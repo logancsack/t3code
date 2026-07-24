@@ -37,6 +37,9 @@ jobs:
           mkdir -p artifacts
           pnpm --config.node-linker=hoisted --config.inject-workspace-packages=true \
             --filter t3 deploy --prod --frozen-lockfile artifacts/devpc-t3
+          rm -rf \
+            artifacts/devpc-t3/node_modules/@anthropic-ai/claude-agent-sdk-linux-x64-musl \
+            artifacts/devpc-t3/node_modules/@anthropic-ai/claude-agent-sdk-win32-x64
           cp LICENSE artifacts/devpc-t3/LICENSE
           cp apps/web/THIRD_PARTY_NOTICES.md artifacts/devpc-t3/THIRD_PARTY_NOTICES.md
           tar -C artifacts/devpc-t3 -czf artifacts/devpc-t3-linux-x64.tar.gz .
