@@ -49,11 +49,18 @@ jobs:
 
       - name: Verify packaged runtime
         run: |
-          test -f artifacts/devpc-t3/dist/bin.mjs
-          test -f artifacts/devpc-t3/dist/client/index.html
-          test -f artifacts/devpc-t3/LICENSE
-          test -f artifacts/devpc-t3/node_modules/node-pty/build/Release/pty.node
-          grep -q "DevPC" artifacts/devpc-t3/dist/client/assets/*.js
+          test -f artifacts/devpc-t3/dist/bin.mjs || { echo "Missing server bundle"; exit 1; }
+          test -f artifacts/devpc-t3/dist/client/index.html || { echo "Missing web bundle"; exit 1; }
+          test -f artifacts/devpc-t3/LICENSE || { echo "Missing license"; exit 1; }
+          test -f artifacts/devpc-t3/node_modules/node-pty/build/Release/pty.node || {
+            echo "Missing Linux node-pty binary"
+            find artifacts/devpc-t3/node_modules/node-pty -maxdepth 4 -type f | sort
+            exit 1
+          }
+          grep -q "DevPC" artifacts/devpc-t3/dist/client/assets/*.js || {
+            echo "Missing managed DevPC client marker"
+            exit 1
+          }
           runtime_home="$(mktemp -d)"
           HOME="$runtime_home/home" \
             T3CODE_HOME="$runtime_home/t3code" \
