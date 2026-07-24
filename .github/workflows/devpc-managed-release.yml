@@ -57,8 +57,8 @@ jobs:
             find artifacts/devpc-t3/node_modules/node-pty -maxdepth 4 -type f | sort
             exit 1
           }
-          grep -q "DevPC" artifacts/devpc-t3/dist/client/assets/*.js || {
-            echo "Missing managed DevPC client marker"
+          grep -q "/_devpc/workspace/restart" artifacts/devpc-t3/dist/client/assets/*.js || {
+            echo "Missing managed DevPC restart surface"
             exit 1
           }
           runtime_home="$(mktemp -d)"
