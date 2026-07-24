@@ -70,6 +70,7 @@ export function resolveRelayTracingConfig() {
 }
 
 export function hasCloudPublicConfig(): boolean {
+  if (import.meta.env.VITE_DEVPC_MANAGED === "1") return false;
   const config = resolveCloudPublicConfig();
   return Boolean(config.clerkPublishableKey && config.clerkJwtTemplate && config.relayUrl);
 }

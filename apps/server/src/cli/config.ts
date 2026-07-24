@@ -110,6 +110,7 @@ const EnvServerConfig = Config.all({
     Config.option,
     Config.map(Option.getOrUndefined),
   ),
+  managedDevPc: Config.boolean("T3CODE_MANAGED_DEVPC").pipe(Config.withDefault(false)),
   bootstrapFd: Config.int("T3CODE_BOOTSTRAP_FD").pipe(
     Config.option,
     Config.map(Option.getOrUndefined),
@@ -364,6 +365,7 @@ export const resolveServerConfig = (
       staticDir,
       devUrl,
       noBrowser,
+      managedDevPc: env.managedDevPc,
       startupPresentation,
       desktopBootstrapToken,
       autoBootstrapProjectFromCwd,

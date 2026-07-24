@@ -120,6 +120,15 @@ const RelayClientLive = Layer.unwrap(
   }),
 );
 
+const AgentAwarenessRelayLayerLive = Layer.unwrap(
+  Effect.gen(function* () {
+    const config = yield* ServerConfig.ServerConfig;
+    return config.managedDevPc
+      ? AgentAwarenessRelay.layerDisabled
+      : AgentAwarenessRelay.layer.pipe(Layer.provide(ServerSecretStore.layer));
+  }),
+);
+
 const HttpServerLive = Layer.unwrap(
   Effect.gen(function* () {
     const config = yield* ServerConfig.ServerConfig;
@@ -164,7 +173,7 @@ const ReactorLayerLive = Layer.empty.pipe(
   Layer.provideMerge(ProviderCommandReactorLive),
   Layer.provideMerge(CheckpointReactorLive),
   Layer.provideMerge(ThreadDeletionReactorLive),
-  Layer.provideMerge(AgentAwarenessRelay.layer.pipe(Layer.provide(ServerSecretStore.layer))),
+  Layer.provideMerge(AgentAwarenessRelayLayerLive),
   Layer.provideMerge(RuntimeReceiptBusLive),
 );
 

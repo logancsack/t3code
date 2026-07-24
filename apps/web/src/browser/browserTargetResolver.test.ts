@@ -2,11 +2,37 @@ import { EnvironmentId } from "@t3tools/contracts";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 const readPreparedConnection = vi.fn();
+const resolveManagedPreviewUrl = vi.fn();
 
 vi.mock("~/state/session", () => ({ readPreparedConnection }));
+vi.mock("../managedDevPc", () => ({ resolveManagedPreviewUrl }));
 
 describe("browser target resolver", () => {
-  beforeEach(() => readPreparedConnection.mockReset());
+  beforeEach(() => {
+    readPreparedConnection.mockReset();
+    resolveManagedPreviewUrl.mockReset();
+    resolveManagedPreviewUrl.mockReturnValue(null);
+  });
+
+  it("routes environment ports through the managed DevPC preview gateway", async () => {
+    readPreparedConnection.mockReturnValue({ httpBaseUrl: "https://code.example.test" });
+    resolveManagedPreviewUrl.mockReturnValue("https://preview.example.test/dashboard");
+    const { resolveBrowserNavigationTarget } = await import("./browserTargetResolver");
+
+    expect(
+      resolveBrowserNavigationTarget(EnvironmentId.make("environment-1"), {
+        kind: "environment-port",
+        port: 5173,
+        path: "/dashboard",
+      }),
+    ).toEqual({
+      requestedUrl: "http://localhost:5173/dashboard",
+      resolvedUrl: "https://preview.example.test/dashboard",
+      resolutionKind: "direct",
+      environmentId: "environment-1",
+    });
+    expect(resolveManagedPreviewUrl).toHaveBeenCalledWith(5173, "/dashboard");
+  });
 
   it("maps environment ports onto a private network host", async () => {
     readPreparedConnection.mockReturnValue({ httpBaseUrl: "http://192.168.1.25:3773" });

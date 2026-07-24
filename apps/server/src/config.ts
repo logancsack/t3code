@@ -73,6 +73,7 @@ export class ServerConfig extends Context.Service<
     readonly staticDir: string | undefined;
     readonly devUrl: URL | undefined;
     readonly noBrowser: boolean;
+    readonly managedDevPc: boolean;
     readonly startupPresentation: StartupPresentation;
     readonly desktopBootstrapToken: string | undefined;
     readonly autoBootstrapProjectFromCwd: boolean;
@@ -188,6 +189,7 @@ const makeTest = Effect.fn("ServerConfig.makeTest")(function* (
     staticDir: undefined,
     devUrl,
     noBrowser: false,
+    managedDevPc: false,
     startupPresentation: "browser",
   });
 });

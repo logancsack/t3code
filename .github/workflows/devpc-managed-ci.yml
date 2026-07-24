@@ -1,0 +1,49 @@
+name: DevPC managed mode
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - "feature/**"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: true
+      - name: License and notices
+        run: |
+          test -s LICENSE
+          test -s apps/web/THIRD_PARTY_NOTICES.md
+          grep -q "MIT License" LICENSE
+      - run: vp run --filter @t3tools/web --filter t3 typecheck
+      - run: vp lint --report-unused-disable-directives
+      - name: Managed-mode feature tests
+        run: |
+          (cd apps/web && vp test run --passWithNoTests --project unit \
+            src/managedDevPc.test.ts \
+            src/browser/browserTargetResolver.test.ts)
+          (cd apps/server && vp test run \
+            src/environment/ServerEnvironment.test.ts \
+            src/cli/config.test.ts \
+            src/bin.test.ts)
+      - name: Managed production build
+        env:
+          VITE_DEVPC_MANAGED: "1"
+          T3CODE_MANAGED_DEVPC: "1"
+          T3CODE_TELEMETRY_ENABLED: "false"
+        run: vp run --filter t3 build
+      - name: Verify matching server and web output
+        run: |
+          test -f apps/server/dist/bin.mjs
+          test -f apps/server/dist/client/index.html
+          grep -q '/_t3/' apps/server/dist/client/index.html
