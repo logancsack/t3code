@@ -14,6 +14,7 @@ interface ImportMetaEnv {
   readonly VITE_RELAY_OTLP_TRACES_DATASET: string;
   readonly VITE_RELAY_OTLP_TRACES_TOKEN: string;
   readonly APP_VERSION: string;
+  readonly VITE_DEVPC_MANAGED: string;
 }
 
 interface ImportMeta {
@@ -24,5 +25,6 @@ declare global {
   interface Window {
     nativeApi?: LocalApi;
     desktopBridge?: DesktopBridge;
+    __DEVPC_MANAGED_BOOTSTRAP__?: import("./managedDevPc").ManagedDevPcBootstrap;
   }
 }

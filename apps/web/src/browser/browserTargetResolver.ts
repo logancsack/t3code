@@ -6,6 +6,7 @@ import type {
 import { isLoopbackHost, normalizePreviewUrl } from "@t3tools/shared/preview";
 
 import { readPreparedConnection } from "~/state/session";
+import { resolveManagedPreviewUrl } from "../managedDevPc";
 
 const normalizeHostname = (host: string): string => host.toLowerCase().replace(/^\[|\]$/g, "");
 
@@ -61,13 +62,22 @@ const resolveEnvironmentPortTarget = (
   requestedUrl?: string,
   sourceUrl?: URL,
 ): PreviewUrlResolution => {
+  const protocol = target.protocol ?? "http";
+  const path = target.path?.startsWith("/") ? target.path : `/${target.path ?? ""}`;
+  const managedPreviewUrl = resolveManagedPreviewUrl(target.port, path);
+  if (managedPreviewUrl) {
+    return {
+      requestedUrl: requestedUrl ?? `${protocol}://localhost:${target.port}${path}`,
+      resolvedUrl: managedPreviewUrl,
+      resolutionKind: "direct",
+      environmentId,
+    };
+  }
   if (!isPrivateNetworkHost(environmentUrl.hostname)) {
     throw new Error(
       "This environment port needs the planned authenticated preview gateway; its server address is not directly private-network reachable.",
     );
   }
-  const protocol = target.protocol ?? "http";
-  const path = target.path?.startsWith("/") ? target.path : `/${target.path ?? ""}`;
   const normalizedEnvironmentHost = environmentUrl.hostname.replace(/^\[|\]$/g, "");
   const resolvedHost = normalizedEnvironmentHost.includes(":")
     ? `[${normalizedEnvironmentHost}]`

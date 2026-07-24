@@ -199,8 +199,11 @@ export function makeCloudCliOAuthConfig({
 
 export const cloudCliOAuthConfig = makeCloudCliOAuthConfig();
 
-export const hasCloudPublicConfig = Boolean(
-  (normalizeSecureRelayUrl(process.env.T3CODE_RELAY_URL ?? "") ?? buildTimeRelayUrl) &&
-  (process.env.T3CODE_CLERK_PUBLISHABLE_KEY?.trim() || buildTimeClerkPublishableKey) &&
-  (process.env.T3CODE_CLERK_CLI_OAUTH_CLIENT_ID?.trim() || buildTimeClerkCliOAuthClientId),
-);
+export const hasCloudPublicConfig =
+  process.env.T3CODE_MANAGED_DEVPC !== "1" &&
+  process.env.T3CODE_MANAGED_DEVPC !== "true" &&
+  Boolean(
+    (normalizeSecureRelayUrl(process.env.T3CODE_RELAY_URL ?? "") ?? buildTimeRelayUrl) &&
+    (process.env.T3CODE_CLERK_PUBLISHABLE_KEY?.trim() || buildTimeClerkPublishableKey) &&
+    (process.env.T3CODE_CLERK_CLI_OAUTH_CLIENT_ID?.trim() || buildTimeClerkCliOAuthClientId),
+  );

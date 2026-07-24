@@ -1,0 +1,36 @@
+name: Sync upstream
+
+on:
+  schedule:
+    - cron: "23 8 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Merge upstream into a review branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git remote add upstream https://github.com/pingdotgg/t3code.git
+          git fetch upstream main
+          branch="automation/upstream-sync-$(date -u +%Y%m%d)"
+          git switch -c "$branch"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git merge --no-edit upstream/main
+          git push --set-upstream origin "$branch"
+          gh pr create \
+            --base main \
+            --head "$branch" \
+            --title "Sync T3 Code upstream" \
+            --body "Automated weekly merge from pingdotgg/t3code main. Managed-mode CI must pass before merge."

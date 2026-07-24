@@ -24,6 +24,9 @@ const configuredRelayTracingDataset = repoEnv.VITE_RELAY_OTLP_TRACES_DATASET?.tr
 const configuredRelayTracingToken = repoEnv.VITE_RELAY_OTLP_TRACES_TOKEN?.trim() || "";
 const configuredHostedAppChannel = process.env.VITE_HOSTED_APP_CHANNEL?.trim() || "";
 const configuredAppVersion = process.env.APP_VERSION?.trim() || pkg.version;
+const managedDevPc = ["1", "true"].includes(
+  process.env.VITE_DEVPC_MANAGED?.trim().toLowerCase() ?? "",
+);
 const configuredHostedAppUrl = (() => {
   const explicitHostedAppUrl = process.env.VITE_HOSTED_APP_URL?.trim();
   if (explicitHostedAppUrl) {
@@ -90,6 +93,7 @@ const devProxyTarget = resolveDevProxyTarget(configuredWsUrl);
 
 export default defineConfig(() => {
   return {
+    base: managedDevPc ? "/_t3/" : "/",
     plugins: [
       tanstackRouter(),
       react(),
@@ -133,6 +137,7 @@ export default defineConfig(() => {
       "import.meta.env.VITE_HOSTED_APP_URL": JSON.stringify(configuredHostedAppUrl ?? ""),
       "import.meta.env.VITE_HOSTED_APP_CHANNEL": JSON.stringify(configuredHostedAppChannel),
       "import.meta.env.APP_VERSION": JSON.stringify(configuredAppVersion),
+      "import.meta.env.VITE_DEVPC_MANAGED": JSON.stringify(managedDevPc ? "1" : ""),
     },
     resolve: {
       tsconfigPaths: true,

@@ -1,0 +1,68 @@
+name: DevPC managed release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version, for example 0.0.28-devpc.1
+        required: true
+  push:
+    tags:
+      - "devpc-v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: true
+
+      - name: Build managed web and server
+        env:
+          VITE_DEVPC_MANAGED: "1"
+          T3CODE_MANAGED_DEVPC: "1"
+          T3CODE_TELEMETRY_ENABLED: "false"
+        run: vp run --filter t3 build
+
+      - name: Stage production runtime
+        run: |
+          mkdir -p artifacts
+          pnpm --config.node-linker=hoisted --config.inject-workspace-packages=true \
+            --filter t3 deploy --prod --frozen-lockfile artifacts/devpc-t3
+          cp LICENSE artifacts/devpc-t3/LICENSE
+          cp apps/web/THIRD_PARTY_NOTICES.md artifacts/devpc-t3/THIRD_PARTY_NOTICES.md
+          tar -C artifacts/devpc-t3 -czf artifacts/devpc-t3-linux-x64.tar.gz .
+          sha256sum artifacts/devpc-t3-linux-x64.tar.gz > artifacts/devpc-t3-linux-x64.tar.gz.sha256
+
+      - name: Verify packaged runtime
+        run: |
+          test -f artifacts/devpc-t3/dist/bin.mjs
+          test -f artifacts/devpc-t3/dist/client/index.html
+          test -f artifacts/devpc-t3/LICENSE
+          grep -q "DevPC" artifacts/devpc-t3/dist/client/assets/*.js
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: devpc-t3-linux-x64
+          path: |
+            artifacts/devpc-t3-linux-x64.tar.gz
+            artifacts/devpc-t3-linux-x64.tar.gz.sha256
+
+      - name: Publish GitHub release assets
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            artifacts/devpc-t3-linux-x64.tar.gz \
+            artifacts/devpc-t3-linux-x64.tar.gz.sha256 \
+            --title "${GITHUB_REF_NAME}" \
+            --generate-notes
