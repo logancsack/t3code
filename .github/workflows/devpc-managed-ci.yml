@@ -29,13 +29,13 @@ jobs:
       - run: vp lint --report-unused-disable-directives
       - name: Managed-mode feature tests
         run: |
-          pnpm --filter @t3tools/web test -- \
+          (cd apps/web && vp test run --passWithNoTests --project unit \
             src/managedDevPc.test.ts \
-            src/browser/browserTargetResolver.test.ts
-          pnpm --filter t3 test -- \
+            src/browser/browserTargetResolver.test.ts)
+          (cd apps/server && vp test run \
             src/environment/ServerEnvironment.test.ts \
             src/cli/config.test.ts \
-            src/bin.test.ts
+            src/bin.test.ts)
       - name: Managed production build
         env:
           VITE_DEVPC_MANAGED: "1"

@@ -35,7 +35,7 @@ jobs:
       - name: Stage production runtime
         run: |
           mkdir -p artifacts
-          pnpm --config.node-linker=hoisted --config.inject-workspace-packages=true \
+          corepack pnpm --config.node-linker=hoisted --config.inject-workspace-packages=true \
             --filter t3 deploy --prod --frozen-lockfile artifacts/devpc-t3
           rm -rf \
             artifacts/devpc-t3/node_modules/@anthropic-ai/claude-agent-sdk-linux-x64-musl \
