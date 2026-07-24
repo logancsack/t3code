@@ -454,6 +454,7 @@ const buildAppUnderTest = (options?: {
       tailscaleServeEnabled: false,
       tailscaleServePort: 443,
       ...options?.config,
+      managedDevPc: options?.config?.managedDevPc ?? false,
     };
     const layerConfig = ServerConfig.layer(config);
     const defaultVcsDriver: VcsDriver.VcsDriver["Service"] = {

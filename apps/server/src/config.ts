@@ -74,6 +74,7 @@ export class ServerConfig extends Context.Service<
     readonly devUrl: URL | undefined;
     readonly devAllowedOrigins: ReadonlyArray<string>;
     readonly noBrowser: boolean;
+    readonly managedDevPc: boolean;
     readonly startupPresentation: StartupPresentation;
     readonly desktopBootstrapToken: string | undefined;
     readonly desktopTelemetryFd?: number | undefined;
@@ -196,6 +197,7 @@ const makeTest = Effect.fn("ServerConfig.makeTest")(function* (
     devUrl,
     devAllowedOrigins: [],
     noBrowser: false,
+    managedDevPc: false,
     startupPresentation: "browser",
   });
 });
