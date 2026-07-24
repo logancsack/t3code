@@ -37,6 +37,7 @@ jobs:
           mkdir -p artifacts
           corepack pnpm --config.node-linker=hoisted --config.inject-workspace-packages=true \
             --filter t3 deploy --prod --frozen-lockfile artifacts/devpc-t3
+          corepack pnpm --dir artifacts/devpc-t3 rebuild node-pty --build-from-source
           rm -rf \
             artifacts/devpc-t3/node_modules/@anthropic-ai/claude-agent-sdk-linux-x64-musl \
             artifacts/devpc-t3/node_modules/@anthropic-ai/claude-agent-sdk-win32-x64
@@ -50,7 +51,25 @@ jobs:
           test -f artifacts/devpc-t3/dist/bin.mjs
           test -f artifacts/devpc-t3/dist/client/index.html
           test -f artifacts/devpc-t3/LICENSE
+          test -f artifacts/devpc-t3/node_modules/node-pty/build/Release/pty.node
           grep -q "DevPC" artifacts/devpc-t3/dist/client/assets/*.js
+          runtime_home="$(mktemp -d)"
+          HOME="$runtime_home/home" \
+            T3CODE_HOME="$runtime_home/t3code" \
+            T3CODE_MANAGED_DEVPC=1 \
+            T3CODE_TELEMETRY_ENABLED=false \
+            node artifacts/devpc-t3/dist/bin.mjs start \
+              --mode web --host 127.0.0.1 --port 4311 \
+              --base-dir "$runtime_home/t3code" --no-browser "$runtime_home" &
+          runtime_pid=$!
+          trap 'kill "$runtime_pid" 2>/dev/null || true; rm -rf "$runtime_home"' EXIT
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error http://127.0.0.1:4311/ >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          exit 1
 
       - uses: actions/upload-artifact@v7
         with:
