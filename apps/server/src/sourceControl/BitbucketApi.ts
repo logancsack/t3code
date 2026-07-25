@@ -25,6 +25,10 @@ import {
 import * as SourceControlProvider from "./SourceControlProvider.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
+import {
+  readStoredBitbucketCredentials,
+  type StoredBitbucketCredentials,
+} from "./BitbucketCredentialStore.ts";
 
 const DEFAULT_API_BASE_URL = "https://api.bitbucket.org/2.0";
 
@@ -444,6 +448,7 @@ function repositoryOwnerName(repositoryName: string): string {
 
 function authFromConfig(
   config: Config.Success<typeof BitbucketApiEnvConfig>,
+  stored: StoredBitbucketCredentials | null,
 ): SourceControlProviderAuth {
   if (Option.isSome(config.accessToken)) {
     return {
@@ -454,10 +459,14 @@ function authFromConfig(
     };
   }
 
-  if (Option.isSome(config.email) && Option.isSome(config.apiToken)) {
+  if ((Option.isSome(config.email) && Option.isSome(config.apiToken)) || stored !== null) {
     return {
       status: "unknown",
-      account: config.email,
+      account: Option.isSome(config.email)
+        ? config.email
+        : stored
+          ? Option.some(stored.email)
+          : Option.none(),
       host: Option.some("bitbucket.org"),
       detail: Option.some("Bitbucket API token is configured."),
     };
@@ -467,9 +476,7 @@ function authFromConfig(
     status: "unauthenticated",
     account: Option.none(),
     host: Option.some("bitbucket.org"),
-    detail: Option.some(
-      "Set T3CODE_BITBUCKET_EMAIL and T3CODE_BITBUCKET_API_TOKEN, or T3CODE_BITBUCKET_ACCESS_TOKEN.",
-    ),
+    detail: Option.some("Connect Bitbucket with an Atlassian account email and API token."),
   };
 }
 
@@ -507,15 +514,21 @@ export const make = Effect.gen(function* () {
 
   const apiUrl = (path: string) => `${config.baseUrl.replace(/\/+$/u, "")}${path}`;
 
-  const withAuth = (request: HttpClientRequest.HttpClientRequest) => {
+  const withAuth = Effect.fn("BitbucketApi.withAuth")(function* (
+    request: HttpClientRequest.HttpClientRequest,
+  ) {
     if (Option.isSome(config.accessToken)) {
       return request.pipe(HttpClientRequest.bearerToken(config.accessToken.value));
     }
     if (Option.isSome(config.email) && Option.isSome(config.apiToken)) {
       return request.pipe(HttpClientRequest.basicAuth(config.email.value, config.apiToken.value));
     }
+    const stored = yield* Effect.promise(readStoredBitbucketCredentials);
+    if (stored) {
+      return request.pipe(HttpClientRequest.basicAuth(stored.email, stored.apiToken));
+    }
     return request;
-  };
+  });
 
   const decodeResponse = <S extends Schema.Top>(
     operation: BitbucketApiOperation,
@@ -542,7 +555,8 @@ export const make = Effect.gen(function* () {
     request: HttpClientRequest.HttpClientRequest,
     schema: S,
   ): Effect.Effect<S["Type"], BitbucketApiError, S["DecodingServices"]> =>
-    httpClient.execute(withAuth(request.pipe(HttpClientRequest.acceptJson))).pipe(
+    withAuth(request.pipe(HttpClientRequest.acceptJson)).pipe(
+      Effect.flatMap(httpClient.execute),
       Effect.mapError(
         (cause) =>
           new BitbucketRequestError({
@@ -701,7 +715,11 @@ export const make = Effect.gen(function* () {
         host: Option.some("bitbucket.org"),
         detail: Option.none<string>(),
       })),
-      Effect.orElseSucceed(() => authFromConfig(config)),
+      Effect.catch(() =>
+        Effect.promise(readStoredBitbucketCredentials).pipe(
+          Effect.map((stored) => authFromConfig(config, stored)),
+        ),
+      ),
     ),
     listPullRequests: (input) =>
       resolveRepository(input).pipe(

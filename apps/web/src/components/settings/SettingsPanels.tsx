@@ -80,6 +80,8 @@ import {
   type ProviderUpdateCandidate,
 } from "../ProviderUpdateLaunchNotification.logic";
 import { ProviderInstanceCard } from "./ProviderInstanceCard";
+import { AuthConnectorDialog } from "./AuthConnectorDialog";
+import { AGENT_AUTH_METHODS } from "./authConnectorMethods";
 import { DRIVER_OPTIONS, getDriverOption } from "./providerDriverMeta";
 import {
   buildProviderInstanceUpdatePatch,
@@ -1464,6 +1466,7 @@ export function ProviderSettingsPanel() {
             favorite.provider === row.instanceId ? Result.succeed(favorite.model) : Result.failVoid,
           );
           const resetLabel = driverOption?.label ?? String(row.driver);
+          const authConnector = AGENT_AUTH_METHODS[row.driver];
           const headerAction =
             row.isDefault && row.isDirty ? (
               <SettingResetButton
@@ -1500,6 +1503,17 @@ export function ProviderSettingsPanel() {
               }}
               onDelete={row.isDefault ? undefined : () => deleteProviderInstance(row.instanceId)}
               headerAction={headerAction}
+              authConnectorAction={
+                authConnector ? (
+                  <AuthConnectorDialog
+                    connector={authConnector.connector}
+                    serviceName={authConnector.serviceName}
+                    methods={authConnector.methods}
+                    isAuthenticated={liveProvider?.auth.status === "authenticated"}
+                    onConnected={refreshProviders}
+                  />
+                ) : undefined
+              }
               hiddenModels={modelPreferences.hiddenModels}
               favoriteModels={favoriteModels}
               modelOrder={modelPreferences.modelOrder}
