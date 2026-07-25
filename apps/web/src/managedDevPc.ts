@@ -137,7 +137,6 @@ export async function prepareManagedWebSocketUrl(socketUrl: string): Promise<str
     }
     throw new Error("The managed workspace connection could not be authorized.");
   }
-  clearManagedSessionRecovery();
   const payload = (await response.json()) as {
     ticket?: unknown;
     websocketUrl?: unknown;
@@ -155,6 +154,7 @@ export async function prepareManagedWebSocketUrl(socketUrl: string): Promise<str
   resolved.searchParams.delete("wsTicket");
   resolved.searchParams.delete("gatewayTicket");
   resolved.searchParams.set(managedSocketUrl ? "wsTicket" : "gatewayTicket", payload.ticket);
+  clearManagedSessionRecovery();
   return resolved.toString();
 }
 
