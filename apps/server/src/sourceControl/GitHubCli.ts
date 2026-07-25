@@ -298,9 +298,17 @@ const RawGitHubRepositorySummarySchema = Schema.Struct({
   archived: Schema.Boolean,
   fork: Schema.Boolean,
 });
-const decodeRawGitHubRepositoryList = Schema.decodeEffect(
-  Schema.fromJsonString(Schema.Array(Schema.Array(RawGitHubRepositorySummarySchema))),
+const decodeRawGitHubRepositorySummary = Schema.decodeEffect(
+  Schema.fromJsonString(RawGitHubRepositorySummarySchema),
 );
+
+function decodeRawGitHubRepositoryList(raw: string) {
+  const lines = raw
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  return Effect.forEach(lines, (line) => decodeRawGitHubRepositorySummary(line));
+}
 
 function normalizeRepositoryCloneUrls(
   raw: Schema.Schema.Type<typeof RawGitHubRepositoryCloneUrlsSchema>,
@@ -490,7 +498,8 @@ export const make = Effect.gen(function* () {
               "--hostname",
               account.host,
               "--paginate",
-              "--slurp",
+              "--jq",
+              ".[]",
               "--method",
               "GET",
               "user/repos",
@@ -518,21 +527,19 @@ export const make = Effect.gen(function* () {
             ),
           ),
         ),
-        Effect.map((pages) =>
-          pages.flatMap((repositories) =>
-            repositories.map(
-              (repository): GitHubRepositorySummary => ({
-                nameWithOwner: repository.full_name,
-                name: repository.name,
-                owner: repository.owner.login,
-                url: repository.html_url,
-                sshUrl: repository.ssh_url,
-                description: repository.description,
-                isPrivate: repository.private,
-                isArchived: repository.archived,
-                isFork: repository.fork,
-              }),
-            ),
+        Effect.map((repositories) =>
+          repositories.map(
+            (repository): GitHubRepositorySummary => ({
+              nameWithOwner: repository.full_name,
+              name: repository.name,
+              owner: repository.owner.login,
+              url: repository.html_url,
+              sshUrl: repository.ssh_url,
+              description: repository.description,
+              isPrivate: repository.private,
+              isArchived: repository.archived,
+              isFork: repository.fork,
+            }),
           ),
         ),
       ),
