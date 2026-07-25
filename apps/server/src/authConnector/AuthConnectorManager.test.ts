@@ -15,8 +15,10 @@ describe("AuthConnectorManager output parsing", () => {
 
   it("extracts Codex device authorization details after removing terminal styling", () => {
     const output = testHelpers.stripAnsi(
-      "\u001b[94mhttps://auth.openai.com/codex/device\u001b[0m\n" +
-        "Enter this one-time code:\n\u001b[94mWXYZ-9876\u001b[0m",
+      "1. Open this URL in your browser\n" +
+        "   \u001b[94mhttps://auth.openai.com/codex/device\u001b[0m\n\n" +
+        "2. Enter this one-time code (expires in 15 minutes)\n" +
+        "   \u001b[94mWXYZ-9876\u001b[0m",
     );
 
     expect(testHelpers.extractUserCode(output)).toBe("WXYZ-9876");
@@ -48,5 +50,30 @@ describe("AuthConnectorManager output parsing", () => {
 
     expect(testHelpers.extractUserCode(output)).toBe("A1B2C3D4");
     expect(testHelpers.extractUrl(output)).toBe("https://microsoft.com/devicelogin");
+  });
+
+  it("recognizes the GitHub CLI credential confirmation before device login", () => {
+    expect(
+      testHelpers.hasGitHubCredentialPrompt(
+        "? Authenticate Git with your GitHub credentials? (Y/n)",
+      ),
+    ).toBe(true);
+  });
+
+  it("runs GitLab device login without its interactive terminal UI", () => {
+    expect(
+      testHelpers.launchSpec({
+        connector: "gitlab",
+        method: "account",
+      })?.env,
+    ).toEqual({ TERM: "dumb" });
+  });
+
+  it("accepts Claude's full callback URL or short authorization code", () => {
+    expect(testHelpers.claudeCallbackField()).toMatchObject({
+      key: "callback",
+      label: "Authorization URL or code",
+      type: "textarea",
+    });
   });
 });

@@ -1,7 +1,14 @@
 "use client";
 
-import { CheckIcon, CopyIcon, ExternalLinkIcon, LoaderIcon, PlugIcon } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  CheckIcon,
+  ClipboardPasteIcon,
+  CopyIcon,
+  ExternalLinkIcon,
+  LoaderIcon,
+  PlugIcon,
+} from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import type {
   AuthConnectorKind,
   AuthConnectorMethod,
@@ -27,6 +34,7 @@ import {
   DialogTitle,
 } from "../ui/dialog";
 import { Input } from "../ui/input";
+import { Textarea } from "../ui/textarea";
 import { toastManager } from "../ui/toast";
 
 export type AuthConnectorMethodOption = {
@@ -36,10 +44,38 @@ export type AuthConnectorMethodOption = {
   readonly hostname?: string;
   readonly externalHelpUrl?: string;
   readonly externalHelpLabel?: string;
+  readonly browserName?: string;
+  readonly authorizeInstruction?: string;
+  readonly waitingMessage?: string;
+  readonly returnInstruction?: string;
 };
 
 function errorMessage(cause: unknown): string {
   return cause instanceof Error ? cause.message : "The connection could not be completed.";
+}
+
+const TERMINAL_STATUSES = new Set(["succeeded", "failed", "expired", "cancelled"]);
+
+function progressSteps(session: AuthConnectorSession): ReadonlyArray<string> {
+  if (session.flow === "secret") return ["Credential", "Verify", "Ready"];
+  if (session.flow === "code") return ["Start", "Authorize", "Return", "Verify", "Ready"];
+  return ["Start", "Authorize", "Verify", "Ready"];
+}
+
+function activeProgressIndex(session: AuthConnectorSession): number {
+  const steps = progressSteps(session);
+  if (session.stage === "complete") return steps.length - 1;
+  if (session.stage === "verifying") return steps.length - 2;
+  if (session.stage === "return") return 2;
+  if (session.stage === "authorize") return 1;
+  return 0;
+}
+
+function formatRemaining(expiresAt: string | null, now: number): string | null {
+  if (!expiresAt) return null;
+  const seconds = Math.max(0, Math.ceil((new Date(expiresAt).getTime() - now) / 1_000));
+  const minutes = Math.floor(seconds / 60);
+  return `${minutes}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
 export function AuthConnectorDialog(props: {
@@ -69,17 +105,16 @@ export function AuthConnectorDialog(props: {
   const [startingMethod, setStartingMethod] = useState<AuthConnectorMethod | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [openedSessionId, setOpenedSessionId] = useState<string | null>(null);
+  const [now, setNow] = useState(() => Date.now());
   const reportedSuccess = useRef<string | null>(null);
+  const callbackInputRef = useRef<HTMLTextAreaElement | null>(null);
 
-  const selectedMethod = useMemo(
-    () => methods.find((method) => method.method === session?.method) ?? null,
-    [methods, session?.method],
-  );
+  const selectedMethod = methods.find((method) => method.method === session?.method) ?? null;
 
   useEffect(() => {
     if (!open || !environment || !session) return;
     if (session.status !== "starting" && session.status !== "waiting") return;
-    if (session.fields.length > 0) return;
     let cancelled = false;
     const timer = window.setInterval(() => {
       void (async () => {
@@ -95,7 +130,14 @@ export function AuthConnectorDialog(props: {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [environment, getConnector, open, session?.fields.length, session?.id, session?.status]);
+  }, [environment, getConnector, open, session?.id, session?.status]);
+
+  useEffect(() => {
+    if (!open || !session?.expiresAt || TERMINAL_STATUSES.has(session.status)) return;
+    setNow(Date.now());
+    const timer = window.setInterval(() => setNow(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+  }, [open, session?.expiresAt, session?.status]);
 
   useEffect(() => {
     if (session?.status !== "succeeded" || reportedSuccess.current === session.id) return;
@@ -114,6 +156,7 @@ export function AuthConnectorDialog(props: {
     setStartingMethod(null);
     setIsSubmitting(false);
     setError(null);
+    setOpenedSessionId(null);
   };
 
   const handleOpenChange = (nextOpen: boolean) => {
@@ -176,7 +219,54 @@ export function AuthConnectorDialog(props: {
 
   const openVerificationUrl = () => {
     if (!session?.verificationUrl) return;
+    setOpenedSessionId(session.id);
     openExternal(session.verificationUrl);
+  };
+
+  const copyCodeAndOpen = () => {
+    if (!session?.verificationUrl) return;
+    setOpenedSessionId(session.id);
+    if (session.userCode) {
+      void navigator.clipboard.writeText(session.userCode).then(
+        () =>
+          toastManager.add({
+            type: "success",
+            title: "Code copied",
+            description: "Paste it into the browser tab that just opened.",
+          }),
+        () => setError("Clipboard access was blocked. Copy the code manually from this window."),
+      );
+    }
+    openExternal(session.verificationUrl);
+  };
+
+  const copyUserCode = async () => {
+    if (!session?.userCode) return;
+    try {
+      await navigator.clipboard.writeText(session.userCode);
+      toastManager.add({
+        type: "success",
+        title: "Code copied",
+      });
+    } catch {
+      setError("Clipboard access was blocked. Select and copy the code manually.");
+    }
+  };
+
+  const pasteFromClipboard = async (key: string) => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (!text.trim()) {
+        setError("Your clipboard is empty. Copy the full authorization URL, then try again.");
+        return;
+      }
+      setValues((current) => ({ ...current, [key]: text.trim() }));
+      setError(null);
+      callbackInputRef.current?.focus();
+    } catch {
+      setError("Clipboard access was blocked. Paste the authorization URL into the field below.");
+      callbackInputRef.current?.focus();
+    }
   };
 
   const openExternal = (url: string) => {
@@ -187,6 +277,37 @@ export function AuthConnectorDialog(props: {
     }
     window.open(url, "_blank", "noopener,noreferrer");
   };
+
+  const steps = session ? progressSteps(session) : [];
+  const presentationStage =
+    session?.stage === "return" && openedSessionId !== session.id ? "authorize" : session?.stage;
+  const activeStep = session
+    ? presentationStage === "authorize"
+      ? 1
+      : activeProgressIndex(session)
+    : 0;
+  const remaining = session ? formatRemaining(session.expiresAt, now) : null;
+  const browserName = selectedMethod?.browserName ?? serviceName;
+  const stageTitle =
+    presentationStage === "credential"
+      ? "Add your credential"
+      : presentationStage === "authorize"
+        ? `Authorize with ${browserName}`
+        : presentationStage === "return"
+          ? "Return to T3 Code"
+          : presentationStage === "verifying"
+            ? "Checking your account"
+            : "Preparing secure sign-in";
+  const stageDescription =
+    presentationStage === "authorize"
+      ? (selectedMethod?.authorizeInstruction ??
+        `Complete the authorization in ${browserName}. This window will update automatically.`)
+      : presentationStage === "return"
+        ? (selectedMethod?.returnInstruction ??
+          `Finish approving access in ${browserName}, then paste what it gives you below.`)
+        : session?.stage === "verifying"
+          ? "Keep this window open while the provider confirms your account."
+          : session?.message;
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -202,7 +323,7 @@ export function AuthConnectorDialog(props: {
         {isAuthenticated ? "Reconnect" : "Connect"}
       </Button>
 
-      <DialogPopup className="w-[min(32rem,calc(100vw-1.5rem))]">
+      <DialogPopup className="w-[min(36rem,calc(100vw-1rem))]">
         <DialogHeader>
           <DialogTitle>
             {session?.status === "succeeded"
@@ -210,12 +331,13 @@ export function AuthConnectorDialog(props: {
               : `Connect ${serviceName}`}
           </DialogTitle>
           <DialogDescription>
-            {session?.message ??
-              `Choose how you use ${serviceName}. Credentials stay on this workspace.`}
+            {session
+              ? `${selectedMethod?.label ?? serviceName} · Credentials stay on this workspace.`
+              : `Choose how you use ${serviceName}. Credentials stay on this workspace.`}
           </DialogDescription>
         </DialogHeader>
 
-        <DialogPanel className="space-y-4">
+        <DialogPanel className="space-y-5">
           {!session ? (
             <div className="divide-y overflow-hidden rounded-xl border bg-card">
               {methods.map((option) => (
@@ -244,99 +366,208 @@ export function AuthConnectorDialog(props: {
                 </button>
               ))}
             </div>
-          ) : session.status === "succeeded" ? (
-            <div className="flex items-center gap-3 rounded-xl border border-success/30 bg-success/8 p-4">
-              <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-success text-success-foreground">
-                <CheckIcon className="size-4" />
-              </span>
-              <div>
-                <p className="text-sm font-medium text-foreground">Ready to use</p>
-                <p className="text-xs text-muted-foreground">
-                  Connection status is refreshing now.
-                </p>
-              </div>
-            </div>
-          ) : session.status === "failed" ||
-            session.status === "expired" ||
-            session.status === "cancelled" ? (
-            <div className="rounded-xl border border-destructive/25 bg-destructive/5 p-4 text-sm text-foreground">
-              {session.message}
-            </div>
           ) : (
             <>
-              {session.userCode ? (
-                <div className="rounded-xl border bg-muted/25 p-4 text-center">
-                  <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-                    One-time code
-                  </p>
-                  <button
-                    type="button"
-                    className="mt-2 inline-flex items-center gap-2 font-mono text-2xl font-semibold tracking-[0.12em] text-foreground"
-                    onClick={() => {
-                      void navigator.clipboard.writeText(session.userCode ?? "");
-                      toastManager.add({
-                        type: "success",
-                        title: "Code copied",
-                      });
-                    }}
-                  >
-                    {session.userCode}
-                    <CopyIcon className="size-3.5 text-muted-foreground" />
-                  </button>
-                </div>
-              ) : null}
+              <ol className="flex items-start gap-1" aria-label="Connection progress">
+                {steps.map((step, index) => {
+                  const isComplete = index < activeStep || session.stage === "complete";
+                  const isActive = index === activeStep;
+                  return (
+                    <li key={step} className="flex min-w-0 flex-1 flex-col items-center gap-1.5">
+                      <span
+                        className={`flex size-5 items-center justify-center rounded-full border text-[10px] font-semibold ${
+                          isComplete
+                            ? "border-primary bg-primary text-primary-foreground"
+                            : isActive
+                              ? "border-primary text-primary"
+                              : "border-border text-muted-foreground"
+                        }`}
+                      >
+                        {isComplete ? <CheckIcon className="size-3" /> : index + 1}
+                      </span>
+                      <span
+                        className={`max-w-full truncate text-[10px] ${
+                          isActive ? "font-medium text-foreground" : "text-muted-foreground"
+                        }`}
+                      >
+                        {step}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ol>
 
-              {session.verificationUrl ? (
-                <Button className="w-full" onClick={openVerificationUrl}>
-                  Continue in browser
-                  <ExternalLinkIcon className="size-4" />
-                </Button>
-              ) : null}
-
-              {session.fields.length > 0 ? (
-                <div className="space-y-3">
-                  {session.fields.map((authField) => (
-                    <label key={authField.key} className="block space-y-1.5">
-                      <span className="text-xs font-medium text-foreground">{authField.label}</span>
-                      <Input
-                        type={authField.type}
-                        value={values[authField.key] ?? ""}
-                        placeholder={authField.placeholder}
-                        autoComplete="off"
-                        onChange={(event) =>
-                          setValues((current) => ({
-                            ...current,
-                            [authField.key]: event.currentTarget.value,
-                          }))
-                        }
-                      />
-                      {authField.help ? (
-                        <span className="block text-xs leading-relaxed text-muted-foreground">
-                          {authField.help}
-                        </span>
+              <div className="border-t pt-5">
+                {session.status === "succeeded" ? (
+                  <div className="flex items-center gap-3 rounded-xl border border-success/30 bg-success/8 p-4">
+                    <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-success text-success-foreground">
+                      <CheckIcon className="size-4" />
+                    </span>
+                    <div>
+                      <p className="text-sm font-medium text-foreground">Ready to use</p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        {serviceName} is connected to this workspace.
+                      </p>
+                    </div>
+                  </div>
+                ) : session.status === "failed" ||
+                  session.status === "expired" ||
+                  session.status === "cancelled" ? (
+                  <div className="rounded-xl border border-destructive/25 bg-destructive/5 p-4">
+                    <p className="text-sm font-medium text-foreground">
+                      {session.status === "expired"
+                        ? "This sign-in expired"
+                        : "We couldn’t finish connecting"}
+                    </p>
+                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                      {session.message}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div>
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-sm font-semibold text-foreground">{stageTitle}</p>
+                        {remaining ? (
+                          <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
+                            Expires in {remaining}
+                          </span>
+                        ) : null}
+                      </div>
+                      {stageDescription ? (
+                        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                          {stageDescription}
+                        </p>
                       ) : null}
-                    </label>
-                  ))}
-                  {selectedMethod?.externalHelpUrl ? (
-                    <Button
-                      type="button"
-                      variant="link"
-                      className="h-auto p-0 text-xs"
-                      onClick={() => openExternal(selectedMethod.externalHelpUrl!)}
-                    >
-                      {selectedMethod.externalHelpLabel ?? "Create a credential"}
-                      <ExternalLinkIcon className="size-3" />
-                    </Button>
-                  ) : null}
-                </div>
-              ) : null}
+                    </div>
 
-              {!session.verificationUrl && session.fields.length === 0 ? (
-                <div className="flex items-center gap-2 rounded-xl border bg-muted/20 p-4 text-sm text-muted-foreground">
-                  <LoaderIcon className="size-4 animate-spin" />
-                  Preparing secure sign-in…
-                </div>
-              ) : null}
+                    {session.userCode ? (
+                      <div className="rounded-xl border bg-muted/25 p-4 text-center">
+                        <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+                          One-time code
+                        </p>
+                        <button
+                          type="button"
+                          className="mt-2 inline-flex items-center gap-2 rounded-md px-2 py-1 font-mono text-2xl font-semibold tracking-[0.12em] text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          aria-label={`Copy one-time code ${session.userCode}`}
+                          onClick={() => void copyUserCode()}
+                        >
+                          {session.userCode}
+                          <CopyIcon className="size-3.5 text-muted-foreground" />
+                        </button>
+                        <p className="mt-2 text-[11px] text-muted-foreground">
+                          Copy this exactly as shown.
+                        </p>
+                      </div>
+                    ) : null}
+
+                    {session.verificationUrl ? (
+                      <Button
+                        className="w-full"
+                        onClick={session.userCode ? copyCodeAndOpen : openVerificationUrl}
+                      >
+                        {session.userCode
+                          ? `Copy code & open ${browserName}`
+                          : `Open ${browserName}`}
+                        <ExternalLinkIcon className="size-4" />
+                      </Button>
+                    ) : null}
+
+                    {session.stage === "authorize" && session.verificationUrl ? (
+                      <div
+                        className="flex items-center gap-2 text-xs text-muted-foreground"
+                        aria-live="polite"
+                      >
+                        <LoaderIcon className="size-3.5 shrink-0 animate-spin" />
+                        {selectedMethod?.waitingMessage ??
+                          "Waiting for you to approve access in the browser…"}
+                      </div>
+                    ) : null}
+
+                    {session.fields.length > 0 ? (
+                      <div className="space-y-3">
+                        {session.fields.map((authField) => (
+                          <label key={authField.key} className="block space-y-1.5">
+                            <span className="flex items-center justify-between gap-3">
+                              <span className="text-xs font-medium text-foreground">
+                                {authField.label}
+                              </span>
+                              {authField.type === "textarea" ? (
+                                <button
+                                  type="button"
+                                  className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                                  onClick={() => void pasteFromClipboard(authField.key)}
+                                >
+                                  <ClipboardPasteIcon className="size-3" />
+                                  Paste from clipboard
+                                </button>
+                              ) : null}
+                            </span>
+                            {authField.type === "textarea" ? (
+                              <Textarea
+                                ref={callbackInputRef}
+                                value={values[authField.key] ?? ""}
+                                placeholder={authField.placeholder}
+                                autoComplete="off"
+                                spellCheck={false}
+                                className="font-mono text-xs"
+                                onChange={(event) =>
+                                  setValues((current) => ({
+                                    ...current,
+                                    [authField.key]: event.currentTarget.value,
+                                  }))
+                                }
+                              />
+                            ) : (
+                              <Input
+                                type={authField.type}
+                                value={values[authField.key] ?? ""}
+                                placeholder={authField.placeholder}
+                                autoComplete="off"
+                                onChange={(event) =>
+                                  setValues((current) => ({
+                                    ...current,
+                                    [authField.key]: event.currentTarget.value,
+                                  }))
+                                }
+                              />
+                            )}
+                            {authField.help ? (
+                              <span className="block text-xs leading-relaxed text-muted-foreground">
+                                {authField.help}
+                              </span>
+                            ) : null}
+                          </label>
+                        ))}
+                        {selectedMethod?.externalHelpUrl ? (
+                          <Button
+                            type="button"
+                            variant="link"
+                            className="h-auto p-0 text-xs"
+                            onClick={() => openExternal(selectedMethod.externalHelpUrl!)}
+                          >
+                            {selectedMethod.externalHelpLabel ?? "Create a credential"}
+                            <ExternalLinkIcon className="size-3" />
+                          </Button>
+                        ) : null}
+                      </div>
+                    ) : null}
+
+                    {(session.stage === "preparing" || session.stage === "verifying") &&
+                    !session.verificationUrl ? (
+                      <div
+                        className="flex items-center gap-2 rounded-xl border bg-muted/20 p-4 text-sm text-muted-foreground"
+                        aria-live="polite"
+                      >
+                        <LoaderIcon className="size-4 animate-spin" />
+                        {session.stage === "verifying"
+                          ? "Confirming your account…"
+                          : "Preparing the provider’s secure sign-in…"}
+                      </div>
+                    ) : null}
+                  </div>
+                )}
+              </div>
             </>
           )}
 
@@ -373,7 +604,7 @@ export function AuthConnectorDialog(props: {
                 onClick={() => void submit()}
               >
                 {isSubmitting ? <LoaderIcon className="animate-spin" /> : null}
-                {session.flow === "code" ? "Verify code" : "Connect account"}
+                {session.stage === "return" ? "Finish connecting" : "Verify & connect"}
               </Button>
             </>
           ) : (
