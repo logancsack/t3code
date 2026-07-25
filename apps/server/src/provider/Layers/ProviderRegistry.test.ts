@@ -418,7 +418,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
           assert.strictEqual(status.auth.status, "unauthenticated");
           assert.strictEqual(
             status.message,
-            "Codex CLI is not authenticated. Run `codex login` and try again.",
+            "Codex is not authenticated. Use Connect to sign in with ChatGPT or an OpenAI API key.",
           );
         }),
       );
