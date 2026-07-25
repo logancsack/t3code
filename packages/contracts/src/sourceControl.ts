@@ -57,6 +57,28 @@ export const SourceControlRepositoryInfo = Schema.Struct({
 });
 export type SourceControlRepositoryInfo = typeof SourceControlRepositoryInfo.Type;
 
+export const SourceControlRepositorySummary = Schema.Struct({
+  provider: SourceControlProviderKind,
+  nameWithOwner: TrimmedNonEmptyString,
+  name: TrimmedNonEmptyString,
+  owner: TrimmedNonEmptyString,
+  url: TrimmedNonEmptyString,
+  sshUrl: TrimmedNonEmptyString,
+  description: Schema.NullOr(Schema.String),
+  isPrivate: Schema.Boolean,
+  isArchived: Schema.Boolean,
+  isFork: Schema.Boolean,
+});
+export type SourceControlRepositorySummary = typeof SourceControlRepositorySummary.Type;
+
+export const SourceControlRepositoryListInput = Schema.Struct({
+  provider: SourceControlProviderKind,
+});
+export type SourceControlRepositoryListInput = typeof SourceControlRepositoryListInput.Type;
+
+export const SourceControlRepositoryListResult = Schema.Array(SourceControlRepositorySummary);
+export type SourceControlRepositoryListResult = typeof SourceControlRepositoryListResult.Type;
+
 export const SourceControlRepositoryLookupInput = Schema.Struct({
   provider: SourceControlProviderKind,
   repository: TrimmedNonEmptyString,
