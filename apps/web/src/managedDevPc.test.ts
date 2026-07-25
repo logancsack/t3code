@@ -123,36 +123,41 @@ describe("managed DevPC WebSocket authorization", () => {
     );
   });
 
-  it("reloads once when the managed browser session must be paired again", async () => {
-    vi.stubEnv("VITE_DEVPC_MANAGED", "1");
-    vi.resetModules();
-    const reload = vi.fn();
-    const storage = new Map<string, string>();
-    vi.stubGlobal("window", {
-      location: { origin: "https://app.example.test", reload },
-      sessionStorage: {
-        getItem: (key: string) => storage.get(key) ?? null,
-        setItem: (key: string, value: string) => storage.set(key, value),
-        removeItem: (key: string) => storage.delete(key),
-      },
-    });
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => new Response(null, { status: 401 })),
-    );
+  it.each([401, 403])(
+    "reloads once when a %i response requires the managed browser session to be paired again",
+    async (status) => {
+      vi.stubEnv("VITE_DEVPC_MANAGED", "1");
+      vi.resetModules();
+      const reload = vi.fn();
+      const storage = new Map<string, string>();
+      vi.stubGlobal("window", {
+        location: { origin: "https://app.example.test", reload },
+        sessionStorage: {
+          getItem: (key: string) => storage.get(key) ?? null,
+          setItem: (key: string, value: string) => storage.set(key, value),
+          removeItem: (key: string) => storage.delete(key),
+        },
+      });
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => new Response(null, { status })),
+      );
 
-    const { prepareManagedWebSocketUrl } = await import("./managedDevPc");
-    await expect(prepareManagedWebSocketUrl("wss://app.example.test/ws")).rejects.toThrow(
-      "Refreshing the managed workspace connection.",
-    );
-    expect(reload).toHaveBeenCalledOnce();
-    expect(storage.size).toBe(1);
+      let { prepareManagedWebSocketUrl } = await import("./managedDevPc");
+      await expect(prepareManagedWebSocketUrl("wss://app.example.test/ws")).rejects.toThrow(
+        "Refreshing the managed workspace connection.",
+      );
+      expect(reload).toHaveBeenCalledOnce();
+      expect(storage.has("devpc-managed-session-recovery-at")).toBe(true);
 
-    await expect(prepareManagedWebSocketUrl("wss://app.example.test/ws")).rejects.toThrow(
-      "could not be authorized",
-    );
-    expect(reload).toHaveBeenCalledOnce();
-  });
+      vi.resetModules();
+      ({ prepareManagedWebSocketUrl } = await import("./managedDevPc"));
+      await expect(prepareManagedWebSocketUrl("wss://app.example.test/ws")).rejects.toThrow(
+        "could not be authorized",
+      );
+      expect(reload).toHaveBeenCalledOnce();
+    },
+  );
 
   it("clears the managed session recovery cooldown after authorization succeeds", async () => {
     vi.stubEnv("VITE_DEVPC_MANAGED", "1");
@@ -174,5 +179,30 @@ describe("managed DevPC WebSocket authorization", () => {
     const { prepareManagedWebSocketUrl } = await import("./managedDevPc");
     await prepareManagedWebSocketUrl("wss://app.example.test/ws");
     expect(storage.size).toBe(0);
+  });
+
+  it("keeps the managed session recovery cooldown after an invalid success response", async () => {
+    vi.stubEnv("VITE_DEVPC_MANAGED", "1");
+    vi.resetModules();
+    const recoveryKey = "devpc-managed-session-recovery-at";
+    const storage = new Map([[recoveryKey, String(Date.now())]]);
+    vi.stubGlobal("window", {
+      location: { origin: "https://app.example.test" },
+      sessionStorage: {
+        getItem: (key: string) => storage.get(key) ?? null,
+        setItem: (key: string, value: string) => storage.set(key, value),
+        removeItem: (key: string) => storage.delete(key),
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json({ ticket: "invalid" })),
+    );
+
+    const { prepareManagedWebSocketUrl } = await import("./managedDevPc");
+    await expect(prepareManagedWebSocketUrl("wss://app.example.test/ws")).rejects.toThrow(
+      "invalid connection credential",
+    );
+    expect(storage.has(recoveryKey)).toBe(true);
   });
 });
