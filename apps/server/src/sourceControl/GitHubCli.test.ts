@@ -292,6 +292,134 @@ describe("GitHubCli.layer", () => {
     }).pipe(Effect.provide(layer)),
   );
 
+  it.effect("lists every accessible repository across paginated GitHub API results", () =>
+    Effect.gen(function* () {
+      mockRun
+        .mockReturnValueOnce(
+          Effect.succeed({
+            ...processOutput(""),
+            exitCode: ChildProcessSpawner.ExitCode(1),
+            stderr:
+              "github.com\n  X Failed to log in to github.com account old-account\n\ngithub.example.com\n  ✓ Logged in to github.example.com account octocat\n  - Active account: true\n",
+          }),
+        )
+        .mockReturnValueOnce(
+          Effect.succeed(
+            processOutput(
+              // @effect-diagnostics-next-line preferSchemaOverJson:off
+              JSON.stringify([
+                [
+                  {
+                    full_name: "octocat/console",
+                    name: "console",
+                    owner: { login: "octocat" },
+                    html_url: "https://github.com/octocat/console",
+                    ssh_url: "git@github.com:octocat/console.git",
+                    description: "Customer console",
+                    private: true,
+                    archived: false,
+                    fork: false,
+                  },
+                ],
+                [
+                  {
+                    full_name: "acme/sdk",
+                    name: "sdk",
+                    owner: { login: "acme" },
+                    html_url: "https://github.com/acme/sdk",
+                    ssh_url: "git@github.com:acme/sdk.git",
+                    description: null,
+                    private: false,
+                    archived: true,
+                    fork: true,
+                  },
+                ],
+              ]),
+            ),
+          ),
+        );
+
+      const gh = yield* GitHubCli.GitHubCli;
+      const result = yield* gh.listRepositories({ cwd: "/repo" });
+
+      assert.deepStrictEqual(result, [
+        {
+          nameWithOwner: "octocat/console",
+          name: "console",
+          owner: "octocat",
+          url: "https://github.com/octocat/console",
+          sshUrl: "git@github.com:octocat/console.git",
+          description: "Customer console",
+          isPrivate: true,
+          isArchived: false,
+          isFork: false,
+        },
+        {
+          nameWithOwner: "acme/sdk",
+          name: "sdk",
+          owner: "acme",
+          url: "https://github.com/acme/sdk",
+          sshUrl: "git@github.com:acme/sdk.git",
+          description: null,
+          isPrivate: false,
+          isArchived: true,
+          isFork: true,
+        },
+      ]);
+      expect(mockRun).toHaveBeenNthCalledWith(1, {
+        operation: "GitHubCli.execute",
+        command: "gh",
+        args: ["auth", "status"],
+        cwd: "/repo",
+        timeoutMs: 30_000,
+        allowNonZeroExit: true,
+      });
+      expect(mockRun).toHaveBeenNthCalledWith(2, {
+        operation: "GitHubCli.execute",
+        command: "gh",
+        args: [
+          "api",
+          "--hostname",
+          "github.example.com",
+          "--paginate",
+          "--slurp",
+          "--method",
+          "GET",
+          "user/repos",
+          "-f",
+          "per_page=100",
+          "-f",
+          "affiliation=owner,collaborator,organization_member",
+          "-f",
+          "sort=pushed",
+          "-f",
+          "direction=desc",
+        ],
+        cwd: "/repo",
+        timeoutMs: 60_000,
+      });
+    }).pipe(Effect.provide(layer)),
+  );
+
+  it.effect("reports invalid repository list JSON", () =>
+    Effect.gen(function* () {
+      mockRun
+        .mockReturnValueOnce(
+          Effect.succeed(
+            processOutput(
+              "github.com\n  ✓ Logged in to github.com account octocat\n  - Active account: true\n",
+            ),
+          ),
+        )
+        .mockReturnValueOnce(Effect.succeed(processOutput("{not-json")));
+
+      const gh = yield* GitHubCli.GitHubCli;
+      const error = yield* Effect.flip(gh.listRepositories({ cwd: "/repo" }));
+
+      assert.strictEqual(error._tag, "GitHubRepositoryListDecodeError");
+    }).pipe(Effect.provide(layer)),
+  );
+
   it.effect("creates repositories and parses clone URLs from create output", () =>
     Effect.gen(function* () {
       mockRun.mockReturnValueOnce(

@@ -187,6 +187,26 @@ export const make = Effect.gen(function* () {
 
   return SourceControlProvider.SourceControlProvider.of({
     kind: "github",
+    listRepositories: (input) =>
+      github.listRepositories(input).pipe(
+        Effect.map((repositories) =>
+          repositories.map((repository) => ({
+            provider: "github" as const,
+            ...repository,
+          })),
+        ),
+        Effect.mapError(
+          (error) =>
+            new SourceControlProviderError({
+              provider: "github",
+              operation: "listRepositories",
+              command: error.command,
+              cwd: input.cwd,
+              detail: error.detail,
+              cause: error,
+            }),
+        ),
+      ),
     listChangeRequests,
     getChangeRequest: (input) =>
       github.getPullRequest(input).pipe(
