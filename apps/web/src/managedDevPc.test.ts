@@ -78,4 +78,48 @@ describe("managed DevPC WebSocket authorization", () => {
     expect(second).toContain("gatewayTicket=second-gateway-ticket-credential");
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
+
+  it("uses an authorized direct relay URL when the managed gateway provides one", async () => {
+    vi.stubEnv("VITE_DEVPC_MANAGED", "1");
+    vi.resetModules();
+    vi.stubGlobal("window", {
+      location: { origin: "https://app.example.test" },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          ticket: "t3-websocket-ticket-that-is-long-enough",
+          websocketUrl: "wss://relay.example.test/v1/t3/ws",
+        }),
+      ),
+    );
+
+    const { prepareManagedWebSocketUrl } = await import("./managedDevPc");
+    await expect(prepareManagedWebSocketUrl("wss://app.example.test/ws")).resolves.toBe(
+      "wss://relay.example.test/v1/t3/ws?wsTicket=t3-websocket-ticket-that-is-long-enough",
+    );
+  });
+
+  it("rejects a managed relay URL with a non-WebSocket protocol", async () => {
+    vi.stubEnv("VITE_DEVPC_MANAGED", "1");
+    vi.resetModules();
+    vi.stubGlobal("window", {
+      location: { origin: "https://app.example.test" },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          ticket: "t3-websocket-ticket-that-is-long-enough",
+          websocketUrl: "https://relay.example.test/v1/t3/ws",
+        }),
+      ),
+    );
+
+    const { prepareManagedWebSocketUrl } = await import("./managedDevPc");
+    await expect(prepareManagedWebSocketUrl("wss://app.example.test/ws")).rejects.toThrow(
+      "invalid WebSocket URL",
+    );
+  });
 });
