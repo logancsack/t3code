@@ -58,15 +58,17 @@ describe("AuthConnectorManager output parsing", () => {
         "? Authenticate Git with your GitHub credentials? (Y/n)",
       ),
     ).toBe(true);
+    expect(testHelpers.hasGitHubCredentialPrompt("Authenticate with a browser?")).toBe(false);
   });
 
   it("runs GitLab device login without its interactive terminal UI", () => {
-    expect(
-      testHelpers.launchSpec({
-        connector: "gitlab",
-        method: "account",
-      })?.env,
-    ).toEqual({ TERM: "dumb" });
+    const spec = testHelpers.launchSpec({
+      connector: "gitlab",
+      method: "account",
+    });
+
+    expect(spec?.env).toEqual({ TERM: "dumb" });
+    expect(spec?.ptyName).toBe("dumb");
   });
 
   it("accepts Claude's full callback URL or short authorization code", () => {
@@ -75,5 +77,60 @@ describe("AuthConnectorManager output parsing", () => {
       label: "Authorization URL or code",
       type: "textarea",
     });
+  });
+
+  it("moves a device flow to authorize with the parsed URL and code", () => {
+    const result = testHelpers.parseOutputForTest({
+      connector: "codex",
+      method: "account",
+      flow: "device",
+      output: [
+        "1. Open this URL in your browser",
+        "   https://auth.openai.com/codex/device",
+        "2. Enter this one-time code (expires in 15 minutes)",
+        "   WXYZ-9876",
+      ].join("\n"),
+    });
+
+    expect(result.snapshot).toMatchObject({
+      status: "waiting",
+      stage: "authorize",
+      verificationUrl: "https://auth.openai.com/codex/device",
+      userCode: "WXYZ-9876",
+    });
+  });
+
+  it("moves Claude to the return stage with its callback field", () => {
+    const result = testHelpers.parseOutputForTest({
+      connector: "claude",
+      method: "account",
+      flow: "code",
+      output:
+        "If the browser didn't open, visit: https://claude.com/cai/oauth/authorize?state=opaque",
+    });
+
+    expect(result.snapshot).toMatchObject({
+      status: "waiting",
+      stage: "return",
+      verificationUrl: "https://claude.com/cai/oauth/authorize?state=opaque",
+      fields: [
+        {
+          key: "callback",
+          type: "textarea",
+        },
+      ],
+    });
+  });
+
+  it("answers the GitHub credential prompt exactly once", () => {
+    const result = testHelpers.parseOutputForTest({
+      connector: "github",
+      method: "account",
+      flow: "device",
+      output: "? Authenticate Git with your GitHub credentials? (Y/n)",
+      repetitions: 2,
+    });
+
+    expect(result.writes).toEqual(["y\r"]);
   });
 });

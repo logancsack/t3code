@@ -256,6 +256,7 @@ type LaunchSpec = {
   readonly message: string;
   readonly fields?: ReadonlyArray<AuthConnectorField>;
   readonly env?: Readonly<Record<string, string>>;
+  readonly ptyName?: string;
 };
 
 function launchSpec(input: AuthConnectorStartInput): LaunchSpec | null {
@@ -367,6 +368,7 @@ function launchSpec(input: AuthConnectorStartInput): LaunchSpec | null {
             flow: "device",
             message: "Starting GitLab sign-in…",
             env: { TERM: "dumb" },
+            ptyName: "dumb",
           };
     case "azure-devops":
       if (input.method !== "account") return null;
@@ -424,7 +426,7 @@ function launchSpec(input: AuthConnectorStartInput): LaunchSpec | null {
 async function spawnPty(session: ManagedSession, spec: LaunchSpec): Promise<void> {
   const pty = await import("node-pty");
   const child = pty.spawn(spec.command, [...spec.args], {
-    name: "xterm-256color",
+    name: spec.ptyName ?? "xterm-256color",
     cols: 100,
     rows: 32,
     cwd: process.cwd(),
@@ -638,6 +640,46 @@ export const cancel = Effect.fn("AuthConnectorManager.cancel")(function* (
   return publicSnapshot(session);
 });
 
+function parseOutputForTest(input: {
+  readonly connector: AuthConnectorSession["connector"];
+  readonly method: AuthConnectorSession["method"];
+  readonly flow: AuthConnectorSession["flow"];
+  readonly output: string;
+  readonly repetitions?: number;
+}): { readonly snapshot: AuthConnectorSession; readonly writes: ReadonlyArray<string> } {
+  const writes: Array<string> = [];
+  const process: PtyProcess = {
+    write: (data) => writes.push(data),
+    kill: () => undefined,
+    onData: () => ({ dispose: () => undefined }),
+    onExit: () => ({ dispose: () => undefined }),
+  };
+  const session: ManagedSession = {
+    snapshot: {
+      id: "test-session",
+      connector: input.connector,
+      method: input.method,
+      status: "starting",
+      flow: input.flow,
+      stage: "preparing",
+      message: "Preparing sign-in.",
+      verificationUrl: null,
+      userCode: null,
+      fields: [],
+      expiresAt: null,
+    },
+    process,
+    output: input.output,
+    acceptOutput: true,
+    selectedOpenCodeDeployment: false,
+    answeredGitHubCredentialPrompt: false,
+  };
+  for (let index = 0; index < (input.repetitions ?? 1); index += 1) {
+    parseProcessOutput(session);
+  }
+  return { snapshot: publicSnapshot(session), writes };
+}
+
 /** @internal */
 export const testHelpers = {
   stripAnsi,
@@ -646,4 +688,5 @@ export const testHelpers = {
   hasGitHubCredentialPrompt,
   claudeCallbackField,
   launchSpec,
+  parseOutputForTest,
 };
