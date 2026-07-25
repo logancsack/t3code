@@ -6,25 +6,51 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
+async function renderManagedStatus(input: {
+  managed?: boolean;
+  state: "starting" | "ready" | "restarting" | "stopped" | "error";
+  ready: boolean;
+}) {
+  vi.stubEnv("VITE_DEVPC_MANAGED", input.managed === false ? "" : "1");
+  vi.resetModules();
+  vi.stubGlobal("window", {
+    __DEVPC_MANAGED_BOOTSTRAP__: {
+      managed: true,
+      state: input.state,
+      ready: input.ready,
+      previewUrlTemplate: "https://{port}.preview.example.test/",
+    },
+  });
+
+  const { ManagedDevPcStatus } = await import("./ManagedDevPcStatus");
+  return renderToStaticMarkup(<ManagedDevPcStatus />);
+}
+
 describe("ManagedDevPcStatus", () => {
   it("renders workspace state and restart as sidebar utility controls", async () => {
-    vi.stubEnv("VITE_DEVPC_MANAGED", "1");
-    vi.resetModules();
-    vi.stubGlobal("window", {
-      __DEVPC_MANAGED_BOOTSTRAP__: {
-        managed: true,
-        state: "ready",
-        ready: true,
-        previewUrlTemplate: "https://{port}.preview.example.test/",
-      },
-    });
-
-    const { ManagedDevPcStatus } = await import("./ManagedDevPcStatus");
-    const markup = renderToStaticMarkup(<ManagedDevPcStatus />);
+    const markup = await renderManagedStatus({ state: "ready", ready: true });
 
     expect(markup).toContain('data-devpc-workspace-status="ready"');
     expect(markup).toContain("Dev PC · Online");
     expect(markup).toContain('aria-label="Restart Dev PC"');
     expect(markup).not.toContain("fixed");
+  });
+
+  it("renders nothing outside managed DevPC mode", async () => {
+    const markup = await renderManagedStatus({ managed: false, state: "ready", ready: true });
+
+    expect(markup).toBe("");
+  });
+
+  it.each([
+    ["starting", "Starting"],
+    ["error", "Needs attention"],
+  ] as const)("disables restart while the workspace is %s", async (state, label) => {
+    const markup = await renderManagedStatus({ state, ready: false });
+
+    expect(markup).toContain(`data-devpc-workspace-status="${state}"`);
+    expect(markup).toContain(`Dev PC · ${label}`);
+    expect(markup).toContain('aria-label="Restart Dev PC"');
+    expect(markup).toContain("disabled");
   });
 });
