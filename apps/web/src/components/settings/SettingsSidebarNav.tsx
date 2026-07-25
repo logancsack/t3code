@@ -35,6 +35,7 @@ import {
   useSidebar,
 } from "../ui/sidebar";
 import { T3ConnectSidebarAvatar, T3ConnectSidebarSignIn } from "../clerk/T3ConnectSidebarSignIn";
+import { ManagedDevPcStatus } from "../ManagedDevPcStatus";
 import { scrollToSettingsTarget } from "./settingsLayout";
 import {
   searchSettings,
@@ -299,8 +300,9 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
       </SidebarContent>
       <SidebarFooter className="p-[var(--sidebar-content-inset)]">
         <T3ConnectSidebarSignIn />
-        <div className="flex items-center gap-1">
-          <SidebarMenu className="min-w-0 flex-1">
+        <ManagedDevPcStatus />
+        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-1">
+          <SidebarMenu className="min-w-0">
             <SidebarMenuItem>
               <SidebarMenuButton onClick={handleBackClick}>
                 <ArrowLeftIcon />
