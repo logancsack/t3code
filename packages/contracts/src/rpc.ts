@@ -154,6 +154,13 @@ import {
 } from "./resourceTelemetry.ts";
 import { ServerSettings, ServerSettingsError, ServerSettingsPatch } from "./settings.ts";
 import {
+  AuthConnectorError,
+  AuthConnectorSession,
+  AuthConnectorSessionInput,
+  AuthConnectorStartInput,
+  AuthConnectorSubmitInput,
+} from "./authConnector.ts";
+import {
   SourceControlCloneRepositoryInput,
   SourceControlCloneRepositoryResult,
   SourceControlDiscoveryResult,
@@ -235,6 +242,10 @@ export const WS_METHODS = {
   serverGetSettings: "server.getSettings",
   serverUpdateSettings: "server.updateSettings",
   serverDiscoverSourceControl: "server.discoverSourceControl",
+  serverStartAuthConnector: "server.startAuthConnector",
+  serverGetAuthConnector: "server.getAuthConnector",
+  serverSubmitAuthConnector: "server.submitAuthConnector",
+  serverCancelAuthConnector: "server.cancelAuthConnector",
   serverGetTraceDiagnostics: "server.getTraceDiagnostics",
   serverGetProcessDiagnostics: "server.getProcessDiagnostics",
   serverGetProcessResourceHistory: "server.getProcessResourceHistory",
@@ -343,6 +354,30 @@ export const WsServerDiscoverSourceControlRpc = Rpc.make(WS_METHODS.serverDiscov
   payload: Schema.Struct({}),
   success: SourceControlDiscoveryResult,
   error: EnvironmentAuthorizationError,
+});
+
+export const WsServerStartAuthConnectorRpc = Rpc.make(WS_METHODS.serverStartAuthConnector, {
+  payload: AuthConnectorStartInput,
+  success: AuthConnectorSession,
+  error: Schema.Union([AuthConnectorError, EnvironmentAuthorizationError]),
+});
+
+export const WsServerGetAuthConnectorRpc = Rpc.make(WS_METHODS.serverGetAuthConnector, {
+  payload: AuthConnectorSessionInput,
+  success: AuthConnectorSession,
+  error: Schema.Union([AuthConnectorError, EnvironmentAuthorizationError]),
+});
+
+export const WsServerSubmitAuthConnectorRpc = Rpc.make(WS_METHODS.serverSubmitAuthConnector, {
+  payload: AuthConnectorSubmitInput,
+  success: AuthConnectorSession,
+  error: Schema.Union([AuthConnectorError, EnvironmentAuthorizationError]),
+});
+
+export const WsServerCancelAuthConnectorRpc = Rpc.make(WS_METHODS.serverCancelAuthConnector, {
+  payload: AuthConnectorSessionInput,
+  success: AuthConnectorSession,
+  error: Schema.Union([AuthConnectorError, EnvironmentAuthorizationError]),
 });
 
 export const WsServerGetTraceDiagnosticsRpc = Rpc.make(WS_METHODS.serverGetTraceDiagnostics, {
@@ -814,6 +849,10 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerGetSettingsRpc,
   WsServerUpdateSettingsRpc,
   WsServerDiscoverSourceControlRpc,
+  WsServerStartAuthConnectorRpc,
+  WsServerGetAuthConnectorRpc,
+  WsServerSubmitAuthConnectorRpc,
+  WsServerCancelAuthConnectorRpc,
   WsServerGetTraceDiagnosticsRpc,
   WsServerGetProcessDiagnosticsRpc,
   WsServerGetProcessResourceHistoryRpc,

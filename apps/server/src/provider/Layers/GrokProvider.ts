@@ -306,7 +306,7 @@ export const checkGrokProviderStatus = Effect.fn("checkGrokProviderStatus")(func
       installed: true,
       version,
       status: "ready",
-      auth: { status: "unknown" },
+      auth: { status: "authenticated", type: "xai" },
     },
   });
 });

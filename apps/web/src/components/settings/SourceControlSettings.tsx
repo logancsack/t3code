@@ -53,6 +53,8 @@ import {
   type Icon,
 } from "../Icons";
 import { RedactedSensitiveText } from "./RedactedSensitiveText";
+import { AuthConnectorDialog } from "./AuthConnectorDialog";
+import { SOURCE_CONTROL_AUTH_METHODS } from "./authConnectorMethods";
 import { SourceControlWritingSettingsSection } from "./SourceControlWritingSettings";
 import { SettingResetButton, SettingsPageContainer, SettingsSection } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
@@ -249,9 +251,7 @@ function itemSummary({
     if (auth.status === "unauthenticated") {
       return (
         <span>
-          {item.label} is not authenticated on this server. Sign in or configure credentials using
-          the <code className="rounded bg-muted px-1 py-px text-[11px]">{item.executable}</code>{" "}
-          tool on the server host to enable change request features.
+          Connect {item.label} to browse private repositories and use pull request features.
         </span>
       );
     }
@@ -268,9 +268,11 @@ function itemSummary({
 function DiscoveryItemRow({
   item,
   children,
+  action,
 }: {
   readonly item: VcsDiscoveryItem | SourceControlProviderDiscoveryItem;
   readonly children?: ReactNode;
+  readonly action?: ReactNode;
 }) {
   const version = optionLabel(item.version);
   const enabled = isProviderDiscoveryItem(item)
@@ -314,6 +316,7 @@ function DiscoveryItemRow({
             </p>
           </div>
           <div className="flex w-full shrink-0 items-center gap-2 sm:w-auto sm:justify-end">
+            {action}
             {hasDetails ? (
               <Button
                 size="sm"
@@ -574,7 +577,24 @@ export function SourceControlSettingsPanel() {
               headerAction={hasVersionControlSystems ? null : scanButton}
             >
               {result.sourceControlProviders.map((item) => (
-                <DiscoveryItemRow key={`provider:${item.kind}`} item={item} />
+                <DiscoveryItemRow
+                  key={`provider:${item.kind}`}
+                  item={item}
+                  action={
+                    item.kind === "github" ||
+                    item.kind === "gitlab" ||
+                    item.kind === "azure-devops" ||
+                    item.kind === "bitbucket" ? (
+                      <AuthConnectorDialog
+                        connector={SOURCE_CONTROL_AUTH_METHODS[item.kind].connector}
+                        serviceName={SOURCE_CONTROL_AUTH_METHODS[item.kind].serviceName}
+                        methods={SOURCE_CONTROL_AUTH_METHODS[item.kind].methods}
+                        isAuthenticated={item.auth.status === "authenticated"}
+                        onConnected={discovery.refresh}
+                      />
+                    ) : undefined
+                  }
+                />
               ))}
             </SettingsSection>
           ) : null}

@@ -112,6 +112,7 @@ import * as AzureDevOpsCli from "./sourceControl/AzureDevOpsCli.ts";
 import * as BitbucketApi from "./sourceControl/BitbucketApi.ts";
 import * as GitHubCli from "./sourceControl/GitHubCli.ts";
 import * as GitLabCli from "./sourceControl/GitLabCli.ts";
+import * as AuthConnectorManager from "./authConnector/AuthConnectorManager.ts";
 import * as SourceControlProviderRegistry from "./sourceControl/SourceControlProviderRegistry.ts";
 import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "./vcs/VcsDriverRegistry.ts";
@@ -1494,6 +1495,30 @@ const makeWsRpcLayer = (
           observeRpcEffect(
             WS_METHODS.serverDiscoverSourceControl,
             sourceControlDiscovery.discover,
+            {
+              "rpc.aggregate": "server",
+            },
+          ),
+        [WS_METHODS.serverStartAuthConnector]: (input) =>
+          observeRpcEffect(WS_METHODS.serverStartAuthConnector, AuthConnectorManager.start(input), {
+            "rpc.aggregate": "server",
+          }),
+        [WS_METHODS.serverGetAuthConnector]: ({ sessionId }) =>
+          observeRpcEffect(WS_METHODS.serverGetAuthConnector, AuthConnectorManager.get(sessionId), {
+            "rpc.aggregate": "server",
+          }),
+        [WS_METHODS.serverSubmitAuthConnector]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.serverSubmitAuthConnector,
+            AuthConnectorManager.submit(input),
+            {
+              "rpc.aggregate": "server",
+            },
+          ),
+        [WS_METHODS.serverCancelAuthConnector]: ({ sessionId }) =>
+          observeRpcEffect(
+            WS_METHODS.serverCancelAuthConnector,
+            AuthConnectorManager.cancel(sessionId),
             {
               "rpc.aggregate": "server",
             },

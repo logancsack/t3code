@@ -71,6 +71,8 @@ import {
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { AddProviderInstanceDialog } from "./AddProviderInstanceDialog";
+import { AuthConnectorDialog } from "./AuthConnectorDialog";
+import { AGENT_AUTH_METHODS } from "./authConnectorMethods";
 import { ProviderInstanceCard } from "./ProviderInstanceCard";
 import { DRIVER_OPTIONS, getDriverOption } from "./providerDriverMeta";
 import { searchableSetting } from "./settingsSearch";
@@ -818,6 +820,7 @@ export function EnvironmentProviderSettings({
                 : Result.failVoid,
             );
             const resetLabel = driverOption?.label ?? String(row.driver);
+            const authConnector = AGENT_AUTH_METHODS[row.driver];
             const headerAction =
               row.isDefault && row.isDirty ? (
                 <SettingResetButton
@@ -854,6 +857,18 @@ export function EnvironmentProviderSettings({
                 }}
                 onDelete={row.isDefault ? undefined : () => deleteProviderInstance(row.instanceId)}
                 headerAction={headerAction}
+                authConnectorAction={
+                  authConnector && !readOnly ? (
+                    <AuthConnectorDialog
+                      connector={authConnector.connector}
+                      serviceName={authConnector.serviceName}
+                      methods={authConnector.methods}
+                      isAuthenticated={liveProvider?.auth.status === "authenticated"}
+                      onConnected={refreshProviders}
+                      environmentId={environmentId}
+                    />
+                  ) : undefined
+                }
                 hiddenModels={modelPreferences.hiddenModels}
                 favoriteModels={favoriteModels}
                 modelOrder={modelPreferences.modelOrder}
