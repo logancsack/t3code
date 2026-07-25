@@ -65,6 +65,14 @@ function mapSessionRpcError(error: InitialConfigError | ProbeError): ConnectionA
   }
 }
 
+function logManagedRpcError(error: InitialConfigError | ProbeError): Effect.Effect<void> {
+  if (Reflect.get(globalThis, "__DEVPC_MANAGED_BOOTSTRAP__") === undefined) {
+    return Effect.void;
+  }
+  const detail = error.message.replaceAll(/\s+/g, " ").slice(0, 320);
+  return Effect.logError(`Managed DevPC RPC failed (${error._tag}): ${detail}`);
+}
+
 export const make = Effect.gen(function* () {
   const webSocketConstructor = yield* Socket.WebSocketConstructor;
 
@@ -116,6 +124,7 @@ export const make = Effect.gen(function* () {
     const client = yield* makeWsRpcProtocolClient.pipe(Effect.provide(protocolContext));
     const initialConfig = yield* Effect.cached(
       client[WS_METHODS.serverGetConfig]({}).pipe(
+        Effect.tapError(logManagedRpcError),
         Effect.mapError(mapSessionRpcError),
         Effect.withSpan("environment.initialSync"),
       ),
