@@ -45,6 +45,7 @@ type ManagedSession = {
   acceptOutput: boolean;
   selectedOpenCodeDeployment: boolean;
   answeredGitHubCredentialPrompt: boolean;
+  answeredGitHubBrowserPrompt: boolean;
 };
 
 const sessions = new Map<string, ManagedSession>();
@@ -117,6 +118,12 @@ function hasGitHubCredentialPrompt(output: string): boolean {
   return /authenticate git with your github credentials\?/iu.test(output);
 }
 
+function hasGitHubBrowserPrompt(output: string): boolean {
+  return /press enter to open (?:https?:\/\/)?github\.com(?:\/login\/device)? in your browser/iu.test(
+    output,
+  );
+}
+
 function claudeCallbackField(): AuthConnectorField {
   return field("callback", "Authorization URL or code", "textarea", {
     placeholder: "Paste the full URL from your browser, or the authorization code",
@@ -159,6 +166,15 @@ function parseProcessOutput(session: ManagedSession): void {
   ) {
     session.answeredGitHubCredentialPrompt = true;
     session.process?.write("y\r");
+  }
+
+  if (
+    session.snapshot.connector === "github" &&
+    !session.answeredGitHubBrowserPrompt &&
+    hasGitHubBrowserPrompt(output)
+  ) {
+    session.answeredGitHubBrowserPrompt = true;
+    session.process?.write("\r");
   }
 
   if (
@@ -339,6 +355,7 @@ function launchSpec(input: AuthConnectorStartInput): LaunchSpec | null {
             ],
             flow: "device",
             message: "Starting GitHub sign-in…",
+            env: { GH_BROWSER: "true" },
           };
     case "gitlab":
       if (input.method !== "account" && input.method !== "token") return null;
@@ -550,6 +567,7 @@ export const start = Effect.fn("AuthConnectorManager.start")(function* (
     acceptOutput: true,
     selectedOpenCodeDeployment: false,
     answeredGitHubCredentialPrompt: false,
+    answeredGitHubBrowserPrompt: false,
   };
   sessions.set(id, session);
   const expiry = setTimeout(() => {
@@ -677,6 +695,7 @@ function parseOutputForTest(input: {
     acceptOutput: true,
     selectedOpenCodeDeployment: false,
     answeredGitHubCredentialPrompt: false,
+    answeredGitHubBrowserPrompt: false,
   };
   for (let index = 0; index < (input.repetitions ?? 1); index += 1) {
     parseProcessOutput(session);
@@ -690,6 +709,7 @@ export const testHelpers = {
   extractUrl,
   extractUserCode,
   hasGitHubCredentialPrompt,
+  hasGitHubBrowserPrompt,
   claudeCallbackField,
   launchSpec,
   parseOutputForTest,
