@@ -227,15 +227,20 @@ export function AuthConnectorDialog(props: {
     if (!session?.verificationUrl) return;
     setOpenedSessionId(session.id);
     if (session.userCode) {
-      void navigator.clipboard.writeText(session.userCode).then(
-        () =>
-          toastManager.add({
-            type: "success",
-            title: "Code copied",
-            description: "Paste it into the browser tab that just opened.",
-          }),
-        () => setError("Clipboard access was blocked. Copy the code manually from this window."),
-      );
+      void Promise.resolve()
+        .then(() => {
+          if (!navigator.clipboard) throw new Error("Clipboard unavailable");
+          return navigator.clipboard.writeText(session.userCode!);
+        })
+        .then(
+          () =>
+            toastManager.add({
+              type: "success",
+              title: "Code copied",
+              description: "Paste it into the browser tab that just opened.",
+            }),
+          () => setError("Clipboard access was blocked. Copy the code manually from this window."),
+        );
     }
     openExternal(session.verificationUrl);
   };
@@ -486,59 +491,73 @@ export function AuthConnectorDialog(props: {
 
                     {session.fields.length > 0 ? (
                       <div className="space-y-3">
-                        {session.fields.map((authField) => (
-                          <label key={authField.key} className="block space-y-1.5">
-                            <span className="flex items-center justify-between gap-3">
-                              <span className="text-xs font-medium text-foreground">
-                                {authField.label}
-                              </span>
-                              {authField.type === "textarea" ? (
-                                <button
-                                  type="button"
-                                  className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
-                                  onClick={() => void pasteFromClipboard(authField.key)}
+                        {session.fields.map((authField) => {
+                          const fieldId = `auth-connector-${session.id}-${authField.key}`;
+                          const helpId = authField.help ? `${fieldId}-help` : undefined;
+                          return (
+                            <div key={authField.key} className="space-y-1.5">
+                              <div className="flex items-center justify-between gap-3">
+                                <label
+                                  htmlFor={fieldId}
+                                  className="text-xs font-medium text-foreground"
                                 >
-                                  <ClipboardPasteIcon className="size-3" />
-                                  Paste from clipboard
-                                </button>
+                                  {authField.label}
+                                </label>
+                                {authField.type === "textarea" ? (
+                                  <button
+                                    type="button"
+                                    className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                                    onClick={() => void pasteFromClipboard(authField.key)}
+                                  >
+                                    <ClipboardPasteIcon className="size-3" />
+                                    Paste from clipboard
+                                  </button>
+                                ) : null}
+                              </div>
+                              {authField.type === "textarea" ? (
+                                <Textarea
+                                  id={fieldId}
+                                  ref={callbackInputRef}
+                                  value={values[authField.key] ?? ""}
+                                  placeholder={authField.placeholder}
+                                  autoComplete="off"
+                                  spellCheck={false}
+                                  aria-describedby={helpId}
+                                  className="font-mono text-xs"
+                                  onChange={(event) =>
+                                    setValues((current) => ({
+                                      ...current,
+                                      [authField.key]: event.currentTarget.value,
+                                    }))
+                                  }
+                                />
+                              ) : (
+                                <Input
+                                  id={fieldId}
+                                  type={authField.type}
+                                  value={values[authField.key] ?? ""}
+                                  placeholder={authField.placeholder}
+                                  autoComplete="off"
+                                  aria-describedby={helpId}
+                                  onChange={(event) =>
+                                    setValues((current) => ({
+                                      ...current,
+                                      [authField.key]: event.currentTarget.value,
+                                    }))
+                                  }
+                                />
+                              )}
+                              {authField.help ? (
+                                <p
+                                  id={helpId}
+                                  className="text-xs leading-relaxed text-muted-foreground"
+                                >
+                                  {authField.help}
+                                </p>
                               ) : null}
-                            </span>
-                            {authField.type === "textarea" ? (
-                              <Textarea
-                                ref={callbackInputRef}
-                                value={values[authField.key] ?? ""}
-                                placeholder={authField.placeholder}
-                                autoComplete="off"
-                                spellCheck={false}
-                                className="font-mono text-xs"
-                                onChange={(event) =>
-                                  setValues((current) => ({
-                                    ...current,
-                                    [authField.key]: event.currentTarget.value,
-                                  }))
-                                }
-                              />
-                            ) : (
-                              <Input
-                                type={authField.type}
-                                value={values[authField.key] ?? ""}
-                                placeholder={authField.placeholder}
-                                autoComplete="off"
-                                onChange={(event) =>
-                                  setValues((current) => ({
-                                    ...current,
-                                    [authField.key]: event.currentTarget.value,
-                                  }))
-                                }
-                              />
-                            )}
-                            {authField.help ? (
-                              <span className="block text-xs leading-relaxed text-muted-foreground">
-                                {authField.help}
-                              </span>
-                            ) : null}
-                          </label>
-                        ))}
+                            </div>
+                          );
+                        })}
                         {selectedMethod?.externalHelpUrl ? (
                           <Button
                             type="button"
