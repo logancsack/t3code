@@ -47,7 +47,7 @@ jobs:
           tar -C artifacts/devpc-t3 -czf artifacts/devpc-t3-linux-x64.tar.gz .
           sha256sum artifacts/devpc-t3-linux-x64.tar.gz > artifacts/devpc-t3-linux-x64.tar.gz.sha256
 
-      - name: Verify packaged runtime
+      - name: Verify packaged contents
         run: |
           test -f artifacts/devpc-t3/dist/bin.mjs || { echo "Missing server bundle"; exit 1; }
           test -f artifacts/devpc-t3/dist/client/index.html || { echo "Missing web bundle"; exit 1; }
@@ -57,14 +57,20 @@ jobs:
             find artifacts/devpc-t3/node_modules/node-pty -maxdepth 4 -type f | sort
             exit 1
           }
-          grep -q "/_devpc/workspace/restart" artifacts/devpc-t3/dist/client/assets/*.js || {
+          grep -R -m1 -q --include='*.js' "/_devpc/workspace/restart" \
+            artifacts/devpc-t3/dist/client/assets || {
             echo "Missing managed DevPC restart surface"
             exit 1
           }
-          grep -q "/_devpc/ws-ticket" artifacts/devpc-t3/dist/client/assets/*.js || {
+          grep -R -m1 -q --include='*.js' "/_devpc/ws-ticket" \
+            artifacts/devpc-t3/dist/client/assets || {
             echo "Missing managed DevPC WebSocket authorization"
             exit 1
           }
+
+      - name: Verify packaged runtime
+        timeout-minutes: 2
+        run: |
           runtime_home="$(mktemp -d)"
           HOME="$runtime_home/home" \
             T3CODE_HOME="$runtime_home/t3code" \
@@ -72,15 +78,24 @@ jobs:
             T3CODE_TELEMETRY_ENABLED=false \
             node artifacts/devpc-t3/dist/bin.mjs start \
               --mode web --host 127.0.0.1 --port 4311 \
-              --base-dir "$runtime_home/t3code" --no-browser "$runtime_home" &
+              --base-dir "$runtime_home/t3code" --no-browser "$runtime_home" \
+              >"$runtime_home/runtime.log" 2>&1 &
           runtime_pid=$!
           trap 'kill "$runtime_pid" 2>/dev/null || true; rm -rf "$runtime_home"' EXIT
           for attempt in $(seq 1 30); do
-            if curl --fail --silent --show-error http://127.0.0.1:4311/ >/dev/null; then
+            if ! kill -0 "$runtime_pid" 2>/dev/null; then
+              cat "$runtime_home/runtime.log"
+              echo "Packaged T3 runtime exited before becoming healthy"
+              exit 1
+            fi
+            if curl --connect-timeout 2 --max-time 5 --fail --silent --show-error \
+              http://127.0.0.1:4311/ >/dev/null; then
               exit 0
             fi
             sleep 1
           done
+          cat "$runtime_home/runtime.log"
+          echo "Packaged T3 runtime did not become healthy"
           exit 1
 
       - uses: actions/upload-artifact@v7
