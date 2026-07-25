@@ -487,7 +487,8 @@ function accountProbeStatus(account: CodexAppServerProviderSnapshot["account"]):
     return {
       status: "error",
       auth: { status: "unauthenticated" },
-      message: "Codex CLI is not authenticated. Run `codex login` and try again.",
+      message:
+        "Codex is not authenticated. Use Connect to sign in with ChatGPT or an OpenAI API key.",
     };
   }
 
