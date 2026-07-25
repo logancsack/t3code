@@ -296,11 +296,12 @@ describe("GitHubCli.layer", () => {
     Effect.gen(function* () {
       mockRun
         .mockReturnValueOnce(
-          Effect.succeed(
-            processOutput(
-              "github.example.com\n  ✓ Logged in to github.example.com account octocat\n  - Active account: true\n",
-            ),
-          ),
+          Effect.succeed({
+            ...processOutput(""),
+            exitCode: ChildProcessSpawner.ExitCode(1),
+            stderr:
+              "github.com\n  X Failed to log in to github.com account old-account\n\ngithub.example.com\n  ✓ Logged in to github.example.com account octocat\n  - Active account: true\n",
+          }),
         )
         .mockReturnValueOnce(
           Effect.succeed(
@@ -371,6 +372,7 @@ describe("GitHubCli.layer", () => {
         args: ["auth", "status"],
         cwd: "/repo",
         timeoutMs: 30_000,
+        allowNonZeroExit: true,
       });
       expect(mockRun).toHaveBeenNthCalledWith(2, {
         operation: "GitHubCli.execute",
@@ -396,6 +398,25 @@ describe("GitHubCli.layer", () => {
         cwd: "/repo",
         timeoutMs: 60_000,
       });
+    }).pipe(Effect.provide(layer)),
+  );
+
+  it.effect("reports invalid repository list JSON", () =>
+    Effect.gen(function* () {
+      mockRun
+        .mockReturnValueOnce(
+          Effect.succeed(
+            processOutput(
+              "github.com\n  ✓ Logged in to github.com account octocat\n  - Active account: true\n",
+            ),
+          ),
+        )
+        .mockReturnValueOnce(Effect.succeed(processOutput("{not-json")));
+
+      const gh = yield* GitHubCli.GitHubCli;
+      const error = yield* Effect.flip(gh.listRepositories({ cwd: "/repo" }));
+
+      assert.strictEqual(error._tag, "GitHubRepositoryListDecodeError");
     }).pipe(Effect.provide(layer)),
   );
 

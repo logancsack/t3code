@@ -227,6 +227,7 @@ export class GitHubCli extends Context.Service<
       readonly cwd: string;
       readonly args: ReadonlyArray<string>;
       readonly timeoutMs?: number;
+      readonly allowNonZeroExit?: boolean;
     }) => Effect.Effect<VcsProcess.VcsProcessOutput, GitHubCliError>;
 
     readonly listOpenPullRequests: (input: {
@@ -359,6 +360,9 @@ export const make = Effect.gen(function* () {
         args: input.args,
         cwd: input.cwd,
         timeoutMs: input.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+        ...(input.allowNonZeroExit !== undefined
+          ? { allowNonZeroExit: input.allowNonZeroExit }
+          : {}),
       })
       .pipe(Effect.mapError((error) => fromVcsError({ command: "gh", cwd: input.cwd }, error)));
 
@@ -456,11 +460,26 @@ export const make = Effect.gen(function* () {
         Effect.map(normalizeRepositoryCloneUrls),
       ),
     listRepositories: (input) =>
-      execute({ cwd: input.cwd, args: ["auth", "status"] }).pipe(
+      execute({
+        cwd: input.cwd,
+        args: ["auth", "status"],
+        allowNonZeroExit: true,
+      }).pipe(
         Effect.map((result) =>
           findAuthenticatedGitHubAccount(
             parseGitHubAuthStatus(`${result.stdout}\n${result.stderr}`).accounts,
           ),
+        ),
+        Effect.flatMap((account) =>
+          account
+            ? Effect.succeed(account)
+            : Effect.fail(
+                new GitHubCliAuthenticationError({
+                  command: "gh",
+                  cwd: input.cwd,
+                  cause: new Error("No authenticated GitHub account is available."),
+                }),
+              ),
         ),
         Effect.flatMap((account) =>
           execute({
@@ -468,7 +487,8 @@ export const make = Effect.gen(function* () {
             timeoutMs: 60_000,
             args: [
               "api",
-              ...(account ? ["--hostname", account.host] : []),
+              "--hostname",
+              account.host,
               "--paginate",
               "--slurp",
               "--method",

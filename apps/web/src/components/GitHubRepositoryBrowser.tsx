@@ -167,7 +167,7 @@ export function GitHubRepositoryBrowser({
                   <Button
                     aria-label={`${project ? "Sync" : "Clone"} ${repository.nameWithOwner}`}
                     className="h-11 min-w-20 px-4 sm:h-8 sm:min-w-18 sm:px-3"
-                    disabled={isActive || repository.isArchived}
+                    disabled={activeRepository !== null || repository.isArchived}
                     onClick={() => {
                       if (project) {
                         onSync(repository, project);

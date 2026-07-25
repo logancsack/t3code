@@ -3104,7 +3104,18 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
 
   it.effect("does not allow management-only access tokens to operate the environment", () =>
     Effect.gen(function* () {
-      yield* buildAppUnderTest();
+      const repositoryListCalls: Array<{ readonly provider: string }> = [];
+      yield* buildAppUnderTest({
+        layers: {
+          sourceControlRepositoryService: {
+            listRepositories: (input) =>
+              Effect.sync(() => {
+                repositoryListCalls.push(input);
+                return [];
+              }),
+          },
+        },
+      });
 
       const { response: exchangeResponse, body: tokenBody } = yield* exchangeAccessToken(
         defaultDesktopBootstrapToken,
@@ -3141,12 +3152,17 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       assert.equal(wsTicketResponse.status, 200);
       const wsUrl = `${yield* getWsServerUrl("/ws", { authenticated: false })}?wsTicket=${encodeURIComponent(wsTicketBody.ticket)}`;
       const rpcError = yield* Effect.flip(
-        Effect.scoped(withWsRpcClient(wsUrl, (client) => client[WS_METHODS.serverGetConfig]({}))),
+        Effect.scoped(
+          withWsRpcClient(wsUrl, (client) =>
+            client[WS_METHODS.sourceControlListRepositories]({ provider: "github" }),
+          ),
+        ),
       );
       assert.equal(rpcError._tag, "EnvironmentAuthorizationError");
       if (rpcError._tag === "EnvironmentAuthorizationError") {
         assert.equal(rpcError.requiredScope, "orchestration:read");
       }
+      assert.deepEqual(repositoryListCalls, []);
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 

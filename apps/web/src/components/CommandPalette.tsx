@@ -1465,10 +1465,8 @@ function OpenCommandPaletteDialog(props: {
     const cloneResult = await cloneRepository({
       environmentId,
       input: {
-        provider: "github",
-        repository: repository.nameWithOwner,
+        remoteUrl: repository.sshUrl,
         destinationPath,
-        protocol: "auto",
       },
     });
     setActiveRemoteRepository(null);

@@ -43,6 +43,39 @@ describe("GitHubRepositoryBrowser logic", () => {
     expect(findProjectForGitHubRepository(repository, [project])).toBe(project);
   });
 
+  it("matches repositories by their GitHub Enterprise host without crossing hosts", () => {
+    const enterpriseRepository = {
+      ...repository,
+      url: "https://github.enterprise.example/acme/console",
+      sshUrl: "git@github.enterprise.example:acme/console.git",
+    };
+    const publicGitHubProject = {
+      workspaceRoot: "/workspace/repos/public-console",
+      repositoryIdentity: {
+        canonicalKey: "github.com/acme/console",
+        locator: {
+          remoteUrl: "git@github.com:acme/console.git",
+        },
+      },
+    };
+    const enterpriseProject = {
+      workspaceRoot: "/workspace/repos/enterprise-console",
+      repositoryIdentity: {
+        canonicalKey: "github.enterprise.example/acme/console",
+        locator: {
+          remoteUrl: "git@github.enterprise.example:acme/console.git",
+        },
+      },
+    };
+
+    expect(
+      findProjectForGitHubRepository(enterpriseRepository, [
+        publicGitHubProject,
+        enterpriseProject,
+      ]),
+    ).toBe(enterpriseProject);
+  });
+
   it("filters by owner, name, and description while showing everything for an empty query", () => {
     const other = {
       ...repository,

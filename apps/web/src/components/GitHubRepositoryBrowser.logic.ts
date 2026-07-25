@@ -6,9 +6,6 @@ export interface RepositoryBrowserProject {
     | {
         readonly canonicalKey: string;
         readonly locator: { readonly remoteUrl: string };
-        readonly provider?: string;
-        readonly owner?: string;
-        readonly name?: string;
       }
     | null
     | undefined;
@@ -40,7 +37,7 @@ export function findProjectForGitHubRepository<T extends RepositoryBrowserProjec
   repository: SourceControlRepositorySummary,
   projects: ReadonlyArray<T>,
 ): T | null {
-  const expectedKey = `github.com/${repository.nameWithOwner}`.toLowerCase();
+  const expectedKey = normalizeGitRemoteIdentity(repository.url);
   return (
     projects.find((project) => {
       const identity = project.repositoryIdentity;
@@ -48,13 +45,6 @@ export function findProjectForGitHubRepository<T extends RepositoryBrowserProjec
         return false;
       }
       if (identity.canonicalKey.toLowerCase() === expectedKey) {
-        return true;
-      }
-      if (
-        identity.provider?.toLowerCase() === "github" &&
-        identity.owner?.toLowerCase() === repository.owner.toLowerCase() &&
-        identity.name?.toLowerCase() === repository.name.toLowerCase()
-      ) {
         return true;
       }
       return normalizeGitRemoteIdentity(identity.locator.remoteUrl) === expectedKey;

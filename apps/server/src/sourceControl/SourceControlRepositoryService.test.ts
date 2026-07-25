@@ -146,8 +146,7 @@ it.effect("lists repositories through providers that support browsing", () => {
     const result = yield* service.listRepositories({ provider: "github" });
 
     assert.deepStrictEqual(result, repositories);
-    assert.strictEqual(calls.length, 1);
-    assert.isTrue(calls[0]?.length !== 0);
+    assert.deepStrictEqual(calls, [process.cwd()]);
   }).pipe(Effect.provide(makeLayer({ provider })));
 });
 
