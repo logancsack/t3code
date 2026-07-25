@@ -106,14 +106,23 @@ export async function prepareManagedWebSocketUrl(socketUrl: string): Promise<str
   if (!response.ok) {
     throw new Error("The managed workspace connection could not be authorized.");
   }
-  const payload = (await response.json()) as { ticket?: unknown };
+  const payload = (await response.json()) as {
+    ticket?: unknown;
+    websocketUrl?: unknown;
+  };
   if (typeof payload.ticket !== "string" || payload.ticket.length < 20) {
     throw new Error("The managed workspace returned an invalid connection credential.");
   }
 
-  const resolved = new URL(socketUrl, window.location.origin);
+  const managedSocketUrl =
+    typeof payload.websocketUrl === "string" ? payload.websocketUrl : undefined;
+  const resolved = new URL(managedSocketUrl ?? socketUrl, window.location.origin);
+  if (!["ws:", "wss:"].includes(resolved.protocol)) {
+    throw new Error("The managed workspace returned an invalid WebSocket URL.");
+  }
   resolved.searchParams.delete("wsTicket");
-  resolved.searchParams.set("gatewayTicket", payload.ticket);
+  resolved.searchParams.delete("gatewayTicket");
+  resolved.searchParams.set(managedSocketUrl ? "wsTicket" : "gatewayTicket", payload.ticket);
   return resolved.toString();
 }
 
