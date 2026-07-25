@@ -44,6 +44,7 @@ type ManagedSession = {
   output: string;
   acceptOutput: boolean;
   selectedOpenCodeDeployment: boolean;
+  answeredGitHubCredentialPrompt: boolean;
 };
 
 const sessions = new Map<string, ManagedSession>();
@@ -98,6 +99,7 @@ function extractUrl(output: string): string | null {
 
 function extractUserCode(output: string): string | null {
   const patterns = [
+    /enter this one-time code(?:\s*\([^)]*\))?\s*\n\s*([A-Z0-9-]{6,})/iu,
     /one-time code:\s*([A-Z0-9-]{6,})/iu,
     /enter code:\s*([A-Z0-9-]{6,})/iu,
     /enter the code\s+([A-Z0-9-]{6,})/iu,
@@ -109,6 +111,17 @@ function extractUserCode(output: string): string | null {
     if (match?.[1]) return match[1];
   }
   return null;
+}
+
+function hasGitHubCredentialPrompt(output: string): boolean {
+  return /authenticate git with your github credentials\?/iu.test(output);
+}
+
+function claudeCallbackField(): AuthConnectorField {
+  return field("callback", "Authorization URL or code", "textarea", {
+    placeholder: "Paste the full URL from your browser, or the authorization code",
+    help: "After approving access, copy the entire URL from the browser address bar. If Anthropic shows a short code instead, you can paste that.",
+  });
 }
 
 function setSnapshot(
@@ -136,6 +149,15 @@ function parseProcessOutput(session: ManagedSession): void {
   const userCode = extractUserCode(output);
 
   if (
+    session.snapshot.connector === "github" &&
+    !session.answeredGitHubCredentialPrompt &&
+    hasGitHubCredentialPrompt(output)
+  ) {
+    session.answeredGitHubCredentialPrompt = true;
+    session.process?.write("y\r");
+  }
+
+  if (
     session.snapshot.connector === "opencode" &&
     session.snapshot.method === "github-copilot" &&
     !session.selectedOpenCodeDeployment &&
@@ -149,14 +171,11 @@ function parseProcessOutput(session: ManagedSession): void {
     setSnapshot(session, {
       status: "waiting",
       flow: "code",
+      stage: "return",
       verificationUrl,
-      fields: [
-        field("code", "Authorization code", "password", {
-          placeholder: "Paste the code from Anthropic",
-          help: "Anthropic shows this code after you approve access in the browser.",
-        }),
-      ],
-      message: "Approve access with Anthropic, then paste the authorization code here.",
+      fields: [claudeCallbackField()],
+      message:
+        "Approve access with Anthropic, then return here with the full browser URL or authorization code.",
     });
     return;
   }
@@ -164,6 +183,7 @@ function parseProcessOutput(session: ManagedSession): void {
   if (verificationUrl || userCode) {
     setSnapshot(session, {
       status: "waiting",
+      stage: "authorize",
       verificationUrl: verificationUrl ?? session.snapshot.verificationUrl,
       userCode: userCode ?? session.snapshot.userCode,
       message: userCode
@@ -186,6 +206,7 @@ function completeSession(session: ManagedSession, exitCode: number): void {
   if (exitCode === 0) {
     setSnapshot(session, {
       status: "succeeded",
+      stage: "complete",
       fields: [],
       message: "Account connected.",
     });
@@ -202,6 +223,7 @@ function completeSession(session: ManagedSession, exitCode: number): void {
   }
   setSnapshot(session, {
     status: "failed",
+    stage: "error",
     fields: [],
     message: "The connection did not complete. Try again or choose another sign-in method.",
   });
@@ -233,6 +255,7 @@ type LaunchSpec = {
   readonly flow: AuthConnectorSession["flow"];
   readonly message: string;
   readonly fields?: ReadonlyArray<AuthConnectorField>;
+  readonly env?: Readonly<Record<string, string>>;
 };
 
 function launchSpec(input: AuthConnectorStartInput): LaunchSpec | null {
@@ -343,6 +366,7 @@ function launchSpec(input: AuthConnectorStartInput): LaunchSpec | null {
             ],
             flow: "device",
             message: "Starting GitLab sign-in…",
+            env: { TERM: "dumb" },
           };
     case "azure-devops":
       if (input.method !== "account") return null;
@@ -408,6 +432,7 @@ async function spawnPty(session: ManagedSession, spec: LaunchSpec): Promise<void
       ...process.env,
       NO_OPEN_BROWSER: "1",
       CI: "0",
+      ...spec.env,
     },
   }) as PtyProcess;
   session.process = child;
@@ -478,6 +503,7 @@ async function submitBitbucket(
   await persistBitbucketGitCredential(email, apiToken);
   setSnapshot(session, {
     status: "succeeded",
+    stage: "complete",
     fields: [],
     message: "Bitbucket account connected.",
   });
@@ -502,6 +528,8 @@ export const start = Effect.fn("AuthConnectorManager.start")(function* (
       method: input.method,
       status: input.connector === "bitbucket" || initialFields.length > 0 ? "waiting" : "starting",
       flow,
+      stage:
+        input.connector === "bitbucket" || initialFields.length > 0 ? "credential" : "preparing",
       message:
         input.connector === "bitbucket"
           ? "Connect Bitbucket with an Atlassian account email and API token."
@@ -515,6 +543,7 @@ export const start = Effect.fn("AuthConnectorManager.start")(function* (
     output: "",
     acceptOutput: true,
     selectedOpenCodeDeployment: false,
+    answeredGitHubCredentialPrompt: false,
   };
   sessions.set(id, session);
   const expiry = setTimeout(() => {
@@ -526,6 +555,7 @@ export const start = Effect.fn("AuthConnectorManager.start")(function* (
       clearSensitiveOutput(current);
       setSnapshot(current, {
         status: "expired",
+        stage: "error",
         fields: [],
         message: "This connection attempt expired. Start again.",
       });
@@ -575,7 +605,7 @@ export const submit = Effect.fn("AuthConnectorManager.submit")(function* (
   }
   const secret =
     session.snapshot.connector === "claude"
-      ? input.values.code?.trim()
+      ? input.values.callback?.trim()
       : input.values.secret?.trim();
   if (!secret) {
     return yield* connectorError("submit", "Enter the requested credential to continue.");
@@ -584,6 +614,7 @@ export const submit = Effect.fn("AuthConnectorManager.submit")(function* (
   session.process?.write(`${secret}\r`);
   setSnapshot(session, {
     status: "starting",
+    stage: "verifying",
     fields: [],
     message: "Verifying your account…",
   });
@@ -599,6 +630,7 @@ export const cancel = Effect.fn("AuthConnectorManager.cancel")(function* (
   clearSensitiveOutput(session);
   setSnapshot(session, {
     status: "cancelled",
+    stage: "error",
     fields: [],
     message: "Connection cancelled.",
   });
@@ -611,4 +643,7 @@ export const testHelpers = {
   stripAnsi,
   extractUrl,
   extractUserCode,
+  hasGitHubCredentialPrompt,
+  claudeCallbackField,
+  launchSpec,
 };
