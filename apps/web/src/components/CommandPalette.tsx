@@ -1468,7 +1468,7 @@ function OpenCommandPaletteDialog(props: {
         provider: "github",
         repository: repository.nameWithOwner,
         destinationPath,
-        protocol: "https",
+        protocol: "auto",
       },
     });
     setActiveRemoteRepository(null);

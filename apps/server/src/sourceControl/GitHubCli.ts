@@ -16,6 +16,7 @@ import {
   decodeGitHubPullRequestJson,
   decodeGitHubPullRequestListJson,
 } from "./gitHubPullRequests.ts";
+import { findAuthenticatedGitHubAccount, parseGitHubAuthStatus } from "./gitHubAuthStatus.ts";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 
@@ -455,26 +456,35 @@ export const make = Effect.gen(function* () {
         Effect.map(normalizeRepositoryCloneUrls),
       ),
     listRepositories: (input) =>
-      execute({
-        cwd: input.cwd,
-        timeoutMs: 60_000,
-        args: [
-          "api",
-          "--paginate",
-          "--slurp",
-          "--method",
-          "GET",
-          "user/repos",
-          "-f",
-          "per_page=100",
-          "-f",
-          "affiliation=owner,collaborator,organization_member",
-          "-f",
-          "sort=pushed",
-          "-f",
-          "direction=desc",
-        ],
-      }).pipe(
+      execute({ cwd: input.cwd, args: ["auth", "status"] }).pipe(
+        Effect.map((result) =>
+          findAuthenticatedGitHubAccount(
+            parseGitHubAuthStatus(`${result.stdout}\n${result.stderr}`).accounts,
+          ),
+        ),
+        Effect.flatMap((account) =>
+          execute({
+            cwd: input.cwd,
+            timeoutMs: 60_000,
+            args: [
+              "api",
+              ...(account ? ["--hostname", account.host] : []),
+              "--paginate",
+              "--slurp",
+              "--method",
+              "GET",
+              "user/repos",
+              "-f",
+              "per_page=100",
+              "-f",
+              "affiliation=owner,collaborator,organization_member",
+              "-f",
+              "sort=pushed",
+              "-f",
+              "direction=desc",
+            ],
+          }),
+        ),
         Effect.map((result) => result.stdout.trim()),
         Effect.flatMap((raw) =>
           decodeRawGitHubRepositoryList(raw).pipe(
