@@ -61,6 +61,10 @@ jobs:
             echo "Missing managed DevPC restart surface"
             exit 1
           }
+          grep -q "/_devpc/ws-ticket" artifacts/devpc-t3/dist/client/assets/*.js || {
+            echo "Missing managed DevPC WebSocket authorization"
+            exit 1
+          }
           runtime_home="$(mktemp -d)"
           HOME="$runtime_home/home" \
             T3CODE_HOME="$runtime_home/t3code" \

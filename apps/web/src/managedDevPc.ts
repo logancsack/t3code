@@ -14,6 +14,7 @@ export interface ManagedDevPcBootstrap {
 export const isManagedDevPc = import.meta.env.VITE_DEVPC_MANAGED === "1";
 
 const BOOTSTRAP_PATH = "/_devpc/bootstrap";
+const WEBSOCKET_TICKET_PATH = "/_devpc/ws-ticket";
 
 function updateBootstrapMessage(message: string, failed = false): void {
   const root = document.getElementById("root");
@@ -87,6 +88,33 @@ export async function prepareManagedDevPc(): Promise<void> {
       await new Promise((resolve) => window.setTimeout(resolve, 1_500));
     }
   }
+}
+
+export async function prepareManagedWebSocketUrl(socketUrl: string): Promise<string> {
+  if (!isManagedDevPc) return socketUrl;
+
+  const response = await fetch(WEBSOCKET_TICKET_PATH, {
+    method: "POST",
+    credentials: "same-origin",
+    cache: "no-store",
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
+    },
+    body: "{}",
+  });
+  if (!response.ok) {
+    throw new Error("The managed workspace connection could not be authorized.");
+  }
+  const payload = (await response.json()) as { ticket?: unknown };
+  if (typeof payload.ticket !== "string" || payload.ticket.length < 20) {
+    throw new Error("The managed workspace returned an invalid connection credential.");
+  }
+
+  const resolved = new URL(socketUrl, window.location.origin);
+  resolved.searchParams.delete("wsTicket");
+  resolved.searchParams.set("gatewayTicket", payload.ticket);
+  return resolved.toString();
 }
 
 export function resolveManagedPreviewUrl(port: number, path: string): string | null {
