@@ -1,4 +1,3 @@
-import * as NodePath from "node:path";
 import * as NodePathService from "@effect/platform-node/NodePath";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
@@ -191,7 +190,7 @@ it.effect("clones a looked-up repository into the requested destination", () =>
     const parent = yield* fs.makeTempDirectoryScoped({
       prefix: "t3-source-control-clone-parent-",
     });
-    const destinationPath = NodePath.join(parent, "t3code");
+    const destinationPath = `${parent}${parent.includes("\\") ? "\\" : "/"}t3code`;
     const cloneCalls: Array<{ cwd: string; args: ReadonlyArray<string> }> = [];
 
     yield* Effect.gen(function* () {
