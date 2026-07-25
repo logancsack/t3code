@@ -112,6 +112,12 @@ import type {
   SourceControlRepositoryInfo,
   SourceControlRepositoryLookupInput,
 } from "./sourceControl.ts";
+import type {
+  AuthConnectorSession,
+  AuthConnectorStartInput,
+  AuthConnectorSubmitInput,
+  AuthConnectorSessionInput,
+} from "./authConnector.ts";
 
 export interface ContextMenuItem<T extends string = string> {
   id: T;
@@ -1149,6 +1155,10 @@ export interface LocalApi {
     getSettings: () => Promise<ServerSettings>;
     updateSettings: (patch: ServerSettingsPatch) => Promise<ServerSettings>;
     discoverSourceControl: () => Promise<SourceControlDiscoveryResult>;
+    startAuthConnector: (input: AuthConnectorStartInput) => Promise<AuthConnectorSession>;
+    getAuthConnector: (input: AuthConnectorSessionInput) => Promise<AuthConnectorSession>;
+    submitAuthConnector: (input: AuthConnectorSubmitInput) => Promise<AuthConnectorSession>;
+    cancelAuthConnector: (input: AuthConnectorSessionInput) => Promise<AuthConnectorSession>;
     getTraceDiagnostics: () => Promise<ServerTraceDiagnosticsResult>;
     getProcessDiagnostics: () => Promise<ServerProcessDiagnosticsResult>;
     getProcessResourceHistory: (
