@@ -15,6 +15,9 @@ export const isManagedDevPc = import.meta.env.VITE_DEVPC_MANAGED === "1";
 
 const BOOTSTRAP_PATH = "/_devpc/bootstrap";
 const WEBSOCKET_TICKET_PATH = "/_devpc/ws-ticket";
+const SESSION_RECOVERY_KEY = "devpc-managed-session-recovery-at";
+const SESSION_RECOVERY_COOLDOWN_MS = 30_000;
+let sessionRecoveryReloadScheduled = false;
 
 function updateBootstrapMessage(message: string, failed = false): void {
   const root = document.getElementById("root");
@@ -48,6 +51,31 @@ function updateBootstrapMessage(message: string, failed = false): void {
 
 function pairingHash(token: string): string {
   return new URLSearchParams([["token", token]]).toString();
+}
+
+function clearManagedSessionRecovery(): void {
+  try {
+    window.sessionStorage.removeItem(SESSION_RECOVERY_KEY);
+  } catch {
+    // Storage can be unavailable in privacy-restricted browser contexts.
+  }
+}
+
+function scheduleManagedSessionRecovery(): boolean {
+  if (sessionRecoveryReloadScheduled) return false;
+  const now = Date.now();
+  try {
+    const previous = Number(window.sessionStorage.getItem(SESSION_RECOVERY_KEY) ?? 0);
+    if (Number.isFinite(previous) && now - previous < SESSION_RECOVERY_COOLDOWN_MS) {
+      return false;
+    }
+    window.sessionStorage.setItem(SESSION_RECOVERY_KEY, String(now));
+  } catch {
+    // The in-memory guard still prevents a reload loop within this document.
+  }
+  sessionRecoveryReloadScheduled = true;
+  window.location.reload();
+  return true;
 }
 
 export async function prepareManagedDevPc(): Promise<void> {
@@ -104,8 +132,12 @@ export async function prepareManagedWebSocketUrl(socketUrl: string): Promise<str
     body: "{}",
   });
   if (!response.ok) {
+    if ([401, 403].includes(response.status) && scheduleManagedSessionRecovery()) {
+      throw new Error("Refreshing the managed workspace connection.");
+    }
     throw new Error("The managed workspace connection could not be authorized.");
   }
+  clearManagedSessionRecovery();
   const payload = (await response.json()) as {
     ticket?: unknown;
     websocketUrl?: unknown;
