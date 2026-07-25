@@ -42,10 +42,21 @@ export type AuthConnectorSessionStatus = typeof AuthConnectorSessionStatus.Type;
 export const AuthConnectorFlow = Schema.Literals(["device", "browser", "code", "secret"]);
 export type AuthConnectorFlow = typeof AuthConnectorFlow.Type;
 
+export const AuthConnectorStage = Schema.Literals([
+  "preparing",
+  "credential",
+  "authorize",
+  "return",
+  "verifying",
+  "complete",
+  "error",
+]);
+export type AuthConnectorStage = typeof AuthConnectorStage.Type;
+
 export const AuthConnectorField = Schema.Struct({
   key: TrimmedNonEmptyString,
   label: TrimmedNonEmptyString,
-  type: Schema.Literals(["text", "email", "password", "url"]),
+  type: Schema.Literals(["text", "email", "password", "url", "textarea"]),
   placeholder: Schema.optional(Schema.String),
   help: Schema.optional(Schema.String),
 });
@@ -57,6 +68,7 @@ export const AuthConnectorSession = Schema.Struct({
   method: AuthConnectorMethod,
   status: AuthConnectorSessionStatus,
   flow: AuthConnectorFlow,
+  stage: AuthConnectorStage,
   message: TrimmedNonEmptyString,
   verificationUrl: Schema.NullOr(Schema.String),
   userCode: Schema.NullOr(Schema.String),

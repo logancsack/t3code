@@ -20,6 +20,10 @@ export const AGENT_AUTH_METHODS: Partial<
         method: "account",
         label: "Sign in with ChatGPT",
         description: "Use your ChatGPT Plus, Pro, Business, Enterprise, or Edu account.",
+        browserName: "OpenAI",
+        authorizeInstruction:
+          "We’ll copy the one-time code for you. Enter it on OpenAI’s device page, then approve access.",
+        waitingMessage: "Waiting for OpenAI to confirm the code…",
       },
       {
         method: "api-key",
@@ -38,11 +42,19 @@ export const AGENT_AUTH_METHODS: Partial<
         method: "account",
         label: "Claude subscription",
         description: "Use a Claude Pro, Max, Team, or Enterprise subscription.",
+        browserName: "Anthropic",
+        authorizeInstruction: "Approve access to your Claude subscription in the Anthropic tab.",
+        returnInstruction:
+          "After approving, copy the entire URL from the browser address bar and paste it below. If Anthropic shows a short code instead, paste that.",
       },
       {
         method: "console",
         label: "Anthropic Console",
         description: "Use API-based billing through your Anthropic Console organization.",
+        browserName: "Anthropic",
+        authorizeInstruction: "Choose your Anthropic Console organization and approve access.",
+        returnInstruction:
+          "After approving, copy the entire URL from the browser address bar and paste it below. If Anthropic shows a short code instead, paste that.",
       },
     ],
   },
@@ -54,6 +66,10 @@ export const AGENT_AUTH_METHODS: Partial<
         method: "account",
         label: "Sign in with Cursor",
         description: "Connect your Cursor account and active subscription in the browser.",
+        browserName: "Cursor",
+        authorizeInstruction:
+          "Sign in to Cursor and approve this workspace. You can close the tab when Cursor says you’re connected.",
+        waitingMessage: "Waiting for Cursor to finish sign-in…",
       },
     ],
   },
@@ -65,6 +81,10 @@ export const AGENT_AUTH_METHODS: Partial<
         method: "account",
         label: "Sign in with xAI",
         description: "Use your Grok or X subscription through xAI's secure device flow.",
+        browserName: "xAI",
+        authorizeInstruction:
+          "Enter the one-time code on xAI’s device page and approve access to your account.",
+        waitingMessage: "Waiting for xAI to confirm the code…",
       },
     ],
   },
@@ -76,16 +96,28 @@ export const AGENT_AUTH_METHODS: Partial<
         method: "openai-account",
         label: "ChatGPT Plus / Pro",
         description: "Connect an OpenAI account with a headless device-code flow.",
+        browserName: "OpenAI",
+        authorizeInstruction:
+          "Enter the one-time code on OpenAI’s device page and approve OpenCode access.",
+        waitingMessage: "Waiting for OpenAI to confirm the code…",
       },
       {
         method: "github-copilot",
         label: "GitHub Copilot",
         description: "Use models included with your GitHub Copilot subscription.",
+        browserName: "GitHub",
+        authorizeInstruction:
+          "Enter the one-time code on GitHub and authorize access to your Copilot subscription.",
+        waitingMessage: "Waiting for GitHub to confirm the code…",
       },
       {
         method: "xai-account",
         label: "xAI / SuperGrok",
         description: "Connect a Grok subscription with a secure device-code flow.",
+        browserName: "xAI",
+        authorizeInstruction:
+          "Enter the one-time code on xAI’s device page and approve OpenCode access.",
+        waitingMessage: "Waiting for xAI to confirm the code…",
       },
       {
         method: "anthropic-api-key",
@@ -121,6 +153,10 @@ export const SOURCE_CONTROL_AUTH_METHODS = {
         method: "account" as const,
         label: "Sign in with GitHub",
         description: "Authorize this workspace with GitHub's one-time device code.",
+        browserName: "GitHub",
+        authorizeInstruction:
+          "Enter the one-time code on GitHub, then authorize this workspace for your repositories.",
+        waitingMessage: "Waiting for GitHub to approve this workspace…",
       },
       {
         method: "token" as const,
@@ -139,6 +175,10 @@ export const SOURCE_CONTROL_AUTH_METHODS = {
         method: "account" as const,
         label: "Sign in with GitLab",
         description: "Authorize GitLab.com using its headless OAuth device flow.",
+        browserName: "GitLab",
+        authorizeInstruction:
+          "Enter the one-time code on GitLab, review the requested access, and approve it.",
+        waitingMessage: "Waiting for GitLab to approve this workspace…",
       },
       {
         method: "token" as const,
@@ -158,6 +198,10 @@ export const SOURCE_CONTROL_AUTH_METHODS = {
         label: "Sign in with Microsoft",
         description:
           "Connect the Microsoft account that has access to your Azure DevOps organization.",
+        browserName: "Microsoft",
+        authorizeInstruction:
+          "Enter the one-time code on Microsoft’s device page, then choose the account with Azure DevOps access.",
+        waitingMessage: "Waiting for Microsoft to confirm the code…",
       },
     ],
   },
