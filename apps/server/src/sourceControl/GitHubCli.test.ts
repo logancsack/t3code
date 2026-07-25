@@ -306,35 +306,32 @@ describe("GitHubCli.layer", () => {
         .mockReturnValueOnce(
           Effect.succeed(
             processOutput(
-              // @effect-diagnostics-next-line preferSchemaOverJson:off
-              JSON.stringify([
-                [
-                  {
-                    full_name: "octocat/console",
-                    name: "console",
-                    owner: { login: "octocat" },
-                    html_url: "https://github.com/octocat/console",
-                    ssh_url: "git@github.com:octocat/console.git",
-                    description: "Customer console",
-                    private: true,
-                    archived: false,
-                    fork: false,
-                  },
-                ],
-                [
-                  {
-                    full_name: "acme/sdk",
-                    name: "sdk",
-                    owner: { login: "acme" },
-                    html_url: "https://github.com/acme/sdk",
-                    ssh_url: "git@github.com:acme/sdk.git",
-                    description: null,
-                    private: false,
-                    archived: true,
-                    fork: true,
-                  },
-                ],
-              ]),
+              [
+                // @effect-diagnostics-next-line preferSchemaOverJson:off
+                JSON.stringify({
+                  full_name: "octocat/console",
+                  name: "console",
+                  owner: { login: "octocat" },
+                  html_url: "https://github.com/octocat/console",
+                  ssh_url: "git@github.com:octocat/console.git",
+                  description: "Customer console",
+                  private: true,
+                  archived: false,
+                  fork: false,
+                }),
+                // @effect-diagnostics-next-line preferSchemaOverJson:off
+                JSON.stringify({
+                  full_name: "acme/sdk",
+                  name: "sdk",
+                  owner: { login: "acme" },
+                  html_url: "https://github.com/acme/sdk",
+                  ssh_url: "git@github.com:acme/sdk.git",
+                  description: null,
+                  private: false,
+                  archived: true,
+                  fork: true,
+                }),
+              ].join("\n"),
             ),
           ),
         );
@@ -382,7 +379,8 @@ describe("GitHubCli.layer", () => {
           "--hostname",
           "github.example.com",
           "--paginate",
-          "--slurp",
+          "--jq",
+          ".[]",
           "--method",
           "GET",
           "user/repos",
