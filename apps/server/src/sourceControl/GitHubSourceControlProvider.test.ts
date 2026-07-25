@@ -285,6 +285,47 @@ it("parses GitHub auth JSON from stdout when stderr has warnings", () => {
   );
 });
 
+it("supports text auth status emitted on stderr by GitHub CLI 2.45", () => {
+  const auth = GitHubSourceControlProvider.discovery.parseAuth(
+    processResult("", {
+      stderr: `github.com
+  ✓ Logged in to github.com account logancsack (keyring)
+  - Active account: true
+  - Git operations protocol: https
+`,
+    }),
+  );
+
+  assert.deepStrictEqual(
+    {
+      status: auth.status,
+      account: auth.account,
+      host: auth.host,
+    },
+    {
+      status: "authenticated",
+      account: Option.some("logancsack"),
+      host: Option.some("github.com"),
+    },
+  );
+});
+
+it("recognizes unauthenticated text output from older GitHub CLI versions", () => {
+  const auth = GitHubSourceControlProvider.discovery.parseAuth(
+    processResult("", {
+      stderr: "You are not logged into any GitHub hosts. Run gh auth login to authenticate.\n",
+      exitCode: ChildProcessSpawner.ExitCode(1),
+    }),
+  );
+
+  assert.strictEqual(auth.status, "unauthenticated");
+  assert.strictEqual(auth.account, Option.none());
+});
+
+it("uses the GitHub auth command supported by GitHub CLI 2.45", () => {
+  assert.deepStrictEqual(GitHubSourceControlProvider.discovery.authArgs, ["auth", "status"]);
+});
+
 it("parses GitHub auth status accounts by host and active state", () => {
   assert.deepStrictEqual(
     parseGitHubAuthStatus(

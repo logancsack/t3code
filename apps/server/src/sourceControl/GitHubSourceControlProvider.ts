@@ -44,7 +44,8 @@ function toChangeRequest(summary: GitHubCli.GitHubPullRequestSummary): ChangeReq
 
 function parseGitHubAuth(input: SourceControlAuthProbeInput) {
   const output = combinedAuthOutput(input);
-  const authStatus = parseGitHubAuthStatus(input.stdout);
+  const stdoutAuthStatus = parseGitHubAuthStatus(input.stdout);
+  const authStatus = stdoutAuthStatus.parsed ? stdoutAuthStatus : parseGitHubAuthStatus(output);
   const authenticatedAccount = findAuthenticatedGitHubAccount(authStatus.accounts);
   const host = authenticatedAccount?.host;
 
@@ -88,7 +89,7 @@ export const discovery = {
   label: "GitHub",
   executable: "gh",
   versionArgs: ["--version"],
-  authArgs: ["auth", "status", "--json", "hosts"],
+  authArgs: ["auth", "status"],
   parseAuth: parseGitHubAuth,
   installHint:
     "Install the GitHub command-line tool (`gh`) via https://cli.github.com/ or your package manager (for example `brew install gh`).",

@@ -30,14 +30,54 @@ export interface GitHubAuthStatus {
   readonly accounts: ReadonlyArray<GitHubAuthStatusAccount>;
 }
 
+const GitHubLoggedInAccountPattern = /Logged in to\s+(\S+)\s+account\s+([^\s(]+)/giu;
+
+const GitHubUnauthenticatedPattern =
+  /(?:not logged (?:in)?to any GitHub hosts|failed to log in to|authentication failed|token\b[^\r\n]*\bis invalid)/iu;
+
 function nonEmptyString(value: string): string | null {
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
 }
 
+function parseGitHubAuthStatusText(text: string): GitHubAuthStatus {
+  const matches = Array.from(text.matchAll(GitHubLoggedInAccountPattern));
+  if (matches.length === 0) {
+    return {
+      parsed: GitHubUnauthenticatedPattern.test(text),
+      accounts: [],
+    };
+  }
+
+  const accounts = matches.flatMap((match, index) => {
+    const host = nonEmptyString(match[1] ?? "");
+    const login = nonEmptyString(match[2] ?? "");
+    if (host === null || login === null) return [];
+
+    const blockStart = match.index ?? 0;
+    const blockEnd = matches[index + 1]?.index ?? text.length;
+    const block = text.slice(blockStart, blockEnd);
+    const activeMatch = /Active account:\s*(true|false)/iu.exec(block);
+
+    return [
+      {
+        host: host.toLowerCase(),
+        account: login,
+        authenticated: true,
+        active:
+          activeMatch?.[1]?.toLowerCase() === "true" ||
+          (matches.length === 1 && activeMatch === null),
+        error: null,
+      },
+    ];
+  });
+
+  return { parsed: true, accounts };
+}
+
 export function parseGitHubAuthStatus(text: string): GitHubAuthStatus {
   return Option.match(decodeGitHubAuthStatusJson(text), {
-    onNone: () => ({ parsed: false, accounts: [] }),
+    onNone: () => parseGitHubAuthStatusText(text),
     onSome: (status) =>
       ({
         parsed: true,
