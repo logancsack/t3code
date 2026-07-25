@@ -61,6 +61,24 @@ describe("AuthConnectorManager output parsing", () => {
     expect(testHelpers.hasGitHubCredentialPrompt("Authenticate with a browser?")).toBe(false);
   });
 
+  it("recognizes GitHub's browser continuation prompt", () => {
+    expect(
+      testHelpers.hasGitHubBrowserPrompt(
+        "Press Enter to open https://github.com/login/device in your browser...",
+      ),
+    ).toBe(true);
+    expect(testHelpers.hasGitHubBrowserPrompt("Waiting for GitHub to approve access.")).toBe(false);
+  });
+
+  it("prevents GitHub CLI from opening a browser inside the workspace", () => {
+    const spec = testHelpers.launchSpec({
+      connector: "github",
+      method: "account",
+    });
+
+    expect(spec?.env).toEqual({ GH_BROWSER: "true" });
+  });
+
   it("runs GitLab device login without its interactive terminal UI", () => {
     const spec = testHelpers.launchSpec({
       connector: "gitlab",
@@ -148,5 +166,26 @@ describe("AuthConnectorManager output parsing", () => {
     });
 
     expect(result.writes).toEqual(["y\r"]);
+  });
+
+  it("advances GitHub into device-code polling exactly once", () => {
+    const result = testHelpers.parseOutputForTest({
+      connector: "github",
+      method: "account",
+      flow: "device",
+      output: [
+        "! First copy your one-time code: EC66-D3F9",
+        "Press Enter to open https://github.com/login/device in your browser...",
+      ].join("\n"),
+      repetitions: 2,
+    });
+
+    expect(result.snapshot).toMatchObject({
+      status: "waiting",
+      stage: "authorize",
+      verificationUrl: "https://github.com/login/device",
+      userCode: "EC66-D3F9",
+    });
+    expect(result.writes).toEqual(["\r"]);
   });
 });
