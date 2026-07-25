@@ -96,6 +96,7 @@ const makeDependencies = Effect.fn("TestConnectionResolver.makeDependencies")((o
   readonly authorizeBearer?: RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization["Service"]["authorizeBearer"];
   readonly authorizeDpop?: RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization["Service"]["authorizeDpop"];
   readonly primaryBearerToken?: string;
+  readonly prepareWebSocketUrl?: ClientCapabilities.PrimaryEnvironmentAuth["Service"]["prepareWebSocketUrl"];
   readonly prepareSsh?: ClientCapabilities.SshEnvironmentGateway["Service"]["prepare"];
 }) => {
   const profiles = new Map(
@@ -172,6 +173,7 @@ const makeDependencies = Effect.fn("TestConnectionResolver.makeDependencies")((o
       ClientCapabilities.PrimaryEnvironmentAuth,
       ClientCapabilities.PrimaryEnvironmentAuth.of({
         bearerToken: Effect.succeed(Option.fromNullishOr(options?.primaryBearerToken)),
+        prepareWebSocketUrl: options?.prepareWebSocketUrl ?? Effect.succeed,
       }),
     ),
     Layer.succeed(
@@ -203,7 +205,13 @@ const makeDependencies = Effect.fn("TestConnectionResolver.makeDependencies")((o
 describe("ConnectionResolver", () => {
   it.effect("prepares a primary environment without remote capabilities", () =>
     Effect.gen(function* () {
-      const brokerLayer = yield* makeDependencies();
+      const preparedUrls = yield* Ref.make<ReadonlyArray<string>>([]);
+      const brokerLayer = yield* makeDependencies({
+        prepareWebSocketUrl: (socketUrl) =>
+          Ref.update(preparedUrls, (values) => [...values, socketUrl]).pipe(
+            Effect.as(`${socketUrl}?gatewayTicket=managed`),
+          ),
+      });
       const broker = yield* ConnectionResolver.ConnectionResolver.pipe(Effect.provide(brokerLayer));
       const target = new PrimaryConnectionTarget({
         environmentId: ENVIRONMENT_ID,
@@ -216,18 +224,24 @@ describe("ConnectionResolver", () => {
         environmentId: ENVIRONMENT_ID,
         label: "Primary",
         httpBaseUrl: "http://127.0.0.1:3777",
-        socketUrl: "ws://127.0.0.1:3777/ws",
+        socketUrl: "ws://127.0.0.1:3777/ws?gatewayTicket=managed",
         httpAuthorization: null,
         target,
       });
+      expect(yield* Ref.get(preparedUrls)).toEqual(["ws://127.0.0.1:3777/ws"]);
     }),
   );
 
   it.effect("authorizes a desktop primary environment with its platform bearer token", () =>
     Effect.gen(function* () {
       const bearerInputs = yield* Ref.make<ReadonlyArray<string>>([]);
+      const preparedUrls = yield* Ref.make<ReadonlyArray<string>>([]);
       const brokerLayer = yield* makeDependencies({
         primaryBearerToken: "desktop-bearer",
+        prepareWebSocketUrl: (socketUrl) =>
+          Ref.update(preparedUrls, (values) => [...values, socketUrl]).pipe(
+            Effect.as("ws://127.0.0.1:3777/ws?gatewayTicket=managed"),
+          ),
         authorizeBearer: (input) =>
           Ref.update(bearerInputs, (values) => [...values, input.bearerToken]).pipe(
             Effect.as({
@@ -251,11 +265,33 @@ describe("ConnectionResolver", () => {
       });
 
       expect(yield* broker.prepare(catalogEntry(target))).toMatchObject({
-        socketUrl: "ws://127.0.0.1:3777/ws?wsTicket=desktop",
+        socketUrl: "ws://127.0.0.1:3777/ws?gatewayTicket=managed",
         httpAuthorization: { _tag: "Bearer", token: "desktop-bearer" },
         target,
       });
       expect(yield* Ref.get(bearerInputs)).toEqual(["desktop-bearer"]);
+      expect(yield* Ref.get(preparedUrls)).toEqual(["ws://127.0.0.1:3777/ws?wsTicket=desktop"]);
+    }),
+  );
+
+  it.effect("propagates primary WebSocket preparation failures", () =>
+    Effect.gen(function* () {
+      const failure = new ConnectionTransientError({
+        reason: "network",
+        detail: "Gateway ticket unavailable.",
+      });
+      const brokerLayer = yield* makeDependencies({
+        prepareWebSocketUrl: () => Effect.fail(failure),
+      });
+      const broker = yield* ConnectionResolver.ConnectionResolver.pipe(Effect.provide(brokerLayer));
+      const target = new PrimaryConnectionTarget({
+        environmentId: ENVIRONMENT_ID,
+        label: "Primary",
+        httpBaseUrl: "http://127.0.0.1:3777",
+        wsBaseUrl: "ws://127.0.0.1:3777",
+      });
+
+      expect(yield* Effect.flip(broker.prepare(catalogEntry(target)))).toBe(failure);
     }),
   );
 

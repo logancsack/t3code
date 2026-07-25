@@ -63,11 +63,12 @@ const makePrimaryBroker = Effect.fn("clientRuntime.connection.broker.makePrimary
   ) {
     const bearerToken = yield* auth.bearerToken;
     if (Option.isNone(bearerToken)) {
+      const socketUrl = yield* auth.prepareWebSocketUrl(primarySocketUrl(target));
       return {
         environmentId: target.environmentId,
         label: target.label,
         httpBaseUrl: target.httpBaseUrl,
-        socketUrl: primarySocketUrl(target),
+        socketUrl,
         httpAuthorization: null,
         target,
       } satisfies PreparedConnection;
@@ -79,8 +80,10 @@ const makePrimaryBroker = Effect.fn("clientRuntime.connection.broker.makePrimary
       wsBaseUrl: target.wsBaseUrl,
       bearerToken: bearerToken.value,
     });
+    const socketUrl = yield* auth.prepareWebSocketUrl(authorized.socketUrl);
     return {
       ...authorized,
+      socketUrl,
       target,
     } satisfies PreparedConnection;
   });

@@ -25,3 +25,57 @@ describe("managed DevPC preview URLs", () => {
     );
   });
 });
+
+describe("managed DevPC WebSocket authorization", () => {
+  it("replaces a T3 ticket with a fresh same-origin gateway ticket", async () => {
+    vi.stubEnv("VITE_DEVPC_MANAGED", "1");
+    vi.resetModules();
+    vi.stubGlobal("window", {
+      location: { origin: "https://app.example.test" },
+    });
+    const fetchMock = vi.fn(async () =>
+      Response.json({ ticket: "gateway-ticket-that-is-long-enough" }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { prepareManagedWebSocketUrl } = await import("./managedDevPc");
+    const resolved = await prepareManagedWebSocketUrl(
+      "wss://app.example.test/ws?wsTicket=local-one-time-ticket",
+    );
+
+    expect(resolved).toBe(
+      "wss://app.example.test/ws?gatewayTicket=gateway-ticket-that-is-long-enough",
+    );
+    expect(fetchMock).toHaveBeenCalledWith("/_devpc/ws-ticket", {
+      method: "POST",
+      credentials: "same-origin",
+      cache: "no-store",
+      headers: {
+        accept: "application/json",
+        "content-type": "application/json",
+      },
+      body: "{}",
+    });
+  });
+
+  it("requests a new ticket for every connection attempt", async () => {
+    vi.stubEnv("VITE_DEVPC_MANAGED", "1");
+    vi.resetModules();
+    vi.stubGlobal("window", {
+      location: { origin: "https://app.example.test" },
+    });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json({ ticket: "first-gateway-ticket-credential" }))
+      .mockResolvedValueOnce(Response.json({ ticket: "second-gateway-ticket-credential" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { prepareManagedWebSocketUrl } = await import("./managedDevPc");
+    const first = await prepareManagedWebSocketUrl("wss://app.example.test/ws");
+    const second = await prepareManagedWebSocketUrl("wss://app.example.test/ws");
+
+    expect(first).toContain("gatewayTicket=first-gateway-ticket-credential");
+    expect(second).toContain("gatewayTicket=second-gateway-ticket-credential");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});

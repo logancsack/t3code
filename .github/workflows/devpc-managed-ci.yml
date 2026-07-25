@@ -47,3 +47,4 @@ jobs:
           test -f apps/server/dist/bin.mjs
           test -f apps/server/dist/client/index.html
           grep -q '/_t3/' apps/server/dist/client/index.html
+          grep -q '/_devpc/ws-ticket' apps/server/dist/client/assets/*.js

@@ -50,6 +50,7 @@ import {
 } from "../environments/primary/target";
 import { clearComposerDraftsEnvironment } from "../composerDraftStore";
 import { isHostedStaticApp } from "../hostedPairing";
+import { prepareManagedWebSocketUrl } from "../managedDevPc";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { acknowledgeRpcRequest, trackRpcRequestSent } from "../rpc/requestLatencyState";
 import {
@@ -215,6 +216,18 @@ const capabilitiesLayer = Layer.effectContext(
             detail: `Could not load the desktop primary credential: ${String(cause)}`,
           }),
       }).pipe(Effect.map(Option.fromNullishOr)),
+      prepareWebSocketUrl: (socketUrl) =>
+        Effect.tryPromise({
+          try: () => prepareManagedWebSocketUrl(socketUrl),
+          catch: (cause) =>
+            new ConnectionTransientError({
+              reason: "network",
+              detail:
+                cause instanceof Error
+                  ? cause.message
+                  : "Could not authorize the managed WebSocket connection.",
+            }),
+        }),
     });
     const ssh = SshEnvironmentGateway.of({
       provision: Effect.fn("web.connectionPlatform.ssh.provision")(function* (target) {
