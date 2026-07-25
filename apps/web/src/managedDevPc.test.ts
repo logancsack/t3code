@@ -122,4 +122,57 @@ describe("managed DevPC WebSocket authorization", () => {
       "invalid WebSocket URL",
     );
   });
+
+  it("reloads once when the managed browser session must be paired again", async () => {
+    vi.stubEnv("VITE_DEVPC_MANAGED", "1");
+    vi.resetModules();
+    const reload = vi.fn();
+    const storage = new Map<string, string>();
+    vi.stubGlobal("window", {
+      location: { origin: "https://app.example.test", reload },
+      sessionStorage: {
+        getItem: (key: string) => storage.get(key) ?? null,
+        setItem: (key: string, value: string) => storage.set(key, value),
+        removeItem: (key: string) => storage.delete(key),
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(null, { status: 401 })),
+    );
+
+    const { prepareManagedWebSocketUrl } = await import("./managedDevPc");
+    await expect(prepareManagedWebSocketUrl("wss://app.example.test/ws")).rejects.toThrow(
+      "Refreshing the managed workspace connection.",
+    );
+    expect(reload).toHaveBeenCalledOnce();
+    expect(storage.size).toBe(1);
+
+    await expect(prepareManagedWebSocketUrl("wss://app.example.test/ws")).rejects.toThrow(
+      "could not be authorized",
+    );
+    expect(reload).toHaveBeenCalledOnce();
+  });
+
+  it("clears the managed session recovery cooldown after authorization succeeds", async () => {
+    vi.stubEnv("VITE_DEVPC_MANAGED", "1");
+    vi.resetModules();
+    const storage = new Map([["devpc-managed-session-recovery-at", String(Date.now())]]);
+    vi.stubGlobal("window", {
+      location: { origin: "https://app.example.test" },
+      sessionStorage: {
+        getItem: (key: string) => storage.get(key) ?? null,
+        setItem: (key: string, value: string) => storage.set(key, value),
+        removeItem: (key: string) => storage.delete(key),
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json({ ticket: "gateway-ticket-that-is-long-enough" })),
+    );
+
+    const { prepareManagedWebSocketUrl } = await import("./managedDevPc");
+    await prepareManagedWebSocketUrl("wss://app.example.test/ws");
+    expect(storage.size).toBe(0);
+  });
 });
