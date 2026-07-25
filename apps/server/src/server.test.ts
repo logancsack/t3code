@@ -3163,6 +3163,25 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         assert.equal(rpcError.requiredScope, "orchestration:read");
       }
       assert.deepEqual(repositoryListCalls, []);
+
+      const authorizedAccessToken = yield* getAuthenticatedBearerSessionToken();
+      const authorizedTicketResponse = yield* HttpClient.post("/api/auth/websocket-ticket", {
+        headers: {
+          authorization: `Bearer ${authorizedAccessToken}`,
+        },
+      });
+      const authorizedTicketBody = (yield* authorizedTicketResponse.json) as {
+        readonly ticket: string;
+      };
+      assert.equal(authorizedTicketResponse.status, 200);
+      const authorizedWsUrl = `${yield* getWsServerUrl("/ws", { authenticated: false })}?wsTicket=${encodeURIComponent(authorizedTicketBody.ticket)}`;
+      const repositories = yield* Effect.scoped(
+        withWsRpcClient(authorizedWsUrl, (client) =>
+          client[WS_METHODS.sourceControlListRepositories]({ provider: "github" }),
+        ),
+      );
+      assert.deepEqual(repositories, []);
+      assert.deepEqual(repositoryListCalls, [{ provider: "github" }]);
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 

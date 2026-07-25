@@ -1820,6 +1820,15 @@ function OpenCommandPaletteDialog(props: {
 
     if (addProjectCloneFlow?.step === "repository" && event.key === "Enter") {
       event.preventDefault();
+      if (isGitHubRepositoryBrowser) {
+        const trimmedQuery = query.trim();
+        const hasExactMatch = (githubRepositories.data ?? []).some(
+          (repository) => repository.nameWithOwner.toLowerCase() === trimmedQuery.toLowerCase(),
+        );
+        if (!trimmedQuery.includes("/") || hasExactMatch) {
+          return;
+        }
+      }
       void submitAddProjectCloneFlow();
       return;
     }
