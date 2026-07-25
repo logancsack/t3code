@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { RotateCwIcon } from "lucide-react";
 
 import {
   isManagedDevPc,
@@ -64,19 +65,31 @@ export function ManagedDevPcStatus() {
   };
 
   return (
-    <div className="fixed right-3 top-2 z-[100] flex h-8 items-center gap-2 rounded-lg border border-border/80 bg-background/95 px-2.5 text-xs shadow-sm backdrop-blur">
-      <span
-        className={`size-2 rounded-full ${ready ? "bg-emerald-500" : state === "error" ? "bg-destructive" : "bg-amber-500"}`}
-        aria-hidden
-      />
-      <span className="font-medium">{statusLabel[state]}</span>
+    <div
+      className="flex h-8 min-w-0 items-center gap-2 rounded-md px-2 text-sm text-sidebar-muted-foreground/80"
+      aria-live="polite"
+      data-devpc-workspace-status={state}
+    >
+      <span className="relative flex size-4 shrink-0 items-center justify-center" aria-hidden>
+        <span
+          className={`size-2 rounded-full ${
+            ready ? "bg-emerald-500" : state === "error" ? "bg-destructive" : "bg-amber-500"
+          }`}
+        />
+        {state === "starting" || state === "restarting" ? (
+          <span className="absolute size-3.5 animate-ping rounded-full bg-amber-500/25" />
+        ) : null}
+      </span>
+      <span className="min-w-0 flex-1 truncate font-medium">Dev PC · {statusLabel[state]}</span>
       <button
         type="button"
-        className="rounded px-1.5 py-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
+        className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-sidebar-muted-foreground/70 outline-hidden hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring disabled:pointer-events-none disabled:opacity-40"
         disabled={!ready}
         onClick={() => void restart()}
+        aria-label="Restart Dev PC"
+        title="Restart Dev PC"
       >
-        Restart
+        <RotateCwIcon className="size-3.5" />
       </button>
     </div>
   );
