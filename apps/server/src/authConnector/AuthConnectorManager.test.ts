@@ -100,6 +100,22 @@ describe("AuthConnectorManager output parsing", () => {
     });
   });
 
+  it("supplies GitHub's device page when the CLI only prints a one-time code", () => {
+    const result = testHelpers.parseOutputForTest({
+      connector: "github",
+      method: "account",
+      flow: "device",
+      output: "! First copy your one-time code: B458-9653",
+    });
+
+    expect(result.snapshot).toMatchObject({
+      status: "waiting",
+      stage: "authorize",
+      verificationUrl: "https://github.com/login/device",
+      userCode: "B458-9653",
+    });
+  });
+
   it("moves Claude to the return stage with its callback field", () => {
     const result = testHelpers.parseOutputForTest({
       connector: "claude",

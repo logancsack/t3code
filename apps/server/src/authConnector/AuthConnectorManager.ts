@@ -145,8 +145,12 @@ function scheduleSessionRemoval(session: ManagedSession): void {
 
 function parseProcessOutput(session: ManagedSession): void {
   const output = session.output;
-  const verificationUrl = extractUrl(output);
   const userCode = extractUserCode(output);
+  const verificationUrl =
+    extractUrl(output) ??
+    (session.snapshot.connector === "github" && userCode
+      ? "https://github.com/login/device"
+      : null);
 
   if (
     session.snapshot.connector === "github" &&
