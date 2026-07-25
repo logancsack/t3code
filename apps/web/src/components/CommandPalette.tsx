@@ -23,6 +23,7 @@ import {
   type SourceControlDiscoveryResult,
   type SourceControlProviderKind,
   type SourceControlRepositoryInfo,
+  type SourceControlRepositorySummary,
   PRIMARY_LOCAL_ENVIRONMENT_ID,
 } from "@t3tools/contracts";
 import { useNavigate, useParams } from "@tanstack/react-router";
@@ -65,6 +66,7 @@ import { filesystemEnvironment } from "../state/filesystem";
 import { projectEnvironment } from "../state/projects";
 import { useEnvironmentQuery } from "../state/query";
 import { sourceControlEnvironment } from "../state/sourceControl";
+import { vcsEnvironment } from "../state/vcs";
 import { useAtomCommand } from "../state/use-atom-command";
 import { useAtomQueryRunner } from "../state/use-atom-query-runner";
 import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
@@ -119,6 +121,8 @@ import { orderItemsByPreferredIds, sortLogicalProjectsForSidebar } from "./Sideb
 import { resolveEnvironmentOptionLabel } from "./BranchToolbar.logic";
 import { CommandPaletteContent } from "./CommandPaletteContent";
 import { CommandPaletteResults } from "./CommandPaletteResults";
+import { GitHubRepositoryBrowser } from "./GitHubRepositoryBrowser";
+import { findProjectForGitHubRepository } from "./GitHubRepositoryBrowser.logic";
 import { AzureDevOpsIcon, BitbucketIcon, GitHubIcon, GitLabIcon } from "./Icons";
 import { ProjectFavicon } from "./ProjectFavicon";
 import { ProjectFilePicker } from "./files/ProjectFilePicker";
@@ -277,6 +281,9 @@ function remoteProjectInputPlaceholder(flow: AddProjectCloneFlow | null): string
   if (flow.step === "confirm") return null;
   if (flow.source === "url") {
     return "Enter Git clone URL";
+  }
+  if (flow.source === "github") {
+    return "Search your GitHub repositories";
   }
   return `Enter ${remoteProjectSourceLabel(flow.source)} repository (${remoteProjectSourcePathHint(flow.source)})`;
 }
@@ -572,6 +579,9 @@ function OpenCommandPaletteDialog(props: {
   const cloneRepository = useAtomCommand(sourceControlEnvironment.cloneRepository, {
     reportFailure: false,
   });
+  const pullRepository = useAtomCommand(vcsEnvironment.pull, {
+    reportFailure: false,
+  });
   const { environments } = useEnvironments();
   const desktopLocalBootstraps = useDesktopLocalBootstraps();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
@@ -620,6 +630,7 @@ function OpenCommandPaletteDialog(props: {
   const [addProjectCloneFlow, setAddProjectCloneFlow] = useState<AddProjectCloneFlow | null>(null);
   const [isRemoteProjectLookingUp, setIsRemoteProjectLookingUp] = useState(false);
   const [isRemoteProjectCloning, setIsRemoteProjectCloning] = useState(false);
+  const [activeRemoteRepository, setActiveRemoteRepository] = useState<string | null>(null);
   const projectGroupingSettings = useMemo(
     () => selectProjectGroupingSettings(clientSettings),
     [clientSettings],
@@ -782,6 +793,16 @@ function OpenCommandPaletteDialog(props: {
           environmentId: browseEnvironmentId,
           input: {},
         }),
+  );
+  const isGitHubRepositoryBrowser =
+    addProjectCloneFlow?.step === "repository" && addProjectCloneFlow.source === "github";
+  const githubRepositories = useEnvironmentQuery(
+    isGitHubRepositoryBrowser
+      ? sourceControlEnvironment.repositories({
+          environmentId: addProjectCloneFlow.environmentId,
+          input: { provider: "github" },
+        })
+      : null,
   );
   const browseEnvironmentPlatform = getEnvironmentBrowsePlatform(
     browseEnvironment?.serverConfig?.environment.platform.os,
@@ -1694,6 +1715,96 @@ function OpenCommandPaletteDialog(props: {
     return getAddProjectInitialQueryForEnvironment(environmentId);
   }
 
+  function getDefaultCloneDestinationPath(environmentId: EnvironmentId, name: string): string {
+    const parentPath = getDefaultCloneParentPath(environmentId).replace(/[\\/]+$/u, "");
+    const separator = parentPath.includes("\\") ? "\\" : "/";
+    return `${parentPath}${separator}${name}`;
+  }
+
+  const projectForGitHubRepository = useCallback(
+    (repository: SourceControlRepositorySummary) =>
+      findProjectForGitHubRepository(
+        repository,
+        projects.filter((project) => project.environmentId === addProjectCloneFlow?.environmentId),
+      ),
+    [addProjectCloneFlow?.environmentId, projects],
+  );
+
+  async function cloneListedGitHubRepository(
+    repository: SourceControlRepositorySummary,
+  ): Promise<void> {
+    if (addProjectCloneFlow?.step !== "repository" || activeRemoteRepository !== null) return;
+    const environmentId = addProjectCloneFlow.environmentId;
+    const destinationPath = getDefaultCloneDestinationPath(environmentId, repository.name);
+    setActiveRemoteRepository(repository.nameWithOwner);
+    const cloneResult = await cloneRepository({
+      environmentId,
+      input: { remoteUrl: repository.sshUrl, destinationPath },
+    });
+    setActiveRemoteRepository(null);
+    if (cloneResult._tag === "Failure") {
+      if (!isAtomCommandInterrupted(cloneResult)) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Clone failed",
+            description: errorMessage(squashAtomCommandFailure(cloneResult)),
+          }),
+        );
+      }
+      return;
+    }
+    toastManager.add(
+      stackedThreadToast({
+        type: "success",
+        title: "Repository cloned",
+        description: `${repository.nameWithOwner} is ready on this Dev PC.`,
+      }),
+    );
+    const environment = environments.find((candidate) => candidate.environmentId === environmentId);
+    await handleAddProjectForEnvironment({
+      environmentId,
+      rawCwd: cloneResult.value.cwd,
+      platform: getEnvironmentBrowsePlatform(environment?.serverConfig?.environment.platform.os),
+      currentProjectCwd: null,
+    });
+  }
+
+  async function syncListedGitHubRepository(
+    repository: SourceControlRepositorySummary,
+    project: { readonly workspaceRoot: string },
+  ): Promise<void> {
+    if (addProjectCloneFlow?.step !== "repository" || activeRemoteRepository !== null) return;
+    setActiveRemoteRepository(repository.nameWithOwner);
+    const pullResult = await pullRepository({
+      environmentId: addProjectCloneFlow.environmentId,
+      input: { cwd: project.workspaceRoot },
+    });
+    setActiveRemoteRepository(null);
+    if (pullResult._tag === "Failure") {
+      if (!isAtomCommandInterrupted(pullResult)) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Sync failed",
+            description: errorMessage(squashAtomCommandFailure(pullResult)),
+          }),
+        );
+      }
+      return;
+    }
+    toastManager.add(
+      stackedThreadToast({
+        type: "success",
+        title:
+          pullResult.value.status === "skipped_up_to_date"
+            ? "Already up to date"
+            : "Repository synced",
+        description: repository.nameWithOwner,
+      }),
+    );
+  }
+
   async function submitAddProjectCloneFlow(destinationPathInput?: string): Promise<void> {
     if (!addProjectCloneFlow) {
       return;
@@ -2004,6 +2115,13 @@ function OpenCommandPaletteDialog(props: {
 
     if (addProjectCloneFlow?.step === "repository" && event.key === "Enter") {
       event.preventDefault();
+      if (isGitHubRepositoryBrowser) {
+        const trimmedQuery = query.trim();
+        const hasExactMatch = (githubRepositories.data ?? []).some(
+          (repository) => repository.nameWithOwner.toLowerCase() === trimmedQuery.toLowerCase(),
+        );
+        if (!trimmedQuery.includes("/") || hasExactMatch) return;
+      }
       void submitAddProjectCloneFlow();
       return;
     }
@@ -2166,7 +2284,7 @@ function OpenCommandPaletteDialog(props: {
   ]);
 
   const inputAccessory =
-    addProjectCloneFlow?.step === "repository" ? (
+    addProjectCloneFlow?.step === "repository" && !isGitHubRepositoryBrowser ? (
       <Tooltip>
         <TooltipTrigger
           render={
@@ -2272,7 +2390,9 @@ function OpenCommandPaletteDialog(props: {
       inputProps={{
         className:
           addProjectCloneFlow?.step === "repository"
-            ? "pe-32"
+            ? isGitHubRepositoryBrowser
+              ? "h-12 text-base sm:h-auto"
+              : "pe-32"
             : isBrowsing
               ? willCreateProjectPath
                 ? "pe-36"
@@ -2305,7 +2425,10 @@ function OpenCommandPaletteDialog(props: {
         setHighlightedItemValue(typeof value === "string" ? value : null);
       }}
       onValueChange={handleQueryChange}
-      panelClassName="max-h-[min(28rem,70vh)]"
+      panelClassName={cn(
+        "max-h-[min(28rem,70vh)]",
+        isGitHubRepositoryBrowser && "flex max-h-none min-h-0 flex-1 flex-col",
+      )}
       showBackHint={isSubmenu}
       value={query}
     >
@@ -2323,31 +2446,47 @@ function OpenCommandPaletteDialog(props: {
           </div>
         </div>
       ) : null}
-      <CommandPaletteResults
-        groups={displayedGroups}
-        highlightedItemValue={highlightedItemValue}
-        isActionsOnly={isActionsOnly}
-        keybindings={keybindings}
-        onExecuteItem={executeItem}
-        {...(addProjectCloneFlow?.step === "repository"
-          ? {
-              emptyStateMessage:
-                addProjectCloneFlow.source === "url"
-                  ? "Enter a Git clone URL and press Enter to continue."
-                  : "Enter a repository path and press Enter to look it up.",
-            }
-          : addProjectCloneFlow?.step === "confirm"
-            ? { emptyStateMessage: "Choose a destination path and press Enter to clone." }
-            : relativePathNeedsActiveProject
-              ? { emptyStateMessage: "Relative paths require an active project." }
-              : willCreateProjectPath
-                ? {
-                    emptyStateMessage: "Press Enter to create this folder and add it as a project.",
-                  }
-                : threadSearch.isPending
-                  ? { emptyStateMessage: "Searching thread messages…" }
-                  : {})}
-      />
+      {isGitHubRepositoryBrowser ? (
+        <GitHubRepositoryBrowser
+          activeRepository={activeRemoteRepository}
+          error={githubRepositories.error}
+          isLoading={githubRepositories.isPending}
+          onClone={(repository) => void cloneListedGitHubRepository(repository)}
+          onManualLookup={() => void submitAddProjectCloneFlow()}
+          onRefresh={githubRepositories.refresh}
+          onSync={(repository, project) => void syncListedGitHubRepository(repository, project)}
+          projectForRepository={projectForGitHubRepository}
+          query={query}
+          repositories={githubRepositories.data ?? []}
+        />
+      ) : (
+        <CommandPaletteResults
+          groups={displayedGroups}
+          highlightedItemValue={highlightedItemValue}
+          isActionsOnly={isActionsOnly}
+          keybindings={keybindings}
+          onExecuteItem={executeItem}
+          {...(addProjectCloneFlow?.step === "repository"
+            ? {
+                emptyStateMessage:
+                  addProjectCloneFlow.source === "url"
+                    ? "Enter a Git clone URL and press Enter to continue."
+                    : "Enter a repository path and press Enter to look it up.",
+              }
+            : addProjectCloneFlow?.step === "confirm"
+              ? { emptyStateMessage: "Choose a destination path and press Enter to clone." }
+              : relativePathNeedsActiveProject
+                ? { emptyStateMessage: "Relative paths require an active project." }
+                : willCreateProjectPath
+                  ? {
+                      emptyStateMessage:
+                        "Press Enter to create this folder and add it as a project.",
+                    }
+                  : threadSearch.isPending
+                    ? { emptyStateMessage: "Searching thread messages…" }
+                    : {})}
+        />
+      )}
     </CommandPaletteContent>
   );
 }

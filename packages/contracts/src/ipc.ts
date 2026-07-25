@@ -98,6 +98,8 @@ import type {
   SourceControlPublishRepositoryInput,
   SourceControlPublishRepositoryResult,
   SourceControlRepositoryInfo,
+  SourceControlRepositoryListInput,
+  SourceControlRepositoryListResult,
   SourceControlRepositoryLookupInput,
 } from "./sourceControl.ts";
 
@@ -1211,6 +1213,9 @@ export interface EnvironmentApi {
     createUrl: (input: AssetCreateUrlInput) => Promise<AssetCreateUrlResult>;
   };
   sourceControl: {
+    listRepositories: (
+      input: SourceControlRepositoryListInput,
+    ) => Promise<SourceControlRepositoryListResult>;
     lookupRepository: (
       input: SourceControlRepositoryLookupInput,
     ) => Promise<SourceControlRepositoryInfo>;

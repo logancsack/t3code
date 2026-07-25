@@ -30,6 +30,43 @@ function makeProvider(github: Partial<GitHubCli.GitHubCli["Service"]>) {
   );
 }
 
+it.effect("maps GitHub repositories into provider-neutral summaries", () =>
+  Effect.gen(function* () {
+    const provider = yield* makeProvider({
+      listRepositories: () =>
+        Effect.succeed([
+          {
+            nameWithOwner: "pingdotgg/t3code",
+            name: "t3code",
+            owner: "pingdotgg",
+            url: "https://github.com/pingdotgg/t3code",
+            sshUrl: "git@github.com:pingdotgg/t3code.git",
+            description: "T3 Code",
+            isPrivate: false,
+            isArchived: false,
+            isFork: false,
+          },
+        ]),
+    });
+
+    const repositories = yield* provider.listRepositories!({ cwd: "/repo" });
+    assert.deepStrictEqual(repositories, [
+      {
+        provider: "github",
+        nameWithOwner: "pingdotgg/t3code",
+        name: "t3code",
+        owner: "pingdotgg",
+        url: "https://github.com/pingdotgg/t3code",
+        sshUrl: "git@github.com:pingdotgg/t3code.git",
+        description: "T3 Code",
+        isPrivate: false,
+        isArchived: false,
+        isFork: false,
+      },
+    ]);
+  }),
+);
+
 it.effect("maps GitHub PR summaries into provider-neutral change requests", () =>
   Effect.gen(function* () {
     const provider = yield* makeProvider({

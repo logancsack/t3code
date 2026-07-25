@@ -1623,6 +1623,12 @@ const makeWsRpcLayer = (
             ),
             { "rpc.aggregate": "cloud" },
           ),
+        [WS_METHODS.sourceControlListRepositories]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.sourceControlListRepositories,
+            sourceControlRepositories.listRepositories(input),
+            { "rpc.aggregate": "source-control" },
+          ),
         [WS_METHODS.sourceControlLookupRepository]: (input) =>
           observeRpcEffect(
             WS_METHODS.sourceControlLookupRepository,

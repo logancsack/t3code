@@ -16,6 +16,7 @@ import {
   decodeGitHubPullRequestJson,
   decodeGitHubPullRequestListJson,
 } from "./gitHubPullRequests.ts";
+import { findAuthenticatedGitHubAccount, parseGitHubAuthStatus } from "./gitHubAuthStatus.ts";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 
@@ -135,6 +136,19 @@ export class GitHubRepositoryDecodeError extends Schema.TaggedErrorClass<GitHubR
   }
 }
 
+export class GitHubRepositoryListDecodeError extends Schema.TaggedErrorClass<GitHubRepositoryListDecodeError>()(
+  "GitHubRepositoryListDecodeError",
+  gitHubCliDecodeFields,
+) {
+  get detail(): string {
+    return "GitHub CLI returned invalid repository list JSON.";
+  }
+
+  override get message(): string {
+    return `GitHub CLI failed in listRepositories: ${this.detail}`;
+  }
+}
+
 export const GitHubCliError = Schema.Union([
   GitHubCliUnavailableError,
   GitHubCliAuthenticationError,
@@ -144,6 +158,7 @@ export const GitHubCliError = Schema.Union([
   GitHubChangeRequestListDecodeError,
   GitHubPullRequestDecodeError,
   GitHubRepositoryDecodeError,
+  GitHubRepositoryListDecodeError,
 ]);
 export type GitHubCliError = typeof GitHubCliError.Type;
 
@@ -196,6 +211,15 @@ export interface GitHubRepositoryCloneUrls {
   readonly sshUrl: string;
 }
 
+export interface GitHubRepositorySummary extends GitHubRepositoryCloneUrls {
+  readonly name: string;
+  readonly owner: string;
+  readonly description: string | null;
+  readonly isPrivate: boolean;
+  readonly isArchived: boolean;
+  readonly isFork: boolean;
+}
+
 export class GitHubCli extends Context.Service<
   GitHubCli,
   {
@@ -203,6 +227,7 @@ export class GitHubCli extends Context.Service<
       readonly cwd: string;
       readonly args: ReadonlyArray<string>;
       readonly timeoutMs?: number;
+      readonly allowNonZeroExit?: boolean;
     }) => Effect.Effect<VcsProcess.VcsProcessOutput, GitHubCliError>;
 
     readonly listOpenPullRequests: (input: {
@@ -220,6 +245,10 @@ export class GitHubCli extends Context.Service<
       readonly cwd: string;
       readonly repository: string;
     }) => Effect.Effect<GitHubRepositoryCloneUrls, GitHubCliError>;
+
+    readonly listRepositories: (input: {
+      readonly cwd: string;
+    }) => Effect.Effect<ReadonlyArray<GitHubRepositorySummary>, GitHubCliError>;
 
     readonly createRepository: (input: {
       readonly cwd: string;
@@ -254,6 +283,23 @@ const RawGitHubRepositoryCloneUrlsSchema = Schema.Struct({
 });
 const decodeRawGitHubRepositoryCloneUrls = Schema.decodeEffect(
   Schema.fromJsonString(RawGitHubRepositoryCloneUrlsSchema),
+);
+
+const RawGitHubRepositorySummarySchema = Schema.Struct({
+  full_name: TrimmedNonEmptyString,
+  name: TrimmedNonEmptyString,
+  owner: Schema.Struct({
+    login: TrimmedNonEmptyString,
+  }),
+  html_url: TrimmedNonEmptyString,
+  ssh_url: TrimmedNonEmptyString,
+  description: Schema.NullOr(Schema.String),
+  private: Schema.Boolean,
+  archived: Schema.Boolean,
+  fork: Schema.Boolean,
+});
+const decodeRawGitHubRepositoryList = Schema.decodeEffect(
+  Schema.fromJsonString(Schema.Array(Schema.Array(RawGitHubRepositorySummarySchema))),
 );
 
 function normalizeRepositoryCloneUrls(
@@ -314,6 +360,9 @@ export const make = Effect.gen(function* () {
         args: input.args,
         cwd: input.cwd,
         timeoutMs: input.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+        ...(input.allowNonZeroExit !== undefined
+          ? { allowNonZeroExit: input.allowNonZeroExit }
+          : {}),
       })
       .pipe(Effect.mapError((error) => fromVcsError({ command: "gh", cwd: input.cwd }, error)));
 
@@ -409,6 +458,83 @@ export const make = Effect.gen(function* () {
           ),
         ),
         Effect.map(normalizeRepositoryCloneUrls),
+      ),
+    listRepositories: (input) =>
+      execute({
+        cwd: input.cwd,
+        args: ["auth", "status"],
+        allowNonZeroExit: true,
+      }).pipe(
+        Effect.map((result) =>
+          findAuthenticatedGitHubAccount(
+            parseGitHubAuthStatus(`${result.stdout}\n${result.stderr}`).accounts,
+          ),
+        ),
+        Effect.flatMap((account) =>
+          account
+            ? Effect.succeed(account)
+            : Effect.fail(
+                new GitHubCliAuthenticationError({
+                  command: "gh",
+                  cwd: input.cwd,
+                  cause: new Error("No authenticated GitHub account is available."),
+                }),
+              ),
+        ),
+        Effect.flatMap((account) =>
+          execute({
+            cwd: input.cwd,
+            timeoutMs: 60_000,
+            args: [
+              "api",
+              "--hostname",
+              account.host,
+              "--paginate",
+              "--slurp",
+              "--method",
+              "GET",
+              "user/repos",
+              "-f",
+              "per_page=100",
+              "-f",
+              "affiliation=owner,collaborator,organization_member",
+              "-f",
+              "sort=pushed",
+              "-f",
+              "direction=desc",
+            ],
+          }),
+        ),
+        Effect.map((result) => result.stdout.trim()),
+        Effect.flatMap((raw) =>
+          decodeRawGitHubRepositoryList(raw).pipe(
+            Effect.mapError(
+              (cause) =>
+                new GitHubRepositoryListDecodeError({
+                  command: "gh",
+                  cwd: input.cwd,
+                  cause,
+                }),
+            ),
+          ),
+        ),
+        Effect.map((pages) =>
+          pages.flatMap((repositories) =>
+            repositories.map(
+              (repository): GitHubRepositorySummary => ({
+                nameWithOwner: repository.full_name,
+                name: repository.name,
+                owner: repository.owner.login,
+                url: repository.html_url,
+                sshUrl: repository.ssh_url,
+                description: repository.description,
+                isPrivate: repository.private,
+                isArchived: repository.archived,
+                isFork: repository.fork,
+              }),
+            ),
+          ),
+        ),
       ),
     createRepository: (input) =>
       execute({

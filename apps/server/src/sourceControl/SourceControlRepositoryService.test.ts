@@ -1,4 +1,4 @@
-import * as NodePath from "@effect/platform-node/NodePath";
+import * as NodePathService from "@effect/platform-node/NodePath";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -89,7 +89,7 @@ function makeLayer(input: {
   return input.fileSystem
     ? serviceLayer.pipe(
         Layer.provide(Layer.succeed(FileSystem.FileSystem, input.fileSystem)),
-        Layer.provideMerge(NodePath.layer),
+        Layer.provideMerge(NodePathService.layer),
       )
     : serviceLayer.pipe(Layer.provideMerge(NodeServices.layer));
 }
@@ -114,6 +114,39 @@ it.effect("looks up repositories through the requested provider without search",
 
     assert.deepStrictEqual(result, { provider: "github", ...CLONE_URLS });
     assert.deepStrictEqual(calls, [{ cwd: "/workspace", repository: "octocat/t3code" }]);
+  }).pipe(Effect.provide(makeLayer({ provider })));
+});
+
+it.effect("lists repositories through providers that support browsing", () => {
+  const repositories = [
+    {
+      provider: "github" as const,
+      nameWithOwner: "octocat/t3code",
+      name: "t3code",
+      owner: "octocat",
+      url: CLONE_URLS.url,
+      sshUrl: CLONE_URLS.sshUrl,
+      description: "T3 Code",
+      isPrivate: false,
+      isArchived: false,
+      isFork: false,
+    },
+  ];
+  const calls: string[] = [];
+  const provider = makeProvider({
+    listRepositories: ({ cwd }) =>
+      Effect.sync(() => {
+        calls.push(cwd);
+        return repositories;
+      }),
+  });
+
+  return Effect.gen(function* () {
+    const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+    const result = yield* service.listRepositories({ provider: "github" });
+
+    assert.deepStrictEqual(result, repositories);
+    assert.deepStrictEqual(calls, [process.cwd()]);
   }).pipe(Effect.provide(makeLayer({ provider })));
 });
 
@@ -156,7 +189,7 @@ it.effect("clones a looked-up repository into the requested destination", () =>
     const parent = yield* fs.makeTempDirectoryScoped({
       prefix: "t3-source-control-clone-parent-",
     });
-    const destinationPath = `${parent}/t3code`;
+    const destinationPath = `${parent}${parent.includes("\\") ? "\\" : "/"}t3code`;
     const cloneCalls: Array<{ cwd: string; args: ReadonlyArray<string> }> = [];
 
     yield* Effect.gen(function* () {

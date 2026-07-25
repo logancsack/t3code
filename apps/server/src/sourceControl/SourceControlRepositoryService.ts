@@ -16,6 +16,8 @@ import {
   type SourceControlPublishRepositoryResult,
   type SourceControlRepositoryCloneUrls,
   type SourceControlRepositoryInfo,
+  type SourceControlRepositoryListInput,
+  type SourceControlRepositoryListResult,
   type SourceControlRepositoryLookupInput,
 } from "@t3tools/contracts";
 
@@ -27,6 +29,9 @@ const isSourceControlRepositoryError = Schema.is(SourceControlRepositoryError);
 export class SourceControlRepositoryService extends Context.Service<
   SourceControlRepositoryService,
   {
+    readonly listRepositories: (
+      input: SourceControlRepositoryListInput,
+    ) => Effect.Effect<SourceControlRepositoryListResult, SourceControlRepositoryError>;
     readonly lookupRepository: (
       input: SourceControlRepositoryLookupInput,
     ) => Effect.Effect<SourceControlRepositoryInfo, SourceControlRepositoryError>;
@@ -124,6 +129,24 @@ export const make = Effect.gen(function* () {
       repository: input.repository.trim(),
     });
     return toRepositoryInfo(providerKind, urls);
+  });
+
+  const listRepositories = Effect.fn("SourceControlRepositoryService.listRepositories")(function* (
+    input: SourceControlRepositoryListInput,
+  ) {
+    const providerKind = yield* ensureConcreteProvider({
+      operation: "listRepositories",
+      provider: input.provider,
+    });
+    const provider = yield* providers.get(providerKind);
+    if (!provider.listRepositories) {
+      return yield* new SourceControlRepositoryError({
+        operation: "listRepositories",
+        provider: providerKind,
+        detail: `Repository browsing is not supported for ${providerKind}.`,
+      });
+    }
+    return yield* provider.listRepositories({ cwd: config.cwd });
   });
 
   const normalizeDestinationPath = Effect.fn("SourceControlRepositoryService.normalizeDestination")(
@@ -276,6 +299,8 @@ export const make = Effect.gen(function* () {
   );
 
   return SourceControlRepositoryService.of({
+    listRepositories: (input) =>
+      listRepositories(input).pipe(mapRepositoryError("listRepositories", input.provider)),
     lookupRepository: (input) =>
       lookupRepository(input).pipe(mapRepositoryError("lookupRepository", input.provider)),
     cloneRepository: (input) =>

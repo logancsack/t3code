@@ -55,6 +55,7 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.serverGetBackgroundPolicy]: AuthOrchestrationReadScope,
   [WS_METHODS.cloudGetRelayClientStatus]: AuthRelayReadScope,
   [WS_METHODS.cloudInstallRelayClient]: AuthRelayWriteScope,
+  [WS_METHODS.sourceControlListRepositories]: AuthOrchestrationReadScope,
   [WS_METHODS.sourceControlLookupRepository]: AuthOrchestrationReadScope,
   [WS_METHODS.sourceControlCloneRepository]: AuthOrchestrationOperateScope,
   [WS_METHODS.sourceControlPublishRepository]: AuthOrchestrationOperateScope,
