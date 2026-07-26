@@ -5,8 +5,19 @@ import {
   buildThreadActionItems,
   enumerateCommandPaletteItems,
   filterCommandPaletteGroups,
+  getGitHubRepositoryCloneInput,
   type CommandPaletteGroup,
 } from "./CommandPalette.logic";
+
+describe("getGitHubRepositoryCloneInput", () => {
+  it("uses authenticated HTTPS cloning instead of requiring an SSH key", () => {
+    expect(getGitHubRepositoryCloneInput({ nameWithOwner: "octocat/t3code" })).toEqual({
+      provider: "github",
+      repository: "octocat/t3code",
+      protocol: "https",
+    });
+  });
+});
 
 describe("enumerateCommandPaletteItems", () => {
   it("assigns positional jump shortcuts to the first nine displayed items", () => {
