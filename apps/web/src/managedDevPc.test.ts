@@ -206,3 +206,54 @@ describe("managed DevPC WebSocket authorization", () => {
     expect(storage.has(recoveryKey)).toBe(true);
   });
 });
+
+describe("shared workspace browser", () => {
+  const stubBootstrap = (previewUrls: Record<string, string>) => {
+    vi.stubGlobal("window", {
+      location: { origin: "https://app.example.test" },
+      __DEVPC_MANAGED_BOOTSTRAP__: {
+        managed: true,
+        state: "ready",
+        ready: true,
+        previewUrlTemplate: "https://{port}--devpc.example.test/",
+        previewUrls,
+      },
+    });
+  };
+
+  it("offers the granted browser URL when the deployment has one", async () => {
+    vi.stubEnv("VITE_DEVPC_MANAGED", "1");
+    vi.resetModules();
+    stubBootstrap({
+      "6080": "https://6080--devpc.example.test/vnc.html?resize=remote&grant=g",
+    });
+
+    const { managedWorkspaceBrowserUrl } = await import("./managedDevPc");
+
+    // Returned untouched: the host already points it at the noVNC client with the
+    // viewer options, because the port's own root serves a directory listing.
+    expect(managedWorkspaceBrowserUrl()).toBe(
+      "https://6080--devpc.example.test/vnc.html?resize=remote&grant=g",
+    );
+  });
+
+  it("offers nothing when the workspace has no browser grant", async () => {
+    vi.stubEnv("VITE_DEVPC_MANAGED", "1");
+    vi.resetModules();
+    stubBootstrap({ "5173": "https://5173--devpc.example.test/?grant=g" });
+
+    const { managedWorkspaceBrowserUrl } = await import("./managedDevPc");
+
+    expect(managedWorkspaceBrowserUrl()).toBeNull();
+  });
+
+  it("offers nothing outside a managed deployment", async () => {
+    vi.stubEnv("VITE_DEVPC_MANAGED", "0");
+    vi.resetModules();
+    stubBootstrap({ "6080": "https://6080--devpc.example.test/vnc.html" });
+
+    const { managedWorkspaceBrowserUrl } = await import("./managedDevPc");
+
+    expect(managedWorkspaceBrowserUrl()).toBeNull();
+  });
+});

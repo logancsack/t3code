@@ -129,6 +129,8 @@ import {
   setActivePreviewTab,
   useThreadPreviewState,
 } from "../previewStateStore";
+import { openUrlInPreview } from "~/browser/openFileInPreview";
+import { managedWorkspaceBrowserUrl } from "~/managedDevPc";
 import { addBrowserSurface } from "./preview/addBrowserSurface";
 import { closePreviewSession } from "./preview/closePreviewSession";
 import { subscribePreviewAction } from "./preview/previewActionBus";
@@ -2987,6 +2989,17 @@ function ChatViewContent(props: ChatViewProps) {
   const createBrowserSurface = useCallback(() => {
     if (!activeThreadRef) return;
     void addBrowserSurface({ threadRef: activeThreadRef, openPreview });
+  }, [activeThreadRef, openPreview]);
+  /**
+   * Open the workspace's shared browser as an ordinary preview surface.
+   *
+   * It is a real signed-in Chrome on the workspace host, reached over noVNC, so
+   * it reuses the browser panel rather than introducing a second kind of surface.
+   */
+  const createWorkspaceBrowserSurface = useCallback(() => {
+    const url = managedWorkspaceBrowserUrl();
+    if (!activeThreadRef || !url) return;
+    void openUrlInPreview({ threadRef: activeThreadRef, url, openPreview });
   }, [activeThreadRef, openPreview]);
   const addDiffSurface = useCallback(() => {
     if (!activeThreadRef || !isServerThread || !isGitRepo) return;
@@ -5994,6 +6007,7 @@ function ChatViewContent(props: ChatViewProps) {
           onCloseAllSurfaces={closeAllRightPanelSurfaces}
           onCopyFilePath={copyRightPanelFilePath}
           onAddBrowser={createBrowserSurface}
+          onAddWorkspaceBrowser={createWorkspaceBrowserSurface}
           onAddTerminal={addTerminalSurface}
           onAddDiff={addDiffSurface}
           onAddFiles={addFilesSurface}
@@ -6021,6 +6035,7 @@ function ChatViewContent(props: ChatViewProps) {
             onCloseAllSurfaces={closeAllRightPanelSurfaces}
             onCopyFilePath={copyRightPanelFilePath}
             onAddBrowser={createBrowserSurface}
+            onAddWorkspaceBrowser={createWorkspaceBrowserSurface}
             onAddTerminal={addTerminalSurface}
             onAddDiff={addDiffSurface}
             onAddFiles={addFilesSurface}
