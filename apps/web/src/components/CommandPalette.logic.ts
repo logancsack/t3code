@@ -1,6 +1,7 @@
 import {
   type FilesystemBrowseEntry,
   type KeybindingCommand,
+  type SourceControlRepositorySummary,
   THREAD_JUMP_KEYBINDING_COMMANDS,
 } from "@t3tools/contracts";
 import type { SidebarThreadSortOrder } from "@t3tools/contracts/settings";
@@ -14,6 +15,16 @@ import { type Project, type SidebarThreadSummary, type Thread } from "../types";
 export const RECENT_THREAD_LIMIT = 12;
 export const ITEM_ICON_CLASS = "size-4 text-icon-muted";
 export const ADDON_ICON_CLASS = "size-4";
+
+export function getGitHubRepositoryCloneInput(
+  repository: Pick<SourceControlRepositorySummary, "nameWithOwner">,
+) {
+  return {
+    provider: "github" as const,
+    repository: repository.nameWithOwner,
+    protocol: "https" as const,
+  };
+}
 
 /**
  * The global search overlay hosts three mutually exclusive surfaces: the

@@ -6,6 +6,7 @@ import {
   buildThreadActionItems,
   enumerateCommandPaletteItems,
   filterCommandPaletteGroups,
+  getGitHubRepositoryCloneInput,
   reduceCommandPaletteUiState,
   type CommandPaletteGroup,
 } from "./CommandPalette.logic";
@@ -77,6 +78,16 @@ describe("reduceCommandPaletteUiState", () => {
       open: true,
       mode: "command",
       openIntent: null,
+    });
+  });
+});
+
+describe("getGitHubRepositoryCloneInput", () => {
+  it("uses authenticated HTTPS cloning instead of requiring an SSH key", () => {
+    expect(getGitHubRepositoryCloneInput({ nameWithOwner: "octocat/t3code" })).toEqual({
+      provider: "github",
+      repository: "octocat/t3code",
+      protocol: "https",
     });
   });
 });

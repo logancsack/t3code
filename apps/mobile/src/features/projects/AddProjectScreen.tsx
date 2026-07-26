@@ -641,7 +641,7 @@ export function AddProjectRepositoryScreen(props: {
         params: {
           environmentId: environment.environmentId,
           source,
-          remoteUrl: repository.sshUrl,
+          remoteUrl: repository.url,
           repositoryTitle: repository.nameWithOwner,
         },
       });
