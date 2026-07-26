@@ -102,6 +102,7 @@ import {
   filterCommandPaletteGroups,
   getCommandPaletteInputPlaceholder,
   getCommandPaletteMode,
+  getGitHubRepositoryCloneInput,
   ITEM_ICON_CLASS,
   RECENT_THREAD_LIMIT,
 } from "./CommandPalette.logic";
@@ -1465,7 +1466,7 @@ function OpenCommandPaletteDialog(props: {
     const cloneResult = await cloneRepository({
       environmentId,
       input: {
-        remoteUrl: repository.sshUrl,
+        ...getGitHubRepositoryCloneInput(repository),
         destinationPath,
       },
     });
@@ -1593,7 +1594,7 @@ function OpenCommandPaletteDialog(props: {
         source: addProjectCloneFlow.source,
         repositoryInput: rawRepository,
         repository,
-        remoteUrl: repository.sshUrl,
+        remoteUrl: repository.url,
       });
       setHighlightedItemValue(null);
       setQuery(destinationPath);
