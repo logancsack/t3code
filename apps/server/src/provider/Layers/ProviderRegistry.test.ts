@@ -20,6 +20,7 @@ import {
   ProviderInstanceId,
   ServerSettings,
   type ServerProvider,
+  type ServerProviderModel,
   type ServerProviderSlashCommand,
   type ServerSettings as ContractServerSettings,
 } from "@t3tools/contracts";
@@ -103,6 +104,7 @@ type TestClaudeCapabilities = {
   readonly tokenSource: string | undefined;
   readonly apiProvider: string | undefined;
   readonly slashCommands: ReadonlyArray<ServerProviderSlashCommand>;
+  readonly models: ReadonlyArray<ServerProviderModel>;
 };
 
 function claudeCapabilities(overrides: Partial<TestClaudeCapabilities> = {}) {
@@ -113,6 +115,7 @@ function claudeCapabilities(overrides: Partial<TestClaudeCapabilities> = {}) {
       tokenSource: undefined,
       apiProvider: undefined,
       slashCommands: [],
+      models: [],
       ...overrides,
     });
 }
@@ -1862,6 +1865,53 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
                   code: 0,
                 };
               throw new Error(`Unexpected args: ${joined}`);
+            }),
+          ),
+        ),
+      );
+
+      it.effect("uses the live Claude initialization model catalog", () =>
+        Effect.gen(function* () {
+          const status = yield* checkClaudeProviderStatus(
+            defaultClaudeSettings,
+            claudeCapabilities({
+              models: [
+                {
+                  slug: "claude-sonnet-6",
+                  name: "Claude Sonnet 6",
+                  isCustom: false,
+                  capabilities: createModelCapabilities({
+                    optionDescriptors: [
+                      selectDescriptor("effort", "Reasoning", [
+                        { id: "medium", label: "Medium" },
+                        { id: "xhigh", label: "Extra High" },
+                      ]),
+                      booleanDescriptor("fastMode", "Fast Mode"),
+                    ],
+                  }),
+                },
+              ],
+            }),
+          );
+
+          assert.deepStrictEqual(
+            status.models.map((model) => model.slug),
+            ["claude-sonnet-6"],
+          );
+          assert.deepStrictEqual(status.models[0]?.capabilities?.optionDescriptors, [
+            selectDescriptor("effort", "Reasoning", [
+              { id: "medium", label: "Medium" },
+              { id: "xhigh", label: "Extra High" },
+            ]),
+            booleanDescriptor("fastMode", "Fast Mode"),
+          ]);
+        }).pipe(
+          Effect.provide(
+            mockSpawnerLayer((args) => {
+              if (args.join(" ") === "--version") {
+                return { stdout: "2.1.219\n", stderr: "", code: 0 };
+              }
+              throw new Error(`Unexpected args: ${args.join(" ")}`);
             }),
           ),
         ),

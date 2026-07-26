@@ -22,6 +22,7 @@ import { resolveSpawnCommand } from "@t3tools/shared/shell";
 import { compareSemverVersions } from "@t3tools/shared/semver";
 import {
   query as claudeQuery,
+  type ModelInfo as ClaudeModelInfo,
   type Options as ClaudeQueryOptions,
   type SlashCommand as ClaudeSlashCommand,
   type SDKUserMessage,
@@ -45,6 +46,25 @@ import { discoverClaudeSkills } from "../Drivers/ClaudeSkills.ts";
 
 const DEFAULT_CLAUDE_MODEL_CAPABILITIES: ModelCapabilities = createModelCapabilities({
   optionDescriptors: [],
+});
+const FUTURE_CLAUDE_MODEL_CAPABILITIES: ModelCapabilities = createModelCapabilities({
+  optionDescriptors: [
+    buildSelectOptionDescriptor({
+      id: "effort",
+      label: "Reasoning",
+      options: [
+        { value: "low", label: "Low" },
+        { value: "medium", label: "Medium" },
+        { value: "high", label: "High" },
+        { value: "xhigh", label: "Extra High" },
+        { value: "max", label: "Max" },
+      ],
+    }),
+    buildBooleanOptionDescriptor({
+      id: "fastMode",
+      label: "Fast Mode",
+    }),
+  ],
 });
 
 const CLAUDE_PRESENTATION = {
@@ -320,8 +340,68 @@ export function getClaudeModelCapabilities(model: string | null | undefined): Mo
   const slug = model?.trim();
   return (
     BUILT_IN_MODELS.find((candidate) => candidate.slug === slug)?.capabilities ??
-    DEFAULT_CLAUDE_MODEL_CAPABILITIES
+    FUTURE_CLAUDE_MODEL_CAPABILITIES
   );
+}
+
+function labelClaudeEffort(value: string): string {
+  return value === "xhigh"
+    ? "Extra High"
+    : value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
+}
+
+function discoveredClaudeModelCapabilities(model: ClaudeModelInfo): ModelCapabilities {
+  const known = BUILT_IN_MODELS.find((candidate) => candidate.slug === model.value);
+  if (known?.capabilities) {
+    return known.capabilities;
+  }
+
+  const effortLevels = model.supportedEffortLevels ?? [];
+  return createModelCapabilities({
+    optionDescriptors: [
+      ...(model.supportsEffort && effortLevels.length > 0
+        ? [
+            buildSelectOptionDescriptor({
+              id: "effort",
+              label: "Reasoning",
+              options: effortLevels.map((value) => ({
+                value,
+                label: labelClaudeEffort(value),
+              })),
+            }),
+          ]
+        : []),
+      ...(model.supportsFastMode
+        ? [
+            buildBooleanOptionDescriptor({
+              id: "fastMode",
+              label: "Fast Mode",
+            }),
+          ]
+        : []),
+    ],
+  });
+}
+
+export function parseClaudeInitializationModels(
+  models: ReadonlyArray<ClaudeModelInfo> | undefined,
+): ReadonlyArray<ServerProviderModel> {
+  const discovered: ServerProviderModel[] = [];
+  const seen = new Set<string>();
+  for (const model of models ?? []) {
+    const slug = model.value.trim();
+    if (!slug || seen.has(slug)) {
+      continue;
+    }
+    seen.add(slug);
+    discovered.push({
+      slug,
+      name: model.displayName.trim() || slug,
+      isCustom: false,
+      capabilities: discoveredClaudeModelCapabilities(model),
+    });
+  }
+  return discovered;
 }
 
 export function resolveClaudeEffort(
@@ -566,6 +646,7 @@ type ClaudeCapabilitiesProbe = {
    */
   readonly apiProvider: string | undefined;
   readonly slashCommands: ReadonlyArray<ServerProviderSlashCommand>;
+  readonly models: ReadonlyArray<ServerProviderModel>;
 };
 
 function parseClaudeInitializationCommands(
@@ -695,6 +776,7 @@ const probeClaudeCapabilities = (
         tokenSource: account?.tokenSource,
         apiProvider: account?.apiProvider,
         slashCommands: parseClaudeInitializationCommands(init.commands),
+        models: parseClaudeInitializationModels(init.models),
       } satisfies ClaudeCapabilitiesProbe;
     });
   }).pipe(
@@ -832,7 +914,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
     });
   }
 
-  const models = providerModelsFromSettings(
+  const fallbackModels = providerModelsFromSettings(
     getBuiltInClaudeModelsForVersion(parsedVersion),
     claudeSettings.customModels,
     DEFAULT_CLAUDE_MODEL_CAPABILITIES,
@@ -848,6 +930,11 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
   const capabilities = resolveCapabilities
     ? yield* resolveCapabilities(claudeSettings).pipe(Effect.orElseSucceed(() => undefined))
     : undefined;
+  const models = providerModelsFromSettings(
+    capabilities?.models.length ? capabilities.models : fallbackModels,
+    claudeSettings.customModels,
+    DEFAULT_CLAUDE_MODEL_CAPABILITIES,
+  );
   const skills = yield* discoverClaudeSkills(claudeSettings, cwd, resolvedEnvironment);
   const slashCommands = capabilities?.slashCommands ?? [];
   const dedupedSlashCommands = dedupeSlashCommands(slashCommands);
