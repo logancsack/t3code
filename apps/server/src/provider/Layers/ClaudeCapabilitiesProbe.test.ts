@@ -99,7 +99,14 @@ it.layer(NodeServices.layer)("Claude capability probe SDK boundary", (it) => {
           "        agents: [],",
           '        output_style: "default",',
           '        available_output_styles: ["default"],',
-          "        models: [],",
+          "        models: [{",
+          '          value: "claude-sonnet-6",',
+          '          displayName: "Claude Sonnet 6",',
+          '          description: "Newest Sonnet",',
+          "          supportsEffort: true,",
+          '          supportedEffortLevels: ["medium", "xhigh"],',
+          "          supportsFastMode: true,",
+          "        }],",
           '        account: { email: "dev@example.com", subscriptionType: "pro", tokenSource: "oauth" },',
           "      },",
           "    },",
@@ -131,6 +138,31 @@ it.layer(NodeServices.layer)("Claude capability probe SDK boundary", (it) => {
             name: "review",
             description: "Review changes",
             input: { hint: "[path]" },
+          },
+        ],
+        models: [
+          {
+            slug: "claude-sonnet-6",
+            name: "Claude Sonnet 6",
+            isCustom: false,
+            capabilities: {
+              optionDescriptors: [
+                {
+                  id: "effort",
+                  label: "Reasoning",
+                  type: "select",
+                  options: [
+                    { id: "medium", label: "Medium" },
+                    { id: "xhigh", label: "Extra High" },
+                  ],
+                },
+                {
+                  id: "fastMode",
+                  label: "Fast Mode",
+                  type: "boolean",
+                },
+              ],
+            },
           },
         ],
       });
