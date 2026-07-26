@@ -74,6 +74,7 @@ const CLAUDE_PRESENTATION = {
 const MINIMUM_CLAUDE_FABLE_5_VERSION = "2.1.169";
 const MINIMUM_CLAUDE_OPUS_4_8_VERSION = "2.1.154";
 const MINIMUM_CLAUDE_OPUS_4_7_VERSION = "2.1.111";
+const CLAUDE_MODELS_REQUIRING_XHIGH_AS_MAX = new Set(["claude-opus-4-7"]);
 
 const BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
   {
@@ -437,12 +438,7 @@ export function normalizeClaudeCliEffort(
   if (effort === "ultracode") {
     return "xhigh";
   }
-  if (
-    effort === "xhigh" &&
-    model !== "claude-fable-5" &&
-    model !== "claude-opus-4-8" &&
-    model !== "claude-sonnet-5"
-  ) {
+  if (effort === "xhigh" && model && CLAUDE_MODELS_REQUIRING_XHIGH_AS_MAX.has(model)) {
     return "max";
   }
   if (effort === "max" && model === "claude-sonnet-4-6") {
