@@ -191,9 +191,11 @@ import { Button } from "../ui/button";
 import { Select, SelectItem, SelectPopup, SelectValue } from "../ui/select";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { toastManager } from "../ui/toast";
+import { takePickedFiles } from "./composerFilePicker";
 import {
   BotIcon,
   CircleAlertIcon,
+  ImageUpIcon,
   PencilRulerIcon,
   type LucideIcon,
   LockIcon,
@@ -987,6 +989,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
    * next draft.
    */
   const pendingImageCompressionsRef = useRef<Map<ThreadId, number>>(new Map());
+  const composerFileInputRef = useRef<HTMLInputElement | null>(null);
 
   // ------------------------------------------------------------------
   // Derived: composer send state
@@ -2368,6 +2371,19 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     removeComposerImageFromDraft(imageId);
   };
 
+  /**
+   * Attach images through the platform's file picker.
+   *
+   * Paste and drag-and-drop are both pointer gestures, so before this there was
+   * no way to attach anything on a phone — which is where screenshots are taken.
+   * `accept="image/*"` is what makes a mobile browser offer the photo library and
+   * the camera alongside the file list.
+   */
+  const onComposerFilesPicked = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = takePickedFiles(event.target);
+    if (files.length > 0) addComposerImages(files);
+  };
+
   // ------------------------------------------------------------------
   // Callbacks: paste / drag
   // ------------------------------------------------------------------
@@ -3107,6 +3123,30 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               )}
             >
               <div className="-m-1 flex min-w-0 flex-1 items-center gap-1 overflow-x-auto p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                <input
+                  ref={composerFileInputRef}
+                  type="file"
+                  // Images only, matching what the composer accepts from a paste
+                  // or a drop; anything else is rejected with an explanation.
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  tabIndex={-1}
+                  onChange={onComposerFilesPicked}
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  disabled={!activeThreadId}
+                  aria-label="Attach images"
+                  title="Attach images"
+                  className="shrink-0 px-2 text-muted-foreground"
+                  onPointerDown={(event) => event.preventDefault()}
+                  onClick={() => composerFileInputRef.current?.click()}
+                >
+                  <ImageUpIcon className="size-4" />
+                </Button>
                 {noProviderAvailable ? (
                   <Button
                     type="button"
