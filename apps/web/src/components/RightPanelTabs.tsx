@@ -1,7 +1,18 @@
 import type { ContextMenuItem, PreviewSessionSnapshot } from "@t3tools/contracts";
 import { getTerminalLabel } from "@t3tools/shared/terminalLabels";
-import { Bot, FileDiff, Files, Globe2, Plus, TerminalSquare, X } from "lucide-react";
 import {
+  Bot,
+  ClipboardList,
+  FileDiff,
+  Files,
+  Globe2,
+  MonitorSmartphone,
+  Plus,
+  TerminalSquare,
+  X,
+} from "lucide-react";
+import {
+  Fragment,
   type MouseEvent as ReactMouseEvent,
   type ReactElement,
   type ReactNode,
@@ -15,6 +26,7 @@ import { isElectron } from "~/env";
 import type { RightPanelSurface } from "~/rightPanelStore";
 import { cn } from "~/lib/utils";
 import { readLocalApi } from "~/localApi";
+import { managedWorkspaceBrowserUrl } from "~/managedDevPc";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "~/components/ui/menu";
 import { ScrollArea } from "~/components/ui/scroll-area";
@@ -41,6 +53,8 @@ interface RightPanelTabsProps {
   onCloseAllSurfaces: () => void;
   onCopyFilePath: (relativePath: string) => void;
   onAddBrowser: () => void;
+  /** Absent unless this deployment provides a shared workspace browser. */
+  onAddWorkspaceBrowser?: (() => void) | undefined;
   onAddTerminal: () => void;
   onAddDiff: () => void;
   onAddFiles: () => void;
@@ -89,6 +103,7 @@ function SurfaceMenuItem(props: {
 
 function RightPanelEmptyState(props: {
   onAddBrowser: () => void;
+  onAddWorkspaceBrowser: (() => void) | null;
   onAddTerminal: () => void;
   onAddDiff: () => void;
   onAddFiles: () => void;
@@ -106,6 +121,20 @@ function RightPanelEmptyState(props: {
       disabledReason: SURFACE_DISABLED_REASONS.browser,
       onClick: props.onAddBrowser,
     },
+    // Only present on a managed workspace, which is the only place a shared
+    // browser exists to open.
+    ...(props.onAddWorkspaceBrowser
+      ? [
+          {
+            label: "Workspace browser",
+            description: "The signed-in browser you and agents share.",
+            icon: MonitorSmartphone,
+            available: true,
+            disabledReason: null,
+            onClick: props.onAddWorkspaceBrowser,
+          },
+        ]
+      : []),
     {
       label: "Terminal",
       description: "Start a shell in this workspace.",
@@ -182,6 +211,10 @@ function RightPanelEmptyState(props: {
                 {content}
               </button>
             );
+            // An action can be unavailable without a reason to show, so the
+            // tooltip is only worth rendering when there is something to say.
+            if (!action.disabledReason)
+              return <Fragment key={action.label}>{disabledCard}</Fragment>;
             return (
               <DisabledReasonTooltip
                 key={action.label}
@@ -491,6 +524,9 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
         {props.activeSurfaceId === null ? (
           <RightPanelEmptyState
             onAddBrowser={props.onAddBrowser}
+            onAddWorkspaceBrowser={
+              managedWorkspaceBrowserUrl() ? (props.onAddWorkspaceBrowser ?? null) : null
+            }
             onAddTerminal={props.onAddTerminal}
             onAddDiff={props.onAddDiff}
             onAddFiles={props.onAddFiles}

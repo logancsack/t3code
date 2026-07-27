@@ -158,6 +158,29 @@ export async function prepareManagedWebSocketUrl(socketUrl: string): Promise<str
   return resolved.toString();
 }
 
+/**
+ * Loopback port serving the managed workspace's shared browser.
+ *
+ * The host exposes one headed Chrome that the user watches over noVNC and agents
+ * drive over the DevTools protocol, so a site signed into by hand stays signed in
+ * for the agent. It arrives as an ordinary preview grant on this port.
+ */
+export const MANAGED_WORKSPACE_BROWSER_PORT = 6080;
+
+/**
+ * URL of the shared workspace browser, when this deployment has one.
+ *
+ * Returns the granted URL untouched: the host builds it pointing at the noVNC
+ * client with the viewer options already set, because the port's own root serves
+ * a directory listing rather than a screen.
+ */
+export function managedWorkspaceBrowserUrl(): string | null {
+  if (!isManagedDevPc) return null;
+  const granted =
+    window.__DEVPC_MANAGED_BOOTSTRAP__?.previewUrls?.[String(MANAGED_WORKSPACE_BROWSER_PORT)];
+  return granted ?? null;
+}
+
 export function resolveManagedPreviewUrl(port: number, path: string): string | null {
   if (!isManagedDevPc) return null;
   const template = window.__DEVPC_MANAGED_BOOTSTRAP__?.previewUrlTemplate;
