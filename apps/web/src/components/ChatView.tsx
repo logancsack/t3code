@@ -134,7 +134,6 @@ import {
   setActivePreviewTab,
   useThreadPreviewState,
 } from "../previewStateStore";
-import { openUrlInPreview } from "~/browser/openFileInPreview";
 import { managedWorkspaceBrowserUrl } from "~/managedDevPc";
 import { addBrowserSurface } from "./preview/addBrowserSurface";
 import { closePreviewSession } from "./preview/closePreviewSession";
@@ -407,6 +406,9 @@ function useDraftHeroLayoutTransition(isDraftHeroState: boolean) {
 }
 const PreviewPanel = lazy(() =>
   import("./preview/PreviewPanel").then((module) => ({ default: module.PreviewPanel })),
+);
+const WorkspaceBrowserPanel = lazy(() =>
+  import("./WorkspaceBrowserPanel").then((module) => ({ default: module.WorkspaceBrowserPanel })),
 );
 const DiffPanel = lazy(() => import("./DiffPanel"));
 const FilePreviewPanel = lazy(() => import("./files/FilePreviewPanel"));
@@ -3149,16 +3151,16 @@ function ChatViewContent(props: ChatViewProps) {
     void addBrowserSurface({ threadRef: activeThreadRef, openPreview });
   }, [activeThreadRef, openPreview]);
   /**
-   * Open the workspace's shared browser as an ordinary preview surface.
+   * Open the workspace's shared browser.
    *
-   * It is a real signed-in Chrome on the workspace host, reached over noVNC, so
-   * it reuses the browser panel rather than introducing a second kind of surface.
+   * It gets its own surface kind rather than reusing the preview panel: previews
+   * are rendered by the Electron desktop bridge, and a managed workspace is always
+   * reached from a browser, so a preview surface can never paint there.
    */
   const createWorkspaceBrowserSurface = useCallback(() => {
-    const url = managedWorkspaceBrowserUrl();
-    if (!activeThreadRef || !url) return;
-    void openUrlInPreview({ threadRef: activeThreadRef, url, openPreview });
-  }, [activeThreadRef, openPreview]);
+    if (!activeThreadRef || !managedWorkspaceBrowserUrl()) return;
+    useRightPanelStore.getState().open(activeThreadRef, "workspaceBrowser");
+  }, [activeThreadRef]);
   const addDiffSurface = useCallback(() => {
     if (!activeThreadRef || !isServerThread || !isGitRepo) return;
     useRightPanelStore.getState().open(activeThreadRef, "diff");
@@ -5901,6 +5903,10 @@ function ChatViewContent(props: ChatViewProps) {
             void onSend(undefined, { annotation, image });
           }}
         />
+      </Suspense>
+    ) : activeRightPanelSurface?.kind === "workspaceBrowser" ? (
+      <Suspense fallback={null}>
+        <WorkspaceBrowserPanel />
       </Suspense>
     ) : activeRightPanelSurface?.kind === "terminal" ? (
       <PersistentThreadTerminalPanel

@@ -248,6 +248,8 @@ function surfaceTitle(
       );
     case "agents":
       return "Agents";
+    case "workspaceBrowser":
+      return "Workspace browser";
     case "preview": {
       const snapshot = surface.resourceId ? sessions[surface.resourceId] : null;
       if (!snapshot || snapshot.navStatus._tag === "Idle") return "Browser";
@@ -305,6 +307,8 @@ function SurfaceIcon({
           className="size-3"
         />
       );
+    case "workspaceBrowser":
+      return <MonitorSmartphone className="size-3.5 shrink-0" />;
     case "terminal":
       return <TerminalSquare className="size-3 shrink-0" />;
     case "agents":

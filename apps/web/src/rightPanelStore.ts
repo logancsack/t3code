@@ -19,14 +19,22 @@ export const RIGHT_PANEL_KINDS = [
   "files",
   "file",
   "preview",
-  "terminal",
   "agents",
+  "workspaceBrowser",
+  "terminal",
 ] as const;
 export type RightPanelKind = (typeof RIGHT_PANEL_KINDS)[number];
 
 export type RightPanelSurface =
   | { id: `browser:${string}`; kind: "preview"; resourceId: string }
   | { id: "browser:new"; kind: "preview"; resourceId: null }
+  /**
+   * The shared workspace browser, which is a plain web page (noVNC) rather than
+   * a preview tab. It is deliberately not a `preview` surface: previews render
+   * through the Electron desktop bridge, so on a managed workspace — which is
+   * always a browser, desktop or mobile — a preview surface can never paint.
+   */
+  | { id: "workspace-browser"; kind: "workspaceBrowser" }
   | {
       id: `terminal:${string}`;
       kind: "terminal";
@@ -100,6 +108,8 @@ const singletonSurface = (
       return { id: "files", kind };
     case "agents":
       return { id: "agents", kind };
+    case "workspaceBrowser":
+      return { id: "workspace-browser", kind };
   }
 };
 

@@ -469,6 +469,31 @@ describe("rightPanelStore", () => {
     });
   });
 
+  it("opens the workspace browser as a singleton surface", () => {
+    useRightPanelStore.getState().open(refA, "workspaceBrowser");
+    useRightPanelStore.getState().open(refA, "workspaceBrowser");
+
+    const state = selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA);
+    expect(state.surfaces).toEqual([{ id: "workspace-browser", kind: "workspaceBrowser" }]);
+    expect(state.activeSurfaceId).toBe("workspace-browser");
+    expect(state.isOpen).toBe(true);
+  });
+
+  it("keeps the workspace browser distinct from preview surfaces", () => {
+    // It must not be a `preview` surface: previews render through the Electron
+    // desktop bridge, so on a managed workspace one can never paint. Reconciling
+    // preview tabs therefore has to leave it alone.
+    useRightPanelStore.getState().open(refA, "workspaceBrowser");
+    useRightPanelStore.getState().openBrowser(refA, "tab-a");
+    useRightPanelStore.getState().reconcileBrowserSurfaces(refA, []);
+
+    expect(
+      selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA).surfaces.map(
+        (surface) => surface.id,
+      ),
+    ).toEqual(["workspace-browser"]);
+  });
+
   it("reconciles browser surfaces without deleting other surface kinds", () => {
     useRightPanelStore.getState().openTerminal(refA, "term-1");
     useRightPanelStore.getState().openBrowser(refA, "tab-a");
