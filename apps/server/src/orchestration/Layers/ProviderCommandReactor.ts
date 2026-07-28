@@ -25,7 +25,9 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 
+import { withFileAttachmentPromptSection } from "../../attachmentPromptText.ts";
 import { resolveThreadWorkspaceCwd } from "../../checkpointing/Utils.ts";
+import { ServerConfig } from "../../config.ts";
 import { increment, orchestrationEventsProcessedTotal } from "../../observability/Metrics.ts";
 import { ProviderAdapterRequestError } from "../../provider/Errors.ts";
 import type { ProviderServiceError } from "../../provider/Errors.ts";
@@ -196,6 +198,7 @@ const make = Effect.gen(function* () {
   const vcsStatusBroadcaster = yield* VcsStatusBroadcaster;
   const textGeneration = yield* TextGeneration;
   const serverSettingsService = yield* ServerSettingsService;
+  const serverConfig = yield* ServerConfig;
   const serverCommandId = (tag: string) =>
     crypto.randomUUIDv4.pipe(Effect.map((uuid) => CommandId.make(`server:${tag}:${uuid}`)));
   const serverEventId = () => crypto.randomUUIDv4.pipe(Effect.map(EventId.make));
@@ -629,8 +632,16 @@ const make = Effect.gen(function* () {
     if (input.modelSelection !== undefined) {
       threadModelSelections.set(input.threadId, input.modelSelection);
     }
-    const normalizedInput = toNonEmptyProviderInput(input.messageText);
     const normalizedAttachments = input.attachments ?? [];
+    // File attachments reach the agent as paths appended to the turn text, so
+    // this has to happen here — the one place every provider's turn is built —
+    // rather than in each adapter. Images are left alone; adapters turn those
+    // into native content blocks.
+    const normalizedInput = withFileAttachmentPromptSection({
+      attachmentsDir: serverConfig.attachmentsDir,
+      attachments: normalizedAttachments,
+      text: toNonEmptyProviderInput(input.messageText),
+    });
     const activeSession = yield* providerService
       .listSessions()
       .pipe(

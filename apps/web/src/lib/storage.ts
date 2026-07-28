@@ -46,7 +46,15 @@ export function createDebouncedStorage(
   const resolvedStorage = resolveStorage(baseStorage);
   const debouncedSetItem = new Debouncer(
     (name: string, value: string) => {
-      resolvedStorage.setItem(name, value);
+      try {
+        resolvedStorage.setItem(name, value);
+      } catch {
+        // Writing a composer draft that carries a large attachment can exceed
+        // the origin's storage quota. That is a recoverable outcome — the draft
+        // store reads the keys back and marks what did not survive, so the
+        // composer can warn that those attachments may be lost on navigation.
+        // Throwing here would only surface as an unhandled error from a timer.
+      }
     },
     { wait: debounceMs },
   );

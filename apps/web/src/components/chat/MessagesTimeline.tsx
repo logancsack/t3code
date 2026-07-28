@@ -45,6 +45,7 @@ import {
   ChevronRightIcon,
   CircleAlertIcon,
   EyeIcon,
+  FileTextIcon,
   GlobeIcon,
   HammerIcon,
   MessageCircleIcon,
@@ -59,6 +60,7 @@ import {
   ZapIcon,
 } from "lucide-react";
 import { Button } from "../ui/button";
+import { formatComposerAttachmentSize } from "./composerAttachments";
 import { buildExpandedImagePreview, ExpandedImagePreview } from "./ExpandedImagePreview";
 import { ProposedPlanCard } from "./ProposedPlanCard";
 import { ChangedFilesCard } from "./ChangedFilesTree";
@@ -832,6 +834,16 @@ function TimelineMinimap({
 
 type TimelineEntry = ReturnType<typeof deriveTimelineEntries>[number];
 type TimelineMessage = Extract<TimelineEntry, { kind: "message" }>["message"];
+type TimelineAttachment = NonNullable<TimelineMessage["attachments"]>[number];
+type TimelineImageAttachment = Extract<TimelineAttachment, { type: "image" }>;
+
+// A predicate rather than a plain boolean filter so the arrays narrow to the
+// image member of the union — only images carry a previewUrl to render.
+function isTimelineImageAttachment(
+  attachment: TimelineAttachment,
+): attachment is TimelineImageAttachment {
+  return attachment.type === "image";
+}
 type TimelineWorkEntry = Extract<MessagesTimelineRow, { kind: "work" }>["groupedEntries"][number];
 type TimelineRow = MessagesTimelineRow;
 
@@ -884,8 +896,15 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
     ...displayedUserMessage.elementContexts,
     ...elementContextState.contexts,
   ];
-  const previewImages = userImages.filter((image) => image.name.startsWith("preview-annotation-"));
-  const regularImages = userImages.filter((image) => !image.name.startsWith("preview-annotation-"));
+  const previewImages = userImages
+    .filter(isTimelineImageAttachment)
+    .filter((attachment) => attachment.name.startsWith("preview-annotation-"));
+  const regularImages = userImages
+    .filter(isTimelineImageAttachment)
+    .filter((attachment) => !attachment.name.startsWith("preview-annotation-"));
+  // Non-image attachments were saved on the server and handed to the agent as a
+  // path; there is nothing to preview, so the transcript records what was sent.
+  const fileAttachments = userImages.filter((attachment) => attachment.type === "file");
   const canRevertAgentWork = typeof row.revertTurnCount === "number";
 
   return (
@@ -893,7 +912,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
       <div className="relative max-w-[80%] rounded-2xl bg-accent p-3">
         {regularImages.length > 0 && (
           <div className="mb-2 grid max-w-[420px] grid-cols-2 gap-2">
-            {regularImages.map((image: NonNullable<TimelineMessage["attachments"]>[number]) => (
+            {regularImages.map((image) => (
               <div
                 key={image.id}
                 className="overflow-hidden rounded-lg border border-border/80 bg-background/70"
@@ -921,6 +940,23 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
                   </div>
                 )}
               </div>
+            ))}
+          </div>
+        )}
+        {fileAttachments.length > 0 && (
+          <div className="mb-2 flex flex-wrap gap-1.5">
+            {fileAttachments.map((attachment) => (
+              <span
+                key={attachment.id}
+                className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-border/80 bg-background/70 px-2 py-1 text-[11px]"
+                title={`${attachment.name} (${formatComposerAttachmentSize(attachment.sizeBytes)})`}
+              >
+                <FileTextIcon className="size-3.5 shrink-0 text-muted-foreground" />
+                <span className="truncate">{attachment.name}</span>
+                <span className="shrink-0 text-muted-foreground">
+                  {formatComposerAttachmentSize(attachment.sizeBytes)}
+                </span>
+              </span>
             ))}
           </div>
         )}
@@ -1345,7 +1381,7 @@ const UserMessageElementContextChip = memo(function UserMessageElementContextChi
 
 function UserMessagePreviewAnnotationCard(props: {
   annotation: ParsedPreviewAnnotation;
-  image: NonNullable<TimelineMessage["attachments"]>[number] | null;
+  image: TimelineImageAttachment | null;
 }) {
   const ctx = use(TimelineRowCtx);
   return (
