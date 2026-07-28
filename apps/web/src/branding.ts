@@ -12,15 +12,22 @@ function readInjectedDesktopAppBranding(): DesktopAppBranding | null {
 const injectedDesktopAppBranding = readInjectedDesktopAppBranding();
 const hostedAppChannel = import.meta.env.VITE_HOSTED_APP_CHANNEL?.trim().toLowerCase();
 
+// Managed DevPC builds ship under the gateway's own product brand. Read the
+// flag directly rather than via managedDevPc.ts so branding stays import-free.
+const managedDevPcBuild = import.meta.env.VITE_DEVPC_MANAGED === "1";
+
 export const HOSTED_APP_CHANNEL =
   hostedAppChannel === "latest" || hostedAppChannel === "nightly" ? hostedAppChannel : null;
 export const HOSTED_APP_CHANNEL_LABEL =
   HOSTED_APP_CHANNEL === "nightly" ? "Nightly" : HOSTED_APP_CHANNEL === "latest" ? "Latest" : null;
-export const APP_BASE_NAME = injectedDesktopAppBranding?.baseName ?? "T3 Code";
+export const APP_BASE_NAME =
+  injectedDesktopAppBranding?.baseName ?? (managedDevPcBuild ? "Aldo" : "T3 Code");
 export const APP_STAGE_LABEL =
   injectedDesktopAppBranding?.stageLabel ??
   HOSTED_APP_CHANNEL_LABEL ??
-  (import.meta.env.DEV ? "Dev" : "Alpha");
+  // "Latest" renders as the bare base name, which is how the managed product
+  // presents itself: "Aldo", no stage suffix.
+  (managedDevPcBuild ? "Latest" : import.meta.env.DEV ? "Dev" : "Alpha");
 export const APP_DISPLAY_NAME =
   injectedDesktopAppBranding?.displayName ??
   formatAppDisplayName({ baseName: APP_BASE_NAME, stageLabel: APP_STAGE_LABEL });
