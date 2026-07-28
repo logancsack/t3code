@@ -148,7 +148,7 @@ export function GitHubRepositoryBrowser({
                       {project ? (
                         <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 font-medium text-emerald-700 text-xs dark:text-emerald-400">
                           <CheckIcon className="size-3" />
-                          On this Dev PC
+                          In this workspace
                         </span>
                       ) : null}
                     </div>

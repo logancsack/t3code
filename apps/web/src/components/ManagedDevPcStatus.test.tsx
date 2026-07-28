@@ -31,8 +31,8 @@ describe("ManagedDevPcStatus", () => {
     const markup = await renderManagedStatus({ state: "ready", ready: true });
 
     expect(markup).toContain('data-devpc-workspace-status="ready"');
-    expect(markup).toContain("Dev PC · Online");
-    expect(markup).toContain('aria-label="Restart Dev PC"');
+    expect(markup).toContain("Workspace · Online");
+    expect(markup).toContain('aria-label="Restart workspace"');
     expect(markup).not.toContain("fixed");
   });
 
@@ -49,8 +49,8 @@ describe("ManagedDevPcStatus", () => {
     const markup = await renderManagedStatus({ state, ready: false });
 
     expect(markup).toContain(`data-devpc-workspace-status="${state}"`);
-    expect(markup).toContain(`Dev PC · ${label}`);
-    expect(markup).toContain('aria-label="Restart Dev PC"');
+    expect(markup).toContain(`Workspace · ${label}`);
+    expect(markup).toContain('aria-label="Restart workspace"');
     expect(markup).toContain("disabled");
   });
 });
