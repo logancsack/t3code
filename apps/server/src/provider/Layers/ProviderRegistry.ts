@@ -126,13 +126,48 @@ const mergeProviderModels = (
 export const mergeProviderSnapshot = (
   previousProvider: ServerProvider | undefined,
   nextProvider: ServerProvider,
-): ServerProvider =>
-  !previousProvider
-    ? nextProvider
-    : {
-        ...nextProvider,
-        models: mergeProviderModels(nextProvider, previousProvider.models, nextProvider.models),
-      };
+): ServerProvider => {
+  if (!previousProvider) {
+    return nextProvider;
+  }
+
+  const shouldPreserveLastKnownGoodState =
+    nextProvider.driver === ProviderDriverKind.make("codex") &&
+    previousProvider.enabled &&
+    previousProvider.installed &&
+    previousProvider.status === "ready" &&
+    nextProvider.enabled &&
+    nextProvider.installed &&
+    nextProvider.status === "warning" &&
+    nextProvider.auth.status === "unknown";
+
+  if (shouldPreserveLastKnownGoodState) {
+    const {
+      message: _nextMessage,
+      versionAdvisory: _nextVersionAdvisory,
+      ...nextProviderWithoutMessage
+    } = nextProvider;
+    return {
+      ...nextProviderWithoutMessage,
+      version: previousProvider.version,
+      status: previousProvider.status,
+      auth: previousProvider.auth,
+      checkedAt: previousProvider.checkedAt,
+      models: previousProvider.models,
+      slashCommands: previousProvider.slashCommands,
+      skills: previousProvider.skills,
+      ...(previousProvider.versionAdvisory
+        ? { versionAdvisory: previousProvider.versionAdvisory }
+        : {}),
+      ...(previousProvider.message ? { message: previousProvider.message } : {}),
+    };
+  }
+
+  return {
+    ...nextProvider,
+    models: mergeProviderModels(nextProvider, previousProvider.models, nextProvider.models),
+  };
+};
 
 export const mergeProviderSnapshots = (
   previousProviders: ReadonlyArray<ServerProvider>,
