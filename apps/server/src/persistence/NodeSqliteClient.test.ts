@@ -29,7 +29,7 @@ layer("NodeSqliteClient", (it) => {
     }),
   );
 
-  it.effect("waits through brief cross-process write contention by default", () =>
+  it.effect("sets the default PRAGMA busy_timeout", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
       const rows = yield* sql<{ readonly timeout: number }>`PRAGMA busy_timeout`;
@@ -37,6 +37,23 @@ layer("NodeSqliteClient", (it) => {
       assert.equal(rows[0]?.timeout, 5_000);
     }),
   );
+
+  for (const [description, busyTimeoutMs, expectedTimeout] of [
+    ["uses an explicit busy timeout", 1_250, 1_250],
+    ["truncates a fractional busy timeout", 1_250.9, 1_250],
+    ["clamps a negative busy timeout", -1, 0],
+    ["uses the default for a NaN busy timeout", Number.NaN, 5_000],
+    ["uses the default for an infinite busy timeout", Number.POSITIVE_INFINITY, 5_000],
+  ] as const) {
+    it.effect(description, () =>
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        const rows = yield* sql<{ readonly timeout: number }>`PRAGMA busy_timeout`;
+
+        assert.equal(rows[0]?.timeout, expectedTimeout);
+      }).pipe(Effect.provide(SqliteClient.layerMemory({ busyTimeoutMs }))),
+    );
+  }
 
   it.effect("returns a typed failure when an unprepared statement cannot be prepared", () =>
     Effect.gen(function* () {

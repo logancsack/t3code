@@ -576,6 +576,15 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
           auth: { status: "authenticated", label: "ChatGPT" },
           checkedAt: "2026-07-28T04:28:18.484Z",
           version: "0.145.0",
+          versionAdvisory: {
+            status: "behind_latest",
+            currentVersion: "0.145.0",
+            latestVersion: "0.146.0",
+            updateCommand: "codex update",
+            canUpdate: true,
+            checkedAt: "2026-07-28T04:28:18.484Z",
+            message: "Codex update available: 0.145.0 → 0.146.0.",
+          },
           models: [
             {
               slug: "gpt-5.4",
@@ -587,8 +596,10 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
           slashCommands: [{ name: "review", description: "Review the current changes." }],
           skills: [],
         } as const satisfies ServerProvider;
+        const { versionAdvisory: _previousVersionAdvisory, ...previousProviderWithoutAdvisory } =
+          previousProvider;
         const inconclusiveProvider = {
-          ...previousProvider,
+          ...previousProviderWithoutAdvisory,
           status: "warning",
           auth: { status: "unknown" },
           checkedAt: "2026-07-28T04:33:18.484Z",

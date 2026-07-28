@@ -142,7 +142,11 @@ export const mergeProviderSnapshot = (
     nextProvider.auth.status === "unknown";
 
   if (shouldPreserveLastKnownGoodState) {
-    const { message: _nextMessage, ...nextProviderWithoutMessage } = nextProvider;
+    const {
+      message: _nextMessage,
+      versionAdvisory: _nextVersionAdvisory,
+      ...nextProviderWithoutMessage
+    } = nextProvider;
     return {
       ...nextProviderWithoutMessage,
       version: previousProvider.version,
@@ -152,6 +156,9 @@ export const mergeProviderSnapshot = (
       models: previousProvider.models,
       slashCommands: previousProvider.slashCommands,
       skills: previousProvider.skills,
+      ...(previousProvider.versionAdvisory
+        ? { versionAdvisory: previousProvider.versionAdvisory }
+        : {}),
       ...(previousProvider.message ? { message: previousProvider.message } : {}),
     };
   }
