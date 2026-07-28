@@ -35,7 +35,7 @@ export const ProviderStatusBanner = memo(function ProviderStatusBanner({
   onDismiss: () => void;
   status: ServerProvider | null;
 }) {
-  if (getProviderStatusBannerKey(status) === null) {
+  if (!status || getProviderStatusBannerKey(status) === null) {
     return null;
   }
 
