@@ -43,7 +43,9 @@ export function ManagedDevPcStatus() {
   const ready = state === "ready";
 
   const restart = async () => {
-    if (!window.confirm("Restart this Dev PC? Active terminals and agent runs will disconnect.")) {
+    if (
+      !window.confirm("Restart this workspace? Active terminals and agent runs will disconnect.")
+    ) {
       return;
     }
     setRestarting(true);
@@ -80,14 +82,14 @@ export function ManagedDevPcStatus() {
           <span className="absolute size-3.5 animate-ping rounded-full bg-amber-500/25" />
         ) : null}
       </span>
-      <span className="min-w-0 flex-1 truncate font-medium">Dev PC · {statusLabel[state]}</span>
+      <span className="min-w-0 flex-1 truncate font-medium">Workspace · {statusLabel[state]}</span>
       <button
         type="button"
         className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-sidebar-muted-foreground/70 outline-hidden hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring disabled:pointer-events-none disabled:opacity-40"
         disabled={!ready}
         onClick={() => void restart()}
-        aria-label="Restart Dev PC"
-        title="Restart Dev PC"
+        aria-label="Restart workspace"
+        title="Restart workspace"
       >
         <RotateCwIcon className="size-3.5" />
       </button>

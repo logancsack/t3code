@@ -12,6 +12,7 @@ import {
   mobileClientPlatformLabel,
   mobileClientUpdatedAtLabel,
 } from "./MobileClientsUserProfilePage.logic";
+import { APP_BASE_NAME } from "../../branding";
 
 const MOBILE_CLIENT_SKELETON_ROWS = ["primary", "secondary"] as const;
 
@@ -96,7 +97,7 @@ function EmptyMobileClients() {
       <EmptyHeader>
         <EmptyTitle>No mobile clients</EmptyTitle>
         <EmptyDescription>
-          Sign in to T3 Code on your iPhone to register it for push notifications and Live
+          Sign in to {APP_BASE_NAME} on your iPhone to register it for push notifications and Live
           Activities.
         </EmptyDescription>
       </EmptyHeader>
