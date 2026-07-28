@@ -482,10 +482,10 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
           yield* Effect.yieldNow;
 
           const status = yield* Fiber.join(statusFiber);
-          assert.strictEqual(status.status, "error");
+          assert.strictEqual(status.status, "warning");
           assert.strictEqual(
             status.message,
-            "Timed out while checking Codex app-server provider status.",
+            "Codex status verification timed out. T3 Code will retry automatically.",
           );
           assert.strictEqual(yield* Ref.get(killCalls), 1);
         }),
@@ -564,6 +564,55 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
         assert.deepStrictEqual(mergeProviderSnapshot(previousProvider, refreshedProvider).models, [
           ...previousProvider.models,
         ]);
+      });
+
+      it("preserves a ready snapshot when a refresh is inconclusive", () => {
+        const previousProvider = {
+          instanceId: ProviderInstanceId.make("codex"),
+          driver: ProviderDriverKind.make("codex"),
+          status: "ready",
+          enabled: true,
+          installed: true,
+          auth: { status: "authenticated", label: "ChatGPT" },
+          checkedAt: "2026-07-28T04:28:18.484Z",
+          version: "0.145.0",
+          versionAdvisory: {
+            status: "behind_latest",
+            currentVersion: "0.145.0",
+            latestVersion: "0.146.0",
+            updateCommand: "codex update",
+            canUpdate: true,
+            checkedAt: "2026-07-28T04:28:18.484Z",
+            message: "Codex update available: 0.145.0 → 0.146.0.",
+          },
+          models: [
+            {
+              slug: "gpt-5.4",
+              name: "GPT-5.4",
+              isCustom: false,
+              capabilities: null,
+            },
+          ],
+          slashCommands: [{ name: "review", description: "Review the current changes." }],
+          skills: [],
+        } as const satisfies ServerProvider;
+        const { versionAdvisory: _previousVersionAdvisory, ...previousProviderWithoutAdvisory } =
+          previousProvider;
+        const inconclusiveProvider = {
+          ...previousProviderWithoutAdvisory,
+          status: "warning",
+          auth: { status: "unknown" },
+          checkedAt: "2026-07-28T04:33:18.484Z",
+          version: null,
+          models: [],
+          slashCommands: [],
+          message: "Codex status verification timed out. T3 Code will retry automatically.",
+        } as const satisfies ServerProvider;
+
+        assert.deepStrictEqual(
+          mergeProviderSnapshot(previousProvider, inconclusiveProvider),
+          previousProvider,
+        );
       });
 
       it("drops stale OpenCode models missing from a successful refresh", () => {
@@ -2302,19 +2351,16 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
         );
       });
 
-      it.effect("returns warning when the Claude initialization result is unavailable", () =>
+      it.effect("returns ready when the Claude initialization result is unavailable", () =>
         Effect.gen(function* () {
           const status = yield* checkClaudeProviderStatus(
             defaultClaudeSettings,
             noClaudeCapabilities,
           );
-          assert.strictEqual(status.status, "warning");
+          assert.strictEqual(status.status, "ready");
           assert.strictEqual(status.installed, true);
           assert.strictEqual(status.auth.status, "unknown");
-          assert.strictEqual(
-            status.message,
-            "Could not verify Claude authentication status from initialization result.",
-          );
+          assert.strictEqual(status.message, undefined);
         }).pipe(
           Effect.provide(
             mockSpawnerLayer((args) => {

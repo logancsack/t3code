@@ -973,9 +973,8 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
       probe: {
         installed: true,
         version: parsedVersion,
-        status: "warning",
+        status: "ready",
         auth: { status: "unknown" },
-        message: "Could not verify Claude authentication status from initialization result.",
       },
     });
   }

@@ -63,9 +63,10 @@ export function getProviderSummary(provider: ServerProvider | undefined) {
   }
   if (provider.status === "warning") {
     return {
-      headline: "Needs attention",
+      headline: "Verification delayed",
       detail:
-        provider.message ?? "The provider is installed, but the server could not fully verify it.",
+        provider.message ??
+        "The provider is installed, but its latest status check was inconclusive. T3 Code will retry automatically.",
     };
   }
   if (provider.status === "error") {

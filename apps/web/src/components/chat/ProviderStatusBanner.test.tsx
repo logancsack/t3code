@@ -27,31 +27,51 @@ function warningProvider(): ServerProvider {
 }
 
 describe("ProviderStatusBanner", () => {
-  it("stays hidden after its current warning is dismissed", () => {
+  it("does not show a global banner for non-actionable provider warnings", () => {
     const status = warningProvider();
 
-    expect(shouldShowProviderStatusBanner(status, null)).toBe(true);
-    expect(shouldShowProviderStatusBanner(status, getProviderStatusBannerKey(status))).toBe(false);
+    expect(getProviderStatusBannerKey(status)).toBeNull();
+    expect(shouldShowProviderStatusBanner(status, null)).toBe(false);
   });
 
-  it("renders an accessible dismiss control for provider warnings", () => {
-    const markup = renderToStaticMarkup(
-      <ProviderStatusBanner status={warningProvider()} onDismiss={() => {}} />,
-    );
-
-    expect(markup).toContain('role="alert"');
-    expect(markup).toContain('aria-label="Dismiss Codex provider warning"');
-    expect(markup).toContain("absolute top-2 right-2");
-  });
-
-  it("labels error dismiss controls with the correct severity", () => {
+  it("does not render non-actionable provider errors", () => {
     const markup = renderToStaticMarkup(
       <ProviderStatusBanner
-        status={{ ...warningProvider(), status: "error" }}
+        status={{ ...warningProvider(), status: "error", auth: { status: "unknown" } }}
         onDismiss={() => {}}
       />,
     );
 
+    expect(markup).toBe("");
+  });
+
+  it("renders an accessible dismiss control for explicit authentication errors", () => {
+    const markup = renderToStaticMarkup(
+      <ProviderStatusBanner
+        status={{ ...warningProvider(), status: "error", auth: { status: "unauthenticated" } }}
+        onDismiss={() => {}}
+      />,
+    );
+
+    expect(markup).toContain('role="alert"');
+    expect(markup).toContain('aria-label="Dismiss Codex provider error"');
+    expect(markup).toContain("absolute top-2 right-2");
+  });
+
+  it("renders missing providers as actionable errors", () => {
+    const markup = renderToStaticMarkup(
+      <ProviderStatusBanner
+        status={{
+          ...warningProvider(),
+          status: "error",
+          installed: false,
+          auth: { status: "unknown" },
+        }}
+        onDismiss={() => {}}
+      />,
+    );
+
+    expect(markup).toContain('role="alert"');
     expect(markup).toContain('aria-label="Dismiss Codex provider error"');
   });
 });
