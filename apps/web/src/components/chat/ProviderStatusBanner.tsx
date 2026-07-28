@@ -6,9 +6,18 @@ import { formatProviderDriverKindLabel } from "../../providerModels";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 export function getProviderStatusBannerKey(status: ServerProvider | null): string | null {
-  return !status || status.status === "ready" || status.status === "disabled"
-    ? null
-    : [status.instanceId, status.status, status.auth.status, status.message ?? ""].join("\u0000");
+  if (
+    !status ||
+    status.status !== "error" ||
+    (status.auth.status !== "unauthenticated" &&
+      status.installed &&
+      status.availability !== "unavailable")
+  ) {
+    return null;
+  }
+  return [status.instanceId, status.status, status.auth.status, status.message ?? ""].join(
+    "\u0000",
+  );
 }
 
 export function shouldShowProviderStatusBanner(
@@ -26,7 +35,7 @@ export const ProviderStatusBanner = memo(function ProviderStatusBanner({
   onDismiss: () => void;
   status: ServerProvider | null;
 }) {
-  if (!status || status.status === "ready" || status.status === "disabled") {
+  if (getProviderStatusBannerKey(status) === null) {
     return null;
   }
 
@@ -47,9 +56,7 @@ export const ProviderStatusBanner = memo(function ProviderStatusBanner({
       <div
         className={cn(
           "relative inline-flex items-center gap-3 rounded-xl border py-3 ps-3.5 pe-10 text-card-foreground text-sm",
-          status.status === "warning"
-            ? "border-warning/32 bg-warning/4 [&_svg]:text-warning"
-            : "border-destructive/32 bg-destructive/4 text-destructive-foreground [&_svg]:text-destructive",
+          "border-destructive/32 bg-destructive/4 text-destructive-foreground [&_svg]:text-destructive",
         )}
         role="alert"
       >

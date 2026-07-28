@@ -25,6 +25,7 @@ import { SqlError, classifySqliteError } from "effect/unstable/sql/SqlError";
 import * as Statement from "effect/unstable/sql/Statement";
 
 const ATTR_DB_SYSTEM_NAME = "db.system.name";
+const DEFAULT_BUSY_TIMEOUT_MS = 5_000;
 
 export const TypeId: TypeId = "~local/sqlite-node/SqliteClient";
 
@@ -34,6 +35,7 @@ export interface SqliteClientConfig {
   readonly filename: string;
   readonly readonly?: boolean | undefined;
   readonly allowExtension?: boolean | undefined;
+  readonly busyTimeoutMs?: number | undefined;
   readonly prepareCacheSize?: number | undefined;
   readonly prepareCacheTTL?: Duration.Input | undefined;
   readonly spanAttributes?: Record<string, unknown> | undefined;
@@ -105,11 +107,27 @@ const makeWithDatabase = Effect.fn("makeWithDatabase")(function* (
   const makeConnection = Effect.gen(function* () {
     const scope = yield* Effect.scope;
     const db = yield* Effect.try({
-      try: openDatabase,
+      try: () => {
+        const database = openDatabase();
+        // Managed deployments run short-lived CLI commands against the same
+        // database as the server. Wait through brief writer overlap instead of
+        // failing session recovery immediately with SQLITE_BUSY.
+        const configuredBusyTimeoutMs = options.busyTimeoutMs ?? DEFAULT_BUSY_TIMEOUT_MS;
+        const busyTimeoutMs = Number.isFinite(configuredBusyTimeoutMs)
+          ? Math.max(0, Math.trunc(configuredBusyTimeoutMs))
+          : DEFAULT_BUSY_TIMEOUT_MS;
+        try {
+          database.exec(`PRAGMA busy_timeout = ${busyTimeoutMs}`);
+          return database;
+        } catch (cause) {
+          database.close();
+          throw cause;
+        }
+      },
       catch: (cause) =>
         new SqlError({
           reason: classifySqliteError(cause, {
-            message: "Failed to open database",
+            message: "Failed to open or configure database",
             operation: "open",
           }),
         }),

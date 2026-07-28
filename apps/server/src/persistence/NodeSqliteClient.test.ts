@@ -29,6 +29,15 @@ layer("NodeSqliteClient", (it) => {
     }),
   );
 
+  it.effect("waits through brief cross-process write contention by default", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const rows = yield* sql<{ readonly timeout: number }>`PRAGMA busy_timeout`;
+
+      assert.equal(rows[0]?.timeout, 5_000);
+    }),
+  );
+
   it.effect("returns a typed failure when an unprepared statement cannot be prepared", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
