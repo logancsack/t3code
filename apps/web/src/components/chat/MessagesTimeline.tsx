@@ -834,6 +834,16 @@ function TimelineMinimap({
 
 type TimelineEntry = ReturnType<typeof deriveTimelineEntries>[number];
 type TimelineMessage = Extract<TimelineEntry, { kind: "message" }>["message"];
+type TimelineAttachment = NonNullable<TimelineMessage["attachments"]>[number];
+type TimelineImageAttachment = Extract<TimelineAttachment, { type: "image" }>;
+
+// A predicate rather than a plain boolean filter so the arrays narrow to the
+// image member of the union — only images carry a previewUrl to render.
+function isTimelineImageAttachment(
+  attachment: TimelineAttachment,
+): attachment is TimelineImageAttachment {
+  return attachment.type === "image";
+}
 type TimelineWorkEntry = Extract<MessagesTimelineRow, { kind: "work" }>["groupedEntries"][number];
 type TimelineRow = MessagesTimelineRow;
 
@@ -886,14 +896,12 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
     ...displayedUserMessage.elementContexts,
     ...elementContextState.contexts,
   ];
-  const previewImages = userImages.filter(
-    (attachment) =>
-      attachment.type === "image" && attachment.name.startsWith("preview-annotation-"),
-  );
-  const regularImages = userImages.filter(
-    (attachment) =>
-      attachment.type === "image" && !attachment.name.startsWith("preview-annotation-"),
-  );
+  const previewImages = userImages
+    .filter(isTimelineImageAttachment)
+    .filter((attachment) => attachment.name.startsWith("preview-annotation-"));
+  const regularImages = userImages
+    .filter(isTimelineImageAttachment)
+    .filter((attachment) => !attachment.name.startsWith("preview-annotation-"));
   // Non-image attachments were saved on the server and handed to the agent as a
   // path; there is nothing to preview, so the transcript records what was sent.
   const fileAttachments = userImages.filter((attachment) => attachment.type === "file");
@@ -904,7 +912,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
       <div className="relative max-w-[80%] rounded-2xl bg-accent p-3">
         {regularImages.length > 0 && (
           <div className="mb-2 grid max-w-[420px] grid-cols-2 gap-2">
-            {regularImages.map((image: NonNullable<TimelineMessage["attachments"]>[number]) => (
+            {regularImages.map((image) => (
               <div
                 key={image.id}
                 className="overflow-hidden rounded-lg border border-border/80 bg-background/70"
@@ -1373,7 +1381,7 @@ const UserMessageElementContextChip = memo(function UserMessageElementContextChi
 
 function UserMessagePreviewAnnotationCard(props: {
   annotation: ParsedPreviewAnnotation;
-  image: NonNullable<TimelineMessage["attachments"]>[number] | null;
+  image: TimelineImageAttachment | null;
 }) {
   const ctx = use(TimelineRowCtx);
   return (
