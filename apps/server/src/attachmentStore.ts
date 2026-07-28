@@ -4,12 +4,23 @@ import * as NodeFS from "node:fs";
 
 import type { ChatAttachment } from "@t3tools/contracts";
 
+import { inferAttachmentFileExtension } from "./attachmentFileNames.ts";
 import {
   normalizeAttachmentRelativePath,
   resolveAttachmentRelativePath,
 } from "./attachmentPaths.ts";
 import { inferImageExtension, SAFE_IMAGE_FILE_EXTENSIONS } from "./imageMime.ts";
 
+/**
+ * Extensions `resolveAttachmentPathById` will probe for.
+ *
+ * This list is deliberately narrower than what `attachmentRelativePath` can
+ * produce. It backs the signed asset endpoint, which serves bytes over the app
+ * origin with a content type inferred from the extension, so only formats that
+ * are safe to render there belong here. A file attachment stored as `.md` or
+ * `.zip` is simply not reachable that way — nothing needs it to be, because the
+ * composer renders file attachments as chips rather than previews.
+ */
 const ATTACHMENT_FILENAME_EXTENSIONS = [...SAFE_IMAGE_FILE_EXTENSIONS, ".bin"];
 const ATTACHMENT_ID_THREAD_SEGMENT_MAX_CHARS = 80;
 const ATTACHMENT_ID_THREAD_SEGMENT_PATTERN = "[a-z0-9_]+(?:-[a-z0-9_]+)*";
@@ -58,6 +69,13 @@ export function attachmentRelativePath(attachment: ChatAttachment): string {
   switch (attachment.type) {
     case "image": {
       const extension = inferImageExtension({
+        mimeType: attachment.mimeType,
+        fileName: attachment.name,
+      });
+      return `${attachment.id}${extension}`;
+    }
+    case "file": {
+      const extension = inferAttachmentFileExtension({
         mimeType: attachment.mimeType,
         fileName: attachment.name,
       });

@@ -11,12 +11,7 @@ import type {
   ServerProvider,
   ThreadId,
 } from "@t3tools/contracts";
-import {
-  ProviderDriverKind,
-  ProviderInstanceId,
-  PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
-  PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
-} from "@t3tools/contracts";
+import { ProviderDriverKind, ProviderInstanceId } from "@t3tools/contracts";
 import type { EnvironmentConnectionPresentation } from "@t3tools/client-runtime/connection";
 import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
 import { createModelSelection, normalizeModelSlug } from "@t3tools/shared/model";
@@ -47,8 +42,10 @@ import {
   makeComposerMentionDragHandlers,
 } from "./composerMentionDrag";
 import {
+  type ComposerAttachment,
   type ComposerImageAttachment,
   type DraftId,
+  type PersistedComposerAttachment,
   type PersistedComposerImageAttachment,
   hydrateImagesFromPersisted,
   useComposerDraftStore,
@@ -191,11 +188,13 @@ import { Button } from "../ui/button";
 import { Select, SelectItem, SelectPopup, SelectValue } from "../ui/select";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { toastManager } from "../ui/toast";
+import { formatComposerAttachmentSize, planComposerAttachmentIntake } from "./composerAttachments";
 import { takePickedFiles } from "./composerFilePicker";
 import {
   BotIcon,
   CircleAlertIcon,
-  ImageUpIcon,
+  FileTextIcon,
+  PaperclipIcon,
   PencilRulerIcon,
   type LucideIcon,
   LockIcon,
@@ -473,7 +472,7 @@ export interface ChatComposerHandle {
   /** Get the current prompt/effort/model state for use in send. */
   getSendContext: () => {
     prompt: string;
-    images: ComposerImageAttachment[];
+    images: ComposerAttachment[];
     terminalContexts: TerminalContextDraft[];
     elementContexts: ElementContextDraft[];
     previewAnnotations: PreviewAnnotationPayload[];
@@ -562,7 +561,7 @@ export interface ChatComposerProps {
 
   // Refs the parent needs kept in sync
   promptRef: React.RefObject<string>;
-  composerImagesRef: React.RefObject<ComposerImageAttachment[]>;
+  composerImagesRef: React.RefObject<ComposerAttachment[]>;
   composerTerminalContextsRef: React.RefObject<TerminalContextDraft[]>;
   composerElementContextsRef: React.RefObject<ElementContextDraft[]>;
   composerRef: React.RefObject<ChatComposerHandle | null>;
@@ -1258,14 +1257,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   );
 
   const addComposerImage = useCallback(
-    (image: ComposerImageAttachment) => {
+    (image: ComposerAttachment) => {
       addComposerDraftImage(composerDraftTarget, image);
     },
     [composerDraftTarget, addComposerDraftImage],
   );
 
   const addComposerImagesToDraft = useCallback(
-    (images: ComposerImageAttachment[]) => {
+    (images: ComposerAttachment[]) => {
       addComposerDraftImages(composerDraftTarget, images);
     },
     [composerDraftTarget, addComposerDraftImages],
@@ -1469,7 +1468,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         const existingPersistedById = new Map(
           currentPersistedAttachments.map((attachment) => [attachment.id, attachment]),
         );
-        const stagedAttachmentById = new Map<string, PersistedComposerImageAttachment>();
+        const stagedAttachmentById = new Map<string, PersistedComposerAttachment>();
         await Promise.all(
           composerImages.map(async (image) => {
             try {
@@ -1480,6 +1479,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 mimeType: image.mimeType,
                 sizeBytes: image.sizeBytes,
                 dataUrl,
+                type: image.type,
               });
             } catch {
               const existingPersisted = existingPersistedById.get(image.id);
@@ -2286,7 +2286,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     if (pendingUserInputs.length > 0) {
       toastManager.add({
         type: "error",
-        title: "Attach images after answering plan questions.",
+        title: "Attach files after answering plan questions.",
       });
       return;
     }
@@ -2367,21 +2367,56 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     }
   };
 
+  const addComposerAttachments = (files: File[]) => {
+    if (!activeThreadId || files.length === 0) return;
+    const imageFiles = files.filter((file) => file.type.startsWith("image/"));
+    const ordinaryFiles = files.filter((file) => !file.type.startsWith("image/"));
+
+    // Preserve upstream's image compression and concurrent-slot reservation.
+    if (imageFiles.length > 0) void addComposerImages(imageFiles);
+    if (ordinaryFiles.length === 0) return;
+    if (pendingUserInputs.length > 0) {
+      toastManager.add({
+        type: "error",
+        title: "Attach files after answering plan questions.",
+      });
+      return;
+    }
+
+    const threadId = activeThreadId;
+    const pendingImages = pendingImageCompressionsRef.current.get(threadId) ?? 0;
+    const { accepted, error } = planComposerAttachmentIntake({
+      files: ordinaryFiles,
+      existingCount: composerImagesRef.current.length + pendingImages,
+    });
+    const nextAttachments: ComposerAttachment[] = accepted.map((attachment) => ({
+      ...attachment,
+      id: randomUUID(),
+      previewUrl: "",
+    }));
+    if (nextAttachments.length === 1 && nextAttachments[0]) {
+      addComposerImage(nextAttachments[0]);
+    } else if (nextAttachments.length > 1) {
+      addComposerImagesToDraft(nextAttachments);
+    }
+    if (error !== null) setThreadError(threadId, error);
+  };
+
   const removeComposerImage = (imageId: string) => {
     removeComposerImageFromDraft(imageId);
   };
 
   /**
-   * Attach images through the platform's file picker.
+   * Attach files through the platform's file picker.
    *
    * Paste and drag-and-drop are both pointer gestures, so before this there was
    * no way to attach anything on a phone — which is where screenshots are taken.
-   * `accept="image/*"` is what makes a mobile browser offer the photo library and
-   * the camera alongside the file list.
+   * The input carries no `accept`, so the picker offers every file and, on
+   * mobile, the photo library and camera alongside it.
    */
   const onComposerFilesPicked = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = takePickedFiles(event.target);
-    if (files.length > 0) addComposerImages(files);
+    if (files.length > 0) addComposerAttachments(files);
   };
 
   // ------------------------------------------------------------------
@@ -2390,10 +2425,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const onComposerPaste = (event: React.ClipboardEvent<HTMLElement>) => {
     const files = Array.from(event.clipboardData.files);
     if (files.length === 0) return;
-    const imageFiles = files.filter((file) => file.type.startsWith("image/"));
-    if (imageFiles.length === 0) return;
     event.preventDefault();
-    void addComposerImages(imageFiles);
+    addComposerAttachments(files);
   };
 
   const onComposerDragEnter = (event: React.DragEvent<HTMLDivElement>) => {
@@ -2427,7 +2460,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     dragDepthRef.current = 0;
     setIsDragOverComposer(false);
     const files = Array.from(event.dataTransfer.files);
-    void addComposerImages(files);
+    addComposerAttachments(files);
     focusComposer();
   };
 
@@ -2972,9 +3005,26 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     .map((image) => (
                       <div
                         key={image.id}
-                        className="relative h-16 w-16 overflow-hidden rounded-lg border border-border/80 bg-background"
+                        className={cn(
+                          "relative h-16 overflow-hidden rounded-lg border border-border/80 bg-background",
+                          // A file has no thumbnail, so the tile widens into a
+                          // chip with room for the name and size instead.
+                          image.type === "file" ? "w-44 max-w-full" : "w-16",
+                        )}
                       >
-                        {image.previewUrl ? (
+                        {image.type === "file" ? (
+                          <div className="flex h-full w-full items-center gap-2 py-2 pl-2 pr-8">
+                            <FileTextIcon className="size-5 shrink-0 text-muted-foreground" />
+                            <div className="min-w-0">
+                              <div className="truncate text-xs" title={image.name}>
+                                {image.name}
+                              </div>
+                              <div className="text-[10px] text-muted-foreground">
+                                {formatComposerAttachmentSize(image.sizeBytes)}
+                              </div>
+                            </div>
+                          </div>
+                        ) : image.previewUrl ? (
                           <button
                             type="button"
                             className="h-full w-full cursor-zoom-in"
@@ -3066,7 +3116,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                           : noProviderAvailable
                             ? "Enable a provider in Settings to send a message"
                             : phase === "disconnected"
-                              ? "Ask for follow-up changes or attach images"
+                              ? "Ask for follow-up changes or attach files"
                               : "Ask anything, @tag files/folders, $use skills, or / for commands"
                 }
                 disabled={isConnecting || isComposerApprovalState || projectSelectionRequired}
@@ -3126,9 +3176,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 <input
                   ref={composerFileInputRef}
                   type="file"
-                  // Images only, matching what the composer accepts from a paste
-                  // or a drop; anything else is rejected with an explanation.
-                  accept="image/*"
+                  // No `accept`: the composer takes any file, matching what it
+                  // accepts from a paste or a drop. Images become content blocks
+                  // the model sees; everything else is saved for the agent to
+                  // read. Leaving it off also keeps the photo library and camera
+                  // in a mobile picker, alongside the file list.
                   multiple
                   className="hidden"
                   tabIndex={-1}
@@ -3139,13 +3191,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   size="sm"
                   variant="ghost"
                   disabled={!activeThreadId}
-                  aria-label="Attach images"
-                  title="Attach images"
+                  aria-label="Attach files"
+                  title="Attach files"
                   className="shrink-0 px-2 text-muted-foreground"
                   onPointerDown={(event) => event.preventDefault()}
                   onClick={() => composerFileInputRef.current?.click()}
                 >
-                  <ImageUpIcon className="size-4" />
+                  <PaperclipIcon className="size-4" />
                 </Button>
                 {noProviderAvailable ? (
                   <Button

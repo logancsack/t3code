@@ -3,10 +3,12 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import {
+  type ChatAttachment,
   type ClientOrchestrationCommand,
   type IsoDateTime,
   type OrchestrationCommand,
   OrchestrationDispatchCommandError,
+  PROVIDER_SEND_TURN_MAX_FILE_BYTES,
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
 } from "@t3tools/contracts";
 
@@ -108,17 +110,24 @@ export const normalizeDispatchCommand = (command: ClientOrchestrationCommand) =>
       canonicalCommand.message.attachments,
       (attachment) =>
         Effect.gen(function* () {
+          const isImage = attachment.type === "image";
           const parsed = parseBase64DataUrl(attachment.dataUrl);
-          if (!parsed || !parsed.mimeType.startsWith("image/")) {
+          // The mime type is taken from the data URL the client actually
+          // encoded rather than the one it declared alongside it, so the bytes
+          // on disk and the type recorded for them cannot disagree.
+          if (!parsed || (isImage && !parsed.mimeType.startsWith("image/"))) {
             return yield* new OrchestrationDispatchCommandError({
-              message: `Invalid image attachment payload for '${attachment.name}'.`,
+              message: `Invalid ${isImage ? "image" : "file"} attachment payload for '${attachment.name}'.`,
             });
           }
 
+          const maxBytes = isImage
+            ? PROVIDER_SEND_TURN_MAX_IMAGE_BYTES
+            : PROVIDER_SEND_TURN_MAX_FILE_BYTES;
           const bytes = Buffer.from(parsed.base64, "base64");
-          if (bytes.byteLength === 0 || bytes.byteLength > PROVIDER_SEND_TURN_MAX_IMAGE_BYTES) {
+          if (bytes.byteLength === 0 || bytes.byteLength > maxBytes) {
             return yield* new OrchestrationDispatchCommandError({
-              message: `Image attachment '${attachment.name}' is empty or too large.`,
+              message: `${isImage ? "Image" : "File"} attachment '${attachment.name}' is empty or too large.`,
             });
           }
 
@@ -129,13 +138,15 @@ export const normalizeDispatchCommand = (command: ClientOrchestrationCommand) =>
             });
           }
 
-          const persistedAttachment = {
-            type: "image" as const,
+          const persisted = {
             id: attachmentId,
             name: attachment.name,
             mimeType: parsed.mimeType.toLowerCase(),
             sizeBytes: bytes.byteLength,
           };
+          const persistedAttachment: ChatAttachment = isImage
+            ? { type: "image", ...persisted }
+            : { type: "file", ...persisted };
 
           const attachmentPath = resolveAttachmentPath({
             attachmentsDir: serverConfig.attachmentsDir,
