@@ -40,6 +40,7 @@ import { toastManager } from "../ui/toast";
 import { ResourceTelemetryDiagnostics } from "./ResourceTelemetryDiagnostics";
 import { SettingsPageContainer, SettingsSection, useRelativeTimeTick } from "./settingsLayout";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { APP_BASE_NAME } from "../../branding";
 
 const NUMBER_FORMAT = new Intl.NumberFormat();
 
@@ -935,8 +936,7 @@ export function DiagnosticsSettingsPanel() {
             toastManager.add({
               type: "info",
               title: "Process already exited",
-              description:
-                "The process is not a child of the T3 Server. It might already have exited.",
+              description: `The process is not a child of the ${APP_BASE_NAME} server. It might already have exited.`,
             });
             return;
           }

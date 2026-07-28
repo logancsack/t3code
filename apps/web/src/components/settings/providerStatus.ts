@@ -1,4 +1,5 @@
 import type { ServerProvider, ServerProviderVersionAdvisory } from "@t3tools/contracts";
+import { APP_BASE_NAME } from "../../branding";
 
 /**
  * Visual treatment for each server-reported provider status. Centralized so
@@ -39,7 +40,8 @@ export function getProviderSummary(provider: ServerProvider | undefined) {
     return {
       headline: "Disabled",
       detail:
-        provider.message ?? "This provider is installed but disabled for new sessions in T3 Code.",
+        provider.message ??
+        `This provider is installed but disabled for new sessions in ${APP_BASE_NAME}.`,
     };
   }
   if (!provider.installed) {
@@ -66,7 +68,7 @@ export function getProviderSummary(provider: ServerProvider | undefined) {
       headline: "Verification delayed",
       detail:
         provider.message ??
-        "The provider is installed, but its latest status check was inconclusive. T3 Code will retry automatically.",
+        `The provider is installed, but its latest status check was inconclusive. ${APP_BASE_NAME} will retry automatically.`,
     };
   }
   if (provider.status === "error") {

@@ -1762,7 +1762,7 @@ function OpenCommandPaletteDialog(props: {
       stackedThreadToast({
         type: "success",
         title: "Repository cloned",
-        description: `${repository.nameWithOwner} is ready on this Dev PC.`,
+        description: `${repository.nameWithOwner} is ready in this workspace.`,
       }),
     );
     const environment = environments.find((candidate) => candidate.environmentId === environmentId);

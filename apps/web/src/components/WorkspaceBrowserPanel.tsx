@@ -13,7 +13,7 @@ import { Button } from "./ui/button";
  * This deliberately does not go through the preview subsystem. Previews render
  * through the Electron desktop bridge, so on a managed workspace — which is
  * always reached from a browser, on desktop or on a phone — a preview surface
- * only ever shows "Preview is only available in the T3 Code desktop app".
+ * only ever shows "Preview is only available in the <app> desktop app".
  *
  * noVNC is itself a web app, so an iframe is all it needs, and it brings its own
  * touch handling: drag to move the pointer, tap to click, two-finger scroll. The

@@ -37,6 +37,7 @@ import {
 import { Input } from "../ui/input";
 import { Textarea } from "../ui/textarea";
 import { toastManager } from "../ui/toast";
+import { APP_BASE_NAME } from "../../branding";
 
 export type AuthConnectorMethodOption = {
   readonly method: AuthConnectorMethod;
@@ -302,7 +303,7 @@ export function AuthConnectorDialog(props: {
       : presentationStage === "authorize"
         ? `Authorize with ${browserName}`
         : presentationStage === "return"
-          ? "Return to T3 Code"
+          ? `Return to ${APP_BASE_NAME}`
           : presentationStage === "verifying"
             ? "Checking your account"
             : "Preparing secure sign-in";

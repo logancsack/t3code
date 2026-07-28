@@ -31,7 +31,7 @@ function updateBootstrapMessage(message: string, failed = false): void {
     "w-full max-w-sm rounded-xl border border-border bg-card p-6 text-center shadow-sm";
   const title = document.createElement("h1");
   title.className = "text-base font-semibold";
-  title.textContent = failed ? "Workspace unavailable" : "Starting your Dev PC";
+  title.textContent = failed ? "Workspace unavailable" : "Starting your workspace";
   const detail = document.createElement("p");
   detail.className = "mt-2 text-sm text-muted-foreground";
   detail.textContent = message;
