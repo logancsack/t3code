@@ -65,7 +65,7 @@ import {
   markPromotedDraftThreadByRef,
   markPromotedDraftThreads,
   markPromotedDraftThreadsByRef,
-  type ComposerImageAttachment,
+  type ComposerAttachment,
   useComposerDraftStore,
   DraftId,
 } from "./composerDraftStore";
@@ -84,7 +84,7 @@ function makeImage(input: {
   mimeType?: string;
   sizeBytes?: number;
   lastModified?: number;
-}): ComposerImageAttachment {
+}): ComposerAttachment {
   const name = input.name ?? "image.png";
   const mimeType = input.mimeType ?? "image/png";
   const sizeBytes = input.sizeBytes ?? 4;

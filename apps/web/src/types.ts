@@ -1,4 +1,5 @@
 import type {
+  ChatFileAttachment as ContractChatFileAttachment,
   ChatImageAttachment as ContractChatImageAttachment,
   OrchestrationCheckpointFile,
   OrchestrationCheckpointSummary,
@@ -35,7 +36,14 @@ export interface ChatImageAttachment extends ContractChatImageAttachment {
   readonly previewUrl?: string;
 }
 
-export type ChatAttachment = ChatImageAttachment;
+/**
+ * Non-image attachments have no preview to render; the transcript shows a chip
+ * carrying the name and size instead, so the optional `previewUrl` that images
+ * use is deliberately absent here.
+ */
+export type ChatFileAttachment = ContractChatFileAttachment;
+
+export type ChatAttachment = ChatImageAttachment | ChatFileAttachment;
 
 export interface ChatMessage extends Omit<OrchestrationMessage, "attachments"> {
   readonly attachments?: ReadonlyArray<ChatAttachment> | undefined;

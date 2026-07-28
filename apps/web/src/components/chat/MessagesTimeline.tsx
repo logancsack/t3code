@@ -45,6 +45,7 @@ import {
   ChevronRightIcon,
   CircleAlertIcon,
   EyeIcon,
+  FileTextIcon,
   GlobeIcon,
   HammerIcon,
   MessageCircleIcon,
@@ -59,6 +60,7 @@ import {
   ZapIcon,
 } from "lucide-react";
 import { Button } from "../ui/button";
+import { formatComposerAttachmentSize } from "./composerAttachments";
 import { buildExpandedImagePreview, ExpandedImagePreview } from "./ExpandedImagePreview";
 import { ProposedPlanCard } from "./ProposedPlanCard";
 import { ChangedFilesCard } from "./ChangedFilesTree";
@@ -884,8 +886,17 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
     ...displayedUserMessage.elementContexts,
     ...elementContextState.contexts,
   ];
-  const previewImages = userImages.filter((image) => image.name.startsWith("preview-annotation-"));
-  const regularImages = userImages.filter((image) => !image.name.startsWith("preview-annotation-"));
+  const previewImages = userImages.filter(
+    (attachment) =>
+      attachment.type === "image" && attachment.name.startsWith("preview-annotation-"),
+  );
+  const regularImages = userImages.filter(
+    (attachment) =>
+      attachment.type === "image" && !attachment.name.startsWith("preview-annotation-"),
+  );
+  // Non-image attachments were saved on the server and handed to the agent as a
+  // path; there is nothing to preview, so the transcript records what was sent.
+  const fileAttachments = userImages.filter((attachment) => attachment.type === "file");
   const canRevertAgentWork = typeof row.revertTurnCount === "number";
 
   return (
@@ -921,6 +932,23 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
                   </div>
                 )}
               </div>
+            ))}
+          </div>
+        )}
+        {fileAttachments.length > 0 && (
+          <div className="mb-2 flex flex-wrap gap-1.5">
+            {fileAttachments.map((attachment) => (
+              <span
+                key={attachment.id}
+                className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-border/80 bg-background/70 px-2 py-1 text-[11px]"
+                title={`${attachment.name} (${formatComposerAttachmentSize(attachment.sizeBytes)})`}
+              >
+                <FileTextIcon className="size-3.5 shrink-0 text-muted-foreground" />
+                <span className="truncate">{attachment.name}</span>
+                <span className="shrink-0 text-muted-foreground">
+                  {formatComposerAttachmentSize(attachment.sizeBytes)}
+                </span>
+              </span>
             ))}
           </div>
         )}
