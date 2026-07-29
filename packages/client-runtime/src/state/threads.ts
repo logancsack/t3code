@@ -36,6 +36,12 @@ function statusWithoutLiveData(data: Option.Option<OrchestrationThread>): Enviro
   return Option.isSome(data) ? "cached" : "empty";
 }
 
+// Consecutive snapshot 404s before a thread is treated as gone. Three spans
+// about a second of resubscribe retries: enough to skip a race with a thread
+// that is still being created, short enough that a tab left open on a dead
+// thread stops generating traffic almost immediately.
+const MISSING_THREAD_NOT_FOUND_THRESHOLD = 3;
+
 function formatThreadError(cause: Cause.Cause<unknown>): string {
   const error = Cause.squash(cause);
   return error instanceof Error && error.message.trim().length > 0
@@ -80,6 +86,11 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     Option.match(cached, { onNone: () => 0, onSome: (snapshot) => snapshot.snapshotSequence }),
   );
   const awaitingCompletion = yield* Ref.make(false);
+  // Consecutive HTTP 404s for this thread. One 404 can race a thread that is
+  // still being created; a run of them means the server genuinely does not know
+  // the thread, and without a terminal transition the subscribe loop refetches
+  // it forever — traffic that also keeps an otherwise idle workspace "active".
+  const snapshotNotFoundStreak = yield* Ref.make(0);
   const persistence = yield* Queue.sliding<OrchestrationThreadDetailSnapshot>(1);
 
   const persist = Effect.fn("EnvironmentThreadState.persist")(function* (
@@ -159,12 +170,12 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     }
   });
 
-  const setDeleted = Effect.fn("EnvironmentThreadState.setDeleted")(function* () {
+  const setDeleted = Effect.fn("EnvironmentThreadState.setDeleted")(function* (error?: string) {
     yield* Ref.set(awaitingCompletion, false);
     yield* SubscriptionRef.set(state, {
       data: Option.none(),
       status: "deleted",
-      error: Option.none(),
+      error: error === undefined ? Option.none() : Option.some(error),
     });
     yield* cache.removeThread(environmentId, threadId).pipe(
       Effect.catch((error) =>
@@ -252,7 +263,13 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
         yield* setSynchronizing;
 
         let current = yield* SubscriptionRef.get(state);
-        if (Option.isNone(current.data) && current.status !== "deleted") {
+        if (current.status === "deleted") {
+          // Terminal: the thread is gone. Park instead of resubscribing so a
+          // dead thread produces no further HTTP or socket traffic; closing
+          // the state's scope interrupts this fiber.
+          return yield* Effect.never;
+        }
+        if (Option.isNone(current.data)) {
           const prepared = yield* SubscriptionRef.get(supervisor.prepared).pipe(
             Effect.flatMap(
               Option.match({
@@ -267,10 +284,26 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
               }),
             ),
           );
-          const httpSnapshot = yield* snapshotLoader.load(prepared, threadId);
-          if (Option.isSome(httpSnapshot)) {
-            yield* applyItem({ kind: "snapshot", snapshot: httpSnapshot.value });
-            current = yield* SubscriptionRef.get(state);
+          const loaded = yield* snapshotLoader.load(prepared, threadId);
+          switch (loaded.kind) {
+            case "found": {
+              yield* Ref.set(snapshotNotFoundStreak, 0);
+              yield* applyItem({ kind: "snapshot", snapshot: loaded.snapshot });
+              current = yield* SubscriptionRef.get(state);
+              break;
+            }
+            case "not-found": {
+              const streak = yield* Ref.updateAndGet(snapshotNotFoundStreak, (count) => count + 1);
+              if (streak >= MISSING_THREAD_NOT_FOUND_THRESHOLD) {
+                yield* setDeleted("This thread no longer exists on the server.");
+                return yield* Effect.never;
+              }
+              break;
+            }
+            // A transport failure says nothing about the thread's existence;
+            // leave the streak alone and let the socket path retry.
+            case "unavailable":
+              break;
           }
         }
 
