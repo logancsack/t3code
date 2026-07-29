@@ -35,6 +35,7 @@ import {
   makeEnvironmentThreadState,
   ThreadSnapshotLoader,
   type EnvironmentThreadState,
+  type ThreadSnapshotLoadResult,
 } from "./threads.ts";
 
 const TARGET = new PrimaryConnectionTarget({
@@ -129,9 +130,34 @@ function awaitThreadState(
   );
 }
 
+/**
+ * Fails the active socket subscription and advances the clock until the retry
+ * has refetched the snapshot. One error per cycle: `Stream.fromQueue` buffers
+ * eagerly, so a second queued error would be swallowed by the dying stream
+ * instead of failing the next subscription.
+ */
+function driveSnapshotRetry(
+  harness: {
+    readonly inputs: Queue.Queue<TestThreadInput>;
+    readonly loaderCalls: Ref.Ref<number>;
+  },
+  untilLoaderCalls: number,
+) {
+  return Effect.gen(function* () {
+    yield* Queue.offer(harness.inputs, new Error("subscribe failed"));
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+      if ((yield* Ref.get(harness.loaderCalls)) >= untilLoaderCalls) return;
+      yield* TestClock.adjust("250 millis");
+      yield* Effect.yieldNow;
+    }
+  });
+}
+
 const makeHarness = Effect.fn("TestEnvironmentThreads.makeHarness")(function* (options?: {
   readonly cached?: OrchestrationThread;
   readonly httpSnapshot?: Option.Option<OrchestrationThreadDetailSnapshot>;
+  /** Overrides the snapshot loader per call; takes precedence over httpSnapshot. */
+  readonly httpLoad?: Effect.Effect<ThreadSnapshotLoadResult>;
   readonly completionMarker?: boolean;
 }) {
   const inputs = yield* Queue.unbounded<TestThreadInput>();
@@ -181,10 +207,16 @@ const makeHarness = Effect.fn("TestEnvironmentThreads.makeHarness")(function* (o
   const snapshotLoader = ThreadSnapshotLoader.of({
     load: (_prepared, threadId) =>
       Ref.update(loaderCalls, (count) => count + 1).pipe(
-        Effect.as(
-          threadId === THREAD_ID
-            ? (options?.httpSnapshot ?? Option.none<OrchestrationThreadDetailSnapshot>())
-            : Option.none<OrchestrationThreadDetailSnapshot>(),
+        Effect.andThen(
+          options?.httpLoad ??
+            Effect.sync(
+              (): ThreadSnapshotLoadResult =>
+                threadId === THREAD_ID &&
+                options?.httpSnapshot !== undefined &&
+                Option.isSome(options.httpSnapshot)
+                  ? { kind: "found", snapshot: options.httpSnapshot.value }
+                  : { kind: "unavailable" },
+            ),
         ),
       ),
   });
@@ -470,12 +502,13 @@ describe("EnvironmentThreads", () => {
       expect(yield* Ref.get(harness.loaderCalls)).toBe(0);
       yield* Queue.offer(harness.wakeups, "application-active");
       for (let attempt = 0; attempt < 100; attempt += 1) {
-        if ((yield* Ref.get(harness.subscriptionCount)) >= 2) break;
         yield* Effect.yieldNow;
       }
 
+      // A deleted thread is terminal: the foreground wakeup neither refetches
+      // the stale HTTP snapshot nor opens a new socket subscription.
       const latest = yield* Ref.get(harness.latest);
-      expect(yield* Ref.get(harness.subscriptionCount)).toBe(2);
+      expect(yield* Ref.get(harness.subscriptionCount)).toBe(1);
       expect(yield* Ref.get(harness.loaderCalls)).toBe(0);
       expect(latest.status).toBe("deleted");
       expect(Option.isNone(latest.data)).toBe(true);
@@ -694,6 +727,78 @@ describe("EnvironmentThreads", () => {
         (value) => value.status === "live" && Option.isSome(value.data),
       );
       expect(Option.getOrThrow(live.data).title).toBe("Latest title");
+    }),
+  );
+
+  it.effect("treats repeated snapshot 404s as a deleted thread and stops fetching", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({
+        httpLoad: Effect.succeed<ThreadSnapshotLoadResult>({ kind: "not-found" }),
+      });
+      // Each socket failure forces a resubscribe, and every resubscribe with no
+      // data refetches the snapshot — the production 404 loop.
+      yield* driveSnapshotRetry(harness, 2);
+      yield* driveSnapshotRetry(harness, 3);
+
+      const state = yield* awaitThreadState(
+        harness.observed,
+        (value) => value.status === "deleted",
+      );
+
+      expect(Option.isNone(state.data)).toBe(true);
+      expect(Option.getOrThrow(state.error)).toContain("no longer exists");
+      expect(yield* Ref.get(harness.removedThreads)).toEqual([THREAD_ID]);
+      const callsAtDeletion = yield* Ref.get(harness.loaderCalls);
+      expect(callsAtDeletion).toBe(3);
+
+      // The subscribe loop is parked: however much time passes, a dead thread
+      // produces no further snapshot fetches.
+      for (let cycle = 0; cycle < 8; cycle += 1) {
+        yield* TestClock.adjust("1 second");
+        yield* Effect.yieldNow;
+      }
+      expect(yield* Ref.get(harness.loaderCalls)).toBe(callsAtDeletion);
+    }),
+  );
+
+  it.effect("does not treat isolated snapshot 404s as deletion once the thread loads", () =>
+    Effect.gen(function* () {
+      const responses = yield* Ref.make<ReadonlyArray<ThreadSnapshotLoadResult>>([
+        { kind: "not-found" },
+        { kind: "not-found" },
+        { kind: "found", snapshot: { snapshotSequence: 1, thread: BASE_THREAD } },
+      ]);
+      const httpLoad: Effect.Effect<ThreadSnapshotLoadResult> = Ref.modify(
+        responses,
+        (queue): readonly [ThreadSnapshotLoadResult, ReadonlyArray<ThreadSnapshotLoadResult>] =>
+          queue.length === 0 ? [{ kind: "unavailable" }, queue] : [queue[0]!, queue.slice(1)],
+      );
+      const harness = yield* makeHarness({ httpLoad });
+      // Two 404s (a thread still being created can race the first fetches),
+      // then the thread appears.
+      yield* driveSnapshotRetry(harness, 2);
+      yield* driveSnapshotRetry(harness, 3);
+
+      const state = yield* awaitThreadState(harness.observed, (value) => Option.isSome(value.data));
+
+      expect(state.status).not.toBe("deleted");
+      expect(Option.getOrThrow(state.data).title).toBe(BASE_THREAD.title);
+      expect(yield* Ref.get(harness.removedThreads)).toEqual([]);
+    }),
+  );
+
+  it.effect("does not treat transport failures as a missing thread", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({
+        httpLoad: Effect.succeed<ThreadSnapshotLoadResult>({ kind: "unavailable" }),
+      });
+      yield* driveSnapshotRetry(harness, 2);
+      yield* driveSnapshotRetry(harness, 3);
+
+      const latest = yield* Ref.get(harness.latest);
+      expect(latest.status).not.toBe("deleted");
+      expect(yield* Ref.get(harness.loaderCalls)).toBeGreaterThanOrEqual(3);
+      expect(yield* Ref.get(harness.removedThreads)).toEqual([]);
     }),
   );
 });
