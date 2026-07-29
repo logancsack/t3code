@@ -159,6 +159,7 @@ import {
   CheckCircle2Icon,
   ChevronDownIcon,
   GitBranchIcon,
+  LoaderCircleIcon,
   WifiOffIcon,
 } from "lucide-react";
 import { cn, randomHex } from "~/lib/utils";
@@ -1949,6 +1950,16 @@ function ChatViewContent(props: ChatViewProps) {
           title: `${unavailableConnection.phase === "connecting" ? "Connecting" : "Reconnecting"} to ${activeEnvironmentUnavailableState.label}`,
           description: "It may be finishing an update. One moment.",
         });
+      } else if (environmentReconnecting) {
+        items.push({
+          id: `environment-unavailable:${activeEnvironmentUnavailableState.environmentId}`,
+          variant: "info",
+          urgent: true,
+          icon: <LoaderCircleIcon className="animate-spin" />,
+          title: unavailableConnection.phase === "connecting" ? "Connecting…" : "Reconnecting…",
+          className:
+            "mx-auto w-fit max-w-full rounded-full border-border/48 bg-background/88 px-3 py-1.5 text-muted-foreground shadow-sm",
+        });
       } else {
         items.push({
           id: `environment-unavailable:${activeEnvironmentUnavailableState.environmentId}`,
@@ -1962,14 +1973,13 @@ function ChatViewContent(props: ChatViewProps) {
             <>
               <Button
                 size="xs"
-                disabled={environmentReconnecting}
                 onClick={() =>
                   void handleReconnectActiveEnvironment(
                     activeEnvironmentUnavailableState.environmentId,
                   )
                 }
               >
-                {environmentReconnecting ? "Reconnecting..." : "Reconnect"}
+                Reconnect
               </Button>
               <Button
                 size="xs"
