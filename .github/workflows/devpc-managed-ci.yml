@@ -51,3 +51,4 @@ jobs:
           grep -q '/_devpc/workspace/start' apps/server/dist/client/assets/*.js
           grep -q '/_devpc/workspace/stop' apps/server/dist/client/assets/*.js
           grep -q '/_devpc/workspace/settings' apps/server/dist/client/assets/*.js
+          grep -q 'data-devpc-workspace-control-center' apps/server/dist/client/assets/*.js

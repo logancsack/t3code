@@ -1,11 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  ChevronRightIcon,
-  ExternalLinkIcon,
-  PauseIcon,
-  PlayIcon,
-  RotateCwIcon,
-} from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChevronRightIcon, PauseIcon, PlayIcon, RotateCwIcon } from "lucide-react";
 
 import {
   isManagedDevPc,
@@ -13,6 +7,7 @@ import {
   type ManagedDevPcDisplayStatus,
   type ManagedDevPcTelemetry,
 } from "../managedDevPc";
+import { randomUUID } from "../lib/utils";
 import {
   AlertDialog,
   AlertDialogClose,
@@ -38,6 +33,7 @@ import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "./u
 const STATUS_PATH = "/_devpc/workspace";
 const SETTINGS_PATH = "/_devpc/workspace/settings";
 const TELEMETRY_FRESH_MS = 60_000;
+const ACTION_REQUEST_TIMEOUT_MS = 30_000;
 const IDLE_TIMEOUTS = [15, 30, 60, 120, 240] as const;
 
 const statusLabel: Record<ManagedDevPcDisplayStatus, string> = {
@@ -65,6 +61,7 @@ const statusDescription: Record<ManagedDevPcDisplayStatus, string> = {
   unreachable: "The workspace agent is not responding.",
   attention: "The workspace needs attention before it can be used.",
 };
+const KNOWN_STATUSES = new Set<string>(Object.keys(statusLabel));
 
 type PendingAction = "restart" | "pause" | "resume";
 type Confirmation = "restart" | "pause";
@@ -78,7 +75,9 @@ export function displayStatus(
   if (pendingAction === "pause") return "pausing";
   if (pendingAction === "resume") return "starting";
   if (statusUnavailable) return "unreachable";
-  if (workspace.status) return workspace.status;
+  if (workspace.status) {
+    return KNOWN_STATUSES.has(workspace.status) ? workspace.status : "attention";
+  }
   if (workspace.state === "ready") return "running";
   if (workspace.state === "restarting") return "restarting";
   if (workspace.state === "starting") return "starting";
@@ -268,6 +267,7 @@ export function ManagedDevPcStatus() {
   const [settingsPending, setSettingsPending] = useState(false);
   const [statusUnavailable, setStatusUnavailable] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const actionKeys = useRef<Partial<Record<PendingAction, string>>>({});
 
   const refresh = useCallback(async () => {
     try {
@@ -325,17 +325,24 @@ export function ManagedDevPcStatus() {
     setConfirmation(null);
     setPendingAction(action);
     setError(null);
+    const idempotencyKey = actionKeys.current[action] ?? `${action}-${randomUUID()}`;
+    actionKeys.current[action] = idempotencyKey;
+    let definitiveFailure = false;
     try {
       const response = await fetch(path, {
         method: "POST",
         credentials: "same-origin",
         headers: {
           "content-type": "application/json",
-          "idempotency-key": `${action}-${Date.now()}`,
+          "idempotency-key": idempotencyKey,
         },
         body: "{}",
+        signal: AbortSignal.timeout(ACTION_REQUEST_TIMEOUT_MS),
       });
-      if (!response.ok) throw new Error("request failed");
+      if (!response.ok) {
+        definitiveFailure = true;
+        throw new Error("request failed");
+      }
       const result = (await response.json()) as { state?: string };
       const reflectedStatus: ManagedDevPcDisplayStatus | null =
         action === "restart" && result.state === "restarting"
@@ -352,6 +359,7 @@ export function ManagedDevPcStatus() {
                 : "running"
               : null;
       if (reflectedStatus) {
+        delete actionKeys.current[action];
         setWorkspace((current) =>
           current
             ? {
@@ -365,6 +373,7 @@ export function ManagedDevPcStatus() {
       }
       void refresh();
     } catch {
+      if (definitiveFailure) delete actionKeys.current[action];
       setPendingAction(null);
       setError(
         action === "resume"
@@ -528,17 +537,7 @@ export function ManagedDevPcStatus() {
             </dl>
           </section>
         </DialogPanel>
-        <DialogFooter className="max-sm:flex-col sm:justify-between">
-          <Button
-            variant="ghost"
-            onClick={() => {
-              setOpen(false);
-              window.location.assign("/checkpoints");
-            }}
-          >
-            Manage restore points
-            <ExternalLinkIcon />
-          </Button>
+        <DialogFooter className="max-sm:flex-col sm:justify-end">
           <div className="flex gap-2 max-sm:flex-col">
             <Button
               className="max-sm:w-full"

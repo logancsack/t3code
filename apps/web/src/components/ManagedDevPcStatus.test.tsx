@@ -1,5 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import type { ManagedDevPcDisplayStatus, ManagedDevPcWorkspaceState } from "../managedDevPc";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -8,18 +9,8 @@ afterEach(() => {
 
 async function renderManagedStatus(input: {
   managed?: boolean;
-  state: "starting" | "ready" | "restarting" | "paused" | "stopped" | "error";
-  status?:
-    | "running"
-    | "starting"
-    | "restarting"
-    | "pausing"
-    | "paused"
-    | "stopped"
-    | "restoring"
-    | "reconnecting"
-    | "unreachable"
-    | "attention";
+  state: ManagedDevPcWorkspaceState;
+  status?: ManagedDevPcDisplayStatus;
   ready: boolean;
 }) {
   vi.stubEnv("VITE_DEVPC_MANAGED", input.managed === false ? "" : "1");
@@ -90,5 +81,21 @@ describe("ManagedDevPcStatus", () => {
         true,
       ),
     ).toBe("unreachable");
+  });
+
+  it("falls back safely when the server returns an unknown status", async () => {
+    vi.stubEnv("VITE_DEVPC_MANAGED", "1");
+    vi.resetModules();
+    const { displayStatus } = await import("./ManagedDevPcStatus");
+
+    expect(
+      displayStatus({
+        managed: true,
+        state: "ready",
+        status: "future-status" as ManagedDevPcDisplayStatus,
+        ready: true,
+        previewUrlTemplate: "https://{port}.preview.example.test/",
+      }),
+    ).toBe("attention");
   });
 });

@@ -77,6 +77,11 @@ jobs:
             echo "Missing managed DevPC settings surface"
             exit 1
           }
+          grep -R -m1 -q --include='*.js' "data-devpc-workspace-control-center" \
+            artifacts/devpc-t3/dist/client/assets || {
+            echo "Missing managed DevPC control center"
+            exit 1
+          }
           grep -R -m1 -q --include='*.js' "/_devpc/ws-ticket" \
             artifacts/devpc-t3/dist/client/assets || {
             echo "Missing managed DevPC WebSocket authorization"

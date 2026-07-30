@@ -41,7 +41,50 @@ describe("managed DevPC paused bootstrap", () => {
     expect(requiresManagedResume({ ...base, requiresResume: true })).toBe(true);
     expect(requiresManagedResume({ ...base, status: "paused" })).toBe(true);
     expect(requiresManagedResume({ ...base, state: "paused" })).toBe(true);
+    expect(requiresManagedResume({ ...base, status: "stopped" })).toBe(true);
+    expect(requiresManagedResume({ ...base, state: "stopped" })).toBe(true);
     expect(requiresManagedResume({ ...base, status: "starting" })).toBe(false);
+  });
+
+  it("continues polling when the resume surface has no root element to mount into", async () => {
+    vi.stubEnv("VITE_DEVPC_MANAGED", "1");
+    vi.resetModules();
+    vi.stubGlobal("document", {
+      getElementById: vi.fn(() => null),
+    });
+    vi.stubGlobal("window", {
+      location: { hash: "" },
+      setTimeout: (callback: () => void) => {
+        callback();
+        return 1;
+      },
+    });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json({
+          managed: true,
+          state: "stopped",
+          status: "stopped",
+          ready: false,
+          previewUrlTemplate: "https://{port}.preview.example.test/",
+        }),
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          managed: true,
+          state: "ready",
+          status: "running",
+          ready: true,
+          previewUrlTemplate: "https://{port}.preview.example.test/",
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { prepareManagedDevPc } = await import("./managedDevPc");
+    await prepareManagedDevPc();
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });
 

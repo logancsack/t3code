@@ -1,3 +1,5 @@
+import { randomUUID } from "./lib/utils";
+
 export type ManagedDevPcWorkspaceState =
   | "starting"
   | "ready"
@@ -77,8 +79,11 @@ const SESSION_RECOVERY_COOLDOWN_MS = 30_000;
 let sessionRecoveryReloadScheduled = false;
 
 export function requiresManagedResume(bootstrap: ManagedDevPcBootstrap): boolean {
+  const resumable = new Set(["paused", "stopped"]);
   return Boolean(
-    bootstrap.requiresResume || bootstrap.status === "paused" || bootstrap.state === "paused",
+    bootstrap.requiresResume ||
+    (bootstrap.status && resumable.has(bootstrap.status)) ||
+    resumable.has(bootstrap.state),
   );
 }
 
@@ -115,7 +120,10 @@ function updateBootstrapMessage(message: string, failed = false): void {
 function waitForManagedResume(): Promise<void> {
   return new Promise((resolve) => {
     const root = document.getElementById("root");
-    if (!root) return;
+    if (!root) {
+      resolve();
+      return;
+    }
     root.replaceChildren();
     const surface = document.createElement("main");
     surface.className =
@@ -136,6 +144,7 @@ function waitForManagedResume(): Promise<void> {
     resume.className =
       "mt-4 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground disabled:opacity-60";
     resume.textContent = "Resume workspace";
+    const resumeRequestKey = `resume-${randomUUID()}`;
     resume.addEventListener("click", () => {
       resume.disabled = true;
       resume.textContent = "Resuming…";
@@ -145,9 +154,10 @@ function waitForManagedResume(): Promise<void> {
         credentials: "same-origin",
         headers: {
           "content-type": "application/json",
-          "idempotency-key": `resume-${Date.now()}`,
+          "idempotency-key": resumeRequestKey,
         },
         body: "{}",
+        signal: AbortSignal.timeout(30_000),
       }).then(
         (response) => {
           if (!response.ok) {
@@ -230,6 +240,7 @@ export async function prepareManagedDevPc(): Promise<void> {
       if (requiresManagedResume(bootstrap)) {
         failures = 0;
         await waitForManagedResume();
+        await new Promise((resolve) => window.setTimeout(resolve, 1_500));
         continue;
       }
       failures = 0;
