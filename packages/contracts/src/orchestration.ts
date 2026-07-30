@@ -752,6 +752,23 @@ const ThreadTurnInterruptCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
+/**
+ * Re-drive a settled-but-failed turn from its original user message.
+ *
+ * Server-initiated (the turn liveness watchdog's auto-retry): re-emits
+ * `thread.turn-start-requested` against the message that started the failed
+ * turn, so no duplicate user message is created and the provider replays the
+ * same input on a fresh turn.
+ */
+const ThreadTurnRetryCommand = Schema.Struct({
+  type: Schema.Literal("thread.turn.retry"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  /** The failed turn being retried; must still be the thread's latest turn. */
+  turnId: TurnId,
+  createdAt: IsoDateTime,
+});
+
 const ThreadApprovalRespondCommand = Schema.Struct({
   type: Schema.Literal("thread.approval.respond"),
   commandId: CommandId,
@@ -907,6 +924,7 @@ const InternalOrchestrationCommand = Schema.Union([
   ThreadTurnDiffCompleteCommand,
   ThreadActivityAppendCommand,
   ThreadRevertCompleteCommand,
+  ThreadTurnRetryCommand,
 ]);
 export type InternalOrchestrationCommand = typeof InternalOrchestrationCommand.Type;
 
