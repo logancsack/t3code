@@ -65,6 +65,30 @@ const KNOWN_STATUSES = new Set<string>(Object.keys(statusLabel));
 
 type PendingAction = "restart" | "pause" | "resume";
 type Confirmation = "restart" | "pause";
+type ActionSnapshotResult = "pending" | "progressing" | "resolved";
+
+export function actionSnapshotResult(
+  action: PendingAction,
+  workspace: ManagedDevPcBootstrap,
+  progressObserved = false,
+): ActionSnapshotResult {
+  const status = workspace.status ?? workspace.state;
+  if (action === "pause") {
+    if (["paused", "stopped"].includes(status)) return "resolved";
+    if (["pausing", "stopping"].includes(status)) return "progressing";
+    return "pending";
+  }
+  if (action === "resume") {
+    if (status === "running" || (workspace.state === "ready" && workspace.ready)) {
+      return "resolved";
+    }
+    if (["starting", "restoring", "reconnecting"].includes(status)) return "progressing";
+    return "pending";
+  }
+  if (["restarting", "starting", "restoring"].includes(status)) return "progressing";
+  if (progressObserved && (status === "running" || workspace.state === "ready")) return "resolved";
+  return "pending";
+}
 
 export function displayStatus(
   workspace: ManagedDevPcBootstrap,
@@ -274,13 +298,27 @@ export function ManagedDevPcStatus() {
   );
   const [open, setOpen] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
+  const [uncertainAction, setUncertainAction] = useState<PendingAction | null>(null);
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
   const [settingsPending, setSettingsPending] = useState(false);
   const [statusUnavailable, setStatusUnavailable] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const actionKeys = useRef<Partial<Record<PendingAction, string>>>({});
+  const pendingActionRef = useRef<PendingAction | null>(null);
+  const uncertainActionRef = useRef<PendingAction | null>(null);
+  const actionProgressObserved = useRef<Partial<Record<PendingAction, boolean>>>({});
   const refreshSequence = useRef(0);
   const latestAppliedRefresh = useRef(0);
+
+  const updatePendingAction = useCallback((action: PendingAction | null) => {
+    pendingActionRef.current = action;
+    setPendingAction(action);
+  }, []);
+
+  const updateUncertainAction = useCallback((action: PendingAction | null) => {
+    uncertainActionRef.current = action;
+    setUncertainAction(action);
+  }, []);
 
   const invalidateWorkspaceRefreshes = () => {
     latestAppliedRefresh.current = ++refreshSequence.current;
@@ -303,6 +341,26 @@ export function ManagedDevPcStatus() {
       const next = (await response.json()) as ManagedDevPcBootstrap;
       if (generation < latestAppliedRefresh.current) return null;
       latestAppliedRefresh.current = generation;
+      const action = pendingActionRef.current ?? uncertainActionRef.current;
+      if (action) {
+        const result = actionSnapshotResult(
+          action,
+          next,
+          actionProgressObserved.current[action] ?? false,
+        );
+        if (result === "resolved") {
+          delete actionKeys.current[action];
+          delete actionProgressObserved.current[action];
+          updatePendingAction(null);
+          updateUncertainAction(null);
+          setError(null);
+        } else if (result === "progressing") {
+          actionProgressObserved.current[action] = true;
+          updatePendingAction(action);
+          updateUncertainAction(null);
+          setError(null);
+        }
+      }
       setWorkspace(next);
       setStatusUnavailable(false);
       return next;
@@ -312,7 +370,7 @@ export function ManagedDevPcStatus() {
       setStatusUnavailable(true);
       return null;
     }
-  }, []);
+  }, [updatePendingAction, updateUncertainAction]);
 
   useEffect(() => {
     if (!isManagedDevPc) return;
@@ -347,10 +405,13 @@ export function ManagedDevPcStatus() {
           ? "/_devpc/workspace/stop"
           : "/_devpc/workspace/start";
     setConfirmation(null);
-    setPendingAction(action);
+    updatePendingAction(action);
+    updateUncertainAction(null);
     setError(null);
-    const idempotencyKey = actionKeys.current[action] ?? `${action}-${randomUUID()}`;
+    const existingKey = actionKeys.current[action];
+    const idempotencyKey = existingKey ?? `${action}-${randomUUID()}`;
     actionKeys.current[action] = idempotencyKey;
+    if (!existingKey) actionProgressObserved.current[action] = false;
     let definitiveFailure = false;
     try {
       const response = await fetch(path, {
@@ -394,17 +455,27 @@ export function ManagedDevPcStatus() {
               }
             : current,
         );
-        setPendingAction(null);
+        updatePendingAction(null);
+        updateUncertainAction(null);
       }
       void refresh();
     } catch {
-      if (definitiveFailure) delete actionKeys.current[action];
-      setPendingAction(null);
-      setError(
-        action === "resume"
-          ? "The workspace could not be resumed. Try again."
-          : `The workspace could not be ${action === "pause" ? "paused" : "restarted"}. Try again.`,
-      );
+      if (definitiveFailure) {
+        delete actionKeys.current[action];
+        delete actionProgressObserved.current[action];
+        if (pendingActionRef.current === action) updatePendingAction(null);
+        if (uncertainActionRef.current === action) updateUncertainAction(null);
+        setError(
+          action === "resume"
+            ? "The workspace could not be resumed. Try again."
+            : `The workspace could not be ${action === "pause" ? "paused" : "restarted"}. Try again.`,
+        );
+      } else if (actionKeys.current[action] === idempotencyKey) {
+        updatePendingAction(null);
+        updateUncertainAction(action);
+        setError("The request was interrupted. Retrying is safe while Aldo checks the workspace.");
+        void refresh();
+      }
     }
   };
 
@@ -436,8 +507,13 @@ export function ManagedDevPcStatus() {
     }
   };
 
-  const canOperate = status === "running" && workspace.state === "ready" && pendingAction === null;
-  const canResume = ["paused", "stopped"].includes(status) && pendingAction === null;
+  const canOperate =
+    status === "running" &&
+    workspace.state === "ready" &&
+    pendingAction === null &&
+    uncertainAction === null;
+  const canResume =
+    ["paused", "stopped"].includes(status) && pendingAction === null && uncertainAction === null;
   const autoStopClock = formatClock(workspace.autoStopAt);
   const ariaState = statusLabel[status].replace("…", "");
 
@@ -447,7 +523,7 @@ export function ManagedDevPcStatus() {
       onOpenChange={(nextOpen) => {
         setOpen(nextOpen);
         if (nextOpen) {
-          setError(null);
+          if (!uncertainActionRef.current) setError(null);
           void refresh();
         }
       }}
@@ -494,7 +570,21 @@ export function ManagedDevPcStatus() {
                 Resume workspace
               </Button>
             ) : null}
-            {error ? <p className="text-xs text-destructive">{error}</p> : null}
+            {error ? (
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs text-destructive">{error}</p>
+                {uncertainAction ? (
+                  <Button
+                    className="shrink-0"
+                    size="xs"
+                    variant="outline"
+                    onClick={() => void runAction(uncertainAction)}
+                  >
+                    Retry {uncertainAction === "pause" ? "pause" : uncertainAction}
+                  </Button>
+                ) : null}
+              </div>
+            ) : null}
           </section>
 
           <section className="space-y-2 border-t pt-5">

@@ -118,4 +118,29 @@ describe("ManagedDevPcStatus", () => {
       idleTimeoutMinutes: 30,
     });
   });
+
+  it("keeps an interrupted action locked until status confirms progress or completion", async () => {
+    vi.stubEnv("VITE_DEVPC_MANAGED", "1");
+    vi.resetModules();
+    const { actionSnapshotResult } = await import("./ManagedDevPcStatus");
+    const running = {
+      managed: true as const,
+      state: "ready" as const,
+      status: "running" as const,
+      ready: true,
+      previewUrlTemplate: "https://{port}.preview.example.test/",
+    };
+
+    expect(actionSnapshotResult("pause", running)).toBe("pending");
+    expect(actionSnapshotResult("restart", running)).toBe("pending");
+    expect(actionSnapshotResult("restart", running, true)).toBe("resolved");
+    expect(
+      actionSnapshotResult("pause", {
+        ...running,
+        state: "paused",
+        status: "paused",
+        ready: false,
+      }),
+    ).toBe("resolved");
+  });
 });
