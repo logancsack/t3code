@@ -100,6 +100,17 @@ export function formatRelativeTime(value: string | null | undefined, now = Date.
   return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(timestamp);
 }
 
+export function withIdleTimeout(
+  workspace: ManagedDevPcBootstrap,
+  idleTimeoutMinutes: number | undefined,
+): ManagedDevPcBootstrap {
+  if (idleTimeoutMinutes === undefined) {
+    const { idleTimeoutMinutes: _previous, ...withoutIdleTimeout } = workspace;
+    return withoutIdleTimeout;
+  }
+  return { ...workspace, idleTimeoutMinutes };
+}
+
 function formatClock(value: string | null | undefined): string | null {
   if (!value) return null;
   const timestamp = Date.parse(value);
@@ -268,8 +279,15 @@ export function ManagedDevPcStatus() {
   const [statusUnavailable, setStatusUnavailable] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const actionKeys = useRef<Partial<Record<PendingAction, string>>>({});
+  const refreshSequence = useRef(0);
+  const latestAppliedRefresh = useRef(0);
+
+  const invalidateWorkspaceRefreshes = () => {
+    latestAppliedRefresh.current = ++refreshSequence.current;
+  };
 
   const refresh = useCallback(async () => {
+    const generation = ++refreshSequence.current;
     try {
       const response = await fetch(STATUS_PATH, {
         credentials: "same-origin",
@@ -277,14 +295,20 @@ export function ManagedDevPcStatus() {
         headers: { accept: "application/json" },
       });
       if (!response.ok) {
+        if (generation < latestAppliedRefresh.current) return null;
+        latestAppliedRefresh.current = generation;
         setStatusUnavailable(true);
         return null;
       }
       const next = (await response.json()) as ManagedDevPcBootstrap;
+      if (generation < latestAppliedRefresh.current) return null;
+      latestAppliedRefresh.current = generation;
       setWorkspace(next);
       setStatusUnavailable(false);
       return next;
     } catch {
+      if (generation < latestAppliedRefresh.current) return null;
+      latestAppliedRefresh.current = generation;
       setStatusUnavailable(true);
       return null;
     }
@@ -360,6 +384,7 @@ export function ManagedDevPcStatus() {
               : null;
       if (reflectedStatus) {
         delete actionKeys.current[action];
+        invalidateWorkspaceRefreshes();
         setWorkspace((current) =>
           current
             ? {
@@ -386,10 +411,11 @@ export function ManagedDevPcStatus() {
   const updateIdleTimeout = async (value: string | null) => {
     const minutes = Number(value);
     if (!IDLE_TIMEOUTS.includes(minutes as (typeof IDLE_TIMEOUTS)[number])) return;
-    const previous = workspace;
+    const previousIdleTimeoutMinutes = workspace.idleTimeoutMinutes;
     setSettingsPending(true);
     setError(null);
-    setWorkspace({ ...workspace, idleTimeoutMinutes: minutes });
+    invalidateWorkspaceRefreshes();
+    setWorkspace((current) => (current ? withIdleTimeout(current, minutes) : current));
     try {
       const response = await fetch(SETTINGS_PATH, {
         method: "PATCH",
@@ -400,7 +426,10 @@ export function ManagedDevPcStatus() {
       if (!response.ok) throw new Error("request failed");
       await refresh();
     } catch {
-      setWorkspace(previous);
+      invalidateWorkspaceRefreshes();
+      setWorkspace((current) =>
+        current ? withIdleTimeout(current, previousIdleTimeoutMinutes) : current,
+      );
       setError("The auto-pause setting could not be updated. Try again.");
     } finally {
       setSettingsPending(false);

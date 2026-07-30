@@ -98,4 +98,24 @@ describe("ManagedDevPcStatus", () => {
       }),
     ).toBe("attention");
   });
+
+  it("rolls back only the idle timeout on a newer workspace snapshot", async () => {
+    vi.stubEnv("VITE_DEVPC_MANAGED", "1");
+    vi.resetModules();
+    const { withIdleTimeout } = await import("./ManagedDevPcStatus");
+    const latest = {
+      managed: true as const,
+      state: "paused" as const,
+      status: "paused" as const,
+      ready: false,
+      idleTimeoutMinutes: 15,
+      lastHeartbeatAt: "2026-07-30T07:00:00.000Z",
+      previewUrlTemplate: "https://{port}.preview.example.test/",
+    };
+
+    expect(withIdleTimeout(latest, 30)).toEqual({
+      ...latest,
+      idleTimeoutMinutes: 30,
+    });
+  });
 });
