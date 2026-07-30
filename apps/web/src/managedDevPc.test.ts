@@ -135,12 +135,46 @@ describe("managed DevPC paused bootstrap", () => {
       ready: true,
       previewUrlTemplate: "https://{port}.preview.example.test/",
     });
+    expect(removeItem).not.toHaveBeenCalled();
+
+    reconcileBootstrapLifecycleAction({
+      managed: true,
+      state: "ready",
+      status: "running",
+      ready: true,
+      previewUrlTemplate: "https://{port}.preview.example.test/",
+    });
     expect(removeItem).toHaveBeenCalledWith("devpc-managed-workspace-action");
     expect(dispatchEvent).toHaveBeenCalledWith(
       expect.objectContaining({
         detail: { action: "restart" },
       }),
     );
+  });
+
+  it("hydrates bootstrap resume recovery from the persisted idempotency key", async () => {
+    vi.stubEnv("VITE_DEVPC_MANAGED", "1");
+    vi.resetModules();
+    vi.stubGlobal("window", {
+      localStorage: {
+        getItem: vi.fn(() =>
+          JSON.stringify({
+            action: "resume",
+            phase: "uncertain",
+            idempotencyKey: "resume-persisted-key",
+            progressObserved: false,
+            restartConfirmations: 0,
+          }),
+        ),
+      },
+    });
+    const { readPersistedManagedResume } = await import("./managedDevPc");
+
+    expect(readPersistedManagedResume()).toEqual({
+      requestKey: "resume-persisted-key",
+      accepted: false,
+      uncertain: true,
+    });
   });
 
   it("continues polling when the resume surface has no root element to mount into", async () => {

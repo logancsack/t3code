@@ -109,23 +109,90 @@ export function clearCompletedPauseAction(bootstrap: ManagedDevPcBootstrap): voi
   reconcileBootstrapLifecycleAction(bootstrap);
 }
 
-export function reconcileBootstrapLifecycleAction(bootstrap: ManagedDevPcBootstrap): void {
+type StoredManagedWorkspaceAction = {
+  readonly action: "pause" | "restart" | "resume";
+  readonly phase?: "pending" | "uncertain";
+  readonly idempotencyKey?: string;
+  readonly progressObserved?: boolean;
+  readonly restartConfirmations?: number;
+};
+
+function readStoredManagedWorkspaceAction(): StoredManagedWorkspaceAction | null {
   try {
     const stored = JSON.parse(
       window.localStorage.getItem(MANAGED_WORKSPACE_ACTION_STORAGE_KEY) ?? "null",
-    ) as { action?: unknown; progressObserved?: unknown } | null;
-    if (!stored || !["pause", "restart", "resume"].includes(String(stored.action))) return;
-    const action = stored.action as "pause" | "restart" | "resume";
+    ) as Partial<StoredManagedWorkspaceAction> | null;
+    if (!stored || !["pause", "restart", "resume"].includes(String(stored.action))) return null;
+    return stored as StoredManagedWorkspaceAction;
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredManagedWorkspaceAction(stored: StoredManagedWorkspaceAction): void {
+  try {
+    window.localStorage.setItem(MANAGED_WORKSPACE_ACTION_STORAGE_KEY, JSON.stringify(stored));
+  } catch {
+    // Storage can be unavailable in privacy-restricted browser contexts.
+  }
+}
+
+function clearStoredManagedWorkspaceAction(
+  action: StoredManagedWorkspaceAction["action"],
+  idempotencyKey?: string,
+): void {
+  try {
+    const stored = readStoredManagedWorkspaceAction();
+    if (
+      stored?.action !== action ||
+      (idempotencyKey !== undefined && stored.idempotencyKey !== idempotencyKey)
+    ) {
+      return;
+    }
+    window.localStorage.removeItem(MANAGED_WORKSPACE_ACTION_STORAGE_KEY);
+  } catch {
+    // Storage can be unavailable in privacy-restricted browser contexts.
+  }
+}
+
+export function readPersistedManagedResume(): {
+  readonly requestKey: string;
+  readonly accepted: boolean;
+  readonly uncertain: boolean;
+} | null {
+  const stored = readStoredManagedWorkspaceAction();
+  if (
+    stored?.action !== "resume" ||
+    typeof stored.idempotencyKey !== "string" ||
+    stored.idempotencyKey.length === 0
+  ) {
+    return null;
+  }
+  return {
+    requestKey: stored.idempotencyKey,
+    accepted: stored.progressObserved === true,
+    uncertain: stored.phase === "uncertain",
+  };
+}
+
+export function reconcileBootstrapLifecycleAction(
+  bootstrap: ManagedDevPcBootstrap,
+): "pending-restart-confirmation" | null {
+  try {
+    const stored = readStoredManagedWorkspaceAction();
+    if (!stored) return null;
+    const action = stored.action;
     const status = bootstrap.status ?? bootstrap.state;
     const running = status === "running" || (bootstrap.state === "ready" && bootstrap.ready);
+    const restartProgressFromStatus =
+      action === "restart" && ["restarting", "starting", "restoring"].includes(status);
     const progressObserved =
       stored.progressObserved === true ||
-      (action === "restart" && ["restarting", "starting", "restoring"].includes(status)) ||
+      restartProgressFromStatus ||
       (action === "resume" && ["starting", "restoring", "reconnecting"].includes(status));
     const completed =
       (action === "pause" && ["paused", "stopped"].includes(status)) ||
-      (action === "resume" && running) ||
-      (action === "restart" && progressObserved && running);
+      (action === "resume" && running);
     if (completed) {
       window.localStorage.removeItem(MANAGED_WORKSPACE_ACTION_STORAGE_KEY);
       if (typeof window.dispatchEvent === "function") {
@@ -135,14 +202,44 @@ export function reconcileBootstrapLifecycleAction(bootstrap: ManagedDevPcBootstr
           }),
         );
       }
-    } else if (progressObserved && stored.progressObserved !== true) {
-      window.localStorage.setItem(
-        MANAGED_WORKSPACE_ACTION_STORAGE_KEY,
-        JSON.stringify({ ...stored, progressObserved: true }),
-      );
+      return null;
     }
+    if (action === "restart" && progressObserved && running) {
+      const previousConfirmations =
+        typeof stored.restartConfirmations === "number" &&
+        Number.isInteger(stored.restartConfirmations) &&
+        stored.restartConfirmations >= 0
+          ? stored.restartConfirmations
+          : 0;
+      if (previousConfirmations >= 1) {
+        window.localStorage.removeItem(MANAGED_WORKSPACE_ACTION_STORAGE_KEY);
+        if (typeof window.dispatchEvent === "function") {
+          window.dispatchEvent(
+            new CustomEvent(MANAGED_WORKSPACE_ACTION_CLEARED_EVENT, {
+              detail: { action },
+            }),
+          );
+        }
+        return null;
+      }
+      writeStoredManagedWorkspaceAction({
+        ...stored,
+        progressObserved: true,
+        restartConfirmations: 1,
+      });
+      return "pending-restart-confirmation";
+    }
+    if (progressObserved && (stored.progressObserved !== true || restartProgressFromStatus)) {
+      writeStoredManagedWorkspaceAction({
+        ...stored,
+        progressObserved: true,
+        restartConfirmations: restartProgressFromStatus ? 0 : (stored.restartConfirmations ?? 0),
+      });
+    }
+    return null;
   } catch {
     // Storage can be unavailable or contain an obsolete record.
+    return null;
   }
 }
 
@@ -179,6 +276,18 @@ function updateBootstrapMessage(message: string, failed = false): void {
 type ResumeRequestOutcome = "accepted" | "rejected" | "uncertain";
 
 async function requestManagedResume(resumeRequestKey: string): Promise<ResumeRequestOutcome> {
+  const existing = readStoredManagedWorkspaceAction();
+  const progressObserved =
+    existing?.action === "resume" &&
+    existing.idempotencyKey === resumeRequestKey &&
+    existing.progressObserved === true;
+  writeStoredManagedWorkspaceAction({
+    action: "resume",
+    phase: "pending",
+    idempotencyKey: resumeRequestKey,
+    progressObserved,
+    restartConfirmations: 0,
+  });
   try {
     const response = await fetch(START_PATH, {
       method: "POST",
@@ -190,9 +299,36 @@ async function requestManagedResume(resumeRequestKey: string): Promise<ResumeReq
       body: "{}",
       signal: AbortSignal.timeout(30_000),
     });
-    if (response.ok) return "accepted";
-    return isAmbiguousLifecycleResponse(response.status) ? "uncertain" : "rejected";
+    if (response.ok) {
+      writeStoredManagedWorkspaceAction({
+        action: "resume",
+        phase: "pending",
+        idempotencyKey: resumeRequestKey,
+        progressObserved: true,
+        restartConfirmations: 0,
+      });
+      return "accepted";
+    }
+    if (isAmbiguousLifecycleResponse(response.status)) {
+      writeStoredManagedWorkspaceAction({
+        action: "resume",
+        phase: "uncertain",
+        idempotencyKey: resumeRequestKey,
+        progressObserved,
+        restartConfirmations: 0,
+      });
+      return "uncertain";
+    }
+    clearStoredManagedWorkspaceAction("resume", resumeRequestKey);
+    return "rejected";
   } catch {
+    writeStoredManagedWorkspaceAction({
+      action: "resume",
+      phase: "uncertain",
+      idempotencyKey: resumeRequestKey,
+      progressObserved,
+      restartConfirmations: 0,
+    });
     return "uncertain";
   }
 }
@@ -290,10 +426,11 @@ export async function prepareManagedDevPc(): Promise<void> {
   if (!isManagedDevPc) return;
 
   updateBootstrapMessage("Connecting to the managed workspace…");
+  const persistedResume = readPersistedManagedResume();
   let failures = 0;
-  let resumeAccepted = false;
-  let resumeRequestKey: string | undefined;
-  let resumeUncertain = false;
+  let resumeAccepted = persistedResume?.accepted ?? false;
+  let resumeRequestKey = persistedResume?.requestKey;
+  let resumeUncertain = persistedResume?.uncertain ?? false;
   let resumeWaitPolls = 0;
   while (true) {
     try {
@@ -307,8 +444,14 @@ export async function prepareManagedDevPc(): Promise<void> {
       }
       const bootstrap = (await response.json()) as ManagedDevPcBootstrap;
       window.__DEVPC_MANAGED_BOOTSTRAP__ = bootstrap;
-      reconcileBootstrapLifecycleAction(bootstrap);
+      const lifecycleReconciliation = reconcileBootstrapLifecycleAction(bootstrap);
       if (bootstrap.ready) {
+        if (lifecycleReconciliation === "pending-restart-confirmation") {
+          failures = 0;
+          updateBootstrapMessage("Confirming that your workspace restarted…");
+          await new Promise((resolve) => window.setTimeout(resolve, 1_500));
+          continue;
+        }
         if (bootstrap.pairingToken) {
           window.location.hash = pairingHash(bootstrap.pairingToken);
         }
@@ -317,6 +460,7 @@ export async function prepareManagedDevPc(): Promise<void> {
       if (requiresManagedResume(bootstrap)) {
         failures = 0;
         if (shouldRepromptManagedResume(resumeAccepted, resumeWaitPolls)) {
+          if (resumeRequestKey) clearStoredManagedWorkspaceAction("resume", resumeRequestKey);
           resumeAccepted = false;
           resumeRequestKey = undefined;
           resumeUncertain = false;
