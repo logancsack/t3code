@@ -392,6 +392,29 @@ export function reconcileIdleTimeoutProjection(
   };
 }
 
+export function reconcileIdleTimeoutRefresh(
+  serverIdleTimeoutMinutes: number | undefined,
+  projectionAtRequestStart: IdleTimeoutProjection | null,
+  currentProjection: IdleTimeoutProjection | null,
+  settingsPending: boolean,
+  currentDisplayedIdleTimeoutMinutes: number | undefined,
+): {
+  readonly effectiveIdleTimeoutMinutes: number | undefined;
+  readonly projection: IdleTimeoutProjection | null;
+} {
+  if (currentProjection !== projectionAtRequestStart) {
+    return {
+      effectiveIdleTimeoutMinutes: currentProjection?.minutes ?? currentDisplayedIdleTimeoutMinutes,
+      projection: currentProjection,
+    };
+  }
+  return reconcileIdleTimeoutProjection(
+    serverIdleTimeoutMinutes,
+    currentProjection,
+    settingsPending,
+  );
+}
+
 function formatClock(value: string | null | undefined): string | null {
   if (!value) return null;
   const timestamp = Date.parse(value);
@@ -606,6 +629,7 @@ export function ManagedDevPcStatus() {
   const refresh = useCallback(async () => {
     const generation = ++refreshSequence.current;
     const restartConfirmationsAtRequestStart = restartCompletionConfirmations.current;
+    const idleTimeoutProjectionAtRequestStart = pendingIdleTimeout.current;
     try {
       const response = await fetch(STATUS_PATH, {
         credentials: "same-origin",
@@ -625,10 +649,12 @@ export function ManagedDevPcStatus() {
       if (generation < latestAppliedRefresh.current) return null;
       latestAppliedRefresh.current = generation;
       window.__DEVPC_MANAGED_BOOTSTRAP__ = next;
-      const idleTimeout = reconcileIdleTimeoutProjection(
+      const idleTimeout = reconcileIdleTimeoutRefresh(
         next.idleTimeoutMinutes,
+        idleTimeoutProjectionAtRequestStart,
         pendingIdleTimeout.current,
         managedActionSnapshot.settingsPending,
+        managedActionSnapshot.idleTimeoutMinutes,
       );
       pendingIdleTimeout.current = idleTimeout.projection;
       updateManagedIdleTimeout(idleTimeout.effectiveIdleTimeoutMinutes);

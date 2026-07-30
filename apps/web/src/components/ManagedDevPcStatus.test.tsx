@@ -291,6 +291,39 @@ describe("ManagedDevPcStatus", () => {
     });
   });
 
+  it("counts only serialized idle-timeout mismatch confirmations", async () => {
+    vi.stubEnv("VITE_DEVPC_MANAGED", "1");
+    vi.resetModules();
+    const { reconcileIdleTimeoutRefresh } = await import("./ManagedDevPcStatus");
+    const projectionAtRequestStart = { minutes: 60, mismatches: 0 };
+    const projectionAfterEarlierResponse = { minutes: 60, mismatches: 1 };
+
+    expect(
+      reconcileIdleTimeoutRefresh(
+        30,
+        projectionAtRequestStart,
+        projectionAfterEarlierResponse,
+        false,
+        60,
+      ),
+    ).toEqual({
+      effectiveIdleTimeoutMinutes: 60,
+      projection: projectionAfterEarlierResponse,
+    });
+    expect(
+      reconcileIdleTimeoutRefresh(
+        30,
+        projectionAfterEarlierResponse,
+        projectionAfterEarlierResponse,
+        false,
+        60,
+      ),
+    ).toEqual({
+      effectiveIdleTimeoutMinutes: 60,
+      projection: { minutes: 60, mismatches: 2 },
+    });
+  });
+
   it("does not invent a default idle timeout when settings metadata is absent", async () => {
     vi.stubEnv("VITE_DEVPC_MANAGED", "1");
     vi.resetModules();
