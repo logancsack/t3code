@@ -183,7 +183,9 @@ export function reconcileBootstrapLifecycleAction(
     if (!stored) return null;
     const action = stored.action;
     const status = bootstrap.status ?? bootstrap.state;
-    const running = status === "running" || (bootstrap.state === "ready" && bootstrap.ready);
+    const running = bootstrap.status
+      ? bootstrap.status === "running"
+      : bootstrap.state === "ready" && bootstrap.ready;
     const restartProgressFromStatus =
       action === "restart" && ["restarting", "starting", "restoring"].includes(status);
     const progressObserved =

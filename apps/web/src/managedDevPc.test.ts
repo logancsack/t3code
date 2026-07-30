@@ -131,6 +131,15 @@ describe("managed DevPC paused bootstrap", () => {
     reconcileBootstrapLifecycleAction({
       managed: true,
       state: "ready",
+      status: "restarting",
+      ready: true,
+      previewUrlTemplate: "https://{port}.preview.example.test/",
+    });
+    expect(removeItem).not.toHaveBeenCalled();
+
+    reconcileBootstrapLifecycleAction({
+      managed: true,
+      state: "ready",
       status: "running",
       ready: true,
       previewUrlTemplate: "https://{port}.preview.example.test/",
