@@ -295,8 +295,7 @@ export function actionSnapshotResult(
   restartCompletionConfirmations = 0,
 ): ActionSnapshotResult {
   const status = workspace.status ?? workspace.state;
-  const legacyReady =
-    workspace.status === undefined && workspace.state === "ready" && workspace.ready;
+  const running = isManagedWorkspaceRunning(workspace);
   if (workspace.state === "error" || status === "attention") return "failed";
   if (action === "pause") {
     if (["paused", "stopped"].includes(status)) return "resolved";
@@ -304,19 +303,21 @@ export function actionSnapshotResult(
     return "pending";
   }
   if (action === "resume") {
-    if (status === "running" || legacyReady) return "resolved";
+    if (running) return "resolved";
     if (["starting", "restoring", "reconnecting"].includes(status)) return "progressing";
     return "pending";
   }
   if (["restarting", "starting", "restoring"].includes(status)) return "progressing";
-  if (
-    progressObserved &&
-    restartCompletionConfirmations > 0 &&
-    (status === "running" || legacyReady)
-  ) {
+  if (progressObserved && restartCompletionConfirmations > 0 && running) {
     return "resolved";
   }
   return "pending";
+}
+
+export function isManagedWorkspaceRunning(workspace: ManagedDevPcBootstrap): boolean {
+  return workspace.status
+    ? workspace.status === "running"
+    : workspace.state === "ready" && workspace.ready;
 }
 
 export function ownsManagedActionRequest(
@@ -717,7 +718,7 @@ export function ManagedDevPcStatus() {
         } else if (
           action === "restart" &&
           actionProgressObserved.current.restart &&
-          (next.status === "running" || next.state === "ready")
+          isManagedWorkspaceRunning(next)
         ) {
           // Require two status snapshots after accepted restart progress. The first
           // can still be the eventually-consistent pre-action projection.
