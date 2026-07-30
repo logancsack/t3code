@@ -428,9 +428,20 @@ function waitForManagedResume(
           error.classList.remove("hidden");
           return;
         }
-        if (outcome === "accepted" || outcome === "superseded") {
+        if (outcome === "accepted") {
           updateBootstrapMessage("Resuming your workspace…");
           resolve({ requestKey: resumeRequestKey, uncertain: false });
+        } else if (outcome === "superseded") {
+          const supersedingResume = readPersistedManagedResume();
+          if (!supersedingResume) {
+            resolve(null);
+            return;
+          }
+          updateBootstrapMessage("Resuming your workspace…");
+          resolve({
+            requestKey: supersedingResume.requestKey,
+            uncertain: supersedingResume.uncertain,
+          });
         } else {
           // The gateway may have accepted the idempotent request before the response
           // was interrupted. Resume bootstrap polling and safely retry the same key
@@ -540,7 +551,10 @@ export async function prepareManagedDevPc(): Promise<void> {
             if (outcome === "accepted") {
               resumeUncertain = false;
             } else if (outcome === "superseded") {
-              resumeUncertain = false;
+              const supersedingResume = readPersistedManagedResume();
+              resumeAccepted = supersedingResume !== null;
+              resumeRequestKey = supersedingResume?.requestKey;
+              resumeUncertain = supersedingResume?.uncertain ?? false;
             } else if (outcome === "rejected") {
               resumeAccepted = false;
               resumeUncertain = false;
