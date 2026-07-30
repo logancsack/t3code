@@ -88,6 +88,47 @@ describe("ManagedDevPcStatus", () => {
     );
   });
 
+  it("clears an already-hydrated pause guard when bootstrap observes the paused state", async () => {
+    vi.stubEnv("VITE_DEVPC_MANAGED", "1");
+    vi.resetModules();
+    const removeItem = vi.fn();
+    let clearedListener: EventListener | undefined;
+    vi.stubGlobal("window", {
+      __DEVPC_MANAGED_BOOTSTRAP__: {
+        managed: true,
+        state: "paused",
+        status: "paused",
+        ready: false,
+        previewUrlTemplate: "https://{port}.preview.example.test/",
+      },
+      sessionStorage: {
+        getItem: vi.fn(() =>
+          JSON.stringify({
+            action: "pause",
+            phase: "pending",
+            idempotencyKey: "pause-persisted-key",
+            progressObserved: false,
+            restartConfirmations: 0,
+          }),
+        ),
+        setItem: vi.fn(),
+        removeItem,
+      },
+      addEventListener: vi.fn((type: string, listener: EventListener) => {
+        if (type === "devpc-managed-workspace-action-cleared") clearedListener = listener;
+      }),
+    });
+
+    await import("./ManagedDevPcStatus");
+    clearedListener?.(
+      new CustomEvent("devpc-managed-workspace-action-cleared", {
+        detail: { action: "pause" },
+      }),
+    );
+
+    expect(removeItem).toHaveBeenCalledWith("devpc-managed-workspace-action");
+  });
+
   it.each([
     ["starting", "starting", "Starting…"],
     ["ready", "reconnecting", "Reconnecting…"],

@@ -4,6 +4,7 @@ import { ChevronRightIcon, PauseIcon, PlayIcon, RotateCwIcon } from "lucide-reac
 import {
   isAmbiguousLifecycleResponse,
   isManagedDevPc,
+  MANAGED_WORKSPACE_ACTION_CLEARED_EVENT,
   MANAGED_WORKSPACE_ACTION_SESSION_KEY,
   type ManagedDevPcBootstrap,
   type ManagedDevPcDisplayStatus,
@@ -217,6 +218,34 @@ function updateManagedIdleTimeout(idleTimeoutMinutes: number | undefined): void 
   if (managedActionSnapshot.idleTimeoutMinutes === idleTimeoutMinutes) return;
   managedActionSnapshot = { ...managedActionSnapshot, idleTimeoutMinutes };
   managedActionListeners.forEach((listener) => listener());
+}
+
+function clearHydratedManagedAction(action: PendingAction): void {
+  let changed = false;
+  if (managedPendingAction.current === action) {
+    managedPendingAction.current = null;
+    managedActionSnapshot = { ...managedActionSnapshot, pendingAction: null };
+    changed = true;
+  }
+  if (managedUncertainAction.current === action) {
+    managedUncertainAction.current = null;
+    managedActionSnapshot = { ...managedActionSnapshot, uncertainAction: null };
+    changed = true;
+  }
+  delete managedActionKeys.current[action];
+  delete managedActionProgress.current[action];
+  if (action === "restart") managedRestartConfirmations.current = 0;
+  persistManagedActionSession();
+  if (changed) managedActionListeners.forEach((listener) => listener());
+}
+
+if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
+  window.addEventListener(MANAGED_WORKSPACE_ACTION_CLEARED_EVENT, (event) => {
+    const action = (event as CustomEvent<{ action?: unknown }>).detail?.action;
+    if (MANAGED_ACTIONS.has(action as PendingAction)) {
+      clearHydratedManagedAction(action as PendingAction);
+    }
+  });
 }
 
 export function actionSnapshotResult(

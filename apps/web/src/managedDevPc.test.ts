@@ -62,11 +62,13 @@ describe("managed DevPC paused bootstrap", () => {
     vi.stubEnv("VITE_DEVPC_MANAGED", "1");
     vi.resetModules();
     const removeItem = vi.fn();
+    const dispatchEvent = vi.fn();
     vi.stubGlobal("window", {
       sessionStorage: {
         getItem: vi.fn(() => JSON.stringify({ action: "pause" })),
         removeItem,
       },
+      dispatchEvent,
     });
     const { clearCompletedPauseAction } = await import("./managedDevPc");
 
@@ -79,6 +81,12 @@ describe("managed DevPC paused bootstrap", () => {
     });
 
     expect(removeItem).toHaveBeenCalledWith("devpc-managed-workspace-action");
+    expect(dispatchEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "devpc-managed-workspace-action-cleared",
+        detail: { action: "pause" },
+      }),
+    );
   });
 
   it("continues polling when the resume surface has no root element to mount into", async () => {

@@ -75,6 +75,7 @@ const BOOTSTRAP_PATH = "/_devpc/bootstrap";
 const START_PATH = "/_devpc/workspace/start";
 const WEBSOCKET_TICKET_PATH = "/_devpc/ws-ticket";
 export const MANAGED_WORKSPACE_ACTION_SESSION_KEY = "devpc-managed-workspace-action";
+export const MANAGED_WORKSPACE_ACTION_CLEARED_EVENT = "devpc-managed-workspace-action-cleared";
 const SESSION_RECOVERY_KEY = "devpc-managed-session-recovery-at";
 const SESSION_RECOVERY_COOLDOWN_MS = 30_000;
 const MAX_RESUME_WAIT_POLLS = 40;
@@ -112,6 +113,13 @@ export function clearCompletedPauseAction(bootstrap: ManagedDevPcBootstrap): voi
     ) as { action?: unknown } | null;
     if (stored?.action === "pause") {
       window.sessionStorage.removeItem(MANAGED_WORKSPACE_ACTION_SESSION_KEY);
+      if (typeof window.dispatchEvent === "function") {
+        window.dispatchEvent(
+          new CustomEvent(MANAGED_WORKSPACE_ACTION_CLEARED_EVENT, {
+            detail: { action: "pause" },
+          }),
+        );
+      }
     }
   } catch {
     // Storage can be unavailable or contain an obsolete record.
