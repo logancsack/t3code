@@ -71,4 +71,24 @@ describe("ManagedDevPcStatus", () => {
     expect(markup).toContain(`data-devpc-workspace-status="${status}"`);
     expect(markup).toContain(`Workspace · ${label}`);
   });
+
+  it("does not preserve a running label after a status request becomes unavailable", async () => {
+    vi.stubEnv("VITE_DEVPC_MANAGED", "1");
+    vi.resetModules();
+    const { displayStatus } = await import("./ManagedDevPcStatus");
+
+    expect(
+      displayStatus(
+        {
+          managed: true,
+          state: "ready",
+          status: "running",
+          ready: true,
+          previewUrlTemplate: "https://{port}.preview.example.test/",
+        },
+        null,
+        true,
+      ),
+    ).toBe("unreachable");
+  });
 });

@@ -72,10 +72,12 @@ type Confirmation = "restart" | "pause";
 export function displayStatus(
   workspace: ManagedDevPcBootstrap,
   pendingAction: PendingAction | null = null,
+  statusUnavailable = false,
 ): ManagedDevPcDisplayStatus {
   if (pendingAction === "restart") return "restarting";
   if (pendingAction === "pause") return "pausing";
   if (pendingAction === "resume") return "starting";
+  if (statusUnavailable) return "unreachable";
   if (workspace.status) return workspace.status;
   if (workspace.state === "ready") return "running";
   if (workspace.state === "restarting") return "restarting";
@@ -264,6 +266,7 @@ export function ManagedDevPcStatus() {
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
   const [settingsPending, setSettingsPending] = useState(false);
+  const [statusUnavailable, setStatusUnavailable] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
@@ -273,12 +276,16 @@ export function ManagedDevPcStatus() {
         cache: "no-store",
         headers: { accept: "application/json" },
       });
-      if (!response.ok) return null;
+      if (!response.ok) {
+        setStatusUnavailable(true);
+        return null;
+      }
       const next = (await response.json()) as ManagedDevPcBootstrap;
       setWorkspace(next);
-      setPendingAction(null);
+      setStatusUnavailable(false);
       return next;
     } catch {
+      setStatusUnavailable(true);
       return null;
     }
   }, []);
@@ -289,7 +296,9 @@ export function ManagedDevPcStatus() {
     return () => window.clearInterval(timer);
   }, [refresh]);
 
-  const status = workspace ? displayStatus(workspace, pendingAction) : "unreachable";
+  const status = workspace
+    ? displayStatus(workspace, pendingAction, statusUnavailable)
+    : "unreachable";
   const telemetry = workspace?.telemetry ?? null;
   const idleTimeoutMinutes = workspace?.idleTimeoutMinutes ?? 30;
   const statusMeta = useMemo(() => {
@@ -327,7 +336,34 @@ export function ManagedDevPcStatus() {
         body: "{}",
       });
       if (!response.ok) throw new Error("request failed");
-      await refresh();
+      const result = (await response.json()) as { state?: string };
+      const reflectedStatus: ManagedDevPcDisplayStatus | null =
+        action === "restart" && result.state === "restarting"
+          ? "restarting"
+          : action === "pause" && ["stopping", "paused", "stopped"].includes(result.state ?? "")
+            ? result.state === "stopping"
+              ? "pausing"
+              : result.state === "paused"
+                ? "paused"
+                : "stopped"
+            : action === "resume" && ["starting", "ready"].includes(result.state ?? "")
+              ? result.state === "starting"
+                ? "starting"
+                : "running"
+              : null;
+      if (reflectedStatus) {
+        setWorkspace((current) =>
+          current
+            ? {
+                ...current,
+                status: reflectedStatus,
+                ready: reflectedStatus === "running",
+              }
+            : current,
+        );
+        setPendingAction(null);
+      }
+      void refresh();
     } catch {
       setPendingAction(null);
       setError(
@@ -362,7 +398,7 @@ export function ManagedDevPcStatus() {
     }
   };
 
-  const canOperate = workspace.state === "ready" && pendingAction === null;
+  const canOperate = status === "running" && workspace.state === "ready" && pendingAction === null;
   const canResume = ["paused", "stopped"].includes(status) && pendingAction === null;
   const autoStopClock = formatClock(workspace.autoStopAt);
   const ariaState = statusLabel[status].replace("…", "");
@@ -479,7 +515,7 @@ export function ManagedDevPcStatus() {
                   ? `${workspace.machine.cpuCount} vCPU · ${formatBytes(
                       workspace.machine.memoryBytes,
                     )}`
-                  : "4 vCPU · 16 GB"}
+                  : "—"}
               </dd>
               <dt className="text-muted-foreground">Uptime</dt>
               <dd className="text-right">
