@@ -64,7 +64,7 @@ describe("managed DevPC paused bootstrap", () => {
     const removeItem = vi.fn();
     const dispatchEvent = vi.fn();
     vi.stubGlobal("window", {
-      sessionStorage: {
+      localStorage: {
         getItem: vi.fn(() => JSON.stringify({ action: "pause" })),
         removeItem,
       },

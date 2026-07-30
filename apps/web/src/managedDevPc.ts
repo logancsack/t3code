@@ -74,7 +74,7 @@ export const isManagedDevPc = import.meta.env.VITE_DEVPC_MANAGED === "1";
 const BOOTSTRAP_PATH = "/_devpc/bootstrap";
 const START_PATH = "/_devpc/workspace/start";
 const WEBSOCKET_TICKET_PATH = "/_devpc/ws-ticket";
-export const MANAGED_WORKSPACE_ACTION_SESSION_KEY = "devpc-managed-workspace-action";
+export const MANAGED_WORKSPACE_ACTION_STORAGE_KEY = "devpc-managed-workspace-action";
 export const MANAGED_WORKSPACE_ACTION_CLEARED_EVENT = "devpc-managed-workspace-action-cleared";
 const SESSION_RECOVERY_KEY = "devpc-managed-session-recovery-at";
 const SESSION_RECOVERY_COOLDOWN_MS = 30_000;
@@ -109,10 +109,10 @@ export function clearCompletedPauseAction(bootstrap: ManagedDevPcBootstrap): voi
   if (!requiresManagedResume(bootstrap)) return;
   try {
     const stored = JSON.parse(
-      window.sessionStorage.getItem(MANAGED_WORKSPACE_ACTION_SESSION_KEY) ?? "null",
+      window.localStorage.getItem(MANAGED_WORKSPACE_ACTION_STORAGE_KEY) ?? "null",
     ) as { action?: unknown } | null;
     if (stored?.action === "pause") {
-      window.sessionStorage.removeItem(MANAGED_WORKSPACE_ACTION_SESSION_KEY);
+      window.localStorage.removeItem(MANAGED_WORKSPACE_ACTION_STORAGE_KEY);
       if (typeof window.dispatchEvent === "function") {
         window.dispatchEvent(
           new CustomEvent(MANAGED_WORKSPACE_ACTION_CLEARED_EVENT, {

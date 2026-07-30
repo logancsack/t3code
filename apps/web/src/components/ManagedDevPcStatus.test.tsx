@@ -63,7 +63,7 @@ describe("ManagedDevPcStatus", () => {
         ready: true,
         previewUrlTemplate: "https://{port}.preview.example.test/",
       },
-      sessionStorage: {
+      localStorage: {
         getItem: vi.fn(() =>
           JSON.stringify({
             action: "restart",
@@ -101,7 +101,7 @@ describe("ManagedDevPcStatus", () => {
         ready: false,
         previewUrlTemplate: "https://{port}.preview.example.test/",
       },
-      sessionStorage: {
+      localStorage: {
         getItem: vi.fn(() =>
           JSON.stringify({
             action: "pause",
@@ -127,6 +127,50 @@ describe("ManagedDevPcStatus", () => {
     );
 
     expect(removeItem).toHaveBeenCalledWith("devpc-managed-workspace-action");
+  });
+
+  it("shares an uncertain lifecycle guard with other open tabs", async () => {
+    vi.stubEnv("VITE_DEVPC_MANAGED", "1");
+    vi.resetModules();
+    let storageListener: EventListener | undefined;
+    vi.stubGlobal("window", {
+      __DEVPC_MANAGED_BOOTSTRAP__: {
+        managed: true,
+        state: "ready",
+        status: "running",
+        ready: true,
+        previewUrlTemplate: "https://{port}.preview.example.test/",
+      },
+      localStorage: {
+        getItem: vi.fn(() => null),
+        setItem: vi.fn(),
+        removeItem: vi.fn(),
+      },
+      addEventListener: vi.fn((type: string, listener: EventListener) => {
+        if (type === "storage") storageListener = listener;
+      }),
+    });
+
+    const { getManagedActionSnapshot } = await import("./ManagedDevPcStatus");
+    storageListener?.({
+      key: "devpc-managed-workspace-action",
+      newValue: JSON.stringify({
+        action: "restart",
+        phase: "uncertain",
+        idempotencyKey: "restart-shared-key",
+        progressObserved: false,
+        restartConfirmations: 0,
+      }),
+    } as StorageEvent);
+
+    expect(getManagedActionSnapshot().uncertainAction).toBe("restart");
+
+    storageListener?.({
+      key: "devpc-managed-workspace-action",
+      newValue: null,
+    } as StorageEvent);
+    expect(getManagedActionSnapshot().uncertainAction).toBeNull();
+    expect(getManagedActionSnapshot().statusUnavailable).toBe(true);
   });
 
   it.each([
@@ -224,6 +268,25 @@ describe("ManagedDevPcStatus", () => {
     expect(withIdleTimeout(latest, undefined)).not.toHaveProperty("idleTimeoutMinutes");
   });
 
+  it("keeps a confirmed idle timeout projected until status observes it", async () => {
+    vi.stubEnv("VITE_DEVPC_MANAGED", "1");
+    vi.resetModules();
+    const { reconcileIdleTimeoutProjection } = await import("./ManagedDevPcStatus");
+
+    expect(reconcileIdleTimeoutProjection(30, 60, false)).toEqual({
+      effectiveIdleTimeoutMinutes: 60,
+      projectedIdleTimeoutMinutes: 60,
+    });
+    expect(reconcileIdleTimeoutProjection(60, 60, false)).toEqual({
+      effectiveIdleTimeoutMinutes: 60,
+      projectedIdleTimeoutMinutes: null,
+    });
+    expect(reconcileIdleTimeoutProjection(60, 60, true)).toEqual({
+      effectiveIdleTimeoutMinutes: 60,
+      projectedIdleTimeoutMinutes: 60,
+    });
+  });
+
   it("does not invent a default idle timeout when settings metadata is absent", async () => {
     vi.stubEnv("VITE_DEVPC_MANAGED", "1");
     vi.resetModules();
@@ -231,6 +294,15 @@ describe("ManagedDevPcStatus", () => {
 
     expect(idleTimeoutLabel(undefined)).toBe("Unavailable");
     expect(idleTimeoutLabel(30)).toBe("30 minutes");
+  });
+
+  it("explains that stopped workspaces must be resumed", async () => {
+    vi.stubEnv("VITE_DEVPC_MANAGED", "1");
+    vi.resetModules();
+    const { autoPauseDescription } = await import("./ManagedDevPcStatus");
+
+    expect(autoPauseDescription("stopped", 30, "10:30")).toBe("Stopped until you resume.");
+    expect(autoPauseDescription("paused", 30, "10:30")).toBe("Paused until you resume.");
   });
 
   it("keeps an interrupted action locked until status confirms progress or completion", async () => {

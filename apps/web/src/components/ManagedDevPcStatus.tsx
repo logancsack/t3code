@@ -5,7 +5,7 @@ import {
   isAmbiguousLifecycleResponse,
   isManagedDevPc,
   MANAGED_WORKSPACE_ACTION_CLEARED_EVENT,
-  MANAGED_WORKSPACE_ACTION_SESSION_KEY,
+  MANAGED_WORKSPACE_ACTION_STORAGE_KEY,
   type ManagedDevPcBootstrap,
   type ManagedDevPcDisplayStatus,
   type ManagedDevPcTelemetry,
@@ -39,6 +39,7 @@ const TELEMETRY_FRESH_MS = 60_000;
 const STATUS_REQUEST_TIMEOUT_MS = 10_000;
 const ACTION_REQUEST_TIMEOUT_MS = 30_000;
 const IDLE_TIMEOUTS = [15, 30, 60, 120, 240] as const;
+const MANAGED_WORKSPACE_ACTION_SYNCED_EVENT = "devpc-managed-workspace-action-synced";
 
 const statusLabel: Record<ManagedDevPcDisplayStatus, string> = {
   running: "Running",
@@ -88,11 +89,9 @@ type StoredActionSession = {
 
 const MANAGED_ACTIONS = new Set<PendingAction>(["restart", "pause", "resume"]);
 
-function readStoredActionSession(): StoredActionSession | null {
+function parseStoredActionSession(serialized: string | null): StoredActionSession | null {
   try {
-    const value = JSON.parse(
-      window.sessionStorage.getItem(MANAGED_WORKSPACE_ACTION_SESSION_KEY) ?? "null",
-    ) as Partial<StoredActionSession> | null;
+    const value = JSON.parse(serialized ?? "null") as Partial<StoredActionSession> | null;
     if (
       !value ||
       !MANAGED_ACTIONS.has(value.action as PendingAction) ||
@@ -115,6 +114,16 @@ function readStoredActionSession(): StoredActionSession | null {
           ? value.restartConfirmations
           : 0,
     };
+  } catch {
+    return null;
+  }
+}
+
+function readStoredActionSession(): StoredActionSession | null {
+  try {
+    return parseStoredActionSession(
+      window.localStorage.getItem(MANAGED_WORKSPACE_ACTION_STORAGE_KEY),
+    );
   } catch {
     return null;
   }
@@ -160,11 +169,11 @@ function persistManagedActionSession(): void {
   const idempotencyKey = action ? managedActionKeys.current[action] : undefined;
   try {
     if (!action || !idempotencyKey) {
-      window.sessionStorage.removeItem(MANAGED_WORKSPACE_ACTION_SESSION_KEY);
+      window.localStorage.removeItem(MANAGED_WORKSPACE_ACTION_STORAGE_KEY);
       return;
     }
-    window.sessionStorage.setItem(
-      MANAGED_WORKSPACE_ACTION_SESSION_KEY,
+    window.localStorage.setItem(
+      MANAGED_WORKSPACE_ACTION_STORAGE_KEY,
       JSON.stringify({
         action,
         phase: managedPendingAction.current ? "pending" : "uncertain",
@@ -185,7 +194,7 @@ function subscribeManagedActionSession(listener: () => void): () => void {
   return () => managedActionListeners.delete(listener);
 }
 
-function getManagedActionSnapshot(): ActionSessionSnapshot {
+export function getManagedActionSnapshot(): ActionSessionSnapshot {
   return managedActionSnapshot;
 }
 
@@ -240,6 +249,25 @@ function clearHydratedManagedAction(action: PendingAction): void {
 }
 
 if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
+  window.addEventListener("storage", (event) => {
+    if (event.key !== MANAGED_WORKSPACE_ACTION_STORAGE_KEY) return;
+    const stored = parseStoredActionSession(event.newValue);
+    managedPendingAction.current = stored?.phase === "pending" ? stored.action : null;
+    managedUncertainAction.current = stored?.phase === "uncertain" ? stored.action : null;
+    managedActionKeys.current = stored ? { [stored.action]: stored.idempotencyKey } : {};
+    managedActionProgress.current = stored ? { [stored.action]: stored.progressObserved } : {};
+    managedRestartConfirmations.current = stored?.restartConfirmations ?? 0;
+    managedActionSnapshot = {
+      ...managedActionSnapshot,
+      pendingAction: managedPendingAction.current,
+      uncertainAction: managedUncertainAction.current,
+      statusUnavailable: stored ? managedActionSnapshot.statusUnavailable : true,
+    };
+    managedActionListeners.forEach((listener) => listener());
+    if (typeof window.dispatchEvent === "function") {
+      window.dispatchEvent(new Event(MANAGED_WORKSPACE_ACTION_SYNCED_EVENT));
+    }
+  });
   window.addEventListener(MANAGED_WORKSPACE_ACTION_CLEARED_EVENT, (event) => {
     const action = (event as CustomEvent<{ action?: unknown }>).detail?.action;
     if (MANAGED_ACTIONS.has(action as PendingAction)) {
@@ -324,6 +352,32 @@ export function withIdleTimeout(
   return { ...workspace, idleTimeoutMinutes };
 }
 
+export function reconcileIdleTimeoutProjection(
+  serverIdleTimeoutMinutes: number | undefined,
+  projectedIdleTimeoutMinutes: number | null,
+  settingsPending: boolean,
+): {
+  readonly effectiveIdleTimeoutMinutes: number | undefined;
+  readonly projectedIdleTimeoutMinutes: number | null;
+} {
+  if (projectedIdleTimeoutMinutes === null) {
+    return {
+      effectiveIdleTimeoutMinutes: serverIdleTimeoutMinutes,
+      projectedIdleTimeoutMinutes: null,
+    };
+  }
+  if (!settingsPending && serverIdleTimeoutMinutes === projectedIdleTimeoutMinutes) {
+    return {
+      effectiveIdleTimeoutMinutes: serverIdleTimeoutMinutes,
+      projectedIdleTimeoutMinutes: null,
+    };
+  }
+  return {
+    effectiveIdleTimeoutMinutes: projectedIdleTimeoutMinutes,
+    projectedIdleTimeoutMinutes,
+  };
+}
+
 function formatClock(value: string | null | undefined): string | null {
   if (!value) return null;
   const timestamp = Date.parse(value);
@@ -354,6 +408,19 @@ export function idleTimeoutLabel(minutes: number | undefined): string {
   if (minutes < 60) return `${minutes} minutes`;
   const hours = minutes / 60;
   return `${hours} ${hours === 1 ? "hour" : "hours"}`;
+}
+
+export function autoPauseDescription(
+  status: ManagedDevPcDisplayStatus,
+  idleTimeoutMinutes: number | undefined,
+  autoStopClock: string | null,
+): string {
+  if (status === "paused" || status === "stopped") {
+    return `${statusLabel[status]} until you resume.`;
+  }
+  if (idleTimeoutMinutes === undefined) return "Auto-pause timing is unavailable.";
+  if (autoStopClock) return `Pauses around ${autoStopClock} if activity stays quiet.`;
+  return `Pauses after ${idleTimeoutLabel(idleTimeoutMinutes)} of inactivity.`;
 }
 
 function StatusDot({ status }: { status: ManagedDevPcDisplayStatus }) {
@@ -525,7 +592,6 @@ export function ManagedDevPcStatus() {
   const refresh = useCallback(async () => {
     const generation = ++refreshSequence.current;
     const restartConfirmationsAtRequestStart = restartCompletionConfirmations.current;
-    const idleTimeoutAtRequestStart = pendingIdleTimeout.current;
     try {
       const response = await fetch(STATUS_PATH, {
         credentials: "same-origin",
@@ -545,9 +611,13 @@ export function ManagedDevPcStatus() {
       if (generation < latestAppliedRefresh.current) return null;
       latestAppliedRefresh.current = generation;
       window.__DEVPC_MANAGED_BOOTSTRAP__ = next;
-      if (idleTimeoutAtRequestStart === null) {
-        updateManagedIdleTimeout(next.idleTimeoutMinutes);
-      }
+      const idleTimeout = reconcileIdleTimeoutProjection(
+        next.idleTimeoutMinutes,
+        pendingIdleTimeout.current,
+        managedActionSnapshot.settingsPending,
+      );
+      pendingIdleTimeout.current = idleTimeout.projectedIdleTimeoutMinutes;
+      updateManagedIdleTimeout(idleTimeout.effectiveIdleTimeoutMinutes);
       const action = pendingActionRef.current ?? uncertainActionRef.current;
       if (action) {
         const result = actionSnapshotResult(
@@ -587,11 +657,7 @@ export function ManagedDevPcStatus() {
           persistManagedActionSession();
         }
       }
-      setWorkspace(
-        idleTimeoutAtRequestStart === null
-          ? next
-          : withIdleTimeout(next, idleTimeoutAtRequestStart),
-      );
+      setWorkspace(withIdleTimeout(next, idleTimeout.effectiveIdleTimeoutMinutes));
       updateManagedStatusUnavailable(false);
       return next;
     } catch {
@@ -612,6 +678,14 @@ export function ManagedDevPcStatus() {
       componentMounted.current = false;
       window.clearInterval(timer);
     };
+  }, [refresh]);
+
+  useEffect(() => {
+    if (!isManagedDevPc) return;
+    const refreshAfterCrossTabAction = () => void refresh();
+    window.addEventListener(MANAGED_WORKSPACE_ACTION_SYNCED_EVENT, refreshAfterCrossTabAction);
+    return () =>
+      window.removeEventListener(MANAGED_WORKSPACE_ACTION_SYNCED_EVENT, refreshAfterCrossTabAction);
   }, [refresh]);
 
   const status = workspace
@@ -755,12 +829,13 @@ export function ManagedDevPcStatus() {
       });
       if (!response.ok) throw new Error("request failed");
       const result = (await response.json()) as { idleTimeoutMinutes?: number };
-      const confirmedMinutes = IDLE_TIMEOUTS.includes(
-        result.idleTimeoutMinutes as (typeof IDLE_TIMEOUTS)[number],
-      )
-        ? result.idleTimeoutMinutes
-        : minutes;
-      pendingIdleTimeout.current = null;
+      const returnedMinutes = result.idleTimeoutMinutes;
+      const confirmedMinutes =
+        typeof returnedMinutes === "number" &&
+        IDLE_TIMEOUTS.includes(returnedMinutes as (typeof IDLE_TIMEOUTS)[number])
+          ? returnedMinutes
+          : minutes;
+      pendingIdleTimeout.current = confirmedMinutes;
       updateManagedIdleTimeout(confirmedMinutes);
       const confirmedWorkspace = withIdleTimeout(
         window.__DEVPC_MANAGED_BOOTSTRAP__ ?? workspace,
@@ -904,13 +979,7 @@ export function ManagedDevPcStatus() {
               </Select>
             </div>
             <p className="text-xs text-muted-foreground">
-              {status === "paused"
-                ? "Paused until you resume."
-                : idleTimeoutMinutes === undefined
-                  ? "Auto-pause timing is unavailable."
-                  : autoStopClock
-                    ? `Pauses around ${autoStopClock} if activity stays quiet.`
-                    : `Pauses after ${idleTimeoutLabel(idleTimeoutMinutes)} of inactivity.`}
+              {autoPauseDescription(status, idleTimeoutMinutes, autoStopClock)}
             </p>
           </section>
 
