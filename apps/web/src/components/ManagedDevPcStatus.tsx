@@ -4,6 +4,7 @@ import { ChevronRightIcon, PauseIcon, PlayIcon, RotateCwIcon } from "lucide-reac
 import {
   isAmbiguousLifecycleResponse,
   isManagedDevPc,
+  MANAGED_WORKSPACE_ACTION_SESSION_KEY,
   type ManagedDevPcBootstrap,
   type ManagedDevPcDisplayStatus,
   type ManagedDevPcTelemetry,
@@ -84,13 +85,12 @@ type StoredActionSession = {
   readonly restartConfirmations: number;
 };
 
-const ACTION_SESSION_KEY = "devpc-managed-workspace-action";
 const MANAGED_ACTIONS = new Set<PendingAction>(["restart", "pause", "resume"]);
 
 function readStoredActionSession(): StoredActionSession | null {
   try {
     const value = JSON.parse(
-      window.sessionStorage.getItem(ACTION_SESSION_KEY) ?? "null",
+      window.sessionStorage.getItem(MANAGED_WORKSPACE_ACTION_SESSION_KEY) ?? "null",
     ) as Partial<StoredActionSession> | null;
     if (
       !value ||
@@ -159,11 +159,11 @@ function persistManagedActionSession(): void {
   const idempotencyKey = action ? managedActionKeys.current[action] : undefined;
   try {
     if (!action || !idempotencyKey) {
-      window.sessionStorage.removeItem(ACTION_SESSION_KEY);
+      window.sessionStorage.removeItem(MANAGED_WORKSPACE_ACTION_SESSION_KEY);
       return;
     }
     window.sessionStorage.setItem(
-      ACTION_SESSION_KEY,
+      MANAGED_WORKSPACE_ACTION_SESSION_KEY,
       JSON.stringify({
         action,
         phase: managedPendingAction.current ? "pending" : "uncertain",
@@ -255,7 +255,7 @@ export function displayStatus(
   pendingAction: PendingAction | null = null,
   statusUnavailable = false,
 ): ManagedDevPcDisplayStatus {
-  if (statusUnavailable) return "unreachable";
+  if (statusUnavailable || workspace.status === "unreachable") return "unreachable";
   if (pendingAction === "restart") return "restarting";
   if (pendingAction === "pause") return "pausing";
   if (pendingAction === "resume") return "starting";

@@ -58,6 +58,29 @@ describe("managed DevPC paused bootstrap", () => {
     expect(shouldRepromptManagedResume(false, 40)).toBe(false);
   });
 
+  it("clears a completed persisted pause before bootstrap resumes it", async () => {
+    vi.stubEnv("VITE_DEVPC_MANAGED", "1");
+    vi.resetModules();
+    const removeItem = vi.fn();
+    vi.stubGlobal("window", {
+      sessionStorage: {
+        getItem: vi.fn(() => JSON.stringify({ action: "pause" })),
+        removeItem,
+      },
+    });
+    const { clearCompletedPauseAction } = await import("./managedDevPc");
+
+    clearCompletedPauseAction({
+      managed: true,
+      state: "paused",
+      status: "paused",
+      ready: false,
+      previewUrlTemplate: "https://{port}.preview.example.test/",
+    });
+
+    expect(removeItem).toHaveBeenCalledWith("devpc-managed-workspace-action");
+  });
+
   it("continues polling when the resume surface has no root element to mount into", async () => {
     vi.stubEnv("VITE_DEVPC_MANAGED", "1");
     vi.resetModules();

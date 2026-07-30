@@ -74,6 +74,7 @@ export const isManagedDevPc = import.meta.env.VITE_DEVPC_MANAGED === "1";
 const BOOTSTRAP_PATH = "/_devpc/bootstrap";
 const START_PATH = "/_devpc/workspace/start";
 const WEBSOCKET_TICKET_PATH = "/_devpc/ws-ticket";
+export const MANAGED_WORKSPACE_ACTION_SESSION_KEY = "devpc-managed-workspace-action";
 const SESSION_RECOVERY_KEY = "devpc-managed-session-recovery-at";
 const SESSION_RECOVERY_COOLDOWN_MS = 30_000;
 const MAX_RESUME_WAIT_POLLS = 40;
@@ -101,6 +102,20 @@ export function shouldPromptManagedResume(
 
 export function shouldRepromptManagedResume(resumeAccepted: boolean, waitPolls: number): boolean {
   return resumeAccepted && waitPolls >= MAX_RESUME_WAIT_POLLS;
+}
+
+export function clearCompletedPauseAction(bootstrap: ManagedDevPcBootstrap): void {
+  if (!requiresManagedResume(bootstrap)) return;
+  try {
+    const stored = JSON.parse(
+      window.sessionStorage.getItem(MANAGED_WORKSPACE_ACTION_SESSION_KEY) ?? "null",
+    ) as { action?: unknown } | null;
+    if (stored?.action === "pause") {
+      window.sessionStorage.removeItem(MANAGED_WORKSPACE_ACTION_SESSION_KEY);
+    }
+  } catch {
+    // Storage can be unavailable or contain an obsolete record.
+  }
 }
 
 function updateBootstrapMessage(message: string, failed = false): void {
@@ -271,6 +286,7 @@ export async function prepareManagedDevPc(): Promise<void> {
         return;
       }
       if (requiresManagedResume(bootstrap)) {
+        clearCompletedPauseAction(bootstrap);
         failures = 0;
         if (shouldRepromptManagedResume(resumeAccepted, resumeWaitPolls)) {
           resumeAccepted = false;
