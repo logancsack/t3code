@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { ChevronRightIcon, PauseIcon, PlayIcon, RotateCwIcon } from "lucide-react";
 
 import {
+  isAmbiguousLifecycleResponse,
   isManagedDevPc,
   type ManagedDevPcBootstrap,
   type ManagedDevPcDisplayStatus,
@@ -103,10 +104,6 @@ function updateManagedActionSession(
   ref.current = action;
   managedActionSnapshot = { ...managedActionSnapshot, [kind]: action };
   managedActionListeners.forEach((listener) => listener());
-}
-
-export function isAmbiguousActionFailure(status: number): boolean {
-  return status === 408 || status >= 500;
 }
 
 export function actionSnapshotResult(
@@ -365,6 +362,7 @@ export function ManagedDevPcStatus() {
   const pendingIdleTimeout = useRef<number | null>(null);
   const refreshSequence = useRef(0);
   const latestAppliedRefresh = useRef(0);
+  const componentMounted = useRef(false);
 
   const updatePendingAction = useCallback((action: PendingAction | null) => {
     updateManagedActionSession("pendingAction", action);
@@ -389,6 +387,7 @@ export function ManagedDevPcStatus() {
         headers: { accept: "application/json" },
         signal: AbortSignal.timeout(STATUS_REQUEST_TIMEOUT_MS),
       });
+      if (!componentMounted.current) return null;
       if (!response.ok) {
         if (generation < latestAppliedRefresh.current) return null;
         latestAppliedRefresh.current = generation;
@@ -396,8 +395,10 @@ export function ManagedDevPcStatus() {
         return null;
       }
       const next = (await response.json()) as ManagedDevPcBootstrap;
+      if (!componentMounted.current) return null;
       if (generation < latestAppliedRefresh.current) return null;
       latestAppliedRefresh.current = generation;
+      window.__DEVPC_MANAGED_BOOTSTRAP__ = next;
       const action = pendingActionRef.current ?? uncertainActionRef.current;
       if (action) {
         const result = actionSnapshotResult(
@@ -444,6 +445,7 @@ export function ManagedDevPcStatus() {
       setStatusUnavailable(false);
       return next;
     } catch {
+      if (!componentMounted.current) return null;
       if (generation < latestAppliedRefresh.current) return null;
       latestAppliedRefresh.current = generation;
       setStatusUnavailable(true);
@@ -453,8 +455,13 @@ export function ManagedDevPcStatus() {
 
   useEffect(() => {
     if (!isManagedDevPc) return;
+    componentMounted.current = true;
+    void refresh();
     const timer = window.setInterval(() => void refresh(), 10_000);
-    return () => window.clearInterval(timer);
+    return () => {
+      componentMounted.current = false;
+      window.clearInterval(timer);
+    };
   }, [refresh]);
 
   const status = workspace
@@ -507,7 +514,7 @@ export function ManagedDevPcStatus() {
         signal: AbortSignal.timeout(ACTION_REQUEST_TIMEOUT_MS),
       });
       if (!response.ok) {
-        definitiveFailure = !isAmbiguousActionFailure(response.status);
+        definitiveFailure = !isAmbiguousLifecycleResponse(response.status);
         throw new Error("request failed");
       }
       const result = (await response.json()) as { state?: string };
@@ -525,36 +532,26 @@ export function ManagedDevPcStatus() {
                 ? "starting"
                 : "running"
               : null;
+      actionProgressObserved.current[action] = true;
+      if (action === "restart") restartCompletionConfirmations.current = 0;
+      if (!componentMounted.current) return;
       if (reflectedStatus) {
         invalidateWorkspaceRefreshes();
-        setWorkspace((current) =>
-          current
-            ? {
-                ...current,
-                status: reflectedStatus,
-                ready: reflectedStatus === "running",
-              }
-            : current,
-        );
+        const projectedWorkspace = {
+          ...(window.__DEVPC_MANAGED_BOOTSTRAP__ ?? workspace),
+          status: reflectedStatus,
+          ready: reflectedStatus === "running",
+        };
+        window.__DEVPC_MANAGED_BOOTSTRAP__ = projectedWorkspace;
+        setWorkspace(projectedWorkspace);
         updateUncertainAction(null);
-        if (["running", "paused", "stopped"].includes(reflectedStatus)) {
-          delete actionKeys.current[action];
-          delete actionProgressObserved.current[action];
-          if (action === "restart") restartCompletionConfirmations.current = 0;
-          updatePendingAction(null);
-        } else {
-          // Keep the guard until the status endpoint observes progress. Its projection
-          // can briefly lag the accepted lifecycle request and return the old state.
-          actionProgressObserved.current[action] = true;
-          if (action === "restart") restartCompletionConfirmations.current = 0;
-          updatePendingAction(action);
-        }
+        // Keep the guard until a mounted instance observes the action through the
+        // status endpoint. The response can outlive this route's sidebar instance.
+        updatePendingAction(action);
       } else {
         // The request was accepted even if the gateway returned a state this client
         // does not model yet. Keep the guard and let status polling settle it.
         invalidateWorkspaceRefreshes();
-        actionProgressObserved.current[action] = true;
-        if (action === "restart") restartCompletionConfirmations.current = 0;
         updatePendingAction(action);
         updateUncertainAction(null);
       }

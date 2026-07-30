@@ -221,7 +221,7 @@ describe("managed DevPC paused bootstrap", () => {
           previewUrlTemplate: "https://{port}.preview.example.test/",
         }),
       )
-      .mockResolvedValueOnce(new Response(null, { status: 500 }))
+      .mockResolvedValueOnce(new Response(null, { status: 409 }))
       .mockResolvedValueOnce(Response.json({ state: "starting" }))
       .mockResolvedValueOnce(
         Response.json({

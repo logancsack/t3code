@@ -79,6 +79,10 @@ const SESSION_RECOVERY_COOLDOWN_MS = 30_000;
 const MAX_RESUME_WAIT_POLLS = 40;
 let sessionRecoveryReloadScheduled = false;
 
+export function isAmbiguousLifecycleResponse(status: number): boolean {
+  return status === 408 || status >= 500;
+}
+
 export function requiresManagedResume(bootstrap: ManagedDevPcBootstrap): boolean {
   const resumable = new Set(["paused", "stopped"]);
   return Boolean(
@@ -143,7 +147,8 @@ async function requestManagedResume(resumeRequestKey: string): Promise<ResumeReq
       body: "{}",
       signal: AbortSignal.timeout(30_000),
     });
-    return response.ok ? "accepted" : "rejected";
+    if (response.ok) return "accepted";
+    return isAmbiguousLifecycleResponse(response.status) ? "uncertain" : "rejected";
   } catch {
     return "uncertain";
   }

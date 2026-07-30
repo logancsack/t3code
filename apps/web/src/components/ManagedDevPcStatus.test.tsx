@@ -180,13 +180,13 @@ describe("ManagedDevPcStatus", () => {
   it("treats gateway failures as ambiguous lifecycle outcomes", async () => {
     vi.stubEnv("VITE_DEVPC_MANAGED", "1");
     vi.resetModules();
-    const { isAmbiguousActionFailure } = await import("./ManagedDevPcStatus");
+    const { isAmbiguousLifecycleResponse } = await import("../managedDevPc");
 
-    expect(isAmbiguousActionFailure(408)).toBe(true);
-    expect(isAmbiguousActionFailure(500)).toBe(true);
-    expect(isAmbiguousActionFailure(502)).toBe(true);
-    expect(isAmbiguousActionFailure(504)).toBe(true);
-    expect(isAmbiguousActionFailure(409)).toBe(false);
-    expect(isAmbiguousActionFailure(422)).toBe(false);
+    expect(isAmbiguousLifecycleResponse(408)).toBe(true);
+    expect(isAmbiguousLifecycleResponse(500)).toBe(true);
+    expect(isAmbiguousLifecycleResponse(502)).toBe(true);
+    expect(isAmbiguousLifecycleResponse(504)).toBe(true);
+    expect(isAmbiguousLifecycleResponse(409)).toBe(false);
+    expect(isAmbiguousLifecycleResponse(422)).toBe(false);
   });
 });
