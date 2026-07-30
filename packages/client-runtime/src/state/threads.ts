@@ -40,6 +40,10 @@ function statusWithoutLiveData(data: Option.Option<OrchestrationThread>): Enviro
 // about a second of resubscribe retries: enough to skip a race with a thread
 // that is still being created, short enough that a tab left open on a dead
 // thread stops generating traffic almost immediately.
+//
+// Provisional draft thread ids must not open this subscription until the shell
+// lists them (see web `useThread`); otherwise create-before-subscribe 404s
+// permanently park a live Working thread as deleted.
 const MISSING_THREAD_NOT_FOUND_THRESHOLD = 3;
 
 function formatThreadError(cause: Cause.Cause<unknown>): string {
