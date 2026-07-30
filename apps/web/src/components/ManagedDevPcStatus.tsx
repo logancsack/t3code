@@ -493,6 +493,7 @@ export function ManagedDevPcStatus() {
         credentials: "same-origin",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ idleTimeoutMinutes: minutes }),
+        signal: AbortSignal.timeout(ACTION_REQUEST_TIMEOUT_MS),
       });
       if (!response.ok) throw new Error("request failed");
       await refresh();
