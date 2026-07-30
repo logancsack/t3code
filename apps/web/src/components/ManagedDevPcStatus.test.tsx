@@ -374,6 +374,23 @@ describe("ManagedDevPcStatus", () => {
         ready: false,
       }),
     ).toBe("resolved");
+    expect(
+      actionSnapshotResult("resume", {
+        ...running,
+        status: "starting",
+      }),
+    ).toBe("progressing");
+    expect(
+      actionSnapshotResult(
+        "restart",
+        {
+          ...running,
+          status: "reconnecting",
+        },
+        true,
+        1,
+      ),
+    ).toBe("pending");
   });
 
   it("makes an accepted but ineffective pause or resume retryable after bounded polls", async () => {
@@ -391,6 +408,16 @@ describe("ManagedDevPcStatus", () => {
     });
     expect(ineffectiveActionPollResult(true, 5, 4)).toBeNull();
     expect(ineffectiveActionPollResult(false, 5, 5)).toBeNull();
+  });
+
+  it("cleans up only the lifecycle request that still owns the action key", async () => {
+    vi.stubEnv("VITE_DEVPC_MANAGED", "1");
+    vi.resetModules();
+    const { ownsManagedActionRequest } = await import("./ManagedDevPcStatus");
+
+    expect(ownsManagedActionRequest("pause-original", "pause-original")).toBe(true);
+    expect(ownsManagedActionRequest("pause-newer-tab", "pause-original")).toBe(false);
+    expect(ownsManagedActionRequest(undefined, "pause-original")).toBe(false);
   });
 
   it("treats gateway failures as ambiguous lifecycle outcomes", async () => {

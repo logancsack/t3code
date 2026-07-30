@@ -295,6 +295,8 @@ export function actionSnapshotResult(
   restartCompletionConfirmations = 0,
 ): ActionSnapshotResult {
   const status = workspace.status ?? workspace.state;
+  const legacyReady =
+    workspace.status === undefined && workspace.state === "ready" && workspace.ready;
   if (workspace.state === "error" || status === "attention") return "failed";
   if (action === "pause") {
     if (["paused", "stopped"].includes(status)) return "resolved";
@@ -302,9 +304,7 @@ export function actionSnapshotResult(
     return "pending";
   }
   if (action === "resume") {
-    if (status === "running" || (workspace.state === "ready" && workspace.ready)) {
-      return "resolved";
-    }
+    if (status === "running" || legacyReady) return "resolved";
     if (["starting", "restoring", "reconnecting"].includes(status)) return "progressing";
     return "pending";
   }
@@ -312,11 +312,18 @@ export function actionSnapshotResult(
   if (
     progressObserved &&
     restartCompletionConfirmations > 0 &&
-    (status === "running" || workspace.state === "ready")
+    (status === "running" || legacyReady)
   ) {
     return "resolved";
   }
   return "pending";
+}
+
+export function ownsManagedActionRequest(
+  currentIdempotencyKey: string | undefined,
+  requestIdempotencyKey: string,
+): boolean {
+  return currentIdempotencyKey === requestIdempotencyKey;
 }
 
 export function ineffectiveActionPollResult(
@@ -864,7 +871,10 @@ export function ManagedDevPcStatus() {
       }
       void refresh();
     } catch {
-      if (definitiveFailure) {
+      if (
+        definitiveFailure &&
+        ownsManagedActionRequest(actionKeys.current[action], idempotencyKey)
+      ) {
         delete actionKeys.current[action];
         delete actionProgressObserved.current[action];
         if (action === "restart") restartCompletionConfirmations.current = 0;
@@ -877,10 +887,15 @@ export function ManagedDevPcStatus() {
             ? "The workspace could not be resumed. Try again."
             : `The workspace could not be ${action === "pause" ? "paused" : "restarted"}. Try again.`,
         );
-      } else if (actionKeys.current[action] === idempotencyKey) {
+      } else if (
+        !definitiveFailure &&
+        ownsManagedActionRequest(actionKeys.current[action], idempotencyKey)
+      ) {
         updatePendingAction(null);
         updateUncertainAction(action);
         setError("The request was interrupted. Retrying is safe while Aldo checks the workspace.");
+        void refresh();
+      } else if (definitiveFailure) {
         void refresh();
       }
     }
