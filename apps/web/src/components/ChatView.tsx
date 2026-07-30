@@ -87,6 +87,7 @@ import {
   deriveActivePlanState,
   deriveTurnPlans,
   findLatestProposedPlan,
+  deriveActiveToolWait,
   deriveWorkLogEntries,
   hasActionableProposedPlan,
   isLatestTurnSettled,
@@ -190,6 +191,7 @@ import {
 import { buildDraftThreadRouteParams } from "../threadRoutes";
 import {
   type ComposerAttachment,
+  type ComposerImageAttachment,
   type DraftThreadEnvMode,
   useComposerDraftStore,
   type DraftId,
@@ -2110,6 +2112,12 @@ function ChatViewContent(props: ChatViewProps) {
   const pendingUserInputs = useMemo(
     () => derivePendingUserInputs(threadActivities),
     [threadActivities],
+  );
+  const activeSessionTurnId =
+    activeThread?.session?.status === "running" ? activeThread.session.activeTurnId : null;
+  const activeToolWait = useMemo(
+    () => deriveActiveToolWait(threadActivities, activeSessionTurnId),
+    [threadActivities, activeSessionTurnId],
   );
   const activePendingUserInput = pendingUserInputs[0] ?? null;
   const activePendingDraftAnswers = useMemo(
@@ -6065,6 +6073,7 @@ function ChatViewContent(props: ChatViewProps) {
                 workingStepLabel={workingStepLabel}
                 activeTurnInProgress={isWorking || !latestTurnSettled}
                 activeTurnStartedAt={activeWorkStartedAt}
+                activeToolWait={activeToolWait}
                 listRef={legendListRef}
                 timelineEntries={timelineEntries}
                 latestTurn={activeLatestTurn}

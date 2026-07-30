@@ -502,6 +502,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
       beforeCursor: page.beforeCursor,
     };
     const response = yield* snapshotLoader.load(prepared, threadId, window);
+    const snapshot = response.kind === "found" ? response.snapshot : null;
     // Staleness check and merge run under the same lock as stream-item
     // application, so a revert/snapshot cannot land between them (TOCTOU
     // review finding) — anything that rewrites history bumps the epoch
@@ -515,11 +516,8 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
         // resurrect turns a newer snapshot or revert already removed.
         const stale =
           epochNow !== epochAtStart ||
-          Option.match(response, {
-            onNone: () => false,
-            onSome: (snapshot) => snapshot.snapshotSequence < loadedSequence,
-          });
-        if (Option.isNone(response) || stale) {
+          (snapshot !== null && snapshot.snapshotSequence < loadedSequence);
+        if (snapshot === null || stale) {
           yield* SubscriptionRef.update(state, (value) => ({
             ...value,
             page: Option.map(value.page, (existing) => ({ ...existing, loadingOlder: false })),
@@ -534,15 +532,15 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
         // the UI shows progress and no second fetch starts. Pages from
         // pre-watermark servers (threadSequence absent) merge immediately,
         // preserving the old behavior.
-        const watermark = response.value.page?.threadSequence;
+        const watermark = snapshot.page?.threadSequence;
         if (watermark !== undefined && watermark > loadedSequence) {
           yield* Ref.set(pendingOlderPage, {
-            snapshot: response.value,
+            snapshot,
             epoch: epochNow,
           });
           return;
         }
-        yield* mergeOlderPage(response.value);
+        yield* mergeOlderPage(snapshot);
       }),
     );
   });

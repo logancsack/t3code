@@ -90,9 +90,15 @@ export const PersistedComposerAttachment = Schema.Struct({
   type: Schema.optionalKey(ChatAttachmentKind),
 });
 export type PersistedComposerAttachment = typeof PersistedComposerAttachment.Type;
-export type PersistedComposerImageAttachment = PersistedComposerAttachment & {
-  readonly type?: "image";
-};
+export const PersistedComposerImageAttachment = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  mimeType: Schema.String,
+  sizeBytes: Schema.Number,
+  dataUrl: Schema.String,
+  type: Schema.optionalKey(Schema.Literal("image")),
+});
+export type PersistedComposerImageAttachment = typeof PersistedComposerImageAttachment.Type;
 
 /**
  * An attachment staged in the composer but not yet sent.

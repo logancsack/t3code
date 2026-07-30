@@ -9,6 +9,7 @@ import {
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  deriveActiveToolWait,
   deriveActiveWorkStartedAt,
   deriveActivePlanState,
   deriveTurnPlans,
@@ -1927,5 +1928,109 @@ describe("rerun workflows", () => {
     const spawnRows = entries.filter((entry) => entry.agentSpawn !== undefined);
     expect(spawnRows.map((row) => row.agentSpawn!.workflowId)).toEqual(["wf-run1", "wf-run2"]);
     expect(spawnRows.map((row) => row.turnId)).toEqual(["turn-1", "turn-2"]);
+  });
+});
+
+describe("deriveActiveToolWait", () => {
+  const runningTurnId = TurnId.make("turn-live");
+
+  it("returns the open command execution with its label and start time", () => {
+    const activities = [
+      makeActivity({
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "tool.started",
+        summary: "Command started",
+        payload: { itemType: "command_execution", itemId: "item-1", detail: "pnpm build" },
+        turnId: "turn-live",
+      }),
+    ];
+    expect(deriveActiveToolWait(activities, runningTurnId)).toEqual({
+      label: "pnpm build",
+      itemType: "command_execution",
+      startedAt: "2026-02-23T00:00:01.000Z",
+    });
+  });
+
+  it("clears the wait when the matching item completes", () => {
+    const activities = [
+      makeActivity({
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "tool.started",
+        payload: { itemType: "command_execution", itemId: "item-1", detail: "pnpm build" },
+        turnId: "turn-live",
+      }),
+      makeActivity({
+        createdAt: "2026-02-23T00:10:00.000Z",
+        kind: "tool.completed",
+        payload: { itemType: "command_execution", itemId: "item-1" },
+        turnId: "turn-live",
+      }),
+    ];
+    expect(deriveActiveToolWait(activities, runningTurnId)).toBeNull();
+  });
+
+  it("pairs legacy activities without itemId by item type", () => {
+    const activities = [
+      makeActivity({
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "tool.started",
+        payload: { itemType: "command_execution", detail: "pnpm lint" },
+        turnId: "turn-live",
+      }),
+      makeActivity({
+        createdAt: "2026-02-23T00:00:05.000Z",
+        kind: "tool.completed",
+        payload: { itemType: "command_execution" },
+        turnId: "turn-live",
+      }),
+    ];
+    expect(deriveActiveToolWait(activities, runningTurnId)).toBeNull();
+  });
+
+  it("a terminal tool.updated closes the wait", () => {
+    const activities = [
+      makeActivity({
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "tool.started",
+        payload: { itemType: "command_execution", itemId: "item-1", detail: "pnpm test" },
+        turnId: "turn-live",
+      }),
+      makeActivity({
+        createdAt: "2026-02-23T00:00:09.000Z",
+        kind: "tool.updated",
+        payload: { itemType: "command_execution", itemId: "item-1", status: "failed" },
+        turnId: "turn-live",
+      }),
+    ];
+    expect(deriveActiveToolWait(activities, runningTurnId)).toBeNull();
+  });
+
+  it("ignores other turns and requires a running turn", () => {
+    const otherTurn = [
+      makeActivity({
+        kind: "tool.started",
+        payload: { itemType: "command_execution", itemId: "item-1", detail: "pnpm build" },
+        turnId: "turn-earlier",
+      }),
+    ];
+    expect(deriveActiveToolWait(otherTurn, runningTurnId)).toBeNull();
+    expect(deriveActiveToolWait(otherTurn, null)).toBeNull();
+  });
+
+  it("falls back to the summary when there is no detail", () => {
+    const activities = [
+      makeActivity({
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "tool.started",
+        summary: "Web search started",
+        payload: { itemType: "web_search", itemId: "item-2" },
+        turnId: "turn-live",
+      }),
+    ];
+    expect(deriveActiveToolWait(activities, runningTurnId)).toEqual({
+      label: "Web search",
+      itemType: "web_search",
+      startedAt: "2026-02-23T00:00:01.000Z",
+    });
   });
 });

@@ -37,6 +37,7 @@ import {
   workEntryIndicatesToolNeutralStatus,
   workEntryIndicatesToolSuccess,
   workLogEntryIsToolLike,
+  type ActiveToolWait,
 } from "../../session-logic";
 import { type TurnDiffSummary } from "../../types";
 import {
@@ -210,6 +211,7 @@ interface MessagesTimelineProps {
   workingStepLabel?: string | null;
   activeTurnInProgress: boolean;
   activeTurnStartedAt: string | null;
+  activeToolWait?: ActiveToolWait | null;
   listRef: React.RefObject<LegendListRef | null>;
   timelineEntries: ReturnType<typeof deriveTimelineEntries>;
   latestTurn: TimelineLatestTurn | null;
@@ -256,6 +258,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   activeTurnStartedAt,
   agentPanelModel = EMPTY_AGENT_PANEL_MODEL,
   onOpenAgents = NOOP_OPEN_AGENTS,
+  activeToolWait = null,
   listRef,
   timelineEntries,
   latestTurn,
@@ -405,6 +408,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
         expandedWorkGroupIds,
         isWorking,
         activeTurnStartedAt,
+        activeToolWait,
         turnDiffSummaryByAssistantMessageId,
         revertTurnCountByUserMessageId,
       }),
@@ -416,6 +420,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       expandedWorkGroupIds,
       isWorking,
       activeTurnStartedAt,
+      activeToolWait,
       turnDiffSummaryByAssistantMessageId,
       revertTurnCountByUserMessageId,
     ],
@@ -1321,6 +1326,10 @@ const TurnPlanTimelineRow = memo(function TurnPlanTimelineRow({
 
 function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "working" }> }) {
   const { workingStepLabel } = use(TimelineRowActivityCtx);
+  // Say what the turn is actually waiting on. A tool the agent launched (a
+  // build, a test run) is legitimately unbounded, so it gets its own label
+  // and elapsed time instead of an anonymous ever-growing "Working for".
+  const toolWait = row.toolWait;
   return (
     <div className="py-0.5 pl-1.5">
       <div className="flex min-w-0 items-center gap-2 pt-1 text-secondary-label text-[11px] tabular-nums">
@@ -1329,8 +1338,13 @@ function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "workin
           <span className="h-1 w-1 rounded-full bg-muted-foreground/30 animate-status-pulse [animation-delay:200ms]" />
           <span className="h-1 w-1 rounded-full bg-muted-foreground/30 animate-status-pulse [animation-delay:400ms]" />
         </span>
-        <span className="shrink-0">
-          {row.createdAt ? (
+        <span className="min-w-0 truncate">
+          {toolWait ? (
+            <>
+              Running <span className="font-mono">{toolWait.label}</span> for{" "}
+              <WorkingTimer createdAt={toolWait.startedAt} />
+            </>
+          ) : row.createdAt ? (
             <>
               Working for <WorkingTimer createdAt={row.createdAt} />
             </>

@@ -3,6 +3,7 @@ import {
   formatDuration,
   workEntryIndicatesToolNeutralStatus,
   workLogEntryIsToolLike,
+  type ActiveToolWait,
   type TimelineEntry,
   type TurnPlanEntry,
   type WorkLogEntry,
@@ -208,7 +209,12 @@ export type MessagesTimelineRow =
       createdAt: string;
       turnPlan: TurnPlanEntry;
     }
-  | { kind: "working"; id: string; createdAt: string | null };
+  | {
+      kind: "working";
+      id: string;
+      createdAt: string | null;
+      toolWait: ActiveToolWait | null;
+    };
 
 export interface StableMessagesTimelineRowsState {
   byId: Map<string, MessagesTimelineRow>;
@@ -450,6 +456,7 @@ export function deriveMessagesTimelineRows(input: {
   expandedWorkGroupIds?: ReadonlySet<string>;
   isWorking: boolean;
   activeTurnStartedAt: string | null;
+  activeToolWait?: ActiveToolWait | null;
   turnDiffSummaryByAssistantMessageId: ReadonlyMap<MessageId, TurnDiffSummary>;
   revertTurnCountByUserMessageId: ReadonlyMap<MessageId, number>;
 }): MessagesTimelineRow[] {
@@ -634,6 +641,7 @@ export function deriveMessagesTimelineRows(input: {
       kind: "working",
       id: "working-indicator-row",
       createdAt: input.activeTurnStartedAt,
+      toolWait: input.activeToolWait ?? null,
     });
   }
 
@@ -665,8 +673,14 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
   if (a.kind !== b.kind || a.id !== b.id) return false;
 
   switch (a.kind) {
-    case "working":
-      return a.createdAt === (b as typeof a).createdAt;
+    case "working": {
+      const bw = b as typeof a;
+      return (
+        a.createdAt === bw.createdAt &&
+        a.toolWait?.label === bw.toolWait?.label &&
+        a.toolWait?.startedAt === bw.toolWait?.startedAt
+      );
+    }
 
     case "turn-fold": {
       const bf = b as typeof a;
