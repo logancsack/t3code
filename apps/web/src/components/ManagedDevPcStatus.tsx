@@ -39,6 +39,7 @@ const TELEMETRY_FRESH_MS = 60_000;
 const STATUS_REQUEST_TIMEOUT_MS = 10_000;
 const ACTION_REQUEST_TIMEOUT_MS = 30_000;
 const IDLE_TIMEOUTS = [15, 30, 60, 120, 240] as const;
+const MAX_CONFIRMED_IDLE_TIMEOUT_MISMATCHES = 3;
 const MANAGED_WORKSPACE_ACTION_SYNCED_EVENT = "devpc-managed-workspace-action-synced";
 
 const statusLabel: Record<ManagedDevPcDisplayStatus, string> = {
@@ -151,7 +152,11 @@ const managedActionProgress = {
 const managedRestartConfirmations = {
   current: restoredActionSession?.restartConfirmations ?? 0,
 };
-const managedPendingIdleTimeout = { current: null as number | null };
+type IdleTimeoutProjection = {
+  readonly minutes: number;
+  readonly mismatches: number;
+};
+const managedPendingIdleTimeout = { current: null as IdleTimeoutProjection | null };
 const managedActionListeners = new Set<() => void>();
 let managedActionSnapshot: ActionSessionSnapshot = {
   pendingAction: managedPendingAction.current,
@@ -252,8 +257,10 @@ if (typeof window !== "undefined" && typeof window.addEventListener === "functio
   window.addEventListener("storage", (event) => {
     if (event.key !== MANAGED_WORKSPACE_ACTION_STORAGE_KEY) return;
     const stored = parseStoredActionSession(event.newValue);
-    managedPendingAction.current = stored?.phase === "pending" ? stored.action : null;
-    managedUncertainAction.current = stored?.phase === "uncertain" ? stored.action : null;
+    // The receiving tab does not own the request and cannot know whether its
+    // originating document survived long enough to receive the response.
+    managedPendingAction.current = null;
+    managedUncertainAction.current = stored?.action ?? null;
     managedActionKeys.current = stored ? { [stored.action]: stored.idempotencyKey } : {};
     managedActionProgress.current = stored ? { [stored.action]: stored.progressObserved } : {};
     managedRestartConfirmations.current = stored?.restartConfirmations ?? 0;
@@ -354,27 +361,34 @@ export function withIdleTimeout(
 
 export function reconcileIdleTimeoutProjection(
   serverIdleTimeoutMinutes: number | undefined,
-  projectedIdleTimeoutMinutes: number | null,
+  projection: IdleTimeoutProjection | null,
   settingsPending: boolean,
 ): {
   readonly effectiveIdleTimeoutMinutes: number | undefined;
-  readonly projectedIdleTimeoutMinutes: number | null;
+  readonly projection: IdleTimeoutProjection | null;
 } {
-  if (projectedIdleTimeoutMinutes === null) {
+  if (projection === null) {
     return {
       effectiveIdleTimeoutMinutes: serverIdleTimeoutMinutes,
-      projectedIdleTimeoutMinutes: null,
+      projection: null,
     };
   }
-  if (!settingsPending && serverIdleTimeoutMinutes === projectedIdleTimeoutMinutes) {
+  if (!settingsPending && serverIdleTimeoutMinutes === projection.minutes) {
     return {
       effectiveIdleTimeoutMinutes: serverIdleTimeoutMinutes,
-      projectedIdleTimeoutMinutes: null,
+      projection: null,
+    };
+  }
+  const mismatches = settingsPending ? projection.mismatches : projection.mismatches + 1;
+  if (mismatches >= MAX_CONFIRMED_IDLE_TIMEOUT_MISMATCHES) {
+    return {
+      effectiveIdleTimeoutMinutes: serverIdleTimeoutMinutes,
+      projection: null,
     };
   }
   return {
-    effectiveIdleTimeoutMinutes: projectedIdleTimeoutMinutes,
-    projectedIdleTimeoutMinutes,
+    effectiveIdleTimeoutMinutes: projection.minutes,
+    projection: { ...projection, mismatches },
   };
 }
 
@@ -616,7 +630,7 @@ export function ManagedDevPcStatus() {
         pendingIdleTimeout.current,
         managedActionSnapshot.settingsPending,
       );
-      pendingIdleTimeout.current = idleTimeout.projectedIdleTimeoutMinutes;
+      pendingIdleTimeout.current = idleTimeout.projection;
       updateManagedIdleTimeout(idleTimeout.effectiveIdleTimeoutMinutes);
       const action = pendingActionRef.current ?? uncertainActionRef.current;
       if (action) {
@@ -808,7 +822,7 @@ export function ManagedDevPcStatus() {
     const minutes = Number(value);
     if (!IDLE_TIMEOUTS.includes(minutes as (typeof IDLE_TIMEOUTS)[number])) return;
     const previousIdleTimeoutMinutes = idleTimeoutMinutes;
-    pendingIdleTimeout.current = minutes;
+    pendingIdleTimeout.current = { minutes, mismatches: 0 };
     updateManagedIdleTimeout(minutes);
     updateManagedSettingsPending(true);
     setError(null);
@@ -835,7 +849,7 @@ export function ManagedDevPcStatus() {
         IDLE_TIMEOUTS.includes(returnedMinutes as (typeof IDLE_TIMEOUTS)[number])
           ? returnedMinutes
           : minutes;
-      pendingIdleTimeout.current = confirmedMinutes;
+      pendingIdleTimeout.current = { minutes: confirmedMinutes, mismatches: 0 };
       updateManagedIdleTimeout(confirmedMinutes);
       const confirmedWorkspace = withIdleTimeout(
         window.__DEVPC_MANAGED_BOOTSTRAP__ ?? workspace,

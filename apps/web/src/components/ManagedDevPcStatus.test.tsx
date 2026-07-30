@@ -156,7 +156,7 @@ describe("ManagedDevPcStatus", () => {
       key: "devpc-managed-workspace-action",
       newValue: JSON.stringify({
         action: "restart",
-        phase: "uncertain",
+        phase: "pending",
         idempotencyKey: "restart-shared-key",
         progressObserved: false,
         restartConfirmations: 0,
@@ -273,17 +273,21 @@ describe("ManagedDevPcStatus", () => {
     vi.resetModules();
     const { reconcileIdleTimeoutProjection } = await import("./ManagedDevPcStatus");
 
-    expect(reconcileIdleTimeoutProjection(30, 60, false)).toEqual({
+    expect(reconcileIdleTimeoutProjection(30, { minutes: 60, mismatches: 0 }, false)).toEqual({
       effectiveIdleTimeoutMinutes: 60,
-      projectedIdleTimeoutMinutes: 60,
+      projection: { minutes: 60, mismatches: 1 },
     });
-    expect(reconcileIdleTimeoutProjection(60, 60, false)).toEqual({
+    expect(reconcileIdleTimeoutProjection(60, { minutes: 60, mismatches: 1 }, false)).toEqual({
       effectiveIdleTimeoutMinutes: 60,
-      projectedIdleTimeoutMinutes: null,
+      projection: null,
     });
-    expect(reconcileIdleTimeoutProjection(60, 60, true)).toEqual({
+    expect(reconcileIdleTimeoutProjection(60, { minutes: 60, mismatches: 0 }, true)).toEqual({
       effectiveIdleTimeoutMinutes: 60,
-      projectedIdleTimeoutMinutes: 60,
+      projection: { minutes: 60, mismatches: 0 },
+    });
+    expect(reconcileIdleTimeoutProjection(30, { minutes: 60, mismatches: 2 }, false)).toEqual({
+      effectiveIdleTimeoutMinutes: 30,
+      projection: null,
     });
   });
 
