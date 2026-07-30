@@ -81,6 +81,7 @@ const SESSION_RECOVERY_COOLDOWN_MS = 30_000;
 const MAX_RESUME_WAIT_POLLS = 40;
 let sessionRecoveryReloadScheduled = false;
 let bootstrapResumeRequestKey: string | undefined;
+let bootstrapResumeUsesSharedStorage = false;
 
 export function isAmbiguousLifecycleResponse(status: number): boolean {
   return status === 408 || status >= 500;
@@ -88,11 +89,8 @@ export function isAmbiguousLifecycleResponse(status: number): boolean {
 
 export function requiresManagedResume(bootstrap: ManagedDevPcBootstrap): boolean {
   const resumable = new Set(["paused", "stopped"]);
-  return Boolean(
-    bootstrap.requiresResume ||
-    (bootstrap.status && resumable.has(bootstrap.status)) ||
-    resumable.has(bootstrap.state),
-  );
+  if (bootstrap.status) return resumable.has(bootstrap.status);
+  return Boolean(bootstrap.requiresResume || resumable.has(bootstrap.state));
 }
 
 export function isManagedBootstrapRunning(bootstrap: ManagedDevPcBootstrap): boolean {
@@ -136,11 +134,13 @@ function readStoredManagedWorkspaceAction(): StoredManagedWorkspaceAction | null
   }
 }
 
-function writeStoredManagedWorkspaceAction(stored: StoredManagedWorkspaceAction): void {
+function writeStoredManagedWorkspaceAction(stored: StoredManagedWorkspaceAction): boolean {
   try {
     window.localStorage.setItem(MANAGED_WORKSPACE_ACTION_STORAGE_KEY, JSON.stringify(stored));
+    return true;
   } catch {
     // Storage can be unavailable in privacy-restricted browser contexts.
+    return false;
   }
 }
 
@@ -150,14 +150,25 @@ function clearStoredManagedWorkspaceAction(
 ): void {
   try {
     const stored = readStoredManagedWorkspaceAction();
-    if (
-      stored?.action !== action ||
-      (idempotencyKey !== undefined && stored.idempotencyKey !== idempotencyKey)
+    if (stored) {
+      if (
+        stored.action !== action ||
+        (idempotencyKey !== undefined && stored.idempotencyKey !== idempotencyKey)
+      ) {
+        return;
+      }
+      window.localStorage.removeItem(MANAGED_WORKSPACE_ACTION_STORAGE_KEY);
+    } else if (
+      action !== "resume" ||
+      bootstrapResumeRequestKey !== idempotencyKey ||
+      bootstrapResumeUsesSharedStorage
     ) {
       return;
     }
-    window.localStorage.removeItem(MANAGED_WORKSPACE_ACTION_STORAGE_KEY);
-    if (action === "resume") bootstrapResumeRequestKey = undefined;
+    if (action === "resume") {
+      bootstrapResumeRequestKey = undefined;
+      bootstrapResumeUsesSharedStorage = false;
+    }
   } catch {
     // Storage can be unavailable in privacy-restricted browser contexts.
   }
@@ -187,7 +198,7 @@ export function ownsPersistedManagedResume(requestKey: string): boolean {
   const stored = readStoredManagedWorkspaceAction();
   return stored
     ? stored.action === "resume" && stored.idempotencyKey === requestKey
-    : bootstrapResumeRequestKey === requestKey;
+    : !bootstrapResumeUsesSharedStorage && bootstrapResumeRequestKey === requestKey;
 }
 
 export function reconcileBootstrapLifecycleAction(
@@ -210,7 +221,10 @@ export function reconcileBootstrapLifecycleAction(
       (action === "resume" && running);
     if (completed) {
       window.localStorage.removeItem(MANAGED_WORKSPACE_ACTION_STORAGE_KEY);
-      if (action === "resume") bootstrapResumeRequestKey = undefined;
+      if (action === "resume") {
+        bootstrapResumeRequestKey = undefined;
+        bootstrapResumeUsesSharedStorage = false;
+      }
       if (typeof window.dispatchEvent === "function") {
         window.dispatchEvent(
           new CustomEvent(MANAGED_WORKSPACE_ACTION_CLEARED_EVENT, {
@@ -291,7 +305,9 @@ function updateBootstrapMessage(message: string, failed = false): void {
 
 type ResumeRequestOutcome = "accepted" | "rejected" | "superseded" | "uncertain";
 
-async function requestManagedResume(resumeRequestKey: string): Promise<ResumeRequestOutcome> {
+export async function requestManagedResume(
+  resumeRequestKey: string,
+): Promise<ResumeRequestOutcome> {
   const existing = readStoredManagedWorkspaceAction();
   if (existing && !ownsPersistedManagedResume(resumeRequestKey)) return "superseded";
   bootstrapResumeRequestKey = resumeRequestKey;
@@ -299,7 +315,7 @@ async function requestManagedResume(resumeRequestKey: string): Promise<ResumeReq
     existing?.action === "resume" &&
     existing.idempotencyKey === resumeRequestKey &&
     existing.progressObserved === true;
-  writeStoredManagedWorkspaceAction({
+  bootstrapResumeUsesSharedStorage = writeStoredManagedWorkspaceAction({
     action: "resume",
     phase: "pending",
     idempotencyKey: resumeRequestKey,
@@ -317,8 +333,8 @@ async function requestManagedResume(resumeRequestKey: string): Promise<ResumeReq
       body: "{}",
       signal: AbortSignal.timeout(30_000),
     });
+    if (!ownsPersistedManagedResume(resumeRequestKey)) return "superseded";
     if (response.ok) {
-      if (!ownsPersistedManagedResume(resumeRequestKey)) return "superseded";
       writeStoredManagedWorkspaceAction({
         action: "resume",
         phase: "pending",
@@ -329,7 +345,6 @@ async function requestManagedResume(resumeRequestKey: string): Promise<ResumeReq
       return "accepted";
     }
     if (isAmbiguousLifecycleResponse(response.status)) {
-      if (!ownsPersistedManagedResume(resumeRequestKey)) return "superseded";
       writeStoredManagedWorkspaceAction({
         action: "resume",
         phase: "uncertain",

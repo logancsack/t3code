@@ -45,6 +45,22 @@ describe("managed DevPC paused bootstrap", () => {
     expect(requiresManagedResume({ ...base, status: "stopped" })).toBe(true);
     expect(requiresManagedResume({ ...base, state: "stopped" })).toBe(true);
     expect(requiresManagedResume({ ...base, status: "starting" })).toBe(false);
+    expect(
+      requiresManagedResume({
+        ...base,
+        state: "stopped",
+        status: "restoring",
+        requiresResume: true,
+      }),
+    ).toBe(false);
+    expect(
+      requiresManagedResume({
+        ...base,
+        state: "stopped",
+        status: "attention",
+        requiresResume: true,
+      }),
+    ).toBe(false);
     expect(shouldPromptManagedResume({ ...base, status: "stopped" }, false)).toBe(true);
     expect(shouldPromptManagedResume({ ...base, status: "stopped" }, true)).toBe(false);
     expect(isManagedBootstrapRunning({ ...base, ready: true, status: "starting" })).toBe(false);
@@ -191,6 +207,65 @@ describe("managed DevPC paused bootstrap", () => {
     });
     expect(ownsPersistedManagedResume("resume-persisted-key")).toBe(true);
     expect(ownsPersistedManagedResume("resume-newer-key")).toBe(false);
+  });
+
+  it("does not reclaim a persisted resume after a newer shared action was cleared", async () => {
+    vi.stubEnv("VITE_DEVPC_MANAGED", "1");
+    vi.resetModules();
+    const storage = new Map<string, string>();
+    vi.stubGlobal("window", {
+      localStorage: {
+        getItem: (key: string) => storage.get(key) ?? null,
+        setItem: (key: string, value: string) => storage.set(key, value),
+        removeItem: (key: string) => storage.delete(key),
+      },
+    });
+    let resolveStart!: (response: Response) => void;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        () =>
+          new Promise<Response>((resolve) => {
+            resolveStart = resolve;
+          }),
+      ),
+    );
+
+    const { requestManagedResume } = await import("./managedDevPc");
+    const resume = requestManagedResume("resume-old-key");
+    await vi.waitFor(() => expect(storage.has("devpc-managed-workspace-action")).toBe(true));
+
+    storage.set(
+      "devpc-managed-workspace-action",
+      JSON.stringify({ action: "pause", idempotencyKey: "pause-newer-key" }),
+    );
+    storage.delete("devpc-managed-workspace-action");
+    resolveStart(Response.json({ state: "starting" }));
+
+    await expect(resume).resolves.toBe("superseded");
+    expect(storage.has("devpc-managed-workspace-action")).toBe(false);
+  });
+
+  it("keeps in-memory resume ownership when shared storage is unavailable from the outset", async () => {
+    vi.stubEnv("VITE_DEVPC_MANAGED", "1");
+    vi.resetModules();
+    vi.stubGlobal("window", {
+      localStorage: {
+        getItem: vi.fn(() => null),
+        setItem: vi.fn(() => {
+          throw new Error("storage unavailable");
+        }),
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json({ state: "starting" })),
+    );
+
+    const { ownsPersistedManagedResume, requestManagedResume } = await import("./managedDevPc");
+
+    await expect(requestManagedResume("resume-private-key")).resolves.toBe("accepted");
+    expect(ownsPersistedManagedResume("resume-private-key")).toBe(true);
   });
 
   it("continues polling when the resume surface has no root element to mount into", async () => {
