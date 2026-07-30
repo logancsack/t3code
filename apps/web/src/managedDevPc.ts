@@ -80,6 +80,7 @@ const SESSION_RECOVERY_KEY = "devpc-managed-session-recovery-at";
 const SESSION_RECOVERY_COOLDOWN_MS = 30_000;
 const MAX_RESUME_WAIT_POLLS = 40;
 let sessionRecoveryReloadScheduled = false;
+let bootstrapResumeRequestKey: string | undefined;
 
 export function isAmbiguousLifecycleResponse(status: number): boolean {
   return status === 408 || status >= 500;
@@ -156,6 +157,7 @@ function clearStoredManagedWorkspaceAction(
       return;
     }
     window.localStorage.removeItem(MANAGED_WORKSPACE_ACTION_STORAGE_KEY);
+    if (action === "resume") bootstrapResumeRequestKey = undefined;
   } catch {
     // Storage can be unavailable in privacy-restricted browser contexts.
   }
@@ -181,6 +183,13 @@ export function readPersistedManagedResume(): {
   };
 }
 
+export function ownsPersistedManagedResume(requestKey: string): boolean {
+  const stored = readStoredManagedWorkspaceAction();
+  return stored
+    ? stored.action === "resume" && stored.idempotencyKey === requestKey
+    : bootstrapResumeRequestKey === requestKey;
+}
+
 export function reconcileBootstrapLifecycleAction(
   bootstrap: ManagedDevPcBootstrap,
 ): "pending-restart-confirmation" | null {
@@ -201,6 +210,7 @@ export function reconcileBootstrapLifecycleAction(
       (action === "resume" && running);
     if (completed) {
       window.localStorage.removeItem(MANAGED_WORKSPACE_ACTION_STORAGE_KEY);
+      if (action === "resume") bootstrapResumeRequestKey = undefined;
       if (typeof window.dispatchEvent === "function") {
         window.dispatchEvent(
           new CustomEvent(MANAGED_WORKSPACE_ACTION_CLEARED_EVENT, {
@@ -279,10 +289,12 @@ function updateBootstrapMessage(message: string, failed = false): void {
   root.append(surface);
 }
 
-type ResumeRequestOutcome = "accepted" | "rejected" | "uncertain";
+type ResumeRequestOutcome = "accepted" | "rejected" | "superseded" | "uncertain";
 
 async function requestManagedResume(resumeRequestKey: string): Promise<ResumeRequestOutcome> {
   const existing = readStoredManagedWorkspaceAction();
+  if (existing && !ownsPersistedManagedResume(resumeRequestKey)) return "superseded";
+  bootstrapResumeRequestKey = resumeRequestKey;
   const progressObserved =
     existing?.action === "resume" &&
     existing.idempotencyKey === resumeRequestKey &&
@@ -306,6 +318,7 @@ async function requestManagedResume(resumeRequestKey: string): Promise<ResumeReq
       signal: AbortSignal.timeout(30_000),
     });
     if (response.ok) {
+      if (!ownsPersistedManagedResume(resumeRequestKey)) return "superseded";
       writeStoredManagedWorkspaceAction({
         action: "resume",
         phase: "pending",
@@ -316,6 +329,7 @@ async function requestManagedResume(resumeRequestKey: string): Promise<ResumeReq
       return "accepted";
     }
     if (isAmbiguousLifecycleResponse(response.status)) {
+      if (!ownsPersistedManagedResume(resumeRequestKey)) return "superseded";
       writeStoredManagedWorkspaceAction({
         action: "resume",
         phase: "uncertain",
@@ -328,6 +342,7 @@ async function requestManagedResume(resumeRequestKey: string): Promise<ResumeReq
     clearStoredManagedWorkspaceAction("resume", resumeRequestKey);
     return "rejected";
   } catch {
+    if (!ownsPersistedManagedResume(resumeRequestKey)) return "superseded";
     writeStoredManagedWorkspaceAction({
       action: "resume",
       phase: "uncertain",
@@ -380,7 +395,7 @@ function waitForManagedResume(
           error.classList.remove("hidden");
           return;
         }
-        if (outcome === "accepted") {
+        if (outcome === "accepted" || outcome === "superseded") {
           updateBootstrapMessage("Resuming your workspace…");
           resolve({ requestKey: resumeRequestKey, uncertain: false });
         } else {
@@ -484,6 +499,8 @@ export async function prepareManagedDevPc(): Promise<void> {
           if (resumeUncertain && resumeRequestKey) {
             const outcome = await requestManagedResume(resumeRequestKey);
             if (outcome === "accepted") {
+              resumeUncertain = false;
+            } else if (outcome === "superseded") {
               resumeUncertain = false;
             } else if (outcome === "rejected") {
               resumeAccepted = false;

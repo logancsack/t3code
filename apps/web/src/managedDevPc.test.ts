@@ -181,13 +181,16 @@ describe("managed DevPC paused bootstrap", () => {
         ),
       },
     });
-    const { readPersistedManagedResume } = await import("./managedDevPc");
+    const { ownsPersistedManagedResume, readPersistedManagedResume } =
+      await import("./managedDevPc");
 
     expect(readPersistedManagedResume()).toEqual({
       requestKey: "resume-persisted-key",
       accepted: false,
       uncertain: true,
     });
+    expect(ownsPersistedManagedResume("resume-persisted-key")).toBe(true);
+    expect(ownsPersistedManagedResume("resume-newer-key")).toBe(false);
   });
 
   it("continues polling when the resume surface has no root element to mount into", async () => {
