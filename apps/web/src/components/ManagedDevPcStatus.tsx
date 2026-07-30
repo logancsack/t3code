@@ -831,6 +831,10 @@ export function ManagedDevPcStatus() {
         throw new Error("request failed");
       }
       const result = (await response.json()) as { state?: string };
+      if (!ownsManagedActionRequest(actionKeys.current[action], idempotencyKey)) {
+        if (componentMounted.current) void refresh();
+        return;
+      }
       const reflectedStatus: ManagedDevPcDisplayStatus | null =
         action === "restart" && result.state === "restarting"
           ? "restarting"

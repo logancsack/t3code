@@ -94,6 +94,12 @@ export function requiresManagedResume(bootstrap: ManagedDevPcBootstrap): boolean
   );
 }
 
+export function isManagedBootstrapRunning(bootstrap: ManagedDevPcBootstrap): boolean {
+  return bootstrap.status
+    ? bootstrap.status === "running"
+    : bootstrap.state === "ready" && bootstrap.ready;
+}
+
 export function shouldPromptManagedResume(
   bootstrap: ManagedDevPcBootstrap,
   resumeAccepted: boolean,
@@ -183,9 +189,7 @@ export function reconcileBootstrapLifecycleAction(
     if (!stored) return null;
     const action = stored.action;
     const status = bootstrap.status ?? bootstrap.state;
-    const running = bootstrap.status
-      ? bootstrap.status === "running"
-      : bootstrap.state === "ready" && bootstrap.ready;
+    const running = isManagedBootstrapRunning(bootstrap);
     const restartProgressFromStatus =
       action === "restart" && ["restarting", "starting", "restoring"].includes(status);
     const progressObserved =
@@ -447,7 +451,7 @@ export async function prepareManagedDevPc(): Promise<void> {
       const bootstrap = (await response.json()) as ManagedDevPcBootstrap;
       window.__DEVPC_MANAGED_BOOTSTRAP__ = bootstrap;
       const lifecycleReconciliation = reconcileBootstrapLifecycleAction(bootstrap);
-      if (bootstrap.ready) {
+      if (isManagedBootstrapRunning(bootstrap)) {
         if (lifecycleReconciliation === "pending-restart-confirmation") {
           failures = 0;
           updateBootstrapMessage("Confirming that your workspace restarted…");

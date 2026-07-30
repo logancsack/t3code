@@ -30,7 +30,8 @@ describe("managed DevPC paused bootstrap", () => {
   it("requires an explicit resume for every paused bootstrap representation", async () => {
     vi.stubEnv("VITE_DEVPC_MANAGED", "1");
     vi.resetModules();
-    const { requiresManagedResume, shouldPromptManagedResume } = await import("./managedDevPc");
+    const { isManagedBootstrapRunning, requiresManagedResume, shouldPromptManagedResume } =
+      await import("./managedDevPc");
     const base = {
       managed: true as const,
       state: "ready" as const,
@@ -46,6 +47,9 @@ describe("managed DevPC paused bootstrap", () => {
     expect(requiresManagedResume({ ...base, status: "starting" })).toBe(false);
     expect(shouldPromptManagedResume({ ...base, status: "stopped" }, false)).toBe(true);
     expect(shouldPromptManagedResume({ ...base, status: "stopped" }, true)).toBe(false);
+    expect(isManagedBootstrapRunning({ ...base, ready: true, status: "starting" })).toBe(false);
+    expect(isManagedBootstrapRunning({ ...base, ready: true, status: "running" })).toBe(true);
+    expect(isManagedBootstrapRunning({ ...base, ready: true })).toBe(true);
   });
 
   it("re-prompts when an accepted resume remains ineffective", async () => {
