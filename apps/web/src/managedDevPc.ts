@@ -387,7 +387,7 @@ export async function requestManagedResume(
 
 function waitForManagedResume(
   resumeRequestKey = `resume-${randomUUID()}`,
-): Promise<{ requestKey: string; uncertain: boolean }> {
+): Promise<{ requestKey: string; uncertain: boolean } | null> {
   return new Promise((resolve) => {
     const root = document.getElementById("root");
     if (!root) {
@@ -414,7 +414,9 @@ function waitForManagedResume(
     resume.className =
       "mt-4 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground disabled:opacity-60";
     resume.textContent = "Resume workspace";
+    let submitted = false;
     resume.addEventListener("click", () => {
+      submitted = true;
       resume.disabled = true;
       resume.textContent = "Resuming…";
       error.classList.add("hidden");
@@ -442,6 +444,11 @@ function waitForManagedResume(
     surface.append(card);
     root.append(surface);
     resume.focus();
+    queueMicrotask(() => {
+      window.setTimeout(() => {
+        if (!submitted) resolve(null);
+      }, 1_500);
+    });
   });
 }
 
@@ -520,6 +527,7 @@ export async function prepareManagedDevPc(): Promise<void> {
         }
         if (shouldPromptManagedResume(bootstrap, resumeAccepted)) {
           const result = await waitForManagedResume(resumeRequestKey);
+          if (!result) continue;
           resumeRequestKey = result.requestKey;
           resumeUncertain = result.uncertain;
           resumeAccepted = true;

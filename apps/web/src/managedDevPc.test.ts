@@ -424,6 +424,65 @@ describe("managed DevPC paused bootstrap", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it("keeps polling while a resume prompt is open in another tab", async () => {
+    vi.stubEnv("VITE_DEVPC_MANAGED", "1");
+    vi.resetModules();
+    const makeElement = () => ({
+      className: "",
+      textContent: "",
+      type: "",
+      disabled: false,
+      classList: { add: vi.fn(), remove: vi.fn() },
+      append: vi.fn(),
+      replaceChildren: vi.fn(),
+      addEventListener: vi.fn(),
+      focus: vi.fn(),
+    });
+    const root = makeElement();
+    vi.stubGlobal("document", {
+      getElementById: vi.fn(() => root),
+      createElement: vi.fn(() => makeElement()),
+    });
+    vi.stubGlobal("window", {
+      location: { hash: "" },
+      localStorage: {
+        getItem: vi.fn(() => null),
+        setItem: vi.fn(),
+        removeItem: vi.fn(),
+      },
+      setTimeout: (callback: () => void) => {
+        callback();
+        return 1;
+      },
+    });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json({
+          managed: true,
+          state: "stopped",
+          status: "stopped",
+          ready: false,
+          previewUrlTemplate: "https://{port}.preview.example.test/",
+        }),
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          managed: true,
+          state: "ready",
+          status: "running",
+          ready: true,
+          previewUrlTemplate: "https://{port}.preview.example.test/",
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { prepareManagedDevPc } = await import("./managedDevPc");
+    await prepareManagedDevPc();
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it("continues bootstrap polling when an accepted resume response may have been lost", async () => {
     vi.stubEnv("VITE_DEVPC_MANAGED", "1");
     vi.resetModules();
