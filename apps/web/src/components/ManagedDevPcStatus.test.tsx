@@ -379,6 +379,13 @@ describe("ManagedDevPcStatus", () => {
       actionSnapshotResult("restart", {
         ...running,
         state: "error",
+        status: "running",
+      }),
+    ).toBe("pending");
+    expect(
+      actionSnapshotResult("restart", {
+        ...running,
+        state: "error",
         status: "attention",
         ready: false,
       }),
@@ -397,6 +404,22 @@ describe("ManagedDevPcStatus", () => {
         status: "starting",
       }),
     ).toBe("progressing");
+    expect(
+      actionSnapshotResult("restart", {
+        ...running,
+        state: "ready",
+        status: "paused",
+        ready: false,
+      }),
+    ).toBe("failed");
+    expect(
+      actionSnapshotResult("restart", {
+        ...running,
+        state: "ready",
+        status: "stopped",
+        ready: false,
+      }),
+    ).toBe("failed");
     expect(
       actionSnapshotResult(
         "restart",

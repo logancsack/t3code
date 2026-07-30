@@ -304,7 +304,9 @@ export function actionSnapshotResult(
 ): ActionSnapshotResult {
   const status = workspace.status ?? workspace.state;
   const running = isManagedWorkspaceRunning(workspace);
-  if (workspace.state === "error" || status === "attention") return "failed";
+  if (workspace.status ? workspace.status === "attention" : workspace.state === "error") {
+    return "failed";
+  }
   if (action === "pause") {
     if (["paused", "stopped"].includes(status)) return "resolved";
     if (["pausing", "stopping"].includes(status)) return "progressing";
@@ -315,6 +317,7 @@ export function actionSnapshotResult(
     if (["starting", "restoring", "reconnecting"].includes(status)) return "progressing";
     return "pending";
   }
+  if (["paused", "stopped"].includes(status)) return "failed";
   if (["restarting", "starting", "restoring"].includes(status)) return "progressing";
   if (progressObserved && restartCompletionConfirmations > 0 && running) {
     return "resolved";
