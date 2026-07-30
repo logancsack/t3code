@@ -147,6 +147,14 @@ describe("ManagedDevPcStatus", () => {
     expect(actionSnapshotResult("restart", running, true)).toBe("pending");
     expect(actionSnapshotResult("restart", running, true, 1)).toBe("resolved");
     expect(
+      actionSnapshotResult("restart", {
+        ...running,
+        state: "error",
+        status: "attention",
+        ready: false,
+      }),
+    ).toBe("failed");
+    expect(
       actionSnapshotResult("pause", {
         ...running,
         state: "paused",

@@ -66,7 +66,7 @@ const KNOWN_STATUSES = new Set<string>(Object.keys(statusLabel));
 
 type PendingAction = "restart" | "pause" | "resume";
 type Confirmation = "restart" | "pause";
-type ActionSnapshotResult = "pending" | "progressing" | "resolved";
+type ActionSnapshotResult = "pending" | "progressing" | "resolved" | "failed";
 
 export function actionSnapshotResult(
   action: PendingAction,
@@ -75,6 +75,7 @@ export function actionSnapshotResult(
   restartCompletionConfirmations = 0,
 ): ActionSnapshotResult {
   const status = workspace.status ?? workspace.state;
+  if (workspace.state === "error" || status === "attention") return "failed";
   if (action === "pause") {
     if (["paused", "stopped"].includes(status)) return "resolved";
     if (["pausing", "stopping"].includes(status)) return "progressing";
@@ -317,6 +318,7 @@ export function ManagedDevPcStatus() {
   const uncertainActionRef = useRef<PendingAction | null>(null);
   const actionProgressObserved = useRef<Partial<Record<PendingAction, boolean>>>({});
   const restartCompletionConfirmations = useRef(0);
+  const pendingIdleTimeout = useRef<number | null>(null);
   const refreshSequence = useRef(0);
   const latestAppliedRefresh = useRef(0);
 
@@ -337,6 +339,7 @@ export function ManagedDevPcStatus() {
   const refresh = useCallback(async () => {
     const generation = ++refreshSequence.current;
     const restartConfirmationsAtRequestStart = restartCompletionConfirmations.current;
+    const idleTimeoutAtRequestStart = pendingIdleTimeout.current;
     try {
       const response = await fetch(STATUS_PATH, {
         credentials: "same-origin",
@@ -361,7 +364,14 @@ export function ManagedDevPcStatus() {
           actionProgressObserved.current[action] ?? false,
           restartConfirmationsAtRequestStart,
         );
-        if (result === "resolved") {
+        if (result === "failed") {
+          delete actionKeys.current[action];
+          delete actionProgressObserved.current[action];
+          restartCompletionConfirmations.current = 0;
+          updatePendingAction(null);
+          updateUncertainAction(null);
+          setError("The workspace reported a problem before the action completed.");
+        } else if (result === "resolved") {
           delete actionKeys.current[action];
           delete actionProgressObserved.current[action];
           restartCompletionConfirmations.current = 0;
@@ -384,7 +394,11 @@ export function ManagedDevPcStatus() {
           restartCompletionConfirmations.current = 1;
         }
       }
-      setWorkspace(next);
+      setWorkspace(
+        idleTimeoutAtRequestStart === null
+          ? next
+          : withIdleTimeout(next, idleTimeoutAtRequestStart),
+      );
       setStatusUnavailable(false);
       return next;
     } catch {
@@ -528,6 +542,7 @@ export function ManagedDevPcStatus() {
     const minutes = Number(value);
     if (!IDLE_TIMEOUTS.includes(minutes as (typeof IDLE_TIMEOUTS)[number])) return;
     const previousIdleTimeoutMinutes = workspace.idleTimeoutMinutes;
+    pendingIdleTimeout.current = minutes;
     setSettingsPending(true);
     setError(null);
     invalidateWorkspaceRefreshes();
@@ -541,9 +556,17 @@ export function ManagedDevPcStatus() {
         signal: AbortSignal.timeout(ACTION_REQUEST_TIMEOUT_MS),
       });
       if (!response.ok) throw new Error("request failed");
-      await refresh();
+      const result = (await response.json()) as { idleTimeoutMinutes?: number };
+      const confirmedMinutes = IDLE_TIMEOUTS.includes(
+        result.idleTimeoutMinutes as (typeof IDLE_TIMEOUTS)[number],
+      )
+        ? result.idleTimeoutMinutes
+        : minutes;
+      pendingIdleTimeout.current = null;
+      setWorkspace((current) => (current ? withIdleTimeout(current, confirmedMinutes) : current));
     } catch {
       invalidateWorkspaceRefreshes();
+      pendingIdleTimeout.current = null;
       setWorkspace((current) =>
         current ? withIdleTimeout(current, previousIdleTimeoutMinutes) : current,
       );
