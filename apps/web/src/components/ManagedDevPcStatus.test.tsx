@@ -376,21 +376,21 @@ describe("ManagedDevPcStatus", () => {
     ).toBe("resolved");
   });
 
-  it("makes an accepted but ineffective resume retryable after bounded polls", async () => {
+  it("makes an accepted but ineffective pause or resume retryable after bounded polls", async () => {
     vi.stubEnv("VITE_DEVPC_MANAGED", "1");
     vi.resetModules();
-    const { ineffectiveResumePollResult } = await import("./ManagedDevPcStatus");
+    const { ineffectiveActionPollResult } = await import("./ManagedDevPcStatus");
 
-    expect(ineffectiveResumePollResult(true, 4, 4)).toEqual({
+    expect(ineffectiveActionPollResult(true, 4, 4)).toEqual({
       polls: 5,
       retryable: false,
     });
-    expect(ineffectiveResumePollResult(true, 5, 5)).toEqual({
+    expect(ineffectiveActionPollResult(true, 5, 5)).toEqual({
       polls: 6,
       retryable: true,
     });
-    expect(ineffectiveResumePollResult(true, 5, 4)).toBeNull();
-    expect(ineffectiveResumePollResult(false, 5, 5)).toBeNull();
+    expect(ineffectiveActionPollResult(true, 5, 4)).toBeNull();
+    expect(ineffectiveActionPollResult(false, 5, 5)).toBeNull();
   });
 
   it("treats gateway failures as ambiguous lifecycle outcomes", async () => {
