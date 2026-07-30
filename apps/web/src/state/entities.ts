@@ -152,10 +152,19 @@ export function useThreadStatus(ref: ScopedThreadRef | null): EnvironmentThreadS
   );
 }
 
-/** Detail collections composed with shell-authoritative thread/workspace metadata. */
+/**
+ * Detail collections composed with shell-authoritative thread/workspace metadata.
+ *
+ * Detail is only subscribed once the shell lists the thread. `useThread` is what
+ * ChatView and draft promotion use for provisional (pre-create) draft refs —
+ * subscribing earlier 404s the snapshot endpoint and, after the missing-thread
+ * threshold, permanently parks the id as deleted while the shell later shows
+ * Working. Direct `useThreadDetail` callers (canonical deep links,
+ * waitForStartedServerThread after create) intentionally bypass this gate.
+ */
 export function useThread(ref: ScopedThreadRef | null): EnvironmentThread | null {
   const shell = useThreadShell(ref);
-  const detail = useThreadDetail(ref);
+  const detail = useThreadDetail(shell !== null ? ref : null);
   return useMemo(() => mergeEnvironmentThread(detail, shell), [detail, shell]);
 }
 
