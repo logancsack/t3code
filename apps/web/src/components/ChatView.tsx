@@ -82,6 +82,7 @@ import {
   deriveActivePlanState,
   findSidebarProposedPlan,
   findLatestProposedPlan,
+  deriveActiveToolWait,
   deriveWorkLogEntries,
   hasActionableProposedPlan,
   isLatestTurnSettled,
@@ -1948,6 +1949,12 @@ function ChatViewContent(props: ChatViewProps) {
   const pendingUserInputs = useMemo(
     () => derivePendingUserInputs(threadActivities),
     [threadActivities],
+  );
+  const activeSessionTurnId =
+    activeThread?.session?.status === "running" ? activeThread.session.activeTurnId : null;
+  const activeToolWait = useMemo(
+    () => deriveActiveToolWait(threadActivities, activeSessionTurnId),
+    [threadActivities, activeSessionTurnId],
   );
   const activePendingUserInput = pendingUserInputs[0] ?? null;
   const activePendingDraftAnswers = useMemo(
@@ -5718,6 +5725,7 @@ function ChatViewContent(props: ChatViewProps) {
                 isWorking={isWorking}
                 activeTurnInProgress={isWorking || !latestTurnSettled}
                 activeTurnStartedAt={activeWorkStartedAt}
+                activeToolWait={activeToolWait}
                 listRef={legendListRef}
                 timelineEntries={timelineEntries}
                 latestTurn={activeLatestTurn}
