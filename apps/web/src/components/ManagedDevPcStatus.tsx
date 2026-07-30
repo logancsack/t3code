@@ -40,6 +40,7 @@ const STATUS_REQUEST_TIMEOUT_MS = 10_000;
 const ACTION_REQUEST_TIMEOUT_MS = 30_000;
 const IDLE_TIMEOUTS = [15, 30, 60, 120, 240] as const;
 const MAX_CONFIRMED_IDLE_TIMEOUT_MISMATCHES = 3;
+const MAX_INEFFECTIVE_RESUME_POLLS = 6;
 const MANAGED_WORKSPACE_ACTION_SYNCED_EVENT = "devpc-managed-workspace-action-synced";
 
 const statusLabel: Record<ManagedDevPcDisplayStatus, string> = {
@@ -152,6 +153,7 @@ const managedActionProgress = {
 const managedRestartConfirmations = {
   current: restoredActionSession?.restartConfirmations ?? 0,
 };
+const managedResumePendingPolls = { current: 0 };
 type IdleTimeoutProjection = {
   readonly minutes: number;
   readonly mismatches: number;
@@ -264,6 +266,7 @@ if (typeof window !== "undefined" && typeof window.addEventListener === "functio
     managedActionKeys.current = stored ? { [stored.action]: stored.idempotencyKey } : {};
     managedActionProgress.current = stored ? { [stored.action]: stored.progressObserved } : {};
     managedRestartConfirmations.current = stored?.restartConfirmations ?? 0;
+    managedResumePendingPolls.current = 0;
     managedActionSnapshot = {
       ...managedActionSnapshot,
       pendingAction: managedPendingAction.current,
@@ -312,6 +315,16 @@ export function actionSnapshotResult(
     return "resolved";
   }
   return "pending";
+}
+
+export function ineffectiveResumePollResult(
+  progressObserved: boolean,
+  currentPolls: number,
+  pollsAtRequestStart: number,
+): { readonly polls: number; readonly retryable: boolean } | null {
+  if (!progressObserved || currentPolls !== pollsAtRequestStart) return null;
+  const polls = currentPolls + 1;
+  return { polls, retryable: polls >= MAX_INEFFECTIVE_RESUME_POLLS };
 }
 
 export function displayStatus(
@@ -629,6 +642,7 @@ export function ManagedDevPcStatus() {
   const refresh = useCallback(async () => {
     const generation = ++refreshSequence.current;
     const restartConfirmationsAtRequestStart = restartCompletionConfirmations.current;
+    const resumePendingPollsAtRequestStart = managedResumePendingPolls.current;
     const idleTimeoutProjectionAtRequestStart = pendingIdleTimeout.current;
     try {
       const response = await fetch(STATUS_PATH, {
@@ -670,6 +684,7 @@ export function ManagedDevPcStatus() {
           delete actionKeys.current[action];
           delete actionProgressObserved.current[action];
           restartCompletionConfirmations.current = 0;
+          managedResumePendingPolls.current = 0;
           updatePendingAction(null);
           updateUncertainAction(null);
           setError("The workspace reported a problem before the action completed.");
@@ -677,12 +692,14 @@ export function ManagedDevPcStatus() {
           delete actionKeys.current[action];
           delete actionProgressObserved.current[action];
           restartCompletionConfirmations.current = 0;
+          managedResumePendingPolls.current = 0;
           updatePendingAction(null);
           updateUncertainAction(null);
           setError(null);
         } else if (result === "progressing") {
           actionProgressObserved.current[action] = true;
           restartCompletionConfirmations.current = 0;
+          managedResumePendingPolls.current = 0;
           updatePendingAction(action);
           updateUncertainAction(null);
           setError(null);
@@ -695,6 +712,21 @@ export function ManagedDevPcStatus() {
           // can still be the eventually-consistent pre-action projection.
           restartCompletionConfirmations.current = 1;
           persistManagedActionSession();
+        } else if (action === "resume" && actionProgressObserved.current.resume) {
+          const resumePoll = ineffectiveResumePollResult(
+            true,
+            managedResumePendingPolls.current,
+            resumePendingPollsAtRequestStart,
+          );
+          if (resumePoll) managedResumePendingPolls.current = resumePoll.polls;
+          if (resumePoll?.retryable) {
+            actionKeys.current.resume = `resume-${randomUUID()}`;
+            actionProgressObserved.current.resume = false;
+            managedResumePendingPolls.current = 0;
+            updateUncertainAction("resume");
+            updatePendingAction(null);
+            setError("The resume did not take effect. Try again.");
+          }
         }
       }
       setWorkspace(withIdleTimeout(next, idleTimeout.effectiveIdleTimeoutMinutes));
@@ -765,6 +797,7 @@ export function ManagedDevPcStatus() {
       actionProgressObserved.current[action] = false;
       if (action === "restart") restartCompletionConfirmations.current = 0;
     }
+    if (action === "resume") managedResumePendingPolls.current = 0;
     persistManagedActionSession();
     let definitiveFailure = false;
     try {
@@ -799,6 +832,7 @@ export function ManagedDevPcStatus() {
               : null;
       actionProgressObserved.current[action] = true;
       if (action === "restart") restartCompletionConfirmations.current = 0;
+      if (action === "resume") managedResumePendingPolls.current = 0;
       persistManagedActionSession();
       if (!componentMounted.current) return;
       if (reflectedStatus) {
@@ -827,6 +861,7 @@ export function ManagedDevPcStatus() {
         delete actionKeys.current[action];
         delete actionProgressObserved.current[action];
         if (action === "restart") restartCompletionConfirmations.current = 0;
+        if (action === "resume") managedResumePendingPolls.current = 0;
         if (pendingActionRef.current === action) updatePendingAction(null);
         if (uncertainActionRef.current === action) updateUncertainAction(null);
         persistManagedActionSession();

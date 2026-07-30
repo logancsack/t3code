@@ -89,6 +89,60 @@ describe("managed DevPC paused bootstrap", () => {
     );
   });
 
+  it("clears a persisted restart after bootstrap observes progress and completion", async () => {
+    vi.stubEnv("VITE_DEVPC_MANAGED", "1");
+    vi.resetModules();
+    let stored = JSON.stringify({
+      action: "restart",
+      phase: "pending",
+      idempotencyKey: "restart-persisted-key",
+      progressObserved: false,
+      restartConfirmations: 0,
+    });
+    const removeItem = vi.fn(() => {
+      stored = "";
+    });
+    const setItem = vi.fn((_key: string, value: string) => {
+      stored = value;
+    });
+    const dispatchEvent = vi.fn();
+    vi.stubGlobal("window", {
+      localStorage: {
+        getItem: vi.fn(() => stored || null),
+        setItem,
+        removeItem,
+      },
+      dispatchEvent,
+    });
+    const { reconcileBootstrapLifecycleAction } = await import("./managedDevPc");
+
+    reconcileBootstrapLifecycleAction({
+      managed: true,
+      state: "restarting",
+      status: "restarting",
+      ready: false,
+      previewUrlTemplate: "https://{port}.preview.example.test/",
+    });
+    expect(setItem).toHaveBeenCalledWith(
+      "devpc-managed-workspace-action",
+      expect.stringContaining('"progressObserved":true'),
+    );
+
+    reconcileBootstrapLifecycleAction({
+      managed: true,
+      state: "ready",
+      status: "running",
+      ready: true,
+      previewUrlTemplate: "https://{port}.preview.example.test/",
+    });
+    expect(removeItem).toHaveBeenCalledWith("devpc-managed-workspace-action");
+    expect(dispatchEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        detail: { action: "restart" },
+      }),
+    );
+  });
+
   it("continues polling when the resume surface has no root element to mount into", async () => {
     vi.stubEnv("VITE_DEVPC_MANAGED", "1");
     vi.resetModules();

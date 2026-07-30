@@ -106,20 +106,40 @@ export function shouldRepromptManagedResume(resumeAccepted: boolean, waitPolls: 
 }
 
 export function clearCompletedPauseAction(bootstrap: ManagedDevPcBootstrap): void {
-  if (!requiresManagedResume(bootstrap)) return;
+  reconcileBootstrapLifecycleAction(bootstrap);
+}
+
+export function reconcileBootstrapLifecycleAction(bootstrap: ManagedDevPcBootstrap): void {
   try {
     const stored = JSON.parse(
       window.localStorage.getItem(MANAGED_WORKSPACE_ACTION_STORAGE_KEY) ?? "null",
-    ) as { action?: unknown } | null;
-    if (stored?.action === "pause") {
+    ) as { action?: unknown; progressObserved?: unknown } | null;
+    if (!stored || !["pause", "restart", "resume"].includes(String(stored.action))) return;
+    const action = stored.action as "pause" | "restart" | "resume";
+    const status = bootstrap.status ?? bootstrap.state;
+    const running = status === "running" || (bootstrap.state === "ready" && bootstrap.ready);
+    const progressObserved =
+      stored.progressObserved === true ||
+      (action === "restart" && ["restarting", "starting", "restoring"].includes(status)) ||
+      (action === "resume" && ["starting", "restoring", "reconnecting"].includes(status));
+    const completed =
+      (action === "pause" && ["paused", "stopped"].includes(status)) ||
+      (action === "resume" && running) ||
+      (action === "restart" && progressObserved && running);
+    if (completed) {
       window.localStorage.removeItem(MANAGED_WORKSPACE_ACTION_STORAGE_KEY);
       if (typeof window.dispatchEvent === "function") {
         window.dispatchEvent(
           new CustomEvent(MANAGED_WORKSPACE_ACTION_CLEARED_EVENT, {
-            detail: { action: "pause" },
+            detail: { action },
           }),
         );
       }
+    } else if (progressObserved && stored.progressObserved !== true) {
+      window.localStorage.setItem(
+        MANAGED_WORKSPACE_ACTION_STORAGE_KEY,
+        JSON.stringify({ ...stored, progressObserved: true }),
+      );
     }
   } catch {
     // Storage can be unavailable or contain an obsolete record.
@@ -287,6 +307,7 @@ export async function prepareManagedDevPc(): Promise<void> {
       }
       const bootstrap = (await response.json()) as ManagedDevPcBootstrap;
       window.__DEVPC_MANAGED_BOOTSTRAP__ = bootstrap;
+      reconcileBootstrapLifecycleAction(bootstrap);
       if (bootstrap.ready) {
         if (bootstrap.pairingToken) {
           window.location.hash = pairingHash(bootstrap.pairingToken);
@@ -294,7 +315,6 @@ export async function prepareManagedDevPc(): Promise<void> {
         return;
       }
       if (requiresManagedResume(bootstrap)) {
-        clearCompletedPauseAction(bootstrap);
         failures = 0;
         if (shouldRepromptManagedResume(resumeAccepted, resumeWaitPolls)) {
           resumeAccepted = false;
