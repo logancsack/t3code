@@ -26,6 +26,25 @@ describe("managed DevPC preview URLs", () => {
   });
 });
 
+describe("managed DevPC paused bootstrap", () => {
+  it("requires an explicit resume for every paused bootstrap representation", async () => {
+    vi.stubEnv("VITE_DEVPC_MANAGED", "1");
+    vi.resetModules();
+    const { requiresManagedResume } = await import("./managedDevPc");
+    const base = {
+      managed: true as const,
+      state: "ready" as const,
+      ready: false,
+      previewUrlTemplate: "https://{port}.preview.example.test/",
+    };
+
+    expect(requiresManagedResume({ ...base, requiresResume: true })).toBe(true);
+    expect(requiresManagedResume({ ...base, status: "paused" })).toBe(true);
+    expect(requiresManagedResume({ ...base, state: "paused" })).toBe(true);
+    expect(requiresManagedResume({ ...base, status: "starting" })).toBe(false);
+  });
+});
+
 describe("managed DevPC WebSocket authorization", () => {
   it("replaces a T3 ticket with a fresh same-origin gateway ticket", async () => {
     vi.stubEnv("VITE_DEVPC_MANAGED", "1");

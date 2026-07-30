@@ -8,7 +8,18 @@ afterEach(() => {
 
 async function renderManagedStatus(input: {
   managed?: boolean;
-  state: "starting" | "ready" | "restarting" | "stopped" | "error";
+  state: "starting" | "ready" | "restarting" | "paused" | "stopped" | "error";
+  status?:
+    | "running"
+    | "starting"
+    | "restarting"
+    | "pausing"
+    | "paused"
+    | "stopped"
+    | "restoring"
+    | "reconnecting"
+    | "unreachable"
+    | "attention";
   ready: boolean;
 }) {
   vi.stubEnv("VITE_DEVPC_MANAGED", input.managed === false ? "" : "1");
@@ -17,6 +28,7 @@ async function renderManagedStatus(input: {
     __DEVPC_MANAGED_BOOTSTRAP__: {
       managed: true,
       state: input.state,
+      status: input.status,
       ready: input.ready,
       previewUrlTemplate: "https://{port}.preview.example.test/",
     },
@@ -27,12 +39,17 @@ async function renderManagedStatus(input: {
 }
 
 describe("ManagedDevPcStatus", () => {
-  it("renders workspace state and restart as sidebar utility controls", async () => {
-    const markup = await renderManagedStatus({ state: "ready", ready: true });
+  it("renders one truthful workspace control", async () => {
+    const markup = await renderManagedStatus({
+      state: "ready",
+      status: "running",
+      ready: true,
+    });
 
-    expect(markup).toContain('data-devpc-workspace-status="ready"');
-    expect(markup).toContain("Workspace · Online");
-    expect(markup).toContain('aria-label="Restart workspace"');
+    expect(markup).toContain('data-devpc-workspace-status="running"');
+    expect(markup).toContain("Workspace · Running");
+    expect(markup).toContain('aria-haspopup="dialog"');
+    expect(markup).not.toContain('aria-label="Restart workspace"');
     expect(markup).not.toContain("fixed");
   });
 
@@ -43,14 +60,15 @@ describe("ManagedDevPcStatus", () => {
   });
 
   it.each([
-    ["starting", "Starting"],
-    ["error", "Needs attention"],
-  ] as const)("disables restart while the workspace is %s", async (state, label) => {
-    const markup = await renderManagedStatus({ state, ready: false });
+    ["starting", "starting", "Starting…"],
+    ["ready", "reconnecting", "Reconnecting…"],
+    ["ready", "unreachable", "Unreachable"],
+    ["paused", "paused", "Paused"],
+    ["error", "attention", "Needs attention"],
+  ] as const)("renders the %s workspace state", async (state, status, label) => {
+    const markup = await renderManagedStatus({ state, status, ready: false });
 
-    expect(markup).toContain(`data-devpc-workspace-status="${state}"`);
+    expect(markup).toContain(`data-devpc-workspace-status="${status}"`);
     expect(markup).toContain(`Workspace · ${label}`);
-    expect(markup).toContain('aria-label="Restart workspace"');
-    expect(markup).toContain("disabled");
   });
 });

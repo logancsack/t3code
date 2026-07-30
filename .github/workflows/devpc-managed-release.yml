@@ -62,6 +62,21 @@ jobs:
             echo "Missing managed DevPC restart surface"
             exit 1
           }
+          grep -R -m1 -q --include='*.js' "/_devpc/workspace/start" \
+            artifacts/devpc-t3/dist/client/assets || {
+            echo "Missing managed DevPC resume surface"
+            exit 1
+          }
+          grep -R -m1 -q --include='*.js' "/_devpc/workspace/stop" \
+            artifacts/devpc-t3/dist/client/assets || {
+            echo "Missing managed DevPC pause surface"
+            exit 1
+          }
+          grep -R -m1 -q --include='*.js' "/_devpc/workspace/settings" \
+            artifacts/devpc-t3/dist/client/assets || {
+            echo "Missing managed DevPC settings surface"
+            exit 1
+          }
           grep -R -m1 -q --include='*.js' "/_devpc/ws-ticket" \
             artifacts/devpc-t3/dist/client/assets || {
             echo "Missing managed DevPC WebSocket authorization"

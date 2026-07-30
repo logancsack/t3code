@@ -1,23 +1,86 @@
-export type ManagedDevPcWorkspaceState = "starting" | "ready" | "restarting" | "stopped" | "error";
+export type ManagedDevPcWorkspaceState =
+  | "starting"
+  | "ready"
+  | "restarting"
+  | "paused"
+  | "stopped"
+  | "error";
+
+export type ManagedDevPcDisplayStatus =
+  | "running"
+  | "starting"
+  | "restarting"
+  | "pausing"
+  | "paused"
+  | "stopped"
+  | "restoring"
+  | "reconnecting"
+  | "unreachable"
+  | "attention";
+
+export interface ManagedDevPcTelemetry {
+  readonly sampledAt: string;
+  readonly receivedAt: string;
+  readonly cpuPercent: number | null;
+  readonly memory: {
+    readonly usedBytes: number;
+    readonly totalBytes: number;
+  };
+  readonly disks: {
+    readonly root: {
+      readonly usedBytes: number;
+      readonly totalBytes: number;
+    } | null;
+    readonly workspace: {
+      readonly usedBytes: number;
+      readonly totalBytes: number;
+    } | null;
+  };
+  readonly uptimeSeconds: number;
+  readonly t3Healthy: boolean;
+}
 
 export interface ManagedDevPcBootstrap {
   readonly managed: true;
   readonly state: ManagedDevPcWorkspaceState;
+  readonly status?: ManagedDevPcDisplayStatus;
   readonly ready: boolean;
+  readonly connected?: boolean;
+  readonly requiresResume?: boolean;
   readonly pairingToken?: string;
   readonly previewUrlTemplate: string;
   readonly previewUrls?: Readonly<Record<string, string>>;
-  readonly t3Version?: string;
+  readonly region?: string | null;
+  readonly t3Version?: string | null;
+  readonly runtimeVersion?: string | null;
+  readonly agentVersion?: string | null;
+  readonly lastHeartbeatAt?: string | null;
+  readonly lastActivityAt?: string | null;
+  readonly connectedAt?: string | null;
+  readonly idleTimeoutMinutes?: number;
+  readonly autoStopAt?: string | null;
+  readonly machine?: {
+    readonly cpuCount: number;
+    readonly memoryBytes: number;
+  };
+  readonly telemetry?: ManagedDevPcTelemetry | null;
   readonly detail?: string;
 }
 
 export const isManagedDevPc = import.meta.env.VITE_DEVPC_MANAGED === "1";
 
 const BOOTSTRAP_PATH = "/_devpc/bootstrap";
+const START_PATH = "/_devpc/workspace/start";
 const WEBSOCKET_TICKET_PATH = "/_devpc/ws-ticket";
 const SESSION_RECOVERY_KEY = "devpc-managed-session-recovery-at";
 const SESSION_RECOVERY_COOLDOWN_MS = 30_000;
 let sessionRecoveryReloadScheduled = false;
+
+export function requiresManagedResume(bootstrap: ManagedDevPcBootstrap): boolean {
+  return Boolean(
+    bootstrap.requiresResume || bootstrap.status === "paused" || bootstrap.state === "paused",
+  );
+}
 
 function updateBootstrapMessage(message: string, failed = false): void {
   const root = document.getElementById("root");
@@ -47,6 +110,69 @@ function updateBootstrapMessage(message: string, failed = false): void {
   }
   surface.append(card);
   root.append(surface);
+}
+
+function waitForManagedResume(): Promise<void> {
+  return new Promise((resolve) => {
+    const root = document.getElementById("root");
+    if (!root) return;
+    root.replaceChildren();
+    const surface = document.createElement("main");
+    surface.className =
+      "flex h-dvh min-h-0 items-center justify-center bg-background px-6 text-foreground";
+    const card = document.createElement("section");
+    card.className =
+      "w-full max-w-sm rounded-xl border border-border bg-card p-6 text-center shadow-sm";
+    const title = document.createElement("h1");
+    title.className = "text-base font-semibold";
+    title.textContent = "Workspace paused";
+    const detail = document.createElement("p");
+    detail.className = "mt-2 text-sm text-muted-foreground";
+    detail.textContent = "Your files are safe. Resume when you want to continue.";
+    const error = document.createElement("p");
+    error.className = "mt-3 hidden text-sm text-destructive";
+    const resume = document.createElement("button");
+    resume.type = "button";
+    resume.className =
+      "mt-4 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground disabled:opacity-60";
+    resume.textContent = "Resume workspace";
+    resume.addEventListener("click", () => {
+      resume.disabled = true;
+      resume.textContent = "Resuming…";
+      error.classList.add("hidden");
+      void fetch(START_PATH, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": `resume-${Date.now()}`,
+        },
+        body: "{}",
+      }).then(
+        (response) => {
+          if (!response.ok) {
+            resume.disabled = false;
+            resume.textContent = "Resume workspace";
+            error.textContent = "The workspace could not be resumed. Try again.";
+            error.classList.remove("hidden");
+            return;
+          }
+          updateBootstrapMessage("Resuming your workspace…");
+          resolve();
+        },
+        () => {
+          resume.disabled = false;
+          resume.textContent = "Resume workspace";
+          error.textContent = "The workspace could not be resumed. Try again.";
+          error.classList.remove("hidden");
+        },
+      );
+    });
+    card.append(title, detail, error, resume);
+    surface.append(card);
+    root.append(surface);
+    resume.focus();
+  });
 }
 
 function pairingHash(token: string): string {
@@ -100,6 +226,11 @@ export async function prepareManagedDevPc(): Promise<void> {
           window.location.hash = pairingHash(bootstrap.pairingToken);
         }
         return;
+      }
+      if (requiresManagedResume(bootstrap)) {
+        failures = 0;
+        await waitForManagedResume();
+        continue;
       }
       failures = 0;
       updateBootstrapMessage(bootstrap.detail ?? "The workspace is still starting…");
