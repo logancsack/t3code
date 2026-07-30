@@ -88,6 +88,82 @@ describe("managed DevPC paused bootstrap", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
+
+  it("continues bootstrap polling when an accepted resume response may have been lost", async () => {
+    vi.stubEnv("VITE_DEVPC_MANAGED", "1");
+    vi.resetModules();
+    type Listener = () => void;
+    const makeElement = () => {
+      let click: Listener | undefined;
+      return {
+        className: "",
+        textContent: "",
+        type: "",
+        disabled: false,
+        classList: { add: vi.fn(), remove: vi.fn() },
+        append: vi.fn(),
+        replaceChildren: vi.fn(),
+        addEventListener: (_type: string, listener: Listener) => {
+          click = listener;
+        },
+        focus: () => queueMicrotask(() => click?.()),
+      };
+    };
+    const root = makeElement();
+    vi.stubGlobal("document", {
+      getElementById: vi.fn(() => root),
+      createElement: vi.fn(() => makeElement()),
+    });
+    vi.stubGlobal("window", {
+      location: { hash: "" },
+      setTimeout: (callback: () => void) => {
+        callback();
+        return 1;
+      },
+    });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json({
+          managed: true,
+          state: "stopped",
+          status: "stopped",
+          ready: false,
+          previewUrlTemplate: "https://{port}.preview.example.test/",
+        }),
+      )
+      .mockRejectedValueOnce(new Error("response lost"))
+      .mockResolvedValueOnce(
+        Response.json({
+          managed: true,
+          state: "stopped",
+          status: "stopped",
+          ready: false,
+          previewUrlTemplate: "https://{port}.preview.example.test/",
+        }),
+      )
+      .mockResolvedValueOnce(Response.json({ state: "starting" }))
+      .mockResolvedValueOnce(
+        Response.json({
+          managed: true,
+          state: "ready",
+          status: "running",
+          ready: true,
+          previewUrlTemplate: "https://{port}.preview.example.test/",
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { prepareManagedDevPc } = await import("./managedDevPc");
+    await prepareManagedDevPc();
+
+    expect(fetchMock).toHaveBeenCalledTimes(5);
+    expect(fetchMock.mock.calls[1]?.[0]).toBe("/_devpc/workspace/start");
+    expect(fetchMock.mock.calls[3]?.[0]).toBe("/_devpc/workspace/start");
+    expect((fetchMock.mock.calls[1]?.[1] as RequestInit | undefined)?.headers).toEqual(
+      (fetchMock.mock.calls[3]?.[1] as RequestInit | undefined)?.headers,
+    );
+  });
 });
 
 describe("managed DevPC WebSocket authorization", () => {

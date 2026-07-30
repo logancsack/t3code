@@ -124,11 +124,33 @@ function updateBootstrapMessage(message: string, failed = false): void {
   root.append(surface);
 }
 
-function waitForManagedResume(): Promise<void> {
+type ResumeRequestOutcome = "accepted" | "rejected" | "uncertain";
+
+async function requestManagedResume(resumeRequestKey: string): Promise<ResumeRequestOutcome> {
+  try {
+    const response = await fetch(START_PATH, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: {
+        "content-type": "application/json",
+        "idempotency-key": resumeRequestKey,
+      },
+      body: "{}",
+      signal: AbortSignal.timeout(30_000),
+    });
+    return response.ok ? "accepted" : "rejected";
+  } catch {
+    return "uncertain";
+  }
+}
+
+function waitForManagedResume(
+  resumeRequestKey = `resume-${randomUUID()}`,
+): Promise<{ requestKey: string; uncertain: boolean }> {
   return new Promise((resolve) => {
     const root = document.getElementById("root");
     if (!root) {
-      resolve();
+      resolve({ requestKey: resumeRequestKey, uncertain: true });
       return;
     }
     root.replaceChildren();
@@ -151,39 +173,29 @@ function waitForManagedResume(): Promise<void> {
     resume.className =
       "mt-4 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground disabled:opacity-60";
     resume.textContent = "Resume workspace";
-    const resumeRequestKey = `resume-${randomUUID()}`;
     resume.addEventListener("click", () => {
       resume.disabled = true;
       resume.textContent = "Resuming…";
       error.classList.add("hidden");
-      void fetch(START_PATH, {
-        method: "POST",
-        credentials: "same-origin",
-        headers: {
-          "content-type": "application/json",
-          "idempotency-key": resumeRequestKey,
-        },
-        body: "{}",
-        signal: AbortSignal.timeout(30_000),
-      }).then(
-        (response) => {
-          if (!response.ok) {
-            resume.disabled = false;
-            resume.textContent = "Resume workspace";
-            error.textContent = "The workspace could not be resumed. Try again.";
-            error.classList.remove("hidden");
-            return;
-          }
-          updateBootstrapMessage("Resuming your workspace…");
-          resolve();
-        },
-        () => {
+      void requestManagedResume(resumeRequestKey).then((outcome) => {
+        if (outcome === "rejected") {
           resume.disabled = false;
           resume.textContent = "Resume workspace";
           error.textContent = "The workspace could not be resumed. Try again.";
           error.classList.remove("hidden");
-        },
-      );
+          return;
+        }
+        if (outcome === "accepted") {
+          updateBootstrapMessage("Resuming your workspace…");
+          resolve({ requestKey: resumeRequestKey, uncertain: false });
+        } else {
+          // The gateway may have accepted the idempotent request before the response
+          // was interrupted. Resume bootstrap polling and safely retry the same key
+          // if the workspace still reports that it needs a resume.
+          updateBootstrapMessage("Checking whether your workspace resumed…");
+          resolve({ requestKey: resumeRequestKey, uncertain: true });
+        }
+      });
     });
     card.append(title, detail, error, resume);
     surface.append(card);
@@ -227,6 +239,8 @@ export async function prepareManagedDevPc(): Promise<void> {
   updateBootstrapMessage("Connecting to the managed workspace…");
   let failures = 0;
   let resumeAccepted = false;
+  let resumeRequestKey: string | undefined;
+  let resumeUncertain = false;
   while (true) {
     try {
       const response = await fetch(BOOTSTRAP_PATH, {
@@ -248,15 +262,28 @@ export async function prepareManagedDevPc(): Promise<void> {
       if (requiresManagedResume(bootstrap)) {
         failures = 0;
         if (shouldPromptManagedResume(bootstrap, resumeAccepted)) {
-          await waitForManagedResume();
+          const result = await waitForManagedResume(resumeRequestKey);
+          resumeRequestKey = result.requestKey;
+          resumeUncertain = result.uncertain;
           resumeAccepted = true;
         } else {
           updateBootstrapMessage("Resuming your workspace…");
+          if (resumeUncertain && resumeRequestKey) {
+            const outcome = await requestManagedResume(resumeRequestKey);
+            if (outcome === "accepted") {
+              resumeUncertain = false;
+            } else if (outcome === "rejected") {
+              resumeAccepted = false;
+              resumeUncertain = false;
+            }
+          }
         }
         await new Promise((resolve) => window.setTimeout(resolve, 1_500));
         continue;
       }
       resumeAccepted = false;
+      resumeRequestKey = undefined;
+      resumeUncertain = false;
       failures = 0;
       updateBootstrapMessage(bootstrap.detail ?? "The workspace is still starting…");
       await new Promise((resolve) => window.setTimeout(resolve, 1_500));

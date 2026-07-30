@@ -444,7 +444,6 @@ export function ManagedDevPcStatus() {
                 : "running"
               : null;
       if (reflectedStatus) {
-        delete actionKeys.current[action];
         invalidateWorkspaceRefreshes();
         setWorkspace((current) =>
           current
@@ -455,8 +454,16 @@ export function ManagedDevPcStatus() {
               }
             : current,
         );
-        updatePendingAction(null);
         updateUncertainAction(null);
+        if (["running", "paused", "stopped"].includes(reflectedStatus)) {
+          delete actionKeys.current[action];
+          delete actionProgressObserved.current[action];
+          updatePendingAction(null);
+        } else {
+          // Keep the guard until the status endpoint observes progress. Its projection
+          // can briefly lag the accepted lifecycle request and return the old state.
+          updatePendingAction(action);
+        }
       }
       void refresh();
     } catch {
