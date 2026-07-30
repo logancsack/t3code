@@ -415,6 +415,13 @@ function waitForManagedResume(
       "mt-4 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground disabled:opacity-60";
     resume.textContent = "Resume workspace";
     let submitted = false;
+    const schedulePolling = () => {
+      queueMicrotask(() => {
+        window.setTimeout(() => {
+          if (!submitted) resolve(null);
+        }, 1_500);
+      });
+    };
     resume.addEventListener("click", () => {
       submitted = true;
       resume.disabled = true;
@@ -422,10 +429,12 @@ function waitForManagedResume(
       error.classList.add("hidden");
       void requestManagedResume(resumeRequestKey).then((outcome) => {
         if (outcome === "rejected") {
+          submitted = false;
           resume.disabled = false;
           resume.textContent = "Resume workspace";
           error.textContent = "The workspace could not be resumed. Try again.";
           error.classList.remove("hidden");
+          schedulePolling();
           return;
         }
         if (outcome === "accepted") {
@@ -455,11 +464,7 @@ function waitForManagedResume(
     surface.append(card);
     root.append(surface);
     resume.focus();
-    queueMicrotask(() => {
-      window.setTimeout(() => {
-        if (!submitted) resolve(null);
-      }, 1_500);
-    });
+    schedulePolling();
   });
 }
 
