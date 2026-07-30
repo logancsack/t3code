@@ -643,6 +643,89 @@ export function deriveWorkLogEntries(
   });
 }
 
+/** A started-but-not-finished tool call in the running turn. */
+export interface ActiveToolWait {
+  /** Human-readable label: the command line or tool title. */
+  label: string;
+  itemType?: ToolLifecycleItemType;
+  startedAt: string;
+}
+
+/**
+ * The tool call the running turn is currently waiting on, if any.
+ *
+ * The working indicator uses this to distinguish "waiting on a tool the agent
+ * launched" (a build or test run — legitimately unbounded, shown with its own
+ * elapsed time) from "waiting on the model". Matching prefers the `itemId`
+ * the server has attached to tool lifecycle payloads; activities persisted
+ * before that ships fall back to pairing starts with completions per item
+ * type, oldest first.
+ */
+export function deriveActiveToolWait(
+  activities: ReadonlyArray<OrchestrationThreadActivity>,
+  runningTurnId: TurnId | null,
+): ActiveToolWait | null {
+  if (runningTurnId === null) {
+    return null;
+  }
+  const ordered = [...activities]
+    .filter((activity) => activity.turnId === runningTurnId)
+    .toSorted(compareActivitiesByOrder);
+
+  interface OpenTool extends ActiveToolWait {
+    itemId?: string;
+  }
+  const open: OpenTool[] = [];
+  for (const activity of ordered) {
+    const payload =
+      activity.payload && typeof activity.payload === "object"
+        ? (activity.payload as Record<string, unknown>)
+        : null;
+    const itemType =
+      typeof payload?.itemType === "string" && isToolLifecycleItemType(payload.itemType)
+        ? payload.itemType
+        : undefined;
+    if (itemType === undefined) {
+      continue;
+    }
+    const itemId = typeof payload?.itemId === "string" ? payload.itemId : undefined;
+
+    if (activity.kind === "tool.started") {
+      const detail = typeof payload?.detail === "string" ? payload.detail : undefined;
+      const label = detail ?? activity.summary.replace(/ started$/, "");
+      open.push({
+        label,
+        itemType,
+        startedAt: activity.createdAt,
+        ...(itemId !== undefined ? { itemId } : {}),
+      });
+      continue;
+    }
+
+    const status = extractWorkLogToolLifecycleStatus(payload);
+    const closes =
+      activity.kind === "tool.completed" ||
+      (activity.kind === "tool.updated" && status !== undefined && status !== "inProgress");
+    if (!closes) {
+      continue;
+    }
+    const index =
+      itemId !== undefined
+        ? open.findIndex((candidate) => candidate.itemId === itemId)
+        : open.findIndex((candidate) => candidate.itemType === itemType);
+    if (index >= 0) {
+      open.splice(index, 1);
+    }
+  }
+
+  const latest = open.at(-1);
+  if (latest === undefined) {
+    return null;
+  }
+  const { itemId: _itemId, ...wait } = latest;
+  return wait;
+}
+
 function isPlanBoundaryToolActivity(activity: OrchestrationThreadActivity): boolean {
   if (activity.kind !== "tool.updated" && activity.kind !== "tool.completed") {
     return false;

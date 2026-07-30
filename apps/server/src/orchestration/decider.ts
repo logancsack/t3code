@@ -845,6 +845,66 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       };
     }
 
+    case "thread.turn.retry": {
+      const thread = yield* requireThread({
+        readModel,
+        command,
+        threadId: command.threadId,
+      });
+      // Retry is only meaningful for the thread's latest turn, and only once
+      // that turn has actually failed. Anything else means the thread moved
+      // on (a newer turn, a completed turn, a still-running turn) and the
+      // retry is stale.
+      const latestTurn = thread.latestTurn;
+      if (latestTurn === null || latestTurn.turnId !== command.turnId) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Turn '${command.turnId}' is not the latest turn of thread '${command.threadId}'.`,
+        });
+      }
+      if (latestTurn.state !== "interrupted" && latestTurn.state !== "error") {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Turn '${command.turnId}' is '${latestTurn.state}', not a failed turn.`,
+        });
+      }
+      if (thread.session?.status === "running" && thread.session.activeTurnId !== null) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Thread '${command.threadId}' is already running a turn.`,
+        });
+      }
+      // Re-drive the original user message: the one the failed turn ran, or
+      // the thread's last user message when the linkage never materialised
+      // (the turn may have died before the provider echoed its start).
+      const originatingMessage =
+        thread.messages.findLast(
+          (message) => message.role === "user" && message.turnId === command.turnId,
+        ) ?? thread.messages.findLast((message) => message.role === "user");
+      if (originatingMessage === undefined) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Thread '${command.threadId}' has no user message to retry.`,
+        });
+      }
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "thread",
+          aggregateId: command.threadId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "thread.turn-start-requested",
+        payload: {
+          threadId: command.threadId,
+          messageId: originatingMessage.id,
+          runtimeMode: thread.runtimeMode,
+          interactionMode: thread.interactionMode,
+          createdAt: command.createdAt,
+        },
+      };
+    }
+
     case "thread.approval.respond": {
       yield* requireThread({
         readModel,
