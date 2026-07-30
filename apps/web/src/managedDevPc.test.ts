@@ -48,6 +48,16 @@ describe("managed DevPC paused bootstrap", () => {
     expect(shouldPromptManagedResume({ ...base, status: "stopped" }, true)).toBe(false);
   });
 
+  it("re-prompts when an accepted resume remains ineffective", async () => {
+    vi.stubEnv("VITE_DEVPC_MANAGED", "1");
+    vi.resetModules();
+    const { shouldRepromptManagedResume } = await import("./managedDevPc");
+
+    expect(shouldRepromptManagedResume(true, 39)).toBe(false);
+    expect(shouldRepromptManagedResume(true, 40)).toBe(true);
+    expect(shouldRepromptManagedResume(false, 40)).toBe(false);
+  });
+
   it("continues polling when the resume surface has no root element to mount into", async () => {
     vi.stubEnv("VITE_DEVPC_MANAGED", "1");
     vi.resetModules();
@@ -162,6 +172,74 @@ describe("managed DevPC paused bootstrap", () => {
     expect(fetchMock.mock.calls[3]?.[0]).toBe("/_devpc/workspace/start");
     expect((fetchMock.mock.calls[1]?.[1] as RequestInit | undefined)?.headers).toEqual(
       (fetchMock.mock.calls[3]?.[1] as RequestInit | undefined)?.headers,
+    );
+  });
+
+  it("lets the user retry a definitively rejected resume with the same key", async () => {
+    vi.stubEnv("VITE_DEVPC_MANAGED", "1");
+    vi.resetModules();
+    type Listener = () => void;
+    let resumeClick: Listener | undefined;
+    const makeElement = () => {
+      return {
+        className: "",
+        textContent: "",
+        type: "",
+        disabled: false,
+        classList: {
+          add: vi.fn(),
+          remove: vi.fn(() => queueMicrotask(() => resumeClick?.())),
+        },
+        append: vi.fn(),
+        replaceChildren: vi.fn(),
+        addEventListener: (_type: string, listener: Listener) => {
+          resumeClick = listener;
+        },
+        focus: () => queueMicrotask(() => resumeClick?.()),
+      };
+    };
+    const root = makeElement();
+    vi.stubGlobal("document", {
+      getElementById: vi.fn(() => root),
+      createElement: vi.fn(() => makeElement()),
+    });
+    vi.stubGlobal("window", {
+      location: { hash: "" },
+      setTimeout: (callback: () => void) => {
+        callback();
+        return 1;
+      },
+    });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json({
+          managed: true,
+          state: "stopped",
+          status: "stopped",
+          ready: false,
+          previewUrlTemplate: "https://{port}.preview.example.test/",
+        }),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 500 }))
+      .mockResolvedValueOnce(Response.json({ state: "starting" }))
+      .mockResolvedValueOnce(
+        Response.json({
+          managed: true,
+          state: "ready",
+          status: "running",
+          ready: true,
+          previewUrlTemplate: "https://{port}.preview.example.test/",
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { prepareManagedDevPc } = await import("./managedDevPc");
+    await prepareManagedDevPc();
+
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect((fetchMock.mock.calls[1]?.[1] as RequestInit | undefined)?.headers).toEqual(
+      (fetchMock.mock.calls[2]?.[1] as RequestInit | undefined)?.headers,
     );
   });
 });

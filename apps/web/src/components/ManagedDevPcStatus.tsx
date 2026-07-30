@@ -336,6 +336,7 @@ export function ManagedDevPcStatus() {
 
   const refresh = useCallback(async () => {
     const generation = ++refreshSequence.current;
+    const restartConfirmationsAtRequestStart = restartCompletionConfirmations.current;
     try {
       const response = await fetch(STATUS_PATH, {
         credentials: "same-origin",
@@ -358,7 +359,7 @@ export function ManagedDevPcStatus() {
           action,
           next,
           actionProgressObserved.current[action] ?? false,
-          restartCompletionConfirmations.current,
+          restartConfirmationsAtRequestStart,
         );
         if (result === "resolved") {
           delete actionKeys.current[action];
@@ -380,7 +381,7 @@ export function ManagedDevPcStatus() {
         ) {
           // Require two status snapshots after accepted restart progress. The first
           // can still be the eventually-consistent pre-action projection.
-          restartCompletionConfirmations.current += 1;
+          restartCompletionConfirmations.current = 1;
         }
       }
       setWorkspace(next);
@@ -492,6 +493,14 @@ export function ManagedDevPcStatus() {
           if (action === "restart") restartCompletionConfirmations.current = 0;
           updatePendingAction(action);
         }
+      } else {
+        // The request was accepted even if the gateway returned a state this client
+        // does not model yet. Keep the guard and let status polling settle it.
+        invalidateWorkspaceRefreshes();
+        actionProgressObserved.current[action] = true;
+        if (action === "restart") restartCompletionConfirmations.current = 0;
+        updatePendingAction(action);
+        updateUncertainAction(null);
       }
       void refresh();
     } catch {

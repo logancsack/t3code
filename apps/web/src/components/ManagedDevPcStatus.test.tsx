@@ -118,6 +118,7 @@ describe("ManagedDevPcStatus", () => {
       ...latest,
       idleTimeoutMinutes: 30,
     });
+    expect(withIdleTimeout(latest, undefined)).not.toHaveProperty("idleTimeoutMinutes");
   });
 
   it("does not invent a default idle timeout when settings metadata is absent", async () => {

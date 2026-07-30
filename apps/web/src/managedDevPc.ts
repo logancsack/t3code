@@ -76,6 +76,7 @@ const START_PATH = "/_devpc/workspace/start";
 const WEBSOCKET_TICKET_PATH = "/_devpc/ws-ticket";
 const SESSION_RECOVERY_KEY = "devpc-managed-session-recovery-at";
 const SESSION_RECOVERY_COOLDOWN_MS = 30_000;
+const MAX_RESUME_WAIT_POLLS = 40;
 let sessionRecoveryReloadScheduled = false;
 
 export function requiresManagedResume(bootstrap: ManagedDevPcBootstrap): boolean {
@@ -92,6 +93,10 @@ export function shouldPromptManagedResume(
   resumeAccepted: boolean,
 ): boolean {
   return requiresManagedResume(bootstrap) && !resumeAccepted;
+}
+
+export function shouldRepromptManagedResume(resumeAccepted: boolean, waitPolls: number): boolean {
+  return resumeAccepted && waitPolls >= MAX_RESUME_WAIT_POLLS;
 }
 
 function updateBootstrapMessage(message: string, failed = false): void {
@@ -241,6 +246,7 @@ export async function prepareManagedDevPc(): Promise<void> {
   let resumeAccepted = false;
   let resumeRequestKey: string | undefined;
   let resumeUncertain = false;
+  let resumeWaitPolls = 0;
   while (true) {
     try {
       const response = await fetch(BOOTSTRAP_PATH, {
@@ -261,12 +267,19 @@ export async function prepareManagedDevPc(): Promise<void> {
       }
       if (requiresManagedResume(bootstrap)) {
         failures = 0;
+        if (shouldRepromptManagedResume(resumeAccepted, resumeWaitPolls)) {
+          resumeAccepted = false;
+          resumeUncertain = false;
+          resumeWaitPolls = 0;
+        }
         if (shouldPromptManagedResume(bootstrap, resumeAccepted)) {
           const result = await waitForManagedResume(resumeRequestKey);
           resumeRequestKey = result.requestKey;
           resumeUncertain = result.uncertain;
           resumeAccepted = true;
+          resumeWaitPolls = 0;
         } else {
+          resumeWaitPolls += 1;
           updateBootstrapMessage("Resuming your workspace…");
           if (resumeUncertain && resumeRequestKey) {
             const outcome = await requestManagedResume(resumeRequestKey);
@@ -284,6 +297,7 @@ export async function prepareManagedDevPc(): Promise<void> {
       resumeAccepted = false;
       resumeRequestKey = undefined;
       resumeUncertain = false;
+      resumeWaitPolls = 0;
       failures = 0;
       updateBootstrapMessage(bootstrap.detail ?? "The workspace is still starting…");
       await new Promise((resolve) => window.setTimeout(resolve, 1_500));
