@@ -87,6 +87,13 @@ export function requiresManagedResume(bootstrap: ManagedDevPcBootstrap): boolean
   );
 }
 
+export function shouldPromptManagedResume(
+  bootstrap: ManagedDevPcBootstrap,
+  resumeAccepted: boolean,
+): boolean {
+  return requiresManagedResume(bootstrap) && !resumeAccepted;
+}
+
 function updateBootstrapMessage(message: string, failed = false): void {
   const root = document.getElementById("root");
   if (!root) return;
@@ -219,6 +226,7 @@ export async function prepareManagedDevPc(): Promise<void> {
 
   updateBootstrapMessage("Connecting to the managed workspace…");
   let failures = 0;
+  let resumeAccepted = false;
   while (true) {
     try {
       const response = await fetch(BOOTSTRAP_PATH, {
@@ -239,10 +247,16 @@ export async function prepareManagedDevPc(): Promise<void> {
       }
       if (requiresManagedResume(bootstrap)) {
         failures = 0;
-        await waitForManagedResume();
+        if (shouldPromptManagedResume(bootstrap, resumeAccepted)) {
+          await waitForManagedResume();
+          resumeAccepted = true;
+        } else {
+          updateBootstrapMessage("Resuming your workspace…");
+        }
         await new Promise((resolve) => window.setTimeout(resolve, 1_500));
         continue;
       }
+      resumeAccepted = false;
       failures = 0;
       updateBootstrapMessage(bootstrap.detail ?? "The workspace is still starting…");
       await new Promise((resolve) => window.setTimeout(resolve, 1_500));
