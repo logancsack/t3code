@@ -45,6 +45,23 @@ describe("ManagedDevPcStatus", () => {
     expect(markup).not.toContain("fixed");
   });
 
+  it("allows controls when explicit running status overrides stale legacy state", async () => {
+    vi.stubEnv("VITE_DEVPC_MANAGED", "1");
+    vi.resetModules();
+    const { canOperateManagedWorkspace, displayStatus } = await import("./ManagedDevPcStatus");
+    const status = displayStatus({
+      managed: true,
+      state: "restarting",
+      status: "running",
+      ready: true,
+      previewUrlTemplate: "https://{port}.preview.example.test/",
+    });
+
+    expect(status).toBe("running");
+    expect(canOperateManagedWorkspace(status, null, null)).toBe(true);
+    expect(canOperateManagedWorkspace(status, "restart", null)).toBe(false);
+  });
+
   it("renders nothing outside managed DevPC mode", async () => {
     const markup = await renderManagedStatus({ managed: false, state: "ready", ready: true });
 

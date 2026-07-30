@@ -181,6 +181,45 @@ describe("managed DevPC paused bootstrap", () => {
     );
   });
 
+  it("retires persisted restart recovery when the workspace now requires resume", async () => {
+    vi.stubEnv("VITE_DEVPC_MANAGED", "1");
+    vi.resetModules();
+    const removeItem = vi.fn();
+    const dispatchEvent = vi.fn();
+    vi.stubGlobal("window", {
+      localStorage: {
+        getItem: vi.fn(() =>
+          JSON.stringify({
+            action: "restart",
+            phase: "uncertain",
+            idempotencyKey: "restart-obsolete-key",
+            progressObserved: true,
+            restartConfirmations: 0,
+          }),
+        ),
+        removeItem,
+      },
+      dispatchEvent,
+    });
+    const { reconcileBootstrapLifecycleAction } = await import("./managedDevPc");
+
+    reconcileBootstrapLifecycleAction({
+      managed: true,
+      state: "ready",
+      status: "paused",
+      ready: false,
+      requiresResume: true,
+      previewUrlTemplate: "https://{port}.preview.example.test/",
+    });
+
+    expect(removeItem).toHaveBeenCalledWith("devpc-managed-workspace-action");
+    expect(dispatchEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        detail: { action: "restart" },
+      }),
+    );
+  });
+
   it("hydrates bootstrap resume recovery from the persisted idempotency key", async () => {
     vi.stubEnv("VITE_DEVPC_MANAGED", "1");
     vi.resetModules();

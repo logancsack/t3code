@@ -210,6 +210,18 @@ export function reconcileBootstrapLifecycleAction(
     const action = stored.action;
     const status = bootstrap.status ?? bootstrap.state;
     const running = isManagedBootstrapRunning(bootstrap);
+    const incompatibleRestart = action === "restart" && requiresManagedResume(bootstrap);
+    if (incompatibleRestart) {
+      window.localStorage.removeItem(MANAGED_WORKSPACE_ACTION_STORAGE_KEY);
+      if (typeof window.dispatchEvent === "function") {
+        window.dispatchEvent(
+          new CustomEvent(MANAGED_WORKSPACE_ACTION_CLEARED_EVENT, {
+            detail: { action },
+          }),
+        );
+      }
+      return null;
+    }
     const restartProgressFromStatus =
       action === "restart" && ["restarting", "starting", "restoring"].includes(status);
     const progressObserved =

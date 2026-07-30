@@ -207,6 +207,14 @@ export function getManagedActionSnapshot(): ActionSessionSnapshot {
   return managedActionSnapshot;
 }
 
+export function canOperateManagedWorkspace(
+  status: ManagedDevPcDisplayStatus,
+  pendingAction: PendingAction | null,
+  uncertainAction: PendingAction | null,
+): boolean {
+  return status === "running" && pendingAction === null && uncertainAction === null;
+}
+
 function updateManagedActionSession(
   kind: "pendingAction" | "uncertainAction",
   action: PendingAction | null,
@@ -963,11 +971,7 @@ export function ManagedDevPcStatus() {
     }
   };
 
-  const canOperate =
-    status === "running" &&
-    workspace.state === "ready" &&
-    pendingAction === null &&
-    uncertainAction === null;
+  const canOperate = canOperateManagedWorkspace(status, pendingAction, uncertainAction);
   const canResume =
     ["paused", "stopped"].includes(status) && pendingAction === null && uncertainAction === null;
   const autoStopClock = formatClock(workspace.autoStopAt);
