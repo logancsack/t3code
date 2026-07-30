@@ -68,6 +68,10 @@ type PendingAction = "restart" | "pause" | "resume";
 type Confirmation = "restart" | "pause";
 type ActionSnapshotResult = "pending" | "progressing" | "resolved" | "failed";
 
+export function isAmbiguousActionFailure(status: number): boolean {
+  return status === 408 || status >= 500;
+}
+
 export function actionSnapshotResult(
   action: PendingAction,
   workspace: ManagedDevPcBootstrap,
@@ -465,7 +469,7 @@ export function ManagedDevPcStatus() {
         signal: AbortSignal.timeout(ACTION_REQUEST_TIMEOUT_MS),
       });
       if (!response.ok) {
-        definitiveFailure = true;
+        definitiveFailure = !isAmbiguousActionFailure(response.status);
         throw new Error("request failed");
       }
       const result = (await response.json()) as { state?: string };
