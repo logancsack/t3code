@@ -54,6 +54,7 @@ describe("ManagedDevPcStatus", () => {
   it("restores an ambiguous lifecycle guard after a document reload", async () => {
     vi.stubEnv("VITE_DEVPC_MANAGED", "1");
     vi.resetModules();
+    const setItem = vi.fn();
     vi.stubGlobal("window", {
       __DEVPC_MANAGED_BOOTSTRAP__: {
         managed: true,
@@ -72,14 +73,19 @@ describe("ManagedDevPcStatus", () => {
             restartConfirmations: 0,
           }),
         ),
+        setItem,
       },
     });
 
     const { ManagedDevPcStatus } = await import("./ManagedDevPcStatus");
     const markup = renderToStaticMarkup(<ManagedDevPcStatus />);
 
-    expect(markup).toContain("Workspace · Restarting…");
+    expect(markup).toContain("Workspace · Running");
     expect(markup).not.toContain('aria-label="Restart workspace"');
+    expect(setItem).toHaveBeenCalledWith(
+      "devpc-managed-workspace-action",
+      expect.stringContaining('"phase":"uncertain"'),
+    );
   });
 
   it.each([

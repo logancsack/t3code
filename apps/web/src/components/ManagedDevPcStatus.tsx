@@ -73,6 +73,7 @@ type ActionSessionSnapshot = {
   readonly uncertainAction: PendingAction | null;
   readonly settingsPending: boolean;
   readonly statusUnavailable: boolean;
+  readonly idleTimeoutMinutes: number | undefined;
 };
 
 type StoredActionSession = {
@@ -125,10 +126,12 @@ const managedActionKeys = {
     : ({} as Partial<Record<PendingAction, string>>),
 };
 const managedPendingAction = {
-  current: restoredActionSession?.phase === "pending" ? restoredActionSession.action : null,
+  current: null as PendingAction | null,
 };
 const managedUncertainAction = {
-  current: restoredActionSession?.phase === "uncertain" ? restoredActionSession.action : null,
+  // A request that survived a document unload has an unknowable outcome even
+  // if it was still pending when persisted. Restore the same key as retryable.
+  current: restoredActionSession?.action ?? null,
 };
 const managedActionProgress = {
   current: restoredActionSession
@@ -139,13 +142,16 @@ const managedRestartConfirmations = {
   current: restoredActionSession?.restartConfirmations ?? 0,
 };
 const managedPendingIdleTimeout = { current: null as number | null };
-const managedIdleTimeout = { current: undefined as number | undefined };
 const managedActionListeners = new Set<() => void>();
 let managedActionSnapshot: ActionSessionSnapshot = {
   pendingAction: managedPendingAction.current,
   uncertainAction: managedUncertainAction.current,
   settingsPending: false,
   statusUnavailable: false,
+  idleTimeoutMinutes:
+    typeof window === "undefined"
+      ? undefined
+      : window.__DEVPC_MANAGED_BOOTSTRAP__?.idleTimeoutMinutes,
 };
 
 function persistManagedActionSession(): void {
@@ -170,6 +176,8 @@ function persistManagedActionSession(): void {
     // The in-memory guard still protects this document when storage is unavailable.
   }
 }
+
+if (restoredActionSession) persistManagedActionSession();
 
 function subscribeManagedActionSession(listener: () => void): () => void {
   managedActionListeners.add(listener);
@@ -202,6 +210,12 @@ function updateManagedSettingsPending(settingsPending: boolean): void {
 function updateManagedStatusUnavailable(statusUnavailable: boolean): void {
   if (managedActionSnapshot.statusUnavailable === statusUnavailable) return;
   managedActionSnapshot = { ...managedActionSnapshot, statusUnavailable };
+  managedActionListeners.forEach((listener) => listener());
+}
+
+function updateManagedIdleTimeout(idleTimeoutMinutes: number | undefined): void {
+  if (managedActionSnapshot.idleTimeoutMinutes === idleTimeoutMinutes) return;
+  managedActionSnapshot = { ...managedActionSnapshot, idleTimeoutMinutes };
   managedActionListeners.forEach((listener) => listener());
 }
 
@@ -444,12 +458,17 @@ export function ManagedDevPcStatus() {
     window.__DEVPC_MANAGED_BOOTSTRAP__ ?? null,
   );
   const [open, setOpen] = useState(false);
-  const { pendingAction, uncertainAction, settingsPending, statusUnavailable } =
-    useSyncExternalStore(
-      subscribeManagedActionSession,
-      getManagedActionSnapshot,
-      getManagedActionSnapshot,
-    );
+  const {
+    pendingAction,
+    uncertainAction,
+    settingsPending,
+    statusUnavailable,
+    idleTimeoutMinutes: snapshottedIdleTimeout,
+  } = useSyncExternalStore(
+    subscribeManagedActionSession,
+    getManagedActionSnapshot,
+    getManagedActionSnapshot,
+  );
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
   const [error, setError] = useState<string | null>(null);
   const actionKeys = managedActionKeys;
@@ -498,7 +517,7 @@ export function ManagedDevPcStatus() {
       latestAppliedRefresh.current = generation;
       window.__DEVPC_MANAGED_BOOTSTRAP__ = next;
       if (idleTimeoutAtRequestStart === null) {
-        managedIdleTimeout.current = next.idleTimeoutMinutes;
+        updateManagedIdleTimeout(next.idleTimeoutMinutes);
       }
       const action = pendingActionRef.current ?? uncertainActionRef.current;
       if (action) {
@@ -570,7 +589,7 @@ export function ManagedDevPcStatus() {
     ? displayStatus(workspace, pendingAction, statusUnavailable)
     : "unreachable";
   const telemetry = workspace?.telemetry ?? null;
-  const idleTimeoutMinutes = managedIdleTimeout.current ?? workspace?.idleTimeoutMinutes;
+  const idleTimeoutMinutes = snapshottedIdleTimeout ?? workspace?.idleTimeoutMinutes;
   const statusMeta = useMemo(() => {
     if (!workspace) return "Status unavailable";
     if (status === "unreachable") {
@@ -637,6 +656,7 @@ export function ManagedDevPcStatus() {
               : null;
       actionProgressObserved.current[action] = true;
       if (action === "restart") restartCompletionConfirmations.current = 0;
+      persistManagedActionSession();
       if (!componentMounted.current) return;
       if (reflectedStatus) {
         invalidateWorkspaceRefreshes();
@@ -666,6 +686,7 @@ export function ManagedDevPcStatus() {
         if (action === "restart") restartCompletionConfirmations.current = 0;
         if (pendingActionRef.current === action) updatePendingAction(null);
         if (uncertainActionRef.current === action) updateUncertainAction(null);
+        persistManagedActionSession();
         setError(
           action === "resume"
             ? "The workspace could not be resumed. Try again."
@@ -685,7 +706,7 @@ export function ManagedDevPcStatus() {
     if (!IDLE_TIMEOUTS.includes(minutes as (typeof IDLE_TIMEOUTS)[number])) return;
     const previousIdleTimeoutMinutes = idleTimeoutMinutes;
     pendingIdleTimeout.current = minutes;
-    managedIdleTimeout.current = minutes;
+    updateManagedIdleTimeout(minutes);
     updateManagedSettingsPending(true);
     setError(null);
     invalidateWorkspaceRefreshes();
@@ -711,7 +732,7 @@ export function ManagedDevPcStatus() {
         ? result.idleTimeoutMinutes
         : minutes;
       pendingIdleTimeout.current = null;
-      managedIdleTimeout.current = confirmedMinutes;
+      updateManagedIdleTimeout(confirmedMinutes);
       const confirmedWorkspace = withIdleTimeout(
         window.__DEVPC_MANAGED_BOOTSTRAP__ ?? workspace,
         confirmedMinutes,
@@ -721,7 +742,7 @@ export function ManagedDevPcStatus() {
     } catch {
       invalidateWorkspaceRefreshes();
       pendingIdleTimeout.current = null;
-      managedIdleTimeout.current = previousIdleTimeoutMinutes;
+      updateManagedIdleTimeout(previousIdleTimeoutMinutes);
       const restoredWorkspace = withIdleTimeout(
         window.__DEVPC_MANAGED_BOOTSTRAP__ ?? workspace,
         previousIdleTimeoutMinutes,
@@ -933,7 +954,13 @@ export function ManagedDevPcStatus() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogClose render={<Button variant="outline" />}>Cancel</AlertDialogClose>
-            <Button onClick={() => void runAction(confirmation === "pause" ? "pause" : "restart")}>
+            <Button
+              disabled={!canOperate}
+              onClick={() => {
+                if (!canOperate) return;
+                void runAction(confirmation === "pause" ? "pause" : "restart");
+              }}
+            >
               {confirmation === "pause" ? "Pause" : "Restart"}
             </Button>
           </AlertDialogFooter>

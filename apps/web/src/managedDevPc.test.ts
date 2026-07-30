@@ -238,9 +238,16 @@ describe("managed DevPC paused bootstrap", () => {
     await prepareManagedDevPc();
 
     expect(fetchMock).toHaveBeenCalledTimes(4);
-    expect((fetchMock.mock.calls[1]?.[1] as RequestInit | undefined)?.headers).toEqual(
-      (fetchMock.mock.calls[2]?.[1] as RequestInit | undefined)?.headers,
-    );
+    expect(fetchMock.mock.calls[1]?.[0]).toBe("/_devpc/workspace/start");
+    expect(fetchMock.mock.calls[2]?.[0]).toBe("/_devpc/workspace/start");
+    const firstHeaders = (fetchMock.mock.calls[1]?.[1] as RequestInit | undefined)?.headers as
+      | Record<string, string>
+      | undefined;
+    const retryHeaders = (fetchMock.mock.calls[2]?.[1] as RequestInit | undefined)?.headers as
+      | Record<string, string>
+      | undefined;
+    expect(firstHeaders?.["idempotency-key"]).toMatch(/^resume-/);
+    expect(retryHeaders?.["idempotency-key"]).toBe(firstHeaders?.["idempotency-key"]);
   });
 });
 
