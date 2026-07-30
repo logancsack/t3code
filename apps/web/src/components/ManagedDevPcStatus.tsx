@@ -33,6 +33,7 @@ import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "./u
 const STATUS_PATH = "/_devpc/workspace";
 const SETTINGS_PATH = "/_devpc/workspace/settings";
 const TELEMETRY_FRESH_MS = 60_000;
+const STATUS_REQUEST_TIMEOUT_MS = 10_000;
 const ACTION_REQUEST_TIMEOUT_MS = 30_000;
 const IDLE_TIMEOUTS = [15, 30, 60, 120, 240] as const;
 
@@ -71,6 +72,7 @@ export function actionSnapshotResult(
   action: PendingAction,
   workspace: ManagedDevPcBootstrap,
   progressObserved = false,
+  restartCompletionConfirmations = 0,
 ): ActionSnapshotResult {
   const status = workspace.status ?? workspace.state;
   if (action === "pause") {
@@ -86,7 +88,13 @@ export function actionSnapshotResult(
     return "pending";
   }
   if (["restarting", "starting", "restoring"].includes(status)) return "progressing";
-  if (progressObserved && (status === "running" || workspace.state === "ready")) return "resolved";
+  if (
+    progressObserved &&
+    restartCompletionConfirmations > 0 &&
+    (status === "running" || workspace.state === "ready")
+  ) {
+    return "resolved";
+  }
   return "pending";
 }
 
@@ -160,7 +168,8 @@ function formatUptime(seconds: number | undefined): string {
   return `${days} ${days === 1 ? "day" : "days"}`;
 }
 
-function idleTimeoutLabel(minutes: number): string {
+export function idleTimeoutLabel(minutes: number | undefined): string {
+  if (minutes === undefined) return "Unavailable";
   if (minutes < 60) return `${minutes} minutes`;
   const hours = minutes / 60;
   return `${hours} ${hours === 1 ? "hour" : "hours"}`;
@@ -307,6 +316,7 @@ export function ManagedDevPcStatus() {
   const pendingActionRef = useRef<PendingAction | null>(null);
   const uncertainActionRef = useRef<PendingAction | null>(null);
   const actionProgressObserved = useRef<Partial<Record<PendingAction, boolean>>>({});
+  const restartCompletionConfirmations = useRef(0);
   const refreshSequence = useRef(0);
   const latestAppliedRefresh = useRef(0);
 
@@ -331,6 +341,7 @@ export function ManagedDevPcStatus() {
         credentials: "same-origin",
         cache: "no-store",
         headers: { accept: "application/json" },
+        signal: AbortSignal.timeout(STATUS_REQUEST_TIMEOUT_MS),
       });
       if (!response.ok) {
         if (generation < latestAppliedRefresh.current) return null;
@@ -347,18 +358,29 @@ export function ManagedDevPcStatus() {
           action,
           next,
           actionProgressObserved.current[action] ?? false,
+          restartCompletionConfirmations.current,
         );
         if (result === "resolved") {
           delete actionKeys.current[action];
           delete actionProgressObserved.current[action];
+          restartCompletionConfirmations.current = 0;
           updatePendingAction(null);
           updateUncertainAction(null);
           setError(null);
         } else if (result === "progressing") {
           actionProgressObserved.current[action] = true;
+          restartCompletionConfirmations.current = 0;
           updatePendingAction(action);
           updateUncertainAction(null);
           setError(null);
+        } else if (
+          action === "restart" &&
+          actionProgressObserved.current.restart &&
+          (next.status === "running" || next.state === "ready")
+        ) {
+          // Require two status snapshots after accepted restart progress. The first
+          // can still be the eventually-consistent pre-action projection.
+          restartCompletionConfirmations.current += 1;
         }
       }
       setWorkspace(next);
@@ -382,7 +404,7 @@ export function ManagedDevPcStatus() {
     ? displayStatus(workspace, pendingAction, statusUnavailable)
     : "unreachable";
   const telemetry = workspace?.telemetry ?? null;
-  const idleTimeoutMinutes = workspace?.idleTimeoutMinutes ?? 30;
+  const idleTimeoutMinutes = workspace?.idleTimeoutMinutes;
   const statusMeta = useMemo(() => {
     if (!workspace) return "Status unavailable";
     if (status === "unreachable") {
@@ -411,7 +433,10 @@ export function ManagedDevPcStatus() {
     const existingKey = actionKeys.current[action];
     const idempotencyKey = existingKey ?? `${action}-${randomUUID()}`;
     actionKeys.current[action] = idempotencyKey;
-    if (!existingKey) actionProgressObserved.current[action] = false;
+    if (!existingKey) {
+      actionProgressObserved.current[action] = false;
+      if (action === "restart") restartCompletionConfirmations.current = 0;
+    }
     let definitiveFailure = false;
     try {
       const response = await fetch(path, {
@@ -458,10 +483,13 @@ export function ManagedDevPcStatus() {
         if (["running", "paused", "stopped"].includes(reflectedStatus)) {
           delete actionKeys.current[action];
           delete actionProgressObserved.current[action];
+          if (action === "restart") restartCompletionConfirmations.current = 0;
           updatePendingAction(null);
         } else {
           // Keep the guard until the status endpoint observes progress. Its projection
           // can briefly lag the accepted lifecycle request and return the old state.
+          actionProgressObserved.current[action] = true;
+          if (action === "restart") restartCompletionConfirmations.current = 0;
           updatePendingAction(action);
         }
       }
@@ -470,6 +498,7 @@ export function ManagedDevPcStatus() {
       if (definitiveFailure) {
         delete actionKeys.current[action];
         delete actionProgressObserved.current[action];
+        if (action === "restart") restartCompletionConfirmations.current = 0;
         if (pendingActionRef.current === action) updatePendingAction(null);
         if (uncertainActionRef.current === action) updateUncertainAction(null);
         setError(
@@ -606,9 +635,9 @@ export function ManagedDevPcStatus() {
                 </p>
               </div>
               <Select
-                value={String(idleTimeoutMinutes)}
+                value={idleTimeoutMinutes === undefined ? null : String(idleTimeoutMinutes)}
                 onValueChange={(value) => void updateIdleTimeout(value)}
-                disabled={settingsPending}
+                disabled={settingsPending || idleTimeoutMinutes === undefined}
               >
                 <SelectTrigger
                   id="workspace-idle-timeout"
@@ -630,9 +659,11 @@ export function ManagedDevPcStatus() {
             <p className="text-xs text-muted-foreground">
               {status === "paused"
                 ? "Paused until you resume."
-                : autoStopClock
-                  ? `Pauses around ${autoStopClock} if activity stays quiet.`
-                  : `Pauses after ${idleTimeoutLabel(idleTimeoutMinutes)} of inactivity.`}
+                : idleTimeoutMinutes === undefined
+                  ? "Auto-pause timing is unavailable."
+                  : autoStopClock
+                    ? `Pauses around ${autoStopClock} if activity stays quiet.`
+                    : `Pauses after ${idleTimeoutLabel(idleTimeoutMinutes)} of inactivity.`}
             </p>
           </section>
 

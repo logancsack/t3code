@@ -40,6 +40,7 @@ describe("ManagedDevPcStatus", () => {
     expect(markup).toContain('data-devpc-workspace-status="running"');
     expect(markup).toContain("Workspace · Running");
     expect(markup).toContain('aria-haspopup="dialog"');
+    expect(markup).not.toContain("Pauses after 30 minutes");
     expect(markup).not.toContain('aria-label="Restart workspace"');
     expect(markup).not.toContain("fixed");
   });
@@ -119,6 +120,15 @@ describe("ManagedDevPcStatus", () => {
     });
   });
 
+  it("does not invent a default idle timeout when settings metadata is absent", async () => {
+    vi.stubEnv("VITE_DEVPC_MANAGED", "1");
+    vi.resetModules();
+    const { idleTimeoutLabel } = await import("./ManagedDevPcStatus");
+
+    expect(idleTimeoutLabel(undefined)).toBe("Unavailable");
+    expect(idleTimeoutLabel(30)).toBe("30 minutes");
+  });
+
   it("keeps an interrupted action locked until status confirms progress or completion", async () => {
     vi.stubEnv("VITE_DEVPC_MANAGED", "1");
     vi.resetModules();
@@ -133,7 +143,8 @@ describe("ManagedDevPcStatus", () => {
 
     expect(actionSnapshotResult("pause", running)).toBe("pending");
     expect(actionSnapshotResult("restart", running)).toBe("pending");
-    expect(actionSnapshotResult("restart", running, true)).toBe("resolved");
+    expect(actionSnapshotResult("restart", running, true)).toBe("pending");
+    expect(actionSnapshotResult("restart", running, true, 1)).toBe("resolved");
     expect(
       actionSnapshotResult("pause", {
         ...running,
