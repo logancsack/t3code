@@ -51,6 +51,37 @@ describe("ManagedDevPcStatus", () => {
     expect(markup).toBe("");
   });
 
+  it("restores an ambiguous lifecycle guard after a document reload", async () => {
+    vi.stubEnv("VITE_DEVPC_MANAGED", "1");
+    vi.resetModules();
+    vi.stubGlobal("window", {
+      __DEVPC_MANAGED_BOOTSTRAP__: {
+        managed: true,
+        state: "ready",
+        status: "running",
+        ready: true,
+        previewUrlTemplate: "https://{port}.preview.example.test/",
+      },
+      sessionStorage: {
+        getItem: vi.fn(() =>
+          JSON.stringify({
+            action: "restart",
+            phase: "pending",
+            idempotencyKey: "restart-persisted-key",
+            progressObserved: true,
+            restartConfirmations: 0,
+          }),
+        ),
+      },
+    });
+
+    const { ManagedDevPcStatus } = await import("./ManagedDevPcStatus");
+    const markup = renderToStaticMarkup(<ManagedDevPcStatus />);
+
+    expect(markup).toContain("Workspace · Restarting…");
+    expect(markup).not.toContain('aria-label="Restart workspace"');
+  });
+
   it.each([
     ["starting", "starting", "Starting…"],
     ["ready", "reconnecting", "Reconnecting…"],

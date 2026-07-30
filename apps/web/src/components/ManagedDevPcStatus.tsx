@@ -72,23 +72,104 @@ type ActionSessionSnapshot = {
   readonly pendingAction: PendingAction | null;
   readonly uncertainAction: PendingAction | null;
   readonly settingsPending: boolean;
+  readonly statusUnavailable: boolean;
 };
 
-const managedActionKeys = { current: {} as Partial<Record<PendingAction, string>> };
-const managedPendingAction = { current: null as PendingAction | null };
-const managedUncertainAction = { current: null as PendingAction | null };
-const managedActionProgress = {
-  current: {} as Partial<Record<PendingAction, boolean>>,
+type StoredActionSession = {
+  readonly action: PendingAction;
+  readonly phase: "pending" | "uncertain";
+  readonly idempotencyKey: string;
+  readonly progressObserved: boolean;
+  readonly restartConfirmations: number;
 };
-const managedRestartConfirmations = { current: 0 };
+
+const ACTION_SESSION_KEY = "devpc-managed-workspace-action";
+const MANAGED_ACTIONS = new Set<PendingAction>(["restart", "pause", "resume"]);
+
+function readStoredActionSession(): StoredActionSession | null {
+  try {
+    const value = JSON.parse(
+      window.sessionStorage.getItem(ACTION_SESSION_KEY) ?? "null",
+    ) as Partial<StoredActionSession> | null;
+    if (
+      !value ||
+      !MANAGED_ACTIONS.has(value.action as PendingAction) ||
+      !["pending", "uncertain"].includes(value.phase ?? "") ||
+      typeof value.idempotencyKey !== "string" ||
+      value.idempotencyKey.length < 1 ||
+      value.idempotencyKey.length > 200
+    ) {
+      return null;
+    }
+    return {
+      action: value.action as PendingAction,
+      phase: value.phase as StoredActionSession["phase"],
+      idempotencyKey: value.idempotencyKey,
+      progressObserved: value.progressObserved === true,
+      restartConfirmations:
+        typeof value.restartConfirmations === "number" &&
+        Number.isInteger(value.restartConfirmations) &&
+        value.restartConfirmations >= 0
+          ? value.restartConfirmations
+          : 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
+const restoredActionSession = readStoredActionSession();
+const managedActionKeys = {
+  current: restoredActionSession
+    ? { [restoredActionSession.action]: restoredActionSession.idempotencyKey }
+    : ({} as Partial<Record<PendingAction, string>>),
+};
+const managedPendingAction = {
+  current: restoredActionSession?.phase === "pending" ? restoredActionSession.action : null,
+};
+const managedUncertainAction = {
+  current: restoredActionSession?.phase === "uncertain" ? restoredActionSession.action : null,
+};
+const managedActionProgress = {
+  current: restoredActionSession
+    ? { [restoredActionSession.action]: restoredActionSession.progressObserved }
+    : ({} as Partial<Record<PendingAction, boolean>>),
+};
+const managedRestartConfirmations = {
+  current: restoredActionSession?.restartConfirmations ?? 0,
+};
 const managedPendingIdleTimeout = { current: null as number | null };
 const managedIdleTimeout = { current: undefined as number | undefined };
 const managedActionListeners = new Set<() => void>();
 let managedActionSnapshot: ActionSessionSnapshot = {
-  pendingAction: null,
-  uncertainAction: null,
+  pendingAction: managedPendingAction.current,
+  uncertainAction: managedUncertainAction.current,
   settingsPending: false,
+  statusUnavailable: false,
 };
+
+function persistManagedActionSession(): void {
+  const action = managedPendingAction.current ?? managedUncertainAction.current;
+  const idempotencyKey = action ? managedActionKeys.current[action] : undefined;
+  try {
+    if (!action || !idempotencyKey) {
+      window.sessionStorage.removeItem(ACTION_SESSION_KEY);
+      return;
+    }
+    window.sessionStorage.setItem(
+      ACTION_SESSION_KEY,
+      JSON.stringify({
+        action,
+        phase: managedPendingAction.current ? "pending" : "uncertain",
+        idempotencyKey,
+        progressObserved: managedActionProgress.current[action] === true,
+        restartConfirmations: managedRestartConfirmations.current,
+      } satisfies StoredActionSession),
+    );
+  } catch {
+    // The in-memory guard still protects this document when storage is unavailable.
+  }
+}
 
 function subscribeManagedActionSession(listener: () => void): () => void {
   managedActionListeners.add(listener);
@@ -104,15 +185,23 @@ function updateManagedActionSession(
   action: PendingAction | null,
 ): void {
   const ref = kind === "pendingAction" ? managedPendingAction : managedUncertainAction;
-  if (ref.current === action) return;
-  ref.current = action;
-  managedActionSnapshot = { ...managedActionSnapshot, [kind]: action };
-  managedActionListeners.forEach((listener) => listener());
+  if (ref.current !== action) {
+    ref.current = action;
+    managedActionSnapshot = { ...managedActionSnapshot, [kind]: action };
+    managedActionListeners.forEach((listener) => listener());
+  }
+  persistManagedActionSession();
 }
 
 function updateManagedSettingsPending(settingsPending: boolean): void {
   if (managedActionSnapshot.settingsPending === settingsPending) return;
   managedActionSnapshot = { ...managedActionSnapshot, settingsPending };
+  managedActionListeners.forEach((listener) => listener());
+}
+
+function updateManagedStatusUnavailable(statusUnavailable: boolean): void {
+  if (managedActionSnapshot.statusUnavailable === statusUnavailable) return;
+  managedActionSnapshot = { ...managedActionSnapshot, statusUnavailable };
   managedActionListeners.forEach((listener) => listener());
 }
 
@@ -355,13 +444,13 @@ export function ManagedDevPcStatus() {
     window.__DEVPC_MANAGED_BOOTSTRAP__ ?? null,
   );
   const [open, setOpen] = useState(false);
-  const { pendingAction, uncertainAction, settingsPending } = useSyncExternalStore(
-    subscribeManagedActionSession,
-    getManagedActionSnapshot,
-    getManagedActionSnapshot,
-  );
+  const { pendingAction, uncertainAction, settingsPending, statusUnavailable } =
+    useSyncExternalStore(
+      subscribeManagedActionSession,
+      getManagedActionSnapshot,
+      getManagedActionSnapshot,
+    );
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
-  const [statusUnavailable, setStatusUnavailable] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const actionKeys = managedActionKeys;
   const pendingActionRef = managedPendingAction;
@@ -400,7 +489,7 @@ export function ManagedDevPcStatus() {
       if (!response.ok) {
         if (generation < latestAppliedRefresh.current) return null;
         latestAppliedRefresh.current = generation;
-        setStatusUnavailable(true);
+        updateManagedStatusUnavailable(true);
         return null;
       }
       const next = (await response.json()) as ManagedDevPcBootstrap;
@@ -447,6 +536,7 @@ export function ManagedDevPcStatus() {
           // Require two status snapshots after accepted restart progress. The first
           // can still be the eventually-consistent pre-action projection.
           restartCompletionConfirmations.current = 1;
+          persistManagedActionSession();
         }
       }
       setWorkspace(
@@ -454,13 +544,13 @@ export function ManagedDevPcStatus() {
           ? next
           : withIdleTimeout(next, idleTimeoutAtRequestStart),
       );
-      setStatusUnavailable(false);
+      updateManagedStatusUnavailable(false);
       return next;
     } catch {
       if (!componentMounted.current) return null;
       if (generation < latestAppliedRefresh.current) return null;
       latestAppliedRefresh.current = generation;
-      setStatusUnavailable(true);
+      updateManagedStatusUnavailable(true);
       return null;
     }
   }, [updatePendingAction, updateUncertainAction]);
@@ -513,6 +603,7 @@ export function ManagedDevPcStatus() {
       actionProgressObserved.current[action] = false;
       if (action === "restart") restartCompletionConfirmations.current = 0;
     }
+    persistManagedActionSession();
     let definitiveFailure = false;
     try {
       const response = await fetch(path, {
