@@ -30,8 +30,12 @@ describe("managed DevPC paused bootstrap", () => {
   it("requires an explicit resume for every paused bootstrap representation", async () => {
     vi.stubEnv("VITE_DEVPC_MANAGED", "1");
     vi.resetModules();
-    const { isManagedBootstrapRunning, requiresManagedResume, shouldPromptManagedResume } =
-      await import("./managedDevPc");
+    const {
+      isManagedBootstrapRunning,
+      isManagedResumeTransition,
+      requiresManagedResume,
+      shouldPromptManagedResume,
+    } = await import("./managedDevPc");
     const base = {
       managed: true as const,
       state: "ready" as const,
@@ -66,6 +70,13 @@ describe("managed DevPC paused bootstrap", () => {
     expect(isManagedBootstrapRunning({ ...base, ready: true, status: "starting" })).toBe(false);
     expect(isManagedBootstrapRunning({ ...base, ready: true, status: "running" })).toBe(true);
     expect(isManagedBootstrapRunning({ ...base, ready: true })).toBe(true);
+    expect(isManagedResumeTransition({ ...base, state: "stopped", status: "starting" })).toBe(true);
+    expect(isManagedResumeTransition({ ...base, state: "stopped", status: "restoring" })).toBe(
+      true,
+    );
+    expect(isManagedResumeTransition({ ...base, state: "starting", status: "attention" })).toBe(
+      false,
+    );
   });
 
   it("re-prompts when an accepted resume remains ineffective", async () => {
@@ -305,6 +316,71 @@ describe("managed DevPC paused bootstrap", () => {
 
     await expect(requestManagedResume("resume-private-key")).resolves.toBe("accepted");
     expect(ownsPersistedManagedResume("resume-private-key")).toBe(true);
+  });
+
+  it("preserves the persisted resume key while bootstrap reports transition progress", async () => {
+    vi.stubEnv("VITE_DEVPC_MANAGED", "1");
+    vi.resetModules();
+    const storage = new Map([
+      [
+        "devpc-managed-workspace-action",
+        JSON.stringify({
+          action: "resume",
+          phase: "uncertain",
+          idempotencyKey: "resume-transition-key",
+          progressObserved: false,
+          restartConfirmations: 0,
+        }),
+      ],
+    ]);
+    const observedKeys: Array<string | undefined> = [];
+    vi.stubGlobal("document", {
+      getElementById: vi.fn(() => null),
+    });
+    vi.stubGlobal("window", {
+      location: { hash: "" },
+      localStorage: {
+        getItem: (key: string) => storage.get(key) ?? null,
+        setItem: (key: string, value: string) => storage.set(key, value),
+        removeItem: (key: string) => storage.delete(key),
+      },
+      dispatchEvent: vi.fn(),
+      setTimeout: (callback: () => void) => {
+        const stored = JSON.parse(storage.get("devpc-managed-workspace-action") ?? "null") as {
+          idempotencyKey?: string;
+        } | null;
+        observedKeys.push(stored?.idempotencyKey);
+        callback();
+        return 1;
+      },
+    });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json({
+          managed: true,
+          state: "stopped",
+          status: "starting",
+          ready: false,
+          previewUrlTemplate: "https://{port}.preview.example.test/",
+        }),
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          managed: true,
+          state: "ready",
+          status: "running",
+          ready: true,
+          previewUrlTemplate: "https://{port}.preview.example.test/",
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { prepareManagedDevPc } = await import("./managedDevPc");
+    await prepareManagedDevPc();
+
+    expect(observedKeys[0]).toBe("resume-transition-key");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("continues polling when the resume surface has no root element to mount into", async () => {

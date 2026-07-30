@@ -110,6 +110,10 @@ export function shouldRepromptManagedResume(resumeAccepted: boolean, waitPolls: 
   return resumeAccepted && waitPolls >= MAX_RESUME_WAIT_POLLS;
 }
 
+export function isManagedResumeTransition(bootstrap: ManagedDevPcBootstrap): boolean {
+  return ["starting", "restoring", "reconnecting"].includes(bootstrap.status ?? bootstrap.state);
+}
+
 export function clearCompletedPauseAction(bootstrap: ManagedDevPcBootstrap): void {
   reconcileBootstrapLifecycleAction(bootstrap);
 }
@@ -538,6 +542,16 @@ export async function prepareManagedDevPc(): Promise<void> {
         await new Promise((resolve) => window.setTimeout(resolve, 1_500));
         continue;
       }
+      if (resumeRequestKey && isManagedResumeTransition(bootstrap)) {
+        resumeAccepted = true;
+        resumeUncertain = false;
+        resumeWaitPolls = 0;
+        failures = 0;
+        updateBootstrapMessage("Resuming your workspace…");
+        await new Promise((resolve) => window.setTimeout(resolve, 1_500));
+        continue;
+      }
+      if (resumeRequestKey) clearStoredManagedWorkspaceAction("resume", resumeRequestKey);
       resumeAccepted = false;
       resumeRequestKey = undefined;
       resumeUncertain = false;
