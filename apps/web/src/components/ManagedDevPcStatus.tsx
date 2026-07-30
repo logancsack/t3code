@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { ChevronRightIcon, PauseIcon, PlayIcon, RotateCwIcon } from "lucide-react";
 
 import {
@@ -67,6 +67,43 @@ const KNOWN_STATUSES = new Set<string>(Object.keys(statusLabel));
 type PendingAction = "restart" | "pause" | "resume";
 type Confirmation = "restart" | "pause";
 type ActionSnapshotResult = "pending" | "progressing" | "resolved" | "failed";
+type ActionSessionSnapshot = {
+  readonly pendingAction: PendingAction | null;
+  readonly uncertainAction: PendingAction | null;
+};
+
+const managedActionKeys = { current: {} as Partial<Record<PendingAction, string>> };
+const managedPendingAction = { current: null as PendingAction | null };
+const managedUncertainAction = { current: null as PendingAction | null };
+const managedActionProgress = {
+  current: {} as Partial<Record<PendingAction, boolean>>,
+};
+const managedRestartConfirmations = { current: 0 };
+const managedActionListeners = new Set<() => void>();
+let managedActionSnapshot: ActionSessionSnapshot = {
+  pendingAction: null,
+  uncertainAction: null,
+};
+
+function subscribeManagedActionSession(listener: () => void): () => void {
+  managedActionListeners.add(listener);
+  return () => managedActionListeners.delete(listener);
+}
+
+function getManagedActionSnapshot(): ActionSessionSnapshot {
+  return managedActionSnapshot;
+}
+
+function updateManagedActionSession(
+  kind: "pendingAction" | "uncertainAction",
+  action: PendingAction | null,
+): void {
+  const ref = kind === "pendingAction" ? managedPendingAction : managedUncertainAction;
+  if (ref.current === action) return;
+  ref.current = action;
+  managedActionSnapshot = { ...managedActionSnapshot, [kind]: action };
+  managedActionListeners.forEach((listener) => listener());
+}
 
 export function isAmbiguousActionFailure(status: number): boolean {
   return status === 408 || status >= 500;
@@ -108,10 +145,10 @@ export function displayStatus(
   pendingAction: PendingAction | null = null,
   statusUnavailable = false,
 ): ManagedDevPcDisplayStatus {
+  if (statusUnavailable) return "unreachable";
   if (pendingAction === "restart") return "restarting";
   if (pendingAction === "pause") return "pausing";
   if (pendingAction === "resume") return "starting";
-  if (statusUnavailable) return "unreachable";
   if (workspace.status) {
     return KNOWN_STATUSES.has(workspace.status) ? workspace.status : "attention";
   }
@@ -311,29 +348,30 @@ export function ManagedDevPcStatus() {
     window.__DEVPC_MANAGED_BOOTSTRAP__ ?? null,
   );
   const [open, setOpen] = useState(false);
-  const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
-  const [uncertainAction, setUncertainAction] = useState<PendingAction | null>(null);
+  const { pendingAction, uncertainAction } = useSyncExternalStore(
+    subscribeManagedActionSession,
+    getManagedActionSnapshot,
+    getManagedActionSnapshot,
+  );
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
   const [settingsPending, setSettingsPending] = useState(false);
   const [statusUnavailable, setStatusUnavailable] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const actionKeys = useRef<Partial<Record<PendingAction, string>>>({});
-  const pendingActionRef = useRef<PendingAction | null>(null);
-  const uncertainActionRef = useRef<PendingAction | null>(null);
-  const actionProgressObserved = useRef<Partial<Record<PendingAction, boolean>>>({});
-  const restartCompletionConfirmations = useRef(0);
+  const actionKeys = managedActionKeys;
+  const pendingActionRef = managedPendingAction;
+  const uncertainActionRef = managedUncertainAction;
+  const actionProgressObserved = managedActionProgress;
+  const restartCompletionConfirmations = managedRestartConfirmations;
   const pendingIdleTimeout = useRef<number | null>(null);
   const refreshSequence = useRef(0);
   const latestAppliedRefresh = useRef(0);
 
   const updatePendingAction = useCallback((action: PendingAction | null) => {
-    pendingActionRef.current = action;
-    setPendingAction(action);
+    updateManagedActionSession("pendingAction", action);
   }, []);
 
   const updateUncertainAction = useCallback((action: PendingAction | null) => {
-    uncertainActionRef.current = action;
-    setUncertainAction(action);
+    updateManagedActionSession("uncertainAction", action);
   }, []);
 
   const invalidateWorkspaceRefreshes = () => {
@@ -589,6 +627,11 @@ export function ManagedDevPcStatus() {
     ["paused", "stopped"].includes(status) && pendingAction === null && uncertainAction === null;
   const autoStopClock = formatClock(workspace.autoStopAt);
   const ariaState = statusLabel[status].replace("…", "");
+  const visibleError =
+    error ??
+    (uncertainAction
+      ? "The request was interrupted. Retrying is safe while Aldo checks the workspace."
+      : null);
 
   return (
     <Dialog
@@ -643,9 +686,9 @@ export function ManagedDevPcStatus() {
                 Resume workspace
               </Button>
             ) : null}
-            {error ? (
+            {visibleError ? (
               <div className="flex items-center justify-between gap-3">
-                <p className="text-xs text-destructive">{error}</p>
+                <p className="text-xs text-destructive">{visibleError}</p>
                 {uncertainAction ? (
                   <Button
                     className="shrink-0"

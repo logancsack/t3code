@@ -269,6 +269,7 @@ export async function prepareManagedDevPc(): Promise<void> {
         failures = 0;
         if (shouldRepromptManagedResume(resumeAccepted, resumeWaitPolls)) {
           resumeAccepted = false;
+          resumeRequestKey = undefined;
           resumeUncertain = false;
           resumeWaitPolls = 0;
         }

@@ -82,6 +82,19 @@ describe("ManagedDevPcStatus", () => {
         true,
       ),
     ).toBe("unreachable");
+    expect(
+      displayStatus(
+        {
+          managed: true,
+          state: "restarting",
+          status: "restarting",
+          ready: false,
+          previewUrlTemplate: "https://{port}.preview.example.test/",
+        },
+        "restart",
+        true,
+      ),
+    ).toBe("unreachable");
   });
 
   it("falls back safely when the server returns an unknown status", async () => {
