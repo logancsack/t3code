@@ -5,6 +5,7 @@ import * as Effect from "effect/Effect";
 
 import type { GrokReviewAgent } from "./GrokReviewAgent.ts";
 import { type GrokReviewCandidate, type GrokReviewVerification } from "./GrokReviewModel.ts";
+import { redactSensitiveDiff } from "./GrokReviewPrivacy.ts";
 import { changedLinesFromDiff, runGrokReviewSwarm } from "./GrokReviewSwarm.ts";
 
 const source: ReviewDiffPreviewSource = {
@@ -56,6 +57,62 @@ describe("changedLinesFromDiff", () => {
   it("indexes only added lines on the new side of each hunk", () => {
     const changed = changedLinesFromDiff(source.diff);
     expect([...changed.get("src/example.ts")!]).toEqual([9, 10]);
+  });
+
+  it("preserves legitimate leading a and b directories", () => {
+    const changed = changedLinesFromDiff(
+      [
+        "diff --git a/a/parser.ts b/a/parser.ts",
+        "--- a/a/parser.ts",
+        "+++ b/a/parser.ts",
+        "@@ -1 +1 @@",
+        "-const parser = oldParser;",
+        "+const parser = newParser;",
+      ].join("\n"),
+    );
+    expect([...changed.get("a/parser.ts")!]).toEqual([1]);
+  });
+
+  it("does not count no-newline metadata as a source line", () => {
+    const changed = changedLinesFromDiff(
+      [
+        "diff --git a/src/no-newline.ts b/src/no-newline.ts",
+        "--- a/src/no-newline.ts",
+        "+++ b/src/no-newline.ts",
+        "@@ -1 +1 @@",
+        "-export const value = 1;",
+        "\\ No newline at end of file",
+        "+export const value = 2;",
+        "\\ No newline at end of file",
+      ].join("\n"),
+    );
+    expect([...changed.get("src/no-newline.ts")!]).toEqual([1]);
+  });
+});
+
+describe("redactSensitiveDiff", () => {
+  it("removes sensitive patch contents while retaining ordinary patches", () => {
+    const diff = [
+      "diff --git a/.env.production b/.env.production",
+      "index 1111111..2222222 100644",
+      "--- a/.env.production",
+      "+++ b/.env.production",
+      "@@ -1 +1 @@",
+      "-API_TOKEN=old-secret",
+      "+API_TOKEN=new-secret",
+      "diff --git a/src/example.ts b/src/example.ts",
+      "--- a/src/example.ts",
+      "+++ b/src/example.ts",
+      "@@ -1 +1 @@",
+      "-export const value = 1;",
+      "+export const value = 2;",
+    ].join("\n");
+
+    const redacted = redactSensitiveDiff(diff);
+    expect(redacted).not.toContain("old-secret");
+    expect(redacted).not.toContain("new-secret");
+    expect(redacted).toContain("[Patch content redacted: sensitive path]");
+    expect(redacted).toContain("+export const value = 2;");
   });
 });
 
@@ -176,6 +233,57 @@ describe("runGrokReviewSwarm", () => {
       expect(report.limitations.length).toBeLessThanOrEqual(8);
       expect(report.summary.length).toBeLessThanOrEqual(2_000);
       expect(report.markdown.length).toBeLessThan(60_000);
+    }).pipe(Effect.provide(NodeServices.layer));
+  });
+
+  it.effect("preserves leading directory names on verified findings", () => {
+    const nestedSource: ReviewDiffPreviewSource = {
+      ...source,
+      diff: [
+        "diff --git a/a/parser.ts b/a/parser.ts",
+        "--- a/a/parser.ts",
+        "+++ b/a/parser.ts",
+        "@@ -1 +1 @@",
+        "-const parser = oldParser;",
+        "+const parser = newParser;",
+      ].join("\n"),
+    };
+    const finding = {
+      ...verifiedFinding,
+      confidence: 0.95,
+      path: "a/parser.ts",
+      startLine: 1,
+      endLine: 1,
+    };
+    const verification: GrokReviewVerification = {
+      summary: "One finding.",
+      findings: [finding],
+      coverage: ["Correctness"],
+      limitations: [],
+      needsHighEffortReview: false,
+      escalationReason: null,
+    };
+    const agent: GrokReviewAgent = {
+      resolvedModel: "grok-4.5",
+      grokBuildVersion: "0.2.112",
+      run: (request) =>
+        Effect.succeed(
+          (request.prompt.includes("medium-effort verifier")
+            ? verification
+            : emptyCandidate()) as never,
+        ),
+    };
+
+    return Effect.gen(function* () {
+      const report = yield* runGrokReviewSwarm({
+        request: { cwd: process.cwd(), target: "working-tree" },
+        source: nestedSource,
+        agent,
+      });
+      expect(report.findings[0]).toMatchObject({
+        path: "a/parser.ts",
+        inlineEligible: true,
+      });
     }).pipe(Effect.provide(NodeServices.layer));
   });
 });

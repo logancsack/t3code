@@ -1,4 +1,5 @@
 import type { GrokReviewReasoningEffort, GrokSettings } from "@t3tools/contracts";
+import { GrokReviewError } from "@t3tools/contracts";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -9,32 +10,15 @@ import { ChildProcess } from "effect/unstable/process";
 
 import { parseGenericCliVersion, spawnAndCollect } from "../provider/providerSnapshot.ts";
 import { toJsonSchemaObject } from "../textGeneration/TextGenerationUtils.ts";
-import { GrokReviewError } from "@t3tools/contracts";
+import { GROK_REVIEW_SENSITIVE_PATH_GLOBS } from "./GrokReviewPrivacy.ts";
 
 const DEFAULT_GROK_REVIEW_MODEL = "grok-4.5";
 const GROK_AGENT_TIMEOUT_MS = 4 * 60 * 1_000;
 const GROK_AGENT_MAX_TURNS = 8;
 const GROK_REVIEW_TOOLS = "read_file,list_dir,grep";
-const GROK_REVIEW_DENY_RULES = [
-  "Read(**/.grok/**)",
-  "Read(**/.env)",
-  "Read(**/.env.*)",
-  "Read(**/.git-credentials)",
-  "Read(**/.netrc)",
-  "Read(**/.npmrc)",
-  "Read(**/.pypirc)",
-  "Read(**/*.key)",
-  "Read(**/*.pem)",
-  "Grep(**/.grok/**)",
-  "Grep(**/.env)",
-  "Grep(**/.env.*)",
-  "Grep(**/.git-credentials)",
-  "Grep(**/.netrc)",
-  "Grep(**/.npmrc)",
-  "Grep(**/.pypirc)",
-  "Grep(**/*.key)",
-  "Grep(**/*.pem)",
-] as const;
+const GROK_REVIEW_DENY_RULES = ["Read", "Grep"].flatMap((operation) =>
+  GROK_REVIEW_SENSITIVE_PATH_GLOBS.map((glob) => `${operation}(${glob})`),
+);
 const GrokHeadlessEnvelope = Schema.Struct({
   structuredOutput: Schema.optionalKey(Schema.Unknown),
   structuredOutputError: Schema.optionalKey(Schema.String),

@@ -36,6 +36,7 @@ import {
   DEFAULT_REVIEWER_ROLES,
   type GrokReviewPromptContext,
 } from "./GrokReviewPrompts.ts";
+import { redactSensitiveDiff } from "./GrokReviewPrivacy.ts";
 
 const MAX_LEAD_CONCURRENCY = 4;
 const MAX_DELEGATED_REVIEWS = 2;
@@ -47,7 +48,11 @@ interface AgentOutcome {
     | { readonly _tag: "Failure"; readonly error: GrokReviewError };
 }
 
-function normalizePath(value: string): string {
+function normalizeFindingPath(value: string): string {
+  return value.trim().replace(/^\.\//, "");
+}
+
+function normalizeDiffPath(value: string): string {
   return value.trim().replace(/^(?:\.\/|[ab]\/)/, "");
 }
 
@@ -59,7 +64,7 @@ export function changedLinesFromDiff(diff: string): ReadonlyMap<string, Readonly
   for (const line of diff.split(/\r?\n/)) {
     if (line.startsWith("+++ ")) {
       const rawPath = line.slice(4).trim();
-      currentPath = rawPath === "/dev/null" ? undefined : normalizePath(rawPath);
+      currentPath = rawPath === "/dev/null" ? undefined : normalizeDiffPath(rawPath);
       currentLine = undefined;
       continue;
     }
@@ -69,6 +74,7 @@ export function changedLinesFromDiff(diff: string): ReadonlyMap<string, Readonly
       continue;
     }
     if (currentPath === undefined || currentLine === undefined) continue;
+    if (line === "\\ No newline at end of file") continue;
     if (line.startsWith("+") && !line.startsWith("+++")) {
       const lines = changed.get(currentPath) ?? new Set<number>();
       lines.add(currentLine);
@@ -89,7 +95,7 @@ function findingIsInlineEligible(
   changedLines: ReadonlyMap<string, ReadonlySet<number>>,
 ): boolean {
   if (finding.startLine === undefined) return false;
-  return changedLines.get(normalizePath(finding.path))?.has(finding.startLine) === true;
+  return changedLines.get(normalizeFindingPath(finding.path))?.has(finding.startLine) === true;
 }
 
 function runCandidate(
@@ -173,7 +179,7 @@ export const runGrokReviewSwarm = Effect.fn("runGrokReviewSwarm")(function* (inp
   );
   const context: GrokReviewPromptContext = {
     targetLabel: input.source.title,
-    diff: input.source.diff,
+    diff: redactSensitiveDiff(input.source.diff),
     focus: input.request.focus ?? [],
   };
 
@@ -270,7 +276,7 @@ export const runGrokReviewSwarm = Effect.fn("runGrokReviewSwarm")(function* (inp
         "SHA-256",
         new TextEncoder().encode(
           [
-            normalizePath(finding.path),
+            normalizeFindingPath(finding.path),
             finding.startLine ?? "",
             finding.severity,
             finding.title.trim().toLowerCase(),
@@ -280,7 +286,7 @@ export const runGrokReviewSwarm = Effect.fn("runGrokReviewSwarm")(function* (inp
       .pipe(
         Effect.map((hash) => ({
           ...finding,
-          path: normalizePath(finding.path),
+          path: normalizeFindingPath(finding.path),
           fingerprint: Encoding.encodeHex(hash),
           inlineEligible: findingIsInlineEligible(finding, lineIndex),
         })),
