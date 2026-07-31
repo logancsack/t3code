@@ -113,7 +113,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
       </SidebarContent>
       <SidebarFooter className="p-2">
         <T3ConnectSidebarSignIn />
-        <ManagedDevPcFooterAccount />
+        <ManagedDevPcFooterAccount showWorkspaceStatus={pathname !== "/settings/workspace"} />
         <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-1">
           <SidebarMenu className="min-w-0">
             <SidebarMenuItem>

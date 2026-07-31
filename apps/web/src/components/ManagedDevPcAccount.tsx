@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { UserRoundIcon } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 
@@ -33,34 +33,44 @@ function accountLabel(account: ManagedAccount | null): string {
 export function ManagedDevPcAccountButton() {
   const [account, setAccount] = useState<ManagedAccount | null>(null);
   const [open, setOpen] = useState(false);
+  const accountRequest = useRef<AbortController | null>(null);
 
-  useEffect(() => {
+  const refreshAccount = useCallback(() => {
     if (!isManagedDevPc) return;
+    accountRequest.current?.abort();
     const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), ACCOUNT_REQUEST_TIMEOUT_MS);
+    accountRequest.current = controller;
     void fetch(ACCOUNT_ME_PATH, {
       credentials: "same-origin",
       cache: "no-store",
       headers: { accept: "application/json" },
-      signal: controller.signal,
+      signal: AbortSignal.any([controller.signal, AbortSignal.timeout(ACCOUNT_REQUEST_TIMEOUT_MS)]),
     })
       .then(async (response) => {
         if (!response.ok) return;
         setAccount((await response.json()) as ManagedAccount);
       })
-      .catch(() => {})
-      .finally(() => window.clearTimeout(timeout));
-    return () => {
-      window.clearTimeout(timeout);
-      controller.abort();
-    };
+      .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    refreshAccount();
+    return () => {
+      accountRequest.current?.abort();
+    };
+  }, [refreshAccount]);
 
   if (!isManagedDevPc) return null;
 
   const label = accountLabel(account);
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        setOpen(nextOpen);
+        if (!nextOpen) refreshAccount();
+      }}
+    >
       <DialogTrigger
         render={
           <button
@@ -112,7 +122,11 @@ export function ManagedDevPcAccountButton() {
   );
 }
 
-export function ManagedDevPcFooterAccount() {
+export function ManagedDevPcFooterAccount({
+  showWorkspaceStatus = true,
+}: {
+  showWorkspaceStatus?: boolean;
+}) {
   const navigate = useNavigate();
   const { isMobile, setOpenMobile } = useSidebar();
 
@@ -120,12 +134,14 @@ export function ManagedDevPcFooterAccount() {
   return (
     <div className="flex min-w-0 items-center gap-1">
       <ManagedDevPcAccountButton />
-      <ManagedDevPcStatus
-        onOpenSettings={() => {
-          if (isMobile) setOpenMobile(false);
-          void navigate({ to: "/settings/workspace" });
-        }}
-      />
+      {showWorkspaceStatus ? (
+        <ManagedDevPcStatus
+          onOpenSettings={() => {
+            if (isMobile) setOpenMobile(false);
+            void navigate({ to: "/settings/workspace" });
+          }}
+        />
+      ) : null}
     </div>
   );
 }
