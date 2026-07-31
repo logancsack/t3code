@@ -1841,6 +1841,8 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         [
           "diff",
           "--no-color",
+          "--no-ext-diff",
+          "--no-textconv",
           "--no-index",
           "--patch",
           "--minimal",
@@ -1902,6 +1904,8 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       [
         "diff",
         "--no-color",
+        "--no-ext-diff",
+        "--no-textconv",
         "--patch",
         "--minimal",
         ...(input.ignoreWhitespace ? ["--ignore-all-space"] : []),
@@ -1928,33 +1932,34 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       .filter((diff) => diff.length > 0)
       .join("\n");
 
-    const baseResult =
-      baseRef && branch
-        ? yield* executeGit(
-            "GitVcsDriver.getReviewDiffPreview.base",
-            input.cwd,
-            [
-              "diff",
-              "--no-color",
-              "--patch",
-              "--minimal",
-              ...(input.ignoreWhitespace ? ["--ignore-all-space"] : []),
-              `${baseRef}...HEAD`,
-            ],
-            {
-              maxOutputBytes: REVIEW_DIFF_PATCH_MAX_OUTPUT_BYTES,
-              appendTruncationMarker: true,
-            },
-          ).pipe(
-            Effect.orElseSucceed(() => ({
-              exitCode: 0,
-              stdout: "",
-              stderr: "",
-              stdoutTruncated: false,
-              stderrTruncated: false,
-            })),
-          )
-        : null;
+    const baseResult = baseRef
+      ? yield* executeGit(
+          "GitVcsDriver.getReviewDiffPreview.base",
+          input.cwd,
+          [
+            "diff",
+            "--no-color",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--patch",
+            "--minimal",
+            ...(input.ignoreWhitespace ? ["--ignore-all-space"] : []),
+            `${baseRef}...HEAD`,
+          ],
+          {
+            maxOutputBytes: REVIEW_DIFF_PATCH_MAX_OUTPUT_BYTES,
+            appendTruncationMarker: true,
+          },
+        ).pipe(
+          Effect.orElseSucceed(() => ({
+            exitCode: 0,
+            stdout: "",
+            stderr: "",
+            stdoutTruncated: false,
+            stderrTruncated: false,
+          })),
+        )
+      : null;
     const baseDiff = baseResult?.stdout ?? "";
     const hashDiff = (diff: string) =>
       crypto.digest("SHA-256", new TextEncoder().encode(diff)).pipe(
