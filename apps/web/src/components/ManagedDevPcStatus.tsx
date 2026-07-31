@@ -385,6 +385,20 @@ export function withIdleTimeout(
   return { ...workspace, idleTimeoutMinutes };
 }
 
+/**
+ * Fold a status poll into the bootstrap the gateway handed the page.
+ *
+ * The status endpoint carries lifecycle fields only. Replacing the whole
+ * object dropped the gateway-minted fields — previewUrls, previewUrlTemplate —
+ * which hid the workspace browser surface as soon as the first poll landed.
+ */
+export function mergeBootstrapStatus(
+  previous: ManagedDevPcBootstrap | undefined,
+  status: ManagedDevPcBootstrap,
+): ManagedDevPcBootstrap {
+  return { ...previous, ...status };
+}
+
 export function reconcileIdleTimeoutProjection(
   serverIdleTimeoutMinutes: number | undefined,
   projection: IdleTimeoutProjection | null,
@@ -678,10 +692,11 @@ export function ManagedDevPcStatus({
         updateManagedStatusUnavailable(true);
         return null;
       }
-      const next = (await response.json()) as ManagedDevPcBootstrap;
+      const status = (await response.json()) as ManagedDevPcBootstrap;
       if (!componentMounted.current) return null;
       if (generation < latestAppliedRefresh.current) return null;
       latestAppliedRefresh.current = generation;
+      const next = mergeBootstrapStatus(window.__DEVPC_MANAGED_BOOTSTRAP__, status);
       window.__DEVPC_MANAGED_BOOTSTRAP__ = next;
       const idleTimeout = reconcileIdleTimeoutRefresh(
         next.idleTimeoutMinutes,
