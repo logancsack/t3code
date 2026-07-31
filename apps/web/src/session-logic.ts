@@ -60,6 +60,12 @@ export type WorkLogToolLifecycleStatus =
   | "declined"
   | "stopped";
 
+export interface GeneratedImageOutput {
+  id: string;
+  base64: string;
+  mimeType: "image/png" | "image/jpeg" | "image/webp";
+}
+
 export interface WorkLogEntry {
   id: string;
   createdAt: string;
@@ -72,6 +78,7 @@ export interface WorkLogEntry {
   tone: "thinking" | "tool" | "info" | "error";
   toolTitle?: string;
   toolData?: unknown;
+  generatedImage?: GeneratedImageOutput;
   itemType?: ToolLifecycleItemType;
   requestKind?: PendingApproval["requestKind"];
   /** From runtime item / task payload `status` when present (e.g. tool.updated). */
@@ -150,6 +157,12 @@ export function workLogEntryIsToolLike(entry: WorkLogEntry): boolean {
     return true;
   }
   return entry.itemType !== undefined && isToolLifecycleItemType(entry.itemType);
+}
+
+export function workLogEntryHasGeneratedImage(
+  entry: WorkLogEntry,
+): entry is WorkLogEntry & { generatedImage: GeneratedImageOutput } {
+  return entry.generatedImage !== undefined;
 }
 
 /** Heuristic: providers often emit successful lifecycle status while error text lives in `detail` / `command`. */
@@ -823,6 +836,12 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
       entry.toolData = data.item;
     }
   }
+  if (activity.kind === "tool.completed") {
+    const generatedImage = extractGeneratedImage(payload);
+    if (generatedImage) {
+      entry.generatedImage = generatedImage;
+    }
+  }
   if (itemType) {
     entry.itemType = itemType;
   }
@@ -901,6 +920,7 @@ function mergeDerivedWorkLogEntries(
   const toolCallId = next.toolCallId ?? previous.toolCallId;
   const toolLifecycleStatus = next.toolLifecycleStatus ?? previous.toolLifecycleStatus;
   const toolData = next.toolData ?? previous.toolData;
+  const generatedImage = next.generatedImage ?? previous.generatedImage;
   return {
     ...previous,
     ...next,
@@ -915,6 +935,7 @@ function mergeDerivedWorkLogEntries(
     ...(toolCallId ? { toolCallId } : {}),
     ...(toolLifecycleStatus !== undefined ? { toolLifecycleStatus } : {}),
     ...(toolData !== undefined ? { toolData } : {}),
+    ...(generatedImage !== undefined ? { generatedImage } : {}),
   };
 }
 
@@ -971,6 +992,83 @@ function asTrimmedString(value: unknown): string | null {
   }
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+const MAX_GENERATED_IMAGE_BASE64_LENGTH = 32 * 1024 * 1024;
+
+function isBase64DataCharacter(code: number): boolean {
+  return (
+    (code >= 0x61 && code <= 0x7a) ||
+    (code >= 0x41 && code <= 0x5a) ||
+    (code >= 0x30 && code <= 0x39) ||
+    code === 0x2b ||
+    code === 0x2f
+  );
+}
+
+/**
+ * Validate the final base64 quantum without scanning the multi-megabyte
+ * payload. The image decoder validates the complete bytes; doing a full regex
+ * pass here would block the UI every time activity state is re-derived.
+ */
+function hasValidBase64Tail(base64: string): boolean {
+  if (base64.length < 4 || base64.length % 4 !== 0) {
+    return false;
+  }
+  const offset = base64.length - 4;
+  const first = base64.charCodeAt(offset);
+  const second = base64.charCodeAt(offset + 1);
+  const third = base64.charCodeAt(offset + 2);
+  const fourth = base64.charCodeAt(offset + 3);
+  if (!isBase64DataCharacter(first) || !isBase64DataCharacter(second)) {
+    return false;
+  }
+  if (third === 0x3d) {
+    return fourth === 0x3d;
+  }
+  if (!isBase64DataCharacter(third)) {
+    return false;
+  }
+  return isBase64DataCharacter(fourth) || fourth === 0x3d;
+}
+
+function generatedImageMimeType(base64: string): GeneratedImageOutput["mimeType"] | null {
+  if (base64.startsWith("iVBORw0KGgo")) {
+    return "image/png";
+  }
+  if (base64.startsWith("/9j/")) {
+    return "image/jpeg";
+  }
+  if (base64.startsWith("UklGR")) {
+    return "image/webp";
+  }
+  return null;
+}
+
+function extractGeneratedImage(
+  payload: Record<string, unknown> | null,
+): GeneratedImageOutput | null {
+  const data = asRecord(payload?.data);
+  const item = asRecord(data?.item);
+  if (item?.type !== "imageGeneration") {
+    return null;
+  }
+  if (item.status !== undefined && item.status !== "completed") {
+    return null;
+  }
+  const id = asTrimmedString(item.id);
+  const base64 = item.result;
+  if (
+    !id ||
+    typeof base64 !== "string" ||
+    base64.length === 0 ||
+    base64.length > MAX_GENERATED_IMAGE_BASE64_LENGTH ||
+    !hasValidBase64Tail(base64)
+  ) {
+    return null;
+  }
+  const mimeType = generatedImageMimeType(base64);
+  return mimeType ? { id, base64, mimeType } : null;
 }
 
 function asNumber(value: unknown): number | null {

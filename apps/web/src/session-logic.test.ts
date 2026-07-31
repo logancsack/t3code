@@ -962,6 +962,92 @@ describe("deriveWorkLogEntries", () => {
     expect(entry?.toolData).toEqual(item);
   });
 
+  it("preserves completed native image-generation output for historical image_view entries", () => {
+    const base64 =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZQmcAAAAASUVORK5CYII=";
+    const [entry] = deriveWorkLogEntries([
+      makeActivity({
+        id: "generated-image-done",
+        kind: "tool.completed",
+        summary: "Image view",
+        payload: {
+          itemType: "image_view",
+          data: {
+            item: {
+              type: "imageGeneration",
+              id: "image-call-1",
+              status: "completed",
+              result: base64,
+              savedPath: "/tmp/generated-images/image-call-1.png",
+            },
+          },
+        },
+      }),
+    ]);
+
+    expect(entry?.generatedImage).toEqual({
+      id: "image-call-1",
+      base64,
+      mimeType: "image/png",
+    });
+  });
+
+  it("rejects incomplete and malformed native image-generation output", () => {
+    const entries = deriveWorkLogEntries([
+      makeActivity({
+        id: "generated-image-in-progress",
+        kind: "tool.completed",
+        summary: "Image view",
+        payload: {
+          itemType: "image_view",
+          data: {
+            item: {
+              type: "imageGeneration",
+              id: "image-call-1",
+              status: "inProgress",
+              result: "iVBORw0KGgo=",
+            },
+          },
+        },
+      }),
+      makeActivity({
+        id: "generated-image-invalid",
+        kind: "tool.completed",
+        summary: "Image view",
+        payload: {
+          itemType: "image_view",
+          data: {
+            item: {
+              type: "imageGeneration",
+              id: "image-call-2",
+              status: "completed",
+              result: "PHN2Zz48L3N2Zz4=",
+            },
+          },
+        },
+      }),
+      makeActivity({
+        id: "generated-image-invalid-tail",
+        kind: "tool.completed",
+        summary: "Image view",
+        payload: {
+          itemType: "image_view",
+          data: {
+            item: {
+              type: "imageGeneration",
+              id: "image-call-3",
+              status: "completed",
+              result: "iVBORw0KGgo!",
+            },
+          },
+        },
+      }),
+    ]);
+
+    expect(entries).toHaveLength(3);
+    expect(entries.every((entry) => entry.generatedImage === undefined)).toBe(true);
+  });
+
   it("keeps MCP payloads while collapsing lifecycle updates", () => {
     const item = {
       type: "mcpToolCall",
