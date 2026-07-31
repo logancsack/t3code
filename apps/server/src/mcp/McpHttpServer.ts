@@ -22,6 +22,8 @@ import {
   PreviewSnapshotToolkit,
   PreviewStandardToolkit,
 } from "./toolkits/preview/tools.ts";
+import { GrokReviewToolkitHandlersLive } from "./toolkits/review/handlers.ts";
+import { GrokReviewToolkit } from "./toolkits/review/tools.ts";
 
 const unauthorized = HttpServerResponse.jsonUnsafe(
   {
@@ -208,10 +210,17 @@ export const PreviewToolkitRegistrationLive = Layer.mergeAll(
   PreviewSnapshotRegistrationLive,
 );
 
+export const GrokReviewToolkitRegistrationLive = McpServer.toolkit(GrokReviewToolkit).pipe(
+  Layer.provide(GrokReviewToolkitHandlersLive),
+);
+
 const McpTransportLive = McpServer.layerHttp({
   name: "T3 Code",
   version: packageJson.version,
   path: "/mcp",
 }).pipe(Layer.provide(McpAuthMiddlewareLive));
 
-export const layer = PreviewToolkitRegistrationLive.pipe(Layer.provideMerge(McpTransportLive));
+export const layer = Layer.mergeAll(
+  PreviewToolkitRegistrationLive,
+  GrokReviewToolkitRegistrationLive,
+).pipe(Layer.provideMerge(McpTransportLive));

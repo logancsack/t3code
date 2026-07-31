@@ -9,6 +9,7 @@ import { HttpClient } from "effect/unstable/http";
 import { ChildProcessSpawner } from "effect/unstable/process";
 
 import { ServerConfig } from "../../config.ts";
+import { makeGrokCodeReview } from "../../review/GrokCodeReview.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { makeGrokTextGeneration } from "../../textGeneration/GrokTextGeneration.ts";
 import { ProviderDriverError } from "../Errors.ts";
@@ -112,6 +113,9 @@ export const GrokDriver: ProviderDriver<GrokSettings, GrokDriverEnv> = {
         instanceId,
       });
       const textGeneration = yield* makeGrokTextGeneration(effectiveConfig, processEnv);
+      const codeReview = enabled
+        ? yield* makeGrokCodeReview(effectiveConfig, processEnv)
+        : undefined;
 
       const checkProvider = checkGrokProviderStatus(effectiveConfig, processEnv).pipe(
         Effect.map(stampIdentity),
@@ -159,6 +163,7 @@ export const GrokDriver: ProviderDriver<GrokSettings, GrokDriverEnv> = {
         snapshot,
         adapter,
         textGeneration,
+        ...(codeReview ? { codeReview } : {}),
       } satisfies ProviderInstance;
     }),
 };

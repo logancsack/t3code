@@ -47,11 +47,26 @@ it.effect("stores only a token hash, resolves the bearer token, and revokes by t
 
     const resolved = yield* registry.resolve(token);
     expect(resolved?.threadId).toBe(threadId);
+    expect(resolved?.capabilities).toEqual(new Set(["preview"]));
 
     yield* registry.revokeThread(threadId);
     expect(yield* registry.resolve(token)).toBeUndefined();
 
     timestamp += 2_000;
+  }),
+);
+
+it.effect("grants review only when explicitly requested", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry(() => 1_000);
+    const issued = yield* registry.issue({
+      threadId: ThreadId.make("thread-review"),
+      providerInstanceId: ProviderInstanceId.make("grok"),
+      grantReview: true,
+    });
+    const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
+
+    expect((yield* registry.resolve(token))?.capabilities).toEqual(new Set(["preview", "review"]));
   }),
 );
 
