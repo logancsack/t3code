@@ -21,6 +21,53 @@ export const MAX_REVIEW_VERIFICATION_CHARS = 350;
 export const MAX_REVIEW_LIST_ENTRY_CHARS = 300;
 export const MAX_REVIEW_DELEGATION_CHARS = 800;
 export const MAX_REVIEW_DELEGATION_PATHS = 8;
+export const GROK_REVIEW_FINDINGS_OMITTED_LIMITATION =
+  "Some model-proposed findings were omitted because they were malformed or exceeded the report limit.";
+
+/**
+ * Grok's constrained output is intentionally decoded through a permissive wire
+ * shape first. Real models still occasionally emit null for optional fields or
+ * exceed a presentation bound by a few characters. Rejecting the whole agent
+ * result for those repairable differences made otherwise useful reviews
+ * disappear, so normalization below restores the strict canonical shape.
+ */
+const GrokReviewCandidateFindingWire = Schema.Struct({
+  severity: Schema.Literals(["blocker", "high", "medium", "low"]),
+  confidence: Schema.Number,
+  category: Schema.String,
+  title: Schema.String,
+  path: Schema.String,
+  startLine: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+  endLine: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+  evidence: Schema.String,
+  impact: Schema.String,
+  suggestion: Schema.String,
+  verification: Schema.optionalKey(Schema.NullOr(Schema.String)),
+});
+
+const GrokReviewDelegationWire = Schema.Struct({
+  objective: Schema.String,
+  paths: Schema.Array(Schema.String),
+});
+
+export const GrokReviewCandidateWire = Schema.Struct({
+  summary: Schema.String,
+  findings: Schema.Array(GrokReviewCandidateFindingWire),
+  coverage: Schema.Array(Schema.String),
+  limitations: Schema.Array(Schema.String),
+  delegation: Schema.optionalKey(Schema.NullOr(GrokReviewDelegationWire)),
+});
+export type GrokReviewCandidateWire = typeof GrokReviewCandidateWire.Type;
+
+export const GrokReviewVerificationWire = Schema.Struct({
+  summary: Schema.String,
+  findings: Schema.Array(GrokReviewCandidateFindingWire),
+  coverage: Schema.Array(Schema.String),
+  limitations: Schema.Array(Schema.String),
+  needsHighEffortReview: Schema.optionalKey(Schema.NullOr(Schema.Boolean)),
+  escalationReason: Schema.optionalKey(Schema.NullOr(Schema.String)),
+});
+export type GrokReviewVerificationWire = typeof GrokReviewVerificationWire.Type;
 
 const boundedNonEmpty = (maxLength: number) =>
   TrimmedNonEmptyString.check(Schema.isMaxLength(maxLength));
@@ -83,6 +130,120 @@ export const GrokReviewVerification = Schema.Struct({
   escalationReason: Schema.NullOr(Schema.String.check(Schema.isMaxLength(800))),
 });
 export type GrokReviewVerification = typeof GrokReviewVerification.Type;
+
+function boundedText(value: string, maxLength: number): string {
+  const trimmed = value.trim();
+  return trimmed.length <= maxLength ? trimmed : trimmed.slice(0, maxLength).trimEnd();
+}
+
+function boundedStrings(values: ReadonlyArray<string>): Array<string> {
+  return [
+    ...new Set(
+      values.map((value) => boundedText(value, MAX_REVIEW_LIST_ENTRY_CHARS)).filter(Boolean),
+    ),
+  ].slice(0, MAX_REVIEW_LIST_ENTRIES);
+}
+
+function positiveLine(value: number | null | undefined): number | undefined {
+  return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : undefined;
+}
+
+function normalizeCandidateFinding(
+  finding: typeof GrokReviewCandidateFindingWire.Type,
+): GrokReviewCandidateFinding | null {
+  const category = boundedText(finding.category, MAX_REVIEW_CATEGORY_CHARS);
+  const title = boundedText(finding.title, MAX_REVIEW_TITLE_CHARS);
+  const path = boundedText(finding.path, MAX_REVIEW_PATH_CHARS);
+  const evidence = boundedText(finding.evidence, MAX_REVIEW_EVIDENCE_CHARS);
+  const impact = boundedText(finding.impact, MAX_REVIEW_IMPACT_CHARS);
+  const suggestion = boundedText(finding.suggestion, MAX_REVIEW_SUGGESTION_CHARS);
+  if (!category || !title || !path || !evidence || !impact || !suggestion) return null;
+
+  const startLine = positiveLine(finding.startLine);
+  const candidateEndLine = positiveLine(finding.endLine);
+  const endLine =
+    startLine !== undefined && candidateEndLine !== undefined && candidateEndLine >= startLine
+      ? candidateEndLine
+      : undefined;
+  const verification = finding.verification
+    ? boundedText(finding.verification, MAX_REVIEW_VERIFICATION_CHARS)
+    : undefined;
+
+  return {
+    severity: finding.severity,
+    confidence: Math.max(0, Math.min(1, finding.confidence)),
+    category,
+    title,
+    path,
+    ...(startLine === undefined ? {} : { startLine }),
+    ...(endLine === undefined ? {} : { endLine }),
+    evidence,
+    impact,
+    suggestion,
+    ...(verification ? { verification } : {}),
+  };
+}
+
+function normalizedFindings(findings: ReadonlyArray<typeof GrokReviewCandidateFindingWire.Type>): {
+  readonly findings: Array<GrokReviewCandidateFinding>;
+  readonly omitted: boolean;
+} {
+  const validFindings = findings.flatMap((finding) => {
+    const normalized = normalizeCandidateFinding(finding);
+    return normalized ? [normalized] : [];
+  });
+  const normalized = validFindings.slice(0, MAX_REVIEW_FINDINGS);
+  return { findings: normalized, omitted: normalized.length < findings.length };
+}
+
+export function normalizeGrokReviewCandidate(
+  candidate: GrokReviewCandidateWire,
+): GrokReviewCandidate {
+  const normalized = normalizedFindings(candidate.findings);
+  const objective = candidate.delegation
+    ? boundedText(candidate.delegation.objective, MAX_REVIEW_DELEGATION_CHARS)
+    : "";
+  const delegationPaths = candidate.delegation
+    ? candidate.delegation.paths
+        .map((value) => boundedText(value, MAX_REVIEW_PATH_CHARS))
+        .filter(Boolean)
+        .slice(0, MAX_REVIEW_DELEGATION_PATHS)
+    : [];
+  return {
+    summary:
+      boundedText(candidate.summary, MAX_REVIEW_SUMMARY_CHARS) ||
+      "The reviewer returned no summary.",
+    findings: normalized.findings,
+    coverage: boundedStrings(candidate.coverage),
+    limitations: boundedStrings([
+      ...(normalized.omitted ? [GROK_REVIEW_FINDINGS_OMITTED_LIMITATION] : []),
+      ...candidate.limitations,
+    ]),
+    delegation: objective ? { objective, paths: delegationPaths } : null,
+  };
+}
+
+export function normalizeGrokReviewVerification(
+  verification: GrokReviewVerificationWire,
+): GrokReviewVerification {
+  const normalized = normalizedFindings(verification.findings);
+  const escalationReason = verification.escalationReason
+    ? boundedText(verification.escalationReason, MAX_REVIEW_DELEGATION_CHARS)
+    : null;
+  return {
+    summary:
+      boundedText(verification.summary, MAX_REVIEW_SUMMARY_CHARS) ||
+      "The verifier returned no summary.",
+    findings: normalized.findings,
+    coverage: boundedStrings(verification.coverage),
+    limitations: boundedStrings([
+      ...(normalized.omitted ? [GROK_REVIEW_FINDINGS_OMITTED_LIMITATION] : []),
+      ...verification.limitations,
+    ]),
+    needsHighEffortReview: verification.needsHighEffortReview ?? false,
+    escalationReason,
+  };
+}
 
 const severityRank: Readonly<Record<GrokReviewSeverity, number>> = {
   blocker: 0,
