@@ -12,6 +12,7 @@ async function renderManagedStatus(input: {
   state: ManagedDevPcWorkspaceState;
   status?: ManagedDevPcDisplayStatus;
   ready: boolean;
+  view?: "indicator" | "settings";
 }) {
   vi.stubEnv("VITE_DEVPC_MANAGED", input.managed === false ? "" : "1");
   vi.resetModules();
@@ -26,7 +27,7 @@ async function renderManagedStatus(input: {
   });
 
   const { ManagedDevPcStatus } = await import("./ManagedDevPcStatus");
-  return renderToStaticMarkup(<ManagedDevPcStatus />);
+  return renderToStaticMarkup(<ManagedDevPcStatus {...(input.view ? { view: input.view } : {})} />);
 }
 
 describe("ManagedDevPcStatus", () => {
@@ -38,8 +39,8 @@ describe("ManagedDevPcStatus", () => {
     });
 
     expect(markup).toContain('data-devpc-workspace-status="running"');
-    expect(markup).toContain("Workspace · Running");
-    expect(markup).toContain('aria-haspopup="dialog"');
+    expect(markup).toContain("Workspace — Running");
+    expect(markup).toContain("Open workspace settings");
     expect(markup).not.toContain("Pauses after 30 minutes");
     expect(markup).not.toContain('aria-label="Restart workspace"');
     expect(markup).not.toContain("fixed");
@@ -66,6 +67,21 @@ describe("ManagedDevPcStatus", () => {
     const markup = await renderManagedStatus({ managed: false, state: "ready", ready: true });
 
     expect(markup).toBe("");
+  });
+
+  it("renders the workspace controls on the settings page instead of in the indicator", async () => {
+    const markup = await renderManagedStatus({
+      state: "ready",
+      status: "running",
+      ready: true,
+      view: "settings",
+    });
+
+    expect(markup).toContain("data-devpc-workspace-control-center");
+    expect(markup).toContain("Auto-pause");
+    expect(markup).toContain(">Restart<");
+    expect(markup).toContain(">Pause<");
+    expect(markup).not.toContain("data-devpc-workspace-status");
   });
 
   it("restores an ambiguous lifecycle guard after a document reload", async () => {
@@ -97,7 +113,7 @@ describe("ManagedDevPcStatus", () => {
     const { ManagedDevPcStatus } = await import("./ManagedDevPcStatus");
     const markup = renderToStaticMarkup(<ManagedDevPcStatus />);
 
-    expect(markup).toContain("Workspace · Running");
+    expect(markup).toContain("Workspace — Running");
     expect(markup).not.toContain('aria-label="Restart workspace"');
     expect(setItem).toHaveBeenCalledWith(
       "devpc-managed-workspace-action",
@@ -200,7 +216,7 @@ describe("ManagedDevPcStatus", () => {
     const markup = await renderManagedStatus({ state, status, ready: false });
 
     expect(markup).toContain(`data-devpc-workspace-status="${status}"`);
-    expect(markup).toContain(`Workspace · ${label}`);
+    expect(markup).toContain(`Workspace — ${label.replace("…", "")}`);
   });
 
   it("does not preserve a running label after a status request becomes unavailable", async () => {

@@ -1,6 +1,7 @@
 export type SettingsPath =
   | "/settings/general"
   | "/settings/appearance"
+  | "/settings/workspace"
   | "/settings/keybindings"
   | "/settings/providers"
   | "/settings/source-control"
@@ -22,6 +23,7 @@ export interface SettingsSearchItem {
 export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/general": "General",
   "/settings/appearance": "Appearance",
+  "/settings/workspace": "Workspace",
   "/settings/keybindings": "Keybindings",
   "/settings/providers": "Providers",
   "/settings/source-control": "Source Control",
