@@ -46,6 +46,7 @@ const RANGE_DIFF_SUMMARY_MAX_OUTPUT_BYTES = 19_000;
 const RANGE_DIFF_PATCH_MAX_OUTPUT_BYTES = 59_000;
 const REVIEW_DIFF_PATCH_MAX_OUTPUT_BYTES = 120_000;
 const REVIEW_UNTRACKED_DIFF_MAX_OUTPUT_BYTES = 80_000;
+const REVIEW_UNTRACKED_AGGREGATE_MAX_OUTPUT_BYTES = 120_000;
 const WORKSPACE_FILES_MAX_OUTPUT_BYTES = 120_000;
 const STATUS_UPSTREAM_REFRESH_INTERVAL = Duration.seconds(15);
 const STATUS_UPSTREAM_REFRESH_TIMEOUT = Duration.seconds(5);
@@ -1854,11 +1855,22 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       { concurrency: 4 },
     );
 
+    const combined = Arr.filterMap(diffs, (result) =>
+      result.stdout.trim().length > 0 ? Result.succeed(result.stdout) : Result.failVoid,
+    ).join("\n");
+    const combinedBytes = Buffer.from(combined);
+    const aggregateTruncated =
+      combinedBytes.byteLength > REVIEW_UNTRACKED_AGGREGATE_MAX_OUTPUT_BYTES;
     return {
-      diff: Arr.filterMap(diffs, (result) =>
-        result.stdout.trim().length > 0 ? Result.succeed(result.stdout) : Result.failVoid,
-      ).join("\n"),
-      truncated: untrackedResult.stdoutTruncated || diffs.some((result) => result.stdoutTruncated),
+      diff: aggregateTruncated
+        ? `${combinedBytes
+            .subarray(0, REVIEW_UNTRACKED_AGGREGATE_MAX_OUTPUT_BYTES)
+            .toString("utf8")}${OUTPUT_TRUNCATED_MARKER}`
+        : combined,
+      truncated:
+        aggregateTruncated ||
+        untrackedResult.stdoutTruncated ||
+        diffs.some((result) => result.stdoutTruncated),
     };
   });
 
