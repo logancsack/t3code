@@ -55,8 +55,8 @@ function focusBlock(focus: ReadonlyArray<string>): string {
     : "";
 }
 
-function untrustedJson(value: unknown): string {
-  return JSON.stringify(value, null, 2).replace(
+function delimiterSafeText(value: string): string {
+  return value.replace(
     /[<>&]/g,
     (character) =>
       ({
@@ -65,6 +65,10 @@ function untrustedJson(value: unknown): string {
         "&": "\\u0026",
       })[character]!,
   );
+}
+
+function untrustedJson(value: unknown): string {
+  return delimiterSafeText(JSON.stringify(value, null, 2));
 }
 
 export function buildLeadReviewPrompt(
@@ -82,7 +86,7 @@ ${focusBlock(context.focus)}
 Review target: ${context.targetLabel}
 
 <untrusted_diff>
-${context.diff}
+${delimiterSafeText(context.diff)}
 </untrusted_diff>
 
 Return the required structured result. Keep findings few and high-signal. If the diff is safe in
@@ -111,7 +115,7 @@ ${focusBlock(context.focus)}
 Review target: ${context.targetLabel}
 
 <untrusted_diff>
-${context.diff}
+${delimiterSafeText(context.diff)}
 </untrusted_diff>
 
 Return the required structured result. Investigate only the delegated question. Return null for
@@ -145,7 +149,7 @@ ambiguous or the reviewers conflict about its validity. ${
 Review target: ${input.context.targetLabel}
 
 <untrusted_diff>
-${input.context.diff}
+${delimiterSafeText(input.context.diff)}
 </untrusted_diff>
 
 <untrusted_candidate_reviews>

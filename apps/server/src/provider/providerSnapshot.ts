@@ -86,11 +86,11 @@ export const spawnAndCollect = (
       [
         collectUint8StreamText({
           stream: child.stdout,
-          ...(options.maxOutputBytes ? { maxBytes: options.maxOutputBytes } : {}),
+          ...(options.maxOutputBytes !== undefined ? { maxBytes: options.maxOutputBytes } : {}),
         }),
         collectUint8StreamText({
           stream: child.stderr,
-          ...(options.maxOutputBytes ? { maxBytes: options.maxOutputBytes } : {}),
+          ...(options.maxOutputBytes !== undefined ? { maxBytes: options.maxOutputBytes } : {}),
         }),
         child.exitCode.pipe(Effect.map(Number)),
       ],

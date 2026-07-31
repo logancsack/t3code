@@ -163,4 +163,34 @@ describe("ProviderCommandNotFoundError", () => {
       expect(result.stderrTruncated).toBe(true);
     });
   });
+
+  it.effect("honors an explicit zero-byte provider output cap", () => {
+    const spawner = ChildProcessSpawner.make(() =>
+      Effect.succeed(
+        ChildProcessSpawner.makeHandle({
+          pid: ChildProcessSpawner.ProcessId(1),
+          exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(0)),
+          isRunning: Effect.succeed(false),
+          kill: () => Effect.void,
+          unref: Effect.succeed(Effect.void),
+          stdin: Sink.drain,
+          stdout: Stream.make(new TextEncoder().encode("stdout")),
+          stderr: Stream.make(new TextEncoder().encode("stderr")),
+          all: Stream.empty,
+          getInputFd: () => Sink.drain,
+          getOutputFd: () => Stream.empty,
+        }),
+      ),
+    );
+    return Effect.gen(function* () {
+      const result = yield* spawnAndCollect("provider", ChildProcess.make("provider", []), {
+        maxOutputBytes: 0,
+      }).pipe(Effect.provide(Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner)));
+
+      expect(result.stdout).toBe("");
+      expect(result.stderr).toBe("");
+      expect(result.stdoutTruncated).toBe(true);
+      expect(result.stderrTruncated).toBe(true);
+    });
+  });
 });
