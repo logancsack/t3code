@@ -1,0 +1,181 @@
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import { describe, expect, it } from "@effect/vitest";
+import type { ReviewDiffPreviewSource } from "@t3tools/contracts";
+import * as Effect from "effect/Effect";
+
+import type { GrokReviewAgent } from "./GrokReviewAgent.ts";
+import { type GrokReviewCandidate, type GrokReviewVerification } from "./GrokReviewModel.ts";
+import { changedLinesFromDiff, runGrokReviewSwarm } from "./GrokReviewSwarm.ts";
+
+const source: ReviewDiffPreviewSource = {
+  id: "working-tree",
+  kind: "working-tree",
+  title: "Dirty worktree",
+  baseRef: "HEAD",
+  headRef: null,
+  diffHash: "diff-hash",
+  truncated: false,
+  diff: [
+    "diff --git a/src/example.ts b/src/example.ts",
+    "index 1111111..2222222 100644",
+    "--- a/src/example.ts",
+    "+++ b/src/example.ts",
+    "@@ -8,3 +8,4 @@",
+    " const before = true;",
+    "-const value = safe();",
+    "+const value = unsafe();",
+    "+const extra = value;",
+    " export { value };",
+  ].join("\n"),
+};
+
+const emptyCandidate = (overrides: Partial<GrokReviewCandidate> = {}): GrokReviewCandidate => ({
+  summary: "No issue found in this review area.",
+  findings: [],
+  coverage: ["Reviewed the supplied diff."],
+  limitations: [],
+  delegation: null,
+  ...overrides,
+});
+
+const verifiedFinding = {
+  severity: "high" as const,
+  confidence: 0.7,
+  category: "correctness",
+  title: "Unsafe value escapes validation",
+  path: "src/example.ts",
+  startLine: 9,
+  endLine: 9,
+  evidence: "The changed line replaces safe() with unsafe().",
+  impact: "Invalid state can reach callers.",
+  suggestion: "Restore validation before exporting the value.",
+  verification: "Exercise the invalid-input path.",
+};
+
+describe("changedLinesFromDiff", () => {
+  it("indexes only added lines on the new side of each hunk", () => {
+    const changed = changedLinesFromDiff(source.diff);
+    expect([...changed.get("src/example.ts")!]).toEqual([9, 10]);
+  });
+});
+
+describe("runGrokReviewSwarm", () => {
+  it.effect("uses medium by default and escalates an ambiguous high finding", () => {
+    const calls: Array<{ readonly effort: string; readonly prompt: string }> = [];
+    const mediumVerification: GrokReviewVerification = {
+      summary: "One high-impact finding needs a deeper verification pass.",
+      findings: [verifiedFinding],
+      coverage: ["Correctness", "Security", "Reliability", "Architecture"],
+      limitations: [],
+      needsHighEffortReview: true,
+      escalationReason: "The changed call's safety contract is ambiguous.",
+    };
+    const highVerification: GrokReviewVerification = {
+      ...mediumVerification,
+      summary: "One actionable correctness defect was verified.",
+      findings: [{ ...verifiedFinding, confidence: 0.96 }],
+      needsHighEffortReview: false,
+      escalationReason: null,
+    };
+    const agent: GrokReviewAgent = {
+      resolvedModel: "grok-4.5",
+      grokBuildVersion: "0.2.112",
+      run: (request) =>
+        Effect.sync(() => {
+          calls.push({ effort: request.effort, prompt: request.prompt });
+          if (request.prompt.includes("high-effort final")) return highVerification as never;
+          if (request.prompt.includes("medium-effort verifier")) {
+            return mediumVerification as never;
+          }
+          if (request.prompt.includes("Security and privacy reviewer")) {
+            return emptyCandidate({
+              delegation: {
+                objective: "Verify the safety contract of unsafe().",
+                paths: ["src/example.ts"],
+              },
+            }) as never;
+          }
+          return emptyCandidate() as never;
+        }),
+    };
+
+    return Effect.gen(function* () {
+      const report = yield* runGrokReviewSwarm({
+        request: { cwd: process.cwd(), target: "working-tree" },
+        source,
+        agent,
+      });
+
+      expect(report.reasoningEffort).toBe("medium");
+      expect(report.escalatedToHigh).toBe(true);
+      expect(report.usage).toEqual({
+        agentRuns: 7,
+        mediumEffortRuns: 6,
+        highEffortRuns: 1,
+      });
+      expect(calls.filter(({ effort }) => effort === "medium")).toHaveLength(6);
+      expect(calls.filter(({ effort }) => effort === "high")).toHaveLength(1);
+      expect(report.findings).toHaveLength(1);
+      expect(report.findings[0]).toMatchObject({
+        severity: "high",
+        confidence: 0.96,
+        inlineEligible: true,
+      });
+      expect(report.findings[0]!.fingerprint).toMatch(/^[0-9a-f]{64}$/);
+      expect(report.markdown).toContain("HIGH: Unsafe value escapes validation");
+      expect(report.markdown).toContain("Reasoning:** medium → high");
+    }).pipe(Effect.provide(NodeServices.layer));
+  });
+
+  it.effect("bounds the canonical report for pull-request comment delivery", () => {
+    const oversizedFinding = {
+      ...verifiedFinding,
+      severity: "low" as const,
+      confidence: 0.95,
+      category: "c".repeat(300),
+      title: "t".repeat(500),
+      path: `src/${"p".repeat(700)}.ts`,
+      evidence: "e".repeat(1_000),
+      impact: "i".repeat(1_000),
+      suggestion: "s".repeat(1_000),
+      verification: "v".repeat(1_000),
+    };
+    const verification: GrokReviewVerification = {
+      summary: "summary ".repeat(1_000),
+      findings: Array.from({ length: 30 }, (_, index) => ({
+        ...oversizedFinding,
+        startLine: 9 + index,
+        endLine: 9 + index,
+        title: `${index}-${oversizedFinding.title}`,
+      })),
+      coverage: Array.from({ length: 20 }, (_, index) => `${index}-${"c".repeat(500)}`),
+      limitations: Array.from({ length: 20 }, (_, index) => `${index}-${"l".repeat(500)}`),
+      needsHighEffortReview: false,
+      escalationReason: null,
+    };
+    const agent: GrokReviewAgent = {
+      resolvedModel: "grok-4.5",
+      grokBuildVersion: "0.2.112",
+      run: (request) =>
+        Effect.succeed(
+          (request.prompt.includes("medium-effort verifier")
+            ? verification
+            : emptyCandidate()) as never,
+        ),
+    };
+
+    return Effect.gen(function* () {
+      const report = yield* runGrokReviewSwarm({
+        request: { cwd: process.cwd(), target: "working-tree" },
+        source,
+        agent,
+      });
+
+      expect(report.findings).toHaveLength(20);
+      expect(report.coverage).toHaveLength(8);
+      expect(report.limitations.length).toBeLessThanOrEqual(8);
+      expect(report.summary.length).toBeLessThanOrEqual(2_000);
+      expect(report.markdown.length).toBeLessThan(60_000);
+    }).pipe(Effect.provide(NodeServices.layer));
+  });
+});

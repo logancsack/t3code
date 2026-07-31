@@ -74,6 +74,11 @@ export class ServerConfig extends Context.Service<
     readonly devUrl: URL | undefined;
     readonly noBrowser: boolean;
     readonly managedDevPc: boolean;
+    /**
+     * Shared only with Aldo's loopback workspace gateway. It authenticates
+     * managed automation routes that are never exposed by standalone T3 Code.
+     */
+    readonly managedGatewayToken?: string | undefined;
     readonly startupPresentation: StartupPresentation;
     readonly desktopBootstrapToken: string | undefined;
     readonly autoBootstrapProjectFromCwd: boolean;
