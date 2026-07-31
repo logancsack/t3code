@@ -352,7 +352,7 @@ export const runGrokReviewSwarm = Effect.fn("runGrokReviewSwarm")(function* (inp
     usage: {
       agentRuns,
       mediumEffortRuns: agentRuns - (shouldEscalate ? 1 : 0),
-      highEffortRuns: highEffortSucceeded ? 1 : 0,
+      highEffortRuns: shouldEscalate ? 1 : 0,
     },
   });
   return report satisfies GrokReviewReport;

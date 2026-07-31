@@ -42,10 +42,9 @@ export const GrokReviewCandidateFinding = Schema.Struct({
 }).check(
   Schema.makeFilter(
     (finding) =>
-      finding.startLine === undefined ||
       finding.endLine === undefined ||
-      finding.endLine >= finding.startLine ||
-      "endLine must be greater than or equal to startLine.",
+      (finding.startLine !== undefined && finding.endLine >= finding.startLine) ||
+      "endLine requires startLine and must be greater than or equal to it.",
   ),
 );
 export type GrokReviewCandidateFinding = typeof GrokReviewCandidateFinding.Type;
