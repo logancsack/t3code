@@ -161,6 +161,24 @@ describe("redactSensitiveDiff", () => {
     expect(redacted).toContain("[Patch content redacted: sensitive path]");
   });
 
+  it("redacts direnv and keystore patches", () => {
+    for (const path of [".envrc", ".direnv/allow", "certificates/service.p12"]) {
+      const diff = [
+        `diff --git a/${path} b/${path}`,
+        `--- a/${path}`,
+        `+++ b/${path}`,
+        "@@ -1 +1 @@",
+        "-old-secret",
+        "+new-secret",
+      ].join("\n");
+
+      const redacted = redactSensitiveDiff(diff);
+      expect(redacted).not.toContain("old-secret");
+      expect(redacted).not.toContain("new-secret");
+      expect(redacted).toContain("[Patch content redacted: sensitive path]");
+    }
+  });
+
   it("never retains sensitive hunk lines that resemble diff headers", () => {
     const diff = [
       "diff --git a/.env b/.env",

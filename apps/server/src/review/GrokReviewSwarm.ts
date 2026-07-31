@@ -103,7 +103,11 @@ function findingIsInlineEligible(
   changedLines: ReadonlyMap<string, ReadonlySet<number>>,
 ): boolean {
   if (finding.startLine === undefined) return false;
-  return changedLines.get(normalizeFindingPath(finding.path))?.has(finding.startLine) === true;
+  const lines = changedLines.get(normalizeFindingPath(finding.path));
+  return (
+    lines?.has(finding.startLine) === true &&
+    (finding.endLine === undefined || lines.has(finding.endLine))
+  );
 }
 
 function runCandidate(
