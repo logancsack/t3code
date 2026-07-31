@@ -1835,7 +1835,16 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         executeGit(
           "GitVcsDriver.readUntrackedReviewDiffs.diff",
           cwd,
-          ["diff", "--no-index", "--patch", "--minimal", "--", "/dev/null", relativePath],
+          [
+            "diff",
+            "--no-color",
+            "--no-index",
+            "--patch",
+            "--minimal",
+            "--",
+            "/dev/null",
+            relativePath,
+          ],
           {
             allowNonZeroExit: true,
             maxOutputBytes: REVIEW_UNTRACKED_DIFF_MAX_OUTPUT_BYTES,
@@ -1879,6 +1888,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       input.cwd,
       [
         "diff",
+        "--no-color",
         "--patch",
         "--minimal",
         ...(input.ignoreWhitespace ? ["--ignore-all-space"] : []),
@@ -1912,6 +1922,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
             input.cwd,
             [
               "diff",
+              "--no-color",
               "--patch",
               "--minimal",
               ...(input.ignoreWhitespace ? ["--ignore-all-space"] : []),

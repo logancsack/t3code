@@ -316,6 +316,24 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
         );
       }),
     );
+
+    it.effect("forces color off in tracked and untracked review patches", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        yield* initRepoWithCommit(cwd);
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        yield* git(cwd, ["config", "color.ui", "always"]);
+        yield* writeTextFile(cwd, "README.md", "# changed\n");
+        yield* writeTextFile(cwd, "untracked.txt", "new\n");
+
+        const preview = yield* driver.getReviewDiffPreview({ cwd });
+        const diff = preview.sources.find((source) => source.kind === "working-tree")?.diff ?? "";
+
+        assert.notInclude(diff, "\u001b[");
+        assert.include(diff, "diff --git a/README.md b/README.md");
+        assert.include(diff, "diff --git a/untracked.txt b/untracked.txt");
+      }),
+    );
   });
 
   describe("repository status", () => {
