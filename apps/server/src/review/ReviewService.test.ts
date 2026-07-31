@@ -75,6 +75,26 @@ describe("ReviewService", () => {
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
+  it.effect("rejects option-like base refs before invoking a VCS driver", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const workspaceRoot = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-workspace-" });
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-base-" });
+      const detectCalls: Array<{ readonly cwd: string }> = [];
+
+      const error = yield* Effect.gen(function* () {
+        const review = yield* ReviewService.ReviewService;
+        return yield* review
+          .getDiffPreview({ cwd: workspaceRoot, baseRef: "--output=../../review" })
+          .pipe(Effect.flip);
+      }).pipe(Effect.provide(makeLayer({ workspaceRoot, baseDir, detectCalls })));
+
+      assert.strictEqual(error._tag, "VcsRepositoryDetectionError");
+      assert.match("detail" in error ? error.detail : "", /must not begin with an option prefix/);
+      assert.deepStrictEqual(detectCalls, []);
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
   it.effect("preserves unexpected path-resolution failures", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
