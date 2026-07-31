@@ -149,7 +149,7 @@ ${input.context.diff}
 </untrusted_diff>
 
 <untrusted_candidate_reviews>
-${JSON.stringify(input.candidates)}
+${untrustedJson(input.candidates)}
 </untrusted_candidate_reviews>
 
 Return the required structured verification result.
