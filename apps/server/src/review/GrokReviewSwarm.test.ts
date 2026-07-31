@@ -5,7 +5,21 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import type { GrokReviewAgent } from "./GrokReviewAgent.ts";
-import { type GrokReviewCandidate, type GrokReviewVerification } from "./GrokReviewModel.ts";
+import {
+  GrokReviewCandidate,
+  type GrokReviewCandidate as GrokReviewCandidateType,
+  type GrokReviewCandidateWire,
+  GrokReviewVerification,
+  type GrokReviewVerification as GrokReviewVerificationType,
+  type GrokReviewVerificationWire,
+  GROK_REVIEW_FINDINGS_OMITTED_LIMITATION,
+  MAX_REVIEW_FINDINGS,
+  MAX_REVIEW_LIST_ENTRIES,
+  MAX_REVIEW_SUMMARY_CHARS,
+  MAX_REVIEW_TITLE_CHARS,
+  normalizeGrokReviewCandidate,
+  normalizeGrokReviewVerification,
+} from "./GrokReviewModel.ts";
 import {
   buildDelegatedReviewPrompt,
   buildLeadReviewPrompt,
@@ -37,8 +51,12 @@ const source: ReviewDiffPreviewSource = {
   ].join("\n"),
 };
 const isGrokReviewInput = Schema.is(GrokReviewInput);
+const decodeGrokReviewCandidate = Schema.decodeUnknownSync(GrokReviewCandidate);
+const decodeGrokReviewVerification = Schema.decodeUnknownSync(GrokReviewVerification);
 
-const emptyCandidate = (overrides: Partial<GrokReviewCandidate> = {}): GrokReviewCandidate => ({
+const emptyCandidate = (
+  overrides: Partial<GrokReviewCandidateType> = {},
+): GrokReviewCandidateType => ({
   summary: "No issue found in this review area.",
   findings: [],
   coverage: ["Reviewed the supplied diff."],
@@ -338,6 +356,46 @@ describe("buildVerificationPrompt", () => {
   });
 });
 
+describe("Grok review output normalization", () => {
+  it("decodes adversarial candidate and verifier output through the canonical schemas", () => {
+    const oversizedFinding = {
+      ...verifiedFinding,
+      confidence: -2,
+      title: "t".repeat(500),
+      startLine: null,
+      endLine: null,
+      verification: null,
+    };
+    const candidateWire: GrokReviewCandidateWire = {
+      summary: "summary ".repeat(400),
+      findings: [oversizedFinding],
+      coverage: Array.from({ length: 12 }, (_, index) => `${index}-${"c".repeat(400)}`),
+      limitations: [],
+      delegation: null,
+    };
+    const verificationWire: GrokReviewVerificationWire = {
+      summary: candidateWire.summary,
+      findings: Array.from({ length: MAX_REVIEW_FINDINGS + 2 }, () => oversizedFinding),
+      coverage: candidateWire.coverage,
+      limitations: [],
+      needsHighEffortReview: null,
+      escalationReason: "reason ".repeat(300),
+    };
+
+    const candidate = normalizeGrokReviewCandidate(candidateWire);
+    const verification = normalizeGrokReviewVerification(verificationWire);
+
+    expect(() => decodeGrokReviewCandidate(candidate)).not.toThrow();
+    expect(() => decodeGrokReviewVerification(verification)).not.toThrow();
+    expect(candidate.findings[0]).toMatchObject({ confidence: 0 });
+    expect(candidate.findings[0]).not.toHaveProperty("startLine");
+    expect(candidate.findings[0]).not.toHaveProperty("verification");
+    expect(verification.findings).toHaveLength(MAX_REVIEW_FINDINGS);
+    expect(verification.needsHighEffortReview).toBe(false);
+    expect(verification.limitations).toContain(GROK_REVIEW_FINDINGS_OMITTED_LIMITATION);
+  });
+});
+
 describe("runGrokReviewSwarm", () => {
   it.effect("normalizes repairable Grok output before building the canonical report", () => {
     const wireVerification = {
@@ -350,6 +408,10 @@ describe("runGrokReviewSwarm", () => {
           startLine: null,
           endLine: null,
           verification: null,
+        },
+        {
+          ...verifiedFinding,
+          title: "   ",
         },
       ],
       coverage: Array.from({ length: 12 }, (_, index) => `${index}-${"c".repeat(400)}`),
@@ -378,21 +440,23 @@ describe("runGrokReviewSwarm", () => {
         agent,
       });
 
-      expect(report.summary.length).toBeLessThanOrEqual(2_000);
-      expect(report.coverage).toHaveLength(8);
+      expect(report.summary.length).toBeLessThanOrEqual(MAX_REVIEW_SUMMARY_CHARS);
+      expect(report.coverage).toHaveLength(MAX_REVIEW_LIST_ENTRIES);
       expect(report.findings[0]).toMatchObject({
         confidence: 1,
         inlineEligible: false,
       });
-      expect(report.findings[0]!.title).toHaveLength(240);
+      expect(report.findings[0]!.title).toHaveLength(MAX_REVIEW_TITLE_CHARS);
       expect(report.findings[0]).not.toHaveProperty("startLine");
       expect(report.findings[0]).not.toHaveProperty("verification");
+      expect(report.status).toBe("partial");
+      expect(report.limitations).toContain(GROK_REVIEW_FINDINGS_OMITTED_LIMITATION);
     }).pipe(Effect.provide(NodeServices.layer));
   });
 
   it.effect("retries failed medium verification at high effort", () => {
     const calls: Array<{ readonly effort: string; readonly prompt: string }> = [];
-    const highVerification: GrokReviewVerification = {
+    const highVerification: GrokReviewVerificationType = {
       summary: "The high-effort fallback completed the verification.",
       findings: [],
       coverage: ["Correctness", "Security"],
@@ -440,9 +504,84 @@ describe("runGrokReviewSwarm", () => {
     }).pipe(Effect.provide(NodeServices.layer));
   });
 
+  it.effect("fails closed when medium and high verification both fail", () => {
+    const agent: GrokReviewAgent = {
+      resolvedModel: "grok-4.5",
+      grokBuildVersion: "0.2.112",
+      run: (request) =>
+        request.prompt.includes("verifier") || request.prompt.includes("high-effort final")
+          ? Effect.fail(
+              new GrokReviewError({
+                operation: "GrokReviewAgent.decode",
+                detail: "The verifier returned malformed output.",
+              }),
+            )
+          : Effect.succeed(emptyCandidate() as never),
+    };
+
+    return Effect.gen(function* () {
+      const result = yield* Effect.result(
+        runGrokReviewSwarm({
+          request: { cwd: process.cwd(), target: "working-tree" },
+          source,
+          agent,
+        }),
+      );
+
+      expect(result._tag).toBe("Failure");
+      if (result._tag === "Failure") {
+        expect(result.failure).toBeInstanceOf(GrokReviewError);
+        expect(result.failure.operation).toBe("GrokReviewSwarm.verify");
+      }
+    }).pipe(Effect.provide(NodeServices.layer));
+  });
+
+  it.effect("keeps the medium report partial when high-effort escalation fails", () => {
+    const mediumVerification: GrokReviewVerificationType = {
+      summary: "One ambiguous high-impact finding needs escalation.",
+      findings: [verifiedFinding],
+      coverage: ["Correctness"],
+      limitations: [],
+      needsHighEffortReview: true,
+      escalationReason: "The finding needs a stronger verification pass.",
+    };
+    const agent: GrokReviewAgent = {
+      resolvedModel: "grok-4.5",
+      grokBuildVersion: "0.2.112",
+      run: (request) => {
+        if (request.prompt.includes("high-effort final")) {
+          return Effect.fail(
+            new GrokReviewError({
+              operation: "GrokReviewAgent.decode",
+              detail: "The high-effort verifier returned malformed output.",
+            }),
+          );
+        }
+        if (request.prompt.includes("medium-effort verifier")) {
+          return Effect.succeed(mediumVerification as never);
+        }
+        return Effect.succeed(emptyCandidate() as never);
+      },
+    };
+
+    return Effect.gen(function* () {
+      const report = yield* runGrokReviewSwarm({
+        request: { cwd: process.cwd(), target: "working-tree" },
+        source,
+        agent,
+      });
+
+      expect(report.status).toBe("partial");
+      expect(report.escalatedToHigh).toBe(false);
+      expect(report.limitations).toContain(
+        "High-effort escalation failed; the medium-effort verification is shown.",
+      );
+    }).pipe(Effect.provide(NodeServices.layer));
+  });
+
   it.effect("uses medium by default and escalates an ambiguous high finding", () => {
     const calls: Array<{ readonly effort: string; readonly prompt: string }> = [];
-    const mediumVerification: GrokReviewVerification = {
+    const mediumVerification: GrokReviewVerificationType = {
       summary: "One high-impact finding needs a deeper verification pass.",
       findings: [verifiedFinding],
       coverage: ["Correctness", "Security", "Reliability", "Architecture"],
@@ -450,7 +589,7 @@ describe("runGrokReviewSwarm", () => {
       needsHighEffortReview: true,
       escalationReason: "The changed call's safety contract is ambiguous.",
     };
-    const highVerification: GrokReviewVerification = {
+    const highVerification: GrokReviewVerificationType = {
       ...mediumVerification,
       summary: "One actionable correctness defect was verified.",
       findings: [{ ...verifiedFinding, confidence: 0.96 }],
@@ -520,7 +659,7 @@ describe("runGrokReviewSwarm", () => {
       suggestion: "s".repeat(1_000),
       verification: "v".repeat(1_000),
     };
-    const verification: GrokReviewVerification = {
+    const verification: GrokReviewVerificationType = {
       summary: "summary ".repeat(1_000),
       findings: Array.from({ length: 30 }, (_, index) => ({
         ...oversizedFinding,
@@ -571,7 +710,7 @@ describe("runGrokReviewSwarm", () => {
         "+TOKEN=new",
       ].join("\n"),
     };
-    const verification: GrokReviewVerification = {
+    const verification: GrokReviewVerificationType = {
       summary: "No issue found in the visible review material.",
       findings: [],
       coverage: ["Reviewed the supplied material."],
@@ -626,7 +765,7 @@ describe("runGrokReviewSwarm", () => {
       startLine: 1,
       endLine: 1,
     };
-    const verification: GrokReviewVerification = {
+    const verification: GrokReviewVerificationType = {
       summary: "One finding.",
       findings: [finding],
       coverage: ["Correctness"],

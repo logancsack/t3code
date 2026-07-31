@@ -16,6 +16,7 @@ import {
   GrokReviewCandidateWire,
   type GrokReviewVerification as GrokReviewVerificationType,
   GrokReviewVerificationWire,
+  GROK_REVIEW_FINDINGS_OMITTED_LIMITATION,
   MAX_REVIEW_CATEGORY_CHARS,
   MAX_REVIEW_EVIDENCE_CHARS,
   MAX_REVIEW_FINDINGS,
@@ -259,13 +260,12 @@ export const runGrokReviewSwarm = Effect.fn("runGrokReviewSwarm")(function* (inp
   );
   const candidates = [...leadCandidates, ...delegatedCandidates];
 
-  const mediumResult = yield* runVerification(input.agent, {
-    cwd: input.request.cwd,
-    prompt: buildVerificationPrompt({ context, candidates, highEffort: false }),
-    effort: "medium",
-  }).pipe(
-    Effect.map((value) => ({ _tag: "Success" as const, value })),
-    Effect.catch((error) => Effect.succeed({ _tag: "Failure" as const, error })),
+  const mediumResult = yield* Effect.result(
+    runVerification(input.agent, {
+      cwd: input.request.cwd,
+      prompt: buildVerificationPrompt({ context, candidates, highEffort: false }),
+      effort: "medium",
+    }),
   );
 
   let verification: GrokReviewVerificationType;
@@ -277,25 +277,24 @@ export const runGrokReviewSwarm = Effect.fn("runGrokReviewSwarm")(function* (inp
   if (mediumResult._tag === "Failure") {
     mediumVerificationFailed = true;
     highEffortAttempted = true;
-    const highResult = yield* runVerification(input.agent, {
-      cwd: input.request.cwd,
-      prompt: buildVerificationPrompt({ context, candidates, highEffort: true }),
-      effort: "high",
-    }).pipe(
-      Effect.map((value) => ({ _tag: "Success" as const, value })),
-      Effect.catch((error) => Effect.succeed({ _tag: "Failure" as const, error })),
+    const highResult = yield* Effect.result(
+      runVerification(input.agent, {
+        cwd: input.request.cwd,
+        prompt: buildVerificationPrompt({ context, candidates, highEffort: true }),
+        effort: "high",
+      }),
     );
     if (highResult._tag === "Failure") {
       return yield* new GrokReviewError({
         operation: "GrokReviewSwarm.verify",
         detail: "Medium and high-effort review verification both failed.",
-        cause: highResult.error,
+        cause: highResult.failure,
       });
     }
-    verification = highResult.value;
+    verification = highResult.success;
     highEffortSucceeded = true;
   } else {
-    verification = mediumResult.value;
+    verification = mediumResult.success;
     const shouldEscalate =
       verification.needsHighEffortReview ||
       verification.findings.some(
@@ -312,20 +311,19 @@ export const runGrokReviewSwarm = Effect.fn("runGrokReviewSwarm")(function* (inp
         limitations: verification.limitations,
         delegation: null,
       };
-      const highResult = yield* runVerification(input.agent, {
-        cwd: input.request.cwd,
-        prompt: buildVerificationPrompt({
-          context,
-          candidates: [...candidates, highCandidate],
-          highEffort: true,
+      const highResult = yield* Effect.result(
+        runVerification(input.agent, {
+          cwd: input.request.cwd,
+          prompt: buildVerificationPrompt({
+            context,
+            candidates: [...candidates, highCandidate],
+            highEffort: true,
+          }),
+          effort: "high",
         }),
-        effort: "high",
-      }).pipe(
-        Effect.map((value) => ({ _tag: "Success" as const, value })),
-        Effect.catch((error) => Effect.succeed({ _tag: "Failure" as const, error })),
       );
       if (highResult._tag === "Success") {
-        verification = highResult.value;
+        verification = highResult.success;
         highEffortSucceeded = true;
       } else {
         highEffortFailed = true;
@@ -374,15 +372,17 @@ export const runGrokReviewSwarm = Effect.fn("runGrokReviewSwarm")(function* (inp
   const failedOutcomes = [...leadOutcomes, ...delegatedOutcomes].filter(
     (outcome) => outcome.result._tag === "Failure",
   );
+  const normalizationOmittedFindings = [...candidates, verification].some((candidate) =>
+    candidate.limitations.includes(GROK_REVIEW_FINDINGS_OMITTED_LIMITATION),
+  );
   const partial =
     input.source.truncated ||
     redactedDiff.redacted ||
     failedOutcomes.length > 0 ||
+    normalizationOmittedFindings ||
     highEffortFailed;
   const limitations = uniqueStrings([
-    ...(verification.findings.length > MAX_REVIEW_FINDINGS
-      ? [`Only the first ${MAX_REVIEW_FINDINGS} verified findings are included.`]
-      : []),
+    ...(normalizationOmittedFindings ? [GROK_REVIEW_FINDINGS_OMITTED_LIMITATION] : []),
     ...(input.source.truncated ? ["The selected diff was truncated before model review."] : []),
     ...(redactedDiff.redacted
       ? ["Sensitive-file patches were redacted and could not be reviewed."]

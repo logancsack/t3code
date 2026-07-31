@@ -21,6 +21,8 @@ export const MAX_REVIEW_VERIFICATION_CHARS = 350;
 export const MAX_REVIEW_LIST_ENTRY_CHARS = 300;
 export const MAX_REVIEW_DELEGATION_CHARS = 800;
 export const MAX_REVIEW_DELEGATION_PATHS = 8;
+export const GROK_REVIEW_FINDINGS_OMITTED_LIMITATION =
+  "Some model-proposed findings were omitted because they were malformed or exceeded the report limit.";
 
 /**
  * Grok's constrained output is intentionally decoded through a permissive wire
@@ -62,7 +64,7 @@ export const GrokReviewVerificationWire = Schema.Struct({
   findings: Schema.Array(GrokReviewCandidateFindingWire),
   coverage: Schema.Array(Schema.String),
   limitations: Schema.Array(Schema.String),
-  needsHighEffortReview: Schema.optionalKey(Schema.Boolean),
+  needsHighEffortReview: Schema.optionalKey(Schema.NullOr(Schema.Boolean)),
   escalationReason: Schema.optionalKey(Schema.NullOr(Schema.String)),
 });
 export type GrokReviewVerificationWire = typeof GrokReviewVerificationWire.Type;
@@ -182,20 +184,22 @@ function normalizeCandidateFinding(
   };
 }
 
-function normalizedFindings(
-  findings: ReadonlyArray<typeof GrokReviewCandidateFindingWire.Type>,
-): Array<GrokReviewCandidateFinding> {
-  return findings
-    .flatMap((finding) => {
-      const normalized = normalizeCandidateFinding(finding);
-      return normalized ? [normalized] : [];
-    })
-    .slice(0, MAX_REVIEW_FINDINGS);
+function normalizedFindings(findings: ReadonlyArray<typeof GrokReviewCandidateFindingWire.Type>): {
+  readonly findings: Array<GrokReviewCandidateFinding>;
+  readonly omitted: boolean;
+} {
+  const validFindings = findings.flatMap((finding) => {
+    const normalized = normalizeCandidateFinding(finding);
+    return normalized ? [normalized] : [];
+  });
+  const normalized = validFindings.slice(0, MAX_REVIEW_FINDINGS);
+  return { findings: normalized, omitted: normalized.length < findings.length };
 }
 
 export function normalizeGrokReviewCandidate(
   candidate: GrokReviewCandidateWire,
 ): GrokReviewCandidate {
+  const normalized = normalizedFindings(candidate.findings);
   const objective = candidate.delegation
     ? boundedText(candidate.delegation.objective, MAX_REVIEW_DELEGATION_CHARS)
     : "";
@@ -209,9 +213,12 @@ export function normalizeGrokReviewCandidate(
     summary:
       boundedText(candidate.summary, MAX_REVIEW_SUMMARY_CHARS) ||
       "The reviewer returned no summary.",
-    findings: normalizedFindings(candidate.findings),
+    findings: normalized.findings,
     coverage: boundedStrings(candidate.coverage),
-    limitations: boundedStrings(candidate.limitations),
+    limitations: boundedStrings([
+      ...(normalized.omitted ? [GROK_REVIEW_FINDINGS_OMITTED_LIMITATION] : []),
+      ...candidate.limitations,
+    ]),
     delegation: objective ? { objective, paths: delegationPaths } : null,
   };
 }
@@ -219,6 +226,7 @@ export function normalizeGrokReviewCandidate(
 export function normalizeGrokReviewVerification(
   verification: GrokReviewVerificationWire,
 ): GrokReviewVerification {
+  const normalized = normalizedFindings(verification.findings);
   const escalationReason = verification.escalationReason
     ? boundedText(verification.escalationReason, MAX_REVIEW_DELEGATION_CHARS)
     : null;
@@ -226,9 +234,12 @@ export function normalizeGrokReviewVerification(
     summary:
       boundedText(verification.summary, MAX_REVIEW_SUMMARY_CHARS) ||
       "The verifier returned no summary.",
-    findings: normalizedFindings(verification.findings),
+    findings: normalized.findings,
     coverage: boundedStrings(verification.coverage),
-    limitations: boundedStrings(verification.limitations),
+    limitations: boundedStrings([
+      ...(normalized.omitted ? [GROK_REVIEW_FINDINGS_OMITTED_LIMITATION] : []),
+      ...verification.limitations,
+    ]),
     needsHighEffortReview: verification.needsHighEffortReview ?? false,
     escalationReason,
   };
