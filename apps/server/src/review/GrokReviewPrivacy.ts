@@ -1,5 +1,6 @@
 export const GROK_REVIEW_SENSITIVE_PATH_GLOBS = [
   "**/.grok/**",
+  "**/.ssh/**",
   "**/.env",
   "**/.env.*",
   "**/.git-credentials",
@@ -11,7 +12,7 @@ export const GROK_REVIEW_SENSITIVE_PATH_GLOBS = [
 ] as const;
 
 const SENSITIVE_PATH_PATTERN =
-  /(?:^|\/)(?:\.grok(?:\/|$)|\.env(?:\.|$)|\.git-credentials$|\.netrc$|\.npmrc$|\.pypirc$|[^/]+\.(?:key|pem)$)/i;
+  /(?:^|\/)(?:\.grok(?:\/|$)|\.ssh(?:\/|$)|\.env(?:\.|$)|\.git-credentials$|\.netrc$|\.npmrc$|\.pypirc$|[^/]+\.(?:key|pem)$)/i;
 const SAFE_SENSITIVE_DIFF_HEADER =
   /^(?:diff --git |old mode |new mode |deleted file mode |new file mode |similarity index |dissimilarity index |rename from |rename to |copy from |copy to |index |--- |\+\+\+ |Binary files )/;
 const REDACTION_NOTICE = "[Patch content redacted: sensitive path]";

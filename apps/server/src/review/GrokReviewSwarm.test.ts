@@ -145,6 +145,22 @@ describe("redactSensitiveDiff", () => {
     expect(redacted).toContain("+export const value = 2;");
   });
 
+  it("redacts extensionless SSH key patches", () => {
+    const diff = [
+      "diff --git a/.ssh/id_ed25519 b/.ssh/id_ed25519",
+      "--- a/.ssh/id_ed25519",
+      "+++ b/.ssh/id_ed25519",
+      "@@ -1 +1 @@",
+      "-old-private-key",
+      "+new-private-key",
+    ].join("\n");
+
+    const redacted = redactSensitiveDiff(diff);
+    expect(redacted).not.toContain("old-private-key");
+    expect(redacted).not.toContain("new-private-key");
+    expect(redacted).toContain("[Patch content redacted: sensitive path]");
+  });
+
   it("does not redact ordinary patches whose added content resembles a header", () => {
     const diff = [
       "diff --git a/src/docs.txt b/src/docs.txt",
