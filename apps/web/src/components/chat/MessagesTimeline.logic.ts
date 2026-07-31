@@ -2,6 +2,7 @@ import * as Equal from "effect/Equal";
 import {
   formatDuration,
   workEntryIndicatesToolNeutralStatus,
+  workLogEntryHasGeneratedImage,
   workLogEntryIsToolLike,
   type ActiveToolWait,
   type TimelineEntry,
@@ -358,7 +359,10 @@ function deriveTurnFolds(input: {
     }
     const hiddenEntryIds = new Set<string>();
     for (const entry of group.entries) {
-      if (entry.id !== group.terminalEntry?.id) {
+      if (
+        entry.id !== group.terminalEntry?.id &&
+        !(entry.kind === "work" && workLogEntryHasGeneratedImage(entry.entry))
+      ) {
         hiddenEntryIds.add(entry.id);
       }
     }
@@ -367,8 +371,9 @@ function deriveTurnFolds(input: {
     }
 
     const firstEntry = group.entries[0];
+    const firstHiddenEntry = group.entries.find((entry) => hiddenEntryIds.has(entry.id));
     const lastEntry = group.entries.at(-1);
-    if (!firstEntry || !lastEntry) {
+    if (!firstEntry || !firstHiddenEntry || !lastEntry) {
       continue;
     }
 
@@ -397,10 +402,10 @@ function deriveTurnFolds(input: {
         ? `Worked for ${duration}`
         : "Worked";
 
-    foldsByAnchorEntryId.set(firstEntry.id, {
+    foldsByAnchorEntryId.set(firstHiddenEntry.id, {
       turnId,
-      anchorEntryId: firstEntry.id,
-      createdAt: firstEntry.createdAt,
+      anchorEntryId: firstHiddenEntry.id,
+      createdAt: firstHiddenEntry.createdAt,
       hiddenEntryIds,
       label,
     });
@@ -467,6 +472,33 @@ export function deriveMessagesTimelineRows(input: {
     }
 
     if (timelineEntry.kind === "work") {
+      if (workLogEntryHasGeneratedImage(timelineEntry.entry)) {
+        const groupedEntries = [timelineEntry.entry];
+        let cursor = index + 1;
+        while (cursor < input.timelineEntries.length) {
+          const nextEntry = input.timelineEntries[cursor];
+          if (
+            !nextEntry ||
+            nextEntry.kind !== "work" ||
+            !workLogEntryHasGeneratedImage(nextEntry.entry) ||
+            collapsedEntryIds.has(nextEntry.id) ||
+            foldsByAnchorEntryId.has(nextEntry.id)
+          ) {
+            break;
+          }
+          groupedEntries.push(nextEntry.entry);
+          cursor += 1;
+        }
+        nextRows.push({
+          kind: "work",
+          id: timelineEntry.id,
+          createdAt: timelineEntry.createdAt,
+          groupedEntries,
+        });
+        index = cursor - 1;
+        continue;
+      }
+
       const groupedEntries = [timelineEntry.entry];
       let cursor = index + 1;
       while (cursor < input.timelineEntries.length) {
@@ -474,6 +506,7 @@ export function deriveMessagesTimelineRows(input: {
         if (
           !nextEntry ||
           nextEntry.kind !== "work" ||
+          workLogEntryHasGeneratedImage(nextEntry.entry) ||
           collapsedEntryIds.has(nextEntry.id) ||
           foldsByAnchorEntryId.has(nextEntry.id)
         ) {
@@ -602,6 +635,55 @@ export function computeStableMessagesTimelineRows(
   return anyChanged ? { byId: next, result } : previous;
 }
 
+function generatedImageWorkEntryIsUnchanged(a: WorkLogEntry, b: WorkLogEntry): boolean {
+  if (!workLogEntryHasGeneratedImage(a) || !workLogEntryHasGeneratedImage(b)) {
+    return false;
+  }
+  return (
+    a.id === b.id &&
+    a.createdAt === b.createdAt &&
+    a.turnId === b.turnId &&
+    a.label === b.label &&
+    a.detail === b.detail &&
+    a.command === b.command &&
+    a.rawCommand === b.rawCommand &&
+    Equal.equals(a.changedFiles, b.changedFiles) &&
+    a.tone === b.tone &&
+    a.toolTitle === b.toolTitle &&
+    a.toolData === b.toolData &&
+    a.itemType === b.itemType &&
+    a.requestKind === b.requestKind &&
+    a.toolLifecycleStatus === b.toolLifecycleStatus &&
+    a.sourceActivityKind === b.sourceActivityKind &&
+    // Completed generation IDs are immutable provider item identities. Keep
+    // multi-megabyte image bytes out of timeline equality's hot path.
+    a.generatedImage.id === b.generatedImage.id &&
+    a.generatedImage.mimeType === b.generatedImage.mimeType &&
+    a.generatedImage.base64.length === b.generatedImage.base64.length
+  );
+}
+
+function workGroupsAreUnchanged(
+  a: ReadonlyArray<WorkLogEntry>,
+  b: ReadonlyArray<WorkLogEntry>,
+): boolean {
+  if (a.length !== b.length) {
+    return false;
+  }
+  return a.every((entry, index) => {
+    const next = b[index];
+    if (!next) {
+      return false;
+    }
+    const entryHasGeneratedImage = workLogEntryHasGeneratedImage(entry);
+    const nextHasGeneratedImage = workLogEntryHasGeneratedImage(next);
+    if (entryHasGeneratedImage || nextHasGeneratedImage) {
+      return generatedImageWorkEntryIsUnchanged(entry, next);
+    }
+    return Equal.equals(entry, next);
+  });
+}
+
 /** Shallow field comparison per row variant — avoids deep equality cost. */
 function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean {
   if (a.kind !== b.kind || a.id !== b.id) return false;
@@ -625,7 +707,7 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
       return a.proposedPlan === (b as typeof a).proposedPlan;
 
     case "work":
-      return Equal.equals(a.groupedEntries, (b as typeof a).groupedEntries);
+      return workGroupsAreUnchanged(a.groupedEntries, (b as typeof a).groupedEntries);
 
     case "work-toggle": {
       const bw = b as typeof a;
