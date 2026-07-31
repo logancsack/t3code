@@ -12,9 +12,10 @@ import * as Encoding from "effect/Encoding";
 import type { GrokReviewAgent } from "./GrokReviewAgent.ts";
 import {
   deriveReviewStatus,
-  GrokReviewCandidate,
   type GrokReviewCandidate as GrokReviewCandidateType,
-  GrokReviewVerification,
+  GrokReviewCandidateWire,
+  type GrokReviewVerification as GrokReviewVerificationType,
+  GrokReviewVerificationWire,
   MAX_REVIEW_CATEGORY_CHARS,
   MAX_REVIEW_EVIDENCE_CHARS,
   MAX_REVIEW_FINDINGS,
@@ -26,6 +27,8 @@ import {
   MAX_REVIEW_SUMMARY_CHARS,
   MAX_REVIEW_TITLE_CHARS,
   MAX_REVIEW_VERIFICATION_CHARS,
+  normalizeGrokReviewCandidate,
+  normalizeGrokReviewVerification,
   sortFindings,
   withMarkdown,
 } from "./GrokReviewModel.ts";
@@ -122,14 +125,14 @@ function runCandidate(
     .run({
       cwd: input.cwd,
       prompt: input.prompt,
-      outputSchema: GrokReviewCandidate,
+      outputSchema: GrokReviewCandidateWire,
       effort: "medium",
     })
     .pipe(
       Effect.map(
         (candidate): AgentOutcome => ({
           label: input.label,
-          result: { _tag: "Success", candidate },
+          result: { _tag: "Success", candidate: normalizeGrokReviewCandidate(candidate) },
         }),
       ),
       Effect.catch((error) =>
@@ -139,6 +142,28 @@ function runCandidate(
         } satisfies AgentOutcome),
       ),
     );
+}
+
+function runVerification(
+  agent: GrokReviewAgent,
+  input: {
+    readonly cwd: string;
+    readonly prompt: string;
+    readonly effort: "medium" | "high";
+  },
+) {
+  return agent
+    .run({
+      cwd: input.cwd,
+      prompt: input.prompt,
+      outputSchema: GrokReviewVerificationWire,
+      effort: input.effort,
+    })
+    .pipe(Effect.map(normalizeGrokReviewVerification));
+}
+
+function reviewerFailureSummary(error: GrokReviewError): string {
+  return `${error.operation}: ${error.message}`.replace(/\s+/g, " ").slice(0, 220);
 }
 
 function boundedText(value: string, maxLength: number): string {
@@ -234,50 +259,77 @@ export const runGrokReviewSwarm = Effect.fn("runGrokReviewSwarm")(function* (inp
   );
   const candidates = [...leadCandidates, ...delegatedCandidates];
 
-  const mediumVerification = yield* input.agent.run({
+  const mediumResult = yield* runVerification(input.agent, {
     cwd: input.request.cwd,
     prompt: buildVerificationPrompt({ context, candidates, highEffort: false }),
-    outputSchema: GrokReviewVerification,
     effort: "medium",
-  });
-  const shouldEscalate =
-    mediumVerification.needsHighEffortReview ||
-    mediumVerification.findings.some(
-      (finding) =>
-        (finding.severity === "blocker" || finding.severity === "high") && finding.confidence < 0.8,
-    );
+  }).pipe(
+    Effect.map((value) => ({ _tag: "Success" as const, value })),
+    Effect.catch((error) => Effect.succeed({ _tag: "Failure" as const, error })),
+  );
 
-  let verification = mediumVerification;
+  let verification: GrokReviewVerificationType;
   let highEffortFailed = false;
   let highEffortSucceeded = false;
-  if (shouldEscalate) {
-    const highCandidate: GrokReviewCandidateType = {
-      summary: mediumVerification.summary,
-      findings: mediumVerification.findings,
-      coverage: mediumVerification.coverage,
-      limitations: mediumVerification.limitations,
-      delegation: null,
-    };
-    const highResult = yield* input.agent
-      .run({
+  let highEffortAttempted = false;
+  let mediumVerificationFailed = false;
+
+  if (mediumResult._tag === "Failure") {
+    mediumVerificationFailed = true;
+    highEffortAttempted = true;
+    const highResult = yield* runVerification(input.agent, {
+      cwd: input.request.cwd,
+      prompt: buildVerificationPrompt({ context, candidates, highEffort: true }),
+      effort: "high",
+    }).pipe(
+      Effect.map((value) => ({ _tag: "Success" as const, value })),
+      Effect.catch((error) => Effect.succeed({ _tag: "Failure" as const, error })),
+    );
+    if (highResult._tag === "Failure") {
+      return yield* new GrokReviewError({
+        operation: "GrokReviewSwarm.verify",
+        detail: "Medium and high-effort review verification both failed.",
+        cause: highResult.error,
+      });
+    }
+    verification = highResult.value;
+    highEffortSucceeded = true;
+  } else {
+    verification = mediumResult.value;
+    const shouldEscalate =
+      verification.needsHighEffortReview ||
+      verification.findings.some(
+        (finding) =>
+          (finding.severity === "blocker" || finding.severity === "high") &&
+          finding.confidence < 0.8,
+      );
+    if (shouldEscalate) {
+      highEffortAttempted = true;
+      const highCandidate: GrokReviewCandidateType = {
+        summary: verification.summary,
+        findings: verification.findings,
+        coverage: verification.coverage,
+        limitations: verification.limitations,
+        delegation: null,
+      };
+      const highResult = yield* runVerification(input.agent, {
         cwd: input.request.cwd,
         prompt: buildVerificationPrompt({
           context,
           candidates: [...candidates, highCandidate],
           highEffort: true,
         }),
-        outputSchema: GrokReviewVerification,
         effort: "high",
-      })
-      .pipe(
+      }).pipe(
         Effect.map((value) => ({ _tag: "Success" as const, value })),
-        Effect.orElseSucceed(() => ({ _tag: "Failure" as const })),
+        Effect.catch((error) => Effect.succeed({ _tag: "Failure" as const, error })),
       );
-    if (highResult._tag === "Success") {
-      verification = highResult.value;
-      highEffortSucceeded = true;
-    } else {
-      highEffortFailed = true;
+      if (highResult._tag === "Success") {
+        verification = highResult.value;
+        highEffortSucceeded = true;
+      } else {
+        highEffortFailed = true;
+      }
     }
   }
 
@@ -335,14 +387,21 @@ export const runGrokReviewSwarm = Effect.fn("runGrokReviewSwarm")(function* (inp
     ...(redactedDiff.redacted
       ? ["Sensitive-file patches were redacted and could not be reviewed."]
       : []),
-    ...failedOutcomes.map((outcome) => `${outcome.label} reviewer did not return a result.`),
+    ...failedOutcomes.map((outcome) =>
+      outcome.result._tag === "Failure"
+        ? `${outcome.label} reviewer failed (${reviewerFailureSummary(outcome.result.error)}).`
+        : "",
+    ),
+    ...(mediumVerificationFailed
+      ? ["Medium-effort verification failed; the high-effort fallback completed."]
+      : []),
     ...(highEffortFailed
       ? ["High-effort escalation failed; the medium-effort verification is shown."]
       : []),
     ...verification.limitations,
   ]);
   const agentRuns =
-    DEFAULT_REVIEWER_ROLES.length + delegatedOutcomes.length + 1 + (shouldEscalate ? 1 : 0);
+    DEFAULT_REVIEWER_ROLES.length + delegatedOutcomes.length + 1 + (highEffortAttempted ? 1 : 0);
   const report = withMarkdown({
     schemaVersion: 1,
     runId,
@@ -363,8 +422,8 @@ export const runGrokReviewSwarm = Effect.fn("runGrokReviewSwarm")(function* (inp
     limitations,
     usage: {
       agentRuns,
-      mediumEffortRuns: agentRuns - (shouldEscalate ? 1 : 0),
-      highEffortRuns: shouldEscalate ? 1 : 0,
+      mediumEffortRuns: agentRuns - (highEffortAttempted ? 1 : 0),
+      highEffortRuns: highEffortAttempted ? 1 : 0,
     },
   });
   return report satisfies GrokReviewReport;

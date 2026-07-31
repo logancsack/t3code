@@ -1,6 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
-import { GrokReviewInput, type ReviewDiffPreviewSource } from "@t3tools/contracts";
+import { GrokReviewError, GrokReviewInput, type ReviewDiffPreviewSource } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
@@ -339,6 +339,107 @@ describe("buildVerificationPrompt", () => {
 });
 
 describe("runGrokReviewSwarm", () => {
+  it.effect("normalizes repairable Grok output before building the canonical report", () => {
+    const wireVerification = {
+      summary: `  ${"summary ".repeat(400)}  `,
+      findings: [
+        {
+          ...verifiedFinding,
+          confidence: 1.4,
+          title: "t".repeat(500),
+          startLine: null,
+          endLine: null,
+          verification: null,
+        },
+      ],
+      coverage: Array.from({ length: 12 }, (_, index) => `${index}-${"c".repeat(400)}`),
+      limitations: [],
+      needsHighEffortReview: false,
+      escalationReason: null,
+    };
+    const agent: GrokReviewAgent = {
+      resolvedModel: "grok-4.5",
+      grokBuildVersion: "0.2.112",
+      run: (request) =>
+        Effect.succeed(
+          (request.prompt.includes("medium-effort verifier")
+            ? wireVerification
+            : {
+                ...emptyCandidate(),
+                delegation: undefined,
+              }) as never,
+        ),
+    };
+
+    return Effect.gen(function* () {
+      const report = yield* runGrokReviewSwarm({
+        request: { cwd: process.cwd(), target: "working-tree" },
+        source,
+        agent,
+      });
+
+      expect(report.summary.length).toBeLessThanOrEqual(2_000);
+      expect(report.coverage).toHaveLength(8);
+      expect(report.findings[0]).toMatchObject({
+        confidence: 1,
+        inlineEligible: false,
+      });
+      expect(report.findings[0]!.title).toHaveLength(240);
+      expect(report.findings[0]).not.toHaveProperty("startLine");
+      expect(report.findings[0]).not.toHaveProperty("verification");
+    }).pipe(Effect.provide(NodeServices.layer));
+  });
+
+  it.effect("retries failed medium verification at high effort", () => {
+    const calls: Array<{ readonly effort: string; readonly prompt: string }> = [];
+    const highVerification: GrokReviewVerification = {
+      summary: "The high-effort fallback completed the verification.",
+      findings: [],
+      coverage: ["Correctness", "Security"],
+      limitations: [],
+      needsHighEffortReview: false,
+      escalationReason: null,
+    };
+    const agent: GrokReviewAgent = {
+      resolvedModel: "grok-4.5",
+      grokBuildVersion: "0.2.112",
+      run: (request) => {
+        calls.push({ effort: request.effort, prompt: request.prompt });
+        if (request.prompt.includes("medium-effort verifier")) {
+          return Effect.fail(
+            new GrokReviewError({
+              operation: "GrokReviewAgent.decode",
+              detail: "The medium verifier returned malformed output.",
+            }),
+          );
+        }
+        if (request.prompt.includes("high-effort final")) {
+          return Effect.succeed(highVerification as never);
+        }
+        return Effect.succeed(emptyCandidate() as never);
+      },
+    };
+
+    return Effect.gen(function* () {
+      const report = yield* runGrokReviewSwarm({
+        request: { cwd: process.cwd(), target: "working-tree" },
+        source,
+        agent,
+      });
+
+      expect(report.escalatedToHigh).toBe(true);
+      expect(report.limitations).toContain(
+        "Medium-effort verification failed; the high-effort fallback completed.",
+      );
+      expect(report.usage).toEqual({
+        agentRuns: 6,
+        mediumEffortRuns: 5,
+        highEffortRuns: 1,
+      });
+      expect(calls.filter(({ effort }) => effort === "high")).toHaveLength(1);
+    }).pipe(Effect.provide(NodeServices.layer));
+  });
+
   it.effect("uses medium by default and escalates an ambiguous high finding", () => {
     const calls: Array<{ readonly effort: string; readonly prompt: string }> = [];
     const mediumVerification: GrokReviewVerification = {
