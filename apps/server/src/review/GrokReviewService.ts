@@ -50,12 +50,24 @@ export const make = Effect.gen(function* () {
 
       const instance = input.grokProviderInstanceId
         ? yield* providerInstances.getInstance(input.grokProviderInstanceId)
-        : (yield* providerInstances.listInstances).find(
+        : (yield* Effect.forEach(
+            (yield* providerInstances.listInstances).filter(
+              (candidate) =>
+                candidate.driverKind === GROK_DRIVER_KIND &&
+                candidate.enabled &&
+                candidate.codeReview !== undefined,
+            ),
             (candidate) =>
-              candidate.driverKind === GROK_DRIVER_KIND &&
-              candidate.enabled &&
-              candidate.codeReview !== undefined,
-          );
+              candidate.snapshot.getSnapshot.pipe(
+                Effect.map((snapshot) => ({ candidate, snapshot })),
+              ),
+            { concurrency: "unbounded" },
+          )).find(
+            ({ snapshot }) =>
+              snapshot.installed &&
+              snapshot.status === "ready" &&
+              snapshot.auth.status === "authenticated",
+          )?.candidate;
       if (
         !instance ||
         instance.driverKind !== GROK_DRIVER_KIND ||

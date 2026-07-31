@@ -1,7 +1,8 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
-import type { ReviewDiffPreviewSource } from "@t3tools/contracts";
+import { GrokReviewInput, type ReviewDiffPreviewSource } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 
 import type { GrokReviewAgent } from "./GrokReviewAgent.ts";
 import { type GrokReviewCandidate, type GrokReviewVerification } from "./GrokReviewModel.ts";
@@ -120,6 +121,29 @@ describe("changedLinesFromDiff", () => {
   });
 });
 
+describe("GrokReviewInput", () => {
+  it("bounds repeated focus guidance", () => {
+    expect(
+      Schema.is(GrokReviewInput)({
+        cwd: "/workspace/project",
+        focus: Array.from({ length: 8 }, () => "a".repeat(300)),
+      }),
+    ).toBe(true);
+    expect(
+      Schema.is(GrokReviewInput)({
+        cwd: "/workspace/project",
+        focus: Array.from({ length: 9 }, () => "focus"),
+      }),
+    ).toBe(false);
+    expect(
+      Schema.is(GrokReviewInput)({
+        cwd: "/workspace/project",
+        focus: ["a".repeat(301)],
+      }),
+    ).toBe(false);
+  });
+});
+
 describe("redactSensitiveDiff", () => {
   it("removes sensitive patch contents while retaining ordinary patches", () => {
     const diff = [
@@ -162,7 +186,14 @@ describe("redactSensitiveDiff", () => {
   });
 
   it("redacts direnv and keystore patches", () => {
-    for (const path of [".envrc", ".direnv/allow", "certificates/service.p12"]) {
+    for (const path of [
+      ".envrc",
+      ".direnv/allow",
+      ".aws/credentials",
+      ".kube/config",
+      "certificates/service.p12",
+      "infra/terraform.tfstate",
+    ]) {
       const diff = [
         `diff --git a/${path} b/${path}`,
         `--- a/${path}`,

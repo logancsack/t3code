@@ -41,6 +41,7 @@ export type GrokReviewTarget = typeof GrokReviewTarget.Type;
 
 export const GrokReviewReasoningEffort = Schema.Literals(["medium", "high"]);
 export type GrokReviewReasoningEffort = typeof GrokReviewReasoningEffort.Type;
+const GrokReviewFocusEntry = TrimmedNonEmptyString.check(Schema.isMaxLength(300));
 
 export const GrokReviewSeverity = Schema.Literals(["blocker", "high", "medium", "low"]);
 export type GrokReviewSeverity = typeof GrokReviewSeverity.Type;
@@ -52,7 +53,7 @@ export const GrokReviewInput = Schema.Struct({
   cwd: TrimmedNonEmptyString,
   target: Schema.optionalKey(GrokReviewTarget),
   baseRef: Schema.optionalKey(TrimmedNonEmptyString),
-  focus: Schema.optionalKey(Schema.Array(TrimmedNonEmptyString)),
+  focus: Schema.optionalKey(Schema.Array(GrokReviewFocusEntry).check(Schema.isMaxLength(8))),
   grokProviderInstanceId: Schema.optionalKey(ProviderInstanceId),
 });
 export type GrokReviewInput = typeof GrokReviewInput.Type;

@@ -47,6 +47,7 @@ const RANGE_DIFF_PATCH_MAX_OUTPUT_BYTES = 59_000;
 const REVIEW_DIFF_PATCH_MAX_OUTPUT_BYTES = 120_000;
 const REVIEW_UNTRACKED_DIFF_MAX_OUTPUT_BYTES = 80_000;
 const REVIEW_UNTRACKED_AGGREGATE_MAX_OUTPUT_BYTES = 120_000;
+const REVIEW_UNTRACKED_MAX_FILES = 64;
 const WORKSPACE_FILES_MAX_OUTPUT_BYTES = 120_000;
 const STATUS_UPSTREAM_REFRESH_INTERVAL = Duration.seconds(15);
 const STATUS_UPSTREAM_REFRESH_TIMEOUT = Duration.seconds(5);
@@ -1830,47 +1831,47 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       return { diff: "", truncated: untrackedResult.stdoutTruncated };
     }
 
-    const diffs = yield* Effect.forEach(
-      untrackedPaths,
-      (relativePath) =>
-        executeGit(
-          "GitVcsDriver.readUntrackedReviewDiffs.diff",
-          cwd,
-          [
-            "diff",
-            "--no-color",
-            "--no-index",
-            "--patch",
-            "--minimal",
-            "--",
-            "/dev/null",
-            relativePath,
-          ],
-          {
-            allowNonZeroExit: true,
-            maxOutputBytes: REVIEW_UNTRACKED_DIFF_MAX_OUTPUT_BYTES,
-            appendTruncationMarker: true,
-          },
-        ),
-      { concurrency: 4 },
-    );
+    const parts: Array<string> = [];
+    let truncated =
+      untrackedResult.stdoutTruncated || untrackedPaths.length > REVIEW_UNTRACKED_MAX_FILES;
+    for (const relativePath of untrackedPaths.slice(0, REVIEW_UNTRACKED_MAX_FILES)) {
+      const result = yield* executeGit(
+        "GitVcsDriver.readUntrackedReviewDiffs.diff",
+        cwd,
+        [
+          "diff",
+          "--no-color",
+          "--no-index",
+          "--patch",
+          "--minimal",
+          "--",
+          "/dev/null",
+          relativePath,
+        ],
+        {
+          allowNonZeroExit: true,
+          maxOutputBytes: REVIEW_UNTRACKED_DIFF_MAX_OUTPUT_BYTES,
+          appendTruncationMarker: true,
+        },
+      );
+      truncated ||= result.stdoutTruncated;
+      if (result.stdout.trim().length === 0) continue;
+      const candidate = [...parts, result.stdout].join("\n");
+      if (Buffer.byteLength(candidate) > REVIEW_UNTRACKED_AGGREGATE_MAX_OUTPUT_BYTES) {
+        const bounded = Buffer.from(candidate)
+          .subarray(0, REVIEW_UNTRACKED_AGGREGATE_MAX_OUTPUT_BYTES)
+          .toString("utf8");
+        return {
+          diff: `${bounded}${OUTPUT_TRUNCATED_MARKER}`,
+          truncated: true,
+        };
+      }
+      parts.push(result.stdout);
+    }
 
-    const combined = Arr.filterMap(diffs, (result) =>
-      result.stdout.trim().length > 0 ? Result.succeed(result.stdout) : Result.failVoid,
-    ).join("\n");
-    const combinedBytes = Buffer.from(combined);
-    const aggregateTruncated =
-      combinedBytes.byteLength > REVIEW_UNTRACKED_AGGREGATE_MAX_OUTPUT_BYTES;
     return {
-      diff: aggregateTruncated
-        ? `${combinedBytes
-            .subarray(0, REVIEW_UNTRACKED_AGGREGATE_MAX_OUTPUT_BYTES)
-            .toString("utf8")}${OUTPUT_TRUNCATED_MARKER}`
-        : combined,
-      truncated:
-        aggregateTruncated ||
-        untrackedResult.stdoutTruncated ||
-        diffs.some((result) => result.stdoutTruncated),
+      diff: parts.join("\n"),
+      truncated,
     };
   });
 

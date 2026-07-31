@@ -89,6 +89,13 @@ describe("GrokReviewService", () => {
       instanceId: ProviderInstanceId.make("grok-work"),
       driverKind: ProviderDriverKind.make("grok"),
       enabled: true,
+      snapshot: {
+        getSnapshot: Effect.succeed({
+          installed: true,
+          status: "ready",
+          auth: { status: "authenticated" },
+        }),
+      },
       codeReview: {
         run: ({
           source,
@@ -102,13 +109,25 @@ describe("GrokReviewService", () => {
           }),
       },
     } as unknown as ProviderInstance;
+    const unhealthy = {
+      ...instance,
+      instanceId: ProviderInstanceId.make("grok-broken"),
+      snapshot: {
+        getSnapshot: Effect.succeed({
+          installed: true,
+          status: "error",
+          auth: { status: "unknown" },
+        }),
+      },
+      codeReview: { run: () => Effect.die("unhealthy instance selected") },
+    } as unknown as ProviderInstance;
 
     return Effect.gen(function* () {
       const service = yield* GrokReviewService.GrokReviewService;
       const result = yield* service.run({ cwd: preview.cwd });
       expect(result.runId).toBe("review-run");
       expect(received).toEqual(["working-hash"]);
-    }).pipe(Effect.provide(makeLayer([instance])));
+    }).pipe(Effect.provide(makeLayer([unhealthy, instance])));
   });
 
   it.effect("fails clearly when no Grok provider is connected", () =>

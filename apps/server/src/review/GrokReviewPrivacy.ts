@@ -5,6 +5,11 @@ export const GROK_REVIEW_SENSITIVE_PATH_GLOBS = [
   "**/.env.*",
   "**/.envrc",
   "**/.direnv/**",
+  "**/.aws/**",
+  "**/.azure/**",
+  "**/.config/gcloud/**",
+  "**/.kube/**",
+  "**/.docker/config.json",
   "**/.git-credentials",
   "**/.netrc",
   "**/.npmrc",
@@ -14,10 +19,12 @@ export const GROK_REVIEW_SENSITIVE_PATH_GLOBS = [
   "**/*.p12",
   "**/*.pfx",
   "**/*.jks",
+  "**/*.tfstate",
+  "**/*.tfstate.*",
 ] as const;
 
 const SENSITIVE_PATH_PATTERN =
-  /(?:^|\/)(?:\.grok(?:\/|$)|\.ssh(?:\/|$)|\.direnv(?:\/|$)|\.env(?:\.|$)|\.envrc$|\.git-credentials$|\.netrc$|\.npmrc$|\.pypirc$|[^/]+\.(?:key|pem|p12|pfx|jks)$)/i;
+  /(?:^|\/)(?:\.grok(?:\/|$)|\.ssh(?:\/|$)|\.direnv(?:\/|$)|\.aws(?:\/|$)|\.azure(?:\/|$)|\.config\/gcloud(?:\/|$)|\.kube(?:\/|$)|\.docker\/config\.json$|\.env(?:\.|$)|\.envrc$|\.git-credentials$|\.netrc$|\.npmrc$|\.pypirc$|[^/]+\.(?:key|pem|p12|pfx|jks|tfstate)(?:\.[^/]*)?$)/i;
 const SAFE_SENSITIVE_DIFF_HEADER =
   /^(?:diff --git |old mode |new mode |deleted file mode |new file mode |similarity index |dissimilarity index |rename from |rename to |copy from |copy to |index |--- |\+\+\+ |Binary files )/;
 const REDACTION_NOTICE = "[Patch content redacted: sensitive path]";
