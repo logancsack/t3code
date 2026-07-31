@@ -91,3 +91,23 @@ it.effect("registers a read-only grok_review tool and returns the canonical repo
     });
   }).pipe(Effect.provide(TestLayer)),
 );
+
+it.effect("rejects a session without the review capability", () =>
+  Effect.gen(function* () {
+    const server = yield* McpServer.McpServer;
+    const result = yield* server
+      .callTool({
+        name: "grok_review",
+        arguments: { cwd: "/workspace/project", target: "working-tree" },
+      })
+      .pipe(
+        Effect.provideService(McpInvocationContext.McpInvocationContext, {
+          ...invocation,
+          capabilities: new Set(["preview"] as const),
+        }),
+        Effect.provideService(McpSchema.McpServerClient, client),
+      );
+
+    expect(result.isError).toBe(true);
+  }).pipe(Effect.provide(TestLayer)),
+);

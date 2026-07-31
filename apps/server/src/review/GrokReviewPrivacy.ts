@@ -105,7 +105,7 @@ function redactDiffBlock(lines: ReadonlyArray<string>): ReadonlyArray<string> {
   const firstHunk = lines.findIndex((line) => line.startsWith("@@ "));
   const headers = firstHunk === -1 ? lines : lines.slice(0, firstHunk);
   if (!headers.some(headerContainsSensitivePath)) return lines;
-  return [...lines.filter((line) => SAFE_SENSITIVE_DIFF_HEADER.test(line)), REDACTION_NOTICE];
+  return [...headers.filter((line) => SAFE_SENSITIVE_DIFF_HEADER.test(line)), REDACTION_NOTICE];
 }
 
 export function redactSensitiveDiff(diff: string): string {

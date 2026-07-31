@@ -8,11 +8,13 @@ import {
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 
 import * as ProviderInstanceRegistry from "../provider/Services/ProviderInstanceRegistry.ts";
 import * as ReviewService from "./ReviewService.ts";
 
 const GROK_DRIVER_KIND = ProviderDriverKind.make("grok");
+const GROK_REVIEW_TIMEOUT_MS = 10 * 60 * 1_000;
 
 export class GrokReviewService extends Context.Service<
   GrokReviewService,
@@ -67,7 +69,16 @@ export const make = Effect.gen(function* () {
         });
       }
 
-      return yield* instance.codeReview.run({ request: input, source });
+      const result = yield* instance.codeReview
+        .run({ request: input, source })
+        .pipe(Effect.timeoutOption(GROK_REVIEW_TIMEOUT_MS));
+      if (Option.isNone(result)) {
+        return yield* new GrokReviewError({
+          operation: "GrokReviewService.run",
+          detail: "The Grok review swarm exceeded its ten-minute time limit.",
+        });
+      }
+      return result.value;
     },
   );
 

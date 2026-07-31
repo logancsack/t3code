@@ -5,6 +5,7 @@ import type {
   GrokReviewSeverity,
   GrokReviewStatus,
 } from "@t3tools/contracts";
+import { TrimmedNonEmptyString } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 
 export const MAX_REVIEW_FINDINGS = 20;
@@ -22,7 +23,7 @@ export const MAX_REVIEW_DELEGATION_CHARS = 800;
 export const MAX_REVIEW_DELEGATION_PATHS = 8;
 
 const boundedNonEmpty = (maxLength: number) =>
-  Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(maxLength));
+  TrimmedNonEmptyString.check(Schema.isMaxLength(maxLength));
 const PositiveLine = Schema.Int.check(Schema.isGreaterThan(0));
 const Confidence = Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 1 }));
 

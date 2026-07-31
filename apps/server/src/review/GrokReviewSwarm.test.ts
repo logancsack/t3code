@@ -161,6 +161,23 @@ describe("redactSensitiveDiff", () => {
     expect(redacted).toContain("[Patch content redacted: sensitive path]");
   });
 
+  it("never retains sensitive hunk lines that resemble diff headers", () => {
+    const diff = [
+      "diff --git a/.env b/.env",
+      "--- a/.env",
+      "+++ b/.env",
+      "@@ -1 +1 @@",
+      "--- API_TOKEN=old-secret",
+      "+++ API_TOKEN=new-secret",
+    ].join("\n");
+
+    const redacted = redactSensitiveDiff(diff);
+    expect(redacted).not.toContain("old-secret");
+    expect(redacted).not.toContain("new-secret");
+    expect(redacted).toContain("--- a/.env");
+    expect(redacted).toContain("+++ b/.env");
+  });
+
   it("does not redact ordinary patches whose added content resembles a header", () => {
     const diff = [
       "diff --git a/src/docs.txt b/src/docs.txt",

@@ -244,6 +244,7 @@ export const runGrokReviewSwarm = Effect.fn("runGrokReviewSwarm")(function* (inp
 
   let verification = mediumVerification;
   let highEffortFailed = false;
+  let highEffortSucceeded = false;
   if (shouldEscalate) {
     const highCandidate: GrokReviewCandidateType = {
       summary: mediumVerification.summary,
@@ -269,6 +270,7 @@ export const runGrokReviewSwarm = Effect.fn("runGrokReviewSwarm")(function* (inp
       );
     if (highResult._tag === "Success") {
       verification = highResult.value;
+      highEffortSucceeded = true;
     } else {
       highEffortFailed = true;
     }
@@ -342,7 +344,7 @@ export const runGrokReviewSwarm = Effect.fn("runGrokReviewSwarm")(function* (inp
     resolvedModel: input.agent.resolvedModel,
     grokBuildVersion: input.agent.grokBuildVersion,
     reasoningEffort: "medium",
-    escalatedToHigh: shouldEscalate,
+    escalatedToHigh: highEffortSucceeded,
     summary: boundedText(verification.summary, MAX_REVIEW_SUMMARY_CHARS),
     findings,
     coverage: uniqueStrings(verification.coverage),
@@ -350,7 +352,7 @@ export const runGrokReviewSwarm = Effect.fn("runGrokReviewSwarm")(function* (inp
     usage: {
       agentRuns,
       mediumEffortRuns: agentRuns - (shouldEscalate ? 1 : 0),
-      highEffortRuns: shouldEscalate ? 1 : 0,
+      highEffortRuns: highEffortSucceeded ? 1 : 0,
     },
   });
   return report satisfies GrokReviewReport;
