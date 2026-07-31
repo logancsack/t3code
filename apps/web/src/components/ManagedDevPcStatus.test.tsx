@@ -1,6 +1,10 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
-import type { ManagedDevPcDisplayStatus, ManagedDevPcWorkspaceState } from "../managedDevPc";
+import type {
+  ManagedDevPcBootstrap,
+  ManagedDevPcDisplayStatus,
+  ManagedDevPcWorkspaceState,
+} from "../managedDevPc";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -278,6 +282,39 @@ describe("ManagedDevPcStatus", () => {
         previewUrlTemplate: "https://{port}.preview.example.test/",
       }),
     ).toBe("attention");
+  });
+
+  it("keeps gateway-minted bootstrap fields across a status poll", async () => {
+    vi.stubEnv("VITE_DEVPC_MANAGED", "1");
+    vi.resetModules();
+    const { mergeBootstrapStatus } = await import("./ManagedDevPcStatus");
+    const bootstrap = {
+      managed: true as const,
+      state: "ready" as const,
+      status: "running" as const,
+      ready: true,
+      previewUrlTemplate: "https://{port}.preview.example.test/",
+      previewUrls: { "6080": "/_devpc/browser", "3000": "https://3000.preview.example.test/" },
+      pairingToken: "pairing-token",
+    };
+    // The status endpoint returns lifecycle fields only — no previewUrlTemplate,
+    // previewUrls, or pairingToken — which is why the poll is a merge, not a
+    // replacement. Modeled with a cast, as refresh() casts the parsed JSON.
+    const statusPoll = {
+      managed: true as const,
+      state: "paused" as const,
+      status: "paused" as const,
+      ready: false,
+    } as ManagedDevPcBootstrap;
+
+    const merged = mergeBootstrapStatus(bootstrap, statusPoll);
+
+    expect(merged.status).toBe("paused");
+    expect(merged.ready).toBe(false);
+    expect(merged.previewUrlTemplate).toBe(bootstrap.previewUrlTemplate);
+    expect(merged.previewUrls).toEqual(bootstrap.previewUrls);
+    expect(merged.pairingToken).toBe("pairing-token");
+    expect(mergeBootstrapStatus(undefined, statusPoll)).toEqual(statusPoll);
   });
 
   it("rolls back only the idle timeout on a newer workspace snapshot", async () => {

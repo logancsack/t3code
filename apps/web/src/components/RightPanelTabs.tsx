@@ -111,16 +111,8 @@ function RightPanelEmptyState(props: {
   filesAvailable: boolean;
 }) {
   const actions = [
-    {
-      label: "Browser",
-      description: "Open a local app or URL.",
-      icon: Globe2,
-      available: props.browserAvailable,
-      disabledReason: SURFACE_DISABLED_REASONS.browser,
-      onClick: props.onAddBrowser,
-    },
-    // Only present on a managed workspace, which is the only place a shared
-    // browser exists to open.
+    // On a managed workspace the shared browser stands in for the preview
+    // browser, whose card the web gateway could only ever show disabled.
     ...(props.onAddWorkspaceBrowser
       ? [
           {
@@ -132,7 +124,16 @@ function RightPanelEmptyState(props: {
             onClick: props.onAddWorkspaceBrowser,
           },
         ]
-      : []),
+      : [
+          {
+            label: "Browser",
+            description: "Open a local app or URL.",
+            icon: Globe2,
+            available: props.browserAvailable,
+            disabledReason: SURFACE_DISABLED_REASONS.browser,
+            onClick: props.onAddBrowser,
+          },
+        ]),
     {
       label: "Terminal",
       description: "Start a shell in this workspace.",
@@ -479,14 +480,21 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                   <Plus className="size-4" />
                 </MenuTrigger>
                 <MenuPopup align="start" side="bottom" sideOffset={6} className="min-w-44">
-                  <SurfaceMenuItem
-                    available={props.browserAvailable}
-                    disabledReason={SURFACE_DISABLED_REASONS.browser}
-                    onClick={props.onAddBrowser}
-                  >
-                    <Globe2 />
-                    Browser
-                  </SurfaceMenuItem>
+                  {props.onAddWorkspaceBrowser && managedWorkspaceBrowserUrl() ? (
+                    <SurfaceMenuItem available onClick={props.onAddWorkspaceBrowser}>
+                      <MonitorSmartphone />
+                      Workspace browser
+                    </SurfaceMenuItem>
+                  ) : (
+                    <SurfaceMenuItem
+                      available={props.browserAvailable}
+                      disabledReason={SURFACE_DISABLED_REASONS.browser}
+                      onClick={props.onAddBrowser}
+                    >
+                      <Globe2 />
+                      Browser
+                    </SurfaceMenuItem>
+                  )}
                   <SurfaceMenuItem available onClick={props.onAddTerminal}>
                     <TerminalSquare />
                     Terminal
