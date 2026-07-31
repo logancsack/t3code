@@ -71,7 +71,15 @@ export const GrokReviewFinding = Schema.Struct({
   impact: TrimmedNonEmptyString,
   suggestion: TrimmedNonEmptyString,
   verification: Schema.optionalKey(TrimmedNonEmptyString),
-});
+}).check(
+  Schema.makeFilter(
+    (finding) =>
+      finding.startLine === undefined ||
+      finding.endLine === undefined ||
+      finding.endLine >= finding.startLine ||
+      "endLine must be greater than or equal to startLine.",
+  ),
+);
 export type GrokReviewFinding = typeof GrokReviewFinding.Type;
 
 export const GrokReviewUsage = Schema.Struct({

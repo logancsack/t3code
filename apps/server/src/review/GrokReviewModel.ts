@@ -39,7 +39,15 @@ export const GrokReviewCandidateFinding = Schema.Struct({
   impact: boundedNonEmpty(MAX_REVIEW_IMPACT_CHARS),
   suggestion: boundedNonEmpty(MAX_REVIEW_SUGGESTION_CHARS),
   verification: Schema.optionalKey(boundedNonEmpty(MAX_REVIEW_VERIFICATION_CHARS)),
-});
+}).check(
+  Schema.makeFilter(
+    (finding) =>
+      finding.startLine === undefined ||
+      finding.endLine === undefined ||
+      finding.endLine >= finding.startLine ||
+      "endLine must be greater than or equal to startLine.",
+  ),
+);
 export type GrokReviewCandidateFinding = typeof GrokReviewCandidateFinding.Type;
 
 export const GrokReviewDelegation = Schema.Struct({
