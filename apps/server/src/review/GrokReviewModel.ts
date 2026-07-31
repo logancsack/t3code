@@ -143,7 +143,12 @@ export function renderGrokReviewMarkdown(input: {
   ];
 
   if (input.findings.length === 0) {
-    lines.push("", "No actionable findings were verified.");
+    lines.push(
+      "",
+      input.status === "partial"
+        ? "No actionable findings were verified in the reviewed portion."
+        : "No actionable findings were verified.",
+    );
   } else {
     lines.push("", `### Findings (${input.findings.length})`);
     for (const finding of input.findings) {

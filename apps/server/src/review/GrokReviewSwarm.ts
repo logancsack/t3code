@@ -36,7 +36,7 @@ import {
   DEFAULT_REVIEWER_ROLES,
   type GrokReviewPromptContext,
 } from "./GrokReviewPrompts.ts";
-import { decodeGitPath, redactSensitiveDiff } from "./GrokReviewPrivacy.ts";
+import { decodeGitPath, redactSensitiveDiffWithMetadata } from "./GrokReviewPrivacy.ts";
 
 const MAX_LEAD_CONCURRENCY = 4;
 const MAX_DELEGATED_REVIEWS = 2;
@@ -189,9 +189,10 @@ export const runGrokReviewSwarm = Effect.fn("runGrokReviewSwarm")(function* (inp
         }),
     ),
   );
+  const redactedDiff = redactSensitiveDiffWithMetadata(input.source.diff);
   const context: GrokReviewPromptContext = {
     targetLabel: input.source.title,
-    diff: redactSensitiveDiff(input.source.diff),
+    diff: redactedDiff.diff,
     focus: input.request.focus ?? [],
   };
 
@@ -321,12 +322,19 @@ export const runGrokReviewSwarm = Effect.fn("runGrokReviewSwarm")(function* (inp
   const failedOutcomes = [...leadOutcomes, ...delegatedOutcomes].filter(
     (outcome) => outcome.result._tag === "Failure",
   );
-  const partial = input.source.truncated || failedOutcomes.length > 0 || highEffortFailed;
+  const partial =
+    input.source.truncated ||
+    redactedDiff.redacted ||
+    failedOutcomes.length > 0 ||
+    highEffortFailed;
   const limitations = uniqueStrings([
     ...(verification.findings.length > MAX_REVIEW_FINDINGS
       ? [`Only the first ${MAX_REVIEW_FINDINGS} verified findings are included.`]
       : []),
     ...(input.source.truncated ? ["The selected diff was truncated before model review."] : []),
+    ...(redactedDiff.redacted
+      ? ["Sensitive-file patches were redacted and could not be reviewed."]
+      : []),
     ...failedOutcomes.map((outcome) => `${outcome.label} reviewer did not return a result.`),
     ...(highEffortFailed
       ? ["High-effort escalation failed; the medium-effort verification is shown."]

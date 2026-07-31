@@ -113,20 +113,32 @@ function headerContainsSensitivePath(line: string): boolean {
   );
 }
 
-function redactDiffBlock(lines: ReadonlyArray<string>): ReadonlyArray<string> {
+function redactDiffBlock(lines: ReadonlyArray<string>): {
+  readonly lines: ReadonlyArray<string>;
+  readonly redacted: boolean;
+} {
   const firstHunk = lines.findIndex((line) => line.startsWith("@@ "));
   const headers = firstHunk === -1 ? lines : lines.slice(0, firstHunk);
-  if (!headers.some(headerContainsSensitivePath)) return lines;
-  return [...headers.filter((line) => SAFE_SENSITIVE_DIFF_HEADER.test(line)), REDACTION_NOTICE];
+  if (!headers.some(headerContainsSensitivePath)) return { lines, redacted: false };
+  return {
+    lines: [...headers.filter((line) => SAFE_SENSITIVE_DIFF_HEADER.test(line)), REDACTION_NOTICE],
+    redacted: true,
+  };
 }
 
-export function redactSensitiveDiff(diff: string): string {
+export function redactSensitiveDiffWithMetadata(diff: string): {
+  readonly diff: string;
+  readonly redacted: boolean;
+} {
   const lines = diff.split(/\r?\n/);
   const output: Array<string> = [];
   let block: Array<string> = [];
+  let redacted = false;
 
   const flush = () => {
-    output.push(...redactDiffBlock(block));
+    const result = redactDiffBlock(block);
+    output.push(...result.lines);
+    redacted ||= result.redacted;
     block = [];
   };
 
@@ -136,5 +148,9 @@ export function redactSensitiveDiff(diff: string): string {
   }
   flush();
 
-  return output.join("\n");
+  return { diff: output.join("\n"), redacted };
+}
+
+export function redactSensitiveDiff(diff: string): string {
+  return redactSensitiveDiffWithMetadata(diff).diff;
 }
