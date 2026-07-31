@@ -14,6 +14,7 @@ import { GROK_REVIEW_SENSITIVE_PATH_GLOBS } from "./GrokReviewPrivacy.ts";
 
 const DEFAULT_GROK_REVIEW_MODEL = "grok-4.5";
 const GROK_AGENT_TIMEOUT_MS = 2 * 60 * 1_000;
+const GROK_AGENT_MAX_OUTPUT_BYTES = 1_000_000;
 const GROK_AGENT_MAX_TURNS = 8;
 const GROK_REVIEW_TOOLS = "read_file,list_dir,grep";
 const GROK_REVIEW_DENY_RULES = ["Read", "Grep"].flatMap((operation) =>
@@ -65,6 +66,7 @@ export const makeGrokReviewAgent = Effect.fn("makeGrokReviewAgent")(function* (
       env: processEnvironment,
       shell: versionCommand.shell,
     }),
+    { maxOutputBytes: 64_000 },
   ).pipe(
     Effect.timeoutOption("5 seconds"),
     Effect.orElseSucceed(() => Option.none()),
@@ -119,6 +121,7 @@ export const makeGrokReviewAgent = Effect.fn("makeGrokReviewAgent")(function* (
           env: processEnvironment,
           shell: command.shell,
         }),
+        { maxOutputBytes: GROK_AGENT_MAX_OUTPUT_BYTES },
       ).pipe(
         Effect.timeoutOption(GROK_AGENT_TIMEOUT_MS),
         Effect.mapError(
@@ -135,6 +138,12 @@ export const makeGrokReviewAgent = Effect.fn("makeGrokReviewAgent")(function* (
         return yield* new GrokReviewError({
           operation: "GrokReviewAgent.run",
           detail: "Grok Build review agent timed out.",
+        });
+      }
+      if (result.value.stdoutTruncated || result.value.stderrTruncated) {
+        return yield* new GrokReviewError({
+          operation: "GrokReviewAgent.run",
+          detail: "Grok Build reviewer output exceeded the safe collection limit.",
         });
       }
       if (result.value.code !== 0) {

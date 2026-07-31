@@ -133,4 +133,34 @@ describe("ProviderCommandNotFoundError", () => {
       expect(error.message).not.toContain("secret-token-value");
     });
   });
+
+  it.effect("caps collected provider command output", () => {
+    const spawner = ChildProcessSpawner.make(() =>
+      Effect.succeed(
+        ChildProcessSpawner.makeHandle({
+          pid: ChildProcessSpawner.ProcessId(1),
+          exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(0)),
+          isRunning: Effect.succeed(false),
+          kill: () => Effect.void,
+          unref: Effect.succeed(Effect.void),
+          stdin: Sink.drain,
+          stdout: Stream.make(new TextEncoder().encode("x".repeat(200))),
+          stderr: Stream.make(new TextEncoder().encode("y".repeat(200))),
+          all: Stream.empty,
+          getInputFd: () => Sink.drain,
+          getOutputFd: () => Stream.empty,
+        }),
+      ),
+    );
+    return Effect.gen(function* () {
+      const result = yield* spawnAndCollect("provider", ChildProcess.make("provider", []), {
+        maxOutputBytes: 128,
+      }).pipe(Effect.provide(Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner)));
+
+      expect(result.stdout).toHaveLength(128);
+      expect(result.stderr).toHaveLength(128);
+      expect(result.stdoutTruncated).toBe(true);
+      expect(result.stderrTruncated).toBe(true);
+    });
+  });
 });
