@@ -273,6 +273,7 @@ export const runGrokReviewSwarm = Effect.fn("runGrokReviewSwarm")(function* (inp
   let highEffortSucceeded = false;
   let highEffortAttempted = false;
   let mediumVerificationFailed = false;
+  let mediumVerificationOmittedFindings = false;
 
   if (mediumResult._tag === "Failure") {
     mediumVerificationFailed = true;
@@ -295,6 +296,9 @@ export const runGrokReviewSwarm = Effect.fn("runGrokReviewSwarm")(function* (inp
     highEffortSucceeded = true;
   } else {
     verification = mediumResult.success;
+    mediumVerificationOmittedFindings = verification.limitations.includes(
+      GROK_REVIEW_FINDINGS_OMITTED_LIMITATION,
+    );
     const shouldEscalate =
       verification.needsHighEffortReview ||
       verification.findings.some(
@@ -372,9 +376,11 @@ export const runGrokReviewSwarm = Effect.fn("runGrokReviewSwarm")(function* (inp
   const failedOutcomes = [...leadOutcomes, ...delegatedOutcomes].filter(
     (outcome) => outcome.result._tag === "Failure",
   );
-  const normalizationOmittedFindings = [...candidates, verification].some((candidate) =>
-    candidate.limitations.includes(GROK_REVIEW_FINDINGS_OMITTED_LIMITATION),
-  );
+  const normalizationOmittedFindings =
+    mediumVerificationOmittedFindings ||
+    [...candidates, verification].some((candidate) =>
+      candidate.limitations.includes(GROK_REVIEW_FINDINGS_OMITTED_LIMITATION),
+    );
   const partial =
     input.source.truncated ||
     redactedDiff.redacted ||
