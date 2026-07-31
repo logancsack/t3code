@@ -646,6 +646,50 @@ describe("runGrokReviewSwarm", () => {
     }).pipe(Effect.provide(NodeServices.layer));
   });
 
+  it.effect("preserves medium normalization omissions after successful escalation", () => {
+    const mediumVerification: GrokReviewVerificationWire = {
+      summary: "The medium verifier found more findings than the report can retain.",
+      findings: Array.from({ length: MAX_REVIEW_FINDINGS + 1 }, () => verifiedFinding),
+      coverage: ["Correctness"],
+      limitations: [],
+      needsHighEffortReview: true,
+      escalationReason: "Verify the retained high-impact findings.",
+    };
+    const highVerification: GrokReviewVerificationType = {
+      summary: "The retained findings were not actionable after deeper verification.",
+      findings: [],
+      coverage: ["Correctness"],
+      limitations: [],
+      needsHighEffortReview: false,
+      escalationReason: null,
+    };
+    const agent: GrokReviewAgent = {
+      resolvedModel: "grok-4.5",
+      grokBuildVersion: "0.2.112",
+      run: (request) => {
+        if (request.prompt.includes("high-effort final")) {
+          return Effect.succeed(highVerification as never);
+        }
+        if (request.prompt.includes("medium-effort verifier")) {
+          return Effect.succeed(mediumVerification as never);
+        }
+        return Effect.succeed(emptyCandidate() as never);
+      },
+    };
+
+    return Effect.gen(function* () {
+      const report = yield* runGrokReviewSwarm({
+        request: { cwd: process.cwd(), target: "working-tree" },
+        source,
+        agent,
+      });
+
+      expect(report.escalatedToHigh).toBe(true);
+      expect(report.status).toBe("partial");
+      expect(report.limitations).toContain(GROK_REVIEW_FINDINGS_OMITTED_LIMITATION);
+    }).pipe(Effect.provide(NodeServices.layer));
+  });
+
   it.effect("bounds the canonical report for pull-request comment delivery", () => {
     const oversizedFinding = {
       ...verifiedFinding,
