@@ -1,11 +1,20 @@
 import { EditorId, type EnvironmentId, type ResolvedKeybindingsConfig } from "@t3tools/contracts";
-import { memo, useCallback, useEffect, useMemo } from "react";
+import { memo, useCallback, useEffect, useMemo, type ReactNode } from "react";
 import { isOpenFavoriteEditorShortcut, shortcutLabelForCommand } from "../../keybindings";
 import { usePreferredEditor } from "../../editorPreferences";
 import { ChevronDownIcon, FolderClosedIcon } from "lucide-react";
 import { Button } from "../ui/button";
 import { Group, GroupSeparator } from "../ui/group";
-import { Menu, MenuItem, MenuPopup, MenuShortcut, MenuTrigger } from "../ui/menu";
+import {
+  Menu,
+  MenuItem,
+  MenuPopup,
+  MenuShortcut,
+  MenuSub,
+  MenuSubPopup,
+  MenuSubTrigger,
+  MenuTrigger,
+} from "../ui/menu";
 import {
   AntigravityIcon,
   CursorIcon,
@@ -190,6 +199,7 @@ export const OpenInPicker = memo(function OpenInPicker({
   openInCwd,
   compact = false,
   enableShortcut = true,
+  renderMenuItems,
 }: {
   environmentId: EnvironmentId;
   keybindings: ResolvedKeybindingsConfig;
@@ -197,6 +207,7 @@ export const OpenInPicker = memo(function OpenInPicker({
   openInCwd: string | null;
   compact?: boolean;
   enableShortcut?: boolean;
+  renderMenuItems?: (menuItems: ReactNode) => ReactNode;
 }) {
   const openInEditorMutation = useAtomCommand(shellEnvironment.openInEditor, "open in editor");
   const [preferredEditor, setPreferredEditor] = usePreferredEditor(availableEditors);
@@ -255,6 +266,43 @@ export const OpenInPicker = memo(function OpenInPicker({
     openInEditorMutation,
     preferredEditor,
   ]);
+
+  if (renderMenuItems) {
+    const menuItems =
+      options.length === 0 ? (
+        <MenuItem disabled>
+          <FolderClosedIcon aria-hidden="true" />
+          No installed apps found
+        </MenuItem>
+      ) : (
+        <MenuSub>
+          <MenuSubTrigger disabled={!openInCwd}>
+            {primaryOption?.Icon ? (
+              <primaryOption.Icon
+                aria-hidden="true"
+                className={getOpenInIconClass(primaryOption.kind)}
+              />
+            ) : (
+              <FolderClosedIcon aria-hidden="true" />
+            )}
+            Open project in...
+          </MenuSubTrigger>
+          <MenuSubPopup className="min-w-48">
+            {options.map(({ label, Icon, value, kind }) => (
+              <MenuItem key={value} onClick={() => openInEditor(value)}>
+                <Icon aria-hidden="true" className={getOpenInIconClass(kind)} />
+                {label}
+                {value === preferredEditor && openFavoriteEditorShortcutLabel && (
+                  <MenuShortcut>{openFavoriteEditorShortcutLabel}</MenuShortcut>
+                )}
+              </MenuItem>
+            ))}
+          </MenuSubPopup>
+        </MenuSub>
+      );
+
+    return renderMenuItems(menuItems);
+  }
 
   return (
     <Group aria-label="Open in editor">
