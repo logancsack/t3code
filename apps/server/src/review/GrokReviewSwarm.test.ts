@@ -88,6 +88,36 @@ describe("changedLinesFromDiff", () => {
     );
     expect([...changed.get("src/no-newline.ts")!]).toEqual([1]);
   });
+
+  it("does not mistake added content beginning with pluses for a file header", () => {
+    const changed = changedLinesFromDiff(
+      [
+        "diff --git a/src/notes.txt b/src/notes.txt",
+        "--- a/src/notes.txt",
+        "+++ b/src/notes.txt",
+        "@@ -1 +1,3 @@",
+        "-old note",
+        "+new note",
+        "+++ emphasized note",
+        "+last note",
+      ].join("\n"),
+    );
+    expect([...changed.get("src/notes.txt")!]).toEqual([1, 2, 3]);
+  });
+
+  it("decodes Git-quoted UTF-8 paths", () => {
+    const changed = changedLinesFromDiff(
+      [
+        'diff --git "a/caf\\303\\251.ts" "b/caf\\303\\251.ts"',
+        '--- "a/caf\\303\\251.ts"',
+        '+++ "b/caf\\303\\251.ts"',
+        "@@ -1 +1 @@",
+        "-export const drink = null;",
+        "+export const drink = coffee;",
+      ].join("\n"),
+    );
+    expect([...changed.get("café.ts")!]).toEqual([1]);
+  });
 });
 
 describe("redactSensitiveDiff", () => {
@@ -113,6 +143,18 @@ describe("redactSensitiveDiff", () => {
     expect(redacted).not.toContain("new-secret");
     expect(redacted).toContain("[Patch content redacted: sensitive path]");
     expect(redacted).toContain("+export const value = 2;");
+  });
+
+  it("does not redact ordinary patches whose added content resembles a header", () => {
+    const diff = [
+      "diff --git a/src/docs.txt b/src/docs.txt",
+      "--- a/src/docs.txt",
+      "+++ b/src/docs.txt",
+      "@@ -1 +1 @@",
+      "-old",
+      "+++ .env files must stay private",
+    ].join("\n");
+    expect(redactSensitiveDiff(diff)).toBe(diff);
   });
 });
 

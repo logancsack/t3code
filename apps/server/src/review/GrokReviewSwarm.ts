@@ -36,7 +36,7 @@ import {
   DEFAULT_REVIEWER_ROLES,
   type GrokReviewPromptContext,
 } from "./GrokReviewPrompts.ts";
-import { redactSensitiveDiff } from "./GrokReviewPrivacy.ts";
+import { decodeGitPath, redactSensitiveDiff } from "./GrokReviewPrivacy.ts";
 
 const MAX_LEAD_CONCURRENCY = 4;
 const MAX_DELEGATED_REVIEWS = 2;
@@ -53,16 +53,23 @@ function normalizeFindingPath(value: string): string {
 }
 
 function normalizeDiffPath(value: string): string {
-  return value.trim().replace(/^(?:\.\/|[ab]\/)/, "");
+  return decodeGitPath(value).replace(/^(?:\.\/|[ab]\/)/, "");
 }
 
 export function changedLinesFromDiff(diff: string): ReadonlyMap<string, ReadonlySet<number>> {
   const changed = new Map<string, Set<number>>();
   let currentPath: string | undefined;
   let currentLine: number | undefined;
+  let insideHunk = false;
 
   for (const line of diff.split(/\r?\n/)) {
-    if (line.startsWith("+++ ")) {
+    if (line.startsWith("diff --git ")) {
+      currentPath = undefined;
+      currentLine = undefined;
+      insideHunk = false;
+      continue;
+    }
+    if (!insideHunk && line.startsWith("+++ ")) {
       const rawPath = line.slice(4).trim();
       currentPath = rawPath === "/dev/null" ? undefined : normalizeDiffPath(rawPath);
       currentLine = undefined;
@@ -71,11 +78,12 @@ export function changedLinesFromDiff(diff: string): ReadonlyMap<string, Readonly
     if (line.startsWith("@@ ")) {
       const match = /\+(\d+)(?:,\d+)?/.exec(line);
       currentLine = match ? Number(match[1]) : undefined;
+      insideHunk = true;
       continue;
     }
-    if (currentPath === undefined || currentLine === undefined) continue;
+    if (!insideHunk || currentPath === undefined || currentLine === undefined) continue;
     if (line === "\\ No newline at end of file") continue;
-    if (line.startsWith("+") && !line.startsWith("+++")) {
+    if (line.startsWith("+")) {
       const lines = changed.get(currentPath) ?? new Set<number>();
       lines.add(currentLine);
       changed.set(currentPath, lines);
