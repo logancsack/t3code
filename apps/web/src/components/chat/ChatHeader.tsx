@@ -18,6 +18,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ReactNode,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
@@ -25,6 +26,7 @@ import GitActionsControl from "../GitActionsControl";
 import { type DraftId } from "~/composerDraftStore";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { toastManager } from "../ui/toast";
+import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "../ui/menu";
 import ProjectScriptsControl, {
   type NewProjectScriptInput,
   type ProjectScriptActionResult,
@@ -204,6 +206,88 @@ export const ChatHeader = memo(function ChatHeader({
     },
     [commitRename],
   );
+
+  const renderProjectMenu = (
+    openInMenuItems: ReactNode | null,
+    projectScriptMenuItems: ReactNode | null,
+  ) => (
+    <Menu>
+      <MenuTrigger
+        aria-label={`Project menu for ${activeProjectName}`}
+        className="-mx-1 inline-flex min-w-0 cursor-pointer items-center gap-1.5 rounded-md px-1 py-0.5 text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <ProjectFavicon
+          environmentId={activeThreadEnvironmentId}
+          cwd={activeProjectCwd ?? ""}
+          className="size-3.5"
+        />
+        <span className="max-w-40 truncate text-sm font-medium">{activeProjectName}</span>
+        <ChevronDownIcon aria-hidden="true" className="size-3.5 shrink-0 opacity-70" />
+      </MenuTrigger>
+      <MenuPopup align="start" className="min-w-52">
+        <MenuItem onClick={onNewThreadInProject}>New thread</MenuItem>
+        <MenuSeparator />
+        {openInMenuItems}
+        {openInMenuItems && projectScriptMenuItems ? <MenuSeparator /> : null}
+        {projectScriptMenuItems}
+      </MenuPopup>
+    </Menu>
+  );
+
+  let projectControl: ReactNode = null;
+  if (activeProjectName && activeProjectScripts) {
+    projectControl = (
+      <ProjectScriptsControl
+        scripts={activeProjectScripts}
+        fileScripts={fileScripts}
+        keybindings={keybindings}
+        preferredScriptId={preferredScriptId}
+        onRunScript={onRunProjectScript}
+        onAddScript={onAddProjectScript}
+        onUpdateScript={onUpdateProjectScript}
+        onDeleteScript={onDeleteProjectScript}
+        renderMenuItems={(projectScriptMenuItems) =>
+          showOpenInPicker ? (
+            <OpenInPicker
+              environmentId={activeThreadEnvironmentId}
+              keybindings={keybindings}
+              availableEditors={availableEditors}
+              openInCwd={openInCwd}
+              renderMenuItems={(openInMenuItems) =>
+                renderProjectMenu(openInMenuItems, projectScriptMenuItems)
+              }
+            />
+          ) : (
+            renderProjectMenu(null, projectScriptMenuItems)
+          )
+        }
+      />
+    );
+  } else if (activeProjectName && showOpenInPicker) {
+    projectControl = (
+      <OpenInPicker
+        environmentId={activeThreadEnvironmentId}
+        keybindings={keybindings}
+        availableEditors={availableEditors}
+        openInCwd={openInCwd}
+        renderMenuItems={(openInMenuItems) => renderProjectMenu(openInMenuItems, null)}
+      />
+    );
+  } else if (activeProjectName) {
+    projectControl = (
+      <span className="inline-flex min-w-0 items-center gap-1.5">
+        <ProjectFavicon
+          environmentId={activeThreadEnvironmentId}
+          cwd={activeProjectCwd ?? ""}
+          className="size-3.5"
+        />
+        <span className="max-w-40 truncate text-sm font-medium text-muted-foreground">
+          {activeProjectName}
+        </span>
+      </span>
+    );
+  }
+
   return (
     <div
       className="@container/header-actions flex min-w-0 flex-1 items-center gap-2 sm:gap-3"
@@ -215,27 +299,8 @@ export const ChatHeader = memo(function ChatHeader({
             doesn't answer it. */}
         {activeProjectName ? (
           <span className="inline-flex shrink-0 items-center gap-2">
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <button
-                    type="button"
-                    aria-label={`New thread in ${activeProjectName}`}
-                    onClick={onNewThreadInProject}
-                    className="inline-flex min-w-0 cursor-pointer items-center gap-1.5 rounded-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
-                  />
-                }
-              >
-                <ProjectFavicon
-                  environmentId={activeThreadEnvironmentId}
-                  cwd={activeProjectCwd ?? ""}
-                  className="size-3.5"
-                />
-                <span className="max-w-40 truncate text-sm font-medium">{activeProjectName}</span>
-              </TooltipTrigger>
-              <TooltipPopup side="top">New thread in {activeProjectName}</TooltipPopup>
-            </Tooltip>
-            <span aria-hidden className="text-icon-muted">
+            {projectControl}
+            <span aria-hidden className="text-muted-foreground/40">
               /
             </span>
           </span>
@@ -300,26 +365,6 @@ export const ChatHeader = memo(function ChatHeader({
           rightPanelOpen ? "pr-0" : "pr-16",
         )}
       >
-        {activeProjectScripts && (
-          <ProjectScriptsControl
-            scripts={activeProjectScripts}
-            fileScripts={fileScripts}
-            keybindings={keybindings}
-            preferredScriptId={preferredScriptId}
-            onRunScript={onRunProjectScript}
-            onAddScript={onAddProjectScript}
-            onUpdateScript={onUpdateProjectScript}
-            onDeleteScript={onDeleteProjectScript}
-          />
-        )}
-        {showOpenInPicker && (
-          <OpenInPicker
-            environmentId={activeThreadEnvironmentId}
-            keybindings={keybindings}
-            availableEditors={availableEditors}
-            openInCwd={openInCwd}
-          />
-        )}
         {activeProjectName && (
           <GitActionsControl
             gitCwd={gitCwd}

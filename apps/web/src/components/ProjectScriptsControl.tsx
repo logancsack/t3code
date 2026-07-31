@@ -21,7 +21,14 @@ import {
   SettingsIcon,
   WrenchIcon,
 } from "lucide-react";
-import React, { type FormEvent, type KeyboardEvent, useCallback, useMemo, useState } from "react";
+import React, {
+  type FormEvent,
+  type KeyboardEvent,
+  type ReactNode,
+  useCallback,
+  useMemo,
+  useState,
+} from "react";
 
 import {
   keybindingValueForCommand,
@@ -124,6 +131,7 @@ interface ProjectScriptsControlProps {
     input: NewProjectScriptInput,
   ) => Promise<ProjectScriptActionResult>;
   onDeleteScript: (scriptId: string) => Promise<ProjectScriptActionResult>;
+  renderMenuItems?: (menuItems: ReactNode) => ReactNode;
 }
 
 export default function ProjectScriptsControl({
@@ -135,6 +143,7 @@ export default function ProjectScriptsControl({
   onAddScript,
   onUpdateScript,
   onDeleteScript,
+  renderMenuItems,
 }: ProjectScriptsControlProps) {
   const addScriptFormId = React.useId();
   const [editingScriptId, setEditingScriptId] = useState<string | null>(null);
@@ -331,9 +340,66 @@ export default function ProjectScriptsControl({
     </>
   );
 
+  const scriptMenuItems = scripts.map((script) => {
+    const shortcutLabel = shortcutLabelForCommand(keybindings, commandForProjectScript(script.id));
+    return (
+      <MenuItem
+        key={script.id}
+        className={`group ${dropdownItemClassName}`}
+        onClick={() => onRunScript(script)}
+      >
+        <ScriptIcon icon={script.icon} className="size-4" />
+        <span className="truncate">
+          {script.runOnWorktreeCreate ? `${script.name} (setup)` : script.name}
+        </span>
+        <span className="relative ms-auto flex h-6 min-w-6 items-center justify-end">
+          {shortcutLabel && (
+            <MenuShortcut className="ms-0 transition-opacity group-hover:opacity-0 group-focus-visible:opacity-0">
+              {shortcutLabel}
+            </MenuShortcut>
+          )}
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            className="absolute right-0 top-1/2 size-6 -translate-y-1/2 opacity-0 pointer-events-none transition-opacity group-hover:opacity-100 group-hover:pointer-events-auto group-focus-visible:opacity-100 group-focus-visible:pointer-events-auto"
+            aria-label={`Edit ${script.name}`}
+            onPointerDown={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+            }}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              openEditDialog(script);
+            }}
+          >
+            <SettingsIcon className="size-3.5" />
+          </Button>
+        </span>
+      </MenuItem>
+    );
+  });
+
+  const projectMenuItems = (
+    <>
+      <MenuGroup>
+        <MenuGroupLabel>Actions</MenuGroupLabel>
+        {scriptMenuItems}
+        <MenuItem className={dropdownItemClassName} onClick={openAddDialog}>
+          <PlusIcon className="size-4" />
+          Add action
+        </MenuItem>
+      </MenuGroup>
+      {importMenuItems}
+    </>
+  );
+
   return (
     <>
-      {primaryScript ? (
+      {renderMenuItems ? (
+        renderMenuItems(projectMenuItems)
+      ) : primaryScript ? (
         <Group aria-label="Project scripts">
           <Tooltip>
             <TooltipTrigger
@@ -369,49 +435,7 @@ export default function ProjectScriptsControl({
               <ChevronDownIcon className="size-4" />
             </MenuTrigger>
             <MenuPopup align="end">
-              {scripts.map((script) => {
-                const shortcutLabel = shortcutLabelForCommand(
-                  keybindings,
-                  commandForProjectScript(script.id),
-                );
-                return (
-                  <MenuItem
-                    key={script.id}
-                    className={`group ${dropdownItemClassName}`}
-                    onClick={() => onRunScript(script)}
-                  >
-                    <ScriptIcon icon={script.icon} className="size-4" />
-                    <span className="truncate">
-                      {script.runOnWorktreeCreate ? `${script.name} (setup)` : script.name}
-                    </span>
-                    <span className="relative ms-auto flex h-6 min-w-6 items-center justify-end">
-                      {shortcutLabel && (
-                        <MenuShortcut className="ms-0 transition-opacity group-hover:opacity-0 group-focus-visible:opacity-0">
-                          {shortcutLabel}
-                        </MenuShortcut>
-                      )}
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-xs"
-                        className="absolute right-0 top-1/2 size-6 -translate-y-1/2 opacity-0 pointer-events-none transition-opacity group-hover:opacity-100 group-hover:pointer-events-auto group-focus-visible:opacity-100 group-focus-visible:pointer-events-auto"
-                        aria-label={`Edit ${script.name}`}
-                        onPointerDown={(event) => {
-                          event.preventDefault();
-                          event.stopPropagation();
-                        }}
-                        onClick={(event) => {
-                          event.preventDefault();
-                          event.stopPropagation();
-                          openEditDialog(script);
-                        }}
-                      >
-                        <SettingsIcon className="size-3.5" />
-                      </Button>
-                    </span>
-                  </MenuItem>
-                );
-              })}
+              {scriptMenuItems}
               {importMenuItems}
               <MenuItem className={dropdownItemClassName} onClick={openAddDialog}>
                 <PlusIcon className="size-4" />
@@ -491,7 +515,7 @@ export default function ProjectScriptsControl({
           <DialogHeader>
             <DialogTitle>{isEditing ? "Edit Action" : "Add Action"}</DialogTitle>
             <DialogDescription>
-              Actions are project-scoped commands you can run from the top bar or keybindings.
+              Actions are project-scoped commands you can run from the project menu or keybindings.
             </DialogDescription>
           </DialogHeader>
           <DialogPanel>
