@@ -36,6 +36,7 @@ function markupWith(onAddWorkspaceBrowser: (() => void) | undefined) {
       onAddTerminal={() => {}}
       onAddDiff={() => {}}
       onAddFiles={() => {}}
+      onAddAgents={() => {}}
       browserAvailable={false}
       diffAvailable={false}
       filesAvailable={false}

@@ -554,6 +554,39 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain("Work Log");
   });
 
+  it("renders every generated image as an expandable gallery instead of tool rows", () => {
+    const base64 = "iVBORw0KGgo=";
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        timelineEntries={["image-1", "image-2"].map((id, index) => ({
+          id: `${id}-entry`,
+          kind: "work" as const,
+          createdAt: `2026-03-17T19:12:${28 + index}.000Z`,
+          entry: {
+            id,
+            createdAt: `2026-03-17T19:12:${28 + index}.000Z`,
+            label: "Image view",
+            tone: "tool" as const,
+            generatedImage: {
+              id: `${id}-call`,
+              base64,
+              mimeType: "image/png" as const,
+            },
+          },
+        }))}
+      />,
+    );
+
+    expect(markup).toContain("data-generated-image-gallery");
+    expect(markup.match(/src="data:image\/png;base64,/g)).toHaveLength(2);
+    expect(markup).toContain('aria-label="2 generated images"');
+    expect(markup).toContain('aria-label="Preview generated image 1"');
+    expect(markup).toContain('aria-label="Preview generated image 2"');
+    expect(markup).toContain(`src="data:image/png;base64,${base64}"`);
+    expect(markup).not.toContain(">Image view<");
+  });
+
   it("formats changed file paths from the workspace root", () => {
     const markup = renderToStaticMarkup(
       <MessagesTimeline

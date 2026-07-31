@@ -36,6 +36,7 @@ import {
   workEntryIndicatesToolFailure,
   workEntryIndicatesToolNeutralStatus,
   workEntryIndicatesToolSuccess,
+  workLogEntryHasGeneratedImage,
   workLogEntryIsToolLike,
   type ActiveToolWait,
 } from "../../session-logic";
@@ -1400,8 +1401,16 @@ const WorkGroupSection = memo(function WorkGroupSection({
   groupedEntries: Extract<MessagesTimelineRow, { kind: "work" }>["groupedEntries"];
 }) {
   const { workspaceRoot } = use(TimelineRowCtx);
+  const generatedImageEntries = useMemo(
+    () => groupedEntries.filter(workLogEntryHasGeneratedImage),
+    [groupedEntries],
+  );
   const nonEmptyEntries = useMemo(
-    () => groupedEntries.filter((entry) => !workEntryIndicatesToolNeutralStatus(entry)),
+    () =>
+      groupedEntries.filter(
+        (entry) =>
+          !workLogEntryHasGeneratedImage(entry) && !workEntryIndicatesToolNeutralStatus(entry),
+      ),
     [groupedEntries],
   );
   const onlyToolEntries = nonEmptyEntries.every((entry) => workLogEntryIsToolLike(entry));
@@ -1411,22 +1420,83 @@ const WorkGroupSection = memo(function WorkGroupSection({
       : `${nonEmptyEntries.length} tool calls`
     : "Work Log";
 
-  if (nonEmptyEntries.length === 0) return null;
+  if (generatedImageEntries.length === 0 && nonEmptyEntries.length === 0) return null;
 
   return (
-    <section className="-mx-1 space-y-0.5 px-1 py-0.5" aria-label={groupLabel}>
-      {!onlyToolEntries && (
-        <p className="px-0.5 pb-0.5 font-medium text-secondary-label text-[11px]">{groupLabel}</p>
-      )}
-      <div className="space-y-px">
-        {nonEmptyEntries.map((workEntry) => (
-          <SimpleWorkEntryRow
-            key={workEntry.id}
-            workEntry={workEntry}
-            workspaceRoot={workspaceRoot}
+    <>
+      {generatedImageEntries.length > 0 ? (
+        <GeneratedImageGallery entries={generatedImageEntries} />
+      ) : null}
+      {nonEmptyEntries.length > 0 ? (
+        <section className="-mx-1 space-y-0.5 px-1 py-0.5" aria-label={groupLabel}>
+          {!onlyToolEntries && (
+            <p className="px-0.5 pb-0.5 font-medium text-secondary-label text-[11px]">
+              {groupLabel}
+            </p>
+          )}
+          <div className="space-y-px">
+            {nonEmptyEntries.map((workEntry) => (
+              <SimpleWorkEntryRow
+                key={workEntry.id}
+                workEntry={workEntry}
+                workspaceRoot={workspaceRoot}
+              />
+            ))}
+          </div>
+        </section>
+      ) : null}
+    </>
+  );
+});
+
+const GeneratedImageGallery = memo(function GeneratedImageGallery({
+  entries,
+}: {
+  entries: ReadonlyArray<
+    TimelineWorkEntry & { generatedImage: NonNullable<TimelineWorkEntry["generatedImage"]> }
+  >;
+}) {
+  const ctx = use(TimelineRowCtx);
+  const images = useMemo(
+    () =>
+      entries.map((entry, index) => ({
+        id: entry.generatedImage.id,
+        name: entries.length === 1 ? "Generated image" : `Generated image ${index + 1}`,
+        previewUrl: `data:${entry.generatedImage.mimeType};base64,${entry.generatedImage.base64}`,
+      })),
+    [entries],
+  );
+  const galleryLabel =
+    images.length === 1 ? "Generated image" : `${images.length} generated images`;
+
+  return (
+    <section
+      className="grid grid-cols-1 gap-2 py-1 sm:grid-cols-2"
+      aria-label={galleryLabel}
+      data-generated-image-gallery
+    >
+      {images.map((image) => (
+        <button
+          key={image.id}
+          type="button"
+          className="group/image overflow-hidden rounded-lg border border-border/80 bg-background/70 text-left shadow-sm transition-colors hover:border-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70"
+          aria-label={`Preview ${image.name.toLowerCase()}`}
+          onClick={() => {
+            const preview = buildExpandedImagePreview(images, image.id);
+            if (!preview) return;
+            ctx.onImageExpand(preview);
+          }}
+        >
+          <img
+            src={image.previewUrl}
+            alt={image.name}
+            className="block h-auto max-h-[360px] w-full object-contain"
+            loading="lazy"
+            decoding="async"
+            data-generated-image
           />
-        ))}
-      </div>
+        </button>
+      ))}
     </section>
   );
 });

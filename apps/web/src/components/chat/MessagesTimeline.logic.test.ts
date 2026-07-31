@@ -541,6 +541,100 @@ describe("deriveMessagesTimelineRows", () => {
     ).toBeDefined();
   });
 
+  it("keeps every generated image visible when the rest of a settled turn is folded", () => {
+    const base64 = "iVBORw0KGgo=";
+    const timelineEntries = [
+      {
+        id: "user-entry",
+        kind: "message" as const,
+        createdAt: "2026-01-01T00:00:00Z",
+        message: {
+          id: "user-1" as never,
+          role: "user" as const,
+          text: "Show me two options",
+          turnId: null,
+          createdAt: "2026-01-01T00:00:00Z",
+          updatedAt: "2026-01-01T00:00:00Z",
+          streaming: false,
+        },
+      },
+      {
+        id: "assistant-thought-entry",
+        kind: "message" as const,
+        createdAt: "2026-01-01T00:00:05Z",
+        message: {
+          id: "assistant-thought" as never,
+          role: "assistant" as const,
+          text: "Generating options.",
+          turnId: "turn-1" as never,
+          createdAt: "2026-01-01T00:00:05Z",
+          updatedAt: "2026-01-01T00:00:06Z",
+          streaming: false,
+        },
+      },
+      {
+        id: "work-entry",
+        kind: "work" as const,
+        createdAt: "2026-01-01T00:00:08Z",
+        entry: {
+          id: "work-1",
+          createdAt: "2026-01-01T00:00:08Z",
+          turnId: "turn-1" as never,
+          label: "Read files",
+          tone: "tool" as const,
+        },
+      },
+      ...["image-1", "image-2"].map((id, index) => ({
+        id: `${id}-entry`,
+        kind: "work" as const,
+        createdAt: `2026-01-01T00:00:${10 + index}Z`,
+        entry: {
+          id,
+          createdAt: `2026-01-01T00:00:${10 + index}Z`,
+          turnId: "turn-1" as never,
+          label: "Image view",
+          tone: "tool" as const,
+          generatedImage: {
+            id: `${id}-call`,
+            base64,
+            mimeType: "image/png" as const,
+          },
+        },
+      })),
+      {
+        id: "assistant-final-entry",
+        kind: "message" as const,
+        createdAt: "2026-01-01T00:00:20Z",
+        message: {
+          id: "assistant-final" as never,
+          role: "assistant" as const,
+          text: "Which option should I build?",
+          turnId: "turn-1" as never,
+          createdAt: "2026-01-01T00:00:20Z",
+          updatedAt: "2026-01-01T00:00:22Z",
+          streaming: false,
+        },
+      },
+    ];
+
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries,
+      isWorking: false,
+      activeTurnStartedAt: null,
+      turnDiffSummaryByAssistantMessageId: new Map(),
+      revertTurnCountByUserMessageId: new Map(),
+    });
+
+    expect(rows.map((row) => row.id)).toEqual([
+      "user-entry",
+      "turn-fold:turn-1",
+      "image-1-entry",
+      "assistant-final-entry",
+    ]);
+    expect(rows.find((row) => row.kind === "work")?.groupedEntries).toHaveLength(2);
+    expect(rows.find((row) => row.kind === "work-toggle")).toBeUndefined();
+  });
+
   it("derives a sane duration for a steer-superseded turn with one instant commentary message", () => {
     // A steer ends the previous turn early: its only message completes the
     // instant it is created, and trailing work entries land after it. The
@@ -1117,6 +1211,55 @@ describe("computeStableMessagesTimelineRows", () => {
 
     expect(repeated).toBe(initial);
     expect(repeated.result[0]).toBe(initial.result[0]);
+  });
+
+  it("stabilizes generated-image rows by immutable image metadata instead of image bytes", () => {
+    const base64 = `iVBORw0KGgo${"A".repeat(1024 * 1024 - 11)}`;
+    const createRows = (imageId: string, imageBase64 = base64) =>
+      deriveMessagesTimelineRows({
+        timelineEntries: [
+          {
+            id: "image-entry",
+            kind: "work",
+            createdAt: "2026-01-01T00:00:00Z",
+            entry: {
+              id: "image-work",
+              createdAt: "2026-01-01T00:00:00Z",
+              label: "Image view",
+              tone: "tool",
+              generatedImage: {
+                id: imageId,
+                base64: imageBase64,
+                mimeType: "image/png",
+              },
+            },
+          },
+        ],
+        isWorking: false,
+        activeTurnStartedAt: null,
+        turnDiffSummaryByAssistantMessageId: new Map(),
+        revertTurnCountByUserMessageId: new Map(),
+      });
+
+    const firstRows = createRows("image-call-1");
+    const initial = computeStableMessagesTimelineRows(firstRows, {
+      byId: new Map(),
+      result: [],
+    });
+    const equivalentRows = createRows("image-call-1");
+    const repeated = computeStableMessagesTimelineRows(equivalentRows, initial);
+
+    expect(repeated).toBe(initial);
+    expect(repeated.result[0]).toBe(initial.result[0]);
+
+    const changedId = computeStableMessagesTimelineRows(createRows("image-call-2"), initial);
+    expect(changedId).not.toBe(initial);
+
+    const changedLength = computeStableMessagesTimelineRows(
+      createRows("image-call-1", `${base64}AAAA`),
+      initial,
+    );
+    expect(changedLength).not.toBe(initial);
   });
 
   it("returns a new result when row order changes without content changes", () => {
