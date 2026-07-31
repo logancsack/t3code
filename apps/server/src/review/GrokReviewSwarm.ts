@@ -239,7 +239,7 @@ export const runGrokReviewSwarm = Effect.fn("runGrokReviewSwarm")(function* (inp
     mediumVerification.needsHighEffortReview ||
     mediumVerification.findings.some(
       (finding) =>
-        finding.severity === "blocker" || (finding.severity === "high" && finding.confidence < 0.8),
+        (finding.severity === "blocker" || finding.severity === "high") && finding.confidence < 0.8,
     );
 
   let verification = mediumVerification;

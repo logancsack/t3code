@@ -13,7 +13,7 @@ import { toJsonSchemaObject } from "../textGeneration/TextGenerationUtils.ts";
 import { GROK_REVIEW_SENSITIVE_PATH_GLOBS } from "./GrokReviewPrivacy.ts";
 
 const DEFAULT_GROK_REVIEW_MODEL = "grok-4.5";
-const GROK_AGENT_TIMEOUT_MS = 4 * 60 * 1_000;
+const GROK_AGENT_TIMEOUT_MS = 2 * 60 * 1_000;
 const GROK_AGENT_MAX_TURNS = 8;
 const GROK_REVIEW_TOOLS = "read_file,list_dir,grep";
 const GROK_REVIEW_DENY_RULES = ["Read", "Grep"].flatMap((operation) =>
