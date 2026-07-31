@@ -54,6 +54,7 @@ import {
 } from "../Icons";
 import { RedactedSensitiveText } from "./RedactedSensitiveText";
 import { AuthConnectorDialog } from "./AuthConnectorDialog";
+import { GrokReviewSettings } from "./GrokReviewSettings";
 import { SOURCE_CONTROL_AUTH_METHODS } from "./authConnectorMethods";
 import { SourceControlWritingSettingsSection } from "./SourceControlWritingSettings";
 import { SettingResetButton, SettingsPageContainer, SettingsSection } from "./settingsLayout";
@@ -549,6 +550,7 @@ export function SourceControlSettingsPanel() {
 
   return (
     <SettingsPageContainer>
+      <GrokReviewSettings />
       {isInitialScanPending ? (
         <>
           <SourceControlSectionSkeleton title="Version Control" headerAction={scanButton} />

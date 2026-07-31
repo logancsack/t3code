@@ -333,6 +333,7 @@ const makePairServerConfig = Effect.fn(function* (input: {
     otlpExportIntervalMs: 10_000,
     otlpServiceName: "t3-server",
     mode: "web",
+    managedDevPc: false,
     port: state.port,
     host: state.host,
     cwd: process.cwd(),

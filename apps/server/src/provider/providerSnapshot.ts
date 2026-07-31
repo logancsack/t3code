@@ -26,6 +26,8 @@ export interface CommandResult {
   readonly stdout: string;
   readonly stderr: string;
   readonly code: number;
+  readonly stdoutTruncated?: boolean;
+  readonly stderrTruncated?: boolean;
 }
 
 export class ProviderCommandNotFoundError extends Schema.TaggedErrorClass<ProviderCommandNotFoundError>()(
@@ -72,26 +74,42 @@ export function isCommandMissingCause(error: unknown): boolean {
   return error instanceof PlatformError.PlatformError && error.reason._tag === "NotFound";
 }
 
-export const spawnAndCollect = (binaryPath: string, command: ChildProcess.Command) =>
+export const spawnAndCollect = (
+  binaryPath: string,
+  command: ChildProcess.Command,
+  options: { readonly maxOutputBytes?: number } = {},
+) =>
   Effect.gen(function* () {
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
     const child = yield* spawner.spawn(command);
     const [stdout, stderr, exitCode] = yield* Effect.all(
       [
-        collectStreamAsString(child.stdout),
-        collectStreamAsString(child.stderr),
+        collectUint8StreamText({
+          stream: child.stdout,
+          ...(options.maxOutputBytes !== undefined ? { maxBytes: options.maxOutputBytes } : {}),
+        }),
+        collectUint8StreamText({
+          stream: child.stderr,
+          ...(options.maxOutputBytes !== undefined ? { maxBytes: options.maxOutputBytes } : {}),
+        }),
         child.exitCode.pipe(Effect.map(Number)),
       ],
       { concurrency: "unbounded" },
     );
 
-    const result: CommandResult = { stdout, stderr, code: exitCode };
-    if (yield* isWindowsCommandNotFound(exitCode, stderr)) {
+    const result: CommandResult = {
+      stdout: stdout.text,
+      stderr: stderr.text,
+      code: exitCode,
+      ...(stdout.truncated ? { stdoutTruncated: true } : {}),
+      ...(stderr.truncated ? { stderrTruncated: true } : {}),
+    };
+    if (yield* isWindowsCommandNotFound(exitCode, stderr.text)) {
       return yield* new ProviderCommandNotFoundError({
         binaryPath,
         exitCode,
-        stdoutLength: stdout.length,
-        stderrLength: stderr.length,
+        stdoutLength: stdout.text.length,
+        stderrLength: stderr.text.length,
       });
     }
     return result;

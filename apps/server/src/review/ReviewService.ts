@@ -90,6 +90,13 @@ export const make = Effect.gen(function* () {
     "ReviewService.getDiffPreview",
   )(function* (input) {
     yield* assertWorkspaceBoundCwd("ReviewService.getDiffPreview", input.cwd);
+    if (input.baseRef?.startsWith("-")) {
+      return yield* new VcsRepositoryDetectionError({
+        operation: "ReviewService.getDiffPreview",
+        cwd: input.cwd,
+        detail: "Review base ref must not begin with an option prefix.",
+      });
+    }
 
     const handle = yield* vcsRegistry.detect({ cwd: input.cwd, requestedKind: "auto" });
     if (!handle) {

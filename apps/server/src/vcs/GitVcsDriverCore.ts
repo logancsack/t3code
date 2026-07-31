@@ -48,6 +48,8 @@ const RANGE_DIFF_PATCH_MAX_OUTPUT_BYTES = 59_000;
 const REVIEW_DIFF_PATCH_MAX_OUTPUT_BYTES = 120_000;
 const REVIEW_UNTRACKED_DIFF_MAX_OUTPUT_BYTES = 80_000;
 const REVIEW_DIFF_FILE_MAX_OUTPUT_BYTES = 1024 * 1024;
+const REVIEW_UNTRACKED_AGGREGATE_MAX_OUTPUT_BYTES = 120_000;
+const REVIEW_UNTRACKED_MAX_FILES = 64;
 const WORKSPACE_FILES_MAX_OUTPUT_BYTES = 120_000;
 const STATUS_UPSTREAM_REFRESH_INTERVAL = Duration.seconds(15);
 const STATUS_UPSTREAM_REFRESH_TIMEOUT = Duration.seconds(5);
@@ -2107,7 +2109,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     }
 
     const diffs = yield* Effect.forEach(
-      untrackedPaths,
+      untrackedPaths.slice(0, REVIEW_UNTRACKED_MAX_FILES),
       (relativePath) =>
         executeGit(
           "GitVcsDriver.readUntrackedReviewDiffs.diff",
@@ -2132,12 +2134,28 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         ),
       { concurrency: 4 },
     );
+    const parts: Array<string> = [];
+    let truncated =
+      untrackedResult.stdoutTruncated || untrackedPaths.length > REVIEW_UNTRACKED_MAX_FILES;
+    for (const result of diffs) {
+      truncated ||= result.stdoutTruncated;
+      if (result.stdout.trim().length === 0) continue;
+      const candidate = [...parts, result.stdout].join("\n");
+      if (Buffer.byteLength(candidate) > REVIEW_UNTRACKED_AGGREGATE_MAX_OUTPUT_BYTES) {
+        const bounded = Buffer.from(candidate)
+          .subarray(0, REVIEW_UNTRACKED_AGGREGATE_MAX_OUTPUT_BYTES)
+          .toString("utf8");
+        return {
+          diff: `${bounded}${OUTPUT_TRUNCATED_MARKER}`,
+          truncated: true,
+        };
+      }
+      parts.push(result.stdout);
+    }
 
     return {
-      diff: Arr.filterMap(diffs, (result) =>
-        result.stdout.trim().length > 0 ? Result.succeed(result.stdout) : Result.failVoid,
-      ).join("\n"),
-      truncated: untrackedResult.stdoutTruncated || diffs.some((result) => result.stdoutTruncated),
+      diff: parts.join("\n"),
+      truncated,
     };
   });
 
@@ -2167,10 +2185,10 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       input.cwd,
       [
         "diff",
-        "--patch",
         "--no-color",
         "--no-ext-diff",
         "--no-textconv",
+        "--patch",
         "--minimal",
         ...(input.ignoreWhitespace ? ["--ignore-all-space"] : []),
         "HEAD",
@@ -2196,35 +2214,34 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       .filter((diff) => diff.length > 0)
       .join("\n");
 
-    const baseResult =
-      baseRef && branch
-        ? yield* executeGit(
-            "GitVcsDriver.getReviewDiffPreview.base",
-            input.cwd,
-            [
-              "diff",
-              "--patch",
-              "--no-color",
-              "--no-ext-diff",
-              "--no-textconv",
-              "--minimal",
-              ...(input.ignoreWhitespace ? ["--ignore-all-space"] : []),
-              `${baseRef}...HEAD`,
-            ],
-            {
-              maxOutputBytes: REVIEW_DIFF_PATCH_MAX_OUTPUT_BYTES,
-              appendTruncationMarker: true,
-            },
-          ).pipe(
-            Effect.orElseSucceed(() => ({
-              exitCode: 0,
-              stdout: "",
-              stderr: "",
-              stdoutTruncated: false,
-              stderrTruncated: false,
-            })),
-          )
-        : null;
+    const baseResult = baseRef
+      ? yield* executeGit(
+          "GitVcsDriver.getReviewDiffPreview.base",
+          input.cwd,
+          [
+            "diff",
+            "--no-color",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--patch",
+            "--minimal",
+            ...(input.ignoreWhitespace ? ["--ignore-all-space"] : []),
+            `${baseRef}...HEAD`,
+          ],
+          {
+            maxOutputBytes: REVIEW_DIFF_PATCH_MAX_OUTPUT_BYTES,
+            appendTruncationMarker: true,
+          },
+        ).pipe(
+          Effect.orElseSucceed(() => ({
+            exitCode: 0,
+            stdout: "",
+            stderr: "",
+            stdoutTruncated: false,
+            stderrTruncated: false,
+          })),
+        )
+      : null;
     const baseDiff = baseResult?.stdout ?? "";
     const hashDiff = (diff: string) =>
       crypto.digest("SHA-256", new TextEncoder().encode(diff)).pipe(

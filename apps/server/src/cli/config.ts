@@ -120,6 +120,10 @@ const EnvServerConfig = Config.all({
     Config.map(Option.getOrUndefined),
   ),
   managedDevPc: Config.boolean("T3CODE_MANAGED_DEVPC").pipe(Config.withDefault(false)),
+  managedGatewayToken: Config.string("WORKSPACE_GATEWAY_TOKEN").pipe(
+    Config.option,
+    Config.map(Option.getOrUndefined),
+  ),
   bootstrapFd: Config.int("T3CODE_BOOTSTRAP_FD").pipe(
     Config.option,
     Config.map(Option.getOrUndefined),
@@ -379,6 +383,7 @@ export const resolveServerConfig = (
       devAllowedOrigins: env.devAllowedOrigins,
       noBrowser,
       managedDevPc: env.managedDevPc,
+      managedGatewayToken: env.managedGatewayToken,
       startupPresentation,
       desktopBootstrapToken,
       desktopTelemetryFd,

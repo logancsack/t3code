@@ -918,6 +918,93 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
         assert.strictEqual(contents.newContents, "# branch change\nunchanged context\n");
       }),
     );
+
+    it.effect("forces color off in tracked and untracked review patches", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        const { initialBranch } = yield* initRepoWithCommit(cwd);
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        yield* git(cwd, ["config", "color.ui", "always"]);
+        yield* git(cwd, ["checkout", "-b", "feature/color"]);
+        yield* writeTextFile(cwd, "README.md", "# committed\n");
+        yield* git(cwd, ["add", "README.md"]);
+        yield* git(cwd, ["commit", "-m", "commit colored diff"]);
+        yield* writeTextFile(cwd, "README.md", "# changed\n");
+        yield* writeTextFile(cwd, "untracked.txt", "new\n");
+
+        const preview = yield* driver.getReviewDiffPreview({ cwd, baseRef: initialBranch });
+        const diff = preview.sources.find((source) => source.kind === "working-tree")?.diff ?? "";
+        const branchDiff =
+          preview.sources.find((source) => source.kind === "branch-range")?.diff ?? "";
+
+        assert.notInclude(diff, "\u001b[");
+        assert.include(diff, "diff --git a/README.md b/README.md");
+        assert.include(diff, "diff --git a/untracked.txt b/untracked.txt");
+        assert.notInclude(branchDiff, "\u001b[");
+        assert.include(branchDiff, "diff --git a/README.md b/README.md");
+      }),
+    );
+
+    it.effect("reviews an explicit base from detached HEAD", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        const { initialBranch } = yield* initRepoWithCommit(cwd);
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        yield* git(cwd, ["checkout", "-b", "feature/detached-review"]);
+        yield* writeTextFile(cwd, "feature.ts", "export const reviewed = true;\n");
+        yield* git(cwd, ["add", "feature.ts"]);
+        yield* git(cwd, ["commit", "-m", "add detached review fixture"]);
+        yield* git(cwd, ["checkout", "--detach"]);
+
+        const preview = yield* driver.getReviewDiffPreview({ cwd, baseRef: initialBranch });
+        const branchDiff =
+          preview.sources.find((source) => source.kind === "branch-range")?.diff ?? "";
+
+        assert.include(branchDiff, "diff --git a/feature.ts b/feature.ts");
+      }),
+    );
+
+    it.effect("disables configured external and textconv diff helpers", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        yield* initRepoWithCommit(cwd);
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        yield* writeTextFile(
+          cwd,
+          ".gitattributes",
+          "README.md diff=external-helper\ncontent.txt diff=textconv-helper\n",
+        );
+        yield* writeTextFile(cwd, "content.txt", "initial\n");
+        yield* git(cwd, ["add", ".gitattributes", "content.txt"]);
+        yield* git(cwd, ["commit", "-m", "add custom diff attributes"]);
+        yield* git(cwd, ["config", "diff.external-helper.command", "false"]);
+        yield* git(cwd, ["config", "diff.textconv-helper.textconv", "false"]);
+        yield* writeTextFile(cwd, "README.md", "# changed without helper\n");
+        yield* writeTextFile(cwd, "content.txt", "changed without textconv\n");
+
+        const preview = yield* driver.getReviewDiffPreview({ cwd });
+        const diff = preview.sources.find((source) => source.kind === "working-tree")?.diff ?? "";
+
+        assert.include(diff, "diff --git a/README.md b/README.md");
+        assert.include(diff, "diff --git a/content.txt b/content.txt");
+      }),
+    );
+
+    it.effect("caps aggregate untracked review patches", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        yield* initRepoWithCommit(cwd);
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        yield* writeTextFile(cwd, "first.txt", "a".repeat(70_000));
+        yield* writeTextFile(cwd, "second.txt", "b".repeat(70_000));
+
+        const preview = yield* driver.getReviewDiffPreview({ cwd });
+        const source = preview.sources.find((candidate) => candidate.kind === "working-tree");
+
+        assert.strictEqual(source?.truncated, true);
+        assert.isAtMost(Buffer.byteLength(source?.diff ?? ""), 121_000);
+      }),
+    );
   });
 
   describe("repository status", () => {
