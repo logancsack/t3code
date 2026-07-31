@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { ChevronRightIcon, PauseIcon, PlayIcon, RotateCwIcon } from "lucide-react";
+import { PauseIcon, PlayIcon, RotateCwIcon } from "lucide-react";
 
 import {
   isAmbiguousLifecycleResponse,
@@ -21,17 +21,9 @@ import {
   AlertDialogTitle,
 } from "./ui/alert-dialog";
 import { Button } from "./ui/button";
-import {
-  Dialog,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogPanel,
-  DialogPopup,
-  DialogTitle,
-  DialogTrigger,
-} from "./ui/dialog";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "./ui/select";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
+import { SettingsPageContainer, SettingsSection } from "./settings/settingsLayout";
 
 const STATUS_PATH = "/_devpc/workspace";
 const SETTINGS_PATH = "/_devpc/workspace/settings";
@@ -496,13 +488,13 @@ export function autoPauseDescription(
 
 function StatusDot({ status }: { status: ManagedDevPcDisplayStatus }) {
   const transitional = ["starting", "restarting", "pausing", "restoring"].includes(status);
-  const ring = ["paused", "stopped", "unreachable"].includes(status);
+  const inactive = ["paused", "stopped"].includes(status);
   const color =
     status === "running"
       ? "bg-emerald-500"
-      : status === "attention"
+      : status === "attention" || status === "unreachable"
         ? "bg-destructive"
-        : ring
+        : inactive
           ? "border border-current bg-transparent text-muted-foreground"
           : "bg-amber-500";
   return (
@@ -620,11 +612,16 @@ function Metrics({
   );
 }
 
-export function ManagedDevPcStatus() {
+export function ManagedDevPcStatus({
+  view = "indicator",
+  onOpenSettings,
+}: {
+  view?: "indicator" | "settings";
+  onOpenSettings?: () => void;
+}) {
   const [workspace, setWorkspace] = useState<ManagedDevPcBootstrap | null>(
     window.__DEVPC_MANAGED_BOOTSTRAP__ ?? null,
   );
-  const [open, setOpen] = useState(false);
   const {
     pendingAction,
     uncertainAction,
@@ -985,164 +982,163 @@ export function ManagedDevPcStatus() {
       ? "The request was interrupted. Retrying is safe while Aldo checks the workspace."
       : null);
 
-  return (
-    <Dialog
-      open={open}
-      onOpenChange={(nextOpen) => {
-        setOpen(nextOpen);
-        if (nextOpen) {
-          if (!uncertainActionRef.current) setError(null);
-          void refresh();
-        }
-      }}
-    >
-      <DialogTrigger
-        render={
-          <button
-            type="button"
-            className="flex h-8 w-full min-w-0 items-center gap-2 rounded-md px-2 text-sm text-sidebar-muted-foreground/80 outline-hidden hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring"
-            aria-label={`Workspace — ${ariaState}. Open workspace controls.`}
-            aria-haspopup="dialog"
-            data-devpc-workspace-status={status}
-          />
-        }
-      >
-        <StatusDot status={status} />
-        <span className="min-w-0 flex-1 truncate text-left font-medium">
-          Workspace · {statusLabel[status]}
-        </span>
-        <ChevronRightIcon className="size-3.5 shrink-0 opacity-45" aria-hidden />
-      </DialogTrigger>
+  if (view === "indicator") {
+    return (
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <button
+              type="button"
+              className="flex size-8 shrink-0 items-center justify-center rounded-md text-sidebar-muted-foreground/80 outline-hidden hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring"
+              aria-label={`Workspace — ${ariaState}. Open workspace settings.`}
+              data-devpc-workspace-status={status}
+              onClick={() => {
+                if (onOpenSettings) {
+                  onOpenSettings();
+                  return;
+                }
+                window.location.assign("/settings/workspace");
+              }}
+            />
+          }
+        >
+          <StatusDot status={status} />
+        </TooltipTrigger>
+        <TooltipPopup side="top">Workspace · {statusLabel[status]}</TooltipPopup>
+      </Tooltip>
+    );
+  }
 
-      <DialogPopup className="w-full sm:max-w-[440px]" data-devpc-workspace-control-center>
-        <DialogHeader>
-          <DialogTitle>Workspace</DialogTitle>
-          <DialogDescription className="sr-only">
-            View workspace health, resources, settings, and controls.
-          </DialogDescription>
-        </DialogHeader>
-        <DialogPanel className="space-y-5">
-          <section className="space-y-3" aria-live="polite">
-            <div className="flex items-start gap-2.5">
-              <div className="pt-0.5">
-                <StatusDot status={status} />
-              </div>
-              <div className="min-w-0">
-                <h3 className="text-sm font-semibold">{statusLabel[status]}</h3>
-                <p className="mt-0.5 text-xs text-muted-foreground">{statusMeta}</p>
-              </div>
-            </div>
-            {canResume ? (
-              <Button className="w-full" onClick={() => void runAction("resume")}>
-                <PlayIcon />
-                Resume workspace
-              </Button>
-            ) : null}
-            {visibleError ? (
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-xs text-destructive">{visibleError}</p>
-                {uncertainAction ? (
-                  <Button
-                    className="shrink-0"
-                    size="xs"
-                    variant="outline"
-                    onClick={() => void runAction(uncertainAction)}
-                  >
-                    Retry {uncertainAction === "pause" ? "pause" : uncertainAction}
+  return (
+    <>
+      <SettingsPageContainer>
+        <SettingsSection title="Workspace">
+          <div
+            className="overflow-hidden rounded-xl border border-border bg-card shadow-xs"
+            data-devpc-workspace-control-center
+          >
+            <div className="space-y-5 p-4 sm:p-5">
+              <section className="space-y-3" aria-live="polite">
+                <div className="flex items-start gap-2.5">
+                  <div className="pt-0.5">
+                    <StatusDot status={status} />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-semibold">{statusLabel[status]}</h3>
+                    <p className="mt-0.5 text-xs text-muted-foreground">{statusMeta}</p>
+                  </div>
+                </div>
+                {canResume ? (
+                  <Button className="w-full" onClick={() => void runAction("resume")}>
+                    <PlayIcon />
+                    Resume workspace
                   </Button>
                 ) : null}
-              </div>
-            ) : null}
-          </section>
+                {visibleError ? (
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-xs text-destructive">{visibleError}</p>
+                    {uncertainAction ? (
+                      <Button
+                        className="shrink-0"
+                        size="xs"
+                        variant="outline"
+                        onClick={() => void runAction(uncertainAction)}
+                      >
+                        Retry {uncertainAction === "pause" ? "pause" : uncertainAction}
+                      </Button>
+                    ) : null}
+                  </div>
+                ) : null}
+              </section>
 
-          <section className="space-y-2 border-t pt-5">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <label className="text-sm font-semibold" htmlFor="workspace-idle-timeout">
-                  Pause after inactivity
-                </label>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  Agent work counts even when this tab is closed.
+              <section className="space-y-2 border-t pt-5">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <label className="text-sm font-semibold" htmlFor="workspace-idle-timeout">
+                      Pause after inactivity
+                    </label>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      Agent work counts even when this tab is closed.
+                    </p>
+                  </div>
+                  <Select
+                    value={idleTimeoutMinutes === undefined ? null : String(idleTimeoutMinutes)}
+                    onValueChange={(value) => void updateIdleTimeout(value)}
+                    disabled={settingsPending || idleTimeoutMinutes === undefined}
+                  >
+                    <SelectTrigger
+                      id="workspace-idle-timeout"
+                      className="w-32 shrink-0"
+                      size="sm"
+                      aria-label="Pause after inactivity"
+                    >
+                      <SelectValue>{idleTimeoutLabel(idleTimeoutMinutes)}</SelectValue>
+                    </SelectTrigger>
+                    <SelectPopup align="end" alignItemWithTrigger={false}>
+                      {IDLE_TIMEOUTS.map((minutes) => (
+                        <SelectItem key={minutes} value={String(minutes)}>
+                          {idleTimeoutLabel(minutes)}
+                        </SelectItem>
+                      ))}
+                    </SelectPopup>
+                  </Select>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {autoPauseDescription(status, idleTimeoutMinutes, autoStopClock)}
                 </p>
-              </div>
-              <Select
-                value={idleTimeoutMinutes === undefined ? null : String(idleTimeoutMinutes)}
-                onValueChange={(value) => void updateIdleTimeout(value)}
-                disabled={settingsPending || idleTimeoutMinutes === undefined}
-              >
-                <SelectTrigger
-                  id="workspace-idle-timeout"
-                  className="w-32 shrink-0"
-                  size="sm"
-                  aria-label="Pause after inactivity"
-                >
-                  <SelectValue>{idleTimeoutLabel(idleTimeoutMinutes)}</SelectValue>
-                </SelectTrigger>
-                <SelectPopup align="end" alignItemWithTrigger={false}>
-                  {IDLE_TIMEOUTS.map((minutes) => (
-                    <SelectItem key={minutes} value={String(minutes)}>
-                      {idleTimeoutLabel(minutes)}
-                    </SelectItem>
-                  ))}
-                </SelectPopup>
-              </Select>
+              </section>
+
+              {telemetry ? (
+                <Metrics telemetry={telemetry} status={status} onRetry={() => void refresh()} />
+              ) : null}
+
+              <section className="space-y-3 border-t pt-5">
+                <h3 className="text-sm font-semibold">Details</h3>
+                <dl className="grid grid-cols-[auto_1fr] gap-x-5 gap-y-2 text-xs">
+                  <dt className="text-muted-foreground">Region</dt>
+                  <dd className="text-right">{workspace.region ?? "—"}</dd>
+                  <dt className="text-muted-foreground">Machine</dt>
+                  <dd className="text-right">
+                    {workspace.machine
+                      ? `${workspace.machine.cpuCount} vCPU · ${formatBytes(
+                          workspace.machine.memoryBytes,
+                        )}`
+                      : "—"}
+                  </dd>
+                  <dt className="text-muted-foreground">Uptime</dt>
+                  <dd className="text-right">
+                    {telemetry ? formatUptime(telemetry.uptimeSeconds) : "—"}
+                  </dd>
+                  <dt className="text-muted-foreground">Runtime</dt>
+                  <dd className="truncate text-right">{workspace.runtimeVersion ?? "—"}</dd>
+                  <dt className="text-muted-foreground">T3</dt>
+                  <dd className="truncate text-right">{workspace.t3Version ?? "—"}</dd>
+                </dl>
+              </section>
             </div>
-            <p className="text-xs text-muted-foreground">
-              {autoPauseDescription(status, idleTimeoutMinutes, autoStopClock)}
-            </p>
-          </section>
-
-          {telemetry ? (
-            <Metrics telemetry={telemetry} status={status} onRetry={() => void refresh()} />
-          ) : null}
-
-          <section className="space-y-3 border-t pt-5">
-            <h3 className="text-sm font-semibold">Details</h3>
-            <dl className="grid grid-cols-[auto_1fr] gap-x-5 gap-y-2 text-xs">
-              <dt className="text-muted-foreground">Region</dt>
-              <dd className="text-right">{workspace.region ?? "—"}</dd>
-              <dt className="text-muted-foreground">Machine</dt>
-              <dd className="text-right">
-                {workspace.machine
-                  ? `${workspace.machine.cpuCount} vCPU · ${formatBytes(
-                      workspace.machine.memoryBytes,
-                    )}`
-                  : "—"}
-              </dd>
-              <dt className="text-muted-foreground">Uptime</dt>
-              <dd className="text-right">
-                {telemetry ? formatUptime(telemetry.uptimeSeconds) : "—"}
-              </dd>
-              <dt className="text-muted-foreground">Runtime</dt>
-              <dd className="truncate text-right">{workspace.runtimeVersion ?? "—"}</dd>
-              <dt className="text-muted-foreground">T3</dt>
-              <dd className="truncate text-right">{workspace.t3Version ?? "—"}</dd>
-            </dl>
-          </section>
-        </DialogPanel>
-        <DialogFooter className="max-sm:flex-col sm:justify-end">
-          <div className="flex gap-2 max-sm:flex-col">
-            <Button
-              className="max-sm:w-full"
-              variant="outline"
-              disabled={!canOperate}
-              onClick={() => setConfirmation("restart")}
-            >
-              <RotateCwIcon />
-              Restart
-            </Button>
-            <Button
-              className="max-sm:w-full"
-              variant="outline"
-              disabled={!canOperate}
-              onClick={() => setConfirmation("pause")}
-            >
-              <PauseIcon />
-              Pause
-            </Button>
+            <div className="flex flex-col gap-2 border-t border-border p-4 sm:flex-row sm:justify-end">
+              <Button
+                className="max-sm:w-full"
+                variant="outline"
+                disabled={!canOperate}
+                onClick={() => setConfirmation("restart")}
+              >
+                <RotateCwIcon />
+                Restart
+              </Button>
+              <Button
+                className="max-sm:w-full"
+                variant="outline"
+                disabled={!canOperate}
+                onClick={() => setConfirmation("pause")}
+              >
+                <PauseIcon />
+                Pause
+              </Button>
+            </div>
           </div>
-        </DialogFooter>
-      </DialogPopup>
+        </SettingsSection>
+      </SettingsPageContainer>
 
       <AlertDialog
         open={confirmation !== null}
@@ -1173,6 +1169,6 @@ export function ManagedDevPcStatus() {
           </AlertDialogFooter>
         </AlertDialogPopup>
       </AlertDialog>
-    </Dialog>
+    </>
   );
 }

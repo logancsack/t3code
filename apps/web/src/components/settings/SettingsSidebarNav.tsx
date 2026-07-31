@@ -7,6 +7,7 @@ import {
   GitBranchIcon,
   KeyboardIcon,
   Link2Icon,
+  ServerIcon,
   Settings2Icon,
 } from "lucide-react";
 import { useCanGoBack, useNavigate } from "@tanstack/react-router";
@@ -21,10 +22,12 @@ import {
   useSidebar,
 } from "../ui/sidebar";
 import { T3ConnectSidebarAvatar, T3ConnectSidebarSignIn } from "../clerk/T3ConnectSidebarSignIn";
-import { ManagedDevPcStatus } from "../ManagedDevPcStatus";
+import { ManagedDevPcFooterAccount } from "../ManagedDevPcAccount";
+import { isManagedDevPc } from "../../managedDevPc";
 
 export type SettingsSectionPath =
   | "/settings/general"
+  | "/settings/workspace"
   | "/settings/keybindings"
   | "/settings/providers"
   | "/settings/source-control"
@@ -38,6 +41,9 @@ export const SETTINGS_NAV_ITEMS: ReadonlyArray<{
   icon: ComponentType<{ className?: string }>;
 }> = [
   { label: "General", to: "/settings/general", icon: Settings2Icon },
+  ...(isManagedDevPc
+    ? ([{ label: "Workspace", to: "/settings/workspace", icon: ServerIcon }] as const)
+    : []),
   { label: "Keybindings", to: "/settings/keybindings", icon: KeyboardIcon },
   { label: "Providers", to: "/settings/providers", icon: BotIcon },
   { label: "Source Control", to: "/settings/source-control", icon: GitBranchIcon },
@@ -107,7 +113,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
       </SidebarContent>
       <SidebarFooter className="p-2">
         <T3ConnectSidebarSignIn />
-        <ManagedDevPcStatus />
+        <ManagedDevPcFooterAccount />
         <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-1">
           <SidebarMenu className="min-w-0">
             <SidebarMenuItem>
