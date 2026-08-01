@@ -32,6 +32,7 @@ import {
   type DesktopBridge,
   type DesktopEnvironmentBootstrap,
   type DesktopSshEnvironmentTarget,
+  type EnvironmentId,
   PRIMARY_LOCAL_ENVIRONMENT_ID,
 } from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
@@ -61,6 +62,7 @@ import {
   type DesktopSecondaryBootstrapsRead,
 } from "./desktopLocal";
 import { connectionStorageLayer } from "./storage";
+import { LANDING_DEMO_ENVIRONMENT_ID, isLandingDemo } from "../landingDemo/mode";
 
 let nextObservedRpcRequestId = 0;
 
@@ -219,17 +221,19 @@ const capabilitiesLayer = Layer.effectContext(
           }),
       }).pipe(Effect.map(Option.fromNullishOr)),
       prepareWebSocketUrl: (socketUrl) =>
-        Effect.tryPromise({
-          try: () => prepareManagedWebSocketUrl(socketUrl),
-          catch: (cause) =>
-            new ConnectionTransientError({
-              reason: "network",
-              detail:
-                cause instanceof Error
-                  ? cause.message
-                  : "Could not authorize the managed WebSocket connection.",
+        isLandingDemo()
+          ? Effect.succeed(socketUrl)
+          : Effect.tryPromise({
+              try: () => prepareManagedWebSocketUrl(socketUrl),
+              catch: (cause) =>
+                new ConnectionTransientError({
+                  reason: "network",
+                  detail:
+                    cause instanceof Error
+                      ? cause.message
+                      : "Could not authorize the managed WebSocket connection.",
+                }),
             }),
-        }),
     });
     const ssh = SshEnvironmentGateway.of({
       provision: Effect.fn("web.connectionPlatform.ssh.provision")(function* (target) {
@@ -471,6 +475,20 @@ export function secondaryRegistrationsToRetainAfterTopologyRead(
 const platformConnectionSourceLayer = Layer.effect(
   PlatformConnectionSource,
   Effect.gen(function* () {
+    if (isLandingDemo()) {
+      const origin = window.location.origin;
+      const registration = new PrimaryConnectionRegistration({
+        target: new PrimaryConnectionTarget({
+          environmentId: LANDING_DEMO_ENVIRONMENT_ID as EnvironmentId,
+          label: "Aldo browser demo",
+          httpBaseUrl: origin,
+          wsBaseUrl: origin.replace(/^http/, "ws"),
+        }),
+      });
+      return PlatformConnectionSource.of({
+        registrations: Stream.make([registration]),
+      });
+    }
     if (isHostedStaticApp()) {
       return PlatformConnectionSource.of({
         registrations: Stream.empty,

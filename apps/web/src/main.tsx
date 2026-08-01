@@ -21,12 +21,20 @@ import {
 } from "./lib/windowControlsOverlay";
 import { AppRoot } from "./AppRoot";
 import { prepareManagedDevPc } from "./managedDevPc";
+import { initializeLandingDemoClientSettings } from "./hooks/useSettings";
+import { isLandingDemo } from "./landingDemo/mode";
 
 async function renderApp() {
-  await prepareManagedDevPc();
+  const landingDemo = isLandingDemo();
+  if (!landingDemo) {
+    await prepareManagedDevPc();
+  } else {
+    initializeLandingDemoClientSettings();
+    document.documentElement.classList.add("dark");
+  }
 
   // Electron loads the app from a file-backed shell, so hash history avoids path resolution issues.
-  const history = isElectron ? createHashHistory() : createBrowserHistory();
+  const history = isElectron || landingDemo ? createHashHistory() : createBrowserHistory();
   const router = getRouter(history);
 
   if (isElectron) {
