@@ -29,6 +29,7 @@ import {
   sanitizeCommitSubject,
   sanitizePrTitle,
   sanitizeThreadTitle,
+  withStructuredOutputSchemaPrompt,
 } from "./TextGenerationUtils.ts";
 import * as OpenCodeRuntime from "../provider/opencodeRuntime.ts";
 
@@ -618,7 +619,7 @@ export const makeOpenCodeTextGeneration = Effect.fn("makeOpenCodeTextGeneration"
       return yield* runOpenCodeJson({
         operation: "generateStructured",
         cwd: input.cwd,
-        prompt: input.prompt,
+        prompt: withStructuredOutputSchemaPrompt(input.prompt, input.outputSchema),
         outputSchemaJson: input.outputSchema,
         modelSelection: input.modelSelection,
       });

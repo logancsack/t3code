@@ -21,6 +21,7 @@ import {
   sanitizeCommitSubject,
   sanitizePrTitle,
   sanitizeThreadTitle,
+  withStructuredOutputSchemaPrompt,
 } from "./TextGenerationUtils.ts";
 import {
   applyCursorAcpModelSelection,
@@ -261,7 +262,7 @@ export const makeCursorTextGeneration = Effect.fn("makeCursorTextGeneration")(fu
       return yield* runCursorJson({
         operation: "generateStructured",
         cwd: input.cwd,
-        prompt: input.prompt,
+        prompt: withStructuredOutputSchemaPrompt(input.prompt, input.outputSchema),
         outputSchemaJson: input.outputSchema,
         modelSelection: input.modelSelection,
       });

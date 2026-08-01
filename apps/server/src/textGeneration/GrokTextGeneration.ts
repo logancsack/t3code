@@ -22,6 +22,7 @@ import {
   sanitizeCommitSubject,
   sanitizePrTitle,
   sanitizeThreadTitle,
+  withStructuredOutputSchemaPrompt,
 } from "./TextGenerationUtils.ts";
 import {
   applyGrokAcpModelSelection,
@@ -253,7 +254,7 @@ export const makeGrokTextGeneration = Effect.fn("makeGrokTextGeneration")(functi
       return yield* runGrokJson({
         operation: "generateStructured",
         cwd: input.cwd,
-        prompt: input.prompt,
+        prompt: withStructuredOutputSchemaPrompt(input.prompt, input.outputSchema),
         outputSchemaJson: input.outputSchema,
         modelSelection: input.modelSelection,
       });

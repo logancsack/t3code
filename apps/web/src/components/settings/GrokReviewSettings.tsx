@@ -48,6 +48,15 @@ export function normalizeGrokReviewRepository(value: string): string | null {
     : null;
 }
 
+export function aldoReviewToggleDisabled(input: {
+  saving: boolean;
+  enabled: boolean;
+  connected: boolean;
+  providerAvailable: boolean;
+}): boolean {
+  return input.saving || (!input.enabled && (!input.connected || !input.providerAvailable));
+}
+
 function sortRepositories(
   repositories: ReadonlyArray<AldoReviewRepositorySetting>,
 ): ReadonlyArray<AldoReviewRepositorySetting> {
@@ -408,7 +417,12 @@ export function GrokReviewSettings() {
                 />
                 <Switch
                   checked={setting.enabled}
-                  disabled={savingRepository !== null || !setting.connected || !selectedEntry}
+                  disabled={aldoReviewToggleDisabled({
+                    saving: savingRepository !== null,
+                    enabled: setting.enabled,
+                    connected: setting.connected,
+                    providerAvailable: selectedEntry !== undefined,
+                  })}
                   onCheckedChange={(enabled) =>
                     void save(setting.repository, Boolean(enabled), selection)
                   }
