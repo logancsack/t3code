@@ -33,7 +33,7 @@ const report: GrokReviewReport = {
   coverage: ["Diff"],
   limitations: [],
   usage: { agentRuns: 5, mediumEffortRuns: 5, highEffortRuns: 0 },
-  markdown: "## Aldo Grok review",
+  markdown: "## Aldo Review",
 };
 
 const invocation = {
@@ -66,16 +66,17 @@ const TestLayer = McpServer.toolkit(GrokReviewToolkit).pipe(
   ),
 );
 
-it.effect("registers a read-only grok_review tool and returns the canonical report", () =>
+it.effect("registers a read-only aldo_review tool and returns the canonical report", () =>
   Effect.gen(function* () {
     const server = yield* McpServer.McpServer;
-    const registered = server.tools.find(({ tool }) => tool.name === "grok_review");
+    const registered = server.tools.find(({ tool }) => tool.name === "aldo_review");
+    expect(server.tools.some(({ tool }) => tool.name === "grok_review")).toBe(true);
     expect(registered?.tool.annotations?.readOnlyHint).toBe(true);
     expect(registered?.tool.annotations?.destructiveHint).toBe(false);
 
     const result = yield* server
       .callTool({
-        name: "grok_review",
+        name: "aldo_review",
         arguments: { cwd: "/workspace/project", target: "working-tree" },
       })
       .pipe(
@@ -97,7 +98,7 @@ it.effect("rejects a session without the review capability", () =>
     const server = yield* McpServer.McpServer;
     const result = yield* server
       .callTool({
-        name: "grok_review",
+        name: "aldo_review",
         arguments: { cwd: "/workspace/project", target: "working-tree" },
       })
       .pipe(

@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
+import * as Schema from "effect/Schema";
+import { TextGenerationError } from "@t3tools/contracts";
 
 import {
   buildBranchNamePrompt,
@@ -6,8 +8,24 @@ import {
   buildPrContentPrompt,
   buildThreadTitlePrompt,
 } from "./TextGenerationPrompts.ts";
-import { normalizeCliError, sanitizeThreadTitle } from "./TextGenerationUtils.ts";
-import { TextGenerationError } from "@t3tools/contracts";
+import {
+  normalizeCliError,
+  sanitizeThreadTitle,
+  withStructuredOutputSchemaPrompt,
+} from "./TextGenerationUtils.ts";
+
+it("appends a concrete JSON Schema contract for non-native structured providers", () => {
+  const prompt = withStructuredOutputSchemaPrompt(
+    "Review the supplied diff.",
+    Schema.Struct({ summary: Schema.String, findings: Schema.Array(Schema.String) }),
+  );
+
+  expect(prompt).toContain("Review the supplied diff.");
+  expect(prompt).toContain("<output_schema>");
+  expect(prompt).toContain('"summary"');
+  expect(prompt).toContain('"findings"');
+  expect(prompt).toContain('"required"');
+});
 
 describe("buildCommitMessagePrompt", () => {
   it("includes staged patch and summary in the prompt", () => {

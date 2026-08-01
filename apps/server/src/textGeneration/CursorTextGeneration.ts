@@ -21,6 +21,7 @@ import {
   sanitizeCommitSubject,
   sanitizePrTitle,
   sanitizeThreadTitle,
+  withStructuredOutputSchemaPrompt,
 } from "./TextGenerationUtils.ts";
 import {
   applyCursorAcpModelSelection,
@@ -54,7 +55,8 @@ export const makeCursorTextGeneration = Effect.fn("makeCursorTextGeneration")(fu
       | "generateCommitMessage"
       | "generatePrContent"
       | "generateBranchName"
-      | "generateThreadTitle";
+      | "generateThreadTitle"
+      | "generateStructured";
     cwd: string;
     prompt: string;
     outputSchemaJson: S;
@@ -255,10 +257,22 @@ export const makeCursorTextGeneration = Effect.fn("makeCursorTextGeneration")(fu
       } satisfies TextGeneration.ThreadTitleGenerationResult;
     });
 
+  const generateStructured: TextGeneration.TextGeneration["Service"]["generateStructured"] =
+    Effect.fn("CursorTextGeneration.generateStructured")(function* (input) {
+      return yield* runCursorJson({
+        operation: "generateStructured",
+        cwd: input.cwd,
+        prompt: withStructuredOutputSchemaPrompt(input.prompt, input.outputSchema),
+        outputSchemaJson: input.outputSchema,
+        modelSelection: input.modelSelection,
+      });
+    });
+
   return {
     generateCommitMessage,
     generatePrContent,
     generateBranchName,
     generateThreadTitle,
+    generateStructured,
   } satisfies TextGeneration.TextGeneration["Service"];
 });

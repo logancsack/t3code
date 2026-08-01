@@ -56,7 +56,7 @@ describe.runIf(process.env.T3_GROK_REVIEW_SWARM_PROBE === "1")("Grok review swar
         expect(report.reasoningEffort).toBe("medium");
         expect(report.usage.agentRuns).toBeGreaterThanOrEqual(5);
         expect(report.usage.agentRuns).toBeLessThanOrEqual(8);
-        expect(report.markdown).toContain("## Aldo Grok review");
+        expect(report.markdown).toContain("## Aldo Review");
       }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
     10 * 60_000,
   );

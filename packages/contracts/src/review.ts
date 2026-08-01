@@ -54,6 +54,9 @@ export const GrokReviewInput = Schema.Struct({
   target: Schema.optionalKey(GrokReviewTarget),
   baseRef: Schema.optionalKey(TrimmedNonEmptyString),
   focus: Schema.optionalKey(Schema.Array(GrokReviewFocusEntry).check(Schema.isMaxLength(8))),
+  providerInstanceId: Schema.optionalKey(ProviderInstanceId),
+  model: Schema.optionalKey(TrimmedNonEmptyString),
+  /** @deprecated Use providerInstanceId. */
   grokProviderInstanceId: Schema.optionalKey(ProviderInstanceId),
 });
 export type GrokReviewInput = typeof GrokReviewInput.Type;

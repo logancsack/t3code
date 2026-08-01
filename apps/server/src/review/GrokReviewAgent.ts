@@ -13,9 +13,9 @@ import { toJsonSchemaObject } from "../textGeneration/TextGenerationUtils.ts";
 import { GROK_REVIEW_SENSITIVE_PATH_GLOBS } from "./GrokReviewPrivacy.ts";
 
 const DEFAULT_GROK_REVIEW_MODEL = "grok-4.5";
-const GROK_AGENT_TIMEOUT_MS = 2 * 60 * 1_000;
+const GROK_AGENT_TIMEOUT_MS = 3 * 60 * 1_000;
 const GROK_AGENT_MAX_OUTPUT_BYTES = 1_000_000;
-const GROK_AGENT_MAX_TURNS = 8;
+const GROK_AGENT_MAX_TURNS = 12;
 const GROK_REVIEW_TOOLS = "read_file,list_dir,grep";
 const GROK_REVIEW_DENY_RULES = ["Read", "Grep"].flatMap((operation) =>
   GROK_REVIEW_SENSITIVE_PATH_GLOBS.map((glob) => `${operation}(${glob})`),
@@ -33,11 +33,13 @@ export interface GrokReviewAgentRequest<S extends Schema.Top> {
   readonly prompt: string;
   readonly outputSchema: S;
   readonly effort: GrokReviewReasoningEffort;
+  readonly allowTools?: boolean;
 }
 
 export interface GrokReviewAgent {
   readonly resolvedModel: string;
   readonly grokBuildVersion: string | null;
+  readonly supportsHighEffort?: boolean;
   readonly run: <S extends Schema.Top>(
     request: GrokReviewAgentRequest<S>,
   ) => Effect.Effect<S["Type"], GrokReviewError, S["DecodingServices"]>;
@@ -104,7 +106,7 @@ export const makeGrokReviewAgent = Effect.fn("makeGrokReviewAgent")(function* (
         "dontAsk",
         ...GROK_REVIEW_DENY_RULES.flatMap((rule) => ["--deny", rule]),
         "--tools",
-        GROK_REVIEW_TOOLS,
+        request.allowTools ? GROK_REVIEW_TOOLS : "",
         "--no-memory",
         "--no-subagents",
         "--no-plan",
@@ -146,6 +148,20 @@ export const makeGrokReviewAgent = Effect.fn("makeGrokReviewAgent")(function* (
           detail: "Grok Build reviewer output exceeded the safe collection limit.",
         });
       }
+      const decodedEnvelope = yield* decodeGrokHeadlessEnvelope(result.value.stdout).pipe(
+        Effect.map(Option.some),
+        Effect.orElseSucceed(() => Option.none()),
+      );
+      if (
+        Option.isSome(decodedEnvelope) &&
+        decodedEnvelope.value.structuredOutputError !== undefined
+      ) {
+        return yield* new GrokReviewError({
+          operation: "GrokReviewAgent.decode",
+          detail: "Grok Build could not produce the required structured review output.",
+          cause: decodedEnvelope.value.structuredOutputError,
+        });
+      }
       if (result.value.code !== 0) {
         return yield* new GrokReviewError({
           operation: "GrokReviewAgent.run",
@@ -154,14 +170,13 @@ export const makeGrokReviewAgent = Effect.fn("makeGrokReviewAgent")(function* (
         });
       }
 
-      const envelope = yield* decodeGrokHeadlessEnvelope(result.value.stdout);
-      if (envelope.structuredOutputError) {
+      if (Option.isNone(decodedEnvelope)) {
         return yield* new GrokReviewError({
           operation: "GrokReviewAgent.decode",
-          detail: "Grok Build could not produce the required structured review output.",
-          cause: envelope.structuredOutputError,
+          detail: "Grok Build returned an invalid structured-output envelope.",
         });
       }
+      const envelope = decodedEnvelope.value;
       if (envelope.structuredOutput === undefined) {
         return yield* new GrokReviewError({
           operation: "GrokReviewAgent.decode",
@@ -195,6 +210,7 @@ export const makeGrokReviewAgent = Effect.fn("makeGrokReviewAgent")(function* (
   return {
     resolvedModel: DEFAULT_GROK_REVIEW_MODEL,
     grokBuildVersion,
+    supportsHighEffort: true,
     run,
   } satisfies GrokReviewAgent;
 });

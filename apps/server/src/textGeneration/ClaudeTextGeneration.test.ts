@@ -190,6 +190,30 @@ function withFakeClaudeEnv<A, E, R>(
 }
 
 it.layer(ClaudeTextGenerationTestLayer)("ClaudeTextGeneration", (it) => {
+  it.effect("disables all Claude tools for structured review generation", () =>
+    withFakeClaudeEnv(
+      {
+        output: JSON.stringify({ structured_output: { ok: true } }),
+        argsMustContain: "--tools ",
+        argsMustNotContain: "--dangerously-skip-permissions",
+      },
+      (textGeneration) =>
+        Effect.gen(function* () {
+          const generated = yield* textGeneration.generateStructured({
+            cwd: process.cwd(),
+            prompt: "Review the supplied diff without using tools.",
+            outputSchema: Schema.Struct({ ok: Schema.Boolean }),
+            modelSelection: createModelSelection(
+              ProviderInstanceId.make("claudeAgent"),
+              "claude-sonnet-4-6",
+            ),
+          });
+
+          expect(generated).toEqual({ ok: true });
+        }),
+    ),
+  );
+
   it.effect("forwards Claude thinking settings for Haiku without passing effort", () =>
     withFakeClaudeEnv(
       {
