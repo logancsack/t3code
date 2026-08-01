@@ -3,7 +3,6 @@ import {
   type GrokReviewInput,
   type GrokReviewReport,
   type GrokReviewRunError,
-  ProviderDriverKind,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -12,8 +11,10 @@ import * as Option from "effect/Option";
 
 import * as ProviderInstanceRegistry from "../provider/Services/ProviderInstanceRegistry.ts";
 import * as ReviewService from "./ReviewService.ts";
+import { makeProviderCodeReview } from "./ProviderCodeReview.ts";
 
-const GROK_DRIVER_KIND = ProviderDriverKind.make("grok");
+const GROK_DRIVER_KIND = "grok";
+const DEFAULT_GROK_REVIEW_MODEL = "grok-4.5";
 const GROK_REVIEW_TIMEOUT_MS = 10 * 60 * 1_000;
 
 export class GrokReviewService extends Context.Service<
@@ -43,51 +44,103 @@ export const make = Effect.gen(function* () {
       const source = preview.sources.find((candidate) => candidate.kind === preferredTarget);
       if (!source || source.diff.trim().length === 0) {
         return yield* new GrokReviewError({
-          operation: "GrokReviewService.run",
+          operation: "AldoReviewService.run",
           detail: `There are no ${preferredTarget} changes to review.`,
         });
       }
 
-      const instance = input.grokProviderInstanceId
-        ? yield* providerInstances.getInstance(input.grokProviderInstanceId)
-        : (yield* Effect.forEach(
-            (yield* providerInstances.listInstances).filter(
-              (candidate) =>
-                candidate.driverKind === GROK_DRIVER_KIND &&
-                candidate.enabled &&
-                candidate.codeReview !== undefined,
-            ),
+      const requestedInstanceId = input.providerInstanceId ?? input.grokProviderInstanceId;
+      const requestedInstance = requestedInstanceId
+        ? yield* providerInstances.getInstance(requestedInstanceId)
+        : undefined;
+      const instances = requestedInstanceId
+        ? requestedInstance
+          ? [requestedInstance]
+          : []
+        : (yield* providerInstances.listInstances).filter((candidate) => candidate.enabled);
+      const candidates = yield* Effect.forEach(
+        instances,
+        (candidate) =>
+          candidate.snapshot.getSnapshot.pipe(
+            Effect.map((snapshot) => ({ instance: candidate, snapshot })),
+          ),
+        { concurrency: "unbounded" },
+      );
+      const readyCandidate = ({ snapshot, instance }: (typeof candidates)[number]) =>
+        snapshot.installed &&
+        snapshot.status === "ready" &&
+        snapshot.auth.status === "authenticated" &&
+        ((snapshot.models?.length ?? 0) > 0 ||
+          (instance.driverKind === GROK_DRIVER_KIND && instance.codeReview !== undefined));
+      const selected = requestedInstanceId
+        ? candidates.find(({ instance }) => instance.instanceId === requestedInstanceId)
+        : (candidates.find(
             (candidate) =>
-              candidate.snapshot.getSnapshot.pipe(
-                Effect.map((snapshot) => ({ candidate, snapshot })),
-              ),
-            { concurrency: "unbounded" },
-          )).find(
-            ({ snapshot }) =>
-              snapshot.installed &&
-              snapshot.status === "ready" &&
-              snapshot.auth.status === "authenticated",
-          )?.candidate;
+              candidate.instance.driverKind === GROK_DRIVER_KIND && readyCandidate(candidate),
+          ) ?? candidates.find((candidate) => readyCandidate(candidate)));
       if (
-        !instance ||
-        instance.driverKind !== GROK_DRIVER_KIND ||
-        !instance.enabled ||
-        !instance.codeReview
+        !selected ||
+        !selected.instance.enabled ||
+        !selected.snapshot.installed ||
+        selected.snapshot.status !== "ready" ||
+        selected.snapshot.auth.status !== "authenticated"
       ) {
         return yield* new GrokReviewError({
           operation: "GrokReviewService.run",
           detail:
-            "No enabled Grok Build provider instance is available. Connect Grok Build in provider settings before running the review swarm.",
+            "The selected Aldo Review provider is not connected and ready. Connect it in provider settings before running the review swarm.",
         });
       }
 
-      const result = yield* instance.codeReview
-        .run({ request: input, source })
+      const selectedModel =
+        input.model ??
+        (selected.instance.driverKind === GROK_DRIVER_KIND
+          ? DEFAULT_GROK_REVIEW_MODEL
+          : (selected.snapshot.models?.find((model) => model.isDefault)?.slug ??
+            selected.snapshot.models?.[0]?.slug));
+      if (!selectedModel) {
+        return yield* new GrokReviewError({
+          operation: "GrokReviewService.run",
+          detail: "The selected Aldo Review provider has no available model.",
+        });
+      }
+      const modelIsAvailable =
+        selected.snapshot.models?.some((model) => model.slug === selectedModel) ?? false;
+      if (
+        !modelIsAvailable &&
+        !(
+          selected.instance.driverKind === GROK_DRIVER_KIND &&
+          selectedModel === DEFAULT_GROK_REVIEW_MODEL
+        )
+      ) {
+        return yield* new GrokReviewError({
+          operation: "GrokReviewService.run",
+          detail: `The selected Aldo Review model '${selectedModel}' is no longer available.`,
+        });
+      }
+
+      const useSpecializedGrokRunner =
+        selected.instance.driverKind === GROK_DRIVER_KIND &&
+        selectedModel === DEFAULT_GROK_REVIEW_MODEL &&
+        selected.instance.codeReview !== undefined;
+      const runner = useSpecializedGrokRunner
+        ? selected.instance.codeReview!
+        : makeProviderCodeReview({
+            textGeneration: selected.instance.textGeneration,
+            modelSelection: {
+              instanceId: selected.instance.instanceId,
+              model: selectedModel,
+            },
+            driver: selected.instance.driverKind,
+            providerLabel: selected.snapshot.displayName ?? selected.instance.driverKind,
+          });
+      const result = yield* runner
+        .run({ request: { ...input, model: selectedModel }, source })
         .pipe(Effect.timeoutOption(GROK_REVIEW_TIMEOUT_MS));
       if (Option.isNone(result)) {
         return yield* new GrokReviewError({
           operation: "GrokReviewService.run",
-          detail: "The Grok review swarm exceeded its ten-minute time limit.",
+          detail: "The Aldo Review swarm exceeded its ten-minute time limit.",
         });
       }
       return result.value;

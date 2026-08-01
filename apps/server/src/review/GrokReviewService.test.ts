@@ -1,3 +1,6 @@
+// @effect-diagnostics nodeBuiltinImport:off
+import * as NodeFS from "node:fs";
+
 import { describe, expect, it } from "@effect/vitest";
 import {
   ProviderDriverKind,
@@ -62,7 +65,7 @@ const report: GrokReviewReport = {
   coverage: ["Diff"],
   limitations: [],
   usage: { agentRuns: 5, mediumEffortRuns: 5, highEffortRuns: 0 },
-  markdown: "## Aldo Grok review",
+  markdown: "## Aldo Review",
 };
 
 function makeLayer(instances: ReadonlyArray<ProviderInstance>) {
@@ -135,7 +138,79 @@ describe("GrokReviewService", () => {
       const service = yield* GrokReviewService.GrokReviewService;
       const error = yield* service.run({ cwd: preview.cwd }).pipe(Effect.flip);
       expect(error._tag).toBe("GrokReviewError");
-      expect(error.message).toContain("No enabled Grok Build provider");
+      expect(error.message).toContain("selected Aldo Review provider is not connected");
     }).pipe(Effect.provide(makeLayer([]))),
   );
+
+  it.effect("routes an explicit connected provider and model through the shared swarm", () => {
+    let agentRuns = 0;
+    const reviewDirectories: Array<string> = [];
+    const instance = {
+      instanceId: ProviderInstanceId.make("codex-work"),
+      driverKind: ProviderDriverKind.make("codex"),
+      enabled: true,
+      snapshot: {
+        getSnapshot: Effect.succeed({
+          installed: true,
+          status: "ready",
+          auth: { status: "authenticated" },
+          displayName: "Codex Work",
+          models: [
+            {
+              slug: "gpt-5.6-sol",
+              name: "GPT-5.6 Sol",
+              isCustom: false,
+              isDefault: true,
+              capabilities: null,
+            },
+          ],
+        }),
+      },
+      textGeneration: {
+        generateStructured: (input: { cwd: string; prompt: string }) =>
+          Effect.sync(() => {
+            agentRuns += 1;
+            reviewDirectories.push(input.cwd);
+            return input.prompt.includes("verifier")
+              ? {
+                  summary: "No actionable findings.",
+                  findings: [],
+                  coverage: ["Diff"],
+                  limitations: [],
+                  needsHighEffortReview: false,
+                }
+              : {
+                  summary: "No actionable findings.",
+                  findings: [],
+                  coverage: ["Diff"],
+                  limitations: [],
+                  delegation: null,
+                };
+          }),
+      },
+    } as unknown as ProviderInstance;
+
+    const unrelated = {
+      ...instance,
+      instanceId: ProviderInstanceId.make("unrelated-provider"),
+      snapshot: {
+        getSnapshot: Effect.die("explicit selection should not snapshot unrelated providers"),
+      },
+    } as unknown as ProviderInstance;
+
+    return Effect.gen(function* () {
+      const service = yield* GrokReviewService.GrokReviewService;
+      const result = yield* service.run({
+        cwd: preview.cwd,
+        providerInstanceId: instance.instanceId,
+        model: "gpt-5.6-sol",
+      });
+      expect(result.resolvedModel).toBe("gpt-5.6-sol");
+      expect(result.markdown).toContain("## Aldo Review");
+      expect(agentRuns).toBe(5);
+      expect(new Set(reviewDirectories).size).toBe(1);
+      expect(reviewDirectories[0]).not.toBe(preview.cwd);
+      expect(NodeFS.existsSync(reviewDirectories[0]!)).toBe(false);
+    }).pipe(Effect.provide(makeLayer([unrelated, instance])));
+  });
 });

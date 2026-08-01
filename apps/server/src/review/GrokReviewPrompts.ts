@@ -47,6 +47,11 @@ show direct evidence, explain impact, and propose a bounded correction. Do not r
 preferences, speculative risks, or pre-existing issues. Use null for delegation when no narrowly
 scoped specialist investigation would materially improve the review. Keep the report compact:
 return at most 20 findings, 8 coverage entries, and 8 limitations.
+
+The embedded diff is the primary review input. Primary and final passes have no tools; reason
+directly from the complete supplied diff. A delegated specialist may use repository read tools
+only to resolve its narrow objective and should spend no more than two turns gathering context.
+Always reserve enough time to return the required structured result.
 `.trim();
 
 function focusBlock(focus: ReadonlyArray<string>): string {

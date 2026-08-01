@@ -340,6 +340,7 @@ function createTextGeneration(
             }),
         ),
       ),
+    generateStructured: () => Effect.die("generateStructured is not used by GitManager tests"),
   };
 }
 

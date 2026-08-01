@@ -294,7 +294,7 @@ export function renderGrokReviewMarkdown(input: {
   readonly runId: string;
 }): string {
   const lines = [
-    "## Aldo Grok review",
+    "## Aldo Review",
     "",
     input.summary.trim(),
     "",
@@ -337,7 +337,7 @@ export function renderGrokReviewMarkdown(input: {
   if (input.limitations.length > 0) {
     lines.push("", "### Limitations", "", ...input.limitations.map((entry) => `- ${entry}`));
   }
-  lines.push("", `<!-- aldo-grok-review:${input.runId} -->`);
+  lines.push("", `<!-- aldo-review:${input.runId} -->`);
   return lines.join("\n");
 }
 

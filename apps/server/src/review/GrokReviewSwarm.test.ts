@@ -397,6 +397,38 @@ describe("Grok review output normalization", () => {
 });
 
 describe("runGrokReviewSwarm", () => {
+  it.effect("reports bounded per-role diagnostics when every lead reviewer fails", () => {
+    const agent: GrokReviewAgent = {
+      resolvedModel: "grok-4.5",
+      grokBuildVersion: "0.2.112",
+      run: () =>
+        Effect.fail(
+          new GrokReviewError({
+            operation: "GrokReviewAgent.decode",
+            detail: "Structured output did not match the required schema.",
+          }),
+        ),
+    };
+
+    return Effect.gen(function* () {
+      const result = yield* Effect.result(
+        runGrokReviewSwarm({
+          request: { cwd: process.cwd(), target: "working-tree" },
+          source,
+          agent,
+        }),
+      );
+
+      expect(result._tag).toBe("Failure");
+      if (result._tag === "Failure") {
+        expect(result.failure.message).toContain("correctness");
+        expect(result.failure.message).toContain("GrokReviewAgent.decode");
+        expect(result.failure.message).toContain("required schema");
+        expect(result.failure.message.length).toBeLessThan(1_500);
+      }
+    }).pipe(Effect.provide(NodeServices.layer));
+  });
+
   it.effect("normalizes repairable Grok output before building the canonical report", () => {
     const wireVerification = {
       summary: `  ${"summary ".repeat(400)}  `,
@@ -575,6 +607,46 @@ describe("runGrokReviewSwarm", () => {
       expect(report.escalatedToHigh).toBe(false);
       expect(report.limitations).toContain(
         "High-effort escalation failed; the medium-effort verification is shown.",
+      );
+    }).pipe(Effect.provide(NodeServices.layer));
+  });
+
+  it.effect("reports unavailable escalation without pretending to run at high effort", () => {
+    const calls: Array<string> = [];
+    const mediumVerification: GrokReviewVerificationType = {
+      summary: "One ambiguous finding remains.",
+      findings: [verifiedFinding],
+      coverage: ["Correctness"],
+      limitations: [],
+      needsHighEffortReview: true,
+      escalationReason: "A stronger reasoning mode would help.",
+    };
+    const agent: GrokReviewAgent = {
+      resolvedModel: "provider-model",
+      grokBuildVersion: null,
+      supportsHighEffort: false,
+      run: (request) => {
+        calls.push(request.effort);
+        return Effect.succeed(
+          (request.prompt.includes("medium-effort verifier")
+            ? mediumVerification
+            : emptyCandidate()) as never,
+        );
+      },
+    };
+
+    return Effect.gen(function* () {
+      const report = yield* runGrokReviewSwarm({
+        request: { cwd: process.cwd(), target: "working-tree" },
+        source,
+        agent,
+      });
+
+      expect(report.escalatedToHigh).toBe(false);
+      expect(report.status).toBe("partial");
+      expect(calls).not.toContain("high");
+      expect(report.limitations).toContain(
+        "The selected provider does not expose a high-effort review mode; the medium-effort verification is shown.",
       );
     }).pipe(Effect.provide(NodeServices.layer));
   });
