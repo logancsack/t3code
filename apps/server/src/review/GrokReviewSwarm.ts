@@ -120,6 +120,7 @@ function runCandidate(
     readonly label: string;
     readonly cwd: string;
     readonly prompt: string;
+    readonly allowTools: boolean;
   },
 ): Effect.Effect<AgentOutcome> {
   return agent
@@ -128,6 +129,7 @@ function runCandidate(
       prompt: input.prompt,
       outputSchema: GrokReviewCandidateWire,
       effort: "medium",
+      allowTools: input.allowTools,
     })
     .pipe(
       Effect.map(
@@ -159,6 +161,7 @@ function runVerification(
       prompt: input.prompt,
       outputSchema: GrokReviewVerificationWire,
       effort: input.effort,
+      allowTools: false,
     })
     .pipe(Effect.map(normalizeGrokReviewVerification));
 }
@@ -229,6 +232,7 @@ export const runGrokReviewSwarm = Effect.fn("runGrokReviewSwarm")(function* (inp
         label: role.id,
         cwd: input.request.cwd,
         prompt: buildLeadReviewPrompt(role, context),
+        allowTools: false,
       }),
     { concurrency: MAX_LEAD_CONCURRENCY },
   );
@@ -236,9 +240,19 @@ export const runGrokReviewSwarm = Effect.fn("runGrokReviewSwarm")(function* (inp
     outcome.result._tag === "Success" ? [outcome.result.candidate] : [],
   );
   if (leadCandidates.length === 0) {
+    const diagnostics = leadOutcomes
+      .flatMap((outcome) =>
+        outcome.result._tag === "Failure"
+          ? [`${outcome.label}: ${reviewerFailureSummary(outcome.result.error)}`]
+          : [],
+      )
+      .join("; ")
+      .slice(0, 1_200);
     return yield* new GrokReviewError({
       operation: "GrokReviewSwarm.leads",
-      detail: "Every Grok review specialist failed before producing a result.",
+      detail: `Every Aldo Review specialist failed before producing a result.${
+        diagnostics ? ` ${diagnostics}` : ""
+      }`,
     });
   }
 
@@ -252,6 +266,7 @@ export const runGrokReviewSwarm = Effect.fn("runGrokReviewSwarm")(function* (inp
         label: `delegated-${index + 1}`,
         cwd: input.request.cwd,
         prompt: buildDelegatedReviewPrompt(delegation, context),
+        allowTools: true,
       }),
     { concurrency: MAX_DELEGATED_REVIEWS },
   );
@@ -272,11 +287,20 @@ export const runGrokReviewSwarm = Effect.fn("runGrokReviewSwarm")(function* (inp
   let highEffortFailed = false;
   let highEffortSucceeded = false;
   let highEffortAttempted = false;
+  let highEffortUnavailable = false;
   let mediumVerificationFailed = false;
   let mediumVerificationOmittedFindings = false;
 
   if (mediumResult._tag === "Failure") {
     mediumVerificationFailed = true;
+    if (input.agent.supportsHighEffort === false) {
+      return yield* new GrokReviewError({
+        operation: "GrokReviewSwarm.verify",
+        detail:
+          "Medium-effort review verification failed and the selected provider does not expose a high-effort fallback.",
+        cause: mediumResult.failure,
+      });
+    }
     highEffortAttempted = true;
     const highResult = yield* Effect.result(
       runVerification(input.agent, {
@@ -307,7 +331,8 @@ export const runGrokReviewSwarm = Effect.fn("runGrokReviewSwarm")(function* (inp
           finding.confidence < 0.8,
       );
     if (shouldEscalate) {
-      highEffortAttempted = true;
+      highEffortUnavailable = input.agent.supportsHighEffort === false;
+      highEffortAttempted = !highEffortUnavailable;
       const highCandidate: GrokReviewCandidateType = {
         summary: verification.summary,
         findings: verification.findings,
@@ -315,22 +340,24 @@ export const runGrokReviewSwarm = Effect.fn("runGrokReviewSwarm")(function* (inp
         limitations: verification.limitations,
         delegation: null,
       };
-      const highResult = yield* Effect.result(
-        runVerification(input.agent, {
-          cwd: input.request.cwd,
-          prompt: buildVerificationPrompt({
-            context,
-            candidates: [...candidates, highCandidate],
-            highEffort: true,
+      if (!highEffortUnavailable) {
+        const highResult = yield* Effect.result(
+          runVerification(input.agent, {
+            cwd: input.request.cwd,
+            prompt: buildVerificationPrompt({
+              context,
+              candidates: [...candidates, highCandidate],
+              highEffort: true,
+            }),
+            effort: "high",
           }),
-          effort: "high",
-        }),
-      );
-      if (highResult._tag === "Success") {
-        verification = highResult.success;
-        highEffortSucceeded = true;
-      } else {
-        highEffortFailed = true;
+        );
+        if (highResult._tag === "Success") {
+          verification = highResult.success;
+          highEffortSucceeded = true;
+        } else {
+          highEffortFailed = true;
+        }
       }
     }
   }
@@ -386,7 +413,8 @@ export const runGrokReviewSwarm = Effect.fn("runGrokReviewSwarm")(function* (inp
     redactedDiff.redacted ||
     failedOutcomes.length > 0 ||
     normalizationOmittedFindings ||
-    highEffortFailed;
+    highEffortFailed ||
+    highEffortUnavailable;
   const limitations = uniqueStrings([
     ...(normalizationOmittedFindings ? [GROK_REVIEW_FINDINGS_OMITTED_LIMITATION] : []),
     ...(input.source.truncated ? ["The selected diff was truncated before model review."] : []),
@@ -403,6 +431,11 @@ export const runGrokReviewSwarm = Effect.fn("runGrokReviewSwarm")(function* (inp
       : []),
     ...(highEffortFailed
       ? ["High-effort escalation failed; the medium-effort verification is shown."]
+      : []),
+    ...(highEffortUnavailable
+      ? [
+          "The selected provider does not expose a high-effort review mode; the medium-effort verification is shown.",
+        ]
       : []),
     ...verification.limitations,
   ]);

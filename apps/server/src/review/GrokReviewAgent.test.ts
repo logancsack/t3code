@@ -55,6 +55,7 @@ it.effect("runs Grok headlessly with medium effort and strict untrusted-code bou
       prompt: "Review this exact diff.",
       outputSchema: Output,
       effort: "medium",
+      allowTools: true,
     });
 
     expect(result).toEqual({ ok: true });
@@ -64,11 +65,49 @@ it.effect("runs Grok headlessly with medium effort and strict untrusted-code bou
     const args = NodeFS.readFileSync(argsLog, "utf8").trim().split("\n");
     expect(args).toContain("--reasoning-effort");
     expect(args[args.indexOf("--reasoning-effort") + 1]).toBe("medium");
+    expect(args[args.indexOf("--max-turns") + 1]).toBe("12");
     expect(args[args.indexOf("--sandbox") + 1]).toBe("strict");
     expect(args[args.indexOf("--tools") + 1]).toBe("read_file,list_dir,grep");
     expect(args).toContain("Read(**/.grok/**)");
     expect(args).toContain("Read(**/.env)");
     expect(args).toContain("--no-subagents");
     expect(args).toContain("--disable-web-search");
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
+it.effect("preserves Grok structured-output diagnostics when the process exits nonzero", () =>
+  Effect.gen(function* () {
+    const tempDirectory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "grok-review-agent-"));
+    yield* Effect.addFinalizer(() =>
+      Effect.sync(() => NodeFS.rmSync(tempDirectory, { recursive: true, force: true })),
+    );
+    const executable = NodePath.join(tempDirectory, "fake-grok");
+    NodeFS.writeFileSync(
+      executable,
+      [
+        "#!/bin/sh",
+        'if [ "$1" = "--version" ]; then exit 0; fi',
+        `printf "%s\\n" '{"structuredOutputError":"severity must be one of the allowed values"}'`,
+        "exit 1",
+      ].join("\n"),
+      "utf8",
+    );
+    NodeFS.chmodSync(executable, 0o755);
+
+    const agent = yield* makeGrokReviewAgent(decodeGrokSettings({ binaryPath: executable }));
+    const result = yield* agent
+      .run({
+        cwd: process.cwd(),
+        prompt: "Review this exact diff.",
+        outputSchema: Output,
+        effort: "medium",
+      })
+      .pipe(Effect.result);
+
+    expect(result._tag).toBe("Failure");
+    if (result._tag === "Failure") {
+      expect(result.failure.operation).toBe("GrokReviewAgent.decode");
+      expect(result.failure.message).toContain("required structured review output");
+    }
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );

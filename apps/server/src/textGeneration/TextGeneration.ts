@@ -1,6 +1,7 @@
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import type * as Schema from "effect/Schema";
 import type { ChatAttachment, ModelSelection, ProviderInstanceId } from "@t3tools/contracts";
 import { TextGenerationError } from "@t3tools/contracts";
 
@@ -67,6 +68,13 @@ export interface ThreadTitleGenerationResult {
   title: string;
 }
 
+export interface StructuredGenerationInput<S extends Schema.Top> {
+  cwd: string;
+  prompt: string;
+  outputSchema: S;
+  modelSelection: ModelSelection;
+}
+
 export interface TextGenerationService {
   generateCommitMessage(
     input: CommitMessageGenerationInput,
@@ -109,6 +117,9 @@ export class TextGeneration extends Context.Service<
     readonly generateThreadTitle: (
       input: ThreadTitleGenerationInput,
     ) => Effect.Effect<ThreadTitleGenerationResult, TextGenerationError>;
+    readonly generateStructured: <S extends Schema.Top>(
+      input: StructuredGenerationInput<S>,
+    ) => Effect.Effect<S["Type"], TextGenerationError, S["DecodingServices"]>;
   }
 >()("t3/textGeneration/TextGeneration") {}
 
@@ -119,7 +130,8 @@ type TextGenerationOp =
   | "generateCommitMessage"
   | "generatePrContent"
   | "generateBranchName"
-  | "generateThreadTitle";
+  | "generateThreadTitle"
+  | "generateStructured";
 
 const resolveInstance = (
   registry: ProviderInstanceRegistry.ProviderInstanceRegistry["Service"],
@@ -158,6 +170,10 @@ export const makeTextGenerationFromRegistry = (
     generateThreadTitle: (input) =>
       resolveInstance(registry, "generateThreadTitle", input.modelSelection.instanceId).pipe(
         Effect.flatMap((textGeneration) => textGeneration.generateThreadTitle(input)),
+      ),
+    generateStructured: (input) =>
+      resolveInstance(registry, "generateStructured", input.modelSelection.instanceId).pipe(
+        Effect.flatMap((textGeneration) => textGeneration.generateStructured(input)),
       ),
   });
 
