@@ -14,6 +14,7 @@ import {
 import { ManagedDevPcStatus } from "./ManagedDevPcStatus";
 import { useSidebar } from "./ui/sidebar";
 import { Button } from "./ui/button";
+import { isLandingDemo } from "../landingDemo/mode";
 
 const ACCOUNT_PATH = "/_devpc/account";
 const ACCOUNT_ME_PATH = "/_devpc/account/me";
@@ -36,7 +37,7 @@ export function ManagedDevPcAccountButton() {
   const accountRequest = useRef<AbortController | null>(null);
 
   const refreshAccount = useCallback(() => {
-    if (!isManagedDevPc) return;
+    if (!isManagedDevPc || isLandingDemo()) return;
     accountRequest.current?.abort();
     const controller = new AbortController();
     accountRequest.current = controller;
@@ -60,7 +61,7 @@ export function ManagedDevPcAccountButton() {
     };
   }, [refreshAccount]);
 
-  if (!isManagedDevPc) return null;
+  if (!isManagedDevPc || isLandingDemo()) return null;
 
   const label = accountLabel(account);
   return (
@@ -130,7 +131,7 @@ export function ManagedDevPcFooterAccount({
   const navigate = useNavigate();
   const { isMobile, setOpenMobile } = useSidebar();
 
-  if (!isManagedDevPc) return null;
+  if (!isManagedDevPc || isLandingDemo()) return null;
   return (
     <div className="flex min-w-0 items-center gap-1">
       <ManagedDevPcAccountButton />

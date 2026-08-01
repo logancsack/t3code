@@ -288,6 +288,17 @@ export function useUpdateClientSettings() {
   }, []);
 }
 
+/** Locks the anonymous landing-page demo to the current production sidebar. */
+export function initializeLandingDemoClientSettings(): void {
+  clientSettingsHydrationGeneration += 1;
+  clientSettingsSnapshot = {
+    ...DEFAULT_CLIENT_SETTINGS,
+    sidebarV2Enabled: true,
+  };
+  clientSettingsHydrated = true;
+  clientSettingsHydrationPromise = null;
+}
+
 export function __resetClientSettingsPersistenceForTests(): void {
   clientSettingsHydrationGeneration += 1;
   clientSettingsSnapshot = DEFAULT_CLIENT_SETTINGS;
