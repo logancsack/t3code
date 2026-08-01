@@ -50,6 +50,9 @@ import {
   primaryServerWelcomeAtom,
 } from "../state/server";
 import { readProject, setActiveEnvironmentId, useActiveEnvironmentId } from "../state/entities";
+import { useRightPanelStore } from "../rightPanelStore";
+import { demoEnvironmentId, demoThreadId } from "../landingDemo/runtime";
+import { isLandingDemo } from "../landingDemo/mode";
 import {
   createKeybindingsUpdateToastController,
   type KeybindingsUpdateToastController,
@@ -137,6 +140,7 @@ function RootRouteView() {
         <SshPasswordPromptDialog />
         <SlowRpcRequestToastCoordinator />
         <HostedStaticEnvironmentBootstrap />
+        <LandingDemoBootstrap />
         {primaryEnvironmentAuthenticated ? <EventRouter /> : null}
         {primaryEnvironmentAuthenticated ? <ProviderUpdateLaunchNotification /> : null}
         {appShell}
@@ -146,6 +150,30 @@ function RootRouteView() {
       </AnchoredToastProvider>
     </ToastProvider>
   );
+}
+
+function LandingDemoBootstrap() {
+  const navigate = useNavigate();
+  const { environments } = useEnvironments();
+  const started = useRef(false);
+
+  useEffect(() => {
+    if (!isLandingDemo() || started.current) return;
+    if (!environments.some((environment) => environment.environmentId === demoEnvironmentId))
+      return;
+    started.current = true;
+    setActiveEnvironmentId(demoEnvironmentId);
+    useRightPanelStore
+      .getState()
+      .open({ environmentId: demoEnvironmentId, threadId: demoThreadId }, "workspaceBrowser");
+    void navigate({
+      to: "/$environmentId/$threadId",
+      params: { environmentId: demoEnvironmentId, threadId: demoThreadId },
+      replace: true,
+    });
+  }, [environments, navigate]);
+
+  return null;
 }
 
 function GlassAppearanceSync() {

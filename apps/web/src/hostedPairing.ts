@@ -1,6 +1,7 @@
 import { DEFAULT_HOSTED_APP_URL } from "@t3tools/shared/connectAuth";
 
 import { getPairingTokenFromUrl, setPairingTokenOnUrl } from "./pairingUrl";
+import { isLandingDemo } from "./landingDemo/mode";
 
 export interface HostedPairingRequest {
   readonly host: string;
@@ -32,6 +33,9 @@ function originFromUrl(value: string): string | null {
 }
 
 export function isHostedStaticApp(url: URL = new URL(window.location.href)): boolean {
+  if (isLandingDemo(url)) {
+    return true;
+  }
   if (configuredBackendUrl()) {
     return false;
   }

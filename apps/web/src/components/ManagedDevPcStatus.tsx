@@ -10,6 +10,7 @@ import {
   type ManagedDevPcDisplayStatus,
   type ManagedDevPcTelemetry,
 } from "../managedDevPc";
+import { isLandingDemo } from "../landingDemo/mode";
 import { randomUUID } from "../lib/utils";
 import {
   AlertDialog,
@@ -780,7 +781,7 @@ export function ManagedDevPcStatus({
   }, [updatePendingAction, updateUncertainAction]);
 
   useEffect(() => {
-    if (!isManagedDevPc) return;
+    if (!isManagedDevPc || isLandingDemo()) return;
     componentMounted.current = true;
     void refresh();
     const timer = window.setInterval(() => void refresh(), 10_000);
@@ -791,7 +792,7 @@ export function ManagedDevPcStatus({
   }, [refresh]);
 
   useEffect(() => {
-    if (!isManagedDevPc) return;
+    if (!isManagedDevPc || isLandingDemo()) return;
     const refreshAfterCrossTabAction = () => void refresh();
     window.addEventListener(MANAGED_WORKSPACE_ACTION_SYNCED_EVENT, refreshAfterCrossTabAction);
     return () =>
@@ -815,7 +816,7 @@ export function ManagedDevPcStatus({
     return statusDescription[status];
   }, [status, workspace]);
 
-  if (!isManagedDevPc || !workspace) return null;
+  if (!isManagedDevPc || isLandingDemo() || !workspace) return null;
 
   const runAction = async (action: PendingAction) => {
     const path =

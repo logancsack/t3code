@@ -6,6 +6,8 @@ import { useCallback, useState } from "react";
 import { managedWorkspaceBrowserUrl } from "~/managedDevPc";
 
 import { Button } from "./ui/button";
+import { isLandingDemo } from "~/landingDemo/mode";
+import { LandingDemoPreviewPanel } from "~/landingDemo/PreviewPanel";
 
 /**
  * The shared workspace browser, embedded as an ordinary web page.
@@ -22,6 +24,9 @@ import { Button } from "./ui/button";
  * scaled-down desktop.
  */
 export function WorkspaceBrowserPanel() {
+  if (isLandingDemo()) {
+    return <LandingDemoPreviewPanel />;
+  }
   const url = managedWorkspaceBrowserUrl();
   // Remounting the frame is the only way to force a reconnect from here: the
   // noVNC session lives inside the iframe's own document.
