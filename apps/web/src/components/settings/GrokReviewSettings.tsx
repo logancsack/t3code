@@ -34,7 +34,7 @@ interface AldoReviewRepositoryList {
 
 interface ReviewSelection {
   readonly providerInstanceId: string;
-  readonly supplementalProviderInstanceId?: string;
+  readonly supplementalProviderInstanceId: string | null;
   readonly providerDriver: string;
   readonly model: string;
 }
@@ -91,7 +91,7 @@ function defaultSelection(entries: ReadonlyArray<ProviderInstanceEntry>): Review
   return model
     ? {
         providerInstanceId: entry.instanceId,
-        ...(supplemental ? { supplementalProviderInstanceId: supplemental.instanceId } : {}),
+        supplementalProviderInstanceId: supplemental?.instanceId ?? null,
         providerDriver: entry.driverKind,
         model,
       }
@@ -244,7 +244,6 @@ export function GrokReviewSettings() {
               connected:
                 current.find((entry) => entry.repository === repository)?.connected ?? false,
               ...selection,
-              supplementalProviderInstanceId: selection.supplementalProviderInstanceId ?? null,
             },
           ]),
         );
@@ -317,13 +316,10 @@ export function GrokReviewSettings() {
           setting.providerInstanceId && setting.providerDriver && setting.model
             ? {
                 providerInstanceId: setting.providerInstanceId,
-                ...(setting.supplementalProviderInstanceId
-                  ? { supplementalProviderInstanceId: setting.supplementalProviderInstanceId }
-                  : fallback?.supplementalProviderInstanceId
-                    ? {
-                        supplementalProviderInstanceId: fallback.supplementalProviderInstanceId,
-                      }
-                    : {}),
+                supplementalProviderInstanceId:
+                  setting.supplementalProviderInstanceId ??
+                  fallback?.supplementalProviderInstanceId ??
+                  null,
                 providerDriver: setting.providerDriver,
                 model: setting.model,
               }
@@ -355,12 +351,10 @@ export function GrokReviewSettings() {
                     if (model) {
                       void save(setting.repository, setting.enabled, {
                         providerInstanceId: entry.instanceId,
-                        ...(selection.supplementalProviderInstanceId !== entry.instanceId
-                          ? {
-                              supplementalProviderInstanceId:
-                                selection.supplementalProviderInstanceId,
-                            }
-                          : {}),
+                        supplementalProviderInstanceId:
+                          selection.supplementalProviderInstanceId !== entry.instanceId
+                            ? selection.supplementalProviderInstanceId
+                            : null,
                         providerDriver: entry.driverKind,
                         model,
                       });
