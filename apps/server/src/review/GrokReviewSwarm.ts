@@ -43,7 +43,7 @@ import {
 } from "./GrokReviewPrompts.ts";
 import {
   decodeGitPath,
-  redactSensitiveContextWithMetadata,
+  redactSensitiveContextSection,
   redactSensitiveDiffWithMetadata,
 } from "./GrokReviewPrivacy.ts";
 
@@ -240,10 +240,9 @@ export const runGrokReviewSwarm = Effect.fn("runGrokReviewSwarm")(function* (inp
   const redactedDiff = redactSensitiveDiffWithMetadata(input.source.diff);
   let repositoryContextRedacted = false;
   const repositoryContext = (input.request.context?.sections ?? []).map((section) => {
-    const title = redactSensitiveContextWithMetadata(section.title);
-    const content = redactSensitiveContextWithMetadata(section.content);
-    repositoryContextRedacted ||= title.redacted || content.redacted;
-    return { title: title.text, content: content.text };
+    const redacted = redactSensitiveContextSection(section);
+    repositoryContextRedacted ||= redacted.redacted;
+    return { title: redacted.title, content: redacted.content };
   });
   const context: GrokReviewPromptContext = {
     targetLabel: input.source.title,

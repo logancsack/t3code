@@ -29,6 +29,7 @@ const SAFE_SENSITIVE_DIFF_HEADER =
   /^(?:diff --git |old mode |new mode |deleted file mode |new file mode |similarity index |dissimilarity index |rename from |rename to |copy from |copy to |index |--- |\+\+\+ |Binary files )/;
 const REDACTION_NOTICE = "[Patch content redacted: sensitive path]";
 const CONTEXT_REDACTION_NOTICE = "[Sensitive value redacted]";
+const SENSITIVE_CONTEXT_PATH_NOTICE = "[Repository context redacted: sensitive path]";
 
 const SENSITIVE_CONTEXT_PATTERNS: ReadonlyArray<RegExp> = [
   /-----BEGIN [^-]*PRIVATE KEY-----[\s\S]*?-----END [^-]*PRIVATE KEY-----/gi,
@@ -42,7 +43,7 @@ const SENSITIVE_CONTEXT_PATTERNS: ReadonlyArray<RegExp> = [
   /\bpassword[ \t]+(?![:=])\S+/gi,
 ];
 const SENSITIVE_CONTEXT_ASSIGNMENT =
-  /(["']?(?:auth|[A-Za-z0-9_.-]*(?:secret|token|password|passwd|api[_-]?key|private[_-]?key|client[_-]?secret|access[_-]?key|account[_-]?key|authorization|cookie)[A-Za-z0-9_.-]*)["']?\s*[:=]\s*)[^\r\n]+/gi;
+  /(["']?(?:auth|[A-Za-z0-9_.-]*(?:secret|token|password|passwd|api[_-]?key|private[_-]?key|client[_-]?secret|client[_-]?key[_-]?data|access[_-]?key|account[_-]?key|authorization|cookie)[A-Za-z0-9_.-]*)["']?\s*[:=]\s*)[^\r\n]+/gi;
 const SENSITIVE_CONTEXT_HEADER =
   /^(\s*(?:authorization|proxy-authorization|cookie|set-cookie)\s*:\s*)(\S.*)$/gim;
 const SENSITIVE_CONTEXT_KEY =
@@ -187,6 +188,31 @@ export function redactSensitiveContextWithMetadata(text: string): {
   output = output.replace(SENSITIVE_CONTEXT_ASSIGNMENT, `$1${CONTEXT_REDACTION_NOTICE}`);
   output = output.replace(SENSITIVE_CONTEXT_HEADER, `$1${CONTEXT_REDACTION_NOTICE}`);
   return { text: output, redacted: output !== text };
+}
+
+export function redactSensitiveContextSection(section: {
+  readonly title: string;
+  readonly content: string;
+}): {
+  readonly title: string;
+  readonly content: string;
+  readonly redacted: boolean;
+} {
+  const title = redactSensitiveContextWithMetadata(section.title);
+  const normalizedTitle = section.title.replace(/[\s:'"()[\]{}]+/g, "/");
+  if (SENSITIVE_PATH_PATTERN.test(normalizedTitle)) {
+    return {
+      title: title.text,
+      content: SENSITIVE_CONTEXT_PATH_NOTICE,
+      redacted: true,
+    };
+  }
+  const content = redactSensitiveContextWithMetadata(section.content);
+  return {
+    title: title.text,
+    content: content.text,
+    redacted: title.redacted || content.redacted,
+  };
 }
 
 function redactSensitiveYamlBlocks(text: string): string {

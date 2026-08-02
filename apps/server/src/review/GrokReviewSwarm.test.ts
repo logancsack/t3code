@@ -28,6 +28,7 @@ import {
 } from "./GrokReviewPrompts.ts";
 import {
   redactSensitiveContextWithMetadata,
+  redactSensitiveContextSection,
   redactSensitiveDiff,
   redactSensitiveDiffWithMetadata,
 } from "./GrokReviewPrivacy.ts";
@@ -338,6 +339,7 @@ describe("redactSensitiveContextWithMetadata", () => {
       "DefaultEndpointsProtocol=https;AccountName=prod;AccountKey=dXNlcjpwYXNzMg==;EndpointSuffix=core.windows.net",
       "remote=https://user:password@example.com/repository.git",
       "machine registry.example login buildbot password hunter2",
+      "client-key-data: cHJpdmF0ZS1rZXk=",
       "github_pat_1234567890abcdefghijklmnop",
       "-----BEGIN PRIVATE KEY-----",
       "private-material",
@@ -363,7 +365,31 @@ describe("redactSensitiveContextWithMetadata", () => {
     expect(result.text).not.toContain("dXNlcjpwYXNzMg==");
     expect(result.text).not.toContain("user:password");
     expect(result.text).not.toContain("hunter2");
+    expect(result.text).not.toContain("cHJpdmF0ZS1rZXk=");
     expect(result.text).not.toContain("private-material");
+  });
+
+  it("suppresses whole context sections identified as sensitive paths", () => {
+    expect(
+      redactSensitiveContextSection({
+        title: "Changed file: .kube/config",
+        content: "unrecognized-private-material",
+      }),
+    ).toEqual({
+      title: "Changed file: .kube/config",
+      content: "[Repository context redacted: sensitive path]",
+      redacted: true,
+    });
+    expect(
+      redactSensitiveContextSection({
+        title: "Changed file: src/config.ts",
+        content: "ordinary repository context",
+      }),
+    ).toEqual({
+      title: "Changed file: src/config.ts",
+      content: "ordinary repository context",
+      redacted: false,
+    });
   });
 });
 
