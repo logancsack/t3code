@@ -22,17 +22,13 @@ import {
   AlertDialogTitle,
 } from "./ui/alert-dialog";
 import { Button } from "./ui/button";
-import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "./ui/select";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { SettingsPageContainer, SettingsSection } from "./settings/settingsLayout";
 
 const STATUS_PATH = "/_devpc/workspace";
-const SETTINGS_PATH = "/_devpc/workspace/settings";
 const TELEMETRY_FRESH_MS = 60_000;
 const STATUS_REQUEST_TIMEOUT_MS = 10_000;
 const ACTION_REQUEST_TIMEOUT_MS = 30_000;
-const IDLE_TIMEOUTS = [15, 30, 60, 120, 240] as const;
-const MAX_CONFIRMED_IDLE_TIMEOUT_MISMATCHES = 3;
 const MAX_INEFFECTIVE_ACTION_POLLS = 6;
 const MANAGED_WORKSPACE_ACTION_SYNCED_EVENT = "devpc-managed-workspace-action-synced";
 
@@ -69,9 +65,7 @@ type ActionSnapshotResult = "pending" | "progressing" | "resolved" | "failed";
 type ActionSessionSnapshot = {
   readonly pendingAction: PendingAction | null;
   readonly uncertainAction: PendingAction | null;
-  readonly settingsPending: boolean;
   readonly statusUnavailable: boolean;
-  readonly idleTimeoutMinutes: number | undefined;
 };
 
 type StoredActionSession = {
@@ -149,21 +143,11 @@ const managedRestartConfirmations = {
 const managedIneffectiveActionPolls = {
   current: {} as Partial<Record<PendingAction, number>>,
 };
-type IdleTimeoutProjection = {
-  readonly minutes: number;
-  readonly mismatches: number;
-};
-const managedPendingIdleTimeout = { current: null as IdleTimeoutProjection | null };
 const managedActionListeners = new Set<() => void>();
 let managedActionSnapshot: ActionSessionSnapshot = {
   pendingAction: managedPendingAction.current,
   uncertainAction: managedUncertainAction.current,
-  settingsPending: false,
   statusUnavailable: false,
-  idleTimeoutMinutes:
-    typeof window === "undefined"
-      ? undefined
-      : window.__DEVPC_MANAGED_BOOTSTRAP__?.idleTimeoutMinutes,
 };
 
 function persistManagedActionSession(): void {
@@ -221,21 +205,9 @@ function updateManagedActionSession(
   persistManagedActionSession();
 }
 
-function updateManagedSettingsPending(settingsPending: boolean): void {
-  if (managedActionSnapshot.settingsPending === settingsPending) return;
-  managedActionSnapshot = { ...managedActionSnapshot, settingsPending };
-  managedActionListeners.forEach((listener) => listener());
-}
-
 function updateManagedStatusUnavailable(statusUnavailable: boolean): void {
   if (managedActionSnapshot.statusUnavailable === statusUnavailable) return;
   managedActionSnapshot = { ...managedActionSnapshot, statusUnavailable };
-  managedActionListeners.forEach((listener) => listener());
-}
-
-function updateManagedIdleTimeout(idleTimeoutMinutes: number | undefined): void {
-  if (managedActionSnapshot.idleTimeoutMinutes === idleTimeoutMinutes) return;
-  managedActionSnapshot = { ...managedActionSnapshot, idleTimeoutMinutes };
   managedActionListeners.forEach((listener) => listener());
 }
 
@@ -375,17 +347,6 @@ export function formatRelativeTime(value: string | null | undefined, now = Date.
   return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(timestamp);
 }
 
-export function withIdleTimeout(
-  workspace: ManagedDevPcBootstrap,
-  idleTimeoutMinutes: number | undefined,
-): ManagedDevPcBootstrap {
-  if (idleTimeoutMinutes === undefined) {
-    const { idleTimeoutMinutes: _previous, ...withoutIdleTimeout } = workspace;
-    return withoutIdleTimeout;
-  }
-  return { ...workspace, idleTimeoutMinutes };
-}
-
 /**
  * Fold a status poll into the bootstrap the gateway handed the page.
  *
@@ -398,62 +359,6 @@ export function mergeBootstrapStatus(
   status: ManagedDevPcBootstrap,
 ): ManagedDevPcBootstrap {
   return { ...previous, ...status };
-}
-
-export function reconcileIdleTimeoutProjection(
-  serverIdleTimeoutMinutes: number | undefined,
-  projection: IdleTimeoutProjection | null,
-  settingsPending: boolean,
-): {
-  readonly effectiveIdleTimeoutMinutes: number | undefined;
-  readonly projection: IdleTimeoutProjection | null;
-} {
-  if (projection === null) {
-    return {
-      effectiveIdleTimeoutMinutes: serverIdleTimeoutMinutes,
-      projection: null,
-    };
-  }
-  if (!settingsPending && serverIdleTimeoutMinutes === projection.minutes) {
-    return {
-      effectiveIdleTimeoutMinutes: serverIdleTimeoutMinutes,
-      projection: null,
-    };
-  }
-  const mismatches = settingsPending ? projection.mismatches : projection.mismatches + 1;
-  if (mismatches >= MAX_CONFIRMED_IDLE_TIMEOUT_MISMATCHES) {
-    return {
-      effectiveIdleTimeoutMinutes: serverIdleTimeoutMinutes,
-      projection: null,
-    };
-  }
-  return {
-    effectiveIdleTimeoutMinutes: projection.minutes,
-    projection: { ...projection, mismatches },
-  };
-}
-
-export function reconcileIdleTimeoutRefresh(
-  serverIdleTimeoutMinutes: number | undefined,
-  projectionAtRequestStart: IdleTimeoutProjection | null,
-  currentProjection: IdleTimeoutProjection | null,
-  settingsPending: boolean,
-  currentDisplayedIdleTimeoutMinutes: number | undefined,
-): {
-  readonly effectiveIdleTimeoutMinutes: number | undefined;
-  readonly projection: IdleTimeoutProjection | null;
-} {
-  if (currentProjection !== projectionAtRequestStart) {
-    return {
-      effectiveIdleTimeoutMinutes: currentProjection?.minutes ?? currentDisplayedIdleTimeoutMinutes,
-      projection: currentProjection,
-    };
-  }
-  return reconcileIdleTimeoutProjection(
-    serverIdleTimeoutMinutes,
-    currentProjection,
-    settingsPending,
-  );
 }
 
 function formatClock(value: string | null | undefined): string | null {
@@ -481,24 +386,15 @@ function formatUptime(seconds: number | undefined): string {
   return `${days} ${days === 1 ? "day" : "days"}`;
 }
 
-export function idleTimeoutLabel(minutes: number | undefined): string {
-  if (minutes === undefined) return "Unavailable";
-  if (minutes < 60) return `${minutes} minutes`;
-  const hours = minutes / 60;
-  return `${hours} ${hours === 1 ? "hour" : "hours"}`;
-}
-
 export function autoPauseDescription(
   status: ManagedDevPcDisplayStatus,
-  idleTimeoutMinutes: number | undefined,
   autoStopClock: string | null,
 ): string {
   if (status === "paused" || status === "stopped") {
     return `${statusLabel[status]} until you resume.`;
   }
-  if (idleTimeoutMinutes === undefined) return "Auto-pause timing is unavailable.";
   if (autoStopClock) return `Pauses around ${autoStopClock} if activity stays quiet.`;
-  return `Pauses after ${idleTimeoutLabel(idleTimeoutMinutes)} of inactivity.`;
+  return "Pauses after 15 minutes of inactivity.";
 }
 
 function StatusDot({ status }: { status: ManagedDevPcDisplayStatus }) {
@@ -637,13 +533,7 @@ export function ManagedDevPcStatus({
   const [workspace, setWorkspace] = useState<ManagedDevPcBootstrap | null>(
     window.__DEVPC_MANAGED_BOOTSTRAP__ ?? null,
   );
-  const {
-    pendingAction,
-    uncertainAction,
-    settingsPending,
-    statusUnavailable,
-    idleTimeoutMinutes: snapshottedIdleTimeout,
-  } = useSyncExternalStore(
+  const { pendingAction, uncertainAction, statusUnavailable } = useSyncExternalStore(
     subscribeManagedActionSession,
     getManagedActionSnapshot,
     getManagedActionSnapshot,
@@ -655,7 +545,6 @@ export function ManagedDevPcStatus({
   const uncertainActionRef = managedUncertainAction;
   const actionProgressObserved = managedActionProgress;
   const restartCompletionConfirmations = managedRestartConfirmations;
-  const pendingIdleTimeout = managedPendingIdleTimeout;
   const refreshSequence = useRef(0);
   const latestAppliedRefresh = useRef(0);
   const componentMounted = useRef(false);
@@ -678,7 +567,6 @@ export function ManagedDevPcStatus({
     const ineffectiveActionPollsAtRequestStart = {
       ...managedIneffectiveActionPolls.current,
     };
-    const idleTimeoutProjectionAtRequestStart = pendingIdleTimeout.current;
     try {
       const response = await fetch(STATUS_PATH, {
         credentials: "same-origin",
@@ -699,15 +587,6 @@ export function ManagedDevPcStatus({
       latestAppliedRefresh.current = generation;
       const next = mergeBootstrapStatus(window.__DEVPC_MANAGED_BOOTSTRAP__, status);
       window.__DEVPC_MANAGED_BOOTSTRAP__ = next;
-      const idleTimeout = reconcileIdleTimeoutRefresh(
-        next.idleTimeoutMinutes,
-        idleTimeoutProjectionAtRequestStart,
-        pendingIdleTimeout.current,
-        managedActionSnapshot.settingsPending,
-        managedActionSnapshot.idleTimeoutMinutes,
-      );
-      pendingIdleTimeout.current = idleTimeout.projection;
-      updateManagedIdleTimeout(idleTimeout.effectiveIdleTimeoutMinutes);
       const action = pendingActionRef.current ?? uncertainActionRef.current;
       if (action) {
         const result = actionSnapshotResult(
@@ -768,7 +647,7 @@ export function ManagedDevPcStatus({
           }
         }
       }
-      setWorkspace(withIdleTimeout(next, idleTimeout.effectiveIdleTimeoutMinutes));
+      setWorkspace(next);
       updateManagedStatusUnavailable(false);
       return next;
     } catch {
@@ -803,7 +682,6 @@ export function ManagedDevPcStatus({
     ? displayStatus(workspace, pendingAction, statusUnavailable)
     : "unreachable";
   const telemetry = workspace?.telemetry ?? null;
-  const idleTimeoutMinutes = snapshottedIdleTimeout ?? workspace?.idleTimeoutMinutes;
   const statusMeta = useMemo(() => {
     if (!workspace) return "Status unavailable";
     if (status === "unreachable") {
@@ -930,63 +808,6 @@ export function ManagedDevPcStatus({
     }
   };
 
-  const updateIdleTimeout = async (value: string | null) => {
-    const minutes = Number(value);
-    if (!IDLE_TIMEOUTS.includes(minutes as (typeof IDLE_TIMEOUTS)[number])) return;
-    const previousIdleTimeoutMinutes = idleTimeoutMinutes;
-    pendingIdleTimeout.current = { minutes, mismatches: 0 };
-    updateManagedIdleTimeout(minutes);
-    updateManagedSettingsPending(true);
-    setError(null);
-    invalidateWorkspaceRefreshes();
-    const projectedWorkspace = withIdleTimeout(
-      window.__DEVPC_MANAGED_BOOTSTRAP__ ?? workspace,
-      minutes,
-    );
-    window.__DEVPC_MANAGED_BOOTSTRAP__ = projectedWorkspace;
-    setWorkspace(projectedWorkspace);
-    try {
-      const response = await fetch(SETTINGS_PATH, {
-        method: "PATCH",
-        credentials: "same-origin",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ idleTimeoutMinutes: minutes }),
-        signal: AbortSignal.timeout(ACTION_REQUEST_TIMEOUT_MS),
-      });
-      if (!response.ok) throw new Error("request failed");
-      const result = (await response.json()) as { idleTimeoutMinutes?: number };
-      const returnedMinutes = result.idleTimeoutMinutes;
-      const confirmedMinutes =
-        typeof returnedMinutes === "number" &&
-        IDLE_TIMEOUTS.includes(returnedMinutes as (typeof IDLE_TIMEOUTS)[number])
-          ? returnedMinutes
-          : minutes;
-      pendingIdleTimeout.current = { minutes: confirmedMinutes, mismatches: 0 };
-      updateManagedIdleTimeout(confirmedMinutes);
-      const confirmedWorkspace = withIdleTimeout(
-        window.__DEVPC_MANAGED_BOOTSTRAP__ ?? workspace,
-        confirmedMinutes,
-      );
-      window.__DEVPC_MANAGED_BOOTSTRAP__ = confirmedWorkspace;
-      if (componentMounted.current) setWorkspace(confirmedWorkspace);
-    } catch {
-      invalidateWorkspaceRefreshes();
-      pendingIdleTimeout.current = null;
-      updateManagedIdleTimeout(previousIdleTimeoutMinutes);
-      const restoredWorkspace = withIdleTimeout(
-        window.__DEVPC_MANAGED_BOOTSTRAP__ ?? workspace,
-        previousIdleTimeoutMinutes,
-      );
-      window.__DEVPC_MANAGED_BOOTSTRAP__ = restoredWorkspace;
-      if (componentMounted.current) {
-        setWorkspace(restoredWorkspace);
-        setError("The auto-pause setting could not be updated. Try again.");
-      }
-    } finally {
-      updateManagedSettingsPending(false);
-    }
-  };
-
   const canOperate = canOperateManagedWorkspace(status, pendingAction, uncertainAction);
   const canResume =
     ["paused", "stopped"].includes(status) && pendingAction === null && uncertainAction === null;
@@ -1068,39 +889,15 @@ export function ManagedDevPcStatus({
               </section>
 
               <section className="space-y-2 border-t pt-5">
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <label className="text-sm font-semibold" htmlFor="workspace-idle-timeout">
-                      Pause after inactivity
-                    </label>
-                    <p className="mt-0.5 text-xs text-muted-foreground">
-                      Agent work counts even when this tab is closed.
-                    </p>
-                  </div>
-                  <Select
-                    value={idleTimeoutMinutes === undefined ? null : String(idleTimeoutMinutes)}
-                    onValueChange={(value) => void updateIdleTimeout(value)}
-                    disabled={settingsPending || idleTimeoutMinutes === undefined}
-                  >
-                    <SelectTrigger
-                      id="workspace-idle-timeout"
-                      className="w-32 shrink-0"
-                      size="sm"
-                      aria-label="Pause after inactivity"
-                    >
-                      <SelectValue>{idleTimeoutLabel(idleTimeoutMinutes)}</SelectValue>
-                    </SelectTrigger>
-                    <SelectPopup align="end" alignItemWithTrigger={false}>
-                      {IDLE_TIMEOUTS.map((minutes) => (
-                        <SelectItem key={minutes} value={String(minutes)}>
-                          {idleTimeoutLabel(minutes)}
-                        </SelectItem>
-                      ))}
-                    </SelectPopup>
-                  </Select>
+                <div>
+                  <p className="text-sm font-semibold">Pauses after 15 minutes of inactivity</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    This timing is fixed. Active AI turns keep the workspace awake even when this
+                    tab is closed.
+                  </p>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  {autoPauseDescription(status, idleTimeoutMinutes, autoStopClock)}
+                  {autoPauseDescription(status, autoStopClock)}
                 </p>
               </section>
 

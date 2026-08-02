@@ -30,11 +30,11 @@ jobs:
       - name: Managed-mode feature tests
         run: |
           (cd apps/web && vp test run --passWithNoTests --project unit \
-            src/managedDevPc.test.ts \
+            src/managedDevPc.test.ts src/components/ManagedDevPcStatus.test.tsx \
             src/browser/browserTargetResolver.test.ts)
           (cd apps/server && vp test run \
             src/environment/ServerEnvironment.test.ts \
-            src/cli/config.test.ts \
+            src/cli/config.test.ts src/managedDevPcActivity.test.ts \
             src/bin.test.ts)
       - name: Managed production build
         env:
@@ -50,5 +50,7 @@ jobs:
           grep -q '/_devpc/ws-ticket' apps/server/dist/client/assets/*.js
           grep -q '/_devpc/workspace/start' apps/server/dist/client/assets/*.js
           grep -q '/_devpc/workspace/stop' apps/server/dist/client/assets/*.js
-          grep -q '/_devpc/workspace/settings' apps/server/dist/client/assets/*.js
+          ! grep -q '/_devpc/workspace/settings' apps/server/dist/client/assets/*.js
+          grep -q 'Pauses after 15 minutes of inactivity' apps/server/dist/client/assets/*.js
+          grep -q '/api/_devpc/activity' apps/server/dist/bin.mjs
           grep -q 'data-devpc-workspace-control-center' apps/server/dist/client/assets/*.js

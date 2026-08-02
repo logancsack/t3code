@@ -72,9 +72,18 @@ jobs:
             echo "Missing managed DevPC pause surface"
             exit 1
           }
-          grep -R -m1 -q --include='*.js' "/_devpc/workspace/settings" \
+          if grep -R -m1 -q --include='*.js' "/_devpc/workspace/settings" \
+            artifacts/devpc-t3/dist/client/assets; then
+            echo "Managed DevPC idle timeout is still adjustable"
+            exit 1
+          fi
+          grep -R -m1 -q --include='*.js' "Pauses after 15 minutes of inactivity" \
             artifacts/devpc-t3/dist/client/assets || {
-            echo "Missing managed DevPC settings surface"
+            echo "Missing fixed managed DevPC idle policy"
+            exit 1
+          }
+          grep -q "/api/_devpc/activity" artifacts/devpc-t3/dist/bin.mjs || {
+            echo "Missing managed DevPC activity endpoint"
             exit 1
           }
           grep -R -m1 -q --include='*.js' "data-devpc-workspace-control-center" \
@@ -100,6 +109,7 @@ jobs:
           HOME="$runtime_home/home" \
             T3CODE_HOME="$runtime_home/t3code" \
             T3CODE_MANAGED_DEVPC=1 \
+            WORKSPACE_GATEWAY_TOKEN=release-smoke-managed-gateway-token \
             T3CODE_TELEMETRY_ENABLED=false \
             node artifacts/devpc-t3/dist/bin.mjs start \
               --mode web --host 127.0.0.1 --port 4311 \
@@ -115,6 +125,13 @@ jobs:
             fi
             if curl --connect-timeout 2 --max-time 5 --fail --silent --show-error \
               http://127.0.0.1:4311/ >/dev/null; then
+              activity="$(curl --connect-timeout 2 --max-time 5 --fail --silent --show-error \
+                -H 'x-devpc-gateway-token: release-smoke-managed-gateway-token' \
+                http://127.0.0.1:4311/api/_devpc/activity)"
+              test "$activity" = '{"active":false}' || {
+                echo "Unexpected managed activity response: $activity"
+                exit 1
+              }
               exit 0
             fi
             sleep 1
