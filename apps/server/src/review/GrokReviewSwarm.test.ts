@@ -377,6 +377,7 @@ describe("redactSensitiveContextWithMetadata", () => {
       "Changed file: .kube/config",
       "Changed file: `.env`",
       "Changed file: .env (lines 1-2)",
+      "Changed file: .env#L1-L2",
     ]) {
       expect(
         redactSensitiveContextSection({

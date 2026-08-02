@@ -200,7 +200,12 @@ export function redactSensitiveContextSection(section: {
 } {
   const title = redactSensitiveContextWithMetadata(section.title);
   const titlePaths = section.title.match(/[^\s`'"()[\]{}:,]+/g) ?? [];
-  if (titlePaths.some((candidate) => SENSITIVE_PATH_PATTERN.test(candidate))) {
+  if (
+    titlePaths.some((candidate) => {
+      const canonicalPath = /^[A-Za-z0-9_./-]+/.exec(candidate)?.[0];
+      return canonicalPath !== undefined && SENSITIVE_PATH_PATTERN.test(canonicalPath);
+    })
+  ) {
     return {
       title: title.text,
       content: SENSITIVE_CONTEXT_PATH_NOTICE,
