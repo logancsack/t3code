@@ -328,6 +328,7 @@ describe("redactSensitiveContextWithMetadata", () => {
       '{"nested":{"password":"compact-json-secret"}}',
       'credentials: { password: "inline-object-secret" }',
       "password: unquoted secret with spaces",
+      'password = """triple-quoted, secret""" trailing-content',
       "password: |",
       "  multiline-yaml-secret",
       "  second-secret-line",
@@ -349,6 +350,8 @@ describe("redactSensitiveContextWithMetadata", () => {
     expect(result.text).not.toContain("compact-json-secret");
     expect(result.text).not.toContain("inline-object-secret");
     expect(result.text).not.toContain("unquoted secret with spaces");
+    expect(result.text).not.toContain("triple-quoted, secret");
+    expect(result.text).not.toContain("trailing-content");
     expect(result.text).not.toContain("multiline-yaml-secret");
     expect(result.text).not.toContain("second-secret-line");
     expect(result.text).toContain("ordinary: preserved-after-block");
