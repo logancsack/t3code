@@ -50,11 +50,9 @@ export function aldoReviewToggleDisabled(input: {
 
 export function resolveSupplementalReviewProviderId(input: {
   stored: string | null;
-  preferred: string | null;
   primary: string;
 }): string | null {
-  if (input.stored && input.stored !== input.primary) return input.stored;
-  return input.preferred && input.preferred !== input.primary ? input.preferred : null;
+  return input.stored && input.stored !== input.primary ? input.stored : null;
 }
 
 function sortRepositories(
@@ -327,7 +325,6 @@ export function GrokReviewSettings() {
                 providerInstanceId: setting.providerInstanceId,
                 supplementalProviderInstanceId: resolveSupplementalReviewProviderId({
                   stored: setting.supplementalProviderInstanceId,
-                  preferred: fallback?.supplementalProviderInstanceId ?? null,
                   primary: setting.providerInstanceId,
                 }),
                 providerDriver: setting.providerDriver,

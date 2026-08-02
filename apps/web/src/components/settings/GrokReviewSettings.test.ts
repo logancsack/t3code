@@ -34,33 +34,29 @@ describe("resolveSupplementalReviewProviderId", () => {
     expect(
       resolveSupplementalReviewProviderId({
         stored: null,
-        preferred: "opencode",
         primary: "opencode",
       }),
     ).toBeNull();
     expect(
       resolveSupplementalReviewProviderId({
         stored: "opencode",
-        preferred: "opencode",
         primary: "opencode",
       }),
     ).toBeNull();
   });
 
-  it("uses a distinct stored or preferred supplemental provider", () => {
+  it("uses only a distinct explicitly stored supplemental provider", () => {
     expect(
       resolveSupplementalReviewProviderId({
         stored: "opencode-work",
-        preferred: "opencode-default",
         primary: "grok",
       }),
     ).toBe("opencode-work");
     expect(
       resolveSupplementalReviewProviderId({
         stored: null,
-        preferred: "opencode-default",
         primary: "grok",
       }),
-    ).toBe("opencode-default");
+    ).toBeNull();
   });
 });

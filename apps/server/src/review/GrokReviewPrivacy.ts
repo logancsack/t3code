@@ -44,6 +44,10 @@ const SENSITIVE_CONTEXT_ASSIGNMENT =
   /(["']?[A-Za-z0-9_.-]*(?:secret|token|password|passwd|api[_-]?key|private[_-]?key|client[_-]?secret|access[_-]?key|authorization|cookie)[A-Za-z0-9_.-]*["']?\s*[:=]\s*)(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\r\n,}\]]+)/gi;
 const SENSITIVE_CONTEXT_HEADER =
   /^(\s*(?:authorization|proxy-authorization|cookie|set-cookie)\s*:\s*)(\S.*)$/gim;
+const SENSITIVE_CONTEXT_KEY =
+  /(?:secret|token|password|passwd|api[_-]?key|private[_-]?key|client[_-]?secret|access[_-]?key|authorization|cookie)/i;
+const YAML_BLOCK_ASSIGNMENT =
+  /^(\s*(?:-\s+)?["']?([A-Za-z0-9_.-]+)["']?\s*:\s*)[|>](?:[-+]?\d?)?\s*(?:#.*)?$/i;
 
 const ESCAPED_BYTES: Readonly<Record<string, number>> = {
   a: 0x07,
@@ -175,11 +179,40 @@ export function redactSensitiveContextWithMetadata(text: string): {
   readonly text: string;
   readonly redacted: boolean;
 } {
-  let output = text;
+  let output = redactSensitiveYamlBlocks(text);
   for (const pattern of SENSITIVE_CONTEXT_PATTERNS) {
     output = output.replace(pattern, CONTEXT_REDACTION_NOTICE);
   }
   output = output.replace(SENSITIVE_CONTEXT_ASSIGNMENT, `$1${CONTEXT_REDACTION_NOTICE}`);
   output = output.replace(SENSITIVE_CONTEXT_HEADER, `$1${CONTEXT_REDACTION_NOTICE}`);
   return { text: output, redacted: output !== text };
+}
+
+function redactSensitiveYamlBlocks(text: string): string {
+  const lines = text.split(/\r?\n/);
+  let redacted = false;
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const header = YAML_BLOCK_ASSIGNMENT.exec(lines[index]!);
+    if (!header || !SENSITIVE_CONTEXT_KEY.test(header[2]!)) continue;
+
+    const headerIndent = /^\s*/.exec(lines[index]!)?.[0].length ?? 0;
+    let end = index + 1;
+    while (end < lines.length) {
+      const line = lines[end]!;
+      if (line.trim().length === 0) {
+        end += 1;
+        continue;
+      }
+      const indentation = /^\s*/.exec(line)?.[0].length ?? 0;
+      if (indentation <= headerIndent) break;
+      end += 1;
+    }
+
+    lines[index] = `${header[1]}${CONTEXT_REDACTION_NOTICE}`;
+    lines.splice(index + 1, end - index - 1);
+    redacted = true;
+  }
+
+  return redacted ? lines.join("\n") : text;
 }
