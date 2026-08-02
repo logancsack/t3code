@@ -373,16 +373,22 @@ describe("redactSensitiveContextWithMetadata", () => {
   });
 
   it("suppresses whole context sections identified as sensitive paths", () => {
-    expect(
-      redactSensitiveContextSection({
-        title: "Changed file: .kube/config",
-        content: "unrecognized-private-material",
-      }),
-    ).toEqual({
-      title: "Changed file: .kube/config",
-      content: "[Repository context redacted: sensitive path]",
-      redacted: true,
-    });
+    for (const title of [
+      "Changed file: .kube/config",
+      "Changed file: `.env`",
+      "Changed file: .env (lines 1-2)",
+    ]) {
+      expect(
+        redactSensitiveContextSection({
+          title,
+          content: "unrecognized-private-material",
+        }),
+      ).toEqual({
+        title,
+        content: "[Repository context redacted: sensitive path]",
+        redacted: true,
+      });
+    }
     expect(
       redactSensitiveContextSection({
         title: "Changed file: src/config.ts",
