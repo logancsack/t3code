@@ -320,6 +320,19 @@ describe("redactSensitiveDiff", () => {
 });
 
 describe("redactSensitiveContextWithMetadata", () => {
+  it("preserves ordinary identifiers containing credential-like substrings", () => {
+    const context = [
+      "const tokenizer = createTokenizer(config)",
+      "tokenCount = tokens.length",
+      "cookieJar = createCookieJar()",
+    ].join("\n");
+
+    expect(redactSensitiveContextWithMetadata(context)).toEqual({
+      text: context,
+      redacted: false,
+    });
+  });
+
   it("redacts common credential forms without suppressing ordinary context", () => {
     const context = [
       "Deployment notes remain useful.",

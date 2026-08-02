@@ -42,12 +42,9 @@ const SENSITIVE_CONTEXT_PATTERNS: ReadonlyArray<RegExp> = [
   /(?<=:\/\/)[^\s/:@]+:[^\s/@]+(?=@)/g,
   /\bpassword[ \t]+(?![:=])\S+/gi,
 ];
-const SENSITIVE_CONTEXT_ASSIGNMENT =
-  /(["']?(?:auth|[A-Za-z0-9_.-]*(?:secret|token|password|passwd|api[_-]?key|private[_-]?key|client[_-]?secret|client[_-]?key[_-]?data|access[_-]?key|account[_-]?key|authorization|cookie)[A-Za-z0-9_.-]*)["']?\s*[:=]\s*)[^\r\n]+/gi;
+const CONTEXT_ASSIGNMENT_PREFIX = /(["']?([A-Za-z0-9_.-]+)["']?\s*[:=]\s*)/g;
 const SENSITIVE_CONTEXT_HEADER =
   /^(\s*(?:authorization|proxy-authorization|cookie|set-cookie)\s*:\s*)(\S.*)$/gim;
-const SENSITIVE_CONTEXT_KEY =
-  /(?:^auth$|secret|token|password|passwd|api[_-]?key|private[_-]?key|client[_-]?secret|client[_-]?key[_-]?data|access[_-]?key|account[_-]?key|authorization|cookie)/i;
 const YAML_BLOCK_ASSIGNMENT =
   /^(\s*(?:-\s+)?["']?([A-Za-z0-9_.-]+)["']?\s*:\s*)[|>](?:[-+][1-9]?|[1-9][-+]?)?\s*(?:#.*)?$/i;
 
@@ -185,9 +182,54 @@ export function redactSensitiveContextWithMetadata(text: string): {
   for (const pattern of SENSITIVE_CONTEXT_PATTERNS) {
     output = output.replace(pattern, CONTEXT_REDACTION_NOTICE);
   }
-  output = output.replace(SENSITIVE_CONTEXT_ASSIGNMENT, `$1${CONTEXT_REDACTION_NOTICE}`);
+  output = redactSensitiveAssignments(output);
   output = output.replace(SENSITIVE_CONTEXT_HEADER, `$1${CONTEXT_REDACTION_NOTICE}`);
   return { text: output, redacted: output !== text };
+}
+
+function credentialKeyWords(key: string): ReadonlyArray<string> {
+  return key
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .toLowerCase()
+    .split(/[._-]+/)
+    .filter(Boolean);
+}
+
+function isSensitiveContextKey(key: string): boolean {
+  const words = credentialKeyWords(key);
+  const last = words.at(-1);
+  if (
+    last !== undefined &&
+    ["auth", "authorization", "cookie", "passwd", "password", "secret", "token"].includes(last)
+  ) {
+    return true;
+  }
+  const suffix = words.slice(-3).join("_");
+  return [
+    "access_key",
+    "account_key",
+    "api_key",
+    "client_key_data",
+    "client_secret",
+    "private_key",
+  ].some((candidate) => suffix === candidate || suffix.endsWith(`_${candidate}`));
+}
+
+function redactSensitiveAssignments(text: string): string {
+  return text
+    .split(/\r?\n/)
+    .map((line) => {
+      CONTEXT_ASSIGNMENT_PREFIX.lastIndex = 0;
+      let match = CONTEXT_ASSIGNMENT_PREFIX.exec(line);
+      while (match) {
+        if (isSensitiveContextKey(match[2]!)) {
+          return `${line.slice(0, match.index)}${match[1]}${CONTEXT_REDACTION_NOTICE}`;
+        }
+        match = CONTEXT_ASSIGNMENT_PREFIX.exec(line);
+      }
+      return line;
+    })
+    .join("\n");
 }
 
 export function redactSensitiveContextSection(section: {
@@ -229,7 +271,7 @@ function redactSensitiveYamlBlocks(text: string): string {
 
   for (let index = 0; index < lines.length; index += 1) {
     const header = YAML_BLOCK_ASSIGNMENT.exec(lines[index]!);
-    if (!header || !SENSITIVE_CONTEXT_KEY.test(header[2]!)) continue;
+    if (!header || !isSensitiveContextKey(header[2]!)) continue;
 
     const headerIndent = /^\s*(?:-\s+)?/.exec(lines[index]!)?.[0].length ?? 0;
     let end = index + 1;
