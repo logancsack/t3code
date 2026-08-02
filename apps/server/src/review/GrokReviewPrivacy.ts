@@ -199,11 +199,14 @@ export function redactSensitiveContextSection(section: {
   readonly redacted: boolean;
 } {
   const title = redactSensitiveContextWithMetadata(section.title);
-  const titlePaths = section.title.match(/[^\s`'"()[\]{}:,;]+/g) ?? [];
+  const titlePaths = section.title.match(/[^\s`'"*~<>()[\]{}:,;]+/g) ?? [];
   if (
     titlePaths.some((candidate) => {
       const canonicalPath = candidate.split(/[?#]/, 1)[0];
-      return canonicalPath !== undefined && SENSITIVE_PATH_PATTERN.test(canonicalPath);
+      const candidates = canonicalPath
+        ? [canonicalPath, canonicalPath.replace(/^_+|_+$/g, "")]
+        : [];
+      return candidates.some((value) => SENSITIVE_PATH_PATTERN.test(value));
     })
   ) {
     return {
