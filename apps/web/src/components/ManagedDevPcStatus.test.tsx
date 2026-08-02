@@ -82,7 +82,9 @@ describe("ManagedDevPcStatus", () => {
     });
 
     expect(markup).toContain("data-devpc-workspace-control-center");
-    expect(markup).toContain("Auto-pause");
+    expect(markup).toContain("Pauses after 15 minutes of inactivity");
+    expect(markup).toContain("This timing is fixed");
+    expect(markup).not.toContain("combobox");
     expect(markup).toContain(">Restart<");
     expect(markup).toContain(">Pause<");
     expect(markup).not.toContain("data-devpc-workspace-status");
@@ -317,90 +319,12 @@ describe("ManagedDevPcStatus", () => {
     expect(mergeBootstrapStatus(undefined, statusPoll)).toEqual(statusPoll);
   });
 
-  it("rolls back only the idle timeout on a newer workspace snapshot", async () => {
+  it("always describes the fixed idle timeout when no stop clock is available", async () => {
     vi.stubEnv("VITE_DEVPC_MANAGED", "1");
     vi.resetModules();
-    const { withIdleTimeout } = await import("./ManagedDevPcStatus");
-    const latest = {
-      managed: true as const,
-      state: "paused" as const,
-      status: "paused" as const,
-      ready: false,
-      idleTimeoutMinutes: 15,
-      lastHeartbeatAt: "2026-07-30T07:00:00.000Z",
-      previewUrlTemplate: "https://{port}.preview.example.test/",
-    };
+    const { autoPauseDescription } = await import("./ManagedDevPcStatus");
 
-    expect(withIdleTimeout(latest, 30)).toEqual({
-      ...latest,
-      idleTimeoutMinutes: 30,
-    });
-    expect(withIdleTimeout(latest, undefined)).not.toHaveProperty("idleTimeoutMinutes");
-  });
-
-  it("keeps a confirmed idle timeout projected until status observes it", async () => {
-    vi.stubEnv("VITE_DEVPC_MANAGED", "1");
-    vi.resetModules();
-    const { reconcileIdleTimeoutProjection } = await import("./ManagedDevPcStatus");
-
-    expect(reconcileIdleTimeoutProjection(30, { minutes: 60, mismatches: 0 }, false)).toEqual({
-      effectiveIdleTimeoutMinutes: 60,
-      projection: { minutes: 60, mismatches: 1 },
-    });
-    expect(reconcileIdleTimeoutProjection(60, { minutes: 60, mismatches: 1 }, false)).toEqual({
-      effectiveIdleTimeoutMinutes: 60,
-      projection: null,
-    });
-    expect(reconcileIdleTimeoutProjection(60, { minutes: 60, mismatches: 0 }, true)).toEqual({
-      effectiveIdleTimeoutMinutes: 60,
-      projection: { minutes: 60, mismatches: 0 },
-    });
-    expect(reconcileIdleTimeoutProjection(30, { minutes: 60, mismatches: 2 }, false)).toEqual({
-      effectiveIdleTimeoutMinutes: 30,
-      projection: null,
-    });
-  });
-
-  it("counts only serialized idle-timeout mismatch confirmations", async () => {
-    vi.stubEnv("VITE_DEVPC_MANAGED", "1");
-    vi.resetModules();
-    const { reconcileIdleTimeoutRefresh } = await import("./ManagedDevPcStatus");
-    const projectionAtRequestStart = { minutes: 60, mismatches: 0 };
-    const projectionAfterEarlierResponse = { minutes: 60, mismatches: 1 };
-
-    expect(
-      reconcileIdleTimeoutRefresh(
-        30,
-        projectionAtRequestStart,
-        projectionAfterEarlierResponse,
-        false,
-        60,
-      ),
-    ).toEqual({
-      effectiveIdleTimeoutMinutes: 60,
-      projection: projectionAfterEarlierResponse,
-    });
-    expect(
-      reconcileIdleTimeoutRefresh(
-        30,
-        projectionAfterEarlierResponse,
-        projectionAfterEarlierResponse,
-        false,
-        60,
-      ),
-    ).toEqual({
-      effectiveIdleTimeoutMinutes: 60,
-      projection: { minutes: 60, mismatches: 2 },
-    });
-  });
-
-  it("does not invent a default idle timeout when settings metadata is absent", async () => {
-    vi.stubEnv("VITE_DEVPC_MANAGED", "1");
-    vi.resetModules();
-    const { idleTimeoutLabel } = await import("./ManagedDevPcStatus");
-
-    expect(idleTimeoutLabel(undefined)).toBe("Unavailable");
-    expect(idleTimeoutLabel(30)).toBe("30 minutes");
+    expect(autoPauseDescription("running", null)).toBe("Pauses after 15 minutes of inactivity.");
   });
 
   it("explains that stopped workspaces must be resumed", async () => {
@@ -408,8 +332,8 @@ describe("ManagedDevPcStatus", () => {
     vi.resetModules();
     const { autoPauseDescription } = await import("./ManagedDevPcStatus");
 
-    expect(autoPauseDescription("stopped", 30, "10:30")).toBe("Stopped until you resume.");
-    expect(autoPauseDescription("paused", 30, "10:30")).toBe("Paused until you resume.");
+    expect(autoPauseDescription("stopped", "10:30")).toBe("Stopped until you resume.");
+    expect(autoPauseDescription("paused", "10:30")).toBe("Paused until you resume.");
   });
 
   it("keeps an interrupted action locked until status confirms progress or completion", async () => {
