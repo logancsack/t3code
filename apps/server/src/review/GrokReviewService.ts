@@ -91,6 +91,7 @@ export const make = Effect.gen(function* () {
         { concurrency: "unbounded" },
       );
       const readyCandidate = ({ snapshot, instance }: (typeof candidates)[number]) =>
+        instance.enabled &&
         snapshot.installed &&
         snapshot.status === "ready" &&
         snapshot.auth.status === "authenticated" &&
