@@ -47,7 +47,7 @@ const SENSITIVE_CONTEXT_ASSIGNMENT =
 const SENSITIVE_CONTEXT_HEADER =
   /^(\s*(?:authorization|proxy-authorization|cookie|set-cookie)\s*:\s*)(\S.*)$/gim;
 const SENSITIVE_CONTEXT_KEY =
-  /(?:secret|token|password|passwd|api[_-]?key|private[_-]?key|client[_-]?secret|access[_-]?key|authorization|cookie)/i;
+  /(?:^auth$|secret|token|password|passwd|api[_-]?key|private[_-]?key|client[_-]?secret|client[_-]?key[_-]?data|access[_-]?key|account[_-]?key|authorization|cookie)/i;
 const YAML_BLOCK_ASSIGNMENT =
   /^(\s*(?:-\s+)?["']?([A-Za-z0-9_.-]+)["']?\s*:\s*)[|>](?:[-+][1-9]?|[1-9][-+]?)?\s*(?:#.*)?$/i;
 

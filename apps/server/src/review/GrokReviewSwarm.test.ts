@@ -333,6 +333,8 @@ describe("redactSensitiveContextWithMetadata", () => {
       "password: |",
       "  multiline-yaml-secret",
       "  second-secret-line",
+      "client-key-data: |",
+      "  multiline-client-private-key",
       "ordinary: preserved-after-block",
       "Authorization: Bearer visible-secret",
       '{"auths":{"registry.example.com":{"auth":"dXNlcjpwYXNz"}}}',
@@ -359,6 +361,7 @@ describe("redactSensitiveContextWithMetadata", () => {
     expect(result.text).not.toContain("trailing-content");
     expect(result.text).not.toContain("multiline-yaml-secret");
     expect(result.text).not.toContain("second-secret-line");
+    expect(result.text).not.toContain("multiline-client-private-key");
     expect(result.text).toContain("ordinary: preserved-after-block");
     expect(result.text).not.toContain("visible-secret");
     expect(result.text).not.toContain("dXNlcjpwYXNz");

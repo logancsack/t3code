@@ -4,6 +4,7 @@ import {
   aldoReviewToggleDisabled,
   resolveSupplementalReviewProviderId,
   supplementalProviderInstanceIdForSave,
+  supplementalProviderSelectDisabled,
 } from "./GrokReviewSettings";
 
 describe("aldoReviewToggleDisabled", () => {
@@ -68,5 +69,24 @@ describe("supplementalProviderInstanceIdForSave", () => {
     expect(supplementalProviderInstanceIdForSave({ instanceId: "opencode-work" })).toBe(
       "opencode-work",
     );
+  });
+});
+
+describe("supplementalProviderSelectDisabled", () => {
+  it("keeps a stale stored selection clearable without an available provider", () => {
+    expect(
+      supplementalProviderSelectDisabled({
+        saving: false,
+        availableProviderCount: 0,
+        selectedProviderInstanceId: "disconnected-opencode",
+      }),
+    ).toBe(false);
+    expect(
+      supplementalProviderSelectDisabled({
+        saving: false,
+        availableProviderCount: 0,
+        selectedProviderInstanceId: null,
+      }),
+    ).toBe(true);
   });
 });

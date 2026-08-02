@@ -62,6 +62,17 @@ export function supplementalProviderInstanceIdForSave(
   return entry?.instanceId ?? null;
 }
 
+export function supplementalProviderSelectDisabled(input: {
+  readonly saving: boolean;
+  readonly availableProviderCount: number;
+  readonly selectedProviderInstanceId: string | null;
+}): boolean {
+  return (
+    input.saving ||
+    (input.availableProviderCount === 0 && input.selectedProviderInstanceId === null)
+  );
+}
+
 function sortRepositories(
   repositories: ReadonlyArray<AldoReviewRepositorySetting>,
 ): ReadonlyArray<AldoReviewRepositorySetting> {
@@ -397,7 +408,11 @@ export function GrokReviewSettings() {
                   ariaLabel="Supplemental OpenCode review provider"
                   placeholder="OpenCode specialist"
                   allowNone
-                  disabled={savingRepository !== null || supplementalProviders.length === 0}
+                  disabled={supplementalProviderSelectDisabled({
+                    saving: savingRepository !== null,
+                    availableProviderCount: supplementalProviders.length,
+                    selectedProviderInstanceId: selection.supplementalProviderInstanceId,
+                  })}
                   onChange={(entry) =>
                     void save(setting.repository, setting.enabled, {
                       ...selection,
