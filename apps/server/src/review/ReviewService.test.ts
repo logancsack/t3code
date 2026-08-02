@@ -130,6 +130,38 @@ describe("ReviewService", () => {
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
+  it.effect("rejects a registered-project symlink that escapes its canonical root", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const workspaceRoot = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-workspace-" });
+      const registeredRoot = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-project-" });
+      const outsideRoot = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-outside-" });
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-base-" });
+      const escapedCwd = path.join(registeredRoot, "linked-outside");
+      yield* fs.symlink(outsideRoot, escapedCwd);
+      const detectCalls: Array<{ readonly cwd: string }> = [];
+
+      const error = yield* Effect.gen(function* () {
+        const review = yield* ReviewService.ReviewService;
+        return yield* review.getDiffPreview({ cwd: escapedCwd }).pipe(Effect.flip);
+      }).pipe(
+        Effect.provide(
+          makeLayer({
+            workspaceRoot,
+            baseDir,
+            detectCalls,
+            registeredProjectRoots: new Set([registeredRoot]),
+          }),
+        ),
+      );
+
+      assert.strictEqual(error._tag, "VcsRepositoryDetectionError");
+      assert.strictEqual(error.operation, "ReviewService.getDiffPreview");
+      assert.deepStrictEqual(detectCalls, []);
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
   it.effect("rejects option-like base refs before invoking a VCS driver", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

@@ -87,7 +87,6 @@ export const make = Effect.gen(function* () {
   const assertWorkspaceBoundCwd = Effect.fn("ReviewService.assertWorkspaceBoundCwd")(function* (
     cwd: string,
   ) {
-    const resolvedCandidate = path.resolve(cwd);
     const [candidate, workspaceRoot, worktreesRoot] = yield* Effect.all([
       canonicalizePath(cwd),
       canonicalizePath(config.cwd),
@@ -98,10 +97,7 @@ export const make = Effect.gen(function* () {
       return;
     }
 
-    if (
-      (yield* hasActiveProjectAncestor(resolvedCandidate)) ||
-      (candidate !== resolvedCandidate && (yield* hasActiveProjectAncestor(candidate)))
-    ) {
+    if (yield* hasActiveProjectAncestor(candidate)) {
       return;
     }
 
