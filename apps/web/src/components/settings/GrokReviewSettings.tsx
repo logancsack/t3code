@@ -22,6 +22,7 @@ interface AldoReviewRepositorySetting {
   readonly enabled: boolean;
   readonly connected: boolean;
   readonly providerInstanceId: string | null;
+  readonly supplementalProviderInstanceId: string | null;
   readonly providerDriver: string | null;
   readonly model: string | null;
 }
@@ -33,6 +34,7 @@ interface AldoReviewRepositoryList {
 
 interface ReviewSelection {
   readonly providerInstanceId: string;
+  readonly supplementalProviderInstanceId?: string;
   readonly providerDriver: string;
   readonly model: string;
 }
@@ -78,9 +80,18 @@ function defaultSelection(entries: ReadonlyArray<ProviderInstanceEntry>): Review
   const entry = entries.find((candidate) => candidate.driverKind === "grok") ?? entries[0];
   if (!entry) return null;
   const model = defaultReviewModel(entry);
+  const supplemental = entries.find(
+    (candidate) =>
+      candidate.instanceId !== entry.instanceId &&
+      candidate.driverKind === "opencode" &&
+      candidate.models.some((candidateModel) =>
+        /^opencode\/nemotron-3-ultra(?:-|$)/.test(candidateModel.slug),
+      ),
+  );
   return model
     ? {
         providerInstanceId: entry.instanceId,
+        ...(supplemental ? { supplementalProviderInstanceId: supplemental.instanceId } : {}),
         providerDriver: entry.driverKind,
         model,
       }
@@ -90,6 +101,8 @@ function defaultSelection(entries: ReadonlyArray<ProviderInstanceEntry>): Review
 function ProviderSelect(props: {
   entries: ReadonlyArray<ProviderInstanceEntry>;
   value: string;
+  ariaLabel?: string;
+  placeholder?: string;
   disabled: boolean;
   onChange: (entry: ProviderInstanceEntry) => void;
 }) {
@@ -102,8 +115,12 @@ function ProviderSelect(props: {
         if (entry) props.onChange(entry);
       }}
     >
-      <SelectTrigger className="h-8 min-w-36 text-xs" disabled={props.disabled}>
-        <SelectValue>{active?.displayName ?? "Select provider"}</SelectValue>
+      <SelectTrigger
+        className="h-8 min-w-36 text-xs"
+        disabled={props.disabled}
+        aria-label={props.ariaLabel}
+      >
+        <SelectValue>{active?.displayName ?? props.placeholder ?? "Select provider"}</SelectValue>
       </SelectTrigger>
       <SelectPopup align="end" alignItemWithTrigger={false}>
         {props.entries.map((entry) => (
@@ -163,6 +180,15 @@ export function GrokReviewSettings() {
     () => defaultSelection(availableProviders),
     [availableProviders],
   );
+  const supplementalProviders = useMemo(
+    () =>
+      availableProviders.filter(
+        (entry) =>
+          entry.driverKind === "opencode" &&
+          entry.models.some((model) => /^opencode\/nemotron-3-ultra(?:-|$)/.test(model.slug)),
+      ),
+    [availableProviders],
+  );
   const [repositories, setRepositories] = useState<ReadonlyArray<AldoReviewRepositorySetting>>([]);
   const [installationUrl, setInstallationUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -218,6 +244,7 @@ export function GrokReviewSettings() {
               connected:
                 current.find((entry) => entry.repository === repository)?.connected ?? false,
               ...selection,
+              supplementalProviderInstanceId: selection.supplementalProviderInstanceId ?? null,
             },
           ]),
         );
@@ -254,7 +281,8 @@ export function GrokReviewSettings() {
         <p className="max-w-2xl text-[13px] leading-[1.45] text-muted-foreground/80">
           Run a fast multi-agent review swarm on every pull-request head. Choose any connected
           provider and model; Grok 4.5 uses medium reasoning by default and escalates ambiguous
-          severe findings to high reasoning.
+          severe findings to high reasoning. An explicitly selected OpenCode Nemotron provider runs
+          the independent code-quality and security roles.
         </p>
         {installationUrl ? (
           <Button
@@ -271,6 +299,11 @@ export function GrokReviewSettings() {
             Connect and authenticate a provider before enabling Aldo Review.
           </p>
         ) : null}
+        {availableProviders.length > 0 && supplementalProviders.length === 0 ? (
+          <p className="mt-3 text-xs text-warning">
+            Connect OpenCode with Nemotron 3 Ultra to enable all six review roles.
+          </p>
+        ) : null}
         {error ? (
           <p role="alert" className="mt-2 text-xs text-destructive">
             {error}
@@ -284,6 +317,13 @@ export function GrokReviewSettings() {
           setting.providerInstanceId && setting.providerDriver && setting.model
             ? {
                 providerInstanceId: setting.providerInstanceId,
+                ...(setting.supplementalProviderInstanceId
+                  ? { supplementalProviderInstanceId: setting.supplementalProviderInstanceId }
+                  : fallback?.supplementalProviderInstanceId
+                    ? {
+                        supplementalProviderInstanceId: fallback.supplementalProviderInstanceId,
+                      }
+                    : {}),
                 providerDriver: setting.providerDriver,
                 model: setting.model,
               }
@@ -315,11 +355,32 @@ export function GrokReviewSettings() {
                     if (model) {
                       void save(setting.repository, setting.enabled, {
                         providerInstanceId: entry.instanceId,
+                        ...(selection.supplementalProviderInstanceId !== entry.instanceId
+                          ? {
+                              supplementalProviderInstanceId:
+                                selection.supplementalProviderInstanceId,
+                            }
+                          : {}),
                         providerDriver: entry.driverKind,
                         model,
                       });
                     }
                   }}
+                />
+                <ProviderSelect
+                  entries={supplementalProviders.filter(
+                    (entry) => entry.instanceId !== selection.providerInstanceId,
+                  )}
+                  value={selection.supplementalProviderInstanceId ?? ""}
+                  ariaLabel="Supplemental OpenCode review provider"
+                  placeholder="OpenCode specialist"
+                  disabled={savingRepository !== null || supplementalProviders.length === 0}
+                  onChange={(entry) =>
+                    void save(setting.repository, setting.enabled, {
+                      ...selection,
+                      supplementalProviderInstanceId: entry.instanceId,
+                    })
+                  }
                 />
                 <ModelSelect
                   entry={selectedEntry}
