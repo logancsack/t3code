@@ -162,6 +162,39 @@ describe("ReviewService", () => {
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
+  it.effect("allows a cwd inside a registered project whose root is a symlink", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const workspaceRoot = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-workspace-" });
+      const projectParent = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-parent-" });
+      const canonicalProject = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-project-" });
+      const registeredRoot = path.join(projectParent, "linked-project");
+      const nestedCwd = path.join(registeredRoot, "packages", "app");
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-base-" });
+      yield* fs.makeDirectory(path.join(canonicalProject, "packages", "app"), { recursive: true });
+      yield* fs.symlink(canonicalProject, registeredRoot);
+      const detectCalls: Array<{ readonly cwd: string }> = [];
+
+      const result = yield* Effect.gen(function* () {
+        const review = yield* ReviewService.ReviewService;
+        return yield* review.getDiffPreview({ cwd: nestedCwd });
+      }).pipe(
+        Effect.provide(
+          makeLayer({
+            workspaceRoot,
+            baseDir,
+            detectCalls,
+            registeredProjectRoots: new Set([registeredRoot]),
+          }),
+        ),
+      );
+
+      assert.strictEqual(result.cwd, nestedCwd);
+      assert.deepStrictEqual(detectCalls, [{ cwd: nestedCwd }]);
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
   it.effect("rejects option-like base refs before invoking a VCS driver", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

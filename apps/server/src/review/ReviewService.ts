@@ -61,22 +61,26 @@ export const make = Effect.gen(function* () {
   };
 
   const hasActiveProjectAncestor = Effect.fn("ReviewService.hasActiveProjectAncestor")(function* (
-    candidate: string,
+    resolvedCandidate: string,
+    canonicalCandidate: string,
   ) {
-    let current = candidate;
+    let current = resolvedCandidate;
     while (true) {
       const project = yield* projectionSnapshotQuery.getActiveProjectByWorkspaceRoot(current).pipe(
         Effect.mapError(
           (cause) =>
             new VcsRepositoryDetectionError({
               operation: "ReviewService.assertWorkspaceBoundCwd.queryActiveProject",
-              cwd: candidate,
+              cwd: resolvedCandidate,
               detail: "Failed to validate the review path against active projects.",
               cause,
             }),
         ),
       );
-      if (Option.isSome(project)) return true;
+      if (Option.isSome(project)) {
+        const canonicalProjectRoot = yield* canonicalizePath(current);
+        return isWithinRoot(canonicalCandidate, canonicalProjectRoot);
+      }
 
       const parent = path.dirname(current);
       if (parent === current) return false;
@@ -87,6 +91,7 @@ export const make = Effect.gen(function* () {
   const assertWorkspaceBoundCwd = Effect.fn("ReviewService.assertWorkspaceBoundCwd")(function* (
     cwd: string,
   ) {
+    const resolvedCandidate = path.resolve(cwd);
     const [candidate, workspaceRoot, worktreesRoot] = yield* Effect.all([
       canonicalizePath(cwd),
       canonicalizePath(config.cwd),
@@ -97,7 +102,7 @@ export const make = Effect.gen(function* () {
       return;
     }
 
-    if (yield* hasActiveProjectAncestor(candidate)) {
+    if (yield* hasActiveProjectAncestor(resolvedCandidate, candidate)) {
       return;
     }
 
