@@ -21,6 +21,7 @@ function makeLayer(input: {
   readonly detectCalls?: Array<{ readonly cwd: string }>;
   readonly registeredProjectRoots?: ReadonlySet<string>;
   readonly projectQueryCalls?: Array<string>;
+  readonly detectedRepositoryRoot?: string;
 }) {
   return ReviewService.layer.pipe(
     Layer.provide(
@@ -30,7 +31,13 @@ function makeLayer(input: {
         detect: (request) =>
           Effect.sync(() => {
             input.detectCalls?.push({ cwd: request.cwd });
-            return null;
+            return input.detectedRepositoryRoot
+              ? ({
+                  kind: "git",
+                  repository: { rootPath: input.detectedRepositoryRoot },
+                  driver: {},
+                } as VcsDriverRegistry.VcsDriverHandle)
+              : null;
           }),
       }),
     ),
@@ -192,6 +199,38 @@ describe("ReviewService", () => {
 
       assert.strictEqual(result.cwd, nestedCwd);
       assert.deepStrictEqual(detectCalls, [{ cwd: nestedCwd }]);
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("rejects a parent repository that escapes the registered project root", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const workspaceRoot = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-workspace-" });
+      const repositoryRoot = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-repository-" });
+      const registeredRoot = path.join(repositoryRoot, "packages", "app");
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-base-" });
+      yield* fs.makeDirectory(registeredRoot, { recursive: true });
+      const detectCalls: Array<{ readonly cwd: string }> = [];
+
+      const error = yield* Effect.gen(function* () {
+        const review = yield* ReviewService.ReviewService;
+        return yield* review.getDiffPreview({ cwd: registeredRoot }).pipe(Effect.flip);
+      }).pipe(
+        Effect.provide(
+          makeLayer({
+            workspaceRoot,
+            baseDir,
+            detectCalls,
+            registeredProjectRoots: new Set([registeredRoot]),
+            detectedRepositoryRoot: repositoryRoot,
+          }),
+        ),
+      );
+
+      assert.strictEqual(error._tag, "VcsRepositoryDetectionError");
+      assert.match("detail" in error ? error.detail : "", /detected repository root/);
+      assert.deepStrictEqual(detectCalls, [{ cwd: registeredRoot }]);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
