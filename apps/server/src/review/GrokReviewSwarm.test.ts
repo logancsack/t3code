@@ -191,6 +191,18 @@ describe("GrokReviewInput", () => {
         },
       }),
     ).toBe(false);
+    expect(
+      isGrokReviewInput({
+        cwd: "/workspace/project",
+        context: {
+          sections: Array.from({ length: 5 }, (_, index) => ({
+            title: `Section ${index}`,
+            content: "a".repeat(index === 4 ? 1 : 30_000),
+          })),
+          limitations: [],
+        },
+      }),
+    ).toBe(false);
   });
 });
 

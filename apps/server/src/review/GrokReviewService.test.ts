@@ -197,6 +197,63 @@ describe("GrokReviewService", () => {
     }).pipe(Effect.provide(makeLayer([unhealthy, instance])));
   });
 
+  it.effect("does not relabel the primary OpenCode instance as independent coverage", () => {
+    let agentRuns = 0;
+    const instance = {
+      instanceId: ProviderInstanceId.make("opencode-primary"),
+      driverKind: ProviderDriverKind.make("opencode"),
+      enabled: true,
+      snapshot: {
+        getSnapshot: Effect.succeed({
+          installed: true,
+          status: "ready",
+          auth: { status: "authenticated" },
+          models: [
+            {
+              slug: "opencode/nemotron-3-ultra-free",
+              name: "Nemotron 3 Ultra Free",
+              isCustom: false,
+              isDefault: true,
+              capabilities: null,
+            },
+          ],
+        }),
+      },
+      textGeneration: {
+        generateStructured: (input: { prompt: string }) =>
+          Effect.sync(() => {
+            agentRuns += 1;
+            return input.prompt.includes("verifier")
+              ? {
+                  summary: "No actionable findings.",
+                  findings: [],
+                  coverage: ["Diff"],
+                  limitations: [],
+                  needsHighEffortReview: false,
+                }
+              : {
+                  summary: "No actionable findings.",
+                  findings: [],
+                  coverage: ["Diff"],
+                  limitations: [],
+                  delegation: null,
+                };
+          }),
+      },
+    } as unknown as ProviderInstance;
+
+    return Effect.gen(function* () {
+      const service = yield* GrokReviewService.GrokReviewService;
+      const result = yield* service.run({ cwd: preview.cwd });
+      expect(agentRuns).toBe(5);
+      expect(result.supplementalModels).toBeUndefined();
+      expect(result.status).toBe("partial");
+      expect(result.limitations).toContain(
+        "OpenCode Nemotron 3 Ultra supplemental reviewers were unavailable.",
+      );
+    }).pipe(Effect.provide(makeLayer([instance])));
+  });
+
   it.effect("fails clearly when no Grok provider is connected", () =>
     Effect.gen(function* () {
       const service = yield* GrokReviewService.GrokReviewService;

@@ -154,6 +154,7 @@ export const make = Effect.gen(function* () {
           });
       const supplementalCandidate = candidates.find(
         (candidate) =>
+          candidate.instance.instanceId !== selected.instance.instanceId &&
           candidate.instance.driverKind === OPENCODE_DRIVER_KIND &&
           readyCandidate(candidate) &&
           selectOpenWeightReviewModel(candidate.snapshot.models ?? []) !== undefined,
