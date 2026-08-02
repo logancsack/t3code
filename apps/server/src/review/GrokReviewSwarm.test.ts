@@ -581,7 +581,14 @@ describe("runGrokReviewSwarm", () => {
 
     return Effect.gen(function* () {
       const report = yield* runGrokReviewSwarm({
-        request: { cwd: process.cwd(), target: "working-tree" },
+        request: {
+          cwd: process.cwd(),
+          target: "working-tree",
+          context: {
+            sections: [],
+            limitations: Array.from({ length: 8 }, (_, index) => `Context limitation ${index}`),
+          },
+        },
         source,
         agent,
         supplementalUnavailableReason:
@@ -592,6 +599,8 @@ describe("runGrokReviewSwarm", () => {
       expect(report.limitations).toContain(
         "OpenCode Nemotron 3 Ultra supplemental reviewers were unavailable.",
       );
+      expect(report.limitations).toHaveLength(8);
+      expect(report.limitations).not.toContain("Context limitation 7");
     }).pipe(Effect.provide(NodeServices.layer));
   });
 

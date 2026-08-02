@@ -464,7 +464,6 @@ export const runGrokReviewSwarm = Effect.fn("runGrokReviewSwarm")(function* (inp
       ? ["Potential secrets in repository context were redacted before model review."]
       : []),
     ...(input.supplementalUnavailableReason ? [input.supplementalUnavailableReason] : []),
-    ...(input.request.context?.limitations ?? []),
     ...failedOutcomes.map((outcome) =>
       outcome.result._tag === "Failure"
         ? `${outcome.label} reviewer failed (${reviewerFailureSummary(outcome.result.error)}).`
@@ -482,6 +481,7 @@ export const runGrokReviewSwarm = Effect.fn("runGrokReviewSwarm")(function* (inp
         ]
       : []),
     ...verification.limitations,
+    ...(input.request.context?.limitations ?? []),
   ]);
   const agentRuns =
     leadRequests.length + delegatedOutcomes.length + 1 + (highEffortAttempted ? 1 : 0);
