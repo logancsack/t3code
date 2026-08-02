@@ -362,6 +362,8 @@ describe("redactSensitiveContextWithMetadata", () => {
       "<password>xml-element-secret</password>",
       '<server password="xml-attribute-secret" />',
       "<m:apiKey>namespaced-xml-secret</m:apiKey>",
+      '<add key="ClearTextPassword" value="nuget-xml-secret" />',
+      '<add name="API_TOKEN" value="named-xml-secret" />',
       "github_pat_1234567890abcdefghijklmnop",
       "-----BEGIN PRIVATE KEY-----",
       "private-material",
@@ -394,6 +396,8 @@ describe("redactSensitiveContextWithMetadata", () => {
     expect(result.text).not.toContain("xml-element-secret");
     expect(result.text).not.toContain("xml-attribute-secret");
     expect(result.text).not.toContain("namespaced-xml-secret");
+    expect(result.text).not.toContain("nuget-xml-secret");
+    expect(result.text).not.toContain("named-xml-secret");
     expect(result.text).not.toContain("private-material");
   });
 

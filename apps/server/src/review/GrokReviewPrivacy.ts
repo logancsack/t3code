@@ -198,13 +198,18 @@ function credentialKeyWords(key: string): ReadonlyArray<string> {
 }
 
 function redactSensitiveXmlElements(text: string): string {
-  return text.replace(
+  const elements = text.replace(
     /<([A-Za-z0-9_.:-]+)>([^<]*)<\/([A-Za-z0-9_.:-]+)\s*>/gi,
     (match: string, opening: string, _content: string, closing: string) =>
       opening.toLowerCase() === closing.toLowerCase() && isSensitiveContextKey(opening)
         ? `<${opening}>${CONTEXT_REDACTION_NOTICE}</${closing}>`
         : match,
   );
+  return elements.replace(/<[^>]+>/g, (tag) => {
+    const key = /\b(?:key|name)\s*=\s*(["'])(.*?)\1/i.exec(tag)?.[2];
+    if (!key || !isSensitiveContextKey(key)) return tag;
+    return tag.replace(/(\bvalue\s*=\s*)(["'])(.*?)\2/i, `$1$2${CONTEXT_REDACTION_NOTICE}$2`);
+  });
 }
 
 function isSensitiveContextKey(key: string): boolean {
