@@ -28,6 +28,22 @@ const SENSITIVE_PATH_PATTERN =
 const SAFE_SENSITIVE_DIFF_HEADER =
   /^(?:diff --git |old mode |new mode |deleted file mode |new file mode |similarity index |dissimilarity index |rename from |rename to |copy from |copy to |index |--- |\+\+\+ |Binary files )/;
 const REDACTION_NOTICE = "[Patch content redacted: sensitive path]";
+const CONTEXT_REDACTION_NOTICE = "[Sensitive value redacted]";
+
+const SENSITIVE_CONTEXT_PATTERNS: ReadonlyArray<RegExp> = [
+  /-----BEGIN [^-]*PRIVATE KEY-----[\s\S]*?-----END [^-]*PRIVATE KEY-----/gi,
+  /\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/g,
+  /\bgithub_pat_[A-Za-z0-9_]{20,}\b/g,
+  /\bgh[pousr]_[A-Za-z0-9_]{20,}\b/g,
+  /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/g,
+  /\bsk-[A-Za-z0-9_-]{20,}\b/g,
+  /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g,
+  /(?<=:\/\/)[^\s/:@]+:[^\s/@]+(?=@)/g,
+];
+const SENSITIVE_CONTEXT_ASSIGNMENT =
+  /^(\s*(?:[-*]\s+)?(?:export\s+)?[A-Za-z0-9_.-]*(?:secret|token|password|passwd|api[_-]?key|private[_-]?key|client[_-]?secret|access[_-]?key)[A-Za-z0-9_.-]*\s*[:=]\s*)(\S.*)$/gim;
+const SENSITIVE_CONTEXT_HEADER =
+  /^(\s*(?:authorization|proxy-authorization|cookie|set-cookie)\s*:\s*)(\S.*)$/gim;
 
 const ESCAPED_BYTES: Readonly<Record<string, number>> = {
   a: 0x07,
@@ -153,4 +169,17 @@ export function redactSensitiveDiffWithMetadata(diff: string): {
 
 export function redactSensitiveDiff(diff: string): string {
   return redactSensitiveDiffWithMetadata(diff).diff;
+}
+
+export function redactSensitiveContextWithMetadata(text: string): {
+  readonly text: string;
+  readonly redacted: boolean;
+} {
+  let output = text;
+  for (const pattern of SENSITIVE_CONTEXT_PATTERNS) {
+    output = output.replace(pattern, CONTEXT_REDACTION_NOTICE);
+  }
+  output = output.replace(SENSITIVE_CONTEXT_ASSIGNMENT, `$1${CONTEXT_REDACTION_NOTICE}`);
+  output = output.replace(SENSITIVE_CONTEXT_HEADER, `$1${CONTEXT_REDACTION_NOTICE}`);
+  return { text: output, redacted: output !== text };
 }

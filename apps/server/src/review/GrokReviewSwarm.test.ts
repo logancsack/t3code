@@ -26,7 +26,11 @@ import {
   buildVerificationPrompt,
   DEFAULT_REVIEWER_ROLES,
 } from "./GrokReviewPrompts.ts";
-import { redactSensitiveDiff, redactSensitiveDiffWithMetadata } from "./GrokReviewPrivacy.ts";
+import {
+  redactSensitiveContextWithMetadata,
+  redactSensitiveDiff,
+  redactSensitiveDiffWithMetadata,
+} from "./GrokReviewPrivacy.ts";
 import { changedLinesFromDiff, runGrokReviewSwarm } from "./GrokReviewSwarm.ts";
 
 const source: ReviewDiffPreviewSource = {
@@ -302,6 +306,29 @@ describe("redactSensitiveDiff", () => {
   });
 });
 
+describe("redactSensitiveContextWithMetadata", () => {
+  it("redacts common credential forms without suppressing ordinary context", () => {
+    const context = [
+      "Deployment notes remain useful.",
+      "API_TOKEN=super-secret-value",
+      "Authorization: Bearer visible-secret",
+      "remote=https://user:password@example.com/repository.git",
+      "github_pat_1234567890abcdefghijklmnop",
+      "-----BEGIN PRIVATE KEY-----",
+      "private-material",
+      "-----END PRIVATE KEY-----",
+    ].join("\n");
+
+    const result = redactSensitiveContextWithMetadata(context);
+    expect(result.redacted).toBe(true);
+    expect(result.text).toContain("Deployment notes remain useful.");
+    expect(result.text).not.toContain("super-secret-value");
+    expect(result.text).not.toContain("visible-secret");
+    expect(result.text).not.toContain("user:password");
+    expect(result.text).not.toContain("private-material");
+  });
+});
+
 describe("buildDelegatedReviewPrompt", () => {
   it("keeps model-generated delegation text inside an escaped untrusted boundary", () => {
     const prompt = buildDelegatedReviewPrompt(
@@ -484,6 +511,7 @@ describe("runGrokReviewSwarm", () => {
               sections: [
                 { title: "Repository map", content: "apps/server/src/review/GrokReviewSwarm.ts" },
                 { title: "Related pull requests", content: "PR #41" },
+                { title: "Deployment notes", content: "API_TOKEN=must-not-reach-models" },
               ],
               limitations: [],
             },
@@ -501,7 +529,14 @@ describe("runGrokReviewSwarm", () => {
         expect(primaryPrompts).toHaveLength(5);
         expect(report.supplementalModels).toEqual(["opencode/nemotron-3-ultra-free"]);
         expect(report.coverage[0]).toBe(
-          "Repository context supplied (2 sections): Repository map, Related pull requests",
+          "Repository context supplied (3 sections): Repository map, Related pull requests, Deployment notes",
+        );
+        expect([...primaryPrompts, ...supplementalPrompts].join("\n")).not.toContain(
+          "must-not-reach-models",
+        );
+        expect(report.status).toBe("partial");
+        expect(report.limitations).toContain(
+          "Potential secrets in repository context were redacted before model review.",
         );
         expect(report.usage).toEqual({
           agentRuns: 7,

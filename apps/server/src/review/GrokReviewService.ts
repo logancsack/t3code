@@ -71,18 +71,11 @@ export const make = Effect.gen(function* () {
       const listedInstances = (yield* providerInstances.listInstances).filter(
         (candidate) => candidate.enabled,
       );
-      const reviewInstances = requestedInstanceId
-        ? listedInstances.filter(
-            (candidate) =>
-              candidate.instanceId === requestedInstanceId ||
-              candidate.driverKind === OPENCODE_DRIVER_KIND,
-          )
+      const instances = requestedInstanceId
+        ? requestedInstance
+          ? [requestedInstance]
+          : listedInstances.filter((candidate) => candidate.instanceId === requestedInstanceId)
         : listedInstances;
-      const instances =
-        requestedInstance &&
-        !reviewInstances.some((candidate) => candidate.instanceId === requestedInstance.instanceId)
-          ? [requestedInstance, ...reviewInstances]
-          : reviewInstances;
       const candidates = yield* Effect.forEach(
         instances,
         (candidate) =>

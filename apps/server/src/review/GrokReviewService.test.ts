@@ -257,6 +257,7 @@ describe("GrokReviewService", () => {
     const unrelated = {
       ...instance,
       instanceId: ProviderInstanceId.make("unrelated-provider"),
+      driverKind: ProviderDriverKind.make("opencode"),
       snapshot: {
         getSnapshot: Effect.die("explicit selection should not snapshot unrelated providers"),
       },
