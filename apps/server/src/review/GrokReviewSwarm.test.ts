@@ -325,6 +325,8 @@ describe("redactSensitiveContextWithMetadata", () => {
       "API_TOKEN=super-secret-value",
       '  "password": "quoted-json-secret",',
       "  'apiKey': 'quoted-object-secret',",
+      '{"nested":{"password":"compact-json-secret"}}',
+      'credentials: { password: "inline-object-secret" }',
       "Authorization: Bearer visible-secret",
       "remote=https://user:password@example.com/repository.git",
       "github_pat_1234567890abcdefghijklmnop",
@@ -339,6 +341,8 @@ describe("redactSensitiveContextWithMetadata", () => {
     expect(result.text).not.toContain("super-secret-value");
     expect(result.text).not.toContain("quoted-json-secret");
     expect(result.text).not.toContain("quoted-object-secret");
+    expect(result.text).not.toContain("compact-json-secret");
+    expect(result.text).not.toContain("inline-object-secret");
     expect(result.text).not.toContain("visible-secret");
     expect(result.text).not.toContain("user:password");
     expect(result.text).not.toContain("private-material");
