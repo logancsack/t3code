@@ -477,7 +477,17 @@ describe("runGrokReviewSwarm", () => {
 
       return Effect.gen(function* () {
         const report = yield* runGrokReviewSwarm({
-          request: { cwd: process.cwd(), target: "working-tree" },
+          request: {
+            cwd: process.cwd(),
+            target: "working-tree",
+            context: {
+              sections: [
+                { title: "Repository map", content: "apps/server/src/review/GrokReviewSwarm.ts" },
+                { title: "Related pull requests", content: "PR #41" },
+              ],
+              limitations: [],
+            },
+          },
           source,
           agent: primary,
           supplementalAgent: supplemental,
@@ -490,6 +500,9 @@ describe("runGrokReviewSwarm", () => {
         ).toBe(true);
         expect(primaryPrompts).toHaveLength(5);
         expect(report.supplementalModels).toEqual(["opencode/nemotron-3-ultra-free"]);
+        expect(report.coverage[0]).toBe(
+          "Repository context supplied (2 sections): Repository map, Related pull requests",
+        );
         expect(report.usage).toEqual({
           agentRuns: 7,
           mediumEffortRuns: 7,

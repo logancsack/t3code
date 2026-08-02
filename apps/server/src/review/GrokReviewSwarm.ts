@@ -184,6 +184,17 @@ function uniqueStrings(values: ReadonlyArray<string>): ReadonlyArray<string> {
   ].slice(0, MAX_REVIEW_LIST_ENTRIES);
 }
 
+function contextCoverage(input: GrokReviewInput): ReadonlyArray<string> {
+  const sections = input.context?.sections ?? [];
+  if (sections.length === 0) return [];
+
+  return [
+    `Repository context supplied (${sections.length} section${sections.length === 1 ? "" : "s"}): ${sections
+      .map((section) => section.title)
+      .join(", ")}`,
+  ];
+}
+
 function boundVerifiedFinding(
   finding: GrokReviewCandidateType["findings"][number],
 ): GrokReviewCandidateType["findings"][number] {
@@ -477,7 +488,7 @@ export const runGrokReviewSwarm = Effect.fn("runGrokReviewSwarm")(function* (inp
     escalatedToHigh: highEffortSucceeded,
     summary: boundedText(verification.summary, MAX_REVIEW_SUMMARY_CHARS),
     findings,
-    coverage: uniqueStrings(verification.coverage),
+    coverage: uniqueStrings([...contextCoverage(input.request), ...verification.coverage]),
     limitations,
     usage: {
       agentRuns,
