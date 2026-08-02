@@ -403,6 +403,7 @@ describe("redactSensitiveContextWithMetadata", () => {
       "Changed file: __.env__",
       "Changed file: ~~.env~~",
       "Changed file: <code>.env</code>",
+      "Changed file: C:\\repo\\.env",
     ]) {
       expect(
         redactSensitiveContextSection({

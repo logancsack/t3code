@@ -244,7 +244,7 @@ export function redactSensitiveContextSection(section: {
   const titlePaths = section.title.match(/[^\s`'"*~<>()[\]{}:,;]+/g) ?? [];
   if (
     titlePaths.some((candidate) => {
-      const canonicalPath = candidate.split(/[?#]/, 1)[0];
+      const canonicalPath = candidate.split(/[?#]/, 1)[0]?.replaceAll("\\", "/");
       const candidates = canonicalPath
         ? [canonicalPath, canonicalPath.replace(/^_+|_+$/g, "")]
         : [];
