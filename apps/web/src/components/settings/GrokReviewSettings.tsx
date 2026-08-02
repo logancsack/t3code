@@ -379,10 +379,10 @@ export function GrokReviewSettings() {
                     if (model) {
                       void save(setting.repository, setting.enabled, {
                         providerInstanceId: entry.instanceId,
-                        supplementalProviderInstanceId:
-                          selection.supplementalProviderInstanceId !== entry.instanceId
-                            ? selection.supplementalProviderInstanceId
-                            : null,
+                        supplementalProviderInstanceId: resolveSupplementalReviewProviderId({
+                          stored: selection.supplementalProviderInstanceId,
+                          primary: entry.instanceId,
+                        }),
                         providerDriver: entry.driverKind,
                         model,
                       });
