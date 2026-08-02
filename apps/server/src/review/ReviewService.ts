@@ -3,6 +3,7 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 
 import {
@@ -14,6 +15,7 @@ import {
 } from "@t3tools/contracts";
 
 import * as ServerConfig from "../config.ts";
+import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 
@@ -32,6 +34,7 @@ export const make = Effect.gen(function* () {
   const path = yield* Path.Path;
   const vcsRegistry = yield* VcsDriverRegistry.VcsDriverRegistry;
   const git = yield* GitVcsDriver.GitVcsDriver;
+  const projectionSnapshotQuery = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
 
   const canonicalizePath = (value: string) => {
     const resolvedPath = path.resolve(value);
@@ -57,18 +60,52 @@ export const make = Effect.gen(function* () {
     return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
   };
 
+  const activeProjectAuthorizationRoot = Effect.fn("ReviewService.activeProjectAuthorizationRoot")(
+    function* (resolvedCandidate: string, canonicalCandidate: string) {
+      let current = resolvedCandidate;
+      while (true) {
+        const project = yield* projectionSnapshotQuery
+          .getActiveProjectByWorkspaceRoot(current)
+          .pipe(
+            Effect.mapError(
+              (cause) =>
+                new VcsRepositoryDetectionError({
+                  operation: "ReviewService.assertWorkspaceBoundCwd.queryActiveProject",
+                  cwd: resolvedCandidate,
+                  detail: "Failed to validate the review path against active projects.",
+                  cause,
+                }),
+            ),
+          );
+        if (Option.isSome(project)) {
+          const canonicalProjectRoot = yield* canonicalizePath(current);
+          return isWithinRoot(canonicalCandidate, canonicalProjectRoot)
+            ? canonicalProjectRoot
+            : null;
+        }
+
+        const parent = path.dirname(current);
+        if (parent === current) return null;
+        current = parent;
+      }
+    },
+  );
+
   const assertWorkspaceBoundCwd = Effect.fn("ReviewService.assertWorkspaceBoundCwd")(function* (
     cwd: string,
   ) {
+    const resolvedCandidate = path.resolve(cwd);
     const [candidate, workspaceRoot, worktreesRoot] = yield* Effect.all([
       canonicalizePath(cwd),
       canonicalizePath(config.cwd),
       canonicalizePath(config.worktreesDir),
     ]);
 
-    if (isWithinRoot(candidate, workspaceRoot) || isWithinRoot(candidate, worktreesRoot)) {
-      return;
-    }
+    if (isWithinRoot(candidate, workspaceRoot)) return workspaceRoot;
+    if (isWithinRoot(candidate, worktreesRoot)) return worktreesRoot;
+
+    const projectRoot = yield* activeProjectAuthorizationRoot(resolvedCandidate, candidate);
+    if (projectRoot) return projectRoot;
 
     return yield* new VcsRepositoryDetectionError({
       operation: "ReviewService.getDiffPreview",
@@ -80,7 +117,7 @@ export const make = Effect.gen(function* () {
   const getDiffPreview: ReviewService["Service"]["getDiffPreview"] = Effect.fn(
     "ReviewService.getDiffPreview",
   )(function* (input) {
-    yield* assertWorkspaceBoundCwd(input.cwd);
+    const authorizationRoot = yield* assertWorkspaceBoundCwd(input.cwd);
     if (input.baseRef?.startsWith("-")) {
       return yield* new VcsRepositoryDetectionError({
         operation: "ReviewService.getDiffPreview",
@@ -96,6 +133,15 @@ export const make = Effect.gen(function* () {
         generatedAt: yield* DateTime.now,
         sources: [],
       };
+    }
+
+    const repositoryRoot = yield* canonicalizePath(handle.repository.rootPath);
+    if (!isWithinRoot(repositoryRoot, authorizationRoot)) {
+      return yield* new VcsRepositoryDetectionError({
+        operation: "ReviewService.getDiffPreview",
+        cwd: input.cwd,
+        detail: "The detected repository root must stay within the authorized review project.",
+      });
     }
 
     const getDriverDiffPreview = handle.driver.getDiffPreview;

@@ -3,9 +3,14 @@ import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
 
+import type { OrchestrationProject } from "@t3tools/contracts";
+
 import { ServerConfig } from "../config.ts";
+import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import * as ReviewService from "./ReviewService.ts";
@@ -14,6 +19,9 @@ function makeLayer(input: {
   readonly workspaceRoot: string;
   readonly baseDir: string;
   readonly detectCalls?: Array<{ readonly cwd: string }>;
+  readonly registeredProjectRoots?: ReadonlySet<string>;
+  readonly projectQueryCalls?: Array<string>;
+  readonly detectedRepositoryRoot?: string;
 }) {
   return ReviewService.layer.pipe(
     Layer.provide(
@@ -23,11 +31,28 @@ function makeLayer(input: {
         detect: (request) =>
           Effect.sync(() => {
             input.detectCalls?.push({ cwd: request.cwd });
-            return null;
+            return input.detectedRepositoryRoot
+              ? ({
+                  kind: "git",
+                  repository: { rootPath: input.detectedRepositoryRoot },
+                  driver: {},
+                } as VcsDriverRegistry.VcsDriverHandle)
+              : null;
           }),
       }),
     ),
     Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)({})),
+    Layer.provide(
+      Layer.mock(ProjectionSnapshotQuery.ProjectionSnapshotQuery)({
+        getActiveProjectByWorkspaceRoot: (workspaceRoot) =>
+          Effect.sync(() => {
+            input.projectQueryCalls?.push(workspaceRoot);
+            return input.registeredProjectRoots?.has(workspaceRoot)
+              ? Option.some({} as OrchestrationProject)
+              : Option.none();
+          }),
+      }),
+    ),
     Layer.provide(ServerConfig.layerTest(input.workspaceRoot, input.baseDir)),
     Layer.provideMerge(NodeServices.layer),
   );
@@ -72,6 +97,140 @@ describe("ReviewService", () => {
       assert.strictEqual(result.cwd, workspaceRoot);
       assert.deepStrictEqual(result.sources, []);
       assert.deepStrictEqual(detectCalls, [{ cwd: workspaceRoot }]);
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("allows diff preview cwd inside an active registered project", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const workspaceRoot = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-workspace-" });
+      const registeredRoot = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-project-" });
+      const nestedCwd = path.join(registeredRoot, "packages", "app");
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-base-" });
+      yield* fs.makeDirectory(nestedCwd, { recursive: true });
+      const detectCalls: Array<{ readonly cwd: string }> = [];
+      const projectQueryCalls: Array<string> = [];
+
+      const result = yield* Effect.gen(function* () {
+        const review = yield* ReviewService.ReviewService;
+        return yield* review.getDiffPreview({ cwd: nestedCwd });
+      }).pipe(
+        Effect.provide(
+          makeLayer({
+            workspaceRoot,
+            baseDir,
+            detectCalls,
+            registeredProjectRoots: new Set([registeredRoot]),
+            projectQueryCalls,
+          }),
+        ),
+      );
+
+      assert.strictEqual(result.cwd, nestedCwd);
+      assert.deepStrictEqual(detectCalls, [{ cwd: nestedCwd }]);
+      assert.deepStrictEqual(projectQueryCalls.slice(0, 3), [
+        nestedCwd,
+        path.dirname(nestedCwd),
+        registeredRoot,
+      ]);
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("rejects a registered-project symlink that escapes its canonical root", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const workspaceRoot = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-workspace-" });
+      const registeredRoot = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-project-" });
+      const outsideRoot = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-outside-" });
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-base-" });
+      const escapedCwd = path.join(registeredRoot, "linked-outside");
+      yield* fs.symlink(outsideRoot, escapedCwd);
+      const detectCalls: Array<{ readonly cwd: string }> = [];
+
+      const error = yield* Effect.gen(function* () {
+        const review = yield* ReviewService.ReviewService;
+        return yield* review.getDiffPreview({ cwd: escapedCwd }).pipe(Effect.flip);
+      }).pipe(
+        Effect.provide(
+          makeLayer({
+            workspaceRoot,
+            baseDir,
+            detectCalls,
+            registeredProjectRoots: new Set([registeredRoot]),
+          }),
+        ),
+      );
+
+      assert.strictEqual(error._tag, "VcsRepositoryDetectionError");
+      assert.strictEqual(error.operation, "ReviewService.getDiffPreview");
+      assert.deepStrictEqual(detectCalls, []);
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("allows a cwd inside a registered project whose root is a symlink", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const workspaceRoot = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-workspace-" });
+      const projectParent = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-parent-" });
+      const canonicalProject = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-project-" });
+      const registeredRoot = path.join(projectParent, "linked-project");
+      const nestedCwd = path.join(registeredRoot, "packages", "app");
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-base-" });
+      yield* fs.makeDirectory(path.join(canonicalProject, "packages", "app"), { recursive: true });
+      yield* fs.symlink(canonicalProject, registeredRoot);
+      const detectCalls: Array<{ readonly cwd: string }> = [];
+
+      const result = yield* Effect.gen(function* () {
+        const review = yield* ReviewService.ReviewService;
+        return yield* review.getDiffPreview({ cwd: nestedCwd });
+      }).pipe(
+        Effect.provide(
+          makeLayer({
+            workspaceRoot,
+            baseDir,
+            detectCalls,
+            registeredProjectRoots: new Set([registeredRoot]),
+          }),
+        ),
+      );
+
+      assert.strictEqual(result.cwd, nestedCwd);
+      assert.deepStrictEqual(detectCalls, [{ cwd: nestedCwd }]);
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("rejects a parent repository that escapes the registered project root", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const workspaceRoot = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-workspace-" });
+      const repositoryRoot = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-repository-" });
+      const registeredRoot = path.join(repositoryRoot, "packages", "app");
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-base-" });
+      yield* fs.makeDirectory(registeredRoot, { recursive: true });
+      const detectCalls: Array<{ readonly cwd: string }> = [];
+
+      const error = yield* Effect.gen(function* () {
+        const review = yield* ReviewService.ReviewService;
+        return yield* review.getDiffPreview({ cwd: registeredRoot }).pipe(Effect.flip);
+      }).pipe(
+        Effect.provide(
+          makeLayer({
+            workspaceRoot,
+            baseDir,
+            detectCalls,
+            registeredProjectRoots: new Set([registeredRoot]),
+            detectedRepositoryRoot: repositoryRoot,
+          }),
+        ),
+      );
+
+      assert.strictEqual(error._tag, "VcsRepositoryDetectionError");
+      assert.match("detail" in error ? error.detail : "", /detected repository root/);
+      assert.deepStrictEqual(detectCalls, [{ cwd: registeredRoot }]);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
