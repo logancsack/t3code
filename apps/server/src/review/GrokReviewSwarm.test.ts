@@ -337,6 +337,7 @@ describe("redactSensitiveContextWithMetadata", () => {
       '{"auths":{"registry.example.com":{"auth":"dXNlcjpwYXNz"}}}',
       "DefaultEndpointsProtocol=https;AccountName=prod;AccountKey=dXNlcjpwYXNzMg==;EndpointSuffix=core.windows.net",
       "remote=https://user:password@example.com/repository.git",
+      "machine registry.example login buildbot password hunter2",
       "github_pat_1234567890abcdefghijklmnop",
       "-----BEGIN PRIVATE KEY-----",
       "private-material",
@@ -361,6 +362,7 @@ describe("redactSensitiveContextWithMetadata", () => {
     expect(result.text).not.toContain("dXNlcjpwYXNz");
     expect(result.text).not.toContain("dXNlcjpwYXNzMg==");
     expect(result.text).not.toContain("user:password");
+    expect(result.text).not.toContain("hunter2");
     expect(result.text).not.toContain("private-material");
   });
 });
