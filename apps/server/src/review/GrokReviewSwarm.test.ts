@@ -343,6 +343,10 @@ describe("redactSensitiveContextWithMetadata", () => {
       'credentials: { password: "inline-object-secret" }',
       "password: unquoted secret with spaces",
       'password = """triple-quoted, secret""" trailing-content',
+      'password = """',
+      "multiline-toml-secret",
+      '"""',
+      "ordinary-after-toml = true",
       "password: |",
       "  multiline-yaml-secret",
       "  second-secret-line",
@@ -383,6 +387,8 @@ describe("redactSensitiveContextWithMetadata", () => {
     expect(result.text).not.toContain("unquoted secret with spaces");
     expect(result.text).not.toContain("triple-quoted, secret");
     expect(result.text).not.toContain("trailing-content");
+    expect(result.text).not.toContain("multiline-toml-secret");
+    expect(result.text).toContain("ordinary-after-toml = true");
     expect(result.text).not.toContain("multiline-yaml-secret");
     expect(result.text).not.toContain("second-secret-line");
     expect(result.text).not.toContain("multiline-client-private-key");

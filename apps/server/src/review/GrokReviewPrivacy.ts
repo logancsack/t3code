@@ -183,6 +183,7 @@ export function redactSensitiveContextWithMetadata(text: string): {
     output = output.replace(pattern, CONTEXT_REDACTION_NOTICE);
   }
   output = redactSensitiveXmlElements(output);
+  output = redactSensitiveTomlMultilineStrings(output);
   output = redactSensitiveAssignments(output);
   output = output.replace(SENSITIVE_CONTEXT_HEADER, `$1${CONTEXT_REDACTION_NOTICE}`);
   return { text: output, redacted: output !== text };
@@ -247,6 +248,30 @@ function redactSensitiveAssignments(text: string): string {
       return line;
     })
     .join("\n");
+}
+
+function redactSensitiveTomlMultilineStrings(text: string): string {
+  const lines = text.split(/\r?\n/);
+  let redacted = false;
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const assignment = /^(\s*["']?([A-Za-z0-9_.-]+)["']?\s*=\s*)("""|''')/.exec(lines[index]!);
+    if (!assignment || !isSensitiveContextKey(assignment[2]!)) continue;
+
+    const delimiter = assignment[3]!;
+    const remainder = lines[index]!.slice(assignment[0].length);
+    let end = index;
+    if (!remainder.includes(delimiter)) {
+      end += 1;
+      while (end < lines.length && !lines[end]!.includes(delimiter)) end += 1;
+    }
+
+    lines[index] = `${assignment[1]}${CONTEXT_REDACTION_NOTICE}`;
+    lines.splice(index + 1, Math.min(end, lines.length - 1) - index);
+    redacted = true;
+  }
+
+  return redacted ? lines.join("\n") : text;
 }
 
 export function redactSensitiveContextSection(section: {
