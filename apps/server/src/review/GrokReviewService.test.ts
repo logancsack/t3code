@@ -154,6 +154,57 @@ describe("GrokReviewService", () => {
     }).pipe(Effect.provide(makeLayer([primary, opencode])));
   });
 
+  it.effect("does not infer a supplemental provider when the request omits one", () => {
+    const supplementalModels: Array<string | undefined> = [];
+    const primary = {
+      instanceId: ProviderInstanceId.make("grok-work"),
+      driverKind: ProviderDriverKind.make("grok"),
+      enabled: true,
+      snapshot: {
+        getSnapshot: Effect.succeed({
+          installed: true,
+          status: "ready",
+          auth: { status: "authenticated" },
+        }),
+      },
+      codeReview: {
+        run: (input: { readonly supplementalAgent?: { readonly resolvedModel: string } }) =>
+          Effect.sync(() => {
+            supplementalModels.push(input.supplementalAgent?.resolvedModel);
+            return report;
+          }),
+      },
+    } as unknown as ProviderInstance;
+    const opencode = {
+      instanceId: ProviderInstanceId.make("opencode"),
+      driverKind: ProviderDriverKind.make("opencode"),
+      enabled: true,
+      snapshot: {
+        getSnapshot: Effect.succeed({
+          installed: true,
+          status: "ready",
+          auth: { status: "authenticated" },
+          models: [
+            {
+              slug: "opencode/nemotron-3-ultra-free",
+              name: "Nemotron 3 Ultra Free",
+              isCustom: false,
+              isDefault: false,
+              capabilities: null,
+            },
+          ],
+        }),
+      },
+      textGeneration: { generateStructured: () => Effect.die("not run by this test") },
+    } as unknown as ProviderInstance;
+
+    return Effect.gen(function* () {
+      const service = yield* GrokReviewService.GrokReviewService;
+      yield* service.run({ cwd: preview.cwd });
+      expect(supplementalModels).toEqual([undefined]);
+    }).pipe(Effect.provide(makeLayer([primary, opencode])));
+  });
+
   it.effect("selects the dirty worktree and routes through an enabled Grok instance", () => {
     const received: Array<string> = [];
     const instance = {

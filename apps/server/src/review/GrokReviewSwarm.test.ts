@@ -360,6 +360,8 @@ describe("redactSensitiveContextWithMetadata", () => {
       "machine registry.example login buildbot password hunter2",
       "client-key-data: cHJpdmF0ZS1rZXk=",
       "<password>xml-element-secret</password>",
+      '<password encrypted="false">xml-attribute-element-secret</password>',
+      "<password><![CDATA[xml-cdata-secret]]></password>",
       '<server password="xml-attribute-secret" />',
       "<m:apiKey>namespaced-xml-secret</m:apiKey>",
       '<add key="ClearTextPassword" value="nuget-xml-secret" />',
@@ -394,6 +396,8 @@ describe("redactSensitiveContextWithMetadata", () => {
     expect(result.text).not.toContain("hunter2");
     expect(result.text).not.toContain("cHJpdmF0ZS1rZXk=");
     expect(result.text).not.toContain("xml-element-secret");
+    expect(result.text).not.toContain("xml-attribute-element-secret");
+    expect(result.text).not.toContain("xml-cdata-secret");
     expect(result.text).not.toContain("xml-attribute-secret");
     expect(result.text).not.toContain("namespaced-xml-secret");
     expect(result.text).not.toContain("nuget-xml-secret");
@@ -414,6 +418,8 @@ describe("redactSensitiveContextWithMetadata", () => {
       "Changed file: ~~.env~~",
       "Changed file: <code>.env</code>",
       "Changed file: C:\\repo\\.env",
+      "Changed file: “.env”",
+      "Changed file: ‘.env’",
     ]) {
       expect(
         redactSensitiveContextSection({

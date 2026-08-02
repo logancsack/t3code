@@ -199,10 +199,10 @@ function credentialKeyWords(key: string): ReadonlyArray<string> {
 
 function redactSensitiveXmlElements(text: string): string {
   const elements = text.replace(
-    /<([A-Za-z0-9_.:-]+)>([^<]*)<\/([A-Za-z0-9_.:-]+)\s*>/gi,
-    (match: string, opening: string, _content: string, closing: string) =>
+    /<([A-Za-z0-9_.:-]+)(\s[^>]*)?>(?:<!\[CDATA\[[\s\S]*?\]\]>|[^<]*)<\/([A-Za-z0-9_.:-]+)\s*>/gi,
+    (match: string, opening: string, attributes: string | undefined, closing: string) =>
       opening.toLowerCase() === closing.toLowerCase() && isSensitiveContextKey(opening)
-        ? `<${opening}>${CONTEXT_REDACTION_NOTICE}</${closing}>`
+        ? `<${opening}${attributes ?? ""}>${CONTEXT_REDACTION_NOTICE}</${closing}>`
         : match,
   );
   return elements.replace(/<[^>]+>/g, (tag) => {
@@ -258,7 +258,7 @@ export function redactSensitiveContextSection(section: {
   readonly redacted: boolean;
 } {
   const title = redactSensitiveContextWithMetadata(section.title);
-  const titlePaths = section.title.match(/[^\s`'"*~<>()[\]{}:,;]+/g) ?? [];
+  const titlePaths = section.title.match(/[^\s`'"“”‘’*~<>()[\]{}:,;]+/g) ?? [];
   if (
     titlePaths.some((candidate) => {
       const canonicalPath = candidate.split(/[?#]/, 1)[0]?.replaceAll("\\", "/");
