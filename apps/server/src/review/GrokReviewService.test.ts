@@ -145,7 +145,11 @@ describe("GrokReviewService", () => {
 
     return Effect.gen(function* () {
       const service = yield* GrokReviewService.GrokReviewService;
-      yield* service.run({ cwd: preview.cwd });
+      yield* service.run({
+        cwd: preview.cwd,
+        providerInstanceId: primary.instanceId,
+        supplementalProviderInstanceId: opencode.instanceId,
+      });
       expect(supplementalModels).toEqual(["opencode/nemotron-3-ultra-free"]);
     }).pipe(Effect.provide(makeLayer([primary, opencode])));
   });

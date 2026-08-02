@@ -79,6 +79,7 @@ export const GrokReviewInput = Schema.Struct({
   baseRef: Schema.optionalKey(TrimmedNonEmptyString),
   focus: Schema.optionalKey(Schema.Array(GrokReviewFocusEntry).check(Schema.isMaxLength(8))),
   providerInstanceId: Schema.optionalKey(ProviderInstanceId),
+  supplementalProviderInstanceId: Schema.optionalKey(ProviderInstanceId),
   model: Schema.optionalKey(TrimmedNonEmptyString),
   context: Schema.optionalKey(GrokReviewContext),
   /** @deprecated Use providerInstanceId. */

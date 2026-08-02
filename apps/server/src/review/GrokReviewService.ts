@@ -65,16 +65,22 @@ export const make = Effect.gen(function* () {
       }
 
       const requestedInstanceId = input.providerInstanceId ?? input.grokProviderInstanceId;
+      const requestedSupplementalInstanceId = input.supplementalProviderInstanceId;
       const requestedInstance = requestedInstanceId
         ? yield* providerInstances.getInstance(requestedInstanceId)
+        : undefined;
+      const requestedSupplementalInstance = requestedSupplementalInstanceId
+        ? yield* providerInstances.getInstance(requestedSupplementalInstanceId)
         : undefined;
       const listedInstances = (yield* providerInstances.listInstances).filter(
         (candidate) => candidate.enabled,
       );
       const instances = requestedInstanceId
-        ? requestedInstance
-          ? [requestedInstance]
-          : listedInstances.filter((candidate) => candidate.instanceId === requestedInstanceId)
+        ? [requestedInstance, requestedSupplementalInstance].filter(
+            (candidate, index, selected): candidate is NonNullable<typeof candidate> =>
+              candidate !== undefined &&
+              selected.findIndex((entry) => entry?.instanceId === candidate.instanceId) === index,
+          )
         : listedInstances;
       const candidates = yield* Effect.forEach(
         instances,
@@ -152,13 +158,24 @@ export const make = Effect.gen(function* () {
             driver: selected.instance.driverKind,
             providerLabel: selected.snapshot.displayName ?? selected.instance.driverKind,
           });
-      const supplementalCandidate = candidates.find(
-        (candidate) =>
-          candidate.instance.instanceId !== selected.instance.instanceId &&
-          candidate.instance.driverKind === OPENCODE_DRIVER_KIND &&
-          readyCandidate(candidate) &&
-          selectOpenWeightReviewModel(candidate.snapshot.models ?? []) !== undefined,
-      );
+      const supplementalCandidate = requestedSupplementalInstanceId
+        ? candidates.find(
+            (candidate) =>
+              candidate.instance.instanceId === requestedSupplementalInstanceId &&
+              candidate.instance.instanceId !== selected.instance.instanceId &&
+              candidate.instance.driverKind === OPENCODE_DRIVER_KIND &&
+              readyCandidate(candidate) &&
+              selectOpenWeightReviewModel(candidate.snapshot.models ?? []) !== undefined,
+          )
+        : requestedInstanceId
+          ? undefined
+          : candidates.find(
+              (candidate) =>
+                candidate.instance.instanceId !== selected.instance.instanceId &&
+                candidate.instance.driverKind === OPENCODE_DRIVER_KIND &&
+                readyCandidate(candidate) &&
+                selectOpenWeightReviewModel(candidate.snapshot.models ?? []) !== undefined,
+            );
       const supplementalModel = supplementalCandidate
         ? selectOpenWeightReviewModel(supplementalCandidate.snapshot.models ?? [])
         : undefined;
