@@ -12,6 +12,7 @@ import {
   staticAndDevRouteLayer,
   browserApiCorsLayer,
 } from "./http.ts";
+import { managedDevPcActivityRouteLayer } from "./managedDevPcActivity.ts";
 import { fixPath } from "./os-jank.ts";
 import { websocketRpcRouteLayer } from "./ws.ts";
 import * as ExternalLauncher from "./process/externalLauncher.ts";
@@ -374,6 +375,7 @@ export const makeRoutesLayer = Layer.mergeAll(
       Layer.provide(environmentAuthenticatedAuthLayer),
     ),
     otlpTracesProxyRouteLayer,
+    managedDevPcActivityRouteLayer,
     assetRouteLayer,
     staticAndDevRouteLayer,
     websocketRpcRouteLayer,
