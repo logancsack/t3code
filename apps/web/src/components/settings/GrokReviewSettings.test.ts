@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   aldoReviewToggleDisabled,
   resolveSupplementalReviewProviderId,
+  supplementalProviderInstanceIdForSave,
 } from "./GrokReviewSettings";
 
 describe("aldoReviewToggleDisabled", () => {
@@ -58,5 +59,14 @@ describe("resolveSupplementalReviewProviderId", () => {
         primary: "grok",
       }),
     ).toBeNull();
+  });
+});
+
+describe("supplementalProviderInstanceIdForSave", () => {
+  it("serializes the explicit no-provider option as null", () => {
+    expect(supplementalProviderInstanceIdForSave(null)).toBeNull();
+    expect(supplementalProviderInstanceIdForSave({ instanceId: "opencode-work" })).toBe(
+      "opencode-work",
+    );
   });
 });

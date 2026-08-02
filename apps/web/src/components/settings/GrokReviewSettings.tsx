@@ -16,6 +16,7 @@ import { SettingsSection } from "./settingsLayout";
 
 const SETTINGS_PATH = "/_devpc/aldo-review/repositories";
 const GROK_REVIEW_MODEL = "grok-4.5";
+const NO_PROVIDER_VALUE = "__none__";
 
 interface AldoReviewRepositorySetting {
   readonly repository: string;
@@ -53,6 +54,12 @@ export function resolveSupplementalReviewProviderId(input: {
   primary: string;
 }): string | null {
   return input.stored && input.stored !== input.primary ? input.stored : null;
+}
+
+export function supplementalProviderInstanceIdForSave(
+  entry: { readonly instanceId: string } | null,
+): string | null {
+  return entry?.instanceId ?? null;
 }
 
 function sortRepositories(
@@ -110,14 +117,20 @@ function ProviderSelect(props: {
   value: string;
   ariaLabel?: string;
   placeholder?: string;
+  allowNone?: boolean;
   disabled: boolean;
-  onChange: (entry: ProviderInstanceEntry) => void;
+  onChange: (entry: ProviderInstanceEntry | null) => void;
 }) {
   const active = props.entries.find((entry) => entry.instanceId === props.value);
+  const value = props.allowNone && !props.value ? NO_PROVIDER_VALUE : props.value;
   return (
     <Select
-      value={props.value}
+      value={value}
       onValueChange={(value) => {
+        if (props.allowNone && value === NO_PROVIDER_VALUE) {
+          props.onChange(null);
+          return;
+        }
         const entry = props.entries.find((candidate) => candidate.instanceId === value);
         if (entry) props.onChange(entry);
       }}
@@ -127,9 +140,16 @@ function ProviderSelect(props: {
         disabled={props.disabled}
         aria-label={props.ariaLabel}
       >
-        <SelectValue>{active?.displayName ?? props.placeholder ?? "Select provider"}</SelectValue>
+        <SelectValue>
+          {active?.displayName ??
+            (props.allowNone && !props.value ? "No supplemental provider" : props.placeholder) ??
+            "Select provider"}
+        </SelectValue>
       </SelectTrigger>
       <SelectPopup align="end" alignItemWithTrigger={false}>
+        {props.allowNone ? (
+          <SelectItem value={NO_PROVIDER_VALUE}>No supplemental provider</SelectItem>
+        ) : null}
         {props.entries.map((entry) => (
           <SelectItem key={entry.instanceId} value={entry.instanceId}>
             {entry.displayName}
@@ -354,6 +374,7 @@ export function GrokReviewSettings() {
                   value={selection.providerInstanceId}
                   disabled={savingRepository !== null}
                   onChange={(entry) => {
+                    if (!entry) return;
                     const model = defaultReviewModel(entry);
                     if (model) {
                       void save(setting.repository, setting.enabled, {
@@ -375,11 +396,12 @@ export function GrokReviewSettings() {
                   value={selection.supplementalProviderInstanceId ?? ""}
                   ariaLabel="Supplemental OpenCode review provider"
                   placeholder="OpenCode specialist"
+                  allowNone
                   disabled={savingRepository !== null || supplementalProviders.length === 0}
                   onChange={(entry) =>
                     void save(setting.repository, setting.enabled, {
                       ...selection,
-                      supplementalProviderInstanceId: entry.instanceId,
+                      supplementalProviderInstanceId: supplementalProviderInstanceIdForSave(entry),
                     })
                   }
                 />

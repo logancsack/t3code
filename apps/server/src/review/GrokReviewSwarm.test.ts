@@ -335,6 +335,7 @@ describe("redactSensitiveContextWithMetadata", () => {
       "ordinary: preserved-after-block",
       "Authorization: Bearer visible-secret",
       '{"auths":{"registry.example.com":{"auth":"dXNlcjpwYXNz"}}}',
+      "DefaultEndpointsProtocol=https;AccountName=prod;AccountKey=dXNlcjpwYXNzMg==;EndpointSuffix=core.windows.net",
       "remote=https://user:password@example.com/repository.git",
       "github_pat_1234567890abcdefghijklmnop",
       "-----BEGIN PRIVATE KEY-----",
@@ -358,6 +359,7 @@ describe("redactSensitiveContextWithMetadata", () => {
     expect(result.text).toContain("ordinary: preserved-after-block");
     expect(result.text).not.toContain("visible-secret");
     expect(result.text).not.toContain("dXNlcjpwYXNz");
+    expect(result.text).not.toContain("dXNlcjpwYXNzMg==");
     expect(result.text).not.toContain("user:password");
     expect(result.text).not.toContain("private-material");
   });
