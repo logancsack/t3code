@@ -38,11 +38,12 @@ import {
   buildLeadReviewPrompt,
   buildVerificationPrompt,
   DEFAULT_REVIEWER_ROLES,
+  SUPPLEMENTAL_REVIEWER_ROLES,
   type GrokReviewPromptContext,
 } from "./GrokReviewPrompts.ts";
 import { decodeGitPath, redactSensitiveDiffWithMetadata } from "./GrokReviewPrivacy.ts";
 
-const MAX_LEAD_CONCURRENCY = 4;
+const MAX_LEAD_CONCURRENCY = 6;
 const MAX_DELEGATED_REVIEWS = 2;
 
 interface AgentOutcome {
@@ -206,6 +207,8 @@ export const runGrokReviewSwarm = Effect.fn("runGrokReviewSwarm")(function* (inp
   readonly request: GrokReviewInput;
   readonly source: ReviewDiffPreviewSource;
   readonly agent: GrokReviewAgent;
+  readonly supplementalAgent?: GrokReviewAgent;
+  readonly supplementalUnavailableReason?: string;
 }) {
   const crypto = yield* Crypto.Crypto;
   const runId = yield* crypto.randomUUIDv4.pipe(
@@ -223,12 +226,22 @@ export const runGrokReviewSwarm = Effect.fn("runGrokReviewSwarm")(function* (inp
     targetLabel: input.source.title,
     diff: redactedDiff.diff,
     focus: input.request.focus ?? [],
+    repositoryContext: input.request.context?.sections ?? [],
   };
 
+  const leadRequests = [
+    ...DEFAULT_REVIEWER_ROLES.map((role) => ({ role, agent: input.agent })),
+    ...(input.supplementalAgent
+      ? SUPPLEMENTAL_REVIEWER_ROLES.map((role) => ({
+          role,
+          agent: input.supplementalAgent!,
+        }))
+      : []),
+  ];
   const leadOutcomes = yield* Effect.forEach(
-    DEFAULT_REVIEWER_ROLES,
-    (role) =>
-      runCandidate(input.agent, {
+    leadRequests,
+    ({ role, agent }) =>
+      runCandidate(agent, {
         label: role.id,
         cwd: input.request.cwd,
         prompt: buildLeadReviewPrompt(role, context),
@@ -412,6 +425,8 @@ export const runGrokReviewSwarm = Effect.fn("runGrokReviewSwarm")(function* (inp
     input.source.truncated ||
     redactedDiff.redacted ||
     failedOutcomes.length > 0 ||
+    input.supplementalUnavailableReason !== undefined ||
+    (input.request.context?.limitations.length ?? 0) > 0 ||
     normalizationOmittedFindings ||
     highEffortFailed ||
     highEffortUnavailable;
@@ -421,6 +436,8 @@ export const runGrokReviewSwarm = Effect.fn("runGrokReviewSwarm")(function* (inp
     ...(redactedDiff.redacted
       ? ["Sensitive-file patches were redacted and could not be reviewed."]
       : []),
+    ...(input.supplementalUnavailableReason ? [input.supplementalUnavailableReason] : []),
+    ...(input.request.context?.limitations ?? []),
     ...failedOutcomes.map((outcome) =>
       outcome.result._tag === "Failure"
         ? `${outcome.label} reviewer failed (${reviewerFailureSummary(outcome.result.error)}).`
@@ -440,7 +457,7 @@ export const runGrokReviewSwarm = Effect.fn("runGrokReviewSwarm")(function* (inp
     ...verification.limitations,
   ]);
   const agentRuns =
-    DEFAULT_REVIEWER_ROLES.length + delegatedOutcomes.length + 1 + (highEffortAttempted ? 1 : 0);
+    leadRequests.length + delegatedOutcomes.length + 1 + (highEffortAttempted ? 1 : 0);
   const report = withMarkdown({
     schemaVersion: 1,
     runId,
@@ -452,6 +469,9 @@ export const runGrokReviewSwarm = Effect.fn("runGrokReviewSwarm")(function* (inp
     },
     status: deriveReviewStatus({ findings, partial }),
     resolvedModel: input.agent.resolvedModel,
+    ...(input.supplementalAgent
+      ? { supplementalModels: [input.supplementalAgent.resolvedModel] }
+      : {}),
     grokBuildVersion: input.agent.grokBuildVersion,
     reasoningEffort: "medium",
     escalatedToHigh: highEffortSucceeded,

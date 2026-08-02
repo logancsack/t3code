@@ -11,11 +11,26 @@ import * as Option from "effect/Option";
 
 import * as ProviderInstanceRegistry from "../provider/Services/ProviderInstanceRegistry.ts";
 import * as ReviewService from "./ReviewService.ts";
-import { makeProviderCodeReview } from "./ProviderCodeReview.ts";
+import { makeProviderCodeReview, makeProviderReviewAgent } from "./ProviderCodeReview.ts";
 
 const GROK_DRIVER_KIND = "grok";
 const DEFAULT_GROK_REVIEW_MODEL = "grok-4.5";
+const OPENCODE_DRIVER_KIND = "opencode";
+const PREFERRED_OPEN_WEIGHT_REVIEW_MODELS = [
+  "opencode/nemotron-3-ultra",
+  "opencode/nemotron-3-ultra-free",
+] as const;
 const GROK_REVIEW_TIMEOUT_MS = 10 * 60 * 1_000;
+
+export function selectOpenWeightReviewModel(
+  models: ReadonlyArray<{ readonly slug: string }>,
+): string | undefined {
+  return (
+    PREFERRED_OPEN_WEIGHT_REVIEW_MODELS.find((slug) =>
+      models.some((model) => model.slug === slug),
+    ) ?? models.find((model) => /^opencode\/nemotron-3-ultra(?:-|$)/.test(model.slug))?.slug
+  );
+}
 
 export class GrokReviewService extends Context.Service<
   GrokReviewService,
@@ -53,11 +68,21 @@ export const make = Effect.gen(function* () {
       const requestedInstance = requestedInstanceId
         ? yield* providerInstances.getInstance(requestedInstanceId)
         : undefined;
-      const instances = requestedInstanceId
-        ? requestedInstance
-          ? [requestedInstance]
-          : []
-        : (yield* providerInstances.listInstances).filter((candidate) => candidate.enabled);
+      const listedInstances = (yield* providerInstances.listInstances).filter(
+        (candidate) => candidate.enabled,
+      );
+      const reviewInstances = requestedInstanceId
+        ? listedInstances.filter(
+            (candidate) =>
+              candidate.instanceId === requestedInstanceId ||
+              candidate.driverKind === OPENCODE_DRIVER_KIND,
+          )
+        : listedInstances;
+      const instances =
+        requestedInstance &&
+        !reviewInstances.some((candidate) => candidate.instanceId === requestedInstance.instanceId)
+          ? [requestedInstance, ...reviewInstances]
+          : reviewInstances;
       const candidates = yield* Effect.forEach(
         instances,
         (candidate) =>
@@ -134,8 +159,40 @@ export const make = Effect.gen(function* () {
             driver: selected.instance.driverKind,
             providerLabel: selected.snapshot.displayName ?? selected.instance.driverKind,
           });
+      const supplementalCandidate = candidates.find(
+        (candidate) =>
+          candidate.instance.driverKind === OPENCODE_DRIVER_KIND &&
+          readyCandidate(candidate) &&
+          selectOpenWeightReviewModel(candidate.snapshot.models ?? []) !== undefined,
+      );
+      const supplementalModel = supplementalCandidate
+        ? selectOpenWeightReviewModel(supplementalCandidate.snapshot.models ?? [])
+        : undefined;
+      const supplementalAgent =
+        supplementalCandidate && supplementalModel
+          ? makeProviderReviewAgent({
+              textGeneration: supplementalCandidate.instance.textGeneration,
+              modelSelection: {
+                instanceId: supplementalCandidate.instance.instanceId,
+                model: supplementalModel,
+              },
+              driver: supplementalCandidate.instance.driverKind,
+              providerLabel:
+                supplementalCandidate.snapshot.displayName ??
+                supplementalCandidate.instance.driverKind,
+            })
+          : undefined;
       const result = yield* runner
-        .run({ request: { ...input, model: selectedModel }, source })
+        .run({
+          request: { ...input, model: selectedModel },
+          source,
+          ...(supplementalAgent
+            ? { supplementalAgent }
+            : {
+                supplementalUnavailableReason:
+                  "OpenCode Nemotron 3 Ultra supplemental reviewers were unavailable.",
+              }),
+        })
         .pipe(Effect.timeoutOption(GROK_REVIEW_TIMEOUT_MS));
       if (Option.isNone(result)) {
         return yield* new GrokReviewError({
