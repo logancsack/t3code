@@ -335,6 +335,10 @@ describe("redactSensitiveContextWithMetadata", () => {
       "  second-secret-line",
       "client-key-data: |",
       "  multiline-client-private-key",
+      "items:",
+      "  - password: |",
+      "      sequence-private-material",
+      "    endpoint: https://prod.example",
       "ordinary: preserved-after-block",
       "Authorization: Bearer visible-secret",
       '{"auths":{"registry.example.com":{"auth":"dXNlcjpwYXNz"}}}',
@@ -362,6 +366,8 @@ describe("redactSensitiveContextWithMetadata", () => {
     expect(result.text).not.toContain("multiline-yaml-secret");
     expect(result.text).not.toContain("second-secret-line");
     expect(result.text).not.toContain("multiline-client-private-key");
+    expect(result.text).not.toContain("sequence-private-material");
+    expect(result.text).toContain("endpoint: https://prod.example");
     expect(result.text).toContain("ordinary: preserved-after-block");
     expect(result.text).not.toContain("visible-secret");
     expect(result.text).not.toContain("dXNlcjpwYXNz");
@@ -378,6 +384,8 @@ describe("redactSensitiveContextWithMetadata", () => {
       "Changed file: `.env`",
       "Changed file: .env (lines 1-2)",
       "Changed file: .env#L1-L2",
+      "Changed file: packages/@org/app/.env#L1",
+      "Changed file: packages/café/.env?plain=1",
     ]) {
       expect(
         redactSensitiveContextSection({

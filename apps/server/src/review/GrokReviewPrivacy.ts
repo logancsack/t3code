@@ -199,10 +199,10 @@ export function redactSensitiveContextSection(section: {
   readonly redacted: boolean;
 } {
   const title = redactSensitiveContextWithMetadata(section.title);
-  const titlePaths = section.title.match(/[^\s`'"()[\]{}:,]+/g) ?? [];
+  const titlePaths = section.title.match(/[^\s`'"()[\]{}:,;]+/g) ?? [];
   if (
     titlePaths.some((candidate) => {
-      const canonicalPath = /^[A-Za-z0-9_./-]+/.exec(candidate)?.[0];
+      const canonicalPath = candidate.split(/[?#]/, 1)[0];
       return canonicalPath !== undefined && SENSITIVE_PATH_PATTERN.test(canonicalPath);
     })
   ) {
@@ -228,7 +228,7 @@ function redactSensitiveYamlBlocks(text: string): string {
     const header = YAML_BLOCK_ASSIGNMENT.exec(lines[index]!);
     if (!header || !SENSITIVE_CONTEXT_KEY.test(header[2]!)) continue;
 
-    const headerIndent = /^\s*/.exec(lines[index]!)?.[0].length ?? 0;
+    const headerIndent = /^\s*(?:-\s+)?/.exec(lines[index]!)?.[0].length ?? 0;
     let end = index + 1;
     while (end < lines.length) {
       const line = lines[end]!;
