@@ -1,5 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
-import { PlusIcon, RefreshCwIcon } from "lucide-react";
+import { RefreshCwIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { isManagedDevPc } from "../../managedDevPc";
@@ -10,13 +10,11 @@ import {
 } from "../../providerInstances";
 import { primaryServerProvidersAtom } from "../../state/server";
 import { Button } from "../ui/button";
-import { Input } from "../ui/input";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
 import { SettingsSection } from "./settingsLayout";
 
 const SETTINGS_PATH = "/_devpc/aldo-review/repositories";
-const REPOSITORY_PATTERN = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const GROK_REVIEW_MODEL = "grok-4.5";
 
 interface AldoReviewRepositorySetting {
@@ -37,15 +35,6 @@ interface ReviewSelection {
   readonly providerInstanceId: string;
   readonly providerDriver: string;
   readonly model: string;
-}
-
-export function normalizeGrokReviewRepository(value: string): string | null {
-  const normalized = value.trim().toLowerCase();
-  const segments = normalized.split("/");
-  return REPOSITORY_PATTERN.test(normalized) &&
-    segments.every((segment) => segment !== "." && segment !== "..")
-    ? normalized
-    : null;
 }
 
 export function aldoReviewToggleDisabled(input: {
@@ -175,24 +164,10 @@ export function GrokReviewSettings() {
     [availableProviders],
   );
   const [repositories, setRepositories] = useState<ReadonlyArray<AldoReviewRepositorySetting>>([]);
-  const [repositoryInput, setRepositoryInput] = useState("");
   const [installationUrl, setInstallationUrl] = useState<string | null>(null);
-  const [newSelection, setNewSelection] = useState<ReviewSelection | null>(null);
   const [loading, setLoading] = useState(true);
   const [savingRepository, setSavingRepository] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const selectedProvider = newSelection
-      ? availableProviders.find((entry) => entry.instanceId === newSelection.providerInstanceId)
-      : undefined;
-    const selectionIsAvailable =
-      selectedProvider !== undefined &&
-      reviewModels(selectedProvider).some((model) => model.slug === newSelection?.model);
-    if (!selectionIsAvailable && newSelection !== preferredSelection) {
-      setNewSelection(preferredSelection);
-    }
-  }, [availableProviders, newSelection, preferredSelection]);
 
   const refresh = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
@@ -258,11 +233,6 @@ export function GrokReviewSettings() {
   );
 
   if (!isManagedDevPc) return null;
-  const normalizedInput = normalizeGrokReviewRepository(repositoryInput);
-  const addRepository = async () => {
-    if (!normalizedInput || !newSelection) return;
-    if (await save(normalizedInput, true, newSelection)) setRepositoryInput("");
-  };
 
   return (
     <SettingsSection
@@ -293,69 +263,13 @@ export function GrokReviewSettings() {
             className="mt-3 h-8"
             onClick={() => window.open(installationUrl, "_blank", "noopener,noreferrer")}
           >
-            Install Aldo Review on GitHub
+            Install or manage Aldo Review on GitHub
           </Button>
         ) : null}
         {availableProviders.length === 0 ? (
           <p className="mt-3 text-xs text-warning">
             Connect and authenticate a provider before enabling Aldo Review.
           </p>
-        ) : (
-          <div className="mt-3 flex flex-col gap-2 lg:flex-row lg:items-center">
-            <Input
-              value={repositoryInput}
-              onChange={(event) => setRepositoryInput(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && normalizedInput && newSelection) {
-                  event.preventDefault();
-                  void addRepository();
-                }
-              }}
-              placeholder="owner/repository"
-              aria-label="GitHub repository"
-              className="h-8 min-w-52 text-sm"
-            />
-            {newSelection ? (
-              <>
-                <ProviderSelect
-                  entries={availableProviders}
-                  value={newSelection.providerInstanceId}
-                  disabled={savingRepository !== null}
-                  onChange={(entry) => {
-                    const model = defaultReviewModel(entry);
-                    if (model) {
-                      setNewSelection({
-                        providerInstanceId: entry.instanceId,
-                        providerDriver: entry.driverKind,
-                        model,
-                      });
-                    }
-                  }}
-                />
-                <ModelSelect
-                  entry={availableProviders.find(
-                    (entry) => entry.instanceId === newSelection.providerInstanceId,
-                  )}
-                  value={newSelection.model}
-                  disabled={savingRepository !== null}
-                  onChange={(model) => setNewSelection({ ...newSelection, model })}
-                />
-              </>
-            ) : null}
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-8 gap-1.5"
-              disabled={!normalizedInput || !newSelection || savingRepository !== null}
-              onClick={() => void addRepository()}
-            >
-              <PlusIcon className="size-3.5" />
-              Add and enable
-            </Button>
-          </div>
-        )}
-        {repositoryInput && !normalizedInput ? (
-          <p className="mt-2 text-xs text-warning">Use a GitHub repository like owner/name.</p>
         ) : null}
         {error ? (
           <p role="alert" className="mt-2 text-xs text-destructive">
@@ -387,7 +301,7 @@ export function GrokReviewSettings() {
               <p className="text-xs text-muted-foreground/80">
                 {setting.connected
                   ? "Aldo Review app connected"
-                  : "Install Aldo Review on this repository to receive reviews"}
+                  : "GitHub access was removed; reinstall the app to resume reviews"}
               </p>
             </div>
             {selection ? (
@@ -436,7 +350,8 @@ export function GrokReviewSettings() {
 
       {!loading && repositories.length === 0 ? (
         <p className="rounded-xl px-3 py-3 text-xs text-muted-foreground sm:px-4">
-          No repositories are enabled yet.
+          Install Aldo Review, select repositories on GitHub, then refresh. New repositories appear
+          here disabled until you choose a provider and turn them on.
         </p>
       ) : null}
     </SettingsSection>

@@ -3,9 +3,14 @@ import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
 
+import type { OrchestrationProject } from "@t3tools/contracts";
+
 import { ServerConfig } from "../config.ts";
+import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import * as ReviewService from "./ReviewService.ts";
@@ -14,6 +19,8 @@ function makeLayer(input: {
   readonly workspaceRoot: string;
   readonly baseDir: string;
   readonly detectCalls?: Array<{ readonly cwd: string }>;
+  readonly registeredProjectRoots?: ReadonlySet<string>;
+  readonly projectQueryCalls?: Array<string>;
 }) {
   return ReviewService.layer.pipe(
     Layer.provide(
@@ -28,6 +35,17 @@ function makeLayer(input: {
       }),
     ),
     Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)({})),
+    Layer.provide(
+      Layer.mock(ProjectionSnapshotQuery.ProjectionSnapshotQuery)({
+        getActiveProjectByWorkspaceRoot: (workspaceRoot) =>
+          Effect.sync(() => {
+            input.projectQueryCalls?.push(workspaceRoot);
+            return input.registeredProjectRoots?.has(workspaceRoot)
+              ? Option.some({} as OrchestrationProject)
+              : Option.none();
+          }),
+      }),
+    ),
     Layer.provide(ServerConfig.layerTest(input.workspaceRoot, input.baseDir)),
     Layer.provideMerge(NodeServices.layer),
   );
@@ -72,6 +90,43 @@ describe("ReviewService", () => {
       assert.strictEqual(result.cwd, workspaceRoot);
       assert.deepStrictEqual(result.sources, []);
       assert.deepStrictEqual(detectCalls, [{ cwd: workspaceRoot }]);
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("allows diff preview cwd inside an active registered project", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const workspaceRoot = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-workspace-" });
+      const registeredRoot = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-project-" });
+      const nestedCwd = path.join(registeredRoot, "packages", "app");
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-base-" });
+      yield* fs.makeDirectory(nestedCwd, { recursive: true });
+      const detectCalls: Array<{ readonly cwd: string }> = [];
+      const projectQueryCalls: Array<string> = [];
+
+      const result = yield* Effect.gen(function* () {
+        const review = yield* ReviewService.ReviewService;
+        return yield* review.getDiffPreview({ cwd: nestedCwd });
+      }).pipe(
+        Effect.provide(
+          makeLayer({
+            workspaceRoot,
+            baseDir,
+            detectCalls,
+            registeredProjectRoots: new Set([registeredRoot]),
+            projectQueryCalls,
+          }),
+        ),
+      );
+
+      assert.strictEqual(result.cwd, nestedCwd);
+      assert.deepStrictEqual(detectCalls, [{ cwd: nestedCwd }]);
+      assert.deepStrictEqual(projectQueryCalls.slice(0, 3), [
+        nestedCwd,
+        path.dirname(nestedCwd),
+        registeredRoot,
+      ]);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 

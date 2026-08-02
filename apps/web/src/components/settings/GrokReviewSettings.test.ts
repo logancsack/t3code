@@ -1,18 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { aldoReviewToggleDisabled, normalizeGrokReviewRepository } from "./GrokReviewSettings";
-
-describe("automatic Grok review repository input", () => {
-  it("normalizes GitHub owner/repository names", () => {
-    expect(normalizeGrokReviewRepository(" Aldo/Platform ")).toBe("aldo/platform");
-  });
-
-  it("rejects path traversal and incomplete names", () => {
-    expect(normalizeGrokReviewRepository("../platform")).toBeNull();
-    expect(normalizeGrokReviewRepository("aldo")).toBeNull();
-    expect(normalizeGrokReviewRepository("aldo/platform/extra")).toBeNull();
-  });
-});
+import { aldoReviewToggleDisabled } from "./GrokReviewSettings";
 
 describe("aldoReviewToggleDisabled", () => {
   it("allows an enabled setting to be disabled after the app disconnects", () => {
