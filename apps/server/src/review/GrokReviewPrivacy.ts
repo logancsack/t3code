@@ -182,17 +182,29 @@ export function redactSensitiveContextWithMetadata(text: string): {
   for (const pattern of SENSITIVE_CONTEXT_PATTERNS) {
     output = output.replace(pattern, CONTEXT_REDACTION_NOTICE);
   }
+  output = redactSensitiveXmlElements(output);
   output = redactSensitiveAssignments(output);
   output = output.replace(SENSITIVE_CONTEXT_HEADER, `$1${CONTEXT_REDACTION_NOTICE}`);
   return { text: output, redacted: output !== text };
 }
 
 function credentialKeyWords(key: string): ReadonlyArray<string> {
-  return key
+  const identifier = key.split(":").at(-1) ?? key;
+  return identifier
     .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
     .toLowerCase()
     .split(/[._-]+/)
     .filter(Boolean);
+}
+
+function redactSensitiveXmlElements(text: string): string {
+  return text.replace(
+    /<([A-Za-z0-9_.:-]+)>([^<]*)<\/([A-Za-z0-9_.:-]+)\s*>/gi,
+    (match: string, opening: string, _content: string, closing: string) =>
+      opening.toLowerCase() === closing.toLowerCase() && isSensitiveContextKey(opening)
+        ? `<${opening}>${CONTEXT_REDACTION_NOTICE}</${closing}>`
+        : match,
+  );
 }
 
 function isSensitiveContextKey(key: string): boolean {
