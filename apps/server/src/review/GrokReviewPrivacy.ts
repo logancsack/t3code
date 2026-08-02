@@ -41,7 +41,7 @@ const SENSITIVE_CONTEXT_PATTERNS: ReadonlyArray<RegExp> = [
   /(?<=:\/\/)[^\s/:@]+:[^\s/@]+(?=@)/g,
 ];
 const SENSITIVE_CONTEXT_ASSIGNMENT =
-  /(["']?[A-Za-z0-9_.-]*(?:secret|token|password|passwd|api[_-]?key|private[_-]?key|client[_-]?secret|access[_-]?key|authorization|cookie)[A-Za-z0-9_.-]*["']?\s*[:=]\s*)[^\r\n]+/gi;
+  /(["']?(?:auth|[A-Za-z0-9_.-]*(?:secret|token|password|passwd|api[_-]?key|private[_-]?key|client[_-]?secret|access[_-]?key|authorization|cookie)[A-Za-z0-9_.-]*)["']?\s*[:=]\s*)[^\r\n]+/gi;
 const SENSITIVE_CONTEXT_HEADER =
   /^(\s*(?:authorization|proxy-authorization|cookie|set-cookie)\s*:\s*)(\S.*)$/gim;
 const SENSITIVE_CONTEXT_KEY =
