@@ -377,15 +377,6 @@ function formatBytes(value: number): string {
   return `${gibibytes >= 10 ? Math.round(gibibytes) : gibibytes.toFixed(1)} GB`;
 }
 
-function formatUptime(seconds: number | undefined): string {
-  if (!seconds || seconds < 60) return "< 1 minute";
-  const hours = Math.floor(seconds / 3600);
-  if (hours < 1) return `${Math.floor(seconds / 60)} minutes`;
-  if (hours < 24) return `${hours} hours`;
-  const days = Math.floor(hours / 24);
-  return `${days} ${days === 1 ? "day" : "days"}`;
-}
-
 export function autoPauseDescription(
   status: ManagedDevPcDisplayStatus,
   autoStopClock: string | null,
@@ -918,9 +909,9 @@ export function ManagedDevPcStatus({
                         )}`
                       : "—"}
                   </dd>
-                  <dt className="text-muted-foreground">Uptime</dt>
+                  <dt className="text-muted-foreground">Last activity</dt>
                   <dd className="text-right">
-                    {telemetry ? formatUptime(telemetry.uptimeSeconds) : "—"}
+                    {workspace.lastActivityAt ? formatRelativeTime(workspace.lastActivityAt) : "—"}
                   </dd>
                   <dt className="text-muted-foreground">Runtime</dt>
                   <dd className="truncate text-right">{workspace.runtimeVersion ?? "—"}</dd>
