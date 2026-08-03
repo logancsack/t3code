@@ -42,6 +42,30 @@ export type GrokReviewTarget = typeof GrokReviewTarget.Type;
 export const GrokReviewReasoningEffort = Schema.Literals(["medium", "high"]);
 export type GrokReviewReasoningEffort = typeof GrokReviewReasoningEffort.Type;
 const GrokReviewFocusEntry = TrimmedNonEmptyString.check(Schema.isMaxLength(300));
+const GrokReviewContextTitle = TrimmedNonEmptyString.check(Schema.isMaxLength(120));
+const GrokReviewContextContent = TrimmedNonEmptyString.check(Schema.isMaxLength(30_000));
+const GrokReviewContextLimitation = TrimmedNonEmptyString.check(Schema.isMaxLength(300));
+export const GROK_REVIEW_CONTEXT_MAX_CHARS = 120_000;
+const GrokReviewContextSections = Schema.Array(
+  Schema.Struct({
+    title: GrokReviewContextTitle,
+    content: GrokReviewContextContent,
+  }),
+).check(
+  Schema.isMaxLength(8),
+  Schema.makeFilter(
+    (sections) =>
+      sections.reduce((total, section) => total + section.content.length, 0) <=
+        GROK_REVIEW_CONTEXT_MAX_CHARS ||
+      `Repository context must not exceed ${GROK_REVIEW_CONTEXT_MAX_CHARS} total characters.`,
+  ),
+);
+
+export const GrokReviewContext = Schema.Struct({
+  sections: GrokReviewContextSections,
+  limitations: Schema.Array(GrokReviewContextLimitation).check(Schema.isMaxLength(8)),
+});
+export type GrokReviewContext = typeof GrokReviewContext.Type;
 
 export const GrokReviewSeverity = Schema.Literals(["blocker", "high", "medium", "low"]);
 export type GrokReviewSeverity = typeof GrokReviewSeverity.Type;
@@ -55,7 +79,9 @@ export const GrokReviewInput = Schema.Struct({
   baseRef: Schema.optionalKey(TrimmedNonEmptyString),
   focus: Schema.optionalKey(Schema.Array(GrokReviewFocusEntry).check(Schema.isMaxLength(8))),
   providerInstanceId: Schema.optionalKey(ProviderInstanceId),
+  supplementalProviderInstanceId: Schema.optionalKey(ProviderInstanceId),
   model: Schema.optionalKey(TrimmedNonEmptyString),
+  context: Schema.optionalKey(GrokReviewContext),
   /** @deprecated Use providerInstanceId. */
   grokProviderInstanceId: Schema.optionalKey(ProviderInstanceId),
 });
@@ -103,6 +129,9 @@ export const GrokReviewReport = Schema.Struct({
   }),
   status: GrokReviewStatus,
   resolvedModel: TrimmedNonEmptyString,
+  supplementalModels: Schema.optionalKey(
+    Schema.Array(TrimmedNonEmptyString).check(Schema.isMaxLength(4)),
+  ),
   grokBuildVersion: Schema.NullOr(TrimmedNonEmptyString),
   reasoningEffort: GrokReviewReasoningEffort,
   escalatedToHigh: Schema.Boolean,

@@ -289,6 +289,7 @@ export function renderGrokReviewMarkdown(input: {
   readonly coverage: ReadonlyArray<string>;
   readonly limitations: ReadonlyArray<string>;
   readonly model: string;
+  readonly supplementalModels?: ReadonlyArray<string>;
   readonly reasoningEffort: GrokReviewReasoningEffort;
   readonly escalatedToHigh: boolean;
   readonly runId: string;
@@ -302,6 +303,9 @@ export function renderGrokReviewMarkdown(input: {
       input.escalatedToHigh ? "medium → high" : input.reasoningEffort
     }`,
   ];
+  if ((input.supplementalModels?.length ?? 0) > 0) {
+    lines.push(`**Supplemental roles:** ${input.supplementalModels!.join(", ")}`);
+  }
 
   if (input.findings.length === 0) {
     lines.push(
@@ -351,6 +355,7 @@ export function withMarkdown(report: Omit<GrokReviewReport, "markdown">): GrokRe
       coverage: report.coverage,
       limitations: report.limitations,
       model: report.resolvedModel,
+      ...(report.supplementalModels ? { supplementalModels: report.supplementalModels } : {}),
       reasoningEffort: report.reasoningEffort,
       escalatedToHigh: report.escalatedToHigh,
       runId: report.runId,

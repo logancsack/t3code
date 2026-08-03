@@ -49,12 +49,12 @@ function selectionForEffort(
   };
 }
 
-export function makeProviderCodeReview(input: {
+export function makeProviderReviewAgent(input: {
   textGeneration: TextGeneration["Service"];
   modelSelection: ModelSelection;
   driver: ProviderDriverKind;
   providerLabel: string;
-}): CodeReviewRunner {
+}): GrokReviewAgent {
   const agent: GrokReviewAgent = {
     resolvedModel: input.modelSelection.model,
     grokBuildVersion: null,
@@ -83,6 +83,16 @@ export function makeProviderCodeReview(input: {
           ),
         ),
   };
+  return agent;
+}
+
+export function makeProviderCodeReview(input: {
+  textGeneration: TextGeneration["Service"];
+  modelSelection: ModelSelection;
+  driver: ProviderDriverKind;
+  providerLabel: string;
+}): CodeReviewRunner {
+  const agent = makeProviderReviewAgent(input);
   const makeIsolatedReviewDirectory = Effect.try({
     try: () => NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-aldo-review-")),
     catch: (cause) =>

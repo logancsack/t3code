@@ -16,12 +16,14 @@ import { SettingsSection } from "./settingsLayout";
 
 const SETTINGS_PATH = "/_devpc/aldo-review/repositories";
 const GROK_REVIEW_MODEL = "grok-4.5";
+const NO_PROVIDER_VALUE = "__none__";
 
 interface AldoReviewRepositorySetting {
   readonly repository: string;
   readonly enabled: boolean;
   readonly connected: boolean;
   readonly providerInstanceId: string | null;
+  readonly supplementalProviderInstanceId: string | null;
   readonly providerDriver: string | null;
   readonly model: string | null;
 }
@@ -33,6 +35,7 @@ interface AldoReviewRepositoryList {
 
 interface ReviewSelection {
   readonly providerInstanceId: string;
+  readonly supplementalProviderInstanceId: string | null;
   readonly providerDriver: string;
   readonly model: string;
 }
@@ -44,6 +47,30 @@ export function aldoReviewToggleDisabled(input: {
   providerAvailable: boolean;
 }): boolean {
   return input.saving || (!input.enabled && (!input.connected || !input.providerAvailable));
+}
+
+export function resolveSupplementalReviewProviderId(input: {
+  stored: string | null;
+  primary: string;
+}): string | null {
+  return input.stored && input.stored !== input.primary ? input.stored : null;
+}
+
+export function supplementalProviderInstanceIdForSave(
+  entry: { readonly instanceId: string } | null,
+): string | null {
+  return entry?.instanceId ?? null;
+}
+
+export function supplementalProviderSelectDisabled(input: {
+  readonly saving: boolean;
+  readonly availableProviderCount: number;
+  readonly selectedProviderInstanceId: string | null;
+}): boolean {
+  return (
+    input.saving ||
+    (input.availableProviderCount === 0 && input.selectedProviderInstanceId === null)
+  );
 }
 
 function sortRepositories(
@@ -78,9 +105,18 @@ function defaultSelection(entries: ReadonlyArray<ProviderInstanceEntry>): Review
   const entry = entries.find((candidate) => candidate.driverKind === "grok") ?? entries[0];
   if (!entry) return null;
   const model = defaultReviewModel(entry);
+  const supplemental = entries.find(
+    (candidate) =>
+      candidate.instanceId !== entry.instanceId &&
+      candidate.driverKind === "opencode" &&
+      candidate.models.some((candidateModel) =>
+        /^opencode\/nemotron-3-ultra(?:-|$)/.test(candidateModel.slug),
+      ),
+  );
   return model
     ? {
         providerInstanceId: entry.instanceId,
+        supplementalProviderInstanceId: supplemental?.instanceId ?? null,
         providerDriver: entry.driverKind,
         model,
       }
@@ -90,22 +126,41 @@ function defaultSelection(entries: ReadonlyArray<ProviderInstanceEntry>): Review
 function ProviderSelect(props: {
   entries: ReadonlyArray<ProviderInstanceEntry>;
   value: string;
+  ariaLabel?: string;
+  placeholder?: string;
+  allowNone?: boolean;
   disabled: boolean;
-  onChange: (entry: ProviderInstanceEntry) => void;
+  onChange: (entry: ProviderInstanceEntry | null) => void;
 }) {
   const active = props.entries.find((entry) => entry.instanceId === props.value);
+  const value = props.allowNone && !props.value ? NO_PROVIDER_VALUE : props.value;
   return (
     <Select
-      value={props.value}
+      value={value}
       onValueChange={(value) => {
+        if (props.allowNone && value === NO_PROVIDER_VALUE) {
+          props.onChange(null);
+          return;
+        }
         const entry = props.entries.find((candidate) => candidate.instanceId === value);
         if (entry) props.onChange(entry);
       }}
     >
-      <SelectTrigger className="h-8 min-w-36 text-xs" disabled={props.disabled}>
-        <SelectValue>{active?.displayName ?? "Select provider"}</SelectValue>
+      <SelectTrigger
+        className="h-8 min-w-36 text-xs"
+        disabled={props.disabled}
+        aria-label={props.ariaLabel}
+      >
+        <SelectValue>
+          {active?.displayName ??
+            (props.allowNone && !props.value ? "No supplemental provider" : props.placeholder) ??
+            "Select provider"}
+        </SelectValue>
       </SelectTrigger>
       <SelectPopup align="end" alignItemWithTrigger={false}>
+        {props.allowNone ? (
+          <SelectItem value={NO_PROVIDER_VALUE}>No supplemental provider</SelectItem>
+        ) : null}
         {props.entries.map((entry) => (
           <SelectItem key={entry.instanceId} value={entry.instanceId}>
             {entry.displayName}
@@ -161,6 +216,15 @@ export function GrokReviewSettings() {
   );
   const preferredSelection = useMemo(
     () => defaultSelection(availableProviders),
+    [availableProviders],
+  );
+  const supplementalProviders = useMemo(
+    () =>
+      availableProviders.filter(
+        (entry) =>
+          entry.driverKind === "opencode" &&
+          entry.models.some((model) => /^opencode\/nemotron-3-ultra(?:-|$)/.test(model.slug)),
+      ),
     [availableProviders],
   );
   const [repositories, setRepositories] = useState<ReadonlyArray<AldoReviewRepositorySetting>>([]);
@@ -254,7 +318,8 @@ export function GrokReviewSettings() {
         <p className="max-w-2xl text-[13px] leading-[1.45] text-muted-foreground/80">
           Run a fast multi-agent review swarm on every pull-request head. Choose any connected
           provider and model; Grok 4.5 uses medium reasoning by default and escalates ambiguous
-          severe findings to high reasoning.
+          severe findings to high reasoning. An explicitly selected OpenCode Nemotron provider runs
+          the independent code-quality and security roles.
         </p>
         {installationUrl ? (
           <Button
@@ -271,6 +336,11 @@ export function GrokReviewSettings() {
             Connect and authenticate a provider before enabling Aldo Review.
           </p>
         ) : null}
+        {availableProviders.length > 0 && supplementalProviders.length === 0 ? (
+          <p className="mt-3 text-xs text-warning">
+            Connect OpenCode with Nemotron 3 Ultra to enable all six review roles.
+          </p>
+        ) : null}
         {error ? (
           <p role="alert" className="mt-2 text-xs text-destructive">
             {error}
@@ -284,6 +354,10 @@ export function GrokReviewSettings() {
           setting.providerInstanceId && setting.providerDriver && setting.model
             ? {
                 providerInstanceId: setting.providerInstanceId,
+                supplementalProviderInstanceId: resolveSupplementalReviewProviderId({
+                  stored: setting.supplementalProviderInstanceId,
+                  primary: setting.providerInstanceId,
+                }),
                 providerDriver: setting.providerDriver,
                 model: setting.model,
               }
@@ -311,15 +385,40 @@ export function GrokReviewSettings() {
                   value={selection.providerInstanceId}
                   disabled={savingRepository !== null}
                   onChange={(entry) => {
+                    if (!entry) return;
                     const model = defaultReviewModel(entry);
                     if (model) {
                       void save(setting.repository, setting.enabled, {
                         providerInstanceId: entry.instanceId,
+                        supplementalProviderInstanceId: resolveSupplementalReviewProviderId({
+                          stored: selection.supplementalProviderInstanceId,
+                          primary: entry.instanceId,
+                        }),
                         providerDriver: entry.driverKind,
                         model,
                       });
                     }
                   }}
+                />
+                <ProviderSelect
+                  entries={supplementalProviders.filter(
+                    (entry) => entry.instanceId !== selection.providerInstanceId,
+                  )}
+                  value={selection.supplementalProviderInstanceId ?? ""}
+                  ariaLabel="Supplemental OpenCode review provider"
+                  placeholder="OpenCode specialist"
+                  allowNone
+                  disabled={supplementalProviderSelectDisabled({
+                    saving: savingRepository !== null,
+                    availableProviderCount: supplementalProviders.length,
+                    selectedProviderInstanceId: selection.supplementalProviderInstanceId,
+                  })}
+                  onChange={(entry) =>
+                    void save(setting.repository, setting.enabled, {
+                      ...selection,
+                      supplementalProviderInstanceId: supplementalProviderInstanceIdForSave(entry),
+                    })
+                  }
                 />
                 <ModelSelect
                   entry={selectedEntry}
