@@ -64,6 +64,12 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   mix-blend-mode: normal;
 }
 
+/* Center the wake content when it fits, but align it to the scroll start on
+   short landscape viewports so no lifecycle guidance is clipped. */
+.managed-wake-surface {
+  align-items: safe center;
+}
+
 @keyframes t3-mobile-draft-headline-exit {
   from {
     opacity: 1;
@@ -146,6 +152,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
      compositor updates discrete frames instead of every vsync. */
   --animate-status-pulse: status-pulse 2s infinite;
   --animate-status-ping: status-ping 2s infinite;
+  --animate-managed-wake-progress: managed-wake-progress 1.8s ease-in-out infinite;
   --color-warning-foreground: var(--warning-foreground);
   --color-warning: var(--warning);
   --color-warning-surface: var(--warning-surface);
@@ -235,6 +242,17 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     100% {
       opacity: 0;
       scale: 2;
+    }
+  }
+  @keyframes managed-wake-progress {
+    0% {
+      transform: translateX(-110%);
+    }
+    50% {
+      transform: translateX(80%);
+    }
+    100% {
+      transform: translateX(250%);
     }
   }
 }
