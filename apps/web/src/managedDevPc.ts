@@ -79,9 +79,11 @@ export const MANAGED_WORKSPACE_ACTION_CLEARED_EVENT = "devpc-managed-workspace-a
 const SESSION_RECOVERY_KEY = "devpc-managed-session-recovery-at";
 const SESSION_RECOVERY_COOLDOWN_MS = 30_000;
 const MAX_RESUME_WAIT_POLLS = 40;
+const MANAGED_WAKE_SLOW_THRESHOLD_MS = 75_000;
 let sessionRecoveryReloadScheduled = false;
 let bootstrapResumeRequestKey: string | undefined;
 let bootstrapResumeUsesSharedStorage = false;
+let lastAnnouncedWakePhase: ManagedWakePhase | undefined;
 
 export function isAmbiguousLifecycleResponse(status: number): boolean {
   return status === 408 || status >= 500;
@@ -112,6 +114,58 @@ export function shouldRepromptManagedResume(resumeAccepted: boolean, waitPolls: 
 
 export function isManagedResumeTransition(bootstrap: ManagedDevPcBootstrap): boolean {
   return ["starting", "restoring", "reconnecting"].includes(bootstrap.status ?? bootstrap.state);
+}
+
+export type ManagedWakePhase = "machine" | "connection" | "workspace";
+
+export interface ManagedWakePresentation {
+  readonly title: string;
+  readonly description: string;
+  readonly timing: string;
+  readonly delayed: boolean;
+}
+
+export function managedWakePhase(bootstrap: ManagedDevPcBootstrap): ManagedWakePhase {
+  const status = bootstrap.status ?? bootstrap.state;
+  if (bootstrap.connected || status === "reconnecting") return "connection";
+  return "machine";
+}
+
+export function managedWakePresentation(
+  phase: ManagedWakePhase,
+  elapsedMs: number,
+): ManagedWakePresentation {
+  const elapsedSeconds = Math.max(0, Math.floor(elapsedMs / 1_000));
+  const delayed = elapsedMs >= MANAGED_WAKE_SLOW_THRESHOLD_MS;
+  const timing = delayed
+    ? `Taking longer than usual · ${elapsedSeconds}s elapsed`
+    : elapsedSeconds >= 10
+      ? `Still working · ${elapsedSeconds}s elapsed`
+      : "Usually ready in about a minute";
+
+  switch (phase) {
+    case "connection":
+      return {
+        title: "Connecting securely",
+        description: "Your machine is awake. Aldo is establishing its private connection.",
+        timing,
+        delayed,
+      };
+    case "workspace":
+      return {
+        title: "Opening your workspace",
+        description: "The secure connection is ready. Aldo is loading your workspace.",
+        timing,
+        delayed,
+      };
+    case "machine":
+      return {
+        title: "Waking your workspace",
+        description: "Your private machine is powering on. Your files and threads are safe.",
+        timing,
+        delayed,
+      };
+  }
 }
 
 export function clearCompletedPauseAction(bootstrap: ManagedDevPcBootstrap): void {
@@ -289,33 +343,115 @@ export function reconcileBootstrapLifecycleAction(
   }
 }
 
-function updateBootstrapMessage(message: string, failed = false): void {
+function updateBootstrapMessage(
+  message: string,
+  failed = false,
+  phase: ManagedWakePhase = "machine",
+  elapsedMs = 0,
+): void {
   const root = document.getElementById("root");
   if (!root) return;
   root.replaceChildren();
   const surface = document.createElement("main");
   surface.className =
-    "flex h-dvh min-h-0 items-center justify-center bg-background px-6 text-foreground";
-  const card = document.createElement("section");
-  card.className =
-    "w-full max-w-sm rounded-xl border border-border bg-card p-6 text-center shadow-sm";
+    "flex min-h-dvh items-center justify-center overflow-hidden bg-background px-6 py-12 text-foreground";
+  const announcePhase = !failed && phase !== lastAnnouncedWakePhase;
+  surface.ariaLive = failed ? "assertive" : announcePhase ? "polite" : "off";
+  surface.ariaBusy = failed ? "false" : "true";
+  if (!failed) lastAnnouncedWakePhase = phase;
+  const content = document.createElement("section");
+  content.className = "w-full max-w-md";
+
+  const logo = document.createElement("img");
+  logo.className = "mb-8 size-11 rounded-xl";
+  logo.src = "/apple-touch-icon.png";
+  logo.alt = "";
+  logo.width = 44;
+  logo.height = 44;
+
+  const eyebrow = document.createElement("p");
+  eyebrow.className =
+    "mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground";
+  eyebrow.textContent = "Workspace status";
+
   const title = document.createElement("h1");
-  title.className = "text-base font-semibold";
-  title.textContent = failed ? "Workspace unavailable" : "Starting your workspace";
+  title.className = "text-balance text-2xl font-semibold tracking-tight sm:text-3xl";
   const detail = document.createElement("p");
-  detail.className = "mt-2 text-sm text-muted-foreground";
-  detail.textContent = message;
-  card.append(title, detail);
+  detail.className = "mt-3 text-pretty text-sm leading-6 text-muted-foreground sm:text-base";
+
   if (failed) {
+    title.textContent = "Workspace unavailable";
+    detail.textContent = message;
     const retry = document.createElement("button");
     retry.type = "button";
     retry.className =
-      "mt-4 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground";
+      "mt-6 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90";
     retry.textContent = "Retry";
     retry.addEventListener("click", () => window.location.reload());
-    card.append(retry);
+    content.append(logo, eyebrow, title, detail, retry);
+    surface.append(content);
+    root.append(surface);
+    return;
   }
-  surface.append(card);
+
+  const presentation = managedWakePresentation(phase, elapsedMs);
+  title.textContent = presentation.title;
+  detail.textContent = presentation.description;
+
+  const progressTrack = document.createElement("div");
+  progressTrack.className = "mt-8 h-1 overflow-hidden rounded-full bg-muted";
+  progressTrack.role = "progressbar";
+  progressTrack.ariaLabel = "Workspace wake progress";
+  progressTrack.ariaValueText = presentation.timing;
+  const progressIndicator = document.createElement("div");
+  progressIndicator.className =
+    "h-full w-2/5 rounded-full bg-primary motion-safe:animate-managed-wake-progress";
+  progressTrack.append(progressIndicator);
+
+  const stages = document.createElement("ol");
+  stages.className = "mt-7 space-y-4";
+  const stageDefinitions: ReadonlyArray<readonly [ManagedWakePhase, string]> = [
+    ["machine", "Starting your private machine"],
+    ["connection", "Connecting securely"],
+    ["workspace", "Opening your workspace"],
+  ];
+  const activeStage = stageDefinitions.findIndex(([stage]) => stage === phase);
+  for (const [index, [, label]] of stageDefinitions.entries()) {
+    const completed = index < activeStage;
+    const active = index === activeStage;
+    const item = document.createElement("li");
+    item.className = `flex items-center gap-3 text-sm ${
+      active ? "font-medium text-foreground" : "text-muted-foreground"
+    }`;
+    const marker = document.createElement("span");
+    marker.className = completed
+      ? "flex size-6 shrink-0 items-center justify-center rounded-full bg-primary text-xs text-primary-foreground"
+      : active
+        ? "flex size-6 shrink-0 items-center justify-center rounded-full border border-primary bg-primary/10 text-xs text-primary motion-safe:animate-status-pulse"
+        : "flex size-6 shrink-0 items-center justify-center rounded-full border border-border text-xs";
+    marker.textContent = completed ? "✓" : String(index + 1);
+    const text = document.createElement("span");
+    text.textContent = label;
+    item.append(marker, text);
+    stages.append(item);
+  }
+
+  const timing = document.createElement("p");
+  timing.className = "mt-8 text-sm font-medium text-muted-foreground";
+  timing.textContent = presentation.timing;
+  const liveDetail = document.createElement("span");
+  liveDetail.className = "sr-only";
+  liveDetail.textContent = message;
+  timing.append(liveDetail);
+
+  content.append(logo, eyebrow, title, detail, progressTrack, stages, timing);
+  if (presentation.delayed) {
+    const delayed = document.createElement("p");
+    delayed.className = "mt-2 text-sm leading-6 text-muted-foreground";
+    delayed.textContent = "Aldo is still retrying automatically. Keep this screen open.";
+    content.append(delayed);
+  }
+  surface.append(content);
   root.append(surface);
 }
 
@@ -395,6 +531,7 @@ function waitForManagedResume(
       return;
     }
     root.replaceChildren();
+    lastAnnouncedWakePhase = undefined;
     const surface = document.createElement("main");
     surface.className =
       "flex h-dvh min-h-0 items-center justify-center bg-background px-6 text-foreground";
@@ -500,7 +637,11 @@ function scheduleManagedSessionRecovery(): boolean {
 export async function prepareManagedDevPc(): Promise<void> {
   if (!isManagedDevPc) return;
 
-  updateBootstrapMessage("Connecting to the managed workspace…");
+  let wakeStartedAt = Date.now();
+  const showWakeProgress = (message: string, phase: ManagedWakePhase = "machine") => {
+    updateBootstrapMessage(message, false, phase, Date.now() - wakeStartedAt);
+  };
+  showWakeProgress("Checking your workspace status…");
   const persistedResume = readPersistedManagedResume();
   let failures = 0;
   let resumeAccepted = persistedResume?.accepted ?? false;
@@ -523,13 +664,14 @@ export async function prepareManagedDevPc(): Promise<void> {
       if (isManagedBootstrapRunning(bootstrap)) {
         if (lifecycleReconciliation === "pending-restart-confirmation") {
           failures = 0;
-          updateBootstrapMessage("Confirming that your workspace restarted…");
+          showWakeProgress("Confirming that your workspace restarted…", "connection");
           await new Promise((resolve) => window.setTimeout(resolve, 1_500));
           continue;
         }
         if (bootstrap.pairingToken) {
           window.location.hash = pairingHash(bootstrap.pairingToken);
         }
+        showWakeProgress("Opening your workspace…", "workspace");
         return;
       }
       if (requiresManagedResume(bootstrap)) {
@@ -548,9 +690,10 @@ export async function prepareManagedDevPc(): Promise<void> {
           resumeUncertain = result.uncertain;
           resumeAccepted = true;
           resumeWaitPolls = 0;
+          wakeStartedAt = Date.now();
         } else {
           resumeWaitPolls += 1;
-          updateBootstrapMessage("Resuming your workspace…");
+          showWakeProgress("Resuming your workspace…", managedWakePhase(bootstrap));
           if (resumeUncertain && resumeRequestKey) {
             const outcome = await requestManagedResume(resumeRequestKey);
             if (outcome === "accepted") {
@@ -574,7 +717,7 @@ export async function prepareManagedDevPc(): Promise<void> {
         resumeUncertain = false;
         resumeWaitPolls = 0;
         failures = 0;
-        updateBootstrapMessage("Resuming your workspace…");
+        showWakeProgress("Resuming your workspace…", managedWakePhase(bootstrap));
         await new Promise((resolve) => window.setTimeout(resolve, 1_500));
         continue;
       }
@@ -584,7 +727,10 @@ export async function prepareManagedDevPc(): Promise<void> {
       resumeUncertain = false;
       resumeWaitPolls = 0;
       failures = 0;
-      updateBootstrapMessage(bootstrap.detail ?? "The workspace is still starting…");
+      showWakeProgress(
+        bootstrap.detail ?? "The workspace is still starting…",
+        managedWakePhase(bootstrap),
+      );
       await new Promise((resolve) => window.setTimeout(resolve, 1_500));
     } catch (error) {
       failures += 1;

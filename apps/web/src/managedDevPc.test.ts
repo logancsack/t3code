@@ -79,6 +79,46 @@ describe("managed DevPC paused bootstrap", () => {
     );
   });
 
+  it("maps live lifecycle snapshots to honest wake stages", async () => {
+    vi.stubEnv("VITE_DEVPC_MANAGED", "1");
+    vi.resetModules();
+    const { managedWakePhase } = await import("./managedDevPc");
+    const base = {
+      managed: true as const,
+      state: "starting" as const,
+      ready: false,
+      previewUrlTemplate: "https://{port}.preview.example.test/",
+    };
+
+    expect(managedWakePhase({ ...base, status: "restoring", connected: false })).toBe("machine");
+    expect(managedWakePhase({ ...base, status: "reconnecting", connected: false })).toBe(
+      "connection",
+    );
+    expect(managedWakePhase({ ...base, status: "starting", connected: true })).toBe("connection");
+  });
+
+  it("sets expectations and acknowledges a delayed wake without inventing a percent", async () => {
+    vi.stubEnv("VITE_DEVPC_MANAGED", "1");
+    vi.resetModules();
+    const { managedWakePresentation } = await import("./managedDevPc");
+
+    expect(managedWakePresentation("machine", 5_000)).toMatchObject({
+      title: "Waking your workspace",
+      timing: "Usually ready in about a minute",
+      delayed: false,
+    });
+    expect(managedWakePresentation("connection", 24_900)).toMatchObject({
+      title: "Connecting securely",
+      timing: "Still working · 24s elapsed",
+      delayed: false,
+    });
+    expect(managedWakePresentation("workspace", 76_200)).toMatchObject({
+      title: "Opening your workspace",
+      timing: "Taking longer than usual · 76s elapsed",
+      delayed: true,
+    });
+  });
+
   it("re-prompts when an accepted resume remains ineffective", async () => {
     vi.stubEnv("VITE_DEVPC_MANAGED", "1");
     vi.resetModules();
