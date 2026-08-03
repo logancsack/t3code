@@ -96,13 +96,13 @@ describe("ManagedDevPcStatus", () => {
   });
 
   it("reports lifecycle activity instead of guest uptime", async () => {
-    const eightHoursAgo = new Date(Date.now() - 8 * 60 * 60_000).toISOString();
+    const oneHourAgo = new Date(Date.now() - 60 * 60_000).toISOString();
     const markup = await renderManagedStatus({
       state: "ready",
       status: "running",
       ready: true,
       view: "settings",
-      lastActivityAt: eightHoursAgo,
+      lastActivityAt: oneHourAgo,
       telemetry: {
         sampledAt: new Date().toISOString(),
         receivedAt: new Date().toISOString(),
@@ -115,7 +115,8 @@ describe("ManagedDevPcStatus", () => {
     });
 
     expect(markup).toContain("Last activity");
-    expect(markup).toContain("8h ago");
+    expect(markup).toContain("1h ago");
+    expect(markup).not.toContain("8h ago");
     expect(markup).not.toContain(">Uptime<");
     expect(markup).not.toContain("8 hours");
   });
