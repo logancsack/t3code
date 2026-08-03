@@ -64,6 +64,12 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   mix-blend-mode: normal;
 }
 
+/* Center the wake content when it fits, but align it to the scroll start on
+   short landscape viewports so no lifecycle guidance is clipped. */
+.managed-wake-surface {
+  align-items: safe center;
+}
+
 @keyframes t3-mobile-draft-headline-exit {
   from {
     opacity: 1;

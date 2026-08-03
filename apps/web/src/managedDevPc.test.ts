@@ -95,6 +95,15 @@ describe("managed DevPC paused bootstrap", () => {
       "connection",
     );
     expect(managedWakePhase({ ...base, status: "starting", connected: true })).toBe("connection");
+    expect(
+      managedWakePhase({
+        ...base,
+        state: "ready",
+        status: "running",
+        ready: true,
+        connected: true,
+      }),
+    ).toBe("workspace");
   });
 
   it("sets expectations and acknowledges a delayed wake without inventing a percent", async () => {

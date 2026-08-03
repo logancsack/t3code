@@ -83,7 +83,7 @@ const MANAGED_WAKE_SLOW_THRESHOLD_MS = 75_000;
 let sessionRecoveryReloadScheduled = false;
 let bootstrapResumeRequestKey: string | undefined;
 let bootstrapResumeUsesSharedStorage = false;
-let lastAnnouncedWakePhase: ManagedWakePhase | undefined;
+let lastAnnouncedWakeState: string | undefined;
 
 export function isAmbiguousLifecycleResponse(status: number): boolean {
   return status === 408 || status >= 500;
@@ -126,6 +126,7 @@ export interface ManagedWakePresentation {
 }
 
 export function managedWakePhase(bootstrap: ManagedDevPcBootstrap): ManagedWakePhase {
+  if (isManagedBootstrapRunning(bootstrap)) return "workspace";
   const status = bootstrap.status ?? bootstrap.state;
   if (bootstrap.connected || status === "reconnecting") return "connection";
   return "machine";
@@ -352,13 +353,15 @@ function updateBootstrapMessage(
   const root = document.getElementById("root");
   if (!root) return;
   root.replaceChildren();
+  const presentation = managedWakePresentation(phase, elapsedMs);
   const surface = document.createElement("main");
   surface.className =
-    "flex min-h-dvh items-center justify-center overflow-hidden bg-background px-6 py-12 text-foreground";
-  const announcePhase = !failed && phase !== lastAnnouncedWakePhase;
-  surface.ariaLive = failed ? "assertive" : announcePhase ? "polite" : "off";
-  surface.ariaBusy = failed ? "false" : "true";
-  if (!failed) lastAnnouncedWakePhase = phase;
+    "managed-wake-surface flex h-dvh min-h-0 justify-center overflow-x-hidden overflow-y-auto bg-background px-6 py-12 text-foreground";
+  const wakeState = `${phase}:${presentation.delayed ? "delayed" : "expected"}`;
+  const announceState = !failed && wakeState !== lastAnnouncedWakeState;
+  surface.ariaLive = failed ? "assertive" : announceState ? "polite" : "off";
+  surface.ariaBusy = "false";
+  if (!failed) lastAnnouncedWakeState = wakeState;
   const content = document.createElement("section");
   content.className = "w-full max-w-md";
 
@@ -394,7 +397,6 @@ function updateBootstrapMessage(
     return;
   }
 
-  const presentation = managedWakePresentation(phase, elapsedMs);
   title.textContent = presentation.title;
   detail.textContent = presentation.description;
 
@@ -405,7 +407,7 @@ function updateBootstrapMessage(
   progressTrack.ariaValueText = presentation.timing;
   const progressIndicator = document.createElement("div");
   progressIndicator.className =
-    "h-full w-2/5 rounded-full bg-primary motion-safe:animate-managed-wake-progress";
+    "h-full w-2/5 rounded-full bg-primary motion-safe:animate-managed-wake-progress motion-reduce:hidden";
   progressTrack.append(progressIndicator);
 
   const stages = document.createElement("ol");
@@ -531,7 +533,7 @@ function waitForManagedResume(
       return;
     }
     root.replaceChildren();
-    lastAnnouncedWakePhase = undefined;
+    lastAnnouncedWakeState = undefined;
     const surface = document.createElement("main");
     surface.className =
       "flex h-dvh min-h-0 items-center justify-center bg-background px-6 text-foreground";
