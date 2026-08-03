@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import type {
   ManagedDevPcBootstrap,
   ManagedDevPcDisplayStatus,
+  ManagedDevPcTelemetry,
   ManagedDevPcWorkspaceState,
 } from "../managedDevPc";
 
@@ -17,6 +18,8 @@ async function renderManagedStatus(input: {
   status?: ManagedDevPcDisplayStatus;
   ready: boolean;
   view?: "indicator" | "settings";
+  lastActivityAt?: string | null;
+  telemetry?: ManagedDevPcTelemetry | null;
 }) {
   vi.stubEnv("VITE_DEVPC_MANAGED", input.managed === false ? "" : "1");
   vi.resetModules();
@@ -27,6 +30,8 @@ async function renderManagedStatus(input: {
       status: input.status,
       ready: input.ready,
       previewUrlTemplate: "https://{port}.preview.example.test/",
+      lastActivityAt: input.lastActivityAt,
+      telemetry: input.telemetry,
     },
   });
 
@@ -88,6 +93,31 @@ describe("ManagedDevPcStatus", () => {
     expect(markup).toContain(">Restart<");
     expect(markup).toContain(">Pause<");
     expect(markup).not.toContain("data-devpc-workspace-status");
+  });
+
+  it("reports lifecycle activity instead of guest uptime", async () => {
+    const eightHoursAgo = new Date(Date.now() - 8 * 60 * 60_000).toISOString();
+    const markup = await renderManagedStatus({
+      state: "ready",
+      status: "running",
+      ready: true,
+      view: "settings",
+      lastActivityAt: eightHoursAgo,
+      telemetry: {
+        sampledAt: new Date().toISOString(),
+        receivedAt: new Date().toISOString(),
+        cpuPercent: 0,
+        memory: { usedBytes: 1, totalBytes: 2 },
+        disks: { root: null, workspace: null },
+        uptimeSeconds: 8 * 60 * 60,
+        t3Healthy: true,
+      },
+    });
+
+    expect(markup).toContain("Last activity");
+    expect(markup).toContain("8h ago");
+    expect(markup).not.toContain(">Uptime<");
+    expect(markup).not.toContain("8 hours");
   });
 
   it("restores an ambiguous lifecycle guard after a document reload", async () => {
