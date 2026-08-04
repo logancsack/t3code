@@ -5,11 +5,12 @@ import type {
   ReviewDiffPreviewSource,
 } from "@t3tools/contracts";
 import { GrokReviewError } from "@t3tools/contracts";
+import * as Clock from "effect/Clock";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Encoding from "effect/Encoding";
 
-import type { GrokReviewAgent } from "./GrokReviewAgent.ts";
+import { GROK_AGENT_MIN_ATTEMPT_MS, type GrokReviewAgent } from "./GrokReviewAgent.ts";
 import {
   deriveReviewStatus,
   type GrokReviewCandidate as GrokReviewCandidateType,
@@ -44,6 +45,29 @@ import { decodeGitPath, redactSensitiveDiffWithMetadata } from "./GrokReviewPriv
 
 const MAX_LEAD_CONCURRENCY = 4;
 const MAX_DELEGATED_REVIEWS = 2;
+
+/**
+ * One wall-clock budget for the whole swarm, split into stage deadlines.
+ *
+ * Reviewers now retry, so without a shared budget a pathological lead round
+ * could consume the entire request and leave nothing for verification — which
+ * is the only stage that actually produces the report. Each stage therefore
+ * gets `min(its own ceiling, budget remaining after later stages' reserves)`,
+ * and optional work is skipped rather than started with too little time to
+ * finish. The total sits just under GROK_REVIEW_TIMEOUT_MS so the swarm reports
+ * a real diagnostic instead of being cut off by the outer service timeout.
+ */
+const SWARM_BUDGET_MS = 11.5 * 60_000;
+const LEAD_STAGE_MAX_MS = 6 * 60_000;
+const DELEGATED_STAGE_MAX_MS = 3 * 60_000;
+const VERIFICATION_STAGE_MAX_MS = 4 * 60_000;
+/** Floor kept for delegation + verification + escalation once leads finish. */
+const RESERVE_AFTER_LEADS_MS = 5 * 60_000;
+/** Floor kept for verification + escalation once delegation finishes. */
+const RESERVE_AFTER_DELEGATION_MS = 4 * 60_000;
+
+const stageDeadline = (now: number, budgetEnd: number, ceilingMs: number, reserveMs: number) =>
+  Math.min(now + ceilingMs, Math.max(now, budgetEnd - reserveMs));
 
 interface AgentOutcome {
   readonly label: string;
@@ -121,6 +145,7 @@ function runCandidate(
     readonly cwd: string;
     readonly prompt: string;
     readonly allowTools: boolean;
+    readonly deadline: number;
   },
 ): Effect.Effect<AgentOutcome> {
   return agent
@@ -130,6 +155,7 @@ function runCandidate(
       outputSchema: GrokReviewCandidateWire,
       effort: "medium",
       allowTools: input.allowTools,
+      deadline: input.deadline,
     })
     .pipe(
       Effect.map(
@@ -153,6 +179,7 @@ function runVerification(
     readonly cwd: string;
     readonly prompt: string;
     readonly effort: "medium" | "high";
+    readonly deadline: number;
   },
 ) {
   return agent
@@ -162,12 +189,26 @@ function runVerification(
       outputSchema: GrokReviewVerificationWire,
       effort: input.effort,
       allowTools: false,
+      deadline: input.deadline,
     })
     .pipe(Effect.map(normalizeGrokReviewVerification));
 }
 
+/**
+ * Grok Build explains *why* constrained decoding failed in the error cause (for
+ * example "severity must be one of the allowed values"). Dropping it left the
+ * published report saying only that a reviewer failed, which is not enough to
+ * fix the underlying prompt or schema, so a bounded cause is carried through.
+ */
 function reviewerFailureSummary(error: GrokReviewError): string {
-  return `${error.operation}: ${error.message}`.replace(/\s+/g, " ").slice(0, 220);
+  const cause =
+    typeof error.cause === "string"
+      ? error.cause
+      : error.cause instanceof Error
+        ? error.cause.message
+        : "";
+  const detail = cause ? `${error.message} — ${cause.slice(0, 120)}` : error.message;
+  return `${error.operation}: ${detail}`.replace(/\s+/g, " ").slice(0, 220);
 }
 
 function boundedText(value: string, maxLength: number): string {
@@ -225,6 +266,9 @@ export const runGrokReviewSwarm = Effect.fn("runGrokReviewSwarm")(function* (inp
     focus: input.request.focus ?? [],
   };
 
+  const startedAt = yield* Clock.currentTimeMillis;
+  const budgetEnd = startedAt + SWARM_BUDGET_MS;
+
   const leadOutcomes = yield* Effect.forEach(
     DEFAULT_REVIEWER_ROLES,
     (role) =>
@@ -233,6 +277,7 @@ export const runGrokReviewSwarm = Effect.fn("runGrokReviewSwarm")(function* (inp
         cwd: input.request.cwd,
         prompt: buildLeadReviewPrompt(role, context),
         allowTools: false,
+        deadline: stageDeadline(startedAt, budgetEnd, LEAD_STAGE_MAX_MS, RESERVE_AFTER_LEADS_MS),
       }),
     { concurrency: MAX_LEAD_CONCURRENCY },
   );
@@ -259,27 +304,50 @@ export const runGrokReviewSwarm = Effect.fn("runGrokReviewSwarm")(function* (inp
   const delegations = leadCandidates
     .flatMap((candidate) => (candidate.delegation ? [candidate.delegation] : []))
     .slice(0, MAX_DELEGATED_REVIEWS);
-  const delegatedOutcomes = yield* Effect.forEach(
-    delegations,
-    (delegation, index) =>
-      runCandidate(input.agent, {
-        label: `delegated-${index + 1}`,
-        cwd: input.request.cwd,
-        prompt: buildDelegatedReviewPrompt(delegation, context),
-        allowTools: true,
-      }),
-    { concurrency: MAX_DELEGATED_REVIEWS },
+  const afterLeadsAt = yield* Clock.currentTimeMillis;
+  const delegatedDeadline = stageDeadline(
+    afterLeadsAt,
+    budgetEnd,
+    DELEGATED_STAGE_MAX_MS,
+    RESERVE_AFTER_DELEGATION_MS,
   );
+  // Delegation is the one optional stage. Starting it with too little time only
+  // buys a guaranteed timeout and a misleading "reviewer failed" limitation, so
+  // record the skip honestly instead.
+  const delegationSkipped =
+    delegations.length > 0 && delegatedDeadline - afterLeadsAt < GROK_AGENT_MIN_ATTEMPT_MS;
+  const delegatedOutcomes = delegationSkipped
+    ? []
+    : yield* Effect.forEach(
+        delegations,
+        (delegation, index) =>
+          runCandidate(input.agent, {
+            label: `delegated-${index + 1}`,
+            cwd: input.request.cwd,
+            prompt: buildDelegatedReviewPrompt(delegation, context),
+            allowTools: true,
+            deadline: delegatedDeadline,
+          }),
+        { concurrency: MAX_DELEGATED_REVIEWS },
+      );
   const delegatedCandidates = delegatedOutcomes.flatMap((outcome) =>
     outcome.result._tag === "Success" ? [outcome.result.candidate] : [],
   );
   const candidates = [...leadCandidates, ...delegatedCandidates];
 
+  const afterDelegationAt = yield* Clock.currentTimeMillis;
+  const verificationDeadline = stageDeadline(
+    afterDelegationAt,
+    budgetEnd,
+    VERIFICATION_STAGE_MAX_MS,
+    0,
+  );
   const mediumResult = yield* Effect.result(
     runVerification(input.agent, {
       cwd: input.request.cwd,
       prompt: buildVerificationPrompt({ context, candidates, highEffort: false }),
       effort: "medium",
+      deadline: verificationDeadline,
     }),
   );
 
@@ -307,6 +375,7 @@ export const runGrokReviewSwarm = Effect.fn("runGrokReviewSwarm")(function* (inp
         cwd: input.request.cwd,
         prompt: buildVerificationPrompt({ context, candidates, highEffort: true }),
         effort: "high",
+        deadline: budgetEnd,
       }),
     );
     if (highResult._tag === "Failure") {
@@ -350,6 +419,7 @@ export const runGrokReviewSwarm = Effect.fn("runGrokReviewSwarm")(function* (inp
               highEffort: true,
             }),
             effort: "high",
+            deadline: budgetEnd,
           }),
         );
         if (highResult._tag === "Success") {
@@ -412,10 +482,14 @@ export const runGrokReviewSwarm = Effect.fn("runGrokReviewSwarm")(function* (inp
     input.source.truncated ||
     redactedDiff.redacted ||
     failedOutcomes.length > 0 ||
+    delegationSkipped ||
     normalizationOmittedFindings ||
     highEffortFailed ||
     highEffortUnavailable;
   const limitations = uniqueStrings([
+    ...(delegationSkipped
+      ? ["Specialist follow-up reviews were skipped to protect the verification budget."]
+      : []),
     ...(normalizationOmittedFindings ? [GROK_REVIEW_FINDINGS_OMITTED_LIMITATION] : []),
     ...(input.source.truncated ? ["The selected diff was truncated before model review."] : []),
     ...(redactedDiff.redacted
