@@ -1,8 +1,10 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import { GrokReviewError, GrokReviewInput, type ReviewDiffPreviewSource } from "@t3tools/contracts";
+import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
+import * as TestClock from "effect/testing/TestClock";
 
 import type { GrokReviewAgent } from "./GrokReviewAgent.ts";
 import {
@@ -910,6 +912,151 @@ describe("runGrokReviewSwarm", () => {
         path: "a/parser.ts",
         inlineEligible: true,
       });
+    }).pipe(Effect.provide(NodeServices.layer));
+  });
+
+  it.effect("surfaces why Grok Build rejected a reviewer's structured output", () => {
+    const verification = {
+      summary: "Verified.",
+      findings: [],
+      coverage: ["Correctness"],
+      limitations: [],
+      needsHighEffortReview: false,
+      escalationReason: null,
+    };
+    let leadFailed = false;
+    const agent: GrokReviewAgent = {
+      resolvedModel: "grok-4.5",
+      grokBuildVersion: "0.2.112",
+      run: (request) => {
+        if (request.prompt.includes("medium-effort verifier")) {
+          return Effect.succeed(verification as never);
+        }
+        // Exactly one lead fails the way Grok Build actually fails.
+        if (!leadFailed) {
+          leadFailed = true;
+          return Effect.fail(
+            new GrokReviewError({
+              operation: "GrokReviewAgent.decode",
+              detail: "Grok Build could not produce the required structured review output.",
+              cause: "severity must be one of the allowed values",
+            }),
+          );
+        }
+        return Effect.succeed(emptyCandidate() as never);
+      },
+    };
+
+    return Effect.gen(function* () {
+      const report = yield* runGrokReviewSwarm({
+        request: { cwd: process.cwd(), target: "working-tree" },
+        source,
+        agent,
+      });
+
+      const failureLimitation = report.limitations.find((entry) =>
+        entry.includes("reviewer failed"),
+      );
+      expect(failureLimitation).toBeDefined();
+      expect(failureLimitation).toContain("severity must be one of the allowed values");
+    }).pipe(Effect.provide(NodeServices.layer));
+  });
+
+  it.effect("bounds every reviewer with a stage deadline drawn from one review budget", () => {
+    const deadlines: Array<{ readonly stage: string; readonly deadline: number | undefined }> = [];
+    const verification = {
+      summary: "Verified.",
+      findings: [],
+      coverage: ["Correctness"],
+      limitations: [],
+      needsHighEffortReview: false,
+      escalationReason: null,
+    };
+    const agent: GrokReviewAgent = {
+      resolvedModel: "grok-4.5",
+      grokBuildVersion: "0.2.112",
+      run: (request) => {
+        const stage = request.prompt.includes("medium-effort verifier")
+          ? "verification"
+          : request.prompt.includes("specialist subagent")
+            ? "delegated"
+            : "lead";
+        deadlines.push({ stage, deadline: request.deadline });
+        return Effect.succeed(
+          (stage === "verification" ? verification : emptyCandidate()) as never,
+        );
+      },
+    };
+
+    return Effect.gen(function* () {
+      const startedAt = yield* Clock.currentTimeMillis;
+      yield* runGrokReviewSwarm({
+        request: { cwd: process.cwd(), target: "working-tree" },
+        source,
+        agent,
+      });
+
+      expect(deadlines.length).toBeGreaterThan(0);
+      // No reviewer may run unbounded, and none may outlive the whole budget.
+      for (const entry of deadlines) {
+        expect(entry.deadline).toBeDefined();
+        expect(entry.deadline!).toBeGreaterThan(startedAt);
+        expect(entry.deadline!).toBeLessThanOrEqual(startedAt + 12 * 60_000);
+      }
+      // Leads are capped well before the budget so verification always has room.
+      const leadDeadlines = deadlines.filter((entry) => entry.stage === "lead");
+      expect(leadDeadlines).toHaveLength(DEFAULT_REVIEWER_ROLES.length);
+      for (const entry of leadDeadlines) {
+        expect(entry.deadline!).toBeLessThanOrEqual(startedAt + 6 * 60_000);
+      }
+    }).pipe(Effect.provide(NodeServices.layer));
+  });
+
+  it.effect("skips specialist follow-ups instead of starving verification", () => {
+    let delegatedRuns = 0;
+    let burned = false;
+    const verification = {
+      summary: "Verified.",
+      findings: [],
+      coverage: ["Correctness"],
+      limitations: [],
+      needsHighEffortReview: false,
+      escalationReason: null,
+    };
+    const agent: GrokReviewAgent = {
+      resolvedModel: "grok-4.5",
+      grokBuildVersion: "0.2.112",
+      run: (request) =>
+        Effect.gen(function* () {
+          if (request.prompt.includes("medium-effort verifier")) return verification as never;
+          if (request.prompt.includes("specialist subagent")) {
+            delegatedRuns += 1;
+            return emptyCandidate() as never;
+          }
+          // One lead consumes almost the entire budget, leaving too little for a
+          // delegated review to finish.
+          if (!burned) {
+            burned = true;
+            yield* TestClock.adjust("7 minutes");
+          }
+          return emptyCandidate({
+            delegation: { objective: "Trace the unsafe value", paths: ["src/example.ts"] },
+          }) as never;
+        }),
+    };
+
+    return Effect.gen(function* () {
+      const report = yield* runGrokReviewSwarm({
+        request: { cwd: process.cwd(), target: "working-tree" },
+        source,
+        agent,
+      });
+
+      expect(delegatedRuns).toBe(0);
+      expect(report.limitations).toContain(
+        "Specialist follow-up reviews were skipped to protect the verification budget.",
+      );
+      expect(report.status).not.toBe("pass");
     }).pipe(Effect.provide(NodeServices.layer));
   });
 });

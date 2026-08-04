@@ -15,7 +15,12 @@ import { makeProviderCodeReview } from "./ProviderCodeReview.ts";
 
 const GROK_DRIVER_KIND = "grok";
 const DEFAULT_GROK_REVIEW_MODEL = "grok-4.5";
-const GROK_REVIEW_TIMEOUT_MS = 10 * 60 * 1_000;
+/**
+ * Outer guard only. The swarm enforces its own 11.5-minute budget, so this sits
+ * just above it: the swarm should always be the thing that reports a diagnostic,
+ * and this timeout should only ever fire if the swarm's own budgeting breaks.
+ */
+const GROK_REVIEW_TIMEOUT_MS = 12 * 60 * 1_000;
 
 export class GrokReviewService extends Context.Service<
   GrokReviewService,
