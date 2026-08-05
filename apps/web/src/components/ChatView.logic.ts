@@ -27,6 +27,20 @@ export const MAX_HIDDEN_MOUNTED_PREVIEW_THREADS = 3;
 
 export const LastInvokedScriptByProjectSchema = Schema.Record(ProjectId, Schema.String);
 
+export function shouldQuietlyRecoverManagedPrimaryEnvironment(input: {
+  readonly managed: boolean;
+  readonly activeEnvironmentId: EnvironmentId | null;
+  readonly primaryEnvironmentId: EnvironmentId | null;
+  readonly connectionPhase: string;
+}): boolean {
+  return Boolean(
+    input.managed &&
+    input.activeEnvironmentId !== null &&
+    input.activeEnvironmentId === input.primaryEnvironmentId &&
+    ["connecting", "reconnecting"].includes(input.connectionPhase),
+  );
+}
+
 export function resolveThreadMetadataUpdateForNextTurn(input: {
   currentModelSelection: ModelSelection;
   nextModelSelection?: ModelSelection;
