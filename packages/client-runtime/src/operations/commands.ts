@@ -12,7 +12,7 @@ import {
   type EnvironmentRpcFailure,
   type EnvironmentRpcSuccess,
   type EnvironmentRpcUnavailableError,
-  request,
+  requestWhenConnected,
 } from "../rpc/client.ts";
 
 type CommandType = ClientOrchestrationCommand["type"];
@@ -80,7 +80,7 @@ function timestampedCommandMetadata(input: {
 }
 
 function dispatch(command: ClientOrchestrationCommand) {
-  return request(ORCHESTRATION_WS_METHODS.dispatchCommand, command);
+  return requestWhenConnected(ORCHESTRATION_WS_METHODS.dispatchCommand, command);
 }
 
 export const createProject: (input: CreateProjectInput) => CommandEffect = Effect.fn(
