@@ -38,6 +38,20 @@ export function startNewThreadForProject(
   return true;
 }
 
+export function shouldQuietlyRecoverManagedPrimaryEnvironment(input: {
+  readonly managed: boolean;
+  readonly activeEnvironmentId: EnvironmentId | null;
+  readonly primaryEnvironmentId: EnvironmentId | null;
+  readonly connectionPhase: string;
+}): boolean {
+  return Boolean(
+    input.managed &&
+    input.activeEnvironmentId !== null &&
+    input.activeEnvironmentId === input.primaryEnvironmentId &&
+    ["connecting", "reconnecting"].includes(input.connectionPhase),
+  );
+}
+
 export function resolveThreadMetadataUpdateForNextTurn(input: {
   currentModelSelection: ModelSelection;
   nextModelSelection?: ModelSelection;

@@ -135,7 +135,7 @@ import {
   setActivePreviewTab,
   useThreadPreviewState,
 } from "../previewStateStore";
-import { managedWorkspaceBrowserUrl } from "~/managedDevPc";
+import { isManagedDevPc, managedWorkspaceBrowserUrl } from "~/managedDevPc";
 import { addBrowserSurface } from "./preview/addBrowserSurface";
 import { closePreviewSession } from "./preview/closePreviewSession";
 import { ThreadPreviewMiniPlayer } from "./preview/ThreadPreviewMiniPlayer";
@@ -298,6 +298,7 @@ import {
   revokeUserMessagePreviewUrls,
   shouldWriteThreadErrorToCurrentServerThread,
   startNewThreadForProject,
+  shouldQuietlyRecoverManagedPrimaryEnvironment,
   waitForStartedServerThread,
 } from "./ChatView.logic";
 import type { ThreadSyncPhase } from "../threadSync";
@@ -1714,6 +1715,17 @@ function ChatViewContent(props: ChatViewProps) {
       connection: activeEnvironment.connection,
     };
   }, [activeEnvironment, activeEnvironmentUnavailable, activeEnvironmentUnavailableLabel]);
+  const quietlyRecoveringManagedPrimary = shouldQuietlyRecoverManagedPrimaryEnvironment({
+    managed: isManagedDevPc,
+    activeEnvironmentId: activeEnvironment?.environmentId ?? null,
+    primaryEnvironmentId,
+    connectionPhase: activeEnvironmentConnectionPhase,
+  });
+  const activeEnvironmentActionUnavailable =
+    activeEnvironmentUnavailable && !quietlyRecoveringManagedPrimary;
+  const activeEnvironmentActionUnavailableState = quietlyRecoveringManagedPrimary
+    ? null
+    : activeEnvironmentUnavailableState;
   const handleReconnectActiveEnvironment = useCallback(
     async (environmentId: EnvironmentId) => {
       const result = await retryEnvironment(environmentId);
@@ -1919,7 +1931,7 @@ function ChatViewContent(props: ChatViewProps) {
   const systemComposerBannerItems = useMemo<ComposerBannerStackItem[]>(() => {
     const items: ComposerBannerStackItem[] = [];
     const updateRunning = serverUpdateState.status === "running";
-    const unavailableConnection = activeEnvironmentUnavailableState?.connection ?? null;
+    const unavailableConnection = activeEnvironmentActionUnavailableState?.connection ?? null;
     const environmentReconnecting =
       unavailableConnection !== null &&
       (unavailableConnection.phase === "connecting" ||
@@ -1936,10 +1948,14 @@ function ChatViewContent(props: ChatViewProps) {
     // restarts) and the update banner already shows progress. Hard failure
     // phases still surface so the Reconnect action stays reachable.
     const suppressUnavailableBanner = updateRunning && environmentReconnecting;
-    if (activeEnvironmentUnavailableState && unavailableConnection && !suppressUnavailableBanner) {
+    if (
+      activeEnvironmentActionUnavailableState &&
+      unavailableConnection &&
+      !suppressUnavailableBanner
+    ) {
       if (reconnectingThroughVersionSkew) {
         items.push({
-          id: `environment-unavailable:${activeEnvironmentUnavailableState.environmentId}`,
+          id: `environment-unavailable:${activeEnvironmentActionUnavailableState.environmentId}`,
           variant: "default",
           // Live connection status: calm styling, but it must front the stack.
           urgent: true,
@@ -1949,12 +1965,12 @@ function ChatViewContent(props: ChatViewProps) {
               aria-hidden="true"
             />
           ),
-          title: `${unavailableConnection.phase === "connecting" ? "Connecting" : "Reconnecting"} to ${activeEnvironmentUnavailableState.label}`,
+          title: `${unavailableConnection.phase === "connecting" ? "Connecting" : "Reconnecting"} to ${activeEnvironmentActionUnavailableState.label}`,
           description: "It may be finishing an update. One moment.",
         });
       } else if (environmentReconnecting) {
         items.push({
-          id: `environment-unavailable:${activeEnvironmentUnavailableState.environmentId}`,
+          id: `environment-unavailable:${activeEnvironmentActionUnavailableState.environmentId}`,
           variant: "info",
           urgent: true,
           icon: <LoaderCircleIcon className="animate-spin" />,
@@ -1964,10 +1980,10 @@ function ChatViewContent(props: ChatViewProps) {
         });
       } else {
         items.push({
-          id: `environment-unavailable:${activeEnvironmentUnavailableState.environmentId}`,
+          id: `environment-unavailable:${activeEnvironmentActionUnavailableState.environmentId}`,
           variant: unavailableConnection.phase === "error" ? "error" : "warning",
           icon: <WifiOffIcon />,
-          title: `${activeEnvironmentUnavailableState.label}: ${connectionStatusTitle(unavailableConnection)}`,
+          title: `${activeEnvironmentActionUnavailableState.label}: ${connectionStatusTitle(unavailableConnection)}`,
           description:
             unavailableConnection.error ??
             "Reconnect this environment before sending messages or running actions.",
@@ -1977,7 +1993,7 @@ function ChatViewContent(props: ChatViewProps) {
                 size="xs"
                 onClick={() =>
                   void handleReconnectActiveEnvironment(
-                    activeEnvironmentUnavailableState.environmentId,
+                    activeEnvironmentActionUnavailableState.environmentId,
                   )
                 }
               >
@@ -2071,7 +2087,7 @@ function ChatViewContent(props: ChatViewProps) {
     }
     return items;
   }, [
-    activeEnvironmentUnavailableState,
+    activeEnvironmentActionUnavailableState,
     handleReconnectActiveEnvironment,
     navigate,
     setDismissedVersionMismatchKey,
@@ -4701,7 +4717,7 @@ function ChatViewContent(props: ChatViewProps) {
       const localApi = readLocalApi();
       if (!localApi || !activeThread || isRevertingCheckpoint) return;
 
-      if (activeEnvironmentUnavailable && activeEnvironmentUnavailableLabel) {
+      if (activeEnvironmentActionUnavailable && activeEnvironmentUnavailableLabel) {
         setThreadError(
           activeThread.id,
           `Reconnect ${activeEnvironmentUnavailableLabel} before reverting checkpoints.`,
@@ -4743,7 +4759,7 @@ function ChatViewContent(props: ChatViewProps) {
     },
     [
       activeThread,
-      activeEnvironmentUnavailable,
+      activeEnvironmentActionUnavailable,
       activeEnvironmentUnavailableLabel,
       environmentId,
       isConnecting,
@@ -4778,12 +4794,13 @@ function ChatViewContent(props: ChatViewProps) {
       isSendBusy ||
       isConnecting ||
       threadDetailLoading ||
+      activeEnvironmentActionUnavailable ||
       sendInFlightRef.current
     ) {
       notifyDirectAnnotationAttached();
       return;
     }
-    if (activeEnvironmentUnavailable) {
+    if (activeEnvironmentActionUnavailable) {
       toastManager.add(
         stackedThreadToast({
           type: "warning",
@@ -5408,6 +5425,7 @@ function ChatViewContent(props: ChatViewProps) {
         !isServerThread ||
         isSendBusy ||
         isConnecting ||
+        activeEnvironmentActionUnavailable ||
         sendInFlightRef.current
       ) {
         return;
@@ -5544,6 +5562,7 @@ function ChatViewContent(props: ChatViewProps) {
       activeThread,
       activeProposedPlan,
       acknowledgeActiveThreadWoke,
+      activeEnvironmentActionUnavailable,
       beginLocalDispatch,
       isConnecting,
       isSendBusy,
@@ -5568,7 +5587,7 @@ function ChatViewContent(props: ChatViewProps) {
       !isServerThread ||
       isSendBusy ||
       isConnecting ||
-      activeEnvironmentUnavailable ||
+      activeEnvironmentActionUnavailable ||
       sendInFlightRef.current
     ) {
       return;
@@ -5703,7 +5722,7 @@ function ChatViewContent(props: ChatViewProps) {
     activeThreadBranch,
     activeThread,
     beginLocalDispatch,
-    activeEnvironmentUnavailable,
+    activeEnvironmentActionUnavailable,
     createThread,
     deleteThread,
     isConnecting,
@@ -6201,7 +6220,7 @@ function ChatViewContent(props: ChatViewProps) {
                             isSendBusy={isSendBusy}
                             sendDisabledReason={threadDetailLoading ? "Messages loading" : null}
                             isPreparingWorktree={isPreparingWorktree}
-                            environmentUnavailable={activeEnvironmentUnavailableState}
+                            environmentUnavailable={activeEnvironmentActionUnavailableState}
                             activePendingApproval={activePendingApproval}
                             pendingApprovals={pendingApprovals}
                             pendingUserInputs={pendingUserInputs}

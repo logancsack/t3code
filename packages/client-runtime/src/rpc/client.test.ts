@@ -25,7 +25,13 @@ import {
 import * as EnvironmentSupervisor from "../connection/supervisor.ts";
 import * as RpcSession from "../rpc/session.ts";
 import type { WsRpcProtocolClient } from "../rpc/protocol.ts";
-import { EnvironmentRpcRequestObserver, request, runStream, subscribe } from "./client.ts";
+import {
+  EnvironmentRpcRequestObserver,
+  request,
+  requestWhenConnected,
+  runStream,
+  subscribe,
+} from "./client.ts";
 
 const TARGET = new PrimaryConnectionTarget({
   environmentId: EnvironmentId.make("environment-1"),
@@ -77,6 +83,43 @@ const makeHarness = Effect.fn("TestEnvironmentRpc.makeHarness")(function* () {
 });
 
 describe("environment RPC", () => {
+  it.effect("defers a primary command until the reconnecting session is available", () =>
+    Effect.gen(function* () {
+      const requests: string[] = [];
+      const client = {
+        [WS_METHODS.cloudGetRelayClientStatus]: () =>
+          Effect.sync(() => {
+            requests.push("dispatched");
+            return { status: "available" as const, version: "2026.8.0" };
+          }),
+      } as unknown as WsRpcProtocolClient;
+      const { activeSession, supervisor } = yield* makeHarness();
+      const reconnectingState: SupervisorConnectionState = {
+        ...AVAILABLE_CONNECTION_STATE,
+        desired: true,
+        phase: "backoff",
+      };
+      yield* SubscriptionRef.set(supervisor.state, reconnectingState);
+
+      const requestFiber = yield* requestWhenConnected(
+        WS_METHODS.cloudGetRelayClientStatus,
+        {},
+      ).pipe(
+        Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor),
+        Effect.forkChild,
+      );
+      yield* Effect.yieldNow;
+      expect(requests).toEqual([]);
+
+      yield* SubscriptionRef.set(activeSession, Option.some(session(client)));
+      expect(yield* Fiber.join(requestFiber)).toEqual({
+        status: "available",
+        version: "2026.8.0",
+      });
+      expect(requests).toEqual(["dispatched"]);
+    }),
+  );
+
   it.effect("observes unary requests until they complete", () =>
     Effect.gen(function* () {
       const observations: string[] = [];

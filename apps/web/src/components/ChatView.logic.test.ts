@@ -27,6 +27,7 @@ import {
   resolveThreadMetadataUpdateForNextTurn,
   resolveSendEnvMode,
   startNewThreadForProject,
+  shouldQuietlyRecoverManagedPrimaryEnvironment,
   shouldShowBranchMismatchBanner,
   shouldWriteThreadErrorToCurrentServerThread,
 } from "./ChatView.logic";
@@ -35,6 +36,49 @@ const environmentId = EnvironmentId.make("environment-local");
 const projectId = ProjectId.make("project-1");
 const threadId = ThreadId.make("thread-1");
 const now = "2026-03-29T00:00:00.000Z";
+
+describe("managed primary recovery", () => {
+  it.each(["connecting", "reconnecting"])(
+    "keeps the managed primary surface interactive while %s",
+    (connectionPhase) => {
+      expect(
+        shouldQuietlyRecoverManagedPrimaryEnvironment({
+          managed: true,
+          activeEnvironmentId: environmentId,
+          primaryEnvironmentId: environmentId,
+          connectionPhase,
+        }),
+      ).toBe(true);
+    },
+  );
+
+  it("does not hide unavailable state for unmanaged, secondary, or failed environments", () => {
+    expect(
+      shouldQuietlyRecoverManagedPrimaryEnvironment({
+        managed: false,
+        activeEnvironmentId: environmentId,
+        primaryEnvironmentId: environmentId,
+        connectionPhase: "reconnecting",
+      }),
+    ).toBe(false);
+    expect(
+      shouldQuietlyRecoverManagedPrimaryEnvironment({
+        managed: true,
+        activeEnvironmentId: environmentId,
+        primaryEnvironmentId: EnvironmentId.make("environment-primary"),
+        connectionPhase: "reconnecting",
+      }),
+    ).toBe(false);
+    expect(
+      shouldQuietlyRecoverManagedPrimaryEnvironment({
+        managed: true,
+        activeEnvironmentId: environmentId,
+        primaryEnvironmentId: environmentId,
+        connectionPhase: "error",
+      }),
+    ).toBe(false);
+  });
+});
 
 function makeThread(overrides: Partial<Thread> = {}): Thread {
   return {

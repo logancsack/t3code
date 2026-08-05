@@ -105,22 +105,61 @@ export type EnvironmentRpcStreamFailure<TTag extends EnvironmentStreamRpcTag> =
     ? E
     : never;
 
-const currentSession = Effect.fn("EnvironmentRpc.currentSession")(function* () {
-  const supervisor = yield* EnvironmentSupervisor;
+function unavailableError(supervisor: EnvironmentSupervisor["Service"]) {
+  return new EnvironmentRpcUnavailableError({
+    environmentId: supervisor.target.environmentId,
+    message: `${supervisor.target.label} is not connected.`,
+  });
+}
+
+const currentSessionFor = Effect.fn("EnvironmentRpc.currentSessionFor")(function* (
+  supervisor: EnvironmentSupervisor["Service"],
+) {
   return yield* SubscriptionRef.get(supervisor.session).pipe(
     Effect.flatMap(
       Option.match({
-        onNone: () =>
-          Effect.fail(
-            new EnvironmentRpcUnavailableError({
-              environmentId: supervisor.target.environmentId,
-              message: `${supervisor.target.label} is not connected.`,
-            }),
-          ),
+        onNone: () => Effect.fail(unavailableError(supervisor)),
         onSome: Effect.succeed,
       }),
     ),
   );
+});
+
+const currentSession = Effect.fn("EnvironmentRpc.currentSession")(function* () {
+  return yield* currentSessionFor(yield* EnvironmentSupervisor);
+});
+
+const dispatchSession = Effect.fn("EnvironmentRpc.dispatchSession")(function* (
+  supervisor: EnvironmentSupervisor["Service"],
+) {
+  const activeSession = yield* SubscriptionRef.get(supervisor.session);
+  if (Option.isSome(activeSession)) return activeSession.value;
+
+  const state = yield* SubscriptionRef.get(supervisor.state);
+  const canReconnectPrimary =
+    supervisor.target._tag === "PrimaryConnectionTarget" &&
+    ["connecting", "backoff", "connected"].includes(state.phase);
+  if (!canReconnectPrimary) return yield* unavailableError(supervisor);
+
+  type DispatchSessionEvent =
+    | { readonly _tag: "Session"; readonly session: RpcSession }
+    | { readonly _tag: "Unavailable" };
+
+  const next = yield* Stream.merge(
+    SubscriptionRef.changes(supervisor.session).pipe(
+      Stream.filter(Option.isSome),
+      Stream.map((session): DispatchSessionEvent => ({ _tag: "Session", session: session.value })),
+    ),
+    SubscriptionRef.changes(supervisor.state).pipe(
+      Stream.filter((connection) => ["available", "offline", "blocked"].includes(connection.phase)),
+      Stream.map((): DispatchSessionEvent => ({ _tag: "Unavailable" })),
+    ),
+  ).pipe(Stream.runHead);
+
+  if (Option.isNone(next) || next.value._tag === "Unavailable") {
+    return yield* unavailableError(supervisor);
+  }
+  return next.value.session;
 });
 
 export const request = Effect.fn("EnvironmentRpc.request")(function* <
@@ -132,6 +171,26 @@ export const request = Effect.fn("EnvironmentRpc.request")(function* <
     "rpc.method": tag,
   });
   const session = yield* currentSession();
+  const observer = yield* EnvironmentRpcRequestObserver;
+  const method = session.client[tag] as (
+    input: EnvironmentRpcInput<TTag>,
+  ) => Effect.Effect<EnvironmentRpcSuccess<TTag>, EnvironmentRpcFailure<TTag>>;
+  const completeObservation = yield* observer.observe({
+    environmentId: supervisor.target.environmentId,
+    method: tag,
+  });
+  return yield* method(input).pipe(Effect.ensuring(completeObservation));
+});
+
+export const requestWhenConnected = Effect.fn("EnvironmentRpc.requestWhenConnected")(function* <
+  TTag extends EnvironmentUnaryRpcTag,
+>(tag: TTag, input: EnvironmentRpcInput<TTag>) {
+  const supervisor = yield* EnvironmentSupervisor;
+  yield* Effect.annotateCurrentSpan({
+    "environment.id": supervisor.target.environmentId,
+    "rpc.method": tag,
+  });
+  const session = yield* dispatchSession(supervisor);
   const observer = yield* EnvironmentRpcRequestObserver;
   const method = session.client[tag] as (
     input: EnvironmentRpcInput<TTag>,
