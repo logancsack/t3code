@@ -3,11 +3,21 @@ import {
   CodexSettings,
   CursorSettings,
   GrokSettings,
+  MuseSettings,
   OpenCodeSettings,
   ProviderDriverKind,
+  type ServerProvider,
 } from "@t3tools/contracts";
 import type * as Schema from "effect/Schema";
-import { ClaudeAI, CursorIcon, GrokIcon, type Icon, OpenAI, OpenCodeIcon } from "../Icons";
+import {
+  ClaudeAI,
+  CursorIcon,
+  GrokIcon,
+  type Icon,
+  MuseCodeIcon,
+  OpenAI,
+  OpenCodeIcon,
+} from "../Icons";
 
 type ProviderSettingsSchema = {
   readonly fields: Readonly<Record<string, Schema.Top>>;
@@ -62,6 +72,13 @@ export const PROVIDER_CLIENT_DEFINITIONS: readonly ProviderClientDefinition[] = 
     settingsSchema: GrokSettings,
   },
   {
+    value: ProviderDriverKind.make("muse"),
+    label: "Muse Code",
+    icon: MuseCodeIcon,
+    badgeLabel: "Beta",
+    settingsSchema: MuseSettings,
+  },
+  {
     value: ProviderDriverKind.make("opencode"),
     label: "OpenCode",
     icon: OpenCodeIcon,
@@ -78,6 +95,36 @@ export const PROVIDER_CLIENT_DEFINITION_BY_VALUE: Partial<
 export const DRIVER_OPTIONS = PROVIDER_CLIENT_DEFINITIONS;
 export const DRIVER_OPTION_BY_VALUE = PROVIDER_CLIENT_DEFINITION_BY_VALUE;
 export type DriverOption = ProviderClientDefinition;
+
+const MUSE_DRIVER_KIND = ProviderDriverKind.make("muse");
+
+type ProviderRuntimeSupportSnapshot = Pick<ServerProvider, "availability" | "driver">;
+
+/**
+ * Muse can be withheld by a managed server while remaining compiled into the
+ * shared client artifact. Only expose it when the server reports a concrete,
+ * available Muse instance. An unavailable shadow may come from stale settings
+ * and is not evidence that the driver can execute in this environment.
+ */
+export function isProviderDriverRuntimeSupported(
+  driver: ProviderDriverKind,
+  providers: ReadonlyArray<ProviderRuntimeSupportSnapshot>,
+): boolean {
+  return (
+    driver !== MUSE_DRIVER_KIND ||
+    providers.some(
+      (provider) => provider.driver === MUSE_DRIVER_KIND && provider.availability !== "unavailable",
+    )
+  );
+}
+
+export function runtimeSupportedDriverOptions(
+  providers: ReadonlyArray<ProviderRuntimeSupportSnapshot>,
+): ReadonlyArray<DriverOption> {
+  return DRIVER_OPTIONS.filter((option) =>
+    isProviderDriverRuntimeSupported(option.value, providers),
+  );
+}
 
 /**
  * Look up the driver metadata for an instance's `driver` field. Accepts

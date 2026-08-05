@@ -75,6 +75,13 @@ export class ServerConfig extends Context.Service<
     readonly noBrowser: boolean;
     readonly managedDevPc: boolean;
     /**
+     * Whether the Muse Code driver and its authentication connector are
+     * available in this server process. Standalone T3 Code enables the driver
+     * by default; managed deployments can explicitly withhold it while still
+     * running the same release artifact.
+     */
+    readonly museCodeEnabled: boolean;
+    /**
      * Shared only with Aldo's loopback workspace gateway. It authenticates
      * managed automation routes that are never exposed by standalone T3 Code.
      */
@@ -195,6 +202,7 @@ const makeTest = Effect.fn("ServerConfig.makeTest")(function* (
     devUrl,
     noBrowser: false,
     managedDevPc: false,
+    museCodeEnabled: true,
     startupPresentation: "browser",
   });
 });

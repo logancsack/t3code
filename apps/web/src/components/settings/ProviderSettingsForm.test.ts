@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
 import { ProviderDriverKind } from "@t3tools/contracts";
 
-import { DRIVER_OPTION_BY_VALUE } from "./providerDriverMeta";
+import {
+  DRIVER_OPTION_BY_VALUE,
+  isProviderDriverRuntimeSupported,
+  runtimeSupportedDriverOptions,
+} from "./providerDriverMeta";
 import {
   deriveProviderSettingsFields,
   nextProviderConfigWithFieldValue,
@@ -35,6 +39,39 @@ describe("ProviderSettingsForm helpers", () => {
       description: "Stored in plain text on disk.",
       control: "password",
     });
+  });
+
+  it("exposes the Muse Code CLI fields without surfacing internal model storage", () => {
+    const muse = DRIVER_OPTION_BY_VALUE[ProviderDriverKind.make("muse")];
+
+    expect(muse).toMatchObject({ label: "Muse Code", badgeLabel: "Beta" });
+    expect(deriveProviderSettingsFields(muse!).map((field) => field.key)).toEqual([
+      "binaryPath",
+      "launchArgs",
+    ]);
+  });
+
+  it("hides Muse when the server withholds it or reports only a stale unavailable shadow", () => {
+    const muse = ProviderDriverKind.make("muse");
+
+    expect(isProviderDriverRuntimeSupported(muse, [])).toBe(false);
+    expect(
+      isProviderDriverRuntimeSupported(muse, [{ driver: muse, availability: "unavailable" }]),
+    ).toBe(false);
+    expect(runtimeSupportedDriverOptions([]).map((option) => option.value)).not.toContain(muse);
+  });
+
+  it("shows Muse when the server registers a concrete Muse instance", () => {
+    const muse = ProviderDriverKind.make("muse");
+
+    expect(
+      isProviderDriverRuntimeSupported(muse, [{ driver: muse, availability: "available" }]),
+    ).toBe(true);
+    expect(
+      runtimeSupportedDriverOptions([{ driver: muse, availability: "available" }]).map(
+        (option) => option.value,
+      ),
+    ).toContain(muse);
   });
 
   it("preserves unknown config keys while omitting empty configurable fields", () => {

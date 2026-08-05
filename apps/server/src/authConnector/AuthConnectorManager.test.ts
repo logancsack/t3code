@@ -1,8 +1,36 @@
 import { describe, expect, it } from "@effect/vitest";
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 
-import { testHelpers } from "./AuthConnectorManager.ts";
+import { ServerConfig } from "../config.ts";
+import { start, testHelpers } from "./AuthConnectorManager.ts";
 
 describe("AuthConnectorManager output parsing", () => {
+  it.effect("rejects Muse authentication before spawning a process when Muse is withheld", () =>
+    Effect.gen(function* () {
+      const defaultConfig = yield* ServerConfig;
+      const error = yield* start({ connector: "muse", method: "account" }).pipe(
+        Effect.provideService(ServerConfig, {
+          ...defaultConfig,
+          museCodeEnabled: false,
+        }),
+        Effect.flip,
+      );
+
+      expect(error).toMatchObject({
+        operation: "start",
+        detail: "Muse Code is not available in this T3 Code environment.",
+      });
+    }).pipe(
+      Effect.provide(
+        ServerConfig.layerTest(process.cwd(), {
+          prefix: "t3-auth-connector-gate-test-",
+        }).pipe(Layer.provideMerge(NodeServices.layer)),
+      ),
+    ),
+  );
+
   it("extracts GitHub device authorization details", () => {
     const output = [
       "! First copy your one-time code: ABCD-1234",
@@ -35,6 +63,34 @@ describe("AuthConnectorManager output parsing", () => {
     );
   });
 
+  it("extracts Muse's Meta device authorization details", () => {
+    const output = [
+      "Open this page to sign in:",
+      "  https://auth.meta.com/oauth/device/?code=ZKWQ-XCBZ",
+      "confirm this code matches:",
+      "  ZKWQ-XCBZ",
+      "Waiting for approval…",
+    ].join("\n");
+
+    expect(testHelpers.extractUserCode(output)).toBe("ZKWQ-XCBZ");
+    expect(testHelpers.extractUrl(output)).toBe(
+      "https://auth.meta.com/oauth/device/?code=ZKWQ-XCBZ",
+    );
+    expect(
+      testHelpers.parseOutputForTest({
+        connector: "muse",
+        method: "account",
+        flow: "device",
+        output,
+      }).snapshot,
+    ).toMatchObject({
+      status: "waiting",
+      stage: "authorize",
+      verificationUrl: "https://auth.meta.com/oauth/device/?code=ZKWQ-XCBZ",
+      userCode: "ZKWQ-XCBZ",
+    });
+  });
+
   it("keeps Claude authorization query parameters intact", () => {
     const output =
       "If the browser did not open, visit: https://claude.com/cai/oauth/authorize?code=true&state=opaque";
@@ -42,6 +98,13 @@ describe("AuthConnectorManager output parsing", () => {
     expect(testHelpers.extractUrl(output)).toBe(
       "https://claude.com/cai/oauth/authorize?code=true&state=opaque",
     );
+  });
+
+  it("rejects lookalike authentication hosts", () => {
+    expect(
+      testHelpers.extractUrl("Open https://auth.meta.com.evil.example/oauth/device to continue"),
+    ).toBeNull();
+    expect(testHelpers.extractUrl("Open http://auth.meta.com/oauth/device to continue")).toBeNull();
   });
 
   it("extracts Microsoft device authorization details for Azure DevOps", () => {
@@ -87,6 +150,37 @@ describe("AuthConnectorManager output parsing", () => {
 
     expect(spec?.env).toEqual({ TERM: "dumb" });
     expect(spec?.ptyName).toBe("dumb");
+  });
+
+  it("starts Muse account login with its device flow", () => {
+    expect(
+      testHelpers.launchSpec({
+        connector: "muse",
+        method: "account",
+      }),
+    ).toMatchObject({
+      command: "muse",
+      args: ["login"],
+      flow: "device",
+    });
+  });
+
+  it("starts Muse API-key login through stdin", () => {
+    expect(
+      testHelpers.launchSpec({
+        connector: "muse",
+        method: "api-key",
+      }),
+    ).toMatchObject({
+      command: "muse",
+      args: ["auth", "set", "--provider", "meta", "--api-key-stdin"],
+      flow: "secret",
+      fields: [{ key: "secret", type: "password" }],
+    });
+    expect(testHelpers.secretInputTerminator({ connector: "muse", method: "api-key" })).toBe(
+      "\r\u0004",
+    );
+    expect(testHelpers.secretInputTerminator({ connector: "codex", method: "api-key" })).toBe("\r");
   });
 
   it("accepts Claude's full callback URL or short authorization code", () => {
