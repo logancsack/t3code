@@ -51,6 +51,16 @@ describe("ProviderSettingsForm helpers", () => {
     ]);
   });
 
+  it("exposes Prime Agent as an experimental provider with its ACP launch fields", () => {
+    const primeAgent = DRIVER_OPTION_BY_VALUE[ProviderDriverKind.make("primeAgent")];
+
+    expect(primeAgent).toMatchObject({ label: "Prime Agent", badgeLabel: "Experimental" });
+    expect(deriveProviderSettingsFields(primeAgent!).map((field) => field.key)).toEqual([
+      "binaryPath",
+      "launchArgs",
+    ]);
+  });
+
   it("hides Muse when the server withholds it or reports only a stale unavailable shadow", () => {
     const muse = ProviderDriverKind.make("muse");
 

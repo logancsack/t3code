@@ -6,6 +6,7 @@ import * as Option from "effect/Option";
 import * as Schedule from "effect/Schedule";
 
 import { ProjectionSnapshotQuery } from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
+import { hasRunningPrimeAgentSubagentsForThread } from "../PrimeAgentActivity.ts";
 import { ProviderSessionDirectory } from "../Services/ProviderSessionDirectory.ts";
 import {
   ProviderSessionReaper,
@@ -65,6 +66,15 @@ const makeProviderSessionReaper = (options?: ProviderSessionReaperLiveOptions) =
           yield* Effect.logDebug("provider.session.reaper.skipped-active-turn", {
             threadId: binding.threadId,
             activeTurnId: thread.session.activeTurnId,
+            idleDurationMs,
+          });
+          continue;
+        }
+
+        if (hasRunningPrimeAgentSubagentsForThread(binding.threadId, binding.providerInstanceId)) {
+          yield* Effect.logDebug("provider.session.reaper.skipped-prime-subagents", {
+            threadId: binding.threadId,
+            providerInstanceId: binding.providerInstanceId,
             idleDurationMs,
           });
           continue;

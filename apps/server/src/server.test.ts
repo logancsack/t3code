@@ -390,6 +390,8 @@ const buildAppUnderTest = (options?: {
       ...options?.config,
       managedDevPc: options?.config?.managedDevPc ?? false,
       museCodeEnabled: options?.config?.museCodeEnabled ?? true,
+      primeAgentSubscriptionOAuthEnabled:
+        options?.config?.primeAgentSubscriptionOAuthEnabled ?? false,
     };
     const layerConfig = ServerConfig.layer(config);
     const defaultVcsDriver: VcsDriver.VcsDriver["Service"] = {

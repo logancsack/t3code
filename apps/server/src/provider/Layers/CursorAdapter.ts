@@ -790,6 +790,8 @@ export function makeCursorAdapter(
                     yield* Deferred.succeed(event.acknowledge, undefined);
                     return;
                   case "ModeChanged":
+                  case "ThoughtDelta":
+                  case "SessionInfoUpdated":
                     return;
                   case "AssistantItemStarted":
                     yield* offerRuntimeEvent(

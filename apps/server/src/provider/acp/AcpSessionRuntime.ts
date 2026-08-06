@@ -68,7 +68,12 @@ export interface AcpSessionRuntimeOptions {
     readonly name: string;
     readonly version: string;
   };
-  readonly authMethodId: string;
+  /**
+   * Authentication method to request after initialization. Omit for agents
+   * whose credentials are resolved before ACP starts and which do not expose
+   * the optional `authenticate` method.
+   */
+  readonly authMethodId?: string;
   readonly mcpServers?: ReadonlyArray<EffectAcpSchema.McpServer>;
   readonly requestLogger?: (event: AcpSessionRequestLogEvent) => Effect.Effect<void, never>;
   readonly protocolLogging?: {
@@ -175,12 +180,17 @@ export class AcpSessionRuntime extends Context.Service<
      */
     readonly handleExtNotification: EffectAcpClient.AcpClient["Service"]["handleExtNotification"];
     /**
-     * Initializes the ACP connection, authenticates, and loads, resumes, or creates the session.
+     * Initializes the ACP connection, optionally authenticates, and loads,
+     * resumes, or creates the session according to negotiated capabilities.
      * Concurrent calls share the same in-flight startup and a failed startup may be retried.
      */
     readonly start: () => Effect.Effect<AcpSessionRuntimeStartResult, EffectAcpErrors.AcpError>;
     /** Stream of parsed ACP session events emitted after startup. */
     readonly getEvents: () => Stream.Stream<AcpSessionRuntimeEvent, never>;
+    /** Completes when the underlying ACP child exits. */
+    readonly processExit: Effect.Effect<number, EffectAcpErrors.AcpError>;
+    /** Checks whether the underlying ACP child is still running. */
+    readonly isProcessRunning: Effect.Effect<boolean, EffectAcpErrors.AcpError>;
     /** Waits until the current event consumer has processed every queued event. */
     readonly drainEvents: Effect.Effect<void>;
     /** Latest mode state observed from session setup and `session/update` notifications. */
@@ -352,6 +362,17 @@ export const make = (
             }),
         ),
       );
+    const processExit = child.exitCode.pipe(
+      Effect.map(Number),
+      Effect.mapError(
+        (cause) =>
+          new EffectAcpErrors.AcpTransportError({
+            operation: "read-process-exit-status",
+            detail: "Failed while waiting for the ACP child process to exit.",
+            cause,
+          }),
+      ),
+    );
 
     const acpContext = yield* Layer.build(
       EffectAcpClient.layerChildProcess(child, {
@@ -541,22 +562,24 @@ export const make = (
         acp.agent.initialize(initializePayload),
       );
 
-      const authenticatePayload = {
-        methodId: options.authMethodId,
-      } satisfies EffectAcpSchema.AuthenticateRequest;
+      if (options.authMethodId !== undefined) {
+        const authenticatePayload = {
+          methodId: options.authMethodId,
+        } satisfies EffectAcpSchema.AuthenticateRequest;
 
-      yield* runLoggedRequest(
-        "authenticate",
-        authenticatePayload,
-        acp.agent.authenticate(authenticatePayload),
-      );
+        yield* runLoggedRequest(
+          "authenticate",
+          authenticatePayload,
+          acp.agent.authenticate(authenticatePayload),
+        );
+      }
 
       let sessionId: string;
       let sessionSetupResult:
         | EffectAcpSchema.LoadSessionResponse
         | EffectAcpSchema.NewSessionResponse
         | EffectAcpSchema.ResumeSessionResponse;
-      if (options.resumeSessionId) {
+      if (options.resumeSessionId && initializeResult.agentCapabilities?.loadSession === true) {
         const loadPayload = {
           sessionId: options.resumeSessionId,
           cwd: options.cwd,
@@ -706,13 +729,27 @@ export const make = (
       handleExtNotification: acp.handleExtNotification,
       start: () => start,
       getEvents: () => Stream.fromQueue(eventQueue),
+      processExit,
+      isProcessRunning: child.isRunning.pipe(
+        Effect.mapError(
+          (cause) =>
+            new EffectAcpErrors.AcpTransportError({
+              operation: "read-process-exit-status",
+              detail: "Failed to inspect the ACP child process state.",
+              cause,
+            }),
+        ),
+      ),
       drainEvents: Effect.gen(function* () {
         const acknowledge = yield* Deferred.make<void>();
         yield* Queue.offer(eventQueue, {
           _tag: "EventStreamBarrier",
           acknowledge,
         });
-        yield* Deferred.await(acknowledge);
+        yield* Effect.raceFirst(
+          Deferred.await(acknowledge),
+          processExit.pipe(Effect.ignore, Effect.asVoid),
+        ).pipe(Effect.timeoutOption("5 seconds"), Effect.asVoid);
       }),
       getModeState: Ref.get(modeStateRef),
       getConfigOptions: Ref.get(configOptionsRef),

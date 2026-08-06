@@ -21,6 +21,10 @@ import { ProjectionSnapshotQuery } from "../../orchestration/Services/Projection
 import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
 import * as ProviderSessionRuntime from "../../persistence/ProviderSessionRuntime.ts";
 import { ProviderValidationError } from "../Errors.ts";
+import {
+  clearPrimeAgentSessionActivity,
+  updatePrimeAgentSubagentActivity,
+} from "../PrimeAgentActivity.ts";
 import { ProviderSessionReaper } from "../Services/ProviderSessionReaper.ts";
 import { ProviderService, type ProviderServiceShape } from "../Services/ProviderService.ts";
 import { ProviderSessionDirectoryLive } from "./ProviderSessionDirectory.ts";
@@ -30,6 +34,7 @@ const defaultModelSelection = {
   instanceId: ProviderInstanceId.make("codex"),
   model: "gpt-5-codex",
 } as const;
+const primeActivityKey = "provider-reaper-prime-session";
 
 async function waitFor(
   predicate: () => boolean | Promise<boolean>,
@@ -62,7 +67,7 @@ function makeReadModel(
     readonly session: {
       readonly threadId: ThreadId;
       readonly status: "starting" | "running" | "ready" | "interrupted" | "stopped" | "error";
-      readonly providerName: "codex" | "claudeAgent";
+      readonly providerName: "codex" | "claudeAgent" | "primeAgent";
       readonly runtimeMode: "approval-required" | "full-access" | "auto-accept-edits";
       readonly activeTurnId: TurnId | null;
       readonly lastError: string | null;
@@ -125,6 +130,7 @@ describe("ProviderSessionReaper", () => {
   let scope: Scope.Closeable | null = null;
 
   afterEach(async () => {
+    clearPrimeAgentSessionActivity(primeActivityKey);
     if (scope) {
       await Effect.runPromise(Scope.close(scope, Exit.void));
     }
@@ -262,7 +268,7 @@ describe("ProviderSessionReaper", () => {
 
     const reaper = await runtime!.runPromise(Effect.service(ProviderSessionReaper));
     scope = await Effect.runPromise(Scope.make("sequential"));
-    await Effect.runPromise(reaper.start().pipe(Scope.provide(scope)));
+    await runtime!.runPromise(reaper.start().pipe(Scope.provide(scope)));
 
     await waitFor(() => harness.stopSession.mock.calls.length === 1);
 
@@ -311,13 +317,71 @@ describe("ProviderSessionReaper", () => {
     );
 
     const reaper = await runtime!.runPromise(Effect.service(ProviderSessionReaper));
-    scope = await Effect.runPromise(Scope.make("sequential"));
-    await Effect.runPromise(reaper.start().pipe(Scope.provide(scope)));
+    scope = await runtime!.runPromise(Scope.make("sequential"));
+    await runtime!.runPromise(reaper.start().pipe(Scope.provide(scope)));
     await Effect.runPromise(drainFibers);
 
     expect(harness.stopSession).not.toHaveBeenCalled();
     const remaining = await runtime!.runPromise(repository.getByThreadId({ threadId }));
     expect(Option.isSome(remaining)).toBe(true);
+  });
+
+  it("does not reap a stale Prime root while a detached subagent is running", async () => {
+    const threadId = ThreadId.make("thread-reaper-prime-subagent");
+    const providerInstanceId = ProviderInstanceId.make("primeAgent");
+    const now = "2026-01-01T00:00:00.000Z";
+    const harness = await createHarness({
+      readModel: makeReadModel([
+        {
+          id: threadId,
+          session: {
+            threadId,
+            status: "ready",
+            providerName: "primeAgent",
+            runtimeMode: "full-access",
+            activeTurnId: null,
+            lastError: null,
+            updatedAt: now,
+          },
+        },
+      ]),
+    });
+    const repository = await runtime!.runPromise(
+      Effect.service(ProviderSessionRuntime.ProviderSessionRuntimeRepository),
+    );
+
+    await runtime!.runPromise(
+      repository.upsert({
+        threadId,
+        providerName: "primeAgent",
+        providerInstanceId,
+        adapterKey: "primeAgent",
+        runtimeMode: "full-access",
+        status: "running",
+        lastSeenAt: "2026-04-14T00:00:00.000Z",
+        resumeCursor: { schemaVersion: 1, sessionKey: "a".repeat(64) },
+        runtimePayload: null,
+      }),
+    );
+    updatePrimeAgentSubagentActivity(
+      primeActivityKey,
+      {
+        "ai.primeintellect.prime-agent": {
+          subagents: [{ id: "detached-child", status: "running" }],
+        },
+      },
+      { threadId, providerInstanceId },
+    );
+
+    const reaper = await runtime!.runPromise(Effect.service(ProviderSessionReaper));
+    scope = await Effect.runPromise(Scope.make("sequential"));
+    await Effect.runPromise(reaper.start().pipe(Scope.provide(scope)));
+    await Effect.runPromise(drainFibers);
+
+    expect(harness.stopSession).not.toHaveBeenCalled();
+    expect(Option.isSome(await runtime!.runPromise(repository.getByThreadId({ threadId })))).toBe(
+      true,
+    );
   });
 
   it("does not reap sessions that are still within the inactivity threshold", async () => {

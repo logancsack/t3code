@@ -13,7 +13,9 @@ import type * as AcpSchema from "effect-acp/schema";
 
 const requestLogPath = process.env.T3_ACP_REQUEST_LOG_PATH;
 const exitLogPath = process.env.T3_ACP_EXIT_LOG_PATH;
+const supportsLoadSession = process.env.T3_ACP_SUPPORTS_LOAD_SESSION !== "0";
 const emitToolCalls = process.env.T3_ACP_EMIT_TOOL_CALLS === "1";
+const emitPrimeUpdates = process.env.T3_ACP_EMIT_PRIME_UPDATES === "1";
 const emitInterleavedAssistantToolCalls =
   process.env.T3_ACP_EMIT_INTERLEAVED_ASSISTANT_TOOL_CALLS === "1";
 const emitGenericToolPlaceholders = process.env.T3_ACP_EMIT_GENERIC_TOOL_PLACEHOLDERS === "1";
@@ -36,6 +38,8 @@ const emitStaleXAiPromptCompleteBeforeSecondHang =
 const emitOverlappingXAiPromptCompleteOutOfOrder =
   process.env.T3_ACP_EMIT_OVERLAPPING_XAI_PROMPT_COMPLETE_OUT_OF_ORDER === "1";
 const failPrompt = process.env.T3_ACP_FAIL_PROMPT === "1";
+const exitDuringPrompt = process.env.T3_ACP_EXIT_DURING_PROMPT === "1";
+const exitAfterCreateSession = process.env.T3_ACP_EXIT_AFTER_CREATE_SESSION === "1";
 const failSetConfigOption = process.env.T3_ACP_FAIL_SET_CONFIG_OPTION === "1";
 const exitOnSetConfigOption = process.env.T3_ACP_EXIT_ON_SET_CONFIG_OPTION === "1";
 const promptResponseText = process.env.T3_ACP_PROMPT_RESPONSE_TEXT;
@@ -302,7 +306,7 @@ const program = Effect.gen(function* () {
         request.clientCapabilities?._meta?.parameterizedModelPicker === true;
       return {
         protocolVersion: 1,
-        agentCapabilities: { loadSession: true },
+        agentCapabilities: { loadSession: supportsLoadSession },
       };
     }),
   );
@@ -310,11 +314,21 @@ const program = Effect.gen(function* () {
   yield* agent.handleAuthenticate(() => Effect.succeed({}));
 
   yield* agent.handleCreateSession(() =>
-    Effect.succeed({
-      sessionId,
-      modes: modeState(),
-      models: modelState(),
-      configOptions: configOptions(),
+    Effect.gen(function* () {
+      if (exitAfterCreateSession) {
+        yield* Effect.sleep("1 millis").pipe(
+          Effect.andThen(Effect.sync(() => process.exit(9))),
+          // The session request fiber completes as soon as this handler
+          // returns, so the startup-exit probe must outlive that child scope.
+          Effect.forkDetach,
+        );
+      }
+      return {
+        sessionId,
+        modes: modeState(),
+        models: modelState(),
+        configOptions: configOptions(),
+      };
     }),
   );
 
@@ -463,6 +477,76 @@ const program = Effect.gen(function* () {
 
       if (failPrompt) {
         return yield* AcpError.AcpRequestError.internalError("Mock prompt failure");
+      }
+      if (exitDuringPrompt) {
+        return yield* Effect.sync(() => process.exit(7));
+      }
+
+      if (emitPrimeUpdates) {
+        writeJsonRpcNotification("session/update", {
+          sessionId: requestedSessionId,
+          update: {
+            sessionUpdate: "agent_thought_chunk",
+            content: { type: "text", text: "prime mock reasoning" },
+          },
+        });
+        writeJsonRpcNotification("session/update", {
+          sessionId: requestedSessionId,
+          update: {
+            sessionUpdate: "session_info_update",
+            _meta: {
+              "ai.primeintellect.prime-agent": {
+                subagents: [{ id: "prime-child-1", status: "running" }],
+              },
+            },
+          },
+        });
+        writeJsonRpcNotification("session/update", {
+          sessionId: requestedSessionId,
+          update: {
+            sessionUpdate: "tool_call",
+            toolCallId: "prime-tool-1",
+            title: "Prime mock tool",
+            kind: "execute",
+            status: "pending",
+            rawInput: { command: ["echo", "prime"] },
+          },
+        });
+        writeJsonRpcNotification("session/update", {
+          sessionId: requestedSessionId,
+          update: {
+            sessionUpdate: "tool_call_update",
+            toolCallId: "prime-tool-1",
+            status: "completed",
+            rawOutput: { exitCode: 0, stdout: "prime", stderr: "" },
+          },
+        });
+        writeJsonRpcNotification("session/update", {
+          sessionId: requestedSessionId,
+          update: {
+            sessionUpdate: "agent_message_chunk",
+            content: { type: "text", text: "hello from prime mock" },
+          },
+        });
+        yield* Effect.sleep("25 millis").pipe(
+          Effect.andThen(
+            Effect.sync(() => {
+              writeJsonRpcNotification("session/update", {
+                sessionId: requestedSessionId,
+                update: {
+                  sessionUpdate: "session_info_update",
+                  _meta: {
+                    "ai.primeintellect.prime-agent": {
+                      subagents: [{ id: "prime-child-1", status: "done" }],
+                    },
+                  },
+                },
+              });
+            }),
+          ),
+          Effect.forkChild,
+        );
+        return { stopReason: "end_turn" };
       }
 
       if (emitStaleXAiPromptCompleteBeforeSecondHang && promptCount === 1) {

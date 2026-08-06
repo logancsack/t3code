@@ -5,6 +5,7 @@ import {
   ProviderDriverKind,
   type ModelCapabilities,
   type ProviderInstanceId,
+  type RuntimeMode,
   type ServerProvider,
   type ServerProviderModel,
 } from "@t3tools/contracts";
@@ -14,6 +15,12 @@ const EMPTY_CAPABILITIES: ModelCapabilities = createModelCapabilities({
   optionDescriptors: [],
 });
 const DEFAULT_DRIVER_KIND = ProviderDriverKind.make("codex");
+export const ALL_RUNTIME_MODES = [
+  "approval-required",
+  "auto-accept-edits",
+  "auto",
+  "full-access",
+] as const satisfies ReadonlyArray<RuntimeMode>;
 
 export function formatProviderDriverKindLabel(provider: ProviderDriverKind): string {
   return provider
@@ -51,6 +58,23 @@ export function getProviderInteractionModeToggle(
   provider: ProviderDriverKind,
 ): boolean {
   return getProviderSnapshot(providers, provider)?.showInteractionModeToggle ?? true;
+}
+
+type RuntimeModeProviderCapability = Pick<ServerProvider, "supportedRuntimeModes">;
+
+export function getProviderSupportedRuntimeModes(
+  provider: RuntimeModeProviderCapability | null | undefined,
+): ReadonlyArray<RuntimeMode> {
+  const configured = provider?.supportedRuntimeModes;
+  return configured && configured.length > 0 ? configured : ALL_RUNTIME_MODES;
+}
+
+export function coerceProviderRuntimeMode(
+  provider: RuntimeModeProviderCapability | null | undefined,
+  runtimeMode: RuntimeMode,
+): RuntimeMode {
+  const supported = getProviderSupportedRuntimeModes(provider);
+  return supported.includes(runtimeMode) ? runtimeMode : (supported[0] ?? "full-access");
 }
 
 export function isProviderEnabled(

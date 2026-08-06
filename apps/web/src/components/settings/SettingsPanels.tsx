@@ -62,6 +62,7 @@ import {
 } from "../../providerInstances";
 import { ensureLocalApi, readLocalApi } from "../../localApi";
 import {
+  primaryServerConfigAtom,
   primaryServerObservabilityAtom,
   primaryServerProvidersAtom,
   serverEnvironment,
@@ -86,7 +87,7 @@ import {
 } from "../ProviderUpdateLaunchNotification.logic";
 import { ProviderInstanceCard } from "./ProviderInstanceCard";
 import { AuthConnectorDialog } from "./AuthConnectorDialog";
-import { AGENT_AUTH_METHODS } from "./authConnectorMethods";
+import { resolveAgentAuthMethods } from "./authConnectorMethods";
 import {
   DRIVER_OPTIONS,
   getDriverOption,
@@ -1111,6 +1112,7 @@ export function ProviderSettingsPanel() {
   const settings = usePrimarySettings();
   const updateSettings = useUpdatePrimarySettings();
   const serverProviders = useAtomValue(primaryServerProvidersAtom);
+  const serverConfig = useAtomValue(primaryServerConfigAtom);
   const primaryEnvironment = usePrimaryEnvironment();
   const refreshServerProviders = useAtomCommand(serverEnvironment.refreshProviders, {
     reportFailure: false,
@@ -1477,7 +1479,10 @@ export function ProviderSettingsPanel() {
             favorite.provider === row.instanceId ? Result.succeed(favorite.model) : Result.failVoid,
           );
           const resetLabel = driverOption?.label ?? String(row.driver);
-          const authConnector = AGENT_AUTH_METHODS[row.driver];
+          const authConnector = resolveAgentAuthMethods(
+            row.driver,
+            serverConfig?.environment.capabilities.primeAgentSubscriptionOAuth === true,
+          );
           const headerAction =
             row.isDefault && row.isDirty ? (
               <SettingResetButton
@@ -1520,6 +1525,7 @@ export function ProviderSettingsPanel() {
                     connector={authConnector.connector}
                     serviceName={authConnector.serviceName}
                     methods={authConnector.methods}
+                    providerInstanceId={row.instanceId}
                     isAuthenticated={liveProvider?.auth.status === "authenticated"}
                     onConnected={refreshProviders}
                   />
