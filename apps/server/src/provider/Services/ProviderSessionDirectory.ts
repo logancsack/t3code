@@ -45,6 +45,16 @@ export interface ProviderSessionDirectoryShape {
     binding: ProviderRuntimeBinding,
   ) => Effect.Effect<void, ProviderSessionDirectoryWriteError>;
 
+  /**
+   * Persist turn metadata only while the routed session is still active and
+   * owned by the same provider instance and session generation. Returns false
+   * when a concurrent stop or replacement won the race.
+   */
+  readonly upsertIfActive: (
+    binding: ProviderRuntimeBinding,
+    expected: { readonly sessionGeneration: string | null },
+  ) => Effect.Effect<boolean, ProviderSessionDirectoryWriteError>;
+
   readonly getProvider: (
     threadId: ThreadId,
   ) => Effect.Effect<ProviderDriverKind, ProviderSessionDirectoryReadError>;

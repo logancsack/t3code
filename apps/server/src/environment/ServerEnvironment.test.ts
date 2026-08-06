@@ -46,6 +46,7 @@ const makeServerConfig = Effect.fn(function* (baseDir: string) {
     devAllowedOrigins: [],
     noBrowser: false,
     managedDevPc: false,
+    museCodeEnabled: true,
     startupPresentation: "browser",
   } satisfies ServerConfig.ServerConfig["Service"];
 });

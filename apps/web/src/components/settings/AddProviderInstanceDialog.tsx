@@ -1,6 +1,7 @@
 "use client";
 
 import { Radio as RadioPrimitive } from "@base-ui/react/radio";
+import { useAtomValue } from "@effect/atom-react";
 import { CheckIcon } from "lucide-react";
 import { useMemo, useState } from "react";
 import {
@@ -13,6 +14,7 @@ import {
 import { useEnvironmentSettings, useUpdateEnvironmentSettings } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
 import { normalizeProviderAccentColor } from "../../providerInstances";
+import { EMPTY_SERVER_PROVIDERS, serverEnvironment } from "../../state/server";
 import { Button } from "../ui/button";
 import { ACPRegistryIcon, Gemini, GithubCopilotIcon, PiAgentIcon, type Icon } from "../Icons";
 import {
@@ -27,7 +29,11 @@ import { Badge } from "../ui/badge";
 import { Input } from "../ui/input";
 import { RadioGroup } from "../ui/radio-group";
 import { toastManager } from "../ui/toast";
-import { DRIVER_OPTION_BY_VALUE, DRIVER_OPTIONS } from "./providerDriverMeta";
+import {
+  DRIVER_OPTION_BY_VALUE,
+  DRIVER_OPTIONS,
+  runtimeSupportedDriverOptions,
+} from "./providerDriverMeta";
 import { ProviderSettingsForm, deriveProviderSettingsFields } from "./ProviderSettingsForm";
 import { AnimatedHeight } from "../AnimatedHeight";
 import {
@@ -130,6 +136,9 @@ export function AddProviderInstanceDialog({
 }: AddProviderInstanceDialogProps) {
   const settings = useEnvironmentSettings(environmentId);
   const updateSettings = useUpdateEnvironmentSettings(environmentId);
+  const serverProviders =
+    useAtomValue(serverEnvironment.configValueAtom(environmentId))?.providers ??
+    EMPTY_SERVER_PROVIDERS;
 
   const [wizardStep, setWizardStep] = useState(0);
   const [driver, setDriver] = useState<ProviderDriverKind>(DEFAULT_DRIVER_KIND);
@@ -146,6 +155,10 @@ export function AddProviderInstanceDialog({
   const existingIds = useMemo(
     () => new Set(Object.keys(settings.providerInstances ?? {})),
     [settings.providerInstances],
+  );
+  const driverOptions = useMemo(
+    () => runtimeSupportedDriverOptions(serverProviders),
+    [serverProviders],
   );
 
   const driverOption = DRIVER_OPTION_BY_VALUE[driver] ?? DEFAULT_DRIVER_OPTION;
@@ -261,7 +274,7 @@ export function AddProviderInstanceDialog({
                   aria-labelledby="add-instance-driver-label"
                   className="grid grid-cols-1 gap-2 sm:grid-cols-2"
                 >
-                  {DRIVER_OPTIONS.map((option) => {
+                  {driverOptions.map((option) => {
                     const IconComponent = option.icon;
                     return (
                       <RadioPrimitive.Root

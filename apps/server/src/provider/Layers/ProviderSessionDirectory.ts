@@ -4,6 +4,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import * as Semaphore from "effect/Semaphore";
 
 import * as ProviderSessionRuntime from "../../persistence/ProviderSessionRuntime.ts";
 import { ProviderSessionDirectoryPersistenceError, ProviderValidationError } from "../Errors.ts";
@@ -57,6 +58,14 @@ function mergeRuntimePayload(
   return next;
 }
 
+function readSessionGeneration(runtimePayload: unknown | null): string | null {
+  if (!isRecord(runtimePayload)) return null;
+  const generation = runtimePayload.sessionGeneration;
+  if (typeof generation !== "string") return null;
+  const trimmed = generation.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 function toRuntimeBinding(
   runtime: ProviderSessionRuntime.ProviderSessionRuntime,
   operation: string,
@@ -85,6 +94,7 @@ function toRuntimeBinding(
 
 const makeProviderSessionDirectory = Effect.gen(function* () {
   const repository = yield* ProviderSessionRuntime.ProviderSessionRuntimeRepository;
+  const writeLock = yield* Semaphore.make(1);
 
   const getBinding = (threadId: ThreadId) =>
     repository.getByThreadId({ threadId }).pipe(
@@ -100,7 +110,7 @@ const makeProviderSessionDirectory = Effect.gen(function* () {
       ),
     );
 
-  const upsert: ProviderSessionDirectoryShape["upsert"] = Effect.fn(function* (binding) {
+  const upsertUnlocked: ProviderSessionDirectoryShape["upsert"] = Effect.fn(function* (binding) {
     const existing = yield* repository
       .getByThreadId({ threadId: binding.threadId })
       .pipe(Effect.mapError(toPersistenceError("ProviderSessionDirectory.upsert:getByThreadId")));
@@ -148,6 +158,51 @@ const makeProviderSessionDirectory = Effect.gen(function* () {
       .pipe(Effect.mapError(toPersistenceError("ProviderSessionDirectory.upsert:upsert")));
   });
 
+  const upsert: ProviderSessionDirectoryShape["upsert"] = (binding) =>
+    writeLock.withPermit(upsertUnlocked(binding));
+
+  const upsertIfActive: ProviderSessionDirectoryShape["upsertIfActive"] = (binding, expected) =>
+    writeLock.withPermit(
+      Effect.gen(function* () {
+        const existing = yield* repository
+          .getByThreadId({ threadId: binding.threadId })
+          .pipe(
+            Effect.mapError(
+              toPersistenceError("ProviderSessionDirectory.upsertIfActive:getByThreadId"),
+            ),
+          );
+        const current = Option.getOrUndefined(existing);
+        const expectedInstanceId = binding.providerInstanceId;
+        if (expectedInstanceId === undefined) {
+          return yield* new ProviderValidationError({
+            operation: "ProviderSessionDirectory.upsertIfActive",
+            issue: "providerInstanceId is required for conditional provider session updates.",
+          });
+        }
+        const currentInstanceId = current
+          ? (current.providerInstanceId ??
+            defaultInstanceIdForDriver(
+              yield* decodeProviderDriverKind(
+                current.providerName,
+                "ProviderSessionDirectory.upsertIfActive",
+              ),
+            ))
+          : undefined;
+        if (
+          current === undefined ||
+          current.status === "stopped" ||
+          current.providerName !== binding.provider ||
+          currentInstanceId !== expectedInstanceId ||
+          readSessionGeneration(current.runtimePayload) !== expected.sessionGeneration
+        ) {
+          return false;
+        }
+
+        yield* upsertUnlocked(binding);
+        return true;
+      }),
+    );
+
   const getProvider: ProviderSessionDirectoryShape["getProvider"] = (threadId) =>
     getBinding(threadId).pipe(
       Effect.flatMap((binding) =>
@@ -184,6 +239,7 @@ const makeProviderSessionDirectory = Effect.gen(function* () {
 
   return {
     upsert,
+    upsertIfActive,
     getProvider,
     getBinding,
     listThreadIds,

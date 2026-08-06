@@ -74,7 +74,11 @@ import { AddProviderInstanceDialog } from "./AddProviderInstanceDialog";
 import { AuthConnectorDialog } from "./AuthConnectorDialog";
 import { AGENT_AUTH_METHODS } from "./authConnectorMethods";
 import { ProviderInstanceCard } from "./ProviderInstanceCard";
-import { DRIVER_OPTIONS, getDriverOption } from "./providerDriverMeta";
+import {
+  DRIVER_OPTIONS,
+  getDriverOption,
+  isProviderDriverRuntimeSupported,
+} from "./providerDriverMeta";
 import { searchableSetting } from "./settingsSearch";
 import {
   backgroundActivityOverrideSettings,
@@ -398,11 +402,12 @@ export function EnvironmentProviderSettings({
   );
   const visibleProviderSettings = PROVIDER_SETTINGS.filter(
     (providerSettings) =>
-      providerSettings.provider !== "cursor" ||
-      serverProviders.some(
-        (provider) =>
-          provider.instanceId === defaultInstanceIdForDriver(ProviderDriverKind.make("cursor")),
-      ),
+      isProviderDriverRuntimeSupported(providerSettings.provider, serverProviders) &&
+      (providerSettings.provider !== "cursor" ||
+        serverProviders.some(
+          (provider) =>
+            provider.instanceId === defaultInstanceIdForDriver(ProviderDriverKind.make("cursor")),
+        )),
   );
   const textGenerationModelSelection = resolveAppModelSelectionState(settings, serverProviders);
   const textGenInstanceId = textGenerationModelSelection.instanceId;
@@ -560,6 +565,7 @@ export function EnvironmentProviderSettings({
   }
   for (const [driver, list] of instancesByDriver) {
     if (visibleDriverKinds.has(driver)) continue;
+    if (!isProviderDriverRuntimeSupported(driver, serverProviders)) continue;
     for (const [id, instance] of list) {
       rows.push({
         instanceId: id,

@@ -120,6 +120,10 @@ const EnvServerConfig = Config.all({
     Config.map(Option.getOrUndefined),
   ),
   managedDevPc: Config.boolean("T3CODE_MANAGED_DEVPC").pipe(Config.withDefault(false)),
+  museCodeEnabled: Config.boolean("T3CODE_MUSE_ENABLED").pipe(
+    Config.option,
+    Config.map(Option.getOrUndefined),
+  ),
   managedGatewayToken: Config.string("WORKSPACE_GATEWAY_TOKEN").pipe(
     Config.option,
     Config.map(Option.getOrUndefined),
@@ -383,6 +387,7 @@ export const resolveServerConfig = (
       devAllowedOrigins: env.devAllowedOrigins,
       noBrowser,
       managedDevPc: env.managedDevPc,
+      museCodeEnabled: env.museCodeEnabled ?? !env.managedDevPc,
       managedGatewayToken: env.managedGatewayToken,
       startupPresentation,
       desktopBootstrapToken,

@@ -175,6 +175,35 @@ describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
   });
 });
 
+describe("Muse Code provider settings", () => {
+  it("defaults to the Muse CLI and keeps optional configuration empty", () => {
+    const muse = decodeServerSettings({}).providers.muse;
+
+    expect(muse).toEqual({
+      enabled: true,
+      binaryPath: "muse",
+      launchArgs: "",
+      customModels: [],
+    });
+  });
+
+  it("trims Muse CLI settings in partial updates", () => {
+    const patch = decodeServerSettingsPatch({
+      providers: {
+        muse: {
+          binaryPath: "  /opt/aldo/bin/muse  ",
+          launchArgs: "  --reasoning-effort ultra  ",
+        },
+      },
+    });
+
+    expect(patch.providers?.muse).toEqual({
+      binaryPath: "/opt/aldo/bin/muse",
+      launchArgs: "--reasoning-effort ultra",
+    });
+  });
+});
+
 describe("ServerSettings worktree defaults", () => {
   it("defaults start-from-origin on for legacy configs", () => {
     expect(decodeServerSettings({}).newWorktreesStartFromOrigin).toBe(true);
