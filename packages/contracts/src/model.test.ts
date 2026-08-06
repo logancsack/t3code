@@ -19,3 +19,13 @@ describe("Muse Code model metadata", () => {
     expect(PROVIDER_DISPLAY_NAMES[muse]).toBe("Muse Code");
   });
 });
+
+describe("Prime Agent model metadata", () => {
+  const prime = ProviderDriverKind.make("primeAgent");
+
+  it("defers interactive and text-generation model selection to Prime", () => {
+    expect(DEFAULT_MODEL_BY_PROVIDER[prime]).toBe("auto");
+    expect(DEFAULT_GIT_TEXT_GENERATION_MODEL_BY_PROVIDER[prime]).toBe("auto");
+    expect(PROVIDER_DISPLAY_NAMES[prime]).toBe("Prime Agent");
+  });
+});

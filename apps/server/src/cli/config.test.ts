@@ -49,6 +49,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
     otlpExportIntervalMs: 10_000,
     otlpServiceName: "t3-server",
     museCodeEnabled: true,
+    primeAgentSubscriptionOAuthEnabled: false,
   } as const;
 
   const openBootstrapFd = Effect.fn(function* (payload: DesktopBackendBootstrapValue) {
@@ -127,6 +128,34 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
 
       expect(resolved.managedDevPc).toBe(true);
       expect(resolved.museCodeEnabled).toBe(true);
+    }),
+  );
+
+  it.effect("keeps Prime Agent subscription OAuth disabled unless explicitly enabled", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-prime-oauth-gate-" });
+      const disabled = yield* resolveWithEnv({
+        T3CODE_HOME: baseDir,
+        T3CODE_MODE: "desktop",
+        T3CODE_PORT: "4104",
+      });
+      const explicitlyDisabled = yield* resolveWithEnv({
+        T3CODE_HOME: baseDir,
+        T3CODE_MODE: "desktop",
+        T3CODE_PORT: "4105",
+        T3CODE_PRIME_AGENT_SUBSCRIPTION_OAUTH_ENABLED: "0",
+      });
+      const enabled = yield* resolveWithEnv({
+        T3CODE_HOME: baseDir,
+        T3CODE_MODE: "desktop",
+        T3CODE_PORT: "4106",
+        T3CODE_PRIME_AGENT_SUBSCRIPTION_OAUTH_ENABLED: "1",
+      });
+
+      expect(disabled.primeAgentSubscriptionOAuthEnabled).toBe(false);
+      expect(explicitlyDisabled.primeAgentSubscriptionOAuthEnabled).toBe(false);
+      expect(enabled.primeAgentSubscriptionOAuthEnabled).toBe(true);
     }),
   );
 

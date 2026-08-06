@@ -83,6 +83,33 @@ describe("AcpRuntimeModel", () => {
     ).toBe(false);
   });
 
+  it("preserves Prime Agent thought chunks and namespaced session metadata", () => {
+    const thought = parseSessionUpdateEvent({
+      sessionId: "session-1",
+      update: {
+        sessionUpdate: "agent_thought_chunk",
+        content: { type: "text", text: "checking the workspace" },
+      },
+    } satisfies EffectAcpSchema.SessionNotification);
+    expect(thought.events).toMatchObject([
+      { _tag: "ThoughtDelta", text: "checking the workspace" },
+    ]);
+
+    const metadata = {
+      "ai.primeintellect.prime-agent": {
+        subagents: [{ id: "child-1", status: "running" }],
+      },
+    };
+    const sessionInfo = parseSessionUpdateEvent({
+      sessionId: "session-1",
+      update: {
+        sessionUpdate: "session_info_update",
+        _meta: metadata,
+      },
+    } satisfies EffectAcpSchema.SessionNotification);
+    expect(sessionInfo.events).toMatchObject([{ _tag: "SessionInfoUpdated", metadata }]);
+  });
+
   it("builds a synthetic load response from initialize model state", () => {
     const response = syntheticLoadSessionResponseFromInitialize({
       protocolVersion: 1,
@@ -251,6 +278,49 @@ describe("AcpRuntimeModel", () => {
         title: "Ran command",
         detail: "bun run typecheck",
         command: "bun run typecheck",
+      });
+    }
+  });
+
+  it("preserves namespaced ACP tool metadata when merging tool updates", () => {
+    const created = parseSessionUpdateEvent({
+      sessionId: "session-1",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "ipython-1",
+        title: "IPython cell",
+        kind: "execute",
+        status: "in_progress",
+        rawInput: { code: "display(image)" },
+      },
+    } satisfies EffectAcpSchema.SessionNotification);
+    const primeMeta = {
+      "ai.primeintellect.prime-agent": {
+        ipython: {
+          attachments: [{ mimeType: "image/png", path: "/tmp/image.png", bytes: 128 }],
+          diffCount: 2,
+        },
+      },
+    };
+    const updated = parseSessionUpdateEvent({
+      sessionId: "session-1",
+      update: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "ipython-1",
+        status: "completed",
+        _meta: primeMeta,
+      },
+    } satisfies EffectAcpSchema.SessionNotification);
+
+    const createdEvent = created.events[0];
+    const updatedEvent = updated.events[0];
+    expect(createdEvent?._tag).toBe("ToolCallUpdated");
+    expect(updatedEvent?._tag).toBe("ToolCallUpdated");
+    if (createdEvent?._tag === "ToolCallUpdated" && updatedEvent?._tag === "ToolCallUpdated") {
+      expect(updatedEvent.toolCall.data._meta).toEqual(primeMeta);
+      expect(mergeToolCallState(createdEvent.toolCall, updatedEvent.toolCall).data).toMatchObject({
+        rawInput: { code: "display(image)" },
+        _meta: primeMeta,
       });
     }
   });

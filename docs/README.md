@@ -19,4 +19,5 @@
   - [Codex](./providers/codex.md)
   - [Claude](./providers/claude.md)
   - [Muse Code](./providers/muse.md)
+  - [Prime Agent](./providers/prime-agent.md)
 - [Reference](./reference/encyclopedia.md)

@@ -108,6 +108,16 @@ export type AcpParsedSessionEvent =
       readonly itemId?: string;
       readonly text: string;
       readonly rawPayload: unknown;
+    }
+  | {
+      readonly _tag: "ThoughtDelta";
+      readonly text: string;
+      readonly rawPayload: unknown;
+    }
+  | {
+      readonly _tag: "SessionInfoUpdated";
+      readonly metadata: unknown;
+      readonly rawPayload: unknown;
     };
 
 type AcpSessionSetupResponse =
@@ -315,6 +325,7 @@ function makeToolCallState(
     readonly rawOutput?: unknown;
     readonly content?: ReadonlyArray<EffectAcpSchema.ToolCallContent> | null | undefined;
     readonly locations?: ReadonlyArray<EffectAcpSchema.ToolCallLocation> | null | undefined;
+    readonly _meta?: unknown;
   },
   options?: {
     readonly fallbackStatus?: "pending" | "inProgress" | "completed" | "failed";
@@ -350,6 +361,9 @@ function makeToolCallState(
   }
   if (input.locations !== undefined) {
     data.locations = input.locations;
+  }
+  if (input._meta !== undefined) {
+    data._meta = input._meta;
   }
   const fallbackDetail = command ?? normalizedTitle ?? textContent;
   const hasPresentationSeed =
@@ -395,6 +409,7 @@ function parseTypedToolCallState(
       rawOutput: event.rawOutput,
       content: event.content,
       locations: event.locations,
+      _meta: event._meta,
     },
     options,
   );
@@ -572,6 +587,24 @@ export function parseSessionUpdateEvent(params: EffectAcpSchema.SessionNotificat
           rawPayload: params,
         });
       }
+      break;
+    }
+    case "agent_thought_chunk": {
+      if (upd.content.type === "text" && upd.content.text.length > 0) {
+        events.push({
+          _tag: "ThoughtDelta",
+          text: upd.content.text,
+          rawPayload: params,
+        });
+      }
+      break;
+    }
+    case "session_info_update": {
+      events.push({
+        _tag: "SessionInfoUpdated",
+        metadata: upd._meta ?? {},
+        rawPayload: params,
+      });
       break;
     }
     default:

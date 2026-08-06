@@ -153,6 +153,32 @@ describe("Muse Code provider settings", () => {
   });
 });
 
+describe("Prime Agent provider settings", () => {
+  it("defaults to the Prime Agent CLI with no persisted launch customization", () => {
+    expect(decodeServerSettings({}).providers.primeAgent).toEqual({
+      enabled: true,
+      binaryPath: "prime-agent",
+      launchArgs: "",
+      customModels: [],
+    });
+  });
+
+  it("trims Prime Agent CLI settings in partial updates", () => {
+    const patch = decodeServerSettingsPatch({
+      providers: {
+        primeAgent: {
+          binaryPath: "  /opt/aldo/bin/prime-agent  ",
+          launchArgs: "  --autonomous  ",
+        },
+      },
+    });
+    expect(patch.providers?.primeAgent).toEqual({
+      binaryPath: "/opt/aldo/bin/prime-agent",
+      launchArgs: "--autonomous",
+    });
+  });
+});
+
 describe("ServerSettings worktree defaults", () => {
   it("defaults start-from-origin on for legacy configs", () => {
     expect(decodeServerSettings({}).newWorktreesStartFromOrigin).toBe(true);

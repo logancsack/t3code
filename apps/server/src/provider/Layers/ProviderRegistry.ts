@@ -79,13 +79,17 @@ const hasModelCapabilities = (model: ServerProvider["models"][number]): boolean 
   (model.capabilities?.optionDescriptors?.length ?? 0) > 0;
 
 const shouldRetainMissingProviderModels = (provider: ServerProvider): boolean => {
-  if (provider.driver !== ProviderDriverKind.make("opencode")) {
+  const hasAuthoritativeModelInventory =
+    provider.driver === ProviderDriverKind.make("opencode") ||
+    provider.driver === ProviderDriverKind.make("primeAgent");
+  if (!hasAuthoritativeModelInventory) {
     return true;
   }
 
-  // OpenCode's initial snapshot is deliberately non-authoritative while its
-  // first probe is still running. A probe error from an installed CLI/server
-  // is likewise partial: it could not establish the current inventory.
+  // Inventory-driven providers' initial snapshots are deliberately
+  // non-authoritative while their first probes are still running. A probe
+  // error from an installed CLI/server is likewise partial: it could not
+  // establish the current inventory.
   // Conversely, disabled and missing-CLI snapshots are authoritative removals,
   // as are successful ready/warning inventories (including an empty one after
   // logout or plugin removal).
@@ -102,10 +106,6 @@ const mergeProviderModels = (
 ): ReadonlyArray<ServerProvider["models"][number]> => {
   const shouldRetainMissingModels = shouldRetainMissingProviderModels(provider);
 
-  if (shouldRetainMissingModels && nextModels.length === 0 && previousModels.length > 0) {
-    return previousModels;
-  }
-
   const previousBySlug = new Map(previousModels.map((model) => [model.slug, model] as const));
   const mergedModels = nextModels.map((model) => {
     const previousModel = previousBySlug.get(model.slug);
@@ -119,7 +119,16 @@ const mergeProviderModels = (
   });
   const nextSlugs = new Set(nextModels.map((model) => model.slug));
   return shouldRetainMissingModels
-    ? [...mergedModels, ...previousModels.filter((model) => !nextSlugs.has(model.slug))]
+    ? [
+        ...mergedModels,
+        ...previousModels.filter(
+          (model) =>
+            !nextSlugs.has(model.slug) &&
+            // Prime's configured custom models come from settings and remain
+            // authoritative even when dynamic model discovery fails.
+            (provider.driver !== ProviderDriverKind.make("primeAgent") || !model.isCustom),
+        ),
+      ]
     : mergedModels;
 };
 

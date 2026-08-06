@@ -89,4 +89,8 @@ describe("contextWindow", () => {
   it("uses the product name for Muse Code context feedback", () => {
     expect(formatProviderDisplayName("muse")).toBe("Muse Code");
   });
+
+  it("uses the product name for Prime Agent context feedback", () => {
+    expect(formatProviderDisplayName("primeAgent")).toBe("Prime Agent");
+  });
 });

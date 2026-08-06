@@ -198,6 +198,7 @@ export function makeAcpAssistantItemEvent(input: {
   readonly turnId: TurnId | undefined;
   readonly itemId: string;
   readonly lifecycle: "item.started" | "item.completed";
+  readonly itemType?: "assistant_message" | "reasoning";
 }): ProviderRuntimeEvent {
   return {
     type: input.lifecycle,
@@ -207,7 +208,7 @@ export function makeAcpAssistantItemEvent(input: {
     turnId: input.turnId,
     itemId: RuntimeItemId.make(input.itemId),
     payload: {
-      itemType: "assistant_message",
+      itemType: input.itemType ?? "assistant_message",
       status: input.lifecycle === "item.completed" ? "completed" : "inProgress",
     },
   };
@@ -221,6 +222,7 @@ export function makeAcpContentDeltaEvent(input: {
   readonly itemId?: string;
   readonly text: string;
   readonly rawPayload: unknown;
+  readonly streamKind?: "assistant_text" | "reasoning_text";
 }): ProviderRuntimeEvent {
   return {
     type: "content.delta",
@@ -230,7 +232,7 @@ export function makeAcpContentDeltaEvent(input: {
     turnId: input.turnId,
     ...(input.itemId ? { itemId: RuntimeItemId.make(input.itemId) } : {}),
     payload: {
-      streamKind: "assistant_text",
+      streamKind: input.streamKind ?? "assistant_text",
       delta: input.text,
     },
     raw: {

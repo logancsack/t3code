@@ -10,7 +10,7 @@
  *
  *  2. **Many drivers, one registry** — the "all drivers slice" describe
  *     block below configures one instance of every shipped driver
- *     (`codex`, `claudeAgent`, `cursor`, `grok`, `muse`, `opencode`) in a single
+ *     (`codex`, `claudeAgent`, `cursor`, `grok`, `muse`, `primeAgent`, `opencode`) in a single
  *     `ProviderInstanceConfigMap` and asserts the registry boots them all
  *     without cross-contamination. This proves the driver SPI is uniform
  *     across every provider — any driver plugs into the registry through
@@ -19,7 +19,7 @@
  * Every instance in these tests is configured with `enabled: false` so the
  * provider-status checks short-circuit to pending/disabled snapshots
  * without trying to spawn real `codex` / `claude` / `agent` / `grok` / `muse` /
- * `opencode`
+ * `prime-agent` / `opencode`
  * binaries. That keeps the assertions focused on registry routing
  * behaviour rather than the runtime details of each provider.
  */
@@ -32,6 +32,7 @@ import {
   type GrokSettings,
   type MuseSettings,
   type OpenCodeSettings,
+  type PrimeSettings,
   ProviderDriverKind,
   type ProviderInstanceConfigMap,
   ProviderInstanceId,
@@ -48,6 +49,7 @@ import { CursorDriver } from "../Drivers/CursorDriver.ts";
 import { GrokDriver } from "../Drivers/GrokDriver.ts";
 import { MuseDriver } from "../Drivers/MuseDriver.ts";
 import { OpenCodeDriver } from "../Drivers/OpenCodeDriver.ts";
+import { PrimeDriver } from "../Drivers/PrimeDriver.ts";
 import { OpenCodeRuntimeLive } from "../opencodeRuntime.ts";
 import { NoOpProviderEventLoggers, ProviderEventLoggers } from "./ProviderEventLoggers.ts";
 import { makeProviderInstanceRegistry } from "./ProviderInstanceRegistryLive.ts";
@@ -96,6 +98,14 @@ const makeGrokConfig = (overrides: Partial<GrokSettings>): GrokSettings => ({
 const makeMuseConfig = (overrides: Partial<MuseSettings>): MuseSettings => ({
   enabled: false,
   binaryPath: "muse",
+  launchArgs: "",
+  customModels: [],
+  ...overrides,
+});
+
+const makePrimeConfig = (overrides: Partial<PrimeSettings>): PrimeSettings => ({
+  enabled: false,
+  binaryPath: "prime-agent",
   launchArgs: "",
   customModels: [],
   ...overrides,
@@ -270,6 +280,7 @@ describe("ProviderInstanceRegistryLive — all drivers slice", () => {
       const cursorId = ProviderInstanceId.make("cursor_default");
       const grokId = ProviderInstanceId.make("grok_default");
       const museId = ProviderInstanceId.make("muse_default");
+      const primeId = ProviderInstanceId.make("prime_default");
       const openCodeId = ProviderInstanceId.make("opencode_default");
 
       const codexDriverKind = ProviderDriverKind.make("codex");
@@ -277,6 +288,7 @@ describe("ProviderInstanceRegistryLive — all drivers slice", () => {
       const cursorDriverKind = ProviderDriverKind.make("cursor");
       const grokDriverKind = ProviderDriverKind.make("grok");
       const museDriverKind = ProviderDriverKind.make("muse");
+      const primeDriverKind = ProviderDriverKind.make("primeAgent");
       const openCodeDriverKind = ProviderDriverKind.make("opencode");
 
       const configMap: ProviderInstanceConfigMap = {
@@ -313,6 +325,12 @@ describe("ProviderInstanceRegistryLive — all drivers slice", () => {
           enabled: false,
           config: makeMuseConfig({}),
         },
+        [primeId]: {
+          driver: primeDriverKind,
+          displayName: "Prime Agent",
+          enabled: false,
+          config: makePrimeConfig({}),
+        },
         [openCodeId]: {
           driver: openCodeDriverKind,
           displayName: "OpenCode",
@@ -322,7 +340,15 @@ describe("ProviderInstanceRegistryLive — all drivers slice", () => {
       };
 
       const { registry } = yield* makeProviderInstanceRegistry({
-        drivers: [CodexDriver, ClaudeDriver, CursorDriver, GrokDriver, MuseDriver, OpenCodeDriver],
+        drivers: [
+          CodexDriver,
+          ClaudeDriver,
+          CursorDriver,
+          GrokDriver,
+          MuseDriver,
+          PrimeDriver,
+          OpenCodeDriver,
+        ],
         configMap,
       });
 
@@ -332,9 +358,9 @@ describe("ProviderInstanceRegistryLive — all drivers slice", () => {
       expect(unavailable).toEqual([]);
 
       const instances = yield* registry.listInstances;
-      expect(instances).toHaveLength(6);
+      expect(instances).toHaveLength(7);
       expect(instances.map((instance) => instance.instanceId).toSorted()).toEqual(
-        [codexId, claudeId, cursorId, grokId, museId, openCodeId].toSorted(),
+        [codexId, claudeId, cursorId, grokId, museId, primeId, openCodeId].toSorted(),
       );
 
       // Instance lookup by id resolves each instance to its own bundle —
@@ -345,18 +371,21 @@ describe("ProviderInstanceRegistryLive — all drivers slice", () => {
       const cursor = yield* registry.getInstance(cursorId);
       const grok = yield* registry.getInstance(grokId);
       const muse = yield* registry.getInstance(museId);
+      const prime = yield* registry.getInstance(primeId);
       const openCode = yield* registry.getInstance(openCodeId);
       expect(codex?.driverKind).toBe(codexDriverKind);
       expect(claude?.driverKind).toBe(claudeDriverKind);
       expect(cursor?.driverKind).toBe(cursorDriverKind);
       expect(grok?.driverKind).toBe(grokDriverKind);
       expect(muse?.driverKind).toBe(museDriverKind);
+      expect(prime?.driverKind).toBe(primeDriverKind);
       expect(openCode?.driverKind).toBe(openCodeDriverKind);
       expect(codex?.displayName).toBe("Codex");
       expect(claude?.displayName).toBe("Claude");
       expect(cursor?.displayName).toBe("Cursor");
       expect(grok?.displayName).toBe("Grok");
       expect(muse?.displayName).toBe("Muse Code");
+      expect(prime?.displayName).toBe("Prime Agent");
       expect(openCode?.displayName).toBe("OpenCode");
 
       // Every instance owns its own set of closures — no sharing across
@@ -370,6 +399,7 @@ describe("ProviderInstanceRegistryLive — all drivers slice", () => {
         cursor!.adapter,
         grok!.adapter,
         muse!.adapter,
+        prime!.adapter,
         openCode!.adapter,
       ];
       expect(new Set(adapters).size).toBe(adapters.length);
@@ -379,6 +409,7 @@ describe("ProviderInstanceRegistryLive — all drivers slice", () => {
         cursor!.textGeneration,
         grok!.textGeneration,
         muse!.textGeneration,
+        prime!.textGeneration,
         openCode!.textGeneration,
       ];
       expect(new Set(textGenerations).size).toBe(textGenerations.length);
@@ -388,6 +419,7 @@ describe("ProviderInstanceRegistryLive — all drivers slice", () => {
         cursor!.snapshot,
         grok!.snapshot,
         muse!.snapshot,
+        prime!.snapshot,
         openCode!.snapshot,
       ];
       expect(new Set(snapshots).size).toBe(snapshots.length);
@@ -429,6 +461,12 @@ describe("ProviderInstanceRegistryLive — all drivers slice", () => {
       expect(museSnapshot.driver).toBe(museDriverKind);
       expect(museSnapshot.enabled).toBe(false);
       expect(museSnapshot.continuation?.groupKey).toBe(`${museDriverKind}:instance:${museId}`);
+
+      const primeSnapshot = yield* prime!.snapshot.getSnapshot;
+      expect(primeSnapshot.instanceId).toBe(primeId);
+      expect(primeSnapshot.driver).toBe(primeDriverKind);
+      expect(primeSnapshot.enabled).toBe(false);
+      expect(primeSnapshot.continuation?.groupKey).toBe(`${primeDriverKind}:instance:${primeId}`);
 
       const openCodeSnapshot = yield* openCode!.snapshot.getSnapshot;
       expect(openCodeSnapshot.instanceId).toBe(openCodeId);

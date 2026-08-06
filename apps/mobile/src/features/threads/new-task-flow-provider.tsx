@@ -24,6 +24,10 @@ import type { DraftComposerImageAttachment } from "../../lib/composerImages";
 import type { ModelOption, ProviderGroup } from "../../lib/modelOptions";
 import { buildModelOptions, groupByProvider } from "../../lib/modelOptions";
 import { groupProjectsByRepository } from "../../lib/repositoryGroups";
+import {
+  coerceProviderRuntimeMode,
+  getProviderSupportedRuntimeModes,
+} from "../../lib/runtimeModes";
 import { scopedProjectKey } from "../../lib/scopedEntities";
 import { appAtomRegistry } from "../../state/atom-registry";
 import {
@@ -125,6 +129,7 @@ type NewTaskFlowContextValue = {
   readonly branchesLoading: boolean;
   readonly availableBranches: ReadonlyArray<VcsRef>;
   readonly runtimeMode: RuntimeMode;
+  readonly supportedRuntimeModes: ReadonlyArray<RuntimeMode>;
   readonly interactionMode: ProviderInteractionMode;
   readonly expandedProvider: string | null;
   readonly environments: ReadonlyArray<{
@@ -358,7 +363,6 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
     draftStartFromOrigin ??
     selectedEnvironmentServerConfig?.settings.newWorktreesStartFromOrigin ??
     true;
-  const runtimeMode = selectedProjectDraft.runtimeMode ?? DEFAULT_RUNTIME_MODE;
   const interactionMode = selectedProjectDraft.interactionMode ?? DEFAULT_PROVIDER_INTERACTION_MODE;
 
   const modelOptions = useMemo(
@@ -383,6 +387,14 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
   const selectedModelKey = selectedModel
     ? `${selectedModel.instanceId}:${selectedModel.model}`
     : null;
+  const selectedProvider = selectedEnvironmentServerConfig?.providers.find(
+    (provider) => provider.instanceId === selectedModel?.instanceId,
+  );
+  const supportedRuntimeModes = getProviderSupportedRuntimeModes(selectedProvider);
+  const runtimeMode = coerceProviderRuntimeMode(
+    selectedProvider,
+    selectedProjectDraft.runtimeMode ?? DEFAULT_RUNTIME_MODE,
+  );
 
   const selectedModelOption =
     modelOptions.find(
@@ -407,11 +419,15 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       if (!option) {
         return;
       }
+      const nextProvider = selectedEnvironmentServerConfig?.providers.find(
+        (provider) => provider.instanceId === option.selection.instanceId,
+      );
       updateComposerDraftSettings(selectedProjectDraftKey, {
         modelSelection: option.selection,
+        runtimeMode: coerceProviderRuntimeMode(nextProvider, runtimeMode),
       });
     },
-    [modelOptions, selectedProjectDraftKey],
+    [modelOptions, runtimeMode, selectedEnvironmentServerConfig, selectedProjectDraftKey],
   );
   const setSelectedModelOptions = useCallback(
     (options: ReadonlyArray<ProviderOptionSelection> | undefined) => {
@@ -622,10 +638,12 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
   const setRuntimeMode = useCallback(
     (value: RuntimeMode) => {
       if (selectedProjectDraftKey) {
-        updateComposerDraftSettings(selectedProjectDraftKey, { runtimeMode: value });
+        updateComposerDraftSettings(selectedProjectDraftKey, {
+          runtimeMode: coerceProviderRuntimeMode(selectedProvider, value),
+        });
       }
     },
-    [selectedProjectDraftKey],
+    [selectedProjectDraftKey, selectedProvider],
   );
   const setInteractionMode = useCallback(
     (value: ProviderInteractionMode) => {
@@ -679,6 +697,9 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       if (text.length === 0 || !draftModelSelection) {
         return null;
       }
+      const draftProvider = selectedEnvironmentServerConfig?.providers.find(
+        (provider) => provider.instanceId === draftModelSelection.instanceId,
+      );
       const workspaceSelection = draft.workspaceSelection;
       const mode = workspaceSelection?.mode ?? "local";
       // When the selection is the stand-in built from the queued snapshot,
@@ -700,7 +721,10 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
         text,
         attachments: draft.attachments,
         modelSelection: draftModelSelection,
-        runtimeMode: draft.runtimeMode ?? DEFAULT_RUNTIME_MODE,
+        runtimeMode: coerceProviderRuntimeMode(
+          draftProvider,
+          draft.runtimeMode ?? DEFAULT_RUNTIME_MODE,
+        ),
         interactionMode: draft.interactionMode ?? DEFAULT_PROVIDER_INTERACTION_MODE,
         creation: {
           projectId: selectedProject.id,
@@ -722,6 +746,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
     [
       editingPendingProject,
       editingPendingTask,
+      selectedEnvironmentServerConfig,
       selectedModel,
       selectedProject,
       selectedProjectDraftKey,
@@ -838,6 +863,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       branchesLoading,
       availableBranches,
       runtimeMode,
+      supportedRuntimeModes,
       interactionMode,
       expandedProvider,
       environments,
@@ -916,6 +942,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       setWorkspaceMode,
       startFromOrigin,
       submitting,
+      supportedRuntimeModes,
       workspaceMode,
       appendAttachments,
       clearAttachments,

@@ -2,16 +2,42 @@ import type { AuthConnectorKind } from "@t3tools/contracts";
 
 import type { AuthConnectorMethodOption } from "./AuthConnectorDialog";
 
-export const AGENT_AUTH_METHODS: Partial<
-  Record<
-    string,
-    {
-      readonly connector: AuthConnectorKind;
-      readonly serviceName: string;
-      readonly methods: ReadonlyArray<AuthConnectorMethodOption>;
-    }
-  >
-> = {
+type AgentAuthConnector = {
+  readonly connector: AuthConnectorKind;
+  readonly serviceName: string;
+  readonly methods: ReadonlyArray<AuthConnectorMethodOption>;
+};
+
+const PRIME_AGENT_SUBSCRIPTION_METHODS: ReadonlyArray<AuthConnectorMethodOption> = [
+  {
+    method: "openai-account",
+    label: "ChatGPT subscription OAuth",
+    badgeLabel: "Experimental · provider approval required",
+    description:
+      "Create a separate Prime Agent OAuth grant for ChatGPT Plus or Pro. T3 Code does not copy or reuse Codex credentials.",
+    browserName: "OpenAI",
+    authorizeInstruction:
+      "In Aldo, open this in the workspace Browser panel so the localhost:1455 callback reaches Prime Agent. From another browser, copy the failed redirect URL and paste it on the next step.",
+    returnInstruction:
+      "If the browser did not return to Prime Agent, paste the complete localhost:1455 redirect URL below.",
+  },
+  {
+    method: "anthropic-account",
+    label: "Claude subscription OAuth",
+    badgeLabel: "Experimental · provider approval required",
+    description:
+      "Third-party harness usage draws from Anthropic extra usage and is billed per token, not Claude plan limits. T3 Code does not copy or reuse Claude credentials.",
+    browserName: "Anthropic",
+    authorizeInstruction:
+      "Approve a separate Prime Agent grant with Anthropic. Charges use Anthropic extra usage rather than Claude plan limits.",
+    returnInstruction:
+      "Paste the redirect URL or authorization code if Anthropic does not return directly to Prime Agent.",
+    externalHelpUrl: "https://claude.ai/settings/usage",
+    externalHelpLabel: "Manage Anthropic extra usage",
+  },
+];
+
+export const AGENT_AUTH_METHODS: Partial<Record<string, AgentAuthConnector>> = {
   codex: {
     connector: "codex",
     serviceName: "Codex",
@@ -110,6 +136,56 @@ export const AGENT_AUTH_METHODS: Partial<
       },
     ],
   },
+  primeAgent: {
+    connector: "prime-agent",
+    serviceName: "Prime Agent",
+    methods: [
+      {
+        method: "prime-inference",
+        label: "Prime Inference",
+        description:
+          "Sign in with Prime Intellect or paste a Prime API key. Prime Agent stores the credential in its own workspace config.",
+        browserName: "Prime Intellect",
+        authorizeInstruction:
+          "Complete Prime Intellect sign-in in the workspace Browser panel, or use Prime Agent's API-key fallback.",
+        waitingMessage: "Waiting for Prime Agent to confirm Prime Inference access…",
+      },
+      {
+        method: "openai-api-key",
+        label: "OpenAI API key",
+        description:
+          "Use OpenAI Platform API billing. The key is saved only in Prime Agent's workspace authentication file.",
+        externalHelpUrl: "https://platform.openai.com/api-keys",
+        externalHelpLabel: "Create an OpenAI API key",
+      },
+      {
+        method: "anthropic-api-key",
+        label: "Anthropic API key",
+        description:
+          "Use Anthropic Console API billing. The key is saved only in Prime Agent's workspace authentication file.",
+        externalHelpUrl: "https://console.anthropic.com/settings/keys",
+        externalHelpLabel: "Create an Anthropic API key",
+      },
+      {
+        method: "azure-openai",
+        label: "Azure OpenAI",
+        description:
+          "Store an Azure OpenAI Responses key in Prime Agent. The selected provider instance must also set AZURE_OPENAI_BASE_URL or AZURE_OPENAI_RESOURCE_NAME in its environment.",
+      },
+      {
+        method: "google-vertex",
+        label: "Google Vertex AI",
+        description:
+          "Store a Google Vertex AI credential directly in Prime Agent's workspace config.",
+      },
+      {
+        method: "amazon-bedrock",
+        label: "Amazon Bedrock",
+        description:
+          "Let Prime Agent detect an existing AWS profile, IAM keys, bearer token, or role-based credentials in this workspace.",
+      },
+    ],
+  },
   opencode: {
     connector: "opencode",
     serviceName: "OpenCode",
@@ -165,6 +241,20 @@ export const AGENT_AUTH_METHODS: Partial<
     ],
   },
 };
+
+export function resolveAgentAuthMethods(
+  driver: string,
+  primeAgentSubscriptionOAuthEnabled = false,
+): AgentAuthConnector | undefined {
+  const configured = AGENT_AUTH_METHODS[driver];
+  if (!configured || driver !== "primeAgent" || !primeAgentSubscriptionOAuthEnabled) {
+    return configured;
+  }
+  return {
+    ...configured,
+    methods: [...configured.methods, ...PRIME_AGENT_SUBSCRIPTION_METHODS],
+  };
+}
 
 export const SOURCE_CONTROL_AUTH_METHODS = {
   github: {

@@ -47,6 +47,10 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   /** Server understands thread.snooze / thread.unsnooze commands. Same
       version-skew contract as threadSettlement. */
   threadSnooze: Schema.optionalKey(Schema.Boolean),
+  /** This server may expose Prime Agent's third-party subscription OAuth
+      routes. The capability is absent unless the operator has explicitly
+      enabled the provider-approval gate. */
+  primeAgentSubscriptionOAuth: Schema.optionalKey(Schema.Boolean),
   /** The update path clients should offer for this server. Absent on
       servers that must be relaunched manually (dev checkouts, Windows
       foreground runs, pre-update servers). */
