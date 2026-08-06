@@ -83,6 +83,12 @@ export class ServerConfig extends Context.Service<
      */
     readonly museCodeEnabled: boolean;
     /**
+     * Explicit operator gate for Prime Agent subscription OAuth. These
+     * third-party OAuth routes stay unavailable by default; API-key and cloud
+     * credential routes are unaffected.
+     */
+    readonly primeAgentSubscriptionOAuthEnabled: boolean;
+    /**
      * Shared only with Aldo's loopback workspace gateway. It authenticates
      * managed automation routes that are never exposed by standalone T3 Code.
      */
@@ -211,6 +217,7 @@ const makeTest = Effect.fn("ServerConfig.makeTest")(function* (
     noBrowser: false,
     managedDevPc: false,
     museCodeEnabled: true,
+    primeAgentSubscriptionOAuthEnabled: false,
     startupPresentation: "browser",
   });
 });

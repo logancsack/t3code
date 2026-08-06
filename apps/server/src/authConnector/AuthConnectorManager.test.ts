@@ -1,10 +1,42 @@
 import { describe, expect, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import { ProviderDriverKind, ProviderInstanceId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import { afterEach, vi } from "vite-plus/test";
 
 import { ServerConfig } from "../config.ts";
-import { start, testHelpers } from "./AuthConnectorManager.ts";
+import * as ServerSettings from "../serverSettings.ts";
+import { cancel, start, testHelpers } from "./AuthConnectorManager.ts";
+
+const ptySpawn = vi.fn(
+  (
+    _command: string,
+    _args: ReadonlyArray<string>,
+    _options: { readonly env?: Readonly<NodeJS.ProcessEnv> },
+  ) => ({
+    write: vi.fn(),
+    kill: vi.fn(),
+    onData: vi.fn(() => ({ dispose: vi.fn() })),
+    onExit: vi.fn(() => ({ dispose: vi.fn() })),
+  }),
+);
+
+vi.mock("node-pty", () => ({ spawn: ptySpawn }));
+
+afterEach(() => {
+  ptySpawn.mockClear();
+});
+
+const authManagerTestLayer = (settings: Parameters<typeof ServerSettings.layerTest>[0] = {}) =>
+  Layer.mergeAll(
+    ServerConfig.layerTest(process.cwd(), {
+      prefix: "t3-auth-connector-test-",
+    }).pipe(Layer.provideMerge(NodeServices.layer)),
+    ServerSettings.layerTest(settings),
+  );
+
+const primeWorkInstanceId = ProviderInstanceId.make("prime_work");
 
 describe("AuthConnectorManager output parsing", () => {
   it.effect("rejects Muse authentication before spawning a process when Muse is withheld", () =>
@@ -22,13 +54,161 @@ describe("AuthConnectorManager output parsing", () => {
         operation: "start",
         detail: "Muse Code is not available in this T3 Code environment.",
       });
+    }).pipe(Effect.provide(authManagerTestLayer())),
+  );
+
+  it.effect("rejects Prime subscription OAuth unless the provider-approval gate is enabled", () =>
+    Effect.gen(function* () {
+      const defaultConfig = yield* ServerConfig;
+      const error = yield* start({ connector: "prime-agent", method: "openai-account" }).pipe(
+        Effect.provideService(ServerConfig, {
+          ...defaultConfig,
+          primeAgentSubscriptionOAuthEnabled: false,
+        }),
+        Effect.flip,
+      );
+
+      expect(error).toMatchObject({
+        operation: "start",
+        detail: expect.stringContaining("requires explicit provider approval"),
+      });
+    }).pipe(Effect.provide(authManagerTestLayer())),
+  );
+
+  it.effect("allows Prime subscription OAuth when the provider-approval gate is enabled", () =>
+    Effect.gen(function* () {
+      const defaultConfig = yield* ServerConfig;
+      const session = yield* start({ connector: "prime-agent", method: "openai-account" }).pipe(
+        Effect.provideService(ServerConfig, {
+          ...defaultConfig,
+          primeAgentSubscriptionOAuthEnabled: true,
+        }),
+      );
+
+      expect(ptySpawn).toHaveBeenCalledTimes(1);
+      expect(ptySpawn.mock.calls[0]?.[0]).toBe("prime-agent");
+      yield* cancel(session.id);
+    }).pipe(Effect.provide(authManagerTestLayer())),
+  );
+
+  it.effect("uses the derived default Prime instance for authentication", () =>
+    Effect.gen(function* () {
+      const session = yield* start({ connector: "prime-agent", method: "prime-inference" });
+
+      expect(ptySpawn).toHaveBeenCalledTimes(1);
+      expect(ptySpawn.mock.calls[0]?.[0]).toBe("prime-agent");
+      yield* cancel(session.id);
+    }).pipe(Effect.provide(authManagerTestLayer())),
+  );
+
+  it.effect("launches the selected Prime instance with its materialized environment", () =>
+    Effect.gen(function* () {
+      const session = yield* start({
+        connector: "prime-agent",
+        method: "prime-inference",
+        providerInstanceId: primeWorkInstanceId,
+      });
+
+      expect(ptySpawn).toHaveBeenCalledTimes(1);
+      const [command, args, options] = ptySpawn.mock.calls[0] ?? [];
+      expect(command).toBe("/opt/prime-work/bin/prime-agent");
+      expect(args).toEqual([
+        "--no-session",
+        "--no-context-files",
+        "--no-skills",
+        "--no-extensions",
+        "--no-themes",
+      ]);
+      expect(options?.env).toMatchObject({
+        HOME: "/workspace/accounts/prime-work",
+        PRIME_AGENT_CODING_AGENT_DIR: "/workspace/accounts/prime-work/agent",
+        PRIME_WORK_SECRET: "materialized-sensitive-value",
+        NO_OPEN_BROWSER: "1",
+        CI: "0",
+      });
+      yield* cancel(session.id);
     }).pipe(
       Effect.provide(
-        ServerConfig.layerTest(process.cwd(), {
-          prefix: "t3-auth-connector-gate-test-",
-        }).pipe(Layer.provideMerge(NodeServices.layer)),
+        authManagerTestLayer({
+          providerInstances: {
+            [primeWorkInstanceId]: {
+              driver: ProviderDriverKind.make("primeAgent"),
+              enabled: true,
+              environment: [
+                { name: "HOME", value: "/workspace/accounts/prime-work", sensitive: false },
+                {
+                  name: "PRIME_AGENT_CODING_AGENT_DIR",
+                  value: "/workspace/accounts/prime-work/agent",
+                  sensitive: false,
+                },
+                {
+                  name: "PRIME_WORK_SECRET",
+                  value: "materialized-sensitive-value",
+                  sensitive: true,
+                },
+                { name: "NO_OPEN_BROWSER", value: "0", sensitive: false },
+                { name: "CI", value: "1", sensitive: false },
+              ],
+              config: { binaryPath: "/opt/prime-work/bin/prime-agent" },
+            },
+          },
+        }),
       ),
     ),
+  );
+
+  it.effect("rejects missing, wrong-driver, and disabled Prime instances before spawning", () =>
+    Effect.gen(function* () {
+      const missingId = ProviderInstanceId.make("prime_missing");
+      const wrongDriverId = ProviderInstanceId.make("prime_wrong_driver");
+      const disabledId = ProviderInstanceId.make("prime_disabled");
+      const cases: ReadonlyArray<{
+        readonly instanceId: ProviderInstanceId;
+        readonly settings: Parameters<typeof ServerSettings.layerTest>[0];
+        readonly detail: string;
+      }> = [
+        { instanceId: missingId, settings: {}, detail: "does not exist" },
+        {
+          instanceId: wrongDriverId,
+          settings: {
+            providerInstances: {
+              [wrongDriverId]: {
+                driver: ProviderDriverKind.make("codex"),
+                enabled: true,
+              },
+            },
+          },
+          detail: "is not a Prime Agent instance",
+        },
+        {
+          instanceId: disabledId,
+          settings: {
+            providerInstances: {
+              [disabledId]: {
+                driver: ProviderDriverKind.make("primeAgent"),
+                enabled: false,
+              },
+            },
+          },
+          detail: "is disabled",
+        },
+      ];
+
+      for (const testCase of cases) {
+        ptySpawn.mockClear();
+        const error = yield* start({
+          connector: "prime-agent",
+          method: "prime-inference",
+          providerInstanceId: testCase.instanceId,
+        }).pipe(Effect.flip, Effect.provide(authManagerTestLayer(testCase.settings)));
+
+        expect(error).toMatchObject({
+          operation: "start",
+          detail: expect.stringContaining(testCase.detail),
+        });
+        expect(ptySpawn).not.toHaveBeenCalled();
+      }
+    }),
   );
 
   it("extracts GitHub device authorization details", () => {
@@ -98,6 +278,46 @@ describe("AuthConnectorManager output parsing", () => {
     expect(testHelpers.extractUrl(output)).toBe(
       "https://claude.com/cai/oauth/authorize?code=true&state=opaque",
     );
+  });
+
+  it("accepts Prime's Anthropic authorize host without allowing lookalikes", () => {
+    expect(testHelpers.extractUrl("Open https://claude.ai/oauth/authorize?state=opaque")).toBe(
+      "https://claude.ai/oauth/authorize?state=opaque",
+    );
+    expect(
+      testHelpers.extractUrl("Open https://claude.ai.evil.example/oauth/authorize?state=opaque"),
+    ).toBeNull();
+  });
+
+  it("recovers Prime's complete OAuth URL from an OSC-8 hyperlink", () => {
+    const url =
+      "https://auth.openai.com/oauth/authorize?client_id=app&redirect_uri=http%3A%2F%2Flocalhost%3A1455%2Fauth%2Fcallback&state=opaque";
+    const rawOutput = `\u001B]8;;${url}\u0007https://auth.openai.com/oauth/authorize?client_id=app\n&redirect_uri=wrapped\u001B]8;;\u0007`;
+
+    expect(testHelpers.extractTerminalHyperlinkUrl(rawOutput)).toBe(url);
+  });
+
+  it("redacts a credential even when its PTY echo is split across chunks", () => {
+    const secret = "sk-ant-split-secret";
+    const first = testHelpers.redactSensitiveOutputChunk("sk-ant-spl", secret, "");
+    const second = testHelpers.redactSensitiveOutputChunk(
+      "it-secret\nCredential accepted.",
+      secret,
+      first.carry,
+    );
+    const captured = `${first.output}${second.output}`;
+
+    expect(captured).toBe("[redacted]\nCredential accepted.");
+    expect(second.carry).toBe("");
+    expect(captured).not.toContain(secret);
+  });
+
+  it("rejects terminal control characters in PTY credentials", () => {
+    expect(testHelpers.hasTerminalControlCharacters("sk-safe-value")).toBe(false);
+    expect(testHelpers.hasTerminalControlCharacters("sk-first\r/another-command")).toBe(true);
+    expect(testHelpers.hasTerminalControlCharacters("callback\nnext-command")).toBe(true);
+    expect(testHelpers.hasTerminalControlCharacters("sk-key\u001B[2K/another-command")).toBe(true);
+    expect(testHelpers.hasTerminalControlCharacters("sk-key\u0085next-command")).toBe(true);
   });
 
   it("rejects lookalike authentication hosts", () => {
@@ -183,6 +403,84 @@ describe("AuthConnectorManager output parsing", () => {
     expect(testHelpers.secretInputTerminator({ connector: "codex", method: "api-key" })).toBe("\r");
   });
 
+  it("launches Prime's interactive login at a wide terminal and selects stable provider rows", () => {
+    const openAiSpec = testHelpers.launchSpec({
+      connector: "prime-agent",
+      method: "openai-account",
+    });
+    expect(openAiSpec).toMatchObject({
+      command: "prime-agent",
+      args: ["--no-session", "--no-context-files", "--no-skills", "--no-extensions", "--no-themes"],
+      flow: "code",
+      columns: 512,
+      primeAgentProviderQuery: "ChatGPT Plus",
+      primeAgentExpectedDialogTitle: "Login to ChatGPT Plus/Pro (Codex Subscription)",
+      primeAgentExpectedAuthType: "oauth",
+    });
+    expect(openAiSpec).not.toHaveProperty("initialInput");
+    expect(
+      testHelpers.launchSpec({ connector: "prime-agent", method: "anthropic-api-key" }),
+    ).toMatchObject({
+      flow: "secret",
+      fields: [{ key: "secret", label: "Anthropic API key", type: "password" }],
+      primeAgentProviderQuery: "anthropic api_key",
+      primeAgentExpectedAuthType: "api_key",
+    });
+  });
+
+  it("waits through delayed first-run onboarding before opening Prime's provider menu", () => {
+    const mainPrompt = 'Try "add tests for @<filepath>"';
+    const delayedOnboarding = [
+      "Welcome to PRIME Agent",
+      "Press Enter to login with Prime Intellect",
+    ].join("\n");
+    const delayedResult = testHelpers.parseOutputForTest({
+      connector: "prime-agent",
+      method: "openai-account",
+      flow: "code",
+      output: mainPrompt,
+      followupOutputs: [{ output: delayedOnboarding }],
+    });
+
+    expect(delayedResult.writes).toEqual(["\u001B"]);
+
+    const dismissedResult = testHelpers.parseOutputForTest({
+      connector: "prime-agent",
+      method: "openai-account",
+      flow: "code",
+      output: delayedOnboarding,
+      followupOutputs: [{ output: mainPrompt }],
+      settlePrimeStartup: true,
+    });
+
+    expect(dismissedResult.writes).toEqual(["\u001B", "/login\r"]);
+  });
+
+  it("distinguishes Prime's duplicate Anthropic rows by authentication type", () => {
+    expect(testHelpers.primeAgentProviderQuery("anthropic-account")).toBe("anthropic oauth");
+    expect(testHelpers.primeAgentProviderQuery("anthropic-api-key")).toBe("anthropic api_key");
+    expect(testHelpers.primeAgentExpectedDialogTitle("anthropic-account")).toBe(
+      "Login to Anthropic (Claude Pro/Max)",
+    );
+    expect(testHelpers.primeAgentExpectedDialogTitle("anthropic-api-key")).toBe(
+      "Login to Anthropic (Claude Pro/Max)",
+    );
+    expect(testHelpers.primeAgentExpectedAuthType("anthropic-account")).toBe("oauth");
+    expect(testHelpers.primeAgentExpectedAuthType("anthropic-api-key")).toBe("api_key");
+  });
+
+  it("uses Prime's manual callback field for subscription OAuth submissions", () => {
+    expect(
+      testHelpers.primeAgentInputValue("openai-account", {
+        callback: " http://localhost:1455/auth/callback?code=abc ",
+        secret: "wrong-field",
+      }),
+    ).toBe("http://localhost:1455/auth/callback?code=abc");
+    expect(testHelpers.primeAgentInputValue("openai-api-key", { secret: "sk-test" })).toBe(
+      "sk-test",
+    );
+  });
+
   it("accepts Claude's full callback URL or short authorization code", () => {
     expect(testHelpers.claudeCallbackField()).toMatchObject({
       key: "callback",
@@ -247,6 +545,270 @@ describe("AuthConnectorManager output parsing", () => {
           type: "textarea",
         },
       ],
+    });
+  });
+
+  it("moves Prime ChatGPT OAuth to a localhost-aware manual return stage", () => {
+    const url =
+      "https://auth.openai.com/oauth/authorize?client_id=app&redirect_uri=http%3A%2F%2Flocalhost%3A1455%2Fauth%2Fcallback&state=opaque";
+    const result = testHelpers.parseOutputForTest({
+      connector: "prime-agent",
+      method: "openai-account",
+      flow: "code",
+      output: "Login to ChatGPT Plus/Pro (Codex Subscription)\nPaste redirect URL below",
+      rawOutput: `\u001B]8;;${url}\u0007wrapped link\u001B]8;;\u0007`,
+    });
+
+    expect(result.snapshot).toMatchObject({
+      status: "waiting",
+      stage: "return",
+      verificationUrl: url,
+      fields: [
+        {
+          key: "callback",
+          type: "textarea",
+          help: expect.stringContaining("localhost:1455"),
+        },
+      ],
+      message: expect.stringContaining("workspace Browser panel"),
+    });
+  });
+
+  it.each([
+    ["openai-account", "ChatGPT Plus\r"],
+    ["anthropic-account", "anthropic oauth\r"],
+    ["anthropic-api-key", "anthropic api_key\r"],
+  ] as const)("selects Prime provider %s exactly once", (method, expectedWrite) => {
+    const result = testHelpers.parseOutputForTest({
+      connector: "prime-agent",
+      method,
+      flow: method === "anthropic-api-key" ? "secret" : "code",
+      output: "Connect with a subscription or API key\nSearch providers",
+      repetitions: 2,
+    });
+
+    expect(result.writes).toEqual([expectedWrite]);
+  });
+
+  it("fails before submitting a credential when fuzzy search opens the wrong Prime provider", () => {
+    const pendingSecret = "sk-must-not-be-retained";
+    const result = testHelpers.parseOutputForTest({
+      connector: "prime-agent",
+      method: "openai-api-key",
+      flow: "secret",
+      output: "Search providers",
+      pendingInput: pendingSecret,
+      followupOutputs: [
+        {
+          output: "Login to OpenCode Zen\nEnter API key:\nPaste value",
+        },
+      ],
+    });
+
+    expect(result.writes).toEqual(["OpenAI\r"]);
+    expect(result.snapshot).toMatchObject({
+      status: "failed",
+      message: expect.stringContaining("opened the wrong provider dialog"),
+    });
+    expect(result.sensitiveState).toEqual({ pendingInput: null, submittedInput: null });
+    expect(JSON.stringify(result.snapshot)).not.toContain(pendingSecret);
+  });
+
+  it("fails before submitting an Anthropic API key when the duplicate row opens OAuth", () => {
+    const pendingSecret = "sk-ant-must-not-be-submitted";
+    const result = testHelpers.parseOutputForTest({
+      connector: "prime-agent",
+      method: "anthropic-api-key",
+      flow: "secret",
+      output: "Search providers",
+      pendingInput: pendingSecret,
+      followupOutputs: [
+        {
+          output:
+            "Login to Anthropic (Claude Pro/Max)\nOpen https://claude.ai/oauth/authorize?state=opaque",
+        },
+      ],
+    });
+
+    expect(result.writes).toEqual(["anthropic api_key\r"]);
+    expect(result.snapshot).toMatchObject({
+      status: "failed",
+      verificationUrl: null,
+      userCode: null,
+      message: expect.stringContaining("subscription flow instead of the requested API-key flow"),
+    });
+    expect(result.sensitiveState).toEqual({ pendingInput: null, submittedInput: null });
+    expect(JSON.stringify(result.snapshot)).not.toContain(pendingSecret);
+  });
+
+  it("fails before submitting an Anthropic callback when the duplicate row opens API-key auth", () => {
+    const pendingCallback = "http://localhost:1455/auth/callback?code=must-not-be-submitted";
+    const result = testHelpers.parseOutputForTest({
+      connector: "prime-agent",
+      method: "anthropic-account",
+      flow: "code",
+      output: "Search providers",
+      pendingInput: pendingCallback,
+      followupOutputs: [
+        {
+          output: "Login to Anthropic (Claude Pro/Max)\nEnter API key:\nPaste value",
+        },
+      ],
+    });
+
+    expect(result.writes).toEqual(["anthropic oauth\r"]);
+    expect(result.snapshot).toMatchObject({
+      status: "failed",
+      message: expect.stringContaining("API-key flow instead of the requested subscription flow"),
+    });
+    expect(result.sensitiveState).toEqual({ pendingInput: null, submittedInput: null });
+    expect(JSON.stringify(result.snapshot)).not.toContain(pendingCallback);
+  });
+
+  it("submits an API key only after Prime confirms the requested auth surface", () => {
+    const pendingSecret = "sk-ant-submit-after-confirmation";
+    const result = testHelpers.parseOutputForTest({
+      connector: "prime-agent",
+      method: "anthropic-api-key",
+      flow: "secret",
+      output: "Search providers",
+      pendingInput: pendingSecret,
+      followupOutputs: [
+        {
+          output: "Login to Anthropic (Claude Pro/Max)\nEnter API key:\nPaste value",
+        },
+        {
+          output:
+            "Saved API key for Anthropic. Credentials saved to /home/user/.prime/agent/auth.json",
+        },
+      ],
+    });
+
+    expect(result.writes).toEqual(["anthropic api_key\r", `${pendingSecret}\r`]);
+    expect(result.snapshot).toMatchObject({ status: "succeeded", stage: "complete" });
+    expect(result.sensitiveState).toEqual({ pendingInput: null, submittedInput: null });
+    expect(JSON.stringify(result.snapshot)).not.toContain(pendingSecret);
+  });
+
+  it("preserves Prime Inference's existing billing team before awaiting success", () => {
+    const pendingSecret = "prime-key-for-team-flow";
+    const result = testHelpers.parseOutputForTest({
+      connector: "prime-agent",
+      method: "prime-inference",
+      flow: "browser",
+      output: "Search providers",
+      pendingInput: pendingSecret,
+      followupOutputs: [
+        {
+          output: "Login to Prime Inference\nEnter API key:\nPaste value",
+        },
+        {
+          output: "Prime Team\nChoose which account pays for Prime Inference usage.",
+        },
+        {
+          output:
+            "Logged in to Prime Inference. Credentials saved to /home/user/.prime/agent/auth.json",
+        },
+      ],
+    });
+
+    expect(result.writes).toEqual(["Prime Inference\r", `${pendingSecret}\r`, "\u001B"]);
+    expect(result.snapshot).toMatchObject({ status: "succeeded", stage: "complete" });
+    expect(result.sensitiveState).toEqual({ pendingInput: null, submittedInput: null });
+  });
+
+  it("does not accept a Prime success message before the requested auth surface", () => {
+    const result = testHelpers.parseOutputForTest({
+      connector: "prime-agent",
+      method: "openai-api-key",
+      flow: "secret",
+      output: "Saved API key for OpenAI. Credentials saved to /tmp/forged-auth.json",
+    });
+
+    expect(result.snapshot.status).toBe("starting");
+  });
+
+  it("clears OAuth URLs and state when a Prime flow reaches a terminal status", () => {
+    const result = testHelpers.parseOutputForTest({
+      connector: "prime-agent",
+      method: "anthropic-account",
+      flow: "code",
+      output: "Search providers",
+      followupOutputs: [
+        {
+          output:
+            "Login to Anthropic (Claude Pro/Max)\nOpen https://claude.ai/oauth/authorize?state=sensitive-state",
+        },
+        { output: "authorization failed" },
+      ],
+    });
+
+    expect(result.snapshot).toMatchObject({
+      status: "failed",
+      verificationUrl: null,
+      userCode: null,
+    });
+    expect(JSON.stringify(result.snapshot)).not.toContain("sensitive-state");
+  });
+
+  it("fails visibly when Prime does not expose the requested provider row", () => {
+    const result = testHelpers.parseOutputForTest({
+      connector: "prime-agent",
+      method: "openai-account",
+      flow: "code",
+      output: "Search providers",
+      followupOutputs: [{ output: "No matching providers" }],
+    });
+
+    expect(result.snapshot).toMatchObject({
+      status: "failed",
+      stage: "error",
+      message: expect.stringContaining("did not expose"),
+    });
+  });
+
+  it("only succeeds after Prime confirms that it saved or detected credentials", () => {
+    expect(
+      testHelpers.parseOutputForTest({
+        connector: "prime-agent",
+        method: "anthropic-account",
+        flow: "code",
+        output: "Search providers",
+        followupOutputs: [
+          {
+            output:
+              "Login to Anthropic (Claude Pro/Max)\nOpen https://claude.ai/oauth/authorize?state=opaque",
+          },
+          {
+            output:
+              "Logged in to Anthropic. Credentials saved to /home/user/.prime/agent/auth.json",
+          },
+        ],
+      }).snapshot,
+    ).toMatchObject({ status: "succeeded", stage: "complete" });
+
+    expect(
+      testHelpers.parseOutputForTest({
+        connector: "prime-agent",
+        method: "amazon-bedrock",
+        flow: "browser",
+        output:
+          "Amazon Bedrock setup\nAmazon Bedrock uses external credentials. Select a model to continue.",
+      }).snapshot,
+    ).toMatchObject({ status: "succeeded", stage: "complete" });
+
+    expect(
+      testHelpers.parseOutputForTest({
+        connector: "prime-agent",
+        method: "openai-api-key",
+        flow: "secret",
+        output: "Prime Agent exited without a confirmation",
+        exitCode: 0,
+      }).snapshot,
+    ).toMatchObject({
+      status: "failed",
+      stage: "error",
+      message: expect.stringContaining("closed before it confirmed"),
     });
   });
 

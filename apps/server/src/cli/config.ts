@@ -124,6 +124,9 @@ const EnvServerConfig = Config.all({
     Config.option,
     Config.map(Option.getOrUndefined),
   ),
+  primeAgentSubscriptionOAuthEnabled: Config.boolean(
+    "T3CODE_PRIME_AGENT_SUBSCRIPTION_OAUTH_ENABLED",
+  ).pipe(Config.withDefault(false)),
   managedGatewayToken: Config.string("WORKSPACE_GATEWAY_TOKEN").pipe(
     Config.option,
     Config.map(Option.getOrUndefined),
@@ -388,6 +391,7 @@ export const resolveServerConfig = (
       noBrowser,
       managedDevPc: env.managedDevPc,
       museCodeEnabled: env.museCodeEnabled ?? !env.managedDevPc,
+      primeAgentSubscriptionOAuthEnabled: env.primeAgentSubscriptionOAuthEnabled,
       managedGatewayToken: env.managedGatewayToken,
       startupPresentation,
       desktopBootstrapToken,

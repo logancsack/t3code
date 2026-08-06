@@ -19,6 +19,7 @@ import {
 } from "./keybindings.ts";
 import { EditorId } from "./editor.ts";
 import { ModelCapabilities } from "./model.ts";
+import { RuntimeMode } from "./orchestration.ts";
 import { ProviderDriverKind, ProviderInstanceId } from "./providerInstance.ts";
 import { ServerSettings } from "./settings.ts";
 
@@ -170,6 +171,10 @@ export const ServerProvider = Schema.Struct({
   badgeLabel: Schema.optional(TrimmedNonEmptyString),
   continuation: Schema.optional(ServerProviderContinuation),
   showInteractionModeToggle: Schema.optional(Schema.Boolean),
+  // Optional for back-compat. When absent, clients expose every runtime mode.
+  // A provider can advertise a strict subset when its protocol cannot honor
+  // the approval semantics of the other modes.
+  supportedRuntimeModes: Schema.optional(Schema.Array(RuntimeMode)),
   requiresNewThreadForModelChange: Schema.optional(Schema.Boolean),
   enabled: Schema.Boolean,
   installed: Schema.Boolean,

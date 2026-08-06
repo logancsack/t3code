@@ -175,7 +175,11 @@ import {
   projectScriptIdFromCommand,
 } from "~/projectScripts";
 import { newDraftId, newMessageId, newThreadId } from "~/lib/utils";
-import { getProviderModelCapabilities, resolveSelectableProvider } from "../providerModels";
+import {
+  coerceProviderRuntimeMode,
+  getProviderModelCapabilities,
+  resolveSelectableProvider,
+} from "../providerModels";
 import { NO_PROVIDER_MODEL_SELECTION } from "../providerInstances";
 import { useClientSettings, useEnvironmentSettings } from "../hooks/useSettings";
 import { useNowMinute } from "../hooks/useNowMinute";
@@ -1488,7 +1492,8 @@ function ChatViewContent(props: ChatViewProps) {
   const threadError = isServerThread
     ? (localServerError ?? activeServerThread?.session?.lastError ?? null)
     : localDraftError;
-  const runtimeMode = composerRuntimeMode ?? activeThread?.runtimeMode ?? DEFAULT_RUNTIME_MODE;
+  const requestedRuntimeMode =
+    composerRuntimeMode ?? activeThread?.runtimeMode ?? DEFAULT_RUNTIME_MODE;
   // Plan mode is legacy (Settings → Beta). With the flag off the effective
   // mode is forced to "default" — even for threads with a stored plan mode —
   // so nobody is trapped in plan mode while its toggle is hidden. The next
@@ -2564,6 +2569,21 @@ function ChatViewContent(props: ChatViewProps) {
     const defaultInstanceId = defaultInstanceIdForDriver(selectedProvider);
     return providerStatuses.find((status) => status.instanceId === defaultInstanceId) ?? null;
   }, [activeProviderInstanceId, providerStatuses, selectedProvider]);
+  const runtimeMode = coerceProviderRuntimeMode(activeProviderStatus, requestedRuntimeMode);
+  useEffect(() => {
+    if (runtimeMode === requestedRuntimeMode) return;
+    setComposerDraftRuntimeMode(composerDraftTarget, runtimeMode);
+    if (isLocalDraftThread) {
+      setDraftThreadContext(composerDraftTarget, { runtimeMode });
+    }
+  }, [
+    composerDraftTarget,
+    isLocalDraftThread,
+    requestedRuntimeMode,
+    runtimeMode,
+    setComposerDraftRuntimeMode,
+    setDraftThreadContext,
+  ]);
   const providerStatusBannerKey = getProviderStatusBannerKey(activeProviderStatus);
   const [dismissedProviderStatusBannerKey, setDismissedProviderStatusBannerKey] = useState<
     string | null
@@ -5812,6 +5832,10 @@ function ChatViewContent(props: ChatViewProps) {
         scheduleComposerFocus();
         return;
       }
+      const nextRuntimeMode = coerceProviderRuntimeMode(entry, runtimeMode);
+      if (nextRuntimeMode !== runtimeMode) {
+        handleRuntimeModeChange(nextRuntimeMode);
+      }
       setComposerDraftModelSelection(
         scopeThreadRef(activeThread.environmentId, activeThread.id),
         nextModelSelection,
@@ -5821,11 +5845,13 @@ function ChatViewContent(props: ChatViewProps) {
     },
     [
       activeThread,
+      handleRuntimeModeChange,
       lockedProvider,
       scheduleComposerFocus,
       setComposerDraftModelSelection,
       setStickyComposerModelSelection,
       providerStatuses,
+      runtimeMode,
       settings,
     ],
   );

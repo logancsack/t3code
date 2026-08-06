@@ -72,7 +72,7 @@ import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { AddProviderInstanceDialog } from "./AddProviderInstanceDialog";
 import { AuthConnectorDialog } from "./AuthConnectorDialog";
-import { AGENT_AUTH_METHODS } from "./authConnectorMethods";
+import { resolveAgentAuthMethods } from "./authConnectorMethods";
 import { ProviderInstanceCard } from "./ProviderInstanceCard";
 import {
   DRIVER_OPTIONS,
@@ -377,6 +377,7 @@ export function EnvironmentProviderSettings({
   const updateSettings = useUpdateEnvironmentSettings(environmentId);
   const serverProviders =
     useAtomValue(serverEnvironment.providersValueAtom(environmentId)) ?? EMPTY_SERVER_PROVIDERS;
+  const serverConfig = useAtomValue(serverEnvironment.configValueAtom(environmentId));
   const refreshServerProviders = useAtomCommand(serverEnvironment.refreshProviders, {
     reportFailure: false,
   });
@@ -826,7 +827,10 @@ export function EnvironmentProviderSettings({
                 : Result.failVoid,
             );
             const resetLabel = driverOption?.label ?? String(row.driver);
-            const authConnector = AGENT_AUTH_METHODS[row.driver];
+            const authConnector = resolveAgentAuthMethods(
+              row.driver,
+              serverConfig?.environment.capabilities.primeAgentSubscriptionOAuth === true,
+            );
             const headerAction =
               row.isDefault && row.isDirty ? (
                 <SettingResetButton
@@ -869,6 +873,7 @@ export function EnvironmentProviderSettings({
                       connector={authConnector.connector}
                       serviceName={authConnector.serviceName}
                       methods={authConnector.methods}
+                      providerInstanceId={row.instanceId}
                       isAuthenticated={liveProvider?.auth.status === "authenticated"}
                       onConnected={refreshProviders}
                       environmentId={environmentId}

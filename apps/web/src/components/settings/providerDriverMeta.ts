@@ -5,6 +5,7 @@ import {
   GrokSettings,
   MuseSettings,
   OpenCodeSettings,
+  PrimeSettings,
   ProviderDriverKind,
   type ServerProvider,
 } from "@t3tools/contracts";
@@ -17,6 +18,7 @@ import {
   MuseCodeIcon,
   OpenAI,
   OpenCodeIcon,
+  PrimeAgentIcon,
 } from "../Icons";
 
 type ProviderSettingsSchema = {
@@ -77,6 +79,13 @@ export const PROVIDER_CLIENT_DEFINITIONS: readonly ProviderClientDefinition[] = 
     icon: MuseCodeIcon,
     badgeLabel: "Beta",
     settingsSchema: MuseSettings,
+  },
+  {
+    value: ProviderDriverKind.make("primeAgent"),
+    label: "Prime Agent",
+    icon: PrimeAgentIcon,
+    badgeLabel: "Experimental",
+    settingsSchema: PrimeSettings,
   },
   {
     value: ProviderDriverKind.make("opencode"),

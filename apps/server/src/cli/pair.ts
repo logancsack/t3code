@@ -335,6 +335,7 @@ const makePairServerConfig = Effect.fn(function* (input: {
     mode: "web",
     managedDevPc: false,
     museCodeEnabled: true,
+    primeAgentSubscriptionOAuthEnabled: false,
     port: state.port,
     host: state.host,
     cwd: process.cwd(),

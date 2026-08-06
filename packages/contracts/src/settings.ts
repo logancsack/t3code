@@ -453,6 +453,41 @@ export const MuseSettings = makeProviderSettingsSchema(
 );
 export type MuseSettings = typeof MuseSettings.Type;
 
+export const PrimeSettings = makeProviderSettingsSchema(
+  {
+    enabled: Schema.Boolean.pipe(
+      Schema.withDecodingDefault(Effect.succeed(true)),
+      Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
+    ),
+    binaryPath: makeBinaryPathSetting("prime-agent").pipe(
+      Schema.annotateKey({
+        title: "Binary path",
+        description: "Path to the Prime Agent binary used by this instance.",
+        providerSettingsForm: {
+          placeholder: "prime-agent",
+          clearWhenEmpty: "omit",
+        },
+      }),
+    ),
+    launchArgs: TrimmedString.pipe(
+      Schema.withDecodingDefault(Effect.succeed("")),
+      Schema.annotateKey({
+        title: "Launch arguments",
+        description: "Additional CLI arguments passed when starting Prime Agent ACP sessions.",
+        providerSettingsForm: { clearWhenEmpty: "omit" },
+      }),
+    ),
+    customModels: Schema.Array(Schema.String).pipe(
+      Schema.withDecodingDefault(Effect.succeed([])),
+      Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
+    ),
+  },
+  {
+    order: ["binaryPath", "launchArgs"],
+  },
+);
+export type PrimeSettings = typeof PrimeSettings.Type;
+
 export const OpenCodeSettings = makeProviderSettingsSchema(
   {
     enabled: Schema.Boolean.pipe(
@@ -628,6 +663,7 @@ export const ServerSettings = Schema.Struct({
     cursor: CursorSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
     grok: GrokSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
     muse: MuseSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+    primeAgent: PrimeSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
     opencode: OpenCodeSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   }).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   // New driver-agnostic instance map. Keyed by `ProviderInstanceId`; values
@@ -731,6 +767,13 @@ const MuseSettingsPatch = Schema.Struct({
   customModels: Schema.optionalKey(Schema.Array(Schema.String)),
 });
 
+const PrimeSettingsPatch = Schema.Struct({
+  enabled: Schema.optionalKey(Schema.Boolean),
+  binaryPath: Schema.optionalKey(TrimmedString),
+  launchArgs: Schema.optionalKey(TrimmedString),
+  customModels: Schema.optionalKey(Schema.Array(Schema.String)),
+});
+
 const OpenCodeSettingsPatch = Schema.Struct({
   enabled: Schema.optionalKey(Schema.Boolean),
   binaryPath: Schema.optionalKey(TrimmedString),
@@ -779,6 +822,7 @@ export const ServerSettingsPatch = Schema.Struct({
       cursor: Schema.optionalKey(CursorSettingsPatch),
       grok: Schema.optionalKey(GrokSettingsPatch),
       muse: Schema.optionalKey(MuseSettingsPatch),
+      primeAgent: Schema.optionalKey(PrimeSettingsPatch),
       opencode: Schema.optionalKey(OpenCodeSettingsPatch),
     }),
   ),

@@ -28,6 +28,7 @@ import { ComposerSurface } from "./ThreadComposer";
 
 import { makeTurnCommandMetadata } from "../../lib/commandMetadata";
 import { convertPastedImagesToAttachments, pickComposerImages } from "../../lib/composerImages";
+import { RUNTIME_MODE_OPTIONS, runtimeModeLabel } from "../../lib/runtimeModes";
 import {
   applyProviderOptionMenuEvent,
   buildProviderOptionMenuActions,
@@ -563,27 +564,14 @@ export function NewTaskDraftScreen(props: {
       {
         id: "options-runtime",
         title: "Runtime",
-        subtitle:
-          flow.runtimeMode === "approval-required"
-            ? "Approve actions"
-            : flow.runtimeMode === "auto-accept-edits"
-              ? "Auto-accept edits"
-              : flow.runtimeMode === "auto"
-                ? "Auto"
-                : "Full access",
-        subactions: [
-          { id: "options:runtime:approval-required", title: "Approve actions" },
-          { id: "options:runtime:auto-accept-edits", title: "Auto-accept edits" },
-          { id: "options:runtime:auto", title: "Auto" },
-          { id: "options:runtime:full-access", title: "Full access" },
-        ].map((option) => {
-          const value = option.id.replace("options:runtime:", "");
-          return {
-            id: option.id,
-            title: option.title,
-            state: flow.runtimeMode === value ? ("on" as const) : undefined,
-          };
-        }),
+        subtitle: runtimeModeLabel(flow.runtimeMode),
+        subactions: RUNTIME_MODE_OPTIONS.filter((option) =>
+          flow.supportedRuntimeModes.includes(option.value),
+        ).map((option) => ({
+          id: `options:runtime:${option.value}`,
+          title: option.label,
+          state: flow.runtimeMode === option.value ? ("on" as const) : undefined,
+        })),
       },
       {
         id: "options-interaction",
@@ -602,7 +590,7 @@ export function NewTaskDraftScreen(props: {
         }),
       },
     ],
-    [flow.interactionMode, flow.runtimeMode, providerOptionDescriptors],
+    [flow.interactionMode, flow.runtimeMode, flow.supportedRuntimeModes, providerOptionDescriptors],
   );
 
   const workspaceMenuActions = useMemo(() => {
@@ -794,7 +782,7 @@ export function NewTaskDraftScreen(props: {
     const selectedWorktreePath =
       draft.workspaceSelection?.worktreePath ?? flow.selectedWorktreePath;
     const startFromOrigin = draft.workspaceSelection?.startFromOrigin ?? flow.startFromOrigin;
-    const runtimeMode = draft.runtimeMode ?? flow.runtimeMode;
+    const runtimeMode = flow.runtimeMode;
     const interactionMode = draft.interactionMode ?? flow.interactionMode;
     const initialMessageText = draft.text.trim();
 

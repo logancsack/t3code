@@ -6,6 +6,7 @@ import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstab
 
 import * as ServerConfig from "./config.ts";
 import { ProjectionSnapshotQuery } from "./orchestration/Services/ProjectionSnapshotQuery.ts";
+import { hasRunningPrimeAgentSubagents } from "./provider/PrimeAgentActivity.ts";
 
 export const MANAGED_DEVPC_ACTIVITY_PATH = "/api/_devpc/activity";
 const MANAGED_GATEWAY_HEADER = "x-devpc-gateway-token";
@@ -53,7 +54,9 @@ const handleManagedDevPcActivity = Effect.gen(function* () {
         ),
       onSuccess: (snapshot) =>
         HttpServerResponse.jsonUnsafe(
-          { active: hasRunningManagedTurn(snapshot.threads) },
+          {
+            active: hasRunningManagedTurn(snapshot.threads) || hasRunningPrimeAgentSubagents(),
+          },
           { status: 200, headers: { "cache-control": "no-store" } },
         ),
     }),

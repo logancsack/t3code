@@ -26,6 +26,7 @@ import { CursorDriver, type CursorDriverEnv } from "./Drivers/CursorDriver.ts";
 import { GrokDriver, type GrokDriverEnv } from "./Drivers/GrokDriver.ts";
 import { MuseDriver, type MuseDriverEnv } from "./Drivers/MuseDriver.ts";
 import { OpenCodeDriver, type OpenCodeDriverEnv } from "./Drivers/OpenCodeDriver.ts";
+import { PrimeDriver, type PrimeDriverEnv } from "./Drivers/PrimeDriver.ts";
 import type { AnyProviderDriver } from "./ProviderDriver.ts";
 
 /**
@@ -39,6 +40,7 @@ export type BuiltInDriversEnv =
   | CursorDriverEnv
   | GrokDriverEnv
   | MuseDriverEnv
+  | PrimeDriverEnv
   | OpenCodeDriverEnv;
 
 /**
@@ -52,6 +54,7 @@ export const BUILT_IN_DRIVERS: ReadonlyArray<AnyProviderDriver<BuiltInDriversEnv
   CursorDriver,
   GrokDriver,
   MuseDriver,
+  PrimeDriver,
   OpenCodeDriver,
 ];
 

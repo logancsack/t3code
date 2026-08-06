@@ -47,6 +47,7 @@ const makeServerConfig = Effect.fn(function* (baseDir: string) {
     noBrowser: false,
     managedDevPc: false,
     museCodeEnabled: true,
+    primeAgentSubscriptionOAuthEnabled: false,
     startupPresentation: "browser",
   } satisfies ServerConfig.ServerConfig["Service"];
 });
@@ -72,7 +73,38 @@ it.layer(NodeServices.layer)("ServerEnvironmentLive", (it) => {
       expect(second.capabilities.repositoryIdentity).toBe(true);
       expect(second.capabilities.connectionProbe).toBe(true);
       expect(second.capabilities.threadTitleRegeneration).toBe(true);
+      expect(second.capabilities.primeAgentSubscriptionOAuth).toBeUndefined();
     }),
+  );
+
+  it.effect(
+    "advertises Prime Agent subscription OAuth only when its operator gate is enabled",
+    () =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const baseDir = yield* fileSystem.makeTempDirectoryScoped({
+          prefix: "t3-server-environment-prime-oauth-test-",
+        });
+        const config = yield* makeServerConfig(baseDir);
+        yield* ServerConfig.ensureServerDirectories(config);
+        const descriptor = yield* Effect.gen(function* () {
+          const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;
+          return yield* serverEnvironment.getDescriptor;
+        }).pipe(
+          Effect.provide(
+            ServerEnvironment.layer.pipe(
+              Layer.provide(
+                ServerConfig.layer({
+                  ...config,
+                  primeAgentSubscriptionOAuthEnabled: true,
+                }),
+              ),
+            ),
+          ),
+        );
+
+        expect(descriptor.capabilities.primeAgentSubscriptionOAuth).toBe(true);
+      }),
   );
 
   it.effect("structures persisted environment id filesystem failures", () =>

@@ -209,7 +209,11 @@ import {
   XIcon,
 } from "lucide-react";
 import { proposedPlanTitle } from "../../proposedPlan";
-import { getProviderDisplayName, getProviderInteractionModeToggle } from "../../providerModels";
+import {
+  getProviderDisplayName,
+  getProviderInteractionModeToggle,
+  getProviderSupportedRuntimeModes,
+} from "../../providerModels";
 import {
   applyProviderInstanceSettings,
   deriveProviderInstanceEntries,
@@ -300,15 +304,22 @@ function isInsideComposerFloatingLayer(element: Element): boolean {
   return element.closest(COMPOSER_FLOATING_LAYER_SELECTOR) !== null;
 }
 
-const ComposerFooterModeControls = memo(function ComposerFooterModeControls(props: {
+export const ComposerFooterModeControls = memo(function ComposerFooterModeControls(props: {
   showInteractionModeToggle: boolean;
   interactionMode: ProviderInteractionMode;
   runtimeMode: RuntimeMode;
+  supportedRuntimeModes: ReadonlyArray<RuntimeMode>;
   onToggleInteractionMode: () => void;
   onRuntimeModeChange: (mode: RuntimeMode) => void;
 }) {
-  const runtimeModeOption = runtimeModeConfig[props.runtimeMode];
+  const supportedRuntimeModes =
+    props.supportedRuntimeModes.length > 0 ? props.supportedRuntimeModes : runtimeModeOptions;
+  const displayedRuntimeMode = supportedRuntimeModes.includes(props.runtimeMode)
+    ? props.runtimeMode
+    : (supportedRuntimeModes[0] ?? "full-access");
+  const runtimeModeOption = runtimeModeConfig[displayedRuntimeMode];
   const RuntimeModeIcon = runtimeModeOption.icon;
+  const isRuntimeModeFixed = supportedRuntimeModes.length === 1;
   const interactionModeTooltip =
     props.interactionMode === "plan"
       ? "Plan mode — click to return to normal build mode"
@@ -353,17 +364,31 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
 
       <Tooltip>
         <Select
-          value={props.runtimeMode}
+          value={displayedRuntimeMode}
           onValueChange={(value) => props.onRuntimeModeChange(value!)}
         >
           <TooltipTrigger
-            render={<ComposerSelectControl className="font-medium" aria-label="Runtime mode" />}
+            render={
+              <ComposerSelectControl
+                className="font-medium"
+                disabled={isRuntimeModeFixed}
+                aria-label={
+                  isRuntimeModeFixed
+                    ? `Runtime mode: ${runtimeModeOption.label} (required by provider)`
+                    : "Runtime mode"
+                }
+              />
+            }
           >
             <ComposerControlIcon icon={RuntimeModeIcon} />
-            <SelectValue>{runtimeModeOption.label}</SelectValue>
+            <SelectValue>
+              {isRuntimeModeFixed
+                ? `${runtimeModeOption.label} · Required`
+                : runtimeModeOption.label}
+            </SelectValue>
           </TooltipTrigger>
           <SelectPopup alignItemWithTrigger={false}>
-            {runtimeModeOptions.map((mode) => {
+            {supportedRuntimeModes.map((mode) => {
               const option = runtimeModeConfig[mode];
               const OptionIcon = option.icon;
               return (
@@ -384,7 +409,11 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
             })}
           </SelectPopup>
         </Select>
-        <TooltipPopup side="top">{runtimeModeOption.description}</TooltipPopup>
+        <TooltipPopup side="top">
+          {isRuntimeModeFixed
+            ? `This provider requires ${runtimeModeOption.label}.`
+            : runtimeModeOption.description}
+        </TooltipPopup>
       </Tooltip>
 
       {interactionModeToggle}
@@ -889,8 +918,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     () => ({
       showInteractionModeToggle:
         planModeUiEnabled && getProviderInteractionModeToggle(providerStatuses, selectedProvider),
+      supportedRuntimeModes: getProviderSupportedRuntimeModes(selectedProviderStatus),
     }),
-    [planModeUiEnabled, providerStatuses, selectedProvider],
+    [planModeUiEnabled, providerStatuses, selectedProvider, selectedProviderStatus],
   );
   const selectedModelSelection = useMemo<ModelSelection>(
     () => createModelSelection(selectedInstanceId, selectedModel, selectedModelOptionsForDispatch),
@@ -3247,6 +3277,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   <CompactComposerControlsMenu
                     interactionMode={interactionMode}
                     runtimeMode={runtimeMode}
+                    supportedRuntimeModes={composerProviderControls.supportedRuntimeModes}
                     showInteractionModeToggle={composerProviderControls.showInteractionModeToggle}
                     traitsMenuContent={providerTraitsMenuContent}
                     onToggleInteractionMode={toggleInteractionMode}
@@ -3264,6 +3295,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       showInteractionModeToggle={composerProviderControls.showInteractionModeToggle}
                       interactionMode={interactionMode}
                       runtimeMode={runtimeMode}
+                      supportedRuntimeModes={composerProviderControls.supportedRuntimeModes}
                       onToggleInteractionMode={toggleInteractionMode}
                       onRuntimeModeChange={handleRuntimeModeChange}
                     />

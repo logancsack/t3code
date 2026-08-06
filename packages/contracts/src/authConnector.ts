@@ -1,6 +1,7 @@
 import * as Schema from "effect/Schema";
 
 import { TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { ProviderInstanceId } from "./providerInstance.ts";
 
 export const AuthConnectorKind = Schema.Literals([
   "codex",
@@ -8,6 +9,7 @@ export const AuthConnectorKind = Schema.Literals([
   "cursor",
   "grok",
   "muse",
+  "prime-agent",
   "opencode",
   "github",
   "gitlab",
@@ -24,7 +26,13 @@ export const AuthConnectorMethod = Schema.Literals([
   "openai-account",
   "github-copilot",
   "xai-account",
+  "prime-inference",
+  "openai-api-key",
+  "anthropic-account",
   "anthropic-api-key",
+  "azure-openai",
+  "amazon-bedrock",
+  "google-vertex",
   "opencode-api-key",
   "openrouter-api-key",
 ]);
@@ -82,6 +90,7 @@ export const AuthConnectorStartInput = Schema.Struct({
   connector: AuthConnectorKind,
   method: AuthConnectorMethod,
   hostname: Schema.optional(TrimmedNonEmptyString),
+  providerInstanceId: Schema.optional(ProviderInstanceId),
 });
 export type AuthConnectorStartInput = typeof AuthConnectorStartInput.Type;
 

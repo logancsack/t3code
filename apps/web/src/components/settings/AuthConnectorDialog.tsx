@@ -14,6 +14,8 @@ import type {
   AuthConnectorMethod,
   AuthConnectorSession,
   EnvironmentId,
+  AuthConnectorStartInput,
+  ProviderInstanceId,
 } from "@t3tools/contracts";
 import {
   isAtomCommandInterrupted,
@@ -25,6 +27,7 @@ import { usePrimaryEnvironment } from "../../state/environments";
 import { sourceControlEnvironment } from "../../state/sourceControl";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { Button } from "../ui/button";
+import { Badge } from "../ui/badge";
 import {
   Dialog,
   DialogDescription,
@@ -42,6 +45,7 @@ import { APP_BASE_NAME } from "../../branding";
 export type AuthConnectorMethodOption = {
   readonly method: AuthConnectorMethod;
   readonly label: string;
+  readonly badgeLabel?: string;
   readonly description: string;
   readonly hostname?: string;
   readonly externalHelpUrl?: string;
@@ -51,6 +55,19 @@ export type AuthConnectorMethodOption = {
   readonly waitingMessage?: string;
   readonly returnInstruction?: string;
 };
+
+export function buildAuthConnectorStartInput(input: {
+  readonly connector: AuthConnectorKind;
+  readonly option: AuthConnectorMethodOption;
+  readonly providerInstanceId?: ProviderInstanceId;
+}): AuthConnectorStartInput {
+  return {
+    connector: input.connector,
+    method: input.option.method,
+    ...(input.option.hostname ? { hostname: input.option.hostname } : {}),
+    ...(input.providerInstanceId ? { providerInstanceId: input.providerInstanceId } : {}),
+  };
+}
 
 function errorMessage(cause: unknown): string {
   return cause instanceof Error ? cause.message : "The connection could not be completed.";
@@ -84,11 +101,13 @@ export function AuthConnectorDialog(props: {
   readonly connector: AuthConnectorKind;
   readonly serviceName: string;
   readonly methods: ReadonlyArray<AuthConnectorMethodOption>;
+  readonly providerInstanceId?: ProviderInstanceId;
   readonly isAuthenticated: boolean;
   readonly onConnected: () => void;
   readonly environmentId?: EnvironmentId;
 }) {
-  const { connector, serviceName, methods, isAuthenticated, onConnected } = props;
+  const { connector, serviceName, methods, providerInstanceId, isAuthenticated, onConnected } =
+    props;
   const primaryEnvironment = usePrimaryEnvironment();
   const environmentId = props.environmentId ?? primaryEnvironment?.environmentId;
   const startConnector = useAtomCommand(sourceControlEnvironment.startAuthConnector, {
@@ -183,11 +202,11 @@ export function AuthConnectorDialog(props: {
     setStartingMethod(option.method);
     const result = await startConnector({
       environmentId,
-      input: {
+      input: buildAuthConnectorStartInput({
         connector,
-        method: option.method,
-        ...(option.hostname ? { hostname: option.hostname } : {}),
-      },
+        option,
+        ...(providerInstanceId ? { providerInstanceId } : {}),
+      }),
     });
     setStartingMethod(null);
     if (result._tag === "Success") {
@@ -326,7 +345,7 @@ export function AuthConnectorDialog(props: {
         variant={isAuthenticated ? "ghost" : "outline"}
         className="h-7 gap-1.5 px-2.5 text-xs"
         disabled={!environmentId}
-        onClick={() => setOpen(true)}
+        onClick={() => handleOpenChange(true)}
       >
         <PlugIcon className="size-3.5" />
         {isAuthenticated ? "Reconnect" : "Connect"}
@@ -358,8 +377,13 @@ export function AuthConnectorDialog(props: {
                   onClick={() => void start(option)}
                 >
                   <span className="min-w-0">
-                    <span className="block text-sm font-medium text-foreground">
-                      {option.label}
+                    <span className="flex flex-wrap items-center gap-2 text-sm font-medium text-foreground">
+                      <span>{option.label}</span>
+                      {option.badgeLabel ? (
+                        <Badge variant="warning" size="sm">
+                          {option.badgeLabel}
+                        </Badge>
+                      ) : null}
                     </span>
                     <span className="mt-0.5 block text-xs leading-relaxed text-muted-foreground">
                       {option.description}
@@ -603,7 +627,7 @@ export function AuthConnectorDialog(props: {
 
         <DialogFooter>
           {session?.status === "succeeded" ? (
-            <Button onClick={() => setOpen(false)}>Done</Button>
+            <Button onClick={() => handleOpenChange(false)}>Done</Button>
           ) : session?.status === "failed" ||
             session?.status === "expired" ||
             session?.status === "cancelled" ? (
@@ -616,7 +640,7 @@ export function AuthConnectorDialog(props: {
             </Button>
           ) : session?.fields.length ? (
             <>
-              <Button variant="ghost" onClick={() => setOpen(false)}>
+              <Button variant="ghost" onClick={() => handleOpenChange(false)}>
                 Cancel
               </Button>
               <Button
@@ -631,7 +655,7 @@ export function AuthConnectorDialog(props: {
               </Button>
             </>
           ) : (
-            <Button variant="ghost" onClick={() => setOpen(false)}>
+            <Button variant="ghost" onClick={() => handleOpenChange(false)}>
               Cancel
             </Button>
           )}

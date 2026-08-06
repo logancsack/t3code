@@ -810,6 +810,9 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                 const stamp = yield* makeEventStamp();
 
                 switch (event._tag) {
+                  case "ThoughtDelta":
+                  case "SessionInfoUpdated":
+                    return;
                   case "AssistantItemStarted":
                     yield* offerRuntimeEvent(
                       makeAcpAssistantItemEvent({

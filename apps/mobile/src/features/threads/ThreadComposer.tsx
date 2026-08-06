@@ -55,6 +55,12 @@ import { ControlPill, ControlPillMenu } from "../../components/ControlPill";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import type { DraftComposerImageAttachment } from "../../lib/composerImages";
 import { buildModelMenuActions, buildModelOptions, groupByProvider } from "../../lib/modelOptions";
+import {
+  RUNTIME_MODE_OPTIONS,
+  coerceProviderRuntimeMode,
+  getProviderSupportedRuntimeModes,
+  runtimeModeLabel,
+} from "../../lib/runtimeModes";
 import { useScaledTextRole } from "../settings/appearance/useScaledTextRole";
 import type { RemoteClientConnectionState } from "../../lib/connection";
 import {
@@ -315,7 +321,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       ? "Queue"
       : "Send";
   const currentModelSelection = props.selectedThread.modelSelection;
-  const currentRuntimeMode = props.selectedThread.runtimeMode;
+  const rawRuntimeMode = props.selectedThread.runtimeMode;
   const currentInteractionMode = props.selectedThread.interactionMode ?? "default";
   const connectionStatus = composerConnectionStatus({
     connectionError: props.connectionError,
@@ -333,6 +339,8 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       ) ?? null
     );
   }, [props.serverConfig, props.selectedThread.modelSelection.instanceId]);
+  const supportedRuntimeModes = getProviderSupportedRuntimeModes(selectedProviderStatus);
+  const currentRuntimeMode = coerceProviderRuntimeMode(selectedProviderStatus, rawRuntimeMode);
 
   // ── Trigger detection ────────────────────────────────────
   const [composerSelection, setComposerSelection] = useState(() => ({
@@ -618,27 +626,14 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       {
         id: "options-runtime",
         title: "Runtime",
-        subtitle:
-          currentRuntimeMode === "approval-required"
-            ? "Approve actions"
-            : currentRuntimeMode === "auto-accept-edits"
-              ? "Auto-accept edits"
-              : currentRuntimeMode === "auto"
-                ? "Auto"
-                : "Full access",
-        subactions: [
-          { id: "options:runtime:approval-required", title: "Approve actions" },
-          { id: "options:runtime:auto-accept-edits", title: "Auto-accept edits" },
-          { id: "options:runtime:auto", title: "Auto" },
-          { id: "options:runtime:full-access", title: "Full access" },
-        ].map((option) => {
-          const value = option.id.replace("options:runtime:", "");
-          return {
-            id: option.id,
-            title: option.title,
-            state: currentRuntimeMode === value ? ("on" as const) : undefined,
-          };
-        }),
+        subtitle: runtimeModeLabel(currentRuntimeMode),
+        subactions: RUNTIME_MODE_OPTIONS.filter((option) =>
+          supportedRuntimeModes.includes(option.value),
+        ).map((option) => ({
+          id: `options:runtime:${option.value}`,
+          title: option.label,
+          state: currentRuntimeMode === option.value ? ("on" as const) : undefined,
+        })),
       },
       {
         id: "options-interaction",
@@ -657,7 +652,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
         }),
       },
     ],
-    [currentInteractionMode, currentRuntimeMode, providerOptionDescriptors],
+    [currentInteractionMode, currentRuntimeMode, providerOptionDescriptors, supportedRuntimeModes],
   );
 
   // ── Menu handlers ────────────────────────────────────────
@@ -669,6 +664,13 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     const option = modelOptions.find((o) => o.key === modelKey);
     if (option) {
       props.onUpdateModelSelection(option.selection);
+      const nextProvider = props.serverConfig?.providers.find(
+        (provider) => provider.instanceId === option.selection.instanceId,
+      );
+      const nextRuntimeMode = coerceProviderRuntimeMode(nextProvider, currentRuntimeMode);
+      if (nextRuntimeMode !== currentRuntimeMode) {
+        props.onUpdateRuntimeMode(nextRuntimeMode);
+      }
     }
   }
 
@@ -683,7 +685,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     }
     if (event.startsWith("options:runtime:")) {
       const runtimeMode = event.slice("options:runtime:".length) as RuntimeMode;
-      props.onUpdateRuntimeMode(runtimeMode);
+      props.onUpdateRuntimeMode(coerceProviderRuntimeMode(selectedProviderStatus, runtimeMode));
       return;
     }
     if (event.startsWith("options:interaction:")) {

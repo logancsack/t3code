@@ -149,6 +149,9 @@ export const make = Effect.gen(function* () {
       threadSnooze: true,
       threadPinning: true,
       threadTitleRegeneration: true,
+      ...(serverConfig.primeAgentSubscriptionOAuthEnabled
+        ? { primeAgentSubscriptionOAuth: true }
+        : {}),
       ...(serverSelfUpdate === null ? {} : { serverSelfUpdate }),
       ...(serverSelfUpdate === "boot-service" ? { serverSelfUpdateProgress: true } : {}),
     },

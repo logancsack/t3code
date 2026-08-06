@@ -736,6 +736,133 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
         ]);
       });
 
+      it("classifies pending, successful, and failed Prime model inventories", () => {
+        const previousProvider = {
+          instanceId: ProviderInstanceId.make("primeAgent"),
+          driver: ProviderDriverKind.make("primeAgent"),
+          status: "ready",
+          enabled: true,
+          installed: true,
+          auth: { status: "authenticated" },
+          checkedAt: "2026-08-06T00:00:00.000Z",
+          version: "0.7.0",
+          models: [
+            {
+              slug: "auto",
+              name: "Automatic",
+              isDefault: true,
+              isCustom: false,
+              capabilities: null,
+            },
+            {
+              slug: "openai/gpt-5.4",
+              name: "gpt-5.4",
+              subProvider: "openai",
+              isCustom: false,
+              capabilities: null,
+            },
+            {
+              slug: "anthropic/claude-opus-4-6",
+              name: "claude-opus-4-6",
+              subProvider: "anthropic",
+              isCustom: false,
+              capabilities: null,
+            },
+            {
+              slug: "openrouter/custom-model",
+              name: "openrouter/custom-model",
+              isCustom: true,
+              capabilities: null,
+            },
+          ],
+          slashCommands: [],
+          skills: [],
+        } as const satisfies ServerProvider;
+        const currentCustomModel = {
+          slug: "openrouter/current-custom-model",
+          name: "openrouter/current-custom-model",
+          isCustom: true,
+          capabilities: null,
+        } as const satisfies ServerProviderModel;
+        const pendingProvider = {
+          ...previousProvider,
+          status: "warning",
+          installed: false,
+          auth: { status: "unknown" },
+          checkedAt: "2026-08-06T00:01:00.000Z",
+          version: null,
+          models: [previousProvider.models[0]!, currentCustomModel],
+          message: "Checking Prime Agent availability...",
+        } satisfies ServerProvider;
+        const reducedProvider = {
+          ...previousProvider,
+          checkedAt: "2026-08-06T00:02:00.000Z",
+          models: [previousProvider.models[0]!, previousProvider.models[1]!],
+        } satisfies ServerProvider;
+        const emptyProvider = {
+          ...previousProvider,
+          status: "warning",
+          auth: { status: "unauthenticated" },
+          checkedAt: "2026-08-06T00:03:00.000Z",
+          models: [previousProvider.models[0]!, currentCustomModel],
+          message: "Prime Agent has no usable authenticated models.",
+        } satisfies ServerProvider;
+        const failedProvider = {
+          ...previousProvider,
+          status: "error",
+          auth: { status: "unknown" },
+          checkedAt: "2026-08-06T00:04:00.000Z",
+          models: [previousProvider.models[0]!, currentCustomModel],
+          message: "Prime Agent model discovery failed.",
+        } satisfies ServerProvider;
+        const disabledProvider = {
+          ...previousProvider,
+          status: "disabled",
+          enabled: false,
+          installed: false,
+          auth: { status: "unknown" },
+          checkedAt: "2026-08-06T00:05:00.000Z",
+          version: null,
+          models: [previousProvider.models[0]!],
+          message: "Prime Agent is disabled in T3 Code settings.",
+        } satisfies ServerProvider;
+        const missingProvider = {
+          ...previousProvider,
+          status: "error",
+          installed: false,
+          auth: { status: "unknown" },
+          checkedAt: "2026-08-06T00:06:00.000Z",
+          version: null,
+          models: [previousProvider.models[0]!],
+          message: "Prime Agent CLI is not installed or not on PATH.",
+        } satisfies ServerProvider;
+        const retainedAfterInconclusiveRefresh = [
+          previousProvider.models[0]!,
+          currentCustomModel,
+          ...previousProvider.models.slice(1).filter((model) => !model.isCustom),
+        ];
+
+        assert.deepStrictEqual(mergeProviderSnapshot(previousProvider, pendingProvider).models, [
+          ...retainedAfterInconclusiveRefresh,
+        ]);
+        assert.deepStrictEqual(mergeProviderSnapshot(previousProvider, reducedProvider).models, [
+          ...reducedProvider.models,
+        ]);
+        assert.deepStrictEqual(mergeProviderSnapshot(previousProvider, emptyProvider).models, [
+          previousProvider.models[0]!,
+          currentCustomModel,
+        ]);
+        assert.deepStrictEqual(mergeProviderSnapshot(previousProvider, failedProvider).models, [
+          ...retainedAfterInconclusiveRefresh,
+        ]);
+        assert.deepStrictEqual(mergeProviderSnapshot(previousProvider, disabledProvider).models, [
+          previousProvider.models[0]!,
+        ]);
+        assert.deepStrictEqual(mergeProviderSnapshot(previousProvider, missingProvider).models, [
+          previousProvider.models[0]!,
+        ]);
+      });
+
       it("classifies pending, logout, uninstall, and reconnect OpenCode inventories", () => {
         const previousProvider = {
           instanceId: ProviderInstanceId.make("opencode"),
@@ -1608,6 +1735,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
                   cursor: { enabled: false },
                   grok: { enabled: false },
                   muse: { enabled: false },
+                  primeAgent: { enabled: false },
                   opencode: { enabled: false },
                 },
               }),
@@ -1863,6 +1991,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
                 "grok",
                 "muse",
                 "opencode",
+                "primeAgent",
               ]);
               assert.strictEqual(cursorProvider?.enabled, false);
               assert.strictEqual(cursorProvider?.status, "disabled");
