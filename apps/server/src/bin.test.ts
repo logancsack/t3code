@@ -92,6 +92,7 @@ const makeCliTestServerConfig = (baseDir: string) =>
       tailscaleServeEnabled: false,
       tailscaleServePort: 443,
       managedDevPc: false,
+      museCodeEnabled: true,
     } satisfies ServerConfig.ServerConfig["Service"];
   });
 

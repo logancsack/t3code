@@ -38,7 +38,7 @@ const makeDesktopBootstrap = (
 });
 
 it.layer(NodeServices.layer)("cli config resolution", (it) => {
-  const defaultObservabilityConfig = {
+  const defaultRuntimeConfig = {
     traceMinLevel: "Info",
     traceTimingEnabled: true,
     traceBatchWindowMs: 200,
@@ -48,6 +48,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
     otlpMetricsUrl: undefined,
     otlpExportIntervalMs: 10_000,
     otlpServiceName: "t3-server",
+    museCodeEnabled: true,
   } as const;
 
   const openBootstrapFd = Effect.fn(function* (payload: DesktopBackendBootstrapValue) {
@@ -58,6 +59,76 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
     const { fd } = yield* fs.open(filePath, { flag: "r" });
     return fd;
   });
+
+  const noServerFlags = {
+    mode: Option.none(),
+    port: Option.none(),
+    host: Option.none(),
+    baseDir: Option.none(),
+    cwd: Option.none(),
+    devUrl: Option.none(),
+    noBrowser: Option.none(),
+    bootstrapFd: Option.none(),
+    autoBootstrapProjectFromCwd: Option.none(),
+    logWebSocketEvents: Option.none(),
+    tailscaleServeEnabled: Option.none(),
+    tailscaleServePort: Option.none(),
+  } satisfies Parameters<typeof resolveServerConfig>[0];
+
+  const resolveWithEnv = (env: Readonly<Record<string, string>>) =>
+    resolveServerConfig(noServerFlags, Option.none()).pipe(
+      Effect.provide(
+        Layer.mergeAll(ConfigProvider.layer(ConfigProvider.fromEnv({ env })), NetService.layer),
+      ),
+    );
+
+  it.effect("enables Muse by default for a standalone server", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-muse-standalone-" });
+      const resolved = yield* resolveWithEnv({
+        T3CODE_HOME: baseDir,
+        T3CODE_MODE: "desktop",
+        T3CODE_PORT: "4101",
+      });
+
+      expect(resolved.managedDevPc).toBe(false);
+      expect(resolved.museCodeEnabled).toBe(true);
+    }),
+  );
+
+  it.effect("withholds Muse by default for a managed server", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-muse-managed-" });
+      const resolved = yield* resolveWithEnv({
+        T3CODE_HOME: baseDir,
+        T3CODE_MANAGED_DEVPC: "true",
+        T3CODE_MODE: "desktop",
+        T3CODE_PORT: "4102",
+      });
+
+      expect(resolved.managedDevPc).toBe(true);
+      expect(resolved.museCodeEnabled).toBe(false);
+    }),
+  );
+
+  it.effect("allows a managed server to explicitly enable Muse", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-muse-managed-enabled-" });
+      const resolved = yield* resolveWithEnv({
+        T3CODE_HOME: baseDir,
+        T3CODE_MANAGED_DEVPC: "true",
+        T3CODE_MODE: "desktop",
+        T3CODE_MUSE_ENABLED: "true",
+        T3CODE_PORT: "4103",
+      });
+
+      expect(resolved.managedDevPc).toBe(true);
+      expect(resolved.museCodeEnabled).toBe(true);
+    }),
+  );
 
   it.effect("falls back to effect/config values when flags are omitted", () =>
     Effect.gen(function* () {
@@ -98,6 +169,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
                   T3CODE_NO_BROWSER: "true",
                   T3CODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD: "false",
                   T3CODE_LOG_WS_EVENTS: "true",
+                  T3CODE_MUSE_ENABLED: "false",
                 },
               }),
             ),
@@ -108,7 +180,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
 
       expect(resolved).toEqual({
         logLevel: "Warn",
-        ...defaultObservabilityConfig,
+        ...defaultRuntimeConfig,
         mode: "desktop",
         port: 4001,
         cwd: process.cwd(),
@@ -119,6 +191,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
         devUrl: new URL("http://127.0.0.1:5173"),
         noBrowser: true,
         managedDevPc: false,
+        museCodeEnabled: false,
         startupPresentation: "browser",
         desktopBootstrapToken: undefined,
         autoBootstrapProjectFromCwd: false,
@@ -179,7 +252,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
 
       expect(resolved).toEqual({
         logLevel: "Debug",
-        ...defaultObservabilityConfig,
+        ...defaultRuntimeConfig,
         mode: "web",
         port: 8788,
         cwd: process.cwd(),
@@ -253,7 +326,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
 
       expect(resolved).toEqual({
         logLevel: "Info",
-        ...defaultObservabilityConfig,
+        ...defaultRuntimeConfig,
         mode: "web",
         port: 8788,
         cwd: process.cwd(),
@@ -326,7 +399,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
 
       expect(resolved).toEqual({
         logLevel: "Info",
-        ...defaultObservabilityConfig,
+        ...defaultRuntimeConfig,
         otlpTracesUrl: "http://localhost:4318/v1/traces",
         otlpMetricsUrl: "http://localhost:4318/v1/metrics",
         mode: "desktop",
@@ -457,7 +530,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
 
       expect(resolved).toEqual({
         logLevel: "Debug",
-        ...defaultObservabilityConfig,
+        ...defaultRuntimeConfig,
         mode: "web",
         port: 8788,
         cwd: process.cwd(),
@@ -525,7 +598,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
       expect(resolved.otlpMetricsUrl).toBe("http://localhost:4318/v1/metrics");
       expect(resolved).toEqual({
         logLevel: "Info",
-        ...defaultObservabilityConfig,
+        ...defaultRuntimeConfig,
         otlpTracesUrl: "http://localhost:4318/v1/traces",
         otlpMetricsUrl: "http://localhost:4318/v1/metrics",
         mode: "desktop",
@@ -591,7 +664,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
 
       expect(resolved).toEqual({
         logLevel: "Info",
-        ...defaultObservabilityConfig,
+        ...defaultRuntimeConfig,
         mode: "web",
         port: 3773,
         cwd: process.cwd(),

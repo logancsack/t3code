@@ -7,6 +7,7 @@ export const AuthConnectorKind = Schema.Literals([
   "claude",
   "cursor",
   "grok",
+  "muse",
   "opencode",
   "github",
   "gitlab",

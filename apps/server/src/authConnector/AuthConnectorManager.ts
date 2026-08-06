@@ -20,6 +20,7 @@ import {
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
+import { ServerConfig } from "../config.ts";
 import { writeStoredBitbucketCredentials } from "../sourceControl/BitbucketCredentialStore.ts";
 
 const SESSION_TTL_MS = 15 * 60 * 1_000;
@@ -88,14 +89,38 @@ function stripAnsi(input: string): string {
   return input.replace(ANSI_PATTERN, "").replace(/\r/g, "");
 }
 
+const AUTH_URL_HOSTS = [
+  "github.com",
+  "gitlab.com",
+  "openai.com",
+  "claude.com",
+  "cursor.com",
+  "x.ai",
+  "auth.meta.com",
+  "microsoft.com",
+  "microsoftonline.com",
+  "aka.ms",
+] as const;
+
+function isAllowedAuthUrl(candidate: string): boolean {
+  try {
+    const parsed = new URL(candidate);
+    const hostname = parsed.hostname.toLowerCase();
+    return (
+      parsed.protocol === "https:" &&
+      AUTH_URL_HOSTS.some((allowed) => hostname === allowed || hostname.endsWith(`.${allowed}`))
+    );
+  } catch {
+    return false;
+  }
+}
+
 function extractUrl(output: string): string | null {
   const matches = output.match(/https?:\/\/[^\s<>"']+/giu) ?? [];
-  const candidate = matches.findLast((url) =>
-    /(?:github\.com|gitlab\.com|openai\.com|claude\.com|cursor\.com|x\.ai|microsoft\.com|microsoftonline\.com|aka\.ms)/iu.test(
-      url,
-    ),
+  return (
+    matches.map((candidate) => candidate.replace(/[),.;]+$/u, "")).findLast(isAllowedAuthUrl) ??
+    null
   );
-  return candidate?.replace(/[),.;]+$/u, "") ?? null;
 }
 
 function extractUserCode(output: string): string | null {
@@ -105,6 +130,7 @@ function extractUserCode(output: string): string | null {
     /enter code:\s*([A-Z0-9-]{6,})/iu,
     /enter the code\s+([A-Z0-9-]{6,})/iu,
     /confirm this code(?: in your browser)?:\s*([A-Z0-9-]{6,})/iu,
+    /confirm this code matches:\s*([A-Z0-9-]{6,})/iu,
     /user_code=([A-Z0-9-]{6,})/iu,
   ];
   for (const pattern of patterns) {
@@ -269,6 +295,10 @@ function secretFields(input: AuthConnectorStartInput): ReadonlyArray<AuthConnect
   ];
 }
 
+function secretInputTerminator(input: Pick<AuthConnectorSession, "connector" | "method">): string {
+  return input.connector === "muse" && input.method === "api-key" ? "\r\u0004" : "\r";
+}
+
 type LaunchSpec = {
   readonly command: string;
   readonly args: ReadonlyArray<string>;
@@ -322,6 +352,22 @@ function launchSpec(input: AuthConnectorStartInput): LaunchSpec | null {
         flow: "device",
         message: "Starting xAI sign-in…",
       };
+    case "muse":
+      if (input.method !== "account" && input.method !== "api-key") return null;
+      return input.method === "api-key"
+        ? {
+            command: "muse",
+            args: ["auth", "set", "--provider", "meta", "--api-key-stdin"],
+            flow: "secret",
+            message: "Enter a Meta API key.",
+            fields: secretFields(input),
+          }
+        : {
+            command: "muse",
+            args: ["login"],
+            flow: "device",
+            message: "Starting secure Meta sign-in…",
+          };
     case "github":
       if (input.method !== "account" && input.method !== "token") return null;
       return input.method === "token"
@@ -535,7 +581,14 @@ async function submitBitbucket(
 
 export const start = Effect.fn("AuthConnectorManager.start")(function* (
   input: AuthConnectorStartInput,
-): Effect.fn.Return<AuthConnectorSession, AuthConnectorError> {
+): Effect.fn.Return<AuthConnectorSession, AuthConnectorError, ServerConfig> {
+  const { museCodeEnabled } = yield* ServerConfig;
+  if (input.connector === "muse" && !museCodeEnabled) {
+    return yield* connectorError(
+      "start",
+      "Muse Code is not available in this T3 Code environment.",
+    );
+  }
   if (input.connector === "bitbucket" && input.method !== "token") {
     return yield* connectorError("start", "That sign-in method is not supported.");
   }
@@ -635,7 +688,7 @@ export const submit = Effect.fn("AuthConnectorManager.submit")(function* (
     return yield* connectorError("submit", "Enter the requested credential to continue.");
   }
   clearSensitiveOutput(session);
-  session.process?.write(`${secret}\r`);
+  session.process?.write(`${secret}${secretInputTerminator(session.snapshot)}`);
   setSnapshot(session, {
     status: "starting",
     stage: "verifying",
@@ -711,6 +764,7 @@ export const testHelpers = {
   hasGitHubCredentialPrompt,
   hasGitHubBrowserPrompt,
   claudeCallbackField,
+  secretInputTerminator,
   launchSpec,
   parseOutputForTest,
 };

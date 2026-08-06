@@ -4,7 +4,7 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { ProviderDriverKind, ThreadId } from "@t3tools/contracts";
+import { ProviderDriverKind, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import { it, assert } from "@effect/vitest";
 import { assertSome } from "@effect/vitest/utils";
 import * as Effect from "effect/Effect";
@@ -120,6 +120,86 @@ it.layer(makeDirectoryLayer(SqlitePersistenceMemory))("ProviderSessionDirectoryL
           activeTurnId: "turn-1",
         });
       }
+    }));
+
+  it("rejects late conditional writes after stop while allowing an explicit reopen", () =>
+    Effect.gen(function* () {
+      const directory = yield* ProviderSessionDirectory;
+      const runtimeRepository = yield* ProviderSessionRuntime.ProviderSessionRuntimeRepository;
+      const threadId = ThreadId.make("thread-conditional-stop-race");
+      const instanceId = ProviderInstanceId.make("codex");
+
+      yield* directory.upsert({
+        provider: ProviderDriverKind.make("codex"),
+        providerInstanceId: instanceId,
+        threadId,
+        status: "running",
+        resumeCursor: { cursor: "before-stop" },
+        runtimePayload: { sessionGeneration: "generation-1" },
+      });
+      yield* directory.upsert({
+        provider: ProviderDriverKind.make("codex"),
+        providerInstanceId: instanceId,
+        threadId,
+        status: "stopped",
+        runtimePayload: { activeTurnId: null },
+      });
+
+      const lateWriteApplied = yield* directory.upsertIfActive(
+        {
+          provider: ProviderDriverKind.make("codex"),
+          providerInstanceId: instanceId,
+          threadId,
+          status: "running",
+          resumeCursor: { cursor: "too-late" },
+          runtimePayload: { activeTurnId: "late-turn" },
+        },
+        { sessionGeneration: "generation-1" },
+      );
+      assert.equal(lateWriteApplied, false);
+
+      const stopped = yield* runtimeRepository.getByThreadId({ threadId });
+      assert.equal(Option.isSome(stopped), true);
+      if (Option.isSome(stopped)) {
+        assert.equal(stopped.value.status, "stopped");
+        assert.deepEqual(stopped.value.resumeCursor, { cursor: "before-stop" });
+        assert.deepEqual(stopped.value.runtimePayload, {
+          sessionGeneration: "generation-1",
+          activeTurnId: null,
+        });
+      }
+
+      yield* directory.upsert({
+        provider: ProviderDriverKind.make("codex"),
+        providerInstanceId: instanceId,
+        threadId,
+        status: "running",
+        resumeCursor: { cursor: "explicit-restart" },
+        runtimePayload: { sessionGeneration: "generation-2", activeTurnId: null },
+      });
+      const staleGenerationWriteApplied = yield* directory.upsertIfActive(
+        {
+          provider: ProviderDriverKind.make("codex"),
+          providerInstanceId: instanceId,
+          threadId,
+          status: "running",
+          runtimePayload: { activeTurnId: "stale-turn" },
+        },
+        { sessionGeneration: "generation-1" },
+      );
+      assert.equal(staleGenerationWriteApplied, false);
+
+      const activeWriteApplied = yield* directory.upsertIfActive(
+        {
+          provider: ProviderDriverKind.make("codex"),
+          providerInstanceId: instanceId,
+          threadId,
+          status: "running",
+          runtimePayload: { activeTurnId: "fresh-turn" },
+        },
+        { sessionGeneration: "generation-2" },
+      );
+      assert.equal(activeWriteApplied, true);
     }));
 
   it("lists persisted bindings with metadata in oldest-first order", () =>

@@ -22,6 +22,7 @@ import {
 import { createModelSelection } from "@t3tools/shared/model";
 import { it, assert, vi } from "@effect/vitest";
 
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
@@ -1017,6 +1018,215 @@ routing.layer("ProviderServiceLive routing", (it) => {
         assert.equal(startPayload.threadId, initial.threadId);
       }
       assert.equal(routing.codex.sendTurn.mock.calls.length, 1);
+    }),
+  );
+
+  it.effect("does not let a late send completion overwrite a restarted binding", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const runtimeRepository = yield* ProviderSessionRuntime.ProviderSessionRuntimeRepository;
+      const sendStarted = yield* Deferred.make<void>();
+      const releaseSend = yield* Deferred.make<void>();
+      const threadId = asThreadId("thread-send-stop-race");
+      const originalSendTurn = routing.codex.sendTurn.getMockImplementation();
+
+      const initial = yield* provider.startSession(threadId, {
+        provider: ProviderDriverKind.make("codex"),
+        providerInstanceId: codexInstanceId,
+        threadId,
+        cwd: "/tmp/project-send-stop-race",
+        runtimeMode: "full-access",
+      });
+      routing.codex.sendTurn.mockImplementation((input) =>
+        Effect.gen(function* () {
+          yield* Deferred.succeed(sendStarted, undefined);
+          yield* Deferred.await(releaseSend);
+          return {
+            threadId: input.threadId,
+            turnId: asTurnId("late-turn"),
+            resumeCursor: { opaque: "late-resume" },
+          };
+        }),
+      );
+
+      const sendFiber = yield* provider
+        .sendTurn({ threadId, input: "race stop", attachments: [] })
+        .pipe(Effect.forkChild);
+      yield* Deferred.await(sendStarted);
+      yield* provider.stopSession({ threadId });
+
+      const stopped = yield* runtimeRepository.getByThreadId({ threadId });
+      assert.equal(Option.isSome(stopped), true);
+      let stoppedGeneration: unknown;
+      if (Option.isSome(stopped)) {
+        assert.equal(stopped.value.status, "stopped");
+        assert.deepEqual(stopped.value.resumeCursor, initial.resumeCursor);
+        const payload = stopped.value.runtimePayload;
+        assert.equal(payload !== null && typeof payload === "object", true);
+        if (payload !== null && typeof payload === "object" && !Array.isArray(payload)) {
+          const runtimePayload = payload as Record<string, unknown>;
+          stoppedGeneration = runtimePayload.sessionGeneration;
+          assert.equal(typeof stoppedGeneration, "string");
+          assert.equal(runtimePayload.activeTurnId, null);
+        }
+      }
+
+      const restarted = yield* provider.startSession(threadId, {
+        provider: ProviderDriverKind.make("codex"),
+        providerInstanceId: codexInstanceId,
+        threadId,
+        cwd: "/tmp/project-send-stop-race",
+        resumeCursor: { opaque: "restart-resume" },
+        runtimeMode: "full-access",
+      });
+      const restartedBeforeLateSend = yield* runtimeRepository.getByThreadId({ threadId });
+      assert.equal(Option.isSome(restartedBeforeLateSend), true);
+      let restartedGeneration: unknown;
+      if (Option.isSome(restartedBeforeLateSend)) {
+        const payload = restartedBeforeLateSend.value.runtimePayload;
+        assert.equal(payload !== null && typeof payload === "object", true);
+        if (payload !== null && typeof payload === "object" && !Array.isArray(payload)) {
+          const runtimePayload = payload as Record<string, unknown>;
+          restartedGeneration = runtimePayload.sessionGeneration;
+          assert.equal(typeof restartedGeneration, "string");
+          assert.notEqual(restartedGeneration, stoppedGeneration);
+        }
+      }
+
+      yield* Deferred.succeed(releaseSend, undefined);
+      const sendExit = yield* Fiber.await(sendFiber);
+      if (originalSendTurn) {
+        routing.codex.sendTurn.mockImplementation(originalSendTurn);
+      }
+      assert.equal(Exit.isSuccess(sendExit), true);
+
+      const persisted = yield* runtimeRepository.getByThreadId({ threadId });
+      assert.equal(Option.isSome(persisted), true);
+      if (Option.isSome(persisted)) {
+        assert.equal(persisted.value.status, "running");
+        assert.deepEqual(persisted.value.resumeCursor, restarted.resumeCursor);
+        const payload = persisted.value.runtimePayload;
+        assert.equal(payload !== null && typeof payload === "object", true);
+        if (payload !== null && typeof payload === "object" && !Array.isArray(payload)) {
+          const runtimePayload = payload as Record<string, unknown>;
+          assert.equal(runtimePayload.sessionGeneration, restartedGeneration);
+          assert.equal(runtimePayload.activeTurnId, null);
+          assert.equal(runtimePayload.lastRuntimeEvent, undefined);
+        }
+      }
+    }),
+  );
+
+  it.effect("does not recover from a stale binding after a concurrent restart", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const runtimeRepository = yield* ProviderSessionRuntime.ProviderSessionRuntimeRepository;
+      const hasSessionChecked = yield* Deferred.make<void>();
+      const releaseHasSession = yield* Deferred.make<void>();
+      const threadId = asThreadId("thread-recovery-restart-race");
+      const originalHasSession = routing.codex.hasSession.getMockImplementation();
+
+      yield* provider.startSession(threadId, {
+        provider: ProviderDriverKind.make("codex"),
+        providerInstanceId: codexInstanceId,
+        threadId,
+        cwd: "/tmp/project-recovery-restart-race",
+        runtimeMode: "full-access",
+      });
+      yield* routing.codex.stopSession(threadId);
+      routing.codex.hasSession.mockImplementation(() =>
+        Effect.gen(function* () {
+          yield* Deferred.succeed(hasSessionChecked, undefined);
+          yield* Deferred.await(releaseHasSession);
+          return false;
+        }),
+      );
+
+      const sendFiber = yield* provider
+        .sendTurn({ threadId, input: "stale recovery", attachments: [] })
+        .pipe(Effect.forkChild);
+      yield* Deferred.await(hasSessionChecked);
+      const restarted = yield* provider.startSession(threadId, {
+        provider: ProviderDriverKind.make("codex"),
+        providerInstanceId: codexInstanceId,
+        threadId,
+        cwd: "/tmp/project-recovery-restart-race",
+        resumeCursor: { opaque: "new-generation" },
+        runtimeMode: "full-access",
+      });
+      const beforeLateRecovery = yield* runtimeRepository.getByThreadId({ threadId });
+      assert.equal(Option.isSome(beforeLateRecovery), true);
+      const expectedGeneration =
+        Option.isSome(beforeLateRecovery) &&
+        beforeLateRecovery.value.runtimePayload !== null &&
+        typeof beforeLateRecovery.value.runtimePayload === "object" &&
+        !Array.isArray(beforeLateRecovery.value.runtimePayload)
+          ? (beforeLateRecovery.value.runtimePayload as Record<string, unknown>).sessionGeneration
+          : undefined;
+      assert.equal(typeof expectedGeneration, "string");
+
+      yield* Deferred.succeed(releaseHasSession, undefined);
+      const sendExit = yield* Fiber.await(sendFiber);
+      if (originalHasSession) {
+        routing.codex.hasSession.mockImplementation(originalHasSession);
+      }
+      assert.equal(Exit.isFailure(sendExit), true);
+
+      const persisted = yield* runtimeRepository.getByThreadId({ threadId });
+      assert.equal(Option.isSome(persisted), true);
+      if (Option.isSome(persisted)) {
+        assert.equal(persisted.value.status, "running");
+        assert.deepEqual(persisted.value.resumeCursor, restarted.resumeCursor);
+        const payload = persisted.value.runtimePayload;
+        assert.equal(payload !== null && typeof payload === "object", true);
+        if (payload !== null && typeof payload === "object" && !Array.isArray(payload)) {
+          const runtimePayload = payload as Record<string, unknown>;
+          assert.equal(runtimePayload.sessionGeneration, expectedGeneration);
+          assert.equal(runtimePayload.activeTurnId, null);
+        }
+      }
+    }),
+  );
+
+  it.effect("persists a stopped binding when service stop is interrupted", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const runtimeRepository = yield* ProviderSessionRuntime.ProviderSessionRuntimeRepository;
+      const stopStarted = yield* Deferred.make<void>();
+      const threadId = asThreadId("thread-interrupted-service-stop");
+      const originalStopSession = routing.codex.stopSession.getMockImplementation();
+
+      yield* provider.startSession(threadId, {
+        provider: ProviderDriverKind.make("codex"),
+        providerInstanceId: codexInstanceId,
+        threadId,
+        cwd: "/tmp/project-interrupted-service-stop",
+        runtimeMode: "full-access",
+      });
+      routing.codex.stopSession.mockImplementation(() =>
+        Effect.gen(function* () {
+          yield* Deferred.succeed(stopStarted, undefined);
+          return yield* Effect.never;
+        }),
+      );
+
+      const stopFiber = yield* provider.stopSession({ threadId }).pipe(Effect.forkChild);
+      yield* Deferred.await(stopStarted);
+      yield* Fiber.interrupt(stopFiber);
+      if (originalStopSession) {
+        routing.codex.stopSession.mockImplementation(originalStopSession);
+      }
+
+      const persisted = yield* runtimeRepository.getByThreadId({ threadId });
+      assert.equal(Option.isSome(persisted), true);
+      if (Option.isSome(persisted)) {
+        assert.equal(persisted.value.status, "stopped");
+        const payload = persisted.value.runtimePayload;
+        assert.equal(payload !== null && typeof payload === "object", true);
+        if (payload !== null && typeof payload === "object" && !Array.isArray(payload)) {
+          assert.equal((payload as Record<string, unknown>).activeTurnId, null);
+        }
+      }
     }),
   );
 

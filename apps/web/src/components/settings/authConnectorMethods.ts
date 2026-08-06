@@ -88,6 +88,28 @@ export const AGENT_AUTH_METHODS: Partial<
       },
     ],
   },
+  muse: {
+    connector: "muse",
+    serviceName: "Muse Code",
+    methods: [
+      {
+        method: "account",
+        label: "Sign in with Meta",
+        description: "Connect your Meta account with Muse Code's secure device flow.",
+        browserName: "Meta",
+        authorizeInstruction:
+          "Confirm that the one-time code matches on Meta’s authorization page, then approve access.",
+        waitingMessage: "Waiting for Meta to confirm the code…",
+      },
+      {
+        method: "api-key",
+        label: "Use a Meta API key",
+        description: "Authenticate Muse Code with a Meta API key.",
+        externalHelpUrl: "https://dev.meta.ai/",
+        externalHelpLabel: "Create a Meta API key",
+      },
+    ],
+  },
   opencode: {
     connector: "opencode",
     serviceName: "OpenCode",
