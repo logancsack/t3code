@@ -19,7 +19,11 @@ const decodePrimeSettings = Schema.decodeSync(PrimeSettings);
 
 type MockModelProbe = "ready" | "empty" | "error";
 
-async function writeMockPrimeAgent(directory: string, modelProbe: MockModelProbe): Promise<string> {
+async function writeMockPrimeAgent(
+  directory: string,
+  modelProbe: MockModelProbe,
+  versionOutput = "prime-agent 0.7.0",
+): Promise<string> {
   const binaryPath = NodePath.join(directory, "prime-agent");
   const modelProbeScript =
     modelProbe === "ready"
@@ -31,7 +35,7 @@ async function writeMockPrimeAgent(directory: string, modelProbe: MockModelProbe
     binaryPath,
     `#!/bin/sh
 if [ "$1" = "--version" ]; then
-  echo "prime-agent 0.7.0"
+  echo "${versionOutput}" >&2
   exit 0
 fi
 if [ "$1" = "model" ] && [ "$2" = "list" ]; then
@@ -196,6 +200,70 @@ it.layer(NodeServices.layer)("checkPrimeProviderStatus", (it) => {
       expect(snapshot.installed).toBe(true);
       expect(snapshot.auth.status).toBe("unknown");
       expect(snapshot.message).toContain("model discovery failed");
+    }),
+  );
+
+  it.effect("rejects unsupported Prime Agent versions before model discovery", () =>
+    Effect.gen(function* () {
+      const directory = yield* Effect.promise(() =>
+        NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "prime-provider-version-mismatch-")),
+      );
+      const binaryPath = yield* Effect.promise(() =>
+        writeMockPrimeAgent(directory, "ready", "prime-agent 0.8.0"),
+      );
+
+      const snapshot = yield* checkPrimeProviderStatus(decodePrimeSettings({ binaryPath }), {
+        HOME: directory,
+      });
+      expect(snapshot.installed).toBe(true);
+      expect(snapshot.version).toBe("0.8.0");
+      expect(snapshot.status).toBe("error");
+      expect(snapshot.auth.status).toBe("unknown");
+      expect(snapshot.models.map((model) => model.slug)).toEqual(["auto"]);
+      expect(snapshot.message).toContain("v0.8.0 is not supported");
+      expect(snapshot.message).toContain("v0.7.0");
+    }),
+  );
+
+  it.effect("rejects an unparseable Prime Agent version", () =>
+    Effect.gen(function* () {
+      const directory = yield* Effect.promise(() =>
+        NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "prime-provider-version-unparsed-")),
+      );
+      const binaryPath = yield* Effect.promise(() =>
+        writeMockPrimeAgent(directory, "ready", "prime-agent development"),
+      );
+
+      const snapshot = yield* checkPrimeProviderStatus(decodePrimeSettings({ binaryPath }), {
+        HOME: directory,
+      });
+      expect(snapshot.installed).toBe(true);
+      expect(snapshot.version).toBeNull();
+      expect(snapshot.status).toBe("error");
+      expect(snapshot.auth.status).toBe("unknown");
+      expect(snapshot.models.map((model) => model.slug)).toEqual(["auto"]);
+      expect(snapshot.message).toContain("version could not be verified");
+      expect(snapshot.message).toContain("v0.7.0");
+    }),
+  );
+
+  it.effect("rejects a prerelease of the supported Prime Agent version", () =>
+    Effect.gen(function* () {
+      const directory = yield* Effect.promise(() =>
+        NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "prime-provider-version-prerelease-")),
+      );
+      const binaryPath = yield* Effect.promise(() =>
+        writeMockPrimeAgent(directory, "ready", "prime-agent 0.7.0-beta.1"),
+      );
+
+      const snapshot = yield* checkPrimeProviderStatus(decodePrimeSettings({ binaryPath }), {
+        HOME: directory,
+      });
+      expect(snapshot.version).toBe("0.7.0-beta.1");
+      expect(snapshot.status).toBe("error");
+      expect(snapshot.models.map((model) => model.slug)).toEqual(["auto"]);
+      expect(snapshot.message).toContain("v0.7.0-beta.1 is not supported");
+      expect(snapshot.message).toContain("v0.7.0");
     }),
   );
 

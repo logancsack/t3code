@@ -15,7 +15,6 @@ import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import {
   buildServerProvider,
   isCommandMissingCause,
-  parseGenericCliVersion,
   providerModelsFromSettings,
   spawnAndCollect,
   type ServerProviderDraft,
@@ -34,6 +33,9 @@ const PRIME_PRESENTATION = {
   requiresNewThreadForModelChange: true,
 } as const;
 const EMPTY_CAPABILITIES = createModelCapabilities({ optionDescriptors: [] });
+const SUPPORTED_PRIME_AGENT_VERSION = "0.7.0";
+const PRIME_AGENT_VERSION_PATTERN =
+  /^\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/u;
 const VERSION_PROBE_TIMEOUT_MS = 4_000;
 const VERSION_PROBE_MAX_OUTPUT_BYTES = 64 * 1024;
 const MODEL_PROBE_TIMEOUT_MS = 20_000;
@@ -111,6 +113,14 @@ const storedPrimeCredentialState = Effect.fn("storedPrimeCredentialState")(funct
 function stripAnsi(input: string): string {
   // eslint-disable-next-line no-control-regex -- Prime's table may be colorized on a TTY.
   return input.replace(/\x1b\[[0-?]*[ -/]*[@-~]/gu, "");
+}
+
+function parsePrimeAgentVersion(output: string): string | null {
+  for (const token of stripAnsi(output).split(/\s+/u)) {
+    const candidate = token.startsWith("v") ? token.slice(1) : token;
+    if (PRIME_AGENT_VERSION_PATTERN.test(candidate)) return candidate;
+  }
+  return null;
 }
 
 export function parsePrimeModelListOutput(output: string): ReadonlyArray<ServerProviderModel> {
@@ -254,7 +264,7 @@ export const checkPrimeProviderStatus = Effect.fn("checkPrimeProviderStatus")(fu
     });
   }
   const versionOutput = versionResult.success.value;
-  const version = parseGenericCliVersion(`${versionOutput.stdout}\n${versionOutput.stderr}`);
+  const version = parsePrimeAgentVersion(`${versionOutput.stdout}\n${versionOutput.stderr}`);
   if (versionOutput.code !== 0) {
     return buildServerProvider({
       presentation: PRIME_PRESENTATION,
@@ -267,6 +277,24 @@ export const checkPrimeProviderStatus = Effect.fn("checkPrimeProviderStatus")(fu
         status: "error",
         auth: { status: "unknown" },
         message: "Prime Agent is installed but failed to run.",
+      },
+    });
+  }
+  if (version !== SUPPORTED_PRIME_AGENT_VERSION) {
+    return buildServerProvider({
+      presentation: PRIME_PRESENTATION,
+      enabled: true,
+      checkedAt,
+      models: fallbackModels,
+      probe: {
+        installed: true,
+        version,
+        status: "error",
+        auth: { status: "unknown" },
+        message:
+          version === null
+            ? `Prime Agent is installed, but its version could not be verified. T3 Code supports Prime Agent v${SUPPORTED_PRIME_AGENT_VERSION}.`
+            : `Prime Agent v${version} is not supported. Install Prime Agent v${SUPPORTED_PRIME_AGENT_VERSION}.`,
       },
     });
   }
