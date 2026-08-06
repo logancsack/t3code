@@ -61,6 +61,7 @@ describe("PrimeProvider", () => {
   it.effect("advertises automatic selection and the full-access warning while probing", () =>
     Effect.gen(function* () {
       const snapshot = yield* buildInitialPrimeProviderSnapshot(decodePrimeSettings({}));
+      expect(snapshot.installed).toBe(false);
       expect(snapshot.models.map((model) => model.slug)).toEqual(["auto"]);
       expect(snapshot.supportedRuntimeModes).toEqual(["full-access"]);
       expect(snapshot.requiresNewThreadForModelChange).toBe(true);
@@ -116,6 +117,7 @@ it.layer(NodeServices.layer)("checkPrimeProviderStatus", (it) => {
         PRIME_AGENT_CODING_AGENT_DIR: "~/.prime/custom-agent",
       });
       expect(snapshot.status).toBe("warning");
+      expect(snapshot.installed).toBe(true);
       expect(snapshot.auth).toMatchObject({
         status: "authenticated",
         label: "Prime Agent credentials",
@@ -191,6 +193,7 @@ it.layer(NodeServices.layer)("checkPrimeProviderStatus", (it) => {
         HOME: directory,
       });
       expect(snapshot.status).toBe("error");
+      expect(snapshot.installed).toBe(true);
       expect(snapshot.auth.status).toBe("unknown");
       expect(snapshot.message).toContain("model discovery failed");
     }),

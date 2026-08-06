@@ -176,7 +176,7 @@ export const buildInitialPrimeProviderSnapshot = Effect.fn("buildInitialPrimePro
       checkedAt,
       models,
       probe: {
-        installed: true,
+        installed: false,
         version: null,
         status: "warning",
         auth: { status: "unknown" },
