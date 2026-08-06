@@ -11,6 +11,7 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
+import * as Logger from "effect/Logger";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as Option from "effect/Option";
 import * as Scope from "effect/Scope";
@@ -28,13 +29,16 @@ import {
 import { ProviderSessionReaper } from "../Services/ProviderSessionReaper.ts";
 import { ProviderService, type ProviderServiceShape } from "../Services/ProviderService.ts";
 import { ProviderSessionDirectoryLive } from "./ProviderSessionDirectory.ts";
-import { makeProviderSessionReaperLive } from "./ProviderSessionReaper.ts";
+import {
+  makeProviderSessionReaperLive,
+  type ProviderSessionReaperLiveOptions,
+} from "./ProviderSessionReaper.ts";
 
 const defaultModelSelection = {
   instanceId: ProviderInstanceId.make("codex"),
   model: "gpt-5-codex",
 } as const;
-const primeActivityKey = "provider-reaper-prime-session";
+const primeActivityKeys = new Set<string>();
 
 async function waitFor(
   predicate: () => boolean | Promise<boolean>,
@@ -130,7 +134,10 @@ describe("ProviderSessionReaper", () => {
   let scope: Scope.Closeable | null = null;
 
   afterEach(async () => {
-    clearPrimeAgentSessionActivity(primeActivityKey);
+    for (const activityKey of primeActivityKeys) {
+      clearPrimeAgentSessionActivity(activityKey);
+    }
+    primeActivityKeys.clear();
     if (scope) {
       await Effect.runPromise(Scope.close(scope, Exit.void));
     }
@@ -143,10 +150,15 @@ describe("ProviderSessionReaper", () => {
 
   async function createHarness(input: {
     readonly readModel: ReturnType<typeof makeReadModel>;
+    readonly reaperOptions?: ProviderSessionReaperLiveOptions;
     readonly stopSessionImplementation?: (input: {
       readonly threadId: ThreadId;
     }) => ReturnType<ProviderServiceShape["stopSession"]>;
   }) {
+    const logMessages: Array<ReadonlyArray<unknown>> = [];
+    const logger = Logger.make<unknown, void>(({ message }) => {
+      logMessages.push(Array.isArray(message) ? message : [message]);
+    });
     const stoppedThreadIds = new Set<ThreadId>();
     const stopSession = vi.fn<ProviderServiceShape["stopSession"]>(
       (request) =>
@@ -190,8 +202,11 @@ describe("ProviderSessionReaper", () => {
       Layer.provide(runtimeRepositoryLayer),
     );
     const layer = makeProviderSessionReaperLive({
-      inactivityThresholdMs: 1_000,
-      sweepIntervalMs: 60_000,
+      inactivityThresholdMs: input.reaperOptions?.inactivityThresholdMs ?? 1_000,
+      ...(input.reaperOptions?.primeSubagentMaxDeferralMs !== undefined
+        ? { primeSubagentMaxDeferralMs: input.reaperOptions.primeSubagentMaxDeferralMs }
+        : {}),
+      sweepIntervalMs: input.reaperOptions?.sweepIntervalMs ?? 60_000,
     }).pipe(
       Layer.provideMerge(providerSessionDirectoryLayer),
       Layer.provideMerge(runtimeRepositoryLayer),
@@ -221,10 +236,11 @@ describe("ProviderSessionReaper", () => {
         }),
       ),
       Layer.provideMerge(NodeServices.layer),
+      Layer.provideMerge(Logger.layer([logger], { mergeWithExisting: false })),
     );
 
     runtime = ManagedRuntime.make(layer);
-    return { stopSession, stoppedThreadIds };
+    return { logMessages, stopSession, stoppedThreadIds };
   }
 
   it("reaps stale persisted sessions without active turns", async () => {
@@ -329,7 +345,10 @@ describe("ProviderSessionReaper", () => {
   it("does not reap a stale Prime root while a detached subagent is running", async () => {
     const threadId = ThreadId.make("thread-reaper-prime-subagent");
     const providerInstanceId = ProviderInstanceId.make("primeAgent");
-    const now = "2026-01-01T00:00:00.000Z";
+    const activityKey = `${providerInstanceId}:${threadId}:prime-session-1`;
+    primeActivityKeys.add(activityKey);
+    const nowMs = await Effect.runPromise(Clock.currentTimeMillis);
+    const now = DateTime.formatIso(DateTime.makeUnsafe(nowMs));
     const harness = await createHarness({
       readModel: makeReadModel([
         {
@@ -358,13 +377,13 @@ describe("ProviderSessionReaper", () => {
         adapterKey: "primeAgent",
         runtimeMode: "full-access",
         status: "running",
-        lastSeenAt: "2026-04-14T00:00:00.000Z",
+        lastSeenAt: DateTime.formatIso(DateTime.makeUnsafe(nowMs - 2_000)),
         resumeCursor: { schemaVersion: 1, sessionKey: "a".repeat(64) },
         runtimePayload: null,
       }),
     );
     updatePrimeAgentSubagentActivity(
-      primeActivityKey,
+      activityKey,
       {
         "ai.primeintellect.prime-agent": {
           subagents: [{ id: "detached-child", status: "running" }],
@@ -375,13 +394,146 @@ describe("ProviderSessionReaper", () => {
 
     const reaper = await runtime!.runPromise(Effect.service(ProviderSessionReaper));
     scope = await Effect.runPromise(Scope.make("sequential"));
-    await Effect.runPromise(reaper.start().pipe(Scope.provide(scope)));
+    await runtime!.runPromise(reaper.start().pipe(Scope.provide(scope)));
     await Effect.runPromise(drainFibers);
 
     expect(harness.stopSession).not.toHaveBeenCalled();
     expect(Option.isSome(await runtime!.runPromise(repository.getByThreadId({ threadId })))).toBe(
       true,
     );
+    clearPrimeAgentSessionActivity(activityKey);
+    primeActivityKeys.delete(activityKey);
+  });
+
+  it("reaps and warns when detached Prime metadata exceeds the maximum deferral", async () => {
+    const threadId = ThreadId.make("thread-reaper-prime-stale-subagent");
+    const providerInstanceId = ProviderInstanceId.make("primeAgent");
+    const activityKey = `${providerInstanceId}:${threadId}:prime-session-stale`;
+    primeActivityKeys.add(activityKey);
+    const now = "2026-01-01T00:00:00.000Z";
+    const harness = await createHarness({
+      readModel: makeReadModel([
+        {
+          id: threadId,
+          session: {
+            threadId,
+            status: "ready",
+            providerName: "primeAgent",
+            runtimeMode: "full-access",
+            activeTurnId: null,
+            lastError: null,
+            updatedAt: now,
+          },
+        },
+      ]),
+      reaperOptions: { primeSubagentMaxDeferralMs: 5_000 },
+    });
+    const repository = await runtime!.runPromise(
+      Effect.service(ProviderSessionRuntime.ProviderSessionRuntimeRepository),
+    );
+
+    await runtime!.runPromise(
+      repository.upsert({
+        threadId,
+        providerName: "primeAgent",
+        providerInstanceId,
+        adapterKey: "primeAgent",
+        runtimeMode: "full-access",
+        status: "running",
+        lastSeenAt: now,
+        resumeCursor: { schemaVersion: 1, sessionKey: "b".repeat(64) },
+        runtimePayload: null,
+      }),
+    );
+    updatePrimeAgentSubagentActivity(
+      activityKey,
+      {
+        "ai.primeintellect.prime-agent": {
+          subagents: [{ id: "stale-detached-child", status: "running" }],
+        },
+      },
+      { threadId, providerInstanceId },
+    );
+
+    const reaper = await runtime!.runPromise(Effect.service(ProviderSessionReaper));
+    scope = await Effect.runPromise(Scope.make("sequential"));
+    await runtime!.runPromise(reaper.start().pipe(Scope.provide(scope)));
+    await waitFor(() => harness.stopSession.mock.calls.length === 1);
+
+    expect(harness.stopSession.mock.calls[0]?.[0]).toEqual({ threadId });
+    expect(
+      harness.logMessages.find(
+        ([message]) => message === "provider.session.reaper.prime-subagent-max-deferral-exceeded",
+      )?.[1],
+    ).toMatchObject({
+      threadId,
+      providerInstanceId,
+      primeSubagentMaxDeferralMs: 5_000,
+    });
+  });
+
+  it("never applies the Prime metadata ceiling while the thread has an active turn", async () => {
+    const threadId = ThreadId.make("thread-reaper-prime-active-turn");
+    const turnId = TurnId.make("turn-reaper-prime-active");
+    const providerInstanceId = ProviderInstanceId.make("primeAgent");
+    const activityKey = `${providerInstanceId}:${threadId}:prime-session-active`;
+    primeActivityKeys.add(activityKey);
+    const now = "2026-01-01T00:00:00.000Z";
+    const harness = await createHarness({
+      readModel: makeReadModel([
+        {
+          id: threadId,
+          session: {
+            threadId,
+            status: "running",
+            providerName: "primeAgent",
+            runtimeMode: "full-access",
+            activeTurnId: turnId,
+            lastError: null,
+            updatedAt: now,
+          },
+        },
+      ]),
+      reaperOptions: { primeSubagentMaxDeferralMs: 5_000 },
+    });
+    const repository = await runtime!.runPromise(
+      Effect.service(ProviderSessionRuntime.ProviderSessionRuntimeRepository),
+    );
+
+    await runtime!.runPromise(
+      repository.upsert({
+        threadId,
+        providerName: "primeAgent",
+        providerInstanceId,
+        adapterKey: "primeAgent",
+        runtimeMode: "full-access",
+        status: "running",
+        lastSeenAt: now,
+        resumeCursor: { schemaVersion: 1, sessionKey: "c".repeat(64) },
+        runtimePayload: null,
+      }),
+    );
+    updatePrimeAgentSubagentActivity(
+      activityKey,
+      {
+        "ai.primeintellect.prime-agent": {
+          subagents: [{ id: "stale-child-active-root", status: "running" }],
+        },
+      },
+      { threadId, providerInstanceId },
+    );
+
+    const reaper = await runtime!.runPromise(Effect.service(ProviderSessionReaper));
+    scope = await Effect.runPromise(Scope.make("sequential"));
+    await runtime!.runPromise(reaper.start().pipe(Scope.provide(scope)));
+    await Effect.runPromise(drainFibers);
+
+    expect(harness.stopSession).not.toHaveBeenCalled();
+    expect(
+      harness.logMessages.some(
+        ([message]) => message === "provider.session.reaper.prime-subagent-max-deferral-exceeded",
+      ),
+    ).toBe(false);
   });
 
   it("does not reap sessions that are still within the inactivity threshold", async () => {
@@ -559,8 +711,8 @@ describe("ProviderSessionReaper", () => {
     );
 
     const reaper = await runtime!.runPromise(Effect.service(ProviderSessionReaper));
-    scope = await Effect.runPromise(Scope.make("sequential"));
-    await Effect.runPromise(reaper.start().pipe(Scope.provide(scope)));
+    scope = await runtime!.runPromise(Scope.make("sequential"));
+    await runtime!.runPromise(reaper.start().pipe(Scope.provide(scope)));
 
     await waitFor(() => harness.stopSession.mock.calls.length === 2);
 
@@ -642,8 +794,8 @@ describe("ProviderSessionReaper", () => {
     );
 
     const reaper = await runtime!.runPromise(Effect.service(ProviderSessionReaper));
-    scope = await Effect.runPromise(Scope.make("sequential"));
-    await Effect.runPromise(reaper.start().pipe(Scope.provide(scope)));
+    scope = await runtime!.runPromise(Scope.make("sequential"));
+    await runtime!.runPromise(reaper.start().pipe(Scope.provide(scope)));
 
     await waitFor(() => harness.stopSession.mock.calls.length === 2);
 

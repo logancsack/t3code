@@ -1,3 +1,4 @@
+import * as NodeOS from "node:os";
 import type { PrimeSettings, ServerProviderModel } from "@t3tools/contracts";
 import { createModelCapabilities } from "@t3tools/shared/model";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
@@ -19,7 +20,11 @@ import {
   spawnAndCollect,
   type ServerProviderDraft,
 } from "../providerSnapshot.ts";
-import { formatPrimeModelSlug, parsePrimeModelSlug } from "../acp/PrimeAcpSupport.ts";
+import {
+  formatPrimeModelSlug,
+  parsePrimeModelSlug,
+  resolvePrimeAgentDirectory,
+} from "../acp/PrimeAcpSupport.ts";
 
 const PRIME_PRESENTATION = {
   displayName: "Prime Agent",
@@ -30,6 +35,7 @@ const PRIME_PRESENTATION = {
 } as const;
 const EMPTY_CAPABILITIES = createModelCapabilities({ optionDescriptors: [] });
 const VERSION_PROBE_TIMEOUT_MS = 4_000;
+const VERSION_PROBE_MAX_OUTPUT_BYTES = 64 * 1024;
 const MODEL_PROBE_TIMEOUT_MS = 20_000;
 const MODEL_PROBE_MAX_OUTPUT_BYTES = 4 * 1024 * 1024;
 const decodeUnknownJson = Schema.decodeUnknownOption(Schema.UnknownFromJsonString);
@@ -79,33 +85,12 @@ function hasConfiguredCredential(value: unknown): boolean {
 
 type StoredPrimeCredentialState = "configured" | "missing" | "unknown";
 
-function expandPrimeAgentDirectory(
-  configured: string,
-  environment: NodeJS.ProcessEnv,
-  path: Path.Path,
-): string | undefined {
-  const trimmed = configured.trim();
-  if (!trimmed) return undefined;
-  if (trimmed === "~" || trimmed.startsWith("~/")) {
-    const home = environment.HOME?.trim();
-    if (!home) return undefined;
-    return trimmed === "~" ? path.resolve(home) : path.join(path.resolve(home), trimmed.slice(2));
-  }
-  return path.resolve(trimmed);
-}
-
 const storedPrimeCredentialState = Effect.fn("storedPrimeCredentialState")(function* (
   environment: NodeJS.ProcessEnv,
 ) {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const configuredAgentDir = environment.PRIME_AGENT_CODING_AGENT_DIR?.trim();
-  const agentDir = configuredAgentDir
-    ? expandPrimeAgentDirectory(configuredAgentDir, environment, path)
-    : environment.HOME?.trim()
-      ? path.join(path.resolve(environment.HOME), ".prime", "agent")
-      : undefined;
-  if (!agentDir) return "unknown" satisfies StoredPrimeCredentialState;
+  const agentDir = resolvePrimeAgentDirectory(path, environment, NodeOS.homedir());
 
   const authJson = yield* fileSystem
     .readFileString(path.join(agentDir, "auth.json"))
@@ -230,10 +215,12 @@ export const checkPrimeProviderStatus = Effect.fn("checkPrimeProviderStatus")(fu
   if (!settings.enabled) return yield* buildInitialPrimeProviderSnapshot(settings);
   const checkedAt = DateTime.formatIso(yield* DateTime.now);
   const fallbackModels = primeModelsFromSettings(settings.customModels);
-  const versionResult = yield* runPrimeCommand(settings, ["--version"], environment).pipe(
-    Effect.timeoutOption(VERSION_PROBE_TIMEOUT_MS),
-    Effect.result,
-  );
+  const versionResult = yield* runPrimeCommand(
+    settings,
+    ["--version"],
+    environment,
+    VERSION_PROBE_MAX_OUTPUT_BYTES,
+  ).pipe(Effect.timeoutOption(VERSION_PROBE_TIMEOUT_MS), Effect.result);
   if (Result.isFailure(versionResult)) {
     return buildServerProvider({
       presentation: PRIME_PRESENTATION,
@@ -290,16 +277,18 @@ export const checkPrimeProviderStatus = Effect.fn("checkPrimeProviderStatus")(fu
     environment,
     MODEL_PROBE_MAX_OUTPUT_BYTES,
   ).pipe(Effect.timeoutOption(MODEL_PROBE_TIMEOUT_MS), Effect.result);
-  const discoveredModels =
+  const modelProbeOutput =
     Result.isSuccess(modelResult) &&
     Option.isSome(modelResult.success) &&
     modelResult.success.value.code === 0 &&
     !modelResult.success.value.stdoutTruncated &&
     !modelResult.success.value.stderrTruncated
-      ? parsePrimeModelListOutput(
-          `${modelResult.success.value.stdout}\n${modelResult.success.value.stderr}`,
-        )
-      : [];
+      ? modelResult.success.value
+      : undefined;
+  const modelProbeFailed = modelProbeOutput === undefined;
+  const discoveredModels = modelProbeOutput
+    ? parsePrimeModelListOutput(`${modelProbeOutput.stdout}\n${modelProbeOutput.stderr}`)
+    : [];
   const models = primeModelsFromSettings(settings.customModels, discoveredModels);
   const hasEnvironmentCredential = PRIME_CREDENTIAL_ENV_NAMES.some((name) =>
     Boolean(environment[name]?.trim()),
@@ -311,13 +300,6 @@ export const checkPrimeProviderStatus = Effect.fn("checkPrimeProviderStatus")(fu
       );
   const authenticated =
     discoveredModels.length > 0 || hasEnvironmentCredential || storedCredential === "configured";
-  const modelProbeFailed =
-    Result.isFailure(modelResult) ||
-    Option.isNone(modelResult.success) ||
-    modelResult.success.value.code !== 0 ||
-    modelResult.success.value.stdoutTruncated ||
-    modelResult.success.value.stderrTruncated;
-
   return buildServerProvider({
     presentation: PRIME_PRESENTATION,
     enabled: true,

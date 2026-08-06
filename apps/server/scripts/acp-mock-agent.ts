@@ -544,7 +544,9 @@ const program = Effect.gen(function* () {
               });
             }),
           ),
-          Effect.forkChild,
+          // The prompt request completes before this delayed notification, so
+          // its fiber must outlive the request handler's child scope.
+          Effect.forkDetach,
         );
         return { stopReason: "end_turn" };
       }

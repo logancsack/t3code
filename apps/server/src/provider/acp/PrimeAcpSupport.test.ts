@@ -95,6 +95,16 @@ describe("PrimeAcpSupport", () => {
       expect(result.firstKey).not.toBe(result.otherKey);
       expect(result.firstKey).toMatch(/^[a-f0-9]{64}$/u);
       expect(result.agentDirectory).toBe("/home/test/.prime/custom");
+      expect(resolvePrimeAgentDirectory(result.path, { HOME: "" }, "/fallback")).toBe(
+        "/fallback/.prime/agent",
+      );
+      expect(
+        resolvePrimeAgentDirectory(
+          result.path,
+          { HOME: "", PRIME_AGENT_CODING_AGENT_DIR: "~/.prime/custom" },
+          "/fallback",
+        ),
+      ).toBe("/fallback/.prime/custom");
       expect(result.sessionDirectory).toBe(
         `/home/test/.prime/custom/t3-sessions/${result.firstKey}`,
       );

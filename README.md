@@ -12,7 +12,7 @@ T3 Code is a minimal web GUI for coding agents (currently Codex, Claude, Cursor,
 > - Claude: install [Claude Code](https://claude.com/product/claude-code) and run `claude auth login`
 > - Cursor: install [Cursor CLI](https://cursor.com/cli) and run `cursor-agent login`
 > - Muse Code: install [Muse Code](https://research.meta.ai/blog/introducing-muse-code-and-muse-spark-1-2) and run `muse login`
-> - Prime Agent: install a [Prime Agent release](https://github.com/PrimeIntellect-ai/prime-agent/releases), then connect a model provider from the Prime Agent card in Settings or run `prime-agent` and use `/login`
+> - Prime Agent: this integration supports exactly [Prime Agent v0.7.0](https://github.com/PrimeIntellect-ai/prime-agent/releases/tag/v0.7.0). Managed Aldo workspaces install that same v0.7.0 release; elsewhere, install it yourself, then connect a model provider from the Prime Agent card in Settings or run `prime-agent` and use `/login`
 > - OpenCode: install [OpenCode](https://opencode.ai) and run `opencode auth login`
 
 ### Run without installing

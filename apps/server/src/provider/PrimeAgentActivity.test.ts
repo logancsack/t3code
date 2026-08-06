@@ -12,6 +12,7 @@ import {
 const sessionKey = "primeAgent:thread-1";
 const threadId = ThreadId.make("thread-1");
 const providerInstanceId = ProviderInstanceId.make("primeAgent");
+const otherProviderInstanceId = ProviderInstanceId.make("primeAgent-work");
 const meta = (id: string, status: string) => ({
   "ai.primeintellect.prime-agent": {
     subagents: [{ id, status }],
@@ -28,6 +29,8 @@ describe("PrimeAgentActivity", () => {
     });
     expect(hasRunningPrimeAgentSubagents()).toBe(true);
     expect(hasRunningPrimeAgentSubagentsForThread(threadId, providerInstanceId)).toBe(true);
+    expect(hasRunningPrimeAgentSubagentsForThread(threadId, otherProviderInstanceId)).toBe(false);
+    expect(hasRunningPrimeAgentSubagentsForThread(threadId, null)).toBe(true);
     expect(
       hasRunningPrimeAgentSubagentsForThread(ThreadId.make("thread-2"), providerInstanceId),
     ).toBe(false);
@@ -36,6 +39,8 @@ describe("PrimeAgentActivity", () => {
     expect(hasRunningPrimeAgentSubagents()).toBe(false);
 
     updatePrimeAgentSubagentActivity(sessionKey, meta("child-2", "running"));
+    expect(hasRunningPrimeAgentSubagents()).toBe(true);
+    expect(hasRunningPrimeAgentSubagentsForThread(threadId, null)).toBe(false);
     clearPrimeAgentSessionActivity(sessionKey);
     expect(hasRunningPrimeAgentSubagents()).toBe(false);
   });

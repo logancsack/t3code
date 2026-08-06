@@ -20,6 +20,7 @@ import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as PubSub from "effect/PubSub";
+import * as Ref from "effect/Ref";
 import * as Scope from "effect/Scope";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
@@ -657,7 +658,11 @@ export const makePrimeAdapter = Effect.fn("makePrimeAdapter")(function* (
         context.promptActive = false;
         context.interrupted = false;
         context.activeTurnId = undefined;
-        const { activeTurnId: _activeTurnId, ...settledSession } = context.session;
+        const {
+          activeTurnId: _activeTurnId,
+          lastError: _lastError,
+          ...settledSession
+        } = context.session;
         context.session = {
           ...settledSession,
           status: failed ? "error" : "ready",
@@ -683,129 +688,184 @@ export const makePrimeAdapter = Effect.fn("makePrimeAdapter")(function* (
 
   const sendTurn: PrimeAdapterShape["sendTurn"] = (input) =>
     Effect.gen(function* () {
-      const prepared = yield* withThreadLock(
-        input.threadId,
-        Effect.gen(function* () {
-          const context = yield* requireSession(input.threadId);
-          if (context.promptActive) {
-            return yield* new ProviderAdapterRequestError({
-              provider: PROVIDER,
-              method: "session/prompt",
-              detail: "Prime Agent ACP does not support steering a prompt already in progress.",
-            });
+      const preparedRef = yield* Ref.make<
+        | {
+            readonly context: PrimeSessionContext;
+            readonly prompt: Array<EffectAcpSchema.ContentBlock>;
+            readonly turnId: TurnId;
           }
-          const requestedModel = modelForInstance(
-            boundInstanceId,
-            input.modelSelection,
-            context.session.model,
-          );
-          if (requestedModel !== context.session.model) {
-            return yield* new ProviderAdapterValidationError({
-              provider: PROVIDER,
-              operation: "sendTurn",
-              issue: "Prime Agent model changes require a new thread.",
-            });
-          }
-          const prompt: Array<EffectAcpSchema.ContentBlock> = [];
-          const textParts: Array<string> = input.input?.trim() ? [input.input.trim()] : [];
-          for (const attachment of input.attachments ?? []) {
-            const attachmentPath = resolveAttachmentPath({
-              attachmentsDir: serverConfig.attachmentsDir,
-              attachment,
-            });
-            if (!attachmentPath) {
+        | undefined
+      >(undefined);
+      const turnSettled = yield* Ref.make(false);
+      const settlePreparedTurn = Effect.fn("PrimeAdapter.settlePreparedTurn")(function* (
+        result: EffectAcpSchema.PromptResponse | undefined,
+        errorMessage?: string,
+      ) {
+        if (yield* Ref.get(turnSettled)) return;
+        const prepared = yield* Ref.get(preparedRef);
+        if (!prepared) return;
+        yield* settleTurn(input.threadId, prepared.turnId, result, errorMessage);
+        yield* Ref.set(turnSettled, true);
+      }, Effect.uninterruptible);
+      const cancelPreparedTurn = Effect.fn("PrimeAdapter.cancelPreparedTurn")(function* () {
+        if (yield* Ref.get(turnSettled)) return;
+        const prepared = yield* Ref.get(preparedRef);
+        if (
+          !prepared ||
+          prepared.context.stopped ||
+          sessions.get(input.threadId) !== prepared.context
+        ) {
+          return;
+        }
+        prepared.context.interrupted = true;
+        yield* prepared.context.acp.cancel.pipe(
+          Effect.ignoreCause({
+            log: "Warn",
+            message: "Failed to cancel an interrupted Prime Agent ACP turn.",
+          }),
+        );
+      }, Effect.uninterruptible);
+
+      return yield* Effect.gen(function* () {
+        const prepared = yield* withThreadLock(
+          input.threadId,
+          Effect.gen(function* () {
+            const context = yield* requireSession(input.threadId);
+            if (context.promptActive) {
               return yield* new ProviderAdapterRequestError({
                 provider: PROVIDER,
                 method: "session/prompt",
-                detail: `Invalid attachment id '${attachment.id}'.`,
+                detail: "Prime Agent ACP does not support steering a prompt already in progress.",
               });
             }
-            if (attachment.type === "image") {
-              const bytes = yield* fileSystem.readFile(attachmentPath).pipe(
-                Effect.mapError(
-                  (cause) =>
-                    new ProviderAdapterRequestError({
-                      provider: PROVIDER,
-                      method: "session/prompt",
-                      detail: cause.message,
-                      cause,
-                    }),
-                ),
-              );
-              prompt.push({
-                type: "image",
-                data: Buffer.from(bytes).toString("base64"),
-                mimeType: attachment.mimeType,
+            const requestedModel = modelForInstance(
+              boundInstanceId,
+              input.modelSelection,
+              context.session.model,
+            );
+            if (requestedModel !== context.session.model) {
+              return yield* new ProviderAdapterValidationError({
+                provider: PROVIDER,
+                operation: "sendTurn",
+                issue: "Prime Agent model changes require a new thread.",
               });
-            } else {
-              const safeName = attachment.name.replaceAll("\r", " ").replaceAll("\n", " ");
-              textParts.push(`The user attached file "${safeName}" at path: ${attachmentPath}`);
             }
-          }
-          if (textParts.length > 0) prompt.unshift({ type: "text", text: textParts.join("\n\n") });
-          if (prompt.length === 0) {
-            return yield* new ProviderAdapterValidationError({
-              provider: PROVIDER,
-              operation: "sendTurn",
-              issue: "Turn requires non-empty text or attachments.",
-            });
-          }
-          const turnId = TurnId.make(yield* randomUUIDv4);
-          context.activeTurnId = turnId;
-          context.promptActive = true;
-          context.interrupted = false;
-          context.reasoningItemId = undefined;
-          context.reasoningStarted = false;
-          context.session = {
-            ...context.session,
-            status: "running",
-            activeTurnId: turnId,
-            updatedAt: yield* nowIso,
-          };
-          yield* emit({
-            type: "turn.started",
-            ...(yield* eventStamp()),
+            const prompt: Array<EffectAcpSchema.ContentBlock> = [];
+            const textParts: Array<string> = input.input?.trim() ? [input.input.trim()] : [];
+            for (const attachment of input.attachments ?? []) {
+              const attachmentPath = resolveAttachmentPath({
+                attachmentsDir: serverConfig.attachmentsDir,
+                attachment,
+              });
+              if (!attachmentPath) {
+                return yield* new ProviderAdapterRequestError({
+                  provider: PROVIDER,
+                  method: "session/prompt",
+                  detail: `Invalid attachment id '${attachment.id}'.`,
+                });
+              }
+              if (attachment.type === "image") {
+                const bytes = yield* fileSystem.readFile(attachmentPath).pipe(
+                  Effect.mapError(
+                    (cause) =>
+                      new ProviderAdapterRequestError({
+                        provider: PROVIDER,
+                        method: "session/prompt",
+                        detail: cause.message,
+                        cause,
+                      }),
+                  ),
+                );
+                prompt.push({
+                  type: "image",
+                  data: Buffer.from(bytes).toString("base64"),
+                  mimeType: attachment.mimeType,
+                });
+              } else {
+                const safeName = attachment.name.replaceAll("\r", " ").replaceAll("\n", " ");
+                textParts.push(`The user attached file "${safeName}" at path: ${attachmentPath}`);
+              }
+            }
+            if (textParts.length > 0) {
+              prompt.unshift({ type: "text", text: textParts.join("\n\n") });
+            }
+            if (prompt.length === 0) {
+              return yield* new ProviderAdapterValidationError({
+                provider: PROVIDER,
+                operation: "sendTurn",
+                issue: "Turn requires non-empty text or attachments.",
+              });
+            }
+            const turnId = TurnId.make(yield* randomUUIDv4);
+            const updatedAt = yield* nowIso;
+            const startedStamp = yield* eventStamp();
+            const prepared = { context, prompt, turnId };
+            yield* Effect.gen(function* () {
+              // Register the prepared turn before mutating session state so
+              // the outer finalizer always knows what to settle.
+              yield* Ref.set(preparedRef, prepared);
+              context.activeTurnId = turnId;
+              context.promptActive = true;
+              context.interrupted = false;
+              context.reasoningItemId = undefined;
+              context.reasoningStarted = false;
+              context.session = {
+                ...context.session,
+                status: "running",
+                activeTurnId: turnId,
+                updatedAt,
+              };
+              yield* emit({
+                type: "turn.started",
+                ...startedStamp,
+                provider: PROVIDER,
+                threadId: input.threadId,
+                turnId,
+                payload: { model: requestedModel },
+              });
+            }).pipe(Effect.uninterruptible);
+            return prepared;
+          }),
+        );
+
+        const promptExit = yield* prepared.context.acp.prompt({ prompt: prepared.prompt }).pipe(
+          Effect.mapError((error) =>
+            mapAcpToAdapterError(PROVIDER, input.threadId, "session/prompt", error),
+          ),
+          Effect.exit,
+        );
+        if (!prepared.context.stopped) yield* prepared.context.acp.drainEvents;
+        yield* Effect.yieldNow;
+        if (prepared.context.stopped || sessions.get(input.threadId) !== prepared.context) {
+          return yield* new ProviderAdapterProcessError({
             provider: PROVIDER,
             threadId: input.threadId,
-            turnId,
-            payload: { model: requestedModel },
+            detail:
+              prepared.context.session.lastError ??
+              "Prime Agent ACP process exited before the turn could settle.",
           });
-          return { context, prompt, turnId };
-        }),
-      );
-
-      const promptExit = yield* prepared.context.acp.prompt({ prompt: prepared.prompt }).pipe(
-        Effect.mapError((error) =>
-          mapAcpToAdapterError(PROVIDER, input.threadId, "session/prompt", error),
-        ),
-        Effect.exit,
-      );
-      if (!prepared.context.stopped) yield* prepared.context.acp.drainEvents;
-      yield* Effect.yieldNow;
-      if (prepared.context.stopped || sessions.get(input.threadId) !== prepared.context) {
-        return yield* new ProviderAdapterProcessError({
-          provider: PROVIDER,
-          threadId: input.threadId,
-          detail:
-            prepared.context.session.lastError ??
-            "Prime Agent ACP process exited before the turn could settle.",
+        }
+        if (Exit.isFailure(promptExit)) {
+          const error = Cause.squash(promptExit.cause);
+          const message = error instanceof Error ? error.message : String(error);
+          yield* settlePreparedTurn(undefined, message);
+          return yield* Effect.failCause(promptExit.cause);
+        }
+        prepared.context.turns.push({
+          id: prepared.turnId,
+          items: [{ prompt: prepared.prompt, result: promptExit.value }],
         });
-      }
-      if (Exit.isFailure(promptExit)) {
-        const error = Cause.squash(promptExit.cause);
-        const message = error instanceof Error ? error.message : String(error);
-        yield* settleTurn(input.threadId, prepared.turnId, undefined, message);
-        return yield* Effect.failCause(promptExit.cause);
-      }
-      prepared.context.turns.push({
-        id: prepared.turnId,
-        items: [{ prompt: prepared.prompt, result: promptExit.value }],
-      });
-      yield* settleTurn(input.threadId, prepared.turnId, promptExit.value);
-      return {
-        threadId: input.threadId,
-        turnId: prepared.turnId,
-      };
+        yield* settlePreparedTurn(promptExit.value);
+        return {
+          threadId: input.threadId,
+          turnId: prepared.turnId,
+        };
+      }).pipe(
+        Effect.onInterrupt(() => cancelPreparedTurn()),
+        Effect.ensuring(
+          settlePreparedTurn(undefined, "Prime Agent turn was interrupted.").pipe(Effect.ignore),
+        ),
+      );
     });
 
   const interruptTurn: PrimeAdapterShape["interruptTurn"] = (threadId, turnId) =>

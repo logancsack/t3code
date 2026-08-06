@@ -15,10 +15,13 @@ import {
 import { ProviderService } from "../Services/ProviderService.ts";
 
 const DEFAULT_INACTIVITY_THRESHOLD_MS = 30 * 60 * 1000;
+const DEFAULT_PRIME_SUBAGENT_MAX_DEFERRAL_MS = 6 * 60 * 60 * 1000;
 const DEFAULT_SWEEP_INTERVAL_MS = 5 * 60 * 1000;
 
 export interface ProviderSessionReaperLiveOptions {
   readonly inactivityThresholdMs?: number;
+  /** Total persisted idle time before detached Prime work stops deferring reaping. */
+  readonly primeSubagentMaxDeferralMs?: number;
   readonly sweepIntervalMs?: number;
 }
 
@@ -33,6 +36,10 @@ const makeProviderSessionReaper = (options?: ProviderSessionReaperLiveOptions) =
       options?.inactivityThresholdMs ?? DEFAULT_INACTIVITY_THRESHOLD_MS,
     );
     const sweepIntervalMs = Math.max(1, options?.sweepIntervalMs ?? DEFAULT_SWEEP_INTERVAL_MS);
+    const primeSubagentMaxDeferralMs = Math.max(
+      inactivityThresholdMs,
+      options?.primeSubagentMaxDeferralMs ?? DEFAULT_PRIME_SUBAGENT_MAX_DEFERRAL_MS,
+    );
 
     const sweep = Effect.gen(function* () {
       const bindings = yield* directory.listBindings();
@@ -71,13 +78,24 @@ const makeProviderSessionReaper = (options?: ProviderSessionReaperLiveOptions) =
           continue;
         }
 
+        let reapReason = "inactivity_threshold";
         if (hasRunningPrimeAgentSubagentsForThread(binding.threadId, binding.providerInstanceId)) {
-          yield* Effect.logDebug("provider.session.reaper.skipped-prime-subagents", {
+          if (idleDurationMs < primeSubagentMaxDeferralMs) {
+            yield* Effect.logDebug("provider.session.reaper.skipped-prime-subagents", {
+              threadId: binding.threadId,
+              providerInstanceId: binding.providerInstanceId,
+              idleDurationMs,
+              primeSubagentMaxDeferralMs,
+            });
+            continue;
+          }
+          reapReason = "prime_subagent_max_deferral_exceeded";
+          yield* Effect.logWarning("provider.session.reaper.prime-subagent-max-deferral-exceeded", {
             threadId: binding.threadId,
             providerInstanceId: binding.providerInstanceId,
             idleDurationMs,
+            primeSubagentMaxDeferralMs,
           });
-          continue;
         }
 
         const reaped = yield* providerService.stopSession({ threadId: binding.threadId }).pipe(
@@ -86,7 +104,7 @@ const makeProviderSessionReaper = (options?: ProviderSessionReaperLiveOptions) =
               threadId: binding.threadId,
               provider: binding.provider,
               idleDurationMs,
-              reason: "inactivity_threshold",
+              reason: reapReason,
             }),
           ),
           Effect.as(true),
@@ -133,6 +151,7 @@ const makeProviderSessionReaper = (options?: ProviderSessionReaperLiveOptions) =
 
         yield* Effect.logInfo("provider.session.reaper.started", {
           inactivityThresholdMs,
+          primeSubagentMaxDeferralMs,
           sweepIntervalMs,
         });
       });

@@ -75,6 +75,22 @@ describe("AuthConnectorManager output parsing", () => {
     }).pipe(Effect.provide(authManagerTestLayer())),
   );
 
+  it.effect("allows Prime subscription OAuth when the provider-approval gate is enabled", () =>
+    Effect.gen(function* () {
+      const defaultConfig = yield* ServerConfig;
+      const session = yield* start({ connector: "prime-agent", method: "openai-account" }).pipe(
+        Effect.provideService(ServerConfig, {
+          ...defaultConfig,
+          primeAgentSubscriptionOAuthEnabled: true,
+        }),
+      );
+
+      expect(ptySpawn).toHaveBeenCalledTimes(1);
+      expect(ptySpawn.mock.calls[0]?.[0]).toBe("prime-agent");
+      yield* cancel(session.id);
+    }).pipe(Effect.provide(authManagerTestLayer())),
+  );
+
   it.effect("uses the derived default Prime instance for authentication", () =>
     Effect.gen(function* () {
       const session = yield* start({ connector: "prime-agent", method: "prime-inference" });
@@ -300,6 +316,8 @@ describe("AuthConnectorManager output parsing", () => {
     expect(testHelpers.hasTerminalControlCharacters("sk-safe-value")).toBe(false);
     expect(testHelpers.hasTerminalControlCharacters("sk-first\r/another-command")).toBe(true);
     expect(testHelpers.hasTerminalControlCharacters("callback\nnext-command")).toBe(true);
+    expect(testHelpers.hasTerminalControlCharacters("sk-key\u001B[2K/another-command")).toBe(true);
+    expect(testHelpers.hasTerminalControlCharacters("sk-key\u0085next-command")).toBe(true);
   });
 
   it("rejects lookalike authentication hosts", () => {

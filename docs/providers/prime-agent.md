@@ -1,15 +1,17 @@
 # Prime Agent
 
-Prime Agent is an experimental T3 Code provider. T3 launches its
+Prime Agent is an experimental T3 Code provider. This integration supports exactly Prime Agent
+v0.7.0. T3 launches its
 [Agent Client Protocol (ACP)](https://github.com/PrimeIntellect-ai/prime-agent/blob/v0.7.0/packages/coding-agent/docs/acp.md)
 server and translates streamed messages, reasoning, plans, tool activity, and Prime-specific
 subagent metadata into the normal T3 conversation and work log.
 
 ## Install And Connect
 
-Install a supported [Prime Agent release](https://github.com/PrimeIntellect-ai/prime-agent/releases)
-and confirm that `prime-agent --version` works in the environment running the T3 server. Managed
-Aldo workspaces install a reviewed, checksum-pinned release automatically.
+Install [Prime Agent v0.7.0](https://github.com/PrimeIntellect-ai/prime-agent/releases/tag/v0.7.0)
+and confirm that `prime-agent --version` reports `0.7.0` in the environment running the T3 server.
+Managed Aldo workspaces install the same pinned v0.7.0 release during workspace bootstrap and
+upgrades; other Prime Agent versions are not supported by this integration.
 
 Open the Prime Agent card in T3 Code Settings to connect one of these credential sources:
 
@@ -69,7 +71,8 @@ for commands Prime chooses to run.
 Prime can report recursively spawned subagents after the parent turn appears complete. In a managed
 Aldo workspace, T3 treats reported queued or running subagents as activity, so the idle reaper does
 not stop their root session and Aldo does not pause the workspace. A resident, idle ACP process does
-not count as activity.
+not count as activity. Reported subagents cannot defer root-session idle reaping beyond six hours;
+an active T3 turn is never subject to that ceiling.
 
 Prime heartbeats and scheduled prompts are not supported by this integration. Prime v0.7 reports
 that heartbeat configuration changed, but not enough active or next-run state for T3 to keep an idle
