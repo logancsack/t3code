@@ -26,6 +26,8 @@ vi.mock("node-pty", () => ({ spawn: ptySpawn }));
 
 afterEach(() => {
   ptySpawn.mockClear();
+  vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
 });
 
 const authManagerTestLayer = (settings: Parameters<typeof ServerSettings.layerTest>[0] = {}) =>
@@ -57,7 +59,7 @@ describe("AuthConnectorManager output parsing", () => {
     }).pipe(Effect.provide(authManagerTestLayer())),
   );
 
-  it.effect("rejects Prime subscription OAuth unless the provider-approval gate is enabled", () =>
+  it.effect("rejects Prime subscription OAuth unless the server gate is enabled", () =>
     Effect.gen(function* () {
       const defaultConfig = yield* ServerConfig;
       const error = yield* start({ connector: "prime-agent", method: "openai-account" }).pipe(
@@ -70,7 +72,7 @@ describe("AuthConnectorManager output parsing", () => {
 
       expect(error).toMatchObject({
         operation: "start",
-        detail: expect.stringContaining("requires explicit provider approval"),
+        detail: "Prime Agent subscription OAuth is not enabled by this server.",
       });
     }).pipe(Effect.provide(authManagerTestLayer())),
   );
@@ -87,6 +89,10 @@ describe("AuthConnectorManager output parsing", () => {
 
       expect(ptySpawn).toHaveBeenCalledTimes(1);
       expect(ptySpawn.mock.calls[0]?.[0]).toBe("prime-agent");
+      expect(ptySpawn.mock.calls[0]?.[2]?.env).toMatchObject({
+        TERM_PROGRAM: "vscode",
+        TMUX: "",
+      });
       yield* cancel(session.id);
     }).pipe(Effect.provide(authManagerTestLayer())),
   );
@@ -295,6 +301,50 @@ describe("AuthConnectorManager output parsing", () => {
     const rawOutput = `\u001B]8;;${url}\u0007https://auth.openai.com/oauth/authorize?client_id=app\n&redirect_uri=wrapped\u001B]8;;\u0007`;
 
     expect(testHelpers.extractTerminalHyperlinkUrl(rawOutput)).toBe(url);
+  });
+
+  it("preserves the complete OAuth URL when opening the managed workspace browser", () => {
+    const url =
+      "https://claude.ai/oauth/authorize?client_id=app&redirect_uri=http%3A%2F%2Flocalhost%3A53692%2Fcallback&state=opaque";
+    const target = testHelpers.managedBrowserTargetUrl(url, "http://127.0.0.1:9222");
+
+    expect(target).not.toBeNull();
+    expect(new URL(target!).pathname).toBe("/json/new");
+    expect(decodeURIComponent(new URL(target!).search.slice(1))).toBe(url);
+  });
+
+  it("refuses non-loopback managed browser endpoints", () => {
+    expect(
+      testHelpers.managedBrowserTargetUrl(
+        "https://claude.ai/oauth/authorize?state=opaque",
+        "https://browser.example.com:9222",
+      ),
+    ).toBeNull();
+  });
+
+  it("opens Prime's complete OAuth URL once in the managed workspace browser", () => {
+    const url =
+      "https://auth.openai.com/oauth/authorize?client_id=app&redirect_uri=http%3A%2F%2Flocalhost%3A1455%2Fauth%2Fcallback&state=opaque";
+    const openTarget = vi.fn((_target: string | URL | Request, _init?: RequestInit) =>
+      Promise.resolve(new Response(null, { status: 200 })),
+    );
+    vi.stubEnv("BROWSER_CDP_ENDPOINT", "http://127.0.0.1:9222");
+    vi.stubGlobal("fetch", openTarget);
+
+    testHelpers.parseOutputForTest({
+      connector: "prime-agent",
+      method: "openai-account",
+      flow: "code",
+      output: "Login to ChatGPT Plus/Pro (Codex Subscription)\nPaste redirect URL below",
+      rawOutput: `\u001B]8;;${url}\u0007wrapped link\u001B]8;;\u0007`,
+      repetitions: 2,
+    });
+
+    expect(openTarget).toHaveBeenCalledTimes(1);
+    const [target, init] = openTarget.mock.calls[0] ?? [];
+    expect(init).toMatchObject({ method: "PUT" });
+    expect(target).toEqual(expect.any(String));
+    expect(decodeURIComponent(new URL(String(target)).search.slice(1))).toBe(url);
   });
 
   it("redacts a credential even when its PTY echo is split across chunks", () => {
@@ -570,7 +620,7 @@ describe("AuthConnectorManager output parsing", () => {
           help: expect.stringContaining("localhost:1455"),
         },
       ],
-      message: expect.stringContaining("workspace Browser panel"),
+      message: expect.stringContaining("workspace browser"),
     });
   });
 

@@ -12,28 +12,28 @@ const PRIME_AGENT_SUBSCRIPTION_METHODS: ReadonlyArray<AuthConnectorMethodOption>
   {
     method: "openai-account",
     label: "ChatGPT subscription OAuth",
-    badgeLabel: "Experimental · provider approval required",
+    badgeLabel: "Subscription",
     description:
-      "Create a separate Prime Agent OAuth grant for ChatGPT Plus or Pro. T3 Code does not copy or reuse Codex credentials.",
+      "Sign in to ChatGPT Plus or Pro for Prime Agent. This creates a separate secure grant and does not copy your Codex credentials.",
     browserName: "OpenAI",
+    workspaceBrowser: true,
     authorizeInstruction:
-      "In Aldo, open this in the workspace Browser panel so the localhost:1455 callback reaches Prime Agent. From another browser, copy the failed redirect URL and paste it on the next step.",
+      "Prime Agent opened OpenAI in the workspace browser so the localhost callback stays inside your workspace.",
     returnInstruction:
-      "If the browser did not return to Prime Agent, paste the complete localhost:1455 redirect URL below.",
+      "Prime Agent normally finishes automatically. If you used the fallback in this browser, paste the complete localhost:1455 redirect URL below.",
   },
   {
     method: "anthropic-account",
     label: "Claude subscription OAuth",
-    badgeLabel: "Experimental · provider approval required",
+    badgeLabel: "Subscription",
     description:
-      "Third-party harness usage draws from Anthropic extra usage and is billed per token, not Claude plan limits. T3 Code does not copy or reuse Claude credentials.",
+      "Sign in to Claude Pro or Max for Prime Agent. This creates a separate secure grant and does not copy your Claude Code credentials.",
     browserName: "Anthropic",
+    workspaceBrowser: true,
     authorizeInstruction:
-      "Approve a separate Prime Agent grant with Anthropic. Charges use Anthropic extra usage rather than Claude plan limits.",
+      "Prime Agent opened Anthropic in the workspace browser so the localhost callback stays inside your workspace.",
     returnInstruction:
-      "Paste the redirect URL or authorization code if Anthropic does not return directly to Prime Agent.",
-    externalHelpUrl: "https://claude.ai/settings/usage",
-    externalHelpLabel: "Manage Anthropic extra usage",
+      "Prime Agent normally finishes automatically. If you used the fallback in this browser, paste the redirect URL or authorization code below.",
   },
 ];
 
