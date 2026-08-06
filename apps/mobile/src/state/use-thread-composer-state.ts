@@ -21,8 +21,10 @@ import {
 } from "../lib/composerImages";
 import type { DraftComposerImageAttachment } from "../lib/composerImages";
 import { scopedThreadKey } from "../lib/scopedEntities";
+import { coerceProviderRuntimeMode } from "../lib/runtimeModes";
 import { buildThreadFeed } from "../lib/threadActivity";
 import { appAtomRegistry } from "../state/atom-registry";
+import { useEnvironmentServerConfig } from "./entities";
 import {
   appendComposerDraftAttachments,
   appendComposerDraftText,
@@ -75,6 +77,7 @@ export function useThreadDraftForThread(input: {
 export function useThreadComposerState() {
   const { selectedThread: selectedThreadShell } = useThreadSelection();
   const selectedThreadDetail = useSelectedThreadDetail();
+  const serverConfig = useEnvironmentServerConfig(selectedThreadShell?.environmentId ?? null);
   const composerDrafts = useAtomValue(composerDraftsAtom);
   const queuedMessagesByThreadKey = useThreadOutboxMessages();
 
@@ -100,7 +103,13 @@ export function useThreadComposerState() {
   const selectedThreadQueueCount = selectedThreadQueuedMessages.length;
   const selectedThread = selectedThreadDetail ?? selectedThreadShell;
   const modelSelection = selectedDraft?.modelSelection ?? selectedThread?.modelSelection ?? null;
-  const runtimeMode = selectedDraft?.runtimeMode ?? selectedThread?.runtimeMode ?? null;
+  const selectedProvider = serverConfig?.providers.find(
+    (provider) => provider.instanceId === modelSelection?.instanceId,
+  );
+  const rawRuntimeMode = selectedDraft?.runtimeMode ?? selectedThread?.runtimeMode ?? null;
+  const runtimeMode = rawRuntimeMode
+    ? coerceProviderRuntimeMode(selectedProvider, rawRuntimeMode)
+    : null;
   const interactionMode = selectedDraft?.interactionMode ?? selectedThread?.interactionMode ?? null;
 
   const selectedThreadSessionActivity = useMemo(() => {
@@ -148,6 +157,10 @@ export function useThreadComposerState() {
 
     const metadata = makeQueuedMessageMetadata();
     const messageId = MessageId.make(metadata.messageId);
+    const messageModelSelection = draft.modelSelection ?? thread.modelSelection;
+    const messageProvider = serverConfig?.providers.find(
+      (provider) => provider.instanceId === messageModelSelection.instanceId,
+    );
     try {
       await enqueueThreadOutboxMessage({
         environmentId: selectedThreadShell.environmentId,
@@ -156,8 +169,11 @@ export function useThreadComposerState() {
         commandId: CommandId.make(metadata.commandId),
         text,
         attachments,
-        modelSelection: draft.modelSelection ?? thread.modelSelection,
-        runtimeMode: draft.runtimeMode ?? thread.runtimeMode,
+        modelSelection: messageModelSelection,
+        runtimeMode: coerceProviderRuntimeMode(
+          messageProvider,
+          draft.runtimeMode ?? thread.runtimeMode,
+        ),
         interactionMode: draft.interactionMode ?? thread.interactionMode,
         createdAt: metadata.createdAt,
       });
@@ -169,7 +185,7 @@ export function useThreadComposerState() {
       );
       return null;
     }
-  }, [selectedThreadDetail, selectedThreadShell]);
+  }, [selectedThreadDetail, selectedThreadShell, serverConfig]);
 
   const onChangeDraftMessage = useCallback(
     (value: string) => {
@@ -264,9 +280,17 @@ export function useThreadComposerState() {
       if (!selectedThreadKey) {
         return;
       }
-      updateComposerDraftSettings(selectedThreadKey, { modelSelection: value });
+      const nextProvider = serverConfig?.providers.find(
+        (provider) => provider.instanceId === value.instanceId,
+      );
+      updateComposerDraftSettings(selectedThreadKey, {
+        modelSelection: value,
+        ...(runtimeMode
+          ? { runtimeMode: coerceProviderRuntimeMode(nextProvider, runtimeMode) }
+          : {}),
+      });
     },
-    [selectedThreadKey],
+    [runtimeMode, selectedThreadKey, serverConfig],
   );
 
   const onUpdateRuntimeMode = useCallback(
@@ -274,9 +298,11 @@ export function useThreadComposerState() {
       if (!selectedThreadKey) {
         return;
       }
-      updateComposerDraftSettings(selectedThreadKey, { runtimeMode: value });
+      updateComposerDraftSettings(selectedThreadKey, {
+        runtimeMode: coerceProviderRuntimeMode(selectedProvider, value),
+      });
     },
-    [selectedThreadKey],
+    [selectedProvider, selectedThreadKey],
   );
 
   const onUpdateInteractionMode = useCallback(
