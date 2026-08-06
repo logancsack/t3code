@@ -192,8 +192,10 @@ function managedBrowserTargetUrl(
   }
 }
 
-function openInManagedWorkspaceBrowser(session: ManagedSession, verificationUrl: string): void {
-  const state = session.primeAgentAuth;
+function openInManagedWorkspaceBrowser(
+  state: { workspaceBrowserOpenStarted: boolean } | null,
+  verificationUrl: string,
+): void {
   if (!state || state.workspaceBrowserOpenStarted) return;
   const targetUrl = managedBrowserTargetUrl(verificationUrl);
   if (!targetUrl) return;
@@ -202,7 +204,13 @@ function openInManagedWorkspaceBrowser(session: ManagedSession, verificationUrl:
   void fetch(targetUrl, {
     method: "PUT",
     signal: AbortSignal.timeout(3_000),
-  }).catch(() => undefined);
+  })
+    .then((response) => {
+      if (!response.ok) state.workspaceBrowserOpenStarted = false;
+    })
+    .catch(() => {
+      state.workspaceBrowserOpenStarted = false;
+    });
 }
 
 function extractUserCode(output: string): string | null {
@@ -640,7 +648,7 @@ function parsePrimeAgentOutput(session: ManagedSession, verificationUrl: string 
     verificationUrl &&
     isPrimeAgentSubscriptionMethod(session.snapshot.method)
   ) {
-    openInManagedWorkspaceBrowser(session, verificationUrl);
+    openInManagedWorkspaceBrowser(session.primeAgentAuth, verificationUrl);
     setSnapshot(session, {
       status: "waiting",
       flow: "code",
@@ -1568,6 +1576,7 @@ export const testHelpers = {
   extractUrl,
   extractTerminalHyperlinkUrl,
   managedBrowserTargetUrl,
+  openInManagedWorkspaceBrowser,
   extractUserCode,
   hasGitHubCredentialPrompt,
   hasGitHubBrowserPrompt,

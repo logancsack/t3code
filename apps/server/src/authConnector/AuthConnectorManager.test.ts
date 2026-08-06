@@ -317,7 +317,7 @@ describe("AuthConnectorManager output parsing", () => {
     expect(
       testHelpers.managedBrowserTargetUrl(
         "https://claude.ai/oauth/authorize?state=opaque",
-        "https://browser.example.com:9222",
+        "http://browser.example.com:9222",
       ),
     ).toBeNull();
   });
@@ -345,6 +345,24 @@ describe("AuthConnectorManager output parsing", () => {
     expect(init).toMatchObject({ method: "PUT" });
     expect(target).toEqual(expect.any(String));
     expect(decodeURIComponent(new URL(String(target)).search.slice(1))).toBe(url);
+  });
+
+  it("retries a managed workspace browser handoff after a non-success response", async () => {
+    const url = "https://auth.openai.com/oauth/authorize?state=opaque";
+    const state = { workspaceBrowserOpenStarted: false };
+    const openTarget = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(null, { status: 503 }))
+      .mockResolvedValueOnce(new Response(null, { status: 200 }));
+    vi.stubEnv("BROWSER_CDP_ENDPOINT", "http://127.0.0.1:9222");
+    vi.stubGlobal("fetch", openTarget);
+
+    testHelpers.openInManagedWorkspaceBrowser(state, url);
+    await vi.waitFor(() => expect(state.workspaceBrowserOpenStarted).toBe(false));
+
+    testHelpers.openInManagedWorkspaceBrowser(state, url);
+    await vi.waitFor(() => expect(state.workspaceBrowserOpenStarted).toBe(true));
+    expect(openTarget).toHaveBeenCalledTimes(2);
   });
 
   it("redacts a credential even when its PTY echo is split across chunks", () => {
