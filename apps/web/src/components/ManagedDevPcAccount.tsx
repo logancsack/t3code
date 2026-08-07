@@ -31,6 +31,9 @@ function accountLabel(account: ManagedAccount | null): string {
   return account?.name?.trim() || account?.email?.trim() || "Account";
 }
 
+/** Any origin will do; the point is only whether resolving changes it. */
+const SAME_ORIGIN_PROBE = "https://managed.invalid";
+
 /**
  * The account image as a same-origin path, or null for the default mark.
  *
@@ -39,14 +42,22 @@ function accountLabel(account: ManagedAccount | null): string {
  * mismatched gateway, and the managed shell CSP (`img-src 'self'`) would block
  * it on load anyway, so treat it as no image rather than a broken one.
  *
- * A backslash is rejected outright: URL parsing folds it into a forward slash,
- * so `/\example.com/a.png` resolves off-origin exactly like `//example.com`.
- * The gateway's own path never contains one.
+ * The check resolves the value rather than pattern-matching it, because URL
+ * parsing rewrites more than it looks like: it folds a backslash into a slash
+ * and deletes tabs and newlines outright, so `/\host`, `/<tab>/host`, and
+ * `//host` all reach an attacker's origin while reading as rooted paths. If
+ * resolving against any base changes the origin, it was never a path.
  */
 export function sameOriginAccountImage(imageUrl: string | null | undefined): string | null {
   const trimmed = imageUrl?.trim();
-  if (!trimmed || trimmed.includes("\\")) return null;
-  return trimmed.startsWith("/") && !trimmed.startsWith("//") ? trimmed : null;
+  if (!trimmed || !trimmed.startsWith("/")) return null;
+  let resolved: URL;
+  try {
+    resolved = new URL(trimmed, SAME_ORIGIN_PROBE);
+  } catch {
+    return null;
+  }
+  return resolved.origin === SAME_ORIGIN_PROBE ? `${resolved.pathname}${resolved.search}` : null;
 }
 
 /**

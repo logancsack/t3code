@@ -65,5 +65,10 @@ describe("sameOriginAccountImage", () => {
     // URL parsing folds a backslash into a slash: `/\host` resolves to `//host`.
     expect(sameOriginAccountImage("/\\img.clerk.com/abc.png")).toBeNull();
     expect(sameOriginAccountImage("\\\\img.clerk.com/abc.png")).toBeNull();
+    // It deletes tabs and newlines outright, rejoining the slashes around them.
+    expect(sameOriginAccountImage("/\t/img.clerk.com/abc.png")).toBeNull();
+    expect(sameOriginAccountImage("/\n/img.clerk.com/abc.png")).toBeNull();
+    expect(sameOriginAccountImage("/\r/img.clerk.com/abc.png")).toBeNull();
+    expect(sameOriginAccountImage("/\t\\img.clerk.com/abc.png")).toBeNull();
   });
 });
