@@ -89,8 +89,11 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
   }, [props.instanceEntries, props.selectedInstanceId, showFavorites]);
 
   return (
-    <div className="w-11 shrink-0 overflow-hidden bg-muted/30" data-model-picker-sidebar="true">
-      <div className="h-full overflow-y-auto overscroll-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <div
+      className="flex h-full min-h-0 w-11 shrink-0 flex-col overflow-hidden bg-muted/30"
+      data-model-picker-sidebar="true"
+    >
+      <div className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-y-contain [-webkit-overflow-scrolling:touch] [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <div ref={sidebarContentRef} className="relative flex min-h-full flex-col gap-1 p-1">
           {selectedIndicatorTop !== null ? (
             <div
@@ -105,7 +108,10 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
           {/* Favorites section */}
           {showFavorites ? (
             <>
-              <div className="relative w-full" data-model-picker-provider="favorites">
+              <div
+                className="relative w-full shrink-0"
+                data-model-picker-provider="favorites"
+              >
                 <Tooltip>
                   <TooltipTrigger
                     render={
@@ -131,7 +137,7 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
                   </TooltipPopup>
                 </Tooltip>
               </div>
-              <div className="border-b border-border/70" aria-hidden="true" />
+              <div className="shrink-0 border-b border-border/70" aria-hidden="true" />
             </>
           ) : null}
 
@@ -215,7 +221,7 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
             return (
               <div
                 key={entry.instanceId}
-                className="relative w-full"
+                className="relative w-full shrink-0"
                 data-model-picker-provider={entry.instanceId}
               >
                 <Tooltip>
