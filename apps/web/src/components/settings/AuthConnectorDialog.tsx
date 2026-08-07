@@ -604,12 +604,13 @@ export function AuthConnectorDialog(props: {
                                   spellCheck={false}
                                   aria-describedby={helpId}
                                   className="font-mono text-xs"
-                                  onChange={(event) =>
+                                  onChange={(event) => {
+                                    const value = event.currentTarget.value;
                                     setValues((current) => ({
                                       ...current,
-                                      [authField.key]: event.currentTarget.value,
-                                    }))
-                                  }
+                                      [authField.key]: value,
+                                    }));
+                                  }}
                                 />
                               ) : (
                                 <Input
@@ -619,12 +620,13 @@ export function AuthConnectorDialog(props: {
                                   placeholder={authField.placeholder}
                                   autoComplete="off"
                                   aria-describedby={helpId}
-                                  onChange={(event) =>
+                                  onChange={(event) => {
+                                    const value = event.currentTarget.value;
                                     setValues((current) => ({
                                       ...current,
-                                      [authField.key]: event.currentTarget.value,
-                                    }))
-                                  }
+                                      [authField.key]: value,
+                                    }));
+                                  }}
                                 />
                               )}
                               {authField.help ? (
