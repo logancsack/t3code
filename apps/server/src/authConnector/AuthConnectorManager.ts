@@ -1,5 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off - Native auth is a Node PTY/process and atomic filesystem boundary.
-// @effect-diagnostics globalFetch:off - Bitbucket credential verification is intentionally performed at this boundary.
+// @effect-diagnostics globalFetch:off - Bitbucket verification and loopback CDP handoff are intentional process boundaries.
 // @effect-diagnostics globalDateInEffect:off - Session expiration timestamps belong to the in-memory PTY lifecycle.
 // @effect-diagnostics globalTimersInEffect:off - A detached auth session must outlive an individual RPC Effect scope.
 // @effect-diagnostics globalTimers:off - Terminal snapshots are retained briefly after detached PTY completion.
@@ -63,6 +63,7 @@ type PrimeAgentAuthState = {
   credentialPromptReady: boolean;
   continuedProviderPrompt: boolean;
   preservedPrimeTeamSelection: boolean;
+  workspaceBrowserOpenStarted: boolean;
   pendingInput: string | null;
   submittedInput: string | null;
   sensitiveOutputCarry: string;
@@ -170,6 +171,51 @@ function extractTerminalHyperlinkUrl(output: string): string | null {
   );
 }
 
+function managedBrowserTargetUrl(
+  verificationUrl: string,
+  endpoint = process.env.BROWSER_CDP_ENDPOINT ?? process.env.BROWSER_CDP_URL,
+): string | null {
+  if (!endpoint || !isAllowedAuthUrl(verificationUrl)) return null;
+
+  try {
+    const parsedEndpoint = new URL(endpoint);
+    const isLoopback = ["127.0.0.1", "[::1]", "localhost"].includes(
+      parsedEndpoint.hostname.toLowerCase(),
+    );
+    if (parsedEndpoint.protocol !== "http:" || !isLoopback) return null;
+
+    const target = new URL("/json/new", parsedEndpoint);
+    target.search = `?${encodeURIComponent(verificationUrl)}`;
+    return target.toString();
+  } catch {
+    return null;
+  }
+}
+
+function openInManagedWorkspaceBrowser(
+  state: { workspaceBrowserOpenStarted: boolean } | null,
+  verificationUrl: string,
+): boolean {
+  if (!state) return false;
+  if (state.workspaceBrowserOpenStarted) return true;
+  const targetUrl = managedBrowserTargetUrl(verificationUrl);
+  if (!targetUrl) return false;
+
+  state.workspaceBrowserOpenStarted = true;
+  void fetch(targetUrl, {
+    method: "PUT",
+    redirect: "error",
+    signal: AbortSignal.timeout(3_000),
+  })
+    .then((response) => {
+      if (!response.ok) state.workspaceBrowserOpenStarted = false;
+    })
+    .catch(() => {
+      state.workspaceBrowserOpenStarted = false;
+    });
+  return true;
+}
+
 function extractUserCode(output: string): string | null {
   const patterns = [
     /enter this one-time code(?:\s*\([^)]*\))?\s*\n\s*([A-Z0-9-]{6,})/iu,
@@ -209,8 +255,8 @@ function primeAgentCallbackField(method: AuthConnectorMethod): AuthConnectorFiel
     placeholder: "Paste the full redirect URL from your browser",
     help:
       method === "openai-account"
-        ? "In Aldo, open the sign-in page in the workspace Browser panel so localhost:1455 can reach Prime Agent. If the redirect fails in another browser, paste its complete URL here."
-        : "Complete provider approval in the workspace Browser panel. If the redirect does not return to Prime Agent, paste the complete redirect URL or authorization code here.",
+        ? "The workspace browser returns localhost:1455 directly to Prime Agent. If you used the fallback in another browser, paste its complete redirect URL here."
+        : "The workspace browser returns the callback directly to Prime Agent. If you used the fallback in another browser, paste the complete redirect URL or authorization code here.",
   });
 }
 
@@ -605,6 +651,10 @@ function parsePrimeAgentOutput(session: ManagedSession, verificationUrl: string 
     verificationUrl &&
     isPrimeAgentSubscriptionMethod(session.snapshot.method)
   ) {
+    const openedManagedBrowser = openInManagedWorkspaceBrowser(
+      session.primeAgentAuth,
+      verificationUrl,
+    );
     setSnapshot(session, {
       status: "waiting",
       flow: "code",
@@ -613,8 +663,12 @@ function parsePrimeAgentOutput(session: ManagedSession, verificationUrl: string 
       fields: [primeAgentCallbackField(session.snapshot.method)],
       message:
         session.snapshot.method === "openai-account"
-          ? "Approve access in the workspace Browser panel so localhost:1455 returns to Prime Agent. If another browser shows a failed redirect, paste its full URL below."
-          : "Approve access with Anthropic. If the browser does not return to Prime Agent, paste the redirect URL or authorization code below.",
+          ? openedManagedBrowser
+            ? "Complete OpenAI sign-in in the workspace browser so its localhost callback returns directly to Prime Agent. If it does not finish automatically, paste the complete localhost:1455 redirect URL here."
+            : "Open the OpenAI sign-in link, approve access, then paste the complete localhost:1455 redirect URL here."
+          : openedManagedBrowser
+            ? "Complete Anthropic sign-in in the workspace browser so its localhost callback returns directly to Prime Agent. If it does not finish automatically, paste the redirect URL or authorization code here."
+            : "Open the Anthropic sign-in link, approve access, then paste the redirect URL or authorization code here.",
     });
     return;
   }
@@ -968,11 +1022,19 @@ function launchSpec(input: AuthConnectorStartInput): LaunchSpec | null {
         ],
         flow: subscription ? "code" : requiresApiKey ? "secret" : "browser",
         message: subscription
-          ? "Starting an experimental provider OAuth flow in Prime Agent…"
+          ? "Starting provider sign-in in Prime Agent…"
           : requiresApiKey
             ? "Enter the provider API key. Prime Agent will store it in its own workspace authentication file."
             : "Starting provider setup in Prime Agent…",
         ...(requiresApiKey ? { fields: [primeAgentSecretField(input.method)] } : {}),
+        env: {
+          // Prime renders OAuth URLs as OSC-8 hyperlinks only for terminals it
+          // knows support them. The managed PTY consumes those hyperlinks and
+          // needs the full target because the visible URL wraps inside Prime's
+          // fixed-width login dialog.
+          TERM_PROGRAM: "vscode",
+          TMUX: "",
+        },
         columns: 512,
         primeAgentProviderQuery: providerQuery,
         primeAgentExpectedDialogTitle: expectedDialogTitle,
@@ -1218,7 +1280,7 @@ export const start = Effect.fn("AuthConnectorManager.start")(function* (
   ) {
     return yield* connectorError(
       "start",
-      "Prime Agent subscription OAuth is experimental and requires explicit provider approval. This server has not enabled it.",
+      "Prime Agent subscription OAuth is not enabled by this server.",
     );
   }
   if (input.connector === "bitbucket" && input.method !== "token") {
@@ -1280,6 +1342,7 @@ export const start = Effect.fn("AuthConnectorManager.start")(function* (
             credentialPromptReady: false,
             continuedProviderPrompt: false,
             preservedPrimeTeamSelection: false,
+            workspaceBrowserOpenStarted: false,
             pendingInput: null,
             submittedInput: null,
             sensitiveOutputCarry: "",
@@ -1484,6 +1547,7 @@ function parseOutputForTest(input: {
             credentialPromptReady: false,
             continuedProviderPrompt: false,
             preservedPrimeTeamSelection: false,
+            workspaceBrowserOpenStarted: false,
             pendingInput: input.pendingInput ?? null,
             submittedInput: null,
             sensitiveOutputCarry: "",
@@ -1521,6 +1585,8 @@ export const testHelpers = {
   stripAnsi,
   extractUrl,
   extractTerminalHyperlinkUrl,
+  managedBrowserTargetUrl,
+  openInManagedWorkspaceBrowser,
   extractUserCode,
   hasGitHubCredentialPrompt,
   hasGitHubBrowserPrompt,

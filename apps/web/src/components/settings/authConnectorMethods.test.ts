@@ -46,23 +46,24 @@ describe("Prime Agent authentication methods", () => {
     expect(azure?.description).toContain("AZURE_OPENAI_RESOURCE_NAME");
   });
 
-  it("surfaces provider-approved subscription OAuth only behind the server capability", () => {
+  it("surfaces managed subscription OAuth only behind the server capability", () => {
     const configured = resolveAgentAuthMethods("primeAgent", true);
     const chatGpt = configured?.methods.find((method) => method.method === "openai-account");
     const claude = configured?.methods.find((method) => method.method === "anthropic-account");
 
     expect(chatGpt).toMatchObject({
-      badgeLabel: "Experimental · provider approval required",
-      authorizeInstruction: expect.stringContaining("localhost:1455"),
+      badgeLabel: "Subscription",
+      workspaceBrowser: true,
+      authorizeInstruction: expect.stringContaining("workspace browser"),
+      manualAuthorizeInstruction: expect.stringContaining("this browser"),
       returnInstruction: expect.stringContaining("redirect URL"),
     });
-    expect(chatGpt?.description).toContain("does not copy or reuse Codex credentials");
+    expect(chatGpt?.description).toContain("does not copy your Codex credentials");
     expect(claude).toMatchObject({
-      badgeLabel: "Experimental · provider approval required",
-      externalHelpUrl: "https://claude.ai/settings/usage",
+      badgeLabel: "Subscription",
+      workspaceBrowser: true,
+      manualAuthorizeInstruction: expect.stringContaining("authorization code"),
     });
-    expect(claude?.description).toContain("draws from Anthropic extra usage");
-    expect(claude?.description).toContain("billed per token, not Claude plan limits");
-    expect(claude?.description).toContain("does not copy or reuse Claude credentials");
+    expect(claude?.description).toContain("does not copy your Claude Code credentials");
   });
 });
