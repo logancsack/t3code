@@ -1,7 +1,11 @@
 import { ProviderInstanceId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { buildAuthConnectorStartInput } from "./AuthConnectorDialog";
+import {
+  authAuthorizeInstruction,
+  authVerificationDestination,
+  buildAuthConnectorStartInput,
+} from "./AuthConnectorDialog";
 
 describe("AuthConnectorDialog start input", () => {
   it("routes an agent connection to the provider card's instance", () => {
@@ -38,5 +42,53 @@ describe("AuthConnectorDialog start input", () => {
       method: "account",
       hostname: "github.example.com",
     });
+  });
+});
+
+describe("AuthConnectorDialog verification destination", () => {
+  const providerUrl =
+    "https://auth.openai.com/oauth/authorize?client_id=app&redirect_uri=http%3A%2F%2Flocalhost%3A1455%2Fauth%2Fcallback";
+
+  it("opens managed Prime OAuth in the shared workspace browser", () => {
+    expect(
+      authVerificationDestination({
+        verificationUrl: providerUrl,
+        workspaceBrowser: true,
+        workspaceBrowserUrl: "/_devpc/browser?grant=workspace",
+      }),
+    ).toBe("/_devpc/browser?grant=workspace");
+  });
+
+  it("keeps the complete provider URL as the unmanaged fallback", () => {
+    expect(
+      authVerificationDestination({
+        verificationUrl: providerUrl,
+        workspaceBrowser: true,
+        workspaceBrowserUrl: null,
+      }),
+    ).toBe(providerUrl);
+  });
+});
+
+describe("AuthConnectorDialog authorization instruction", () => {
+  const option = {
+    method: "openai-account" as const,
+    label: "ChatGPT subscription OAuth",
+    description: "Use a ChatGPT subscription.",
+    workspaceBrowser: true,
+    authorizeInstruction: "Continue in the workspace browser.",
+    manualAuthorizeInstruction: "Continue in this browser and paste the redirect URL.",
+  };
+
+  it("uses managed workspace guidance when the viewer is available", () => {
+    expect(authAuthorizeInstruction({ option, usesManagedWorkspaceBrowser: true })).toContain(
+      "workspace browser",
+    );
+  });
+
+  it("uses manual callback guidance on standalone servers", () => {
+    expect(authAuthorizeInstruction({ option, usesManagedWorkspaceBrowser: false })).toContain(
+      "paste the redirect URL",
+    );
   });
 });

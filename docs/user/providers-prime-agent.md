@@ -29,14 +29,13 @@ Prime's OpenAI OAuth callback listens on `localhost:1455`. Opening its authoriza
 workspace Browser panel lets the callback reach the Prime process. If another browser reaches a
 failed localhost redirect, copy the complete redirect URL back into the T3 connection dialog.
 
-Anthropic subscription auth in a third-party harness uses Anthropic **extra usage**, billed per
-token rather than against Claude plan limits. Review and manage that setting at
-<https://claude.ai/settings/usage> before connecting it.
+Anthropic's authorization screen identifies this flow as Claude subscription access. The grant is
+stored separately in Prime Agent, while the account's existing plan and usage controls continue to
+apply.
 
 Subscription OAuth is absent by default. An operator must deliberately set
-`T3CODE_PRIME_AGENT_SUBSCRIPTION_OAUTH_ENABLED=true` after completing the provider-policy review
-for that environment. This gates T3's guided connector, not Prime's own interactive `/login`
-command, and it does not affect API keys.
+`T3CODE_PRIME_AGENT_SUBSCRIPTION_OAUTH_ENABLED=true` for that environment. This gates T3's guided
+connector, not Prime's own interactive `/login` command, and it does not affect API keys.
 
 ## Models And Continuation
 
