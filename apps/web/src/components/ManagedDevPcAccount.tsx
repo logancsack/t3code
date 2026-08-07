@@ -31,6 +31,67 @@ function accountLabel(account: ManagedAccount | null): string {
   return account?.name?.trim() || account?.email?.trim() || "Account";
 }
 
+/** Any origin will do; the point is only whether resolving changes it. */
+const SAME_ORIGIN_PROBE = "https://managed.invalid";
+
+/**
+ * The account image as a same-origin path, or null for the default mark.
+ *
+ * The gateway proxies the identity provider's picture under its own origin and
+ * sends null when the user never set one. An absolute URL therefore means a
+ * mismatched gateway, and the managed shell CSP (`img-src 'self'`) would block
+ * it on load anyway, so treat it as no image rather than a broken one.
+ *
+ * The check resolves the value rather than pattern-matching it, because URL
+ * parsing rewrites more than it looks like: it folds a backslash into a slash
+ * and deletes tabs and newlines outright, so `/\host`, `/<tab>/host`, and
+ * `//host` all reach an attacker's origin while reading as rooted paths. If
+ * resolving against any base changes the origin, it was never a path.
+ */
+export function sameOriginAccountImage(imageUrl: string | null | undefined): string | null {
+  const trimmed = imageUrl?.trim();
+  if (!trimmed || !trimmed.startsWith("/")) return null;
+  let resolved: URL;
+  try {
+    resolved = new URL(trimmed, SAME_ORIGIN_PROBE);
+  } catch {
+    return null;
+  }
+  return resolved.origin === SAME_ORIGIN_PROBE ? `${resolved.pathname}${resolved.search}` : null;
+}
+
+/**
+ * The signed-in user's picture, falling back to the default person mark.
+ *
+ * `alt` is intentionally empty: the trigger already names the account, so the
+ * image is decorative to a screen reader.
+ */
+function AccountAvatar({ account }: { account: ManagedAccount | null }) {
+  const source = sameOriginAccountImage(account?.imageUrl);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    setFailed(false);
+  }, [source]);
+
+  return (
+    <span className="flex size-5 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sidebar-row-hover text-sidebar-foreground">
+      {source && !failed ? (
+        <img
+          src={source}
+          alt=""
+          className="size-full object-cover"
+          draggable={false}
+          onError={() => setFailed(true)}
+          data-devpc-account-avatar
+        />
+      ) : (
+        <UserRoundIcon className="size-3.5" aria-hidden />
+      )}
+    </span>
+  );
+}
+
 export function ManagedDevPcAccountButton() {
   const [account, setAccount] = useState<ManagedAccount | null>(null);
   const [open, setOpen] = useState(false);
@@ -82,9 +143,7 @@ export function ManagedDevPcAccountButton() {
           />
         }
       >
-        <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-sidebar-row-hover text-sidebar-foreground">
-          <UserRoundIcon className="size-3.5" aria-hidden />
-        </span>
+        <AccountAvatar account={account} />
         <span className="min-w-0 flex-1 truncate text-left font-medium">{label}</span>
       </DialogTrigger>
 
