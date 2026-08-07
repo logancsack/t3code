@@ -98,10 +98,10 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
 
   return (
     <div
-      className="w-12 shrink-0 overflow-hidden border-r bg-muted/30"
+      className="flex h-full min-h-0 w-12 shrink-0 flex-col overflow-hidden border-r bg-muted/30"
       data-model-picker-sidebar="true"
     >
-      <div className="h-full overflow-y-auto overscroll-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-y-contain [-webkit-overflow-scrolling:touch] [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <div
           ref={sidebarContentRef}
           className="relative flex min-h-full flex-col gap-1 px-1 pb-1 pt-0.5"
@@ -118,7 +118,7 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
           ) : null}
           {/* Favorites section */}
           {showFavorites ? (
-            <div className="mb-1 border-b pb-1">
+            <div className="mb-1 shrink-0 border-b pb-1">
               <div className="relative w-full">
                 <Tooltip>
                   <TooltipTrigger
@@ -228,7 +228,7 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
             );
 
             return (
-              <div key={entry.instanceId} className="relative w-full">
+              <div key={entry.instanceId} className="relative w-full shrink-0">
                 <Tooltip>
                   <TooltipTrigger render={trigger} />
                   <TooltipPopup
