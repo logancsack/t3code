@@ -19,6 +19,8 @@ const PRIME_AGENT_SUBSCRIPTION_METHODS: ReadonlyArray<AuthConnectorMethodOption>
     workspaceBrowser: true,
     authorizeInstruction:
       "Prime Agent opened OpenAI in the workspace browser so the localhost callback stays inside your workspace.",
+    manualAuthorizeInstruction:
+      "Open OpenAI in this browser, approve access, then return here with the complete localhost:1455 redirect URL.",
     returnInstruction:
       "Prime Agent normally finishes automatically. If you used the fallback in this browser, paste the complete localhost:1455 redirect URL below.",
   },
@@ -32,6 +34,8 @@ const PRIME_AGENT_SUBSCRIPTION_METHODS: ReadonlyArray<AuthConnectorMethodOption>
     workspaceBrowser: true,
     authorizeInstruction:
       "Prime Agent opened Anthropic in the workspace browser so the localhost callback stays inside your workspace.",
+    manualAuthorizeInstruction:
+      "Open Anthropic in this browser, approve access, then return here with the redirect URL or authorization code.",
     returnInstruction:
       "Prime Agent normally finishes automatically. If you used the fallback in this browser, paste the redirect URL or authorization code below.",
   },

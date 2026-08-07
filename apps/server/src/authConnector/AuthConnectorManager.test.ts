@@ -77,7 +77,7 @@ describe("AuthConnectorManager output parsing", () => {
     }).pipe(Effect.provide(authManagerTestLayer())),
   );
 
-  it.effect("allows Prime subscription OAuth when the provider-approval gate is enabled", () =>
+  it.effect("allows Prime subscription OAuth when the server capability is enabled", () =>
     Effect.gen(function* () {
       const defaultConfig = yield* ServerConfig;
       const session = yield* start({ connector: "prime-agent", method: "openai-account" }).pipe(
@@ -342,7 +342,7 @@ describe("AuthConnectorManager output parsing", () => {
 
     expect(openTarget).toHaveBeenCalledTimes(1);
     const [target, init] = openTarget.mock.calls[0] ?? [];
-    expect(init).toMatchObject({ method: "PUT" });
+    expect(init).toMatchObject({ method: "PUT", redirect: "error" });
     expect(target).toEqual(expect.any(String));
     expect(decodeURIComponent(new URL(String(target)).search.slice(1))).toBe(url);
   });
@@ -363,6 +363,26 @@ describe("AuthConnectorManager output parsing", () => {
     testHelpers.openInManagedWorkspaceBrowser(state, url);
     await vi.waitFor(() => expect(state.workspaceBrowserOpenStarted).toBe(true));
     expect(openTarget).toHaveBeenCalledTimes(2);
+  });
+
+  it("reports when a managed browser handoff is unavailable", () => {
+    vi.stubEnv("BROWSER_CDP_ENDPOINT", "");
+
+    expect(
+      testHelpers.openInManagedWorkspaceBrowser(
+        { workspaceBrowserOpenStarted: false },
+        "https://auth.openai.com/oauth/authorize?state=opaque",
+      ),
+    ).toBe(false);
+  });
+
+  it("keeps reporting an already-started managed browser handoff", () => {
+    expect(
+      testHelpers.openInManagedWorkspaceBrowser(
+        { workspaceBrowserOpenStarted: true },
+        "https://auth.openai.com/oauth/authorize?state=opaque",
+      ),
+    ).toBe(true);
   });
 
   it("redacts a credential even when its PTY echo is split across chunks", () => {
@@ -638,7 +658,7 @@ describe("AuthConnectorManager output parsing", () => {
           help: expect.stringContaining("localhost:1455"),
         },
       ],
-      message: expect.stringContaining("workspace browser"),
+      message: expect.stringContaining("paste the complete localhost:1455 redirect URL"),
     });
   });
 

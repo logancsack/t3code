@@ -53,6 +53,7 @@ export type AuthConnectorMethodOption = {
   readonly browserName?: string;
   readonly workspaceBrowser?: boolean;
   readonly authorizeInstruction?: string;
+  readonly manualAuthorizeInstruction?: string;
   readonly waitingMessage?: string;
   readonly returnInstruction?: string;
 };
@@ -78,6 +79,15 @@ export function authVerificationDestination(input: {
   return input.workspaceBrowser && input.workspaceBrowserUrl
     ? input.workspaceBrowserUrl
     : input.verificationUrl;
+}
+
+export function authAuthorizeInstruction(input: {
+  readonly option: AuthConnectorMethodOption | null | undefined;
+  readonly usesManagedWorkspaceBrowser: boolean;
+}): string | undefined {
+  return input.usesManagedWorkspaceBrowser
+    ? input.option?.authorizeInstruction
+    : (input.option?.manualAuthorizeInstruction ?? input.option?.authorizeInstruction);
 }
 
 function errorMessage(cause: unknown): string {
@@ -339,6 +349,10 @@ export function AuthConnectorDialog(props: {
   const browserName = selectedMethod?.browserName ?? serviceName;
   const usesManagedWorkspaceBrowser =
     selectedMethod?.workspaceBrowser === true && managedWorkspaceBrowserUrl() !== null;
+  const authorizeInstruction = authAuthorizeInstruction({
+    option: selectedMethod,
+    usesManagedWorkspaceBrowser,
+  });
   const stageTitle =
     presentationStage === "credential"
       ? "Add your credential"
@@ -351,7 +365,7 @@ export function AuthConnectorDialog(props: {
             : "Preparing secure sign-in";
   const stageDescription =
     presentationStage === "authorize"
-      ? (selectedMethod?.authorizeInstruction ??
+      ? (authorizeInstruction ??
         `Complete the authorization in ${browserName}. This window will update automatically.`)
       : presentationStage === "return"
         ? (selectedMethod?.returnInstruction ??

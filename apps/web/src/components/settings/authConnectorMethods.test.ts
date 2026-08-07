@@ -55,12 +55,14 @@ describe("Prime Agent authentication methods", () => {
       badgeLabel: "Subscription",
       workspaceBrowser: true,
       authorizeInstruction: expect.stringContaining("workspace browser"),
+      manualAuthorizeInstruction: expect.stringContaining("this browser"),
       returnInstruction: expect.stringContaining("redirect URL"),
     });
     expect(chatGpt?.description).toContain("does not copy your Codex credentials");
     expect(claude).toMatchObject({
       badgeLabel: "Subscription",
       workspaceBrowser: true,
+      manualAuthorizeInstruction: expect.stringContaining("authorization code"),
     });
     expect(claude?.description).toContain("does not copy your Claude Code credentials");
   });

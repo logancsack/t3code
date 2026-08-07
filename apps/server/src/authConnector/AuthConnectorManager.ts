@@ -195,14 +195,16 @@ function managedBrowserTargetUrl(
 function openInManagedWorkspaceBrowser(
   state: { workspaceBrowserOpenStarted: boolean } | null,
   verificationUrl: string,
-): void {
-  if (!state || state.workspaceBrowserOpenStarted) return;
+): boolean {
+  if (!state) return false;
+  if (state.workspaceBrowserOpenStarted) return true;
   const targetUrl = managedBrowserTargetUrl(verificationUrl);
-  if (!targetUrl) return;
+  if (!targetUrl) return false;
 
   state.workspaceBrowserOpenStarted = true;
   void fetch(targetUrl, {
     method: "PUT",
+    redirect: "error",
     signal: AbortSignal.timeout(3_000),
   })
     .then((response) => {
@@ -211,6 +213,7 @@ function openInManagedWorkspaceBrowser(
     .catch(() => {
       state.workspaceBrowserOpenStarted = false;
     });
+  return true;
 }
 
 function extractUserCode(output: string): string | null {
@@ -648,7 +651,10 @@ function parsePrimeAgentOutput(session: ManagedSession, verificationUrl: string 
     verificationUrl &&
     isPrimeAgentSubscriptionMethod(session.snapshot.method)
   ) {
-    openInManagedWorkspaceBrowser(session.primeAgentAuth, verificationUrl);
+    const openedManagedBrowser = openInManagedWorkspaceBrowser(
+      session.primeAgentAuth,
+      verificationUrl,
+    );
     setSnapshot(session, {
       status: "waiting",
       flow: "code",
@@ -657,8 +663,12 @@ function parsePrimeAgentOutput(session: ManagedSession, verificationUrl: string 
       fields: [primeAgentCallbackField(session.snapshot.method)],
       message:
         session.snapshot.method === "openai-account"
-          ? "Complete OpenAI sign-in in the workspace browser so its localhost callback returns directly to Prime Agent."
-          : "Complete Anthropic sign-in in the workspace browser so its localhost callback returns directly to Prime Agent.",
+          ? openedManagedBrowser
+            ? "Complete OpenAI sign-in in the workspace browser so its localhost callback returns directly to Prime Agent. If it does not finish automatically, paste the complete localhost:1455 redirect URL here."
+            : "Open the OpenAI sign-in link, approve access, then paste the complete localhost:1455 redirect URL here."
+          : openedManagedBrowser
+            ? "Complete Anthropic sign-in in the workspace browser so its localhost callback returns directly to Prime Agent. If it does not finish automatically, paste the redirect URL or authorization code here."
+            : "Open the Anthropic sign-in link, approve access, then paste the redirect URL or authorization code here.",
     });
     return;
   }

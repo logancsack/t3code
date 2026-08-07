@@ -1,7 +1,11 @@
 import { ProviderInstanceId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { authVerificationDestination, buildAuthConnectorStartInput } from "./AuthConnectorDialog";
+import {
+  authAuthorizeInstruction,
+  authVerificationDestination,
+  buildAuthConnectorStartInput,
+} from "./AuthConnectorDialog";
 
 describe("AuthConnectorDialog start input", () => {
   it("routes an agent connection to the provider card's instance", () => {
@@ -63,5 +67,28 @@ describe("AuthConnectorDialog verification destination", () => {
         workspaceBrowserUrl: null,
       }),
     ).toBe(providerUrl);
+  });
+});
+
+describe("AuthConnectorDialog authorization instruction", () => {
+  const option = {
+    method: "openai-account" as const,
+    label: "ChatGPT subscription OAuth",
+    description: "Use a ChatGPT subscription.",
+    workspaceBrowser: true,
+    authorizeInstruction: "Continue in the workspace browser.",
+    manualAuthorizeInstruction: "Continue in this browser and paste the redirect URL.",
+  };
+
+  it("uses managed workspace guidance when the viewer is available", () => {
+    expect(authAuthorizeInstruction({ option, usesManagedWorkspaceBrowser: true })).toContain(
+      "workspace browser",
+    );
+  });
+
+  it("uses manual callback guidance on standalone servers", () => {
+    expect(authAuthorizeInstruction({ option, usesManagedWorkspaceBrowser: false })).toContain(
+      "paste the redirect URL",
+    );
   });
 });
