@@ -62,5 +62,8 @@ describe("sameOriginAccountImage", () => {
     expect(sameOriginAccountImage("https://img.clerk.com/abc.png")).toBeNull();
     expect(sameOriginAccountImage("//img.clerk.com/abc.png")).toBeNull();
     expect(sameOriginAccountImage("javascript:alert(1)")).toBeNull();
+    // URL parsing folds a backslash into a slash: `/\host` resolves to `//host`.
+    expect(sameOriginAccountImage("/\\img.clerk.com/abc.png")).toBeNull();
+    expect(sameOriginAccountImage("\\\\img.clerk.com/abc.png")).toBeNull();
   });
 });
