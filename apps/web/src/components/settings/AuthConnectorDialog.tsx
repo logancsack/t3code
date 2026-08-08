@@ -154,6 +154,7 @@ export function AuthConnectorDialog(props: {
   });
   const [open, setOpen] = useState(false);
   const [session, setSession] = useState<AuthConnectorSession | null>(null);
+  const [sessionEnvironmentId, setSessionEnvironmentId] = useState<EnvironmentId | null>(null);
   const [values, setValues] = useState<Record<string, string>>({});
   const [startingMethod, setStartingMethod] = useState<AuthConnectorMethod | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -166,13 +167,13 @@ export function AuthConnectorDialog(props: {
   const selectedMethod = methods.find((method) => method.method === session?.method) ?? null;
 
   useEffect(() => {
-    if (!open || !environmentId || !session) return;
+    if (!open || !sessionEnvironmentId || !session) return;
     if (session.status !== "starting" && session.status !== "waiting") return;
     let cancelled = false;
     const timer = window.setInterval(() => {
       void (async () => {
         const result = await getConnector({
-          environmentId,
+          environmentId: sessionEnvironmentId,
           input: { sessionId: session.id },
         });
         if (cancelled || result._tag !== "Success") return;
@@ -183,7 +184,7 @@ export function AuthConnectorDialog(props: {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [environmentId, getConnector, open, session?.id, session?.status]);
+  }, [getConnector, open, session?.id, session?.status, sessionEnvironmentId]);
 
   useEffect(() => {
     if (!open || !session?.expiresAt || TERMINAL_STATUSES.has(session.status)) return;
@@ -205,6 +206,7 @@ export function AuthConnectorDialog(props: {
 
   const reset = () => {
     setSession(null);
+    setSessionEnvironmentId(null);
     setValues({});
     setStartingMethod(null);
     setIsSubmitting(false);
@@ -219,12 +221,12 @@ export function AuthConnectorDialog(props: {
       return;
     }
     if (
-      environmentId &&
+      sessionEnvironmentId &&
       session &&
       (session.status === "starting" || session.status === "waiting")
     ) {
       void cancelConnector({
-        environmentId,
+        environmentId: sessionEnvironmentId,
         input: { sessionId: session.id },
       });
     }
@@ -244,6 +246,7 @@ export function AuthConnectorDialog(props: {
     });
     setStartingMethod(null);
     if (result._tag === "Success") {
+      setSessionEnvironmentId(environmentId);
       setSession(result.value);
       return;
     }
@@ -253,11 +256,11 @@ export function AuthConnectorDialog(props: {
   };
 
   const submit = async () => {
-    if (!environmentId || !session) return;
+    if (!sessionEnvironmentId || !session) return;
     setError(null);
     setIsSubmitting(true);
     const result = await submitConnector({
-      environmentId,
+      environmentId: sessionEnvironmentId,
       input: {
         sessionId: session.id,
         values,

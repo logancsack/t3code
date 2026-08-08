@@ -581,6 +581,7 @@ export interface ChatComposerProps {
   // Provider / model
   lockedProvider: ProviderDriverKind | null;
   providerStatuses: ServerProvider[];
+  reconnectedProviderInstanceId?: ProviderInstanceId;
   activeProjectDefaultModelSelection: ModelSelection | null | undefined;
   activeThreadModelSelection: ModelSelection | null | undefined;
 
@@ -675,6 +676,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     interactionMode,
     lockedProvider,
     providerStatuses,
+    reconnectedProviderInstanceId,
     activeProjectDefaultModelSelection,
     activeThreadModelSelection,
     activeThreadActivities,
@@ -864,7 +866,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   );
   const providerAuthenticationRequired =
     selectedProviderEntry?.snapshot.auth.status === "unauthenticated";
-  const noProviderAvailable = !isProviderInstanceSendReady(selectedProviderEntry);
+  const noProviderAvailable = !isProviderInstanceSendReady(
+    selectedProviderEntry,
+    reconnectedProviderInstanceId,
+  );
   // The driver kind follows the instance that will actually run the turn,
   // which can differ from the persisted selection when that selection is
   // disabled.

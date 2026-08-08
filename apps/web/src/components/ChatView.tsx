@@ -2402,6 +2402,24 @@ function ChatViewContent(props: ChatViewProps) {
     const defaultInstanceId = defaultInstanceIdForDriver(selectedProvider);
     return providerStatuses.find((status) => status.instanceId === defaultInstanceId) ?? null;
   }, [activeProviderInstanceId, providerStatuses, selectedProvider]);
+  const [reconnectedProvider, setReconnectedProvider] = useState<{
+    readonly environmentId: EnvironmentId;
+    readonly instanceId: ProviderInstanceId;
+  } | null>(null);
+  const reconnectedProviderInstanceId =
+    reconnectedProvider?.environmentId === environmentId
+      ? reconnectedProvider.instanceId
+      : undefined;
+
+  useEffect(() => {
+    if (!reconnectedProviderInstanceId) return;
+    const snapshot = providerStatuses.find(
+      (provider) => provider.instanceId === reconnectedProviderInstanceId,
+    );
+    if (snapshot?.auth.status === "authenticated") {
+      setReconnectedProvider(null);
+    }
+  }, [providerStatuses, reconnectedProviderInstanceId]);
   const runtimeMode = coerceProviderRuntimeMode(activeProviderStatus, requestedRuntimeMode);
   useEffect(() => {
     if (runtimeMode === requestedRuntimeMode) return;
@@ -2562,6 +2580,12 @@ function ChatViewContent(props: ChatViewProps) {
       provider: activeProviderStatus,
       latestTurn: activeThread?.latestTurn ?? null,
     });
+    if (activeProviderStatus) {
+      setReconnectedProvider({
+        environmentId,
+        instanceId: activeProviderStatus.instanceId,
+      });
+    }
     void (async () => {
       await refreshServerProviders({ environmentId, input: {} });
       if (!activeThread || !retryTurnId) return;
@@ -5972,6 +5996,9 @@ function ChatViewContent(props: ChatViewProps) {
                             interactionMode={interactionMode}
                             lockedProvider={lockedProvider}
                             providerStatuses={providerStatuses as ServerProvider[]}
+                            {...(reconnectedProviderInstanceId
+                              ? { reconnectedProviderInstanceId }
+                              : {})}
                             activeProjectDefaultModelSelection={
                               activeProject?.defaultModelSelection
                             }

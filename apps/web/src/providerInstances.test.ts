@@ -91,6 +91,20 @@ describe("isProviderInstanceSendReady", () => {
 
     expect(isProviderInstanceSendReady(entry)).toBe(true);
   });
+
+  it("allows the first send after an explicit reconnect so the runtime latch can clear", () => {
+    const instanceId = ProviderInstanceId.make("claudeAgent");
+    const [entry] = deriveProviderInstanceEntries([
+      provider({
+        provider: ProviderDriverKind.make("claudeAgent"),
+        instanceId,
+        status: "error",
+        authStatus: "unauthenticated",
+      }),
+    ]);
+
+    expect(isProviderInstanceSendReady(entry, instanceId)).toBe(true);
+  });
 });
 
 describe("isProviderInstancePickerVisible", () => {
