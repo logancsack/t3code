@@ -142,6 +142,7 @@ interface ClaudeTurnState {
   readonly assistantTextBlockOrder: Array<AssistantTextBlockState>;
   readonly capturedProposedPlanKeys: Set<string>;
   nextSyntheticAssistantBlockIndex: number;
+  authenticationError: string | undefined;
 }
 
 interface AssistantTextBlockState {
@@ -268,6 +269,23 @@ export interface ClaudeAdapterLiveOptions {
   }) => ClaudeQueryRuntime;
   readonly nativeEventLogPath?: string;
   readonly nativeEventLogger?: EventNdjsonLogger;
+  readonly onAuthenticationStateChanged?: (authenticated: boolean) => Effect.Effect<void>;
+}
+
+const CLAUDE_AUTHENTICATION_REQUIRED_MESSAGE =
+  "Your Claude sign-in expired. Reconnect Claude to retry this message.";
+
+function isClaudeAuthenticationFailure(message: SDKMessage): boolean {
+  if (message.type !== "assistant") return false;
+  const candidate = message as SDKMessage & {
+    readonly error?: unknown;
+    readonly is_api_error_message?: unknown;
+  };
+  if (candidate.error === "authentication_failed") return true;
+  if (candidate.is_api_error_message !== true) return false;
+  return extractAssistantTextBlocks(message).some((text) =>
+    text.toLowerCase().includes("failed to authenticate"),
+  );
 }
 
 function isUuid(value: string): boolean {
@@ -1282,7 +1300,9 @@ const buildUserMessageEffect = Effect.fn("buildUserMessageEffect")(function* (
 });
 
 function turnStatusFromResult(result: SDKResultMessage): ProviderRuntimeTurnStatus {
-  if (result.subtype === "success") {
+  const terminalReason = (result as unknown as { readonly terminal_reason?: unknown })
+    .terminal_reason;
+  if (result.subtype === "success" && terminalReason !== "api_error") {
     return "completed";
   }
 
@@ -2365,6 +2385,13 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
 
     const { event } = message;
 
+    if (event.type === "message_start") {
+      if (options?.onAuthenticationStateChanged) {
+        yield* options.onAuthenticationStateChanged(true);
+      }
+      return;
+    }
+
     // Subagent-owned stream traffic (parent_tool_use_id set) must not write
     // into the parent transcript: with forwardSubagentText off the SDK still
     // forwards subagent tool_use/tool_result blocks and their wrapping
@@ -2833,6 +2860,21 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       return;
     }
 
+    if (isClaudeAuthenticationFailure(message)) {
+      if (context.turnState) {
+        context.turnState.authenticationError = CLAUDE_AUTHENTICATION_REQUIRED_MESSAGE;
+      }
+      yield* emitRuntimeError(context, CLAUDE_AUTHENTICATION_REQUIRED_MESSAGE, {
+        code: "authentication_required",
+      });
+      if (options?.onAuthenticationStateChanged) {
+        yield* options.onAuthenticationStateChanged(false);
+      }
+      context.lastAssistantUuid = message.uuid;
+      yield* updateResumeCursor(context);
+      return;
+    }
+
     // Subagent-owned assistant snapshots (parent_tool_use_id set) are the
     // subagent's own conversation, not the parent's. Emitting them created
     // interleaved "Agent N done"-adjacent leak messages and spawned synthetic
@@ -2867,6 +2909,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         assistantTextBlockOrder: [],
         capturedProposedPlanKeys: new Set(),
         nextSyntheticAssistantBlockIndex: -1,
+        authenticationError: undefined,
       };
       context.session = {
         ...context.session,
@@ -2941,10 +2984,15 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       return;
     }
 
-    const status = turnStatusFromResult(message);
-    const errorMessage = resultUserFacingError(message);
+    const authenticationError = context.turnState?.authenticationError;
+    const status = authenticationError ? "failed" : turnStatusFromResult(message);
+    const resultMessage =
+      "result" in message && typeof message.result === "string" ? message.result : undefined;
+    const errorMessage =
+      authenticationError ??
+      (status === "completed" ? undefined : (resultUserFacingError(message) ?? resultMessage));
 
-    if (status === "failed") {
+    if (status === "failed" && !authenticationError) {
       yield* emitRuntimeError(context, errorMessage ?? "Claude turn failed.");
     }
 
@@ -4358,6 +4406,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         assistantTextBlockOrder: [],
         capturedProposedPlanKeys: new Set(),
         nextSyntheticAssistantBlockIndex: -1,
+        authenticationError: undefined,
       };
 
       const updatedAt = yield* nowIso;

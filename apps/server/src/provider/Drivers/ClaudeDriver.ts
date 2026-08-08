@@ -19,6 +19,7 @@ import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
+import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import { HttpClient } from "effect/unstable/http";
 import { ChildProcessSpawner } from "effect/unstable/process";
@@ -59,6 +60,24 @@ const decodeClaudeSettings = Schema.decodeSync(ClaudeSettings);
 
 const DRIVER_KIND = ProviderDriverKind.make("claudeAgent");
 const CAPABILITIES_PROBE_TTL = Duration.minutes(5);
+const CLAUDE_AUTHENTICATION_REQUIRED_MESSAGE =
+  "Your Claude sign-in expired. Reconnect Claude to retry the last message automatically.";
+
+export function applyClaudeRuntimeAuthenticationState(
+  snapshot: ServerProvider,
+  authenticationRequired: boolean,
+): ServerProvider {
+  if (!authenticationRequired) return snapshot;
+  return {
+    ...snapshot,
+    status: "error",
+    auth: {
+      ...snapshot.auth,
+      status: "unauthenticated",
+    },
+    message: CLAUDE_AUTHENTICATION_REQUIRED_MESSAGE,
+  };
+}
 
 function isClaudeNativeCommandPath(commandPath: string): boolean {
   const normalized = normalizeCommandPath(commandPath);
@@ -143,13 +162,8 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
         continuationGroupKey,
       });
 
-      const adapterOptions = {
-        instanceId,
-        environment: processEnv,
-        ...(eventLoggers.native ? { nativeEventLogger: eventLoggers.native } : {}),
-      };
-      const adapter = yield* makeClaudeAdapter(effectiveConfig, adapterOptions);
       const textGeneration = yield* makeClaudeTextGeneration(effectiveConfig, processEnv);
+      const runtimeAuthenticationRequired = yield* Ref.make(false);
 
       // Per-instance capabilities cache: keyed on binary + resolved HOME so
       // account-specific probes never share auth metadata across instances.
@@ -163,16 +177,23 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
       });
       const capabilitiesCacheKey = yield* makeClaudeCapabilitiesCacheKey(effectiveConfig, cwd);
 
-      const checkProvider = checkClaudeProviderStatus(
-        effectiveConfig,
-        () => Cache.get(capabilitiesProbeCache, capabilitiesCacheKey),
-        processEnv,
-        cwd,
-      ).pipe(
-        Effect.map(stampIdentity),
-        Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
-        Effect.provideService(FileSystem.FileSystem, fileSystem),
-        Effect.provideService(Path.Path, path),
+      const checkProvider = Effect.all({
+        snapshot: checkClaudeProviderStatus(
+          effectiveConfig,
+          () => Cache.get(capabilitiesProbeCache, capabilitiesCacheKey),
+          processEnv,
+          cwd,
+        ).pipe(
+          Effect.map(stampIdentity),
+          Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+          Effect.provideService(FileSystem.FileSystem, fileSystem),
+          Effect.provideService(Path.Path, path),
+        ),
+        authenticationRequired: Ref.get(runtimeAuthenticationRequired),
+      }).pipe(
+        Effect.map(({ snapshot, authenticationRequired }) =>
+          applyClaudeRuntimeAuthenticationState(snapshot, authenticationRequired),
+        ),
       );
 
       const snapshotSettings = makeProviderSnapshotSettingsSource(effectiveConfig, serverSettings);
@@ -202,6 +223,21 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
             }),
         ),
       );
+
+      const adapterOptions = {
+        instanceId,
+        environment: processEnv,
+        ...(eventLoggers.native ? { nativeEventLogger: eventLoggers.native } : {}),
+        onAuthenticationStateChanged: (authenticated: boolean) =>
+          Ref.getAndSet(runtimeAuthenticationRequired, !authenticated).pipe(
+            Effect.flatMap((wasAuthenticationRequired) =>
+              wasAuthenticationRequired === !authenticated
+                ? Effect.void
+                : snapshot.refresh.pipe(Effect.asVoid),
+            ),
+          ),
+      };
+      const adapter = yield* makeClaudeAdapter(effectiveConfig, adapterOptions);
 
       return {
         instanceId,

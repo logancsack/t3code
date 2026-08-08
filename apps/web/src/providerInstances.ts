@@ -74,6 +74,17 @@ export function isProviderInstancePickerReady(entry: ProviderInstanceEntry): boo
   return entry.enabled && entry.isAvailable && entry.status === "ready";
 }
 
+/** A configured instance cannot start a turn while its credentials need reconnecting. */
+export function isProviderInstanceSendReady(
+  entry: ProviderInstanceEntry | undefined,
+  reconnectedInstanceId?: ProviderInstanceId,
+): entry is ProviderInstanceEntry {
+  return (
+    entry !== undefined &&
+    (entry.snapshot.auth.status !== "unauthenticated" || entry.instanceId === reconnectedInstanceId)
+  );
+}
+
 /** Picker rails contain configured, enabled instances only. */
 export function isProviderInstancePickerVisible(entry: ProviderInstanceEntry): boolean {
   return entry.enabled;

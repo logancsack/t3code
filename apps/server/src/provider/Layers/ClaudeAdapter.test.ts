@@ -161,6 +161,7 @@ function makeHarness(config?: {
   readonly baseDir?: string;
   readonly claudeConfig?: Partial<ClaudeSettings>;
   readonly instanceId?: ProviderInstanceId;
+  readonly onAuthenticationStateChanged?: (authenticated: boolean) => Effect.Effect<void>;
 }) {
   const query = new FakeClaudeQuery();
   let createInput:
@@ -185,6 +186,9 @@ function makeHarness(config?: {
       ? {
           nativeEventLogPath: config.nativeEventLogPath,
         }
+      : {}),
+    ...(config?.onAuthenticationStateChanged
+      ? { onAuthenticationStateChanged: config.onAuthenticationStateChanged }
       : {}),
   };
 
@@ -1062,6 +1066,97 @@ describe("ClaudeAdapterLive", () => {
       assert.equal(String(turnStartedEvents[0]?.turnId), String(turn.turnId));
       assert.equal(turnCompletedEvents.length, 1);
       assert.equal(String(turnCompletedEvents[0]?.turnId), String(turn.turnId));
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("turns an expired OAuth session into reconnect state instead of assistant text", () => {
+    const authenticationStates: boolean[] = [];
+    const harness = makeHarness({
+      onAuthenticationStateChanged: (authenticated) =>
+        Effect.sync(() => authenticationStates.push(authenticated)),
+    });
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const runtimeEventsFiber = yield* Stream.takeUntil(
+        adapter.streamEvents,
+        (event) => event.type === "turn.completed",
+      ).pipe(Stream.runCollect, Effect.forkChild);
+
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+      yield* adapter.sendTurn({
+        threadId: THREAD_ID,
+        input: "Is this live now?",
+        attachments: [],
+      });
+
+      harness.query.emit({
+        type: "assistant",
+        session_id: "sdk-session-auth-failure",
+        uuid: "assistant-auth-failure",
+        parent_tool_use_id: null,
+        error: "authentication_failed",
+        is_api_error_message: true,
+        message: {
+          id: "synthetic-auth-error",
+          content: [
+            {
+              type: "text",
+              text: "Failed to authenticate: OAuth session expired and could not be refreshed",
+            },
+          ],
+        },
+      } as unknown as SDKMessage);
+      harness.query.emit({
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        terminal_reason: "api_error",
+        result: "Failed to authenticate: OAuth session expired and could not be refreshed",
+        session_id: "sdk-session-auth-failure",
+        uuid: "result-auth-failure",
+      } as unknown as SDKMessage);
+
+      const runtimeEvents = Array.from(yield* Fiber.join(runtimeEventsFiber));
+      yield* Effect.yieldNow;
+
+      assert.deepEqual(authenticationStates, [false]);
+      assert.equal(
+        runtimeEvents.some((event) => event.type === "content.delta"),
+        false,
+      );
+      assert.equal(
+        runtimeEvents.some(
+          (event) =>
+            event.type === "item.completed" && event.payload.itemType === "assistant_message",
+        ),
+        false,
+      );
+      const runtimeError = runtimeEvents.find((event) => event.type === "runtime.error");
+      assert.equal(runtimeError?.type, "runtime.error");
+      if (runtimeError?.type === "runtime.error") {
+        assert.equal(runtimeError.payload.class, "provider_error");
+        assert.equal(
+          runtimeError.payload.message,
+          "Your Claude sign-in expired. Reconnect Claude to retry this message.",
+        );
+        assert.deepEqual(runtimeError.payload.detail, { code: "authentication_required" });
+      }
+      const turnCompleted = runtimeEvents.findLast((event) => event.type === "turn.completed");
+      assert.equal(turnCompleted?.type, "turn.completed");
+      if (turnCompleted?.type === "turn.completed") {
+        assert.equal(turnCompleted.payload.state, "failed");
+        assert.equal(
+          turnCompleted.payload.errorMessage,
+          "Your Claude sign-in expired. Reconnect Claude to retry this message.",
+        );
+      }
     }).pipe(
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
       Effect.provide(harness.layer),

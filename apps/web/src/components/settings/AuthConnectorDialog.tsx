@@ -13,8 +13,8 @@ import type {
   AuthConnectorKind,
   AuthConnectorMethod,
   AuthConnectorSession,
-  EnvironmentId,
   AuthConnectorStartInput,
+  EnvironmentId,
   ProviderInstanceId,
 } from "@t3tools/contracts";
 import {
@@ -124,12 +124,20 @@ export function AuthConnectorDialog(props: {
   readonly serviceName: string;
   readonly methods: ReadonlyArray<AuthConnectorMethodOption>;
   readonly providerInstanceId?: ProviderInstanceId;
-  readonly isAuthenticated: boolean;
-  readonly onConnected: () => void;
   readonly environmentId?: EnvironmentId;
+  readonly isAuthenticated: boolean;
+  readonly triggerLabel?: string;
+  readonly onConnected: () => void;
 }) {
-  const { connector, serviceName, methods, providerInstanceId, isAuthenticated, onConnected } =
-    props;
+  const {
+    connector,
+    serviceName,
+    methods,
+    providerInstanceId,
+    isAuthenticated,
+    triggerLabel,
+    onConnected,
+  } = props;
   const primaryEnvironment = usePrimaryEnvironment();
   const environmentId = props.environmentId ?? primaryEnvironment?.environmentId;
   const startConnector = useAtomCommand(sourceControlEnvironment.startAuthConnector, {
@@ -146,6 +154,7 @@ export function AuthConnectorDialog(props: {
   });
   const [open, setOpen] = useState(false);
   const [session, setSession] = useState<AuthConnectorSession | null>(null);
+  const [sessionEnvironmentId, setSessionEnvironmentId] = useState<EnvironmentId | null>(null);
   const [values, setValues] = useState<Record<string, string>>({});
   const [startingMethod, setStartingMethod] = useState<AuthConnectorMethod | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -158,13 +167,13 @@ export function AuthConnectorDialog(props: {
   const selectedMethod = methods.find((method) => method.method === session?.method) ?? null;
 
   useEffect(() => {
-    if (!open || !environmentId || !session) return;
+    if (!open || !sessionEnvironmentId || !session) return;
     if (session.status !== "starting" && session.status !== "waiting") return;
     let cancelled = false;
     const timer = window.setInterval(() => {
       void (async () => {
         const result = await getConnector({
-          environmentId,
+          environmentId: sessionEnvironmentId,
           input: { sessionId: session.id },
         });
         if (cancelled || result._tag !== "Success") return;
@@ -175,7 +184,7 @@ export function AuthConnectorDialog(props: {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [environmentId, getConnector, open, session?.id, session?.status]);
+  }, [getConnector, open, session?.id, session?.status, sessionEnvironmentId]);
 
   useEffect(() => {
     if (!open || !session?.expiresAt || TERMINAL_STATUSES.has(session.status)) return;
@@ -197,6 +206,7 @@ export function AuthConnectorDialog(props: {
 
   const reset = () => {
     setSession(null);
+    setSessionEnvironmentId(null);
     setValues({});
     setStartingMethod(null);
     setIsSubmitting(false);
@@ -210,9 +220,13 @@ export function AuthConnectorDialog(props: {
       reset();
       return;
     }
-    if (environmentId && session && (session.status === "starting" || session.status === "waiting")) {
+    if (
+      sessionEnvironmentId &&
+      session &&
+      (session.status === "starting" || session.status === "waiting")
+    ) {
       void cancelConnector({
-        environmentId,
+        environmentId: sessionEnvironmentId,
         input: { sessionId: session.id },
       });
     }
@@ -232,6 +246,7 @@ export function AuthConnectorDialog(props: {
     });
     setStartingMethod(null);
     if (result._tag === "Success") {
+      setSessionEnvironmentId(environmentId);
       setSession(result.value);
       return;
     }
@@ -241,11 +256,11 @@ export function AuthConnectorDialog(props: {
   };
 
   const submit = async () => {
-    if (!environmentId || !session) return;
+    if (!sessionEnvironmentId || !session) return;
     setError(null);
     setIsSubmitting(true);
     const result = await submitConnector({
-      environmentId,
+      environmentId: sessionEnvironmentId,
       input: {
         sessionId: session.id,
         values,
@@ -388,7 +403,7 @@ export function AuthConnectorDialog(props: {
         onClick={() => handleOpenChange(true)}
       >
         <PlugIcon className="size-3.5" />
-        {isAuthenticated ? "Reconnect" : "Connect"}
+        {triggerLabel ?? (isAuthenticated ? "Reconnect" : "Connect")}
       </Button>
 
       <DialogPopup className="w-[min(36rem,calc(100vw-1rem))]">

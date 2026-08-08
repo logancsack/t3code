@@ -860,7 +860,7 @@ const ThreadTurnInterruptCommand = Schema.Struct({
 /**
  * Re-drive a settled-but-failed turn from its original user message.
  *
- * Server-initiated (the turn liveness watchdog's auto-retry): re-emits
+ * Re-emits
  * `thread.turn-start-requested` against the message that started the failed
  * turn, so no duplicate user message is created and the provider replays the
  * same input on a fresh turn.
@@ -926,6 +926,7 @@ const DispatchableClientOrchestrationCommand = Schema.Union([
   ThreadInteractionModeSetCommand,
   ThreadTurnStartCommand,
   ThreadTurnInterruptCommand,
+  ThreadTurnRetryCommand,
   ThreadApprovalRespondCommand,
   ThreadUserInputRespondCommand,
   ThreadCheckpointRevertCommand,
@@ -953,6 +954,7 @@ export const ClientOrchestrationCommand = Schema.Union([
   ThreadInteractionModeSetCommand,
   ClientThreadTurnStartCommand,
   ThreadTurnInterruptCommand,
+  ThreadTurnRetryCommand,
   ThreadApprovalRespondCommand,
   ThreadUserInputRespondCommand,
   ThreadCheckpointRevertCommand,

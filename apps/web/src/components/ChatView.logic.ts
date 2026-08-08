@@ -52,6 +52,17 @@ export function shouldQuietlyRecoverManagedPrimaryEnvironment(input: {
   );
 }
 
+export function retryableTurnAfterProviderReconnect(input: {
+  readonly provider: ServerProvider | null;
+  readonly latestTurn: Thread["latestTurn"] | null;
+}): TurnId | null {
+  if (input.provider?.auth.status !== "unauthenticated") return null;
+  if (input.latestTurn?.state !== "error" && input.latestTurn?.state !== "interrupted") {
+    return null;
+  }
+  return input.latestTurn.turnId;
+}
+
 export function resolveThreadMetadataUpdateForNextTurn(input: {
   currentModelSelection: ModelSelection;
   nextModelSelection?: ModelSelection;

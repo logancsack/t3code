@@ -30,7 +30,10 @@ import {
 import * as EnvironmentSupervisor from "../connection/supervisor.ts";
 import * as Persistence from "../platform/persistence.ts";
 import * as RpcSession from "../rpc/session.ts";
-import type { ThreadSnapshotWindow } from "./threadSnapshotHttp.ts";
+import type {
+  ThreadSnapshotLoadResult,
+  ThreadSnapshotWindow,
+} from "./threadSnapshotHttp.ts";
 import {
   INITIAL_THREAD_USER_TURN_LIMIT,
   makeEnvironmentThreadState,
@@ -178,6 +181,12 @@ const makeHarness = Effect.fn("TestThreadPagination.makeHarness")(function* (opt
                 Effect.tap((deferred) => Queue.offer(pendingPageResponses, deferred)),
                 Effect.flatMap(Deferred.await),
               ),
+        ),
+        Effect.map(
+          Option.match({
+            onNone: (): ThreadSnapshotLoadResult => ({ kind: "not-found" }),
+            onSome: (snapshot): ThreadSnapshotLoadResult => ({ kind: "found", snapshot }),
+          }),
         ),
       ),
   });

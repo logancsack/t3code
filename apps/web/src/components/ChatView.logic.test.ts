@@ -2,6 +2,7 @@ import {
   EnvironmentId,
   MessageId,
   ProjectId,
+  ProviderDriverKind,
   ProviderInstanceId,
   ThreadId,
   TurnId,
@@ -24,6 +25,7 @@ import {
   isBranchMismatchDismissedForSession,
   reconcileMountedTerminalThreadIds,
   reconcileRetainedMountedThreadIds,
+  retryableTurnAfterProviderReconnect,
   resolveThreadMetadataUpdateForNextTurn,
   resolveSendEnvMode,
   startNewThreadForProject,
@@ -77,6 +79,48 @@ describe("managed primary recovery", () => {
         connectionPhase: "error",
       }),
     ).toBe(false);
+  });
+});
+
+describe("provider authentication recovery", () => {
+  const provider = {
+    instanceId: ProviderInstanceId.make("claudeAgent"),
+    driver: ProviderDriverKind.make("claudeAgent"),
+    displayName: "Claude",
+    enabled: true,
+    installed: true,
+    version: "2.1.226",
+    status: "error" as const,
+    auth: { status: "unauthenticated" as const },
+    checkedAt: now,
+    models: [],
+    slashCommands: [],
+    skills: [],
+  };
+
+  it.each(["error", "interrupted"] as const)(
+    "retries the original %s turn after reconnecting",
+    (state) => {
+      expect(
+        retryableTurnAfterProviderReconnect({
+          provider,
+          latestTurn: {
+            ...completedTurn,
+            state,
+          },
+        }),
+      ).toBe(completedTurn.turnId);
+    },
+  );
+
+  it("does not retry a completed turn or a provider that is already authenticated", () => {
+    expect(retryableTurnAfterProviderReconnect({ provider, latestTurn: completedTurn })).toBeNull();
+    expect(
+      retryableTurnAfterProviderReconnect({
+        provider: { ...provider, auth: { status: "authenticated" } },
+        latestTurn: { ...completedTurn, state: "error" },
+      }),
+    ).toBeNull();
   });
 });
 
