@@ -45,17 +45,26 @@ describe("ProviderStatusBanner", () => {
     expect(markup).toBe("");
   });
 
-  it("renders an accessible dismiss control for explicit authentication errors", () => {
+  it("renders persistent reconnect guidance for explicit authentication errors", () => {
+    const status = {
+      ...warningProvider(),
+      status: "error" as const,
+      auth: { status: "unauthenticated" as const },
+      message: "Reconnect Claude to retry the last message automatically.",
+    };
     const markup = renderToStaticMarkup(
       <ProviderStatusBanner
-        status={{ ...warningProvider(), status: "error", auth: { status: "unauthenticated" } }}
+        status={status}
         onDismiss={() => {}}
+        action={<button type="button">Reconnect Claude</button>}
       />,
     );
 
     expect(markup).toContain('role="alert"');
-    expect(markup).toContain('aria-label="Dismiss Codex provider error"');
-    expect(markup).toContain("absolute top-2 right-2");
+    expect(markup).toContain("Reconnect Claude to retry the last message automatically.");
+    expect(markup).toContain("Reconnect Claude</button>");
+    expect(markup).not.toContain('aria-label="Dismiss Codex provider error"');
+    expect(shouldShowProviderStatusBanner(status, getProviderStatusBannerKey(status))).toBe(true);
   });
 
   it("renders missing providers as actionable errors", () => {

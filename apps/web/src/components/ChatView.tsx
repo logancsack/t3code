@@ -237,6 +237,8 @@ import {
   shouldShowProviderStatusBanner,
 } from "./chat/ProviderStatusBanner";
 import { ThreadErrorBanner } from "./chat/ThreadErrorBanner";
+import { AuthConnectorDialog } from "./settings/AuthConnectorDialog";
+import { resolveAgentAuthMethods } from "./settings/authConnectorMethods";
 import { resolveThreadPr } from "./ThreadStatusIndicators";
 import { ComposerBannerStack, type ComposerBannerStackItem } from "./chat/ComposerBannerStack";
 import {
@@ -273,6 +275,7 @@ import {
   resolveSendEnvMode,
   revokeBlobPreviewUrl,
   revokeUserMessagePreviewUrls,
+  retryableTurnAfterProviderReconnect,
   shouldQuietlyRecoverManagedPrimaryEnvironment,
   waitForStartedServerThread,
 } from "./ChatView.logic";
@@ -1162,6 +1165,12 @@ function ChatViewContent(props: ChatViewProps) {
   });
   const startThreadTurn = useAtomCommand(threadEnvironment.startTurn, { reportFailure: false });
   const interruptThreadTurn = useAtomCommand(threadEnvironment.interruptTurn, {
+    reportFailure: false,
+  });
+  const retryThreadTurn = useAtomCommand(threadEnvironment.retryTurn, {
+    reportFailure: false,
+  });
+  const refreshServerProviders = useAtomCommand(serverEnvironment.refreshProviders, {
     reportFailure: false,
   });
   const respondToThreadApproval = useAtomCommand(threadEnvironment.respondToApproval, {
@@ -2541,6 +2550,46 @@ function ChatViewContent(props: ChatViewProps) {
     },
     [draftId, routeThreadKey, routeThreadRef, serverThread],
   );
+
+  const activeProviderAuthConnector = activeProviderStatus
+    ? resolveAgentAuthMethods(
+        activeProviderStatus.driver,
+        serverConfig?.environment.capabilities.primeAgentSubscriptionOAuth === true,
+      )
+    : null;
+  const handleProviderReconnected = useCallback(() => {
+    const retryTurnId = retryableTurnAfterProviderReconnect({
+      provider: activeProviderStatus,
+      latestTurn: activeThread?.latestTurn ?? null,
+    });
+    void (async () => {
+      await refreshServerProviders({ environmentId, input: {} });
+      if (!activeThread || !retryTurnId) return;
+      const result = await retryThreadTurn({
+        environmentId,
+        input: {
+          threadId: activeThread.id,
+          turnId: retryTurnId,
+        },
+      });
+      if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+        const error = squashAtomCommandFailure(result);
+        setThreadError(
+          activeThread.id,
+          error instanceof Error
+            ? error.message
+            : "Claude reconnected, but the previous message could not be retried.",
+        );
+      }
+    })();
+  }, [
+    activeProviderStatus,
+    activeThread,
+    environmentId,
+    refreshServerProviders,
+    retryThreadTurn,
+    setThreadError,
+  ]);
 
   const focusComposer = useCallback(() => {
     composerRef.current?.focusAtEnd();
@@ -5755,6 +5804,21 @@ function ChatViewContent(props: ChatViewProps) {
               <ProviderStatusBanner
                 status={visibleProviderStatus}
                 onDismiss={() => setDismissedProviderStatusBannerKey(providerStatusBannerKey)}
+                action={
+                  visibleProviderStatus?.auth.status === "unauthenticated" &&
+                  activeProviderAuthConnector ? (
+                    <AuthConnectorDialog
+                      connector={activeProviderAuthConnector.connector}
+                      serviceName={activeProviderAuthConnector.serviceName}
+                      methods={activeProviderAuthConnector.methods}
+                      providerInstanceId={visibleProviderStatus.instanceId}
+                      environmentId={environmentId}
+                      isAuthenticated={false}
+                      triggerLabel={`Reconnect ${activeProviderAuthConnector.serviceName}`}
+                      onConnected={handleProviderReconnected}
+                    />
+                  ) : undefined
+                }
               />
             </div>
             {/* Messages Wrapper */}

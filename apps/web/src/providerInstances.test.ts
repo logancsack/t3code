@@ -5,6 +5,7 @@ import {
   deriveProviderInstanceEntries,
   getDefaultProviderInstanceModel,
   isProviderInstancePickerReady,
+  isProviderInstanceSendReady,
   isProviderInstancePickerVisible,
   resolveDefaultProviderModelSelection,
   resolveSelectableProviderInstance,
@@ -18,6 +19,7 @@ function provider(input: {
   availability?: ServerProvider["availability"];
   displayName?: string;
   status?: ServerProvider["status"];
+  authStatus?: ServerProvider["auth"]["status"];
   models?: ServerProvider["models"];
 }): ServerProvider {
   return {
@@ -29,7 +31,7 @@ function provider(input: {
     version: null,
     status: input.status ?? "ready",
     ...(input.availability ? { availability: input.availability } : {}),
-    auth: { status: "authenticated" },
+    auth: { status: input.authStatus ?? "authenticated" },
     checkedAt: "2026-01-01T00:00:00.000Z",
     models: input.models ?? [],
     slashCommands: [],
@@ -65,6 +67,29 @@ describe("isProviderInstancePickerReady", () => {
     ]);
 
     expect(entry && isProviderInstancePickerReady(entry)).toBe(true);
+  });
+});
+
+describe("isProviderInstanceSendReady", () => {
+  it("blocks a selected instance until its credentials are reconnected", () => {
+    const [entry] = deriveProviderInstanceEntries([
+      provider({
+        provider: ProviderDriverKind.make("claudeAgent"),
+        instanceId: "claudeAgent",
+        status: "error",
+        authStatus: "unauthenticated",
+      }),
+    ]);
+
+    expect(isProviderInstanceSendReady(entry)).toBe(false);
+  });
+
+  it("allows authenticated selected instances", () => {
+    const [entry] = deriveProviderInstanceEntries([
+      provider({ provider: ProviderDriverKind.make("claudeAgent"), instanceId: "claudeAgent" }),
+    ]);
+
+    expect(isProviderInstanceSendReady(entry)).toBe(true);
   });
 });
 

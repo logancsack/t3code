@@ -14,6 +14,7 @@ import type {
   AuthConnectorMethod,
   AuthConnectorSession,
   AuthConnectorStartInput,
+  EnvironmentId,
   ProviderInstanceId,
 } from "@t3tools/contracts";
 import {
@@ -123,12 +124,22 @@ export function AuthConnectorDialog(props: {
   readonly serviceName: string;
   readonly methods: ReadonlyArray<AuthConnectorMethodOption>;
   readonly providerInstanceId?: ProviderInstanceId;
+  readonly environmentId?: EnvironmentId;
   readonly isAuthenticated: boolean;
+  readonly triggerLabel?: string;
   readonly onConnected: () => void;
 }) {
-  const { connector, serviceName, methods, providerInstanceId, isAuthenticated, onConnected } =
-    props;
-  const environment = usePrimaryEnvironment();
+  const {
+    connector,
+    serviceName,
+    methods,
+    providerInstanceId,
+    isAuthenticated,
+    triggerLabel,
+    onConnected,
+  } = props;
+  const primaryEnvironment = usePrimaryEnvironment();
+  const environmentId = props.environmentId ?? primaryEnvironment?.environmentId;
   const startConnector = useAtomCommand(sourceControlEnvironment.startAuthConnector, {
     reportFailure: false,
   });
@@ -155,13 +166,13 @@ export function AuthConnectorDialog(props: {
   const selectedMethod = methods.find((method) => method.method === session?.method) ?? null;
 
   useEffect(() => {
-    if (!open || !environment || !session) return;
+    if (!open || !environmentId || !session) return;
     if (session.status !== "starting" && session.status !== "waiting") return;
     let cancelled = false;
     const timer = window.setInterval(() => {
       void (async () => {
         const result = await getConnector({
-          environmentId: environment.environmentId,
+          environmentId,
           input: { sessionId: session.id },
         });
         if (cancelled || result._tag !== "Success") return;
@@ -172,7 +183,7 @@ export function AuthConnectorDialog(props: {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [environment, getConnector, open, session?.id, session?.status]);
+  }, [environmentId, getConnector, open, session?.id, session?.status]);
 
   useEffect(() => {
     if (!open || !session?.expiresAt || TERMINAL_STATUSES.has(session.status)) return;
@@ -207,20 +218,24 @@ export function AuthConnectorDialog(props: {
       reset();
       return;
     }
-    if (environment && session && (session.status === "starting" || session.status === "waiting")) {
+    if (
+      environmentId &&
+      session &&
+      (session.status === "starting" || session.status === "waiting")
+    ) {
       void cancelConnector({
-        environmentId: environment.environmentId,
+        environmentId,
         input: { sessionId: session.id },
       });
     }
   };
 
   const start = async (option: AuthConnectorMethodOption) => {
-    if (!environment) return;
+    if (!environmentId) return;
     setError(null);
     setStartingMethod(option.method);
     const result = await startConnector({
-      environmentId: environment.environmentId,
+      environmentId,
       input: buildAuthConnectorStartInput({
         connector,
         option,
@@ -238,11 +253,11 @@ export function AuthConnectorDialog(props: {
   };
 
   const submit = async () => {
-    if (!environment || !session) return;
+    if (!environmentId || !session) return;
     setError(null);
     setIsSubmitting(true);
     const result = await submitConnector({
-      environmentId: environment.environmentId,
+      environmentId,
       input: {
         sessionId: session.id,
         values,
@@ -381,11 +396,11 @@ export function AuthConnectorDialog(props: {
         size="sm"
         variant={isAuthenticated ? "ghost" : "outline"}
         className="h-7 gap-1.5 px-2.5 text-xs"
-        disabled={!environment}
+        disabled={!environmentId}
         onClick={() => handleOpenChange(true)}
       >
         <PlugIcon className="size-3.5" />
-        {isAuthenticated ? "Reconnect" : "Connect"}
+        {triggerLabel ?? (isAuthenticated ? "Reconnect" : "Connect")}
       </Button>
 
       <DialogPopup className="w-[min(36rem,calc(100vw-1rem))]">
