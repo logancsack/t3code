@@ -1,5 +1,5 @@
 import { type ServerProvider } from "@t3tools/contracts";
-import { memo } from "react";
+import { memo, type ReactNode } from "react";
 import { InfoIcon, XIcon } from "lucide-react";
 import { cn } from "~/lib/utils";
 import { formatProviderDriverKindLabel } from "../../providerModels";
@@ -25,15 +25,18 @@ export function shouldShowProviderStatusBanner(
   dismissedBannerKey: string | null,
 ): boolean {
   const bannerKey = getProviderStatusBannerKey(status);
+  if (status?.auth.status === "unauthenticated") return bannerKey !== null;
   return bannerKey !== null && bannerKey !== dismissedBannerKey;
 }
 
 export const ProviderStatusBanner = memo(function ProviderStatusBanner({
   onDismiss,
   status,
+  action,
 }: {
   onDismiss: () => void;
   status: ServerProvider | null;
+  action?: ReactNode;
 }) {
   if (!status || getProviderStatusBannerKey(status) === null) {
     return null;
@@ -45,7 +48,7 @@ export const ProviderStatusBanner = memo(function ProviderStatusBanner({
     ? `${providerName} is unauthenticated`
     : `${providerName} provider status`;
   const message = isUnauthenticated
-    ? "Sign in via the CLI to authenticate again."
+    ? (status.message ?? "Reconnect your account to authenticate again.")
     : (status.message ??
       (status.status === "error"
         ? `${providerName} provider is unavailable.`
@@ -71,15 +74,18 @@ export const ProviderStatusBanner = memo(function ProviderStatusBanner({
               {message}
             </TooltipPopup>
           </Tooltip>
+          {action ? <div className="mt-1 flex items-center">{action}</div> : null}
         </div>
-        <button
-          type="button"
-          aria-label={`Dismiss ${providerName} provider ${status.status}`}
-          className="absolute top-2 right-2 inline-flex size-6 cursor-pointer items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-foreground/8 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-          onClick={onDismiss}
-        >
-          <XIcon aria-hidden className="size-3.5" />
-        </button>
+        {!isUnauthenticated ? (
+          <button
+            type="button"
+            aria-label={`Dismiss ${providerName} provider ${status.status}`}
+            className="absolute top-2 right-2 inline-flex size-6 cursor-pointer items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-foreground/8 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={onDismiss}
+          >
+            <XIcon aria-hidden className="size-3.5" />
+          </button>
+        ) : null}
       </div>
     </div>
   );

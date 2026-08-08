@@ -174,6 +174,7 @@ import {
 import {
   applyProviderInstanceSettings,
   deriveProviderInstanceEntries,
+  isProviderInstanceSendReady,
   NO_PROVIDER_MODEL_SELECTION,
   resolveProviderDriverKindForInstanceSelection,
   resolveSelectableProviderInstanceEntry,
@@ -580,6 +581,7 @@ export interface ChatComposerProps {
   // Provider / model
   lockedProvider: ProviderDriverKind | null;
   providerStatuses: ServerProvider[];
+  reconnectedProviderInstanceId?: ProviderInstanceId;
   activeProjectDefaultModelSelection: ModelSelection | null | undefined;
   activeThreadModelSelection: ModelSelection | null | undefined;
 
@@ -674,6 +676,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     interactionMode,
     lockedProvider,
     providerStatuses,
+    reconnectedProviderInstanceId,
     activeProjectDefaultModelSelection,
     activeThreadModelSelection,
     activeThreadActivities,
@@ -861,7 +864,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     () => providerInstanceEntries.find((entry) => entry.instanceId === selectedInstanceId),
     [providerInstanceEntries, selectedInstanceId],
   );
-  const noProviderAvailable = selectedProviderEntry === undefined;
+  const providerAuthenticationRequired =
+    selectedProviderEntry?.snapshot.auth.status === "unauthenticated";
+  const noProviderAvailable = !isProviderInstanceSendReady(
+    selectedProviderEntry,
+    reconnectedProviderInstanceId,
+  );
   // The driver kind follows the instance that will actually run the turn,
   // which can differ from the persisted selection when that selection is
   // disabled.
@@ -2386,7 +2394,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   ? activePendingProgress.customAnswer ||
                     "Type your own answer, or leave this blank to use the selected option"
                   : prompt.trim() ||
-                    (noProviderAvailable ? "Enable a provider in Settings" : "Ask anything...")}
+                    (providerAuthenticationRequired
+                      ? `Reconnect ${selectedProviderEntry?.displayName ?? "provider"} to continue`
+                      : noProviderAvailable
+                        ? "Enable a provider in Settings"
+                        : "Ask anything...")}
               </button>
               <button
                 type="button"
@@ -2609,11 +2621,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                         ? "Add feedback to refine the plan, or leave this blank to implement it"
                         : projectSelectionRequired
                           ? "Choose a project above to start a thread"
-                          : noProviderAvailable
-                            ? "Enable a provider in Settings to send a message"
-                            : phase === "disconnected"
-                              ? "Ask for follow-up changes or attach files"
-                              : "Ask anything, @tag files/folders, $use skills, or / for commands"
+                          : providerAuthenticationRequired
+                            ? `Reconnect ${selectedProviderEntry?.displayName ?? "provider"} to continue`
+                            : noProviderAvailable
+                              ? "Enable a provider in Settings to send a message"
+                              : phase === "disconnected"
+                                ? "Ask for follow-up changes or attach files"
+                                : "Ask anything, @tag files/folders, $use skills, or / for commands"
                 }
                 disabled={isConnecting || isComposerApprovalState || projectSelectionRequired}
               />
@@ -2704,7 +2718,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     className="shrink-0 gap-2 px-2 text-muted-foreground/70 sm:px-3"
                   >
                     <CircleAlertIcon className="size-4" />
-                    No provider available
+                    {providerAuthenticationRequired
+                      ? "Reconnect provider"
+                      : "No provider available"}
                   </Button>
                 ) : (
                   <ProviderModelPicker

@@ -4,6 +4,7 @@ import {
   ORCHESTRATION_WS_METHODS,
   ProjectId,
   ThreadId,
+  TurnId,
   type ClientOrchestrationCommand,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
@@ -26,6 +27,7 @@ import {
   createProject,
   settleThread,
   stopThreadSession,
+  retryThreadTurn,
   unsettleThread,
 } from "./commands.ts";
 
@@ -116,6 +118,30 @@ describe("environment commands", () => {
           commandId: "queued-command",
           threadId: "thread-1",
           createdAt: "2026-06-06T00:01:00.000Z",
+        },
+      ]);
+    }).pipe(Effect.provide(TEST_CRYPTO_LAYER)),
+  );
+
+  it.effect("retries a failed turn without creating another user message", () =>
+    Effect.gen(function* () {
+      const dispatched: ClientOrchestrationCommand[] = [];
+      const supervisor = yield* makeSupervisor(dispatched);
+
+      yield* retryThreadTurn({
+        commandId: CommandId.make("retry-authenticated-turn"),
+        threadId: ThreadId.make("thread-1"),
+        turnId: TurnId.make("turn-auth-failed"),
+        createdAt: "2026-08-08T18:58:54.000Z",
+      }).pipe(Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor));
+
+      expect(dispatched).toEqual([
+        {
+          type: "thread.turn.retry",
+          commandId: "retry-authenticated-turn",
+          threadId: "thread-1",
+          turnId: "turn-auth-failed",
+          createdAt: "2026-08-08T18:58:54.000Z",
         },
       ]);
     }).pipe(Effect.provide(TEST_CRYPTO_LAYER)),
