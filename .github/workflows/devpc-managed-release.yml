@@ -178,8 +178,13 @@ jobs:
             tag="devpc-v$(printf '%s' "$version" | sed 's/-devpc\./\./')"
             # --target only applies when the tag does not exist yet; an
             # existing tag pointing elsewhere would silently mislabel this
-            # run's assets, so resolve it first and refuse on a mismatch.
-            existing="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${tag}" --jq .sha 2>/dev/null || true)"
+            # run's assets. ls-remote separates absence (empty output) from
+            # a failed lookup, which must fail the publish, not pass it.
+            refs="$(git ls-remote origin "refs/tags/${tag}" "refs/tags/${tag}^{}")" || {
+              echo "Could not query origin for existing tag $tag"
+              exit 1
+            }
+            existing="$(printf '%s' "$refs" | awk 'END { print $1 }')"
             if [ -n "$existing" ] && [ "$existing" != "$GITHUB_SHA" ]; then
               echo "Tag $tag already exists at $existing, not $GITHUB_SHA; refusing to publish"
               exit 1
