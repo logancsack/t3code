@@ -151,17 +151,30 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION_INPUT: ${{ inputs.version }}
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             # Map the version input (0.0.28-devpc.54) to its release tag
             # (devpc-v0.0.28.54). `gh release create` creates the tag at
             # --target when it does not exist yet, so a dispatch run can
-            # publish a full release without a separately pushed tag.
-            version="${{ inputs.version }}"
+            # publish a full release without a separately pushed tag. The
+            # input reaches the script through the environment so it can
+            # never expand into shell syntax.
+            version="$VERSION_INPUT"
             printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+-devpc\.[0-9]+$' || {
               echo "Version input '$version' must look like 0.0.28-devpc.54"
               exit 1
             }
+            # The tag labels the artifact built from this checkout, so its
+            # base version must be the one the packages actually carry.
+            base="${version%-devpc.*}"
+            for pkg in apps/server/package.json apps/web/package.json; do
+              pkg_version="$(node -p "require('./${pkg}').version")"
+              if [ "$pkg_version" != "$base" ]; then
+                echo "Version input base $base does not match $pkg version $pkg_version"
+                exit 1
+              fi
+            done
             tag="devpc-v$(printf '%s' "$version" | sed 's/-devpc\./\./')"
             # --target only applies when the tag does not exist yet; an
             # existing tag pointing elsewhere would silently mislabel this
