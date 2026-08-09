@@ -157,7 +157,20 @@ jobs:
             # (devpc-v0.0.28.54). `gh release create` creates the tag at
             # --target when it does not exist yet, so a dispatch run can
             # publish a full release without a separately pushed tag.
-            tag="devpc-v$(printf '%s' "${{ inputs.version }}" | sed 's/-devpc\./\./')"
+            version="${{ inputs.version }}"
+            printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+-devpc\.[0-9]+$' || {
+              echo "Version input '$version' must look like 0.0.28-devpc.54"
+              exit 1
+            }
+            tag="devpc-v$(printf '%s' "$version" | sed 's/-devpc\./\./')"
+            # --target only applies when the tag does not exist yet; an
+            # existing tag pointing elsewhere would silently mislabel this
+            # run's assets, so resolve it first and refuse on a mismatch.
+            existing="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${tag}" --jq .sha 2>/dev/null || true)"
+            if [ -n "$existing" ] && [ "$existing" != "$GITHUB_SHA" ]; then
+              echo "Tag $tag already exists at $existing, not $GITHUB_SHA; refusing to publish"
+              exit 1
+            fi
             gh release create "$tag" \
               artifacts/devpc-t3-linux-x64.tar.gz \
               artifacts/devpc-t3-linux-x64.tar.gz.sha256 \
