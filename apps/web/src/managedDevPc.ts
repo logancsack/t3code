@@ -89,6 +89,26 @@ export function isAmbiguousLifecycleResponse(status: number): boolean {
   return status === 408 || status >= 500;
 }
 
+/** A non-ok bootstrap response, carrying its status for retryability triage. */
+class ManagedBootstrapHttpError extends Error {
+  constructor(readonly status: number) {
+    super(`Workspace bootstrap returned ${status}.`);
+  }
+}
+
+/**
+ * Only failures the gateway may heal on its own deserve the extended retry
+ * budget: network errors, timeouts, rate limiting, and 5xx. A definitive 4xx
+ * (an expired session, a missing workspace) will not change in eighteen
+ * seconds of polling.
+ */
+function isTransientBootstrapFailure(error: unknown): boolean {
+  if (error instanceof ManagedBootstrapHttpError) {
+    return isAmbiguousLifecycleResponse(error.status) || error.status === 429;
+  }
+  return true;
+}
+
 export function requiresManagedResume(bootstrap: ManagedDevPcBootstrap): boolean {
   const resumable = new Set(["paused", "stopped"]);
   if (bootstrap.status) return resumable.has(bootstrap.status);
@@ -658,7 +678,7 @@ export async function prepareManagedDevPc(): Promise<void> {
         headers: { accept: "application/json" },
       });
       if (!response.ok) {
-        throw new Error(`Workspace bootstrap returned ${response.status}.`);
+        throw new ManagedBootstrapHttpError(response.status);
       }
       const bootstrap = (await response.json()) as ManagedDevPcBootstrap;
       window.__DEVPC_MANAGED_BOOTSTRAP__ = bootstrap;
@@ -740,8 +760,9 @@ export async function prepareManagedDevPc(): Promise<void> {
       // retry-after while it recovers, which can span a relay handoff or a
       // control-plane deploy (~15–20 s). Twelve polls at 1.5 s gives ~18 s
       // of tolerance before the fatal card, instead of giving up during a
-      // blip the platform is already healing.
-      if (failures >= 12) {
+      // blip the platform is already healing. Definitive failures skip the
+      // budget entirely.
+      if (!isTransientBootstrapFailure(error) || failures >= 12) {
         updateBootstrapMessage(
           error instanceof Error ? error.message : "The workspace could not be reached.",
           true,

@@ -435,8 +435,19 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
               return "detach" as const;
             }
             break;
-          case "ConnectRequested":
           case "Wakeup":
+            // The same relay account-change handling as the main monitor
+            // loop — a probe in flight must not swallow it.
+            if (
+              probeEvent.signal.reason === "credentials-changed" &&
+              target._tag === "RelayConnectionTarget"
+            ) {
+              yield* logManagedRelayAccountChange;
+              yield* Fiber.interrupt(probe);
+              return "detach" as const;
+            }
+            break;
+          case "ConnectRequested":
             break;
         }
       }

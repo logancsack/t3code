@@ -33,11 +33,11 @@ const DEFAULT_RETRY_DELAY_MS = 30 * 1000;
 /** Failed attempts stop counting against the budget after this long. */
 const RETRY_BUDGET_EXPIRY_MS = 24 * 60 * 60 * 1000;
 /**
- * A sweep arriving this much later than its schedule means the VM was
- * suspended, not that the event loop hiccuped. Two full intervals of slack
- * keeps load-induced jitter from reading as a suspend.
+ * A clock reading arriving this many sweep intervals past the previous one
+ * means the VM was suspended, not that the event loop hiccuped. Two full
+ * intervals of slack keeps load-induced jitter from reading as a suspend.
  */
-const SUSPEND_GAP_THRESHOLD_MS = 2 * DEFAULT_SWEEP_INTERVAL_MS;
+const SUSPEND_GAP_SWEEP_INTERVALS = 2;
 /**
  * Window after a detected resume in which a turn failure is attributed to
  * the suspend (its provider connection died with the VM's TCP state) and is
@@ -102,8 +102,35 @@ const makeTurnLivenessWatchdog = (options?: TurnLivenessWatchdogLiveOptions) =>
 
     const entries = new Map<ThreadId, TurnLiveness>();
     const retryStateByThread = new Map<ThreadId, ThreadRetryState>();
-    let lastSweepAtMs: number | null = null;
+    let lastObservedClockMs: number | null = null;
     let resumedAtMs: number | null = null;
+
+    /**
+     * Advance the shared clock baseline and detect a VM suspend: a reading
+     * far past the last one plus a sweep interval means this machine slept
+     * in between. Runs in BOTH the sweep and the runtime-event path — the
+     * first thing delivered after a resume is often the dying provider
+     * stream's terminal event, up to a full sweep interval before the timer
+     * fires, and retry attribution must already know about the resume by
+     * then.
+     */
+    const observeClock = (nowMs: number) =>
+      Effect.gen(function* () {
+        const previous = lastObservedClockMs;
+        lastObservedClockMs = nowMs;
+        if (
+          previous === null ||
+          nowMs - previous - sweepIntervalMs < SUSPEND_GAP_SWEEP_INTERVALS * sweepIntervalMs
+        ) {
+          return;
+        }
+        resumedAtMs = nowMs;
+        rebaseAfterSuspend(entries, nowMs);
+        yield* Effect.logInfo("turn.watchdog.resumed-after-suspend", {
+          suspendedForMs: nowMs - previous - sweepIntervalMs,
+          rebasedTurnCount: entries.size,
+        });
+      });
 
     const watchdogCommandId = (tag: string) =>
       crypto.randomUUIDv4.pipe(Effect.map((uuid) => CommandId.make(`watchdog:${tag}:${uuid}`)));
@@ -296,22 +323,7 @@ const makeTurnLivenessWatchdog = (options?: TurnLivenessWatchdogLiveOptions) =>
 
     const sweep = Effect.gen(function* () {
       const nowMs = yield* Clock.currentTimeMillis;
-      // A sweep landing far past its schedule means the whole VM was
-      // suspended. The paused span must not read as provider silence, and
-      // model-wait turns whose streams died with the suspend get a short
-      // probation instead of the full silence budget.
-      if (
-        lastSweepAtMs !== null &&
-        nowMs - lastSweepAtMs - sweepIntervalMs >= SUSPEND_GAP_THRESHOLD_MS
-      ) {
-        resumedAtMs = nowMs;
-        rebaseAfterSuspend(entries, nowMs);
-        yield* Effect.logInfo("turn.watchdog.resumed-after-suspend", {
-          suspendedForMs: nowMs - lastSweepAtMs - sweepIntervalMs,
-          rebasedTurnCount: entries.size,
-        });
-      }
-      lastSweepAtMs = nowMs;
+      yield* observeClock(nowMs);
       const stalled = stalledTurns(entries, nowMs, { modelSilenceMs, recoveryGraceMs });
       for (const turn of stalled) {
         yield* interruptStalledTurn(turn).pipe(
@@ -350,10 +362,17 @@ const makeTurnLivenessWatchdog = (options?: TurnLivenessWatchdogLiveOptions) =>
           retryStateByThread.delete(event.threadId);
         }
         const nowMs = yield* Clock.currentTimeMillis;
-        // A tracked turn dying shortly after a resume-from-suspend is the
+        // The resume must be known BEFORE this event is judged: the first
+        // thing delivered after a suspend is often the dying stream's own
+        // terminal event, well ahead of the next sweep timer.
+        yield* observeClock(nowMs);
+        // A probation turn dying shortly after a resume-from-suspend is the
         // suspend's doing (its provider stream went down with the VM's TCP
         // state), not the model's — schedule a budgeted retry so the work
         // survives the pause instead of ending in a manual-retry error.
+        // Turns started after the resume (or already proven live) fail for
+        // their own reasons, including deliberate user aborts, and are not
+        // second-guessed here.
         if (
           (event.type === "turn.aborted" ||
             event.type === "session.exited" ||
@@ -363,7 +382,7 @@ const makeTurnLivenessWatchdog = (options?: TurnLivenessWatchdogLiveOptions) =>
           maxAutoRetries > 0
         ) {
           const tracked = entries.get(event.threadId);
-          if (tracked !== undefined) {
+          if (tracked?.resumedProbation === true) {
             const retryState = currentRetryState(event.threadId, nowMs);
             if (retryState.attempts < maxAutoRetries && retryState.scheduled === null) {
               retryState.scheduled = { turnId: tracked.turnId, notBeforeMs: nowMs + retryDelayMs };
