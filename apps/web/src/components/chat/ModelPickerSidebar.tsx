@@ -108,10 +108,7 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
           {/* Favorites section */}
           {showFavorites ? (
             <>
-              <div
-                className="relative w-full shrink-0"
-                data-model-picker-provider="favorites"
-              >
+              <div className="relative w-full shrink-0" data-model-picker-provider="favorites">
                 <Tooltip>
                   <TooltipTrigger
                     render={

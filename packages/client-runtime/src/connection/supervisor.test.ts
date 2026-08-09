@@ -420,7 +420,7 @@ describe("EnvironmentSupervisor", () => {
       yield* TestClock.adjust("14 seconds");
       expect((yield* SubscriptionRef.get(supervisor.state)).stage).toBe("synchronizing");
 
-      yield* TestClock.adjust("3 seconds");
+      yield* TestClock.adjust("1 second");
       const retrying = yield* awaitState(supervisor.state, (state) => state.phase === "backoff");
 
       expect(retrying).toMatchObject({
