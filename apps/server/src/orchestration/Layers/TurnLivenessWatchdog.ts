@@ -356,9 +356,17 @@ const makeTurnLivenessWatchdog = (options?: TurnLivenessWatchdogLiveOptions) =>
 
     const followRuntimeEvents = Stream.runForEach(providerService.streamEvents, (event) =>
       Effect.gen(function* () {
-        // A completed turn is the proof of recovery that refills the
-        // auto-retry budget; anything less keeps counting toward the cap.
-        if (event.type === "turn.completed") {
+        // Some providers report a broken turn as a completion carrying a
+        // failed state (ahead of their own error / session-exit events), so
+        // "completed" alone is not proof of recovery.
+        const failedCompletion =
+          event.type === "turn.completed" &&
+          "state" in event.payload &&
+          event.payload.state === "failed";
+        // A successfully completed turn is the proof of recovery that
+        // refills the auto-retry budget; anything less keeps counting
+        // toward the cap.
+        if (event.type === "turn.completed" && !failedCompletion) {
           retryStateByThread.delete(event.threadId);
         }
         const nowMs = yield* Clock.currentTimeMillis;
@@ -371,20 +379,40 @@ const makeTurnLivenessWatchdog = (options?: TurnLivenessWatchdogLiveOptions) =>
         // state), not the model's — schedule a budgeted retry so the work
         // survives the pause instead of ending in a manual-retry error.
         // Turns started after the resume (or already proven live) fail for
-        // their own reasons, including deliberate user aborts, and are not
-        // second-guessed here.
+        // their own reasons and are not second-guessed here.
         if (
           (event.type === "turn.aborted" ||
             event.type === "session.exited" ||
-            event.type === "runtime.error") &&
+            event.type === "runtime.error" ||
+            failedCompletion) &&
           resumedAtMs !== null &&
           nowMs - resumedAtMs <= POST_RESUME_FAILURE_WINDOW_MS &&
           maxAutoRetries > 0
         ) {
           const tracked = entries.get(event.threadId);
           if (tracked?.resumedProbation === true) {
+            // A commanded interrupt (the user's Stop, or this watchdog's
+            // own stall handling) projects the turn as interrupted before
+            // the provider's terminal event arrives — deliberate stops must
+            // never be auto-restarted. A pause-broken stream dies with no
+            // command, leaving the projection running (or errored once the
+            // failure is ingested). Unknown projection state errs toward
+            // respecting the stop.
+            const thread = yield* projectionSnapshotQuery.getThreadShellById(event.threadId).pipe(
+              Effect.map(Option.getOrUndefined),
+              Effect.orElseSucceed(() => undefined),
+            );
+            const latestTurn = thread?.latestTurn;
+            const uncommanded =
+              latestTurn != null &&
+              latestTurn.turnId === tracked.turnId &&
+              latestTurn.state !== "interrupted";
             const retryState = currentRetryState(event.threadId, nowMs);
-            if (retryState.attempts < maxAutoRetries && retryState.scheduled === null) {
+            if (
+              uncommanded &&
+              retryState.attempts < maxAutoRetries &&
+              retryState.scheduled === null
+            ) {
               retryState.scheduled = { turnId: tracked.turnId, notBeforeMs: nowMs + retryDelayMs };
               retryStateByThread.set(event.threadId, retryState);
               yield* Effect.logInfo("turn.watchdog.retry-after-suspend-failure", {
