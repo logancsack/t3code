@@ -33,6 +33,13 @@ const RETRY_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 16_000] as const;
 const CONNECTION_ESTABLISHMENT_TIMEOUT = "15 seconds";
 const CONNECTION_PROBE_TIMEOUT = "15 seconds";
 const BACKOFF_RESET_AFTER_MS = 30_000;
+/**
+ * Idle heartbeat cadence on an established connection. A socket that dies
+ * without a close frame (a dropped relay, a NATed path timing out) otherwise
+ * stays "connected" indefinitely while every subscription silently starves —
+ * the probe turns that into a detected failure and a normal reconnect.
+ */
+const CONNECTION_HEARTBEAT_INTERVAL = "30 seconds";
 
 interface SupervisorIntent {
   readonly desired: boolean;
@@ -386,65 +393,84 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
   const monitorConnectedLease = Effect.fnUntraced(function* (
     lease: ConnectionDriver.EnvironmentConnectionLease,
   ) {
+    /**
+     * Probe the live session, draining supervisor signals while the probe is
+     * in flight. Returns "detach" when a signal ended the lease, "ok" when
+     * the probe succeeded; a failed or timed-out probe fails the monitor,
+     * which recycles the connection through the normal retry path.
+     */
+    const probeLease = Effect.gen(function* () {
+      const probe = yield* lease.session.probe.pipe(
+        Effect.timeoutOrElse({
+          duration: CONNECTION_PROBE_TIMEOUT,
+          orElse: () =>
+            Effect.fail(
+              new ConnectionTransientError({
+                reason: "timeout",
+                detail: `${target.label} did not respond to a connection health check.`,
+              }),
+            ),
+        }),
+        Effect.forkChild,
+      );
+      for (;;) {
+        const probeEvent = yield* Effect.raceFirst(
+          Fiber.await(probe).pipe(
+            Effect.map((exit) => ({ _tag: "ProbeCompleted" as const, exit })),
+          ),
+          Queue.take(signals).pipe(Effect.map((signal) => ({ _tag: "Signal" as const, signal }))),
+        );
+        if (probeEvent._tag === "ProbeCompleted") {
+          yield* probeEvent.exit;
+          return "ok" as const;
+        }
+        switch (probeEvent.signal._tag) {
+          case "DisconnectRequested":
+          case "RetryRequested":
+            yield* Fiber.interrupt(probe);
+            return "detach" as const;
+          case "NetworkChanged":
+            if (probeEvent.signal.network === "offline") {
+              yield* Fiber.interrupt(probe);
+              return "detach" as const;
+            }
+            break;
+          case "ConnectRequested":
+          case "Wakeup":
+            break;
+        }
+      }
+    });
+
     for (;;) {
-      const next = yield* Queue.take(signals);
-      switch (next._tag) {
+      const next = yield* Queue.take(signals).pipe(
+        Effect.map((signal) => ({ _tag: "Signal" as const, signal })),
+        Effect.timeoutOrElse({
+          duration: CONNECTION_HEARTBEAT_INTERVAL,
+          orElse: () => Effect.succeed({ _tag: "HeartbeatDue" as const }),
+        }),
+      );
+      if (next._tag === "HeartbeatDue") {
+        if ((yield* probeLease) === "detach") return;
+        continue;
+      }
+      const signal = next.signal;
+      switch (signal._tag) {
         case "DisconnectRequested":
         case "RetryRequested":
           return;
         case "NetworkChanged":
-          if (next.network === "offline") {
+          if (signal.network === "offline") {
             return;
           }
           break;
         case "Wakeup":
-          if (next.reason === "credentials-changed" && target._tag === "RelayConnectionTarget") {
+          if (signal.reason === "credentials-changed" && target._tag === "RelayConnectionTarget") {
             yield* logManagedRelayAccountChange;
             return;
           }
-          if (next.reason === "application-active") {
-            const probe = yield* lease.session.probe.pipe(
-              Effect.timeoutOrElse({
-                duration: CONNECTION_PROBE_TIMEOUT,
-                orElse: () =>
-                  Effect.fail(
-                    new ConnectionTransientError({
-                      reason: "timeout",
-                      detail: `${target.label} did not respond to a connection health check.`,
-                    }),
-                  ),
-              }),
-              Effect.forkChild,
-            );
-            for (;;) {
-              const probeEvent = yield* Effect.raceFirst(
-                Fiber.await(probe).pipe(
-                  Effect.map((exit) => ({ _tag: "ProbeCompleted" as const, exit })),
-                ),
-                Queue.take(signals).pipe(
-                  Effect.map((signal) => ({ _tag: "Signal" as const, signal })),
-                ),
-              );
-              if (probeEvent._tag === "ProbeCompleted") {
-                yield* probeEvent.exit;
-                break;
-              }
-              switch (probeEvent.signal._tag) {
-                case "DisconnectRequested":
-                case "RetryRequested":
-                  yield* Fiber.interrupt(probe);
-                  return;
-                case "NetworkChanged":
-                  if (probeEvent.signal.network === "offline") {
-                    yield* Fiber.interrupt(probe);
-                    return;
-                  }
-                  break;
-                case "ConnectRequested":
-                case "Wakeup":
-                  break;
-              }
-            }
+          if (signal.reason === "application-active") {
+            if ((yield* probeLease) === "detach") return;
           }
           break;
         case "ConnectRequested":

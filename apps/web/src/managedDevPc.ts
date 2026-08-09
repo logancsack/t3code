@@ -736,12 +736,20 @@ export async function prepareManagedDevPc(): Promise<void> {
       await new Promise((resolve) => window.setTimeout(resolve, 1_500));
     } catch (error) {
       failures += 1;
-      if (failures >= 4) {
+      // The gateway answers transient control-plane trouble with 503 +
+      // retry-after while it recovers, which can span a relay handoff or a
+      // control-plane deploy (~15–20 s). Twelve polls at 1.5 s gives ~18 s
+      // of tolerance before the fatal card, instead of giving up during a
+      // blip the platform is already healing.
+      if (failures >= 12) {
         updateBootstrapMessage(
           error instanceof Error ? error.message : "The workspace could not be reached.",
           true,
         );
         throw error;
+      }
+      if (failures >= 2) {
+        showWakeProgress("Reconnecting to your workspace…", "connection");
       }
       await new Promise((resolve) => window.setTimeout(resolve, 1_500));
     }
@@ -760,6 +768,10 @@ export async function prepareManagedWebSocketUrl(socketUrl: string): Promise<str
       "content-type": "application/json",
     },
     body: "{}",
+    // Without a bound, a hung gateway pins the connection attempt until the
+    // supervisor's establishment timeout; failing fast keeps the retry loop
+    // (which mints a fresh ticket per attempt) moving.
+    signal: AbortSignal.timeout(10_000),
   });
   if (!response.ok) {
     if ([401, 403].includes(response.status) && scheduleManagedSessionRecovery()) {

@@ -33,6 +33,15 @@ export interface TurnLiveness {
    * arrives for the thread shortly after boot, the turn is an orphan.
    */
   readonly seededFromSnapshot: boolean;
+  /**
+   * True after the VM this server runs on was suspended and resumed while
+   * the turn was waiting on the model. The process survived the suspend but
+   * a model-wait stream almost never does, so the turn is judged against the
+   * short recovery grace instead of the full silence budget — and unlike a
+   * restart orphan it is safe to auto-retry, because the retry budget
+   * bookkeeping survived with the process.
+   */
+  readonly resumedProbation?: boolean;
 }
 
 export type TurnWaitClass = "human" | "tool" | "model";
@@ -91,10 +100,11 @@ export function applyRuntimeEvent(
   if (current === undefined) return null;
 
   // A live event for a thread seeded from the snapshot means the turn
-  // outlived the restart after all; from here on track it as live.
-  const base: TurnLiveness = current.seededFromSnapshot
-    ? { ...current, seededFromSnapshot: false }
-    : current;
+  // outlived the restart after all; the same proof ends resume probation.
+  const base: TurnLiveness =
+    current.seededFromSnapshot || current.resumedProbation === true
+      ? { ...current, seededFromSnapshot: false, resumedProbation: false }
+      : current;
 
   switch (event.type) {
     case "item.started":
@@ -151,7 +161,32 @@ export interface StalledTurn {
   readonly threadId: ThreadId;
   readonly turnId: TurnId;
   readonly silentForMs: number;
-  readonly reason: "model-silence" | "orphaned-after-restart";
+  readonly reason: "model-silence" | "orphaned-after-restart" | "suspend-silence";
+}
+
+/**
+ * Rebase liveness across a detected VM suspend (the host paused this machine
+ * and resumed it later; the wall clock jumped while nothing actually ran).
+ *
+ * The paused interval must not count toward any silence budget, so every
+ * entry's clock restarts at the resume. Turns that were waiting on the model
+ * additionally enter resume probation: their provider stream almost certainly
+ * died with the suspended TCP connections, so instead of the full silence
+ * budget they get the short recovery grace to prove themselves with a live
+ * event. Tool and human waits carry no such suspicion — local subprocesses
+ * survive a suspend, and human waits are unbounded by design.
+ */
+export function rebaseAfterSuspend(
+  entries: Map<ThreadId, TurnLiveness>,
+  resumedAtMs: number,
+): void {
+  for (const [threadId, liveness] of entries) {
+    entries.set(threadId, {
+      ...liveness,
+      lastEventAtMs: resumedAtMs,
+      resumedProbation: !liveness.seededFromSnapshot && classifyWait(liveness) === "model",
+    });
+  }
 }
 
 /**
@@ -171,15 +206,18 @@ export function stalledTurns(
   for (const [threadId, liveness] of entries) {
     if (classifyWait(liveness) !== "model") continue;
     const silentForMs = nowMs - liveness.lastEventAtMs;
-    const threshold = liveness.seededFromSnapshot
-      ? thresholds.recoveryGraceMs
-      : thresholds.modelSilenceMs;
+    const probation = liveness.seededFromSnapshot || liveness.resumedProbation === true;
+    const threshold = probation ? thresholds.recoveryGraceMs : thresholds.modelSilenceMs;
     if (silentForMs < threshold) continue;
     stalled.push({
       threadId,
       turnId: liveness.turnId,
       silentForMs,
-      reason: liveness.seededFromSnapshot ? "orphaned-after-restart" : "model-silence",
+      reason: liveness.seededFromSnapshot
+        ? "orphaned-after-restart"
+        : liveness.resumedProbation === true
+          ? "suspend-silence"
+          : "model-silence",
     });
   }
   return stalled;

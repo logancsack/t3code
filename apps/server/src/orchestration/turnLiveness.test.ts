@@ -10,6 +10,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   applyRuntimeEvent,
   classifyWait,
+  rebaseAfterSuspend,
   seededTurnLiveness,
   stalledTurns,
   type TurnLiveness,
@@ -201,5 +202,56 @@ describe("turnLiveness", () => {
       1_000,
     )!;
     expect(classifyWait(liveness)).toBe("model");
+  });
+
+  it("rebases model waits into resume probation after a suspend", () => {
+    const entries = new Map([[threadId, runningTurn(0)]]);
+    // The VM was paused; the wall clock jumped far past the silence budget.
+    const resumedAt = 3_600_000;
+    rebaseAfterSuspend(entries, resumedAt);
+
+    // The paused hour does not read as silence...
+    expect(stalledTurns(entries, resumedAt + 1_000, thresholds)).toEqual([]);
+    // ...but the dead model stream only gets the short recovery grace, and
+    // the stall is retryable suspend-silence, not a restart orphan.
+    const stalled = stalledTurns(entries, resumedAt + thresholds.recoveryGraceMs, thresholds);
+    expect(stalled).toHaveLength(1);
+    expect(stalled[0]!.reason).toBe("suspend-silence");
+  });
+
+  it("clears resume probation when a live event proves the stream survived", () => {
+    const entries = new Map([[threadId, runningTurn(0)]]);
+    rebaseAfterSuspend(entries, 3_600_000);
+    const next = applyRuntimeEvent(
+      entries.get(threadId),
+      event({ type: "content.delta" }),
+      3_601_000,
+    )!;
+    expect(next.resumedProbation).toBe(false);
+    // Back on the full silence budget.
+    expect(
+      stalledTurns(new Map([[threadId, next]]), 3_601_000 + thresholds.recoveryGraceMs, thresholds),
+    ).toEqual([]);
+  });
+
+  it("does not put tool waits or restart-seeded turns on resume probation", () => {
+    let toolWait = runningTurn(0);
+    toolWait = applyRuntimeEvent(
+      toolWait,
+      event({ type: "item.started", itemId: "item-3", payload: { itemType: "command_execution" } }),
+      1_000,
+    )!;
+    const seeded = seededTurnLiveness(TurnId.make("turn-seeded"), 0);
+    const entries = new Map([
+      [threadId, toolWait],
+      [ThreadId.make("thread-2"), seeded],
+    ]);
+    rebaseAfterSuspend(entries, 3_600_000);
+
+    expect(entries.get(threadId)!.resumedProbation).toBe(false);
+    // A local tool keeps running through a pause; no stall however long it takes.
+    expect(stalledTurns(entries, 7_200_000, thresholds).map((turn) => turn.reason)).toEqual([
+      "orphaned-after-restart",
+    ]);
   });
 });

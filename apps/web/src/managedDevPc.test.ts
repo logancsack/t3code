@@ -713,6 +713,7 @@ describe("managed DevPC WebSocket authorization", () => {
         "content-type": "application/json",
       },
       body: "{}",
+      signal: expect.any(AbortSignal),
     });
   });
 

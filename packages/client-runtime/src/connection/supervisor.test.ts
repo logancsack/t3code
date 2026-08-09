@@ -481,6 +481,44 @@ describe("EnvironmentSupervisor", () => {
     }),
   );
 
+  it.effect("heartbeats an idle connection and recycles it when the probe fails", () =>
+    Effect.gen(function* () {
+      const probeCount = yield* Ref.make(0);
+      const harness = yield* makeHarness({
+        probe: (attempt) =>
+          Ref.update(probeCount, (count) => count + 1).pipe(
+            Effect.andThen(
+              attempt === 1 ? Effect.fail(transient("The socket is half-open.")) : Effect.void,
+            ),
+          ),
+      });
+      const supervisor = yield* EnvironmentSupervisor.make(TARGET_ENTRY, {
+        initiallyDesired: true,
+      }).pipe(Effect.provide(harness.dependencies));
+
+      yield* awaitState(
+        supervisor.state,
+        (state) => state.phase === "connected" && state.generation === 1,
+      );
+      // No traffic and no wakeups: the idle heartbeat alone must find the
+      // dead socket and recycle the connection through the normal retry path.
+      yield* TestClock.adjust("30 seconds");
+      yield* awaitState(supervisor.state, (state) => state.phase === "backoff");
+      expect(yield* Ref.get(probeCount)).toBe(1);
+
+      yield* TestClock.adjust("1 second");
+      yield* awaitState(
+        supervisor.state,
+        (state) => state.phase === "connected" && state.generation === 2,
+      );
+
+      // A healthy connection just keeps heartbeating.
+      yield* TestClock.adjust("30 seconds");
+      yield* awaitState(supervisor.state, (state) => state.phase === "connected");
+      expect(yield* Ref.get(probeCount)).toBe(2);
+    }).pipe(Effect.provide(TestClock.layer())),
+  );
+
   it.effect("keeps blocked failures idle until an external signal requests another attempt", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness({
