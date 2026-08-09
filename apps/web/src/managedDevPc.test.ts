@@ -695,11 +695,14 @@ describe("managed DevPC WebSocket authorization", () => {
       Response.json({ ticket: "gateway-ticket-that-is-long-enough" }),
     );
     vi.stubGlobal("fetch", fetchMock);
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout");
 
     const { prepareManagedWebSocketUrl } = await import("./managedDevPc");
     const resolved = await prepareManagedWebSocketUrl(
       "wss://app.example.test/ws?wsTicket=local-one-time-ticket",
     );
+
+    expect(timeoutSpy).toHaveBeenCalledWith(10_000);
 
     expect(resolved).toBe(
       "wss://app.example.test/ws?gatewayTicket=gateway-ticket-that-is-long-enough",
@@ -713,6 +716,7 @@ describe("managed DevPC WebSocket authorization", () => {
         "content-type": "application/json",
       },
       body: "{}",
+      signal: expect.any(AbortSignal),
     });
   });
 

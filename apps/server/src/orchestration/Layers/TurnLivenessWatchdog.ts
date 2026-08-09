@@ -18,6 +18,7 @@ import {
 } from "../Services/TurnLivenessWatchdog.ts";
 import {
   applyRuntimeEvent,
+  rebaseAfterSuspend,
   seededTurnLiveness,
   stalledTurns,
   type StalledTurn,
@@ -31,6 +32,18 @@ const DEFAULT_MAX_AUTO_RETRIES = 2;
 const DEFAULT_RETRY_DELAY_MS = 30 * 1000;
 /** Failed attempts stop counting against the budget after this long. */
 const RETRY_BUDGET_EXPIRY_MS = 24 * 60 * 60 * 1000;
+/**
+ * A clock reading arriving this many sweep intervals past the previous one
+ * means the VM was suspended, not that the event loop hiccuped. Two full
+ * intervals of slack keeps load-induced jitter from reading as a suspend.
+ */
+const SUSPEND_GAP_SWEEP_INTERVALS = 2;
+/**
+ * Window after a detected resume in which a turn failure is attributed to
+ * the suspend (its provider connection died with the VM's TCP state) and is
+ * therefore auto-retried within the normal budget.
+ */
+const POST_RESUME_FAILURE_WINDOW_MS = 3 * 60 * 1000;
 
 export interface TurnLivenessWatchdogLiveOptions {
   readonly modelSilenceMs?: number;
@@ -89,6 +102,35 @@ const makeTurnLivenessWatchdog = (options?: TurnLivenessWatchdogLiveOptions) =>
 
     const entries = new Map<ThreadId, TurnLiveness>();
     const retryStateByThread = new Map<ThreadId, ThreadRetryState>();
+    let lastObservedClockMs: number | null = null;
+    let resumedAtMs: number | null = null;
+
+    /**
+     * Advance the shared clock baseline and detect a VM suspend: a reading
+     * far past the last one plus a sweep interval means this machine slept
+     * in between. Runs in BOTH the sweep and the runtime-event path — the
+     * first thing delivered after a resume is often the dying provider
+     * stream's terminal event, up to a full sweep interval before the timer
+     * fires, and retry attribution must already know about the resume by
+     * then.
+     */
+    const observeClock = (nowMs: number) =>
+      Effect.gen(function* () {
+        const previous = lastObservedClockMs;
+        lastObservedClockMs = nowMs;
+        if (
+          previous === null ||
+          nowMs - previous - sweepIntervalMs < SUSPEND_GAP_SWEEP_INTERVALS * sweepIntervalMs
+        ) {
+          return;
+        }
+        resumedAtMs = nowMs;
+        rebaseAfterSuspend(entries, nowMs);
+        yield* Effect.logInfo("turn.watchdog.resumed-after-suspend", {
+          suspendedForMs: nowMs - previous - sweepIntervalMs,
+          rebasedTurnCount: entries.size,
+        });
+      });
 
     const watchdogCommandId = (tag: string) =>
       crypto.randomUUIDv4.pipe(Effect.map((uuid) => CommandId.make(`watchdog:${tag}:${uuid}`)));
@@ -136,7 +178,9 @@ const makeTurnLivenessWatchdog = (options?: TurnLivenessWatchdogLiveOptions) =>
         const summary =
           stalled.reason === "orphaned-after-restart"
             ? "This turn did not survive a server restart and was marked interrupted."
-            : `No provider activity for ${describeSilence(stalled.silentForMs)} — the turn was interrupted.`;
+            : stalled.reason === "suspend-silence"
+              ? "The workspace was paused mid-turn and the provider connection did not survive the resume — the turn was interrupted."
+              : `No provider activity for ${describeSilence(stalled.silentForMs)} — the turn was interrupted.`;
 
         const activityCommandId = yield* watchdogCommandId("activity");
         const activityId = yield* crypto.randomUUIDv4.pipe(
@@ -179,11 +223,12 @@ const makeTurnLivenessWatchdog = (options?: TurnLivenessWatchdogLiveOptions) =>
           silentForMs: stalled.silentForMs,
         });
 
-        // A model-silence stall is usually a dead provider connection, which
-        // a fresh turn recovers from — schedule one bounded retry. Restart
-        // orphans are not retried: the budget bookkeeping died with the old
-        // process, and retrying there could loop across repeated crashes.
-        if (stalled.reason !== "model-silence" || maxAutoRetries < 1) return;
+        // A model-silence or suspend-silence stall is a dead provider
+        // connection, which a fresh turn recovers from — schedule one bounded
+        // retry. Restart orphans are not retried: the budget bookkeeping died
+        // with the old process, and retrying there could loop across
+        // repeated crashes.
+        if (stalled.reason === "orphaned-after-restart" || maxAutoRetries < 1) return;
         const nowMs = yield* Clock.currentTimeMillis;
         const retryState = currentRetryState(stalled.threadId, nowMs);
         if (retryState.attempts >= maxAutoRetries) {
@@ -214,7 +259,10 @@ const makeTurnLivenessWatchdog = (options?: TurnLivenessWatchdogLiveOptions) =>
 
         // Only retry if the interrupt actually landed and the human has not
         // already moved the thread on: the failed turn must still be the
-        // latest, in a failed state, with nothing else running.
+        // latest, in a failed state, with nothing else running. A user
+        // message newer than the failed turn, or a session already booting
+        // for one, is the human moving on — re-driving the old message
+        // would race their newer work and repeat side effects.
         const thread = yield* projectionSnapshotQuery
           .getThreadShellById(threadId)
           .pipe(Effect.map(Option.getOrUndefined));
@@ -224,7 +272,23 @@ const makeTurnLivenessWatchdog = (options?: TurnLivenessWatchdogLiveOptions) =>
           latestTurn == null ||
           latestTurn.turnId !== scheduled.turnId ||
           (latestTurn.state !== "interrupted" && latestTurn.state !== "error") ||
+          thread.session?.status === "starting" ||
           (thread.session?.status === "running" && thread.session.activeTurnId !== null)
+        ) {
+          return;
+        }
+        const latestTurnAtMs = Math.max(
+          Date.parse(latestTurn.requestedAt),
+          latestTurn.startedAt === null
+            ? Number.NEGATIVE_INFINITY
+            : Date.parse(latestTurn.startedAt),
+          latestTurn.completedAt === null
+            ? Number.NEGATIVE_INFINITY
+            : Date.parse(latestTurn.completedAt),
+        );
+        if (
+          thread.latestUserMessageAt !== null &&
+          Date.parse(thread.latestUserMessageAt) > latestTurnAtMs
         ) {
           return;
         }
@@ -278,6 +342,7 @@ const makeTurnLivenessWatchdog = (options?: TurnLivenessWatchdogLiveOptions) =>
 
     const sweep = Effect.gen(function* () {
       const nowMs = yield* Clock.currentTimeMillis;
+      yield* observeClock(nowMs);
       const stalled = stalledTurns(entries, nowMs, { modelSilenceMs, recoveryGraceMs });
       for (const turn of stalled) {
         yield* interruptStalledTurn(turn).pipe(
@@ -310,12 +375,117 @@ const makeTurnLivenessWatchdog = (options?: TurnLivenessWatchdogLiveOptions) =>
 
     const followRuntimeEvents = Stream.runForEach(providerService.streamEvents, (event) =>
       Effect.gen(function* () {
-        // A completed turn is the proof of recovery that refills the
-        // auto-retry budget; anything less keeps counting toward the cap.
-        if (event.type === "turn.completed") {
+        // Some providers report a broken turn as a completion carrying a
+        // failed state (ahead of their own error / session-exit events), so
+        // "completed" alone is not proof of recovery.
+        const failedCompletion =
+          event.type === "turn.completed" &&
+          "state" in event.payload &&
+          event.payload.state === "failed";
+        // A successfully completed turn is the proof of recovery that
+        // refills the auto-retry budget; anything less keeps counting
+        // toward the cap. A stale completion flushed for a superseded turn
+        // proves nothing and must not defeat the cap — nor cancel a retry
+        // already scheduled for a different failed turn.
+        const trackedForRefill = entries.get(event.threadId);
+        const scheduledRetryTurnId =
+          retryStateByThread.get(event.threadId)?.scheduled?.turnId ?? null;
+        const completionMatchesKnownTurn =
+          trackedForRefill !== undefined
+            ? event.turnId === undefined || event.turnId === trackedForRefill.turnId
+            : scheduledRetryTurnId !== null
+              ? event.turnId === undefined || event.turnId === scheduledRetryTurnId
+              : true;
+        if (event.type === "turn.completed" && !failedCompletion && completionMatchesKnownTurn) {
           retryStateByThread.delete(event.threadId);
         }
         const nowMs = yield* Clock.currentTimeMillis;
+        // The resume must be known BEFORE this event is judged: the first
+        // thing delivered after a suspend is often the dying stream's own
+        // terminal event, well ahead of the next sweep timer.
+        yield* observeClock(nowMs);
+        // A probation turn dying shortly after a resume-from-suspend is the
+        // suspend's doing (its provider stream went down with the VM's TCP
+        // state), not the model's — schedule a budgeted retry so the work
+        // survives the pause instead of ending in a manual-retry error.
+        // Turns started after the resume (or already proven live) fail for
+        // their own reasons and are not second-guessed here.
+        if (
+          (event.type === "turn.aborted" ||
+            event.type === "session.exited" ||
+            event.type === "runtime.error" ||
+            failedCompletion) &&
+          resumedAtMs !== null &&
+          nowMs - resumedAtMs <= POST_RESUME_FAILURE_WINDOW_MS &&
+          maxAutoRetries > 0
+        ) {
+          const tracked = entries.get(event.threadId);
+          // A delayed failure event scoped to some OTHER turn (a stale abort
+          // from a superseded turn surviving in a provider queue) says
+          // nothing about the tracked turn — session-scoped events carry no
+          // turnId and pass.
+          const eventTurnMatchesTracked =
+            tracked !== undefined &&
+            (event.turnId === undefined || event.turnId === tracked.turnId);
+          if (tracked?.resumedProbation === true && eventTurnMatchesTracked) {
+            // A commanded interrupt (the user's Stop, or this watchdog's
+            // own stall handling) projects the turn as interrupted before
+            // the provider's terminal event arrives — deliberate stops must
+            // never be auto-restarted. A pause-broken stream dies with no
+            // command, leaving the projection running (or errored once the
+            // failure is ingested). Unknown projection state errs toward
+            // respecting the stop.
+            const thread = yield* projectionSnapshotQuery.getThreadShellById(event.threadId).pipe(
+              Effect.map(Option.getOrUndefined),
+              Effect.orElseSucceed(() => undefined),
+            );
+            const latestTurn = thread?.latestTurn;
+            const uncommanded =
+              latestTurn != null &&
+              latestTurn.turnId === tracked.turnId &&
+              latestTurn.state !== "interrupted";
+            const retryState = currentRetryState(event.threadId, nowMs);
+            if (
+              uncommanded &&
+              retryState.attempts < maxAutoRetries &&
+              retryState.scheduled === null
+            ) {
+              // A bare abort with no session-level follow-up never settles
+              // the projected turn on its own (ingestion has no turn.aborted
+              // lifecycle case), and the retry dispatcher only accepts
+              // settled turns. Interrupt it explicitly so the scheduled
+              // retry can land instead of being silently rejected.
+              if (event.type === "turn.aborted" && latestTurn.state === "running") {
+                yield* Effect.gen(function* () {
+                  const createdAt = DateTime.formatIso(yield* DateTime.now);
+                  const interruptCommandId = yield* watchdogCommandId("suspend-interrupt");
+                  yield* orchestrationEngine.dispatch({
+                    type: "thread.turn.interrupt",
+                    commandId: interruptCommandId,
+                    threadId: event.threadId,
+                    turnId: tracked.turnId,
+                    createdAt,
+                  });
+                }).pipe(
+                  Effect.catchCause((cause) =>
+                    Effect.logWarning("turn.watchdog.suspend-interrupt-failed", {
+                      threadId: event.threadId,
+                      turnId: tracked.turnId,
+                      cause,
+                    }),
+                  ),
+                );
+              }
+              retryState.scheduled = { turnId: tracked.turnId, notBeforeMs: nowMs + retryDelayMs };
+              retryStateByThread.set(event.threadId, retryState);
+              yield* Effect.logInfo("turn.watchdog.retry-after-suspend-failure", {
+                threadId: event.threadId,
+                turnId: tracked.turnId,
+                eventType: event.type,
+              });
+            }
+          }
+        }
         const next = applyRuntimeEvent(entries.get(event.threadId), event, nowMs);
         if (next === null) {
           entries.delete(event.threadId);

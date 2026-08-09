@@ -128,7 +128,7 @@ jobs:
               activity="$(curl --connect-timeout 2 --max-time 5 --fail --silent --show-error \
                 -H 'x-devpc-gateway-token: release-smoke-managed-gateway-token' \
                 http://127.0.0.1:4311/api/_devpc/activity)"
-              test "$activity" = '{"active":false}' || {
+              test "$activity" = '{"active":false,"working":false,"pendingWork":false}' || {
                 echo "Unexpected managed activity response: $activity"
                 exit 1
               }
