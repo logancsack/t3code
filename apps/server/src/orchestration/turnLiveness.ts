@@ -116,6 +116,12 @@ export function applyRuntimeEvent(
     current.seededFromSnapshot || (current.resumedProbation === true && provesTrackedTurn)
       ? { ...current, seededFromSnapshot: false, resumedProbation: false }
       : current;
+  // While on probation, an unrelated event must not extend the recovery
+  // deadline either — a periodic side event (rate limits, config warnings)
+  // could otherwise keep a dead model stream from ever stalling.
+  if (base.resumedProbation === true && !provesTrackedTurn) {
+    return base;
+  }
 
   switch (event.type) {
     case "item.started":

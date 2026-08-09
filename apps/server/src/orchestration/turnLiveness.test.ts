@@ -257,9 +257,12 @@ describe("turnLiveness", () => {
       3_601_000,
     )!;
     expect(next.resumedProbation).toBe(true);
+    // The deadline is not extended either: repeated side events must not
+    // keep a dead stream from stalling.
+    expect(next.lastEventAtMs).toBe(3_600_000);
     const stalled = stalledTurns(
       new Map([[threadId, next]]),
-      3_601_000 + thresholds.recoveryGraceMs,
+      3_600_000 + thresholds.recoveryGraceMs,
       thresholds,
     );
     expect(stalled.map((turn) => turn.reason)).toEqual(["suspend-silence"]);

@@ -385,15 +385,18 @@ const makeTurnLivenessWatchdog = (options?: TurnLivenessWatchdogLiveOptions) =>
         // A successfully completed turn is the proof of recovery that
         // refills the auto-retry budget; anything less keeps counting
         // toward the cap. A stale completion flushed for a superseded turn
-        // proves nothing and must not defeat the cap.
+        // proves nothing and must not defeat the cap — nor cancel a retry
+        // already scheduled for a different failed turn.
         const trackedForRefill = entries.get(event.threadId);
-        if (
-          event.type === "turn.completed" &&
-          !failedCompletion &&
-          (trackedForRefill === undefined ||
-            event.turnId === undefined ||
-            event.turnId === trackedForRefill.turnId)
-        ) {
+        const scheduledRetryTurnId =
+          retryStateByThread.get(event.threadId)?.scheduled?.turnId ?? null;
+        const completionMatchesKnownTurn =
+          trackedForRefill !== undefined
+            ? event.turnId === undefined || event.turnId === trackedForRefill.turnId
+            : scheduledRetryTurnId !== null
+              ? event.turnId === undefined || event.turnId === scheduledRetryTurnId
+              : true;
+        if (event.type === "turn.completed" && !failedCompletion && completionMatchesKnownTurn) {
           retryStateByThread.delete(event.threadId);
         }
         const nowMs = yield* Clock.currentTimeMillis;
