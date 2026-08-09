@@ -234,6 +234,25 @@ describe("turnLiveness", () => {
     ).toEqual([]);
   });
 
+  it("keeps resume probation through events unrelated to the tracked turn", () => {
+    const entries = new Map([[threadId, runningTurn(0)]]);
+    rebaseAfterSuspend(entries, 3_600_000);
+    // A thread-scoped side event (or one for a superseded turn) proves
+    // nothing about the tracked turn's stream.
+    const next = applyRuntimeEvent(
+      entries.get(threadId),
+      event({ type: "account.updated", turnId: "turn-other" }),
+      3_601_000,
+    )!;
+    expect(next.resumedProbation).toBe(true);
+    const stalled = stalledTurns(
+      new Map([[threadId, next]]),
+      3_601_000 + thresholds.recoveryGraceMs,
+      thresholds,
+    );
+    expect(stalled.map((turn) => turn.reason)).toEqual(["suspend-silence"]);
+  });
+
   it("does not put tool waits or restart-seeded turns on resume probation", () => {
     let toolWait = runningTurn(0);
     toolWait = applyRuntimeEvent(

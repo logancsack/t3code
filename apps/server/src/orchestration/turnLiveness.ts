@@ -100,9 +100,13 @@ export function applyRuntimeEvent(
   if (current === undefined) return null;
 
   // A live event for a thread seeded from the snapshot means the turn
-  // outlived the restart after all; the same proof ends resume probation.
+  // outlived the restart after all. Resume probation demands more: only an
+  // event tied to the tracked turn proves the model stream survived — a
+  // thread-scoped side event (an account update, a config warning) proves
+  // nothing about the stream and must not soften the probation.
+  const provesTrackedTurn = event.turnId !== undefined && event.turnId === current.turnId;
   const base: TurnLiveness =
-    current.seededFromSnapshot || current.resumedProbation === true
+    current.seededFromSnapshot || (current.resumedProbation === true && provesTrackedTurn)
       ? { ...current, seededFromSnapshot: false, resumedProbation: false }
       : current;
 

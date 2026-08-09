@@ -259,7 +259,10 @@ const makeTurnLivenessWatchdog = (options?: TurnLivenessWatchdogLiveOptions) =>
 
         // Only retry if the interrupt actually landed and the human has not
         // already moved the thread on: the failed turn must still be the
-        // latest, in a failed state, with nothing else running.
+        // latest, in a failed state, with nothing else running. A user
+        // message newer than the failed turn, or a session already booting
+        // for one, is the human moving on — re-driving the old message
+        // would race their newer work and repeat side effects.
         const thread = yield* projectionSnapshotQuery
           .getThreadShellById(threadId)
           .pipe(Effect.map(Option.getOrUndefined));
@@ -269,7 +272,23 @@ const makeTurnLivenessWatchdog = (options?: TurnLivenessWatchdogLiveOptions) =>
           latestTurn == null ||
           latestTurn.turnId !== scheduled.turnId ||
           (latestTurn.state !== "interrupted" && latestTurn.state !== "error") ||
+          thread.session?.status === "starting" ||
           (thread.session?.status === "running" && thread.session.activeTurnId !== null)
+        ) {
+          return;
+        }
+        const latestTurnAtMs = Math.max(
+          Date.parse(latestTurn.requestedAt),
+          latestTurn.startedAt === null
+            ? Number.NEGATIVE_INFINITY
+            : Date.parse(latestTurn.startedAt),
+          latestTurn.completedAt === null
+            ? Number.NEGATIVE_INFINITY
+            : Date.parse(latestTurn.completedAt),
+        );
+        if (
+          thread.latestUserMessageAt !== null &&
+          Date.parse(thread.latestUserMessageAt) > latestTurnAtMs
         ) {
           return;
         }
@@ -390,7 +409,14 @@ const makeTurnLivenessWatchdog = (options?: TurnLivenessWatchdogLiveOptions) =>
           maxAutoRetries > 0
         ) {
           const tracked = entries.get(event.threadId);
-          if (tracked?.resumedProbation === true) {
+          // A delayed failure event scoped to some OTHER turn (a stale abort
+          // from a superseded turn surviving in a provider queue) says
+          // nothing about the tracked turn — session-scoped events carry no
+          // turnId and pass.
+          const eventTurnMatchesTracked =
+            tracked !== undefined &&
+            (event.turnId === undefined || event.turnId === tracked.turnId);
+          if (tracked?.resumedProbation === true && eventTurnMatchesTracked) {
             // A commanded interrupt (the user's Stop, or this watchdog's
             // own stall handling) projects the turn as interrupted before
             // the provider's terminal event arrives — deliberate stops must
