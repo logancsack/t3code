@@ -34,6 +34,13 @@ const CONNECTION_ESTABLISHMENT_TIMEOUT = "15 seconds";
 const CONNECTION_PROBE_TIMEOUT = "15 seconds";
 const MOBILE_CONNECTION_PROBE_TIMEOUT = "3 seconds";
 const BACKOFF_RESET_AFTER_MS = 30_000;
+/**
+ * Idle heartbeat cadence on an established connection. A socket that dies
+ * without a close frame (a dropped relay, a NATed path timing out) otherwise
+ * stays "connected" indefinitely while every subscription silently starves —
+ * the probe turns that into a detected failure and a normal reconnect.
+ */
+const CONNECTION_HEARTBEAT_INTERVAL = "30 seconds";
 
 interface SupervisorIntent {
   readonly desired: boolean;
@@ -396,89 +403,121 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
   const monitorConnectedLease = Effect.fnUntraced(function* (
     lease: ConnectionDriver.EnvironmentConnectionLease,
   ) {
+    /**
+     * Probe the live session, draining supervisor signals while the probe is
+     * in flight. A detach result carries whether the retry sequence should be
+     * reset; a failed or timed-out probe fails the monitor, which recycles the
+     * connection through the normal retry path.
+     */
+    const probeLease = Effect.fnUntraced(function* (
+      timeout: typeof CONNECTION_PROBE_TIMEOUT | typeof MOBILE_CONNECTION_PROBE_TIMEOUT,
+      recordWakeFailure: boolean,
+    ) {
+      const probe = yield* lease.session.probe.pipe(
+        Effect.timeoutOrElse({
+          duration: timeout,
+          orElse: () =>
+            Effect.fail(
+              new ConnectionTransientError({
+                reason: "timeout",
+                detail: `${target.label} did not respond to a connection health check.`,
+              }),
+            ),
+        }),
+        Effect.forkChild,
+      );
+      for (;;) {
+        const probeEvent = yield* Effect.raceFirst(
+          Fiber.await(probe).pipe(
+            Effect.map((exit) => ({ _tag: "ProbeCompleted" as const, exit })),
+          ),
+          Queue.take(signals).pipe(Effect.map((signal) => ({ _tag: "Signal" as const, signal }))),
+        );
+        if (probeEvent._tag === "ProbeCompleted") {
+          if (recordWakeFailure && Exit.isFailure(probeEvent.exit)) {
+            yield* Ref.set(wakeProbeFailed, true);
+          }
+          yield* probeEvent.exit;
+          return { _tag: "ok" as const };
+        }
+        switch (probeEvent.signal._tag) {
+          case "DisconnectRequested":
+          case "RetryRequested":
+            yield* Fiber.interrupt(probe);
+            return { _tag: "detach" as const, resetRetry: false };
+          case "NetworkChanged":
+            if (probeEvent.signal.network === "offline") {
+              yield* Fiber.interrupt(probe);
+              return { _tag: "detach" as const, resetRetry: false };
+            }
+            break;
+          case "Wakeup":
+            if (probeEvent.signal.reason === "application-active-reconnect") {
+              yield* Fiber.interrupt(probe);
+              return { _tag: "detach" as const, resetRetry: true };
+            }
+            // The same relay account-change handling as the main monitor
+            // loop — a probe in flight must not swallow it.
+            if (
+              probeEvent.signal.reason === "credentials-changed" &&
+              target._tag === "RelayConnectionTarget"
+            ) {
+              yield* logManagedRelayAccountChange;
+              yield* Fiber.interrupt(probe);
+              return { _tag: "detach" as const, resetRetry: false };
+            }
+            break;
+          case "ConnectRequested":
+            break;
+        }
+      }
+    });
+
     for (;;) {
-      const next = yield* Queue.take(signals);
-      switch (next._tag) {
+      const next = yield* Queue.take(signals).pipe(
+        Effect.map((signal) => ({ _tag: "Signal" as const, signal })),
+        Effect.timeoutOrElse({
+          duration: CONNECTION_HEARTBEAT_INTERVAL,
+          orElse: () => Effect.succeed({ _tag: "HeartbeatDue" as const }),
+        }),
+      );
+      if (next._tag === "HeartbeatDue") {
+        const heartbeat = yield* probeLease(CONNECTION_PROBE_TIMEOUT, false);
+        if (heartbeat._tag === "detach") return heartbeat.resetRetry;
+        continue;
+      }
+      const signal = next.signal;
+      switch (signal._tag) {
         case "DisconnectRequested":
         case "RetryRequested":
           return false;
         case "NetworkChanged":
-          if (next.network === "offline") {
+          if (signal.network === "offline") {
             return false;
           }
           break;
         case "Wakeup":
-          if (next.reason === "credentials-changed" && target._tag === "RelayConnectionTarget") {
+          if (signal.reason === "credentials-changed" && target._tag === "RelayConnectionTarget") {
             yield* logManagedRelayAccountChange;
             return false;
           }
-          if (next.reason === "application-active-reconnect") {
+          if (signal.reason === "application-active-reconnect") {
             // Mobile operating systems commonly suspend sockets without
             // delivering a close event. A long background resume deliberately
             // replaces that lease and starts a fresh attempt without backoff.
             return true;
           }
-          if (next.reason === "application-active" || next.reason === "application-active-probe") {
-            const probe = yield* lease.session.probe.pipe(
-              Effect.timeoutOrElse({
-                duration:
-                  next.reason === "application-active-probe"
-                    ? MOBILE_CONNECTION_PROBE_TIMEOUT
-                    : CONNECTION_PROBE_TIMEOUT,
-                orElse: () =>
-                  Effect.fail(
-                    new ConnectionTransientError({
-                      reason: "timeout",
-                      detail: `${target.label} did not respond to a connection health check.`,
-                    }),
-                  ),
-              }),
-              Effect.forkChild,
+          if (
+            signal.reason === "application-active" ||
+            signal.reason === "application-active-probe"
+          ) {
+            const wakeProbe = yield* probeLease(
+              signal.reason === "application-active-probe"
+                ? MOBILE_CONNECTION_PROBE_TIMEOUT
+                : CONNECTION_PROBE_TIMEOUT,
+              true,
             );
-            for (;;) {
-              const probeEvent = yield* Effect.raceFirst(
-                Fiber.await(probe).pipe(
-                  Effect.map((exit) => ({ _tag: "ProbeCompleted" as const, exit })),
-                ),
-                Queue.take(signals).pipe(
-                  Effect.map((signal) => ({ _tag: "Signal" as const, signal })),
-                ),
-              );
-              if (probeEvent._tag === "ProbeCompleted") {
-                if (Exit.isFailure(probeEvent.exit)) {
-                  yield* Ref.set(wakeProbeFailed, true);
-                }
-                yield* probeEvent.exit;
-                break;
-              }
-              switch (probeEvent.signal._tag) {
-                case "DisconnectRequested":
-                case "RetryRequested":
-                  yield* Fiber.interrupt(probe);
-                  return false;
-                case "NetworkChanged":
-                  if (probeEvent.signal.network === "offline") {
-                    yield* Fiber.interrupt(probe);
-                    return false;
-                  }
-                  break;
-                case "Wakeup":
-                  if (probeEvent.signal.reason === "application-active-reconnect") {
-                    yield* Fiber.interrupt(probe);
-                    return true;
-                  }
-                  if (
-                    probeEvent.signal.reason === "credentials-changed" &&
-                    target._tag === "RelayConnectionTarget"
-                  ) {
-                    yield* Fiber.interrupt(probe);
-                    return false;
-                  }
-                  break;
-                case "ConnectRequested":
-                  break;
-              }
-            }
+            if (wakeProbe._tag === "detach") return wakeProbe.resetRetry;
           }
           break;
         case "ConnectRequested":
