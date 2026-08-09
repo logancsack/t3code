@@ -413,6 +413,32 @@ const makeTurnLivenessWatchdog = (options?: TurnLivenessWatchdogLiveOptions) =>
               retryState.attempts < maxAutoRetries &&
               retryState.scheduled === null
             ) {
+              // A bare abort with no session-level follow-up never settles
+              // the projected turn on its own (ingestion has no turn.aborted
+              // lifecycle case), and the retry dispatcher only accepts
+              // settled turns. Interrupt it explicitly so the scheduled
+              // retry can land instead of being silently rejected.
+              if (event.type === "turn.aborted" && latestTurn.state === "running") {
+                yield* Effect.gen(function* () {
+                  const createdAt = DateTime.formatIso(yield* DateTime.now);
+                  const interruptCommandId = yield* watchdogCommandId("suspend-interrupt");
+                  yield* orchestrationEngine.dispatch({
+                    type: "thread.turn.interrupt",
+                    commandId: interruptCommandId,
+                    threadId: event.threadId,
+                    turnId: tracked.turnId,
+                    createdAt,
+                  });
+                }).pipe(
+                  Effect.catchCause((cause) =>
+                    Effect.logWarning("turn.watchdog.suspend-interrupt-failed", {
+                      threadId: event.threadId,
+                      turnId: tracked.turnId,
+                      cause,
+                    }),
+                  ),
+                );
+              }
               retryState.scheduled = { turnId: tracked.turnId, notBeforeMs: nowMs + retryDelayMs };
               retryStateByThread.set(event.threadId, retryState);
               yield* Effect.logInfo("turn.watchdog.retry-after-suspend-failure", {
