@@ -61,6 +61,18 @@ describe("turnLiveness", () => {
     expect(applyRuntimeEvent(started, event({ type: "session.exited" }), 2_000)).toBeNull();
   });
 
+  it("keeps tracking the current turn through stale terminal events", () => {
+    const started = runningTurn(1_000);
+    // A delayed abort or completion flushed for a superseded turn says
+    // nothing about the tracked one.
+    expect(
+      applyRuntimeEvent(started, event({ type: "turn.aborted", turnId: "turn-old" }), 2_000),
+    ).toBe(started);
+    expect(
+      applyRuntimeEvent(started, event({ type: "turn.completed", turnId: "turn-old" }), 2_000),
+    ).toBe(started);
+  });
+
   it("ignores events for threads with no tracked turn", () => {
     expect(applyRuntimeEvent(undefined, event({ type: "content.delta" }), 1_000)).toBeNull();
   });

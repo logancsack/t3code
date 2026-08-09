@@ -88,6 +88,13 @@ export function applyRuntimeEvent(
     }
     case "turn.completed":
     case "turn.aborted":
+      // A delayed terminal event for a superseded turn must not end tracking
+      // of the current one — providers can flush stale queue entries after a
+      // new turn started. Unscoped terminal events settle the tracked turn.
+      if (current !== undefined && event.turnId !== undefined && event.turnId !== current.turnId) {
+        return current;
+      }
+      return null;
     case "session.exited":
       return null;
     default:
