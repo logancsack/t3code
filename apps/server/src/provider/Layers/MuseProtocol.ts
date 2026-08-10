@@ -11,7 +11,7 @@ import { tokenizeCliArgs } from "@t3tools/shared/cliArgs";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
-const decodeUnknownJson = Schema.decodeUnknownOption(Schema.UnknownFromJsonString);
+const decodeUnknownJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown));
 
 const MUSE_CONTEXT_COMPACTION_STRATEGIES = new Set([
   "summary-preserved-suffix/v1",

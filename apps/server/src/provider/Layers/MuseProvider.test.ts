@@ -15,7 +15,7 @@ import {
 } from "./MuseProvider.ts";
 
 const decodeMuseSettings = Schema.decodeSync(MuseSettings);
-const encodeUnknownJson = Schema.encodeUnknownSync(Schema.UnknownFromJsonString);
+const encodeUnknownJson = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
 
 describe("buildInitialMuseProviderSnapshot", () => {
   it.effect("publishes the built-in Muse model and reasoning controls", () =>

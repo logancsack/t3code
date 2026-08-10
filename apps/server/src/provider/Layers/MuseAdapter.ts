@@ -67,7 +67,7 @@ const MUSE_RESUME_VERSION = 1 as const;
 const DEFAULT_MUSE_MODEL = "muse-spark-1.2";
 const DEFAULT_REASONING_EFFORT = "high";
 const MAX_DIAGNOSTIC_CHARS = 16_000;
-const decodeUnknownJson = Schema.decodeUnknownOption(Schema.UnknownFromJsonString);
+const decodeUnknownJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown));
 
 const MUSE_REASONING_EFFORTS = new Set([
   "none",

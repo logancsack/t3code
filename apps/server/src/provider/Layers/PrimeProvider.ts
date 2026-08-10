@@ -40,7 +40,7 @@ const VERSION_PROBE_TIMEOUT_MS = 4_000;
 const VERSION_PROBE_MAX_OUTPUT_BYTES = 64 * 1024;
 const MODEL_PROBE_TIMEOUT_MS = 20_000;
 const MODEL_PROBE_MAX_OUTPUT_BYTES = 4 * 1024 * 1024;
-const decodeUnknownJson = Schema.decodeUnknownOption(Schema.UnknownFromJsonString);
+const decodeUnknownJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown));
 
 const PRIME_CREDENTIAL_ENV_NAMES = [
   "AI_GATEWAY_API_KEY",

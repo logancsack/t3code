@@ -14,12 +14,8 @@ describe("provider-constrained runtime mode controls", () => {
         interactionMode="default"
         runtimeMode="full-access"
         supportedRuntimeModes={["full-access"]}
-        showPlanToggle={false}
-        planSidebarLabel="Plan"
-        planSidebarOpen={false}
         onToggleInteractionMode={noop}
         onRuntimeModeChange={noop}
-        onTogglePlanSidebar={noop}
       />,
     );
 
@@ -32,15 +28,11 @@ describe("provider-constrained runtime mode controls", () => {
   it("labels the compact composer with Prime's fixed Full access requirement", () => {
     const markup = renderToStaticMarkup(
       <CompactComposerControlsMenu
-        activePlan={false}
         interactionMode="default"
-        planSidebarLabel="Plan"
-        planSidebarOpen={false}
         runtimeMode="full-access"
         supportedRuntimeModes={["full-access"]}
         showInteractionModeToggle={false}
         onToggleInteractionMode={noop}
-        onTogglePlanSidebar={noop}
         onRuntimeModeChange={noop}
       />,
     );

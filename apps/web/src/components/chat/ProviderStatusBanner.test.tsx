@@ -61,6 +61,7 @@ describe("ProviderStatusBanner", () => {
     );
 
     expect(markup).toContain('role="alert"');
+    expect(markup).toContain("alert-glass");
     expect(markup).toContain("Reconnect Claude to retry the last message automatically.");
     expect(markup).toContain("Reconnect Claude</button>");
     expect(markup).not.toContain('aria-label="Dismiss Codex provider error"');

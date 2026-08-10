@@ -72,6 +72,7 @@ export class ServerConfig extends Context.Service<
     readonly baseDir: string;
     readonly staticDir: string | undefined;
     readonly devUrl: URL | undefined;
+    readonly devAllowedOrigins: ReadonlyArray<string>;
     readonly noBrowser: boolean;
     readonly managedDevPc: boolean;
     /**
@@ -94,6 +95,9 @@ export class ServerConfig extends Context.Service<
     readonly managedGatewayToken?: string | undefined;
     readonly startupPresentation: StartupPresentation;
     readonly desktopBootstrapToken: string | undefined;
+    readonly desktopTelemetryFd?: number | undefined;
+    readonly desktopTelemetryControlFd?: number | undefined;
+    readonly resourceMonitorPath?: string | undefined;
     readonly autoBootstrapProjectFromCwd: boolean;
     readonly logWebSocketEvents: boolean;
     readonly tailscaleServeEnabled: boolean;
@@ -204,8 +208,12 @@ const makeTest = Effect.fn("ServerConfig.makeTest")(function* (
     port: 0,
     host: undefined,
     desktopBootstrapToken: undefined,
+    desktopTelemetryFd: undefined,
+    desktopTelemetryControlFd: undefined,
+    resourceMonitorPath: undefined,
     staticDir: undefined,
     devUrl,
+    devAllowedOrigins: [],
     noBrowser: false,
     managedDevPc: false,
     museCodeEnabled: true,

@@ -178,7 +178,9 @@ it.layer(NodeServices.layer)("MuseTextGeneration", (it) => {
           ).toEqual(["--reasoning-effort", "xhigh"]);
           const prompt = yield* fs.readFileString(capture.promptFile);
           expect(prompt).toContain("<output_schema>");
-          expect(prompt).toContain("You write concise thread titles");
+          expect(prompt).toContain(
+            "Generate a title that will help the user recognize this T3 Code thread",
+          );
         }),
     ),
   );

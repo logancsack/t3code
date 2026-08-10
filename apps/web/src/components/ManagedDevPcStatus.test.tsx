@@ -7,6 +7,16 @@ import type {
   ManagedDevPcWorkspaceState,
 } from "../managedDevPc";
 
+vi.mock("@tanstack/react-router", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@tanstack/react-router")>();
+  return {
+    ...actual,
+    useNavigate: () => () => Promise.resolve(),
+    useLocation: ({ select }: { select: (location: { hash: string }) => unknown }) =>
+      select({ hash: "" }),
+  };
+});
+
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();

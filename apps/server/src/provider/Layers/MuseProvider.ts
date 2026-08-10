@@ -35,7 +35,7 @@ const MUSE_PRESENTATION = {
 const VERSION_PROBE_TIMEOUT_MS = 4_000;
 const SKILLS_PROBE_TIMEOUT_MS = 4_000;
 const SKILLS_PROBE_MAX_OUTPUT_BYTES = 2 * 1024 * 1024;
-const decodeUnknownJson = Schema.decodeUnknownOption(Schema.UnknownFromJsonString);
+const decodeUnknownJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown));
 export const DEFAULT_MUSE_MODEL = "muse-spark-1.2";
 
 export const MUSE_REASONING_EFFORTS = [

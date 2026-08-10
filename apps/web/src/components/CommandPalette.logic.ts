@@ -1,6 +1,6 @@
 import {
-  type KeybindingCommand,
   type FilesystemBrowseEntry,
+  type KeybindingCommand,
   type SourceControlRepositorySummary,
   THREAD_JUMP_KEYBINDING_COMMANDS,
 } from "@t3tools/contracts";
@@ -13,7 +13,7 @@ import { formatRelativeTimeLabel } from "../timestampFormat";
 import { type Project, type SidebarThreadSummary, type Thread } from "../types";
 
 export const RECENT_THREAD_LIMIT = 12;
-export const ITEM_ICON_CLASS = "size-4 text-muted-foreground/80";
+export const ITEM_ICON_CLASS = "size-4 text-icon-muted";
 export const ADDON_ICON_CLASS = "size-4";
 
 export function getGitHubRepositoryCloneInput(
@@ -26,12 +26,68 @@ export function getGitHubRepositoryCloneInput(
   };
 }
 
+/**
+ * The global search overlay hosts three mutually exclusive surfaces: the
+ * command palette (⌘K), the project file picker (⌘P), and project content
+ * search (⇧⌘F). One reducer owns open/mode state so the surfaces can never
+ * stack and re-triggering a mode's shortcut toggles it closed.
+ */
+export type SearchOverlayMode = "command" | "files" | "content";
+
+export interface CommandPaletteOpenIntent {
+  readonly kind: "add-project" | "new-thread-in";
+}
+
+export interface CommandPaletteUiState {
+  readonly open: boolean;
+  readonly mode: SearchOverlayMode;
+  readonly openIntent: CommandPaletteOpenIntent | null;
+}
+
+export type CommandPaletteUiAction =
+  | { readonly _tag: "SetOpen"; readonly open: boolean }
+  | { readonly _tag: "ToggleMode"; readonly mode: SearchOverlayMode }
+  | { readonly _tag: "OpenAddProject" }
+  | { readonly _tag: "OpenNewThreadIn" }
+  | { readonly _tag: "ClearOpenIntent" };
+
+export function reduceCommandPaletteUiState(
+  state: CommandPaletteUiState,
+  action: CommandPaletteUiAction,
+): CommandPaletteUiState {
+  switch (action._tag) {
+    case "SetOpen":
+      return {
+        open: action.open,
+        mode: "command",
+        openIntent: action.open ? state.openIntent : null,
+      };
+    case "ToggleMode":
+      return state.open && state.mode === action.mode
+        ? { open: false, mode: "command", openIntent: null }
+        : { open: true, mode: action.mode, openIntent: null };
+    case "OpenAddProject":
+      return { open: true, mode: "command", openIntent: { kind: "add-project" } };
+    case "OpenNewThreadIn":
+      return { open: true, mode: "command", openIntent: { kind: "new-thread-in" } };
+    case "ClearOpenIntent":
+      return state.openIntent ? { ...state, openIntent: null } : state;
+  }
+}
+
+export interface CommandPaletteThreadContentMatch {
+  readonly source: "user" | "assistant";
+  readonly snippet: string;
+  readonly query: string;
+}
+
 export interface CommandPaletteItem {
   readonly kind: "action" | "submenu";
   readonly value: string;
   readonly searchTerms: ReadonlyArray<string>;
   readonly title: ReactNode;
-  readonly description?: string;
+  readonly description?: ReactNode;
+  readonly threadContentMatch?: CommandPaletteThreadContentMatch;
   readonly timestamp?: string;
   readonly icon: ReactNode;
   readonly disabled?: boolean;
@@ -81,38 +137,6 @@ export function enumerateCommandPaletteItems(
 
 export type CommandPaletteMode = "root" | "root-browse" | "submenu" | "submenu-browse";
 
-export function filterBrowseEntries(input: {
-  browseEntries: ReadonlyArray<FilesystemBrowseEntry>;
-  browseFilterQuery: string;
-  highlightedItemValue: string | null;
-}): {
-  filteredEntries: FilesystemBrowseEntry[];
-  highlightedEntry: FilesystemBrowseEntry | null;
-  exactEntry: FilesystemBrowseEntry | null;
-} {
-  const lowerFilter = input.browseFilterQuery.toLowerCase();
-  const showHidden = input.browseFilterQuery.startsWith(".");
-
-  const filteredEntries = input.browseEntries.filter(
-    (entry) =>
-      entry.name.toLowerCase().startsWith(lowerFilter) &&
-      (showHidden || !entry.name.startsWith(".")),
-  );
-
-  let highlightedEntry: FilesystemBrowseEntry | null = null;
-  if (input.highlightedItemValue?.startsWith("browse:")) {
-    const highlightedPath = input.highlightedItemValue.slice("browse:".length);
-    highlightedEntry = filteredEntries.find((entry) => entry.fullPath === highlightedPath) ?? null;
-  }
-
-  const exactEntry =
-    input.browseFilterQuery.length > 0
-      ? (filteredEntries.find((entry) => entry.name === input.browseFilterQuery) ?? null)
-      : null;
-
-  return { filteredEntries, highlightedEntry, exactEntry };
-}
-
 export function normalizeSearchText(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
 }
@@ -157,6 +181,7 @@ export function buildThreadActionItems<TThread extends BuildThreadActionItemsThr
   renderLeadingContent?: (thread: TThread) => ReactNode;
   /** Optional content rendered inline after the title text per-thread. */
   renderTrailingContent?: (thread: TThread) => ReactNode;
+  getContentMatch?: (thread: TThread) => CommandPaletteThreadContentMatch | undefined;
   runThread: (thread: Pick<SidebarThreadSummary, "environmentId" | "id">) => Promise<void>;
   limit?: number;
 }): CommandPaletteActionItem[] {
@@ -183,12 +208,18 @@ export function buildThreadActionItems<TThread extends BuildThreadActionItemsThr
 
     const leadingContent = input.renderLeadingContent?.(thread);
     const trailingContent = input.renderTrailingContent?.(thread);
+    const contentMatch = input.getContentMatch?.(thread);
 
     return Object.assign(
       {
         kind: "action" as const,
         value: `thread:${thread.id}`,
-        searchTerms: [thread.title, projectTitle ?? ``, thread.branch ?? ``],
+        searchTerms: [
+          thread.title,
+          projectTitle ?? ``,
+          thread.branch ?? ``,
+          contentMatch?.snippet ?? ``,
+        ],
         title: thread.title,
         description: descriptionParts.join(` · `),
         timestamp: formatRelativeTimeLabel(
@@ -198,6 +229,7 @@ export function buildThreadActionItems<TThread extends BuildThreadActionItemsThr
       },
       leadingContent ? { titleLeadingContent: leadingContent } : {},
       trailingContent ? { titleTrailingContent: trailingContent } : {},
+      contentMatch ? { threadContentMatch: contentMatch } : {},
       {
         run: async () => {
           await input.runThread(thread);
@@ -313,8 +345,8 @@ export function buildBrowseGroups(input: {
   canBrowseUp: boolean;
   upIcon: ReactNode;
   directoryIcon: ReactNode;
-  browseUp: () => void;
-  browseTo: (name: string) => void;
+  browseUp: () => void | Promise<void>;
+  browseTo: (name: string) => void | Promise<void>;
 }): CommandPaletteGroup[] {
   const items: CommandPaletteActionItem[] = [];
 
@@ -327,7 +359,7 @@ export function buildBrowseGroups(input: {
       icon: input.upIcon,
       keepOpen: true,
       run: async () => {
-        input.browseUp();
+        await input.browseUp();
       },
     });
   }
@@ -341,7 +373,7 @@ export function buildBrowseGroups(input: {
       icon: input.directoryIcon,
       keepOpen: true,
       run: async () => {
-        input.browseTo(entry.name);
+        await input.browseTo(entry.name);
       },
     });
   }

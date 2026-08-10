@@ -38,7 +38,7 @@ const GrokHeadlessEnvelope = Schema.Struct({
   structuredOutputError: Schema.optionalKey(Schema.String),
 });
 const decodeGrokHeadlessEnvelope = Schema.decodeEffect(Schema.fromJsonString(GrokHeadlessEnvelope));
-const encodeJsonString = Schema.encodeEffect(Schema.UnknownFromJsonString);
+const encodeJsonString = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 const isGrokReviewError = Schema.is(GrokReviewError);
 
 export interface GrokReviewAgentRequest<S extends Schema.Top> {

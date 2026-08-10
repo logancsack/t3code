@@ -30,6 +30,7 @@ dist-electron/
 .showcase/
 apps/mobile/.showcase/
 artifacts/app-store/screenshots/
+native/**/target/
 artifacts/devpc-t3-*/
 artifacts/devpc-t3-linux-x64.tar.gz
 artifacts/devpc-t3-linux-x64.tar.gz.sha256

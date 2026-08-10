@@ -10,7 +10,7 @@ import {
   parseMuseJsonLine,
 } from "./MuseProtocol.ts";
 
-const encodeUnknownJson = Schema.encodeUnknownSync(Schema.UnknownFromJsonString);
+const encodeUnknownJson = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
 
 const envelope = (payloadType: string, payload: Record<string, unknown>) =>
   encodeUnknownJson({

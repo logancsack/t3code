@@ -11,6 +11,10 @@ import * as Option from "effect/Option";
 import { Atom } from "effect/unstable/reactivity";
 
 import { runtimeContextLayer } from "../lib/runtime";
+import {
+  backgroundActivityObserverLayer,
+  backgroundActivityReporterLayer,
+} from "../lib/backgroundActivityReporter";
 import { connectionPlatformLayer } from "./platform";
 import { isLandingDemo } from "../landingDemo/mode";
 import { landingDemoRpcSessionLayer } from "../landingDemo/runtime";
@@ -40,10 +44,25 @@ type ConnectionLayerSource =
   | typeof Connection.layer
   | typeof snapshotLoaderLayer
   | typeof runtimeContextLayer
-  | typeof connectionPlatformLayer;
+  | typeof connectionPlatformLayer
+  | typeof backgroundActivityObserverLayer
+  | typeof backgroundActivityReporterLayer;
 
-const connectionLayer = Layer.merge(connectionServicesLayer, snapshotLoaderLayer).pipe(
-  Layer.provideMerge(Layer.mergeAll(runtimeContextLayer, providedConnectionPlatformLayer)),
+const providedClientConnectionLayer = Layer.merge(
+  connectionServicesLayer,
+  snapshotLoaderLayer,
+).pipe(
+  Layer.provideMerge(
+    Layer.mergeAll(
+      runtimeContextLayer,
+      providedConnectionPlatformLayer,
+      backgroundActivityObserverLayer,
+    ),
+  ),
+);
+
+const connectionLayer = backgroundActivityReporterLayer.pipe(
+  Layer.provideMerge(providedClientConnectionLayer),
 );
 
 export const connectionAtomRuntime: Atom.AtomRuntime<

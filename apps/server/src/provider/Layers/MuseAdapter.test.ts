@@ -24,7 +24,7 @@ const MUSE = ProviderDriverKind.make("muse");
 const MUSE_INSTANCE = ProviderInstanceId.make("muse");
 const MUSE_MODEL = "muse-spark-1.2";
 const decodeMuseSettings = Schema.decodeSync(MuseSettings);
-const encodeUnknownJson = Schema.encodeUnknownSync(Schema.UnknownFromJsonString);
+const encodeUnknownJson = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
 
 type CapturedCommand = {
   readonly command: string;

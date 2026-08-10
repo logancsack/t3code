@@ -152,19 +152,35 @@ export function useThreadStatus(ref: ScopedThreadRef | null): EnvironmentThreadS
   );
 }
 
-/**
- * Detail collections composed with shell-authoritative thread/workspace metadata.
- *
- * Detail is only subscribed once the shell lists the thread. `useThread` is what
- * ChatView and draft promotion use for provisional (pre-create) draft refs —
- * subscribing earlier 404s the snapshot endpoint and, after the missing-thread
- * threshold, permanently parks the id as deleted while the shell later shows
- * Working. Direct `useThreadDetail` callers (canonical deep links,
- * waitForStartedServerThread after create) intentionally bypass this gate.
- */
-export function useThread(ref: ScopedThreadRef | null): EnvironmentThread | null {
+export function resolveThreadDetailRef(
+  ref: ScopedThreadRef | null,
+  options: {
+    shellExists: boolean;
+    waitForShell: boolean;
+  },
+): ScopedThreadRef | null {
+  return ref !== null && (!options.waitForShell || options.shellExists) ? ref : null;
+}
+
+/** Detail collections composed with shell-authoritative thread/workspace metadata. */
+export function useThread(
+  ref: ScopedThreadRef | null,
+  options?: {
+    /**
+     * Client-reserved draft thread ids do not exist on the server until the
+     * first send. Waiting for the shell index avoids polling the detail
+     * endpoint for an intentionally missing thread during that window.
+     */
+    waitForShell?: boolean;
+  },
+): EnvironmentThread | null {
   const shell = useThreadShell(ref);
-  const detail = useThreadDetail(shell !== null ? ref : null);
+  const detail = useThreadDetail(
+    resolveThreadDetailRef(ref, {
+      shellExists: shell !== null,
+      waitForShell: options?.waitForShell === true,
+    }),
+  );
   return useMemo(() => mergeEnvironmentThread(detail, shell), [detail, shell]);
 }
 
@@ -222,6 +238,24 @@ export function readEnvironmentSupportsSnooze(environmentId: EnvironmentId): boo
   return (
     appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId)?.environment.capabilities
       .threadSnooze === true
+  );
+}
+
+/** Whether the environment's server understands thread.pin/unpin.
+    Same version-skew contract as settlement. */
+export function readEnvironmentSupportsPinning(environmentId: EnvironmentId): boolean {
+  return (
+    appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId)?.environment.capabilities
+      .threadPinning === true
+  );
+}
+
+/** Whether the environment's server understands thread title regeneration.
+    Same version-skew contract as settlement. */
+export function readEnvironmentSupportsTitleRegeneration(environmentId: EnvironmentId): boolean {
+  return (
+    appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId)?.environment.capabilities
+      .threadTitleRegeneration === true
   );
 }
 

@@ -1,3 +1,5 @@
+// @effect-diagnostics nodeBuiltinImport:off
+import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 
 import { assert, expect, it } from "@effect/vitest";
@@ -41,13 +43,14 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
   const defaultRuntimeConfig = {
     traceMinLevel: "Info",
     traceTimingEnabled: true,
-    traceBatchWindowMs: 200,
+    traceBatchWindowMs: 1_000,
     traceMaxBytes: 10 * 1024 * 1024,
     traceMaxFiles: 10,
     otlpTracesUrl: undefined,
     otlpMetricsUrl: undefined,
     otlpExportIntervalMs: 10_000,
     otlpServiceName: "t3-server",
+    devAllowedOrigins: [],
     museCodeEnabled: true,
     primeAgentSubscriptionOAuthEnabled: false,
   } as const;
@@ -57,8 +60,10 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
     const filePath = yield* fs.makeTempFileScoped({ prefix: "t3-bootstrap-", suffix: ".ndjson" });
     const encoded = yield* encodeDesktopBootstrap(payload);
     yield* fs.writeFileString(filePath, `${encoded}\n`);
-    const { fd } = yield* fs.open(filePath, { flag: "r" });
-    return fd;
+    return yield* Effect.acquireRelease(
+      Effect.sync(() => NodeFS.openSync(filePath, "r")),
+      (fd) => Effect.sync(() => NodeFS.closeSync(fd)),
+    );
   });
 
   const noServerFlags = {
@@ -195,6 +200,8 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
                   T3CODE_HOST: "0.0.0.0",
                   T3CODE_HOME: baseDir,
                   VITE_DEV_SERVER_URL: "http://127.0.0.1:5173",
+                  T3CODE_DEV_ALLOWED_ORIGINS:
+                    "https://host.example.ts.net, https://phone.example.ts.net ",
                   T3CODE_NO_BROWSER: "true",
                   T3CODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD: "false",
                   T3CODE_LOG_WS_EVENTS: "true",
@@ -218,6 +225,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
         host: "0.0.0.0",
         staticDir: undefined,
         devUrl: new URL("http://127.0.0.1:5173"),
+        devAllowedOrigins: ["https://host.example.ts.net", "https://phone.example.ts.net"],
         noBrowser: true,
         managedDevPc: false,
         museCodeEnabled: false,
@@ -387,6 +395,8 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
           t3Home: baseDir,
           noBrowser: true,
           desktopBootstrapToken: "desktop-token",
+          desktopTelemetryFd: 4,
+          desktopTelemetryControlFd: 5,
           tailscaleServeEnabled: false,
           tailscaleServePort: 443,
           otlpTracesUrl: "http://localhost:4318/v1/traces",
@@ -443,12 +453,17 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
         managedDevPc: false,
         startupPresentation: "browser",
         desktopBootstrapToken: "desktop-token",
+        desktopTelemetryFd: 4,
+        desktopTelemetryControlFd: 5,
+        resourceMonitorPath: undefined,
         autoBootstrapProjectFromCwd: false,
         logWebSocketEvents: false,
         tailscaleServeEnabled: false,
         tailscaleServePort: 443,
       });
       assert.equal(join(baseDir, "userdata"), resolved.stateDir);
+      assert.equal(resolved.desktopTelemetryFd, 4);
+      assert.equal(resolved.desktopTelemetryControlFd, 5);
     }),
   );
 
