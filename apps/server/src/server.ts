@@ -660,7 +660,7 @@ export const makeServerLayer = Layer.unwrap(
     const routesLayer = HttpRouter.serve(
       makeApplicationRoutesLayer.pipe(Layer.provide(launcherLayer)),
       {
-      disableLogger: !config.logWebSocketEvents,
+        disableLogger: !config.logWebSocketEvents,
       },
     ).pipe(Layer.tap(() => Deferred.succeed(routesReady, undefined).pipe(Effect.orDie)));
     const serverApplicationLayer = Layer.mergeAll(
