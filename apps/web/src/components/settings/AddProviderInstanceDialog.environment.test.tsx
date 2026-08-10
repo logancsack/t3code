@@ -8,6 +8,10 @@ const settingsHooks = vi.hoisted(() => ({
   update: vi.fn(() => vi.fn()),
 }));
 
+const serverState = vi.hoisted(() => ({
+  configAtom: Symbol("config"),
+}));
+
 vi.mock("react", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react")>();
   const { reactHookHarness } = await import("../../test/reactHookHarness");
@@ -22,6 +26,17 @@ vi.mock("react/compiler-runtime", async () => {
   const { reactHookHarness } = await import("../../test/reactHookHarness");
   return { c: reactHookHarness.useMemoCache };
 });
+
+vi.mock("@effect/atom-react", () => ({
+  useAtomValue: (atom: symbol) => (atom === serverState.configAtom ? { providers: [] } : null),
+}));
+
+vi.mock("../../state/server", () => ({
+  EMPTY_SERVER_PROVIDERS: [],
+  serverEnvironment: {
+    configValueAtom: () => serverState.configAtom,
+  },
+}));
 
 vi.mock("../../hooks/useSettings", () => ({
   useEnvironmentSettings: settingsHooks.read,
