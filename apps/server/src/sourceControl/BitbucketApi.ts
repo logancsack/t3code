@@ -13,7 +13,10 @@ import {
   type SourceControlRepositoryVisibility,
 } from "@t3tools/contracts";
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http";
-import { sanitizeBranchFragment } from "@t3tools/shared/git";
+import {
+  pullRequestWorktreeBranchNameCandidates,
+  sanitizeBranchFragment,
+} from "@t3tools/shared/git";
 import { detectSourceControlProviderFromRemoteUrl } from "@t3tools/shared/sourceControl";
 
 import {
@@ -432,7 +435,10 @@ function checkoutBranchName(input: {
     return input.headBranch;
   }
 
-  return `t3code/pr-${input.pullRequestId}/${sanitizeBranchFragment(input.headBranch)}`;
+  return pullRequestWorktreeBranchNameCandidates(
+    input.pullRequestId,
+    sanitizeBranchFragment(input.headBranch),
+  )[0]!;
 }
 
 function repositoryNameWithOwner(
