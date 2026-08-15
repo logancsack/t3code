@@ -21,6 +21,7 @@ import {
 
 import { PrimaryEnvironmentHttpClient } from "./httpClient";
 import { runPrimaryHttp } from "../../lib/runtime";
+import { isManagedWorkspaceSleeping } from "../../managedDevPc";
 
 const PrimaryEnvironmentRequestOperation = Schema.Literals([
   "fetch-session-state",
@@ -318,6 +319,12 @@ function isTransientBootstrapError(error: unknown): boolean {
 }
 
 async function bootstrapServerAuth(): Promise<ServerAuthGateState> {
+  // The Aldo gateway has already authenticated and authorized this browser for
+  // its workspace. Requiring the sleeping guest to repeat that check would
+  // make a cached managed shell impossible to open without waking the VM.
+  if (isManagedWorkspaceSleeping()) {
+    return { status: "authenticated" };
+  }
   const bootstrapCredential = getDesktopBootstrapCredential();
   const currentSession = await fetchSessionState();
   if (currentSession.authenticated) {

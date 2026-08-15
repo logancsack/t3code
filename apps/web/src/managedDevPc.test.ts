@@ -1,4 +1,10 @@
-import { CommandId, ThreadId, type ClientOrchestrationCommand } from "@t3tools/contracts";
+import {
+  CommandId,
+  EnvironmentId,
+  ThreadId,
+  type ClientOrchestrationCommand,
+  type ExecutionEnvironmentDescriptor,
+} from "@t3tools/contracts";
 import * as NodeCrypto from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
@@ -6,6 +12,23 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
 });
+
+const MANAGED_DESCRIPTOR = {
+  environmentId: EnvironmentId.make("environment-managed"),
+  label: "Managed workspace",
+  platform: { os: "linux", arch: "x64" },
+  serverVersion: "0.0.0-test",
+  capabilities: { repositoryIdentity: true },
+} satisfies ExecutionEnvironmentDescriptor;
+
+function memoryLocalStorage(initial: Record<string, string> = {}) {
+  const values = new Map(Object.entries(initial));
+  return {
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => values.set(key, value),
+    removeItem: (key: string) => values.delete(key),
+  };
+}
 
 describe("managed DevPC preview URLs", () => {
   it("fills the managed port template and preserves the requested path", async () => {
@@ -434,7 +457,7 @@ describe("managed DevPC paused bootstrap", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it("renders a stopped workspace without mounting a wake prompt", async () => {
+  it("renders a cached stopped workspace without waking it", async () => {
     vi.stubEnv("VITE_DEVPC_MANAGED", "1");
     vi.resetModules();
     vi.stubGlobal("document", {
@@ -442,6 +465,9 @@ describe("managed DevPC paused bootstrap", () => {
     });
     vi.stubGlobal("window", {
       location: { hash: "" },
+      localStorage: memoryLocalStorage({
+        "t3-managed-primary-environment-descriptor-v1": JSON.stringify(MANAGED_DESCRIPTOR),
+      }),
       setTimeout: (callback: () => void) => {
         callback();
         return 1;
@@ -496,11 +522,9 @@ describe("managed DevPC paused bootstrap", () => {
     });
     vi.stubGlobal("window", {
       location: { hash: "" },
-      localStorage: {
-        getItem: vi.fn(() => null),
-        setItem: vi.fn(),
-        removeItem: vi.fn(),
-      },
+      localStorage: memoryLocalStorage({
+        "t3-managed-primary-environment-descriptor-v1": JSON.stringify(MANAGED_DESCRIPTOR),
+      }),
       setTimeout: (callback: () => void) => {
         callback();
         return 1;
@@ -534,33 +558,15 @@ describe("managed DevPC paused bootstrap", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("does not issue an implicit resume when a stopped bootstrap is returned", async () => {
+  it("performs a one-time wake when an older browser has no descriptor cache", async () => {
     vi.stubEnv("VITE_DEVPC_MANAGED", "1");
     vi.resetModules();
-    type Listener = () => void;
-    const makeElement = () => {
-      let click: Listener | undefined;
-      return {
-        className: "",
-        textContent: "",
-        type: "",
-        disabled: false,
-        classList: { add: vi.fn(), remove: vi.fn() },
-        append: vi.fn(),
-        replaceChildren: vi.fn(),
-        addEventListener: (_type: string, listener: Listener) => {
-          click = listener;
-        },
-        focus: () => queueMicrotask(() => click?.()),
-      };
-    };
-    const root = makeElement();
     vi.stubGlobal("document", {
-      getElementById: vi.fn(() => root),
-      createElement: vi.fn(() => makeElement()),
+      getElementById: vi.fn(() => null),
     });
     vi.stubGlobal("window", {
       location: { hash: "" },
+      localStorage: memoryLocalStorage(),
       setTimeout: (callback: () => void) => {
         callback();
         return 1;
@@ -577,17 +583,16 @@ describe("managed DevPC paused bootstrap", () => {
           previewUrlTemplate: "https://{port}.preview.example.test/",
         }),
       )
-      .mockRejectedValueOnce(new Error("response lost"))
+      .mockResolvedValueOnce(Response.json({ state: "starting" }, { status: 202 }))
       .mockResolvedValueOnce(
         Response.json({
           managed: true,
-          state: "stopped",
-          status: "stopped",
+          state: "starting",
+          status: "starting",
           ready: false,
           previewUrlTemplate: "https://{port}.preview.example.test/",
         }),
       )
-      .mockResolvedValueOnce(Response.json({ state: "starting" }))
       .mockResolvedValueOnce(
         Response.json({
           managed: true,
@@ -602,39 +607,22 @@ describe("managed DevPC paused bootstrap", () => {
     const { prepareManagedDevPc } = await import("./managedDevPc");
     await prepareManagedDevPc();
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(fetchMock.mock.calls[1]?.[0]).toBe("/_devpc/workspace/start");
+    expect((fetchMock.mock.calls[1]?.[1] as RequestInit | undefined)?.headers).toMatchObject({
+      "idempotency-key": expect.stringMatching(/^bootstrap-/),
+    });
   });
 
-  it("leaves explicit resume retry handling to lifecycle controls", async () => {
+  it("surfaces a rejected one-time upgrade wake", async () => {
     vi.stubEnv("VITE_DEVPC_MANAGED", "1");
     vi.resetModules();
-    type Listener = () => void;
-    let resumeClick: Listener | undefined;
-    const makeElement = () => {
-      return {
-        className: "",
-        textContent: "",
-        type: "",
-        disabled: false,
-        classList: {
-          add: vi.fn(),
-          remove: vi.fn(() => queueMicrotask(() => resumeClick?.())),
-        },
-        append: vi.fn(),
-        replaceChildren: vi.fn(),
-        addEventListener: (_type: string, listener: Listener) => {
-          resumeClick = listener;
-        },
-        focus: () => queueMicrotask(() => resumeClick?.()),
-      };
-    };
-    const root = makeElement();
     vi.stubGlobal("document", {
-      getElementById: vi.fn(() => root),
-      createElement: vi.fn(() => makeElement()),
+      getElementById: vi.fn(() => null),
     });
     vi.stubGlobal("window", {
       location: { hash: "" },
+      localStorage: memoryLocalStorage(),
       setTimeout: (callback: () => void) => {
         callback();
         return 1;
@@ -651,23 +639,15 @@ describe("managed DevPC paused bootstrap", () => {
           previewUrlTemplate: "https://{port}.preview.example.test/",
         }),
       )
-      .mockResolvedValueOnce(new Response(null, { status: 409 }))
-      .mockResolvedValueOnce(Response.json({ state: "starting" }))
-      .mockResolvedValueOnce(
-        Response.json({
-          managed: true,
-          state: "ready",
-          status: "running",
-          ready: true,
-          previewUrlTemplate: "https://{port}.preview.example.test/",
-        }),
-      );
+      .mockResolvedValueOnce(new Response(null, { status: 409 }));
     vi.stubGlobal("fetch", fetchMock);
 
     const { prepareManagedDevPc } = await import("./managedDevPc");
-    await prepareManagedDevPc();
+    await expect(prepareManagedDevPc()).rejects.toThrow(
+      "The workspace could not be resumed to finish this one-time upgrade.",
+    );
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });
 
