@@ -7,7 +7,7 @@ import {
   TurnId,
   type ClientOrchestrationCommand,
 } from "@t3tools/contracts";
-import { describe, expect, it } from "@effect/vitest";
+import { afterEach, describe, expect, it } from "@effect/vitest";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -28,8 +28,13 @@ import {
   settleThread,
   stopThreadSession,
   retryThreadTurn,
+  setOrchestrationCommandDispatchOverride,
   unsettleThread,
 } from "./commands.ts";
+
+afterEach(() => {
+  setOrchestrationCommandDispatchOverride(null);
+});
 
 const TEST_CRYPTO_LAYER = Layer.succeed(
   Crypto.Crypto,
@@ -75,6 +80,41 @@ const makeSupervisor = Effect.fn("TestEnvironmentCommands.makeSupervisor")(funct
 });
 
 describe("environment commands", () => {
+  it.effect("uses the host dispatch override while the primary connection is offline", () =>
+    Effect.gen(function* () {
+      const supervisor = yield* makeSupervisor([]);
+      const offlineSupervisor = EnvironmentSupervisor.EnvironmentSupervisor.of({
+        ...supervisor,
+        session: yield* SubscriptionRef.make(Option.none<RpcSession.RpcSession>()),
+      });
+      const queued: ClientOrchestrationCommand[] = [];
+      setOrchestrationCommandDispatchOverride(async ({ command, environmentId, primary }) => {
+        queued.push(command);
+        expect(environmentId).toBe("environment-1");
+        expect(primary).toBe(true);
+        return { sequence: 0 };
+      });
+
+      const result = yield* stopThreadSession({
+        commandId: CommandId.make("queued-while-asleep"),
+        threadId: ThreadId.make("thread-1"),
+        createdAt: "2026-08-14T20:00:00.000Z",
+      }).pipe(
+        Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, offlineSupervisor),
+      );
+
+      expect(result).toEqual({ sequence: 0 });
+      expect(queued).toEqual([
+        {
+          type: "thread.session.stop",
+          commandId: "queued-while-asleep",
+          threadId: "thread-1",
+          createdAt: "2026-08-14T20:00:00.000Z",
+        },
+      ]);
+    }).pipe(Effect.provide(TEST_CRYPTO_LAYER)),
+  );
+
   it.effect("adds generated command metadata", () =>
     Effect.gen(function* () {
       const dispatched: ClientOrchestrationCommand[] = [];

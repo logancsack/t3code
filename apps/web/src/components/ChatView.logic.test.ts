@@ -40,7 +40,7 @@ const threadId = ThreadId.make("thread-1");
 const now = "2026-03-29T00:00:00.000Z";
 
 describe("managed primary recovery", () => {
-  it.each(["connecting", "reconnecting"])(
+  it.each(["connecting", "reconnecting", "offline"])(
     "keeps the managed primary surface interactive while %s",
     (connectionPhase) => {
       expect(

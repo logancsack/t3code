@@ -16,13 +16,14 @@ import {
   syncDocumentWindowControlsOverlayClass,
 } from "./lib/windowControlsOverlay";
 import { AppRoot } from "./AppRoot";
-import { prepareManagedDevPc } from "./managedDevPc";
+import { installManagedCommandDispatch, prepareManagedDevPc } from "./managedDevPc";
 import { initializeLandingDemoClientSettings } from "./hooks/useSettings";
 import { isLandingDemo } from "./landingDemo/mode";
 
 async function renderApp() {
   const landingDemo = isLandingDemo();
   if (!landingDemo) {
+    installManagedCommandDispatch();
     await prepareManagedDevPc();
   } else {
     initializeLandingDemoClientSettings();

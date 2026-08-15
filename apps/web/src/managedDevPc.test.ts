@@ -1,3 +1,5 @@
+import { CommandId, ThreadId, type ClientOrchestrationCommand } from "@t3tools/contracts";
+import * as NodeCrypto from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 afterEach(() => {
@@ -432,7 +434,7 @@ describe("managed DevPC paused bootstrap", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it("continues polling when the resume surface has no root element to mount into", async () => {
+  it("renders a stopped workspace without mounting a wake prompt", async () => {
     vi.stubEnv("VITE_DEVPC_MANAGED", "1");
     vi.resetModules();
     vi.stubGlobal("document", {
@@ -470,10 +472,10 @@ describe("managed DevPC paused bootstrap", () => {
     const { prepareManagedDevPc } = await import("./managedDevPc");
     await prepareManagedDevPc();
 
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps polling while a resume prompt is open in another tab", async () => {
+  it("does not keep polling a stopped workspace while another tab is open", async () => {
     vi.stubEnv("VITE_DEVPC_MANAGED", "1");
     vi.resetModules();
     const makeElement = () => ({
@@ -529,10 +531,10 @@ describe("managed DevPC paused bootstrap", () => {
     const { prepareManagedDevPc } = await import("./managedDevPc");
     await prepareManagedDevPc();
 
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("continues bootstrap polling when an accepted resume response may have been lost", async () => {
+  it("does not issue an implicit resume when a stopped bootstrap is returned", async () => {
     vi.stubEnv("VITE_DEVPC_MANAGED", "1");
     vi.resetModules();
     type Listener = () => void;
@@ -600,15 +602,10 @@ describe("managed DevPC paused bootstrap", () => {
     const { prepareManagedDevPc } = await import("./managedDevPc");
     await prepareManagedDevPc();
 
-    expect(fetchMock).toHaveBeenCalledTimes(5);
-    expect(fetchMock.mock.calls[1]?.[0]).toBe("/_devpc/workspace/start");
-    expect(fetchMock.mock.calls[3]?.[0]).toBe("/_devpc/workspace/start");
-    expect((fetchMock.mock.calls[1]?.[1] as RequestInit | undefined)?.headers).toEqual(
-      (fetchMock.mock.calls[3]?.[1] as RequestInit | undefined)?.headers,
-    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("lets the user retry a definitively rejected resume with the same key", async () => {
+  it("leaves explicit resume retry handling to lifecycle controls", async () => {
     vi.stubEnv("VITE_DEVPC_MANAGED", "1");
     vi.resetModules();
     type Listener = () => void;
@@ -670,17 +667,70 @@ describe("managed DevPC paused bootstrap", () => {
     const { prepareManagedDevPc } = await import("./managedDevPc");
     await prepareManagedDevPc();
 
-    expect(fetchMock).toHaveBeenCalledTimes(4);
-    expect(fetchMock.mock.calls[1]?.[0]).toBe("/_devpc/workspace/start");
-    expect(fetchMock.mock.calls[2]?.[0]).toBe("/_devpc/workspace/start");
-    const firstHeaders = (fetchMock.mock.calls[1]?.[1] as RequestInit | undefined)?.headers as
-      | Record<string, string>
-      | undefined;
-    const retryHeaders = (fetchMock.mock.calls[2]?.[1] as RequestInit | undefined)?.headers as
-      | Record<string, string>
-      | undefined;
-    expect(firstHeaders?.["idempotency-key"]).toMatch(/^resume-/);
-    expect(retryHeaders?.["idempotency-key"]).toBe(firstHeaders?.["idempotency-key"]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("managed DevPC command dispatch", () => {
+  it("seals a command and preserves its idempotency key", async () => {
+    vi.stubEnv("VITE_DEVPC_MANAGED", "1");
+    vi.resetModules();
+    const keyPair = await NodeCrypto.webcrypto.subtle.generateKey(
+      {
+        name: "RSA-OAEP",
+        modulusLength: 2048,
+        publicExponent: new Uint8Array([1, 0, 1]),
+        hash: "SHA-256",
+      },
+      true,
+      ["encrypt", "decrypt"],
+    );
+    const publicKey = Buffer.from(
+      await NodeCrypto.webcrypto.subtle.exportKey("spki", keyPair.publicKey),
+    ).toString("base64");
+    vi.stubGlobal("window", {
+      crypto: NodeCrypto.webcrypto,
+      atob,
+      btoa,
+      __DEVPC_MANAGED_BOOTSTRAP__: {
+        managed: true,
+        state: "stopped",
+        ready: false,
+        dispatchPublicKey: publicKey,
+        previewUrlTemplate: "https://{port}.preview.example.test/",
+      },
+    });
+    const fetchMock = vi.fn(async (_input: string, _init?: RequestInit) =>
+      Response.json({ queued: true }, { status: 202 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const command: ClientOrchestrationCommand = {
+      type: "thread.session.stop",
+      commandId: CommandId.make("sealed-command"),
+      threadId: ThreadId.make("thread-1"),
+      createdAt: "2026-08-14T20:00:00.000Z",
+    };
+
+    const { queueManagedCommand } = await import("./managedDevPc");
+    await expect(queueManagedCommand(command)).resolves.toEqual({ sequence: 0 });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const call = fetchMock.mock.calls[0];
+    if (!call) throw new Error("Dispatch request was not recorded");
+    const [path, init] = call;
+    expect(path).toBe("/_devpc/dispatches");
+    expect(init?.headers).toMatchObject({ "idempotency-key": "sealed-command" });
+    const bodyText = String(init?.body);
+    expect(bodyText).not.toContain("thread.session.stop");
+    expect(JSON.parse(bodyText)).toMatchObject({
+      commandId: "sealed-command",
+      sealed: {
+        version: 1,
+        encryptedKey: expect.any(String),
+        iv: expect.any(String),
+        ciphertext: expect.any(String),
+      },
+    });
   });
 });
 
