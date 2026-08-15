@@ -1,3 +1,6 @@
+import type { ClientOrchestrationCommand } from "@t3tools/contracts";
+import { setOrchestrationCommandDispatchOverride } from "@t3tools/client-runtime/operations";
+
 import { randomUUID } from "./lib/utils";
 
 export type ManagedDevPcWorkspaceState =
@@ -50,6 +53,8 @@ export interface ManagedDevPcBootstrap {
   readonly connected?: boolean;
   readonly requiresResume?: boolean;
   readonly pairingToken?: string;
+  /** RSA-OAEP SPKI public key used to seal commands while the workspace is asleep. */
+  readonly dispatchPublicKey?: string;
   readonly previewUrlTemplate: string;
   readonly previewUrls?: Readonly<Record<string, string>>;
   readonly region?: string | null;
@@ -74,6 +79,7 @@ export const isManagedDevPc = import.meta.env.VITE_DEVPC_MANAGED === "1";
 const BOOTSTRAP_PATH = "/_devpc/bootstrap";
 const START_PATH = "/_devpc/workspace/start";
 const WEBSOCKET_TICKET_PATH = "/_devpc/ws-ticket";
+const DISPATCH_PATH = "/_devpc/dispatches";
 export const MANAGED_WORKSPACE_ACTION_STORAGE_KEY = "devpc-managed-workspace-action";
 export const MANAGED_WORKSPACE_ACTION_CLEARED_EVENT = "devpc-managed-workspace-action-cleared";
 const SESSION_RECOVERY_KEY = "devpc-managed-session-recovery-at";
@@ -84,6 +90,114 @@ let sessionRecoveryReloadScheduled = false;
 let bootstrapResumeRequestKey: string | undefined;
 let bootstrapResumeUsesSharedStorage = false;
 let lastAnnouncedWakeState: string | undefined;
+
+interface ManagedSealedDispatch {
+  readonly version: 1;
+  readonly encryptedKey: string;
+  readonly iv: string;
+  readonly ciphertext: string;
+}
+
+function decodeBase64(value: string): Uint8Array<ArrayBuffer> {
+  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+  const decoded = window.atob(padded);
+  return Uint8Array.from(decoded, (character) => character.charCodeAt(0));
+}
+
+function encodeBase64Url(value: ArrayBuffer): string {
+  const bytes = new Uint8Array(value);
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return window.btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+async function sealManagedCommand(
+  publicKey: string,
+  command: ClientOrchestrationCommand,
+): Promise<ManagedSealedDispatch> {
+  const rsaKey = await window.crypto.subtle.importKey(
+    "spki",
+    decodeBase64(publicKey),
+    { name: "RSA-OAEP", hash: "SHA-256" },
+    false,
+    ["encrypt"],
+  );
+  const contentKey = await window.crypto.subtle.generateKey(
+    { name: "AES-GCM", length: 256 },
+    true,
+    ["encrypt"],
+  );
+  const rawContentKey = await window.crypto.subtle.exportKey("raw", contentKey);
+  const encryptedKey = await window.crypto.subtle.encrypt(
+    { name: "RSA-OAEP" },
+    rsaKey,
+    rawContentKey,
+  );
+  const iv = window.crypto.getRandomValues(new Uint8Array(12));
+  const ciphertext = await window.crypto.subtle.encrypt(
+    { name: "AES-GCM", iv },
+    contentKey,
+    new TextEncoder().encode(JSON.stringify(command)),
+  );
+  return {
+    version: 1,
+    encryptedKey: encodeBase64Url(encryptedKey),
+    iv: encodeBase64Url(iv.buffer),
+    ciphertext: encodeBase64Url(ciphertext),
+  };
+}
+
+/** Route primary managed commands through Aldo's durable wake queue. */
+export function installManagedCommandDispatch(): void {
+  if (!isManagedDevPc) return;
+  setOrchestrationCommandDispatchOverride(async ({ command, primary }) => {
+    if (!primary) return null;
+    if (managedCommandRequiresLiveTransport(command)) {
+      await requestManagedResume(`dispatch-${command.commandId}`);
+      return null;
+    }
+    const queued = await queueManagedCommand(command);
+    if (queued) return queued;
+    // One-time compatibility for a workspace paused before its guest runtime
+    // published a sealing key. Wake it explicitly, then let the normal RPC
+    // request wait for the relay; future commands use the durable queue.
+    await requestManagedResume(`dispatch-${command.commandId}`);
+    return null;
+  });
+}
+
+export function managedCommandRequiresLiveTransport(command: ClientOrchestrationCommand): boolean {
+  // Attachment data URLs can reach tens of megabytes. Keep those in T3's
+  // existing streamed/live path instead of copying them through PostgreSQL;
+  // requestWhenConnected retains the command while Morph wakes.
+  return command.type === "thread.turn.start" && command.message.attachments.length > 0;
+}
+
+export async function queueManagedCommand(
+  command: ClientOrchestrationCommand,
+): Promise<{ readonly sequence: number } | null> {
+  const publicKey = window.__DEVPC_MANAGED_BOOTSTRAP__?.dispatchPublicKey;
+  if (!publicKey) return null;
+  const response = await fetch(DISPATCH_PATH, {
+    method: "POST",
+    credentials: "same-origin",
+    cache: "no-store",
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
+      "idempotency-key": command.commandId,
+    },
+    body: JSON.stringify({
+      commandId: command.commandId,
+      sealed: await sealManagedCommand(publicKey, command),
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(`Aldo could not queue the command (${response.status}).`);
+  }
+  return { sequence: 0 };
+}
 
 export function isAmbiguousLifecycleResponse(status: number): boolean {
   return status === 408 || status >= 500;
@@ -543,7 +657,7 @@ export async function requestManagedResume(
   }
 }
 
-function waitForManagedResume(
+export function waitForManagedResume(
   resumeRequestKey = `resume-${randomUUID()}`,
 ): Promise<{ requestKey: string; uncertain: boolean } | null> {
   return new Promise((resolve) => {
@@ -659,17 +773,12 @@ function scheduleManagedSessionRecovery(): boolean {
 export async function prepareManagedDevPc(): Promise<void> {
   if (!isManagedDevPc) return;
 
-  let wakeStartedAt = Date.now();
+  const wakeStartedAt = Date.now();
   const showWakeProgress = (message: string, phase: ManagedWakePhase = "machine") => {
     updateBootstrapMessage(message, false, phase, Date.now() - wakeStartedAt);
   };
   showWakeProgress("Checking your workspace status…");
-  const persistedResume = readPersistedManagedResume();
   let failures = 0;
-  let resumeAccepted = persistedResume?.accepted ?? false;
-  let resumeRequestKey = persistedResume?.requestKey;
-  let resumeUncertain = persistedResume?.uncertain ?? false;
-  let resumeWaitPolls = 0;
   while (true) {
     try {
       const response = await fetch(BOOTSTRAP_PATH, {
@@ -697,57 +806,11 @@ export async function prepareManagedDevPc(): Promise<void> {
         return;
       }
       if (requiresManagedResume(bootstrap)) {
-        failures = 0;
-        if (shouldRepromptManagedResume(resumeAccepted, resumeWaitPolls)) {
-          if (resumeRequestKey) clearStoredManagedWorkspaceAction("resume", resumeRequestKey);
-          resumeAccepted = false;
-          resumeRequestKey = undefined;
-          resumeUncertain = false;
-          resumeWaitPolls = 0;
-        }
-        if (shouldPromptManagedResume(bootstrap, resumeAccepted)) {
-          const result = await waitForManagedResume(resumeRequestKey);
-          if (!result) continue;
-          resumeRequestKey = result.requestKey;
-          resumeUncertain = result.uncertain;
-          resumeAccepted = true;
-          resumeWaitPolls = 0;
-          wakeStartedAt = Date.now();
-        } else {
-          resumeWaitPolls += 1;
-          showWakeProgress("Resuming your workspace…", managedWakePhase(bootstrap));
-          if (resumeUncertain && resumeRequestKey) {
-            const outcome = await requestManagedResume(resumeRequestKey);
-            if (outcome === "accepted") {
-              resumeUncertain = false;
-            } else if (outcome === "superseded") {
-              const supersedingResume = readPersistedManagedResume();
-              resumeAccepted = supersedingResume !== null;
-              resumeRequestKey = supersedingResume?.requestKey;
-              resumeUncertain = supersedingResume?.uncertain ?? false;
-            } else if (outcome === "rejected") {
-              resumeAccepted = false;
-              resumeUncertain = false;
-            }
-          }
-        }
-        await new Promise((resolve) => window.setTimeout(resolve, 1_500));
-        continue;
+        // Rendering an intentionally sleeping workspace must not wake it. The
+        // cached shell stays usable and the first durable command performs the
+        // wake. Explicit lifecycle controls still use requestManagedResume.
+        return;
       }
-      if (resumeRequestKey && isManagedResumeTransition(bootstrap)) {
-        resumeAccepted = true;
-        resumeUncertain = false;
-        resumeWaitPolls = 0;
-        failures = 0;
-        showWakeProgress("Resuming your workspace…", managedWakePhase(bootstrap));
-        await new Promise((resolve) => window.setTimeout(resolve, 1_500));
-        continue;
-      }
-      if (resumeRequestKey) clearStoredManagedWorkspaceAction("resume", resumeRequestKey);
-      resumeAccepted = false;
-      resumeRequestKey = undefined;
-      resumeUncertain = false;
-      resumeWaitPolls = 0;
       failures = 0;
       showWakeProgress(
         bootstrap.detail ?? "The workspace is still starting…",

@@ -12,7 +12,10 @@ import { hasRunningPrimeAgentSubagents } from "./provider/PrimeAgentActivity.ts"
 export const MANAGED_DEVPC_ACTIVITY_PATH = "/api/_devpc/activity";
 const MANAGED_GATEWAY_HEADER = "x-devpc-gateway-token";
 
-function tokenMatches(actual: string | undefined, expected: string | undefined): boolean {
+export function managedGatewayTokenMatches(
+  actual: string | undefined,
+  expected: string | undefined,
+): boolean {
   if (!actual || !expected) return false;
   const actualBytes = Buffer.from(actual);
   const expectedBytes = Buffer.from(expected);
@@ -91,7 +94,7 @@ const handleManagedDevPcActivity = Effect.gen(function* () {
   const config = yield* ServerConfig.ServerConfig;
   if (
     !config.managedDevPc ||
-    !tokenMatches(request.headers[MANAGED_GATEWAY_HEADER], config.managedGatewayToken)
+    !managedGatewayTokenMatches(request.headers[MANAGED_GATEWAY_HEADER], config.managedGatewayToken)
   ) {
     return HttpServerResponse.jsonUnsafe(
       { error: { code: "NOT_FOUND", message: "Activity route not found." } },

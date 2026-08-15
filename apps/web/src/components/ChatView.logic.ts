@@ -48,7 +48,7 @@ export function shouldQuietlyRecoverManagedPrimaryEnvironment(input: {
     input.managed &&
     input.activeEnvironmentId !== null &&
     input.activeEnvironmentId === input.primaryEnvironmentId &&
-    ["connecting", "reconnecting"].includes(input.connectionPhase),
+    ["connecting", "reconnecting", "offline"].includes(input.connectionPhase),
   );
 }
 

@@ -7,11 +7,11 @@ import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 
-import type { EnvironmentSupervisor } from "../connection/supervisor.ts";
+import { EnvironmentSupervisor } from "../connection/supervisor.ts";
 import {
   type EnvironmentRpcFailure,
   type EnvironmentRpcSuccess,
-  type EnvironmentRpcUnavailableError,
+  EnvironmentRpcUnavailableError,
   requestWhenConnected,
 } from "../rpc/client.ts";
 
@@ -59,6 +59,21 @@ type CommandEffect = Effect.Effect<
   Crypto.Crypto | EnvironmentSupervisor
 >;
 
+export type OrchestrationCommandDispatchOverride = (input: {
+  readonly command: ClientOrchestrationCommand;
+  readonly environmentId: string;
+  readonly primary: boolean;
+}) => Promise<EnvironmentRpcSuccess<DispatchTag> | null>;
+
+let orchestrationCommandDispatchOverride: OrchestrationCommandDispatchOverride | null = null;
+
+/** Install the host transport used when a managed primary is intentionally asleep. */
+export function setOrchestrationCommandDispatchOverride(
+  override: OrchestrationCommandDispatchOverride | null,
+): void {
+  orchestrationCommandDispatchOverride = override;
+}
+
 function commandId(input: { readonly commandId?: CommandId }) {
   return Effect.gen(function* () {
     if (input.commandId !== undefined) {
@@ -83,7 +98,27 @@ function timestampedCommandMetadata(input: {
 }
 
 function dispatch(command: ClientOrchestrationCommand) {
-  return requestWhenConnected(ORCHESTRATION_WS_METHODS.dispatchCommand, command);
+  return Effect.gen(function* () {
+    const supervisor = yield* EnvironmentSupervisor;
+    const override = orchestrationCommandDispatchOverride;
+    if (override) {
+      const overridden = yield* Effect.tryPromise({
+        try: () =>
+          override({
+            command,
+            environmentId: supervisor.target.environmentId,
+            primary: supervisor.target._tag === "PrimaryConnectionTarget",
+          }),
+        catch: (cause) =>
+          new EnvironmentRpcUnavailableError({
+            environmentId: supervisor.target.environmentId,
+            message: cause instanceof Error ? cause.message : "Managed command dispatch failed.",
+          }),
+      });
+      if (overridden !== null) return overridden;
+    }
+    return yield* requestWhenConnected(ORCHESTRATION_WS_METHODS.dispatchCommand, command);
+  });
 }
 
 export const createProject: (input: CreateProjectInput) => CommandEffect = Effect.fn(
