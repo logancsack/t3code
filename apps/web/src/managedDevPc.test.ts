@@ -556,6 +556,7 @@ describe("managed DevPC paused bootstrap", () => {
     await prepareManagedDevPc();
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(root.replaceChildren).not.toHaveBeenCalled();
   });
 
   it("performs a one-time wake when an older browser has no descriptor cache", async () => {
