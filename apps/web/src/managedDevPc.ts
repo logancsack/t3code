@@ -152,20 +152,36 @@ async function sealManagedCommand(
 /** Route primary managed commands through Aldo's durable wake queue. */
 export function installManagedCommandDispatch(): void {
   if (!isManagedDevPc) return;
-  setOrchestrationCommandDispatchOverride(async ({ command, primary }) => {
-    if (!primary) return null;
-    if (managedCommandRequiresLiveTransport(command)) {
-      await requestManagedResume(`dispatch-${command.commandId}`);
-      return null;
-    }
-    const queued = await queueManagedCommand(command);
-    if (queued) return queued;
-    // One-time compatibility for a workspace paused before its guest runtime
-    // published a sealing key. Wake it explicitly, then let the normal RPC
-    // request wait for the relay; future commands use the durable queue.
-    await requestManagedResume(`dispatch-${command.commandId}`);
+  setOrchestrationCommandDispatchOverride(prepareManagedCommandDispatch);
+}
+
+/**
+ * Persist a managed command before the ordinary RPC waits for the workspace.
+ *
+ * The queue's 202 only proves that Aldo stored the encrypted command; it is not
+ * T3's orchestration receipt. Returning a synthetic receipt here made drafts
+ * look active forever when relay delivery was delayed or rejected. Always let
+ * requestWhenConnected send the same idempotent command after the VM wakes so
+ * the composer settles only after T3 actually accepts it. The durable copy is
+ * still the tab-close fallback and a later duplicate is harmless because the
+ * command id is stable.
+ */
+export async function prepareManagedCommandDispatch(input: {
+  readonly command: ClientOrchestrationCommand;
+  readonly primary: boolean;
+}): Promise<null> {
+  if (!input.primary) return null;
+  if (managedCommandRequiresLiveTransport(input.command)) {
+    await requestManagedResume(`dispatch-${input.command.commandId}`);
     return null;
-  });
+  }
+  const queued = await queueManagedCommand(input.command);
+  if (queued) return null;
+  // One-time compatibility for a workspace paused before its guest runtime
+  // published a sealing key. Wake it explicitly, then let the normal RPC
+  // request wait for the relay; future commands use the durable queue.
+  await requestManagedResume(`dispatch-${input.command.commandId}`);
+  return null;
 }
 
 export function managedCommandRequiresLiveTransport(command: ClientOrchestrationCommand): boolean {
@@ -786,10 +802,20 @@ export async function prepareManagedDevPc(): Promise<void> {
   if (!isManagedDevPc) return;
 
   const wakeStartedAt = Date.now();
+  let bootstrapProgressVisible = false;
   const showWakeProgress = (message: string, phase: ManagedWakePhase = "machine") => {
+    bootstrapProgressVisible = true;
     updateBootstrapMessage(message, false, phase, Date.now() - wakeStartedAt);
   };
-  showWakeProgress("Checking your workspace status…");
+  // A previously opened managed browser already has enough public metadata to
+  // render its cached shell. Keep that shell in the DOM while the lightweight
+  // bootstrap request checks whether the guest is awake; otherwise every idle
+  // page load flashes a misleading full-screen wake even though no wake is
+  // requested. Older browsers without the cache still need the progress
+  // surface for their one-time discovery wake.
+  if (!readManagedPrimaryEnvironmentDescriptor()) {
+    showWakeProgress("Checking your workspace status…");
+  }
   let failures = 0;
   let coldBootstrapResumeKey: string | undefined;
   let coldBootstrapResumeSubmitted = false;
@@ -816,7 +842,9 @@ export async function prepareManagedDevPc(): Promise<void> {
         if (bootstrap.pairingToken) {
           window.location.hash = pairingHash(bootstrap.pairingToken);
         }
-        showWakeProgress("Opening your workspace…", "workspace");
+        if (bootstrapProgressVisible) {
+          showWakeProgress("Opening your workspace…", "workspace");
+        }
         return;
       }
       if (requiresManagedResume(bootstrap)) {
