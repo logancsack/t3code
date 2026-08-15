@@ -5,8 +5,11 @@ import {
   applyGitStatusStreamEvent,
   buildTemporaryWorktreeBranchName,
   isTemporaryWorktreeBranch,
+  LEGACY_WORKTREE_BRANCH_PREFIXES,
   normalizeGitRemoteUrl,
   parseGitHubRepositoryNameWithOwnerFromRemoteUrl,
+  pullRequestWorktreeBranchNameCandidates,
+  stripWorktreeBranchPrefix,
   WORKTREE_BRANCH_PREFIX,
 } from "./git.ts";
 
@@ -98,6 +101,47 @@ describe("isTemporaryWorktreeBranch", () => {
     expect(isTemporaryWorktreeBranch(`${WORKTREE_BRANCH_PREFIX}/feature/demo`)).toBe(false);
     expect(isTemporaryWorktreeBranch("main")).toBe(false);
     expect(isTemporaryWorktreeBranch(`${WORKTREE_BRANCH_PREFIX}/deadbeef-extra`)).toBe(false);
+  });
+
+  it("still matches branches generated under a legacy prefix", () => {
+    for (const legacyPrefix of LEGACY_WORKTREE_BRANCH_PREFIXES) {
+      expect(isTemporaryWorktreeBranch(`${legacyPrefix}/deadbeef`)).toBe(true);
+      expect(
+        isTemporaryWorktreeBranch(`${legacyPrefix}/f4ae4e0e-f971-4d48-b4f2-9cf0aa54ab12`),
+      ).toBe(true);
+      expect(isTemporaryWorktreeBranch(`${legacyPrefix}/feature/demo`)).toBe(false);
+    }
+  });
+});
+
+describe("stripWorktreeBranchPrefix", () => {
+  it("removes the current prefix and every legacy one", () => {
+    expect(stripWorktreeBranchPrefix(`${WORKTREE_BRANCH_PREFIX}/fix-relay`)).toBe("fix-relay");
+    for (const legacyPrefix of LEGACY_WORKTREE_BRANCH_PREFIXES) {
+      expect(stripWorktreeBranchPrefix(`${legacyPrefix}/fix-relay`)).toBe("fix-relay");
+    }
+  });
+
+  it("leaves an unprefixed name alone", () => {
+    expect(stripWorktreeBranchPrefix("feature/demo")).toBe("feature/demo");
+    expect(stripWorktreeBranchPrefix("main")).toBe("main");
+  });
+});
+
+describe("pullRequestWorktreeBranchNameCandidates", () => {
+  it("generates the current name first and keeps legacy names matchable", () => {
+    const candidates = pullRequestWorktreeBranchNameCandidates(488, "statemachine");
+
+    expect(candidates[0]).toBe(`${WORKTREE_BRANCH_PREFIX}/pr-488/statemachine`);
+    for (const legacyPrefix of LEGACY_WORKTREE_BRANCH_PREFIXES) {
+      expect(candidates).toContain(`${legacyPrefix}/pr-488/statemachine`);
+    }
+  });
+
+  it("falls back to a head suffix when the branch fragment is empty", () => {
+    expect(pullRequestWorktreeBranchNameCandidates(7, "")[0]).toBe(
+      `${WORKTREE_BRANCH_PREFIX}/pr-7/head`,
+    );
   });
 });
 

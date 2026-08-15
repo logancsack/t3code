@@ -34,6 +34,7 @@ import {
   detectSourceControlProviderFromGitRemoteUrl,
   mergeGitStatusParts,
   normalizeGitRemoteUrl,
+  pullRequestWorktreeBranchNameCandidates,
   resolveAutoFeatureBranchName,
   sanitizeBranchFragment,
   sanitizeFeatureBranchName,
@@ -201,8 +202,25 @@ function resolvePullRequestWorktreeLocalBranchName(
   }
 
   const sanitizedHeadBranch = sanitizeBranchFragment(pullRequest.headBranch).trim();
-  const suffix = sanitizedHeadBranch.length > 0 ? sanitizedHeadBranch : "head";
-  return `t3code/pr-${pullRequest.number}/${suffix}`;
+  return pullRequestWorktreeBranchNameCandidates(pullRequest.number, sanitizedHeadBranch)[0]!;
+}
+
+/**
+ * Every name this pull request's worktree could already carry, newest first.
+ * A checkout made before the branch prefix changed keeps its old name, and
+ * matching only the current one would strand it and build a second worktree.
+ */
+function resolvePullRequestWorktreeLocalBranchNames(
+  pullRequest: ResolvedPullRequest & PullRequestHeadRemoteInfo,
+): ReadonlyArray<string> {
+  if (!pullRequest.isCrossRepository) {
+    return [pullRequest.headBranch];
+  }
+
+  return pullRequestWorktreeBranchNameCandidates(
+    pullRequest.number,
+    sanitizeBranchFragment(pullRequest.headBranch).trim(),
+  );
 }
 
 function parseGitHubRepositoryNameWithOwnerFromRemoteUrl(url: string | null): string | null {
@@ -1792,11 +1810,13 @@ export const make = Effect.gen(function* () {
       } as const;
       const localPullRequestBranch =
         resolvePullRequestWorktreeLocalBranchName(pullRequestWithRemoteInfo);
+      const localPullRequestBranchNames =
+        resolvePullRequestWorktreeLocalBranchNames(pullRequestWithRemoteInfo);
 
       const findLocalHeadBranch = Effect.fn("findLocalHeadBranch")(function* (cwd: string) {
         const result = yield* gitCore.listRefs({ cwd, refresh: true });
         const localBranch = result.refs.find(
-          (branch) => !branch.isRemote && branch.name === localPullRequestBranch,
+          (branch) => !branch.isRemote && localPullRequestBranchNames.includes(branch.name),
         );
         if (localBranch) {
           return localBranch;
@@ -1830,7 +1850,9 @@ export const make = Effect.gen(function* () {
         yield* ensureExistingWorktreeUpstream(existingBranchBeforeFetch.worktreePath);
         return {
           pullRequest,
-          branch: localPullRequestBranch,
+          // The branch that exists wins over the one this build would generate,
+          // so a worktree checked out under the previous prefix reports itself.
+          branch: existingBranchBeforeFetch.name,
           worktreePath: existingBranchBeforeFetch.worktreePath,
         };
       }
@@ -1860,7 +1882,7 @@ export const make = Effect.gen(function* () {
         yield* ensureExistingWorktreeUpstream(existingBranchAfterFetch.worktreePath);
         return {
           pullRequest,
-          branch: localPullRequestBranch,
+          branch: existingBranchAfterFetch.name,
           worktreePath: existingBranchAfterFetch.worktreePath,
         };
       }

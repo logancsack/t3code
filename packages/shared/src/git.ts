@@ -10,14 +10,53 @@ import * as Arr from "effect/Array";
 import * as Result from "effect/Result";
 import { detectSourceControlProviderFromRemoteUrl } from "./sourceControl.ts";
 
-export const WORKTREE_BRANCH_PREFIX = "t3code";
-// Canonical form is `t3code/<8 hex>`. Older mobile builds generated `t3code/<uuid>`
+export const WORKTREE_BRANCH_PREFIX = "aldo";
+
+/**
+ * Prefixes this build no longer generates but must still recognize. Branches,
+ * worktrees, and PR checkouts created before the rename keep their old names,
+ * so every matcher here reads them and only the generators moved on.
+ */
+export const LEGACY_WORKTREE_BRANCH_PREFIXES = ["t3code"] as const;
+
+const WORKTREE_BRANCH_PREFIXES = [
+  WORKTREE_BRANCH_PREFIX,
+  ...LEGACY_WORKTREE_BRANCH_PREFIXES,
+] as const;
+
+// Canonical form is `<prefix>/<8 hex>`. Older mobile builds generated `<prefix>/<uuid>`
 // via Crypto.randomUUID() (always RFC 4122 v4), so the matcher also accepts exactly
 // that shape — version nibble `4`, variant nibble `[89ab]` — to keep those threads
 // eligible for branch regeneration without loosening beyond what was ever generated.
 const TEMP_WORKTREE_BRANCH_PATTERN = new RegExp(
-  `^${WORKTREE_BRANCH_PREFIX}\\/(?:[0-9a-f]{8}|[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$`,
+  `^(?:${WORKTREE_BRANCH_PREFIXES.join("|")})\\/(?:[0-9a-f]{8}|[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$`,
 );
+
+/**
+ * Remove a generated worktree branch prefix, current or legacy, so a name is
+ * rebuilt under one prefix instead of accumulating them.
+ */
+export function stripWorktreeBranchPrefix(refName: string): string {
+  for (const prefix of WORKTREE_BRANCH_PREFIXES) {
+    if (refName.startsWith(`${prefix}/`)) {
+      return refName.slice(prefix.length + 1);
+    }
+  }
+  return refName;
+}
+
+/**
+ * The name a cross-repository pull request worktree gets, plus the names older
+ * builds would have given it. The first entry is what this build creates; the
+ * rest exist so an already checked-out pull request is still found.
+ */
+export function pullRequestWorktreeBranchNameCandidates(
+  pullRequestId: number | string,
+  headBranchFragment: string,
+): ReadonlyArray<string> {
+  const suffix = headBranchFragment.length > 0 ? headBranchFragment : "head";
+  return WORKTREE_BRANCH_PREFIXES.map((prefix) => `${prefix}/pr-${pullRequestId}/${suffix}`);
+}
 
 /**
  * Sanitize an arbitrary string into a valid, lowercase git refName fragment.
