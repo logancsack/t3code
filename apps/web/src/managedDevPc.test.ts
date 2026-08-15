@@ -652,6 +652,52 @@ describe("managed DevPC paused bootstrap", () => {
 });
 
 describe("managed DevPC command dispatch", () => {
+  it("waits for T3's live receipt after durably queueing a command", async () => {
+    vi.stubEnv("VITE_DEVPC_MANAGED", "1");
+    vi.resetModules();
+    const keyPair = await NodeCrypto.webcrypto.subtle.generateKey(
+      {
+        name: "RSA-OAEP",
+        modulusLength: 2048,
+        publicExponent: new Uint8Array([1, 0, 1]),
+        hash: "SHA-256",
+      },
+      true,
+      ["encrypt", "decrypt"],
+    );
+    const publicKey = Buffer.from(
+      await NodeCrypto.webcrypto.subtle.exportKey("spki", keyPair.publicKey),
+    ).toString("base64");
+    vi.stubGlobal("window", {
+      crypto: NodeCrypto.webcrypto,
+      atob,
+      btoa,
+      __DEVPC_MANAGED_BOOTSTRAP__: {
+        managed: true,
+        state: "stopped",
+        ready: false,
+        dispatchPublicKey: publicKey,
+        previewUrlTemplate: "https://{port}.preview.example.test/",
+      },
+    });
+    const fetchMock = vi.fn(async (_input: string, _init?: RequestInit) =>
+      Response.json({ queued: true }, { status: 202 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const command: ClientOrchestrationCommand = {
+      type: "thread.session.stop",
+      commandId: CommandId.make("queued-then-live"),
+      threadId: ThreadId.make("thread-1"),
+      createdAt: "2026-08-15T22:30:00.000Z",
+    };
+
+    const { prepareManagedCommandDispatch } = await import("./managedDevPc");
+    await expect(prepareManagedCommandDispatch({ command, primary: true })).resolves.toBeNull();
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/_devpc/dispatches");
+  });
+
   it("seals a command and preserves its idempotency key", async () => {
     vi.stubEnv("VITE_DEVPC_MANAGED", "1");
     vi.resetModules();

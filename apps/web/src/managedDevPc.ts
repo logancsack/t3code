@@ -152,20 +152,36 @@ async function sealManagedCommand(
 /** Route primary managed commands through Aldo's durable wake queue. */
 export function installManagedCommandDispatch(): void {
   if (!isManagedDevPc) return;
-  setOrchestrationCommandDispatchOverride(async ({ command, primary }) => {
-    if (!primary) return null;
-    if (managedCommandRequiresLiveTransport(command)) {
-      await requestManagedResume(`dispatch-${command.commandId}`);
-      return null;
-    }
-    const queued = await queueManagedCommand(command);
-    if (queued) return queued;
-    // One-time compatibility for a workspace paused before its guest runtime
-    // published a sealing key. Wake it explicitly, then let the normal RPC
-    // request wait for the relay; future commands use the durable queue.
-    await requestManagedResume(`dispatch-${command.commandId}`);
+  setOrchestrationCommandDispatchOverride(prepareManagedCommandDispatch);
+}
+
+/**
+ * Persist a managed command before the ordinary RPC waits for the workspace.
+ *
+ * The queue's 202 only proves that Aldo stored the encrypted command; it is not
+ * T3's orchestration receipt. Returning a synthetic receipt here made drafts
+ * look active forever when relay delivery was delayed or rejected. Always let
+ * requestWhenConnected send the same idempotent command after the VM wakes so
+ * the composer settles only after T3 actually accepts it. The durable copy is
+ * still the tab-close fallback and a later duplicate is harmless because the
+ * command id is stable.
+ */
+export async function prepareManagedCommandDispatch(input: {
+  readonly command: ClientOrchestrationCommand;
+  readonly primary: boolean;
+}): Promise<null> {
+  if (!input.primary) return null;
+  if (managedCommandRequiresLiveTransport(input.command)) {
+    await requestManagedResume(`dispatch-${input.command.commandId}`);
     return null;
-  });
+  }
+  const queued = await queueManagedCommand(input.command);
+  if (queued) return null;
+  // One-time compatibility for a workspace paused before its guest runtime
+  // published a sealing key. Wake it explicitly, then let the normal RPC
+  // request wait for the relay; future commands use the durable queue.
+  await requestManagedResume(`dispatch-${input.command.commandId}`);
+  return null;
 }
 
 export function managedCommandRequiresLiveTransport(command: ClientOrchestrationCommand): boolean {
