@@ -11,6 +11,7 @@ import { PrimaryEnvironmentHttpClient } from "./httpClient";
 
 import { runPrimaryHttp } from "../../lib/runtime";
 import { readPrimaryEnvironmentTarget } from "./target";
+import { writeManagedPrimaryEnvironmentDescriptor } from "../../managedPrimaryEnvironment";
 
 let primaryEnvironmentDescriptor: ExecutionEnvironmentDescriptor | null = null;
 let primaryEnvironmentDescriptorPromise: Promise<ExecutionEnvironmentDescriptor> | null = null;
@@ -50,6 +51,7 @@ async function fetchPrimaryEnvironmentDescriptor(): Promise<ExecutionEnvironment
     }
 
     writePrimaryEnvironmentDescriptor(descriptor);
+    writeManagedPrimaryEnvironmentDescriptor(descriptor);
     return descriptor;
   });
 }

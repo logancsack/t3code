@@ -2,6 +2,7 @@ import type { ClientOrchestrationCommand } from "@t3tools/contracts";
 import { setOrchestrationCommandDispatchOverride } from "@t3tools/client-runtime/operations";
 
 import { randomUUID } from "./lib/utils";
+import { readManagedPrimaryEnvironmentDescriptor } from "./managedPrimaryEnvironment";
 
 export type ManagedDevPcWorkspaceState =
   | "starting"
@@ -210,6 +211,8 @@ class ManagedBootstrapHttpError extends Error {
   }
 }
 
+class ManagedColdBootstrapResumeError extends Error {}
+
 /**
  * Only failures the gateway may heal on its own deserve the extended retry
  * budget: network errors, timeouts, rate limiting, and 5xx. A definitive 4xx
@@ -220,6 +223,7 @@ function isTransientBootstrapFailure(error: unknown): boolean {
   if (error instanceof ManagedBootstrapHttpError) {
     return isAmbiguousLifecycleResponse(error.status) || error.status === 429;
   }
+  if (error instanceof ManagedColdBootstrapResumeError) return false;
   return true;
 }
 
@@ -227,6 +231,14 @@ export function requiresManagedResume(bootstrap: ManagedDevPcBootstrap): boolean
   const resumable = new Set(["paused", "stopped"]);
   if (bootstrap.status) return resumable.has(bootstrap.status);
   return Boolean(bootstrap.requiresResume || resumable.has(bootstrap.state));
+}
+
+export function isManagedWorkspaceSleeping(): boolean {
+  return (
+    isManagedDevPc &&
+    window.__DEVPC_MANAGED_BOOTSTRAP__ !== undefined &&
+    requiresManagedResume(window.__DEVPC_MANAGED_BOOTSTRAP__)
+  );
 }
 
 export function isManagedBootstrapRunning(bootstrap: ManagedDevPcBootstrap): boolean {
@@ -779,6 +791,8 @@ export async function prepareManagedDevPc(): Promise<void> {
   };
   showWakeProgress("Checking your workspace status…");
   let failures = 0;
+  let coldBootstrapResumeKey: string | undefined;
+  let coldBootstrapResumeSubmitted = false;
   while (true) {
     try {
       const response = await fetch(BOOTSTRAP_PATH, {
@@ -806,10 +820,30 @@ export async function prepareManagedDevPc(): Promise<void> {
         return;
       }
       if (requiresManagedResume(bootstrap)) {
-        // Rendering an intentionally sleeping workspace must not wake it. The
-        // cached shell stays usable and the first durable command performs the
-        // wake. Explicit lifecycle controls still use requestManagedResume.
-        return;
+        // A browser that has already discovered this environment can render
+        // its persisted shell without waking the guest. Browsers upgrading
+        // from older managed builds do not have this small descriptor cache;
+        // wake once to discover it, after which cold loads stay sleep-safe.
+        if (readManagedPrimaryEnvironmentDescriptor()) return;
+        coldBootstrapResumeKey ??=
+          readPersistedManagedResume()?.requestKey ?? `bootstrap-${randomUUID()}`;
+        if (!coldBootstrapResumeSubmitted) {
+          const outcome = await requestManagedResume(coldBootstrapResumeKey);
+          if (outcome === "rejected") {
+            throw new ManagedColdBootstrapResumeError(
+              "The workspace could not be resumed to finish this one-time upgrade.",
+            );
+          }
+          if (outcome === "superseded") {
+            const supersedingResume = readPersistedManagedResume();
+            coldBootstrapResumeKey = supersedingResume?.requestKey ?? coldBootstrapResumeKey;
+          }
+          coldBootstrapResumeSubmitted = true;
+        }
+        failures = 0;
+        showWakeProgress("Updating this browser for sleep-safe startup…", "machine");
+        await new Promise((resolve) => window.setTimeout(resolve, 1_500));
+        continue;
       }
       failures = 0;
       showWakeProgress(
