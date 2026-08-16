@@ -215,6 +215,7 @@ export type MessagesTimelineRow =
       id: string;
       createdAt: string | null;
       toolWait: ActiveToolWait | null;
+      status: "waking" | "working";
     };
 
 export interface StableMessagesTimelineRowsState {
@@ -460,6 +461,7 @@ export function deriveMessagesTimelineRows(input: {
   expandedTurnIds?: ReadonlySet<TurnId>;
   expandedWorkGroupIds?: ReadonlySet<string>;
   isWorking: boolean;
+  isWakingWorkspace?: boolean;
   activeTurnStartedAt: string | null;
   activeToolWait?: ActiveToolWait | null;
   turnDiffSummaryByAssistantMessageId: ReadonlyMap<MessageId, TurnDiffSummary>;
@@ -675,6 +677,7 @@ export function deriveMessagesTimelineRows(input: {
       id: "working-indicator-row",
       createdAt: input.activeTurnStartedAt,
       toolWait: input.activeToolWait ?? null,
+      status: input.isWakingWorkspace ? "waking" : "working",
     });
   }
 
@@ -759,6 +762,7 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
       const bw = b as typeof a;
       return (
         a.createdAt === bw.createdAt &&
+        a.status === bw.status &&
         a.toolWait?.label === bw.toolWait?.label &&
         a.toolWait?.startedAt === bw.toolWait?.startedAt
       );

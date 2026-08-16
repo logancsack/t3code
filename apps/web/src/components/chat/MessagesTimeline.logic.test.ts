@@ -838,6 +838,27 @@ describe("deriveMessagesTimelineRows", () => {
     expect(finalRow?.kind === "message" && finalRow.showAssistantMeta).toBe(true);
   });
 
+  it("marks the local working row as waking while a managed machine starts", () => {
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries: [],
+      isWorking: true,
+      isWakingWorkspace: true,
+      activeTurnStartedAt: "2026-01-01T00:01:00Z",
+      turnDiffSummaryByAssistantMessageId: new Map(),
+      revertTurnCountByUserMessageId: new Map(),
+    });
+
+    expect(rows).toEqual([
+      {
+        kind: "working",
+        id: "working-indicator-row",
+        createdAt: "2026-01-01T00:01:00Z",
+        toolWait: null,
+        status: "waking",
+      },
+    ]);
+  });
+
   it("does not fold the active in-progress turn", () => {
     const rows = deriveMessagesTimelineRows({
       timelineEntries: [

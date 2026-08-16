@@ -209,6 +209,7 @@ interface MessagesTimelineProps {
   agentPanelModel?: AgentPanelModel;
   onOpenAgents?: () => void;
   isWorking: boolean;
+  isWakingWorkspace?: boolean;
   workingStepLabel?: string | null;
   activeTurnInProgress: boolean;
   activeTurnStartedAt: string | null;
@@ -254,6 +255,7 @@ interface MessagesTimelineProps {
 
 export const MessagesTimeline = memo(function MessagesTimeline({
   isWorking,
+  isWakingWorkspace = false,
   workingStepLabel = null,
   activeTurnInProgress,
   activeTurnStartedAt,
@@ -408,6 +410,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
         expandedTurnIds,
         expandedWorkGroupIds,
         isWorking,
+        isWakingWorkspace,
         activeTurnStartedAt,
         activeToolWait,
         turnDiffSummaryByAssistantMessageId,
@@ -420,6 +423,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       expandedTurnIds,
       expandedWorkGroupIds,
       isWorking,
+      isWakingWorkspace,
       activeTurnStartedAt,
       activeToolWait,
       turnDiffSummaryByAssistantMessageId,
@@ -1333,14 +1337,21 @@ function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "workin
   const toolWait = row.toolWait;
   return (
     <div className="py-0.5 pl-1.5">
-      <div className="flex min-w-0 items-center gap-2 pt-1 text-secondary-label text-[11px] tabular-nums">
+      <div
+        className="flex min-w-0 items-center gap-2 pt-1 text-secondary-label text-[11px] tabular-nums"
+        data-working-status={row.status}
+      >
         <span className="inline-flex items-center gap-[3px]">
           <span className="h-1 w-1 rounded-full bg-muted-foreground/30 animate-status-pulse" />
           <span className="h-1 w-1 rounded-full bg-muted-foreground/30 animate-status-pulse [animation-delay:200ms]" />
           <span className="h-1 w-1 rounded-full bg-muted-foreground/30 animate-status-pulse [animation-delay:400ms]" />
         </span>
         <span className="min-w-0 truncate">
-          {toolWait ? (
+          {row.status === "waking" && row.createdAt ? (
+            <>
+              Your machine is waking up (<WorkingTimer createdAt={row.createdAt} />)
+            </>
+          ) : toolWait ? (
             <>
               Running <span className="font-mono">{toolWait.label}</span> for{" "}
               <WorkingTimer createdAt={toolWait.startedAt} />

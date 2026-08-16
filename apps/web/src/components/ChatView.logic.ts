@@ -52,6 +52,20 @@ export function shouldQuietlyRecoverManagedPrimaryEnvironment(input: {
   );
 }
 
+export function shouldShowManagedWakeStatus(input: {
+  readonly isSendBusy: boolean;
+  readonly isManagedPrimary: boolean;
+  readonly connectionPhase: string;
+  readonly workspaceSleeping: boolean;
+}): boolean {
+  return Boolean(
+    input.isSendBusy &&
+    input.isManagedPrimary &&
+    input.connectionPhase !== "connected" &&
+    input.workspaceSleeping,
+  );
+}
+
 export function retryableTurnAfterProviderReconnect(input: {
   readonly provider: ServerProvider | null;
   readonly latestTurn: Thread["latestTurn"] | null;

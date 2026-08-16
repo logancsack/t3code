@@ -135,7 +135,11 @@ import {
   setActivePreviewTab,
   useThreadPreviewState,
 } from "../previewStateStore";
-import { isManagedDevPc, managedWorkspaceBrowserUrl } from "~/managedDevPc";
+import {
+  isManagedDevPc,
+  isManagedWorkspaceSleeping,
+  managedWorkspaceBrowserUrl,
+} from "~/managedDevPc";
 import { addBrowserSurface } from "./preview/addBrowserSurface";
 import { closePreviewSession } from "./preview/closePreviewSession";
 import { ThreadPreviewMiniPlayer } from "./preview/ThreadPreviewMiniPlayer";
@@ -306,6 +310,7 @@ import {
   startNewThreadForProject,
   retryableTurnAfterProviderReconnect,
   shouldQuietlyRecoverManagedPrimaryEnvironment,
+  shouldShowManagedWakeStatus,
   waitForStartedServerThread,
 } from "./ChatView.logic";
 import type { ThreadSyncPhase } from "../threadSync";
@@ -2231,6 +2236,12 @@ function ChatViewContent(props: ChatViewProps) {
     threadError,
   });
   const isWorking = phase === "running" || isSendBusy || isConnecting || isRevertingCheckpoint;
+  const isWakingManagedWorkspace = shouldShowManagedWakeStatus({
+    isSendBusy,
+    isManagedPrimary: activeEnvironment?.environmentId === primaryEnvironmentId,
+    connectionPhase: activeEnvironmentConnectionPhase,
+    workspaceSleeping: isManagedWorkspaceSleeping(),
+  });
   const activeWorkStartedAt = deriveActiveWorkStartedAt(
     activeLatestTurn,
     activeThread?.session ?? null,
@@ -6203,6 +6214,7 @@ function ChatViewContent(props: ChatViewProps) {
                 onOpenAgents={addAgentsSurface}
                 key={activeThread.id}
                 isWorking={isWorking}
+                isWakingWorkspace={isWakingManagedWorkspace}
                 workingStepLabel={workingStepLabel}
                 activeTurnInProgress={isWorking || !latestTurnSettled}
                 activeTurnStartedAt={activeWorkStartedAt}

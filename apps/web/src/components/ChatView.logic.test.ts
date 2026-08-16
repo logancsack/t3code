@@ -30,6 +30,7 @@ import {
   resolveSendEnvMode,
   startNewThreadForProject,
   shouldQuietlyRecoverManagedPrimaryEnvironment,
+  shouldShowManagedWakeStatus,
   shouldShowBranchMismatchBanner,
   shouldWriteThreadErrorToCurrentServerThread,
 } from "./ChatView.logic";
@@ -77,6 +78,28 @@ describe("managed primary recovery", () => {
         activeEnvironmentId: environmentId,
         primaryEnvironmentId: environmentId,
         connectionPhase: "error",
+      }),
+    ).toBe(false);
+  });
+
+  it("shows wake progress only while a sleeping managed primary is reconnecting", () => {
+    expect(
+      shouldShowManagedWakeStatus({
+        isSendBusy: true,
+        isManagedPrimary: true,
+        connectionPhase: "reconnecting",
+        workspaceSleeping: true,
+      }),
+    ).toBe(true);
+  });
+
+  it("stops using a stale sleeping bootstrap snapshot after the connection is live", () => {
+    expect(
+      shouldShowManagedWakeStatus({
+        isSendBusy: true,
+        isManagedPrimary: true,
+        connectionPhase: "connected",
+        workspaceSleeping: true,
       }),
     ).toBe(false);
   });
