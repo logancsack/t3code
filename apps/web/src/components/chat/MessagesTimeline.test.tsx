@@ -242,6 +242,25 @@ describe("MessagesTimeline", () => {
     expect(fadedMarkup).toContain("chat-timeline-scroll-fade");
   });
 
+  it("uses the normal working treatment for managed machine wake progress", () => {
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        isWorking
+        isWakingWorkspace
+        activeTurnInProgress
+        activeTurnStartedAt={new Date().toISOString()}
+        timelineEntries={[buildUserTimelineEntry("Hello")]}
+      />,
+    );
+
+    expect(markup).toContain('data-working-status="waking"');
+    expect(markup).toContain("Your machine is waking up (");
+    expect(markup).toMatch(/Your machine is waking up \(<span class="tabular-nums">\d+s<\/span>\)/);
+    expect(markup.match(/animate-status-pulse/g)).toHaveLength(3);
+    expect(markup).not.toContain("Working for");
+  });
+
   it("keeps assistant changed-files headers sticky below the thread header", () => {
     const assistantMessageId = MessageId.make("message-assistant-with-files");
     const turnId = TurnId.make("turn-with-files");
