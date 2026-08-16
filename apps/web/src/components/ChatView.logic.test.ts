@@ -82,24 +82,20 @@ describe("managed primary recovery", () => {
     ).toBe(false);
   });
 
-  it("shows wake progress only while a sleeping managed primary is reconnecting", () => {
+  it("shows wake progress for a dispatch that began while the managed workspace was sleeping", () => {
     expect(
       shouldShowManagedWakeStatus({
         isSendBusy: true,
-        isManagedPrimary: true,
-        connectionPhase: "reconnecting",
-        workspaceSleeping: true,
+        wakingManagedWorkspace: true,
       }),
     ).toBe(true);
   });
 
-  it("stops using a stale sleeping bootstrap snapshot after the connection is live", () => {
+  it("does not infer a wake from connection or bootstrap state after dispatch begins", () => {
     expect(
       shouldShowManagedWakeStatus({
         isSendBusy: true,
-        isManagedPrimary: true,
-        connectionPhase: "connected",
-        workspaceSleeping: true,
+        wakingManagedWorkspace: false,
       }),
     ).toBe(false);
   });

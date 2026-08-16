@@ -559,7 +559,7 @@ describe("managed DevPC paused bootstrap", () => {
     expect(root.replaceChildren).not.toHaveBeenCalled();
   });
 
-  it("performs a one-time wake when an older browser has no descriptor cache", async () => {
+  it("seeds a new browser from gateway metadata without waking a stopped workspace", async () => {
     vi.stubEnv("VITE_DEVPC_MANAGED", "1");
     vi.resetModules();
     vi.stubGlobal("document", {
@@ -568,87 +568,26 @@ describe("managed DevPC paused bootstrap", () => {
     vi.stubGlobal("window", {
       location: { hash: "" },
       localStorage: memoryLocalStorage(),
-      setTimeout: (callback: () => void) => {
-        callback();
-        return 1;
-      },
     });
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        Response.json({
-          managed: true,
-          state: "stopped",
-          status: "stopped",
-          ready: false,
-          previewUrlTemplate: "https://{port}.preview.example.test/",
-        }),
-      )
-      .mockResolvedValueOnce(Response.json({ state: "starting" }, { status: 202 }))
-      .mockResolvedValueOnce(
-        Response.json({
-          managed: true,
-          state: "starting",
-          status: "starting",
-          ready: false,
-          previewUrlTemplate: "https://{port}.preview.example.test/",
-        }),
-      )
-      .mockResolvedValueOnce(
-        Response.json({
-          managed: true,
-          state: "ready",
-          status: "running",
-          ready: true,
-          previewUrlTemplate: "https://{port}.preview.example.test/",
-        }),
-      );
+    const fetchMock = vi.fn(async () =>
+      Response.json({
+        managed: true,
+        state: "stopped",
+        status: "stopped",
+        ready: false,
+        previewUrlTemplate: "https://{port}.preview.example.test/",
+        environmentDescriptor: MANAGED_DESCRIPTOR,
+      }),
+    );
     vi.stubGlobal("fetch", fetchMock);
 
     const { prepareManagedDevPc } = await import("./managedDevPc");
     await prepareManagedDevPc();
 
-    expect(fetchMock).toHaveBeenCalledTimes(4);
-    expect(fetchMock.mock.calls[1]?.[0]).toBe("/_devpc/workspace/start");
-    expect((fetchMock.mock.calls[1]?.[1] as RequestInit | undefined)?.headers).toMatchObject({
-      "idempotency-key": expect.stringMatching(/^bootstrap-/),
-    });
-  });
-
-  it("surfaces a rejected one-time upgrade wake", async () => {
-    vi.stubEnv("VITE_DEVPC_MANAGED", "1");
-    vi.resetModules();
-    vi.stubGlobal("document", {
-      getElementById: vi.fn(() => null),
-    });
-    vi.stubGlobal("window", {
-      location: { hash: "" },
-      localStorage: memoryLocalStorage(),
-      setTimeout: (callback: () => void) => {
-        callback();
-        return 1;
-      },
-    });
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        Response.json({
-          managed: true,
-          state: "stopped",
-          status: "stopped",
-          ready: false,
-          previewUrlTemplate: "https://{port}.preview.example.test/",
-        }),
-      )
-      .mockResolvedValueOnce(new Response(null, { status: 409 }));
-    vi.stubGlobal("fetch", fetchMock);
-
-    const { prepareManagedDevPc } = await import("./managedDevPc");
-    await expect(prepareManagedDevPc()).rejects.toThrow(
-      "The workspace could not be resumed to finish this one-time upgrade.",
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(window.localStorage.getItem("t3-managed-primary-environment-descriptor-v1")).toBe(
+      JSON.stringify(MANAGED_DESCRIPTOR),
     );
-
-    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });
 
