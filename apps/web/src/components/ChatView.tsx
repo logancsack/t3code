@@ -535,6 +535,7 @@ function useLocalDispatchState(input: {
   activePendingApproval: ApprovalRequestId | null;
   activePendingUserInput: ApprovalRequestId | null;
   threadError: string | null | undefined;
+  wakingManagedWorkspace: boolean;
 }) {
   const [localDispatch, setLocalDispatch] = useState<LocalDispatchSnapshot | null>(null);
   const latestUserMessageId =
@@ -578,10 +579,13 @@ function useLocalDispatchState(input: {
             ? active
             : { ...active, preparingWorktree };
         }
-        return createLocalDispatchSnapshot(input.activeThread, options);
+        return createLocalDispatchSnapshot(input.activeThread, {
+          ...options,
+          wakingManagedWorkspace: input.wakingManagedWorkspace,
+        });
       });
     },
-    [input.activeThread, serverAcknowledgedLocalDispatch],
+    [input.activeThread, input.wakingManagedWorkspace, serverAcknowledgedLocalDispatch],
   );
 
   return {
@@ -589,6 +593,7 @@ function useLocalDispatchState(input: {
     resetLocalDispatch,
     localDispatchStartedAt: activeLocalDispatch?.startedAt ?? null,
     isPreparingWorktree: activeLocalDispatch?.preparingWorktree ?? false,
+    wakingManagedWorkspace: activeLocalDispatch?.wakingManagedWorkspace ?? false,
     isSendBusy: activeLocalDispatch !== null,
   };
 }
@@ -2226,6 +2231,7 @@ function ChatViewContent(props: ChatViewProps) {
     resetLocalDispatch,
     localDispatchStartedAt,
     isPreparingWorktree,
+    wakingManagedWorkspace,
     isSendBusy,
   } = useLocalDispatchState({
     activeThread,
@@ -2234,13 +2240,15 @@ function ChatViewContent(props: ChatViewProps) {
     activePendingApproval: activePendingApproval?.requestId ?? null,
     activePendingUserInput: activePendingUserInput?.requestId ?? null,
     threadError,
+    wakingManagedWorkspace:
+      isManagedDevPc &&
+      activeEnvironment?.environmentId === primaryEnvironmentId &&
+      isManagedWorkspaceSleeping(),
   });
   const isWorking = phase === "running" || isSendBusy || isConnecting || isRevertingCheckpoint;
   const isWakingManagedWorkspace = shouldShowManagedWakeStatus({
     isSendBusy,
-    isManagedPrimary: activeEnvironment?.environmentId === primaryEnvironmentId,
-    connectionPhase: activeEnvironmentConnectionPhase,
-    workspaceSleeping: isManagedWorkspaceSleeping(),
+    wakingManagedWorkspace,
   });
   const activeWorkStartedAt = deriveActiveWorkStartedAt(
     activeLatestTurn,

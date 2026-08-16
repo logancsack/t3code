@@ -54,16 +54,9 @@ export function shouldQuietlyRecoverManagedPrimaryEnvironment(input: {
 
 export function shouldShowManagedWakeStatus(input: {
   readonly isSendBusy: boolean;
-  readonly isManagedPrimary: boolean;
-  readonly connectionPhase: string;
-  readonly workspaceSleeping: boolean;
+  readonly wakingManagedWorkspace: boolean;
 }): boolean {
-  return Boolean(
-    input.isSendBusy &&
-    input.isManagedPrimary &&
-    input.connectionPhase !== "connected" &&
-    input.workspaceSleeping,
-  );
+  return input.isSendBusy && input.wakingManagedWorkspace;
 }
 
 export function retryableTurnAfterProviderReconnect(input: {
@@ -515,6 +508,7 @@ export async function waitForStartedServerThread(
 export interface LocalDispatchSnapshot {
   startedAt: string;
   preparingWorktree: boolean;
+  wakingManagedWorkspace: boolean;
   latestUserMessageId: ChatMessage["id"] | null;
   latestTurnTurnId: TurnId | null;
   latestTurnRequestedAt: string | null;
@@ -526,7 +520,7 @@ export interface LocalDispatchSnapshot {
 
 export function createLocalDispatchSnapshot(
   activeThread: Thread | undefined,
-  options?: { preparingWorktree?: boolean },
+  options?: { preparingWorktree?: boolean; wakingManagedWorkspace?: boolean },
 ): LocalDispatchSnapshot {
   const latestTurn = activeThread?.latestTurn ?? null;
   const session = activeThread?.session ?? null;
@@ -534,6 +528,7 @@ export function createLocalDispatchSnapshot(
   return {
     startedAt: new Date().toISOString(),
     preparingWorktree: Boolean(options?.preparingWorktree),
+    wakingManagedWorkspace: Boolean(options?.wakingManagedWorkspace),
     latestUserMessageId: latestUserMessage?.id ?? null,
     latestTurnTurnId: latestTurn?.turnId ?? null,
     latestTurnRequestedAt: latestTurn?.requestedAt ?? null,
