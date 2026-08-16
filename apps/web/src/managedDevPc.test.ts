@@ -653,6 +653,20 @@ describe("managed DevPC paused bootstrap", () => {
 });
 
 describe("managed DevPC command dispatch", () => {
+  it("keeps draft bootstrap turns on the live transport", async () => {
+    vi.stubEnv("VITE_DEVPC_MANAGED", "1");
+    vi.resetModules();
+
+    const { managedCommandRequiresLiveTransport } = await import("./managedDevPc");
+    const draftTurn = {
+      type: "thread.turn.start",
+      message: { attachments: [] },
+      bootstrap: { createThread: {} },
+    } as unknown as ClientOrchestrationCommand;
+
+    expect(managedCommandRequiresLiveTransport(draftTurn)).toBe(true);
+  });
+
   it("waits for T3's live receipt after durably queueing a command", async () => {
     vi.stubEnv("VITE_DEVPC_MANAGED", "1");
     vi.resetModules();
