@@ -310,6 +310,7 @@ import {
   startNewThreadForProject,
   retryableTurnAfterProviderReconnect,
   shouldQuietlyRecoverManagedPrimaryEnvironment,
+  shouldShowManagedWakeStatus,
   waitForStartedServerThread,
 } from "./ChatView.logic";
 import type { ThreadSyncPhase } from "../threadSync";
@@ -2235,10 +2236,12 @@ function ChatViewContent(props: ChatViewProps) {
     threadError,
   });
   const isWorking = phase === "running" || isSendBusy || isConnecting || isRevertingCheckpoint;
-  const isWakingManagedWorkspace =
-    isSendBusy &&
-    activeEnvironment?.environmentId === primaryEnvironmentId &&
-    isManagedWorkspaceSleeping();
+  const isWakingManagedWorkspace = shouldShowManagedWakeStatus({
+    isSendBusy,
+    isManagedPrimary: activeEnvironment?.environmentId === primaryEnvironmentId,
+    connectionPhase: activeEnvironmentConnectionPhase,
+    workspaceSleeping: isManagedWorkspaceSleeping(),
+  });
   const activeWorkStartedAt = deriveActiveWorkStartedAt(
     activeLatestTurn,
     activeThread?.session ?? null,
