@@ -188,7 +188,15 @@ export function managedCommandRequiresLiveTransport(command: ClientOrchestration
   // Attachment data URLs can reach tens of megabytes. Keep those in T3's
   // existing streamed/live path instead of copying them through PostgreSQL;
   // requestWhenConnected retains the command while Morph wakes.
-  return command.type === "thread.turn.start" && command.message.attachments.length > 0;
+  // Draft turns also need the WebSocket dispatcher's bootstrap transaction to
+  // create their thread before the turn starts. The managed HTTP dispatch
+  // endpoint accepts only normalized orchestration commands, so queueing a
+  // bootstrap turn there would permanently reject its command id before the
+  // live dispatcher can create the thread.
+  return (
+    command.type === "thread.turn.start" &&
+    (command.message.attachments.length > 0 || command.bootstrap !== undefined)
+  );
 }
 
 export async function queueManagedCommand(
