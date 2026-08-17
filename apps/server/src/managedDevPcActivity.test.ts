@@ -7,7 +7,7 @@ import {
   hasQueuedManagedTurnStart,
   hasRunningManagedTurn,
   hasStartingManagedSession,
-  QUEUED_TURN_START_GRACE_MS,
+  QUEUED_TURN_START_FUTURE_SKEW_MS,
 } from "./managedDevPcActivity.ts";
 import {
   clearPrimeAgentSessionActivity,
@@ -78,16 +78,17 @@ describe("managed DevPC activity", () => {
         NOW_MS,
       ),
     ).toBe(false);
-    // Stale: outside the grace window in either direction.
+    // Accepted work never ages out merely because provider adoption is slow.
     expect(
       hasQueuedManagedTurnStart(
-        [queuedThread({ latestUserMessageAt: iso(-QUEUED_TURN_START_GRACE_MS - 1_000) })],
+        [queuedThread({ latestUserMessageAt: iso(-24 * 60 * 60_000) })],
         NOW_MS,
       ),
-    ).toBe(false);
+    ).toBe(true);
+    // Reject only an implausibly future client timestamp.
     expect(
       hasQueuedManagedTurnStart(
-        [queuedThread({ latestUserMessageAt: iso(QUEUED_TURN_START_GRACE_MS + 1_000) })],
+        [queuedThread({ latestUserMessageAt: iso(QUEUED_TURN_START_FUTURE_SKEW_MS + 1_000) })],
         NOW_MS,
       ),
     ).toBe(false);

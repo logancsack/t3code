@@ -10,6 +10,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   deriveActiveToolWait,
+  derivePhase,
   deriveActiveWorkStartedAt,
   deriveActivePlanState,
   deriveTurnPlans,
@@ -24,6 +25,23 @@ import {
   workEntryIndicatesToolNeutralStatus,
   workEntryIndicatesToolSuccess,
 } from "./session-logic";
+
+describe("derivePhase", () => {
+  const session = {
+    threadId: ThreadId.make("thread-phase"),
+    status: "running" as const,
+    providerName: "Codex",
+    runtimeMode: "full-access" as const,
+    activeTurnId: TurnId.make("turn-phase"),
+    lastError: null,
+    updatedAt: "2026-08-16T00:00:00.000Z",
+  };
+
+  it("requires a concrete active turn before showing the running phase", () => {
+    expect(derivePhase(session)).toBe("running");
+    expect(derivePhase({ ...session, activeTurnId: null })).toBe("ready");
+  });
+});
 
 let nextActivityId = 0;
 

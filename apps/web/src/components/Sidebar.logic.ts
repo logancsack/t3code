@@ -444,7 +444,12 @@ export function resolveSidebarV2Status(thread: SidebarV2StatusInput): SidebarV2S
   if (thread.hasPendingUserInput) {
     return "input";
   }
-  if (thread.session?.status === "running" || thread.session?.status === "starting") {
+  if (
+    thread.session?.status === "starting" ||
+    (thread.session?.status === "running" &&
+      thread.session.activeTurnId !== null &&
+      thread.session.activeTurnId !== undefined)
+  ) {
     return "working";
   }
   // A failed session outranks lingering background liveness: the user must

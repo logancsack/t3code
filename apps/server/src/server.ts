@@ -20,6 +20,7 @@ import {
 } from "./http.ts";
 import { managedDevPcActivityRouteLayer } from "./managedDevPcActivity.ts";
 import { managedDevPcDispatchRouteLayer } from "./managedDevPcDispatch.ts";
+import { managedDevPcDrainRouteLayer } from "./managedDevPcDrain.ts";
 import { fixPath } from "./os-jank.ts";
 import { websocketRpcRouteLayer } from "./ws.ts";
 import * as ExternalLauncher from "./process/externalLauncher.ts";
@@ -454,6 +455,7 @@ export const makeRoutesLayer = Layer.mergeAll(
     otlpTracesProxyRouteLayer,
     managedDevPcActivityRouteLayer,
     managedDevPcDispatchRouteLayer,
+    managedDevPcDrainRouteLayer,
     assetRouteLayer,
     staticAndDevRouteLayer,
     websocketRpcRouteLayer,

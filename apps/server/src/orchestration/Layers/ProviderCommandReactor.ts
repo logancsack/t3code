@@ -15,6 +15,8 @@ import {
 import { isTemporaryWorktreeBranch, WORKTREE_BRANCH_PREFIX } from "@t3tools/shared/git";
 import * as Cache from "effect/Cache";
 import * as Cause from "effect/Cause";
+import * as Clock from "effect/Clock";
+import * as DateTime from "effect/DateTime";
 import * as Crypto from "effect/Crypto";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -36,6 +38,8 @@ import { ProviderService } from "../../provider/Services/ProviderService.ts";
 import { ProviderRegistry } from "../../provider/Services/ProviderRegistry.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
+import { ProjectionTurnRepository } from "../../persistence/Services/ProjectionTurns.ts";
+import { ProjectionTurnRepositoryLive } from "../../persistence/Layers/ProjectionTurns.ts";
 import {
   ProviderCommandReactor,
   type ProviderCommandReactorShape,
@@ -92,6 +96,7 @@ const turnStartKeyForEvent = (event: ProviderIntentEvent): string =>
 
 const HANDLED_TURN_START_KEY_MAX = 10_000;
 const HANDLED_TURN_START_KEY_TTL = Duration.minutes(30);
+const TURN_START_ADOPTION_TIMEOUT = Duration.minutes(10);
 const DEFAULT_RUNTIME_MODE: RuntimeMode = "full-access";
 const DEFAULT_THREAD_TITLE = "New thread";
 const MAX_REGENERATION_ATTACHMENTS = 4;
@@ -316,6 +321,7 @@ const make = Effect.gen(function* () {
   const crypto = yield* Crypto.Crypto;
   const orchestrationEngine = yield* OrchestrationEngineService;
   const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
+  const projectionTurnRepository = yield* ProjectionTurnRepository;
   const providerService = yield* ProviderService;
   const providerRegistry = yield* ProviderRegistry;
   const gitWorkflow = yield* GitWorkflowService;
@@ -1192,7 +1198,11 @@ const make = Effect.gen(function* () {
 
     yield* providerService
       .sendTurn(sendTurnRequest.value)
-      .pipe(Effect.catchCause(recoverTurnStartFailure), Effect.forkScoped);
+      .pipe(
+        Effect.timeout(TURN_START_ADOPTION_TIMEOUT),
+        Effect.catchCause(recoverTurnStartFailure),
+        Effect.forkScoped,
+      );
   });
 
   const processTurnInterruptRequested = Effect.fn("processTurnInterruptRequested")(function* (
@@ -1398,7 +1408,96 @@ const make = Effect.gen(function* () {
 
   const worker = yield* makeDrainableWorker(processDomainEventSafely);
 
+  const recoverInterruptedTurnStarts = Effect.fn("recoverInterruptedTurnStarts")(function* (
+    pendingStarts: ReadonlyArray<{
+      readonly threadId: ThreadId;
+      readonly requestedAt: string;
+    }>,
+  ) {
+    if (pendingStarts.length === 0) {
+      return;
+    }
+
+    const providerSessions = yield* providerService.listSessions();
+    const nowMs = yield* Clock.currentTimeMillis;
+    const recoveredAt = DateTime.formatIso(DateTime.makeUnsafe(nowMs));
+    yield* Effect.forEach(
+      pendingStarts,
+      (pending) =>
+        Effect.gen(function* () {
+          const providerSession = providerSessions.find(
+            (session) =>
+              session.threadId === pending.threadId &&
+              session.status === "running" &&
+              session.activeTurnId !== undefined,
+          );
+          const thread = yield* resolveThread(pending.threadId);
+          if (!thread) {
+            return;
+          }
+
+          if (providerSession?.activeTurnId !== undefined) {
+            // The provider durably adopted the request before the prior server
+            // stopped, but projection ingestion did not finish. Re-project the
+            // concrete active turn instead of dispatching the prompt twice.
+            yield* setThreadSession({
+              threadId: pending.threadId,
+              session: {
+                ...(thread.session ?? {
+                  threadId: pending.threadId,
+                  providerName: providerSession.provider,
+                  runtimeMode: providerSession.runtimeMode,
+                }),
+                status: "running",
+                providerName: providerSession.provider,
+                ...(providerSession.providerInstanceId !== undefined
+                  ? { providerInstanceId: providerSession.providerInstanceId }
+                  : {}),
+                runtimeMode: providerSession.runtimeMode,
+                activeTurnId: providerSession.activeTurnId,
+                lastError: null,
+                updatedAt: recoveredAt,
+              },
+              createdAt: recoveredAt,
+            });
+            return;
+          }
+
+          // Retrying an ambiguous provider side effect can execute the user's
+          // prompt twice. Prefer a durable, visible terminal error; the user
+          // can safely retry from the preserved message.
+          const detail =
+            "The agent run was interrupted before the provider confirmed that it started. The request was preserved and the run was marked complete with an infrastructure error so it cannot remain stuck in Working.";
+          yield* setThreadSessionErrorOnTurnStartFailure({
+            threadId: pending.threadId,
+            detail,
+            createdAt: recoveredAt,
+          });
+          yield* appendProviderFailureActivity({
+            threadId: pending.threadId,
+            kind: "provider.turn.start.failed",
+            summary: "Agent run interrupted before start",
+            detail,
+            turnId: null,
+            createdAt: recoveredAt,
+          });
+        }),
+      { concurrency: 1 },
+    );
+  });
+
   const start: ProviderCommandReactorShape["start"] = Effect.fn("start")(function* () {
+    const interruptedTurnStarts = yield* projectionTurnRepository.listPendingTurnStarts().pipe(
+      Effect.catchCause((cause) => {
+        if (Cause.hasInterruptsOnly(cause)) {
+          return Effect.interrupt;
+        }
+        return Effect.logWarning(
+          "provider command reactor failed to find interrupted turn starts",
+          { cause: Cause.pretty(cause) },
+        ).pipe(Effect.as([]));
+      }),
+    );
     const interruptedTitleRegenerations = yield* findInterruptedThreadTitleRegenerations().pipe(
       Effect.catchCause((cause) => {
         if (Cause.hasInterruptsOnly(cause)) {
@@ -1425,6 +1524,20 @@ const make = Effect.gen(function* () {
     });
 
     yield* forkParked(Stream.runForEach(orchestrationEngine.streamDomainEvents, processEvent));
+
+    if (interruptedTurnStarts.length > 0) {
+      yield* recoverInterruptedTurnStarts(interruptedTurnStarts).pipe(
+        Effect.catchCause((cause) => {
+          if (Cause.hasInterruptsOnly(cause)) {
+            return Effect.interrupt;
+          }
+          return Effect.logWarning(
+            "provider command reactor failed to recover interrupted turn starts",
+            { cause: Cause.pretty(cause) },
+          );
+        }),
+      );
+    }
 
     // The domain event stream is hot, so work pending before this reactor
     // starts cannot be resumed. Correlated completions only clear the request
@@ -1461,4 +1574,6 @@ const make = Effect.gen(function* () {
   } satisfies ProviderCommandReactorShape;
 });
 
-export const ProviderCommandReactorLive = Layer.effect(ProviderCommandReactor, make);
+export const ProviderCommandReactorLive = Layer.effect(ProviderCommandReactor, make).pipe(
+  Layer.provide(ProjectionTurnRepositoryLive),
+);
