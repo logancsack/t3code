@@ -35,13 +35,8 @@ export function hasRunningManagedTurn(threads: ReadonlyArray<OrchestrationThread
   );
 }
 
-/**
- * Mirrors the decider's queued-turn-start grace: a user message no turn has
- * adopted yet is imminent agent work, and the workspace must not be paused in
- * the window between "message sent" and "turn running". Bounded on both sides
- * because message timestamps are client-supplied (see decider.ts).
- */
-export const QUEUED_TURN_START_GRACE_MS = 2 * 60_000;
+/** Client timestamps may be slightly ahead of the server, but not arbitrarily so. */
+export const QUEUED_TURN_START_FUTURE_SKEW_MS = 2 * 60_000;
 
 export function hasQueuedManagedTurnStart(
   threads: ReadonlyArray<OrchestrationThreadShell>,
@@ -64,9 +59,10 @@ export function hasQueuedManagedTurnStart(
               candidate == null ? Number.NEGATIVE_INFINITY : Date.parse(candidate),
             ),
           );
-    return (
-      messageAtMs > latestTurnAtMs && Math.abs(nowMs - messageAtMs) <= QUEUED_TURN_START_GRACE_MS
-    );
+    // An accepted message remains work until a concrete turn adopts it or a
+    // durable terminal session error rejects it. Aging it out made an orphaned
+    // start look idle while the UI correctly retained the pending request.
+    return messageAtMs > latestTurnAtMs && messageAtMs <= nowMs + QUEUED_TURN_START_FUTURE_SKEW_MS;
   });
 }
 

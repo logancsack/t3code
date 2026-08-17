@@ -1821,6 +1821,14 @@ export function derivePhase(session: ThreadSession | null): SessionPhase {
     return "disconnected";
   }
   if (session.status === "starting") return "connecting";
-  if (session.status === "running") return "running";
+  // Some providers report a waiting runtime as a running session even though
+  // no turn is active. Rendering that state as an unbounded Working timer can
+  // outlive the request that caused it. Starting covers accepted pre-adoption
+  // work; running requires a concrete active turn.
+  if (session.status === "running") {
+    return session.activeTurnId === null || session.activeTurnId === undefined
+      ? "ready"
+      : "running";
+  }
   return "ready";
 }

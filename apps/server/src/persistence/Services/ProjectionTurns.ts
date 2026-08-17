@@ -129,6 +129,17 @@ export interface ProjectionTurnRepositoryShape {
   ) => Effect.Effect<Option.Option<ProjectionPendingTurnStart>, ProjectionRepositoryError>;
 
   /**
+   * Lists every accepted turn start that has not yet been adopted by a
+   * concrete provider turn. The provider command reactor uses this durable
+   * queue at startup so a process restart cannot leave a thread permanently
+   * looking active with no owner.
+   */
+  readonly listPendingTurnStarts: () => Effect.Effect<
+    ReadonlyArray<ProjectionPendingTurnStart>,
+    ProjectionRepositoryError
+  >;
+
+  /**
    * Deletes only pending-start placeholder rows (`turnId = null`) for a thread and leaves concrete turn rows untouched.
    */
   readonly deletePendingTurnStartByThreadId: (

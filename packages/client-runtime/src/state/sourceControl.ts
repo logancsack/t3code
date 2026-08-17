@@ -64,6 +64,7 @@ export function createSourceControlEnvironmentAtoms<R, E>(
     cloneRepository: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:source-control:clone-repository",
       tag: WS_METHODS.sourceControlCloneRepository,
+      waitForConnection: true,
       scheduler: commandScheduler,
       concurrency: {
         mode: "serial",

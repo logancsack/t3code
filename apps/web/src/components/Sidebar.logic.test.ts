@@ -666,6 +666,15 @@ describe("resolveSidebarV2Status", () => {
     ).toBe("working");
   });
 
+  it("does not render a provider waiting session with no active turn as working", () => {
+    expect(
+      resolveSidebarV2Status({
+        ...idle,
+        session: { ...session, status: "running" as const, activeTurnId: null },
+      }),
+    ).toBe("ready");
+  });
+
   it("reports failed only while the session status is error", () => {
     expect(
       resolveSidebarV2Status({

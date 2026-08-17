@@ -21,6 +21,10 @@ T3 Code works with the platforms your team already uses:
 - Choose **GitHub repository**, **GitLab repository**, **Bitbucket repository**, **Azure DevOps repository**, or paste any **Git URL**
 - Enter the repository path (`owner/repo`, `group/project`, `workspace/repository`, or `project/repository`) or a full Git URL, pick a destination, and start coding
 
+In a managed environment that can sleep, opening **Add Project** is an explicit
+compute action and reconnects that environment before project creation or clone.
+Merely viewing existing projects and thread history does not reconnect it.
+
 **Publish local projects to the cloud**
 
 - Have a local Git repository without a remote?
