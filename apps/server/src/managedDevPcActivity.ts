@@ -29,6 +29,8 @@ export function hasRunningManagedTurn(threads: ReadonlyArray<OrchestrationThread
   return threads.some(
     (thread) =>
       thread.latestTurn?.state === "running" &&
+      thread.session?.status === "running" &&
+      thread.session.activeTurnId === thread.latestTurn.turnId &&
       !thread.hasPendingApprovals &&
       !thread.hasPendingUserInput &&
       !thread.hasActionableProposedPlan,

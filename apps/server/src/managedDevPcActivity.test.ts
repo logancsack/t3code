@@ -18,11 +18,18 @@ import {
 const thread = (
   state: "running" | "interrupted" | "completed" | "error" | null,
   waiting: "approval" | "input" | "plan" | null = null,
+  session: "matching" | "missing" | "mismatched" = "matching",
 ) =>
   ({
-    latestTurn: state === null ? null : { state },
+    latestTurn: state === null ? null : { state, turnId: "turn-latest" },
     latestUserMessageAt: null,
-    session: null,
+    session:
+      session === "missing"
+        ? null
+        : {
+            status: "running",
+            activeTurnId: session === "matching" ? "turn-latest" : "turn-other",
+          },
     hasPendingApprovals: waiting === "approval",
     hasPendingUserInput: waiting === "input",
     hasActionableProposedPlan: waiting === "plan",
@@ -58,6 +65,19 @@ describe("managed DevPC activity", () => {
     expect(hasRunningManagedTurn([thread("running", "plan")])).toBe(false);
     expect(hasRunningManagedTurn([thread(null)])).toBe(false);
     expect(hasRunningManagedTurn([])).toBe(false);
+  });
+
+  it("does not keep an orphaned running projection active", () => {
+    expect(hasRunningManagedTurn([thread("running", null, "missing")])).toBe(false);
+    expect(hasRunningManagedTurn([thread("running", null, "mismatched")])).toBe(false);
+    expect(
+      hasRunningManagedTurn([
+        {
+          ...thread("running"),
+          session: { status: "ready", activeTurnId: null },
+        } as OrchestrationThreadShell,
+      ]),
+    ).toBe(false);
   });
 
   it("counts a fresh user message no turn adopted yet as queued work", () => {
