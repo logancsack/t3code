@@ -40,6 +40,12 @@ describe("derivePhase", () => {
   it("requires a concrete active turn before showing the running phase", () => {
     expect(derivePhase(session)).toBe("running");
     expect(derivePhase({ ...session, activeTurnId: null })).toBe("ready");
+    expect(
+      derivePhase({
+        ...session,
+        activeTurnId: undefined,
+      } as unknown as NonNullable<Parameters<typeof derivePhase>[0]>),
+    ).toBe("ready");
   });
 });
 

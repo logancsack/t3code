@@ -1825,6 +1825,10 @@ export function derivePhase(session: ThreadSession | null): SessionPhase {
   // no turn is active. Rendering that state as an unbounded Working timer can
   // outlive the request that caused it. Starting covers accepted pre-adoption
   // work; running requires a concrete active turn.
-  if (session.status === "running") return session.activeTurnId === null ? "ready" : "running";
+  if (session.status === "running") {
+    return session.activeTurnId === null || session.activeTurnId === undefined
+      ? "ready"
+      : "running";
+  }
   return "ready";
 }

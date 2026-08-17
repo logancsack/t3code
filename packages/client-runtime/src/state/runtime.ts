@@ -17,6 +17,7 @@ import {
   type EnvironmentSubscriptionRpcTag,
   type EnvironmentUnaryRpcTag,
   request,
+  requestWhenConnected,
   runStream,
   subscribe,
 } from "../rpc/client.ts";
@@ -648,6 +649,8 @@ export function createEnvironmentRpcCommand<R, ER, TTag extends EnvironmentUnary
   options: {
     readonly label: string;
     readonly tag: TTag;
+    /** Hold an explicit mutation until a sleeping/disconnected environment reconnects. */
+    readonly waitForConnection?: boolean;
     readonly scheduler?: AtomCommandScheduler;
     readonly concurrency?: AtomCommandConcurrency<{
       readonly environmentId: EnvironmentIdType;
@@ -678,7 +681,8 @@ export function createEnvironmentRpcCommand<R, ER, TTag extends EnvironmentUnary
         environmentId,
         input,
       };
-      return request(options.tag, input).pipe(
+      const executeRequest = options.waitForConnection ? requestWhenConnected : request;
+      return executeRequest(options.tag, input).pipe(
         Effect.tap(() => options.onSuccess?.(target, registry) ?? Effect.void),
         Effect.ensuring(options.onSettled?.(target, registry) ?? Effect.void),
       );

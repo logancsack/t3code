@@ -89,7 +89,8 @@ import { isPreviewFocused } from "../lib/previewFocus";
 import { isTerminalFocused } from "../lib/terminalFocus";
 import { selectActiveRightPanel, useRightPanelStore } from "../rightPanelStore";
 import { getLatestThreadForProject, sortThreads } from "../lib/threadSort";
-import { cn, isMacPlatform, isWindowsPlatform, newProjectId } from "../lib/utils";
+import { cn, isMacPlatform, isWindowsPlatform, newProjectId, randomUUID } from "../lib/utils";
+import { isManagedDevPc, requestManagedResume } from "../managedDevPc";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { buildThreadRouteParams, resolveThreadRouteTarget } from "../threadRoutes";
 import {
@@ -189,6 +190,21 @@ interface AddProjectEnvironmentOption {
   readonly isPrimary: boolean;
   readonly isConnected: boolean;
   readonly status: string;
+}
+
+function canUseAddProjectEnvironment(
+  environmentId: EnvironmentId | null | undefined,
+  primaryEnvironmentId: EnvironmentId | null,
+  connectionPhase: Parameters<typeof canCreateProjectInEnvironment>[0],
+): boolean {
+  return (
+    canCreateProjectInEnvironment(connectionPhase) ||
+    (isManagedDevPc &&
+      environmentId !== null &&
+      environmentId !== undefined &&
+      primaryEnvironmentId !== null &&
+      environmentId === primaryEnvironmentId)
+  );
 }
 
 type AddProjectRemoteProviderKind = Extract<
@@ -731,7 +747,11 @@ function OpenCommandPaletteDialog(props: {
           runtimeLabel: environment.label,
         }),
         isPrimary,
-        isConnected: canCreateProjectInEnvironment(environment.connection.phase),
+        isConnected: canUseAddProjectEnvironment(
+          environment.environmentId,
+          primaryEnvironmentId,
+          environment.connection.phase,
+        ),
         status: connectionStatusText(environment.connection),
       };
     });
@@ -744,7 +764,7 @@ function OpenCommandPaletteDialog(props: {
     });
 
     return options;
-  }, [environments]);
+  }, [environments, primaryEnvironmentId]);
   const defaultAddProjectEnvironmentId =
     addProjectEnvironmentOptions.find((option) => option.isConnected)?.environmentId ?? null;
   const wslAddProjectEnvironmentOption = useMemo(
@@ -1245,11 +1265,17 @@ function OpenCommandPaletteDialog(props: {
   );
 
   const startAddProjectSourceSelection = useCallback(
-    (environmentId: EnvironmentId): void => {
+    async (environmentId: EnvironmentId): Promise<void> => {
       const environment = environments.find(
         (candidate) => candidate.environmentId === environmentId,
       );
-      if (!canCreateProjectInEnvironment(environment?.connection.phase)) {
+      if (
+        !canUseAddProjectEnvironment(
+          environmentId,
+          primaryEnvironmentId,
+          environment?.connection.phase,
+        )
+      ) {
         toastManager.add(
           stackedThreadToast({
             type: "error",
@@ -1258,6 +1284,19 @@ function OpenCommandPaletteDialog(props: {
           }),
         );
         return;
+      }
+      if (!canCreateProjectInEnvironment(environment?.connection.phase) && isManagedDevPc) {
+        const outcome = await requestManagedResume(`add-project-${randomUUID()}`);
+        if (outcome === "rejected") {
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: "Workspace could not resume",
+              description: "Try adding the project again in a moment.",
+            }),
+          );
+          return;
+        }
       }
       setAddProjectEnvironmentId(environmentId);
       setAddProjectCloneFlow(null);
@@ -1275,6 +1314,7 @@ function OpenCommandPaletteDialog(props: {
       browseEnvironmentId,
       buildAddProjectSourceGroups,
       environments,
+      primaryEnvironmentId,
       pushPaletteView,
       sourceControlDiscovery.data,
     ],
@@ -1295,7 +1335,7 @@ function OpenCommandPaletteDialog(props: {
       icon: <FolderPlusIcon className={ITEM_ICON_CLASS} />,
       keepOpen: true,
       run: async () => {
-        startAddProjectSourceSelection(option.environmentId);
+        await startAddProjectSourceSelection(option.environmentId);
       },
     }),
   );
@@ -1558,7 +1598,13 @@ function OpenCommandPaletteDialog(props: {
       const environment = environments.find(
         (candidate) => candidate.environmentId === input.environmentId,
       );
-      if (!canCreateProjectInEnvironment(environment?.connection.phase)) {
+      if (
+        !canUseAddProjectEnvironment(
+          input.environmentId,
+          primaryEnvironmentId,
+          environment?.connection.phase,
+        )
+      ) {
         toastManager.add(
           stackedThreadToast({
             type: "error",
@@ -1813,7 +1859,13 @@ function OpenCommandPaletteDialog(props: {
     if (!addProjectCloneFlow) {
       return;
     }
-    if (!canCreateProjectInEnvironment(browseEnvironment?.connection.phase)) {
+    if (
+      !canUseAddProjectEnvironment(
+        browseEnvironmentId,
+        primaryEnvironmentId,
+        browseEnvironment?.connection.phase,
+      )
+    ) {
       toastManager.add(
         stackedThreadToast({
           type: "error",
@@ -2030,7 +2082,11 @@ function OpenCommandPaletteDialog(props: {
   const canSubmitBrowsePath =
     isBrowsing &&
     !relativePathNeedsActiveProject &&
-    canCreateProjectInEnvironment(browseEnvironment?.connection.phase);
+    canUseAddProjectEnvironment(
+      browseEnvironmentId,
+      primaryEnvironmentId,
+      browseEnvironment?.connection.phase,
+    );
   const willCreateProjectPath =
     canSubmitBrowsePath &&
     !isBrowsePending &&
@@ -2057,7 +2113,11 @@ function OpenCommandPaletteDialog(props: {
   const canSubmitRemoteProjectFlow =
     addProjectCloneFlow?.step === "repository" &&
     query.trim().length > 0 &&
-    canCreateProjectInEnvironment(browseEnvironment?.connection.phase) &&
+    canUseAddProjectEnvironment(
+      browseEnvironmentId,
+      primaryEnvironmentId,
+      browseEnvironment?.connection.phase,
+    ) &&
     !isRemoteProjectPending;
   const fileManagerName = getLocalFileManagerName(navigator.platform);
   const canOpenProjectFromFileManager =
@@ -2329,7 +2389,11 @@ function OpenCommandPaletteDialog(props: {
               )}
               aria-label={`${submitActionLabel} (${addShortcutLabel})`}
               disabled={
-                !canCreateProjectInEnvironment(browseEnvironment?.connection.phase) ||
+                !canUseAddProjectEnvironment(
+                  browseEnvironmentId,
+                  primaryEnvironmentId,
+                  browseEnvironment?.connection.phase,
+                ) ||
                 relativePathNeedsActiveProject ||
                 (isCloneDestinationStep && isRemoteProjectPending)
               }

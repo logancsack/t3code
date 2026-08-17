@@ -1487,28 +1487,6 @@ const make = Effect.gen(function* () {
   });
 
   const start: ProviderCommandReactorShape["start"] = Effect.fn("start")(function* () {
-    const interruptedTurnStarts = yield* projectionTurnRepository.listPendingTurnStarts().pipe(
-      Effect.catchCause((cause) => {
-        if (Cause.hasInterruptsOnly(cause)) {
-          return Effect.interrupt;
-        }
-        return Effect.logWarning(
-          "provider command reactor failed to find interrupted turn starts",
-          { cause: Cause.pretty(cause) },
-        ).pipe(Effect.as([]));
-      }),
-    );
-    const interruptedTitleRegenerations = yield* findInterruptedThreadTitleRegenerations().pipe(
-      Effect.catchCause((cause) => {
-        if (Cause.hasInterruptsOnly(cause)) {
-          return Effect.interrupt;
-        }
-        return Effect.logWarning(
-          "provider command reactor failed to find interrupted title regenerations",
-          { cause: Cause.pretty(cause) },
-        ).pipe(Effect.as([]));
-      }),
-    );
     const processEvent = Effect.fn("processEvent")(function* (event: OrchestrationEvent) {
       if (
         (event.type === "thread.meta-updated" && event.payload.regenerateTitle === true) ||
@@ -1523,21 +1501,47 @@ const make = Effect.gen(function* () {
       }
     });
 
+    // Subscribe before scanning the durable backlog. Otherwise a command
+    // committed between the one-shot query and this hot subscription is lost
+    // until the next process restart—the exact failure mode this recovery is
+    // intended to close.
     yield* forkParked(Stream.runForEach(orchestrationEngine.streamDomainEvents, processEvent));
 
-    if (interruptedTurnStarts.length > 0) {
-      yield* recoverInterruptedTurnStarts(interruptedTurnStarts).pipe(
-        Effect.catchCause((cause) => {
-          if (Cause.hasInterruptsOnly(cause)) {
-            return Effect.interrupt;
-          }
-          return Effect.logWarning(
-            "provider command reactor failed to recover interrupted turn starts",
-            { cause: Cause.pretty(cause) },
-          );
-        }),
-      );
-    }
+    const reconcileInterruptedTurnStarts = Effect.fn("reconcileInterruptedTurnStarts")(
+      function* () {
+        const pendingStarts = yield* projectionTurnRepository.listPendingTurnStarts();
+        const nowMs = yield* Clock.currentTimeMillis;
+        const expired = pendingStarts.filter(
+          (pending) =>
+            nowMs - DateTime.toEpochMillis(DateTime.makeUnsafe(pending.requestedAt)) >=
+            Duration.toMillis(TURN_START_ADOPTION_TIMEOUT),
+        );
+        if (expired.length > 0) yield* recoverInterruptedTurnStarts(expired);
+      },
+      Effect.catchCause((cause) => {
+        if (Cause.hasInterruptsOnly(cause)) return Effect.interrupt;
+        return Effect.logWarning("provider command reactor failed to reconcile turn starts", {
+          cause: Cause.pretty(cause),
+        });
+      }),
+    );
+
+    yield* reconcileInterruptedTurnStarts();
+    yield* forkParked(
+      Effect.forever(
+        Effect.sleep(Duration.seconds(30)).pipe(Effect.andThen(reconcileInterruptedTurnStarts())),
+      ),
+    );
+
+    const interruptedTitleRegenerations = yield* findInterruptedThreadTitleRegenerations().pipe(
+      Effect.catchCause((cause) => {
+        if (Cause.hasInterruptsOnly(cause)) return Effect.interrupt;
+        return Effect.logWarning(
+          "provider command reactor failed to find interrupted title regenerations",
+          { cause: Cause.pretty(cause) },
+        ).pipe(Effect.as([]));
+      }),
+    );
 
     // The domain event stream is hot, so work pending before this reactor
     // starts cannot be resumed. Correlated completions only clear the request
