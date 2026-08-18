@@ -370,6 +370,54 @@ describe("managed DevPC paused bootstrap", () => {
     expect(storage.has("devpc-managed-workspace-action")).toBe(false);
   });
 
+  it.each(["pause", "restart", "resume"] as const)(
+    "lets a fresh command wake supersede a persisted %s action",
+    async (action) => {
+      vi.stubEnv("VITE_DEVPC_MANAGED", "1");
+      vi.resetModules();
+      const storage = new Map([
+        [
+          "devpc-managed-workspace-action",
+          JSON.stringify({
+            action,
+            phase: "pending",
+            idempotencyKey: `${action}-stale-key`,
+            progressObserved: true,
+            restartConfirmations: 0,
+          }),
+        ],
+      ]);
+      const dispatchEvent = vi.fn();
+      vi.stubGlobal("window", {
+        localStorage: {
+          getItem: (key: string) => storage.get(key) ?? null,
+          setItem: (key: string, value: string) => storage.set(key, value),
+          removeItem: (key: string) => storage.delete(key),
+        },
+        dispatchEvent,
+      });
+      const fetchMock = vi.fn(async (_input: string) => Response.json({ state: "starting" }));
+      vi.stubGlobal("fetch", fetchMock);
+
+      const { requestManagedResume } = await import("./managedDevPc");
+
+      await expect(requestManagedResume("dispatch-fresh-command")).resolves.toBe("accepted");
+      expect(fetchMock).toHaveBeenCalledOnce();
+      expect(fetchMock.mock.calls[0]?.[0]).toBe("/_devpc/workspace/start");
+      expect(JSON.parse(storage.get("devpc-managed-workspace-action") ?? "null")).toMatchObject({
+        action: "resume",
+        idempotencyKey: "dispatch-fresh-command",
+        progressObserved: true,
+      });
+      expect(dispatchEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "devpc-managed-workspace-action-cleared",
+          detail: { action },
+        }),
+      );
+    },
+  );
+
   it("keeps in-memory resume ownership when shared storage is unavailable from the outset", async () => {
     vi.stubEnv("VITE_DEVPC_MANAGED", "1");
     vi.resetModules();
