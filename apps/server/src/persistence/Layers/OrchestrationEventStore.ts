@@ -64,6 +64,10 @@ const ReadFromSequenceRequestSchema = Schema.Struct({
   sequenceExclusive: NonNegativeInt,
   limit: Schema.Number,
 });
+const ReadCreatedEventRequestSchema = Schema.Struct({
+  aggregateKind: OrchestrationAggregateKind,
+  aggregateId: Schema.Union([ProjectId, ThreadId]),
+});
 const DEFAULT_READ_FROM_SEQUENCE_LIMIT = 1_000;
 const READ_PAGE_SIZE = 500;
 
@@ -181,6 +185,31 @@ const makeEventStore = Effect.gen(function* () {
       `,
   });
 
+  const readCreatedEventRows = SqlSchema.findAll({
+    Request: ReadCreatedEventRequestSchema,
+    Result: OrchestrationEventPersistedRowSchema,
+    execute: (request) =>
+      sql`
+        SELECT
+          sequence,
+          event_id AS "eventId",
+          event_type AS "type",
+          aggregate_kind AS "aggregateKind",
+          stream_id AS "aggregateId",
+          occurred_at AS "occurredAt",
+          command_id AS "commandId",
+          causation_event_id AS "causationEventId",
+          correlation_id AS "correlationId",
+          payload_json AS "payload",
+          metadata_json AS "metadata"
+        FROM orchestration_events
+        WHERE aggregate_kind = ${request.aggregateKind}
+          AND stream_id = ${request.aggregateId}
+          AND stream_version = 0
+        LIMIT 1
+      `,
+  });
+
   const append: OrchestrationEventStoreShape["append"] = (event) =>
     appendEventRow({
       eventId: event.eventId,
@@ -260,10 +289,34 @@ const makeEventStore = Effect.gen(function* () {
     return readPage(sequenceExclusive, normalizedLimit);
   };
 
+  const readCreatedEvent: OrchestrationEventStoreShape["readCreatedEvent"] = (
+    aggregateKind,
+    aggregateId,
+  ) =>
+    readCreatedEventRows({ aggregateKind, aggregateId }).pipe(
+      Effect.mapError(
+        toPersistenceSqlOrDecodeError(
+          "OrchestrationEventStore.readCreatedEvent:query",
+          "OrchestrationEventStore.readCreatedEvent:decodeRows",
+        ),
+      ),
+      Effect.flatMap((rows) => {
+        const row = rows[0];
+        return row === undefined
+          ? Effect.succeed(null)
+          : decodeEvent(row).pipe(
+              Effect.mapError(
+                toPersistenceDecodeError("OrchestrationEventStore.readCreatedEvent:rowToEvent"),
+              ),
+            );
+      }),
+    );
+
   return {
     append,
     readFromSequence,
     readAll: () => readFromSequence(0, Number.MAX_SAFE_INTEGER),
+    readCreatedEvent,
   } satisfies OrchestrationEventStoreShape;
 });
 

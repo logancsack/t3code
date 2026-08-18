@@ -48,7 +48,7 @@ export interface OrchestrationEngineShape {
    */
   readonly dispatch: (
     command: OrchestrationCommand,
-  ) => Effect.Effect<{ sequence: number }, OrchestrationDispatchError, never>;
+  ) => Effect.Effect<{ sequence: number; replayed?: true }, OrchestrationDispatchError, never>;
 
   /**
    * Stream persisted domain events in dispatch order.

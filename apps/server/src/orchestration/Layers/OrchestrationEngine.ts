@@ -11,6 +11,7 @@ import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
+import * as Equal from "effect/Equal";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
@@ -38,6 +39,7 @@ import {
   type OrchestrationProjectorDecodeError,
 } from "../Errors.ts";
 import { decideOrchestrationCommand } from "../decider.ts";
+import { findProjectById, findThreadById } from "../commandInvariants.ts";
 import { createEmptyReadModel, projectEvent } from "../projector.ts";
 import { OrchestrationProjectionPipeline } from "../Services/ProjectionPipeline.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
@@ -52,7 +54,7 @@ const isOrchestrationCommandInvariantError = Schema.is(OrchestrationCommandInvar
 
 interface CommandEnvelope {
   command: OrchestrationCommand;
-  result: Deferred.Deferred<{ sequence: number }, OrchestrationDispatchError>;
+  result: Deferred.Deferred<{ sequence: number; replayed?: true }, OrchestrationDispatchError>;
   startedAtMs: number;
 }
 
@@ -74,6 +76,47 @@ function commandToAggregateRef(command: OrchestrationCommand): {
         aggregateId: command.threadId,
       };
   }
+}
+
+function matchingCreateReplay(input: {
+  readonly command: OrchestrationCommand;
+  readonly readModel: OrchestrationReadModel;
+  readonly createdEvent: OrchestrationEvent | null;
+}): { readonly acceptedAt: string } | undefined {
+  const { command, readModel, createdEvent } = input;
+  if (command.type === "project.create") {
+    const project = findProjectById(readModel, command.projectId);
+    if (
+      project?.deletedAt === null &&
+      createdEvent?.type === "project.created" &&
+      createdEvent.payload.title === command.title &&
+      createdEvent.payload.workspaceRoot === command.workspaceRoot &&
+      Equal.equals(
+        createdEvent.payload.defaultModelSelection,
+        command.defaultModelSelection ?? null,
+      )
+    ) {
+      return { acceptedAt: createdEvent.occurredAt };
+    }
+    return undefined;
+  }
+  if (command.type === "thread.create") {
+    const thread = findThreadById(readModel, command.threadId);
+    if (
+      thread?.deletedAt === null &&
+      createdEvent?.type === "thread.created" &&
+      createdEvent.payload.projectId === command.projectId &&
+      createdEvent.payload.title === command.title &&
+      Equal.equals(createdEvent.payload.modelSelection, command.modelSelection) &&
+      createdEvent.payload.interactionMode === command.interactionMode &&
+      createdEvent.payload.runtimeMode === command.runtimeMode &&
+      createdEvent.payload.branch === command.branch &&
+      createdEvent.payload.worktreePath === command.worktreePath
+    ) {
+      return { acceptedAt: createdEvent.occurredAt };
+    }
+  }
+  return undefined;
 }
 
 const makeOrchestrationEngine = Effect.gen(function* () {
@@ -142,12 +185,38 @@ const makeOrchestrationEngine = Effect.gen(function* () {
           if (existingReceipt.value.status === "accepted") {
             return {
               sequence: existingReceipt.value.resultSequence,
+              replayed: true as const,
             };
           }
           return yield* new OrchestrationCommandPreviouslyRejectedError({
             commandId: envelope.command.commandId,
             detail: existingReceipt.value.error ?? "Previously rejected.",
           });
+        }
+
+        const createdEvent =
+          envelope.command.type === "project.create" || envelope.command.type === "thread.create"
+            ? yield* eventStore.readCreatedEvent(
+                aggregateRef.aggregateKind,
+                aggregateRef.aggregateId,
+              )
+            : null;
+        const createReplay = matchingCreateReplay({
+          command: envelope.command,
+          readModel: commandReadModel,
+          createdEvent,
+        });
+        if (createReplay !== undefined) {
+          yield* commandReceiptRepository.upsert({
+            commandId: envelope.command.commandId,
+            aggregateKind: aggregateRef.aggregateKind,
+            aggregateId: aggregateRef.aggregateId,
+            acceptedAt: createReplay.acceptedAt,
+            resultSequence: commandReadModel.snapshotSequence,
+            status: "accepted",
+            error: null,
+          });
+          return { sequence: commandReadModel.snapshotSequence, replayed: true as const };
         }
 
         const eventBase = yield* decideOrchestrationCommand({
@@ -311,7 +380,10 @@ const makeOrchestrationEngine = Effect.gen(function* () {
 
   const dispatch: OrchestrationEngineShape["dispatch"] = (command) =>
     Effect.gen(function* () {
-      const result = yield* Deferred.make<{ sequence: number }, OrchestrationDispatchError>();
+      const result = yield* Deferred.make<
+        { sequence: number; replayed?: true },
+        OrchestrationDispatchError
+      >();
       yield* Queue.offer(commandQueue, {
         command,
         result,
