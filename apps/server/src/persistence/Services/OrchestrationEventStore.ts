@@ -52,6 +52,12 @@ export interface OrchestrationEventStoreShape {
    * @returns Stream containing all stored events.
    */
   readonly readAll: () => Stream.Stream<OrchestrationEvent, OrchestrationEventStoreError>;
+
+  /** Read the immutable first event for one aggregate, if it exists. */
+  readonly readCreatedEvent: (
+    aggregateKind: "project" | "thread",
+    aggregateId: OrchestrationEvent["aggregateId"],
+  ) => Effect.Effect<OrchestrationEvent | null, OrchestrationEventStoreError>;
 }
 
 /**

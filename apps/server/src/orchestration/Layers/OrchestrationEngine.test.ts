@@ -106,6 +106,7 @@ describe("OrchestrationEngine", () => {
           return savedEvent;
         }),
       readFromSequence: () => Stream.empty,
+      readCreatedEvent: () => Effect.succeed(null),
       readAll: () =>
         Stream.fail(
           new PersistenceSqlError({
@@ -812,6 +813,16 @@ describe("OrchestrationEngine", () => {
       readAll() {
         return Stream.fromIterable(events);
       },
+      readCreatedEvent(aggregateKind, aggregateId) {
+        return Effect.succeed(
+          events.find(
+            (event) =>
+              event.aggregateKind === aggregateKind &&
+              event.aggregateId === aggregateId &&
+              (event.type === "project.created" || event.type === "thread.created"),
+          ) ?? null,
+        );
+      },
     };
 
     const ServerConfigLayer = ServerConfig.layerTest(process.cwd(), {
@@ -1048,6 +1059,16 @@ describe("OrchestrationEngine", () => {
       readAll() {
         return Stream.fromIterable(events);
       },
+      readCreatedEvent(aggregateKind, aggregateId) {
+        return Effect.succeed(
+          events.find(
+            (event) =>
+              event.aggregateKind === aggregateKind &&
+              event.aggregateId === aggregateId &&
+              (event.type === "project.created" || event.type === "thread.created"),
+          ) ?? null,
+        );
+      },
     };
 
     let shouldFailProjection = true;
@@ -1168,12 +1189,12 @@ describe("OrchestrationEngine", () => {
     await system.dispose();
   });
 
-  it("rejects duplicate thread creation", async () => {
+  it("accepts equivalent create replays without appending duplicate events", async () => {
     const system = await createOrchestrationSystem();
     const { engine } = system;
     const createdAt = now();
 
-    await system.run(
+    const initialProjectResult = await system.run(
       engine.dispatch({
         type: "project.create",
         commandId: CommandId.make("cmd-project-duplicate-create"),
@@ -1187,8 +1208,9 @@ describe("OrchestrationEngine", () => {
         createdAt,
       }),
     );
+    expect(initialProjectResult.replayed).toBeUndefined();
 
-    await system.run(
+    const initialThreadResult = await system.run(
       engine.dispatch({
         type: "thread.create",
         commandId: CommandId.make("cmd-thread-duplicate-1"),
@@ -1206,15 +1228,118 @@ describe("OrchestrationEngine", () => {
         createdAt,
       }),
     );
+    expect(initialThreadResult.replayed).toBeUndefined();
+
+    await system.run(
+      engine.dispatch({
+        type: "project.meta.update",
+        commandId: CommandId.make("cmd-project-duplicate-meta"),
+        projectId: asProjectId("project-duplicate"),
+        title: "Renamed after creation",
+      }),
+    );
+    await system.run(
+      engine.dispatch({
+        type: "thread.meta.update",
+        commandId: CommandId.make("cmd-thread-duplicate-meta"),
+        threadId: ThreadId.make("thread-duplicate"),
+        branch: "agent/generated-worktree",
+        worktreePath: "/tmp/project-duplicate/.t3/worktrees/generated",
+      }),
+    );
+
+    const projectReplay = await system.run(
+      engine.dispatch({
+        type: "project.create",
+        commandId: CommandId.make("cmd-project-duplicate-replay"),
+        projectId: asProjectId("project-duplicate"),
+        title: "Duplicate Project",
+        workspaceRoot: "/tmp/project-duplicate",
+        defaultModelSelection: {
+          instanceId: ProviderInstanceId.make("codex"),
+          model: "gpt-5-codex",
+        },
+        createdAt: now(),
+      }),
+    );
+    const threadReplay = await system.run(
+      engine.dispatch({
+        type: "thread.create",
+        commandId: CommandId.make("cmd-thread-duplicate-replay"),
+        threadId: ThreadId.make("thread-duplicate"),
+        projectId: asProjectId("project-duplicate"),
+        title: "duplicate",
+        modelSelection: {
+          instanceId: ProviderInstanceId.make("codex"),
+          model: "gpt-5-codex",
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        branch: null,
+        worktreePath: null,
+        createdAt: now(),
+      }),
+    );
+    expect(projectReplay.replayed).toBe(true);
+    expect(threadReplay.replayed).toBe(true);
+
+    const events = await system.run(
+      Stream.runCollect(engine.readEvents(0)).pipe(
+        Effect.map((chunk): OrchestrationEvent[] => Array.from(chunk)),
+      ),
+    );
+    expect(events.map((event) => event.type)).toEqual([
+      "project.created",
+      "thread.created",
+      "project.meta-updated",
+      "thread.meta-updated",
+    ]);
+
+    await system.dispose();
+  });
+
+  it("rejects conflicting create replays", async () => {
+    const system = await createOrchestrationSystem();
+    const { engine } = system;
+    const createdAt = now();
+
+    await system.run(
+      engine.dispatch({
+        type: "project.create",
+        commandId: CommandId.make("cmd-project-conflict-create"),
+        projectId: asProjectId("project-conflict"),
+        title: "Conflict Project",
+        workspaceRoot: "/tmp/project-conflict",
+        createdAt,
+      }),
+    );
+    await system.run(
+      engine.dispatch({
+        type: "thread.create",
+        commandId: CommandId.make("cmd-thread-conflict-create"),
+        threadId: ThreadId.make("thread-conflict"),
+        projectId: asProjectId("project-conflict"),
+        title: "original",
+        modelSelection: {
+          instanceId: ProviderInstanceId.make("codex"),
+          model: "gpt-5-codex",
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        branch: null,
+        worktreePath: null,
+        createdAt,
+      }),
+    );
 
     await expect(
       system.run(
         engine.dispatch({
           type: "thread.create",
-          commandId: CommandId.make("cmd-thread-duplicate-2"),
-          threadId: ThreadId.make("thread-duplicate"),
-          projectId: asProjectId("project-duplicate"),
-          title: "duplicate",
+          commandId: CommandId.make("cmd-thread-conflict-replay"),
+          threadId: ThreadId.make("thread-conflict"),
+          projectId: asProjectId("project-conflict"),
+          title: "different",
           modelSelection: {
             instanceId: ProviderInstanceId.make("codex"),
             model: "gpt-5-codex",
@@ -1223,7 +1348,7 @@ describe("OrchestrationEngine", () => {
           runtimeMode: "approval-required",
           branch: null,
           worktreePath: null,
-          createdAt,
+          createdAt: now(),
         }),
       ),
     ).rejects.toThrow("already exists");
