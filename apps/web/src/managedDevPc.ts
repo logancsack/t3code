@@ -638,7 +638,24 @@ export async function requestManagedResume(
   resumeRequestKey: string,
 ): Promise<ResumeRequestOutcome> {
   const existing = readStoredManagedWorkspaceAction();
-  if (existing && !ownsPersistedManagedResume(resumeRequestKey)) return "superseded";
+  if (existing && !ownsPersistedManagedResume(resumeRequestKey)) {
+    // This call is made only for fresh, trusted user intent: a resume click or
+    // a command the user just submitted. A prior lifecycle action may survive
+    // in localStorage after the workspace later pauses again (notably when an
+    // earlier resume completed between status polls). Treating that older
+    // record as authoritative skips the start request entirely and strands the
+    // new command in requestWhenConnected forever. Latest explicit intent wins;
+    // the control plane serializes a concurrent pause/restart safely, while the
+    // stable new key keeps retries idempotent.
+    clearStoredManagedWorkspaceAction(existing.action, existing.idempotencyKey);
+    if (typeof window.dispatchEvent === "function") {
+      window.dispatchEvent(
+        new CustomEvent(MANAGED_WORKSPACE_ACTION_CLEARED_EVENT, {
+          detail: { action: existing.action },
+        }),
+      );
+    }
+  }
   bootstrapResumeRequestKey = resumeRequestKey;
   const progressObserved =
     existing?.action === "resume" &&
