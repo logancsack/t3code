@@ -277,6 +277,7 @@ export function projectEvent(
           event.type,
           "payload",
         );
+        const existing = nextBase.threads.find((entry) => entry.id === payload.threadId);
         const thread: OrchestrationThread = yield* decodeForEvent(
           OrchestrationThread,
           {
@@ -289,15 +290,18 @@ export function projectEvent(
             branch: payload.branch,
             worktreePath: payload.worktreePath,
             latestTurn: null,
-            createdAt: payload.createdAt,
+            createdAt: existing?.createdAt ?? payload.createdAt,
             updatedAt: payload.updatedAt,
             archivedAt: null,
             settledOverride: null,
             settledAt: null,
             snoozedUntil: null,
             snoozedAt: null,
+            pinnedAt: null,
+            titleRegeneration: null,
             deletedAt: null,
             messages: [],
+            proposedPlans: [],
             activities: [],
             checkpoints: [],
             session: null,
@@ -305,7 +309,6 @@ export function projectEvent(
           event.type,
           "thread",
         );
-        const existing = nextBase.threads.find((entry) => entry.id === thread.id);
         return {
           ...nextBase,
           threads: existing

@@ -590,7 +590,45 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
       "applyThreadsProjection",
     )(function* (event, attachmentSideEffects) {
       switch (event.type) {
-        case "thread.created":
+        case "thread.created": {
+          const existingRow = yield* projectionThreadRepository.getById({
+            threadId: event.payload.threadId,
+          });
+          const recreatingDeletedThread =
+            Option.isSome(existingRow) && existingRow.value.deletedAt !== null;
+          if (recreatingDeletedThread) {
+            const pendingApprovals = yield* projectionPendingApprovalRepository.listByThreadId({
+              threadId: event.payload.threadId,
+            });
+            yield* Effect.all(
+              [
+                projectionThreadMessageRepository.deleteByThreadId({
+                  threadId: event.payload.threadId,
+                }),
+                projectionThreadProposedPlanRepository.deleteByThreadId({
+                  threadId: event.payload.threadId,
+                }),
+                projectionThreadActivityRepository.deleteByThreadId({
+                  threadId: event.payload.threadId,
+                }),
+                projectionThreadSessionRepository.deleteByThreadId({
+                  threadId: event.payload.threadId,
+                }),
+                projectionTurnRepository.deleteByThreadId({
+                  threadId: event.payload.threadId,
+                }),
+                Effect.forEach(
+                  pendingApprovals,
+                  (approval) =>
+                    projectionPendingApprovalRepository.deleteByRequestId({
+                      requestId: approval.requestId,
+                    }),
+                  { concurrency: 1, discard: true },
+                ),
+              ],
+              { concurrency: 1, discard: true },
+            );
+          }
           yield* projectionThreadRepository.upsert({
             threadId: event.payload.threadId,
             projectId: event.payload.projectId,
@@ -601,7 +639,9 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             branch: event.payload.branch,
             worktreePath: event.payload.worktreePath,
             latestTurnId: null,
-            createdAt: event.payload.createdAt,
+            createdAt: Option.isSome(existingRow)
+              ? existingRow.value.createdAt
+              : event.payload.createdAt,
             updatedAt: event.payload.updatedAt,
             archivedAt: null,
             settledOverride: null,
@@ -618,6 +658,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             deletedAt: null,
           });
           return;
+        }
 
         case "thread.archived": {
           const existingRow = yield* projectionThreadRepository.getById({

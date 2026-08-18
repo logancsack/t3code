@@ -1003,6 +1003,7 @@ it.layer(Layer.fresh(makeProjectionPipelinePrefixedTestLayer("t3-projection-atta
         const path = yield* Path.Path;
         const projectionPipeline = yield* OrchestrationProjectionPipeline;
         const eventStore = yield* OrchestrationEventStore;
+        const sql = yield* SqlClient.SqlClient;
         const { attachmentsDir } = yield* ServerConfig;
         const now = "2026-01-01T00:00:00.000Z";
         const threadId = ThreadId.make("Thread Delete.Files");
@@ -1122,6 +1123,39 @@ it.layer(Layer.fresh(makeProjectionPipelinePrefixedTestLayer("t3-projection-atta
 
         assert.isFalse(yield* exists(threadAttachmentPath));
         assert.isTrue(yield* exists(otherThreadAttachmentPath));
+
+        yield* appendAndProject({
+          type: "thread.created",
+          eventId: EventId.make("evt-delete-files-5"),
+          aggregateKind: "thread",
+          aggregateId: threadId,
+          occurredAt: now,
+          commandId: CommandId.make("cmd-delete-files-5"),
+          causationEventId: null,
+          correlationId: CorrelationId.make("cmd-delete-files-5"),
+          metadata: {},
+          payload: {
+            threadId,
+            projectId: ProjectId.make("project-delete-files"),
+            title: "Recreated Thread",
+            modelSelection: {
+              instanceId: ProviderInstanceId.make("codex"),
+              model: "gpt-5-codex",
+            },
+            runtimeMode: "full-access",
+            branch: null,
+            worktreePath: null,
+            createdAt: now,
+            updatedAt: now,
+          },
+        });
+
+        const staleMessages = yield* sql<{ readonly count: number }>`
+          SELECT count(*) AS count
+          FROM projection_thread_messages
+          WHERE thread_id = ${threadId}
+        `;
+        assert.equal(Number(staleMessages[0]?.count ?? -1), 0);
       }),
     );
   },

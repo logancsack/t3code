@@ -107,6 +107,7 @@ describe("OrchestrationEngine", () => {
         }),
       readFromSequence: () => Stream.empty,
       readCreatedEvent: () => Effect.succeed(null),
+      readDeletedEvent: () => Effect.succeed(null),
       readAll: () =>
         Stream.fail(
           new PersistenceSqlError({
@@ -815,11 +816,21 @@ describe("OrchestrationEngine", () => {
       },
       readCreatedEvent(aggregateKind, aggregateId) {
         return Effect.succeed(
-          events.find(
+          events.findLast(
             (event) =>
               event.aggregateKind === aggregateKind &&
               event.aggregateId === aggregateId &&
               (event.type === "project.created" || event.type === "thread.created"),
+          ) ?? null,
+        );
+      },
+      readDeletedEvent(threadId) {
+        return Effect.succeed(
+          events.findLast(
+            (event) =>
+              event.aggregateKind === "thread" &&
+              event.aggregateId === threadId &&
+              event.type === "thread.deleted",
           ) ?? null,
         );
       },
@@ -1061,11 +1072,21 @@ describe("OrchestrationEngine", () => {
       },
       readCreatedEvent(aggregateKind, aggregateId) {
         return Effect.succeed(
-          events.find(
+          events.findLast(
             (event) =>
               event.aggregateKind === aggregateKind &&
               event.aggregateId === aggregateId &&
               (event.type === "project.created" || event.type === "thread.created"),
+          ) ?? null,
+        );
+      },
+      readDeletedEvent(threadId) {
+        return Effect.succeed(
+          events.findLast(
+            (event) =>
+              event.aggregateKind === "thread" &&
+              event.aggregateId === threadId &&
+              event.type === "thread.deleted",
           ) ?? null,
         );
       },
@@ -1294,6 +1315,138 @@ describe("OrchestrationEngine", () => {
       "project.meta-updated",
       "thread.meta-updated",
     ]);
+
+    await system.dispose();
+  });
+
+  it("recreates a cleaned-up bootstrap thread and replays its latest create", async () => {
+    const system = await createOrchestrationSystem();
+    const { engine } = system;
+    const projectId = asProjectId("project-bootstrap-recovery");
+    const threadId = ThreadId.make("thread-bootstrap-recovery");
+    const modelSelection = {
+      instanceId: ProviderInstanceId.make("codex"),
+      model: "gpt-5-codex",
+    };
+
+    await system.run(
+      engine.dispatch({
+        type: "project.create",
+        commandId: CommandId.make("cmd-bootstrap-recovery-project"),
+        projectId,
+        title: "Bootstrap Recovery",
+        workspaceRoot: "/tmp/project-bootstrap-recovery",
+        createdAt: now(),
+      }),
+    );
+    await system.run(
+      engine.dispatch({
+        type: "thread.create",
+        commandId: CommandId.make("cmd-bootstrap-recovery-initial"),
+        threadId,
+        projectId,
+        title: "Initial failed bootstrap",
+        modelSelection,
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "full-access",
+        branch: null,
+        worktreePath: null,
+        createdAt: now(),
+      }),
+    );
+    await system.run(
+      engine.dispatch({
+        type: "thread.delete",
+        commandId: CommandId.make("server:bootstrap-thread-delete:recovery"),
+        threadId,
+      }),
+    );
+
+    const recreated = await system.run(
+      engine.dispatch({
+        type: "thread.create",
+        commandId: CommandId.make("cmd-bootstrap-recovery-recreate"),
+        threadId,
+        projectId,
+        title: "Recovered bootstrap",
+        modelSelection,
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "full-access",
+        branch: null,
+        worktreePath: null,
+        createdAt: now(),
+      }),
+    );
+    const replayed = await system.run(
+      engine.dispatch({
+        type: "thread.create",
+        commandId: CommandId.make("cmd-bootstrap-recovery-replay"),
+        threadId,
+        projectId,
+        title: "Recovered bootstrap",
+        modelSelection,
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "full-access",
+        branch: null,
+        worktreePath: null,
+        createdAt: now(),
+      }),
+    );
+
+    expect(recreated.replayed).toBeUndefined();
+    expect(replayed.replayed).toBe(true);
+    const events = await system.run(
+      Stream.runCollect(engine.readEvents(0)).pipe(
+        Effect.map((chunk): OrchestrationEvent[] => Array.from(chunk)),
+      ),
+    );
+    expect(events.map((event) => event.type)).toEqual([
+      "project.created",
+      "thread.created",
+      "thread.deleted",
+      "thread.created",
+    ]);
+
+    const ordinaryThreadId = ThreadId.make("thread-ordinary-delete");
+    await system.run(
+      engine.dispatch({
+        type: "thread.create",
+        commandId: CommandId.make("cmd-ordinary-create"),
+        threadId: ordinaryThreadId,
+        projectId,
+        title: "Ordinary thread",
+        modelSelection,
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "full-access",
+        branch: null,
+        worktreePath: null,
+        createdAt: now(),
+      }),
+    );
+    await system.run(
+      engine.dispatch({
+        type: "thread.delete",
+        commandId: CommandId.make("cmd-ordinary-delete"),
+        threadId: ordinaryThreadId,
+      }),
+    );
+    await expect(
+      system.run(
+        engine.dispatch({
+          type: "thread.create",
+          commandId: CommandId.make("cmd-ordinary-recreate"),
+          threadId: ordinaryThreadId,
+          projectId,
+          title: "Ordinary recreation",
+          modelSelection,
+          interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          runtimeMode: "full-access",
+          branch: null,
+          worktreePath: null,
+          createdAt: now(),
+        }),
+      ),
+    ).rejects.toThrow("already exists");
 
     await system.dispose();
   });

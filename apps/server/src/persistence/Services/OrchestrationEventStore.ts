@@ -53,10 +53,15 @@ export interface OrchestrationEventStoreShape {
    */
   readonly readAll: () => Stream.Stream<OrchestrationEvent, OrchestrationEventStoreError>;
 
-  /** Read the immutable first event for one aggregate, if it exists. */
+  /** Read the latest create event for one aggregate, including a recreated deleted thread. */
   readonly readCreatedEvent: (
     aggregateKind: "project" | "thread",
     aggregateId: OrchestrationEvent["aggregateId"],
+  ) => Effect.Effect<OrchestrationEvent | null, OrchestrationEventStoreError>;
+
+  /** Read the latest deletion event for one thread aggregate. */
+  readonly readDeletedEvent: (
+    threadId: OrchestrationEvent["aggregateId"],
   ) => Effect.Effect<OrchestrationEvent | null, OrchestrationEventStoreError>;
 }
 
