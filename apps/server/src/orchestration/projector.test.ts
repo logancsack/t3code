@@ -7,6 +7,7 @@ import {
   type OrchestrationEvent,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import { it as effectIt } from "@effect/vitest";
 import { describe, expect, it } from "vite-plus/test";
 
 import { createEmptyReadModel, projectEvent } from "./projector.ts";
@@ -93,6 +94,8 @@ describe("orchestration projector", () => {
         settledAt: null,
         snoozedUntil: null,
         snoozedAt: null,
+        pinnedAt: null,
+        titleRegeneration: null,
         deletedAt: null,
         messages: [],
         proposedPlans: [],
@@ -102,6 +105,109 @@ describe("orchestration projector", () => {
       },
     ]);
   });
+
+  effectIt.effect(
+    "recreates a deleted thread without discarding its original history boundary",
+    () =>
+      Effect.gen(function* () {
+        const createdAt = "2026-01-01T00:00:00.000Z";
+        const deletedAt = "2026-01-01T00:01:00.000Z";
+        const recreatedAt = "2026-01-01T00:02:00.000Z";
+        const created = yield* projectEvent(
+          createEmptyReadModel(createdAt),
+          makeEvent({
+            sequence: 1,
+            type: "thread.created",
+            aggregateKind: "thread",
+            aggregateId: "thread-recreated",
+            occurredAt: createdAt,
+            commandId: "cmd-thread-create-initial",
+            payload: {
+              threadId: "thread-recreated",
+              projectId: "project-1",
+              title: "Initial bootstrap",
+              modelSelection: { provider: "codex", model: "gpt-5-codex" },
+              runtimeMode: "full-access",
+              interactionMode: "default",
+              branch: null,
+              worktreePath: null,
+              createdAt,
+              updatedAt: createdAt,
+            },
+          }),
+        );
+        const running = yield* projectEvent(
+          created,
+          makeEvent({
+            sequence: 2,
+            type: "thread.session-set",
+            aggregateKind: "thread",
+            aggregateId: "thread-recreated",
+            occurredAt: deletedAt,
+            commandId: "cmd-thread-running-before-delete",
+            payload: {
+              threadId: "thread-recreated",
+              session: {
+                threadId: "thread-recreated",
+                status: "running",
+                providerName: "codex",
+                providerSessionId: "session-before-delete",
+                providerThreadId: "provider-thread-before-delete",
+                runtimeMode: "full-access",
+                activeTurnId: "turn-before-delete",
+                lastError: null,
+                updatedAt: deletedAt,
+              },
+            },
+          }),
+        );
+        const deleted = yield* projectEvent(
+          running,
+          makeEvent({
+            sequence: 3,
+            type: "thread.deleted",
+            aggregateKind: "thread",
+            aggregateId: "thread-recreated",
+            occurredAt: deletedAt,
+            commandId: "server:bootstrap-thread-delete:recreated",
+            payload: { threadId: "thread-recreated", deletedAt },
+          }),
+        );
+        const recreated = yield* projectEvent(
+          deleted,
+          makeEvent({
+            sequence: 4,
+            type: "thread.created",
+            aggregateKind: "thread",
+            aggregateId: "thread-recreated",
+            occurredAt: recreatedAt,
+            commandId: "cmd-thread-create-recovered",
+            payload: {
+              threadId: "thread-recreated",
+              projectId: "project-1",
+              title: "Recovered bootstrap",
+              modelSelection: { provider: "codex", model: "gpt-5-codex" },
+              runtimeMode: "full-access",
+              interactionMode: "default",
+              branch: null,
+              worktreePath: null,
+              createdAt: recreatedAt,
+              updatedAt: recreatedAt,
+            },
+          }),
+        );
+
+        expect(recreated.threads[0]).toMatchObject({
+          id: "thread-recreated",
+          title: "Recovered bootstrap",
+          createdAt,
+          updatedAt: recreatedAt,
+          deletedAt: null,
+          latestTurn: null,
+          session: null,
+        });
+      }),
+  );
 
   it("fails when event payload cannot be decoded by runtime schema", async () => {
     const now = "2026-01-01T00:00:00.000Z";

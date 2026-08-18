@@ -16,6 +16,9 @@ import { forkParked } from "../../serverActivation.ts";
 
 type ThreadDeletedEvent = Extract<OrchestrationEvent, { type: "thread.deleted" }>;
 
+export const isBootstrapCleanupDeletion = (event: ThreadDeletedEvent): boolean =>
+  event.commandId?.startsWith("server:bootstrap-thread-delete:") === true;
+
 export const logCleanupCauseUnlessInterrupted = <R, E>({
   effect,
   message,
@@ -59,6 +62,10 @@ const make = Effect.gen(function* () {
   const processThreadDeleted = Effect.fn("processThreadDeleted")(function* (
     event: ThreadDeletedEvent,
   ) {
+    // Bootstrap cleanup happens before a provider session or terminal can be
+    // created. Skipping the asynchronous general cleanup also makes a retry
+    // safe: no queued deletion worker can later tear down the recreated ID.
+    if (isBootstrapCleanupDeletion(event)) return;
     const { threadId } = event.payload;
     yield* stopProviderSession(threadId);
     yield* closeThreadTerminals(threadId);

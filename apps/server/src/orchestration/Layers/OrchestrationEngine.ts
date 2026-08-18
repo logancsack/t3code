@@ -201,6 +201,14 @@ const makeOrchestrationEngine = Effect.gen(function* () {
                 aggregateRef.aggregateId,
               )
             : null;
+        const deletedEvent =
+          envelope.command.type === "thread.create" &&
+          findThreadById(commandReadModel, envelope.command.threadId)?.deletedAt !== null
+            ? yield* eventStore.readDeletedEvent(envelope.command.threadId)
+            : null;
+        const allowDeletedBootstrapRecreation =
+          deletedEvent?.type === "thread.deleted" &&
+          deletedEvent.commandId?.startsWith("server:bootstrap-thread-delete:") === true;
         const createReplay = matchingCreateReplay({
           command: envelope.command,
           readModel: commandReadModel,
@@ -222,6 +230,7 @@ const makeOrchestrationEngine = Effect.gen(function* () {
         const eventBase = yield* decideOrchestrationCommand({
           command: envelope.command,
           readModel: commandReadModel,
+          allowDeletedBootstrapRecreation,
         }).pipe(
           Effect.provideService(Crypto.Crypto, crypto),
           Effect.mapError((cause) =>

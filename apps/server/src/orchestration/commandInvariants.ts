@@ -155,8 +155,18 @@ export function requireThreadAbsent(input: {
   readonly readModel: OrchestrationReadModel;
   readonly command: OrchestrationCommand;
   readonly threadId: ThreadId;
+  readonly allowDeletedBootstrapRecreation?: boolean;
 }): Effect.Effect<void, OrchestrationCommandInvariantError> {
-  if (!findThreadById(input.readModel, input.threadId)) {
+  const existing = findThreadById(input.readModel, input.threadId);
+  if (!existing) {
+    return Effect.void;
+  }
+  if (
+    input.allowDeletedBootstrapRecreation === true &&
+    existing.deletedAt !== null &&
+    input.command.type === "thread.create" &&
+    existing.projectId === input.command.projectId
+  ) {
     return Effect.void;
   }
   return Effect.fail(

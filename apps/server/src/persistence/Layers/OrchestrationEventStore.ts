@@ -205,7 +205,34 @@ const makeEventStore = Effect.gen(function* () {
         FROM orchestration_events
         WHERE aggregate_kind = ${request.aggregateKind}
           AND stream_id = ${request.aggregateId}
-          AND stream_version = 0
+          AND event_type IN ('project.created', 'thread.created')
+        ORDER BY stream_version DESC
+        LIMIT 1
+      `,
+  });
+
+  const readDeletedEventRows = SqlSchema.findAll({
+    Request: ReadCreatedEventRequestSchema,
+    Result: OrchestrationEventPersistedRowSchema,
+    execute: (request) =>
+      sql`
+        SELECT
+          sequence,
+          event_id AS "eventId",
+          event_type AS "type",
+          aggregate_kind AS "aggregateKind",
+          stream_id AS "aggregateId",
+          occurred_at AS "occurredAt",
+          command_id AS "commandId",
+          causation_event_id AS "causationEventId",
+          correlation_id AS "correlationId",
+          payload_json AS "payload",
+          metadata_json AS "metadata"
+        FROM orchestration_events
+        WHERE aggregate_kind = 'thread'
+          AND stream_id = ${request.aggregateId}
+          AND event_type = 'thread.deleted'
+        ORDER BY stream_version DESC
         LIMIT 1
       `,
   });
@@ -312,11 +339,31 @@ const makeEventStore = Effect.gen(function* () {
       }),
     );
 
+  const readDeletedEvent: OrchestrationEventStoreShape["readDeletedEvent"] = (threadId) =>
+    readDeletedEventRows({ aggregateKind: "thread", aggregateId: threadId }).pipe(
+      Effect.mapError(
+        toPersistenceSqlOrDecodeError(
+          "OrchestrationEventStore.readDeletedEvent:query",
+          "OrchestrationEventStore.readDeletedEvent:decodeRows",
+        ),
+      ),
+      Effect.flatMap((rows) => {
+        const row = rows[0];
+        if (row === undefined) return Effect.succeed(null);
+        return decodeEvent(row).pipe(
+          Effect.mapError(
+            toPersistenceDecodeError("OrchestrationEventStore.readDeletedEvent:rowToEvent"),
+          ),
+        );
+      }),
+    );
+
   return {
     append,
     readFromSequence,
     readAll: () => readFromSequence(0, Number.MAX_SAFE_INTEGER),
     readCreatedEvent,
+    readDeletedEvent,
   } satisfies OrchestrationEventStoreShape;
 });
 

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
+import { it as effectIt } from "@effect/vitest";
 import {
   MessageId,
   CommandId,
@@ -200,6 +201,68 @@ describe("commandInvariants", () => {
       ),
     ).rejects.toThrow("already exists");
   });
+
+  effectIt.effect("allows recreating a deleted thread", () =>
+    requireThreadAbsent({
+      readModel: {
+        ...readModel,
+        threads: readModel.threads.map((thread) =>
+          thread.id === "thread-2" ? { ...thread, deletedAt: now } : thread,
+        ),
+      },
+      command: {
+        type: "thread.create",
+        commandId: CommandId.make("cmd-recreate-deleted"),
+        threadId: ThreadId.make("thread-2"),
+        projectId: ProjectId.make("project-b"),
+        title: "recreated",
+        modelSelection: {
+          instanceId: ProviderInstanceId.make("codex"),
+          model: "gpt-5-codex",
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "full-access",
+        branch: null,
+        worktreePath: null,
+        createdAt: now,
+      },
+      threadId: ThreadId.make("thread-2"),
+      allowDeletedBootstrapRecreation: true,
+    }),
+  );
+
+  effectIt.effect("keeps deleted thread IDs bound to their original project", () =>
+    Effect.gen(function* () {
+      const error = yield* requireThreadAbsent({
+        readModel: {
+          ...readModel,
+          threads: readModel.threads.map((thread) =>
+            thread.id === "thread-2" ? { ...thread, deletedAt: now } : thread,
+          ),
+        },
+        command: {
+          type: "thread.create",
+          commandId: CommandId.make("cmd-move-deleted"),
+          threadId: ThreadId.make("thread-2"),
+          projectId: ProjectId.make("project-a"),
+          title: "moved",
+          modelSelection: {
+            instanceId: ProviderInstanceId.make("codex"),
+            model: "gpt-5-codex",
+          },
+          interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          runtimeMode: "full-access",
+          branch: null,
+          worktreePath: null,
+          createdAt: now,
+        },
+        threadId: ThreadId.make("thread-2"),
+        allowDeletedBootstrapRecreation: true,
+      }).pipe(Effect.flip);
+
+      expect(error.detail).toContain("already exists");
+    }),
+  );
 
   it("requires non-negative integers", async () => {
     await Effect.runPromise(
