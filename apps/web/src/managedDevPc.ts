@@ -95,10 +95,12 @@ const SESSION_RECOVERY_KEY = "devpc-managed-session-recovery-at";
 const SESSION_RECOVERY_COOLDOWN_MS = 30_000;
 const MAX_RESUME_WAIT_POLLS = 40;
 const MANAGED_WAKE_SLOW_THRESHOLD_MS = 75_000;
+const MANAGED_COMMAND_READY_POLL_MS = 1_500;
 let sessionRecoveryReloadScheduled = false;
 let bootstrapResumeRequestKey: string | undefined;
 let bootstrapResumeUsesSharedStorage = false;
 let lastAnnouncedWakeState: string | undefined;
+let managedCommandTransportReadyPromise: Promise<void> | undefined;
 
 interface ManagedSealedDispatch {
   readonly version: 1;
@@ -181,15 +183,79 @@ export async function prepareManagedCommandDispatch(input: {
   if (!input.primary) return null;
   if (managedCommandRequiresLiveTransport(input.command)) {
     await requestManagedResume(`dispatch-${input.command.commandId}`);
+    await waitForManagedCommandTransportReady();
     return null;
   }
   const queued = await queueManagedCommand(input.command);
-  if (queued) return null;
-  // One-time compatibility for a workspace paused before its guest runtime
-  // published a sealing key. Wake it explicitly, then let the normal RPC
-  // request wait for the relay; future commands use the durable queue.
-  await requestManagedResume(`dispatch-${input.command.commandId}`);
+  if (!queued) {
+    // One-time compatibility for a workspace paused before its guest runtime
+    // published a sealing key. Wake it explicitly, then let the normal RPC
+    // request wait for the relay; future commands use the durable queue.
+    await requestManagedResume(`dispatch-${input.command.commandId}`);
+  }
+  await waitForManagedCommandTransportReady();
   return null;
+}
+
+/**
+ * Wait for Aldo's durable lifecycle boundary, not merely a reachable socket.
+ *
+ * A resumed VM can briefly expose its previous T3 process while Aldo installs
+ * a newer runtime. Sending through that maintenance relay lets the old process
+ * accept a turn that the same start operation subsequently restarts. The
+ * bootstrap endpoint reports `running` only after runtime configuration,
+ * version reconciliation, relay replacement, and lifecycle completion.
+ */
+export async function waitForManagedCommandTransportReady(): Promise<void> {
+  if (managedCommandTransportReadyPromise) return managedCommandTransportReadyPromise;
+  const pending = pollForManagedCommandTransportReady();
+  managedCommandTransportReadyPromise = pending;
+  return pending.finally(() => {
+    if (managedCommandTransportReadyPromise === pending) {
+      managedCommandTransportReadyPromise = undefined;
+    }
+  });
+}
+
+async function pollForManagedCommandTransportReady(): Promise<void> {
+  while (true) {
+    try {
+      const response = await fetch(BOOTSTRAP_PATH, {
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: { accept: "application/json" },
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (!response.ok) {
+        if ([401, 403].includes(response.status)) {
+          if (scheduleManagedSessionRecovery()) {
+            throw new ManagedBootstrapTerminalError("Refreshing the managed workspace connection.");
+          }
+          throw new ManagedBootstrapHttpError(response.status);
+        }
+        if (!isAmbiguousLifecycleResponse(response.status) && response.status !== 429) {
+          throw new ManagedBootstrapHttpError(response.status);
+        }
+      } else {
+        const bootstrap = (await response.json()) as ManagedDevPcBootstrap;
+        window.__DEVPC_MANAGED_BOOTSTRAP__ = bootstrap;
+        if (bootstrap.environmentDescriptor) {
+          writeManagedPrimaryEnvironmentDescriptor(bootstrap.environmentDescriptor);
+        }
+        reconcileBootstrapLifecycleAction(bootstrap);
+        if (isManagedBootstrapRunning(bootstrap)) return;
+        const status = bootstrap.status ?? bootstrap.state;
+        if (bootstrap.state === "error" || ["attention", "unreachable"].includes(status)) {
+          throw new ManagedBootstrapTerminalError(
+            bootstrap.detail ?? "The managed workspace could not start.",
+          );
+        }
+      }
+    } catch (error) {
+      if (!isTransientBootstrapFailure(error)) throw error;
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, MANAGED_COMMAND_READY_POLL_MS));
+  }
 }
 
 export function managedCommandRequiresLiveTransport(command: ClientOrchestrationCommand): boolean {
@@ -243,6 +309,8 @@ class ManagedBootstrapHttpError extends Error {
   }
 }
 
+class ManagedBootstrapTerminalError extends Error {}
+
 /**
  * Only failures the gateway may heal on its own deserve the extended retry
  * budget: network errors, timeouts, rate limiting, and 5xx. A definitive 4xx
@@ -250,6 +318,7 @@ class ManagedBootstrapHttpError extends Error {
  * seconds of polling.
  */
 function isTransientBootstrapFailure(error: unknown): boolean {
+  if (error instanceof ManagedBootstrapTerminalError) return false;
   if (error instanceof ManagedBootstrapHttpError) {
     return isAmbiguousLifecycleResponse(error.status) || error.status === 429;
   }

@@ -681,10 +681,20 @@ describe("managed DevPC command dispatch", () => {
         dispatchPublicKey: publicKey,
         previewUrlTemplate: "https://{port}.preview.example.test/",
       },
+      setTimeout,
     });
-    const fetchMock = vi.fn(async (_input: string, _init?: RequestInit) =>
-      Response.json({ queued: true }, { status: 202 }),
-    );
+    const fetchMock = vi
+      .fn<(_input: string, _init?: RequestInit) => Promise<Response>>()
+      .mockResolvedValueOnce(Response.json({ queued: true }, { status: 202 }))
+      .mockResolvedValueOnce(
+        Response.json({
+          managed: true,
+          state: "ready",
+          status: "running",
+          ready: true,
+          previewUrlTemplate: "https://{port}.preview.example.test/",
+        }),
+      );
     vi.stubGlobal("fetch", fetchMock);
     const command: ClientOrchestrationCommand = {
       type: "thread.session.stop",
@@ -696,8 +706,87 @@ describe("managed DevPC command dispatch", () => {
     const { prepareManagedCommandDispatch } = await import("./managedDevPc");
     await expect(prepareManagedCommandDispatch({ command, primary: true })).resolves.toBeNull();
 
-    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(fetchMock.mock.calls[0]?.[0]).toBe("/_devpc/dispatches");
+    expect(fetchMock.mock.calls[1]?.[0]).toBe("/_devpc/bootstrap");
+  });
+
+  it("does not release a live command to a maintenance relay", async () => {
+    vi.stubEnv("VITE_DEVPC_MANAGED", "1");
+    vi.resetModules();
+    vi.stubGlobal("window", {
+      __DEVPC_MANAGED_BOOTSTRAP__: {
+        managed: true,
+        state: "starting",
+        status: "starting",
+        ready: false,
+        previewUrlTemplate: "https://{port}.preview.example.test/",
+      },
+      setTimeout: (callback: () => void) => setTimeout(callback, 0),
+    });
+    const fetchMock = vi
+      .fn<(_input: string, _init?: RequestInit) => Promise<Response>>()
+      .mockResolvedValueOnce(
+        Response.json({
+          managed: true,
+          state: "starting",
+          status: "starting",
+          ready: false,
+          connected: true,
+          previewUrlTemplate: "https://{port}.preview.example.test/",
+        }),
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          managed: true,
+          state: "ready",
+          status: "running",
+          ready: true,
+          connected: true,
+          previewUrlTemplate: "https://{port}.preview.example.test/",
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { waitForManagedCommandTransportReady } = await import("./managedDevPc");
+    const first = waitForManagedCommandTransportReady();
+    const second = waitForManagedCommandTransportReady();
+    await expect(Promise.all([first, second])).resolves.toEqual([undefined, undefined]);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("surfaces a terminal workspace start failure", async () => {
+    vi.stubEnv("VITE_DEVPC_MANAGED", "1");
+    vi.resetModules();
+    vi.stubGlobal("window", {
+      __DEVPC_MANAGED_BOOTSTRAP__: {
+        managed: true,
+        state: "starting",
+        status: "starting",
+        ready: false,
+        previewUrlTemplate: "https://{port}.preview.example.test/",
+      },
+      setTimeout,
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          managed: true,
+          state: "error",
+          status: "attention",
+          ready: false,
+          detail: "Runtime replacement failed.",
+          previewUrlTemplate: "https://{port}.preview.example.test/",
+        }),
+      ),
+    );
+
+    const { waitForManagedCommandTransportReady } = await import("./managedDevPc");
+    await expect(waitForManagedCommandTransportReady()).rejects.toThrow(
+      "Runtime replacement failed.",
+    );
   });
 
   it("seals a command and preserves its idempotency key", async () => {
