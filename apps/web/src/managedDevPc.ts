@@ -100,6 +100,7 @@ let sessionRecoveryReloadScheduled = false;
 let bootstrapResumeRequestKey: string | undefined;
 let bootstrapResumeUsesSharedStorage = false;
 let lastAnnouncedWakeState: string | undefined;
+let managedCommandTransportReadyPromise: Promise<void> | undefined;
 
 interface ManagedSealedDispatch {
   readonly version: 1;
@@ -206,6 +207,17 @@ export async function prepareManagedCommandDispatch(input: {
  * version reconciliation, relay replacement, and lifecycle completion.
  */
 export async function waitForManagedCommandTransportReady(): Promise<void> {
+  if (managedCommandTransportReadyPromise) return managedCommandTransportReadyPromise;
+  const pending = pollForManagedCommandTransportReady();
+  managedCommandTransportReadyPromise = pending;
+  return pending.finally(() => {
+    if (managedCommandTransportReadyPromise === pending) {
+      managedCommandTransportReadyPromise = undefined;
+    }
+  });
+}
+
+async function pollForManagedCommandTransportReady(): Promise<void> {
   while (true) {
     try {
       const response = await fetch(BOOTSTRAP_PATH, {
@@ -215,6 +227,12 @@ export async function waitForManagedCommandTransportReady(): Promise<void> {
         signal: AbortSignal.timeout(10_000),
       });
       if (!response.ok) {
+        if ([401, 403].includes(response.status)) {
+          if (scheduleManagedSessionRecovery()) {
+            throw new ManagedBootstrapTerminalError("Refreshing the managed workspace connection.");
+          }
+          throw new ManagedBootstrapHttpError(response.status);
+        }
         if (!isAmbiguousLifecycleResponse(response.status) && response.status !== 429) {
           throw new ManagedBootstrapHttpError(response.status);
         }
@@ -226,6 +244,12 @@ export async function waitForManagedCommandTransportReady(): Promise<void> {
         }
         reconcileBootstrapLifecycleAction(bootstrap);
         if (isManagedBootstrapRunning(bootstrap)) return;
+        const status = bootstrap.status ?? bootstrap.state;
+        if (bootstrap.state === "error" || ["attention", "unreachable"].includes(status)) {
+          throw new ManagedBootstrapTerminalError(
+            bootstrap.detail ?? "The managed workspace could not start.",
+          );
+        }
       }
     } catch (error) {
       if (!isTransientBootstrapFailure(error)) throw error;
@@ -285,6 +309,8 @@ class ManagedBootstrapHttpError extends Error {
   }
 }
 
+class ManagedBootstrapTerminalError extends Error {}
+
 /**
  * Only failures the gateway may heal on its own deserve the extended retry
  * budget: network errors, timeouts, rate limiting, and 5xx. A definitive 4xx
@@ -292,6 +318,7 @@ class ManagedBootstrapHttpError extends Error {
  * seconds of polling.
  */
 function isTransientBootstrapFailure(error: unknown): boolean {
+  if (error instanceof ManagedBootstrapTerminalError) return false;
   if (error instanceof ManagedBootstrapHttpError) {
     return isAmbiguousLifecycleResponse(error.status) || error.status === 429;
   }

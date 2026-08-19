@@ -749,9 +749,44 @@ describe("managed DevPC command dispatch", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const { waitForManagedCommandTransportReady } = await import("./managedDevPc");
-    await expect(waitForManagedCommandTransportReady()).resolves.toBeUndefined();
+    const first = waitForManagedCommandTransportReady();
+    const second = waitForManagedCommandTransportReady();
+    await expect(Promise.all([first, second])).resolves.toEqual([undefined, undefined]);
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("surfaces a terminal workspace start failure", async () => {
+    vi.stubEnv("VITE_DEVPC_MANAGED", "1");
+    vi.resetModules();
+    vi.stubGlobal("window", {
+      __DEVPC_MANAGED_BOOTSTRAP__: {
+        managed: true,
+        state: "starting",
+        status: "starting",
+        ready: false,
+        previewUrlTemplate: "https://{port}.preview.example.test/",
+      },
+      setTimeout,
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          managed: true,
+          state: "error",
+          status: "attention",
+          ready: false,
+          detail: "Runtime replacement failed.",
+          previewUrlTemplate: "https://{port}.preview.example.test/",
+        }),
+      ),
+    );
+
+    const { waitForManagedCommandTransportReady } = await import("./managedDevPc");
+    await expect(waitForManagedCommandTransportReady()).rejects.toThrow(
+      "Runtime replacement failed.",
+    );
   });
 
   it("seals a command and preserves its idempotency key", async () => {
