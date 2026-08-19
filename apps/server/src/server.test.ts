@@ -7277,6 +7277,49 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
+  it.effect("keeps transient managed dispatch failures retryable", () =>
+    Effect.gen(function* () {
+      const gatewayToken = "managed-gateway-token-with-enough-entropy";
+      yield* buildAppUnderTest({
+        config: {
+          managedDevPc: true,
+          managedGatewayToken: gatewayToken,
+        },
+        layers: {
+          orchestrationEngine: {
+            dispatch: () =>
+              Effect.fail(
+                new PersistenceSqlError({
+                  operation: "managed-dispatch-test",
+                  detail: "temporary persistence outage",
+                }),
+              ),
+            readEvents: () => Stream.empty,
+          },
+        },
+      });
+
+      const response = yield* HttpClient.post("/api/_devpc/dispatch", {
+        headers: {
+          "x-devpc-gateway-token": gatewayToken,
+        },
+        body: yield* HttpBody.json({
+          type: "thread.session.stop",
+          commandId: CommandId.make("cmd-managed-transient-failure"),
+          threadId: ThreadId.make("thread-managed-transient-failure"),
+          createdAt: "2026-01-01T00:00:00.000Z",
+        }),
+      });
+      const body = (yield* response.json) as {
+        readonly error: { readonly code: string; readonly message: string };
+      };
+
+      assert.equal(response.status, 503);
+      assert.equal(body.error.code, "DISPATCH_UNAVAILABLE");
+      assert.include(body.error.message, "temporary persistence outage");
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
   it.effect(
     "bootstraps first-send worktree turns on the server before dispatching turn start",
     () =>
