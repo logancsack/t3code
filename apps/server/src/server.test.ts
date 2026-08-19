@@ -7206,6 +7206,77 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
+  it.effect("uses the bootstrap transaction for durable managed first turns", () =>
+    Effect.gen(function* () {
+      const dispatchedCommands: Array<OrchestrationCommand> = [];
+      const gatewayToken = "managed-gateway-token-with-enough-entropy";
+      yield* buildAppUnderTest({
+        config: {
+          managedDevPc: true,
+          managedGatewayToken: gatewayToken,
+        },
+        layers: {
+          orchestrationEngine: {
+            dispatch: (command) =>
+              Effect.sync(() => {
+                dispatchedCommands.push(command);
+                return { sequence: dispatchedCommands.length };
+              }),
+            readEvents: () => Stream.empty,
+          },
+        },
+      });
+
+      const createdAt = "2026-01-01T00:00:00.000Z";
+      const response = yield* HttpClient.post("/api/_devpc/dispatch", {
+        headers: {
+          "x-devpc-gateway-token": gatewayToken,
+        },
+        body: yield* HttpBody.json({
+          type: "thread.turn.start",
+          commandId: CommandId.make("cmd-managed-bootstrap-turn-start"),
+          threadId: ThreadId.make("thread-managed-bootstrap"),
+          message: {
+            messageId: MessageId.make("msg-managed-bootstrap"),
+            role: "user",
+            text: "survive a browser reload",
+            attachments: [],
+          },
+          modelSelection: defaultModelSelection,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          bootstrap: {
+            createThread: {
+              projectId: defaultProjectId,
+              title: "Durable Managed Bootstrap",
+              modelSelection: defaultModelSelection,
+              runtimeMode: "full-access",
+              interactionMode: "default",
+              branch: "main",
+              worktreePath: null,
+              createdAt,
+            },
+          },
+          createdAt,
+        }),
+      });
+      const body = (yield* response.json) as { readonly sequence: number };
+
+      assert.equal(response.status, 202);
+      assert.equal(body.sequence, 2);
+      assert.deepEqual(
+        dispatchedCommands.map((command) => command.type),
+        ["thread.create", "thread.turn.start"],
+      );
+      const finalCommand = dispatchedCommands[1];
+      assert.equal(finalCommand?.type, "thread.turn.start");
+      if (finalCommand?.type === "thread.turn.start") {
+        assert.isUndefined(finalCommand.bootstrap);
+        assert.equal(finalCommand.message.text, "survive a browser reload");
+      }
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
   it.effect(
     "bootstraps first-send worktree turns on the server before dispatching turn start",
     () =>

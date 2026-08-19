@@ -5,8 +5,8 @@ import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstab
 
 import * as ServerConfig from "./config.ts";
 import { managedGatewayTokenMatches } from "./managedDevPcActivity.ts";
+import { makeOrchestrationCommandDispatcher } from "./orchestration/CommandDispatcher.ts";
 import { normalizeDispatchCommand } from "./orchestration/Normalizer.ts";
-import { OrchestrationEngineService } from "./orchestration/Services/OrchestrationEngine.ts";
 
 export const MANAGED_DEVPC_DISPATCH_PATH = "/api/_devpc/dispatch";
 const MANAGED_GATEWAY_HEADER = "x-devpc-gateway-token";
@@ -24,11 +24,11 @@ const handleManagedDevPcDispatch = Effect.gen(function* () {
     );
   }
 
-  const engine = yield* OrchestrationEngineService;
+  const dispatchCommand = yield* makeOrchestrationCommandDispatcher;
   return yield* request.json.pipe(
     Effect.flatMap(Schema.decodeUnknownEffect(ClientOrchestrationCommand)),
     Effect.flatMap(normalizeDispatchCommand),
-    Effect.flatMap((command) => engine.dispatch(command)),
+    Effect.flatMap(dispatchCommand),
     Effect.match({
       onFailure: (error) =>
         HttpServerResponse.jsonUnsafe(
