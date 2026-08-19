@@ -231,9 +231,10 @@ describe("commandInvariants", () => {
     }),
   );
 
-  effectIt.effect("keeps deleted thread IDs bound to their original project", () =>
-    Effect.gen(function* () {
-      const error = yield* requireThreadAbsent({
+  effectIt.effect(
+    "allows a bootstrap to reclaim a deleted thread ID in a replacement project",
+    () =>
+      requireThreadAbsent({
         readModel: {
           ...readModel,
           threads: readModel.threads.map((thread) =>
@@ -258,10 +259,7 @@ describe("commandInvariants", () => {
         },
         threadId: ThreadId.make("thread-2"),
         allowDeletedBootstrapRecreation: true,
-      }).pipe(Effect.flip);
-
-      expect(error.detail).toContain("already exists");
-    }),
+      }),
   );
 
   it("requires non-negative integers", async () => {
