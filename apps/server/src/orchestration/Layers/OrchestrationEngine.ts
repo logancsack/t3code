@@ -201,14 +201,23 @@ const makeOrchestrationEngine = Effect.gen(function* () {
                 aggregateRef.aggregateId,
               )
             : null;
+        const deletedThread =
+          envelope.command.type === "thread.create"
+            ? findThreadById(commandReadModel, envelope.command.threadId)
+            : undefined;
         const deletedEvent =
-          envelope.command.type === "thread.create" &&
-          findThreadById(commandReadModel, envelope.command.threadId)?.deletedAt !== null
+          deletedThread !== undefined &&
+          deletedThread.deletedAt !== null &&
+          envelope.command.type === "thread.create"
             ? yield* eventStore.readDeletedEvent(envelope.command.threadId)
             : null;
         const allowDeletedBootstrapRecreation =
-          deletedEvent?.type === "thread.deleted" &&
-          deletedEvent.commandId?.startsWith("server:bootstrap-thread-delete:") === true;
+          deletedThread !== undefined &&
+          deletedThread.deletedAt !== null &&
+          envelope.command.type === "thread.create" &&
+          (envelope.command.commandId.startsWith("server:bootstrap-thread-create:") ||
+            (deletedEvent?.type === "thread.deleted" &&
+              deletedEvent.commandId?.startsWith("server:bootstrap-thread-delete:") === true));
         const createReplay = matchingCreateReplay({
           command: envelope.command,
           readModel: commandReadModel,

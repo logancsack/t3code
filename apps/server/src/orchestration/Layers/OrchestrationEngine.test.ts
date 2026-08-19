@@ -1407,6 +1407,71 @@ describe("OrchestrationEngine", () => {
       "thread.created",
     ]);
 
+    const replacementProjectId = asProjectId("project-bootstrap-recovery-replacement");
+    await system.run(
+      engine.dispatch({
+        type: "project.create",
+        commandId: CommandId.make("cmd-bootstrap-recovery-replacement-project"),
+        projectId: replacementProjectId,
+        title: "Bootstrap Recovery Replacement",
+        workspaceRoot: "/tmp/project-bootstrap-recovery-replacement",
+        createdAt: now(),
+      }),
+    );
+
+    const legacyThreadId = ThreadId.make("thread-legacy-bootstrap-cleanup");
+    await system.run(
+      engine.dispatch({
+        type: "thread.create",
+        commandId: CommandId.make("cmd-legacy-bootstrap-create"),
+        threadId: legacyThreadId,
+        projectId,
+        title: "Legacy failed bootstrap",
+        modelSelection,
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "full-access",
+        branch: null,
+        worktreePath: null,
+        createdAt: now(),
+      }),
+    );
+    await system.run(
+      engine.dispatch({
+        type: "thread.delete",
+        commandId: CommandId.make("cmd-legacy-client-cleanup"),
+        threadId: legacyThreadId,
+      }),
+    );
+
+    const recoveredLegacyBootstrap = await system.run(
+      engine.dispatch({
+        type: "thread.create",
+        commandId: CommandId.make("server:bootstrap-thread-create:legacy-recovery"),
+        threadId: legacyThreadId,
+        projectId: replacementProjectId,
+        title: "Recovered legacy bootstrap",
+        modelSelection,
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "full-access",
+        branch: null,
+        worktreePath: null,
+        createdAt: now(),
+      }),
+    );
+    expect(recoveredLegacyBootstrap.replayed).toBeUndefined();
+    const recoveryEvents = await system.run(
+      Stream.runCollect(engine.readEvents(0)).pipe(
+        Effect.map((chunk): OrchestrationEvent[] => Array.from(chunk)),
+      ),
+    );
+    const recoveredLegacyThreadEvent = recoveryEvents.findLast(
+      (event) => event.type === "thread.created" && event.aggregateId === legacyThreadId,
+    );
+    expect(recoveredLegacyThreadEvent?.type).toBe("thread.created");
+    if (recoveredLegacyThreadEvent?.type === "thread.created") {
+      expect(recoveredLegacyThreadEvent.payload.projectId).toBe(replacementProjectId);
+    }
+
     const ordinaryThreadId = ThreadId.make("thread-ordinary-delete");
     await system.run(
       engine.dispatch({

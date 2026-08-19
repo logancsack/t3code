@@ -164,8 +164,7 @@ export function requireThreadAbsent(input: {
   if (
     input.allowDeletedBootstrapRecreation === true &&
     existing.deletedAt !== null &&
-    input.command.type === "thread.create" &&
-    existing.projectId === input.command.projectId
+    input.command.type === "thread.create"
   ) {
     return Effect.void;
   }
