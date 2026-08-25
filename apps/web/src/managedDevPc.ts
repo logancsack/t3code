@@ -81,6 +81,8 @@ export interface ManagedDevPcBootstrap {
   };
   readonly telemetry?: ManagedDevPcTelemetry | null;
   readonly detail?: string;
+  /** The in-flight wake is installing a newer workspace runtime first. */
+  readonly runtimeUpdating?: boolean;
 }
 
 export const isManagedDevPc = import.meta.env.VITE_DEVPC_MANAGED === "1";
@@ -955,6 +957,17 @@ export async function prepareManagedDevPc(): Promise<void> {
         await new Promise((resolve) => window.setTimeout(resolve, 1_500));
         continue;
       }
+      // A wake, restart, or runtime update is already in flight. The cached
+      // shell opens now, exactly like the sleeping-workspace path above: the
+      // workspace status surface reports live progress, reads come from the
+      // cached environment, and anything the user sends waits in the durable
+      // dispatch queue or the connected-transport retry loop until the
+      // lifecycle completes. The blocking status page is reserved for a first
+      // boot with nothing cached to show — never for an arrival that happens
+      // to land mid-wake (autonomous runtime convergence made that common).
+      // Except: keep the gate when this page itself asked for the wake from
+      // its pre-shell resume card, so that flow keeps its progress screen.
+      if (!coldBootstrapResumeSubmitted && readManagedPrimaryEnvironmentDescriptor()) return;
       failures = 0;
       showWakeProgress(
         bootstrap.detail ?? "The workspace is still starting…",
