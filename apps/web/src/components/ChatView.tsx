@@ -137,7 +137,7 @@ import {
 } from "../previewStateStore";
 import {
   isManagedDevPc,
-  isManagedWorkspaceSleeping,
+  isManagedWorkspaceUnavailable,
   managedWorkspaceBrowserUrl,
 } from "~/managedDevPc";
 import { addBrowserSurface } from "./preview/addBrowserSurface";
@@ -2243,7 +2243,7 @@ function ChatViewContent(props: ChatViewProps) {
     wakingManagedWorkspace:
       isManagedDevPc &&
       activeEnvironment?.environmentId === primaryEnvironmentId &&
-      isManagedWorkspaceSleeping(),
+      isManagedWorkspaceUnavailable(),
   });
   const isWorking = phase === "running" || isSendBusy || isConnecting || isRevertingCheckpoint;
   const isWakingManagedWorkspace = shouldShowManagedWakeStatus({
