@@ -490,4 +490,22 @@ describe("ManagedDevPcStatus", () => {
     expect(isAmbiguousLifecycleResponse(409)).toBe(false);
     expect(isAmbiguousLifecycleResponse(422)).toBe(false);
   });
+
+  it("names a runtime update instead of a generic start while a wake installs one", async () => {
+    vi.stubEnv("VITE_DEVPC_MANAGED", "1");
+    vi.resetModules();
+    const { managedStatusLabel, managedStatusDescription } = await import("./ManagedDevPcStatus");
+
+    expect(managedStatusLabel("starting", { runtimeUpdating: true })).toBe("Updating…");
+    expect(managedStatusDescription("starting", { runtimeUpdating: true })).toBe(
+      "Installing the latest Aldo runtime before opening…",
+    );
+    // Only a start that is actually installing an update presents as one.
+    expect(managedStatusLabel("starting", { runtimeUpdating: false })).toBe("Starting…");
+    expect(managedStatusLabel("starting")).toBe("Starting…");
+    expect(managedStatusLabel("running", { runtimeUpdating: true })).toBe("Running");
+    expect(managedStatusDescription("running", { runtimeUpdating: true })).toBe(
+      "Connected and ready.",
+    );
+  });
 });

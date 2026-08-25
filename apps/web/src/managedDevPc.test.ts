@@ -607,6 +607,99 @@ describe("managed DevPC paused bootstrap", () => {
     expect(root.replaceChildren).not.toHaveBeenCalled();
   });
 
+  it("opens the cached shell while a wake is already in flight", async () => {
+    vi.stubEnv("VITE_DEVPC_MANAGED", "1");
+    vi.resetModules();
+    const root = {
+      className: "",
+      replaceChildren: vi.fn(),
+      append: vi.fn(),
+    };
+    vi.stubGlobal("document", {
+      getElementById: vi.fn(() => root),
+      createElement: vi.fn(() => ({
+        className: "",
+        textContent: "",
+        classList: { add: vi.fn(), remove: vi.fn() },
+        append: vi.fn(),
+        addEventListener: vi.fn(),
+      })),
+    });
+    vi.stubGlobal("window", {
+      location: { hash: "" },
+      localStorage: memoryLocalStorage({
+        "t3-managed-primary-environment-descriptor-v1": JSON.stringify(MANAGED_DESCRIPTOR),
+      }),
+      setTimeout: (callback: () => void) => {
+        callback();
+        return 1;
+      },
+    });
+    // An arrival mid-wake (a user message racing the resume, or autonomous
+    // runtime convergence booting a stopped workspace) must not stare at the
+    // blocking status page: the cached shell renders and the workspace status
+    // surface reports the wake inline.
+    const fetchMock = vi.fn(async () =>
+      Response.json({
+        managed: true,
+        state: "starting",
+        status: "starting",
+        ready: false,
+        runtimeUpdating: true,
+        previewUrlTemplate: "https://{port}.preview.example.test/",
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { prepareManagedDevPc } = await import("./managedDevPc");
+    await prepareManagedDevPc();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(root.replaceChildren).not.toHaveBeenCalled();
+  });
+
+  it("keeps the wake status page when nothing is cached to render", async () => {
+    vi.stubEnv("VITE_DEVPC_MANAGED", "1");
+    vi.resetModules();
+    vi.stubGlobal("document", {
+      getElementById: vi.fn(() => null),
+    });
+    vi.stubGlobal("window", {
+      location: { hash: "" },
+      localStorage: memoryLocalStorage(),
+      setTimeout: (callback: () => void) => {
+        callback();
+        return 1;
+      },
+    });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json({
+          managed: true,
+          state: "starting",
+          status: "starting",
+          ready: false,
+          previewUrlTemplate: "https://{port}.preview.example.test/",
+        }),
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          managed: true,
+          state: "ready",
+          status: "running",
+          ready: true,
+          previewUrlTemplate: "https://{port}.preview.example.test/",
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { prepareManagedDevPc } = await import("./managedDevPc");
+    await prepareManagedDevPc();
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it("seeds a new browser from gateway metadata without waking a stopped workspace", async () => {
     vi.stubEnv("VITE_DEVPC_MANAGED", "1");
     vi.resetModules();

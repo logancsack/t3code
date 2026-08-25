@@ -59,6 +59,29 @@ const statusDescription: Record<ManagedDevPcDisplayStatus, string> = {
 };
 const KNOWN_STATUSES = new Set<string>(Object.keys(statusLabel));
 
+/**
+ * A wake that must install a newer workspace runtime takes minutes, not the
+ * usual seconds. Saying "Starting…" for that whole window reads as stalled;
+ * naming the update tells the user the platform is working, not broken.
+ */
+export function managedStatusLabel(
+  status: ManagedDevPcDisplayStatus,
+  workspace?: Pick<ManagedDevPcBootstrap, "runtimeUpdating">,
+): string {
+  if (status === "starting" && workspace?.runtimeUpdating === true) return "Updating…";
+  return statusLabel[status];
+}
+
+export function managedStatusDescription(
+  status: ManagedDevPcDisplayStatus,
+  workspace?: Pick<ManagedDevPcBootstrap, "runtimeUpdating">,
+): string {
+  if (status === "starting" && workspace?.runtimeUpdating === true) {
+    return "Installing the latest Aldo runtime before opening…";
+  }
+  return statusDescription[status];
+}
+
 type PendingAction = "restart" | "pause" | "resume";
 type Confirmation = "restart" | "pause";
 type ActionSnapshotResult = "pending" | "progressing" | "resolved" | "failed";
@@ -682,7 +705,7 @@ export function ManagedDevPcStatus({
     if (workspace.lastHeartbeatAt && ["running", "reconnecting"].includes(status)) {
       return `Heartbeat ${formatRelativeTime(workspace.lastHeartbeatAt)}`;
     }
-    return statusDescription[status];
+    return managedStatusDescription(status, workspace);
   }, [status, workspace]);
 
   if (!isManagedDevPc || isLandingDemo() || !workspace) return null;
@@ -803,7 +826,7 @@ export function ManagedDevPcStatus({
   const canResume =
     ["paused", "stopped"].includes(status) && pendingAction === null && uncertainAction === null;
   const autoStopClock = formatClock(workspace.autoStopAt);
-  const ariaState = statusLabel[status].replace("…", "");
+  const ariaState = managedStatusLabel(status, workspace).replace("…", "");
   const visibleError =
     error ??
     (uncertainAction
@@ -832,7 +855,7 @@ export function ManagedDevPcStatus({
         >
           <StatusDot status={status} />
         </TooltipTrigger>
-        <TooltipPopup side="top">Workspace · {statusLabel[status]}</TooltipPopup>
+        <TooltipPopup side="top">Workspace · {managedStatusLabel(status, workspace)}</TooltipPopup>
       </Tooltip>
     );
   }
@@ -852,7 +875,9 @@ export function ManagedDevPcStatus({
                     <StatusDot status={status} />
                   </div>
                   <div className="min-w-0">
-                    <h3 className="text-sm font-semibold">{statusLabel[status]}</h3>
+                    <h3 className="text-sm font-semibold">
+                      {managedStatusLabel(status, workspace)}
+                    </h3>
                     <p className="mt-0.5 text-xs text-muted-foreground">{statusMeta}</p>
                   </div>
                 </div>
