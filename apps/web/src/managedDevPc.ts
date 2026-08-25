@@ -336,6 +336,21 @@ export function isManagedWorkspaceSleeping(): boolean {
   );
 }
 
+/**
+ * The managed workspace cannot serve its primary environment right now:
+ * asleep, or a wake, restart, or runtime update is still in flight. The Aldo
+ * gateway has already authenticated this browser either way, and the cached
+ * shell is expected to render, fall back to cached environment metadata, and
+ * queue work until the lifecycle completes — a not-yet-running guest must
+ * never surface as a fatal error to a page the gateway happily served.
+ */
+export function isManagedWorkspaceUnavailable(): boolean {
+  if (!isManagedDevPc) return false;
+  const bootstrap = window.__DEVPC_MANAGED_BOOTSTRAP__;
+  if (bootstrap === undefined) return false;
+  return !isManagedBootstrapRunning(bootstrap);
+}
+
 export function isManagedBootstrapRunning(bootstrap: ManagedDevPcBootstrap): boolean {
   return bootstrap.status
     ? bootstrap.status === "running"

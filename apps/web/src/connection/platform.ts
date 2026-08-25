@@ -53,7 +53,7 @@ import {
 } from "../environments/primary/target";
 import { clearComposerDraftsEnvironment } from "../composerDraftStore";
 import { isHostedStaticApp } from "../hostedPairing";
-import { isManagedWorkspaceSleeping, prepareManagedWebSocketUrl } from "../managedDevPc";
+import { isManagedWorkspaceUnavailable, prepareManagedWebSocketUrl } from "../managedDevPc";
 import {
   readManagedPrimaryEnvironmentDescriptor,
   writeManagedPrimaryEnvironmentDescriptor,
@@ -317,7 +317,7 @@ const loadPrimaryConnectionRegistration = Effect.fn(
       Effect.sync(() => writeManagedPrimaryEnvironmentDescriptor(discovered)),
     ),
     Effect.catch((error) => {
-      const cached = isManagedWorkspaceSleeping()
+      const cached = isManagedWorkspaceUnavailable()
         ? readManagedPrimaryEnvironmentDescriptor()
         : null;
       return cached === null ? Effect.fail(error) : Effect.succeed(cached);

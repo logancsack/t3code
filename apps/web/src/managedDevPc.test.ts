@@ -607,6 +607,33 @@ describe("managed DevPC paused bootstrap", () => {
     expect(root.replaceChildren).not.toHaveBeenCalled();
   });
 
+  it("reports the workspace unavailable through every non-running lifecycle state", async () => {
+    vi.stubEnv("VITE_DEVPC_MANAGED", "1");
+    vi.resetModules();
+    const windowStub: { __DEVPC_MANAGED_BOOTSTRAP__?: unknown } = {};
+    vi.stubGlobal("window", windowStub);
+    const { isManagedWorkspaceUnavailable } = await import("./managedDevPc");
+
+    // No bootstrap yet: nothing is known, so nothing is suppressed.
+    expect(isManagedWorkspaceUnavailable()).toBe(false);
+    for (const [status, unavailable] of [
+      ["running", false],
+      ["starting", true],
+      ["restarting", true],
+      ["stopped", true],
+      ["paused", true],
+      ["reconnecting", true],
+    ] as const) {
+      windowStub.__DEVPC_MANAGED_BOOTSTRAP__ = {
+        managed: true,
+        state: "ready",
+        status,
+        ready: status === "running",
+      };
+      expect(isManagedWorkspaceUnavailable(), status).toBe(unavailable);
+    }
+  });
+
   it("opens the cached shell while a wake is already in flight", async () => {
     vi.stubEnv("VITE_DEVPC_MANAGED", "1");
     vi.resetModules();
