@@ -14,6 +14,7 @@ import * as Data from "effect/Data";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
@@ -398,7 +399,7 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
       },
     );
 
-    return yield* commandCoordinator
+    const updateFiber = yield* commandCoordinator
       .withCommandLock({
         targetKey,
         lockKey: update.lockKey,
@@ -414,7 +415,14 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
               })
             : error,
         ),
+        // Provider updates mutate a shared installation and must outlive the
+        // WebSocket request that started them. The caller still waits for the
+        // result while connected, but interrupting that caller no longer
+        // interrupts the update command or releases its coordinator lock.
+        Effect.forkDetach,
       );
+
+    return yield* Fiber.join(updateFiber);
   });
 
   return ProviderMaintenanceRunner.of({

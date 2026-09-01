@@ -109,12 +109,13 @@ function mockHandle(result: {
   readonly stderr?: string;
   readonly code?: number;
   readonly exitCode?: Effect.Effect<ChildProcessSpawner.ExitCode>;
+  readonly kill?: () => Effect.Effect<void>;
 }) {
   return ChildProcessSpawner.makeHandle({
     pid: ChildProcessSpawner.ProcessId(1),
     exitCode: result.exitCode ?? Effect.succeed(ChildProcessSpawner.ExitCode(result.code ?? 0)),
     isRunning: Effect.succeed(false),
-    kill: () => Effect.void,
+    kill: result.kill ?? (() => Effect.void),
     unref: Effect.succeed(Effect.void),
     stdin: Sink.drain,
     stdout: Stream.make(encoder.encode(result.stdout ?? "")),
@@ -134,6 +135,7 @@ function mockSpawnerLayer(
     readonly stderr?: string;
     readonly code?: number;
     readonly exitCode?: Effect.Effect<ChildProcessSpawner.ExitCode>;
+    readonly kill?: () => Effect.Effect<void>;
   },
 ) {
   return Layer.succeed(
@@ -614,57 +616,92 @@ describe("providerMaintenanceRunner", () => {
     );
   });
 
-  it.effect(
-    "releases the running-provider marker when interrupted after queuing but before the lock run starts",
-    () =>
-      Effect.gen(function* () {
-        const { registry } = yield* makeRegistry(baseProvider);
-        let blockQueuedState = true;
-        const queuedStateWrittenLatch: { resolve: () => void } = { resolve: () => {} };
-        const releaseQueuedStateLatch: { resolve: () => void } = { resolve: () => {} };
-        const queuedStateWritten = new Promise<void>((resolve) => {
-          queuedStateWrittenLatch.resolve = resolve;
-        });
-        const releaseQueuedState = new Promise<void>((resolve) => {
-          releaseQueuedStateLatch.resolve = resolve;
-        });
+  it.effect("keeps an update running when the requesting client disconnects", () => {
+    const commandStartedLatch: { resolve: () => void } = { resolve: () => {} };
+    const releaseCommandLatch: { resolve: () => void } = { resolve: () => {} };
+    const updateFinishedLatch: { resolve: () => void } = { resolve: () => {} };
+    const commandStarted = new Promise<void>((resolve) => {
+      commandStartedLatch.resolve = resolve;
+    });
+    const releaseCommand = new Promise<void>((resolve) => {
+      releaseCommandLatch.resolve = resolve;
+    });
+    const updateFinished = new Promise<void>((resolve) => {
+      updateFinishedLatch.resolve = resolve;
+    });
+    let commandCount = 0;
+    let killCount = 0;
 
-        const updater = yield* makeTestRunner({
-          ...registry,
-          setProviderMaintenanceActionState: Effect.fn(
-            "providerMaintenanceRunner.test.blockQueuedState",
-          )(function* (input) {
-            const providers = yield* registry.setProviderMaintenanceActionState(input);
-            if (input.state?.status === "queued" && blockQueuedState) {
-              queuedStateWrittenLatch.resolve();
-              yield* Effect.promise(() => releaseQueuedState);
-            }
-            return providers;
-          }),
-        });
+    return Effect.gen(function* () {
+      const { registry } = yield* makeRegistry(baseProvider);
+      const updater = yield* makeTestRunner({
+        ...registry,
+        setProviderMaintenanceActionState: Effect.fn(
+          "providerMaintenanceRunner.test.observeDetachedUpdate",
+        )(function* (input) {
+          const providers = yield* registry.setProviderMaintenanceActionState(input);
+          if (
+            input.state?.status === "succeeded" ||
+            input.state?.status === "unchanged" ||
+            input.state?.status === "failed"
+          ) {
+            updateFinishedLatch.resolve();
+          }
+          return providers;
+        }),
+      });
 
-        const first = yield* updater.updateProvider(CODEX_DRIVER).pipe(Effect.forkScoped);
-        yield* Effect.promise(() => queuedStateWritten);
-        blockQueuedState = false;
+      const requestingClient = yield* updater.updateProvider(CODEX_DRIVER).pipe(Effect.forkScoped);
+      yield* Effect.promise(() => commandStarted);
+      yield* Fiber.interrupt(requestingClient);
 
-        yield* Fiber.interrupt(first);
-        releaseQueuedStateLatch.resolve();
-
-        const second = yield* updater.updateProvider(CODEX_DRIVER).pipe(Effect.exit);
-        assert.strictEqual(Exit.isSuccess(second), true);
-        if (Exit.isSuccess(second)) {
-          assert.strictEqual(second.value.providers[0]?.updateState?.status, "succeeded");
+      assert.strictEqual(killCount, 0);
+      const duplicate = yield* updater.updateProvider(CODEX_DRIVER).pipe(Effect.exit);
+      assert.strictEqual(Exit.isFailure(duplicate), true);
+      if (Exit.isFailure(duplicate)) {
+        const error = Cause.squash(duplicate.cause);
+        assert.strictEqual(isServerProviderUpdateError(error), true);
+        if (isServerProviderUpdateError(error)) {
+          assert.include(error.reason, "already running");
         }
-      }).pipe(
-        Effect.provide(
-          Layer.mergeAll(
-            NonWindowsPlatform,
-            latestVersionHttpClient("0.0.0"),
-            mockSpawnerLayer(() => ({ stdout: "updated" })),
-          ),
+      }
+
+      releaseCommandLatch.resolve();
+      yield* Effect.promise(() => updateFinished);
+
+      const providers = yield* registry.getProviders;
+      assert.strictEqual(providers[0]?.updateState?.status, "succeeded");
+      assert.strictEqual(commandCount, 1);
+
+      const retry = yield* updater.updateProvider(CODEX_DRIVER);
+      assert.strictEqual(retry.providers[0]?.updateState?.status, "succeeded");
+      assert.strictEqual(commandCount, 2);
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          NonWindowsPlatform,
+          latestVersionHttpClient("0.0.0"),
+          mockSpawnerLayer(() => {
+            commandCount += 1;
+            if (commandCount === 1) {
+              commandStartedLatch.resolve();
+              return {
+                stdout: "updated",
+                exitCode: Effect.promise(() => releaseCommand).pipe(
+                  Effect.as(ChildProcessSpawner.ExitCode(0)),
+                ),
+                kill: () =>
+                  Effect.sync(() => {
+                    killCount += 1;
+                  }),
+              };
+            }
+            return { stdout: "updated" };
+          }),
         ),
       ),
-  );
+    );
+  });
 
   it.effect("resolves npm to a .cmd shim and routes through the shell on win32", () => {
     const captured: Array<{
