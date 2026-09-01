@@ -14,10 +14,12 @@ import * as Data from "effect/Data";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
+import * as Scope from "effect/Scope";
 import { HttpClient } from "effect/unstable/http";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
@@ -198,6 +200,7 @@ function makeUpdateState(input: {
 }
 
 export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
+  const maintenanceScope = yield* Scope.Scope;
   const providerRegistry = yield* ProviderRegistry;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const httpClient = yield* HttpClient.HttpClient;
@@ -398,7 +401,7 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
       },
     );
 
-    return yield* commandCoordinator
+    const updateFiber = yield* commandCoordinator
       .withCommandLock({
         targetKey,
         lockKey: update.lockKey,
@@ -414,7 +417,15 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
               })
             : error,
         ),
+        // Provider updates mutate a shared installation and must outlive the
+        // WebSocket request that started them without outliving the server
+        // route layer. Forking into the runner's scope preserves the command
+        // and lock across disconnects while still running child-process
+        // cleanup during an orderly server shutdown.
+        Effect.forkIn(maintenanceScope),
       );
+
+    return yield* Fiber.join(updateFiber);
   });
 
   return ProviderMaintenanceRunner.of({

@@ -1840,6 +1840,7 @@ const makeWsRpcLayer = (
 export const websocketRpcRouteLayer = Layer.unwrap(
   Effect.gen(function* () {
     const previewAutomationBroker = yield* PreviewAutomationBroker.PreviewAutomationBroker;
+    const providerMaintenanceRunner = yield* ProviderMaintenanceRunner.ProviderMaintenanceRunner;
     const serverSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
     return HttpRouter.add(
       "GET",
@@ -1862,7 +1863,15 @@ export const websocketRpcRouteLayer = Layer.unwrap(
           Effect.provide(
             makeWsRpcLayer(session, previewAutomationBroker).pipe(
               Layer.provideMerge(RpcSerialization.layerJson),
-              Layer.provide(ProviderMaintenanceRunner.layer),
+              // One runner owns provider maintenance for the lifetime of the
+              // route layer. Building it inside this WebSocket handler made
+              // the supposedly global command locks connection-local.
+              Layer.provide(
+                Layer.succeed(
+                  ProviderMaintenanceRunner.ProviderMaintenanceRunner,
+                  providerMaintenanceRunner,
+                ),
+              ),
               Layer.provide(Layer.succeed(ServerSelfUpdate.ServerSelfUpdate, serverSelfUpdate)),
               Layer.provide(
                 SourceControlDiscovery.layer.pipe(
