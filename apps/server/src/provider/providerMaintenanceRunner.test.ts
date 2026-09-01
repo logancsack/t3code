@@ -14,6 +14,7 @@ import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Sink from "effect/Sink";
+import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import { HttpClient, HttpClientResponse } from "effect/unstable/http";
 import { ChildProcessSpawner } from "effect/unstable/process";
@@ -205,18 +206,17 @@ function makeRegistry(
 }
 
 const makeTestRunner = (registry: ProviderRegistryShape) =>
-  Effect.service(ProviderMaintenanceRunner.ProviderMaintenanceRunner).pipe(
+  ProviderMaintenanceRunner.make().pipe(
     Effect.provide(
-      ProviderMaintenanceRunner.layer.pipe(
-        Layer.provide(
-          Layer.mergeAll(
-            Layer.succeed(ProviderRegistry, registry),
-            Layer.succeed(ProviderVersionCache, new Map()),
-          ),
-        ),
+      Layer.mergeAll(
+        Layer.succeed(ProviderRegistry, registry),
+        Layer.succeed(ProviderVersionCache, new Map()),
       ),
     ),
   );
+
+const makeTestRunnerInScope = (registry: ProviderRegistryShape, maintenanceScope: Scope.Scope) =>
+  makeTestRunner(registry).pipe(Effect.provideService(Scope.Scope, maintenanceScope));
 
 describe("providerMaintenanceRunner", () => {
   it.effect("runs the allowlisted provider update command and records success", () => {
@@ -697,6 +697,48 @@ describe("providerMaintenanceRunner", () => {
               };
             }
             return { stdout: "updated" };
+          }),
+        ),
+      ),
+    );
+  });
+
+  it.effect("stops an update when the maintenance scope closes", () => {
+    const commandStartedLatch: { resolve: () => void } = { resolve: () => {} };
+    const commandStarted = new Promise<void>((resolve) => {
+      commandStartedLatch.resolve = resolve;
+    });
+    let killCount = 0;
+
+    return Effect.gen(function* () {
+      const maintenanceScope = yield* Scope.make();
+      yield* Effect.addFinalizer((exit) => Scope.close(maintenanceScope, exit));
+      const { registry } = yield* makeRegistry(baseProvider);
+      const updater = yield* makeTestRunnerInScope(registry, maintenanceScope);
+
+      const requestingClient = yield* updater.updateProvider(CODEX_DRIVER).pipe(Effect.forkScoped);
+      yield* Effect.promise(() => commandStarted);
+
+      yield* Scope.close(maintenanceScope, Exit.void);
+      const exit = yield* Fiber.await(requestingClient);
+
+      assert.strictEqual(killCount, 1);
+      assert.strictEqual(Exit.isFailure(exit), true);
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          NonWindowsPlatform,
+          latestVersionHttpClient("0.0.0"),
+          mockSpawnerLayer(() => {
+            commandStartedLatch.resolve();
+            return {
+              stdout: "updated",
+              exitCode: Effect.never,
+              kill: () =>
+                Effect.sync(() => {
+                  killCount += 1;
+                }),
+            };
           }),
         ),
       ),

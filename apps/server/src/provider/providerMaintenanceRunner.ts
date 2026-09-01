@@ -19,6 +19,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
+import * as Scope from "effect/Scope";
 import { HttpClient } from "effect/unstable/http";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
@@ -199,6 +200,7 @@ function makeUpdateState(input: {
 }
 
 export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
+  const maintenanceScope = yield* Scope.Scope;
   const providerRegistry = yield* ProviderRegistry;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const httpClient = yield* HttpClient.HttpClient;
@@ -416,10 +418,11 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
             : error,
         ),
         // Provider updates mutate a shared installation and must outlive the
-        // WebSocket request that started them. The caller still waits for the
-        // result while connected, but interrupting that caller no longer
-        // interrupts the update command or releases its coordinator lock.
-        Effect.forkDetach,
+        // WebSocket request that started them without outliving the server
+        // route layer. Forking into the runner's scope preserves the command
+        // and lock across disconnects while still running child-process
+        // cleanup during an orderly server shutdown.
+        Effect.forkIn(maintenanceScope),
       );
 
     return yield* Fiber.join(updateFiber);
