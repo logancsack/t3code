@@ -1251,8 +1251,24 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const [providerInputSubmissionError, setProviderInputSubmissionError] = useState<string | null>(
     null,
   );
+  // Mirrors for effects that clear transient UI state on every prompt change.
+  // Those effects run at default priority after each keystroke's synchronous
+  // commit, and an unconditional setState there schedules a default-lane
+  // render even when nothing changes (React can only skip it eagerly while the
+  // fiber has no pending lanes). Sustained typing on a heavy thread starves
+  // that lane, every sync commit then counts toward React's nested-update
+  // limit, and the composer throws "Maximum update depth exceeded". The refs
+  // let the effects touch state only when there is something to clear.
+  const providerInputSubmissionErrorRef = useRef(providerInputSubmissionError);
+  useEffect(() => {
+    providerInputSubmissionErrorRef.current = providerInputSubmissionError;
+  }, [providerInputSubmissionError]);
   const [composerMenuAnchor, setComposerMenuAnchor] = useState<HTMLDivElement | null>(null);
   const [isStashMenuOpen, setIsStashMenuOpen] = useState(false);
+  const isStashMenuOpenRef = useRef(isStashMenuOpen);
+  useEffect(() => {
+    isStashMenuOpenRef.current = isStashMenuOpen;
+  }, [isStashMenuOpen]);
   const [isTasksDrawerOpen, setIsTasksDrawerOpen] = useState(false);
   const [stashPulse, setStashPulse] = useState<{ key: number; active: boolean }>({
     key: 0,
@@ -1680,6 +1696,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   }, [composerSubmissionError, prompt]);
 
   useEffect(() => {
+    if (providerInputSubmissionErrorRef.current === null) return;
+    providerInputSubmissionErrorRef.current = null;
     setProviderInputSubmissionError(null);
   }, [
     composerElementContexts,
@@ -2991,6 +3009,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     }
   }, [composerMenuOpen]);
   useEffect(() => {
+    if (!isStashMenuOpenRef.current) return;
+    isStashMenuOpenRef.current = false;
     setIsStashMenuOpen(false);
   }, [prompt]);
 
