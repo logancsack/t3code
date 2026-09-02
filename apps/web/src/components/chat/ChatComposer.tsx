@@ -1650,9 +1650,25 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // ------------------------------------------------------------------
   // Sync refs back to parent
   // ------------------------------------------------------------------
+  // Passive effects after a keystroke's synchronous commit run at default
+  // priority, so every setState they issue schedules a default-lane render
+  // even when the value is unchanged (React can only skip eagerly while the
+  // fiber has no pending lanes). Sustained typing on a heavy thread never
+  // leaves the main thread idle long enough to render that lane, every sync
+  // commit then finds it still pending, and React's nested-update counter
+  // reaches its limit ("Maximum update depth exceeded"). Only touch state when
+  // the value actually changes.
+  const composerCursorRef = useRef(composerCursor);
+  useEffect(() => {
+    composerCursorRef.current = composerCursor;
+  }, [composerCursor]);
   useEffect(() => {
     promptRef.current = prompt;
-    setComposerCursor((existing) => clampCollapsedComposerCursor(prompt, existing));
+    const clampedCursor = clampCollapsedComposerCursor(prompt, composerCursorRef.current);
+    if (clampedCursor !== composerCursorRef.current) {
+      composerCursorRef.current = clampedCursor;
+      setComposerCursor(clampedCursor);
+    }
   }, [prompt, promptRef]);
 
   useEffect(() => {
@@ -1697,8 +1713,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // ------------------------------------------------------------------
   useEffect(() => {
     if (!composerMenuOpen) {
-      setComposerHighlightedItemId(null);
-      setComposerHighlightedSearchKey(null);
+      // Same default-lane concern as the cursor sync above: this effect runs on
+      // every keystroke because the menu item list is rebuilt per render.
+      if (composerHighlightedItemId !== null) setComposerHighlightedItemId(null);
+      if (composerHighlightedSearchKey !== null) setComposerHighlightedSearchKey(null);
       return;
     }
     const nextActiveItemId = resolveComposerMenuActiveItemId({
