@@ -7,7 +7,7 @@ import { APP_BASE_NAME } from "../../branding";
  */
 export const PROVIDER_STATUS_STYLES = {
   disabled: {
-    dot: "bg-amber-400",
+    dot: "bg-muted-foreground/50",
   },
   error: {
     dot: "bg-destructive",

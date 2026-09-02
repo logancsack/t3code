@@ -1,5 +1,4 @@
 import {
-  effectiveSettled,
   effectiveSnoozed,
   hasQueuedTurnStart,
   QUEUED_TURN_START_GRACE_MS,
@@ -9,6 +8,10 @@ import {
 import type { SnoozePreset } from "@t3tools/client-runtime/state/thread-settled";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import { threadSearchMatchKey } from "@t3tools/client-runtime/state/thread-search";
+import {
+  activeThreadAnchorTimestampMs,
+  sortPinnedThreadsByOrderKey,
+} from "@t3tools/client-runtime/state/thread-sort";
 import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
 
 import type { PendingNewTask } from "../../state/use-pending-new-tasks";
@@ -102,23 +105,23 @@ export const THREAD_LIST_V2_SETTLED_INITIAL_COUNT = 10;
 export const THREAD_LIST_V2_SETTLED_PAGE_COUNT = 25;
 
 /**
- * Thread List v2 is on by default on every app variant; the Settings → Beta
- * toggle is an opt-out. Preferences persist as sparse patches, so `undefined`
- * genuinely means "never chosen".
+ * The flat Thread List v2 is the default on every app variant; the Settings →
+ * Legacy toggle opts a device back into the grouped legacy list. Preferences
+ * persist as sparse patches, so `undefined` genuinely means "never chosen".
  *
  * `preferencesLoaded` guards the startup window: preferences load
  * asynchronously, and rendering one list before the stored choice arrives would
  * remount the whole thing a tick later. While loading, hold the default — that
- * is where every device without an explicit opt-out lands anyway.
+ * is where every device without an explicit legacy opt-in lands anyway.
  */
 export function resolveThreadListV2Enabled(input: {
-  readonly preference: boolean | undefined;
+  readonly legacyPreference: boolean | undefined;
   readonly preferencesLoaded: boolean;
 }): boolean {
   if (!input.preferencesLoaded) {
     return true;
   }
-  return input.preference ?? true;
+  return input.legacyPreference !== true;
 }
 
 export function resolveThreadListV2Status(
@@ -158,19 +161,25 @@ function firstValidTimestampMs(...candidates: ReadonlyArray<string | null | unde
 }
 
 /**
- * v2 sort: static creation order, newest thread on top. Activity NEVER
- * reorders the list — a row holds its position from open until settled, so
- * the screen only moves at lifecycle transitions. Mirrors web's
- * sortThreadsForSidebarV2.
+ * v2 sort: static order, newest anchor on top. Activity NEVER reorders the
+ * list — a row holds its position between lifecycle transitions. The anchor
+ * is creation time until an un-settle re-anchors it (see
+ * activeThreadAnchorTimestampMs), so an un-settled thread surfaces at the
+ * top instead of sinking back to its creation-order slot. Mirrors web's
+ * sortThreadsForSidebar.
  */
-export function sortThreadsForListV2<T extends { readonly id: string; readonly createdAt: string }>(
-  threads: readonly T[],
-): T[] {
+export function sortThreadsForListV2<
+  T extends {
+    readonly id: string;
+    readonly createdAt: string;
+    readonly unsettledAt?: string | null | undefined;
+  },
+>(threads: readonly T[]): T[] {
   // .sort() on a copy, not .toSorted(): Hermes doesn't ship the ES2023
   // change-by-copy array methods.
   return [...threads].sort(
     (left, right) =>
-      parseTimestampMs(right.createdAt) - parseTimestampMs(left.createdAt) ||
+      activeThreadAnchorTimestampMs(right) - activeThreadAnchorTimestampMs(left) ||
       left.id.localeCompare(right.id),
   );
 }
@@ -305,9 +314,7 @@ export function buildThreadListV2ListItems(input: {
 
 /**
  * Partitions visible threads into the active card block (creation order) and
- * the settled recency tail, matching the web v2 list. `autoSettleAfterDays`
- * mirrors the web default of 3 — mobile has no client-settings sync yet, so
- * the default is fixed here rather than user-configurable.
+ * the settled recency tail, matching the web v2 list.
  */
 export function buildThreadListV2Items(input: {
   readonly threads: ReadonlyArray<EnvironmentThreadShell>;
@@ -318,8 +325,6 @@ export function buildThreadListV2Items(input: {
   }> | null;
   readonly searchQuery: string;
   readonly matchedThreadKeys?: ReadonlySet<string>;
-  /** Per-row PR state reported up by visible rows ("env:threadId" keys). */
-  readonly changeRequestStateByKey?: ReadonlyMap<string, "open" | "closed" | "merged">;
   /** Environments whose server supports thread.settle/unsettle. Threads on
       other environments never classify as settled — the user could neither
       un-settle nor pin them. Absent = no gating (tests). */
@@ -327,16 +332,10 @@ export function buildThreadListV2Items(input: {
   /** Environments whose server supports thread.snooze/unsnooze. Same
       contract as settlementEnvironmentIds. */
   readonly snoozeEnvironmentIds?: ReadonlySet<EnvironmentId>;
-  readonly autoSettleAfterDays?: number;
   /** Max settled rows to render; the rest are counted, not built. */
   readonly settledLimit?: number;
-  /** Injectable for tests; defaults to now. */
-  readonly now?: string;
-  /** Second-precise clock for snooze classification. Callers pass a
-      minute-quantized `now` for memoization; snooze wake times are
-      second-precise, so classifying with the floored minute would hold a
-      woken thread hidden for up to a minute. Defaults to `now`. */
-  readonly snoozeNow?: string;
+  /** Second-precise clock used for time-based classification. */
+  readonly now: string;
   /** Expands the snoozed shelf into rows. Collapsed is the default. */
   readonly snoozedShelfExpanded?: boolean;
   /** Expands the settled shelf into rows. Expanded is the default. */
@@ -345,9 +344,7 @@ export function buildThreadListV2Items(input: {
       a split-view detail can never lose its navigation row. */
   readonly selectedThreadKey?: string | null;
 }): ThreadListV2Layout {
-  const now = input.now ?? new Date().toISOString();
-  const snoozeNow = input.snoozeNow ?? now;
-  const autoSettleAfterDays = input.autoSettleAfterDays ?? 3;
+  const now = input.now;
   const query = input.searchQuery.trim().toLocaleLowerCase();
   const projectKeys = input.projectRefs
     ? new Set(input.projectRefs.map((ref) => `${ref.environmentId}:${ref.projectId}`))
@@ -359,8 +356,7 @@ export function buildThreadListV2Items(input: {
   const snoozed: EnvironmentThreadShell[] = [];
   let nextSnoozeWakeAt: string | null = null;
   for (const thread of input.threads) {
-    // Callers pass live (unarchived) shells; settled threads are among them
-    // and partition into the tail via effectiveSettled.
+    // Callers pass live shells. The server stamps settledOverride for the tail.
     if (input.environmentId !== null && thread.environmentId !== input.environmentId) continue;
     if (projectKeys !== null && !projectKeys.has(`${thread.environmentId}:${thread.projectId}`)) {
       continue;
@@ -379,13 +375,8 @@ export function buildThreadListV2Items(input: {
     }
     const supportsSettlement = input.settlementEnvironmentIds?.has(thread.environmentId) ?? true;
     const supportsSnooze = input.snoozeEnvironmentIds?.has(thread.environmentId) ?? true;
-    const changeRequestState =
-      input.changeRequestStateByKey?.get(`${thread.environmentId}:${thread.id}`) ?? null;
-    // Visibility parity with web: snooze outranks everything, including a
-    // pin — a snoozed thread leaves the list until it wakes (or raises its
-    // hand). The pin survives underneath, so a woken thread reappears at
-    // its original spot in the creation-ordered pinned block.
-    if (supportsSnooze && effectiveSnoozed(thread, { now: snoozeNow })) {
+    // Snooze outranks settlement and pinning until the thread wakes.
+    if (supportsSnooze && effectiveSnoozed(thread, { now })) {
       snoozed.push(thread);
       if (
         thread.snoozedUntil != null &&
@@ -396,17 +387,10 @@ export function buildThreadListV2Items(input: {
       }
       continue;
     }
-    // A pin otherwise overrides the lifecycle: pinned threads render above
-    // the inbox and never auto-settle out of sight.
-    if (thread.pinnedAt != null) {
-      pinned.push(thread);
-      continue;
-    }
-    if (
-      supportsSettlement &&
-      effectiveSettled(thread, { now, autoSettleAfterDays, changeRequestState })
-    ) {
+    if (supportsSettlement && thread.settledOverride === "settled") {
       settled.push(thread);
+    } else if (thread.pinnedAt != null) {
+      pinned.push(thread);
     } else {
       active.push(thread);
     }
@@ -444,7 +428,7 @@ export function buildThreadListV2Items(input: {
         );
 
   const items: ThreadListV2Item[] = [];
-  for (const thread of sortThreadsForListV2(pinned)) {
+  for (const thread of sortPinnedThreadsByOrderKey(pinned)) {
     items.push({
       thread,
       variant: "card",

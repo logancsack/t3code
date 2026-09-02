@@ -5,7 +5,7 @@ import {
   scopedThreadKey,
 } from "@t3tools/client-runtime/environment";
 import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import { canSettle, canSnooze, threadWokeAt } from "@t3tools/client-runtime/state/thread-settled";
+import { canSnooze, threadWokeAt } from "@t3tools/client-runtime/state/thread-settled";
 import { EnvironmentId, type ScopedThreadRef, ThreadId } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Schema from "effect/Schema";
@@ -13,21 +13,24 @@ import { AsyncResult } from "effect/unstable/reactivity";
 import { useRouter } from "@tanstack/react-router";
 import { useCallback, useMemo, useRef } from "react";
 
-import { getFallbackThreadIdAfterDelete } from "../components/Sidebar.logic";
+import { getFallbackThreadIdAfterDelete, pinOrderKeyBetween } from "../components/Sidebar.logic";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { terminalEnvironment } from "../state/terminal";
 import { threadEnvironment } from "../state/threads";
 import { vcsEnvironment } from "../state/vcs";
 import { useNewThreadHandler } from "./useHandleNewThread";
 import { refreshArchivedThreadsForEnvironment } from "../lib/archivedThreadsState";
+import { releaseComposerDraftUploads } from "../lib/composerDraftUploads";
 import { readLocalApi } from "../localApi";
 import {
   readEnvironmentSupportsPinning,
+  readEnvironmentSupportsPinReorder,
   readEnvironmentSupportsSettlement,
   readEnvironmentSupportsSnooze,
   readEnvironmentThreadRefs,
   readProject,
   readThreadShell,
+  readThreadShells,
 } from "../state/entities";
 import { useTerminalUiStateStore } from "../terminalUiStateStore";
 import { useUiStateStore } from "../uiStateStore";
@@ -61,18 +64,6 @@ export class ThreadSettlementUnsupportedError extends Schema.TaggedErrorClass<Th
   }
 }
 
-export class ThreadSettleBlockedError extends Schema.TaggedErrorClass<ThreadSettleBlockedError>()(
-  "ThreadSettleBlockedError",
-  {
-    environmentId: EnvironmentId,
-    threadId: ThreadId,
-  },
-) {
-  override get message(): string {
-    return "This thread still needs attention. Resolve or interrupt it first, then try again.";
-  }
-}
-
 export class ThreadSnoozeUnsupportedError extends Schema.TaggedErrorClass<ThreadSnoozeUnsupportedError>()(
   "ThreadSnoozeUnsupportedError",
   {
@@ -97,6 +88,18 @@ export class ThreadSnoozeBlockedError extends Schema.TaggedErrorClass<ThreadSnoo
   }
 }
 
+/** Key that sorts before every arranged pinned thread, so a fresh pin lands
+    at the top of the run. Undefined (keyless, sorts with the legacy block)
+    when key math can't produce one — pinning must never fail on placement. */
+function topOfPinnedRunOrderKey(): string | undefined {
+  let firstKey: string | null = null;
+  for (const shell of readThreadShells()) {
+    if (shell.pinnedAt == null || shell.pinOrderKey == null) continue;
+    if (firstKey === null || shell.pinOrderKey < firstKey) firstKey = shell.pinOrderKey;
+  }
+  return pinOrderKeyBetween(null, firstKey) ?? undefined;
+}
+
 export class ThreadPinningUnsupportedError extends Schema.TaggedErrorClass<ThreadPinningUnsupportedError>()(
   "ThreadPinningUnsupportedError",
   {
@@ -107,6 +110,38 @@ export class ThreadPinningUnsupportedError extends Schema.TaggedErrorClass<Threa
   override get message(): string {
     return "This environment's server does not support pinning yet. Update the server to use Pin.";
   }
+}
+
+export class ThreadPinReorderUnsupportedError extends Schema.TaggedErrorClass<ThreadPinReorderUnsupportedError>()(
+  "ThreadPinReorderUnsupportedError",
+  {
+    environmentId: EnvironmentId,
+    threadId: ThreadId,
+  },
+) {
+  override get message(): string {
+    return "This environment's server does not support reordering pinned threads yet. Update the server to reorder pins.";
+  }
+}
+
+export async function requestThreadUnpinConfirmation(input: {
+  enabled: boolean;
+  title: string;
+  confirm: ((message: string) => Promise<boolean>) | null;
+}) {
+  const { confirm } = input;
+  if (!input.enabled || confirm === null) {
+    return AsyncResult.success(true);
+  }
+
+  return settlePromise(() =>
+    confirm(
+      [
+        `Unpin thread "${input.title}"?`,
+        "This will move the thread out of your pinned section.",
+      ].join("\n"),
+    ),
+  );
 }
 
 export function useThreadActions() {
@@ -132,6 +167,9 @@ export function useThreadActions() {
   const unpinThreadMutation = useAtomCommand(threadEnvironment.unpin, {
     reportFailure: false,
   });
+  const reorderPinnedThreadMutation = useAtomCommand(threadEnvironment.reorderPin, {
+    reportFailure: false,
+  });
   const snoozeThreadMutation = useAtomCommand(threadEnvironment.snooze, {
     reportFailure: false,
   });
@@ -147,6 +185,7 @@ export function useThreadActions() {
   });
   const sidebarThreadSortOrder = useClientSettings((settings) => settings.sidebarThreadSortOrder);
   const confirmThreadDelete = useClientSettings((settings) => settings.confirmThreadDelete);
+  const confirmThreadUnpin = useClientSettings((settings) => settings.confirmThreadUnpin);
   const clearComposerDraftForThread = useComposerDraftStore((store) => store.clearDraftThread);
   const clearProjectDraftThreadById = useComposerDraftStore(
     (store) => store.clearProjectDraftThreadById,
@@ -295,6 +334,7 @@ export function useThreadActions() {
               "",
               "Delete the worktree too?",
             ].join("\n"),
+            { variant: "destructive" },
           ),
         );
         if (confirmationResult._tag === "Failure") {
@@ -334,6 +374,7 @@ export function useThreadActions() {
         return deleteResult;
       }
       refreshArchivedThreadsForEnvironment(threadRef.environmentId);
+      releaseComposerDraftUploads(threadRef);
       clearComposerDraftForThread(threadRef);
       clearProjectDraftThreadById(
         scopeProjectRef(threadRef.environmentId, thread.projectId),
@@ -453,19 +494,6 @@ export function useThreadActions() {
         );
       }
       const resolved = resolveThreadTarget(target);
-      // Settle may only target what effectiveSettled could classify as
-      // settled: not starting/running sessions, not threads waiting on
-      // approvals or user input. Anything else would hide live work.
-      if (resolved && !canSettle(resolved.thread, { now: new Date().toISOString() })) {
-        return AsyncResult.failure(
-          Cause.fail(
-            new ThreadSettleBlockedError({
-              environmentId: resolved.threadRef.environmentId,
-              threadId: resolved.threadRef.threadId,
-            }),
-          ),
-        );
-      }
       const wokeAt = resolved
         ? threadWokeAt(resolved.thread, { now: new Date().toISOString() })
         : null;
@@ -506,7 +534,7 @@ export function useThreadActions() {
   );
 
   const pinThread = useCallback(
-    async (target: ScopedThreadRef) => {
+    async (target: ScopedThreadRef, opts: { orderKey?: string } = {}) => {
       // Version skew: never send the command to a server that predates it.
       if (!readEnvironmentSupportsPinning(target.environmentId)) {
         return AsyncResult.failure(
@@ -518,9 +546,21 @@ export function useThreadActions() {
           ),
         );
       }
+      // Every pin path places the thread at the top of the arranged run:
+      // callers with a better anchor (the sidebar, which knows the displayed
+      // order) pass their own key; everyone else (chat header, context menus)
+      // gets the default so the same action never places differently.
+      // orderKey rides only to servers that decode it; pre-reorder servers
+      // get the bare pin they understand and the thread stays keyless.
+      const orderKey = readEnvironmentSupportsPinReorder(target.environmentId)
+        ? (opts.orderKey ?? topOfPinnedRunOrderKey())
+        : undefined;
       return pinThreadMutation({
         environmentId: target.environmentId,
-        input: { threadId: target.threadId },
+        input: {
+          threadId: target.threadId,
+          ...(orderKey !== undefined ? { orderKey } : {}),
+        },
       });
     },
     [pinThreadMutation],
@@ -544,6 +584,49 @@ export function useThreadActions() {
       });
     },
     [unpinThreadMutation],
+  );
+
+  const confirmAndUnpinThread = useCallback(
+    async (target: ScopedThreadRef) => {
+      const localApi = readLocalApi();
+      const resolved = resolveThreadTarget(target);
+      const confirmationResult = await requestThreadUnpinConfirmation({
+        enabled: confirmThreadUnpin,
+        title: resolved?.thread.title ?? "this thread",
+        confirm: localApi ? (message) => localApi.dialogs.confirm(message) : null,
+      });
+      if (confirmationResult._tag === "Failure") {
+        return confirmationResult;
+      }
+      if (!confirmationResult.value) {
+        return AsyncResult.success(undefined);
+      }
+      return unpinThread(target);
+    },
+    [confirmThreadUnpin, resolveThreadTarget, unpinThread],
+  );
+
+  const reorderPinnedThread = useCallback(
+    async (target: ScopedThreadRef, orderKey: string) => {
+      // Callers (the sidebar drag handler) only enable dragging on
+      // reorder-capable environments; this guard covers races around
+      // capability changes mid-drag.
+      if (!readEnvironmentSupportsPinReorder(target.environmentId)) {
+        return AsyncResult.failure(
+          Cause.fail(
+            new ThreadPinReorderUnsupportedError({
+              environmentId: target.environmentId,
+              threadId: target.threadId,
+            }),
+          ),
+        );
+      }
+      return reorderPinnedThreadMutation({
+        environmentId: target.environmentId,
+        input: { threadId: target.threadId, orderKey },
+      });
+    },
+    [reorderPinnedThreadMutation],
   );
 
   const snoozeThread = useCallback(
@@ -614,6 +697,7 @@ export function useThreadActions() {
               `Delete thread "${title}"?`,
               "This permanently clears conversation history for this thread.",
             ].join("\n"),
+            { variant: "destructive" },
           ),
         );
         if (confirmationResult._tag === "Failure") {
@@ -641,12 +725,16 @@ export function useThreadActions() {
       unsnoozeThread,
       pinThread,
       unpinThread,
+      confirmAndUnpinThread,
+      reorderPinnedThread,
     }),
     [
       archiveThread,
       confirmAndDeleteThread,
+      confirmAndUnpinThread,
       deleteThread,
       pinThread,
+      reorderPinnedThread,
       settleThread,
       snoozeThread,
       unarchiveThread,

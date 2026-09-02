@@ -1,6 +1,7 @@
 import {
   CommandId,
   EventId,
+  type OrchestrationClientOrigin,
   type OrchestrationCommand,
   OrchestrationDispatchCommandError,
   ThreadId,
@@ -16,6 +17,11 @@ import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.t
 import * as ServerRuntimeStartup from "../serverRuntimeStartup.ts";
 import * as VcsStatusBroadcaster from "../vcs/VcsStatusBroadcaster.ts";
 import * as OrchestrationEngine from "./Services/OrchestrationEngine.ts";
+import { ThreadDeletionReactor } from "./Services/ThreadDeletionReactor.ts";
+
+export interface OrchestrationDispatchOptions {
+  readonly origin?: OrchestrationClientOrigin;
+}
 
 const isOrchestrationDispatchCommandError = Schema.is(OrchestrationDispatchCommandError);
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
@@ -61,6 +67,7 @@ export const makeOrchestrationCommandDispatcher = Effect.gen(function* () {
   const vcsStatusBroadcaster = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
   const startup = yield* ServerRuntimeStartup.ServerRuntimeStartup;
   const projectSetupScriptRunner = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
+  const threadDeletionReactor = yield* ThreadDeletionReactor;
 
   const toDispatchCommandError = (cause: unknown, fallbackMessage: string) =>
     isOrchestrationDispatchCommandError(cause)
@@ -82,39 +89,57 @@ export const makeOrchestrationCommandDispatcher = Effect.gen(function* () {
       .refreshStatus(cwd)
       .pipe(Effect.ignoreCause({ log: true }), Effect.forkDetach, Effect.asVoid);
 
-  const appendSetupScriptActivity = (input: {
-    readonly threadId: ThreadId;
-    readonly kind: "setup-script.requested" | "setup-script.started" | "setup-script.failed";
-    readonly summary: string;
-    readonly createdAt: string;
-    readonly payload: Record<string, unknown>;
-    readonly tone: "info" | "error";
-  }) =>
+  const appendSetupScriptActivity = (
+    input: {
+      readonly threadId: ThreadId;
+      readonly kind: "setup-script.requested" | "setup-script.started" | "setup-script.failed";
+      readonly summary: string;
+      readonly createdAt: string;
+      readonly payload: Record<string, unknown>;
+      readonly tone: "info" | "error";
+    },
+    options: OrchestrationDispatchOptions | undefined,
+  ) =>
     Effect.all({
       commandId: serverCommandId("setup-script-activity"),
       activityId: serverEventId,
     }).pipe(
       Effect.flatMap(({ commandId, activityId }) =>
-        orchestrationEngine.dispatch({
-          type: "thread.activity.append",
-          commandId,
-          threadId: input.threadId,
-          activity: {
-            id: activityId,
-            tone: input.tone,
-            kind: input.kind,
-            summary: input.summary,
-            payload: input.payload,
-            turnId: null,
+        orchestrationEngine.dispatch(
+          {
+            type: "thread.activity.append",
+            commandId,
+            threadId: input.threadId,
+            activity: {
+              id: activityId,
+              tone: input.tone,
+              kind: input.kind,
+              summary: input.summary,
+              payload: input.payload,
+              turnId: null,
+              createdAt: input.createdAt,
+            },
             createdAt: input.createdAt,
           },
-          createdAt: input.createdAt,
-        }),
+          options,
+        ),
       ),
     );
 
+  const toBootstrapDispatchCommandCauseError = (cause: Cause.Cause<unknown>) => {
+    const error = Cause.squash(cause);
+    return isOrchestrationDispatchCommandError(error)
+      ? error
+      : new OrchestrationDispatchCommandError({
+          message:
+            error instanceof Error ? error.message : "Failed to bootstrap thread turn start.",
+          cause,
+        });
+  };
+
   const dispatchBootstrapTurnStart = (
     command: Extract<OrchestrationCommand, { type: "thread.turn.start" }>,
+    options: OrchestrationDispatchOptions | undefined,
   ): Effect.Effect<{ readonly sequence: number }, OrchestrationDispatchCommandError> =>
     Effect.gen(function* () {
       const bootstrap = command.bootstrap;
@@ -128,15 +153,18 @@ export const makeOrchestrationCommandDispatcher = Effect.gen(function* () {
         createdThread
           ? serverCommandId("bootstrap-thread-delete").pipe(
               Effect.flatMap((commandId) =>
-                orchestrationEngine.dispatch({
-                  type: "thread.delete",
-                  commandId,
-                  threadId: command.threadId,
-                }),
+                orchestrationEngine.dispatch(
+                  {
+                    type: "thread.delete",
+                    commandId,
+                    threadId: command.threadId,
+                  },
+                  options,
+                ),
               ),
-              Effect.ignoreCause({ log: true }),
+              Effect.as(true),
             )
-          : Effect.void;
+          : Effect.succeed(false);
 
       const recordSetupScriptLaunchFailure = (input: {
         readonly error: ProjectSetupScriptRunner.ProjectSetupScriptRunnerError;
@@ -144,14 +172,17 @@ export const makeOrchestrationCommandDispatcher = Effect.gen(function* () {
         readonly worktreePath: string;
       }) => {
         const detail = projectSetupScriptCompatibilityDetail(input.error);
-        return appendSetupScriptActivity({
-          threadId: command.threadId,
-          kind: "setup-script.failed",
-          summary: "Setup script failed to start",
-          createdAt: input.requestedAt,
-          payload: { detail, worktreePath: input.worktreePath },
-          tone: "error",
-        }).pipe(
+        return appendSetupScriptActivity(
+          {
+            threadId: command.threadId,
+            kind: "setup-script.failed",
+            summary: "Setup script failed to start",
+            createdAt: input.requestedAt,
+            payload: { detail, worktreePath: input.worktreePath },
+            tone: "error",
+          },
+          options,
+        ).pipe(
           Effect.ignoreCause({ log: false }),
           Effect.flatMap(() =>
             Effect.logWarning("bootstrap turn start failed to launch setup script", {
@@ -179,22 +210,28 @@ export const makeOrchestrationCommandDispatcher = Effect.gen(function* () {
             worktreePath: input.worktreePath,
           };
           yield* Effect.all([
-            appendSetupScriptActivity({
-              threadId: command.threadId,
-              kind: "setup-script.requested",
-              summary: "Starting setup script",
-              createdAt: input.requestedAt,
-              payload,
-              tone: "info",
-            }),
-            appendSetupScriptActivity({
-              threadId: command.threadId,
-              kind: "setup-script.started",
-              summary: "Setup script started",
-              createdAt: startedAt,
-              payload,
-              tone: "info",
-            }),
+            appendSetupScriptActivity(
+              {
+                threadId: command.threadId,
+                kind: "setup-script.requested",
+                summary: "Starting setup script",
+                createdAt: input.requestedAt,
+                payload,
+                tone: "info",
+              },
+              options,
+            ),
+            appendSetupScriptActivity(
+              {
+                threadId: command.threadId,
+                kind: "setup-script.started",
+                summary: "Setup script started",
+                createdAt: startedAt,
+                payload,
+                tone: "info",
+              },
+              options,
+            ),
           ]).pipe(
             Effect.asVoid,
             Effect.catch((error) =>
@@ -244,19 +281,27 @@ export const makeOrchestrationCommandDispatcher = Effect.gen(function* () {
 
       const bootstrapProgram = Effect.gen(function* () {
         if (bootstrap?.createThread) {
-          const createResult = yield* orchestrationEngine.dispatch({
-            type: "thread.create",
-            commandId: yield* serverCommandId("bootstrap-thread-create"),
-            threadId: command.threadId,
-            projectId: bootstrap.createThread.projectId,
-            title: bootstrap.createThread.title,
-            modelSelection: bootstrap.createThread.modelSelection,
-            runtimeMode: bootstrap.createThread.runtimeMode,
-            interactionMode: bootstrap.createThread.interactionMode,
-            branch: bootstrap.createThread.branch,
-            worktreePath: bootstrap.createThread.worktreePath,
-            createdAt: bootstrap.createThread.createdAt,
-          });
+          const createResult = yield* orchestrationEngine.dispatch(
+            {
+              type: "thread.create",
+              commandId: yield* serverCommandId("bootstrap-thread-create"),
+              threadId: command.threadId,
+              projectId: bootstrap.createThread.projectId,
+              title: bootstrap.createThread.title,
+              modelSelection: bootstrap.createThread.modelSelection,
+              runtimeMode: bootstrap.createThread.runtimeMode,
+              interactionMode: bootstrap.createThread.interactionMode,
+              branch: bootstrap.createThread.branch,
+              worktreePath: bootstrap.createThread.worktreePath,
+              createdAt: bootstrap.createThread.createdAt,
+            },
+            options,
+          );
+          // The successful create is a fence in the engine command queue:
+          // every delete for the prior incarnation committed before it.
+          // Drain through that event before setup or turn start can own
+          // terminals and provider sessions under the reused thread id.
+          yield* threadDeletionReactor.drainThrough(createResult.sequence);
           createdThread = createResult.replayed !== true;
         }
 
@@ -288,47 +333,71 @@ export const makeOrchestrationCommandDispatcher = Effect.gen(function* () {
             path: null,
           });
           targetWorktreePath = worktree.worktree.path;
-          yield* orchestrationEngine.dispatch({
-            type: "thread.meta.update",
-            commandId: yield* serverCommandId("bootstrap-thread-meta-update"),
-            threadId: command.threadId,
-            branch: worktree.worktree.refName,
-            worktreePath: targetWorktreePath,
-          });
+          yield* orchestrationEngine.dispatch(
+            {
+              type: "thread.meta.update",
+              commandId: yield* serverCommandId("bootstrap-thread-meta-update"),
+              threadId: command.threadId,
+              branch: worktree.worktree.refName,
+              worktreePath: targetWorktreePath,
+            },
+            options,
+          );
           yield* refreshGitStatus(targetWorktreePath);
         }
 
         yield* runSetupProgram();
-        return yield* orchestrationEngine.dispatch(finalTurnStartCommand);
+        return yield* orchestrationEngine.dispatch(finalTurnStartCommand, options);
       });
 
       return yield* bootstrapProgram.pipe(
         Effect.catchCause((cause) => {
-          const error = Cause.squash(cause);
-          const dispatchError = isOrchestrationDispatchCommandError(error)
-            ? error
-            : new OrchestrationDispatchCommandError({
-                message:
-                  error instanceof Error ? error.message : "Failed to bootstrap thread turn start.",
-                cause,
-              });
-          if (Cause.hasInterruptsOnly(cause)) return Effect.fail(dispatchError);
-          return cleanupCreatedThread().pipe(Effect.flatMap(() => Effect.fail(dispatchError)));
+          const dispatchError = toBootstrapDispatchCommandCauseError(cause);
+          if (Cause.hasInterruptsOnly(cause)) {
+            return Effect.fail(dispatchError);
+          }
+          return Effect.uninterruptible(cleanupCreatedThread()).pipe(
+            Effect.matchCauseEffect({
+              onFailure: (cleanupCause) =>
+                Effect.logWarning("bootstrap thread cleanup failed", {
+                  threadId: command.threadId,
+                  detail: Cause.pretty(cleanupCause),
+                }).pipe(Effect.flatMap(() => Effect.fail(dispatchError))),
+              onSuccess: (threadDeleted) =>
+                Effect.fail(
+                  threadDeleted
+                    ? new OrchestrationDispatchCommandError({
+                        message: dispatchError.message,
+                        ...(dispatchError.cause !== undefined
+                          ? { cause: dispatchError.cause }
+                          : {}),
+                        bootstrapThreadDisposition: "deleted",
+                      })
+                    : dispatchError,
+                ),
+            }),
+          );
         }),
       );
     });
 
-  return (normalizedCommand: OrchestrationCommand) => {
+  return (normalizedCommand: OrchestrationCommand, options?: OrchestrationDispatchOptions) => {
     const dispatchEffect =
       normalizedCommand.type === "thread.turn.start" && normalizedCommand.bootstrap
-        ? dispatchBootstrapTurnStart(normalizedCommand)
-        : orchestrationEngine
-            .dispatch(normalizedCommand)
-            .pipe(
-              Effect.mapError((cause) =>
-                toDispatchCommandError(cause, "Failed to dispatch orchestration command"),
-              ),
-            );
+        ? dispatchBootstrapTurnStart(normalizedCommand, options)
+        : orchestrationEngine.dispatch(normalizedCommand, options).pipe(
+            Effect.tap(({ sequence }) =>
+              // Returning from thread.create is the handoff point at which
+              // clients may start resources for the new incarnation. Use
+              // its event sequence as the exact deletion-cleanup fence.
+              normalizedCommand.type === "thread.create"
+                ? threadDeletionReactor.drainThrough(sequence)
+                : Effect.void,
+            ),
+            Effect.mapError((cause) =>
+              toDispatchCommandError(cause, "Failed to dispatch orchestration command"),
+            ),
+          );
 
     return startup
       .enqueueCommand(dispatchEffect)

@@ -157,37 +157,17 @@ export function requireThreadAbsent(input: {
   readonly threadId: ThreadId;
   readonly allowDeletedBootstrapRecreation?: boolean;
 }): Effect.Effect<void, OrchestrationCommandInvariantError> {
+  // Thread deletion is a soft delete and a draft keeps its client-minted id
+  // across retries, so only a live row blocks creation. Projectors reset the
+  // thread's rows when the id is created again.
   const existing = findThreadById(input.readModel, input.threadId);
-  if (!existing) {
-    return Effect.void;
-  }
-  if (
-    input.allowDeletedBootstrapRecreation === true &&
-    existing.deletedAt !== null &&
-    input.command.type === "thread.create"
-  ) {
+  if (existing === undefined || existing.deletedAt !== null) {
     return Effect.void;
   }
   return Effect.fail(
     invariantError(
       input.command.type,
       `Thread '${input.threadId}' already exists and cannot be created twice.`,
-    ),
-  );
-}
-
-export function requireNonNegativeInteger(input: {
-  readonly commandType: OrchestrationCommand["type"];
-  readonly field: string;
-  readonly value: number;
-}): Effect.Effect<void, OrchestrationCommandInvariantError> {
-  if (Number.isInteger(input.value) && input.value >= 0) {
-    return Effect.void;
-  }
-  return Effect.fail(
-    invariantError(
-      input.commandType,
-      `${input.field} must be an integer greater than or equal to 0.`,
     ),
   );
 }

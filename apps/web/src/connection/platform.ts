@@ -8,7 +8,6 @@ import {
   SshEnvironmentGateway,
 } from "@t3tools/client-runtime/platform";
 
-import { APP_BASE_NAME } from "../branding";
 import {
   BearerConnectionCredential,
   BearerConnectionProfile,
@@ -45,6 +44,7 @@ import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 import { FetchHttpClient } from "effect/unstable/http";
 
+import { APP_VERSION } from "../branding";
 import { readDesktopPrimaryBearerToken } from "../environments/primary/desktopAuth";
 import { primaryEnvironmentHttpLayer } from "../environments/primary/httpLayer";
 import {
@@ -67,6 +67,7 @@ import {
 } from "./desktopLocal";
 import { connectionStorageLayer } from "./storage";
 import { LANDING_DEMO_ENVIRONMENT_ID, isLandingDemo } from "../landingDemo/mode";
+import { clientPresentationMetadata } from "./clientMetadata";
 
 let nextObservedRpcRequestId = 0;
 
@@ -123,13 +124,16 @@ const wakeupsLayer = Wakeups.layer({
 });
 
 function clientMetadata() {
-  const desktop = window.desktopBridge !== undefined;
-  const platform = navigator.platform.trim();
-  return {
-    label: desktop ? `${APP_BASE_NAME} Desktop` : `${APP_BASE_NAME} Web`,
-    deviceType: "desktop" as const,
-    ...(platform === "" ? {} : { os: platform }),
-  };
+  return clientPresentationMetadata({
+    appVersion: APP_VERSION,
+    hosted: isHostedStaticApp(),
+    identity: {
+      userAgent: navigator.userAgent,
+      platform: navigator.platform,
+      maxTouchPoints: navigator.maxTouchPoints,
+    },
+    desktopBridge: window.desktopBridge,
+  });
 }
 
 function sshPreparationError(cause: unknown) {

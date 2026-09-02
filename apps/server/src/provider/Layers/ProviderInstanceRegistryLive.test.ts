@@ -44,6 +44,7 @@ import * as Stream from "effect/Stream";
 import { HttpClient, HttpClientResponse } from "effect/unstable/http";
 
 import * as BackgroundPolicy from "../../background/BackgroundPolicy.ts";
+import type { BuiltInDriversEnv } from "../builtInDrivers.ts";
 import { ServerConfig } from "../../config.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { ClaudeDriver } from "../Drivers/ClaudeDriver.ts";
@@ -53,6 +54,7 @@ import { GrokDriver } from "../Drivers/GrokDriver.ts";
 import { MuseDriver } from "../Drivers/MuseDriver.ts";
 import { OpenCodeDriver } from "../Drivers/OpenCodeDriver.ts";
 import { PrimeDriver } from "../Drivers/PrimeDriver.ts";
+import * as ModelManifest from "../ModelManifest.ts";
 import { OpenCodeRuntimeLive } from "../opencodeRuntime.ts";
 import { NoOpProviderEventLoggers, ProviderEventLoggers } from "./ProviderEventLoggers.ts";
 import { makeProviderInstanceRegistry } from "./ProviderInstanceRegistryLive.ts";
@@ -111,6 +113,7 @@ const makeClaudeConfig = (overrides: Partial<ClaudeSettings>): ClaudeSettings =>
   homePath: "",
   customModels: [],
   launchArgs: "",
+  autoCompactWindow: "",
   ...overrides,
 });
 
@@ -168,6 +171,7 @@ describe("ProviderInstanceRegistryLive — multi-instance codex slice", () => {
     Layer.provideMerge(ServerSettingsService.layerTest()),
     Layer.provideMerge(TestHttpClientLive),
     Layer.provideMerge(Layer.succeed(ProviderEventLoggers, NoOpProviderEventLoggers)),
+    Layer.provideMerge(ModelManifest.layerTest),
   );
 
   it.live("boots two independent codex instances from a ProviderInstanceConfigMap", () =>
@@ -244,6 +248,32 @@ describe("ProviderInstanceRegistryLive — multi-instance codex slice", () => {
     }).pipe(Effect.provide(testLayer)),
   );
 
+  it.live("treats an explicit in-config enabled:false as disabling despite the envelope", () =>
+    Effect.gen(function* () {
+      // Old settings files can carry both flags with conflicting values.
+      // The explicit false must win so a user's disable is never undone.
+      const staleId = ProviderInstanceId.make("codex_stale");
+      const configMap: ProviderInstanceConfigMap = {
+        [staleId]: {
+          driver: ProviderDriverKind.make("codex"),
+          enabled: true,
+          config: makeCodexConfig({ enabled: false }),
+        },
+      };
+
+      const { registry } = yield* makeProviderInstanceRegistry({
+        drivers: [CodexDriver],
+        configMap,
+      });
+
+      const instance = yield* registry.getInstance(staleId);
+      expect(instance).toBeDefined();
+      expect(instance!.enabled).toBe(false);
+      const snapshot = yield* instance!.snapshot.getSnapshot;
+      expect(snapshot.enabled).toBe(false);
+    }).pipe(Effect.provide(testLayer)),
+  );
+
   it.live(
     "shadows instances whose driver is not registered in this build without failing boot",
     () =>
@@ -307,6 +337,7 @@ describe("ProviderInstanceRegistryLive — all drivers slice", () => {
     Layer.provideMerge(ServerSettingsService.layerTest()),
     Layer.provideMerge(TestHttpClientLive),
     Layer.provideMerge(Layer.succeed(ProviderEventLoggers, NoOpProviderEventLoggers)),
+    Layer.provideMerge(ModelManifest.layerTest),
   );
 
   it.live("boots one instance of every shipped driver from a single config map", () =>
@@ -375,7 +406,7 @@ describe("ProviderInstanceRegistryLive — all drivers slice", () => {
         },
       };
 
-      const { registry } = yield* makeProviderInstanceRegistry({
+      const { registry } = yield* makeProviderInstanceRegistry<BuiltInDriversEnv>({
         drivers: [
           CodexDriver,
           ClaudeDriver,

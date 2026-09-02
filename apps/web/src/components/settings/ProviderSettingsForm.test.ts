@@ -51,6 +51,18 @@ describe("ProviderSettingsForm helpers", () => {
     ]);
   });
 
+  it("shows the auto-compaction threshold for Claude providers", () => {
+    const claude = DRIVER_OPTION_BY_VALUE[ProviderDriverKind.make("claudeAgent")];
+    expect(claude).toBeDefined();
+
+    expect(deriveProviderSettingsFields(claude!).map((field) => field.key)).toEqual([
+      "binaryPath",
+      "homePath",
+      "autoCompactWindow",
+      "launchArgs",
+    ]);
+  });
+
   it("exposes Prime Agent as an experimental provider with its ACP launch fields", () => {
     const primeAgent = DRIVER_OPTION_BY_VALUE[ProviderDriverKind.make("primeAgent")];
 
