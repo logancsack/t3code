@@ -32,7 +32,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { createPortal } from "react-dom";
+import { createPortal, flushSync } from "react-dom";
 import {
   clampCollapsedComposerCursor,
   type ComposerSubmissionIntent,
@@ -1919,17 +1919,27 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         return;
       }
       promptRef.current = nextPrompt;
-      setPrompt(nextPrompt);
-      if (!terminalContextIdListsEqual(composerTerminalContexts, terminalContextIds)) {
-        setComposerDraftTerminalContexts(
-          composerDraftTarget,
-          syncTerminalContextsByIds(composerTerminalContexts, terminalContextIds),
+      // Commit the draft-store write and the local cursor/trigger state in one
+      // synchronous render. The store notifies React through
+      // useSyncExternalStore, which always schedules a sync-lane render, while
+      // the local setState calls below would otherwise land in the default
+      // lane. Fast typing then interleaves the next keystroke's sync render
+      // with the still-pending default-lane work, and React counts every such
+      // commit toward its nested-update limit until it throws
+      // "Maximum update depth exceeded" (React error #185) mid-typing.
+      flushSync(() => {
+        setPrompt(nextPrompt);
+        if (!terminalContextIdListsEqual(composerTerminalContexts, terminalContextIds)) {
+          setComposerDraftTerminalContexts(
+            composerDraftTarget,
+            syncTerminalContextsByIds(composerTerminalContexts, terminalContextIds),
+          );
+        }
+        setComposerCursor(nextCursor);
+        setComposerTrigger(
+          cursorAdjacentToMention ? null : detectComposerTrigger(nextPrompt, expandedCursor),
         );
-      }
-      setComposerCursor(nextCursor);
-      setComposerTrigger(
-        cursorAdjacentToMention ? null : detectComposerTrigger(nextPrompt, expandedCursor),
-      );
+      });
     },
     [
       activePendingProgress?.activeQuestion,

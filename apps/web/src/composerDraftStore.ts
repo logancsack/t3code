@@ -2884,6 +2884,12 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
           }
           set((state) => {
             const existing = state.draftsByThreadKey[threadKey] ?? createEmptyThreadDraft();
+            // Re-emitting an unchanged prompt (editor focus restores, reconnect
+            // re-syncs) must not notify subscribers: every notification forces a
+            // synchronous React re-render of the composer tree.
+            if (existing.prompt === prompt) {
+              return state;
+            }
             const nextDraft: ComposerThreadDraftState = {
               ...existing,
               prompt,

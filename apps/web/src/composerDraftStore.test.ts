@@ -465,6 +465,25 @@ describe("composerDraftStore file attachments", () => {
     expect(store.getComposerDraft(threadRef)).toBeNull();
   });
 
+  it("does not notify subscribers when the prompt is unchanged", () => {
+    const store = useComposerDraftStore.getState();
+    store.setPrompt(threadRef, "Review the report");
+    const before = useComposerDraftStore.getState();
+    let notifications = 0;
+    const unsubscribe = useComposerDraftStore.subscribe(() => {
+      notifications += 1;
+    });
+
+    store.setPrompt(threadRef, "Review the report");
+
+    unsubscribe();
+    expect(notifications).toBe(0);
+    expect(useComposerDraftStore.getState()).toBe(before);
+    expect(useComposerDraftStore.getState().getComposerDraft(threadRef)?.prompt).toBe(
+      "Review the report",
+    );
+  });
+
   it("removes generic files when a prompt is moved into the stash", () => {
     const store = useComposerDraftStore.getState();
     store.setPrompt(threadRef, "Review the report");
