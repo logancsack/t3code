@@ -42,4 +42,8 @@ export function makeLayer<R>(rpcSessionLayer: Layer.Layer<RpcSession.RpcSessionF
   return connectionStartupLayer.pipe(Layer.provideMerge(connectionServicesLayer));
 }
 
-export const layer = makeLayer(RpcSession.layer);
+export function layerWithOptions(options: RpcSession.RpcSessionOptions) {
+  return makeLayer(RpcSession.layerWithOptions(options));
+}
+
+export const layer = layerWithOptions({});

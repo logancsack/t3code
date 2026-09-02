@@ -547,6 +547,13 @@ const client = new Proxy(
 const session: RpcSession = {
   client,
   initialConfig: Effect.succeed(demoServerConfig),
+  // The demo config never changes; emit it once and stay open so the session
+  // is not treated as disconnected when the subscription ends.
+  subscribeServerConfig: () =>
+    Stream.concat(
+      Stream.make({ version: 1 as const, type: "snapshot" as const, config: demoServerConfig }),
+      Stream.never,
+    ),
   ready: Effect.void,
   probe: Effect.void,
   closed: Effect.never,

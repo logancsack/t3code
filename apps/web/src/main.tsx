@@ -19,6 +19,7 @@ import { AppRoot } from "./AppRoot";
 import { installManagedCommandDispatch, prepareManagedDevPc } from "./managedDevPc";
 import { initializeLandingDemoClientSettings } from "./hooks/useSettings";
 import { isLandingDemo } from "./landingDemo/mode";
+import { clerkAppearance } from "./components/clerk/clerkAppearance";
 
 async function renderApp() {
   const landingDemo = isLandingDemo();
@@ -46,11 +47,15 @@ async function renderApp() {
     <React.StrictMode>
       {clerkPublishableKey && hasCloudPublicConfig() ? (
         isElectron ? (
-          <ElectronClerkProvider publishableKey={clerkPublishableKey} passkeys={passkeys}>
+          <ElectronClerkProvider
+            appearance={clerkAppearance}
+            publishableKey={clerkPublishableKey}
+            passkeys={passkeys}
+          >
             <ManagedRelayAuthProvider>{app}</ManagedRelayAuthProvider>
           </ElectronClerkProvider>
         ) : (
-          <ClerkProvider publishableKey={clerkPublishableKey}>
+          <ClerkProvider appearance={clerkAppearance} publishableKey={clerkPublishableKey}>
             <ManagedRelayAuthProvider>{app}</ManagedRelayAuthProvider>
           </ClerkProvider>
         )

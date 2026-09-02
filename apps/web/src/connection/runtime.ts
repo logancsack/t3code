@@ -6,6 +6,7 @@ import {
   threadSnapshotLoaderLayer,
 } from "@t3tools/client-runtime/state/threads";
 import * as Effect from "effect/Effect";
+import { pullRequestDiffLoaderLayer } from "@t3tools/client-runtime/state/pull-requests";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import { Atom } from "effect/unstable/reactivity";
@@ -34,11 +35,11 @@ const landingDemoSnapshotLoaderLayer = Layer.merge(
   ),
 );
 const snapshotLoaderLayer = isLandingDemo()
-  ? landingDemoSnapshotLoaderLayer
-  : Layer.merge(threadSnapshotLoaderLayer, shellSnapshotLoaderLayer);
+  ? Layer.merge(landingDemoSnapshotLoaderLayer, pullRequestDiffLoaderLayer)
+  : Layer.mergeAll(threadSnapshotLoaderLayer, shellSnapshotLoaderLayer, pullRequestDiffLoaderLayer);
 const connectionServicesLayer = isLandingDemo()
   ? Connection.makeLayer(landingDemoRpcSessionLayer)
-  : Connection.layer;
+  : Connection.layerWithOptions({ environmentThemes: true });
 
 type ConnectionLayerSource =
   | typeof Connection.layer
