@@ -38,6 +38,9 @@ vi.mock("react", async (importOriginal) => {
 
 vi.mock("../../env", () => ({ isElectron: false }));
 vi.mock("../../state/usage", () => ({ useUsage: testState.useUsage }));
+vi.mock("../../state/aldoWorkspaceUsage", () => ({
+  useAldoWorkspaceUsage: () => ({ state: { status: "unavailable" }, refresh: vi.fn() }),
+}));
 vi.mock("../ui/button", () => ({ Button: "button" }));
 vi.mock("../ui/scroll-area", () => ({ ScrollArea: "div" }));
 vi.mock("../ui/select", () => ({
