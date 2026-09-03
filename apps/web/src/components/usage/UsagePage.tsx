@@ -6,6 +6,7 @@ import type { DailyTotals, HourlyTotals } from "@t3tools/shared/usageMerge";
 
 import { isElectron } from "../../env";
 import { cn } from "../../lib/utils";
+import { useAldoWorkspaceUsage } from "../../state/aldoWorkspaceUsage";
 import { useUsage, type EnvironmentUsageStatus } from "../../state/usage";
 import {
   enumerateDays,
@@ -31,6 +32,7 @@ import {
 } from "../WorkspaceBreadcrumb";
 import { WorkspacePageContainer } from "../WorkspacePageContainer";
 import { WorkspacePageHeader } from "../WorkspacePageHeader";
+import { AldoWorkspaceUsageSection } from "./AldoWorkspaceUsage";
 import { UsageProviderChart, type UsageChartMetric } from "./UsageProviderChart";
 import { PROVIDER_ORDER, PROVIDER_PRESENTATION, providersWithUsage } from "./usageProviders";
 
@@ -51,6 +53,7 @@ export function UsagePage() {
   const { days: windowDays, window } = windowSelection;
   const isPast24Hours = windowDays === 1;
   const { merged, environments, isPending, isPartial, refresh } = useUsage(window);
+  const aldoWorkspace = useAldoWorkspaceUsage();
 
   // Hold the content until every environment is terminal. Rendering merged
   // totals while devices are still answering makes every number on the page
@@ -93,6 +96,7 @@ export function UsagePage() {
     });
   };
   const refreshWindow = () => {
+    aldoWorkspace.refresh();
     const nextWindow = makeWindow(windowDays, undefined, isPast24Hours ? "hour" : "day");
     if (
       nextWindow.sinceDay === window.sinceDay &&
@@ -299,7 +303,18 @@ export function UsagePage() {
                     />
                   </div>
                 </section>
+              </>
+            )}
 
+            {/*
+              Aldo compute is metered by the gateway, not read from transcripts,
+              so it stays visible while environments are still answering and
+              while a paused workspace cannot answer at all.
+            */}
+            <AldoWorkspaceUsageSection state={aldoWorkspace.state} />
+
+            {settling ? null : (
+              <>
                 <section className="flex flex-col gap-2">
                   <h2 className="text-sm font-medium text-foreground">Totals</h2>
                   <div className="grid grid-cols-2 gap-x-6 gap-y-4 py-1 md:grid-cols-5">
