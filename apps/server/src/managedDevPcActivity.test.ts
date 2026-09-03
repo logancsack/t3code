@@ -7,6 +7,7 @@ import {
   hasQueuedManagedTurnStart,
   hasRunningManagedTurn,
   hasStartingManagedSession,
+  managedBackgroundWork,
   QUEUED_TURN_START_FUTURE_SKEW_MS,
 } from "./managedDevPcActivity.ts";
 import {
@@ -141,6 +142,28 @@ describe("managed DevPC activity", () => {
     expect(hasPendingManagedWork([thread("interrupted", "plan")])).toBe(true);
     expect(hasPendingManagedWork([thread("running")])).toBe(false);
     expect(hasPendingManagedWork([])).toBe(false);
+  });
+
+  it("reports native background work that outlives the settled turn", () => {
+    const withLiveness = (
+      backgroundLiveness: "working" | "monitoring" | null | undefined,
+    ): OrchestrationThreadShell =>
+      ({
+        ...thread("completed"),
+        ...(backgroundLiveness === undefined ? {} : { backgroundLiveness }),
+      }) as OrchestrationThreadShell;
+
+    // A watch loop (Monitor task, backgrounded shell) is the only live work.
+    expect(managedBackgroundWork([withLiveness(null), withLiveness("monitoring")])).toBe(
+      "monitoring",
+    );
+    // Any live agent work outranks monitoring across threads.
+    expect(managedBackgroundWork([withLiveness("monitoring"), withLiveness("working")])).toBe(
+      "working",
+    );
+    // Absent (older projection) and null both mean no background work.
+    expect(managedBackgroundWork([withLiveness(undefined), withLiveness(null)])).toBeNull();
+    expect(managedBackgroundWork([])).toBeNull();
   });
 
   it("keeps a workspace active for detached Prime subagents, not a resident process", () => {
