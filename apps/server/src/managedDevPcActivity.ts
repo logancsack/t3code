@@ -75,6 +75,31 @@ export function hasStartingManagedSession(
   return threads.some((thread) => thread.session?.status === "starting");
 }
 
+export type ManagedBackgroundWork = "working" | "monitoring" | null;
+
+/**
+ * Native background work still alive after a turn settled, aggregated across
+ * threads from the per-thread `backgroundLiveness` the shell already reports:
+ * "working" while subagent fleets or workflow runs continue, "monitoring" when
+ * watch loops (Monitor tasks, backgrounded shells) are the only live work.
+ *
+ * Without this the managed platform saw a settled turn as an idle guest and
+ * paused the VM underneath a deployment watch, freezing the agent's follow-up
+ * forever. "working" is agent work and counts as active; "monitoring" is
+ * reported separately so the platform can hold the workspace online under its
+ * own bounded policy instead of forever for a forgotten background shell.
+ */
+export function managedBackgroundWork(
+  threads: ReadonlyArray<OrchestrationThreadShell>,
+): ManagedBackgroundWork {
+  let monitoring = false;
+  for (const thread of threads) {
+    if (thread.backgroundLiveness === "working") return "working";
+    if (thread.backgroundLiveness === "monitoring") monitoring = true;
+  }
+  return monitoring ? "monitoring" : null;
+}
+
 /**
  * Work that exists but is blocked on the human: pause-safe (the workspace may
  * idle out while an approval waits), yet worth surfacing so the platform can
@@ -110,13 +135,21 @@ const handleManagedDevPcActivity = Effect.gen(function* () {
           { status: 503, headers: { "cache-control": "no-store" } },
         ),
       onSuccess: (snapshot) => {
-        // `active` keeps its original meaning (a genuinely running turn) so
-        // control planes reading only that field see unchanged behavior.
+        // `active` keeps its original meaning (agent work genuinely running:
+        // a turn, detached Prime subagents, or native background agent work)
+        // so control planes reading only that field see unchanged behavior.
         // `working` widens it with imminent work — a queued turn start or a
         // booting session — which must hold a work claim before the turn's
         // running state lands. `pendingWork` is human-blocked work: pause-safe
-        // but not "idle".
-        const active = hasRunningManagedTurn(snapshot.threads) || hasRunningPrimeAgentSubagents();
+        // but not "idle". `backgroundWork` reports native background work
+        // after the turn settled; "monitoring" is deliberately not folded into
+        // `working` so the platform applies a bounded hold rather than keeping
+        // a forgotten background shell online indefinitely.
+        const backgroundWork = managedBackgroundWork(snapshot.threads);
+        const active =
+          hasRunningManagedTurn(snapshot.threads) ||
+          hasRunningPrimeAgentSubagents() ||
+          backgroundWork === "working";
         return HttpServerResponse.jsonUnsafe(
           {
             active,
@@ -125,6 +158,7 @@ const handleManagedDevPcActivity = Effect.gen(function* () {
               hasQueuedManagedTurnStart(snapshot.threads, nowMs) ||
               hasStartingManagedSession(snapshot.threads),
             pendingWork: hasPendingManagedWork(snapshot.threads),
+            backgroundWork,
           },
           { status: 200, headers: { "cache-control": "no-store" } },
         );
