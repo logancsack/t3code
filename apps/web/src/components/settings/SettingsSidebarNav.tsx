@@ -1,3 +1,4 @@
+import { ManagedDevPcConnections } from "../ManagedDevPcConnections";
 import {
   useCallback,
   useEffect,
@@ -297,6 +298,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
       </SidebarContent>
       <SidebarFooter className="p-[var(--sidebar-content-inset)]">
         <T3ConnectSidebarSignIn />
+        <ManagedDevPcConnections />
         <ManagedDevPcFooterAccount showWorkspaceStatus={pathname !== "/settings/workspace"} />
         <div className="flex items-center gap-1">
           <div className="min-w-0 flex-1">
