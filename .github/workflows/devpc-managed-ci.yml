@@ -36,6 +36,7 @@ jobs:
             src/environment/ServerEnvironment.test.ts \
             src/cli/config.test.ts src/managedDevPcActivity.test.ts \
             src/bin.test.ts)
+          (cd apps/server && vp test run src/server.test.ts -t "managed coordinator")
       - name: Managed production build
         env:
           VITE_DEVPC_MANAGED: "1"

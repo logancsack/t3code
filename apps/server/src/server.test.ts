@@ -8323,6 +8323,81 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
+  it.effect("requires the gateway capability for managed coordinator snapshots", () =>
+    Effect.gen(function* () {
+      yield* buildAppUnderTest({
+        config: { managedDevPc: true, managedGatewayToken: "coordinator-test-token" },
+      });
+      const denied = yield* HttpClient.get("/api/_devpc/agent/snapshot");
+      assert.equal(denied.status, 404);
+      const allowed = yield* HttpClient.get("/api/_devpc/agent/snapshot", {
+        headers: { "x-devpc-gateway-token": "coordinator-test-token" },
+      });
+      assert.equal(allowed.status, 200);
+      assert.equal(allowed.headers["cache-control"], "no-store, private");
+      const body = (yield* allowed.json) as { threads: unknown[] };
+      assert.deepEqual(body.threads, []);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("prunes superseded activities from managed coordinator snapshots", () =>
+    Effect.gen(function* () {
+      const thread = makeDefaultOrchestrationReadModel().threads[0]!;
+      const activities: OrchestrationThreadActivity[] = [100, 200].map((usedTokens) => ({
+        id: EventId.make(`context-${usedTokens}`),
+        tone: "info",
+        kind: "context-window.updated",
+        summary: "Context usage",
+        payload: { usedTokens },
+        turnId: TurnId.make("coordinator-turn"),
+        createdAt: "2026-09-01T00:00:00.000Z",
+      }));
+      yield* buildAppUnderTest({
+        config: { managedDevPc: true, managedGatewayToken: "coordinator-test-token" },
+        layers: {
+          projectionSnapshotQuery: {
+            getThreadDetailSnapshot: () =>
+              Effect.succeed(
+                Option.some({ snapshotSequence: 1, thread: { ...thread, activities } }),
+              ),
+          },
+        },
+      });
+      const response = yield* HttpClient.get(`/api/_devpc/agent/snapshot?threadId=${thread.id}`, {
+        headers: { "x-devpc-gateway-token": "coordinator-test-token" },
+      });
+      const body = (yield* response.json) as { thread: { activities: { id: string }[] } };
+      assert.equal(response.status, 200);
+      assert.deepEqual(
+        body.thread.activities.map((activity) => activity.id),
+        ["context-200"],
+      );
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("bounds managed coordinator detail reads to three turns", () =>
+    Effect.gen(function* () {
+      let requested: unknown;
+      yield* buildAppUnderTest({
+        config: { managedDevPc: true, managedGatewayToken: "coordinator-test-token" },
+        layers: {
+          projectionSnapshotQuery: {
+            getThreadDetailSnapshot: (id, options) => {
+              requested = { id, options };
+              return Effect.succeed(Option.none());
+            },
+          },
+        },
+      });
+      const response = yield* HttpClient.get(
+        "/api/_devpc/agent/snapshot?threadId=thread-coordinator",
+        { headers: { "x-devpc-gateway-token": "coordinator-test-token" } },
+      );
+      assert.equal(response.status, 404);
+      assert.deepEqual(requested, { id: "thread-coordinator", options: { turnLimit: 3 } });
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
   it.effect("uses the bootstrap transaction for durable managed first turns", () =>
     Effect.gen(function* () {
       const dispatchedCommands: Array<OrchestrationCommand> = [];
