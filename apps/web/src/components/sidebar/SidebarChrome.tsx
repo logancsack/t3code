@@ -1,4 +1,5 @@
 import { ManagedDevPcConnections } from "../ManagedDevPcConnections";
+import { ManagedDevPcAgent } from "../ManagedDevPcAgent";
 import {
   ArrowLeftIcon,
   ChartNoAxesColumnIcon,
@@ -238,6 +239,7 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
       <SidebarProviderUpdatePill />
       <SidebarUpdateArchitectureWarning />
       <ManagedDevPcConnections />
+      <ManagedDevPcAgent />
       <ManagedDevPcFooterAccount />
       <SidebarUtilityMenu />
     </SidebarFooter>
