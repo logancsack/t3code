@@ -2,9 +2,12 @@
 
 Managed builds expose Aldo Agent in the workspace sidebar. The conversation iframe is
 served by the managed gateway at `/_aldo/agent`; T3 does not hold voice-provider keys or
-run the coordinator model. The panel provider sits above the responsive sidebar so
-mobile dismissal, navigation, and minimization preserve an opened session. Closing the
-panel unmounts its frame and disconnects voice; delegated T3 work remains independent.
+run the coordinator model. Opening it shows a chromeless full-screen voice view above the
+app; the provider sits above the responsive sidebar so navigation does not unmount an
+opened session. The view has no controls of its own: the embedded page ends the
+conversation and posts `aldo-agent:close` to its same-origin parent, and Escape closes it
+too. Closing unmounts the frame and disconnects voice; delegated T3 work remains
+independent.
 
 `GET /api/_devpc/agent/snapshot` returns the current shell projection to the workspace
 coordinator. With `?threadId=...`, it returns that thread's detail snapshot bounded to
