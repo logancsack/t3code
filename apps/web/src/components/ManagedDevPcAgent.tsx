@@ -1,6 +1,6 @@
-import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { MicIcon, Minimize2Icon, XIcon } from "lucide-react";
+import { MicIcon } from "lucide-react";
 
 import { useSidebar } from "./ui/sidebar";
 import { isManagedDevPc } from "../managedDevPc";
@@ -28,18 +28,34 @@ export function ManagedDevPcAgent() {
   );
 }
 
-/** Lives above the responsive sidebar so navigation, minimization and mobile dismissal
- * do not unmount an explicitly opened voice session. */
+/** Lives above the responsive sidebar so navigation does not unmount an explicitly opened
+ * voice session. The view is deliberately chromeless: the embedded page ends the conversation
+ * and asks to be closed, and Escape does the same. */
 export function ManagedDevPcAgentProvider({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
-  const [minimized, setMinimized] = useState(false);
-  const openAgent = useMemo(
-    () => () => {
-      setOpen(true);
-      setMinimized(false);
-    },
-    [],
-  );
+  const openAgent = useMemo(() => () => setOpen(true), []);
+  useEffect(() => {
+    if (!open) return;
+    const onMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      const data: unknown = event.data;
+      if (
+        typeof data === "object" &&
+        data !== null &&
+        (data as { type?: unknown }).type === "aldo-agent:close"
+      )
+        setOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("message", onMessage);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("message", onMessage);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
   if (!isManagedDevPc || isLandingDemo()) return children;
   return (
     <AgentContext value={openAgent}>
@@ -48,42 +64,15 @@ export function ManagedDevPcAgentProvider({ children }: { children: ReactNode })
         ? createPortal(
             <section
               aria-label="Aldo Agent"
-              className="fixed right-3 bottom-3 z-50 flex w-[min(420px,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-2xl border bg-background text-foreground shadow-2xl"
-              style={{ height: minimized ? "auto" : "min(720px, calc(100dvh - 1.5rem))" }}
+              className="fixed inset-0 z-50 bg-black"
+              data-devpc-agent-view
             >
-              <div className="flex h-12 shrink-0 items-center gap-2 border-b px-4">
-                <MicIcon className="size-4" aria-hidden />
-                <button
-                  type="button"
-                  className="flex-1 text-left text-sm font-medium"
-                  onClick={() => setMinimized(false)}
-                >
-                  Aldo Agent
-                </button>
-                <button
-                  type="button"
-                  aria-label={minimized ? "Expand Aldo Agent" : "Minimize Aldo Agent"}
-                  className="rounded p-2 hover:bg-muted"
-                  onClick={() => setMinimized(!minimized)}
-                >
-                  <Minimize2Icon className="size-4" />
-                </button>
-                <button
-                  type="button"
-                  aria-label="Close Aldo Agent and disconnect voice"
-                  className="rounded p-2 hover:bg-muted"
-                  onClick={() => setOpen(false)}
-                >
-                  <XIcon className="size-4" />
-                </button>
-              </div>
               {/* eslint-disable-next-line react/iframe-missing-sandbox -- trusted same-origin Aldo application with microphone access */}
               <iframe
                 src="/_aldo/agent"
                 title="Aldo Agent conversation"
                 allow="microphone; autoplay"
-                className="min-h-0 flex-1 border-0"
-                style={{ display: minimized ? "none" : "block" }}
+                className="h-full w-full border-0"
               />
             </section>,
             document.body,
