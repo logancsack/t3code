@@ -6,6 +6,7 @@ import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstab
 
 import * as ServerConfig from "./config.ts";
 import { managedGatewayTokenMatches } from "./managedDevPcActivity.ts";
+import { projectThreadDetailSnapshot } from "./orchestration/ActivityPayloadProjection.ts";
 import { ProjectionSnapshotQuery } from "./orchestration/Services/ProjectionSnapshotQuery.ts";
 
 const decodeThreadId = Schema.decodeUnknownOption(ThreadId);
@@ -40,7 +41,9 @@ export const managedDevPcAgentRouteLayer = HttpRouter.add(
             HttpServerResponse.jsonUnsafe({ error: "Unavailable" }, { status: 503, headers }),
           onSuccess: (snapshot) =>
             Option.isSome(snapshot)
-              ? HttpServerResponse.jsonUnsafe(snapshot.value, { headers })
+              ? HttpServerResponse.jsonUnsafe(projectThreadDetailSnapshot(snapshot.value), {
+                  headers,
+                })
               : HttpServerResponse.jsonUnsafe({ error: "Not found" }, { status: 404, headers }),
         }),
       );

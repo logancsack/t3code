@@ -8340,6 +8340,41 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
+  it.effect("prunes superseded activities from managed coordinator snapshots", () =>
+    Effect.gen(function* () {
+      const thread = makeDefaultOrchestrationReadModel().threads[0]!;
+      const activities: OrchestrationThreadActivity[] = [100, 200].map((usedTokens) => ({
+        id: EventId.make(`context-${usedTokens}`),
+        tone: "info",
+        kind: "context-window.updated",
+        summary: "Context usage",
+        payload: { usedTokens },
+        turnId: TurnId.make("coordinator-turn"),
+        createdAt: "2026-09-01T00:00:00.000Z",
+      }));
+      yield* buildAppUnderTest({
+        config: { managedDevPc: true, managedGatewayToken: "coordinator-test-token" },
+        layers: {
+          projectionSnapshotQuery: {
+            getThreadDetailSnapshot: () =>
+              Effect.succeed(
+                Option.some({ snapshotSequence: 1, thread: { ...thread, activities } }),
+              ),
+          },
+        },
+      });
+      const response = yield* HttpClient.get(`/api/_devpc/agent/snapshot?threadId=${thread.id}`, {
+        headers: { "x-devpc-gateway-token": "coordinator-test-token" },
+      });
+      const body = (yield* response.json) as { thread: { activities: { id: string }[] } };
+      assert.equal(response.status, 200);
+      assert.deepEqual(
+        body.thread.activities.map((activity) => activity.id),
+        ["context-200"],
+      );
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
   it.effect("bounds managed coordinator detail reads to three turns", () =>
     Effect.gen(function* () {
       let requested: unknown;
