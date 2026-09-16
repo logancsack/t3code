@@ -8340,6 +8340,107 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
+  it.effect("serves the provider catalog to the managed coordinator", () =>
+    Effect.gen(function* () {
+      const providers = [
+        {
+          instanceId: ProviderInstanceId.make("codex"),
+          driver: ProviderDriverKind.make("codex"),
+          displayName: "OpenAI",
+          enabled: true,
+          installed: true,
+          version: "1.0.0",
+          status: "ready" as const,
+          auth: { status: "authenticated" as const },
+          checkedAt: "2026-04-11T00:00:00.000Z",
+          models: [
+            {
+              slug: "gpt-6",
+              name: "GPT-6",
+              aliases: ["gpt6"],
+              isCustom: false,
+              isDefault: true,
+              capabilities: {
+                optionDescriptors: [
+                  {
+                    id: "reasoningEffort",
+                    label: "Reasoning",
+                    type: "select" as const,
+                    currentValue: "medium",
+                    options: [
+                      { id: "low", label: "Low" },
+                      { id: "medium", label: "Medium", isDefault: true },
+                      { id: "high", label: "High" },
+                    ],
+                  },
+                ],
+              },
+            },
+          ],
+          slashCommands: [],
+          skills: [],
+        },
+        {
+          instanceId: ProviderInstanceId.make("cursor"),
+          driver: ProviderDriverKind.make("cursor"),
+          enabled: false,
+          installed: false,
+          version: null,
+          status: "ready" as const,
+          auth: { status: "unknown" as const },
+          checkedAt: "2026-04-11T00:00:00.000Z",
+          models: [],
+          slashCommands: [],
+          skills: [],
+        },
+      ] as const;
+      yield* buildAppUnderTest({
+        config: { managedDevPc: true, managedGatewayToken: "coordinator-test-token" },
+        layers: { providerRegistry: { getProviders: Effect.succeed(providers) } },
+      });
+      const denied = yield* HttpClient.get("/api/_devpc/agent/providers");
+      assert.equal(denied.status, 404);
+      const allowed = yield* HttpClient.get("/api/_devpc/agent/providers", {
+        headers: { "x-devpc-gateway-token": "coordinator-test-token" },
+      });
+      assert.equal(allowed.status, 200);
+      assert.equal(allowed.headers["cache-control"], "no-store, private");
+      const body = (yield* allowed.json) as { providers: unknown[] };
+      assert.deepEqual(body.providers, [
+        {
+          instanceId: "codex",
+          driver: "codex",
+          displayName: "OpenAI",
+          installed: true,
+          status: "ready",
+          auth: "authenticated",
+          availability: "available",
+          models: [
+            {
+              slug: "gpt-6",
+              name: "GPT-6",
+              aliases: ["gpt6"],
+              isDefault: true,
+              options: [
+                {
+                  id: "reasoningEffort",
+                  label: "Reasoning",
+                  type: "select",
+                  currentValue: "medium",
+                  choices: [
+                    { id: "low", label: "Low" },
+                    { id: "medium", label: "Medium", isDefault: true },
+                    { id: "high", label: "High" },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ]);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
   it.effect("prunes superseded activities from managed coordinator snapshots", () =>
     Effect.gen(function* () {
       const thread = makeDefaultOrchestrationReadModel().threads[0]!;

@@ -21,7 +21,10 @@ import {
 } from "./http.ts";
 import { managedDevPcActivityRouteLayer } from "./managedDevPcActivity.ts";
 import { managedDevPcDispatchRouteLayer } from "./managedDevPcDispatch.ts";
-import { managedDevPcAgentRouteLayer } from "./managedDevPcAgent.ts";
+import {
+  managedDevPcAgentProvidersRouteLayer,
+  managedDevPcAgentRouteLayer,
+} from "./managedDevPcAgent.ts";
 import { managedDevPcDrainRouteLayer } from "./managedDevPcDrain.ts";
 import { guardHttpResponseWriteErrors } from "./httpResponseErrorGuard.ts";
 import { fixPath } from "./os-jank.ts";
@@ -503,6 +506,7 @@ export const makeRoutesLayer = Layer.mergeAll(
     managedDevPcActivityRouteLayer,
     managedDevPcDispatchRouteLayer,
     managedDevPcAgentRouteLayer,
+    managedDevPcAgentProvidersRouteLayer,
     managedDevPcDrainRouteLayer,
     assetRouteLayer,
     attachmentUploadRouteLayer,
