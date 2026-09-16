@@ -330,6 +330,12 @@ function AldoAgentShell() {
     select: (params) => resolveThreadRouteRef(params),
   });
   const fullScreen = expanded || isMobile;
+  // A stable ref callback: an inline one is re-invoked (null, then the element) on every
+  // render, which would mark the frame not ready after each state message it sends.
+  const attachFrame = useCallback(
+    (frame: HTMLIFrameElement | null) => store.getState().attachFrame(frame),
+    [store],
+  );
   const findShell = useCallback(
     (threadId: string): EnvironmentThreadShell | undefined =>
       shells.find((shell) => shell.id === threadId),
@@ -599,7 +605,7 @@ function AldoAgentShell() {
         </div>
         {/* eslint-disable-next-line react/iframe-missing-sandbox -- trusted same-origin Aldo application with microphone access */}
         <iframe
-          ref={(frame) => store.getState().attachFrame(frame)}
+          ref={attachFrame}
           src={AGENT_URL}
           title="Aldo Agent conversation"
           allow="microphone; autoplay"
