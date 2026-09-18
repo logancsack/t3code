@@ -89,6 +89,7 @@ import {
   type ComposerBannerStackContent,
   type ComposerBannerStackItem,
 } from "./ComposerBannerStack";
+import { useAldoComposerBannerItem } from "../ManagedDevPcAgent";
 import { compressImageForStash, prepareImageForAttachment } from "../../lib/imageCompression";
 import {
   fileAttachmentTooLargeMessage,
@@ -2981,9 +2982,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         content: activityStackContent,
       }
     : null;
-  const bannerStackItems = activityStackItem
-    ? [activityStackItem, ...props.bannerItems]
-    : props.bannerItems;
+  const aldoStackItem = useAldoComposerBannerItem();
+  const bannerStackItems = [
+    ...(aldoStackItem ? [aldoStackItem] : []),
+    ...(activityStackItem ? [activityStackItem] : []),
+    ...props.bannerItems,
+  ];
   useEffect(() => {
     if (activeTasksProgress === null || activeTaskSteps === null) {
       setIsTasksDrawerOpen(false);
