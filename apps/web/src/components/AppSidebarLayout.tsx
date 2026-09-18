@@ -1,4 +1,4 @@
-import { ManagedDevPcAgentProvider } from "./ManagedDevPcAgent";
+import { AldoAgentBar, ManagedDevPcAgentProvider } from "./ManagedDevPcAgent";
 import { useAtomValue } from "@effect/atom-react";
 import * as Schema from "effect/Schema";
 import {
@@ -240,7 +240,10 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
           )}
           <SidebarRail onDoubleClick={resetSidebarWidth} />
         </Sidebar>
-        {children}
+        <div className="flex h-dvh min-h-0 min-w-0 flex-1 flex-col">
+          {children}
+          <AldoAgentBar />
+        </div>
         <SidebarControl />
       </SidebarProvider>
     </ManagedDevPcAgentProvider>

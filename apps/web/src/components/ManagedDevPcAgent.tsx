@@ -2,14 +2,7 @@ import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 import type { ScopedThreadRef, ThreadId } from "@t3tools/contracts";
 import { useNavigate, useParams } from "@tanstack/react-router";
-import {
-  BookOpenIcon,
-  KeyboardIcon,
-  Maximize2Icon,
-  MicIcon,
-  Minimize2Icon,
-  XIcon,
-} from "lucide-react";
+import { MicIcon, XIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { create } from "zustand";
@@ -33,6 +26,8 @@ const AGENT_URL = "/_aldo/agent";
 const MEMORY_URL = "/_aldo/agent/memory";
 /** Threads the coordinator starts carry this prefix in their id. */
 const ALDO_THREAD_PREFIX = "aldo-";
+/** Height of the bar at the bottom of the workspace, in pixels. */
+const BAR_HEIGHT = 52;
 
 type AldoPhase =
   | "loading"
@@ -56,7 +51,7 @@ interface AldoFrameState {
 }
 /** What the embedded page may be told to do. */
 type AldoCommand =
-  | { command: "layout"; layout: "docked" | "full" }
+  | { command: "layout"; layout: "bar" | "full" }
   | { command: "connect" }
   | { command: "disconnect" }
   | { command: "push-to-talk"; enabled: boolean }
@@ -69,16 +64,14 @@ type AldoEvent =
   | { type: "navigate"; target: "thread" | "diff" | "approvals"; threadId: string };
 
 interface AldoAgentStore extends AldoFrameState {
+  /** The bar is shown at the bottom of the workspace. */
   open: boolean;
-  /** Full-screen stage rather than the docked strip. */
-  expanded: boolean;
   memoryOpen: boolean;
   frame: HTMLIFrameElement | null;
   ready: boolean;
   queued: AldoCommand[];
-  openAgent: (options?: { expanded?: boolean; command?: AldoCommand }) => void;
+  openAgent: (options?: { command?: AldoCommand }) => void;
   closeAgent: () => void;
-  setExpanded: (expanded: boolean) => void;
   setMemoryOpen: (open: boolean) => void;
   send: (command: AldoCommand) => void;
   attachFrame: (frame: HTMLIFrameElement | null) => void;
@@ -104,17 +97,13 @@ export const useAldoAgentStore = create<AldoAgentStore>((set, get) => {
   return {
     ...INITIAL_FRAME_STATE,
     open: false,
-    expanded: false,
     memoryOpen: false,
     frame: null,
     ready: false,
     queued: [],
     openAgent: (options) => {
       const { open, ready, frame } = get();
-      set({
-        open: true,
-        ...(options?.expanded !== undefined ? { expanded: options.expanded } : {}),
-      });
+      set({ open: true });
       const command = options?.command;
       if (command) {
         if (open && ready) deliver(frame, command);
@@ -123,10 +112,6 @@ export const useAldoAgentStore = create<AldoAgentStore>((set, get) => {
     },
     closeAgent: () =>
       set({ ...INITIAL_FRAME_STATE, open: false, memoryOpen: false, ready: false, queued: [] }),
-    setExpanded: (expanded) => {
-      set({ expanded });
-      get().send({ command: "layout", layout: expanded ? "full" : "docked" });
-    },
     setMemoryOpen: (memoryOpen) => set({ memoryOpen }),
     send: (command) => {
       const { ready, frame } = get();
@@ -135,9 +120,9 @@ export const useAldoAgentStore = create<AldoAgentStore>((set, get) => {
     },
     attachFrame: (frame) => set({ frame, ...(frame ? {} : { ready: false }) }),
     frameReady: () => {
-      const { frame, queued, expanded } = get();
+      const { frame, queued } = get();
       set({ ready: true, queued: [] });
-      deliver(frame, { command: "layout", layout: expanded ? "full" : "docked" });
+      deliver(frame, { command: "layout", layout: "bar" });
       for (const command of queued) deliver(frame, command);
     },
     reflect: (state) => set(state),
@@ -179,11 +164,11 @@ function isEditable(target: EventTarget | null): boolean {
   );
 }
 
-/** The sidebar entry: opens Aldo, and shows what it is doing while a conversation is live. */
+/** The sidebar entry: shows or hides the bar, and mirrors what Aldo is doing while live. */
 export function ManagedDevPcAgent() {
   const { isMobile, setOpenMobile } = useSidebar();
   const openAgent = useAldoAgentStore((state) => state.openAgent);
-  const setExpanded = useAldoAgentStore((state) => state.setExpanded);
+  const closeAgent = useAldoAgentStore((state) => state.closeAgent);
   const open = useAldoAgentStore((state) => state.open);
   const phase = useAldoAgentStore((state) => state.phase);
   const live = useAldoAgentStore((state) => state.live);
@@ -193,12 +178,13 @@ export function ManagedDevPcAgent() {
       type="button"
       onClick={() => {
         if (isMobile) setOpenMobile(false);
-        if (open) setExpanded(true);
-        else openAgent({ expanded: isMobile });
+        if (open && !live) closeAgent();
+        else openAgent();
       }}
       className="flex h-9 w-full items-center gap-2 rounded-md px-2 text-sm text-sidebar-muted-foreground/80 outline-hidden hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring"
       data-devpc-agent-button
       data-devpc-agent-phase={phase}
+      aria-pressed={open}
     >
       <MicIcon
         className={cn(
@@ -300,9 +286,9 @@ function AldoThreadCard({ threadRef }: { threadRef: ScopedThreadRef }) {
 
 /**
  * Lives above the responsive sidebar so navigation does not unmount an opened voice session.
- * The embedded page owns the conversation; this shell docks it beside the workspace, mirrors
- * its state, turns its actions into cards, moves the view where Aldo points, and nudges the
- * user when a thread needs them.
+ * The embedded page owns the conversation; this shell mirrors its state, turns its actions
+ * into cards, moves the view where Aldo points, nudges the user when a thread needs them,
+ * and hosts the memory editor. The bar itself is rendered by the layout (`AldoAgentBar`).
  */
 export function ManagedDevPcAgentProvider({ children }: { children: ReactNode }) {
   if (!isManagedDevPc || isLandingDemo()) return children;
@@ -314,14 +300,43 @@ export function ManagedDevPcAgentProvider({ children }: { children: ReactNode })
   );
 }
 
+/**
+ * The bar at the bottom of the workspace: a waveform, captions and a few controls, in the
+ * layout flow so the workspace above stays fully visible and usable on every screen size.
+ */
+export function AldoAgentBar() {
+  const store = useAldoAgentStore;
+  const open = useAldoAgentStore((state) => state.open);
+  const attachFrame = useCallback(
+    (frame: HTMLIFrameElement | null) => store.getState().attachFrame(frame),
+    [store],
+  );
+  if (!isManagedDevPc || isLandingDemo() || !open) return null;
+  return (
+    <section
+      aria-label="Aldo Agent"
+      className="shrink-0 border-t border-border bg-black pb-[env(safe-area-inset-bottom)]"
+      style={{ height: `calc(${BAR_HEIGHT}px + env(safe-area-inset-bottom))` }}
+      data-devpc-agent-view
+      data-devpc-agent-layout="bar"
+    >
+      {/* eslint-disable-next-line react/iframe-missing-sandbox -- trusted same-origin Aldo application with microphone access */}
+      <iframe
+        ref={attachFrame}
+        src={AGENT_URL}
+        title="Aldo Agent conversation"
+        allow="microphone; autoplay"
+        className="block w-full border-0"
+        style={{ height: BAR_HEIGHT }}
+      />
+    </section>
+  );
+}
+
 function AldoAgentShell() {
   const store = useAldoAgentStore;
   const open = useAldoAgentStore((state) => state.open);
-  const expanded = useAldoAgentStore((state) => state.expanded);
   const memoryOpen = useAldoAgentStore((state) => state.memoryOpen);
-  const phase = useAldoAgentStore((state) => state.phase);
-  const live = useAldoAgentStore((state) => state.live);
-  const pushToTalk = useAldoAgentStore((state) => state.pushToTalk);
   const isMobile = useIsMobile();
   const navigate = useNavigate();
   const shells = useThreadShells();
@@ -329,20 +344,11 @@ function AldoAgentShell() {
     strict: false,
     select: (params) => resolveThreadRouteRef(params),
   });
-  const fullScreen = expanded || isMobile;
-  // A stable ref callback: an inline one is re-invoked (null, then the element) on every
-  // render, which would mark the frame not ready after each state message it sends.
-  const attachFrame = useCallback(
-    (frame: HTMLIFrameElement | null) => store.getState().attachFrame(frame),
-    [store],
-  );
   const findShell = useCallback(
     (threadId: string): EnvironmentThreadShell | undefined =>
       shells.find((shell) => shell.id === threadId),
     [shells],
   );
-  const shellsRef = useRef(shells);
-  shellsRef.current = shells;
   const goToThread = useCallback(
     (ref: ScopedThreadRef) => {
       void navigate({ to: "/$environmentId/$threadId", params: buildThreadRouteParams(ref) });
@@ -374,7 +380,6 @@ function AldoAgentShell() {
                     children: "Talk about it",
                     onClick: () =>
                       store.getState().openAgent({
-                        expanded: isMobile,
                         command: { command: "discuss", ...options.talk! },
                       }),
                   },
@@ -385,7 +390,7 @@ function AldoAgentShell() {
         }),
       );
     },
-    [goToThread, isMobile, store],
+    [goToThread, store],
   );
 
   // Messages from the embedded page.
@@ -402,6 +407,9 @@ function AldoAgentShell() {
           break;
         case "aldo-agent:close":
           state.closeAgent();
+          break;
+        case "aldo-agent:memory":
+          state.setMemoryOpen(true);
           break;
         case "aldo-agent:state": {
           const next: Partial<AldoFrameState> = {};
@@ -450,29 +458,22 @@ function AldoAgentShell() {
     return () => window.removeEventListener("message", onMessage);
   }, [open, findShell, goToThread, showThreadToast, store]);
 
-  // A thread Aldo started shows up a moment after its action; refresh that card's target.
-  useEffect(() => {
-    store.getState().send({ command: "layout", layout: fullScreen ? "full" : "docked" });
-  }, [fullScreen, store]);
-
-  // Keys while the shell has focus: Mod+Shift+A opens or expands Aldo, Escape docks the
-  // full-screen stage, and Space held is push-to-talk when that mode is on.
+  // Keys while the shell has focus: Mod+Shift+A shows Aldo and starts talking, Escape closes
+  // the memory editor, and Space held is push-to-talk when that mode is on.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return;
       const state = store.getState();
       if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === "a") {
         event.preventDefault();
-        if (!state.open) state.openAgent({ expanded: isMobile, command: { command: "connect" } });
+        if (!state.open) state.openAgent({ command: { command: "connect" } });
         else if (!state.live) state.send({ command: "connect" });
-        else state.setExpanded(!state.expanded);
+        else state.send({ command: "disconnect" });
         return;
       }
       if (!state.open) return;
-      if (event.key === "Escape" && (state.expanded || state.memoryOpen)) {
-        if (state.memoryOpen) state.setMemoryOpen(false);
-        else if (!isMobile) state.setExpanded(false);
-        else state.closeAgent();
+      if (event.key === "Escape" && state.memoryOpen) {
+        state.setMemoryOpen(false);
         return;
       }
       if (event.key === " " && state.pushToTalk && state.live && !isEditable(event.target)) {
@@ -491,7 +492,7 @@ function AldoAgentShell() {
       window.removeEventListener("keydown", onKeyDown, true);
       window.removeEventListener("keyup", onKeyUp, true);
     };
-  }, [isMobile, store]);
+  }, [store]);
 
   // Nudges: a thread that starts waiting on the user, and Aldo's own threads finishing or
   // failing, each get a card with a way to open it or talk it over. The first snapshot is a
@@ -535,105 +536,27 @@ function AldoAgentShell() {
     seen.current = next;
   }, [shells, activeThreadRef?.threadId, showThreadToast]);
 
-  if (!open) return null;
-  const frameClass = fullScreen
-    ? "fixed inset-0 z-50 bg-black"
-    : "fixed right-4 bottom-4 z-50 flex w-[min(400px,calc(100vw-2rem))] flex-col overflow-hidden rounded-xl border border-border bg-black shadow-2xl";
+  if (!memoryOpen) return null;
   return createPortal(
-    <>
-      <section
-        aria-label="Aldo Agent"
-        className={frameClass}
-        data-devpc-agent-view
-        data-devpc-agent-layout={fullScreen ? "full" : "docked"}
-      >
-        <div
-          className={cn(
-            "flex h-8 shrink-0 items-center gap-1 px-1.5 text-xs text-white/60",
-            fullScreen && "absolute top-0 right-0 left-0 z-10 bg-transparent",
-          )}
+    <section
+      aria-label="What Aldo remembers"
+      className="fixed inset-0 z-[60] flex flex-col bg-black"
+      style={isMobile ? { paddingTop: "env(safe-area-inset-top)" } : undefined}
+      data-devpc-agent-memory
+    >
+      <div className="flex h-9 shrink-0 items-center justify-end px-2">
+        <button
+          type="button"
+          className="rounded-md p-1 text-white/70 hover:bg-white/10 hover:text-white"
+          aria-label="Close"
+          onClick={() => store.getState().setMemoryOpen(false)}
         >
-          <span className="flex-1 truncate pl-1" aria-live="polite">
-            {live ? PHASE_LABELS[phase] : "Aldo"}
-          </span>
-          <button
-            type="button"
-            className={cn(
-              "rounded-md p-1 hover:bg-white/10 hover:text-white",
-              pushToTalk && "bg-emerald-500/20 text-emerald-300",
-            )}
-            aria-label={pushToTalk ? "Push to talk on: hold Space or the orb" : "Push to talk off"}
-            aria-pressed={pushToTalk}
-            onClick={() => store.getState().send({ command: "push-to-talk", enabled: !pushToTalk })}
-          >
-            <KeyboardIcon className="size-3.5" aria-hidden />
-            <span className="sr-only">Push to talk</span>
-          </button>
-          <button
-            type="button"
-            className="rounded-md p-1 hover:bg-white/10 hover:text-white"
-            aria-label="What Aldo remembers"
-            onClick={() => store.getState().setMemoryOpen(true)}
-          >
-            <BookOpenIcon className="size-3.5" aria-hidden />
-            <span className="sr-only">What Aldo remembers</span>
-          </button>
-          {isMobile ? null : (
-            <button
-              type="button"
-              className="rounded-md p-1 hover:bg-white/10 hover:text-white"
-              aria-label={expanded ? "Dock" : "Expand"}
-              onClick={() => store.getState().setExpanded(!expanded)}
-            >
-              {expanded ? (
-                <Minimize2Icon className="size-3.5" aria-hidden />
-              ) : (
-                <Maximize2Icon className="size-3.5" aria-hidden />
-              )}
-              <span className="sr-only">{expanded ? "Dock" : "Expand"}</span>
-            </button>
-          )}
-          <button
-            type="button"
-            className="rounded-md p-1 hover:bg-white/10 hover:text-white"
-            aria-label="Close Aldo"
-            onClick={() => store.getState().closeAgent()}
-          >
-            <XIcon className="size-3.5" aria-hidden />
-            <span className="sr-only">Close Aldo</span>
-          </button>
-        </div>
-        {/* eslint-disable-next-line react/iframe-missing-sandbox -- trusted same-origin Aldo application with microphone access */}
-        <iframe
-          ref={attachFrame}
-          src={AGENT_URL}
-          title="Aldo Agent conversation"
-          allow="microphone; autoplay"
-          className={cn("w-full border-0", fullScreen ? "h-full" : "h-[172px]")}
-        />
-      </section>
-      {memoryOpen ? (
-        <section
-          aria-label="What Aldo remembers"
-          className="fixed inset-0 z-[60] flex flex-col bg-black"
-          data-devpc-agent-memory
-        >
-          <div className="flex h-9 shrink-0 items-center justify-end px-2">
-            <button
-              type="button"
-              className="rounded-md p-1 text-white/70 hover:bg-white/10 hover:text-white"
-              aria-label="Close"
-              onClick={() => store.getState().setMemoryOpen(false)}
-            >
-              <XIcon className="size-4" aria-hidden />
-              <span className="sr-only">Close</span>
-            </button>
-          </div>
-          {/* eslint-disable-next-line react/iframe-missing-sandbox -- trusted same-origin Aldo application */}
-          <iframe src={MEMORY_URL} title="What Aldo remembers" className="h-full w-full border-0" />
-        </section>
-      ) : null}
-    </>,
+          <XIcon className="size-4" aria-hidden />
+        </button>
+      </div>
+      {/* eslint-disable-next-line react/iframe-missing-sandbox -- trusted same-origin Aldo application */}
+      <iframe src={MEMORY_URL} title="What Aldo remembers" className="h-full w-full border-0" />
+    </section>,
     document.body,
   );
 }
