@@ -2,13 +2,15 @@
 
 Managed builds expose Aldo Agent in the workspace sidebar. The conversation iframe is
 served by the managed gateway at `/_aldo/agent`; T3 does not hold voice-provider keys or
-run the coordinator model. The shell (`ManagedDevPcAgent.tsx`) docks the frame beside the
-workspace on desktop (a strip at the bottom right with expand, push-to-talk, memory and
-close controls) and shows it full screen on mobile or when expanded. The provider sits
-above the responsive sidebar so navigation does not unmount an opened session. Closing
-unmounts the frame and disconnects voice; delegated T3 work remains independent.
-`Mod+Shift+A` opens Aldo or toggles the stage; Escape docks it; with push-to-talk on,
-holding Space anywhere in the shell opens the microphone.
+run the coordinator model. The shell (`ManagedDevPcAgent.tsx`) renders it as a one-row bar
+(`AldoAgentBar`, 52 px plus the bottom safe area) at the bottom of the main content column
+in `AppSidebarLayout`, on desktop and mobile alike, so the workspace above stays fully
+visible and usable while talking: a waveform, one line of captions, and controls for
+typing, push-to-talk, the memory editor and closing. Nothing takes over the screen. The
+provider sits above the responsive sidebar so navigation does not unmount an opened
+session. Closing unmounts the frame and disconnects voice; delegated T3 work remains
+independent. `Mod+Shift+A` shows Aldo and starts (or ends) a conversation; with
+push-to-talk on, holding Space anywhere in the shell opens the microphone.
 
 ## Frame protocol (same-origin `postMessage`)
 
@@ -24,11 +26,12 @@ Page to shell:
   wants the user to see something. Actions become toasts with the thread's model,
   reasoning and permissions, an Open action, and Approve/Decline buttons when the thread
   is waiting on an approval; navigation opens the thread (and its diff panel).
-- `aldo-agent:close` when the page ended the conversation from the full-screen stage.
+- `aldo-agent:close` when the page asks the shell to hide the bar (its close control).
+- `aldo-agent:memory` when the page asks the shell to open the memory editor.
 
 Shell to page, as `{ type: "aldo-agent:command", command, ... }`:
 
-- `layout` `{ layout: "docked" | "full" }`
+- `layout` `{ layout: "bar" | "full" }` (the shell always sends `bar`)
 - `connect` / `disconnect`
 - `push-to-talk` `{ enabled }` and `press` `{ pressed }`
 - `text` `{ text }` sends typed input; `discuss` `{ threadId, title }` opens a
@@ -38,7 +41,7 @@ Threads the coordinator starts have ids prefixed `aldo-` and carry an "Aldo" bad
 the sidebar. The shell nudges with a toast when any thread starts waiting on an approval
 or a question, and when an Aldo-started thread finishes or fails, unless that thread is
 already open. The memory editor at `/_aldo/agent/memory` opens over the app from the
-dock header.
+bar's book control.
 
 ## Server routes
 
