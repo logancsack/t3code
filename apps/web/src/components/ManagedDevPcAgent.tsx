@@ -20,14 +20,16 @@ import { useRightPanelStore } from "../rightPanelStore";
 import { Button } from "./ui/button";
 import { useSidebar } from "./ui/sidebar";
 import { stackedThreadToast, toastManager } from "./ui/toast";
+import { ComposerBanner } from "./chat/ComposerBanner";
+import type { ComposerBannerStackContent } from "./chat/ComposerBannerStack";
 
 /** The conversation page and its memory editor, both served by the managed gateway. */
 const AGENT_URL = "/_aldo/agent";
 const MEMORY_URL = "/_aldo/agent/memory";
 /** Threads the coordinator starts carry this prefix in their id. */
 const ALDO_THREAD_PREFIX = "aldo-";
-/** Height of the bar at the bottom of the workspace, in pixels. */
-const BAR_HEIGHT = 52;
+/** Height of the inline strip above the composer, in pixels. */
+const STRIP_HEIGHT = 34;
 
 type AldoPhase =
   | "loading"
@@ -51,7 +53,7 @@ interface AldoFrameState {
 }
 /** What the embedded page may be told to do. */
 type AldoCommand =
-  | { command: "layout"; layout: "bar" | "full" }
+  | { command: "layout"; layout: "inline" | "full"; dark?: boolean }
   | { command: "connect" }
   | { command: "disconnect" }
   | { command: "push-to-talk"; enabled: boolean }
@@ -122,7 +124,7 @@ export const useAldoAgentStore = create<AldoAgentStore>((set, get) => {
     frameReady: () => {
       const { frame, queued } = get();
       set({ ready: true, queued: [] });
-      deliver(frame, { command: "layout", layout: "bar" });
+      deliver(frame, { command: "layout", layout: "inline", dark: isDarkTheme() });
       for (const command of queued) deliver(frame, command);
     },
     reflect: (state) => set(state),
@@ -152,6 +154,10 @@ const TOOL_LABELS: Record<string, string> = {
   rename_thread: "Renamed",
   set_agent_permissions: "Changed permissions on",
 };
+/** T3 applies its theme as a class on the root element; the frame follows it. */
+function isDarkTheme(): boolean {
+  return document.documentElement.classList.contains("dark");
+}
 export function isAldoThreadId(id: string): boolean {
   return id.startsWith(ALDO_THREAD_PREFIX);
 }
@@ -288,7 +294,7 @@ function AldoThreadCard({ threadRef }: { threadRef: ScopedThreadRef }) {
  * Lives above the responsive sidebar so navigation does not unmount an opened voice session.
  * The embedded page owns the conversation; this shell mirrors its state, turns its actions
  * into cards, moves the view where Aldo points, nudges the user when a thread needs them,
- * and hosts the memory editor. The bar itself is rendered by the layout (`AldoAgentBar`).
+ * and hosts the memory editor. The strip itself is a composer banner entry (`useAldoComposerBannerItem`).
  */
 export function ManagedDevPcAgentProvider({ children }: { children: ReactNode }) {
   if (!isManagedDevPc || isLandingDemo()) return children;
@@ -301,24 +307,48 @@ export function ManagedDevPcAgentProvider({ children }: { children: ReactNode })
 }
 
 /**
- * The bar at the bottom of the workspace: a waveform, captions and a few controls, in the
- * layout flow so the workspace above stays fully visible and usable on every screen size.
+ * The strip above the composer: the frame draws a waveform and a caption on a transparent
+ * background inside T3's own banner surface, with T3's dismiss control at the right. It is a
+ * banner-stack entry so it sits exactly where the composer's other notices do, on desktop
+ * and mobile alike, and never covers the workspace.
  */
-export function AldoAgentBar() {
-  const store = useAldoAgentStore;
+export function useAldoComposerBannerItem(): ComposerBannerStackContent | null {
   const open = useAldoAgentStore((state) => state.open);
+  return useMemo(
+    () =>
+      open && isManagedDevPc && !isLandingDemo()
+        ? {
+            id: "aldo-agent",
+            variant: "default" as const,
+            priority: "activity" as const,
+            className: "dark:shadow-none",
+            content: <AldoComposerStrip />,
+          }
+        : null,
+    [open],
+  );
+}
+
+function AldoComposerStrip() {
+  const store = useAldoAgentStore;
   const attachFrame = useCallback(
     (frame: HTMLIFrameElement | null) => store.getState().attachFrame(frame),
     [store],
   );
-  if (!isManagedDevPc || isLandingDemo() || !open) return null;
+  // Follow theme changes so the frame's colours keep matching the surface around them.
+  useEffect(() => {
+    const observer = new MutationObserver(() => {
+      const state = store.getState();
+      if (state.ready) state.send({ command: "layout", layout: "inline", dark: isDarkTheme() });
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    return () => observer.disconnect();
+  }, [store]);
   return (
-    <section
-      aria-label="Aldo Agent"
-      className="shrink-0 border-t border-border bg-black pb-[env(safe-area-inset-bottom)]"
-      style={{ height: `calc(${BAR_HEIGHT}px + env(safe-area-inset-bottom))` }}
+    <div
+      className="flex min-w-0 items-center gap-1 pl-1"
       data-devpc-agent-view
-      data-devpc-agent-layout="bar"
+      data-devpc-agent-layout="inline"
     >
       {/* eslint-disable-next-line react/iframe-missing-sandbox -- trusted same-origin Aldo application with microphone access */}
       <iframe
@@ -326,10 +356,14 @@ export function AldoAgentBar() {
         src={AGENT_URL}
         title="Aldo Agent conversation"
         allow="microphone; autoplay"
-        className="block w-full border-0"
-        style={{ height: BAR_HEIGHT }}
+        className="block min-w-0 flex-1 border-0 bg-transparent"
+        style={{ height: STRIP_HEIGHT, colorScheme: "normal" }}
       />
-    </section>
+      <ComposerBanner.Dismiss
+        aria-label="Close Aldo"
+        onClick={() => store.getState().closeAgent()}
+      />
+    </div>
   );
 }
 
