@@ -1,4 +1,5 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import type { EnvironmentShellStatus } from "@t3tools/client-runtime/state/shell";
 import type { EnvironmentId, ScopedThreadRef, ThreadId } from "@t3tools/contracts";
 import type { DraftId } from "./composerDraftStore";
 
@@ -22,6 +23,7 @@ export type ThreadRouteRenderState = "loading" | "ready" | "missing";
 
 export function resolveThreadRouteRenderState(input: {
   bootstrapComplete: boolean;
+  shellStatus: EnvironmentShellStatus | undefined;
   serverThreadShellExists: boolean;
   serverThreadDetailExists: boolean;
   serverThreadDetailDeleted: boolean;
@@ -35,6 +37,11 @@ export function resolveThreadRouteRenderState(input: {
   }
   if (input.serverThreadDetailDeleted) {
     return "missing";
+  }
+  // A cached list can predate work started by another client or a cloud agent.
+  // Only a live snapshot can establish that a deep-linked thread is missing.
+  if (input.shellStatus !== "live") {
+    return "loading";
   }
   return input.serverThreadShellExists ? "loading" : "missing";
 }

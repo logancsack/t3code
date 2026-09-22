@@ -98,6 +98,7 @@ describe("threadRoutes", () => {
     expect(
       resolveThreadRouteRenderState({
         bootstrapComplete: true,
+        shellStatus: "live",
         serverThreadShellExists: true,
         serverThreadDetailExists: false,
         serverThreadDetailDeleted: false,
@@ -110,6 +111,7 @@ describe("threadRoutes", () => {
     expect(
       resolveThreadRouteRenderState({
         bootstrapComplete: true,
+        shellStatus: "live",
         serverThreadShellExists: true,
         serverThreadDetailExists: true,
         serverThreadDetailDeleted: false,
@@ -119,6 +121,7 @@ describe("threadRoutes", () => {
     expect(
       resolveThreadRouteRenderState({
         bootstrapComplete: true,
+        shellStatus: "live",
         serverThreadShellExists: false,
         serverThreadDetailExists: false,
         serverThreadDetailDeleted: false,
@@ -131,6 +134,7 @@ describe("threadRoutes", () => {
     expect(
       resolveThreadRouteRenderState({
         bootstrapComplete: false,
+        shellStatus: "empty",
         serverThreadShellExists: false,
         serverThreadDetailExists: false,
         serverThreadDetailDeleted: false,
@@ -140,6 +144,7 @@ describe("threadRoutes", () => {
     expect(
       resolveThreadRouteRenderState({
         bootstrapComplete: true,
+        shellStatus: "live",
         serverThreadShellExists: false,
         serverThreadDetailExists: false,
         serverThreadDetailDeleted: false,
@@ -148,15 +153,53 @@ describe("threadRoutes", () => {
     ).toBe("missing");
   });
 
-  it("redirects deleted shell-only threads", () => {
-    expect(
-      resolveThreadRouteRenderState({
+  it.each(["cached", "synchronizing"] as const)(
+    "waits for a live snapshot before redirecting a thread missing from a %s list",
+    (shellStatus) => {
+      const state = {
         bootstrapComplete: true,
-        serverThreadShellExists: true,
+        shellStatus,
+        serverThreadShellExists: false,
         serverThreadDetailExists: false,
-        serverThreadDetailDeleted: true,
+        serverThreadDetailDeleted: false,
         draftThreadExists: false,
-      }),
-    ).toBe("missing");
-  });
+      };
+      expect(resolveThreadRouteRenderState(state)).toBe("loading");
+      expect(
+        resolveThreadRouteRenderState({
+          ...state,
+          shellStatus: "live",
+          serverThreadShellExists: true,
+        }),
+      ).toBe("loading");
+      expect(
+        resolveThreadRouteRenderState({
+          ...state,
+          shellStatus: "live",
+          serverThreadShellExists: true,
+          serverThreadDetailExists: true,
+        }),
+      ).toBe("ready");
+      expect(resolveThreadRouteRenderState({ ...state, shellStatus: "live" })).toBe("missing");
+      expect(resolveThreadRouteRenderState({ ...state, serverThreadDetailExists: true })).toBe(
+        "ready",
+      );
+    },
+  );
+
+  it.each(["live", "cached", "synchronizing"] as const)(
+    "redirects terminal deleted threads with a %s shell",
+    (shellStatus) => {
+      expect(
+        resolveThreadRouteRenderState({
+          bootstrapComplete: true,
+          shellStatus,
+          serverThreadShellExists: true,
+          serverThreadDetailExists: false,
+          serverThreadDetailDeleted: true,
+          draftThreadExists: false,
+        }),
+      ).toBe("missing");
+    },
+  );
 });
