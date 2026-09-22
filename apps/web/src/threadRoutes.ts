@@ -35,13 +35,13 @@ export function resolveThreadRouteRenderState(input: {
   if (input.serverThreadDetailExists || input.draftThreadExists) {
     return "ready";
   }
+  if (input.serverThreadDetailDeleted) {
+    return "missing";
+  }
   // A cached list can predate work started by another client or a cloud agent.
   // Only a live snapshot can establish that a deep-linked thread is missing.
   if (input.shellStatus !== "live") {
     return "loading";
-  }
-  if (input.serverThreadDetailDeleted) {
-    return "missing";
   }
   return input.serverThreadShellExists ? "loading" : "missing";
 }

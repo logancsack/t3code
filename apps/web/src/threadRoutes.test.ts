@@ -187,16 +187,19 @@ describe("threadRoutes", () => {
     },
   );
 
-  it("redirects deleted shell-only threads", () => {
-    expect(
-      resolveThreadRouteRenderState({
-        bootstrapComplete: true,
-        shellStatus: "live",
-        serverThreadShellExists: true,
-        serverThreadDetailExists: false,
-        serverThreadDetailDeleted: true,
-        draftThreadExists: false,
-      }),
-    ).toBe("missing");
-  });
+  it.each(["live", "cached", "synchronizing"] as const)(
+    "redirects terminal deleted threads with a %s shell",
+    (shellStatus) => {
+      expect(
+        resolveThreadRouteRenderState({
+          bootstrapComplete: true,
+          shellStatus,
+          serverThreadShellExists: true,
+          serverThreadDetailExists: false,
+          serverThreadDetailDeleted: true,
+          draftThreadExists: false,
+        }),
+      ).toBe("missing");
+    },
+  );
 });
