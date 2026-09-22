@@ -125,6 +125,7 @@ import {
 import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
 import { ThreadDeletionReactor } from "./orchestration/Services/ThreadDeletionReactor.ts";
 import { SqlitePersistenceMemory } from "./persistence/Layers/Sqlite.ts";
+import { OrchestrationCommandReceiptRepository } from "./persistence/Services/OrchestrationCommandReceipts.ts";
 import { PersistenceSqlError } from "./persistence/Errors.ts";
 import * as ProviderRegistry from "./provider/Services/ProviderRegistry.ts";
 import * as ProviderService from "./provider/Services/ProviderService.ts";
@@ -462,6 +463,7 @@ const buildAppUnderTest = (options?: {
       ProjectSetupScriptRunner.ProjectSetupScriptRunner["Service"]
     >;
     terminalManager?: Partial<TerminalManager.TerminalManager["Service"]>;
+    commandReceipts?: Partial<OrchestrationCommandReceiptRepository["Service"]>;
     orchestrationEngine?: Partial<OrchestrationEngine.OrchestrationEngineService["Service"]>;
     threadDeletionReactor?: Partial<ThreadDeletionReactor["Service"]>;
     analyticsService?: Partial<AnalyticsService.AnalyticsService["Service"]>;
@@ -853,6 +855,10 @@ const buildAppUnderTest = (options?: {
       ),
       Layer.provide(
         Layer.mergeAll(
+          Layer.mock(OrchestrationCommandReceiptRepository)({
+            getByCommandId: () => Effect.succeed(Option.none()),
+            ...options?.layers?.commandReceipts,
+          }),
           Layer.mock(OrchestrationEngine.OrchestrationEngineService)({
             readEvents: () => Stream.empty,
             dispatch: () => Effect.succeed({ sequence: 0 }),
@@ -8568,6 +8574,92 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         assert.equal(finalCommand.message.text, "survive a browser reload");
       }
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect(
+    "managed coordinator replays a bootstrap receipt without repeating worktree or setup",
+    () =>
+      Effect.gen(function* () {
+        const gatewayToken = "managed-replay-fixture-token";
+        const commandId = CommandId.make("cmd-managed-bootstrap-replay");
+        const threadId = ThreadId.make("thread-managed-bootstrap-replay");
+        const createdAt = "2026-01-01T00:00:00.000Z";
+        const commands: Array<OrchestrationCommand> = [];
+        yield* buildAppUnderTest({
+          config: { managedDevPc: true, managedGatewayToken: gatewayToken },
+          layers: {
+            commandReceipts: {
+              getByCommandId: () =>
+                Effect.succeed(
+                  Option.some({
+                    commandId,
+                    aggregateKind: "thread",
+                    aggregateId: threadId,
+                    acceptedAt: createdAt,
+                    resultSequence: 42,
+                    status: "accepted",
+                    error: null,
+                  }),
+                ),
+            },
+            orchestrationEngine: {
+              dispatch: (command) =>
+                Effect.sync(() => {
+                  commands.push(command);
+                  return { sequence: 42, replayed: true as const };
+                }),
+            },
+            gitVcsDriver: { createWorktree: () => Effect.die("Recreated an adopted worktree") },
+            projectSetupScriptRunner: {
+              runForThread: () => Effect.die("Reran an adopted setup script"),
+            },
+          },
+        });
+        const response = yield* HttpClient.post("/api/_devpc/dispatch", {
+          headers: { "x-devpc-gateway-token": gatewayToken },
+          body: yield* HttpBody.json({
+            type: "thread.turn.start",
+            commandId,
+            threadId,
+            createdAt,
+            message: {
+              messageId: MessageId.make("msg-managed-replay"),
+              role: "user",
+              text: "Original assignment",
+              attachments: [],
+            },
+            modelSelection: defaultModelSelection,
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            bootstrap: {
+              createThread: {
+                projectId: defaultProjectId,
+                title: "Replay",
+                modelSelection: defaultModelSelection,
+                runtimeMode: "full-access",
+                interactionMode: "default",
+                branch: null,
+                worktreePath: null,
+                createdAt,
+              },
+              prepareWorktree: {
+                projectCwd: "/tmp/repo",
+                baseBranch: "main",
+                branch: "agent/replay",
+              },
+              runSetupScript: true,
+            },
+          }),
+        });
+        assert.equal(response.status, 202);
+        assert.deepEqual(yield* response.json, { sequence: 42, replayed: true });
+        assert.deepEqual(
+          commands.map((command) => command.type),
+          ["thread.turn.start"],
+        );
+        const command = commands[0];
+        if (command?.type === "thread.turn.start") assert.isUndefined(command.bootstrap);
+      }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
   it.effect("keeps transient managed dispatch failures retryable", () =>

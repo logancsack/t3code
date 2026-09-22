@@ -10,8 +10,10 @@ import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
+import { OrchestrationCommandReceiptRepository } from "../persistence/Services/OrchestrationCommandReceipts.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
 import * as ServerRuntimeStartup from "../serverRuntimeStartup.ts";
@@ -62,6 +64,7 @@ function projectSetupScriptCompatibilityDetail(
  */
 export const makeOrchestrationCommandDispatcher = Effect.gen(function* () {
   const crypto = yield* Crypto.Crypto;
+  const commandReceipts = yield* OrchestrationCommandReceiptRepository;
   const orchestrationEngine = yield* OrchestrationEngine.OrchestrationEngineService;
   const gitWorkflow = yield* GitWorkflowService.GitWorkflowService;
   const vcsStatusBroadcaster = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
@@ -144,6 +147,25 @@ export const makeOrchestrationCommandDispatcher = Effect.gen(function* () {
     Effect.gen(function* () {
       const bootstrap = command.bootstrap;
       const { bootstrap: _bootstrap, ...finalTurnStartCommand } = command;
+      // A lost transport acknowledgment must not rerun worktree creation or setup.
+      // Let the engine return the durable accepted/rejected receipt, as it does
+      // for commands without bootstrap side effects.
+      const receipt = yield* commandReceipts
+        .getByCommandId({ commandId: command.commandId })
+        .pipe(
+          Effect.mapError((cause) =>
+            toDispatchCommandError(cause, "Failed to read command receipt."),
+          ),
+        );
+      if (Option.isSome(receipt)) {
+        return yield* orchestrationEngine
+          .dispatch(finalTurnStartCommand)
+          .pipe(
+            Effect.mapError((cause) =>
+              toDispatchCommandError(cause, "Failed to replay command receipt."),
+            ),
+          );
+      }
       let createdThread = false;
       let targetProjectId = bootstrap?.createThread?.projectId;
       let targetProjectCwd = bootstrap?.prepareWorktree?.projectCwd;

@@ -58,5 +58,8 @@ private and uncacheable. These routes use the same workspace-local capability as
 dispatch and are not a new public agent authorization mechanism.
 
 The coordinator sends work through the existing durable managed dispatch endpoint.
-Task creation therefore retains T3's ordinary command receipts, bootstrap transaction,
-worktree preparation, provider execution, and approval behavior.
+Task creation retains T3's ordinary command receipts, worktree preparation, provider
+execution, and approval behavior. Before bootstrap side effects, the dispatcher checks
+for a persisted command receipt. An accepted or rejected command reuses the engine's
+receipt path without recreating its worktree or rerunning setup after a lost response
+or server restart. This does not make an interrupted, not-yet-adopted bootstrap atomic.
