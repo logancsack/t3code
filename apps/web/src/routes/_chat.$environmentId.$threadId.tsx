@@ -31,6 +31,7 @@ function ChatThreadRouteView() {
   );
   const renderState = resolveThreadRouteRenderState({
     bootstrapComplete,
+    shellStatus: shell.data?.status,
     serverThreadShellExists: serverThreadShell !== null,
     serverThreadDetailExists: serverThreadDetail !== null,
     serverThreadDetailDeleted: serverThreadStatus === "deleted",
