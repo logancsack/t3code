@@ -80,10 +80,24 @@ export interface HubPoolOptions {
   readonly applicationName?: string;
 }
 
+/**
+ * libpq accepts `sslrootcert=system` (use the platform's CA store); node-postgres
+ * would try to read a file named "system". Node verifies against its bundled
+ * CA store by default, so the parameter is dropped.
+ */
+export const normalizeHubDatabaseUrl = (url: string): string => {
+  const parsed = new URL(url);
+  if (parsed.searchParams.get("sslrootcert") !== "system") {
+    return url;
+  }
+  parsed.searchParams.delete("sslrootcert");
+  return parsed.toString();
+};
+
 /** A plain pooled client: migrations and administration only (no tenant). */
 export const makeHubPool = (options: HubPoolOptions) =>
   PgClient.make({
-    url: Redacted.make(options.url),
+    url: Redacted.make(normalizeHubDatabaseUrl(options.url)),
     // Many hub processes share one database, and PlanetScale's direct port
     // allows few connections. One user's engine is a single writer, so a
     // handful of connections is enough.

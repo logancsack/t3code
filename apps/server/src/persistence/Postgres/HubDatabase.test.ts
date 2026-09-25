@@ -127,9 +127,15 @@ describe.skipIf(hubTestDatabaseUrl === undefined)("hub database", () => {
     ),
   );
 
-  it.effect("fails closed for a role without BYPASSRLS", () =>
+  it.effect("fails closed for a role without BYPASSRLS", (context) =>
     withSchema((schema) =>
       Effect.gen(function* () {
+        if (!schema.runtimeSubjectToRls) {
+          // A remote database whose only role bypasses RLS; roles are never
+          // created outside a local cluster.
+          context.skip();
+          return;
+        }
         const database = yield* HubDatabase;
         const tenantA = database!.sql;
         const runtime = yield* makeHubPool({ url: schema.runtimeUrl, maxConnections: 2 });

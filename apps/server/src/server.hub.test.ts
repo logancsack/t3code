@@ -24,6 +24,7 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Path from "effect/Path";
 import * as Deferred from "effect/Deferred";
 import * as Fiber from "effect/Fiber";
 import * as Reactivity from "effect/unstable/reactivity/Reactivity";
@@ -110,22 +111,25 @@ const startHub = (schema: HubTestSchema, baseDir: string) =>
     };
   });
 
+/**
+ * Files a hub leaves in its base directory that are not disposable: anything
+ * but logs, caches, and the runtime state file of the live process.
+ */
 const durableStateFiles = (config: ServerConfig.ServerConfig["Service"]) =>
   Effect.gen(function* () {
     const fileSystem = yield* FileSystem.FileSystem;
-    const candidates = [
-      config.dbPath,
-      config.settingsPath,
-      config.keybindingsConfigPath,
-      config.environmentIdPath,
-      config.anonymousIdPath,
-      config.secretsDir,
-    ];
-    const present: Array<string> = [];
-    for (const candidate of candidates) {
-      if (yield* fileSystem.exists(candidate)) present.push(candidate);
+    const path = yield* Path.Path;
+    const disposable = (absolute: string) =>
+      absolute === config.serverRuntimeStatePath ||
+      absolute.startsWith(`${config.logsDir}${path.sep}`) ||
+      absolute.startsWith(`${config.providerStatusCacheDir}${path.sep}`);
+    const durable: Array<string> = [];
+    for (const entry of yield* fileSystem.readDirectory(config.baseDir, { recursive: true })) {
+      const absolute = path.join(config.baseDir, entry);
+      const info = yield* fileSystem.stat(absolute);
+      if (info.type !== "Directory" && !disposable(absolute)) durable.push(entry);
     }
-    return present;
+    return durable;
   });
 
 describe.skipIf(hubTestDatabaseUrl === undefined)("hub server", () => {

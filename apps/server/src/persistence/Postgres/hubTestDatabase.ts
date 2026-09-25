@@ -36,7 +36,14 @@ export interface HubTestSchema {
   readonly runtimeUrl: string;
   /** Whether a separate role without BYPASSRLS was created for the runtime. */
   readonly separateRuntimeRole: boolean;
+  /** Whether the runtime role is subject to row-level security. */
+  readonly runtimeSubjectToRls: boolean;
 }
+
+const isLoopbackDatabase = (url: string) => {
+  const host = new URL(url).hostname;
+  return host === "127.0.0.1" || host === "localhost" || host === "[::1]" || host === "::1";
+};
 
 const withSearchPath = (url: string, schema: string, credentials?: [string, string]) => {
   const parsed = new URL(url);
@@ -62,7 +69,10 @@ export const makeHubTestSchema = (baseUrl: string) =>
       readonly rolsuper: boolean;
       readonly rolbypassrls: boolean;
     }>`SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user`;
-    const needsRuntimeRole = attributes?.rolsuper === true || attributes?.rolbypassrls === true;
+    const bypassesRls = attributes?.rolsuper === true || attributes?.rolbypassrls === true;
+    // Only ever create roles in a private local cluster; elsewhere a test may
+    // touch nothing but its own schema.
+    const needsRuntimeRole = bypassesRls && isLoopbackDatabase(baseUrl);
     const runtimeRole = `${schema}_app`;
     const runtimePassword = NodeCrypto.randomBytes(12).toString("hex");
 
@@ -98,6 +108,7 @@ export const makeHubTestSchema = (baseUrl: string) =>
         ? withSearchPath(baseUrl, schema, [runtimeRole, runtimePassword])
         : adminUrl,
       separateRuntimeRole: needsRuntimeRole,
+      runtimeSubjectToRls: needsRuntimeRole || !bypassesRls,
     } satisfies HubTestSchema;
   }).pipe(Effect.provide(Reactivity.layer));
 
