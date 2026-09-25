@@ -490,7 +490,7 @@ const runAttachmentSideEffects = Effect.fn("runAttachmentSideEffects")(function*
   );
 });
 
-const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjectionPipeline")(
+export const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjectionPipeline")(
   function* () {
     const sql = yield* SqlClient.SqlClient;
     const eventStore = yield* OrchestrationEventStore;
