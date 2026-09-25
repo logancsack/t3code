@@ -2,11 +2,14 @@
  * HubRunnerLifecycle - hub-wide background work for thread machines.
  *
  * - Opens runner event delivery once the server is activated (ingestion
- *   subscribes at the same gate), then resumes delivery from machines that
- *   were running a turn when the hub stopped. Resuming never wakes a machine.
+ *   subscribes at the same gate), then resumes delivery from every thread
+ *   with a live remote session whose machine is running, so events emitted
+ *   while the hub was down are ingested. Resuming never wakes a machine.
  * - Flushes delivery cursors: every `ACK_INTERVAL`, safe points older than
- *   `ACK_SETTLE` are persisted after ingestion drains, then acknowledged to
- *   their runners. A final flush runs on shutdown.
+ *   `ACK_SETTLE` are persisted once ingestion and the checkpoint reactor have
+ *   drained (so a turn's checkpoint capture is durable before its events are
+ *   acknowledged), then acknowledged to their runners. A final flush runs on
+ *   shutdown.
  * - Gives the connection pool the project and repository of each thread for
  *   machine directory requests.
  * - Releases a thread's machine when the thread is archived or deleted, and
@@ -23,6 +26,7 @@ import * as Stream from "effect/Stream";
 
 import { isBootstrapCleanupDeletion } from "../orchestration/Layers/ThreadDeletionReactor.ts";
 import { OrchestrationEngineService } from "../orchestration/Services/OrchestrationEngine.ts";
+import { CheckpointReactor } from "../orchestration/Services/CheckpointReactor.ts";
 import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { ProviderRuntimeIngestionService } from "../orchestration/Services/ProviderRuntimeIngestion.ts";
 import {
@@ -54,6 +58,7 @@ export const layer = Layer.effectDiscard(
     const delivery = yield* RunnerEventDelivery;
     const registry = yield* RemoteSessionRegistry;
     const ingestion = yield* ProviderRuntimeIngestionService;
+    const checkpointReactor = yield* CheckpointReactor;
     const engine = yield* OrchestrationEngineService;
     const projections = yield* ProjectionSnapshotQuery;
     const repositoryIdentity = yield* RepositoryIdentityResolver;
@@ -83,16 +88,17 @@ export const layer = Layer.effectDiscard(
       }),
     );
 
-    const flush = (minAgeMs: number) => delivery.flush({ minAgeMs, drain: ingestion.drain });
+    const flush = (minAgeMs: number) =>
+      delivery.flush({
+        minAgeMs,
+        drain: ingestion.drain.pipe(Effect.andThen(checkpointReactor.drain)),
+      });
 
     yield* forkParked(
       Effect.gen(function* () {
         yield* Effect.sleep(DELIVERY_START_DELAY);
         yield* delivery.start;
         for (const record of yield* registry.list) {
-          if (record.session.status !== "running" && record.session.activeTurnId === undefined) {
-            continue;
-          }
           yield* pool
             .use(record.threadId, { wake: false, operation: "resume-delivery" }, () => Effect.void)
             .pipe(
