@@ -148,13 +148,15 @@ start of every transaction and wraps statements outside one in their own transac
 extra round trips), so it works behind a transaction pooler and never leaks between clients.
 Without the setting a query sees nothing and cannot write. Use a runtime role without
 `BYPASSRLS` (PlanetScale's default role has it) and pass the owner as the admin URL; after
-migrating, the hub grants the runtime role DML on the schema's tables. The explicit
-`user_id` predicates remain the primary isolation; RLS is the backstop.
+migrating, the hub grants the runtime role DML on the schema's tables (read-only on the
+migration history). The explicit `user_id` predicates remain the primary isolation; RLS is
+the backstop. Each hub keeps a pool of at most four connections.
 
 **Import.** `t3 hub import <state-dir>` copies a standalone state directory into the tenant
 named by the `T3CODE_HUB_*` environment in one transaction: the database (read-only, paged,
 at the current standalone migration), the documents, attachments within the upload limit,
 and provider environment secrets re-encrypted with the hub key. Auth sessions, pairing
 links, and other secrets stay behind. It refuses a tenant with data unless `--replace`,
-records repository identities for projects whose checkouts exist on the machine, and prints
+which first deletes every row the tenant has (sessions and hub secrets included), records
+repository identities for projects whose checkouts exist on the machine, and prints
 counts only.

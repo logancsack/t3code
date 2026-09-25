@@ -37,7 +37,6 @@ import {
 import { migrationEntries } from "../Migrations.ts";
 import type { HubDatabaseShape } from "./HubDatabase.ts";
 import { encryptHubSecret, parseHubSecretKey } from "./HubSecretCipher.ts";
-import { HUB_BASELINE_TENANT_TABLES } from "./migrations/001_HubBaseline.ts";
 
 export class HubImportError extends Schema.TaggedErrorClass<HubImportError>()("HubImportError", {
   reason: Schema.Literals([
@@ -213,8 +212,16 @@ export const importStandaloneState = (input: HubImportInput) =>
 
     return yield* hub.sql.withTransaction(
       Effect.gen(function* () {
+        // Every tenant table leads with user_id, including ones added by later
+        // migrations.
+        const tenantTables = (yield* hub.sql<{ readonly table: string }>`
+          SELECT DISTINCT table_name AS "table"
+          FROM information_schema.columns
+          WHERE table_schema = current_schema() AND column_name = 'user_id'
+          ORDER BY table_name
+        `).map((row) => row.table);
         const occupied: Array<string> = [];
-        for (const table of HUB_BASELINE_TENANT_TABLES) {
+        for (const table of tenantTables) {
           const [row] = yield* hub.sql<{ readonly present: boolean }>`
             SELECT EXISTS (
               SELECT 1 FROM ${hub.sql(table)} WHERE user_id = ${hub.tenantId}

@@ -185,6 +185,16 @@ describe.skipIf(hubTestDatabaseUrl === undefined)("hub database", () => {
           SELECT contents FROM hub_documents WHERE user_id = 'tenant-a'
         `;
         assert.strictEqual(row?.contents, "{}");
+
+        if (schema.separateRuntimeRole) {
+          // The runtime role reads the migration history but cannot rewrite it.
+          const history = yield* runtime<{
+            readonly id: number;
+          }>`SELECT id FROM hub_schema_migrations`;
+          assert.isAbove(history.length, 0);
+          const rewrite = yield* runtime`DELETE FROM hub_schema_migrations`.pipe(Effect.exit);
+          assert.isTrue(Exit.isFailure(rewrite));
+        }
       }).pipe(Effect.provide(hubTestDatabaseLayer(schema, "tenant-a"))),
     ),
   );

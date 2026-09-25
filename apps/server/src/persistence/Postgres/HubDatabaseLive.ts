@@ -48,6 +48,10 @@ const grantRuntimeRole = (admin: SqlClient.SqlClient, runtimeRole: string) =>
       `GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA ${schema} TO ${role}`,
     );
     yield* admin.unsafe(`GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA ${schema} TO ${role}`);
+    // The runtime role may read the migration history but not rewrite it.
+    yield* admin.unsafe(
+      `REVOKE INSERT, UPDATE, DELETE ON ${schema}.hub_schema_migrations FROM ${role}`,
+    );
   }).pipe(
     Effect.catchCause((cause) =>
       Effect.logWarning("Could not grant the hub runtime role access to hub tables.", {
