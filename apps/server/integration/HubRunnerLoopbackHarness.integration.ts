@@ -32,6 +32,10 @@ import {
   type ProviderApprovalDecision,
   type ServerProvider,
 } from "@t3tools/contracts";
+import {
+  type ClientOrchestrationCommand,
+  OrchestrationDispatchCommandError,
+} from "@t3tools/contracts";
 import { threadCheckoutPath } from "@t3tools/contracts/runner";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -40,6 +44,7 @@ import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
 import * as Schedule from "effect/Schedule";
+import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 
@@ -54,6 +59,8 @@ import * as RemoteSessionRegistry from "../src/hub/RemoteSessionRegistry.ts";
 import { make as makePool, RunnerConnectionPool } from "../src/hub/RunnerConnectionPool.ts";
 import * as RunnerEventDelivery from "../src/hub/RunnerEventDelivery.ts";
 import { serveRunner } from "../src/hub/testUtils/runnerServer.ts";
+import { makeOrchestrationCommandDispatcher } from "../src/orchestration/CommandDispatcher.ts";
+import { normalizeDispatchCommand } from "../src/orchestration/Normalizer.ts";
 import { CheckpointReactorLive } from "../src/orchestration/Layers/CheckpointReactor.ts";
 import { OrchestrationEngineLive } from "../src/orchestration/Layers/OrchestrationEngine.ts";
 import { OrchestrationReactorLive } from "../src/orchestration/Layers/OrchestrationReactor.ts";
@@ -94,6 +101,7 @@ import { ProviderInstanceRegistry } from "../src/provider/Services/ProviderInsta
 import { makeAdapterRegistryMock } from "../src/provider/testUtils/providerAdapterRegistryMock.ts";
 import { makeProviderRegistryLayer } from "../src/provider/testUtils/providerRegistryMock.ts";
 import * as AgentAwarenessRelay from "../src/relay/AgentAwarenessRelay.ts";
+import * as ProjectSetupScriptRunner from "../src/project/ProjectSetupScriptRunner.ts";
 import * as ReviewService from "../src/review/ReviewService.ts";
 import * as RunnerCheckout from "../src/runner/RunnerCheckout.ts";
 import { RunnerRpcHandlersLive } from "../src/runner/RunnerHandlers.ts";
@@ -103,6 +111,7 @@ import {
   type RunnerOutboxShape,
 } from "../src/runner/RunnerOutbox.ts";
 import { RunnerEventPumpLive } from "../src/runner/RunnerServer.ts";
+import { ServerRuntimeStartup } from "../src/serverRuntimeStartup.ts";
 import { ServerSettingsService } from "../src/serverSettings.ts";
 import { AnalyticsService } from "../src/telemetry/AnalyticsService.ts";
 import * as TerminalManager from "../src/terminal/Manager.ts";
@@ -121,6 +130,7 @@ import {
 } from "./TestProviderAdapter.integration.ts";
 
 export const LOOPBACK_PROVIDER = ProviderDriverKind.make("codex");
+const isDispatchError = Schema.is(OrchestrationDispatchCommandError);
 export const LOOPBACK_INSTANCE_ID = defaultInstanceIdForDriver(LOOPBACK_PROVIDER);
 
 const git = (cwd: string, args: ReadonlyArray<string>) =>
@@ -180,6 +190,15 @@ const instanceRegistryLayer = (adapter: TestProviderAdapterHarness["adapter"]) =
   });
 };
 
+const localStatus = {
+  isRepo: true,
+  hasPrimaryRemote: false,
+  isDefaultRef: true,
+  refName: "main",
+  hasWorkingTreeChanges: false,
+  workingTree: { files: [], insertions: 0, deletions: 0 },
+};
+
 export interface LoopbackRunner {
   readonly url: string;
   readonly adapterHarness: TestProviderAdapterHarness;
@@ -201,6 +220,10 @@ export interface HubRunnerLoopbackHarness {
   readonly delivery: () => RunnerEventDelivery.RunnerEventDelivery["Service"];
   /** Disposes the hub runtime and starts a new one on the same database. */
   readonly restartHub: Effect.Effect<void>;
+  /** A client command through normalization and the command dispatcher (bootstrap included). */
+  readonly dispatchClientCommand: (
+    command: ClientOrchestrationCommand,
+  ) => Effect.Effect<void, OrchestrationDispatchCommandError>;
   readonly waitForThread: (
     predicate: (thread: OrchestrationThread) => boolean,
     description: string,
@@ -267,14 +290,14 @@ export const makeHubRunnerLoopbackHarness = (threadIdValue = "thread-loopback") 
               Layer.mock(GitWorkflowService.GitWorkflowService)({}),
               Layer.mock(VcsStatusBroadcaster.VcsStatusBroadcaster)({
                 streamStatus: () => Stream.never,
-                refreshLocalStatus: () =>
+                refreshLocalStatus: () => Effect.succeed(localStatus),
+                refreshStatus: () =>
                   Effect.succeed({
-                    isRepo: true,
-                    hasPrimaryRemote: false,
-                    isDefaultRef: true,
-                    refName: "main",
-                    hasWorkingTreeChanges: false,
-                    workingTree: { files: [], insertions: 0, deletions: 0 },
+                    ...localStatus,
+                    hasUpstream: false,
+                    aheadCount: 0,
+                    behindCount: 0,
+                    pr: null,
                   }),
               }),
               Layer.mock(VcsProvisioningService.VcsProvisioningService)({}),
@@ -374,6 +397,7 @@ export const makeHubRunnerLoopbackHarness = (threadIdValue = "thread-loopback") 
         ),
         ProjectionCheckpointRepositoryLive,
         ProjectionPendingApprovalRepositoryLive,
+        OrchestrationCommandReceiptRepositoryLive,
         HubLayers.hubCheckpointStoreLayer,
         providerLayer,
         RuntimeReceiptBusTest,
@@ -382,6 +406,7 @@ export const makeHubRunnerLoopbackHarness = (threadIdValue = "thread-loopback") 
         Layer.provideMerge(ThreadPlanProgress.layer),
       );
       const checkoutServices = Layer.mergeAll(
+        HubLayers.hubWorkspacePathsLayer,
         HubLayers.hubVcsStatusBroadcasterLayer,
         HubLayers.hubWorkspaceEntriesLayer,
         HubLayers.hubGitWorkflowServiceLayer,
@@ -437,6 +462,7 @@ export const makeHubRunnerLoopbackHarness = (threadIdValue = "thread-loopback") 
       readonly diffStore: CheckpointTurnDiffStore["Service"];
       readonly delivery: RunnerEventDelivery.RunnerEventDelivery["Service"];
       readonly approvals: ProjectionPendingApprovalRepository["Service"];
+      readonly dispatchClientCommand: HubRunnerLoopbackHarness["dispatchClientCommand"];
     }
 
     const startHub = Effect.gen(function* () {
@@ -455,10 +481,42 @@ export const makeHubRunnerLoopbackHarness = (threadIdValue = "thread-loopback") 
         ),
       );
       const { reactor, ...rest } = services;
+      // The transport's dispatch path: startup is already ready, setup scripts
+      // are covered elsewhere, and thread deletion needs no fence here.
+      const dispatchStubs = Layer.mergeAll(
+        Layer.succeed(ServerRuntimeStartup, {
+          awaitCommandReady: Effect.void,
+          markHttpListening: Effect.void,
+          enqueueCommand: (effect) => effect,
+        }),
+        Layer.succeed(ProjectSetupScriptRunner.ProjectSetupScriptRunner, {
+          runForThread: () => Effect.succeed({ status: "no-script" as const }),
+        }),
+        Layer.succeed(ThreadDeletionReactor, {
+          start: () => Effect.void,
+          drainThrough: () => Effect.void,
+        }),
+      );
+      const dispatchClientCommand: HubRunnerLoopbackHarness["dispatchClientCommand"] = (command) =>
+        Effect.tryPromise({
+          try: () =>
+            runtime.runPromise(
+              Effect.gen(function* () {
+                const dispatch = yield* makeOrchestrationCommandDispatcher;
+                const normalized = yield* normalizeDispatchCommand(command);
+                yield* dispatch(normalized);
+              }).pipe(Effect.provide(dispatchStubs)),
+            ),
+          catch: (cause) =>
+            isDispatchError(cause)
+              ? cause
+              : new OrchestrationDispatchCommandError({ message: String(cause), cause }),
+        });
       const instance = {
         runtime,
         scope: yield* Scope.make("sequential"),
         ...rest,
+        dispatchClientCommand,
       } satisfies HubInstance;
       yield* Effect.promise(() =>
         runtime.runPromise(reactor.start().pipe(Scope.provide(instance.scope))),
@@ -495,6 +553,7 @@ export const makeHubRunnerLoopbackHarness = (threadIdValue = "thread-loopback") 
       checkpointStore: () => hub.checkpointStore,
       diffStore: () => hub.diffStore,
       delivery: () => hub.delivery,
+      dispatchClientCommand: (command) => Effect.suspend(() => hub.dispatchClientCommand(command)),
       restartHub: Effect.gen(function* () {
         yield* stopHub(hub);
         hub = yield* startHub;

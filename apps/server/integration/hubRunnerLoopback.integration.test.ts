@@ -329,3 +329,73 @@ it.live("replays an open turn after a hub restart without duplicating anything",
     }),
   ),
 );
+
+it.live("bootstraps a new thread on its machine: checkout path, branch, and progress", () =>
+  withHarness((harness) =>
+    Effect.gen(function* () {
+      yield* harness.engine().dispatch({
+        type: "project.create",
+        commandId: CommandId.make("cmd-project-create"),
+        projectId: PROJECT_ID,
+        title: "Loopback",
+        workspaceRoot: projectVirtualRoot(PROJECT_ID),
+        defaultModelSelection: MODEL,
+        createdAt: at(0),
+      });
+      yield* harness.runner().adapterHarness.queueTurnResponseForNextSession({
+        events: [
+          { type: "turn.started", ...fixture(harness, "evt-b1") },
+          { type: "message.delta", ...fixture(harness, "evt-b2"), delta: "Bootstrapped.\n" },
+        ],
+      });
+      yield* harness.dispatchClientCommand({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-bootstrap-turn"),
+        threadId: harness.threadId,
+        message: {
+          messageId: MessageId.make("msg-bootstrap"),
+          role: "user",
+          text: "Hi",
+          attachments: [],
+        },
+        runtimeMode: "approval-required",
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        bootstrap: {
+          createThread: {
+            projectId: PROJECT_ID,
+            title: "New thread",
+            modelSelection: MODEL,
+            runtimeMode: "approval-required",
+            interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+            branch: null,
+            worktreePath: "/somewhere/the/client/chose",
+            createdAt: at(1),
+          },
+          prepareWorktree: {
+            projectCwd: projectVirtualRoot(PROJECT_ID),
+            baseBranch: "main",
+            branch: "t3/feature-x",
+          },
+        },
+        createdAt: at(2),
+      });
+      const thread = yield* harness.waitForThread(
+        (value) =>
+          value.latestTurn?.state === "completed" &&
+          value.messages.some((message) => message.role === "assistant"),
+        "bootstrapped turn",
+      );
+      assert.equal(thread.worktreePath, harness.checkout);
+      assert.equal(thread.branch, "t3/feature-x");
+      assert.include(
+        thread.activities.map((activity) => activity.kind),
+        "thread-machine.checkout.preparing",
+      );
+      const checkedOut = NodeFS.readFileSync(
+        NodePath.join(harness.checkout, ".git", "HEAD"),
+        "utf8",
+      );
+      assert.equal(checkedOut.trim(), "ref: refs/heads/t3/feature-x");
+    }),
+  ),
+);
