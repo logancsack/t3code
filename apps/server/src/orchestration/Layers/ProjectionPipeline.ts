@@ -54,6 +54,7 @@ import {
   parseThreadSegmentFromAttachmentId,
   toSafeThreadAttachmentSegment,
 } from "../../attachmentStore.ts";
+import { removeHubThreadAttachments } from "../../persistence/Postgres/HubAttachments.ts";
 
 export const ORCHESTRATION_PROJECTOR_NAMES = {
   projects: "projection.projects",
@@ -417,6 +418,7 @@ const runAttachmentSideEffects = Effect.fn("runAttachmentSideEffects")(function*
       return;
     }
 
+    yield* removeHubThreadAttachments(threadSegment);
     const entries = yield* readAttachmentRootEntries;
     yield* Effect.forEach(
       entries,
@@ -470,6 +472,7 @@ const runAttachmentSideEffects = Effect.fn("runAttachmentSideEffects")(function*
       return;
     }
 
+    yield* removeHubThreadAttachments(threadSegment, keptThreadRelativePaths);
     const entries = yield* readAttachmentRootEntries;
     yield* Effect.forEach(
       entries,

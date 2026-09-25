@@ -17,6 +17,8 @@ import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import { readAgentActivityPublishingActive } from "../cloud/config.ts";
 import { resolveServerSelfUpdateCapability } from "../cloud/selfUpdate.ts";
 import { resolveServiceLauncherMode } from "../cloud/serviceLauncherClient.ts";
+import { HubDatabase, type HubDatabaseShape } from "../persistence/Postgres/HubDatabase.ts";
+import { makeHubDocuments } from "../persistence/Postgres/HubDocuments.ts";
 import * as ServerConfig from "../config.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import { resolveServerEnvironmentLabel } from "./ServerEnvironmentLabel.ts";
@@ -78,10 +80,50 @@ function platformArch(
   }
 }
 
+/**
+ * A hub's state directory is disposable, so its environment id lives in the
+ * tenant's documents. Concurrent initializers agree on the first stored id,
+ * which is what the standalone link-then-recover dance guarantees for files.
+ */
+const makeHubIdentity = Effect.fn("ServerEnvironmentIdentity.makeHubIdentity")(function* (
+  hubDatabase: HubDatabaseShape,
+  environmentIdPath: string,
+) {
+  const crypto = yield* Crypto.Crypto;
+  const path = yield* Path.Path;
+  const generated = yield* crypto.randomUUIDv4;
+  const environmentId = yield* makeHubDocuments(hubDatabase)
+    .createIfAbsent(path.basename(environmentIdPath), `${generated}\n`)
+    .pipe(
+      Effect.map((value) => value.trim()),
+      Effect.mapError(
+        (cause) =>
+          new ServerEnvironmentIdPersistenceError({
+            operation: "write",
+            environmentIdPath,
+            cause,
+          }),
+      ),
+    );
+  if (environmentId.length === 0) {
+    return yield* new ServerEnvironmentIdPersistenceError({
+      operation: "initialize",
+      environmentIdPath,
+    });
+  }
+  return ServerEnvironmentIdentity.of({
+    getEnvironmentId: Effect.succeed(EnvironmentId.make(environmentId)),
+  });
+});
+
 const makeIdentity = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const serverConfig = yield* ServerConfig.ServerConfig;
   const crypto = yield* Crypto.Crypto;
+  const hubDatabase = yield* HubDatabase;
+  if (hubDatabase !== undefined) {
+    return yield* makeHubIdentity(hubDatabase, serverConfig.environmentIdPath);
+  }
 
   const readPersistedEnvironmentId = Effect.gen(function* () {
     const exists = yield* fileSystem.exists(serverConfig.environmentIdPath).pipe(

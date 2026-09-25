@@ -43,6 +43,7 @@ import * as ServerConfig from "../config.ts";
 import * as ProjectFaviconResolver from "../project/ProjectFaviconResolver.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import { openMediaFile, type OpenMediaFile } from "./MediaFile.ts";
+import { hydrateHubAttachment } from "../persistence/Postgres/HubAttachments.ts";
 
 export const ASSET_ROUTE_PREFIX = "/api/assets";
 
@@ -351,6 +352,10 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
     }
     case "attachment": {
       const config = yield* ServerConfig.ServerConfig;
+      yield* hydrateHubAttachment({
+        attachmentsDir: config.attachmentsDir,
+        attachmentId: input.resource.attachmentId,
+      });
       const attachmentPath = resolveAttachmentPathById({
         attachmentsDir: config.attachmentsDir,
         attachmentId: input.resource.attachmentId,
@@ -532,6 +537,10 @@ export const resolveAsset = Effect.fn("AssetAccess.resolveAsset")(function* (
 
   if (claims.kind === "attachment") {
     const config = yield* ServerConfig.ServerConfig;
+    yield* hydrateHubAttachment({
+      attachmentsDir: config.attachmentsDir,
+      attachmentId: claims.attachmentId,
+    });
     const attachmentPath = resolveAttachmentPathById({
       attachmentsDir: config.attachmentsDir,
       attachmentId: claims.attachmentId,

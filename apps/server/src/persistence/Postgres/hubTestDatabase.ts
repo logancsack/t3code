@@ -21,6 +21,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Reactivity from "effect/unstable/reactivity/Reactivity";
 
+import * as ServerConfig from "../../config.ts";
 import { HubDatabase } from "./HubDatabase.ts";
 import { makeHubDatabase } from "./HubDatabaseLive.ts";
 import { makeHubPool } from "./HubClient.ts";
@@ -109,4 +110,37 @@ export const hubTestDatabaseLayer = (schema: HubTestSchema, tenantId: string) =>
       databaseAdminUrl: schema.separateRuntimeRole ? schema.adminUrl : undefined,
       tenantId,
     }),
+  );
+
+/** A fixed test-only key; never use outside tests. */
+export const HUB_TEST_SECRET_KEY = Buffer.alloc(32, 7).toString("base64");
+
+/**
+ * A test `ServerConfig` in hub mode for `tenantId`, over a temporary base
+ * directory (which a hub treats as disposable).
+ */
+export const hubTestServerConfigLayer = (
+  schema: HubTestSchema,
+  tenantId: string,
+  options: { readonly baseDir?: string; readonly secretKey?: string } = {},
+) =>
+  Layer.effect(
+    ServerConfig.ServerConfig,
+    Effect.gen(function* () {
+      const config = yield* ServerConfig.ServerConfig;
+      return {
+        ...config,
+        serverMode: "hub" as const,
+        hub: {
+          databaseUrl: schema.runtimeUrl,
+          databaseAdminUrl: schema.separateRuntimeRole ? schema.adminUrl : undefined,
+          tenantId,
+          secretKey: options.secretKey ?? HUB_TEST_SECRET_KEY,
+        },
+      };
+    }),
+  ).pipe(
+    Layer.provide(
+      ServerConfig.layerTest(process.cwd(), options.baseDir ?? { prefix: "t3-hub-test-" }),
+    ),
   );
