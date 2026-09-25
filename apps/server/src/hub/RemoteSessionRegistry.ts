@@ -159,7 +159,13 @@ export const make = Effect.gen(function* () {
             case "session.exited":
               return Effect.sync(() => {
                 const current = records.get(event.threadId);
-                if (current && current.instanceId === event.providerInstanceId) {
+                // A restart emits the old session's exit before or while the new
+                // one starts; only an exit at or after the current session ends it.
+                if (
+                  current &&
+                  current.instanceId === event.providerInstanceId &&
+                  event.createdAt >= current.session.createdAt
+                ) {
                   records.delete(event.threadId);
                 }
               });

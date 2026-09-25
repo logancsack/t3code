@@ -339,19 +339,17 @@ export const makeOrchestrationCommandDispatcher = Effect.gen(function* () {
             branch,
             baseRef: bootstrap?.prepareWorktree?.baseBranch ?? null,
           });
-          if (prepared.worktreePath !== targetWorktreePath || prepared.branch !== branch) {
-            yield* orchestrationEngine.dispatch(
-              {
-                type: "thread.meta.update",
-                commandId: yield* serverCommandId("bootstrap-thread-meta-update"),
-                threadId: command.threadId,
-                branch: prepared.branch,
-                worktreePath: prepared.worktreePath,
-              },
-              options,
-            );
-          }
           targetWorktreePath = prepared.worktreePath;
+          yield* orchestrationEngine.dispatch(
+            {
+              type: "thread.meta.update",
+              commandId: yield* serverCommandId("bootstrap-thread-meta-update"),
+              threadId: command.threadId,
+              branch: prepared.branch,
+              worktreePath: prepared.worktreePath,
+            },
+            options,
+          );
           yield* refreshGitStatus(targetWorktreePath);
         } else if (bootstrap?.prepareWorktree) {
           let worktreeBaseRef = bootstrap.prepareWorktree.baseBranch;
