@@ -136,6 +136,9 @@ export const RepositoryIdentity = Schema.Struct({
   provider: Schema.optionalKey(TrimmedNonEmptyString),
   owner: Schema.optionalKey(TrimmedNonEmptyString),
   name: Schema.optionalKey(TrimmedNonEmptyString),
+  // Set when the identity is recorded rather than read from a checkout (hub
+  // projects): the branch a new thread machine checks out.
+  defaultBranch: Schema.optionalKey(TrimmedNonEmptyString),
 });
 export type RepositoryIdentity = typeof RepositoryIdentity.Type;
 

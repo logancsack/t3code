@@ -35,6 +35,7 @@ import * as PullRequestProviderRegistry from "./pullRequest/PullRequestProviderR
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
 import { layerConfig as SqlitePersistenceLayerLive } from "./persistence/Layers/Sqlite.ts";
 import * as HubDatabase from "./persistence/Postgres/HubDatabase.ts";
+import * as HubRepositoryIdentityResolver from "./persistence/Postgres/HubRepositoryIdentityResolver.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
 import { ProviderSessionDirectoryLive } from "./provider/Layers/ProviderSessionDirectory.ts";
@@ -494,7 +495,7 @@ const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
   Layer.provideMerge(WorkspaceLayerLive),
   Layer.provideMerge(ProjectFaviconResolverLayerLive),
   Layer.provideMerge(
-    byServerMode(RepositoryIdentityResolver.layer, HubLayers.hubRepositoryIdentityResolverLayer),
+    byServerMode(RepositoryIdentityResolver.layer, HubRepositoryIdentityResolver.layer),
   ),
   Layer.provideMerge(ServerEnvironmentLayerLive),
   Layer.provideMerge(AuthLayerLive),

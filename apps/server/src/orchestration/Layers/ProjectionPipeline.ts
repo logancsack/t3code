@@ -520,6 +520,9 @@ export const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationP
             projectId: event.payload.projectId,
             title: event.payload.title,
             workspaceRoot: event.payload.workspaceRoot,
+            ...(event.payload.repositoryIdentity !== undefined
+              ? { repositoryIdentity: event.payload.repositoryIdentity }
+              : {}),
             defaultModelSelection: event.payload.defaultModelSelection,
             defaultThreadEnvMode: null,
             faviconPath: event.payload.faviconPath ?? null,
@@ -553,6 +556,9 @@ export const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationP
               ? { faviconPath: event.payload.faviconPath }
               : {}),
             ...(event.payload.scripts !== undefined ? { scripts: event.payload.scripts } : {}),
+            ...(event.payload.repositoryIdentity !== undefined
+              ? { repositoryIdentity: event.payload.repositoryIdentity }
+              : {}),
             updatedAt: event.payload.updatedAt,
           });
           return;

@@ -713,6 +713,9 @@ export const ProjectCreateCommand = Schema.Struct({
   workspaceRoot: TrimmedNonEmptyString,
   createWorkspaceRootIfMissing: Schema.optional(Schema.Boolean),
   defaultModelSelection: Schema.optional(Schema.NullOr(ModelSelection)),
+  // Recorded identity for projects without a local checkout (hub mode), which
+  // cannot resolve it from `git remote`. Absent = resolve from the checkout.
+  repositoryIdentity: Schema.optional(Schema.NullOr(RepositoryIdentity)),
   createdAt: IsoDateTime,
 });
 
@@ -727,6 +730,8 @@ const ProjectMetaUpdateCommand = Schema.Struct({
   defaultThreadEnvMode: Schema.optional(Schema.NullOr(ThreadEnvMode)),
   faviconPath: Schema.optional(Schema.NullOr(ProjectFaviconPath)),
   scripts: Schema.optional(Schema.Array(ProjectScript)),
+  // Absent = leave unchanged; null = clear the recorded identity.
+  repositoryIdentity: Schema.optional(Schema.NullOr(RepositoryIdentity)),
 });
 
 const ProjectDeleteCommand = Schema.Struct({
