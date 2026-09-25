@@ -19,6 +19,7 @@ import {
 } from "../attachmentStore.ts";
 import { ServerConfig } from "../config.ts";
 import { parseBase64DataUrl } from "../imageMime.ts";
+import { HubThreadCheckouts } from "../serverModeHooks.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 
 export const canonicalizeClientCommandTimestamps = (
@@ -75,7 +76,11 @@ const removeClaimedAttachmentPaths = Effect.fn("Normalizer.removeClaimedAttachme
 export const normalizeDispatchCommand = (command: ClientOrchestrationCommand) =>
   Effect.gen(function* () {
     const receivedAt = DateTime.formatIso(yield* DateTime.now);
-    const canonicalCommand = canonicalizeClientCommandTimestamps(command, receivedAt);
+    const hubThreadCheckouts = yield* HubThreadCheckouts;
+    const canonicalCommand = canonicalizeClientCommandTimestamps(
+      hubThreadCheckouts ? hubThreadCheckouts.rewriteClientCommand(command) : command,
+      receivedAt,
+    );
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const serverConfig = yield* ServerConfig;

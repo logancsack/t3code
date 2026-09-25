@@ -1,0 +1,71 @@
+/**
+ * Narrow hooks through which hub mode changes shared server code.
+ *
+ * Each is a `Context.Reference` whose default is standalone behavior, so
+ * standalone servers and existing tests never provide them. The hub layer set
+ * (`hub/HubLayers.ts`) provides hub implementations. See
+ * docs/internals/thread-machines.md.
+ *
+ * @module serverModeHooks
+ */
+import type {
+  ClientOrchestrationCommand,
+  OrchestrationDispatchCommandError,
+  ProjectId,
+  ThreadId,
+} from "@t3tools/contracts";
+import * as Context from "effect/Context";
+import type * as Effect from "effect/Effect";
+
+/**
+ * Provider runtime ingestion derives command ids from the runtime event id
+ * instead of a random suffix. In hub mode runners replay events after a hub
+ * restart, and deterministic ids turn every already-committed command into a
+ * receipt replay instead of a duplicate.
+ */
+export class DeterministicIngestionCommandIds extends Context.Reference<boolean>(
+  "t3/serverModeHooks/DeterministicIngestionCommandIds",
+  { defaultValue: () => false },
+) {}
+
+export interface ThreadCheckoutBootstrapInput {
+  readonly threadId: ThreadId;
+  readonly projectId: ProjectId | undefined;
+  /** Branch the thread should work on; null keeps the checkout's branch. */
+  readonly branch: string | null;
+  /** Base ref for a branch that does not exist yet. */
+  readonly baseRef: string | null;
+}
+
+export interface ThreadCheckoutBootstrapResult {
+  readonly worktreePath: string;
+  readonly branch: string | null;
+}
+
+export interface HubThreadCheckoutsShape {
+  /** Rewrites a client command before normalization (virtual roots, checkout paths). */
+  readonly rewriteClientCommand: (
+    command: ClientOrchestrationCommand,
+  ) => ClientOrchestrationCommand;
+  /**
+   * Bootstrap of a thread in hub mode: ensure and wake its machine, then
+   * prepare the checkout (clone or fetch, branch). Records progress and
+   * failures as thread activities.
+   */
+  readonly bootstrap: (
+    input: ThreadCheckoutBootstrapInput,
+  ) => Effect.Effect<ThreadCheckoutBootstrapResult, OrchestrationDispatchCommandError>;
+  /** Before a turn: make sure the thread's checkout exists on its (awake) machine. */
+  readonly ensureForTurn: (thread: {
+    readonly id: ThreadId;
+    readonly projectId: ProjectId;
+    readonly branch: string | null;
+    readonly worktreePath: string | null;
+  }) => Effect.Effect<void>;
+}
+
+/** Hub thread-checkout provisioning; `null` keeps the standalone local worktree logic. */
+export class HubThreadCheckouts extends Context.Reference<HubThreadCheckoutsShape | null>(
+  "t3/serverModeHooks/HubThreadCheckouts",
+  { defaultValue: () => null },
+) {}

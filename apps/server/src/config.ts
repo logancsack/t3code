@@ -66,17 +66,32 @@ export const serverModeOf = (config: {
 }): ServerMode => config.serverMode ?? "standalone";
 
 export interface HubServerConfig {
-  /** Postgres URL for the hub schema, using a role without BYPASSRLS. */
-  readonly databaseUrl: string;
+  /**
+   * Postgres URL for the hub schema, using a role without BYPASSRLS. Without
+   * it a hub persists to its SQLite state database (tests and development).
+   */
+  readonly databaseUrl?: string | undefined;
   /** Optional role used only to apply hub migrations. */
   readonly databaseAdminUrl?: string | undefined;
-  /** The Aldo user whose rows this process owns. */
-  readonly tenantId: string;
-  /** Base64 32-byte key that encrypts per-user secrets at rest. */
-  readonly secretKey: string;
+  /** The Aldo user whose rows this process owns; required with `databaseUrl`. */
+  readonly tenantId?: string | undefined;
+  /** Base64 32-byte key that encrypts per-user secrets at rest; required with `databaseUrl`. */
+  readonly secretKey?: string | undefined;
   /** Machine directory base URL; absent only with a development `runnerUrl`. */
   readonly machinesUrl?: string | undefined;
   readonly machinesToken?: string | undefined;
+  /**
+   * Public base URL at which thread machines reach this hub (its `/mcp`
+   * endpoint). Without it, runners are given the hub's local MCP endpoint,
+   * which only a runner on the same host can reach.
+   */
+  readonly publicUrl?: string | undefined;
+  /**
+   * Root of thread checkouts on thread machines (`/workspace/t` by default).
+   * Hub and machines must agree on it; only tests and local development
+   * change it.
+   */
+  readonly checkoutRoot?: string | undefined;
 }
 
 export class ServerConfig extends Context.Service<

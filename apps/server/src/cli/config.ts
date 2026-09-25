@@ -159,6 +159,14 @@ const EnvServerConfig = Config.all({
     Config.option,
     Config.map(Option.getOrUndefined),
   ),
+  hubPublicUrl: Config.string("T3CODE_HUB_PUBLIC_URL").pipe(
+    Config.option,
+    Config.map(Option.getOrUndefined),
+  ),
+  hubCheckoutRoot: Config.string("T3CODE_HUB_CHECKOUT_ROOT").pipe(
+    Config.option,
+    Config.map(Option.getOrUndefined),
+  ),
   runnerUrl: Config.string("T3CODE_RUNNER_URL").pipe(
     Config.option,
     Config.map(Option.getOrUndefined),
@@ -268,29 +276,38 @@ const resolveHubServerConfig = (env: {
   readonly hubSecretKey?: string | undefined;
   readonly hubMachinesUrl?: string | undefined;
   readonly hubMachinesToken?: string | undefined;
+  readonly hubPublicUrl?: string | undefined;
+  readonly hubCheckoutRoot?: string | undefined;
   readonly runnerUrl?: string | undefined;
 }) =>
   Effect.gen(function* () {
-    const missing = [
-      ["T3CODE_HUB_DATABASE_URL", env.hubDatabaseUrl],
-      ["T3CODE_HUB_TENANT_ID", env.hubTenantId],
-      ["T3CODE_HUB_SECRET_KEY", env.hubSecretKey],
-    ]
-      .filter(([, value]) => !value)
-      .map(([name]) => name);
+    // Without a database URL the hub persists to its SQLite state database.
+    const missing = env.hubDatabaseUrl
+      ? [
+          ["T3CODE_HUB_TENANT_ID", env.hubTenantId],
+          ["T3CODE_HUB_SECRET_KEY", env.hubSecretKey],
+        ]
+          .filter(([, value]) => !value)
+          .map(([name]) => name)
+      : [];
     if (!env.runnerUrl && (!env.hubMachinesUrl || !env.hubMachinesToken)) {
       missing.push("T3CODE_HUB_MACHINES_URL and T3CODE_HUB_MACHINES_TOKEN");
     }
     if (missing.length > 0) {
       return yield* Effect.die(new Error(`Hub mode requires ${missing.join(", ")}.`));
     }
+    if (env.hubCheckoutRoot && !env.hubCheckoutRoot.startsWith("/")) {
+      return yield* Effect.die(new Error("T3CODE_HUB_CHECKOUT_ROOT must be an absolute path."));
+    }
     return {
-      databaseUrl: env.hubDatabaseUrl!,
+      databaseUrl: env.hubDatabaseUrl,
       databaseAdminUrl: env.hubDatabaseAdminUrl,
-      tenantId: env.hubTenantId!,
-      secretKey: env.hubSecretKey!,
+      tenantId: env.hubTenantId,
+      secretKey: env.hubSecretKey,
       machinesUrl: env.hubMachinesUrl,
       machinesToken: env.hubMachinesToken,
+      publicUrl: env.hubPublicUrl,
+      checkoutRoot: env.hubCheckoutRoot,
     } satisfies ServerConfig.HubServerConfig;
   });
 

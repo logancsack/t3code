@@ -20,6 +20,7 @@ import {
   WORKSPACE_BROWSER_PREVIEW_EXTENSIONS,
   WORKSPACE_IMAGE_PREVIEW_EXTENSIONS,
 } from "@t3tools/shared/filePreview";
+import { HubModeUnsupportedError } from "@t3tools/contracts/runner";
 import { PROJECT_FAVICON_FALLBACK_MARKER } from "@t3tools/shared/projectFavicon";
 import * as Clock from "effect/Clock";
 import * as Crypto from "effect/Crypto";
@@ -216,6 +217,19 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const workspacePaths = yield* WorkspacePaths.WorkspacePaths;
+  // A hub has attachments but no checkout; workspace files live on thread machines.
+  if (
+    input.resource._tag !== "attachment" &&
+    ServerConfig.serverModeOf(yield* ServerConfig.ServerConfig) === "hub"
+  ) {
+    return yield* new AssetWorkspaceResolutionError({
+      resource: input.resource,
+      cause: new HubModeUnsupportedError({
+        operation: "assets.createUrl",
+        detail: "Workspace files and favicons are served by thread machines, not the hub.",
+      }),
+    });
+  }
   let expiresAt = (yield* Clock.currentTimeMillis) + ASSET_TOKEN_TTL_MS;
   let claims: AssetClaims;
   let fileName: string;
