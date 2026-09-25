@@ -5,9 +5,15 @@ import { ServerConfig } from "../config.ts";
 import { runRunner } from "../runner/RunnerServer.ts";
 import { resolveServerConfig, sharedServerCommandFlags } from "./config.ts";
 
-/** Prototype: serve the runner protocol for this machine's checkout. */
+/**
+ * `t3 runner`: serves the runner protocol for one thread's checkout on a
+ * thread machine (`T3CODE_RUNNER_THREAD_ID`, `T3CODE_RUNNER_CHECKOUT`,
+ * `T3CODE_RUNNER_TOKEN`). See docs/internals/thread-machines.md.
+ */
 export const runnerCommand = Command.make("runner", { ...sharedServerCommandFlags }).pipe(
-  Command.withDescription("Run a T3 runner: provider drivers and checkpoints for a remote hub."),
+  Command.withDescription(
+    "Run a T3 runner: one thread's providers, git, terminals and files for a hub.",
+  ),
   Command.withHandler((flags) =>
     Effect.gen(function* () {
       const logLevel = yield* GlobalFlag.LogLevel;
@@ -16,7 +22,12 @@ export const runnerCommand = Command.make("runner", { ...sharedServerCommandFlag
         forceAutoBootstrapProjectFromCwd: false,
         serverMode: "runner",
       });
-      return yield* runRunner.pipe(Effect.provideService(ServerConfig, config));
+      // Services that anchor on the server cwd (review path checks, provider
+      // fallbacks) anchor on the thread's checkout.
+      const runnerConfig = config.runnerCheckout
+        ? { ...config, cwd: config.runnerCheckout }
+        : config;
+      return yield* runRunner.pipe(Effect.provideService(ServerConfig, runnerConfig));
     }),
   ),
 );

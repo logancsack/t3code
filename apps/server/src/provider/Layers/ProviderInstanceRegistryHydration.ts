@@ -62,7 +62,6 @@ import type { AnyProviderDriver } from "../ProviderDriver.ts";
 import { ProviderInstanceRegistry } from "../Services/ProviderInstanceRegistry.ts";
 import { ProviderInstanceRegistryMutator } from "../Services/ProviderInstanceRegistryMutator.ts";
 import { ProviderInstanceRegistryMutableLayer } from "./ProviderInstanceRegistryLive.ts";
-import { makeRemoteProviderDriver } from "../../runner/hub/RemoteProviderDriver.ts";
 
 /**
  * Synthesize a `ProviderInstanceConfigMap` from a `ServerSettings` snapshot.
@@ -193,15 +192,11 @@ export const ProviderInstanceRegistryHydrationLive: Layer.Layer<
 > = Layer.unwrap(
   Effect.gen(function* () {
     const serverConfig = yield* ServerConfig;
-    const drivers = resolveBuiltInDrivers({
-      museCodeEnabled: serverConfig.museCodeEnabled,
-    });
-    // Hub mode: every provider runs on the thread's runner. The hub keeps the
-    // same driver kinds and instance ids, but each adapter forwards over the
-    // runner protocol instead of spawning a provider CLI locally.
-    return serverConfig.serverMode === "hub"
-      ? makeProviderInstanceRegistryHydration(drivers.map(makeRemoteProviderDriver))
-      : makeProviderInstanceRegistryHydration(drivers);
+    return makeProviderInstanceRegistryHydration(
+      resolveBuiltInDrivers({
+        museCodeEnabled: serverConfig.museCodeEnabled,
+      }),
+    );
   }),
 ) as Layer.Layer<
   ProviderInstanceRegistry,

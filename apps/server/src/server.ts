@@ -134,10 +134,7 @@ import * as NetService from "@t3tools/shared/Net";
 import * as RelayClient from "@t3tools/shared/relayClient";
 import { disableTailscaleServe, ensureTailscaleServe } from "@t3tools/tailscale";
 import { forkParked, ServerActivation } from "./serverActivation.ts";
-import { CheckoutGitProbe, localCheckoutGitProbe } from "./git/CheckoutGitProbe.ts";
-import * as HubLayers from "./runner/hub/HubLayers.ts";
-import * as RunnerClient from "./runner/hub/RunnerClient.ts";
-import * as RunnerDelivery from "./runner/hub/RunnerDelivery.ts";
+import * as HubLayers from "./hub/HubLayers.ts";
 
 // MCP handoff thread IDs include escaped provenance and can exceed find-my-way's
 // 100-character default for one path segment.
@@ -155,7 +152,7 @@ export const ApplicationObservabilityLive = ObservabilityLive.pipe(
   Layer.provideMerge(ResourceAttributionLayerLive),
 );
 
-const PtyAdapterLive = Layer.unwrap(
+export const PtyAdapterLive = Layer.unwrap(
   Effect.gen(function* () {
     if (typeof Bun !== "undefined") {
       const BunPtyAdapter = yield* Effect.promise(() => import("./terminal/BunPtyAdapter.ts"));
@@ -168,17 +165,35 @@ const PtyAdapterLive = Layer.unwrap(
 );
 
 /**
- * Picks the checkout-bound implementation (`local`) or the hub substitute
- * (`hub`) depending on whether this server delegates to a runner.
+ * Picks the standalone or the hub implementation of a mode-dependent layer
+ * group (see `ServerModeLayers`). Consumers see only the services both provide.
  */
-const byServerMode = <A, E1, R1, E2, R2>(
-  local: Layer.Layer<A, E1, R1>,
-  hub: Layer.Layer<A, E2, R2>,
-): Layer.Layer<A, E1 | E2, R1 | R2 | ServerConfig.ServerConfig> =>
+const byServerMode = <A1, E1, R1, A2, E2, R2>(
+  standalone: Layer.Layer<A1, E1, R1>,
+  hub: Layer.Layer<A2, E2, R2>,
+): Layer.Layer<Extract<A1, A2>, E1 | E2, R1 | R2 | ServerConfig.ServerConfig> =>
   Layer.unwrap(
     Effect.gen(function* () {
       const config = yield* ServerConfig.ServerConfig;
-      return (config.serverMode === "hub" ? hub : local) as Layer.Layer<A, E1 | E2, R1 | R2>;
+      return (ServerConfig.serverModeOf(config) === "hub"
+        ? hub
+        : standalone) as unknown as Layer.Layer<Extract<A1, A2>, E1 | E2, R1 | R2>;
+    }),
+  );
+
+/**
+ * A layer only a hub runs. Standalone servers build nothing in its place; the
+ * services it provides are only required by the other hub groups.
+ */
+const hubOnly = <A, E, R>(
+  hub: Layer.Layer<A, E, R>,
+): Layer.Layer<A, E, R | ServerConfig.ServerConfig> =>
+  Layer.unwrap(
+    Effect.gen(function* () {
+      const config = yield* ServerConfig.ServerConfig;
+      return ServerConfig.serverModeOf(config) === "hub"
+        ? hub
+        : (Layer.empty as unknown as Layer.Layer<A, E, R>);
     }),
   );
 
@@ -291,13 +306,7 @@ export const PlatformServicesLive = Layer.unwrap(
   }),
 );
 
-const CheckoutGitProbeLayerLive = byServerMode(
-  Layer.succeed(CheckoutGitProbe, localCheckoutGitProbe),
-  HubLayers.remoteCheckoutGitProbeLayer,
-);
-
 const ReactorLayerLive = Layer.empty.pipe(
-  Layer.provideMerge(RunnerDelivery.layer),
   Layer.provideMerge(OrchestrationReactorLive),
   Layer.provideMerge(ProviderRuntimeIngestionLive),
   Layer.provideMerge(ProviderCommandReactorLive),
@@ -306,7 +315,6 @@ const ReactorLayerLive = Layer.empty.pipe(
   Layer.provideMerge(ThreadSettlementReactor.layer),
   Layer.provideMerge(AgentAwarenessRelayLayerLive),
   Layer.provideMerge(RuntimeReceiptBusLive),
-  Layer.provideMerge(CheckoutGitProbeLayerLive),
 );
 
 const ProviderSessionDirectoryLayerLive = ProviderSessionDirectoryLive.pipe(
@@ -330,7 +338,7 @@ export const VcsDriverRegistryLayerLive = VcsDriverRegistry.layer.pipe(
   Layer.provide(VcsProjectConfig.layer),
 );
 
-const SourceControlProviderRegistryLayerLive = SourceControlProviderRegistry.layer.pipe(
+export const SourceControlProviderRegistryLayerLive = SourceControlProviderRegistry.layer.pipe(
   Layer.provide(
     Layer.mergeAll(AzureDevOpsCli.layer, BitbucketApi.layer, GitHubCli.layer, GitLabCli.layer),
   ),
@@ -382,22 +390,12 @@ const VcsLayerLive = Layer.empty.pipe(
   Layer.provideMerge(ReviewLayerLive),
   Layer.provideMerge(GrokReviewLayerLive),
   Layer.provideMerge(SourceControlRepositoryServiceLayerLive),
-  Layer.provideMerge(
-    byServerMode(
-      VcsStatusBroadcaster.layer.pipe(Layer.provide(GitWorkflowLayerLive)),
-      HubLayers.hubVcsStatusBroadcasterLayer,
-    ),
-  ),
+  Layer.provideMerge(VcsStatusBroadcaster.layer.pipe(Layer.provide(GitWorkflowLayerLive))),
 );
 
 const CheckpointingLayerLive = Layer.empty.pipe(
   Layer.provideMerge(CheckpointDiffQuery.layer),
-  Layer.provideMerge(
-    byServerMode(
-      CheckpointStore.layer.pipe(Layer.provide(VcsDriverRegistryLayerLive)),
-      HubLayers.remoteCheckpointStoreLayer,
-    ),
-  ),
+  Layer.provideMerge(CheckpointStore.layer.pipe(Layer.provide(VcsDriverRegistryLayerLive))),
 );
 
 const PortScannerLayerLive = PortScanner.layer.pipe(Layer.provide(ProcessRunner.layer));
@@ -420,8 +418,8 @@ const WorkspaceFileSystemLayerLive = WorkspaceFileSystem.layer.pipe(
 );
 
 const WorkspaceLayerLive = Layer.mergeAll(
-  byServerMode(WorkspacePaths.layer, HubLayers.remoteWorkspacePathsLayer),
-  byServerMode(WorkspaceEntriesLayerLive, HubLayers.hubWorkspaceEntriesLayer),
+  WorkspacePaths.layer,
+  WorkspaceEntriesLayerLive,
   WorkspaceFileSystemLayerLive,
 );
 
@@ -448,22 +446,92 @@ const CloudManagedEndpointRuntimeLive = Layer.mergeAll(
   ),
 );
 
+/**
+ * Layer groups whose implementation depends on the server mode. Standalone
+ * uses the local implementations above; a hub (`T3CODE_SERVER_MODE=hub`)
+ * replaces every checkout-bound group with `hub/HubLayers.ts`, so the hub never
+ * reads a checkout, runs git, opens a PTY, or spawns a provider CLI. The rest
+ * of the runtime is identical in both modes. See
+ * docs/internals/thread-machines.md.
+ */
+const ServerModeLayers = {
+  /** Background work that needs the reactors (hub: runner delivery and machine release). */
+  background: hubOnly(HubLayers.hubRuntimeBackgroundLayer),
+  /** Hooks read by reactors and command dispatch; standalone relies on their defaults. */
+  reactorHooks: hubOnly(HubLayers.hubReactorHooksLayer),
+  checkpointing: byServerMode(
+    CheckpointingLayerLive,
+    CheckpointDiffQuery.layer.pipe(Layer.provideMerge(HubLayers.hubCheckpointStoreLayer)),
+  ),
+  git: byServerMode(
+    GitLayerLive,
+    HubLayers.hubGitManagerLayer.pipe(
+      Layer.provideMerge(ProjectSetupScriptRunner.layer),
+      Layer.provideMerge(GitVcsDriver.layer),
+      Layer.provideMerge(SourceControlProviderRegistryLayerLive),
+      Layer.provideMerge(TextGeneration.layer),
+    ),
+  ),
+  vcs: byServerMode(
+    VcsLayerLive,
+    Layer.mergeAll(
+      HubLayers.hubVcsStatusBroadcasterLayer,
+      HubLayers.hubVcsProvisioningServiceLayer,
+      HubLayers.hubSourceControlRepositoryServiceLayer.pipe(
+        Layer.provide(SourceControlRepositoryServiceLayerLive),
+      ),
+      GrokReviewService.layer.pipe(Layer.provide(HubLayers.hubReviewServiceLayer)),
+    ).pipe(
+      Layer.provideMerge(HubLayers.hubReviewServiceLayer),
+      Layer.provideMerge(HubLayers.hubGitWorkflowServiceLayer),
+      Layer.provideMerge(VcsDriverRegistryLayerLive),
+      Layer.provideMerge(VcsProjectConfig.layer),
+    ),
+  ),
+  terminal: byServerMode(TerminalLayerLive, HubLayers.hubTerminalManagerLayer),
+  workspace: byServerMode(
+    WorkspaceLayerLive,
+    Layer.mergeAll(
+      HubLayers.hubWorkspacePathsLayer,
+      HubLayers.hubWorkspaceEntriesLayer,
+      HubLayers.hubWorkspaceFileSystemLayer,
+    ),
+  ),
+  repositoryIdentity: byServerMode(
+    RepositoryIdentityResolver.layer,
+    HubLayers.hubRepositoryIdentityResolverLayer,
+  ),
+  providerInstances: byServerMode(
+    ProviderInstanceRegistryHydrationLive,
+    HubLayers.hubProviderInstanceRegistryLayer,
+  ),
+  /** Hub-only services under the whole runtime (machine directory, runner pool, caches). */
+  infrastructure: hubOnly(
+    HubLayers.makeHubInfrastructureLayer({ sqlitePersistence: SqlitePersistenceLayerLive }),
+  ),
+};
+
 const ProviderRuntimeLayerLive = Layer.mergeAll(
   ProviderSessionReaperLive,
   TurnLivenessWatchdogLive,
 ).pipe(Layer.provideMerge(ProviderLayerLive), Layer.provideMerge(OrchestrationLayerLive));
 
-const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
+const RuntimeReactorsLive = ServerModeLayers.background.pipe(
+  Layer.provideMerge(ReactorLayerLive),
+  Layer.provideMerge(ServerModeLayers.reactorHooks),
+);
+
+const RuntimeCoreDependenciesLive = RuntimeReactorsLive.pipe(
   // Core Services
   Layer.provideMerge(ServerSettingsLayerLive),
-  Layer.provideMerge(CheckpointingLayerLive),
+  Layer.provideMerge(ServerModeLayers.checkpointing),
   Layer.provideMerge(
     Layer.mergeAll(SourceControlProviderRegistryLayerLive, PullRequestServiceLive),
   ),
-  Layer.provideMerge(GitLayerLive),
-  Layer.provideMerge(VcsLayerLive),
+  Layer.provideMerge(ServerModeLayers.git),
+  Layer.provideMerge(ServerModeLayers.vcs),
   Layer.provideMerge(ProviderRuntimeLayerLive),
-  Layer.provideMerge(Layer.mergeAll(TerminalLayerLive, PreviewLayerLive)),
+  Layer.provideMerge(Layer.mergeAll(ServerModeLayers.terminal, PreviewLayerLive)),
   Layer.provideMerge(PersistenceLayerLive),
   // Both read a user-owned file out of the state directory and stream changes
   // to clients; neither depends on the other.
@@ -474,7 +542,7 @@ const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
   // through this layer. Built-in drivers come from `BUILT_IN_DRIVERS`;
   // `providerInstances` hydration merges `settings.providers.<kind>`
   // with explicit `providerInstances` entries on boot.
-  Layer.provideMerge(ProviderInstanceRegistryHydrationLive),
+  Layer.provideMerge(ServerModeLayers.providerInstances),
   // Shared native/canonical NDJSON writers used by both the per-instance
   // drivers (native stream, written from inside each `<X>Adapter`) and
   // `ProviderService` (canonical stream, written after event normalization).
@@ -490,11 +558,9 @@ const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
   // no longer transitively provides it. Exposing it at the runtime level
   // keeps a single Live for all opencode consumers.
   Layer.provideMerge(OpenCodeRuntime.OpenCodeRuntimeLive),
-  Layer.provideMerge(WorkspaceLayerLive),
+  Layer.provideMerge(ServerModeLayers.workspace),
   Layer.provideMerge(ProjectFaviconResolverLayerLive),
-  Layer.provideMerge(
-    byServerMode(RepositoryIdentityResolver.layer, HubLayers.hubRepositoryIdentityResolverLayer),
-  ),
+  Layer.provideMerge(ServerModeLayers.repositoryIdentity),
   Layer.provideMerge(ServerEnvironmentLayerLive),
   Layer.provideMerge(AuthLayerLive),
   Layer.provideMerge(ServerSecretStore.layer),
@@ -773,7 +839,7 @@ export const makeServerLayer = Layer.unwrap(
 
     return serverApplicationLayer.pipe(
       Layer.provideMerge(runtimeServicesLive),
-      Layer.provideMerge(RunnerClient.layer),
+      Layer.provideMerge(ServerModeLayers.infrastructure),
       Layer.provide(activationLayer),
       Layer.provideMerge(serverRelayBrokerTracingLayer),
       Layer.provideMerge(HttpServerLive),

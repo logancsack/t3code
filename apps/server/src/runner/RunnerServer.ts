@@ -1,21 +1,23 @@
 /**
- * RunnerServer - the runner build (prototype).
+ * RunnerServer - the `t3 runner` composition.
  *
  * A runner is the half of the T3 server that must live next to a checkout:
- * real provider drivers, the checkpoint store, and workspace validation. It
- * serves `RunnerRpcGroup` on `RUNNER_WS_PATH` and never runs orchestration,
- * projections, or the client API; the hub does.
+ * the real provider drivers, git and checkpoints, terminals, workspace files,
+ * review and git actions for exactly one thread. It serves `RunnerRpcGroup`
+ * on `RUNNER_WS_PATH` and never runs orchestration, projections, auth, or the
+ * client API; the hub does.
  *
- * Provider runtime events from every hosted instance are stamped with their
- * instance id and appended to the durable `RunnerOutbox` before any hub sees
- * them.
+ * Every provider runtime event from every hosted instance is stamped with its
+ * instance id and committed to the durable `RunnerOutbox` before any hub sees
+ * it. On graceful shutdown the runner stops its sessions while the event pumps
+ * still run, so the exit events reach the outbox and the hub settles the turn.
  *
  * @module runner/RunnerServer
  */
 import * as NodeCrypto from "node:crypto";
 
 import type { ProviderInstanceId } from "@t3tools/contracts";
-import * as Clock from "effect/Clock";
+import { RUNNER_WS_PATH, RunnerRpcGroup } from "@t3tools/contracts/runner";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
@@ -24,55 +26,65 @@ import { RpcSerialization, RpcServer } from "effect/unstable/rpc";
 
 import * as CheckpointStore from "../checkpointing/CheckpointStore.ts";
 import { ServerConfig } from "../config.ts";
-import { isGitRepository } from "../git/Utils.ts";
-import { ClaudeDriver, type ClaudeDriverEnv } from "../provider/Drivers/ClaudeDriver.ts";
-import { CodexDriver, type CodexDriverEnv } from "../provider/Drivers/CodexDriver.ts";
-import { ProviderAdapterValidationError } from "../provider/Errors.ts";
+import * as GitManager from "../git/GitManager.ts";
+import * as GitWorkflowService from "../git/GitWorkflowService.ts";
+import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
+import * as PortScanner from "../preview/PortScanner.ts";
+import * as ProcessRunner from "../processRunner.ts";
+import { resolveBuiltInDrivers } from "../provider/builtInDrivers.ts";
+import type { ProviderAdapterError } from "../provider/Errors.ts";
 import * as ModelManifest from "../provider/ModelManifest.ts";
-import type { AnyProviderDriver } from "../provider/ProviderDriver.ts";
+import * as OpenCodeRuntime from "../provider/opencodeRuntime.ts";
 import * as ProviderEventLoggers from "../provider/Layers/ProviderEventLoggers.ts";
 import { makeProviderInstanceRegistryHydration } from "../provider/Layers/ProviderInstanceRegistryHydration.ts";
+import { ProviderRegistryLive } from "../provider/Layers/ProviderRegistry.ts";
 import type { ProviderAdapterShape } from "../provider/Services/ProviderAdapter.ts";
 import { ProviderInstanceRegistry } from "../provider/Services/ProviderInstanceRegistry.ts";
-import type { ProviderAdapterError } from "../provider/Errors.ts";
+import * as ReviewService from "../review/ReviewService.ts";
 import {
   ApplicationObservabilityLive,
   BackgroundLayerLive,
   HttpServerLive,
   PlatformServicesLive,
+  PtyAdapterLive,
+  SourceControlProviderRegistryLayerLive,
   VcsDriverRegistryLayerLive,
 } from "../server.ts";
-import { TextGenerationError } from "@t3tools/contracts";
+import * as TerminalManager from "../terminal/Manager.ts";
+import * as TextGeneration from "../textGeneration/TextGeneration.ts";
+import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
+import * as VcsProvisioningService from "../vcs/VcsProvisioningService.ts";
+import * as VcsStatusBroadcaster from "../vcs/VcsStatusBroadcaster.ts";
+import * as WorkspaceEntries from "../workspace/WorkspaceEntries.ts";
+import * as WorkspaceFileSystem from "../workspace/WorkspaceFileSystem.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
+import * as RunnerCheckout from "./RunnerCheckout.ts";
+import { RunnerRpcHandlersLive, resolveRunnerBinding } from "./RunnerHandlers.ts";
 import { RunnerOutbox, layer as RunnerOutboxLayer } from "./RunnerOutbox.ts";
-import {
-  RUNNER_PROTOCOL_VERSION,
-  RUNNER_WS_PATH,
-  RunnerRpcGroup,
-  RunnerWorkspaceError,
-} from "./RunnerProtocol.ts";
+import * as RunnerProjectionSnapshotQuery from "./RunnerProjectionSnapshotQuery.ts";
 
-type RunnerDriversEnv = ClaudeDriverEnv | CodexDriverEnv;
+/** Time given to session-exit events to reach the outbox on graceful shutdown. */
+const SHUTDOWN_DRAIN = "300 millis";
 
-const RUNNER_DRIVERS: ReadonlyArray<AnyProviderDriver<RunnerDriversEnv>> = [
-  ClaudeDriver,
-  CodexDriver,
-];
-
-/** `T3CODE_RUNNER_DRIVERS=claudeAgent,codex` selects which drivers this runner hosts. */
-const selectRunnerDrivers = () => {
-  const wanted = new Set(
-    (process.env.T3CODE_RUNNER_DRIVERS ?? "claudeAgent,codex")
-      .split(",")
-      .map((value) => value.trim())
-      .filter((value) => value.length > 0),
-  );
-  return RUNNER_DRIVERS.filter((driver) => wanted.has(driver.driverKind));
-};
-
-const RunnerRegistryLive = Layer.unwrap(
-  Effect.sync(() => makeProviderInstanceRegistryHydration(selectRunnerDrivers())),
+/**
+ * `T3CODE_RUNNER_DRIVERS=claudeAgent,codex` limits the hosted drivers (for
+ * development and tests); by default a runner hosts every built-in driver.
+ */
+const RunnerProviderInstanceRegistryLive = Layer.unwrap(
+  Effect.gen(function* () {
+    const config = yield* ServerConfig;
+    const drivers = resolveBuiltInDrivers({ museCodeEnabled: config.museCodeEnabled });
+    const wanted = new Set(
+      (process.env.T3CODE_RUNNER_DRIVERS ?? "")
+        .split(",")
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0),
+    );
+    return makeProviderInstanceRegistryHydration(
+      wanted.size === 0 ? drivers : drivers.filter((driver) => wanted.has(driver.driverKind)),
+    );
+  }),
 );
 
 /** Appends every hosted adapter's runtime events to the outbox. */
@@ -82,14 +94,9 @@ const RunnerEventPumpLive = Layer.effectDiscard(
     const outbox = yield* RunnerOutbox;
     const subscribed = new Map<ProviderInstanceId, ProviderAdapterShape<ProviderAdapterError>>();
     const reconcile = Effect.gen(function* () {
-      const instances = yield* registry.listInstances;
-      for (const instance of instances) {
+      for (const instance of yield* registry.listInstances) {
         if (subscribed.get(instance.instanceId) === instance.adapter) continue;
         subscribed.set(instance.instanceId, instance.adapter);
-        yield* Effect.logInfo("runner hosting provider instance", {
-          instanceId: instance.instanceId,
-          driver: instance.driverKind,
-        });
         yield* Stream.runForEach(instance.adapter.streamEvents, (event) =>
           outbox.append({ ...event, providerInstanceId: instance.instanceId }),
         ).pipe(Effect.forkScoped);
@@ -101,17 +108,14 @@ const RunnerEventPumpLive = Layer.effectDiscard(
       Effect.forkScoped,
     );
     // Registered after the pumps, so it runs first on shutdown: stopping the
-    // sessions while the pumps still run outboxes their exit events, and the
-    // hub learns the sessions ended instead of waiting on a silent turn.
+    // sessions while the pumps still run commits their exit events, and the
+    // hub learns the turns ended instead of waiting on silent sessions.
     yield* Effect.addFinalizer(() =>
       Effect.gen(function* () {
-        const instances = yield* registry.listInstances;
-        yield* Effect.forEach(
-          instances,
-          (instance) => instance.adapter.stopAll().pipe(Effect.ignore),
-          { discard: true },
-        );
-        yield* Effect.sleep("300 millis");
+        for (const instance of yield* registry.listInstances) {
+          yield* instance.adapter.stopAll().pipe(Effect.ignore);
+        }
+        yield* Effect.sleep(SHUTDOWN_DRAIN);
         yield* Effect.logInfo("runner drained provider sessions into the outbox", {
           ...(yield* outbox.stats),
         });
@@ -120,202 +124,25 @@ const RunnerEventPumpLive = Layer.effectDiscard(
   }),
 );
 
-const RunnerRpcHandlersLive = RunnerRpcGroup.toLayer(
-  Effect.gen(function* () {
-    const registry = yield* ProviderInstanceRegistry;
-    const checkpointStore = yield* CheckpointStore.CheckpointStore;
-    const workspacePaths = yield* WorkspacePaths.WorkspacePaths;
-    const outbox = yield* RunnerOutbox;
+const bearerMatches = (header: string | undefined, expected: string): boolean => {
+  if (header === undefined || !header.startsWith("Bearer ")) return false;
+  const presented = Buffer.from(header.slice("Bearer ".length));
+  const wanted = Buffer.from(expected);
+  return presented.length === wanted.length && NodeCrypto.timingSafeEqual(presented, wanted);
+};
 
-    const instanceOf = (instanceId: ProviderInstanceId) =>
-      registry.getInstance(instanceId).pipe(
-        Effect.flatMap((instance) =>
-          instance
-            ? Effect.succeed(instance)
-            : Effect.fail(
-                new ProviderAdapterValidationError({
-                  provider: String(instanceId),
-                  operation: "runner.resolveInstance",
-                  issue: `This runner does not host provider instance '${instanceId}'.`,
-                }),
-              ),
-        ),
-      );
-    const adapterOf = (instanceId: ProviderInstanceId) =>
-      instanceOf(instanceId).pipe(Effect.map((instance) => instance.adapter));
-    /** Logs each state-changing call with its duration, for protocol evidence. */
-    const logged = <A, E, R>(
-      method: string,
-      attributes: Record<string, unknown>,
-      effect: Effect.Effect<A, E, R>,
-    ) =>
-      Effect.gen(function* () {
-        const startedAt = yield* Clock.currentTimeMillis;
-        const exit = yield* Effect.exit(effect);
-        yield* Effect.logInfo(`runner rpc ${method}`, {
-          ...attributes,
-          ok: exit._tag === "Success",
-          ms: (yield* Clock.currentTimeMillis) - startedAt,
-        });
-        return yield* exit;
-      });
-    const textGenerationOf = (instanceId: ProviderInstanceId, operation: string) =>
-      instanceOf(instanceId).pipe(
-        Effect.map((instance) => instance.textGeneration),
-        Effect.mapError((error) => new TextGenerationError({ operation, detail: error.message })),
-      );
-
-    return RunnerRpcGroup.of({
-      "runner.hello": () =>
-        Effect.gen(function* () {
-          const stats = yield* outbox.stats;
-          const instances = yield* registry.listInstances;
-          return {
-            protocolVersion: RUNNER_PROTOCOL_VERSION,
-            runnerId: stats.runnerId,
-            bootId: stats.bootId,
-            headSequence: stats.headSequence,
-            ackedSequence: stats.ackedSequence,
-            instances: instances.map((instance) => instance.instanceId),
-          };
-        }),
-      "runner.provider.startSession": ({ instanceId, input }) =>
-        logged(
-          "startSession",
-          {
-            threadId: input.threadId,
-            cwd: input.cwd,
-            runtimeMode: input.runtimeMode,
-            resumeCursor: input.resumeCursor ?? null,
-          },
-          adapterOf(instanceId).pipe(Effect.flatMap((adapter) => adapter.startSession(input))),
-        ),
-      "runner.provider.sendTurn": ({ instanceId, input }) =>
-        logged(
-          "sendTurn",
-          { threadId: input.threadId },
-          adapterOf(instanceId).pipe(Effect.flatMap((adapter) => adapter.sendTurn(input))),
-        ),
-      "runner.provider.interruptTurn": ({ instanceId, threadId, turnId }) =>
-        logged(
-          "interruptTurn",
-          { threadId, turnId },
-          adapterOf(instanceId).pipe(
-            Effect.flatMap((adapter) => adapter.interruptTurn(threadId, turnId)),
-          ),
-        ),
-      "runner.provider.respondToRequest": ({ instanceId, threadId, requestId, decision }) =>
-        logged(
-          "respondToRequest",
-          { threadId, requestId, decision },
-          adapterOf(instanceId).pipe(
-            Effect.flatMap((adapter) => adapter.respondToRequest(threadId, requestId, decision)),
-          ),
-        ),
-      "runner.provider.respondToUserInput": ({ instanceId, threadId, requestId, answers }) =>
-        adapterOf(instanceId).pipe(
-          Effect.flatMap((adapter) => adapter.respondToUserInput(threadId, requestId, answers)),
-        ),
-      "runner.provider.stopSession": ({ instanceId, threadId }) =>
-        logged(
-          "stopSession",
-          { threadId },
-          adapterOf(instanceId).pipe(Effect.flatMap((adapter) => adapter.stopSession(threadId))),
-        ),
-      "runner.provider.listSessions": ({ instanceId }) =>
-        adapterOf(instanceId).pipe(Effect.flatMap((adapter) => adapter.listSessions())),
-      "runner.provider.readThread": ({ instanceId, threadId }) =>
-        adapterOf(instanceId).pipe(Effect.flatMap((adapter) => adapter.readThread(threadId))),
-      "runner.provider.rollbackThread": ({ instanceId, threadId, numTurns }) =>
-        adapterOf(instanceId).pipe(
-          Effect.flatMap((adapter) => adapter.rollbackThread(threadId, numTurns)),
-        ),
-      "runner.provider.getCapabilities": ({ instanceId, refresh }) =>
-        instanceOf(instanceId).pipe(
-          Effect.flatMap((instance) =>
-            (refresh ? instance.snapshot.refresh : instance.snapshot.getSnapshot).pipe(
-              Effect.map((snapshot) => ({
-                snapshot,
-                sessionModelSwitch: instance.adapter.capabilities.sessionModelSwitch,
-              })),
-            ),
-          ),
-        ),
-      "runner.text.generateThreadTitle": ({ instanceId, ...request }) =>
-        logged(
-          "text.generateThreadTitle",
-          { cwd: request.cwd, model: request.modelSelection.model },
-          textGenerationOf(instanceId, "generateThreadTitle").pipe(
-            Effect.flatMap((textGeneration) => textGeneration.generateThreadTitle(request)),
-          ),
-        ),
-      "runner.text.generateBranchName": ({ instanceId, ...request }) =>
-        textGenerationOf(instanceId, "generateBranchName").pipe(
-          Effect.flatMap((textGeneration) => textGeneration.generateBranchName(request)),
-        ),
-      "runner.events.subscribe": ({ afterSequence }) => outbox.subscribe(afterSequence),
-      "runner.events.ack": ({ throughSequence }) => outbox.ack(throughSequence),
-      // Same `.git` presence check the in-process reactors used, so hub mode
-      // keeps the exact checkpoint eligibility rule.
-      "runner.checkpoint.isGitRepository": ({ cwd }) => Effect.sync(() => isGitRepository(cwd)),
-      "runner.checkpoint.capture": (input) =>
-        logged(
-          "checkpoint.capture",
-          { checkpointRef: input.checkpointRef },
-          checkpointStore.captureCheckpoint(input),
-        ),
-      "runner.checkpoint.hasRef": (input) => checkpointStore.hasCheckpointRef(input),
-      "runner.checkpoint.restore": ({ cwd, checkpointRef, fallbackToHead }) =>
-        checkpointStore.restoreCheckpoint({
-          cwd,
-          checkpointRef,
-          ...(fallbackToHead !== undefined ? { fallbackToHead } : {}),
-        }),
-      "runner.checkpoint.diff": ({ fallbackFromToHead, ...input }) =>
-        checkpointStore.diffCheckpoints({
-          ...input,
-          ...(fallbackFromToHead !== undefined ? { fallbackFromToHead } : {}),
-        }),
-      "runner.checkpoint.deleteRefs": (input) => checkpointStore.deleteCheckpointRefs(input),
-      "runner.workspace.normalizeRoot": ({ workspaceRoot, createIfMissing }) =>
-        workspacePaths
-          .normalizeWorkspaceRoot(
-            workspaceRoot,
-            createIfMissing !== undefined ? { createIfMissing } : undefined,
-          )
-          .pipe(
-            Effect.mapError(
-              (error) =>
-                new RunnerWorkspaceError({
-                  operation: "normalizeRoot",
-                  workspaceRoot,
-                  reason:
-                    error._tag === "WorkspaceRootNotExistsError"
-                      ? "not-exists"
-                      : error._tag === "WorkspaceRootNotDirectoryError"
-                        ? "not-directory"
-                        : error._tag === "WorkspaceRootCreateFailedError"
-                          ? "create-failed"
-                          : "stat-failed",
-                  detail: error.message,
-                }),
-            ),
-          ),
-    });
-  }),
-);
-
-function tokenMatches(presented: string | null, expected: string): boolean {
-  if (presented === null) return false;
-  const left = Buffer.from(presented);
-  const right = Buffer.from(expected);
-  return left.length === right.length && NodeCrypto.timingSafeEqual(left, right);
-}
-
+/**
+ * The runner protocol endpoint. The hub authenticates with
+ * `Authorization: Bearer T3CODE_RUNNER_TOKEN`; without a configured token the
+ * endpoint is open, which is only acceptable on loopback in development.
+ */
 const RunnerRouteLive = Layer.unwrap(
   Effect.gen(function* () {
     const config = yield* ServerConfig;
     const expectedToken = config.runnerToken;
+    if (!expectedToken) {
+      yield* Effect.logWarning("runner has no T3CODE_RUNNER_TOKEN; the protocol endpoint is open");
+    }
     const handlers = yield* Layer.build(
       RunnerRpcHandlersLive.pipe(Layer.provideMerge(RpcSerialization.layerJson)),
     );
@@ -323,33 +150,82 @@ const RunnerRouteLive = Layer.unwrap(
       disableTracing: true,
     }).pipe(Effect.provide(handlers));
     return HttpRouter.add("GET", RUNNER_WS_PATH, (request) =>
-      Effect.gen(function* () {
-        const token = new URL(request.url, "http://runner.local").searchParams.get("token");
-        if (expectedToken && !tokenMatches(token, expectedToken)) {
-          return HttpServerResponse.text("unauthorized", { status: 401 });
-        }
-        return yield* rpcHttpEffect;
-      }),
+      expectedToken && !bearerMatches(request.headers.authorization, expectedToken)
+        ? Effect.succeed(HttpServerResponse.text("unauthorized", { status: 401 }))
+        : rpcHttpEffect,
     );
   }),
 );
 
-const RunnerServicesLive = Layer.mergeAll(RunnerEventPumpLive, RunnerRouteLive).pipe(
-  Layer.provideMerge(RunnerOutboxLayer),
-  Layer.provideMerge(RunnerRegistryLive),
+const RunnerTerminalLive = TerminalManager.layer.pipe(
+  Layer.provide(PtyAdapterLive),
+  Layer.provide(PortScanner.layer.pipe(Layer.provide(ProcessRunner.layer))),
+);
+
+const RunnerWorkspaceLive = Layer.mergeAll(
+  WorkspaceFileSystem.layer.pipe(
+    Layer.provide(WorkspaceEntries.layer.pipe(Layer.provide(WorkspacePaths.layer))),
+  ),
+  WorkspaceEntries.layer,
+).pipe(Layer.provideMerge(WorkspacePaths.layer));
+
+const RunnerGitLive = Layer.mergeAll(
+  GitWorkflowService.layer,
+  ReviewService.layer,
+  VcsProvisioningService.layer,
+  CheckpointStore.layer,
+  RunnerCheckout.layer,
+).pipe(
   Layer.provideMerge(
-    Layer.mergeAll(
-      CheckpointStore.layer.pipe(Layer.provide(VcsDriverRegistryLayerLive)),
-      WorkspacePaths.layer,
+    GitManager.layer.pipe(
+      Layer.provideMerge(ProjectSetupScriptRunner.layer),
+      Layer.provideMerge(TextGeneration.layer),
+      Layer.provideMerge(SourceControlProviderRegistryLayerLive),
     ),
   ),
-  Layer.provideMerge(Layer.mergeAll(ProviderEventLoggers.layer, ModelManifest.layer)),
+  Layer.provideMerge(GitVcsDriver.layer),
+  Layer.provideMerge(VcsDriverRegistryLayerLive),
+);
+
+const RunnerCheckoutServicesLive = Layer.mergeAll(
+  VcsStatusBroadcaster.layer.pipe(Layer.provideMerge(RunnerGitLive)),
+  RunnerWorkspaceLive,
+).pipe(
+  Layer.provideMerge(RunnerTerminalLive),
+  Layer.provideMerge(RunnerProjectionSnapshotQuery.layer),
+);
+
+const RunnerServicesLive = Layer.mergeAll(RunnerEventPumpLive, RunnerRouteLive).pipe(
+  Layer.provideMerge(RunnerOutboxLayer),
+  Layer.provideMerge(RunnerCheckoutServicesLive),
+  Layer.provideMerge(ProviderRegistryLive),
+  Layer.provideMerge(RunnerProviderInstanceRegistryLive),
+  Layer.provideMerge(
+    Layer.mergeAll(
+      ProviderEventLoggers.layer,
+      ModelManifest.layer,
+      OpenCodeRuntime.OpenCodeRuntimeLive,
+    ),
+  ),
   Layer.provideMerge(BackgroundLayerLive),
+);
+
+/** Fails fast with a clear message when the runner is not bound to a thread. */
+const RunnerBindingCheckLive = Layer.effectDiscard(
+  resolveRunnerBinding.pipe(
+    Effect.tap((binding) =>
+      Effect.logInfo("runner serving thread", {
+        threadId: binding.threadId,
+        checkout: binding.checkout,
+      }),
+    ),
+  ),
 );
 
 export const makeRunnerLayer = HttpRouter.serve(RunnerServicesLive, {
   disableLogger: true,
 }).pipe(
+  Layer.provideMerge(RunnerBindingCheckLive),
   Layer.provideMerge(HttpServerLive),
   Layer.provide(ApplicationObservabilityLive),
   Layer.provideMerge(FetchHttpClient.layer),
