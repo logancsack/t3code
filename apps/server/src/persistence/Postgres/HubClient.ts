@@ -112,6 +112,30 @@ const withTenantTransaction = <A>(
     }),
   );
 
+// Postgres `text` cannot hold U+0000, which SQLite stores happily (provider
+// output occasionally contains it). Replace it in string parameters instead of
+// failing the write; JSON text keeps its escaped `\u0000` form and is handled
+// where it is parsed.
+const withoutNul = (params: ReadonlyArray<unknown>): ReadonlyArray<unknown> =>
+  params.some((param) => typeof param === "string" && param.includes("\u0000"))
+    ? params.map((param) =>
+        typeof param === "string" ? param.replaceAll("\u0000", "\uFFFD") : param,
+      )
+    : params;
+
+const sanitizingParameters = (connection: SqlConnection.Connection): SqlConnection.Connection => ({
+  execute: (sql, params, transformRows) =>
+    connection.execute(sql, withoutNul(params), transformRows),
+  executeRaw: (sql, params) => connection.executeRaw(sql, withoutNul(params)),
+  executeValues: (sql, params) => connection.executeValues(sql, withoutNul(params)),
+  executeValuesUnprepared: (sql, params) =>
+    connection.executeValuesUnprepared(sql, withoutNul(params)),
+  executeUnprepared: (sql, params, transformRows) =>
+    connection.executeUnprepared(sql, withoutNul(params), transformRows),
+  executeStream: (sql, params, transformRows) =>
+    connection.executeStream(sql, withoutNul(params), transformRows),
+});
+
 /**
  * Wraps a pooled client so every statement and transaction carries the tenant.
  *
@@ -152,8 +176,10 @@ export const makeTenantSqlClient = (base: PgClient.PgClient, tenantId: string) =
     return yield* SqlClient.make({
       // `reserve` pins one pooled connection for the statement, so the tenant
       // transaction and the statement share it.
-      acquirer: Effect.map(base.reserve, autocommit),
-      transactionAcquirer: base.reserve,
+      acquirer: Effect.map(base.reserve, (connection) =>
+        autocommit(sanitizingParameters(connection)),
+      ),
+      transactionAcquirer: Effect.map(base.reserve, sanitizingParameters),
       compiler: PgClient.makeCompiler(),
       spanAttributes: [
         ["db.system.name", "postgresql"],
