@@ -131,6 +131,14 @@ const EnvServerConfig = Config.all({
     Config.option,
     Config.map(Option.getOrUndefined),
   ),
+  runnerUrl: Config.string("T3CODE_RUNNER_URL").pipe(
+    Config.option,
+    Config.map(Option.getOrUndefined),
+  ),
+  runnerToken: Config.string("T3CODE_RUNNER_TOKEN").pipe(
+    Config.option,
+    Config.map(Option.getOrUndefined),
+  ),
   bootstrapFd: Config.int("T3CODE_BOOTSTRAP_FD").pipe(
     Config.option,
     Config.map(Option.getOrUndefined),
@@ -391,6 +399,8 @@ export const resolveServerConfig = (
       museCodeEnabled: env.museCodeEnabled ?? !env.managedDevPc,
       primeAgentSubscriptionOAuthEnabled: env.primeAgentSubscriptionOAuthEnabled,
       managedGatewayToken: env.managedGatewayToken,
+      runnerUrl: env.runnerUrl,
+      runnerToken: env.runnerToken,
       startupPresentation,
       desktopBootstrapToken,
       desktopTelemetryFd,

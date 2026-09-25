@@ -98,6 +98,14 @@ export class ServerConfig extends Context.Service<
      * managed automation routes that are never exposed by standalone T3 Code.
      */
     readonly managedGatewayToken?: string | undefined;
+    /**
+     * Hub mode (prototype): when set, this server owns no checkout. Provider
+     * sessions, checkpoints and workspace validation run on the runner at this
+     * WebSocket URL (see `runner/`).
+     */
+    readonly runnerUrl?: string | undefined;
+    /** Shared bearer secret presented to the runner (hub) or required from hubs (runner). */
+    readonly runnerToken?: string | undefined;
     readonly startupPresentation: StartupPresentation;
     readonly desktopBootstrapToken: string | undefined;
     readonly desktopTelemetryFd?: number | undefined;

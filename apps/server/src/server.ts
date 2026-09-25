@@ -134,6 +134,10 @@ import * as NetService from "@t3tools/shared/Net";
 import * as RelayClient from "@t3tools/shared/relayClient";
 import { disableTailscaleServe, ensureTailscaleServe } from "@t3tools/tailscale";
 import { forkParked, ServerActivation } from "./serverActivation.ts";
+import { CheckoutGitProbe, localCheckoutGitProbe } from "./git/CheckoutGitProbe.ts";
+import * as HubLayers from "./runner/hub/HubLayers.ts";
+import * as RunnerClient from "./runner/hub/RunnerClient.ts";
+import * as RunnerDelivery from "./runner/hub/RunnerDelivery.ts";
 
 // MCP handoff thread IDs include escaped provenance and can exceed find-my-way's
 // 100-character default for one path segment.
@@ -147,7 +151,7 @@ export const HTTP_ROUTER_CONFIG = {
 // those finalizers get a chance to run.
 const HTTP_PREEMPTIVE_SHUTDOWN_GRACE_MS = 0;
 const ResourceAttributionLayerLive = ResourceAttribution.layer;
-const ApplicationObservabilityLive = ObservabilityLive.pipe(
+export const ApplicationObservabilityLive = ObservabilityLive.pipe(
   Layer.provideMerge(ResourceAttributionLayerLive),
 );
 
@@ -163,7 +167,22 @@ const PtyAdapterLive = Layer.unwrap(
   }),
 );
 
-const ServerSettingsLayerLive = ServerSettings.layer.pipe(
+/**
+ * Picks the checkout-bound implementation (`local`) or the hub substitute
+ * (`hub`) depending on whether this server delegates to a runner.
+ */
+const byRunnerMode = <A, E1, R1, E2, R2>(
+  local: Layer.Layer<A, E1, R1>,
+  hub: Layer.Layer<A, E2, R2>,
+): Layer.Layer<A, E1 | E2, R1 | R2 | ServerConfig.ServerConfig> =>
+  Layer.unwrap(
+    Effect.gen(function* () {
+      const config = yield* ServerConfig.ServerConfig;
+      return (config.runnerUrl ? hub : local) as Layer.Layer<A, E1 | E2, R1 | R2>;
+    }),
+  );
+
+export const ServerSettingsLayerLive = ServerSettings.layer.pipe(
   Layer.provide(ServerSecretStore.layer),
   Layer.provideMerge(SqlitePersistenceLayerLive),
 );
@@ -184,7 +203,7 @@ const HostPowerMonitorLayerLive = HostPowerMonitor.layer.pipe(
   Layer.provide(DesktopTelemetryReceiverLayerLive),
 );
 
-const BackgroundLayerLive = BackgroundPolicy.layer.pipe(
+export const BackgroundLayerLive = BackgroundPolicy.layer.pipe(
   Layer.provide(HostPowerMonitorLayerLive),
   Layer.provideMerge(ServerSettingsLayerLive),
 );
@@ -213,7 +232,7 @@ const AgentAwarenessRelayLayerLive = Layer.unwrap(
   }),
 );
 
-const HttpServerLive = Layer.unwrap(
+export const HttpServerLive = Layer.unwrap(
   Effect.gen(function* () {
     const config = yield* ServerConfig.ServerConfig;
     if (typeof Bun !== "undefined") {
@@ -260,7 +279,7 @@ const HttpServerLive = Layer.unwrap(
   }),
 );
 
-const PlatformServicesLive = Layer.unwrap(
+export const PlatformServicesLive = Layer.unwrap(
   Effect.gen(function* () {
     if (typeof Bun !== "undefined") {
       const { layer } = yield* Effect.promise(() => import("@effect/platform-bun/BunServices"));
@@ -272,7 +291,13 @@ const PlatformServicesLive = Layer.unwrap(
   }),
 );
 
+const CheckoutGitProbeLayerLive = byRunnerMode(
+  Layer.succeed(CheckoutGitProbe, localCheckoutGitProbe),
+  HubLayers.remoteCheckoutGitProbeLayer,
+);
+
 const ReactorLayerLive = Layer.empty.pipe(
+  Layer.provideMerge(RunnerDelivery.layer),
   Layer.provideMerge(OrchestrationReactorLive),
   Layer.provideMerge(ProviderRuntimeIngestionLive),
   Layer.provideMerge(ProviderCommandReactorLive),
@@ -281,6 +306,7 @@ const ReactorLayerLive = Layer.empty.pipe(
   Layer.provideMerge(ThreadSettlementReactor.layer),
   Layer.provideMerge(AgentAwarenessRelayLayerLive),
   Layer.provideMerge(RuntimeReceiptBusLive),
+  Layer.provideMerge(CheckoutGitProbeLayerLive),
 );
 
 const ProviderSessionDirectoryLayerLive = ProviderSessionDirectoryLive.pipe(
@@ -300,7 +326,7 @@ const ProviderLayerLive = ProviderServiceLive.pipe(
 
 const PersistenceLayerLive = Layer.empty.pipe(Layer.provideMerge(SqlitePersistenceLayerLive));
 
-const VcsDriverRegistryLayerLive = VcsDriverRegistry.layer.pipe(
+export const VcsDriverRegistryLayerLive = VcsDriverRegistry.layer.pipe(
   Layer.provide(VcsProjectConfig.layer),
 );
 
@@ -356,12 +382,22 @@ const VcsLayerLive = Layer.empty.pipe(
   Layer.provideMerge(ReviewLayerLive),
   Layer.provideMerge(GrokReviewLayerLive),
   Layer.provideMerge(SourceControlRepositoryServiceLayerLive),
-  Layer.provideMerge(VcsStatusBroadcaster.layer.pipe(Layer.provide(GitWorkflowLayerLive))),
+  Layer.provideMerge(
+    byRunnerMode(
+      VcsStatusBroadcaster.layer.pipe(Layer.provide(GitWorkflowLayerLive)),
+      HubLayers.hubVcsStatusBroadcasterLayer,
+    ),
+  ),
 );
 
 const CheckpointingLayerLive = Layer.empty.pipe(
   Layer.provideMerge(CheckpointDiffQuery.layer),
-  Layer.provideMerge(CheckpointStore.layer.pipe(Layer.provide(VcsDriverRegistryLayerLive))),
+  Layer.provideMerge(
+    byRunnerMode(
+      CheckpointStore.layer.pipe(Layer.provide(VcsDriverRegistryLayerLive)),
+      HubLayers.remoteCheckpointStoreLayer,
+    ),
+  ),
 );
 
 const PortScannerLayerLive = PortScanner.layer.pipe(Layer.provide(ProcessRunner.layer));
@@ -384,8 +420,8 @@ const WorkspaceFileSystemLayerLive = WorkspaceFileSystem.layer.pipe(
 );
 
 const WorkspaceLayerLive = Layer.mergeAll(
-  WorkspacePaths.layer,
-  WorkspaceEntriesLayerLive,
+  byRunnerMode(WorkspacePaths.layer, HubLayers.remoteWorkspacePathsLayer),
+  byRunnerMode(WorkspaceEntriesLayerLive, HubLayers.hubWorkspaceEntriesLayer),
   WorkspaceFileSystemLayerLive,
 );
 
@@ -456,7 +492,9 @@ const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
   Layer.provideMerge(OpenCodeRuntime.OpenCodeRuntimeLive),
   Layer.provideMerge(WorkspaceLayerLive),
   Layer.provideMerge(ProjectFaviconResolverLayerLive),
-  Layer.provideMerge(RepositoryIdentityResolver.layer),
+  Layer.provideMerge(
+    byRunnerMode(RepositoryIdentityResolver.layer, HubLayers.hubRepositoryIdentityResolverLayer),
+  ),
   Layer.provideMerge(ServerEnvironmentLayerLive),
   Layer.provideMerge(AuthLayerLive),
   Layer.provideMerge(ServerSecretStore.layer),
@@ -735,6 +773,7 @@ export const makeServerLayer = Layer.unwrap(
 
     return serverApplicationLayer.pipe(
       Layer.provideMerge(runtimeServicesLive),
+      Layer.provideMerge(RunnerClient.layer),
       Layer.provide(activationLayer),
       Layer.provideMerge(serverRelayBrokerTracingLayer),
       Layer.provideMerge(HttpServerLive),

@@ -1,0 +1,85 @@
+[19:26:04.742] thread.turn.start accepted in 38 ms
+[19:26:04.833] message user: "Without using any tools: which lines did you add to notes.txt earlier in this conversation? Reply with the exact lines only, one per line."
+[19:26:08.271] activity context-window.updated: Context window updated
+[19:26:08.271] message assistant: "edited by the remote runner\nafter hub restart"
+[19:26:09.103] activity context-window.updated: Context window updated
+[19:26:09.103] activity checkpoint.captured: Checkpoint captured
+[19:26:09.103] turn 3aec0919-df29-4679-8037-0d3deaf7fea3 settled: completed after 4360 ms (first assistant text after 3528 ms)
+{
+  "latestTurn": {
+    "turnId": "3aec0919-df29-4679-8037-0d3deaf7fea3",
+    "state": "completed",
+    "requestedAt": "2026-09-25T19:26:04.710Z",
+    "startedAt": "2026-09-25T19:26:04.710Z",
+    "completedAt": "2026-09-25T19:26:08.669Z",
+    "assistantMessageId": "assistant:b663b4d0-215b-4770-8878-3a1d64c12568"
+  },
+  "session": {
+    "status": "ready",
+    "activeTurnId": null,
+    "lastError": null
+  },
+  "messageCount": 14,
+  "activityCount": 47,
+  "checkpoints": [
+    {
+      "turnCount": 1,
+      "status": "ready",
+      "ref": "refs/t3/checkpoints/dGhyZWFkLWM5ZmM3M2VmLWE4ZmItNGU3NS05OTNmLTJhYTI5ODdlMDk2Nw/turn/1",
+      "files": [
+        "notes.txt +1/-0"
+      ]
+    },
+    {
+      "turnCount": 2,
+      "status": "ready",
+      "ref": "refs/t3/checkpoints/dGhyZWFkLWM5ZmM3M2VmLWE4ZmItNGU3NS05OTNmLTJhYTI5ODdlMDk2Nw/turn/2",
+      "files": []
+    },
+    {
+      "turnCount": 3,
+      "status": "ready",
+      "ref": "refs/t3/checkpoints/dGhyZWFkLWM5ZmM3M2VmLWE4ZmItNGU3NS05OTNmLTJhYTI5ODdlMDk2Nw/turn/3",
+      "files": []
+    },
+    {
+      "turnCount": 4,
+      "status": "ready",
+      "ref": "refs/t3/checkpoints/dGhyZWFkLWM5ZmM3M2VmLWE4ZmItNGU3NS05OTNmLTJhYTI5ODdlMDk2Nw/turn/4",
+      "files": []
+    },
+    {
+      "turnCount": 5,
+      "status": "ready",
+      "ref": "refs/t3/checkpoints/dGhyZWFkLWM5ZmM3M2VmLWE4ZmItNGU3NS05OTNmLTJhYTI5ODdlMDk2Nw/turn/5",
+      "files": []
+    },
+    {
+      "turnCount": 6,
+      "status": "ready",
+      "ref": "refs/t3/checkpoints/dGhyZWFkLWM5ZmM3M2VmLWE4ZmItNGU3NS05OTNmLTJhYTI5ODdlMDk2Nw/turn/6",
+      "files": []
+    },
+    {
+      "turnCount": 7,
+      "status": "ready",
+      "ref": "refs/t3/checkpoints/dGhyZWFkLWM5ZmM3M2VmLWE4ZmItNGU3NS05OTNmLTJhYTI5ODdlMDk2Nw/turn/7",
+      "files": []
+    },
+    {
+      "turnCount": 8,
+      "status": "ready",
+      "ref": "refs/t3/checkpoints/dGhyZWFkLWM5ZmM3M2VmLWE4ZmItNGU3NS05OTNmLTJhYTI5ODdlMDk2Nw/turn/8",
+      "files": [
+        "notes.txt +1/-0"
+      ]
+    },
+    {
+      "turnCount": 9,
+      "status": "ready",
+      "ref": "refs/t3/checkpoints/dGhyZWFkLWM5ZmM3M2VmLWE4ZmItNGU3NS05OTNmLTJhYTI5ODdlMDk2Nw/turn/9",
+      "files": []
+    }
+  ],
+  "pendingApprovals": []
+}

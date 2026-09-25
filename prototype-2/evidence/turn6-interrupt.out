@@ -1,0 +1,72 @@
+[19:24:23.128] thread.turn.start accepted in 26 ms
+[19:24:23.147] message user: "Count from 1 to 1500, writing each number on its own line as plain text. Do not use any tools."
+[19:24:27.260] interrupting turn 01b724b4-5435-4a80-ae29-49dbcacbabb0
+[19:24:27.685] activity context-window.updated: Context window updated
+[19:24:27.685] activity checkpoint.captured: Checkpoint captured
+[19:24:27.685] activity checkpoint.captured: Checkpoint captured
+[19:24:27.685] message assistant: "1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n20\n21\n22\n23\n24\n25\n26\n27\n28\n29\n30\n31\n32\n33\n34\n35\n36\n37\n38\n39\n40\n41\n42\n43\n44\n45\n46\n47\n48\n49\n50\n51\n52\n53\n54\n55\n56\n5"
+[19:24:27.685] turn 01b724b4-5435-4a80-ae29-49dbcacbabb0 settled: completed after 4556 ms (first assistant text after 4556 ms)
+{
+  "latestTurn": {
+    "turnId": "01b724b4-5435-4a80-ae29-49dbcacbabb0",
+    "state": "completed",
+    "requestedAt": "2026-09-25T19:24:23.108Z",
+    "startedAt": "2026-09-25T19:24:23.108Z",
+    "completedAt": "2026-09-25T19:24:27.276Z",
+    "assistantMessageId": "assistant:fd4dfdf7-ef55-4530-a742-4b1be6390a7c"
+  },
+  "session": {
+    "status": "stopped",
+    "activeTurnId": null,
+    "lastError": null
+  },
+  "messageCount": 10,
+  "activityCount": 33,
+  "checkpoints": [
+    {
+      "turnCount": 1,
+      "status": "ready",
+      "ref": "refs/t3/checkpoints/dGhyZWFkLWM5ZmM3M2VmLWE4ZmItNGU3NS05OTNmLTJhYTI5ODdlMDk2Nw/turn/1",
+      "files": [
+        "notes.txt +1/-0"
+      ]
+    },
+    {
+      "turnCount": 2,
+      "status": "ready",
+      "ref": "refs/t3/checkpoints/dGhyZWFkLWM5ZmM3M2VmLWE4ZmItNGU3NS05OTNmLTJhYTI5ODdlMDk2Nw/turn/2",
+      "files": []
+    },
+    {
+      "turnCount": 3,
+      "status": "ready",
+      "ref": "refs/t3/checkpoints/dGhyZWFkLWM5ZmM3M2VmLWE4ZmItNGU3NS05OTNmLTJhYTI5ODdlMDk2Nw/turn/3",
+      "files": []
+    },
+    {
+      "turnCount": 4,
+      "status": "ready",
+      "ref": "refs/t3/checkpoints/dGhyZWFkLWM5ZmM3M2VmLWE4ZmItNGU3NS05OTNmLTJhYTI5ODdlMDk2Nw/turn/4",
+      "files": []
+    },
+    {
+      "turnCount": 5,
+      "status": "ready",
+      "ref": "refs/t3/checkpoints/dGhyZWFkLWM5ZmM3M2VmLWE4ZmItNGU3NS05OTNmLTJhYTI5ODdlMDk2Nw/turn/5",
+      "files": []
+    },
+    {
+      "turnCount": 6,
+      "status": "ready",
+      "ref": "refs/t3/checkpoints/dGhyZWFkLWM5ZmM3M2VmLWE4ZmItNGU3NS05OTNmLTJhYTI5ODdlMDk2Nw/turn/6",
+      "files": []
+    },
+    {
+      "turnCount": 7,
+      "status": "ready",
+      "ref": "refs/t3/checkpoints/dGhyZWFkLWM5ZmM3M2VmLWE4ZmItNGU3NS05OTNmLTJhYTI5ODdlMDk2Nw/turn/7",
+      "files": []
+    }
+  ],
+  "pendingApprovals": []
+}

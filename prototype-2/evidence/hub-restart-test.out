@@ -1,0 +1,11 @@
+outbox head before turn: 368
+[19:24:56.968] command started on runner; stopping hub
+stopped pid 3600897 on :4411 in 107 ms
+[19:24:57.126] hub down; outbox head 379
+[19:25:20.363] approval requested while hub down:
+395 19:25:20.148 request.opened file_change_approval
+[19:25:20.590] outbox head 395; restarting hub
+ready in 8574 ms
+hub pid 3609589 (start->ready 8675 ms)
+scenario exit 0
+events produced by the runner while the hub was down: 379..405

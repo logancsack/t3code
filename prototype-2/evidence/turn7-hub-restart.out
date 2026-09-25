@@ -1,0 +1,124 @@
+[19:24:52.710] thread.turn.start accepted in 25 ms
+[19:24:52.746] message user: "Run the Bash command 'sleep 20' in the foreground (do not run it in the background). When it has finished, append the line 'after hub restart' to notes.txt. Rep"
+[19:24:56.878] activity tool.started: Command run started
+[19:24:57.281] hub unreachable: fetch failed
+[19:24:58.283] hub unreachable: fetch failed
+[19:24:59.285] hub unreachable: fetch failed
+[19:25:00.286] hub unreachable: fetch failed
+[19:25:01.291] hub unreachable: fetch failed
+[19:25:02.293] hub unreachable: fetch failed
+[19:25:03.296] hub unreachable: fetch failed
+[19:25:04.298] hub unreachable: fetch failed
+[19:25:05.300] hub unreachable: fetch failed
+[19:25:06.302] hub unreachable: fetch failed
+[19:25:07.303] hub unreachable: fetch failed
+[19:25:08.304] hub unreachable: fetch failed
+[19:25:09.306] hub unreachable: fetch failed
+[19:25:10.308] hub unreachable: fetch failed
+[19:25:11.310] hub unreachable: fetch failed
+[19:25:12.312] hub unreachable: fetch failed
+[19:25:13.314] hub unreachable: fetch failed
+[19:25:14.316] hub unreachable: fetch failed
+[19:25:15.318] hub unreachable: fetch failed
+[19:25:16.320] hub unreachable: fetch failed
+[19:25:17.321] hub unreachable: fetch failed
+[19:25:18.323] hub unreachable: fetch failed
+[19:25:19.325] hub unreachable: fetch failed
+[19:25:20.327] hub unreachable: fetch failed
+[19:25:21.328] hub unreachable: fetch failed
+[19:25:22.334] hub unreachable: fetch failed
+[19:25:23.336] hub unreachable: fetch failed
+[19:25:24.338] hub unreachable: fetch failed
+[19:25:25.340] hub unreachable: fetch failed
+[19:25:26.342] hub unreachable: fetch failed
+[19:25:27.398] activity tool.updated: Command run
+[19:25:27.398] activity context-window.updated: Context window updated
+[19:25:27.873] activity task.started: local_bash task started
+[19:25:27.873] activity task.completed: Task completed
+[19:25:28.306] activity tool.completed: Command run
+[19:25:28.306] activity tool.started: Tool call started
+[19:25:28.306] activity tool.completed: Tool call
+[19:25:28.306] activity tool.started: File change started
+[19:25:28.306] activity tool.updated: File change
+[19:25:28.306] activity context-window.updated: Context window updated
+[19:25:28.306] activity approval.requested: File-change approval requested
+[19:25:28.306] approving 1ec080d3-2abc-4a2a-948a-d0d9f4afe95e (File-change approval requested: Edit: {"file_path":"/tmp/proto-runner/checkout/notes.txt","old_string":"hello fr)
+[19:25:28.352] approval dispatched in 46 ms
+[19:25:28.765] activity approval.resolved: Approval resolved
+[19:25:28.766] activity tool.completed: File change
+[19:25:30.046] activity context-window.updated: Context window updated
+[19:25:30.046] message assistant: "done"
+[19:25:30.957] activity context-window.updated: Context window updated
+[19:25:30.957] turn e3457ec4-8d3f-493b-ae23-3d56fae7b69d settled: completed after 38246 ms (first assistant text after 37335 ms)
+{
+  "latestTurn": {
+    "turnId": "e3457ec4-8d3f-493b-ae23-3d56fae7b69d",
+    "state": "completed",
+    "requestedAt": "2026-09-25T19:24:52.691Z",
+    "startedAt": "2026-09-25T19:24:52.691Z",
+    "completedAt": "2026-09-25T19:25:30.482Z",
+    "assistantMessageId": "assistant:fc0426b0-ff22-4fb1-a3d6-aaa2e4d8f2a3"
+  },
+  "session": {
+    "status": "ready",
+    "activeTurnId": null,
+    "lastError": null
+  },
+  "messageCount": 12,
+  "activityCount": 45,
+  "checkpoints": [
+    {
+      "turnCount": 1,
+      "status": "ready",
+      "ref": "refs/t3/checkpoints/dGhyZWFkLWM5ZmM3M2VmLWE4ZmItNGU3NS05OTNmLTJhYTI5ODdlMDk2Nw/turn/1",
+      "files": [
+        "notes.txt +1/-0"
+      ]
+    },
+    {
+      "turnCount": 2,
+      "status": "ready",
+      "ref": "refs/t3/checkpoints/dGhyZWFkLWM5ZmM3M2VmLWE4ZmItNGU3NS05OTNmLTJhYTI5ODdlMDk2Nw/turn/2",
+      "files": []
+    },
+    {
+      "turnCount": 3,
+      "status": "ready",
+      "ref": "refs/t3/checkpoints/dGhyZWFkLWM5ZmM3M2VmLWE4ZmItNGU3NS05OTNmLTJhYTI5ODdlMDk2Nw/turn/3",
+      "files": []
+    },
+    {
+      "turnCount": 4,
+      "status": "ready",
+      "ref": "refs/t3/checkpoints/dGhyZWFkLWM5ZmM3M2VmLWE4ZmItNGU3NS05OTNmLTJhYTI5ODdlMDk2Nw/turn/4",
+      "files": []
+    },
+    {
+      "turnCount": 5,
+      "status": "ready",
+      "ref": "refs/t3/checkpoints/dGhyZWFkLWM5ZmM3M2VmLWE4ZmItNGU3NS05OTNmLTJhYTI5ODdlMDk2Nw/turn/5",
+      "files": []
+    },
+    {
+      "turnCount": 6,
+      "status": "ready",
+      "ref": "refs/t3/checkpoints/dGhyZWFkLWM5ZmM3M2VmLWE4ZmItNGU3NS05OTNmLTJhYTI5ODdlMDk2Nw/turn/6",
+      "files": []
+    },
+    {
+      "turnCount": 7,
+      "status": "ready",
+      "ref": "refs/t3/checkpoints/dGhyZWFkLWM5ZmM3M2VmLWE4ZmItNGU3NS05OTNmLTJhYTI5ODdlMDk2Nw/turn/7",
+      "files": []
+    },
+    {
+      "turnCount": 8,
+      "status": "ready",
+      "ref": "refs/t3/checkpoints/dGhyZWFkLWM5ZmM3M2VmLWE4ZmItNGU3NS05OTNmLTJhYTI5ODdlMDk2Nw/turn/8",
+      "files": [
+        "notes.txt +1/-0"
+      ]
+    }
+  ],
+  "pendingApprovals": []
+}

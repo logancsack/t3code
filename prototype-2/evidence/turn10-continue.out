@@ -1,0 +1,110 @@
+[19:27:36.288] thread.turn.start accepted in 24 ms
+[19:27:36.318] message user: "Your previous task was cut off by a machine restart. Finish it now: make sure notes.txt ends with the line 'after runner restart' (add it only if missing). Repl"
+[19:27:38.385] activity tool.started: Tool call started
+[19:27:38.798] activity context-window.updated: Context window updated
+[19:27:38.799] activity tool.completed: Tool call
+[19:27:39.622] activity tool.started: File change started
+[19:27:40.446] activity tool.updated: File change
+[19:27:40.446] activity approval.requested: File-change approval requested
+[19:27:40.446] activity context-window.updated: Context window updated
+[19:27:40.447] approving fed8ec9c-d62b-4f8b-97dc-a1cf6c869b7f (File-change approval requested: Edit: {"file_path":"/tmp/proto-runner/checkout/notes.txt","old_string":"hello fr)
+[19:27:40.464] approval dispatched in 17 ms
+[19:27:40.878] activity approval.resolved: Approval resolved
+[19:27:40.878] activity tool.completed: File change
+[19:27:40.878] activity tool.updated: File change
+[19:27:41.704] activity checkpoint.captured: Checkpoint captured
+[19:27:41.704] activity context-window.updated: Context window updated
+[19:27:41.704] message assistant: "done"
+[19:27:41.704] turn 5361dcda-bf7d-45da-9a15-a3a4347b117e settled: completed after 5415 ms (first assistant text after 5415 ms)
+{
+  "latestTurn": {
+    "turnId": "5361dcda-bf7d-45da-9a15-a3a4347b117e",
+    "state": "completed",
+    "requestedAt": "2026-09-25T19:27:36.271Z",
+    "startedAt": "2026-09-25T19:27:36.271Z",
+    "completedAt": "2026-09-25T19:27:41.453Z",
+    "assistantMessageId": "assistant:4a8ac405-4358-44b2-bc48-e438e8d9e683"
+  },
+  "session": {
+    "status": "ready",
+    "activeTurnId": null,
+    "lastError": null
+  },
+  "messageCount": 17,
+  "activityCount": 61,
+  "checkpoints": [
+    {
+      "turnCount": 1,
+      "status": "ready",
+      "ref": "refs/t3/checkpoints/dGhyZWFkLWM5ZmM3M2VmLWE4ZmItNGU3NS05OTNmLTJhYTI5ODdlMDk2Nw/turn/1",
+      "files": [
+        "notes.txt +1/-0"
+      ]
+    },
+    {
+      "turnCount": 2,
+      "status": "ready",
+      "ref": "refs/t3/checkpoints/dGhyZWFkLWM5ZmM3M2VmLWE4ZmItNGU3NS05OTNmLTJhYTI5ODdlMDk2Nw/turn/2",
+      "files": []
+    },
+    {
+      "turnCount": 3,
+      "status": "ready",
+      "ref": "refs/t3/checkpoints/dGhyZWFkLWM5ZmM3M2VmLWE4ZmItNGU3NS05OTNmLTJhYTI5ODdlMDk2Nw/turn/3",
+      "files": []
+    },
+    {
+      "turnCount": 4,
+      "status": "ready",
+      "ref": "refs/t3/checkpoints/dGhyZWFkLWM5ZmM3M2VmLWE4ZmItNGU3NS05OTNmLTJhYTI5ODdlMDk2Nw/turn/4",
+      "files": []
+    },
+    {
+      "turnCount": 5,
+      "status": "ready",
+      "ref": "refs/t3/checkpoints/dGhyZWFkLWM5ZmM3M2VmLWE4ZmItNGU3NS05OTNmLTJhYTI5ODdlMDk2Nw/turn/5",
+      "files": []
+    },
+    {
+      "turnCount": 6,
+      "status": "ready",
+      "ref": "refs/t3/checkpoints/dGhyZWFkLWM5ZmM3M2VmLWE4ZmItNGU3NS05OTNmLTJhYTI5ODdlMDk2Nw/turn/6",
+      "files": []
+    },
+    {
+      "turnCount": 7,
+      "status": "ready",
+      "ref": "refs/t3/checkpoints/dGhyZWFkLWM5ZmM3M2VmLWE4ZmItNGU3NS05OTNmLTJhYTI5ODdlMDk2Nw/turn/7",
+      "files": []
+    },
+    {
+      "turnCount": 8,
+      "status": "ready",
+      "ref": "refs/t3/checkpoints/dGhyZWFkLWM5ZmM3M2VmLWE4ZmItNGU3NS05OTNmLTJhYTI5ODdlMDk2Nw/turn/8",
+      "files": [
+        "notes.txt +1/-0"
+      ]
+    },
+    {
+      "turnCount": 9,
+      "status": "ready",
+      "ref": "refs/t3/checkpoints/dGhyZWFkLWM5ZmM3M2VmLWE4ZmItNGU3NS05OTNmLTJhYTI5ODdlMDk2Nw/turn/9",
+      "files": []
+    },
+    {
+      "turnCount": 10,
+      "status": "ready",
+      "ref": "refs/t3/checkpoints/dGhyZWFkLWM5ZmM3M2VmLWE4ZmItNGU3NS05OTNmLTJhYTI5ODdlMDk2Nw/turn/10",
+      "files": []
+    },
+    {
+      "turnCount": 11,
+      "status": "ready",
+      "ref": "refs/t3/checkpoints/dGhyZWFkLWM5ZmM3M2VmLWE4ZmItNGU3NS05OTNmLTJhYTI5ODdlMDk2Nw/turn/11",
+      "files": [
+        "notes.txt +1/-0"
+      ]
+    }
+  ],
+  "pendingApprovals": []
+}

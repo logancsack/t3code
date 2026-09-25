@@ -1,0 +1,350 @@
+[19:15:29.359] INFO (#45): runner connected
+    bootId: 'boot-87901cd8-0c08-4338-9996-f7b99f3e14c9',
+    headSequence: 0,
+    runnerAckedSequence: 0,
+[19:15:30.356] INFO (#203): runner event subscription opened
+  { afterSequence: 0 }
+[19:20:05.283] INFO (#46): runner connected
+    bootId: 'boot-4e155bbc-f7b5-484c-8009-4922a3ae942f',
+    headSequence: 28,
+    runnerAckedSequence: 28,
+[19:20:06.058] INFO (#90): runner event subscription opened
+  { afterSequence: 28 }
+[19:22:29.856] INFO (#243): runner events acknowledged
+    throughSequence: 31,
+    deliveredCount: 3,
+    duplicateCount: 0,
+    connectCount: 1
+[19:22:30.414] INFO (#243): runner events acknowledged
+    throughSequence: 35,
+    deliveredCount: 7,
+    duplicateCount: 0,
+    connectCount: 1
+[19:22:32.993] INFO (#243): runner events acknowledged
+    throughSequence: 40,
+    deliveredCount: 12,
+    duplicateCount: 0,
+    connectCount: 1
+[19:23:22.101] INFO (#243): runner events acknowledged
+    throughSequence: 43,
+    deliveredCount: 15,
+    duplicateCount: 0,
+    connectCount: 1
+[19:23:22.673] INFO (#243): runner events acknowledged
+    throughSequence: 50,
+    deliveredCount: 22,
+    duplicateCount: 0,
+    connectCount: 1
+[19:23:24.226] INFO (#243): runner events acknowledged
+    throughSequence: 52,
+    deliveredCount: 24,
+    duplicateCount: 0,
+    connectCount: 1
+[19:23:24.782] INFO (#243): runner events acknowledged
+    throughSequence: 60,
+    deliveredCount: 32,
+    duplicateCount: 0,
+    connectCount: 1
+[19:23:25.836] INFO (#243): runner events acknowledged
+    throughSequence: 68,
+    deliveredCount: 40,
+    duplicateCount: 0,
+    connectCount: 1
+[19:23:26.390] INFO (#243): runner events acknowledged
+    throughSequence: 70,
+    deliveredCount: 42,
+    duplicateCount: 0,
+    connectCount: 1
+[19:23:54.470] INFO (#243): runner events acknowledged
+    throughSequence: 73,
+    deliveredCount: 45,
+    duplicateCount: 0,
+    connectCount: 1
+[19:23:55.524] INFO (#243): runner events acknowledged
+    throughSequence: 78,
+    deliveredCount: 52,
+    duplicateCount: 0,
+    connectCount: 1
+[19:23:56.077] INFO (#243): runner events acknowledged
+    throughSequence: 99,
+    deliveredCount: 73,
+    duplicateCount: 0,
+    connectCount: 1
+[19:23:56.733] INFO (#243): runner events acknowledged
+    throughSequence: 120,
+    deliveredCount: 93,
+    duplicateCount: 0,
+    connectCount: 1
+[19:23:57.387] INFO (#243): runner events acknowledged
+    throughSequence: 148,
+    deliveredCount: 122,
+    duplicateCount: 0,
+    connectCount: 1
+[19:23:57.943] INFO (#243): runner events acknowledged
+    throughSequence: 170,
+    deliveredCount: 143,
+    duplicateCount: 0,
+    connectCount: 1
+[19:23:58.498] INFO (#243): runner events acknowledged
+    throughSequence: 191,
+    deliveredCount: 164,
+    duplicateCount: 0,
+    connectCount: 1
+[19:23:59.054] INFO (#243): runner events acknowledged
+    throughSequence: 212,
+    deliveredCount: 186,
+    duplicateCount: 0,
+    connectCount: 1
+[19:23:59.607] INFO (#243): runner events acknowledged
+    throughSequence: 228,
+    deliveredCount: 200,
+    duplicateCount: 0,
+    connectCount: 1
+[19:24:09.684] INFO (#243): runner events acknowledged
+    throughSequence: 232,
+    deliveredCount: 204,
+    duplicateCount: 0,
+    connectCount: 1
+[19:24:11.239] INFO (#243): runner events acknowledged
+    throughSequence: 234,
+    deliveredCount: 206,
+    duplicateCount: 0,
+    connectCount: 1
+[19:24:11.793] INFO (#243): runner events acknowledged
+    throughSequence: 239,
+    deliveredCount: 211,
+    duplicateCount: 0,
+    connectCount: 1
+[19:24:12.848] INFO (#243): runner events acknowledged
+    throughSequence: 244,
+    deliveredCount: 216,
+    duplicateCount: 0,
+    connectCount: 1
+[19:24:23.417] INFO (#243): runner events acknowledged
+    throughSequence: 247,
+    deliveredCount: 219,
+    duplicateCount: 0,
+    connectCount: 1
+[19:24:24.470] INFO (#243): runner events acknowledged
+    throughSequence: 256,
+    deliveredCount: 230,
+    duplicateCount: 0,
+    connectCount: 1
+[19:24:25.022] INFO (#243): runner events acknowledged
+    throughSequence: 277,
+    deliveredCount: 251,
+    duplicateCount: 0,
+    connectCount: 1
+[19:24:25.576] INFO (#243): runner events acknowledged
+    throughSequence: 298,
+    deliveredCount: 272,
+    duplicateCount: 0,
+    connectCount: 1
+[19:24:26.128] INFO (#243): runner events acknowledged
+    throughSequence: 319,
+    deliveredCount: 293,
+    duplicateCount: 0,
+    connectCount: 1
+[19:24:26.682] INFO (#243): runner events acknowledged
+    throughSequence: 340,
+    deliveredCount: 314,
+    duplicateCount: 0,
+    connectCount: 1
+[19:24:27.234] INFO (#243): runner events acknowledged
+    throughSequence: 361,
+    deliveredCount: 335,
+    duplicateCount: 0,
+    connectCount: 1
+[19:24:27.787] INFO (#243): runner events acknowledged
+    throughSequence: 368,
+    deliveredCount: 340,
+    duplicateCount: 0,
+    connectCount: 1
+[19:24:52.865] INFO (#243): runner events acknowledged
+    throughSequence: 371,
+    deliveredCount: 343,
+    duplicateCount: 0,
+    connectCount: 1
+[19:24:53.920] INFO (#243): runner events acknowledged
+    throughSequence: 375,
+    deliveredCount: 347,
+    duplicateCount: 0,
+    connectCount: 1
+[19:24:56.975] INFO (#243): runner events acknowledged
+    throughSequence: 379,
+    deliveredCount: 351,
+    duplicateCount: 0,
+    connectCount: 1
+[19:25:26.826] INFO (#46): runner connected
+    bootId: 'boot-4e155bbc-f7b5-484c-8009-4922a3ae942f',
+    headSequence: 395,
+    runnerAckedSequence: 379,
+[19:25:27.725] INFO (#90): runner event subscription opened
+  { afterSequence: 379 }
+[19:25:28.285] INFO (#240): runner events acknowledged
+    throughSequence: 395,
+    deliveredCount: 16,
+    duplicateCount: 0,
+    connectCount: 1
+[19:25:28.865] INFO (#240): runner events acknowledged
+    throughSequence: 400,
+    deliveredCount: 21,
+    duplicateCount: 0,
+    connectCount: 1
+[19:25:29.927] INFO (#240): runner events acknowledged
+    throughSequence: 402,
+    deliveredCount: 23,
+    duplicateCount: 0,
+    connectCount: 1
+[19:25:30.555] INFO (#240): runner events acknowledged
+    throughSequence: 403,
+    deliveredCount: 26,
+    duplicateCount: 0,
+    connectCount: 1
+[19:25:31.117] INFO (#240): runner events acknowledged
+    throughSequence: 405,
+    deliveredCount: 26,
+    duplicateCount: 0,
+    connectCount: 1
+[19:25:53.280] WARN (#46): runner connection ended
+[19:25:54.284] WARN (#46): runner connection ended
+[19:25:55.288] WARN (#46): runner connection ended
+[19:25:56.292] WARN (#46): runner connection ended
+[19:25:57.311] INFO (#46): runner connected
+    bootId: 'boot-1b34a7ce-30b4-418a-8d97-7adb8eecf074',
+    headSequence: 405,
+    runnerAckedSequence: 405,
+[19:25:57.311] INFO (#756): runner event subscription opened
+  { afterSequence: 405 }
+[19:26:05.761] INFO (#240): runner events acknowledged
+    throughSequence: 408,
+    deliveredCount: 29,
+    duplicateCount: 0,
+    connectCount: 2
+[19:26:06.819] INFO (#240): runner events acknowledged
+    throughSequence: 412,
+    deliveredCount: 33,
+    duplicateCount: 0,
+    connectCount: 2
+[19:26:08.403] INFO (#240): runner events acknowledged
+    throughSequence: 418,
+    deliveredCount: 39,
+    duplicateCount: 0,
+    connectCount: 2
+[19:26:08.963] INFO (#240): runner events acknowledged
+    throughSequence: 420,
+    deliveredCount: 41,
+    duplicateCount: 0,
+    connectCount: 2
+[19:27:11.155] WARN (#46): runner connection ended
+[19:27:12.178] INFO (#46): runner connected
+    bootId: 'boot-3d1e2e6c-b8d2-496f-8cdf-cb189cf657d2',
+    headSequence: 420,
+    runnerAckedSequence: 420,
+[19:27:12.178] INFO (#1047): runner event subscription opened
+  { afterSequence: 420 }
+[19:27:27.230] INFO (#240): runner events acknowledged
+    throughSequence: 423,
+    deliveredCount: 44,
+    duplicateCount: 0,
+    connectCount: 3
+[19:27:27.786] INFO (#240): runner events acknowledged
+    throughSequence: 427,
+    deliveredCount: 48,
+    duplicateCount: 0,
+    connectCount: 3
+[19:27:29.342] INFO (#240): runner events acknowledged
+    throughSequence: 431,
+    deliveredCount: 52,
+    duplicateCount: 0,
+    connectCount: 3
+[19:27:31.416] WARN (#46): runner connection ended
+[19:27:32.419] WARN (#46): runner connection ended
+[19:27:33.422] WARN (#46): runner connection ended
+[19:27:34.441] INFO (#46): runner connected
+    bootId: 'boot-0d427cb0-d9a9-4c7a-9578-d5ca7b9d0bf4',
+    headSequence: 435,
+    runnerAckedSequence: 431,
+[19:27:34.441] INFO (#1312): runner event subscription opened
+  { afterSequence: 431 }
+[19:27:34.901] INFO (#240): runner events acknowledged
+    throughSequence: 435,
+    deliveredCount: 56,
+    duplicateCount: 0,
+    connectCount: 4
+[19:27:36.458] INFO (#240): runner events acknowledged
+    throughSequence: 438,
+    deliveredCount: 59,
+    duplicateCount: 0,
+    connectCount: 4
+[19:27:37.025] INFO (#240): runner events acknowledged
+    throughSequence: 440,
+    deliveredCount: 63,
+    duplicateCount: 0,
+    connectCount: 4
+[19:27:37.579] INFO (#240): runner events acknowledged
+    throughSequence: 442,
+    deliveredCount: 63,
+    duplicateCount: 0,
+    connectCount: 4
+[19:27:38.636] INFO (#240): runner events acknowledged
+    throughSequence: 449,
+    deliveredCount: 70,
+    duplicateCount: 0,
+    connectCount: 4
+[19:27:39.690] INFO (#240): runner events acknowledged
+    throughSequence: 450,
+    deliveredCount: 71,
+    duplicateCount: 0,
+    connectCount: 4
+[19:27:40.258] INFO (#240): runner events acknowledged
+    throughSequence: 451,
+    deliveredCount: 74,
+    duplicateCount: 0,
+    connectCount: 4
+[19:27:40.814] INFO (#240): runner events acknowledged
+    throughSequence: 458,
+    deliveredCount: 79,
+    duplicateCount: 0,
+    connectCount: 4
+[19:27:41.381] INFO (#240): runner events acknowledged
+    throughSequence: 460,
+    deliveredCount: 82,
+    duplicateCount: 0,
+    connectCount: 4
+[19:27:41.937] INFO (#240): runner events acknowledged
+    throughSequence: 463,
+    deliveredCount: 84,
+    duplicateCount: 0,
+    connectCount: 4
+[19:31:41.091] INFO (#46): runner connected
+    bootId: 'boot-e6ca177c-997c-49a2-aecf-1acdba8c445f',
+    headSequence: 464,
+    runnerAckedSequence: 463,
+[19:31:41.895] INFO (#90): runner event subscription opened
+  { afterSequence: 463 }
+[19:31:42.452] INFO (#242): runner events acknowledged
+    throughSequence: 464,
+    deliveredCount: 1,
+    duplicateCount: 0,
+    connectCount: 1
+[19:31:50.521] INFO (#242): runner events acknowledged
+    throughSequence: 467,
+    deliveredCount: 4,
+    duplicateCount: 0,
+    connectCount: 1
+[19:31:51.076] INFO (#242): runner events acknowledged
+    throughSequence: 471,
+    deliveredCount: 8,
+    duplicateCount: 0,
+    connectCount: 1
+[19:31:51.632] INFO (#242): runner events acknowledged
+    throughSequence: 472,
+    deliveredCount: 9,
+    duplicateCount: 0,
+    connectCount: 1
+[19:31:52.686] INFO (#242): runner events acknowledged
+    throughSequence: 477,
+    deliveredCount: 14,
+    duplicateCount: 0,
+    connectCount: 1

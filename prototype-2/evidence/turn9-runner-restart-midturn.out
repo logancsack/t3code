@@ -1,0 +1,92 @@
+[19:27:26.747] thread.turn.start accepted in 31 ms
+[19:27:26.776] message user: "Run the Bash command 'sleep 15' in the foreground (do not run it in the background). When it has finished, append the line 'after runner restart' to notes.txt. "
+[19:27:29.277] activity tool.started: Command run started
+[19:27:29.278] activity tool.updated: Command run
+[19:27:29.278] activity context-window.updated: Context window updated
+[19:27:34.662] activity context-window.updated: Context window updated
+[19:27:34.662] activity tool.completed: Command run
+[19:27:34.662] turn b53e0583-1332-4761-b85c-163aedc3c1db settled: completed after 7914 ms (first assistant text after n/a ms)
+{
+  "latestTurn": {
+    "turnId": "b53e0583-1332-4761-b85c-163aedc3c1db",
+    "state": "completed",
+    "requestedAt": "2026-09-25T19:27:26.722Z",
+    "startedAt": "2026-09-25T19:27:26.722Z",
+    "completedAt": "2026-09-25T19:27:29.407Z",
+    "assistantMessageId": "assistant:b53e0583-1332-4761-b85c-163aedc3c1db"
+  },
+  "session": {
+    "status": "stopped",
+    "activeTurnId": null,
+    "lastError": null
+  },
+  "messageCount": 15,
+  "activityCount": 52,
+  "checkpoints": [
+    {
+      "turnCount": 1,
+      "status": "ready",
+      "ref": "refs/t3/checkpoints/dGhyZWFkLWM5ZmM3M2VmLWE4ZmItNGU3NS05OTNmLTJhYTI5ODdlMDk2Nw/turn/1",
+      "files": [
+        "notes.txt +1/-0"
+      ]
+    },
+    {
+      "turnCount": 2,
+      "status": "ready",
+      "ref": "refs/t3/checkpoints/dGhyZWFkLWM5ZmM3M2VmLWE4ZmItNGU3NS05OTNmLTJhYTI5ODdlMDk2Nw/turn/2",
+      "files": []
+    },
+    {
+      "turnCount": 3,
+      "status": "ready",
+      "ref": "refs/t3/checkpoints/dGhyZWFkLWM5ZmM3M2VmLWE4ZmItNGU3NS05OTNmLTJhYTI5ODdlMDk2Nw/turn/3",
+      "files": []
+    },
+    {
+      "turnCount": 4,
+      "status": "ready",
+      "ref": "refs/t3/checkpoints/dGhyZWFkLWM5ZmM3M2VmLWE4ZmItNGU3NS05OTNmLTJhYTI5ODdlMDk2Nw/turn/4",
+      "files": []
+    },
+    {
+      "turnCount": 5,
+      "status": "ready",
+      "ref": "refs/t3/checkpoints/dGhyZWFkLWM5ZmM3M2VmLWE4ZmItNGU3NS05OTNmLTJhYTI5ODdlMDk2Nw/turn/5",
+      "files": []
+    },
+    {
+      "turnCount": 6,
+      "status": "ready",
+      "ref": "refs/t3/checkpoints/dGhyZWFkLWM5ZmM3M2VmLWE4ZmItNGU3NS05OTNmLTJhYTI5ODdlMDk2Nw/turn/6",
+      "files": []
+    },
+    {
+      "turnCount": 7,
+      "status": "ready",
+      "ref": "refs/t3/checkpoints/dGhyZWFkLWM5ZmM3M2VmLWE4ZmItNGU3NS05OTNmLTJhYTI5ODdlMDk2Nw/turn/7",
+      "files": []
+    },
+    {
+      "turnCount": 8,
+      "status": "ready",
+      "ref": "refs/t3/checkpoints/dGhyZWFkLWM5ZmM3M2VmLWE4ZmItNGU3NS05OTNmLTJhYTI5ODdlMDk2Nw/turn/8",
+      "files": [
+        "notes.txt +1/-0"
+      ]
+    },
+    {
+      "turnCount": 9,
+      "status": "ready",
+      "ref": "refs/t3/checkpoints/dGhyZWFkLWM5ZmM3M2VmLWE4ZmItNGU3NS05OTNmLTJhYTI5ODdlMDk2Nw/turn/9",
+      "files": []
+    },
+    {
+      "turnCount": 10,
+      "status": "ready",
+      "ref": "refs/t3/checkpoints/dGhyZWFkLWM5ZmM3M2VmLWE4ZmItNGU3NS05OTNmLTJhYTI5ODdlMDk2Nw/turn/10",
+      "files": []
+    }
+  ],
+  "pendingApprovals": []
+}

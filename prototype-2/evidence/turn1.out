@@ -1,0 +1,45 @@
+[19:17:17.733] thread.turn.start accepted in 40 ms
+[19:17:17.754] message user: "Append a new line 'edited by the remote runner' to the end of notes.txt in the current directory. Do not touch other files. Reply with just: done"
+[19:17:21.057] activity tool.started: Tool call started
+[19:17:21.468] activity context-window.updated: Context window updated
+[19:17:21.468] activity tool.completed: Tool call
+[19:17:22.695] activity tool.started: File change started
+[19:17:23.513] activity tool.updated: File change
+[19:17:23.513] activity approval.requested: File-change approval requested
+[19:17:23.513] activity context-window.updated: Context window updated
+[19:17:23.513] approving de4acf9b-62b1-42ef-8302-ff2109bf7f7e (File-change approval requested: Edit: {"file_path":"/tmp/proto-runner/checkout/notes.txt","old_string":"hello fr)
+[19:17:23.532] approval dispatched in 19 ms
+[19:17:23.941] activity approval.resolved: Approval resolved
+[19:17:23.941] activity tool.completed: File change
+[19:17:24.782] activity context-window.updated: Context window updated
+[19:17:24.782] message assistant: "done"
+[19:17:25.194] activity checkpoint.captured: Checkpoint captured
+[19:17:25.194] turn 8ff8671b-3ab7-4f43-8bc4-5b56d1983e2a settled: completed after 7460 ms (first assistant text after 7048 ms)
+{
+  "latestTurn": {
+    "turnId": "8ff8671b-3ab7-4f43-8bc4-5b56d1983e2a",
+    "state": "completed",
+    "requestedAt": "2026-09-25T19:17:17.702Z",
+    "startedAt": "2026-09-25T19:17:17.702Z",
+    "completedAt": "2026-09-25T19:17:24.588Z",
+    "assistantMessageId": "assistant:80ac5a42-e09e-42b6-b17d-cd7ce029b03b"
+  },
+  "session": {
+    "status": "ready",
+    "activeTurnId": null,
+    "lastError": null
+  },
+  "messageCount": 2,
+  "activityCount": 8,
+  "checkpoints": [
+    {
+      "turnCount": 1,
+      "status": "ready",
+      "ref": "refs/t3/checkpoints/dGhyZWFkLWM5ZmM3M2VmLWE4ZmItNGU3NS05OTNmLTJhYTI5ODdlMDk2Nw/turn/1",
+      "files": [
+        "notes.txt +1/-0"
+      ]
+    }
+  ],
+  "pendingApprovals": []
+}

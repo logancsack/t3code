@@ -1,0 +1,32 @@
+3594265 --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=3594266, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+3594265 --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=3594267, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+3594265 --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=3594268, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+3594265 --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=3594269, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+3594265 --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=3594270, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+3594186 --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=3594265, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+3594186 --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=3594279, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+3594186 --- SIGTERM {si_signo=SIGTERM, si_code=SI_USER, si_pid=3600359, si_uid=1000} ---
+3601072 --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=3601073, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+3601072 --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=3601074, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+3601072 --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=3601075, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+3601072 --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=3601076, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+3601072 --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=3601077, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+3600897 --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=3601072, si_uid=1000, si_status=0, si_utime=0, si_stime=1 /* 0.01 s */} ---
+3600897 --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=3601082, si_uid=1000, si_status=0, si_utime=0, si_stime=1 /* 0.01 s */} ---
+3600897 --- SIGTERM {si_signo=SIGTERM, si_code=SI_USER, si_pid=3608476, si_uid=1000} ---
+3609858 --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=3609860, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+3609858 --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=3609862, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+3609858 --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=3609864, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+3609858 --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=3609865, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+3609858 --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=3609866, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+3609589 --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=3609858, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+3609589 --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=3609885, si_uid=1000, si_status=0, si_utime=0, si_stime=1 /* 0.01 s */} ---
+3609589 --- SIGTERM {si_signo=SIGTERM, si_code=SI_USER, si_pid=3616263, si_uid=1000} ---
+3622473 --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=3622476, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+3622473 --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=3622478, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+3622473 --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=3622480, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+3622473 --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=3622481, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+3622473 --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=3622483, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+3622218 --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=3622473, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+3622218 --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=3622493, si_uid=1000, si_status=0, si_utime=0, si_stime=1 /* 0.01 s */} ---
+3622218 --- SIGTERM {si_signo=SIGTERM, si_code=SI_USER, si_pid=3623549, si_uid=1000} ---

@@ -1,0 +1,42 @@
+[19:28:23.900] thread.turn.start accepted in 35 ms
+[19:28:23.937] message user: "Count from 1 to 1500, writing each number on its own line as plain text. Do not use any tools."
+[19:28:28.041] interrupting turn f0ad36d1-d1e6-464b-b924-f808ba4eeb96
+[19:28:28.471] activity context-window.updated: Context window updated
+[19:28:28.471] activity checkpoint.captured: Checkpoint captured
+[19:28:28.471] activity checkpoint.captured: Checkpoint captured
+[19:28:28.471] message assistant: "1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n20\n21\n22\n23\n24\n25\n26\n27\n28\n29\n30\n31\n32\n33\n34\n35\n36\n37\n38\n39\n40\n41\n42\n43\n44\n45\n46\n47\n48\n49\n50\n51\n52\n53\n54\n55\n56\n5"
+[19:28:28.471] turn f0ad36d1-d1e6-464b-b924-f808ba4eeb96 settled: completed after 4570 ms (first assistant text after 4570 ms)
+{
+  "latestTurn": {
+    "turnId": "f0ad36d1-d1e6-464b-b924-f808ba4eeb96",
+    "state": "completed",
+    "requestedAt": "2026-09-25T19:28:23.872Z",
+    "startedAt": "2026-09-25T19:28:23.872Z",
+    "completedAt": "2026-09-25T19:28:28.062Z",
+    "assistantMessageId": "assistant:f0ad36d1-d1e6-464b-b924-f808ba4eeb96"
+  },
+  "session": {
+    "status": "stopped",
+    "activeTurnId": null,
+    "lastError": null
+  },
+  "messageCount": 4,
+  "activityCount": 14,
+  "checkpoints": [
+    {
+      "turnCount": 1,
+      "status": "ready",
+      "ref": "refs/t3/checkpoints/dGhyZWFkLWVhYWU4ZjVhLWFhOGUtNGY0ZC1iYzdhLTdiNmExNTNhNjEyNw/turn/1",
+      "files": [
+        "notes.txt +1/-0"
+      ]
+    },
+    {
+      "turnCount": 2,
+      "status": "ready",
+      "ref": "refs/t3/checkpoints/dGhyZWFkLWVhYWU4ZjVhLWFhOGUtNGY0ZC1iYzdhLTdiNmExNTNhNjEyNw/turn/2",
+      "files": []
+    }
+  ],
+  "pendingApprovals": []
+}
