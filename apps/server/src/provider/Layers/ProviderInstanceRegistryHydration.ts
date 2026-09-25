@@ -199,7 +199,7 @@ export const ProviderInstanceRegistryHydrationLive: Layer.Layer<
     // Hub mode: every provider runs on the thread's runner. The hub keeps the
     // same driver kinds and instance ids, but each adapter forwards over the
     // runner protocol instead of spawning a provider CLI locally.
-    return serverConfig.runnerUrl
+    return serverConfig.serverMode === "hub"
       ? makeProviderInstanceRegistryHydration(drivers.map(makeRemoteProviderDriver))
       : makeProviderInstanceRegistryHydration(drivers);
   }),

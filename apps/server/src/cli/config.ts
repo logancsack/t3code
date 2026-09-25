@@ -131,11 +131,47 @@ const EnvServerConfig = Config.all({
     Config.option,
     Config.map(Option.getOrUndefined),
   ),
+  serverMode: Config.schema(ServerConfig.ServerMode, "T3CODE_SERVER_MODE").pipe(
+    Config.option,
+    Config.map(Option.getOrUndefined),
+  ),
+  hubDatabaseUrl: Config.string("T3CODE_HUB_DATABASE_URL").pipe(
+    Config.option,
+    Config.map(Option.getOrUndefined),
+  ),
+  hubDatabaseAdminUrl: Config.string("T3CODE_HUB_DATABASE_ADMIN_URL").pipe(
+    Config.option,
+    Config.map(Option.getOrUndefined),
+  ),
+  hubTenantId: Config.string("T3CODE_HUB_TENANT_ID").pipe(
+    Config.option,
+    Config.map(Option.getOrUndefined),
+  ),
+  hubSecretKey: Config.string("T3CODE_HUB_SECRET_KEY").pipe(
+    Config.option,
+    Config.map(Option.getOrUndefined),
+  ),
+  hubMachinesUrl: Config.string("T3CODE_HUB_MACHINES_URL").pipe(
+    Config.option,
+    Config.map(Option.getOrUndefined),
+  ),
+  hubMachinesToken: Config.string("T3CODE_HUB_MACHINES_TOKEN").pipe(
+    Config.option,
+    Config.map(Option.getOrUndefined),
+  ),
   runnerUrl: Config.string("T3CODE_RUNNER_URL").pipe(
     Config.option,
     Config.map(Option.getOrUndefined),
   ),
   runnerToken: Config.string("T3CODE_RUNNER_TOKEN").pipe(
+    Config.option,
+    Config.map(Option.getOrUndefined),
+  ),
+  runnerThreadId: Config.string("T3CODE_RUNNER_THREAD_ID").pipe(
+    Config.option,
+    Config.map(Option.getOrUndefined),
+  ),
+  runnerCheckout: Config.string("T3CODE_RUNNER_CHECKOUT").pipe(
     Config.option,
     Config.map(Option.getOrUndefined),
   ),
@@ -225,12 +261,47 @@ const loadPersistedObservabilitySettings = Effect.fn(function* (settingsPath: st
   return parsePersistedServerObservabilitySettings(raw);
 });
 
+const resolveHubServerConfig = (env: {
+  readonly hubDatabaseUrl?: string | undefined;
+  readonly hubDatabaseAdminUrl?: string | undefined;
+  readonly hubTenantId?: string | undefined;
+  readonly hubSecretKey?: string | undefined;
+  readonly hubMachinesUrl?: string | undefined;
+  readonly hubMachinesToken?: string | undefined;
+  readonly runnerUrl?: string | undefined;
+}) =>
+  Effect.gen(function* () {
+    const missing = [
+      ["T3CODE_HUB_DATABASE_URL", env.hubDatabaseUrl],
+      ["T3CODE_HUB_TENANT_ID", env.hubTenantId],
+      ["T3CODE_HUB_SECRET_KEY", env.hubSecretKey],
+    ]
+      .filter(([, value]) => !value)
+      .map(([name]) => name);
+    if (!env.runnerUrl && (!env.hubMachinesUrl || !env.hubMachinesToken)) {
+      missing.push("T3CODE_HUB_MACHINES_URL and T3CODE_HUB_MACHINES_TOKEN");
+    }
+    if (missing.length > 0) {
+      return yield* Effect.die(new Error(`Hub mode requires ${missing.join(", ")}.`));
+    }
+    return {
+      databaseUrl: env.hubDatabaseUrl!,
+      databaseAdminUrl: env.hubDatabaseAdminUrl,
+      tenantId: env.hubTenantId!,
+      secretKey: env.hubSecretKey!,
+      machinesUrl: env.hubMachinesUrl,
+      machinesToken: env.hubMachinesToken,
+    } satisfies ServerConfig.HubServerConfig;
+  });
+
 export const resolveServerConfig = (
   flags: CliServerFlags,
   cliLogLevel: Option.Option<LogLevel.LogLevel>,
   options?: {
     readonly startupPresentation?: ServerConfig.StartupPresentation;
     readonly forceAutoBootstrapProjectFromCwd?: boolean;
+    /** Set by commands that fix the mode, such as `t3 runner`. */
+    readonly serverMode?: ServerConfig.ServerMode;
   },
 ) =>
   Effect.gen(function* () {
@@ -366,6 +437,8 @@ export const resolveServerConfig = (
       () => (mode === "desktop" ? "127.0.0.1" : undefined),
     );
     const logLevel = Option.getOrElse(cliLogLevel, () => env.logLevel);
+    const serverMode = options?.serverMode ?? env.serverMode ?? "standalone";
+    const hub = serverMode === "hub" ? yield* resolveHubServerConfig(env) : undefined;
 
     const config: ServerConfig.ServerConfig["Service"] = {
       logLevel,
@@ -399,8 +472,14 @@ export const resolveServerConfig = (
       museCodeEnabled: env.museCodeEnabled ?? !env.managedDevPc,
       primeAgentSubscriptionOAuthEnabled: env.primeAgentSubscriptionOAuthEnabled,
       managedGatewayToken: env.managedGatewayToken,
-      runnerUrl: env.runnerUrl,
-      runnerToken: env.runnerToken,
+      // Hub and runner settings are omitted entirely in standalone mode so the
+      // standalone configuration stays identical to upstream T3.
+      ...(serverMode === "standalone" ? {} : { serverMode }),
+      ...(hub ? { hub } : {}),
+      ...(env.runnerUrl ? { runnerUrl: env.runnerUrl } : {}),
+      ...(env.runnerToken ? { runnerToken: env.runnerToken } : {}),
+      ...(env.runnerThreadId ? { runnerThreadId: env.runnerThreadId } : {}),
+      ...(env.runnerCheckout ? { runnerCheckout: env.runnerCheckout } : {}),
       startupPresentation,
       desktopBootstrapToken,
       desktopTelemetryFd,

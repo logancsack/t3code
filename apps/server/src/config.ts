@@ -57,6 +57,28 @@ export interface DeriveServerPathsOptions {
 /**
  * ServerConfig - Service tag for server runtime configuration.
  */
+export const ServerMode = Schema.Literals(["standalone", "hub", "runner"]);
+export type ServerMode = typeof ServerMode.Type;
+
+/** Standalone unless a hub or runner mode was selected. */
+export const serverModeOf = (config: {
+  readonly serverMode?: ServerMode | undefined;
+}): ServerMode => config.serverMode ?? "standalone";
+
+export interface HubServerConfig {
+  /** Postgres URL for the hub schema, using a role without BYPASSRLS. */
+  readonly databaseUrl: string;
+  /** Optional role used only to apply hub migrations. */
+  readonly databaseAdminUrl?: string | undefined;
+  /** The Aldo user whose rows this process owns. */
+  readonly tenantId: string;
+  /** Base64 32-byte key that encrypts per-user secrets at rest. */
+  readonly secretKey: string;
+  /** Machine directory base URL; absent only with a development `runnerUrl`. */
+  readonly machinesUrl?: string | undefined;
+  readonly machinesToken?: string | undefined;
+}
+
 export class ServerConfig extends Context.Service<
   ServerConfig,
   ServerDerivedPaths & {
@@ -99,13 +121,26 @@ export class ServerConfig extends Context.Service<
      */
     readonly managedGatewayToken?: string | undefined;
     /**
-     * Hub mode (prototype): when set, this server owns no checkout. Provider
-     * sessions, checkpoints and workspace validation run on the runner at this
-     * WebSocket URL (see `runner/`).
+     * `standalone` owns everything (the default). `hub` owns orchestration and
+     * persistence but no checkout; thread work runs on per-thread runners.
+     * `runner` serves one thread's checkout to a hub. See
+     * docs/internals/thread-machines.md.
+     */
+    readonly serverMode?: ServerMode | undefined;
+    /** Hub-mode settings; present only when `serverMode` is `hub`. */
+    readonly hub?: HubServerConfig | undefined;
+    /**
+     * Development override for hub mode: a single runner WebSocket URL used
+     * for every thread instead of resolving runners through the machine
+     * directory.
      */
     readonly runnerUrl?: string | undefined;
-    /** Shared bearer secret presented to the runner (hub) or required from hubs (runner). */
+    /** Bearer presented to runners (hub) or required from hubs (runner). */
     readonly runnerToken?: string | undefined;
+    /** Runner mode: the only thread this runner serves. */
+    readonly runnerThreadId?: string | undefined;
+    /** Runner mode: the absolute checkout path of that thread. */
+    readonly runnerCheckout?: string | undefined;
     readonly startupPresentation: StartupPresentation;
     readonly desktopBootstrapToken: string | undefined;
     readonly desktopTelemetryFd?: number | undefined;

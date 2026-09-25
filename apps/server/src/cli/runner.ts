@@ -14,6 +14,7 @@ export const runnerCommand = Command.make("runner", { ...sharedServerCommandFlag
       const config = yield* resolveServerConfig(flags, logLevel, {
         startupPresentation: "headless",
         forceAutoBootstrapProjectFromCwd: false,
+        serverMode: "runner",
       });
       return yield* runRunner.pipe(Effect.provideService(ServerConfig, config));
     }),

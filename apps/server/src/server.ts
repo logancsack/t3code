@@ -171,14 +171,14 @@ const PtyAdapterLive = Layer.unwrap(
  * Picks the checkout-bound implementation (`local`) or the hub substitute
  * (`hub`) depending on whether this server delegates to a runner.
  */
-const byRunnerMode = <A, E1, R1, E2, R2>(
+const byServerMode = <A, E1, R1, E2, R2>(
   local: Layer.Layer<A, E1, R1>,
   hub: Layer.Layer<A, E2, R2>,
 ): Layer.Layer<A, E1 | E2, R1 | R2 | ServerConfig.ServerConfig> =>
   Layer.unwrap(
     Effect.gen(function* () {
       const config = yield* ServerConfig.ServerConfig;
-      return (config.runnerUrl ? hub : local) as Layer.Layer<A, E1 | E2, R1 | R2>;
+      return (config.serverMode === "hub" ? hub : local) as Layer.Layer<A, E1 | E2, R1 | R2>;
     }),
   );
 
@@ -291,7 +291,7 @@ export const PlatformServicesLive = Layer.unwrap(
   }),
 );
 
-const CheckoutGitProbeLayerLive = byRunnerMode(
+const CheckoutGitProbeLayerLive = byServerMode(
   Layer.succeed(CheckoutGitProbe, localCheckoutGitProbe),
   HubLayers.remoteCheckoutGitProbeLayer,
 );
@@ -383,7 +383,7 @@ const VcsLayerLive = Layer.empty.pipe(
   Layer.provideMerge(GrokReviewLayerLive),
   Layer.provideMerge(SourceControlRepositoryServiceLayerLive),
   Layer.provideMerge(
-    byRunnerMode(
+    byServerMode(
       VcsStatusBroadcaster.layer.pipe(Layer.provide(GitWorkflowLayerLive)),
       HubLayers.hubVcsStatusBroadcasterLayer,
     ),
@@ -393,7 +393,7 @@ const VcsLayerLive = Layer.empty.pipe(
 const CheckpointingLayerLive = Layer.empty.pipe(
   Layer.provideMerge(CheckpointDiffQuery.layer),
   Layer.provideMerge(
-    byRunnerMode(
+    byServerMode(
       CheckpointStore.layer.pipe(Layer.provide(VcsDriverRegistryLayerLive)),
       HubLayers.remoteCheckpointStoreLayer,
     ),
@@ -420,8 +420,8 @@ const WorkspaceFileSystemLayerLive = WorkspaceFileSystem.layer.pipe(
 );
 
 const WorkspaceLayerLive = Layer.mergeAll(
-  byRunnerMode(WorkspacePaths.layer, HubLayers.remoteWorkspacePathsLayer),
-  byRunnerMode(WorkspaceEntriesLayerLive, HubLayers.hubWorkspaceEntriesLayer),
+  byServerMode(WorkspacePaths.layer, HubLayers.remoteWorkspacePathsLayer),
+  byServerMode(WorkspaceEntriesLayerLive, HubLayers.hubWorkspaceEntriesLayer),
   WorkspaceFileSystemLayerLive,
 );
 
@@ -493,7 +493,7 @@ const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
   Layer.provideMerge(WorkspaceLayerLive),
   Layer.provideMerge(ProjectFaviconResolverLayerLive),
   Layer.provideMerge(
-    byRunnerMode(RepositoryIdentityResolver.layer, HubLayers.hubRepositoryIdentityResolverLayer),
+    byServerMode(RepositoryIdentityResolver.layer, HubLayers.hubRepositoryIdentityResolverLayer),
   ),
   Layer.provideMerge(ServerEnvironmentLayerLive),
   Layer.provideMerge(AuthLayerLive),
