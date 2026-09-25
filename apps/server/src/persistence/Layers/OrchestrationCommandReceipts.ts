@@ -11,6 +11,8 @@ import {
   OrchestrationCommandReceiptRepository,
   type OrchestrationCommandReceiptRepositoryShape,
 } from "../Services/OrchestrationCommandReceipts.ts";
+import { localOrHub } from "../Postgres/HubDatabase.ts";
+import { PgOrchestrationCommandReceiptRepositoryLive } from "../Postgres/OrchestrationCommandReceipts.ts";
 
 const makeOrchestrationCommandReceiptRepository = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
@@ -84,7 +86,7 @@ const makeOrchestrationCommandReceiptRepository = Effect.gen(function* () {
   } satisfies OrchestrationCommandReceiptRepositoryShape;
 });
 
-export const OrchestrationCommandReceiptRepositoryLive = Layer.effect(
-  OrchestrationCommandReceiptRepository,
-  makeOrchestrationCommandReceiptRepository,
+export const OrchestrationCommandReceiptRepositoryLive = localOrHub(
+  Layer.effect(OrchestrationCommandReceiptRepository, makeOrchestrationCommandReceiptRepository),
+  PgOrchestrationCommandReceiptRepositoryLive,
 );

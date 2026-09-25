@@ -11,6 +11,8 @@ import {
   ProjectionThreadProposedPlanRepository,
   type ProjectionThreadProposedPlanRepositoryShape,
 } from "../Services/ProjectionThreadProposedPlans.ts";
+import { localOrHub } from "../Postgres/HubDatabase.ts";
+import { PgProjectionThreadProposedPlanRepositoryLive } from "../Postgres/ProjectionThreadProposedPlans.ts";
 
 const makeProjectionThreadProposedPlanRepository = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
@@ -105,7 +107,7 @@ const makeProjectionThreadProposedPlanRepository = Effect.gen(function* () {
   } satisfies ProjectionThreadProposedPlanRepositoryShape;
 });
 
-export const ProjectionThreadProposedPlanRepositoryLive = Layer.effect(
-  ProjectionThreadProposedPlanRepository,
-  makeProjectionThreadProposedPlanRepository,
+export const ProjectionThreadProposedPlanRepositoryLive = localOrHub(
+  Layer.effect(ProjectionThreadProposedPlanRepository, makeProjectionThreadProposedPlanRepository),
+  PgProjectionThreadProposedPlanRepositoryLive,
 );

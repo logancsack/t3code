@@ -13,6 +13,8 @@ import {
   GetProjectionStateInput,
   ProjectionState,
 } from "../Services/ProjectionState.ts";
+import { localOrHub } from "../Postgres/HubDatabase.ts";
+import { PgProjectionStateRepositoryLive } from "../Postgres/ProjectionState.ts";
 
 const MinLastAppliedSequenceRowSchema = Schema.Struct({
   minLastAppliedSequence: Schema.NullOr(NonNegativeInt),
@@ -112,7 +114,7 @@ const makeProjectionStateRepository = Effect.gen(function* () {
   } satisfies ProjectionStateRepositoryShape;
 });
 
-export const ProjectionStateRepositoryLive = Layer.effect(
-  ProjectionStateRepository,
-  makeProjectionStateRepository,
+export const ProjectionStateRepositoryLive = localOrHub(
+  Layer.effect(ProjectionStateRepository, makeProjectionStateRepository),
+  PgProjectionStateRepositoryLive,
 );

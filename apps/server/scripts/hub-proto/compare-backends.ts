@@ -15,11 +15,9 @@ import { ProjectionSnapshotQuery } from "../../src/orchestration/Services/Projec
 import * as ThreadBackgroundLiveness from "../../src/orchestration/ThreadBackgroundLiveness.ts";
 import * as ThreadPlanProgress from "../../src/orchestration/ThreadPlanProgress.ts";
 import { makeSqlitePersistenceLive } from "../../src/persistence/Layers/Sqlite.ts";
-import {
-  makeHubSharedLayer,
-  makeHubUserEngineLayer,
-  type HubSharedServices,
-} from "../../src/persistence/Postgres/HubEngine.ts";
+import { layerConfig as ServerPersistenceLive } from "../../src/persistence/Layers/Sqlite.ts";
+import { HubDatabase } from "../../src/persistence/Postgres/HubDatabase.ts";
+import { makeHubDatabase } from "../../src/persistence/Postgres/HubDatabaseLive.ts";
 import { RepositoryIdentityResolver } from "../../src/project/RepositoryIdentityResolver.ts";
 
 const [sqliteFile, pgUrl, owner, threadArg, skipArg] = process.argv.slice(2);
@@ -43,10 +41,21 @@ const sqliteQuery = ManagedRuntime.make(
     Layer.provide(NodeServices.layer),
   ),
 );
-const shared = ManagedRuntime.make(makeHubSharedLayer({ url: pgUrl }));
-const sharedContext = await shared.runPromise(Effect.context<HubSharedServices>());
+// The hub reads through the same live layer as the server, selected by HubDatabase.
 const pgQuery = ManagedRuntime.make(
-  makeHubUserEngineLayer({ userId: owner, shared: sharedContext }),
+  OrchestrationProjectionSnapshotQueryLive.pipe(
+    Layer.provide(ThreadBackgroundLiveness.layer),
+    Layer.provide(ThreadPlanProgress.layer),
+    Layer.provide(
+      Layer.succeed(RepositoryIdentityResolver, { resolve: () => Effect.succeed(null) }),
+    ),
+    Layer.provide(ServerPersistenceLive),
+    Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-hub-compare-" })),
+    Layer.provide(NodeServices.layer),
+    Layer.provide(
+      Layer.effect(HubDatabase, makeHubDatabase({ databaseUrl: pgUrl, tenantId: owner })),
+    ),
+  ),
 );
 
 const both = async <A, E>(
@@ -155,5 +164,4 @@ check(
 
 out(failures === 0 ? "ALL EQUAL" : `${failures} DIFFERENCES`);
 await pgQuery.dispose();
-await shared.dispose();
 await sqliteQuery.dispose();

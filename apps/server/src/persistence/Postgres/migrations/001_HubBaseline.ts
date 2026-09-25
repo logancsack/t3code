@@ -1,43 +1,109 @@
 /**
- * Hub baseline schema for PostgreSQL.
+ * Hub baseline: the standalone SQLite schema after its migration 043, plus the
+ * state a standalone server keeps as files, keyed by tenant.
  *
- * Derived from the SQLite schema after migration 043 (`sqlite3 <fresh db> .schema`),
- * not from a port of the 43 migrations. Tenancy is a `user_id` column that leads
- * every primary key, unique constraint, and index, so one database serves every
- * hub user and every query stays safe behind a transaction-mode pooler.
+ * Tenancy is a `user_id` column that leads every primary key, unique
+ * constraint, and index. Every table has a row-level-security policy that
+ * compares `user_id` with the transaction-local `hub.user_id` setting (see
+ * `HubClient.ts`); `FORCE` makes it apply to the table owner too, so only
+ * superusers and `BYPASSRLS` roles skip it.
  *
- * Dialect decisions that the queries depend on:
- * - Every text column that is compared or ordered uses `COLLATE "C"` so ordering
- *   matches SQLite's BINARY collation (the thread-detail keyset uses "~" and ""
- *   sentinels that only work bytewise), whatever the database default is.
- * - Nullable sort keys are indexed `NULLS FIRST`, SQLite's NULL ordering, so the
- *   `DESC NULLS LAST` window reads are served by a backward index scan.
- * - JSON stays in `text` columns: the repositories decode with `fromJsonString`
- *   and the `\u0000` escapes that JSON.stringify can emit are rejected by jsonb.
- * - Boolean-like columns stay integers (`is_streaming`, counts) so row decoding is
- *   identical to SQLite.
+ * Dialect decisions the queries depend on:
+ * - Every compared or ordered text column uses `COLLATE "C"`, matching SQLite's
+ *   BINARY ordering (the thread-detail keyset relies on bytewise "~" and ""
+ *   sentinels) whatever the database default collation is.
+ * - Nullable sort keys are indexed `NULLS FIRST`, SQLite's NULL ordering.
+ * - JSON stays in `text` columns: repositories decode with `fromJsonString`,
+ *   and `jsonb` rejects the `\u0000` escapes that JSON.stringify can emit.
+ * - Boolean-like columns stay integers so row decoding matches SQLite.
  * - SQLite's global `orchestration_events.sequence AUTOINCREMENT` becomes a
  *   per-user counter in `hub_users.last_event_sequence`, allocated inside the
- *   append transaction, so sequences are gap-free per user like SQLite's.
+ *   append transaction, so sequences stay gap-free per user.
  */
-
-export const HUB_SCHEMA_VERSION = 1;
+import * as Effect from "effect/Effect";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 const c = `COLLATE "C"`;
 
-export const HUB_BASELINE_STATEMENTS: ReadonlyArray<string> = [
-  `CREATE TABLE IF NOT EXISTS hub_schema_version (
-    version integer PRIMARY KEY,
-    applied_at timestamptz NOT NULL DEFAULT now()
-  )`,
-  `CREATE TABLE IF NOT EXISTS hub_users (
+export const HUB_BASELINE_TENANT_TABLES = [
+  "hub_users",
+  "hub_documents",
+  "hub_secrets",
+  "hub_attachments",
+  "orchestration_events",
+  "orchestration_command_receipts",
+  "checkpoint_diff_blobs",
+  "provider_session_runtime",
+  "projection_projects",
+  "projection_threads",
+  "projection_thread_messages",
+  "projection_thread_activities",
+  "projection_thread_sessions",
+  "projection_turns",
+  "projection_pending_approvals",
+  "projection_state",
+  "projection_thread_proposed_plans",
+  "auth_pairing_links",
+  "auth_sessions",
+] as const;
+
+/** Enables the fail-closed tenant policy on a table (idempotent). */
+export const hubTenantPolicyStatements = (table: string): ReadonlyArray<string> => [
+  `ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY`,
+  `ALTER TABLE ${table} FORCE ROW LEVEL SECURITY`,
+  `DROP POLICY IF EXISTS hub_tenant_isolation ON ${table}`,
+  `CREATE POLICY hub_tenant_isolation ON ${table}
+    USING (user_id = current_setting('hub.user_id', true))
+    WITH CHECK (user_id = current_setting('hub.user_id', true))`,
+];
+
+const statements: ReadonlyArray<string> = [
+  // Per-user event sequence counter.
+  `CREATE TABLE hub_users (
     user_id text ${c} PRIMARY KEY,
     last_event_sequence bigint NOT NULL DEFAULT 0,
     created_at timestamptz NOT NULL DEFAULT now()
   )`,
 
-  // orchestration_events (001) — sequence is per user.
-  `CREATE TABLE IF NOT EXISTS orchestration_events (
+  // Small documents a standalone server keeps as files in its state directory:
+  // settings.json, keybindings.json, environment-id, anonymous-id.
+  `CREATE TABLE hub_documents (
+    user_id text ${c} NOT NULL,
+    name text ${c} NOT NULL,
+    contents text NOT NULL,
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (user_id, name)
+  )`,
+
+  // ServerSecretStore values, AES-256-GCM encrypted with T3CODE_HUB_SECRET_KEY.
+  `CREATE TABLE hub_secrets (
+    user_id text ${c} NOT NULL,
+    name text ${c} NOT NULL,
+    format smallint NOT NULL,
+    nonce bytea NOT NULL,
+    ciphertext bytea NOT NULL,
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (user_id, name)
+  )`,
+
+  // Attachment bytes. The local attachments directory is a disposable cache.
+  `CREATE TABLE hub_attachments (
+    user_id text ${c} NOT NULL,
+    relative_path text ${c} NOT NULL,
+    attachment_id text ${c} NOT NULL,
+    thread_segment text ${c} NOT NULL,
+    size_bytes bigint NOT NULL,
+    content bytea NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (user_id, relative_path)
+  )`,
+  `CREATE INDEX idx_hub_attachments_attachment_id
+    ON hub_attachments (user_id, attachment_id)`,
+  `CREATE INDEX idx_hub_attachments_thread_segment
+    ON hub_attachments (user_id, thread_segment, created_at)`,
+
+  // orchestration_events (SQLite 001) — sequence is per user.
+  `CREATE TABLE orchestration_events (
     user_id text ${c} NOT NULL,
     sequence bigint NOT NULL,
     event_id text ${c} NOT NULL,
@@ -55,17 +121,17 @@ export const HUB_BASELINE_STATEMENTS: ReadonlyArray<string> = [
     PRIMARY KEY (user_id, sequence),
     UNIQUE (user_id, event_id)
   )`,
-  `CREATE UNIQUE INDEX IF NOT EXISTS idx_orch_events_stream_version
+  `CREATE UNIQUE INDEX idx_orch_events_stream_version
     ON orchestration_events (user_id, aggregate_kind, stream_id, stream_version)`,
-  `CREATE INDEX IF NOT EXISTS idx_orch_events_stream_sequence
+  `CREATE INDEX idx_orch_events_stream_sequence
     ON orchestration_events (user_id, aggregate_kind, stream_id, sequence)`,
-  `CREATE INDEX IF NOT EXISTS idx_orch_events_command_id
+  `CREATE INDEX idx_orch_events_command_id
     ON orchestration_events (user_id, command_id)`,
-  `CREATE INDEX IF NOT EXISTS idx_orch_events_correlation_id
+  `CREATE INDEX idx_orch_events_correlation_id
     ON orchestration_events (user_id, correlation_id)`,
 
   // orchestration_command_receipts (002)
-  `CREATE TABLE IF NOT EXISTS orchestration_command_receipts (
+  `CREATE TABLE orchestration_command_receipts (
     user_id text ${c} NOT NULL,
     command_id text ${c} NOT NULL,
     aggregate_kind text ${c} NOT NULL,
@@ -76,26 +142,27 @@ export const HUB_BASELINE_STATEMENTS: ReadonlyArray<string> = [
     error text,
     PRIMARY KEY (user_id, command_id)
   )`,
-  `CREATE INDEX IF NOT EXISTS idx_orch_command_receipts_aggregate
+  `CREATE INDEX idx_orch_command_receipts_aggregate
     ON orchestration_command_receipts (user_id, aggregate_kind, aggregate_id)`,
-  `CREATE INDEX IF NOT EXISTS idx_orch_command_receipts_sequence
+  `CREATE INDEX idx_orch_command_receipts_sequence
     ON orchestration_command_receipts (user_id, result_sequence)`,
 
-  // checkpoint_diff_blobs (003)
-  `CREATE TABLE IF NOT EXISTS checkpoint_diff_blobs (
+  // checkpoint_diff_blobs (003): the patch of every completed turn, so reading a
+  // finished diff never wakes a thread machine.
+  `CREATE TABLE checkpoint_diff_blobs (
     user_id text ${c} NOT NULL,
     thread_id text ${c} NOT NULL,
     from_turn_count integer NOT NULL,
     to_turn_count integer NOT NULL,
     diff text NOT NULL,
     created_at text ${c} NOT NULL,
-    UNIQUE (user_id, thread_id, from_turn_count, to_turn_count)
+    PRIMARY KEY (user_id, thread_id, from_turn_count, to_turn_count)
   )`,
-  `CREATE INDEX IF NOT EXISTS idx_checkpoint_diff_blobs_thread_to_turn
+  `CREATE INDEX idx_checkpoint_diff_blobs_thread_to_turn
     ON checkpoint_diff_blobs (user_id, thread_id, to_turn_count)`,
 
   // provider_session_runtime (004, 009, 027)
-  `CREATE TABLE IF NOT EXISTS provider_session_runtime (
+  `CREATE TABLE provider_session_runtime (
     user_id text ${c} NOT NULL,
     thread_id text ${c} NOT NULL,
     provider_name text ${c} NOT NULL,
@@ -108,15 +175,16 @@ export const HUB_BASELINE_STATEMENTS: ReadonlyArray<string> = [
     provider_instance_id text ${c},
     PRIMARY KEY (user_id, thread_id)
   )`,
-  `CREATE INDEX IF NOT EXISTS idx_provider_session_runtime_status
+  `CREATE INDEX idx_provider_session_runtime_status
     ON provider_session_runtime (user_id, status)`,
-  `CREATE INDEX IF NOT EXISTS idx_provider_session_runtime_provider
+  `CREATE INDEX idx_provider_session_runtime_provider
     ON provider_session_runtime (user_id, provider_name)`,
-  `CREATE INDEX IF NOT EXISTS idx_provider_session_runtime_instance
+  `CREATE INDEX idx_provider_session_runtime_instance
     ON provider_session_runtime (user_id, provider_instance_id)`,
 
-  // projection_projects (005, 039, 040)
-  `CREATE TABLE IF NOT EXISTS projection_projects (
+  // projection_projects (005, 039, 040). repository_identity_json is hub-only:
+  // a hub has no checkout to run `git remote` in, so the identity is stored.
+  `CREATE TABLE projection_projects (
     user_id text ${c} NOT NULL,
     project_id text ${c} NOT NULL,
     title text NOT NULL,
@@ -128,15 +196,16 @@ export const HUB_BASELINE_STATEMENTS: ReadonlyArray<string> = [
     default_model_selection_json text,
     default_thread_env_mode text ${c},
     favicon_path text,
+    repository_identity_json text,
     PRIMARY KEY (user_id, project_id)
   )`,
-  `CREATE INDEX IF NOT EXISTS idx_projection_projects_updated_at
+  `CREATE INDEX idx_projection_projects_updated_at
     ON projection_projects (user_id, updated_at)`,
-  `CREATE INDEX IF NOT EXISTS idx_projection_projects_workspace_root_deleted_at
+  `CREATE INDEX idx_projection_projects_workspace_root_deleted_at
     ON projection_projects (user_id, workspace_root, deleted_at)`,
 
   // projection_threads (005, 010, 012, 016, 017, 023, 033-036, 038, 042, 043)
-  `CREATE TABLE IF NOT EXISTS projection_threads (
+  `CREATE TABLE projection_threads (
     user_id text ${c} NOT NULL,
     thread_id text ${c} NOT NULL,
     project_id text ${c} NOT NULL,
@@ -167,20 +236,20 @@ export const HUB_BASELINE_STATEMENTS: ReadonlyArray<string> = [
     unsettled_at text ${c},
     PRIMARY KEY (user_id, thread_id)
   )`,
-  `CREATE INDEX IF NOT EXISTS idx_projection_threads_project_id
+  `CREATE INDEX idx_projection_threads_project_id
     ON projection_threads (user_id, project_id)`,
-  `CREATE INDEX IF NOT EXISTS idx_projection_threads_project_archived_at
+  `CREATE INDEX idx_projection_threads_project_archived_at
     ON projection_threads (user_id, project_id, archived_at)`,
-  `CREATE INDEX IF NOT EXISTS idx_projection_threads_project_deleted_created
+  `CREATE INDEX idx_projection_threads_project_deleted_created
     ON projection_threads (user_id, project_id, deleted_at, created_at)`,
-  `CREATE INDEX IF NOT EXISTS idx_projection_threads_shell_active
+  `CREATE INDEX idx_projection_threads_shell_active
     ON projection_threads (user_id, deleted_at, archived_at, project_id, created_at, thread_id)`,
-  `CREATE INDEX IF NOT EXISTS idx_projection_threads_shell_archived
+  `CREATE INDEX idx_projection_threads_shell_archived
     ON projection_threads (user_id, deleted_at, archived_at, project_id, thread_id)`,
 
   // projection_thread_messages (005, 007, 029). SQLite's (thread_id, created_at)
-  // and (thread_id, sequence) indexes are prefixes of the 029 indexes and are dropped.
-  `CREATE TABLE IF NOT EXISTS projection_thread_messages (
+  // and (thread_id, sequence) indexes are prefixes of the 029 index.
+  `CREATE TABLE projection_thread_messages (
     user_id text ${c} NOT NULL,
     message_id text ${c} NOT NULL,
     thread_id text ${c} NOT NULL,
@@ -193,11 +262,11 @@ export const HUB_BASELINE_STATEMENTS: ReadonlyArray<string> = [
     attachments_json text,
     PRIMARY KEY (user_id, message_id)
   )`,
-  `CREATE INDEX IF NOT EXISTS idx_projection_thread_messages_thread_created_id
+  `CREATE INDEX idx_projection_thread_messages_thread_created_id
     ON projection_thread_messages (user_id, thread_id, created_at, message_id)`,
 
   // projection_thread_activities (005, 008, 029)
-  `CREATE TABLE IF NOT EXISTS projection_thread_activities (
+  `CREATE TABLE projection_thread_activities (
     user_id text ${c} NOT NULL,
     activity_id text ${c} NOT NULL,
     thread_id text ${c} NOT NULL,
@@ -210,13 +279,13 @@ export const HUB_BASELINE_STATEMENTS: ReadonlyArray<string> = [
     sequence bigint,
     PRIMARY KEY (user_id, activity_id)
   )`,
-  `CREATE INDEX IF NOT EXISTS idx_projection_thread_activities_thread_created
+  `CREATE INDEX idx_projection_thread_activities_thread_created
     ON projection_thread_activities (user_id, thread_id, created_at)`,
-  `CREATE INDEX IF NOT EXISTS idx_projection_thread_activities_thread_sequence_created_id
+  `CREATE INDEX idx_projection_thread_activities_thread_sequence_created_id
     ON projection_thread_activities (user_id, thread_id, sequence NULLS FIRST, created_at, activity_id)`,
 
   // projection_thread_sessions (005, 006, 028)
-  `CREATE TABLE IF NOT EXISTS projection_thread_sessions (
+  `CREATE TABLE projection_thread_sessions (
     user_id text ${c} NOT NULL,
     thread_id text ${c} NOT NULL,
     status text ${c} NOT NULL,
@@ -230,15 +299,15 @@ export const HUB_BASELINE_STATEMENTS: ReadonlyArray<string> = [
     provider_instance_id text ${c},
     PRIMARY KEY (user_id, thread_id)
   )`,
-  `CREATE INDEX IF NOT EXISTS idx_projection_thread_sessions_provider_session
+  `CREATE INDEX idx_projection_thread_sessions_provider_session
     ON projection_thread_sessions (user_id, provider_session_id)`,
-  `CREATE INDEX IF NOT EXISTS idx_projection_thread_sessions_instance
+  `CREATE INDEX idx_projection_thread_sessions_instance
     ON projection_thread_sessions (user_id, provider_instance_id)`,
 
-  // projection_turns (005, 015, 037) — row_id keeps SQLite's surrogate key.
-  `CREATE TABLE IF NOT EXISTS projection_turns (
-    row_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  // projection_turns (005, 015, 037). row_id keeps SQLite's surrogate key.
+  `CREATE TABLE projection_turns (
     user_id text ${c} NOT NULL,
+    row_id bigint GENERATED ALWAYS AS IDENTITY,
     thread_id text ${c} NOT NULL,
     turn_id text ${c},
     pending_message_id text ${c},
@@ -253,18 +322,19 @@ export const HUB_BASELINE_STATEMENTS: ReadonlyArray<string> = [
     checkpoint_files_json text NOT NULL,
     source_proposed_plan_thread_id text ${c},
     source_proposed_plan_id text ${c},
+    PRIMARY KEY (user_id, row_id),
     UNIQUE (user_id, thread_id, turn_id),
     UNIQUE (user_id, thread_id, checkpoint_turn_count)
   )`,
-  `CREATE INDEX IF NOT EXISTS idx_projection_turns_thread_requested
+  `CREATE INDEX idx_projection_turns_thread_requested
     ON projection_turns (user_id, thread_id, requested_at)`,
-  `CREATE INDEX IF NOT EXISTS idx_projection_turns_thread_checkpoint_completed
+  `CREATE INDEX idx_projection_turns_thread_checkpoint_completed
     ON projection_turns (user_id, thread_id, checkpoint_turn_count, completed_at)`,
-  `CREATE INDEX IF NOT EXISTS idx_projection_turns_thread_keyset
+  `CREATE INDEX idx_projection_turns_thread_keyset
     ON projection_turns (user_id, thread_id, requested_at, turn_id NULLS FIRST)`,
 
   // projection_pending_approvals (005, 025)
-  `CREATE TABLE IF NOT EXISTS projection_pending_approvals (
+  `CREATE TABLE projection_pending_approvals (
     user_id text ${c} NOT NULL,
     request_id text ${c} NOT NULL,
     thread_id text ${c} NOT NULL,
@@ -275,11 +345,11 @@ export const HUB_BASELINE_STATEMENTS: ReadonlyArray<string> = [
     resolved_at text ${c},
     PRIMARY KEY (user_id, request_id)
   )`,
-  `CREATE INDEX IF NOT EXISTS idx_projection_pending_approvals_thread_status
+  `CREATE INDEX idx_projection_pending_approvals_thread_status
     ON projection_pending_approvals (user_id, thread_id, status)`,
 
   // projection_state (005)
-  `CREATE TABLE IF NOT EXISTS projection_state (
+  `CREATE TABLE projection_state (
     user_id text ${c} NOT NULL,
     projector text ${c} NOT NULL,
     last_applied_sequence bigint NOT NULL,
@@ -288,7 +358,7 @@ export const HUB_BASELINE_STATEMENTS: ReadonlyArray<string> = [
   )`,
 
   // projection_thread_proposed_plans (013, 014)
-  `CREATE TABLE IF NOT EXISTS projection_thread_proposed_plans (
+  `CREATE TABLE projection_thread_proposed_plans (
     user_id text ${c} NOT NULL,
     plan_id text ${c} NOT NULL,
     thread_id text ${c} NOT NULL,
@@ -300,12 +370,12 @@ export const HUB_BASELINE_STATEMENTS: ReadonlyArray<string> = [
     implementation_thread_id text ${c},
     PRIMARY KEY (user_id, plan_id)
   )`,
-  `CREATE INDEX IF NOT EXISTS idx_projection_thread_proposed_plans_thread_created
+  `CREATE INDEX idx_projection_thread_proposed_plans_thread_created
     ON projection_thread_proposed_plans (user_id, thread_id, created_at)`,
 
-  // auth_pairing_links / auth_sessions (020-022, 031, 032, 041). The hub replaces
-  // pairing and bearer sessions with a signed gateway identity; kept for parity.
-  `CREATE TABLE IF NOT EXISTS auth_pairing_links (
+  // auth_pairing_links / auth_sessions (020-022, 031, 032, 041): the hub keeps
+  // T3's pairing links, browser sessions, and bearer sessions.
+  `CREATE TABLE auth_pairing_links (
     user_id text ${c} NOT NULL,
     id text ${c} NOT NULL,
     credential text ${c} NOT NULL,
@@ -319,11 +389,11 @@ export const HUB_BASELINE_STATEMENTS: ReadonlyArray<string> = [
     revoked_at text ${c},
     proof_key_thumbprint text ${c},
     PRIMARY KEY (user_id, id),
-    UNIQUE (credential)
+    UNIQUE (user_id, credential)
   )`,
-  `CREATE INDEX IF NOT EXISTS idx_auth_pairing_links_active
+  `CREATE INDEX idx_auth_pairing_links_active
     ON auth_pairing_links (user_id, revoked_at, consumed_at, expires_at)`,
-  `CREATE TABLE IF NOT EXISTS auth_sessions (
+  `CREATE TABLE auth_sessions (
     user_id text ${c} NOT NULL,
     session_id text ${c} NOT NULL,
     subject text ${c} NOT NULL,
@@ -343,40 +413,15 @@ export const HUB_BASELINE_STATEMENTS: ReadonlyArray<string> = [
     client_app_version text,
     PRIMARY KEY (user_id, session_id)
   )`,
-  `CREATE INDEX IF NOT EXISTS idx_auth_sessions_active
+  `CREATE INDEX idx_auth_sessions_active
     ON auth_sessions (user_id, revoked_at, expires_at, issued_at)`,
+
+  ...HUB_BASELINE_TENANT_TABLES.flatMap(hubTenantPolicyStatements),
 ];
 
-/** Tables whose rows belong to one hub user; used by tests and the RLS backstop. */
-export const HUB_TENANT_TABLES = [
-  "orchestration_events",
-  "orchestration_command_receipts",
-  "checkpoint_diff_blobs",
-  "provider_session_runtime",
-  "projection_projects",
-  "projection_threads",
-  "projection_thread_messages",
-  "projection_thread_activities",
-  "projection_thread_sessions",
-  "projection_turns",
-  "projection_pending_approvals",
-  "projection_state",
-  "projection_thread_proposed_plans",
-  "auth_pairing_links",
-  "auth_sessions",
-] as const;
-
-/**
- * Optional row-level-security backstop. Policies compare `user_id` with the
- * transaction-local `hub.user_id` setting, so a statement that runs without a
- * tenant context sees no rows and cannot insert (fails closed). Table owners
- * bypass RLS unless FORCE is set, so the backstop applies to a non-owner role.
- */
-export const hubRowLevelSecurityStatements = (tables: ReadonlyArray<string> = HUB_TENANT_TABLES) =>
-  tables.flatMap((table) => [
-    `ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY`,
-    `DROP POLICY IF EXISTS hub_tenant_isolation ON ${table}`,
-    `CREATE POLICY hub_tenant_isolation ON ${table}
-      USING (user_id = current_setting('hub.user_id', true))
-      WITH CHECK (user_id = current_setting('hub.user_id', true))`,
-  ]);
+export default Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  for (const statement of statements) {
+    yield* sql.unsafe(statement);
+  }
+});

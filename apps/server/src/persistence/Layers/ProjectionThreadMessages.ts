@@ -17,6 +17,8 @@ import {
   ListProjectionThreadMessagesInput,
   ProjectionThreadMessage,
 } from "../Services/ProjectionThreadMessages.ts";
+import { localOrHub } from "../Postgres/HubDatabase.ts";
+import { PgProjectionThreadMessageRepositoryLive } from "../Postgres/ProjectionThreadMessages.ts";
 
 const ProjectionThreadMessageDbRowSchema = ProjectionThreadMessage.mapFields(
   Struct.assign({
@@ -235,7 +237,7 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
   } satisfies ProjectionThreadMessageRepositoryShape;
 });
 
-export const ProjectionThreadMessageRepositoryLive = Layer.effect(
-  ProjectionThreadMessageRepository,
-  makeProjectionThreadMessageRepository,
+export const ProjectionThreadMessageRepositoryLive = localOrHub(
+  Layer.effect(ProjectionThreadMessageRepository, makeProjectionThreadMessageRepository),
+  PgProjectionThreadMessageRepositoryLive,
 );

@@ -16,6 +16,8 @@ import {
   ProjectionCheckpointRepository,
   type ProjectionCheckpointRepositoryShape,
 } from "../Services/ProjectionCheckpoints.ts";
+import { localOrHub } from "../Postgres/HubDatabase.ts";
+import { PgProjectionCheckpointRepositoryLive } from "../Postgres/ProjectionCheckpoints.ts";
 
 const ProjectionCheckpointDbRowSchema = ProjectionCheckpoint.mapFields(
   Struct.assign({
@@ -211,7 +213,7 @@ const makeProjectionCheckpointRepository = Effect.gen(function* () {
   } satisfies ProjectionCheckpointRepositoryShape;
 });
 
-export const ProjectionCheckpointRepositoryLive = Layer.effect(
-  ProjectionCheckpointRepository,
-  makeProjectionCheckpointRepository,
+export const ProjectionCheckpointRepositoryLive = localOrHub(
+  Layer.effect(ProjectionCheckpointRepository, makeProjectionCheckpointRepository),
+  PgProjectionCheckpointRepositoryLive,
 );

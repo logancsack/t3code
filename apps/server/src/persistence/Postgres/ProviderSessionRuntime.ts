@@ -1,7 +1,12 @@
+/**
+ * Postgres port of `ProviderSessionRuntimeRepository` for the hub (see
+ * `../ProviderSessionRuntime.ts`): the provider session directory the hub keeps
+ * for every thread, including resume cursors. Every statement is scoped to the
+ * process tenant. Keep the SQL in step with the SQLite repository; the
+ * differences are the `user_id` predicates.
+ */
 import * as Arr from "effect/Array";
-import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
-import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
@@ -22,9 +27,9 @@ import {
   type PersistenceErrorCorrelation,
   PersistenceSqlError,
   type ProviderSessionRuntimeRepositoryError,
-} from "./Errors.ts";
-import { localOrHub } from "./Postgres/HubDatabase.ts";
-import * as PgRepository from "./Postgres/ProviderSessionRuntime.ts";
+} from "../Errors.ts";
+import type { ProviderSessionRuntimeRepository } from "../ProviderSessionRuntime.ts";
+import { HubTenant } from "./HubTenant.ts";
 
 /**
  * ProviderSessionRuntimeRepository - Repository interface for provider runtime sessions.
@@ -34,7 +39,7 @@ import * as PgRepository from "./Postgres/ProviderSessionRuntime.ts";
  * @module ProviderSessionRuntimeRepository
  */
 
-export const ProviderSessionRuntime = Schema.Struct({
+const ProviderSessionRuntime = Schema.Struct({
   threadId: ThreadId,
   providerName: Schema.String,
   /**
@@ -52,57 +57,17 @@ export const ProviderSessionRuntime = Schema.Struct({
   resumeCursor: Schema.NullOr(Schema.Unknown),
   runtimePayload: Schema.NullOr(Schema.Unknown),
 });
-export type ProviderSessionRuntime = typeof ProviderSessionRuntime.Type;
+type ProviderSessionRuntime = typeof ProviderSessionRuntime.Type;
 
-export const GetProviderSessionRuntimeInput = Schema.Struct({ threadId: ThreadId });
-export type GetProviderSessionRuntimeInput = typeof GetProviderSessionRuntimeInput.Type;
+const GetProviderSessionRuntimeInput = Schema.Struct({ threadId: ThreadId });
+type GetProviderSessionRuntimeInput = typeof GetProviderSessionRuntimeInput.Type;
 
-export const DeleteProviderSessionRuntimeInput = Schema.Struct({ threadId: ThreadId });
-export type DeleteProviderSessionRuntimeInput = typeof DeleteProviderSessionRuntimeInput.Type;
+const DeleteProviderSessionRuntimeInput = Schema.Struct({ threadId: ThreadId });
+type DeleteProviderSessionRuntimeInput = typeof DeleteProviderSessionRuntimeInput.Type;
 
 /**
  * ProviderSessionRuntimeRepository - Service tag for provider runtime persistence.
  */
-export class ProviderSessionRuntimeRepository extends Context.Service<
-  ProviderSessionRuntimeRepository,
-  {
-    /**
-     * Insert or replace a provider runtime row.
-     *
-     * Upserts by canonical `threadId`, including JSON payload/cursor fields.
-     */
-    readonly upsert: (
-      runtime: ProviderSessionRuntime,
-    ) => Effect.Effect<void, ProviderSessionRuntimeRepositoryError>;
-
-    /**
-     * Read provider runtime state by canonical thread id.
-     */
-    readonly getByThreadId: (
-      input: GetProviderSessionRuntimeInput,
-    ) => Effect.Effect<
-      Option.Option<ProviderSessionRuntime>,
-      ProviderSessionRuntimeRepositoryError
-    >;
-
-    /**
-     * List all provider runtime rows.
-     *
-     * Returned in ascending last-seen order.
-     */
-    readonly list: () => Effect.Effect<
-      ReadonlyArray<ProviderSessionRuntime>,
-      ProviderSessionRuntimeRepositoryError
-    >;
-
-    /**
-     * Delete provider runtime state by canonical thread id.
-     */
-    readonly deleteByThreadId: (
-      input: DeleteProviderSessionRuntimeInput,
-    ) => Effect.Effect<void, ProviderSessionRuntimeRepositoryError>;
-  }
->()("t3/persistence/ProviderSessionRuntime/ProviderSessionRuntimeRepository") {}
 
 const ProviderSessionRuntimeDbRowSchema = ProviderSessionRuntime.mapFields(
   Struct.assign({
@@ -148,12 +113,14 @@ function toPersistenceSqlOrDecodeError(
 
 export const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
+  const { userId } = yield* HubTenant;
 
   const upsertRuntimeRow = SqlSchema.void({
     Request: ProviderSessionRuntimeDbRowSchema,
     execute: (runtime) =>
       sql`
         INSERT INTO provider_session_runtime (
+          user_id,
           thread_id,
           provider_name,
           provider_instance_id,
@@ -165,6 +132,7 @@ export const make = Effect.gen(function* () {
           runtime_payload_json
         )
         VALUES (
+          ${userId},
           ${runtime.threadId},
           ${runtime.providerName},
           ${runtime.providerInstanceId},
@@ -175,7 +143,7 @@ export const make = Effect.gen(function* () {
           ${runtime.resumeCursor},
           ${runtime.runtimePayload}
         )
-        ON CONFLICT (thread_id)
+        ON CONFLICT (user_id, thread_id)
         DO UPDATE SET
           provider_name = excluded.provider_name,
           provider_instance_id = excluded.provider_instance_id,
@@ -204,7 +172,8 @@ export const make = Effect.gen(function* () {
           resume_cursor_json AS "resumeCursor",
           runtime_payload_json AS "runtimePayload"
         FROM provider_session_runtime
-        WHERE thread_id = ${threadId}
+        WHERE user_id = ${userId}
+          AND thread_id = ${threadId}
       `,
   });
 
@@ -224,6 +193,7 @@ export const make = Effect.gen(function* () {
           resume_cursor_json AS "resumeCursor",
           runtime_payload_json AS "runtimePayload"
         FROM provider_session_runtime
+        WHERE user_id = ${userId}
         ORDER BY last_seen_at ASC, thread_id ASC
       `,
   });
@@ -233,7 +203,8 @@ export const make = Effect.gen(function* () {
     execute: ({ threadId }) =>
       sql`
         DELETE FROM provider_session_runtime
-        WHERE thread_id = ${threadId}
+        WHERE user_id = ${userId}
+          AND thread_id = ${threadId}
       `,
   });
 
@@ -331,8 +302,3 @@ export const make = Effect.gen(function* () {
     deleteByThreadId,
   } satisfies ProviderSessionRuntimeRepository["Service"];
 });
-
-export const layer = localOrHub(
-  Layer.effect(ProviderSessionRuntimeRepository, make),
-  Layer.effect(ProviderSessionRuntimeRepository, PgRepository.make),
-);
