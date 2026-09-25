@@ -108,8 +108,53 @@ deduplicates by `(threadId, runner sequence)`.
 
 ## What the hub persists
 
-Everything a standalone server keeps in its state directory moves to Postgres, scoped by
-`user_id` with row-level security as a backstop: orchestration events, projections, command
-receipts, provider session runtime, auth sessions and pairing links, settings, keybindings,
-secrets (encrypted with `T3CODE_HUB_SECRET_KEY`), the environment ID, attachments, per-turn
-diffs, repository identity, and the last reported VCS status per thread.
+A hub process serves exactly one tenant (`T3CODE_HUB_TENANT_ID`) and its base directory is
+disposable: it holds only logs, caches, and the live process's runtime state file. Everything
+a standalone server keeps in its state directory lives in Postgres instead, in tables whose
+keys and indexes all start with `user_id`:
+
+| Standalone                                                              | Hub                                                                                                          |
+| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `state.sqlite`: events, receipts, projections, provider session runtime | The same tables in Postgres; event sequences are per tenant (`hub_users.last_event_sequence`)                |
+| `state.sqlite`: auth sessions and pairing links                         | `auth_sessions`, `auth_pairing_links`; T3's pairing, browser sessions, and bearer tokens work unchanged      |
+| `settings.json`, `keybindings.json`, `environment-id`, `anonymous-id`   | `hub_documents` rows named after the files; in-process notifications replace the file watcher                |
+| `secrets/*.bin`                                                         | `hub_secrets`, AES-256-GCM with `T3CODE_HUB_SECRET_KEY`; the authenticated data binds tenant and secret name |
+| `attachments/`                                                          | `hub_attachments` (`bytea`); the local directory is a cache filled on lookup                                 |
+| Repository identity from `git remote` on every read                     | `projection_projects.repository_identity_json`, recorded by `project.create` / `project.meta.update`         |
+| `checkpoint_diff_blobs` (unused standalone)                             | Created for the per-turn diff cache                                                                          |
+
+Machine-published themes stay local (a hub has no desktop to publish them). The last
+reported VCS status per thread and the runner cursors belong to the thread-machine
+migrations.
+
+In code, hub mode is a `HubDatabase` reference provided at the server and auth CLI roots
+(`apps/server/src/persistence/Postgres/`). The SQLite persistence layer hands out its client,
+each repository layer selects its Postgres port through `localOrHub`, and file-backed stores
+branch on it. Standalone layers, types, and behavior are unchanged.
+
+## Operations
+
+**Migrations.** Hub migrations are numbered entries in
+`apps/server/src/persistence/Postgres/migrations/index.ts`: 001–049 for hub persistence,
+050–099 for thread-machine state. A hub applies pending ones at startup with
+`T3CODE_HUB_DATABASE_ADMIN_URL` (or the runtime URL), each in its own transaction under a
+transaction-scoped advisory lock, recorded in `hub_schema_migrations`. They are applied by id,
+not list position, so separately owned ranges can land in any order. Keep them
+expand/contract compatible: an older hub may still be running.
+
+**Roles and row-level security.** Every tenant table has a forced policy comparing `user_id`
+with the transaction-local `hub.user_id`. The runtime client sets it with `SET LOCAL` at the
+start of every transaction and wraps statements outside one in their own transaction (two
+extra round trips), so it works behind a transaction pooler and never leaks between clients.
+Without the setting a query sees nothing and cannot write. Use a runtime role without
+`BYPASSRLS` (PlanetScale's default role has it) and pass the owner as the admin URL; after
+migrating, the hub grants the runtime role DML on the schema's tables. The explicit
+`user_id` predicates remain the primary isolation; RLS is the backstop.
+
+**Import.** `t3 hub import <state-dir>` copies a standalone state directory into the tenant
+named by the `T3CODE_HUB_*` environment in one transaction: the database (read-only, paged,
+at the current standalone migration), the documents, attachments within the upload limit,
+and provider environment secrets re-encrypted with the hub key. Auth sessions, pairing
+links, and other secrets stay behind. It refuses a tenant with data unless `--replace`,
+records repository identities for projects whose checkouts exist on the machine, and prints
+counts only.
