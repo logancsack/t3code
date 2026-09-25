@@ -12,7 +12,6 @@ import type { SqlError } from "effect/unstable/sql/SqlError";
 import { Argument, Command, Flag } from "effect/unstable/cli";
 
 import { expandHomePath } from "../os-jank.ts";
-import { makeHubDatabase } from "../persistence/Postgres/HubDatabaseLive.ts";
 import {
   HubImportError,
   importStandaloneState,
@@ -92,6 +91,10 @@ const importCommand = Command.make("import", {
         });
       }
 
+      // Loaded on use so other `t3` commands never load the Postgres driver.
+      const { makeHubDatabase } = yield* Effect.promise(
+        () => import("../persistence/Postgres/HubDatabaseLive.ts"),
+      );
       const hub = yield* makeHubDatabase({
         databaseUrl: Redacted.value(env.databaseUrl),
         databaseAdminUrl: Option.getOrUndefined(Option.map(env.databaseAdminUrl, Redacted.value)),
