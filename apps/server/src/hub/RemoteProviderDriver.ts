@@ -44,6 +44,7 @@ import {
   type RunnerMcpSession,
   ThreadMachineUnavailableError,
 } from "@t3tools/contracts/runner";
+import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
@@ -428,10 +429,10 @@ const makeRemoteSnapshot = (input: {
             Effect.tap((snapshot) => Ref.set(current, snapshot)),
             Effect.tap((snapshot) => PubSub.publish(changes, snapshot)),
             Effect.asVoid,
-            Effect.catch((error) =>
+            Effect.catchCause((cause) =>
               Effect.logWarning("runner did not report provider capabilities", {
                 instanceId: context.instanceId,
-                detail: describe(error),
+                detail: Cause.pretty(cause).slice(0, 400),
               }),
             ),
           )

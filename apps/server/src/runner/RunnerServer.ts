@@ -88,7 +88,7 @@ const RunnerProviderInstanceRegistryLive = Layer.unwrap(
 );
 
 /** Appends every hosted adapter's runtime events to the outbox. */
-const RunnerEventPumpLive = Layer.effectDiscard(
+export const RunnerEventPumpLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const registry = yield* ProviderInstanceRegistry;
     const outbox = yield* RunnerOutbox;

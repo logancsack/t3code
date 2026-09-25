@@ -129,6 +129,11 @@ export interface RunnerConnectionPoolShape {
   readonly setContextResolver: (resolver: ThreadMachineContextResolver) => Effect.Effect<void>;
   /** Closes the connection and retires the machine. */
   readonly release: (threadId: ThreadId) => Effect.Effect<void>;
+  /**
+   * Closes connections idle for `idleTimeout` and notifies the directory.
+   * Runs every `idleCheckInterval`; exposed so callers can sweep on demand.
+   */
+  readonly sweepIdle: Effect.Effect<void>;
 }
 
 export class RunnerConnectionPool extends Context.Service<
@@ -607,7 +612,7 @@ export const make = (options: RunnerConnectionPoolOptions = {}) =>
       );
 
     // Idle connections close and tell the platform the machine may sleep.
-    yield* Effect.gen(function* () {
+    const sweepIdle = Effect.gen(function* () {
       const now = yield* Clock.currentTimeMillis;
       for (const [threadId, slot] of slots) {
         if (!slot.connection || slot.closing) continue;
@@ -625,7 +630,12 @@ export const make = (options: RunnerConnectionPoolOptions = {}) =>
           ),
         );
       }
-    }).pipe(Effect.delay(idleCheckInterval), Effect.forever, Effect.forkIn(poolScope));
+    });
+    yield* sweepIdle.pipe(
+      Effect.delay(idleCheckInterval),
+      Effect.forever,
+      Effect.forkIn(poolScope),
+    );
 
     yield* Effect.addFinalizer(() =>
       Effect.forEach([...slots], ([threadId, slot]) => closeSlot(threadId, slot, true), {
@@ -634,6 +644,7 @@ export const make = (options: RunnerConnectionPoolOptions = {}) =>
     );
 
     return RunnerConnectionPool.of({
+      sweepIdle,
       checkoutRoot,
       checkoutFor,
       use,

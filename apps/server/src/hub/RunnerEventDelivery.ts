@@ -37,10 +37,12 @@ import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
+import * as Schedule from "effect/Schedule";
 import * as Stream from "effect/Stream";
 
 import { RunnerCursorStore } from "../persistence/Services/HubThreadMachineState.ts";
@@ -106,6 +108,11 @@ const closesTurn = (event: ProviderRuntimeEvent) =>
 
 const MACHINE_RESTARTED = "The thread machine restarted; the turn was interrupted.";
 const RECONCILE_WAIT = "30 seconds";
+const SUBSCRIPTION_RETRY = Schedule.exponential("250 millis").pipe(
+  Schedule.modifyDelay(({ duration }) =>
+    Effect.succeed(Duration.min(duration, Duration.seconds(5))),
+  ),
+);
 
 export const make = Effect.gen(function* () {
   const pool = yield* RunnerConnectionPool;
@@ -276,7 +283,11 @@ export const make = Effect.gen(function* () {
             });
 
       yield* reconcileWhenCaughtUp(state.delivered);
-      yield* client["runner.events.subscribe"]({ afterSequence: state.delivered }).pipe(
+      // Resubscribes from the last delivered sequence if the stream fails while
+      // the connection stays open; the connection's scope ends the loop.
+      yield* Stream.suspend(() =>
+        client["runner.events.subscribe"]({ afterSequence: state.delivered }),
+      ).pipe(
         Stream.runForEach((envelope) =>
           Effect.gen(function* () {
             if (envelope.sequence <= state.delivered) {
@@ -288,6 +299,14 @@ export const make = Effect.gen(function* () {
             yield* reconcileWhenCaughtUp(envelope.sequence);
           }),
         ),
+        Effect.tapCause((cause) =>
+          Effect.logWarning("runner event subscription failed; resubscribing", {
+            threadId,
+            delivered: state.delivered,
+            cause: Cause.pretty(cause).slice(0, 400),
+          }),
+        ),
+        Effect.retry(SUBSCRIPTION_RETRY),
       );
     });
 
