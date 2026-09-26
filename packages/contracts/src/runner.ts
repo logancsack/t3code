@@ -90,6 +90,7 @@ import {
   ProviderTurnStartResult,
 } from "./provider.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
+import { ThreadMachineState } from "./threadMachine.ts";
 import { ProviderRuntimeEvent } from "./providerRuntime.ts";
 import {
   ReviewDiffFileContentsInput,
@@ -179,17 +180,8 @@ export function parseThreadCheckoutPath(
 
 // ── Thread machine directory ───────────────────────────────────────────
 
-/** Lifecycle state reported by the machine directory. */
-export const ThreadMachineState = Schema.Literals([
-  "none",
-  "preparing",
-  "starting",
-  "running",
-  "paused",
-  "saved",
-  "failed",
-]);
-export type ThreadMachineState = typeof ThreadMachineState.Type;
+/** Lifecycle state reported by the machine directory (shared with thread shells). */
+export { ThreadMachineState } from "./threadMachine.ts";
 
 /** Repository a new thread machine checks out, from the project's identity. */
 export const ThreadMachineRepository = Schema.Struct({

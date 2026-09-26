@@ -101,6 +101,10 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
       this is false — no update would ever repaint it. Absent on older
       servers, which may still publish, so only an explicit false skips. */
   agentActivityPublishing: Schema.optionalKey(Schema.Boolean),
+  /** Hub mode: every thread runs on its own on-demand machine, projects are
+      repositories or blank projects, and the server has no filesystem of its
+      own. Absent on standalone servers. */
+  threadMachines: Schema.optionalKey(Schema.Boolean),
 });
 export type ExecutionEnvironmentCapabilities = typeof ExecutionEnvironmentCapabilities.Type;
 
