@@ -1,7 +1,0 @@
-[19:17:31.083] getTurnDiff via hub in 121 ms
-{
-  "fromTurnCount": 0,
-  "toTurnCount": 1,
-  "threadId": "thread-c9fc73ef-a8fb-4e75-993f-2aa2987e0967",
-  "diff": "diff --git a/notes.txt b/notes.txt\nindex f31bc06..77957df 100644\n--- a/notes.txt\n+++ b/notes.txt\n@@ -1 +1,2 @@\n hello from the runner\n+edited by the remote runner\n"
-}
