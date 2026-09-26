@@ -1,6 +1,6 @@
 import * as Schema from "effect/Schema";
 
-import { IsoDateTime } from "./baseSchemas.ts";
+import { IsoDateTime, ThreadId } from "./baseSchemas.ts";
 
 /**
  * Lifecycle of the machine a hub-mode thread runs on. Standalone servers never
@@ -49,3 +49,42 @@ export type ThreadMachineStateActivityPayload = typeof ThreadMachineStateActivit
  * client that has not picked a base ref never needs a branch list first.
  */
 export const DEFAULT_BRANCH_BASE_REF = "HEAD";
+
+/**
+ * The reserved thread (and project) whose machine runs provider sign-in in hub
+ * mode. It has no repository, never runs agent sessions, and never appears in
+ * the thread list.
+ */
+export const PROVIDER_SIGN_IN_THREAD_ID = "aldo-provider-sign-in";
+
+// ── Client controls (hub mode) ─────────────────────────────────────────
+
+/** `threadMachines.wake` / `threadMachines.pause` payload. */
+export const ThreadMachineControlInput = Schema.Struct({ threadId: ThreadId });
+export type ThreadMachineControlInput = typeof ThreadMachineControlInput.Type;
+
+export const ThreadMachineControlErrorReason = Schema.Literals([
+  /** The server is not a hub (no `threadMachines` capability). */
+  "unsupported",
+  /** The thread does not exist, is archived, or is reserved. */
+  "not-found",
+  /** A turn is running on the machine; it cannot be released now. */
+  "busy",
+  /** The machine directory or the machine failed; `state` and `detail` say how. */
+  "unavailable",
+]);
+export type ThreadMachineControlErrorReason = typeof ThreadMachineControlErrorReason.Type;
+
+export class ThreadMachineControlError extends Schema.TaggedErrorClass<ThreadMachineControlError>()(
+  "ThreadMachineControlError",
+  {
+    operation: Schema.String,
+    reason: ThreadMachineControlErrorReason,
+    state: Schema.optional(ThreadMachineState),
+    detail: Schema.String,
+  },
+) {
+  override get message(): string {
+    return this.detail;
+  }
+}

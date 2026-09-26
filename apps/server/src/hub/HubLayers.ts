@@ -49,6 +49,7 @@ import { makeRemoteProviderDriver } from "./RemoteProviderDriver.ts";
 import * as RemoteSessionRegistry from "./RemoteSessionRegistry.ts";
 import * as RunnerConnectionPool from "./RunnerConnectionPool.ts";
 import * as RunnerEventDelivery from "./RunnerEventDelivery.ts";
+import * as ThreadMachineControls from "./ThreadMachineControls.ts";
 import * as ThreadMachineStates from "./ThreadMachineStates.ts";
 
 /**
@@ -145,11 +146,12 @@ export const hubSourceControlRepositoryServiceLayer = Layer.effect(
   }),
 );
 
-/** Hooks consumed by the orchestration reactors and command dispatch. */
+/** Hooks consumed by the orchestration reactors, command dispatch and the client API. */
 export const hubReactorHooksLayer = Layer.mergeAll(
   Layer.succeed(DeterministicIngestionCommandIds, true),
   hubCheckoutGitProbeLayer,
   HubThreadCheckouts.layer,
+  ThreadMachineControls.layer,
 );
 
 /** Background work that needs the reactors: delivery acks, resume, machine release. */

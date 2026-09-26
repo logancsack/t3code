@@ -58,6 +58,7 @@ import {
   RpcClientId,
   EnvironmentAuthorizationError,
   ThreadId,
+  ThreadMachineControlError,
   type TerminalAttachStreamEvent,
   type TerminalError,
   type TerminalEvent,
@@ -129,6 +130,7 @@ import * as AzureDevOpsCli from "./sourceControl/AzureDevOpsCli.ts";
 import * as BitbucketApi from "./sourceControl/BitbucketApi.ts";
 import * as GitHubCli from "./sourceControl/GitHubCli.ts";
 import * as GitLabCli from "./sourceControl/GitLabCli.ts";
+import { ThreadMachineControls } from "./serverModeHooks.ts";
 import * as AuthConnectorManager from "./authConnector/AuthConnectorManager.ts";
 import * as SourceControlProviderRegistry from "./sourceControl/SourceControlProviderRegistry.ts";
 import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
@@ -422,6 +424,14 @@ function readClientAnalyticsProps(request: HttpServerRequest.HttpServerRequest) 
   };
 }
 
+/** Thread-machine controls exist only on a hub (the `threadMachines` capability). */
+const unsupportedThreadMachineControl = (operation: string) =>
+  new ThreadMachineControlError({
+    operation,
+    reason: "unsupported",
+    detail: "This server does not run threads on thread machines.",
+  });
+
 const makeWsRpcLayer = (
   currentSession: EnvironmentAuth.AuthenticatedSession,
   clientOrigin: OrchestrationClientOrigin,
@@ -474,6 +484,7 @@ const makeWsRpcLayer = (
       const providerMaintenanceRunner = yield* ProviderMaintenanceRunner.ProviderMaintenanceRunner;
       const serverSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
       const config = yield* ServerConfig.ServerConfig;
+      const threadMachineControls = yield* ThreadMachineControls;
       const lifecycleEvents = yield* ServerLifecycleEvents.ServerLifecycleEvents;
       const serverSettings = yield* ServerSettings.ServerSettingsService;
       const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
@@ -1414,6 +1425,22 @@ const makeWsRpcLayer = (
           observeRpcEffect(WS_METHODS.serverGetUsageSummary, usage.readSummary(input), {
             "rpc.aggregate": "server",
           }),
+        [WS_METHODS.threadMachinesWake]: ({ threadId }) =>
+          observeRpcEffect(
+            WS_METHODS.threadMachinesWake,
+            threadMachineControls === null
+              ? Effect.fail(unsupportedThreadMachineControl("threadMachines.wake"))
+              : threadMachineControls.wake(threadId),
+            { "rpc.aggregate": "thread-machine" },
+          ),
+        [WS_METHODS.threadMachinesPause]: ({ threadId }) =>
+          observeRpcEffect(
+            WS_METHODS.threadMachinesPause,
+            threadMachineControls === null
+              ? Effect.fail(unsupportedThreadMachineControl("threadMachines.pause"))
+              : threadMachineControls.pause(threadId),
+            { "rpc.aggregate": "thread-machine" },
+          ),
         [WS_METHODS.serverRetryResourceTelemetry]: (_input) =>
           observeRpcEffect(WS_METHODS.serverRetryResourceTelemetry, resourceTelemetry.retry, {
             "rpc.aggregate": "server",

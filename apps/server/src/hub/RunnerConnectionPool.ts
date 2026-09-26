@@ -130,6 +130,11 @@ export interface RunnerConnectionPoolShape {
   /** Closes the connection and retires the machine. */
   readonly release: (threadId: ThreadId) => Effect.Effect<void>;
   /**
+   * Closes the connection now and tells the directory the machine is idle,
+   * unless a busy mark (a running turn) holds it. Never wakes a machine.
+   */
+  readonly idle: (threadId: ThreadId) => Effect.Effect<"idle" | "busy">;
+  /**
    * Closes connections idle for `idleTimeout` and notifies the directory.
    * Runs every `idleCheckInterval`; exposed so callers can sweep on demand.
    */
@@ -611,6 +616,16 @@ export const make = (options: RunnerConnectionPoolOptions = {}) =>
         }),
       );
 
+    const reportIdle = (threadId: ThreadId) =>
+      directory.idle(threadId).pipe(
+        Effect.catch((error) =>
+          Effect.logWarning("machine directory idle notification failed", {
+            threadId,
+            detail: error.message,
+          }),
+        ),
+      );
+
     // Idle connections close and tell the platform the machine may sleep.
     const sweepIdle = Effect.gen(function* () {
       const now = yield* Clock.currentTimeMillis;
@@ -621,14 +636,7 @@ export const make = (options: RunnerConnectionPoolOptions = {}) =>
         if (now - entry.lastActivityAt < Duration.toMillis(idleTimeout)) continue;
         yield* Effect.logInfo("closing idle runner connection", { threadId });
         yield* closeSlot(threadId, slot, true);
-        yield* directory.idle(threadId).pipe(
-          Effect.catch((error) =>
-            Effect.logWarning("machine directory idle notification failed", {
-              threadId,
-              detail: error.message,
-            }),
-          ),
-        );
+        yield* reportIdle(threadId);
       }
     });
     yield* sweepIdle.pipe(
@@ -701,6 +709,14 @@ export const make = (options: RunnerConnectionPoolOptions = {}) =>
       setContextResolver: (resolver) =>
         Effect.sync(() => {
           contextResolver = resolver;
+        }),
+      idle: (threadId) =>
+        Effect.gen(function* () {
+          if ((activity.get(threadId)?.busy.size ?? 0) > 0) return "busy" as const;
+          const slot = slots.get(threadId);
+          if (slot) yield* closeSlot(threadId, slot, true);
+          yield* reportIdle(threadId);
+          return "idle" as const;
         }),
       release: (threadId) =>
         Effect.gen(function* () {

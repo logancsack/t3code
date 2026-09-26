@@ -13,6 +13,7 @@ import type {
   OrchestrationDispatchCommandError,
   ProjectId,
   ThreadId,
+  ThreadMachineControlError,
   ThreadMachineStatus,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
@@ -94,3 +95,20 @@ export const threadMachineShellField = (
   const machine = reader.get(threadId);
   return machine === undefined ? {} : { machine };
 };
+
+export interface ThreadMachineControlsShape {
+  /** Resumes or recreates the thread's machine; returns once the directory accepted. */
+  readonly wake: (
+    threadId: ThreadId,
+  ) => Effect.Effect<ThreadMachineStatus | null, ThreadMachineControlError>;
+  /** Releases the hub's hold on the machine so the platform may pause it. */
+  readonly pause: (
+    threadId: ThreadId,
+  ) => Effect.Effect<ThreadMachineStatus | null, ThreadMachineControlError>;
+}
+
+/** `threadMachines.wake` / `threadMachines.pause`; `null` (standalone) answers `unsupported`. */
+export class ThreadMachineControls extends Context.Reference<ThreadMachineControlsShape | null>(
+  "t3/serverModeHooks/ThreadMachineControls",
+  { defaultValue: () => null },
+) {}

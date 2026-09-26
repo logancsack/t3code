@@ -213,6 +213,11 @@ import {
   SourceControlRepositoryListResult,
   SourceControlRepositoryLookupInput,
 } from "./sourceControl.ts";
+import {
+  ThreadMachineControlError,
+  ThreadMachineControlInput,
+  ThreadMachineStatus,
+} from "./threadMachine.ts";
 import { VcsError } from "./vcs.ts";
 
 export const WS_METHODS = {
@@ -304,6 +309,10 @@ export const WS_METHODS = {
   serverReportHostPowerState: "server.reportHostPowerState",
   serverGetBackgroundPolicy: "server.getBackgroundPolicy",
   serverGetUsageSummary: "server.getUsageSummary",
+
+  // Thread machine methods (hub mode; see the threadMachines capability)
+  threadMachinesWake: "threadMachines.wake",
+  threadMachinesPause: "threadMachines.pause",
 
   // Cloud environment methods
   cloudGetRelayClientStatus: "cloud.getRelayClientStatus",
@@ -483,6 +492,28 @@ export const WsServerRetryResourceTelemetryRpc = Rpc.make(WS_METHODS.serverRetry
   payload: Schema.Struct({}),
   success: ResourceTelemetryRetryResult,
   error: EnvironmentAuthorizationError,
+});
+
+/**
+ * Hub mode: resumes or recreates a thread's machine. Returns once the
+ * directory accepted the request (usually still `starting`); progress arrives
+ * on the thread shell's `machine` and as `thread-machine.state` activities.
+ */
+export const WsThreadMachinesWakeRpc = Rpc.make(WS_METHODS.threadMachinesWake, {
+  payload: ThreadMachineControlInput,
+  success: Schema.NullOr(ThreadMachineStatus),
+  error: Schema.Union([ThreadMachineControlError, EnvironmentAuthorizationError]),
+});
+
+/**
+ * Hub mode: releases the hub's hold on a thread's machine (closes its runner
+ * connection and reports it idle); the platform pauses it after its idle
+ * delay. Refused with `busy` while a turn runs.
+ */
+export const WsThreadMachinesPauseRpc = Rpc.make(WS_METHODS.threadMachinesPause, {
+  payload: ThreadMachineControlInput,
+  success: Schema.NullOr(ThreadMachineStatus),
+  error: Schema.Union([ThreadMachineControlError, EnvironmentAuthorizationError]),
 });
 
 export const WsServerGetUsageSummaryRpc = Rpc.make(WS_METHODS.serverGetUsageSummary, {
@@ -1095,6 +1126,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerGetResourceTelemetryHistoryRpc,
   WsServerRetryResourceTelemetryRpc,
   WsServerGetUsageSummaryRpc,
+  WsThreadMachinesWakeRpc,
+  WsThreadMachinesPauseRpc,
   WsServerSignalProcessRpc,
   WsServerReportClientActivityRpc,
   WsServerReportHostPowerStateRpc,
