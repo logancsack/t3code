@@ -26,19 +26,20 @@ checkout path. A runner never persists orchestration state.
 
 ### Hub
 
-| Variable                        | Meaning                                                                                                                                                                |
-| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `T3CODE_SERVER_MODE=hub`        | Enables hub mode                                                                                                                                                       |
-| `T3CODE_HUB_DATABASE_URL`       | Postgres URL of the hub schema, for a role without `BYPASSRLS`. libpq's `sslrootcert=system` is accepted. Without it the hub persists to SQLite (tests, development)   |
-| `T3CODE_HUB_DATABASE_ADMIN_URL` | Optional; the schema owner, used only to apply hub migrations and grant the runtime role. Defaults to the runtime URL                                                  |
-| `T3CODE_HUB_TENANT_ID`          | The Aldo user ID whose rows this process owns; one hub process serves one user. Required with a database URL                                                           |
-| `T3CODE_HUB_SECRET_KEY`         | Base64 32-byte key encrypting the tenant's secrets at rest. Required with a database URL                                                                               |
-| `T3CODE_HUB_MACHINES_URL`       | Base URL of the machine directory (served by the platform host process)                                                                                                |
-| `T3CODE_HUB_MACHINES_TOKEN`     | Bearer for the machine directory                                                                                                                                       |
-| `T3CODE_HUB_PUBLIC_URL`         | Base URL at which thread machines reach the hub. Runners are given `<url>/mcp` as the `t3-code` MCP endpoint; without it only a runner on the hub's host can reach MCP |
-| `T3CODE_HUB_CHECKOUT_ROOT`      | Root of thread checkouts (`/workspace/t`). Hub and machines must agree; only tests and development change it                                                           |
-| `T3CODE_RUNNER_URL`             | Development only: a single `t3 runner` WebSocket URL used instead of the machine directory (static directory, always `running`)                                        |
-| `T3CODE_RUNNER_TOKEN`           | Development only: the bearer presented to that runner                                                                                                                  |
+| Variable                                 | Meaning                                                                                                                                                                         |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `T3CODE_SERVER_MODE=hub`                 | Enables hub mode                                                                                                                                                                |
+| `T3CODE_HUB_DATABASE_URL`                | Postgres URL of the hub schema, for a role without `BYPASSRLS`. libpq's `sslrootcert=system` is accepted. Without it the hub persists to SQLite (tests, development)            |
+| `T3CODE_HUB_DATABASE_ADMIN_URL`          | Optional; the schema owner, used only to apply hub migrations and grant the runtime role. Defaults to the runtime URL                                                           |
+| `T3CODE_HUB_TENANT_ID`                   | The Aldo user ID whose rows this process owns; one hub process serves one user. Required with a database URL                                                                    |
+| `T3CODE_HUB_SECRET_KEY`                  | Base64 32-byte key encrypting the tenant's secrets at rest. Required with a database URL                                                                                        |
+| `T3CODE_HUB_MACHINES_URL`                | Base URL of the machine directory (served by the platform host process)                                                                                                         |
+| `T3CODE_HUB_MACHINES_TOKEN`              | Bearer for the machine directory                                                                                                                                                |
+| `T3CODE_HUB_PUBLIC_URL`                  | Base URL at which thread machines reach the hub. Runners are given `<url>/mcp` as the `t3-code` MCP endpoint; without it only a runner on the hub's host can reach MCP          |
+| `T3CODE_HUB_CHECKOUT_ROOT`               | Root of thread checkouts (`/workspace/t`). Hub and machines must agree; only tests and development change it                                                                    |
+| `T3CODE_HUB_THREAD_BROWSER_URL_TEMPLATE` | Same-origin URL of a thread machine's browser page with `{threadId}`, linked from provider sign-in flows that finish in a browser. Default `/_devpc/threads/{threadId}/browser` |
+| `T3CODE_RUNNER_URL`                      | Development only: a single `t3 runner` WebSocket URL used instead of the machine directory (static directory, always `running`)                                                 |
+| `T3CODE_RUNNER_TOKEN`                    | Development only: the bearer presented to that runner                                                                                                                           |
 
 A hub needs the machine directory (URL and token) or a development runner URL. The
 database, tenant, and secret key go together: with them the hub is production-shaped and its
@@ -108,6 +109,20 @@ never wakes. Both return:
 }
 ```
 
+The same base URL serves the platform's machine-free lookups (the hub host forwards them to
+the control plane; see `docs/hub-host.md` in the remote-dev repository):
+
+```
+GET    /repositories/refs?url=<repository URL>  → { defaultBranch, refs: [{ name, sha }], truncated }
+GET    /provider-homes                          → { providers: [{ provider, version, updatedAt }] }
+DELETE /provider-homes/{provider}               → { provider, deleted }
+```
+
+Errors carry `{ "error": "CODE" }` (`REPOSITORY_ACCESS_REQUIRED`, `REPOSITORY_NOT_FOUND`,
+`NOT_HUB_HOSTED`, `REPOSITORY_UNSUPPORTED`, `REPOSITORY_REFS_UNAVAILABLE`), surfaced as
+`MachineDirectoryError.code`. The development directory (`T3CODE_RUNNER_URL`) lists no
+repositories and no provider homes.
+
 `runner` is present only in `running`. A changed `bootId` means the machine restarted;
 the hub reconciles sessions and turns that were active on the previous boot. `idle` tells
 the platform no session or turn needs the machine; the platform decides when to pause or
@@ -133,8 +148,9 @@ Hub behavior (`hub/MachineDirectory.ts`, `hub/RunnerConnectionPool.ts`):
 ## Runner protocol
 
 `packages/contracts/src/runner.ts` (`@t3tools/contracts/runner`) defines `RunnerRpcGroup`,
-versioned independently of the client protocol: `RUNNER_PROTOCOL_VERSION = 1`,
-`RUNNER_MIN_PROTOCOL_VERSION = 1`. `runner.hello` sends the hub's range and the thread; a
+versioned independently of the client protocol: `RUNNER_PROTOCOL_VERSION = 2`,
+`RUNNER_MIN_PROTOCOL_VERSION = 1`. Version 2 adds `runner.provider.configure` and
+`runner.auth.*`; a hub never calls them on a runner that negotiated 1. `runner.hello` sends the hub's range and the thread; a
 runner whose range does not overlap refuses with `RunnerProtocolMismatchError`, and one
 bound to another thread with `RunnerThreadMismatchError`. The reply carries the negotiated
 version, `runnerId` (the outbox identity, stable across restarts), `bootId` (per process),
@@ -150,7 +166,8 @@ with the server's schema and decoded back on the hub.
 | Group       | RPCs                                                                                                                                                                                                                                                                                                                                                                 |
 | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Handshake   | `runner.hello`                                                                                                                                                                                                                                                                                                                                                       |
-| Provider    | `runner.provider.{startSession, sendTurn, interruptTurn, respondToRequest, respondToUserInput, stopSession, listSessions, readThread, rollbackThread, getCapabilities}`                                                                                                                                                                                              |
+| Provider    | `runner.provider.{startSession, sendTurn, interruptTurn, respondToRequest, respondToUserInput, stopSession, listSessions, readThread, rollbackThread, getCapabilities, configure}`                                                                                                                                                                                   |
+| Sign-in     | `runner.auth.{start, get, submit, cancel}` (only on the provider sign-in machine)                                                                                                                                                                                                                                                                                    |
 | Text        | `runner.text.{generateThreadTitle, generateBranchName}`                                                                                                                                                                                                                                                                                                              |
 | Events      | `runner.events.subscribe` (stream), `runner.events.ack`                                                                                                                                                                                                                                                                                                              |
 | Checkout    | `runner.checkout.prepare`                                                                                                                                                                                                                                                                                                                                            |
@@ -171,8 +188,23 @@ with its own. Commit and PR text are generated on the runner inside git actions.
 origin`, with the machine's own git configuration and credential helper) or, without a
 repository, initialized; an existing one is never reset. When `branch` is not checked out
 it is switched to if it exists locally, else created from `origin/<branch>` (pushed from an
-earlier machine), else from `baseRef` (remote-tracking first), else `HEAD`. Network access
-happens only when cloning or creating a branch.
+earlier machine), else from `baseRef` (remote-tracking first), else `HEAD`. A `baseRef` of
+`HEAD` (`DEFAULT_BRANCH_BASE_REF`, what a client sends as `prepareWorktree.baseBranch` when
+no base was picked) means the repository's default branch: `origin/HEAD`, recorded with
+`git remote set-head origin --auto` when the checkout lacks it; the directory is then asked
+for the default ref (`repository.ref: null`). Network access happens only when cloning or
+creating a branch.
+
+`runner.provider.configure` carries the hub's effective settings for provider instances
+(explicit `providerInstances` or the legacy `providers.<kind>` mirror), sensitive
+environment values decrypted from the hub's secret store. The hub pushes the thread's
+instance when its runner connects, and the session's instance before every session start
+and before title or branch-name generation. The runner layers them over its own settings in
+memory only (`runner/RunnerProviderSettings.ts`): nothing is written to the machine beyond
+the CLI's own files, a restarted runner starts from its local settings until the next push,
+and identical settings are a no-op (changed ones rebuild the instance, as a settings change
+does on any server). A runner serves one thread, so the settings apply to that thread's
+sessions only. Only instance ids are logged.
 
 ## Wake semantics
 
@@ -181,14 +213,81 @@ Whether a call may resume or recreate a sleeping machine is decided per call:
 | Wakes the machine                                                                                                                                     | Never wakes it                                                                                                                                |
 | ----------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | Provider session start, `sendTurn` (turn start), approval and user-input responses, interrupting an active turn, rollback (revert) and `readThread`   | `hasSession` / `listSessions` (answered by the hub; a session on a sleeping machine is resumable), `stopSession`, provider capability refresh |
-| Thread bootstrap and checkout preparation before each turn, setup scripts                                                                             | Git status: `getStatus`, `streamStatus`, refreshes (hub cache; a connected runner refreshes it), `listRefs`, invalidations                    |
+| Thread bootstrap and checkout preparation before each turn, setup scripts                                                                             | Git status: `getStatus`, `streamStatus`, refreshes (hub cache; a connected runner refreshes it), invalidations                                |
+| `threadMachines.wake`                                                                                                                                 | `listRefs` (project roots and sleeping checkouts list the repository from the platform), `threadMachines.pause`                               |
 | Terminal `open`, `attach`, `restart`                                                                                                                  | Terminal `write`, `resize`, `clear` (fail with `TerminalNotRunningError`), `close` (no-op), terminal events and metadata                      |
 | File writes; `vcs.init`; git actions (pull, commit/push/PR stacked actions, refs, worktrees, branch rename, PR resolve and thread preparation, fetch) | File list, search, content search and read; review diff preview and file contents; workspace index refresh                                    |
 | Title and branch-name generation (only issued at turn start)                                                                                          | Turn and full-thread diffs that were captured (hub cache); a diff never captured wakes once and is then cached                                |
 
 A read that needs a running machine fails with its service's own error type whose cause
 is `ThreadMachineUnavailableError { reason: "asleep", state }`, which clients can render as
-a resumable state. Clients should offer an explicit action (a turn, a terminal) to wake.
+a resumable state. Clients should offer an explicit action (a turn, a terminal, or
+`threadMachines.wake`) to wake.
+
+`threadMachines.wake({ threadId })` resumes or recreates the machine through the
+connection pool (the same path a turn takes, so the runner is connected once it is up) and
+answers within two seconds with the state reached so far; the rest continues in the
+background and shows on the thread shell. `threadMachines.pause({ threadId })` closes the
+runner connection and reports the machine idle, after which the platform pauses it after
+its idle delay; a running turn, an attached terminal or any other call still using the machine
+refuses with `busy`. Both answer
+`ThreadMachineControlError { reason: "unsupported" | "not-found" | "busy" | "unavailable",
+state?, detail }`; standalone servers answer `unsupported`, and the provider sign-in thread
+is `not-found` (the sign-in flow manages it).
+
+## Machine state on thread shells
+
+Every machine directory response (ensure, status, wake polls) passes through
+`hub/ThreadMachineStates.ts`, and a release is recorded as `none`. A change of state or boot,
+or new progress detail while a machine is `preparing`, `starting` or `failed`, is persisted
+(`hub_thread_machine_status`) and published. `HubRunnerLifecycle` records each change as a
+`thread-machine.state` activity; that domain event is what re-publishes the thread shell,
+and shells read the state through the `ThreadMachineStatusReader` hook, so the shell
+snapshot and every upsert carry `machine: { state, detail, updatedAt }` (`null` when no
+machine is known). Machines the hub believes awake but holds no connection to are re-checked
+every minute without waking them, so a machine the platform paused after an idle report
+shows as `paused`. Standalone shells never carry the field.
+
+Thread-machine activity kinds (`THREAD_MACHINE_ACTIVITY_KINDS`):
+
+| Kind                                | Tone                 | Payload                            | When                                       |
+| ----------------------------------- | -------------------- | ---------------------------------- | ------------------------------------------ |
+| `thread-machine.state`              | `error` for `failed` | `{ state, detail, bootId }`        | Every machine state transition             |
+| `thread-machine.checkout.preparing` | `info`               | `{ checkout, branch, repository }` | Bootstrap asks the runner for the checkout |
+| `thread-machine.failed`             | `error`              | `{ detail }`                       | Bootstrap or checkout preparation failed   |
+
+The earlier one-off `thread-machine.starting` activity is folded into `thread-machine.state`.
+
+## Branch lists without a machine
+
+`vcs.listRefs` on a project's virtual root (`/workspace/p/<projectId>`) is served from the
+platform's repository refs for the project's recorded repository
+(`hub/HubRepositoryRefs.ts`), mapped to the ordinary result: branch names as local refs (or
+`origin/<name>` remote refs for `refKind: "remote"`), the default branch `isDefault`,
+current first, then default, filtered and paginated like a checkout, `isRepo: true`,
+`hasPrimaryRemote: true`. Listings are cached for 30 s per repository; `refresh: true`
+bypasses the cache. A blank project lists nothing (`isRepo: false`), a repository the
+platform cannot list (`REPOSITORY_UNSUPPORTED`, not GitHub) lists nothing with `isRepo:
+true`, and other platform errors fail with a `GitCommandError` whose detail says what to do
+(for example, connect the repository to the Aldo GitHub App). A thread checkout with a
+running machine lists the runner's refs; a sleeping one gets the platform listing with the
+thread's branch marked current (and added when it was never pushed), so listing never wakes
+a machine.
+
+## Provider status and settings
+
+A hub cannot probe provider CLIs. `hub/HubProviderSnapshots.ts` keeps the last snapshot a
+runner reported per provider instance, persisted in `hub_provider_snapshots`, so a restarted
+hub, or one whose machines are asleep, shows real status, auth and models. A runner reports
+an instance when its thread uses that instance (on connect, right after the hub pushed the
+instance's settings, and on refresh), so a report always reflects the hub's settings; the
+provider sign-in machine reports only the instance it just signed in. Before any runner reported an instance, its snapshot is the
+driver's pending one (built-in and custom models; manifest models when the driver lists
+none) marked `installed: true`, `status: "ready"`, `auth: { status: "unknown" }`, so the
+composer can select it and the first turn starts a machine. The hub's settings stay
+authoritative for identity and enablement, and update advisories are dropped (a hub cannot
+update CLIs on machines). Settings reach runners through `runner.provider.configure` (see
+the runner protocol).
 
 ## Durable delivery and crash reconciliation
 
@@ -249,11 +348,59 @@ bindings live (`ProviderAdapterCapabilities.sessionsOutliveServer`).
 Bootstrap in hub mode (`hub/HubThreadCheckouts.ts`, used by `CommandDispatcher`) creates the
 thread with its checkout path, ensures and wakes its machine with the project's repository
 identity and the branch, and calls `runner.checkout.prepare`, then runs the setup script in a
-routed terminal. Progress and failures are thread activities: `thread-machine.starting`
-("Starting machine", while waking), `thread-machine.checkout.preparing` ("Preparing
-checkout") and `thread-machine.failed` (tone `error`). A failed bootstrap deletes the new
-thread as in standalone mode. Before every turn the checkout is prepared again (skipped when
-the same runner boot already did).
+routed terminal. Machine progress is `thread-machine.state` activities; checkout progress
+and failures are `thread-machine.checkout.preparing` ("Preparing checkout") and
+`thread-machine.failed` (tone `error`). The base ref is `prepareWorktree.baseBranch`, where
+`HEAD` means the repository's default branch. A failed bootstrap deletes the new thread as
+in standalone mode. Before every turn the checkout is prepared again (skipped when the same
+runner boot already did).
+
+## Provider sign-in
+
+On a hub, `server.startAuthConnector` (and `get`, `submit`, `cancel`) runs T3's unchanged
+auth connector on the machine of the reserved thread `aldo-provider-sign-in`
+(`PROVIDER_SIGN_IN_THREAD_ID`; project `aldo-provider-sign-in`, repository `null`, checkout
+`/workspace/t/aldo-provider-sign-in`), through `hub/HubProviderSignIn.ts`:
+
+1. `start` answers at once with `status: "starting"`, `stage: "preparing"`, message
+   "Starting a machine for sign-in…" and the flow the method will use. In the background
+   the hub reads the provider's stored sign-in version, ensures and wakes the sign-in
+   machine, pushes the instance's settings, and starts the connector there
+   (`runner.auth.start`). The session then mirrors the runner's (prompts, verification URLs,
+   codes, fields) under the hub's session id; `submit` and `cancel` are forwarded. Flows that
+   finish in a browser on the machine (`flow: "browser"`) carry `workspaceBrowserUrl`
+   (`T3CODE_HUB_THREAD_BROWSER_URL_TEMPLATE` with the sign-in thread).
+2. When the login command succeeds the session stays `starting`/`verifying` ("Saving your
+   sign-in…") until `GET provider-homes` lists the provider at a higher version (the
+   supervisor uploads within about 20 s; the hub waits up to two minutes, then fails with
+   "was not saved"). The instance's status is then read again on the machine and the session
+   succeeds.
+3. Once no sign-in is active the sign-in machine is reported idle. The remote provider
+   driver refuses agent sessions on that thread, and runners serve `runner.auth.*` only when
+   bound to it.
+
+Connectors map to provider homes as `claude`→`claude`, `codex`→`codex`, `opencode`→`opencode`,
+`grok`→`grok`, `cursor`→`cursor`, `prime-agent`→`prime`, `muse`→`muse`. Source-control
+connectors (GitHub, GitLab, Azure DevOps, Bitbucket) answer `AuthConnectorError` on a hub.
+`server.listProviderSignIns` lists stored sign-ins (`{ signIns: [{ connector, version,
+updatedAt }] }`) and `server.signOutProvider({ connector })` deletes one
+(`DELETE provider-homes/{provider}`; running machines drop the files within about 15 s, and
+the provider's snapshots return to auth `unknown`). Standalone servers keep the local auth
+connector and answer the two new calls with `AuthConnectorError`. A stored sign-in is not
+proof of a valid login; the provider's status on a machine is.
+
+## MCP credentials
+
+The hub mints an MCP credential for every provider session it starts, and the runner hands
+it to the provider CLI (`T3CODE_HUB_PUBLIC_URL/mcp`). Those sessions outlive the hub, so a hub
+persists each credential's SHA-256 hash and scope, never the token, in
+`hub_mcp_credentials` (`McpCredentialPersistence` hook, `hub/HubMcpCredentials.ts`). A
+restarted hub loads the unexpired ones and keeps answering the sessions' MCP calls;
+revocation deletes them, liveness is written through at most every ten minutes, and the
+shutdown `revokeAll` clears only the process's memory. Standalone servers keep credentials
+in memory, as before. A session a recreated machine lost is restarted without an MCP
+credential when the hub restarted since it was minted (the raw token is not kept); the next
+explicit session start mints a new one.
 
 ## Hub persistence
 
@@ -269,7 +416,7 @@ with `user_id`:
 | `secrets/*.bin`                                                         | `hub_secrets`, AES-256-GCM with `T3CODE_HUB_SECRET_KEY`; the authenticated data binds tenant and secret name |
 | `attachments/`                                                          | `hub_attachments` (`bytea`); the local directory is a cache filled on lookup                                 |
 | Repository identity from `git remote` on every read                     | `projection_projects.repository_identity_json`, recorded by `project.create` / `project.meta.update`         |
-| (none)                                                                  | Thread-machine state, migration 050: see below                                                               |
+| (none)                                                                  | Thread-machine state, migrations 050 and 051: see below                                                      |
 
 Thread-machine state (`persistence/Services/HubThreadMachineState.ts`):
 
@@ -279,6 +426,12 @@ Thread-machine state (`persistence/Services/HubThreadMachineState.ts`):
   whitespace modes. It is the hub's only diff table; standalone `checkpoint_diff_blobs` is
   never written, has no hub table, and is not imported.
 - `hub_thread_vcs_status` (`ThreadVcsStatusStore`): the last git status a runner reported.
+- `hub_thread_machine_status` (`ThreadMachineStatusStore`, migration 051): the last machine
+  state per thread, shown on thread shells.
+- `hub_provider_snapshots` (`ProviderSnapshotStore`, 051): the last provider snapshot a
+  runner reported per provider instance.
+- `hub_mcp_credentials` (`McpCredentialStore`, 051): hashes and scopes of minted MCP
+  credentials.
 
 Machine-published themes stay local (a hub has no desktop to publish them).
 
@@ -304,7 +457,7 @@ runner, so a hub on a fresh base directory still sends them.
 
 **Migrations.** Hub migrations are numbered entries in
 `apps/server/src/persistence/Postgres/migrations/index.ts`: 001–049 for hub persistence,
-050–099 for thread-machine state (050 today). A hub applies pending ones at startup with
+050–099 for thread-machine state (050 and 051 today). A hub applies pending ones at startup with
 `T3CODE_HUB_DATABASE_ADMIN_URL` (or the runtime URL), each in its own transaction under a
 transaction-scoped advisory lock, recorded in `hub_schema_migrations`. They are applied by id,
 not list position, so separately owned ranges can land in any order. Every new tenant table
@@ -340,46 +493,69 @@ prints only equal/different with counts.
 `server.ts` builds one runtime for every mode from the `ServerModeLayers` record; standalone
 uses the local layers and a hub uses `hub/HubLayers.ts` for the checkout-bound groups
 (checkpointing, git, VCS, terminals, workspace, provider instances), the recorded repository
-identity (`HubRepositoryIdentityResolver`), and hub-only infrastructure (machine directory,
-connection pool, session registry, event delivery, state stores, git status cache) and
-background work. `HubDatabase.layerConfig` sits under the whole runtime. Shared code sees hub
-mode only through the `serverModeHooks.ts` references (deterministic ingestion ids,
-`HubThreadCheckouts`), `CheckoutGitProbe`, and `HubDatabase`, whose defaults are standalone
-behavior. `t3 runner` is composed in `runner/RunnerServer.ts` without orchestration,
-projections or the client API.
+identity (`HubRepositoryIdentityResolver`), and hub-only infrastructure (machine directory
+observed by the machine states, connection pool, session registry, event delivery, state
+stores, provider snapshots, persisted MCP credentials, git status cache) and background
+work. `HubDatabase.layerConfig` sits under the whole runtime. Shared code sees hub mode only
+through the `serverModeHooks.ts` references (deterministic ingestion ids,
+`HubThreadCheckouts`, `ThreadMachineStatusReader` for shells, `ThreadMachineControls` and
+`ProviderSignInControls` for the client API, `McpCredentialPersistence`),
+`CheckoutGitProbe`, and `HubDatabase`, whose defaults are standalone behavior. `t3 runner`
+is composed in `runner/RunnerServer.ts` without orchestration, projections or the client
+API; its provider registry is `RunnerProviderSettings`.
 
 ## Gaps
 
 Not available on a hub (typed errors, never the hub's disk): filesystem browsing for the
-project picker, repository clone and publish, and workspace-file, media and project-favicon
-asset URLs.
+project picker, repository clone and publish, workspace-file, media and project-favicon
+asset URLs, source-control sign-in (GitHub, GitLab, Azure DevOps, Bitbucket connectors),
+and the pull-request workspace (the `pullRequests` capability is absent until PR APIs work
+without `gh` on a checkout).
 
-Still running where the hub runs, to move to runners or the credential service: previews,
-provider sign-in (auth connector), provider maintenance, usage scanning, workflow scripts,
-and pull-request listing (which needs provider credentials).
+Still running where the hub runs, to move to runners or the credential service: provider
+maintenance (update advisories are hidden), usage scanning, and workflow scripts. Previews
+and the thread browser are served by the platform's `/_devpc/threads/{threadId}/…` routes.
 
 Not built yet:
 
-- No client records a project's repository identity; the platform (or the import, from a
-  checkout) must dispatch `project.create` / `project.meta.update` with `repositoryIdentity`.
-  A hub without a database records none.
+- Repository identity is recorded only when a client or the platform sends
+  `repositoryIdentity` on `project.create` / `project.meta.update`; a hub without a
+  database records none, so its projects are blank.
 - A hub behind a runner's `firstRetainedSequence` (more than 200,000 unacknowledged events)
   only logs the gap; resynchronizing from `readThread` is future work.
+- The platform does not produce `saved` yet (idle machines pause); a `paused` machine is
+  only noticed by the minute-long watch after the hub reported it idle, so the shell may
+  show `running` for up to a minute after the platform paused it.
+- Thread detail (`OrchestrationThread`) does not carry `machine`; clients read it from the
+  shell.
+- On connect the hub pushes settings only for the thread's instance; other instances on
+  that runner report status with the runner's local defaults until a session starts them.
+- The raw MCP token is not persisted, so a session a recreated machine lost after a hub
+  restart restarts without MCP tools until the next explicit session start.
 - Attachment bytes live in `bytea` within the upload limits; object storage can replace the
   table behind the `HubAttachments` helpers.
 
 ## Testing
 
 - Unit: `apps/server/src/hub/*.test.ts` (wake semantics with a fake directory and fake
-  runner, delivery and reconciliation, routed services, the machine directory contract),
-  `apps/server/src/runner/*.test.ts` (outbox, checkout, handler guards),
-  `packages/contracts/src/runner.test.ts`, and the thread-machine stores on SQLite.
+  runner, delivery and reconciliation, routed services, the machine directory contract
+  including repository refs and provider homes, machine states and controls, repository
+  refs, provider snapshots and the settings push, provider sign-in),
+  `apps/server/src/runner/*.test.ts` (outbox, checkout including the `HEAD` base ref,
+  handler guards, provider settings), `apps/server/src/mcp/McpSessionRegistry.test.ts`
+  (persisted credentials), `packages/contracts/src/runner.test.ts`, and the thread-machine
+  stores on SQLite (`persistence/Layers/HubThreadMachineState.test.ts`).
+- Standalone behavior: `src/environment/ServerEnvironment.test.ts` (capabilities) and
+  `src/server.test.ts` (hub-only RPCs answer `unsupported` / `AuthConnectorError`), plus
+  the rest of the server suite.
 - Postgres: set `T3_HUB_TEST_DATABASE_URL` to a disposable database the tests may create
   schemas in (for example a private loopback cluster as `postgres`). Each test gets its own
   schema and, when the connecting role bypasses RLS on loopback, a runtime role without
   `BYPASSRLS`, so row-level security is exercised. This enables the persistence tests
-  (`persistence/Postgres/*.test.ts`, including the thread-machine stores and migration 050),
-  the hub server boot (`server.hub.test.ts`), attachment restore before shipping to a
+  (`persistence/Postgres/*.test.ts`, including the thread-machine stores and migrations 050
+  and 051), the hub server boot (`server.hub.test.ts`: capabilities, shells, pending provider
+  snapshots, and `t3 auth pairing create` in hub mode writing to Postgres with a browser
+  session exchange against the running hub), attachment restore before shipping to a
   runner, and the loopback integration on Postgres. Without the variable they skip, and the
   loopback runs on SQLite.
 - Loopback integration: `apps/server/integration/hubRunnerLoopback.integration.test.ts` runs
@@ -389,4 +565,71 @@ Not built yet:
 [--hub-database-url <url> [--hub-database-admin-url <url>]]` starts a runner (4422) and a
   hub (4421) on loopback and drives the hub's public API. With a database URL the hub runs
   on Postgres for a fresh tenant seeded through `t3 hub import`, and restarts on an empty
-  base directory.
+  base directory. Beyond the two turns it checks the client contract: the capability,
+  selectable provider snapshots before any runner reported, the settings push, the shell's
+  machine state and `thread-machine.state` activities, `vcs.listRefs` on the project root
+  and the checkout, and `threadMachines.pause` / `wake`.
+
+## Client contract
+
+Everything a web client relies on when an environment is a hub. All of it is additive and
+optional in `packages/contracts`: standalone servers never send the new fields and answer the
+new calls as unsupported, and older clients ignore them.
+
+**Detecting a hub.** `ExecutionEnvironmentDescriptor.capabilities.threadMachines === true`;
+hubs omit `pullRequests`, so clients must not probe the pull-request APIs. Managed hubs also
+set `serverMode: "hub"` in the platform bootstrap (with `threadPreviewUrlTemplate` and
+`threadBrowserUrlTemplate`).
+
+**Projects and threads.** `project.create` on a hub gets the virtual root
+`/workspace/p/<projectId>` (whatever the client sends) and should carry
+`repositoryIdentity` for a repository project; a project without one is blank. Every thread
+gets `worktreePath` `/workspace/t/<threadId>` on creation or bootstrap. Bootstrap uses
+`prepareWorktree.branch ?? createThread.branch`, and `prepareWorktree.baseBranch` may be
+`"HEAD"` (`DEFAULT_BRANCH_BASE_REF`) to mean the repository's default branch, so a client
+need not list branches first. `projectCwd` is ignored; `startFromOrigin` has no effect.
+
+**Machine state.** `OrchestrationThreadShell.machine: { state, detail, updatedAt } | null`
+on the shell snapshot and every `thread-upserted` event (`state` is `ThreadMachineState`:
+`none`, `preparing`, `starting`, `running`, `paused`, `saved`, `failed`; `null` means no
+machine is known). Activities: `thread-machine.state` `{ state, detail, bootId }` on every
+transition (tone `error` when `failed`), `thread-machine.checkout.preparing`, and
+`thread-machine.failed` `{ detail }` (tone `error`); see `THREAD_MACHINE_ACTIVITY_KINDS` and
+`ThreadMachineStateActivityPayload`. Clients typically hide these activities unless they are
+errors and render the shell's `machine` instead.
+
+**Controls.** `threadMachines.wake({ threadId })` and `threadMachines.pause({ threadId })`
+return the shell's `ThreadMachineStatus | null` or fail with `ThreadMachineControlError`
+(`unsupported`, `not-found`, `busy`, `unavailable` with `state?` and `detail`). Turns,
+terminal opens, file writes and git actions wake a machine on their own; reads never do and
+fail with their own error type caused by `ThreadMachineUnavailableError { reason: "asleep",
+state }` (render as "asleep, wakes on send").
+
+**Branches.** `vcs.listRefs({ cwd: "/workspace/p/<projectId>" })` lists the repository's
+branches from the platform (default branch `isDefault`, names without `origin/`), cached
+30 s, `refresh: true` to bypass; blank projects answer `isRepo: false` with no refs, and a
+missing GitHub App connection fails with a `GitCommandError` whose message says so. The same
+call on a thread checkout lists the machine's refs, or the platform's with the thread's
+branch `current` when the machine is asleep. `vcs.status` on a project root is not served
+(a draft has no checkout).
+
+**Providers.** `server.getConfig` / `subscribeServerConfig` providers are available before
+any machine ran: `installed: true`, `status: "ready"`, `auth.status: "unknown"` until a runner
+reports, then the last reported status (persisted across hub restarts). Provider settings,
+including API keys, stay hub settings; the hub delivers them to machines.
+
+**Sign-in.** The existing `server.startAuthConnector` / `getAuthConnector` /
+`submitAuthConnector` / `cancelAuthConnector` flow works unchanged on a hub for provider
+connectors (not source control). The first session answers `status: "starting"`,
+`stage: "preparing"`, message "Starting a machine for sign-in…" while the sign-in machine
+starts, then mirrors the provider's prompt; after the CLI finishes it stays `verifying`
+("Saving your sign-in…") until the platform stored it, then `succeeded`. Sessions with
+`flow: "browser"` carry `AuthConnectorSession.workspaceBrowserUrl` (the machine's browser
+page, same origin, frameable). `server.listProviderSignIns({})` →
+`{ signIns: [{ connector, version, updatedAt }] }` and
+`server.signOutProvider({ connector })` → `{ connector, signedOut }` exist only on hubs
+(standalone: `AuthConnectorError`).
+
+**Unchanged.** Previews and the thread browser are platform routes
+(`/_devpc/threads/{threadId}/preview/{port}`, `/_devpc/threads/{threadId}/browser`); pairing
+and sessions work as on any T3 server.

@@ -15,6 +15,13 @@
  *   e. a runner restart (new boot), then a turn that resumes the session
  *   f. a hub restart; history and diffs survive
  *
+ * Along the way it checks the hub-mode client contract: the threadMachines
+ * capability, selectable provider snapshots before any runner reported (and
+ * the persisted report after a restart), the provider settings push, the
+ * thread shell's machine state and thread-machine.state activities,
+ * vcs.listRefs on the virtual project root and on the thread's checkout, and
+ * threadMachines.pause / threadMachines.wake.
+ *
  * By default the hub persists to SQLite in its base directory. With
  * `--hub-database-url` it runs as production hubs do: on Postgres, for a fresh
  * tenant with a random secret key, seeded through `t3 hub import` from a
@@ -379,6 +386,25 @@ async function main() {
   });
   const created = await thread();
   check("thread checkout path", created.worktreePath === checkout, created.worktreePath);
+
+  // The hub-mode client contract before any machine ran.
+  const config = await rpc("server.getConfig", {});
+  check(
+    "threadMachines capability without pullRequests",
+    config.environment.capabilities.threadMachines === true &&
+      config.environment.capabilities.pullRequests === undefined,
+  );
+  const pending = config.providers.find((provider) => provider.instanceId === "claudeAgent");
+  check(
+    "provider selectable before any runner reported",
+    pending?.enabled === true && pending.installed && pending.status === "ready",
+    `${pending?.status} / auth ${pending?.auth.status}`,
+  );
+  const projectRefs = await rpc("vcs.listRefs", { cwd: `/workspace/p/${projectId}` });
+  check(
+    "blank project lists no refs without a machine",
+    projectRefs.isRepo === false && projectRefs.refs.length === 0,
+  );
   const shell = await http("GET", "/api/orchestration/shell");
   const project = (shell.projects ?? shell.snapshot?.projects ?? []).find(
     (entry) => entry.id === projectId,
@@ -395,13 +421,59 @@ async function main() {
   );
   const notes = NodeFS.readFileSync(NodePath.join(checkout, "notes.txt"), "utf8");
   check("turn 1 edited the runner checkout", notes.includes("edited by the runner"));
-  const checkpoint = first.checkpoints.find((entry) => entry.checkpointTurnCount === 1);
+  // The checkpoint is captured just after the turn settles.
+  const captured = await waitFor("turn 1 checkpoint", async () => {
+    const current = await thread();
+    return current.checkpoints.some(
+      (entry) => entry.checkpointTurnCount === 1 && entry.status === "ready",
+    )
+      ? current
+      : undefined;
+  });
+  const checkpoint = captured.checkpoints.find((entry) => entry.checkpointTurnCount === 1);
   check(
     "turn 1 checkpoint captured",
     checkpoint?.status === "ready" && checkpoint.files.some((file) => file.path === "notes.txt"),
     JSON.stringify(checkpoint?.files ?? []),
   );
 
+  // The machine, the settings push, and the runner's provider report.
+  const shellAfterTurn = await http("GET", "/api/orchestration/shell");
+  const shellThread = (shellAfterTurn.threads ?? shellAfterTurn.snapshot?.threads ?? []).find(
+    (entry) => entry.id === threadId,
+  );
+  check(
+    "thread shell carries the machine state",
+    shellThread?.machine?.state === "running",
+    JSON.stringify(shellThread?.machine ?? null),
+  );
+  check(
+    "thread-machine.state activity recorded",
+    first.activities.some(
+      (activity) =>
+        activity.kind === "thread-machine.state" && activity.payload?.state === "running",
+    ),
+  );
+  check(
+    "provider settings pushed to the runner",
+    /runner rpc configure[\s\S]{0,120}claudeAgent/.test(
+      NodeFS.readFileSync(NodePath.join(logs, "runner.log"), "utf8"),
+    ),
+  );
+  const reported = (await rpc("server.getConfig", {})).providers.find(
+    (provider) => provider.instanceId === "claudeAgent",
+  );
+  check(
+    "runner reported the provider",
+    reported?.auth.status === "authenticated",
+    reported?.auth.status,
+  );
+  const threadRefs = await rpc("vcs.listRefs", { cwd: checkout });
+  check(
+    "thread checkout lists its refs",
+    threadRefs.refs.some((ref) => ref.name === "main"),
+    threadRefs.refs.map((ref) => ref.name).join(","),
+  );
   // c. The diff through the hub.
   const t0 = Date.now();
   const diff = await rpc("orchestration.getTurnDiff", {
@@ -416,6 +488,12 @@ async function main() {
   );
 
   // d. With the runner stopped, the hub still serves the diff and git status.
+  // The first turn's title is generated on the runner; let it finish first.
+  await waitFor(
+    "title generation",
+    async () => ((await thread()).title !== "New thread" ? true : undefined),
+    90_000,
+  ).catch((error) => log(`title not generated before the runner stopped: ${error.message}`));
   await stop("runner");
   const t1 = Date.now();
   const cached = await rpc("orchestration.getTurnDiff", {
@@ -442,6 +520,19 @@ async function main() {
     /runner rpc startSession[\s\S]{0,200}resume: true/.test(runnerLog),
   );
 
+  // Releasing the machine waits for work still using it (the title, for one).
+  const paused = await waitFor(
+    "threadMachines.pause",
+    () => rpc("threadMachines.pause", { threadId }),
+    60_000,
+  );
+  const woken = await rpc("threadMachines.wake", { threadId });
+  check(
+    "threadMachines.pause and threadMachines.wake",
+    paused?.state === "running" && woken?.state === "running",
+    `${paused?.state} / ${woken?.state}`,
+  );
+
   // f. A hub restart keeps history and diffs.
   const beforeRestart = await thread();
   await stop("hub");
@@ -459,6 +550,14 @@ async function main() {
     toTurnCount: 1,
   });
   check("turn diff after hub restart", afterDiff.diff === diff.diff);
+  const restartedProvider = (await rpc("server.getConfig", {})).providers.find(
+    (provider) => provider.instanceId === "claudeAgent",
+  );
+  check(
+    "provider status after the hub restart",
+    restartedProvider?.auth.status === "authenticated",
+    restartedProvider?.auth.status,
+  );
   check(
     "title generated on the runner",
     afterRestart.title !== "New thread",
