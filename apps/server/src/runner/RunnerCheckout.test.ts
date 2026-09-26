@@ -113,6 +113,51 @@ describe("RunnerCheckout", () => {
     }).pipe(Effect.provide(TestLayer)),
   );
 
+  it.effect("branches from the repository's default branch for the HEAD base ref", () =>
+    Effect.gen(function* () {
+      const origin = makeOrigin();
+      // The origin's default branch is main; the clone checks out a work branch first.
+      git(origin.root, ["--git-dir", "origin.git", "symbolic-ref", "HEAD", "refs/heads/main"]);
+      const checkout = NodePath.join(origin.root, "t", threadId);
+      const runner = yield* RunnerCheckout;
+      yield* runner.prepare({
+        threadId,
+        checkout,
+        repository: { url: origin.url, ref: null },
+        branch: "feature/existing",
+        baseRef: null,
+      });
+
+      const fromDefault = yield* runner.prepare({
+        threadId,
+        checkout,
+        repository: { url: origin.url, ref: null },
+        branch: "t3/from-default",
+        baseRef: "HEAD",
+      });
+      expect(fromDefault.branch).toBe("t3/from-default");
+      expect(fromDefault.headCommit).toBe(origin.mainHead);
+
+      // A checkout without a recorded origin/HEAD learns it from the remote.
+      git(checkout, ["remote", "set-head", "origin", "--delete"]);
+      git(origin.root, [
+        "--git-dir",
+        "origin.git",
+        "symbolic-ref",
+        "HEAD",
+        "refs/heads/feature/existing",
+      ]);
+      const learned = yield* runner.prepare({
+        threadId,
+        checkout,
+        repository: { url: origin.url, ref: null },
+        branch: "t3/from-learned-default",
+        baseRef: "HEAD",
+      });
+      expect(learned.headCommit).toBe(origin.featureHead);
+    }).pipe(Effect.provide(TestLayer)),
+  );
+
   it.effect("initializes a blank project without a repository", () =>
     Effect.gen(function* () {
       const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "runner-checkout-blank-"));

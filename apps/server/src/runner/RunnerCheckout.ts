@@ -10,6 +10,9 @@
  * 3. When `branch` is not checked out: switch to it if it exists locally;
  *    otherwise create it from `origin/<branch>` (a branch pushed from an
  *    earlier machine), else from `baseRef` (remote-tracking first), else HEAD.
+ *    A `baseRef` of `HEAD` (`DEFAULT_BRANCH_BASE_REF`) means the repository's
+ *    default branch: `origin/HEAD`, which `git remote set-head --auto` fills
+ *    in when a clone did not record it.
  *
  * Network access happens only when the checkout is cloned or a branch has to
  * be created, so steady-state calls run two or three local git commands.
@@ -17,6 +20,7 @@
  * @module runner/RunnerCheckout
  */
 import {
+  DEFAULT_BRANCH_BASE_REF,
   RunnerCheckoutError,
   type RunnerPrepareCheckoutInput,
   type RunnerPrepareCheckoutResult,
@@ -129,6 +133,23 @@ export const make = Effect.gen(function* () {
         Effect.map((sha) => sha !== null),
       );
 
+    /** `origin`'s default branch as a remote-tracking ref, recording it when missing. */
+    const defaultBranchRefs = (withOrigin: boolean) =>
+      Effect.gen(function* () {
+        if (!withOrigin) return [];
+        const readDefault = probe(checkout, [
+          "symbolic-ref",
+          "--quiet",
+          "refs/remotes/origin/HEAD",
+        ]);
+        const recorded =
+          (yield* readDefault) ??
+          (yield* probe(checkout, ["remote", "set-head", "origin", "--auto"]).pipe(
+            Effect.andThen(readDefault),
+          ));
+        return recorded === null ? [] : [recorded];
+      });
+
     if (input.branch !== null && (yield* currentBranch()) !== input.branch) {
       const branch = input.branch;
       if (yield* refExists(`refs/heads/${branch}`)) {
@@ -137,11 +158,15 @@ export const make = Effect.gen(function* () {
         if (hasOrigin && !created) {
           yield* run("fetch", checkout, ["fetch", "--prune", "origin"], FETCH_TIMEOUT_MS);
         }
+        const baseCandidates =
+          input.baseRef === null
+            ? []
+            : input.baseRef === DEFAULT_BRANCH_BASE_REF
+              ? yield* defaultBranchRefs(hasOrigin)
+              : [...(hasOrigin ? [`refs/remotes/origin/${input.baseRef}`] : []), input.baseRef];
         const candidates = [
           ...(hasOrigin ? [`refs/remotes/origin/${branch}`] : []),
-          ...(input.baseRef !== null
-            ? [...(hasOrigin ? [`refs/remotes/origin/${input.baseRef}`] : []), input.baseRef]
-            : []),
+          ...baseCandidates,
           "HEAD",
         ];
         let startPoint: string | null = null;
