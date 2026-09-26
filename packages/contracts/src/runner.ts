@@ -89,7 +89,7 @@ import {
   ProviderSessionStartInput,
   ProviderTurnStartResult,
 } from "./provider.ts";
-import { ProviderInstanceId } from "./providerInstance.ts";
+import { ProviderInstanceConfig, ProviderInstanceId } from "./providerInstance.ts";
 import { ThreadMachineState } from "./threadMachine.ts";
 import { ProviderRuntimeEvent } from "./providerRuntime.ts";
 import {
@@ -116,8 +116,17 @@ import {
 } from "./terminal.ts";
 import { VcsError } from "./vcs.ts";
 
-/** Current runner protocol version. Bump when an RPC changes incompatibly. */
-export const RUNNER_PROTOCOL_VERSION = 1;
+/**
+ * Current runner protocol version. Bump when RPCs are added or change; a hub
+ * checks `hello.protocolVersion` before using newer calls.
+ *
+ * - 1: the initial protocol.
+ * - 2: `runner.provider.configure` (hub-pushed provider instance settings) and
+ *   `runner.auth.*` (provider sign-in on the sign-in machine).
+ */
+export const RUNNER_PROTOCOL_VERSION = 2;
+/** First version with `runner.provider.configure` and `runner.auth.*`. */
+export const RUNNER_PROTOCOL_PROVIDER_SETTINGS = 2;
 /** Oldest protocol version this build still speaks. */
 export const RUNNER_MIN_PROTOCOL_VERSION = 1;
 export const RUNNER_WS_PATH = "/runner/ws";
@@ -553,6 +562,20 @@ export const RunnerRollbackThreadRpc = Rpc.make("runner.provider.rollbackThread"
   error: RunnerRemoteError,
 });
 
+/**
+ * The hub's effective settings for provider instances, sensitive environment
+ * values included. The runner applies them to its provider registry in memory
+ * (it serves one thread, so they apply to that thread's sessions only) and
+ * never writes them to disk; the reply lists the instances it now hosts.
+ */
+export const RunnerConfigureProvidersRpc = Rpc.make("runner.provider.configure", {
+  payload: Schema.Struct({
+    instances: Schema.Record(ProviderInstanceId, ProviderInstanceConfig),
+  }),
+  success: Schema.Struct({ instances: Schema.Array(ProviderInstanceId) }),
+  error: RunnerRemoteError,
+});
+
 /** Provider status and models as the runner's real driver sees them. */
 export const RunnerGetCapabilitiesRpc = Rpc.make("runner.provider.getCapabilities", {
   payload: Schema.Struct({ ...InstanceScoped, refresh: Schema.optional(Schema.Boolean) }),
@@ -941,6 +964,7 @@ export const RunnerRpcGroup = RpcGroup.make(
   RunnerReadThreadRpc,
   RunnerRollbackThreadRpc,
   RunnerGetCapabilitiesRpc,
+  RunnerConfigureProvidersRpc,
   RunnerGenerateThreadTitleRpc,
   RunnerGenerateBranchNameRpc,
   RunnerSubscribeEventsRpc,

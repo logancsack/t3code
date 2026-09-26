@@ -36,7 +36,6 @@ import type { ProviderAdapterError } from "../provider/Errors.ts";
 import * as ModelManifest from "../provider/ModelManifest.ts";
 import * as OpenCodeRuntime from "../provider/opencodeRuntime.ts";
 import * as ProviderEventLoggers from "../provider/Layers/ProviderEventLoggers.ts";
-import { makeProviderInstanceRegistryHydration } from "../provider/Layers/ProviderInstanceRegistryHydration.ts";
 import { ProviderRegistryLive } from "../provider/Layers/ProviderRegistry.ts";
 import type { ProviderAdapterShape } from "../provider/Services/ProviderAdapter.ts";
 import { ProviderInstanceRegistry } from "../provider/Services/ProviderInstanceRegistry.ts";
@@ -62,6 +61,7 @@ import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import * as RunnerCheckout from "./RunnerCheckout.ts";
 import { RunnerRpcHandlersLive, resolveRunnerBinding } from "./RunnerHandlers.ts";
 import { RunnerOutbox, layer as RunnerOutboxLayer } from "./RunnerOutbox.ts";
+import { makeRunnerProviderRegistryLayer } from "./RunnerProviderSettings.ts";
 import * as RunnerProjectionSnapshotQuery from "./RunnerProjectionSnapshotQuery.ts";
 
 /** Time given to session-exit events to reach the outbox on graceful shutdown. */
@@ -70,6 +70,8 @@ const SHUTDOWN_DRAIN = "300 millis";
 /**
  * `T3CODE_RUNNER_DRIVERS=claudeAgent,codex` limits the hosted drivers (for
  * development and tests); by default a runner hosts every built-in driver.
+ * Instance settings come from the runner's settings file with the hub's
+ * pushed settings layered over them in memory (`RunnerProviderSettings`).
  */
 const RunnerProviderInstanceRegistryLive = Layer.unwrap(
   Effect.gen(function* () {
@@ -81,7 +83,7 @@ const RunnerProviderInstanceRegistryLive = Layer.unwrap(
         .map((value) => value.trim())
         .filter((value) => value.length > 0),
     );
-    return makeProviderInstanceRegistryHydration(
+    return makeRunnerProviderRegistryLayer(
       wanted.size === 0 ? drivers : drivers.filter((driver) => wanted.has(driver.driverKind)),
     );
   }),

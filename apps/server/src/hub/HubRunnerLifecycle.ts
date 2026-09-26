@@ -88,7 +88,9 @@ export const layer = Layer.effectDiscard(
             .getThreadShellById(threadId)
             .pipe(Effect.orElseSucceed(() => Option.none())),
         );
-        if (!thread) return { projectId: null, repository: null, branch: null };
+        if (!thread) {
+          return { projectId: null, repository: null, branch: null, providerInstanceId: null };
+        }
         const project = Option.getOrUndefined(
           yield* projections
             .getProjectShellById(thread.projectId)
@@ -99,6 +101,7 @@ export const layer = Layer.effectDiscard(
           projectId: thread.projectId,
           repository: identity ? { url: identity.locator.remoteUrl, ref: null } : null,
           branch: thread.branch,
+          providerInstanceId: thread.modelSelection.instanceId,
         };
       }),
     );

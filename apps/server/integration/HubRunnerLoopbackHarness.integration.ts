@@ -32,6 +32,7 @@ import {
   ThreadId,
   type OrchestrationThread,
   type ProviderApprovalDecision,
+  type ProviderInstanceConfig,
   type ServerProvider,
 } from "@t3tools/contracts";
 import {
@@ -61,6 +62,7 @@ import * as RemoteSessionRegistry from "../src/hub/RemoteSessionRegistry.ts";
 import { make as makePool, RunnerConnectionPool } from "../src/hub/RunnerConnectionPool.ts";
 import * as RunnerEventDelivery from "../src/hub/RunnerEventDelivery.ts";
 import * as ThreadMachineStates from "../src/hub/ThreadMachineStates.ts";
+import { RunnerProviderSettings } from "../src/runner/RunnerProviderSettings.ts";
 import * as HubProviderSnapshots from "../src/hub/HubProviderSnapshots.ts";
 import { serveRunner } from "../src/hub/testUtils/runnerServer.ts";
 import { makeOrchestrationCommandDispatcher } from "../src/orchestration/CommandDispatcher.ts";
@@ -221,6 +223,8 @@ export interface LoopbackRunner {
   readonly url: string;
   readonly adapterHarness: TestProviderAdapterHarness;
   readonly outbox: RunnerOutboxShape;
+  /** Every `runner.provider.configure` push, as the settings the hub sent. */
+  readonly configured: Array<Readonly<Record<string, ProviderInstanceConfig>>>;
 }
 
 export interface HubRunnerLoopbackHarness {
@@ -293,8 +297,19 @@ export const makeHubRunnerLoopbackHarness = (threadIdValue = "thread-loopback") 
         const outbox = yield* makeOutbox({
           databasePath: NodePath.join(runnerStateDir, "runner", "outbox.sqlite"),
         }).pipe(Scope.provide(scope));
+        const configured: Array<Readonly<Record<string, ProviderInstanceConfig>>> = [];
         const runnerLayer = Layer.mergeAll(RunnerEventPumpLive, RunnerRpcHandlersLive).pipe(
           Layer.provideMerge(Layer.succeed(RunnerOutbox, outbox)),
+          Layer.provideMerge(
+            Layer.succeed(RunnerProviderSettings, {
+              apply: (instances) =>
+                Effect.sync(() => {
+                  configured.push(instances);
+                  return [LOOPBACK_INSTANCE_ID];
+                }),
+              effectiveSettings: Effect.die("unused in the loopback harness"),
+            }),
+          ),
           Layer.provideMerge(instanceRegistryLayer(adapterHarness.adapter)),
           Layer.provideMerge(
             Layer.mergeAll(
@@ -335,7 +350,7 @@ export const makeHubRunnerLoopbackHarness = (threadIdValue = "thread-loopback") 
         );
         const served = yield* serveRunner(runnerLayer).pipe(Scope.provide(scope));
         runnerScope = scope;
-        runner = { url: served.url, adapterHarness, outbox };
+        runner = { url: served.url, adapterHarness, outbox, configured };
         return runner;
       });
 

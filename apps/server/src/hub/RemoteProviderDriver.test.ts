@@ -29,6 +29,7 @@ import {
   makeHubTestSchema,
 } from "../persistence/Postgres/hubTestDatabase.ts";
 import * as ProviderSessionRuntime from "../persistence/ProviderSessionRuntime.ts";
+import { ServerSettingsService } from "../serverSettings.ts";
 import { CodexDriver } from "../provider/Drivers/CodexDriver.ts";
 import * as HubProviderSnapshots from "./HubProviderSnapshots.ts";
 import { MachineDirectory, makeFakeMachineDirectory } from "./MachineDirectory.ts";
@@ -128,7 +129,13 @@ describe("remote provider driver helpers", () => {
 });
 
 const StoresLive = HubProviderSnapshots.layer.pipe(
-  Layer.provideMerge(Layer.mergeAll(HubThreadMachineStateSqliteLive, ProviderSessionRuntime.layer)),
+  Layer.provideMerge(
+    Layer.mergeAll(
+      HubThreadMachineStateSqliteLive,
+      ProviderSessionRuntime.layer,
+      ServerSettingsService.layerTest(),
+    ),
+  ),
   Layer.provideMerge(SqlitePersistenceMemory),
   Layer.provideMerge(NodeServices.layer),
 );

@@ -42,6 +42,7 @@ import * as WorkspaceFileSystem from "../workspace/WorkspaceFileSystem.ts";
 import * as RunnerCheckout from "./RunnerCheckout.ts";
 import { RunnerRpcHandlersLive } from "./RunnerHandlers.ts";
 import { makeWithOptions as makeOutbox, RunnerOutbox } from "./RunnerOutbox.ts";
+import { RunnerProviderSettings } from "./RunnerProviderSettings.ts";
 
 const threadId = ThreadId.make("thread-handlers");
 const provider = ProviderDriverKind.make("claudeAgent");
@@ -59,6 +60,7 @@ const setup = Effect.gen(function* () {
   const checkout = NodePath.join(root, "t", threadId);
   NodeFS.mkdirSync(checkout, { recursive: true });
   const turns: Array<ProviderSendTurnInput> = [];
+  const configured: Array<ReadonlyArray<string>> = [];
   const mcpAtStart: Array<McpProviderSession.McpProviderSessionConfig | undefined> = [];
   const events = yield* PubSub.unbounded<never>();
   const adapter = {
@@ -143,6 +145,17 @@ const setup = Effect.gen(function* () {
         Layer.mock(VcsProvisioningService.VcsProvisioningService)({}),
         Layer.mock(ReviewService.ReviewService)({}),
         Layer.mock(TerminalManager.TerminalManager)({}),
+        Layer.succeed(RunnerProviderSettings, {
+          apply: (instances) =>
+            Effect.sync(() => {
+              configured.push(Object.keys(instances));
+              return [
+                instanceId,
+                ...Object.keys(instances).map((id) => ProviderInstanceId.make(id)),
+              ];
+            }),
+          effectiveSettings: Effect.die("unused"),
+        }),
         ServerSettingsService.layerTest(),
       ),
     ),
@@ -159,7 +172,15 @@ const setup = Effect.gen(function* () {
   const runnerConfig = yield* ServerConfig.pipe(
     Effect.provide(config.pipe(Layer.provide(NodeServices.layer))),
   );
-  return { root, checkout, turns, mcpAtStart, pool, attachmentsDir: runnerConfig.attachmentsDir };
+  return {
+    root,
+    checkout,
+    turns,
+    mcpAtStart,
+    configured,
+    pool,
+    attachmentsDir: runnerConfig.attachmentsDir,
+  };
 });
 
 describe("runner handlers", () => {
@@ -250,6 +271,26 @@ describe("runner handlers", () => {
           .pipe(Effect.flip);
         expect(outside).toMatchObject({ _tag: "VcsRepositoryDetectionError", cwd: "/etc" });
         expect(turns).toEqual([]);
+      }),
+    ),
+  );
+
+  it.live("applies the hub's provider settings and reports the hosted instances", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { pool, configured } = yield* setup;
+        const result = yield* pool.use(threadId, { wake: false, operation: "test" }, (connection) =>
+          connection.client["runner.provider.configure"]({
+            instances: {
+              [ProviderInstanceId.make("claude_work")]: {
+                driver: provider,
+                environment: [{ name: "ANTHROPIC_API_KEY", value: "sk-test", sensitive: true }],
+              },
+            },
+          }),
+        );
+        expect(result.instances).toEqual(["claudeAgent", "claude_work"]);
+        expect(configured).toEqual([["claude_work"]]);
       }),
     ),
   );

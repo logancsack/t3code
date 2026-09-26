@@ -22,7 +22,7 @@
  *
  * @module hub/RunnerConnectionPool
  */
-import { type ProjectId, type ThreadId } from "@t3tools/contracts";
+import { type ProjectId, type ProviderInstanceId, type ThreadId } from "@t3tools/contracts";
 import {
   RUNNER_MIN_PROTOCOL_VERSION,
   RUNNER_PROTOCOL_VERSION,
@@ -71,6 +71,8 @@ export interface ThreadMachineContext {
   readonly projectId: ProjectId | null;
   readonly repository: ThreadMachineRepository | null;
   readonly branch: string | null;
+  /** The provider instance the thread's model selection names, when known. */
+  readonly providerInstanceId?: ProviderInstanceId | null;
 }
 
 export type ThreadMachineContextResolver = (
@@ -121,6 +123,12 @@ export interface RunnerConnectionPoolShape {
   ) => Effect.Effect<ThreadMachineStatus, ThreadMachineUnavailableError>;
   /** Runs `handler` in the scope of every current and future connection. */
   readonly onConnection: (handler: ConnectionHandler) => Effect.Effect<void>;
+  /** Like `onConnection`, until the caller's scope closes. */
+  readonly onConnectionScoped: (
+    handler: ConnectionHandler,
+  ) => Effect.Effect<void, never, Scope.Scope>;
+  /** The thread's machine context from the registered resolver, if any. */
+  readonly contextOf: (threadId: ThreadId) => Effect.Effect<ThreadMachineContext | null>;
   readonly lifecycle: Stream.Stream<PoolLifecycleEvent>;
   /** Busy marks keep a connection open (and reconnecting) while set. */
   readonly setBusy: (threadId: ThreadId, reason: string, busy: boolean) => Effect.Effect<void>;
@@ -651,6 +659,26 @@ export const make = (options: RunnerConnectionPoolOptions = {}) =>
       }),
     );
 
+    const registerHandler = (handler: ConnectionHandler) =>
+      Effect.gen(function* () {
+        handlers.push(handler);
+        for (const slot of slots.values()) {
+          if (slot.connection && slot.scope && !slot.closing) {
+            yield* handler(slot.connection).pipe(
+              Scope.provide(slot.scope),
+              Effect.catchCause((cause) =>
+                Cause.hasInterruptsOnly(cause)
+                  ? Effect.void
+                  : Effect.logWarning("runner connection handler failed", {
+                      cause: Cause.pretty(cause),
+                    }),
+              ),
+              Effect.forkIn(slot.scope),
+            );
+          }
+        }
+      });
+
     return RunnerConnectionPool.of({
       sweepIdle,
       checkoutRoot,
@@ -671,25 +699,20 @@ export const make = (options: RunnerConnectionPoolOptions = {}) =>
       ),
       machineStatus: (threadId) =>
         directory.status(threadId).pipe(Effect.mapError(fromDirectoryError(threadId, "status"))),
-      onConnection: (handler) =>
-        Effect.gen(function* () {
-          handlers.push(handler);
-          for (const slot of slots.values()) {
-            if (slot.connection && slot.scope && !slot.closing) {
-              yield* handler(slot.connection).pipe(
-                Scope.provide(slot.scope),
-                Effect.catchCause((cause) =>
-                  Cause.hasInterruptsOnly(cause)
-                    ? Effect.void
-                    : Effect.logWarning("runner connection handler failed", {
-                        cause: Cause.pretty(cause),
-                      }),
-                ),
-                Effect.forkIn(slot.scope),
-              );
-            }
-          }
-        }),
+      contextOf: (threadId) =>
+        contextResolver === null
+          ? Effect.succeed(null)
+          : contextResolver(threadId).pipe(
+              Effect.catchCause(() => Effect.succeed<ThreadMachineContext | null>(null)),
+            ),
+      onConnectionScoped: (handler) =>
+        Effect.acquireRelease(registerHandler(handler), () =>
+          Effect.sync(() => {
+            const index = handlers.indexOf(handler);
+            if (index >= 0) handlers.splice(index, 1);
+          }),
+        ),
+      onConnection: (handler) => registerHandler(handler),
       lifecycle: Stream.fromPubSub(lifecycle),
       setBusy: (threadId, reason, busy) =>
         Clock.currentTimeMillis.pipe(

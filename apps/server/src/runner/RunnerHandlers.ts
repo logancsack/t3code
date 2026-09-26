@@ -69,6 +69,7 @@ import * as WorkspaceFileSystem from "../workspace/WorkspaceFileSystem.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import { RunnerCheckout } from "./RunnerCheckout.ts";
 import { RunnerOutbox } from "./RunnerOutbox.ts";
+import { RunnerProviderSettings } from "./RunnerProviderSettings.ts";
 import { ProviderAdapterErrorSchema, toRunnerRemoteError } from "./remoteErrors.ts";
 
 const DEFAULT_AUTOMATIC_GIT_FETCH_INTERVAL = Duration.minutes(5);
@@ -126,6 +127,7 @@ export const RunnerRpcHandlersLive = RunnerRpcGroup.toLayer(
     const review = yield* ReviewService.ReviewService;
     const terminals = yield* TerminalManager.TerminalManager;
     const serverSettings = yield* ServerSettingsService;
+    const providerSettings = yield* RunnerProviderSettings;
 
     const automaticGitFetchInterval = serverSettings.getSettings.pipe(
       Effect.map(
@@ -338,6 +340,13 @@ export const RunnerRpcHandlersLive = RunnerRpcGroup.toLayer(
         }),
 
       // ── Provider sessions ────────────────────────────────────────────
+      // Only instance ids are logged; the settings carry secrets.
+      "runner.provider.configure": ({ instances }) =>
+        logged(
+          "configure",
+          { instances: Object.keys(instances) },
+          providerSettings.apply(instances).pipe(Effect.map((hosted) => ({ instances: hosted }))),
+        ),
       "runner.provider.startSession": ({ instanceId, input, mcp }) =>
         guardThread("startSession", input.threadId).pipe(
           Effect.andThen(

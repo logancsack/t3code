@@ -25,6 +25,12 @@
  * recreated) is restarted from the recorded resume cursor before a turn is
  * sent, after boot reconciliation has settled the old one.
  *
+ * Provider settings: the hub's effective settings for the instance, sensitive
+ * environment values decrypted from the hub's secret store, are pushed to the
+ * runner (`runner.provider.configure`, protocol 2) when a thread's runner
+ * connects (for the thread's instance), before every session start and before
+ * title or branch-name generation. The runner keeps them in memory only.
+ *
  * @module hub/RemoteProviderDriver
  */
 import * as NodeFS from "node:fs";
@@ -32,6 +38,7 @@ import * as NodeFS from "node:fs";
 import {
   type ChatAttachment,
   type ProviderDriverKind,
+  type ProviderInstanceConfig,
   type ProviderInstanceId,
   type ProviderSession,
   type ServerProvider,
@@ -40,6 +47,7 @@ import {
 } from "@t3tools/contracts";
 import {
   parseThreadCheckoutPath,
+  RUNNER_PROTOCOL_PROVIDER_SETTINGS,
   type RunnerAttachmentFile,
   type RunnerMcpSession,
   ThreadMachineUnavailableError,
@@ -57,6 +65,8 @@ import * as Stream from "effect/Stream";
 import { resolveAttachmentPath } from "../attachmentStore.ts";
 import { ServerConfig } from "../config.ts";
 import * as McpProviderSession from "../mcp/McpProviderSession.ts";
+import { deriveProviderInstanceConfigMap } from "../provider/Layers/ProviderInstanceRegistryHydration.ts";
+import { ServerSettingsService } from "../serverSettings.ts";
 import { hydrateHubAttachment } from "../persistence/Postgres/HubAttachments.ts";
 import {
   type ProviderAdapterError,
@@ -91,6 +101,7 @@ export type RemoteProviderDriverEnv =
   | RunnerEventDelivery
   | RemoteSessionRegistry
   | HubProviderSnapshots
+  | ServerSettingsService
   | ServerConfig
   | FileSystem.FileSystem
   | Path.Path;
@@ -161,7 +172,38 @@ interface InstanceContext {
     attachments: ReadonlyArray<ChatAttachment> | undefined,
   ) => Effect.Effect<ReadonlyArray<RunnerAttachmentFile>, RunnerAttachmentReadError>;
   readonly publicUrl: string | undefined;
+  /**
+   * Pushes the hub's effective settings for this instance to a runner that
+   * speaks protocol 2; returns the instances the runner hosts afterwards, or
+   * none when nothing was pushed.
+   */
+  readonly pushSettings: (
+    connection: RunnerConnection,
+  ) => Effect.Effect<Option.Option<ReadonlyArray<ProviderInstanceId>>>;
 }
+
+/**
+ * The hub's effective settings for one instance (explicit `providerInstances`
+ * or the legacy `providers.<kind>` mirror), with sensitive values included.
+ */
+export const effectiveInstanceSettings = (
+  serverSettings: ServerSettingsService["Service"],
+  instanceId: ProviderInstanceId,
+) =>
+  serverSettings.getSettings.pipe(
+    Effect.map((settings): ProviderInstanceConfig | undefined => {
+      const entry = deriveProviderInstanceConfigMap(settings)[instanceId];
+      if (entry === undefined) return undefined;
+      return entry.environment === undefined
+        ? entry
+        : {
+            ...entry,
+            environment: entry.environment.map(
+              ({ valueRedacted: _redacted, ...variable }) => variable,
+            ),
+          };
+    }),
+  );
 
 export function makeRemoteProviderDriver<R>(
   base: AnyProviderDriver<R>,
@@ -175,7 +217,27 @@ export function makeRemoteProviderDriver<R>(
     create: ({ instanceId, displayName, accentColor, enabled, config: driverConfig }) =>
       Effect.gen(function* () {
         const config = yield* ServerConfig;
+        const serverSettings = yield* ServerSettingsService;
         const platform = yield* Effect.context<FileSystem.FileSystem | Path.Path>();
+        const pushSettings: InstanceContext["pushSettings"] = (connection) =>
+          connection.hello.protocolVersion < RUNNER_PROTOCOL_PROVIDER_SETTINGS
+            ? Effect.succeed(Option.none())
+            : effectiveInstanceSettings(serverSettings, instanceId).pipe(
+                Effect.flatMap((settings) =>
+                  settings === undefined
+                    ? Effect.succeed(Option.none<ReadonlyArray<ProviderInstanceId>>())
+                    : connection.client["runner.provider.configure"]({
+                        instances: { [instanceId]: settings },
+                      }).pipe(Effect.map((result) => Option.some(result.instances))),
+                ),
+                Effect.catchCause((cause) =>
+                  Effect.logWarning("provider settings were not pushed to the runner", {
+                    threadId: connection.threadId,
+                    instanceId,
+                    detail: Cause.pretty(cause).slice(0, 300),
+                  }).pipe(Effect.as(Option.none<ReadonlyArray<ProviderInstanceId>>())),
+                ),
+              );
         const context: InstanceContext = {
           driverKind,
           instanceId,
@@ -187,6 +249,7 @@ export function makeRemoteProviderDriver<R>(
               Effect.provideContext(platform),
             ),
           publicUrl: config.hub?.publicUrl,
+          pushSettings,
         };
         const capabilities: {
           current: Omit<ProviderAdapterCapabilities, "sessionsOutliveServer">;
@@ -291,11 +354,16 @@ function makeRemoteAdapter(
     connection: RunnerConnection,
     input: Parameters<ProviderAdapterShape<ProviderAdapterError>["startSession"]>[0],
   ) =>
-    connection.client["runner.provider.startSession"]({
-      instanceId,
-      input,
-      mcp: mcpSessionForRunner(input.threadId, context.publicUrl),
-    }).pipe(Effect.tap((session) => recordSession(session, connection)));
+    context.pushSettings(connection).pipe(
+      Effect.andThen(
+        connection.client["runner.provider.startSession"]({
+          instanceId,
+          input,
+          mcp: mcpSessionForRunner(input.threadId, context.publicUrl),
+        }),
+      ),
+      Effect.tap((session) => recordSession(session, connection)),
+    );
 
   const hostedSession = (threadId: ThreadId) =>
     registry
@@ -461,8 +529,8 @@ const makeRemoteSnapshot = (input: {
       Effect.forkScoped,
     );
 
-    const fetchFrom = (connection: RunnerConnection, refresh: boolean) =>
-      connection.hello.instances.includes(context.instanceId)
+    const fetchFrom = (connection: RunnerConnection, refresh: boolean, hosted?: boolean) =>
+      (hosted ?? connection.hello.instances.includes(context.instanceId))
         ? connection.client["runner.provider.getCapabilities"]({
             instanceId: context.instanceId,
             ...(refresh ? { refresh } : {}),
@@ -480,7 +548,25 @@ const makeRemoteSnapshot = (input: {
           )
         : Effect.void;
 
-    yield* context.pool.onConnection((connection) => fetchFrom(connection, false));
+    /** The instance a thread uses: its live session's, else its model selection's. */
+    const threadInstance = (threadId: ThreadId) =>
+      Effect.gen(function* () {
+        const record = yield* context.registry.get(threadId);
+        if (Option.isSome(record)) return record.value.instanceId;
+        return (yield* context.pool.contextOf(threadId))?.providerInstanceId ?? null;
+      });
+
+    // Scoped to the instance: a rebuilt instance (settings changed) replaces it.
+    yield* context.pool.onConnectionScoped((connection) =>
+      Effect.gen(function* () {
+        let hosted = connection.hello.instances;
+        if ((yield* threadInstance(connection.threadId)) === context.instanceId) {
+          const pushed = yield* context.pushSettings(connection);
+          if (Option.isSome(pushed)) hosted = pushed.value;
+        }
+        if (hosted.includes(context.instanceId)) yield* fetchFrom(connection, false, true);
+      }),
+    );
 
     const refresh = Effect.gen(function* () {
       const [connection] = yield* context.pool.connections;
@@ -527,7 +613,9 @@ function makeRemoteTextGeneration(context: InstanceContext): TextGenerationShape
           }),
         )
       : pool
-          .use(threadId, { wake: true, operation: `text.${operation}` }, f)
+          .use(threadId, { wake: true, operation: `text.${operation}` }, (connection) =>
+            context.pushSettings(connection).pipe(Effect.andThen(f(connection))),
+          )
           .pipe(Effect.mapError(toTextGenerationError(operation)));
   };
   const onRunnerOnly = (operation: string) =>
