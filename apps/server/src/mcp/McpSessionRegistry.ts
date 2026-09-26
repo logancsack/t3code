@@ -8,6 +8,7 @@ import * as SynchronizedRef from "effect/SynchronizedRef";
 import { HttpServer } from "effect/unstable/http";
 
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
+import { McpCredentialPersistence, type McpCredentialRecord } from "../serverModeHooks.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
 import * as McpProviderSession from "./McpProviderSession.ts";
 
@@ -73,6 +74,14 @@ export interface McpSessionRegistryOptions {
  */
 const DEFAULT_LIVENESS_WINDOW_MS = 24 * 60 * 60 * 1_000;
 
+/**
+ * With persistence (a hub), how stale a persisted liveness may get before a
+ * sign of life is written through. Well inside the liveness window.
+ */
+const PERSISTED_LIVENESS_REFRESH_MS = 10 * 60 * 1_000;
+
+const MCP_CAPABILITIES: ReadonlySet<string> = new Set(["preview", "review"]);
+
 const bytesToHex = (bytes: Uint8Array): string =>
   Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
 
@@ -96,9 +105,64 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
   const environment = yield* ServerEnvironment.ServerEnvironment;
   const environmentId = yield* environment.getEnvironmentId;
   const httpServer = yield* HttpServer.HttpServer;
-  const state = yield* SynchronizedRef.make<RegistryState>({ records: new Map() });
   const currentTimeMillis = options.now ? Effect.sync(options.now) : Clock.currentTimeMillis;
   const livenessWindowMs = options.livenessWindowMs ?? DEFAULT_LIVENESS_WINDOW_MS;
+  // A hub persists credentials: its provider sessions outlive the process.
+  const persistence = yield* McpCredentialPersistence;
+  const persistedAliveAt = new Map<string, number>();
+  const restored = new Map<string, CredentialRecord>();
+  if (persistence !== null) {
+    const loadedAt = yield* currentTimeMillis;
+    const expired: Array<string> = [];
+    for (const row of yield* persistence.load) {
+      if (row.environmentId !== environmentId || loadedAt - row.lastAliveAt > livenessWindowMs) {
+        expired.push(row.tokenHash);
+        continue;
+      }
+      restored.set(row.tokenHash, {
+        tokenHash: row.tokenHash,
+        lastAliveAt: row.lastAliveAt,
+        scope: {
+          environmentId,
+          threadId: ThreadId.make(row.threadId),
+          providerSessionId: row.providerSessionId,
+          providerInstanceId: ProviderInstanceId.make(row.providerInstanceId),
+          capabilities: new Set(
+            row.capabilities.filter(
+              (capability): capability is McpInvocationContext.McpCapability =>
+                MCP_CAPABILITIES.has(capability),
+            ),
+          ),
+          issuedAt: row.issuedAt,
+        },
+      });
+      persistedAliveAt.set(row.tokenHash, row.lastAliveAt);
+    }
+    if (expired.length > 0) yield* persistence.remove(expired);
+  }
+  const state = yield* SynchronizedRef.make<RegistryState>({ records: restored });
+
+  /** Writes liveness through for credentials whose persisted value is stale. */
+  const persistLiveness = (tokenHashes: ReadonlyArray<string>, timestamp: number) => {
+    if (persistence === null) return Effect.void;
+    const stale = tokenHashes.filter(
+      (tokenHash) =>
+        timestamp - (persistedAliveAt.get(tokenHash) ?? 0) >= PERSISTED_LIVENESS_REFRESH_MS,
+    );
+    if (stale.length === 0) return Effect.void;
+    for (const tokenHash of stale) persistedAliveAt.set(tokenHash, timestamp);
+    return persistence.touch(stale, timestamp);
+  };
+  const toPersisted = (record: CredentialRecord): McpCredentialRecord => ({
+    tokenHash: record.tokenHash,
+    environmentId: record.scope.environmentId,
+    threadId: record.scope.threadId,
+    providerSessionId: record.scope.providerSessionId,
+    providerInstanceId: record.scope.providerInstanceId,
+    capabilities: [...record.scope.capabilities],
+    issuedAt: record.scope.issuedAt,
+    lastAliveAt: record.lastAliveAt,
+  });
   const endpoint =
     httpServer.address._tag === "TcpAddress"
       ? `http://${getHttpMcpEndpointHost(httpServer.address.hostname)}:${httpServer.address.port}/mcp`
@@ -135,11 +199,16 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
         ]),
         issuedAt,
       };
+      const record: CredentialRecord = { tokenHash, scope, lastAliveAt: issuedAt };
       yield* SynchronizedRef.update(state, ({ records }) => {
         const next = new Map(pruneDead(records, issuedAt));
-        next.set(tokenHash, { tokenHash, scope, lastAliveAt: issuedAt });
+        next.set(tokenHash, record);
         return { records: next };
       });
+      if (persistence !== null) {
+        persistedAliveAt.set(tokenHash, issuedAt);
+        yield* persistence.save(toPersisted(record));
+      }
       return {
         config: {
           environmentId,
@@ -158,7 +227,7 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
       if (rawToken.length === 0) return undefined;
       const tokenHash = yield* hashToken(rawToken);
       const timestamp = yield* currentTimeMillis;
-      return yield* SynchronizedRef.modify(state, ({ records }) => {
+      const scope = yield* SynchronizedRef.modify(state, ({ records }) => {
         const current = pruneDead(records, timestamp);
         const record = current.get(tokenHash);
         if (!record) return [undefined, { records: current }] as const;
@@ -166,29 +235,46 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
         next.set(tokenHash, { ...record, lastAliveAt: timestamp });
         return [record.scope, { records: next }] as const;
       });
+      if (scope !== undefined) yield* persistLiveness([tokenHash], timestamp);
+      return scope;
     },
   );
 
   const touch: McpSessionRegistryShape["touch"] = Effect.fn("McpSessionRegistry.touch")(
     function* (threadId) {
       const timestamp = yield* currentTimeMillis;
-      yield* SynchronizedRef.update(state, ({ records }) => {
+      const touched = yield* SynchronizedRef.modify(state, ({ records }) => {
         const current = pruneDead(records, timestamp);
         const next = new Map(current);
+        const hashes: Array<string> = [];
         for (const [tokenHash, record] of current) {
           if (record.scope.threadId === threadId) {
             next.set(tokenHash, { ...record, lastAliveAt: timestamp });
+            hashes.push(tokenHash);
           }
         }
-        return { records: next };
+        return [hashes, { records: next }] as const;
       });
+      yield* persistLiveness(touched, timestamp);
     },
   );
 
   const revokeWhere = (predicate: (record: CredentialRecord) => boolean) =>
-    SynchronizedRef.update(state, ({ records }) => ({
-      records: new Map(Array.from(records).filter(([, record]) => !predicate(record))),
-    }));
+    SynchronizedRef.modify(state, ({ records }) => {
+      const revoked = Array.from(records.values()).filter(predicate);
+      return [
+        revoked.map((record) => record.tokenHash),
+        {
+          records: new Map(Array.from(records).filter(([, record]) => !predicate(record))),
+        },
+      ] as const;
+    }).pipe(
+      Effect.flatMap((revoked) => {
+        if (persistence === null || revoked.length === 0) return Effect.void;
+        for (const tokenHash of revoked) persistedAliveAt.delete(tokenHash);
+        return persistence.remove(revoked);
+      }),
+    );
 
   return McpSessionRegistry.of({
     issue,
@@ -202,6 +288,9 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
     revokeThread: Effect.fn("McpSessionRegistry.revokeThread")(function* (threadId) {
       yield* revokeWhere((record) => record.scope.threadId === threadId);
     }),
+    // Clears this process's credentials only (the shutdown path). Persisted
+    // credentials belong to sessions that outlive the server (a hub's thread
+    // machines) and are loaded again by the next process.
     revokeAll: SynchronizedRef.set(state, { records: new Map() }),
   });
 });

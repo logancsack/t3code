@@ -10,6 +10,11 @@ import {
   RunnerCursorStore,
   ThreadVcsStatusStore,
 } from "../Services/HubThreadMachineState.ts";
+import {
+  expectedThreadMachineServices,
+  readThreadMachineServices,
+  writeThreadMachineServices,
+} from "../hubThreadMachineServicesScenario.ts";
 import { HubThreadMachineStateSqliteLive } from "./HubThreadMachineState.ts";
 import { SqlitePersistenceMemory } from "./Sqlite.ts";
 
@@ -112,6 +117,13 @@ describe("hub thread-machine state on SQLite", () => {
       });
       yield* statuses.remove(threadId);
       expect(yield* statuses.list()).toEqual([]);
+    }).pipe(Effect.provide(TestLayer)),
+  );
+
+  it.effect("keeps machine states, provider snapshots and MCP credentials", () =>
+    Effect.gen(function* () {
+      yield* writeThreadMachineServices("sqlite");
+      expect(yield* readThreadMachineServices).toEqual(expectedThreadMachineServices("sqlite"));
     }).pipe(Effect.provide(TestLayer)),
   );
 });

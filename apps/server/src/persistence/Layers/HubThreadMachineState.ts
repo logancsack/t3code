@@ -26,6 +26,8 @@ import {
   CheckpointTurnDiff,
   CheckpointTurnDiffKey,
   CheckpointTurnDiffStore,
+  McpCredentialRow,
+  McpCredentialStore,
   ProviderSnapshotRow,
   ProviderSnapshotStore,
   RunnerCursor,
@@ -70,6 +72,16 @@ const HUB_SQLITE_TABLES = [
     instance_id TEXT PRIMARY KEY,
     snapshot_json TEXT NOT NULL,
     updated_at TEXT NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS hub_mcp_credentials (
+    token_hash TEXT PRIMARY KEY,
+    environment_id TEXT NOT NULL,
+    thread_id TEXT NOT NULL,
+    provider_session_id TEXT NOT NULL,
+    provider_instance_id TEXT NOT NULL,
+    capabilities_json TEXT NOT NULL,
+    issued_at INTEGER NOT NULL,
+    last_alive_at INTEGER NOT NULL
   )`,
 ] as const;
 
@@ -308,6 +320,61 @@ export const makeProviderSnapshotStore = Effect.gen(function* () {
   });
 });
 
+const McpCredentialDbRow = McpCredentialRow.mapFields((fields) => ({
+  ...fields,
+  capabilities: Schema.fromJsonString(fields.capabilities),
+}));
+
+export const makeMcpCredentialStore = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* ensureTables;
+
+  const selectAll = SqlSchema.findAll({
+    Request: Schema.Void,
+    Result: McpCredentialDbRow,
+    execute: () => sql`
+      SELECT token_hash AS "tokenHash", environment_id AS "environmentId",
+        thread_id AS "threadId", provider_session_id AS "providerSessionId",
+        provider_instance_id AS "providerInstanceId", capabilities_json AS capabilities,
+        issued_at AS "issuedAt", last_alive_at AS "lastAliveAt"
+      FROM hub_mcp_credentials
+    `,
+  });
+  const insert = SqlSchema.void({
+    Request: McpCredentialDbRow,
+    execute: (row) => sql`
+      INSERT INTO hub_mcp_credentials (
+        token_hash, environment_id, thread_id, provider_session_id, provider_instance_id,
+        capabilities_json, issued_at, last_alive_at
+      )
+      VALUES (
+        ${row.tokenHash}, ${row.environmentId}, ${row.threadId}, ${row.providerSessionId},
+        ${row.providerInstanceId}, ${row.capabilities}, ${row.issuedAt}, ${row.lastAliveAt}
+      )
+      ON CONFLICT (token_hash) DO UPDATE SET last_alive_at = excluded.last_alive_at
+    `,
+  });
+
+  return McpCredentialStore.of({
+    list: () => selectAll(undefined).pipe(Effect.mapError(sqlOrDecode("McpCredentialStore.list"))),
+    put: (row) => insert(row).pipe(Effect.mapError(sqlOrDecode("McpCredentialStore.put"))),
+    touch: (tokenHashes, lastAliveAt) =>
+      tokenHashes.length === 0
+        ? Effect.void
+        : sql`
+            UPDATE hub_mcp_credentials SET last_alive_at = ${lastAliveAt}
+            WHERE token_hash IN ${sql.in(tokenHashes)}
+          `.pipe(Effect.asVoid, Effect.mapError(toPersistenceSqlError("McpCredentialStore.touch"))),
+    remove: (tokenHashes) =>
+      tokenHashes.length === 0
+        ? Effect.void
+        : sql`DELETE FROM hub_mcp_credentials WHERE token_hash IN ${sql.in(tokenHashes)}`.pipe(
+            Effect.asVoid,
+            Effect.mapError(toPersistenceSqlError("McpCredentialStore.remove")),
+          ),
+  });
+});
+
 /** Every repository over the configured SQLite client. */
 export const HubThreadMachineStateSqliteLive = Layer.mergeAll(
   Layer.effect(RunnerCursorStore, makeRunnerCursorStore),
@@ -315,4 +382,5 @@ export const HubThreadMachineStateSqliteLive = Layer.mergeAll(
   Layer.effect(ThreadVcsStatusStore, makeThreadVcsStatusStore),
   Layer.effect(ThreadMachineStatusStore, makeThreadMachineStatusStore),
   Layer.effect(ProviderSnapshotStore, makeProviderSnapshotStore),
+  Layer.effect(McpCredentialStore, makeMcpCredentialStore),
 );

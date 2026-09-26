@@ -5,6 +5,11 @@ import * as Effect from "effect/Effect";
 import { HttpServer } from "effect/unstable/http";
 
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
+import {
+  McpCredentialPersistence,
+  type McpCredentialPersistenceShape,
+  type McpCredentialRecord,
+} from "../serverModeHooks.ts";
 import * as McpSessionRegistry from "./McpSessionRegistry.ts";
 
 const environmentId = EnvironmentId.make("environment-1");
@@ -140,5 +145,57 @@ it.effect("does not keep credentials of other threads alive", () =>
     timestamp += 2;
 
     expect(yield* registry.resolve(token)).toBeUndefined();
+  }),
+);
+
+it.effect("keeps persisted credentials across restarts until they are revoked or expire", () =>
+  Effect.gen(function* () {
+    const rows = new Map<string, McpCredentialRecord>();
+    const persistence: McpCredentialPersistenceShape = {
+      load: Effect.sync(() => [...rows.values()]),
+      save: (record) => Effect.sync(() => void rows.set(record.tokenHash, record)),
+      touch: (hashes, lastAliveAt) =>
+        Effect.sync(() => {
+          for (const hash of hashes) {
+            const row = rows.get(hash);
+            if (row) rows.set(hash, { ...row, lastAliveAt });
+          }
+        }),
+      remove: (hashes) => Effect.sync(() => hashes.forEach((hash) => rows.delete(hash))),
+    };
+    let timestamp = 1_000;
+    const makePersistent = () =>
+      makeRegistry(() => timestamp).pipe(
+        Effect.provideService(McpCredentialPersistence, persistence),
+      );
+
+    const first = yield* makePersistent();
+    const threadId = ThreadId.make("thread-persisted");
+    const issued = yield* first.issue({
+      threadId,
+      providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+      grantReview: true,
+    });
+    const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
+    // Only the hash is persisted.
+    expect([...rows.values()].some((row) => JSON.stringify(row).includes(token))).toBe(false);
+    yield* first.revokeAll;
+
+    // A new process (a restarted hub) still resolves the running session's token.
+    const second = yield* makePersistent();
+    const resolved = yield* second.resolve(token);
+    expect(resolved?.threadId).toBe(threadId);
+    expect(resolved?.capabilities).toEqual(new Set(["preview", "review"]));
+
+    yield* second.revokeThread(threadId);
+    expect(rows.size).toBe(0);
+
+    // Credentials past the liveness window are dropped when loaded.
+    yield* second.issue({ threadId, providerInstanceId: ProviderInstanceId.make("codex") });
+    expect(rows.size).toBe(1);
+    timestamp += 1_000;
+    const third = yield* makePersistent();
+    expect(rows.size).toBe(0);
+    expect(yield* third.resolve(token)).toBeUndefined();
   }),
 );

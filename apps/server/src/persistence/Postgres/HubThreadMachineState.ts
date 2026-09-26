@@ -23,6 +23,8 @@ import {
   CheckpointTurnDiff,
   CheckpointTurnDiffKey,
   CheckpointTurnDiffStore,
+  McpCredentialRow,
+  McpCredentialStore,
   ProviderSnapshotRow,
   ProviderSnapshotStore,
   RunnerCursor,
@@ -274,6 +276,67 @@ export const makeProviderSnapshotStore = Effect.gen(function* () {
   });
 });
 
+const McpCredentialDbRow = McpCredentialRow.mapFields((fields) => ({
+  ...fields,
+  capabilities: Schema.fromJsonString(fields.capabilities),
+  issuedAt: Schema.NumberFromString,
+  lastAliveAt: Schema.NumberFromString,
+}));
+
+export const makeMcpCredentialStore = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  const { userId } = yield* HubTenant;
+
+  const selectAll = SqlSchema.findAll({
+    Request: Schema.Void,
+    Result: McpCredentialDbRow,
+    execute: () => sql`
+      SELECT token_hash AS "tokenHash", environment_id AS "environmentId",
+        thread_id AS "threadId", provider_session_id AS "providerSessionId",
+        provider_instance_id AS "providerInstanceId", capabilities_json AS capabilities,
+        issued_at::text AS "issuedAt", last_alive_at::text AS "lastAliveAt"
+      FROM hub_mcp_credentials WHERE user_id = ${userId}
+    `,
+  });
+  const insert = SqlSchema.void({
+    Request: McpCredentialDbRow,
+    execute: (row) => sql`
+      INSERT INTO hub_mcp_credentials (
+        user_id, token_hash, environment_id, thread_id, provider_session_id,
+        provider_instance_id, capabilities_json, issued_at, last_alive_at
+      )
+      VALUES (
+        ${userId}, ${row.tokenHash}, ${row.environmentId}, ${row.threadId},
+        ${row.providerSessionId}, ${row.providerInstanceId}, ${row.capabilities},
+        ${row.issuedAt}::bigint, ${row.lastAliveAt}::bigint
+      )
+      ON CONFLICT (user_id, token_hash) DO UPDATE SET last_alive_at = excluded.last_alive_at
+    `,
+  });
+
+  return McpCredentialStore.of({
+    list: () => selectAll(undefined).pipe(Effect.mapError(sqlOrDecode("McpCredentialStore.list"))),
+    put: (row) => insert(row).pipe(Effect.mapError(sqlOrDecode("McpCredentialStore.put"))),
+    touch: (tokenHashes, lastAliveAt) =>
+      tokenHashes.length === 0
+        ? Effect.void
+        : sql`
+            UPDATE hub_mcp_credentials SET last_alive_at = ${String(lastAliveAt)}::bigint
+            WHERE user_id = ${userId} AND token_hash IN ${sql.in(tokenHashes)}
+          `.pipe(Effect.asVoid, Effect.mapError(toPersistenceSqlError("McpCredentialStore.touch"))),
+    remove: (tokenHashes) =>
+      tokenHashes.length === 0
+        ? Effect.void
+        : sql`
+            DELETE FROM hub_mcp_credentials
+            WHERE user_id = ${userId} AND token_hash IN ${sql.in(tokenHashes)}
+          `.pipe(
+            Effect.asVoid,
+            Effect.mapError(toPersistenceSqlError("McpCredentialStore.remove")),
+          ),
+  });
+});
+
 /** Every repository; requires the hub Postgres `SqlClient` and `HubTenant`. */
 export const HubThreadMachineStatePostgresLive = Layer.mergeAll(
   Layer.effect(RunnerCursorStore, makeRunnerCursorStore),
@@ -281,4 +344,5 @@ export const HubThreadMachineStatePostgresLive = Layer.mergeAll(
   Layer.effect(ThreadVcsStatusStore, makeThreadVcsStatusStore),
   Layer.effect(ThreadMachineStatusStore, makeThreadMachineStatusStore),
   Layer.effect(ProviderSnapshotStore, makeProviderSnapshotStore),
+  Layer.effect(McpCredentialStore, makeMcpCredentialStore),
 );

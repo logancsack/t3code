@@ -144,3 +144,33 @@ export class ProviderSignInControls extends Context.Reference<ProviderSignInCont
   "t3/serverModeHooks/ProviderSignInControls",
   { defaultValue: () => null },
 ) {}
+
+/** A minted MCP credential as persisted: the token's hash, never the token. */
+export interface McpCredentialRecord {
+  readonly tokenHash: string;
+  readonly environmentId: string;
+  readonly threadId: string;
+  readonly providerSessionId: string;
+  readonly providerInstanceId: string;
+  readonly capabilities: ReadonlyArray<string>;
+  readonly issuedAt: number;
+  readonly lastAliveAt: number;
+}
+
+export interface McpCredentialPersistenceShape {
+  readonly load: Effect.Effect<ReadonlyArray<McpCredentialRecord>>;
+  readonly save: (record: McpCredentialRecord) => Effect.Effect<void>;
+  readonly touch: (tokenHashes: ReadonlyArray<string>, lastAliveAt: number) => Effect.Effect<void>;
+  readonly remove: (tokenHashes: ReadonlyArray<string>) => Effect.Effect<void>;
+}
+
+/**
+ * Persists the MCP credentials this server mints. A hub's provider sessions
+ * run on thread machines and outlive the hub process, so their credentials
+ * must still resolve after a hub restart. `null` (standalone) keeps them in
+ * memory only.
+ */
+export class McpCredentialPersistence extends Context.Reference<McpCredentialPersistenceShape | null>(
+  "t3/serverModeHooks/McpCredentialPersistence",
+  { defaultValue: () => null },
+) {}

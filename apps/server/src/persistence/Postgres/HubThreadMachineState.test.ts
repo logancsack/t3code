@@ -21,7 +21,18 @@ import {
 import { HubDatabase } from "./HubDatabase.ts";
 import { HubThreadMachineStatePostgresLive } from "./HubThreadMachineState.ts";
 import { hubTenantLayer } from "./HubTenant.ts";
-import { HUB_THREAD_MACHINE_STATE_TABLES } from "./migrations/050_HubThreadMachineState.ts";
+import {
+  expectedThreadMachineServices,
+  readThreadMachineServices,
+  writeThreadMachineServices,
+} from "../hubThreadMachineServicesScenario.ts";
+import { HUB_THREAD_MACHINE_STATE_TABLES as MIGRATION_050_TABLES } from "./migrations/050_HubThreadMachineState.ts";
+import { HUB_THREAD_MACHINE_SERVICE_TABLES } from "./migrations/051_HubThreadMachineServices.ts";
+
+const HUB_THREAD_MACHINE_STATE_TABLES = [
+  ...MIGRATION_050_TABLES,
+  ...HUB_THREAD_MACHINE_SERVICE_TABLES,
+] as const;
 import {
   hubTestDatabaseLayer,
   hubTestDatabaseUrl,
@@ -140,7 +151,28 @@ describe.skipIf(hubTestDatabaseUrl === undefined)("hub thread-machine state on P
     ),
   );
 
-  it.effect("applies migration 050 with the forced tenant policy on every table", () =>
+  it.effect("keeps machine states, provider snapshots and MCP credentials per tenant", () =>
+    withSchema((schema) =>
+      Effect.gen(function* () {
+        yield* writeThreadMachineServices("user-a").pipe(
+          Effect.provide(storesFor(schema, "user-a")),
+        );
+        yield* writeThreadMachineServices("user-b").pipe(
+          Effect.provide(storesFor(schema, "user-b")),
+        );
+        assert.deepStrictEqual(
+          yield* readThreadMachineServices.pipe(Effect.provide(storesFor(schema, "user-a"))),
+          expectedThreadMachineServices("user-a"),
+        );
+        assert.deepStrictEqual(
+          yield* readThreadMachineServices.pipe(Effect.provide(storesFor(schema, "user-b"))),
+          expectedThreadMachineServices("user-b"),
+        );
+      }),
+    ),
+  );
+
+  it.effect("applies migrations 050 and 051 with the forced tenant policy on every table", () =>
     withSchema((schema) =>
       Effect.gen(function* () {
         yield* writeAs(1, "user-a").pipe(Effect.provide(storesFor(schema, "user-a")));
@@ -152,7 +184,10 @@ describe.skipIf(hubTestDatabaseUrl === undefined)("hub thread-machine state on P
           `;
           assert.deepStrictEqual(
             migrations.map((row) => [row.id, row.name]),
-            [[50, "HubThreadMachineState"]],
+            [
+              [50, "HubThreadMachineState"],
+              [51, "HubThreadMachineServices"],
+            ],
           );
           const tables = yield* sql<{
             readonly table: string;

@@ -44,6 +44,7 @@ import {
   hubWorkspaceFileSystemLayer,
   hubWorkspacePathsLayer,
 } from "./HubWorkspace.ts";
+import * as HubMcpCredentials from "./HubMcpCredentials.ts";
 import * as HubProviderSignIn from "./HubProviderSignIn.ts";
 import * as HubProviderSnapshots from "./HubProviderSnapshots.ts";
 import * as MachineDirectory from "./MachineDirectory.ts";
@@ -70,7 +71,7 @@ export const makeHubStateStoresLayer = <E, R>(
 
 /**
  * Hub-only services underneath the whole runtime: stores, machine states,
- * provider snapshots, machine directory (observed by the machine states), connection pool,
+ * provider snapshots, persisted MCP credentials, machine directory (observed by the machine states), connection pool,
  * session registry, event delivery and git status cache. `persistence` is
  * the server's persistence layer (SQLite, or the hub's Postgres client in hub
  * mode with a database).
@@ -89,7 +90,13 @@ export const makeHubInfrastructureLayer = <E, R>(parts: {
       ThreadMachineStates.observedMachineDirectoryLayer.pipe(Layer.provide(MachineDirectory.layer)),
     ),
     Layer.provideMerge(ThreadMachineStates.readerLayer),
-    Layer.provideMerge(Layer.mergeAll(ThreadMachineStates.layer, HubProviderSnapshots.layer)),
+    Layer.provideMerge(
+      Layer.mergeAll(
+        ThreadMachineStates.layer,
+        HubProviderSnapshots.layer,
+        HubMcpCredentials.layer,
+      ),
+    ),
     Layer.provideMerge(makeHubStateStoresLayer(parts.persistence)),
   );
 

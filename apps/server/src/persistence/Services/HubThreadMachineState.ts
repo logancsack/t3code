@@ -14,6 +14,8 @@
  *   per thread, shown on thread shells without asking the directory again.
  * - `ProviderSnapshotStore`: the last provider snapshot a runner reported per
  *   provider instance, so a hub shows providers before any machine runs.
+ * - `McpCredentialStore`: the hashes and scopes of the MCP credentials the hub
+ *   minted for provider sessions on thread machines, which outlive the hub.
  *
  * Postgres implementations live in `persistence/Postgres/HubThreadMachineState.ts`
  * (hub migrations 050 and 051); the SQLite implementations back hub mode without a
@@ -161,3 +163,32 @@ export class ProviderSnapshotStore extends Context.Service<
   ProviderSnapshotStore,
   ProviderSnapshotStoreShape
 >()("t3/persistence/Services/HubThreadMachineState/ProviderSnapshotStore") {}
+
+export const McpCredentialRow = Schema.Struct({
+  tokenHash: TrimmedNonEmptyString,
+  environmentId: Schema.String,
+  threadId: Schema.String,
+  providerSessionId: Schema.String,
+  providerInstanceId: Schema.String,
+  capabilities: Schema.Array(Schema.String),
+  issuedAt: Schema.Number,
+  lastAliveAt: Schema.Number,
+});
+export type McpCredentialRow = typeof McpCredentialRow.Type;
+
+export interface McpCredentialStoreShape {
+  readonly list: () => Effect.Effect<ReadonlyArray<McpCredentialRow>, ProjectionRepositoryError>;
+  readonly put: (row: McpCredentialRow) => Effect.Effect<void, ProjectionRepositoryError>;
+  readonly touch: (
+    tokenHashes: ReadonlyArray<string>,
+    lastAliveAt: number,
+  ) => Effect.Effect<void, ProjectionRepositoryError>;
+  readonly remove: (
+    tokenHashes: ReadonlyArray<string>,
+  ) => Effect.Effect<void, ProjectionRepositoryError>;
+}
+
+export class McpCredentialStore extends Context.Service<
+  McpCredentialStore,
+  McpCredentialStoreShape
+>()("t3/persistence/Services/HubThreadMachineState/McpCredentialStore") {}
