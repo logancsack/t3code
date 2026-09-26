@@ -40,6 +40,8 @@ import { useThreadActionMenu } from "~/hooks/useThreadActionMenu";
 import { threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { ProjectFavicon } from "../ProjectFavicon";
+import { ThreadMachineStatusPill } from "../ThreadMachineStatus";
+import { useIsHubEnvironment } from "~/hubMode";
 import {
   WorkspaceBreadcrumb,
   WorkspaceBreadcrumbItem,
@@ -145,12 +147,16 @@ export const ChatHeader = memo(function ChatHeader({
     activeProjectScripts ? activeProjectCwd : null,
   );
   const remoteOpenState = useRemoteOpenState(activeThreadEnvironmentId);
-  const showOpenInPicker = shouldShowOpenInPicker({
-    activeProjectName,
-    activeThreadEnvironmentId,
-    primaryEnvironmentId,
-    remoteOpenMode: remoteOpenState.mode,
-  });
+  // A hub has no folder to open; each thread's checkout lives on its machine.
+  const isHub = useIsHubEnvironment(activeThreadEnvironmentId);
+  const showOpenInPicker =
+    !isHub &&
+    shouldShowOpenInPicker({
+      activeProjectName,
+      activeThreadEnvironmentId,
+      primaryEnvironmentId,
+      remoteOpenMode: remoteOpenState.mode,
+    });
   const activeThreadRef = useMemo(
     () => scopeThreadRef(activeThreadEnvironmentId, activeThreadId),
     [activeThreadEnvironmentId, activeThreadId],
@@ -440,6 +446,12 @@ export const ChatHeader = memo(function ChatHeader({
           rightPanelOpen ? "pr-0" : "pr-16",
         )}
       >
+        {isServerThread ? (
+          <ThreadMachineStatusPill
+            environmentId={activeThreadEnvironmentId}
+            threadId={activeThreadId}
+          />
+        ) : null}
         {activeProjectName && (
           <GitActionsControl
             gitCwd={gitCwd}

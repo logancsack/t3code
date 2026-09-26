@@ -150,6 +150,7 @@ import {
   useSettingsSearchTargetId,
 } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
+import { usePrimaryIsHub } from "../../hubMode";
 import { ProjectFavicon } from "../ProjectFavicon";
 
 const ENVIRONMENT_IDENTIFICATION_LABELS: Record<EnvironmentIdentificationMode, string> = {
@@ -1882,6 +1883,8 @@ export function GeneralSettingsPanel() {
   const serverProviders = useAtomValue(primaryServerProvidersAtom);
   const supportsAutoSettlement =
     useAtomValue(primaryServerConfigAtom)?.environment.capabilities.threadAutoSettlement === true;
+  // Hub threads always start on a fresh machine from a repository, not a folder.
+  const primaryIsHub = usePrimaryIsHub();
   const diagnosticsDescription = formatDiagnosticsDescription({
     localTracingEnabled: observability?.localTracingEnabled ?? false,
     otlpTracesEnabled: observability?.otlpTracesEnabled ?? false,
@@ -2243,6 +2246,7 @@ export function GeneralSettingsPanel() {
         />
 
         <SettingsRow
+          hidden={primaryIsHub}
           {...searchableSetting("new-threads")}
           description="Pick the default workspace mode for newly created draft threads."
           resetAction={
@@ -2287,7 +2291,7 @@ export function GeneralSettingsPanel() {
           }
         />
 
-        {settings.defaultThreadEnvMode === "worktree" ? (
+        {settings.defaultThreadEnvMode === "worktree" && !primaryIsHub ? (
           <SettingsRow
             className="bg-muted/20 sm:pl-9"
             title={searchableSetting("start-from-origin").title}
@@ -2319,6 +2323,7 @@ export function GeneralSettingsPanel() {
         ) : null}
 
         <SettingsRow
+          hidden={primaryIsHub}
           {...searchableSetting("add-project-starts-in")}
           description='Leave empty to use "~/" when the Add Project browser opens.'
           resetAction={

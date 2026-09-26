@@ -76,6 +76,7 @@ import { reviewEnvironment } from "../state/review";
 import { vcsEnvironment } from "../state/vcs";
 import { buildBaseRefChoices, filterBaseRefChoices } from "../lib/baseRefChoices";
 import { createGitDiffFileContentsLoader } from "../lib/diffFileContents";
+import { useDiffPanelTurnDefaultWhileMachineAsleep } from "./hub/useHubDiffDefaults";
 
 type DiffThemeType = "light" | "dark";
 const AUTOMATIC_BASE_REF = "__automatic_base_ref__";
@@ -200,6 +201,7 @@ export default function DiffPanel({
     selectedTurn &&
     (selectedTurn.checkpointTurnCount ?? inferredCheckpointTurnCountByTurnId[selectedTurn.turnId]);
   const latestTurn = orderedTurnDiffSummaries[0];
+  useDiffPanelTurnDefaultWhileMachineAsleep(routeThreadRef, latestTurn?.turnId ?? null);
   const selectedScopeLabel =
     selectedTurnId === null
       ? selectedGitScope === "unstaged"

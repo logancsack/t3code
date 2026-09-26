@@ -15,6 +15,7 @@ import {
   type OrchestrationShellStreamItem,
   type OrchestrationThread,
   type OrchestrationThreadDetailSnapshot,
+  type OrchestrationThreadShell,
   type OrchestrationThreadStreamItem,
   type ServerConfig,
 } from "@t3tools/contracts";
@@ -31,9 +32,17 @@ import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 
 import {
+  hubDemoDiscovery,
+  hubDemoProjects,
+  hubDemoRefs,
+  hubDemoRepositories,
+  hubDemoThreads,
+} from "./hubScenario";
+import {
   LANDING_DEMO_ENVIRONMENT_ID,
   LANDING_DEMO_PROJECT_ID,
   LANDING_DEMO_THREAD_ID,
+  isLandingDemoHub,
 } from "./mode";
 
 export const demoEnvironmentId = EnvironmentId.make(LANDING_DEMO_ENVIRONMENT_ID);
@@ -41,6 +50,7 @@ export const demoProjectId = ProjectId.make(LANDING_DEMO_PROJECT_ID);
 export const demoThreadId = ThreadId.make(LANDING_DEMO_THREAD_ID);
 const demoProviderId = ProviderInstanceId.make("codex");
 const STARTED_AT = "2026-07-31T12:00:00.000Z";
+const hubDemo = isLandingDemoHub();
 
 const initialFiles = {
   "index.html": `<!doctype html>
@@ -91,8 +101,8 @@ let thread: OrchestrationThread = {
   modelSelection: { instanceId: demoProviderId, model: "openai/gpt-oss-20b:free" },
   runtimeMode: "full-access",
   interactionMode: "default",
-  branch: "main",
-  worktreePath: null,
+  branch: hubDemo ? "aldo/homepage" : "main",
+  worktreePath: hubDemo ? `/workspace/t/${LANDING_DEMO_THREAD_ID}` : null,
   latestTurn: null,
   createdAt: STARTED_AT,
   updatedAt: STARTED_AT,
@@ -127,42 +137,54 @@ const project: OrchestrationProjectShell = {
   updatedAt: STARTED_AT,
 };
 
-function threadShell() {
+const hubThreads = hubDemo ? hubDemoThreads(thread) : [];
+
+function threadShell(
+  source: OrchestrationThread = thread,
+  machine: OrchestrationThreadShell["machine"] = hubDemo
+    ? { state: "running", detail: null, updatedAt: STARTED_AT }
+    : undefined,
+): OrchestrationThreadShell {
   return {
-    id: thread.id,
-    projectId: thread.projectId,
-    title: thread.title,
-    modelSelection: thread.modelSelection,
-    runtimeMode: thread.runtimeMode,
-    interactionMode: thread.interactionMode,
-    branch: thread.branch,
-    worktreePath: thread.worktreePath,
-    latestTurn: thread.latestTurn,
-    createdAt: thread.createdAt,
-    updatedAt: thread.updatedAt,
-    archivedAt: thread.archivedAt,
-    settledOverride: thread.settledOverride,
-    settledAt: thread.settledAt,
-    session: thread.session,
+    id: source.id,
+    projectId: source.projectId,
+    title: source.title,
+    modelSelection: source.modelSelection,
+    runtimeMode: source.runtimeMode,
+    interactionMode: source.interactionMode,
+    branch: source.branch,
+    worktreePath: source.worktreePath,
+    latestTurn: source.latestTurn,
+    createdAt: source.createdAt,
+    updatedAt: source.updatedAt,
+    archivedAt: source.archivedAt,
+    settledOverride: source.settledOverride,
+    settledAt: source.settledAt,
+    session: source.session,
     latestUserMessageAt:
-      thread.messages.findLast((message) => message.role === "user")?.createdAt ?? null,
+      source.messages.findLast((message) => message.role === "user")?.createdAt ?? null,
     hasPendingApprovals: false,
     hasPendingUserInput: false,
     hasActionableProposedPlan: false,
-  } as const;
+    ...(machine ? { machine } : {}),
+  };
 }
 
 function shellSnapshot(): OrchestrationShellSnapshot {
   return {
     snapshotSequence,
-    projects: [project],
-    threads: [threadShell()],
+    projects: hubDemo ? [...hubDemoProjects(project)] : [project],
+    threads: [
+      threadShell(),
+      ...hubThreads.map((entry) => threadShell(entry.thread, entry.machine)),
+    ],
     updatedAt: thread.updatedAt,
   };
 }
 
-function threadSnapshot(): OrchestrationThreadDetailSnapshot {
-  return { snapshotSequence, thread };
+function threadSnapshot(threadId?: string): OrchestrationThreadDetailSnapshot {
+  const hubThread = hubThreads.find((entry) => entry.thread.id === threadId)?.thread;
+  return { snapshotSequence, thread: hubThread ?? thread };
 }
 
 function broadcastThread() {
@@ -184,10 +206,12 @@ function callbackStream<T>(listeners: Set<(item: T) => void>) {
   );
 }
 
-function subscribeThread(): Stream.Stream<OrchestrationThreadStreamItem> {
+function subscribeThread(input?: {
+  readonly threadId?: string;
+}): Stream.Stream<OrchestrationThreadStreamItem> {
   return Stream.concat(
     Stream.fromIterable<OrchestrationThreadStreamItem>([
-      { kind: "snapshot", snapshot: threadSnapshot() },
+      { kind: "snapshot", snapshot: threadSnapshot(input?.threadId) },
       { kind: "synchronized" },
     ]),
     callbackStream(threadListeners),
@@ -208,8 +232,12 @@ export const demoServerConfig = {
   environment: {
     id: demoEnvironmentId,
     label: "Aldo browser demo",
+    platform: { os: "linux", arch: "x64" },
     serverVersion: "0.0.28",
-    capabilities: { connectionProbe: false },
+    capabilities: {
+      connectionProbe: false,
+      ...(hubDemo ? { repositoryIdentity: true, threadMachines: true } : {}),
+    },
   },
   auth: { mode: "none" },
   cwd: "/demo/northstar",
@@ -523,14 +551,25 @@ const client = new Proxy(
     [ORCHESTRATION_WS_METHODS.subscribeThread]: subscribeThread,
     [ORCHESTRATION_WS_METHODS.dispatchCommand]: dispatchCommand,
     [WS_METHODS.vcsListRefs]: () =>
-      Effect.succeed({
-        refs: [],
-        isRepo: true,
-        hasPrimaryRemote: false,
-        nextCursor: null,
-        totalCount: 0,
-      }),
+      Effect.succeed(
+        hubDemo
+          ? hubDemoRefs
+          : {
+              refs: [],
+              isRepo: true,
+              hasPrimaryRemote: false,
+              nextCursor: null,
+              totalCount: 0,
+            },
+      ),
+    ...(hubDemo
+      ? {
+          [WS_METHODS.serverDiscoverSourceControl]: () => Effect.succeed(hubDemoDiscovery),
+          [WS_METHODS.sourceControlListRepositories]: () => Effect.succeed(hubDemoRepositories),
+        }
+      : {}),
     [ORCHESTRATION_WS_METHODS.getFullThreadDiff]: () => Effect.succeed({ patch: "", files: [] }),
+    [ORCHESTRATION_WS_METHODS.searchThreads]: () => Effect.succeed({ matches: [] }),
     [ORCHESTRATION_WS_METHODS.getTurnDiff]: () => Effect.succeed({ patch: "", files: [] }),
   } as Record<string, unknown>,
   {

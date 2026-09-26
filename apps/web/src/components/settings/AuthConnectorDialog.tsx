@@ -41,7 +41,8 @@ import { Input } from "../ui/input";
 import { Textarea } from "../ui/textarea";
 import { toastManager } from "../ui/toast";
 import { APP_BASE_NAME } from "../../branding";
-import { managedWorkspaceBrowserUrl } from "../../managedDevPc";
+import { useIsHubEnvironment } from "../../hubMode";
+import { resolveAuthWorkspaceBrowserUrl } from "../hub/hubAuthConnector";
 
 export type AuthConnectorMethodOption = {
   readonly method: AuthConnectorMethod;
@@ -165,6 +166,8 @@ export function AuthConnectorDialog(props: {
   const callbackInputRef = useRef<HTMLTextAreaElement | null>(null);
 
   const selectedMethod = methods.find((method) => method.method === session?.method) ?? null;
+  const hub = useIsHubEnvironment(environmentId);
+  const workspaceBrowserUrl = resolveAuthWorkspaceBrowserUrl(session);
 
   useEffect(() => {
     if (!open || !sessionEnvironmentId || !session) return;
@@ -284,7 +287,7 @@ export function AuthConnectorDialog(props: {
       authVerificationDestination({
         verificationUrl: session.verificationUrl,
         workspaceBrowser: selectedMethod?.workspaceBrowser === true,
-        workspaceBrowserUrl: managedWorkspaceBrowserUrl(),
+        workspaceBrowserUrl,
       }),
     );
   };
@@ -366,7 +369,7 @@ export function AuthConnectorDialog(props: {
   const remaining = session ? formatRemaining(session.expiresAt, now) : null;
   const browserName = selectedMethod?.browserName ?? serviceName;
   const usesManagedWorkspaceBrowser =
-    selectedMethod?.workspaceBrowser === true && managedWorkspaceBrowserUrl() !== null;
+    selectedMethod?.workspaceBrowser === true && workspaceBrowserUrl !== null;
   const authorizeInstruction = authAuthorizeInstruction({
     option: selectedMethod,
     usesManagedWorkspaceBrowser,
@@ -380,7 +383,9 @@ export function AuthConnectorDialog(props: {
           ? `Return to ${APP_BASE_NAME}`
           : presentationStage === "verifying"
             ? "Checking your account"
-            : "Preparing secure sign-in";
+            : hub && selectedMethod?.workspaceBrowser === true
+              ? "Starting a machine for sign-in…"
+              : "Preparing secure sign-in";
   const stageDescription =
     presentationStage === "authorize"
       ? (authorizeInstruction ??

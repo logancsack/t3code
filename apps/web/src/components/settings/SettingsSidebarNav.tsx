@@ -39,6 +39,7 @@ import {
 import { T3ConnectSidebarAvatar, T3ConnectSidebarSignIn } from "../clerk/T3ConnectSidebarSignIn";
 import { ManagedDevPcFooterAccount } from "../ManagedDevPcAccount";
 import { isManagedDevPc } from "../../managedDevPc";
+import { usePrimaryIsHub } from "../../hubMode";
 import { SidebarUtilityMenu } from "../sidebar/SidebarChrome";
 import { scrollToSettingsTarget } from "./settingsLayout";
 import {
@@ -88,6 +89,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
   const [query, setQuery] = useState("");
   const [activeResultIndex, setActiveResultIndex] = useState(0);
   const searchableItems = useAvailableSettingsSearchItems();
+  const primaryIsHub = usePrimaryIsHub();
   const results = useMemo(() => searchSettings(query, searchableItems), [query, searchableItems]);
   const isSearching = query.trim().length > 0;
   const hasResults = results.length > 0;
@@ -279,7 +281,10 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 ))
-              : SETTINGS_NAV_ITEMS.map((item) => {
+              : SETTINGS_NAV_ITEMS.filter(
+                  // A hub has no workspace machine to manage; threads bring their own.
+                  (item) => item.to !== "/settings/workspace" || !primaryIsHub,
+                ).map((item) => {
                   const Icon = item.icon;
                   const isActive = pathname === item.to || pathname.startsWith(`${item.to}/`);
                   return (
@@ -301,7 +306,9 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
         <T3ConnectSidebarSignIn />
         <ManagedDevPcConnections />
         <ManagedDevPcAgent />
-        <ManagedDevPcFooterAccount showWorkspaceStatus={pathname !== "/settings/workspace"} />
+        <ManagedDevPcFooterAccount
+          showWorkspaceStatus={pathname !== "/settings/workspace" && !primaryIsHub}
+        />
         <div className="flex items-center gap-1">
           <div className="min-w-0 flex-1">
             <SidebarUtilityMenu />

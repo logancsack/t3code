@@ -40,6 +40,8 @@ export interface ThreadActionMenuState {
     readonly snooze: boolean;
     readonly pinning: boolean;
     readonly titleRegeneration: boolean;
+    /** Absent = true. Hub threads live on their own machines: no local path to copy. */
+    readonly workspacePath?: boolean;
   };
   readonly snoozePresets: ReadonlyArray<SnoozePreset>;
 }
@@ -113,7 +115,9 @@ export function buildThreadActionMenuItems(
       icon: "copy",
       separatorBefore: true,
       children: [
-        { id: "copy-path", label: "Path", icon: "folder" },
+        ...(state.supports.workspacePath !== false
+          ? [{ id: "copy-path" as const, label: "Path", icon: "folder" }]
+          : []),
         ...(state.branch
           ? [{ id: "copy-branch" as const, label: "Branch", icon: "git-branch" }]
           : []),
