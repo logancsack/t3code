@@ -575,21 +575,38 @@ const makeRemoteSnapshot = (input: {
         return (yield* context.pool.contextOf(threadId))?.providerInstanceId ?? null;
       });
 
+    /**
+     * Whether a runner's report of this instance reflects the hub's settings:
+     * the runner's thread uses the instance (so its settings were pushed), or
+     * the runner predates the push and only has its own settings anyway. The
+     * provider sign-in machine never reports: it runs no sessions.
+     */
+    const reportsFor = (connection: RunnerConnection) =>
+      Effect.gen(function* () {
+        if (connection.threadId === PROVIDER_SIGN_IN_THREAD_ID) return false;
+        if (connection.hello.protocolVersion < RUNNER_PROTOCOL_PROVIDER_SETTINGS) {
+          return connection.hello.instances.includes(context.instanceId);
+        }
+        return (yield* threadInstance(connection.threadId)) === context.instanceId;
+      });
+
     // Scoped to the instance: a rebuilt instance (settings changed) replaces it.
     yield* context.pool.onConnectionScoped((connection) =>
       Effect.gen(function* () {
-        let hosted = connection.hello.instances;
-        if ((yield* threadInstance(connection.threadId)) === context.instanceId) {
-          const pushed = yield* context.pushSettings(connection);
-          if (Option.isSome(pushed)) hosted = pushed.value;
-        }
+        if (!(yield* reportsFor(connection))) return;
+        const pushed = yield* context.pushSettings(connection);
+        const hosted = Option.getOrElse(pushed, () => connection.hello.instances);
         if (hosted.includes(context.instanceId)) yield* fetchFrom(connection, false, true);
       }),
     );
 
+    // Refreshing asks a connected runner whose thread uses this instance.
     const refresh = Effect.gen(function* () {
-      const [connection] = yield* context.pool.connections;
-      if (connection) yield* fetchFrom(connection, true);
+      for (const connection of yield* context.pool.connections) {
+        if (!(yield* reportsFor(connection))) continue;
+        yield* fetchFrom(connection, true, true);
+        break;
+      }
       return yield* Ref.get(current);
     });
 

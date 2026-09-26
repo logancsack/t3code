@@ -130,6 +130,7 @@ describe("hub provider snapshots", () => {
               snapshot: reported("authenticated"),
               sessionModelSwitch: "in-session",
             }),
+          "runner.provider.configure": () => Effect.succeed({ instances: [claudeInstance] }),
         }),
       );
       const fake = yield* makeFakeMachineDirectory({
@@ -140,6 +141,15 @@ describe("hub provider snapshots", () => {
         wakePollInterval: "5 millis",
         idleCheckInterval: "1 hour",
       }).pipe(Effect.provideService(MachineDirectory, fake.directory));
+      // Only runners whose thread uses the instance report it.
+      yield* pool.setContextResolver(() =>
+        Effect.succeed({
+          projectId: null,
+          repository: null,
+          branch: null,
+          providerInstanceId: claudeInstance,
+        }),
+      );
       const registry = yield* RemoteSessionRegistry.make;
       const delivery = yield* RunnerEventDelivery.make.pipe(
         Effect.provideService(RunnerConnectionPool, pool),
