@@ -220,6 +220,13 @@ export function wakeAldoEnvironment(environmentId: string): Promise<void> {
   return wake;
 }
 
+/** Deletes a thread's sandbox (and everything in it) once its last thread is gone. */
+export async function deleteAldoEnvironment(environmentId: string): Promise<void> {
+  const threadId = threadIdForEnvironment(environmentId);
+  await api(`/api/environments/${threadId}`, { method: "DELETE" });
+  requestAldoDirectoryRefresh();
+}
+
 /** Tells Aldo the user is looking at this thread, so it isn't stopped for idleness. */
 export function touchAldoEnvironment(environmentId: string): void {
   const threadId = threadIdForEnvironment(environmentId);

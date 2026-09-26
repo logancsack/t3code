@@ -441,7 +441,9 @@ export function useNewThreadHandler() {
     ): Promise<{ draftId: DraftId; threadId: ThreadId } | null> => {
       if (!isAldoCloud) return openDraft(projectRef, options);
       const target = await aldoProjectRefForNewThread(projectRef).catch(() => null);
-      return target ? openDraft(target, options) : null;
+      // The sandbox is the thread's own, so it works directly in the sandbox's
+      // checkout (its aldo/<id> branch) rather than a separate worktree.
+      return target ? openDraft(target, { envMode: "local", ...options }) : null;
     },
     [openDraft],
   );

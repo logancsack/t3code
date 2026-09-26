@@ -38,6 +38,19 @@ import { buildThreadRouteParams, resolveThreadRouteRef } from "../threadRoutes";
 import { formatWorktreePathForDisplay, getOrphanedWorktreePathForThread } from "../worktreeCleanup";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
 import { useClientSettings } from "./useSettings";
+import { deleteAldoEnvironment, isAldoCloud, isAldoEnvironmentId } from "../aldo/cloud";
+
+function removeAldoSandbox(environmentId: string): void {
+  void deleteAldoEnvironment(environmentId).catch((cause: unknown) => {
+    toastManager.add(
+      stackedThreadToast({
+        type: "error",
+        title: "Thread deleted, but its sandbox wasn't",
+        description: cause instanceof Error ? cause.message : "Aldo couldn't delete the sandbox.",
+      }),
+    );
+  });
+}
 import { useAtomCommand } from "../state/use-atom-command";
 
 export class ThreadArchiveBlockedError extends Schema.TaggedErrorClass<ThreadArchiveBlockedError>()(
@@ -381,6 +394,13 @@ export function useThreadActions() {
         threadRef,
       );
       clearTerminalUiState(threadRef);
+      // Aldo: each thread has its own sandbox; the last thread's deletion removes it.
+      if (isAldoCloud && isAldoEnvironmentId(threadRef.environmentId)) {
+        const remaining = threads.filter(
+          (entry) => entry.id !== threadRef.threadId && !deletedThreadIds.has(entry.id),
+        );
+        if (remaining.length === 0) removeAldoSandbox(threadRef.environmentId);
+      }
 
       if (shouldNavigateToFallback) {
         if (fallbackThreadId) {
@@ -695,7 +715,9 @@ export function useThreadActions() {
           localApi.dialogs.confirm(
             [
               `Delete thread "${title}"?`,
-              "This permanently clears conversation history for this thread.",
+              isAldoCloud && isAldoEnvironmentId(target.environmentId)
+                ? "This permanently deletes the thread and its sandbox, including any changes that haven't been pushed."
+                : "This permanently clears conversation history for this thread.",
             ].join("\n"),
             { variant: "destructive" },
           ),
