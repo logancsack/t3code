@@ -239,7 +239,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
       aria-label={
         isEnvironmentUnavailable
           ? isAldoCloud
-            ? "Reconnecting to the cloud"
+            ? "Can't send yet"
             : "Environment disconnected"
           : sendDisabledReason
             ? sendDisabledReason

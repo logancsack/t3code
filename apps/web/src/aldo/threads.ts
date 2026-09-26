@@ -1,30 +1,42 @@
 // Each thread runs on its own cloud machine (an Aldo sandbox), and T3 groups
 // a repository's machines into one project, so the UI shows the project once
-// with all of its threads. A new thread gets a new machine, except that one
-// the project already has with no threads yet (a draft that was never sent)
-// is used first.
+// with all of its threads.
+//
+// A new thread opens at once: Aldo records its machine without creating it,
+// and the client registers the machine with its project and models already
+// in T3's cache, so the thread is ready to type in before anything runs. The
+// machine is created when the first message is sent (see dispatch.ts). A
+// project's machine with no threads yet (a draft that was never sent) is used
+// before recording another.
 
+import {
+  normalizeGitRemoteUrl,
+  detectSourceControlProviderFromGitRemoteUrl,
+} from "@t3tools/shared/git";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentId, ScopedProjectRef } from "@t3tools/contracts";
 
 import { toastManager } from "../components/ui/toast";
+import { seedEnvironmentCache } from "../connection/storage";
 import { readEnvironmentThreadRefs, readProjects } from "../state/entities";
 import {
+  aldoEnvironmentIdFor,
   aldoProjectSandboxes,
   aldoSandboxesFor,
   createAldoEnvironment,
-  getAldoEnvironments,
+  holdAldoEnvironment,
   isAldoCloud,
   isAldoEnvironmentId,
+  newAldoThreadId,
+  releaseAldoEnvironment,
   type AldoEnvironment,
   type AldoNewProject,
+  type AldoPlannedProject,
 } from "./cloud";
+import { ensureAldoConnected } from "./dispatch";
+import { aldoServerConfigFor } from "./serverConfig";
 
-const PROJECT_WAIT_MS = 120_000;
-const NUDGE_EVERY_MS = 10_000;
-
-/** The environment catalog's retryNow: connects an environment now. */
-export type AldoReconnect = (environmentId: EnvironmentId) => Promise<unknown>;
+const PROJECT_WAIT_MS = 15_000;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -35,32 +47,15 @@ function loadedProject(environmentId: string): ScopedProjectRef | null {
   return project ? scopeProjectRef(project.environmentId, project.id) : null;
 }
 
-/**
- * Resolves once the machine's T3 server has connected and reported its
- * project. A machine that joins the directory mid-session doesn't connect by
- * itself, so `reconnect` nudges it once it's listed, and again every little
- * while until its project arrives.
- */
-async function waitForAldoProject(
-  environmentId: string,
-  reconnect: AldoReconnect,
-): Promise<ScopedProjectRef> {
+/** Resolves once the machine's project is in the client (from its seeded cache). */
+async function waitForAldoProject(environmentId: string): Promise<ScopedProjectRef> {
   const deadline = Date.now() + PROJECT_WAIT_MS;
-  let nextNudge: number | null = null;
   while (Date.now() < deadline) {
     const project = loadedProject(environmentId);
     if (project) return project;
-    if (getAldoEnvironments()?.some((e) => e.environmentId === environmentId)) {
-      // Give the new registration a moment to install before the first nudge.
-      nextNudge ??= Date.now() + 1000;
-      if (Date.now() >= nextNudge) {
-        nextNudge = Date.now() + NUDGE_EVERY_MS;
-        void reconnect(environmentId as EnvironmentId).catch(() => undefined);
-      }
-    }
-    await sleep(400);
+    await sleep(100);
   }
-  throw new Error("The cloud agent didn't finish starting. Try again.");
+  throw new Error("The thread didn't open. Try again.");
 }
 
 /** One of these machines with no threads yet whose project is loaded. */
@@ -73,23 +68,58 @@ function idleMachine(sandboxes: ReadonlyArray<AldoEnvironment>): ScopedProjectRe
   return null;
 }
 
+/** The repository identity T3 derives from `git remote -v` (it groups a repository's machines by it). */
+function repositoryIdentity(project: AldoPlannedProject) {
+  const canonicalKey = normalizeGitRemoteUrl(project.remoteUrl);
+  const repositoryPath = canonicalKey.split("/").slice(1).join("/");
+  const segments = repositoryPath.split("/").filter((segment) => segment.length > 0);
+  const provider = detectSourceControlProviderFromGitRemoteUrl(project.remoteUrl);
+  return {
+    canonicalKey,
+    locator: { source: "git-remote", remoteName: "origin", remoteUrl: project.remoteUrl },
+    rootPath: project.workspaceRoot,
+    ...(repositoryPath ? { displayName: repositoryPath } : {}),
+    ...(provider ? { provider: provider.kind } : {}),
+    ...(segments[0] ? { owner: segments[0] } : {}),
+    ...(segments.at(-1) ? { name: segments.at(-1) } : {}),
+  };
+}
+
+/** The T3 shell the machine will report, with just its project. */
+function plannedShell(project: AldoPlannedProject) {
+  const now = new Date().toISOString();
+  return {
+    snapshotSequence: 0,
+    projects: [
+      {
+        id: project.id,
+        title: project.title,
+        workspaceRoot: project.workspaceRoot,
+        repositoryIdentity: repositoryIdentity(project),
+        defaultModelSelection: null,
+        scripts: [],
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+    threads: [],
+    updatedAt: now,
+  };
+}
+
 /**
- * Starts a cloud agent (a machine) for a thread: in repositories, like
- * another thread's, or in a new repository. Uses an idle machine of the same
- * project when there is one; otherwise creates one and waits until it's
- * connected. Returns the machine's project.
+ * Opens a new thread's cloud agent (a machine) without starting it: in
+ * repositories, like another thread's, or in a new repository. Uses an idle
+ * machine of the same project when there is one; otherwise records a new
+ * one and registers it with its project and models. Returns its project.
  */
-export async function startAldoSandbox(
-  input: {
-    readonly repo?: string;
-    readonly fromEnvironmentId?: string;
-    readonly branch?: string;
-    readonly create?: AldoNewProject;
-    readonly repos?: ReadonlyArray<string>;
-  },
-  label: string,
-  reconnect: AldoReconnect,
-): Promise<ScopedProjectRef> {
+export async function startAldoSandbox(input: {
+  readonly repo?: string;
+  readonly fromEnvironmentId?: string;
+  readonly branch?: string;
+  readonly create?: AldoNewProject;
+  readonly repos?: ReadonlyArray<string>;
+}): Promise<ScopedProjectRef> {
   const idle = input.create
     ? null
     : idleMachine(
@@ -99,34 +129,47 @@ export async function startAldoSandbox(
       );
   if (idle) return idle;
 
-  const toastId = toastManager.add({
-    type: "loading",
-    title: input.create ? `Creating ${label}…` : "Creating a cloud agent…",
-    description: input.create
-      ? "Creating the repository and a cloud agent to work in it."
-      : `Setting up ${label} in the cloud.`,
-    timeout: 0,
-  });
+  const threadId = newAldoThreadId();
+  const environmentId = aldoEnvironmentIdFor(threadId);
+  let hasModels = false;
+  let created: AldoEnvironment | undefined;
+  holdAldoEnvironment(environmentId);
+  // The models come from Aldo's copy; fetch it while the record is made.
+  const serverConfig = aldoServerConfigFor(environmentId).catch(() => null);
   try {
-    const environment = await createAldoEnvironment(input);
-    toastManager.update(toastId, {
-      type: "loading",
-      title: "Connecting to the cloud…",
-      description: "Almost ready.",
-      timeout: 0,
+    const { environment, project } = await createAldoEnvironment({
+      ...input,
+      id: threadId,
+      projectId: crypto.randomUUID(),
+      start: false,
     });
-    const projectRef = await waitForAldoProject(environment.environmentId, reconnect);
-    toastManager.close(toastId);
-    return projectRef;
+    if (!project) throw new Error("Aldo didn't name the thread's project.");
+    const config = await serverConfig;
+    hasModels = config !== null;
+    await seedEnvironmentCache({
+      environmentId: environmentId as EnvironmentId,
+      shell: plannedShell(project),
+      serverConfig: config && {
+        ...config,
+        environment: { ...config.environment, label: environment.label },
+      },
+    });
+    created = environment;
   } catch (cause) {
-    toastManager.update(toastId, {
+    toastManager.add({
       type: "error",
-      title: input.create ? "Couldn't create the project" : "Couldn't create the cloud agent",
+      title: input.create ? "Couldn't create the project" : "Couldn't start the thread",
       description: cause instanceof Error ? cause.message : String(cause),
       timeout: 10_000,
     });
     throw cause;
+  } finally {
+    releaseAldoEnvironment(environmentId, created);
   }
+  // Before any cloud agent has reported its models there are none to show,
+  // so start this one right away; its models appear when it's up.
+  if (!hasModels) void ensureAldoConnected(environmentId).catch(() => undefined);
+  return waitForAldoProject(environmentId);
 }
 
 /**
@@ -135,16 +178,7 @@ export async function startAldoSandbox(
  */
 export async function aldoProjectRefForNewThread(
   projectRef: ScopedProjectRef,
-  reconnect: AldoReconnect,
 ): Promise<ScopedProjectRef> {
   if (!isAldoCloud || !isAldoEnvironmentId(projectRef.environmentId)) return projectRef;
-  const project = readProjects().find(
-    (candidate) =>
-      candidate.environmentId === projectRef.environmentId && candidate.id === projectRef.projectId,
-  );
-  return startAldoSandbox(
-    { fromEnvironmentId: projectRef.environmentId },
-    project?.title ?? "this project",
-    reconnect,
-  );
+  return startAldoSandbox({ fromEnvironmentId: projectRef.environmentId });
 }

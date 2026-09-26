@@ -34,6 +34,7 @@ export interface AldoEnvironment {
   /** Every repository in the project (multi-repo workspaces), the main one first. */
   readonly repos?: ReadonlyArray<string>;
   readonly branch: string;
+  /** "new": the machine doesn't exist yet; it's created when the thread's first message is sent. */
   readonly state: "new" | "ready" | "stopped" | "failed";
 }
 
@@ -91,6 +92,8 @@ async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
 let knownEnvironments: ReadonlyArray<AldoEnvironment> | null = null;
 const directoryListeners = new Set<() => void>();
 let refreshRequested = true;
+/** Emit the directory as it is now, without fetching (a sandbox was just added to it). */
+let emitRequested = false;
 let lastFetchAt = 0;
 const IDLE_REFRESH_MS = 15_000;
 
@@ -136,6 +139,18 @@ export function displayedThreadBranch(
   return placeholder ? null : branch;
 }
 
+/** Whether a thread's machine is still to be created (it is when its first message is sent). */
+export function aldoMachineIsNew(environmentId: string): boolean {
+  return knownEnvironments?.find((entry) => entry.environmentId === environmentId)?.state === "new";
+}
+
+/** What a thread's panels say while its cloud agent is offline. */
+export function aldoOfflineMessage(environmentId: string): string {
+  return aldoMachineIsNew(environmentId)
+    ? "The cloud agent starts when you send your first message."
+    : "Reconnecting to the cloud…";
+}
+
 export function requestAldoDirectoryRefresh(): void {
   refreshRequested = true;
 }
@@ -171,14 +186,23 @@ function registrationFor(environment: AldoEnvironment): BearerConnectionRegistra
  * 15 seconds, and within a few seconds of requestAldoDirectoryRefresh(). A
  * failed fetch emits nothing, so a network blip never drops environments.
  */
+function currentRegistrations(environments: ReadonlyArray<AldoEnvironment>) {
+  return environments
+    .filter((environment) => !pendingEnvironmentIds.has(environment.environmentId))
+    .map(registrationFor);
+}
+
 async function pollDirectory(): Promise<Array<BearerConnectionRegistration> | null> {
+  if (emitRequested && knownEnvironments) {
+    emitRequested = false;
+    return currentRegistrations(knownEnvironments);
+  }
   const due = refreshRequested || Date.now() - lastFetchAt > IDLE_REFRESH_MS;
   if (!due) return null;
   refreshRequested = false;
   lastFetchAt = Date.now();
   try {
-    const environments = await fetchEnvironments();
-    return environments.map(registrationFor);
+    return currentRegistrations(await fetchEnvironments());
   } catch {
     refreshRequested = true;
     return null;
@@ -188,7 +212,8 @@ async function pollDirectory(): Promise<Array<BearerConnectionRegistration> | nu
 export function aldoPlatformRegistrations(): Stream.Stream<
   ReadonlyArray<PlatformConnectionRegistration>
 > {
-  return Stream.tick("2 seconds").pipe(
+  // Ticks are cheap: pollDirectory only fetches when a refresh is due.
+  return Stream.tick("250 millis").pipe(
     Stream.mapEffect(() => Effect.promise(pollDirectory)),
     Stream.filter(
       (registrations): registrations is Array<BearerConnectionRegistration> =>
@@ -299,9 +324,54 @@ export interface AldoNewProject {
   readonly isPrivate: boolean;
 }
 
+/** What a new thread's machine will report as its T3 project. */
+export interface AldoPlannedProject {
+  readonly id: string;
+  readonly title: string;
+  readonly workspaceRoot: string;
+  readonly remoteUrl: string;
+}
+
 /**
- * Opens a project's sandbox, which Aldo creates the first time (`created`)
- * and otherwise wakes and returns: each project has one.
+ * Sandboxes the client is still preparing (seeding their cached project and
+ * models); the directory leaves them out until then, so they register with
+ * the cache in place.
+ */
+const pendingEnvironmentIds = new Set<string>();
+
+export function holdAldoEnvironment(environmentId: string): void {
+  pendingEnvironmentIds.add(environmentId);
+}
+
+/** Lets a prepared sandbox into the directory; registers it at once when `environment` is given. */
+export function releaseAldoEnvironment(environmentId: string, environment?: AldoEnvironment): void {
+  pendingEnvironmentIds.delete(environmentId);
+  if (environment && knownEnvironments) {
+    if (!knownEnvironments.some((entry) => entry.environmentId === environmentId)) {
+      knownEnvironments = [environment, ...knownEnvironments];
+      for (const listener of directoryListeners) listener();
+    }
+    emitRequested = true;
+    return;
+  }
+  requestAldoDirectoryRefresh();
+}
+
+/** A new thread's sandbox id, in the form Aldo's server makes them. */
+export function newAldoThreadId(): string {
+  const alphabet = "0123456789abcdefghjkmnpqrstvwxyz";
+  const bytes = crypto.getRandomValues(new Uint8Array(10));
+  return Array.from(bytes, (byte) => alphabet[byte % alphabet.length]).join("");
+}
+
+export function aldoEnvironmentIdFor(threadId: string): string {
+  return `aldo-${threadId}`;
+}
+
+/**
+ * Creates a thread's sandbox record. With `start: false` (and the thread and
+ * project ids named here) its machine is only created when the thread's first
+ * message is sent, and `project` says what to show until then.
  */
 export async function createAldoEnvironment(input: {
   readonly repo?: string;
@@ -311,24 +381,43 @@ export async function createAldoEnvironment(input: {
   readonly create?: AldoNewProject;
   /** A multi-repo workspace: every repository, the main one first. */
   readonly repos?: ReadonlyArray<string>;
-}): Promise<AldoEnvironment & { readonly created: boolean }> {
-  const { environment, created } = await api<{ environment: AldoEnvironment; created: boolean }>(
-    "/api/environments",
-    {
-      method: "POST",
-      body: JSON.stringify({
-        repo: input.repo,
-        branch: input.branch,
-        create: input.create,
-        repos: input.repos,
-        fromThreadId: input.fromEnvironmentId
-          ? threadIdForEnvironment(input.fromEnvironmentId)
-          : undefined,
-      }),
-    },
-  );
+  readonly id?: string;
+  readonly projectId?: string;
+  readonly start?: boolean;
+}): Promise<{
+  readonly environment: AldoEnvironment;
+  readonly project: AldoPlannedProject | null;
+}> {
+  const result = await api<{
+    environment: AldoEnvironment;
+    project: AldoPlannedProject | null;
+  }>("/api/environments", {
+    method: "POST",
+    body: JSON.stringify({
+      repo: input.repo,
+      branch: input.branch,
+      create: input.create,
+      repos: input.repos,
+      fromThreadId: input.fromEnvironmentId
+        ? threadIdForEnvironment(input.fromEnvironmentId)
+        : undefined,
+      id: input.id,
+      projectId: input.projectId,
+      start: input.start,
+    }),
+  });
   requestAldoDirectoryRefresh();
-  return { ...environment, created };
+  return result;
+}
+
+/** The newest T3 server config Aldo has for the user (see /api/models). */
+export async function fetchAldoServerConfig(): Promise<unknown> {
+  const { config } = await api<{ config: unknown }>("/api/models");
+  return config;
+}
+
+export async function reportAldoServerConfig(config: unknown): Promise<void> {
+  await api("/api/models", { method: "POST", body: JSON.stringify({ config }) });
 }
 
 export async function listAldoRepositories(): Promise<

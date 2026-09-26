@@ -37,7 +37,7 @@ import {
 import { cn } from "../lib/utils";
 import { useAldoBrowserRequests } from "./browserStore";
 import { AldoDesktopView } from "./AldoDesktopView";
-import { AldoApiError, aldoBrowserConnection, aldoPreviewUrl } from "./cloud";
+import { AldoApiError, aldoBrowserConnection, aldoPreviewUrl, aldoOfflineMessage } from "./cloud";
 
 type Tab = { id: string; url: string; title: string };
 type Nav = { url: string; canGoBack: boolean; canGoForward: boolean; loading: boolean };
@@ -680,7 +680,7 @@ export function AldoBrowserPanel({ environmentId }: { environmentId: string }) {
         {status !== "live" ? (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-6 text-center text-sm text-muted-foreground">
             {status === "asleep" ? (
-              "Reconnecting to the cloud…"
+              aldoOfflineMessage(environmentId)
             ) : status === "error" ? (
               <span className="max-w-sm">
                 Couldn't reach the browser{error ? `: ${error}` : ""}. Retrying…

@@ -29,10 +29,8 @@ import {
 } from "../components/ui/select";
 import { Switch } from "../components/ui/switch";
 import { Textarea } from "../components/ui/textarea";
-import { environmentCatalog } from "../connection/catalog";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { cn } from "../lib/utils";
-import { useAtomCommand } from "../state/use-atom-command";
 import { AldoAccountButton, useAldoAccounts } from "./AldoAccountsPanel";
 import {
   isAldoCloud,
@@ -186,7 +184,6 @@ function NewProjectForm(props: {
   readonly onDone: () => void;
 }) {
   const handleNewThread = useNewThreadHandler();
-  const reconnect = useAtomCommand(environmentCatalog.retryNow, { reportFailure: false });
   const [host, setHost] = useState<AldoHostKind>(
     props.hosts.includes("github") ? "github" : props.hosts[0]!,
   );
@@ -204,18 +201,14 @@ function NewProjectForm(props: {
     setCreating(true);
     setError(null);
     try {
-      const projectRef = await startAldoSandbox(
-        {
-          create: {
-            host,
-            name,
-            isPrivate,
-            ...(description.trim() ? { description: description.trim() } : {}),
-          },
+      const projectRef = await startAldoSandbox({
+        create: {
+          host,
+          name,
+          isPrivate,
+          ...(description.trim() ? { description: description.trim() } : {}),
         },
-        name,
-        reconnect,
-      );
+      });
       props.onDone();
       await handleNewThread(projectRef);
     } catch (cause) {
@@ -322,7 +315,6 @@ function typedRef(query: string): string | null {
 
 function ExistingRepositoryPicker(props: { readonly onDone: () => void }) {
   const handleNewThread = useNewThreadHandler();
-  const reconnect = useAtomCommand(environmentCatalog.retryNow, { reportFailure: false });
   const [repositories, setRepositories] = useState<ReadonlyArray<SourceControlRepositorySummary>>(
     [],
   );
@@ -374,8 +366,7 @@ function ExistingRepositoryPicker(props: { readonly onDone: () => void }) {
     setStarting(true);
     setError(null);
     try {
-      const label = selected.map(shortName).join(" + ");
-      const projectRef = await startAldoSandbox({ repos: selected }, label, reconnect);
+      const projectRef = await startAldoSandbox({ repos: selected });
       props.onDone();
       await handleNewThread(projectRef);
     } catch (cause) {
@@ -476,7 +467,7 @@ function ExistingRepositoryPicker(props: { readonly onDone: () => void }) {
         {error ? <p className="basis-full text-destructive-foreground text-sm">{error}</p> : null}
         {starting ? (
           <span className="flex items-center gap-2 text-muted-foreground text-sm">
-            <LoaderCircleIcon className="size-4 animate-spin" /> Creating a cloud agent…
+            <LoaderCircleIcon className="size-4 animate-spin" /> Opening…
           </span>
         ) : null}
         <Button type="button" variant="ghost" onClick={props.onDone}>

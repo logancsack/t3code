@@ -2,7 +2,7 @@ import RFB from "@novnc/novnc";
 import { LoaderIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
-import { AldoApiError, aldoBrowserConnection } from "./cloud";
+import { AldoApiError, aldoBrowserConnection, aldoOfflineMessage } from "./cloud";
 
 type Status = "connecting" | "live" | "asleep" | "error";
 
@@ -79,7 +79,7 @@ export function AldoDesktopView({ environmentId }: { environmentId: string }) {
       {status !== "live" ? (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-6 text-center text-sm text-muted-foreground">
           {status === "asleep" ? (
-            "Reconnecting to the cloud…"
+            aldoOfflineMessage(environmentId)
           ) : status === "error" ? (
             <span className="max-w-sm">
               Couldn't reach the desktop{error ? `: ${error}` : ""}. Retrying…

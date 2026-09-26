@@ -440,6 +440,7 @@ import {
 import { useAssetUrls } from "../assets/assetUrls";
 import { useAldoAutoWake } from "../aldo/useAldoAutoWake";
 import { isAldoCloud, isAldoEnvironmentId } from "../aldo/cloud";
+import { ensureAldoConnected } from "../aldo/dispatch";
 
 const ATTACHMENT_ONLY_BOOTSTRAP_PROMPT =
   "[User attached one or more files without additional text. Respond using the conversation context and the attached files.]";
@@ -2012,11 +2013,17 @@ function ChatViewContent(props: ChatViewProps) {
     primaryEnvironmentId,
     connectionPhase: activeEnvironmentConnectionPhase,
   });
+  // Aldo: sending creates or wakes the thread's cloud agent (aldo/dispatch.ts),
+  // so a machine that isn't running (or doesn't exist yet) doesn't block it.
+  const aldoAgentOffline =
+    isAldoCloud &&
+    activeEnvironment !== null &&
+    isAldoEnvironmentId(activeEnvironment.environmentId) &&
+    activeEnvironmentConnectionPhase !== "connected";
   const activeEnvironmentActionUnavailable =
-    activeEnvironmentUnavailable && !quietlyRecoveringManagedPrimary;
-  const activeEnvironmentActionUnavailableState = quietlyRecoveringManagedPrimary
-    ? null
-    : activeEnvironmentUnavailableState;
+    activeEnvironmentUnavailable && !quietlyRecoveringManagedPrimary && !aldoAgentOffline;
+  const activeEnvironmentActionUnavailableState =
+    quietlyRecoveringManagedPrimary || aldoAgentOffline ? null : activeEnvironmentUnavailableState;
   const handleReconnectActiveEnvironment = useCallback(
     async (environmentId: EnvironmentId) => {
       const result = await retryEnvironment(environmentId);
@@ -2036,8 +2043,7 @@ function ChatViewContent(props: ChatViewProps) {
     [retryEnvironment],
   );
   // Aldo: a thread's sandbox sleeps when idle; viewing the thread wakes it.
-  const aldoWakeEnvironmentId =
-    activeEnvironment?.environmentId ?? activeProject?.environmentId ?? null;
+  const aldoWakeEnvironmentId = isServerThread ? (activeEnvironment?.environmentId ?? null) : null;
   const aldoWake = useAldoAutoWake(
     aldoWakeEnvironmentId,
     (aldoWakeEnvironmentId ? environmentById.get(aldoWakeEnvironmentId)?.connection.phase : null) ??
@@ -2276,8 +2282,9 @@ function ChatViewContent(props: ChatViewProps) {
         priority: "urgent",
         icon: <LoaderCircleIcon className="animate-spin" />,
         title: "Reconnecting to the cloud…",
+        width: "content",
         className:
-          "mx-auto w-fit max-w-full rounded-full border-border/48 bg-background/88 px-3 py-1.5 text-muted-foreground shadow-sm",
+          "mx-auto rounded-full border-border/48 bg-background/88 px-3 py-1.5 text-muted-foreground shadow-sm",
       });
     } else if (aldoWake.state.status === "failed") {
       items.push({
@@ -2319,8 +2326,9 @@ function ChatViewContent(props: ChatViewProps) {
           priority: "urgent",
           icon: <LoaderCircleIcon className="animate-spin" />,
           title: `${unavailableConnection.phase === "connecting" ? "Connecting" : "Reconnecting"}${isAldoCloud ? " to the cloud" : ""}…`,
+          width: "content",
           className:
-            "mx-auto w-fit max-w-full rounded-full border-border/48 bg-background/88 px-3 py-1.5 text-muted-foreground shadow-sm",
+            "mx-auto rounded-full border-border/48 bg-background/88 px-3 py-1.5 text-muted-foreground shadow-sm",
         });
       } else {
         items.push({
@@ -2579,9 +2587,10 @@ function ChatViewContent(props: ChatViewProps) {
     activePendingUserInput: activePendingUserInput?.requestId ?? null,
     threadError,
     wakingManagedWorkspace:
-      isManagedDevPc &&
-      activeEnvironment?.environmentId === primaryEnvironmentId &&
-      isManagedWorkspaceUnavailable(),
+      (isManagedDevPc &&
+        activeEnvironment?.environmentId === primaryEnvironmentId &&
+        isManagedWorkspaceUnavailable()) ||
+      aldoAgentOffline,
   });
   const isWorking = phase === "running" || isSendBusy || isConnecting || isRevertingCheckpoint;
   const isWakingManagedWorkspace = shouldShowManagedWakeStatus({
@@ -6136,6 +6145,23 @@ function ChatViewContent(props: ChatViewProps) {
       composerFilesSnapshot.length > 0
         ? attachmentCapabilitiesBeforeUpload.supportsAttachmentUploads
         : supportsAttachmentUploads;
+    if (
+      turnUsesAttachmentUploads &&
+      composerAttachmentsSnapshot.length > 0 &&
+      isAldoCloud &&
+      isAldoEnvironmentId(environmentId)
+    ) {
+      try {
+        await ensureAldoConnected(environmentId);
+      } catch (cause) {
+        sendInFlightRef.current = false;
+        setThreadError(
+          threadIdForSend,
+          cause instanceof Error ? cause.message : "The cloud agent didn't come online.",
+        );
+        return;
+      }
+    }
     if (turnUsesAttachmentUploads && composerAttachmentsSnapshot.length > 0) {
       for (const attachment of composerAttachmentsSnapshot) {
         startAttachmentUpload({

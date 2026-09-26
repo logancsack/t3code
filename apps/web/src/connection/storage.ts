@@ -671,3 +671,49 @@ export const connectionStorageLayer = Layer.effectContext(
     );
   }),
 );
+
+const decodeShellSnapshot = Schema.decodeUnknownEffect(OrchestrationShellSnapshot);
+const decodeServerConfig = Schema.decodeUnknownEffect(ServerConfig);
+
+/**
+ * Writes an environment's cached shell snapshot and server config before the
+ * environment is registered, so it opens with them. Aldo uses this to show a
+ * thread's project and models before the thread's machine exists. Both go
+ * through the same schemas as the cache itself.
+ */
+export function seedEnvironmentCache(input: {
+  readonly environmentId: EnvironmentId;
+  readonly shell: unknown;
+  readonly serverConfig: unknown;
+}): Promise<void> {
+  return Effect.runPromise(
+    Effect.acquireUseRelease(
+      openDatabase(),
+      (database) =>
+        Effect.gen(function* () {
+          const snapshot = yield* decodeShellSnapshot(input.shell);
+          const shell = yield* encodeStoredShellSnapshot({
+            schemaVersion: SHELL_SNAPSHOT_CACHE_SCHEMA_VERSION,
+            environmentId: input.environmentId,
+            snapshot,
+          });
+          yield* writeDatabaseValue(database, SHELL_STORE_NAME, input.environmentId, shell);
+          if (input.serverConfig !== null) {
+            const config = yield* decodeServerConfig(input.serverConfig);
+            const stored = yield* encodeStoredServerConfig({
+              schemaVersion: 1,
+              environmentId: input.environmentId,
+              config,
+            });
+            yield* writeDatabaseValue(
+              database,
+              SERVER_CONFIG_STORE_NAME,
+              input.environmentId,
+              stored,
+            );
+          }
+        }),
+      (database) => Effect.sync(() => database.close()),
+    ),
+  );
+}
