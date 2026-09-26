@@ -442,6 +442,7 @@ import {
 } from "../versionSkew";
 import { useAssetUrls } from "../assets/assetUrls";
 import { useAldoAutoWake } from "../aldo/useAldoAutoWake";
+import { isAldoCloud, isAldoEnvironmentId } from "../aldo/cloud";
 
 const ATTACHMENT_ONLY_BOOTSTRAP_PROMPT =
   "[User attached one or more files without additional text. Respond using the conversation context and the attached files.]";
@@ -4675,19 +4676,27 @@ function ChatViewContent(props: ChatViewProps) {
     activeThread.worktreePath === null &&
     !envLocked,
   );
-  const envMode: DraftThreadEnvMode = canOverrideServerThreadEnvMode
-    ? (pendingServerThreadEnvMode ?? draftThread?.envMode ?? derivedEnvMode)
-    : derivedEnvMode;
+  // Aldo: the sandbox belongs to this thread, so it always works in the
+  // sandbox's checkout; a worktree "from origin" would need the thread's branch
+  // on the remote, which it isn't until pushed.
+  const aldoSandboxThread = isAldoCloud && isAldoEnvironmentId(environmentId);
+  const envMode: DraftThreadEnvMode = aldoSandboxThread
+    ? "local"
+    : canOverrideServerThreadEnvMode
+      ? (pendingServerThreadEnvMode ?? draftThread?.envMode ?? derivedEnvMode)
+      : derivedEnvMode;
   const activeThreadBranch =
     canOverrideServerThreadEnvMode && pendingServerThreadBranch !== undefined
       ? pendingServerThreadBranch
       : (activeThread?.branch ?? null);
-  const startFromOrigin = isLocalDraftThread
-    ? (draftThread?.startFromOrigin ?? false)
-    : canOverrideServerThreadEnvMode
-      ? (pendingServerThreadStartFromOriginByThreadId[activeThread?.id ?? ""] ??
-        primaryServerSettings.newWorktreesStartFromOrigin)
-      : false;
+  const startFromOrigin = aldoSandboxThread
+    ? false
+    : isLocalDraftThread
+      ? (draftThread?.startFromOrigin ?? false)
+      : canOverrideServerThreadEnvMode
+        ? (pendingServerThreadStartFromOriginByThreadId[activeThread?.id ?? ""] ??
+          primaryServerSettings.newWorktreesStartFromOrigin)
+        : false;
   const sendEnvMode = resolveSendEnvMode({
     requestedEnvMode: envMode,
     isGitRepo,
