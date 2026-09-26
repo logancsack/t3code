@@ -566,6 +566,13 @@ const client = new Proxy(
       ? {
           [WS_METHODS.serverDiscoverSourceControl]: () => Effect.succeed(hubDemoDiscovery),
           [WS_METHODS.sourceControlListRepositories]: () => Effect.succeed(hubDemoRepositories),
+          [WS_METHODS.serverListProviderSignIns]: () =>
+            Effect.succeed({
+              signIns: [{ connector: "codex", version: 1, updatedAt: STARTED_AT }],
+            }),
+          [WS_METHODS.threadMachinesWake]: () =>
+            Effect.succeed({ state: "starting", detail: null, updatedAt: STARTED_AT }),
+          [WS_METHODS.threadMachinesPause]: () => Effect.succeed(null),
         }
       : {}),
     [ORCHESTRATION_WS_METHODS.getFullThreadDiff]: () => Effect.succeed({ patch: "", files: [] }),

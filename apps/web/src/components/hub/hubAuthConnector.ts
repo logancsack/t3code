@@ -1,27 +1,25 @@
+import type { AuthConnectorSession } from "@t3tools/contracts";
+
 import { managedWorkspaceBrowserUrl } from "../../managedDevPc";
 
 /**
- * The machine a hub starts for provider sign-in has its own browser, reached
- * like a thread's under this reserved id.
+ * Where a sign-in that needs the workspace browser should open it: the page
+ * the session names (a hub's sign-in machine), else the persistent
+ * workspace's browser. A hub names it once the provider's flow runs in a
+ * browser on its sign-in machine; until then there is none.
  */
-export const HUB_SIGN_IN_BROWSER_THREAD_ID = "aldo-provider-sign-in";
+export function resolveAuthWorkspaceBrowserUrl(
+  session: AuthConnectorSession | null,
+): string | null {
+  return session?.workspaceBrowserUrl ?? managedWorkspaceBrowserUrl();
+}
 
 /**
- * Where a sign-in that needs the workspace browser should open it: the URL
- * the session names (a hub's sign-in machine), else the deployment's browser.
- *
- * TODO(thread-machines): read `session.workspaceBrowserUrl` directly once the
- * `AuthConnectorSession` contract carries it; until then decoding drops it
- * and the reserved sign-in id stands in.
+ * A hub reports its own progress while it starts the sign-in machine and
+ * while it saves the finished sign-in; show that message as the status line.
  */
-export function resolveAuthWorkspaceBrowserUrl(session: object | null): string | null {
-  if (
-    session !== null &&
-    "workspaceBrowserUrl" in session &&
-    typeof session.workspaceBrowserUrl === "string" &&
-    session.workspaceBrowserUrl.length > 0
-  ) {
-    return session.workspaceBrowserUrl;
-  }
-  return managedWorkspaceBrowserUrl(HUB_SIGN_IN_BROWSER_THREAD_ID);
+export function hubAuthConnectorProgress(
+  session: Pick<AuthConnectorSession, "stage" | "message"> | null,
+): string | null {
+  return session?.stage === "preparing" || session?.stage === "verifying" ? session.message : null;
 }

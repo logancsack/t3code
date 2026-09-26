@@ -19,7 +19,7 @@ import { deriveThreadMachineView, type ThreadMachineView } from "../../threadMac
 import type { ComposerBannerStackItem } from "../chat/ComposerBannerStack";
 import { buildThreadMachineBannerItem } from "../ThreadMachineStatus";
 import { stackedThreadToast, toastManager } from "../ui/toast";
-import { requestThreadMachineWake, THREAD_MACHINE_WAKE_SUPPORTED } from "./threadMachineActions";
+import { useThreadMachineControls } from "./threadMachineActions";
 
 export interface HubThreadContext {
   /** The thread's environment is a hub: every thread runs on its own machine. */
@@ -102,13 +102,15 @@ export function useHubThreadContext(input: HubThreadContextInput): HubThreadCont
   });
 
   const retryTurn = useAtomCommand(threadEnvironment.retryTurn, { reportFailure: false });
+  const machineControls = useThreadMachineControls();
   const [retrying, setRetrying] = useState(false);
   const [, setDismissTick] = useState(0);
   const failedTurnId = input.latestTurn?.state === "error" ? input.latestTurn.turnId : null;
-  const canRetry =
-    base.machineView?.phase === "failed" &&
-    threadRef !== null &&
-    (failedTurnId !== null || THREAD_MACHINE_WAKE_SUPPORTED);
+  const canRetry = base.machineView?.phase === "failed" && threadRef !== null;
+  const { wake } = machineControls;
+  const onWake = useCallback(() => {
+    if (threadRef) void wake(threadRef);
+  }, [threadRef, wake]);
   const onRetry = useCallback(() => {
     if (!threadRef) return;
     setRetrying(true);
@@ -130,11 +132,11 @@ export function useHubThreadContext(input: HubThreadContextInput): HubThreadCont
           );
         }
       } else {
-        await requestThreadMachineWake(threadRef);
+        await wake(threadRef);
       }
       setRetrying(false);
     })();
-  }, [failedTurnId, retryTurn, threadRef]);
+  }, [failedTurnId, retryTurn, threadRef, wake]);
 
   const threadKey = threadRef ? scopedThreadKey(threadRef) : null;
   const bannerView = base.machineView;
@@ -148,12 +150,25 @@ export function useHubThreadContext(input: HubThreadContextInput): HubThreadCont
       view: bannerView,
       onRetry: canRetry ? onRetry : null,
       retrying,
+      onWake: threadRef ? onWake : null,
+      waking: machineControls.pending === "wake",
       onDismiss: () => {
         dismissedMachineBanners.add(bannerId);
         setDismissTick((tick) => tick + 1);
       },
     });
-  }, [bannerDismissed, bannerId, bannerView, canRetry, onRetry, retrying, threadKey]);
+  }, [
+    bannerDismissed,
+    bannerId,
+    bannerView,
+    canRetry,
+    machineControls.pending,
+    onRetry,
+    onWake,
+    retrying,
+    threadKey,
+    threadRef,
+  ]);
 
   const machineWakes = base.machineView !== null && base.machineView.phase !== "running";
   const announceMachineWake = useCallback(() => {

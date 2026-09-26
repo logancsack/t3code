@@ -77,6 +77,7 @@ import { vcsEnvironment } from "../state/vcs";
 import { buildBaseRefChoices, filterBaseRefChoices } from "../lib/baseRefChoices";
 import { createGitDiffFileContentsLoader } from "../lib/diffFileContents";
 import { useDiffPanelTurnDefaultWhileMachineAsleep } from "./hub/useHubDiffDefaults";
+import { ThreadMachineAsleepPanel } from "./ThreadMachineStatus";
 
 type DiffThemeType = "light" | "dark";
 const AUTOMATIC_BASE_REF = "__automatic_base_ref__";
@@ -201,7 +202,10 @@ export default function DiffPanel({
     selectedTurn &&
     (selectedTurn.checkpointTurnCount ?? inferredCheckpointTurnCountByTurnId[selectedTurn.turnId]);
   const latestTurn = orderedTurnDiffSummaries[0];
-  useDiffPanelTurnDefaultWhileMachineAsleep(routeThreadRef, latestTurn?.turnId ?? null);
+  const unavailableMachine = useDiffPanelTurnDefaultWhileMachineAsleep(
+    routeThreadRef,
+    latestTurn?.turnId ?? null,
+  );
   const selectedScopeLabel =
     selectedTurnId === null
       ? selectedGitScope === "unstaged"
@@ -829,6 +833,12 @@ export default function DiffPanel({
         <div className="flex flex-1 items-center justify-center px-5 text-center text-xs text-muted-foreground/70">
           Turn diffs are unavailable because this project is not a git repository.
         </div>
+      ) : selectedTurnId === null && unavailableMachine ? (
+        <ThreadMachineAsleepPanel
+          threadRef={routeThreadRef ?? null}
+          view={unavailableMachine}
+          subject="Working tree and branch diffs"
+        />
       ) : selectedTurnId !== null && orderedTurnDiffSummaries.length === 0 ? (
         <div className="flex flex-1 items-center justify-center px-5 text-center text-xs text-muted-foreground/70">
           No completed turns yet.

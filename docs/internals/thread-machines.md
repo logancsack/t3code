@@ -557,18 +557,26 @@ descriptor, so a hub never flashes local-checkout controls. On a hub:
   projects: `project.create` with `repositoryIdentity` and the virtual root, deduplicated by
   remote. Nothing is cloned by the client.
 - The thread shell's `machine` drives a header status pill, the timeline's waking row
-  (with the platform's detail), the composer notice (asleep, or failed with a retry that
-  re-drives the failed turn), and the sidebar (starting reads as working, failed as failed).
-  `thread-machine.*` activities stay out of the work log unless they are errors.
+  (with the platform's detail), the composer notice (asleep with "Wake machine", or failed
+  with a retry that re-drives the failed turn, or wakes the machine when no turn failed), and
+  the sidebar (starting reads as working, failed as failed). `thread-machine.*` activities
+  stay out of the work log unless they are errors.
+- Explicit controls (`components/hub/threadMachineActions.ts`) call `threadMachines.wake` and
+  `threadMachines.pause`: "Wake machine" in the composer notice, the files panel, working-tree
+  and branch diffs while the machine sleeps, and the thread menu (sidebar and header) of a
+  sleeping or failed machine; "Pause machine" in the thread menu of a running one. `busy`
+  shows a "Machine is busy" warning, every other failure an error toast.
 - Surfaces that need a checkout adapt: no Open In, Copy path, t3.json reads or new-thread
   workspace settings; files show "Machine asleep" while the machine sleeps; the diff panel
   opens on the latest captured turn; previews and the machine browser use the bootstrap's
-  per-thread templates (`threadPreviewUrlTemplate`, `threadBrowserUrlTemplate`); provider
-  sign-in opens the session's `workspaceBrowserUrl` when present. The managed workspace
-  status, `/settings/workspace` and the durable wake queue are skipped.
-
-An explicit wake (`threadMachines.wake`) is not wired yet: the client hides that affordance
-(`components/hub/threadMachineActions.ts`).
+  per-thread templates (`threadPreviewUrlTemplate`, `threadBrowserUrlTemplate`). The managed
+  workspace status, `/settings/workspace` and the durable wake queue are skipped.
+- Provider sign-in opens the session's `workspaceBrowserUrl` (a hub names none until the
+  flow runs in the sign-in machine's browser) and shows the hub's staged messages
+  ("Starting a machine for sign-in…", "Saving your sign-in…") as the dialog's status line.
+  Settings → Providers marks providers whose sign-in is stored for machines
+  (`server.listProviderSignIns`) and offers a confirmed "Sign out"
+  (`server.signOutProvider`).
 
 ## Gaps
 

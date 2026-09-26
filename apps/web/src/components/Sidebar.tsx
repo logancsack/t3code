@@ -97,6 +97,8 @@ import {
 } from "../sidebarProjectGrouping";
 import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore";
 import { readIsHubEnvironment, usePrimaryIsHub } from "../hubMode";
+import { deriveThreadMachineView } from "../threadMachine";
+import { threadMachineControlFor, useThreadMachineControls } from "./hub/threadMachineActions";
 import { useThreadSelectionStore } from "../threadSelectionStore";
 import { useThreadActions } from "../hooks/useThreadActions";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
@@ -1755,6 +1757,7 @@ export default function Sidebar() {
     archiveThread,
     deleteThread,
   } = useThreadActions();
+  const { wake: wakeMachine, pause: pauseMachine } = useThreadMachineControls();
   const updateThreadMetadata = useAtomCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
   });
@@ -3105,6 +3108,7 @@ export default function Sidebar() {
         const isSettled = settledThreadKeysRef.current.has(threadKey);
         const isSnoozed = snoozedThreadKeysRef.current.has(threadKey);
         const isPinned = thread.pinnedAt != null;
+        const hub = readIsHubEnvironment(thread.environmentId);
         // Presets resolve at menu-open time (same as the popover).
         const snoozePresets = resolveSnoozePresets(new Date(), timestampFormat);
         const clicked = await settlePromise(() =>
@@ -3123,8 +3127,11 @@ export default function Sidebar() {
                 snooze: supportsSnooze,
                 pinning: supportsPinning,
                 titleRegeneration: supportsTitleRegeneration,
-                workspacePath: !readIsHubEnvironment(thread.environmentId),
+                workspacePath: !hub,
               },
+              machineControl: hub
+                ? threadMachineControlFor(deriveThreadMachineView(thread.machine))
+                : null,
               snoozePresets,
             }),
             position,
@@ -3233,6 +3240,12 @@ export default function Sidebar() {
           case "copy-thread-id":
             copyThreadIdToClipboard(thread.id, { threadId: thread.id });
             return;
+          case "wake-machine":
+            await wakeMachine(threadRef);
+            return;
+          case "pause-machine":
+            await pauseMachine(threadRef);
+            return;
           case "archive": {
             if (confirmThreadArchive) {
               const confirmed = await settlePromise(() =>
@@ -3310,11 +3323,13 @@ export default function Sidebar() {
       handleMultiSelectContextMenu,
       markThreadUnread,
       openProjectSettings,
+      pauseMachine,
       projectCwdByKey,
       serverConfigs,
       startThreadRename,
       updateThreadMetadata,
       timestampFormat,
+      wakeMachine,
     ],
   );
 

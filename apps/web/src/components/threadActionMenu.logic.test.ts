@@ -46,6 +46,17 @@ describe("buildThreadActionMenuItems", () => {
     expect(hubIds).toContain("copy-thread-id");
   });
 
+  it("offers the hub thread's machine control after the lifecycle actions", () => {
+    expect(ids(baseState)).not.toContain("wake-machine");
+    expect(ids(baseState)).not.toContain("pause-machine");
+    const wake = ids({ ...baseState, machineControl: "wake" });
+    expect(wake).not.toContain("pause-machine");
+    expect(wake.indexOf("wake-machine")).toBe(wake.indexOf("rename") - 1);
+    const pause = ids({ ...baseState, machineControl: "pause" });
+    expect(pause).not.toContain("wake-machine");
+    expect(pause.indexOf("pause-machine")).toBe(pause.indexOf("rename") - 1);
+  });
+
   it("groups project settings with utility actions before archive", () => {
     const items = buildThreadActionMenuItems(baseState);
     const copyIndex = items.findIndex((item) => item.id === "copy");

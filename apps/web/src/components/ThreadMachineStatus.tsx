@@ -1,4 +1,4 @@
-import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import type { EnvironmentId, ScopedThreadRef, ThreadId } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { CloudIcon, MoonIcon, TriangleAlertIcon } from "lucide-react";
 import { useMemo } from "react";
@@ -11,6 +11,7 @@ import {
   type ThreadMachineView,
 } from "../threadMachine";
 import type { ComposerBannerStackItem } from "./chat/ComposerBannerStack";
+import { useThreadMachineControls } from "./hub/threadMachineActions";
 import { StatusDot } from "./ManagedDevPcStatus";
 import { Button } from "./ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
@@ -65,6 +66,8 @@ export function buildThreadMachineBannerItem(input: {
   readonly view: ThreadMachineView | null;
   readonly onRetry: (() => void) | null;
   readonly retrying: boolean;
+  readonly onWake: (() => void) | null;
+  readonly waking: boolean;
   readonly onDismiss: () => void;
 }): ComposerBannerStackItem | null {
   const { view } = input;
@@ -76,6 +79,15 @@ export function buildThreadMachineBannerItem(input: {
       priority: "notice",
       icon: <MoonIcon />,
       title: view.description,
+      ...(input.onWake
+        ? {
+            actions: (
+              <Button size="xs" variant="outline" disabled={input.waking} onClick={input.onWake}>
+                {input.waking ? "Waking…" : "Wake machine"}
+              </Button>
+            ),
+          }
+        : {}),
       dismissLabel: "Dismiss machine status",
       onDismiss: input.onDismiss,
     };
@@ -101,8 +113,19 @@ export function buildThreadMachineBannerItem(input: {
   return null;
 }
 
-/** Stands in for machine-backed panels (files) while the machine sleeps. */
-export function ThreadMachineAsleepPanel({ view }: { readonly view: ThreadMachineView }) {
+/**
+ * Stands in for machine-backed panels (files, working-tree diffs) while the
+ * machine sleeps or failed, with an explicit wake.
+ */
+export function ThreadMachineAsleepPanel(props: {
+  readonly threadRef: ScopedThreadRef | null;
+  readonly view: ThreadMachineView;
+  /** What lives on the machine, as the start of a sentence ("Files"). */
+  readonly subject: string;
+}) {
+  const { view } = props;
+  const { wake, pending } = useThreadMachineControls();
+  const threadRef = props.threadRef;
   return (
     <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-8 text-center">
       <MoonIcon className="size-5 text-muted-foreground/70" aria-hidden />
@@ -112,8 +135,19 @@ export function ThreadMachineAsleepPanel({ view }: { readonly view: ThreadMachin
       <p className="max-w-xs text-sm text-muted-foreground">
         {view.phase === "failed"
           ? (view.detail ?? "This thread's machine could not start.")
-          : "Files live on this thread's machine. Send a message to wake it."}
+          : `${props.subject} live on this thread's machine. Wake it, or send a message.`}
       </p>
+      {threadRef ? (
+        <Button
+          size="xs"
+          variant="outline"
+          className="mt-1"
+          disabled={pending === "wake"}
+          onClick={() => void wake(threadRef)}
+        >
+          {pending === "wake" ? "Waking…" : "Wake machine"}
+        </Button>
+      ) : null}
     </div>
   );
 }

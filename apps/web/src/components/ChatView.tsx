@@ -7323,7 +7323,11 @@ function ChatViewContent(props: ChatViewProps) {
     ) : (activeRightPanelSurface?.kind === "files" || activeRightPanelSurface?.kind === "file") &&
       hubThread.machineUnavailable &&
       hubThread.machineView ? (
-      <ThreadMachineAsleepPanel view={hubThread.machineView} />
+      <ThreadMachineAsleepPanel
+        threadRef={activeThreadRef ?? null}
+        view={hubThread.machineView}
+        subject="Files"
+      />
     ) : (activeRightPanelSurface?.kind === "files" || activeRightPanelSurface?.kind === "file") &&
       activeProject &&
       activeWorkspaceRoot ? (

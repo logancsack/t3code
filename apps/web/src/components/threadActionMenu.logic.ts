@@ -23,6 +23,8 @@ export type ThreadActionMenuId =
   | "copy-path"
   | "copy-branch"
   | "copy-thread-id"
+  | "wake-machine"
+  | "pause-machine"
   | "archive"
   | "delete";
 
@@ -43,6 +45,8 @@ export interface ThreadActionMenuState {
     /** Absent = true. Hub threads live on their own machines: no local path to copy. */
     readonly workspacePath?: boolean;
   };
+  /** Hub threads: wake a sleeping or failed machine, or pause a running one. */
+  readonly machineControl?: "wake" | "pause" | null;
   readonly snoozePresets: ReadonlyArray<SnoozePreset>;
 }
 
@@ -97,6 +101,11 @@ export function buildThreadActionMenuItems(
               },
         ]
       : []),
+    ...(state.machineControl === "wake"
+      ? [{ id: "wake-machine" as const, label: "Wake machine", icon: "power" }]
+      : state.machineControl === "pause"
+        ? [{ id: "pause-machine" as const, label: "Pause machine", icon: "moon" }]
+        : []),
     { id: "rename", label: "Rename thread", icon: "pencil", separatorBefore: true },
     ...(state.supports.titleRegeneration
       ? [

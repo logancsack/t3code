@@ -1,3 +1,4 @@
+import type { AuthConnectorSession } from "@t3tools/contracts";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 afterEach(() => {
@@ -16,28 +17,42 @@ async function load(bootstrap: Record<string, unknown>) {
   return import("./hubAuthConnector");
 }
 
+const HUB_BOOTSTRAP = {
+  serverMode: "hub",
+  threadBrowserUrlTemplate: "/_devpc/threads/{threadId}/browser",
+};
+
+function session(patch: Partial<AuthConnectorSession> = {}): AuthConnectorSession {
+  return {
+    id: "session",
+    connector: "cursor",
+    method: "account",
+    status: "starting",
+    flow: "browser",
+    stage: "preparing",
+    message: "Starting a machine for sign-in…",
+    verificationUrl: null,
+    userCode: null,
+    fields: [],
+    expiresAt: null,
+    ...patch,
+  };
+}
+
 describe("resolveAuthWorkspaceBrowserUrl", () => {
-  it("prefers the browser the sign-in session names", async () => {
-    const { resolveAuthWorkspaceBrowserUrl } = await load({
-      serverMode: "hub",
-      threadBrowserUrlTemplate: "/_devpc/threads/{threadId}/browser",
-    });
+  it("opens the browser the hub's sign-in session names", async () => {
+    const { resolveAuthWorkspaceBrowserUrl } = await load(HUB_BOOTSTRAP);
     expect(
-      resolveAuthWorkspaceBrowserUrl({ id: "session", workspaceBrowserUrl: "/_aldo/sign-in" }),
-    ).toBe("/_aldo/sign-in");
+      resolveAuthWorkspaceBrowserUrl(
+        session({ workspaceBrowserUrl: "/_devpc/threads/aldo-provider-sign-in/browser" }),
+      ),
+    ).toBe("/_devpc/threads/aldo-provider-sign-in/browser");
   });
 
-  it("opens the hub's sign-in machine browser when the session names none", async () => {
-    const { resolveAuthWorkspaceBrowserUrl } = await load({
-      serverMode: "hub",
-      threadBrowserUrlTemplate: "/_devpc/threads/{threadId}/browser",
-    });
-    expect(resolveAuthWorkspaceBrowserUrl({ id: "session" })).toBe(
-      "/_devpc/threads/aldo-provider-sign-in/browser",
-    );
-    expect(resolveAuthWorkspaceBrowserUrl(null)).toBe(
-      "/_devpc/threads/aldo-provider-sign-in/browser",
-    );
+  it("has no browser on a hub until the session names one", async () => {
+    const { resolveAuthWorkspaceBrowserUrl } = await load(HUB_BOOTSTRAP);
+    expect(resolveAuthWorkspaceBrowserUrl(session({ workspaceBrowserUrl: null }))).toBeNull();
+    expect(resolveAuthWorkspaceBrowserUrl(null)).toBeNull();
   });
 
   it("keeps the shared workspace browser on a persistent workspace", async () => {
@@ -45,6 +60,26 @@ describe("resolveAuthWorkspaceBrowserUrl", () => {
       previewUrlTemplate: "https://{port}.preview.example.test/",
       previewUrls: { "6080": "https://6080.preview.example.test/vnc.html" },
     });
-    expect(resolveAuthWorkspaceBrowserUrl(null)).toBe("https://6080.preview.example.test/vnc.html");
+    expect(resolveAuthWorkspaceBrowserUrl(session())).toBe(
+      "https://6080.preview.example.test/vnc.html",
+    );
+  });
+});
+
+describe("hubAuthConnectorProgress", () => {
+  it("shows the hub's staged messages while it starts the machine and saves the sign-in", async () => {
+    const { hubAuthConnectorProgress } = await load(HUB_BOOTSTRAP);
+    expect(hubAuthConnectorProgress(session())).toBe("Starting a machine for sign-in…");
+    expect(
+      hubAuthConnectorProgress(session({ stage: "verifying", message: "Saving your sign-in…" })),
+    ).toBe("Saving your sign-in…");
+  });
+
+  it("stays quiet once the provider asks the user for something", async () => {
+    const { hubAuthConnectorProgress } = await load(HUB_BOOTSTRAP);
+    expect(
+      hubAuthConnectorProgress(session({ status: "waiting", stage: "authorize", message: "Go" })),
+    ).toBeNull();
+    expect(hubAuthConnectorProgress(null)).toBeNull();
   });
 });
