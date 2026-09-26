@@ -441,6 +441,7 @@ import {
   serverUpdateGuidance,
 } from "../versionSkew";
 import { useAssetUrls } from "../assets/assetUrls";
+import { useAldoAutoWake } from "../aldo/useAldoAutoWake";
 
 const ATTACHMENT_ONLY_BOOTSTRAP_PROMPT =
   "[User attached one or more files without additional text. Respond using the conversation context and the attached files.]";
@@ -2034,6 +2035,15 @@ function ChatViewContent(props: ChatViewProps) {
     },
     [retryEnvironment],
   );
+  // Aldo: a thread's sandbox sleeps when idle; viewing the thread wakes it.
+  const aldoWakeEnvironmentId =
+    activeEnvironment?.environmentId ?? activeProject?.environmentId ?? null;
+  const aldoWake = useAldoAutoWake(
+    aldoWakeEnvironmentId,
+    (aldoWakeEnvironmentId ? environmentById.get(aldoWakeEnvironmentId)?.connection.phase : null) ??
+      "available",
+    retryEnvironment,
+  );
   const logicalProjectEnvironments = useMemo(() => {
     if (!activeProject) return [];
     const logicalKey = deriveLogicalProjectKeyFromSettings(activeProject, projectGroupingSettings);
@@ -2259,7 +2269,30 @@ function ChatViewContent(props: ChatViewProps) {
     const suppressUnavailableBanner =
       environmentReconnecting &&
       (updateRunning || (!reconnectingThroughVersionSkew && !reconnectWarningGraceElapsed));
-    if (
+    if (aldoWake.state.status === "waking") {
+      items.push({
+        id: "aldo-wake",
+        variant: "info",
+        priority: "urgent",
+        icon: <LoaderCircleIcon className="animate-spin" />,
+        title: "Waking this thread's sandbox…",
+        className:
+          "mx-auto w-fit max-w-full rounded-full border-border/48 bg-background/88 px-3 py-1.5 text-muted-foreground shadow-sm",
+      });
+    } else if (aldoWake.state.status === "failed") {
+      items.push({
+        id: "aldo-wake",
+        variant: "error",
+        icon: <WifiOffIcon />,
+        title: "Couldn't wake this thread's sandbox",
+        description: aldoWake.state.message,
+        actions: (
+          <Button size="xs" onClick={aldoWake.wake}>
+            Try again
+          </Button>
+        ),
+      });
+    } else if (
       activeEnvironmentActionUnavailableState &&
       unavailableConnection &&
       !suppressUnavailableBanner
@@ -2396,6 +2429,8 @@ function ChatViewContent(props: ChatViewProps) {
     return items;
   }, [
     activeEnvironmentActionUnavailableState,
+    aldoWake.state,
+    aldoWake.wake,
     reconnectWarningGraceElapsed,
     handleReconnectActiveEnvironment,
     navigate,

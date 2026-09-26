@@ -53,6 +53,27 @@ export class PrimaryEnvironmentAuth extends Context.Service<
   }
 >()("@t3tools/client-runtime/platform/capabilities/PrimaryEnvironmentAuth") {}
 
+export interface PreparedPlatformEnvironment {
+  readonly httpBaseUrl: string;
+  readonly wsBaseUrl: string;
+  readonly bearerToken: string;
+}
+
+/**
+ * Supplies a platform bearer environment's address and credential at connect
+ * time instead of from the stored profile, for hosts whose environments move or
+ * sleep (cloud sandboxes woken on demand). None falls back to the stored ones.
+ */
+export class PlatformEnvironmentGateway extends Context.Service<
+  PlatformEnvironmentGateway,
+  {
+    readonly prepare: (input: {
+      readonly connectionId: string;
+      readonly environmentId: EnvironmentId;
+    }) => Effect.Effect<Option.Option<PreparedPlatformEnvironment>, ConnectionAttemptError>;
+  }
+>()("@t3tools/client-runtime/platform/capabilities/PlatformEnvironmentGateway") {}
+
 export class SshEnvironmentGateway extends Context.Service<
   SshEnvironmentGateway,
   {

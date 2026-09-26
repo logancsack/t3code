@@ -102,6 +102,7 @@ const makePrimaryBroker = Effect.fn("clientRuntime.connection.broker.makePrimary
 const makeBearerBroker = Effect.fn("clientRuntime.connection.broker.makeBearer")(function* () {
   const credentials = yield* ConnectionCredentialStore.ConnectionCredentialStore;
   const remote = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization;
+  const gateway = yield* Effect.serviceOption(ClientCapabilities.PlatformEnvironmentGateway);
 
   return Effect.fn("clientRuntime.connection.broker.bearer")(function* (
     entry: ConnectionCatalogEntry & { readonly target: BearerConnectionTarget },
@@ -122,6 +123,29 @@ const makeBearerBroker = Effect.fn("clientRuntime.connection.broker.makeBearer")
         expected: target.environmentId,
         actual: profile.environmentId,
       });
+    }
+    if (Option.isSome(gateway)) {
+      const dynamic = yield* gateway.value.prepare({
+        connectionId: target.connectionId,
+        environmentId: target.environmentId,
+      });
+      if (Option.isSome(dynamic)) {
+        const authorized = yield* remote.authorizeBearer({
+          expectedEnvironmentId: target.environmentId,
+          httpBaseUrl: dynamic.value.httpBaseUrl,
+          wsBaseUrl: dynamic.value.wsBaseUrl,
+          bearerToken: dynamic.value.bearerToken,
+          connectionMethod: "direct",
+        });
+        return {
+          environmentId: authorized.environmentId,
+          label: authorized.label,
+          httpBaseUrl: authorized.httpBaseUrl,
+          socketUrl: authorized.socketUrl,
+          httpAuthorization: authorized.httpAuthorization,
+          target,
+        } satisfies PreparedConnection;
+      }
     }
     const credential = yield* credentials.get(target.connectionId).pipe(
       Effect.flatMap(

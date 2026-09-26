@@ -207,6 +207,9 @@ export default defineConfig(() => {
       "import.meta.env.VITE_HOSTED_APP_CHANNEL": JSON.stringify(configuredHostedAppChannel),
       "import.meta.env.APP_VERSION": JSON.stringify(configuredAppVersion),
       "import.meta.env.VITE_DEVPC_MANAGED": JSON.stringify(managedDevPc ? "1" : ""),
+      "import.meta.env.VITE_ALDO_CLOUD": JSON.stringify(
+        process.env.VITE_ALDO_CLOUD?.trim() === "1" ? "1" : "",
+      ),
     },
     resolve: {
       tsconfigPaths: true,
