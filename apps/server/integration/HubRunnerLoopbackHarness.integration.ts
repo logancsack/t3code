@@ -7,8 +7,10 @@
  * SQLite outbox, real git checkpoints and checkout preparation in
  * `<root>/t/<threadId>`, hosting the scripted `TestProviderAdapter`.
  *
- * Hub: the orchestration engine, `ProviderService` and reactors on SQLite,
- * with the hub layer set for everything checkout-bound: the remote provider
+ * Hub: the orchestration engine, `ProviderService` and reactors on SQLite, or
+ * on Postgres through the production hub database when
+ * T3_HUB_TEST_DATABASE_URL is set, with the hub layer set for everything
+ * checkout-bound: the remote provider
  * driver, routed checkpoint store with the diff cache, git status cache,
  * workspace routing, reactor hooks, event delivery and its ack loop, and a
  * fake machine directory pointing at the runner.
@@ -79,13 +81,17 @@ import { ThreadDeletionReactor } from "../src/orchestration/Services/ThreadDelet
 import * as ThreadBackgroundLiveness from "../src/orchestration/ThreadBackgroundLiveness.ts";
 import * as ThreadPlanProgress from "../src/orchestration/ThreadPlanProgress.ts";
 import * as ThreadSettlementReactor from "../src/orchestration/ThreadSettlementReactor.ts";
-import { HubThreadMachineStateSqliteLive } from "../src/persistence/Layers/HubThreadMachineState.ts";
 import { OrchestrationCommandReceiptRepositoryLive } from "../src/persistence/Layers/OrchestrationCommandReceipts.ts";
 import { OrchestrationEventStoreLive } from "../src/persistence/Layers/OrchestrationEventStore.ts";
 import { ProjectionCheckpointRepositoryLive } from "../src/persistence/Layers/ProjectionCheckpoints.ts";
 import { ProjectionPendingApprovalRepositoryLive } from "../src/persistence/Layers/ProjectionPendingApprovals.ts";
-import { makeSqlitePersistenceLive } from "../src/persistence/Layers/Sqlite.ts";
+import { layerConfig as ServerPersistenceLive } from "../src/persistence/Layers/Sqlite.ts";
 import * as HubRepositoryIdentityResolver from "../src/persistence/Postgres/HubRepositoryIdentityResolver.ts";
+import {
+  hubTestDatabaseLayer,
+  hubTestDatabaseUrl,
+  makeHubTestSchema,
+} from "../src/persistence/Postgres/hubTestDatabase.ts";
 import * as ProviderSessionRuntime from "../src/persistence/ProviderSessionRuntime.ts";
 import { CheckpointTurnDiffStore } from "../src/persistence/Services/HubThreadMachineState.ts";
 import { ProjectionPendingApprovalRepository } from "../src/persistence/Services/ProjectionPendingApprovals.ts";
@@ -133,6 +139,7 @@ import {
 export const LOOPBACK_PROVIDER = ProviderDriverKind.make("codex");
 const isDispatchError = Schema.is(OrchestrationDispatchCommandError);
 export const LOOPBACK_INSTANCE_ID = defaultInstanceIdForDriver(LOOPBACK_PROVIDER);
+const LOOPBACK_TENANT_ID = "user_loopback";
 
 const git = (cwd: string, args: ReadonlyArray<string>) =>
   NodeChildProcess.execFileSync(
@@ -191,13 +198,21 @@ const instanceRegistryLayer = (adapter: TestProviderAdapterHarness["adapter"]) =
   });
 };
 
-const localStatus = {
-  isRepo: true,
-  hasPrimaryRemote: false,
-  isDefaultRef: true,
-  refName: "main",
-  hasWorkingTreeChanges: false,
-  workingTree: { files: [], insertions: 0, deletions: 0 },
+/**
+ * A clean status on the branch actually checked out: the checkpoint reactor
+ * adopts the reported branch after each turn, so a fixed one would race the
+ * branch that bootstrap recorded.
+ */
+const localStatusOf = (checkout: string) => {
+  const refName = git(checkout, ["rev-parse", "--abbrev-ref", "HEAD"]).trim();
+  return {
+    isRepo: true,
+    hasPrimaryRemote: false,
+    isDefaultRef: refName === "main",
+    refName,
+    hasWorkingTreeChanges: false,
+    workingTree: { files: [], insertions: 0, deletions: 0 },
+  };
 };
 
 export interface LoopbackRunner {
@@ -291,15 +306,15 @@ export const makeHubRunnerLoopbackHarness = (threadIdValue = "thread-loopback") 
               Layer.mock(GitWorkflowService.GitWorkflowService)({}),
               Layer.mock(VcsStatusBroadcaster.VcsStatusBroadcaster)({
                 streamStatus: () => Stream.never,
-                refreshLocalStatus: () => Effect.succeed(localStatus),
+                refreshLocalStatus: () => Effect.sync(() => localStatusOf(checkout)),
                 refreshStatus: () =>
-                  Effect.succeed({
-                    ...localStatus,
+                  Effect.sync(() => ({
+                    ...localStatusOf(checkout),
                     hasUpstream: false,
                     aheadCount: 0,
                     behindCount: 0,
                     pr: null,
-                  }),
+                  })),
               }),
               Layer.mock(VcsProvisioningService.VcsProvisioningService)({}),
               Layer.mock(ReviewService.ReviewService)({}),
@@ -343,6 +358,20 @@ export const makeHubRunnerLoopbackHarness = (threadIdValue = "thread-loopback") 
 
     // ── Hub ──────────────────────────────────────────────────────────────
     const hubBaseDir = NodePath.join(rootDir, "hub");
+    // With T3_HUB_TEST_DATABASE_URL the hub persists to a disposable Postgres
+    // schema through the production hub database (tenant client, migrations,
+    // row-level security); otherwise to SQLite in its base directory. Either
+    // way the database outlives hub restarts.
+    const harnessScope = yield* Scope.make();
+    const hubSchema =
+      hubTestDatabaseUrl === undefined
+        ? undefined
+        : yield* makeHubTestSchema(hubTestDatabaseUrl).pipe(
+            Scope.provide(harnessScope),
+            Effect.orDie,
+          );
+    const hubDatabaseLayer =
+      hubSchema === undefined ? Layer.empty : hubTestDatabaseLayer(hubSchema, LOOPBACK_TENANT_ID);
     const hubConfigLayer = Layer.effect(
       ServerConfig,
       Effect.gen(function* () {
@@ -352,7 +381,7 @@ export const makeHubRunnerLoopbackHarness = (threadIdValue = "thread-loopback") 
     ).pipe(Layer.provide(ServerConfig.layerTest(rootDir, hubBaseDir)));
 
     const makeHubLayer = () => {
-      const persistence = makeSqlitePersistenceLive(NodePath.join(hubBaseDir, "hub.sqlite"));
+      const persistence = ServerPersistenceLive;
       const infrastructure = Layer.mergeAll(RunnerEventDelivery.layer, hubVcsStatusCacheLayer).pipe(
         Layer.provideMerge(
           RemoteSessionRegistry.layer.pipe(Layer.provide(ProviderSessionRuntime.layer)),
@@ -364,7 +393,7 @@ export const makeHubRunnerLoopbackHarness = (threadIdValue = "thread-loopback") 
           ),
         ),
         Layer.provideMerge(Layer.succeed(MachineDirectory, directory.directory)),
-        Layer.provideMerge(HubThreadMachineStateSqliteLive),
+        Layer.provideMerge(HubLayers.makeHubStateStoresLayer(persistence)),
       );
       const remoteAdapterRegistry = Layer.effect(
         ProviderAdapterRegistry,
@@ -450,6 +479,7 @@ export const makeHubRunnerLoopbackHarness = (threadIdValue = "thread-loopback") 
         Layer.provideMerge(persistence),
         Layer.provideMerge(ServerSettingsService.layerTest()),
         Layer.provideMerge(hubConfigLayer),
+        Layer.provideMerge(hubDatabaseLayer),
         Layer.provideMerge(NodeServices.layer),
       );
     };
@@ -571,6 +601,7 @@ export const makeHubRunnerLoopbackHarness = (threadIdValue = "thread-loopback") 
       dispose: Effect.gen(function* () {
         yield* stopHub(hub);
         if (runnerScope) yield* Scope.close(runnerScope, Exit.void);
+        yield* Scope.close(harnessScope, Exit.void);
         NodeFS.rmSync(rootDir, { recursive: true, force: true });
       }),
     } satisfies HubRunnerLoopbackHarness;
