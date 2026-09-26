@@ -231,6 +231,7 @@ export const make = Effect.gen(function* () {
   const cwdBaseName = path.basename(serverConfig.cwd).trim();
   const label = yield* resolveServerEnvironmentLabel({ cwdBaseName });
   const launcher = yield* resolveServiceLauncherMode();
+  const hubMode = ServerConfig.serverModeOf(serverConfig) === "hub";
   const serverSelfUpdate = serverConfig.managedDevPc
     ? null
     : resolveServerSelfUpdateCapability({
@@ -251,7 +252,9 @@ export const make = Effect.gen(function* () {
       connectionProbe: true,
       attachmentUploads: true,
       fileAttachments: { maxUploadBytes: PROVIDER_SEND_TURN_MAX_FILE_BYTES },
-      pullRequests: true,
+      // A hub has no checkout or `gh` login of its own, so it advertises
+      // thread machines instead of the pull-request workspace.
+      ...(hubMode ? { threadMachines: true } : { pullRequests: true }),
       threadSettlement: true,
       threadAutoSettlement: true,
       threadSnooze: true,
