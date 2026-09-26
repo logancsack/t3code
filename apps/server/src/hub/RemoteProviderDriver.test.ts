@@ -14,6 +14,7 @@ import {
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Reactivity from "effect/unstable/reactivity/Reactivity";
 import { afterEach, describe, expect } from "vite-plus/test";
 
 import { resolveAttachmentPath } from "../attachmentStore.ts";
@@ -21,6 +22,12 @@ import { ServerConfig } from "../config.ts";
 import * as McpProviderSession from "../mcp/McpProviderSession.ts";
 import { HubThreadMachineStateSqliteLive } from "../persistence/Layers/HubThreadMachineState.ts";
 import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
+import { persistHubAttachment } from "../persistence/Postgres/HubAttachments.ts";
+import {
+  hubTestDatabaseLayer,
+  hubTestDatabaseUrl,
+  makeHubTestSchema,
+} from "../persistence/Postgres/hubTestDatabase.ts";
 import * as ProviderSessionRuntime from "../persistence/ProviderSessionRuntime.ts";
 import { CodexDriver } from "../provider/Drivers/CodexDriver.ts";
 import { MachineDirectory, makeFakeMachineDirectory } from "./MachineDirectory.ts";
@@ -83,7 +90,39 @@ describe("remote provider driver helpers", () => {
           bytesBase64: Buffer.from("abc").toString("base64"),
         },
       ]);
-    }),
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect.skipIf(hubTestDatabaseUrl === undefined)(
+    "restores an attachment the hub's local cache lost before shipping it",
+    () =>
+      Effect.gen(function* () {
+        const schema = yield* makeHubTestSchema(hubTestDatabaseUrl!);
+        const dir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "hub-attachments-test-"));
+        tempDirs.push(dir);
+        const attachment = {
+          type: "file" as const,
+          id: `${threadId}-4a4a4a4a-0000-4000-8000-000000000000`,
+          name: "notes.md",
+          mimeType: "text/markdown",
+          sizeBytes: 3,
+        };
+        const hubPath = resolveAttachmentPath({ attachmentsDir: dir, attachment })!;
+        NodeFS.mkdirSync(NodePath.dirname(hubPath), { recursive: true });
+        NodeFS.writeFileSync(hubPath, "abc");
+        const files = yield* Effect.gen(function* () {
+          yield* persistHubAttachment({
+            attachmentsDir: dir,
+            relativePath: NodePath.relative(dir, hubPath),
+          });
+          // A new hub process on a fresh base directory.
+          NodeFS.rmSync(hubPath);
+          return yield* attachmentFilesForRunner(dir, [attachment]);
+        }).pipe(Effect.provide(hubTestDatabaseLayer(schema, "user-attachments")));
+        expect(files).toEqual([
+          { attachment, hubPath, bytesBase64: Buffer.from("abc").toString("base64") },
+        ]);
+      }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, Reactivity.layer))),
   );
 });
 

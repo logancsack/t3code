@@ -46,7 +46,9 @@ import {
 } from "@t3tools/contracts/runner";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
+import type * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
+import type * as Path from "effect/Path";
 import * as PubSub from "effect/PubSub";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
@@ -55,6 +57,7 @@ import * as Stream from "effect/Stream";
 import { resolveAttachmentPath } from "../attachmentStore.ts";
 import { ServerConfig } from "../config.ts";
 import * as McpProviderSession from "../mcp/McpProviderSession.ts";
+import { hydrateHubAttachment } from "../persistence/Postgres/HubAttachments.ts";
 import {
   type ProviderAdapterError,
   ProviderAdapterRequestError,
@@ -82,7 +85,9 @@ export type RemoteProviderDriverEnv =
   | RunnerConnectionPool
   | RunnerEventDelivery
   | RemoteSessionRegistry
-  | ServerConfig;
+  | ServerConfig
+  | FileSystem.FileSystem
+  | Path.Path;
 
 const isThreadMachineUnavailable = Schema.is(ThreadMachineUnavailableError);
 const isProviderAdapterError = Schema.is(ProviderAdapterErrorSchema);
@@ -115,22 +120,29 @@ export class RunnerAttachmentReadError extends Schema.TaggedErrorClass<RunnerAtt
   }
 }
 
-/** Reads attachment bytes from the hub's attachment store for shipping with a turn. */
+/**
+ * Reads attachment bytes from the hub's attachment store for shipping with a
+ * turn. With a hub database the local store is a cache, so each attachment is
+ * restored from Postgres first when the cache lost it.
+ */
 export const attachmentFilesForRunner = (
   attachmentsDir: string,
   attachments: ReadonlyArray<ChatAttachment> | undefined,
 ) =>
   Effect.forEach(attachments ?? [], (attachment) =>
-    Effect.try({
-      try: (): ReadonlyArray<RunnerAttachmentFile> => {
-        const hubPath = resolveAttachmentPath({ attachmentsDir, attachment });
-        if (hubPath === null || !NodeFS.existsSync(hubPath)) return [];
-        return [
-          { attachment, hubPath, bytesBase64: NodeFS.readFileSync(hubPath).toString("base64") },
-        ];
-      },
-      catch: (cause) => new RunnerAttachmentReadError({ attachmentId: attachment.id, cause }),
-    }),
+    Effect.andThen(
+      hydrateHubAttachment({ attachmentsDir, attachmentId: attachment.id }),
+      Effect.try({
+        try: (): ReadonlyArray<RunnerAttachmentFile> => {
+          const hubPath = resolveAttachmentPath({ attachmentsDir, attachment });
+          if (hubPath === null || !NodeFS.existsSync(hubPath)) return [];
+          return [
+            { attachment, hubPath, bytesBase64: NodeFS.readFileSync(hubPath).toString("base64") },
+          ];
+        },
+        catch: (cause) => new RunnerAttachmentReadError({ attachmentId: attachment.id, cause }),
+      }),
+    ),
   ).pipe(Effect.map((files) => files.flat()));
 
 interface InstanceContext {
@@ -139,7 +151,9 @@ interface InstanceContext {
   readonly pool: RunnerConnectionPool["Service"];
   readonly delivery: RunnerEventDelivery["Service"];
   readonly registry: RemoteSessionRegistry["Service"];
-  readonly attachmentsDir: string;
+  readonly readAttachments: (
+    attachments: ReadonlyArray<ChatAttachment> | undefined,
+  ) => Effect.Effect<ReadonlyArray<RunnerAttachmentFile>, RunnerAttachmentReadError>;
   readonly publicUrl: string | undefined;
 }
 
@@ -155,13 +169,17 @@ export function makeRemoteProviderDriver<R>(
     create: ({ instanceId, displayName, accentColor, enabled }) =>
       Effect.gen(function* () {
         const config = yield* ServerConfig;
+        const platform = yield* Effect.context<FileSystem.FileSystem | Path.Path>();
         const context: InstanceContext = {
           driverKind,
           instanceId,
           pool: yield* RunnerConnectionPool,
           delivery: yield* RunnerEventDelivery,
           registry: yield* RemoteSessionRegistry,
-          attachmentsDir: config.attachmentsDir,
+          readAttachments: (attachments) =>
+            attachmentFilesForRunner(config.attachmentsDir, attachments).pipe(
+              Effect.provideContext(platform),
+            ),
           publicUrl: config.hub?.publicUrl,
         };
         const capabilities: {
@@ -281,10 +299,9 @@ function makeRemoteAdapter(
         // Captured before waking: if the machine was recreated while asleep,
         // reconciliation settles the old session and this restarts it.
         const before = yield* hostedSession(input.threadId);
-        const attachments = yield* attachmentFilesForRunner(
-          context.attachmentsDir,
-          input.attachments,
-        ).pipe(Effect.mapError(toAdapterError("sendTurn")));
+        const attachments = yield* context
+          .readAttachments(input.attachments)
+          .pipe(Effect.mapError(toAdapterError("sendTurn")));
         return yield* onRunner(input.threadId, "sendTurn", true, (connection) =>
           Effect.gen(function* () {
             const current = yield* hostedSession(input.threadId);
@@ -497,7 +514,7 @@ function makeRemoteTextGeneration(context: InstanceContext): TextGenerationShape
     );
   return {
     generateThreadTitle: (request) =>
-      attachmentFilesForRunner(context.attachmentsDir, request.attachments).pipe(
+      context.readAttachments(request.attachments).pipe(
         Effect.mapError(toTextGenerationError("generateThreadTitle")),
         Effect.flatMap((attachments) =>
           onThreadRunner("generateThreadTitle", request.cwd, (connection) =>
@@ -515,7 +532,7 @@ function makeRemoteTextGeneration(context: InstanceContext): TextGenerationShape
         ),
       ),
     generateBranchName: (request) =>
-      attachmentFilesForRunner(context.attachmentsDir, request.attachments).pipe(
+      context.readAttachments(request.attachments).pipe(
         Effect.mapError(toTextGenerationError("generateBranchName")),
         Effect.flatMap((attachments) =>
           onThreadRunner("generateBranchName", request.cwd, (connection) =>
