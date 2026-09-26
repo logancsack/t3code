@@ -411,7 +411,7 @@ export function autoPauseDescription(
   return "Pauses after 15 minutes of inactivity.";
 }
 
-function StatusDot({ status }: { status: ManagedDevPcDisplayStatus }) {
+export function StatusDot({ status }: { status: ManagedDevPcDisplayStatus }) {
   const transitional = ["starting", "restarting", "pausing", "restoring"].includes(status);
   const inactive = ["paused", "stopped"].includes(status);
   const color =
