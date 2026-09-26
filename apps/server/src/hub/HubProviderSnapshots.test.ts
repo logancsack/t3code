@@ -260,8 +260,13 @@ describe("hub provider snapshots", () => {
             Effect.provideService(RunnerConnectionPool, pool),
             Effect.provideService(RunnerEventDelivery.RunnerEventDelivery, delivery),
             Effect.provideService(RemoteSessionRegistry.RemoteSessionRegistry, registry),
-            Effect.provide(HubProviderSnapshots.layer),
-            Effect.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-hub-push-" })),
+            Effect.provide(
+              HubProviderSnapshots.layer.pipe(
+                Layer.provideMerge(
+                  ServerConfig.layerTest(process.cwd(), { prefix: "t3-hub-push-" }),
+                ),
+              ),
+            ),
           );
 
         // Connecting pushes the thread's instance, then reads its status.
