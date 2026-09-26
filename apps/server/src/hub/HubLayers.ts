@@ -44,6 +44,7 @@ import {
   hubWorkspaceFileSystemLayer,
   hubWorkspacePathsLayer,
 } from "./HubWorkspace.ts";
+import * as HubProviderSignIn from "./HubProviderSignIn.ts";
 import * as HubProviderSnapshots from "./HubProviderSnapshots.ts";
 import * as MachineDirectory from "./MachineDirectory.ts";
 import { makeRemoteProviderDriver } from "./RemoteProviderDriver.ts";
@@ -153,6 +154,7 @@ export const hubReactorHooksLayer = Layer.mergeAll(
   hubCheckoutGitProbeLayer,
   HubThreadCheckouts.layer,
   ThreadMachineControls.layer,
+  HubProviderSignIn.layer,
 );
 
 /** Background work that needs the reactors: delivery acks, resume, machine release. */

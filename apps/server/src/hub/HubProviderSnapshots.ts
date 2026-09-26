@@ -57,6 +57,8 @@ import { buildUnavailableProviderSnapshot } from "../provider/unavailableProvide
 export interface HubProviderSnapshotsShape {
   /** The latest snapshot a runner reported for the instance, if any. */
   readonly get: (instanceId: ProviderInstanceId) => Effect.Effect<Option.Option<ServerProvider>>;
+  /** Every snapshot a runner reported. */
+  readonly all: Effect.Effect<ReadonlyArray<ServerProvider>>;
   /** Records (and persists) a runner-reported snapshot and publishes it. */
   readonly put: (snapshot: ServerProvider) => Effect.Effect<void>;
   readonly changes: Stream.Stream<ServerProvider>;
@@ -85,6 +87,7 @@ export const make = Effect.gen(function* () {
 
   return HubProviderSnapshots.of({
     get: (instanceId) => Effect.sync(() => Option.fromNullishOr(snapshots.get(instanceId))),
+    all: Effect.sync(() => [...snapshots.values()]),
     put: (snapshot) =>
       Effect.gen(function* () {
         snapshots.set(snapshot.instanceId, snapshot);

@@ -87,6 +87,12 @@ export interface HubServerConfig {
    */
   readonly publicUrl?: string | undefined;
   /**
+   * Same-origin URL template of a thread machine's browser page, with
+   * `{threadId}`; provider sign-in flows that finish in a browser on the
+   * sign-in machine link to it. Defaults to `/_devpc/threads/{threadId}/browser`.
+   */
+  readonly threadBrowserUrlTemplate?: string | undefined;
+  /**
    * Root of thread checkouts on thread machines (`/workspace/t` by default).
    * Hub and machines must agree on it; only tests and local development
    * change it.

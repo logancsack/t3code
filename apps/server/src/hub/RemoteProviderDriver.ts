@@ -37,6 +37,7 @@ import * as NodeFS from "node:fs";
 
 import {
   type ChatAttachment,
+  PROVIDER_SIGN_IN_THREAD_ID,
   type ProviderDriverKind,
   type ProviderInstanceConfig,
   type ProviderInstanceId,
@@ -72,6 +73,7 @@ import {
   type ProviderAdapterError,
   ProviderAdapterRequestError,
   ProviderAdapterSessionNotFoundError,
+  ProviderAdapterValidationError,
 } from "../provider/Errors.ts";
 import {
   defaultProviderContinuationIdentity,
@@ -341,6 +343,18 @@ function makeRemoteAdapter(
   const sessionNotFound = (threadId: ThreadId) =>
     new ProviderAdapterSessionNotFoundError({ provider: driverKind, threadId });
 
+  /** The provider sign-in machine never runs agent sessions. */
+  const refuseSignInThread = (threadId: ThreadId, operation: string) =>
+    threadId === PROVIDER_SIGN_IN_THREAD_ID
+      ? Effect.fail(
+          new ProviderAdapterValidationError({
+            provider: driverKind,
+            operation,
+            issue: "The provider sign-in machine does not run agent sessions.",
+          }),
+        )
+      : Effect.void;
+
   const recordSession = (session: ProviderSession, connection: RunnerConnection) =>
     registry.upsert({
       threadId: session.threadId,
@@ -376,11 +390,16 @@ function makeRemoteAdapter(
       return { ...currentCapabilities(), sessionsOutliveServer: true };
     },
     startSession: (input) =>
-      onRunner(input.threadId, "startSession", true, (connection) =>
-        startOnRunner(connection, input),
+      refuseSignInThread(input.threadId, "startSession").pipe(
+        Effect.andThen(
+          onRunner(input.threadId, "startSession", true, (connection) =>
+            startOnRunner(connection, input),
+          ),
+        ),
       ),
     sendTurn: (input) =>
       Effect.gen(function* () {
+        yield* refuseSignInThread(input.threadId, "sendTurn");
         // Captured before waking: if the machine was recreated while asleep,
         // reconciliation settles the old session and this restarts it.
         const before = yield* hostedSession(input.threadId);

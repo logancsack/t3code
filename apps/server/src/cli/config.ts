@@ -167,6 +167,10 @@ const EnvServerConfig = Config.all({
     Config.option,
     Config.map(Option.getOrUndefined),
   ),
+  hubThreadBrowserUrlTemplate: Config.string("T3CODE_HUB_THREAD_BROWSER_URL_TEMPLATE").pipe(
+    Config.option,
+    Config.map(Option.getOrUndefined),
+  ),
   runnerUrl: Config.string("T3CODE_RUNNER_URL").pipe(
     Config.option,
     Config.map(Option.getOrUndefined),
@@ -278,6 +282,7 @@ const resolveHubServerConfig = (env: {
   readonly hubMachinesToken?: string | undefined;
   readonly hubPublicUrl?: string | undefined;
   readonly hubCheckoutRoot?: string | undefined;
+  readonly hubThreadBrowserUrlTemplate?: string | undefined;
   readonly runnerUrl?: string | undefined;
 }) =>
   Effect.gen(function* () {
@@ -308,6 +313,7 @@ const resolveHubServerConfig = (env: {
       machinesToken: env.hubMachinesToken,
       publicUrl: env.hubPublicUrl,
       checkoutRoot: env.hubCheckoutRoot,
+      threadBrowserUrlTemplate: env.hubThreadBrowserUrlTemplate,
     } satisfies ServerConfig.HubServerConfig;
   });
 

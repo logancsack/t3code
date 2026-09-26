@@ -16,8 +16,10 @@ import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 
 import {
+  AuthConnectorError,
   GitCommandError,
   GitManagerError,
+  PROVIDER_SIGN_IN_THREAD_ID,
   type ChatAttachment,
   type GitManagerServiceError,
   type ProviderInstanceId,
@@ -53,6 +55,7 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
 import { resolveAttachmentPath } from "../attachmentStore.ts";
+import * as AuthConnectorManager from "../authConnector/AuthConnectorManager.ts";
 import * as CheckpointStore from "../checkpointing/CheckpointStore.ts";
 import { ServerConfig } from "../config.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
@@ -300,6 +303,25 @@ export const RunnerRpcHandlersLive = RunnerRpcGroup.toLayer(
 
     const decodeSendTurnInput = Schema.decodeUnknownEffect(ProviderSendTurnInput);
 
+    /** Provider sign-in runs only on the reserved sign-in machine. */
+    const signInMachineOnly = (operation: string) =>
+      binding.threadId === PROVIDER_SIGN_IN_THREAD_ID
+        ? Effect.void
+        : Effect.fail(
+            new AuthConnectorError({
+              operation,
+              detail: "Provider sign-in runs only on the provider sign-in machine.",
+            }),
+          );
+    /** The login command sees the hub's settings for the instance (environment, paths). */
+    const withHubProviderSettings = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+      effect.pipe(
+        Effect.provideService(ServerSettingsService, {
+          ...serverSettings,
+          getSettings: providerSettings.effectiveSettings,
+        }),
+      );
+
     return RunnerRpcGroup.of({
       "runner.hello": (input) =>
         Effect.gen(function* () {
@@ -346,6 +368,27 @@ export const RunnerRpcHandlersLive = RunnerRpcGroup.toLayer(
           "configure",
           { instances: Object.keys(instances) },
           providerSettings.apply(instances).pipe(Effect.map((hosted) => ({ instances: hosted }))),
+        ),
+      // ── Provider sign-in (credentials in `submit` are never logged) ──
+      "runner.auth.start": (input) =>
+        signInMachineOnly("start").pipe(
+          Effect.andThen(
+            logged(
+              "auth.start",
+              { connector: input.connector, method: input.method },
+              withHubProviderSettings(AuthConnectorManager.start(input)),
+            ),
+          ),
+        ),
+      "runner.auth.get": ({ sessionId }) =>
+        signInMachineOnly("get").pipe(Effect.andThen(AuthConnectorManager.get(sessionId))),
+      "runner.auth.submit": (input) =>
+        signInMachineOnly("submit").pipe(
+          Effect.andThen(logged("auth.submit", {}, AuthConnectorManager.submit(input))),
+        ),
+      "runner.auth.cancel": ({ sessionId }) =>
+        signInMachineOnly("cancel").pipe(
+          Effect.andThen(logged("auth.cancel", {}, AuthConnectorManager.cancel(sessionId))),
         ),
       "runner.provider.startSession": ({ instanceId, input, mcp }) =>
         guardThread("startSession", input.threadId).pipe(

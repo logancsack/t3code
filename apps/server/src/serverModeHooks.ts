@@ -9,9 +9,16 @@
  * @module serverModeHooks
  */
 import type {
+  AuthConnectorError,
+  AuthConnectorSession,
+  AuthConnectorStartInput,
+  AuthConnectorSubmitInput,
   ClientOrchestrationCommand,
   OrchestrationDispatchCommandError,
   ProjectId,
+  ProviderSignInList,
+  ProviderSignOutInput,
+  ProviderSignOutResult,
   ThreadId,
   ThreadMachineControlError,
   ThreadMachineStatus,
@@ -110,5 +117,30 @@ export interface ThreadMachineControlsShape {
 /** `threadMachines.wake` / `threadMachines.pause`; `null` (standalone) answers `unsupported`. */
 export class ThreadMachineControls extends Context.Reference<ThreadMachineControlsShape | null>(
   "t3/serverModeHooks/ThreadMachineControls",
+  { defaultValue: () => null },
+) {}
+
+export interface ProviderSignInControlsShape {
+  readonly start: (
+    input: AuthConnectorStartInput,
+  ) => Effect.Effect<AuthConnectorSession, AuthConnectorError>;
+  readonly get: (sessionId: string) => Effect.Effect<AuthConnectorSession, AuthConnectorError>;
+  readonly submit: (
+    input: AuthConnectorSubmitInput,
+  ) => Effect.Effect<AuthConnectorSession, AuthConnectorError>;
+  readonly cancel: (sessionId: string) => Effect.Effect<AuthConnectorSession, AuthConnectorError>;
+  readonly list: Effect.Effect<ProviderSignInList, AuthConnectorError>;
+  readonly signOut: (
+    input: ProviderSignOutInput,
+  ) => Effect.Effect<ProviderSignOutResult, AuthConnectorError>;
+}
+
+/**
+ * Provider sign-in on a hub: the auth connector runs on the provider sign-in
+ * machine and sign-ins are stored by the platform. `null` (standalone) keeps
+ * the local `AuthConnectorManager`.
+ */
+export class ProviderSignInControls extends Context.Reference<ProviderSignInControlsShape | null>(
+  "t3/serverModeHooks/ProviderSignInControls",
   { defaultValue: () => null },
 ) {}

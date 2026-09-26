@@ -294,4 +294,18 @@ describe("runner handlers", () => {
       }),
     ),
   );
+
+  it.live("serves provider sign-in only on the sign-in machine", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { pool } = yield* setup;
+        const refused = yield* pool
+          .use(threadId, { wake: false, operation: "test" }, (connection) =>
+            connection.client["runner.auth.start"]({ connector: "claude", method: "account" }),
+          )
+          .pipe(Effect.flip);
+        expect(refused).toMatchObject({ _tag: "AuthConnectorError", operation: "start" });
+      }),
+    ),
+  );
 });

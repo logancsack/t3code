@@ -89,6 +89,13 @@ import {
   ProviderSessionStartInput,
   ProviderTurnStartResult,
 } from "./provider.ts";
+import {
+  AuthConnectorError,
+  AuthConnectorSession,
+  AuthConnectorSessionInput,
+  AuthConnectorStartInput,
+  AuthConnectorSubmitInput,
+} from "./authConnector.ts";
 import { ProviderInstanceConfig, ProviderInstanceId } from "./providerInstance.ts";
 import { ThreadMachineState } from "./threadMachine.ts";
 import { ProviderRuntimeEvent } from "./providerRuntime.ts";
@@ -586,6 +593,38 @@ export const RunnerGetCapabilitiesRpc = Rpc.make("runner.provider.getCapabilitie
   error: RunnerRemoteError,
 });
 
+// ── Provider sign-in (the sign-in machine only) ────────────────────────
+
+/**
+ * T3's auth connector on the provider sign-in machine: the provider's own
+ * login command runs there and writes its files, which the machine's
+ * supervisor stores for every thread machine. Only a runner bound to
+ * `PROVIDER_SIGN_IN_THREAD_ID` serves these.
+ */
+export const RunnerAuthStartRpc = Rpc.make("runner.auth.start", {
+  payload: AuthConnectorStartInput,
+  success: AuthConnectorSession,
+  error: AuthConnectorError,
+});
+
+export const RunnerAuthGetRpc = Rpc.make("runner.auth.get", {
+  payload: AuthConnectorSessionInput,
+  success: AuthConnectorSession,
+  error: AuthConnectorError,
+});
+
+export const RunnerAuthSubmitRpc = Rpc.make("runner.auth.submit", {
+  payload: AuthConnectorSubmitInput,
+  success: AuthConnectorSession,
+  error: AuthConnectorError,
+});
+
+export const RunnerAuthCancelRpc = Rpc.make("runner.auth.cancel", {
+  payload: AuthConnectorSessionInput,
+  success: AuthConnectorSession,
+  error: AuthConnectorError,
+});
+
 // ── Text generation ────────────────────────────────────────────────────
 
 const TextGenerationPayload = {
@@ -965,6 +1004,10 @@ export const RunnerRpcGroup = RpcGroup.make(
   RunnerRollbackThreadRpc,
   RunnerGetCapabilitiesRpc,
   RunnerConfigureProvidersRpc,
+  RunnerAuthStartRpc,
+  RunnerAuthGetRpc,
+  RunnerAuthSubmitRpc,
+  RunnerAuthCancelRpc,
   RunnerGenerateThreadTitleRpc,
   RunnerGenerateBranchNameRpc,
   RunnerSubscribeEventsRpc,

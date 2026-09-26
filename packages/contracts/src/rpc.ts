@@ -200,6 +200,9 @@ import {
   AuthConnectorSessionInput,
   AuthConnectorStartInput,
   AuthConnectorSubmitInput,
+  ProviderSignInList,
+  ProviderSignOutInput,
+  ProviderSignOutResult,
 } from "./authConnector.ts";
 import {
   SourceControlCloneRepositoryInput,
@@ -299,6 +302,8 @@ export const WS_METHODS = {
   serverGetAuthConnector: "server.getAuthConnector",
   serverSubmitAuthConnector: "server.submitAuthConnector",
   serverCancelAuthConnector: "server.cancelAuthConnector",
+  serverListProviderSignIns: "server.listProviderSignIns",
+  serverSignOutProvider: "server.signOutProvider",
   serverGetTraceDiagnostics: "server.getTraceDiagnostics",
   serverGetProcessDiagnostics: "server.getProcessDiagnostics",
   serverGetProcessResourceHistory: "server.getProcessResourceHistory",
@@ -455,6 +460,20 @@ export const WsServerSubmitAuthConnectorRpc = Rpc.make(WS_METHODS.serverSubmitAu
 export const WsServerCancelAuthConnectorRpc = Rpc.make(WS_METHODS.serverCancelAuthConnector, {
   payload: AuthConnectorSessionInput,
   success: AuthConnectorSession,
+  error: Schema.Union([AuthConnectorError, EnvironmentAuthorizationError]),
+});
+
+/** Hub mode: the provider sign-ins stored for thread machines. */
+export const WsServerListProviderSignInsRpc = Rpc.make(WS_METHODS.serverListProviderSignIns, {
+  payload: Schema.Struct({}),
+  success: ProviderSignInList,
+  error: Schema.Union([AuthConnectorError, EnvironmentAuthorizationError]),
+});
+
+/** Hub mode: deletes a provider's stored sign-in; every thread machine signs out. */
+export const WsServerSignOutProviderRpc = Rpc.make(WS_METHODS.serverSignOutProvider, {
+  payload: ProviderSignOutInput,
+  success: ProviderSignOutResult,
   error: Schema.Union([AuthConnectorError, EnvironmentAuthorizationError]),
 });
 
@@ -1120,6 +1139,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerGetAuthConnectorRpc,
   WsServerSubmitAuthConnectorRpc,
   WsServerCancelAuthConnectorRpc,
+  WsServerListProviderSignInsRpc,
+  WsServerSignOutProviderRpc,
   WsServerGetTraceDiagnosticsRpc,
   WsServerGetProcessDiagnosticsRpc,
   WsServerGetProcessResourceHistoryRpc,

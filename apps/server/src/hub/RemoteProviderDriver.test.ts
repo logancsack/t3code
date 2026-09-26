@@ -199,6 +199,16 @@ describe("remote provider adapter session answers", () => {
         yield* adapter.stopSession(threadId);
         expect(yield* adapter.hasSession(threadId)).toBe(false);
         yield* adapter.stopAll();
+
+        // The provider sign-in machine never runs agent sessions.
+        const refused = yield* adapter
+          .startSession({
+            threadId: ThreadId.make("aldo-provider-sign-in"),
+            provider,
+            runtimeMode: "full-access",
+          })
+          .pipe(Effect.flip);
+        expect(refused._tag).toBe("ProviderAdapterValidationError");
         expect(yield* fake.calls).toEqual([]);
       }),
     ).pipe(Effect.provide(StoresLive)),

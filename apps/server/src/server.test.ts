@@ -4762,7 +4762,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
-  it.effect("answers thread machine controls as unsupported on a standalone server", () =>
+  it.effect("answers hub-only thread machine and sign-in calls as unsupported standalone", () =>
     Effect.gen(function* () {
       yield* buildAppUnderTest();
       const wsUrl = yield* getWsServerUrl("/ws");
@@ -4779,6 +4779,16 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         assert.equal(error._tag, "ThreadMachineControlError");
         assert.equal(error._tag === "ThreadMachineControlError" && error.reason, "unsupported");
       }
+      const [list, signOut] = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          Effect.all([
+            client[WS_METHODS.serverListProviderSignIns]({}).pipe(Effect.flip),
+            client[WS_METHODS.serverSignOutProvider]({ connector: "claude" }).pipe(Effect.flip),
+          ]),
+        ),
+      );
+      assert.equal(list._tag, "AuthConnectorError");
+      assert.equal(signOut._tag, "AuthConnectorError");
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
