@@ -447,6 +447,10 @@ const projectAddCommand = Command.make("add", {
     Argument.withDescription("Workspace root to add as a project."),
   ),
   title: Flag.string("title").pipe(Flag.withDescription("Optional project title."), Flag.optional),
+  id: Flag.string("id").pipe(
+    Flag.withDescription("Optional project id (a UUID), for hosts that name the project up front."),
+    Flag.optional,
+  ),
 }).pipe(
   Command.withDescription("Add a project."),
   Command.withHandler((flags) =>
@@ -474,7 +478,9 @@ const projectAddCommand = Command.make("add", {
         }
 
         const title = yield* resolveProjectTitle(workspaceRoot, Option.getOrUndefined(flags.title));
-        const projectId = ProjectId.make(yield* projectCommandUuid);
+        const projectId = ProjectId.make(
+          Option.getOrUndefined(flags.id)?.trim() || (yield* projectCommandUuid),
+        );
         yield* dispatch({
           type: "project.create",
           commandId: CommandId.make(yield* projectCommandUuid),
