@@ -22,15 +22,17 @@ staging enables them.
 A hub never runs git, provider CLIs, terminals, or repository code, and never reads a
 checkout path. A runner never persists orchestration state.
 
-### Hub configuration
+## Configuration
+
+### Hub
 
 | Variable                        | Meaning                                                                                                                                                                |
 | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `T3CODE_SERVER_MODE=hub`        | Enables hub mode                                                                                                                                                       |
-| `T3CODE_HUB_DATABASE_URL`       | Postgres URL for the hub schema (a role without `BYPASSRLS`). Without it the hub persists to its SQLite state database, which only tests and development do            |
-| `T3CODE_HUB_DATABASE_ADMIN_URL` | Optional; used only to apply hub migrations. Defaults to the runtime URL                                                                                               |
-| `T3CODE_HUB_TENANT_ID`          | The Aldo user ID whose rows this process owns. One hub process serves one user. Required with a database URL                                                           |
-| `T3CODE_HUB_SECRET_KEY`         | Base64 32-byte key encrypting per-user secrets at rest in Postgres. Required with a database URL                                                                       |
+| `T3CODE_HUB_DATABASE_URL`       | Postgres URL of the hub schema, for a role without `BYPASSRLS`. libpq's `sslrootcert=system` is accepted. Without it the hub persists to SQLite (tests, development)   |
+| `T3CODE_HUB_DATABASE_ADMIN_URL` | Optional; the schema owner, used only to apply hub migrations and grant the runtime role. Defaults to the runtime URL                                                  |
+| `T3CODE_HUB_TENANT_ID`          | The Aldo user ID whose rows this process owns; one hub process serves one user. Required with a database URL                                                           |
+| `T3CODE_HUB_SECRET_KEY`         | Base64 32-byte key encrypting the tenant's secrets at rest. Required with a database URL                                                                               |
 | `T3CODE_HUB_MACHINES_URL`       | Base URL of the machine directory (served by the platform host process)                                                                                                |
 | `T3CODE_HUB_MACHINES_TOKEN`     | Bearer for the machine directory                                                                                                                                       |
 | `T3CODE_HUB_PUBLIC_URL`         | Base URL at which thread machines reach the hub. Runners are given `<url>/mcp` as the `t3-code` MCP endpoint; without it only a runner on the hub's host can reach MCP |
@@ -38,11 +40,15 @@ checkout path. A runner never persists orchestration state.
 | `T3CODE_RUNNER_URL`             | Development only: a single `t3 runner` WebSocket URL used instead of the machine directory (static directory, always `running`)                                        |
 | `T3CODE_RUNNER_TOKEN`           | Development only: the bearer presented to that runner                                                                                                                  |
 
-The existing managed variables (`T3CODE_MANAGED_DEVPC`, `WORKSPACE_GATEWAY_TOKEN`, port,
-base dir) keep their meaning. The base dir holds only disposable caches and logs in hub
-mode; losing it loses nothing.
+A hub needs the machine directory (URL and token) or a development runner URL. The
+database, tenant, and secret key go together: with them the hub is production-shaped and its
+base directory is disposable (logs, caches, and the live process's runtime state file only);
+without them it keeps a standalone-style state directory, which only tests and development
+use. The existing managed variables (`T3CODE_MANAGED_DEVPC`, `WORKSPACE_GATEWAY_TOKEN`, port,
+base dir) keep their meaning. In standalone mode none of these keys appear in the resolved
+configuration, so it stays identical to upstream T3.
 
-### Runner configuration
+### Runner
 
 The runner is `t3 runner` with the usual base dir and port flags plus:
 
@@ -249,28 +255,11 @@ checkout") and `thread-machine.failed` (tone `error`). A failed bootstrap delete
 thread as in standalone mode. Before every turn the checkout is prepared again (skipped when
 the same runner boot already did).
 
-## Composition
+## Hub persistence
 
-`server.ts` builds one runtime for every mode from the `ServerModeLayers` record; standalone
-uses the local layers and a hub uses `hub/HubLayers.ts` for the checkout-bound groups
-(checkpointing, git, VCS, terminals, workspace, repository identity, provider instances)
-plus hub-only infrastructure and background work. Shared code sees hub mode only through
-the `serverModeHooks.ts` references (deterministic ingestion ids, `HubThreadCheckouts`) and
-`CheckoutGitProbe`, whose defaults are standalone behavior. `t3 runner` is composed in
-`runner/RunnerServer.ts` without orchestration, projections or the client API.
-
-Not available on a hub (typed errors, never the hub's disk): filesystem browsing for the
-project picker, repository clone and publish, and workspace-file, media and project-favicon
-asset URLs. Still running where the hub runs, to move to runners or the credential service:
-previews, provider sign-in (auth connector), provider maintenance, usage scanning, workflow
-scripts, and pull-request listing (which needs provider credentials).
-
-## What the hub persists
-
-A hub process serves exactly one tenant (`T3CODE_HUB_TENANT_ID`) and its base directory is
-disposable: it holds only logs, caches, and the live process's runtime state file. Everything
-a standalone server keeps in its state directory lives in Postgres instead, in tables whose
-keys and indexes all start with `user_id`:
+A hub process serves exactly one tenant. With a database, everything a standalone server
+keeps in its state directory lives in Postgres, in tables whose keys and indexes all start
+with `user_id`:
 
 | Standalone                                                              | Hub                                                                                                          |
 | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
@@ -280,55 +269,124 @@ keys and indexes all start with `user_id`:
 | `secrets/*.bin`                                                         | `hub_secrets`, AES-256-GCM with `T3CODE_HUB_SECRET_KEY`; the authenticated data binds tenant and secret name |
 | `attachments/`                                                          | `hub_attachments` (`bytea`); the local directory is a cache filled on lookup                                 |
 | Repository identity from `git remote` on every read                     | `projection_projects.repository_identity_json`, recorded by `project.create` / `project.meta.update`         |
+| (none)                                                                  | Thread-machine state, migration 050: see below                                                               |
 
-Machine-published themes stay local (a hub has no desktop to publish them). Thread-machine
-state is hub migration 050: runner cursors (`hub_runner_cursors`), per-turn diffs
-(`hub_checkpoint_turn_diffs`, the hub's only diff table; standalone `checkpoint_diff_blobs`
-is never written and is not imported), and the last reported git status per thread
-(`hub_thread_vcs_status`).
+Thread-machine state (`persistence/Services/HubThreadMachineState.ts`):
 
-In code, hub mode is a `HubDatabase` reference provided at the server and auth CLI roots
-(`apps/server/src/persistence/Postgres/`). The SQLite persistence layer hands out its client,
-each repository layer selects its Postgres port through `localOrHub`, and file-backed stores
-branch on it. Standalone layers, types, and behavior are unchanged.
+- `hub_runner_cursors` (`RunnerCursorStore`): per thread, the runner outbox id, the last
+  reconciled boot, and the durable delivery sequence.
+- `hub_checkpoint_turn_diffs` (`CheckpointTurnDiffStore`): per-turn patches in both
+  whitespace modes. It is the hub's only diff table; standalone `checkpoint_diff_blobs` is
+  never written, has no hub table, and is not imported.
+- `hub_thread_vcs_status` (`ThreadVcsStatusStore`): the last git status a runner reported.
+
+Machine-published themes stay local (a hub has no desktop to publish them).
+
+In code, hub mode with a database is a `HubDatabase` reference (tenant id and the
+tenant-scoped client) provided once at the server and auth CLI roots
+(`persistence/Postgres/HubDatabase.ts`). There is one selection rule, `localOrHub(local,
+hub)`: every repository layer, the thread-machine stores included, gets the tenant client as
+its `SqlClient` and the tenant as `HubTenant` when the reference is set, and its SQLite
+implementation otherwise. The SQLite persistence layer hands out the tenant client in hub
+mode and refuses to open a local file when a database URL is configured; file-backed stores
+(settings, keybindings, secrets, environment and anonymous ids, attachments) branch on the
+same reference. A hub without a database therefore runs on SQLite end to end: the
+thread-machine stores create their tables on first use (never in standalone databases), and
+no repository identity is recorded, so machines start from an empty checkout. Standalone
+layers, types, and behavior are unchanged.
+
+Attachments are persisted when they become durable (upload completed, pending upload
+claimed by a turn, inline image written) and restored into the cache before any lookup by
+id, including before the remote provider driver ships a turn's attachment bytes to the
+runner, so a hub on a fresh base directory still sends them.
 
 ## Operations
 
 **Migrations.** Hub migrations are numbered entries in
 `apps/server/src/persistence/Postgres/migrations/index.ts`: 001–049 for hub persistence,
-050–099 for thread-machine state. A hub applies pending ones at startup with
+050–099 for thread-machine state (050 today). A hub applies pending ones at startup with
 `T3CODE_HUB_DATABASE_ADMIN_URL` (or the runtime URL), each in its own transaction under a
 transaction-scoped advisory lock, recorded in `hub_schema_migrations`. They are applied by id,
-not list position, so separately owned ranges can land in any order. Keep them
-expand/contract compatible: an older hub may still be running.
+not list position, so separately owned ranges can land in any order. Every new tenant table
+leads its keys and indexes with `user_id` and enables `hubTenantPolicyStatements` (001).
+Keep migrations expand/contract compatible: an older hub may still be running.
 
 **Roles and row-level security.** Every tenant table has a forced policy comparing `user_id`
 with the transaction-local `hub.user_id`. The runtime client sets it with `SET LOCAL` at the
-start of every transaction and wraps statements outside one in their own transaction (two
-extra round trips), so it works behind a transaction pooler and never leaks between clients.
-Without the setting a query sees nothing and cannot write. Use a runtime role without
-`BYPASSRLS` (PlanetScale's default role has it) and pass the owner as the admin URL; after
-migrating, the hub grants the runtime role DML on the schema's tables (read-only on the
-migration history). The explicit `user_id` predicates remain the primary isolation; RLS is
-the backstop. Each hub keeps a pool of at most four connections.
+start of every transaction (`BEGIN; SET LOCAL hub.user_id = …` in one round trip) and wraps
+statements outside one in their own transaction (two extra round trips), so it works behind a
+transaction pooler such as PgBouncer and never leaks between clients. Without the setting a
+query sees nothing and cannot write. Use a runtime role without `BYPASSRLS` (PlanetScale's
+default role has it) and pass the owner as the admin URL; after migrating, the hub grants the
+runtime role DML on the schema's tables (read-only on the migration history). The explicit
+`user_id` predicates remain the primary isolation; RLS is the backstop. Each hub keeps a pool
+of at most four connections, and the Postgres driver is loaded only when a hub database is
+configured.
 
 **Import.** `t3 hub import <state-dir>` copies a standalone state directory into the tenant
 named by the `T3CODE_HUB_*` environment in one transaction: the database (read-only, paged,
 at the current standalone migration), the documents, attachments within the upload limit,
 and provider environment secrets re-encrypted with the hub key. Auth sessions, pairing
 links, and other secrets stay behind. It refuses a tenant with data unless `--replace`,
-which first deletes every row the tenant has (sessions and hub secrets included), records
-repository identities for projects whose checkouts exist on the machine, and prints
-counts only.
+which first deletes every row the tenant has in any tenant table (sessions, hub secrets and
+thread-machine state included), records repository identities for projects whose checkouts
+exist on the machine, and prints counts only. To verify an import, run
+`node apps/server/scripts/hub-import-compare.ts <state-dir> [thread-ids]` with the same
+environment: it compares every snapshot read of the standalone database and the tenant and
+prints only equal/different with counts.
+
+## Composition
+
+`server.ts` builds one runtime for every mode from the `ServerModeLayers` record; standalone
+uses the local layers and a hub uses `hub/HubLayers.ts` for the checkout-bound groups
+(checkpointing, git, VCS, terminals, workspace, provider instances), the recorded repository
+identity (`HubRepositoryIdentityResolver`), and hub-only infrastructure (machine directory,
+connection pool, session registry, event delivery, state stores, git status cache) and
+background work. `HubDatabase.layerConfig` sits under the whole runtime. Shared code sees hub
+mode only through the `serverModeHooks.ts` references (deterministic ingestion ids,
+`HubThreadCheckouts`), `CheckoutGitProbe`, and `HubDatabase`, whose defaults are standalone
+behavior. `t3 runner` is composed in `runner/RunnerServer.ts` without orchestration,
+projections or the client API.
+
+## Gaps
+
+Not available on a hub (typed errors, never the hub's disk): filesystem browsing for the
+project picker, repository clone and publish, and workspace-file, media and project-favicon
+asset URLs.
+
+Still running where the hub runs, to move to runners or the credential service: previews,
+provider sign-in (auth connector), provider maintenance, usage scanning, workflow scripts,
+and pull-request listing (which needs provider credentials).
+
+Not built yet:
+
+- No client records a project's repository identity; the platform (or the import, from a
+  checkout) must dispatch `project.create` / `project.meta.update` with `repositoryIdentity`.
+  A hub without a database records none.
+- A hub behind a runner's `firstRetainedSequence` (more than 200,000 unacknowledged events)
+  only logs the gap; resynchronizing from `readThread` is future work.
+- Attachment bytes live in `bytea` within the upload limits; object storage can replace the
+  table behind the `HubAttachments` helpers.
 
 ## Testing
 
 - Unit: `apps/server/src/hub/*.test.ts` (wake semantics with a fake directory and fake
-  runner, delivery and reconciliation, routed services),
-  `apps/server/src/runner/*.test.ts` (outbox, checkout),
-  `packages/contracts/src/runner.test.ts`.
+  runner, delivery and reconciliation, routed services, the machine directory contract),
+  `apps/server/src/runner/*.test.ts` (outbox, checkout, handler guards),
+  `packages/contracts/src/runner.test.ts`, and the thread-machine stores on SQLite.
+- Postgres: set `T3_HUB_TEST_DATABASE_URL` to a disposable database the tests may create
+  schemas in (for example a private loopback cluster as `postgres`). Each test gets its own
+  schema and, when the connecting role bypasses RLS on loopback, a runtime role without
+  `BYPASSRLS`, so row-level security is exercised. This enables the persistence tests
+  (`persistence/Postgres/*.test.ts`, including the thread-machine stores and migration 050),
+  the hub server boot (`server.hub.test.ts`), attachment restore before shipping to a
+  runner, and the loopback integration on Postgres. Without the variable they skip, and the
+  loopback runs on SQLite.
 - Loopback integration: `apps/server/integration/hubRunnerLoopback.integration.test.ts` runs
   `ProviderService` and the reactors on a hub against the real runner handlers.
 - End to end with a real provider:
-  `node apps/server/scripts/thread-machines-e2e.mjs [--keep] [--model <id>]` starts a
-  runner (4422) and a hub (4421) on loopback and drives the hub's public API.
+  `node apps/server/scripts/thread-machines-e2e.mjs [--keep] [--model <id>]
+[--hub-database-url <url> [--hub-database-admin-url <url>]]` starts a runner (4422) and a
+  hub (4421) on loopback and drives the hub's public API. With a database URL the hub runs
+  on Postgres for a fresh tenant seeded through `t3 hub import`, and restarts on an empty
+  base directory.
