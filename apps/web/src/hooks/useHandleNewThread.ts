@@ -428,9 +428,8 @@ function useDraftThreadHandler() {
 }
 
 /**
- * Opens a new draft thread in a project. Under Aldo each thread has its own
- * sandbox, so the draft goes to a fresh sandbox for the same repository unless
- * the project's sandbox has no threads yet.
+ * Opens a new draft thread in a project. Under Aldo the draft goes to the
+ * project's sandbox (the newest, for older projects that have several).
  */
 export function useNewThreadHandler() {
   const openDraft = useDraftThreadHandler();
@@ -440,10 +439,10 @@ export function useNewThreadHandler() {
       options?: Parameters<typeof openDraft>[1],
     ): Promise<{ draftId: DraftId; threadId: ThreadId } | null> => {
       if (!isAldoCloud) return openDraft(projectRef, options);
-      const target = await aldoProjectRefForNewThread(projectRef).catch(() => null);
-      // The sandbox is the thread's own, so it works directly in the sandbox's
-      // checkout (its aldo/<id> branch) rather than a separate worktree.
-      return target ? openDraft(target, { envMode: "local", ...options }) : null;
+      // Threads start in the project's checkout, where its dependencies are
+      // installed and its dev services run; the composer can still switch one
+      // to a worktree of its own.
+      return openDraft(aldoProjectRefForNewThread(projectRef), { envMode: "local", ...options });
     },
     [openDraft],
   );

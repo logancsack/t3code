@@ -203,6 +203,12 @@ import {
 } from "../logicalProject";
 import type { SidebarThreadSummary } from "../types";
 import {
+  ALDO_PROJECT_REMOVAL_NOTE,
+  isAldoCloud,
+  isAldoEnvironmentId,
+  removeAldoProjectSandbox,
+} from "../aldo/cloud";
+import {
   buildPhysicalToLogicalProjectKeyMap,
   buildSidebarProjectSnapshots,
   type SidebarProjectGroupMember,
@@ -1470,6 +1476,15 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       if (result._tag === "Failure") {
         return result;
       }
+      void removeAldoProjectSandbox(member.environmentId).catch((cause: unknown) =>
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: `Removed "${member.title}", but not its sandbox`,
+            description: cause instanceof Error ? cause.message : "Aldo couldn't delete it.",
+          }),
+        ),
+      );
       const draftStore = useComposerDraftStore.getState();
       releaseProjectDraftUploads(
         memberProjectRef,
@@ -1533,7 +1548,9 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
                             ? [`Environment: ${member.environmentLabel}`]
                             : []),
                           "This permanently clears conversation history for those threads.",
-                          "This removes only this project entry.",
+                          isAldoCloud && isAldoEnvironmentId(member.environmentId)
+                            ? ALDO_PROJECT_REMOVAL_NOTE
+                            : "This removes only this project entry.",
                           "This action cannot be undone.",
                         ].join("\n")
                       : [
@@ -1542,7 +1559,9 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
                           ...(member.environmentLabel
                             ? [`Environment: ${member.environmentLabel}`]
                             : []),
-                          "This removes only this project entry.",
+                          isAldoCloud && isAldoEnvironmentId(member.environmentId)
+                            ? ALDO_PROJECT_REMOVAL_NOTE
+                            : "This removes only this project entry.",
                         ].join("\n"),
                     { variant: "destructive" },
                   );
@@ -1591,7 +1610,9 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         `Remove project "${member.title}"?`,
         `Path: ${member.workspaceRoot}`,
         ...(member.environmentLabel ? [`Environment: ${member.environmentLabel}`] : []),
-        "This removes only this project entry.",
+        isAldoCloud && isAldoEnvironmentId(member.environmentId)
+          ? ALDO_PROJECT_REMOVAL_NOTE
+          : "This removes only this project entry.",
       ].join("\n");
       const confirmed = await api.dialogs.confirm(message, { variant: "destructive" });
       if (!confirmed) {

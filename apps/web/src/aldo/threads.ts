@@ -1,12 +1,15 @@
-// Per-thread sandboxes: every new thread gets a fresh sandbox, except that a
-// sandbox with no threads yet (just created, or an abandoned draft's) is reused.
+// One sandbox per project: a project's threads all run in its sandbox, so a
+// new thread opens straight into it instead of cloning the repository again.
+// Projects from before sandboxes were shared can have several; new threads go
+// to the newest.
 
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
-import type { ScopedProjectRef } from "@t3tools/contracts";
+import type { EnvironmentId, ScopedProjectRef } from "@t3tools/contracts";
 
 import { toastManager } from "../components/ui/toast";
-import { readEnvironmentThreadRefs, readProjects } from "../state/entities";
+import { readProjects } from "../state/entities";
 import {
+  aldoProjectSandboxes,
   createAldoEnvironment,
   isAldoCloud,
   isAldoEnvironmentId,
@@ -27,26 +30,31 @@ export async function waitForAldoProject(environmentId: string): Promise<ScopedP
     if (project) return scopeProjectRef(project.environmentId, project.id);
     await sleep(400);
   }
-  throw new Error("The new sandbox didn't finish starting. Try again.");
+  throw new Error("The project's sandbox didn't finish starting. Try again.");
 }
 
-/** Creates a sandbox (for a repository, or like another thread's) and returns its project. */
+/**
+ * Opens a project's sandbox (for repositories, or a new repository), creating
+ * it the first time, and returns its project. A sandbox that already existed
+ * may have been asleep, with its connection held as dormant: `reconnect`
+ * connects it now that Aldo has woken it.
+ */
 export async function startAldoSandbox(
   input: {
     readonly repo?: string;
-    readonly fromEnvironmentId?: string;
     readonly branch?: string;
     readonly create?: AldoNewProject;
     readonly repos?: ReadonlyArray<string>;
   },
   label: string,
+  reconnect?: (environmentId: EnvironmentId) => Promise<unknown>,
 ): Promise<ScopedProjectRef> {
   const toastId = toastManager.add({
     type: "loading",
-    title: input.create ? `Creating ${label}…` : `Starting a sandbox for ${label}…`,
+    title: input.create ? `Creating ${label}…` : `Opening ${label}…`,
     description: input.create
       ? "Creating the repository and starting its sandbox."
-      : "Cloning the repository and starting the agent tools.",
+      : "Starting its sandbox. The first time, this clones the repository.",
     timeout: 0,
   });
   try {
@@ -57,13 +65,16 @@ export async function startAldoSandbox(
       description: "Almost ready.",
       timeout: 0,
     });
+    if (!environment.created && reconnect) {
+      await reconnect(environment.environmentId as EnvironmentId).catch(() => undefined);
+    }
     const projectRef = await waitForAldoProject(environment.environmentId);
     toastManager.close(toastId);
     return projectRef;
   } catch (cause) {
     toastManager.update(toastId, {
       type: "error",
-      title: input.create ? "Couldn't create the project" : "Couldn't start the sandbox",
+      title: input.create ? "Couldn't create the project" : `Couldn't open ${label}`,
       description: cause instanceof Error ? cause.message : String(cause),
       timeout: 10_000,
     });
@@ -72,21 +83,16 @@ export async function startAldoSandbox(
 }
 
 /**
- * Where a new thread in `projectRef` should live. Outside Aldo, or when the
- * project's sandbox has no threads yet, that's the project itself; otherwise a
- * new sandbox for the same repository.
+ * Where a new thread in `projectRef` should live: in the project's newest
+ * sandbox the client has loaded (viewing the draft wakes it if it's asleep).
  */
-export async function aldoProjectRefForNewThread(
-  projectRef: ScopedProjectRef,
-): Promise<ScopedProjectRef> {
+export function aldoProjectRefForNewThread(projectRef: ScopedProjectRef): ScopedProjectRef {
   if (!isAldoCloud || !isAldoEnvironmentId(projectRef.environmentId)) return projectRef;
-  if (readEnvironmentThreadRefs(projectRef.environmentId).length === 0) return projectRef;
-  const project = readProjects().find(
-    (candidate) =>
-      candidate.environmentId === projectRef.environmentId && candidate.id === projectRef.projectId,
-  );
-  return startAldoSandbox(
-    { fromEnvironmentId: projectRef.environmentId },
-    project?.title ?? "this repository",
-  );
+  const projects = readProjects();
+  for (const sandbox of aldoProjectSandboxes(projectRef.environmentId)) {
+    if (sandbox.environmentId === projectRef.environmentId) return projectRef;
+    const project = projects.find((candidate) => candidate.environmentId === sandbox.environmentId);
+    if (project) return scopeProjectRef(project.environmentId, project.id);
+  }
+  return projectRef;
 }

@@ -29,8 +29,10 @@ import {
 } from "../components/ui/select";
 import { Switch } from "../components/ui/switch";
 import { Textarea } from "../components/ui/textarea";
+import { environmentCatalog } from "../connection/catalog";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { cn } from "../lib/utils";
+import { useAtomCommand } from "../state/use-atom-command";
 import { AldoAccountButton, useAldoAccounts } from "./AldoAccountsPanel";
 import {
   isAldoCloud,
@@ -111,8 +113,8 @@ function StartPicker(props: { readonly initialMode: Mode; readonly onDone: () =>
         <DialogTitle>{mode === "new" ? "New project" : "Start a thread"}</DialogTitle>
         <DialogDescription>
           {mode === "new"
-            ? "Aldo creates the repository and opens a thread in its own sandbox. Tell the agent what to build."
-            : "Pick one or more repositories. The thread gets its own sandbox with each one cloned on a new branch."}
+            ? "Aldo creates the repository and a cloud sandbox for the project, then opens a thread in it. Tell the agent what to build."
+            : "Pick one or more repositories. Each project gets one cloud sandbox, shared by all of its threads; a project you already have opens where it is."}
         </DialogDescription>
       </DialogHeader>
       {accounts === null ? (
@@ -318,6 +320,7 @@ function typedRef(query: string): string | null {
 
 function ExistingRepositoryPicker(props: { readonly onDone: () => void }) {
   const handleNewThread = useNewThreadHandler();
+  const reconnect = useAtomCommand(environmentCatalog.retryNow, { reportFailure: false });
   const [repositories, setRepositories] = useState<ReadonlyArray<SourceControlRepositorySummary>>(
     [],
   );
@@ -370,7 +373,7 @@ function ExistingRepositoryPicker(props: { readonly onDone: () => void }) {
     setError(null);
     try {
       const label = selected.map(shortName).join(" + ");
-      const projectRef = await startAldoSandbox({ repos: selected }, label);
+      const projectRef = await startAldoSandbox({ repos: selected }, label, reconnect);
       props.onDone();
       await handleNewThread(projectRef);
     } catch (cause) {

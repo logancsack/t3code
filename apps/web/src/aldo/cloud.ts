@@ -1,6 +1,7 @@
 // Aldo cloud mode. The web client is served by Aldo, which runs one sandbox
-// per thread; each sandbox runs a stock T3 server and appears here as a
-// platform bearer environment. Aldo's same-origin API lists the sandboxes,
+// per project (a repository, or several), shared by the project's threads;
+// each sandbox runs a stock T3 server and appears here as a platform bearer
+// environment. Aldo's same-origin API lists the sandboxes,
 // wakes them, and hands out short-lived bearer tokens at connect time.
 
 import {
@@ -30,7 +31,7 @@ export interface AldoEnvironment {
   readonly threadId: string;
   readonly label: string;
   readonly repo: string;
-  /** Every repository in the workspace (multi-repo threads), the main one first. */
+  /** Every repository in the project (multi-repo workspaces), the main one first. */
   readonly repos?: ReadonlyArray<string>;
   readonly branch: string;
   readonly state: "new" | "ready" | "stopped" | "failed";
@@ -100,6 +101,27 @@ export function subscribeAldoEnvironments(listener: () => void): () => void {
 
 export function getAldoEnvironments(): ReadonlyArray<AldoEnvironment> | null {
   return knownEnvironments;
+}
+
+function projectKey(environment: AldoEnvironment): string {
+  return (environment.repos ?? [environment.repo]).join(",");
+}
+
+/**
+ * Every sandbox of this sandbox's project, newest first (the directory's
+ * order). Projects from before sandboxes were shared can have several.
+ */
+export function aldoProjectSandboxes(environmentId: string): ReadonlyArray<AldoEnvironment> {
+  const environments = knownEnvironments ?? [];
+  const own = environments.find((environment) => environment.environmentId === environmentId);
+  return own
+    ? environments.filter((environment) => projectKey(environment) === projectKey(own))
+    : [];
+}
+
+/** Whether the project has another sandbox besides this one (an older duplicate). */
+export function aldoHasOtherSandbox(environmentId: string): boolean {
+  return aldoProjectSandboxes(environmentId).length > 1;
 }
 
 export function requestAldoDirectoryRefresh(): void {
@@ -203,7 +225,7 @@ export const aldoEnvironmentGateway = {
           : Effect.fail(
               new ConnectionBlockedError({
                 reason: "dormant",
-                detail: "This thread's sandbox is asleep.",
+                detail: "This project's sandbox is asleep.",
               }),
             ),
       ),
@@ -225,12 +247,24 @@ export function wakeAldoEnvironment(environmentId: string): Promise<void> {
   return wake;
 }
 
-/** Deletes a thread's sandbox (and everything in it) once its last thread is gone. */
+/** Deletes a sandbox and everything in it. */
 export async function deleteAldoEnvironment(environmentId: string): Promise<void> {
   const threadId = threadIdForEnvironment(environmentId);
   await api(`/api/environments/${threadId}`, { method: "DELETE" });
   requestAldoDirectoryRefresh();
 }
+
+/**
+ * In Aldo a project is its sandbox: once T3 has removed the project, the
+ * sandbox goes too. Does nothing outside Aldo.
+ */
+export async function removeAldoProjectSandbox(environmentId: string): Promise<void> {
+  if (isAldoCloud && isAldoEnvironmentId(environmentId)) await deleteAldoEnvironment(environmentId);
+}
+
+/** How removing a project in Aldo reads in a confirmation. */
+export const ALDO_PROJECT_REMOVAL_NOTE =
+  "This also deletes the project's cloud sandbox, including any changes there that haven't been pushed.";
 
 /** Tells Aldo the user is looking at this thread, so it isn't stopped for idleness. */
 export function touchAldoEnvironment(environmentId: string): void {
@@ -253,29 +287,36 @@ export interface AldoNewProject {
   readonly isPrivate: boolean;
 }
 
+/**
+ * Opens a project's sandbox, which Aldo creates the first time (`created`)
+ * and otherwise wakes and returns: each project has one.
+ */
 export async function createAldoEnvironment(input: {
   readonly repo?: string;
   readonly fromEnvironmentId?: string;
   readonly branch?: string;
-  /** A new project: Aldo creates the GitHub repository first. */
+  /** A new project: Aldo creates the repository first. */
   readonly create?: AldoNewProject;
   /** A multi-repo workspace: every repository, the main one first. */
   readonly repos?: ReadonlyArray<string>;
-}): Promise<AldoEnvironment> {
-  const { environment } = await api<{ environment: AldoEnvironment }>("/api/environments", {
-    method: "POST",
-    body: JSON.stringify({
-      repo: input.repo,
-      branch: input.branch,
-      create: input.create,
-      repos: input.repos,
-      fromThreadId: input.fromEnvironmentId
-        ? threadIdForEnvironment(input.fromEnvironmentId)
-        : undefined,
-    }),
-  });
+}): Promise<AldoEnvironment & { readonly created: boolean }> {
+  const { environment, created } = await api<{ environment: AldoEnvironment; created: boolean }>(
+    "/api/environments",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        repo: input.repo,
+        branch: input.branch,
+        create: input.create,
+        repos: input.repos,
+        fromThreadId: input.fromEnvironmentId
+          ? threadIdForEnvironment(input.fromEnvironmentId)
+          : undefined,
+      }),
+    },
+  );
   requestAldoDirectoryRefresh();
-  return environment;
+  return { ...environment, created };
 }
 
 export async function listAldoRepositories(): Promise<

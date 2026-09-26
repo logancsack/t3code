@@ -114,6 +114,12 @@ import {
   ProjectFaviconPickerDialog,
 } from "./ProjectFaviconPickerDialog";
 import { projectGroupTitleNeedsUpdate } from "./ProjectSettingsPanel.logic";
+import {
+  ALDO_PROJECT_REMOVAL_NOTE,
+  isAldoCloud,
+  isAldoEnvironmentId,
+  removeAldoProjectSandbox,
+} from "../../aldo/cloud";
 
 export const PROJECT_GROUPING_MODE_LABELS: Record<SidebarProjectGroupingMode, string> = {
   repository: "Group by repository",
@@ -685,6 +691,8 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
       const isWholeGroup = members.length === group.memberProjects.length;
       const singleMember = members.length === 1 ? members[0]! : null;
       const targetLabel = singleMember?.title ?? group.displayName;
+      const inAldo =
+        isAldoCloud && members.every((member) => isAldoEnvironmentId(member.environmentId));
       const confirmed = await settlePromise(() =>
         api.dialogs.confirm(
           [
@@ -702,9 +710,11 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
             ...(projectThreads.length > 0
               ? ["This permanently clears conversation history for those threads."]
               : []),
-            isWholeGroup
-              ? "This removes only the project entries, not the files on disk."
-              : "Other entries in this grouped project are unaffected.",
+            inAldo
+              ? ALDO_PROJECT_REMOVAL_NOTE
+              : isWholeGroup
+                ? "This removes only the project entries, not the files on disk."
+                : "Other entries in this grouped project are unaffected.",
             "This action cannot be undone.",
           ].join("\n"),
           { variant: "destructive" },
@@ -732,6 +742,15 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
           reportFailure(`Failed to remove "${member.title}"`, result);
           return;
         }
+        void removeAldoProjectSandbox(member.environmentId).catch((cause: unknown) =>
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: `Removed "${member.title}", but not its sandbox`,
+              description: cause instanceof Error ? cause.message : "Aldo couldn't delete it.",
+            }),
+          ),
+        );
         const projectRef = scopeProjectRef(member.environmentId, member.id);
         releaseProjectDraftUploads(
           projectRef,
@@ -1167,12 +1186,16 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
         <SettingsSection title="Danger">
           <SettingsRow
             title={
-              group.memberProjects.length > 1 ? "Remove this project everywhere" : "Remove project"
+              group.memberProjects.length > 1 && !isAldoCloud
+                ? "Remove this project everywhere"
+                : "Remove project"
             }
             description={
-              group.memberProjects.length > 1
-                ? `Deletes all ${group.memberProjects.length} checkout entries and their threads on every machine. Files on disk are not touched.`
-                : "Deletes the project entry and its threads. Files on disk are not touched."
+              isAldoCloud
+                ? "Deletes the project, its threads and its cloud sandbox."
+                : group.memberProjects.length > 1
+                  ? `Deletes all ${group.memberProjects.length} checkout entries and their threads on every machine. Files on disk are not touched.`
+                  : "Deletes the project entry and its threads. Files on disk are not touched."
             }
             control={
               <Button
@@ -1180,7 +1203,9 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
                 onClick={() => void removeMembers(group.memberProjects)}
               >
                 <Trash2Icon />
-                {group.memberProjects.length > 1 ? "Remove all entries" : "Remove project"}
+                {group.memberProjects.length > 1 && !isAldoCloud
+                  ? "Remove all entries"
+                  : "Remove project"}
               </Button>
             }
           />
