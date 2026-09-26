@@ -12,9 +12,10 @@ function readInjectedDesktopAppBranding(): DesktopAppBranding | null {
 const injectedDesktopAppBranding = readInjectedDesktopAppBranding();
 const hostedAppChannel = import.meta.env.VITE_HOSTED_APP_CHANNEL?.trim().toLowerCase();
 
-// Managed DevPC builds ship under the gateway's own product brand. Read the
-// flag directly rather than via managedDevPc.ts so branding stays import-free.
-const managedDevPcBuild = import.meta.env.VITE_DEVPC_MANAGED === "1";
+// Managed DevPC and Aldo cloud builds ship under the Aldo product brand. Read
+// the flags directly rather than via their modules so branding stays import-free.
+const managedDevPcBuild =
+  import.meta.env.VITE_DEVPC_MANAGED === "1" || import.meta.env.VITE_ALDO_CLOUD === "1";
 
 export const HOSTED_APP_CHANNEL =
   hostedAppChannel === "latest" || hostedAppChannel === "nightly" ? hostedAppChannel : null;

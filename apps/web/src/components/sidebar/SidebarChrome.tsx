@@ -33,6 +33,7 @@ import {
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
 import { ManagedDevPcFooterAccount } from "../ManagedDevPcAccount";
+import { APP_BASE_NAME } from "../../branding";
 import { SidebarUpdateArchitectureWarning, SidebarUpdatePill } from "./SidebarUpdatePill";
 
 export const SidebarChromeHeader = memo(function SidebarChromeHeader({
@@ -92,15 +93,23 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
       )}
       to="/"
     >
-      <T3Wordmark />
-      <span
-        className={cn(
-          "-translate-y-px truncate text-sm font-medium tracking-tight",
-          onBackdrop ? "text-white/70" : "text-muted-foreground",
-        )}
-      >
-        Code
-      </span>
+      {APP_BASE_NAME === "T3 Code" ? (
+        <>
+          <T3Wordmark />
+          <span
+            className={cn(
+              "-translate-y-px truncate text-sm font-medium tracking-tight",
+              onBackdrop ? "text-white/70" : "text-muted-foreground",
+            )}
+          >
+            Code
+          </span>
+        </>
+      ) : (
+        <span className="-translate-y-px truncate text-sm font-semibold tracking-tight">
+          {APP_BASE_NAME}
+        </span>
+      )}
     </Link>
   );
 }
