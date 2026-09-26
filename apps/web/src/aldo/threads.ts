@@ -167,7 +167,7 @@ export async function startAldoSandbox(input: {
     releaseAldoEnvironment(environmentId, created);
   }
   // Before any cloud agent has reported its models there are none to show,
-  // so start this one right away; its models appear when it's up.
+  // so start this one right away (preloading may already); its models appear when it's up.
   if (!hasModels) void ensureAldoConnected(environmentId).catch(() => undefined);
   return waitForAldoProject(environmentId);
 }

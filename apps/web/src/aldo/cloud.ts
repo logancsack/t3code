@@ -24,6 +24,8 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 
+import { getAldoPreloadSettings } from "./preloadSettings";
+
 export const isAldoCloud = import.meta.env.VITE_ALDO_CLOUD === "1";
 
 export interface AldoEnvironment {
@@ -146,9 +148,15 @@ export function aldoMachineIsNew(environmentId: string): boolean {
 
 /** What a thread's panels say while its cloud agent is offline. */
 export function aldoOfflineMessage(environmentId: string): string {
-  return aldoMachineIsNew(environmentId)
-    ? "The cloud agent starts when you send your first message."
-    : "Reconnecting to the cloud…";
+  const preload = getAldoPreloadSettings();
+  if (aldoMachineIsNew(environmentId)) {
+    return preload.newThreads
+      ? "Starting the cloud agent…"
+      : "The cloud agent starts when you send your first message.";
+  }
+  return preload.openedThreads
+    ? "Reconnecting to the cloud…"
+    : "This cloud agent is asleep. It wakes when you send a message.";
 }
 
 export function requestAldoDirectoryRefresh(): void {
@@ -302,6 +310,16 @@ export async function removeAldoProjectSandbox(environmentId: string): Promise<v
 /** How removing a project in Aldo reads in a confirmation. */
 export const ALDO_PROJECT_REMOVAL_NOTE =
   "This also deletes the project's cloud agents, including any changes they haven't pushed.";
+
+/**
+ * Puts back a machine started or woken ahead of use once the user has left
+ * without sending anything (deleted if it never got a thread, else paused).
+ */
+export async function unloadAldoEnvironment(environmentId: string): Promise<void> {
+  const threadId = threadIdForEnvironment(environmentId);
+  await api(`/api/environments/${threadId}/unload`, { method: "POST", keepalive: true });
+  requestAldoDirectoryRefresh();
+}
 
 /** Tells Aldo the user is looking at this thread, so it isn't stopped for idleness. */
 export function touchAldoEnvironment(environmentId: string): void {

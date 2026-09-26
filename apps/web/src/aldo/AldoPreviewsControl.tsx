@@ -19,6 +19,7 @@ import {
   type AldoFollowedPullRequest,
   type AldoPreviews,
   aldoMachineIsNew,
+  aldoOfflineMessage,
 } from "./cloud";
 
 function label(command: string, process: string): string {
@@ -77,7 +78,7 @@ export function AldoPreviewsControl(props: { environmentId: string; onOpenBrowse
         ) : previews && !previews.running ? (
           <div className="px-2 py-3 text-xs text-muted-foreground">
             {aldoMachineIsNew(props.environmentId)
-              ? "The cloud agent starts when you send your first message."
+              ? aldoOfflineMessage(props.environmentId)
               : "This cloud agent is asleep. Opening a preview's link reconnects it."}
           </div>
         ) : ports.length === 0 ? (

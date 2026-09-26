@@ -438,7 +438,7 @@ import {
   serverUpdateGuidance,
 } from "../versionSkew";
 import { useAssetUrls } from "../assets/assetUrls";
-import { useAldoAutoWake } from "../aldo/useAldoAutoWake";
+import { useAldoPreload } from "../aldo/preload";
 import { isAldoCloud, isAldoEnvironmentId } from "../aldo/cloud";
 import { ensureAldoConnected } from "../aldo/dispatch";
 
@@ -2042,13 +2042,12 @@ function ChatViewContent(props: ChatViewProps) {
     },
     [retryEnvironment],
   );
-  // Aldo: a thread's sandbox sleeps when idle; viewing the thread wakes it.
-  const aldoWakeEnvironmentId = isServerThread ? (activeEnvironment?.environmentId ?? null) : null;
-  const aldoWake = useAldoAutoWake(
-    aldoWakeEnvironmentId,
-    (aldoWakeEnvironmentId ? environmentById.get(aldoWakeEnvironmentId)?.connection.phase : null) ??
-      "available",
-    retryEnvironment,
+  // Aldo: opening a thread starts its cloud agent in the background (a new
+  // thread's is created, an existing one's woken), so sending doesn't wait.
+  useAldoPreload(
+    activeEnvironment?.environmentId ?? null,
+    isServerThread,
+    activeEnvironment?.connection.phase,
   );
   const logicalProjectEnvironments = useMemo(() => {
     if (!activeProject) return [];
@@ -2275,31 +2274,7 @@ function ChatViewContent(props: ChatViewProps) {
     const suppressUnavailableBanner =
       environmentReconnecting &&
       (updateRunning || (!reconnectingThroughVersionSkew && !reconnectWarningGraceElapsed));
-    if (aldoWake.state.status === "waking") {
-      items.push({
-        id: "aldo-wake",
-        variant: "info",
-        priority: "urgent",
-        icon: <LoaderCircleIcon className="animate-spin" />,
-        title: "Reconnecting to the cloud…",
-        width: "content",
-        className:
-          "mx-auto rounded-full border-border/48 bg-background/88 px-3 py-1.5 text-muted-foreground shadow-sm",
-      });
-    } else if (aldoWake.state.status === "failed") {
-      items.push({
-        id: "aldo-wake",
-        variant: "error",
-        icon: <WifiOffIcon />,
-        title: "Couldn't reconnect to the cloud",
-        description: aldoWake.state.message,
-        actions: (
-          <Button size="xs" onClick={aldoWake.wake}>
-            Try again
-          </Button>
-        ),
-      });
-    } else if (
+    if (
       activeEnvironmentActionUnavailableState &&
       unavailableConnection &&
       !suppressUnavailableBanner
@@ -2443,8 +2418,6 @@ function ChatViewContent(props: ChatViewProps) {
     return items;
   }, [
     activeEnvironmentActionUnavailableState,
-    aldoWake.state,
-    aldoWake.wake,
     reconnectWarningGraceElapsed,
     handleReconnectActiveEnvironment,
     navigate,

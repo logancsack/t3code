@@ -31,7 +31,7 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function isConnected(environmentId: string): boolean {
+export function isAldoConnected(environmentId: string): boolean {
   const presentation = appAtomRegistry.get(
     environmentPresentations.presentationAtom(environmentId as EnvironmentId),
   );
@@ -47,7 +47,7 @@ export function aldoStartingLabel(environmentId: string): string {
 
 /** Creates or wakes a thread's cloud agent and waits until the client is connected to it. */
 export function ensureAldoConnected(environmentId: string): Promise<void> {
-  if (isConnected(environmentId)) return Promise.resolve();
+  if (isAldoConnected(environmentId)) return Promise.resolve();
   const existing = inFlight.get(environmentId);
   if (existing) return existing;
   starting.set(environmentId, aldoMachineIsNew(environmentId) ? "creating" : "reconnecting");
@@ -60,7 +60,7 @@ export function ensureAldoConnected(environmentId: string): Promise<void> {
     let nextNudge = 0;
     let connectedChecks = 0;
     while (Date.now() < deadline) {
-      connectedChecks = isConnected(environmentId) ? connectedChecks + 1 : 0;
+      connectedChecks = isAldoConnected(environmentId) ? connectedChecks + 1 : 0;
       if (connectedChecks >= 2) return;
       if (Date.now() >= nextNudge) {
         nextNudge = Date.now() + NUDGE_EVERY_MS;
@@ -82,11 +82,20 @@ export function ensureAldoConnected(environmentId: string): Promise<void> {
   return run;
 }
 
+/** When each machine was last sent a message, so a preload knows whether it was used. */
+const lastSentAt = new Map<string, number>();
+
+export function aldoLastSentAt(environmentId: string): number {
+  return lastSentAt.get(environmentId) ?? 0;
+}
+
 /** Routes commands for Aldo threads through ensureAldoConnected. */
 export function installAldoCommandDispatch(): void {
   if (!isAldoCloud) return;
-  setOrchestrationCommandDispatchOverride(async ({ environmentId }) => {
-    if (isAldoEnvironmentId(environmentId)) await ensureAldoConnected(environmentId);
+  setOrchestrationCommandDispatchOverride(async ({ command, environmentId }) => {
+    if (!isAldoEnvironmentId(environmentId)) return null;
+    if (command.type === "thread.turn.start") lastSentAt.set(environmentId, Date.now());
+    await ensureAldoConnected(environmentId);
     return null;
   });
 }
