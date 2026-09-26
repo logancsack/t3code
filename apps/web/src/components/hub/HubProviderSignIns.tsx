@@ -9,7 +9,7 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import { LogOutIcon } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { readLocalApi } from "../../localApi";
 import { useEnvironmentQuery } from "../../state/query";
@@ -20,16 +20,6 @@ import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-
-/**
- * Hub mode: the provider sign-ins stored for thread machines. Pass `null` off
- * a hub; standalone servers do not answer the call.
- */
-export function useHubProviderSignIns(environmentId: EnvironmentId | null) {
-  return useEnvironmentQuery(
-    environmentId ? sourceControlEnvironment.providerSignIns({ environmentId, input: {} }) : null,
-  );
-}
 
 export function providerSignInFor(
   list: ProviderSignInList | null,
@@ -48,21 +38,30 @@ export function describeProviderSignIn(serviceName: string, signIn: ProviderSign
 }
 
 /**
- * Shows that a provider is signed in on thread machines, with a confirmed
- * sign-out. Renders nothing when no sign-in is stored.
+ * Hub mode only: shows that a provider is signed in on thread machines
+ * (`server.listProviderSignIns`), with a confirmed sign-out. Renders nothing
+ * when no sign-in is stored. Bump `revision` to reload after a sign-in.
  */
 export function HubProviderSignInStatus(props: {
   readonly environmentId: EnvironmentId;
   readonly connector: AuthConnectorKind;
   readonly serviceName: string;
-  readonly signIn: ProviderSignIn | null;
+  readonly revision: number;
   readonly onSignedOut: () => void;
 }) {
-  const { environmentId, connector, serviceName, signIn, onSignedOut } = props;
+  const { environmentId, connector, serviceName, revision, onSignedOut } = props;
+  const signIns = useEnvironmentQuery(
+    sourceControlEnvironment.providerSignIns({ environmentId, input: {} }),
+  );
+  const refreshSignIns = signIns.refresh;
   const signOut = useAtomCommand(sourceControlEnvironment.signOutProvider, {
     reportFailure: false,
   });
   const [signingOut, setSigningOut] = useState(false);
+  useEffect(() => {
+    if (revision > 0) refreshSignIns();
+  }, [refreshSignIns, revision]);
+  const signIn = providerSignInFor(signIns.data, connector);
   if (signIn === null) return null;
 
   const confirmAndSignOut = async () => {
@@ -80,6 +79,7 @@ export function HubProviderSignInStatus(props: {
     setSigningOut(false);
     if (result._tag === "Success") {
       toastManager.add({ type: "success", title: `Signed out of ${serviceName}` });
+      refreshSignIns();
       onSignedOut();
       return;
     }

@@ -76,11 +76,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { AddProviderInstanceDialog } from "./AddProviderInstanceDialog";
 import { AuthConnectorDialog } from "./AuthConnectorDialog";
-import {
-  HubProviderSignInStatus,
-  providerSignInFor,
-  useHubProviderSignIns,
-} from "../hub/HubProviderSignIns";
+import { HubProviderSignInStatus } from "../hub/HubProviderSignIns";
 import { useIsHubEnvironment } from "../../hubMode";
 import { resolveAgentAuthMethods } from "./authConnectorMethods";
 import { ProviderInstanceCard } from "./ProviderInstanceCard";
@@ -465,7 +461,8 @@ export function EnvironmentProviderSettings({
     useAtomValue(serverEnvironment.providersValueAtom(environmentId)) ?? EMPTY_SERVER_PROVIDERS;
   const serverConfig = useAtomValue(serverEnvironment.configValueAtom(environmentId));
   const hub = useIsHubEnvironment(environmentId);
-  const providerSignIns = useHubProviderSignIns(hub ? environmentId : null);
+  // Hub mode: bumped when a sign-in finishes, so the stored sign-ins reload.
+  const [signInRevision, setSignInRevision] = useState(0);
   const refreshServerProviders = useAtomCommand(serverEnvironment.refreshProviders, {
     reportFailure: false,
   });
@@ -545,13 +542,10 @@ export function EnvironmentProviderSettings({
     })();
   }, [environmentId, refreshServerProviders]);
 
-  // Hub mode: a sign-in or sign-out changes the stored sign-ins and every
-  // machine's provider status.
-  const refreshProviderSignIns = providerSignIns.refresh;
-  const refreshSignIns = useCallback(() => {
-    refreshProviderSignIns();
+  const handleHubSignedIn = useCallback(() => {
+    setSignInRevision((revision) => revision + 1);
     refreshProviders();
-  }, [refreshProviderSignIns, refreshProviders]);
+  }, [refreshProviders]);
 
   const runProviderUpdate = useCallback(
     async (candidate: ProviderUpdateCandidate) => {
@@ -862,8 +856,8 @@ export function EnvironmentProviderSettings({
                   environmentId={environmentId}
                   connector={authConnector.connector}
                   serviceName={authConnector.serviceName}
-                  signIn={providerSignInFor(providerSignIns.data, authConnector.connector)}
-                  onSignedOut={refreshSignIns}
+                  revision={signInRevision}
+                  onSignedOut={refreshProviders}
                 />
               ) : null}
               <AuthConnectorDialog
@@ -872,7 +866,7 @@ export function EnvironmentProviderSettings({
                 methods={authConnector.methods}
                 providerInstanceId={row.instanceId}
                 isAuthenticated={liveProvider?.auth.status === "authenticated"}
-                onConnected={hub ? refreshSignIns : refreshProviders}
+                onConnected={hub ? handleHubSignedIn : refreshProviders}
                 environmentId={environmentId}
               />
             </>
