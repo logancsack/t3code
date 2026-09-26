@@ -11,23 +11,49 @@ import { readProjects } from "../state/entities";
 import {
   aldoProjectSandboxes,
   createAldoEnvironment,
+  getAldoEnvironments,
   isAldoCloud,
   isAldoEnvironmentId,
   type AldoNewProject,
 } from "./cloud";
 
 const PROJECT_WAIT_MS = 120_000;
+const NUDGE_EVERY_MS = 10_000;
+
+type Reconnect = (environmentId: EnvironmentId) => Promise<unknown>;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** Resolves once the sandbox's T3 server has connected and reported its project. */
-export async function waitForAldoProject(environmentId: string): Promise<ScopedProjectRef> {
+function loadedProject(environmentId: string): ScopedProjectRef | null {
+  const project = readProjects().find((candidate) => candidate.environmentId === environmentId);
+  return project ? scopeProjectRef(project.environmentId, project.id) : null;
+}
+
+/**
+ * Resolves once the sandbox's T3 server has connected and reported its
+ * project. A sandbox that joins the directory mid-session (or wakes from
+ * sleep) doesn't connect by itself, so `reconnect` nudges it once it's listed,
+ * and again every little while until its project arrives.
+ */
+async function waitForAldoProject(
+  environmentId: string,
+  reconnect: Reconnect,
+): Promise<ScopedProjectRef> {
   const deadline = Date.now() + PROJECT_WAIT_MS;
+  let nextNudge: number | null = null;
   while (Date.now() < deadline) {
-    const project = readProjects().find((candidate) => candidate.environmentId === environmentId);
-    if (project) return scopeProjectRef(project.environmentId, project.id);
+    const project = loadedProject(environmentId);
+    if (project) return project;
+    if (getAldoEnvironments()?.some((e) => e.environmentId === environmentId)) {
+      // Give the new registration a moment to install before the first nudge.
+      nextNudge ??= Date.now() + 1000;
+      if (Date.now() >= nextNudge) {
+        nextNudge = Date.now() + NUDGE_EVERY_MS;
+        void reconnect(environmentId as EnvironmentId).catch(() => undefined);
+      }
+    }
     await sleep(400);
   }
   throw new Error("The project's sandbox didn't finish starting. Try again.");
@@ -35,9 +61,8 @@ export async function waitForAldoProject(environmentId: string): Promise<ScopedP
 
 /**
  * Opens a project's sandbox (for repositories, or a new repository), creating
- * it the first time, and returns its project. A sandbox that already existed
- * may have been asleep, with its connection held as dormant: `reconnect`
- * connects it now that Aldo has woken it.
+ * it the first time, and returns its project. `reconnect` (the environment
+ * catalog's retryNow) connects the sandbox once Aldo has it running.
  */
 export async function startAldoSandbox(
   input: {
@@ -47,7 +72,7 @@ export async function startAldoSandbox(
     readonly repos?: ReadonlyArray<string>;
   },
   label: string,
-  reconnect?: (environmentId: EnvironmentId) => Promise<unknown>,
+  reconnect: Reconnect,
 ): Promise<ScopedProjectRef> {
   const toastId = toastManager.add({
     type: "loading",
@@ -59,16 +84,22 @@ export async function startAldoSandbox(
   });
   try {
     const environment = await createAldoEnvironment(input);
-    toastManager.update(toastId, {
-      type: "loading",
-      title: `Connecting to ${label}…`,
-      description: "Almost ready.",
-      timeout: 0,
-    });
-    if (!environment.created && reconnect) {
-      await reconnect(environment.environmentId as EnvironmentId).catch(() => undefined);
+    // A project the client already has (one it opened before) is ready now;
+    // if Aldo just woke its sandbox, connect to it.
+    let projectRef = loadedProject(environment.environmentId);
+    if (projectRef) {
+      if (!environment.created) {
+        void reconnect(environment.environmentId as EnvironmentId).catch(() => undefined);
+      }
+    } else {
+      toastManager.update(toastId, {
+        type: "loading",
+        title: `Connecting to ${label}…`,
+        description: "Almost ready.",
+        timeout: 0,
+      });
+      projectRef = await waitForAldoProject(environment.environmentId, reconnect);
     }
-    const projectRef = await waitForAldoProject(environment.environmentId);
     toastManager.close(toastId);
     return projectRef;
   } catch (cause) {

@@ -706,7 +706,11 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
                     ? [`Environment: ${singleMember.environmentLabel}`]
                     : []),
                 ]
-              : [`This removes ${members.length} grouped project entries.`]),
+              : [
+                  inAldo
+                    ? `This removes all ${members.length} copies of the project.`
+                    : `This removes ${members.length} grouped project entries.`,
+                ]),
             ...(projectThreads.length > 0
               ? ["This permanently clears conversation history for those threads."]
               : []),
@@ -1046,7 +1050,11 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
           {group.memberProjects.length > 1 ? (
             <SettingsRow
               title="Remove checkout"
-              description="Removes this checkout and its threads from the project group. Files on disk are not touched."
+              description={
+                isAldoCloud
+                  ? "Deletes this copy of the project, its threads and its cloud sandbox."
+                  : "Removes this checkout and its threads from the project group. Files on disk are not touched."
+              }
               control={
                 <Button
                   size="xs"

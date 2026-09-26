@@ -186,6 +186,7 @@ function NewProjectForm(props: {
   readonly onDone: () => void;
 }) {
   const handleNewThread = useNewThreadHandler();
+  const reconnect = useAtomCommand(environmentCatalog.retryNow, { reportFailure: false });
   const [host, setHost] = useState<AldoHostKind>(
     props.hosts.includes("github") ? "github" : props.hosts[0]!,
   );
@@ -213,6 +214,7 @@ function NewProjectForm(props: {
           },
         },
         name,
+        reconnect,
       );
       props.onDone();
       await handleNewThread(projectRef);
