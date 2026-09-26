@@ -70,6 +70,14 @@ const ICON_PATHS: Record<string, ReadonlyArray<{ tag: string; attrs: Record<stri
     { tag: "path", attrs: { d: "M12 8v6" } },
     { tag: "path", attrs: { d: "M9 11h6" } },
   ],
+  moon: [
+    {
+      tag: "path",
+      attrs: {
+        d: "M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401",
+      },
+    },
+  ],
   pin: [
     { tag: "path", attrs: { d: "M12 17v5" } },
     {
@@ -89,6 +97,10 @@ const ICON_PATHS: Record<string, ReadonlyArray<{ tag: string; attrs: Record<stri
         d: "M9 9v1.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h11",
       },
     },
+  ],
+  power: [
+    { tag: "path", attrs: { d: "M12 2v10" } },
+    { tag: "path", attrs: { d: "M18.4 6.6a9 9 0 1 1-12.77.04" } },
   ],
   "refresh-cw": [
     { tag: "path", attrs: { d: "M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" } },

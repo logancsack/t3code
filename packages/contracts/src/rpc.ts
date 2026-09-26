@@ -200,6 +200,9 @@ import {
   AuthConnectorSessionInput,
   AuthConnectorStartInput,
   AuthConnectorSubmitInput,
+  ProviderSignInList,
+  ProviderSignOutInput,
+  ProviderSignOutResult,
 } from "./authConnector.ts";
 import {
   SourceControlCloneRepositoryInput,
@@ -213,6 +216,11 @@ import {
   SourceControlRepositoryListResult,
   SourceControlRepositoryLookupInput,
 } from "./sourceControl.ts";
+import {
+  ThreadMachineControlError,
+  ThreadMachineControlInput,
+  ThreadMachineStatus,
+} from "./threadMachine.ts";
 import { VcsError } from "./vcs.ts";
 
 export const WS_METHODS = {
@@ -294,6 +302,8 @@ export const WS_METHODS = {
   serverGetAuthConnector: "server.getAuthConnector",
   serverSubmitAuthConnector: "server.submitAuthConnector",
   serverCancelAuthConnector: "server.cancelAuthConnector",
+  serverListProviderSignIns: "server.listProviderSignIns",
+  serverSignOutProvider: "server.signOutProvider",
   serverGetTraceDiagnostics: "server.getTraceDiagnostics",
   serverGetProcessDiagnostics: "server.getProcessDiagnostics",
   serverGetProcessResourceHistory: "server.getProcessResourceHistory",
@@ -304,6 +314,10 @@ export const WS_METHODS = {
   serverReportHostPowerState: "server.reportHostPowerState",
   serverGetBackgroundPolicy: "server.getBackgroundPolicy",
   serverGetUsageSummary: "server.getUsageSummary",
+
+  // Thread machine methods (hub mode; see the threadMachines capability)
+  threadMachinesWake: "threadMachines.wake",
+  threadMachinesPause: "threadMachines.pause",
 
   // Cloud environment methods
   cloudGetRelayClientStatus: "cloud.getRelayClientStatus",
@@ -449,6 +463,20 @@ export const WsServerCancelAuthConnectorRpc = Rpc.make(WS_METHODS.serverCancelAu
   error: Schema.Union([AuthConnectorError, EnvironmentAuthorizationError]),
 });
 
+/** Hub mode: the provider sign-ins stored for thread machines. */
+export const WsServerListProviderSignInsRpc = Rpc.make(WS_METHODS.serverListProviderSignIns, {
+  payload: Schema.Struct({}),
+  success: ProviderSignInList,
+  error: Schema.Union([AuthConnectorError, EnvironmentAuthorizationError]),
+});
+
+/** Hub mode: deletes a provider's stored sign-in; every thread machine signs out. */
+export const WsServerSignOutProviderRpc = Rpc.make(WS_METHODS.serverSignOutProvider, {
+  payload: ProviderSignOutInput,
+  success: ProviderSignOutResult,
+  error: Schema.Union([AuthConnectorError, EnvironmentAuthorizationError]),
+});
+
 export const WsServerGetTraceDiagnosticsRpc = Rpc.make(WS_METHODS.serverGetTraceDiagnostics, {
   payload: Schema.Struct({}),
   success: ServerTraceDiagnosticsResult,
@@ -483,6 +511,28 @@ export const WsServerRetryResourceTelemetryRpc = Rpc.make(WS_METHODS.serverRetry
   payload: Schema.Struct({}),
   success: ResourceTelemetryRetryResult,
   error: EnvironmentAuthorizationError,
+});
+
+/**
+ * Hub mode: resumes or recreates a thread's machine. Returns once the
+ * directory accepted the request (usually still `starting`); progress arrives
+ * on the thread shell's `machine` and as `thread-machine.state` activities.
+ */
+export const WsThreadMachinesWakeRpc = Rpc.make(WS_METHODS.threadMachinesWake, {
+  payload: ThreadMachineControlInput,
+  success: Schema.NullOr(ThreadMachineStatus),
+  error: Schema.Union([ThreadMachineControlError, EnvironmentAuthorizationError]),
+});
+
+/**
+ * Hub mode: releases the hub's hold on a thread's machine (closes its runner
+ * connection and reports it idle); the platform pauses it after its idle
+ * delay. Refused with `busy` while a turn, a terminal, or another call uses it.
+ */
+export const WsThreadMachinesPauseRpc = Rpc.make(WS_METHODS.threadMachinesPause, {
+  payload: ThreadMachineControlInput,
+  success: Schema.NullOr(ThreadMachineStatus),
+  error: Schema.Union([ThreadMachineControlError, EnvironmentAuthorizationError]),
 });
 
 export const WsServerGetUsageSummaryRpc = Rpc.make(WS_METHODS.serverGetUsageSummary, {
@@ -1089,12 +1139,16 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerGetAuthConnectorRpc,
   WsServerSubmitAuthConnectorRpc,
   WsServerCancelAuthConnectorRpc,
+  WsServerListProviderSignInsRpc,
+  WsServerSignOutProviderRpc,
   WsServerGetTraceDiagnosticsRpc,
   WsServerGetProcessDiagnosticsRpc,
   WsServerGetProcessResourceHistoryRpc,
   WsServerGetResourceTelemetryHistoryRpc,
   WsServerRetryResourceTelemetryRpc,
   WsServerGetUsageSummaryRpc,
+  WsThreadMachinesWakeRpc,
+  WsThreadMachinesPauseRpc,
   WsServerSignalProcessRpc,
   WsServerReportClientActivityRpc,
   WsServerReportHostPowerStateRpc,

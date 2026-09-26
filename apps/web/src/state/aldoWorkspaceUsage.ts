@@ -141,8 +141,9 @@ export function isAldoWorkspaceUsage(value: unknown): value is AldoWorkspaceUsag
   ) {
     return false;
   }
+  // A hub has no workspace machine (threads bring their own), so it may omit it.
   if (
-    machine !== null &&
+    machine != null &&
     !(
       isRecord(machine) &&
       (machine.class === "standard" || machine.class === "full_power") &&
@@ -213,7 +214,7 @@ export function useAldoWorkspaceUsage(): {
           }));
           return;
         }
-        setState({ status: "ready", usage: payload });
+        setState({ status: "ready", usage: { ...payload, machine: payload.machine ?? null } });
       })
       .catch(() => {
         if (controller.signal.aborted) return;

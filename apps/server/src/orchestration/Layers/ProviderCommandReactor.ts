@@ -52,6 +52,7 @@ import {
 } from "../../serverSettings.ts";
 import { VcsStatusBroadcaster } from "../../vcs/VcsStatusBroadcaster.ts";
 import { GitWorkflowService } from "../../git/GitWorkflowService.ts";
+import { HubThreadCheckouts } from "../../serverModeHooks.ts";
 const isProviderAdapterRequestError = Schema.is(ProviderAdapterRequestError);
 const isProviderDriverKind = Schema.is(ProviderDriverKind);
 
@@ -320,6 +321,8 @@ const make = Effect.gen(function* () {
   const vcsStatusBroadcaster = yield* VcsStatusBroadcaster;
   const textGeneration = yield* TextGeneration;
   const serverSettingsService = yield* ServerSettingsService;
+  // Hub mode: checkouts live on thread machines; never stat or run git locally.
+  const hubThreadCheckouts = yield* HubThreadCheckouts;
   const serverCommandId = (tag: string) =>
     crypto.randomUUIDv4.pipe(Effect.map((uuid) => CommandId.make(`server:${tag}:${uuid}`)));
   const serverEventId = () => crypto.randomUUIDv4.pipe(Effect.map(EventId.make));
@@ -452,6 +455,9 @@ const make = Effect.gen(function* () {
     readonly branch: string | null;
     readonly worktreePath: string | null;
   }) {
+    if (hubThreadCheckouts !== null) {
+      return yield* hubThreadCheckouts.ensureForTurn(thread);
+    }
     const { worktreePath, branch } = thread;
     if (!worktreePath || !branch) {
       return;

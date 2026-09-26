@@ -31,7 +31,24 @@ describe("browser target resolver", () => {
       resolutionKind: "direct",
       environmentId: "environment-1",
     });
-    expect(resolveManagedPreviewUrl).toHaveBeenCalledWith(5173, "/dashboard");
+    expect(resolveManagedPreviewUrl).toHaveBeenCalledWith(5173, "/dashboard", undefined);
+  });
+
+  it("names the thread whose machine serves the port on a hub", async () => {
+    readPreparedConnection.mockReturnValue({ httpBaseUrl: "https://code.example.test" });
+    resolveManagedPreviewUrl.mockReturnValue(
+      "https://code.example.test/_devpc/threads/thread-1/preview/5173",
+    );
+    const { resolveBrowserNavigationTarget } = await import("./browserTargetResolver");
+
+    expect(
+      resolveBrowserNavigationTarget(
+        EnvironmentId.make("environment-1"),
+        { kind: "url", url: "http://localhost:5173/" },
+        "thread-1",
+      ).resolvedUrl,
+    ).toBe("https://code.example.test/_devpc/threads/thread-1/preview/5173");
+    expect(resolveManagedPreviewUrl).toHaveBeenCalledWith(5173, "/", "thread-1");
   });
 
   it("maps environment ports onto a private network host", async () => {

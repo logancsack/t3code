@@ -374,10 +374,11 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
           case "open": {
             const input = request.input as PreviewAutomationOpenInput;
             const resolvedInputUrl = input.url
-              ? resolveBrowserNavigationTarget(environmentId, {
-                  kind: "url",
-                  url: input.url,
-                }).resolvedUrl
+              ? resolveBrowserNavigationTarget(
+                  environmentId,
+                  { kind: "url", url: input.url },
+                  threadRef.threadId,
+                ).resolvedUrl
               : undefined;
             let activeTabId = resolvePreviewAutomationOpenTab(
               state,
@@ -487,6 +488,7 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
                 kind: "url",
                 url: input.url!,
               },
+              threadRef.threadId,
             );
             await ready.bridge.navigate(ready.runtimeTabId, resolution.resolvedUrl);
             await waitForNavigationReadiness(

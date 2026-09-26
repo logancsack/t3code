@@ -53,6 +53,20 @@ export function createSourceControlEnvironmentAtoms<R, E>(
         mode: "parallel",
       },
     }),
+    // Hub mode only: provider sign-ins stored for thread machines.
+    providerSignIns: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:server:provider-sign-ins",
+      tag: WS_METHODS.serverListProviderSignIns,
+    }),
+    signOutProvider: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:sign-out-provider",
+      tag: WS_METHODS.serverSignOutProvider,
+      scheduler: commandScheduler,
+      concurrency: {
+        mode: "serial",
+        key: ({ environmentId }) => environmentId,
+      },
+    }),
     repository: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:source-control:repository",
       tag: WS_METHODS.sourceControlLookupRepository,

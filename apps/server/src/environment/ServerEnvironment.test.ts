@@ -173,6 +173,33 @@ it.layer(NodeServices.layer)("ServerEnvironmentLive", (it) => {
       expect(second.capabilities.primeAgentSubscriptionOAuth).toBeUndefined();
       expect(second.capabilities.threadPullRequestLinking).toBe(true);
       expect(second.capabilities.agentActivityPublishing).toBe(false);
+      expect(second.capabilities.threadMachines).toBeUndefined();
+    }),
+  );
+
+  it.effect("advertises thread machines instead of pull requests in hub mode", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const baseDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-server-environment-hub-test-",
+      });
+      const serverConfig = yield* makeServerConfig(baseDir);
+      yield* fileSystem.makeDirectory(serverConfig.stateDir, { recursive: true });
+      const descriptor = yield* Effect.gen(function* () {
+        const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;
+        return yield* serverEnvironment.getDescriptor;
+      }).pipe(
+        Effect.provide(
+          ServerEnvironment.layer.pipe(
+            Layer.provide(emptySecretStoreLayer),
+            Layer.provide(ServerConfig.layer({ ...serverConfig, serverMode: "hub", hub: {} })),
+          ),
+        ),
+      );
+
+      expect(descriptor.capabilities.threadMachines).toBe(true);
+      expect(descriptor.capabilities.pullRequests).toBeUndefined();
+      expect(descriptor.capabilities.repositoryIdentity).toBe(true);
     }),
   );
 

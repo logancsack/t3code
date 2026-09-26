@@ -1259,6 +1259,16 @@ async function submitBitbucket(
   scheduleSessionRemoval(session);
 }
 
+/**
+ * The flow a connector method uses, known before its login command starts
+ * (a hub shows it while a machine starts the command). Bitbucket asks for a
+ * secret; anything without a launch spec defaults to a browser flow.
+ */
+export function authConnectorFlow(input: AuthConnectorStartInput): AuthConnectorSession["flow"] {
+  if (input.connector === "bitbucket") return "secret";
+  return launchSpec(input)?.flow ?? "browser";
+}
+
 export const start = Effect.fn("AuthConnectorManager.start")(function* (
   input: AuthConnectorStartInput,
 ): Effect.fn.Return<

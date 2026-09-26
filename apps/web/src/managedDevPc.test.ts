@@ -1229,3 +1229,74 @@ describe("shared workspace browser", () => {
     expect(managedWorkspaceBrowserUrl()).toBeNull();
   });
 });
+
+describe("hub bootstrap", () => {
+  const stubHubBootstrap = (fetch = vi.fn()) => {
+    vi.stubGlobal("fetch", fetch);
+    vi.stubGlobal("window", {
+      location: { origin: "https://app.example.test" },
+      localStorage: memoryLocalStorage(),
+      __DEVPC_MANAGED_BOOTSTRAP__: {
+        managed: true,
+        state: "ready",
+        ready: true,
+        serverMode: "hub",
+        previewUrlTemplate: "",
+        threadPreviewUrlTemplate: "/_devpc/threads/{threadId}/preview/{port}",
+        threadBrowserUrlTemplate: "/_devpc/threads/{threadId}/browser",
+      },
+    });
+    return fetch;
+  };
+
+  it("gives each thread its own machine browser", async () => {
+    vi.stubEnv("VITE_DEVPC_MANAGED", "1");
+    vi.resetModules();
+    stubHubBootstrap();
+
+    const {
+      isManagedHubBootstrap,
+      isManagedWorkspaceBrowserAvailable,
+      managedWorkspaceBrowserUrl,
+    } = await import("./managedDevPc");
+
+    expect(isManagedHubBootstrap()).toBe(true);
+    expect(isManagedWorkspaceBrowserAvailable()).toBe(true);
+    expect(managedWorkspaceBrowserUrl("thread/1")).toBe("/_devpc/threads/thread%2F1/browser");
+    // Without a thread there is no machine to show.
+    expect(managedWorkspaceBrowserUrl()).toBeNull();
+  });
+
+  it("routes a thread's preview port through the per-thread template", async () => {
+    vi.stubEnv("VITE_DEVPC_MANAGED", "1");
+    vi.resetModules();
+    stubHubBootstrap();
+
+    const { resolveManagedPreviewUrl } = await import("./managedDevPc");
+
+    expect(resolveManagedPreviewUrl(5173, "/", "thread-1")).toBe(
+      "https://app.example.test/_devpc/threads/thread-1/preview/5173",
+    );
+    expect(resolveManagedPreviewUrl(3000, "/docs?page=2", "thread-1")).toBe(
+      "https://app.example.test/_devpc/threads/thread-1/preview/3000?path=%2Fdocs%3Fpage%3D2",
+    );
+    expect(resolveManagedPreviewUrl(3000, "/", null)).toBeNull();
+  });
+
+  it("dispatches commands directly instead of queueing a workspace wake", async () => {
+    vi.stubEnv("VITE_DEVPC_MANAGED", "1");
+    vi.resetModules();
+    const fetch = stubHubBootstrap();
+
+    const { prepareManagedCommandDispatch } = await import("./managedDevPc");
+    const command = {
+      type: "thread.turn.interrupt",
+      commandId: CommandId.make("command-1"),
+      threadId: ThreadId.make("thread-1"),
+      createdAt: "2026-09-26T10:00:00.000Z",
+    } as ClientOrchestrationCommand;
+
+    await expect(prepareManagedCommandDispatch({ command, primary: true })).resolves.toBeNull();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+});

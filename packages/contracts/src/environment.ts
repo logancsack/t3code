@@ -101,6 +101,10 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
       this is false — no update would ever repaint it. Absent on older
       servers, which may still publish, so only an explicit false skips. */
   agentActivityPublishing: Schema.optionalKey(Schema.Boolean),
+  /** Hub mode: every thread runs on its own on-demand machine, projects are
+      repositories or blank projects, and the server has no filesystem of its
+      own. Absent on standalone servers. */
+  threadMachines: Schema.optionalKey(Schema.Boolean),
 });
 export type ExecutionEnvironmentCapabilities = typeof ExecutionEnvironmentCapabilities.Type;
 
@@ -136,6 +140,9 @@ export const RepositoryIdentity = Schema.Struct({
   provider: Schema.optionalKey(TrimmedNonEmptyString),
   owner: Schema.optionalKey(TrimmedNonEmptyString),
   name: Schema.optionalKey(TrimmedNonEmptyString),
+  // Set when the identity is recorded rather than read from a checkout (hub
+  // projects): the branch a new thread machine checks out.
+  defaultBranch: Schema.optionalKey(TrimmedNonEmptyString),
 });
 export type RepositoryIdentity = typeof RepositoryIdentity.Type;
 

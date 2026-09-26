@@ -1263,7 +1263,16 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
 
   const runStopAll = Effect.fn("runStopAll")(function* () {
     const threadIds = yield* directory.listThreadIds();
-    const currentAdapters = yield* getAdapterEntries;
+    const allAdapters = yield* getAdapterEntries;
+    // Sessions hosted on other machines keep running; their bindings stay live.
+    const remoteInstanceIds = new Set(
+      allAdapters
+        .filter(([, adapter]) => adapter.capabilities.sessionsOutliveServer === true)
+        .map(([instanceId]) => instanceId),
+    );
+    const currentAdapters = allAdapters.filter(
+      ([instanceId]) => !remoteInstanceIds.has(instanceId),
+    );
     const activeSessions = yield* Effect.forEach(currentAdapters, ([instanceId, adapter]) =>
       adapter.listSessions().pipe(
         Effect.map((sessions) =>
@@ -1285,7 +1294,11 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     yield* Effect.forEach(currentAdapters, ([, adapter]) => adapter.stopAll()).pipe(Effect.asVoid);
     yield* McpSessionRegistry.revokeAllActiveMcpCredentials();
     McpProviderSession.clearAllMcpProviderSessions();
-    const bindings = yield* directory.listBindings().pipe(Effect.orElseSucceed(() => []));
+    const bindings = (yield* directory.listBindings().pipe(Effect.orElseSucceed(() => []))).filter(
+      (binding) =>
+        binding.providerInstanceId === undefined ||
+        !remoteInstanceIds.has(binding.providerInstanceId),
+    );
     yield* Effect.forEach(bindings, (binding) =>
       Effect.gen(function* () {
         const providerInstanceId = dieOnMissingBindingInstanceId(

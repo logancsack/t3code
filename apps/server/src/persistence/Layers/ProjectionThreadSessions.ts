@@ -12,6 +12,8 @@ import {
   DeleteProjectionThreadSessionInput,
   GetProjectionThreadSessionInput,
 } from "../Services/ProjectionThreadSessions.ts";
+import { localOrHub } from "../Postgres/HubDatabase.ts";
+import { PgProjectionThreadSessionRepositoryLive } from "../Postgres/ProjectionThreadSessions.ts";
 
 const makeProjectionThreadSessionRepository = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
@@ -106,7 +108,7 @@ const makeProjectionThreadSessionRepository = Effect.gen(function* () {
   } satisfies ProjectionThreadSessionRepositoryShape;
 });
 
-export const ProjectionThreadSessionRepositoryLive = Layer.effect(
-  ProjectionThreadSessionRepository,
-  makeProjectionThreadSessionRepository,
+export const ProjectionThreadSessionRepositoryLive = localOrHub(
+  Layer.effect(ProjectionThreadSessionRepository, makeProjectionThreadSessionRepository),
+  PgProjectionThreadSessionRepositoryLive,
 );

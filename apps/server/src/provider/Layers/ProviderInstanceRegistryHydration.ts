@@ -157,31 +157,46 @@ const makeSettingsWatcherLive = (drivers: ReadonlyArray<AnyProviderDriver<BuiltI
  * The mutator tag is technically also exposed; only this module imports
  * it, so the visibility leak is harmless in practice.
  */
+export const makeProviderInstanceRegistryHydration = <R>(
+  drivers: ReadonlyArray<AnyProviderDriver<R>>,
+): Layer.Layer<ProviderInstanceRegistry, never, R | ServerSettingsService> =>
+  Layer.unwrap(
+    Effect.gen(function* () {
+      const serverSettings = yield* ServerSettingsService;
+      const initialSettings: ServerSettings | undefined = yield* serverSettings.getSettings.pipe(
+        Effect.orElseSucceed(() => undefined),
+      );
+      // The legacy `providers.<kind>` mirror only depends on `driverKind`, so
+      // any driver list (built-in, remote, or a runner subset) derives the same map.
+      const configDrivers = drivers as unknown as ReadonlyArray<
+        AnyProviderDriver<BuiltInDriversEnv>
+      >;
+      const initialConfigMap =
+        initialSettings === undefined
+          ? ({} as ProviderInstanceConfigMap)
+          : deriveProviderInstanceConfigMap(initialSettings, configDrivers);
+
+      const mutableLayer = ProviderInstanceRegistryMutableLayer({
+        drivers,
+        configMap: initialConfigMap,
+      });
+
+      return makeSettingsWatcherLive(configDrivers).pipe(Layer.provideMerge(mutableLayer));
+    }),
+  ) as Layer.Layer<ProviderInstanceRegistry, never, R | ServerSettingsService>;
+
 export const ProviderInstanceRegistryHydrationLive: Layer.Layer<
   ProviderInstanceRegistry,
   never,
   BuiltInDriversEnv | ServerConfig | ServerSettingsService
 > = Layer.unwrap(
   Effect.gen(function* () {
-    const serverSettings = yield* ServerSettingsService;
     const serverConfig = yield* ServerConfig;
-    const drivers = resolveBuiltInDrivers({
-      museCodeEnabled: serverConfig.museCodeEnabled,
-    });
-    const initialSettings: ServerSettings | undefined = yield* serverSettings.getSettings.pipe(
-      Effect.orElseSucceed(() => undefined),
+    return makeProviderInstanceRegistryHydration(
+      resolveBuiltInDrivers({
+        museCodeEnabled: serverConfig.museCodeEnabled,
+      }),
     );
-    const initialConfigMap =
-      initialSettings === undefined
-        ? ({} as ProviderInstanceConfigMap)
-        : deriveProviderInstanceConfigMap(initialSettings, drivers);
-
-    const mutableLayer = ProviderInstanceRegistryMutableLayer({
-      drivers,
-      configMap: initialConfigMap,
-    });
-
-    return makeSettingsWatcherLive(drivers).pipe(Layer.provideMerge(mutableLayer));
   }),
 ) as Layer.Layer<
   ProviderInstanceRegistry,

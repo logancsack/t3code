@@ -20,6 +20,7 @@ import {
   WORKSPACE_BROWSER_PREVIEW_EXTENSIONS,
   WORKSPACE_IMAGE_PREVIEW_EXTENSIONS,
 } from "@t3tools/shared/filePreview";
+import { HubModeUnsupportedError } from "@t3tools/contracts/runner";
 import { PROJECT_FAVICON_FALLBACK_MARKER } from "@t3tools/shared/projectFavicon";
 import * as Clock from "effect/Clock";
 import * as Crypto from "effect/Crypto";
@@ -43,6 +44,7 @@ import * as ServerConfig from "../config.ts";
 import * as ProjectFaviconResolver from "../project/ProjectFaviconResolver.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import { openMediaFile, type OpenMediaFile } from "./MediaFile.ts";
+import { hydrateHubAttachment } from "../persistence/Postgres/HubAttachments.ts";
 
 export const ASSET_ROUTE_PREFIX = "/api/assets";
 
@@ -216,6 +218,19 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const workspacePaths = yield* WorkspacePaths.WorkspacePaths;
+  // A hub has attachments but no checkout; workspace files live on thread machines.
+  if (
+    input.resource._tag !== "attachment" &&
+    ServerConfig.serverModeOf(yield* ServerConfig.ServerConfig) === "hub"
+  ) {
+    return yield* new AssetWorkspaceResolutionError({
+      resource: input.resource,
+      cause: new HubModeUnsupportedError({
+        operation: "assets.createUrl",
+        detail: "Workspace files and favicons are served by thread machines, not the hub.",
+      }),
+    });
+  }
   let expiresAt = (yield* Clock.currentTimeMillis) + ASSET_TOKEN_TTL_MS;
   let claims: AssetClaims;
   let fileName: string;
@@ -351,6 +366,10 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
     }
     case "attachment": {
       const config = yield* ServerConfig.ServerConfig;
+      yield* hydrateHubAttachment({
+        attachmentsDir: config.attachmentsDir,
+        attachmentId: input.resource.attachmentId,
+      });
       const attachmentPath = resolveAttachmentPathById({
         attachmentsDir: config.attachmentsDir,
         attachmentId: input.resource.attachmentId,
@@ -532,6 +551,10 @@ export const resolveAsset = Effect.fn("AssetAccess.resolveAsset")(function* (
 
   if (claims.kind === "attachment") {
     const config = yield* ServerConfig.ServerConfig;
+    yield* hydrateHubAttachment({
+      attachmentsDir: config.attachmentsDir,
+      attachmentId: claims.attachmentId,
+    });
     const attachmentPath = resolveAttachmentPathById({
       attachmentsDir: config.attachmentsDir,
       attachmentId: claims.attachmentId,

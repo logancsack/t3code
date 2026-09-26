@@ -35,6 +35,12 @@ import {
 } from "../logicalProject";
 import { buildPhysicalToLogicalProjectKeyMap } from "../sidebarProjectGrouping";
 import { useUiStateStore } from "../uiStateStore";
+import { readIsHubEnvironment } from "../hubMode";
+import { deriveThreadMachineView } from "../threadMachine";
+import {
+  threadMachineControlFor,
+  useThreadMachineControls,
+} from "../components/hub/threadMachineActions";
 import { useCopyToClipboard } from "./useCopyToClipboard";
 import { useNewThreadHandler } from "./useHandleNewThread";
 import { useClientSettings } from "./useSettings";
@@ -94,6 +100,7 @@ export function useThreadActionMenu(input: {
     reportFailure: false,
   });
   const handleNewThread = useNewThreadHandler();
+  const { wake: wakeMachine, pause: pauseMachine } = useThreadMachineControls();
   const markThreadUnread = useUiStateStore((s) => s.markThreadUnread);
   const confirmThreadDelete = useClientSettings((s) => s.confirmThreadDelete);
   const confirmThreadArchive = useClientSettings((s) => s.confirmThreadArchive);
@@ -129,11 +136,13 @@ export function useThreadActionMenu(input: {
         const thread = readThreadShell(threadRef);
         if (!thread) return;
         const now = new Date();
+        const hub = readIsHubEnvironment(threadRef.environmentId);
         const supports = {
           settlement: readEnvironmentSupportsSettlement(threadRef.environmentId),
           snooze: readEnvironmentSupportsSnooze(threadRef.environmentId),
           pinning: readEnvironmentSupportsPinning(threadRef.environmentId),
           titleRegeneration: readEnvironmentSupportsTitleRegeneration(threadRef.environmentId),
+          workspacePath: !hub,
         };
         const isRegeneratingTitle = thread.titleRegeneration != null;
         const snoozePresets = resolveSnoozePresets(now, timestampFormat);
@@ -146,6 +155,9 @@ export function useThreadActionMenu(input: {
           isRegeneratingTitle,
           isRunning: thread.session?.status === "running" && thread.session.activeTurnId != null,
           supports,
+          machineControl: hub
+            ? threadMachineControlFor(deriveThreadMachineView(thread.machine))
+            : null,
           snoozePresets,
         });
         const clicked = await settlePromise(() => api.contextMenu.show(items, position));
@@ -276,6 +288,12 @@ export function useThreadActionMenu(input: {
           case "copy-thread-id":
             copyThreadIdToClipboard(thread.id, { threadId: thread.id });
             return;
+          case "wake-machine":
+            await wakeMachine(threadRef);
+            return;
+          case "pause-machine":
+            await pauseMachine(threadRef);
+            return;
           case "archive": {
             if (confirmThreadArchive) {
               const confirmed = await settlePromise(() =>
@@ -341,6 +359,7 @@ export function useThreadActionMenu(input: {
       logicalProjectKeyByPhysicalKey,
       markThreadUnread,
       onStartRename,
+      pauseMachine,
       pinThread,
       projectCwd,
       projectGroupingSettings,
@@ -353,6 +372,7 @@ export function useThreadActionMenu(input: {
       unsettleThread,
       unsnoozeThread,
       updateThreadMetadata,
+      wakeMachine,
     ],
   );
 

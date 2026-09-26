@@ -41,7 +41,8 @@ import { Input } from "../ui/input";
 import { Textarea } from "../ui/textarea";
 import { toastManager } from "../ui/toast";
 import { APP_BASE_NAME } from "../../branding";
-import { managedWorkspaceBrowserUrl } from "../../managedDevPc";
+import { useIsHubEnvironment } from "../../hubMode";
+import { hubAuthConnectorProgress, resolveAuthWorkspaceBrowserUrl } from "../hub/hubAuthConnector";
 
 export type AuthConnectorMethodOption = {
   readonly method: AuthConnectorMethod;
@@ -165,6 +166,9 @@ export function AuthConnectorDialog(props: {
   const callbackInputRef = useRef<HTMLTextAreaElement | null>(null);
 
   const selectedMethod = methods.find((method) => method.method === session?.method) ?? null;
+  const hub = useIsHubEnvironment(environmentId);
+  const workspaceBrowserUrl = resolveAuthWorkspaceBrowserUrl(session);
+  const hubProgress = hub ? hubAuthConnectorProgress(session) : null;
 
   useEffect(() => {
     if (!open || !sessionEnvironmentId || !session) return;
@@ -284,7 +288,7 @@ export function AuthConnectorDialog(props: {
       authVerificationDestination({
         verificationUrl: session.verificationUrl,
         workspaceBrowser: selectedMethod?.workspaceBrowser === true,
-        workspaceBrowserUrl: managedWorkspaceBrowserUrl(),
+        workspaceBrowserUrl,
       }),
     );
   };
@@ -366,7 +370,7 @@ export function AuthConnectorDialog(props: {
   const remaining = session ? formatRemaining(session.expiresAt, now) : null;
   const browserName = selectedMethod?.browserName ?? serviceName;
   const usesManagedWorkspaceBrowser =
-    selectedMethod?.workspaceBrowser === true && managedWorkspaceBrowserUrl() !== null;
+    selectedMethod?.workspaceBrowser === true && workspaceBrowserUrl !== null;
   const authorizeInstruction = authAuthorizeInstruction({
     option: selectedMethod,
     usesManagedWorkspaceBrowser,
@@ -390,7 +394,9 @@ export function AuthConnectorDialog(props: {
           `Finish approving access in ${browserName}, then paste what it gives you below.`)
         : session?.stage === "verifying"
           ? "Keep this window open while the provider confirms your account."
-          : session?.message;
+          : hubProgress
+            ? undefined
+            : session?.message;
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -673,15 +679,16 @@ export function AuthConnectorDialog(props: {
                     ) : null}
 
                     {(session.stage === "preparing" || session.stage === "verifying") &&
-                    !session.verificationUrl ? (
+                    (hubProgress || !session.verificationUrl) ? (
                       <div
                         className="flex items-center gap-2 rounded-xl border bg-muted/20 p-4 text-sm text-muted-foreground"
                         aria-live="polite"
                       >
                         <LoaderIcon className="size-4 animate-spin" />
-                        {session.stage === "verifying"
-                          ? "Confirming your account…"
-                          : "Preparing the provider’s secure sign-in…"}
+                        {hubProgress ??
+                          (session.stage === "verifying"
+                            ? "Confirming your account…"
+                            : "Preparing the provider’s secure sign-in…")}
                       </div>
                     ) : null}
                   </div>

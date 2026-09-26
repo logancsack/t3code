@@ -219,5 +219,18 @@ export function createThreadEnvironmentAtoms<R, E>(
       scheduler,
       concurrency,
     }),
+    // Hub mode only (the `threadMachines` capability): explicit machine controls.
+    wakeMachine: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:commands:thread:wake-machine",
+      tag: WS_METHODS.threadMachinesWake,
+      scheduler,
+      concurrency,
+    }),
+    pauseMachine: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:commands:thread:pause-machine",
+      tag: WS_METHODS.threadMachinesPause,
+      scheduler,
+      concurrency,
+    }),
   };
 }

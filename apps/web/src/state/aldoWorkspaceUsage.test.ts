@@ -54,6 +54,11 @@ describe("isAldoWorkspaceUsage", () => {
     ).toBe(true);
   });
 
+  it("accepts a summary without a workspace machine (hub deployments)", () => {
+    const { machine: _machine, ...withoutMachine } = metered;
+    expect(isAldoWorkspaceUsage(withoutMachine)).toBe(true);
+  });
+
   it("rejects shapes this build cannot render truthfully", () => {
     expect(isAldoWorkspaceUsage(null)).toBe(false);
     expect(isAldoWorkspaceUsage({ error: { code: "GATEWAY_SESSION_EXPIRED" } })).toBe(false);

@@ -12,6 +12,8 @@ import {
   ProjectionPendingApprovalRepository,
   type ProjectionPendingApprovalRepositoryShape,
 } from "../Services/ProjectionPendingApprovals.ts";
+import { localOrHub } from "../Postgres/HubDatabase.ts";
+import { PgProjectionPendingApprovalRepositoryLive } from "../Postgres/ProjectionPendingApprovals.ts";
 
 const makeProjectionPendingApprovalRepository = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
@@ -148,7 +150,7 @@ const makeProjectionPendingApprovalRepository = Effect.gen(function* () {
   } satisfies ProjectionPendingApprovalRepositoryShape;
 });
 
-export const ProjectionPendingApprovalRepositoryLive = Layer.effect(
-  ProjectionPendingApprovalRepository,
-  makeProjectionPendingApprovalRepository,
+export const ProjectionPendingApprovalRepositoryLive = localOrHub(
+  Layer.effect(ProjectionPendingApprovalRepository, makeProjectionPendingApprovalRepository),
+  PgProjectionPendingApprovalRepositoryLive,
 );

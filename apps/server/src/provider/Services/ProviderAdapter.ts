@@ -32,6 +32,11 @@ export interface ProviderAdapterCapabilities {
    * Declares whether changing the model on an existing session is supported.
    */
   readonly sessionModelSwitch: ProviderSessionModelSwitchMode;
+  /**
+   * Sessions run on another machine and outlive this server process (hub
+   * mode). Shutting the server down must not stop them or mark them stopped.
+   */
+  readonly sessionsOutliveServer?: boolean;
 }
 
 export interface ProviderThreadTurnSnapshot {

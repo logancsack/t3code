@@ -20,6 +20,8 @@ export interface GitHubRepositoryBrowserProject {
 }
 
 interface GitHubRepositoryBrowserProps {
+  /** Hub: repositories are added and opened, never cloned into this environment. */
+  readonly addsWithoutCloning?: boolean;
   readonly repositories: ReadonlyArray<SourceControlRepositorySummary>;
   readonly query: string;
   readonly isLoading: boolean;
@@ -38,6 +40,7 @@ interface GitHubRepositoryBrowserProps {
 }
 
 export function GitHubRepositoryBrowser({
+  addsWithoutCloning = false,
   repositories,
   query,
   isLoading,
@@ -58,6 +61,8 @@ export function GitHubRepositoryBrowser({
     (repository) => repository.nameWithOwner.toLowerCase() === trimmedQuery.toLowerCase(),
   );
   const canLookUpExactPath = trimmedQuery.includes("/") && !hasExactMatch;
+  const addLabel = addsWithoutCloning ? "Add" : "Clone";
+  const existingLabel = addsWithoutCloning ? "Open" : "Sync";
 
   return (
     <section className="flex min-h-0 flex-1 flex-col" aria-label="Your GitHub repositories">
@@ -148,7 +153,7 @@ export function GitHubRepositoryBrowser({
                       {project ? (
                         <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 font-medium text-emerald-700 text-xs dark:text-emerald-400">
                           <CheckIcon className="size-3" />
-                          In this workspace
+                          {addsWithoutCloning ? "Added" : "In this workspace"}
                         </span>
                       ) : null}
                     </div>
@@ -165,7 +170,7 @@ export function GitHubRepositoryBrowser({
                     ) : null}
                   </div>
                   <Button
-                    aria-label={`${project ? "Sync" : "Clone"} ${repository.nameWithOwner}`}
+                    aria-label={`${project ? existingLabel : addLabel} ${repository.nameWithOwner}`}
                     className="h-11 min-w-20 px-4 sm:h-8 sm:min-w-18 sm:px-3"
                     disabled={activeRepository !== null || repository.isArchived}
                     onClick={() => {
@@ -178,7 +183,7 @@ export function GitHubRepositoryBrowser({
                     variant={project ? "outline" : "default"}
                   >
                     {isActive ? <LoaderCircleIcon className="animate-spin" /> : null}
-                    {repository.isArchived ? "Archived" : project ? "Sync" : "Clone"}
+                    {repository.isArchived ? "Archived" : project ? existingLabel : addLabel}
                   </Button>
                 </article>
               );

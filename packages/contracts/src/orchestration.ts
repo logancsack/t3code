@@ -23,6 +23,7 @@ import {
   TurnId,
 } from "./baseSchemas.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
+import { ThreadMachineStatus } from "./threadMachine.ts";
 
 export const ORCHESTRATION_WS_METHODS = {
   dispatchCommand: "orchestration.dispatchCommand",
@@ -552,6 +553,8 @@ export const OrchestrationThreadShell = Schema.Struct({
    * live work. Optional so old servers/clients interop; absent = none.
    */
   backgroundLiveness: Schema.optional(Schema.NullOr(Schema.Literals(["working", "monitoring"]))),
+  /** Hub mode only: the thread machine's latest known state. Absent on standalone servers. */
+  machine: Schema.optional(Schema.NullOr(ThreadMachineStatus)),
   /**
    * Current plan step while a turn runs, for the Working indicators
    * (sidebar row, in-chat working line). Cleared when the turn settles —
@@ -713,6 +716,9 @@ export const ProjectCreateCommand = Schema.Struct({
   workspaceRoot: TrimmedNonEmptyString,
   createWorkspaceRootIfMissing: Schema.optional(Schema.Boolean),
   defaultModelSelection: Schema.optional(Schema.NullOr(ModelSelection)),
+  // Recorded identity for projects without a local checkout (hub mode), which
+  // cannot resolve it from `git remote`. Absent = resolve from the checkout.
+  repositoryIdentity: Schema.optional(Schema.NullOr(RepositoryIdentity)),
   createdAt: IsoDateTime,
 });
 
@@ -727,6 +733,8 @@ const ProjectMetaUpdateCommand = Schema.Struct({
   defaultThreadEnvMode: Schema.optional(Schema.NullOr(ThreadEnvMode)),
   faviconPath: Schema.optional(Schema.NullOr(ProjectFaviconPath)),
   scripts: Schema.optional(Schema.Array(ProjectScript)),
+  // Absent = leave unchanged; null = clear the recorded identity.
+  repositoryIdentity: Schema.optional(Schema.NullOr(RepositoryIdentity)),
 });
 
 const ProjectDeleteCommand = Schema.Struct({
