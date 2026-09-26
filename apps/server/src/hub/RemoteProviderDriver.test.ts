@@ -30,6 +30,7 @@ import {
 } from "../persistence/Postgres/hubTestDatabase.ts";
 import * as ProviderSessionRuntime from "../persistence/ProviderSessionRuntime.ts";
 import { CodexDriver } from "../provider/Drivers/CodexDriver.ts";
+import * as HubProviderSnapshots from "./HubProviderSnapshots.ts";
 import { MachineDirectory, makeFakeMachineDirectory } from "./MachineDirectory.ts";
 import {
   attachmentFilesForRunner,
@@ -126,10 +127,11 @@ describe("remote provider driver helpers", () => {
   );
 });
 
-const StoresLive = Layer.mergeAll(
-  HubThreadMachineStateSqliteLive,
-  ProviderSessionRuntime.layer,
-).pipe(Layer.provideMerge(SqlitePersistenceMemory), Layer.provideMerge(NodeServices.layer));
+const StoresLive = HubProviderSnapshots.layer.pipe(
+  Layer.provideMerge(Layer.mergeAll(HubThreadMachineStateSqliteLive, ProviderSessionRuntime.layer)),
+  Layer.provideMerge(SqlitePersistenceMemory),
+  Layer.provideMerge(NodeServices.layer),
+);
 
 describe("remote provider adapter session answers", () => {
   it.live("answers hasSession and listSessions from the hub and never wakes a machine", () =>

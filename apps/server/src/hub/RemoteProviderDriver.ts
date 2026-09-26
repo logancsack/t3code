@@ -74,9 +74,14 @@ import type {
   ProviderThreadSnapshot,
 } from "../provider/Services/ProviderAdapter.ts";
 import type { ServerProviderShape } from "../provider/Services/ServerProvider.ts";
-import { buildUnavailableProviderSnapshot } from "../provider/unavailableProviderSnapshot.ts";
 import type { TextGenerationShape } from "../textGeneration/TextGeneration.ts";
 import { fromRunnerRemoteError, ProviderAdapterErrorSchema } from "../runner/remoteErrors.ts";
+import {
+  HubProviderSnapshots,
+  overlayHubIdentity,
+  pendingRemoteSnapshot,
+  type RemoteInstanceIdentity,
+} from "./HubProviderSnapshots.ts";
 import { RemoteSessionRegistry } from "./RemoteSessionRegistry.ts";
 import { RunnerConnectionPool, type RunnerConnection } from "./RunnerConnectionPool.ts";
 import { RunnerEventDelivery } from "./RunnerEventDelivery.ts";
@@ -85,6 +90,7 @@ export type RemoteProviderDriverEnv =
   | RunnerConnectionPool
   | RunnerEventDelivery
   | RemoteSessionRegistry
+  | HubProviderSnapshots
   | ServerConfig
   | FileSystem.FileSystem
   | Path.Path;
@@ -166,7 +172,7 @@ export function makeRemoteProviderDriver<R>(
     metadata: base.metadata,
     configSchema: base.configSchema,
     defaultConfig: base.defaultConfig,
-    create: ({ instanceId, displayName, accentColor, enabled }) =>
+    create: ({ instanceId, displayName, accentColor, enabled, config: driverConfig }) =>
       Effect.gen(function* () {
         const config = yield* ServerConfig;
         const platform = yield* Effect.context<FileSystem.FileSystem | Path.Path>();
@@ -185,10 +191,21 @@ export function makeRemoteProviderDriver<R>(
         const capabilities: {
           current: Omit<ProviderAdapterCapabilities, "sessionsOutliveServer">;
         } = { current: { sessionModelSwitch: "in-session" } };
+        const continuationIdentity = defaultProviderContinuationIdentity({
+          driverKind,
+          instanceId,
+        });
         const snapshot = yield* makeRemoteSnapshot({
           context,
-          displayName,
-          accentColor,
+          identity: {
+            driverKind,
+            instanceId,
+            displayName,
+            accentColor,
+            enabled,
+            continuationGroupKey: continuationIdentity.continuationKey,
+          },
+          config: driverConfig,
           onCapabilities: (sessionModelSwitch) =>
             Effect.sync(() => {
               capabilities.current = { ...capabilities.current, sessionModelSwitch };
@@ -197,7 +214,7 @@ export function makeRemoteProviderDriver<R>(
         return {
           instanceId,
           driverKind,
-          continuationIdentity: defaultProviderContinuationIdentity({ driverKind, instanceId }),
+          continuationIdentity,
           displayName,
           accentColor,
           enabled,
@@ -408,32 +425,41 @@ function makeRemoteAdapter(
 }
 
 /**
- * Provider status and models as the most recent runner reported them. A hub
- * cannot probe provider CLIs; until a thread machine reports this instance
- * the snapshot says so.
+ * Provider status and models as the most recent runner reported them,
+ * persisted by `HubProviderSnapshots` so they survive hub restarts. Before
+ * any runner reported this instance the snapshot is the driver's pending
+ * one, installed and ready with auth `unknown` (see `pendingRemoteSnapshot`).
+ * Every runner connection reports its hosted instances; `refresh` asks a
+ * connected runner to probe again.
  */
 const makeRemoteSnapshot = (input: {
   readonly context: InstanceContext;
-  readonly displayName: string | undefined;
-  readonly accentColor: string | undefined;
+  readonly identity: RemoteInstanceIdentity;
+  readonly config: unknown;
   readonly onCapabilities: (
     sessionModelSwitch: ProviderAdapterCapabilities["sessionModelSwitch"],
   ) => Effect.Effect<void>;
 }) =>
   Effect.gen(function* () {
-    const { context } = input;
-    const unavailable = (reason: string) =>
-      buildUnavailableProviderSnapshot({
-        driverKind: context.driverKind,
-        instanceId: context.instanceId,
-        displayName: input.displayName,
-        accentColor: input.accentColor,
-        reason,
-      });
+    const { context, identity } = input;
+    const snapshots = yield* HubProviderSnapshots;
+    const persisted = yield* snapshots.get(context.instanceId);
     const current = yield* Ref.make<ServerProvider>(
-      yield* unavailable("No thread machine has reported this provider yet."),
+      Option.isSome(persisted)
+        ? overlayHubIdentity(persisted.value, identity)
+        : yield* pendingRemoteSnapshot(identity, input.config),
     );
     const changes = yield* PubSub.unbounded<ServerProvider>();
+
+    // Reports from any runner (or the sign-in flow) arrive through the store.
+    yield* snapshots.changes.pipe(
+      Stream.filter((snapshot) => snapshot.instanceId === context.instanceId),
+      Stream.runForEach((snapshot) => {
+        const next = overlayHubIdentity(snapshot, identity);
+        return Ref.set(current, next).pipe(Effect.andThen(PubSub.publish(changes, next)));
+      }),
+      Effect.forkScoped,
+    );
 
     const fetchFrom = (connection: RunnerConnection, refresh: boolean) =>
       connection.hello.instances.includes(context.instanceId)
@@ -442,10 +468,9 @@ const makeRemoteSnapshot = (input: {
             ...(refresh ? { refresh } : {}),
           }).pipe(
             Effect.tap((result) => input.onCapabilities(result.sessionModelSwitch)),
-            Effect.map((result) => result.snapshot),
-            Effect.tap((snapshot) => Ref.set(current, snapshot)),
-            Effect.tap((snapshot) => PubSub.publish(changes, snapshot)),
-            Effect.asVoid,
+            Effect.flatMap((result) =>
+              snapshots.put({ ...result.snapshot, instanceId: context.instanceId }),
+            ),
             Effect.catchCause((cause) =>
               Effect.logWarning("runner did not report provider capabilities", {
                 instanceId: context.instanceId,

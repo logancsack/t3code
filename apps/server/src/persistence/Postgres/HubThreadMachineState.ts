@@ -5,7 +5,12 @@
  *
  * @module HubThreadMachineStatePostgres
  */
-import { VcsStatusLocalResult, VcsStatusRemoteResult, type ThreadId } from "@t3tools/contracts";
+import {
+  ServerProvider,
+  VcsStatusLocalResult,
+  VcsStatusRemoteResult,
+  type ThreadId,
+} from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -18,6 +23,8 @@ import {
   CheckpointTurnDiff,
   CheckpointTurnDiffKey,
   CheckpointTurnDiffStore,
+  ProviderSnapshotRow,
+  ProviderSnapshotStore,
   RunnerCursor,
   RunnerCursorStore,
   ThreadMachineStatusRow,
@@ -232,10 +239,46 @@ export const makeThreadMachineStatusStore = Effect.gen(function* () {
   });
 });
 
+const ProviderSnapshotDbRow = ProviderSnapshotRow.mapFields((fields) => ({
+  ...fields,
+  snapshot: Schema.fromJsonString(ServerProvider),
+}));
+
+export const makeProviderSnapshotStore = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  const { userId } = yield* HubTenant;
+
+  const selectAll = SqlSchema.findAll({
+    Request: Schema.Void,
+    Result: ProviderSnapshotDbRow,
+    execute: () => sql`
+      SELECT instance_id AS "instanceId", snapshot_json AS snapshot, updated_at AS "updatedAt"
+      FROM hub_provider_snapshots WHERE user_id = ${userId}
+    `,
+  });
+  const upsert = SqlSchema.void({
+    Request: ProviderSnapshotDbRow,
+    execute: (row) => sql`
+      INSERT INTO hub_provider_snapshots (user_id, instance_id, snapshot_json, updated_at)
+      VALUES (${userId}, ${row.instanceId}, ${row.snapshot}, ${row.updatedAt})
+      ON CONFLICT (user_id, instance_id) DO UPDATE SET
+        snapshot_json = excluded.snapshot_json,
+        updated_at = excluded.updated_at
+    `,
+  });
+
+  return ProviderSnapshotStore.of({
+    list: () =>
+      selectAll(undefined).pipe(Effect.mapError(sqlOrDecode("ProviderSnapshotStore.list"))),
+    put: (row) => upsert(row).pipe(Effect.mapError(sqlOrDecode("ProviderSnapshotStore.put"))),
+  });
+});
+
 /** Every repository; requires the hub Postgres `SqlClient` and `HubTenant`. */
 export const HubThreadMachineStatePostgresLive = Layer.mergeAll(
   Layer.effect(RunnerCursorStore, makeRunnerCursorStore),
   Layer.effect(CheckpointTurnDiffStore, makeCheckpointTurnDiffStore),
   Layer.effect(ThreadVcsStatusStore, makeThreadVcsStatusStore),
   Layer.effect(ThreadMachineStatusStore, makeThreadMachineStatusStore),
+  Layer.effect(ProviderSnapshotStore, makeProviderSnapshotStore),
 );

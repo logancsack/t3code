@@ -3,6 +3,8 @@
  *
  * - `hub_thread_machine_status`: the last machine state the directory reported
  *   per thread, so thread shells show it without asking the directory again.
+ * - `hub_provider_snapshots`: the last provider snapshot (status, auth, models)
+ *   a runner reported per provider instance.
  *
  * Every table leads its key with `user_id` and carries the forced tenant policy
  * from the baseline (`hubTenantPolicyStatements`). The statements are
@@ -17,7 +19,10 @@ import { hubTenantPolicyStatements } from "./001_HubBaseline.ts";
 
 const c = `COLLATE "C"`;
 
-export const HUB_THREAD_MACHINE_SERVICE_TABLES = ["hub_thread_machine_status"] as const;
+export const HUB_THREAD_MACHINE_SERVICE_TABLES = [
+  "hub_thread_machine_status",
+  "hub_provider_snapshots",
+] as const;
 
 const statements: ReadonlyArray<string> = [
   `CREATE TABLE IF NOT EXISTS hub_thread_machine_status (
@@ -28,6 +33,13 @@ const statements: ReadonlyArray<string> = [
     boot_id text ${c},
     updated_at text ${c} NOT NULL,
     PRIMARY KEY (user_id, thread_id)
+  )`,
+  `CREATE TABLE IF NOT EXISTS hub_provider_snapshots (
+    user_id text ${c} NOT NULL,
+    instance_id text ${c} NOT NULL,
+    snapshot_json text NOT NULL,
+    updated_at text ${c} NOT NULL,
+    PRIMARY KEY (user_id, instance_id)
   )`,
   ...HUB_THREAD_MACHINE_SERVICE_TABLES.flatMap(hubTenantPolicyStatements),
 ];

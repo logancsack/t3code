@@ -8,7 +8,12 @@
  *
  * @module HubThreadMachineStateSqlite
  */
-import { VcsStatusLocalResult, VcsStatusRemoteResult, type ThreadId } from "@t3tools/contracts";
+import {
+  ServerProvider,
+  VcsStatusLocalResult,
+  VcsStatusRemoteResult,
+  type ThreadId,
+} from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -21,6 +26,8 @@ import {
   CheckpointTurnDiff,
   CheckpointTurnDiffKey,
   CheckpointTurnDiffStore,
+  ProviderSnapshotRow,
+  ProviderSnapshotStore,
   RunnerCursor,
   RunnerCursorStore,
   ThreadMachineStatusRow,
@@ -57,6 +64,11 @@ const HUB_SQLITE_TABLES = [
     state TEXT NOT NULL,
     detail TEXT,
     boot_id TEXT,
+    updated_at TEXT NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS hub_provider_snapshots (
+    instance_id TEXT PRIMARY KEY,
+    snapshot_json TEXT NOT NULL,
     updated_at TEXT NOT NULL
   )`,
 ] as const;
@@ -261,10 +273,46 @@ export const makeThreadMachineStatusStore = Effect.gen(function* () {
   });
 });
 
+const ProviderSnapshotDbRow = ProviderSnapshotRow.mapFields((fields) => ({
+  ...fields,
+  snapshot: Schema.fromJsonString(ServerProvider),
+}));
+
+export const makeProviderSnapshotStore = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* ensureTables;
+
+  const selectAll = SqlSchema.findAll({
+    Request: Schema.Void,
+    Result: ProviderSnapshotDbRow,
+    execute: () => sql`
+      SELECT instance_id AS "instanceId", snapshot_json AS snapshot, updated_at AS "updatedAt"
+      FROM hub_provider_snapshots
+    `,
+  });
+  const upsert = SqlSchema.void({
+    Request: ProviderSnapshotDbRow,
+    execute: (row) => sql`
+      INSERT INTO hub_provider_snapshots (instance_id, snapshot_json, updated_at)
+      VALUES (${row.instanceId}, ${row.snapshot}, ${row.updatedAt})
+      ON CONFLICT (instance_id) DO UPDATE SET
+        snapshot_json = excluded.snapshot_json,
+        updated_at = excluded.updated_at
+    `,
+  });
+
+  return ProviderSnapshotStore.of({
+    list: () =>
+      selectAll(undefined).pipe(Effect.mapError(sqlOrDecode("ProviderSnapshotStore.list"))),
+    put: (row) => upsert(row).pipe(Effect.mapError(sqlOrDecode("ProviderSnapshotStore.put"))),
+  });
+});
+
 /** Every repository over the configured SQLite client. */
 export const HubThreadMachineStateSqliteLive = Layer.mergeAll(
   Layer.effect(RunnerCursorStore, makeRunnerCursorStore),
   Layer.effect(CheckpointTurnDiffStore, makeCheckpointTurnDiffStore),
   Layer.effect(ThreadVcsStatusStore, makeThreadVcsStatusStore),
   Layer.effect(ThreadMachineStatusStore, makeThreadMachineStatusStore),
+  Layer.effect(ProviderSnapshotStore, makeProviderSnapshotStore),
 );

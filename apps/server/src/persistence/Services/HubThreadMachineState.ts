@@ -12,6 +12,8 @@
  * - `ThreadVcsStatusStore`: the last git status a runner reported per thread.
  * - `ThreadMachineStatusStore`: the last machine state the directory reported
  *   per thread, shown on thread shells without asking the directory again.
+ * - `ProviderSnapshotStore`: the last provider snapshot a runner reported per
+ *   provider instance, so a hub shows providers before any machine runs.
  *
  * Postgres implementations live in `persistence/Postgres/HubThreadMachineState.ts`
  * (hub migrations 050 and 051); the SQLite implementations back hub mode without a
@@ -23,6 +25,8 @@
 import {
   IsoDateTime,
   NonNegativeInt,
+  ProviderInstanceId,
+  ServerProvider,
   ThreadId,
   ThreadMachineState,
   TrimmedNonEmptyString,
@@ -140,3 +144,20 @@ export class ThreadMachineStatusStore extends Context.Service<
   ThreadMachineStatusStore,
   ThreadMachineStatusStoreShape
 >()("t3/persistence/Services/HubThreadMachineState/ThreadMachineStatusStore") {}
+
+export const ProviderSnapshotRow = Schema.Struct({
+  instanceId: ProviderInstanceId,
+  snapshot: ServerProvider,
+  updatedAt: IsoDateTime,
+});
+export type ProviderSnapshotRow = typeof ProviderSnapshotRow.Type;
+
+export interface ProviderSnapshotStoreShape {
+  readonly list: () => Effect.Effect<ReadonlyArray<ProviderSnapshotRow>, ProjectionRepositoryError>;
+  readonly put: (row: ProviderSnapshotRow) => Effect.Effect<void, ProjectionRepositoryError>;
+}
+
+export class ProviderSnapshotStore extends Context.Service<
+  ProviderSnapshotStore,
+  ProviderSnapshotStoreShape
+>()("t3/persistence/Services/HubThreadMachineState/ProviderSnapshotStore") {}
