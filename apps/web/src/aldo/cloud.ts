@@ -291,3 +291,83 @@ export const aldoAuthConnectors = {
   cancel: (sessionId: string) =>
     api<AuthConnectorSession>(`/api/connectors/${sessionId}/cancel`, { method: "POST" }),
 };
+
+// ---------------------------------------------------------------------------
+// Previews, the shared browser and the vault (served by aldod in each sandbox)
+
+export interface AldoPreviewPort {
+  readonly port: number;
+  readonly process: string;
+  readonly command: string;
+}
+
+export interface AldoService {
+  readonly name: string;
+  readonly command: string;
+  readonly cwd: string;
+  readonly running: boolean;
+  readonly restarts: number;
+}
+
+export interface AldoPreviews {
+  readonly running: boolean;
+  readonly ports: ReadonlyArray<AldoPreviewPort>;
+  readonly services: ReadonlyArray<AldoService>;
+}
+
+/** Dev servers listening in a thread's sandbox. Never wakes it. */
+export function fetchAldoPreviews(environmentId: string): Promise<AldoPreviews> {
+  return api<AldoPreviews>(`/api/environments/${threadIdForEnvironment(environmentId)}/previews`);
+}
+
+/** The owner-only link to a port in a thread's sandbox (wakes it when opened). */
+export function aldoPreviewUrl(environmentId: string, port: number): string {
+  return `/p/${threadIdForEnvironment(environmentId)}/${port}`;
+}
+
+/** A signed WebSocket URL for the thread's live browser; AldoApiError 409 while asleep. */
+export async function aldoBrowserUrl(environmentId: string): Promise<string> {
+  const { url } = await api<{ url: string }>(
+    `/api/environments/${threadIdForEnvironment(environmentId)}/browser`,
+    { method: "POST" },
+  );
+  return url;
+}
+
+export interface AldoVaultItem {
+  readonly id: string;
+  readonly kind: "env" | "login";
+  readonly name: string;
+  readonly scope: string;
+  readonly origin: string | null;
+  readonly username: string | null;
+  readonly updated_at: string;
+  readonly last_used_at: string | null;
+}
+
+export const aldoVault = {
+  list: async () => (await api<{ items: AldoVaultItem[] }>("/api/vault")).items,
+  saveVariable: (input: { name: string; value: string; scope: string }) =>
+    api<{ item: AldoVaultItem }>("/api/vault", {
+      method: "POST",
+      body: JSON.stringify({ kind: "env", ...input }),
+    }),
+  saveLogin: (input: {
+    id?: string;
+    label: string;
+    origin: string;
+    username: string;
+    password?: string;
+    scope: string;
+  }) =>
+    api<{ item: AldoVaultItem }>("/api/vault", {
+      method: "POST",
+      body: JSON.stringify({ kind: "login", ...input }),
+    }),
+  remove: (id: string) => api(`/api/vault/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  importDotenv: (scope: string, text: string) =>
+    api<{ saved: string[]; skipped: string[] }>("/api/vault/import", {
+      method: "POST",
+      body: JSON.stringify({ scope, text }),
+    }),
+};

@@ -158,11 +158,8 @@ import {
   setActivePreviewTab,
   useThreadPreviewState,
 } from "../previewStateStore";
-import {
-  isManagedDevPc,
-  isManagedWorkspaceUnavailable,
-  managedWorkspaceBrowserUrl,
-} from "~/managedDevPc";
+import { isManagedDevPc, isManagedWorkspaceUnavailable } from "~/managedDevPc";
+import { hasSharedBrowser } from "~/aldo/sharedBrowser";
 import { previewRuntimeTabId } from "../browser/previewRuntimeTabId";
 import { addBrowserSurface } from "./preview/addBrowserSurface";
 import { closePreviewSession } from "./preview/closePreviewSession";
@@ -3773,7 +3770,7 @@ function ChatViewContent(props: ChatViewProps) {
    * reached from a browser, so a preview surface can never paint there.
    */
   const createWorkspaceBrowserSurface = useCallback(() => {
-    if (!activeThreadRef || !managedWorkspaceBrowserUrl()) return;
+    if (!activeThreadRef || !hasSharedBrowser()) return;
     useRightPanelStore.getState().open(activeThreadRef, "workspaceBrowser");
   }, [activeThreadRef]);
   const addDiffSurface = useCallback(() => {
@@ -7264,7 +7261,7 @@ function ChatViewContent(props: ChatViewProps) {
       </Suspense>
     ) : activeRightPanelSurface?.kind === "workspaceBrowser" ? (
       <Suspense fallback={null}>
-        <WorkspaceBrowserPanel />
+        <WorkspaceBrowserPanel environmentId={activeThreadRef?.environmentId} />
       </Suspense>
     ) : activeRightPanelSurface?.kind === "terminal" ? (
       <PersistentThreadTerminalPanel

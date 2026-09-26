@@ -29,7 +29,8 @@ import type { DesktopPreviewOverlay } from "~/previewStateStore";
 import type { RightPanelSurface } from "~/rightPanelStore";
 import { cn } from "~/lib/utils";
 import { readLocalApi } from "~/localApi";
-import { managedWorkspaceBrowserUrl } from "~/managedDevPc";
+import { hasSharedBrowser } from "~/aldo/sharedBrowser";
+import { isAldoCloud } from "~/aldo/cloud";
 import { Button } from "~/components/ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { Kbd } from "~/components/ui/kbd";
@@ -533,7 +534,7 @@ function surfaceTitle(
     case "agents":
       return "Agents";
     case "workspaceBrowser":
-      return "Workspace browser";
+      return isAldoCloud ? "Browser" : "Workspace browser";
     case "preview": {
       const snapshot = surface.resourceId ? sessions[surface.resourceId] : null;
       if (!snapshot || snapshot.navStatus._tag === "Idle") return "Browser";
@@ -638,10 +639,10 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
     disabledReason: string | null;
     onClick: () => void;
   }> = [
-    ...(props.onAddWorkspaceBrowser && managedWorkspaceBrowserUrl()
+    ...(props.onAddWorkspaceBrowser && hasSharedBrowser()
       ? [
           {
-            label: "Workspace browser",
+            label: isAldoCloud ? "Browser" : "Workspace browser",
             icon: MonitorSmartphone,
             shortcut: "B",
             available: true,
@@ -984,7 +985,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
           <RightPanelEmptyState
             onAddBrowser={props.onAddBrowser}
             onAddWorkspaceBrowser={
-              managedWorkspaceBrowserUrl() ? (props.onAddWorkspaceBrowser ?? null) : null
+              hasSharedBrowser() ? (props.onAddWorkspaceBrowser ?? null) : null
             }
             onAddTerminal={props.onAddTerminal}
             onAddDiff={props.onAddDiff}

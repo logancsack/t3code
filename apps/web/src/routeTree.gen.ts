@@ -16,6 +16,7 @@ import { Route as ConnectRouteImport } from './routes/connect'
 import { Route as ChatRouteImport } from './routes/_chat'
 import { Route as ChatIndexRouteImport } from './routes/_chat.index'
 import { Route as SettingsWorkspaceRouteImport } from './routes/settings.workspace'
+import { Route as SettingsVaultRouteImport } from './routes/settings.vault'
 import { Route as SettingsSourceControlRouteImport } from './routes/settings.source-control'
 import { Route as SettingsProvidersRouteImport } from './routes/settings.providers'
 import { Route as SettingsKeybindingsRouteImport } from './routes/settings.keybindings'
@@ -63,6 +64,11 @@ const ChatIndexRoute = ChatIndexRouteImport.update({
 const SettingsWorkspaceRoute = SettingsWorkspaceRouteImport.update({
   id: '/workspace',
   path: '/workspace',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsVaultRoute = SettingsVaultRouteImport.update({
+  id: '/vault',
+  path: '/vault',
   getParentRoute: () => SettingsRoute,
 } as any)
 const SettingsSourceControlRoute = SettingsSourceControlRouteImport.update({
@@ -155,6 +161,7 @@ export interface FileRoutesByFullPath {
   '/settings/keybindings': typeof SettingsKeybindingsRoute
   '/settings/providers': typeof SettingsProvidersRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
+  '/settings/vault': typeof SettingsVaultRoute
   '/settings/workspace': typeof SettingsWorkspaceRoute
   '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/draft/$draftId': typeof ChatDraftDraftIdRoute
@@ -176,6 +183,7 @@ export interface FileRoutesByTo {
   '/settings/keybindings': typeof SettingsKeybindingsRoute
   '/settings/providers': typeof SettingsProvidersRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
+  '/settings/vault': typeof SettingsVaultRoute
   '/settings/workspace': typeof SettingsWorkspaceRoute
   '/': typeof ChatIndexRoute
   '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
@@ -200,6 +208,7 @@ export interface FileRoutesById {
   '/settings/keybindings': typeof SettingsKeybindingsRoute
   '/settings/providers': typeof SettingsProvidersRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
+  '/settings/vault': typeof SettingsVaultRoute
   '/settings/workspace': typeof SettingsWorkspaceRoute
   '/_chat/': typeof ChatIndexRoute
   '/_chat/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
@@ -225,6 +234,7 @@ export interface FileRouteTypes {
     | '/settings/keybindings'
     | '/settings/providers'
     | '/settings/source-control'
+    | '/settings/vault'
     | '/settings/workspace'
     | '/$environmentId/$threadId'
     | '/draft/$draftId'
@@ -246,6 +256,7 @@ export interface FileRouteTypes {
     | '/settings/keybindings'
     | '/settings/providers'
     | '/settings/source-control'
+    | '/settings/vault'
     | '/settings/workspace'
     | '/'
     | '/$environmentId/$threadId'
@@ -269,6 +280,7 @@ export interface FileRouteTypes {
     | '/settings/keybindings'
     | '/settings/providers'
     | '/settings/source-control'
+    | '/settings/vault'
     | '/settings/workspace'
     | '/_chat/'
     | '/_chat/$environmentId/$threadId'
@@ -334,6 +346,13 @@ declare module '@tanstack/react-router' {
       path: '/workspace'
       fullPath: '/settings/workspace'
       preLoaderRoute: typeof SettingsWorkspaceRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/vault': {
+      id: '/settings/vault'
+      path: '/vault'
+      fullPath: '/settings/vault'
+      preLoaderRoute: typeof SettingsVaultRouteImport
       parentRoute: typeof SettingsRoute
     }
     '/settings/source-control': {
@@ -463,6 +482,7 @@ interface SettingsRouteChildren {
   SettingsKeybindingsRoute: typeof SettingsKeybindingsRoute
   SettingsProvidersRoute: typeof SettingsProvidersRoute
   SettingsSourceControlRoute: typeof SettingsSourceControlRoute
+  SettingsVaultRoute: typeof SettingsVaultRoute
   SettingsWorkspaceRoute: typeof SettingsWorkspaceRoute
 }
 
@@ -476,6 +496,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsKeybindingsRoute: SettingsKeybindingsRoute,
   SettingsProvidersRoute: SettingsProvidersRoute,
   SettingsSourceControlRoute: SettingsSourceControlRoute,
+  SettingsVaultRoute: SettingsVaultRoute,
   SettingsWorkspaceRoute: SettingsWorkspaceRoute,
 }
 
