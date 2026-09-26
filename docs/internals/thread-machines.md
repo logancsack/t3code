@@ -348,6 +348,35 @@ mode only through the `serverModeHooks.ts` references (deterministic ingestion i
 behavior. `t3 runner` is composed in `runner/RunnerServer.ts` without orchestration,
 projections or the client API.
 
+## Web client
+
+The web client decides hub mode per environment, at render time, from
+`capabilities.threadMachines` (`apps/web/src/hubMode.ts`); before a managed primary's config
+arrives it trusts the managed bootstrap (`serverMode: "hub"`) or the cached environment
+descriptor, so a hub never flashes local-checkout controls. On a hub:
+
+- New threads have no local/worktree choice. A draft shows "New machine" and a base branch
+  listed from the repository (`vcs.listRefs` on the project root); with none picked it sends
+  `prepareWorktree.baseBranch: "HEAD"`. Drafts never ask the hub for status, files,
+  terminals or scripts, since their machine does not exist yet. Blank projects send no
+  `prepareWorktree`.
+- Projects are added as repositories (URL, provider lookup, or the GitHub list) or blank
+  projects: `project.create` with `repositoryIdentity` and the virtual root, deduplicated by
+  remote. Nothing is cloned by the client.
+- The thread shell's `machine` drives a header status pill, the timeline's waking row
+  (with the platform's detail), the composer notice (asleep, or failed with a retry that
+  re-drives the failed turn), and the sidebar (starting reads as working, failed as failed).
+  `thread-machine.*` activities stay out of the work log unless they are errors.
+- Surfaces that need a checkout adapt: no Open In, Copy path, t3.json reads or new-thread
+  workspace settings; files show "Machine asleep" while the machine sleeps; the diff panel
+  opens on the latest captured turn; previews and the machine browser use the bootstrap's
+  per-thread templates (`threadPreviewUrlTemplate`, `threadBrowserUrlTemplate`); provider
+  sign-in opens the session's `workspaceBrowserUrl` when present. The managed workspace
+  status, `/settings/workspace` and the durable wake queue are skipped.
+
+An explicit wake (`threadMachines.wake`) is not wired yet: the client hides that affordance
+(`components/hub/threadMachineActions.ts`).
+
 ## Gaps
 
 Not available on a hub (typed errors, never the hub's disk): filesystem browsing for the
@@ -360,9 +389,9 @@ and pull-request listing (which needs provider credentials).
 
 Not built yet:
 
-- No client records a project's repository identity; the platform (or the import, from a
-  checkout) must dispatch `project.create` / `project.meta.update` with `repositoryIdentity`.
-  A hub without a database records none.
+- Only the web client's add-repository flow and the import (from a checkout) record a
+  project's repository identity (`project.create` / `project.meta.update` with
+  `repositoryIdentity`). A hub without a database records none.
 - A hub behind a runner's `firstRetainedSequence` (more than 200,000 unacknowledged events)
   only logs the gap; resynchronizing from `readThread` is future work.
 - Attachment bytes live in `bytea` within the upload limits; object storage can replace the
