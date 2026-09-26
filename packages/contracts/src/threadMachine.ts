@@ -68,7 +68,7 @@ export const ThreadMachineControlErrorReason = Schema.Literals([
   "unsupported",
   /** The thread does not exist, is archived, or is reserved. */
   "not-found",
-  /** A turn is running on the machine; it cannot be released now. */
+  /** A turn, a terminal, or another call is using the machine; it cannot be released now. */
   "busy",
   /** The machine directory or the machine failed; `state` and `detail` say how. */
   "unavailable",

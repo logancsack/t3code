@@ -139,7 +139,8 @@ export interface RunnerConnectionPoolShape {
   readonly release: (threadId: ThreadId) => Effect.Effect<void>;
   /**
    * Closes the connection now and tells the directory the machine is idle,
-   * unless a busy mark (a running turn) holds it. Never wakes a machine.
+   * unless a busy mark (a running turn) or an in-flight call or stream holds
+   * it: closing would cut that work off. Never wakes a machine.
    */
   readonly idle: (threadId: ThreadId) => Effect.Effect<"idle" | "busy">;
   /**
@@ -735,7 +736,8 @@ export const make = (options: RunnerConnectionPoolOptions = {}) =>
         }),
       idle: (threadId) =>
         Effect.gen(function* () {
-          if ((activity.get(threadId)?.busy.size ?? 0) > 0) return "busy" as const;
+          const entry = activity.get(threadId);
+          if (entry && (entry.busy.size > 0 || entry.inFlight > 0)) return "busy" as const;
           const slot = slots.get(threadId);
           if (slot) yield* closeSlot(threadId, slot, true);
           yield* reportIdle(threadId);

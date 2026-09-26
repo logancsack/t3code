@@ -206,9 +206,9 @@ describe("hub provider snapshots", () => {
                   instances: Object.keys(instances).map((id) => ProviderInstanceId.make(id)),
                 };
               }),
-            "runner.provider.getCapabilities": () =>
+            "runner.provider.getCapabilities": ({ refresh }) =>
               Effect.sync(() => {
-                calls.push("getCapabilities");
+                calls.push(refresh ? "getCapabilities refresh" : "getCapabilities");
                 return {
                   snapshot: { ...reported("authenticated"), instanceId: claudeWork },
                   sessionModelSwitch: "in-session" as const,
@@ -269,7 +269,7 @@ describe("hub provider snapshots", () => {
         yield* Effect.repeat(instance.snapshot.getSnapshot, {
           until: (snapshot) => snapshot.auth.status === "authenticated",
         }).pipe(Effect.timeout("5 seconds"));
-        expect(calls).toEqual(["configure", "getCapabilities"]);
+        expect(calls).toEqual(["configure", "getCapabilities refresh"]);
 
         yield* instance.adapter.startSession({
           threadId,
@@ -277,7 +277,12 @@ describe("hub provider snapshots", () => {
           providerInstanceId: claudeWork,
           runtimeMode: "full-access",
         });
-        expect(calls).toEqual(["configure", "getCapabilities", "configure", "startSession"]);
+        expect(calls).toEqual([
+          "configure",
+          "getCapabilities refresh",
+          "configure",
+          "startSession",
+        ]);
         expect(pushed[1]).toEqual({
           claude_work: {
             driver: "claudeAgent",

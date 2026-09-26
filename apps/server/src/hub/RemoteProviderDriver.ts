@@ -596,7 +596,9 @@ const makeRemoteSnapshot = (input: {
         if (!(yield* reportsFor(connection))) return;
         const pushed = yield* context.pushSettings(connection);
         const hosted = Option.getOrElse(pushed, () => connection.hello.instances);
-        if (hosted.includes(context.instanceId)) yield* fetchFrom(connection, false, true);
+        // Probe: a runner that just booted, or an instance the push just
+        // rebuilt, would otherwise report its pending, unchecked snapshot.
+        if (hosted.includes(context.instanceId)) yield* fetchFrom(connection, true, true);
       }),
     );
 

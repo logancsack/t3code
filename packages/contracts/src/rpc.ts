@@ -527,7 +527,7 @@ export const WsThreadMachinesWakeRpc = Rpc.make(WS_METHODS.threadMachinesWake, {
 /**
  * Hub mode: releases the hub's hold on a thread's machine (closes its runner
  * connection and reports it idle); the platform pauses it after its idle
- * delay. Refused with `busy` while a turn runs.
+ * delay. Refused with `busy` while a turn, a terminal, or another call uses it.
  */
 export const WsThreadMachinesPauseRpc = Rpc.make(WS_METHODS.threadMachinesPause, {
   payload: ThreadMachineControlInput,

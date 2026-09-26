@@ -9,7 +9,8 @@
  *   the wake continues in the background and is visible on the thread shell.
  * - `pause` releases the hub's hold: it closes the runner connection and
  *   reports the machine idle, after which the platform pauses it. A running
- *   turn refuses with `busy`.
+ *   turn, or any call or stream still using the machine (a title being
+ *   generated, an attached terminal), refuses with `busy`.
  *
  * Only existing, unarchived threads are controlled; the provider sign-in
  * machine is managed by the sign-in flow.
@@ -97,7 +98,7 @@ export const make = Effect.gen(function* () {
         return yield* new ThreadMachineControlError({
           operation: "threadMachines.pause",
           reason: "busy",
-          detail: "A turn is running on this thread's machine.",
+          detail: "This thread's machine is in use (a turn, a terminal, or another call).",
         });
       }
       return current(threadId);

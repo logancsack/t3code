@@ -2,6 +2,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it } from "@effect/vitest";
 import { type OrchestrationThreadShell, ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import { describe, expect } from "vite-plus/test";
@@ -96,12 +97,22 @@ describe("thread machine controls", () => {
     }).pipe(Effect.scoped, Effect.provide(StoreLayer)),
   );
 
-  it.live("refuses to release a machine while a turn runs", () =>
+  it.live("refuses to release a machine while a turn or a call uses it", () =>
     Effect.gen(function* () {
       const { controls, pool } = yield* setup((url) => ({ state: "running", runnerUrl: url }));
       yield* pool.setBusy(threadId, "turn", true);
       const error = yield* controls.pause(threadId).pipe(Effect.flip);
       expect(error.reason).toBe("busy");
+      yield* pool.setBusy(threadId, "turn", false);
+
+      // A call still using the machine (a title being generated) holds it too.
+      const call = yield* pool
+        .use(threadId, { wake: true, operation: "test" }, () => Effect.never)
+        .pipe(Effect.forkChild);
+      yield* Effect.sleep("50 millis");
+      expect((yield* controls.pause(threadId).pipe(Effect.flip)).reason).toBe("busy");
+      yield* Fiber.interrupt(call);
+      expect((yield* controls.pause(threadId))?.state).toBe("running");
     }).pipe(Effect.scoped, Effect.provide(StoreLayer)),
   );
 
