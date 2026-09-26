@@ -22,12 +22,14 @@ import { LandingDemoPreviewPanel } from "~/landingDemo/PreviewPanel";
  * grant URL already carries `resize=remote`, so the remote display follows the
  * size of this frame and a phone gets a phone-shaped screen rather than a
  * scaled-down desktop.
+ *
+ * On a hub each thread's machine has its own browser, so the thread picks it.
  */
-export function WorkspaceBrowserPanel() {
+export function WorkspaceBrowserPanel({ threadId }: { readonly threadId?: string } = {}) {
   if (isLandingDemo()) {
     return <LandingDemoPreviewPanel />;
   }
-  const url = managedWorkspaceBrowserUrl();
+  const url = managedWorkspaceBrowserUrl(threadId);
   // Remounting the frame is the only way to force a reconnect from here: the
   // noVNC session lives inside the iframe's own document.
   const [reloadKey, setReloadKey] = useState(0);

@@ -186,6 +186,8 @@ import {
 } from "@t3tools/client-runtime/state/subagentRuntime";
 import { DiffWorkerPoolProvider } from "./DiffWorkerPoolProvider";
 import { BranchToolbar } from "./BranchToolbar";
+import { useHubThreadContext } from "./hub/useHubThreadContext";
+import { ThreadMachineAsleepPanel } from "./ThreadMachineStatus";
 import { resolveShortcutCommand, shortcutLabelForCommand } from "../keybindings";
 import ThreadTerminalDrawer from "./ThreadTerminalDrawer";
 import {
@@ -1893,6 +1895,13 @@ function ChatViewContent(props: ChatViewProps) {
     [activeThread?.environmentId, activeThread?.projectId],
   );
   const activeProject = useProject(activeProjectRef);
+  const hubThread = useHubThreadContext({
+    environmentId: activeThread?.environmentId ?? environmentId,
+    threadId: activeThread?.id ?? null,
+    isServerThread,
+    projectRepositoryIdentity: activeProject?.repositoryIdentity,
+    latestTurn: activeLatestTurn,
+  });
   const handleNewThreadInActiveProject = useCallback(() => {
     startNewThreadForProject(activeProjectRef, handleNewThread);
   }, [activeProjectRef, handleNewThread]);
@@ -2924,12 +2933,13 @@ function ChatViewContent(props: ChatViewProps) {
     return byUserMessageId;
   }, [inferredCheckpointTurnCountByTurnId, timelineEntries, turnDiffSummaryByAssistantMessageId]);
 
-  const gitCwd = activeProject
-    ? projectScriptCwd({
-        project: { cwd: activeProject.workspaceRoot },
-        worktreePath: activeThread?.worktreePath ?? null,
-      })
-    : null;
+  const gitCwd =
+    activeProject && !hubThread.draftWithoutMachine
+      ? projectScriptCwd({
+          project: { cwd: activeProject.workspaceRoot },
+          worktreePath: activeThread?.worktreePath ?? null,
+        })
+      : null;
   const gitStatusCwd = activeThread?.worktreePath ?? gitCwd;
   const gitStatusQuery = useEnvironmentQuery(
     gitStatusCwd === null
@@ -3066,10 +3076,11 @@ function ChatViewContent(props: ChatViewProps) {
   const activeTerminalLaunchContext =
     terminalUiLaunchContext?.threadId === activeThreadId ? terminalUiLaunchContext : null;
   // Default true while loading to avoid toolbar flicker.
-  const isGitRepo = gitStatusQuery.data?.isRepo ?? true;
+  const isGitRepo = hubThread.isGitRepoOverride ?? gitStatusQuery.data?.isRepo ?? true;
   const showComposerContextStrip = shouldShowComposerContextStrip({
     hasActiveProject: activeProject !== null,
-    isGitRepo,
+    // A hub draft always says where it will run, repository or not.
+    isGitRepo: isGitRepo || hubThread.draftWithoutMachine,
     showEnvironmentIndicator: showComposerEnvironmentIndicator,
   });
   const initialDiffPanelGitScope =
@@ -3273,13 +3284,14 @@ function ChatViewContent(props: ChatViewProps) {
     if (!activeThreadRef) return;
     const nextOpen = !terminalUiState.terminalOpen;
     if (nextOpen && terminalUiState.terminalIds.length === 0) {
-      if (!activeThreadId || !activeProject) {
+      if (!activeThreadId || !activeProject || !hubThread.workspaceAvailable) {
         return;
       }
       const cwdForOpen = gitCwd ?? activeProject.workspaceRoot;
       if (!cwdForOpen) {
         return;
       }
+      hubThread.announceMachineWake();
       const terminalId = nextTerminalId(allocatableActiveTerminalIds);
       storeEnsureTerminal(activeThreadRef, terminalId, { open: true });
       void openTerminal({
@@ -3306,6 +3318,8 @@ function ChatViewContent(props: ChatViewProps) {
     allocatableActiveTerminalIds,
     environmentId,
     gitCwd,
+    hubThread.announceMachineWake,
+    hubThread.workspaceAvailable,
     openTerminal,
     setTerminalOpen,
     storeEnsureTerminal,
@@ -3737,7 +3751,7 @@ function ChatViewContent(props: ChatViewProps) {
    * reached from a browser, so a preview surface can never paint there.
    */
   const createWorkspaceBrowserSurface = useCallback(() => {
-    if (!activeThreadRef || !managedWorkspaceBrowserUrl()) return;
+    if (!activeThreadRef || !managedWorkspaceBrowserUrl(activeThreadRef.threadId)) return;
     useRightPanelStore.getState().open(activeThreadRef, "workspaceBrowser");
   }, [activeThreadRef]);
   const addDiffSurface = useCallback(() => {
@@ -3826,6 +3840,7 @@ function ChatViewContent(props: ChatViewProps) {
   }, [activeThreadRef]);
   const addTerminalSurface = useCallback(() => {
     if (!activeThreadRef || !activeThreadId || !activeProject) return;
+    hubThread.announceMachineWake();
     const cwd = gitCwd ?? activeProject.workspaceRoot;
     const terminalId = nextTerminalId(allocatableActiveTerminalIds);
     useRightPanelStore.getState().openTerminal(activeThreadRef, terminalId);
@@ -3850,6 +3865,7 @@ function ChatViewContent(props: ChatViewProps) {
     activeThreadWorktreePath,
     allocatableActiveTerminalIds,
     gitCwd,
+    hubThread.announceMachineWake,
     openTerminal,
   ]);
   const splitPanelTerminal = useCallback(
@@ -4640,19 +4656,23 @@ function ChatViewContent(props: ChatViewProps) {
     activeThread.worktreePath === null &&
     !envLocked,
   );
-  const envMode: DraftThreadEnvMode = canOverrideServerThreadEnvMode
-    ? (pendingServerThreadEnvMode ?? draftThread?.envMode ?? derivedEnvMode)
-    : derivedEnvMode;
+  const envMode: DraftThreadEnvMode =
+    hubThread.forcedEnvMode ??
+    (canOverrideServerThreadEnvMode
+      ? (pendingServerThreadEnvMode ?? draftThread?.envMode ?? derivedEnvMode)
+      : derivedEnvMode);
   const activeThreadBranch =
     canOverrideServerThreadEnvMode && pendingServerThreadBranch !== undefined
       ? pendingServerThreadBranch
       : (activeThread?.branch ?? null);
-  const startFromOrigin = isLocalDraftThread
-    ? (draftThread?.startFromOrigin ?? false)
-    : canOverrideServerThreadEnvMode
-      ? (pendingServerThreadStartFromOriginByThreadId[activeThread?.id ?? ""] ??
-        primaryServerSettings.newWorktreesStartFromOrigin)
-      : false;
+  const startFromOrigin = hubThread.hub
+    ? false
+    : isLocalDraftThread
+      ? (draftThread?.startFromOrigin ?? false)
+      : canOverrideServerThreadEnvMode
+        ? (pendingServerThreadStartFromOriginByThreadId[activeThread?.id ?? ""] ??
+          primaryServerSettings.newWorktreesStartFromOrigin)
+        : false;
   const sendEnvMode = resolveSendEnvMode({
     requestedEnvMode: envMode,
     isGitRepo,
@@ -5291,9 +5311,11 @@ function ChatViewContent(props: ChatViewProps) {
       resumeCompactionBannerItem === null ? [] : [resumeCompactionBannerItem];
     const wokeThreadItems = wokeThreadBannerItem === null ? [] : [wokeThreadBannerItem];
     const parkedThreadItems = parkedThreadBannerItem === null ? [] : [parkedThreadBannerItem];
+    const threadMachineItems = hubThread.machineBannerItem ? [hubThread.machineBannerItem] : [];
     if (!localCheckoutBranchMismatch || !showBranchMismatchBanner || !activeBranchMismatchKey) {
       return [
         ...systemComposerBannerItems,
+        ...threadMachineItems,
         ...backgroundLivenessItems,
         ...resumeCompactionItems,
         ...wokeThreadItems,
@@ -5302,6 +5324,7 @@ function ChatViewContent(props: ChatViewProps) {
     }
     return [
       ...systemComposerBannerItems,
+      ...threadMachineItems,
       ...backgroundLivenessItems,
       ...resumeCompactionItems,
       ...wokeThreadItems,
@@ -5350,6 +5373,7 @@ function ChatViewContent(props: ChatViewProps) {
     activeBranchMismatchKey,
     backgroundLivenessBannerItem,
     handleRestoreThreadBranch,
+    hubThread.machineBannerItem,
     isRestoringThreadBranch,
     localCheckoutBranchMismatch,
     parkedThreadBannerItem,
@@ -6011,14 +6035,14 @@ function ChatViewContent(props: ChatViewProps) {
     const isFirstMessage = !isServerThread || activeThread.messages.length === 0;
     const baseBranchForWorktree =
       isFirstMessage && sendEnvMode === "worktree" && !activeThread.worktreePath
-        ? activeThreadBranch
+        ? (activeThreadBranch ?? hubThread.defaultBaseRef)
         : null;
 
     // In worktree mode, require an explicit base branch so we don't silently
     // fall back to local execution when branch selection is missing.
     const shouldCreateWorktree =
       isFirstMessage && sendEnvMode === "worktree" && !activeThread.worktreePath;
-    if (shouldCreateWorktree && !activeThreadBranch) {
+    if (shouldCreateWorktree && !baseBranchForWorktree) {
       setThreadError(threadIdForSend, "Select a base branch before sending in New worktree mode.");
       return;
     }
@@ -7170,7 +7194,7 @@ function ChatViewContent(props: ChatViewProps) {
 
   const panelToggleControls = (
     <PanelLayoutControls
-      terminalAvailable={activeProject !== null}
+      terminalAvailable={activeProject !== null && hubThread.workspaceAvailable}
       terminalOpen={terminalUiState.terminalOpen}
       terminalShortcutLabel={shortcutLabelForCommand(keybindings, "terminal.toggle")}
       rightPanelAvailable={activeProject !== null}
@@ -7220,7 +7244,7 @@ function ChatViewContent(props: ChatViewProps) {
       </Suspense>
     ) : activeRightPanelSurface?.kind === "workspaceBrowser" ? (
       <Suspense fallback={null}>
-        <WorkspaceBrowserPanel />
+        <WorkspaceBrowserPanel threadId={activeThreadRef.threadId} />
       </Suspense>
     ) : activeRightPanelSurface?.kind === "terminal" ? (
       <PersistentThreadTerminalPanel
@@ -7297,6 +7321,10 @@ function ChatViewContent(props: ChatViewProps) {
         threadId={activeThreadRef?.threadId ?? null}
       />
     ) : (activeRightPanelSurface?.kind === "files" || activeRightPanelSurface?.kind === "file") &&
+      hubThread.machineUnavailable &&
+      hubThread.machineView ? (
+      <ThreadMachineAsleepPanel view={hubThread.machineView} />
+    ) : (activeRightPanelSurface?.kind === "files" || activeRightPanelSurface?.kind === "file") &&
       activeProject &&
       activeWorkspaceRoot ? (
       <Suspense fallback={null}>
@@ -7361,7 +7389,9 @@ function ChatViewContent(props: ChatViewProps) {
             activeProjectCwd={activeProject?.workspaceRoot ?? null}
             activeProjectFaviconPath={activeProject?.faviconPath ?? null}
             openInCwd={gitCwd}
-            activeProjectScripts={activeProject?.scripts}
+            activeProjectScripts={
+              hubThread.draftWithoutMachine ? undefined : activeProject?.scripts
+            }
             preferredScriptId={
               activeProject ? (lastInvokedScriptByProjectId[activeProject.id] ?? null) : null
             }
@@ -7440,10 +7470,14 @@ function ChatViewContent(props: ChatViewProps) {
                 onOpenAgents={addAgentsSurface}
                 key={activeThread.id}
                 isWorking={isWorking}
-                isWakingWorkspace={isWakingManagedWorkspace}
-                workingStepLabel={workingStepLabel}
+                isWakingWorkspace={
+                  isWakingManagedWorkspace ||
+                  hubThread.machineTransitional ||
+                  (hubThread.hub && isPreparingWorktree)
+                }
+                workingStepLabel={hubThread.machineDetail ?? workingStepLabel}
                 activeTurnInProgress={isWorking || !latestTurnSettled}
-                isPreparingWorktree={isPreparingWorktree}
+                isPreparingWorktree={isPreparingWorktree && !hubThread.hub}
                 activeTurnStartedAt={activeWorkStartedAt}
                 activeToolWait={activeToolWait}
                 listRef={legendListRef}
@@ -7654,7 +7688,7 @@ function ChatViewContent(props: ChatViewProps) {
                                 onEnvModeChange={onEnvModeChange}
                                 startFromOrigin={startFromOrigin}
                                 onStartFromOriginChange={onStartFromOriginChange}
-                                {...(canOverrideServerThreadEnvMode
+                                {...(canOverrideServerThreadEnvMode || hubThread.forcedEnvMode
                                   ? { effectiveEnvModeOverride: envMode }
                                   : {})}
                                 {...(canOverrideServerThreadEnvMode
@@ -7666,7 +7700,7 @@ function ChatViewContent(props: ChatViewProps) {
                                   : {})}
                                 envLocked={envLocked}
                                 onComposerFocusRequest={scheduleComposerFocus}
-                                {...(canCheckoutPullRequestIntoThread
+                                {...(canCheckoutPullRequestIntoThread && !hubThread.hub
                                   ? { onCheckoutPullRequestRequest: openPullRequestDialog }
                                   : {})}
                                 {...(hasMultipleEnvironments ? { onEnvironmentChange } : {})}
@@ -7784,16 +7818,18 @@ function ChatViewContent(props: ChatViewProps) {
           onCloseAllSurfaces={closeAllRightPanelSurfaces}
           onCopyFilePath={copyRightPanelFilePath}
           onAddBrowser={createBrowserSurface}
-          onAddWorkspaceBrowser={createWorkspaceBrowserSurface}
+          onAddWorkspaceBrowser={
+            hubThread.workspaceAvailable ? createWorkspaceBrowserSurface : undefined
+          }
           onAddTerminal={addTerminalSurface}
           onAddDiff={addDiffSurface}
           onAddFiles={addFilesSurface}
           onAddPullRequest={addPullRequestSurface}
           onAddAgents={addAgentsSurface}
           browserAvailable={isPreviewSupportedInRuntime()}
-          terminalAvailable={activeProject !== null}
+          terminalAvailable={activeProject !== null && hubThread.workspaceAvailable}
           diffAvailable={isServerThread && isGitRepo}
-          filesAvailable={activeProject !== null}
+          filesAvailable={activeProject !== null && hubThread.workspaceAvailable}
           pullRequestAvailable={pullRequestSurfaceAvailable}
           agentsAvailable
           pullRequestStatuses={pullRequestTabStatuses}
@@ -7825,16 +7861,18 @@ function ChatViewContent(props: ChatViewProps) {
             onCloseAllSurfaces={closeAllRightPanelSurfaces}
             onCopyFilePath={copyRightPanelFilePath}
             onAddBrowser={createBrowserSurface}
-            onAddWorkspaceBrowser={createWorkspaceBrowserSurface}
+            onAddWorkspaceBrowser={
+              hubThread.workspaceAvailable ? createWorkspaceBrowserSurface : undefined
+            }
             onAddTerminal={addTerminalSurface}
             onAddDiff={addDiffSurface}
             onAddFiles={addFilesSurface}
             onAddPullRequest={addPullRequestSurface}
             onAddAgents={addAgentsSurface}
             browserAvailable={isPreviewSupportedInRuntime()}
-            terminalAvailable={activeProject !== null}
+            terminalAvailable={activeProject !== null && hubThread.workspaceAvailable}
             diffAvailable={isServerThread && isGitRepo}
-            filesAvailable={activeProject !== null}
+            filesAvailable={activeProject !== null && hubThread.workspaceAvailable}
             pullRequestAvailable={pullRequestSurfaceAvailable}
             agentsAvailable
             pullRequestStatuses={pullRequestTabStatuses}

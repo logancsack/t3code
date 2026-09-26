@@ -36,6 +36,16 @@ describe("buildThreadActionMenuItems", () => {
     ).toEqual(["rename", "mark-unread", "copy", "project-settings", "archive", "delete"]);
   });
 
+  it("drops Copy path for threads whose checkout lives on their own machine", () => {
+    expect(allIds(baseState)).toContain("copy-path");
+    const hubIds = allIds({
+      ...baseState,
+      supports: { ...baseState.supports, workspacePath: false },
+    });
+    expect(hubIds).not.toContain("copy-path");
+    expect(hubIds).toContain("copy-thread-id");
+  });
+
   it("groups project settings with utility actions before archive", () => {
     const items = buildThreadActionMenuItems(baseState);
     const copyIndex = items.findIndex((item) => item.id === "copy");

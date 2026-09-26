@@ -34,6 +34,7 @@ import { vcsEnvironment } from "../state/vcs";
 import { cn } from "../lib/utils";
 import { parsePullRequestReference } from "../pullRequestReference";
 import { getSourceControlPresentation } from "../sourceControlPresentation";
+import { useIsHubEnvironment } from "../hubMode";
 import {
   deriveLocalBranchNameFromRemoteRef,
   resolveBranchTriggerLabel,
@@ -211,8 +212,11 @@ export function BranchToolbarBranchSelector({
   const [branchQuery, setBranchQuery] = useState("");
   const deferredBranchQuery = useDeferredValue(branchQuery);
 
+  // A hub draft has no checkout yet; its refs come from the repository itself.
+  const isHub = useIsHubEnvironment(environmentId);
+  const isHubDraft = isHub && serverThread === null;
   const branchStatusQuery = useEnvironmentQuery(
-    branchCwd === null
+    branchCwd === null || isHubDraft
       ? null
       : vcsEnvironment.status({
           environmentId,
@@ -604,13 +608,16 @@ export function BranchToolbarBranchSelector({
     void branchListRef.current?.scrollToOffset?.({ offset: 0, animated: false });
   }, [deferredTrimmedBranchQuery, isBranchMenuOpen]);
 
-  const triggerLabel = resolveBranchTriggerLabel({
-    activeWorktreePath,
-    effectiveEnvMode,
-    resolvedActiveBranch,
-    resolvedActiveBranchIsRemote,
-    startFromOrigin,
-  });
+  const triggerLabel =
+    isHubDraft && resolvedActiveBranch === null
+      ? "From default branch"
+      : resolveBranchTriggerLabel({
+          activeWorktreePath,
+          effectiveEnvMode,
+          resolvedActiveBranch,
+          resolvedActiveBranchIsRemote,
+          startFromOrigin: startFromOrigin && !isHub,
+        });
 
   // PR pill shown next to the branch selector when the active branch has one.
   const branchPr = resolveThreadPr({
@@ -835,7 +842,7 @@ export function BranchToolbarBranchSelector({
               />
             </ComboboxListVirtualized>
           </div>
-          {isSelectingWorktreeBase ? (
+          {isSelectingWorktreeBase && !isHub ? (
             <Tooltip>
               <TooltipTrigger
                 render={
