@@ -30,7 +30,7 @@ checkout path. A runner never persists orchestration state.
 | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `T3CODE_SERVER_MODE=hub`                 | Enables hub mode                                                                                                                                                                |
 | `T3CODE_HUB_DATABASE_URL`                | Postgres URL of the hub schema, for a role without `BYPASSRLS`. libpq's `sslrootcert=system` is accepted. Without it the hub persists to SQLite (tests, development)            |
-| `T3CODE_HUB_DATABASE_ADMIN_URL`          | Optional; the schema owner, used only to apply hub migrations and grant the runtime role. Defaults to the runtime URL                                                           |
+| `T3CODE_HUB_DATABASE_ADMIN_URL`          | Optional; the schema owner, used only by `t3 hub migrate` (see Operations). Tenant processes never get it; a hub given it (development, tests) migrates at startup              |
 | `T3CODE_HUB_TENANT_ID`                   | The Aldo user ID whose rows this process owns; one hub process serves one user. Required with a database URL                                                                    |
 | `T3CODE_HUB_SECRET_KEY`                  | Base64 32-byte key encrypting the tenant's secrets at rest. Required with a database URL                                                                                        |
 | `T3CODE_HUB_MACHINES_URL`                | Base URL of the machine directory (served by the platform host process)                                                                                                         |
@@ -115,6 +115,7 @@ the control plane; see `docs/hub-host.md` in the remote-dev repository):
 ```
 GET    /repositories/refs?url=<repository URL>  → { defaultBranch, refs: [{ name, sha }], truncated }
 GET    /provider-homes                          → { providers: [{ provider, version, updatedAt }] }
+POST   /provider-homes/{provider}/sign-in       → 201 { provider, epoch, expiresAt }   open a sign-in intent
 DELETE /provider-homes/{provider}               → { provider, deleted }
 ```
 
@@ -365,8 +366,12 @@ auth connector on the machine of the reserved thread `aldo-provider-sign-in`
 1. `start` answers at once with `status: "starting"`, `stage: "preparing"`, message
    "Starting a machine for sign-in…" and the flow the method will use. In the background
    the hub reads the provider's stored sign-in version, ensures and wakes the sign-in
-   machine, pushes the instance's settings, and starts the connector there
-   (`runner.auth.start`). The session then mirrors the runner's (prompts, verification URLs,
+   machine, pushes the instance's settings, opens the platform's sign-in intent
+   (`POST {T3CODE_HUB_MACHINES_URL}/provider-homes/{provider}/sign-in` →
+   `{ provider, epoch, expiresAt }`, open for 30 minutes; only a login the sign-in machine
+   writes after it is stored, because the supervisor presents the epoch when it creates the
+   archive), and only then starts the connector there (`runner.auth.start`). A refused
+   intent fails the session with a visible message and never runs the login. The session then mirrors the runner's (prompts, verification URLs,
    codes, fields) under the hub's session id; `submit` and `cancel` are forwarded. Flows that
    finish in a browser on the machine (`flow: "browser"`) carry `workspaceBrowserUrl`
    (`T3CODE_HUB_THREAD_BROWSER_URL_TEMPLATE` with the sign-in thread).
@@ -378,6 +383,14 @@ auth connector on the machine of the reserved thread `aldo-provider-sign-in`
 3. Once no sign-in is active the sign-in machine is reported idle. The remote provider
    driver refuses agent sessions on that thread, and runners serve `runner.auth.*` only when
    bound to it.
+
+Machines sync only each provider's login file (`claude` `.claude/.credentials.json`,
+`codex` `.codex/auth.json`, `opencode` `.local/share/opencode/auth.json`, `grok`
+`.grok/auth.json`, `cursor` `.config/cursor/auth.json`, `prime` `.prime/agent/auth.json`,
+`muse` `.config/muse/auth.json`). Nothing else a CLI keeps in its home (settings, hooks,
+skills, MCP configuration) reaches thread machines, so T3 never relies on it: user-level
+provider configuration comes from the hub's provider instance settings, which the hub
+pushes to each machine (`runner.provider.configure`).
 
 Connectors map to provider homes as `claude`→`claude`, `codex`→`codex`, `opencode`→`opencode`,
 `grok`→`grok`, `cursor`→`cursor`, `prime-agent`→`prime`, `muse`→`muse`. Source-control
@@ -457,12 +470,36 @@ runner, so a hub on a fresh base directory still sends them.
 
 **Migrations.** Hub migrations are numbered entries in
 `apps/server/src/persistence/Postgres/migrations/index.ts`: 001–049 for hub persistence,
-050–099 for thread-machine state (050 and 051 today). A hub applies pending ones at startup with
-`T3CODE_HUB_DATABASE_ADMIN_URL` (or the runtime URL), each in its own transaction under a
-transaction-scoped advisory lock, recorded in `hub_schema_migrations`. They are applied by id,
-not list position, so separately owned ranges can land in any order. Every new tenant table
-leads its keys and indexes with `user_id` and enables `hubTenantPolicyStatements` (001).
-Keep migrations expand/contract compatible: an older hub may still be running.
+050–099 for thread-machine state (050 and 051 today). They are applied by
+`t3 hub migrate`, each in its own transaction under a transaction-scoped advisory lock,
+recorded in `hub_schema_migrations`, by id rather than list position, so separately owned
+ranges can land in any order. Every new tenant table leads its keys and indexes with
+`user_id` and enables `hubTenantPolicyStatements` (001). Keep migrations expand/contract
+compatible: an older hub may still be running.
+
+The hub host runs the command once before activating any tenant (`docs/hub-host.md` in the
+remote-dev repository):
+
+```bash
+node <dist>/bin.mjs hub migrate --base-dir <dir>   # cwd <dir>, a fresh temporary directory
+```
+
+with exactly `PATH`, `HOME=<dir>/home`, `LANG`, `NODE_ENV=production`, `T3CODE_HOME=<dir>`,
+`T3CODE_SERVER_MODE=hub`, `T3CODE_HUB_DATABASE_URL` (runtime role),
+`T3CODE_HUB_DATABASE_ADMIN_URL` (when configured; otherwise the runtime role migrates),
+`T3CODE_HUB_TENANT_ID=00000000-0000-4000-8000-000000000000` (ignored),
+`T3CODE_HUB_SECRET_KEY` (ignored) and `T3CODE_TELEMETRY_ENABLED=false`: no machines URL or
+token, gateway token or port. It applies every pending migration, grants the runtime role
+DML on the schema's tables (read-only on the history) when the admin role differs, starts
+no server, touches no tenant data, prints no credentials, and is idempotent; exit 0 means
+the schema is current and the grants are in place, anything else is a failure (the host
+kills it after five minutes).
+
+Tenant hub processes start with the runtime URL only. They never attempt DDL: at startup
+they check that `hub_schema_migrations` records every migration the build knows and
+otherwise exit with `HubSchemaNotMigratedError` naming the missing ones ("Run `t3 hub
+migrate` …"). A hub given an admin URL (development, tests, the loopback harness) still
+migrates at startup, as the command would.
 
 **Roles and row-level security.** Every tenant table has a forced policy comparing `user_id`
 with the transaction-local `hub.user_id`. The runtime client sets it with `SET LOCAL` at the
@@ -548,6 +585,9 @@ Not built yet:
 - Standalone behavior: `src/environment/ServerEnvironment.test.ts` (capabilities) and
   `src/server.test.ts` (hub-only RPCs answer `unsupported` / `AuthConnectorError`), plus
   the rest of the server suite.
+- `t3 hub migrate` with the host's exact environment (`src/cli/hub.test.ts`) and tenant
+  startup that only verifies the schema (`persistence/Postgres/HubDatabase.test.ts`), both
+  Postgres-gated.
 - Postgres: set `T3_HUB_TEST_DATABASE_URL` to a disposable database the tests may create
   schemas in (for example a private loopback cluster as `postgres`). Each test gets its own
   schema and, when the connecting role bypasses RLS on loopback, a runtime role without
@@ -622,7 +662,8 @@ including API keys, stay hub settings; the hub delivers them to machines.
 `submitAuthConnector` / `cancelAuthConnector` flow works unchanged on a hub for provider
 connectors (not source control). The first session answers `status: "starting"`,
 `stage: "preparing"`, message "Starting a machine for sign-in…" while the sign-in machine
-starts, then mirrors the provider's prompt; after the CLI finishes it stays `verifying`
+starts (a refused sign-in intent fails it with a visible message), then mirrors the
+provider's prompt; after the CLI finishes it stays `verifying`
 ("Saving your sign-in…") until the platform stored it, then `succeeded`. Sessions with
 `flow: "browser"` carry `AuthConnectorSession.workspaceBrowserUrl` (the machine's browser
 page, same origin, frameable). `server.listProviderSignIns({})` →

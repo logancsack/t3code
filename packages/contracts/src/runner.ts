@@ -283,6 +283,19 @@ export const ProviderHomesResponse = Schema.Struct({
 });
 export type ProviderHomesResponse = typeof ProviderHomesResponse.Type;
 
+/**
+ * `POST {machines}/provider-homes/{provider}/sign-in` — opens a 30-minute
+ * sign-in intent. Only a login the sign-in machine writes after it is stored
+ * (the machine presents the epoch when it creates the archive); starting
+ * again supersedes it and sign-out closes it.
+ */
+export const ProviderSignInIntent = Schema.Struct({
+  provider: Schema.String,
+  epoch: Schema.Number,
+  expiresAt: Schema.optional(Schema.NullOr(Schema.String)),
+});
+export type ProviderSignInIntent = typeof ProviderSignInIntent.Type;
+
 /** `DELETE {machines}/provider-homes/{provider}` — sign out everywhere. */
 export const ProviderHomeDeleteResponse = Schema.Struct({
   provider: Schema.String,

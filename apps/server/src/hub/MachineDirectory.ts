@@ -14,6 +14,7 @@
  *
  *   GET    /repositories/refs?url=<repository>  branches (GitHub App repositories)
  *   GET    /provider-homes                      stored provider sign-ins (metadata)
+ *   POST   /provider-homes/{provider}/sign-in   open a sign-in intent (its epoch)
  *   DELETE /provider-homes/{provider}           sign a provider out everywhere
  *
  * Implementations:
@@ -29,6 +30,7 @@ import {
   ProviderHomeDeleteResponse,
   type ProviderHomeId,
   ProviderHomesResponse,
+  ProviderSignInIntent,
   RepositoryRefsResponse,
   type ThreadMachineEnsureRequest,
   type ThreadMachineState,
@@ -103,6 +105,13 @@ export interface MachineDirectoryShape {
   ) => Effect.Effect<RepositoryRefsResponse, MachineDirectoryError>;
   /** Stored provider sign-ins (versions only). */
   readonly providerHomes: Effect.Effect<ProviderHomesResponse, MachineDirectoryError>;
+  /**
+   * Opens a sign-in intent: only a login the sign-in machine writes after
+   * this is stored. Call it right before running the login command.
+   */
+  readonly beginProviderSignIn: (
+    provider: ProviderHomeId,
+  ) => Effect.Effect<ProviderSignInIntent, MachineDirectoryError>;
   /** Deletes a provider's stored sign-in; running machines sign out within seconds. */
   readonly deleteProviderHome: (
     provider: ProviderHomeId,
@@ -225,6 +234,15 @@ export const makeHttpMachineDirectory = (options: {
         Effect.succeed(HttpClientRequest.get(`${base}/provider-homes`)),
         HttpClientResponse.schemaBodyJson(ProviderHomesResponse),
       ),
+      beginProviderSignIn: (provider) =>
+        send(
+          "beginProviderSignIn",
+          "",
+          HttpClientRequest.post(
+            `${base}/provider-homes/${encodeURIComponent(provider)}/sign-in`,
+          ).pipe(HttpClientRequest.bodyJson({})),
+          HttpClientResponse.schemaBodyJson(ProviderSignInIntent),
+        ),
       deleteProviderHome: (provider) =>
         send(
           "deleteProviderHome",
@@ -260,6 +278,7 @@ export const makeStaticMachineDirectory = (options: {
         }),
       ),
     providerHomes: Effect.succeed({ providers: [] }),
+    beginProviderSignIn: (provider) => Effect.succeed({ provider, epoch: 0, expiresAt: null }),
     deleteProviderHome: (provider) => Effect.succeed({ provider, deleted: false }),
   });
 
@@ -304,12 +323,15 @@ export const makeFakeMachineDirectory = (options?: {
   readonly initial?: ReadonlyArray<readonly [ThreadId, FakeMachine]>;
   readonly onWake?: (threadId: ThreadId, machine: FakeMachine | undefined) => FakeMachine;
   readonly repositories?: Readonly<Record<string, FakeRepositoryRefs>>;
+  /** Fails every sign-in intent with this platform error. */
+  readonly signInIntentFailure?: { readonly status: number; readonly code: string };
 }) =>
   Effect.gen(function* () {
     const machines = yield* Ref.make(new Map(options?.initial ?? []));
     const calls = yield* Ref.make<ReadonlyArray<FakeMachineDirectoryCall>>([]);
     const platformCalls = yield* Ref.make<ReadonlyArray<string>>([]);
     const providerHomes = yield* Ref.make(new Map<string, number>());
+    let signInEpoch = 0;
     const recordPlatform = (call: string) =>
       Ref.update(platformCalls, (current) => [...current, call]);
     const record = (call: FakeMachineDirectoryCall) =>
@@ -388,6 +410,22 @@ export const makeFakeMachineDirectory = (options?: {
           })),
         })),
       ),
+      beginProviderSignIn: (provider) =>
+        Effect.gen(function* () {
+          yield* recordPlatform(`beginProviderSignIn ${provider}`);
+          const failure = options?.signInIntentFailure;
+          if (failure !== undefined) {
+            return yield* new MachineDirectoryError({
+              operation: "beginProviderSignIn",
+              threadId: "",
+              status: failure.status,
+              code: failure.code,
+              detail: `{"error":"${failure.code}"}`,
+            });
+          }
+          signInEpoch += 1;
+          return { provider, epoch: signInEpoch, expiresAt: null };
+        }),
       deleteProviderHome: (provider) =>
         recordPlatform(`deleteProviderHome ${provider}`).pipe(
           Effect.andThen(

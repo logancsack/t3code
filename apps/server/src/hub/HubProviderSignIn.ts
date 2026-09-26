@@ -8,8 +8,10 @@
  *
  * 1. `start` answers at once with a session that is starting a machine; a
  *    background fiber records the provider's stored sign-in version, ensures
- *    and wakes the sign-in machine, pushes the instance's settings, and
- *    starts the connector there (`runner.auth.start`). The session mirrors the
+ *    and wakes the sign-in machine, pushes the instance's settings, opens the
+ *    platform's sign-in intent (`POST provider-homes/{provider}/sign-in`; only
+ *    a login written after it is stored, and a failure is shown on the
+ *    session), and starts the connector there (`runner.auth.start`). The session mirrors the
  *    runner's session (prompts, URLs, codes, fields) as it progresses;
  *    `submit` and `cancel` are forwarded. Flows that finish in a browser on the
  *    machine carry `workspaceBrowserUrl`.
@@ -239,6 +241,17 @@ export const make = (options: HubProviderSignInOptions = {}) =>
                   instances: { [instanceId]: settings },
                 }).pipe(Effect.ignore);
               }
+              // Only a login written after the intent opens is stored.
+              yield* directory
+                .beginProviderSignIn(provider.home)
+                .pipe(
+                  Effect.mapError((error) =>
+                    failure(
+                      "start",
+                      `Sign-in could not be started: ${error.code ?? error.detail}. Try again.`,
+                    ),
+                  ),
+                );
               return yield* connection.client["runner.auth.start"](input);
             }),
         );

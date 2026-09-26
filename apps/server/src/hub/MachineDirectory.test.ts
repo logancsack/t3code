@@ -154,6 +154,12 @@ describe("HTTP machine directory", () => {
           if (request.method === "DELETE") {
             return { status: 200, body: { provider: "claude", deleted: true } };
           }
+          if (request.url.endsWith("/sign-in")) {
+            return {
+              status: 201,
+              body: { provider: "claude", epoch: 7, expiresAt: "2026-09-26T01:30:00.000Z" },
+            };
+          }
           return {
             status: 200,
             body: { providers: [{ provider: "claude", version: 3, updatedAt: "t" }] },
@@ -168,6 +174,7 @@ describe("HTTP machine directory", () => {
           .pipe(Effect.flip);
         expect(locked).toMatchObject({ status: 403, code: "REPOSITORY_ACCESS_REQUIRED" });
         expect((yield* directory.providerHomes).providers[0]?.version).toBe(3);
+        expect((yield* directory.beginProviderSignIn("claude")).epoch).toBe(7);
         expect(yield* directory.deleteProviderHome("claude")).toEqual({
           provider: "claude",
           deleted: true,
@@ -177,6 +184,7 @@ describe("HTTP machine directory", () => {
           ["GET", "/api/repositories/refs?url=https%3A%2F%2Fgithub.com%2Facme%2Fapp"],
           ["GET", "/api/repositories/refs?url=https%3A%2F%2Fgithub.com%2Facme%2Flocked"],
           ["GET", "/api/provider-homes"],
+          ["POST", "/api/provider-homes/claude/sign-in"],
           ["DELETE", "/api/provider-homes/claude"],
         ]);
       }).pipe(Effect.provide(FetchHttpClient.layer)),

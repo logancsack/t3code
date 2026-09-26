@@ -68,10 +68,16 @@ const setup = (
   options: {
     readonly storeTimeout?: Duration.Input;
     readonly succeedWithoutInput?: boolean;
+    readonly signInIntentFailure?: { readonly status: number; readonly code: string };
   } = {},
 ) =>
   Effect.gen(function* () {
     const calls: Array<string> = [];
+    // The platform's calls so far, read when the login command starts.
+    const platform: { calls: Effect.Effect<ReadonlyArray<string>> } = {
+      calls: Effect.succeed([]),
+    };
+    const intentsAtStart: Array<ReadonlyArray<string>> = [];
     let submitted = options.succeedWithoutInput === true;
     const succeeded = { ...waiting, status: "succeeded" as const, stage: "complete" as const };
     const runner = yield* serveRunner(
@@ -88,8 +94,11 @@ const setup = (
         "runner.provider.getCapabilities": () =>
           Effect.succeed({ snapshot: authenticated, sessionModelSwitch: "in-session" as const }),
         "runner.auth.start": (input) =>
-          Effect.sync(() => {
+          Effect.gen(function* () {
             calls.push(`start ${input.connector}`);
+            intentsAtStart.push(
+              (yield* platform.calls).filter((call) => call.startsWith("beginProviderSignIn")),
+            );
             return waiting;
           }),
         "runner.auth.get": () => Effect.sync(() => (submitted ? succeeded : waiting)),
@@ -108,7 +117,9 @@ const setup = (
     );
     const fake = yield* makeFakeMachineDirectory({
       onWake: () => ({ state: "running", runnerUrl: runner.url }),
+      ...(options.signInIntentFailure ? { signInIntentFailure: options.signInIntentFailure } : {}),
     });
+    platform.calls = fake.platformCalls;
     const snapshots = yield* HubProviderSnapshots.make;
     const context = yield* Layer.build(
       Layer.effect(
@@ -133,13 +144,15 @@ const setup = (
     const signIn = (yield* ProviderSignInControls.pipe(Effect.provide(context)))!;
     const waitFor = (id: string, predicate: (session: AuthConnectorSession) => boolean) =>
       Effect.repeat(signIn.get(id), { until: predicate }).pipe(Effect.timeout("5 seconds"));
-    return { signIn, fake, calls, snapshots, waitFor };
+    return { signIn, fake, calls, snapshots, waitFor, intentsAtStart };
   });
 
 describe("hub provider sign-in", () => {
   it.live("runs the login on the sign-in machine and completes once the sign-in is stored", () =>
     Effect.gen(function* () {
-      const { signIn, fake, calls, snapshots, waitFor } = yield* setup(remoteSession({}));
+      const { signIn, fake, calls, snapshots, waitFor, intentsAtStart } = yield* setup(
+        remoteSession({}),
+      );
       const started = yield* signIn.start({ connector: "claude", method: "account" });
       expect(started).toMatchObject({ status: "starting", stage: "preparing", flow: "code" });
 
@@ -162,6 +175,8 @@ describe("hub provider sign-in", () => {
       const done = yield* waitFor(started.id, (session) => session.status !== "starting");
       expect(done).toMatchObject({ status: "succeeded", stage: "complete", message: "Signed in." });
 
+      // The sign-in intent was open before the login command ran.
+      expect(intentsAtStart).toEqual([["beginProviderSignIn claude"]]);
       expect(calls).toContain("configure claudeAgent");
       expect(calls).toContain("start claude");
       expect(calls).toContain("submit runner-session-1 callback");
@@ -215,6 +230,19 @@ describe("hub provider sign-in", () => {
         .start({ connector: "github", method: "token" })
         .pipe(Effect.flip);
       expect(github._tag).toBe("AuthConnectorError");
+    }).pipe(Effect.scoped, Effect.provide(StoresLive)),
+  );
+
+  it.live("shows a sign-in the platform refused to start and never runs the login", () =>
+    Effect.gen(function* () {
+      const { signIn, calls, fake, waitFor } = yield* setup(remoteSession({}), {
+        signInIntentFailure: { status: 409, code: "NOT_HUB_HOSTED" },
+      });
+      const started = yield* signIn.start({ connector: "claude", method: "account" });
+      const failed = yield* waitFor(started.id, (session) => session.status === "failed");
+      expect(failed.message).toContain("NOT_HUB_HOSTED");
+      expect(calls.some((call) => call.startsWith("start "))).toBe(false);
+      expect((yield* fake.calls).map((call) => call.method).at(-1)).toBe("idle");
     }).pipe(Effect.scoped, Effect.provide(StoresLive)),
   );
 });

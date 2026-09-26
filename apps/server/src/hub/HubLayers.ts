@@ -56,10 +56,11 @@ import * as ThreadMachineControls from "./ThreadMachineControls.ts";
 import * as ThreadMachineStates from "./ThreadMachineStates.ts";
 
 /**
- * Hub thread-machine state (runner cursors, per-turn diffs, git status): the
- * hub's tenant Postgres database when it has one (migration 050, applied with
- * the other hub migrations), otherwise the server's SQLite database (tests and
- * local development).
+ * Hub thread-machine state (runner cursors, per-turn diffs, git status,
+ * machine states, provider snapshots, MCP credentials): the hub's tenant
+ * Postgres database when it has one (migrations 050 and 051, applied by
+ * `t3 hub migrate` with the other hub migrations), otherwise the server's
+ * SQLite database (tests and local development).
  */
 export const makeHubStateStoresLayer = <E, R>(
   persistence: Layer.Layer<SqlClient.SqlClient, E, R>,
