@@ -11,7 +11,14 @@ import {
   MenuTrigger,
 } from "../components/ui/menu";
 import { useAldoBrowserRequests } from "./browserStore";
-import { aldoPreviewUrl, fetchAldoPreviews, type AldoPreviews } from "./cloud";
+import {
+  aldoPreviewUrl,
+  fetchAldoPreviews,
+  fetchAldoPullRequests,
+  stopAldoFollowThrough,
+  type AldoFollowedPullRequest,
+  type AldoPreviews,
+} from "./cloud";
 
 function label(command: string, process: string): string {
   const text = command || process;
@@ -26,9 +33,13 @@ export function AldoPreviewsControl(props: { environmentId: string; onOpenBrowse
   const [previews, setPreviews] = useState<AldoPreviews | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [pullRequests, setPullRequests] = useState<ReadonlyArray<AldoFollowedPullRequest>>([]);
 
   const refresh = useCallback(() => {
     setLoading(true);
+    fetchAldoPullRequests(props.environmentId)
+      .then(setPullRequests)
+      .catch(() => undefined);
     fetchAldoPreviews(props.environmentId)
       .then((next) => {
         setPreviews(next);
@@ -97,6 +108,39 @@ export function AldoPreviewsControl(props: { environmentId: string; onOpenBrowse
             </MenuGroup>
           ))
         )}
+        {pullRequests.length > 0 ? (
+          <>
+            <MenuSeparator />
+            <MenuGroup>
+              <MenuGroupLabel>Pull requests Aldo follows through</MenuGroupLabel>
+              {pullRequests.slice(0, 6).map((pr) => (
+                <MenuItem
+                  key={`${pr.repo}#${pr.number}`}
+                  onClick={() => window.open(pr.url, "_blank", "noopener")}
+                >
+                  <span className="min-w-0 flex-1 truncate">
+                    #{pr.number} {pr.title}
+                  </span>
+                  <span className="shrink-0 text-muted-foreground text-xs">
+                    {pr.status === "watching"
+                      ? pr.followups
+                        ? `${pr.followups} fix${pr.followups === 1 ? "" : "es"}`
+                        : "watching"
+                      : pr.status}
+                  </span>
+                </MenuItem>
+              ))}
+              {pullRequests.some((pr) => pr.status === "watching") ? (
+                <MenuItem
+                  onClick={() => void stopAldoFollowThrough(props.environmentId).then(refresh)}
+                  className="text-muted-foreground"
+                >
+                  Stop following through
+                </MenuItem>
+              ) : null}
+            </MenuGroup>
+          </>
+        ) : null}
         {stopped.length > 0 ? (
           <>
             <MenuSeparator />

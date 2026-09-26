@@ -30,11 +30,16 @@ export interface AldoEnvironment {
   readonly threadId: string;
   readonly label: string;
   readonly repo: string;
+  /** Every repository in the workspace (multi-repo threads), the main one first. */
+  readonly repos?: ReadonlyArray<string>;
   readonly branch: string;
   readonly state: "new" | "ready" | "stopped" | "failed";
 }
 
 export type AldoAccountKind = "github" | "claude" | "codex" | "grok";
+/** Git hosts connected with an access token (GitHub has its own sign-in wizard). */
+export type AldoGitHostKind = "gitlab" | "bitbucket" | "azure";
+export type AldoHostKind = "github" | AldoGitHostKind;
 
 export interface AldoAccount {
   readonly connected: boolean;
@@ -241,6 +246,8 @@ export function touchAldoEnvironment(environmentId: string): void {
  * waits until it is running. Returns the new environment.
  */
 export interface AldoNewProject {
+  /** Where to create it (default GitHub). */
+  readonly host?: AldoHostKind;
   readonly name: string;
   readonly description?: string;
   readonly isPrivate: boolean;
@@ -252,6 +259,8 @@ export async function createAldoEnvironment(input: {
   readonly branch?: string;
   /** A new project: Aldo creates the GitHub repository first. */
   readonly create?: AldoNewProject;
+  /** A multi-repo workspace: every repository, the main one first. */
+  readonly repos?: ReadonlyArray<string>;
 }): Promise<AldoEnvironment> {
   const { environment } = await api<{ environment: AldoEnvironment }>("/api/environments", {
     method: "POST",
@@ -259,6 +268,7 @@ export async function createAldoEnvironment(input: {
       repo: input.repo,
       branch: input.branch,
       create: input.create,
+      repos: input.repos,
       fromThreadId: input.fromEnvironmentId
         ? threadIdForEnvironment(input.fromEnvironmentId)
         : undefined,
@@ -280,11 +290,23 @@ export async function listAldoRepositories(): Promise<
 // ---------------------------------------------------------------------------
 // Accounts (sign-in wizards)
 
-export async function fetchAldoAccounts(): Promise<Record<AldoAccountKind, AldoAccount>> {
-  return api<Record<AldoAccountKind, AldoAccount>>("/api/connections");
+export async function fetchAldoAccounts(): Promise<
+  Record<AldoAccountKind | AldoGitHostKind, AldoAccount>
+> {
+  return api<Record<AldoAccountKind | AldoGitHostKind, AldoAccount>>("/api/connections");
 }
 
-export async function disconnectAldoAccount(kind: AldoAccountKind): Promise<void> {
+/** Connects GitLab, Bitbucket or Azure DevOps with an access token. */
+export async function connectAldoGitHost(
+  kind: AldoGitHostKind,
+  values: Record<string, string>,
+): Promise<void> {
+  await api(`/api/hosts/${kind}`, { method: "POST", body: JSON.stringify(values) });
+}
+
+export async function disconnectAldoAccount(
+  kind: AldoAccountKind | AldoGitHostKind,
+): Promise<void> {
   await api(`/api/connections/${kind}`, { method: "DELETE" });
 }
 
@@ -334,14 +356,96 @@ export function aldoPreviewUrl(environmentId: string, port: number): string {
   return `/p/${threadIdForEnvironment(environmentId)}/${port}`;
 }
 
-/** A signed WebSocket URL for the thread's live browser; AldoApiError 409 while asleep. */
-export async function aldoBrowserUrl(environmentId: string): Promise<string> {
-  const { url } = await api<{ url: string }>(
+/** Signed WebSocket URLs for the thread's live browser and desktop; AldoApiError 409 while asleep. */
+export async function aldoBrowserConnection(
+  environmentId: string,
+): Promise<{ url: string; desktopUrl: string }> {
+  return api<{ url: string; desktopUrl: string }>(
     `/api/environments/${threadIdForEnvironment(environmentId)}/browser`,
     { method: "POST" },
   );
-  return url;
 }
+
+/** Repositories from every connected host, and hosts that couldn't be listed. */
+export async function listAldoRepositoryDirectory(): Promise<{
+  repositories: ReadonlyArray<SourceControlRepositorySummary>;
+  errors: ReadonlyArray<string>;
+  hosts: ReadonlyArray<AldoHostKind>;
+}> {
+  return api("/api/repos");
+}
+
+export interface AldoFollowedPullRequest {
+  readonly repo: string;
+  readonly number: number;
+  readonly url: string;
+  readonly title: string;
+  readonly status: "watching" | "merged" | "closed" | "stopped";
+  readonly followups: number;
+}
+
+/** Pull requests Aldo is following through for a thread. */
+export async function fetchAldoPullRequests(
+  environmentId: string,
+): Promise<ReadonlyArray<AldoFollowedPullRequest>> {
+  const { pullRequests } = await api<{ pullRequests: AldoFollowedPullRequest[] }>(
+    `/api/environments/${threadIdForEnvironment(environmentId)}/prs`,
+  );
+  return pullRequests;
+}
+
+export async function stopAldoFollowThrough(
+  environmentId: string,
+  pr?: { repo: string; number: number },
+): Promise<void> {
+  await api(`/api/environments/${threadIdForEnvironment(environmentId)}/prs`, {
+    method: "DELETE",
+    body: JSON.stringify(pr ?? {}),
+  });
+}
+
+export interface AldoEnvironmentService {
+  readonly name: string;
+  readonly command: string;
+  readonly cwd?: string;
+}
+
+export interface AldoEnvironmentBuild {
+  readonly id: string;
+  readonly status: "building" | "ready" | "failed" | "superseded";
+  readonly commit_sha: string | null;
+  readonly install: string;
+  readonly log: string | null;
+  readonly snapshot_id: string | null;
+  readonly started_at: string;
+  readonly finished_at: string | null;
+}
+
+export interface AldoPrebuiltEnvironment {
+  readonly id: string;
+  readonly repos: ReadonlyArray<string>;
+  readonly install: string;
+  readonly services: ReadonlyArray<AldoEnvironmentService>;
+  readonly current_build: string | null;
+  readonly building: string | null;
+  readonly updated_at: string;
+  readonly builds: ReadonlyArray<AldoEnvironmentBuild>;
+}
+
+/** Ready-to-go environments (Settings → Environments). */
+export const aldoPrebuilds = {
+  list: async () =>
+    (await api<{ environments: AldoPrebuiltEnvironment[] }>("/api/prebuilds")).environments,
+  save: (input: {
+    repos: ReadonlyArray<string>;
+    install: string;
+    services: ReadonlyArray<AldoEnvironmentService>;
+  }) => api("/api/prebuilds", { method: "POST", body: JSON.stringify(input) }),
+  rebuild: (id: string) => api(`/api/prebuilds/${id}/rebuild`, { method: "POST" }),
+  use: (id: string, buildId: string) =>
+    api(`/api/prebuilds/${id}/use`, { method: "POST", body: JSON.stringify({ buildId }) }),
+  remove: (id: string) => api(`/api/prebuilds/${id}`, { method: "DELETE" }),
+};
 
 export interface AldoVaultItem {
   readonly id: string;

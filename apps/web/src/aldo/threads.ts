@@ -37,6 +37,7 @@ export async function startAldoSandbox(
     readonly fromEnvironmentId?: string;
     readonly branch?: string;
     readonly create?: AldoNewProject;
+    readonly repos?: ReadonlyArray<string>;
   },
   label: string,
 ): Promise<ScopedProjectRef> {
@@ -44,7 +45,7 @@ export async function startAldoSandbox(
     type: "loading",
     title: input.create ? `Creating ${label}…` : `Starting a sandbox for ${label}…`,
     description: input.create
-      ? "Creating the GitHub repository and starting its sandbox."
+      ? "Creating the repository and starting its sandbox."
       : "Cloning the repository and starting the agent tools.",
     timeout: 0,
   });

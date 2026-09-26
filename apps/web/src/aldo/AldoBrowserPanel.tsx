@@ -8,6 +8,7 @@ import {
   GlobeIcon,
   HandIcon,
   LoaderIcon,
+  MonitorIcon,
   PlusIcon,
   RotateCwIcon,
   XIcon,
@@ -35,7 +36,8 @@ import {
 } from "../components/ui/menu";
 import { cn } from "../lib/utils";
 import { useAldoBrowserRequests } from "./browserStore";
-import { AldoApiError, aldoBrowserUrl, aldoPreviewUrl } from "./cloud";
+import { AldoDesktopView } from "./AldoDesktopView";
+import { AldoApiError, aldoBrowserConnection, aldoPreviewUrl } from "./cloud";
 
 type Tab = { id: string; url: string; title: string };
 type Nav = { url: string; canGoBack: boolean; canGoForward: boolean; loading: boolean };
@@ -76,6 +78,7 @@ export function AldoBrowserPanel({ environmentId }: { environmentId: string }) {
   const [activeTab, setActiveTab] = useState<string | null>(null);
   const [follow, setFollow] = useState(true);
   const [phone, setPhone] = useState(false);
+  const [view, setView] = useState<"browser" | "desktop">("browser");
   const [nav, setNav] = useState<Nav>({
     url: "",
     canGoBack: false,
@@ -152,7 +155,7 @@ export function AldoBrowserPanel({ environmentId }: { environmentId: string }) {
       setStatus((current) => (current === "live" ? "connecting" : current));
       let url: string;
       try {
-        url = await aldoBrowserUrl(environmentId);
+        url = (await aldoBrowserConnection(environmentId)).url;
       } catch (cause) {
         if (cause instanceof AldoApiError && cause.status === 409) {
           setStatus("asleep");
@@ -217,6 +220,10 @@ export function AldoBrowserPanel({ environmentId }: { environmentId: string }) {
       socketRef.current = null;
     };
   }, [environmentId, sendViewport]);
+
+  useEffect(() => {
+    if (status === "live") send({ type: "pause", paused: view === "desktop" });
+  }, [send, status, view]);
 
   // Keep the stream sized to the panel (sharp frames without wasting bandwidth).
   useEffect(() => {
@@ -437,94 +444,130 @@ export function AldoBrowserPanel({ environmentId }: { environmentId: string }) {
   return (
     <div className="@container flex min-h-0 flex-1 flex-col bg-background">
       <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-border px-1.5 py-1">
-        <Menu>
-          <MenuTrigger
-            aria-label="Browser tabs"
-            className="inline-flex h-7 max-w-36 min-w-0 shrink-0 items-center gap-1 rounded-md px-1.5 text-xs text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        <div
+          className="flex shrink-0 items-center rounded-md bg-muted/60 p-0.5"
+          role="tablist"
+          aria-label="View"
+        >
+          {(
+            [
+              ["browser", GlobeIcon, "Browser"],
+              ["desktop", MonitorIcon, "Desktop"],
+            ] as const
+          ).map(([value, Icon, label]) => (
+            <button
+              key={value}
+              type="button"
+              role="tab"
+              aria-selected={view === value}
+              aria-label={label}
+              onClick={() => setView(value)}
+              className={cn(
+                "inline-flex h-6 items-center gap-1 rounded px-1.5 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                view === value
+                  ? "bg-background text-foreground shadow-xs"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <Icon className="size-3.5" />
+              <span className="hidden @lg:inline">{label}</span>
+            </button>
+          ))}
+        </div>
+        {view === "desktop" ? (
+          <span className="min-w-0 flex-1 truncate px-1 text-xs text-muted-foreground">
+            The whole sandbox desktop: Chrome, desktop apps and the taskbar.
+          </span>
+        ) : null}
+        <div className={cn("contents", view === "desktop" && "hidden")}>
+          <Menu>
+            <MenuTrigger
+              aria-label="Browser tabs"
+              className="inline-flex h-7 max-w-36 min-w-0 shrink-0 items-center gap-1 rounded-md px-1.5 text-xs text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <GlobeIcon className="size-3.5 shrink-0" />
+              <span className="truncate">{active?.title || "New tab"}</span>
+              {tabs.length > 1 ? (
+                <span className="shrink-0 tabular-nums opacity-70">{tabs.length}</span>
+              ) : null}
+              <ChevronDownIcon className="size-3 shrink-0 opacity-70" />
+            </MenuTrigger>
+            <MenuPopup align="start" className="max-w-80 min-w-56">
+              {tabs.map((tab) => (
+                <MenuItem key={tab.id} onClick={() => send({ type: "activate", tabId: tab.id })}>
+                  <span
+                    className={cn("min-w-0 flex-1 truncate", tab.id === activeTab && "font-medium")}
+                  >
+                    {tab.title || tab.url || "New tab"}
+                  </span>
+                </MenuItem>
+              ))}
+              <MenuSeparator />
+              <MenuItem onClick={() => send({ type: "newTab" })}>
+                <PlusIcon className="size-3.5" /> New tab
+              </MenuItem>
+              {active ? (
+                <MenuItem onClick={() => send({ type: "closeTab", tabId: active.id })}>
+                  <XIcon className="size-3.5" /> Close this tab
+                </MenuItem>
+              ) : null}
+            </MenuPopup>
+          </Menu>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            aria-label="Back"
+            disabled={!nav.canGoBack}
+            onClick={() => send({ type: "back" })}
           >
-            <GlobeIcon className="size-3.5 shrink-0" />
-            <span className="truncate">{active?.title || "New tab"}</span>
-            {tabs.length > 1 ? (
-              <span className="shrink-0 tabular-nums opacity-70">{tabs.length}</span>
-            ) : null}
-            <ChevronDownIcon className="size-3 shrink-0 opacity-70" />
-          </MenuTrigger>
-          <MenuPopup align="start" className="max-w-80 min-w-56">
-            {tabs.map((tab) => (
-              <MenuItem key={tab.id} onClick={() => send({ type: "activate", tabId: tab.id })}>
-                <span
-                  className={cn("min-w-0 flex-1 truncate", tab.id === activeTab && "font-medium")}
-                >
-                  {tab.title || tab.url || "New tab"}
-                </span>
-              </MenuItem>
-            ))}
-            <MenuSeparator />
-            <MenuItem onClick={() => send({ type: "newTab" })}>
-              <PlusIcon className="size-3.5" /> New tab
-            </MenuItem>
-            {active ? (
-              <MenuItem onClick={() => send({ type: "closeTab", tabId: active.id })}>
-                <XIcon className="size-3.5" /> Close this tab
-              </MenuItem>
-            ) : null}
-          </MenuPopup>
-        </Menu>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-xs"
-          aria-label="Back"
-          disabled={!nav.canGoBack}
-          onClick={() => send({ type: "back" })}
-        >
-          <ArrowLeftIcon />
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-xs"
-          aria-label="Forward"
-          disabled={!nav.canGoForward}
-          onClick={() => send({ type: "forward" })}
-        >
-          <ArrowRightIcon />
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-xs"
-          aria-label={nav.loading ? "Stop loading" : "Reload"}
-          onClick={() => send({ type: nav.loading ? "stop" : "reload" })}
-        >
-          {nav.loading ? <XIcon /> : <RotateCwIcon />}
-        </Button>
-        <form
-          className="order-last min-w-0 basis-full @md:order-none @md:flex-1 @md:basis-auto"
-          onSubmit={submitAddress}
-        >
-          <Input
-            size="compact"
-            aria-label="Address"
-            placeholder="Search or enter an address, e.g. localhost:3000"
-            value={address}
-            onFocus={(e) => {
-              setEditingAddress(true);
-              e.currentTarget.select();
-            }}
-            onBlur={() => setEditingAddress(false)}
-            onChange={(e) => setAddress(e.currentTarget.value)}
-            className="text-xs"
-          />
-        </form>
+            <ArrowLeftIcon />
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            aria-label="Forward"
+            disabled={!nav.canGoForward}
+            onClick={() => send({ type: "forward" })}
+          >
+            <ArrowRightIcon />
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            aria-label={nav.loading ? "Stop loading" : "Reload"}
+            onClick={() => send({ type: nav.loading ? "stop" : "reload" })}
+          >
+            {nav.loading ? <XIcon /> : <RotateCwIcon />}
+          </Button>
+          <form
+            className="order-last min-w-0 basis-full @md:order-none @md:flex-1 @md:basis-auto"
+            onSubmit={submitAddress}
+          >
+            <Input
+              size="compact"
+              aria-label="Address"
+              placeholder="Search or enter an address, e.g. localhost:3000"
+              value={address}
+              onFocus={(e) => {
+                setEditingAddress(true);
+                e.currentTarget.select();
+              }}
+              onBlur={() => setEditingAddress(false)}
+              onChange={(e) => setAddress(e.currentTarget.value)}
+              className="text-xs"
+            />
+          </form>
+        </div>
         <Button
           type="button"
           variant={control.explicit ? "default" : "ghost"}
           size="icon-xs"
           aria-label={
-            control.explicit ? "Hand the browser back to the agent" : "Take control of the browser"
+            control.explicit ? "Hand control back to the agent" : "Take control (agents wait)"
           }
-          title={control.explicit ? "Hand back to the agent" : "Take control (agents wait)"}
           onClick={() => send({ type: "control", take: !control.explicit })}
         >
           <HandIcon />
@@ -566,7 +609,7 @@ export function AldoBrowserPanel({ environmentId }: { environmentId: string }) {
         <div className="flex shrink-0 items-center gap-2 border-b border-border bg-primary/8 px-3 py-1.5 text-xs">
           <HandIcon className="size-3.5 shrink-0 text-primary" />
           <span className="min-w-0 flex-1">
-            You have control. Agents wait until you hand the browser back.
+            You have control. Agents wait until you hand it back.
           </span>
           <Button
             type="button"
@@ -580,7 +623,9 @@ export function AldoBrowserPanel({ environmentId }: { environmentId: string }) {
       ) : agentActive ? (
         <div className="flex shrink-0 items-center gap-2 border-b border-border bg-muted/50 px-3 py-1.5 text-xs text-muted-foreground">
           <BotIcon className="size-3.5 shrink-0" />
-          <span className="min-w-0 flex-1">The agent is using the browser.</span>
+          <span className="min-w-0 flex-1">
+            The agent is using the {view === "desktop" ? "desktop" : "browser"}.
+          </span>
           <Button
             type="button"
             size="compact"
@@ -592,7 +637,14 @@ export function AldoBrowserPanel({ environmentId }: { environmentId: string }) {
         </div>
       ) : null}
 
-      <div ref={stageRef} className="relative min-h-0 flex-1 overflow-hidden bg-muted/30">
+      {view === "desktop" ? <AldoDesktopView environmentId={environmentId} /> : null}
+      <div
+        ref={stageRef}
+        className={cn(
+          "relative min-h-0 flex-1 overflow-hidden bg-muted/30",
+          view === "desktop" && "hidden",
+        )}
+      >
         <canvas
           ref={canvasRef}
           aria-label="Shared browser. Click to interact."

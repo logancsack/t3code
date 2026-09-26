@@ -1,5 +1,5 @@
 import { CheckCircle2Icon } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 
 import { AuthConnectorDialog } from "../components/settings/AuthConnectorDialog";
 import { SettingsRow, SettingsSection } from "../components/settings/settingsLayout";
@@ -9,13 +9,17 @@ import {
   fetchAldoAccounts,
   type AldoAccount,
   type AldoAccountKind,
+  type AldoGitHostKind,
 } from "./cloud";
 import { ALDO_ACCOUNT_SPECS } from "./accountSpecs";
 
 export { ALDO_ACCOUNT_SPECS };
 
 export function useAldoAccounts() {
-  const [accounts, setAccounts] = useState<Record<AldoAccountKind, AldoAccount> | null>(null);
+  const [accounts, setAccounts] = useState<Record<
+    AldoAccountKind | AldoGitHostKind,
+    AldoAccount
+  > | null>(null);
   const [error, setError] = useState<string | null>(null);
   const refresh = useCallback(() => {
     fetchAldoAccounts()
@@ -66,6 +70,11 @@ function accountStatus(account: AldoAccount | undefined) {
 export function AldoAccountsPanel(props: {
   readonly kinds: ReadonlyArray<AldoAccountKind>;
   readonly title: string;
+  /** More rows after the wizard-connected accounts (the token-connected git hosts). */
+  readonly extra?: (
+    accounts: Record<AldoAccountKind | AldoGitHostKind, AldoAccount> | null,
+    refresh: () => void,
+  ) => ReactNode;
 }) {
   const { accounts, error, refresh } = useAldoAccounts();
   return (
@@ -96,6 +105,7 @@ export function AldoAccountsPanel(props: {
           />
         );
       })}
+      {props.extra?.(accounts, refresh)}
       {error ? <p className="px-4 text-destructive-foreground text-sm">{error}</p> : null}
     </SettingsSection>
   );

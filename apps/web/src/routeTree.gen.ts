@@ -22,6 +22,7 @@ import { Route as SettingsProvidersRouteImport } from './routes/settings.provide
 import { Route as SettingsKeybindingsRouteImport } from './routes/settings.keybindings'
 import { Route as SettingsIntegrationsRouteImport } from './routes/settings.integrations'
 import { Route as SettingsGeneralRouteImport } from './routes/settings.general'
+import { Route as SettingsEnvironmentsRouteImport } from './routes/settings.environments'
 import { Route as SettingsDiagnosticsRouteImport } from './routes/settings.diagnostics'
 import { Route as SettingsConnectionsRouteImport } from './routes/settings.connections'
 import { Route as SettingsArchivedRouteImport } from './routes/settings.archived'
@@ -96,6 +97,11 @@ const SettingsGeneralRoute = SettingsGeneralRouteImport.update({
   path: '/general',
   getParentRoute: () => SettingsRoute,
 } as any)
+const SettingsEnvironmentsRoute = SettingsEnvironmentsRouteImport.update({
+  id: '/environments',
+  path: '/environments',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const SettingsDiagnosticsRoute = SettingsDiagnosticsRouteImport.update({
   id: '/diagnostics',
   path: '/diagnostics',
@@ -156,6 +162,7 @@ export interface FileRoutesByFullPath {
   '/settings/archived': typeof SettingsArchivedRoute
   '/settings/connections': typeof SettingsConnectionsRoute
   '/settings/diagnostics': typeof SettingsDiagnosticsRoute
+  '/settings/environments': typeof SettingsEnvironmentsRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/integrations': typeof SettingsIntegrationsRoute
   '/settings/keybindings': typeof SettingsKeybindingsRoute
@@ -178,6 +185,7 @@ export interface FileRoutesByTo {
   '/settings/archived': typeof SettingsArchivedRoute
   '/settings/connections': typeof SettingsConnectionsRoute
   '/settings/diagnostics': typeof SettingsDiagnosticsRoute
+  '/settings/environments': typeof SettingsEnvironmentsRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/integrations': typeof SettingsIntegrationsRoute
   '/settings/keybindings': typeof SettingsKeybindingsRoute
@@ -203,6 +211,7 @@ export interface FileRoutesById {
   '/settings/archived': typeof SettingsArchivedRoute
   '/settings/connections': typeof SettingsConnectionsRoute
   '/settings/diagnostics': typeof SettingsDiagnosticsRoute
+  '/settings/environments': typeof SettingsEnvironmentsRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/integrations': typeof SettingsIntegrationsRoute
   '/settings/keybindings': typeof SettingsKeybindingsRoute
@@ -229,6 +238,7 @@ export interface FileRouteTypes {
     | '/settings/archived'
     | '/settings/connections'
     | '/settings/diagnostics'
+    | '/settings/environments'
     | '/settings/general'
     | '/settings/integrations'
     | '/settings/keybindings'
@@ -251,6 +261,7 @@ export interface FileRouteTypes {
     | '/settings/archived'
     | '/settings/connections'
     | '/settings/diagnostics'
+    | '/settings/environments'
     | '/settings/general'
     | '/settings/integrations'
     | '/settings/keybindings'
@@ -275,6 +286,7 @@ export interface FileRouteTypes {
     | '/settings/archived'
     | '/settings/connections'
     | '/settings/diagnostics'
+    | '/settings/environments'
     | '/settings/general'
     | '/settings/integrations'
     | '/settings/keybindings'
@@ -390,6 +402,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsGeneralRouteImport
       parentRoute: typeof SettingsRoute
     }
+    '/settings/environments': {
+      id: '/settings/environments'
+      path: '/environments'
+      fullPath: '/settings/environments'
+      preLoaderRoute: typeof SettingsEnvironmentsRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/settings/diagnostics': {
       id: '/settings/diagnostics'
       path: '/diagnostics'
@@ -477,6 +496,7 @@ interface SettingsRouteChildren {
   SettingsArchivedRoute: typeof SettingsArchivedRoute
   SettingsConnectionsRoute: typeof SettingsConnectionsRoute
   SettingsDiagnosticsRoute: typeof SettingsDiagnosticsRoute
+  SettingsEnvironmentsRoute: typeof SettingsEnvironmentsRoute
   SettingsGeneralRoute: typeof SettingsGeneralRoute
   SettingsIntegrationsRoute: typeof SettingsIntegrationsRoute
   SettingsKeybindingsRoute: typeof SettingsKeybindingsRoute
@@ -491,6 +511,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsArchivedRoute: SettingsArchivedRoute,
   SettingsConnectionsRoute: SettingsConnectionsRoute,
   SettingsDiagnosticsRoute: SettingsDiagnosticsRoute,
+  SettingsEnvironmentsRoute: SettingsEnvironmentsRoute,
   SettingsGeneralRoute: SettingsGeneralRoute,
   SettingsIntegrationsRoute: SettingsIntegrationsRoute,
   SettingsKeybindingsRoute: SettingsKeybindingsRoute,
