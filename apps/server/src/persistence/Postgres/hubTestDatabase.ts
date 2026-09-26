@@ -118,7 +118,8 @@ export const hubTestDatabaseLayer = (schema: HubTestSchema, tenantId: string) =>
     HubDatabase,
     makeHubDatabase({
       databaseUrl: schema.runtimeUrl,
-      databaseAdminUrl: schema.separateRuntimeRole ? schema.adminUrl : undefined,
+      // Tests migrate at startup, as `t3 hub migrate` would before a tenant starts.
+      databaseAdminUrl: schema.adminUrl,
       tenantId,
     }),
   );
@@ -144,7 +145,7 @@ export const hubTestServerConfigLayer = (
         serverMode: "hub" as const,
         hub: {
           databaseUrl: schema.runtimeUrl,
-          databaseAdminUrl: schema.separateRuntimeRole ? schema.adminUrl : undefined,
+          databaseAdminUrl: schema.adminUrl,
           tenantId,
           secretKey: options.secretKey ?? HUB_TEST_SECRET_KEY,
         },

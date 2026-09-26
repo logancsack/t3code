@@ -313,8 +313,8 @@ describe.skipIf(hubTestDatabaseUrl === undefined)("hub server", () => {
       });
       const env: Record<string, string> = {
         T3CODE_SERVER_MODE: "hub",
+        // Like a tenant process: the runtime role only, never the migration role.
         T3CODE_HUB_DATABASE_URL: schema.runtimeUrl,
-        ...(schema.separateRuntimeRole ? { T3CODE_HUB_DATABASE_ADMIN_URL: schema.adminUrl } : {}),
         T3CODE_HUB_TENANT_ID: TENANT,
         T3CODE_HUB_SECRET_KEY: HUB_TEST_SECRET_KEY,
         T3CODE_HUB_MACHINES_URL: "http://127.0.0.1:9",

@@ -10,6 +10,7 @@ import * as Reactivity from "effect/unstable/reactivity/Reactivity";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { HubDatabase } from "./HubDatabase.ts";
+import { makeHubDatabase, migrateHubDatabase } from "./HubDatabaseLive.ts";
 import { makeHubPool, makeTenantSqlClient } from "./HubClient.ts";
 import { orderHubMigrations, runHubMigrations, type HubMigrationEntry } from "./HubMigrator.ts";
 import { hubMigrations } from "./migrations/index.ts";
@@ -96,6 +97,59 @@ describe.skipIf(hubTestDatabaseUrl === undefined)("hub database", () => {
         assert.deepStrictEqual(rerun, []);
       }),
     ),
+  );
+
+  it.effect(
+    "starts tenants without schema changes: verify first, `t3 hub migrate` applies and grants",
+    () =>
+      withSchema((schema) =>
+        Effect.gen(function* () {
+          const admin = yield* makeHubPool({ url: schema.adminUrl, maxConnections: 1 });
+          const migrationsTable = admin<{ readonly exists: boolean }>`
+            SELECT to_regclass('hub_schema_migrations') IS NOT NULL AS exists
+          `.pipe(Effect.map((rows) => rows[0]?.exists ?? false));
+
+          // A tenant process (runtime role, no admin URL) refuses a schema
+          // that is behind, and changes nothing trying to fix it.
+          const behind = yield* makeHubDatabase({
+            databaseUrl: schema.runtimeUrl,
+            tenantId: "tenant-verify",
+          }).pipe(Effect.scoped, Effect.flip);
+          assert.strictEqual(behind._tag, "HubSchemaNotMigratedError");
+          assert.include(behind.message, "t3 hub migrate");
+          assert.include(behind.message, "051_HubThreadMachineServices");
+          assert.isFalse(yield* migrationsTable);
+
+          const first = yield* migrateHubDatabase({
+            databaseUrl: schema.runtimeUrl,
+            ...(schema.separateRuntimeRole ? { databaseAdminUrl: schema.adminUrl } : {}),
+          });
+          assert.deepStrictEqual(
+            first.applied.map((entry) => entry.id),
+            hubMigrations.map((entry) => entry.id),
+          );
+          assert.strictEqual(first.grantedRole !== null, schema.separateRuntimeRole);
+          const again = yield* migrateHubDatabase({
+            databaseUrl: schema.runtimeUrl,
+            ...(schema.separateRuntimeRole ? { databaseAdminUrl: schema.adminUrl } : {}),
+          });
+          assert.deepStrictEqual(again.applied, []);
+
+          // Now the tenant process starts, and its runtime role can use the tables.
+          const rows = yield* Effect.scoped(
+            Effect.gen(function* () {
+              const tenant = yield* makeHubDatabase({
+                databaseUrl: schema.runtimeUrl,
+                tenantId: "tenant-verify",
+              });
+              return yield* tenant.sql<{ readonly count: number }>`
+                SELECT count(*) AS count FROM hub_documents
+              `;
+            }),
+          );
+          assert.strictEqual(Number(rows[0]?.count), 0);
+        }),
+      ),
   );
 
   it("rejects duplicate migration ids", () => {

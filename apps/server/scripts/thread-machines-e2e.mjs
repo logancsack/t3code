@@ -25,9 +25,9 @@
  * By default the hub persists to SQLite in its base directory. With
  * `--hub-database-url` it runs as production hubs do: on Postgres, for a fresh
  * tenant with a random secret key, seeded through `t3 hub import` from a
- * standalone state directory, with a separate migration role when
- * `--hub-database-admin-url` is given, and restarting on an empty base
- * directory. Use a disposable database; the tenant's rows are left in it.
+ * standalone state directory after `t3 hub migrate` (with a separate
+ * migration role when `--hub-database-admin-url` is given; tenant processes
+ * never get it), and restarting on an empty base directory. Use a disposable database; the tenant's rows are left in it.
  *
  * It uses the real provider through T3's adapter on the runner, with this
  * machine's existing provider login, for two short turns (plus title
@@ -165,11 +165,14 @@ async function startRunner() {
   log(`runner listening in ${Date.now() - started} ms`);
 }
 
-/** Postgres hub settings: a fresh tenant and secret key per run (never printed). */
+/**
+ * Postgres hub settings: a fresh tenant and secret key per run (never printed).
+ * As on the hub host, tenant processes get only the runtime URL; the admin URL
+ * is used by `t3 hub migrate` alone.
+ */
 const hubDatabaseEnv = HUB_DATABASE_URL
   ? {
       T3CODE_HUB_DATABASE_URL: HUB_DATABASE_URL,
-      ...(HUB_DATABASE_ADMIN_URL ? { T3CODE_HUB_DATABASE_ADMIN_URL: HUB_DATABASE_ADMIN_URL } : {}),
       T3CODE_HUB_TENANT_ID: `e2e-${NodeCrypto.randomUUID()}`,
       T3CODE_HUB_SECRET_KEY: NodeCrypto.randomBytes(32).toString("base64"),
     }
@@ -195,6 +198,17 @@ const t3 = (argv, env) =>
  * directory holding them (its state.sqlite is created by a standalone command).
  */
 function seedHubDatabase() {
+  // The hub host migrates once with the migration role before any tenant starts.
+  const migrateDir = NodePath.join(root, "migrate");
+  NodeFS.mkdirSync(migrateDir, { recursive: true });
+  const migrated = t3(["hub", "migrate", "--base-dir", migrateDir], {
+    T3CODE_SERVER_MODE: "hub",
+    T3CODE_HUB_DATABASE_URL: HUB_DATABASE_URL,
+    ...(HUB_DATABASE_ADMIN_URL ? { T3CODE_HUB_DATABASE_ADMIN_URL: HUB_DATABASE_ADMIN_URL } : {}),
+    T3CODE_HUB_TENANT_ID: "00000000-0000-4000-8000-000000000000",
+    T3CODE_HUB_SECRET_KEY: hubDatabaseEnv.T3CODE_HUB_SECRET_KEY,
+  });
+  check("t3 hub migrate", /hub migrations|nothing to apply/.test(migrated));
   const seedDir = NodePath.join(root, "seed");
   t3(["auth", "session", "list", "--base-dir", seedDir], {});
   const report = t3(["hub", "import", NodePath.join(seedDir, "userdata")], hubDatabaseEnv);

@@ -121,7 +121,57 @@ const importCommand = Command.make("import", {
   ),
 );
 
+const HubMigrateEnv = Config.all({
+  databaseUrl: Config.redacted("T3CODE_HUB_DATABASE_URL"),
+  databaseAdminUrl: Config.redacted("T3CODE_HUB_DATABASE_ADMIN_URL").pipe(Config.option),
+});
+
+/**
+ * `t3 hub migrate`: the hub host runs this once before activating tenants, so
+ * tenant processes never need schema-change privileges. It applies every
+ * pending hub migration with `T3CODE_HUB_DATABASE_ADMIN_URL` (or the runtime
+ * role when that is absent), grants the runtime role access, starts no server,
+ * touches no tenant data, and is idempotent. Other `T3CODE_HUB_*` variables
+ * (tenant, secret key) are accepted and ignored. Prints no credentials.
+ */
+const migrateCommand = Command.make("migrate", {
+  baseDir: Flag.string("base-dir").pipe(
+    Flag.withDescription("Accepted for symmetry with other commands; nothing is written there."),
+    Flag.optional,
+  ),
+}).pipe(
+  Command.withDescription(
+    "Apply the hub database migrations and grant the runtime role access. Reads T3CODE_HUB_DATABASE_URL and the optional T3CODE_HUB_DATABASE_ADMIN_URL; starts no server and touches no tenant data.",
+  ),
+  Command.withHandler(() =>
+    Effect.gen(function* () {
+      const env = yield* HubMigrateEnv;
+      // Loaded on use so other `t3` commands never load the Postgres driver.
+      const { migrateHubDatabase } = yield* Effect.promise(
+        () => import("../persistence/Postgres/HubDatabaseLive.ts"),
+      );
+      const report = yield* migrateHubDatabase({
+        databaseUrl: Redacted.value(env.databaseUrl),
+        databaseAdminUrl: Option.getOrUndefined(Option.map(env.databaseAdminUrl, Redacted.value)),
+      });
+      yield* Console.log(
+        [
+          report.applied.length === 0
+            ? "The hub database schema is current; nothing to apply."
+            : `Applied ${report.applied.length} hub migrations: ${report.applied
+                .map((entry) => `${String(entry.id).padStart(3, "0")}_${entry.name}`)
+                .join(", ")}.`,
+          report.grantedRole === null
+            ? "The runtime role migrated the schema itself; no grants needed."
+            : "Granted the runtime role access to the hub tables.",
+          "",
+        ].join("\n"),
+      );
+    }),
+  ),
+);
+
 export const hubCommand = Command.make("hub").pipe(
   Command.withDescription("Manage thread-machine hub state."),
-  Command.withSubcommands([importCommand]),
+  Command.withSubcommands([importCommand, migrateCommand]),
 );

@@ -82,3 +82,20 @@ export const runHubMigrations = (entries: ReadonlyArray<HubMigrationEntry>) =>
       yield* Effect.logInfo("Applied hub migration.", { id: next.id, name: next.name });
     }
   });
+
+/**
+ * The migrations `hub_schema_migrations` does not record yet (all of them
+ * when the table does not exist). Reads only; safe for the runtime role.
+ */
+export const pendingHubMigrations = (entries: ReadonlyArray<HubMigrationEntry>) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const ordered = orderHubMigrations(entries);
+    const [table] = yield* sql<{ readonly exists: boolean }>`
+      SELECT to_regclass('hub_schema_migrations') IS NOT NULL AS exists
+    `;
+    if (!table?.exists) return ordered;
+    const rows = yield* sql<{ readonly id: number }>`SELECT id FROM hub_schema_migrations`;
+    const done = new Set(rows.map((row) => Number(row.id)));
+    return ordered.filter((entry) => !done.has(entry.id));
+  });
