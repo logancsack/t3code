@@ -47,10 +47,22 @@ describe.skipIf(hubTestDatabaseUrl === undefined)("hub database", () => {
           ),
           { concurrency: "unbounded" },
         );
+        // Each migration is applied exactly once across the concurrent starts,
+        // and each start applies what it applied in id order.
         assert.deepStrictEqual(
-          applied.flat().map((entry) => entry.id),
+          applied
+            .flat()
+            .map((entry) => entry.id)
+            .toSorted((left, right) => left - right),
           hubMigrations.map((entry) => entry.id),
         );
+        for (const run of applied) {
+          const ids = run.map((entry) => entry.id);
+          assert.deepStrictEqual(
+            ids,
+            ids.toSorted((left, right) => left - right),
+          );
+        }
 
         // A later migration with a lower id than an applied one still applies.
         const pool = yield* makeHubPool({ url: schema.adminUrl, maxConnections: 1 });

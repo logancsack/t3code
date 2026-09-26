@@ -26,18 +26,24 @@ import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Deferred from "effect/Deferred";
 import * as Fiber from "effect/Fiber";
+import * as ConfigProvider from "effect/ConfigProvider";
+import * as TestConsole from "effect/testing/TestConsole";
+import { Command } from "effect/unstable/cli";
 import * as Reactivity from "effect/unstable/reactivity/Reactivity";
-import { FetchHttpClient, HttpServer } from "effect/unstable/http";
+import { FetchHttpClient, HttpClient, HttpClientRequest, HttpServer } from "effect/unstable/http";
 import * as HttpApiClient from "effect/unstable/httpapi/HttpApiClient";
 
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
+import { makeCli } from "./bin.ts";
 import * as ServerConfig from "./config.ts";
 import { ServerEnvironment } from "./environment/ServerEnvironment.ts";
 import { OrchestrationEngineService } from "./orchestration/Services/OrchestrationEngine.ts";
+import { ProviderRegistry } from "./provider/Services/ProviderRegistry.ts";
 import { AuthAdministrativeScopes } from "@t3tools/contracts";
 import { HubDatabase } from "./persistence/Postgres/HubDatabase.ts";
 import { makeHubDocuments } from "./persistence/Postgres/HubDocuments.ts";
 import {
+  HUB_TEST_SECRET_KEY,
   hubTestDatabaseLayer,
   hubTestDatabaseUrl,
   hubTestServerConfigLayer,
@@ -108,6 +114,7 @@ const startHub = (schema: HubTestSchema, baseDir: string) =>
       engine: Context.getUnsafe(context, OrchestrationEngineService),
       auth: Context.getUnsafe(context, EnvironmentAuth.EnvironmentAuth),
       environment: Context.getUnsafe(context, ServerEnvironment),
+      providers: Context.getUnsafe(context, ProviderRegistry),
       stop: Fiber.interrupt(fiber),
     };
   });
@@ -198,8 +205,19 @@ describe.skipIf(hubTestDatabaseUrl === undefined)("hub server", () => {
           [[projectId, "main"]],
         );
         assert.deepStrictEqual(
-          shell.threads.map((thread) => thread.id),
-          [threadId],
+          shell.threads.map((thread) => [thread.id, thread.machine]),
+          [[threadId, null]],
+        );
+        // Hub capabilities, and providers selectable before any machine reported them.
+        const descriptor = yield* first.environment.getDescriptor;
+        assert.strictEqual(descriptor.capabilities.threadMachines, true);
+        assert.isUndefined(descriptor.capabilities.pullRequests);
+        const codex = (yield* first.providers.getProviders).find(
+          (provider) => provider.instanceId === "codex",
+        );
+        assert.deepStrictEqual(
+          codex && [codex.enabled, codex.installed, codex.status, codex.auth.status],
+          [true, true, "ready", "unknown"],
         );
         const detail = yield* client.orchestration.threadSnapshot({
           headers,
@@ -270,5 +288,117 @@ describe.skipIf(hubTestDatabaseUrl === undefined)("hub server", () => {
           ),
         ),
       ),
+  );
+
+  it.effect("mints a pairing link with `t3 auth pairing create` that a running hub exchanges", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const schema = yield* makeHubTestSchema(hubTestDatabaseUrl!);
+      yield* Effect.gen(function* () {
+        const database = yield* HubDatabase;
+        yield* makeHubDocuments(database!).write(
+          "settings.json",
+          '{ "enableProviderUpdateChecks": false }\n',
+        );
+      }).pipe(Effect.provide(hubTestDatabaseLayer(schema, TENANT)));
+      const hub = yield* startHub(
+        schema,
+        yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-hub-pair-server-" }),
+      );
+
+      // The hub host mints pairing credentials with the CLI on its own base
+      // directory, configured for the tenant's hub database.
+      const cliBaseDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-hub-pair-cli-",
+      });
+      const env: Record<string, string> = {
+        T3CODE_SERVER_MODE: "hub",
+        T3CODE_HUB_DATABASE_URL: schema.runtimeUrl,
+        ...(schema.separateRuntimeRole ? { T3CODE_HUB_DATABASE_ADMIN_URL: schema.adminUrl } : {}),
+        T3CODE_HUB_TENANT_ID: TENANT,
+        T3CODE_HUB_SECRET_KEY: HUB_TEST_SECRET_KEY,
+        T3CODE_HUB_MACHINES_URL: "http://127.0.0.1:9",
+        T3CODE_HUB_MACHINES_TOKEN: "unused",
+      };
+      const output = yield* Effect.gen(function* () {
+        yield* Command.runWith(makeCli(), { version: "0.0.0" })([
+          "auth",
+          "pairing",
+          "create",
+          "--base-dir",
+          cliBaseDir,
+          "--json",
+        ]);
+        return (yield* TestConsole.logLines).findLast(
+          (line): line is string => typeof line === "string",
+        );
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            TestConsole.layer,
+            NetService.layer,
+            ConfigProvider.layer(ConfigProvider.fromEnv({ env })),
+          ),
+        ),
+      );
+      // @effect-diagnostics-next-line preferSchemaOverJson:off
+      const issued = JSON.parse(output ?? "{}") as {
+        readonly id: string;
+        readonly credential: string;
+      };
+      assert.isString(issued.credential);
+
+      // The pairing link lives in the tenant's Postgres rows, not on disk.
+      const stored = yield* Effect.gen(function* () {
+        const { sql } = (yield* HubDatabase)!;
+        return yield* sql<{ readonly id: string }>`
+            SELECT id FROM auth_pairing_links
+            WHERE user_id = ${TENANT} AND revoked_at IS NULL
+          `;
+      }).pipe(Effect.provide(hubTestDatabaseLayer(schema, TENANT)));
+      assert.include(
+        stored.map((row) => row.id),
+        issued.id,
+      );
+      assert.notInclude(
+        yield* fileSystem.readDirectory(cliBaseDir, { recursive: true }),
+        "userdata/state.sqlite",
+      );
+
+      // The running hub exchanges it for a browser session.
+      const http = yield* HttpClient.HttpClient;
+      const exchange = (credential: string) =>
+        HttpClientRequest.post(`${hub.origin}/api/auth/browser-session`).pipe(
+          HttpClientRequest.bodyJson({ credential }),
+          Effect.flatMap(http.execute),
+        );
+      const exchanged = yield* exchange(issued.credential);
+      assert.strictEqual(exchanged.status, 200);
+      const setCookie = exchanged.headers["set-cookie"];
+      const cookie = (Array.isArray(setCookie) ? setCookie[0] : setCookie)?.split(";")[0] ?? "";
+      assert.isAbove(cookie.length, 0);
+      const session = yield* http
+        .execute(
+          HttpClientRequest.get(`${hub.origin}/api/auth/session`).pipe(
+            HttpClientRequest.setHeader("cookie", cookie),
+          ),
+        )
+        .pipe(Effect.flatMap((response) => response.json));
+      assert.isTrue((session as { readonly authenticated: boolean }).authenticated);
+
+      // One-time: the same credential cannot be exchanged again.
+      assert.notStrictEqual((yield* exchange(issued.credential)).status, 200);
+      yield* hub.stop;
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(
+        Layer.mergeAll(
+          NodeServices.layer,
+          NetService.layer,
+          FetchHttpClient.layer,
+          Reactivity.layer,
+        ),
+      ),
+    ),
   );
 });
