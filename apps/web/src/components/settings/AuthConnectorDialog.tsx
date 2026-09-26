@@ -45,13 +45,6 @@ import { managedWorkspaceBrowserUrl } from "../../managedDevPc";
 import { aldoAuthConnectors, isAldoCloud } from "../../aldo/cloud";
 import { aldoAccountMethod } from "../../aldo/accountSpecs";
 
-// Under Aldo a sign-in belongs to the account, not to one environment: Aldo
-// runs it and every thread's sandbox receives the credential.
-const ACCOUNT_SCOPED = isAldoCloud;
-const CREDENTIAL_SCOPE_COPY = ACCOUNT_SCOPED
-  ? "Saved to your Aldo account for every thread."
-  : "Credentials stay on this workspace.";
-
 export type AuthConnectorMethodOption = {
   readonly method: AuthConnectorMethod;
   readonly label: string;
@@ -174,7 +167,15 @@ export function AuthConnectorDialog(props: {
   const callbackInputRef = useRef<HTMLTextAreaElement | null>(null);
 
   // Aldo runs one subscription sign-in per service and keeps it on the account.
-  const aldoMethod = ACCOUNT_SCOPED ? aldoAccountMethod(connector) : null;
+  // Aldo keeps GitHub, Claude, Codex and Grok on the account; anything else
+  // (OpenCode, say) signs in inside the thread's own sandbox as usual.
+  const aldoMethod = isAldoCloud ? aldoAccountMethod(connector) : null;
+  const ACCOUNT_SCOPED = aldoMethod !== null;
+  const CREDENTIAL_SCOPE_COPY = ACCOUNT_SCOPED
+    ? "Saved to your Aldo account for every thread."
+    : isAldoCloud
+      ? "Credentials stay in this thread's sandbox."
+      : "Credentials stay on this workspace.";
   const methods = aldoMethod ? [aldoMethod] : offeredMethods;
   const selectedMethod = methods.find((method) => method.method === session?.method) ?? null;
 
