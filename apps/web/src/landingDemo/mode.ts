@@ -13,3 +13,10 @@ export function isLandingDemo(url?: URL): boolean {
   }
   return resolved?.searchParams.get("aldoDemo") === "1";
 }
+
+/** The demo served as a hub: repository projects, each thread on its own machine. */
+export function isLandingDemoHub(url?: URL): boolean {
+  if (!isLandingDemo(url)) return false;
+  const resolved = url ?? new URL(window.location.href, "http://localhost");
+  return resolved.searchParams.get("aldoDemoHub") === "1";
+}
