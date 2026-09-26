@@ -36,6 +36,8 @@ import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore"
 import { useClientSettings } from "./useSettings";
 import { isAldoCloud } from "../aldo/cloud";
 import { aldoProjectRefForNewThread } from "../aldo/threads";
+import { environmentCatalog } from "../connection/catalog";
+import { useAtomCommand } from "../state/use-atom-command";
 
 interface NewThreadWorkspaceOptions {
   branch?: string | null;
@@ -428,23 +430,25 @@ function useDraftThreadHandler() {
 }
 
 /**
- * Opens a new draft thread in a project. Under Aldo the draft goes to the
- * project's sandbox (the newest, for older projects that have several).
+ * Opens a new draft thread in a project. Under Aldo each thread gets its own
+ * cloud machine, so the draft goes to an idle machine of the project or a new
+ * one (see aldo/threads.ts).
  */
 export function useNewThreadHandler() {
   const openDraft = useDraftThreadHandler();
+  const reconnect = useAtomCommand(environmentCatalog.retryNow, { reportFailure: false });
   return useCallback(
     async (
       projectRef: ScopedProjectRef,
       options?: Parameters<typeof openDraft>[1],
     ): Promise<{ draftId: DraftId; threadId: ThreadId } | null> => {
       if (!isAldoCloud) return openDraft(projectRef, options);
-      // Threads start in the project's checkout, where its dependencies are
-      // installed and its dev services run; the composer can still switch one
-      // to a worktree of its own.
-      return openDraft(aldoProjectRefForNewThread(projectRef), { envMode: "local", ...options });
+      const target = await aldoProjectRefForNewThread(projectRef, reconnect).catch(() => null);
+      // The machine is the thread's own, so it works directly in the machine's
+      // checkout (its aldo/<id> branch) rather than a separate worktree.
+      return target ? openDraft(target, { envMode: "local", ...options }) : null;
     },
-    [openDraft],
+    [openDraft, reconnect],
   );
 }
 

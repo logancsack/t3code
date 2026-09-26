@@ -1,7 +1,7 @@
 // Aldo cloud mode. The web client is served by Aldo, which runs one sandbox
-// per project (a repository, or several), shared by the project's threads;
-// each sandbox runs a stock T3 server and appears here as a platform bearer
-// environment. Aldo's same-origin API lists the sandboxes,
+// (a cloud machine) per thread; each runs a stock T3 server and appears here
+// as a platform bearer environment. T3 groups a repository's machines into
+// one project, and the UI keeps the machines themselves out of sight. Aldo's same-origin API lists the sandboxes,
 // wakes them, and hands out short-lived bearer tokens at connect time.
 
 import {
@@ -107,21 +107,33 @@ function projectKey(environment: AldoEnvironment): string {
   return (environment.repos ?? [environment.repo]).join(",");
 }
 
-/**
- * Every sandbox of this sandbox's project, newest first (the directory's
- * order). Projects from before sandboxes were shared can have several.
- */
-export function aldoProjectSandboxes(environmentId: string): ReadonlyArray<AldoEnvironment> {
-  const environments = knownEnvironments ?? [];
-  const own = environments.find((environment) => environment.environmentId === environmentId);
-  return own
-    ? environments.filter((environment) => projectKey(environment) === projectKey(own))
-    : [];
+/** Every machine working in these repositories, newest first (the directory's order). */
+export function aldoSandboxesFor(repos: ReadonlyArray<string>): ReadonlyArray<AldoEnvironment> {
+  const key = repos.join(",");
+  return (knownEnvironments ?? []).filter((environment) => projectKey(environment) === key);
 }
 
-/** Whether the project has another sandbox besides this one (an older duplicate). */
-export function aldoHasOtherSandbox(environmentId: string): boolean {
-  return aldoProjectSandboxes(environmentId).length > 1;
+/** Every machine of this machine's project (its own included), newest first. */
+export function aldoProjectSandboxes(environmentId: string): ReadonlyArray<AldoEnvironment> {
+  const own = knownEnvironments?.find((environment) => environment.environmentId === environmentId);
+  return own ? aldoSandboxesFor(own.repos ?? [own.repo]) : [];
+}
+
+/**
+ * The branch to show for a thread. Each Aldo machine starts on its own
+ * `aldo/<machine id>` branch, which says nothing to the user, so it's hidden;
+ * branches the agent makes still show.
+ */
+export function displayedThreadBranch(
+  environmentId: string,
+  branch: string | null | undefined,
+): string | null {
+  if (!branch) return null;
+  const placeholder =
+    isAldoCloud &&
+    isAldoEnvironmentId(environmentId) &&
+    branch === `aldo/${threadIdForEnvironment(environmentId)}`;
+  return placeholder ? null : branch;
 }
 
 export function requestAldoDirectoryRefresh(): void {
@@ -225,7 +237,7 @@ export const aldoEnvironmentGateway = {
           : Effect.fail(
               new ConnectionBlockedError({
                 reason: "dormant",
-                detail: "This project's sandbox is asleep.",
+                detail: "This cloud agent is asleep.",
               }),
             ),
       ),
@@ -255,8 +267,8 @@ export async function deleteAldoEnvironment(environmentId: string): Promise<void
 }
 
 /**
- * In Aldo a project is its sandbox: once T3 has removed the project, the
- * sandbox goes too. Does nothing outside Aldo.
+ * In Aldo a project's entry in a machine is the machine's reason to exist:
+ * once T3 has removed it, the machine goes too. Does nothing outside Aldo.
  */
 export async function removeAldoProjectSandbox(environmentId: string): Promise<void> {
   if (isAldoCloud && isAldoEnvironmentId(environmentId)) await deleteAldoEnvironment(environmentId);
@@ -264,7 +276,7 @@ export async function removeAldoProjectSandbox(environmentId: string): Promise<v
 
 /** How removing a project in Aldo reads in a confirmation. */
 export const ALDO_PROJECT_REMOVAL_NOTE =
-  "This also deletes the project's cloud sandbox, including any changes there that haven't been pushed.";
+  "This also deletes the project's cloud agents, including any changes they haven't pushed.";
 
 /** Tells Aldo the user is looking at this thread, so it isn't stopped for idleness. */
 export function touchAldoEnvironment(environmentId: string): void {

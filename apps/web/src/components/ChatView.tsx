@@ -2025,7 +2025,9 @@ function ChatViewContent(props: ChatViewProps) {
         toastManager.add(
           stackedThreadToast({
             type: "error",
-            title: "Could not reconnect environment",
+            title: isAldoCloud
+              ? "Couldn't reconnect to the cloud"
+              : "Could not reconnect environment",
             description: error instanceof Error ? error.message : "Failed to reconnect.",
           }),
         );
@@ -2273,7 +2275,7 @@ function ChatViewContent(props: ChatViewProps) {
         variant: "info",
         priority: "urgent",
         icon: <LoaderCircleIcon className="animate-spin" />,
-        title: "Waking this thread's sandbox…",
+        title: "Reconnecting to the cloud…",
         className:
           "mx-auto w-fit max-w-full rounded-full border-border/48 bg-background/88 px-3 py-1.5 text-muted-foreground shadow-sm",
       });
@@ -2282,7 +2284,7 @@ function ChatViewContent(props: ChatViewProps) {
         id: "aldo-wake",
         variant: "error",
         icon: <WifiOffIcon />,
-        title: "Couldn't wake this thread's sandbox",
+        title: "Couldn't reconnect to the cloud",
         description: aldoWake.state.message,
         actions: (
           <Button size="xs" onClick={aldoWake.wake}>
@@ -2307,7 +2309,7 @@ function ChatViewContent(props: ChatViewProps) {
               aria-hidden="true"
             />
           ),
-          title: `${unavailableConnection.phase === "connecting" ? "Connecting" : "Reconnecting"} to ${activeEnvironmentActionUnavailableState.label}`,
+          title: `${unavailableConnection.phase === "connecting" ? "Connecting" : "Reconnecting"} to ${isAldoCloud ? "the cloud" : activeEnvironmentActionUnavailableState.label}`,
           description: "It may be finishing an update. One moment.",
         });
       } else if (environmentReconnecting) {
@@ -2316,7 +2318,7 @@ function ChatViewContent(props: ChatViewProps) {
           variant: "info",
           priority: "urgent",
           icon: <LoaderCircleIcon className="animate-spin" />,
-          title: unavailableConnection.phase === "connecting" ? "Connecting…" : "Reconnecting…",
+          title: `${unavailableConnection.phase === "connecting" ? "Connecting" : "Reconnecting"}${isAldoCloud ? " to the cloud" : ""}…`,
           className:
             "mx-auto w-fit max-w-full rounded-full border-border/48 bg-background/88 px-3 py-1.5 text-muted-foreground shadow-sm",
         });
@@ -2325,10 +2327,14 @@ function ChatViewContent(props: ChatViewProps) {
           id: `environment-unavailable:${activeEnvironmentActionUnavailableState.environmentId}`,
           variant: unavailableConnection.phase === "error" ? "error" : "warning",
           icon: <WifiOffIcon />,
-          title: `${activeEnvironmentActionUnavailableState.label}: ${connectionStatusTitle(unavailableConnection)}`,
+          title: isAldoCloud
+            ? "Can't reach this thread's cloud agent"
+            : `${activeEnvironmentActionUnavailableState.label}: ${connectionStatusTitle(unavailableConnection)}`,
           description:
             unavailableConnection.error ??
-            "Reconnect this environment before sending messages or running actions.",
+            (isAldoCloud
+              ? "Reconnect to keep working."
+              : "Reconnect this environment before sending messages or running actions."),
           actions: (
             <>
               <Button
@@ -2341,13 +2347,15 @@ function ChatViewContent(props: ChatViewProps) {
               >
                 Reconnect
               </Button>
-              <Button
-                size="xs"
-                variant="outline"
-                onClick={() => void navigate({ to: "/settings/connections" })}
-              >
-                Connections
-              </Button>
+              {isAldoCloud ? null : (
+                <Button
+                  size="xs"
+                  variant="outline"
+                  onClick={() => void navigate({ to: "/settings/connections" })}
+                >
+                  Connections
+                </Button>
+              )}
             </>
           ),
         });
@@ -2652,7 +2660,12 @@ function ChatViewContent(props: ChatViewProps) {
     async (attachment: ChatFileAttachment) => {
       const connection = readPreparedConnection(environmentId);
       if (!connection) {
-        toastManager.add({ type: "error", title: "The environment is not connected." });
+        toastManager.add({
+          type: "error",
+          title: isAldoCloud
+            ? "Not connected to the cloud yet."
+            : "The environment is not connected.",
+        });
         return;
       }
       const isVideo = videoMimeType(attachment) !== null;
@@ -5799,7 +5812,9 @@ function ChatViewContent(props: ChatViewProps) {
         stackedThreadToast({
           type: "warning",
           title: "Not connected: message not sent",
-          description: "Reconnecting to the environment. Try again once it is connected.",
+          description: isAldoCloud
+            ? "Reconnecting to the cloud. Try again in a moment."
+            : "Reconnecting to the environment. Try again once it is connected.",
         }),
       );
       return;

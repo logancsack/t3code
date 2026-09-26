@@ -127,7 +127,7 @@ function EnvironmentForm(props: {
       </label>
       <div className="space-y-2">
         <span className="text-muted-foreground text-xs">
-          Dev services (started with the sandbox, restarted after sleeps)
+          Dev services (started with every thread, restarted after sleeps)
         </span>
         {draft.services.map((service, index) => (
           <div key={index} className="grid grid-cols-[6rem_1fr_6rem_auto] gap-1.5">
@@ -329,11 +329,11 @@ export function AldoEnvironmentsPanel() {
       }
     >
       <p className="px-3 text-sm text-muted-foreground sm:px-4">
-        A ready-to-go environment prebuilds a project (one repository or several) with its
-        dependencies installed, so a new sandbox for it starts working immediately, with its dev
-        servers already running. Agents set one up with{" "}
-        <code className="text-xs">save_environment</code>, a repository can define one in{" "}
-        <code className="text-xs">.aldo/environment.json</code>, or add one here.
+        A ready-to-go environment prebuilds a repository (or a set of repositories) with
+        dependencies installed, so new threads start working immediately, with their dev servers
+        already running. Agents set one up with <code className="text-xs">save_environment</code>, a
+        repository can define one in <code className="text-xs">.aldo/environment.json</code>, or add
+        one here. Aldo rebuilds them daily.
       </p>
       {error ? <p className="px-3 text-destructive-foreground text-sm sm:px-4">{error}</p> : null}
       {draft ? (

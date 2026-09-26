@@ -38,20 +38,15 @@ import { buildThreadRouteParams, resolveThreadRouteRef } from "../threadRoutes";
 import { formatWorktreePathForDisplay, getOrphanedWorktreePathForThread } from "../worktreeCleanup";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
 import { useClientSettings } from "./useSettings";
-import {
-  aldoHasOtherSandbox,
-  deleteAldoEnvironment,
-  isAldoCloud,
-  isAldoEnvironmentId,
-} from "../aldo/cloud";
+import { deleteAldoEnvironment, isAldoCloud, isAldoEnvironmentId } from "../aldo/cloud";
 
 function removeAldoSandbox(environmentId: string): void {
   void deleteAldoEnvironment(environmentId).catch((cause: unknown) => {
     toastManager.add(
       stackedThreadToast({
         type: "error",
-        title: "Thread deleted, but the old sandbox wasn't",
-        description: cause instanceof Error ? cause.message : "Aldo couldn't delete the sandbox.",
+        title: "Thread deleted, but its cloud agent wasn't",
+        description: cause instanceof Error ? cause.message : "Aldo couldn't delete it.",
       }),
     );
   });
@@ -399,13 +394,8 @@ export function useThreadActions() {
         threadRef,
       );
       clearTerminalUiState(threadRef);
-      // Aldo: a project keeps its sandbox when its threads are deleted, but an
-      // older duplicate sandbox of the project goes with its last thread.
-      if (
-        isAldoCloud &&
-        isAldoEnvironmentId(threadRef.environmentId) &&
-        aldoHasOtherSandbox(threadRef.environmentId)
-      ) {
+      // Aldo: each thread has its own machine; the last thread's deletion removes it.
+      if (isAldoCloud && isAldoEnvironmentId(threadRef.environmentId)) {
         const remaining = threads.filter(
           (entry) => entry.id !== threadRef.threadId && !deletedThreadIds.has(entry.id),
         );
@@ -721,17 +711,12 @@ export function useThreadActions() {
 
       if (confirmThreadDelete && localApi) {
         const title = resolved?.thread.title ?? "this thread";
-        const removesOldSandbox =
-          isAldoCloud &&
-          isAldoEnvironmentId(target.environmentId) &&
-          aldoHasOtherSandbox(target.environmentId) &&
-          readEnvironmentThreadRefs(target.environmentId).length <= 1;
         const confirmationResult = await settlePromise(() =>
           localApi.dialogs.confirm(
             [
               `Delete thread "${title}"?`,
-              removesOldSandbox
-                ? "This permanently deletes the thread and, as the last thread in an older copy of this project, that copy's sandbox, including any changes there that haven't been pushed."
+              isAldoCloud && isAldoEnvironmentId(target.environmentId)
+                ? "This permanently deletes the thread and its cloud agent, including any changes it hasn't pushed."
                 : "This permanently clears conversation history for this thread.",
             ].join("\n"),
             { variant: "destructive" },

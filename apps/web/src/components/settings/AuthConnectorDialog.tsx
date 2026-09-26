@@ -174,7 +174,7 @@ export function AuthConnectorDialog(props: {
   const CREDENTIAL_SCOPE_COPY = ACCOUNT_SCOPED
     ? "Saved to your Aldo account for every thread."
     : isAldoCloud
-      ? "Credentials stay in this thread's sandbox."
+      ? "Credentials stay with this thread's cloud agent."
       : "Credentials stay on this workspace.";
   const methods = aldoMethod ? [aldoMethod] : offeredMethods;
   const selectedMethod = methods.find((method) => method.method === session?.method) ?? null;

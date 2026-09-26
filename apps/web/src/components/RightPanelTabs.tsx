@@ -279,7 +279,7 @@ function RightPanelEmptyState(props: {
           {
             label: isAldoCloud ? "Browser" : "Workspace browser",
             description: isAldoCloud
-              ? "Chrome and the desktop in this thread's sandbox, shared with the agent."
+              ? "The cloud agent's Chrome and desktop, shared with you."
               : "The signed-in browser you and agents share.",
             icon: MonitorSmartphone,
             shortcut: "B",

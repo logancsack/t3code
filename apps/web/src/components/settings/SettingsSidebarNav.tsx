@@ -75,6 +75,8 @@ export const SETTINGS_NAV_ITEMS: ReadonlyArray<{
 }> = (Object.keys(SETTINGS_SECTION_LABELS) as SettingsPath[])
   .filter((to) => to !== "/settings/workspace" || isManagedDevPc)
   .filter((to) => (to !== "/settings/vault" && to !== "/settings/environments") || isAldoCloud)
+  // Aldo connects each thread's cloud agent itself; there's nothing to manage.
+  .filter((to) => to !== "/settings/connections" || !isAldoCloud)
   .map((to) => ({
     to,
     label: SETTINGS_SECTION_LABELS[to],

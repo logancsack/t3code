@@ -113,8 +113,8 @@ function StartPicker(props: { readonly initialMode: Mode; readonly onDone: () =>
         <DialogTitle>{mode === "new" ? "New project" : "Start a thread"}</DialogTitle>
         <DialogDescription>
           {mode === "new"
-            ? "Aldo creates the repository and a cloud sandbox for the project, then opens a thread in it. Tell the agent what to build."
-            : "Pick one or more repositories. Each project gets one cloud sandbox, shared by all of its threads; a project you already have opens where it is."}
+            ? "Aldo creates the repository and a cloud agent to work in it. Tell the agent what to build."
+            : "Pick one or more repositories. The thread gets its own cloud agent, with each one cloned on a new branch."}
         </DialogDescription>
       </DialogHeader>
       {accounts === null ? (
@@ -476,7 +476,7 @@ function ExistingRepositoryPicker(props: { readonly onDone: () => void }) {
         {error ? <p className="basis-full text-destructive-foreground text-sm">{error}</p> : null}
         {starting ? (
           <span className="flex items-center gap-2 text-muted-foreground text-sm">
-            <LoaderCircleIcon className="size-4 animate-spin" /> Starting a sandbox…
+            <LoaderCircleIcon className="size-4 animate-spin" /> Creating a cloud agent…
           </span>
         ) : null}
         <Button type="button" variant="ghost" onClick={props.onDone}>

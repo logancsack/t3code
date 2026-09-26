@@ -1,4 +1,5 @@
 import { isElectron } from "~/env";
+import { isAldoCloud } from "../../aldo/cloud";
 import { isManagedDevPc } from "../../managedDevPc";
 import { isMacPlatform, isWindowsPlatform, normalizeSearchText } from "~/lib/utils";
 
@@ -474,7 +475,9 @@ export function filterAvailableSettingsSearchItems(
       (!item.providerSettingsOnly || availability.hasProviderSettingsEnvironment) &&
       (!item.localBackendManagementOnly || availability.canManageLocalBackend) &&
       (!item.wslAvailableOnly || availability.isWslSettingsRowVisible) &&
-      (!item.requiresThreadAutoSettlement || availability.hasThreadAutoSettlement),
+      (!item.requiresThreadAutoSettlement || availability.hasThreadAutoSettlement) &&
+      // Aldo has no Connections page: it connects cloud agents itself.
+      (item.to !== "/settings/connections" || !isAldoCloud),
   );
 }
 

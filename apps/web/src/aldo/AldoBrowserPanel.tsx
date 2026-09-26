@@ -476,7 +476,7 @@ export function AldoBrowserPanel({ environmentId }: { environmentId: string }) {
         </div>
         {view === "desktop" ? (
           <span className="min-w-0 flex-1 truncate px-1 text-xs text-muted-foreground">
-            The whole sandbox desktop: Chrome, desktop apps and the taskbar.
+            The agent's whole desktop: Chrome, desktop apps and the taskbar.
           </span>
         ) : null}
         <div className={cn("contents", view === "desktop" && "hidden")}>
@@ -680,7 +680,7 @@ export function AldoBrowserPanel({ environmentId }: { environmentId: string }) {
         {status !== "live" ? (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-6 text-center text-sm text-muted-foreground">
             {status === "asleep" ? (
-              "This thread is asleep. It wakes when you open it."
+              "Reconnecting to the cloud…"
             ) : status === "error" ? (
               <span className="max-w-sm">
                 Couldn't reach the browser{error ? `: ${error}` : ""}. Retrying…

@@ -31,7 +31,7 @@ export function AldoHome() {
               </EmptyTitle>
               <EmptyDescription className="mt-2 text-sm text-muted-foreground/78">
                 {setupDone
-                  ? "Start a new project from scratch, or work in one of your repositories. Each project runs in its own cloud sandbox."
+                  ? "Start a new project from scratch, or work in one of your repositories. Every thread gets its own cloud agent."
                   : "Connect GitHub and at least one of your agent subscriptions. You only do this once."}
               </EmptyDescription>
             </EmptyHeader>

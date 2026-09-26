@@ -79,7 +79,7 @@ export function AldoDesktopView({ environmentId }: { environmentId: string }) {
       {status !== "live" ? (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-6 text-center text-sm text-muted-foreground">
           {status === "asleep" ? (
-            "This thread is asleep. It wakes when you open it."
+            "Reconnecting to the cloud…"
           ) : status === "error" ? (
             <span className="max-w-sm">
               Couldn't reach the desktop{error ? `: ${error}` : ""}. Retrying…
