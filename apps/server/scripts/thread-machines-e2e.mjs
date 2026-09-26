@@ -35,8 +35,12 @@
  * instance. Nothing outside the temporary directory (and the hub database)
  * is written; processes started here are stopped by PID on exit.
  *
+ * With `--dist <dir>` every process runs from a built server package instead
+ * of the source: an extracted release artifact (`<dir>/dist/bin.mjs`) or the
+ * `bin.mjs` itself.
+ *
  *   node apps/server/scripts/thread-machines-e2e.mjs [--keep] [--model <id>]
- *     [--hub-database-url <url> [--hub-database-admin-url <url>]]
+ *     [--hub-database-url <url> [--hub-database-admin-url <url>]] [--dist <dir>]
  */
 import * as NodeChildProcess from "node:child_process";
 import * as NodeCrypto from "node:crypto";
@@ -48,16 +52,16 @@ import * as NodeURL from "node:url";
 const HUB_PORT = 4421;
 const RUNNER_PORT = 4422;
 const HUB = `http://127.0.0.1:${HUB_PORT}`;
-const BIN = NodePath.resolve(
-  NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)),
-  "../src/bin.ts",
-);
 
 const args = process.argv.slice(2);
 const flagValue = (name, fallback) => {
   const index = args.indexOf(name);
   return index >= 0 ? args[index + 1] : fallback;
 };
+const DIST = flagValue("--dist", undefined);
+const BIN = DIST
+  ? NodePath.resolve(DIST.endsWith(".mjs") ? DIST : NodePath.join(DIST, "dist", "bin.mjs"))
+  : NodePath.resolve(NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)), "../src/bin.ts");
 const KEEP = args.includes("--keep");
 const MODEL = { instanceId: "claudeAgent", model: flagValue("--model", "claude-haiku-4-5") };
 const HUB_DATABASE_URL = flagValue("--hub-database-url", undefined);
@@ -369,7 +373,7 @@ async function main() {
   NodeFS.writeFileSync(NodePath.join(checkout, "notes.txt"), "hello from the runner\n");
   git("add", ".");
   git("commit", "-m", "initial");
-  log(`workspace ${root}; hub persistence: ${HUB_DATABASE_URL ? "Postgres" : "SQLite"}`);
+  log(`workspace ${root}; hub persistence: ${HUB_DATABASE_URL ? "Postgres" : "SQLite"}; ${BIN}`);
 
   if (HUB_DATABASE_URL) seedHubDatabase();
   await startRunner();

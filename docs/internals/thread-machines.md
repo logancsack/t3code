@@ -639,8 +639,9 @@ Not built yet:
   `ProviderService` and the reactors on a hub against the real runner handlers.
 - End to end with a real provider:
   `node apps/server/scripts/thread-machines-e2e.mjs [--keep] [--model <id>]
-[--hub-database-url <url> [--hub-database-admin-url <url>]]` starts a runner (4422) and a
-  hub (4421) on loopback and drives the hub's public API. With a database URL the hub runs
+[--hub-database-url <url> [--hub-database-admin-url <url>]] [--dist <dir>]` starts a runner
+  (4422) and a hub (4421) on loopback and drives the hub's public API. `--dist` runs every
+  process from a built package (an extracted release artifact) instead of the source. With a database URL the hub runs
   on Postgres for a fresh tenant seeded through `t3 hub import`, and restarts on an empty
   base directory. Beyond the two turns it checks the client contract: the capability,
   selectable provider snapshots before any runner reported, the settings push, the shell's
