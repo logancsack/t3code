@@ -15,13 +15,21 @@
  *   e. a runner restart (new boot), then a turn that resumes the session
  *   f. a hub restart; history and diffs survive
  *
+ * By default the hub persists to SQLite in its base directory. With
+ * `--hub-database-url` it runs as production hubs do: on Postgres, for a fresh
+ * tenant with a random secret key, seeded through `t3 hub import` from a
+ * standalone state directory, with a separate migration role when
+ * `--hub-database-admin-url` is given, and restarting on an empty base
+ * directory. Use a disposable database; the tenant's rows are left in it.
+ *
  * It uses the real provider through T3's adapter on the runner, with this
  * machine's existing provider login, for two short turns (plus title
  * generation). The model defaults to claude-haiku-4-5 on the claudeAgent
- * instance. Nothing outside the temporary directory is written; processes
- * started here are stopped by PID on exit.
+ * instance. Nothing outside the temporary directory (and the hub database)
+ * is written; processes started here are stopped by PID on exit.
  *
  *   node apps/server/scripts/thread-machines-e2e.mjs [--keep] [--model <id>]
+ *     [--hub-database-url <url> [--hub-database-admin-url <url>]]
  */
 import * as NodeChildProcess from "node:child_process";
 import * as NodeCrypto from "node:crypto";
@@ -45,6 +53,8 @@ const flagValue = (name, fallback) => {
 };
 const KEEP = args.includes("--keep");
 const MODEL = { instanceId: "claudeAgent", model: flagValue("--model", "claude-haiku-4-5") };
+const HUB_DATABASE_URL = flagValue("--hub-database-url", undefined);
+const HUB_DATABASE_ADMIN_URL = flagValue("--hub-database-admin-url", undefined);
 
 const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-thread-machines-e2e-"));
 const threadId = `thread-${NodeCrypto.randomUUID()}`;
@@ -53,6 +63,12 @@ const checkoutRoot = NodePath.join(root, "t");
 const checkout = NodePath.join(checkoutRoot, threadId);
 const runnerToken = NodeCrypto.randomBytes(24).toString("base64url");
 const logs = NodePath.join(root, "logs");
+// The settings every process starts with; titles are generated on the
+// thread's runner with the same cheap model.
+const SETTINGS = JSON.stringify({
+  enableProviderUpdateChecks: false,
+  textGenerationModelSelection: MODEL,
+});
 
 const stamp = () => new Date().toISOString().slice(11, 23);
 const log = (...values) => console.log(`[${stamp()}]`, ...values);
@@ -142,26 +158,62 @@ async function startRunner() {
   log(`runner listening in ${Date.now() - started} ms`);
 }
 
+/** Postgres hub settings: a fresh tenant and secret key per run (never printed). */
+const hubDatabaseEnv = HUB_DATABASE_URL
+  ? {
+      T3CODE_HUB_DATABASE_URL: HUB_DATABASE_URL,
+      ...(HUB_DATABASE_ADMIN_URL ? { T3CODE_HUB_DATABASE_ADMIN_URL: HUB_DATABASE_ADMIN_URL } : {}),
+      T3CODE_HUB_TENANT_ID: `e2e-${NodeCrypto.randomUUID()}`,
+      T3CODE_HUB_SECRET_KEY: NodeCrypto.randomBytes(32).toString("base64"),
+    }
+  : {};
+const hubEnv = {
+  T3CODE_SERVER_MODE: "hub",
+  T3CODE_RUNNER_URL: `ws://127.0.0.1:${RUNNER_PORT}/runner/ws`,
+  T3CODE_RUNNER_TOKEN: runnerToken,
+  T3CODE_HUB_CHECKOUT_ROOT: checkoutRoot,
+  T3CODE_HUB_PUBLIC_URL: HUB,
+  ...hubDatabaseEnv,
+};
+
+const t3 = (argv, env) =>
+  NodeChildProcess.execFileSync(process.execPath, [BIN, ...argv], {
+    encoding: "utf8",
+    env: { ...baseEnv, ...env },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+
+/**
+ * Postgres hubs keep settings in the database: import a standalone state
+ * directory holding them (its state.sqlite is created by a standalone command).
+ */
+function seedHubDatabase() {
+  const seedDir = NodePath.join(root, "seed");
+  t3(["auth", "session", "list", "--base-dir", seedDir], {});
+  const report = t3(["hub", "import", NodePath.join(seedDir, "userdata")], hubDatabaseEnv);
+  const documents = /documents: (\d+)/.exec(report)?.[1];
+  check(
+    "hub tenant seeded through t3 hub import",
+    Number(documents) >= 1,
+    `${documents} documents`,
+  );
+}
+
 let hubToken = "";
+let hubBoots = 0;
 async function startHub() {
   const started = Date.now();
-  const hubDir = NodePath.join(root, "hub");
-  start("hub", hubDir, ["--base-dir", hubDir, "--port", `${HUB_PORT}`], {
-    T3CODE_SERVER_MODE: "hub",
-    T3CODE_RUNNER_URL: `ws://127.0.0.1:${RUNNER_PORT}/runner/ws`,
-    T3CODE_RUNNER_TOKEN: runnerToken,
-    T3CODE_HUB_CHECKOUT_ROOT: checkoutRoot,
-    T3CODE_HUB_PUBLIC_URL: HUB,
-  });
+  // A Postgres hub's base directory is disposable: every boot gets an empty one.
+  hubBoots += 1;
+  const hubDir = NodePath.join(root, HUB_DATABASE_URL ? `hub-${hubBoots}` : "hub");
+  NodeFS.mkdirSync(hubDir, { recursive: true });
+  start("hub", hubDir, ["--base-dir", hubDir, "--port", `${HUB_PORT}`], hubEnv);
   await waitFor("hub to listen", () => listening(HUB_PORT));
   if (!hubToken) {
-    hubToken = childProcess
-      .execFileSync(
-        process.execPath,
-        [BIN, "auth", "session", "issue", "--base-dir", hubDir, "--token-only"],
-        { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
-      )
-      .trim();
+    hubToken = t3(
+      ["auth", "session", "issue", "--base-dir", hubDir, "--token-only"],
+      hubEnv,
+    ).trim();
   }
   await waitFor(
     "hub API",
@@ -279,13 +331,9 @@ async function runTurn(text, timeoutMs = 240_000) {
 async function main() {
   NodeFS.mkdirSync(logs, { recursive: true });
   NodeFS.mkdirSync(checkout, { recursive: true });
-  for (const dir of ["runner", "hub"]) {
+  for (const dir of ["runner", HUB_DATABASE_URL ? "seed" : "hub"]) {
     NodeFS.mkdirSync(NodePath.join(root, dir, "userdata"), { recursive: true });
-    NodeFS.writeFileSync(
-      NodePath.join(root, dir, "userdata", "settings.json"),
-      // Titles are generated on the thread's runner with the same cheap model.
-      JSON.stringify({ enableProviderUpdateChecks: false, textGenerationModelSelection: MODEL }),
-    );
+    NodeFS.writeFileSync(NodePath.join(root, dir, "userdata", "settings.json"), SETTINGS);
   }
   const git = (...gitArgs) =>
     NodeChildProcess.execFileSync(
@@ -300,8 +348,9 @@ async function main() {
   NodeFS.writeFileSync(NodePath.join(checkout, "notes.txt"), "hello from the runner\n");
   git("add", ".");
   git("commit", "-m", "initial");
-  log(`workspace ${root}`);
+  log(`workspace ${root}; hub persistence: ${HUB_DATABASE_URL ? "Postgres" : "SQLite"}`);
 
+  if (HUB_DATABASE_URL) seedHubDatabase();
   await startRunner();
   await startHub();
 
