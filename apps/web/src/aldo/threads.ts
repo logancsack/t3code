@@ -6,7 +6,12 @@ import type { ScopedProjectRef } from "@t3tools/contracts";
 
 import { toastManager } from "../components/ui/toast";
 import { readEnvironmentThreadRefs, readProjects } from "../state/entities";
-import { createAldoEnvironment, isAldoCloud, isAldoEnvironmentId } from "./cloud";
+import {
+  createAldoEnvironment,
+  isAldoCloud,
+  isAldoEnvironmentId,
+  type AldoNewProject,
+} from "./cloud";
 
 const PROJECT_WAIT_MS = 120_000;
 
@@ -27,13 +32,20 @@ export async function waitForAldoProject(environmentId: string): Promise<ScopedP
 
 /** Creates a sandbox (for a repository, or like another thread's) and returns its project. */
 export async function startAldoSandbox(
-  input: { readonly repo?: string; readonly fromEnvironmentId?: string; readonly branch?: string },
+  input: {
+    readonly repo?: string;
+    readonly fromEnvironmentId?: string;
+    readonly branch?: string;
+    readonly create?: AldoNewProject;
+  },
   label: string,
 ): Promise<ScopedProjectRef> {
   const toastId = toastManager.add({
     type: "loading",
-    title: `Starting a sandbox for ${label}…`,
-    description: "Cloning the repository and starting the agent tools.",
+    title: input.create ? `Creating ${label}…` : `Starting a sandbox for ${label}…`,
+    description: input.create
+      ? "Creating the GitHub repository and starting its sandbox."
+      : "Cloning the repository and starting the agent tools.",
     timeout: 0,
   });
   try {
@@ -50,7 +62,7 @@ export async function startAldoSandbox(
   } catch (cause) {
     toastManager.update(toastId, {
       type: "error",
-      title: "Couldn't start the sandbox",
+      title: input.create ? "Couldn't create the project" : "Couldn't start the sandbox",
       description: cause instanceof Error ? cause.message : String(cause),
       timeout: 10_000,
     });

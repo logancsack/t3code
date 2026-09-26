@@ -1,4 +1,4 @@
-import { CheckCircle2Icon, CircleIcon, PlusIcon } from "lucide-react";
+import { CheckCircle2Icon, CircleIcon, FolderGit2Icon, SparklesIcon } from "lucide-react";
 
 import { Button } from "../components/ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../components/ui/empty";
@@ -31,7 +31,7 @@ export function AldoHome() {
               </EmptyTitle>
               <EmptyDescription className="mt-2 text-sm text-muted-foreground/78">
                 {setupDone
-                  ? "Each thread runs in its own cloud sandbox with a fresh clone of your repository."
+                  ? "Start a new project from scratch, or work in one of your repositories. Each thread runs in its own cloud sandbox."
                   : "Connect GitHub and at least one of your agent subscriptions. You only do this once."}
               </EmptyDescription>
             </EmptyHeader>
@@ -56,10 +56,18 @@ export function AldoHome() {
               </ol>
             ) : null}
 
-            <div className="mt-8 flex justify-center">
-              <Button onClick={openAldoRepositoryPicker} disabled={!githubReady}>
-                <PlusIcon className="size-4" />
-                Start a thread
+            <div className="mt-8 flex flex-wrap justify-center gap-2">
+              <Button onClick={() => openAldoRepositoryPicker("new")} disabled={!githubReady}>
+                <SparklesIcon className="size-4" />
+                New project
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => openAldoRepositoryPicker("existing")}
+                disabled={!githubReady}
+              >
+                <FolderGit2Icon className="size-4" />
+                Open a repository
               </Button>
             </div>
           </div>

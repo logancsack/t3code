@@ -240,16 +240,25 @@ export function touchAldoEnvironment(environmentId: string): void {
  * Creates a sandbox for a repository (or another thread's repository) and
  * waits until it is running. Returns the new environment.
  */
+export interface AldoNewProject {
+  readonly name: string;
+  readonly description?: string;
+  readonly isPrivate: boolean;
+}
+
 export async function createAldoEnvironment(input: {
   readonly repo?: string;
   readonly fromEnvironmentId?: string;
   readonly branch?: string;
+  /** A new project: Aldo creates the GitHub repository first. */
+  readonly create?: AldoNewProject;
 }): Promise<AldoEnvironment> {
   const { environment } = await api<{ environment: AldoEnvironment }>("/api/environments", {
     method: "POST",
     body: JSON.stringify({
       repo: input.repo,
       branch: input.branch,
+      create: input.create,
       fromThreadId: input.fromEnvironmentId
         ? threadIdForEnvironment(input.fromEnvironmentId)
         : undefined,
