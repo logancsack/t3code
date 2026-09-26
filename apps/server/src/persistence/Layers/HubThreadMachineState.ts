@@ -4,7 +4,7 @@
  * Used only in hub mode without `T3CODE_HUB_DATABASE_URL` (tests and local
  * development). The tables are created on first use instead of through a
  * numbered migration so standalone databases never gain hub-only tables; the
- * production schema is hub Postgres migration 050.
+ * production schema is hub Postgres migrations 050 and 051.
  *
  * @module HubThreadMachineStateSqlite
  */
@@ -23,6 +23,8 @@ import {
   CheckpointTurnDiffStore,
   RunnerCursor,
   RunnerCursorStore,
+  ThreadMachineStatusRow,
+  ThreadMachineStatusStore,
   ThreadVcsStatus,
   ThreadVcsStatusStore,
 } from "../Services/HubThreadMachineState.ts";
@@ -48,6 +50,13 @@ const HUB_SQLITE_TABLES = [
     thread_id TEXT PRIMARY KEY,
     local_json TEXT NOT NULL,
     remote_json TEXT,
+    updated_at TEXT NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS hub_thread_machine_status (
+    thread_id TEXT PRIMARY KEY,
+    state TEXT NOT NULL,
+    detail TEXT,
+    boot_id TEXT,
     updated_at TEXT NOT NULL
   )`,
 ] as const;
@@ -214,9 +223,48 @@ export const makeThreadVcsStatusStore = Effect.gen(function* () {
   });
 });
 
-/** All three repositories over the configured SQLite client. */
+export const makeThreadMachineStatusStore = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* ensureTables;
+
+  const selectAll = SqlSchema.findAll({
+    Request: Schema.Void,
+    Result: ThreadMachineStatusRow,
+    execute: () => sql`
+      SELECT thread_id AS "threadId", state, detail, boot_id AS "bootId",
+        updated_at AS "updatedAt"
+      FROM hub_thread_machine_status
+    `,
+  });
+  const upsert = SqlSchema.void({
+    Request: ThreadMachineStatusRow,
+    execute: (row) => sql`
+      INSERT INTO hub_thread_machine_status (thread_id, state, detail, boot_id, updated_at)
+      VALUES (${row.threadId}, ${row.state}, ${row.detail}, ${row.bootId}, ${row.updatedAt})
+      ON CONFLICT (thread_id) DO UPDATE SET
+        state = excluded.state,
+        detail = excluded.detail,
+        boot_id = excluded.boot_id,
+        updated_at = excluded.updated_at
+    `,
+  });
+
+  return ThreadMachineStatusStore.of({
+    list: () =>
+      selectAll(undefined).pipe(Effect.mapError(sqlOrDecode("ThreadMachineStatusStore.list"))),
+    put: (row) => upsert(row).pipe(Effect.mapError(sqlOrDecode("ThreadMachineStatusStore.put"))),
+    remove: (threadId) =>
+      sql`DELETE FROM hub_thread_machine_status WHERE thread_id = ${threadId}`.pipe(
+        Effect.asVoid,
+        Effect.mapError(toPersistenceSqlError("ThreadMachineStatusStore.remove")),
+      ),
+  });
+});
+
+/** Every repository over the configured SQLite client. */
 export const HubThreadMachineStateSqliteLive = Layer.mergeAll(
   Layer.effect(RunnerCursorStore, makeRunnerCursorStore),
   Layer.effect(CheckpointTurnDiffStore, makeCheckpointTurnDiffStore),
   Layer.effect(ThreadVcsStatusStore, makeThreadVcsStatusStore),
+  Layer.effect(ThreadMachineStatusStore, makeThreadMachineStatusStore),
 );

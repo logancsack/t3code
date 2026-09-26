@@ -1,6 +1,6 @@
 /**
  * Postgres implementations of the hub thread-machine repositories
- * (tables from hub migration 050). Every statement is scoped to the
+ * (tables from hub migrations 050 and 051). Every statement is scoped to the
  * `HubTenant` user, like the rest of the hub schema.
  *
  * @module HubThreadMachineStatePostgres
@@ -20,6 +20,8 @@ import {
   CheckpointTurnDiffStore,
   RunnerCursor,
   RunnerCursorStore,
+  ThreadMachineStatusRow,
+  ThreadMachineStatusStore,
   ThreadVcsStatus,
   ThreadVcsStatusStore,
 } from "../Services/HubThreadMachineState.ts";
@@ -186,9 +188,54 @@ export const makeThreadVcsStatusStore = Effect.gen(function* () {
   });
 });
 
-/** All three repositories; requires the hub Postgres `SqlClient` and `HubTenant`. */
+export const makeThreadMachineStatusStore = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  const { userId } = yield* HubTenant;
+
+  const selectAll = SqlSchema.findAll({
+    Request: Schema.Void,
+    Result: ThreadMachineStatusRow,
+    execute: () => sql`
+      SELECT thread_id AS "threadId", state, detail, boot_id AS "bootId",
+        updated_at AS "updatedAt"
+      FROM hub_thread_machine_status WHERE user_id = ${userId}
+    `,
+  });
+  const upsert = SqlSchema.void({
+    Request: ThreadMachineStatusRow,
+    execute: (row) => sql`
+      INSERT INTO hub_thread_machine_status (
+        user_id, thread_id, state, detail, boot_id, updated_at
+      )
+      VALUES (
+        ${userId}, ${row.threadId}, ${row.state}, ${row.detail}, ${row.bootId}, ${row.updatedAt}
+      )
+      ON CONFLICT (user_id, thread_id) DO UPDATE SET
+        state = excluded.state,
+        detail = excluded.detail,
+        boot_id = excluded.boot_id,
+        updated_at = excluded.updated_at
+    `,
+  });
+
+  return ThreadMachineStatusStore.of({
+    list: () =>
+      selectAll(undefined).pipe(Effect.mapError(sqlOrDecode("ThreadMachineStatusStore.list"))),
+    put: (row) => upsert(row).pipe(Effect.mapError(sqlOrDecode("ThreadMachineStatusStore.put"))),
+    remove: (threadId) =>
+      sql`
+        DELETE FROM hub_thread_machine_status WHERE user_id = ${userId} AND thread_id = ${threadId}
+      `.pipe(
+        Effect.asVoid,
+        Effect.mapError(toPersistenceSqlError("ThreadMachineStatusStore.remove")),
+      ),
+  });
+});
+
+/** Every repository; requires the hub Postgres `SqlClient` and `HubTenant`. */
 export const HubThreadMachineStatePostgresLive = Layer.mergeAll(
   Layer.effect(RunnerCursorStore, makeRunnerCursorStore),
   Layer.effect(CheckpointTurnDiffStore, makeCheckpointTurnDiffStore),
   Layer.effect(ThreadVcsStatusStore, makeThreadVcsStatusStore),
+  Layer.effect(ThreadMachineStatusStore, makeThreadMachineStatusStore),
 );

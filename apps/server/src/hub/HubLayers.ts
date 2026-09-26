@@ -49,6 +49,7 @@ import { makeRemoteProviderDriver } from "./RemoteProviderDriver.ts";
 import * as RemoteSessionRegistry from "./RemoteSessionRegistry.ts";
 import * as RunnerConnectionPool from "./RunnerConnectionPool.ts";
 import * as RunnerEventDelivery from "./RunnerEventDelivery.ts";
+import * as ThreadMachineStates from "./ThreadMachineStates.ts";
 
 /**
  * Hub thread-machine state (runner cursors, per-turn diffs, git status): the
@@ -65,10 +66,11 @@ export const makeHubStateStoresLayer = <E, R>(
   );
 
 /**
- * Hub-only services underneath the whole runtime: stores, machine directory,
- * connection pool, session registry, event delivery and git status cache.
- * `persistence` is the server's persistence layer (SQLite, or the hub's
- * Postgres client in hub mode with a database).
+ * Hub-only services underneath the whole runtime: stores, machine states,
+ * machine directory (observed by the machine states), connection pool,
+ * session registry, event delivery and git status cache. `persistence` is
+ * the server's persistence layer (SQLite, or the hub's Postgres client in hub
+ * mode with a database).
  */
 export const makeHubInfrastructureLayer = <E, R>(parts: {
   readonly persistence: Layer.Layer<SqlClient.SqlClient, E, R>;
@@ -80,7 +82,11 @@ export const makeHubInfrastructureLayer = <E, R>(parts: {
       ),
     ),
     Layer.provideMerge(RunnerConnectionPool.layer),
-    Layer.provideMerge(MachineDirectory.layer),
+    Layer.provideMerge(
+      ThreadMachineStates.observedMachineDirectoryLayer.pipe(Layer.provide(MachineDirectory.layer)),
+    ),
+    Layer.provideMerge(ThreadMachineStates.readerLayer),
+    Layer.provideMerge(ThreadMachineStates.layer),
     Layer.provideMerge(makeHubStateStoresLayer(parts.persistence)),
   );
 

@@ -10,9 +10,11 @@
  * - `CheckpointTurnDiffStore`: the patch between two checkpoints of a thread,
  *   captured while the machine was awake.
  * - `ThreadVcsStatusStore`: the last git status a runner reported per thread.
+ * - `ThreadMachineStatusStore`: the last machine state the directory reported
+ *   per thread, shown on thread shells without asking the directory again.
  *
  * Postgres implementations live in `persistence/Postgres/HubThreadMachineState.ts`
- * (hub migration 050); the SQLite implementations back hub mode without a
+ * (hub migrations 050 and 051); the SQLite implementations back hub mode without a
  * database URL (tests and local development) and are never built in
  * standalone mode.
  *
@@ -22,6 +24,7 @@ import {
   IsoDateTime,
   NonNegativeInt,
   ThreadId,
+  ThreadMachineState,
   TrimmedNonEmptyString,
   VcsStatusLocalResult,
   VcsStatusRemoteResult,
@@ -114,3 +117,26 @@ export class ThreadVcsStatusStore extends Context.Service<
   ThreadVcsStatusStore,
   ThreadVcsStatusStoreShape
 >()("t3/persistence/Services/HubThreadMachineState/ThreadVcsStatusStore") {}
+
+export const ThreadMachineStatusRow = Schema.Struct({
+  threadId: ThreadId,
+  state: ThreadMachineState,
+  detail: Schema.NullOr(Schema.String),
+  bootId: Schema.NullOr(Schema.String),
+  updatedAt: IsoDateTime,
+});
+export type ThreadMachineStatusRow = typeof ThreadMachineStatusRow.Type;
+
+export interface ThreadMachineStatusStoreShape {
+  readonly list: () => Effect.Effect<
+    ReadonlyArray<ThreadMachineStatusRow>,
+    ProjectionRepositoryError
+  >;
+  readonly put: (row: ThreadMachineStatusRow) => Effect.Effect<void, ProjectionRepositoryError>;
+  readonly remove: (threadId: ThreadId) => Effect.Effect<void, ProjectionRepositoryError>;
+}
+
+export class ThreadMachineStatusStore extends Context.Service<
+  ThreadMachineStatusStore,
+  ThreadMachineStatusStoreShape
+>()("t3/persistence/Services/HubThreadMachineState/ThreadMachineStatusStore") {}

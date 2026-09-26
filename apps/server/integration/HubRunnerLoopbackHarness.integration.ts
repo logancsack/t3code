@@ -60,6 +60,7 @@ import { makeRemoteProviderDriver } from "../src/hub/RemoteProviderDriver.ts";
 import * as RemoteSessionRegistry from "../src/hub/RemoteSessionRegistry.ts";
 import { make as makePool, RunnerConnectionPool } from "../src/hub/RunnerConnectionPool.ts";
 import * as RunnerEventDelivery from "../src/hub/RunnerEventDelivery.ts";
+import * as ThreadMachineStates from "../src/hub/ThreadMachineStates.ts";
 import { serveRunner } from "../src/hub/testUtils/runnerServer.ts";
 import { makeOrchestrationCommandDispatcher } from "../src/orchestration/CommandDispatcher.ts";
 import { normalizeDispatchCommand } from "../src/orchestration/Normalizer.ts";
@@ -392,7 +393,13 @@ export const makeHubRunnerLoopbackHarness = (threadIdValue = "thread-loopback") 
             makePool({ checkoutRoot, wakePollInterval: "5 millis", idleCheckInterval: "1 hour" }),
           ),
         ),
-        Layer.provideMerge(Layer.succeed(MachineDirectory, directory.directory)),
+        Layer.provideMerge(
+          ThreadMachineStates.observedMachineDirectoryLayer.pipe(
+            Layer.provide(Layer.succeed(MachineDirectory, directory.directory)),
+          ),
+        ),
+        Layer.provideMerge(ThreadMachineStates.readerLayer),
+        Layer.provideMerge(ThreadMachineStates.layer),
         Layer.provideMerge(HubLayers.makeHubStateStoresLayer(persistence)),
       );
       const remoteAdapterRegistry = Layer.effect(

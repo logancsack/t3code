@@ -391,6 +391,18 @@ it.live("bootstraps a new thread on its machine: checkout path, branch, and prog
         thread.activities.map((activity) => activity.kind),
         "thread-machine.checkout.preparing",
       );
+      // The wake is recorded as a machine state activity and on the shell.
+      const states = thread.activities
+        .filter((activity) => activity.kind === "thread-machine.state")
+        .map((activity) => (activity.payload as { readonly state: string }).state);
+      assert.include(states, "running");
+      const shell = yield* harness.snapshotQuery().getThreadShellById(harness.threadId);
+      assert.equal(Option.getOrThrow(shell).machine?.state, "running");
+      const snapshot = yield* harness.snapshotQuery().getShellSnapshot();
+      assert.equal(
+        snapshot.threads.find((entry) => entry.id === harness.threadId)?.machine?.state,
+        "running",
+      );
       const checkedOut = NodeFS.readFileSync(
         NodePath.join(harness.checkout, ".git", "HEAD"),
         "utf8",

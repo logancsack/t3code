@@ -13,6 +13,7 @@ import type {
   OrchestrationDispatchCommandError,
   ProjectId,
   ThreadId,
+  ThreadMachineStatus,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
@@ -69,3 +70,27 @@ export class HubThreadCheckouts extends Context.Reference<HubThreadCheckoutsShap
   "t3/serverModeHooks/HubThreadCheckouts",
   { defaultValue: () => null },
 ) {}
+
+export interface ThreadMachineStatusReaderShape {
+  /**
+   * The latest machine state a hub knows for a thread, read synchronously
+   * while thread shells are mapped. `null` means no machine is known;
+   * `undefined` (standalone) omits the shell field entirely.
+   */
+  readonly get: (threadId: ThreadId) => ThreadMachineStatus | null | undefined;
+}
+
+/** Thread-machine state for thread shells; standalone servers never report one. */
+export class ThreadMachineStatusReader extends Context.Reference<ThreadMachineStatusReaderShape>(
+  "t3/serverModeHooks/ThreadMachineStatusReader",
+  { defaultValue: () => ({ get: () => undefined }) },
+) {}
+
+/** Spreads a thread's machine state into a shell; nothing in standalone mode. */
+export const threadMachineShellField = (
+  reader: ThreadMachineStatusReaderShape,
+  threadId: ThreadId,
+): { readonly machine?: ThreadMachineStatus | null } => {
+  const machine = reader.get(threadId);
+  return machine === undefined ? {} : { machine };
+};

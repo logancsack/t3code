@@ -181,7 +181,7 @@ export function parseThreadCheckoutPath(
 // ── Thread machine directory ───────────────────────────────────────────
 
 /** Lifecycle state reported by the machine directory (shared with thread shells). */
-export { ThreadMachineState } from "./threadMachine.ts";
+export { DEFAULT_BRANCH_BASE_REF, ThreadMachineState } from "./threadMachine.ts";
 
 /** Repository a new thread machine checks out, from the project's identity. */
 export const ThreadMachineRepository = Schema.Struct({

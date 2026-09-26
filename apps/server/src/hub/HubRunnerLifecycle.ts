@@ -14,6 +14,11 @@
  *   machine directory requests.
  * - Releases a thread's machine when the thread is archived or deleted, and
  *   drops its hub caches when it is deleted.
+ * - Records every machine state change as a `thread-machine.state` activity
+ *   (which re-publishes the thread shell with its new `machine`), and checks
+ *   machines the hub believes are awake but holds no connection to every
+ *   `MACHINE_WATCH_INTERVAL`, so a machine the platform paused after an idle
+ *   report shows as asleep. Checks never wake a machine.
  *
  * @module hub/HubRunnerLifecycle
  */
@@ -39,6 +44,11 @@ import { HubVcsStatusCache } from "./HubVcs.ts";
 import { RemoteSessionRegistry } from "./RemoteSessionRegistry.ts";
 import { RunnerConnectionPool } from "./RunnerConnectionPool.ts";
 import { RunnerEventDelivery } from "./RunnerEventDelivery.ts";
+import {
+  makeThreadMachineActivityRecorder,
+  threadMachineStateActivity,
+} from "./threadMachineActivity.ts";
+import { ThreadMachineStates } from "./ThreadMachineStates.ts";
 
 /** Ingestion's stream consumers start at the same activation gate; let them subscribe first. */
 const DELIVERY_START_DELAY = "250 millis";
@@ -46,6 +56,9 @@ const ACK_INTERVAL = "250 millis";
 /** A safe point is persisted once it is this old, so its events have reached ingestion's queue. */
 const ACK_SETTLE_MS = 250;
 const SHUTDOWN_FLUSH_TIMEOUT = "5 seconds";
+/** How often machines believed awake without a hub connection are re-checked. */
+const MACHINE_WATCH_INTERVAL = "60 seconds";
+const WATCHED_STATES: ReadonlySet<string> = new Set(["preparing", "starting", "running"]);
 
 type ThreadLifecycleEvent = Extract<
   OrchestrationEvent,
@@ -65,6 +78,8 @@ export const layer = Layer.effectDiscard(
     const cursors = yield* RunnerCursorStore;
     const diffs = yield* CheckpointTurnDiffStore;
     const vcsCache = yield* HubVcsStatusCache;
+    const machineStates = yield* ThreadMachineStates;
+    const recordActivity = yield* makeThreadMachineActivityRecorder;
 
     yield* pool.setContextResolver((threadId) =>
       Effect.gen(function* () {
@@ -129,6 +144,7 @@ export const layer = Layer.effectDiscard(
           yield* vcsCache.remove(threadId);
           yield* cursors.remove(threadId).pipe(Effect.ignore);
           yield* diffs.removeThread(threadId).pipe(Effect.ignore);
+          yield* machineStates.remove(threadId);
         }
       }).pipe(
         Effect.catchCause((cause) =>
@@ -148,5 +164,31 @@ export const layer = Layer.effectDiscard(
           : Effect.void,
       ),
     );
+
+    // Machine state transitions become thread activities; the activity's
+    // domain event re-publishes the shell with the new `machine`.
+    yield* forkParked(
+      Stream.runForEach(machineStates.changes, (change) =>
+        Effect.gen(function* () {
+          const thread = yield* projections
+            .getThreadShellById(change.threadId)
+            .pipe(Effect.orElseSucceed(() => Option.none()));
+          // The provider sign-in machine and deleted threads have no thread.
+          if (Option.isNone(thread)) return;
+          yield* recordActivity(change.threadId, threadMachineStateActivity(change.current));
+        }),
+      ),
+    );
+
+    // Machines the hub believes awake but holds no connection to may have been
+    // paused by the platform; a status read (which never wakes) records that.
+    const watchMachines = Effect.gen(function* () {
+      for (const [threadId, entry] of yield* machineStates.list) {
+        if (!WATCHED_STATES.has(entry.state)) continue;
+        if (Option.isSome(yield* pool.current(threadId))) continue;
+        yield* pool.machineStatus(threadId).pipe(Effect.ignore);
+      }
+    });
+    yield* forkParked(watchMachines.pipe(Effect.delay(MACHINE_WATCH_INTERVAL), Effect.forever));
   }),
 );
