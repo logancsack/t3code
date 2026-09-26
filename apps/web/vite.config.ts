@@ -144,6 +144,60 @@ function devCompressionPlugin(): Plugin {
   };
 }
 
+// Aldo cloud builds ship under the Aldo brand: Aldo icons (public-aldo/), the
+// Aldo document title and splash, and Aldo in user-facing prose. Protocol
+// identifiers (t3code:* storage keys, t3.json, theme ids) stay untouched.
+const aldoCloud = process.env.VITE_ALDO_CLOUD?.trim() === "1";
+
+const ALDO_PROSE_REPLACEMENTS: ReadonlyArray<readonly [string, string]> = [
+  ["`t3 connect`", "the connect command"],
+  ["From t3.json", "From project config"],
+  [
+    " (t3.json at the repository root). See https://t3.codes for documentation.",
+    " at the repository root.",
+  ],
+  ["a T3 Connect", "an Aldo Connect"],
+  ["T3 Connect", "Aldo Connect"],
+  ["t3 connect", "aldo connect"],
+  ["T3 Code", "Aldo"],
+  ["T3 Chat", "Aldo"],
+  ["T3 server", "Aldo server"],
+  ["T3 environment", "Aldo environment"],
+  ["T3 project file", "Aldo project file"],
+  ["T3 process", "Aldo process"],
+  ["T3 system footprint", "Aldo system footprint"],
+  ["known T3 operations", "known Aldo operations"],
+  ["Managed DevPC", "Aldo"],
+  ["`T3`", "`Aldo`"],
+];
+
+function aldoBrandingPlugin(): Plugin {
+  return {
+    name: "aldo:branding",
+    apply: "build",
+    transformIndexHtml(html) {
+      return html
+        .replace(/<title>[^<]*<\/title>/, "<title>Aldo</title>")
+        .replace(
+          /<link rel="icon"[^>]*>/,
+          [
+            '<link rel="icon" href="/favicon.ico" sizes="48x48" />',
+            '<link rel="icon" href="/icon.svg" type="image/svg+xml" />',
+          ].join("\n    "),
+        )
+        .replace('aria-label="T3 Code splash screen"', 'aria-label="Aldo"')
+        .replace('src="/apple-touch-icon.png" alt="T3 Code"', 'src="/icon.svg" alt="Aldo"');
+    },
+    renderChunk(code) {
+      const branded = ALDO_PROSE_REPLACEMENTS.reduce(
+        (source, [legacy, aldo]) => source.replaceAll(legacy, aldo),
+        code,
+      );
+      return branded === code ? null : { code: branded, map: null };
+    },
+  };
+}
+
 // Vite rejects requests whose Host header isn't localhost, which blocks sharing
 // a dev server over Tailscale/LAN. Tailnet names are safe to allow wholesale:
 // the DNS is controlled by tailscale, so they can't be rebound by an attacker.
@@ -158,7 +212,9 @@ export default defineConfig(() => {
   return {
     assetsInclude: ["**/*.wasm"],
     base: managedDevPc ? "/_t3/" : "/",
+    publicDir: aldoCloud ? "public-aldo" : "public",
     plugins: [
+      ...(aldoCloud ? [aldoBrandingPlugin()] : []),
       devCompressionPlugin(),
       tanstackRouter(),
       react(),
@@ -207,9 +263,7 @@ export default defineConfig(() => {
       "import.meta.env.VITE_HOSTED_APP_CHANNEL": JSON.stringify(configuredHostedAppChannel),
       "import.meta.env.APP_VERSION": JSON.stringify(configuredAppVersion),
       "import.meta.env.VITE_DEVPC_MANAGED": JSON.stringify(managedDevPc ? "1" : ""),
-      "import.meta.env.VITE_ALDO_CLOUD": JSON.stringify(
-        process.env.VITE_ALDO_CLOUD?.trim() === "1" ? "1" : "",
-      ),
+      "import.meta.env.VITE_ALDO_CLOUD": JSON.stringify(aldoCloud ? "1" : ""),
     },
     resolve: {
       tsconfigPaths: true,

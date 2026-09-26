@@ -17,6 +17,9 @@ const hostedAppChannel = import.meta.env.VITE_HOSTED_APP_CHANNEL?.trim().toLower
 const managedDevPcBuild =
   import.meta.env.VITE_DEVPC_MANAGED === "1" || import.meta.env.VITE_ALDO_CLOUD === "1";
 
+/** Aldo builds show the Aldo mark; compare this, not the (rewritten) name strings. */
+export const APP_IS_ALDO = managedDevPcBuild;
+
 export const HOSTED_APP_CHANNEL =
   hostedAppChannel === "latest" || hostedAppChannel === "nightly" ? hostedAppChannel : null;
 export const HOSTED_APP_CHANNEL_LABEL =
