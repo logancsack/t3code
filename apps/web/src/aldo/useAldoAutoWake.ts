@@ -1,7 +1,14 @@
 import type { EnvironmentId } from "@t3tools/contracts";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { isAldoCloud, isAldoEnvironmentId, wakeAldoEnvironment } from "./cloud";
+import {
+  isAldoCloud,
+  isAldoEnvironmentId,
+  touchAldoEnvironment,
+  wakeAldoEnvironment,
+} from "./cloud";
+
+const TOUCH_INTERVAL_MS = 4 * 60 * 1000;
 
 export type AldoWakeState =
   | { readonly status: "idle" }
@@ -51,6 +58,17 @@ export function useAldoAutoWake(
   useEffect(() => {
     setState({ status: "idle" });
   }, [environmentId]);
+
+  // While the thread is on screen, keep its sandbox from idling out.
+  useEffect(() => {
+    if (!applies || environmentId === null || phase !== "connected") return;
+    const touch = () => {
+      if (document.visibilityState === "visible") touchAldoEnvironment(environmentId);
+    };
+    touch();
+    const timer = window.setInterval(touch, TOUCH_INTERVAL_MS);
+    return () => window.clearInterval(timer);
+  }, [applies, environmentId, phase]);
 
   return { state: applies ? state : { status: "idle" }, wake };
 }

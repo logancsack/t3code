@@ -220,6 +220,12 @@ export function wakeAldoEnvironment(environmentId: string): Promise<void> {
   return wake;
 }
 
+/** Tells Aldo the user is looking at this thread, so it isn't stopped for idleness. */
+export function touchAldoEnvironment(environmentId: string): void {
+  const threadId = threadIdForEnvironment(environmentId);
+  void api(`/api/environments/${threadId}/touch`, { method: "POST" }).catch(() => undefined);
+}
+
 // ---------------------------------------------------------------------------
 // New sandboxes
 
