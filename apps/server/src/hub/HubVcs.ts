@@ -11,7 +11,9 @@
  * PR thread preparation) run on the thread's runner and wake its machine.
  * Read-only git and review calls never wake a machine; on a sleeping machine
  * they fail with the service's error type caused by a `ThreadMachineUnavailableError`
- * whose reason is `asleep`.
+ * whose reason is `asleep`. Branch lists are the exception: a project root and
+ * a sleeping thread's checkout list the repository's branches from the
+ * platform (`HubRepositoryRefs`).
  *
  * @module hub/HubVcs
  */
@@ -25,7 +27,7 @@ import {
   type VcsStatusResult,
   type VcsStatusStreamEvent,
 } from "@t3tools/contracts";
-import { ThreadMachineUnavailableError } from "@t3tools/contracts/runner";
+import { parseProjectVirtualRoot, ThreadMachineUnavailableError } from "@t3tools/contracts/runner";
 import { mergeGitStatusParts } from "@t3tools/shared/git";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -38,6 +40,7 @@ import * as Stream from "effect/Stream";
 
 import * as GitManager from "../git/GitManager.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
+import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { ThreadVcsStatusStore } from "../persistence/Services/HubThreadMachineState.ts";
 import * as ReviewService from "../review/ReviewService.ts";
 import * as VcsProvisioningService from "../vcs/VcsProvisioningService.ts";
@@ -51,6 +54,7 @@ import {
   toGitManagerServiceError,
   toVcsError,
 } from "./hubRouting.ts";
+import { makeRepositoryRefsLister } from "./HubRepositoryRefs.ts";
 import { RunnerConnectionPool } from "./RunnerConnectionPool.ts";
 
 const isThreadMachineUnavailable: (error: unknown) => error is ThreadMachineUnavailableError =
@@ -296,6 +300,13 @@ export const hubGitWorkflowServiceLayer = Layer.effect(
   Effect.gen(function* () {
     const pool = yield* RunnerConnectionPool;
     const cache = yield* HubVcsStatusCache;
+    const projections = yield* ProjectionSnapshotQuery;
+    const listRepositoryRefs = yield* makeRepositoryRefsLister;
+    const threadBranch = (threadId: ThreadId) =>
+      projections.getThreadShellById(threadId).pipe(
+        Effect.map((thread) => (Option.isSome(thread) ? thread.value.branch : null)),
+        Effect.orElseSucceed(() => null),
+      );
     const wake = (operation: string) => ({ wake: true, operation: `git.${operation}` });
     const read = (operation: string) => ({ wake: false, operation: `git.${operation}` });
     const cachedFallback = <A, E>(
@@ -401,9 +412,22 @@ export const hubGitWorkflowServiceLayer = Layer.effect(
           client["runner.git.preparePullRequestThread"](input),
         ).pipe(Effect.mapError(toGitManagerServiceError("preparePullRequestThread", input.cwd))),
       listRefs: (input) =>
-        onCwdRunner(pool, input.cwd, read("listRefs"), (client) =>
-          client["runner.git.listRefs"](input),
-        ).pipe(Effect.mapError(toGitCommandError("listRefs", input.cwd))),
+        parseProjectVirtualRoot(input.cwd) !== null
+          ? listRepositoryRefs(input, null)
+          : onCwdRunner(pool, input.cwd, read("listRefs"), (client) =>
+              client["runner.git.listRefs"](input),
+            ).pipe(
+              // A sleeping machine's checkout lists the repository's branches instead.
+              Effect.catchIf(
+                (error) => isThreadMachineUnavailable(error) && error.reason === "asleep",
+                () =>
+                  threadOfCwd(pool, input.cwd, "listRefs").pipe(
+                    Effect.flatMap(threadBranch),
+                    Effect.flatMap((branch) => listRepositoryRefs(input, branch)),
+                  ),
+              ),
+              Effect.mapError(toGitCommandError("listRefs", input.cwd)),
+            ),
       createWorktree: (input) =>
         onCwdRunner(pool, input.cwd, wake("createWorktree"), (client) =>
           client["runner.git.createWorktree"](input),

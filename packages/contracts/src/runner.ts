@@ -155,6 +155,19 @@ export function projectVirtualRoot(projectId: string): string {
   return `${PROJECT_VIRTUAL_ROOT}/${encodePathSegment(projectId)}`;
 }
 
+/** The project whose virtual root is exactly `path`, or null. */
+export function parseProjectVirtualRoot(path: string): ProjectId | null {
+  const prefix = `${PROJECT_VIRTUAL_ROOT}/`;
+  if (!path.startsWith(prefix)) return null;
+  const segment = trimTrailingSlashes(path.slice(prefix.length));
+  if (segment.length === 0 || segment.includes("/")) return null;
+  const projectId = decodePathSegment(segment);
+  if (projectId === null || projectId.trim().length === 0 || projectId !== projectId.trim()) {
+    return null;
+  }
+  return ProjectId.make(projectId);
+}
+
 /**
  * The thread whose checkout contains `path`, or null when the path is not
  * inside `<root>/<threadId>`. Paths inside the checkout (`<root>/<id>/src`)
@@ -215,6 +228,51 @@ export const ThreadMachineStatus = Schema.Struct({
   detail: Schema.optional(Schema.NullOr(Schema.String)),
 });
 export type ThreadMachineStatus = typeof ThreadMachineStatus.Type;
+
+/**
+ * `GET {machines}/repositories/refs?url=` — a repository's branches without a
+ * machine (GitHub App repositories only; default branch first, at most 500).
+ */
+export const RepositoryRefsResponse = Schema.Struct({
+  defaultBranch: Schema.NullOr(Schema.String),
+  refs: Schema.Array(Schema.Struct({ name: TrimmedNonEmptyString, sha: Schema.String })),
+  truncated: Schema.optional(Schema.Boolean),
+});
+export type RepositoryRefsResponse = typeof RepositoryRefsResponse.Type;
+
+/**
+ * Provider ids of the platform's provider-home archives (the files a provider
+ * CLI keeps its sign-in in), restored onto every thread machine.
+ */
+export const ProviderHomeId = Schema.Literals([
+  "claude",
+  "codex",
+  "opencode",
+  "grok",
+  "cursor",
+  "prime",
+  "muse",
+]);
+export type ProviderHomeId = typeof ProviderHomeId.Type;
+
+/** `GET {machines}/provider-homes` — stored sign-in metadata; never the files. */
+export const ProviderHomesResponse = Schema.Struct({
+  providers: Schema.Array(
+    Schema.Struct({
+      provider: Schema.String,
+      version: Schema.Number,
+      updatedAt: Schema.optional(Schema.NullOr(Schema.String)),
+    }),
+  ),
+});
+export type ProviderHomesResponse = typeof ProviderHomesResponse.Type;
+
+/** `DELETE {machines}/provider-homes/{provider}` — sign out everywhere. */
+export const ProviderHomeDeleteResponse = Schema.Struct({
+  provider: Schema.String,
+  deleted: Schema.Boolean,
+});
+export type ProviderHomeDeleteResponse = typeof ProviderHomeDeleteResponse.Type;
 
 export const ThreadMachineUnavailableReason = Schema.Literals([
   /** The machine is paused, saved, or not created, and the call must not wake it. */

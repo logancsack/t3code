@@ -10,6 +10,12 @@
  *   POST /threads/{threadId}/machine/idle     nothing on the hub needs the machine
  *   POST /threads/{threadId}/machine/release  the thread was archived or deleted
  *
+ * The same base URL serves the platform's machine-free lookups:
+ *
+ *   GET    /repositories/refs?url=<repository>  branches (GitHub App repositories)
+ *   GET    /provider-homes                      stored provider sign-ins (metadata)
+ *   DELETE /provider-homes/{provider}           sign a provider out everywhere
+ *
  * Implementations:
  * - `layerHttp`: the documented HTTP contract (production).
  * - `makeStaticMachineDirectory`: one runner at `T3CODE_RUNNER_URL` that is
@@ -20,6 +26,10 @@
  */
 import type { ThreadId } from "@t3tools/contracts";
 import {
+  ProviderHomeDeleteResponse,
+  type ProviderHomeId,
+  ProviderHomesResponse,
+  RepositoryRefsResponse,
   type ThreadMachineEnsureRequest,
   type ThreadMachineState,
   ThreadMachineStatus,
@@ -28,6 +38,7 @@ import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http";
@@ -38,16 +49,37 @@ export class MachineDirectoryError extends Schema.TaggedErrorClass<MachineDirect
   "MachineDirectoryError",
   {
     operation: Schema.String,
+    /** Empty for requests that are not about one thread. */
     threadId: Schema.String,
     status: Schema.optional(Schema.Number),
+    /** The platform's error code (`{ "error": "CODE" }`), when it sent one. */
+    code: Schema.optional(Schema.String),
     detail: Schema.String,
   },
 ) {
   override get message(): string {
     const status = this.status === undefined ? "" : ` (HTTP ${this.status})`;
-    return `Machine directory ${this.operation} failed for thread ${this.threadId}${status}: ${this.detail}`;
+    const subject = this.threadId === "" ? "" : ` for thread ${this.threadId}`;
+    return `Machine directory ${this.operation} failed${subject}${status}: ${this.detail}`;
   }
 }
+
+const decodeErrorBody = Schema.decodeUnknownOption(
+  Schema.fromJsonString(
+    Schema.Struct({
+      error: Schema.optional(Schema.Unknown),
+      code: Schema.optional(Schema.Unknown),
+    }),
+  ),
+);
+
+/** The platform's `{ "error": "CODE" }` (or `code`) from an error body, if any. */
+const errorCodeOf = (body: string): string | undefined => {
+  const parsed = decodeErrorBody(body);
+  if (Option.isNone(parsed)) return undefined;
+  const code = parsed.value.error ?? parsed.value.code;
+  return typeof code === "string" && code.length > 0 ? code : undefined;
+};
 
 const isMachineDirectoryError = Schema.is(MachineDirectoryError);
 
@@ -65,6 +97,16 @@ export interface MachineDirectoryShape {
   readonly idle: (threadId: ThreadId) => Effect.Effect<void, MachineDirectoryError>;
   /** Retires the machine; the thread was archived or deleted. */
   readonly release: (threadId: ThreadId) => Effect.Effect<void, MachineDirectoryError>;
+  /** A repository's branches, without any machine. */
+  readonly repositoryRefs: (
+    url: string,
+  ) => Effect.Effect<RepositoryRefsResponse, MachineDirectoryError>;
+  /** Stored provider sign-ins (versions only). */
+  readonly providerHomes: Effect.Effect<ProviderHomesResponse, MachineDirectoryError>;
+  /** Deletes a provider's stored sign-in; running machines sign out within seconds. */
+  readonly deleteProviderHome: (
+    provider: ProviderHomeId,
+  ) => Effect.Effect<ProviderHomeDeleteResponse, MachineDirectoryError>;
 }
 
 export class MachineDirectory extends Context.Service<MachineDirectory, MachineDirectoryShape>()(
@@ -85,7 +127,7 @@ export const makeHttpMachineDirectory = (options: {
     const url = (threadId: ThreadId, suffix = "") =>
       `${base}/threads/${encodeURIComponent(threadId)}/machine${suffix}`;
 
-    const toDirectoryError = (operation: string, threadId: ThreadId) => (cause: unknown) =>
+    const toDirectoryError = (operation: string, threadId: ThreadId | "") => (cause: unknown) =>
       isMachineDirectoryError(cause)
         ? cause
         : new MachineDirectoryError({
@@ -99,7 +141,7 @@ export const makeHttpMachineDirectory = (options: {
 
     const send = <A, E1, E2>(
       operation: string,
-      threadId: ThreadId,
+      threadId: ThreadId | "",
       request: Effect.Effect<HttpClientRequest.HttpClientRequest, E1>,
       decode: (response: HttpClientResponse.HttpClientResponse) => Effect.Effect<A, E2>,
     ): Effect.Effect<A, MachineDirectoryError> =>
@@ -111,10 +153,12 @@ export const makeHttpMachineDirectory = (options: {
         );
         if (response.status < 200 || response.status >= 300) {
           const body = yield* response.text.pipe(Effect.orElseSucceed(() => ""));
+          const code = errorCodeOf(body);
           return yield* new MachineDirectoryError({
             operation,
             threadId,
             status: response.status,
+            ...(code !== undefined ? { code } : {}),
             detail: body.slice(0, 500) || "request failed",
           });
         }
@@ -164,6 +208,32 @@ export const makeHttpMachineDirectory = (options: {
           HttpClientRequest.post(url(threadId, "/release")).pipe(HttpClientRequest.bodyJson({})),
           () => Effect.void,
         ),
+      repositoryRefs: (repositoryUrl) =>
+        send(
+          "repositoryRefs",
+          "",
+          Effect.succeed(
+            HttpClientRequest.get(
+              `${base}/repositories/refs?url=${encodeURIComponent(repositoryUrl)}`,
+            ),
+          ),
+          HttpClientResponse.schemaBodyJson(RepositoryRefsResponse),
+        ),
+      providerHomes: send(
+        "providerHomes",
+        "",
+        Effect.succeed(HttpClientRequest.get(`${base}/provider-homes`)),
+        HttpClientResponse.schemaBodyJson(ProviderHomesResponse),
+      ),
+      deleteProviderHome: (provider) =>
+        send(
+          "deleteProviderHome",
+          "",
+          Effect.succeed(
+            HttpClientRequest.delete(`${base}/provider-homes/${encodeURIComponent(provider)}`),
+          ),
+          HttpClientResponse.schemaBodyJson(ProviderHomeDeleteResponse),
+        ),
     });
   });
 
@@ -181,6 +251,16 @@ export const makeStaticMachineDirectory = (options: {
     status: () => Effect.succeed(staticStatus(options)),
     idle: () => Effect.void,
     release: () => Effect.void,
+    repositoryRefs: () =>
+      Effect.fail(
+        new MachineDirectoryError({
+          operation: "repositoryRefs",
+          threadId: "",
+          detail: "The development runner directory has no platform to list repository refs.",
+        }),
+      ),
+    providerHomes: Effect.succeed({ providers: [] }),
+    deleteProviderHome: (provider) => Effect.succeed({ provider, deleted: false }),
   });
 
 const staticStatus = (options: {
@@ -209,17 +289,29 @@ export interface FakeMachineDirectoryCall {
   readonly wake?: boolean;
 }
 
+/** A fake repository listing, or the platform error it answers with. */
+export type FakeRepositoryRefs =
+  | RepositoryRefsResponse
+  | { readonly status: number; readonly code: string };
+
 /**
  * Scriptable directory for tests. `onWake` decides what an ensure-with-wake
- * does to a machine (by default it becomes `running`).
+ * does to a machine (by default it becomes `running`). `repositories` answers
+ * repository ref listings by URL; provider homes start empty and change with
+ * `setProviderHome` and `deleteProviderHome`.
  */
 export const makeFakeMachineDirectory = (options?: {
   readonly initial?: ReadonlyArray<readonly [ThreadId, FakeMachine]>;
   readonly onWake?: (threadId: ThreadId, machine: FakeMachine | undefined) => FakeMachine;
+  readonly repositories?: Readonly<Record<string, FakeRepositoryRefs>>;
 }) =>
   Effect.gen(function* () {
     const machines = yield* Ref.make(new Map(options?.initial ?? []));
     const calls = yield* Ref.make<ReadonlyArray<FakeMachineDirectoryCall>>([]);
+    const platformCalls = yield* Ref.make<ReadonlyArray<string>>([]);
+    const providerHomes = yield* Ref.make(new Map<string, number>());
+    const recordPlatform = (call: string) =>
+      Ref.update(platformCalls, (current) => [...current, call]);
     const record = (call: FakeMachineDirectoryCall) =>
       Ref.update(calls, (current) => [...current, call]);
     const toStatus = (machine: FakeMachine | undefined): ThreadMachineStatus =>
@@ -262,10 +354,57 @@ export const makeFakeMachineDirectory = (options?: {
             }),
           ),
         ),
+      repositoryRefs: (url) =>
+        Effect.gen(function* () {
+          yield* recordPlatform(`repositoryRefs ${url}`);
+          const answer = options?.repositories?.[url];
+          if (answer === undefined) {
+            return yield* new MachineDirectoryError({
+              operation: "repositoryRefs",
+              threadId: "",
+              status: 404,
+              code: "REPOSITORY_NOT_FOUND",
+              detail: `{"error":"REPOSITORY_NOT_FOUND"}`,
+            });
+          }
+          if ("status" in answer) {
+            return yield* new MachineDirectoryError({
+              operation: "repositoryRefs",
+              threadId: "",
+              status: answer.status,
+              code: answer.code,
+              detail: `{"error":"${answer.code}"}`,
+            });
+          }
+          return answer;
+        }),
+      providerHomes: recordPlatform("providerHomes").pipe(
+        Effect.andThen(Ref.get(providerHomes)),
+        Effect.map((homes) => ({
+          providers: [...homes].map(([provider, version]) => ({
+            provider,
+            version,
+            updatedAt: null,
+          })),
+        })),
+      ),
+      deleteProviderHome: (provider) =>
+        recordPlatform(`deleteProviderHome ${provider}`).pipe(
+          Effect.andThen(
+            Ref.modify(providerHomes, (homes) => {
+              const next = new Map(homes);
+              const deleted = next.delete(provider);
+              return [{ provider, deleted }, next] as const;
+            }),
+          ),
+        ),
     });
     return {
       directory,
       calls: Ref.get(calls),
+      platformCalls: Ref.get(platformCalls),
+      setProviderHome: (provider: string, version: number) =>
+        Ref.update(providerHomes, (homes) => new Map(homes).set(provider, version)),
       set: (threadId: ThreadId, machine: FakeMachine) =>
         Ref.update(machines, (map) => new Map(map).set(threadId, machine)),
       get: (threadId: ThreadId) => Ref.get(machines).pipe(Effect.map((map) => map.get(threadId))),

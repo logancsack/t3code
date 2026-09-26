@@ -134,4 +134,52 @@ describe("HTTP machine directory", () => {
       }).pipe(Effect.provide(FetchHttpClient.layer)),
     ),
   );
+
+  it.live("lists repository refs and provider homes and signs a provider out", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const server = yield* serveDirectory((request) => {
+          if (request.url.startsWith("/api/repositories/refs")) {
+            return request.url.includes("locked")
+              ? { status: 403, body: { error: "REPOSITORY_ACCESS_REQUIRED" } }
+              : {
+                  status: 200,
+                  body: {
+                    defaultBranch: "main",
+                    refs: [{ name: "main", sha: "abc" }],
+                    truncated: false,
+                  },
+                };
+          }
+          if (request.method === "DELETE") {
+            return { status: 200, body: { provider: "claude", deleted: true } };
+          }
+          return {
+            status: 200,
+            body: { providers: [{ provider: "claude", version: 3, updatedAt: "t" }] },
+          };
+        });
+        const directory = yield* makeHttpMachineDirectory({ baseUrl: server.url, token: "t" });
+
+        const refs = yield* directory.repositoryRefs("https://github.com/acme/app");
+        expect(refs.defaultBranch).toBe("main");
+        const locked = yield* directory
+          .repositoryRefs("https://github.com/acme/locked")
+          .pipe(Effect.flip);
+        expect(locked).toMatchObject({ status: 403, code: "REPOSITORY_ACCESS_REQUIRED" });
+        expect((yield* directory.providerHomes).providers[0]?.version).toBe(3);
+        expect(yield* directory.deleteProviderHome("claude")).toEqual({
+          provider: "claude",
+          deleted: true,
+        });
+
+        expect(server.requests.map((request) => [request.method, request.url])).toEqual([
+          ["GET", "/api/repositories/refs?url=https%3A%2F%2Fgithub.com%2Facme%2Fapp"],
+          ["GET", "/api/repositories/refs?url=https%3A%2F%2Fgithub.com%2Facme%2Flocked"],
+          ["GET", "/api/provider-homes"],
+          ["DELETE", "/api/provider-homes/claude"],
+        ]);
+      }).pipe(Effect.provide(FetchHttpClient.layer)),
+    ),
+  );
 });
