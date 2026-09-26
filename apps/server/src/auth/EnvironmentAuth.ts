@@ -37,6 +37,7 @@ import * as ServerSecretStore from "./ServerSecretStore.ts";
 import * as SessionStore from "./SessionStore.ts";
 import { verifyRequestDpopProof } from "./dpop.ts";
 import { layerConfig as SqlitePersistenceLayer } from "../persistence/Layers/Sqlite.ts";
+import * as HubDatabase from "../persistence/Postgres/HubDatabase.ts";
 
 export const DEFAULT_SESSION_SUBJECT = "cli-issued-session";
 export const INTERNAL_ADMINISTRATIVE_BOOTSTRAP_SUBJECT = "administrative-bootstrap";
@@ -1037,4 +1038,6 @@ export const storageLayer = Layer.mergeAll(ServerSecretStore.layer, SqlitePersis
 export const runtimeLayer = layer.pipe(
   Layer.provideMerge(storageLayer),
   Layer.provideMerge(ServerEnvironment.identityLayer),
+  // Hub mode keeps auth state in the tenant's Postgres database.
+  Layer.provideMerge(HubDatabase.layerConfig),
 );

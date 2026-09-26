@@ -54,6 +54,7 @@ import {
   parseThreadSegmentFromAttachmentId,
   toSafeThreadAttachmentSegment,
 } from "../../attachmentStore.ts";
+import { removeHubThreadAttachments } from "../../persistence/Postgres/HubAttachments.ts";
 
 export const ORCHESTRATION_PROJECTOR_NAMES = {
   projects: "projection.projects",
@@ -417,6 +418,7 @@ const runAttachmentSideEffects = Effect.fn("runAttachmentSideEffects")(function*
       return;
     }
 
+    yield* removeHubThreadAttachments(threadSegment);
     const entries = yield* readAttachmentRootEntries;
     yield* Effect.forEach(
       entries,
@@ -470,6 +472,7 @@ const runAttachmentSideEffects = Effect.fn("runAttachmentSideEffects")(function*
       return;
     }
 
+    yield* removeHubThreadAttachments(threadSegment, keptThreadRelativePaths);
     const entries = yield* readAttachmentRootEntries;
     yield* Effect.forEach(
       entries,
@@ -517,6 +520,9 @@ export const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationP
             projectId: event.payload.projectId,
             title: event.payload.title,
             workspaceRoot: event.payload.workspaceRoot,
+            ...(event.payload.repositoryIdentity !== undefined
+              ? { repositoryIdentity: event.payload.repositoryIdentity }
+              : {}),
             defaultModelSelection: event.payload.defaultModelSelection,
             defaultThreadEnvMode: null,
             faviconPath: event.payload.faviconPath ?? null,
@@ -550,6 +556,9 @@ export const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationP
               ? { faviconPath: event.payload.faviconPath }
               : {}),
             ...(event.payload.scripts !== undefined ? { scripts: event.payload.scripts } : {}),
+            ...(event.payload.repositoryIdentity !== undefined
+              ? { repositoryIdentity: event.payload.repositoryIdentity }
+              : {}),
             updatedAt: event.payload.updatedAt,
           });
           return;

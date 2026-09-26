@@ -68,6 +68,8 @@ import {
   type ProjectionThreadDetailQuery,
   type ProjectionSnapshotQueryShape,
 } from "../Services/ProjectionSnapshotQuery.ts";
+import { localOrHub } from "../../persistence/Postgres/HubDatabase.ts";
+import { PgProjectionSnapshotQueryLive } from "../../persistence/Postgres/ProjectionSnapshotQuery.ts";
 
 const decodeReadModel = Schema.decodeUnknownEffect(OrchestrationReadModel);
 const decodeShellSnapshot = Schema.decodeUnknownEffect(OrchestrationShellSnapshot);
@@ -3120,7 +3122,7 @@ pending_approval_requests AS (
   } satisfies ProjectionSnapshotQueryShape;
 });
 
-export const OrchestrationProjectionSnapshotQueryLive = Layer.effect(
-  ProjectionSnapshotQuery,
-  makeProjectionSnapshotQuery,
+export const OrchestrationProjectionSnapshotQueryLive = localOrHub(
+  Layer.effect(ProjectionSnapshotQuery, makeProjectionSnapshotQuery),
+  PgProjectionSnapshotQueryLive,
 );

@@ -12,6 +12,7 @@ import {
   OrchestrationThread,
   OrchestrationThreadDetailSnapshot,
   ProjectScript,
+  RepositoryIdentity,
   TurnId,
   type OrchestrationCheckpointSummary,
   type OrchestrationLatestTurn,
@@ -58,7 +59,6 @@ import {
   encodeThreadDetailPageCursor,
 } from "../../orchestration/threadDetailCursor.ts";
 import { projectActivityPayload } from "../../orchestration/ActivityPayloadProjection.ts";
-import * as RepositoryIdentityResolver from "../../project/RepositoryIdentityResolver.ts";
 import { HubTenant } from "./HubTenant.ts";
 import { ORCHESTRATION_PROJECTOR_NAMES } from "../../orchestration/Layers/ProjectionPipeline.ts";
 import {
@@ -83,6 +83,7 @@ const THREAD_DETAIL_ACTIVITY_PAYLOAD_BATCH_SIZE = 25;
 const ProjectionProjectDbRowSchema = ProjectionProject.mapFields(
   Struct.assign({
     defaultModelSelection: Schema.NullOr(Schema.fromJsonString(ModelSelection)),
+    repositoryIdentity: Schema.optional(Schema.NullOr(Schema.fromJsonString(RepositoryIdentity))),
     scripts: Schema.fromJsonString(Schema.Array(ProjectScript)),
   }),
 );
@@ -387,39 +388,22 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
   const threadPlanProgress = yield* ThreadPlanProgressService;
   const sql = yield* SqlClient.SqlClient;
   const { userId } = yield* HubTenant;
-  const repositoryIdentityResolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
-  const repositoryIdentityResolutionConcurrency = 4;
-  const resolveRepositoryIdentitiesForProjects = Effect.fn(
-    "ProjectionSnapshotQuery.resolveRepositoryIdentitiesForProjects",
-  )(function* (
+  // A hub has no checkout to run `git remote` in: projects carry the identity
+  // recorded at creation (repository_identity_json), read in the same snapshot.
+  const resolveRepositoryIdentitiesForProjects = (
     projectRows: ReadonlyArray<Schema.Schema.Type<typeof ProjectionProjectDbRowSchema>>,
     options?: {
       readonly includeDeleted?: boolean;
     },
-  ) {
-    const filteredProjectRows =
-      options?.includeDeleted === true
-        ? projectRows
-        : projectRows.filter((row) => row.deletedAt === null);
-    const uniqueWorkspaceRoots = [...new Set(filteredProjectRows.map((row) => row.workspaceRoot))];
-    const repositoryIdentityByWorkspaceRoot = new Map(
-      yield* Effect.forEach(
-        uniqueWorkspaceRoots,
-        (workspaceRoot) =>
-          repositoryIdentityResolver
-            .resolve(workspaceRoot)
-            .pipe(Effect.map((identity) => [workspaceRoot, identity] as const)),
-        { concurrency: repositoryIdentityResolutionConcurrency },
+  ) =>
+    Effect.succeed(
+      new Map(
+        (options?.includeDeleted === true
+          ? projectRows
+          : projectRows.filter((row) => row.deletedAt === null)
+        ).map((row) => [row.projectId, row.repositoryIdentity ?? null] as const),
       ),
     );
-
-    return new Map(
-      filteredProjectRows.map((row) => [
-        row.projectId,
-        repositoryIdentityByWorkspaceRoot.get(row.workspaceRoot) ?? null,
-      ]),
-    );
-  });
 
   // A SQLite read transaction reads one snapshot. Under Postgres READ COMMITTED
   // each statement would read its own, so a snapshot could pair rows with a newer
@@ -442,6 +426,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           default_model_selection_json AS "defaultModelSelection",
           default_thread_env_mode AS "defaultThreadEnvMode",
           favicon_path AS "faviconPath",
+          repository_identity_json AS "repositoryIdentity",
           scripts_json AS "scripts",
           created_at AS "createdAt",
           updated_at AS "updatedAt",
@@ -927,6 +912,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           default_model_selection_json AS "defaultModelSelection",
           default_thread_env_mode AS "defaultThreadEnvMode",
           favicon_path AS "faviconPath",
+          repository_identity_json AS "repositoryIdentity",
           scripts_json AS "scripts",
           created_at AS "createdAt",
           updated_at AS "updatedAt",
@@ -952,6 +938,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           default_model_selection_json AS "defaultModelSelection",
           default_thread_env_mode AS "defaultThreadEnvMode",
           favicon_path AS "faviconPath",
+          repository_identity_json AS "repositoryIdentity",
           scripts_json AS "scripts",
           created_at AS "createdAt",
           updated_at AS "updatedAt",
@@ -2555,7 +2542,7 @@ pending_approval_requests AS (
         Effect.flatMap((option) =>
           Option.isNone(option)
             ? Effect.succeed(Option.none<OrchestrationProject>())
-            : repositoryIdentityResolver.resolve(option.value.workspaceRoot).pipe(
+            : Effect.succeed(option.value.repositoryIdentity ?? null).pipe(
                 Effect.map((repositoryIdentity) =>
                   Option.some({
                     id: option.value.projectId,
@@ -2586,13 +2573,11 @@ pending_approval_requests AS (
       Effect.flatMap((option) =>
         Option.isNone(option)
           ? Effect.succeed(Option.none<OrchestrationProjectShell>())
-          : repositoryIdentityResolver
-              .resolve(option.value.workspaceRoot)
-              .pipe(
-                Effect.map((repositoryIdentity) =>
-                  Option.some(mapProjectShellRow(option.value, repositoryIdentity)),
-                ),
+          : Effect.succeed(option.value.repositoryIdentity ?? null).pipe(
+              Effect.map((repositoryIdentity) =>
+                Option.some(mapProjectShellRow(option.value, repositoryIdentity)),
               ),
+            ),
       ),
     );
 

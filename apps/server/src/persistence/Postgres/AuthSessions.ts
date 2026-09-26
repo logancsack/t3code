@@ -1,6 +1,9 @@
-import * as Context from "effect/Context";
+/**
+ * Postgres port of `AuthSessionRepository` for the hub (see `../AuthSessions.ts`).
+ * Every statement is scoped to the process tenant. Keep the SQL in step with
+ * the SQLite repository; the differences are the `user_id` predicates.
+ */
 import * as Effect from "effect/Effect";
-import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
@@ -19,11 +22,11 @@ import {
   PersistenceDecodeError,
   type PersistenceErrorCorrelation,
   PersistenceSqlError,
-} from "./Errors.ts";
-import { localOrHub } from "./Postgres/HubDatabase.ts";
-import * as PgRepository from "./Postgres/AuthSessions.ts";
+} from "../Errors.ts";
+import type { AuthSessionRepository } from "../AuthSessions.ts";
+import { HubTenant } from "./HubTenant.ts";
 
-export const AuthSessionClientMetadataRecord = Schema.Struct({
+const AuthSessionClientMetadataRecord = Schema.Struct({
   label: Schema.NullOr(Schema.String),
   ipAddress: Schema.NullOr(Schema.String),
   userAgent: Schema.NullOr(Schema.String),
@@ -31,9 +34,9 @@ export const AuthSessionClientMetadataRecord = Schema.Struct({
   os: Schema.NullOr(Schema.String),
   browser: Schema.NullOr(Schema.String),
 });
-export type AuthSessionClientMetadataRecord = typeof AuthSessionClientMetadataRecord.Type;
+type AuthSessionClientMetadataRecord = typeof AuthSessionClientMetadataRecord.Type;
 
-export const AuthSessionRecord = Schema.Struct({
+const AuthSessionRecord = Schema.Struct({
   sessionId: AuthSessionId,
   subject: Schema.String,
   scopes: AuthEnvironmentScopes,
@@ -44,9 +47,9 @@ export const AuthSessionRecord = Schema.Struct({
   lastConnectedAt: Schema.NullOr(Schema.DateTimeUtcFromString),
   revokedAt: Schema.NullOr(Schema.DateTimeUtcFromString),
 });
-export type AuthSessionRecord = typeof AuthSessionRecord.Type;
+type AuthSessionRecord = typeof AuthSessionRecord.Type;
 
-export const CreateAuthSessionInput = Schema.Struct({
+const CreateAuthSessionInput = Schema.Struct({
   sessionId: AuthSessionId,
   subject: Schema.String,
   scopes: AuthEnvironmentScopes,
@@ -55,69 +58,42 @@ export const CreateAuthSessionInput = Schema.Struct({
   issuedAt: Schema.DateTimeUtcFromString,
   expiresAt: Schema.DateTimeUtcFromString,
 });
-export type CreateAuthSessionInput = typeof CreateAuthSessionInput.Type;
+type CreateAuthSessionInput = typeof CreateAuthSessionInput.Type;
 
-export const GetAuthSessionByIdInput = Schema.Struct({
+const GetAuthSessionByIdInput = Schema.Struct({
   sessionId: AuthSessionId,
 });
-export type GetAuthSessionByIdInput = typeof GetAuthSessionByIdInput.Type;
+type GetAuthSessionByIdInput = typeof GetAuthSessionByIdInput.Type;
 
-export const ListActiveAuthSessionsInput = Schema.Struct({
+const ListActiveAuthSessionsInput = Schema.Struct({
   now: Schema.DateTimeUtcFromString,
 });
-export type ListActiveAuthSessionsInput = typeof ListActiveAuthSessionsInput.Type;
+type ListActiveAuthSessionsInput = typeof ListActiveAuthSessionsInput.Type;
 
-export const RevokeAuthSessionInput = Schema.Struct({
+const RevokeAuthSessionInput = Schema.Struct({
   sessionId: AuthSessionId,
   revokedAt: Schema.DateTimeUtcFromString,
 });
-export type RevokeAuthSessionInput = typeof RevokeAuthSessionInput.Type;
+type RevokeAuthSessionInput = typeof RevokeAuthSessionInput.Type;
 
-export const RevokeOtherAuthSessionsInput = Schema.Struct({
+const RevokeOtherAuthSessionsInput = Schema.Struct({
   currentSessionId: AuthSessionId,
   revokedAt: Schema.DateTimeUtcFromString,
 });
-export type RevokeOtherAuthSessionsInput = typeof RevokeOtherAuthSessionsInput.Type;
+type RevokeOtherAuthSessionsInput = typeof RevokeOtherAuthSessionsInput.Type;
 
-export const SetAuthSessionLastConnectedAtInput = Schema.Struct({
+const SetAuthSessionLastConnectedAtInput = Schema.Struct({
   sessionId: AuthSessionId,
   lastConnectedAt: Schema.DateTimeUtcFromString,
 });
-export type SetAuthSessionLastConnectedAtInput = typeof SetAuthSessionLastConnectedAtInput.Type;
+type SetAuthSessionLastConnectedAtInput = typeof SetAuthSessionLastConnectedAtInput.Type;
 
-export const SetAuthSessionClientConnectionInput = Schema.Struct({
+const SetAuthSessionClientConnectionInput = Schema.Struct({
   sessionId: AuthSessionId,
   surface: Schema.NullOr(ClientSurface),
   appVersion: Schema.NullOr(Schema.String),
 });
-export type SetAuthSessionClientConnectionInput = typeof SetAuthSessionClientConnectionInput.Type;
-
-export class AuthSessionRepository extends Context.Service<
-  AuthSessionRepository,
-  {
-    readonly create: (
-      input: CreateAuthSessionInput,
-    ) => Effect.Effect<void, AuthSessionRepositoryError>;
-    readonly getById: (
-      input: GetAuthSessionByIdInput,
-    ) => Effect.Effect<Option.Option<AuthSessionRecord>, AuthSessionRepositoryError>;
-    readonly listActive: (
-      input: ListActiveAuthSessionsInput,
-    ) => Effect.Effect<ReadonlyArray<AuthSessionRecord>, AuthSessionRepositoryError>;
-    readonly revoke: (
-      input: RevokeAuthSessionInput,
-    ) => Effect.Effect<boolean, AuthSessionRepositoryError>;
-    readonly revokeAllExcept: (
-      input: RevokeOtherAuthSessionsInput,
-    ) => Effect.Effect<ReadonlyArray<AuthSessionId>, AuthSessionRepositoryError>;
-    readonly setLastConnectedAt: (
-      input: SetAuthSessionLastConnectedAtInput,
-    ) => Effect.Effect<void, AuthSessionRepositoryError>;
-    readonly setClientConnection: (
-      input: SetAuthSessionClientConnectionInput,
-    ) => Effect.Effect<void, AuthSessionRepositoryError>;
-  }
->()("t3/persistence/AuthSessions/AuthSessionRepository") {}
+type SetAuthSessionClientConnectionInput = typeof SetAuthSessionClientConnectionInput.Type;
 
 const AuthSessionDbRow = Schema.Struct({
   sessionId: AuthSessionId,
@@ -193,12 +169,14 @@ function toPersistenceSqlOrDecodeError(
 
 export const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
+  const { userId } = yield* HubTenant;
 
   const createSessionRow = SqlSchema.void({
     Request: CreateAuthSessionInput,
     execute: (input) =>
       sql`
         INSERT INTO auth_sessions (
+          user_id,
           session_id,
           subject,
           scopes,
@@ -214,6 +192,7 @@ export const make = Effect.gen(function* () {
           revoked_at
         )
         VALUES (
+          ${userId},
           ${input.sessionId},
           ${input.subject},
           ${JSON.stringify(input.scopes)},
@@ -252,7 +231,8 @@ export const make = Effect.gen(function* () {
           last_connected_at AS "lastConnectedAt",
           revoked_at AS "revokedAt"
         FROM auth_sessions
-        WHERE session_id = ${sessionId}
+        WHERE user_id = ${userId}
+          AND session_id = ${sessionId}
       `,
   });
 
@@ -277,7 +257,8 @@ export const make = Effect.gen(function* () {
           last_connected_at AS "lastConnectedAt",
           revoked_at AS "revokedAt"
         FROM auth_sessions
-        WHERE revoked_at IS NULL
+        WHERE user_id = ${userId}
+          AND revoked_at IS NULL
           AND expires_at > ${now}
         ORDER BY issued_at DESC, session_id DESC
       `,
@@ -289,7 +270,8 @@ export const make = Effect.gen(function* () {
       sql`
         UPDATE auth_sessions
         SET last_connected_at = ${lastConnectedAt}
-        WHERE session_id = ${sessionId}
+        WHERE user_id = ${userId}
+          AND session_id = ${sessionId}
           AND revoked_at IS NULL
       `,
   });
@@ -303,7 +285,8 @@ export const make = Effect.gen(function* () {
         UPDATE auth_sessions
         SET client_surface = COALESCE(${surface}, client_surface),
             client_app_version = COALESCE(${appVersion}, client_app_version)
-        WHERE session_id = ${sessionId}
+        WHERE user_id = ${userId}
+          AND session_id = ${sessionId}
           AND revoked_at IS NULL
       `,
   });
@@ -315,7 +298,8 @@ export const make = Effect.gen(function* () {
       sql`
         UPDATE auth_sessions
         SET revoked_at = ${revokedAt}
-        WHERE session_id = ${sessionId}
+        WHERE user_id = ${userId}
+          AND session_id = ${sessionId}
           AND revoked_at IS NULL
         RETURNING session_id AS "sessionId"
       `,
@@ -328,7 +312,8 @@ export const make = Effect.gen(function* () {
       sql`
         UPDATE auth_sessions
         SET revoked_at = ${revokedAt}
-        WHERE session_id <> ${currentSessionId}
+        WHERE user_id = ${userId}
+          AND session_id <> ${currentSessionId}
           AND revoked_at IS NULL
         RETURNING session_id AS "sessionId"
       `,
@@ -452,8 +437,3 @@ export const make = Effect.gen(function* () {
     setClientConnection,
   } satisfies AuthSessionRepository["Service"];
 });
-
-export const layer = localOrHub(
-  Layer.effect(AuthSessionRepository, make),
-  Layer.effect(AuthSessionRepository, PgRepository.make),
-);

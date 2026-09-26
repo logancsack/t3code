@@ -28,6 +28,8 @@ import {
   OrchestrationEventStore,
   type OrchestrationEventStoreShape,
 } from "../Services/OrchestrationEventStore.ts";
+import { localOrHub } from "../Postgres/HubDatabase.ts";
+import { PgOrchestrationEventStoreLive } from "../Postgres/OrchestrationEventStore.ts";
 
 const decodeEvent = Schema.decodeUnknownEffect(OrchestrationEvent);
 const UnknownFromJsonString = Schema.fromJsonString(Schema.Unknown);
@@ -403,4 +405,7 @@ const makeEventStore = Effect.gen(function* () {
   } satisfies OrchestrationEventStoreShape;
 });
 
-export const OrchestrationEventStoreLive = Layer.effect(OrchestrationEventStore, makeEventStore);
+export const OrchestrationEventStoreLive = localOrHub(
+  Layer.effect(OrchestrationEventStore, makeEventStore),
+  PgOrchestrationEventStoreLive,
+);

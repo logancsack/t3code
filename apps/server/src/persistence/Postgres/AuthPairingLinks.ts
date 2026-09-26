@@ -1,6 +1,10 @@
-import * as Context from "effect/Context";
+/**
+ * Postgres port of `AuthPairingLinkRepository` for the hub (see
+ * `../AuthPairingLinks.ts`). Every statement is scoped to the process tenant.
+ * Keep the SQL in step with the SQLite repository; the differences are the
+ * `user_id` predicates.
+ */
 import * as Effect from "effect/Effect";
-import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
@@ -13,11 +17,11 @@ import {
   PersistenceDecodeError,
   type PersistenceErrorCorrelation,
   PersistenceSqlError,
-} from "./Errors.ts";
-import { localOrHub } from "./Postgres/HubDatabase.ts";
-import * as PgRepository from "./Postgres/AuthPairingLinks.ts";
+} from "../Errors.ts";
+import type { AuthPairingLinkRepository } from "../AuthPairingLinks.ts";
+import { HubTenant } from "./HubTenant.ts";
 
-export const AuthPairingLinkRecord = Schema.Struct({
+const AuthPairingLinkRecord = Schema.Struct({
   id: Schema.String,
   credential: Schema.String,
   method: Schema.Literals(["desktop-bootstrap", "one-time-token"]),
@@ -30,9 +34,9 @@ export const AuthPairingLinkRecord = Schema.Struct({
   consumedAt: Schema.NullOr(Schema.DateTimeUtcFromString),
   revokedAt: Schema.NullOr(Schema.DateTimeUtcFromString),
 });
-export type AuthPairingLinkRecord = typeof AuthPairingLinkRecord.Type;
+type AuthPairingLinkRecord = typeof AuthPairingLinkRecord.Type;
 
-export const CreateAuthPairingLinkInput = Schema.Struct({
+const CreateAuthPairingLinkInput = Schema.Struct({
   id: Schema.String,
   credential: Schema.String,
   method: Schema.Literals(["desktop-bootstrap", "one-time-token"]),
@@ -43,31 +47,31 @@ export const CreateAuthPairingLinkInput = Schema.Struct({
   createdAt: Schema.DateTimeUtcFromString,
   expiresAt: Schema.DateTimeUtcFromString,
 });
-export type CreateAuthPairingLinkInput = typeof CreateAuthPairingLinkInput.Type;
+type CreateAuthPairingLinkInput = typeof CreateAuthPairingLinkInput.Type;
 
-export const ConsumeAuthPairingLinkInput = Schema.Struct({
+const ConsumeAuthPairingLinkInput = Schema.Struct({
   credential: Schema.String,
   proofKeyThumbprint: Schema.NullOr(Schema.String),
   consumedAt: Schema.DateTimeUtcFromString,
   now: Schema.DateTimeUtcFromString,
 });
-export type ConsumeAuthPairingLinkInput = typeof ConsumeAuthPairingLinkInput.Type;
+type ConsumeAuthPairingLinkInput = typeof ConsumeAuthPairingLinkInput.Type;
 
-export const ListActiveAuthPairingLinksInput = Schema.Struct({
+const ListActiveAuthPairingLinksInput = Schema.Struct({
   now: Schema.DateTimeUtcFromString,
 });
-export type ListActiveAuthPairingLinksInput = typeof ListActiveAuthPairingLinksInput.Type;
+type ListActiveAuthPairingLinksInput = typeof ListActiveAuthPairingLinksInput.Type;
 
-export const RevokeAuthPairingLinkInput = Schema.Struct({
+const RevokeAuthPairingLinkInput = Schema.Struct({
   id: Schema.String,
   revokedAt: Schema.DateTimeUtcFromString,
 });
-export type RevokeAuthPairingLinkInput = typeof RevokeAuthPairingLinkInput.Type;
+type RevokeAuthPairingLinkInput = typeof RevokeAuthPairingLinkInput.Type;
 
-export const GetAuthPairingLinkByCredentialInput = Schema.Struct({
+const GetAuthPairingLinkByCredentialInput = Schema.Struct({
   credential: Schema.String,
 });
-export type GetAuthPairingLinkByCredentialInput = typeof GetAuthPairingLinkByCredentialInput.Type;
+type GetAuthPairingLinkByCredentialInput = typeof GetAuthPairingLinkByCredentialInput.Type;
 
 const AuthPairingLinkRawDbRow = Schema.Struct({
   id: Schema.String,
@@ -84,27 +88,6 @@ const AuthPairingLinkRawDbRow = Schema.Struct({
 });
 
 const decodeAuthPairingLinkDbRow = Schema.decodeUnknownEffect(AuthPairingLinkRecord);
-
-export class AuthPairingLinkRepository extends Context.Service<
-  AuthPairingLinkRepository,
-  {
-    readonly create: (
-      input: CreateAuthPairingLinkInput,
-    ) => Effect.Effect<void, AuthPairingLinkRepositoryError>;
-    readonly consumeAvailable: (
-      input: ConsumeAuthPairingLinkInput,
-    ) => Effect.Effect<Option.Option<AuthPairingLinkRecord>, AuthPairingLinkRepositoryError>;
-    readonly listActive: (
-      input: ListActiveAuthPairingLinksInput,
-    ) => Effect.Effect<ReadonlyArray<AuthPairingLinkRecord>, AuthPairingLinkRepositoryError>;
-    readonly revoke: (
-      input: RevokeAuthPairingLinkInput,
-    ) => Effect.Effect<boolean, AuthPairingLinkRepositoryError>;
-    readonly getByCredential: (
-      input: GetAuthPairingLinkByCredentialInput,
-    ) => Effect.Effect<Option.Option<AuthPairingLinkRecord>, AuthPairingLinkRepositoryError>;
-  }
->()("t3/persistence/AuthPairingLinks/AuthPairingLinkRepository") {}
 
 function toPersistenceSqlOrDecodeError(
   sqlOperation: string,
@@ -123,12 +106,14 @@ function toPersistenceSqlOrDecodeError(
 
 export const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
+  const { userId } = yield* HubTenant;
 
   const createPairingLinkRow = SqlSchema.void({
     Request: CreateAuthPairingLinkInput,
     execute: (input) =>
       sql`
         INSERT INTO auth_pairing_links (
+          user_id,
           id,
           credential,
           method,
@@ -142,6 +127,7 @@ export const make = Effect.gen(function* () {
           revoked_at
         )
         VALUES (
+          ${userId},
           ${input.id},
           ${input.credential},
           ${input.method},
@@ -164,7 +150,8 @@ export const make = Effect.gen(function* () {
       sql`
         UPDATE auth_pairing_links
         SET consumed_at = ${consumedAt}
-        WHERE credential = ${credential}
+        WHERE user_id = ${userId}
+          AND credential = ${credential}
           AND revoked_at IS NULL
           AND consumed_at IS NULL
           AND expires_at > ${now}
@@ -205,7 +192,8 @@ export const make = Effect.gen(function* () {
           consumed_at AS "consumedAt",
           revoked_at AS "revokedAt"
         FROM auth_pairing_links
-        WHERE revoked_at IS NULL
+        WHERE user_id = ${userId}
+          AND revoked_at IS NULL
           AND consumed_at IS NULL
           AND expires_at > ${now}
         ORDER BY created_at DESC, id DESC
@@ -219,7 +207,8 @@ export const make = Effect.gen(function* () {
       sql`
         UPDATE auth_pairing_links
         SET revoked_at = ${revokedAt}
-        WHERE id = ${id}
+        WHERE user_id = ${userId}
+          AND id = ${id}
           AND revoked_at IS NULL
           AND consumed_at IS NULL
         RETURNING id AS "id"
@@ -244,7 +233,8 @@ export const make = Effect.gen(function* () {
           consumed_at AS "consumedAt",
           revoked_at AS "revokedAt"
         FROM auth_pairing_links
-        WHERE credential = ${credential}
+        WHERE user_id = ${userId}
+          AND credential = ${credential}
       `,
   });
 
@@ -354,8 +344,3 @@ export const make = Effect.gen(function* () {
     getByCredential,
   } satisfies AuthPairingLinkRepository["Service"];
 });
-
-export const layer = localOrHub(
-  Layer.effect(AuthPairingLinkRepository, make),
-  Layer.effect(AuthPairingLinkRepository, PgRepository.make),
-);

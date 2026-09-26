@@ -1,29 +1,26 @@
 /**
- * Hub Postgres migration 050: thread-machine state.
+ * Hub migration 050: thread-machine state, the first of the 050-099 range.
  *
  * - `hub_runner_cursors`: per thread, the runner outbox identity, the last
  *   runner boot the hub reconciled, and the highest runner event sequence whose
  *   effects are durable in the hub.
- * - `hub_checkpoint_turn_diffs`: patches between two checkpoints of a thread,
- *   captured while the machine was awake, so diffs never wake a machine.
+ * - `hub_checkpoint_turn_diffs`: patches between two checkpoints of a thread in
+ *   both whitespace modes, captured while the machine was awake, so diffs never
+ *   wake a machine. This is the hub's only diff table; the standalone
+ *   `checkpoint_diff_blobs` table has no hub counterpart.
  * - `hub_thread_vcs_status`: the last git status a runner reported per thread.
  *
- * Every table leads with `user_id` and carries the same row-level-security
- * backstop as the hub baseline (`hub.user_id` transaction setting).
- *
- * Registration: hub migrations 001-049 belong to the hub persistence
- * framework (feature/tm-hub). TODO(tm-hub integration): add this module to
- * that framework's migration list as id 50, name "HubThreadMachineState".
- * Until then `HUB_MIGRATION_050` can be applied directly; every statement is
- * idempotent.
+ * Every table leads its key with `user_id` and carries the forced tenant policy
+ * from the baseline (`hubTenantPolicyStatements`). The statements are
+ * idempotent, so a database where an earlier build created these tables
+ * outside the migrator still migrates.
  *
  * @module 050_HubThreadMachineState
  */
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
-export const HUB_MIGRATION_050_ID = 50;
-export const HUB_MIGRATION_050_NAME = "HubThreadMachineState";
+import { hubTenantPolicyStatements } from "./001_HubBaseline.ts";
 
 const c = `COLLATE "C"`;
 
@@ -33,7 +30,7 @@ export const HUB_THREAD_MACHINE_STATE_TABLES = [
   "hub_thread_vcs_status",
 ] as const;
 
-export const HUB_MIGRATION_050_STATEMENTS: ReadonlyArray<string> = [
+const statements: ReadonlyArray<string> = [
   `CREATE TABLE IF NOT EXISTS hub_runner_cursors (
     user_id text ${c} NOT NULL,
     thread_id text ${c} NOT NULL,
@@ -63,23 +60,12 @@ export const HUB_MIGRATION_050_STATEMENTS: ReadonlyArray<string> = [
     updated_at text ${c} NOT NULL,
     PRIMARY KEY (user_id, thread_id)
   )`,
-  ...HUB_THREAD_MACHINE_STATE_TABLES.flatMap((table) => [
-    `ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY`,
-    `DROP POLICY IF EXISTS hub_tenant_isolation ON ${table}`,
-    `CREATE POLICY hub_tenant_isolation ON ${table}
-      USING (user_id = current_setting('hub.user_id', true))
-      WITH CHECK (user_id = current_setting('hub.user_id', true))`,
-  ]),
+  ...HUB_THREAD_MACHINE_STATE_TABLES.flatMap(hubTenantPolicyStatements),
 ];
 
-/** Applies migration 050 idempotently in one transaction. */
-export const HUB_MIGRATION_050 = Effect.gen(function* () {
+export default Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
-  yield* sql.withTransaction(
-    Effect.forEach(HUB_MIGRATION_050_STATEMENTS, (statement) => sql.unsafe(statement), {
-      discard: true,
-    }),
-  );
+  for (const statement of statements) {
+    yield* sql.unsafe(statement);
+  }
 });
-
-export default HUB_MIGRATION_050;

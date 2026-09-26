@@ -11,6 +11,7 @@ import {
   ModelSelection,
   ProjectId,
   ProjectScript,
+  RepositoryIdentity,
   ThreadEnvMode,
 } from "@t3tools/contracts";
 import * as Option from "effect/Option";
@@ -27,6 +28,9 @@ export const ProjectionProject = Schema.Struct({
   defaultModelSelection: Schema.NullOr(ModelSelection),
   defaultThreadEnvMode: Schema.NullOr(ThreadEnvMode),
   faviconPath: Schema.optional(Schema.NullOr(Schema.String)),
+  // Hub projects only: the recorded identity (standalone resolves it from the
+  // checkout and does not store it).
+  repositoryIdentity: Schema.optional(Schema.NullOr(RepositoryIdentity)),
   scripts: Schema.Array(ProjectScript),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,

@@ -18,6 +18,11 @@ import {
   resolveAttachmentPath,
 } from "../attachmentStore.ts";
 import { ServerConfig } from "../config.ts";
+import {
+  hydrateHubAttachment,
+  persistHubAttachment,
+  removeHubAttachments,
+} from "../persistence/Postgres/HubAttachments.ts";
 import { parseBase64DataUrl } from "../imageMime.ts";
 import { HubThreadCheckouts } from "../serverModeHooks.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
@@ -56,6 +61,11 @@ const removeClaimedAttachmentPaths = Effect.fn("Normalizer.removeClaimedAttachme
       return;
     }
     const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const { attachmentsDir } = yield* ServerConfig;
+    yield* removeHubAttachments(
+      attachmentPaths.map((attachmentPath) => path.relative(attachmentsDir, attachmentPath)),
+    );
     yield* Effect.forEach(
       attachmentPaths,
       (attachmentPath) =>
@@ -138,12 +148,30 @@ export const normalizeDispatchCommand = (command: ClientOrchestrationCommand) =>
       return canonicalCommand as OrchestrationCommand;
     }
 
+    // Hub mode keeps attachment bytes in Postgres; a no-op otherwise.
+    const persistAttachment = (attachmentPath: string, name: string) =>
+      persistHubAttachment({
+        attachmentsDir: serverConfig.attachmentsDir,
+        relativePath: path.relative(serverConfig.attachmentsDir, attachmentPath),
+      }).pipe(
+        Effect.mapError(
+          (cause) =>
+            new OrchestrationDispatchCommandError({
+              message: `Failed to persist attachment '${name}'.`,
+              cause,
+            }),
+        ),
+      );
     const claimedAttachmentPaths: string[] = [];
     const normalizedAttachments = yield* Effect.forEach(
       canonicalCommand.message.attachments,
       (attachment) =>
         Effect.gen(function* () {
           if (!("dataUrl" in attachment)) {
+            yield* hydrateHubAttachment({
+              attachmentsDir: serverConfig.attachmentsDir,
+              attachmentId: attachment.id,
+            });
             const claim = planAttachmentClaim({
               attachmentsDir: serverConfig.attachmentsDir,
               threadId: canonicalCommand.threadId,
@@ -199,6 +227,7 @@ export const normalizeDispatchCommand = (command: ClientOrchestrationCommand) =>
               ),
             );
             claimedAttachmentPaths.push(claim.finalPath);
+            yield* persistAttachment(claim.finalPath, attachment.name);
 
             return normalizedAttachment;
           }
@@ -258,6 +287,7 @@ export const normalizeDispatchCommand = (command: ClientOrchestrationCommand) =>
                 }),
             ),
           );
+          yield* persistAttachment(attachmentPath, attachment.name);
 
           return persistedAttachment;
         }),

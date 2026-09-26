@@ -85,6 +85,7 @@ import { OrchestrationEventStoreLive } from "../src/persistence/Layers/Orchestra
 import { ProjectionCheckpointRepositoryLive } from "../src/persistence/Layers/ProjectionCheckpoints.ts";
 import { ProjectionPendingApprovalRepositoryLive } from "../src/persistence/Layers/ProjectionPendingApprovals.ts";
 import { makeSqlitePersistenceLive } from "../src/persistence/Layers/Sqlite.ts";
+import * as HubRepositoryIdentityResolver from "../src/persistence/Postgres/HubRepositoryIdentityResolver.ts";
 import * as ProviderSessionRuntime from "../src/persistence/ProviderSessionRuntime.ts";
 import { CheckpointTurnDiffStore } from "../src/persistence/Services/HubThreadMachineState.ts";
 import { ProjectionPendingApprovalRepository } from "../src/persistence/Services/ProjectionPendingApprovals.ts";
@@ -444,7 +445,7 @@ export const makeHubRunnerLoopbackHarness = (threadIdValue = "thread-loopback") 
         Layer.provideMerge(checkoutServices),
         Layer.provideMerge(runtimeServices),
         Layer.provideMerge(makeProviderRegistryLayer()),
-        Layer.provideMerge(HubLayers.hubRepositoryIdentityResolverLayer),
+        Layer.provideMerge(HubRepositoryIdentityResolver.layer),
         Layer.provideMerge(infrastructure),
         Layer.provideMerge(persistence),
         Layer.provideMerge(ServerSettingsService.layerTest()),

@@ -213,6 +213,9 @@ export function projectEvent(
             id: payload.projectId,
             title: payload.title,
             workspaceRoot: payload.workspaceRoot,
+            ...(payload.repositoryIdentity !== undefined
+              ? { repositoryIdentity: payload.repositoryIdentity }
+              : {}),
             defaultModelSelection: payload.defaultModelSelection,
             defaultThreadEnvMode: null,
             faviconPath: payload.faviconPath ?? null,
@@ -255,6 +258,9 @@ export function projectEvent(
                     ? { faviconPath: payload.faviconPath }
                     : {}),
                   ...(payload.scripts !== undefined ? { scripts: payload.scripts } : {}),
+                  ...(payload.repositoryIdentity !== undefined
+                    ? { repositoryIdentity: payload.repositoryIdentity }
+                    : {}),
                   updatedAt: payload.updatedAt,
                 }
               : project,
