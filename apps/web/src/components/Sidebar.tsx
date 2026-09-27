@@ -121,7 +121,6 @@ import { formatRelativeTimeLabel, parseTimestampDate } from "../timestampFormat"
 import type { SidebarThreadSummary } from "../types";
 import { cn } from "~/lib/utils";
 import { AldoThreadBadge, isAldoThreadId } from "./ManagedDevPcAgent";
-import { displayedThreadBranch, isAldoCloud } from "../aldo/cloud";
 import { buildThreadActionMenuItems } from "./threadActionMenu.logic";
 import {
   animatePinnedLayoutChanges,
@@ -329,7 +328,7 @@ function SidebarThreadTooltip({
               <div className="min-w-0 truncate text-foreground/75">{environmentLabel}</div>
             </div>
           ) : null}
-          {displayedThreadBranch(thread.environmentId, thread.branch) ? (
+          {thread.branch ? (
             <div className="flex min-w-0 items-center gap-2">
               <GitBranchIcon className="size-3 shrink-0 stroke-muted-foreground" />
               <div className="min-w-0 truncate text-foreground/75">{thread.branch}</div>
@@ -1564,7 +1563,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
               {/* Always the branch. The plan step used to take this slot while
                   working, but it truncated to a half-sentence and dropped the
                   branch, so the row lost its most stable identifier. */}
-              {displayedThreadBranch(thread.environmentId, thread.branch) ? (
+              {thread.branch ? (
                 <>
                   <ThreadWorktreeIndicator thread={thread} />
                   <span className="min-w-0 flex-1 truncate whitespace-nowrap">{thread.branch}</span>
@@ -3704,11 +3703,7 @@ export default function Sidebar() {
                             `${thread.environmentId}:${thread.projectId}`,
                           ) ?? null
                         }
-                        environmentLabel={
-                          isAldoCloud
-                            ? null
-                            : (environmentLabelById.get(thread.environmentId) ?? null)
-                        }
+                        environmentLabel={environmentLabelById.get(thread.environmentId) ?? null}
                         providerEntryByInstanceId={
                           providerEntriesByEnvironment.get(thread.environmentId) ??
                           EMPTY_PROVIDER_ENTRIES
@@ -3806,11 +3801,7 @@ export default function Sidebar() {
                           showThreadJumpHints ? (jumpLabelByKey.get(threadKey) ?? null) : null
                         }
                         currentEnvironmentId={primaryEnvironmentId}
-                        environmentLabel={
-                          isAldoCloud
-                            ? null
-                            : (environmentLabelById.get(thread.environmentId) ?? null)
-                        }
+                        environmentLabel={environmentLabelById.get(thread.environmentId) ?? null}
                         projectCwd={
                           projectCwdByKey.get(`${thread.environmentId}:${thread.projectId}`) ?? null
                         }

@@ -34,8 +34,6 @@ import { primaryServerSettingsAtom } from "../state/server";
 import { resolveThreadRouteTarget } from "../threadRoutes";
 import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore";
 import { useClientSettings } from "./useSettings";
-import { isAldoCloud } from "../aldo/cloud";
-import { aldoProjectRefForNewThread } from "../aldo/threads";
 
 interface NewThreadWorkspaceOptions {
   branch?: string | null;
@@ -56,7 +54,7 @@ function pickExplicitWorkspaceOptions(options: NewThreadWorkspaceOptions | undef
   };
 }
 
-function useDraftThreadHandler() {
+export function useNewThreadHandler() {
   // New-thread defaults are a user preference, and the settings UI only ever
   // edits the primary environment's settings.json. Reading the target
   // environment's own settings here would silently reset remote projects to
@@ -424,29 +422,6 @@ function useDraftThreadHandler() {
       })();
     },
     [getCurrentRouteTarget, primaryServerSettings, projectGroupingSettings, router],
-  );
-}
-
-/**
- * Opens a new draft thread in a project. Under Aldo each thread gets its own
- * cloud machine, so the draft goes to an idle machine of the project or a new
- * one, which opens at once and is only created when the first message is sent
- * (see aldo/threads.ts).
- */
-export function useNewThreadHandler() {
-  const openDraft = useDraftThreadHandler();
-  return useCallback(
-    async (
-      projectRef: ScopedProjectRef,
-      options?: Parameters<typeof openDraft>[1],
-    ): Promise<{ draftId: DraftId; threadId: ThreadId } | null> => {
-      if (!isAldoCloud) return openDraft(projectRef, options);
-      const target = await aldoProjectRefForNewThread(projectRef).catch(() => null);
-      // The machine is the thread's own, so it works directly in the machine's
-      // checkout (its aldo/<id> branch) rather than a separate worktree.
-      return target ? openDraft(target, { envMode: "local", ...options }) : null;
-    },
-    [openDraft],
   );
 }
 

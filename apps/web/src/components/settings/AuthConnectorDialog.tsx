@@ -42,8 +42,6 @@ import { Textarea } from "../ui/textarea";
 import { toastManager } from "../ui/toast";
 import { APP_BASE_NAME } from "../../branding";
 import { managedWorkspaceBrowserUrl } from "../../managedDevPc";
-import { aldoAuthConnectors, isAldoCloud } from "../../aldo/cloud";
-import { aldoAccountMethod } from "../../aldo/accountSpecs";
 
 export type AuthConnectorMethodOption = {
   readonly method: AuthConnectorMethod;
@@ -134,7 +132,7 @@ export function AuthConnectorDialog(props: {
   const {
     connector,
     serviceName,
-    methods: offeredMethods,
+    methods,
     providerInstanceId,
     isAuthenticated,
     triggerLabel,
@@ -166,31 +164,14 @@ export function AuthConnectorDialog(props: {
   const reportedSuccess = useRef<string | null>(null);
   const callbackInputRef = useRef<HTMLTextAreaElement | null>(null);
 
-  // Aldo runs one subscription sign-in per service and keeps it on the account.
-  // Aldo keeps GitHub, Claude, Codex and Grok on the account; anything else
-  // (OpenCode, say) signs in inside the thread's own sandbox as usual.
-  const aldoMethod = isAldoCloud ? aldoAccountMethod(connector) : null;
-  const ACCOUNT_SCOPED = aldoMethod !== null;
-  const CREDENTIAL_SCOPE_COPY = ACCOUNT_SCOPED
-    ? "Saved to your Aldo account for every thread."
-    : isAldoCloud
-      ? "Credentials stay with this thread's cloud agent."
-      : "Credentials stay on this workspace.";
-  const methods = aldoMethod ? [aldoMethod] : offeredMethods;
   const selectedMethod = methods.find((method) => method.method === session?.method) ?? null;
 
   useEffect(() => {
-    if (!open || !session || (!ACCOUNT_SCOPED && !sessionEnvironmentId)) return;
+    if (!open || !sessionEnvironmentId || !session) return;
     if (session.status !== "starting" && session.status !== "waiting") return;
     let cancelled = false;
     const timer = window.setInterval(() => {
       void (async () => {
-        if (ACCOUNT_SCOPED) {
-          const next = await aldoAuthConnectors.get(session.id).catch(() => null);
-          if (!cancelled && next) setSession(next);
-          return;
-        }
-        if (!sessionEnvironmentId) return;
         const result = await getConnector({
           environmentId: sessionEnvironmentId,
           input: { sessionId: session.id },
@@ -219,9 +200,7 @@ export function AuthConnectorDialog(props: {
     toastManager.add({
       type: "success",
       title: `${serviceName} connected`,
-      description: ACCOUNT_SCOPED
-        ? "Every thread can use it now."
-        : "Your account is ready to use in this workspace.",
+      description: "Your account is ready to use in this workspace.",
     });
   }, [onConnected, serviceName, session?.id, session?.status]);
 
@@ -242,14 +221,6 @@ export function AuthConnectorDialog(props: {
       return;
     }
     if (
-      ACCOUNT_SCOPED &&
-      session &&
-      (session.status === "starting" || session.status === "waiting")
-    ) {
-      void aldoAuthConnectors.cancel(session.id).catch(() => undefined);
-      return;
-    }
-    if (
       sessionEnvironmentId &&
       session &&
       (session.status === "starting" || session.status === "waiting")
@@ -262,26 +233,6 @@ export function AuthConnectorDialog(props: {
   };
 
   const start = async (option: AuthConnectorMethodOption) => {
-    if (ACCOUNT_SCOPED) {
-      setError(null);
-      setStartingMethod(option.method);
-      try {
-        setSession(
-          await aldoAuthConnectors.start(
-            buildAuthConnectorStartInput({
-              connector,
-              option,
-              ...(providerInstanceId ? { providerInstanceId } : {}),
-            }),
-          ),
-        );
-      } catch (cause) {
-        setError(errorMessage(cause));
-      } finally {
-        setStartingMethod(null);
-      }
-      return;
-    }
     if (!environmentId) return;
     setError(null);
     setStartingMethod(option.method);
@@ -304,32 +255,7 @@ export function AuthConnectorDialog(props: {
     }
   };
 
-  // Under Aldo each service has a single sign-in, so skip the method picker.
-  const autoStarted = useRef(false);
-  useEffect(() => {
-    if (!open) {
-      autoStarted.current = false;
-      return;
-    }
-    if (!aldoMethod || session || autoStarted.current) return;
-    autoStarted.current = true;
-    void start(aldoMethod);
-  }, [open]);
-
   const submit = async () => {
-    if (ACCOUNT_SCOPED && session) {
-      setError(null);
-      setIsSubmitting(true);
-      try {
-        setSession(await aldoAuthConnectors.submit(session.id, values));
-        setValues({});
-      } catch (cause) {
-        setError(errorMessage(cause));
-      } finally {
-        setIsSubmitting(false);
-      }
-      return;
-    }
     if (!sessionEnvironmentId || !session) return;
     setError(null);
     setIsSubmitting(true);
@@ -473,7 +399,7 @@ export function AuthConnectorDialog(props: {
         size="sm"
         variant={isAuthenticated ? "ghost" : "outline"}
         className="h-7 gap-1.5 px-2.5 text-xs"
-        disabled={!ACCOUNT_SCOPED && !environmentId}
+        disabled={!environmentId}
         onClick={() => handleOpenChange(true)}
       >
         <PlugIcon className="size-3.5" />
@@ -489,8 +415,8 @@ export function AuthConnectorDialog(props: {
           </DialogTitle>
           <DialogDescription>
             {session
-              ? `${selectedMethod?.label ?? serviceName} · ${CREDENTIAL_SCOPE_COPY}`
-              : `Choose how you use ${serviceName}. ${CREDENTIAL_SCOPE_COPY}`}
+              ? `${selectedMethod?.label ?? serviceName} · Credentials stay on this workspace.`
+              : `Choose how you use ${serviceName}. Credentials stay on this workspace.`}
           </DialogDescription>
         </DialogHeader>
 
@@ -568,8 +494,7 @@ export function AuthConnectorDialog(props: {
                     <div>
                       <p className="text-sm font-medium text-foreground">Ready to use</p>
                       <p className="mt-0.5 text-xs text-muted-foreground">
-                        {serviceName} is connected
-                        {ACCOUNT_SCOPED ? " to your Aldo account" : " to this workspace"}.
+                        {serviceName} is connected to this workspace.
                       </p>
                     </div>
                   </div>

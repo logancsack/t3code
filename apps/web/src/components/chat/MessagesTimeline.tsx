@@ -1,5 +1,3 @@
-import { isAldoCloud } from "../../aldo/cloud";
-import { aldoStartingLabel } from "../../aldo/dispatch";
 import {
   type ChatFileAttachment,
   type EnvironmentId,
@@ -1359,7 +1357,6 @@ function ProposedPlanTimelineRow({
 
 function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "working" }> }) {
   const { isPreparingWorktree, workingStepLabel } = use(TimelineRowActivityCtx);
-  const { activeThreadEnvironmentId } = use(TimelineRowCtx);
   // Say what the turn is actually waiting on. A tool the agent launched (a
   // build, a test run) is legitimately unbounded, so it gets its own label
   // and elapsed time instead of an anonymous ever-growing "Working for".
@@ -1373,10 +1370,7 @@ function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "workin
         >
           {row.status === "waking" && row.createdAt ? (
             <>
-              {isAldoCloud && activeThreadEnvironmentId
-                ? aldoStartingLabel(activeThreadEnvironmentId)
-                : "Your machine is waking up"}{" "}
-              (<WorkingTimer createdAt={row.createdAt} />)
+              Your machine is waking up (<WorkingTimer createdAt={row.createdAt} />)
             </>
           ) : isPreparingWorktree ? (
             <>

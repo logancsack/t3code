@@ -36,10 +36,6 @@ export function isHostedStaticApp(url: URL = new URL(window.location.href)): boo
   if (isLandingDemo(url)) {
     return true;
   }
-  // Aldo serves this client with no local server; environments are sandboxes.
-  if (import.meta.env.VITE_ALDO_CLOUD === "1") {
-    return true;
-  }
   if (configuredBackendUrl()) {
     return false;
   }

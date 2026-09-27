@@ -29,8 +29,7 @@ import type { DesktopPreviewOverlay } from "~/previewStateStore";
 import type { RightPanelSurface } from "~/rightPanelStore";
 import { cn } from "~/lib/utils";
 import { readLocalApi } from "~/localApi";
-import { hasSharedBrowser } from "~/aldo/sharedBrowser";
-import { isAldoCloud } from "~/aldo/cloud";
+import { managedWorkspaceBrowserUrl } from "~/managedDevPc";
 import { Button } from "~/components/ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { Kbd } from "~/components/ui/kbd";
@@ -277,10 +276,8 @@ function RightPanelEmptyState(props: {
     ...(props.onAddWorkspaceBrowser
       ? [
           {
-            label: isAldoCloud ? "Browser" : "Workspace browser",
-            description: isAldoCloud
-              ? "The cloud agent's Chrome and desktop, shared with you."
-              : "The signed-in browser you and agents share.",
+            label: "Workspace browser",
+            description: "The signed-in browser you and agents share.",
             icon: MonitorSmartphone,
             shortcut: "B",
             available: true,
@@ -536,7 +533,7 @@ function surfaceTitle(
     case "agents":
       return "Agents";
     case "workspaceBrowser":
-      return isAldoCloud ? "Browser" : "Workspace browser";
+      return "Workspace browser";
     case "preview": {
       const snapshot = surface.resourceId ? sessions[surface.resourceId] : null;
       if (!snapshot || snapshot.navStatus._tag === "Idle") return "Browser";
@@ -641,10 +638,10 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
     disabledReason: string | null;
     onClick: () => void;
   }> = [
-    ...(props.onAddWorkspaceBrowser && hasSharedBrowser()
+    ...(props.onAddWorkspaceBrowser && managedWorkspaceBrowserUrl()
       ? [
           {
-            label: isAldoCloud ? "Browser" : "Workspace browser",
+            label: "Workspace browser",
             icon: MonitorSmartphone,
             shortcut: "B",
             available: true,
@@ -987,7 +984,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
           <RightPanelEmptyState
             onAddBrowser={props.onAddBrowser}
             onAddWorkspaceBrowser={
-              hasSharedBrowser() ? (props.onAddWorkspaceBrowser ?? null) : null
+              managedWorkspaceBrowserUrl() ? (props.onAddWorkspaceBrowser ?? null) : null
             }
             onAddTerminal={props.onAddTerminal}
             onAddDiff={props.onAddDiff}

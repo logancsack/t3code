@@ -33,7 +33,6 @@ import {
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
 import { ManagedDevPcFooterAccount } from "../ManagedDevPcAccount";
-import { APP_BASE_NAME, APP_IS_ALDO } from "../../branding";
 import { SidebarUpdateArchitectureWarning, SidebarUpdatePill } from "./SidebarUpdatePill";
 
 export const SidebarChromeHeader = memo(function SidebarChromeHeader({
@@ -93,41 +92,16 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
       )}
       to="/"
     >
-      {APP_IS_ALDO ? (
-        <>
-          <AldoMark className="h-3 w-auto shrink-0" />
-          <span className="-translate-y-px truncate text-sm font-semibold tracking-tight">
-            Aldo
-          </span>
-        </>
-      ) : APP_BASE_NAME === "T3 Code" ? (
-        <>
-          <T3Wordmark />
-          <span
-            className={cn(
-              "-translate-y-px truncate text-sm font-medium tracking-tight",
-              onBackdrop ? "text-white/70" : "text-muted-foreground",
-            )}
-          >
-            Code
-          </span>
-        </>
-      ) : (
-        <span className="-translate-y-px truncate text-sm font-semibold tracking-tight">
-          {APP_BASE_NAME}
-        </span>
-      )}
+      <T3Wordmark />
+      <span
+        className={cn(
+          "-translate-y-px truncate text-sm font-medium tracking-tight",
+          onBackdrop ? "text-white/70" : "text-muted-foreground",
+        )}
+      >
+        Code
+      </span>
     </Link>
-  );
-}
-
-/** The Aldo "Open Frame" mark, drawn in the current text color. */
-export function AldoMark({ className }: { className?: string }) {
-  return (
-    <svg aria-hidden="true" className={className} viewBox="0 0 42 32">
-      <path d="M1 28 13.4 4h8.7L10.6 28H1Z" fill="currentColor" />
-      <path d="M23.9 4h8.7L41 28h-9.6L23.9 4Z" fill="currentColor" />
-    </svg>
   );
 }
 

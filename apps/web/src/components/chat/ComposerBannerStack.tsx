@@ -16,8 +16,6 @@ export interface ComposerBannerStackItem {
   readonly children?: ReactNode;
   readonly actions?: ReactNode;
   readonly className?: string;
-  /** "content" sizes the banner to its text (a pill); the default fills the row. */
-  readonly width?: "fill" | "content";
   readonly dismissLabel?: string;
   readonly onDismiss?: () => void;
 }
@@ -269,7 +267,6 @@ function ComposerBannerStackAlert({
       placement={attached ? "attached" : "floating"}
       variant={item.variant}
       className={item.className}
-      {...(item.width ? { width: item.width } : {})}
     >
       <ComposerBanner.Row layout="wrap-actions">
         <ComposerBanner.Icon className={item.description ? "min-h-4 self-start" : undefined}>
