@@ -38,6 +38,18 @@ export interface AldoEnvironment {
   readonly branch: string;
   /** "new": the machine doesn't exist yet; it's created when the thread's first message is sent. */
   readonly state: "new" | "ready" | "stopped" | "failed";
+  /** Standard: 4 vCPU, 8 GB. 2x: 8 vCPU, 16 GB, twice the usage. */
+  readonly machine?: AldoMachineSize;
+  /** A recent report of the machine running short while its agent worked. */
+  readonly pressure?: AldoMachinePressure | null;
+}
+
+export type AldoMachineSize = "standard" | "2x";
+
+export interface AldoMachinePressure {
+  readonly kind: "memory" | "cpu";
+  readonly detail: string;
+  readonly at: string;
 }
 
 export type AldoAccountKind = "github" | "claude" | "codex" | "grok";
@@ -561,6 +573,15 @@ export async function fetchAldoPullRequests(
     `/api/environments/${threadIdForEnvironment(environmentId)}/prs`,
   );
   return pullRequests;
+}
+
+/** Moves a thread to another machine size. A running machine restarts, and its agent carries on. */
+export async function setAldoMachine(environmentId: string, size: AldoMachineSize): Promise<void> {
+  await api(`/api/environments/${threadIdForEnvironment(environmentId)}/machine`, {
+    method: "POST",
+    body: JSON.stringify({ size }),
+  });
+  requestAldoDirectoryRefresh();
 }
 
 export async function stopAldoFollowThrough(
