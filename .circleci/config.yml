@@ -1,14 +1,14 @@
 version: 2.1
 
-# The fork's CI. It replaces the GitHub Actions `CI` and `DevPC managed mode`
-# workflows, which are disabled in this repository's Actions settings rather
-# than deleted, so .github/ stays identical to upstream. Left out on purpose:
-# Release Smoke (it exercises upstream's release.yml, which the fork doesn't
-# run) and the macOS mobile native lint (the fork doesn't ship mobile builds).
+# CI for Aldo's side of the fork. This branch (aldo/cloud-platform) is where
+# Aldo builds the T3 server each sandbox runs and the web client it serves, so
+# the jobs cover those two and the workspace packages they depend on
+# (`t3...`). Desktop, mobile and the other upstream surfaces aren't part of
+# Aldo and aren't built or tested here. GitHub Actions is off for this repo.
 
 executors:
-  # Vite+ runs tasks on the Node that package.json's engines asks for, as
-  # setup-vp does on Actions; the image's Node only runs the installer.
+  # Vite+ runs tasks on the Node that package.json's engines asks for; the
+  # image's Node only runs the installer.
   node:
     docker:
       - image: cimg/node:24.19
@@ -17,6 +17,9 @@ executors:
 commands:
   setup:
     steps:
+      # Skips the history's blobs; the repo's .git is several times its tree.
+      - checkout:
+          method: blobless
       - run:
           name: Install Vite+
           command: |
@@ -32,44 +35,22 @@ jobs:
   check:
     executor: node
     steps:
-      - checkout
       - setup
       - run:
-          name: Reject repository-owned PR assets
-          command: |
-            files="$(git ls-files .github/pr-assets)"
-            if test -n "$files"; then
-              printf 'PR evidence must be uploaded to GitHub, not committed:\n%s\n' "$files" >&2
-              exit 1
-            fi
-      - run:
-          name: Ensure Electron runtime is installed
-          command: vp run --filter @t3tools/desktop ensure:electron
-      - run:
-          name: Check
+          name: Format and lint
           command: vp check
       - run:
           name: Typecheck
-          command: vp run typecheck
-      - run:
-          name: Build desktop pipeline
-          command: vp run build:desktop
-      - run:
-          name: Verify preload bundle output
-          command: node apps/desktop/scripts/verify-preload-bundle.mjs
+          command: vp run --filter 't3...' typecheck
 
-  # Everything except `t3` (apps/server), which test-server shards.
+  # The server's dependencies; test-server runs the server itself.
   test:
     executor: node
     steps:
-      - checkout
       - setup
       - run:
-          name: Ensure Electron runtime is installed
-          command: vp run --filter @t3tools/desktop ensure:electron
-      - run:
           name: Test
-          command: vp run --parallel --concurrency-limit 4 --filter '!t3' --filter '!@t3tools/monorepo' test
+          command: vp run --parallel --concurrency-limit 4 --filter 't3^...' test
 
   # apps/server sets `fileParallelism: false`, so its files run one at a time.
   # Sharding spreads them over separate machines instead.
@@ -77,74 +58,22 @@ jobs:
     executor: node
     parallelism: 3
     steps:
-      - checkout
       - setup
       - run:
           name: Test
           command: vp run --filter t3 test --shard "$((CIRCLE_NODE_INDEX + 1))/${CIRCLE_NODE_TOTAL}"
 
-  rust:
-    docker:
-      - image: cimg/rust:1.98
-    resource_class: medium
-    steps:
-      - checkout
-      - run:
-          name: Check resource monitor formatting
-          command: cargo fmt --manifest-path native/resource-monitor/Cargo.toml -- --check
-      - run:
-          name: Test resource monitor
-          command: cargo test --locked --manifest-path native/resource-monitor/Cargo.toml
-
-  # The DevPC managed build, as DevPC managed release ships it.
-  devpc-managed:
+  build:
     executor: node
     steps:
-      - checkout
       - setup
       - run:
-          name: License and notices
-          command: |
-            test -s LICENSE
-            test -s apps/web/THIRD_PARTY_NOTICES.md
-            grep -q "MIT License" LICENSE
-      - run:
-          name: Managed production build
+          name: Build the T3 server, as Aldo's runtime:build does
           environment:
-            VITE_DEVPC_MANAGED: "1"
-            T3CODE_MANAGED_DEVPC: "1"
             T3CODE_TELEMETRY_ENABLED: "false"
           command: vp run --filter t3 build
       - run:
-          name: Verify matching server and web output
-          command: |
-            test -f apps/server/dist/bin.mjs
-            test -f apps/server/dist/client/index.html
-            grep -q '/_t3/' apps/server/dist/client/index.html
-            grep -q '/_devpc/ws-ticket' apps/server/dist/client/assets/*.js
-            grep -q '/_devpc/workspace/start' apps/server/dist/client/assets/*.js
-            grep -q '/_devpc/workspace/stop' apps/server/dist/client/assets/*.js
-            ! grep -q '/_devpc/workspace/settings' apps/server/dist/client/assets/*.js
-            grep -q 'Pauses after 15 minutes of inactivity' apps/server/dist/client/assets/*.js
-            grep -q '/api/_devpc/activity' apps/server/dist/bin.mjs
-            grep -q 'data-devpc-workspace-control-center' apps/server/dist/client/assets/*.js
-
-  # The web client Aldo serves, as its README builds it. Only branches that
-  # carry the Aldo client (aldo/cloud-platform and PRs into it) have one.
-  aldo-web:
-    executor: node
-    steps:
-      - checkout
-      - run:
-          name: Skip branches without the Aldo client
-          command: |
-            if ! test -d apps/web/src/aldo; then
-              echo "No apps/web/src/aldo on this branch."
-              circleci-agent step halt
-            fi
-      - setup
-      - run:
-          name: Build the Aldo cloud client
+          name: Build the Aldo web client, as Aldo's README does
           working_directory: apps/web
           environment:
             VITE_ALDO_CLOUD: "1"
@@ -156,6 +85,4 @@ workflows:
       - check
       - test
       - test-server
-      - rust
-      - devpc-managed
-      - aldo-web
+      - build
