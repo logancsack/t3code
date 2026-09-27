@@ -1,0 +1,88 @@
+version: 2.1
+
+# CI for Aldo's side of the fork. This branch (aldo/cloud-platform) is where
+# Aldo builds the T3 server each sandbox runs and the web client it serves, so
+# the jobs cover those two and the workspace packages they depend on
+# (`t3...`). Desktop, mobile and the other upstream surfaces aren't part of
+# Aldo and aren't built or tested here. GitHub Actions is off for this repo.
+
+executors:
+  # Vite+ runs tasks on the Node that package.json's engines asks for; the
+  # image's Node only runs the installer.
+  node:
+    docker:
+      - image: cimg/node:24.19
+    resource_class: large
+
+commands:
+  setup:
+    steps:
+      # Skips the history's blobs; the repo's .git is several times its tree.
+      - checkout:
+          method: blobless
+      - run:
+          name: Install Vite+
+          command: |
+            version=$(sed -n 's/^  vite-plus: //p' pnpm-workspace.yaml)
+            curl -fsSL "https://raw.githubusercontent.com/voidzero-dev/vite-plus/v${version}/packages/cli/install.sh" \
+              | VP_VERSION="$version" bash
+            echo 'export PATH="$HOME/.vite-plus/bin:$PATH"' >> "$BASH_ENV"
+      - run:
+          name: Install dependencies
+          command: vp install
+
+jobs:
+  check:
+    executor: node
+    steps:
+      - setup
+      - run:
+          name: Format and lint
+          command: vp check
+      - run:
+          name: Typecheck
+          command: vp run --filter 't3...' typecheck
+
+  # The server's dependencies; test-server runs the server itself.
+  test:
+    executor: node
+    steps:
+      - setup
+      - run:
+          name: Test
+          command: vp run --parallel --concurrency-limit 4 --filter 't3^...' test
+
+  # apps/server sets `fileParallelism: false`, so its files run one at a time.
+  # Sharding spreads them over separate machines instead.
+  test-server:
+    executor: node
+    parallelism: 3
+    steps:
+      - setup
+      - run:
+          name: Test
+          command: vp run --filter t3 test --shard "$((CIRCLE_NODE_INDEX + 1))/${CIRCLE_NODE_TOTAL}"
+
+  build:
+    executor: node
+    steps:
+      - setup
+      - run:
+          name: Build the T3 server, as Aldo's runtime:build does
+          environment:
+            T3CODE_TELEMETRY_ENABLED: "false"
+          command: vp run --filter t3 build
+      - run:
+          name: Build the Aldo web client, as Aldo's README does
+          working_directory: apps/web
+          environment:
+            VITE_ALDO_CLOUD: "1"
+          command: vp build
+
+workflows:
+  ci:
+    jobs:
+      - check
+      - test
+      - test-server
+      - build
