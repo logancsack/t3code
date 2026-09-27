@@ -607,23 +607,42 @@ export const aldoPrebuilds = {
   remove: (id: string) => api(`/api/prebuilds/${id}`, { method: "DELETE" }),
 };
 
+/** How a vault secret reaches a thread: a variable, injected into requests to some sites, or a file. */
+export type AldoSecretKind = "env" | "request" | "file";
+
 export interface AldoVaultItem {
   readonly id: string;
-  readonly kind: "env" | "login";
+  readonly kind: AldoSecretKind | "login";
   readonly name: string;
   readonly scope: string;
   readonly origin: string | null;
   readonly username: string | null;
+  readonly hosts: ReadonlyArray<string> | null;
+  readonly header: string | null;
+  readonly template: string | null;
+  readonly path: string | null;
   readonly updated_at: string;
   readonly last_used_at: string | null;
 }
 
+export interface AldoSecretInput {
+  readonly kind: AldoSecretKind;
+  readonly name: string;
+  readonly scope: string;
+  /** Empty keeps the saved value (to change only how it's delivered). */
+  readonly value: string;
+  readonly hosts?: string;
+  readonly header?: string;
+  readonly template?: string;
+  readonly path?: string;
+}
+
 export const aldoVault = {
   list: async () => (await api<{ items: AldoVaultItem[] }>("/api/vault")).items,
-  saveVariable: (input: { name: string; value: string; scope: string }) =>
+  saveSecret: (input: AldoSecretInput) =>
     api<{ item: AldoVaultItem }>("/api/vault", {
       method: "POST",
-      body: JSON.stringify({ kind: "env", ...input }),
+      body: JSON.stringify(input),
     }),
   saveLogin: (input: {
     id?: string;

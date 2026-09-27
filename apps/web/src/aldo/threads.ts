@@ -17,6 +17,7 @@ import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentId, ScopedProjectRef } from "@t3tools/contracts";
 
 import { toastManager } from "../components/ui/toast";
+import { randomUUID } from "../lib/utils";
 import { seedEnvironmentCache } from "../connection/storage";
 import { readEnvironmentThreadRefs, readProjects } from "../state/entities";
 import {
@@ -140,7 +141,7 @@ export async function startAldoSandbox(input: {
     const { environment, project } = await createAldoEnvironment({
       ...input,
       id: threadId,
-      projectId: crypto.randomUUID(),
+      projectId: randomUUID(),
       start: false,
     });
     if (!project) throw new Error("Aldo didn't name the thread's project.");
