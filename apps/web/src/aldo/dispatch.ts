@@ -12,7 +12,9 @@ import { environmentCatalog } from "../connection/catalog";
 import { runAtomCommand } from "@t3tools/client-runtime/state/runtime";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentPresentations } from "../state/presentation";
+import { toastManager } from "../components/ui/toast";
 import {
+  AldoApiError,
   aldoMachineIsNew,
   isAldoCloud,
   isAldoEnvironmentId,
@@ -53,7 +55,26 @@ export function ensureAldoConnected(environmentId: string): Promise<void> {
   starting.set(environmentId, aldoMachineIsNew(environmentId) ? "creating" : "reconnecting");
   const run = (async () => {
     // Aldo creates the machine the first time, else resumes it, and returns once T3 is up.
-    await wakeAldoEnvironment(environmentId);
+    await wakeAldoEnvironment(environmentId).catch((cause: unknown) => {
+      if (cause instanceof AldoApiError && (cause.status === 402 || cause.status === 409)) {
+        toastManager.add({
+          type: "warning",
+          title:
+            cause.status === 402 ? "This cloud agent can't start" : "Too many cloud agents at once",
+          description: cause.message,
+          timeout: 0,
+          ...(cause.status === 402
+            ? {
+                actionProps: {
+                  children: "Open Usage",
+                  onClick: () => window.location.assign("/usage"),
+                },
+              }
+            : {}),
+        });
+      }
+      throw cause;
+    });
     requestAldoDirectoryRefresh();
     // A sleeping machine's connection waits to be told to try again.
     const deadline = Date.now() + CONNECT_WAIT_MS;

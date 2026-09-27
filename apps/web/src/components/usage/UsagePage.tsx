@@ -311,7 +311,10 @@ export function UsagePage() {
               so it stays visible while environments are still answering and
               while a paused workspace cannot answer at all.
             */}
-            <AldoWorkspaceUsageSection state={aldoWorkspace.state} />
+            <AldoWorkspaceUsageSection
+              state={aldoWorkspace.state}
+              onChanged={aldoWorkspace.refresh}
+            />
 
             {settling ? null : (
               <>

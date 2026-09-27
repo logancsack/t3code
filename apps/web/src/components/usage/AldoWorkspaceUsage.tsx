@@ -1,13 +1,18 @@
 import { ExternalLinkIcon } from "lucide-react";
+import { useState, type FormEvent } from "react";
+
+import { isAldoCloud, setAldoSpendLimit } from "../../aldo/cloud";
 
 import type { AldoWorkspaceUsage, AldoWorkspaceUsageState } from "../../state/aldoWorkspaceUsage";
 import { Button } from "../ui/button";
+import { Input } from "../ui/input";
 import {
   aldoUsageAlertCopy,
   aldoUsageFacts,
   aldoUsageFootnote,
   aldoUsageMeterFraction,
   aldoUsageUnmeteredCopy,
+  formatCents,
   formatCredits,
 } from "./aldoWorkspaceUsageView";
 
@@ -18,7 +23,13 @@ const MANAGE_CAPACITY_HREF = "/_devpc/account/billing";
  * Compute credits for the Aldo workspace this UI runs in, beside the token
  * spend it already reports. Renders nothing outside a managed build.
  */
-export function AldoWorkspaceUsageSection({ state }: { readonly state: AldoWorkspaceUsageState }) {
+export function AldoWorkspaceUsageSection({
+  state,
+  onChanged,
+}: {
+  readonly state: AldoWorkspaceUsageState;
+  readonly onChanged?: () => void;
+}) {
   if (state.status === "unavailable") return null;
   const usage = state.status === "ready" ? state.usage : state.usage;
 
@@ -28,14 +39,20 @@ export function AldoWorkspaceUsageSection({ state }: { readonly state: AldoWorks
         <h2 id="aldo-workspace-usage-heading" className="text-sm font-medium text-foreground">
           Aldo workspace
         </h2>
-        <Button
-          render={<a href={MANAGE_CAPACITY_HREF} target="_blank" rel="noreferrer" />}
-          size="xs"
-          variant="outline"
-        >
-          Manage capacity
-          <ExternalLinkIcon aria-hidden />
-        </Button>
+        {isAldoCloud ? (
+          usage?.bill ? (
+            <SpendLimitControl spendLimitCents={usage.bill.spendLimitCents} onChanged={onChanged} />
+          ) : null
+        ) : (
+          <Button
+            render={<a href={MANAGE_CAPACITY_HREF} target="_blank" rel="noreferrer" />}
+            size="xs"
+            variant="outline"
+          >
+            Manage capacity
+            <ExternalLinkIcon aria-hidden />
+          </Button>
+        )}
       </div>
       {usage ? (
         <AldoWorkspaceUsageBody usage={usage} stale={state.status !== "ready"} />
@@ -111,6 +128,70 @@ function AldoWorkspaceUsageBody({
       ) : null}
       {footnote ? <span className="text-xs text-muted-foreground">{footnote}</span> : null}
     </div>
+  );
+}
+
+/**
+ * Aldo cloud: how much extra usage (billed past the plan's credits) the user
+ * allows each month. Agents stop once credits and the limit are used up.
+ */
+function SpendLimitControl(props: {
+  readonly spendLimitCents: number;
+  readonly onChanged: (() => void) | undefined;
+}) {
+  const [editing, setEditing] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const save = async (event: FormEvent) => {
+    event.preventDefault();
+    if (editing === null) return;
+    const dollars = Number(editing);
+    if (!Number.isFinite(dollars) || dollars < 0) {
+      setError("Enter an amount in dollars, like 20.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await setAldoSpendLimit(Math.round(dollars * 100));
+      setEditing(null);
+      props.onChanged?.();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (editing === null) {
+    return (
+      <Button
+        size="xs"
+        variant="outline"
+        onClick={() => setEditing(String(props.spendLimitCents / 100))}
+      >
+        Extra usage limit: {formatCents(props.spendLimitCents)}
+      </Button>
+    );
+  }
+  return (
+    <form onSubmit={save} className="flex items-center gap-1.5">
+      <span className="text-xs text-muted-foreground">Extra usage up to $</span>
+      <Input
+        autoFocus
+        aria-label="Extra usage limit in dollars"
+        inputMode="decimal"
+        className="h-7 w-20 text-xs"
+        value={editing}
+        onChange={(e) => setEditing(e.currentTarget.value)}
+      />
+      <Button type="submit" size="xs" disabled={busy}>
+        Save
+      </Button>
+      <Button type="button" size="xs" variant="ghost" onClick={() => setEditing(null)}>
+        Cancel
+      </Button>
+      {error ? <span className="text-xs text-destructive-foreground">{error}</span> : null}
+    </form>
   );
 }
 
