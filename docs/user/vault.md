@@ -22,7 +22,7 @@ A shell can't hold a name with a dot or a dash, like `spring.datasource.password
 
 List the sites that use the secret, such as `api.stripe.com` or `*.example.com`. Then give the header it goes in and the header's value, with `{value}` where the secret goes (for example `Authorization` and `Bearer {value}`). **Fill in for** sets these for common APIs.
 
-Agents, and anything they run, see a stand-in in the variable, such as `sk_live_aldo-injected-…`. When a request to one of your sites carries that stand-in in that header, the cloud machine's network replaces it with your secret on the way out. The machine never holds the real value, so neither an agent nor a package it installs can read it or send it anywhere else. Requests that don't carry the stand-in are left alone.
+Agents, and anything they run, see a stand-in in the variable: a made-up key of the same shape as yours (same prefix, such as `sk_live_`, and the same length), so tools that check a key's format still accept it. When a request to one of your sites carries that stand-in in that header, the cloud machine's network replaces it with your secret on the way out. The machine never holds the real value, so neither an agent nor a package it installs can read it or send it anywhere else. Requests that don't carry the stand-in are left alone.
 
 This works for any program that reads the key from the variable and sends it in a header over HTTPS. It doesn't work for secrets used another way, such as database connection strings, SSH, keys in a URL, or requests a client signs itself (AWS, for example). Save those as a variable or a file.
 
