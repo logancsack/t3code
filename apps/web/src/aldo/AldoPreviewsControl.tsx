@@ -1,5 +1,5 @@
 import { AppWindowIcon, ExternalLinkIcon, LoaderIcon, PanelRightIcon } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   Menu,
@@ -36,19 +36,36 @@ export function AldoPreviewsControl(props: { environmentId: string; onOpenBrowse
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [pullRequests, setPullRequests] = useState<ReadonlyArray<AldoFollowedPullRequest>>([]);
+  // The thread whose answers are wanted: one for a thread left since is dropped.
+  const current = useRef(props.environmentId);
+
+  useEffect(() => {
+    current.current = props.environmentId;
+    setPreviews(null);
+    setPullRequests([]);
+    setError(null);
+    setLoading(false);
+  }, [props.environmentId]);
 
   const refresh = useCallback(() => {
+    const environmentId = props.environmentId;
+    const stillCurrent = () => current.current === environmentId;
     setLoading(true);
-    fetchAldoPullRequests(props.environmentId)
-      .then(setPullRequests)
+    fetchAldoPullRequests(environmentId)
+      .then((next) => stillCurrent() && setPullRequests(next))
       .catch(() => undefined);
-    fetchAldoPreviews(props.environmentId)
+    fetchAldoPreviews(environmentId)
       .then((next) => {
+        if (!stillCurrent()) return;
         setPreviews(next);
         setError(null);
       })
-      .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))
-      .finally(() => setLoading(false));
+      .catch((cause: unknown) => {
+        if (stillCurrent()) setError(cause instanceof Error ? cause.message : String(cause));
+      })
+      .finally(() => {
+        if (stillCurrent()) setLoading(false);
+      });
   }, [props.environmentId]);
 
   const openInBrowser = (port: number) => {

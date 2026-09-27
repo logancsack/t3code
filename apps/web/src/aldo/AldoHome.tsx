@@ -5,20 +5,22 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../components/
 import { SidebarInset } from "../components/ui/sidebar";
 import { ALDO_ACCOUNT_SPECS, AldoAccountButton, useAldoAccounts } from "./AldoAccountsPanel";
 import type { AldoAccountKind } from "./cloud";
-import { openAldoRepositoryPicker } from "./AldoRepositoryDialog";
+import { HOST_KINDS, openAldoRepositoryPicker } from "./AldoRepositoryDialog";
 
 const AGENT_KINDS: ReadonlyArray<AldoAccountKind> = ["claude", "codex", "grok"];
 
 /**
- * The landing screen under Aldo. Until GitHub and at least one agent are
- * connected it walks through setup; after that it's a single "start a thread"
- * prompt. Existing threads are in the sidebar.
+ * The landing screen under Aldo. Until a git host (GitHub, or GitLab,
+ * Bitbucket or Azure DevOps from Settings → Source Control) and at least one
+ * agent are connected it walks through setup; after that it's a single "start
+ * a thread" prompt. Existing threads are in the sidebar.
  */
 export function AldoHome() {
   const { accounts, refresh } = useAldoAccounts();
-  const githubReady = accounts?.github.connected === true;
+  const sourceHost = HOST_KINDS.find((kind) => accounts?.[kind]?.connected === true);
+  const sourceReady = sourceHost !== undefined;
   const agentReady = AGENT_KINDS.some((kind) => accounts?.[kind].connected === true);
-  const setupDone = githubReady && agentReady;
+  const setupDone = sourceReady && agentReady;
 
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground">
@@ -32,18 +34,20 @@ export function AldoHome() {
               <EmptyDescription className="mt-2 text-sm text-muted-foreground/78">
                 {setupDone
                   ? "Start a new project from scratch, or work in one of your repositories. Every thread gets its own cloud agent."
-                  : "Connect GitHub and at least one of your agent subscriptions. You only do this once."}
+                  : "Connect GitHub (or another git host in Settings → Source Control) and at least one of your agent subscriptions. You only do this once."}
               </EmptyDescription>
             </EmptyHeader>
 
             {accounts && !setupDone ? (
               <ol className="mt-8 space-y-2 text-left">
-                <SetupRow
-                  kind="github"
-                  connected={githubReady}
-                  label={accounts.github.account}
-                  onConnected={refresh}
-                />
+                {sourceHost && sourceHost !== "github" ? null : (
+                  <SetupRow
+                    kind="github"
+                    connected={sourceReady}
+                    label={accounts.github.account}
+                    onConnected={refresh}
+                  />
+                )}
                 {AGENT_KINDS.map((kind) => (
                   <SetupRow
                     key={kind}
@@ -57,14 +61,14 @@ export function AldoHome() {
             ) : null}
 
             <div className="mt-8 flex flex-wrap justify-center gap-2">
-              <Button onClick={() => openAldoRepositoryPicker("new")} disabled={!githubReady}>
+              <Button onClick={() => openAldoRepositoryPicker("new")} disabled={!sourceReady}>
                 <SparklesIcon className="size-4" />
                 New project
               </Button>
               <Button
                 variant="outline"
                 onClick={() => openAldoRepositoryPicker("existing")}
-                disabled={!githubReady}
+                disabled={!sourceReady}
               >
                 <FolderGit2Icon className="size-4" />
                 Open a repository

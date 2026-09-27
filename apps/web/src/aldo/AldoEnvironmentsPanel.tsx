@@ -14,6 +14,7 @@ import { Input } from "../components/ui/input";
 import {
   aldoPrebuilds,
   getAldoEnvironments,
+  listAldoRepositories,
   subscribeAldoEnvironments,
   type AldoEnvironmentService,
   type AldoPrebuiltEnvironment,
@@ -194,6 +195,7 @@ function EnvironmentRow(props: {
 }) {
   const { env } = props;
   const [showHistory, setShowHistory] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [busy, setBusy] = useState(false);
   const status = statusOf(env);
   const act = (action: () => Promise<unknown>) => {
@@ -240,14 +242,25 @@ function EnvironmentRow(props: {
           <Button size="compact" variant="ghost" onClick={() => setShowHistory((v) => !v)}>
             History
           </Button>
-          <Button
-            size="compact"
-            variant="ghost"
-            disabled={busy}
-            onClick={() => act(() => aldoPrebuilds.remove(env.id))}
-          >
-            Delete
-          </Button>
+          {confirmingDelete ? (
+            <>
+              <Button size="compact" variant="ghost" onClick={() => setConfirmingDelete(false)}>
+                Keep
+              </Button>
+              <Button
+                size="compact"
+                variant="destructive"
+                disabled={busy}
+                onClick={() => act(() => aldoPrebuilds.remove(env.id))}
+              >
+                Delete
+              </Button>
+            </>
+          ) : (
+            <Button size="compact" variant="ghost" onClick={() => setConfirmingDelete(true)}>
+              Delete
+            </Button>
+          )}
         </span>
       }
     >
@@ -291,9 +304,19 @@ export function AldoEnvironmentsPanel() {
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const threads = useSyncExternalStore(subscribeAldoEnvironments, getAldoEnvironments, () => null);
+  // The connected accounts' repositories, so the first environment can come before any thread.
+  const [accountRepos, setAccountRepos] = useState<ReadonlyArray<string>>([]);
+  useEffect(() => {
+    listAldoRepositories()
+      .then((repositories) => setAccountRepos(repositories.map((r) => r.nameWithOwner)))
+      .catch(() => setAccountRepos([]));
+  }, []);
   const repoOptions = useMemo(
-    () => [...new Set((threads ?? []).flatMap((t) => t.repos ?? [t.repo]))].sort(),
-    [threads],
+    () =>
+      [
+        ...new Set([...(threads ?? []).flatMap((t) => t.repos ?? [t.repo]), ...accountRepos]),
+      ].sort(),
+    [threads, accountRepos],
   );
 
   const refresh = useCallback(() => {
@@ -338,6 +361,7 @@ export function AldoEnvironmentsPanel() {
       {error ? <p className="px-3 text-destructive-foreground text-sm sm:px-4">{error}</p> : null}
       {draft ? (
         <EnvironmentForm
+          key={draft.id ?? "new"}
           draft={draft}
           repoOptions={repoOptions}
           onCancel={() => setDraft(null)}

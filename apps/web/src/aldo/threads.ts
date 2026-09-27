@@ -25,6 +25,7 @@ import {
   aldoProjectSandboxes,
   aldoSandboxesFor,
   createAldoEnvironment,
+  deleteAldoEnvironment,
   holdAldoEnvironment,
   isAldoCloud,
   isAldoEnvironmentId,
@@ -134,6 +135,8 @@ export async function startAldoSandbox(input: {
   const environmentId = aldoEnvironmentIdFor(threadId);
   let hasModels = false;
   let created: AldoEnvironment | undefined;
+  /** Recorded in Aldo: deleted again if the client can't finish setting it up. */
+  let recorded = false;
   holdAldoEnvironment(environmentId);
   // The models come from Aldo's copy; fetch it while the record is made.
   const serverConfig = aldoServerConfigFor(environmentId).catch(() => null);
@@ -144,6 +147,7 @@ export async function startAldoSandbox(input: {
       projectId: randomUUID(),
       start: false,
     });
+    recorded = true;
     if (!project) throw new Error("Aldo didn't name the thread's project.");
     const config = await serverConfig;
     hasModels = config !== null;
@@ -157,6 +161,8 @@ export async function startAldoSandbox(input: {
     });
     created = environment;
   } catch (cause) {
+    // Otherwise the next directory refresh shows a thread with no project, and a retry makes another.
+    if (recorded) void deleteAldoEnvironment(environmentId).catch(() => undefined);
     toastManager.add({
       type: "error",
       title: input.create ? "Couldn't create the project" : "Couldn't start the thread",

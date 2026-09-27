@@ -98,6 +98,9 @@ let refreshRequested = true;
 let emitRequested = false;
 let lastFetchAt = 0;
 const IDLE_REFRESH_MS = 15_000;
+/** After failed fetches, no retry before this time: 1s, 2s, 4s… up to the idle interval. */
+let retryAt = 0;
+let failedFetches = 0;
 
 export function subscribeAldoEnvironments(listener: () => void): () => void {
   directoryListeners.add(listener);
@@ -206,12 +209,18 @@ async function pollDirectory(): Promise<Array<BearerConnectionRegistration> | nu
     return currentRegistrations(knownEnvironments);
   }
   const due = refreshRequested || Date.now() - lastFetchAt > IDLE_REFRESH_MS;
-  if (!due) return null;
+  if (!due || Date.now() < retryAt) return null;
   refreshRequested = false;
   lastFetchAt = Date.now();
   try {
-    return currentRegistrations(await fetchEnvironments());
+    const registrations = currentRegistrations(await fetchEnvironments());
+    failedFetches = 0;
+    retryAt = 0;
+    return registrations;
   } catch {
+    // Retry soon, backing off while Aldo can't be reached so every open tab doesn't hammer it.
+    failedFetches += 1;
+    retryAt = Date.now() + Math.min(IDLE_REFRESH_MS, 1000 * 2 ** (failedFetches - 1));
     refreshRequested = true;
     return null;
   }

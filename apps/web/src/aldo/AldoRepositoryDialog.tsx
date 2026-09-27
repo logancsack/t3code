@@ -51,7 +51,7 @@ const HOST_LABELS: Record<AldoHostKind, string> = {
   bitbucket: "Bitbucket",
   azure: "Azure DevOps",
 };
-const HOST_KINDS = Object.keys(HOST_LABELS) as AldoHostKind[];
+export const HOST_KINDS = Object.keys(HOST_LABELS) as AldoHostKind[];
 
 /** "gitlab:group/project" → GitLab; "owner/repo" → GitHub. */
 function hostOf(ref: string): AldoHostKind {
@@ -101,7 +101,7 @@ function slugify(text: string): string {
 }
 
 function StartPicker(props: { readonly initialMode: Mode; readonly onDone: () => void }) {
-  const { accounts, refresh: refreshAccounts } = useAldoAccounts();
+  const { accounts, error: accountsError, refresh: refreshAccounts } = useAldoAccounts();
   const connectedHosts = HOST_KINDS.filter((kind) => accounts?.[kind]?.connected === true);
   const [mode, setMode] = useState<Mode>(props.initialMode);
 
@@ -115,7 +115,16 @@ function StartPicker(props: { readonly initialMode: Mode; readonly onDone: () =>
             : "Pick one or more repositories. The thread gets its own cloud agent, with each one cloned on a new branch."}
         </DialogDescription>
       </DialogHeader>
-      {accounts === null ? (
+      {accounts === null && accountsError ? (
+        <DialogPanel className="flex flex-col items-start gap-3">
+          <p className="text-destructive-foreground text-sm">
+            Couldn't load your connected accounts: {accountsError}
+          </p>
+          <Button variant="outline" size="sm" onClick={refreshAccounts}>
+            Try again
+          </Button>
+        </DialogPanel>
+      ) : accounts === null ? (
         <DialogPanel>
           <LoaderCircleIcon className="mx-auto size-5 animate-spin text-muted-foreground" />
         </DialogPanel>
