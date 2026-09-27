@@ -21,6 +21,14 @@ rate. When included or authorized credits run low, the same warning Aldo shows o
 appears here. **Manage capacity** opens the Aldo account page, where you can add credits or upgrade
 hardware. Complimentary workspaces show their hardware but no credit meter.
 
+With Aldo cloud agents, the section shows the credits of your Aldo plan instead. A credit is an
+hour of a standard machine; a 2× machine uses 2 an hour. Past the plan's included credits, agents
+keep working as extra usage, billed per credit, up to your extra usage limit. **Extra usage limit**
+sets that limit in dollars; set it to $0 to stop at the included credits. When credits and the
+limit are used up, cloud agents stop once their turn finishes and won't start until the next
+cycle or a higher limit. If Aldo can't start a cloud agent when you send a message (no plan, no
+credits left, or your plan's agents at once all busy), a notice says why.
+
 Workspace credits come from Aldo's billing ledger, not from provider transcripts, so they stay
 visible while environments are still reporting and while a paused workspace cannot report at all.
 The refresh control reloads them along with the token totals.

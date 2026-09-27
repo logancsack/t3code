@@ -145,7 +145,8 @@ function SpendLimitControl(props: {
   const save = async (event: FormEvent) => {
     event.preventDefault();
     if (editing === null) return;
-    const dollars = Number(editing);
+    // A blank field isn't $0: that would turn extra usage off.
+    const dollars = editing.trim() === "" ? Number.NaN : Number(editing);
     if (!Number.isFinite(dollars) || dollars < 0) {
       setError("Enter an amount in dollars, like 20.");
       return;

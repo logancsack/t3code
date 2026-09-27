@@ -105,6 +105,8 @@ export function installAldoCommandDispatch(): void {
   });
 }
 
+let refusalToastId: string | null = null;
+
 /**
  * Tells the user why their cloud agent can't start, when Aldo refused it: no
  * plan or credits left (402), or the plan's agents at once already running
@@ -112,7 +114,9 @@ export function installAldoCommandDispatch(): void {
  */
 function notifyRefusal(cause: unknown): void {
   if (!(cause instanceof AldoApiError) || (cause.status !== 402 && cause.status !== 409)) return;
-  toastManager.add({
+  // One at a time: another refused send replaces it rather than stacking.
+  if (refusalToastId !== null) toastManager.close(refusalToastId);
+  refusalToastId = toastManager.add({
     type: "warning",
     title: cause.status === 402 ? "This cloud agent can't start" : "Too many cloud agents at once",
     description: cause.message,
