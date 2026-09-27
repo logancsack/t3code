@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { isAldoCloud } from "../aldo/cloud";
 import { isLandingDemo } from "../landingDemo/mode";
 import { isManagedDevPc } from "../managedDevPc";
 
@@ -66,6 +67,8 @@ const ALERT_LEVELS: ReadonlySet<string> = new Set([
 ]);
 
 export const ALDO_WORKSPACE_USAGE_PATH = "/_devpc/account/usage";
+/** Aldo cloud's own usage API: the same summary, for the signed-in user. */
+export const ALDO_CLOUD_USAGE_PATH = "/api/usage";
 const REQUEST_TIMEOUT_MS = 10_000;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -169,7 +172,7 @@ export type AldoWorkspaceUsageState =
   | { readonly status: "error"; readonly usage: AldoWorkspaceUsage | null };
 
 export function aldoWorkspaceUsageAvailable(): boolean {
-  return isManagedDevPc && !isLandingDemo();
+  return (isManagedDevPc || isAldoCloud) && !isLandingDemo();
 }
 
 /**
@@ -197,7 +200,7 @@ export function useAldoWorkspaceUsage(): {
       status: "loading",
       usage: previous.status === "unavailable" ? null : previous.usage,
     }));
-    void fetch(ALDO_WORKSPACE_USAGE_PATH, {
+    void fetch(isAldoCloud ? ALDO_CLOUD_USAGE_PATH : ALDO_WORKSPACE_USAGE_PATH, {
       credentials: "same-origin",
       cache: "no-store",
       headers: { accept: "application/json" },

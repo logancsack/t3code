@@ -575,6 +575,11 @@ export async function fetchAldoPullRequests(
   return pullRequests;
 }
 
+/** Sets how much extra usage past the plan's credits is allowed each period, in cents. */
+export async function setAldoSpendLimit(cents: number): Promise<void> {
+  await api("/api/usage", { method: "PATCH", body: JSON.stringify({ spendLimitCents: cents }) });
+}
+
 /** Moves a thread to another machine size. A running machine restarts, and its agent carries on. */
 export async function setAldoMachine(environmentId: string, size: AldoMachineSize): Promise<void> {
   await api(`/api/environments/${threadIdForEnvironment(environmentId)}/machine`, {

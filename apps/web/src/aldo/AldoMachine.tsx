@@ -12,8 +12,8 @@ import {
 } from "./cloud";
 
 const MACHINE_LABELS: Record<AldoMachineSize, string> = {
-  standard: "Standard: 4 vCPU, 8 GB",
-  "2x": "2×: 8 vCPU, 16 GB, 2× usage",
+  standard: "Standard: 4 vCPU, 8 GB, 1 credit an hour",
+  "2x": "2×: 8 vCPU, 16 GB, 2 credits an hour",
 };
 
 /** Reports already offered in this tab, so each shows once. */
@@ -67,7 +67,7 @@ export function useAldoMachineOffer(environmentId: string): void {
           pressure.kind === "memory"
             ? "This cloud agent is running low on memory"
             : "This cloud agent's CPUs are maxed out",
-        description: `${pressure.detail} A 2× machine has 8 vCPUs and 16 GB and counts as 2× usage. Upgrading restarts the machine, and the agent carries on where it left off.`,
+        description: `${pressure.detail} A 2× machine has 8 vCPUs and 16 GB and uses 2 credits an hour instead of 1. Upgrading restarts the machine, and the agent carries on where it left off.`,
         timeout: 0,
         actionProps: {
           children: "Upgrade to 2×",
@@ -94,8 +94,8 @@ export function AldoMachineMenuSection(props: { environmentId: string }) {
       </MenuGroupLabel>
       <MenuItem onClick={() => void switchMachine(props.environmentId, other)}>
         {other === "2x"
-          ? "Upgrade to 2× (8 vCPU, 16 GB, 2× usage)"
-          : "Switch back to standard (4 vCPU, 8 GB)"}
+          ? "Upgrade to 2× (8 vCPU, 16 GB, 2 credits an hour)"
+          : "Switch back to standard (4 vCPU, 8 GB, 1 credit an hour)"}
       </MenuItem>
     </MenuGroup>
   );

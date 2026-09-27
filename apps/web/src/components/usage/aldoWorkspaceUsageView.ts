@@ -1,3 +1,4 @@
+import { isAldoCloud } from "../../aldo/cloud";
 import type { AldoUsageAlertLevel, AldoWorkspaceUsage } from "../../state/aldoWorkspaceUsage";
 
 const CREDITS = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 });
@@ -30,6 +31,7 @@ function formatDayTime(iso: string): string {
 
 /** Copy the Aldo account page uses for the same alert levels, so both surfaces agree. */
 export function aldoUsageAlertCopy(level: AldoUsageAlertLevel): string | null {
+  if (isAldoCloud) return aldoCloudAlertCopy(level);
   switch (level) {
     case "included_warning":
       return "Included credits are running low. Add capacity to keep agents working without interruption.";
@@ -39,6 +41,22 @@ export function aldoUsageAlertCopy(level: AldoUsageAlertLevel): string | null {
       return "This cycle is close to its authorized usage limit.";
     case "spend_reached":
       return "Authorized usage for this cycle is used up. Add capacity to resume new work.";
+    default:
+      return null;
+  }
+}
+
+/** Aldo cloud: extra usage past the plan is allowed up to the limit set here. */
+function aldoCloudAlertCopy(level: AldoUsageAlertLevel): string | null {
+  switch (level) {
+    case "included_warning":
+      return "This month's included credits are running low. Past them, agents keep working up to your extra usage limit, at $0.60 a credit.";
+    case "included_exhausted":
+      return "This month's included credits are used up, and extra usage is off. Set an extra usage limit to keep agents working.";
+    case "spend_warning":
+      return "Extra usage is close to your limit. Raise it to keep agents working.";
+    case "spend_reached":
+      return "Your credits and extra usage limit are used up, so agents can't start. Raise the limit to keep going.";
     default:
       return null;
   }
@@ -66,7 +84,10 @@ export function aldoUsageFacts(usage: AldoWorkspaceUsage): readonly AldoUsageFac
         value: `${usage.plan.name} · ${formatCredits(usage.plan.includedCredits)} included`,
       },
       { label: "Included left", value: formatCredits(usage.credits.includedRemaining) },
-      { label: "Added capacity left", value: formatCredits(usage.credits.overageRemaining) },
+      {
+        label: isAldoCloud ? "Extra usage left" : "Added capacity left",
+        value: formatCredits(usage.credits.overageRemaining),
+      },
       {
         label: "Projected at renewal",
         value:
@@ -106,6 +127,11 @@ export function aldoUsageFootnote(usage: AldoWorkspaceUsage): string | null {
 
 /** Why there are no credit numbers to show, when there are none. */
 export function aldoUsageUnmeteredCopy(usage: AldoWorkspaceUsage): string {
+  if (isAldoCloud) {
+    return usage.configured
+      ? "Your account is complimentary, so compute isn't metered."
+      : "You don't have a plan yet, so cloud agents can't start. Ask your Aldo admin for one.";
+  }
   return usage.configured
     ? "This workspace is complimentary, so compute is not metered."
     : "Usage billing is not configured for this environment.";

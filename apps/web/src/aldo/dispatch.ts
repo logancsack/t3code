@@ -12,7 +12,9 @@ import { environmentCatalog } from "../connection/catalog";
 import { runAtomCommand } from "@t3tools/client-runtime/state/runtime";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentPresentations } from "../state/presentation";
+import { toastManager } from "../components/ui/toast";
 import {
+  AldoApiError,
   aldoMachineIsNew,
   isAldoCloud,
   isAldoEnvironmentId,
@@ -95,7 +97,37 @@ export function installAldoCommandDispatch(): void {
   setOrchestrationCommandDispatchOverride(async ({ command, environmentId }) => {
     if (!isAldoEnvironmentId(environmentId)) return null;
     if (command.type === "thread.turn.start") lastSentAt.set(environmentId, Date.now());
-    await ensureAldoConnected(environmentId);
+    await ensureAldoConnected(environmentId).catch((cause: unknown) => {
+      notifyRefusal(cause);
+      throw cause;
+    });
     return null;
+  });
+}
+
+let refusalToastId: string | null = null;
+
+/**
+ * Tells the user why their cloud agent can't start, when Aldo refused it: no
+ * plan or credits left (402), or the plan's agents at once already running
+ * (409). Only for what the user sent: preloads fail quietly.
+ */
+function notifyRefusal(cause: unknown): void {
+  if (!(cause instanceof AldoApiError) || (cause.status !== 402 && cause.status !== 409)) return;
+  // One at a time: another refused send replaces it rather than stacking.
+  if (refusalToastId !== null) toastManager.close(refusalToastId);
+  refusalToastId = toastManager.add({
+    type: "warning",
+    title: cause.status === 402 ? "This cloud agent can't start" : "Too many cloud agents at once",
+    description: cause.message,
+    timeout: 0,
+    ...(cause.status === 402
+      ? {
+          actionProps: {
+            children: "Open Usage",
+            onClick: () => window.location.assign("/usage"),
+          },
+        }
+      : {}),
   });
 }
