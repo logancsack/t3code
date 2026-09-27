@@ -29,24 +29,26 @@ export function AldoDesktopView({ environmentId }: { environmentId: string }) {
     const connect = async () => {
       const container = containerRef.current;
       if (disposed || !container) return;
-      let url: string;
+      let client: RFB;
       try {
-        url = (await aldoBrowserConnection(environmentId)).desktopUrl;
+        const { desktopUrl } = await aldoBrowserConnection(environmentId);
+        // noVNC touches the DOM as soon as it loads, so it's loaded only when a desktop is shown.
+        const { default: VncClient } = await import("@novnc/novnc");
+        if (disposed) return;
+        client = new VncClient(container, desktopUrl, { shared: true });
       } catch (cause) {
         if (cause instanceof AldoApiError && cause.status === 409) {
           setStatus("asleep");
           schedule(3000);
         } else {
+          // Includes noVNC failing to download (a deploy in progress, a network blip).
           setStatus("error");
           setError(cause instanceof Error ? cause.message : String(cause));
           schedule(Math.min(15_000, 1000 * 2 ** attempt++));
         }
         return;
       }
-      // noVNC touches the DOM as soon as it loads, so it's loaded only when a desktop is shown.
-      const { default: VncClient } = await import("@novnc/novnc");
-      if (disposed) return;
-      rfb = new VncClient(container, url, { shared: true });
+      rfb = client;
       rfb.scaleViewport = true;
       rfb.resizeSession = false;
       rfb.focusOnClick = true;
