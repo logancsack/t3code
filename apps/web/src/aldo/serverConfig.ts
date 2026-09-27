@@ -98,10 +98,11 @@ async function template(): Promise<EncodedConfig | null> {
 
 /**
  * The server config to show for a machine that isn't running: the newest one
- * any cloud agent reported, renamed for this machine, with providers the user has signed in
- * to through Aldo marked signed in (the machine gets those sign-ins when it
- * starts, whatever the reporting machine had). Null before any cloud agent
- * has ever reported one.
+ * any cloud agent reported, renamed for this machine, with each provider's
+ * sign-in set from the user's Aldo accounts (the machine gets those sign-ins
+ * when it starts, whatever the reporting machine had): connected ones signed
+ * in, disconnected ones signed out. If the accounts can't be read, providers
+ * stay as reported. Null before any cloud agent has ever reported one.
  */
 export async function aldoServerConfigFor(environmentId: string): Promise<EncodedConfig | null> {
   const [base, accounts] = await Promise.all([template(), fetchAldoAccounts().catch(() => null)]);
@@ -112,11 +113,19 @@ export async function aldoServerConfigFor(environmentId: string): Promise<Encode
     providers: base.providers.map((provider) => {
       const account = ACCOUNT_FOR_DRIVER[String(provider.driver)];
       const auth = (provider.auth ?? {}) as Record<string, unknown>;
-      if (!account || !accounts?.[account]?.connected || auth.status === "authenticated") {
-        return provider;
+      if (!account || !accounts) return provider;
+      if (accounts[account]?.connected === true) {
+        if (auth.status === "authenticated") return provider;
+        const { message: _message, ...rest } = provider;
+        return { ...rest, status: "ready", auth: { ...auth, status: "authenticated" } };
       }
-      const { message: _message, ...rest } = provider;
-      return { ...rest, status: "ready", auth: { ...auth, status: "authenticated" } };
+      if (auth.status !== "authenticated") return provider;
+      return {
+        ...provider,
+        status: "error",
+        auth: { status: "unauthenticated" },
+        message: "Not signed in. Connect it in Settings → Providers.",
+      };
     }),
   };
 }
