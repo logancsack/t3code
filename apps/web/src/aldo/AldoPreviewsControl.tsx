@@ -10,6 +10,7 @@ import {
   MenuSeparator,
   MenuTrigger,
 } from "../components/ui/menu";
+import { AldoMachineMenuSection, useAldoMachineOffer } from "./AldoMachine";
 import { useAldoBrowserRequests } from "./browserStore";
 import {
   aldoPreviewUrl,
@@ -32,6 +33,7 @@ function label(command: string, process: string): string {
  * through its owner-only preview link (works from any device, wakes the thread).
  */
 export function AldoPreviewsControl(props: { environmentId: string; onOpenBrowser: () => void }) {
+  useAldoMachineOffer(props.environmentId);
   const [previews, setPreviews] = useState<AldoPreviews | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -170,6 +172,8 @@ export function AldoPreviewsControl(props: { environmentId: string; onOpenBrowse
             </div>
           </>
         ) : null}
+        <MenuSeparator />
+        <AldoMachineMenuSection environmentId={props.environmentId} />
       </MenuPopup>
     </Menu>
   );
