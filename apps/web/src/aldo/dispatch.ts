@@ -55,26 +55,7 @@ export function ensureAldoConnected(environmentId: string): Promise<void> {
   starting.set(environmentId, aldoMachineIsNew(environmentId) ? "creating" : "reconnecting");
   const run = (async () => {
     // Aldo creates the machine the first time, else resumes it, and returns once T3 is up.
-    await wakeAldoEnvironment(environmentId).catch((cause: unknown) => {
-      if (cause instanceof AldoApiError && (cause.status === 402 || cause.status === 409)) {
-        toastManager.add({
-          type: "warning",
-          title:
-            cause.status === 402 ? "This cloud agent can't start" : "Too many cloud agents at once",
-          description: cause.message,
-          timeout: 0,
-          ...(cause.status === 402
-            ? {
-                actionProps: {
-                  children: "Open Usage",
-                  onClick: () => window.location.assign("/usage"),
-                },
-              }
-            : {}),
-        });
-      }
-      throw cause;
-    });
+    await wakeAldoEnvironment(environmentId);
     requestAldoDirectoryRefresh();
     // A sleeping machine's connection waits to be told to try again.
     const deadline = Date.now() + CONNECT_WAIT_MS;
@@ -116,7 +97,33 @@ export function installAldoCommandDispatch(): void {
   setOrchestrationCommandDispatchOverride(async ({ command, environmentId }) => {
     if (!isAldoEnvironmentId(environmentId)) return null;
     if (command.type === "thread.turn.start") lastSentAt.set(environmentId, Date.now());
-    await ensureAldoConnected(environmentId);
+    await ensureAldoConnected(environmentId).catch((cause: unknown) => {
+      notifyRefusal(cause);
+      throw cause;
+    });
     return null;
+  });
+}
+
+/**
+ * Tells the user why their cloud agent can't start, when Aldo refused it: no
+ * plan or credits left (402), or the plan's agents at once already running
+ * (409). Only for what the user sent: preloads fail quietly.
+ */
+function notifyRefusal(cause: unknown): void {
+  if (!(cause instanceof AldoApiError) || (cause.status !== 402 && cause.status !== 409)) return;
+  toastManager.add({
+    type: "warning",
+    title: cause.status === 402 ? "This cloud agent can't start" : "Too many cloud agents at once",
+    description: cause.message,
+    timeout: 0,
+    ...(cause.status === 402
+      ? {
+          actionProps: {
+            children: "Open Usage",
+            onClick: () => window.location.assign("/usage"),
+          },
+        }
+      : {}),
   });
 }
