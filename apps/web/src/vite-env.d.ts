@@ -15,6 +15,7 @@ interface ImportMetaEnv {
   readonly VITE_RELAY_OTLP_TRACES_TOKEN: string;
   readonly APP_VERSION: string;
   readonly VITE_DEVPC_MANAGED: string;
+  readonly VITE_ALDO_CLOUD: string;
 }
 
 interface ImportMeta {

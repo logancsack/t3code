@@ -1,4 +1,5 @@
 import type { ComposerFileAttachment } from "../../composerDraftStore";
+import { isAldoCloud } from "../../aldo/cloud";
 import { type ChatImageAttachment, isVideoAttachment } from "../../types";
 import type {
   AssetCreateUrlResult,
@@ -82,7 +83,11 @@ export async function resolveMarkdownMediaPreview(input: {
     src = resolveProtocolRelativeMediaUrl(source.uri);
   } else {
     if (!input.threadRef || !input.httpBaseUrl) {
-      throw new Error("Reconnect to this environment and open the media again.");
+      throw new Error(
+        isAldoCloud
+          ? "Reconnect to the cloud and open the media again."
+          : "Reconnect to this environment and open the media again.",
+      );
     }
     asset = {
       environmentId: input.threadRef.environmentId,

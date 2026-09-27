@@ -182,6 +182,8 @@ import {
   buildSidebarProjectPickerEntries,
   buildSidebarProjectSnapshots,
 } from "../sidebarProjectGrouping";
+import { isAldoCloud } from "../aldo/cloud";
+import { openAldoRepositoryPicker } from "../aldo/AldoRepositoryDialog";
 import type { Project } from "../types";
 
 const EMPTY_BROWSE_ENTRIES: FilesystemBrowseResult["entries"] = [];
@@ -1541,6 +1543,12 @@ function OpenCommandPaletteDialog(props: {
   );
 
   const openAddProjectFlow = useCallback(() => {
+    if (isAldoCloud) {
+      // Under Aldo a project is a GitHub repository; picking one starts a sandbox.
+      setOpen(false);
+      openAldoRepositoryPicker();
+      return;
+    }
     if (addProjectEnvironmentOptions.length > 1 || defaultAddProjectEnvironmentId === null) {
       pushPaletteView({
         addonIcon: <FolderPlusIcon className={ADDON_ICON_CLASS} />,
@@ -1567,6 +1575,7 @@ function OpenCommandPaletteDialog(props: {
     addProjectEnvironmentOptions.length,
     defaultAddProjectEnvironmentId,
     pushPaletteView,
+    setOpen,
     startAddProjectSourceSelection,
   ]);
 

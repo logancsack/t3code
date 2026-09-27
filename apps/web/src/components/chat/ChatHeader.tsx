@@ -46,6 +46,9 @@ import {
   WorkspaceBreadcrumbSeparator,
 } from "../WorkspaceBreadcrumb";
 import { cn } from "~/lib/utils";
+import { AldoPreviewsControl } from "~/aldo/AldoPreviewsControl";
+import { isAldoCloud, isAldoEnvironmentId } from "~/aldo/cloud";
+import { useRightPanelStore } from "~/rightPanelStore";
 
 interface ChatHeaderProps {
   activeThreadEnvironmentId: EnvironmentId;
@@ -440,6 +443,16 @@ export const ChatHeader = memo(function ChatHeader({
           rightPanelOpen ? "pr-0" : "pr-16",
         )}
       >
+        {isAldoCloud && isAldoEnvironmentId(activeThreadEnvironmentId) ? (
+          <AldoPreviewsControl
+            environmentId={activeThreadEnvironmentId}
+            onOpenBrowser={() =>
+              useRightPanelStore
+                .getState()
+                .open(scopeThreadRef(activeThreadEnvironmentId, activeThreadId), "workspaceBrowser")
+            }
+          />
+        ) : null}
         {activeProjectName && (
           <GitActionsControl
             gitCwd={gitCwd}

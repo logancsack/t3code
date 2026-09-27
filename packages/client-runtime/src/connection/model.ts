@@ -72,6 +72,9 @@ export const ConnectionBlockedReason = Schema.Literals([
   "configuration",
   "permission",
   "unsupported",
+  // The environment exists but is asleep (a stopped cloud sandbox, say). The
+  // platform wakes it on demand; until then it reads as available, not failed.
+  "dormant",
 ]);
 export type ConnectionBlockedReason = typeof ConnectionBlockedReason.Type;
 

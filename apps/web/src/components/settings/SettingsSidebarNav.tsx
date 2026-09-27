@@ -14,6 +14,8 @@ import {
   BlocksIcon,
   BotIcon,
   GitBranchIcon,
+  LockKeyholeIcon,
+  BoxesIcon,
   KeyboardIcon,
   Link2Icon,
   PaletteIcon,
@@ -39,6 +41,7 @@ import {
 import { T3ConnectSidebarAvatar, T3ConnectSidebarSignIn } from "../clerk/T3ConnectSidebarSignIn";
 import { ManagedDevPcFooterAccount } from "../ManagedDevPcAccount";
 import { isManagedDevPc } from "../../managedDevPc";
+import { isAldoCloud } from "../../aldo/cloud";
 import { SidebarUtilityMenu } from "../sidebar/SidebarChrome";
 import { scrollToSettingsTarget } from "./settingsLayout";
 import {
@@ -59,6 +62,8 @@ const SETTINGS_SECTION_ICONS: Readonly<
   "/settings/providers": BotIcon,
   "/settings/integrations": BlocksIcon,
   "/settings/source-control": GitBranchIcon,
+  "/settings/vault": LockKeyholeIcon,
+  "/settings/environments": BoxesIcon,
   "/settings/connections": Link2Icon,
   "/settings/archived": ArchiveIcon,
 };
@@ -69,6 +74,9 @@ export const SETTINGS_NAV_ITEMS: ReadonlyArray<{
   icon: ComponentType<{ className?: string }>;
 }> = (Object.keys(SETTINGS_SECTION_LABELS) as SettingsPath[])
   .filter((to) => to !== "/settings/workspace" || isManagedDevPc)
+  .filter((to) => (to !== "/settings/vault" && to !== "/settings/environments") || isAldoCloud)
+  // Aldo connects each thread's cloud agent itself; there's nothing to manage.
+  .filter((to) => to !== "/settings/connections" || !isAldoCloud)
   .map((to) => ({
     to,
     label: SETTINGS_SECTION_LABELS[to],

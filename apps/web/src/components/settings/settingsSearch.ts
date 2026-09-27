@@ -1,4 +1,5 @@
 import { isElectron } from "~/env";
+import { isAldoCloud } from "../../aldo/cloud";
 import { isManagedDevPc } from "../../managedDevPc";
 import { isMacPlatform, isWindowsPlatform, normalizeSearchText } from "~/lib/utils";
 
@@ -10,6 +11,8 @@ export type SettingsPath =
   | "/settings/providers"
   | "/settings/integrations"
   | "/settings/source-control"
+  | "/settings/vault"
+  | "/settings/environments"
   | "/settings/connections"
   | "/settings/archived";
 
@@ -56,6 +59,8 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/providers": "Providers",
   "/settings/integrations": "Integrations",
   "/settings/source-control": "Source Control",
+  "/settings/vault": "Vault",
+  "/settings/environments": "Environments",
   "/settings/connections": isManagedDevPc ? "Server connections" : "Connections",
   "/settings/archived": "Archive",
 };
@@ -470,7 +475,9 @@ export function filterAvailableSettingsSearchItems(
       (!item.providerSettingsOnly || availability.hasProviderSettingsEnvironment) &&
       (!item.localBackendManagementOnly || availability.canManageLocalBackend) &&
       (!item.wslAvailableOnly || availability.isWslSettingsRowVisible) &&
-      (!item.requiresThreadAutoSettlement || availability.hasThreadAutoSettlement),
+      (!item.requiresThreadAutoSettlement || availability.hasThreadAutoSettlement) &&
+      // Aldo has no Connections page: it connects cloud agents itself.
+      (item.to !== "/settings/connections" || !isAldoCloud),
   );
 }
 

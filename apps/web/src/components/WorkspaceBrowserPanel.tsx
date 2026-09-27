@@ -4,6 +4,8 @@ import { ExternalLink, RotateCw } from "lucide-react";
 import { useCallback, useState } from "react";
 
 import { managedWorkspaceBrowserUrl } from "~/managedDevPc";
+import { AldoBrowserPanel } from "~/aldo/AldoBrowserPanel";
+import { isAldoCloud } from "~/aldo/cloud";
 
 import { Button } from "./ui/button";
 import { isLandingDemo } from "~/landingDemo/mode";
@@ -23,9 +25,14 @@ import { LandingDemoPreviewPanel } from "~/landingDemo/PreviewPanel";
  * size of this frame and a phone gets a phone-shaped screen rather than a
  * scaled-down desktop.
  */
-export function WorkspaceBrowserPanel() {
+export function WorkspaceBrowserPanel({
+  environmentId,
+}: { environmentId?: string | undefined } = {}) {
   if (isLandingDemo()) {
     return <LandingDemoPreviewPanel />;
+  }
+  if (isAldoCloud && environmentId) {
+    return <AldoBrowserPanel key={environmentId} environmentId={environmentId} />;
   }
   const url = managedWorkspaceBrowserUrl();
   // Remounting the frame is the only way to force a reconnect from here: the

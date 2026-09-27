@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 138 32" role="img" aria-labelledby="title desc" shape-rendering="geometricPrecision">
+  <title id="title">Aldo</title>
+  <desc id="desc">The black Aldo Open Frame mark with the Aldo wordmark in Geist Sans.</desc>
+  <path fill="#000000" d="M1 28 13.4 4h8.7L10.6 28H1Z"/>
+  <path fill="#000000" d="M23.9 4h8.7L41 28h-9.6L23.9 4Z"/>
+  <text x="53" y="24.2" fill="#000000" font-family="Geist Sans, Geist, Arial, sans-serif" font-size="24" font-weight="600" letter-spacing="-0.7">Aldo</text>
+</svg>

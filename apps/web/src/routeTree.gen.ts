@@ -16,11 +16,13 @@ import { Route as ConnectRouteImport } from './routes/connect'
 import { Route as ChatRouteImport } from './routes/_chat'
 import { Route as ChatIndexRouteImport } from './routes/_chat.index'
 import { Route as SettingsWorkspaceRouteImport } from './routes/settings.workspace'
+import { Route as SettingsVaultRouteImport } from './routes/settings.vault'
 import { Route as SettingsSourceControlRouteImport } from './routes/settings.source-control'
 import { Route as SettingsProvidersRouteImport } from './routes/settings.providers'
 import { Route as SettingsKeybindingsRouteImport } from './routes/settings.keybindings'
 import { Route as SettingsIntegrationsRouteImport } from './routes/settings.integrations'
 import { Route as SettingsGeneralRouteImport } from './routes/settings.general'
+import { Route as SettingsEnvironmentsRouteImport } from './routes/settings.environments'
 import { Route as SettingsDiagnosticsRouteImport } from './routes/settings.diagnostics'
 import { Route as SettingsConnectionsRouteImport } from './routes/settings.connections'
 import { Route as SettingsArchivedRouteImport } from './routes/settings.archived'
@@ -65,6 +67,11 @@ const SettingsWorkspaceRoute = SettingsWorkspaceRouteImport.update({
   path: '/workspace',
   getParentRoute: () => SettingsRoute,
 } as any)
+const SettingsVaultRoute = SettingsVaultRouteImport.update({
+  id: '/vault',
+  path: '/vault',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const SettingsSourceControlRoute = SettingsSourceControlRouteImport.update({
   id: '/source-control',
   path: '/source-control',
@@ -88,6 +95,11 @@ const SettingsIntegrationsRoute = SettingsIntegrationsRouteImport.update({
 const SettingsGeneralRoute = SettingsGeneralRouteImport.update({
   id: '/general',
   path: '/general',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsEnvironmentsRoute = SettingsEnvironmentsRouteImport.update({
+  id: '/environments',
+  path: '/environments',
   getParentRoute: () => SettingsRoute,
 } as any)
 const SettingsDiagnosticsRoute = SettingsDiagnosticsRouteImport.update({
@@ -150,11 +162,13 @@ export interface FileRoutesByFullPath {
   '/settings/archived': typeof SettingsArchivedRoute
   '/settings/connections': typeof SettingsConnectionsRoute
   '/settings/diagnostics': typeof SettingsDiagnosticsRoute
+  '/settings/environments': typeof SettingsEnvironmentsRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/integrations': typeof SettingsIntegrationsRoute
   '/settings/keybindings': typeof SettingsKeybindingsRoute
   '/settings/providers': typeof SettingsProvidersRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
+  '/settings/vault': typeof SettingsVaultRoute
   '/settings/workspace': typeof SettingsWorkspaceRoute
   '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/draft/$draftId': typeof ChatDraftDraftIdRoute
@@ -171,11 +185,13 @@ export interface FileRoutesByTo {
   '/settings/archived': typeof SettingsArchivedRoute
   '/settings/connections': typeof SettingsConnectionsRoute
   '/settings/diagnostics': typeof SettingsDiagnosticsRoute
+  '/settings/environments': typeof SettingsEnvironmentsRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/integrations': typeof SettingsIntegrationsRoute
   '/settings/keybindings': typeof SettingsKeybindingsRoute
   '/settings/providers': typeof SettingsProvidersRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
+  '/settings/vault': typeof SettingsVaultRoute
   '/settings/workspace': typeof SettingsWorkspaceRoute
   '/': typeof ChatIndexRoute
   '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
@@ -195,11 +211,13 @@ export interface FileRoutesById {
   '/settings/archived': typeof SettingsArchivedRoute
   '/settings/connections': typeof SettingsConnectionsRoute
   '/settings/diagnostics': typeof SettingsDiagnosticsRoute
+  '/settings/environments': typeof SettingsEnvironmentsRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/integrations': typeof SettingsIntegrationsRoute
   '/settings/keybindings': typeof SettingsKeybindingsRoute
   '/settings/providers': typeof SettingsProvidersRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
+  '/settings/vault': typeof SettingsVaultRoute
   '/settings/workspace': typeof SettingsWorkspaceRoute
   '/_chat/': typeof ChatIndexRoute
   '/_chat/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
@@ -220,11 +238,13 @@ export interface FileRouteTypes {
     | '/settings/archived'
     | '/settings/connections'
     | '/settings/diagnostics'
+    | '/settings/environments'
     | '/settings/general'
     | '/settings/integrations'
     | '/settings/keybindings'
     | '/settings/providers'
     | '/settings/source-control'
+    | '/settings/vault'
     | '/settings/workspace'
     | '/$environmentId/$threadId'
     | '/draft/$draftId'
@@ -241,11 +261,13 @@ export interface FileRouteTypes {
     | '/settings/archived'
     | '/settings/connections'
     | '/settings/diagnostics'
+    | '/settings/environments'
     | '/settings/general'
     | '/settings/integrations'
     | '/settings/keybindings'
     | '/settings/providers'
     | '/settings/source-control'
+    | '/settings/vault'
     | '/settings/workspace'
     | '/'
     | '/$environmentId/$threadId'
@@ -264,11 +286,13 @@ export interface FileRouteTypes {
     | '/settings/archived'
     | '/settings/connections'
     | '/settings/diagnostics'
+    | '/settings/environments'
     | '/settings/general'
     | '/settings/integrations'
     | '/settings/keybindings'
     | '/settings/providers'
     | '/settings/source-control'
+    | '/settings/vault'
     | '/settings/workspace'
     | '/_chat/'
     | '/_chat/$environmentId/$threadId'
@@ -336,6 +360,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsWorkspaceRouteImport
       parentRoute: typeof SettingsRoute
     }
+    '/settings/vault': {
+      id: '/settings/vault'
+      path: '/vault'
+      fullPath: '/settings/vault'
+      preLoaderRoute: typeof SettingsVaultRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/settings/source-control': {
       id: '/settings/source-control'
       path: '/source-control'
@@ -369,6 +400,13 @@ declare module '@tanstack/react-router' {
       path: '/general'
       fullPath: '/settings/general'
       preLoaderRoute: typeof SettingsGeneralRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/environments': {
+      id: '/settings/environments'
+      path: '/environments'
+      fullPath: '/settings/environments'
+      preLoaderRoute: typeof SettingsEnvironmentsRouteImport
       parentRoute: typeof SettingsRoute
     }
     '/settings/diagnostics': {
@@ -458,11 +496,13 @@ interface SettingsRouteChildren {
   SettingsArchivedRoute: typeof SettingsArchivedRoute
   SettingsConnectionsRoute: typeof SettingsConnectionsRoute
   SettingsDiagnosticsRoute: typeof SettingsDiagnosticsRoute
+  SettingsEnvironmentsRoute: typeof SettingsEnvironmentsRoute
   SettingsGeneralRoute: typeof SettingsGeneralRoute
   SettingsIntegrationsRoute: typeof SettingsIntegrationsRoute
   SettingsKeybindingsRoute: typeof SettingsKeybindingsRoute
   SettingsProvidersRoute: typeof SettingsProvidersRoute
   SettingsSourceControlRoute: typeof SettingsSourceControlRoute
+  SettingsVaultRoute: typeof SettingsVaultRoute
   SettingsWorkspaceRoute: typeof SettingsWorkspaceRoute
 }
 
@@ -471,11 +511,13 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsArchivedRoute: SettingsArchivedRoute,
   SettingsConnectionsRoute: SettingsConnectionsRoute,
   SettingsDiagnosticsRoute: SettingsDiagnosticsRoute,
+  SettingsEnvironmentsRoute: SettingsEnvironmentsRoute,
   SettingsGeneralRoute: SettingsGeneralRoute,
   SettingsIntegrationsRoute: SettingsIntegrationsRoute,
   SettingsKeybindingsRoute: SettingsKeybindingsRoute,
   SettingsProvidersRoute: SettingsProvidersRoute,
   SettingsSourceControlRoute: SettingsSourceControlRoute,
+  SettingsVaultRoute: SettingsVaultRoute,
   SettingsWorkspaceRoute: SettingsWorkspaceRoute,
 }
 

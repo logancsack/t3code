@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc" shape-rendering="geometricPrecision">
+  <title id="title">Aldo</title>
+  <desc id="desc">The white Aldo Open Frame mark on black.</desc>
+  <rect x="10.667" y="10.667" width="490.666" height="490.666" rx="106.667" fill="#000000"/>
+  <svg x="64" y="109.714" width="384" height="292.571" viewBox="0 0 42 32">
+    <path fill="#FFFFFF" d="M1 28 13.4 4h8.7L10.6 28H1Z"/>
+    <path fill="#FFFFFF" d="M23.9 4h8.7L41 28h-9.6L23.9 4Z"/>
+  </svg>
+</svg>

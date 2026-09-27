@@ -18,11 +18,16 @@ import {
 import { useEnvironments } from "../state/environments";
 import { APP_DISPLAY_NAME } from "~/branding";
 import { hasCloudPublicConfig } from "~/cloud/publicConfig";
+import { AldoHome } from "~/aldo/AldoHome";
+import { isAldoCloud } from "~/aldo/cloud";
 
 function ChatIndexRouteView() {
   const { authGateState } = Route.useRouteContext();
   const { environments } = useEnvironments();
 
+  if (isAldoCloud) {
+    return <AldoHome />;
+  }
   if (authGateState.status === "hosted-static" && environments.length === 0) {
     return <HostedStaticOnboardingState />;
   }

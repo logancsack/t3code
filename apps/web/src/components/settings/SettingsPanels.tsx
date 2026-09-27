@@ -122,6 +122,8 @@ import {
 } from "../ui/number-field";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
+import { AldoPreloadSettings } from "../../aldo/AldoPreloadSettings";
+import { isAldoCloud } from "../../aldo/cloud";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ThemeLibrary } from "./ThemeSettings";
@@ -1928,9 +1930,12 @@ export function GeneralSettingsPanel() {
 
   return (
     <SettingsPageContainer>
+      {isAldoCloud ? <AldoPreloadSettings /> : null}
       <SettingsSection title="General">
         <SettingsRow
           {...searchableSetting("project-grouping")}
+          // Aldo runs each thread on its own machine; grouping is what shows a project once.
+          {...(isAldoCloud ? { className: "hidden" } : {})}
           description="Combine matching repositories across environments."
           resetAction={
             settings.sidebarProjectGroupingMode !==
