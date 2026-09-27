@@ -114,12 +114,6 @@ import {
   ProjectFaviconPickerDialog,
 } from "./ProjectFaviconPickerDialog";
 import { projectGroupTitleNeedsUpdate } from "./ProjectSettingsPanel.logic";
-import {
-  ALDO_PROJECT_REMOVAL_NOTE,
-  isAldoCloud,
-  isAldoEnvironmentId,
-  removeAldoProjectSandbox,
-} from "../../aldo/cloud";
 
 export const PROJECT_GROUPING_MODE_LABELS: Record<SidebarProjectGroupingMode, string> = {
   repository: "Group by repository",
@@ -691,32 +685,26 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
       const isWholeGroup = members.length === group.memberProjects.length;
       const singleMember = members.length === 1 ? members[0]! : null;
       const targetLabel = singleMember?.title ?? group.displayName;
-      const inAldo =
-        isAldoCloud && members.every((member) => isAldoEnvironmentId(member.environmentId));
       const confirmed = await settlePromise(() =>
         api.dialogs.confirm(
           [
             projectThreads.length > 0
               ? `Remove project "${targetLabel}" and delete its ${projectThreads.length} thread${projectThreads.length === 1 ? "" : "s"}?`
               : `Remove project "${targetLabel}"?`,
-            ...(inAldo
-              ? []
-              : singleMember
-                ? [
-                    `Path: ${singleMember.workspaceRoot}`,
-                    ...(singleMember.environmentLabel
-                      ? [`Environment: ${singleMember.environmentLabel}`]
-                      : []),
-                  ]
-                : [`This removes ${members.length} grouped project entries.`]),
+            ...(singleMember
+              ? [
+                  `Path: ${singleMember.workspaceRoot}`,
+                  ...(singleMember.environmentLabel
+                    ? [`Environment: ${singleMember.environmentLabel}`]
+                    : []),
+                ]
+              : [`This removes ${members.length} grouped project entries.`]),
             ...(projectThreads.length > 0
               ? ["This permanently clears conversation history for those threads."]
               : []),
-            inAldo
-              ? ALDO_PROJECT_REMOVAL_NOTE
-              : isWholeGroup
-                ? "This removes only the project entries, not the files on disk."
-                : "Other entries in this grouped project are unaffected.",
+            isWholeGroup
+              ? "This removes only the project entries, not the files on disk."
+              : "Other entries in this grouped project are unaffected.",
             "This action cannot be undone.",
           ].join("\n"),
           { variant: "destructive" },
@@ -744,15 +732,6 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
           reportFailure(`Failed to remove "${member.title}"`, result);
           return;
         }
-        void removeAldoProjectSandbox(member.environmentId).catch((cause: unknown) =>
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: `Removed "${member.title}", but not its cloud agents`,
-              description: cause instanceof Error ? cause.message : "Aldo couldn't delete it.",
-            }),
-          ),
-        );
         const projectRef = scopeProjectRef(member.environmentId, member.id);
         releaseProjectDraftUploads(
           projectRef,
@@ -794,11 +773,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
         <SettingsSection title="Project">
           <SettingsRow
             title="Name"
-            description={
-              isAldoCloud
-                ? "The name for this project in the sidebar and thread lists."
-                : "The shared name for this project group in the sidebar and thread lists."
-            }
+            description="The shared name for this project group in the sidebar and thread lists."
             control={
               <Input
                 key={`${group.projectKey}:${group.displayName}`}
@@ -857,11 +832,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
         <SettingsSection title="New threads">
           <SettingsRow
             title="Model"
-            description={
-              isAldoCloud
-                ? "New threads in this project start with this model."
-                : "New threads in this project start with this model. Applies to every checkout in this group."
-            }
+            description="New threads in this project start with this model. Applies to every checkout in this group."
             resetAction={
               storedSelection !== null ? (
                 <SettingResetButton
@@ -913,7 +884,6 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
             }
           />
           <SettingsRow
-            {...(isAldoCloud ? { className: "hidden" } : {})}
             title="Workspace"
             description="Where new threads in this project start. Overrides t3.json and the global default; applies to every checkout in this group."
             resetAction={
@@ -959,7 +929,6 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
         </SettingsSection>
 
         <SettingsSection
-          {...(isAldoCloud ? { className: "hidden" } : {})}
           title="Checkout"
           headerAction={
             <Select
@@ -1198,16 +1167,12 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
         <SettingsSection title="Danger">
           <SettingsRow
             title={
-              group.memberProjects.length > 1 && !isAldoCloud
-                ? "Remove this project everywhere"
-                : "Remove project"
+              group.memberProjects.length > 1 ? "Remove this project everywhere" : "Remove project"
             }
             description={
-              isAldoCloud
-                ? "Deletes the project, its threads and their cloud agents."
-                : group.memberProjects.length > 1
-                  ? `Deletes all ${group.memberProjects.length} checkout entries and their threads on every machine. Files on disk are not touched.`
-                  : "Deletes the project entry and its threads. Files on disk are not touched."
+              group.memberProjects.length > 1
+                ? `Deletes all ${group.memberProjects.length} checkout entries and their threads on every machine. Files on disk are not touched.`
+                : "Deletes the project entry and its threads. Files on disk are not touched."
             }
             control={
               <Button
@@ -1215,9 +1180,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
                 onClick={() => void removeMembers(group.memberProjects)}
               >
                 <Trash2Icon />
-                {group.memberProjects.length > 1 && !isAldoCloud
-                  ? "Remove all entries"
-                  : "Remove project"}
+                {group.memberProjects.length > 1 ? "Remove all entries" : "Remove project"}
               </Button>
             }
           />

@@ -3,7 +3,6 @@ import {
   CloudSession,
   EnvironmentOwnedDataCleanup,
   PlatformConnectionSource,
-  PlatformEnvironmentGateway,
   PrimaryEnvironmentAuth,
   RelayDeviceIdentity,
   SshEnvironmentGateway,
@@ -69,7 +68,6 @@ import {
 import { connectionStorageLayer } from "./storage";
 import { LANDING_DEMO_ENVIRONMENT_ID, isLandingDemo } from "../landingDemo/mode";
 import { clientPresentationMetadata } from "./clientMetadata";
-import { aldoEnvironmentGateway, aldoPlatformRegistrations, isAldoCloud } from "../aldo/cloud";
 
 let nextObservedRpcRequestId = 0;
 
@@ -308,12 +306,6 @@ const capabilitiesLayer = Layer.effectContext(
       Context.add(RelayDeviceIdentity, identity),
       Context.add(ClientPresentation, presentation),
       Context.add(SshEnvironmentGateway, ssh),
-      // Only answers for Aldo sandbox connections; every other bearer
-      // environment keeps using its stored profile and credential.
-      Context.add(
-        PlatformEnvironmentGateway,
-        PlatformEnvironmentGateway.of(aldoEnvironmentGateway),
-      ),
     );
   }),
 );
@@ -515,11 +507,6 @@ const platformConnectionSourceLayer = Layer.effect(
       });
       return PlatformConnectionSource.of({
         registrations: Stream.make([registration]),
-      });
-    }
-    if (isAldoCloud) {
-      return PlatformConnectionSource.of({
-        registrations: aldoPlatformRegistrations(),
       });
     }
     if (isHostedStaticApp()) {

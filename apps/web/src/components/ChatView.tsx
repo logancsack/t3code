@@ -158,8 +158,11 @@ import {
   setActivePreviewTab,
   useThreadPreviewState,
 } from "../previewStateStore";
-import { isManagedDevPc, isManagedWorkspaceUnavailable } from "~/managedDevPc";
-import { hasSharedBrowser } from "~/aldo/sharedBrowser";
+import {
+  isManagedDevPc,
+  isManagedWorkspaceUnavailable,
+  managedWorkspaceBrowserUrl,
+} from "~/managedDevPc";
 import { previewRuntimeTabId } from "../browser/previewRuntimeTabId";
 import { addBrowserSurface } from "./preview/addBrowserSurface";
 import { closePreviewSession } from "./preview/closePreviewSession";
@@ -438,9 +441,6 @@ import {
   serverUpdateGuidance,
 } from "../versionSkew";
 import { useAssetUrls } from "../assets/assetUrls";
-import { useAldoPreload } from "../aldo/preload";
-import { isAldoCloud, isAldoEnvironmentId } from "../aldo/cloud";
-import { ensureAldoConnected } from "../aldo/dispatch";
 
 const ATTACHMENT_ONLY_BOOTSTRAP_PROMPT =
   "[User attached one or more files without additional text. Respond using the conversation context and the attached files.]";
@@ -2013,17 +2013,11 @@ function ChatViewContent(props: ChatViewProps) {
     primaryEnvironmentId,
     connectionPhase: activeEnvironmentConnectionPhase,
   });
-  // Aldo: sending creates or wakes the thread's cloud agent (aldo/dispatch.ts),
-  // so a machine that isn't running (or doesn't exist yet) doesn't block it.
-  const aldoAgentOffline =
-    isAldoCloud &&
-    activeEnvironment !== null &&
-    isAldoEnvironmentId(activeEnvironment.environmentId) &&
-    activeEnvironmentConnectionPhase !== "connected";
   const activeEnvironmentActionUnavailable =
-    activeEnvironmentUnavailable && !quietlyRecoveringManagedPrimary && !aldoAgentOffline;
-  const activeEnvironmentActionUnavailableState =
-    quietlyRecoveringManagedPrimary || aldoAgentOffline ? null : activeEnvironmentUnavailableState;
+    activeEnvironmentUnavailable && !quietlyRecoveringManagedPrimary;
+  const activeEnvironmentActionUnavailableState = quietlyRecoveringManagedPrimary
+    ? null
+    : activeEnvironmentUnavailableState;
   const handleReconnectActiveEnvironment = useCallback(
     async (environmentId: EnvironmentId) => {
       const result = await retryEnvironment(environmentId);
@@ -2032,22 +2026,13 @@ function ChatViewContent(props: ChatViewProps) {
         toastManager.add(
           stackedThreadToast({
             type: "error",
-            title: isAldoCloud
-              ? "Couldn't reconnect to the cloud"
-              : "Could not reconnect environment",
+            title: "Could not reconnect environment",
             description: error instanceof Error ? error.message : "Failed to reconnect.",
           }),
         );
       }
     },
     [retryEnvironment],
-  );
-  // Aldo: opening a thread starts its cloud agent in the background (a new
-  // thread's is created, an existing one's woken), so sending doesn't wait.
-  useAldoPreload(
-    activeEnvironment?.environmentId ?? null,
-    isServerThread,
-    activeEnvironment?.connection.phase,
   );
   const logicalProjectEnvironments = useMemo(() => {
     if (!activeProject) return [];
@@ -2291,7 +2276,7 @@ function ChatViewContent(props: ChatViewProps) {
               aria-hidden="true"
             />
           ),
-          title: `${unavailableConnection.phase === "connecting" ? "Connecting" : "Reconnecting"} to ${isAldoCloud ? "the cloud" : activeEnvironmentActionUnavailableState.label}`,
+          title: `${unavailableConnection.phase === "connecting" ? "Connecting" : "Reconnecting"} to ${activeEnvironmentActionUnavailableState.label}`,
           description: "It may be finishing an update. One moment.",
         });
       } else if (environmentReconnecting) {
@@ -2300,24 +2285,19 @@ function ChatViewContent(props: ChatViewProps) {
           variant: "info",
           priority: "urgent",
           icon: <LoaderCircleIcon className="animate-spin" />,
-          title: `${unavailableConnection.phase === "connecting" ? "Connecting" : "Reconnecting"}${isAldoCloud ? " to the cloud" : ""}…`,
-          width: "content",
+          title: unavailableConnection.phase === "connecting" ? "Connecting…" : "Reconnecting…",
           className:
-            "mx-auto rounded-full border-border/48 bg-background/88 px-3 py-1.5 text-muted-foreground shadow-sm",
+            "mx-auto w-fit max-w-full rounded-full border-border/48 bg-background/88 px-3 py-1.5 text-muted-foreground shadow-sm",
         });
       } else {
         items.push({
           id: `environment-unavailable:${activeEnvironmentActionUnavailableState.environmentId}`,
           variant: unavailableConnection.phase === "error" ? "error" : "warning",
           icon: <WifiOffIcon />,
-          title: isAldoCloud
-            ? "Can't reach this thread's cloud agent"
-            : `${activeEnvironmentActionUnavailableState.label}: ${connectionStatusTitle(unavailableConnection)}`,
+          title: `${activeEnvironmentActionUnavailableState.label}: ${connectionStatusTitle(unavailableConnection)}`,
           description:
             unavailableConnection.error ??
-            (isAldoCloud
-              ? "Reconnect to keep working."
-              : "Reconnect this environment before sending messages or running actions."),
+            "Reconnect this environment before sending messages or running actions.",
           actions: (
             <>
               <Button
@@ -2330,15 +2310,13 @@ function ChatViewContent(props: ChatViewProps) {
               >
                 Reconnect
               </Button>
-              {isAldoCloud ? null : (
-                <Button
-                  size="xs"
-                  variant="outline"
-                  onClick={() => void navigate({ to: "/settings/connections" })}
-                >
-                  Connections
-                </Button>
-              )}
+              <Button
+                size="xs"
+                variant="outline"
+                onClick={() => void navigate({ to: "/settings/connections" })}
+              >
+                Connections
+              </Button>
             </>
           ),
         });
@@ -2560,10 +2538,9 @@ function ChatViewContent(props: ChatViewProps) {
     activePendingUserInput: activePendingUserInput?.requestId ?? null,
     threadError,
     wakingManagedWorkspace:
-      (isManagedDevPc &&
-        activeEnvironment?.environmentId === primaryEnvironmentId &&
-        isManagedWorkspaceUnavailable()) ||
-      aldoAgentOffline,
+      isManagedDevPc &&
+      activeEnvironment?.environmentId === primaryEnvironmentId &&
+      isManagedWorkspaceUnavailable(),
   });
   const isWorking = phase === "running" || isSendBusy || isConnecting || isRevertingCheckpoint;
   const isWakingManagedWorkspace = shouldShowManagedWakeStatus({
@@ -2642,12 +2619,7 @@ function ChatViewContent(props: ChatViewProps) {
     async (attachment: ChatFileAttachment) => {
       const connection = readPreparedConnection(environmentId);
       if (!connection) {
-        toastManager.add({
-          type: "error",
-          title: isAldoCloud
-            ? "Not connected to the cloud yet."
-            : "The environment is not connected.",
-        });
+        toastManager.add({ type: "error", title: "The environment is not connected." });
         return;
       }
       const isVideo = videoMimeType(attachment) !== null;
@@ -3765,7 +3737,7 @@ function ChatViewContent(props: ChatViewProps) {
    * reached from a browser, so a preview surface can never paint there.
    */
   const createWorkspaceBrowserSurface = useCallback(() => {
-    if (!activeThreadRef || !hasSharedBrowser()) return;
+    if (!activeThreadRef || !managedWorkspaceBrowserUrl()) return;
     useRightPanelStore.getState().open(activeThreadRef, "workspaceBrowser");
   }, [activeThreadRef]);
   const addDiffSurface = useCallback(() => {
@@ -4668,27 +4640,19 @@ function ChatViewContent(props: ChatViewProps) {
     activeThread.worktreePath === null &&
     !envLocked,
   );
-  // Aldo: the sandbox belongs to this thread, so it always works in the
-  // sandbox's checkout; a worktree "from origin" would need the thread's branch
-  // on the remote, which it isn't until pushed.
-  const aldoSandboxThread = isAldoCloud && isAldoEnvironmentId(environmentId);
-  const envMode: DraftThreadEnvMode = aldoSandboxThread
-    ? "local"
-    : canOverrideServerThreadEnvMode
-      ? (pendingServerThreadEnvMode ?? draftThread?.envMode ?? derivedEnvMode)
-      : derivedEnvMode;
+  const envMode: DraftThreadEnvMode = canOverrideServerThreadEnvMode
+    ? (pendingServerThreadEnvMode ?? draftThread?.envMode ?? derivedEnvMode)
+    : derivedEnvMode;
   const activeThreadBranch =
     canOverrideServerThreadEnvMode && pendingServerThreadBranch !== undefined
       ? pendingServerThreadBranch
       : (activeThread?.branch ?? null);
-  const startFromOrigin = aldoSandboxThread
-    ? false
-    : isLocalDraftThread
-      ? (draftThread?.startFromOrigin ?? false)
-      : canOverrideServerThreadEnvMode
-        ? (pendingServerThreadStartFromOriginByThreadId[activeThread?.id ?? ""] ??
-          primaryServerSettings.newWorktreesStartFromOrigin)
-        : false;
+  const startFromOrigin = isLocalDraftThread
+    ? (draftThread?.startFromOrigin ?? false)
+    : canOverrideServerThreadEnvMode
+      ? (pendingServerThreadStartFromOriginByThreadId[activeThread?.id ?? ""] ??
+        primaryServerSettings.newWorktreesStartFromOrigin)
+      : false;
   const sendEnvMode = resolveSendEnvMode({
     requestedEnvMode: envMode,
     isGitRepo,
@@ -5794,9 +5758,7 @@ function ChatViewContent(props: ChatViewProps) {
         stackedThreadToast({
           type: "warning",
           title: "Not connected: message not sent",
-          description: isAldoCloud
-            ? "Reconnecting to the cloud. Try again in a moment."
-            : "Reconnecting to the environment. Try again once it is connected.",
+          description: "Reconnecting to the environment. Try again once it is connected.",
         }),
       );
       return;
@@ -6118,23 +6080,6 @@ function ChatViewContent(props: ChatViewProps) {
       composerFilesSnapshot.length > 0
         ? attachmentCapabilitiesBeforeUpload.supportsAttachmentUploads
         : supportsAttachmentUploads;
-    if (
-      turnUsesAttachmentUploads &&
-      composerAttachmentsSnapshot.length > 0 &&
-      isAldoCloud &&
-      isAldoEnvironmentId(environmentId)
-    ) {
-      try {
-        await ensureAldoConnected(environmentId);
-      } catch (cause) {
-        sendInFlightRef.current = false;
-        setThreadError(
-          threadIdForSend,
-          cause instanceof Error ? cause.message : "The cloud agent didn't come online.",
-        );
-        return;
-      }
-    }
     if (turnUsesAttachmentUploads && composerAttachmentsSnapshot.length > 0) {
       for (const attachment of composerAttachmentsSnapshot) {
         startAttachmentUpload({
@@ -7275,7 +7220,7 @@ function ChatViewContent(props: ChatViewProps) {
       </Suspense>
     ) : activeRightPanelSurface?.kind === "workspaceBrowser" ? (
       <Suspense fallback={null}>
-        <WorkspaceBrowserPanel environmentId={activeThreadRef?.environmentId} />
+        <WorkspaceBrowserPanel />
       </Suspense>
     ) : activeRightPanelSurface?.kind === "terminal" ? (
       <PersistentThreadTerminalPanel

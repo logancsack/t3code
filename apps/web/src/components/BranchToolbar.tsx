@@ -26,7 +26,6 @@ import {
   shouldShowEnvironmentIndicator,
 } from "./BranchToolbar.logic";
 import { BranchToolbarBranchSelector } from "./BranchToolbarBranchSelector";
-import { isAldoCloud, isAldoEnvironmentId } from "../aldo/cloud";
 import { BranchToolbarEnvironmentSelector } from "./BranchToolbarEnvironmentSelector";
 import { BranchToolbarEnvModeSelector } from "./BranchToolbarEnvModeSelector";
 import { Button } from "./ui/button";
@@ -454,20 +453,15 @@ export const BranchToolbar = memo(function BranchToolbar({
     });
   }, [activeProjectRef, draftId, previousWorktreeSeed, setDraftThreadContext, threadRef]);
 
-  // Aldo: every thread has its own cloud machine, so there's no machine or
-  // workspace to pick; only the branch shows.
-  const aldoThread = isAldoCloud && isAldoEnvironmentId(environmentId);
-  const showEnvironmentPicker =
-    !aldoThread &&
-    Boolean(availableEnvironments && availableEnvironments.length > 1 && onEnvironmentChange);
+  const showEnvironmentPicker = Boolean(
+    availableEnvironments && availableEnvironments.length > 1 && onEnvironmentChange,
+  );
   const activeEnvironmentOption =
     availableEnvironments?.find((env) => env.environmentId === environmentId) ?? null;
-  const showEnvironmentIndicator =
-    !aldoThread &&
-    shouldShowEnvironmentIndicator({
-      activeEnvironment: activeEnvironmentOption,
-      canPickEnvironment: showEnvironmentPicker,
-    });
+  const showEnvironmentIndicator = shouldShowEnvironmentIndicator({
+    activeEnvironment: activeEnvironmentOption,
+    canPickEnvironment: showEnvironmentPicker,
+  });
   const isMobile = useIsMobile();
   const [stripElement, setStripElement] = useState<HTMLDivElement | null>(null);
   const labelsOverflow = useLabelsOverflow(stripElement);
@@ -479,7 +473,7 @@ export const BranchToolbar = memo(function BranchToolbar({
       ref={setStripElement}
       data-compact={labelsOverflow ? "" : undefined}
     >
-      {isMobile && showGitControls && !aldoThread ? (
+      {isMobile && showGitControls ? (
         <MobileRunContextSelector
           envLocked={envLocked}
           envModeLocked={envModeLocked}
@@ -513,7 +507,7 @@ export const BranchToolbar = memo(function BranchToolbar({
               ) : null}
             </>
           )}
-          {showGitControls && !aldoThread ? (
+          {showGitControls ? (
             <BranchToolbarEnvModeSelector
               envLocked={envModeLocked}
               effectiveEnvMode={effectiveEnvMode}

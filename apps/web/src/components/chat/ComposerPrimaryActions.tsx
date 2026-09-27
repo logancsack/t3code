@@ -1,5 +1,4 @@
 import { memo, type PointerEventHandler } from "react";
-import { isAldoCloud } from "../../aldo/cloud";
 import { ChevronDownIcon, ChevronLeftIcon } from "lucide-react";
 import { useEnvironmentIdentificationMode } from "~/hooks/useSettings";
 import { cn } from "~/lib/utils";
@@ -238,9 +237,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
       }
       aria-label={
         isEnvironmentUnavailable
-          ? isAldoCloud
-            ? "Can't send yet"
-            : "Environment disconnected"
+          ? "Environment disconnected"
           : sendDisabledReason
             ? sendDisabledReason
             : isConnecting

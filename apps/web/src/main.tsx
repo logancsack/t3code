@@ -17,8 +17,6 @@ import {
 } from "./lib/windowControlsOverlay";
 import { AppRoot } from "./AppRoot";
 import { installManagedCommandDispatch, prepareManagedDevPc } from "./managedDevPc";
-import { installAldoCommandDispatch } from "./aldo/dispatch";
-import { installAldoServerConfigCapture } from "./aldo/serverConfig";
 import { initializeLandingDemoClientSettings } from "./hooks/useSettings";
 import { isLandingDemo } from "./landingDemo/mode";
 import { clerkAppearance } from "./components/clerk/clerkAppearance";
@@ -27,8 +25,6 @@ async function renderApp() {
   const landingDemo = isLandingDemo();
   if (!landingDemo) {
     installManagedCommandDispatch();
-    installAldoCommandDispatch();
-    installAldoServerConfigCapture();
     await prepareManagedDevPc();
   } else {
     initializeLandingDemoClientSettings();

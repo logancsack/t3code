@@ -47,12 +47,6 @@ export function presentConnectionState(
         traceId: state.lastFailure?.traceId ?? null,
       };
     case "blocked":
-      if (
-        state.lastFailure?._tag === "ConnectionBlockedError" &&
-        state.lastFailure.reason === "dormant"
-      ) {
-        return { phase: "available", error: null, traceId: null };
-      }
       return {
         phase: "error",
         error: state.lastFailure?.message ?? null,
