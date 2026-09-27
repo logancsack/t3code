@@ -151,6 +151,8 @@ const isProviderApprovalOption = Schema.is(ProviderApprovalOption);
 
 export interface PendingUserInput {
   requestId: ApprovalRequestId;
+  /** The turn that asked, when known. */
+  turnId?: TurnId;
   createdAt: string;
   questions: ReadonlyArray<UserInputQuestion>;
 }
@@ -443,8 +445,64 @@ function isStalePendingRequestFailureDetail(detail: string | undefined): boolean
     normalized.includes("unknown pending permission request") ||
     normalized.includes("unknown pending user-input request") ||
     normalized.includes("unknown pending user input request") ||
-    normalized.includes("unknown pending codex user input request")
+    normalized.includes("unknown pending codex user input request") ||
+    // Nothing is left to answer it: the provider session that asked is gone.
+    normalized.includes("no active provider session is bound")
   );
+}
+
+/**
+ * Whether the turn that asked a question is over. Providers hold a question
+ * in the process running its turn, so once that turn has ended without an
+ * answer (its server restarted, or its machine was stopped) or a later turn
+ * has started, nothing can take the answer any more.
+ */
+export function hasPendingUserInputOutlivedTurn(
+  input: Pick<PendingUserInput, "turnId" | "createdAt">,
+  latestTurn: Pick<OrchestrationLatestTurn, "turnId" | "state" | "requestedAt"> | null,
+): boolean {
+  if (!input.turnId || !latestTurn) return false;
+  if (latestTurn.turnId === input.turnId) return latestTurn.state !== "running";
+  // A latest turn requested before the question is one this client hasn't caught up past.
+  return Date.parse(latestTurn.requestedAt) > Date.parse(input.createdAt);
+}
+
+/**
+ * Drops the refusal a question gets once its answer has gone out as a message
+ * instead (see hasPendingUserInputOutlivedTurn). A user message sent between
+ * the question and the refusal carried the answer, so the refusal is noise;
+ * one without such a message means an answer was lost, and stays.
+ */
+export function withoutRefusalsAnsweredByMessage(
+  activities: ReadonlyArray<OrchestrationThreadActivity>,
+  userMessageTimes: ReadonlyArray<string>,
+): ReadonlyArray<OrchestrationThreadActivity> {
+  const requestFields = (activity: OrchestrationThreadActivity) => {
+    const payload =
+      activity.payload && typeof activity.payload === "object"
+        ? (activity.payload as Record<string, unknown>)
+        : null;
+    return {
+      requestId: typeof payload?.requestId === "string" ? payload.requestId : null,
+      detail: typeof payload?.detail === "string" ? payload.detail : undefined,
+    };
+  };
+  const askedAt = new Map<string, number>();
+  for (const activity of activities) {
+    const { requestId } = requestFields(activity);
+    if (activity.kind === "user-input.requested" && requestId) {
+      askedAt.set(requestId, Date.parse(activity.createdAt));
+    }
+  }
+  const sentAt = userMessageTimes.map((time) => Date.parse(time));
+  return activities.filter((activity) => {
+    if (activity.kind !== "provider.user-input.respond.failed") return true;
+    const { requestId, detail } = requestFields(activity);
+    const asked = requestId ? askedAt.get(requestId) : undefined;
+    if (asked === undefined || !isStalePendingRequestFailureDetail(detail)) return true;
+    const refusedAt = Date.parse(activity.createdAt);
+    return !sentAt.some((time) => time > asked && time <= refusedAt);
+  });
 }
 
 export function derivePendingApprovals(
@@ -580,6 +638,7 @@ export function derivePendingUserInputs(
       }
       openByRequestId.set(requestId, {
         requestId,
+        ...(activity.turnId ? { turnId: activity.turnId } : {}),
         createdAt: activity.createdAt,
         questions,
       });

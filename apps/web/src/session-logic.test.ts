@@ -19,7 +19,9 @@ import {
   deriveWorkLogEntries,
   findLatestProposedPlan,
   hasActionableProposedPlan,
+  hasPendingUserInputOutlivedTurn,
   isLatestTurnSettled,
+  withoutRefusalsAnsweredByMessage,
   workEntryIndicatesToolFailure,
   workEntryIndicatesToolNeutralStatus,
   workEntryIndicatesToolSuccess,
@@ -402,6 +404,131 @@ describe("derivePendingUserInputs", () => {
     ];
 
     expect(derivePendingUserInputs(activities)).toEqual([]);
+  });
+
+  it("keeps the asking turn and clears a prompt whose provider session is gone", () => {
+    const question = {
+      id: "merge",
+      header: "Merge block",
+      question: "How should I proceed?",
+      options: [{ label: "Wait for CircleCI", description: "Merge once it's green" }],
+      multiSelect: false,
+    };
+    const requested = makeActivity({
+      id: "user-input-open-turn",
+      createdAt: "2026-02-23T00:00:01.000Z",
+      kind: "user-input.requested",
+      summary: "User input requested",
+      tone: "info",
+      turnId: "turn-asking",
+      payload: { requestId: "req-user-input-turn", questions: [question] },
+    });
+
+    expect(derivePendingUserInputs([requested])).toEqual([
+      {
+        requestId: "req-user-input-turn",
+        turnId: "turn-asking",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        questions: [question],
+      },
+    ]);
+    expect(
+      derivePendingUserInputs([
+        requested,
+        makeActivity({
+          id: "user-input-failed-no-session",
+          createdAt: "2026-02-23T00:00:02.000Z",
+          kind: "provider.user-input.respond.failed",
+          summary: "Provider user input response failed",
+          tone: "error",
+          payload: {
+            requestId: "req-user-input-turn",
+            detail: "No active provider session is bound to this thread.",
+          },
+        }),
+      ]),
+    ).toEqual([]);
+  });
+});
+
+describe("hasPendingUserInputOutlivedTurn", () => {
+  const input = { turnId: TurnId.make("turn-1"), createdAt: "2026-02-23T00:00:05.000Z" };
+  const turn = (turnId: string, state: "running" | "completed" | "error", requestedAt: string) => ({
+    turnId: TurnId.make(turnId),
+    state,
+    requestedAt,
+  });
+
+  it("is live while the turn that asked is still running", () => {
+    expect(
+      hasPendingUserInputOutlivedTurn(input, turn("turn-1", "running", "2026-02-23T00:00:00.000Z")),
+    ).toBe(false);
+  });
+
+  it("has outlived a turn that ended without an answer", () => {
+    // A restarted server settles the orphaned turn as an error.
+    expect(
+      hasPendingUserInputOutlivedTurn(input, turn("turn-1", "error", "2026-02-23T00:00:00.000Z")),
+    ).toBe(true);
+  });
+
+  it("has outlived its turn once a later turn has started", () => {
+    expect(
+      hasPendingUserInputOutlivedTurn(input, turn("turn-2", "running", "2026-02-23T00:00:09.000Z")),
+    ).toBe(true);
+  });
+
+  it("stays live when this client hasn't seen the asking turn yet", () => {
+    expect(
+      hasPendingUserInputOutlivedTurn(
+        input,
+        turn("turn-0", "completed", "2026-02-23T00:00:00.000Z"),
+      ),
+    ).toBe(false);
+  });
+
+  it("stays live without a known turn", () => {
+    expect(
+      hasPendingUserInputOutlivedTurn(
+        { createdAt: input.createdAt },
+        turn("turn-1", "error", "2026-02-23T00:00:00.000Z"),
+      ),
+    ).toBe(false);
+    expect(hasPendingUserInputOutlivedTurn(input, null)).toBe(false);
+  });
+});
+
+describe("withoutRefusalsAnsweredByMessage", () => {
+  const asked = makeActivity({
+    id: "refusal-asked",
+    createdAt: "2026-02-23T00:00:01.000Z",
+    kind: "user-input.requested",
+    summary: "User input requested",
+    tone: "info",
+    payload: { requestId: "req-refused", questions: [] },
+  });
+  const refused = makeActivity({
+    id: "refusal-refused",
+    createdAt: "2026-02-23T00:00:10.000Z",
+    kind: "provider.user-input.respond.failed",
+    summary: "Provider user input response failed",
+    tone: "error",
+    payload: {
+      requestId: "req-refused",
+      detail: "Stale pending user-input request: req-refused. Restart the turn to continue.",
+    },
+  });
+
+  it("drops the refusal when a message carried the answer", () => {
+    expect(
+      withoutRefusalsAnsweredByMessage([asked, refused], ["2026-02-23T00:00:09.000Z"]),
+    ).toEqual([asked]);
+  });
+
+  it("keeps the refusal when no message went out after the question", () => {
+    expect(
+      withoutRefusalsAnsweredByMessage([asked, refused], ["2026-02-23T00:00:00.500Z"]),
+    ).toEqual([asked, refused]);
   });
 });
 

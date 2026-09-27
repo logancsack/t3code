@@ -119,6 +119,19 @@ export function buildPendingUserInputAnswers(
   return answers;
 }
 
+/** Answers written as a message, one "Header: answer" line per question. */
+export function formatPendingUserInputAnswersAsMessage(
+  questions: ReadonlyArray<UserInputQuestion>,
+  answers: Record<string, string | string[]>,
+): string {
+  return questions
+    .map((question) => {
+      const answer = answers[question.id] ?? "";
+      return `${question.header}: ${Array.isArray(answer) ? answer.join(", ") : answer}`;
+    })
+    .join("\n");
+}
+
 export function countAnsweredPendingUserInputQuestions(
   questions: ReadonlyArray<UserInputQuestion>,
   draftAnswers: Record<string, PendingUserInputDraftAnswer>,
