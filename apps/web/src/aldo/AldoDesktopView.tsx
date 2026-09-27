@@ -1,4 +1,4 @@
-import RFB from "@novnc/novnc";
+import type RFB from "@novnc/novnc";
 import { LoaderIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
@@ -43,8 +43,10 @@ export function AldoDesktopView({ environmentId }: { environmentId: string }) {
         }
         return;
       }
+      // noVNC touches the DOM as soon as it loads, so it's loaded only when a desktop is shown.
+      const { default: VncClient } = await import("@novnc/novnc");
       if (disposed) return;
-      rfb = new RFB(container, url, { shared: true });
+      rfb = new VncClient(container, url, { shared: true });
       rfb.scaleViewport = true;
       rfb.resizeSession = false;
       rfb.focusOnClick = true;
