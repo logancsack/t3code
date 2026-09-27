@@ -505,7 +505,17 @@ describe("withoutRefusalsAnsweredByMessage", () => {
     kind: "user-input.requested",
     summary: "User input requested",
     tone: "info",
-    payload: { requestId: "req-refused", questions: [] },
+    payload: {
+      requestId: "req-refused",
+      questions: [
+        {
+          id: "merge",
+          header: "Merge block",
+          question: "How should I proceed?",
+          options: [{ label: "Wait for CI", description: "Merge once it's green" }],
+        },
+      ],
+    },
   });
   const refused = makeActivity({
     id: "refusal-refused",
@@ -521,13 +531,22 @@ describe("withoutRefusalsAnsweredByMessage", () => {
 
   it("drops the refusal when a message carried the answer", () => {
     expect(
-      withoutRefusalsAnsweredByMessage([asked, refused], ["2026-02-23T00:00:09.000Z"]),
+      withoutRefusalsAnsweredByMessage(
+        [asked, refused],
+        [{ createdAt: "2026-02-23T00:00:09.000Z", text: "Merge block: Wait for CI" }],
+      ),
     ).toEqual([asked]);
   });
 
-  it("keeps the refusal when no message went out after the question", () => {
+  it("keeps the refusal when no message in between carried the answer", () => {
     expect(
-      withoutRefusalsAnsweredByMessage([asked, refused], ["2026-02-23T00:00:00.500Z"]),
+      withoutRefusalsAnsweredByMessage(
+        [asked, refused],
+        [
+          { createdAt: "2026-02-23T00:00:00.500Z", text: "Merge block: Wait for CI" },
+          { createdAt: "2026-02-23T00:00:05.000Z", text: "Something unrelated" },
+        ],
+      ),
     ).toEqual([asked, refused]);
   });
 });

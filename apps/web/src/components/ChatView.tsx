@@ -2465,9 +2465,7 @@ function ChatViewContent(props: ChatViewProps) {
       deriveWorkLogEntries(
         withoutRefusalsAnsweredByMessage(
           threadActivities,
-          (threadMessages ?? [])
-            .filter((message) => message.role === "user")
-            .map((message) => message.createdAt),
+          (threadMessages ?? []).filter((message) => message.role === "user"),
         ),
       ),
     [threadActivities, threadMessages],

@@ -469,39 +469,52 @@ export function hasPendingUserInputOutlivedTurn(
 
 /**
  * Drops the refusal a question gets once its answer has gone out as a message
- * instead (see hasPendingUserInputOutlivedTurn). A user message sent between
- * the question and the refusal carried the answer, so the refusal is noise;
- * one without such a message means an answer was lost, and stays.
+ * instead (see hasPendingUserInputOutlivedTurn): the message, sent between the
+ * question and the refusal, has a "Header: answer" line for each of its
+ * questions. A refusal with no such message means an answer was lost, and stays.
  */
 export function withoutRefusalsAnsweredByMessage(
   activities: ReadonlyArray<OrchestrationThreadActivity>,
-  userMessageTimes: ReadonlyArray<string>,
+  userMessages: ReadonlyArray<{ createdAt: string; text: string }>,
 ): ReadonlyArray<OrchestrationThreadActivity> {
-  const requestFields = (activity: OrchestrationThreadActivity) => {
-    const payload =
-      activity.payload && typeof activity.payload === "object"
-        ? (activity.payload as Record<string, unknown>)
-        : null;
-    return {
-      requestId: typeof payload?.requestId === "string" ? payload.requestId : null,
-      detail: typeof payload?.detail === "string" ? payload.detail : undefined,
-    };
-  };
-  const askedAt = new Map<string, number>();
+  const payloadOf = (activity: OrchestrationThreadActivity) =>
+    activity.payload && typeof activity.payload === "object"
+      ? (activity.payload as Record<string, unknown>)
+      : null;
+  const asked = new Map<string, { at: number; headers: string[] }>();
   for (const activity of activities) {
-    const { requestId } = requestFields(activity);
-    if (activity.kind === "user-input.requested" && requestId) {
-      askedAt.set(requestId, Date.parse(activity.createdAt));
+    const payload = payloadOf(activity);
+    if (activity.kind !== "user-input.requested" || typeof payload?.requestId !== "string") {
+      continue;
     }
+    const questions = parseUserInputQuestions(payload) ?? [];
+    asked.set(payload.requestId, {
+      at: Date.parse(activity.createdAt),
+      headers: questions.map((question) => question.header),
+    });
   }
-  const sentAt = userMessageTimes.map((time) => Date.parse(time));
+  const sent = userMessages.map((message) => ({
+    at: Date.parse(message.createdAt),
+    lines: message.text.split("\n").map((line) => line.trim()),
+  }));
   return activities.filter((activity) => {
     if (activity.kind !== "provider.user-input.respond.failed") return true;
-    const { requestId, detail } = requestFields(activity);
-    const asked = requestId ? askedAt.get(requestId) : undefined;
-    if (asked === undefined || !isStalePendingRequestFailureDetail(detail)) return true;
+    const payload = payloadOf(activity);
+    const request =
+      typeof payload?.requestId === "string" ? asked.get(payload.requestId) : undefined;
+    const detail = typeof payload?.detail === "string" ? payload.detail : undefined;
+    if (!request || request.headers.length === 0 || !isStalePendingRequestFailureDetail(detail)) {
+      return true;
+    }
     const refusedAt = Date.parse(activity.createdAt);
-    return !sentAt.some((time) => time > asked && time <= refusedAt);
+    return !sent.some(
+      (message) =>
+        message.at > request.at &&
+        message.at <= refusedAt &&
+        request.headers.every((header) =>
+          message.lines.some((line) => line.startsWith(`${header}: `)),
+        ),
+    );
   });
 }
 
