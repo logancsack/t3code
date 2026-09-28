@@ -78,6 +78,17 @@ jobs:
           environment:
             VITE_ALDO_CLOUD: "1"
           command: vp build
+      # Aldo pins this exact build: `pnpm t3-web:pin <commit>` publishes it as the
+      # commit's aldo-web-<sha> release (artifacts expire) and writes t3-web.json.
+      - run:
+          name: Package the Aldo web client
+          command: |
+            mkdir -p /tmp/aldo-web
+            tar -C apps/web/dist -czf /tmp/aldo-web/aldo-t3-web.tar.gz .
+            (cd /tmp/aldo-web && sha256sum aldo-t3-web.tar.gz > aldo-t3-web.tar.gz.sha256 && echo "$CIRCLE_SHA1" > commit)
+      - store_artifacts:
+          path: /tmp/aldo-web
+          destination: aldo-web
 
 workflows:
   ci:
