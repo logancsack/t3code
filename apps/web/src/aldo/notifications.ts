@@ -6,17 +6,14 @@
 
 import { isAldoCloud } from "./cloud";
 import {
-  aldoNotificationsAvailability,
   base64UrlToBytes,
   parseAldoPushKey,
+  resolveAldoNotificationsStatus,
   subscribedWithKey,
-  type AldoNotificationsAvailability,
+  type AldoNotificationsStatus,
 } from "./notifications.logic";
 
-export type AldoNotificationsStatus =
-  | { availability: "unsupported" }
-  | { availability: "add-to-home-screen" }
-  | { availability: "available"; on: boolean; blocked: boolean };
+export type { AldoNotificationsStatus };
 
 const WORKER = "/sw.js";
 
@@ -38,14 +35,15 @@ function hasPush(): boolean {
   return "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
 }
 
-function availability(key: string | null): AldoNotificationsAvailability {
+/** An iPhone or iPad (iPadOS reports a Mac with touch), and whether Aldo runs from the Home Screen. */
+function device(): { appleMobile: boolean; standalone: boolean } {
   const appleMobile =
     /iPhone|iPad|iPod/.test(navigator.userAgent) ||
     (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
   const standalone =
     window.matchMedia("(display-mode: standalone)").matches ||
     (navigator as Navigator & { standalone?: boolean }).standalone === true;
-  return aldoNotificationsAvailability({ key, push: hasPush(), appleMobile, standalone });
+  return { appleMobile, standalone };
 }
 
 async function currentSubscription(): Promise<PushSubscription | null> {
@@ -64,22 +62,30 @@ async function save(subscription: PushSubscription): Promise<void> {
 }
 
 export async function aldoNotificationsStatus(): Promise<AldoNotificationsStatus> {
-  const key = await fetchKey();
-  const available = availability(key);
-  if (available === "add-to-home-screen") return { availability: available };
-  if (!key || available !== "available") return { availability: "unsupported" };
-  const subscription = await currentSubscription().catch(() => null);
-  const on =
-    Notification.permission === "granted" &&
-    subscribedWithKey(subscription?.options.applicationServerKey ?? null, key);
-  return { availability: "available", on, blocked: Notification.permission === "denied" };
+  const push = hasPush();
+  const [key, subscription] = await Promise.all([
+    fetchKey(),
+    push ? currentSubscription().catch(() => null) : null,
+  ]);
+  return resolveAldoNotificationsStatus({
+    key,
+    push,
+    ...device(),
+    permission: push ? Notification.permission : null,
+    subscriptionKey: subscription ? subscription.options.applicationServerKey : undefined,
+  });
 }
 
-/** Asks for permission (the browser's prompt), then subscribes this device. False if the user said no. */
-export async function enableAldoNotifications(): Promise<boolean> {
-  const key = await fetchKey();
-  if (!key || !hasPush()) throw new Error("Notifications aren't available here.");
+/**
+ * Asks for permission (the browser's prompt) first, while the click still
+ * counts as the user's, then subscribes this device with Aldo's key and saves
+ * it with Aldo. A subscription Aldo couldn't save is undone. False if the user
+ * said no.
+ */
+export async function enableAldoNotifications(key: string | null): Promise<boolean> {
+  if (!hasPush()) throw new Error("Notifications aren't available here.");
   if ((await Notification.requestPermission()) !== "granted") return false;
+  if (!key) throw new Error("Aldo can't be reached just now; try again.");
   const registration = await navigator.serviceWorker.register(WORKER);
   await navigator.serviceWorker.ready;
   let subscription = await registration.pushManager.getSubscription();
@@ -87,35 +93,52 @@ export async function enableAldoNotifications(): Promise<boolean> {
     await subscription.unsubscribe();
     subscription = null;
   }
+  const created = !subscription;
   subscription ??= await registration.pushManager.subscribe({
     userVisibleOnly: true,
     applicationServerKey: base64UrlToBytes(key),
   });
-  await save(subscription);
+  try {
+    await save(subscription);
+  } catch (error) {
+    if (created) await subscription.unsubscribe().catch(() => false);
+    throw error;
+  }
   return true;
 }
 
+/**
+ * Unsubscribes this device, then tells Aldo to forget it. If the browser
+ * doesn't let go, Aldo keeps it and the switch stays on. (Aldo also forgets a
+ * subscription the first time the push service says it's gone.)
+ */
 export async function disableAldoNotifications(): Promise<void> {
   const subscription = await currentSubscription();
   if (!subscription) return;
+  const { endpoint } = subscription;
+  if (!(await subscription.unsubscribe()))
+    throw new Error("This browser didn't turn notifications off; try again.");
   await fetch("/api/push", {
     method: "DELETE",
     credentials: "same-origin",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ endpoint: subscription.endpoint }),
+    body: JSON.stringify({ endpoint }),
   }).catch(() => undefined);
-  await subscription.unsubscribe();
 }
 
 /**
  * On load, a device that's on tells Aldo its subscription again (the browser
- * may have renewed it, or Aldo forgotten it), and moves to a new key if
- * Aldo's changed. Does nothing outside Aldo or on a device that's off.
+ * may have renewed it, or Aldo forgotten it). One made with an older key is
+ * left alone: settings shows it off, and turning it on (a click) replaces it.
+ * Does nothing outside Aldo or on a device that's off.
  */
 export function installAldoNotificationsSync(): void {
   if (!isAldoCloud || !hasPush() || Notification.permission !== "granted") return;
   void (async () => {
-    if (!(await currentSubscription())) return;
-    await enableAldoNotifications();
+    const subscription = await currentSubscription();
+    if (!subscription) return;
+    const key = await fetchKey();
+    if (key && subscribedWithKey(subscription.options.applicationServerKey, key))
+      await save(subscription);
   })().catch(() => undefined);
 }

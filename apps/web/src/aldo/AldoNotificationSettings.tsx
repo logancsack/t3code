@@ -20,8 +20,18 @@ export function AldoNotificationSettings() {
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(() => aldoNotificationsStatus().then(setStatus), []);
+  // Read again when the user comes back, e.g. from allowing notifications in the browser's settings.
   useEffect(() => {
     void refresh();
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void refresh();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+    };
   }, [refresh]);
 
   if (!status || status.availability === "unsupported") return null;
@@ -30,7 +40,9 @@ export function AldoNotificationSettings() {
     setBusy(true);
     setError(null);
     try {
-      if (checked && !(await enableAldoNotifications())) setError("Notifications weren't allowed.");
+      const key = status.availability === "available" ? status.key : null;
+      if (checked && !(await enableAldoNotifications(key)))
+        setError("Notifications weren't allowed.");
       if (!checked) await disableAldoNotifications();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Something went wrong.");

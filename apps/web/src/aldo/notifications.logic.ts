@@ -32,6 +32,36 @@ export function base64UrlToBytes(value: string): Uint8Array<ArrayBuffer> {
   return bytes;
 }
 
+export type AldoNotificationsStatus =
+  | { availability: "unsupported" }
+  | { availability: "add-to-home-screen" }
+  | { availability: "available"; key: string | null; on: boolean; blocked: boolean };
+
+/**
+ * What the settings row shows. A device that's on can always be turned off,
+ * even while Aldo's key can't be read; one subscribed with an older key reads
+ * as off until the user turns it on again (a new subscription needs their
+ * click on some browsers).
+ */
+export function resolveAldoNotificationsStatus(input: {
+  key: string | null;
+  push: boolean;
+  appleMobile: boolean;
+  standalone: boolean;
+  permission: NotificationPermission | null;
+  /** The browser's subscription's key; undefined when there's no subscription. */
+  subscriptionKey: ArrayBuffer | null | undefined;
+}): AldoNotificationsStatus {
+  const subscribed =
+    input.push && input.permission === "granted" && input.subscriptionKey !== undefined;
+  if (subscribed && (!input.key || subscribedWithKey(input.subscriptionKey ?? null, input.key))) {
+    return { availability: "available", key: input.key, on: true, blocked: false };
+  }
+  const availability = aldoNotificationsAvailability(input);
+  if (availability !== "available") return { availability };
+  return { availability, key: input.key, on: false, blocked: input.permission === "denied" };
+}
+
 /** Whether a subscription was made with this key (Aldo's key changes if its secret is rotated). */
 export function subscribedWithKey(applicationServerKey: ArrayBuffer | null, key: string): boolean {
   if (!applicationServerKey) return false;
