@@ -566,8 +566,12 @@ export function AldoVaultPanel() {
         {secret && requested && answersAldoSecretRequest(requested, secret) ? (
           <p className="px-3 text-sm sm:px-4">
             An agent asked for <span className="font-mono">{requested.name}</span>
-            {requested.why ? `: ${requested.why}` : ""}. Paste the value below; agents never see it,
-            and the thread that asked carries on once it's saved.
+            {requested.why ? `: ${requested.why}` : ""}. Paste the value below, not in the
+            conversation.{" "}
+            {secret.kind === "request"
+              ? "Injected into requests, it never reaches the cloud machine; agents only see a stand-in."
+              : "As a variable or a file it's on the cloud machine, where agents can read it; for an API key, prefer Injected into requests."}{" "}
+            The thread that asked carries on once it's saved.
           </p>
         ) : null}
         {secret ? (

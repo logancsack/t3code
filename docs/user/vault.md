@@ -40,7 +40,7 @@ A secret goes to all threads, or only to threads on one repository. A repository
 
 An agent that needs a secret it doesn't have (an API key, a token, a key file) sends you a link instead of asking you to paste it in the conversation. The link opens **Settings → Vault** with the secret's form filled in: its name, how agents get it, and its sites, path or repository. The agent's reason is shown above the form.
 
-Paste the value and choose **Save**; the agent never sees it. Once the secret has reached your cloud machines, the thread that asked gets a message that it's in place and carries on. **Cancel** declines the request, and the thread isn't told anything.
+Paste the value there, not in the conversation, and choose **Save**. Injected into requests, the value never reaches the cloud machine and agents only see a stand-in; as a variable or a file it's on the machine, where agents can read it, as with any secret delivered that way. Once the secret is on the machine of the thread that asked, that thread gets a message that it's in place and carries on. **Cancel** declines the request, and the thread isn't told anything.
 
 Only the form the agent asked for completes its request: saving a secret with another name, or for other threads, leaves the request open. Open the link again to answer it.
 
