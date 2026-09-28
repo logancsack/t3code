@@ -18,7 +18,7 @@ import type { EnvironmentId, ScopedProjectRef } from "@t3tools/contracts";
 
 import { toastManager } from "../components/ui/toast";
 import { randomUUID } from "../lib/utils";
-import { seedEnvironmentCache } from "../connection/storage";
+import { clearEnvironmentCache, seedEnvironmentCache } from "../connection/storage";
 import { readEnvironmentThreadRefs, readProjects } from "../state/entities";
 import {
   aldoEnvironmentIdFor,
@@ -26,6 +26,7 @@ import {
   aldoSandboxesFor,
   createAldoEnvironment,
   deleteAldoEnvironment,
+  deleteAldoMachineWithThread,
   holdAldoEnvironment,
   isAldoCloud,
   isAldoEnvironmentId,
@@ -188,4 +189,14 @@ export async function aldoProjectRefForNewThread(
 ): Promise<ScopedProjectRef> {
   if (!isAldoCloud || !isAldoEnvironmentId(projectRef.environmentId)) return projectRef;
   return startAldoSandbox({ fromEnvironmentId: projectRef.environmentId });
+}
+
+/**
+ * Deletes a thread that's alone on its machine by deleting the machine,
+ * without waking it: the thread leaves the sidebar at once, and comes back if
+ * Aldo can't delete it.
+ */
+export async function deleteAldoThreadWithMachine(environmentId: string): Promise<void> {
+  await deleteAldoMachineWithThread(environmentId);
+  await clearEnvironmentCache(environmentId as EnvironmentId).catch(() => undefined);
 }

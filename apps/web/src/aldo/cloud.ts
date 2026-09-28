@@ -113,6 +113,30 @@ const IDLE_REFRESH_MS = 15_000;
 /** After failed fetches, no retry before this time: 1s, 2s, 4s… up to the idle interval. */
 let retryAt = 0;
 let failedFetches = 0;
+/**
+ * Machines this tab is deleting with their thread (deleteAldoMachineWithThread):
+ * left out of the directory from the moment deleting starts, and kept out
+ * once deleted. Until Aldo confirms it, and for a little while after a
+ * failure puts one back, the machine's cached thread and project are kept.
+ */
+const deletions = new Map<string, "deleting" | "deleted" | "restoring">();
+const RESTORE_KEEP_CACHE_MS = 10_000;
+
+function hiddenByDeletion(environmentId: string): boolean {
+  const deletion = deletions.get(environmentId);
+  return deletion === "deleting" || deletion === "deleted";
+}
+
+/**
+ * Whether a machine leaving the directory keeps its cached thread and project
+ * (connection/storage.ts): it does while its deletion is pending, so if Aldo
+ * can't delete it, it comes back as it was (a sleeping machine shows only
+ * its cache).
+ */
+export function aldoKeepsEnvironmentCache(environmentId: string): boolean {
+  const deletion = deletions.get(environmentId);
+  return deletion === "deleting" || deletion === "restoring";
+}
 
 export function subscribeAldoEnvironments(listener: () => void): () => void {
   directoryListeners.add(listener);
@@ -180,9 +204,11 @@ export function requestAldoDirectoryRefresh(): void {
 
 async function fetchEnvironments(): Promise<ReadonlyArray<AldoEnvironment>> {
   const { environments } = await api<{ environments: AldoEnvironment[] }>("/api/environments");
-  knownEnvironments = environments;
+  // A listing that started before a deletion finished can still include its machine.
+  const listed = environments.filter((environment) => !hiddenByDeletion(environment.environmentId));
+  knownEnvironments = listed;
   for (const listener of directoryListeners) listener();
-  return environments;
+  return listed;
 }
 
 function registrationFor(environment: AldoEnvironment): BearerConnectionRegistration {
@@ -313,11 +339,43 @@ export function wakeAldoEnvironment(environmentId: string): Promise<void> {
   return wake;
 }
 
-/** Deletes a sandbox and everything in it. */
+/** Deletes a sandbox and everything in it. One that's already gone counts as deleted. */
 export async function deleteAldoEnvironment(environmentId: string): Promise<void> {
   const threadId = threadIdForEnvironment(environmentId);
-  await api(`/api/environments/${threadId}`, { method: "DELETE" });
+  try {
+    await api(`/api/environments/${threadId}`, { method: "DELETE" });
+  } catch (cause) {
+    if (!(cause instanceof AldoApiError && cause.status === 404)) throw cause;
+  }
   requestAldoDirectoryRefresh();
+}
+
+/**
+ * Deletes a thread's machine, and with it the thread (the only one on it),
+ * without sending the machine anything, so a sleeping one isn't woken. The
+ * machine leaves the directory at once, taking its thread and project out of
+ * the sidebar; if Aldo can't delete it, it comes back. Once it's deleted, the
+ * caller clears its cache.
+ */
+export async function deleteAldoMachineWithThread(environmentId: string): Promise<void> {
+  deletions.set(environmentId, "deleting");
+  if (knownEnvironments?.some((entry) => entry.environmentId === environmentId)) {
+    knownEnvironments = knownEnvironments.filter((entry) => entry.environmentId !== environmentId);
+    for (const listener of directoryListeners) listener();
+  }
+  emitRequested = true;
+  try {
+    await deleteAldoEnvironment(environmentId);
+  } catch (cause) {
+    // Back into the directory with its cache, which stays kept until it has re-registered.
+    deletions.set(environmentId, "restoring");
+    window.setTimeout(() => {
+      if (deletions.get(environmentId) === "restoring") deletions.delete(environmentId);
+    }, RESTORE_KEEP_CACHE_MS);
+    requestAldoDirectoryRefresh();
+    throw cause;
+  }
+  deletions.set(environmentId, "deleted");
 }
 
 /**
