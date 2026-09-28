@@ -26,6 +26,7 @@ import {
   type AldoSecretKind,
   type AldoVaultItem,
 } from "./cloud";
+import { parseAldoSecretRequest, type AldoSecretRequest } from "./secretRequest.logic";
 
 const EVERY_THREAD = "*";
 
@@ -385,6 +386,25 @@ export function AldoVaultPanel() {
   const [importing, setImporting] = useState<{ scope: string; text: string } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // An agent's request_secret link: the form filled in, and the thread told once it's saved.
+  const [requested, setRequested] = useState<AldoSecretRequest | null>(null);
+  useEffect(() => {
+    const request = parseAldoSecretRequest(window.location.search, EVERY_THREAD);
+    if (!request) return;
+    setRequested(request);
+    setSecret({
+      ...NEW_SECRET,
+      kind: request.kind,
+      name: request.name,
+      scope: request.scope,
+      hosts: request.hosts,
+      path: request.path,
+    });
+  }, []);
+  const clearRequest = () => {
+    setRequested(null);
+    window.history.replaceState(window.history.state, "", window.location.pathname);
+  };
 
   const refresh = useCallback(() => {
     aldoVault
@@ -418,9 +438,12 @@ export function AldoVaultPanel() {
     e.preventDefault();
     if (!secret) return;
     const { saved: _saved, ...input } = secret;
+    const requestedBy =
+      requested && requested.name === secret.name ? requested.requestedBy : undefined;
     void run(
-      () => aldoVault.saveSecret(input),
+      () => aldoVault.saveSecret(requestedBy ? { ...input, requestedBy } : input),
       () => {
+        if (requested) clearRequest();
         setNotice(
           secret.kind === "request"
             ? `Saved ${secret.name}. Requests to ${secret.hosts} get it now; agents see a stand-in.`
@@ -536,13 +559,23 @@ export function AldoVaultPanel() {
             </p>
           </form>
         ) : null}
+        {secret && requested ? (
+          <p className="px-3 text-sm sm:px-4">
+            An agent asked for <span className="font-mono">{requested.name}</span>
+            {requested.why ? `: ${requested.why}` : ""}. Paste the value below; agents never see it,
+            and the thread that asked carries on once it's saved.
+          </p>
+        ) : null}
         {secret ? (
           <SecretForm
             draft={secret}
             saving={saving}
             onChange={setSecret}
             onSubmit={saveSecret}
-            onCancel={() => setSecret(null)}
+            onCancel={() => {
+              setSecret(null);
+              if (requested) clearRequest();
+            }}
           />
         ) : null}
         {items && secrets.length === 0 && !secret && !importing ? (
