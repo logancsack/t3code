@@ -16,6 +16,16 @@ import {
   MenuSeparator,
   MenuTrigger,
 } from "../components/ui/menu";
+import {
+  AlertDialog,
+  AlertDialogClose,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogPopup,
+  AlertDialogTitle,
+} from "../components/ui/alert-dialog";
+import { Button } from "../components/ui/button";
 import { toastManager } from "../components/ui/toast";
 import { AldoMachineMenuSection, useAldoMachineOffer } from "./AldoMachine";
 import { useAldoBrowserRequests } from "./browserStore";
@@ -30,7 +40,11 @@ import {
   aldoMachineIsNew,
   aldoOfflineMessage,
 } from "./cloud";
-import { aldoPullRequestMergeable, aldoPullRequestStatusLabel } from "./pullRequests.logic";
+import {
+  aldoPullRequestMergeable,
+  aldoPullRequestShortRef,
+  aldoPullRequestStatusLabel,
+} from "./pullRequests.logic";
 
 function label(command: string, process: string): string {
   const text = command || process;
@@ -47,6 +61,8 @@ export function AldoPreviewsControl(props: { environmentId: string; onOpenBrowse
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [pullRequests, setPullRequests] = useState<ReadonlyArray<AldoFollowedPullRequest>>([]);
+  // The pull request whose Merge was chosen, waiting for the user to confirm.
+  const [confirmMerge, setConfirmMerge] = useState<AldoFollowedPullRequest | null>(null);
   // The thread whose answers are wanted: one for a thread left since is dropped.
   const current = useRef(props.environmentId);
 
@@ -89,14 +105,14 @@ export function AldoPreviewsControl(props: { environmentId: string; onOpenBrowse
       .then(() =>
         toastManager.add({
           type: "success",
-          title: `Merged #${pr.number}`,
+          title: `Merged ${aldoPullRequestShortRef(pr, pullRequests)}`,
           description: "Aldo follows its deploy and tells the agent how it went.",
         }),
       )
       .catch((cause: unknown) =>
         toastManager.add({
           type: "error",
-          title: `Couldn't merge #${pr.number}`,
+          title: `Couldn't merge ${aldoPullRequestShortRef(pr, pullRequests)}`,
           description: cause instanceof Error ? cause.message : String(cause),
         }),
       )
@@ -180,8 +196,12 @@ export function AldoPreviewsControl(props: { environmentId: string; onOpenBrowse
                 .slice(0, 6)
                 .filter(aldoPullRequestMergeable)
                 .map((pr) => (
-                  <MenuItem key={`merge:${pr.repo}#${pr.number}`} onClick={() => merge(pr)}>
-                    <GitMergeIcon className="size-3.5" /> Merge #{pr.number}
+                  <MenuItem
+                    key={`merge:${pr.repo}#${pr.number}`}
+                    onClick={() => setConfirmMerge(pr)}
+                  >
+                    <GitMergeIcon className="size-3.5" /> Merge{" "}
+                    {aldoPullRequestShortRef(pr, pullRequests)}
                   </MenuItem>
                 ))}
               {pullRequests.some((pr) => pr.status === "watching") ? (
@@ -206,6 +226,38 @@ export function AldoPreviewsControl(props: { environmentId: string; onOpenBrowse
         <MenuSeparator />
         <AldoMachineMenuSection environmentId={props.environmentId} />
       </MenuPopup>
+      <AlertDialog
+        open={confirmMerge !== null}
+        onOpenChange={(open) => {
+          if (!open) setConfirmMerge(null);
+        }}
+      >
+        <AlertDialogPopup>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Merge pull request?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmMerge
+                ? `This merges ${confirmMerge.repo}#${confirmMerge.number}, "${confirmMerge.title}", at the commit whose checks passed. Aldo checks it again first, then follows its deploy and tells the agent how it went.`
+                : null}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogClose render={<Button variant="outline" size="sm" />}>
+              Cancel
+            </AlertDialogClose>
+            <Button
+              size="sm"
+              onClick={() => {
+                const pr = confirmMerge;
+                setConfirmMerge(null);
+                if (pr) merge(pr);
+              }}
+            >
+              Merge
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogPopup>
+      </AlertDialog>
     </Menu>
   );
 }

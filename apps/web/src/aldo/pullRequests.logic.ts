@@ -59,6 +59,23 @@ export function aldoPullRequestStatusLabel(pr: AldoPullRequestStatusInput): stri
   }
 }
 
+/**
+ * How a pull request is named in the menu's Merge action: its number, with
+ * its repository's name when the list spans more than one repository (numbers
+ * are only unique within one).
+ */
+export function aldoPullRequestShortRef(
+  pr: { readonly repo: string; readonly number: number },
+  all: ReadonlyArray<{ readonly repo: string }>,
+): string {
+  const repos = new Set(all.map((entry) => entry.repo));
+  if (repos.size <= 1) return `#${pr.number}`;
+  const name = pr.repo.split("/").at(-1) ?? pr.repo;
+  const sameName =
+    [...repos].filter((repo) => (repo.split("/").at(-1) ?? repo) === name).length > 1;
+  return `${sameName ? pr.repo : name}#${pr.number}`;
+}
+
 /** Whether the user can merge it from the menu (Aldo checks again before merging). */
 export function aldoPullRequestMergeable(pr: AldoPullRequestStatusInput): boolean {
   return pr.status === "watching" && pr.stage === "green";

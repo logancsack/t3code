@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { aldoPullRequestMergeable, aldoPullRequestStatusLabel } from "./pullRequests.logic";
+import {
+  aldoPullRequestMergeable,
+  aldoPullRequestShortRef,
+  aldoPullRequestStatusLabel,
+} from "./pullRequests.logic";
 
 const watching = { status: "watching" as const, followups: 0 };
 
@@ -61,5 +65,23 @@ describe("aldoPullRequestMergeable", () => {
     expect(aldoPullRequestMergeable({ status: "stopped", followups: 0, stage: "green" })).toBe(
       false,
     );
+  });
+});
+
+describe("aldoPullRequestShortRef", () => {
+  it("is the number alone when every pull request is in one repository", () => {
+    const pr = { repo: "acme/web", number: 7 };
+    expect(aldoPullRequestShortRef(pr, [pr, { repo: "acme/web" }])).toBe("#7");
+  });
+
+  it("names the repository when the list spans several", () => {
+    const all = [{ repo: "acme/web" }, { repo: "acme/api" }];
+    expect(aldoPullRequestShortRef({ repo: "acme/web", number: 7 }, all)).toBe("web#7");
+    expect(aldoPullRequestShortRef({ repo: "acme/api", number: 7 }, all)).toBe("api#7");
+  });
+
+  it("uses the full name when two repositories share a name", () => {
+    const all = [{ repo: "acme/web" }, { repo: "gitlab:other/web" }];
+    expect(aldoPullRequestShortRef({ repo: "acme/web", number: 7 }, all)).toBe("acme/web#7");
   });
 });
