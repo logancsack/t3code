@@ -1,6 +1,7 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, it, assert } from "@effect/vitest";
 import * as DateTime from "effect/DateTime";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
@@ -1891,6 +1892,19 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
           const firstMissing = `t3code_codex_first_`;
           const secondMissing = `t3code_codex_second_`;
           const spawnedCommands: Array<string> = [];
+          // Each probe is a real spawn (it fails: the binary doesn't exist), so it
+          // finishes on I/O, not TestClock time. The spawner signals when it has.
+          const firstProbed = yield* Deferred.make<void>();
+          const secondProbed = yield* Deferred.make<void>();
+          const awaitProbe = (probed: Deferred.Deferred<void>) =>
+            Effect.gen(function* () {
+              // In case the probe waits on a timer, keep the clock moving meanwhile.
+              const clock = yield* Effect.forkChild(
+                Effect.forever(TestClock.adjust("10 millis").pipe(Effect.andThen(Effect.yieldNow))),
+              );
+              yield* Deferred.await(probed);
+              yield* Fiber.interrupt(clock);
+            });
           const serverSettings = yield* makeMutableServerSettingsService(
             decodeServerSettings(
               deepMerge(encodedDefaultServerSettings, {
@@ -1929,8 +1943,19 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
             Layer.provideMerge(OpenCodeRuntime.OpenCodeRuntimeLive),
             Layer.updateService(ChildProcessSpawner.ChildProcessSpawner, (spawner) =>
               ChildProcessSpawner.make((command) => {
-                spawnedCommands.push((command as { readonly command: string }).command);
-                return spawner.spawn(command);
+                const executable = (command as { readonly command: string }).command;
+                spawnedCommands.push(executable);
+                const probed =
+                  executable === firstMissing
+                    ? firstProbed
+                    : executable === secondMissing
+                      ? secondProbed
+                      : null;
+                return probed === null
+                  ? spawner.spawn(command)
+                  : spawner
+                      .spawn(command)
+                      .pipe(Effect.ensuring(Deferred.succeed(probed, undefined)));
               }),
             ),
             Layer.provideMerge(NodeServices.layer),
@@ -1945,6 +1970,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
             // Boot-time probe: the default codex instance is enabled with
             // `firstMissing`, so the real spawner yields ENOENT and the
             // snapshot should be `status: "error"`.
+            yield* awaitProbe(firstProbed);
             let initialProviders = yield* registry.getProviders;
             for (
               let attempts = 0;
@@ -1977,6 +2003,8 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
                 codex: { enabled: true, binaryPath: secondMissing },
               },
             });
+
+            yield* awaitProbe(secondProbed);
 
             // Poll until the injected process boundary observes the new
             // executable. This verifies the public settings-to-probe behavior
