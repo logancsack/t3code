@@ -4,6 +4,7 @@ import {
   buildPendingUserInputAnswers,
   countAnsweredPendingUserInputQuestions,
   derivePendingUserInputProgress,
+  formatPendingUserInputAnswersAsMessage,
   resolvePendingUserInputAnswer,
   setPendingUserInputCustomAnswer,
   togglePendingUserInputOptionSelection,
@@ -222,5 +223,16 @@ describe("pending user input question progress", () => {
       canAdvance: true,
       isComplete: true,
     });
+  });
+});
+
+describe("formatPendingUserInputAnswersAsMessage", () => {
+  it("writes one line per question, joining multi-select answers", () => {
+    expect(
+      formatPendingUserInputAnswersAsMessage([singleSelectQuestion, multiSelectQuestion], {
+        scope: "Orchestration-first",
+        areas: ["Server", "Web"],
+      }),
+    ).toBe("Scope: Orchestration-first\nAreas: Server, Web");
   });
 });

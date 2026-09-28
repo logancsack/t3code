@@ -93,6 +93,7 @@ import {
 import {
   derivePendingApprovals,
   derivePendingUserInputs,
+  hasPendingUserInputOutlivedTurn,
   derivePhase,
   deriveTimelineEntries,
   deriveActiveWorkStartedAt,
@@ -102,6 +103,8 @@ import {
   deriveWorkLogEntries,
   hasActionableProposedPlan,
   isLatestTurnSettled,
+  withoutRefusalsAnsweredByMessage,
+  type PendingUserInput,
 } from "../session-logic";
 import { type LegendListRef } from "@legendapp/list/react";
 import {
@@ -112,6 +115,7 @@ import {
 import {
   buildPendingUserInputAnswers,
   derivePendingUserInputProgress,
+  formatPendingUserInputAnswersAsMessage,
   setPendingUserInputCustomAnswer,
   togglePendingUserInputOptionSelection,
   type PendingUserInputDraftAnswer,
@@ -1529,6 +1533,11 @@ function ChatViewContent(props: ChatViewProps) {
   const [respondingUserInputRequestIds, setRespondingUserInputRequestIds] = useState<
     ApprovalRequestId[]
   >([]);
+  // Questions answered with a new message after their turn ended, hidden
+  // until the server closes them.
+  const [answeredByMessageRequestIds, setAnsweredByMessageRequestIds] = useState<
+    ApprovalRequestId[]
+  >([]);
 
   useEffect(() => {
     setIsWorkspaceFileDragActive(false);
@@ -2450,7 +2459,17 @@ function ChatViewContent(props: ChatViewProps) {
     () => deriveLatestContextWindowSnapshot(threadActivities),
     [threadActivities],
   );
-  const workLogEntries = useMemo(() => deriveWorkLogEntries(threadActivities), [threadActivities]);
+  const threadMessages = activeThread?.messages;
+  const workLogEntries = useMemo(
+    () =>
+      deriveWorkLogEntries(
+        withoutRefusalsAnsweredByMessage(
+          threadActivities,
+          (threadMessages ?? []).filter((message) => message.role === "user"),
+        ),
+      ),
+    [threadActivities, threadMessages],
+  );
   // Native subagent fold: memoized by activity-list identity, shared by the
   // Agents surface, live strip, and workflow cards. v2Projection is null
   // until orchestration-v2 lands (source precedence lives in the derive).
@@ -2468,8 +2487,11 @@ function ChatViewContent(props: ChatViewProps) {
     [threadActivities],
   );
   const pendingUserInputs = useMemo(
-    () => derivePendingUserInputs(threadActivities),
-    [threadActivities],
+    () =>
+      derivePendingUserInputs(threadActivities).filter(
+        (input) => !answeredByMessageRequestIds.includes(input.requestId),
+      ),
+    [answeredByMessageRequestIds, threadActivities],
   );
   const activeSessionTurnId =
     activeThread?.session?.status === "running" ? activeThread.session.activeTurnId : null;
@@ -6698,25 +6720,6 @@ function ChatViewContent(props: ChatViewProps) {
     [activePendingUserInput, composerRef],
   );
 
-  const onAdvanceActivePendingUserInput = useCallback(() => {
-    if (!activePendingUserInput || !activePendingProgress) {
-      return;
-    }
-    if (activePendingProgress.isLastQuestion) {
-      if (activePendingResolvedAnswers) {
-        void onRespondToUserInput(activePendingUserInput.requestId, activePendingResolvedAnswers);
-      }
-      return;
-    }
-    setActivePendingUserInputQuestionIndex(activePendingProgress.questionIndex + 1);
-  }, [
-    activePendingProgress,
-    activePendingResolvedAnswers,
-    activePendingUserInput,
-    onRespondToUserInput,
-    setActivePendingUserInputQuestionIndex,
-  ]);
-
   const onPreviousActivePendingUserInputQuestion = useCallback(() => {
     if (!activePendingProgress) {
       return;
@@ -6728,9 +6731,11 @@ function ChatViewContent(props: ChatViewProps) {
     async ({
       text,
       interactionMode: nextInteractionMode,
+      linkProposedPlan = true,
     }: {
       text: string;
       interactionMode: "default" | "plan";
+      linkProposedPlan?: boolean;
     }) => {
       if (
         !activeThread ||
@@ -6740,17 +6745,17 @@ function ChatViewContent(props: ChatViewProps) {
         activeEnvironmentActionUnavailable ||
         sendInFlightRef.current
       ) {
-        return;
+        return false;
       }
 
       const trimmed = text.trim();
       if (!trimmed) {
-        return;
+        return false;
       }
 
       const sendCtx = composerRef.current?.getSendContext();
       if (!sendCtx?.providerAvailable) {
-        return;
+        return false;
       }
       const {
         selectedProvider: ctxSelectedProvider,
@@ -6825,7 +6830,7 @@ function ChatViewContent(props: ChatViewProps) {
             titleSeed: activeThread.title,
             runtimeMode,
             interactionMode: nextInteractionMode,
-            ...(nextInteractionMode === "default" && activeProposedPlan
+            ...(linkProposedPlan && nextInteractionMode === "default" && activeProposedPlan
               ? {
                   sourceProposedPlan: {
                     threadId: activeThread.id,
@@ -6842,7 +6847,7 @@ function ChatViewContent(props: ChatViewProps) {
       if (failure === null) {
         acknowledgeActiveThreadWoke();
         sendInFlightRef.current = false;
-        return;
+        return true;
       }
 
       setOptimisticUserMessages((existing) =>
@@ -6857,6 +6862,7 @@ function ChatViewContent(props: ChatViewProps) {
       }
       sendInFlightRef.current = false;
       resetLocalDispatch();
+      return false;
     },
     [
       activeThread,
@@ -6879,6 +6885,55 @@ function ChatViewContent(props: ChatViewProps) {
       composerRef,
     ],
   );
+
+  // A question whose turn is over can't take its answer any more, so the
+  // answer goes to the agent as a new message. Answering the question as well,
+  // once the new turn's session holds it, gets the server to close it.
+  const onAnswerOutlivedPendingUserInput = useCallback(
+    async (request: PendingUserInput, answers: Record<string, string | string[]>) => {
+      const { requestId } = request;
+      setAnsweredByMessageRequestIds((existing) =>
+        existing.includes(requestId) ? existing : [...existing, requestId],
+      );
+      const sent = await onSubmitPlanFollowUp({
+        text: formatPendingUserInputAnswersAsMessage(request.questions, answers),
+        interactionMode,
+        linkProposedPlan: false,
+      });
+      if (!sent) {
+        setAnsweredByMessageRequestIds((existing) => existing.filter((id) => id !== requestId));
+        return;
+      }
+      await onRespondToUserInput(requestId, answers);
+    },
+    [interactionMode, onRespondToUserInput, onSubmitPlanFollowUp],
+  );
+
+  const onAdvanceActivePendingUserInput = useCallback(() => {
+    if (!activePendingUserInput || !activePendingProgress) {
+      return;
+    }
+    if (activePendingProgress.isLastQuestion) {
+      if (!activePendingResolvedAnswers) {
+        return;
+      }
+      if (hasPendingUserInputOutlivedTurn(activePendingUserInput, activeLatestTurn)) {
+        void onAnswerOutlivedPendingUserInput(activePendingUserInput, activePendingResolvedAnswers);
+      } else {
+        void onRespondToUserInput(activePendingUserInput.requestId, activePendingResolvedAnswers);
+      }
+      return;
+    }
+    setActivePendingUserInputQuestionIndex(activePendingProgress.questionIndex + 1);
+  }, [
+    activeLatestTurn,
+    activePendingProgress,
+    activePendingResolvedAnswers,
+    activePendingUserInput,
+    onAnswerOutlivedPendingUserInput,
+    onRespondToUserInput,
+    setActivePendingUserInputQuestionIndex,
+  ]);
 
   const onImplementPlanInNewThread = useCallback(async () => {
     if (
