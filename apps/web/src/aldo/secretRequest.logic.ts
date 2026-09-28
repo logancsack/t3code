@@ -39,3 +39,15 @@ export function parseAldoSecretRequest(
     requestedBy: t3 ? { thread, t3 } : { thread },
   };
 }
+
+/**
+ * Whether a secret form answers the request: the same name, for the same
+ * threads. Saving any other secret leaves the request open, and doesn't tell
+ * the thread something it didn't ask for is ready.
+ */
+export function answersAldoSecretRequest(
+  request: AldoSecretRequest,
+  draft: { readonly name: string; readonly scope: string },
+): boolean {
+  return draft.name.trim() === request.name && draft.scope === request.scope;
+}

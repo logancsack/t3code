@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { parseAldoSecretRequest } from "./secretRequest.logic";
+import { answersAldoSecretRequest, parseAldoSecretRequest } from "./secretRequest.logic";
 
 describe("parseAldoSecretRequest", () => {
   it("reads an injected secret an agent asked for", () => {
@@ -31,6 +31,14 @@ describe("parseAldoSecretRequest", () => {
         "*",
       ),
     ).toMatchObject({ kind: "file", path: "~/.config/key.json", scope: "me/app" });
+  });
+
+  it("is answered only by the same name, for the same threads", () => {
+    const request = parseAldoSecretRequest("?request=API_KEY&scope=me/app&thread=t1", "*")!;
+    expect(answersAldoSecretRequest(request, { name: "API_KEY", scope: "me/app" })).toBe(true);
+    expect(answersAldoSecretRequest(request, { name: " API_KEY ", scope: "me/app" })).toBe(true);
+    expect(answersAldoSecretRequest(request, { name: "API_KEY", scope: "*" })).toBe(false);
+    expect(answersAldoSecretRequest(request, { name: "OTHER_KEY", scope: "me/app" })).toBe(false);
   });
 
   it("ignores a Vault URL without a whole request", () => {

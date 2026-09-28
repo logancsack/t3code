@@ -26,7 +26,11 @@ import {
   type AldoSecretKind,
   type AldoVaultItem,
 } from "./cloud";
-import { parseAldoSecretRequest, type AldoSecretRequest } from "./secretRequest.logic";
+import {
+  answersAldoSecretRequest,
+  parseAldoSecretRequest,
+  type AldoSecretRequest,
+} from "./secretRequest.logic";
 
 const EVERY_THREAD = "*";
 
@@ -438,12 +442,12 @@ export function AldoVaultPanel() {
     e.preventDefault();
     if (!secret) return;
     const { saved: _saved, ...input } = secret;
-    const requestedBy =
-      requested && requested.name === secret.name ? requested.requestedBy : undefined;
+    // Only the form the agent asked for tells its thread; another secret leaves the request open.
+    const answer = requested && answersAldoSecretRequest(requested, secret) ? requested : null;
     void run(
-      () => aldoVault.saveSecret(requestedBy ? { ...input, requestedBy } : input),
+      () => aldoVault.saveSecret(answer ? { ...input, requestedBy: answer.requestedBy } : input),
       () => {
-        if (requested) clearRequest();
+        if (answer) clearRequest();
         setNotice(
           secret.kind === "request"
             ? `Saved ${secret.name}. Requests to ${secret.hosts} get it now; agents see a stand-in.`
@@ -559,7 +563,7 @@ export function AldoVaultPanel() {
             </p>
           </form>
         ) : null}
-        {secret && requested ? (
+        {secret && requested && answersAldoSecretRequest(requested, secret) ? (
           <p className="px-3 text-sm sm:px-4">
             An agent asked for <span className="font-mono">{requested.name}</span>
             {requested.why ? `: ${requested.why}` : ""}. Paste the value below; agents never see it,
@@ -573,8 +577,9 @@ export function AldoVaultPanel() {
             onChange={setSecret}
             onSubmit={saveSecret}
             onCancel={() => {
+              // Cancelling the requested form declines the request.
+              if (requested && answersAldoSecretRequest(requested, secret)) clearRequest();
               setSecret(null);
-              if (requested) clearRequest();
             }}
           />
         ) : null}
