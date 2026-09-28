@@ -1,4 +1,10 @@
-import { AppWindowIcon, ExternalLinkIcon, LoaderIcon, PanelRightIcon } from "lucide-react";
+import {
+  AppWindowIcon,
+  ExternalLinkIcon,
+  GitMergeIcon,
+  LoaderIcon,
+  PanelRightIcon,
+} from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
@@ -10,18 +16,21 @@ import {
   MenuSeparator,
   MenuTrigger,
 } from "../components/ui/menu";
+import { toastManager } from "../components/ui/toast";
 import { AldoMachineMenuSection, useAldoMachineOffer } from "./AldoMachine";
 import { useAldoBrowserRequests } from "./browserStore";
 import {
   aldoPreviewUrl,
   fetchAldoPreviews,
   fetchAldoPullRequests,
+  mergeAldoPullRequest,
   stopAldoFollowThrough,
   type AldoFollowedPullRequest,
   type AldoPreviews,
   aldoMachineIsNew,
   aldoOfflineMessage,
 } from "./cloud";
+import { aldoPullRequestMergeable, aldoPullRequestStatusLabel } from "./pullRequests.logic";
 
 function label(command: string, process: string): string {
   const text = command || process;
@@ -74,6 +83,24 @@ export function AldoPreviewsControl(props: { environmentId: string; onOpenBrowse
     useAldoBrowserRequests.getState().openUrl(props.environmentId, `http://localhost:${port}`);
     props.onOpenBrowser();
   };
+
+  const merge = (pr: AldoFollowedPullRequest) =>
+    void mergeAldoPullRequest(props.environmentId, pr)
+      .then(() =>
+        toastManager.add({
+          type: "success",
+          title: `Merged #${pr.number}`,
+          description: "Aldo follows its deploy and tells the agent how it went.",
+        }),
+      )
+      .catch((cause: unknown) =>
+        toastManager.add({
+          type: "error",
+          title: `Couldn't merge #${pr.number}`,
+          description: cause instanceof Error ? cause.message : String(cause),
+        }),
+      )
+      .finally(refresh);
 
   const ports = previews?.ports ?? [];
   const stopped = (previews?.services ?? []).filter((s) => !s.running);
@@ -145,14 +172,18 @@ export function AldoPreviewsControl(props: { environmentId: string; onOpenBrowse
                     #{pr.number} {pr.title}
                   </span>
                   <span className="shrink-0 text-muted-foreground text-xs">
-                    {pr.status === "watching"
-                      ? pr.followups
-                        ? `${pr.followups} fix${pr.followups === 1 ? "" : "es"}`
-                        : "watching"
-                      : pr.status}
+                    {aldoPullRequestStatusLabel(pr)}
                   </span>
                 </MenuItem>
               ))}
+              {pullRequests
+                .slice(0, 6)
+                .filter(aldoPullRequestMergeable)
+                .map((pr) => (
+                  <MenuItem key={`merge:${pr.repo}#${pr.number}`} onClick={() => merge(pr)}>
+                    <GitMergeIcon className="size-3.5" /> Merge #{pr.number}
+                  </MenuItem>
+                ))}
               {pullRequests.some((pr) => pr.status === "watching") ? (
                 <MenuItem
                   onClick={() => void stopAldoFollowThrough(props.environmentId).then(refresh)}
