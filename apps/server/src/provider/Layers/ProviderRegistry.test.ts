@@ -1888,6 +1888,11 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
       //
       it.effect("re-probes when settings change the codex binaryPath", () =>
         Effect.gen(function* () {
+          // The probes spawn real processes: give the event loop a real turn while
+          // polling, or a busy machine can run out of TestClock rounds first.
+          const eventLoopTurn = Effect.promise(
+            () => new Promise<void>((resolve) => setTimeout(resolve, 5)),
+          );
           const firstMissing = `t3code_codex_first_`;
           const secondMissing = `t3code_codex_second_`;
           const spawnedCommands: Array<string> = [];
@@ -1955,6 +1960,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
             ) {
               yield* TestClock.adjust("10 millis");
               yield* Effect.yieldNow;
+              yield* eventLoopTurn;
               initialProviders = yield* registry.getProviders;
             }
             const initialCodex = initialProviders.find(
@@ -1994,6 +2000,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
                 }
                 yield* TestClock.adjust("50 millis");
                 yield* Effect.yieldNow;
+                yield* eventLoopTurn;
               }
               return yield* registry.getProviders;
             });
