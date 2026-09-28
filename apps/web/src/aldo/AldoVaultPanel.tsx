@@ -26,6 +26,11 @@ import {
   type AldoSecretKind,
   type AldoVaultItem,
 } from "./cloud";
+import {
+  answersAldoSecretRequest,
+  parseAldoSecretRequest,
+  type AldoSecretRequest,
+} from "./secretRequest.logic";
 
 const EVERY_THREAD = "*";
 
@@ -385,6 +390,25 @@ export function AldoVaultPanel() {
   const [importing, setImporting] = useState<{ scope: string; text: string } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // An agent's request_secret link: the form filled in, and the thread told once it's saved.
+  const [requested, setRequested] = useState<AldoSecretRequest | null>(null);
+  useEffect(() => {
+    const request = parseAldoSecretRequest(window.location.search, EVERY_THREAD);
+    if (!request) return;
+    setRequested(request);
+    setSecret({
+      ...NEW_SECRET,
+      kind: request.kind,
+      name: request.name,
+      scope: request.scope,
+      hosts: request.hosts,
+      path: request.path,
+    });
+  }, []);
+  const clearRequest = () => {
+    setRequested(null);
+    window.history.replaceState(window.history.state, "", window.location.pathname);
+  };
 
   const refresh = useCallback(() => {
     aldoVault
@@ -418,9 +442,12 @@ export function AldoVaultPanel() {
     e.preventDefault();
     if (!secret) return;
     const { saved: _saved, ...input } = secret;
+    // Only the form the agent asked for tells its thread; another secret leaves the request open.
+    const answer = requested && answersAldoSecretRequest(requested, secret) ? requested : null;
     void run(
-      () => aldoVault.saveSecret(input),
+      () => aldoVault.saveSecret(answer ? { ...input, requestedBy: answer.requestedBy } : input),
       () => {
+        if (answer) clearRequest();
         setNotice(
           secret.kind === "request"
             ? `Saved ${secret.name}. Requests to ${secret.hosts} get it now; agents see a stand-in.`
@@ -536,13 +563,28 @@ export function AldoVaultPanel() {
             </p>
           </form>
         ) : null}
+        {secret && requested && answersAldoSecretRequest(requested, secret) ? (
+          <p className="px-3 text-sm sm:px-4">
+            An agent asked for <span className="font-mono">{requested.name}</span>
+            {requested.why ? `: ${requested.why}` : ""}. Paste the value below, not in the
+            conversation.{" "}
+            {secret.kind === "request"
+              ? "Injected into requests, it never reaches the cloud machine; agents only see a stand-in."
+              : "As a variable or a file it's on the cloud machine, where agents can read it; for an API key, prefer Injected into requests."}{" "}
+            The thread that asked carries on once it's saved.
+          </p>
+        ) : null}
         {secret ? (
           <SecretForm
             draft={secret}
             saving={saving}
             onChange={setSecret}
             onSubmit={saveSecret}
-            onCancel={() => setSecret(null)}
+            onCancel={() => {
+              // Cancelling the requested form declines the request.
+              if (requested && answersAldoSecretRequest(requested, secret)) clearRequest();
+              setSecret(null);
+            }}
           />
         ) : null}
         {items && secrets.length === 0 && !secret && !importing ? (

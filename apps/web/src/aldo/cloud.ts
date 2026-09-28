@@ -728,6 +728,8 @@ export interface AldoSecretInput {
   readonly header?: string;
   readonly template?: string;
   readonly path?: string;
+  /** The thread that asked for it (request_secret): told when it's saved. */
+  readonly requestedBy?: { readonly thread: string; readonly t3?: string };
 }
 
 export const aldoVault = {
