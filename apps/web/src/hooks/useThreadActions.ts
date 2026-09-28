@@ -38,19 +38,9 @@ import { buildThreadRouteParams, resolveThreadRouteRef } from "../threadRoutes";
 import { formatWorktreePathForDisplay, getOrphanedWorktreePathForThread } from "../worktreeCleanup";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
 import { useClientSettings } from "./useSettings";
-import { deleteAldoEnvironment, isAldoCloud, isAldoEnvironmentId } from "../aldo/cloud";
-
-function removeAldoSandbox(environmentId: string): void {
-  void deleteAldoEnvironment(environmentId).catch((cause: unknown) => {
-    toastManager.add(
-      stackedThreadToast({
-        type: "error",
-        title: "Thread deleted, but its cloud agent wasn't",
-        description: cause instanceof Error ? cause.message : "Aldo couldn't delete it.",
-      }),
-    );
-  });
-}
+import { isAldoCloud, isAldoEnvironmentId } from "../aldo/cloud";
+import { aldoThreadIsAloneOnMachine } from "../aldo/deleteThread.logic";
+import { deleteAldoThreadWithMachine } from "../aldo/threads";
 import { useAtomCommand } from "../state/use-atom-command";
 
 export class ThreadArchiveBlockedError extends Schema.TaggedErrorClass<ThreadArchiveBlockedError>()(
@@ -324,6 +314,36 @@ export function useThreadActions() {
               }),
             )
           : undefined;
+      // Aldo: a thread alone on its machine is deleted with the machine, and
+      // nothing is sent to the machine first (that would wake a sleeping one).
+      if (
+        isAldoCloud &&
+        isAldoEnvironmentId(threadRef.environmentId) &&
+        aldoThreadIsAloneOnMachine({
+          threadId: threadRef.threadId,
+          machineThreadIds: threads.map((entry) => entry.id),
+          deletedThreadIds: deletedIds,
+        })
+      ) {
+        const routeThreadRef = getCurrentRouteThreadRef();
+        // Leaves the sidebar at once; comes back if Aldo can't delete it.
+        const deletion = settlePromise(() => deleteAldoThreadWithMachine(threadRef.environmentId));
+        const navigationResult =
+          routeThreadRef?.threadId === threadRef.threadId &&
+          routeThreadRef.environmentId === threadRef.environmentId
+            ? await settlePromise(() => router.navigate({ to: "/", replace: true }))
+            : null;
+        const deleteResult = await deletion;
+        if (deleteResult._tag === "Failure") return deleteResult;
+        releaseComposerDraftUploads(threadRef);
+        clearComposerDraftForThread(threadRef);
+        clearProjectDraftThreadById(
+          scopeProjectRef(threadRef.environmentId, thread.projectId),
+          threadRef,
+        );
+        clearTerminalUiState(threadRef);
+        return navigationResult?._tag === "Failure" ? navigationResult : deleteResult;
+      }
       const survivingThreads =
         deletedIds && deletedIds.size > 0
           ? threads.filter((entry) => entry.id === threadRef.threadId || !deletedIds.has(entry.id))
@@ -394,13 +414,6 @@ export function useThreadActions() {
         threadRef,
       );
       clearTerminalUiState(threadRef);
-      // Aldo: each thread has its own machine; the last thread's deletion removes it.
-      if (isAldoCloud && isAldoEnvironmentId(threadRef.environmentId)) {
-        const remaining = threads.filter(
-          (entry) => entry.id !== threadRef.threadId && !deletedThreadIds.has(entry.id),
-        );
-        if (remaining.length === 0) removeAldoSandbox(threadRef.environmentId);
-      }
 
       if (shouldNavigateToFallback) {
         if (fallbackThreadId) {

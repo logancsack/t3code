@@ -19,6 +19,7 @@ import { AppRoot } from "./AppRoot";
 import { installManagedCommandDispatch, prepareManagedDevPc } from "./managedDevPc";
 import { installAldoCommandDispatch } from "./aldo/dispatch";
 import { installAldoServerConfigCapture } from "./aldo/serverConfig";
+import { installAldoVersionCheck } from "./aldo/version";
 import { initializeLandingDemoClientSettings } from "./hooks/useSettings";
 import { isLandingDemo } from "./landingDemo/mode";
 import { clerkAppearance } from "./components/clerk/clerkAppearance";
@@ -29,6 +30,7 @@ async function renderApp() {
     installManagedCommandDispatch();
     installAldoCommandDispatch();
     installAldoServerConfigCapture();
+    installAldoVersionCheck();
     await prepareManagedDevPc();
   } else {
     initializeLandingDemoClientSettings();

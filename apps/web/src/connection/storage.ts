@@ -33,6 +33,8 @@ import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 
+import { aldoKeepsEnvironmentCache } from "../aldo/cloud";
+
 const DATABASE_NAME = "t3code:connection-runtime";
 const DATABASE_VERSION = 4;
 const CATALOG_STORE_NAME = "catalog";
@@ -643,23 +645,10 @@ export const connectionStorageLayer = Layer.effectContext(
           threadCacheKey(environmentId, threadId),
         ).pipe(Effect.mapError((cause) => persistenceError("remove-thread", cause))),
       clear: (environmentId) =>
-        Effect.all(
-          [
-            removeDatabaseValue(database, SHELL_STORE_NAME, environmentId),
-            removeDatabaseValuesInRange(
-              database,
-              THREAD_STORE_NAME,
-              IDBKeyRange.bound(`${environmentId}:`, `${environmentId}:\uffff`),
-            ),
-            removeDatabaseValue(database, SERVER_CONFIG_STORE_NAME, environmentId),
-            removeDatabaseValuesInRange(
-              database,
-              VCS_REFS_STORE_NAME,
-              IDBKeyRange.bound(`${environmentId}:`, `${environmentId}:\uffff`),
-            ),
-          ],
-          { concurrency: "unbounded", discard: true },
-        ).pipe(Effect.mapError((cause) => persistenceError("clear-environment", cause))),
+        // Aldo: a machine whose deletion is pending keeps its cache, in case it comes back.
+        aldoKeepsEnvironmentCache(environmentId)
+          ? Effect.void
+          : clearCachedEnvironment(database, environmentId),
     });
 
     return Context.make(ConnectionTargetStore, targetStore).pipe(
@@ -671,6 +660,37 @@ export const connectionStorageLayer = Layer.effectContext(
     );
   }),
 );
+
+function clearCachedEnvironment(database: IDBDatabase, environmentId: EnvironmentId) {
+  return Effect.all(
+    [
+      removeDatabaseValue(database, SHELL_STORE_NAME, environmentId),
+      removeDatabaseValuesInRange(
+        database,
+        THREAD_STORE_NAME,
+        IDBKeyRange.bound(`${environmentId}:`, `${environmentId}:\uffff`),
+      ),
+      removeDatabaseValue(database, SERVER_CONFIG_STORE_NAME, environmentId),
+      removeDatabaseValuesInRange(
+        database,
+        VCS_REFS_STORE_NAME,
+        IDBKeyRange.bound(`${environmentId}:`, `${environmentId}:\uffff`),
+      ),
+    ],
+    { concurrency: "unbounded", discard: true },
+  ).pipe(Effect.mapError((cause) => persistenceError("clear-environment", cause)));
+}
+
+/** Clears an environment's cache. Aldo: a deleted machine's, which it kept while deleting it. */
+export function clearEnvironmentCache(environmentId: EnvironmentId): Promise<void> {
+  return Effect.runPromise(
+    Effect.acquireUseRelease(
+      openDatabase(),
+      (database) => clearCachedEnvironment(database, environmentId),
+      (database) => Effect.sync(() => database.close()),
+    ),
+  );
+}
 
 const decodeShellSnapshot = Schema.decodeUnknownEffect(OrchestrationShellSnapshot);
 const decodeServerConfig = Schema.decodeUnknownEffect(ServerConfig);
