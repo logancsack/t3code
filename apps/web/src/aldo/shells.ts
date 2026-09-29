@@ -53,7 +53,8 @@ function isLive(environmentId: string): boolean {
   return isLivePhase(phaseOf(environmentId));
 }
 
-async function download(environments: ReadonlyArray<AldoEnvironment>): Promise<void> {
+/** Copies these machines' shells from Aldo into the cache. Returns the thread ids Aldo sent. */
+async function download(environments: ReadonlyArray<AldoEnvironment>): Promise<Set<string>> {
   const shells = await fetchAldoShells(environments.map((environment) => environment.threadId));
   await Promise.all(
     environments.map(async (environment) => {
@@ -75,7 +76,8 @@ async function download(environments: ReadonlyArray<AldoEnvironment>): Promise<v
         appAtomRegistry.refresh(environmentShell.stateAtom(environmentId as EnvironmentId));
       }
     }),
-  );
+  ).catch(() => undefined);
+  return new Set(Object.keys(shells));
 }
 
 async function sync(environments: ReadonlyArray<AldoEnvironment>): Promise<void> {
@@ -98,8 +100,12 @@ async function sync(environments: ReadonlyArray<AldoEnvironment>): Promise<void>
     });
   }
 
-  for (let start = 0; start < plan.download.length; start += BATCH) {
-    await download(plan.download.slice(start, start + BATCH)).catch(() => undefined);
+  // A response holds as many shells as fit; ask again for the rest until none come.
+  let remaining = plan.download;
+  while (remaining.length > 0) {
+    const sent = await download(remaining.slice(0, BATCH)).catch(() => null);
+    if (!sent || sent.size === 0) break;
+    remaining = remaining.filter((environment) => !sent.has(environment.threadId));
   }
 }
 
