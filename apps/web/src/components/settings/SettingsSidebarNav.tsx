@@ -16,6 +16,7 @@ import {
   GitBranchIcon,
   LockKeyholeIcon,
   BoxesIcon,
+  NotebookPenIcon,
   KeyboardIcon,
   Link2Icon,
   PaletteIcon,
@@ -62,6 +63,7 @@ const SETTINGS_SECTION_ICONS: Readonly<
   "/settings/providers": BotIcon,
   "/settings/integrations": BlocksIcon,
   "/settings/source-control": GitBranchIcon,
+  "/settings/instructions": NotebookPenIcon,
   "/settings/vault": LockKeyholeIcon,
   "/settings/environments": BoxesIcon,
   "/settings/connections": Link2Icon,
@@ -74,7 +76,13 @@ export const SETTINGS_NAV_ITEMS: ReadonlyArray<{
   icon: ComponentType<{ className?: string }>;
 }> = (Object.keys(SETTINGS_SECTION_LABELS) as SettingsPath[])
   .filter((to) => to !== "/settings/workspace" || isManagedDevPc)
-  .filter((to) => (to !== "/settings/vault" && to !== "/settings/environments") || isAldoCloud)
+  .filter(
+    (to) =>
+      (to !== "/settings/instructions" &&
+        to !== "/settings/vault" &&
+        to !== "/settings/environments") ||
+      isAldoCloud,
+  )
   // Aldo connects each thread's cloud agent itself; there's nothing to manage.
   .filter((to) => to !== "/settings/connections" || !isAldoCloud)
   .map((to) => ({

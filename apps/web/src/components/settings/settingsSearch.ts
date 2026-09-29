@@ -11,6 +11,7 @@ export type SettingsPath =
   | "/settings/providers"
   | "/settings/integrations"
   | "/settings/source-control"
+  | "/settings/instructions"
   | "/settings/vault"
   | "/settings/environments"
   | "/settings/connections"
@@ -59,6 +60,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/providers": "Providers",
   "/settings/integrations": "Integrations",
   "/settings/source-control": "Source Control",
+  "/settings/instructions": "Instructions",
   "/settings/vault": "Vault",
   "/settings/environments": "Environments",
   "/settings/connections": isManagedDevPc ? "Server connections" : "Connections",

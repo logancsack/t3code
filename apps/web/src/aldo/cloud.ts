@@ -770,6 +770,31 @@ export const aldoPrebuilds = {
   remove: (id: string) => api(`/api/prebuilds/${id}`, { method: "DELETE" }),
 };
 
+/** The user's instructions for their agents: for every project (scope "*") or one repository. */
+export interface AldoInstructions {
+  readonly scope: string;
+  readonly text: string;
+  readonly updated_at: string;
+}
+
+/** Settings → Instructions. */
+export const aldoInstructions = {
+  list: async () =>
+    (await api<{ instructions: AldoInstructions[] }>("/api/instructions")).instructions,
+  /**
+   * Replaces one scope's instructions (empty text removes them). `since` is the
+   * updated_at the edit started from (null for none): if they've changed since,
+   * Aldo refuses with a 409.
+   */
+  save: async (scope: string, text: string, since: string | null) =>
+    (
+      await api<{ instructions: AldoInstructions[] }>("/api/instructions", {
+        method: "POST",
+        body: JSON.stringify({ scope, text, since }),
+      })
+    ).instructions,
+};
+
 /** How a vault secret reaches a thread: a variable, injected into requests to some sites, or a file. */
 export type AldoSecretKind = "env" | "request" | "file";
 
