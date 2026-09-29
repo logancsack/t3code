@@ -16,7 +16,17 @@ import {
 
 const EVERY_PROJECT = "*";
 
-const short = (ref: string) => ref.replace(/^(gitlab|bitbucket|azure):/, "");
+const HOSTS: Record<string, string> = {
+  gitlab: "GitLab",
+  bitbucket: "Bitbucket",
+  azure: "Azure DevOps",
+};
+
+/** A repository as the user knows it, with its host unless it's GitHub (the same path can be on two hosts). */
+function projectLabel(ref: string): string {
+  const [, host, path] = /^(gitlab|bitbucket|azure):(.*)$/.exec(ref) ?? [];
+  return host && path ? `${path} (${HOSTS[host]})` : ref;
+}
 
 const PLACEHOLDERS = {
   every:
@@ -61,7 +71,8 @@ function InstructionsEditor(props: {
           (i) => i.scope === scope,
         ) ?? null;
       setBase(next);
-      setDraft(next?.text ?? "");
+      // Keep what the user typed while the save was in flight.
+      setDraft((current) => (current === text ? (next?.text ?? "") : current));
       setChanged(null);
       setConfirmingRemove(false);
       if (!next && scope !== EVERY_PROJECT) props.onRemoved();
@@ -87,7 +98,7 @@ function InstructionsEditor(props: {
     void save(draft);
   };
 
-  const title = scope === EVERY_PROJECT ? "All projects" : short(scope);
+  const title = scope === EVERY_PROJECT ? "All projects" : projectLabel(scope);
   return (
     <form onSubmit={submit} className="space-y-2 rounded-xl px-3 py-3 sm:px-4">
       <div className="flex items-baseline justify-between gap-2">
@@ -230,7 +241,7 @@ export function AldoInstructionsPanel() {
                     setEntries((all) => [...(all ?? []), { scope: repo, saved: null }])
                   }
                 >
-                  {short(repo)}
+                  {projectLabel(repo)}
                 </MenuItem>
               ))}
             </MenuPopup>
