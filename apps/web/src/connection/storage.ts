@@ -737,3 +737,78 @@ export function seedEnvironmentCache(input: {
     ),
   );
 }
+
+/** A cached shell as stored, read without decoding it (aldo/shells.ts compares many at once). */
+export interface CachedShellSummary {
+  readonly sequence: number;
+  readonly threadCount: number;
+  /** The stored (encoded) snapshot. */
+  readonly snapshot: unknown;
+}
+
+function summarizeStoredShell(
+  raw: unknown,
+  environmentId: EnvironmentId,
+): CachedShellSummary | null {
+  if (typeof raw !== "string") return null;
+  try {
+    const stored = JSON.parse(raw) as {
+      schemaVersion?: unknown;
+      environmentId?: unknown;
+      snapshot?: { snapshotSequence?: unknown; threads?: unknown };
+    };
+    const sequence = stored.snapshot?.snapshotSequence;
+    const threads = stored.snapshot?.threads;
+    if (
+      stored.schemaVersion !== SHELL_SNAPSHOT_CACHE_SCHEMA_VERSION ||
+      stored.environmentId !== environmentId ||
+      typeof sequence !== "number" ||
+      !Array.isArray(threads)
+    ) {
+      return null;
+    }
+    return { sequence, threadCount: threads.length, snapshot: stored.snapshot };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The shells cached for these environments, in one read. Aldo compares their
+ * sequences with the copies it keeps of its machines' shells.
+ */
+export function readCachedShells(
+  environmentIds: ReadonlyArray<EnvironmentId>,
+): Promise<Map<EnvironmentId, CachedShellSummary>> {
+  return Effect.runPromise(
+    Effect.acquireUseRelease(
+      openDatabase(),
+      (database) =>
+        Effect.callback<Map<EnvironmentId, CachedShellSummary>, ConnectionTransientError>(
+          (resume) => {
+            const shells = new Map<EnvironmentId, CachedShellSummary>();
+            const transaction = database.transaction(SHELL_STORE_NAME, "readonly");
+            transaction.addEventListener("error", () => {
+              resume(
+                Effect.fail(
+                  catalogError("read", transaction.error ?? "Unknown IndexedDB read error"),
+                ),
+              );
+            });
+            transaction.addEventListener("complete", () => {
+              resume(Effect.succeed(shells));
+            });
+            const store = transaction.objectStore(SHELL_STORE_NAME);
+            for (const environmentId of environmentIds) {
+              const request = store.get(environmentId);
+              request.addEventListener("success", () => {
+                const shell = summarizeStoredShell(request.result, environmentId);
+                if (shell) shells.set(environmentId, shell);
+              });
+            }
+          },
+        ),
+      (database) => Effect.sync(() => database.close()),
+    ),
+  );
+}

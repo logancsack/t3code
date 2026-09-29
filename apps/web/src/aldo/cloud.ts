@@ -43,6 +43,11 @@ export interface AldoEnvironment {
   readonly machine?: AldoMachineSize;
   /** A recent report of the machine running short while its agent worked. */
   readonly pressure?: AldoMachinePressure | null;
+  /**
+   * The snapshot sequence of the machine's threads as Aldo last had them
+   * reported (shells.ts), null before any; an older Aldo leaves it out.
+   */
+  readonly shellSequence?: number | null;
 }
 
 export type AldoMachineSize = "standard" | "2x";
@@ -203,6 +208,31 @@ export function requestAldoDirectoryRefresh(): void {
   refreshRequested = true;
 }
 
+type DirectorySync = (environments: ReadonlyArray<AldoEnvironment>) => Promise<void>;
+let directorySync: DirectorySync | null = null;
+const DIRECTORY_SYNC_WAIT_MS = 5_000;
+
+/**
+ * Brings this browser's copies of the machines' threads up to date on every
+ * directory fetch (shells.ts). The directory waits for it, up to a few
+ * seconds, before it registers machines, so a page opens with every thread.
+ */
+export function setAldoDirectorySync(sync: DirectorySync): void {
+  directorySync = sync;
+}
+
+async function syncDirectory(environments: ReadonlyArray<AldoEnvironment>): Promise<void> {
+  if (!directorySync) return;
+  let timer: number | undefined;
+  await Promise.race([
+    directorySync(environments).catch(() => undefined),
+    new Promise<void>((resolve) => {
+      timer = window.setTimeout(resolve, DIRECTORY_SYNC_WAIT_MS);
+    }),
+  ]);
+  window.clearTimeout(timer);
+}
+
 async function fetchEnvironments(): Promise<ReadonlyArray<AldoEnvironment>> {
   const { environments } = await api<{ environments: AldoEnvironment[] }>("/api/environments");
   // A listing that started before a deletion finished can still include its machine.
@@ -238,7 +268,11 @@ function registrationFor(environment: AldoEnvironment): BearerConnectionRegistra
  */
 function currentRegistrations(environments: ReadonlyArray<AldoEnvironment>) {
   return environments
-    .filter((environment) => !pendingEnvironmentIds.has(environment.environmentId))
+    .filter(
+      (environment) =>
+        !pendingEnvironmentIds.has(environment.environmentId) &&
+        !hiddenByDeletion(environment.environmentId),
+    )
     .map(registrationFor);
 }
 
@@ -252,7 +286,9 @@ async function pollDirectory(): Promise<Array<BearerConnectionRegistration> | nu
   refreshRequested = false;
   lastFetchAt = Date.now();
   try {
-    const registrations = currentRegistrations(await fetchEnvironments());
+    const environments = await fetchEnvironments();
+    await syncDirectory(environments);
+    const registrations = currentRegistrations(environments);
     failedFetches = 0;
     retryAt = 0;
     return registrations;
@@ -516,6 +552,24 @@ export async function fetchAldoServerConfig(): Promise<unknown> {
 
 export async function reportAldoServerConfig(config: unknown): Promise<void> {
   await api("/api/models", { method: "POST", body: JSON.stringify({ config }) });
+}
+
+/** Machines' threads (T3 shells) as their aldod last reported them, by thread id. Never wakes one. */
+export async function fetchAldoShells(
+  threadIds: ReadonlyArray<string>,
+): Promise<Record<string, unknown>> {
+  const { shells } = await api<{ shells: Record<string, unknown> }>(
+    `/api/environments/shells?ids=${threadIds.join(",")}`,
+  );
+  return shells;
+}
+
+/** This browser's copy of a machine's threads, for Aldo to keep until the machine reports its own. */
+export async function offerAldoShell(threadId: string, shell: unknown): Promise<void> {
+  await api("/api/environments/shells", {
+    method: "POST",
+    body: JSON.stringify({ threadId, shell }),
+  });
 }
 
 export async function listAldoRepositories(): Promise<
