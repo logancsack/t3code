@@ -25,6 +25,7 @@ import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 
 import { getAldoPreloadSettings } from "./preloadSettings";
+import type { AldoCheckCounts, AldoPullRequestStage } from "./pullRequests.logic";
 
 export const isAldoCloud = import.meta.env.VITE_ALDO_CLOUD === "1";
 
@@ -621,6 +622,10 @@ export interface AldoFollowedPullRequest {
   readonly title: string;
   readonly status: "watching" | "merged" | "closed" | "stopped";
   readonly followups: number;
+  /** Where it is (checks → merged → deployed); an older Aldo leaves these out. */
+  readonly stage?: AldoPullRequestStage;
+  readonly checks?: AldoCheckCounts | null;
+  readonly deploy?: AldoCheckCounts | null;
 }
 
 /** Pull requests Aldo is following through for a thread. */
@@ -645,6 +650,17 @@ export async function setAldoMachine(environmentId: string, size: AldoMachineSiz
     body: JSON.stringify({ size }),
   });
   requestAldoDirectoryRefresh();
+}
+
+/** Merges a followed pull request whose checks all passed; Aldo then follows its deploy. */
+export async function mergeAldoPullRequest(
+  environmentId: string,
+  pr: { repo: string; number: number },
+): Promise<void> {
+  await api(`/api/environments/${threadIdForEnvironment(environmentId)}/prs`, {
+    method: "POST",
+    body: JSON.stringify({ repo: pr.repo, number: pr.number }),
+  });
 }
 
 export async function stopAldoFollowThrough(
