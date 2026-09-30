@@ -853,3 +853,80 @@ export const aldoVault = {
       body: JSON.stringify({ scope, text }),
     }),
 };
+
+// ---------------------------------------------------------------------------
+// Aldo, the assistant
+
+/** A realtime session with Aldo: the short-lived key the browser connects to OpenAI with. */
+export interface AldoVoiceSession {
+  readonly sessionId: string;
+  readonly key: string;
+  readonly expiresAt: number;
+  readonly model: string;
+}
+
+/** Whether this Aldo has the assistant (an older one has no /api/assistant). */
+export async function aldoAssistantAvailable(): Promise<boolean> {
+  const response = await fetch("/api/assistant/tools", { credentials: "same-origin" }).catch(
+    () => null,
+  );
+  return response?.ok === true;
+}
+
+export const aldoAssistant = {
+  startSession: () => api<AldoVoiceSession>("/api/assistant/session", { method: "POST" }),
+  /** Runs a tool the model called: { result } or, for a refusal the model should hear, { error }. */
+  runTool: (
+    name: string,
+    args: Record<string, unknown>,
+    sessionId: string | null,
+    heard: ReadonlyArray<string>,
+  ) =>
+    api<{ result?: unknown; error?: string }>(`/api/assistant/tools/${encodeURIComponent(name)}`, {
+      method: "POST",
+      body: JSON.stringify({ arguments: args, sessionId, heard }),
+    }),
+  record: (sessionId: string, items: ReadonlyArray<{ role: "user" | "assistant"; text: string }>) =>
+    api("/api/assistant/history", { method: "POST", body: JSON.stringify({ sessionId, items }) }),
+  history: async (limit = 50) =>
+    (
+      await api<{ messages: Array<{ role: "user" | "assistant"; text: string; at: string }> }>(
+        `/api/assistant/history?limit=${limit}`,
+      )
+    ).messages,
+};
+
+/** What Aldo knows about the user: its profile of them and its notes. */
+export interface AldoMemoryItem {
+  readonly id: string;
+  readonly kind: "profile" | "note";
+  readonly title: string;
+  readonly body: string;
+  /** Who wrote it last: aldo (in conversation), consolidation (after one), or user. */
+  readonly source: string;
+  readonly updatedAt: string;
+}
+
+export const aldoMemory = {
+  list: async () => (await api<{ items: AldoMemoryItem[] }>("/api/assistant/memory")).items,
+  saveProfile: async (body: string) =>
+    (
+      await api<{ items: AldoMemoryItem[] }>("/api/assistant/memory", {
+        method: "POST",
+        body: JSON.stringify({ kind: "profile", body }),
+      })
+    ).items,
+  saveNote: async (title: string, body: string) =>
+    (
+      await api<{ items: AldoMemoryItem[] }>("/api/assistant/memory", {
+        method: "POST",
+        body: JSON.stringify({ kind: "note", title, body }),
+      })
+    ).items,
+  forget: async (id: string) =>
+    (
+      await api<{ items: AldoMemoryItem[] }>(`/api/assistant/memory?id=${encodeURIComponent(id)}`, {
+        method: "DELETE",
+      })
+    ).items,
+};
