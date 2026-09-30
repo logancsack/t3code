@@ -1,26 +1,87 @@
 import { CheckCircle2Icon, CircleIcon, FolderGit2Icon, SparklesIcon } from "lucide-react";
+import { useEffect, useState } from "react";
 
 import { Button } from "../components/ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../components/ui/empty";
 import { SidebarInset } from "../components/ui/sidebar";
 import { ALDO_ACCOUNT_SPECS, AldoAccountButton, useAldoAccounts } from "./AldoAccountsPanel";
-import type { AldoAccountKind } from "./cloud";
+import { AldoAssistantHome } from "./AldoAssistant";
+import { aldoAssistantAvailable, type AldoAccountKind } from "./cloud";
 import { HOST_KINDS, openAldoRepositoryPicker } from "./AldoRepositoryDialog";
 
 const AGENT_KINDS: ReadonlyArray<AldoAccountKind> = ["claude", "codex", "grok"];
 
+let assistantAvailable: Promise<boolean> | null = null;
+
+/** Whether this Aldo has the assistant, asked once per page; null until it's known. */
+function useAssistantAvailable(): boolean | null {
+  const [available, setAvailable] = useState<boolean | null>(null);
+  useEffect(() => {
+    let current = true;
+    assistantAvailable ??= aldoAssistantAvailable();
+    void assistantAvailable.then((value) => {
+      if (current) setAvailable(value);
+    });
+    return () => {
+      current = false;
+    };
+  }, []);
+  return available;
+}
+
 /**
  * The landing screen under Aldo. Until a git host (GitHub, or GitLab,
  * Bitbucket or Azure DevOps from Settings → Source Control) and at least one
- * agent are connected it walks through setup; after that it's a single "start
- * a thread" prompt. Existing threads are in the sidebar.
+ * agent are connected it walks through setup. Where Aldo has the assistant,
+ * the home screen is Aldo (AldoAssistant.tsx), with setup above it until it's
+ * done; otherwise it's a single "start a thread" prompt. Existing threads are
+ * in the sidebar.
  */
 export function AldoHome() {
   const { accounts, refresh } = useAldoAccounts();
+  const assistant = useAssistantAvailable();
   const sourceHost = HOST_KINDS.find((kind) => accounts?.[kind]?.connected === true);
   const sourceReady = sourceHost !== undefined;
   const agentReady = AGENT_KINDS.some((kind) => accounts?.[kind].connected === true);
   const setupDone = sourceReady && agentReady;
+
+  if (assistant === null) return <SidebarInset className="h-dvh bg-background" />;
+  if (assistant) {
+    return (
+      <AldoAssistantHome
+        setup={
+          accounts && !setupDone ? (
+            <section className="rounded-xl border border-border/60 bg-card/30 p-4">
+              <h2 className="font-medium text-sm">Set up Aldo</h2>
+              <p className="mt-1 text-muted-foreground text-xs">
+                Connect GitHub (or another git host in Settings → Source Control) and at least one
+                of your agent subscriptions, once, so Aldo can start threads for you.
+              </p>
+              <ol className="mt-3 space-y-2 text-left">
+                {sourceHost && sourceHost !== "github" ? null : (
+                  <SetupRow
+                    kind="github"
+                    connected={sourceReady}
+                    label={accounts.github.account}
+                    onConnected={refresh}
+                  />
+                )}
+                {AGENT_KINDS.map((kind) => (
+                  <SetupRow
+                    key={kind}
+                    kind={kind}
+                    connected={accounts[kind].connected}
+                    label={accounts[kind].account}
+                    onConnected={refresh}
+                  />
+                ))}
+              </ol>
+            </section>
+          ) : null
+        }
+      />
+    );
+  }
 
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground">
