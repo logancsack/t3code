@@ -3,12 +3,15 @@
 // command here before sending it; Aldo creates or wakes the machine and
 // connects to it, and then T3 sends the command as usual. Until then the
 // thread shows the message and "Creating your cloud agent" or "Reconnecting to
-// the cloud".
+// the cloud". Settling, archiving, pinning, snoozing, renaming or deleting a
+// sleeping machine's thread doesn't wake it: it's done at once, and Aldo keeps
+// the command for the machine (threadCommands.ts).
 
 import { setOrchestrationCommandDispatchOverride } from "@t3tools/client-runtime/operations";
 import type { EnvironmentId } from "@t3tools/contracts";
 
 import { environmentCatalog } from "../connection/catalog";
+import { keepAldoCommand } from "./threadCommands";
 import { runAtomCommand } from "@t3tools/client-runtime/state/runtime";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentPresentations } from "../state/presentation";
@@ -97,6 +100,10 @@ export function installAldoCommandDispatch(): void {
   setOrchestrationCommandDispatchOverride(async ({ command, environmentId }) => {
     if (!isAldoEnvironmentId(environmentId)) return null;
     if (command.type === "thread.turn.start") lastSentAt.set(environmentId, Date.now());
+    // Settling, archiving, renaming... a sleeping machine's thread: at once, without waking it.
+    // (Not while this tab is bringing the machine up for a message: those wait for it, in order.)
+    const kept = inFlight.has(environmentId) ? null : await keepAldoCommand(environmentId, command);
+    if (kept) return kept;
     await ensureAldoConnected(environmentId).catch((cause: unknown) => {
       notifyAldoRefusal(cause);
       throw cause;
