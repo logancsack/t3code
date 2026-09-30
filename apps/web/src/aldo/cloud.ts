@@ -93,7 +93,7 @@ export function isAldoEnvironmentId(environmentId: string): boolean {
   return environmentId.startsWith("aldo-");
 }
 
-function threadIdForEnvironment(environmentId: string): string {
+export function threadIdForEnvironment(environmentId: string): string {
   return environmentId.replace(/^aldo-/, "");
 }
 
@@ -207,6 +207,12 @@ export function displayedThreadBranch(
 /** Whether a thread's machine is still to be created (it is when its first message is sent). */
 export function aldoMachineIsNew(environmentId: string): boolean {
   return knownEnvironments?.find((entry) => entry.environmentId === environmentId)?.state === "new";
+}
+
+/** Whether the directory has a thread's machine asleep (stopped, or failed to start). */
+export function aldoMachineIsAsleep(environmentId: string): boolean {
+  const state = knownEnvironments?.find((entry) => entry.environmentId === environmentId)?.state;
+  return state === "stopped" || state === "failed";
 }
 
 /**
@@ -622,19 +628,21 @@ export async function fetchAldoThreadDetail(
 /**
  * One of T3's commands for a thread on a machine this browser isn't
  * connected to, with what it changes in the thread's shell entry
- * (threadCommands.ts): Aldo sends it now if the machine runs, else when it
- * next starts. Returns the sequence of Aldo's copy of the shell with the
- * change, null if it has none.
+ * (threadCommands.ts), made from this browser's copy of the shell at
+ * sequence `base`: Aldo sends it now if the machine runs, else when it next
+ * starts. Returns the sequence of Aldo's copy of the shell with the change,
+ * null if it has none; a 412 if Aldo's copy is newer than `base`.
  */
 export async function sendAldoThreadCommand(
   environmentId: string,
   command: unknown,
   patch: unknown,
+  base: number,
 ): Promise<{ readonly sequence: number | null }> {
   const threadId = threadIdForEnvironment(environmentId);
   return api(`/api/environments/${threadId}/commands`, {
     method: "POST",
-    body: JSON.stringify({ command, patch }),
+    body: JSON.stringify({ command, patch, base }),
   });
 }
 

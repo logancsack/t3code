@@ -19,6 +19,29 @@ export interface AldoShellThread {
   readonly session?: { readonly status: string } | null;
   readonly hasPendingApprovals?: boolean;
   readonly hasPendingUserInput?: boolean;
+  readonly latestUserMessageAt?: string | null;
+  readonly latestTurn?: {
+    readonly requestedAt: string;
+    readonly startedAt: string | null;
+    readonly completedAt: string | null;
+  } | null;
+}
+
+/** As T3's threadHasQueuedTurnStart: how long a user message no turn has taken up yet counts as work. */
+const QUEUED_TURN_START_GRACE_MS = 2 * 60 * 1_000;
+
+/** A message the user sent lately that no turn has taken up yet: work T3 won't let be settled or snoozed away. */
+function hasQueuedTurnStart(thread: AldoShellThread, now: string): boolean {
+  const sentAt = thread.latestUserMessageAt ?? null;
+  if (sentAt === null || thread.session?.status === "error") return false;
+  const messageAt = Date.parse(sentAt);
+  const age = Date.parse(now) - messageAt;
+  if (Number.isNaN(age) || Math.abs(age) > QUEUED_TURN_START_GRACE_MS) return false;
+  const turn = thread.latestTurn ?? null;
+  if (turn === null) return true;
+  return [turn.requestedAt, turn.startedAt, turn.completedAt].every(
+    (value) => value == null || Date.parse(value) < messageAt,
+  );
 }
 
 /** A client command, as far as these go. */
@@ -35,20 +58,26 @@ export type AldoShellPatch =
 
 /**
  * What `command` does to `thread` (null when it isn't in the shell) on a
- * sleeping machine: a patch to keep for it, "nothing" (no session runs on a
- * sleeping machine to stop), or null when only the machine can take it (the
- * command isn't one of these, or T3 would refuse it, so it says why).
+ * machine this browser isn't connected to: a patch to keep for it, "nothing"
+ * (a machine known to be asleep, `asleep`, runs no session to stop), or null
+ * when only the machine can take it (the command isn't one of these, or T3
+ * would refuse it, so it says why).
  */
 export function aldoCommandPatch(
   command: AldoThreadCommand,
   thread: AldoShellThread | null,
   now: string,
+  asleep: boolean,
 ): AldoShellPatch | "nothing" | null {
-  if (command.type === "thread.session.stop") return "nothing";
+  if (command.type === "thread.session.stop") return asleep ? "nothing" : null;
   // Archived threads (not in the shell) can still be deleted.
   if (command.type === "thread.delete") return { remove: true };
   if (thread === null) return null;
-  const blocked = thread.hasPendingApprovals === true || thread.hasPendingUserInput === true;
+  // Work T3 won't let be parked: a request waiting on the user, or a message no turn has taken up.
+  const blocked =
+    thread.hasPendingApprovals === true ||
+    thread.hasPendingUserInput === true ||
+    hasQueuedTurnStart(thread, now);
   const working = thread.session?.status === "starting" || thread.session?.status === "running";
   const unsnoozed = thread.snoozedUntil != null ? { snoozedUntil: null, snoozedAt: null } : {};
 
@@ -168,6 +197,23 @@ export function aldoCommandPatch(
     default:
       return null;
   }
+}
+
+/**
+ * The shell's threads with one thread put back as it was (`original`, at
+ * `index` if it had gone), after its command didn't go through; the others
+ * keep any change made since.
+ */
+export function restoreAldoShellThread<T extends { readonly id: string }>(
+  threads: ReadonlyArray<T>,
+  original: T,
+  index: number,
+): T[] {
+  if (threads.some((thread) => thread.id === original.id)) {
+    return threads.map((thread) => (thread.id === original.id ? original : thread));
+  }
+  const at = Math.max(0, Math.min(index, threads.length));
+  return [...threads.slice(0, at), original, ...threads.slice(at)];
 }
 
 /** The cached shell's threads with the patch applied. */

@@ -101,7 +101,8 @@ export function installAldoCommandDispatch(): void {
     if (!isAldoEnvironmentId(environmentId)) return null;
     if (command.type === "thread.turn.start") lastSentAt.set(environmentId, Date.now());
     // Settling, archiving, renaming... a sleeping machine's thread: at once, without waking it.
-    const kept = await keepAldoCommand(environmentId, command);
+    // (Not while this tab is bringing the machine up for a message: those wait for it, in order.)
+    const kept = inFlight.has(environmentId) ? null : await keepAldoCommand(environmentId, command);
     if (kept) return kept;
     await ensureAldoConnected(environmentId).catch((cause: unknown) => {
       notifyAldoRefusal(cause);
