@@ -619,6 +619,25 @@ export async function fetchAldoThreadDetail(
   return api(`/api/environments/${threadId}/detail?${query}`, signal ? { signal } : {});
 }
 
+/**
+ * One of T3's commands for a thread on a machine this browser isn't
+ * connected to, with what it changes in the thread's shell entry
+ * (threadCommands.ts): Aldo sends it now if the machine runs, else when it
+ * next starts. Returns the sequence of Aldo's copy of the shell with the
+ * change, null if it has none.
+ */
+export async function sendAldoThreadCommand(
+  environmentId: string,
+  command: unknown,
+  patch: unknown,
+): Promise<{ readonly sequence: number | null }> {
+  const threadId = threadIdForEnvironment(environmentId);
+  return api(`/api/environments/${threadId}/commands`, {
+    method: "POST",
+    body: JSON.stringify({ command, patch }),
+  });
+}
+
 type ThreadDetailSource = (
   environmentId: string,
   threadId: string,
