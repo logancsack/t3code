@@ -150,7 +150,8 @@ function AldoCaption() {
   const phase = useAldoAssistant((s) => s.phase);
   if (error)
     return <p className="max-w-lg text-center text-destructive-foreground text-sm">{error}</p>;
-  if (!said || phase === "idle") return null;
+  // While Aldo speaks; after, its words are in the conversation above.
+  if (!said || phase !== "speaking") return null;
   return <p className="line-clamp-3 max-w-lg text-center text-foreground/90 text-sm">{said}</p>;
 }
 
