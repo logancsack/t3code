@@ -7,22 +7,37 @@
 // said on either side is kept by Aldo, so the next conversation picks up
 // from this one. The session lives here, not in a screen: Aldo opening a
 // thread moves the page, and the conversation carries on (the dock shows it).
+// A thread Aldo starts shows in the sidebar at once, and is followed until its
+// first turn is under way: if it has to wait, runs into trouble, can't start
+// or stops at once (an agent signed out), Aldo says so (or, once the
+// conversation has ended, a toast does).
 
 import { create } from "zustand";
 
+import { toastManager } from "../components/ui/toast";
 import {
   actionFor,
   functionCallsIn,
   openTargetOf,
   phaseAfter,
   rememberHeard,
+  startNews,
+  startWatchFor,
   type AldoAssistantAction,
   type AldoAssistantMessage,
   type AldoAssistantPhase,
   type AldoFunctionCall,
   type AldoOpenTarget,
+  type AldoStartNews,
+  type AldoStartWatch,
 } from "./assistant.logic";
-import { AldoApiError, aldoAssistant } from "./cloud";
+import {
+  AldoApiError,
+  aldoAssistant,
+  getAldoEnvironments,
+  requestAldoDirectoryRefresh,
+  subscribeAldoEnvironments,
+} from "./cloud";
 
 const REALTIME_CALLS_URL = "https://api.openai.com/v1/realtime/calls";
 /** How long a tool call waits for the transcript of what the user just said. */
@@ -78,6 +93,21 @@ let levelsTimer: ReturnType<typeof setInterval> | null = null;
 /** Typed before the conversation was connected: sent once it is, instead of the greeting. */
 let queuedText: string | null = null;
 let openThread: ((target: AldoOpenTarget) => void) | null = null;
+/**
+ * A response has been asked for or is being made (only one at a time), or
+ * tool calls run (their results then ask for one).
+ */
+let responding = false;
+let calling = false;
+/**
+ * News for Aldo, in the conversation already, that came while it was busy: no
+ * response since has had it, so the next one asked for is its (or, if the
+ * conversation ends first, a toast).
+ */
+let newsWaiting: AldoStartNews[] = [];
+/** Threads this page started through Aldo, until they've started (or couldn't). */
+let startWatches: ReadonlyArray<AldoStartWatch> = [];
+let stopWatchingStarts: (() => void) | null = null;
 
 /** How the conversation opens a thread on the page (the router, from the dock). */
 export function setAldoAssistantNavigator(
@@ -124,8 +154,78 @@ async function transcriptsSettled(): Promise<void> {
   }
 }
 
+/**
+ * Asks for a response, which has everything in the conversation so far. One
+ * asked for while another is on its way is refused, so news keeps waiting.
+ */
+function requestResponse(response?: Record<string, unknown>): void {
+  if (!responding) newsWaiting = [];
+  responding = true;
+  send(response ? { type: "response.create", response } : { type: "response.create" });
+}
+
+function toastStartNews(news: AldoStartNews): void {
+  const failed = news.state === "failed" || news.state === "stopped";
+  toastManager.add({
+    type: failed ? "error" : "warning",
+    title: news.label,
+    timeout: failed ? 0 : 10_000,
+  });
+}
+
+/**
+ * News for Aldo to tell the user, in the conversation: now, or once it's free
+ * (a response on its way, tool calls running, or the user speaking, whose
+ * words get a response of their own first).
+ */
+function tellAldo(news: AldoStartNews): void {
+  send({
+    type: "conversation.item.create",
+    item: { type: "message", role: "system", content: [{ type: "input_text", text: news.prompt }] },
+  });
+  const phase = get().phase;
+  if (calling || responding || phase === "hearing" || phase === "thinking")
+    newsWaiting = [...newsWaiting, news];
+  else requestResponse();
+}
+
+function tellStartNews(watch: AldoStartWatch, news: AldoStartNews): void {
+  addEntry({
+    kind: "action",
+    id: `start-${watch.threadId}-${news.state}`,
+    tool: "start_thread",
+    label: news.label,
+    failed: news.state !== "queued",
+    open: { environmentId: watch.environmentId, threadId: watch.threadId },
+  });
+  if (aldoAssistantLive() && channel?.readyState === "open") tellAldo(news);
+  else toastStartNews(news);
+}
+
+/** On every directory fetch: how the threads Aldo started stand. */
+function checkStarts(): void {
+  const environments = getAldoEnvironments();
+  const next: AldoStartWatch[] = [];
+  for (const watch of startWatches) {
+    const { news, done } = startNews(watch, environments, Date.now());
+    if (news) tellStartNews(watch, news);
+    if (!done) next.push(news ? { ...watch, told: [...watch.told, news.state] } : watch);
+  }
+  startWatches = next;
+  if (next.length === 0) {
+    stopWatchingStarts?.();
+    stopWatchingStarts = null;
+  }
+}
+
+function watchStart(watch: AldoStartWatch): void {
+  startWatches = [...startWatches, watch];
+  stopWatchingStarts ??= subscribeAldoEnvironments(checkStarts);
+}
+
 async function runCalls(calls: ReadonlyArray<AldoFunctionCall>): Promise<void> {
   set({ phase: "thinking" });
+  calling = true;
   for (const call of calls) {
     // An action is checked against what the user said: wait for the words they just spoke.
     await transcriptsSettled();
@@ -139,13 +239,20 @@ async function runCalls(calls: ReadonlyArray<AldoFunctionCall>): Promise<void> {
     const open = openTargetOf(outcome);
     if (open) openThread?.(open);
     const action = actionFor(call, outcome);
-    if (action) addEntry({ kind: "action", ...action });
+    if (action) {
+      addEntry({ kind: "action", ...action });
+      // What it changed shows in the sidebar now (a new thread at once), not on the next refresh.
+      if (!action.failed) requestAldoDirectoryRefresh();
+    }
+    const watch = startWatchFor(call, outcome, Date.now());
+    if (watch) watchStart(watch);
     send({
       type: "conversation.item.create",
       item: { type: "function_call_output", call_id: call.callId, output: JSON.stringify(outcome) },
     });
   }
-  send({ type: "response.create" });
+  calling = false;
+  requestResponse();
 }
 
 function onEvent(event: { type: string } & Record<string, unknown>): void {
@@ -166,6 +273,8 @@ function onEvent(event: { type: string } & Record<string, unknown>): void {
       if (typeof event.item_id === "string") transcribing.delete(event.item_id);
       break;
     case "response.created":
+      // One the server made itself (the user stopped speaking).
+      responding = true;
       set({ said: "" });
       break;
     case "response.output_audio_transcript.delta":
@@ -175,8 +284,10 @@ function onEvent(event: { type: string } & Record<string, unknown>): void {
       if (typeof event.transcript === "string") say("assistant", event.transcript);
       break;
     case "response.done": {
+      responding = false;
       const calls = functionCallsIn(event);
       if (calls.length > 0) void runCalls(calls);
+      else if (newsWaiting.length > 0) requestResponse();
       break;
     }
     case "error": {
@@ -215,6 +326,11 @@ function teardown(): void {
   peer = null;
   microphone = null;
   sessionId = null;
+  responding = false;
+  calling = false;
+  // News no response had: shown instead of said.
+  newsWaiting.forEach(toastStartNews);
+  newsWaiting = [];
   transcribing.clear();
 }
 
@@ -273,7 +389,7 @@ export async function connectAldo(options: { mic?: boolean } = {}): Promise<void
       const text = queuedText;
       queuedText = null;
       if (text) sendText(text);
-      else send({ type: "response.create", response: { instructions: GREETING } });
+      else requestResponse({ instructions: GREETING });
     });
     peer.onconnectionstatechange = () => {
       const state = peer?.connectionState;
@@ -321,7 +437,7 @@ export function sendText(text: string): void {
     type: "conversation.item.create",
     item: { type: "message", role: "user", content: [{ type: "input_text", text: words }] },
   });
-  send({ type: "response.create" });
+  requestResponse();
 }
 
 export function setAldoMuted(muted: boolean): void {

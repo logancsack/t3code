@@ -5,15 +5,19 @@
 // without sending anything, the machine is put back shortly after: a new one
 // that never got a thread is deleted, a woken one goes back to sleep. Aldo's
 // sweep does the same for tabs that close first. Both are settings
-// (preloadSettings.ts). A thread with nothing to show (neither Aldo nor this
-// browser has a copy of it, threadDetails.ts) wakes its machine regardless,
-// once: the machine then reports it, and it opens without waking from then on.
+// (preloadSettings.ts). A machine Aldo is starting a thread on is left to it
+// until it's up, and then connected; one Aldo couldn't start isn't brought up.
+// A thread with nothing to show (neither Aldo nor this browser has a copy of
+// it, threadDetails.ts) wakes its machine regardless, once: the machine then
+// reports it, and it opens without waking from then on.
 
 import { useEffect, useRef, useState } from "react";
 
 import {
+  aldoStartOf,
   isAldoCloud,
   isAldoEnvironmentId,
+  subscribeAldoEnvironments,
   touchAldoEnvironment,
   unloadAldoEnvironment,
 } from "./cloud";
@@ -81,9 +85,24 @@ export function useAldoPreload(
     if (!enabled) return;
     const openedAt = Date.now();
     let preloaded = false;
+    /** Waiting for Aldo to finish starting a thread on the machine (the directory says). */
+    let stopWaiting: (() => void) | null = null;
     const preload = () => {
       // Already up: it isn't this visit's to put back.
       if (document.visibilityState !== "visible" || isAldoConnected(environmentId)) return;
+      const start = aldoStartOf(environmentId);
+      // Aldo couldn't start its thread: there's nothing to bring up.
+      if (start === "failed") return;
+      // Aldo is bringing it up (bringing it up here too would race it): connect once it has.
+      if (start === "starting") {
+        stopWaiting ??= subscribeAldoEnvironments(() => {
+          if (aldoStartOf(environmentId) === "starting") return;
+          stopWaiting?.();
+          stopWaiting = null;
+          preload();
+        });
+        return;
+      }
       preloaded = true;
       // Woken to show the thread, a refusal is the user's to know.
       void ensureAldoConnected(environmentId).catch((cause: unknown) => {
@@ -98,6 +117,7 @@ export function useAldoPreload(
     document.addEventListener("visibilitychange", onVisibility);
     return () => {
       window.clearTimeout(timer);
+      stopWaiting?.();
       document.removeEventListener("visibilitychange", onVisibility);
       if (preloaded && aldoLastSentAt(environmentId) < openedAt) scheduleUnload(environmentId);
     };

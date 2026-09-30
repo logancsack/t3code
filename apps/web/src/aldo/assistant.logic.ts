@@ -1,6 +1,9 @@
 // The parts of talking to Aldo that don't touch the network or the page: what
 // the realtime model's events mean for the conversation, which tool calls a
-// response asks for, and what a tool's result asks the page to do.
+// response asks for, what a tool's result asks the page to do, and what the
+// user hears of a thread Aldo started that couldn't start at once.
+
+import type { AldoStartState, AldoThreadAttention } from "./cloud";
 
 /** Where the conversation is, as the orb shows it. */
 export type AldoAssistantPhase =
@@ -113,6 +116,119 @@ export function actionFor(call: AldoFunctionCall, outcome: unknown): AldoAssista
     failed: typeof error === "string",
     ...(open ? { open } : {}),
   };
+}
+
+/** A thread this conversation started, followed in the directory until it has started, or couldn't. */
+export interface AldoStartWatch extends AldoOpenTarget {
+  readonly title: string;
+  readonly since: number;
+  /** What the user has been told of. */
+  readonly told: ReadonlyArray<AldoStartNews["state"]>;
+}
+
+/** Long enough for a start to wait for room; after that the user hears of it from Aldo's overview. */
+const START_WATCH_MS = 30 * 60_000;
+
+/** The thread a start_thread call started, to follow. */
+export function startWatchFor(
+  call: AldoFunctionCall,
+  outcome: unknown,
+  now: number,
+): AldoStartWatch | null {
+  if (call.name !== "start_thread") return null;
+  const thread = threadOf(outcome);
+  if (!thread) return null;
+  const title = (outcome as { result?: { title?: unknown } }).result?.title;
+  return {
+    ...thread,
+    title:
+      typeof title === "string"
+        ? title
+        : typeof call.arguments.title === "string"
+          ? call.arguments.title
+          : "the new thread",
+    since: now,
+    told: [],
+  };
+}
+
+/** What the user hears of a start: a line for the conversation, and what Aldo is asked to say. */
+export interface AldoStartNews {
+  readonly state: Exclude<AldoStartState["state"], "starting"> | "stopped";
+  readonly label: string;
+  readonly prompt: string;
+}
+
+/**
+ * What the directory says of a followed start: news the user hasn't heard
+ * (once per state: queued, retrying, failed), and whether to stop following
+ * it: it couldn't start, or it's been long enough. Once it has started, it's
+ * followed until its first turn shows how it's going, since an agent whose
+ * sign-in has expired stops at once. A directory without starts (an older
+ * Aldo) says nothing.
+ */
+export function startNews(
+  watch: AldoStartWatch,
+  environments: ReadonlyArray<{
+    readonly environmentId: string;
+    readonly starts?: Readonly<Record<string, AldoStartState>>;
+    readonly attention?: Readonly<Record<string, AldoThreadAttention>>;
+  }> | null,
+  now: number,
+): { readonly news: AldoStartNews | null; readonly done: boolean } {
+  if (now - watch.since > START_WATCH_MS) return { news: null, done: true };
+  const environment = environments?.find((entry) => entry.environmentId === watch.environmentId);
+  // Not listed yet: the directory was read before the start.
+  if (!environment) return { news: null, done: false };
+  if (!environment.starts) return { news: null, done: true };
+  const title = `"${watch.title}"`;
+  const start = environment.starts[watch.threadId];
+  if (!start) {
+    const turn = environment.attention?.[watch.threadId];
+    if (!turn) return { news: null, done: false };
+    if (turn.state !== "failed") return { news: null, done: true };
+    const why = turn.summary ? turn.summary.replace(/[.\s]+$/, "") : null;
+    return {
+      done: true,
+      news: {
+        state: "stopped",
+        label: `${title} stopped${why ? `: ${why}` : ""}`,
+        prompt: `Tell the user now, in a sentence or two: the thread ${title} you started stopped as soon as it began${why ? ` (${why})` : ""}. Say what they can do about it if the reason says.`,
+      },
+    };
+  }
+  const done = start.state === "failed";
+  if (start.state === "starting" || watch.told.includes(start.state)) return { news: null, done };
+  const why = start.detail ? start.detail.replace(/[.\s]+$/, "") : null;
+  switch (start.state) {
+    case "failed":
+      return {
+        done,
+        news: {
+          state: "failed",
+          label: `Couldn't start ${title}${why ? `: ${why}` : ""}`,
+          prompt: `Tell the user now, in a sentence or two: the thread ${title} you started couldn't start${why ? ` (${why})` : ""}. Nothing is running for it. Say what they can do about it if the reason says.`,
+        },
+      };
+    case "queued":
+      return {
+        done,
+        news: {
+          state: "queued",
+          label: `Waiting to start ${title}${why ? `: ${why}` : ""}`,
+          prompt: `Tell the user briefly: the thread ${title} you started is waiting to start${why ? ` (${why})` : ""}. It starts by itself as soon as there's room; they don't need to do anything.`,
+        },
+      };
+    case "retrying":
+      return {
+        done,
+        news: {
+          state: "retrying",
+          label: `Trouble starting ${title}${why ? `: ${why}` : ""}. Trying again.`,
+          prompt: `Tell the user briefly: the thread ${title} you started hit a problem starting${why ? ` (${why})` : ""}, and it's being tried again. You'll tell them if it fails.`,
+        },
+      };
+  }
 }
 
 /** What the user said lately, for Aldo to check an action's `asked` against (the newest 80). */

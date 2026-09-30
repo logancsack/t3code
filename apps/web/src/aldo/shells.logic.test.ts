@@ -33,10 +33,19 @@ describe("aldoShellCandidates", () => {
 
   it("leaves out connected machines, machines not created yet, and an older Aldo's directory", () => {
     const candidates = aldoShellCandidates(
-      [machine("aldo-live", 5), machine("aldo-new", 5, "new"), machine("aldo-old", undefined)],
+      [machine("aldo-live", 5), machine("aldo-new", null, "new"), machine("aldo-old", undefined)],
       { ...none, isLive: (id) => id === "aldo-live" },
     );
     expect(candidates).toEqual([]);
+  });
+
+  it("reads a machine not created yet that Aldo is starting a thread on", () => {
+    const starting = machine("aldo-starting", 0, "new");
+    expect(aldoShellCandidates([starting], { ...none, isLive: notLive })).toEqual([starting]);
+    const known = new Map([["aldo-starting", 0]]);
+    expect(aldoShellCandidates([starting], { ...none, known, isLive: notLive })).toEqual([]);
+    const failed = machine("aldo-starting", 1, "new");
+    expect(aldoShellCandidates([failed], { ...none, known, isLive: notLive })).toEqual([failed]);
   });
 
   it("looks for a copy to offer once per machine Aldo has no shell for", () => {
