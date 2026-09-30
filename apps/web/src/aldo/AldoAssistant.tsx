@@ -12,6 +12,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Button } from "../components/ui/button";
 import { SidebarInset } from "../components/ui/sidebar";
 import { Input } from "../components/ui/input";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { cn } from "~/lib/utils";
 import { useThreadShells } from "../state/entities";
 import type { AldoAssistantPhase, AldoOpenTarget } from "./assistant.logic";
@@ -24,7 +25,7 @@ import {
   useAldoAssistant,
   type AldoConversationEntry,
 } from "./assistantSession";
-import { aldoAssistant } from "./cloud";
+import { aldoAssistant, aldoAssistantAvailable } from "./cloud";
 
 const OVERVIEW_EVERY_MS = 20_000;
 
@@ -65,7 +66,34 @@ export function AldoAssistantHome(props: { readonly setup?: ReactNode }) {
 }
 
 /** The orb: tap to talk or hang up; it swells with whoever is speaking. */
-export function AldoOrb(props: { readonly size?: "lg" | "sm"; readonly className?: string }) {
+let assistantAvailable: Promise<boolean> | null = null;
+
+/** Whether this Aldo has the assistant, asked once per page; null until it's known. */
+export function useAldoAssistantAvailable(): boolean | null {
+  const [available, setAvailable] = useState<boolean | null>(null);
+  useEffect(() => {
+    let current = true;
+    assistantAvailable ??= aldoAssistantAvailable();
+    void assistantAvailable.then((value) => {
+      if (current) setAvailable(value);
+    });
+    return () => {
+      current = false;
+    };
+  }, []);
+  return available;
+}
+
+/** How to talk to Aldo from anywhere (AldoAssistantDock listens for it). */
+export const ALDO_SHORTCUT_LABEL =
+  typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform)
+    ? "⌘⇧A"
+    : "Ctrl+Shift+A";
+
+export function AldoOrb(props: {
+  readonly size?: "lg" | "sm" | "xs";
+  readonly className?: string;
+}) {
   const phase = useAldoAssistant((s) => s.phase);
   const levels = useAldoAssistant((s) => s.levels);
   const live = phase !== "idle" && phase !== "error";
@@ -76,35 +104,52 @@ export function AldoOrb(props: { readonly size?: "lg" | "sm"; readonly className
         ? levels.mic
         : 0;
   const scale = 1 + Math.min(1, level * 2.5) * 0.28;
-  const large = props.size !== "sm";
+  const size = props.size ?? "lg";
   return (
-    <button
-      type="button"
-      aria-label={live ? "End the conversation with Aldo" : "Talk to Aldo"}
-      onClick={() => (live ? disconnectAldo() : void connectAldo())}
-      className={cn(
-        "relative flex shrink-0 items-center justify-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring",
-        large ? "size-20" : "size-9",
-        props.className,
-      )}
-    >
-      <span
-        aria-hidden
-        className={cn(
-          "absolute inset-0 rounded-full bg-gradient-to-br from-primary/90 to-primary/50 shadow-lg shadow-primary/20 transition-transform duration-100 motion-reduce:transition-none",
-          (phase === "thinking" || phase === "connecting") && "animate-pulse",
-          !live && "opacity-80",
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            aria-label={live ? "End the conversation with Aldo" : "Talk to Aldo"}
+            onClick={() => (live ? disconnectAldo() : void connectAldo())}
+            className={cn(
+              "relative flex shrink-0 items-center justify-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              size === "lg" ? "size-20" : size === "sm" ? "size-9" : "size-6",
+              props.className,
+            )}
+          />
+        }
+      >
+        <span
+          aria-hidden
+          className={cn(
+            "absolute inset-0 rounded-full bg-gradient-to-br from-primary/90 to-primary/50 shadow-lg shadow-primary/20 transition-transform duration-100 motion-reduce:transition-none",
+            (phase === "thinking" || phase === "connecting") && "animate-pulse",
+            !live && "opacity-80",
+          )}
+          style={{ transform: `scale(${scale})` }}
+        />
+        <span
+          aria-hidden
+          className={cn(
+            "absolute rounded-full bg-background/25",
+            size === "lg" ? "inset-5" : size === "sm" ? "inset-2" : "inset-1.5",
+          )}
+        />
+        {live ? null : (
+          <MicIcon
+            className={cn(
+              "relative text-primary-foreground",
+              size === "lg" ? "size-7" : size === "sm" ? "size-4" : "size-3",
+            )}
+          />
         )}
-        style={{ transform: `scale(${scale})` }}
-      />
-      <span
-        aria-hidden
-        className={cn("absolute rounded-full bg-background/25", large ? "inset-5" : "inset-2")}
-      />
-      {live ? null : (
-        <MicIcon className={cn("relative text-primary-foreground", large ? "size-7" : "size-4")} />
-      )}
-    </button>
+      </TooltipTrigger>
+      <TooltipPopup side={size === "xs" ? "right" : "top"}>
+        {live ? "Hang up" : `Talk to Aldo (${ALDO_SHORTCUT_LABEL})`}
+      </TooltipPopup>
+    </Tooltip>
   );
 }
 

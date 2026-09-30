@@ -1,33 +1,14 @@
 import { CheckCircle2Icon, CircleIcon, FolderGit2Icon, SparklesIcon } from "lucide-react";
-import { useEffect, useState } from "react";
 
 import { Button } from "../components/ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../components/ui/empty";
 import { SidebarInset } from "../components/ui/sidebar";
 import { ALDO_ACCOUNT_SPECS, AldoAccountButton, useAldoAccounts } from "./AldoAccountsPanel";
-import { AldoAssistantHome } from "./AldoAssistant";
-import { aldoAssistantAvailable, type AldoAccountKind } from "./cloud";
+import { AldoAssistantHome, useAldoAssistantAvailable } from "./AldoAssistant";
+import type { AldoAccountKind } from "./cloud";
 import { HOST_KINDS, openAldoRepositoryPicker } from "./AldoRepositoryDialog";
 
 const AGENT_KINDS: ReadonlyArray<AldoAccountKind> = ["claude", "codex", "grok"];
-
-let assistantAvailable: Promise<boolean> | null = null;
-
-/** Whether this Aldo has the assistant, asked once per page; null until it's known. */
-function useAssistantAvailable(): boolean | null {
-  const [available, setAvailable] = useState<boolean | null>(null);
-  useEffect(() => {
-    let current = true;
-    assistantAvailable ??= aldoAssistantAvailable();
-    void assistantAvailable.then((value) => {
-      if (current) setAvailable(value);
-    });
-    return () => {
-      current = false;
-    };
-  }, []);
-  return available;
-}
 
 /**
  * The landing screen under Aldo. Until a git host (GitHub, or GitLab,
@@ -39,7 +20,7 @@ function useAssistantAvailable(): boolean | null {
  */
 export function AldoHome() {
   const { accounts, refresh } = useAldoAccounts();
-  const assistant = useAssistantAvailable();
+  const assistant = useAldoAssistantAvailable();
   const sourceHost = HOST_KINDS.find((kind) => accounts?.[kind]?.connected === true);
   const sourceReady = sourceHost !== undefined;
   const agentReady = AGENT_KINDS.some((kind) => accounts?.[kind].connected === true);
