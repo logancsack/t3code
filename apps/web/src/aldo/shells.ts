@@ -90,25 +90,38 @@ async function download(environments: ReadonlyArray<AldoEnvironment>): Promise<S
   return new Set(Object.keys(shells));
 }
 
-/** Models for the machines that aren't connected and have none cached, once per tab. */
+/**
+ * Models for the machines that aren't connected and have none cached, once
+ * each per tab: one that didn't get them (no cloud agent has reported any yet,
+ * or Aldo couldn't be reached) is tried again on the next directory fetch.
+ */
 async function seedModels(environments: ReadonlyArray<AldoEnvironment>): Promise<void> {
   const ids = environments
     .map((environment) => environment.environmentId)
     .filter((environmentId) => !modelsChecked.has(environmentId) && !isLive(environmentId));
   if (ids.length === 0) return;
+  // Held while in flight, so a fetch that comes meanwhile doesn't do them again.
   for (const environmentId of ids) modelsChecked.add(environmentId);
-  const configs = await aldoServerConfigsFor(ids);
-  const written = await seedMissingServerConfigs(
-    new Map(
-      [...configs].map(([environmentId, config]) => [environmentId as EnvironmentId, config]),
-    ),
-  );
-  // Already registered: its config reloads from the cache.
-  for (const environmentId of written) {
-    const phase = phaseOf(environmentId);
-    if (phase !== undefined && !isLivePhase(phase)) {
-      appAtomRegistry.refresh(serverEnvironment.configProjection({ environmentId, input: {} }));
+  let done = new Set<string>();
+  try {
+    const configs = await aldoServerConfigsFor(ids);
+    if (configs.size === 0) return;
+    const { written, kept } = await seedMissingServerConfigs(
+      new Map(
+        [...configs].map(([environmentId, config]) => [environmentId as EnvironmentId, config]),
+      ),
+    );
+    done = new Set([...written, ...kept]);
+    // Already registered: its config reloads from the cache.
+    for (const environmentId of written) {
+      const phase = phaseOf(environmentId);
+      if (phase !== undefined && !isLivePhase(phase)) {
+        appAtomRegistry.refresh(serverEnvironment.configProjection({ environmentId, input: {} }));
+      }
     }
+  } finally {
+    for (const environmentId of ids)
+      if (!done.has(environmentId)) modelsChecked.delete(environmentId);
   }
 }
 

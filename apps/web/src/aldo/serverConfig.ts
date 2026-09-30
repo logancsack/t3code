@@ -110,8 +110,9 @@ export async function aldoServerConfigsFor(
 ): Promise<Map<string, EncodedConfig>> {
   const configs = new Map<string, EncodedConfig>();
   if (environmentIds.length === 0) return configs;
-  const [base, accounts] = await Promise.all([template(), fetchAldoAccounts().catch(() => null)]);
+  const base = await template();
   if (!base) return configs;
+  const accounts = await fetchAldoAccounts().catch(() => null);
   const providers = base.providers.map((provider) => {
     const account = ACCOUNT_FOR_DRIVER[String(provider.driver)];
     const auth = (provider.auth ?? {}) as Record<string, unknown>;

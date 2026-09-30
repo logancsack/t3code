@@ -562,10 +562,17 @@ export const connectionStorageLayer = Layer.effectContext(
               ? cause
               : persistenceError("load-thread", cause),
           ),
-          // Aldo: a sleeping machine's thread opens from Aldo's copy when it's newer.
-          Effect.flatMap((cached) =>
-            withAldoThreadDetail(database, environmentId, threadId, cached),
-          ),
+          // Aldo: a sleeping machine's thread opens from Aldo's copy when it's newer,
+          // or when the cached one can't be read (it's reported as before if Aldo has none).
+          Effect.matchEffect({
+            onSuccess: (cached) => withAldoThreadDetail(database, environmentId, threadId, cached),
+            onFailure: (error) =>
+              withAldoThreadDetail(database, environmentId, threadId, Option.none()).pipe(
+                Effect.flatMap((copy) =>
+                  Option.isSome(copy) ? Effect.succeed(copy) : Effect.fail(error),
+                ),
+              ),
+          }),
         ),
       saveThread: (environmentId, snapshot) =>
         Effect.gen(function* () {
@@ -795,11 +802,12 @@ export function seedEnvironmentCache(input: {
  * Aldo: writes the server config given for each environment that has none
  * cached (a sleeping machine this browser never connected to), so its threads
  * open with models to send with; a cached one, from the machine itself, is
- * kept. Checked and written in one transaction. Returns the environments written.
+ * kept. Checked and written in one transaction. Returns the environments
+ * written, and the ones that already had one.
  */
 export function seedMissingServerConfigs(
   configs: ReadonlyMap<EnvironmentId, unknown>,
-): Promise<EnvironmentId[]> {
+): Promise<{ readonly written: EnvironmentId[]; readonly kept: EnvironmentId[] }> {
   return Effect.runPromise(
     Effect.acquireUseRelease(
       openDatabase(),
@@ -816,8 +824,12 @@ export function seedMissingServerConfigs(
             }).pipe(Effect.option);
             if (Option.isSome(stored)) encoded.set(environmentId, stored.value);
           }
-          return yield* Effect.callback<EnvironmentId[], ConnectionTransientError>((resume) => {
+          return yield* Effect.callback<
+            { written: EnvironmentId[]; kept: EnvironmentId[] },
+            ConnectionTransientError
+          >((resume) => {
             const written: EnvironmentId[] = [];
+            const kept: EnvironmentId[] = [];
             const transaction = database.transaction(SERVER_CONFIG_STORE_NAME, "readwrite");
             transaction.addEventListener("error", () => {
               resume(
@@ -827,13 +839,16 @@ export function seedMissingServerConfigs(
               );
             });
             transaction.addEventListener("complete", () => {
-              resume(Effect.succeed(written));
+              resume(Effect.succeed({ written, kept }));
             });
             const store = transaction.objectStore(SERVER_CONFIG_STORE_NAME);
             for (const [environmentId, value] of encoded) {
               const request = store.get(environmentId);
               request.addEventListener("success", () => {
-                if (request.result !== undefined) return;
+                if (request.result !== undefined) {
+                  kept.push(environmentId);
+                  return;
+                }
                 store.put(value, environmentId);
                 written.push(environmentId);
               });

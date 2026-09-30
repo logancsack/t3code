@@ -23,8 +23,13 @@ import {
 } from "./cloud";
 import { readAldoThreadDetail } from "./threadDetails.logic";
 
-/** A thread still opens (as "loading") if Aldo doesn't answer by then. */
+/**
+ * How long a thread waits for Aldo's copy before it opens without it: a
+ * thread this browser has nothing of waits longer (it only shows "loading"
+ * meanwhile) than one it has an older copy of, which shows that instead.
+ */
 const FETCH_TIMEOUT_MS = 5_000;
+const CACHED_FETCH_TIMEOUT_MS = 1_500;
 
 /** Threads that neither Aldo nor this browser had a detail of when T3 last opened them. */
 const missing = new Set<string>();
@@ -65,7 +70,7 @@ async function newerDetail(
     environmentId,
     threadId,
     cachedSequence,
-    AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    AbortSignal.timeout(cachedSequence === null ? FETCH_TIMEOUT_MS : CACHED_FETCH_TIMEOUT_MS),
   ).catch(() => null);
   // An Aldo without copies, or out of reach, says nothing either way.
   if (!response) return null;
