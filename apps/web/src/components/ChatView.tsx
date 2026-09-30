@@ -446,7 +446,7 @@ import {
 import { useAssetUrls } from "../assets/assetUrls";
 import { useAldoPreload } from "../aldo/preload";
 import { isAldoCloud, isAldoEnvironmentId } from "../aldo/cloud";
-import { ensureAldoConnected } from "../aldo/dispatch";
+import { ensureAldoConnected, isAldoConnected } from "../aldo/dispatch";
 
 const ATTACHMENT_ONLY_BOOTSTRAP_PROMPT =
   "[User attached one or more files without additional text. Respond using the conversation context and the attached files.]";
@@ -6150,34 +6150,21 @@ function ChatViewContent(props: ChatViewProps) {
       composerFilesSnapshot.length > 0
         ? attachmentCapabilitiesBeforeUpload.supportsAttachmentUploads
         : supportsAttachmentUploads;
-    if (
+    // Aldo: when the thread's cloud agent isn't up yet (a new thread's is
+    // created by its first message), the message goes out like one without
+    // attachments: it shows at once and the composer clears, and the
+    // attachments upload once the agent is up (below, with the turn's).
+    const uploadsAwaitAldoAgent =
       turnUsesAttachmentUploads &&
       composerAttachmentsSnapshot.length > 0 &&
       isAldoCloud &&
-      isAldoEnvironmentId(environmentId)
+      isAldoEnvironmentId(environmentId) &&
+      !isAldoConnected(environmentId);
+    if (
+      turnUsesAttachmentUploads &&
+      composerAttachmentsSnapshot.length > 0 &&
+      !uploadsAwaitAldoAgent
     ) {
-      try {
-        await ensureAldoConnected(environmentId);
-      } catch (cause) {
-        sendInFlightRef.current = false;
-        setThreadError(
-          threadIdForSend,
-          cause instanceof Error ? cause.message : "The cloud agent didn't come online.",
-        );
-        return;
-      }
-      // An upload that failed while the agent was offline goes again now that it's up.
-      for (const attachment of composerAttachmentsSnapshot) {
-        if (readAttachmentUpload(attachment.id)?.status === "failed") {
-          retryAttachmentUpload({
-            environmentId,
-            image: attachment,
-            draftTarget: composerDraftTarget,
-          });
-        }
-      }
-    }
-    if (turnUsesAttachmentUploads && composerAttachmentsSnapshot.length > 0) {
       for (const attachment of composerAttachmentsSnapshot) {
         startAttachmentUpload({
           environmentId,
@@ -6240,9 +6227,27 @@ function ChatViewContent(props: ChatViewProps) {
 
     const messageIdForSend = newMessageId();
     const messageCreatedAt = new Date().toISOString();
+    const aldoAgentUploads = uploadsAwaitAldoAgent
+      ? (async () => {
+          await ensureAldoConnected(environmentId);
+          for (const attachment of composerAttachmentsSnapshot) {
+            const upload = { environmentId, image: attachment, draftTarget: composerDraftTarget };
+            // One that failed while the agent was offline goes again.
+            if (readAttachmentUpload(attachment.id)?.status === "failed") {
+              retryAttachmentUpload(upload);
+            } else {
+              startAttachmentUpload(upload);
+            }
+          }
+          await awaitAttachmentUploads(
+            composerAttachmentsSnapshot.map((attachment) => attachment.id),
+          );
+        })()
+      : null;
     const turnAttachmentsPromise = Promise.all(
       composerAttachmentsSnapshot.map(async (attachment) => {
         if (turnUsesAttachmentUploads) {
+          await aldoAgentUploads;
           const uploaded = getUploadedAttachments({ environmentId, images: [attachment] })?.[0];
           if (!uploaded) {
             throw new Error(`Attachment '${attachment.name}' did not finish uploading.`);
