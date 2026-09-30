@@ -38,18 +38,17 @@ let reportedProviders: string | null = null;
 let fetchedFromAldo: Promise<void> | null = null;
 
 /**
- * Whether the machine has checked its providers since its server started: for
- * its first seconds each one shows as not installed, its sign-in unknown,
- * which says nothing about the user's agents.
+ * How many of the machine's providers it hasn't checked since its server
+ * started: for its first seconds each one shows a warning with its sign-in
+ * unknown (as not installed, or for Grok, Cursor and Muse as installed), as
+ * does one whose check timed out until T3 tries again. That says nothing of
+ * the user's agents.
  */
-function providersChecked(config: ServerConfig): boolean {
-  return config.providers.every(
+function uncheckedProviders(config: ServerConfig): number {
+  return config.providers.filter(
     (provider) =>
-      !provider.enabled ||
-      provider.installed ||
-      provider.status !== "warning" ||
-      provider.auth.status !== "unknown",
-  );
+      provider.enabled && provider.status === "warning" && provider.auth.status === "unknown",
+  ).length;
 }
 
 function newestProviderCheck(config: ServerConfig): string {
@@ -59,17 +58,27 @@ function newestProviderCheck(config: ServerConfig): string {
   }, "");
 }
 
-/** The config of the connected cloud agent that checked its providers last. */
+/** Whether `a` says more of the user's agents than `b`: fewer providers unchecked, then checked last. */
+function saysMore(a: ServerConfig, b: ServerConfig): boolean {
+  const unchecked = uncheckedProviders(a) - uncheckedProviders(b);
+  return unchecked !== 0 ? unchecked < 0 : newestProviderCheck(a) > newestProviderCheck(b);
+}
+
+/**
+ * The config of the connected cloud agent that has checked the most of its
+ * providers, and checked them last (Aldo keeps what earlier reports said of
+ * providers a machine hasn't checked yet).
+ */
 function connectedConfig(): ServerConfig | null {
   const configs = appAtomRegistry.get(environmentServerConfigsAtom);
   let best: ServerConfig | null = null;
   for (const [environmentId, config] of configs) {
-    if (!isAldoEnvironmentId(environmentId) || !providersChecked(config)) continue;
+    if (!isAldoEnvironmentId(environmentId)) continue;
     const presentation = appAtomRegistry.get(
       environmentPresentations.presentationAtom(environmentId as EnvironmentId),
     );
     if (presentation?.connection.phase !== "connected") continue;
-    if (!best || newestProviderCheck(config) > newestProviderCheck(best)) best = config;
+    if (!best || saysMore(config, best)) best = config;
   }
   return best;
 }

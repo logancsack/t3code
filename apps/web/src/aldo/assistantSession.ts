@@ -93,11 +93,18 @@ let levelsTimer: ReturnType<typeof setInterval> | null = null;
 /** Typed before the conversation was connected: sent once it is, instead of the greeting. */
 let queuedText: string | null = null;
 let openThread: ((target: AldoOpenTarget) => void) | null = null;
-/** A response is being made, or tool calls run (their results then ask for one). */
+/**
+ * A response has been asked for or is being made (only one at a time), or
+ * tool calls run (their results then ask for one).
+ */
 let responding = false;
 let calling = false;
-/** News for Aldo that came while it was busy: it asks for a response once it's done. */
-let newsWaiting = false;
+/**
+ * News for Aldo, in the conversation already, that came while it was busy: no
+ * response since has had it, so the next one asked for is its (or, if the
+ * conversation ends first, a toast).
+ */
+let newsWaiting: AldoStartNews[] = [];
 /** Threads this page started through Aldo, until they've started (or couldn't). */
 let startWatches: ReadonlyArray<AldoStartWatch> = [];
 let stopWatchingStarts: (() => void) | null = null;
@@ -147,16 +154,39 @@ async function transcriptsSettled(): Promise<void> {
   }
 }
 
-/** News for Aldo to tell the user, in the conversation: now, or as soon as it's free. */
-function tellAldo(prompt: string): void {
+/**
+ * Asks for a response, which has everything in the conversation so far. One
+ * asked for while another is on its way is refused, so news keeps waiting.
+ */
+function requestResponse(response?: Record<string, unknown>): void {
+  if (!responding) newsWaiting = [];
+  responding = true;
+  send(response ? { type: "response.create", response } : { type: "response.create" });
+}
+
+function toastStartNews(news: AldoStartNews): void {
+  const failed = news.state === "failed" || news.state === "stopped";
+  toastManager.add({
+    type: failed ? "error" : "warning",
+    title: news.label,
+    timeout: failed ? 0 : 10_000,
+  });
+}
+
+/**
+ * News for Aldo to tell the user, in the conversation: now, or once it's free
+ * (a response on its way, tool calls running, or the user speaking, whose
+ * words get a response of their own first).
+ */
+function tellAldo(news: AldoStartNews): void {
   send({
     type: "conversation.item.create",
-    item: { type: "message", role: "system", content: [{ type: "input_text", text: prompt }] },
+    item: { type: "message", role: "system", content: [{ type: "input_text", text: news.prompt }] },
   });
-  // Tool calls running ask for a response when they're done; one being made asks after.
-  if (calling) return;
-  if (responding || get().phase === "hearing") newsWaiting = true;
-  else send({ type: "response.create" });
+  const phase = get().phase;
+  if (calling || responding || phase === "hearing" || phase === "thinking")
+    newsWaiting = [...newsWaiting, news];
+  else requestResponse();
 }
 
 function tellStartNews(watch: AldoStartWatch, news: AldoStartNews): void {
@@ -168,16 +198,8 @@ function tellStartNews(watch: AldoStartWatch, news: AldoStartNews): void {
     failed: news.state !== "queued",
     open: { environmentId: watch.environmentId, threadId: watch.threadId },
   });
-  if (aldoAssistantLive() && channel?.readyState === "open") {
-    tellAldo(news.prompt);
-    return;
-  }
-  const failed = news.state === "failed" || news.state === "stopped";
-  toastManager.add({
-    type: failed ? "error" : "warning",
-    title: news.label,
-    timeout: failed ? 0 : 10_000,
-  });
+  if (aldoAssistantLive() && channel?.readyState === "open") tellAldo(news);
+  else toastStartNews(news);
 }
 
 /** On every directory fetch: how the threads Aldo started stand. */
@@ -230,8 +252,7 @@ async function runCalls(calls: ReadonlyArray<AldoFunctionCall>): Promise<void> {
     });
   }
   calling = false;
-  newsWaiting = false;
-  send({ type: "response.create" });
+  requestResponse();
 }
 
 function onEvent(event: { type: string } & Record<string, unknown>): void {
@@ -252,9 +273,8 @@ function onEvent(event: { type: string } & Record<string, unknown>): void {
       if (typeof event.item_id === "string") transcribing.delete(event.item_id);
       break;
     case "response.created":
-      // What Aldo was told before now is in what it says next.
+      // One the server made itself (the user stopped speaking).
       responding = true;
-      newsWaiting = false;
       set({ said: "" });
       break;
     case "response.output_audio_transcript.delta":
@@ -267,10 +287,7 @@ function onEvent(event: { type: string } & Record<string, unknown>): void {
       responding = false;
       const calls = functionCallsIn(event);
       if (calls.length > 0) void runCalls(calls);
-      else if (newsWaiting) {
-        newsWaiting = false;
-        send({ type: "response.create" });
-      }
+      else if (newsWaiting.length > 0) requestResponse();
       break;
     }
     case "error": {
@@ -311,7 +328,9 @@ function teardown(): void {
   sessionId = null;
   responding = false;
   calling = false;
-  newsWaiting = false;
+  // News no response had: shown instead of said.
+  newsWaiting.forEach(toastStartNews);
+  newsWaiting = [];
   transcribing.clear();
 }
 
@@ -370,7 +389,7 @@ export async function connectAldo(options: { mic?: boolean } = {}): Promise<void
       const text = queuedText;
       queuedText = null;
       if (text) sendText(text);
-      else send({ type: "response.create", response: { instructions: GREETING } });
+      else requestResponse({ instructions: GREETING });
     });
     peer.onconnectionstatechange = () => {
       const state = peer?.connectionState;
@@ -418,7 +437,7 @@ export function sendText(text: string): void {
     type: "conversation.item.create",
     item: { type: "message", role: "user", content: [{ type: "input_text", text: words }] },
   });
-  send({ type: "response.create" });
+  requestResponse();
 }
 
 export function setAldoMuted(muted: boolean): void {

@@ -209,16 +209,21 @@ export function aldoMachineIsNew(environmentId: string): boolean {
   return knownEnvironments?.find((entry) => entry.environmentId === environmentId)?.state === "new";
 }
 
-/** Whether Aldo is starting a thread on this machine: it creates (or wakes) the machine itself. */
-export function aldoStartInProgress(environmentId: string): boolean {
+/**
+ * Whether Aldo is starting a thread on this machine (it brings the machine up
+ * itself), or couldn't start one (there's no machine to bring up), or neither.
+ */
+export function aldoStartOf(environmentId: string): "starting" | "failed" | null {
   const entry = knownEnvironments?.find((candidate) => candidate.environmentId === environmentId);
-  return Object.values(entry?.starts ?? {}).some((start) => start.state !== "failed");
+  const starts = Object.values(entry?.starts ?? {});
+  if (starts.length === 0) return null;
+  return starts.some((start) => start.state !== "failed") ? "starting" : "failed";
 }
 
 /** What a thread's panels say while its cloud agent is offline. */
 export function aldoOfflineMessage(environmentId: string): string {
   const preload = getAldoPreloadSettings();
-  if (aldoStartInProgress(environmentId)) return "Starting the cloud agent…";
+  if (aldoStartOf(environmentId) === "starting") return "Starting the cloud agent…";
   if (aldoMachineIsNew(environmentId)) {
     return preload.newThreads
       ? "Starting the cloud agent…"
