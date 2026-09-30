@@ -4,6 +4,8 @@ import { useMemo, useState } from "react";
 
 import type { DailyTotals, HourlyTotals } from "@t3tools/shared/usageMerge";
 
+import { isAldoCloud } from "../../aldo/cloud";
+import { aldoUsageNotes } from "../../aldo/usage.logic";
 import { isElectron } from "../../env";
 import { cn } from "../../lib/utils";
 import { useAldoWorkspaceUsage } from "../../state/aldoWorkspaceUsage";
@@ -214,7 +216,10 @@ export function UsagePage() {
           <WorkspacePageContainer width="wide">
             {settling ? (
               <>
-                {environments.length > 1 ? <UsageDeviceStrip environments={environments} /> : null}
+                {/* Aldo keeps its machines out of sight. */}
+                {environments.length > 1 && !isAldoCloud ? (
+                  <UsageDeviceStrip environments={environments} />
+                ) : null}
                 <UsageSkeleton />
               </>
             ) : (
@@ -528,9 +533,13 @@ function UsageCoverageNotice({
 
   return (
     <div className="flex flex-col gap-1 border border-border px-3 py-2 text-xs text-muted-foreground">
-      {failed.map((environment) => (
-        <span key={environment.label}>{environment.label} could not report usage.</span>
-      ))}
+      {isAldoCloud
+        ? aldoUsageNotes(failed.map((environment) => environment.error ?? "")).map((note) => (
+            <span key={note}>{note}</span>
+          ))
+        : failed.map((environment) => (
+            <span key={environment.label}>{environment.label} could not report usage.</span>
+          ))}
       {stale.map((environment) => (
         <span key={environment.label}>
           {environment.label} runs an older server version and is excluded from totals.

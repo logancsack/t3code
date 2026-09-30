@@ -18,6 +18,8 @@ import { AsyncResult, Atom } from "effect/unstable/reactivity";
 import { useCallback, useMemo } from "react";
 
 import { mergeUsage, type EnvironmentUsage, type MergedUsage } from "@t3tools/shared/usageMerge";
+import { isAldoCloud } from "../aldo/cloud";
+import { aldoUsageAtom, withAldoUsages } from "../aldo/usage";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentPresentations } from "./presentation";
 import { serverEnvironment } from "./server";
@@ -53,7 +55,10 @@ const usageByWindowAtom = Atom.family((windowKey: string) =>
         summary: Option.getOrNull(AsyncResult.value(result)),
       });
     }
-    return statuses;
+    // Aldo answers for the cloud agents that sleep (aldo/usage.ts).
+    return isAldoCloud
+      ? withAldoUsages(statuses, presentations, get(aldoUsageAtom(windowKey)))
+      : statuses;
   }).pipe(Atom.withLabel(`web-usage:window:${windowKey}`)),
 );
 
@@ -104,6 +109,7 @@ export function useUsage(input: UsageSummaryInput): UsageView {
         serverEnvironment.usageSummary({ environmentId: environment.environmentId, input }),
       );
     }
+    if (isAldoCloud) appAtomRegistry.refresh(aldoUsageAtom(windowKey));
   }, [environments, windowKey]);
 
   const merged = useMemo(() => {
