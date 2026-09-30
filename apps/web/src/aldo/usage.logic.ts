@@ -13,31 +13,56 @@ interface UsageStatus {
   readonly summary: UsageSummary | null;
 }
 
-/** Aldo's answers for the window, by environment id; or still loading; or none (an Aldo without them, or out of reach). */
-export type AldoUsageAnswers = "loading" | "none" | Readonly<Record<string, unknown>>;
+/**
+ * Aldo's answers for the window, by environment id (none from an Aldo without
+ * them); or still loading; or failed to load.
+ */
+export type AldoUsageAnswers = "loading" | "failed" | Readonly<Record<string, unknown>>;
 
 export const ALDO_UNREPORTED_USAGE = "This cloud agent hasn't reported its usage yet.";
+export const ALDO_UNREAD_USAGE = "This cloud agent's usage couldn't be read.";
 
 const decodeSummary = Schema.decodeUnknownOption(UsageSummary);
 
 /**
- * An agent that answered counts as it answered, and one still answering is
- * waited for. One that couldn't (it's asleep, so not connected) counts from
- * Aldo's answer, is waited for while that loads, and without one is left out
- * as unreported.
+ * An agent that answered counts as it answered, and a connected one (still
+ * answering, or failing to) as it does. One that isn't connected (it's
+ * asleep) counts from Aldo's answer, is waited for while that loads, and
+ * without one is left out: as unreported, or unread when Aldo's answers
+ * couldn't be loaded.
  */
-export function withAldoUsage<S extends UsageStatus>(status: S, answers: AldoUsageAnswers): S {
-  if (status.summary !== null || status.isPending) return status;
+export function withAldoUsage<S extends UsageStatus>(
+  status: S,
+  connected: boolean,
+  answers: AldoUsageAnswers,
+): S {
+  if (status.summary !== null || status.isPending || connected) return status;
   if (answers === "loading") return { ...status, isPending: true, error: null };
-  const answer = answers === "none" ? Option.none() : decodeSummary(answers[status.environmentId]);
+  if (answers === "failed") return { ...status, error: ALDO_UNREAD_USAGE };
+  const answer = decodeSummary(answers[status.environmentId]);
   return Option.isSome(answer)
     ? { ...status, error: null, summary: answer.value }
     : { ...status, error: ALDO_UNREPORTED_USAGE };
 }
 
-/** One line for the agents left out, instead of one each. */
-export function aldoUnreportedUsageNote(count: number): string {
-  return count === 1
-    ? "Usage from 1 cloud agent isn't counted yet: it reports it the next time it runs."
-    : `Usage from ${count} cloud agents isn't counted yet: each reports it the next time it runs.`;
+function agents(count: number): string {
+  return count === 1 ? "1 cloud agent" : `${count} cloud agents`;
+}
+
+/** The lines for the agents left out (by their errors), instead of one each. */
+export function aldoUsageNotes(errors: ReadonlyArray<string>): string[] {
+  const unreported = errors.filter((error) => error === ALDO_UNREPORTED_USAGE).length;
+  const unread = errors.length - unreported;
+  return [
+    ...(unreported === 0
+      ? []
+      : [
+          `Usage from ${agents(unreported)} isn't counted yet: ${
+            unreported === 1 ? "it reports" : "each reports"
+          } it the next time it runs.`,
+        ]),
+    ...(unread === 0
+      ? []
+      : [`Usage from ${agents(unread)} couldn't be read. Refresh to try again.`]),
+  ];
 }

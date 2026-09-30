@@ -606,7 +606,8 @@ export async function offerAldoShell(threadId: string, shell: unknown): Promise<
 /**
  * What each machine's agents used in this window, as Aldo answers for it from
  * what the machine last reported (usage.ts), by environment id. A machine
- * that never reported is left out. Never wakes one.
+ * that never reported is left out, and an Aldo without these has none. Never
+ * wakes one.
  */
 export async function fetchAldoUsage(input: UsageSummaryInput): Promise<Record<string, unknown>> {
   const query = new URLSearchParams({
@@ -619,7 +620,12 @@ export async function fetchAldoUsage(input: UsageSummaryInput): Promise<Record<s
   if (input.untilTime) query.set("untilTime", input.untilTime);
   const { usage } = await api<{ usage?: Record<string, unknown> }>(
     `/api/environments/usage?${query}`,
-  );
+  ).catch((error: unknown) => {
+    if (error instanceof AldoApiError && (error.status === 404 || error.status === 405)) {
+      return { usage: {} };
+    }
+    throw error;
+  });
   return Object.fromEntries(
     Object.entries(usage ?? {}).map(([threadId, summary]) => [
       aldoEnvironmentIdFor(threadId),

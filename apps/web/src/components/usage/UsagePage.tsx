@@ -5,7 +5,7 @@ import { useMemo, useState } from "react";
 import type { DailyTotals, HourlyTotals } from "@t3tools/shared/usageMerge";
 
 import { isAldoCloud } from "../../aldo/cloud";
-import { aldoUnreportedUsageNote } from "../../aldo/usage.logic";
+import { aldoUsageNotes } from "../../aldo/usage.logic";
 import { isElectron } from "../../env";
 import { cn } from "../../lib/utils";
 import { useAldoWorkspaceUsage } from "../../state/aldoWorkspaceUsage";
@@ -534,7 +534,9 @@ function UsageCoverageNotice({
   return (
     <div className="flex flex-col gap-1 border border-border px-3 py-2 text-xs text-muted-foreground">
       {isAldoCloud
-        ? failed.length > 0 && <span>{aldoUnreportedUsageNote(failed.length)}</span>
+        ? aldoUsageNotes(failed.map((environment) => environment.error ?? "")).map((note) => (
+            <span key={note}>{note}</span>
+          ))
         : failed.map((environment) => (
             <span key={environment.label}>{environment.label} could not report usage.</span>
           ))}

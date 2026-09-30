@@ -56,7 +56,9 @@ const usageByWindowAtom = Atom.family((windowKey: string) =>
       });
     }
     // Aldo answers for the cloud agents that sleep (aldo/usage.ts).
-    return isAldoCloud ? withAldoUsages(statuses, get(aldoUsageAtom(windowKey))) : statuses;
+    return isAldoCloud
+      ? withAldoUsages(statuses, presentations, get(aldoUsageAtom(windowKey)))
+      : statuses;
   }).pipe(Atom.withLabel(`web-usage:window:${windowKey}`)),
 );
 

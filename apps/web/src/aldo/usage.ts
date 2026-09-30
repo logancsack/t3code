@@ -23,15 +23,25 @@ export const aldoUsageAtom = Atom.family((windowKey: string) => {
   );
 });
 
-/** The page's environments with Aldo's answers for the ones that couldn't; a machine not created yet has none to count. */
+/**
+ * The page's environments, with Aldo's answers for the ones that aren't
+ * connected; a machine not created yet has nothing to count.
+ */
 export function withAldoUsages<S extends Parameters<typeof withAldoUsage>[0]>(
   statuses: ReadonlyArray<S>,
+  presentations: ReadonlyMap<string, { readonly connection: { readonly phase: string } }>,
   result: AsyncResult.AsyncResult<Record<string, unknown>, unknown>,
 ): S[] {
   const answers: AldoUsageAnswers = Option.getOrElse(AsyncResult.value(result), () =>
-    AsyncResult.isFailure(result) ? "none" : "loading",
+    AsyncResult.isFailure(result) ? "failed" : "loading",
   );
   return statuses
     .filter((status) => !aldoMachineIsNew(status.environmentId))
-    .map((status) => withAldoUsage(status, answers));
+    .map((status) =>
+      withAldoUsage(
+        status,
+        presentations.get(status.environmentId)?.connection.phase === "connected",
+        answers,
+      ),
+    );
 }
