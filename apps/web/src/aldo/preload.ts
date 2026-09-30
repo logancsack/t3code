@@ -7,8 +7,11 @@
 // sweep does the same for tabs that close first. Both are settings
 // (preloadSettings.ts). A machine Aldo is starting a thread on is left to it
 // until it's up, and then connected; one Aldo couldn't start isn't brought up.
+// A thread with nothing to show (neither Aldo nor this browser has a copy of
+// it, threadDetails.ts) wakes its machine regardless, once: the machine then
+// reports it, and it opens without waking from then on.
 
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   aldoStartOf,
@@ -18,7 +21,12 @@ import {
   touchAldoEnvironment,
   unloadAldoEnvironment,
 } from "./cloud";
-import { aldoLastSentAt, ensureAldoConnected, isAldoConnected } from "./dispatch";
+import {
+  aldoLastSentAt,
+  ensureAldoConnected,
+  isAldoConnected,
+  notifyAldoRefusal,
+} from "./dispatch";
 import { useAldoPreloadSettings } from "./preloadSettings";
 
 /** A thread passed over on the way elsewhere shouldn't start anything. */
@@ -49,16 +57,26 @@ function scheduleUnload(environmentId: string): void {
 /**
  * Preloads the cloud agent of the thread on screen: `isThread` is false for
  * a new thread's draft (its machine is created) and true for an existing
- * thread (its machine is woken). Also keeps an agent that's up from idling
- * out while the thread is on screen.
+ * thread (its machine is woken). `nothingToShow`: the thread has no copy
+ * anywhere, so its machine is woken to show it, whatever the setting. Also
+ * keeps an agent that's up from idling out while the thread is on screen.
  */
 export function useAldoPreload(
   environmentId: string | null,
   isThread: boolean,
   phase: string | undefined,
+  nothingToShow = false,
 ): void {
   const settings = useAldoPreloadSettings();
-  const enabled = isThread ? settings.openedThreads : settings.newThreads;
+  // Once woken to show the thread, the machine stays up while it's on screen.
+  const [wokenToShow, setWokenToShow] = useState<string | null>(null);
+  useEffect(() => {
+    if (nothingToShow && environmentId !== null) setWokenToShow(environmentId);
+  }, [environmentId, nothingToShow]);
+  const toShow = isThread && environmentId !== null && wokenToShow === environmentId;
+  const toShowRef = useRef(toShow);
+  toShowRef.current = toShow;
+  const enabled = isThread ? settings.openedThreads || toShow : settings.newThreads;
   const applies = isAldoCloud && environmentId !== null && isAldoEnvironmentId(environmentId);
 
   useEffect(() => {
@@ -86,7 +104,10 @@ export function useAldoPreload(
         return;
       }
       preloaded = true;
-      void ensureAldoConnected(environmentId).catch(() => undefined);
+      // Woken to show the thread, a refusal is the user's to know.
+      void ensureAldoConnected(environmentId).catch((cause: unknown) => {
+        if (toShowRef.current) notifyAldoRefusal(cause);
+      });
     };
     const timer = window.setTimeout(preload, DWELL_MS);
     // Back to a tab that sat hidden (its agent may have gone to sleep meanwhile).

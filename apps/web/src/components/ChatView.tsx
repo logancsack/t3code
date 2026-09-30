@@ -445,6 +445,7 @@ import {
 } from "../versionSkew";
 import { useAssetUrls } from "../assets/assetUrls";
 import { useAldoPreload } from "../aldo/preload";
+import { useAldoThreadDetailMissing } from "../aldo/threadDetails";
 import { isAldoCloud, isAldoEnvironmentId } from "../aldo/cloud";
 import { ensureAldoConnected, isAldoConnected } from "../aldo/dispatch";
 
@@ -2054,11 +2055,17 @@ function ChatViewContent(props: ChatViewProps) {
     [retryEnvironment],
   );
   // Aldo: opening a thread starts its cloud agent in the background (a new
-  // thread's is created, an existing one's woken), so sending doesn't wait.
+  // thread's is created, an existing one's woken), so sending doesn't wait;
+  // one with no copy anywhere to show wakes it regardless.
+  const aldoThreadDetailMissing = useAldoThreadDetailMissing(
+    routeKind === "server" ? environmentId : null,
+    routeKind === "server" ? threadId : null,
+  );
   useAldoPreload(
     activeEnvironment?.environmentId ?? null,
     isServerThread,
     activeEnvironment?.connection.phase,
+    aldoThreadDetailMissing && threadDetailLoading,
   );
   const logicalProjectEnvironments = useMemo(() => {
     if (!activeProject) return [];
