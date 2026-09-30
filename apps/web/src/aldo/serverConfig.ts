@@ -97,35 +97,49 @@ async function template(): Promise<EncodedConfig | null> {
 }
 
 /**
- * The server config to show for a machine that isn't running: the newest one
- * any cloud agent reported, renamed for this machine, with each provider's
- * sign-in set from the user's Aldo accounts (the machine gets those sign-ins
- * when it starts, whatever the reporting machine had): connected ones signed
- * in, disconnected ones signed out. If the accounts can't be read, providers
- * stay as reported. Null before any cloud agent has ever reported one.
+ * The server config to show for machines that aren't running, by environment
+ * id: the newest one any cloud agent reported, renamed for each machine, with
+ * each provider's sign-in set from the user's Aldo accounts (a machine gets
+ * those sign-ins when it starts, whatever the reporting machine had):
+ * connected ones signed in, disconnected ones signed out. If the accounts
+ * can't be read, providers stay as reported. None before any cloud agent has
+ * ever reported one.
  */
-export async function aldoServerConfigFor(environmentId: string): Promise<EncodedConfig | null> {
+export async function aldoServerConfigsFor(
+  environmentIds: ReadonlyArray<string>,
+): Promise<Map<string, EncodedConfig>> {
+  const configs = new Map<string, EncodedConfig>();
+  if (environmentIds.length === 0) return configs;
   const [base, accounts] = await Promise.all([template(), fetchAldoAccounts().catch(() => null)]);
-  if (!base) return null;
-  return {
-    ...base,
-    environment: { ...base.environment, environmentId },
-    providers: base.providers.map((provider) => {
-      const account = ACCOUNT_FOR_DRIVER[String(provider.driver)];
-      const auth = (provider.auth ?? {}) as Record<string, unknown>;
-      if (!account || !accounts) return provider;
-      if (accounts[account]?.connected === true) {
-        if (auth.status === "authenticated") return provider;
-        const { message: _message, ...rest } = provider;
-        return { ...rest, status: "ready", auth: { ...auth, status: "authenticated" } };
-      }
-      if (auth.status !== "authenticated") return provider;
-      return {
-        ...provider,
-        status: "error",
-        auth: { status: "unauthenticated" },
-        message: "Not signed in. Connect it in Settings → Providers.",
-      };
-    }),
-  };
+  if (!base) return configs;
+  const providers = base.providers.map((provider) => {
+    const account = ACCOUNT_FOR_DRIVER[String(provider.driver)];
+    const auth = (provider.auth ?? {}) as Record<string, unknown>;
+    if (!account || !accounts) return provider;
+    if (accounts[account]?.connected === true) {
+      if (auth.status === "authenticated") return provider;
+      const { message: _message, ...rest } = provider;
+      return { ...rest, status: "ready", auth: { ...auth, status: "authenticated" } };
+    }
+    if (auth.status !== "authenticated") return provider;
+    return {
+      ...provider,
+      status: "error",
+      auth: { status: "unauthenticated" },
+      message: "Not signed in. Connect it in Settings → Providers.",
+    };
+  });
+  for (const environmentId of environmentIds) {
+    configs.set(environmentId, {
+      ...base,
+      environment: { ...base.environment, environmentId },
+      providers,
+    });
+  }
+  return configs;
+}
+
+/** The server config to show for a machine that isn't running (aldoServerConfigsFor). */
+export async function aldoServerConfigFor(environmentId: string): Promise<EncodedConfig | null> {
+  return (await aldoServerConfigsFor([environmentId])).get(environmentId) ?? null;
 }

@@ -9,14 +9,21 @@
 // sidebar reloads them for machines that aren't connected; a connected
 // machine keeps its own cache current. For a machine Aldo has no shell for
 // yet (it hasn't run since machines began reporting them), this browser
-// offers its copy.
+// offers its copy. A machine this browser never connected to has no models
+// cached either, so nothing could be sent in its threads: it gets the ones a
+// new thread shows (serverConfig.ts) until it connects and has its own.
 
 import type { EnvironmentPresentation } from "@t3tools/client-runtime/connection";
 import type { EnvironmentId } from "@t3tools/contracts";
 
-import { readCachedShells, seedEnvironmentCache } from "../connection/storage";
+import {
+  readCachedShells,
+  seedEnvironmentCache,
+  seedMissingServerConfigs,
+} from "../connection/storage";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentPresentations } from "../state/presentation";
+import { serverEnvironment } from "../state/server";
 import { environmentShell } from "../state/shell";
 import {
   fetchAldoShells,
@@ -25,6 +32,7 @@ import {
   setAldoDirectorySync,
   type AldoEnvironment,
 } from "./cloud";
+import { aldoServerConfigsFor } from "./serverConfig";
 import { aldoShellCandidates, planAldoShellSync } from "./shells.logic";
 
 /** Shells fetched at once (Aldo's limit). */
@@ -34,6 +42,8 @@ const BATCH = 100;
 const known = new Map<string, number>();
 /** Machines Aldo had no shell for whose cache this tab has looked at for a copy to offer. */
 const offerChecked = new Set<string>();
+/** Machines whose cache this tab has looked at for models. */
+const modelsChecked = new Set<string>();
 
 type Phase = EnvironmentPresentation["connection"]["phase"];
 
@@ -80,6 +90,28 @@ async function download(environments: ReadonlyArray<AldoEnvironment>): Promise<S
   return new Set(Object.keys(shells));
 }
 
+/** Models for the machines that aren't connected and have none cached, once per tab. */
+async function seedModels(environments: ReadonlyArray<AldoEnvironment>): Promise<void> {
+  const ids = environments
+    .map((environment) => environment.environmentId)
+    .filter((environmentId) => !modelsChecked.has(environmentId) && !isLive(environmentId));
+  if (ids.length === 0) return;
+  for (const environmentId of ids) modelsChecked.add(environmentId);
+  const configs = await aldoServerConfigsFor(ids);
+  const written = await seedMissingServerConfigs(
+    new Map(
+      [...configs].map(([environmentId, config]) => [environmentId as EnvironmentId, config]),
+    ),
+  );
+  // Already registered: its config reloads from the cache.
+  for (const environmentId of written) {
+    const phase = phaseOf(environmentId);
+    if (phase !== undefined && !isLivePhase(phase)) {
+      appAtomRegistry.refresh(serverEnvironment.configProjection({ environmentId, input: {} }));
+    }
+  }
+}
+
 async function sync(environments: ReadonlyArray<AldoEnvironment>): Promise<void> {
   const candidates = aldoShellCandidates(environments, { known, offerChecked, isLive });
   if (candidates.length === 0) return;
@@ -115,6 +147,8 @@ let running: Promise<void> | null = null;
 export function installAldoShellSync(): void {
   if (!isAldoCloud) return;
   setAldoDirectorySync((environments) => {
+    // Not waited for: a machine that registers first reloads its models once they're in.
+    void seedModels(environments).catch(() => undefined);
     // One at a time: a fetch that comes while one runs (slow Aldo) waits for it.
     running ??= sync(environments).finally(() => {
       running = null;

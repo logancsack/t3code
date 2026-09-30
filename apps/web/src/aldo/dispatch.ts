@@ -98,7 +98,7 @@ export function installAldoCommandDispatch(): void {
     if (!isAldoEnvironmentId(environmentId)) return null;
     if (command.type === "thread.turn.start") lastSentAt.set(environmentId, Date.now());
     await ensureAldoConnected(environmentId).catch((cause: unknown) => {
-      notifyRefusal(cause);
+      notifyAldoRefusal(cause);
       throw cause;
     });
     return null;
@@ -110,9 +110,10 @@ let refusalToastId: string | null = null;
 /**
  * Tells the user why their cloud agent can't start, when Aldo refused it: no
  * plan or credits left (402), or the plan's agents at once already running
- * (409). Only for what the user sent: preloads fail quietly.
+ * (409). Only for what the user asked for (a message, or a thread with nothing
+ * else to show): preloads fail quietly.
  */
-function notifyRefusal(cause: unknown): void {
+export function notifyAldoRefusal(cause: unknown): void {
   if (!(cause instanceof AldoApiError) || (cause.status !== 402 && cause.status !== 409)) return;
   // One at a time: another refused send replaces it rather than stacking.
   if (refusalToastId !== null) toastManager.close(refusalToastId);

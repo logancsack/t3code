@@ -572,6 +572,49 @@ export async function offerAldoShell(threadId: string, shell: unknown): Promise<
   });
 }
 
+/**
+ * A T3 thread's detail as its machine last reported it (threadDetails.ts):
+ * `sequence` is Aldo's copy's, null when it has none, and `detail` comes only
+ * when it's newer than `after`, this browser's own.
+ */
+export async function fetchAldoThreadDetail(
+  environmentId: string,
+  t3ThreadId: string,
+  after: number | null,
+  signal?: AbortSignal,
+): Promise<{ readonly sequence: number | null; readonly detail: unknown }> {
+  const query = new URLSearchParams({ t3ThreadId });
+  if (after !== null) query.set("after", String(after));
+  const threadId = threadIdForEnvironment(environmentId);
+  return api(`/api/environments/${threadId}/detail?${query}`, signal ? { signal } : {});
+}
+
+type ThreadDetailSource = (
+  environmentId: string,
+  threadId: string,
+  cachedSequence: number | null,
+) => Promise<unknown>;
+let threadDetailSource: ThreadDetailSource | null = null;
+
+/** Where T3's thread cache finds Aldo's copy of a thread (threadDetails.ts). */
+export function setAldoThreadDetailSource(source: ThreadDetailSource): void {
+  threadDetailSource = source;
+}
+
+/**
+ * Aldo's copy of a thread whose machine isn't connected, when it's newer than
+ * this browser's cached one (`cachedSequence`), for T3's thread cache to open
+ * it with (connection/storage.ts). Null otherwise; never fails.
+ */
+export async function aldoThreadDetail(
+  environmentId: string,
+  threadId: string,
+  cachedSequence: number | null,
+): Promise<unknown> {
+  if (!threadDetailSource) return null;
+  return threadDetailSource(environmentId, threadId, cachedSequence).catch(() => null);
+}
+
 export async function listAldoRepositories(): Promise<
   ReadonlyArray<SourceControlRepositorySummary>
 > {
