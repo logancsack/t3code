@@ -647,6 +647,12 @@ export interface ChatComposerProps {
   attachmentUploadsCapabilityKnown: boolean;
   supportsAttachmentUploads: boolean;
   maxFileAttachmentBytes: number | null;
+  /**
+   * Aldo: the environment isn't connected yet, and sending connects it and
+   * uploads the attachments first. Uploads don't start (they would fail) and
+   * don't block sending until then.
+   */
+  attachmentUploadsDeferred: boolean;
   routeKind: "server" | "draft";
   routeThreadRef: ScopedThreadRef;
   draftId: DraftId | null;
@@ -771,6 +777,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     attachmentUploadsCapabilityKnown,
     supportsAttachmentUploads,
     maxFileAttachmentBytes,
+    attachmentUploadsDeferred,
     routeKind,
     routeThreadRef,
     draftId,
@@ -883,11 +890,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         ? needsReattachFileCount === 1
           ? "Attach the interrupted file again or remove it"
           : "Attach the interrupted files again or remove them"
-        : attachmentUploadBlockReason({
-            imageIds: [...composerImages, ...composerFiles].map((attachment) => attachment.id),
-            uploadsByImageId,
-            environmentId,
-          })
+        : attachmentUploadsDeferred
+          ? null
+          : attachmentUploadBlockReason({
+              imageIds: [...composerImages, ...composerFiles].map((attachment) => attachment.id),
+              uploadsByImageId,
+              environmentId,
+            })
       : null);
   const sendDisabledReason =
     externalSendDisabledReason ?? (activePendingProgress ? null : attachmentBlockReason);
@@ -930,7 +939,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const getComposerDraft = useComposerDraftStore((store) => store.getComposerDraft);
 
   useEffect(() => {
-    if (!attachmentUploadsCapabilityKnown) {
+    if (!attachmentUploadsCapabilityKnown || attachmentUploadsDeferred) {
       return;
     }
     if (!supportsAttachmentUploads) {
@@ -966,6 +975,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     }
   }, [
     attachmentUploadsCapabilityKnown,
+    attachmentUploadsDeferred,
     composerDraftTarget,
     composerFiles,
     composerImages,
