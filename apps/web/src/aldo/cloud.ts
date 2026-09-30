@@ -865,12 +865,18 @@ export interface AldoVoiceSession {
   readonly model: string;
 }
 
-/** Whether this Aldo has the assistant (an older one has no /api/assistant). */
+/**
+ * Whether this Aldo has the assistant: its tool list, as JSON. An older Aldo
+ * answers a path it doesn't know with the web client's own page (200, HTML),
+ * so the status alone doesn't tell.
+ */
 export async function aldoAssistantAvailable(): Promise<boolean> {
   const response = await fetch("/api/assistant/tools", { credentials: "same-origin" }).catch(
     () => null,
   );
-  return response?.ok === true;
+  if (!response?.ok) return false;
+  const body = (await response.json().catch(() => null)) as { tools?: unknown } | null;
+  return Array.isArray(body?.tools);
 }
 
 export const aldoAssistant = {
@@ -908,7 +914,13 @@ export interface AldoMemoryItem {
 }
 
 export const aldoMemory = {
-  list: async () => (await api<{ items: AldoMemoryItem[] }>("/api/assistant/memory")).items,
+  list: async () => {
+    const { items } = await api<{ items?: AldoMemoryItem[] }>("/api/assistant/memory");
+    // An older Aldo answers with the web client's page: it has no memory.
+    if (!Array.isArray(items))
+      throw new AldoApiError(404, "This Aldo server doesn't have memory yet.");
+    return items;
+  },
   saveProfile: async (body: string) =>
     (
       await api<{ items: AldoMemoryItem[] }>("/api/assistant/memory", {
