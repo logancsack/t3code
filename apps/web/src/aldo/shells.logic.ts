@@ -20,7 +20,9 @@ export interface AldoCachedShell {
  * The machines whose cached shell is worth reading: Aldo's is newer than the
  * sequence this tab last knew the cache at, or Aldo has none and this tab
  * hasn't looked for a copy to offer yet. A machine that isn't created yet has
- * nothing to show, and a connected one keeps its own cache current.
+ * nothing to show unless Aldo is starting a thread on it (Aldo's shell has
+ * the thread, from the moment it's asked for), and a connected one keeps its
+ * own cache current.
  */
 export function aldoShellCandidates<T extends AldoShellEntry>(
   environments: ReadonlyArray<T>,
@@ -32,7 +34,8 @@ export function aldoShellCandidates<T extends AldoShellEntry>(
 ): T[] {
   return environments.filter((environment) => {
     const { environmentId, shellSequence } = environment;
-    if (shellSequence === undefined || environment.state === "new") return false;
+    if (shellSequence === undefined) return false;
+    if (environment.state === "new" && shellSequence === null) return false;
     if (input.isLive(environmentId)) return false;
     return shellSequence === null
       ? !input.offerChecked.has(environmentId)
