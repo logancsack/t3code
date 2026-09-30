@@ -402,7 +402,9 @@ import { useComposerHandleContext } from "../composerHandleContext";
 import {
   awaitAttachmentUploads,
   getUploadedAttachments,
+  readAttachmentUpload,
   releaseDraftAttachments,
+  retryAttachmentUpload,
   startAttachmentUpload,
 } from "../lib/attachmentUploadQueue";
 import { sanitizeThreadErrorMessage } from "~/rpc/transportError";
@@ -2232,6 +2234,14 @@ function ChatViewContent(props: ChatViewProps) {
     advertisedFileAttachmentBytes === null
       ? null
       : clampFileAttachmentUploadBytes(advertisedFileAttachmentBytes);
+  // Aldo: attachments upload to the thread's cloud agent, which a new thread
+  // doesn't have until its first message is sent (and a sleeping one is still
+  // waking). Until it's connected they wait instead of failing; sending brings
+  // the agent up and uploads them before the message goes out.
+  const attachmentUploadsDeferred =
+    isAldoCloud &&
+    isAldoEnvironmentId(environmentId) &&
+    environmentById.get(environmentId)?.connection.phase !== "connected";
   const versionMismatch = resolveServerConfigVersionMismatch(serverConfig);
   const versionMismatchDismissKey =
     versionMismatch && activeThread
@@ -6156,6 +6166,16 @@ function ChatViewContent(props: ChatViewProps) {
         );
         return;
       }
+      // An upload that failed while the agent was offline goes again now that it's up.
+      for (const attachment of composerAttachmentsSnapshot) {
+        if (readAttachmentUpload(attachment.id)?.status === "failed") {
+          retryAttachmentUpload({
+            environmentId,
+            image: attachment,
+            draftTarget: composerDraftTarget,
+          });
+        }
+      }
     }
     if (turnUsesAttachmentUploads && composerAttachmentsSnapshot.length > 0) {
       for (const attachment of composerAttachmentsSnapshot) {
@@ -7660,6 +7680,7 @@ function ChatViewContent(props: ChatViewProps) {
                             attachmentUploadsCapabilityKnown={attachmentUploadsCapabilityKnown}
                             supportsAttachmentUploads={supportsAttachmentUploads}
                             maxFileAttachmentBytes={maxFileAttachmentBytes}
+                            attachmentUploadsDeferred={attachmentUploadsDeferred}
                             routeKind={routeKind}
                             routeThreadRef={routeThreadRef}
                             draftId={draftId}
