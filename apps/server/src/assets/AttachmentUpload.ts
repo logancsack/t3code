@@ -19,6 +19,7 @@ import {
   attachmentFileExtension,
   createPendingAttachmentId,
   parseThreadSegmentFromAttachmentId,
+  PENDING_ATTACHMENT_MAX_AGE_MS,
   PENDING_ATTACHMENT_THREAD_SEGMENT,
   resolveAttachmentPathById,
   sweepStalePendingAttachments,
@@ -33,6 +34,11 @@ import {
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ServerConfig from "../config.ts";
 import { inferImageExtension } from "../imageMime.ts";
+import {
+  persistHubAttachment,
+  removeHubAttachmentById,
+  sweepHubPendingAttachments,
+} from "../persistence/Postgres/HubAttachments.ts";
 
 export const ATTACHMENT_UPLOAD_ROUTE_PREFIX = "/api/attachments/upload";
 
@@ -86,6 +92,7 @@ export const issueAttachmentUploadUrl = Effect.fn("AttachmentUpload.issueUrl")(f
     nowMs - previousSweep >= PENDING_ATTACHMENT_SWEEP_INTERVAL_MS
   ) {
     lastPendingSweepByDirectory.set(config.attachmentsDir, nowMs);
+    yield* sweepHubPendingAttachments(PENDING_ATTACHMENT_MAX_AGE_MS);
     const swept = sweepStalePendingAttachments({
       attachmentsDir: config.attachmentsDir,
       nowMs,
@@ -202,6 +209,7 @@ export const storeAttachmentUpload = Effect.fn("AttachmentUpload.store")(functio
       } satisfies StoreAttachmentUploadResult;
     }
     yield* fileSystem.rename(partPath, finalPath);
+    yield* persistHubAttachment({ attachmentsDir: config.attachmentsDir, relativePath });
     return { ok: true } satisfies StoreAttachmentUploadResult;
   }).pipe(
     Effect.catch((cause) =>
@@ -230,6 +238,7 @@ export const deletePendingAttachment = Effect.fn("AttachmentUpload.deletePending
   }
 
   const config = yield* ServerConfig.ServerConfig;
+  yield* removeHubAttachmentById(attachmentId);
   const attachmentPath = resolveAttachmentPathById({
     attachmentsDir: config.attachmentsDir,
     attachmentId,

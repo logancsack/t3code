@@ -170,10 +170,11 @@ const resolveEnvironmentPortTarget = (
   environmentUrl: URL,
   requestedUrl?: string,
   sourceUrl?: URL,
+  threadId?: string,
 ): PreviewUrlResolution => {
   const protocol = target.protocol ?? "http";
   const path = target.path?.startsWith("/") ? target.path : `/${target.path ?? ""}`;
-  const managedPreviewUrl = resolveManagedPreviewUrl(target.port, path);
+  const managedPreviewUrl = resolveManagedPreviewUrl(target.port, path, threadId);
   if (managedPreviewUrl) {
     return {
       requestedUrl: requestedUrl ?? `${protocol}://localhost:${target.port}${path}`,
@@ -212,9 +213,14 @@ const resolveEnvironmentPortTarget = (
   };
 };
 
+/**
+ * `threadId` names the thread whose machine serves the port on a hub, where
+ * every thread has its own machine; elsewhere the environment serves it.
+ */
 export function resolveBrowserNavigationTarget(
   environmentId: EnvironmentId,
   target: BrowserNavigationTarget,
+  threadId?: string,
 ): PreviewUrlResolution {
   if (target.kind === "url") {
     let parsed: URL | null = null;
@@ -238,6 +244,7 @@ export function resolveBrowserNavigationTarget(
           environmentUrl,
           target.url,
           parsed,
+          threadId,
         );
       }
     }
@@ -248,16 +255,28 @@ export function resolveBrowserNavigationTarget(
       environmentId,
     };
   }
-  return resolveEnvironmentPortTarget(environmentId, target, readEnvironmentUrl(environmentId));
+  return resolveEnvironmentPortTarget(
+    environmentId,
+    target,
+    readEnvironmentUrl(environmentId),
+    undefined,
+    undefined,
+    threadId,
+  );
 }
 
-export function resolveDiscoveredServerUrl(environmentId: EnvironmentId, rawUrl: string): string {
+export function resolveDiscoveredServerUrl(
+  environmentId: EnvironmentId,
+  rawUrl: string,
+  threadId?: string,
+): string {
   try {
     const normalizedUrl = normalizePreviewUrl(rawUrl);
-    return resolveBrowserNavigationTarget(environmentId, {
-      kind: "url",
-      url: normalizedUrl,
-    }).resolvedUrl;
+    return resolveBrowserNavigationTarget(
+      environmentId,
+      { kind: "url", url: normalizedUrl },
+      threadId,
+    ).resolvedUrl;
   } catch {
     return rawUrl;
   }

@@ -150,6 +150,9 @@ import { CommandPaletteContent } from "./CommandPaletteContent";
 import { CommandPaletteResults } from "./CommandPaletteResults";
 import { GitHubRepositoryBrowser } from "./GitHubRepositoryBrowser";
 import { findProjectForGitHubRepository } from "./GitHubRepositoryBrowser.logic";
+import { useHubAddRepository } from "./hub/hubAddRepository";
+import { buildHubBlankProjectSourceItem, hubAddProjectFlowCopy } from "./hub/hubCommandPalette";
+import { hubProjectDisplayLabel, readIsHubEnvironment, usePrimaryIsHub } from "../hubMode";
 import { AzureDevOpsIcon, BitbucketIcon, GitHubIcon, GitLabIcon } from "./Icons";
 import { ProjectFavicon } from "./ProjectFavicon";
 import { ProjectFilePicker } from "./files/ProjectFilePicker";
@@ -244,6 +247,8 @@ type AddProjectCloneFlow =
       readonly step: "repository";
       readonly environmentId: EnvironmentId;
       readonly source: AddProjectRemoteSource;
+      /** Hub only: the input names a new blank project instead of a repository. */
+      readonly blankProject?: boolean;
     }
   | {
       readonly step: "confirm";
@@ -322,6 +327,10 @@ function remoteProjectSourceIcon(source: AddProjectRemoteSource, className: stri
 function remoteProjectInputPlaceholder(flow: AddProjectCloneFlow | null): string | null {
   if (!flow) return null;
   if (flow.step === "confirm") return null;
+  if (readIsHubEnvironment(flow.environmentId)) {
+    const placeholder = hubAddProjectFlowCopy(flow).placeholder;
+    if (placeholder) return placeholder;
+  }
   if (flow.source === "url") {
     return "Enter Git clone URL";
   }
@@ -620,6 +629,8 @@ function OpenCommandPaletteDialog(props: {
   const pullRepository = useAtomCommand(vcsEnvironment.pull, {
     reportFailure: false,
   });
+  const hubAddRepository = useHubAddRepository();
+  const primaryIsHub = usePrimaryIsHub();
   const { environments } = useEnvironments();
   const desktopLocalBootstraps = useDesktopLocalBootstraps();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
@@ -1128,6 +1139,11 @@ function OpenCommandPaletteDialog(props: {
             group?.memberProjects.flatMap((member) => [member.title, member.workspaceRoot]) ?? []
           );
         },
+        // A hub project's root is virtual; show its repository instead.
+        renderDescription: (project) =>
+          readIsHubEnvironment(project.environmentId)
+            ? hubProjectDisplayLabel(project)
+            : project.workspaceRoot,
         icon: projectFavicon,
         runProject: openProjectFromSearch,
       }),
@@ -1150,6 +1166,10 @@ function OpenCommandPaletteDialog(props: {
             ];
           },
           renderDescription: (project) => {
+            // A hub project is its repository; it has no folder or local/remote location.
+            if (readIsHubEnvironment(project.environmentId)) {
+              return <span className="truncate">{hubProjectDisplayLabel(project)}</span>;
+            }
             const location = projectEnvironmentLocationById.get(project.environmentId) ?? {
               kind: "remote",
               label: "Remote",
@@ -1342,9 +1362,14 @@ function OpenCommandPaletteDialog(props: {
   );
 
   const startAddProjectClone = useCallback(
-    (environmentId: EnvironmentId, source: AddProjectRemoteSource): void => {
+    (environmentId: EnvironmentId, source: AddProjectRemoteSource, blankProject = false): void => {
       setAddProjectEnvironmentId(environmentId);
-      setAddProjectCloneFlow({ step: "repository", environmentId, source });
+      setAddProjectCloneFlow({
+        step: "repository",
+        environmentId,
+        source,
+        ...(blankProject ? { blankProject } : {}),
+      });
       pushPaletteView({
         addonIcon: remoteProjectSourceIcon(source, ADDON_ICON_CLASS),
         groups: [],
@@ -1379,6 +1404,14 @@ function OpenCommandPaletteDialog(props: {
         },
       ];
 
+      // A hub has no folders, and adding a repository clones nothing here.
+      const hub = readIsHubEnvironment(environmentId);
+      if (hub) {
+        sourceItems[0] = buildHubBlankProjectSourceItem(environmentId, () =>
+          startAddProjectClone(environmentId, "url", true),
+        );
+      }
+
       const orderedSources: ReadonlyArray<AddProjectRemoteSource> = [
         "url",
         ...sortAddProjectProviderSources(readinessBySource),
@@ -1389,8 +1422,8 @@ function OpenCommandPaletteDialog(props: {
         const title = source === "url" ? "Git URL" : `${label} repository`;
         const description =
           source === "url"
-            ? "Clone from a remote URL"
-            : `Clone ${label} ${remoteProjectSourcePathHint(source)}`;
+            ? `${hub ? "Add" : "Clone"} from a remote URL`
+            : `${hub ? "Add" : "Clone"} ${label} ${remoteProjectSourcePathHint(source)}`;
         const readiness = readinessBySource[source];
         const disabledHint = readiness.hint;
 
@@ -1474,7 +1507,11 @@ function OpenCommandPaletteDialog(props: {
         );
         return;
       }
-      if (!canCreateProjectInEnvironment(environment?.connection.phase) && isManagedDevPc) {
+      if (
+        !canCreateProjectInEnvironment(environment?.connection.phase) &&
+        isManagedDevPc &&
+        !readIsHubEnvironment(environmentId)
+      ) {
         const outcome = await requestManagedResume(`add-project-${randomUUID()}`);
         if (outcome === "rejected") {
           toastManager.add(
@@ -1719,7 +1756,7 @@ function OpenCommandPaletteDialog(props: {
       "url",
       "environment",
     ],
-    title: "Add project",
+    title: primaryIsHub ? "Add repository" : "Add project",
     disabled: defaultAddProjectEnvironmentId === null,
     icon: <FolderPlusIcon className={ITEM_ICON_CLASS} />,
     keepOpen: true,
@@ -2039,11 +2076,83 @@ function OpenCommandPaletteDialog(props: {
     [addProjectCloneFlow?.environmentId, projects],
   );
 
+  function hubDefaultModelSelection(environmentId: EnvironmentId) {
+    return resolveDefaultProviderModelSelection(
+      environments.find((environment) => environment.environmentId === environmentId)?.serverConfig
+        ?.providers ?? (environmentId === primaryEnvironmentId ? providers : []),
+      null,
+    );
+  }
+
+  /** Hub: record the repository as a project (each thread's machine clones it) and open it. */
+  async function addHubRepositoryProject(
+    environmentId: EnvironmentId,
+    remoteUrl: string,
+    repository?: Pick<SourceControlRepositoryInfo, "nameWithOwner">,
+  ): Promise<void> {
+    if (repository) setActiveRemoteRepository(repository.nameWithOwner);
+    const added = await hubAddRepository.addRepository({
+      environmentId,
+      remoteUrl,
+      defaultModelSelection: hubDefaultModelSelection(environmentId),
+    });
+    setActiveRemoteRepository(null);
+    if (added) setOpen(false);
+  }
+
+  /** Hub: a URL or repository path is added as-is; a blank project only needs a name. */
+  async function submitHubAddProjectFlow(
+    flow: Extract<AddProjectCloneFlow, { readonly step: "repository" }>,
+    rawInput: string,
+  ): Promise<void> {
+    if (flow.blankProject) {
+      const added = await hubAddRepository.addBlankProject({
+        environmentId: flow.environmentId,
+        title: rawInput,
+        defaultModelSelection: hubDefaultModelSelection(flow.environmentId),
+      });
+      if (added) setOpen(false);
+      return;
+    }
+    const provider = remoteProjectSourceProvider(flow.source);
+    if (!provider) {
+      await addHubRepositoryProject(flow.environmentId, normalizePastedCloneUrl(rawInput));
+      return;
+    }
+    setIsRemoteProjectLookingUp(true);
+    const lookupResult = await lookupRepository({
+      environmentId: flow.environmentId,
+      input: { provider, repository: rawInput },
+    });
+    setIsRemoteProjectLookingUp(false);
+    if (lookupResult._tag === "Failure") {
+      if (!isAtomCommandInterrupted(lookupResult)) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Repository lookup failed",
+            description: errorMessage(squashAtomCommandFailure(lookupResult)),
+          }),
+        );
+      }
+      return;
+    }
+    await addHubRepositoryProject(
+      flow.environmentId,
+      getDefaultCloneUrl(lookupResult.value),
+      lookupResult.value,
+    );
+  }
+
   async function cloneListedGitHubRepository(
     repository: SourceControlRepositorySummary,
   ): Promise<void> {
     if (addProjectCloneFlow?.step !== "repository" || activeRemoteRepository !== null) return;
     const environmentId = addProjectCloneFlow.environmentId;
+    if (readIsHubEnvironment(environmentId)) {
+      await addHubRepositoryProject(environmentId, getDefaultCloneUrl(repository), repository);
+      return;
+    }
     const destinationPath = getDefaultCloneDestinationPath(environmentId, repository.name);
     setActiveRemoteRepository(repository.nameWithOwner);
     const cloneResult = await cloneRepository({
@@ -2087,6 +2196,15 @@ function OpenCommandPaletteDialog(props: {
     project: { readonly workspaceRoot: string },
   ): Promise<void> {
     if (addProjectCloneFlow?.step !== "repository" || activeRemoteRepository !== null) return;
+    if (readIsHubEnvironment(addProjectCloneFlow.environmentId)) {
+      // Already added: open it. Each thread's machine fetches for itself.
+      await addHubRepositoryProject(
+        addProjectCloneFlow.environmentId,
+        getDefaultCloneUrl(repository),
+        repository,
+      );
+      return;
+    }
     setActiveRemoteRepository(repository.nameWithOwner);
     const pullResult = await pullRepository({
       environmentId: addProjectCloneFlow.environmentId,
@@ -2141,6 +2259,10 @@ function OpenCommandPaletteDialog(props: {
     if (addProjectCloneFlow.step === "repository") {
       const rawRepository = query.trim();
       if (rawRepository.length === 0 || isRemoteProjectLookingUp) {
+        return;
+      }
+      if (readIsHubEnvironment(addProjectCloneFlow.environmentId)) {
+        await submitHubAddProjectFlow(addProjectCloneFlow, rawRepository);
         return;
       }
 
@@ -2388,9 +2510,12 @@ function OpenCommandPaletteDialog(props: {
       : "Add";
   const addShortcutLabel = hasHighlightedBrowseItem ? `${submitModifierLabel} Enter` : "Enter";
   const remoteProjectButtonLabel = addProjectCloneFlow
-    ? addProjectCloneFlow.source === "url"
-      ? "Continue"
-      : "Lookup"
+    ? addProjectCloneFlow.step === "repository" &&
+      readIsHubEnvironment(addProjectCloneFlow.environmentId)
+      ? hubAddProjectFlowCopy(addProjectCloneFlow).buttonLabel
+      : addProjectCloneFlow.source === "url"
+        ? "Continue"
+        : "Lookup"
     : null;
   const isRemoteProjectPending = isRemoteProjectLookingUp || isRemoteProjectCloning;
   const canSubmitRemoteProjectFlow =
@@ -2806,6 +2931,9 @@ function OpenCommandPaletteDialog(props: {
       ) : null}
       {isGitHubRepositoryBrowser ? (
         <GitHubRepositoryBrowser
+          addsWithoutCloning={
+            addProjectCloneFlow !== null && readIsHubEnvironment(addProjectCloneFlow.environmentId)
+          }
           activeRepository={activeRemoteRepository}
           error={githubRepositories.error}
           isLoading={githubRepositories.isPending}
@@ -2826,8 +2954,9 @@ function OpenCommandPaletteDialog(props: {
           onExecuteItem={executeItem}
           {...(addProjectCloneFlow?.step === "repository"
             ? {
-                emptyStateMessage:
-                  addProjectCloneFlow.source === "url"
+                emptyStateMessage: readIsHubEnvironment(addProjectCloneFlow.environmentId)
+                  ? hubAddProjectFlowCopy(addProjectCloneFlow).emptyStateMessage
+                  : addProjectCloneFlow.source === "url"
                     ? "Enter a Git clone URL and press Enter to continue."
                     : "Enter a repository path and press Enter to look it up.",
               }

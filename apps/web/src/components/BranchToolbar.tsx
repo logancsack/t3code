@@ -41,6 +41,8 @@ import {
 } from "./ui/menu";
 import { Separator } from "./ui/separator";
 import { ComposerSurface } from "./chat/ComposerSurface";
+import { HubRunContextLabel } from "./ThreadMachineStatus";
+import { useIsHubEnvironment } from "../hubMode";
 
 interface BranchToolbarProps {
   environmentId: EnvironmentId;
@@ -417,7 +419,10 @@ export const BranchToolbar = memo(function BranchToolbar({
       hasServerThread: serverThread !== null,
       draftThreadEnvMode: draftThread?.envMode,
     });
-  const envModeLocked = envLocked || (serverThread !== null && activeWorktreePath !== null);
+  // Every hub thread runs in a fresh checkout on its own machine: no choice to make.
+  const isHub = useIsHubEnvironment(environmentId);
+  const envModeLocked =
+    envLocked || (serverThread !== null && activeWorktreePath !== null) || isHub;
 
   // "Previous worktree" hops a draft into the most recently active worktree
   // of this project — the "keep going where I just was" follow-up flow. Only
@@ -473,7 +478,7 @@ export const BranchToolbar = memo(function BranchToolbar({
       ref={setStripElement}
       data-compact={labelsOverflow ? "" : undefined}
     >
-      {isMobile && showGitControls ? (
+      {isMobile && showGitControls && !isHub ? (
         <MobileRunContextSelector
           envLocked={envLocked}
           envModeLocked={envModeLocked}
@@ -507,7 +512,8 @@ export const BranchToolbar = memo(function BranchToolbar({
               ) : null}
             </>
           )}
-          {showGitControls ? (
+          {isHub && serverThread === null ? <HubRunContextLabel /> : null}
+          {showGitControls && !isHub ? (
             <BranchToolbarEnvModeSelector
               envLocked={envModeLocked}
               effectiveEnvMode={effectiveEnvMode}

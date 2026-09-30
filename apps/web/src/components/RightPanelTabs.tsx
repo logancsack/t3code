@@ -29,7 +29,7 @@ import type { DesktopPreviewOverlay } from "~/previewStateStore";
 import type { RightPanelSurface } from "~/rightPanelStore";
 import { cn } from "~/lib/utils";
 import { readLocalApi } from "~/localApi";
-import { managedWorkspaceBrowserUrl } from "~/managedDevPc";
+import { isManagedWorkspaceBrowserAvailable } from "~/managedDevPc";
 import { Button } from "~/components/ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { Kbd } from "~/components/ui/kbd";
@@ -638,7 +638,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
     disabledReason: string | null;
     onClick: () => void;
   }> = [
-    ...(props.onAddWorkspaceBrowser && managedWorkspaceBrowserUrl()
+    ...(props.onAddWorkspaceBrowser && isManagedWorkspaceBrowserAvailable()
       ? [
           {
             label: "Workspace browser",
@@ -984,7 +984,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
           <RightPanelEmptyState
             onAddBrowser={props.onAddBrowser}
             onAddWorkspaceBrowser={
-              managedWorkspaceBrowserUrl() ? (props.onAddWorkspaceBrowser ?? null) : null
+              isManagedWorkspaceBrowserAvailable() ? (props.onAddWorkspaceBrowser ?? null) : null
             }
             onAddTerminal={props.onAddTerminal}
             onAddDiff={props.onAddDiff}

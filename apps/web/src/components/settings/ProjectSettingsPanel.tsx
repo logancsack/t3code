@@ -114,6 +114,7 @@ import {
   ProjectFaviconPickerDialog,
 } from "./ProjectFaviconPickerDialog";
 import { projectGroupTitleNeedsUpdate } from "./ProjectSettingsPanel.logic";
+import { hubProjectLocationLabel, readIsHubEnvironment, useIsHubEnvironment } from "../../hubMode";
 
 export const PROJECT_GROUPING_MODE_LABELS: Record<SidebarProjectGroupingMode, string> = {
   repository: "Group by repository",
@@ -287,6 +288,12 @@ export function ProjectSettingsPanel({ projectKey }: { projectKey: string }) {
     );
   }
   return <ProjectDetail key={selected.projectKey} group={selected} />;
+}
+
+function projectLocation(project: SidebarProjectSnapshot["memberProjects"][number]): string {
+  return readIsHubEnvironment(project.environmentId)
+    ? hubProjectLocationLabel(project)
+    : project.workspaceRoot;
 }
 
 function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
@@ -473,6 +480,11 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
   const selectedCheckout =
     group.memberProjects.find((member) => member.physicalProjectKey === selectedCheckoutKey) ??
     representative;
+  // A hub project has no folder; its repository is what identifies it.
+  const selectedCheckoutIsHub = useIsHubEnvironment(selectedCheckout.environmentId);
+  const selectedCheckoutLocation = selectedCheckoutIsHub
+    ? hubProjectLocationLabel(selectedCheckout)
+    : selectedCheckout.workspaceRoot;
   const selectedServerConfig = useAtomValue(
     serverEnvironment.configValueAtom(selectedCheckout.environmentId),
   );
@@ -693,7 +705,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
               : `Remove project "${targetLabel}"?`,
             ...(singleMember
               ? [
-                  `Path: ${singleMember.workspaceRoot}`,
+                  `Path: ${projectLocation(singleMember)}`,
                   ...(singleMember.environmentLabel
                     ? [`Environment: ${singleMember.environmentLabel}`]
                     : []),
@@ -884,6 +896,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
             }
           />
           <SettingsRow
+            hidden={selectedCheckoutIsHub}
             title="Workspace"
             description="Where new threads in this project start. Overrides t3.json and the global default; applies to every checkout in this group."
             resetAction={
@@ -945,7 +958,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
                     hideIndicator
                     value={member.physicalProjectKey}
                   >
-                    {member.environmentLabel ?? "This machine"} · {member.workspaceRoot}
+                    {member.environmentLabel ?? "This machine"} · {projectLocation(member)}
                   </SelectItem>
                 ))}
               </SelectPopup>
@@ -962,13 +975,13 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
                       className="group flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-left outline-none hover:bg-accent/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
                       type="button"
                       onClick={() =>
-                        copyPathToClipboard(selectedCheckout.workspaceRoot, {
-                          path: selectedCheckout.workspaceRoot,
+                        copyPathToClipboard(selectedCheckoutLocation, {
+                          path: selectedCheckoutLocation,
                         })
                       }
                     >
                       <code className="min-w-0 flex-1 truncate font-mono">
-                        {selectedCheckout.workspaceRoot}
+                        {selectedCheckoutLocation}
                       </code>
                       <CopyIcon className="size-4 shrink-0 opacity-60 group-hover:opacity-100" />
                     </button>

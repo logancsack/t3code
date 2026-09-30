@@ -221,6 +221,9 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           projectId: command.projectId,
           title: command.title,
           workspaceRoot: command.workspaceRoot,
+          ...(command.repositoryIdentity !== undefined
+            ? { repositoryIdentity: command.repositoryIdentity }
+            : {}),
           defaultModelSelection: command.defaultModelSelection ?? null,
           faviconPath: null,
           scripts: [],
@@ -265,6 +268,9 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
             : {}),
           ...(command.faviconPath !== undefined ? { faviconPath: command.faviconPath } : {}),
           ...(command.scripts !== undefined ? { scripts: command.scripts } : {}),
+          ...(command.repositoryIdentity !== undefined
+            ? { repositoryIdentity: command.repositoryIdentity }
+            : {}),
           updatedAt: occurredAt,
         },
       };

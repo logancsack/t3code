@@ -23,6 +23,8 @@ import {
   PersistenceSqlError,
   type ProviderSessionRuntimeRepositoryError,
 } from "./Errors.ts";
+import { localOrHub } from "./Postgres/HubDatabase.ts";
+import * as PgRepository from "./Postgres/ProviderSessionRuntime.ts";
 
 /**
  * ProviderSessionRuntimeRepository - Repository interface for provider runtime sessions.
@@ -330,4 +332,7 @@ export const make = Effect.gen(function* () {
   } satisfies ProviderSessionRuntimeRepository["Service"];
 });
 
-export const layer = Layer.effect(ProviderSessionRuntimeRepository, make);
+export const layer = localOrHub(
+  Layer.effect(ProviderSessionRuntimeRepository, make),
+  Layer.effect(ProviderSessionRuntimeRepository, PgRepository.make),
+);

@@ -57,6 +57,49 @@ export interface DeriveServerPathsOptions {
 /**
  * ServerConfig - Service tag for server runtime configuration.
  */
+export const ServerMode = Schema.Literals(["standalone", "hub", "runner"]);
+export type ServerMode = typeof ServerMode.Type;
+
+/** Standalone unless a hub or runner mode was selected. */
+export const serverModeOf = (config: {
+  readonly serverMode?: ServerMode | undefined;
+}): ServerMode => config.serverMode ?? "standalone";
+
+export interface HubServerConfig {
+  /**
+   * Postgres URL for the hub schema, using a role without BYPASSRLS. Without
+   * it a hub persists to its SQLite state database (tests and development).
+   */
+  readonly databaseUrl?: string | undefined;
+  /** Optional role used only to apply hub migrations. */
+  readonly databaseAdminUrl?: string | undefined;
+  /** The Aldo user whose rows this process owns; required with `databaseUrl`. */
+  readonly tenantId?: string | undefined;
+  /** Base64 32-byte key that encrypts per-user secrets at rest; required with `databaseUrl`. */
+  readonly secretKey?: string | undefined;
+  /** Machine directory base URL; absent only with a development `runnerUrl`. */
+  readonly machinesUrl?: string | undefined;
+  readonly machinesToken?: string | undefined;
+  /**
+   * Public base URL at which thread machines reach this hub (its `/mcp`
+   * endpoint). Without it, runners are given the hub's local MCP endpoint,
+   * which only a runner on the same host can reach.
+   */
+  readonly publicUrl?: string | undefined;
+  /**
+   * Same-origin URL template of a thread machine's browser page, with
+   * `{threadId}`; provider sign-in flows that finish in a browser on the
+   * sign-in machine link to it. Defaults to `/_devpc/threads/{threadId}/browser`.
+   */
+  readonly threadBrowserUrlTemplate?: string | undefined;
+  /**
+   * Root of thread checkouts on thread machines (`/workspace/t` by default).
+   * Hub and machines must agree on it; only tests and local development
+   * change it.
+   */
+  readonly checkoutRoot?: string | undefined;
+}
+
 export class ServerConfig extends Context.Service<
   ServerConfig,
   ServerDerivedPaths & {
@@ -98,6 +141,27 @@ export class ServerConfig extends Context.Service<
      * managed automation routes that are never exposed by standalone T3 Code.
      */
     readonly managedGatewayToken?: string | undefined;
+    /**
+     * `standalone` owns everything (the default). `hub` owns orchestration and
+     * persistence but no checkout; thread work runs on per-thread runners.
+     * `runner` serves one thread's checkout to a hub. See
+     * docs/internals/thread-machines.md.
+     */
+    readonly serverMode?: ServerMode | undefined;
+    /** Hub-mode settings; present only when `serverMode` is `hub`. */
+    readonly hub?: HubServerConfig | undefined;
+    /**
+     * Development override for hub mode: a single runner WebSocket URL used
+     * for every thread instead of resolving runners through the machine
+     * directory.
+     */
+    readonly runnerUrl?: string | undefined;
+    /** Bearer presented to runners (hub) or required from hubs (runner). */
+    readonly runnerToken?: string | undefined;
+    /** Runner mode: the only thread this runner serves. */
+    readonly runnerThreadId?: string | undefined;
+    /** Runner mode: the absolute checkout path of that thread. */
+    readonly runnerCheckout?: string | undefined;
     readonly startupPresentation: StartupPresentation;
     readonly desktopBootstrapToken: string | undefined;
     readonly desktopTelemetryFd?: number | undefined;

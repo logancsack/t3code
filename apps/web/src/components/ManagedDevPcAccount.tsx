@@ -3,6 +3,7 @@ import { UserRoundIcon } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 
 import { isManagedDevPc } from "../managedDevPc";
+import { usePrimaryIsHub } from "../hubMode";
 import {
   Dialog,
   DialogDescription,
@@ -189,12 +190,14 @@ export function ManagedDevPcFooterAccount({
 }) {
   const navigate = useNavigate();
   const { isMobile, setOpenMobile } = useSidebar();
+  // A hub has no workspace machine: each thread shows its own machine instead.
+  const primaryIsHub = usePrimaryIsHub();
 
   if (!isManagedDevPc || isLandingDemo()) return null;
   return (
     <div className="flex min-w-0 items-center gap-1">
       <ManagedDevPcAccountButton />
-      {showWorkspaceStatus ? (
+      {showWorkspaceStatus && !primaryIsHub ? (
         <ManagedDevPcStatus
           onOpenSettings={() => {
             if (isMobile) setOpenMobile(false);

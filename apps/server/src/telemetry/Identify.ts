@@ -8,6 +8,8 @@ import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 
+import { HubDatabase, type HubDatabaseShape } from "../persistence/Postgres/HubDatabase.ts";
+import { makeHubDocuments } from "../persistence/Postgres/HubDocuments.ts";
 import * as ServerConfig from "../config.ts";
 
 const CodexAuthJsonSchema = Schema.Struct({
@@ -211,9 +213,44 @@ const getClaudeUserId = Effect.fn("TelemetryIdentity.getClaudeUserId")(function*
   return Option.some(claudeJson.userID);
 });
 
+// A hub's state directory is disposable; the id lives in the tenant's documents.
+const upsertHubAnonymousId = Effect.fn("TelemetryIdentity.upsertHubAnonymousId")(function* (
+  hubDatabase: HubDatabaseShape,
+  anonymousIdPath: string,
+) {
+  const path = yield* Path.Path;
+  const generated = yield* Crypto.Crypto.pipe(
+    Effect.flatMap((crypto) => crypto.randomUUIDv4),
+    Effect.mapError(
+      (cause) =>
+        new TelemetryAnonymousIdGenerationError({
+          source: "anonymous",
+          filePath: anonymousIdPath,
+          cause,
+        }),
+    ),
+  );
+  return yield* makeHubDocuments(hubDatabase)
+    .createIfAbsent(path.basename(anonymousIdPath), generated)
+    .pipe(
+      Effect.mapError(
+        (cause) =>
+          new TelemetryAnonymousIdPersistenceError({
+            source: "anonymous",
+            filePath: anonymousIdPath,
+            cause,
+          }),
+      ),
+    );
+});
+
 const upsertAnonymousId = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const { anonymousIdPath } = yield* ServerConfig.ServerConfig;
+  const hubDatabase = yield* HubDatabase;
+  if (hubDatabase !== undefined) {
+    return yield* upsertHubAnonymousId(hubDatabase, anonymousIdPath);
+  }
 
   const existing = yield* readIdentityFile(fileSystem, "anonymous", anonymousIdPath);
   if (Option.isSome(existing)) {

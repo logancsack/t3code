@@ -10,6 +10,13 @@ import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 
 import * as ServerConfig from "../config.ts";
+import { HubDatabase, type HubDatabaseShape } from "../persistence/Postgres/HubDatabase.ts";
+import {
+  decryptHubSecret,
+  encryptHubSecret,
+  HubSecretKeyError,
+  parseHubSecretKey,
+} from "../persistence/Postgres/HubSecretCipher.ts";
 
 const secretStoreErrorContext = {
   resource: Schema.String,
@@ -310,4 +317,160 @@ export const make = Effect.gen(function* () {
   });
 });
 
-export const layer = Layer.effect(ServerSecretStore, make);
+const hubSecretAlreadyExists = (name: string) =>
+  PlatformError.systemError({
+    _tag: "AlreadyExists",
+    module: "ServerSecretStore",
+    method: "create",
+    pathOrDescriptor: name,
+  });
+
+/**
+ * Hub mode keeps secrets as tenant rows encrypted with the hub secret key (see
+ * `HubSecretCipher`): the hub's state directory is disposable and shared
+ * machines must not hold them in plain files.
+ */
+const makeHub = (hubDatabase: HubDatabaseShape) =>
+  Effect.gen(function* () {
+    const crypto = yield* Crypto.Crypto;
+    const serverConfig = yield* ServerConfig.ServerConfig;
+    const encodedKey = serverConfig.hub?.secretKey;
+    if (encodedKey === undefined) {
+      return yield* Effect.die(new HubSecretKeyError());
+    }
+    // An invalid key is a configuration defect: fail startup (without echoing it).
+    const key = yield* Effect.sync(() => parseHubSecretKey(encodedKey));
+    const { sql, tenantId } = hubDatabase;
+
+    const get: ServerSecretStore["Service"]["get"] = (name) =>
+      sql<{ readonly format: number; readonly nonce: Uint8Array; readonly ciphertext: Uint8Array }>`
+        SELECT format, nonce, ciphertext
+        FROM hub_secrets
+        WHERE user_id = ${tenantId}
+          AND name = ${name}
+      `.pipe(
+        Effect.mapError((cause) => new SecretStoreReadError({ resource: `secret ${name}`, cause })),
+        Effect.flatMap(([row]) =>
+          row === undefined
+            ? Effect.succeed(Option.none<Uint8Array>())
+            : Effect.try({
+                try: () => Option.some(decryptHubSecret({ key, tenantId, name, stored: row })),
+                catch: (cause) => new SecretStoreDecodeError({ resource: `secret ${name}`, cause }),
+              }),
+        ),
+        Effect.withSpan("ServerSecretStore.get"),
+      );
+
+    const encrypt = (name: string, value: Uint8Array) =>
+      Effect.try({
+        try: () => encryptHubSecret({ key, tenantId, name, plaintext: value }),
+        catch: (cause) => new SecretStoreEncodeError({ resource: `secret ${name}`, cause }),
+      });
+
+    const set: ServerSecretStore["Service"]["set"] = (name, value) =>
+      encrypt(name, value).pipe(
+        Effect.flatMap((stored) =>
+          sql`
+            INSERT INTO hub_secrets (user_id, name, format, nonce, ciphertext, updated_at)
+            VALUES (${tenantId}, ${name}, ${stored.format}, ${stored.nonce}, ${stored.ciphertext}, now())
+            ON CONFLICT (user_id, name)
+            DO UPDATE SET
+              format = excluded.format,
+              nonce = excluded.nonce,
+              ciphertext = excluded.ciphertext,
+              updated_at = excluded.updated_at
+          `.pipe(
+            Effect.mapError(
+              (cause) => new SecretStorePersistError({ resource: `secret ${name}`, cause }),
+            ),
+          ),
+        ),
+        Effect.asVoid,
+        Effect.withSpan("ServerSecretStore.set"),
+      );
+
+    const create: ServerSecretStore["Service"]["create"] = (name, value) =>
+      encrypt(name, value).pipe(
+        Effect.flatMap((stored) =>
+          sql<{ readonly name: string }>`
+            INSERT INTO hub_secrets (user_id, name, format, nonce, ciphertext)
+            VALUES (${tenantId}, ${name}, ${stored.format}, ${stored.nonce}, ${stored.ciphertext})
+            ON CONFLICT (user_id, name) DO NOTHING
+            RETURNING name
+          `.pipe(
+            Effect.mapError(
+              (cause) => new SecretStorePersistError({ resource: `secret ${name}`, cause }),
+            ),
+          ),
+        ),
+        Effect.flatMap((rows) =>
+          rows.length > 0
+            ? Effect.void
+            : Effect.fail(
+                new SecretStorePersistError({
+                  resource: `secret ${name}`,
+                  cause: hubSecretAlreadyExists(name),
+                }),
+              ),
+        ),
+        Effect.withSpan("ServerSecretStore.create"),
+      );
+
+    const getOrCreateRandom: ServerSecretStore["Service"]["getOrCreateRandom"] = (name, bytes) =>
+      get(name).pipe(
+        Effect.flatMap(
+          Option.match({
+            onSome: Effect.succeed,
+            onNone: () =>
+              crypto.randomBytes(bytes).pipe(
+                Effect.mapError(
+                  (cause) =>
+                    new SecretStoreRandomGenerationError({ resource: `secret ${name}`, cause }),
+                ),
+                Effect.flatMap((generated) =>
+                  create(name, generated).pipe(
+                    Effect.as(Uint8Array.from(generated)),
+                    Effect.catchIf(isSecretAlreadyExistsError, () =>
+                      get(name).pipe(
+                        Effect.flatMap(
+                          Option.match({
+                            onSome: Effect.succeed,
+                            onNone: () =>
+                              Effect.fail(
+                                new SecretStoreConcurrentReadError({ resource: `secret ${name}` }),
+                              ),
+                          }),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          }),
+        ),
+        Effect.withSpan("ServerSecretStore.getOrCreateRandom"),
+      );
+
+    const remove: ServerSecretStore["Service"]["remove"] = (name) =>
+      sql`
+        DELETE FROM hub_secrets
+        WHERE user_id = ${tenantId}
+          AND name = ${name}
+      `.pipe(
+        Effect.mapError(
+          (cause) => new SecretStoreRemoveError({ resource: `secret ${name}`, cause }),
+        ),
+        Effect.asVoid,
+        Effect.withSpan("ServerSecretStore.remove"),
+      );
+
+    return ServerSecretStore.of({ get, set, create, getOrCreateRandom, remove });
+  });
+
+export const layer = Layer.effect(
+  ServerSecretStore,
+  Effect.gen(function* () {
+    const hubDatabase = yield* HubDatabase;
+    return hubDatabase === undefined ? yield* make : yield* makeHub(hubDatabase);
+  }),
+);

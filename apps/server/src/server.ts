@@ -34,6 +34,8 @@ import { pullRequestHttpApiLayer } from "./pullRequest/http.ts";
 import * as PullRequestProviderRegistry from "./pullRequest/PullRequestProviderRegistry.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
 import { layerConfig as SqlitePersistenceLayerLive } from "./persistence/Layers/Sqlite.ts";
+import * as HubDatabase from "./persistence/Postgres/HubDatabase.ts";
+import * as HubRepositoryIdentityResolver from "./persistence/Postgres/HubRepositoryIdentityResolver.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
 import { ProviderSessionDirectoryLive } from "./provider/Layers/ProviderSessionDirectory.ts";
@@ -134,6 +136,7 @@ import * as NetService from "@t3tools/shared/Net";
 import * as RelayClient from "@t3tools/shared/relayClient";
 import { disableTailscaleServe, ensureTailscaleServe } from "@t3tools/tailscale";
 import { forkParked, ServerActivation } from "./serverActivation.ts";
+import * as HubLayers from "./hub/HubLayers.ts";
 
 // MCP handoff thread IDs include escaped provenance and can exceed find-my-way's
 // 100-character default for one path segment.
@@ -147,11 +150,11 @@ export const HTTP_ROUTER_CONFIG = {
 // those finalizers get a chance to run.
 const HTTP_PREEMPTIVE_SHUTDOWN_GRACE_MS = 0;
 const ResourceAttributionLayerLive = ResourceAttribution.layer;
-const ApplicationObservabilityLive = ObservabilityLive.pipe(
+export const ApplicationObservabilityLive = ObservabilityLive.pipe(
   Layer.provideMerge(ResourceAttributionLayerLive),
 );
 
-const PtyAdapterLive = Layer.unwrap(
+export const PtyAdapterLive = Layer.unwrap(
   Effect.gen(function* () {
     if (typeof Bun !== "undefined") {
       const BunPtyAdapter = yield* Effect.promise(() => import("./terminal/BunPtyAdapter.ts"));
@@ -163,7 +166,40 @@ const PtyAdapterLive = Layer.unwrap(
   }),
 );
 
-const ServerSettingsLayerLive = ServerSettings.layer.pipe(
+/**
+ * Picks the standalone or the hub implementation of a mode-dependent layer
+ * group (see `ServerModeLayers`). Consumers see only the services both provide.
+ */
+const byServerMode = <A1, E1, R1, A2, E2, R2>(
+  standalone: Layer.Layer<A1, E1, R1>,
+  hub: Layer.Layer<A2, E2, R2>,
+): Layer.Layer<Extract<A1, A2>, E1 | E2, R1 | R2 | ServerConfig.ServerConfig> =>
+  Layer.unwrap(
+    Effect.gen(function* () {
+      const config = yield* ServerConfig.ServerConfig;
+      return (ServerConfig.serverModeOf(config) === "hub"
+        ? hub
+        : standalone) as unknown as Layer.Layer<Extract<A1, A2>, E1 | E2, R1 | R2>;
+    }),
+  );
+
+/**
+ * A layer only a hub runs. Standalone servers build nothing in its place; the
+ * services it provides are only required by the other hub groups.
+ */
+const hubOnly = <A, E, R>(
+  hub: Layer.Layer<A, E, R>,
+): Layer.Layer<A, E, R | ServerConfig.ServerConfig> =>
+  Layer.unwrap(
+    Effect.gen(function* () {
+      const config = yield* ServerConfig.ServerConfig;
+      return ServerConfig.serverModeOf(config) === "hub"
+        ? hub
+        : (Layer.empty as unknown as Layer.Layer<A, E, R>);
+    }),
+  );
+
+export const ServerSettingsLayerLive = ServerSettings.layer.pipe(
   Layer.provide(ServerSecretStore.layer),
   Layer.provideMerge(SqlitePersistenceLayerLive),
 );
@@ -184,7 +220,7 @@ const HostPowerMonitorLayerLive = HostPowerMonitor.layer.pipe(
   Layer.provide(DesktopTelemetryReceiverLayerLive),
 );
 
-const BackgroundLayerLive = BackgroundPolicy.layer.pipe(
+export const BackgroundLayerLive = BackgroundPolicy.layer.pipe(
   Layer.provide(HostPowerMonitorLayerLive),
   Layer.provideMerge(ServerSettingsLayerLive),
 );
@@ -213,7 +249,7 @@ const AgentAwarenessRelayLayerLive = Layer.unwrap(
   }),
 );
 
-const HttpServerLive = Layer.unwrap(
+export const HttpServerLive = Layer.unwrap(
   Effect.gen(function* () {
     const config = yield* ServerConfig.ServerConfig;
     if (typeof Bun !== "undefined") {
@@ -260,7 +296,7 @@ const HttpServerLive = Layer.unwrap(
   }),
 );
 
-const PlatformServicesLive = Layer.unwrap(
+export const PlatformServicesLive = Layer.unwrap(
   Effect.gen(function* () {
     if (typeof Bun !== "undefined") {
       const { layer } = yield* Effect.promise(() => import("@effect/platform-bun/BunServices"));
@@ -300,11 +336,11 @@ const ProviderLayerLive = ProviderServiceLive.pipe(
 
 const PersistenceLayerLive = Layer.empty.pipe(Layer.provideMerge(SqlitePersistenceLayerLive));
 
-const VcsDriverRegistryLayerLive = VcsDriverRegistry.layer.pipe(
+export const VcsDriverRegistryLayerLive = VcsDriverRegistry.layer.pipe(
   Layer.provide(VcsProjectConfig.layer),
 );
 
-const SourceControlProviderRegistryLayerLive = SourceControlProviderRegistry.layer.pipe(
+export const SourceControlProviderRegistryLayerLive = SourceControlProviderRegistry.layer.pipe(
   Layer.provide(
     Layer.mergeAll(AzureDevOpsCli.layer, BitbucketApi.layer, GitHubCli.layer, GitLabCli.layer),
   ),
@@ -412,22 +448,93 @@ const CloudManagedEndpointRuntimeLive = Layer.mergeAll(
   ),
 );
 
+/**
+ * Layer groups whose implementation depends on the server mode. Standalone
+ * uses the local implementations above; a hub (`T3CODE_SERVER_MODE=hub`)
+ * replaces every checkout-bound group with `hub/HubLayers.ts`, so the hub never
+ * reads a checkout, runs git, opens a PTY, or spawns a provider CLI. The rest
+ * of the runtime is identical in both modes. See
+ * docs/internals/thread-machines.md.
+ */
+const ServerModeLayers = {
+  /** Background work that needs the reactors (hub: runner delivery and machine release). */
+  background: hubOnly(HubLayers.hubRuntimeBackgroundLayer),
+  /** Hooks read by reactors and command dispatch; standalone relies on their defaults. */
+  reactorHooks: hubOnly(HubLayers.hubReactorHooksLayer),
+  checkpointing: byServerMode(
+    CheckpointingLayerLive,
+    CheckpointDiffQuery.layer.pipe(Layer.provideMerge(HubLayers.hubCheckpointStoreLayer)),
+  ),
+  git: byServerMode(
+    GitLayerLive,
+    HubLayers.hubGitManagerLayer.pipe(
+      Layer.provideMerge(ProjectSetupScriptRunner.layer),
+      Layer.provideMerge(GitVcsDriver.layer),
+      Layer.provideMerge(SourceControlProviderRegistryLayerLive),
+      Layer.provideMerge(TextGeneration.layer),
+    ),
+  ),
+  vcs: byServerMode(
+    VcsLayerLive,
+    Layer.mergeAll(
+      HubLayers.hubVcsStatusBroadcasterLayer,
+      HubLayers.hubVcsProvisioningServiceLayer,
+      HubLayers.hubSourceControlRepositoryServiceLayer.pipe(
+        Layer.provide(SourceControlRepositoryServiceLayerLive),
+      ),
+      GrokReviewService.layer.pipe(Layer.provide(HubLayers.hubReviewServiceLayer)),
+    ).pipe(
+      Layer.provideMerge(HubLayers.hubReviewServiceLayer),
+      Layer.provideMerge(HubLayers.hubGitWorkflowServiceLayer),
+      Layer.provideMerge(VcsDriverRegistryLayerLive),
+      Layer.provideMerge(VcsProjectConfig.layer),
+    ),
+  ),
+  terminal: byServerMode(TerminalLayerLive, HubLayers.hubTerminalManagerLayer),
+  workspace: byServerMode(
+    WorkspaceLayerLive,
+    Layer.mergeAll(
+      HubLayers.hubWorkspacePathsLayer,
+      HubLayers.hubWorkspaceEntriesLayer,
+      HubLayers.hubWorkspaceFileSystemLayer,
+    ),
+  ),
+  /** A hub answers from the identity recorded on each project. */
+  repositoryIdentity: byServerMode(
+    RepositoryIdentityResolver.layer,
+    HubRepositoryIdentityResolver.layer,
+  ),
+  providerInstances: byServerMode(
+    ProviderInstanceRegistryHydrationLive,
+    HubLayers.hubProviderInstanceRegistryLayer,
+  ),
+  /** Hub-only services under the whole runtime (machine directory, runner pool, caches). */
+  infrastructure: hubOnly(
+    HubLayers.makeHubInfrastructureLayer({ persistence: SqlitePersistenceLayerLive }),
+  ),
+};
+
 const ProviderRuntimeLayerLive = Layer.mergeAll(
   ProviderSessionReaperLive,
   TurnLivenessWatchdogLive,
 ).pipe(Layer.provideMerge(ProviderLayerLive), Layer.provideMerge(OrchestrationLayerLive));
 
-const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
+const RuntimeReactorsLive = ServerModeLayers.background.pipe(
+  Layer.provideMerge(ReactorLayerLive),
+  Layer.provideMerge(ServerModeLayers.reactorHooks),
+);
+
+const RuntimeCoreDependenciesLive = RuntimeReactorsLive.pipe(
   // Core Services
   Layer.provideMerge(ServerSettingsLayerLive),
-  Layer.provideMerge(CheckpointingLayerLive),
+  Layer.provideMerge(ServerModeLayers.checkpointing),
   Layer.provideMerge(
     Layer.mergeAll(SourceControlProviderRegistryLayerLive, PullRequestServiceLive),
   ),
-  Layer.provideMerge(GitLayerLive),
-  Layer.provideMerge(VcsLayerLive),
+  Layer.provideMerge(ServerModeLayers.git),
+  Layer.provideMerge(ServerModeLayers.vcs),
   Layer.provideMerge(ProviderRuntimeLayerLive),
-  Layer.provideMerge(Layer.mergeAll(TerminalLayerLive, PreviewLayerLive)),
+  Layer.provideMerge(Layer.mergeAll(ServerModeLayers.terminal, PreviewLayerLive)),
   Layer.provideMerge(PersistenceLayerLive),
   // Both read a user-owned file out of the state directory and stream changes
   // to clients; neither depends on the other.
@@ -438,7 +545,7 @@ const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
   // through this layer. Built-in drivers come from `BUILT_IN_DRIVERS`;
   // `providerInstances` hydration merges `settings.providers.<kind>`
   // with explicit `providerInstances` entries on boot.
-  Layer.provideMerge(ProviderInstanceRegistryHydrationLive),
+  Layer.provideMerge(ServerModeLayers.providerInstances),
   // Shared native/canonical NDJSON writers used by both the per-instance
   // drivers (native stream, written from inside each `<X>Adapter`) and
   // `ProviderService` (canonical stream, written after event normalization).
@@ -454,9 +561,9 @@ const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
   // no longer transitively provides it. Exposing it at the runtime level
   // keeps a single Live for all opencode consumers.
   Layer.provideMerge(OpenCodeRuntime.OpenCodeRuntimeLive),
-  Layer.provideMerge(WorkspaceLayerLive),
+  Layer.provideMerge(ServerModeLayers.workspace),
   Layer.provideMerge(ProjectFaviconResolverLayerLive),
-  Layer.provideMerge(RepositoryIdentityResolver.layer),
+  Layer.provideMerge(ServerModeLayers.repositoryIdentity),
   Layer.provideMerge(ServerEnvironmentLayerLive),
   Layer.provideMerge(AuthLayerLive),
   Layer.provideMerge(ServerSecretStore.layer),
@@ -735,9 +842,12 @@ export const makeServerLayer = Layer.unwrap(
 
     return serverApplicationLayer.pipe(
       Layer.provideMerge(runtimeServicesLive),
+      Layer.provideMerge(ServerModeLayers.infrastructure),
       Layer.provide(activationLayer),
       Layer.provideMerge(serverRelayBrokerTracingLayer),
       Layer.provideMerge(HttpServerLive),
+      // Hub mode: the tenant's Postgres database, visible to every store below.
+      Layer.provideMerge(HubDatabase.layerConfig),
       Layer.provide(ApplicationObservabilityLive),
       Layer.provideMerge(FetchHttpClient.layer),
       Layer.provideMerge(VcsProcess.layer),

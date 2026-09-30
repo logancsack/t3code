@@ -9,6 +9,7 @@ import { useEnvironments, usePrimaryEnvironmentId } from "~/state/environments";
 import { useEnvironmentQuery } from "~/state/query";
 import { usePrimarySessionState } from "~/environments/primary";
 import { primaryServerConfigAtom } from "~/state/server";
+import { usePrimaryIsHub } from "~/hubMode";
 import { isWslSettingsRowVisible } from "./ConnectionsSettings.logic";
 import { isProviderSettingsEnvironmentAvailable } from "./ProviderSettingsPanel.logic";
 import { filterAvailableSettingsSearchItems } from "./settingsSearch";
@@ -19,6 +20,7 @@ export function useAvailableSettingsSearchItems() {
   const primarySessionState = usePrimarySessionState();
   const primaryServerConfig = useAtomValue(primaryServerConfigAtom);
   const desktopWsl = useEnvironmentQuery(isElectron ? desktopWslStateAtom : null);
+  const primaryIsHub = usePrimaryIsHub();
   const canManageLocalBackend =
     isElectron ||
     ((primarySessionState.data?.authenticated &&
@@ -43,6 +45,7 @@ export function useAvailableSettingsSearchItems() {
         }),
         hasThreadAutoSettlement:
           primaryServerConfig?.environment.capabilities.threadAutoSettlement === true,
+        primaryIsHub,
       }),
     [
       canManageLocalBackend,
@@ -50,6 +53,7 @@ export function useAvailableSettingsSearchItems() {
       desktopWsl.error,
       environments,
       primaryEnvironmentId,
+      primaryIsHub,
       primaryServerConfig,
     ],
   );

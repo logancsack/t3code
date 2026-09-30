@@ -4762,6 +4762,36 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
+  it.effect("answers hub-only thread machine and sign-in calls as unsupported standalone", () =>
+    Effect.gen(function* () {
+      yield* buildAppUnderTest();
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const threadId = ThreadId.make("thread-standalone");
+      const [wake, pause] = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          Effect.all([
+            client[WS_METHODS.threadMachinesWake]({ threadId }).pipe(Effect.flip),
+            client[WS_METHODS.threadMachinesPause]({ threadId }).pipe(Effect.flip),
+          ]),
+        ),
+      );
+      for (const error of [wake, pause]) {
+        assert.equal(error._tag, "ThreadMachineControlError");
+        assert.equal(error._tag === "ThreadMachineControlError" && error.reason, "unsupported");
+      }
+      const [list, signOut] = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          Effect.all([
+            client[WS_METHODS.serverListProviderSignIns]({}).pipe(Effect.flip),
+            client[WS_METHODS.serverSignOutProvider]({ connector: "claude" }).pipe(Effect.flip),
+          ]),
+        ),
+      );
+      assert.equal(list._tag, "AuthConnectorError");
+      assert.equal(signOut._tag, "AuthConnectorError");
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
   it.effect("uploads image bytes through a signed URL issued by websocket rpc", () =>
     Effect.gen(function* () {
       const config = yield* buildAppUnderTest();

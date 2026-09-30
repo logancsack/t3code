@@ -20,6 +20,8 @@ import {
   type PersistenceErrorCorrelation,
   PersistenceSqlError,
 } from "./Errors.ts";
+import { localOrHub } from "./Postgres/HubDatabase.ts";
+import * as PgRepository from "./Postgres/AuthSessions.ts";
 
 export const AuthSessionClientMetadataRecord = Schema.Struct({
   label: Schema.NullOr(Schema.String),
@@ -451,4 +453,7 @@ export const make = Effect.gen(function* () {
   } satisfies AuthSessionRepository["Service"];
 });
 
-export const layer = Layer.effect(AuthSessionRepository, make);
+export const layer = localOrHub(
+  Layer.effect(AuthSessionRepository, make),
+  Layer.effect(AuthSessionRepository, PgRepository.make),
+);

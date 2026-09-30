@@ -32,7 +32,8 @@ import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
 import { ProjectionTurnRepository } from "../../persistence/Services/ProjectionTurns.ts";
 import { ProjectionTurnRepositoryLive } from "../../persistence/Layers/ProjectionTurns.ts";
-import { isGitRepository } from "../../git/Utils.ts";
+import { CheckoutGitProbe } from "../../git/CheckoutGitProbe.ts";
+import { DeterministicIngestionCommandIds } from "../../serverModeHooks.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ThreadBackgroundLivenessService } from "../ThreadBackgroundLiveness.ts";
 import { ThreadPlanProgressService } from "../ThreadPlanProgress.ts";
@@ -888,6 +889,9 @@ export function runtimeEventToActivities(
   return [];
 }
 
+/** Events whose command ordinals are remembered; far beyond any replay window. */
+const COMMAND_ORDINAL_CAPACITY = 20_000;
+
 const make = Effect.gen(function* () {
   const threadBackgroundLiveness = yield* ThreadBackgroundLivenessService;
   const threadPlanProgress = yield* ThreadPlanProgressService;
@@ -897,10 +901,30 @@ const make = Effect.gen(function* () {
   const providerService = yield* ProviderService;
   const projectionTurnRepository = yield* ProjectionTurnRepository;
   const serverSettingsService = yield* ServerSettingsService;
+  const isGitRepository = yield* CheckoutGitProbe;
+  const deterministicCommandIds = yield* DeterministicIngestionCommandIds;
+  // Hub mode: `provider:<eventId>:<tag>:<n>`, where n counts commands per
+  // event and tag, so a replayed runner event reproduces the same ids.
+  const commandOrdinals = new Map<string, number>();
+  const nextCommandOrdinal = (key: string) => {
+    const ordinal = commandOrdinals.get(key) ?? 0;
+    commandOrdinals.delete(key);
+    commandOrdinals.set(key, ordinal + 1);
+    if (commandOrdinals.size > COMMAND_ORDINAL_CAPACITY) {
+      commandOrdinals.delete(commandOrdinals.keys().next().value!);
+    }
+    return ordinal;
+  };
   const providerCommandId = (event: ProviderRuntimeEvent, tag: string) =>
-    crypto.randomUUIDv4.pipe(
-      Effect.map((uuid) => CommandId.make(`provider:${event.eventId}:${tag}:${uuid}`)),
-    );
+    deterministicCommandIds
+      ? Effect.sync(() =>
+          CommandId.make(
+            `provider:${event.eventId}:${tag}:${nextCommandOrdinal(`${event.eventId}:${tag}`)}`,
+          ),
+        )
+      : crypto.randomUUIDv4.pipe(
+          Effect.map((uuid) => CommandId.make(`provider:${event.eventId}:${tag}:${uuid}`)),
+        );
 
   const turnMessageIdsByTurnKey = yield* Cache.make<string, Set<MessageId>>({
     capacity: TURN_MESSAGE_IDS_BY_TURN_CACHE_CAPACITY,
@@ -1948,7 +1972,7 @@ const make = Effect.gen(function* () {
           : undefined;
         const workspaceCwd =
           checkpointContext?.worktreePath ?? checkpointContext?.workspaceRoot ?? undefined;
-        if (turnId && checkpointContext && workspaceCwd && isGitRepository(workspaceCwd)) {
+        if (turnId && checkpointContext && workspaceCwd && (yield* isGitRepository(workspaceCwd))) {
           // Skip if a checkpoint already exists for this turn. A real
           // (non-placeholder) capture from CheckpointReactor should not
           // be clobbered, and dispatching a duplicate placeholder for the

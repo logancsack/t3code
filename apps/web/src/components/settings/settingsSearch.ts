@@ -33,6 +33,8 @@ export interface SettingsSearchItem {
   readonly localBackendManagementOnly?: boolean;
   readonly wslAvailableOnly?: boolean;
   readonly requiresThreadAutoSettlement?: boolean;
+  /** Its row is hidden when the primary environment is a hub (no folders, no env mode). */
+  readonly hiddenInHub?: boolean;
 }
 
 export interface SettingsSearchAvailability {
@@ -42,6 +44,7 @@ export interface SettingsSearchAvailability {
   readonly canManageLocalBackend: boolean;
   readonly isWslSettingsRowVisible: boolean;
   readonly hasThreadAutoSettlement: boolean;
+  readonly primaryIsHub?: boolean;
 }
 
 /**
@@ -206,12 +209,14 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "new-threads",
     title: "New threads",
     to: "/settings/general",
+    hiddenInHub: true,
     searchTerms: ["default workspace mode draft local worktree"],
   },
   {
     id: "start-from-origin",
     title: "Start from origin",
     to: "/settings/general",
+    hiddenInHub: true,
     targetId: "new-threads",
     searchTerms: ["new worktrees latest matching remote branch local"],
   },
@@ -219,6 +224,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "add-project-starts-in",
     title: "Add project starts in",
     to: "/settings/general",
+    hiddenInHub: true,
     searchTerms: ["base directory folder browser path home"],
   },
   {
@@ -470,7 +476,8 @@ export function filterAvailableSettingsSearchItems(
       (!item.providerSettingsOnly || availability.hasProviderSettingsEnvironment) &&
       (!item.localBackendManagementOnly || availability.canManageLocalBackend) &&
       (!item.wslAvailableOnly || availability.isWslSettingsRowVisible) &&
-      (!item.requiresThreadAutoSettlement || availability.hasThreadAutoSettlement),
+      (!item.requiresThreadAutoSettlement || availability.hasThreadAutoSettlement) &&
+      (!item.hiddenInHub || availability.primaryIsHub !== true),
   );
 }
 

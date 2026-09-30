@@ -30,6 +30,7 @@ import {
   resolveNewThreadModelSelectionOverride,
 } from "../lib/chatThreadActions";
 import { readT3ProjectFileDefaultThreadEnvMode } from "../lib/t3ProjectFileDefaults";
+import { hubNewThreadOptions, readIsHubEnvironment } from "../hubMode";
 import { primaryServerSettingsAtom } from "../state/server";
 import { resolveThreadRouteTarget } from "../threadRoutes";
 import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore";
@@ -71,7 +72,7 @@ export function useNewThreadHandler() {
   return useCallback(
     (
       projectRef: ScopedProjectRef,
-      options?: {
+      requestedOptions?: {
         branch?: string | null;
         worktreePath?: string | null;
         envMode?: DraftThreadEnvMode;
@@ -82,6 +83,8 @@ export function useNewThreadHandler() {
       // prepared checkout, a task to write — addresses that one rather than looking the project
       // up again and finding whichever draft it happens to hold.
     ): Promise<{ draftId: DraftId; threadId: ThreadId } | null> => {
+      const hub = readIsHubEnvironment(projectRef.environmentId);
+      const options = hub ? hubNewThreadOptions(requestedOptions) : requestedOptions;
       const projects = readProjects();
       const {
         getComposerDraft,
@@ -146,6 +149,7 @@ export function useNewThreadHandler() {
       // skipped entirely when a higher-priority source decides, and its
       // query atom caches per project after the first call.
       const resolveDefaultEnvMode = async (): Promise<DraftThreadEnvMode> => {
+        if (hub) return "worktree";
         const consultProjectFile = project !== undefined && project.defaultThreadEnvMode == null;
         return resolveDefaultThreadEnvMode({
           projectSetting: project?.defaultThreadEnvMode,

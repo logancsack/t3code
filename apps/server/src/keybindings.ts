@@ -23,11 +23,8 @@ import * as Array from "effect/Array";
 import * as Cache from "effect/Cache";
 import * as Cause from "effect/Cause";
 import * as Deferred from "effect/Deferred";
-import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
-import * as FileSystem from "effect/FileSystem";
-import * as Path from "effect/Path";
 import * as Layer from "effect/Layer";
 import * as Predicate from "effect/Predicate";
 import * as PubSub from "effect/PubSub";
@@ -41,7 +38,7 @@ import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as Semaphore from "effect/Semaphore";
 import * as ServerConfig from "./config.ts";
-import { writeFileStringAtomically } from "./atomicWrite.ts";
+import * as StateDocument from "./persistence/StateDocument.ts";
 import { fromJsonStringPretty, fromLenientJson } from "@t3tools/shared/schemaJson";
 import {
   DEFAULT_KEYBINDINGS,
@@ -284,8 +281,7 @@ export class Keybindings extends Context.Service<
 
 const make = Effect.gen(function* () {
   const { keybindingsConfigPath } = yield* ServerConfig.ServerConfig;
-  const fs = yield* FileSystem.FileSystem;
-  const path = yield* Path.Path;
+  const keybindingsDocument = yield* StateDocument.make(keybindingsConfigPath);
   const upsertSemaphore = yield* Semaphore.make(1);
   const resolvedConfigCacheKey = "resolved" as const;
   const changesPubSub = yield* PubSub.unbounded<KeybindingsChangeEvent>();
@@ -296,7 +292,7 @@ const make = Effect.gen(function* () {
   const emitChange = (configState: KeybindingsConfigState) =>
     PubSub.publish(changesPubSub, configState).pipe(Effect.asVoid);
 
-  const readConfigExists = fs.exists(keybindingsConfigPath).pipe(
+  const readConfigExists = keybindingsDocument.exists.pipe(
     Effect.mapError(
       (cause) =>
         new KeybindingsConfigError({
@@ -307,7 +303,7 @@ const make = Effect.gen(function* () {
     ),
   );
 
-  const readRawConfig = fs.readFileString(keybindingsConfigPath).pipe(
+  const readRawConfig = keybindingsDocument.readString.pipe(
     Effect.mapError(
       (cause) =>
         new KeybindingsConfigError({
@@ -421,15 +417,7 @@ const make = Effect.gen(function* () {
   const writeConfigAtomically = (rules: readonly KeybindingRule[]) => {
     return encodeKeybindingsConfigPrettyJson(rules).pipe(
       Effect.map((encoded) => `${encoded}\n`),
-      Effect.flatMap((encoded) =>
-        writeFileStringAtomically({
-          filePath: keybindingsConfigPath,
-          contents: encoded,
-        }).pipe(
-          Effect.provideService(FileSystem.FileSystem, fs),
-          Effect.provideService(Path.Path, path),
-        ),
-      ),
+      Effect.flatMap((encoded) => keybindingsDocument.writeStringAtomically(encoded)),
       Effect.mapError(
         (cause) =>
           new KeybindingsConfigError({
@@ -565,11 +553,7 @@ const make = Effect.gen(function* () {
   );
 
   const startWatcher = Effect.gen(function* () {
-    const keybindingsConfigDir = path.dirname(keybindingsConfigPath);
-    const keybindingsConfigFile = path.basename(keybindingsConfigPath);
-    const keybindingsConfigPathResolved = path.resolve(keybindingsConfigPath);
-
-    yield* fs.makeDirectory(keybindingsConfigDir, { recursive: true }).pipe(
+    const debouncedKeybindingsEvents = yield* keybindingsDocument.watchExternalChanges.pipe(
       Effect.mapError(
         (cause) =>
           new KeybindingsConfigError({
@@ -581,20 +565,6 @@ const make = Effect.gen(function* () {
     );
 
     const revalidateAndEmitSafely = revalidateAndEmit.pipe(Effect.ignoreCause({ log: true }));
-
-    // Debounce watch events so the file is fully written before we read it.
-    // Editors emit multiple events per save (truncate, write, rename) and
-    // `fs.watch` can fire before the content has been flushed to disk.
-    const debouncedKeybindingsEvents = fs.watch(keybindingsConfigDir).pipe(
-      Stream.filter((event) => {
-        return (
-          event.path === keybindingsConfigFile ||
-          event.path === keybindingsConfigPath ||
-          path.resolve(keybindingsConfigDir, event.path) === keybindingsConfigPathResolved
-        );
-      }),
-      Stream.debounce(Duration.millis(100)),
-    );
 
     yield* Stream.runForEach(debouncedKeybindingsEvents, () => revalidateAndEmitSafely).pipe(
       Effect.ignoreCause({ log: true }),

@@ -10,6 +10,7 @@ import {
   type ThreadSortInput,
 } from "../lib/threadSort";
 import type { SidebarThreadSummary, Thread } from "../types";
+import { threadMachineSidebarStatus } from "../threadMachine";
 import type { ThreadRouteTarget } from "../threadRoutes";
 import { cn } from "../lib/utils";
 import { isLatestTurnSettled } from "../session-logic";
@@ -160,6 +161,7 @@ type ThreadStatusInput = Pick<
   | "latestTurn"
   | "session"
   | "backgroundLiveness"
+  | "machine"
 > & {
   lastVisitedAt?: string | undefined;
 };
@@ -469,7 +471,7 @@ export type SidebarThreadStatus =
 
 type SidebarThreadStatusInput = Pick<
   SidebarThreadSummary,
-  "hasPendingApprovals" | "hasPendingUserInput" | "session" | "backgroundLiveness"
+  "hasPendingApprovals" | "hasPendingUserInput" | "session" | "backgroundLiveness" | "machine"
 >;
 
 export function resolveSidebarThreadStatus(thread: SidebarThreadStatusInput): SidebarThreadStatus {
@@ -492,6 +494,9 @@ export function resolveSidebarThreadStatus(thread: SidebarThreadStatusInput): Si
   if (thread.session?.status === "error") {
     return "failed";
   }
+  // Hub threads: a machine starting reads as work in motion, a failed one as failed.
+  const machineStatus = threadMachineSidebarStatus(thread.machine);
+  if (machineStatus !== null) return machineStatus;
   // Background work outlives the turn: fleets read as working; monitoring
   // only when watch loops are the sole live work.
   if (thread.backgroundLiveness === "working") {
@@ -714,7 +719,10 @@ export function resolveThreadStatusPill(input: {
     };
   }
 
-  if (thread.session?.status === "starting") {
+  if (
+    thread.session?.status === "starting" ||
+    threadMachineSidebarStatus(thread.machine) === "working"
+  ) {
     return {
       label: "Connecting",
       colorClass: "text-sky-600 dark:text-sky-300/80",

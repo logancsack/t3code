@@ -17,6 +17,7 @@ import { OrchestrationCommandReceiptRepository } from "../persistence/Services/O
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
 import * as ServerRuntimeStartup from "../serverRuntimeStartup.ts";
+import { HubThreadCheckouts } from "../serverModeHooks.ts";
 import * as VcsStatusBroadcaster from "../vcs/VcsStatusBroadcaster.ts";
 import * as OrchestrationEngine from "./Services/OrchestrationEngine.ts";
 import { ThreadDeletionReactor } from "./Services/ThreadDeletionReactor.ts";
@@ -71,6 +72,8 @@ export const makeOrchestrationCommandDispatcher = Effect.gen(function* () {
   const startup = yield* ServerRuntimeStartup.ServerRuntimeStartup;
   const projectSetupScriptRunner = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
   const threadDeletionReactor = yield* ThreadDeletionReactor;
+  // Hub mode: each thread checks out on its own machine instead of a local worktree.
+  const hubThreadCheckouts = yield* HubThreadCheckouts;
 
   const toDispatchCommandError = (cause: unknown, fallbackMessage: string) =>
     isOrchestrationDispatchCommandError(cause)
@@ -327,7 +330,28 @@ export const makeOrchestrationCommandDispatcher = Effect.gen(function* () {
           createdThread = createResult.replayed !== true;
         }
 
-        if (bootstrap?.prepareWorktree) {
+        if (hubThreadCheckouts !== null) {
+          const branch =
+            bootstrap?.prepareWorktree?.branch ?? bootstrap?.createThread?.branch ?? null;
+          const prepared = yield* hubThreadCheckouts.bootstrap({
+            threadId: command.threadId,
+            projectId: targetProjectId,
+            branch,
+            baseRef: bootstrap?.prepareWorktree?.baseBranch ?? null,
+          });
+          targetWorktreePath = prepared.worktreePath;
+          yield* orchestrationEngine.dispatch(
+            {
+              type: "thread.meta.update",
+              commandId: yield* serverCommandId("bootstrap-thread-meta-update"),
+              threadId: command.threadId,
+              branch: prepared.branch,
+              worktreePath: prepared.worktreePath,
+            },
+            options,
+          );
+          yield* refreshGitStatus(targetWorktreePath);
+        } else if (bootstrap?.prepareWorktree) {
           let worktreeBaseRef = bootstrap.prepareWorktree.baseBranch;
           const startFromOrigin =
             bootstrap.prepareWorktree.startFromOrigin === true &&

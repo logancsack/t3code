@@ -872,6 +872,34 @@ describe("workEntryIndicatesToolFailure", () => {
 });
 
 describe("deriveWorkLogEntries", () => {
+  it("hides thread-machine lifecycle rows unless they report an error", () => {
+    const activities = [
+      makeActivity({
+        id: "starting",
+        kind: "thread-machine.starting",
+        summary: "Starting machine",
+        tone: "info",
+        sequence: 0,
+      }),
+      makeActivity({
+        id: "state",
+        kind: "thread-machine.state",
+        summary: "Machine running",
+        tone: "info",
+        sequence: 1,
+      }),
+      makeActivity({
+        id: "failed",
+        kind: "thread-machine.failed",
+        summary: "Thread machine is unavailable",
+        tone: "error",
+        sequence: 2,
+      }),
+      makeActivity({ id: "tool", kind: "tool.completed", summary: "Ran tests", sequence: 3 }),
+    ];
+    expect(deriveWorkLogEntries(activities).map((entry) => entry.id)).toEqual(["failed", "tool"]);
+  });
+
   it("keeps the latest task progress without emitting plan-update log entries", () => {
     const activities = [
       makeActivity({ id: "before", kind: "tool.completed", summary: "Read files", sequence: 0 }),

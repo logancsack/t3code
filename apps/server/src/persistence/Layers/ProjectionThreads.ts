@@ -15,6 +15,8 @@ import {
   type ProjectionThreadRepositoryShape,
 } from "../Services/ProjectionThreads.ts";
 import { ModelSelection, ThreadLinkedPullRequest } from "@t3tools/contracts";
+import { localOrHub } from "../Postgres/HubDatabase.ts";
+import { PgProjectionThreadRepositoryLive } from "../Postgres/ProjectionThreads.ts";
 
 const ProjectionThreadDbRow = ProjectionThread.mapFields(
   Struct.assign({
@@ -234,7 +236,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
   } satisfies ProjectionThreadRepositoryShape;
 });
 
-export const ProjectionThreadRepositoryLive = Layer.effect(
-  ProjectionThreadRepository,
-  makeProjectionThreadRepository,
+export const ProjectionThreadRepositoryLive = localOrHub(
+  Layer.effect(ProjectionThreadRepository, makeProjectionThreadRepository),
+  PgProjectionThreadRepositoryLive,
 );

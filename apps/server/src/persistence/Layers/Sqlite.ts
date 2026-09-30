@@ -7,6 +7,7 @@ import type { SqlError } from "effect/unstable/sql/SqlError";
 
 import { runMigrations } from "../Migrations.ts";
 import { ServerConfig } from "../../config.ts";
+import { HubDatabase } from "../Postgres/HubDatabase.ts";
 
 type RuntimeSqliteLayerConfig = {
   readonly filename: string;
@@ -65,9 +66,23 @@ export const SqlitePersistenceMemory = Layer.provideMerge(
   makeRuntimeSqliteLayer({ filename: ":memory:" }),
 );
 
+/**
+ * The server's persistence: `state.sqlite` in its state directory, or, in hub
+ * mode, the hub's tenant-scoped Postgres client (see `HubDatabase`).
+ */
 export const layerConfig = Layer.unwrap(
   Effect.gen(function* () {
-    const { dbPath } = yield* ServerConfig;
+    const hubDatabase = yield* HubDatabase;
+    if (hubDatabase !== undefined) {
+      return Layer.succeed(SqlClient.SqlClient, hubDatabase.sql);
+    }
+    const { dbPath, hub } = yield* ServerConfig;
+    if (hub?.databaseUrl) {
+      // Never fall back to a local SQLite file in hub mode.
+      return yield* Effect.die(
+        new Error("Hub persistence is not available: provide HubDatabase.layerConfig at the root."),
+      );
+    }
     return makeSqlitePersistenceLive(dbPath);
   }),
 );

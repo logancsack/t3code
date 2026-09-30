@@ -190,7 +190,11 @@ export function PreviewView({
   const handleOpenServerUrl = useCallback(
     async (next: string) => {
       try {
-        const resolved = resolveDiscoveredServerUrl(threadRef.environmentId, next);
+        const resolved = resolveDiscoveredServerUrl(
+          threadRef.environmentId,
+          next,
+          threadRef.threadId,
+        );
         if (await navigateToResolvedUrl(resolved)) {
           recordVisitForThread(threadRef, next);
         }

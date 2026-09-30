@@ -18,6 +18,7 @@ import {
   ClientOs,
   ClientSurface,
   ClientWebDeployment,
+  AuthConnectorError,
   CommandId,
   type DiscoveredLocalServerList,
   EventId,
@@ -58,6 +59,7 @@ import {
   RpcClientId,
   EnvironmentAuthorizationError,
   ThreadId,
+  ThreadMachineControlError,
   type TerminalAttachStreamEvent,
   type TerminalError,
   type TerminalEvent,
@@ -129,6 +131,7 @@ import * as AzureDevOpsCli from "./sourceControl/AzureDevOpsCli.ts";
 import * as BitbucketApi from "./sourceControl/BitbucketApi.ts";
 import * as GitHubCli from "./sourceControl/GitHubCli.ts";
 import * as GitLabCli from "./sourceControl/GitLabCli.ts";
+import { ProviderSignInControls, ThreadMachineControls } from "./serverModeHooks.ts";
 import * as AuthConnectorManager from "./authConnector/AuthConnectorManager.ts";
 import * as SourceControlProviderRegistry from "./sourceControl/SourceControlProviderRegistry.ts";
 import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
@@ -422,6 +425,21 @@ function readClientAnalyticsProps(request: HttpServerRequest.HttpServerRequest) 
   };
 }
 
+/** Stored provider sign-ins exist only on a hub (the `threadMachines` capability). */
+const noStoredProviderSignIns = (operation: string) =>
+  new AuthConnectorError({
+    operation,
+    detail: "Stored provider sign-ins exist only on servers that run thread machines.",
+  });
+
+/** Thread-machine controls exist only on a hub (the `threadMachines` capability). */
+const unsupportedThreadMachineControl = (operation: string) =>
+  new ThreadMachineControlError({
+    operation,
+    reason: "unsupported",
+    detail: "This server does not run threads on thread machines.",
+  });
+
 const makeWsRpcLayer = (
   currentSession: EnvironmentAuth.AuthenticatedSession,
   clientOrigin: OrchestrationClientOrigin,
@@ -474,6 +492,9 @@ const makeWsRpcLayer = (
       const providerMaintenanceRunner = yield* ProviderMaintenanceRunner.ProviderMaintenanceRunner;
       const serverSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
       const config = yield* ServerConfig.ServerConfig;
+      const threadMachineControls = yield* ThreadMachineControls;
+      // Hub mode runs provider sign-in on the sign-in machine; standalone runs it here.
+      const providerSignIn = yield* ProviderSignInControls;
       const lifecycleEvents = yield* ServerLifecycleEvents.ServerLifecycleEvents;
       const serverSettings = yield* ServerSettings.ServerSettingsService;
       const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
@@ -1356,17 +1377,31 @@ const makeWsRpcLayer = (
             },
           ),
         [WS_METHODS.serverStartAuthConnector]: (input) =>
-          observeRpcEffect(WS_METHODS.serverStartAuthConnector, AuthConnectorManager.start(input), {
-            "rpc.aggregate": "server",
-          }),
+          observeRpcEffect(
+            WS_METHODS.serverStartAuthConnector,
+            providerSignIn === null
+              ? AuthConnectorManager.start(input)
+              : providerSignIn.start(input),
+            {
+              "rpc.aggregate": "server",
+            },
+          ),
         [WS_METHODS.serverGetAuthConnector]: ({ sessionId }) =>
-          observeRpcEffect(WS_METHODS.serverGetAuthConnector, AuthConnectorManager.get(sessionId), {
-            "rpc.aggregate": "server",
-          }),
+          observeRpcEffect(
+            WS_METHODS.serverGetAuthConnector,
+            providerSignIn === null
+              ? AuthConnectorManager.get(sessionId)
+              : providerSignIn.get(sessionId),
+            {
+              "rpc.aggregate": "server",
+            },
+          ),
         [WS_METHODS.serverSubmitAuthConnector]: (input) =>
           observeRpcEffect(
             WS_METHODS.serverSubmitAuthConnector,
-            AuthConnectorManager.submit(input),
+            providerSignIn === null
+              ? AuthConnectorManager.submit(input)
+              : providerSignIn.submit(input),
             {
               "rpc.aggregate": "server",
             },
@@ -1374,10 +1409,28 @@ const makeWsRpcLayer = (
         [WS_METHODS.serverCancelAuthConnector]: ({ sessionId }) =>
           observeRpcEffect(
             WS_METHODS.serverCancelAuthConnector,
-            AuthConnectorManager.cancel(sessionId),
+            providerSignIn === null
+              ? AuthConnectorManager.cancel(sessionId)
+              : providerSignIn.cancel(sessionId),
             {
               "rpc.aggregate": "server",
             },
+          ),
+        [WS_METHODS.serverListProviderSignIns]: (_input) =>
+          observeRpcEffect(
+            WS_METHODS.serverListProviderSignIns,
+            providerSignIn === null
+              ? Effect.fail(noStoredProviderSignIns("listProviderSignIns"))
+              : providerSignIn.list,
+            { "rpc.aggregate": "server" },
+          ),
+        [WS_METHODS.serverSignOutProvider]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.serverSignOutProvider,
+            providerSignIn === null
+              ? Effect.fail(noStoredProviderSignIns("signOutProvider"))
+              : providerSignIn.signOut(input),
+            { "rpc.aggregate": "server" },
           ),
         [WS_METHODS.serverGetTraceDiagnostics]: (_input) =>
           observeRpcEffect(
@@ -1414,6 +1467,22 @@ const makeWsRpcLayer = (
           observeRpcEffect(WS_METHODS.serverGetUsageSummary, usage.readSummary(input), {
             "rpc.aggregate": "server",
           }),
+        [WS_METHODS.threadMachinesWake]: ({ threadId }) =>
+          observeRpcEffect(
+            WS_METHODS.threadMachinesWake,
+            threadMachineControls === null
+              ? Effect.fail(unsupportedThreadMachineControl("threadMachines.wake"))
+              : threadMachineControls.wake(threadId),
+            { "rpc.aggregate": "thread-machine" },
+          ),
+        [WS_METHODS.threadMachinesPause]: ({ threadId }) =>
+          observeRpcEffect(
+            WS_METHODS.threadMachinesPause,
+            threadMachineControls === null
+              ? Effect.fail(unsupportedThreadMachineControl("threadMachines.pause"))
+              : threadMachineControls.pause(threadId),
+            { "rpc.aggregate": "thread-machine" },
+          ),
         [WS_METHODS.serverRetryResourceTelemetry]: (_input) =>
           observeRpcEffect(WS_METHODS.serverRetryResourceTelemetry, resourceTelemetry.retry, {
             "rpc.aggregate": "server",

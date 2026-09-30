@@ -96,6 +96,9 @@ import {
   type SidebarProjectSnapshot,
 } from "../sidebarProjectGrouping";
 import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore";
+import { readIsHubEnvironment, usePrimaryIsHub } from "../hubMode";
+import { deriveThreadMachineView } from "../threadMachine";
+import { threadMachineControlFor, useThreadMachineControls } from "./hub/threadMachineActions";
 import { useThreadSelectionStore } from "../threadSelectionStore";
 import { useThreadActions } from "../hooks/useThreadActions";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
@@ -1754,6 +1757,7 @@ export default function Sidebar() {
     archiveThread,
     deleteThread,
   } = useThreadActions();
+  const { wake: wakeMachine, pause: pauseMachine } = useThreadMachineControls();
   const updateThreadMetadata = useAtomCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
   });
@@ -1817,6 +1821,9 @@ export default function Sidebar() {
     () => openCommandPalette({ open: "add-project" }),
     [],
   );
+  // A hub's projects are repositories (or blank), never folders.
+  const primaryIsHub = usePrimaryIsHub();
+  const addProjectLabel = primaryIsHub ? "Add repository" : "New project";
   const { environments } = useEnvironments();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const clearSelection = useThreadSelectionStore((s) => s.clearSelection);
@@ -3101,6 +3108,7 @@ export default function Sidebar() {
         const isSettled = settledThreadKeysRef.current.has(threadKey);
         const isSnoozed = snoozedThreadKeysRef.current.has(threadKey);
         const isPinned = thread.pinnedAt != null;
+        const hub = readIsHubEnvironment(thread.environmentId);
         // Presets resolve at menu-open time (same as the popover).
         const snoozePresets = resolveSnoozePresets(new Date(), timestampFormat);
         const clicked = await settlePromise(() =>
@@ -3119,7 +3127,11 @@ export default function Sidebar() {
                 snooze: supportsSnooze,
                 pinning: supportsPinning,
                 titleRegeneration: supportsTitleRegeneration,
+                workspacePath: !hub,
               },
+              machineControl: hub
+                ? threadMachineControlFor(deriveThreadMachineView(thread.machine))
+                : null,
               snoozePresets,
             }),
             position,
@@ -3228,6 +3240,12 @@ export default function Sidebar() {
           case "copy-thread-id":
             copyThreadIdToClipboard(thread.id, { threadId: thread.id });
             return;
+          case "wake-machine":
+            await wakeMachine(threadRef);
+            return;
+          case "pause-machine":
+            await pauseMachine(threadRef);
+            return;
           case "archive": {
             if (confirmThreadArchive) {
               const confirmed = await settlePromise(() =>
@@ -3305,11 +3323,13 @@ export default function Sidebar() {
       handleMultiSelectContextMenu,
       markThreadUnread,
       openProjectSettings,
+      pauseMachine,
       projectCwdByKey,
       serverConfigs,
       startThreadRename,
       updateThreadMetadata,
       timestampFormat,
+      wakeMachine,
     ],
   );
 
@@ -3650,7 +3670,7 @@ export default function Sidebar() {
                         className="relative shrink-0 focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
                         onClick={openAddProjectCommandPalette}
                         type="button"
-                        aria-label="New project"
+                        aria-label={addProjectLabel}
                       />
                     }
                   >
@@ -3660,7 +3680,7 @@ export default function Sidebar() {
                       aria-hidden="true"
                     />
                   </TooltipTrigger>
-                  <TooltipPopup side="right">New project</TooltipPopup>
+                  <TooltipPopup side="right">{addProjectLabel}</TooltipPopup>
                 </Tooltip>
               </div>
             ) : null}
@@ -4017,7 +4037,7 @@ export default function Sidebar() {
                     className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-sidebar-border px-2.5 py-1 text-[11px] font-medium text-sidebar-muted-foreground transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
                   >
                     <PlusIcon className="-mx-0.5 size-3" />
-                    Add project
+                    {primaryIsHub ? "Add repository" : "Add project"}
                   </button>
                 </>
               ) : scopedProjectGroup ? (

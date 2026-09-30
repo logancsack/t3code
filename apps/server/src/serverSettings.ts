@@ -6,7 +6,7 @@
  * text generation model selection).
  *
  * Follows the same pattern as `keybindings.ts`: JSON file + Cache + PubSub +
- * Semaphore + FileSystem.watch for concurrency and external edit detection.
+ * Semaphore + StateDocument watch for concurrency and external edit detection.
  *
  * @module ServerSettings
  */
@@ -32,10 +32,8 @@ import * as Duration from "effect/Duration";
 import * as Equal from "effect/Equal";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
-import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import * as Path from "effect/Path";
 import * as PubSub from "effect/PubSub";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
@@ -43,7 +41,6 @@ import * as Semaphore from "effect/Semaphore";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
-import { writeFileStringAtomically } from "./atomicWrite.ts";
 import * as ServerConfig from "./config.ts";
 import { type DeepPartial, deepMerge } from "@t3tools/shared/Struct";
 import { fromJsonStringPretty, fromLenientJson } from "@t3tools/shared/schemaJson";
@@ -52,6 +49,8 @@ import {
   isModelSelectionProviderEnabled,
 } from "@t3tools/shared/serverSettings";
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
+import { HubDatabase, type HubDatabaseShape } from "./persistence/Postgres/HubDatabase.ts";
+import * as StateDocument from "./persistence/StateDocument.ts";
 
 export { resolveSourceControlWriterModelSelection } from "@t3tools/shared/serverSettings";
 
@@ -371,10 +370,34 @@ function stripDefaultServerSettings(current: unknown, defaults: unknown): unknow
   return Object.is(current, defaults) ? undefined : current;
 }
 
+interface ProviderHistoryRow {
+  readonly providerName: string;
+  readonly providerInstanceId: string | null;
+}
+
+// The standalone query reads every row of both tables; a hub database holds
+// every tenant, so it filters on the tenant it serves.
+const readHubProviderHistory = (hubDatabase: HubDatabaseShape) =>
+  hubDatabase.sql<ProviderHistoryRow>`
+    SELECT DISTINCT
+      provider_name AS "providerName",
+      provider_instance_id AS "providerInstanceId"
+    FROM projection_thread_sessions
+    WHERE user_id = ${hubDatabase.tenantId}
+      AND provider_name IN ('cursor', 'grok', 'opencode')
+    UNION
+    SELECT DISTINCT
+      provider_name AS "providerName",
+      provider_instance_id AS "providerInstanceId"
+    FROM provider_session_runtime
+    WHERE user_id = ${hubDatabase.tenantId}
+      AND provider_name IN ('cursor', 'grok', 'opencode')
+  `;
+
 const make = Effect.gen(function* () {
   const { settingsPath } = yield* ServerConfig.ServerConfig;
-  const fs = yield* FileSystem.FileSystem;
-  const pathService = yield* Path.Path;
+  const settingsDocument = yield* StateDocument.make(settingsPath);
+  const hubDatabase = yield* HubDatabase;
   const secretStore = yield* ServerSecretStore.ServerSecretStore;
   const sql = yield* SqlClient.SqlClient;
   const writeSemaphore = yield* Semaphore.make(1);
@@ -388,7 +411,7 @@ const make = Effect.gen(function* () {
   const emitChange = (settings: ServerSettings) =>
     PubSub.publish(changesPubSub, settings).pipe(Effect.asVoid);
 
-  const readConfigExists = fs.exists(settingsPath).pipe(
+  const readConfigExists = settingsDocument.exists.pipe(
     Effect.mapError(
       (cause) =>
         new ServerSettingsError({
@@ -399,7 +422,7 @@ const make = Effect.gen(function* () {
     ),
   );
 
-  const readRawConfig = fs.readFileString(settingsPath).pipe(
+  const readRawConfig = settingsDocument.readString.pipe(
     Effect.mapError(
       (cause) =>
         new ServerSettingsError({
@@ -435,22 +458,23 @@ const make = Effect.gen(function* () {
       }
     }
 
-    const providerHistory = yield* sql<{
-      readonly providerName: string;
-      readonly providerInstanceId: string | null;
-    }>`
-      SELECT DISTINCT
-        provider_name AS "providerName",
-        provider_instance_id AS "providerInstanceId"
-      FROM projection_thread_sessions
-      WHERE provider_name IN ('cursor', 'grok', 'opencode')
-      UNION
-      SELECT DISTINCT
-        provider_name AS "providerName",
-        provider_instance_id AS "providerInstanceId"
-      FROM provider_session_runtime
-      WHERE provider_name IN ('cursor', 'grok', 'opencode')
-    `.pipe(
+    const providerHistory = yield* (
+      hubDatabase === undefined
+        ? sql<ProviderHistoryRow>`
+            SELECT DISTINCT
+              provider_name AS "providerName",
+              provider_instance_id AS "providerInstanceId"
+            FROM projection_thread_sessions
+            WHERE provider_name IN ('cursor', 'grok', 'opencode')
+            UNION
+            SELECT DISTINCT
+              provider_name AS "providerName",
+              provider_instance_id AS "providerInstanceId"
+            FROM provider_session_runtime
+            WHERE provider_name IN ('cursor', 'grok', 'opencode')
+          `
+        : readHubProviderHistory(hubDatabase)
+    ).pipe(
       Effect.mapError(
         (cause) =>
           new ServerSettingsError({
@@ -642,13 +666,7 @@ const make = Effect.gen(function* () {
         stripDefaultServerSettings(settings, PERSISTED_SERVER_SETTINGS_DEFAULTS) ?? {},
       );
 
-      return yield* writeFileStringAtomically({
-        filePath: settingsPath,
-        contents: `${sparseSettingsJson}\n`,
-      }).pipe(
-        Effect.provideService(FileSystem.FileSystem, fs),
-        Effect.provideService(Path.Path, pathService),
-      );
+      return yield* settingsDocument.writeStringAtomically(`${sparseSettingsJson}\n`);
     },
     Effect.mapError(
       (cause) =>
@@ -669,11 +687,7 @@ const make = Effect.gen(function* () {
   );
 
   const startWatcher = Effect.gen(function* () {
-    const settingsDir = pathService.dirname(settingsPath);
-    const settingsFile = pathService.basename(settingsPath);
-    const settingsPathResolved = pathService.resolve(settingsPath);
-
-    yield* fs.makeDirectory(settingsDir, { recursive: true }).pipe(
+    const debouncedSettingsEvents = yield* settingsDocument.watchExternalChanges.pipe(
       Effect.mapError(
         (cause) =>
           new ServerSettingsError({
@@ -685,20 +699,6 @@ const make = Effect.gen(function* () {
     );
 
     const revalidateAndEmitSafely = revalidateAndEmit.pipe(Effect.ignoreCause({ log: true }));
-
-    // Debounce watch events so the file is fully written before we read it.
-    // Editors emit multiple events per save (truncate, write, rename) and
-    // `fs.watch` can fire before the content has been flushed to disk.
-    const debouncedSettingsEvents = fs.watch(settingsDir).pipe(
-      Stream.filter((event) => {
-        return (
-          event.path === settingsFile ||
-          event.path === settingsPath ||
-          pathService.resolve(settingsDir, event.path) === settingsPathResolved
-        );
-      }),
-      Stream.debounce(Duration.millis(100)),
-    );
 
     yield* Stream.runForEach(debouncedSettingsEvents, () => revalidateAndEmitSafely).pipe(
       Effect.ignoreCause({ log: true }),

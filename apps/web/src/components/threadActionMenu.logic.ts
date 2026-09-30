@@ -23,6 +23,8 @@ export type ThreadActionMenuId =
   | "copy-path"
   | "copy-branch"
   | "copy-thread-id"
+  | "wake-machine"
+  | "pause-machine"
   | "archive"
   | "delete";
 
@@ -40,7 +42,11 @@ export interface ThreadActionMenuState {
     readonly snooze: boolean;
     readonly pinning: boolean;
     readonly titleRegeneration: boolean;
+    /** Absent = true. Hub threads live on their own machines: no local path to copy. */
+    readonly workspacePath?: boolean;
   };
+  /** Hub threads: wake a sleeping or failed machine, or pause a running one. */
+  readonly machineControl?: "wake" | "pause" | null;
   readonly snoozePresets: ReadonlyArray<SnoozePreset>;
 }
 
@@ -95,6 +101,11 @@ export function buildThreadActionMenuItems(
               },
         ]
       : []),
+    ...(state.machineControl === "wake"
+      ? [{ id: "wake-machine" as const, label: "Wake machine", icon: "power" }]
+      : state.machineControl === "pause"
+        ? [{ id: "pause-machine" as const, label: "Pause machine", icon: "moon" }]
+        : []),
     { id: "rename", label: "Rename thread", icon: "pencil", separatorBefore: true },
     ...(state.supports.titleRegeneration
       ? [
@@ -113,7 +124,9 @@ export function buildThreadActionMenuItems(
       icon: "copy",
       separatorBefore: true,
       children: [
-        { id: "copy-path", label: "Path", icon: "folder" },
+        ...(state.supports.workspacePath !== false
+          ? [{ id: "copy-path" as const, label: "Path", icon: "folder" }]
+          : []),
         ...(state.branch
           ? [{ id: "copy-branch" as const, label: "Branch", icon: "git-branch" }]
           : []),

@@ -172,6 +172,25 @@ describe("searchSettings", () => {
     ]);
   });
 
+  it("hides new-thread workspace and folder settings when the primary is a hub", () => {
+    const availability = {
+      hasCloudPublicConfig: false,
+      hasPrimaryEnvironment: true,
+      hasProviderSettingsEnvironment: false,
+      canManageLocalBackend: false,
+      isWslSettingsRowVisible: false,
+      hasThreadAutoSettlement: false,
+    };
+    const hubHidden = ["new-threads", "start-from-origin", "add-project-starts-in"];
+    const standaloneIds = filterAvailableSettingsSearchItems(availability).map((item) => item.id);
+    const hubIds = filterAvailableSettingsSearchItems({ ...availability, primaryIsHub: true }).map(
+      (item) => item.id,
+    );
+    expect(hubHidden.every((id) => standaloneIds.includes(id))).toBe(true);
+    expect(hubIds.filter((id) => hubHidden.includes(id))).toEqual([]);
+    expect(standaloneIds.filter((id) => !hubHidden.includes(id))).toEqual(hubIds);
+  });
+
   it("keeps catalog result ids unique", () => {
     const ids = SETTINGS_SEARCH_ITEMS.map((item) => item.id);
     expect(new Set(ids).size).toBe(ids.length);

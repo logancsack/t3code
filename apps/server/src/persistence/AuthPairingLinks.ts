@@ -14,6 +14,8 @@ import {
   type PersistenceErrorCorrelation,
   PersistenceSqlError,
 } from "./Errors.ts";
+import { localOrHub } from "./Postgres/HubDatabase.ts";
+import * as PgRepository from "./Postgres/AuthPairingLinks.ts";
 
 export const AuthPairingLinkRecord = Schema.Struct({
   id: Schema.String,
@@ -353,4 +355,7 @@ export const make = Effect.gen(function* () {
   } satisfies AuthPairingLinkRepository["Service"];
 });
 
-export const layer = Layer.effect(AuthPairingLinkRepository, make);
+export const layer = localOrHub(
+  Layer.effect(AuthPairingLinkRepository, make),
+  Layer.effect(AuthPairingLinkRepository, PgRepository.make),
+);

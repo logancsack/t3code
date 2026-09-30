@@ -15,6 +15,8 @@ import {
   ProjectionThreadActivityRepository,
   type ProjectionThreadActivityRepositoryShape,
 } from "../Services/ProjectionThreadActivities.ts";
+import { localOrHub } from "../Postgres/HubDatabase.ts";
+import { PgProjectionThreadActivityRepositoryLive } from "../Postgres/ProjectionThreadActivities.ts";
 
 const ProjectionThreadActivityDbRowSchema = ProjectionThreadActivity.mapFields(
   Struct.assign({
@@ -199,7 +201,7 @@ const makeProjectionThreadActivityRepository = Effect.gen(function* () {
   } satisfies ProjectionThreadActivityRepositoryShape;
 });
 
-export const ProjectionThreadActivityRepositoryLive = Layer.effect(
-  ProjectionThreadActivityRepository,
-  makeProjectionThreadActivityRepository,
+export const ProjectionThreadActivityRepositoryLive = localOrHub(
+  Layer.effect(ProjectionThreadActivityRepository, makeProjectionThreadActivityRepository),
+  PgProjectionThreadActivityRepositoryLive,
 );

@@ -83,9 +83,24 @@ export interface ManagedDevPcBootstrap {
   readonly detail?: string;
   /** The in-flight wake is installing a newer workspace runtime first. */
   readonly runtimeUpdating?: boolean;
+  /**
+   * Hub mode: T3 is served without a machine and every thread runs on its own
+   * machine (docs/internals/thread-machines.md). There is no workspace to
+   * resume, so the workspace lifecycle surfaces stay out of the way.
+   */
+  readonly serverMode?: "hub";
+  /** Hub mode: a thread's preview, `{threadId}` and `{port}` substituted. */
+  readonly threadPreviewUrlTemplate?: string;
+  /** Hub mode: a thread's machine browser, `{threadId}` substituted. */
+  readonly threadBrowserUrlTemplate?: string;
 }
 
 export const isManagedDevPc = import.meta.env.VITE_DEVPC_MANAGED === "1";
+
+/** The managed deployment serves a hub: threads run on their own machines. */
+export function isManagedHubBootstrap(): boolean {
+  return isManagedDevPc && window.__DEVPC_MANAGED_BOOTSTRAP__?.serverMode === "hub";
+}
 
 const BOOTSTRAP_PATH = "/_devpc/bootstrap";
 const START_PATH = "/_devpc/workspace/start";
@@ -182,7 +197,8 @@ export async function prepareManagedCommandDispatch(input: {
   readonly command: ClientOrchestrationCommand;
   readonly primary: boolean;
 }): Promise<null> {
-  if (!input.primary) return null;
+  // A hub is always reachable and wakes each thread's machine itself.
+  if (!input.primary || isManagedHubBootstrap()) return null;
   if (managedCommandRequiresLiveTransport(input.command)) {
     await requestManagedResume(`dispatch-${input.command.commandId}`);
     await waitForManagedCommandTransportReady();
@@ -1072,15 +1088,45 @@ export const MANAGED_WORKSPACE_BROWSER_PORT = 6080;
  * client with the viewer options already set, because the port's own root serves
  * a directory listing rather than a screen.
  */
-export function managedWorkspaceBrowserUrl(): string | null {
+export function managedWorkspaceBrowserUrl(threadId?: string | null): string | null {
   if (!isManagedDevPc) return null;
+  // Hub mode: each thread's machine has its own browser.
+  const threadTemplate = window.__DEVPC_MANAGED_BOOTSTRAP__?.threadBrowserUrlTemplate;
+  if (threadTemplate) {
+    return threadId ? threadTemplate.replace("{threadId}", encodeURIComponent(threadId)) : null;
+  }
   const granted =
     window.__DEVPC_MANAGED_BOOTSTRAP__?.previewUrls?.[String(MANAGED_WORKSPACE_BROWSER_PORT)];
   return granted ?? null;
 }
 
-export function resolveManagedPreviewUrl(port: number, path: string): string | null {
+/** Whether this deployment offers a workspace (or per-thread machine) browser at all. */
+export function isManagedWorkspaceBrowserAvailable(): boolean {
+  if (!isManagedDevPc) return false;
+  return Boolean(
+    window.__DEVPC_MANAGED_BOOTSTRAP__?.threadBrowserUrlTemplate ||
+    window.__DEVPC_MANAGED_BOOTSTRAP__?.previewUrls?.[String(MANAGED_WORKSPACE_BROWSER_PORT)],
+  );
+}
+
+export function resolveManagedPreviewUrl(
+  port: number,
+  path: string,
+  threadId?: string | null,
+): string | null {
   if (!isManagedDevPc) return null;
+  const threadTemplate = window.__DEVPC_MANAGED_BOOTSTRAP__?.threadPreviewUrlTemplate;
+  if (threadTemplate) {
+    if (!threadId) return null;
+    const resolved = new URL(
+      threadTemplate
+        .replace("{threadId}", encodeURIComponent(threadId))
+        .replace("{port}", String(port)),
+      window.location.origin,
+    );
+    if (path !== "/" && path !== "") resolved.searchParams.set("path", path);
+    return resolved.toString();
+  }
   const template = window.__DEVPC_MANAGED_BOOTSTRAP__?.previewUrlTemplate;
   const granted = window.__DEVPC_MANAGED_BOOTSTRAP__?.previewUrls?.[String(port)];
   if (granted) {

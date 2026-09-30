@@ -8,6 +8,7 @@ import { parseT3ProjectFile } from "@t3tools/shared/t3ProjectFile";
 import { useMemo } from "react";
 
 import { useProjectFileQuery } from "~/components/files/projectFilesQueryState";
+import { useIsHubEnvironment } from "~/hubMode";
 
 const NO_SCRIPTS: ReadonlyArray<T3ProjectFileScript> = [];
 
@@ -31,8 +32,10 @@ export interface T3ProjectFileState {
  */
 export function useT3ProjectFileState(
   environmentId: EnvironmentId,
-  cwd: string | null,
+  requestedCwd: string | null,
 ): T3ProjectFileState {
+  // A hub project root is virtual: t3.json lives in each thread's checkout.
+  const cwd = useIsHubEnvironment(environmentId) ? null : requestedCwd;
   const query = useProjectFileQuery(environmentId, cwd ?? "", T3_PROJECT_FILE_NAME, cwd !== null);
   const contents = query.data && !query.data.truncated ? query.data.contents : null;
   const isPending = query.isPending;

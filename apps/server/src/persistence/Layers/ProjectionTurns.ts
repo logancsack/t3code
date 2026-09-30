@@ -20,6 +20,8 @@ import {
   ProjectionTurnRepository,
   type ProjectionTurnRepositoryShape,
 } from "../Services/ProjectionTurns.ts";
+import { localOrHub } from "../Postgres/HubDatabase.ts";
+import { PgProjectionTurnRepositoryLive } from "../Postgres/ProjectionTurns.ts";
 
 const ProjectionTurnDbRowSchema = ProjectionTurn.mapFields(
   Struct.assign({
@@ -380,7 +382,7 @@ const makeProjectionTurnRepository = Effect.gen(function* () {
   } satisfies ProjectionTurnRepositoryShape;
 });
 
-export const ProjectionTurnRepositoryLive = Layer.effect(
-  ProjectionTurnRepository,
-  makeProjectionTurnRepository,
+export const ProjectionTurnRepositoryLive = localOrHub(
+  Layer.effect(ProjectionTurnRepository, makeProjectionTurnRepository),
+  PgProjectionTurnRepositoryLive,
 );

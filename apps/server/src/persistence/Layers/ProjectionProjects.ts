@@ -14,6 +14,8 @@ import {
   ProjectionProjectRepository,
   type ProjectionProjectRepositoryShape,
 } from "../Services/ProjectionProjects.ts";
+import { localOrHub } from "../Postgres/HubDatabase.ts";
+import { PgProjectionProjectRepositoryLive } from "../Postgres/ProjectionProjects.ts";
 
 const ProjectionProjectDbRow = ProjectionProject.mapFields(
   Struct.assign({
@@ -147,7 +149,7 @@ const makeProjectionProjectRepository = Effect.gen(function* () {
   } satisfies ProjectionProjectRepositoryShape;
 });
 
-export const ProjectionProjectRepositoryLive = Layer.effect(
-  ProjectionProjectRepository,
-  makeProjectionProjectRepository,
+export const ProjectionProjectRepositoryLive = localOrHub(
+  Layer.effect(ProjectionProjectRepository, makeProjectionProjectRepository),
+  PgProjectionProjectRepositoryLive,
 );

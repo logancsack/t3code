@@ -83,6 +83,12 @@ export const AuthConnectorSession = Schema.Struct({
   userCode: Schema.NullOr(Schema.String),
   fields: Schema.Array(AuthConnectorField),
   expiresAt: Schema.NullOr(Schema.String),
+  /**
+   * Hub mode: sign-in runs on a thread machine. For flows that finish in a
+   * browser on that machine (`flow: "browser"`), the same-origin page showing
+   * the machine's browser. Absent on standalone servers.
+   */
+  workspaceBrowserUrl: Schema.optional(Schema.NullOr(Schema.String)),
 });
 export type AuthConnectorSession = typeof AuthConnectorSession.Type;
 
@@ -116,3 +122,30 @@ export class AuthConnectorError extends Schema.TaggedErrorClass<AuthConnectorErr
     return this.detail;
   }
 }
+
+/**
+ * Hub mode: provider sign-ins stored for thread machines (the files each
+ * provider CLI keeps its login in). A stored sign-in is not proof of a valid
+ * login; the provider's status on a machine is.
+ */
+export const ProviderSignIn = Schema.Struct({
+  connector: AuthConnectorKind,
+  version: Schema.Number,
+  updatedAt: Schema.NullOr(Schema.String),
+});
+export type ProviderSignIn = typeof ProviderSignIn.Type;
+
+export const ProviderSignInList = Schema.Struct({
+  signIns: Schema.Array(ProviderSignIn),
+});
+export type ProviderSignInList = typeof ProviderSignInList.Type;
+
+export const ProviderSignOutInput = Schema.Struct({ connector: AuthConnectorKind });
+export type ProviderSignOutInput = typeof ProviderSignOutInput.Type;
+
+/** Running machines drop the provider's files within about 15 s. */
+export const ProviderSignOutResult = Schema.Struct({
+  connector: AuthConnectorKind,
+  signedOut: Schema.Boolean,
+});
+export type ProviderSignOutResult = typeof ProviderSignOutResult.Type;

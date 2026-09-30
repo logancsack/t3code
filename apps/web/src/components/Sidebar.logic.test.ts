@@ -724,6 +724,52 @@ describe("resolveSidebarThreadStatus", () => {
   it("defaults to ready with no session", () => {
     expect(resolveSidebarThreadStatus({ ...idle, session: null })).toBe("ready");
   });
+
+  describe("hub thread machines", () => {
+    const machine = (state: "starting" | "preparing" | "paused" | "running" | "failed") => ({
+      state,
+      detail: state === "failed" ? "Quota exceeded" : null,
+      updatedAt: "2026-03-09T10:00:00.000Z",
+    });
+
+    it("reads a preparing or starting machine as working", () => {
+      expect(
+        resolveSidebarThreadStatus({ ...idle, session: null, machine: machine("starting") }),
+      ).toBe("working");
+      expect(
+        resolveSidebarThreadStatus({ ...idle, session: null, machine: machine("preparing") }),
+      ).toBe("working");
+    });
+
+    it("reads a failed machine as failed", () => {
+      expect(
+        resolveSidebarThreadStatus({ ...idle, session: null, machine: machine("failed") }),
+      ).toBe("failed");
+    });
+
+    it("says nothing extra for a sleeping or running machine", () => {
+      expect(
+        resolveSidebarThreadStatus({ ...idle, session: null, machine: machine("paused") }),
+      ).toBe("ready");
+      expect(
+        resolveSidebarThreadStatus({ ...idle, session: null, machine: machine("running") }),
+      ).toBe("ready");
+    });
+
+    it("keeps approvals, input and live turns ahead of the machine", () => {
+      expect(
+        resolveSidebarThreadStatus({
+          ...idle,
+          hasPendingApprovals: true,
+          session: null,
+          machine: machine("failed"),
+        }),
+      ).toBe("approval");
+      expect(resolveSidebarThreadStatus({ ...idle, session, machine: machine("failed") })).toBe(
+        "working",
+      );
+    });
+  });
 });
 
 describe("searchSidebarThreadsByTitle", () => {
@@ -1146,6 +1192,18 @@ describe("resolveThreadStatusPill", () => {
       updatedAt: "2026-03-09T10:00:00.000Z",
     },
   };
+
+  it("shows a hub machine that is starting as connecting", () => {
+    expect(
+      resolveThreadStatusPill({
+        thread: {
+          ...baseThread,
+          session: null,
+          machine: { state: "starting", detail: null, updatedAt: "2026-03-09T10:00:00.000Z" },
+        },
+      }),
+    ).toMatchObject({ label: "Connecting", pulse: true });
+  });
 
   it("shows pending approval before all other statuses", () => {
     expect(
