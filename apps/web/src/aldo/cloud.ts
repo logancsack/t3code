@@ -895,3 +895,38 @@ export const aldoAssistant = {
       )
     ).messages,
 };
+
+/** What Aldo knows about the user: its profile of them and its notes. */
+export interface AldoMemoryItem {
+  readonly id: string;
+  readonly kind: "profile" | "note";
+  readonly title: string;
+  readonly body: string;
+  /** Who wrote it last: aldo (in conversation), consolidation (after one), or user. */
+  readonly source: string;
+  readonly updatedAt: string;
+}
+
+export const aldoMemory = {
+  list: async () => (await api<{ items: AldoMemoryItem[] }>("/api/assistant/memory")).items,
+  saveProfile: async (body: string) =>
+    (
+      await api<{ items: AldoMemoryItem[] }>("/api/assistant/memory", {
+        method: "POST",
+        body: JSON.stringify({ kind: "profile", body }),
+      })
+    ).items,
+  saveNote: async (title: string, body: string) =>
+    (
+      await api<{ items: AldoMemoryItem[] }>("/api/assistant/memory", {
+        method: "POST",
+        body: JSON.stringify({ kind: "note", title, body }),
+      })
+    ).items,
+  forget: async (id: string) =>
+    (
+      await api<{ items: AldoMemoryItem[] }>(`/api/assistant/memory?id=${encodeURIComponent(id)}`, {
+        method: "DELETE",
+      })
+    ).items,
+};

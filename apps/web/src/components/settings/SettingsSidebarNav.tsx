@@ -12,6 +12,7 @@ import {
 import {
   ArchiveIcon,
   BlocksIcon,
+  BrainIcon,
   BotIcon,
   GitBranchIcon,
   LockKeyholeIcon,
@@ -64,6 +65,7 @@ const SETTINGS_SECTION_ICONS: Readonly<
   "/settings/integrations": BlocksIcon,
   "/settings/source-control": GitBranchIcon,
   "/settings/instructions": NotebookPenIcon,
+  "/settings/memory": BrainIcon,
   "/settings/vault": LockKeyholeIcon,
   "/settings/environments": BoxesIcon,
   "/settings/connections": Link2Icon,
@@ -79,6 +81,7 @@ export const SETTINGS_NAV_ITEMS: ReadonlyArray<{
   .filter(
     (to) =>
       (to !== "/settings/instructions" &&
+        to !== "/settings/memory" &&
         to !== "/settings/vault" &&
         to !== "/settings/environments") ||
       isAldoCloud,
