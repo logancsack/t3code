@@ -19,6 +19,7 @@ import type {
   AuthConnectorStartInput,
   EnvironmentId,
   SourceControlRepositorySummary,
+  UsageSummaryInput,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -600,6 +601,31 @@ export async function offerAldoShell(threadId: string, shell: unknown): Promise<
     method: "POST",
     body: JSON.stringify({ threadId, shell }),
   });
+}
+
+/**
+ * What each machine's agents used in this window, as Aldo answers for it from
+ * what the machine last reported (usage.ts), by environment id. A machine
+ * that never reported is left out. Never wakes one.
+ */
+export async function fetchAldoUsage(input: UsageSummaryInput): Promise<Record<string, unknown>> {
+  const query = new URLSearchParams({
+    sinceDay: input.sinceDay,
+    untilDay: input.untilDay,
+    timeZone: input.timeZone,
+  });
+  if (input.resolution) query.set("resolution", input.resolution);
+  if (input.sinceTime) query.set("sinceTime", input.sinceTime);
+  if (input.untilTime) query.set("untilTime", input.untilTime);
+  const { usage } = await api<{ usage?: Record<string, unknown> }>(
+    `/api/environments/usage?${query}`,
+  );
+  return Object.fromEntries(
+    Object.entries(usage ?? {}).map(([threadId, summary]) => [
+      aldoEnvironmentIdFor(threadId),
+      summary,
+    ]),
+  );
 }
 
 /**
