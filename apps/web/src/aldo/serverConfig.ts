@@ -37,6 +37,21 @@ let latest: EncodedConfig | null = null;
 let reportedProviders: string | null = null;
 let fetchedFromAldo: Promise<void> | null = null;
 
+/**
+ * Whether the machine has checked its providers since its server started: for
+ * its first seconds each one shows as not installed, its sign-in unknown,
+ * which says nothing about the user's agents.
+ */
+function providersChecked(config: ServerConfig): boolean {
+  return config.providers.every(
+    (provider) =>
+      !provider.enabled ||
+      provider.installed ||
+      provider.status !== "warning" ||
+      provider.auth.status !== "unknown",
+  );
+}
+
 function newestProviderCheck(config: ServerConfig): string {
   return config.providers.reduce((max, provider) => {
     const at = String(provider.checkedAt);
@@ -49,7 +64,7 @@ function connectedConfig(): ServerConfig | null {
   const configs = appAtomRegistry.get(environmentServerConfigsAtom);
   let best: ServerConfig | null = null;
   for (const [environmentId, config] of configs) {
-    if (!isAldoEnvironmentId(environmentId)) continue;
+    if (!isAldoEnvironmentId(environmentId) || !providersChecked(config)) continue;
     const presentation = appAtomRegistry.get(
       environmentPresentations.presentationAtom(environmentId as EnvironmentId),
     );

@@ -48,6 +48,24 @@ export interface AldoEnvironment {
    * reported (shells.ts), null before any; an older Aldo leaves it out.
    */
   readonly shellSequence?: number | null;
+  /**
+   * The machine's threads Aldo is starting that haven't started yet, by T3
+   * thread id (an older Aldo leaves it out).
+   */
+  readonly starts?: Readonly<Record<string, AldoStartState>>;
+  /** How each of its T3 threads stands, as the machine last reported (working, waiting, done, failed). */
+  readonly attention?: Readonly<Record<string, AldoThreadAttention>>;
+}
+
+export interface AldoThreadAttention {
+  readonly state: "working" | "waiting" | "done" | "failed";
+  readonly summary?: string;
+}
+
+/** Where a thread Aldo is starting stands, and why when it isn't simply starting. */
+export interface AldoStartState {
+  readonly state: "starting" | "queued" | "retrying" | "failed";
+  readonly detail?: string;
 }
 
 export type AldoMachineSize = "standard" | "2x";
@@ -191,9 +209,16 @@ export function aldoMachineIsNew(environmentId: string): boolean {
   return knownEnvironments?.find((entry) => entry.environmentId === environmentId)?.state === "new";
 }
 
+/** Whether Aldo is starting a thread on this machine: it creates (or wakes) the machine itself. */
+export function aldoStartInProgress(environmentId: string): boolean {
+  const entry = knownEnvironments?.find((candidate) => candidate.environmentId === environmentId);
+  return Object.values(entry?.starts ?? {}).some((start) => start.state !== "failed");
+}
+
 /** What a thread's panels say while its cloud agent is offline. */
 export function aldoOfflineMessage(environmentId: string): string {
   const preload = getAldoPreloadSettings();
+  if (aldoStartInProgress(environmentId)) return "Starting the cloud agent…";
   if (aldoMachineIsNew(environmentId)) {
     return preload.newThreads
       ? "Starting the cloud agent…"

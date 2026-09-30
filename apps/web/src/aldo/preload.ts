@@ -5,11 +5,12 @@
 // without sending anything, the machine is put back shortly after: a new one
 // that never got a thread is deleted, a woken one goes back to sleep. Aldo's
 // sweep does the same for tabs that close first. Both are settings
-// (preloadSettings.ts).
+// (preloadSettings.ts). A machine Aldo is starting a thread on is left to it.
 
 import { useEffect } from "react";
 
 import {
+  aldoStartInProgress,
   isAldoCloud,
   isAldoEnvironmentId,
   touchAldoEnvironment,
@@ -65,8 +66,13 @@ export function useAldoPreload(
     const openedAt = Date.now();
     let preloaded = false;
     const preload = () => {
-      // Already up: it isn't this visit's to put back.
-      if (document.visibilityState !== "visible" || isAldoConnected(environmentId)) return;
+      // Already up, or Aldo is bringing it up for a thread it's starting: it isn't this visit's to put back.
+      if (
+        document.visibilityState !== "visible" ||
+        isAldoConnected(environmentId) ||
+        aldoStartInProgress(environmentId)
+      )
+        return;
       preloaded = true;
       void ensureAldoConnected(environmentId).catch(() => undefined);
     };

@@ -6,6 +6,9 @@ import {
   openTargetOf,
   phaseAfter,
   rememberHeard,
+  startNews,
+  startWatchFor,
+  type AldoStartWatch,
 } from "./assistant.logic";
 
 describe("functionCallsIn", () => {
@@ -123,5 +126,124 @@ describe("phaseAfter", () => {
     expect(phaseAfter("idle", "response.created")).toBeNull();
     expect(phaseAfter("connecting", "output_audio_buffer.started")).toBeNull();
     expect(phaseAfter("listening", "session.updated")).toBeNull();
+  });
+});
+
+describe("startWatchFor", () => {
+  const started = {
+    result: {
+      title: "Fix the login bug",
+      thread: { environmentId: "aldo-k3j9x0a1b2", threadId: "t-1" },
+    },
+  };
+
+  it("follows the thread a start_thread call started", () => {
+    const call = { callId: "c1", name: "start_thread", arguments: { brief: "Fix it" } };
+    expect(startWatchFor(call, started, 1000)).toEqual({
+      environmentId: "aldo-k3j9x0a1b2",
+      threadId: "t-1",
+      title: "Fix the login bug",
+      since: 1000,
+      told: [],
+    });
+  });
+
+  it("follows nothing for other tools, or a start that was refused", () => {
+    expect(
+      startWatchFor({ callId: "c1", name: "message_thread", arguments: {} }, started, 0),
+    ).toBeNull();
+    const call = { callId: "c1", name: "start_thread", arguments: {} };
+    expect(startWatchFor(call, { error: "Claude isn't signed in." }, 0)).toBeNull();
+  });
+});
+
+describe("startNews", () => {
+  const watch: AldoStartWatch = {
+    environmentId: "aldo-k3j9x0a1b2",
+    threadId: "t-1",
+    title: "Fix the login bug",
+    since: 0,
+    told: [],
+  };
+  const directory = (start?: {
+    state: "starting" | "queued" | "retrying" | "failed";
+    detail?: string;
+  }) => [{ environmentId: "aldo-k3j9x0a1b2", starts: start ? { "t-1": start } : {} }];
+
+  it("waits quietly while the thread is starting, or before the directory lists it", () => {
+    expect(startNews(watch, directory({ state: "starting" }), 1)).toEqual({
+      news: null,
+      done: false,
+    });
+    expect(startNews(watch, [], 1)).toEqual({ news: null, done: false });
+    expect(startNews(watch, null, 1)).toEqual({ news: null, done: false });
+  });
+
+  it("follows a thread that started until its first turn shows how it's going", () => {
+    expect(startNews(watch, directory(), 1)).toEqual({ news: null, done: false });
+    const going = [
+      {
+        environmentId: "aldo-k3j9x0a1b2",
+        starts: {},
+        attention: { "t-1": { state: "working" as const } },
+      },
+    ];
+    expect(startNews(watch, going, 1)).toEqual({ news: null, done: true });
+  });
+
+  it("tells when the thread stopped as soon as it began (an agent signed out)", () => {
+    const stopped = [
+      {
+        environmentId: "aldo-k3j9x0a1b2",
+        starts: {},
+        attention: { "t-1": { state: "failed" as const, summary: "Your Claude sign-in expired." } },
+      },
+    ];
+    const { news, done } = startNews(watch, stopped, 1);
+    expect(done).toBe(true);
+    expect(news?.state).toBe("stopped");
+    expect(news?.label).toBe('"Fix the login bug" stopped: Your Claude sign-in expired');
+  });
+
+  it("stops following after a while", () => {
+    expect(startNews(watch, directory({ state: "starting" }), 31 * 60_000)).toEqual({
+      news: null,
+      done: true,
+    });
+  });
+
+  it("stops at once when Aldo's directory doesn't say how starts stand", () => {
+    expect(startNews(watch, [{ environmentId: "aldo-k3j9x0a1b2" }], 1)).toEqual({
+      news: null,
+      done: true,
+    });
+  });
+
+  it("tells of a failure, with why, and stops", () => {
+    const { news, done } = startNews(
+      watch,
+      directory({ state: "failed", detail: "Couldn't start: repository not found." }),
+      1,
+    );
+    expect(done).toBe(true);
+    expect(news?.state).toBe("failed");
+    expect(news?.label).toBe(
+      "Couldn't start \"Fix the login bug\": Couldn't start: repository not found",
+    );
+    expect(news?.prompt).toContain("repository not found");
+  });
+
+  it("tells once that it's waiting for room, and keeps following it", () => {
+    const queued = directory({ state: "queued", detail: "Your plan runs 2 cloud agents at once." });
+    const first = startNews(watch, queued, 1);
+    expect(first.done).toBe(false);
+    expect(first.news?.state).toBe("queued");
+    expect(startNews({ ...watch, told: ["queued"] }, queued, 2)).toEqual({
+      news: null,
+      done: false,
+    });
+    expect(
+      startNews({ ...watch, told: ["queued"] }, directory({ state: "failed" }), 3).news?.state,
+    ).toBe("failed");
   });
 });
