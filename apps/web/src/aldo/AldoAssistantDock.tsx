@@ -91,11 +91,17 @@ export function AldoAssistantDock() {
   return (
     <div className="pointer-events-none fixed inset-x-0 bottom-[max(1rem,env(safe-area-inset-bottom))] z-50 flex flex-col items-center gap-2 px-4">
       {typing && (said || lastSaid) ? (
-        <p className="pointer-events-auto line-clamp-4 w-full max-w-md rounded-2xl border border-border/70 bg-popover/95 px-3.5 py-2 text-sm shadow-lg backdrop-blur">
+        <p
+          className="pointer-events-auto line-clamp-4 w-full max-w-md rounded-2xl border border-border/70 bg-popover/95 px-3.5 py-2 text-sm shadow-lg backdrop-blur"
+          data-aldo-dock="bubble"
+        >
           {said || lastSaid}
         </p>
       ) : null}
-      <div className="pointer-events-auto flex w-full max-w-md items-center gap-2 rounded-full border border-border/70 bg-popover/95 py-1.5 pr-1.5 pl-1.5 shadow-lg backdrop-blur">
+      <div
+        className="pointer-events-auto flex w-full max-w-md items-center gap-2 rounded-full border border-border/70 bg-popover/95 py-1.5 pr-1.5 pl-1.5 shadow-lg backdrop-blur"
+        data-aldo-dock="capsule"
+      >
         <AldoOrb size="sm" />
         {typing ? (
           <form

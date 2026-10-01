@@ -1387,11 +1387,12 @@ html[data-theme-id="t3-chat"] [data-app-sidebar] {
 
 /* Prism: liquid chrome and glass. The palette stays opaque so the editor,
    exports, and mobile read it like any other theme; the glass is added here.
-   The body paints one static scene (iridescent glows, a chrome ribbon, a few
-   sparks) and every pane over it is a translucent tint of its palette color,
-   so the scene shows through. Blur stays limited to the panes that float over
-   other content: the sidebar, the thread toolbar, the composer, and the popups
-   that already carry it. */
+   The body paints one static scene (iridescent glows, chrome ribbons, a few
+   sparks); the canvases over it are thin tints so it shows through; and the
+   surfaces that float over other content are either frosted (overlays:
+   heavy blur and enough tint to read on) or liquid glass (controls: a
+   specular fill, a lit rim, and a soft inner highlight). Blur stays on those
+   floating surfaces only. */
 html[data-theme-id="prism"] {
   /* The ink every hairline, fill, and highlight is mixed from: graphite on
      the pearl canvas, white on the ink-black one. */
@@ -1406,7 +1407,34 @@ html[data-theme-id="prism"] {
      thin for the scene to come through. */
   --prism-canvas-opacity: 34%;
   --prism-pane-opacity: 56%;
-  --prism-popup-opacity: 82%;
+  /* Frosted glass: what overlays are made of. Opaque palette colors, so the
+     thin canvas never leaks into them. */
+  --prism-frost: color-mix(in srgb, var(--app-theme-surface-overlay) 84%, transparent);
+  --prism-frost-sidebar: color-mix(in srgb, var(--app-theme-sidebar) 86%, transparent);
+  --prism-frost-canvas: color-mix(in srgb, var(--app-theme-canvas) 84%, transparent);
+  --prism-frost-blur: blur(40px) saturate(1.4);
+  --prism-dim: color-mix(in srgb, var(--app-theme-chrome) 48%, transparent);
+  /* Liquid glass: a specular fill over a light tint, a rim lit from the top
+     left, and an inner highlight along the top edge. */
+  --prism-lg-tint: color-mix(in srgb, var(--app-theme-surface-raised) 52%, transparent);
+  --prism-lg-fill: linear-gradient(
+    135deg,
+    oklch(1 0 0 / 70%) 0%,
+    oklch(1 0 0 / 34%) 42%,
+    oklch(1 0 0 / 22%) 70%,
+    oklch(1 0 0 / 48%) 100%
+  );
+  --prism-lg-rim: linear-gradient(
+    135deg,
+    oklch(1 0 0 / 100%) 0%,
+    oklch(1 0 0 / 55%) 30%,
+    color-mix(in srgb, var(--prism-ink) 14%, transparent) 55%,
+    oklch(1 0 0 / 80%) 100%
+  );
+  --prism-lg-inset:
+    inset 0 1px 0 oklch(1 0 0 / 95%), inset 0 -1px 0 oklch(1 0 0 / 40%),
+    inset 1px 0 0 oklch(1 0 0 / 55%), inset -1px 0 0 oklch(1 0 0 / 55%);
+  --prism-lg-blur: blur(28px) saturate(1.6) brightness(1.04);
   --prism-shadow: 0 24px 64px -28px oklch(0.25 0.03 268 / 40%);
   --prism-chrome-text: linear-gradient(
     180deg,
@@ -1446,7 +1474,30 @@ html[data-theme-id="prism"] {
     --prism-highlight: oklch(1 0 0 / 14%);
     --prism-canvas-opacity: 20%;
     --prism-pane-opacity: 58%;
-    --prism-popup-opacity: 80%;
+    --prism-frost: color-mix(in srgb, var(--app-theme-surface-overlay) 82%, transparent);
+    --prism-frost-sidebar: color-mix(in srgb, var(--app-theme-sidebar) 84%, transparent);
+    --prism-frost-canvas: color-mix(in srgb, var(--app-theme-canvas) 82%, transparent);
+    --prism-frost-blur: blur(40px) saturate(1.5);
+    --prism-dim: color-mix(in srgb, var(--app-theme-chrome) 55%, transparent);
+    --prism-lg-tint: color-mix(in srgb, var(--app-theme-surface-raised) 48%, transparent);
+    --prism-lg-fill: linear-gradient(
+      135deg,
+      oklch(1 0 0 / 16%) 0%,
+      oklch(1 0 0 / 5%) 42%,
+      oklch(1 0 0 / 2%) 70%,
+      oklch(1 0 0 / 9%) 100%
+    );
+    --prism-lg-rim: linear-gradient(
+      135deg,
+      oklch(1 0 0 / 60%) 0%,
+      oklch(1 0 0 / 18%) 30%,
+      oklch(1 0 0 / 6%) 55%,
+      oklch(1 0 0 / 38%) 100%
+    );
+    --prism-lg-inset:
+      inset 0 1px 0 oklch(1 0 0 / 34%), inset 0 -1px 0 oklch(1 0 0 / 7%),
+      inset 1px 0 0 oklch(1 0 0 / 12%), inset -1px 0 0 oklch(1 0 0 / 12%);
+    --prism-lg-blur: blur(28px) saturate(1.7) brightness(1.08);
     --prism-shadow: 0 28px 72px -28px oklch(0 0 0 / 85%);
     --prism-chrome-text: linear-gradient(
       180deg,
@@ -1488,8 +1539,8 @@ html[data-theme-id="prism"] {
   /* `:root` matches the same element; it only adds the specificity needed to
      outrank the generic theme mapping and the root defaults above. */
   &:root {
-    --glass-blur: 24px;
-    --glass-saturation: 1.3;
+    --glass-blur: 32px;
+    --glass-saturation: 1.4;
     --app-scrollbar-thumb: color-mix(in srgb, var(--prism-ink) 12%, transparent);
     --app-scrollbar-thumb-hover: color-mix(in srgb, var(--prism-ink) 18%, transparent);
     --background: color-mix(
@@ -1507,11 +1558,9 @@ html[data-theme-id="prism"] {
     --toolbar-control-hover: var(--prism-fill-active);
     --surface-raised: color-mix(in srgb, var(--app-theme-surface-raised) 70%, transparent);
     --card: color-mix(in srgb, var(--app-theme-surface) var(--prism-pane-opacity), transparent);
-    --popover: color-mix(
-      in srgb,
-      var(--app-theme-surface-overlay) var(--prism-popup-opacity),
-      transparent
-    );
+    /* Popups are frosted below; the token stays nearly solid for everything
+       else that paints with it. */
+    --popover: var(--prism-frost);
     --secondary: var(--prism-fill);
     --muted: var(--prism-fill);
     --accent: var(--prism-fill-hover);
@@ -1536,9 +1585,9 @@ html[data-theme-id="prism"] body {
   background-size: 100% 100%;
 }
 
-/* The sidebar owns a local palette (above); give it the same glass. The
-   container is the pane that blurs, so its inner wrapper stops painting a
-   second tint over it. */
+/* The docked sidebar owns a local palette (above); give it the same glass.
+   It is the pane that blurs, so its inner wrapper stops painting a second
+   tint over it. */
 html[data-theme-id="prism"] [data-app-sidebar] {
   --background: color-mix(
     in srgb,
@@ -1566,40 +1615,197 @@ html[data-theme-id="prism"] [data-app-sidebar] [data-slot="sidebar-inner"] {
   background-color: transparent;
 }
 
-html[data-theme-id="prism"] [data-chat-header] {
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
-  box-shadow: inset 0 -1px 0 var(--prism-line);
-}
-
-html[data-theme-id="prism"] [data-slot="composer-shell"] {
-  --chat-composer-glass-surface: color-mix(
-    in srgb,
-    var(--app-theme-surface-raised) 72%,
-    transparent
-  );
-  --chat-composer-outline: var(--prism-line-strong);
-  --chat-composer-highlight: var(--prism-highlight);
-}
-
-/* Popups already blur; they take Prism's hairline, specular edge, and a deeper
-   drop so they lift off the scene. */
-html[data-theme-id="prism"]
-  :is(
-    [data-slot="menu-popup"],
-    [data-slot="select-popup"],
-    [data-slot="popover-popup"],
-    [data-slot="dialog-popup"]
-  ) {
+/* ---- Frosted overlays ---------------------------------------------------
+   Everything that opens over other content. On narrow screens the sidebar
+   is a sheet (and never carries the docked sidebar's attribute), so it is
+   matched by its slot here. */
+html[data-theme-id="prism"] [data-slot="sidebar"][data-mobile="true"] {
+  --sidebar-stage-fade: var(--prism-frost-sidebar);
+  background-color: var(--prism-frost-sidebar);
   border-color: var(--prism-line-strong);
   box-shadow:
-    inset 0 1px 0 var(--prism-highlight),
+    inset -1px 0 0 var(--prism-highlight),
     var(--prism-shadow);
+  -webkit-backdrop-filter: var(--prism-frost-blur);
+  backdrop-filter: var(--prism-frost-blur);
 }
 
-/* A translucent canvas dims too little behind a dialog; dim with the chrome. */
-html[data-theme-id="prism"] [data-slot="dialog-backdrop"] {
-  background: color-mix(in srgb, var(--app-theme-chrome) 55%, transparent);
+html[data-theme-id="prism"]
+  :is(
+    [data-slot="sheet-popup"],
+    [data-slot="dialog-popup"],
+    [data-slot="command-dialog-popup"],
+    [data-slot="menu-popup"],
+    [data-slot="select-popup"],
+    [data-slot="popover-popup"]
+  ) {
+  background: var(--prism-frost);
+  border-color: var(--prism-line-strong);
+  box-shadow: var(--prism-lg-inset), var(--prism-shadow);
+  -webkit-backdrop-filter: var(--prism-frost-blur);
+  backdrop-filter: var(--prism-frost-blur);
+}
+
+html[data-theme-id="prism"]
+  :is(
+    [data-slot="sheet-backdrop"],
+    [data-slot="dialog-backdrop"],
+    [data-slot="command-dialog-backdrop"]
+  ) {
+  background: var(--prism-dim);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+
+/* The glass utilities mix from the canvas token, which Prism thins; give
+   them the opaque palette color instead so they stay frosted, not clear. */
+html[data-theme-id="prism"] .surface-glass {
+  background: var(--prism-frost-canvas);
+  -webkit-backdrop-filter: var(--prism-frost-blur);
+  backdrop-filter: var(--prism-frost-blur);
+}
+
+html[data-theme-id="prism"] .dropdown-glass {
+  background: var(--prism-frost);
+}
+
+html[data-theme-id="prism"] .dialog-glass {
+  background: var(--prism-frost);
+}
+
+/* Floating pills that paint a near-solid canvas expect it to be opaque. */
+html[data-theme-id="prism"] :is(.bg-background\/88, .bg-background\/95) {
+  background-color: var(--prism-frost-canvas);
+  -webkit-backdrop-filter: var(--prism-frost-blur);
+  backdrop-filter: var(--prism-frost-blur);
+}
+
+html[data-theme-id="prism"] [data-aldo-assistant-footer] {
+  background-color: var(--prism-frost-canvas);
+  -webkit-backdrop-filter: var(--prism-frost-blur);
+  backdrop-filter: var(--prism-frost-blur);
+}
+
+@layer base {
+  /* alert-glass sets its background !important; only an important rule in
+     an earlier layer outranks it. */
+  html[data-theme-id="prism"] .alert-glass {
+    background:
+      linear-gradient(
+        color-mix(in srgb, var(--alert-glass-tint) 6%, transparent),
+        color-mix(in srgb, var(--alert-glass-tint) 6%, transparent)
+      ),
+      var(--prism-frost) !important;
+  }
+}
+
+/* ---- Liquid glass -------------------------------------------------------
+   Controls that sit on the scene: the composer, the Aldo dock, toolbar
+   controls, inputs, and the selected sidebar row. */
+
+/* The composer: its backdrop pseudo becomes the glass body, and the outline
+   pseudo on its host becomes the lit rim (a gradient border, cut with a mask
+   so only the 1px ring paints). */
+html[data-theme-id="prism"] [data-slot="composer-shell"] {
+  --chat-composer-glass-surface: var(--app-theme-surface-raised);
+  --chat-composer-outline: transparent;
+  --chat-composer-highlight: transparent;
+}
+
+html[data-theme-id="prism"] [data-slot="composer-shell"]::before {
+  background: var(--prism-lg-fill), var(--prism-lg-tint);
+  box-shadow: var(--prism-lg-inset), var(--prism-shadow);
+  -webkit-backdrop-filter: var(--prism-lg-blur);
+  backdrop-filter: var(--prism-lg-blur);
+}
+
+html[data-theme-id="prism"] [data-slot="composer-host"]::after,
+html[data-theme-id="prism"] [data-chat-composer-main-surface]::after {
+  border: 0;
+  padding: 1px;
+  background: var(--prism-lg-rim) border-box;
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  box-shadow: none;
+}
+
+html[data-theme-id="prism"] [data-slot="composer-context-strip"]::before {
+  border-color: var(--prism-line-strong);
+  background: var(--prism-lg-tint);
+  box-shadow: var(--prism-lg-inset);
+}
+
+/* The chat composer's own textarea sits inside the glass; keep it clear. */
+html[data-theme-id="prism"] [data-slot="composer-shell"] textarea {
+  background: transparent;
+}
+
+/* The Aldo dock: a liquid glass capsule and speech bubble. */
+html[data-theme-id="prism"] [data-aldo-dock] {
+  position: relative;
+  background: var(--prism-lg-fill), var(--prism-lg-tint);
+  border-color: transparent;
+  box-shadow: var(--prism-lg-inset), var(--prism-shadow);
+  -webkit-backdrop-filter: var(--prism-lg-blur);
+  backdrop-filter: var(--prism-lg-blur);
+}
+
+html[data-theme-id="prism"] [data-aldo-dock]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  padding: 1px;
+  border-radius: inherit;
+  background: var(--prism-lg-rim) border-box;
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+html[data-theme-id="prism"] [data-aldo-dock] [data-slot="input"] {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+/* Toolbar controls and inputs: glass pills with a lit top edge. */
+html[data-theme-id="prism"] [data-chat-header] [data-slot="button"],
+html[data-theme-id="prism"] [data-chat-header] [data-slot="menu-trigger"],
+html[data-theme-id="prism"] [data-chat-header] [data-toolbar-control] {
+  background-image: var(--prism-lg-fill);
+  border-color: var(--prism-line-strong);
+  box-shadow: inset 0 1px 0 var(--prism-highlight);
+}
+
+/* Inputs have no blur of their own, so their fill stays thin: the lit top
+   edge and hairline carry the glass. */
+html[data-theme-id="prism"] [data-slot="input"]:not([data-aldo-dock] [data-slot="input"]),
+html[data-theme-id="prism"] [data-slot="input-control"] {
+  background: var(--prism-fill);
+  border-color: var(--prism-line-strong);
+  box-shadow: inset 0 1px 0 var(--prism-highlight);
+}
+
+/* The selected sidebar row and the active settings entry. */
+html[data-theme-id="prism"] [data-slot="sidebar"] :is([aria-current="page"], [data-active="true"]),
+html[data-theme-id="prism"] [data-app-sidebar] :is([aria-current="page"], [data-active="true"]) {
+  background-image: var(--prism-lg-fill);
+  box-shadow:
+    inset 0 1px 0 var(--prism-highlight),
+    inset 0 0 0 1px var(--prism-line);
 }
 
 /* The wordmark is set in chrome. */
@@ -1622,14 +1828,14 @@ html[data-theme-id="prism"] .sidebar-brand > span {
     --surface-raised: var(--app-theme-surface-raised);
     --sidebar: var(--app-theme-sidebar);
     --sidebar-stage-fade: var(--app-theme-sidebar);
+    --prism-frost: var(--app-theme-surface-overlay);
+    --prism-frost-sidebar: var(--app-theme-sidebar);
+    --prism-frost-canvas: var(--app-theme-canvas);
+    --prism-lg-tint: var(--app-theme-surface-raised);
   }
 
   html[data-theme-id="prism"] [data-app-sidebar] [data-slot="sidebar-inner"] {
     background-color: var(--sidebar);
-  }
-
-  html[data-theme-id="prism"] [data-slot="composer-shell"] {
-    --chat-composer-glass-surface: var(--app-theme-surface-raised);
   }
 }
 

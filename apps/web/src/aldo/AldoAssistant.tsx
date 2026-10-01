@@ -53,7 +53,10 @@ export function AldoAssistantHome(props: { readonly setup?: ReactNode }) {
             <AldoConversation />
           </div>
         </div>
-        <div className="shrink-0 border-t border-border/60 bg-background/95 backdrop-blur">
+        <div
+          className="shrink-0 border-t border-border/60 bg-background/95 backdrop-blur"
+          data-aldo-assistant-footer=""
+        >
           <div className="mx-auto flex w-full max-w-2xl flex-col items-center gap-3 px-5 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
             <AldoCaption />
             <AldoTalkControls />
