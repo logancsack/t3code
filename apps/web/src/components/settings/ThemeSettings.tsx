@@ -28,6 +28,7 @@ import {
   GROVE_THEME,
   IRIS_THEME,
   OCEAN_THEME,
+  PRISM_THEME,
 } from "../../themePalette";
 import {
   AlertDialog,
@@ -61,6 +62,7 @@ const MAINTAINER_THEMES: ReadonlyArray<ThemeDefinition> = [
   OCEAN_THEME,
   EMBER_THEME,
   IRIS_THEME,
+  PRISM_THEME,
 ];
 
 function collectionVariantLabels(themes: ReadonlyArray<ThemeDefinition>): ReadonlyArray<string> {

@@ -1,8 +1,8 @@
 # Mobile appearance
 
-T3 Code Mobile includes the T3 Code, T3 Chat, Grove, Ocean, Ember, and Iris themes. Each theme has
-light and dark colors that apply throughout the app, including code reviews, file previews, the
-terminal, native headers, and sheets.
+T3 Code Mobile includes the T3 Code, T3 Chat, Grove, Ocean, Ember, Iris, and Prism themes. Each
+theme has light and dark colors that apply throughout the app, including code reviews, file
+previews, the terminal, native headers, and sheets.
 
 On supported iOS versions, the new-task and thread composers, working timer, and scroll-to-end
 button use the system glass material. Other platforms use a themed background.

@@ -8,6 +8,7 @@ import {
   GROVE_THEME,
   IRIS_THEME,
   OCEAN_THEME,
+  PRISM_THEME,
   T3_CHAT_THEME,
   RESERVED_THEME_IDS,
   THEME_COLOR_ROLES,
@@ -18,7 +19,15 @@ import {
   type ThemeVariants,
 } from "@t3tools/shared/themePalettes";
 
-export { EMBER_THEME, GROVE_THEME, IRIS_THEME, OCEAN_THEME, T3_CHAT_THEME, THEME_COLOR_ROLES };
+export {
+  EMBER_THEME,
+  GROVE_THEME,
+  IRIS_THEME,
+  OCEAN_THEME,
+  PRISM_THEME,
+  T3_CHAT_THEME,
+  THEME_COLOR_ROLES,
+};
 export type { ThemeAppearance, ThemeColorRole, ThemeColors, ThemeDefinition, ThemeVariants };
 
 export const T3_CHAT_THEME_ID = "t3-chat" as const;
@@ -31,6 +40,8 @@ export const EMBER_THEME_ID = "ember" as const;
 export const EMBER_THEME_LABEL = "Ember";
 export const IRIS_THEME_ID = "iris" as const;
 export const IRIS_THEME_LABEL = "Iris";
+export const PRISM_THEME_ID = "prism" as const;
+export const PRISM_THEME_LABEL = "Prism";
 export const THEME_FILE_VERSION = 1 as const;
 export const CUSTOM_THEMES_STORAGE_KEY = "t3code:themes:v1";
 export const THEME_FOLLOW_SYSTEM_STORAGE_KEY = "t3code:theme-follow-system";

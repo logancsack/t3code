@@ -180,6 +180,10 @@ describe("mobile themes", () => {
         expect(
           contrastRatio(variables["--color-placeholder"], variables["--color-input"]),
         ).toBeGreaterThanOrEqual(4.5);
+        // Primary buttons set normal-sized labels on the accent.
+        expect(
+          contrastRatio(variables["--color-primary-foreground"], variables["--color-primary"]),
+        ).toBeGreaterThanOrEqual(4.5);
       }
     }
 
