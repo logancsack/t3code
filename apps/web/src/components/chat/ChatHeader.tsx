@@ -446,6 +446,7 @@ export const ChatHeader = memo(function ChatHeader({
         {isAldoCloud && isAldoEnvironmentId(activeThreadEnvironmentId) ? (
           <AldoPreviewsControl
             environmentId={activeThreadEnvironmentId}
+            threadId={activeThreadId}
             onOpenBrowser={() =>
               useRightPanelStore
                 .getState()

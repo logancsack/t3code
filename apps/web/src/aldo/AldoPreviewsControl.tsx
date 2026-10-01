@@ -5,6 +5,7 @@ import {
   LoaderIcon,
   PanelRightIcon,
 } from "lucide-react";
+import type { ThreadId } from "@t3tools/contracts";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
@@ -27,6 +28,7 @@ import {
 } from "../components/ui/alert-dialog";
 import { Button } from "../components/ui/button";
 import { toastManager } from "../components/ui/toast";
+import { useAldoComputerAsk } from "./AldoComputer";
 import { AldoMachineMenuSection, useAldoMachineOffer } from "./AldoMachine";
 import { useAldoBrowserRequests } from "./browserStore";
 import {
@@ -55,8 +57,14 @@ function label(command: string, process: string): string {
  * The thread's dev servers: open one in the shared browser, or in a new tab
  * through its owner-only preview link (works from any device, wakes the thread).
  */
-export function AldoPreviewsControl(props: { environmentId: string; onOpenBrowser: () => void }) {
+export function AldoPreviewsControl(props: {
+  environmentId: string;
+  /** The thread shown, where the thread's asks appear. */
+  threadId: ThreadId;
+  onOpenBrowser: () => void;
+}) {
   useAldoMachineOffer(props.environmentId);
+  useAldoComputerAsk(props.environmentId, props.threadId);
   const [previews, setPreviews] = useState<AldoPreviews | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);

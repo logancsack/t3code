@@ -25,6 +25,7 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 
+import type { AldoComputer } from "./computer.logic";
 import { getAldoPreloadSettings } from "./preloadSettings";
 import type { AldoCheckCounts, AldoPullRequestStage } from "./pullRequests.logic";
 
@@ -56,6 +57,11 @@ export interface AldoEnvironment {
   readonly starts?: Readonly<Record<string, AldoStartState>>;
   /** How each of its T3 threads stands, as the machine last reported (working, waiting, done, failed). */
   readonly attention?: Readonly<Record<string, AldoThreadAttention>>;
+  /**
+   * The user's Windows computer, on the thread asking for it or using it
+   * (computer.logic.ts); null otherwise, and left out by an older Aldo.
+   */
+  readonly computer?: AldoComputer | null;
 }
 
 export interface AldoThreadAttention {
@@ -878,6 +884,15 @@ export async function setAldoMachine(environmentId: string, size: AldoMachineSiz
   await api(`/api/environments/${threadIdForEnvironment(environmentId)}/machine`, {
     method: "POST",
     body: JSON.stringify({ size }),
+  });
+  requestAldoDirectoryRefresh();
+}
+
+/** Answers a thread's agent asking for the user's Windows computer: agreeing starts it. */
+export async function answerAldoComputer(environmentId: string, approve: boolean): Promise<void> {
+  await api(`/api/environments/${threadIdForEnvironment(environmentId)}/computer`, {
+    method: "POST",
+    body: JSON.stringify({ approve }),
   });
   requestAldoDirectoryRefresh();
 }
