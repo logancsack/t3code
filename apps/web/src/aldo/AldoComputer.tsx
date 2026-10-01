@@ -1,7 +1,9 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import { CpuIcon, MonitorIcon } from "lucide-react";
-import { useEffect, useSyncExternalStore } from "react";
+import { CpuIcon, MonitorIcon, SquareIcon } from "lucide-react";
+import { useEffect, useMemo, useSyncExternalStore } from "react";
+
+import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "../components/ui/menu";
 
 import { hiddenToastActionProps, stackedThreadToast, toastManager } from "../components/ui/toast";
 import {
@@ -150,17 +152,14 @@ export function useAldoComputer(
   readonly answer: boolean | undefined;
   readonly stopping: boolean;
 } {
-  const computer = useSyncExternalStore(
+  const environment = useSyncExternalStore(
     subscribeAldoEnvironments,
-    () => {
-      const environment = getAldoEnvironments()?.find(
-        (candidate) => candidate.environmentId === environmentId,
-      );
-      const computers = environment ? aldoComputers(environment) : [];
-      return (kind ? computers.find((c) => c.kind === kind) : computers[0]) ?? null;
-    },
+    () =>
+      getAldoEnvironments()?.find((candidate) => candidate.environmentId === environmentId) ?? null,
     () => null,
   );
+  const computers = useMemo(() => (environment ? aldoComputers(environment) : []), [environment]);
+  const computer = (kind ? computers.find((c) => c.kind === kind) : computers[0]) ?? null;
   const entry = computer ? key(environmentId, computer.kind) : "";
   const answered = useSyncExternalStore(
     subscribe,
@@ -172,11 +171,55 @@ export function useAldoComputer(
     () => (entry ? stopping.has(entry) : false),
     () => false,
   );
-  // Once the directory no longer reports the ask, a new one is asked again.
+  // An answer is kept only while its computer still asks: once the directory stops reporting
+  // the ask (whichever computer this thread shows first now), a new ask is asked again.
   useEffect(() => {
-    if (entry) set(answers, entry, aldoComputerKeptAnswer(computer, answered));
-  }, [answered, computer, entry]);
+    const prefix = `${environmentId}:`;
+    for (const [stored, value] of answers) {
+      if (!stored.startsWith(prefix)) continue;
+      const asking = computers.find((c) => c.kind === stored.slice(prefix.length));
+      set(answers, stored, aldoComputerKeptAnswer(asking, value));
+    }
+  }, [answered, computers, environmentId]);
   return { computer, answer: answered, stopping: isStopping };
+}
+
+/**
+ * While the thread's GPU computer starts or runs, a control in the thread's
+ * header says so and stops it (it has no screen, so nothing else shows it).
+ */
+export function AldoGpuComputerControl(props: { environmentId: string }) {
+  const { computer, stopping: isStopping } = useAldoComputer(props.environmentId, "gpu");
+  if (!computer || !aldoComputerStoppable(computer)) return null;
+  const running = computer.status === "running";
+  return (
+    <Menu>
+      <MenuTrigger
+        aria-label={running ? "Your GPU computer is running" : "Your GPU computer is starting"}
+        className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <CpuIcon className={running ? "size-3.5 text-info" : "size-3.5 animate-pulse"} />
+        <span className="hidden @3xl/header-actions:inline">GPU</span>
+      </MenuTrigger>
+      <MenuPopup align="end" className="w-72">
+        <div className="space-y-1 px-2 py-2 text-xs text-muted-foreground">
+          <p className="font-medium text-foreground">
+            {running ? "Your GPU computer is running" : "Your GPU computer is starting"}
+          </p>
+          <p>
+            {aldoComputerAskDescription({ why: null, creditsPerHour: computer.creditsPerHour })}
+          </p>
+        </div>
+        <MenuSeparator />
+        <MenuItem
+          disabled={isStopping}
+          onClick={() => void stopAldoThreadComputer(props.environmentId, "gpu")}
+        >
+          <SquareIcon className="size-3.5" /> {isStopping ? "Stopping…" : "Stop it"}
+        </MenuItem>
+      </MenuPopup>
+    </Menu>
+  );
 }
 
 /**
