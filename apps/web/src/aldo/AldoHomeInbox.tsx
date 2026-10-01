@@ -110,13 +110,24 @@ export function NeedsYouCard(props: {
           {c.summary && kind !== "approval" ? (
             <p className="mt-2 line-clamp-3 whitespace-pre-wrap text-sm">{c.summary}</p>
           ) : null}
+          {/* Keyed by what's asked, so a form's choices and words go when the thread moves on to another. */}
           <div className="mt-3">
             {kind === "question" && c.pending?.kind === "question" ? (
-              <QuestionForm target={c.thread} pending={c.pending} onActed={props.onActed} />
+              <QuestionForm
+                key={c.pending.requestId}
+                target={c.thread}
+                pending={c.pending}
+                onActed={props.onActed}
+              />
             ) : kind === "approval" && c.pending?.kind === "approval" ? (
-              <ApprovalForm target={c.thread} pending={c.pending} onActed={props.onActed} />
+              <ApprovalForm
+                key={c.pending.requestId}
+                target={c.thread}
+                pending={c.pending}
+                onActed={props.onActed}
+              />
             ) : kind === "plan" && c.plan ? (
-              <PlanForm target={c.thread} plan={c.plan} onActed={props.onActed} />
+              <PlanForm key={c.plan.id} target={c.thread} plan={c.plan} onActed={props.onActed} />
             ) : null}
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-2">
