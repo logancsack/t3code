@@ -21,6 +21,8 @@ export interface AldoComputer {
   /** The agent's one-line reason, while it asks. */
   readonly why: string | null;
   readonly creditsPerHour: number;
+  /** The machine's thread asking for it or using it (an older Aldo leaves it out). */
+  readonly t3ThreadId?: string | null;
   /** Why it didn't start, when it failed. */
   readonly error: string | null;
 }
@@ -100,4 +102,15 @@ export function aldoDesktopScreen(
 export function aldoDesktopScreenUrl(desktopUrl: string, screen: AldoDesktopScreen): string {
   if (screen === "machine") return desktopUrl;
   return `${desktopUrl}${desktopUrl.includes("?") ? "&" : "?"}screen=windows`;
+}
+
+/**
+ * The thread a computer's toast belongs to: the one asking for it or using it
+ * (the user sees its toast there), or, from an older Aldo, the thread open.
+ */
+export function aldoComputerToastThread(
+  computer: AldoComputer | null | undefined,
+  openThreadId: string,
+): string {
+  return computer?.t3ThreadId || openThreadId;
 }

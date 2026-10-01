@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  aldoComputerToastThread,
   aldoComputerAskDescription,
   aldoComputerKeptAnswer,
   aldoComputerNotice,
@@ -129,5 +130,25 @@ describe("aldoDesktopScreenUrl", () => {
     expect(aldoDesktopScreenUrl("wss://agent.example/desktop", "windows")).toBe(
       "wss://agent.example/desktop?screen=windows",
     );
+  });
+});
+
+describe("aldoComputerToastThread", () => {
+  const base = {
+    kind: "windows",
+    status: "asked",
+    why: "Refresh the model",
+    creditsPerHour: 2,
+    error: null,
+  } as const;
+  it("belongs to the thread that asks", () => {
+    expect(aldoComputerToastThread({ ...base, t3ThreadId: "t3-asking" }, "t3-open")).toBe(
+      "t3-asking",
+    );
+  });
+  it("falls back to the open thread with an older Aldo", () => {
+    expect(aldoComputerToastThread(base, "t3-open")).toBe("t3-open");
+    expect(aldoComputerToastThread({ ...base, t3ThreadId: null }, "t3-open")).toBe("t3-open");
+    expect(aldoComputerToastThread(null, "t3-open")).toBe("t3-open");
   });
 });

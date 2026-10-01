@@ -47,6 +47,8 @@ export function AldoDesktopView({
         // noVNC touches the DOM as soon as it loads, so it's loaded only when a desktop is shown.
         const { default: VncClient } = await import("@novnc/novnc");
         if (disposed) return;
+        // noVNC leaves its screen in the container when it disconnects: start from an empty one.
+        container.replaceChildren();
         client = new VncClient(container, aldoDesktopScreenUrl(desktopUrl, screen), {
           shared: true,
         });

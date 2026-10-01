@@ -18,6 +18,7 @@ import {
   aldoComputerNotice,
   aldoComputerStartOutcome,
   aldoComputerStoppable,
+  aldoComputerToastThread,
   type AldoComputer,
   type AldoComputerNotice,
 } from "./computer.logic";
@@ -57,6 +58,8 @@ const shown = new Map<
     readonly id: ToastId | null;
     readonly description: string;
     readonly stoppable: boolean;
+    /** The thread it shows in. */
+    readonly threadId: string;
   }
 >();
 
@@ -177,16 +180,23 @@ export function useAldoComputerAsk(environmentId: string, threadId: ThreadId): v
         : "Your agent hears when it's ready.";
     // Stopping is offered once Aldo is starting it, not while the answer is on its way.
     const stoppable = notice === "starting" && aldoComputerStoppable(computer);
-    // Stopping takes its toast down (as closed by the user: not offered again while it winds down).
+    // A stop that went through takes its toast down (as closed by the user: not offered again
+    // while it winds down); one that failed leaves it, to try again.
     const stopAction = (toastId: () => ToastId) => ({
       children: "Stop",
       onClick: () => {
-        toastManager.close(toastId());
-        void stopAldoWindowsComputer(environmentId);
+        void stopAldoWindowsComputer(environmentId).then((stopped) => {
+          if (stopped) toastManager.close(toastId());
+        });
       },
     });
+    const toastThreadId = aldoComputerToastThread(computer, threadId) as ThreadId;
     const current = shown.get(environmentId);
-    if (current?.notice === notice) {
+    // The same notice, for another thread (another thread asks, or the user opened the one that did): shown again there.
+    if (current?.notice === notice && current.threadId !== toastThreadId) {
+      shown.delete(environmentId);
+      if (current.id !== null) toastManager.close(current.id);
+    } else if (current?.notice === notice) {
       // The agent asked again before the user answered, for another reason; or it can be stopped now.
       const currentId = current.id;
       if (
@@ -203,8 +213,8 @@ export function useAldoComputerAsk(environmentId: string, threadId: ThreadId): v
       }
       return;
     }
-    const threadRef = scopeThreadRef(environmentId as EnvironmentId, threadId);
-    if (current) {
+    const threadRef = scopeThreadRef(environmentId as EnvironmentId, toastThreadId);
+    if (current && shown.has(environmentId)) {
       shown.delete(environmentId);
       const outcome = current.notice === "starting" ? aldoComputerStartOutcome(computer) : null;
       if (current.id === null) {
@@ -241,7 +251,13 @@ export function useAldoComputerAsk(environmentId: string, threadId: ThreadId): v
     // Closed by the user (with ✕ or a swipe), not by this hook, which forgets it first.
     const onClose = () => {
       if (shown.get(environmentId)?.id === id) {
-        shown.set(environmentId, { notice, id: null, description, stoppable });
+        shown.set(environmentId, {
+          notice,
+          id: null,
+          description,
+          stoppable,
+          threadId: toastThreadId,
+        });
       }
     };
     const id: ToastId = toastManager.add({
@@ -275,6 +291,6 @@ export function useAldoComputerAsk(environmentId: string, threadId: ThreadId): v
           })),
       onClose,
     });
-    shown.set(environmentId, { notice, id, description, stoppable });
+    shown.set(environmentId, { notice, id, description, stoppable, threadId: toastThreadId });
   }, [answered, computer, environmentId, threadId]);
 }
