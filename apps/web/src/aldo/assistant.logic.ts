@@ -86,7 +86,7 @@ function threadOf(outcome: unknown): AldoOpenTarget | null {
   return { environmentId: thread.environmentId, threadId: thread.threadId };
 }
 
-const ACTION_LABELS: Record<string, string> = {
+export const ACTION_LABELS: Record<string, string> = {
   start_thread: "Started a thread",
   message_thread: "Messaged a thread",
   answer_thread: "Answered a thread",

@@ -1011,8 +1011,37 @@ export async function aldoAssistantAvailable(): Promise<boolean> {
   return Array.isArray(body?.tools);
 }
 
+/** A written turn with Aldo: its reply, and the tool calls it made with what came of each. */
+export interface AldoChatTurn {
+  readonly sessionId: string;
+  readonly reply: string;
+  readonly calls: ReadonlyArray<{
+    readonly callId: string;
+    readonly name: string;
+    readonly arguments: Record<string, unknown>;
+    readonly outcome: unknown;
+  }>;
+}
+
 export const aldoAssistant = {
   startSession: () => api<AldoVoiceSession>("/api/assistant/session", { method: "POST" }),
+  /**
+   * A written turn, typed without a call (Aldo's src/lib/assistant/chat.ts);
+   * null where this Aldo can't chat in writing (an older one answers a path
+   * it doesn't know with the web client's own page).
+   */
+  chat: async (sessionId: string | null, text: string): Promise<AldoChatTurn | null> => {
+    const body = await api<Partial<AldoChatTurn>>("/api/assistant/chat", {
+      method: "POST",
+      body: JSON.stringify({ sessionId, text }),
+    });
+    if (typeof body.reply !== "string" || typeof body.sessionId !== "string") return null;
+    return {
+      sessionId: body.sessionId,
+      reply: body.reply,
+      calls: Array.isArray(body.calls) ? body.calls : [],
+    };
+  },
   /** Runs a tool the model called: { result } or, for a refusal the model should hear, { error }. */
   runTool: (
     name: string,
@@ -1074,3 +1103,223 @@ export const aldoMemory = {
       })
     ).items,
 };
+
+// ---------------------------------------------------------------------------
+// The home screen: the user's agents' work in one read (Aldo's src/lib/home.ts)
+
+export interface AldoHomeTarget {
+  readonly environmentId: string;
+  readonly threadId: string;
+}
+
+/** What a conversation is waiting on the user for, with its choices. */
+export type AldoHomePending =
+  | {
+      readonly kind: "question";
+      readonly requestId: string;
+      readonly questions: ReadonlyArray<{
+        readonly id: string;
+        readonly header: string;
+        readonly question: string;
+        readonly options: ReadonlyArray<{ readonly label: string; readonly description: string }>;
+        readonly multiSelect: boolean;
+      }>;
+    }
+  | {
+      readonly kind: "approval";
+      readonly requestId: string;
+      readonly summary: string;
+      readonly detail?: string;
+      readonly options: ReadonlyArray<{ readonly decision: string; readonly label: string }>;
+    };
+
+export interface AldoHomeConversation {
+  readonly ref: string;
+  readonly thread: AldoHomeTarget;
+  readonly title: string;
+  readonly repos: ReadonlyArray<string>;
+  readonly branch: string;
+  /** working, waiting, done, failed; starting, queued, retrying; new (nothing sent yet). */
+  readonly state: string;
+  /** What it last said, asked or failed with. */
+  readonly summary?: string;
+  /** Its machine: running, asleep, not created, failed. */
+  readonly machine: string;
+  readonly model?: string;
+  readonly at: string;
+  readonly pullRequests?: ReadonlyArray<{
+    readonly repo: string;
+    readonly number: number;
+    readonly title: string;
+    readonly stage: AldoPullRequestStage;
+    readonly url: string;
+  }>;
+  readonly pending?: AldoHomePending;
+  readonly plan?: { readonly id: string; readonly text: string };
+  readonly pressure?: AldoMachinePressure | null;
+}
+
+export interface AldoHomePullRequest {
+  readonly environmentId: string;
+  readonly thread: AldoHomeTarget | null;
+  readonly threadTitle: string;
+  readonly repo: string;
+  readonly number: number;
+  readonly url: string;
+  readonly title: string;
+  readonly status: "watching" | "merged" | "closed" | "stopped";
+  readonly stage: AldoPullRequestStage;
+  readonly checks: AldoCheckCounts | null;
+  readonly deploy: AldoCheckCounts | null;
+  readonly followups: number;
+  readonly reviewsExhausted: boolean;
+  readonly greenSince: string | null;
+  /** When Aldo merges it on its own, if nothing changes (the workspace's policy says so). */
+  readonly mergesAt: string | null;
+  readonly mergedAt: string | null;
+  readonly updatedAt: string;
+}
+
+export interface AldoHomeDelivery {
+  readonly id: string;
+  readonly kind: "reminder" | "message" | "notice";
+  readonly thread: AldoHomeTarget;
+  readonly threadTitle: string;
+  readonly message: string;
+  readonly dueAt: string;
+  readonly createdAt: string;
+  /** Due, but its thread couldn't take it yet. */
+  readonly held: boolean;
+}
+
+export interface AldoHomeAction {
+  readonly id: string;
+  readonly tool: string;
+  readonly title: string | null;
+  readonly asked: string;
+  readonly failed: boolean;
+  readonly error: string | null;
+  readonly thread: AldoHomeTarget | null;
+  readonly at: string;
+}
+
+export interface AldoHomeUsage {
+  readonly configured: boolean;
+  readonly metered: boolean;
+  readonly plan: {
+    readonly id: string;
+    readonly name: string;
+    readonly includedCredits: number;
+  } | null;
+  readonly period: { readonly status: string; readonly start: string; readonly end: string } | null;
+  readonly credits: {
+    readonly used: number;
+    readonly included: number;
+    readonly authorized: number;
+    readonly remaining: number;
+    readonly projected: number | null;
+  } | null;
+  readonly bill: {
+    readonly estimatedCents: number;
+    readonly projectedCents: number | null;
+    readonly spendLimitCents: number;
+  } | null;
+  readonly alert: string;
+  readonly agents: { readonly running: number; readonly limit: number | null };
+}
+
+export interface AldoPolicy {
+  readonly merge?: "auto" | "approve";
+  readonly mergeMethod?: Record<string, string>;
+  readonly spendThreshold?: number;
+  readonly reviews?: "all" | "important";
+}
+
+export interface AldoHome {
+  readonly at: string;
+  readonly conversations: ReadonlyArray<AldoHomeConversation>;
+  readonly pullRequests: ReadonlyArray<AldoHomePullRequest>;
+  readonly upcoming: ReadonlyArray<AldoHomeDelivery>;
+  readonly actions: ReadonlyArray<AldoHomeAction>;
+  readonly usage: AldoHomeUsage;
+  readonly spends: {
+    readonly once: number;
+    readonly monthly: number;
+    readonly recent: ReadonlyArray<{
+      readonly id: string;
+      readonly what: string;
+      readonly amount: number;
+      readonly monthly: boolean;
+      readonly approvedByUser: boolean;
+      readonly stopped: boolean;
+      readonly at: string;
+    }>;
+  };
+  readonly health: {
+    readonly providers: ReadonlyArray<{
+      readonly id: string;
+      readonly name: string;
+      readonly signedIn: boolean;
+    }>;
+    readonly connected: ReadonlyArray<string>;
+    readonly environments: ReadonlyArray<{
+      readonly repos: ReadonlyArray<string>;
+      readonly status: "ready" | "building" | "failed" | "none";
+      readonly at: string;
+    }>;
+  };
+  readonly policy: {
+    readonly everywhere: AldoPolicy;
+    readonly workspaces: ReadonlyArray<{
+      readonly repos: ReadonlyArray<string>;
+      readonly policy: AldoPolicy;
+    }>;
+  };
+}
+
+/** The home screen's read; null where this Aldo doesn't have it (an older one answers with the web client's own page). */
+export async function fetchAldoHome(): Promise<AldoHome | null> {
+  const body = await api<Partial<AldoHome>>("/api/home");
+  return Array.isArray(body.conversations) ? (body as AldoHome) : null;
+}
+
+/** Answers the question or approval a conversation is waiting on, as the user. Says what happened. */
+export async function answerAldoThread(
+  target: AldoHomeTarget,
+  answer: {
+    readonly answers?: Record<string, string | ReadonlyArray<string>>;
+    readonly text?: string;
+    readonly decision?: string;
+  },
+): Promise<string> {
+  const { status } = await api<{ status: string }>(
+    `/api/environments/${threadIdForEnvironment(target.environmentId)}/actions`,
+    {
+      method: "POST",
+      body: JSON.stringify({ action: "answer", t3ThreadId: target.threadId, ...answer }),
+    },
+  );
+  return status;
+}
+
+/** Has the agent carry out the plan it proposed, or, with changes, asks for a revised one. */
+export async function approveAldoPlan(target: AldoHomeTarget, changes?: string): Promise<string> {
+  const { status } = await api<{ status: string }>(
+    `/api/environments/${threadIdForEnvironment(target.environmentId)}/actions`,
+    {
+      method: "POST",
+      body: JSON.stringify({ action: "approve_plan", t3ThreadId: target.threadId, changes }),
+    },
+  );
+  return status;
+}
+
+/** Sends a waiting delivery (a reminder, a message) now rather than when it's due. */
+export async function sendAldoDeliveryNow(id: string): Promise<void> {
+  await api(`/api/deliveries/${encodeURIComponent(id)}`, { method: "POST" });
+}
+
+/** Cancels a waiting delivery: it's never sent. */
+export async function cancelAldoDelivery(id: string): Promise<void> {
+  await api(`/api/deliveries/${encodeURIComponent(id)}`, { method: "DELETE" });
+}

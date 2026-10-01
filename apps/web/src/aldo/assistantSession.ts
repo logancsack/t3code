@@ -5,8 +5,11 @@
 // the call goes to Aldo with what the user said lately (an action runs only
 // if the user asked for it) and the result goes back to the model. What's
 // said on either side is kept by Aldo, so the next conversation picks up
-// from this one. The session lives here, not in a screen: Aldo opening a
-// thread moves the page, and the conversation carries on (the dock shows it).
+// from this one. Typed without a call on, the words go to Aldo in writing
+// instead (its text model, with the same tools): each turn comes back with
+// Aldo's reply and what it did. The session lives here, not in a screen: Aldo
+// opening a thread moves the page, and the conversation carries on (the dock
+// shows it).
 // A thread Aldo starts shows in the sidebar at once, and is followed until its
 // first turn is under way: if it has to wait, runs into trouble, can't start
 // or stops at once (an agent signed out), Aldo says so (or, once the
@@ -64,6 +67,8 @@ interface AldoAssistantState {
   readonly levels: { readonly mic: number; readonly aldo: number };
   /** What the user typed that couldn't be sent (the conversation didn't start), for the composer to give back. */
   readonly unsent: string | null;
+  /** A written reply is on its way (typed without a call on). */
+  readonly replying: boolean;
 }
 
 export const useAldoAssistant = create<AldoAssistantState>(() => ({
@@ -76,6 +81,7 @@ export const useAldoAssistant = create<AldoAssistantState>(() => ({
   historyLoaded: false,
   levels: { mic: 0, aldo: 0 },
   unsent: null,
+  replying: false,
 }));
 
 const set = (patch: Partial<AldoAssistantState>) => useAldoAssistant.setState(patch);
@@ -93,6 +99,10 @@ let levelsTimer: ReturnType<typeof setInterval> | null = null;
 /** Typed before the conversation was connected: sent once it is, instead of the greeting. */
 let queuedText: string | null = null;
 let openThread: ((target: AldoOpenTarget) => void) | null = null;
+/** The written conversation's session with Aldo, continued turn after turn. */
+let chatSessionId: string | null = null;
+/** Whether this Aldo can chat in writing; null until tried. An older one takes typing on a call instead. */
+let chatSupported: boolean | null = null;
 /**
  * A response has been asked for or is being made (only one at a time), or
  * tool calls run (their results then ask for one).
@@ -422,22 +432,102 @@ export function disconnectAldo(): void {
   set({ phase: "idle", said: "", micOn: false, muted: false, levels: { mic: 0, aldo: 0 } });
 }
 
-/** Typed words: into the conversation, which starts (typed only) if it isn't on. */
+/**
+ * Typed words: into the call when one is on; otherwise to Aldo in writing
+ * (or, on an older Aldo, into a call that starts typed only).
+ */
 export function sendText(text: string): void {
   const words = text.trim();
   if (!words) return;
-  if (!aldoAssistantLive() || channel?.readyState !== "open") {
+  if (aldoAssistantLive()) {
+    if (channel?.readyState !== "open") {
+      queuedText = words;
+      return;
+    }
+    heard = rememberHeard(heard, words);
+    say("user", words);
+    send({
+      type: "conversation.item.create",
+      item: { type: "message", role: "user", content: [{ type: "input_text", text: words }] },
+    });
+    requestResponse();
+    return;
+  }
+  if (chatSupported === false) {
     queuedText = words;
-    if (!aldoAssistantLive()) void connectAldo({ mic: false });
+    void connectAldo({ mic: false });
+    return;
+  }
+  void chatText(words);
+}
+
+/** Puts words in the composer for the user to finish ("About the checkout fix: "). */
+export function seedAldoComposer(text: string): void {
+  set({ unsent: text });
+}
+
+/** A written turn: the words go to Aldo, and its reply comes back with what it did. */
+async function chatText(words: string): Promise<void> {
+  if (get().replying) {
+    // One turn at a time; the words come back to the composer.
+    set({ unsent: words });
     return;
   }
   heard = rememberHeard(heard, words);
-  say("user", words);
-  send({
-    type: "conversation.item.create",
-    item: { type: "message", role: "user", content: [{ type: "input_text", text: words }] },
-  });
-  requestResponse();
+  const entry: AldoConversationEntry = {
+    kind: "message",
+    role: "user",
+    text: words,
+    at: new Date().toISOString(),
+  };
+  addEntry(entry);
+  set({ replying: true, error: null });
+  try {
+    const turn = await aldoAssistant.chat(chatSessionId, words).catch((error: unknown) => {
+      if (error instanceof AldoApiError && error.status === 404) return null;
+      throw error;
+    });
+    if (!turn) {
+      // An older Aldo: the words go into a call instead, which shows them itself.
+      chatSupported = false;
+      set({ entries: get().entries.filter((e) => e !== entry) });
+      queuedText = words;
+      void connectAldo({ mic: false });
+      return;
+    }
+    chatSupported = true;
+    chatSessionId = turn.sessionId;
+    for (const call of turn.calls) {
+      const made: AldoFunctionCall = {
+        callId: call.callId,
+        name: call.name,
+        arguments: call.arguments,
+      };
+      const open = openTargetOf(call.outcome);
+      if (open) openThread?.(open);
+      const action = actionFor(made, call.outcome);
+      if (action) {
+        addEntry({ kind: "action", ...action });
+        if (!action.failed) requestAldoDirectoryRefresh();
+      }
+      const watch = startWatchFor(made, call.outcome, Date.now());
+      if (watch) watchStart(watch);
+    }
+    addEntry({
+      kind: "message",
+      role: "assistant",
+      text: turn.reply,
+      at: new Date().toISOString(),
+    });
+  } catch (error) {
+    set({
+      entries: get().entries.filter((e) => e !== entry),
+      error: messageOf(error),
+      unsent: words,
+    });
+  } finally {
+    set({ replying: false });
+  }
 }
 
 export function setAldoMuted(muted: boolean): void {

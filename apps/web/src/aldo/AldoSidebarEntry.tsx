@@ -29,9 +29,17 @@ export function AldoSidebarEntry() {
   const said = useAldoAssistant((s) => s.said);
   const muted = useAldoAssistant((s) => s.muted);
   const micOn = useAldoAssistant((s) => s.micOn);
+  const replying = useAldoAssistant((s) => s.replying);
   if (!isAldoCloud || !available) return null;
   const live = phase !== "idle" && phase !== "error";
-  const status = live && muted ? "Muted" : phase === "speaking" && said ? said : STATUS[phase];
+  const status =
+    live && muted
+      ? "Muted"
+      : phase === "speaking" && said
+        ? said
+        : replying
+          ? "Thinking…"
+          : STATUS[phase];
   return (
     <div className="flex h-10 items-center gap-2 rounded-md px-1.5 text-sm hover:bg-sidebar-row-hover">
       <AldoOrb size="xs" className="ml-0.5" />

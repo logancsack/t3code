@@ -1,19 +1,29 @@
-// Aldo as the home screen: talk to it (the orb), or type. It shows what was
-// said, what Aldo did (with a link to each thread), and what needs the user
-// or is working now, read the way Aldo reads it (its overview) without waking
-// a machine. The conversation itself lives in assistantSession.ts, so it
-// carries on when Aldo opens a thread (the dock shows it there).
+// Talking to Aldo on the home screen (AldoHome.tsx): the orb to talk, the
+// composer to type (with a few things to say when it's empty), and the
+// conversation: what was said, what Aldo did (with a link to each thread).
+// The conversation itself lives in assistantSession.ts, so it carries on when
+// Aldo opens a thread (the dock shows it there). AldoAtAGlance is what needs
+// the user and what's working, read the way Aldo reads it (its overview): the
+// board for an Aldo without the home screen's read.
 
 import { Link } from "@tanstack/react-router";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import { ArrowUpIcon, ArrowUpRightIcon, MicIcon, MicOffIcon, PhoneOffIcon } from "lucide-react";
+import {
+  ArrowUpIcon,
+  ArrowUpRightIcon,
+  ChevronDownIcon,
+  ChevronUpIcon,
+  MicIcon,
+  MicOffIcon,
+  PhoneOffIcon,
+} from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { Button } from "../components/ui/button";
-import { SidebarInset } from "../components/ui/sidebar";
 import { Input } from "../components/ui/input";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { cn } from "~/lib/utils";
+import { useMediaQuery } from "../hooks/useMediaQuery";
 import { useThreadShells } from "../state/entities";
 import type { AldoAssistantPhase, AldoOpenTarget } from "./assistant.logic";
 import {
@@ -30,7 +40,7 @@ import { aldoAssistant, aldoAssistantAvailable } from "./cloud";
 const OVERVIEW_EVERY_MS = 20_000;
 
 const PHASE_LABEL: Record<AldoAssistantPhase, string> = {
-  idle: "Tap to talk to Aldo",
+  idle: "Tap to talk",
   connecting: "Connecting…",
   listening: "Listening",
   hearing: "Listening",
@@ -39,29 +49,73 @@ const PHASE_LABEL: Record<AldoAssistantPhase, string> = {
   error: "Tap to talk again",
 };
 
-export function AldoAssistantHome(props: { readonly setup?: ReactNode }) {
+/**
+ * Aldo's side of the home screen: the conversation, then the orb, caption and
+ * composer. `chips` are things to say when the composer is empty. On a phone
+ * the conversation is folded under a line of what Aldo last said, and opens
+ * when the user says something.
+ */
+export function AldoPane(props: {
+  readonly chips: ReadonlyArray<string>;
+  readonly onChip: (chip: string) => void;
+  readonly className?: string;
+}) {
   useEffect(() => {
     void loadAldoConversation();
   }, []);
+  const wide = useMediaQuery("(min-width: 1024px)");
+  const [open, setOpen] = useState(false);
+  const count = useAldoAssistant((s) => s.entries.length);
+  const replying = useAldoAssistant((s) => s.replying);
+  const lastSaid = useAldoAssistant((s) => {
+    const last = s.entries.findLast((e) => e.kind === "message" && e.role === "assistant");
+    return last?.kind === "message" ? last.text : "";
+  });
+  const loaded = useAldoAssistant((s) => s.historyLoaded);
+  // What's said after the conversation has loaded opens it; the history itself doesn't.
+  const seen = useRef<number | null>(null);
+  useEffect(() => {
+    if (!loaded) return;
+    if (seen.current !== null && count > seen.current) setOpen(true);
+    seen.current = count;
+  }, [count, loaded]);
+  useEffect(() => {
+    if (replying) setOpen(true);
+  }, [replying]);
   return (
-    <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground">
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+    <aside className={cn("flex min-h-0 flex-col bg-background", props.className)} aria-label="Aldo">
+      {wide ? null : (
+        <button
+          type="button"
+          aria-expanded={open}
+          className="flex shrink-0 items-center gap-2 border-border/60 border-b px-4 py-2 text-left text-xs"
+          onClick={() => setOpen((v) => !v)}
+        >
+          <span className="min-w-0 flex-1 truncate text-muted-foreground">
+            {lastSaid || "Your conversation with Aldo"}
+          </span>
+          {open ? (
+            <ChevronDownIcon className="size-3.5 text-muted-foreground" />
+          ) : (
+            <ChevronUpIcon className="size-3.5 text-muted-foreground" />
+          )}
+        </button>
+      )}
+      {wide || open ? (
         <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-5 pt-14 pb-4 sm:pt-8">
-            {props.setup}
-            <AldoAtAGlance />
+          <div className="flex flex-col gap-4 px-4 pt-4 pb-3">
             <AldoConversation />
           </div>
         </div>
-        <div className="shrink-0 border-t border-border/60 bg-background/95 backdrop-blur">
-          <div className="mx-auto flex w-full max-w-2xl flex-col items-center gap-3 px-5 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
-            <AldoCaption />
-            <AldoTalkControls />
-            <AldoComposer />
-          </div>
+      ) : null}
+      <div className="shrink-0 border-t border-border/60 bg-background/95 backdrop-blur">
+        <div className="flex w-full flex-col items-center gap-2.5 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+          <AldoCaption />
+          <AldoTalkControls />
+          <AldoComposer chips={props.chips} onChip={props.onChip} />
         </div>
       </div>
-    </SidebarInset>
+    </aside>
   );
 }
 
@@ -157,6 +211,7 @@ function AldoTalkControls() {
   const phase = useAldoAssistant((s) => s.phase);
   const micOn = useAldoAssistant((s) => s.micOn);
   const muted = useAldoAssistant((s) => s.muted);
+  const replying = useAldoAssistant((s) => s.replying);
   const live = phase !== "idle" && phase !== "error";
   return (
     <div className="flex items-center gap-4">
@@ -169,10 +224,10 @@ function AldoTalkControls() {
       >
         {muted ? <MicOffIcon /> : <MicIcon />}
       </Button>
-      <div className="flex flex-col items-center gap-1.5">
-        <AldoOrb />
-        <span className="text-muted-foreground text-xs">
-          {muted && live ? "Muted" : PHASE_LABEL[phase]}
+      <div className="flex flex-col items-center gap-1">
+        <AldoOrb size="sm" />
+        <span className="text-muted-foreground text-[11px]">
+          {muted && live ? "Muted" : !live && replying ? "Thinking…" : PHASE_LABEL[phase]}
         </span>
       </div>
       <Button
@@ -200,16 +255,27 @@ function AldoCaption() {
   return <p className="line-clamp-3 max-w-lg text-center text-foreground/90 text-sm">{said}</p>;
 }
 
-function AldoComposer() {
+function AldoComposer(props: {
+  readonly chips: ReadonlyArray<string>;
+  readonly onChip: (chip: string) => void;
+}) {
   const [text, setText] = useState("");
   const phase = useAldoAssistant((s) => s.phase);
   const unsent = useAldoAssistant((s) => s.unsent);
+  const replying = useAldoAssistant((s) => s.replying);
+  const input = useRef<HTMLInputElement>(null);
   const live = phase !== "idle" && phase !== "error";
-  // What couldn't be sent comes back to be sent again.
+  // What couldn't be sent comes back to be sent again, and words seeded for
+  // the user to finish; a draft already in the field is kept, after them.
   useEffect(() => {
     if (unsent === null) return;
-    setText(unsent);
+    setText((current) => {
+      if (!current.trim()) return unsent;
+      if (!unsent.trim()) return current;
+      return `${unsent} ${current}`;
+    });
     useAldoAssistant.setState({ unsent: null });
+    input.current?.focus();
   }, [unsent]);
   const submit = () => {
     if (!text.trim()) return;
@@ -217,23 +283,46 @@ function AldoComposer() {
     setText("");
   };
   return (
-    <form
-      className="flex w-full items-center gap-2"
-      onSubmit={(event) => {
-        event.preventDefault();
-        submit();
-      }}
-    >
-      <Input
-        className="flex-1"
-        value={text}
-        placeholder={live ? "Or type to Aldo…" : "Type to Aldo, or tap the orb to talk"}
-        onChange={(event) => setText(event.target.value)}
-      />
-      <Button type="submit" size="icon" aria-label="Send" disabled={!text.trim()}>
-        <ArrowUpIcon />
-      </Button>
-    </form>
+    <div className="flex w-full flex-col gap-2">
+      {!text && !replying && props.chips.length > 0 ? (
+        <div className="flex flex-wrap justify-center gap-1.5">
+          {props.chips.map((chip) => (
+            <button
+              key={chip}
+              type="button"
+              className="rounded-full border border-border/70 bg-card/40 px-2.5 py-1 text-muted-foreground text-xs transition-colors hover:bg-accent hover:text-foreground"
+              onClick={() => props.onChip(chip)}
+            >
+              {chip}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      <form
+        className="flex w-full items-center gap-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          submit();
+        }}
+      >
+        <Input
+          ref={input}
+          className="flex-1"
+          value={text}
+          placeholder={
+            replying
+              ? "Aldo is thinking…"
+              : live
+                ? "Or type to Aldo…"
+                : "Ask Aldo, or tell it what to do"
+          }
+          onChange={(event) => setText(event.target.value)}
+        />
+        <Button type="submit" size="icon" aria-label="Send" disabled={!text.trim()}>
+          <ArrowUpIcon />
+        </Button>
+      </form>
+    </div>
   );
 }
 
@@ -255,17 +344,18 @@ function threadLink(target: AldoOpenTarget, children: ReactNode, className?: str
 function AldoConversation() {
   const entries = useAldoAssistant((s) => s.entries);
   const loaded = useAldoAssistant((s) => s.historyLoaded);
+  const replying = useAldoAssistant((s) => s.replying);
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => {
     end.current?.scrollIntoView({ block: "end" });
-  }, [entries.length]);
+  }, [entries.length, replying]);
   if (loaded && entries.length === 0) {
     return (
-      <div className="py-10 text-center">
-        <h1 className="font-semibold text-2xl">What should we get done?</h1>
-        <p className="mx-auto mt-2 max-w-md text-muted-foreground text-sm">
-          Tell Aldo what you want, out loud or typed. It starts threads, briefs their agents,
-          follows them, and tells you how it went. You never have to open a thread yourself.
+      <div className="py-8 text-center">
+        <h2 className="font-semibold text-lg">What should we get done?</h2>
+        <p className="mx-auto mt-2 max-w-xs text-muted-foreground text-sm">
+          Tell Aldo what you want, typed or out loud. It starts threads, briefs their agents,
+          follows them, and tells you how it went.
         </p>
       </div>
     );
@@ -278,6 +368,11 @@ function AldoConversation() {
           entry={entry}
         />
       ))}
+      {replying ? (
+        <p className="self-start text-muted-foreground text-sm" aria-live="polite">
+          Thinking…
+        </p>
+      ) : null}
       <div ref={end} />
     </div>
   );
@@ -335,8 +430,8 @@ function useRefTarget(): (ref: string) => AldoOpenTarget | null {
   );
 }
 
-/** What needs the user, and what's working, as Aldo sees it. */
-function AldoAtAGlance() {
+/** What needs the user, and what's working, as Aldo sees it: the board for an Aldo without the home screen's read. */
+export function AldoAtAGlance() {
   const [overview, setOverview] = useState<{
     needsYou: OverviewEntry[];
     working: OverviewEntry[];
