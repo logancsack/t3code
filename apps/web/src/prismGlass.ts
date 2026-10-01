@@ -143,44 +143,62 @@ export function buildLensMaps(
   // far edge glows too, as the real material does.
   const lightA = normalize([-0.55, -0.75, 0.42]);
   const lightB = normalize([0.55, 0.75, 0.3]);
+  // Everything the dome contributes depends only on the distance into the
+  // bezel, so it is sampled once along that distance: rays come straight
+  // down, meet the dome at its local slope, refract once (Snell), and the
+  // lateral shift grows toward the edge; the normal tilts outward by the
+  // same angle and lights the rim.
+  const SAMPLES = 256;
+  const bend = new Float32Array(SAMPLES + 1);
+  const sinT = new Float32Array(SAMPLES + 1);
+  const cosT = new Float32Array(SAMPLES + 1);
   const dd = 0.004;
+  for (let i = 0; i <= SAMPLES; i++) {
+    const t = i / SAMPLES;
+    const slope = (profile(clamp(t + dd, 0, 1)) - profile(clamp(t - dd, 0, 1))) / (2 * dd);
+    const theta = Math.min(Math.atan(slope), params.thetaMax);
+    const refracted = Math.asin(Math.sin(theta) / params.ior);
+    bend[i] = t >= 1 ? 0 : Math.tan(theta - refracted) / Math.tan(params.thetaMax);
+    sinT[i] = Math.sin(theta);
+    cosT[i] = Math.cos(theta);
+  }
+  const thickness = new Float32Array(SAMPLES + 1);
+  for (let i = 0; i <= SAMPLES; i++) thickness[i] = Math.pow(1 - i / SAMPLES, 3) * params.thick;
   for (let y = 0; y < mh; y++) {
     for (let x = 0; x < mw; x++) {
       const px = (x + 0.5) * step - w / 2;
       const py = (y + 0.5) * step - h / 2;
       const e = edgeOf(px, py, w / 2, h / 2, r);
+      const inside = e.d >= 0;
       const t = clamp(e.d / bezel, 0, 1);
-      // Rays come straight down, meet the dome at its local slope, refract
-      // once (Snell), and the lateral shift grows toward the edge.
-      const slope = (profile(clamp(t + dd, 0, 1)) - profile(clamp(t - dd, 0, 1))) / (2 * dd);
-      const theta = Math.min(Math.atan(slope), params.thetaMax);
-      const refracted = Math.asin(Math.sin(theta) / params.ior);
-      const bend = e.d < 0 || t >= 1 ? 0 : Math.tan(theta - refracted) / Math.tan(params.thetaMax);
+      const i = Math.round(t * SAMPLES);
+      const shift = inside ? bend[i]! : 0;
       const o = (y * mw + x) * 4;
       // The eye at the edge sees inner content: sample toward the centre.
-      map[o] = Math.round(128 - e.dx * bend * 127);
-      map[o + 1] = Math.round(128 - e.dy * bend * 127);
+      map[o] = Math.round(128 - e.dx * shift * 127);
+      map[o + 1] = Math.round(128 - e.dy * shift * 127);
       map[o + 2] = 128;
       map[o + 3] = 255;
-      // Rim light: the surface normal tilts outward by theta. A line a few
-      // pixels wide whatever the size, bright where the dome faces the light
-      // (the upper-left corner, the top edge), fainter on the far side, plus
-      // a faint shading inside it that reads as thickness.
-      const n = normalize([Math.sin(theta) * e.dx, Math.sin(theta) * e.dy, Math.cos(theta)]);
-      const kA = Math.pow(
-        Math.max(0, n[0] * lightA[0] + n[1] * lightA[1] + n[2] * lightA[2]),
-        params.rimExp,
-      );
-      const kB = Math.pow(
-        Math.max(0, n[0] * lightB[0] + n[1] * lightB[1] + n[2] * lightB[2]),
-        params.rimExp + 1,
-      );
-      const inside = e.d >= 0 ? 1 : 0;
-      const band = Math.exp(-Math.pow(e.d / params.rimWidth, 2));
-      const glow =
-        inside *
-        (band * (0.8 * kA + 0.35 * kB) * params.rimGain +
-          Math.pow(clamp(1 - t, 0, 1), 3) * params.thick);
+      // Rim light: a line a few pixels wide whatever the size, bright where
+      // the dome faces the light (the upper-left corner, the top edge),
+      // fainter on the far side, plus a faint shading inside it that reads
+      // as thickness.
+      let glow = 0;
+      if (inside) {
+        const nx = sinT[i]! * e.dx;
+        const ny = sinT[i]! * e.dy;
+        const nz = cosT[i]!;
+        const kA = Math.pow(
+          Math.max(0, nx * lightA[0] + ny * lightA[1] + nz * lightA[2]),
+          params.rimExp,
+        );
+        const kB = Math.pow(
+          Math.max(0, nx * lightB[0] + ny * lightB[1] + nz * lightB[2]),
+          params.rimExp + 1,
+        );
+        const band = Math.exp(-Math.pow(e.d / params.rimWidth, 2));
+        glow = band * (0.8 * kA + 0.35 * kB) * params.rimGain + thickness[i]!;
+      }
       rim[o] = 255;
       rim[o + 1] = 255;
       rim[o + 2] = 255;
