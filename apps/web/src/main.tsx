@@ -25,9 +25,11 @@ import { installAldoThreadDetails } from "./aldo/threadDetails";
 import { installAldoVersionCheck } from "./aldo/version";
 import { initializeLandingDemoClientSettings } from "./hooks/useSettings";
 import { isLandingDemo } from "./landingDemo/mode";
+import { installPrismGlass } from "./prismGlass";
 import { clerkAppearance } from "./components/clerk/clerkAppearance";
 
 async function renderApp() {
+  installPrismGlass();
   const landingDemo = isLandingDemo();
   if (!landingDemo) {
     installManagedCommandDispatch();
