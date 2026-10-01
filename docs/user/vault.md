@@ -44,6 +44,12 @@ Paste the value there, not in the conversation, and choose **Save**. Injected in
 
 Only the form the agent asked for completes its request: saving a secret with another name, or for other threads, leaves the request open. Open the link again to answer it.
 
+### When an agent saves a secret
+
+An agent that gets a credential later threads will need too, such as an API key you gave it, a token it created, or a command-line tool's login (`vercel login`, for example), saves it to your vault itself, so no other thread has to sign in again. It saves it for all threads, or only for one of the thread's repositories, and tells you what it saved. **Settings → Vault** shows these as _saved by an agent_, with the thread's name.
+
+An agent can't replace a secret you saved; it asks you instead. It can't move a saved value to other sites or paths without giving the value itself, and it can't save variables or files that change how programs start in every thread, such as `PATH`, `NODE_OPTIONS` or `~/.bashrc`. Save those yourself if you need them. Once you edit an agent's secret and save it here, it's yours.
+
 ### Changing a secret
 
 **Edit** changes how a secret is delivered, and its sites, header or path. Leave the value empty to keep the one you saved.
@@ -63,3 +69,13 @@ The accounts you connect for GitHub and Claude work like injected secrets. The c
 ## Logins
 
 A saved login is typed into the in-app browser for the agent, only on the exact site you saved it for. The agent never sees the password. For two-factor codes, the agent asks you in the conversation, or you can take over the browser.
+
+### Saving a login when you sign in
+
+When you sign in to a site yourself in a thread's browser (the Browser panel or the Desktop view), the panel asks **Save this login to your vault?** once the sign-in has gone through, with the site and username. Save it for all threads or only one of the thread's repositories, and every thread's agent can then sign in there for you. If the site and username are saved with another password, it offers to update that login instead. It doesn't ask for a sign-in that failed, one the agent did, or a login that's already saved.
+
+**Not now** dismisses it. **Never for this site** stops asking for that site in this browser; the sites you chose are listed under **Logins** in **Settings → Vault**, where **Offer again** undoes it. The password stays on the cloud machine unless you choose **Save**.
+
+### Logins agents save
+
+An agent that signs up for an account for you, or that you give a login to, can save it to your vault too. It's shown as _saved by an agent_. An agent can't replace a login you saved.

@@ -26,6 +26,7 @@ import {
   type AldoSecretKind,
   type AldoVaultItem,
 } from "./cloud";
+import { offerSavingLoginsFor, useAldoNeverSaveLogins } from "./neverSaveLogins";
 import {
   answersAldoSecretRequest,
   parseAldoSecretRequest,
@@ -123,16 +124,26 @@ function scopeLabel(scope: string): string {
   return scope === EVERY_THREAD ? "All threads" : scope;
 }
 
+function useEnvironments() {
+  return useSyncExternalStore(subscribeAldoEnvironments, getAldoEnvironments, () => null);
+}
+
 function useRepositories(): ReadonlyArray<string> {
-  const environments = useSyncExternalStore(
-    subscribeAldoEnvironments,
-    getAldoEnvironments,
-    () => null,
-  );
+  const environments = useEnvironments();
   return useMemo(
     () => [...new Set((environments ?? []).map((e) => e.repo))].sort(),
     [environments],
   );
+}
+
+/** " · saved by an agent in <thread>" for what an agent saved; it's the user's once they save it here. */
+function useSavedBy(): (item: AldoVaultItem) => string {
+  const environments = useEnvironments();
+  return (item) => {
+    if (!item.agent_thread_id) return "";
+    const thread = environments?.find((e) => e.threadId === item.agent_thread_id)?.label;
+    return ` · saved by an agent${thread ? ` in “${thread}”` : ""}`;
+  };
 }
 
 function ScopeSelect(props: { value: string; onChange: (value: string) => void; extra?: string }) {
@@ -390,6 +401,8 @@ export function AldoVaultPanel() {
   const [importing, setImporting] = useState<{ scope: string; text: string } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const savedBy = useSavedBy();
+  const neverSave = useAldoNeverSaveLogins();
   // An agent's request_secret link: the form filled in, and the thread told once it's saved.
   const [requested, setRequested] = useState<AldoSecretRequest | null>(null);
   useEffect(() => {
@@ -496,7 +509,8 @@ export function AldoVaultPanel() {
           here, only replaced. A secret can be a variable in every agent shell, injected into
           requests to the sites you list (agents see only a stand-in, so they can't read or leak
           it), or a file. Logins are typed into the browser for the agent, which never sees the
-          password.
+          password. Agents save what they sign in with here too, and when you sign in in a thread's
+          browser, it offers to save the login.
         </p>
         {error ? <p className="px-3 text-sm text-destructive-foreground sm:px-4">{error}</p> : null}
         {notice ? <p className="px-3 text-sm text-success-foreground sm:px-4">{notice}</p> : null}
@@ -597,7 +611,7 @@ export function AldoVaultPanel() {
           <SettingsRow
             key={item.id}
             title={<span className="font-mono text-sm">{item.name}</span>}
-            description={`${deliveryLabel(item)} · ${scopeLabel(item.scope)} · updated ${ago(item.updated_at)}`}
+            description={`${deliveryLabel(item)} · ${scopeLabel(item.scope)} · updated ${ago(item.updated_at)}${savedBy(item)}`}
             control={
               <span className="inline-flex gap-1">
                 <Button
@@ -706,7 +720,7 @@ export function AldoVaultPanel() {
           <SettingsRow
             key={item.id}
             title={item.name}
-            description={`${item.origin}${item.username ? ` · ${item.username}` : ""} · ${scopeLabel(item.scope)} · used ${ago(item.last_used_at)}`}
+            description={`${item.origin}${item.username ? ` · ${item.username}` : ""} · ${scopeLabel(item.scope)} · used ${ago(item.last_used_at)}${savedBy(item)}`}
             control={
               <span className="inline-flex gap-1">
                 <Button
@@ -735,6 +749,23 @@ export function AldoVaultPanel() {
                   }
                 />
               </span>
+            }
+          />
+        ))}
+        {[...neverSave].sort().map((origin) => (
+          <SettingsRow
+            key={origin}
+            title={origin}
+            description="Not offered: you chose Never for this site when signing in in a thread's browser (this browser only)."
+            control={
+              <Button
+                type="button"
+                size="compact"
+                variant="ghost"
+                onClick={() => offerSavingLoginsFor(origin)}
+              >
+                Offer again
+              </Button>
             }
           />
         ))}

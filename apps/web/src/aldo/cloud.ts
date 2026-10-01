@@ -943,6 +943,8 @@ export interface AldoVaultItem {
   readonly path: string | null;
   readonly updated_at: string;
   readonly last_used_at: string | null;
+  /** The thread whose agent saved it (save_secret, save_login); null or absent for the user's own. */
+  readonly agent_thread_id?: string | null;
 }
 
 export interface AldoSecretInput {
