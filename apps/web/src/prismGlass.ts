@@ -276,10 +276,16 @@ function lensedEntry(element: Element): (typeof LENSED)[number] | null {
 function createRuntime() {
   const lens = supportsLensFilter();
   const cache = new Map<string, CacheEntry>();
-  const tracked = new Map<Element, { key: string | null; observer: ResizeObserver }>();
+  const tracked = new Map<
+    Element,
+    { key: string | null; observer: ResizeObserver; settle: number }
+  >();
   let defs: SVGDefsElement | null = null;
   let frame = 0;
   const pending = new Set<Element>();
+  /** A size has to hold this long before its map is built, so a composer
+      growing line by line or a panel animating its width builds once. */
+  const SETTLE_MS = 120;
 
   function defsHost(): SVGDefsElement {
     if (defs?.isConnected) return defs;
@@ -350,6 +356,7 @@ function createRuntime() {
       if (entry) entry.users -= 1;
     }
     state.observer.disconnect();
+    clearTimeout(state.settle);
     tracked.delete(element);
     pending.delete(element);
     (element as HTMLElement).style.removeProperty("--prism-lens");
@@ -391,10 +398,22 @@ function createRuntime() {
     if (!frame) frame = requestAnimationFrame(flush);
   }
 
+  /** Builds once the element's size has settled; the first build is immediate. */
+  function settle(element: Element) {
+    const state = tracked.get(element);
+    if (!state) return;
+    if (state.key === null) {
+      schedule(element);
+      return;
+    }
+    clearTimeout(state.settle);
+    state.settle = window.setTimeout(() => schedule(element), SETTLE_MS);
+  }
+
   function track(element: Element) {
     if (tracked.has(element) || !lensedEntry(element)) return;
-    const observer = new ResizeObserver(() => schedule(element));
-    tracked.set(element, { key: null, observer });
+    const observer = new ResizeObserver(() => settle(element));
+    tracked.set(element, { key: null, observer, settle: 0 });
     observer.observe(element);
     schedule(element);
   }
