@@ -3,8 +3,8 @@
 // signs in with the provider in a popup; how the sign-in reports back to this
 // tab is in integrations.logic.ts.
 
-import { BlocksIcon, CheckCircle2Icon, LoaderCircleIcon } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { BlocksIcon, CheckCircle2Icon } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { SettingsRow, SettingsSection } from "../components/settings/settingsLayout";
 import { Button } from "../components/ui/button";
@@ -130,7 +130,7 @@ function IntegrationRow(props: {
                   key={account.type}
                   size="sm"
                   variant={index === 0 ? "default" : "outline"}
-                  disabled={!integration.available}
+                  disabled={!integration.available || confirming || busy}
                   onClick={() => connect(integration.provider, account.type)}
                 >
                   {account.label}
@@ -164,15 +164,21 @@ export function AldoIntegrationsPanel() {
   const [integrations, setIntegrations] = useState<ReadonlyArray<AldoIntegration> | null>(null);
   const [unsupported, setUnsupported] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Refreshes overlap (focus, a sign-in's message, a disconnect); only the latest one's answer shows.
+  const latest = useRef(0);
 
   const refresh = useCallback(() => {
+    const request = ++latest.current;
     fetchAldoIntegrations()
       .then((next) => {
-        if (next) setIntegrations(next);
-        else setUnsupported(true);
+        if (request !== latest.current) return;
+        setIntegrations(next);
+        setUnsupported(next === null);
         setError(null);
       })
-      .catch((cause: unknown) => setError(messageOf(cause)));
+      .catch((cause: unknown) => {
+        if (request === latest.current) setError(messageOf(cause));
+      });
   }, []);
 
   useEffect(() => {
@@ -231,7 +237,7 @@ export function AldoIntegrationsPanel() {
       ) : null}
       {error ? <p className="px-3 text-sm text-destructive-foreground sm:px-4">{error}</p> : null}
       {integrations === null && !unsupported && !error ? (
-        <LoaderCircleIcon className="mx-4 size-4 animate-spin text-muted-foreground" />
+        <p className="px-3 text-sm text-muted-foreground sm:px-4">Loading…</p>
       ) : null}
       {integrations && shown.length === 0 ? (
         <p className="px-3 text-sm text-muted-foreground sm:px-4">Nothing to connect yet.</p>

@@ -33,6 +33,8 @@ export interface SettingsSearchItem {
   // not expose a result that points to a missing anchor.
   readonly windowsOnly?: boolean;
   readonly cloudOnly?: boolean;
+  /** Only in Aldo cloud mode, whose page at this path differs from T3's. */
+  readonly aldoCloudOnly?: boolean;
   readonly primaryOnly?: boolean;
   readonly providerSettingsOnly?: boolean;
   readonly localBackendManagementOnly?: boolean;
@@ -307,6 +309,15 @@ export const SETTINGS_SEARCH_ITEMS = [
     providerSettingsOnly: true,
   },
   {
+    id: "aldo-integration-microsoft",
+    title: "Microsoft",
+    to: "/settings/integrations",
+    searchTerms: [
+      "integrations accounts connect disconnect onedrive sharepoint excel office 365 work school personal",
+    ],
+    aldoCloudOnly: true,
+  },
+  {
     id: "agent-browser-access",
     title: "Agent browser access",
     to: "/settings/integrations",
@@ -483,7 +494,8 @@ export function filterAvailableSettingsSearchItems(
       // Aldo has no Connections page: it connects cloud agents itself.
       (item.to !== "/settings/connections" || !isAldoCloud) &&
       // Its Integrations page lists accounts instead of the preview browser's settings.
-      (item.to !== "/settings/integrations" || !isAldoCloud),
+      (item.to !== "/settings/integrations" || !isAldoCloud || item.aldoCloudOnly === true) &&
+      (!item.aldoCloudOnly || isAldoCloud),
   );
 }
 
