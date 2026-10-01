@@ -1,10 +1,12 @@
-// The user's Windows computer: one per user (a cloud computer with desktop
-// Office) that agents ask for. Aldo's directory reports it on the thread
-// asking for it (status "asked", with the agent's reason) and on the thread
-// using it (its status); an older Aldo leaves the field out, which reads as no
-// computer. It costs credits while it runs, so the first time a thread asks,
-// the user answers in the thread. While it runs, the Desktop view can show its
-// screen instead of the thread machine's own, and the user can stop it.
+// The user's computers, one of each kind per user, that agents ask for: a
+// Windows computer (desktop Office) and a GPU computer (rendering, CUDA).
+// Aldo's directory reports each on the thread asking for it (status "asked",
+// with the agent's reason) and on the thread using it (its status), the one
+// to show first first; an older Aldo reports only the Windows computer, as
+// `computer`, or nothing, which reads as no computer. It costs credits while it
+// runs, so the first time a thread asks, the user answers in the thread. While
+// the Windows computer runs, the Desktop view can show its screen instead of
+// the thread machine's own, and the user can stop either.
 
 export type AldoComputerStatus =
   | "asked"
@@ -15,8 +17,11 @@ export type AldoComputerStatus =
   | "stopped"
   | "failed";
 
+/** The kinds this client knows; a newer Aldo may report others, named plainly. */
+export type AldoComputerKind = "windows" | "gpu";
+
 export interface AldoComputer {
-  readonly kind: "windows";
+  readonly kind: AldoComputerKind | (string & {});
   readonly status: AldoComputerStatus;
   /** The agent's one-line reason, while it asks. */
   readonly why: string | null;
@@ -25,6 +30,22 @@ export interface AldoComputer {
   readonly t3ThreadId?: string | null;
   /** Why it didn't start, when it failed. */
   readonly error: string | null;
+}
+
+/** The thread's computers from a directory entry, the one to show first first (an older Aldo reports one, or none). */
+export function aldoComputers(environment: {
+  readonly computers?: readonly AldoComputer[] | null;
+  readonly computer?: AldoComputer | null;
+}): readonly AldoComputer[] {
+  if (environment.computers) return environment.computers;
+  return environment.computer ? [environment.computer] : [];
+}
+
+/** How a computer is named to the user: "Windows computer", "GPU computer". */
+export function aldoComputerName(computer: Pick<AldoComputer, "kind"> | null | undefined): string {
+  if (computer?.kind === "windows") return "Windows computer";
+  if (computer?.kind === "gpu") return "GPU computer";
+  return "computer";
 }
 
 /** What a thread shows about its computer: the ask, "Starting…", or nothing. */
@@ -90,12 +111,14 @@ export function aldoComputerAskDescription(
 /** The Desktop view's screens: the thread machine's own desktop, or the Windows computer's. */
 export type AldoDesktopScreen = "machine" | "windows";
 
-/** The screen the Desktop view shows: Windows only while it's chosen and the computer runs. */
+/** The screen the Desktop view shows: Windows only while it's chosen and the Windows computer runs. */
 export function aldoDesktopScreen(
   chosen: AldoDesktopScreen,
   computer: AldoComputer | null | undefined,
 ): AldoDesktopScreen {
-  return chosen === "windows" && computer?.status === "running" ? "windows" : "machine";
+  return chosen === "windows" && computer?.kind === "windows" && computer.status === "running"
+    ? "windows"
+    : "machine";
 }
 
 /** The desktop stream's URL for a screen: the Windows computer's is the same one with `screen=windows`. */

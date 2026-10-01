@@ -58,9 +58,11 @@ export interface AldoEnvironment {
   /** How each of its T3 threads stands, as the machine last reported (working, waiting, done, failed). */
   readonly attention?: Readonly<Record<string, AldoThreadAttention>>;
   /**
-   * The user's Windows computer, on the thread asking for it or using it
-   * (computer.logic.ts); null otherwise, and left out by an older Aldo.
+   * The user's computers this thread asks for or uses, the one to show first
+   * first (computer.logic.ts); left out by an older Aldo, which may report the
+   * Windows computer alone as `computer`. Read them with aldoComputers().
    */
+  readonly computers?: readonly AldoComputer[];
   readonly computer?: AldoComputer | null;
 }
 
@@ -888,23 +890,27 @@ export async function setAldoMachine(environmentId: string, size: AldoMachineSiz
   requestAldoDirectoryRefresh();
 }
 
-/** Answers a thread's agent asking for the user's Windows computer: agreeing starts it. */
-export async function answerAldoComputer(environmentId: string, approve: boolean): Promise<void> {
+/** Answers a thread's agent asking for one of the user's computers: agreeing starts it. */
+export async function answerAldoComputer(
+  environmentId: string,
+  approve: boolean,
+  kind: string,
+): Promise<void> {
   await api(`/api/environments/${threadIdForEnvironment(environmentId)}/computer`, {
     method: "POST",
-    body: JSON.stringify({ approve }),
+    body: JSON.stringify({ approve, kind }),
   });
   requestAldoDirectoryRefresh();
 }
 
 /**
- * Stops a thread's Windows computer (it stops costing credits; its disk
- * stays). Returns what Aldo says came of it; an older Aldo, without it,
- * refuses with a 405.
+ * Stops a thread's computer of a kind (it stops costing credits). Returns
+ * what Aldo says came of it; an older Aldo, without it, refuses with a 405
+ * (and one from before GPU computers stops the thread's Windows computer).
  */
-export async function stopAldoComputer(environmentId: string): Promise<string> {
+export async function stopAldoComputer(environmentId: string, kind: string): Promise<string> {
   const { message } = await api<{ message?: unknown }>(
-    `/api/environments/${threadIdForEnvironment(environmentId)}/computer`,
+    `/api/environments/${threadIdForEnvironment(environmentId)}/computer?kind=${encodeURIComponent(kind)}`,
     { method: "DELETE" },
   );
   requestAldoDirectoryRefresh();

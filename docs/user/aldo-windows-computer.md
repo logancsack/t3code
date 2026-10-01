@@ -2,6 +2,8 @@
 
 Some work needs desktop Office on Windows: Excel with VBA, macros and Power Query, Word, or PowerPoint. For that, Aldo gives you a Windows computer in the cloud. Your agents use it when a task calls for it, and you can watch and use it yourself.
 
+For rendering and other work that needs a graphics card, there's also [your GPU computer](./aldo-gpu-computer.md).
+
 ## When an agent asks for it
 
 An agent that needs your Windows computer asks for it, with a line saying why. The first time a thread asks, you're asked in that thread:
