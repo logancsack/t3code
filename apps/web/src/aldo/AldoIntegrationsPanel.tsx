@@ -123,36 +123,38 @@ function IntegrationRow(props: {
         )
       }
       control={
-        integration.connected && !broken ? (
-          confirming ? (
-            <>
-              <Button size="sm" variant="ghost" onClick={() => setConfirming(false)}>
-                Keep
-              </Button>
-              <Button size="sm" variant="destructive" disabled={busy} onClick={disconnect}>
+        <div className="flex flex-wrap gap-2 sm:flex-col sm:items-stretch">
+          {!integration.connected || broken
+            ? spec.accounts.map((account, index) => (
+                <Button
+                  key={account.type}
+                  size="sm"
+                  variant={index === 0 ? "default" : "outline"}
+                  disabled={!integration.available}
+                  onClick={() => connect(integration.provider, account.type)}
+                >
+                  {account.label}
+                </Button>
+              ))
+            : null}
+          {/* A broken sign-in can be connected again or removed. */}
+          {integration.connected ? (
+            confirming ? (
+              <>
+                <Button size="sm" variant="ghost" onClick={() => setConfirming(false)}>
+                  Keep
+                </Button>
+                <Button size="sm" variant="destructive" disabled={busy} onClick={disconnect}>
+                  Disconnect
+                </Button>
+              </>
+            ) : (
+              <Button size="sm" variant="ghost" onClick={() => setConfirming(true)}>
                 Disconnect
               </Button>
-            </>
-          ) : (
-            <Button size="sm" variant="ghost" onClick={() => setConfirming(true)}>
-              Disconnect
-            </Button>
-          )
-        ) : (
-          <div className="flex flex-wrap gap-2 sm:flex-col sm:items-stretch">
-            {spec.accounts.map((account, index) => (
-              <Button
-                key={account.type}
-                size="sm"
-                variant={index === 0 ? "default" : "outline"}
-                disabled={!integration.available}
-                onClick={() => connect(integration.provider, account.type)}
-              >
-                {account.label}
-              </Button>
-            ))}
-          </div>
-        )
+            )
+          ) : null}
+        </div>
       }
     />
   );
