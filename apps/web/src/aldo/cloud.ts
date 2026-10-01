@@ -750,6 +750,50 @@ export const aldoAuthConnectors = {
 };
 
 // ---------------------------------------------------------------------------
+// Integrations (accounts agents use, like Microsoft for OneDrive and Excel)
+
+export type AldoIntegrationAccountType = "work" | "personal";
+
+export interface AldoIntegration {
+  readonly provider: string;
+  readonly name: string;
+  /** False when this Aldo has no app set up with the provider, so there's nothing to connect yet. */
+  readonly available: boolean;
+  readonly connected: boolean;
+  readonly account: {
+    readonly email: string;
+    readonly name: string;
+    readonly type: AldoIntegrationAccountType;
+  } | null;
+  /** Why the provider stopped accepting the sign-in; it needs connecting again. */
+  readonly error: string | null;
+}
+
+/** The integrations this Aldo offers and how each stands; null for an Aldo without them. */
+export async function fetchAldoIntegrations(): Promise<ReadonlyArray<AldoIntegration> | null> {
+  const body = await api<{ integrations?: AldoIntegration[] }>("/api/integrations").catch(
+    (error: unknown) => {
+      if (error instanceof AldoApiError && error.status === 404) return null;
+      throw error;
+    },
+  );
+  // An older Aldo may answer with the web client's page instead of a 404.
+  return Array.isArray(body?.integrations) ? body.integrations : null;
+}
+
+/** Where connecting starts: Aldo sends it on to the provider's sign-in. */
+export function aldoIntegrationConnectUrl(
+  provider: string,
+  account: AldoIntegrationAccountType,
+): string {
+  return `/api/integrations/${encodeURIComponent(provider)}/connect?account=${account}`;
+}
+
+export async function disconnectAldoIntegration(provider: string): Promise<void> {
+  await api(`/api/integrations/${encodeURIComponent(provider)}`, { method: "DELETE" });
+}
+
+// ---------------------------------------------------------------------------
 // Previews, the shared browser and the vault (served by aldod in each sandbox)
 
 export interface AldoPreviewPort {

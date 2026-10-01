@@ -481,7 +481,9 @@ export function filterAvailableSettingsSearchItems(
       (!item.wslAvailableOnly || availability.isWslSettingsRowVisible) &&
       (!item.requiresThreadAutoSettlement || availability.hasThreadAutoSettlement) &&
       // Aldo has no Connections page: it connects cloud agents itself.
-      (item.to !== "/settings/connections" || !isAldoCloud),
+      (item.to !== "/settings/connections" || !isAldoCloud) &&
+      // Its Integrations page lists accounts instead of the preview browser's settings.
+      (item.to !== "/settings/integrations" || !isAldoCloud),
   );
 }
 

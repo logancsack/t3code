@@ -1,0 +1,242 @@
+// Settings → Integrations: accounts the user connects for their agents to use,
+// beyond their code (Microsoft, for OneDrive, SharePoint and Excel). Connecting
+// signs in with the provider in a popup; how the sign-in reports back to this
+// tab is in integrations.logic.ts.
+
+import { BlocksIcon, CheckCircle2Icon, LoaderCircleIcon } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+
+import { SettingsRow, SettingsSection } from "../components/settings/settingsLayout";
+import { Button } from "../components/ui/button";
+import { toastManager } from "../components/ui/toast";
+import {
+  aldoIntegrationConnectUrl,
+  disconnectAldoIntegration,
+  fetchAldoIntegrations,
+  type AldoIntegration,
+  type AldoIntegrationAccountType,
+} from "./cloud";
+import {
+  ALDO_INTEGRATIONS_CHANNEL,
+  aldoIntegrationResultFilter,
+  parseAldoIntegrationMessage,
+  parseAldoIntegrationRedirect,
+  withoutAldoIntegrationRedirect,
+  type AldoIntegrationResult,
+} from "./integrations.logic";
+
+const messageOf = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause));
+
+/** The integrations this client can show; any others a newer Aldo offers are left out. */
+const INTEGRATIONS: Record<
+  string,
+  {
+    readonly name: string;
+    readonly description: string;
+    /** The first is the main way to connect. */
+    readonly accounts: ReadonlyArray<{
+      readonly type: AldoIntegrationAccountType;
+      readonly label: string;
+    }>;
+  }
+> = {
+  microsoft: {
+    name: "Microsoft",
+    description:
+      "Lets your agents open and save your OneDrive and SharePoint files, and work in the Excel workbooks stored there.",
+    accounts: [
+      { type: "work", label: "Connect work or school account" },
+      { type: "personal", label: "Connect personal account" },
+    ],
+  },
+};
+
+const ACCOUNT_TYPE: Record<AldoIntegrationAccountType, string> = {
+  work: "work account",
+  personal: "personal account",
+};
+
+function connect(provider: string, account: AldoIntegrationAccountType) {
+  const url = aldoIntegrationConnectUrl(provider, account);
+  // With the popup blocked, sign in in this tab: Aldo sends it back here after.
+  if (!window.open(url, "aldo-integration", "popup,width=520,height=720")) {
+    window.location.assign(url);
+  }
+}
+
+function toastFailure(result: AldoIntegrationResult) {
+  toastManager.add({
+    type: "error",
+    title: `Couldn't connect ${INTEGRATIONS[result.provider]?.name ?? "the account"}`,
+    description: result.message ?? "The sign-in didn't finish. Try again.",
+  });
+}
+
+function IntegrationRow(props: {
+  readonly integration: AldoIntegration;
+  readonly onChanged: () => void;
+}) {
+  const { integration } = props;
+  const spec = INTEGRATIONS[integration.provider];
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  if (!spec) return null;
+  // Connected, but the provider stopped accepting the sign-in: it needs connecting again.
+  const broken = integration.connected && integration.error !== null;
+
+  const disconnect = () => {
+    setBusy(true);
+    disconnectAldoIntegration(integration.provider)
+      .catch((cause: unknown) =>
+        toastManager.add({
+          type: "error",
+          title: `Couldn't disconnect ${spec.name}`,
+          description: messageOf(cause),
+        }),
+      )
+      .finally(() => {
+        setBusy(false);
+        setConfirming(false);
+        props.onChanged();
+      });
+  };
+
+  return (
+    <SettingsRow
+      title={spec.name}
+      description={spec.description}
+      status={
+        !integration.available ? (
+          `${spec.name} sign-in isn't set up on this Aldo yet.`
+        ) : broken ? (
+          <span className="text-destructive-foreground">{integration.error}</span>
+        ) : integration.connected ? (
+          <span className="inline-flex items-center gap-1 text-success-foreground">
+            <CheckCircle2Icon className="size-3.5" />
+            Connected
+            {integration.account
+              ? ` as ${integration.account.email} (${ACCOUNT_TYPE[integration.account.type]})`
+              : ""}
+          </span>
+        ) : (
+          "Not connected"
+        )
+      }
+      control={
+        integration.connected && !broken ? (
+          confirming ? (
+            <>
+              <Button size="sm" variant="ghost" onClick={() => setConfirming(false)}>
+                Keep
+              </Button>
+              <Button size="sm" variant="destructive" disabled={busy} onClick={disconnect}>
+                Disconnect
+              </Button>
+            </>
+          ) : (
+            <Button size="sm" variant="ghost" onClick={() => setConfirming(true)}>
+              Disconnect
+            </Button>
+          )
+        ) : (
+          <div className="flex flex-wrap gap-2 sm:flex-col sm:items-stretch">
+            {spec.accounts.map((account, index) => (
+              <Button
+                key={account.type}
+                size="sm"
+                variant={index === 0 ? "default" : "outline"}
+                disabled={!integration.available}
+                onClick={() => connect(integration.provider, account.type)}
+              >
+                {account.label}
+              </Button>
+            ))}
+          </div>
+        )
+      }
+    />
+  );
+}
+
+export function AldoIntegrationsPanel() {
+  const [integrations, setIntegrations] = useState<ReadonlyArray<AldoIntegration> | null>(null);
+  const [unsupported, setUnsupported] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = useCallback(() => {
+    fetchAldoIntegrations()
+      .then((next) => {
+        if (next) setIntegrations(next);
+        else setUnsupported(true);
+        setError(null);
+      })
+      .catch((cause: unknown) => setError(messageOf(cause)));
+  }, []);
+
+  useEffect(() => {
+    refresh();
+    // Back from a sign-in that ran in this tab (the popup was blocked).
+    const result = parseAldoIntegrationRedirect(window.location.search);
+    if (!result) return;
+    // On a fresh page load the toasts start listening after this panel mounts.
+    if (!result.ok) window.setTimeout(() => toastFailure(result), 0);
+    const { pathname, search, hash } = window.location;
+    window.history.replaceState(
+      window.history.state,
+      "",
+      `${pathname}${withoutAldoIntegrationRedirect(search)}${hash}`,
+    );
+  }, [refresh]);
+
+  useEffect(() => {
+    const isNew = aldoIntegrationResultFilter();
+    const settle = (data: unknown) => {
+      const result = parseAldoIntegrationMessage(data);
+      if (!result || !isNew(result, Date.now())) return;
+      if (!result.ok) toastFailure(result);
+      refresh();
+    };
+    const onMessage = (event: MessageEvent) => {
+      if (event.origin === window.location.origin) settle(event.data);
+    };
+    // The popup's opener can be cut off by the provider's pages; the channel still reaches us.
+    const channel =
+      typeof BroadcastChannel === "undefined"
+        ? null
+        : new BroadcastChannel(ALDO_INTEGRATIONS_CHANNEL);
+    channel?.addEventListener("message", (event) => settle(event.data));
+    window.addEventListener("message", onMessage);
+    // And if neither did, coming back to the tab shows how it went.
+    window.addEventListener("focus", refresh);
+    return () => {
+      window.removeEventListener("message", onMessage);
+      window.removeEventListener("focus", refresh);
+      channel?.close();
+    };
+  }, [refresh]);
+
+  const shown = (integrations ?? []).filter((integration) => integration.provider in INTEGRATIONS);
+
+  return (
+    <SettingsSection title="Integrations" icon={<BlocksIcon className="size-4" />}>
+      <p className="px-3 text-sm text-muted-foreground sm:px-4">
+        Accounts you connect for your agents to use. Disconnect one and agents can't use it anymore.
+      </p>
+      {unsupported ? (
+        <p className="px-3 text-sm text-muted-foreground sm:px-4">
+          This Aldo server doesn't have integrations yet.
+        </p>
+      ) : null}
+      {error ? <p className="px-3 text-sm text-destructive-foreground sm:px-4">{error}</p> : null}
+      {integrations === null && !unsupported && !error ? (
+        <LoaderCircleIcon className="mx-4 size-4 animate-spin text-muted-foreground" />
+      ) : null}
+      {integrations && shown.length === 0 ? (
+        <p className="px-3 text-sm text-muted-foreground sm:px-4">Nothing to connect yet.</p>
+      ) : null}
+      {shown.map((integration) => (
+        <IntegrationRow key={integration.provider} integration={integration} onChanged={refresh} />
+      ))}
+    </SettingsSection>
+  );
+}
