@@ -27,27 +27,39 @@ export type LensParams = Readonly<{
   ior: number;
   /** Red/blue split at the rim, 0 for none. */
   chroma: number;
-  /** Brightness of the rim light and how tightly it hugs the edge. */
+  /** Brightness of the rim light, its width in CSS px, and how tightly the
+      lit arcs hug the corners that face the light. */
   rimGain: number;
-  rimPow: number;
+  rimWidth: number;
+  rimExp: number;
+  /** Faint shading inside the rim that reads as the glass's thickness. */
+  thick: number;
 }>;
 
-/** Controls that sit on the scene: thick glass with a visible chromatic rim. */
+/**
+ * The one material, calibrated against iOS 26: thick glass whose bend
+ * follows the control's size (a 28px button barely bends, the composer
+ * does), a rim a couple of pixels wide with bright arcs on the corners that
+ * face the light, and a faint chromatic split at the edge.
+ */
 export const LENS_CONTROL: LensParams = {
-  bezel: 0.4,
-  bezelMax: 56,
-  shift: 18,
+  bezel: 0.35,
+  bezelMax: 36,
+  shift: 14,
   thetaMax: 1.1,
   ior: 1.52,
-  chroma: 1,
-  rimGain: 2.6,
-  rimPow: 2.5,
+  chroma: 0.5,
+  rimGain: 1.2,
+  rimWidth: 2.4,
+  rimExp: 3,
+  thick: 0.06,
 };
 
-/** Overlays over other content: the same glass, bending a little less. */
-export const LENS_OVERLAY: LensParams = { ...LENS_CONTROL, shift: 14, rimGain: 2.2 };
-
-/** Which elements get a lens, with their params. Matched live as the DOM changes. */
+/**
+ * Which elements get a lens. Controls only: the composer, primary buttons,
+ * the Aldo dock, and the thread toolbar's pills. Sidebars, sheets, dialogs,
+ * and menus stay frosted; glass is a lot on a surface that size.
+ */
 const LENSED: ReadonlyArray<{ selector: string; params: LensParams; radius?: number }> = [
   {
     // The composer shell is square; its glass pseudo rounds itself to 22px,
@@ -58,13 +70,8 @@ const LENSED: ReadonlyArray<{ selector: string; params: LensParams; radius?: num
   },
   {
     selector:
-      '[data-chat-composer-main-surface], [data-aldo-dock], [data-chat-header] [data-slot="button"], [data-chat-header] [data-slot="menu-trigger"], [data-chat-header] [data-toolbar-control]',
+      '[data-chat-composer-main-surface], [data-aldo-dock], [data-slot="button"][data-variant="default"], [data-composer-send], [data-chat-header] [data-slot="button"], [data-chat-header] [data-slot="menu-trigger"], [data-chat-header] [data-toolbar-control]',
     params: LENS_CONTROL,
-  },
-  {
-    selector:
-      '[data-slot="dialog-popup"], [data-slot="command-dialog-popup"], [data-slot="sheet-popup"], [data-slot="sidebar"][data-mobile="true"], .dropdown-glass, [data-app-sidebar]',
-    params: LENS_OVERLAY,
   },
 ];
 const LENSED_SELECTOR = LENSED.map((entry) => entry.selector).join(", ");
@@ -155,23 +162,34 @@ export function buildLensMaps(
       map[o + 1] = Math.round(128 - e.dy * bend * 127);
       map[o + 2] = 128;
       map[o + 3] = 255;
-      // Rim light: the surface normal tilts outward by theta.
+      // Rim light: the surface normal tilts outward by theta. A line a few
+      // pixels wide whatever the size, bright where the dome faces the light
+      // (the upper-left corner, the top edge), fainter on the far side, plus
+      // a faint shading inside it that reads as thickness.
       const n = normalize([Math.sin(theta) * e.dx, Math.sin(theta) * e.dy, Math.cos(theta)]);
-      const kA = Math.pow(Math.max(0, n[0] * lightA[0] + n[1] * lightA[1] + n[2] * lightA[2]), 5);
-      const kB = Math.pow(Math.max(0, n[0] * lightB[0] + n[1] * lightB[1] + n[2] * lightB[2]), 7);
+      const kA = Math.pow(
+        Math.max(0, n[0] * lightA[0] + n[1] * lightA[1] + n[2] * lightA[2]),
+        params.rimExp,
+      );
+      const kB = Math.pow(
+        Math.max(0, n[0] * lightB[0] + n[1] * lightB[1] + n[2] * lightB[2]),
+        params.rimExp + 1,
+      );
       const inside = e.d >= 0 ? 1 : 0;
+      const band = Math.exp(-Math.pow(e.d / params.rimWidth, 2));
       const glow =
         inside *
-        Math.pow(clamp(1 - t, 0, 1), params.rimPow) *
-        (0.95 * kA + 0.6 * kB) *
-        params.rimGain;
+        (band * (0.8 * kA + 0.35 * kB) * params.rimGain +
+          Math.pow(clamp(1 - t, 0, 1), 3) * params.thick);
       rim[o] = 255;
       rim[o + 1] = 255;
       rim[o + 2] = 255;
       rim[o + 3] = Math.round(clamp(glow, 0, 1) * 255);
     }
   }
-  return { map, rim, width: mw, height: mh, scale: params.shift };
+  // Thickness, and so the bend, follows the control's size.
+  const scale = Math.min(params.shift, Math.max(4, 0.1 * Math.min(w, h)));
+  return { map, rim, width: mw, height: mh, scale };
 }
 
 /** The SVG filter: the map bends the backdrop, once per channel when chroma splits them. */
@@ -243,7 +261,9 @@ function cornerRadius(element: Element, width: number, height: number): number {
     const raw = getComputedStyle(element, pseudo).borderTopLeftRadius.trim();
     const value = Number.parseFloat(raw);
     if (!Number.isFinite(value) || value <= 0) continue;
-    return raw.endsWith("%") ? (Math.min(width, height) * value) / 100 : value;
+    // A capsule's radius is written as infinity; the shape caps it anyway.
+    const radius = raw.endsWith("%") ? (Math.min(width, height) * value) / 100 : value;
+    return Math.min(radius, Math.min(width, height) / 2);
   }
   return 0;
 }
@@ -345,7 +365,7 @@ function createRuntime() {
     const height = (element as HTMLElement).offsetHeight;
     if (width < 2 || height < 2) return;
     const radius = cornerRadius(element, width, height) || entry.radius || 0;
-    const key = `${params === LENS_OVERLAY ? "o" : "c"}:${width}x${height}:${Math.round(radius)}`;
+    const key = `${width}x${height}:${Math.round(radius)}`;
     if (key === state.key) return;
     if (state.key) {
       const previous = cache.get(state.key);

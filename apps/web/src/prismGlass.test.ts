@@ -22,16 +22,21 @@ describe("Prism lens maps", () => {
     const bottom = pixel(maps.map, maps.width, 100, maps.height - 1);
     expect(bottom[0]).toBe(128);
     expect(bottom[1]).toBeLessThan(120);
-    expect(maps.scale).toBe(LENS_CONTROL.shift);
+    // An 80px-tall control bends 8px; the shift never exceeds the parameter.
+    expect(maps.scale).toBe(8);
+    expect(buildLensMaps(600, 300, 24, LENS_CONTROL).scale).toBe(LENS_CONTROL.shift);
+    expect(buildLensMaps(28, 28, 14, LENS_CONTROL).scale).toBe(4);
   });
 
-  it("lights the rim from the upper left, with a fainter answer at the lower right", () => {
-    const top = pixel(maps.rim, maps.width, 100, 1)[3];
-    const bottom = pixel(maps.rim, maps.width, 100, maps.height - 2)[3];
+  it("lights a thin rim from the upper left, with a fainter answer at the lower right", () => {
+    const top = pixel(maps.rim, maps.width, 100, 0)[3];
+    const bottom = pixel(maps.rim, maps.width, 100, maps.height - 1)[3];
     const centre = pixel(maps.rim, maps.width, 100, 40)[3];
     expect(top).toBeGreaterThan(bottom);
     expect(bottom).toBeGreaterThan(0);
     expect(centre).toBe(0);
+    // A few pixels in, the line is gone and only the faint thickness shading remains.
+    expect(pixel(maps.rim, maps.width, 100, 8)[3]).toBeLessThan(top / 4);
   });
 
   it("caps the map's resolution for big panels and keeps the lens thin on small controls", () => {
