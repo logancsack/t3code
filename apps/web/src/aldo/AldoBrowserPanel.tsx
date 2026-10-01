@@ -18,6 +18,7 @@ import {
   useEffect,
   useRef,
   useState,
+  useSyncExternalStore,
   type ClipboardEvent as ReactClipboardEvent,
   type FormEvent,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -37,7 +38,16 @@ import {
 import { cn } from "../lib/utils";
 import { useAldoBrowserRequests } from "./browserStore";
 import { AldoDesktopView } from "./AldoDesktopView";
-import { AldoApiError, aldoBrowserConnection, aldoPreviewUrl, aldoOfflineMessage } from "./cloud";
+import { AldoLoginOfferCard } from "./AldoLoginOfferCard";
+import {
+  AldoApiError,
+  aldoBrowserConnection,
+  aldoPreviewUrl,
+  aldoOfflineMessage,
+  getAldoEnvironments,
+  subscribeAldoEnvironments,
+} from "./cloud";
+import { nextAldoLoginOffer, parseAldoLoginOffers, type AldoLoginOffer } from "./loginOffers.logic";
 
 type Tab = { id: string; url: string; title: string };
 type Nav = { url: string; canGoBack: boolean; canGoForward: boolean; loading: boolean };
@@ -48,6 +58,20 @@ type Status = "connecting" | "live" | "asleep" | "error";
 
 const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
 const AGENT_ACTIVE_MS = 4000;
+
+/** Sites the user said never to offer saving a login for, in this browser. */
+const NEVER_SAVE_KEY = "aldo:never-save-logins";
+
+function readNeverSave(): ReadonlySet<string> {
+  try {
+    const stored = JSON.parse(localStorage.getItem(NEVER_SAVE_KEY) ?? "[]") as unknown;
+    return new Set(
+      Array.isArray(stored) ? stored.filter((v): v is string => typeof v === "string") : [],
+    );
+  } catch {
+    return new Set();
+  }
+}
 
 function modifiers(e: { altKey: boolean; ctrlKey: boolean; metaKey: boolean; shiftKey: boolean }) {
   let bits = (e.altKey ? 1 : 0) | (e.ctrlKey ? 2 : 0) | (e.metaKey ? 4 : 0) | (e.shiftKey ? 8 : 0);
@@ -91,6 +115,8 @@ export function AldoBrowserPanel({ environmentId }: { environmentId: string }) {
     agentActiveAt: 0,
   });
   const [dialog, setDialog] = useState<Dialog | null>(null);
+  const [loginOffers, setLoginOffers] = useState<ReadonlyArray<AldoLoginOffer>>([]);
+  const [neverSave, setNeverSave] = useState(readNeverSave);
   const [address, setAddress] = useState("");
   const [editingAddress, setEditingAddress] = useState(false);
   const [now, setNow] = useState(() => Date.now());
@@ -197,6 +223,9 @@ export function AldoBrowserPanel({ environmentId }: { environmentId: string }) {
             break;
           case "dialog":
             setDialog((message.dialog as Dialog | null) ?? null);
+            break;
+          case "loginOffers":
+            setLoginOffers(parseAldoLoginOffers(message.offers));
             break;
           case "device":
             setPhone(message.mode === "phone");
@@ -433,6 +462,23 @@ export function AldoBrowserPanel({ environmentId }: { environmentId: string }) {
     focusKeyboard();
   };
 
+  const environments = useSyncExternalStore(
+    subscribeAldoEnvironments,
+    getAldoEnvironments,
+    () => null,
+  );
+  const environment = environments?.find((e) => e.environmentId === environmentId);
+  const loginOffer = nextAldoLoginOffer(loginOffers, neverSave);
+  const neverSaveFor = (origin: string) => {
+    const next = new Set(neverSave).add(origin);
+    setNeverSave(next);
+    try {
+      localStorage.setItem(NEVER_SAVE_KEY, JSON.stringify([...next]));
+    } catch {
+      // Not kept past this tab; it's still skipped here.
+    }
+  };
+
   const active = tabs.find((tab) => tab.id === activeTab) ?? null;
   const agentActive = now - control.agentActiveAt < AGENT_ACTIVE_MS && !control.human;
   const port = localPort(shownUrl);
@@ -635,6 +681,19 @@ export function AldoBrowserPanel({ environmentId }: { environmentId: string }) {
             Take control
           </Button>
         </div>
+      ) : null}
+
+      {loginOffer ? (
+        <AldoLoginOfferCard
+          key={loginOffer.id}
+          offer={loginOffer}
+          repos={environment ? (environment.repos ?? [environment.repo]) : []}
+          onDone={(saved) => send({ type: "loginOffer", id: loginOffer.id, saved })}
+          onNever={() => {
+            neverSaveFor(loginOffer.origin);
+            send({ type: "loginOffer", id: loginOffer.id, saved: false });
+          }}
+        />
       ) : null}
 
       {view === "desktop" ? <AldoDesktopView environmentId={environmentId} /> : null}
