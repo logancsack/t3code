@@ -1,10 +1,7 @@
 import { Connection } from "@t3tools/client-runtime/connection";
 import { shellSnapshotLoaderLayer } from "@t3tools/client-runtime/state/shell";
 import { ShellSnapshotLoader } from "@t3tools/client-runtime/state/shell";
-import {
-  ThreadSnapshotLoader,
-  threadSnapshotLoaderLayer,
-} from "@t3tools/client-runtime/state/threads";
+import { ThreadSnapshotLoader } from "@t3tools/client-runtime/state/threads";
 import * as Effect from "effect/Effect";
 import { pullRequestDiffLoaderLayer } from "@t3tools/client-runtime/state/pull-requests";
 import * as Layer from "effect/Layer";
@@ -18,6 +15,7 @@ import {
 } from "../lib/backgroundActivityReporter";
 import { connectionPlatformLayer } from "./platform";
 import { isLandingDemo } from "../landingDemo/mode";
+import { aldoThreadSnapshotLoaderLayer } from "../aldo/pendingThreads";
 import { landingDemoRpcSessionLayer } from "../landingDemo/runtime";
 
 const providedConnectionPlatformLayer = connectionPlatformLayer.pipe(
@@ -36,7 +34,12 @@ const landingDemoSnapshotLoaderLayer = Layer.merge(
 );
 const snapshotLoaderLayer = isLandingDemo()
   ? Layer.merge(landingDemoSnapshotLoaderLayer, pullRequestDiffLoaderLayer)
-  : Layer.mergeAll(threadSnapshotLoaderLayer, shellSnapshotLoaderLayer, pullRequestDiffLoaderLayer);
+  : Layer.mergeAll(
+      // Aldo: T3's own, except for a thread this tab is creating (aldo/pendingThreads.ts).
+      aldoThreadSnapshotLoaderLayer,
+      shellSnapshotLoaderLayer,
+      pullRequestDiffLoaderLayer,
+    );
 const connectionServicesLayer = isLandingDemo()
   ? Connection.makeLayer(landingDemoRpcSessionLayer)
   : Connection.layerWithOptions({ environmentThemes: true });

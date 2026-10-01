@@ -448,6 +448,7 @@ import { useAldoPreload } from "../aldo/preload";
 import { useAldoThreadDetailMissing } from "../aldo/threadDetails";
 import { isAldoCloud, isAldoEnvironmentId } from "../aldo/cloud";
 import { ensureAldoConnected, isAldoConnected } from "../aldo/dispatch";
+import { showAldoStartingThread, withdrawAldoStartingThread } from "../aldo/startingThreads";
 
 const ATTACHMENT_ONLY_BOOTSTRAP_PROMPT =
   "[User attached one or more files without additional text. Respond using the conversation context and the attached files.]";
@@ -6369,6 +6370,21 @@ function ChatViewContent(props: ChatViewProps) {
       ctxSelectedModel || activeProject.defaultModelSelection?.model || DEFAULT_MODEL,
       ctxSelectedModelSelection.options,
     );
+    // Aldo: a new thread is in the sidebar while its cloud agent is created, not once it's up.
+    if (isLocalDraftThread) {
+      showAldoStartingThread(environmentId, {
+        id: threadIdForSend,
+        projectId: activeProject.id,
+        title,
+        modelSelection: threadCreateModelSelection,
+        runtimeMode,
+        interactionMode,
+        branch: activeThreadBranch,
+        worktreePath: activeThread.worktreePath,
+        createdAt: activeThread.createdAt,
+        sentAt: messageCreatedAt,
+      });
+    }
 
     let failure: AtomCommandResult<unknown, unknown> | null = null;
     // Auto-title from first message
@@ -6532,6 +6548,7 @@ function ChatViewContent(props: ChatViewProps) {
     }
 
     if (failure !== null) {
+      if (isLocalDraftThread) void withdrawAldoStartingThread(environmentId, threadIdForSend);
       if (
         promptRef.current.length === 0 &&
         composerImagesRef.current.length === 0 &&
