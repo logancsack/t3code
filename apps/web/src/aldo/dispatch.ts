@@ -3,15 +3,17 @@
 // command here before sending it; Aldo creates or wakes the machine and
 // connects to it, and then T3 sends the command as usual. Until then the
 // thread shows the message and "Creating your cloud agent" or "Reconnecting to
-// the cloud". Settling, archiving, pinning, snoozing, renaming or deleting a
-// sleeping machine's thread doesn't wake it: it's done at once, and Aldo keeps
-// the command for the machine (threadCommands.ts).
+// the cloud", and a new thread shows in the sidebar meanwhile
+// (startingThreads.ts). Settling, archiving, pinning, snoozing, renaming or
+// deleting a sleeping machine's thread doesn't wake it: it's done at once, and
+// Aldo keeps the command for the machine (threadCommands.ts).
 
 import { setOrchestrationCommandDispatchOverride } from "@t3tools/client-runtime/operations";
 import type { EnvironmentId } from "@t3tools/contracts";
 
 import { environmentCatalog } from "../connection/catalog";
 import { keepAldoCommand } from "./threadCommands";
+import { aldoMachineConnected } from "./startingThreads";
 import { runAtomCommand } from "@t3tools/client-runtime/state/runtime";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentPresentations } from "../state/presentation";
@@ -52,7 +54,10 @@ export function aldoStartingLabel(environmentId: string): string {
 
 /** Creates or wakes a thread's cloud agent and waits until the client is connected to it. */
 export function ensureAldoConnected(environmentId: string): Promise<void> {
-  if (isAldoConnected(environmentId)) return Promise.resolve();
+  if (isAldoConnected(environmentId)) {
+    aldoMachineConnected(environmentId);
+    return Promise.resolve();
+  }
   const existing = inFlight.get(environmentId);
   if (existing) return existing;
   starting.set(environmentId, aldoMachineIsNew(environmentId) ? "creating" : "reconnecting");
@@ -66,7 +71,10 @@ export function ensureAldoConnected(environmentId: string): Promise<void> {
     let connectedChecks = 0;
     while (Date.now() < deadline) {
       connectedChecks = isAldoConnected(environmentId) ? connectedChecks + 1 : 0;
-      if (connectedChecks >= 2) return;
+      if (connectedChecks >= 2) {
+        aldoMachineConnected(environmentId);
+        return;
+      }
       if (Date.now() >= nextNudge) {
         nextNudge = Date.now() + NUDGE_EVERY_MS;
         void runAtomCommand(

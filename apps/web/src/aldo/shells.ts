@@ -11,7 +11,9 @@
 // yet (it hasn't run since machines began reporting them), this browser
 // offers its copy. A machine this browser never connected to has no models
 // cached either, so nothing could be sent in its threads: it gets the ones a
-// new thread shows (serverConfig.ts) until it connects and has its own.
+// new thread shows (serverConfig.ts) until it connects and has its own. A
+// machine this tab is bringing up for a new thread's first message keeps the
+// thread it shows (startingThreads.ts) until the machine connects.
 
 import type { EnvironmentPresentation } from "@t3tools/client-runtime/connection";
 import type { EnvironmentId } from "@t3tools/contracts";
@@ -34,6 +36,7 @@ import {
 } from "./cloud";
 import { aldoServerConfigsFor } from "./serverConfig";
 import { aldoShellCandidates, planAldoShellSync } from "./shells.logic";
+import { aldoShowsStartingThread, clearLeftoverAldoThreads } from "./startingThreads";
 
 /** Shells fetched at once (Aldo's limit). */
 const BATCH = 100;
@@ -70,7 +73,8 @@ async function download(environments: ReadonlyArray<AldoEnvironment>): Promise<S
     environments.map(async (environment) => {
       const environmentId = environment.environmentId;
       const shell = shells[environment.threadId] as { snapshotSequence?: unknown } | undefined;
-      if (!shell || isLive(environmentId)) return;
+      // A machine coming up for a thread shown here: its own shell is moments away.
+      if (!shell || isLive(environmentId) || aldoShowsStartingThread(environmentId)) return;
       // One that doesn't decode isn't fetched again until the machine reports another.
       known.set(environmentId, environment.shellSequence ?? -1);
       await seedEnvironmentCache({
@@ -126,6 +130,7 @@ async function seedModels(environments: ReadonlyArray<AldoEnvironment>): Promise
 }
 
 async function sync(environments: ReadonlyArray<AldoEnvironment>): Promise<void> {
+  await clearLeftoverAldoThreads(environments).catch(() => undefined);
   const candidates = aldoShellCandidates(environments, { known, offerChecked, isLive });
   if (candidates.length === 0) return;
   const cached = await readCachedShells(
@@ -138,6 +143,7 @@ async function sync(environments: ReadonlyArray<AldoEnvironment>): Promise<void>
     if (environment.shellSequence === null) offerChecked.add(environment.environmentId);
   }
   for (const environment of plan.offer) {
+    if (aldoShowsStartingThread(environment.environmentId)) continue;
     const copy = cached.get(environment.environmentId as EnvironmentId);
     if (!copy) continue;
     void offerAldoShell(environment.threadId, copy.snapshot).catch(() => {
