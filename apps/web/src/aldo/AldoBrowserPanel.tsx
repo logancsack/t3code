@@ -111,6 +111,8 @@ export function AldoBrowserPanel({ environmentId }: { environmentId: string }) {
   // The user's answers to offers, until the machine drops the offer: sent again after a reconnect.
   const [loginAnswers, setLoginAnswers] = useState<ReadonlyMap<string, boolean>>(new Map());
   const loginAnswersRef = useRef<ReadonlyMap<string, boolean>>(new Map());
+  // Saves waiting for an offer's password from the machine.
+  const passwordWaits = useRef(new Map<string, (password: string | null) => void>());
   const neverSave = useAldoNeverSaveLogins();
   const [address, setAddress] = useState("");
   const [editingAddress, setEditingAddress] = useState(false);
@@ -223,6 +225,13 @@ export function AldoBrowserPanel({ environmentId }: { environmentId: string }) {
           case "dialog":
             setDialog((message.dialog as Dialog | null) ?? null);
             break;
+          case "loginOfferPassword": {
+            const wait = passwordWaits.current.get(String(message.id));
+            wait?.(
+              typeof message.password === "string" && message.password ? message.password : null,
+            );
+            break;
+          }
           case "loginOffers": {
             const offers = parseAldoLoginOffers(message.offers);
             loginAnswersRef.current = pendingAldoLoginAnswers(loginAnswersRef.current, offers);
@@ -472,6 +481,27 @@ export function AldoBrowserPanel({ environmentId }: { environmentId: string }) {
   );
   const environment = environments?.find((e) => e.environmentId === environmentId);
   const loginOffer = nextAldoLoginOffer(loginOffers, neverSave, loginAnswers);
+  /** An offer's password: the machine sends it only when asked, once the user chose Save. */
+  const loginOfferPassword = (id: string) =>
+    new Promise<string>((resolve, reject) => {
+      const unreachable = "Couldn't reach the cloud agent's browser. Try again in a moment.";
+      const finish = (password: string | null, failure?: string) => {
+        clearTimeout(timer);
+        passwordWaits.current.delete(id);
+        if (password) resolve(password);
+        else
+          reject(
+            new Error(
+              failure ?? "This sign-in isn't on offer anymore. Sign in again to be asked again.",
+            ),
+          );
+      };
+      const timer = setTimeout(() => finish(null, unreachable), 15_000);
+      passwordWaits.current.set(id, finish);
+      if (socketRef.current?.readyState === WebSocket.OPEN)
+        send({ type: "loginOfferPassword", id });
+      else finish(null, unreachable);
+    });
   /** Hides the offer at once; the machine drops it (on every device) once it has the answer. */
   const answerLoginOffer = (id: string, saved: boolean) => {
     loginAnswersRef.current = new Map(loginAnswersRef.current).set(id, saved);
@@ -688,6 +718,7 @@ export function AldoBrowserPanel({ environmentId }: { environmentId: string }) {
           key={loginOffer.id}
           offer={loginOffer}
           repos={environment ? (environment.repos ?? [environment.repo]) : []}
+          password={() => loginOfferPassword(loginOffer.id)}
           onDone={(saved) => answerLoginOffer(loginOffer.id, saved)}
           onNever={() => {
             neverSaveLoginsFor(loginOffer.origin);

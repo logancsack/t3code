@@ -19,12 +19,14 @@ const EVERY_THREAD = "*";
  * Offers to save a login the user just signed in with in the shared browser,
  * so agents in other threads can sign in with it (fill_login) and nobody signs
  * in again. A strip above the page (and the desktop) that doesn't block it;
- * saving goes to the vault as the user.
+ * saving takes the password from the machine and saves it as the user.
  */
 export function AldoLoginOfferCard(props: {
   offer: AldoLoginOffer;
   /** The thread's repositories, for saving a login for one of them only. */
   repos: ReadonlyArray<string>;
+  /** The offer's password, from the machine: asked for only once the user chose Save. */
+  password: () => Promise<string>;
   onDone: (saved: boolean) => void;
   onNever: () => void;
 }) {
@@ -41,7 +43,7 @@ export function AldoLoginOfferCard(props: {
     setBusy(true);
     setError(null);
     try {
-      await aldoVault.saveLogin(aldoLoginToSave(offer, scope));
+      await aldoVault.saveLogin(aldoLoginToSave(offer, await props.password(), scope));
       toastManager.add({
         type: "success",
         title: update ? `Updated the password for ${update.label}` : `Saved your ${site} login`,

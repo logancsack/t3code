@@ -12,7 +12,6 @@ const offer = {
   id: "o1",
   origin: "https://www.github.com",
   username: "alice@example.com",
-  password: "hunter22",
 };
 
 describe("parseAldoLoginOffers", () => {
@@ -24,12 +23,11 @@ describe("parseAldoLoginOffers", () => {
     ]);
   });
 
-  it("skips what isn't a whole offer", () => {
+  it("skips what isn't a whole offer, and never keeps a password", () => {
     expect(parseAldoLoginOffers(undefined)).toEqual([]);
-    expect(
-      parseAldoLoginOffers([null, { ...offer, password: "" }, { ...offer, origin: 3 }, offer]),
-    ).toEqual([offer]);
+    expect(parseAldoLoginOffers([null, { ...offer, origin: 3 }, offer])).toEqual([offer]);
     expect(parseAldoLoginOffers([{ ...offer, saved: { id: "v_1" } }])).toEqual([offer]);
+    expect(parseAldoLoginOffers([{ ...offer, password: "hunter22" }])).toEqual([offer]);
   });
 });
 
@@ -68,23 +66,23 @@ describe("pendingAldoLoginAnswers", () => {
 
 describe("aldoLoginToSave", () => {
   it("saves a new login under the site's name, for the threads chosen", () => {
-    expect(aldoLoginToSave(offer, "*")).toEqual({
+    expect(aldoLoginToSave(offer, "hunter22", "*")).toEqual({
       label: "github.com",
       origin: offer.origin,
       username: offer.username,
-      password: offer.password,
+      password: "hunter22",
       scope: "*",
     });
   });
 
   it("updates a saved login in place, keeping its name and threads", () => {
     const saved = { id: "v_1", label: "GitHub (work)", scope: "me/app" };
-    expect(aldoLoginToSave({ ...offer, saved }, "*")).toEqual({
+    expect(aldoLoginToSave({ ...offer, saved }, "hunter22", "*")).toEqual({
       id: "v_1",
       label: "GitHub (work)",
       origin: offer.origin,
       username: offer.username,
-      password: offer.password,
+      password: "hunter22",
       scope: "me/app",
     });
   });
