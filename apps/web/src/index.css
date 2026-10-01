@@ -1627,6 +1627,10 @@ html[data-theme-id="prism"] .sidebar-brand > span {
   html[data-theme-id="prism"] [data-app-sidebar] [data-slot="sidebar-inner"] {
     background-color: var(--sidebar);
   }
+
+  html[data-theme-id="prism"] [data-slot="composer-shell"] {
+    --chat-composer-glass-surface: var(--app-theme-surface-raised);
+  }
 }
 
 /* Contrast stays in ordinary custom properties so both Tailwind utilities and
