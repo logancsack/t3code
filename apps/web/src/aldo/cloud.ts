@@ -25,6 +25,7 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 
+import type { AldoComputer } from "./computer.logic";
 import { getAldoPreloadSettings } from "./preloadSettings";
 import type { AldoCheckCounts, AldoPullRequestStage } from "./pullRequests.logic";
 
@@ -56,6 +57,11 @@ export interface AldoEnvironment {
   readonly starts?: Readonly<Record<string, AldoStartState>>;
   /** How each of its T3 threads stands, as the machine last reported (working, waiting, done, failed). */
   readonly attention?: Readonly<Record<string, AldoThreadAttention>>;
+  /**
+   * The user's Windows computer, on the thread asking for it or using it
+   * (computer.logic.ts); null otherwise, and left out by an older Aldo.
+   */
+  readonly computer?: AldoComputer | null;
 }
 
 export interface AldoThreadAttention {
@@ -880,6 +886,31 @@ export async function setAldoMachine(environmentId: string, size: AldoMachineSiz
     body: JSON.stringify({ size }),
   });
   requestAldoDirectoryRefresh();
+}
+
+/** Answers a thread's agent asking for the user's Windows computer: agreeing starts it. */
+export async function answerAldoComputer(environmentId: string, approve: boolean): Promise<void> {
+  await api(`/api/environments/${threadIdForEnvironment(environmentId)}/computer`, {
+    method: "POST",
+    body: JSON.stringify({ approve }),
+  });
+  requestAldoDirectoryRefresh();
+}
+
+/**
+ * Stops a thread's Windows computer (it stops costing credits; its disk
+ * stays). Returns what Aldo says came of it; an older Aldo, without it,
+ * refuses with a 405.
+ */
+export async function stopAldoComputer(environmentId: string): Promise<string> {
+  const { message } = await api<{ message?: unknown }>(
+    `/api/environments/${threadIdForEnvironment(environmentId)}/computer`,
+    { method: "DELETE" },
+  );
+  requestAldoDirectoryRefresh();
+  // An Aldo that answers with the web client's page instead didn't stop anything either.
+  if (typeof message !== "string") throw new AldoApiError(405, "Stopping it isn't available.");
+  return message;
 }
 
 /** Merges a followed pull request whose checks all passed; Aldo then follows its deploy. */

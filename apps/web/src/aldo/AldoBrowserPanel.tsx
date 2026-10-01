@@ -37,7 +37,8 @@ import {
 } from "../components/ui/menu";
 import { cn } from "../lib/utils";
 import { useAldoBrowserRequests } from "./browserStore";
-import { AldoDesktopView } from "./AldoDesktopView";
+import { stopAldoWindowsComputer, useAldoComputer } from "./AldoComputer";
+import { AldoDesktopScreenSwitch, AldoDesktopView } from "./AldoDesktopView";
 import { AldoLoginOfferCard } from "./AldoLoginOfferCard";
 import {
   AldoApiError,
@@ -47,6 +48,7 @@ import {
   getAldoEnvironments,
   subscribeAldoEnvironments,
 } from "./cloud";
+import { aldoDesktopScreen, type AldoDesktopScreen } from "./computer.logic";
 import {
   nextAldoLoginOffer,
   parseAldoLoginOffers,
@@ -95,6 +97,7 @@ export function AldoBrowserPanel({ environmentId }: { environmentId: string }) {
   const [follow, setFollow] = useState(true);
   const [phone, setPhone] = useState(false);
   const [view, setView] = useState<"browser" | "desktop">("browser");
+  const [chosenScreen, setChosenScreen] = useState<AldoDesktopScreen>("machine");
   const [nav, setNav] = useState<Nav>({
     url: "",
     canGoBack: false,
@@ -480,6 +483,14 @@ export function AldoBrowserPanel({ environmentId }: { environmentId: string }) {
     () => null,
   );
   const environment = environments?.find((e) => e.environmentId === environmentId);
+  // The Desktop view offers the Windows computer's screen while it runs.
+  const { computer, stopping: stoppingComputer } = useAldoComputer(environmentId);
+  const windowsRunning = computer?.status === "running";
+  const screen = aldoDesktopScreen(chosenScreen, computer);
+  useEffect(() => {
+    // Back to this machine's screen once it stops, and not straight to Windows when it next runs.
+    if (!windowsRunning) setChosenScreen("machine");
+  }, [windowsRunning]);
   const loginOffer = nextAldoLoginOffer(loginOffers, neverSave, loginAnswers);
   /** An offer's password: the machine sends it only when asked, once the user chose Save. */
   const loginOfferPassword = (id: string) =>
@@ -550,9 +561,23 @@ export function AldoBrowserPanel({ environmentId }: { environmentId: string }) {
             </button>
           ))}
         </div>
+        {view === "desktop" && windowsRunning ? (
+          <AldoDesktopScreenSwitch
+            screen={screen}
+            onChange={setChosenScreen}
+            stopping={stoppingComputer}
+            onStop={() =>
+              void stopAldoWindowsComputer(environmentId).then((stopped) => {
+                if (stopped) setChosenScreen("machine");
+              })
+            }
+          />
+        ) : null}
         {view === "desktop" ? (
           <span className="min-w-0 flex-1 truncate px-1 text-xs text-muted-foreground">
-            The agent's whole desktop: Chrome, desktop apps and the taskbar.
+            {screen === "windows"
+              ? "Your Windows computer, with desktop Office. Sign in to Office here once."
+              : "The agent's whole desktop: Chrome, desktop apps and the taskbar."}
           </span>
         ) : null}
         <div className={cn("contents", view === "desktop" && "hidden")}>
@@ -696,7 +721,7 @@ export function AldoBrowserPanel({ environmentId }: { environmentId: string }) {
             Hand back
           </Button>
         </div>
-      ) : agentActive ? (
+      ) : agentActive && !(view === "desktop" && screen === "windows") ? (
         <div className="flex shrink-0 items-center gap-2 border-b border-border bg-muted/50 px-3 py-1.5 text-xs text-muted-foreground">
           <BotIcon className="size-3.5 shrink-0" />
           <span className="min-w-0 flex-1">
@@ -727,7 +752,9 @@ export function AldoBrowserPanel({ environmentId }: { environmentId: string }) {
         />
       ) : null}
 
-      {view === "desktop" ? <AldoDesktopView environmentId={environmentId} /> : null}
+      {view === "desktop" ? (
+        <AldoDesktopView environmentId={environmentId} screen={screen} />
+      ) : null}
       <div
         ref={stageRef}
         className={cn(
