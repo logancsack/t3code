@@ -1403,6 +1403,9 @@ html[data-theme-id="prism"] {
   --prism-fill-hover: color-mix(in srgb, var(--prism-ink) 8%, transparent);
   --prism-fill-active: color-mix(in srgb, var(--prism-ink) 11%, transparent);
   --prism-highlight: oklch(1 0 0 / 85%);
+  --prism-frost-inset:
+    inset 0 1px 0 oklch(1 0 0 / 95%), inset 0 -1px 0 oklch(1 0 0 / 40%),
+    inset 1px 0 0 oklch(1 0 0 / 55%), inset -1px 0 0 oklch(1 0 0 / 55%);
   /* The canvas stacks two or three deep (route, view, column), so it stays
      thin for the scene to come through. */
   --prism-canvas-opacity: 34%;
@@ -1416,25 +1419,21 @@ html[data-theme-id="prism"] {
   --prism-dim: color-mix(in srgb, var(--app-theme-chrome) 48%, transparent);
   /* Liquid glass: a specular fill over a light tint, a rim lit from the top
      left, and an inner highlight along the top edge. */
-  --prism-lg-tint: color-mix(in srgb, var(--app-theme-surface-raised) 52%, transparent);
+  /* Liquid glass, for controls only: a light tint, a faint specular fill,
+     a hairline, and the rim light and bend that prismGlass.ts hands each
+     element through --prism-rim and --prism-lens. */
+  --prism-lg-tint: color-mix(in srgb, var(--app-theme-surface-raised) 46%, transparent);
   --prism-lg-fill: linear-gradient(
     135deg,
-    oklch(1 0 0 / 70%) 0%,
-    oklch(1 0 0 / 34%) 42%,
-    oklch(1 0 0 / 22%) 70%,
-    oklch(1 0 0 / 48%) 100%
+    oklch(1 0 0 / 60%) 0%,
+    oklch(1 0 0 / 30%) 45%,
+    oklch(1 0 0 / 20%) 70%,
+    oklch(1 0 0 / 45%) 100%
   );
-  --prism-lg-rim: linear-gradient(
-    135deg,
-    oklch(1 0 0 / 100%) 0%,
-    oklch(1 0 0 / 55%) 30%,
-    color-mix(in srgb, var(--prism-ink) 14%, transparent) 55%,
-    oklch(1 0 0 / 80%) 100%
-  );
-  --prism-lg-inset:
-    inset 0 1px 0 oklch(1 0 0 / 95%), inset 0 -1px 0 oklch(1 0 0 / 40%),
-    inset 1px 0 0 oklch(1 0 0 / 55%), inset -1px 0 0 oklch(1 0 0 / 55%);
-  --prism-lg-blur: blur(28px) saturate(1.6) brightness(1.04);
+  --prism-lg-inset: inset 0 0 0 1px oklch(0.2 0.02 268 / 16%);
+  --prism-lg-blur: blur(6px) saturate(1.3);
+  --prism-lg-shadow:
+    0 10px 30px -12px oklch(0.25 0.03 268 / 35%), 0 1px 2px oklch(0.25 0.03 268 / 12%);
   --prism-shadow: 0 24px 64px -28px oklch(0.25 0.03 268 / 40%);
   --prism-chrome-text: linear-gradient(
     180deg,
@@ -1472,6 +1471,9 @@ html[data-theme-id="prism"] {
   @variant dark {
     --prism-ink: oklch(1 0 0);
     --prism-highlight: oklch(1 0 0 / 14%);
+    --prism-frost-inset:
+      inset 0 1px 0 oklch(1 0 0 / 34%), inset 0 -1px 0 oklch(1 0 0 / 7%),
+      inset 1px 0 0 oklch(1 0 0 / 12%), inset -1px 0 0 oklch(1 0 0 / 12%);
     --prism-canvas-opacity: 20%;
     --prism-pane-opacity: 58%;
     --prism-frost: color-mix(in srgb, var(--app-theme-surface-overlay) 82%, transparent);
@@ -1479,25 +1481,17 @@ html[data-theme-id="prism"] {
     --prism-frost-canvas: color-mix(in srgb, var(--app-theme-canvas) 82%, transparent);
     --prism-frost-blur: blur(40px) saturate(1.5);
     --prism-dim: color-mix(in srgb, var(--app-theme-chrome) 55%, transparent);
-    --prism-lg-tint: color-mix(in srgb, var(--app-theme-surface-raised) 48%, transparent);
+    --prism-lg-tint: color-mix(in srgb, var(--app-theme-surface-raised) 40%, transparent);
     --prism-lg-fill: linear-gradient(
       135deg,
-      oklch(1 0 0 / 16%) 0%,
-      oklch(1 0 0 / 5%) 42%,
+      oklch(1 0 0 / 9%) 0%,
+      oklch(1 0 0 / 3%) 45%,
       oklch(1 0 0 / 2%) 70%,
-      oklch(1 0 0 / 9%) 100%
+      oklch(1 0 0 / 6%) 100%
     );
-    --prism-lg-rim: linear-gradient(
-      135deg,
-      oklch(1 0 0 / 60%) 0%,
-      oklch(1 0 0 / 18%) 30%,
-      oklch(1 0 0 / 6%) 55%,
-      oklch(1 0 0 / 38%) 100%
-    );
-    --prism-lg-inset:
-      inset 0 1px 0 oklch(1 0 0 / 34%), inset 0 -1px 0 oklch(1 0 0 / 7%),
-      inset 1px 0 0 oklch(1 0 0 / 12%), inset -1px 0 0 oklch(1 0 0 / 12%);
-    --prism-lg-blur: blur(28px) saturate(1.7) brightness(1.08);
+    --prism-lg-inset: inset 0 0 0 1px oklch(1 0 0 / 12%);
+    --prism-lg-blur: blur(6px) saturate(1.4) brightness(1.03);
+    --prism-lg-shadow: 0 10px 30px -12px oklch(0 0 0 / 60%), 0 1px 2px oklch(0 0 0 / 25%);
     --prism-shadow: 0 28px 72px -28px oklch(0 0 0 / 85%);
     --prism-chrome-text: linear-gradient(
       180deg,
@@ -1642,7 +1636,7 @@ html[data-theme-id="prism"]
   ) {
   background: var(--prism-frost);
   border-color: var(--prism-line-strong);
-  box-shadow: var(--prism-lg-inset), var(--prism-shadow);
+  box-shadow: var(--prism-frost-inset), var(--prism-shadow);
   -webkit-backdrop-filter: var(--prism-frost-blur);
   backdrop-filter: var(--prism-frost-blur);
 }
@@ -1700,49 +1694,37 @@ html[data-theme-id="prism"] [data-aldo-assistant-footer] {
 }
 
 /* ---- Liquid glass -------------------------------------------------------
-   Controls that sit on the scene: the composer, the Aldo dock, toolbar
-   controls, inputs, and the selected sidebar row. */
+   Controls that sit on the scene: the composer, primary buttons, the Aldo
+   dock, and the thread toolbar's pills. Each is a thick lens: a light tint
+   over the bent, lightly blurred backdrop, a faint specular fill, a thin rim
+   lit from the upper left, and a chromatic edge. prismGlass.ts measures
+   these elements and hands them --prism-rim and --prism-lens; where the lens
+   can't run (Safari, Firefox) the rim and tint still read as glass. */
 
-/* The composer: its backdrop pseudo becomes the glass body, and the outline
-   pseudo on its host becomes the lit rim (a gradient border, cut with a mask
-   so only the 1px ring paints). */
+/* The composer: its backdrop pseudo is the glass body (and with a banner
+   attached, the main surface paints instead); the outline pseudo on its
+   host is a hairline. The pseudo inherits the lens and rim from the shell. */
 html[data-theme-id="prism"] [data-slot="composer-shell"] {
   --chat-composer-glass-surface: var(--app-theme-surface-raised);
-  --chat-composer-outline: transparent;
+  --chat-composer-outline: var(--prism-line-strong);
   --chat-composer-highlight: transparent;
 }
 
-html[data-theme-id="prism"] [data-slot="composer-shell"]::before {
-  background: var(--prism-lg-fill), var(--prism-lg-tint);
-  box-shadow: var(--prism-lg-inset), var(--prism-shadow);
-  -webkit-backdrop-filter: var(--prism-lg-blur);
-  backdrop-filter: var(--prism-lg-blur);
-}
-
-/* With a banner attached the shell hides its backdrop pseudo and the main
-   surface paints the glass instead. */
+html[data-theme-id="prism"] [data-slot="composer-shell"]::before,
 html[data-theme-id="prism"]
   [data-slot="composer-shell"]:has([data-composer-banner-surface="attached"])
   [data-chat-composer-main-surface] {
-  background: var(--prism-lg-fill), var(--prism-lg-tint);
-  box-shadow: var(--prism-lg-inset), var(--prism-shadow);
-  -webkit-backdrop-filter: var(--prism-lg-blur);
-  backdrop-filter: var(--prism-lg-blur);
+  background-color: var(--prism-lg-tint);
+  background-image: var(--prism-rim, none), var(--prism-lg-fill);
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+  box-shadow: var(--prism-lg-inset), var(--prism-lg-shadow);
+  -webkit-backdrop-filter: var(--prism-lens, opacity(1)) var(--prism-lg-blur);
+  backdrop-filter: var(--prism-lens, opacity(1)) var(--prism-lg-blur);
 }
 
 html[data-theme-id="prism"] [data-slot="composer-host"]::after,
 html[data-theme-id="prism"] [data-chat-composer-main-surface]::after {
-  border: 0;
-  padding: 1px;
-  background: var(--prism-lg-rim) border-box;
-  -webkit-mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
-  mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
   box-shadow: none;
 }
 
@@ -1759,31 +1741,14 @@ html[data-theme-id="prism"] [data-slot="composer-shell"] textarea {
 
 /* The Aldo dock: a liquid glass capsule and speech bubble. */
 html[data-theme-id="prism"] [data-aldo-dock] {
-  position: relative;
-  background: var(--prism-lg-fill), var(--prism-lg-tint);
+  background-color: var(--prism-lg-tint);
+  background-image: var(--prism-rim, none), var(--prism-lg-fill);
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
   border-color: transparent;
-  box-shadow: var(--prism-lg-inset), var(--prism-shadow);
-  -webkit-backdrop-filter: var(--prism-lg-blur);
-  backdrop-filter: var(--prism-lg-blur);
-}
-
-html[data-theme-id="prism"] [data-aldo-dock]::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  padding: 1px;
-  border-radius: inherit;
-  background: var(--prism-lg-rim) border-box;
-  -webkit-mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
-  mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  pointer-events: none;
+  box-shadow: var(--prism-lg-inset), var(--prism-lg-shadow);
+  -webkit-backdrop-filter: var(--prism-lens, opacity(1)) var(--prism-lg-blur);
+  backdrop-filter: var(--prism-lens, opacity(1)) var(--prism-lg-blur);
 }
 
 html[data-theme-id="prism"] [data-aldo-dock] [data-slot="input-control"] {
@@ -1792,13 +1757,39 @@ html[data-theme-id="prism"] [data-aldo-dock] [data-slot="input-control"] {
   box-shadow: none;
 }
 
-/* Toolbar controls and inputs: glass pills with a lit top edge. */
+/* Primary buttons and the composer's send button: the action color as
+   glass, light enough for its ink. */
+html[data-theme-id="prism"] [data-slot="button"][data-variant="default"],
+html[data-theme-id="prism"] [data-composer-send] {
+  background-color: color-mix(in srgb, var(--primary) 74%, transparent);
+  background-image: var(--prism-rim, none), var(--prism-lg-fill);
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+  border-color: transparent;
+  box-shadow:
+    var(--prism-lg-inset),
+    0 6px 18px -8px oklch(0 0 0 / 45%);
+  -webkit-backdrop-filter: var(--prism-lens, opacity(1)) var(--prism-lg-blur);
+  backdrop-filter: var(--prism-lens, opacity(1)) var(--prism-lg-blur);
+}
+
+html[data-theme-id="prism"] [data-slot="button"][data-variant="default"]:hover,
+html[data-theme-id="prism"] [data-slot="button"][data-variant="default"][data-pressed],
+html[data-theme-id="prism"] [data-composer-send]:enabled:hover {
+  background-color: color-mix(in srgb, var(--primary) 86%, transparent);
+}
+
+/* Toolbar pills: small lenses. */
 html[data-theme-id="prism"] [data-chat-header] [data-slot="button"],
 html[data-theme-id="prism"] [data-chat-header] [data-slot="menu-trigger"],
 html[data-theme-id="prism"] [data-chat-header] [data-toolbar-control] {
-  background-image: var(--prism-lg-fill);
+  background-image: var(--prism-rim, none), var(--prism-lg-fill);
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
   border-color: var(--prism-line-strong);
-  box-shadow: inset 0 1px 0 var(--prism-highlight);
+  box-shadow: var(--prism-lg-inset);
+  -webkit-backdrop-filter: var(--prism-lens, opacity(1)) blur(4px) saturate(1.3);
+  backdrop-filter: var(--prism-lens, opacity(1)) blur(4px) saturate(1.3);
 }
 
 /* Inputs have no blur of their own, so their fill stays thin: the lit top
@@ -1817,6 +1808,16 @@ html[data-theme-id="prism"] [data-app-sidebar] :is([aria-current="page"], [data-
   box-shadow:
     inset 0 1px 0 var(--prism-highlight),
     inset 0 0 0 1px var(--prism-line);
+}
+
+/* Without the lens (Safari, Firefox), an inner ring stands in for the bezel. */
+html[data-theme-id="prism"][data-prism-lens="none"]
+  :is([data-aldo-dock], [data-slot="button"][data-variant="default"], [data-composer-send]),
+html[data-theme-id="prism"][data-prism-lens="none"] [data-slot="composer-shell"]::before {
+  box-shadow:
+    var(--prism-lg-inset),
+    inset 0 0 18px color-mix(in srgb, var(--prism-ink) 6%, transparent),
+    var(--prism-lg-shadow);
 }
 
 /* The wordmark is set in chrome. */
