@@ -4,7 +4,9 @@ import {
   aldoComputerToastThread,
   aldoComputerAskDescription,
   aldoComputerKeptAnswer,
+  aldoComputerName,
   aldoComputerNotice,
+  aldoComputers,
   aldoComputerStartOutcome,
   aldoComputerStoppable,
   aldoDesktopScreen,
@@ -109,6 +111,10 @@ describe("aldoDesktopScreen", () => {
     expect(aldoDesktopScreen("machine", computer("running"))).toBe("machine");
   });
 
+  it("never shows a GPU computer, which has no screen", () => {
+    expect(aldoDesktopScreen("windows", computer("running", { kind: "gpu" }))).toBe("machine");
+  });
+
   it("goes back to this machine once the computer stops running", () => {
     for (const status of ["stopping", "stopped", "failed", "starting", "asked"] as const) {
       expect(aldoDesktopScreen("windows", computer(status))).toBe("machine");
@@ -150,5 +156,29 @@ describe("aldoComputerToastThread", () => {
     expect(aldoComputerToastThread(base, "t3-open")).toBe("t3-open");
     expect(aldoComputerToastThread({ ...base, t3ThreadId: null }, "t3-open")).toBe("t3-open");
     expect(aldoComputerToastThread(null, "t3-open")).toBe("t3-open");
+  });
+});
+
+describe("aldoComputers", () => {
+  it("reads a newer Aldo's list", () => {
+    const gpu = computer("asked", { kind: "gpu" });
+    expect(aldoComputers({ computers: [gpu], computer: gpu })).toEqual([gpu]);
+    expect(aldoComputers({ computers: [], computer: null })).toEqual([]);
+  });
+
+  it("reads an older Aldo's one computer, or none", () => {
+    const windows = computer("running");
+    expect(aldoComputers({ computer: windows })).toEqual([windows]);
+    expect(aldoComputers({ computer: null })).toEqual([]);
+    expect(aldoComputers({})).toEqual([]);
+  });
+});
+
+describe("aldoComputerName", () => {
+  it("names the kinds it knows, and others plainly", () => {
+    expect(aldoComputerName({ kind: "windows" })).toBe("Windows computer");
+    expect(aldoComputerName({ kind: "gpu" })).toBe("GPU computer");
+    expect(aldoComputerName({ kind: "mac" })).toBe("computer");
+    expect(aldoComputerName(null)).toBe("computer");
   });
 });

@@ -37,7 +37,7 @@ import {
 } from "../components/ui/menu";
 import { cn } from "../lib/utils";
 import { useAldoBrowserRequests } from "./browserStore";
-import { stopAldoWindowsComputer, useAldoComputer } from "./AldoComputer";
+import { stopAldoThreadComputer, useAldoComputer } from "./AldoComputer";
 import { AldoDesktopScreenSwitch, AldoDesktopView } from "./AldoDesktopView";
 import { AldoLoginOfferCard } from "./AldoLoginOfferCard";
 import {
@@ -484,8 +484,8 @@ export function AldoBrowserPanel({ environmentId }: { environmentId: string }) {
   );
   const environment = environments?.find((e) => e.environmentId === environmentId);
   // The Desktop view offers the Windows computer's screen while it runs.
-  const { computer, stopping: stoppingComputer } = useAldoComputer(environmentId);
-  const windowsRunning = computer?.status === "running";
+  const { computer, stopping: stoppingComputer } = useAldoComputer(environmentId, "windows");
+  const windowsRunning = computer?.kind === "windows" && computer.status === "running";
   const screen = aldoDesktopScreen(chosenScreen, computer);
   useEffect(() => {
     // Back to this machine's screen once it stops, and not straight to Windows when it next runs.
@@ -567,7 +567,7 @@ export function AldoBrowserPanel({ environmentId }: { environmentId: string }) {
             onChange={setChosenScreen}
             stopping={stoppingComputer}
             onStop={() =>
-              void stopAldoWindowsComputer(environmentId).then((stopped) => {
+              void stopAldoThreadComputer(environmentId, "windows").then((stopped) => {
                 if (stopped) setChosenScreen("machine");
               })
             }
