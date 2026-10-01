@@ -17,6 +17,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip"
 import { cn } from "~/lib/utils";
 import { seedAldoComposer } from "./assistantSession";
 import {
+  AldoApiError,
   answerAldoThread,
   approveAldoPlan,
   type AldoHomeConversation,
@@ -26,6 +27,8 @@ import {
 import { elapsed, modelName, NEEDS_YOU_LABEL, needsYouKind, repoName } from "./home.logic";
 
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
+/** Aldo refused because the thread is waiting on something else now: the board should show it. */
+const movedOn = (error: unknown) => error instanceof AldoApiError && error.status === 409;
 
 export function ThreadLink(props: {
   readonly target: AldoHomeTarget;
@@ -152,7 +155,10 @@ function QuestionForm(props: {
     setBusy(true);
     setError(null);
     try {
-      const status = await answerAldoThread(props.target, { answers: given });
+      const status = await answerAldoThread(props.target, {
+        requestId: props.pending.requestId,
+        answers: given,
+      });
       toastManager.add({
         type: "success",
         title: status === "answered" ? "Answered" : "Answer sent",
@@ -160,6 +166,7 @@ function QuestionForm(props: {
       props.onActed();
     } catch (cause) {
       setError(messageOf(cause));
+      if (movedOn(cause)) props.onActed();
     } finally {
       setBusy(false);
     }
@@ -278,7 +285,10 @@ function ApprovalForm(props: {
     setBusy(decision);
     setError(null);
     try {
-      const status = await answerAldoThread(props.target, { decision });
+      const status = await answerAldoThread(props.target, {
+        requestId: props.pending.requestId,
+        decision,
+      });
       toastManager.add({
         type: "success",
         title: status.startsWith("sent")
@@ -288,6 +298,7 @@ function ApprovalForm(props: {
       props.onActed();
     } catch (cause) {
       setError(messageOf(cause));
+      if (movedOn(cause)) props.onActed();
     } finally {
       setBusy(null);
     }
@@ -346,7 +357,7 @@ function PlanForm(props: {
     setBusy(true);
     setError(null);
     try {
-      await approveAldoPlan(props.target, withChanges);
+      await approveAldoPlan(props.target, props.plan.id, withChanges);
       toastManager.add({
         type: "success",
         title: withChanges ? "Asked for a revised plan" : "The agent is carrying out the plan",
@@ -354,6 +365,7 @@ function PlanForm(props: {
       props.onActed();
     } catch (cause) {
       setError(messageOf(cause));
+      if (movedOn(cause)) props.onActed();
     } finally {
       setBusy(false);
     }
