@@ -108,7 +108,10 @@ export function AldoPane(props: {
           </div>
         </div>
       ) : null}
-      <div className="shrink-0 border-t border-border/60 bg-background/95 backdrop-blur">
+      <div
+        className="shrink-0 border-t border-border/60 bg-background/95 backdrop-blur"
+        data-aldo-assistant-footer=""
+      >
         <div className="flex w-full flex-col items-center gap-2.5 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
           <AldoCaption />
           <AldoTalkControls />
