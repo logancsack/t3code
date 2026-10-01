@@ -5,6 +5,7 @@ import {
   aldoLoginToSave,
   nextAldoLoginOffer,
   parseAldoLoginOffers,
+  pendingAldoLoginAnswers,
 } from "./loginOffers.logic";
 
 const offer = {
@@ -46,6 +47,22 @@ describe("nextAldoLoginOffer", () => {
     expect(nextAldoLoginOffer([offer, other], new Set())).toBe(offer);
     expect(nextAldoLoginOffer([offer, other], new Set([offer.origin]))).toBe(other);
     expect(nextAldoLoginOffer([offer], new Set([offer.origin]))).toBeNull();
+  });
+
+  it("skips offers the user answered, before the machine has taken the answer", () => {
+    const other = { ...offer, id: "o2", origin: "https://vercel.com" };
+    expect(nextAldoLoginOffer([offer, other], new Set(), new Map([["o1", false]]))).toBe(other);
+  });
+});
+
+describe("pendingAldoLoginAnswers", () => {
+  it("keeps the answers to offers the machine still sends, to send again", () => {
+    const answered = new Map([
+      ["o1", true],
+      ["gone", false],
+    ]);
+    expect(pendingAldoLoginAnswers(answered, [offer])).toEqual(new Map([["o1", true]]));
+    expect(pendingAldoLoginAnswers(answered, [])).toEqual(new Map());
   });
 });
 

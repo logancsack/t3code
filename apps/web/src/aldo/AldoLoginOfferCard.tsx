@@ -98,11 +98,23 @@ export function AldoLoginOfferCard(props: {
       {error ? <p className="text-xs text-destructive-foreground">{error}</p> : null}
       <div className="flex flex-wrap justify-end gap-1">
         {!update ? (
-          <Button type="button" size="compact" variant="ghost" onClick={props.onNever}>
+          <Button
+            type="button"
+            size="compact"
+            variant="ghost"
+            disabled={busy}
+            onClick={props.onNever}
+          >
             Never for this site
           </Button>
         ) : null}
-        <Button type="button" size="compact" variant="ghost" onClick={() => props.onDone(false)}>
+        <Button
+          type="button"
+          size="compact"
+          variant="ghost"
+          disabled={busy}
+          onClick={() => props.onDone(false)}
+        >
           Not now
         </Button>
         <Button type="button" size="compact" disabled={busy} onClick={() => void save()}>

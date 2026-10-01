@@ -56,12 +56,26 @@ export function aldoLoginSite(origin: string): string {
   }
 }
 
-/** The offer to show: the first one for a site the user didn't say never to. */
+/** The offer to show: the first one the user hasn't answered, for a site they didn't say never to. */
 export function nextAldoLoginOffer(
   offers: ReadonlyArray<AldoLoginOffer>,
   never: ReadonlySet<string>,
+  answered: ReadonlyMap<string, boolean> = new Map(),
 ): AldoLoginOffer | null {
-  return offers.find((offer) => !never.has(offer.origin)) ?? null;
+  return offers.find((offer) => !answered.has(offer.id) && !never.has(offer.origin)) ?? null;
+}
+
+/**
+ * The user's answers (offer id → saved) that the machine hasn't taken yet:
+ * those whose offer it still sends. They're sent again after a reconnect,
+ * since an answer given while the connection was down never arrived.
+ */
+export function pendingAldoLoginAnswers(
+  answered: ReadonlyMap<string, boolean>,
+  offers: ReadonlyArray<AldoLoginOffer>,
+): Map<string, boolean> {
+  const offered = new Set(offers.map((offer) => offer.id));
+  return new Map([...answered].filter(([id]) => offered.has(id)));
 }
 
 /** What saving an offer sends to the vault: an update keeps the saved login's name and threads. */

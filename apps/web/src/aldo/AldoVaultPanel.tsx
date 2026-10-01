@@ -26,6 +26,7 @@ import {
   type AldoSecretKind,
   type AldoVaultItem,
 } from "./cloud";
+import { offerSavingLoginsFor, useAldoNeverSaveLogins } from "./neverSaveLogins";
 import {
   answersAldoSecretRequest,
   parseAldoSecretRequest,
@@ -401,6 +402,7 @@ export function AldoVaultPanel() {
   const [notice, setNotice] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const savedBy = useSavedBy();
+  const neverSave = useAldoNeverSaveLogins();
   // An agent's request_secret link: the form filled in, and the thread told once it's saved.
   const [requested, setRequested] = useState<AldoSecretRequest | null>(null);
   useEffect(() => {
@@ -747,6 +749,23 @@ export function AldoVaultPanel() {
                   }
                 />
               </span>
+            }
+          />
+        ))}
+        {[...neverSave].sort().map((origin) => (
+          <SettingsRow
+            key={origin}
+            title={origin}
+            description="Not offered: you chose Never for this site when signing in in a thread's browser (this browser only)."
+            control={
+              <Button
+                type="button"
+                size="compact"
+                variant="ghost"
+                onClick={() => offerSavingLoginsFor(origin)}
+              >
+                Offer again
+              </Button>
             }
           />
         ))}

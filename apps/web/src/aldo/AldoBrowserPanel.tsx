@@ -47,7 +47,13 @@ import {
   getAldoEnvironments,
   subscribeAldoEnvironments,
 } from "./cloud";
-import { nextAldoLoginOffer, parseAldoLoginOffers, type AldoLoginOffer } from "./loginOffers.logic";
+import {
+  nextAldoLoginOffer,
+  parseAldoLoginOffers,
+  pendingAldoLoginAnswers,
+  type AldoLoginOffer,
+} from "./loginOffers.logic";
+import { neverSaveLoginsFor, useAldoNeverSaveLogins } from "./neverSaveLogins";
 
 type Tab = { id: string; url: string; title: string };
 type Nav = { url: string; canGoBack: boolean; canGoForward: boolean; loading: boolean };
@@ -58,20 +64,6 @@ type Status = "connecting" | "live" | "asleep" | "error";
 
 const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
 const AGENT_ACTIVE_MS = 4000;
-
-/** Sites the user said never to offer saving a login for, in this browser. */
-const NEVER_SAVE_KEY = "aldo:never-save-logins";
-
-function readNeverSave(): ReadonlySet<string> {
-  try {
-    const stored = JSON.parse(localStorage.getItem(NEVER_SAVE_KEY) ?? "[]") as unknown;
-    return new Set(
-      Array.isArray(stored) ? stored.filter((v): v is string => typeof v === "string") : [],
-    );
-  } catch {
-    return new Set();
-  }
-}
 
 function modifiers(e: { altKey: boolean; ctrlKey: boolean; metaKey: boolean; shiftKey: boolean }) {
   let bits = (e.altKey ? 1 : 0) | (e.ctrlKey ? 2 : 0) | (e.metaKey ? 4 : 0) | (e.shiftKey ? 8 : 0);
@@ -116,7 +108,10 @@ export function AldoBrowserPanel({ environmentId }: { environmentId: string }) {
   });
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [loginOffers, setLoginOffers] = useState<ReadonlyArray<AldoLoginOffer>>([]);
-  const [neverSave, setNeverSave] = useState(readNeverSave);
+  // The user's answers to offers, until the machine drops the offer: sent again after a reconnect.
+  const [loginAnswers, setLoginAnswers] = useState<ReadonlyMap<string, boolean>>(new Map());
+  const loginAnswersRef = useRef<ReadonlyMap<string, boolean>>(new Map());
+  const neverSave = useAldoNeverSaveLogins();
   const [address, setAddress] = useState("");
   const [editingAddress, setEditingAddress] = useState(false);
   const [now, setNow] = useState(() => Date.now());
@@ -201,6 +196,10 @@ export function AldoBrowserPanel({ environmentId }: { environmentId: string }) {
         setStatus("live");
         setError(null);
         sendViewport();
+        // Answers given while the connection was down.
+        for (const [id, saved] of loginAnswersRef.current) {
+          socket.send(JSON.stringify({ type: "loginOffer", id, saved }));
+        }
       };
       socket.onmessage = (event) => {
         const message = JSON.parse(String(event.data)) as Record<string, unknown> & {
@@ -224,9 +223,13 @@ export function AldoBrowserPanel({ environmentId }: { environmentId: string }) {
           case "dialog":
             setDialog((message.dialog as Dialog | null) ?? null);
             break;
-          case "loginOffers":
-            setLoginOffers(parseAldoLoginOffers(message.offers));
+          case "loginOffers": {
+            const offers = parseAldoLoginOffers(message.offers);
+            loginAnswersRef.current = pendingAldoLoginAnswers(loginAnswersRef.current, offers);
+            setLoginAnswers(loginAnswersRef.current);
+            setLoginOffers(offers);
             break;
+          }
           case "device":
             setPhone(message.mode === "phone");
             break;
@@ -468,15 +471,12 @@ export function AldoBrowserPanel({ environmentId }: { environmentId: string }) {
     () => null,
   );
   const environment = environments?.find((e) => e.environmentId === environmentId);
-  const loginOffer = nextAldoLoginOffer(loginOffers, neverSave);
-  const neverSaveFor = (origin: string) => {
-    const next = new Set(neverSave).add(origin);
-    setNeverSave(next);
-    try {
-      localStorage.setItem(NEVER_SAVE_KEY, JSON.stringify([...next]));
-    } catch {
-      // Not kept past this tab; it's still skipped here.
-    }
+  const loginOffer = nextAldoLoginOffer(loginOffers, neverSave, loginAnswers);
+  /** Hides the offer at once; the machine drops it (on every device) once it has the answer. */
+  const answerLoginOffer = (id: string, saved: boolean) => {
+    loginAnswersRef.current = new Map(loginAnswersRef.current).set(id, saved);
+    setLoginAnswers(loginAnswersRef.current);
+    send({ type: "loginOffer", id, saved });
   };
 
   const active = tabs.find((tab) => tab.id === activeTab) ?? null;
@@ -688,10 +688,10 @@ export function AldoBrowserPanel({ environmentId }: { environmentId: string }) {
           key={loginOffer.id}
           offer={loginOffer}
           repos={environment ? (environment.repos ?? [environment.repo]) : []}
-          onDone={(saved) => send({ type: "loginOffer", id: loginOffer.id, saved })}
+          onDone={(saved) => answerLoginOffer(loginOffer.id, saved)}
           onNever={() => {
-            neverSaveFor(loginOffer.origin);
-            send({ type: "loginOffer", id: loginOffer.id, saved: false });
+            neverSaveLoginsFor(loginOffer.origin);
+            answerLoginOffer(loginOffer.id, false);
           }}
         />
       ) : null}
