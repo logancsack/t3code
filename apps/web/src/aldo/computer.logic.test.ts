@@ -5,6 +5,7 @@ import {
   aldoComputerKeptAnswer,
   aldoComputerNotice,
   aldoComputerStartOutcome,
+  aldoComputerStoppable,
   aldoDesktopScreen,
   aldoDesktopScreenUrl,
   type AldoComputer,
@@ -65,6 +66,17 @@ describe("aldoComputerStartOutcome", () => {
     expect(aldoComputerStartOutcome(computer("failed", { error: "No quota" }))).toBe("failed");
     expect(aldoComputerStartOutcome(computer("stopped"))).toBeNull();
     expect(aldoComputerStartOutcome(null)).toBeNull();
+  });
+});
+
+describe("aldoComputerStoppable", () => {
+  it("offers stopping it only while it starts or runs", () => {
+    expect(aldoComputerStoppable(computer("starting"))).toBe(true);
+    expect(aldoComputerStoppable(computer("running"))).toBe(true);
+    for (const status of ["asked", "new", "stopping", "stopped", "failed"] as const) {
+      expect(aldoComputerStoppable(computer(status))).toBe(false);
+    }
+    expect(aldoComputerStoppable(null)).toBe(false);
   });
 });
 

@@ -2,6 +2,7 @@ import type RFB from "@novnc/novnc";
 import { LoaderIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
+import { Button } from "../components/ui/button";
 import { cn } from "../lib/utils";
 import { AldoApiError, aldoBrowserConnection, aldoOfflineMessage } from "./cloud";
 import { aldoDesktopScreenUrl, type AldoDesktopScreen } from "./computer.logic";
@@ -119,34 +120,53 @@ const SCREENS: ReadonlyArray<readonly [AldoDesktopScreen, string]> = [
   ["windows", "Windows"],
 ];
 
-/** Which desktop the Desktop view shows, offered while the user's Windows computer runs. */
+/**
+ * Which desktop the Desktop view shows, and a way to stop the Windows
+ * computer, offered while it runs.
+ */
 export function AldoDesktopScreenSwitch(props: {
   screen: AldoDesktopScreen;
   onChange: (screen: AldoDesktopScreen) => void;
+  /** Aldo is stopping the computer: Stop waits for it. */
+  stopping: boolean;
+  onStop: () => void;
 }) {
   return (
-    <div
-      className="flex shrink-0 items-center rounded-md bg-muted/60 p-0.5"
-      role="radiogroup"
-      aria-label="Screen"
-    >
-      {SCREENS.map(([value, label]) => (
-        <button
-          key={value}
-          type="button"
-          role="radio"
-          aria-checked={props.screen === value}
-          onClick={() => props.onChange(value)}
-          className={cn(
-            "inline-flex h-6 items-center rounded px-1.5 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring",
-            props.screen === value
-              ? "bg-background text-foreground shadow-xs"
-              : "text-muted-foreground hover:text-foreground",
-          )}
-        >
-          {label}
-        </button>
-      ))}
-    </div>
+    <>
+      <div
+        className="flex shrink-0 items-center rounded-md bg-muted/60 p-0.5"
+        role="radiogroup"
+        aria-label="Screen"
+      >
+        {SCREENS.map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            role="radio"
+            aria-checked={props.screen === value}
+            onClick={() => props.onChange(value)}
+            className={cn(
+              "inline-flex h-6 items-center rounded px-1.5 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              props.screen === value
+                ? "bg-background text-foreground shadow-xs"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <Button
+        type="button"
+        variant="ghost"
+        size="xs"
+        aria-label="Stop your Windows computer"
+        title="Stop your Windows computer: it stops using credits, and its disk stays as it is."
+        disabled={props.stopping}
+        onClick={props.onStop}
+      >
+        {props.stopping ? "Stopping…" : "Stop"}
+      </Button>
+    </>
   );
 }

@@ -897,6 +897,22 @@ export async function answerAldoComputer(environmentId: string, approve: boolean
   requestAldoDirectoryRefresh();
 }
 
+/**
+ * Stops a thread's Windows computer (it stops costing credits; its disk
+ * stays). Returns what Aldo says came of it; an older Aldo, without it,
+ * refuses with a 405.
+ */
+export async function stopAldoComputer(environmentId: string): Promise<string> {
+  const { message } = await api<{ message?: unknown }>(
+    `/api/environments/${threadIdForEnvironment(environmentId)}/computer`,
+    { method: "DELETE" },
+  );
+  requestAldoDirectoryRefresh();
+  // An Aldo that answers with the web client's page instead didn't stop anything either.
+  if (typeof message !== "string") throw new AldoApiError(405, "Stopping it isn't available.");
+  return message;
+}
+
 /** Merges a followed pull request whose checks all passed; Aldo then follows its deploy. */
 export async function mergeAldoPullRequest(
   environmentId: string,

@@ -4,7 +4,7 @@
 // using it (its status); an older Aldo leaves the field out, which reads as no
 // computer. It costs credits while it runs, so the first time a thread asks,
 // the user answers in the thread. While it runs, the Desktop view can show its
-// screen instead of the thread machine's own.
+// screen instead of the thread machine's own, and the user can stop it.
 
 export type AldoComputerStatus =
   | "asked"
@@ -45,6 +45,11 @@ export function aldoComputerNotice(
   return computer?.status === "starting" ? "starting" : null;
 }
 
+/** Whether the user can stop the computer: while it starts or runs. */
+export function aldoComputerStoppable(computer: AldoComputer | null | undefined): boolean {
+  return computer?.status === "starting" || computer?.status === "running";
+}
+
 /** This tab's answer to an ask, while the directory still reports the ask; once it doesn't, a new ask is asked again. */
 export function aldoComputerKeptAnswer(
   computer: AldoComputer | null | undefined,
@@ -53,7 +58,10 @@ export function aldoComputerKeptAnswer(
   return computer?.status === "asked" ? answer : undefined;
 }
 
-/** How a start shown as "Starting…" ended, once the thread no longer shows it: ready, failed, or neither (stopped, asked again). */
+/**
+ * How a start shown as "Starting…" ended, once the thread no longer shows it:
+ * ready, failed, or neither (it stopped, it asks again).
+ */
 export function aldoComputerStartOutcome(
   computer: AldoComputer | null | undefined,
 ): "ready" | "failed" | null {

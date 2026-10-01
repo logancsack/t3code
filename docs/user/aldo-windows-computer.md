@@ -18,7 +18,11 @@ Once you've agreed in a thread, its agent can start the computer again later wit
 
 ## What it costs
 
-The computer uses credits for every hour it runs, as the question says. It stops when the thread is done, or sooner when the agent has finished with it. While it's stopped, nothing runs, but its disk stays as it was: your files, settings and Office sign-in are still there, and the next start is quicker.
+The computer uses credits for every hour it runs, as the question says. It stops when the thread is done, or sooner when the agent has finished with it. You can also stop it yourself (see below). While it's stopped, nothing runs and it uses no credits, but its disk stays as it was: your files, settings and Office sign-in are still there, and the next start is quicker.
+
+## Stopping it
+
+To stop the computer yourself, choose **Stop** next to the **This machine** / **Windows** switch in the thread's **Desktop** view, or on the message that says it's starting or running. It stops right away, without asking, and Aldo tells you how it went. Anything open on it that wasn't saved is lost, so let your agent finish first if it's in the middle of something. Your agent can start it again when it needs it.
 
 ## Seeing it, and signing in to Office
 
