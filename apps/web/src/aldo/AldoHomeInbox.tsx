@@ -17,6 +17,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip"
 import { cn } from "~/lib/utils";
 import { seedAldoComposer } from "./assistantSession";
 import {
+  AldoApiError,
   answerAldoThread,
   approveAldoPlan,
   type AldoHomeConversation,
@@ -26,6 +27,8 @@ import {
 import { elapsed, modelName, NEEDS_YOU_LABEL, needsYouKind, repoName } from "./home.logic";
 
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
+/** Aldo refused because the thread is waiting on something else now: the board should show it. */
+const movedOn = (error: unknown) => error instanceof AldoApiError && error.status === 409;
 
 export function ThreadLink(props: {
   readonly target: AldoHomeTarget;
@@ -107,13 +110,24 @@ export function NeedsYouCard(props: {
           {c.summary && kind !== "approval" ? (
             <p className="mt-2 line-clamp-3 whitespace-pre-wrap text-sm">{c.summary}</p>
           ) : null}
+          {/* Keyed by what's asked, so a form's choices and words go when the thread moves on to another. */}
           <div className="mt-3">
             {kind === "question" && c.pending?.kind === "question" ? (
-              <QuestionForm target={c.thread} pending={c.pending} onActed={props.onActed} />
+              <QuestionForm
+                key={c.pending.requestId}
+                target={c.thread}
+                pending={c.pending}
+                onActed={props.onActed}
+              />
             ) : kind === "approval" && c.pending?.kind === "approval" ? (
-              <ApprovalForm target={c.thread} pending={c.pending} onActed={props.onActed} />
+              <ApprovalForm
+                key={c.pending.requestId}
+                target={c.thread}
+                pending={c.pending}
+                onActed={props.onActed}
+              />
             ) : kind === "plan" && c.plan ? (
-              <PlanForm target={c.thread} plan={c.plan} onActed={props.onActed} />
+              <PlanForm key={c.plan.id} target={c.thread} plan={c.plan} onActed={props.onActed} />
             ) : null}
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -152,7 +166,10 @@ function QuestionForm(props: {
     setBusy(true);
     setError(null);
     try {
-      const status = await answerAldoThread(props.target, { answers: given });
+      const status = await answerAldoThread(props.target, {
+        requestId: props.pending.requestId,
+        answers: given,
+      });
       toastManager.add({
         type: "success",
         title: status === "answered" ? "Answered" : "Answer sent",
@@ -160,6 +177,7 @@ function QuestionForm(props: {
       props.onActed();
     } catch (cause) {
       setError(messageOf(cause));
+      if (movedOn(cause)) props.onActed();
     } finally {
       setBusy(false);
     }
@@ -278,7 +296,10 @@ function ApprovalForm(props: {
     setBusy(decision);
     setError(null);
     try {
-      const status = await answerAldoThread(props.target, { decision });
+      const status = await answerAldoThread(props.target, {
+        requestId: props.pending.requestId,
+        decision,
+      });
       toastManager.add({
         type: "success",
         title: status.startsWith("sent")
@@ -288,6 +309,7 @@ function ApprovalForm(props: {
       props.onActed();
     } catch (cause) {
       setError(messageOf(cause));
+      if (movedOn(cause)) props.onActed();
     } finally {
       setBusy(null);
     }
@@ -346,7 +368,7 @@ function PlanForm(props: {
     setBusy(true);
     setError(null);
     try {
-      await approveAldoPlan(props.target, withChanges);
+      await approveAldoPlan(props.target, props.plan.id, withChanges);
       toastManager.add({
         type: "success",
         title: withChanges ? "Asked for a revised plan" : "The agent is carrying out the plan",
@@ -354,6 +376,7 @@ function PlanForm(props: {
       props.onActed();
     } catch (cause) {
       setError(messageOf(cause));
+      if (movedOn(cause)) props.onActed();
     } finally {
       setBusy(false);
     }

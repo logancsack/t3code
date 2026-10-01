@@ -1283,10 +1283,15 @@ export async function fetchAldoHome(): Promise<AldoHome | null> {
   return Array.isArray(body.conversations) ? (body as AldoHome) : null;
 }
 
-/** Answers the question or approval a conversation is waiting on, as the user. Says what happened. */
+/**
+ * Answers the question or approval a conversation is waiting on, as the
+ * user. `requestId` is the one the page showed: Aldo refuses (409) if the
+ * thread has moved on to another. Says what happened.
+ */
 export async function answerAldoThread(
   target: AldoHomeTarget,
   answer: {
+    readonly requestId: string;
     readonly answers?: Record<string, string | ReadonlyArray<string>>;
     readonly text?: string;
     readonly decision?: string;
@@ -1302,13 +1307,26 @@ export async function answerAldoThread(
   return status;
 }
 
-/** Has the agent carry out the plan it proposed, or, with changes, asks for a revised one. */
-export async function approveAldoPlan(target: AldoHomeTarget, changes?: string): Promise<string> {
+/**
+ * Has the agent carry out the plan it proposed (`planId`, the one the page
+ * showed; refused if it proposes another now), or, with changes, asks for a
+ * revised one.
+ */
+export async function approveAldoPlan(
+  target: AldoHomeTarget,
+  planId: string,
+  changes?: string,
+): Promise<string> {
   const { status } = await api<{ status: string }>(
     `/api/environments/${threadIdForEnvironment(target.environmentId)}/actions`,
     {
       method: "POST",
-      body: JSON.stringify({ action: "approve_plan", t3ThreadId: target.threadId, changes }),
+      body: JSON.stringify({
+        action: "approve_plan",
+        t3ThreadId: target.threadId,
+        planId,
+        changes,
+      }),
     },
   );
   return status;
