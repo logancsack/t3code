@@ -172,7 +172,7 @@ export function ConversationRow(props: {
             : stuck
               ? "bg-warning"
               : working
-                ? "animate-pulse bg-primary"
+                ? "bg-primary"
                 : "bg-muted-foreground/50",
         )}
       />

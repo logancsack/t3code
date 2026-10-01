@@ -169,8 +169,19 @@ function QuestionForm(props: {
       className="flex flex-col gap-3"
       onSubmit={(event) => {
         event.preventDefault();
-        if (single && other.trim() && !complete) void submit({ [questions[0]!.id]: other.trim() });
-        else if (complete) void submit(answers);
+        if (!single) {
+          if (complete) void submit(answers);
+          return;
+        }
+        // One question: typed words join the choices of a multi-select, or answer it instead.
+        const q = questions[0]!;
+        const chosen = answers[q.id];
+        const typed = other.trim();
+        const answer: string | string[] | undefined = q.multiSelect
+          ? [...(Array.isArray(chosen) ? chosen : []), ...(typed ? [typed] : [])]
+          : typed || chosen;
+        if (answer === undefined || (Array.isArray(answer) ? answer.length === 0 : !answer)) return;
+        void submit({ [q.id]: answer });
       }}
     >
       {questions.map((q) => {
@@ -237,8 +248,12 @@ function QuestionForm(props: {
             onChange={(event) => setOther(event.target.value)}
           />
         ) : null}
-        {!single || other.trim() ? (
-          <Button type="submit" size="sm" disabled={busy || (single ? !other.trim() : !complete)}>
+        {!single || other.trim() || (questions[0]!.multiSelect && complete) ? (
+          <Button
+            type="submit"
+            size="sm"
+            disabled={busy || (single ? !(other.trim() || complete) : !complete)}
+          >
             {busy ? "Sending…" : "Send"}
           </Button>
         ) : null}

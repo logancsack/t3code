@@ -265,10 +265,15 @@ function AldoComposer(props: {
   const replying = useAldoAssistant((s) => s.replying);
   const input = useRef<HTMLInputElement>(null);
   const live = phase !== "idle" && phase !== "error";
-  // What couldn't be sent comes back to be sent again; words seeded for the user to finish, too.
+  // What couldn't be sent comes back to be sent again, and words seeded for
+  // the user to finish; a draft already in the field is kept, after them.
   useEffect(() => {
     if (unsent === null) return;
-    setText(unsent);
+    setText((current) => {
+      if (!current.trim()) return unsent;
+      if (!unsent.trim()) return current;
+      return `${unsent} ${current}`;
+    });
     useAldoAssistant.setState({ unsent: null });
     input.current?.focus();
   }, [unsent]);
@@ -365,7 +370,7 @@ function AldoConversation() {
       ))}
       {replying ? (
         <p className="self-start text-muted-foreground text-sm" aria-live="polite">
-          <span className="animate-pulse">Thinking…</span>
+          Thinking…
         </p>
       ) : null}
       <div ref={end} />

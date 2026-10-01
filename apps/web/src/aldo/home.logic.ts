@@ -369,7 +369,7 @@ export interface HealthIssue {
  */
 export function healthIssues(
   home: Pick<AldoHome, "health" | "usage">,
-  notifications: "on" | "off" | "unavailable",
+  notifications: "on" | "off" | "blocked" | "unavailable",
 ): ReadonlyArray<HealthIssue> {
   const issues: HealthIssue[] = [];
   for (const provider of home.health.providers) {
@@ -428,6 +428,12 @@ export function healthIssues(
       text: "Notifications are off on this device, so you'll only hear from agents here.",
       tone: "warn",
       action: "enable-notifications",
+    });
+  } else if (notifications === "blocked") {
+    issues.push({
+      id: "notifications",
+      text: "Your browser blocks notifications for Aldo. Allow them in its site settings to hear from agents away from this tab.",
+      tone: "warn",
     });
   }
   return issues;

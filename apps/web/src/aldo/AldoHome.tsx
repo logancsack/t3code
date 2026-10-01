@@ -69,9 +69,14 @@ function useAldoHome() {
   const [supported, setSupported] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
   const inflight = useRef(false);
+  /** A refresh asked for during a read: the read may predate what asked, so it runs again after. */
+  const again = useRef(false);
   const fetchedAt = useRef(0);
-  const refresh = useCallback(async (force = true) => {
-    if (inflight.current) return;
+  const refresh = useCallback(async (force = true): Promise<void> => {
+    if (inflight.current) {
+      if (force) again.current = true;
+      return;
+    }
     if (!force && Date.now() - fetchedAt.current < FOLLOW_DIRECTORY_MIN_MS) return;
     inflight.current = true;
     fetchedAt.current = Date.now();
@@ -88,6 +93,10 @@ function useAldoHome() {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       inflight.current = false;
+    }
+    if (again.current) {
+      again.current = false;
+      await refresh();
     }
   }, []);
   useEffect(() => {
@@ -161,8 +170,8 @@ function useNow(): number {
   return now;
 }
 
-function useNotifications(): { status: "on" | "off" | "unavailable"; enable: () => void } {
-  const [status, setStatus] = useState<"on" | "off" | "unavailable">("unavailable");
+function useNotifications(): { status: NotificationsState; enable: () => void } {
+  const [status, setStatus] = useState<NotificationsState>("unavailable");
   const [key, setKey] = useState<string | null>(null);
   useEffect(() => {
     let current = true;
@@ -171,7 +180,7 @@ function useNotifications(): { status: "on" | "off" | "unavailable"; enable: () 
       if (next.availability !== "available") setStatus("unavailable");
       else {
         setKey(next.key);
-        setStatus(next.on ? "on" : next.blocked || !next.key ? "unavailable" : "off");
+        setStatus(next.on ? "on" : next.blocked ? "blocked" : next.key ? "off" : "unavailable");
       }
     });
     return () => {
@@ -196,6 +205,8 @@ function useNotifications(): { status: "on" | "off" | "unavailable"; enable: () 
   return { status, enable };
 }
 
+type NotificationsState = Parameters<typeof healthIssues>[1];
+
 function inField(target: EventTarget | null): boolean {
   const element = target as HTMLElement | null;
   if (!element) return false;
@@ -215,7 +226,8 @@ export function AldoHome() {
   const notifications = useNotifications();
   const navigate = useNavigate();
   const [repo, setRepo] = useState<string | null>(null);
-  const [selected, setSelected] = useState<number | null>(null);
+  /** The selected conversation, by ref: it stays selected as the board refreshes around it. */
+  const [selectedRef, setSelectedRef] = useState<string | null>(null);
   const boardRef = useRef<HTMLDivElement>(null);
   const conversationEmpty = useAldoAssistant((s) => s.historyLoaded && s.entries.length === 0);
 
@@ -225,10 +237,9 @@ export function AldoHome() {
   const setupDone = sourceReady && agentReady;
 
   const repos = useMemo(() => (home ? repoChips(home) : []), [home]);
-  const shown = useMemo(
-    () => (home ? filterHome(home, repo && repos.includes(repo) ? repo : null) : null),
-    [home, repo, repos],
-  );
+  // A repository whose chip has gone (its last conversation left) no longer narrows anything.
+  const activeRepo = repo !== null && repos.includes(repo) ? repo : null;
+  const shown = useMemo(() => (home ? filterHome(home, activeRepo) : null), [home, activeRepo]);
   const board = useMemo(() => (shown ? boardFor(shown.conversations, now) : null), [shown, now]);
   const issues = useMemo(
     () => (home ? healthIssues(home, notifications.status) : []),
@@ -243,6 +254,8 @@ export function AldoHome() {
     () => (board ? [...board.needsYou, ...board.working, ...board.done] : []),
     [board],
   );
+  const selectedIndex = selectable.findIndex((c) => c.ref === selectedRef);
+  const selected = selectedIndex === -1 ? null : selectedIndex;
 
   const open = useCallback(
     (c: AldoHomeConversation) =>
@@ -276,7 +289,7 @@ export function AldoHome() {
       const next = moveSelection(selected, selectable.length, event.key);
       if (next === selected) return;
       event.preventDefault();
-      setSelected(next);
+      setSelectedRef(next === null ? null : selectable[next]!.ref);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -335,9 +348,9 @@ export function AldoHome() {
     repos,
     now,
     isNew: isNewSince(c.at, lastSeen),
-    selected: selected !== null && selectable[selected] === c,
+    selected: c.ref === selectedRef,
     assistant: assistant === true,
-    onSelect: () => setSelected(selectable.indexOf(c)),
+    onSelect: () => setSelectedRef(c.ref),
     onActed: () => void refresh(),
   });
 
@@ -369,12 +382,16 @@ export function AldoHome() {
             {setup}
             {repos.length > 1 ? (
               <div className="flex flex-wrap gap-1.5">
-                <RepoChip label="Everything" on={repo === null} onClick={() => setRepo(null)} />
+                <RepoChip
+                  label="Everything"
+                  on={activeRepo === null}
+                  onClick={() => setRepo(null)}
+                />
                 {repos.map((r) => (
                   <RepoChip
                     key={r}
                     label={repoName(r, repos)}
-                    on={repo === r}
+                    on={activeRepo === r}
                     onClick={() => setRepo(r)}
                   />
                 ))}
@@ -412,7 +429,7 @@ export function AldoHome() {
                 ) : null}
                 {board.needsYou.length === 0 &&
                 board.working.length === 0 &&
-                shown.conversations.length === 0 ? (
+                board.done.length === 0 ? (
                   <div className="rounded-xl border border-border/60 border-dashed px-5 py-8 text-center">
                     <p className="font-medium text-sm">Nothing's running</p>
                     <p className="mt-1 text-muted-foreground text-xs">

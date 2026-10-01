@@ -15,6 +15,7 @@
 - [Source control integrations](./user/source-control.md)
 - [Instructions in Aldo](./user/aldo-instructions.md)
 - [The Vault in Aldo](./user/vault.md)
+- [The home screen in Aldo](./user/aldo-home.md)
 - [Pull requests in Aldo](./user/aldo-pull-requests.md)
 - [Notifications in Aldo](./user/aldo-notifications.md)
 - [Background service (Linux)](./user/background-service.md)

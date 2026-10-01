@@ -470,6 +470,21 @@ describe("healthIssues", () => {
     expect(issues[0]!.href).toBe("/settings/providers");
     expect(issues[3]!.action).toBe("enable-notifications");
   });
+
+  it("says when the browser blocks notifications, with nothing to click", () => {
+    const [issue] = healthIssues(
+      { usage, health: { providers: [], connected: [], environments: [] } },
+      "blocked",
+    );
+    expect(issue!.id).toBe("notifications");
+    expect(issue!.action).toBeUndefined();
+    expect(
+      healthIssues(
+        { usage, health: { providers: [], connected: [], environments: [] } },
+        "unavailable",
+      ),
+    ).toEqual([]);
+  });
 });
 
 describe("policyLines", () => {
