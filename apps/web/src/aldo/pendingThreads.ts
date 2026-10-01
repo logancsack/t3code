@@ -20,23 +20,30 @@ const pending = new Map<string, number>();
 /** Longer than a machine takes to come up and take the message; a thread gone after that is gone. */
 const PENDING_MS = 10 * 60_000;
 
-export function markAldoThreadPending(threadId: string): void {
-  pending.set(threadId, Date.now());
+/** A thread is its machine's: the same id on another machine is another thread. */
+function keyOf(environmentId: string, threadId: string): string {
+  return `${environmentId}\u0000${threadId}`;
 }
 
-export function settleAldoThreadPending(threadId: string): void {
-  pending.delete(threadId);
+export function markAldoThreadPending(environmentId: string, threadId: string): void {
+  pending.set(keyOf(environmentId, threadId), Date.now());
+}
+
+export function settleAldoThreadPending(environmentId: string, threadId: string): void {
+  pending.delete(keyOf(environmentId, threadId));
 }
 
 /** What T3 makes of a machine's answer for a thread: "not found" is "not yet" while it's pending. */
 export function aldoThreadSnapshotResult(
+  environmentId: string,
   threadId: string,
   result: ThreadSnapshotLoadResult,
 ): ThreadSnapshotLoadResult {
-  const since = pending.get(threadId);
+  const key = keyOf(environmentId, threadId);
+  const since = pending.get(key);
   if (since === undefined) return result;
   if (result.kind === "found" || Date.now() - since > PENDING_MS) {
-    pending.delete(threadId);
+    pending.delete(key);
     return result;
   }
   return result.kind === "not-found" ? { kind: "unavailable" } : result;
@@ -51,7 +58,11 @@ export const aldoThreadSnapshotLoaderLayer = Layer.effect(
       load: (prepared, threadId, window) =>
         loader
           .load(prepared, threadId, window)
-          .pipe(Effect.map((result) => aldoThreadSnapshotResult(threadId, result))),
+          .pipe(
+            Effect.map((result) =>
+              aldoThreadSnapshotResult(prepared.environmentId, threadId, result),
+            ),
+          ),
     });
   }),
 ).pipe(Layer.provide(threadSnapshotLoaderLayer));

@@ -42,10 +42,15 @@ function phaseOf(environmentId: string): string | undefined {
     .get(environmentId as EnvironmentId)?.connection.phase;
 }
 
-/** Connected, or about to be: its cache is T3's own. */
+/** Connected, or about to be: its own shell is moments away. */
 function isLive(environmentId: string): boolean {
   const phase = phaseOf(environmentId);
   return phase === "connected" || phase === "connecting" || phase === "reconnecting";
+}
+
+/** Connected: what's shown is T3's own shell, and so is its cache. */
+function isConnected(environmentId: string): boolean {
+  return phaseOf(environmentId) === "connected";
 }
 
 /** Whether this tab shows a thread on this machine that it hasn't connected to yet. */
@@ -72,24 +77,28 @@ function serially(environmentId: string, run: () => Promise<void>): Promise<void
   return next;
 }
 
-/** Changes the machine's cached shell and shows it, unless the machine is up (or coming up). */
+/**
+ * Changes the machine's cached shell and shows it, unless the machine is
+ * connected. (One still trying to connect, as when it never came online,
+ * shows its cache.)
+ */
 async function change(
   environmentId: string,
   edit: (shell: CachedShell) => CachedShell | null,
 ): Promise<void> {
-  if (isLive(environmentId)) return;
+  if (isConnected(environmentId)) return;
   const cached = (await readCachedShells([environmentId as EnvironmentId])).get(
     environmentId as EnvironmentId,
   );
   const next = cached ? edit(cached.snapshot as CachedShell) : null;
-  if (!next || isLive(environmentId)) return;
+  if (!next || isConnected(environmentId)) return;
   await seedEnvironmentCache({
     environmentId: environmentId as EnvironmentId,
     shell: next,
     serverConfig: null,
   });
   // Already registered: its shell reloads from the cache. (One registering later reads it then.)
-  if (phaseOf(environmentId) !== undefined && !isLive(environmentId)) {
+  if (phaseOf(environmentId) !== undefined && !isConnected(environmentId)) {
     appAtomRegistry.refresh(environmentShell.stateAtom(environmentId as EnvironmentId));
   }
 }
@@ -100,7 +109,7 @@ async function change(
  */
 export function showAldoStartingThread(environmentId: string, thread: AldoNewThread): void {
   if (!isAldoCloud || !isAldoEnvironmentId(environmentId) || isLive(environmentId)) return;
-  markAldoThreadPending(thread.id);
+  markAldoThreadPending(environmentId, thread.id);
   const threads = shown.get(environmentId) ?? new Set<string>();
   threads.add(thread.id);
   shown.set(environmentId, threads);
@@ -151,7 +160,7 @@ export async function withdrawAldoStartingThread(
   threadId: string,
 ): Promise<void> {
   if (!isAldoCloud || !isAldoEnvironmentId(environmentId)) return;
-  settleAldoThreadPending(threadId);
+  settleAldoThreadPending(environmentId, threadId);
   const ref = scopeThreadRef(
     environmentId as EnvironmentId,
     threadId as ScopedThreadRef["threadId"],
