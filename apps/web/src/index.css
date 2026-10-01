@@ -1630,14 +1630,15 @@ html[data-theme-id="prism"] [data-slot="sidebar"][data-mobile="true"] {
   backdrop-filter: var(--prism-frost-blur);
 }
 
+/* Menus and popovers carry dropdown-glass on the popup itself; a select's
+   popup slot is a bare wrapper around a dropdown-glass child, so the class
+   is the one element to frost in all three. */
 html[data-theme-id="prism"]
   :is(
     [data-slot="sheet-popup"],
     [data-slot="dialog-popup"],
     [data-slot="command-dialog-popup"],
-    [data-slot="menu-popup"],
-    [data-slot="select-popup"],
-    [data-slot="popover-popup"]
+    .dropdown-glass
   ) {
   background: var(--prism-frost);
   border-color: var(--prism-line-strong);
@@ -1665,19 +1666,18 @@ html[data-theme-id="prism"] .surface-glass {
   backdrop-filter: var(--prism-frost-blur);
 }
 
-html[data-theme-id="prism"] .dropdown-glass {
-  background: var(--prism-frost);
-}
-
 html[data-theme-id="prism"] .dialog-glass {
   background: var(--prism-frost);
 }
 
-/* Floating pills that paint a near-solid canvas expect it to be opaque. */
-html[data-theme-id="prism"] :is(.bg-background\/88, .bg-background\/95) {
+/* Floating capsules (scroll-to-latest, new messages, the search shortcut
+   badge) paint a near-solid canvas and expect it to be opaque. Scoped to the
+   capsule shape so the sticky browser toolbar, which shares the class, keeps
+   its own lighter blur. */
+html[data-theme-id="prism"] :is(.bg-background\/88, .bg-background\/95).rounded-full {
   background-color: var(--prism-frost-canvas);
-  -webkit-backdrop-filter: var(--prism-frost-blur);
-  backdrop-filter: var(--prism-frost-blur);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  backdrop-filter: blur(16px) saturate(1.4);
 }
 
 html[data-theme-id="prism"] [data-aldo-assistant-footer] {
@@ -1713,6 +1713,17 @@ html[data-theme-id="prism"] [data-slot="composer-shell"] {
 }
 
 html[data-theme-id="prism"] [data-slot="composer-shell"]::before {
+  background: var(--prism-lg-fill), var(--prism-lg-tint);
+  box-shadow: var(--prism-lg-inset), var(--prism-shadow);
+  -webkit-backdrop-filter: var(--prism-lg-blur);
+  backdrop-filter: var(--prism-lg-blur);
+}
+
+/* With a banner attached the shell hides its backdrop pseudo and the main
+   surface paints the glass instead. */
+html[data-theme-id="prism"]
+  [data-slot="composer-shell"]:has([data-composer-banner-surface="attached"])
+  [data-chat-composer-main-surface] {
   background: var(--prism-lg-fill), var(--prism-lg-tint);
   box-shadow: var(--prism-lg-inset), var(--prism-shadow);
   -webkit-backdrop-filter: var(--prism-lg-blur);
@@ -1775,7 +1786,7 @@ html[data-theme-id="prism"] [data-aldo-dock]::before {
   pointer-events: none;
 }
 
-html[data-theme-id="prism"] [data-aldo-dock] [data-slot="input"] {
+html[data-theme-id="prism"] [data-aldo-dock] [data-slot="input-control"] {
   background: transparent;
   border-color: transparent;
   box-shadow: none;
@@ -1791,9 +1802,9 @@ html[data-theme-id="prism"] [data-chat-header] [data-toolbar-control] {
 }
 
 /* Inputs have no blur of their own, so their fill stays thin: the lit top
-   edge and hairline carry the glass. */
-html[data-theme-id="prism"] [data-slot="input"]:not([data-aldo-dock] [data-slot="input"]),
-html[data-theme-id="prism"] [data-slot="input-control"] {
+   edge and hairline carry the glass. Only the styled wrapper owns a surface;
+   an unstyled one (input groups, the sidebar search) belongs to its host. */
+html[data-theme-id="prism"] [data-slot="input-control"]:not([data-unstyled], [data-aldo-dock] *) {
   background: var(--prism-fill);
   border-color: var(--prism-line-strong);
   box-shadow: inset 0 1px 0 var(--prism-highlight);
