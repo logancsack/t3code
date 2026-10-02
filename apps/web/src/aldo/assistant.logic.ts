@@ -150,14 +150,29 @@ export const ACTION_LABELS: Record<string, string> = {
   cancel_upcoming: "Canceled a queued message",
 };
 
-/** The label for calls that undo what their tool's name says (unpinning, unsnoozing, unsettling). */
+/** The labels for calls that undo what their tool's name says: unpinning, unsnoozing, unsettling. */
+export const REVERSE_LABELS: Record<string, string> = {
+  pin_thread: "Unpinned a thread",
+  snooze_thread: "Brought back a snoozed thread",
+  settle_thread: "Made a thread active again",
+};
+
+/** Whether a call undoes what its tool's name says (pin_thread with pinned: false, say). */
+export function reverses(call: Pick<AldoFunctionCall, "name" | "arguments">): boolean {
+  switch (call.name) {
+    case "pin_thread":
+      return call.arguments.pinned === false;
+    case "snooze_thread":
+      return !call.arguments.until;
+    case "settle_thread":
+      return call.arguments.settled === false;
+    default:
+      return false;
+  }
+}
+
 function labelFor(call: AldoFunctionCall): string | undefined {
-  if (call.name === "pin_thread" && call.arguments.pinned === false) return "Unpinned a thread";
-  if (call.name === "snooze_thread" && !call.arguments.until)
-    return "Brought back a snoozed thread";
-  if (call.name === "settle_thread" && call.arguments.settled === false)
-    return "Made a thread active again";
-  return ACTION_LABELS[call.name];
+  return (reverses(call) ? REVERSE_LABELS[call.name] : undefined) ?? ACTION_LABELS[call.name];
 }
 
 /**

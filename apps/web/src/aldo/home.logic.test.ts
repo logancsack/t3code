@@ -346,6 +346,17 @@ describe("words", () => {
     ).toBe("Couldn't answer a thread");
   });
 
+  it("says when an action undid what its tool's name says", () => {
+    const action = { id: "1", title: null, asked: "go", error: null, thread: null, at: ago(1) };
+    expect(actionLabel({ ...action, tool: "pin_thread", failed: false, reverse: true })).toBe(
+      "Unpinned a thread",
+    );
+    expect(actionLabel({ ...action, tool: "pin_thread", failed: false })).toBe("Pinned a thread");
+    expect(
+      actionLabel({ ...action, tool: "settle_thread", failed: true, error: "no", reverse: true }),
+    ).toBe("Couldn't make a thread active again");
+  });
+
   it("marks news since the last visit", () => {
     expect(isNewSince(ago(1), null)).toBe(false);
     expect(isNewSince(ago(1), ago(5))).toBe(true);

@@ -1326,6 +1326,8 @@ export interface AldoHomeAction {
   readonly error: string | null;
   readonly thread: AldoHomeTarget | null;
   readonly at: string;
+  /** It undid what its tool's name says (unpinned, unsnoozed, unsettled); an older Aldo doesn't say. */
+  readonly reverse?: boolean;
 }
 
 export interface AldoHomeUsage {

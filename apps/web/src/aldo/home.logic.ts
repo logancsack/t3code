@@ -2,7 +2,7 @@
 // user's work (cloud.ts AldoHome) sorts into what needs them, what's working,
 // what shipped and what's coming, and the words for each.
 
-import { ACTION_LABELS } from "./assistant.logic";
+import { ACTION_LABELS, REVERSE_LABELS } from "./assistant.logic";
 import type {
   AldoHome,
   AldoHomeAction,
@@ -297,12 +297,22 @@ const FAILED_LABELS: Record<string, string> = {
   cancel_upcoming: "Couldn't cancel a queued message",
 };
 
+/** What a call that undoes its tool's name couldn't do. */
+const FAILED_REVERSE_LABELS: Record<string, string> = {
+  pin_thread: "Couldn't unpin a thread",
+  snooze_thread: "Couldn't bring back a snoozed thread",
+  settle_thread: "Couldn't make a thread active again",
+};
+
 /** What Aldo did (or couldn't), in a few words, for its log: "Started a thread: Fix checkout". */
 export function actionLabel(action: AldoHomeAction): string {
   const plain = action.tool.replace(/_/g, " ");
+  const reverse = action.reverse === true;
   const label = action.failed
-    ? (FAILED_LABELS[action.tool] ?? `Couldn't ${plain}`)
-    : (ACTION_LABELS[action.tool] ?? plain);
+    ? ((reverse ? FAILED_REVERSE_LABELS[action.tool] : undefined) ??
+      FAILED_LABELS[action.tool] ??
+      `Couldn't ${plain}`)
+    : ((reverse ? REVERSE_LABELS[action.tool] : undefined) ?? ACTION_LABELS[action.tool] ?? plain);
   return action.title ? `${label}: ${action.title}` : label;
 }
 

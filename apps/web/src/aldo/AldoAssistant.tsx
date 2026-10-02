@@ -26,7 +26,11 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { cn } from "~/lib/utils";
-import { prepareImageForAttachment } from "~/lib/imageCompression";
+import { isHeicImageFile, prepareImageForAttachment } from "~/lib/imageCompression";
+import {
+  classifyComposerAttachmentFile,
+  normalizeComposerImageFileMimeType,
+} from "../components/chat/composerAttachmentFiles";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { useThreadShells } from "../state/entities";
 import { withoutImageNotes, type AldoAssistantPhase, type AldoOpenTarget } from "./assistant.logic";
@@ -182,10 +186,12 @@ function readAsDataUrl(file: Blob): Promise<string> {
 
 /** An image the user gave, made small enough to send: null (with why) if it can't be. */
 async function imageUpload(
-  file: File,
+  given: File,
   limits: AldoImageLimits,
 ): Promise<{ image: AldoImageUpload } | { error: string }> {
-  const heic = /\.(heic|heif)$/i.test(file.name) || /^image\/hei[cf]$/i.test(file.type);
+  // A file dragged from another app may have no type: its name says it, as in the thread's composer.
+  const file = normalizeComposerImageFileMimeType(given);
+  const heic = isHeicImageFile(file);
   if (!heic && !limits.types.includes(file.type)) {
     return { error: `${file.name || "That file"} isn't a PNG, JPEG, WebP or GIF image.` };
   }
@@ -324,6 +330,8 @@ function AldoComposer(props: {
   const [text, setText] = useState("");
   const [images, setImages] = useState<ReadonlyArray<AldoImageUpload>>([]);
   const [imageError, setImageError] = useState<string | null>(null);
+  /** Images being made ready to send: the message waits for them. */
+  const [preparing, setPreparing] = useState(0);
   const phase = useAldoAssistant((s) => s.phase);
   const unsent = useAldoAssistant((s) => s.unsent);
   const unsentImages = useAldoAssistant((s) => s.unsentImages);
@@ -334,27 +342,36 @@ function AldoComposer(props: {
   const live = phase !== "idle" && phase !== "error";
   // Images go in writing: not into a call.
   const canAttach = limits !== null && !live;
+  // Images that couldn't be sent come back before any added since, as their words do.
   useEffect(() => {
     if (unsentImages === null) return;
-    setImages(unsentImages);
+    setImages((current) => {
+      const merged = [
+        ...unsentImages,
+        ...current.filter((image) => !unsentImages.some((u) => u.dataUrl === image.dataUrl)),
+      ];
+      return limits ? merged.slice(0, limits.max) : merged;
+    });
     useAldoAssistant.setState({ unsentImages: null });
-  }, [unsentImages]);
+  }, [unsentImages, limits]);
+  // A batch is made ready together, and the message waits for it.
   const addImages = (files: ReadonlyArray<File>) => {
     if (!limits || files.length === 0) return;
     setImageError(null);
-    void (async () => {
-      const room = limits.max - images.length;
-      if (room <= 0 || files.length > room)
-        setImageError(`At most ${limits.max} images with a message.`);
-      for (const file of files.slice(0, Math.max(0, room))) {
-        const made = await imageUpload(file, limits);
-        if ("error" in made) setImageError(made.error);
-        else
-          setImages((current) =>
-            current.length < limits.max ? [...current, made.image] : current,
-          );
-      }
-    })();
+    const room = limits.max - images.length;
+    if (room <= 0 || files.length > room)
+      setImageError(`At most ${limits.max} images with a message.`);
+    const batch = files.slice(0, Math.max(0, room));
+    if (batch.length === 0) return;
+    setPreparing((n) => n + 1);
+    void Promise.all(batch.map((file) => imageUpload(file, limits)))
+      .then((made) => {
+        const failed = made.find((m): m is { error: string } => "error" in m);
+        if (failed) setImageError(failed.error);
+        const ready = made.flatMap((m) => ("image" in m ? [m.image] : []));
+        setImages((current) => [...current, ...ready].slice(0, limits.max));
+      })
+      .finally(() => setPreparing((n) => n - 1));
   };
   // What couldn't be sent comes back to be sent again, and words seeded for
   // the user to finish; a draft already in the field is kept, after them.
@@ -369,10 +386,13 @@ function AldoComposer(props: {
     input.current?.focus();
   }, [unsent]);
   const submit = () => {
-    if (!text.trim() && images.length === 0) return;
-    sendText(text, canAttach ? images : []);
+    if (preparing > 0) return;
+    // During a call images don't go: they stay for after it.
+    const sending = canAttach ? images : [];
+    if (!text.trim() && sending.length === 0) return;
+    sendText(text, sending);
     setText("");
-    setImages([]);
+    if (sending.length > 0) setImages([]);
     setImageError(null);
   };
   return (
@@ -469,8 +489,8 @@ function AldoComposer(props: {
           onChange={(event) => setText(event.target.value)}
           onPaste={(event) => {
             if (!canAttach) return;
-            const files = [...event.clipboardData.files].filter((file) =>
-              file.type.startsWith("image/"),
+            const files = [...event.clipboardData.files].filter(
+              (file) => classifyComposerAttachmentFile(file) !== "file",
             );
             if (files.length === 0) return;
             event.preventDefault();
@@ -481,7 +501,7 @@ function AldoComposer(props: {
           type="submit"
           size="icon"
           aria-label="Send"
-          disabled={!text.trim() && !(canAttach && images.length > 0)}
+          disabled={preparing > 0 || (!text.trim() && !(canAttach && images.length > 0))}
         >
           <ArrowUpIcon />
         </Button>

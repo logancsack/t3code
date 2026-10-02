@@ -139,6 +139,12 @@ describe("actionFor", () => {
     expect(actionFor(unpin, { result: { thread } })?.label).toBe("Unpinned a thread");
     const wake = { callId: "c9", name: "snooze_thread", arguments: { thread: "x" } };
     expect(actionFor(wake, { result: { thread } })?.label).toBe("Brought back a snoozed thread");
+    const snooze = {
+      callId: "c10",
+      name: "snooze_thread",
+      arguments: { thread: "x", until: "2026-10-03T09:00:00Z" },
+    };
+    expect(actionFor(snooze, { result: { thread } })?.label).toBe("Snoozed a thread");
   });
 });
 
