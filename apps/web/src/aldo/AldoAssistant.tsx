@@ -13,6 +13,7 @@ import {
   ArrowUpRightIcon,
   ChevronDownIcon,
   ChevronUpIcon,
+  ImageIcon,
   ImagePlusIcon,
   MicIcon,
   MicOffIcon,
@@ -28,7 +29,7 @@ import { cn } from "~/lib/utils";
 import { prepareImageForAttachment } from "~/lib/imageCompression";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { useThreadShells } from "../state/entities";
-import type { AldoAssistantPhase, AldoOpenTarget } from "./assistant.logic";
+import { withoutImageNotes, type AldoAssistantPhase, type AldoOpenTarget } from "./assistant.logic";
 import {
   connectAldo,
   disconnectAldo,
@@ -571,7 +572,22 @@ function ConversationEntry({ entry }: { readonly entry: AldoConversationEntry })
       </div>
     );
   }
-  return entry.role === "user" ? (
+  if (entry.role === "user") return <UserMessage entry={entry} />;
+  return (
+    <p className="max-w-[85%] self-start whitespace-pre-wrap text-sm leading-relaxed">
+      {entry.text}
+    </p>
+  );
+}
+
+/** What the user said, with the images they sent: shown, or named when the message was kept (from before this page). */
+function UserMessage({
+  entry,
+}: {
+  readonly entry: Extract<AldoConversationEntry, { kind: "message" }>;
+}) {
+  const { text, images: named } = withoutImageNotes(entry.text);
+  return (
     <div className="flex max-w-[85%] flex-col items-end gap-1.5 self-end">
       {entry.images && entry.images.length > 0 ? (
         <div className="flex flex-wrap justify-end gap-1.5">
@@ -585,16 +601,23 @@ function ConversationEntry({ entry }: { readonly entry: AldoConversationEntry })
           ))}
         </div>
       ) : null}
-      {entry.text ? (
-        <p className="whitespace-pre-wrap rounded-2xl bg-muted/60 px-3.5 py-2 text-sm">
-          {entry.text}
-        </p>
+      {!entry.images?.length && named.length > 0 ? (
+        <div className="flex flex-wrap justify-end gap-1.5">
+          {named.map(({ id, name }) => (
+            <span
+              key={id}
+              className="inline-flex items-center gap-1 rounded-full border border-border/60 px-2 py-0.5 text-muted-foreground text-xs"
+            >
+              <ImageIcon className="size-3" />
+              {name}
+            </span>
+          ))}
+        </div>
+      ) : null}
+      {text ? (
+        <p className="whitespace-pre-wrap rounded-2xl bg-muted/60 px-3.5 py-2 text-sm">{text}</p>
       ) : null}
     </div>
-  ) : (
-    <p className="max-w-[85%] self-start whitespace-pre-wrap text-sm leading-relaxed">
-      {entry.text}
-    </p>
   );
 }
 

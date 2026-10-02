@@ -80,6 +80,26 @@ export function openTargetOf(outcome: unknown): AldoOpenTarget | null {
   return { environmentId: open.environmentId, threadId: open.threadId };
 }
 
+/**
+ * A message as Aldo keeps it names the images sent with it ("[image img_…:
+ * name]", so Aldo can attach them later): the words to show, and the images'
+ * names.
+ */
+export function withoutImageNotes(text: string): {
+  readonly text: string;
+  readonly images: ReadonlyArray<{ readonly id: string; readonly name: string }>;
+} {
+  const images: { id: string; name: string }[] = [];
+  const words = text.replace(
+    /\[image (img_[A-Za-z0-9]+): ([^\]\n]*)\]/g,
+    (_, id: string, name: string) => {
+      images.push({ id, name: name.trim() || "image" });
+      return "";
+    },
+  );
+  return { text: words.trim(), images };
+}
+
 /** The app a tool's result asks the page to open in a new tab (open_preview), if any. */
 export function previewOf(outcome: unknown): string | null {
   const url = (outcome as { result?: { preview?: { url?: unknown } } } | null)?.result?.preview

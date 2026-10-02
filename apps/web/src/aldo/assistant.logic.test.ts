@@ -9,6 +9,7 @@ import {
   rememberHeard,
   startNews,
   startWatchFor,
+  withoutImageNotes,
   type AldoStartWatch,
 } from "./assistant.logic";
 
@@ -138,6 +139,24 @@ describe("actionFor", () => {
     expect(actionFor(unpin, { result: { thread } })?.label).toBe("Unpinned a thread");
     const wake = { callId: "c9", name: "snooze_thread", arguments: { thread: "x" } };
     expect(actionFor(wake, { result: { thread } })?.label).toBe("Brought back a snoozed thread");
+  });
+});
+
+describe("withoutImageNotes", () => {
+  it("shows the words, and the images a kept message names", () => {
+    expect(
+      withoutImageNotes("What's this?\n\n[image img_ab12: shot.png] [image img_cd34: b.jpg]"),
+    ).toEqual({
+      text: "What's this?",
+      images: [
+        { id: "img_ab12", name: "shot.png" },
+        { id: "img_cd34", name: "b.jpg" },
+      ],
+    });
+    expect(withoutImageNotes("No images [here].")).toEqual({
+      text: "No images [here].",
+      images: [],
+    });
   });
 });
 
