@@ -484,6 +484,8 @@ describe("EnvironmentThreads", () => {
       );
 
       expect(Option.isNone(state.data)).toBe(true);
+      // Reported deleted by the server: never followed again.
+      expect(state.notFound).toBeUndefined();
       expect(yield* Ref.get(harness.removedThreads)).toEqual([THREAD_ID]);
     }),
   );
@@ -763,6 +765,8 @@ describe("EnvironmentThreads", () => {
 
       expect(Option.isNone(state.data)).toBe(true);
       expect(Option.getOrThrow(state.error)).toContain("no longer exists");
+      // Only "not found": followed again once the server lists it.
+      expect(state.notFound).toBe(true);
       expect(yield* Ref.get(harness.removedThreads)).toEqual([THREAD_ID]);
       const callsAtDeletion = yield* Ref.get(harness.loaderCalls);
       expect(callsAtDeletion).toBe(3);

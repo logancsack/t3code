@@ -11,7 +11,7 @@ import {
 import { SidebarInset } from "../components/ui/sidebar";
 import { waitForDraftHeroTransition } from "../components/chat/draftHeroTransition";
 import { buildThreadRouteParams } from "../threadRoutes";
-import { useThread, useThreadRefs } from "../state/entities";
+import { useRefollowListedThread, useThread, useThreadRefs } from "../state/entities";
 
 function DraftChatThreadRouteView() {
   const navigate = useNavigate();
@@ -28,6 +28,9 @@ function DraftChatThreadRouteView() {
     : null;
   const serverThreadRef = draftSession?.promotedTo ?? inferredThreadRef;
   const serverThread = useThread(serverThreadRef);
+  // Taken for deleted before the server had it, the thread it was promoted to
+  // is followed again once the server lists it, and the draft moves to it.
+  useRefollowListedThread(serverThreadRef);
   const backgroundSubmissionPending = useBackgroundDraftSubmissionPending(serverThreadRef);
   const canonicalThreadRef = resolveDraftPromotionNavigationTarget({
     serverThreadRef,

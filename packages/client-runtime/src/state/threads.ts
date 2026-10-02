@@ -307,14 +307,22 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     }
   });
 
-  const setDeleted = Effect.fn("EnvironmentThreadState.setDeleted")(function* (error?: string) {
+  // "not-found": the server answered "not found" several times running rather
+  // than reporting the thread deleted, so it may yet exist (shouldRefollowThread).
+  const setDeleted = Effect.fn("EnvironmentThreadState.setDeleted")(function* (
+    reason: "deleted" | "not-found",
+  ) {
     yield* Ref.set(awaitingCompletion, false);
     yield* Ref.update(historyEpoch, (epoch) => epoch + 1);
     yield* SubscriptionRef.set(state, {
       data: Option.none(),
       status: "deleted",
-      error: error === undefined ? Option.none() : Option.some(error),
+      error:
+        reason === "not-found"
+          ? Option.some("This thread no longer exists on the server.")
+          : Option.none(),
       page: Option.none(),
+      ...(reason === "not-found" ? { notFound: true } : {}),
     });
     yield* cache.removeThread(environmentId, threadId).pipe(
       Effect.catch((error) =>
@@ -363,7 +371,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     const current = yield* SubscriptionRef.get(state);
     if (Option.isNone(current.data)) {
       if (item.event.type === "thread.deleted") {
-        yield* setDeleted();
+        yield* setDeleted("deleted");
       }
       return;
     }
@@ -380,7 +388,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     if (result.kind === "updated") {
       yield* setThread(result.thread, "keep");
     } else if (result.kind === "deleted") {
-      yield* setDeleted();
+      yield* setDeleted("deleted");
     }
     // The event may have advanced the live state past a parked page's
     // watermark; merge it as soon as that happens.
@@ -641,7 +649,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
             case "not-found": {
               const streak = yield* Ref.updateAndGet(snapshotNotFoundStreak, (count) => count + 1);
               if (streak >= MISSING_THREAD_NOT_FOUND_THRESHOLD) {
-                yield* setDeleted("This thread no longer exists on the server.");
+                yield* setDeleted("not-found");
                 return yield* Effect.never;
               }
               break;
