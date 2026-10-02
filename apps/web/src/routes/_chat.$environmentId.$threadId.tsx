@@ -7,7 +7,12 @@ import { finalizePromotedDraftThreadByRef, useComposerDraftStore } from "../comp
 import { resolveThreadRouteRef, resolveThreadRouteRenderState } from "../threadRoutes";
 import { resolveThreadSyncPhase } from "../threadSync";
 import { SidebarInset } from "~/components/ui/sidebar";
-import { useThreadDetail, useThreadShell, useThreadStatus } from "../state/entities";
+import {
+  useRefollowListedThread,
+  useThreadDetail,
+  useThreadShell,
+  useThreadStatus,
+} from "../state/entities";
 import { useEnvironmentQuery } from "../state/query";
 import { environmentShell } from "../state/shell";
 
@@ -22,6 +27,10 @@ function ChatThreadRouteView() {
   const serverThreadShell = useThreadShell(threadRef);
   const serverThreadDetail = useThreadDetail(threadRef);
   const serverThreadStatus = useThreadStatus(threadRef);
+  // Opened before its first message reached the server (from a notification, a
+  // reload, the sidebar), a thread was taken for deleted and showed as the
+  // draft it was sent from; it loads once the server lists it.
+  useRefollowListedThread(threadRef);
   const bootstrapComplete = shell.data?.snapshot._tag === "Some";
   const draftThreadExists = useComposerDraftStore((store) =>
     threadRef ? store.getDraftThreadByRef(threadRef) !== null : false,
