@@ -72,7 +72,7 @@ describe("routineStatus", () => {
     expect(routineStatus(routine, dueIn)).toBe("Next tomorrow 8:00 AM");
     expect(routineStatus({ ...routine, enabled: false }, dueIn)).toBe("Paused");
     expect(routineStatus({ ...routine, nextRunAt: null, webhook: "https://x" }, dueIn)).toBe(
-      "Runs when its webhook is called",
+      "Webhook",
     );
   });
 });

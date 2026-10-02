@@ -125,7 +125,7 @@ export function routineStatus(
 ): string {
   if (!routine.enabled) return "Paused";
   if (routine.nextRunAt) return `Next ${dueIn(routine.nextRunAt)}`;
-  return routine.webhook ? "Runs when its webhook is called" : "Runs when you run it";
+  return routine.webhook ? "Webhook" : "When you run it";
 }
 
 /** How its last run went, for the user: Aldo's note, without its "failed: " prefix. */
