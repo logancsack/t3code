@@ -79,7 +79,11 @@ function repositoryIdentity(project: AldoPlannedProject) {
   const provider = detectSourceControlProviderFromGitRemoteUrl(project.remoteUrl);
   return {
     canonicalKey,
-    locator: { source: "git-remote", remoteName: "origin", remoteUrl: project.remoteUrl },
+    locator: {
+      source: "git-remote",
+      remoteName: project.remoteName ?? "origin",
+      remoteUrl: project.remoteUrl,
+    },
     rootPath: project.workspaceRoot,
     ...(repositoryPath ? { displayName: repositoryPath } : {}),
     ...(provider ? { provider: provider.kind } : {}),
@@ -112,7 +116,8 @@ function plannedShell(project: AldoPlannedProject) {
 
 /**
  * Opens a new thread's cloud agent (a machine) without starting it: in
- * repositories, like another thread's, or in a new repository. Uses an idle
+ * repositories, like another thread's, in a new repository, or in none
+ * (`repos: []`: a General thread, for work that isn't code). Uses an idle
  * machine of the same project when there is one; otherwise records a new
  * one and registers it with its project and models. Returns its project.
  */

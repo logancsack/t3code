@@ -2,6 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   aldoIntegrationResultFilter,
+  describeAldoCapabilities,
   parseAldoIntegrationMessage,
   parseAldoIntegrationRedirect,
   withoutAldoIntegrationRedirect,
@@ -96,5 +97,16 @@ describe("aldoIntegrationResultFilter", () => {
     expect(isNew(failed, 1_000)).toBe(true);
     expect(isNew({ ...failed, message: "Admin approval required" }, 1_100)).toBe(true);
     expect(isNew({ provider: "microsoft", ok: true, message: null }, 1_200)).toBe(true);
+  });
+});
+
+describe("describeAldoCapabilities", () => {
+  it("lists what agents can use, in words", () => {
+    expect(describeAldoCapabilities(["files"])).toBe("files");
+    expect(describeAldoCapabilities(["mail", "calendar", "contacts"])).toBe(
+      "mail, calendar and contacts",
+    );
+    expect(describeAldoCapabilities(["mail", "something-newer", "files"])).toBe("mail and files");
+    expect(describeAldoCapabilities([])).toBe("");
   });
 });

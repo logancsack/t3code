@@ -240,6 +240,14 @@ export function filterHome(home: AldoHome, repo: string | null): AldoHome {
       (pr) => pr.repo === repo || threads.has(pr.environmentId),
     ),
     upcoming: home.upcoming.filter((d) => threads.has(d.thread.environmentId)),
+    ...(home.routines
+      ? {
+          routines: home.routines.filter(
+            (r) =>
+              r.repos.includes(repo) || (r.thread !== null && threads.has(r.thread.environmentId)),
+          ),
+        }
+      : {}),
     actions: home.actions.filter((a) => !a.thread || threads.has(a.thread.environmentId)),
   };
 }
@@ -295,6 +303,10 @@ const FAILED_LABELS: Record<string, string> = {
   set_machine_size: "Couldn't change a machine's size",
   send_upcoming_now: "Couldn't send a queued message",
   cancel_upcoming: "Couldn't cancel a queued message",
+  create_routine: "Couldn't set up a routine",
+  update_routine: "Couldn't change a routine",
+  run_routine: "Couldn't run a routine",
+  delete_routine: "Couldn't remove a routine",
 };
 
 /** What a call that undoes its tool's name couldn't do. */
@@ -322,6 +334,8 @@ export function deliveryLabel(delivery: AldoHomeDelivery): string {
       return "Reminder";
     case "message":
       return "Your message";
+    case "routine":
+      return "Routine run";
     default:
       return "Notice";
   }

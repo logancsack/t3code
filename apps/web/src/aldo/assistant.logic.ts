@@ -148,6 +148,10 @@ export const ACTION_LABELS: Record<string, string> = {
   set_machine_size: "Changed a machine's size",
   send_upcoming_now: "Sent a queued message now",
   cancel_upcoming: "Canceled a queued message",
+  create_routine: "Set up a routine",
+  update_routine: "Changed a routine",
+  run_routine: "Ran a routine",
+  delete_routine: "Removed a routine",
 };
 
 /** The labels for calls that undo what their tool's name says: unpinning, unsnoozing, unsettling. */
