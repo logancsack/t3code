@@ -397,7 +397,9 @@ export function UpcomingSection(props: {
   const act = async (delivery: AldoHomeDelivery, what: "send" | "cancel") => {
     if (what === "cancel") {
       const confirmed = await (requestConfirmDialog(
-        `Cancel this ${deliveryLabel(delivery).toLowerCase()}? It won't be sent.`,
+        delivery.kind === "routine"
+          ? "Cancel this routine run? It won't run (the routine's next runs still will)."
+          : `Cancel this ${deliveryLabel(delivery).toLowerCase()}? It won't be sent.`,
         { variant: "destructive" },
       ) ?? Promise.resolve(true));
       if (!confirmed) return;
@@ -406,7 +408,15 @@ export function UpcomingSection(props: {
     try {
       if (what === "send") await sendAldoDeliveryNow(delivery.id);
       else await cancelAldoDelivery(delivery.id);
-      toastManager.add({ type: "success", title: what === "send" ? "Sending it now" : "Canceled" });
+      toastManager.add({
+        type: "success",
+        title:
+          what === "cancel"
+            ? "Canceled"
+            : delivery.kind === "routine"
+              ? "Running it now"
+              : "Sending it now",
+      });
       props.onActed();
     } catch (cause) {
       toastManager.add({ type: "error", title: "Couldn't do that", description: messageOf(cause) });
@@ -448,7 +458,7 @@ export function UpcomingSection(props: {
                   disabled={busy !== null}
                   onClick={() => void act(d, "send")}
                 >
-                  Send now
+                  {d.kind === "routine" ? "Run now" : "Send now"}
                 </Button>
               ) : null}
               <Button

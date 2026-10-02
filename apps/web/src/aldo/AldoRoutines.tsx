@@ -66,6 +66,8 @@ export function RoutinesSection(props: {
   readonly onChanged: () => void;
 }) {
   const [creating, setCreating] = useState(false);
+  /** A routine is being set up: the form stays open until Aldo answers, whichever way it's dismissed. */
+  const [saving, setSaving] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
 
   const act = async (routine: AldoRoutine, what: "run" | "pause" | "resume" | "delete") => {
@@ -106,6 +108,11 @@ export function RoutinesSection(props: {
   };
 
   const copyWebhook = (url: string) => {
+    // Without the Clipboard API (an insecure page, an older browser), the URL is shown to copy by hand.
+    if (typeof navigator.clipboard?.writeText !== "function") {
+      toastManager.add({ type: "info", title: "Copy the webhook URL", description: url });
+      return;
+    }
     void navigator.clipboard
       .writeText(url)
       .then(() =>
@@ -236,9 +243,10 @@ export function RoutinesSection(props: {
           })}
         </ul>
       )}
-      <Dialog open={creating} onOpenChange={(open) => !open && setCreating(false)}>
+      <Dialog open={creating} onOpenChange={(open) => !open && !saving && setCreating(false)}>
         {creating ? (
           <NewRoutine
+            onSaving={setSaving}
             onDone={(created) => {
               setCreating(false);
               if (created) props.onChanged();
@@ -250,9 +258,16 @@ export function RoutinesSection(props: {
   );
 }
 
-function NewRoutine(props: { readonly onDone: (created: boolean) => void }) {
+function NewRoutine(props: {
+  readonly onDone: (created: boolean) => void;
+  readonly onSaving: (saving: boolean) => void;
+}) {
   const [form, setForm] = useState<RoutineForm>(EMPTY_ROUTINE_FORM);
-  const [saving, setSaving] = useState(false);
+  const [saving, setSavingHere] = useState(false);
+  const setSaving = (value: boolean) => {
+    setSavingHere(value);
+    props.onSaving(value);
+  };
   const [error, setError] = useState<string | null>(null);
   const set = (patch: Partial<RoutineForm>) => setForm((current) => ({ ...current, ...patch }));
   const request = routineRequest(form);
@@ -277,6 +292,7 @@ function NewRoutine(props: { readonly onDone: (created: boolean) => void }) {
           ? `It runs ${routine.when.charAt(0).toLowerCase()}${routine.when.slice(1)}.`
           : "Copy its webhook URL from the list to use it.",
       });
+      setSaving(false);
       props.onDone(true);
     } catch (cause) {
       setError(messageOf(cause));
