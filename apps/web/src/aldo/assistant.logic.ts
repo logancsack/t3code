@@ -19,6 +19,8 @@ export interface AldoAssistantMessage {
   readonly role: "user" | "assistant";
   readonly text: string;
   readonly at: string;
+  /** Images the user sent with it, to show (data URLs); kept for this page only. */
+  readonly images?: ReadonlyArray<string>;
 }
 
 /** Something Aldo did in this conversation, shown under what was said. */
@@ -28,6 +30,8 @@ export interface AldoAssistantAction {
   readonly label: string;
   readonly failed: boolean;
   readonly open?: AldoOpenTarget;
+  /** A page it made or opened (a preview, a pull request), in a new tab. */
+  readonly href?: string;
 }
 
 export interface AldoOpenTarget {
@@ -76,6 +80,39 @@ export function openTargetOf(outcome: unknown): AldoOpenTarget | null {
   return { environmentId: open.environmentId, threadId: open.threadId };
 }
 
+/**
+ * A message as Aldo keeps it names the images sent with it ("[image img_…:
+ * name]", so Aldo can attach them later): the words to show, and the images'
+ * names.
+ */
+export function withoutImageNotes(text: string): {
+  readonly text: string;
+  readonly images: ReadonlyArray<{ readonly id: string; readonly name: string }>;
+} {
+  const images: { id: string; name: string }[] = [];
+  const words = text.replace(
+    /\[image (img_[A-Za-z0-9]+): ([^\]\n]*)\]/g,
+    (_, id: string, name: string) => {
+      images.push({ id, name: name.trim() || "image" });
+      return "";
+    },
+  );
+  return { text: words.trim(), images };
+}
+
+/** The app a tool's result asks the page to open in a new tab (open_preview), if any. */
+export function previewOf(outcome: unknown): string | null {
+  const url = (outcome as { result?: { preview?: { url?: unknown } } } | null)?.result?.preview
+    ?.url;
+  return typeof url === "string" && /^https?:\/\//.test(url) ? url : null;
+}
+
+/** The page an action made, for the conversation to link to: a preview, or a pull request it opened. */
+function hrefOf(outcome: unknown): string | null {
+  const url = (outcome as { result?: { url?: unknown } } | null)?.result?.url;
+  return previewOf(outcome) ?? (typeof url === "string" && /^https?:\/\//.test(url) ? url : null);
+}
+
 /** The thread an action acted on, which its result names for the page to link to. */
 function threadOf(outcome: unknown): AldoOpenTarget | null {
   const thread = (outcome as { result?: { thread?: unknown } } | null)?.result?.thread as
@@ -97,24 +134,69 @@ export const ACTION_LABELS: Record<string, string> = {
   unarchive_thread: "Brought a thread back",
   delete_thread: "Deleted a thread",
   merge_pull_request: "Merged a pull request",
+  open_pull_request: "Opened a pull request",
+  stop_following_pull_request: "Stopped following a pull request",
+  run_command: "Ran a command",
+  write_file: "Edited a file",
+  open_preview: "Opened a preview",
+  revert_thread: "Reverted a thread",
+  pin_thread: "Pinned a thread",
+  snooze_thread: "Snoozed a thread",
+  settle_thread: "Settled a thread",
+  answer_computer_request: "Answered a computer request",
+  stop_computer: "Stopped a computer",
+  set_machine_size: "Changed a machine's size",
+  send_upcoming_now: "Sent a queued message now",
+  cancel_upcoming: "Canceled a queued message",
 };
+
+/** The labels for calls that undo what their tool's name says: unpinning, unsnoozing, unsettling. */
+export const REVERSE_LABELS: Record<string, string> = {
+  pin_thread: "Unpinned a thread",
+  snooze_thread: "Brought back a snoozed thread",
+  settle_thread: "Made a thread active again",
+};
+
+/** Whether a call undoes what its tool's name says (pin_thread with pinned: false, say). */
+export function reverses(call: Pick<AldoFunctionCall, "name" | "arguments">): boolean {
+  switch (call.name) {
+    case "pin_thread":
+      return call.arguments.pinned === false;
+    case "snooze_thread":
+      return !call.arguments.until;
+    case "settle_thread":
+      return call.arguments.settled === false;
+    default:
+      return false;
+  }
+}
+
+function labelFor(call: AldoFunctionCall): string | undefined {
+  return (reverses(call) ? REVERSE_LABELS[call.name] : undefined) ?? ACTION_LABELS[call.name];
+}
 
 /**
  * The action a tool call makes, for the conversation to show: one per call
  * that changed something (reads and show_thread aren't shown).
  */
 export function actionFor(call: AldoFunctionCall, outcome: unknown): AldoAssistantAction | null {
-  const label = ACTION_LABELS[call.name];
+  const label = labelFor(call);
   if (!label) return null;
   const error = (outcome as { error?: unknown } | null)?.error;
   const title = typeof call.arguments.title === "string" ? call.arguments.title : null;
-  const open = call.name === "delete_thread" ? null : threadOf(outcome);
+  const href = hrefOf(outcome);
+  // A preview opens the app, not its thread.
+  const open =
+    call.name === "delete_thread" || call.name === "open_preview" ? null : threadOf(outcome);
+  // open_preview reads; it's shown only when it opened something.
+  if (call.name === "open_preview" && !href && typeof error !== "string") return null;
   return {
     id: call.callId,
     tool: call.name,
     label: typeof error === "string" ? `Couldn't: ${error}` : title ? `${label}: ${title}` : label,
     failed: typeof error === "string",
     ...(open ? { open } : {}),
+    ...(href ? { href } : {}),
   };
 }
 

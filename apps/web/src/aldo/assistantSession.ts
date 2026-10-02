@@ -22,6 +22,7 @@ import {
   actionFor,
   functionCallsIn,
   openTargetOf,
+  previewOf,
   phaseAfter,
   rememberHeard,
   startNews,
@@ -40,6 +41,7 @@ import {
   getAldoEnvironments,
   requestAldoDirectoryRefresh,
   subscribeAldoEnvironments,
+  type AldoImageUpload,
 } from "./cloud";
 
 const REALTIME_CALLS_URL = "https://api.openai.com/v1/realtime/calls";
@@ -67,6 +69,8 @@ interface AldoAssistantState {
   readonly levels: { readonly mic: number; readonly aldo: number };
   /** What the user typed that couldn't be sent (the conversation didn't start), for the composer to give back. */
   readonly unsent: string | null;
+  /** Images that couldn't be sent with it, given back the same way. */
+  readonly unsentImages: ReadonlyArray<AldoImageUpload> | null;
   /** A written reply is on its way (typed without a call on). */
   readonly replying: boolean;
 }
@@ -81,6 +85,7 @@ export const useAldoAssistant = create<AldoAssistantState>(() => ({
   historyLoaded: false,
   levels: { mic: 0, aldo: 0 },
   unsent: null,
+  unsentImages: null,
   replying: false,
 }));
 
@@ -124,6 +129,15 @@ export function setAldoAssistantNavigator(
   navigate: ((target: AldoOpenTarget) => void) | null,
 ): void {
   openThread = navigate;
+}
+
+/**
+ * Opens the app a tool's result names (open_preview) in a new tab. A browser
+ * may block it outside a click; the conversation links to it either way.
+ */
+function openPreview(outcome: unknown): void {
+  const url = previewOf(outcome);
+  if (url && typeof window !== "undefined") window.open(url, "_blank", "noopener");
 }
 
 export function aldoAssistantLive(): boolean {
@@ -248,6 +262,7 @@ async function runCalls(calls: ReadonlyArray<AldoFunctionCall>): Promise<void> {
       : { error: "The conversation ended." };
     const open = openTargetOf(outcome);
     if (open) openThread?.(open);
+    openPreview(outcome);
     const action = actionFor(call, outcome);
     if (action) {
       addEntry({ kind: "action", ...action });
@@ -434,10 +449,15 @@ export function disconnectAldo(): void {
 
 /**
  * Typed words: into the call when one is on; otherwise to Aldo in writing
- * (or, on an older Aldo, into a call that starts typed only).
+ * (or, on an older Aldo, into a call that starts typed only). Images go in
+ * writing only: the composer offers them when no call is on.
  */
-export function sendText(text: string): void {
+export function sendText(text: string, images: ReadonlyArray<AldoImageUpload> = []): void {
   const words = text.trim();
+  if (images.length > 0 && !aldoAssistantLive()) {
+    void chatText(words, images);
+    return;
+  }
   if (!words) return;
   if (aldoAssistantLive()) {
     if (channel?.readyState !== "open") {
@@ -466,11 +486,11 @@ export function seedAldoComposer(text: string): void {
   set({ unsent: text });
 }
 
-/** A written turn: the words go to Aldo, and its reply comes back with what it did. */
-async function chatText(words: string): Promise<void> {
+/** A written turn: the words (and images) go to Aldo, and its reply comes back with what it did. */
+async function chatText(words: string, images: ReadonlyArray<AldoImageUpload> = []): Promise<void> {
   if (get().replying) {
     // One turn at a time; the words come back to the composer.
-    set({ unsent: words });
+    set({ unsent: words, ...(images.length > 0 ? { unsentImages: images } : {}) });
     return;
   }
   heard = rememberHeard(heard, words);
@@ -479,11 +499,12 @@ async function chatText(words: string): Promise<void> {
     role: "user",
     text: words,
     at: new Date().toISOString(),
+    ...(images.length > 0 ? { images: images.map((image) => image.dataUrl) } : {}),
   };
   addEntry(entry);
   set({ replying: true, error: null });
   try {
-    const turn = await aldoAssistant.chat(chatSessionId, words).catch((error: unknown) => {
+    const turn = await aldoAssistant.chat(chatSessionId, words, images).catch((error: unknown) => {
       if (error instanceof AldoApiError && error.status === 404) return null;
       throw error;
     });
@@ -505,6 +526,7 @@ async function chatText(words: string): Promise<void> {
       };
       const open = openTargetOf(call.outcome);
       if (open) openThread?.(open);
+      openPreview(call.outcome);
       const action = actionFor(made, call.outcome);
       if (action) {
         addEntry({ kind: "action", ...action });
@@ -524,6 +546,7 @@ async function chatText(words: string): Promise<void> {
       entries: get().entries.filter((e) => e !== entry),
       error: messageOf(error),
       unsent: words,
+      ...(images.length > 0 ? { unsentImages: images } : {}),
     });
   } finally {
     set({ replying: false });

@@ -5,9 +5,11 @@ import {
   functionCallsIn,
   openTargetOf,
   phaseAfter,
+  previewOf,
   rememberHeard,
   startNews,
   startWatchFor,
+  withoutImageNotes,
   type AldoStartWatch,
 } from "./assistant.logic";
 
@@ -101,6 +103,76 @@ describe("actionFor", () => {
     expect(
       actionFor({ callId: "c5", name: "show_thread", arguments: {} }, { result: {} }),
     ).toBeNull();
+  });
+
+  it("links a preview it opened to the app, not the thread", () => {
+    const url = "https://aldo.example/p/k3j9x0a1b2/3000";
+    const call = { callId: "c6", name: "open_preview", arguments: { thread: "k3j9x0a1b2" } };
+    expect(actionFor(call, { result: { preview: { url, port: 3000 }, thread } })).toEqual({
+      id: "c6",
+      tool: "open_preview",
+      label: "Opened a preview",
+      failed: false,
+      href: url,
+    });
+    // Several ports to choose from: nothing opened yet.
+    expect(actionFor(call, { result: { ports: [{ port: 3000 }, { port: 5173 }] } })).toBeNull();
+  });
+
+  it("links a pull request it opened", () => {
+    const call = {
+      callId: "c7",
+      name: "open_pull_request",
+      arguments: { thread: "k3j9x0a1b2", title: "Fix login" },
+    };
+    expect(
+      actionFor(call, { result: { thread, number: 12, url: "https://github.com/o/r/pull/12" } }),
+    ).toMatchObject({
+      label: "Opened a pull request: Fix login",
+      href: "https://github.com/o/r/pull/12",
+      open: thread,
+    });
+  });
+
+  it("says what an undoing call did", () => {
+    const unpin = { callId: "c8", name: "pin_thread", arguments: { thread: "x", pinned: false } };
+    expect(actionFor(unpin, { result: { thread } })?.label).toBe("Unpinned a thread");
+    const wake = { callId: "c9", name: "snooze_thread", arguments: { thread: "x" } };
+    expect(actionFor(wake, { result: { thread } })?.label).toBe("Brought back a snoozed thread");
+    const snooze = {
+      callId: "c10",
+      name: "snooze_thread",
+      arguments: { thread: "x", until: "2026-10-03T09:00:00Z" },
+    };
+    expect(actionFor(snooze, { result: { thread } })?.label).toBe("Snoozed a thread");
+  });
+});
+
+describe("withoutImageNotes", () => {
+  it("shows the words, and the images a kept message names", () => {
+    expect(
+      withoutImageNotes("What's this?\n\n[image img_ab12: shot.png] [image img_cd34: b.jpg]"),
+    ).toEqual({
+      text: "What's this?",
+      images: [
+        { id: "img_ab12", name: "shot.png" },
+        { id: "img_cd34", name: "b.jpg" },
+      ],
+    });
+    expect(withoutImageNotes("No images [here].")).toEqual({
+      text: "No images [here].",
+      images: [],
+    });
+  });
+});
+
+describe("previewOf", () => {
+  it("opens only a web address", () => {
+    expect(previewOf({ result: { preview: { url: "https://a.example/p/x/3000" } } })).toBe(
+      "https://a.example/p/x/3000",
+    );
+    expect(previewOf({ result: { preview: { url: "javascript:alert(1)" } } })).toBeNull();
+    expect(previewOf({ error: "nope" })).toBeNull();
   });
 });
 

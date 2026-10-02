@@ -2,7 +2,7 @@
 // user's work (cloud.ts AldoHome) sorts into what needs them, what's working,
 // what shipped and what's coming, and the words for each.
 
-import { ACTION_LABELS } from "./assistant.logic";
+import { ACTION_LABELS, REVERSE_LABELS } from "./assistant.logic";
 import type {
   AldoHome,
   AldoHomeAction,
@@ -282,14 +282,37 @@ const FAILED_LABELS: Record<string, string> = {
   unarchive_thread: "Couldn't bring a thread back",
   delete_thread: "Couldn't delete a thread",
   merge_pull_request: "Couldn't merge a pull request",
+  open_pull_request: "Couldn't open a pull request",
+  stop_following_pull_request: "Couldn't stop following a pull request",
+  run_command: "Couldn't run a command",
+  write_file: "Couldn't edit a file",
+  revert_thread: "Couldn't revert a thread",
+  pin_thread: "Couldn't pin a thread",
+  snooze_thread: "Couldn't snooze a thread",
+  settle_thread: "Couldn't settle a thread",
+  answer_computer_request: "Couldn't answer a computer request",
+  stop_computer: "Couldn't stop a computer",
+  set_machine_size: "Couldn't change a machine's size",
+  send_upcoming_now: "Couldn't send a queued message",
+  cancel_upcoming: "Couldn't cancel a queued message",
+};
+
+/** What a call that undoes its tool's name couldn't do. */
+const FAILED_REVERSE_LABELS: Record<string, string> = {
+  pin_thread: "Couldn't unpin a thread",
+  snooze_thread: "Couldn't bring back a snoozed thread",
+  settle_thread: "Couldn't make a thread active again",
 };
 
 /** What Aldo did (or couldn't), in a few words, for its log: "Started a thread: Fix checkout". */
 export function actionLabel(action: AldoHomeAction): string {
   const plain = action.tool.replace(/_/g, " ");
+  const reverse = action.reverse === true;
   const label = action.failed
-    ? (FAILED_LABELS[action.tool] ?? `Couldn't ${plain}`)
-    : (ACTION_LABELS[action.tool] ?? plain);
+    ? ((reverse ? FAILED_REVERSE_LABELS[action.tool] : undefined) ??
+      FAILED_LABELS[action.tool] ??
+      `Couldn't ${plain}`)
+    : ((reverse ? REVERSE_LABELS[action.tool] : undefined) ?? ACTION_LABELS[action.tool] ?? plain);
   return action.title ? `${label}: ${action.title}` : label;
 }
 
