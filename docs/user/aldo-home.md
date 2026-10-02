@@ -19,7 +19,9 @@ Answering a thread whose agent has gone to sleep wakes it, so a button can take 
 
 **Pull requests.** Every pull request Aldo follows, in three lanes: **open** (draft, checks running, failing, or green), **shipping** (merged, deploying), and **shipped** (deployed in the last two days). Each shows its stage, how many fixes the agent has made, whether reviews went to you, and, when your policy has Aldo merge green pull requests, when it will. **Merge** merges a green one yourself. See [Pull requests in Aldo](./aldo-pull-requests.md).
 
-**Coming up.** Reminders agents set for themselves, and messages of yours waiting for a busy thread. **Send now** sends one without waiting; **Cancel** drops it.
+**Coming up.** Reminders agents set for themselves, messages of yours waiting for a busy thread, and routine runs waiting for theirs. **Send now** sends one without waiting; **Cancel** drops it.
+
+**Routines.** What you have Aldo do on a schedule or when a webhook is called: when each runs next, how its last run went, and its thread. **Run now**, **Pause** and **Remove** are on each; **New routine** sets one up. See [Routines in Aldo](./aldo-routines.md).
 
 **Done.** Threads that finished in the last two days. What's new since you last opened the home screen on this device is marked. **Catch me up** has Aldo tell you.
 
@@ -28,6 +30,10 @@ Answering a thread whose agent has gone to sleep wakes it, so a button can take 
 Below those, a line shows how many agents are running against your plan, your credits, and what agents have spent, and **How Aldo works for you** shows the policy your agents follow (merging, spending, automated reviews).
 
 When something needs fixing, a strip at the top says so: an agent that's signed out on your cloud agents, credits used up, an environment that failed to build, or notifications off on this device. Each has a way to fix it.
+
+## Starting work
+
+At the top, **New project** creates a repository and starts a thread in it, **Open a repository** starts one in repositories you have, and **New thread** starts one in no repository, for work that isn't code (see [Threads without a repository](./aldo-general-threads.md)). Or tell Aldo what you want done.
 
 ## Narrowing and moving
 

@@ -90,13 +90,14 @@ function IntegrationRow(props: {
   if (!spec) return null;
   // Connected, but the provider stopped accepting the sign-in: it needs connecting again.
   const broken = integration.connected && integration.error !== null;
-  // Connected from before Aldo asked for mail and calendar (or with some left out): connecting again adds them.
-  const missing = integration.connected && !broken ? (integration.missing ?? []) : [];
-  const reconnect =
-    broken || missing.length > 0
-      ? (spec.accounts.find((account) => account.type === integration.account?.type) ??
-        spec.accounts[0]!)
-      : null;
+  // Connected from before Aldo asked for mail and calendar (or with some left out): connecting
+  // again adds them. What a newer Aldo names and this client doesn't know is left out of both.
+  const canUse = integration.connected ? describeAldoCapabilities(integration.can ?? []) : "";
+  const toAdd =
+    integration.connected && !broken ? describeAldoCapabilities(integration.missing ?? []) : "";
+  // Connecting again goes the way it was connected; when that's unknown, every way is offered.
+  const sameWay = spec.accounts.find((account) => account.type === integration.account?.type);
+  const reconnect = broken || toAdd ? (sameWay ? [sameWay] : spec.accounts) : [];
 
   const disconnect = () => {
     setBusy(true);
@@ -133,15 +134,11 @@ function IntegrationRow(props: {
                 ? ` as ${integration.account.email}${integration.account.type ? ` (${ACCOUNT_TYPE[integration.account.type]})` : ""}`
                 : ""}
             </span>
-            {integration.can && integration.can.length > 0 ? (
-              <span className="text-muted-foreground">
-                Agents can use your {describeAldoCapabilities(integration.can)}.
-              </span>
+            {canUse ? (
+              <span className="text-muted-foreground">Agents can use your {canUse}.</span>
             ) : null}
-            {missing.length > 0 ? (
-              <span className="text-warning-foreground">
-                Connect again to add your {describeAldoCapabilities(missing)}.
-              </span>
+            {toAdd ? (
+              <span className="text-warning-foreground">Connect again to add your {toAdd}.</span>
             ) : null}
           </span>
         ) : (
@@ -150,27 +147,29 @@ function IntegrationRow(props: {
       }
       control={
         <div className="flex flex-wrap gap-2 sm:flex-col sm:items-stretch">
-          {!integration.connected ? (
-            spec.accounts.map((account, index) => (
-              <Button
-                key={account.type ?? account.label}
-                size="sm"
-                variant={index === 0 ? "default" : "outline"}
-                disabled={!integration.available || confirming || busy}
-                onClick={() => connect(integration.provider, account.type)}
-              >
-                {account.label}
-              </Button>
-            ))
-          ) : reconnect ? (
-            <Button
-              size="sm"
-              disabled={!integration.available || confirming || busy}
-              onClick={() => connect(integration.provider, reconnect.type)}
-            >
-              Connect again
-            </Button>
-          ) : null}
+          {!integration.connected
+            ? spec.accounts.map((account, index) => (
+                <Button
+                  key={account.type ?? account.label}
+                  size="sm"
+                  variant={index === 0 ? "default" : "outline"}
+                  disabled={!integration.available || confirming || busy}
+                  onClick={() => connect(integration.provider, account.type)}
+                >
+                  {account.label}
+                </Button>
+              ))
+            : reconnect.map((account, index) => (
+                <Button
+                  key={account.type ?? account.label}
+                  size="sm"
+                  variant={index === 0 ? "default" : "outline"}
+                  disabled={!integration.available || confirming || busy}
+                  onClick={() => connect(integration.provider, account.type)}
+                >
+                  {reconnect.length === 1 ? "Connect again" : account.label}
+                </Button>
+              ))}
           {/* A broken sign-in can be connected again or removed. */}
           {integration.connected ? (
             confirming ? (

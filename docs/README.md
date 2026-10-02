@@ -16,6 +16,8 @@
 - [Instructions in Aldo](./user/aldo-instructions.md)
 - [The Vault in Aldo](./user/vault.md)
 - [Integrations in Aldo](./user/aldo-integrations.md)
+- [Routines in Aldo](./user/aldo-routines.md)
+- [Threads without a repository in Aldo](./user/aldo-general-threads.md)
 - [Your Windows computer in Aldo](./user/aldo-windows-computer.md)
 - [Your GPU computer in Aldo](./user/aldo-gpu-computer.md)
 - [The home screen in Aldo](./user/aldo-home.md)

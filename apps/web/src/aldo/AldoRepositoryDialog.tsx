@@ -9,7 +9,15 @@ import {
   SparklesIcon,
   XIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+  type FormEvent,
+  type ReactNode,
+} from "react";
 
 import { Button } from "../components/ui/button";
 import {
@@ -37,6 +45,7 @@ import {
   aldoSupportsGeneralThreads,
   isAldoCloud,
   listAldoRepositoryDirectory,
+  subscribeAldoEnvironments,
   type AldoAccount,
   type AldoHostKind,
 } from "./cloud";
@@ -114,8 +123,12 @@ const DESCRIPTIONS: Record<Mode, string> = {
 function StartPicker(props: { readonly initialMode: Mode; readonly onDone: () => void }) {
   const { accounts, error: accountsError, refresh: refreshAccounts } = useAldoAccounts();
   const connectedHosts = HOST_KINDS.filter((kind) => accounts?.[kind]?.connected === true);
-  // An older Aldo can't start a thread without a repository.
-  const general = aldoSupportsGeneralThreads();
+  // An older Aldo can't start a thread without a repository (the directory says, once listed).
+  const general = useSyncExternalStore(
+    subscribeAldoEnvironments,
+    aldoSupportsGeneralThreads,
+    () => false,
+  );
   const [mode, setMode] = useState<Mode>(
     props.initialMode === "general" && !general ? "existing" : props.initialMode,
   );

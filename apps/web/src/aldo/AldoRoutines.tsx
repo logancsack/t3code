@@ -41,6 +41,7 @@ import { ThreadLink } from "./AldoHomeInbox";
 import {
   createAldoRoutine,
   deleteAldoRoutine,
+  requestAldoDirectoryRefresh,
   runAldoRoutine,
   updateAldoRoutine,
   type AldoRoutine,
@@ -79,11 +80,18 @@ export function RoutinesSection(props: {
     try {
       if (what === "run") {
         const result = await runAldoRoutine(routine.id);
+        const failed = result.startsWith("failed");
         toastManager.add({
-          type: result.startsWith("failed") ? "error" : "success",
-          title: result.startsWith("skipped") ? "Not run" : `Running "${routine.title}"`,
+          type: failed ? "error" : "success",
+          title: failed
+            ? `"${routine.title}" couldn't run`
+            : result.startsWith("skipped")
+              ? "Not run"
+              : `Running "${routine.title}"`,
           description: result.replace(/^(failed|skipped): /, ""),
         });
+        // Its first run makes its thread: list it now, so "Open its thread" goes somewhere.
+        requestAldoDirectoryRefresh();
       } else if (what === "delete") {
         await deleteAldoRoutine(routine.id);
       } else {
@@ -419,7 +427,12 @@ function NewRoutine(props: { readonly onDone: (created: boolean) => void }) {
           {!request.ok && (form.title || form.instruction) ? (
             <span className="mr-auto text-muted-foreground text-xs">{request.reason}</span>
           ) : null}
-          <Button type="button" variant="ghost" onClick={() => props.onDone(false)}>
+          <Button
+            disabled={saving}
+            type="button"
+            variant="ghost"
+            onClick={() => props.onDone(false)}
+          >
             Cancel
           </Button>
           <Button type="submit" disabled={!request.ok || saving}>
