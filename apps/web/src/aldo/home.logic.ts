@@ -282,6 +282,19 @@ const FAILED_LABELS: Record<string, string> = {
   unarchive_thread: "Couldn't bring a thread back",
   delete_thread: "Couldn't delete a thread",
   merge_pull_request: "Couldn't merge a pull request",
+  open_pull_request: "Couldn't open a pull request",
+  stop_following_pull_request: "Couldn't stop following a pull request",
+  run_command: "Couldn't run a command",
+  write_file: "Couldn't edit a file",
+  revert_thread: "Couldn't revert a thread",
+  pin_thread: "Couldn't pin a thread",
+  snooze_thread: "Couldn't snooze a thread",
+  settle_thread: "Couldn't settle a thread",
+  answer_computer_request: "Couldn't answer a computer request",
+  stop_computer: "Couldn't stop a computer",
+  set_machine_size: "Couldn't change a machine's size",
+  send_upcoming_now: "Couldn't send a queued message",
+  cancel_upcoming: "Couldn't cancel a queued message",
 };
 
 /** What Aldo did (or couldn't), in a few words, for its log: "Started a thread: Fix checkout". */

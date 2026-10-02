@@ -13,9 +13,11 @@ import {
   ArrowUpRightIcon,
   ChevronDownIcon,
   ChevronUpIcon,
+  ImagePlusIcon,
   MicIcon,
   MicOffIcon,
   PhoneOffIcon,
+  XIcon,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
@@ -23,6 +25,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { cn } from "~/lib/utils";
+import { prepareImageForAttachment } from "~/lib/imageCompression";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { useThreadShells } from "../state/entities";
 import type { AldoAssistantPhase, AldoOpenTarget } from "./assistant.logic";
@@ -35,7 +38,12 @@ import {
   useAldoAssistant,
   type AldoConversationEntry,
 } from "./assistantSession";
-import { aldoAssistant, aldoAssistantAvailable } from "./cloud";
+import {
+  aldoAssistant,
+  aldoAssistantInfo,
+  type AldoImageLimits,
+  type AldoImageUpload,
+} from "./cloud";
 
 const OVERVIEW_EVERY_MS = 20_000;
 
@@ -123,22 +131,72 @@ export function AldoPane(props: {
 }
 
 /** The orb: tap to talk or hang up; it swells with whoever is speaking. */
-let assistantAvailable: Promise<boolean> | null = null;
+let assistantInfo: ReturnType<typeof aldoAssistantInfo> | null = null;
 
 /** Whether this Aldo has the assistant, asked once per page; null until it's known. */
 export function useAldoAssistantAvailable(): boolean | null {
   const [available, setAvailable] = useState<boolean | null>(null);
   useEffect(() => {
     let current = true;
-    assistantAvailable ??= aldoAssistantAvailable();
-    void assistantAvailable.then((value) => {
-      if (current) setAvailable(value);
+    assistantInfo ??= aldoAssistantInfo();
+    void assistantInfo.then((info) => {
+      if (current) setAvailable(info.available);
     });
     return () => {
       current = false;
     };
   }, []);
   return available;
+}
+
+/** The images this Aldo's written messages take, asked once per page; null when none (or not known yet). */
+function useAldoImageLimits(): AldoImageLimits | null {
+  const [limits, setLimits] = useState<AldoImageLimits | null>(null);
+  useEffect(() => {
+    let current = true;
+    assistantInfo ??= aldoAssistantInfo();
+    void assistantInfo.then((info) => {
+      if (current) setLimits(info.images);
+    });
+    return () => {
+      current = false;
+    };
+  }, []);
+  return limits;
+}
+
+/** A request to Aldo is at most 4.5 MB: the images of one message share about 3 MB, before base64. */
+const IMAGES_BYTES = 3_000_000;
+
+function readAsDataUrl(file: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => resolve(String(reader.result)));
+    reader.addEventListener("error", () =>
+      reject(reader.error ?? new Error("Couldn't read the image.")),
+    );
+    reader.readAsDataURL(file);
+  });
+}
+
+/** An image the user gave, made small enough to send: null (with why) if it can't be. */
+async function imageUpload(
+  file: File,
+  limits: AldoImageLimits,
+): Promise<{ image: AldoImageUpload } | { error: string }> {
+  const heic = /\.(heic|heif)$/i.test(file.name) || /^image\/hei[cf]$/i.test(file.type);
+  if (!heic && !limits.types.includes(file.type)) {
+    return { error: `${file.name || "That file"} isn't a PNG, JPEG, WebP or GIF image.` };
+  }
+  const budget = Math.min(limits.maxBytes, Math.floor(IMAGES_BYTES / limits.max));
+  const prepared = await prepareImageForAttachment(file, budget);
+  if (!prepared.ok) return { error: `${file.name || "That image"} is too large to send.` };
+  return {
+    image: {
+      name: prepared.file.name || file.name || "image",
+      dataUrl: await readAsDataUrl(prepared.file),
+    },
+  };
 }
 
 /** How to talk to Aldo from anywhere (AldoAssistantDock listens for it). */
@@ -263,11 +321,40 @@ function AldoComposer(props: {
   readonly onChip: (chip: string) => void;
 }) {
   const [text, setText] = useState("");
+  const [images, setImages] = useState<ReadonlyArray<AldoImageUpload>>([]);
+  const [imageError, setImageError] = useState<string | null>(null);
   const phase = useAldoAssistant((s) => s.phase);
   const unsent = useAldoAssistant((s) => s.unsent);
+  const unsentImages = useAldoAssistant((s) => s.unsentImages);
   const replying = useAldoAssistant((s) => s.replying);
   const input = useRef<HTMLInputElement>(null);
+  const picker = useRef<HTMLInputElement>(null);
+  const limits = useAldoImageLimits();
   const live = phase !== "idle" && phase !== "error";
+  // Images go in writing: not into a call.
+  const canAttach = limits !== null && !live;
+  useEffect(() => {
+    if (unsentImages === null) return;
+    setImages(unsentImages);
+    useAldoAssistant.setState({ unsentImages: null });
+  }, [unsentImages]);
+  const addImages = (files: ReadonlyArray<File>) => {
+    if (!limits || files.length === 0) return;
+    setImageError(null);
+    void (async () => {
+      const room = limits.max - images.length;
+      if (room <= 0 || files.length > room)
+        setImageError(`At most ${limits.max} images with a message.`);
+      for (const file of files.slice(0, Math.max(0, room))) {
+        const made = await imageUpload(file, limits);
+        if ("error" in made) setImageError(made.error);
+        else
+          setImages((current) =>
+            current.length < limits.max ? [...current, made.image] : current,
+          );
+      }
+    })();
+  };
   // What couldn't be sent comes back to be sent again, and words seeded for
   // the user to finish; a draft already in the field is kept, after them.
   useEffect(() => {
@@ -281,9 +368,11 @@ function AldoComposer(props: {
     input.current?.focus();
   }, [unsent]);
   const submit = () => {
-    if (!text.trim()) return;
-    sendText(text);
+    if (!text.trim() && images.length === 0) return;
+    sendText(text, canAttach ? images : []);
     setText("");
+    setImages([]);
+    setImageError(null);
   };
   return (
     <div className="flex w-full flex-col gap-2">
@@ -301,13 +390,70 @@ function AldoComposer(props: {
           ))}
         </div>
       ) : null}
+      {canAttach && images.length > 0 ? (
+        <div className="flex flex-wrap gap-2">
+          {images.map((image, index) => (
+            <div key={image.dataUrl} className="relative">
+              <img
+                src={image.dataUrl}
+                alt={image.name}
+                className="size-14 rounded-md border border-border/70 object-cover"
+              />
+              <button
+                type="button"
+                aria-label={`Remove ${image.name}`}
+                className="absolute -top-1.5 -right-1.5 rounded-full border border-border bg-background p-0.5 text-muted-foreground hover:text-foreground"
+                onClick={() => setImages((current) => current.filter((_, i) => i !== index))}
+              >
+                <XIcon className="size-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {canAttach && imageError ? (
+        <p className="text-destructive-foreground text-xs">{imageError}</p>
+      ) : null}
       <form
         className="flex w-full items-center gap-2"
         onSubmit={(event) => {
           event.preventDefault();
           submit();
         }}
+        onDragOver={(event) => {
+          if (canAttach && event.dataTransfer.types.includes("Files")) event.preventDefault();
+        }}
+        onDrop={(event) => {
+          if (!canAttach || event.dataTransfer.files.length === 0) return;
+          event.preventDefault();
+          addImages([...event.dataTransfer.files]);
+        }}
       >
+        {canAttach ? (
+          <>
+            <input
+              ref={picker}
+              type="file"
+              accept={[...limits.types, ".heic", ".heif"].join(",")}
+              multiple
+              hidden
+              onChange={(event) => {
+                addImages([...(event.target.files ?? [])]);
+                event.target.value = "";
+              }}
+            />
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              aria-label="Add images"
+              disabled={images.length >= limits.max}
+              onClick={() => picker.current?.click()}
+            >
+              <ImagePlusIcon />
+            </Button>
+          </>
+        ) : null}
         <Input
           ref={input}
           className="flex-1"
@@ -320,8 +466,22 @@ function AldoComposer(props: {
                 : "Ask Aldo, or tell it what to do"
           }
           onChange={(event) => setText(event.target.value)}
+          onPaste={(event) => {
+            if (!canAttach) return;
+            const files = [...event.clipboardData.files].filter((file) =>
+              file.type.startsWith("image/"),
+            );
+            if (files.length === 0) return;
+            event.preventDefault();
+            addImages(files);
+          }}
         />
-        <Button type="submit" size="icon" aria-label="Send" disabled={!text.trim()}>
+        <Button
+          type="submit"
+          size="icon"
+          aria-label="Send"
+          disabled={!text.trim() && !(canAttach && images.length > 0)}
+        >
           <ArrowUpIcon />
         </Button>
       </form>
@@ -396,16 +556,41 @@ function ConversationEntry({ entry }: { readonly entry: AldoConversationEntry })
     );
     return (
       <div className="self-start rounded-full border border-border/60 bg-card/40 px-3 py-1 text-muted-foreground text-xs">
-        {entry.open && entry.open.threadId
-          ? threadLink(entry.open, label, "hover:text-foreground")
-          : label}
+        {entry.href ? (
+          <a href={entry.href} target="_blank" rel="noreferrer" className="hover:text-foreground">
+            <span className="inline-flex items-center gap-1.5">
+              {entry.label}
+              <ArrowUpRightIcon className="size-3.5" />
+            </span>
+          </a>
+        ) : entry.open && entry.open.threadId ? (
+          threadLink(entry.open, label, "hover:text-foreground")
+        ) : (
+          label
+        )}
       </div>
     );
   }
   return entry.role === "user" ? (
-    <p className="max-w-[85%] self-end whitespace-pre-wrap rounded-2xl bg-muted/60 px-3.5 py-2 text-sm">
-      {entry.text}
-    </p>
+    <div className="flex max-w-[85%] flex-col items-end gap-1.5 self-end">
+      {entry.images && entry.images.length > 0 ? (
+        <div className="flex flex-wrap justify-end gap-1.5">
+          {entry.images.map((src) => (
+            <img
+              key={src}
+              src={src}
+              alt=""
+              className="size-20 rounded-lg border border-border/60 object-cover"
+            />
+          ))}
+        </div>
+      ) : null}
+      {entry.text ? (
+        <p className="whitespace-pre-wrap rounded-2xl bg-muted/60 px-3.5 py-2 text-sm">
+          {entry.text}
+        </p>
+      ) : null}
+    </div>
   ) : (
     <p className="max-w-[85%] self-start whitespace-pre-wrap text-sm leading-relaxed">
       {entry.text}

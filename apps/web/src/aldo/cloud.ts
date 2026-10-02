@@ -1085,13 +1085,51 @@ export interface AldoVoiceSession {
  * answers a path it doesn't know with the web client's own page (200, HTML),
  * so the status alone doesn't tell.
  */
-export async function aldoAssistantAvailable(): Promise<boolean> {
+/** The images a written message to Aldo takes: how many, how large each, and of which types. */
+export interface AldoImageLimits {
+  readonly max: number;
+  readonly maxBytes: number;
+  readonly types: ReadonlyArray<string>;
+}
+
+/** Whether this Aldo has the assistant, and the images its written messages take (null: none, as on an older Aldo). */
+export async function aldoAssistantInfo(): Promise<{
+  readonly available: boolean;
+  readonly images: AldoImageLimits | null;
+}> {
   const response = await fetch("/api/assistant/tools", { credentials: "same-origin" }).catch(
     () => null,
   );
-  if (!response?.ok) return false;
-  const body = (await response.json().catch(() => null)) as { tools?: unknown } | null;
-  return Array.isArray(body?.tools);
+  if (!response?.ok) return { available: false, images: null };
+  const body = (await response.json().catch(() => null)) as {
+    tools?: unknown;
+    images?: { max?: unknown; maxBytes?: unknown; types?: unknown };
+  } | null;
+  const images = body?.images;
+  return {
+    available: Array.isArray(body?.tools),
+    images:
+      typeof images?.max === "number" &&
+      images.max > 0 &&
+      typeof images.maxBytes === "number" &&
+      Array.isArray(images.types)
+        ? {
+            max: images.max,
+            maxBytes: images.maxBytes,
+            types: images.types.filter((t): t is string => typeof t === "string"),
+          }
+        : null,
+  };
+}
+
+export async function aldoAssistantAvailable(): Promise<boolean> {
+  return (await aldoAssistantInfo()).available;
+}
+
+/** An image to send with a written message, as Aldo takes it. */
+export interface AldoImageUpload {
+  readonly name: string;
+  readonly dataUrl: string;
 }
 
 /** A written turn with Aldo: its reply, and the tool calls it made with what came of each. */
@@ -1113,10 +1151,14 @@ export const aldoAssistant = {
    * null where this Aldo can't chat in writing (an older one answers a path
    * it doesn't know with the web client's own page).
    */
-  chat: async (sessionId: string | null, text: string): Promise<AldoChatTurn | null> => {
+  chat: async (
+    sessionId: string | null,
+    text: string,
+    images: ReadonlyArray<AldoImageUpload> = [],
+  ): Promise<AldoChatTurn | null> => {
     const body = await api<Partial<AldoChatTurn>>("/api/assistant/chat", {
       method: "POST",
-      body: JSON.stringify({ sessionId, text }),
+      body: JSON.stringify({ sessionId, text, ...(images.length > 0 ? { images } : {}) }),
     });
     if (typeof body.reply !== "string" || typeof body.sessionId !== "string") return null;
     return {
