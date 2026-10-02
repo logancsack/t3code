@@ -36,7 +36,10 @@ import {
   useRemoteEnvironmentRuntime,
 } from "../../state/use-remote-environment-registry";
 import { useKnownTerminalSessions } from "../../state/use-terminal-session";
-import { useSelectedThreadDetailState } from "../../state/use-thread-detail";
+import {
+  useRefollowListedThread,
+  useSelectedThreadDetailState,
+} from "../../state/use-thread-detail";
 import { useThreadSelection } from "../../state/use-thread-selection";
 import { GitActionProgressOverlay } from "./GitActionProgressOverlay";
 import {
@@ -194,6 +197,9 @@ function ThreadRouteContent(
     useThreadSelection();
   const selectedThreadDetailState = props.selectedThreadDetailState;
   const selectedThreadDetail = Option.getOrNull(selectedThreadDetailState.data);
+  // Opened before it existed (from a notification while its first message was
+  // on its way), a thread was taken for deleted; it loads once the server lists it.
+  const refollowing = useRefollowListedThread(selectedThread, selectedThreadDetailState);
   // "Load earlier turns" header state for windowed (paginated) thread loads.
   const loadEarlierTurns = useMemo(() => {
     if (selectedThread === null || !threadHasOlderTurns(selectedThreadDetailState)) {
@@ -755,7 +761,7 @@ function ThreadRouteContent(
   const contentPresentation = projectThreadContentPresentation({
     hasDetail: selectedThreadDetail !== null,
     detailError: Option.getOrNull(selectedThreadDetailState.error),
-    detailDeleted: selectedThreadDetailState.status === "deleted",
+    detailDeleted: selectedThreadDetailState.status === "deleted" && !refollowing,
     connectionState: routeConnectionState,
   });
   const serverConfig = routeEnvironmentRuntime?.serverConfig ?? null;

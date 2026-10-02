@@ -8,18 +8,24 @@ import type {
 import {
   type EnvironmentThreadStatus,
   mergeEnvironmentThread,
+  refollowThreadOnce,
+  shouldRefollowThread,
 } from "@t3tools/client-runtime/state/threads";
 import type { ScopedProjectRef, ScopedThreadRef, ServerConfig } from "@t3tools/contracts";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { Atom } from "effect/unstable/reactivity";
 import { useEffect, useMemo } from "react";
 import { appAtomRegistry } from "../rpc/atomRegistry";
-import { shouldRefollowThread } from "../threadSync";
 import { environmentProjects } from "./projects";
 import { useEnvironmentQuery } from "./query";
 import { environmentServerConfigsAtom } from "./server";
 import { allEnvironmentShellsBootstrappedAtom, environmentShell } from "./shell";
-import { environmentThreadDetails, environmentThreads, environmentThreadShells } from "./threads";
+import {
+  environmentThreadDetails,
+  environmentThreads,
+  environmentThreadShells,
+  useEnvironmentThread,
+} from "./threads";
 
 const EMPTY_THREAD_REFS: ReadonlyArray<ScopedThreadRef> = Object.freeze([]);
 
@@ -110,35 +116,28 @@ export function useThreadStatus(ref: ScopedThreadRef | null): EnvironmentThreadS
   );
 }
 
-/** The version of its shell each thread was last followed again for. */
-const refollowedAt = new Map<string, string>();
-
 /**
  * Follows a thread taken for deleted again once the server lists it
- * (shouldRefollowThread). Once per change to the thread, so a server that
- * lists a thread it can't load isn't asked for it over and over.
+ * (shouldRefollowThread). Returns whether it's being followed again, for the
+ * thread to show as loading meanwhile rather than missing.
  */
-export function useRefollowListedThread(ref: ScopedThreadRef | null): void {
-  const status = useThreadStatus(ref);
-  const shell = useThreadShell(ref);
-  const environmentShellStatus = useEnvironmentQuery(
-    ref === null ? null : environmentShell.stateAtom(ref.environmentId),
-  ).data?.status;
-  const refollow = shouldRefollowThread({
-    status,
-    shellExists: shell !== null,
-    environmentShellStatus,
-  });
+export function useRefollowListedThread(ref: ScopedThreadRef | null): boolean {
   const environmentId = ref?.environmentId ?? null;
   const threadId = ref?.threadId ?? null;
+  const state = useEnvironmentThread(environmentId, threadId);
+  const shell = useThreadShell(ref);
+  const shellStatus = useEnvironmentQuery(
+    environmentId === null ? null : environmentShell.stateAtom(environmentId),
+  ).data?.status;
+  const refollow = shouldRefollowThread({ state, listed: shell !== null, shellStatus });
   const version = shell?.updatedAt ?? null;
   useEffect(() => {
     if (!refollow || environmentId === null || threadId === null || version === null) return;
-    const key = scopedThreadKey({ environmentId, threadId });
-    if (refollowedAt.get(key) === version) return;
-    refollowedAt.set(key, version);
-    appAtomRegistry.refresh(environmentThreads.stateAtom(environmentId, threadId));
+    refollowThreadOnce(scopedThreadKey({ environmentId, threadId }), version, () =>
+      appAtomRegistry.refresh(environmentThreads.stateAtom(environmentId, threadId)),
+    );
   }, [environmentId, refollow, threadId, version]);
+  return refollow;
 }
 
 export function resolveThreadDetailRef(
