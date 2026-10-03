@@ -40,19 +40,25 @@ const TOUCH_INTERVAL_MS = 2 * 60 * 1000;
 /** A page on screen that hasn't been used for this long no longer keeps its agent up. */
 const UNATTENDED_MS = 30 * 60 * 1000;
 
-/** When the user last used the page: the pointer, a key, a touch, the wheel, or coming back to the tab. */
+/** When the user last used the page: the pointer, a key, a touch, the wheel, or coming back to the tab or window. */
 let lastUsedAt = Date.now();
-/** Run when the page is used after a pause: the agent on screen may need a touch, or waking, at once. */
+/** Run when the page is used after a pause: the agent on screen may need a touch, or waking. */
 const resumeListeners = new Set<() => void>();
 
 function noteUse(): void {
   const paused = Date.now() - lastUsedAt > TOUCH_INTERVAL_MS;
   lastUsedAt = Date.now();
-  if (paused) for (const listener of resumeListeners) listener();
+  // After DWELL_MS, as when opening a thread: a click that leaves this thread
+  // for another has unmounted it (and its listeners) by then, so it isn't woken.
+  if (paused) {
+    window.setTimeout(() => {
+      for (const listener of resumeListeners) listener();
+    }, DWELL_MS);
+  }
 }
 
 if (isAldoCloud && typeof window !== "undefined") {
-  for (const type of ["pointerdown", "pointermove", "keydown", "wheel", "touchstart"]) {
+  for (const type of ["pointerdown", "pointermove", "keydown", "wheel", "touchstart", "focus"]) {
     window.addEventListener(type, noteUse, { capture: true, passive: true });
   }
   document.addEventListener("visibilitychange", () => {
