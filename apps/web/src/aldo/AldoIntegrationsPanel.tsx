@@ -376,19 +376,29 @@ export function AldoIntegrationsPanel() {
           <HeadsUpsRow />
         ) : null}
       </SettingsSection>
-      {generators.length > 0 ? (
-        <SettingsSection
-          id="aldo-generators"
-          title="Image, video and audio"
-          icon={<SparklesIcon className="size-4" />}
-        >
+      <SettingsSection
+        id="aldo-generators"
+        title="Image, video and audio"
+        icon={<SparklesIcon className="size-4" />}
+      >
+        {generators.length > 0 ? (
+          <>
+            <p className="px-3 text-sm text-muted-foreground sm:px-4">
+              Generators your agents use with your own API key, for images, video, voices and music.
+              What they make is billed to your account with each one.
+            </p>
+            <AldoGeneratorRows integrations={generators} onChanged={refresh} />
+          </>
+        ) : (
           <p className="px-3 text-sm text-muted-foreground sm:px-4">
-            Generators your agents use with your own API key, for images, video, voices and music.
-            What they make is billed to your account with each one.
+            {error
+              ? "Couldn't load media generators. Try again in a moment."
+              : integrations === null && !unsupported
+                ? "Loading…"
+                : "Media generators aren't available on this Aldo server."}
           </p>
-          <AldoGeneratorRows integrations={generators} onChanged={refresh} />
-        </SettingsSection>
-      ) : null}
+        )}
+      </SettingsSection>
     </>
   );
 }
