@@ -202,18 +202,44 @@ function IntegrationRow(props: {
 /** Aldo's heads-ups, on or off; shown once Aldo has them and an account with mail or a calendar is connected. */
 function HeadsUpsRow() {
   const [headsUps, setHeadsUps] = useState<AldoHeadsUps | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  useEffect(() => {
-    let live = true;
+  // Only the latest read's answer shows.
+  const latest = useRef(0);
+  const load = useCallback(() => {
+    const request = ++latest.current;
     fetchAldoHeadsUps()
       .then((next) => {
-        if (live) setHeadsUps(next);
+        if (request !== latest.current) return;
+        setHeadsUps(next);
+        setError(null);
       })
-      .catch(() => {});
-    return () => {
-      live = false;
-    };
+      .catch((cause: unknown) => {
+        if (request === latest.current) setError(messageOf(cause));
+      });
   }, []);
+  useEffect(() => {
+    load();
+    // A read that failed for a moment is tried again when the user comes back to the tab.
+    window.addEventListener("focus", load);
+    return () => {
+      latest.current++;
+      window.removeEventListener("focus", load);
+    };
+  }, [load]);
+  if (error && !headsUps) {
+    return (
+      <SettingsRow
+        title="Heads-ups from Aldo"
+        description={`Couldn't read whether they're on: ${error}`}
+        control={
+          <Button size="sm" variant="outline" onClick={load}>
+            Try again
+          </Button>
+        }
+      />
+    );
+  }
   if (!headsUps) return null;
   const change = (on: boolean) => {
     setSaving(true);

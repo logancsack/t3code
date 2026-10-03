@@ -115,7 +115,11 @@ function useAldoHome() {
   }, []);
   useEffect(() => {
     void refresh();
-    const timer = window.setInterval(() => void refresh(), REFRESH_EVERY_MS);
+    // With notifications off there's no push: Aldo's heads-ups show on the regular refresh too.
+    const timer = window.setInterval(() => {
+      void refresh();
+      void pullAldoConversation();
+    }, REFRESH_EVERY_MS);
     const unsubscribe = subscribeAldoEnvironments(() => void refresh(false));
     const onVisible = () => {
       if (document.visibilityState !== "visible") return;

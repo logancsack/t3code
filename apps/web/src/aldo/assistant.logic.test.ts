@@ -323,8 +323,8 @@ describe("startNews", () => {
 
 describe("unseenMessages", () => {
   const at = (minute: number) => `2026-10-03T12:${String(minute).padStart(2, "0")}:00.000Z`;
-  it("adds what Aldo said since the last read, once", () => {
-    const shown = [
+  it("adds what was said since the last read, less what the page said itself", () => {
+    const said = [
       { role: "user" as const, text: "What's on today?" },
       { role: "assistant" as const, text: "Just the review at 3." },
     ];
@@ -333,8 +333,23 @@ describe("unseenMessages", () => {
       { role: "user" as const, text: "What's on today?", at: at(5) },
       { role: "assistant" as const, text: "Just the review at 3.", at: at(5) },
       { role: "assistant" as const, text: "Sam moved the review to 4.", at: at(9) },
+      { role: "user" as const, text: "Book a room for it.", at: at(10) },
     ];
-    expect(unseenMessages(shown, fetched, at(1))).toEqual([fetched[3]]);
-    expect(unseenMessages([...shown, fetched[3]!], fetched, at(1))).toEqual([]);
+    const { fresh, matched } = unseenMessages(said, fetched, at(1));
+    expect(fresh).toEqual([fetched[3], fetched[4]]);
+    expect(matched).toEqual(said);
+  });
+
+  it("matches each message once, and image notes aside", () => {
+    const said = [
+      { role: "user" as const, text: "yes" },
+      { role: "user" as const, text: "Look" },
+    ];
+    const fetched = [
+      { role: "user" as const, text: "yes", at: at(2) },
+      { role: "user" as const, text: "Look\n\n[image img_abc: shot.png]", at: at(3) },
+      { role: "user" as const, text: "yes", at: at(4) },
+    ];
+    expect(unseenMessages(said, fetched, null).fresh).toEqual([fetched[2]]);
   });
 });

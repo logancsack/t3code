@@ -351,18 +351,29 @@ export function phaseAfter(phase: AldoAssistantPhase, type: string): AldoAssista
 }
 
 /**
- * What Aldo said that the page doesn't show yet: its messages after the
- * newest the page loaded (a heads-up Aldo gave while the page was open),
- * except what it said on this page, which is there already (matched by what
- * it said).
+ * What Aldo's latest read of the conversation has that the page doesn't show
+ * yet: everything said after the newest message the page read (a heads-up
+ * Aldo gave, a turn on another device), less what was said on this page,
+ * which shows already. Each of the page's own messages (`said`) stands for
+ * one message read back, by who said it and what (image notes aside), so
+ * words said twice show twice; `matched` are the ones that did.
  */
-export function unseenMessages(
-  shown: ReadonlyArray<Pick<AldoAssistantMessage, "role" | "text">>,
+export function unseenMessages<T extends Pick<AldoAssistantMessage, "role" | "text">>(
+  said: ReadonlyArray<T>,
   fetched: ReadonlyArray<AldoAssistantMessage>,
   after: string | null,
-): ReadonlyArray<AldoAssistantMessage> {
-  const said = new Set(shown.filter((m) => m.role === "assistant").map((m) => m.text.trim()));
-  return fetched.filter(
-    (m) => m.role === "assistant" && (after === null || m.at > after) && !said.has(m.text.trim()),
-  );
+): { readonly fresh: ReadonlyArray<AldoAssistantMessage>; readonly matched: ReadonlyArray<T> } {
+  const key = (m: Pick<AldoAssistantMessage, "role" | "text">) =>
+    `${m.role}\n${withoutImageNotes(m.text).text}`;
+  const waiting = new Map<string, T[]>();
+  for (const m of said) waiting.set(key(m), [...(waiting.get(key(m)) ?? []), m]);
+  const matched: T[] = [];
+  const fresh = fetched.filter((m) => {
+    if (after !== null && m.at <= after) return false;
+    const mine = waiting.get(key(m))?.shift();
+    if (!mine) return true;
+    matched.push(mine);
+    return false;
+  });
+  return { fresh, matched };
 }

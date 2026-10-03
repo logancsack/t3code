@@ -1519,10 +1519,17 @@ export interface AldoHeadsUps {
   readonly lookedAt: string | null;
 }
 
+/** Heads-ups as Aldo answered, or null for an answer that isn't (an older Aldo's page for a path it doesn't have). */
+function headsUpsOf(body: Partial<AldoHeadsUps> | null): AldoHeadsUps | null {
+  return typeof body?.on === "boolean"
+    ? { on: body.on, lookedAt: typeof body.lookedAt === "string" ? body.lookedAt : null }
+    : null;
+}
+
 /** Null where this Aldo has no heads-ups. */
 export async function fetchAldoHeadsUps(): Promise<AldoHeadsUps | null> {
   try {
-    return await api<AldoHeadsUps>("/api/assistant/heads-ups");
+    return headsUpsOf(await api<Partial<AldoHeadsUps>>("/api/assistant/heads-ups"));
   } catch (cause) {
     if (cause instanceof AldoApiError && cause.status === 404) return null;
     throw cause;
@@ -1530,10 +1537,14 @@ export async function fetchAldoHeadsUps(): Promise<AldoHeadsUps | null> {
 }
 
 export async function setAldoHeadsUps(on: boolean): Promise<AldoHeadsUps> {
-  return api<AldoHeadsUps>("/api/assistant/heads-ups", {
-    method: "PUT",
-    body: JSON.stringify({ on }),
-  });
+  const saved = headsUpsOf(
+    await api<Partial<AldoHeadsUps>>("/api/assistant/heads-ups", {
+      method: "PUT",
+      body: JSON.stringify({ on }),
+    }),
+  );
+  if (!saved) throw new Error("This Aldo doesn't have heads-ups.");
+  return saved;
 }
 
 export interface AldoHome {
