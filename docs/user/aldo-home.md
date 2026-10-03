@@ -4,7 +4,9 @@ Aldo's home screen is where you see all of your agents' work at once and act on 
 
 ## The board
 
-The board answers four questions, in order.
+The board answers four questions, in order, starting with what waits on a tap from you.
+
+**Approve.** What waits on one tap from you: an email an agent drafted to send, an event for your calendar, or a thread Aldo suggests. See [Approvals and heads-ups](./aldo-approvals.md).
 
 **Needs you.** Every thread waiting on you, the one that has waited longest first:
 

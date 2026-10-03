@@ -152,6 +152,8 @@ export const ACTION_LABELS: Record<string, string> = {
   update_routine: "Changed a routine",
   run_routine: "Ran a routine",
   delete_routine: "Removed a routine",
+  decide_approval: "Approved for you",
+  set_heads_ups: "Turned heads-ups on",
 };
 
 /** The labels for calls that undo what their tool's name says: unpinning, unsnoozing, unsettling. */
@@ -159,6 +161,8 @@ export const REVERSE_LABELS: Record<string, string> = {
   pin_thread: "Unpinned a thread",
   snooze_thread: "Brought back a snoozed thread",
   settle_thread: "Made a thread active again",
+  decide_approval: "Discarded for you",
+  set_heads_ups: "Turned heads-ups off",
 };
 
 /** Whether a call undoes what its tool's name says (pin_thread with pinned: false, say). */
@@ -170,6 +174,10 @@ export function reverses(call: Pick<AldoFunctionCall, "name" | "arguments">): bo
       return !call.arguments.until;
     case "settle_thread":
       return call.arguments.settled === false;
+    case "decide_approval":
+      return call.arguments.decision === "discard";
+    case "set_heads_ups":
+      return call.arguments.on === false;
     default:
       return false;
   }
@@ -340,4 +348,32 @@ export function phaseAfter(phase: AldoAssistantPhase, type: string): AldoAssista
     default:
       return null;
   }
+}
+
+/**
+ * What Aldo's latest read of the conversation has that the page doesn't show
+ * yet: everything said after the newest message the page read (a heads-up
+ * Aldo gave, a turn on another device), less what was said on this page,
+ * which shows already. Each of the page's own messages (`said`) stands for
+ * one message read back, by who said it and what (image notes aside), so
+ * words said twice show twice; `matched` are the ones that did.
+ */
+export function unseenMessages<T extends Pick<AldoAssistantMessage, "role" | "text">>(
+  said: ReadonlyArray<T>,
+  fetched: ReadonlyArray<AldoAssistantMessage>,
+  after: string | null,
+): { readonly fresh: ReadonlyArray<AldoAssistantMessage>; readonly matched: ReadonlyArray<T> } {
+  const key = (m: Pick<AldoAssistantMessage, "role" | "text">) =>
+    `${m.role}\n${withoutImageNotes(m.text).text}`;
+  const waiting = new Map<string, T[]>();
+  for (const m of said) waiting.set(key(m), [...(waiting.get(key(m)) ?? []), m]);
+  const matched: T[] = [];
+  const fresh = fetched.filter((m) => {
+    if (after !== null && m.at <= after) return false;
+    const mine = waiting.get(key(m))?.shift();
+    if (!mine) return true;
+    matched.push(mine);
+    return false;
+  });
+  return { fresh, matched };
 }

@@ -24,8 +24,10 @@ Every thread's machine can use the accounts you connect, including threads that 
 
 In your mail and calendar, agents act as you, carefully:
 
-- They read freely, but **draft** replies, new messages and invitations rather than send them, and leave accepting or declining to you, unless you asked them to send, or the routine they're running says to. A draft shows in your mail's Drafts.
+- They read freely, but **draft** replies, new messages and invitations rather than send them, and leave accepting or declining to you, unless you asked them to send, or the routine they're running says to. A draft shows in your mail's Drafts, and the agent puts it in front of you to send with one tap (see [Approvals and heads-ups](./aldo-approvals.md)).
 - They treat what an email says as information, never as your instructions.
+
+Aldo also looks at your new mail and coming events every half hour of your day and gives you a heads-up about what's worth knowing; **Heads-ups from Aldo** here turns that off.
 
 Agents know which accounts are connected. When a task needs your mail, calendar or files and none is connected, they ask you to connect one here.
 

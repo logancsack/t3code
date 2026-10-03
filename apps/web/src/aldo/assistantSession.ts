@@ -27,6 +27,7 @@ import {
   rememberHeard,
   startNews,
   startWatchFor,
+  unseenMessages,
   type AldoAssistantAction,
   type AldoAssistantMessage,
   type AldoAssistantPhase,
@@ -160,15 +161,43 @@ function send(event: Record<string, unknown>): void {
   if (channel?.readyState === "open") channel.send(JSON.stringify(event));
 }
 
+/** The newest message read from Aldo, so a later read adds only what came after it. */
+let historyUntil: string | null = null;
+/** Messages that came from Aldo's record, or were found in it: the rest were said on this page and not read back yet. */
+const recorded = new WeakSet<AldoConversationEntry>();
+
+function fromRecord(messages: ReadonlyArray<AldoAssistantMessage>): AldoConversationEntry[] {
+  const entries = messages.map((m) => ({ kind: "message" as const, ...m }));
+  for (const entry of entries) recorded.add(entry);
+  return entries;
+}
+
 /** The conversation so far, from Aldo (once per page). */
 export async function loadAldoConversation(): Promise<void> {
   if (get().historyLoaded) return;
   const messages = await aldoAssistant.history().catch(() => []);
+  historyUntil = messages.at(-1)?.at ?? historyUntil;
   set({
     historyLoaded: true,
     // Anything said since the page opened stays after what came before.
-    entries: [...messages.map((m) => ({ kind: "message" as const, ...m })), ...get().entries],
+    entries: [...fromRecord(messages), ...get().entries],
   });
+}
+
+/**
+ * What was said since the conversation loaded that the page doesn't show: a
+ * heads-up Aldo gave, or a turn on another device, added at its end. Run on
+ * the home screen's refresh, and when a push arrives.
+ */
+export async function pullAldoConversation(): Promise<void> {
+  if (!get().historyLoaded) return;
+  const messages = await aldoAssistant.history(20).catch(() => null);
+  if (!messages?.length) return;
+  const said = get().entries.flatMap((e) => (e.kind === "message" && !recorded.has(e) ? [e] : []));
+  const { fresh, matched } = unseenMessages(said, messages, historyUntil);
+  historyUntil = messages.at(-1)?.at ?? historyUntil;
+  for (const entry of matched) recorded.add(entry);
+  if (fresh.length > 0) set({ entries: [...get().entries, ...fromRecord(fresh)] });
 }
 
 async function transcriptsSettled(): Promise<void> {

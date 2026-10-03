@@ -1,18 +1,24 @@
 // Settings → Integrations: accounts the user connects for their agents to use,
 // beyond their code: Google and Microsoft, for their mail, calendar, contacts
 // and files. Connecting signs in with the provider in a popup; how the sign-in
-// reports back to this tab is in integrations.logic.ts.
+// reports back to this tab is in integrations.logic.ts. Once one is connected,
+// Aldo's heads-ups (it looks at new mail and coming events between
+// conversations) can be turned off here.
 
 import { BlocksIcon, CheckCircle2Icon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { SettingsRow, SettingsSection } from "../components/settings/settingsLayout";
 import { Button } from "../components/ui/button";
+import { Switch } from "../components/ui/switch";
 import { toastManager } from "../components/ui/toast";
 import {
   aldoIntegrationConnectUrl,
   disconnectAldoIntegration,
+  fetchAldoHeadsUps,
   fetchAldoIntegrations,
+  setAldoHeadsUps,
+  type AldoHeadsUps,
   type AldoIntegration,
   type AldoIntegrationAccountType,
 } from "./cloud";
@@ -193,6 +199,77 @@ function IntegrationRow(props: {
   );
 }
 
+/** Aldo's heads-ups, on or off; shown once Aldo has them and an account with mail or a calendar is connected. */
+function HeadsUpsRow() {
+  const [headsUps, setHeadsUps] = useState<AldoHeadsUps | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  // Only the latest read's answer shows.
+  const latest = useRef(0);
+  const load = useCallback(() => {
+    const request = ++latest.current;
+    fetchAldoHeadsUps()
+      .then((next) => {
+        if (request !== latest.current) return;
+        setHeadsUps(next);
+        setError(null);
+      })
+      .catch((cause: unknown) => {
+        if (request === latest.current) setError(messageOf(cause));
+      });
+  }, []);
+  useEffect(() => {
+    load();
+    // A read that failed for a moment is tried again when the user comes back to the tab.
+    window.addEventListener("focus", load);
+    return () => {
+      latest.current++;
+      window.removeEventListener("focus", load);
+    };
+  }, [load]);
+  if (error && !headsUps) {
+    return (
+      <SettingsRow
+        title="Heads-ups from Aldo"
+        description={`Couldn't read whether they're on: ${error}`}
+        control={
+          <Button size="sm" variant="outline" onClick={load}>
+            Try again
+          </Button>
+        }
+      />
+    );
+  }
+  if (!headsUps) return null;
+  const change = (on: boolean) => {
+    setSaving(true);
+    setAldoHeadsUps(on)
+      .then(setHeadsUps)
+      .catch((cause: unknown) =>
+        toastManager.add({
+          type: "error",
+          title: "Couldn't change that",
+          description: messageOf(cause),
+        }),
+      )
+      .finally(() => setSaving(false));
+  };
+  return (
+    <SettingsRow
+      title="Heads-ups from Aldo"
+      description="Every half hour of your day, Aldo looks at your new mail and coming events and tells you what's worth knowing (here and on your phone), sometimes with a thread to start for it. Most looks say nothing."
+      control={
+        <Switch
+          checked={headsUps.on}
+          disabled={saving}
+          onCheckedChange={change}
+          aria-label="Heads-ups from Aldo"
+        />
+      }
+    />
+  );
+}
+
 export function AldoIntegrationsPanel() {
   const [integrations, setIntegrations] = useState<ReadonlyArray<AldoIntegration> | null>(null);
   const [unsupported, setUnsupported] = useState(false);
@@ -278,6 +355,14 @@ export function AldoIntegrationsPanel() {
       {shown.map((integration) => (
         <IntegrationRow key={integration.provider} integration={integration} onChanged={refresh} />
       ))}
+      {shown.some(
+        (i) =>
+          i.connected &&
+          !i.error &&
+          (i.can ?? ["mail"]).some((c) => c === "mail" || c === "calendar"),
+      ) ? (
+        <HeadsUpsRow />
+      ) : null}
     </SettingsSection>
   );
 }

@@ -1,7 +1,7 @@
 // The home screen under Aldo: a command center for the user's agents' work,
 // with Aldo as the way to act on it. The board (left, or on top on a phone)
-// answers four questions in order: what needs me, what's happening, what got
-// done, what's coming; all from Aldo's one read of the account (cloud.ts
+// answers four questions in order: what needs me (what waits on a tap first),
+// what's happening, what got done, what's coming; all from Aldo's one read of the account (cloud.ts
 // fetchAldoHome), which never wakes a machine, refreshed with the directory
 // and when a push arrives. Aldo (right) is the conversation: typed, or the
 // orb to talk. Until a git host and an agent are connected it walks through
@@ -37,9 +37,15 @@ import {
   ShipLaneSection,
   UpcomingSection,
 } from "./AldoHomeBoard";
+import { ApprovalsSection } from "./AldoApprovals";
 import { NeedsYouCard } from "./AldoHomeInbox";
 import { RoutinesSection } from "./AldoRoutines";
-import { seedAldoComposer, sendText, useAldoAssistant } from "./assistantSession";
+import {
+  pullAldoConversation,
+  seedAldoComposer,
+  sendText,
+  useAldoAssistant,
+} from "./assistantSession";
 import {
   aldoSupportsGeneralThreads,
   fetchAldoHome,
@@ -109,10 +115,16 @@ function useAldoHome() {
   }, []);
   useEffect(() => {
     void refresh();
-    const timer = window.setInterval(() => void refresh(), REFRESH_EVERY_MS);
+    // With notifications off there's no push: Aldo's heads-ups show on the regular refresh too.
+    const timer = window.setInterval(() => {
+      void refresh();
+      void pullAldoConversation();
+    }, REFRESH_EVERY_MS);
     const unsubscribe = subscribeAldoEnvironments(() => void refresh(false));
     const onVisible = () => {
-      if (document.visibilityState === "visible") void refresh();
+      if (document.visibilityState !== "visible") return;
+      void refresh();
+      void pullAldoConversation();
     };
     document.addEventListener("visibilitychange", onVisible);
     // A push for a thread that finished or needs the user: refresh now rather than on the next poll.
@@ -120,6 +132,8 @@ function useAldoHome() {
       if ((event.data as { type?: unknown } | null)?.type !== "aldo-push") return;
       requestAldoDirectoryRefresh();
       void refresh();
+      // A heads-up is Aldo speaking: it shows in the conversation too.
+      void pullAldoConversation();
     };
     const worker = "serviceWorker" in navigator ? navigator.serviceWorker : null;
     worker?.addEventListener("message", onMessage);
@@ -434,6 +448,14 @@ export function AldoHome() {
             ) : null}
             {board && shown ? (
               <>
+                {/* Not narrowed by repository: what waits on a tap is the user's, wherever it came from. */}
+                {home?.approvals ? (
+                  <ApprovalsSection
+                    approvals={home.approvals}
+                    now={now}
+                    onActed={() => void refresh()}
+                  />
+                ) : null}
                 {board.needsYou.length > 0 ? (
                   <Section title="Needs you" count={board.needsYou.length}>
                     <ul className="flex flex-col gap-2">
