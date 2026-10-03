@@ -491,7 +491,7 @@ export function AldoBrowserPanel({ environmentId }: { environmentId: string }) {
     // Back to this machine's screen once it stops, and not straight to Windows when it next runs.
     if (!windowsRunning) setChosenScreen("machine");
   }, [windowsRunning]);
-  const loginOffer = nextAldoLoginOffer(loginOffers, neverSave, loginAnswers);
+  const loginOffer = nextAldoLoginOffer(loginOffers, neverSave.origins, loginAnswers);
   /** An offer's password: the machine sends it only when asked, once the user chose Save. */
   const loginOfferPassword = (id: string) =>
     new Promise<string>((resolve, reject) => {
@@ -739,17 +739,22 @@ export function AldoBrowserPanel({ environmentId }: { environmentId: string }) {
       ) : null}
 
       {loginOffer ? (
-        <AldoLoginOfferCard
-          key={loginOffer.id}
-          offer={loginOffer}
-          repos={environment ? (environment.repos ?? [environment.repo]) : []}
-          password={() => loginOfferPassword(loginOffer.id)}
-          onDone={(saved) => answerLoginOffer(loginOffer.id, saved)}
-          onNever={() => {
-            neverSaveLoginsFor(loginOffer.origin);
-            answerLoginOffer(loginOffer.id, false);
-          }}
-        />
+        // Over the top corner of the page or the desktop, which stay usable around it.
+        <div className="relative z-20 h-0 shrink-0">
+          <div className="absolute top-2 right-2 w-[min(22rem,calc(100%-1rem))]">
+            <AldoLoginOfferCard
+              key={loginOffer.id}
+              offer={loginOffer}
+              repos={environment ? (environment.repos ?? [environment.repo]) : []}
+              password={() => loginOfferPassword(loginOffer.id)}
+              onDone={(saved) => answerLoginOffer(loginOffer.id, saved)}
+              onNever={() => {
+                void neverSaveLoginsFor(loginOffer.origin);
+                answerLoginOffer(loginOffer.id, false);
+              }}
+            />
+          </div>
+        </div>
       ) : null}
 
       {view === "desktop" ? (
