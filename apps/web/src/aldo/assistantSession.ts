@@ -27,6 +27,7 @@ import {
   rememberHeard,
   startNews,
   startWatchFor,
+  unseenMessages,
   type AldoAssistantAction,
   type AldoAssistantMessage,
   type AldoAssistantPhase,
@@ -160,15 +161,35 @@ function send(event: Record<string, unknown>): void {
   if (channel?.readyState === "open") channel.send(JSON.stringify(event));
 }
 
+/** The newest message read from Aldo, so a later read adds only what came after it. */
+let historyUntil: string | null = null;
+
 /** The conversation so far, from Aldo (once per page). */
 export async function loadAldoConversation(): Promise<void> {
   if (get().historyLoaded) return;
   const messages = await aldoAssistant.history().catch(() => []);
+  historyUntil = messages.at(-1)?.at ?? historyUntil;
   set({
     historyLoaded: true,
     // Anything said since the page opened stays after what came before.
     entries: [...messages.map((m) => ({ kind: "message" as const, ...m })), ...get().entries],
   });
+}
+
+/**
+ * What Aldo said since the conversation loaded, without a call or a typed
+ * turn (a heads-up): added at its end. Run when a push arrives.
+ */
+export async function pullAldoConversation(): Promise<void> {
+  if (!get().historyLoaded) return;
+  const messages = await aldoAssistant.history(20).catch(() => null);
+  if (!messages?.length) return;
+  const shown = get().entries.flatMap((e) => (e.kind === "message" ? [e] : []));
+  const fresh = unseenMessages(shown, messages, historyUntil);
+  historyUntil = messages.at(-1)?.at ?? historyUntil;
+  if (fresh.length > 0) {
+    set({ entries: [...get().entries, ...fresh.map((m) => ({ kind: "message" as const, ...m }))] });
+  }
 }
 
 async function transcriptsSettled(): Promise<void> {

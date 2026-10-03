@@ -152,6 +152,8 @@ export const ACTION_LABELS: Record<string, string> = {
   update_routine: "Changed a routine",
   run_routine: "Ran a routine",
   delete_routine: "Removed a routine",
+  decide_approval: "Approved for you",
+  set_heads_ups: "Turned heads-ups on",
 };
 
 /** The labels for calls that undo what their tool's name says: unpinning, unsnoozing, unsettling. */
@@ -159,6 +161,8 @@ export const REVERSE_LABELS: Record<string, string> = {
   pin_thread: "Unpinned a thread",
   snooze_thread: "Brought back a snoozed thread",
   settle_thread: "Made a thread active again",
+  decide_approval: "Discarded for you",
+  set_heads_ups: "Turned heads-ups off",
 };
 
 /** Whether a call undoes what its tool's name says (pin_thread with pinned: false, say). */
@@ -170,6 +174,10 @@ export function reverses(call: Pick<AldoFunctionCall, "name" | "arguments">): bo
       return !call.arguments.until;
     case "settle_thread":
       return call.arguments.settled === false;
+    case "decide_approval":
+      return call.arguments.decision === "discard";
+    case "set_heads_ups":
+      return call.arguments.on === false;
     default:
       return false;
   }
@@ -340,4 +348,21 @@ export function phaseAfter(phase: AldoAssistantPhase, type: string): AldoAssista
     default:
       return null;
   }
+}
+
+/**
+ * What Aldo said that the page doesn't show yet: its messages after the
+ * newest the page loaded (a heads-up Aldo gave while the page was open),
+ * except what it said on this page, which is there already (matched by what
+ * it said).
+ */
+export function unseenMessages(
+  shown: ReadonlyArray<Pick<AldoAssistantMessage, "role" | "text">>,
+  fetched: ReadonlyArray<AldoAssistantMessage>,
+  after: string | null,
+): ReadonlyArray<AldoAssistantMessage> {
+  const said = new Set(shown.filter((m) => m.role === "assistant").map((m) => m.text.trim()));
+  return fetched.filter(
+    (m) => m.role === "assistant" && (after === null || m.at > after) && !said.has(m.text.trim()),
+  );
 }

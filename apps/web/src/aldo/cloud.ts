@@ -1472,11 +1472,77 @@ export async function runAldoRoutine(id: string): Promise<string> {
   return result;
 }
 
+// ---------------------------------------------------------------------------
+// Approvals: what waits on the user's one tap. An email an agent drafted in
+// their mail (sent as it stands), an event for their calendar, or a thread
+// Aldo suggests in a heads-up. Aldo does it when they approve.
+
+export type AldoApprovalStatus = "pending" | "sending" | "approved" | "discarded" | "expired";
+
+export interface AldoApproval {
+  readonly id: string;
+  readonly kind: "email" | "event" | "start";
+  readonly provider: "google" | "microsoft" | null;
+  readonly title: string;
+  /** One line: who it's to, or when. */
+  readonly summary: string;
+  /** What it is in full, labeled: To, Cc, Bcc, Attached; When, Invites, Where. */
+  readonly fields: ReadonlyArray<{ readonly label: string; readonly value: string }>;
+  /** The email's text, the event's description, or what the thread would be asked. */
+  readonly body: string;
+  readonly approveLabel: string;
+  readonly discardLabel: string;
+  readonly status: AldoApprovalStatus;
+  /** What was done, or why the last try failed (`failed`) while it waits. */
+  readonly result: string | null;
+  readonly failed: boolean;
+  readonly thread: AldoHomeTarget | null;
+  readonly threadTitle: string | null;
+  readonly createdAt: string;
+  readonly decidedAt: string | null;
+}
+
+/** Approves or discards one; says what was done. Aldo refuses (409) an email whose draft changed since it was shown. */
+export async function decideAldoApproval(
+  id: string,
+  decision: "approve" | "discard",
+): Promise<{ readonly approval: Omit<AldoApproval, "threadTitle">; readonly message: string }> {
+  return api(`/api/approvals/${encodeURIComponent(id)}`, {
+    method: "POST",
+    body: JSON.stringify({ decision }),
+  });
+}
+
+/** Aldo's heads-ups: whether it looks at the user's new mail and coming events between conversations. */
+export interface AldoHeadsUps {
+  readonly on: boolean;
+  readonly lookedAt: string | null;
+}
+
+/** Null where this Aldo has no heads-ups. */
+export async function fetchAldoHeadsUps(): Promise<AldoHeadsUps | null> {
+  try {
+    return await api<AldoHeadsUps>("/api/assistant/heads-ups");
+  } catch (cause) {
+    if (cause instanceof AldoApiError && cause.status === 404) return null;
+    throw cause;
+  }
+}
+
+export async function setAldoHeadsUps(on: boolean): Promise<AldoHeadsUps> {
+  return api<AldoHeadsUps>("/api/assistant/heads-ups", {
+    method: "PUT",
+    body: JSON.stringify({ on }),
+  });
+}
+
 export interface AldoHome {
   readonly at: string;
   readonly conversations: ReadonlyArray<AldoHomeConversation>;
   readonly pullRequests: ReadonlyArray<AldoHomePullRequest>;
   readonly upcoming: ReadonlyArray<AldoHomeDelivery>;
+  /** What waits on the user's tap, then what they decided in the last day (an older Aldo leaves them out). */
+  readonly approvals?: ReadonlyArray<AldoApproval>;
   /** The user's routines (an older Aldo leaves them out). */
   readonly routines?: ReadonlyArray<AldoRoutine>;
   readonly actions: ReadonlyArray<AldoHomeAction>;

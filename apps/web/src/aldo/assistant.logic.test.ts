@@ -9,6 +9,7 @@ import {
   rememberHeard,
   startNews,
   startWatchFor,
+  unseenMessages,
   withoutImageNotes,
   type AldoStartWatch,
 } from "./assistant.logic";
@@ -317,5 +318,23 @@ describe("startNews", () => {
     expect(
       startNews({ ...watch, told: ["queued"] }, directory({ state: "failed" }), 3).news?.state,
     ).toBe("failed");
+  });
+});
+
+describe("unseenMessages", () => {
+  const at = (minute: number) => `2026-10-03T12:${String(minute).padStart(2, "0")}:00.000Z`;
+  it("adds what Aldo said since the last read, once", () => {
+    const shown = [
+      { role: "user" as const, text: "What's on today?" },
+      { role: "assistant" as const, text: "Just the review at 3." },
+    ];
+    const fetched = [
+      { role: "assistant" as const, text: "Old news.", at: at(0) },
+      { role: "user" as const, text: "What's on today?", at: at(5) },
+      { role: "assistant" as const, text: "Just the review at 3.", at: at(5) },
+      { role: "assistant" as const, text: "Sam moved the review to 4.", at: at(9) },
+    ];
+    expect(unseenMessages(shown, fetched, at(1))).toEqual([fetched[3]]);
+    expect(unseenMessages([...shown, fetched[3]!], fetched, at(1))).toEqual([]);
   });
 });
