@@ -23,6 +23,7 @@
 - [The home screen in Aldo](./user/aldo-home.md)
 - [Pull requests in Aldo](./user/aldo-pull-requests.md)
 - [Notifications in Aldo](./user/aldo-notifications.md)
+- [When cloud agents sleep in Aldo](./user/aldo-sleeping-agents.md)
 - [Background service (Linux)](./user/background-service.md)
 - Providers: [Codex](./user/providers-codex.md) · [Claude](./user/providers-claude.md) · [OpenCode](./user/providers-opencode.md) · [Muse Code](./user/providers-muse.md) · [Prime Agent](./user/providers-prime-agent.md)
 
