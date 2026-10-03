@@ -1,7 +1,7 @@
 // Settings → Integrations: accounts the user connects for their agents to use,
-// beyond their code (Microsoft, for OneDrive, SharePoint and Excel). Connecting
-// signs in with the provider in a popup; how the sign-in reports back to this
-// tab is in integrations.logic.ts.
+// beyond their code: Google and Microsoft, for their mail, calendar, contacts
+// and files. Connecting signs in with the provider in a popup; how the sign-in
+// reports back to this tab is in integrations.logic.ts.
 
 import { BlocksIcon, CheckCircle2Icon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -18,6 +18,7 @@ import {
 } from "./cloud";
 import {
   ALDO_INTEGRATIONS_CHANNEL,
+  describeAldoCapabilities,
   aldoIntegrationResultFilter,
   parseAldoIntegrationMessage,
   parseAldoIntegrationRedirect,
@@ -33,17 +34,23 @@ const INTEGRATIONS: Record<
   {
     readonly name: string;
     readonly description: string;
-    /** The first is the main way to connect. */
+    /** The first is the main way to connect; a provider without account types has one. */
     readonly accounts: ReadonlyArray<{
-      readonly type: AldoIntegrationAccountType;
+      readonly type?: AldoIntegrationAccountType;
       readonly label: string;
     }>;
   }
 > = {
+  google: {
+    name: "Google",
+    description:
+      "Lets your agents read your Gmail and draft replies, see and add to your calendar, look up contacts, and open and save your Drive files, Docs and Sheets.",
+    accounts: [{ label: "Connect Google account" }],
+  },
   microsoft: {
     name: "Microsoft",
     description:
-      "Lets your agents open and save your OneDrive and SharePoint files, and work in the Excel workbooks stored there.",
+      "Lets your agents read your Outlook mail and draft replies, see and add to your calendar, look up contacts, and open and save your OneDrive and SharePoint files and the Excel workbooks there.",
     accounts: [
       { type: "work", label: "Connect work or school account" },
       { type: "personal", label: "Connect personal account" },
@@ -56,7 +63,7 @@ const ACCOUNT_TYPE: Record<AldoIntegrationAccountType, string> = {
   personal: "personal account",
 };
 
-function connect(provider: string, account: AldoIntegrationAccountType) {
+function connect(provider: string, account?: AldoIntegrationAccountType) {
   const url = aldoIntegrationConnectUrl(provider, account);
   // With the popup blocked, sign in in this tab: Aldo sends it back here after.
   if (!window.open(url, "aldo-integration", "popup,width=520,height=720")) {
@@ -83,6 +90,14 @@ function IntegrationRow(props: {
   if (!spec) return null;
   // Connected, but the provider stopped accepting the sign-in: it needs connecting again.
   const broken = integration.connected && integration.error !== null;
+  // Connected from before Aldo asked for mail and calendar (or with some left out): connecting
+  // again adds them. What a newer Aldo names and this client doesn't know is left out of both.
+  const canUse = integration.connected ? describeAldoCapabilities(integration.can ?? []) : "";
+  const toAdd =
+    integration.connected && !broken ? describeAldoCapabilities(integration.missing ?? []) : "";
+  // Connecting again goes the way it was connected; when that's unknown, every way is offered.
+  const sameWay = spec.accounts.find((account) => account.type === integration.account?.type);
+  const reconnect = broken || toAdd ? (sameWay ? [sameWay] : spec.accounts) : [];
 
   const disconnect = () => {
     setBusy(true);
@@ -111,12 +126,20 @@ function IntegrationRow(props: {
         ) : broken ? (
           <span className="text-destructive-foreground">{integration.error}</span>
         ) : integration.connected ? (
-          <span className="inline-flex items-center gap-1 text-success-foreground">
-            <CheckCircle2Icon className="size-3.5" />
-            Connected
-            {integration.account
-              ? ` as ${integration.account.email} (${ACCOUNT_TYPE[integration.account.type]})`
-              : ""}
+          <span className="flex flex-col gap-0.5">
+            <span className="inline-flex items-center gap-1 text-success-foreground">
+              <CheckCircle2Icon className="size-3.5" />
+              Connected
+              {integration.account
+                ? ` as ${integration.account.email}${integration.account.type ? ` (${ACCOUNT_TYPE[integration.account.type]})` : ""}`
+                : ""}
+            </span>
+            {canUse ? (
+              <span className="text-muted-foreground">Agents can use your {canUse}.</span>
+            ) : null}
+            {toAdd ? (
+              <span className="text-warning-foreground">Connect again to add your {toAdd}.</span>
+            ) : null}
           </span>
         ) : (
           "Not connected"
@@ -124,10 +147,10 @@ function IntegrationRow(props: {
       }
       control={
         <div className="flex flex-wrap gap-2 sm:flex-col sm:items-stretch">
-          {!integration.connected || broken
+          {!integration.connected
             ? spec.accounts.map((account, index) => (
                 <Button
-                  key={account.type}
+                  key={account.type ?? account.label}
                   size="sm"
                   variant={index === 0 ? "default" : "outline"}
                   disabled={!integration.available || confirming || busy}
@@ -136,7 +159,17 @@ function IntegrationRow(props: {
                   {account.label}
                 </Button>
               ))
-            : null}
+            : reconnect.map((account, index) => (
+                <Button
+                  key={account.type ?? account.label}
+                  size="sm"
+                  variant={index === 0 ? "default" : "outline"}
+                  disabled={!integration.available || confirming || busy}
+                  onClick={() => connect(integration.provider, account.type)}
+                >
+                  {reconnect.length === 1 ? "Connect again" : account.label}
+                </Button>
+              ))}
           {/* A broken sign-in can be connected again or removed. */}
           {integration.connected ? (
             confirming ? (

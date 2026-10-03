@@ -8,6 +8,21 @@
 
 export const ALDO_INTEGRATIONS_CHANNEL = "aldo-integrations";
 
+const CAPABILITY_NAMES: Record<string, string> = {
+  mail: "mail",
+  calendar: "calendar",
+  contacts: "contacts",
+  files: "files",
+};
+
+/** ["mail", "calendar", "files"] → "mail, calendar and files" (what a newer Aldo adds and this client doesn't know is left out). */
+export function describeAldoCapabilities(capabilities: ReadonlyArray<string>): string {
+  const names = capabilities.flatMap((c) => (CAPABILITY_NAMES[c] ? [CAPABILITY_NAMES[c]] : []));
+  return names.length <= 1
+    ? (names[0] ?? "")
+    : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
+}
+
 export interface AldoIntegrationResult {
   readonly provider: string;
   readonly ok: boolean;

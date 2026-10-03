@@ -10,8 +10,14 @@
 
 import { useNavigate } from "@tanstack/react-router";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import { CheckCircle2Icon, CircleIcon, FolderGit2Icon, SparklesIcon } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  CheckCircle2Icon,
+  CircleIcon,
+  CompassIcon,
+  FolderGit2Icon,
+  SparklesIcon,
+} from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import { Button } from "../components/ui/button";
 import { Kbd } from "../components/ui/kbd";
@@ -32,8 +38,10 @@ import {
   UpcomingSection,
 } from "./AldoHomeBoard";
 import { NeedsYouCard } from "./AldoHomeInbox";
+import { RoutinesSection } from "./AldoRoutines";
 import { seedAldoComposer, sendText, useAldoAssistant } from "./assistantSession";
 import {
+  aldoSupportsGeneralThreads,
   fetchAldoHome,
   requestAldoDirectoryRefresh,
   subscribeAldoEnvironments,
@@ -234,7 +242,13 @@ export function AldoHome() {
   const sourceHost = HOST_KINDS.find((kind) => accounts?.[kind]?.connected === true);
   const sourceReady = sourceHost !== undefined;
   const agentReady = AGENT_KINDS.some((kind) => accounts?.[kind].connected === true);
-  const setupDone = sourceReady && agentReady;
+  // Threads that aren't in a repository need no git host; an older Aldo's do (the directory says, once listed).
+  const general = useSyncExternalStore(
+    subscribeAldoEnvironments,
+    aldoSupportsGeneralThreads,
+    () => false,
+  );
+  const setupDone = agentReady && (sourceReady || general);
 
   const repos = useMemo(() => (home ? repoChips(home) : []), [home]);
   // A repository whose chip has gone (its last conversation left) no longer narrows anything.
@@ -318,8 +332,9 @@ export function AldoHome() {
       <section className="rounded-xl border border-border/60 bg-card/30 p-4">
         <h2 className="font-medium text-sm">{assistant ? "Set up Aldo" : "Welcome to Aldo"}</h2>
         <p className="mt-1 text-muted-foreground text-xs">
-          Connect GitHub (or another git host in Settings → Source Control) and at least one of your
-          agent subscriptions, once{assistant ? ", so Aldo can start threads for you" : ""}.
+          {general
+            ? `Connect at least one of your agent subscriptions, once${assistant ? ", so Aldo can start threads for you" : ""}, and GitHub (or another git host in Settings → Source Control) for work on code.`
+            : `Connect GitHub (or another git host in Settings → Source Control) and at least one of your agent subscriptions, once${assistant ? ", so Aldo can start threads for you" : ""}.`}
         </p>
         <ol className="mt-3 space-y-2 text-left">
           {sourceHost && sourceHost !== "github" ? null : (
@@ -378,6 +393,16 @@ export function AldoHome() {
                 <FolderGit2Icon className="size-4" />
                 Open a repository
               </Button>
+              {general ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => openAldoRepositoryPicker("general")}
+                >
+                  <CompassIcon className="size-4" />
+                  New thread
+                </Button>
+              ) : null}
             </header>
             {setup}
             {repos.length > 1 ? (
@@ -451,6 +476,14 @@ export function AldoHome() {
                   now={now}
                   onActed={() => void refresh()}
                 />
+                {/* An older Aldo has no routines to show. */}
+                {shown.routines ? (
+                  <RoutinesSection
+                    routines={shown.routines}
+                    now={now}
+                    onChanged={() => void refresh()}
+                  />
+                ) : null}
                 {board.done.length > 0 ? (
                   <Section
                     title="Done"

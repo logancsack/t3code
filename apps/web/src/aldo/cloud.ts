@@ -115,11 +115,25 @@ export class AldoApiError extends Error {
   }
 }
 
+/** The browser's time zone, which Aldo keeps for routines' times and its sense of the user's day. */
+function timeZone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone ?? "";
+  } catch {
+    return "";
+  }
+}
+
 async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const zone = timeZone();
   const response = await fetch(path, {
     ...init,
     credentials: "same-origin",
-    headers: { "content-type": "application/json", ...init.headers },
+    headers: {
+      "content-type": "application/json",
+      ...(zone ? { "x-time-zone": zone } : {}),
+      ...init.headers,
+    },
   });
   if (response.status === 401) {
     // The Aldo session ended; send the user back through sign-in.
@@ -137,6 +151,13 @@ async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
 // Directory of sandboxes
 
 let knownEnvironments: ReadonlyArray<AldoEnvironment> | null = null;
+/** What this Aldo can do that an older one couldn't, as its directory says (none before the first listing). */
+let aldoFeatures: { readonly general: boolean } = { general: false };
+
+/** Whether threads can start without a repository (General), as the directory said. */
+export function aldoSupportsGeneralThreads(): boolean {
+  return aldoFeatures.general;
+}
 const directoryListeners = new Set<() => void>();
 let refreshRequested = true;
 /** Emit the directory as it is now, without fetching (a sandbox was just added to it). */
@@ -279,7 +300,11 @@ async function syncDirectory(environments: ReadonlyArray<AldoEnvironment>): Prom
 }
 
 async function fetchEnvironments(): Promise<ReadonlyArray<AldoEnvironment>> {
-  const { environments } = await api<{ environments: AldoEnvironment[] }>("/api/environments");
+  const { environments, features } = await api<{
+    environments: AldoEnvironment[];
+    features?: { general?: boolean };
+  }>("/api/environments");
+  aldoFeatures = { general: features?.general === true };
   // A listing that started before a deletion finished can still include its machine.
   const listed = environments.filter((environment) => !hiddenByDeletion(environment.environmentId));
   knownEnvironments = listed;
@@ -509,6 +534,8 @@ export interface AldoPlannedProject {
   readonly title: string;
   readonly workspaceRoot: string;
   readonly remoteUrl: string;
+  /** The remote T3 reads it from: origin, or a thread's own folder's stand-in (an older Aldo leaves it out). */
+  readonly remoteName?: string;
 }
 
 /**
@@ -762,6 +789,9 @@ export const aldoAuthConnectors = {
 
 export type AldoIntegrationAccountType = "work" | "personal";
 
+/** What agents can do with a connected account. */
+export type AldoIntegrationCapability = "mail" | "calendar" | "contacts" | "files";
+
 export interface AldoIntegration {
   readonly provider: string;
   readonly name: string;
@@ -771,8 +801,13 @@ export interface AldoIntegration {
   readonly account: {
     readonly email: string;
     readonly name: string;
-    readonly type: AldoIntegrationAccountType;
+    /** A Microsoft account's type. */
+    readonly type?: AldoIntegrationAccountType;
   } | null;
+  /** What agents can do with it (an older Aldo leaves it out). */
+  readonly can?: ReadonlyArray<AldoIntegrationCapability>;
+  /** What connecting again would add (a sign-in from before Aldo asked for it). */
+  readonly missing?: ReadonlyArray<AldoIntegrationCapability>;
   /** Why the provider stopped accepting the sign-in; it needs connecting again. */
   readonly error: string | null;
 }
@@ -792,9 +827,10 @@ export async function fetchAldoIntegrations(): Promise<ReadonlyArray<AldoIntegra
 /** Where connecting starts: Aldo sends it on to the provider's sign-in. */
 export function aldoIntegrationConnectUrl(
   provider: string,
-  account: AldoIntegrationAccountType,
+  account?: AldoIntegrationAccountType,
 ): string {
-  return `/api/integrations/${encodeURIComponent(provider)}/connect?account=${account}`;
+  const path = `/api/integrations/${encodeURIComponent(provider)}/connect`;
+  return account ? `${path}?account=${account}` : path;
 }
 
 export async function disconnectAldoIntegration(provider: string): Promise<void> {
@@ -1307,7 +1343,7 @@ export interface AldoHomePullRequest {
 
 export interface AldoHomeDelivery {
   readonly id: string;
-  readonly kind: "reminder" | "message" | "notice";
+  readonly kind: "reminder" | "message" | "notice" | "routine";
   readonly thread: AldoHomeTarget;
   readonly threadTitle: string;
   readonly message: string;
@@ -1362,11 +1398,87 @@ export interface AldoPolicy {
   readonly reviews?: "all" | "important";
 }
 
+// ---------------------------------------------------------------------------
+// Routines: standing instructions that run in a thread of their own on a
+// schedule (in the user's time zone) or when their webhook is called.
+
+export type AldoWeekday = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
+
+export interface AldoRoutineSchedule {
+  readonly every: "day" | "weekdays" | "week" | "month" | "hours";
+  /** Times of day, HH:MM (24-hour). */
+  readonly at?: ReadonlyArray<string>;
+  readonly days?: ReadonlyArray<AldoWeekday>;
+  readonly day?: number;
+  readonly hours?: number;
+}
+
+export interface AldoRoutine {
+  readonly id: string;
+  readonly title: string;
+  readonly instruction: string;
+  readonly schedule: AldoRoutineSchedule | null;
+  /** When it runs, in words ("Weekdays at 07:00 (America/New_York)"). */
+  readonly when: string;
+  readonly timeZone: string;
+  readonly repos: ReadonlyArray<string>;
+  readonly enabled: boolean;
+  /** Its webhook URL, when it has one: anything POSTed to it runs the routine. */
+  readonly webhook: string | null;
+  readonly nextRunAt: string | null;
+  readonly lastRunAt: string | null;
+  readonly lastResult: string | null;
+  readonly createdBy: "user" | "aldo" | "agent";
+  /** The thread its runs go to, once there is one. */
+  readonly thread: AldoHomeTarget | null;
+}
+
+export interface AldoRoutineInput {
+  readonly title?: string;
+  readonly instruction?: string;
+  readonly schedule?: AldoRoutineSchedule | null;
+  readonly webhook?: boolean;
+  readonly enabled?: boolean;
+}
+
+export async function createAldoRoutine(input: AldoRoutineInput): Promise<AldoRoutine> {
+  const { routine } = await api<{ routine: AldoRoutine }>("/api/routines", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+  return routine;
+}
+
+export async function updateAldoRoutine(id: string, input: AldoRoutineInput): Promise<AldoRoutine> {
+  const { routine } = await api<{ routine: AldoRoutine }>(
+    `/api/routines/${encodeURIComponent(id)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    },
+  );
+  return routine;
+}
+
+export async function deleteAldoRoutine(id: string): Promise<void> {
+  await api(`/api/routines/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+/** Runs a routine now; says how it went ("started a thread for it", "skipped: ..."). */
+export async function runAldoRoutine(id: string): Promise<string> {
+  const { result } = await api<{ result: string }>(`/api/routines/${encodeURIComponent(id)}/run`, {
+    method: "POST",
+  });
+  return result;
+}
+
 export interface AldoHome {
   readonly at: string;
   readonly conversations: ReadonlyArray<AldoHomeConversation>;
   readonly pullRequests: ReadonlyArray<AldoHomePullRequest>;
   readonly upcoming: ReadonlyArray<AldoHomeDelivery>;
+  /** The user's routines (an older Aldo leaves them out). */
+  readonly routines?: ReadonlyArray<AldoRoutine>;
   readonly actions: ReadonlyArray<AldoHomeAction>;
   readonly usage: AldoHomeUsage;
   readonly spends: {

@@ -131,7 +131,8 @@ function useEnvironments() {
 function useRepositories(): ReadonlyArray<string> {
   const environments = useEnvironments();
   return useMemo(
-    () => [...new Set((environments ?? []).map((e) => e.repo))].sort(),
+    // A thread that isn't in a repository has none ("").
+    () => [...new Set((environments ?? []).map((e) => e.repo).filter(Boolean))].sort(),
     [environments],
   );
 }

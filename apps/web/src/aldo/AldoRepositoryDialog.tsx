@@ -1,6 +1,7 @@
 import type { SourceControlRepositorySummary } from "@t3tools/contracts";
 import {
   CheckIcon,
+  CompassIcon,
   FolderGit2Icon,
   LoaderCircleIcon,
   LockIcon,
@@ -8,7 +9,15 @@ import {
   SparklesIcon,
   XIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+  type FormEvent,
+  type ReactNode,
+} from "react";
 
 import { Button } from "../components/ui/button";
 import {
@@ -33,8 +42,10 @@ import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { cn } from "../lib/utils";
 import { AldoAccountButton, useAldoAccounts } from "./AldoAccountsPanel";
 import {
+  aldoSupportsGeneralThreads,
   isAldoCloud,
   listAldoRepositoryDirectory,
+  subscribeAldoEnvironments,
   type AldoAccount,
   type AldoHostKind,
 } from "./cloud";
@@ -43,7 +54,8 @@ import { startAldoSandbox } from "./threads";
 const OPEN_EVENT = "aldo:open-repository-picker";
 const MAX_REPOS = 6;
 
-type Mode = "new" | "existing";
+/** A new project, existing repositories, or none (General: work that isn't code). */
+type Mode = "new" | "existing" | "general";
 
 const HOST_LABELS: Record<AldoHostKind, string> = {
   github: "GitHub",
@@ -67,7 +79,7 @@ function shortName(ref: string): string {
   return pathOf(ref).split("/").at(-1) ?? ref;
 }
 
-/** Opens the start dialog: a new project, or a thread in existing repositories. */
+/** Opens the start dialog: a new project, a thread in existing repositories, or one in none. */
 export function openAldoRepositoryPicker(mode: Mode = "existing"): void {
   window.dispatchEvent(new CustomEvent<Mode>(OPEN_EVENT, { detail: mode }));
 }
@@ -100,20 +112,35 @@ function slugify(text: string): string {
     .slice(0, 100);
 }
 
+const DESCRIPTIONS: Record<Mode, string> = {
+  new: "Aldo creates the repository and a cloud agent to work in it. Tell the agent what to build.",
+  existing:
+    "Pick one or more repositories. The thread gets its own cloud agent, with each one cloned on a new branch.",
+  general:
+    "For work that isn't code: research, errands, email, documents, anything on the web. The thread gets its own cloud agent with a browser and the accounts you connected, and shows under General.",
+};
+
 function StartPicker(props: { readonly initialMode: Mode; readonly onDone: () => void }) {
   const { accounts, error: accountsError, refresh: refreshAccounts } = useAldoAccounts();
   const connectedHosts = HOST_KINDS.filter((kind) => accounts?.[kind]?.connected === true);
-  const [mode, setMode] = useState<Mode>(props.initialMode);
+  // An older Aldo can't start a thread without a repository (the directory says, once listed).
+  const general = useSyncExternalStore(
+    subscribeAldoEnvironments,
+    aldoSupportsGeneralThreads,
+    () => false,
+  );
+  const [mode, setMode] = useState<Mode>(
+    props.initialMode === "general" && !general ? "existing" : props.initialMode,
+  );
+  // Without a git host, a thread outside a repository is the one there is to start.
+  const shownMode: Mode =
+    general && accounts !== null && connectedHosts.length === 0 ? "general" : mode;
 
   return (
     <DialogPopup className="flex max-h-[min(760px,calc(100dvh-2rem))] w-[min(680px,calc(100vw-2rem))] flex-col">
       <DialogHeader>
-        <DialogTitle>{mode === "new" ? "New project" : "Start a thread"}</DialogTitle>
-        <DialogDescription>
-          {mode === "new"
-            ? "Aldo creates the repository and a cloud agent to work in it. Tell the agent what to build."
-            : "Pick one or more repositories. The thread gets its own cloud agent, with each one cloned on a new branch."}
-        </DialogDescription>
+        <DialogTitle>{shownMode === "new" ? "New project" : "Start a thread"}</DialogTitle>
+        <DialogDescription>{DESCRIPTIONS[shownMode]}</DialogDescription>
       </DialogHeader>
       {accounts === null && accountsError ? (
         <DialogPanel className="flex flex-col items-start gap-3">
@@ -129,38 +156,100 @@ function StartPicker(props: { readonly initialMode: Mode; readonly onDone: () =>
           <LoaderCircleIcon className="mx-auto size-5 animate-spin text-muted-foreground" />
         </DialogPanel>
       ) : connectedHosts.length === 0 ? (
-        <DialogPanel className="flex flex-col items-start gap-3">
-          <p className="text-muted-foreground text-sm">
-            Connect GitHub (or GitLab, Bitbucket or Azure DevOps in Settings → Source Control) so
-            threads can clone your repositories and open pull requests.
-          </p>
-          <AldoAccountButton
-            kind="github"
-            account={accounts.github}
-            onConnected={refreshAccounts}
-            triggerLabel="Connect GitHub"
-          />
-        </DialogPanel>
+        <>
+          {general ? <GeneralThreadStart onDone={props.onDone} /> : null}
+          <DialogPanel className="flex flex-col items-start gap-3">
+            <p className="text-muted-foreground text-sm">
+              {general ? "To work on code, connect" : "Connect"} GitHub (or GitLab, Bitbucket or
+              Azure DevOps in Settings → Source Control) so threads can clone your repositories and
+              open pull requests.
+            </p>
+            <AldoAccountButton
+              kind="github"
+              account={accounts.github}
+              onConnected={refreshAccounts}
+              triggerLabel="Connect GitHub"
+            />
+          </DialogPanel>
+        </>
       ) : (
         <>
           <div className="px-4 pb-3 sm:px-6">
-            <div className="grid grid-cols-2 gap-1 rounded-lg bg-muted/60 p-1" role="tablist">
+            <div
+              className={cn(
+                "grid gap-1 rounded-lg bg-muted/60 p-1",
+                general ? "grid-cols-3" : "grid-cols-2",
+              )}
+              role="tablist"
+            >
               <ModeButton active={mode === "new"} onClick={() => setMode("new")}>
                 <SparklesIcon className="size-3.5" /> New project
               </ModeButton>
               <ModeButton active={mode === "existing"} onClick={() => setMode("existing")}>
-                <FolderGit2Icon className="size-3.5" /> Existing repositories
+                <FolderGit2Icon className="size-3.5" /> Repositories
               </ModeButton>
+              {general ? (
+                <ModeButton active={mode === "general"} onClick={() => setMode("general")}>
+                  <CompassIcon className="size-3.5" /> No repository
+                </ModeButton>
+              ) : null}
             </div>
           </div>
           {mode === "new" ? (
             <NewProjectForm hosts={connectedHosts} accounts={accounts} onDone={props.onDone} />
+          ) : mode === "general" ? (
+            <GeneralThreadStart onDone={props.onDone} />
           ) : (
             <ExistingRepositoryPicker onDone={props.onDone} />
           )}
         </>
       )}
     </DialogPopup>
+  );
+}
+
+/** Starts a thread that isn't in a repository: it opens at once, ready for what to do. */
+function GeneralThreadStart(props: { readonly onDone: () => void }) {
+  const handleNewThread = useNewThreadHandler();
+  const [starting, setStarting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const start = async () => {
+    setStarting(true);
+    setError(null);
+    try {
+      const projectRef = await startAldoSandbox({ repos: [] });
+      props.onDone();
+      await handleNewThread(projectRef);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+      setStarting(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-3 px-4 pb-5 sm:px-6">
+      <ul className="flex list-disc flex-col gap-1 pl-5 text-muted-foreground text-sm">
+        <li>Research something and write it up</li>
+        <li>Sort your inbox, or draft replies, with your mail connected</li>
+        <li>Book, buy or fill something in on a website you're signed in to</li>
+        <li>Make a document, spreadsheet or deck</li>
+      </ul>
+      {error ? <p className="text-destructive-foreground text-sm">{error}</p> : null}
+      <div className="flex items-center justify-end gap-2">
+        {starting ? (
+          <span className="mr-auto flex items-center gap-2 text-muted-foreground text-sm">
+            <LoaderCircleIcon className="size-4 animate-spin" /> Opening…
+          </span>
+        ) : null}
+        <Button type="button" variant="ghost" onClick={props.onDone}>
+          {starting ? "Hide" : "Cancel"}
+        </Button>
+        <Button type="button" disabled={starting} onClick={() => void start()}>
+          Start thread
+        </Button>
+      </div>
+    </div>
   );
 }
 
