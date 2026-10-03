@@ -72,9 +72,11 @@ A saved login is typed into the in-app browser for the agent, only on the exact 
 
 ### Saving a login when you sign in
 
-When you sign in to a site yourself in a thread's browser (the Browser panel or the Desktop view), the panel asks **Save this login to your vault?** once the sign-in has gone through, with the site and username. Save it for all threads or only one of the thread's repositories, and every thread's agent can then sign in there for you. If the site and username are saved with another password, it offers to update that login instead. It doesn't ask for a sign-in that failed, one the agent did, or a login that's already saved.
+When you sign in to a site yourself in a thread's browser (the Browser panel or the Desktop view), a pop-up over the page asks **Save this login to your Aldo vault?** once the sign-in has gone through, with the site and username. Save it for all threads or only one of the thread's repositories, and every thread's agent can then sign in there for you. If the site and username are saved with another password, it offers to update that login instead. It asks every time you sign in, except for a sign-in that failed, one the agent did, or a login that's already saved.
 
-**Not now** dismisses it. **Never for this site** stops asking for that site in this browser; the sites you chose are listed under **Logins** in **Settings → Vault**, where **Offer again** undoes it. The password stays on the cloud machine unless you choose **Save**.
+**Not now** dismisses it for this sign-in; the next one asks again. **Never for this site** stops asking for that site on every device and in every thread; the sites you chose are listed under **Logins** in **Settings → Vault**, where **Offer again** undoes it. The password stays on the cloud machine unless you choose **Save**.
+
+The thread's Chrome doesn't run its own password manager, so it never offers to save a password itself or covers the page with a breach warning.
 
 ### Logins agents save
 

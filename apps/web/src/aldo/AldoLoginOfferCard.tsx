@@ -12,14 +12,16 @@ import {
 import { toastManager } from "../components/ui/toast";
 import { aldoVault } from "./cloud";
 import { aldoLoginSite, aldoLoginToSave, type AldoLoginOffer } from "./loginOffers.logic";
+import { useAldoNeverSaveLogins } from "./neverSaveLogins";
 
 const EVERY_THREAD = "*";
 
 /**
  * Offers to save a login the user just signed in with in the shared browser,
  * so agents in other threads can sign in with it (fill_login) and nobody signs
- * in again. A strip above the page (and the desktop) that doesn't block it;
- * saving takes the password from the machine and saves it as the user.
+ * in again. A pop-up over the page's corner (and the desktop's), as a
+ * browser's own is, that leaves the rest of it usable; saving takes the
+ * password from the machine and saves it as the user.
  */
 export function AldoLoginOfferCard(props: {
   offer: AldoLoginOffer;
@@ -34,6 +36,7 @@ export function AldoLoginOfferCard(props: {
   const [scope, setScope] = useState(EVERY_THREAD);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { synced } = useAldoNeverSaveLogins();
   const update = offer.saved;
   const site = aldoLoginSite(offer.origin);
   const threads =
@@ -58,11 +61,21 @@ export function AldoLoginOfferCard(props: {
     }
   };
 
+  const never = () => {
+    props.onNever();
+    toastManager.add({
+      type: "info",
+      title: `Won't offer to save logins for ${site} again`,
+      description: `${synced ? "On any device" : "In this browser"}. Settings → Vault offers them again.`,
+      timeout: 6000,
+    });
+  };
+
   return (
     <div
-      role="region"
+      role="dialog"
       aria-label={update ? "Update saved login" : "Save login"}
-      className="shrink-0 space-y-2 border-b border-border bg-primary/8 px-3 py-2 text-sm"
+      className="dropdown-glass space-y-2 rounded-lg p-3 text-sm text-popover-foreground shadow-[0_16px_40px_-18px_rgb(0_0_0/55%)] dark:shadow-[0_18px_44px_-18px_rgb(0_0_0/80%)]"
     >
       <div className="flex items-start gap-2">
         <KeyRoundIcon className="mt-0.5 size-4 shrink-0 text-primary" />
@@ -70,7 +83,7 @@ export function AldoLoginOfferCard(props: {
           <p className="font-medium">
             {update
               ? `Update the saved password for ${update.label}?`
-              : "Save this login to your vault?"}
+              : "Save this login to your Aldo vault?"}
           </p>
           <p className="truncate text-xs text-muted-foreground">
             {site}
@@ -99,17 +112,9 @@ export function AldoLoginOfferCard(props: {
       ) : null}
       {error ? <p className="text-xs text-destructive-foreground">{error}</p> : null}
       <div className="flex flex-wrap justify-end gap-1">
-        {!update ? (
-          <Button
-            type="button"
-            size="compact"
-            variant="ghost"
-            disabled={busy}
-            onClick={props.onNever}
-          >
-            Never for this site
-          </Button>
-        ) : null}
+        <Button type="button" size="compact" variant="ghost" disabled={busy} onClick={never}>
+          Never for this site
+        </Button>
         <Button
           type="button"
           size="compact"

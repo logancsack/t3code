@@ -26,7 +26,11 @@ import {
   type AldoSecretKind,
   type AldoVaultItem,
 } from "./cloud";
-import { offerSavingLoginsFor, useAldoNeverSaveLogins } from "./neverSaveLogins";
+import {
+  offerSavingLoginsFor,
+  refreshAldoNeverSaveLogins,
+  useAldoNeverSaveLogins,
+} from "./neverSaveLogins";
 import {
   answersAldoSecretRequest,
   parseAldoSecretRequest,
@@ -434,6 +438,8 @@ export function AldoVaultPanel() {
       .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)));
   }, []);
   useEffect(() => refresh(), [refresh]);
+  // Sites never offered may have changed on another device since this page loaded.
+  useEffect(() => void refreshAldoNeverSaveLogins(), []);
 
   const run = async (action: () => Promise<unknown>, done: () => void) => {
     setSaving(true);
@@ -753,17 +759,26 @@ export function AldoVaultPanel() {
             }
           />
         ))}
-        {[...neverSave].sort().map((origin) => (
+        {[...neverSave.origins].sort().map((origin) => (
           <SettingsRow
             key={origin}
             title={origin}
-            description="Not offered: you chose Never for this site when signing in in a thread's browser (this browser only)."
+            description={`Not offered: you chose Never for this site when signing in in a thread's browser${neverSave.synced ? "" : " (this browser only)"}.`}
             control={
               <Button
                 type="button"
                 size="compact"
                 variant="ghost"
-                onClick={() => offerSavingLoginsFor(origin)}
+                disabled={saving}
+                onClick={() =>
+                  void run(
+                    () => offerSavingLoginsFor(origin),
+                    () =>
+                      setNotice(
+                        `Signing in on ${origin} in a thread's browser offers to save it again.`,
+                      ),
+                  )
+                }
               >
                 Offer again
               </Button>

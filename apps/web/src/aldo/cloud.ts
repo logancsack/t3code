@@ -1098,6 +1098,13 @@ export const aldoVault = {
       body: JSON.stringify({ kind: "login", ...input }),
     }),
   remove: (id: string) => api(`/api/vault/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  /** Sites the user said never to offer saving a login for. An Aldo from before it kept them answers 404 or 405. */
+  neverSave: async () => (await api<{ origins: string[] }>("/api/vault/never-save")).origins,
+  setNeverSave: (origin: string, never: boolean) =>
+    api<{ origin: string }>("/api/vault/never-save", {
+      method: never ? "POST" : "DELETE",
+      body: JSON.stringify({ origin }),
+    }),
   importDotenv: (scope: string, text: string) =>
     api<{ saved: string[]; skipped: string[] }>("/api/vault/import", {
       method: "POST",
