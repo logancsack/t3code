@@ -810,6 +810,20 @@ export interface AldoIntegration {
   readonly missing?: ReadonlyArray<AldoIntegrationCapability>;
   /** Why the provider stopped accepting the sign-in; it needs connecting again. */
   readonly error: string | null;
+  /** "key" for a generator the user connects with its API key (an older Aldo leaves it out: an account). */
+  readonly kind?: "account" | "key";
+  /** A generator's: what it makes, as Settings says it. */
+  readonly description?: string;
+  /** A generator's: where the user creates a key. */
+  readonly keyUrl?: string;
+  /** A generator's: what connecting asks for (an API key, or a key and its secret). */
+  readonly fields?: ReadonlyArray<AldoIntegrationKeyField>;
+}
+
+export interface AldoIntegrationKeyField {
+  readonly name: string;
+  readonly label: string;
+  readonly placeholder?: string;
 }
 
 /** The integrations this Aldo offers and how each stands; null for an Aldo without them. */
@@ -835,6 +849,17 @@ export function aldoIntegrationConnectUrl(
 
 export async function disconnectAldoIntegration(provider: string): Promise<void> {
   await api(`/api/integrations/${encodeURIComponent(provider)}`, { method: "DELETE" });
+}
+
+/** Connects a generator with the user's key; Aldo checks it with the provider first. */
+export async function connectAldoIntegrationKey(
+  provider: string,
+  values: Readonly<Record<string, string>>,
+): Promise<void> {
+  await api(`/api/integrations/${encodeURIComponent(provider)}`, {
+    method: "POST",
+    body: JSON.stringify({ values }),
+  });
 }
 
 // ---------------------------------------------------------------------------

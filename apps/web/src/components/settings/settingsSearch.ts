@@ -318,6 +318,15 @@ export const SETTINGS_SEARCH_ITEMS = [
     aldoCloudOnly: true,
   },
   {
+    id: "aldo-generators",
+    title: "Image, video and audio",
+    to: "/settings/integrations",
+    searchTerms: [
+      "generators media generation ai video image audio voice music speech api key runway higgsfield luma fal replicate elevenlabs flux black forest labs kling minimax hailuo ideogram veo imagen sora gpt image",
+    ],
+    aldoCloudOnly: true,
+  },
+  {
     id: "agent-browser-access",
     title: "Agent browser access",
     to: "/settings/integrations",
