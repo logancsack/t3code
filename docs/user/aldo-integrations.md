@@ -4,7 +4,7 @@
 
 ## Image, video and audio
 
-Connect **Runway**, **Higgsfield**, **Luma**, **fal**, **Replicate**, or **ElevenLabs** with your own API credentials. Choose **Connect** next to a provider, follow **Get a key** to its developer dashboard, and paste the key. Higgsfield asks for the key ID and secret separately; fal takes the complete key, including the colon.
+Connect **Runway**, **Higgsfield**, **Luma**, **fal**, **Replicate**, or **ElevenLabs** with your own API credentials. Choose **Connect** next to a provider, follow **Get a key** to its developer dashboard, and paste the complete copied key as-is. Higgsfield uses the key copied from [its API console](https://open.higgsfield.ai/api-keys); fal takes the complete key, including the colon.
 
 Aldo saves the key in your encrypted Vault and sends it only to that provider's API. Agents receive a stand-in and instructions for using the provider. Ask a thread to make an image, clip, voice, sound effect or music; the agent saves the result and shares the file. Running threads receive the key immediately; agents' instructions update once their current turn finishes.
 
