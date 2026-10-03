@@ -851,7 +851,7 @@ export async function disconnectAldoIntegration(provider: string): Promise<void>
   await api(`/api/integrations/${encodeURIComponent(provider)}`, { method: "DELETE" });
 }
 
-/** Connects a generator with the user's key; Aldo checks it with the provider first. */
+/** Connects a generator with the user's key, using an account check where the provider supports one. */
 export async function connectAldoIntegrationKey(
   provider: string,
   values: Readonly<Record<string, string>>,
