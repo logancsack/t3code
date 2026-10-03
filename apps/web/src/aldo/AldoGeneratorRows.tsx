@@ -5,7 +5,7 @@
 // Aldo adds shows here as it is.
 
 import { CheckCircle2Icon, ExternalLinkIcon } from "lucide-react";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 
 import { SettingsRow } from "../components/settings/settingsLayout";
 import { Button } from "../components/ui/button";
@@ -35,6 +35,15 @@ function GeneratorRow(props: {
   const [confirming, setConfirming] = useState(false);
   const complete = fields.every((field) => (values[field.name] ?? "").trim() !== "");
 
+  useEffect(() => {
+    if (!integration.connected) setConfirming(false);
+    if (!integration.available) {
+      setOpen(false);
+      setValues({});
+      setError(null);
+    }
+  }, [integration.available, integration.connected]);
+
   const close = () => {
     setOpen(false);
     setValues({});
@@ -43,6 +52,7 @@ function GeneratorRow(props: {
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
+    if (!integration.available) return;
     setBusy(true);
     setError(null);
     try {
@@ -78,7 +88,9 @@ function GeneratorRow(props: {
       title={integration.name}
       description={integration.description}
       status={
-        integration.connected && integration.error ? (
+        !integration.available ? (
+          `${integration.name} isn't available on this Aldo yet.`
+        ) : integration.connected && integration.error ? (
           <span className="text-destructive-foreground">{integration.error}</span>
         ) : integration.connected ? (
           <span className="inline-flex items-center gap-1 text-success-foreground">
@@ -91,7 +103,7 @@ function GeneratorRow(props: {
       }
       control={
         <div className="flex flex-wrap gap-2 sm:flex-col sm:items-stretch">
-          {confirming ? (
+          {confirming && integration.connected ? (
             <>
               <Button size="sm" variant="ghost" onClick={() => setConfirming(false)}>
                 Keep
@@ -105,7 +117,7 @@ function GeneratorRow(props: {
               <Button
                 size="sm"
                 variant={integration.connected ? "ghost" : "outline"}
-                disabled={busy}
+                disabled={busy || !integration.available}
                 onClick={() => (open ? close() : setOpen(true))}
               >
                 {open ? "Cancel" : integration.connected ? "Replace key" : "Connect"}
@@ -120,7 +132,7 @@ function GeneratorRow(props: {
         </div>
       }
     >
-      {open ? (
+      {open && integration.available ? (
         <form
           onSubmit={submit}
           className="mb-3 space-y-3 rounded-xl border border-border p-3"
