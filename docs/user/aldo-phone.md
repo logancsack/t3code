@@ -20,10 +20,17 @@ requires it, then enable texts in Settings. You can disable calls, reset
 your PIN, change your number, or disconnect it on the same page. Use a number
 only you control, and disconnect it before giving it up.
 
+You can still see and disconnect your verified number if the phone provider
+is unavailable. Adding or changing a number waits until the provider is
+available again. Switching to Change number closes any disconnect confirmation.
+
 Phone settings shows recent activity and replies that failed or were not
 confirmed. If a delivery is uncertain, check the conversation in Aldo before
 asking for an action again. An administrator may need to reconnect the phone
 provider or enable its voice bridge.
+
+After a temporary connection failure, settings search and the command palette
+check for phone access again when you return to the app or reconnect to the network.
 
 Development servers can show a clearly marked local prototype. It simulates
 texts and calls with demo replies and does not run real tasks.

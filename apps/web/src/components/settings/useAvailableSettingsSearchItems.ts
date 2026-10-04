@@ -19,15 +19,26 @@ export function useAvailableSettingsSearchItems() {
   useEffect(() => {
     if (!isAldoCloud) return;
     let current = true;
+    let latest = 0;
     // Both settings search and the command palette use this hook. A supported
     // API can still report an unconfigured provider; its settings section exists.
-    void fetchAldoPhone()
-      .then((settings) => {
-        if (current) setHasAldoPhoneApi(settings !== null);
-      })
-      .catch(() => {});
+    const refresh = () => {
+      const seq = ++latest;
+      void fetchAldoPhone()
+        .then((settings) => {
+          if (current && seq === latest) setHasAldoPhoneApi(settings !== null);
+        })
+        .catch(() => {
+          // Keep known support through an outage; retry when focus or network returns.
+        });
+    };
+    refresh();
+    window.addEventListener("focus", refresh);
+    window.addEventListener("online", refresh);
     return () => {
       current = false;
+      window.removeEventListener("focus", refresh);
+      window.removeEventListener("online", refresh);
     };
   }, []);
   const primaryEnvironmentId = usePrimaryEnvironmentId();

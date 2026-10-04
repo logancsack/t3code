@@ -97,9 +97,9 @@ export function AldoPhonePanel() {
           {settings.error}
         </p>
       ) : null}
-      {settings?.available ? (
+      {settings && (settings.available || settings.verified) ? (
         <>
-          {settings.verified && !changing ? (
+          {settings.verified && (!changing || !settings.available) ? (
             <SettingsRow
               title="Your number"
               description={settings.phone ?? "Verified"}
@@ -109,8 +109,11 @@ export function AldoPhonePanel() {
                   <Button
                     size="sm"
                     variant="outline"
-                    disabled={busy}
-                    onClick={() => setChanging(true)}
+                    disabled={busy || !settings.available}
+                    onClick={() => {
+                      setDisconnecting(false);
+                      setChanging(true);
+                    }}
                   >
                     Change number
                   </Button>
@@ -125,7 +128,7 @@ export function AldoPhonePanel() {
                 </div>
               }
             />
-          ) : (
+          ) : settings.available ? (
             <form
               className="space-y-3 px-3 py-3 sm:px-4"
               onSubmit={(event) => {
@@ -141,6 +144,7 @@ export function AldoPhonePanel() {
                     setCode("");
                     setPin("");
                     setChanging(false);
+                    setDisconnecting(false);
                   }
                 });
               }}
@@ -218,7 +222,7 @@ export function AldoPhonePanel() {
                 ) : null}
               </div>
             </form>
-          )}
+          ) : null}
           {disconnecting ? (
             <div className="space-y-2 px-3 text-sm sm:px-4">
               <p>
@@ -234,6 +238,11 @@ export function AldoPhonePanel() {
                     void act(async () => {
                       setSettings(await aldoPhone.disconnect());
                       setDisconnecting(false);
+                      setChanging(false);
+                      setVerificationId(null);
+                      setCode("");
+                      setPin("");
+                      setPhone("");
                     });
                   }}
                 >
@@ -250,7 +259,7 @@ export function AldoPhonePanel() {
               </div>
             </div>
           ) : null}
-          {settings.verified ? (
+          {settings.verified && settings.available ? (
             <>
               <SettingsRow
                 title="Text messages"
@@ -333,7 +342,7 @@ export function AldoPhonePanel() {
               </form>
             </>
           ) : null}
-          {settings.prototype && settings.verified ? (
+          {settings.available && settings.prototype && settings.verified ? (
             <PhonePrototype settings={settings} onChanged={refresh} />
           ) : null}
           {settings.deliveries.length ? (
