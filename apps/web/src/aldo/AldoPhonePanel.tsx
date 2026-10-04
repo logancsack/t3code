@@ -21,7 +21,10 @@ export function AldoPhonePanel() {
   const [changing, setChanging] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const latest = useRef(0);
+  const mutating = useRef(false);
   const refresh = useCallback(() => {
+    // A focus read during a write can return the old state after its result.
+    if (mutating.current) return;
     const seq = ++latest.current;
     fetchAldoPhone()
       .then((next) => {
@@ -47,6 +50,8 @@ export function AldoPhonePanel() {
     };
   }, [refresh]);
   async function act(work: () => Promise<void>) {
+    if (mutating.current) return;
+    mutating.current = true;
     setBusy(true);
     setError(null);
     latest.current++;
@@ -55,6 +60,7 @@ export function AldoPhonePanel() {
     } catch (cause) {
       setError(messageOf(cause));
     } finally {
+      mutating.current = false;
       setBusy(false);
     }
   }
@@ -233,7 +239,12 @@ export function AldoPhonePanel() {
                 >
                   Disconnect number
                 </Button>
-                <Button size="sm" variant="ghost" onClick={() => setDisconnecting(false)}>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={busy}
+                  onClick={() => setDisconnecting(false)}
+                >
                   Keep number
                 </Button>
               </div>
