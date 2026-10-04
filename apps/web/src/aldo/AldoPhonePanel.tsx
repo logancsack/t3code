@@ -261,9 +261,29 @@ export function AldoPhonePanel() {
           ) : null}
           {settings.verified && settings.available ? (
             <>
+              {settings.smsTermsUrl ? (
+                <p className="px-3 text-xs text-muted-foreground sm:px-4">
+                  By enabling Text messages, you consent to conversational SMS from Aldo. Message
+                  frequency varies; message and data rates may apply. Text STOP to opt out or HELP
+                  for support. SMS is optional.{" "}
+                  <a
+                    href={settings.smsTermsUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="underline"
+                  >
+                    SMS terms
+                  </a>{" "}
+                  and{" "}
+                  <a href="/privacy" target="_blank" rel="noreferrer" className="underline">
+                    Privacy Policy
+                  </a>
+                  .
+                </p>
+              ) : null}
               <SettingsRow
                 title="Text messages"
-                description="Text Aldo from your verified number. Text STOP to turn SMS off; enable it here to reconnect."
+                description="Text Aldo from your verified number. Text STOP to turn SMS off; text START and enable it here to reconnect."
                 status={!settings.sms ? "Disabled by an administrator" : undefined}
                 control={
                   <Switch
