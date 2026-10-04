@@ -35,6 +35,7 @@ export interface SettingsSearchItem {
   readonly cloudOnly?: boolean;
   /** Only in Aldo cloud mode, whose page at this path differs from T3's. */
   readonly aldoCloudOnly?: boolean;
+  readonly requiresAldoPhone?: boolean;
   readonly primaryOnly?: boolean;
   readonly providerSettingsOnly?: boolean;
   readonly localBackendManagementOnly?: boolean;
@@ -49,6 +50,7 @@ export interface SettingsSearchAvailability {
   readonly canManageLocalBackend: boolean;
   readonly isWslSettingsRowVisible: boolean;
   readonly hasThreadAutoSettlement: boolean;
+  readonly hasAldoPhoneApi?: boolean;
 }
 
 /**
@@ -323,6 +325,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/integrations",
     searchTerms: ["phone sms mms voice call text number verification pin disconnect"],
     aldoCloudOnly: true,
+    requiresAldoPhone: true,
   },
   {
     id: "aldo-generators",
@@ -507,6 +510,7 @@ export function filterAvailableSettingsSearchItems(
       (!item.localBackendManagementOnly || availability.canManageLocalBackend) &&
       (!item.wslAvailableOnly || availability.isWslSettingsRowVisible) &&
       (!item.requiresThreadAutoSettlement || availability.hasThreadAutoSettlement) &&
+      (!item.requiresAldoPhone || availability.hasAldoPhoneApi === true) &&
       // Aldo has no Connections page: it connects cloud agents itself.
       (item.to !== "/settings/connections" || !isAldoCloud) &&
       // Its Integrations page lists accounts instead of the preview browser's settings.
