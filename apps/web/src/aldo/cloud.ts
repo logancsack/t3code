@@ -839,6 +839,7 @@ export async function fetchAldoIntegrations(): Promise<ReadonlyArray<AldoIntegra
 }
 
 export interface AldoPhoneSettings {
+  readonly smsTermsUrl?: string;
   readonly available: boolean;
   readonly prototype: boolean;
   readonly number: string | null;
