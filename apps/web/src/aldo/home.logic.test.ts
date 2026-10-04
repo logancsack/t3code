@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import type { AldoHome, AldoHomeConversation, AldoHomePullRequest } from "./cloud";
 import {
@@ -523,27 +523,29 @@ describe("policyLines", () => {
 });
 
 describe("composer chips", () => {
+  beforeEach(() => {
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("offers what fits the board", () => {
-    const clock = vi.spyOn(Date, "now").mockReturnValue(NOW);
-    try {
-      const home = {
-        conversations: [
-          conversation({ state: "waiting" }),
-          conversation({ ref: "b", state: "done", at: ago(10) }),
-        ],
-      };
-      expect(composerChips(home, { conversationEmpty: false, lastSeen: ago(60) })).toEqual([
-        "What needs me?",
-        "Catch me up",
-        "What shipped today?",
-        "Start something in shop",
-      ]);
-      expect(composerChips(null, { conversationEmpty: true, lastSeen: null })).toEqual([
-        "What can you do?",
-      ]);
-    } finally {
-      clock.mockRestore();
-    }
+    const home = {
+      conversations: [
+        conversation({ state: "waiting" }),
+        conversation({ ref: "b", state: "done", at: ago(10) }),
+      ],
+    };
+    expect(composerChips(home, { conversationEmpty: false, lastSeen: ago(60) })).toEqual([
+      "What needs me?",
+      "Catch me up",
+      "What shipped today?",
+      "Start something in shop",
+    ]);
+    expect(composerChips(null, { conversationEmpty: true, lastSeen: null })).toEqual([
+      "What can you do?",
+    ]);
   });
 
   it("turns a chip into words", () => {
