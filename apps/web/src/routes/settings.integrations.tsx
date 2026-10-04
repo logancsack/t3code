@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 import { AldoIntegrationsPanel } from "../aldo/AldoIntegrationsPanel";
+import { AldoPhonePanel } from "../aldo/AldoPhonePanel";
 import { isAldoCloud } from "../aldo/cloud";
 import { IntegrationsSettingsPanel } from "../components/settings/IntegrationsSettings";
 import { SettingsPageContainer } from "../components/settings/settingsLayout";
@@ -11,6 +12,7 @@ function SettingsIntegrationsRoute() {
     return (
       <SettingsPageContainer>
         <AldoIntegrationsPanel />
+        <AldoPhonePanel />
       </SettingsPageContainer>
     );
   }

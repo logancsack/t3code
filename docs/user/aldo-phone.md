@@ -1,0 +1,29 @@
+# Text and call Aldo
+
+In Aldo cloud, Settings → Integrations has **Text and call Aldo** when your
+server supports phone access. Enter your number with its country code, verify
+the texted code, and choose a six-digit call PIN. Then turn on text messages,
+phone calls, or both. The displayed Aldo number opens your phone's normal
+texting or calling app.
+
+Text from your verified number to continue with Aldo. When you call, enter
+your PIN before discussing your account. You can interrupt Aldo while it
+speaks; press 0 to end the call. Your conversations appear in Aldo too, and
+your agents keep the same capabilities and settings.
+
+Draft approval cards still need your tap in the signed-in app. Open Aldo
+for approvals, signing in, secrets, files, and visual work. Interrupting
+speech ends playback; work already started can continue.
+
+Text STOP to disable SMS. To reconnect, text START if your carrier provider
+requires it, then enable texts in Settings. You can disable calls, reset
+your PIN, change your number, or disconnect it on the same page. Use a number
+only you control, and disconnect it before giving it up.
+
+Phone settings shows recent activity and replies that failed or were not
+confirmed. If a delivery is uncertain, check the conversation in Aldo before
+asking for an action again. An administrator may need to reconnect the phone
+provider or enable its voice bridge.
+
+Development servers can show a clearly marked local prototype. It simulates
+texts and calls with demo replies and does not run real tasks.

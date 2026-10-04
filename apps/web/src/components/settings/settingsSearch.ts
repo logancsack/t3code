@@ -318,6 +318,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     aldoCloudOnly: true,
   },
   {
+    id: "aldo-phone",
+    title: "Text and call Aldo",
+    to: "/settings/integrations",
+    searchTerms: ["phone sms mms voice call text number verification pin disconnect"],
+    aldoCloudOnly: true,
+  },
+  {
     id: "agent-browser-access",
     title: "Agent browser access",
     to: "/settings/integrations",

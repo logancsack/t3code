@@ -824,6 +824,59 @@ export async function fetchAldoIntegrations(): Promise<ReadonlyArray<AldoIntegra
   return Array.isArray(body?.integrations) ? body.integrations : null;
 }
 
+export interface AldoPhoneSettings {
+  readonly available: boolean;
+  readonly prototype: boolean;
+  readonly number: string | null;
+  readonly sms: boolean;
+  readonly voice: boolean;
+  readonly verified: boolean;
+  readonly phone: string | null;
+  readonly smsEnabled: boolean;
+  readonly voiceEnabled: boolean;
+  readonly hasPin: boolean;
+  readonly error: string | null;
+  readonly events: ReadonlyArray<{
+    id: string;
+    channel: string;
+    state: string;
+    error: string | null;
+    at: string;
+  }>;
+  readonly deliveries: ReadonlyArray<{ id: string; state: string; error: string | null }>;
+  readonly calls: ReadonlyArray<{ state: string; error: string | null; at: string }>;
+}
+
+/** Absent on older servers: either half can ship first. */
+export async function fetchAldoPhone(): Promise<AldoPhoneSettings | null> {
+  const result = await api<AldoPhoneSettings>("/api/phone").catch((error: unknown) => {
+    if (error instanceof AldoApiError && error.status === 404) return null;
+    throw error;
+  });
+  return typeof result?.available === "boolean" ? result : null;
+}
+
+export const aldoPhone = {
+  verify: (phone: string) =>
+    api<{ verificationId: string; prototypeCode?: string }>("/api/phone/verification", {
+      method: "POST",
+      body: JSON.stringify({ phone }),
+    }),
+  confirm: (verificationId: string, code: string, pin: string) =>
+    api<AldoPhoneSettings>("/api/phone/verification", {
+      method: "PUT",
+      body: JSON.stringify({ verificationId, code, pin }),
+    }),
+  update: (input: { smsEnabled?: boolean; voiceEnabled?: boolean; pin?: string }) =>
+    api<AldoPhoneSettings>("/api/phone", { method: "PATCH", body: JSON.stringify(input) }),
+  disconnect: () => api<AldoPhoneSettings>("/api/phone", { method: "DELETE" }),
+  prototype: (input: Record<string, unknown>) =>
+    api<{ reply?: string | null; state?: string; callId?: string; twiml?: string }>(
+      "/api/phone/prototype",
+      { method: "POST", body: JSON.stringify(input) },
+    ),
+};
+
 /** Where connecting starts: Aldo sends it on to the provider's sign-in. */
 export function aldoIntegrationConnectUrl(
   provider: string,
