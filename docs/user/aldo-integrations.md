@@ -1,6 +1,16 @@
 # Integrations in Aldo
 
-**Settings → Integrations** connects accounts your cloud agents use on your behalf: Google and Microsoft, for your mail, calendar, contacts and files.
+**Settings → Integrations** connects accounts your cloud agents use on your behalf: Google and Microsoft, for your mail, calendar, contacts and files, and media generators for images, video and audio.
+
+## Image, video and audio
+
+Connect **Runway**, **Higgsfield**, **Luma**, **fal**, **Replicate**, or **ElevenLabs** with your own API credentials. Choose **Connect** next to a provider, follow **Get a key** to its developer dashboard, and paste the complete copied key as-is. Higgsfield uses the key copied from [its API console](https://open.higgsfield.ai/api-keys); fal takes the complete key, including the colon.
+
+Aldo saves the key in your encrypted Vault and sends it only to that provider's API. Agents receive a stand-in and instructions for using the provider. Ask a thread to make an image, clip, voice, sound effect or music; the agent saves the result and shares the file. Running threads receive the key immediately; agents' instructions update once their current turn finishes.
+
+Generation is billed by the provider, separately from Aldo. A website subscription may have separate credits from its API. Set the provider's spending or credit limit in its dashboard. Connecting never generates media or spends generation credits. Runway and Replicate keys are checked with an account read; other providers' access is checked when an agent first uses them.
+
+Use **Replace key** to rotate credentials. **Disconnect** removes the key connected here from your Vault and running threads. Keys you saved for an individual repository remain available in that repository; manage those in the Vault. Revoking the key in the provider's dashboard also stops its use outside Aldo.
 
 ## Google
 

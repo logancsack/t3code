@@ -3,9 +3,11 @@
 // and files. Connecting signs in with the provider in a popup; how the sign-in
 // reports back to this tab is in integrations.logic.ts. Once one is connected,
 // Aldo's heads-ups (it looks at new mail and coming events between
-// conversations) can be turned off here.
+// conversations) can be turned off here. Below them, the image, video and
+// audio generators agents use with the user's own API keys
+// (AldoGeneratorRows.tsx).
 
-import { BlocksIcon, CheckCircle2Icon } from "lucide-react";
+import { BlocksIcon, CheckCircle2Icon, SparklesIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { SettingsRow, SettingsSection } from "../components/settings/settingsLayout";
@@ -22,6 +24,7 @@ import {
   type AldoIntegration,
   type AldoIntegrationAccountType,
 } from "./cloud";
+import { AldoGeneratorRows } from "./AldoGeneratorRows";
 import {
   ALDO_INTEGRATIONS_CHANNEL,
   describeAldoCapabilities,
@@ -333,36 +336,69 @@ export function AldoIntegrationsPanel() {
     };
   }, [refresh]);
 
-  const shown = (integrations ?? []).filter((integration) => integration.provider in INTEGRATIONS);
+  const shown = (integrations ?? []).filter(
+    (integration) => integration.kind !== "key" && integration.provider in INTEGRATIONS,
+  );
+  const generators = (integrations ?? []).filter((integration) => integration.kind === "key");
 
   return (
-    <SettingsSection title="Integrations" icon={<BlocksIcon className="size-4" />}>
-      <p className="px-3 text-sm text-muted-foreground sm:px-4">
-        Accounts you connect for your agents to use. Disconnect one and agents can't use it anymore.
-      </p>
-      {unsupported ? (
+    <>
+      <SettingsSection title="Integrations" icon={<BlocksIcon className="size-4" />}>
         <p className="px-3 text-sm text-muted-foreground sm:px-4">
-          This Aldo server doesn't have integrations yet.
+          Accounts you connect for your agents to use. Disconnect one and agents can't use it
+          anymore.
         </p>
-      ) : null}
-      {error ? <p className="px-3 text-sm text-destructive-foreground sm:px-4">{error}</p> : null}
-      {integrations === null && !unsupported && !error ? (
-        <p className="px-3 text-sm text-muted-foreground sm:px-4">Loading…</p>
-      ) : null}
-      {integrations && shown.length === 0 ? (
-        <p className="px-3 text-sm text-muted-foreground sm:px-4">Nothing to connect yet.</p>
-      ) : null}
-      {shown.map((integration) => (
-        <IntegrationRow key={integration.provider} integration={integration} onChanged={refresh} />
-      ))}
-      {shown.some(
-        (i) =>
-          i.connected &&
-          !i.error &&
-          (i.can ?? ["mail"]).some((c) => c === "mail" || c === "calendar"),
-      ) ? (
-        <HeadsUpsRow />
-      ) : null}
-    </SettingsSection>
+        {unsupported ? (
+          <p className="px-3 text-sm text-muted-foreground sm:px-4">
+            This Aldo server doesn't have integrations yet.
+          </p>
+        ) : null}
+        {error ? <p className="px-3 text-sm text-destructive-foreground sm:px-4">{error}</p> : null}
+        {integrations === null && !unsupported && !error ? (
+          <p className="px-3 text-sm text-muted-foreground sm:px-4">Loading…</p>
+        ) : null}
+        {integrations && shown.length === 0 ? (
+          <p className="px-3 text-sm text-muted-foreground sm:px-4">Nothing to connect yet.</p>
+        ) : null}
+        {shown.map((integration) => (
+          <IntegrationRow
+            key={integration.provider}
+            integration={integration}
+            onChanged={refresh}
+          />
+        ))}
+        {shown.some(
+          (i) =>
+            i.connected &&
+            !i.error &&
+            (i.can ?? ["mail"]).some((c) => c === "mail" || c === "calendar"),
+        ) ? (
+          <HeadsUpsRow />
+        ) : null}
+      </SettingsSection>
+      <SettingsSection
+        id="aldo-generators"
+        title="Image, video and audio"
+        icon={<SparklesIcon className="size-4" />}
+      >
+        {generators.length > 0 ? (
+          <>
+            <p className="px-3 text-sm text-muted-foreground sm:px-4">
+              Generators your agents use with your own API key, for images, video, voices and music.
+              What they make is billed to your account with each one.
+            </p>
+            <AldoGeneratorRows integrations={generators} onChanged={refresh} />
+          </>
+        ) : (
+          <p className="px-3 text-sm text-muted-foreground sm:px-4">
+            {error
+              ? "Couldn't load media generators. Try again in a moment."
+              : integrations === null && !unsupported
+                ? "Loading…"
+                : "Media generators aren't available on this Aldo server."}
+          </p>
+        )}
+      </SettingsSection>
+    </>
   );
 }

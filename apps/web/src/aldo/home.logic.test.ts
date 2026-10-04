@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import type { AldoHome, AldoHomeConversation, AldoHomePullRequest } from "./cloud";
 import {
@@ -523,6 +523,13 @@ describe("policyLines", () => {
 });
 
 describe("composer chips", () => {
+  beforeEach(() => {
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("offers what fits the board", () => {
     const home = {
       conversations: [
