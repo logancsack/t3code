@@ -49,6 +49,8 @@ import {
   subscribeAldoEnvironments,
 } from "./cloud";
 import { aldoDesktopScreen, type AldoDesktopScreen } from "./computer.logic";
+import { aldoCanDecodeH264, AldoVideoPlayer } from "./liveVideo";
+import { ALDO_FRAME_VIDEO } from "./liveVideo.logic";
 import {
   ALDO_FRAME_JPEG,
   aldoLiveViewSize,
@@ -196,12 +198,18 @@ export function AldoBrowserPanel({ environmentId }: { environmentId: string }) {
 
     // A newer machine's: binary, decoded off the main thread, and acknowledged
     // once drawn, which is when the machine sends the next (it paces the
-    // stream to this panel rather than queueing frames on a slow link).
-    const drawBinary = (socket: WebSocket, data: ArrayBuffer) => {
+    // stream to this panel rather than queueing frames on a slow link). Video
+    // frames go to the connection's player, which acknowledges them itself.
+    const drawBinary = (socket: WebSocket, data: ArrayBuffer, player: AldoVideoPlayer | null) => {
       const frame = parseAldoLiveFrame(data);
       const acknowledge = () => {
         if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "frameAck" }));
       };
+      if (frame?.kind === ALDO_FRAME_VIDEO) {
+        if (player) return player.decode(frame);
+        if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "videoAck" }));
+        return;
+      }
       if (frame?.kind !== ALDO_FRAME_JPEG) return acknowledge();
       const seq = ++frameSeq.current;
       const metadata = frame.header as unknown as FrameMeta;
@@ -236,12 +244,36 @@ export function AldoBrowserPanel({ environmentId }: { environmentId: string }) {
         }
         return;
       }
+      // The page as H.264 video where this browser decodes it (a newer machine sends it).
+      const video = await aldoCanDecodeH264();
       if (disposed) return;
       const socket = new WebSocket(
-        aldoLiveViewUrl(url, { ...viewportSize(), paused: pausedRef.current }),
+        aldoLiveViewUrl(url, { ...viewportSize(), paused: pausedRef.current, video }),
       );
       socket.binaryType = "arraybuffer";
       socketRef.current = socket;
+      const tell = (message: Record<string, unknown>) => {
+        if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
+      };
+      // Input coordinates are in the page's CSS pixels, which the video's configuration gives.
+      let videoMeta: FrameMeta | null = null;
+      const player = video
+        ? new AldoVideoPlayer(
+            (picture) => {
+              if (videoMeta) {
+                paint(
+                  ++frameSeq.current,
+                  picture,
+                  picture.displayWidth,
+                  picture.displayHeight,
+                  videoMeta,
+                );
+              }
+            },
+            () => tell({ type: "videoAck" }),
+            () => tell({ type: "keyframe" }),
+          )
+        : null;
       socket.onopen = () => {
         attempt = 0;
         setStatus("live");
@@ -253,7 +285,7 @@ export function AldoBrowserPanel({ environmentId }: { environmentId: string }) {
         }
       };
       socket.onmessage = (event) => {
-        if (event.data instanceof ArrayBuffer) return drawBinary(socket, event.data);
+        if (event.data instanceof ArrayBuffer) return drawBinary(socket, event.data, player);
         const message = JSON.parse(String(event.data)) as Record<string, unknown> & {
           type: string;
         };
@@ -292,12 +324,19 @@ export function AldoBrowserPanel({ environmentId }: { environmentId: string }) {
           case "device":
             setPhone(message.mode === "phone");
             break;
+          case "video": {
+            // The page as video from here on, or (codec null) as JPEG frames again.
+            const page = player?.configure(message) ? player.config?.page : null;
+            videoMeta = page ? { deviceWidth: page.width, deviceHeight: page.height } : null;
+            break;
+          }
           case "error":
             setError(String(message.message));
             break;
         }
       };
       socket.onclose = () => {
+        player?.close();
         if (socketRef.current === socket) socketRef.current = null;
         if (!disposed) schedule(Math.min(15_000, 1000 * 2 ** attempt++));
       };

@@ -1,8 +1,10 @@
 // The Browser panel's live view on the wire. A newer machine sends frames as
 // binary messages when the panel asks for them in its URL (`binary=1`), and
 // paces them to the panel: it sends the next once the panel acknowledges the
-// one it drew (`{ type: "frameAck" }`). An older machine ignores the
-// parameters and sends JSON frames (base64), which the panel still draws.
+// one it drew (`{ type: "frameAck" }`), or, for a panel that decodes H.264
+// (`video=h264`), sends the page as video (liveVideo.ts). An older machine
+// ignores the parameters and sends JSON frames (base64), which the panel
+// still draws.
 
 /** A JPEG frame of the page, with the screencast's metadata as its header. */
 export const ALDO_FRAME_JPEG = 1;
@@ -45,13 +47,14 @@ export function aldoLiveViewSize(
   return { width: Math.round(cssWidth * dpr), height: Math.round(cssHeight * dpr) };
 }
 
-/** The stream's URL with what this panel takes: binary frames, its size, and whether it starts hidden. */
+/** The stream's URL with what this panel takes: binary frames (and video), its size, and whether it starts hidden. */
 export function aldoLiveViewUrl(
   url: string,
-  options: { width: number; height: number; paused: boolean },
+  options: { width: number; height: number; paused: boolean; video?: boolean },
 ): string {
   const parsed = new URL(url);
   parsed.searchParams.set("binary", "1");
+  if (options.video) parsed.searchParams.set("video", "h264");
   if (options.width > 0 && options.height > 0) {
     parsed.searchParams.set("width", String(options.width));
     parsed.searchParams.set("height", String(options.height));
