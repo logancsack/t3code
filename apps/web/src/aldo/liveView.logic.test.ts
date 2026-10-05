@@ -59,6 +59,20 @@ describe("aldoLiveViewUrl", () => {
     expect(url.searchParams.get("width")).toBe("900");
     expect(url.searchParams.get("height")).toBe("560");
     expect(url.searchParams.has("paused")).toBe(false);
+    expect(url.searchParams.has("video")).toBe(false);
+  });
+
+  it("asks for the page as H.264 video where the browser decodes it", () => {
+    const url = new URL(
+      aldoLiveViewUrl("wss://sb.example/browser?token=t", {
+        width: 900,
+        height: 560,
+        paused: false,
+        video: true,
+      }),
+    );
+    expect(url.searchParams.get("video")).toBe("h264");
+    expect(url.searchParams.get("binary")).toBe("1");
   });
 
   it("says when the panel starts hidden, and leaves out a size it doesn't know yet", () => {
