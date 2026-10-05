@@ -50,12 +50,19 @@ import {
 } from "./cloud";
 import { aldoDesktopScreen, type AldoDesktopScreen } from "./computer.logic";
 import {
+  ALDO_FRAME_JPEG,
+  aldoLiveViewSize,
+  aldoLiveViewUrl,
+  parseAldoLiveFrame,
+} from "./liveView.logic";
+import {
   nextAldoLoginOffer,
   parseAldoLoginOffers,
   pendingAldoLoginAnswers,
   type AldoLoginOffer,
 } from "./loginOffers.logic";
 import { neverSaveLoginsFor, useAldoNeverSaveLogins } from "./neverSaveLogins";
+import { useAldoPageVisible } from "./pageVisibility";
 
 type Tab = { id: string; url: string; title: string };
 type Nav = { url: string; canGoBack: boolean; canGoForward: boolean; loading: boolean };
@@ -121,6 +128,11 @@ export function AldoBrowserPanel({ environmentId }: { environmentId: string }) {
   const [editingAddress, setEditingAddress] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const [focused, setFocused] = useState(false);
+  // Nothing streams while nobody can see it: the Desktop view is up, or the page is hidden.
+  const pageVisible = useAldoPageVisible();
+  const paused = view === "desktop" || !pageVisible;
+  const pausedRef = useRef(paused);
+  pausedRef.current = paused;
 
   const socketRef = useRef<WebSocket | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -136,16 +148,17 @@ export function AldoBrowserPanel({ environmentId }: { environmentId: string }) {
     if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
   }, []);
 
-  const sendViewport = useCallback(() => {
+  /** The page area's size in device pixels: frames are never bigger than it shows them. */
+  const viewportSize = useCallback(() => {
     const stage = stageRef.current;
-    if (!stage) return;
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
-    send({
-      type: "viewport",
-      width: Math.round(stage.clientWidth * dpr),
-      height: Math.round(stage.clientHeight * dpr),
-    });
-  }, [send]);
+    if (!stage) return { width: 0, height: 0 };
+    return aldoLiveViewSize(stage.clientWidth, stage.clientHeight, window.devicePixelRatio);
+  }, []);
+
+  const sendViewport = useCallback(() => {
+    const size = viewportSize();
+    if (size.width > 0 && size.height > 0) send({ type: "viewport", ...size });
+  }, [send, viewportSize]);
 
   // Connection: fetch a signed URL, stream, and reconnect with backoff.
   useEffect(() => {
@@ -153,22 +166,52 @@ export function AldoBrowserPanel({ environmentId }: { environmentId: string }) {
     let retry: ReturnType<typeof setTimeout> | null = null;
     let attempt = 0;
 
+    /** Draws a frame unless a newer one has arrived meanwhile. */
+    const paint = (
+      seq: number,
+      image: CanvasImageSource,
+      width: number,
+      height: number,
+      metadata: FrameMeta,
+    ) => {
+      if (seq !== frameSeq.current) return;
+      const canvas = canvasRef.current;
+      const context = canvas?.getContext("2d");
+      if (!canvas || !context) return;
+      if (canvas.width !== width || canvas.height !== height) {
+        canvas.width = width;
+        canvas.height = height;
+      }
+      context.drawImage(image, 0, 0);
+      metaRef.current = metadata;
+    };
+
+    // An older machine's frames: JSON, base64.
     const draw = (data: string, metadata: FrameMeta) => {
       const seq = ++frameSeq.current;
       const image = new Image();
-      image.onload = () => {
-        if (seq !== frameSeq.current) return;
-        const canvas = canvasRef.current;
-        const context = canvas?.getContext("2d");
-        if (!canvas || !context) return;
-        if (canvas.width !== image.naturalWidth || canvas.height !== image.naturalHeight) {
-          canvas.width = image.naturalWidth;
-          canvas.height = image.naturalHeight;
-        }
-        context.drawImage(image, 0, 0);
-        metaRef.current = metadata;
-      };
+      image.onload = () => paint(seq, image, image.naturalWidth, image.naturalHeight, metadata);
       image.src = `data:image/jpeg;base64,${data}`;
+    };
+
+    // A newer machine's: binary, decoded off the main thread, and acknowledged
+    // once drawn, which is when the machine sends the next (it paces the
+    // stream to this panel rather than queueing frames on a slow link).
+    const drawBinary = (socket: WebSocket, data: ArrayBuffer) => {
+      const frame = parseAldoLiveFrame(data);
+      const acknowledge = () => {
+        if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "frameAck" }));
+      };
+      if (frame?.kind !== ALDO_FRAME_JPEG) return acknowledge();
+      const seq = ++frameSeq.current;
+      const metadata = frame.header as unknown as FrameMeta;
+      createImageBitmap(new Blob([frame.payload], { type: "image/jpeg" }))
+        .then((bitmap) => {
+          paint(seq, bitmap, bitmap.width, bitmap.height, metadata);
+          bitmap.close();
+        })
+        .catch(() => {})
+        .finally(acknowledge);
     };
 
     const schedule = (delay: number) => {
@@ -194,7 +237,10 @@ export function AldoBrowserPanel({ environmentId }: { environmentId: string }) {
         return;
       }
       if (disposed) return;
-      const socket = new WebSocket(url);
+      const socket = new WebSocket(
+        aldoLiveViewUrl(url, { ...viewportSize(), paused: pausedRef.current }),
+      );
+      socket.binaryType = "arraybuffer";
       socketRef.current = socket;
       socket.onopen = () => {
         attempt = 0;
@@ -207,6 +253,7 @@ export function AldoBrowserPanel({ environmentId }: { environmentId: string }) {
         }
       };
       socket.onmessage = (event) => {
+        if (event.data instanceof ArrayBuffer) return drawBinary(socket, event.data);
         const message = JSON.parse(String(event.data)) as Record<string, unknown> & {
           type: string;
         };
@@ -263,19 +310,27 @@ export function AldoBrowserPanel({ environmentId }: { environmentId: string }) {
       socketRef.current?.close();
       socketRef.current = null;
     };
-  }, [environmentId, sendViewport]);
+  }, [environmentId, sendViewport, viewportSize]);
 
   useEffect(() => {
-    if (status === "live") send({ type: "pause", paused: view === "desktop" });
-  }, [send, status, view]);
+    if (status === "live") send({ type: "pause", paused });
+  }, [send, status, paused]);
 
-  // Keep the stream sized to the panel (sharp frames without wasting bandwidth).
+  // Keep the stream sized to the panel (sharp frames without wasting bandwidth),
+  // once a resize settles: each new size restarts the stream with a whole frame.
   useEffect(() => {
     const stage = stageRef.current;
     if (!stage) return;
-    const observer = new ResizeObserver(() => sendViewport());
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const observer = new ResizeObserver(() => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(sendViewport, 150);
+    });
     observer.observe(stage);
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      if (timer) clearTimeout(timer);
+    };
   }, [sendViewport]);
 
   // "Agent is using the browser" fades after a few seconds without agent input.
