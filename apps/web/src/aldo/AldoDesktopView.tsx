@@ -48,6 +48,8 @@ export function AldoDesktopView({
     if (!pageVisible) return;
     let disposed = false;
     let rfb: RFB | null = null;
+    // This effect's own video socket: a later effect's goes in videoRef too, and isn't this one's to close.
+    let videoSocket: WebSocket | null = null;
     let retry: ReturnType<typeof setTimeout> | null = null;
     let attempt = 0;
     // Video until the machine says it has none (an older one, or it can't now): VNC alone from then on.
@@ -66,8 +68,9 @@ export function AldoDesktopView({
 
     /** Ends this connection's video and VNC; whichever ends first takes the other with it. */
     const hangUp = () => {
-      const video = videoRef.current;
-      videoRef.current = null;
+      const video = videoSocket;
+      videoSocket = null;
+      if (videoRef.current === video) videoRef.current = null;
       video?.close();
       rfb?.disconnect();
     };
@@ -123,8 +126,9 @@ export function AldoDesktopView({
           if (!streaming) return resolve("failed");
           // The machine gave up on video for this screen: VNC from here on.
           if (event.reason.startsWith("No video")) vncOnly = true;
-          if (videoRef.current === socket) hangUp();
+          if (videoSocket === socket) hangUp();
         };
+        videoSocket = socket;
         videoRef.current = socket;
       });
 
@@ -135,6 +139,7 @@ export function AldoDesktopView({
       let video = false;
       try {
         const { desktopUrl } = await aldoBrowserConnection(environmentId);
+        if (disposed) return;
         let vncUrl = aldoDesktopScreenUrl(desktopUrl, screen);
         if (!vncOnly && (await aldoCanDecodeH264())) {
           const root = rootRef.current;
@@ -193,7 +198,7 @@ export function AldoDesktopView({
         schedule(Math.min(15_000, 1000 * 2 ** attempt++));
       });
       // The video ended while noVNC loaded: start over.
-      if (video && videoRef.current?.readyState !== WebSocket.OPEN) hangUp();
+      if (video && videoSocket?.readyState !== WebSocket.OPEN) hangUp();
     };
 
     void connect();
