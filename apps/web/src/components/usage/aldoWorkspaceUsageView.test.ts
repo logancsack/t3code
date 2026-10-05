@@ -52,6 +52,23 @@ describe("aldoUsageFacts", () => {
     ]);
   });
 
+  it("shows the economy lane once the authorized credits are used, when the gateway reports it", () => {
+    const economy: AldoWorkspaceUsage = {
+      ...metered,
+      credits: {
+        ...metered.credits!,
+        used: 300,
+        remaining: 0,
+        economyIncluded: 125,
+        economyRemaining: 100,
+      },
+    };
+    expect(aldoUsageFacts(economy)).toContainEqual({ label: "Economy lane left", value: "100" });
+    expect(
+      aldoUsageFacts({ ...economy, credits: { ...economy.credits!, used: 299 } }),
+    ).not.toContainEqual(expect.objectContaining({ label: "Economy lane left" }));
+  });
+
   it("shows only hardware for an unmetered workspace and a dash for no projection", () => {
     const complimentary: AldoWorkspaceUsage = {
       ...metered,

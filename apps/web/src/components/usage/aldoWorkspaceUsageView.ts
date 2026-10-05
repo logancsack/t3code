@@ -30,8 +30,11 @@ function formatDayTime(iso: string): string {
 }
 
 /** Copy the Aldo account page uses for the same alert levels, so both surfaces agree. */
-export function aldoUsageAlertCopy(level: AldoUsageAlertLevel): string | null {
-  if (isAldoCloud) return aldoCloudAlertCopy(level);
+export function aldoUsageAlertCopy(
+  level: AldoUsageAlertLevel,
+  usage?: AldoWorkspaceUsage,
+): string | null {
+  if (isAldoCloud) return aldoCloudAlertCopy(level, usage);
   switch (level) {
     case "included_warning":
       return "Included credits are running low. Add capacity to keep agents working without interruption.";
@@ -46,17 +49,35 @@ export function aldoUsageAlertCopy(level: AldoUsageAlertLevel): string | null {
   }
 }
 
+/** What $10 of extra usage buys, when the gateway says what a credit costs. */
+function extraUsagePrice(usage?: AldoWorkspaceUsage): string {
+  const cents = usage?.bill?.extraCentsPerCredit;
+  return cents && cents > 0
+    ? `${formatCredits(Math.round(1000 / cents))} credits for $10`
+    : "billed by the credit";
+}
+
 /** Aldo cloud: extra usage past the plan is allowed up to the limit set here. */
-function aldoCloudAlertCopy(level: AldoUsageAlertLevel): string | null {
+function aldoCloudAlertCopy(level: AldoUsageAlertLevel, usage?: AldoWorkspaceUsage): string | null {
+  // Past the limit, a newer gateway keeps agents working one at a time (the economy lane).
+  const economy = usage?.credits?.economyRemaining;
+  const economyCopy =
+    economy !== undefined && economy > 0
+      ? `Agents keep working one at a time on the economy lane (${formatCredits(economy)} credits left, not billed); GPU and Windows computers wait.`
+      : null;
   switch (level) {
     case "included_warning":
-      return "This month's included credits are running low. Past them, agents keep working up to your extra usage limit, at $0.60 a credit.";
+      return `This month's included credits are running low. Past them, agents keep working up to your extra usage limit, ${extraUsagePrice(usage)}.`;
     case "included_exhausted":
-      return "This month's included credits are used up, and extra usage is off. Set an extra usage limit to keep agents working.";
+      return economyCopy
+        ? `This month's included credits are used up, and extra usage is off. ${economyCopy} Set an extra usage limit to run more.`
+        : "This month's included credits are used up, and extra usage is off. Set an extra usage limit to keep agents working.";
     case "spend_warning":
       return "Extra usage is close to your limit. Raise it to keep agents working.";
     case "spend_reached":
-      return "Your credits and extra usage limit are used up, so agents can't start. Raise the limit to keep going.";
+      return economyCopy
+        ? `Your credits and extra usage limit are used up. ${economyCopy} Raise the limit to run more.`
+        : "Your credits and extra usage limit are used up, so agents can't start. Raise the limit to keep going.";
     default:
       return null;
   }
@@ -88,6 +109,10 @@ export function aldoUsageFacts(usage: AldoWorkspaceUsage): readonly AldoUsageFac
         label: isAldoCloud ? "Extra usage left" : "Added capacity left",
         value: formatCredits(usage.credits.overageRemaining),
       },
+      ...(usage.credits.economyRemaining !== undefined &&
+      usage.credits.used >= usage.credits.authorized
+        ? [{ label: "Economy lane left", value: formatCredits(usage.credits.economyRemaining) }]
+        : []),
       {
         label: "Projected at renewal",
         value:

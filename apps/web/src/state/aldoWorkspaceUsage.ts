@@ -34,11 +34,16 @@ export interface AldoWorkspaceUsage {
     readonly includedRemaining: number;
     readonly overageRemaining: number;
     readonly projected: number | null;
+    /** Past the authorized credits, agents keep working one at a time on these, not billed (newer gateways only). */
+    readonly economyIncluded?: number;
+    readonly economyRemaining?: number;
   } | null;
   readonly bill: {
     readonly estimatedCents: number;
     readonly projectedCents: number | null;
     readonly spendLimitCents: number;
+    /** What extra usage costs, in cents a credit (newer gateways only). */
+    readonly extraCentsPerCredit?: number;
   } | null;
   readonly machine: {
     readonly class: "standard" | "full_power";
@@ -81,6 +86,10 @@ function isFiniteNumber(value: unknown): value is number {
 
 function isNullableFiniteNumber(value: unknown): value is number | null {
   return value === null || isFiniteNumber(value);
+}
+
+function isOptionalFiniteNumber(value: unknown): value is number | undefined {
+  return value === undefined || isFiniteNumber(value);
 }
 
 /**
@@ -128,7 +137,9 @@ export function isAldoWorkspaceUsage(value: unknown): value is AldoWorkspaceUsag
       isFiniteNumber(credits.remaining) &&
       isFiniteNumber(credits.includedRemaining) &&
       isFiniteNumber(credits.overageRemaining) &&
-      isNullableFiniteNumber(credits.projected)
+      isNullableFiniteNumber(credits.projected) &&
+      isOptionalFiniteNumber(credits.economyIncluded) &&
+      isOptionalFiniteNumber(credits.economyRemaining)
     )
   ) {
     return false;
@@ -139,7 +150,8 @@ export function isAldoWorkspaceUsage(value: unknown): value is AldoWorkspaceUsag
       isRecord(bill) &&
       isFiniteNumber(bill.estimatedCents) &&
       isNullableFiniteNumber(bill.projectedCents) &&
-      isFiniteNumber(bill.spendLimitCents)
+      isFiniteNumber(bill.spendLimitCents) &&
+      isOptionalFiniteNumber(bill.extraCentsPerCredit)
     )
   ) {
     return false;
