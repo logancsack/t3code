@@ -6,6 +6,7 @@ import { Button } from "../components/ui/button";
 import { cn } from "../lib/utils";
 import { AldoApiError, aldoBrowserConnection, aldoOfflineMessage } from "./cloud";
 import { aldoDesktopScreenUrl, type AldoDesktopScreen } from "./computer.logic";
+import { useAldoPageVisible } from "./pageVisibility";
 
 type Status = "connecting" | "live" | "asleep" | "error";
 
@@ -25,8 +26,12 @@ export function AldoDesktopView({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [status, setStatus] = useState<Status>("connecting");
   const [error, setError] = useState<string | null>(null);
+  // VNC streams whatever changes on the screen while connected: let go of it
+  // once the page has been hidden for a while (a quick tab switch keeps it).
+  const pageVisible = useAldoPageVisible(10_000);
 
   useEffect(() => {
+    if (!pageVisible) return;
     let disposed = false;
     let rfb: RFB | null = null;
     let retry: ReturnType<typeof setTimeout> | null = null;
@@ -88,7 +93,7 @@ export function AldoDesktopView({
       if (retry) clearTimeout(retry);
       rfb?.disconnect();
     };
-  }, [environmentId, screen]);
+  }, [environmentId, screen, pageVisible]);
 
   const what = screen === "windows" ? "your Windows computer" : "the desktop";
   return (
