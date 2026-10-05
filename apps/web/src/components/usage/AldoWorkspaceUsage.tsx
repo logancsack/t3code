@@ -74,7 +74,7 @@ function AldoWorkspaceUsageBody({
   readonly usage: AldoWorkspaceUsage;
   readonly stale: boolean;
 }) {
-  const alert = aldoUsageAlertCopy(usage.alert);
+  const alert = aldoUsageAlertCopy(usage.alert, usage);
   const facts = aldoUsageFacts(usage);
   const footnote = aldoUsageFootnote(usage);
 
