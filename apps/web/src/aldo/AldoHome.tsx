@@ -77,7 +77,12 @@ const LAST_SEEN_KEY = "aldo:home:seen";
 /** Shows "now" moving: elapsed times tick without a fetch. */
 const TICK_MS = 30_000;
 
-/** Aldo's read of the user's work, kept fresh: with the directory, on a push, when the tab comes back, and every so often. */
+/**
+ * Aldo's read of the user's work, kept fresh while the tab is in view: with
+ * the directory, on a push, when the tab comes back, and every so often (a
+ * read with nothing new is a 304 the browser answers from its cache, from an
+ * Aldo that tags it).
+ */
 function useAldoHome() {
   const [home, setHome] = useState<AldoHomeRead | null>(null);
   const [supported, setSupported] = useState<boolean | null>(null);
@@ -115,12 +120,17 @@ function useAldoHome() {
   }, []);
   useEffect(() => {
     void refresh();
+    // A tab no one sees doesn't poll: it refreshes as it comes back (and on a push).
+    const hidden = () => document.visibilityState === "hidden";
     // With notifications off there's no push: Aldo's heads-ups show on the regular refresh too.
     const timer = window.setInterval(() => {
+      if (hidden()) return;
       void refresh();
       void pullAldoConversation();
     }, REFRESH_EVERY_MS);
-    const unsubscribe = subscribeAldoEnvironments(() => void refresh(false));
+    const unsubscribe = subscribeAldoEnvironments(() => {
+      if (!hidden()) void refresh(false);
+    });
     const onVisible = () => {
       if (document.visibilityState !== "visible") return;
       void refresh();
