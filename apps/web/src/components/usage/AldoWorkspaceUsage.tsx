@@ -1,6 +1,7 @@
 import { ExternalLinkIcon } from "lucide-react";
 import { useState, type FormEvent } from "react";
 
+import { AldoBillingSection, useAldoCheckoutReturn } from "../../aldo/AldoBilling";
 import { isAldoCloud, setAldoSpendLimit } from "../../aldo/cloud";
 
 import type { AldoWorkspaceUsage, AldoWorkspaceUsageState } from "../../state/aldoWorkspaceUsage";
@@ -30,40 +31,49 @@ export function AldoWorkspaceUsageSection({
   readonly state: AldoWorkspaceUsageState;
   readonly onChanged?: () => void;
 }) {
+  useAldoCheckoutReturn(onChanged);
   if (state.status === "unavailable") return null;
   const usage = state.status === "ready" ? state.usage : state.usage;
 
   return (
-    <section className="flex flex-col gap-3" aria-labelledby="aldo-workspace-usage-heading">
-      <div className="flex items-center justify-between gap-3">
-        <h2 id="aldo-workspace-usage-heading" className="text-sm font-medium text-foreground">
-          Aldo workspace
-        </h2>
-        {isAldoCloud ? (
-          usage?.bill ? (
-            <SpendLimitControl spendLimitCents={usage.bill.spendLimitCents} onChanged={onChanged} />
-          ) : null
+    <>
+      <section className="flex flex-col gap-3" aria-labelledby="aldo-workspace-usage-heading">
+        <div className="flex items-center justify-between gap-3">
+          <h2 id="aldo-workspace-usage-heading" className="text-sm font-medium text-foreground">
+            Aldo workspace
+          </h2>
+          {isAldoCloud ? (
+            usage?.bill ? (
+              <SpendLimitControl
+                spendLimitCents={usage.bill.spendLimitCents}
+                onChanged={onChanged}
+              />
+            ) : null
+          ) : (
+            <Button
+              render={<a href={MANAGE_CAPACITY_HREF} target="_blank" rel="noreferrer" />}
+              size="xs"
+              variant="outline"
+            >
+              Manage capacity
+              <ExternalLinkIcon aria-hidden />
+            </Button>
+          )}
+        </div>
+        {usage ? (
+          <AldoWorkspaceUsageBody usage={usage} stale={state.status !== "ready"} />
+        ) : state.status === "error" ? (
+          <p className="text-xs text-muted-foreground">
+            Aldo usage could not be loaded. Refresh to try again.
+          </p>
         ) : (
-          <Button
-            render={<a href={MANAGE_CAPACITY_HREF} target="_blank" rel="noreferrer" />}
-            size="xs"
-            variant="outline"
-          >
-            Manage capacity
-            <ExternalLinkIcon aria-hidden />
-          </Button>
+          <AldoWorkspaceUsageSkeleton />
         )}
-      </div>
-      {usage ? (
-        <AldoWorkspaceUsageBody usage={usage} stale={state.status !== "ready"} />
-      ) : state.status === "error" ? (
-        <p className="text-xs text-muted-foreground">
-          Aldo usage could not be loaded. Refresh to try again.
-        </p>
-      ) : (
-        <AldoWorkspaceUsageSkeleton />
-      )}
-    </section>
+      </section>
+      {isAldoCloud && usage ? (
+        <AldoBillingSection usage={usage} status={state.status} onChanged={onChanged} />
+      ) : null}
+    </>
   );
 }
 
