@@ -70,7 +70,9 @@ export function AldoWorkspaceUsageSection({
           <AldoWorkspaceUsageSkeleton />
         )}
       </section>
-      {isAldoCloud && usage ? <AldoBillingSection usage={usage} onChanged={onChanged} /> : null}
+      {isAldoCloud && usage ? (
+        <AldoBillingSection usage={usage} status={state.status} onChanged={onChanged} />
+      ) : null}
     </>
   );
 }

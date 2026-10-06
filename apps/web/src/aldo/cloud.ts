@@ -1028,8 +1028,8 @@ export async function setAldoSpendLimit(cents: number): Promise<void> {
 }
 
 /** The usage summary the Usage page shows (state/aldoWorkspaceUsage.ts checks its shape). */
-export async function fetchAldoCloudUsage(): Promise<unknown> {
-  return api<unknown>("/api/usage", { cache: "no-store" });
+export async function fetchAldoCloudUsage(signal?: AbortSignal): Promise<unknown> {
+  return api<unknown>("/api/usage", { cache: "no-store", ...(signal ? { signal } : {}) });
 }
 
 /** Where to pay for a plan: Stripe Checkout, which comes back to /usage?checkout=done or =canceled. */

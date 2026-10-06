@@ -17,8 +17,13 @@ import {
 import { Spinner } from "../components/ui/spinner";
 import { toastManager } from "../components/ui/toast";
 import { cn } from "../lib/utils";
-import { isAldoWorkspaceUsage, type AldoWorkspaceUsage } from "../state/aldoWorkspaceUsage";
 import {
+  isAldoWorkspaceUsage,
+  type AldoWorkspaceUsage,
+  type AldoWorkspaceUsageState,
+} from "../state/aldoWorkspaceUsage";
+import {
+  aldoBillingActionsEnabled,
   aldoBillingView,
   aldoCancelCopy,
   aldoCheckedOutPlan,
@@ -56,41 +61,82 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** The plan this tab sent to Stripe Checkout, to wait for once it's back (Stripe's return URL doesn't say). */
+const CHECKOUT_PLAN_KEY = "aldo:checkout-plan";
+
+function rememberCheckoutPlan(plan: string | null): void {
+  try {
+    if (plan === null) sessionStorage.removeItem(CHECKOUT_PLAN_KEY);
+    else sessionStorage.setItem(CHECKOUT_PLAN_KEY, plan);
+  } catch {
+    // No storage: the return waits for any running Stripe plan instead.
+  }
+}
+
+function rememberedCheckoutPlan(): string | null {
+  try {
+    return sessionStorage.getItem(CHECKOUT_PLAN_KEY) || null;
+  } catch {
+    return null;
+  }
+}
+
+/** Stripe Checkout's URL for a plan, remembering the plan for the way back. */
+async function checkoutUrl(plan: string): Promise<string> {
+  const url = await startAldoCheckout(plan);
+  rememberCheckoutPlan(plan);
+  return url;
+}
+
 /**
  * Back from Stripe Checkout (/usage?checkout=done): Stripe tells Aldo a few
- * seconds later, so this waits for the plan to show, says so, and refreshes
- * the page. Either way the query goes from the address bar.
+ * seconds later, so this waits (up to CHECKOUT_WAIT_MS, however slow Aldo
+ * answers) for the plan that was bought to show, says so, and refreshes the
+ * page. Either way the query goes from the address bar.
  */
 export function useAldoCheckoutReturn(onChanged: (() => void) | undefined): void {
-  // Read once, before the effect cleans it up (StrictMode runs effects twice).
-  const [outcome] = useState(() =>
-    isAldoCloud ? aldoCheckoutReturn(window.location.search) : null,
-  );
+  // Read once, before the effect cleans up (StrictMode runs effects twice).
+  const [checkout] = useState(() => {
+    const outcome = isAldoCloud ? aldoCheckoutReturn(window.location.search) : null;
+    return outcome ? { outcome, bought: rememberedCheckoutPlan() } : null;
+  });
   useEffect(() => {
-    if (!outcome) return;
+    if (!checkout) return;
     const { pathname, search, hash } = window.location;
     window.history.replaceState(
       window.history.state,
       "",
       `${pathname}${withoutAldoCheckoutReturn(search)}${hash}`,
     );
-    if (outcome !== "done") return;
-    let stopped = false;
+    if (checkout.outcome !== "done") {
+      rememberCheckoutPlan(null);
+      return;
+    }
+    const controller = new AbortController();
     void (async () => {
       const deadline = Date.now() + CHECKOUT_WAIT_MS;
       for (;;) {
-        const usage = await fetchAldoCloudUsage().catch(() => null);
-        if (stopped) return;
-        const plan = aldoCheckedOutPlan(isAldoWorkspaceUsage(usage) ? usage : null);
+        const left = deadline - Date.now();
+        if (left <= 0) break;
+        const usage = await fetchAldoCloudUsage(
+          AbortSignal.any([controller.signal, AbortSignal.timeout(left)]),
+        ).catch(() => null);
+        if (controller.signal.aborted) return;
+        const plan = aldoCheckedOutPlan(
+          isAldoWorkspaceUsage(usage) ? usage : null,
+          checkout.bought,
+        );
         if (plan) {
+          rememberCheckoutPlan(null);
           toastManager.add({ type: "success", title: `You're on ${plan}` });
           onChanged?.();
           return;
         }
-        if (Date.now() + CHECKOUT_POLL_MS > deadline) break;
+        if (Date.now() + CHECKOUT_POLL_MS >= deadline) break;
         await sleep(CHECKOUT_POLL_MS);
-        if (stopped) return;
+        if (controller.signal.aborted) return;
       }
+      rememberCheckoutPlan(null);
       toastManager.add({
         type: "info",
         title: "Your plan is on its way",
@@ -98,15 +144,15 @@ export function useAldoCheckoutReturn(onChanged: (() => void) | undefined): void
       });
       onChanged?.();
     })();
-    return () => {
-      stopped = true;
-    };
-  }, [outcome, onChanged]);
+    return () => controller.abort();
+  }, [checkout, onChanged]);
 }
 
 /** The plan section under the workspace's credits, when Aldo bills through Stripe. */
 export function AldoBillingSection(props: {
   readonly usage: AldoWorkspaceUsage;
+  /** The usage summary's state: billing actions wait while it isn't current. */
+  readonly status: AldoWorkspaceUsageState["status"];
   readonly onChanged: (() => void) | undefined;
 }) {
   const view = aldoBillingView(props.usage);
@@ -127,6 +173,7 @@ export function AldoBillingSection(props: {
   }, []);
 
   if (!view) return null;
+  const enabled = aldoBillingActionsEnabled(props.status, busy);
   const confirm = (next: Confirming) => {
     setError(null);
     setConfirming(next);
@@ -136,7 +183,7 @@ export function AldoBillingSection(props: {
 
   /** Runs one request at a time; a redirect leaves the button spinning while the page goes. */
   const run = async (key: string, action: () => Promise<string | void>) => {
-    if (busy) return;
+    if (!enabled) return;
     setBusy(key);
     setError(null);
     try {
@@ -152,8 +199,7 @@ export function AldoBillingSection(props: {
     }
   };
 
-  const checkout = (plan: AldoBillingPlan) =>
-    run(`plan:${plan.id}`, () => startAldoCheckout(plan.id));
+  const checkout = (plan: AldoBillingPlan) => run(`plan:${plan.id}`, () => checkoutUrl(plan.id));
   const portal = (key: string) => run(key, aldoBillingPortalUrl);
   const changePlan = (to: { readonly id: string; readonly name: string }, kept: boolean) =>
     run(kept ? "keep" : "confirm", async () => {
@@ -162,7 +208,7 @@ export function AldoBillingSection(props: {
         effective = await changeAldoPlan(to.id);
       } catch (cause) {
         // No Stripe subscription after all: pay for the plan instead.
-        if (cause instanceof AldoApiError && cause.status === 409) return startAldoCheckout(to.id);
+        if (cause instanceof AldoApiError && cause.status === 409) return checkoutUrl(to.id);
         throw cause;
       }
       setConfirmOpen(false);
@@ -204,7 +250,7 @@ export function AldoBillingSection(props: {
               <Button
                 size="xs"
                 variant="ghost"
-                disabled={busy !== null}
+                disabled={!enabled}
                 onClick={() => confirm({ kind: "cancel" })}
               >
                 Cancel plan
@@ -213,7 +259,7 @@ export function AldoBillingSection(props: {
             <Button
               size="xs"
               variant="outline"
-              disabled={busy !== null}
+              disabled={!enabled}
               onClick={() => void portal("portal")}
             >
               {spinner("portal")}
@@ -232,7 +278,7 @@ export function AldoBillingSection(props: {
           <Button
             size="xs"
             variant="outline"
-            disabled={busy !== null}
+            disabled={!enabled}
             onClick={() => void portal("payment")}
           >
             {spinner("payment")}
@@ -247,8 +293,8 @@ export function AldoBillingSection(props: {
         <Notice
           text={`Switches to ${view.pending.name} ${onPeriodEnd(view.periodEnd)}.`}
           action={`Keep ${view.plan.name}`}
-          busy={busy}
-          busyKey="keep"
+          disabled={!enabled}
+          spinning={busy === "keep"}
           onAction={() => void changePlan(view.plan, true)}
         />
       ) : null}
@@ -256,8 +302,8 @@ export function AldoBillingSection(props: {
         <Notice
           text={`Ends ${onPeriodEnd(view.periodEnd)}.`}
           action="Resume"
-          busy={busy}
-          busyKey="resume"
+          disabled={!enabled}
+          spinning={busy === "resume"}
           onAction={() => void cancel(true)}
         />
       ) : null}
@@ -268,7 +314,7 @@ export function AldoBillingSection(props: {
             <PlanCard key={plan.id} plan={plan}>
               <Button
                 size="xs"
-                disabled={busy !== null}
+                disabled={!enabled}
                 onClick={() => void checkout(plan)}
                 className="self-start"
               >
@@ -293,7 +339,7 @@ export function AldoBillingSection(props: {
                 <Button
                   size="xs"
                   variant={option.change === "upgrade" ? "default" : "outline"}
-                  disabled={busy !== null}
+                  disabled={!enabled}
                   className="self-start"
                   onClick={() => confirm({ kind: "change", from: view.current!, to: option.plan })}
                 >
@@ -309,6 +355,11 @@ export function AldoBillingSection(props: {
         <p className="text-xs text-muted-foreground">
           Past a plan's credits, extra usage is billed by the credit up to a limit you set. Past
           that, agents keep going one at a time, unbilled.
+        </p>
+      ) : null}
+      {props.status === "error" ? (
+        <p className="text-xs text-muted-foreground">
+          Your plan couldn't be refreshed, so changing it waits. Refresh to try again.
         </p>
       ) : null}
       {error && !confirmOpen ? (
@@ -348,7 +399,7 @@ export function AldoBillingSection(props: {
             <Button
               size="sm"
               variant={confirming?.kind === "cancel" ? "destructive" : "default"}
-              disabled={busy !== null}
+              disabled={!enabled}
               onClick={() => {
                 if (confirming?.kind === "change") void changePlan(confirming.to, false);
                 else if (confirming?.kind === "cancel") void cancel(false);
@@ -398,8 +449,8 @@ function PlanCard(props: {
 function Notice(props: {
   readonly text: string;
   readonly action: string;
-  readonly busy: string | null;
-  readonly busyKey: string;
+  readonly disabled: boolean;
+  readonly spinning: boolean;
   readonly onAction: () => void;
 }) {
   return (
@@ -408,8 +459,8 @@ function Notice(props: {
       role="status"
     >
       <span>{props.text}</span>
-      <Button size="xs" variant="outline" disabled={props.busy !== null} onClick={props.onAction}>
-        {props.busy === props.busyKey ? <Spinner className="size-3.5" /> : null}
+      <Button size="xs" variant="outline" disabled={props.disabled} onClick={props.onAction}>
+        {props.spinning ? <Spinner className="size-3.5" /> : null}
         {props.action}
       </Button>
     </div>

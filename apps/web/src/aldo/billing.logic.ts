@@ -3,7 +3,7 @@
 // Aldo leaves out); this decides what the page offers for it, and says it.
 // Pure, so it's tested on its own.
 
-import type { AldoWorkspaceUsage } from "../state/aldoWorkspaceUsage";
+import type { AldoWorkspaceUsage, AldoWorkspaceUsageState } from "../state/aldoWorkspaceUsage";
 
 export interface AldoBillingPlan {
   readonly id: string;
@@ -81,7 +81,8 @@ export type AldoBillingView =
       /** Its terms, unless Aldo no longer offers it. */
       readonly current: AldoBillingPlan | null;
       readonly periodEnd: string | null;
-      readonly pending: AldoBillingPlan | null;
+      /** A pending downgrade's plan, named by its id if Aldo no longer offers it. */
+      readonly pending: { readonly id: string; readonly name: string } | null;
       readonly canceling: boolean;
       readonly pastDue: boolean;
       readonly options: readonly AldoPlanOption[];
@@ -111,7 +112,12 @@ export function aldoBillingView(usage: AldoWorkspaceUsage): AldoBillingView | nu
 
   const currentId = usage.plan.id;
   const current = plans.find((plan) => plan.id === currentId) ?? null;
-  const pending = plans.find((plan) => plan.id === billing.pendingPlan) ?? null;
+  const pending = billing.pendingPlan
+    ? (plans.find((plan) => plan.id === billing.pendingPlan) ?? {
+        id: billing.pendingPlan,
+        name: billing.pendingPlan,
+      })
+    : null;
   const canceling = usage.period?.cancelAtPeriodEnd ?? false;
   // Ending or unpaid, the way back is Resume or a payment method, not another plan.
   const switchable = current !== null && !canceling && !billing.pastDue;
@@ -263,9 +269,27 @@ export function withoutAldoCheckoutReturn(search: string): string {
 
 /**
  * The plan's name once a checkout has landed (Stripe tells Aldo a few seconds
- * after the user is back): a running plan that's a Stripe subscription.
+ * after the user is back): a running plan that's a Stripe subscription, and
+ * the one that was bought when this tab knows which (until then Aldo can
+ * still show the plan the user had).
  */
-export function aldoCheckedOutPlan(usage: AldoWorkspaceUsage | null): string | null {
+export function aldoCheckedOutPlan(
+  usage: AldoWorkspaceUsage | null,
+  bought: string | null,
+): string | null {
   if (!usage?.plan || usage.period?.status === "canceled") return null;
+  if (bought !== null && usage.plan.id !== bought) return null;
   return usage.billing?.managed === false ? null : usage.plan.name;
+}
+
+/**
+ * Billing actions wait for a summary that's current: while the page refreshes,
+ * or after a refresh failed, the plan shown may not be the plan the user has.
+ * And one request at a time.
+ */
+export function aldoBillingActionsEnabled(
+  status: AldoWorkspaceUsageState["status"],
+  busy: string | null,
+): boolean {
+  return status === "ready" && busy === null;
 }

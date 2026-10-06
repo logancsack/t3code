@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 import type { AldoWorkspaceUsage } from "../state/aldoWorkspaceUsage";
 import { isAldoWorkspaceUsage } from "../state/aldoWorkspaceUsage";
 import {
+  aldoBillingActionsEnabled,
   aldoBillingView,
   aldoCancelCopy,
   aldoCheckedOutPlan,
@@ -182,6 +183,16 @@ describe("aldoBillingView", () => {
     expect(aldoPlanSummary(view)).toBe("Pro · $60 a month");
   });
 
+  it("keeps a pending downgrade to a plan Aldo no longer offers, named by its id", () => {
+    const retired = { ...onPro, billing: { ...billing, pendingPlan: "starter" } };
+    const view = managed(retired);
+    // Still shown (and so still undoable with Keep Pro), not dropped as unknown.
+    expect(view.pending).toEqual({ id: "starter", name: "starter" });
+    expect(aldoPlanSummary(view)).toBe("Pro · $60 a month");
+    expect(view.options.some((option) => option.pending)).toBe(false);
+    expect(changes(retired)).toEqual({ plus: "downgrade", pro: null, max: "upgrade" });
+  });
+
   it("offers no switching while the plan is ending or unpaid", () => {
     const canceling = {
       ...onPro,
@@ -266,18 +277,45 @@ describe("checkout return", () => {
   });
 
   it("waits for a running Stripe plan, not an ended or admin-set one", () => {
-    expect(aldoCheckedOutPlan(onPro)).toBe("Pro");
-    expect(aldoCheckedOutPlan(null)).toBeNull();
-    expect(aldoCheckedOutPlan(noPlan)).toBeNull();
+    expect(aldoCheckedOutPlan(onPro, null)).toBe("Pro");
+    expect(aldoCheckedOutPlan(null, null)).toBeNull();
+    expect(aldoCheckedOutPlan(noPlan, null)).toBeNull();
     expect(
-      aldoCheckedOutPlan({
-        ...onPro,
-        period: { ...onPro.period!, status: "canceled" },
-        billing: { ...billing, managed: false },
-      }),
+      aldoCheckedOutPlan(
+        {
+          ...onPro,
+          period: { ...onPro.period!, status: "canceled" },
+          billing: { ...billing, managed: false },
+        },
+        null,
+      ),
     ).toBeNull();
-    expect(aldoCheckedOutPlan({ ...onPro, billing: { ...billing, managed: false } })).toBeNull();
+    expect(
+      aldoCheckedOutPlan({ ...onPro, billing: { ...billing, managed: false } }, null),
+    ).toBeNull();
     const { billing: _left, ...older } = onPro;
-    expect(aldoCheckedOutPlan(older)).toBe("Pro");
+    expect(aldoCheckedOutPlan(older, null)).toBe("Pro");
+  });
+
+  it("waits for the plan that was bought, not the one the user still has", () => {
+    // Bought Max from Pro (no Stripe subscription after all): Aldo shows Pro until Stripe says.
+    expect(aldoCheckedOutPlan(onPro, "max")).toBeNull();
+    expect(
+      aldoCheckedOutPlan(
+        { ...onPro, plan: { id: "max", name: "Max", includedCredits: 30_000 } },
+        "max",
+      ),
+    ).toBe("Max");
+  });
+});
+
+describe("aldoBillingActionsEnabled", () => {
+  it("allows one request at a time, and only on a current summary", () => {
+    expect(aldoBillingActionsEnabled("ready", null)).toBe(true);
+    expect(aldoBillingActionsEnabled("ready", "portal")).toBe(false);
+    // Refreshing, or the refresh failed: the plan shown may be out of date.
+    expect(aldoBillingActionsEnabled("loading", null)).toBe(false);
+    expect(aldoBillingActionsEnabled("error", null)).toBe(false);
+    expect(aldoBillingActionsEnabled("unavailable", null)).toBe(false);
   });
 });
