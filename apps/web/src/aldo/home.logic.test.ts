@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-import type { AldoHome, AldoHomeConversation, AldoHomePullRequest } from "./cloud";
+import type { AldoApproval, AldoHome, AldoHomeConversation, AldoHomePullRequest } from "./cloud";
 import {
   actionLabel,
   boardFor,
@@ -17,10 +17,13 @@ import {
   modelName,
   moveSelection,
   needsYouKind,
+  nowDetail,
+  nowItems,
   policyLines,
   relativeTime,
   repoChips,
   repoName,
+  sameTarget,
   shipLanes,
   stageLabel,
 } from "./home.logic";
@@ -554,5 +557,120 @@ describe("composer chips", () => {
       "Catch me up on what happened since 3 h ago: what finished, what shipped, and what needs me.",
     );
     expect(chipPrompt("Start something in shop", null, NOW)).toBe("Start something in shop: ");
+  });
+});
+
+describe("the Now strip", () => {
+  const home = (
+    conversations: ReadonlyArray<AldoHomeConversation>,
+    pullRequests: ReadonlyArray<AldoHomePullRequest> = [],
+    approvals: ReadonlyArray<AldoApproval> = [],
+  ): AldoHome => ({
+    at: ago(0),
+    conversations,
+    pullRequests,
+    upcoming: [],
+    approvals,
+    actions: [],
+    usage: {
+      configured: true,
+      metered: false,
+      plan: null,
+      period: null,
+      credits: null,
+      bill: null,
+      alert: "none",
+      agents: { running: 0, limit: null },
+    },
+    spends: { once: 0, monthly: 0, recent: [] },
+    health: { providers: [], connected: [], environments: [] },
+    policy: { everywhere: {}, workspaces: [] },
+  });
+  const approval = (id: string): AldoApproval => ({
+    id,
+    kind: "email",
+    provider: "google",
+    title: "Reply to The Hoxton",
+    summary: "To maya@example.com",
+    fields: [],
+    body: "Nov 12 works.",
+    approveLabel: "Send",
+    discardLabel: "Discard",
+    status: "pending",
+    result: null,
+    failed: false,
+    thread: null,
+    threadTitle: null,
+    createdAt: ago(20),
+    decidedAt: null,
+  });
+  const at = (id: string) => ({ environmentId: `aldo-${id}`, threadId: id });
+
+  it("puts approvals, then what waits on the user, then what can merge, then what's working", () => {
+    const items = nowItems(
+      home(
+        [
+          conversation({ ref: "w", thread: at("w"), state: "working", at: ago(2) }),
+          conversation({ ref: "q", thread: at("q"), state: "waiting", at: ago(12) }),
+          conversation({ ref: "d", thread: at("d"), state: "done", at: ago(60) }),
+        ],
+        [pullRequest({ thread: at("d"), number: 131 })],
+        [approval("ap")],
+      ),
+      NOW,
+    );
+    expect(items.map((item) => item.key)).toEqual([
+      "approval:ap",
+      "needs:q",
+      "merge:acme/shop#131",
+      "working:w",
+    ]);
+  });
+
+  it("leaves out a pull request whose conversation is on it already, and what can't merge yet", () => {
+    const items = nowItems(
+      home(
+        [conversation({ ref: "w", thread: at("w"), state: "working" })],
+        [
+          pullRequest({ thread: at("w"), number: 1 }),
+          pullRequest({ thread: at("x"), number: 2, stage: "checks-running" }),
+          pullRequest({ thread: at("y"), number: 3, status: "merged", stage: "merged" }),
+        ],
+      ),
+      NOW,
+    );
+    expect(items.map((item) => item.key)).toEqual(["working:w"]);
+  });
+
+  it("is a glance: at most eight", () => {
+    const many = Array.from({ length: 12 }, (_, i) =>
+      conversation({ ref: `c${i}`, thread: at(`c${i}`), state: "working", at: ago(i) }),
+    );
+    expect(nowItems(home(many), NOW)).toHaveLength(8);
+  });
+
+  it("says what each is at", () => {
+    const [needs, working, stuck] = nowItems(
+      home([
+        conversation({
+          ref: "q",
+          thread: at("q"),
+          state: "waiting",
+          pending: { kind: "question", requestId: "r", questions: [] },
+        }),
+        conversation({ ref: "w", thread: at("w"), state: "working", at: ago(4) }),
+        conversation({ ref: "s", thread: at("s"), state: "working", at: ago(90) }),
+      ]),
+      NOW,
+    );
+    expect(nowDetail(needs!, NOW)).toBe("asks you");
+    expect(nowDetail(working!, NOW)).toBe("working 4 min");
+    expect(nowDetail(stuck!, NOW)).toBe("stuck");
+  });
+
+  it("matches a thread by its machine and its T3 thread", () => {
+    expect(sameTarget(at("a"), at("a"))).toBe(true);
+    expect(sameTarget({ environmentId: "aldo-a", threadId: "b" }, at("a"))).toBe(false);
+    expect(sameTarget(null, at("a"))).toBe(false);
   });
 });

@@ -8,8 +8,9 @@
 // from this one. Typed without a call on, the words go to Aldo in writing
 // instead (its text model, with the same tools): each turn comes back with
 // Aldo's reply and what it did. The session lives here, not in a screen: Aldo
-// opening a thread moves the page, and the conversation carries on (the dock
-// shows it).
+// opening a thread moves the page (or, on the home screen, peeks at it), and
+// the conversation carries on (the dock shows it). Aldo hears which thread is
+// on screen (screen.ts): with each written turn, and on a call as it changes.
 // A thread Aldo starts shows in the sidebar at once, and is followed until its
 // first turn is under way: if it has to wait, runs into trouble, can't start
 // or stops at once (an agent signed out), Aldo says so (or, once the
@@ -25,6 +26,7 @@ import {
   previewOf,
   phaseAfter,
   rememberHeard,
+  screenNote,
   startNews,
   startWatchFor,
   unseenMessages,
@@ -32,6 +34,7 @@ import {
   type AldoAssistantMessage,
   type AldoAssistantPhase,
   type AldoFunctionCall,
+  type AldoOnScreen,
   type AldoOpenTarget,
   type AldoStartNews,
   type AldoStartWatch,
@@ -44,6 +47,7 @@ import {
   subscribeAldoEnvironments,
   type AldoImageUpload,
 } from "./cloud";
+import { aldoOnScreen, subscribeAldoOnScreen } from "./screen";
 
 const REALTIME_CALLS_URL = "https://api.openai.com/v1/realtime/calls";
 /** How long a tool call waits for the transcript of what the user just said. */
@@ -124,12 +128,26 @@ let newsWaiting: AldoStartNews[] = [];
 /** Threads this page started through Aldo, until they've started (or couldn't). */
 let startWatches: ReadonlyArray<AldoStartWatch> = [];
 let stopWatchingStarts: (() => void) | null = null;
+/** What the call was last told is on screen (screenNote), so it hears only changes. */
+let toldScreen: string | null = null;
+let stopWatchingScreen: (() => void) | null = null;
 
 /** How the conversation opens a thread on the page (the router, from the dock). */
 export function setAldoAssistantNavigator(
   navigate: ((target: AldoOpenTarget) => void) | null,
 ): void {
   openThread = navigate;
+}
+
+/** Where a thread Aldo shows goes instead of the page: the home screen's peek, while it's there. */
+let peekThread: ((target: AldoOpenTarget) => void) | null = null;
+
+export function setAldoThreadPeeker(peek: ((target: AldoOpenTarget) => void) | null): void {
+  peekThread = peek;
+}
+
+function showThread(target: AldoOpenTarget): void {
+  (peekThread ?? openThread)?.(target);
 }
 
 /**
@@ -217,6 +235,23 @@ function requestResponse(response?: Record<string, unknown>): void {
   send(response ? { type: "response.create", response } : { type: "response.create" });
 }
 
+/**
+ * Tells the call what's on screen when that changes: a note in the
+ * conversation, for its next response (it doesn't ask for one). The first is
+ * told only when there's a thread to name.
+ */
+function tellScreen(): void {
+  if (channel?.readyState !== "open") return;
+  const onScreen: AldoOnScreen | null = aldoOnScreen();
+  const note = screenNote(onScreen);
+  if (note === toldScreen || (toldScreen === null && !onScreen)) return;
+  toldScreen = note;
+  send({
+    type: "conversation.item.create",
+    item: { type: "message", role: "system", content: [{ type: "input_text", text: note }] },
+  });
+}
+
 function toastStartNews(news: AldoStartNews): void {
   const failed = news.state === "failed" || news.state === "stopped";
   toastManager.add({
@@ -290,7 +325,7 @@ async function runCalls(calls: ReadonlyArray<AldoFunctionCall>): Promise<void> {
           }))
       : { error: "The conversation ended." };
     const open = openTargetOf(outcome);
-    if (open) openThread?.(open);
+    if (open) showThread(open);
     openPreview(outcome);
     const action = actionFor(call, outcome);
     if (action) {
@@ -372,6 +407,9 @@ function watchLevels(): void {
 function teardown(): void {
   if (levelsTimer) clearInterval(levelsTimer);
   levelsTimer = null;
+  stopWatchingScreen?.();
+  stopWatchingScreen = null;
+  toldScreen = null;
   channel?.close();
   peer?.close();
   microphone?.getTracks().forEach((track) => track.stop());
@@ -440,6 +478,9 @@ export async function connectAldo(options: { mic?: boolean } = {}): Promise<void
     });
     channel.addEventListener("open", () => {
       set({ phase: "listening", micOn: microphone !== null });
+      // What's on screen first, so the greeting (or what was typed) can mean it.
+      tellScreen();
+      stopWatchingScreen = subscribeAldoOnScreen(tellScreen);
       const text = queuedText;
       queuedText = null;
       if (text) sendText(text);
@@ -533,10 +574,16 @@ async function chatText(words: string, images: ReadonlyArray<AldoImageUpload> = 
   addEntry(entry);
   set({ replying: true, error: null });
   try {
-    const turn = await aldoAssistant.chat(chatSessionId, words, images).catch((error: unknown) => {
-      if (error instanceof AldoApiError && error.status === 404) return null;
-      throw error;
-    });
+    const onScreen = aldoOnScreen();
+    const viewing = onScreen
+      ? { environmentId: onScreen.environmentId, threadId: onScreen.threadId }
+      : null;
+    const turn = await aldoAssistant
+      .chat(chatSessionId, words, images, viewing)
+      .catch((error: unknown) => {
+        if (error instanceof AldoApiError && error.status === 404) return null;
+        throw error;
+      });
     if (!turn) {
       // An older Aldo: the words go into a call instead, which shows them itself.
       chatSupported = false;
@@ -554,7 +601,7 @@ async function chatText(words: string, images: ReadonlyArray<AldoImageUpload> = 
         arguments: call.arguments,
       };
       const open = openTargetOf(call.outcome);
-      if (open) openThread?.(open);
+      if (open) showThread(open);
       openPreview(call.outcome);
       const action = actionFor(made, call.outcome);
       if (action) {
