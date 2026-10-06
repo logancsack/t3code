@@ -242,6 +242,7 @@ function SummonBar() {
               autoFocus
               value={query}
               aria-label="Ask Aldo"
+              autoComplete="off"
               placeholder={
                 askedAt !== null
                   ? "Ask a follow-up…"

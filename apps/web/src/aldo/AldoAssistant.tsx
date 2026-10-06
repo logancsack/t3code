@@ -505,6 +505,7 @@ export function AldoComposer(props: {
           className={cn("flex-1", page && "text-base")}
           size={page ? "lg" : "default"}
           unstyled={page}
+          autoComplete="off"
           value={text}
           placeholder={
             replying
