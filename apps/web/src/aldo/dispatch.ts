@@ -4,7 +4,10 @@
 // connects to it, and then T3 sends the command as usual. Until then the
 // thread shows the message and "Creating your cloud agent" or "Reconnecting to
 // the cloud", and a new thread shows in the sidebar meanwhile
-// (startingThreads.ts). Settling, archiving, pinning, snoozing, renaming or
+// (startingThreads.ts). A message goes to Aldo first (holdAldoTurn), which
+// brings the machine up and sends it even if this page goes away or a first
+// boot takes minutes; T3 runs it once, however many times it's sent. A wake
+// that fails for a passing reason is tried again. Settling, archiving, pinning, snoozing, renaming or
 // deleting a sleeping machine's thread doesn't wake it: it's done at once, and
 // Aldo keeps the command for the machine (threadCommands.ts).
 
@@ -21,6 +24,7 @@ import { toastManager } from "../components/ui/toast";
 import {
   AldoApiError,
   aldoMachineIsNew,
+  holdAldoTurn,
   isAldoCloud,
   isAldoEnvironmentId,
   requestAldoDirectoryRefresh,
@@ -29,6 +33,10 @@ import {
 
 const CONNECT_WAIT_MS = 3 * 60_000;
 const NUDGE_EVERY_MS = 8_000;
+/** How long a wake that fails for a passing reason (no answer, a slow first boot) is tried again. */
+const WAKE_RETRY_MS = 15 * 60_000;
+/** How long this page keeps connecting, after it stopped waiting, to a machine Aldo is bringing up for a held message. */
+const FOLLOW_MS = 30 * 60_000;
 
 const inFlight = new Map<string, Promise<void>>();
 /** Whether each machine being brought up is new or waking, for the thread's status line. */
@@ -36,6 +44,30 @@ const starting = new Map<string, "creating" | "reconnecting">();
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Aldo said no (out of credits, too many agents at once, no such thread), not "not yet". */
+function refused(cause: unknown): boolean {
+  return (
+    cause instanceof AldoApiError &&
+    cause.status >= 400 &&
+    cause.status < 500 &&
+    cause.status !== 408 &&
+    cause.status !== 429
+  );
+}
+
+/** Creates or wakes the machine, trying again while what failed passes (Aldo or the network not answering, a start still under way). */
+async function wake(environmentId: string): Promise<void> {
+  const deadline = Date.now() + WAKE_RETRY_MS;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await wakeAldoEnvironment(environmentId);
+    } catch (cause) {
+      if (refused(cause) || Date.now() >= deadline) throw cause;
+      await sleep(Math.min(15_000, 2_000 * 2 ** attempt));
+    }
+  }
 }
 
 export function isAldoConnected(environmentId: string): boolean {
@@ -63,7 +95,7 @@ export function ensureAldoConnected(environmentId: string): Promise<void> {
   starting.set(environmentId, aldoMachineIsNew(environmentId) ? "creating" : "reconnecting");
   const run = (async () => {
     // Aldo creates the machine the first time, else resumes it, and returns once T3 is up.
-    await wakeAldoEnvironment(environmentId);
+    await wake(environmentId);
     requestAldoDirectoryRefresh();
     // A sleeping machine's connection waits to be told to try again.
     const deadline = Date.now() + CONNECT_WAIT_MS;
@@ -112,12 +144,46 @@ export function installAldoCommandDispatch(): void {
     // (Not while this tab is bringing the machine up for a message: those wait for it, in order.)
     const kept = inFlight.has(environmentId) ? null : await keepAldoCommand(environmentId, command);
     if (kept) return kept;
-    await ensureAldoConnected(environmentId).catch((cause: unknown) => {
+    // A message for a machine this page isn't connected to goes to Aldo first.
+    const held =
+      command.type === "thread.turn.start" &&
+      !isAldoConnected(environmentId) &&
+      (await holdAldoTurn(environmentId, command));
+    try {
+      await ensureAldoConnected(environmentId);
+    } catch (cause) {
       notifyAldoRefusal(cause);
-      throw cause;
-    });
+      if (!held) throw cause;
+      // Aldo has it and sends it once the machine is up, so it stays sent
+      // (sending it again from the draft would send it twice), and this page
+      // connects when the machine is up.
+      followAldoMachine(environmentId);
+      return { sequence: 0 };
+    }
     return null;
   });
+}
+
+const following = new Set<string>();
+
+/** Connects to a machine Aldo is bringing up for a held message once it's up, after this page stopped waiting. */
+function followAldoMachine(environmentId: string): void {
+  if (following.has(environmentId)) return;
+  following.add(environmentId);
+  void (async () => {
+    const deadline = Date.now() + FOLLOW_MS;
+    while (Date.now() < deadline && !isAldoConnected(environmentId)) {
+      requestAldoDirectoryRefresh();
+      void runAtomCommand(
+        appAtomRegistry,
+        environmentCatalog.retryNow,
+        environmentId as EnvironmentId,
+        { reportFailure: false },
+      );
+      await sleep(NUDGE_EVERY_MS);
+    }
+    if (isAldoConnected(environmentId)) aldoMachineConnected(environmentId);
+  })().finally(() => following.delete(environmentId));
 }
 
 let refusalToastId: string | null = null;

@@ -713,6 +713,26 @@ export async function sendAldoThreadCommand(
   });
 }
 
+/**
+ * Hands Aldo a message (T3's `thread.turn.start`) for a machine this browser
+ * isn't connected to. Aldo brings the machine up and sends it, even if this
+ * page goes away; this page sends it too once connected, and T3 runs it once.
+ * False when Aldo didn't take it (an older Aldo, a message too big for it to
+ * carry, or no answer): the page sends it itself, as before.
+ */
+export async function holdAldoTurn(environmentId: string, command: unknown): Promise<boolean> {
+  const threadId = threadIdForEnvironment(environmentId);
+  try {
+    await api(`/api/environments/${threadId}/turns`, {
+      method: "POST",
+      body: JSON.stringify({ command }),
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 type ThreadDetailSource = (
   environmentId: string,
   threadId: string,
