@@ -253,7 +253,7 @@ export function ConversationRow(props: {
   );
 }
 
-const TONE_VARIANT: Record<StageTone, "outline" | "info" | "success" | "error"> = {
+export const TONE_VARIANT: Record<StageTone, "outline" | "info" | "success" | "error"> = {
   neutral: "outline",
   working: "info",
   good: "success",
@@ -265,6 +265,33 @@ const LANE_TITLE: Record<ShipLane, string> = {
   shipping: "Shipping",
   shipped: "Shipped",
 };
+
+/**
+ * Merges a followed pull request as the user, once they confirm (`started`
+ * hears when it goes ahead), and says how it went; true when it merged.
+ */
+export async function mergeFollowedPullRequest(
+  pr: AldoHomePullRequest,
+  started?: () => void,
+): Promise<boolean> {
+  const key = `${pr.repo}#${pr.number}`;
+  const confirmed = await (requestConfirmDialog(`Merge ${key}? Aldo then follows its deploy.`) ??
+    Promise.resolve(true));
+  if (!confirmed) return false;
+  started?.();
+  try {
+    await mergeAldoPullRequest(pr.environmentId, pr);
+    toastManager.add({ type: "success", title: `Merged ${key}` });
+    return true;
+  } catch (cause) {
+    toastManager.add({
+      type: "error",
+      title: `Couldn't merge ${key}`,
+      description: messageOf(cause),
+    });
+    return false;
+  }
+}
 
 export function ShipLaneSection(props: {
   readonly pullRequests: ReadonlyArray<AldoHomePullRequest>;
@@ -278,24 +305,9 @@ export function ShipLaneSection(props: {
   const total = lanes.open.length + lanes.shipping.length + lanes.shipped.length;
   if (total === 0) return null;
   const merge = async (pr: AldoHomePullRequest) => {
-    const key = `${pr.repo}#${pr.number}`;
-    const confirmed = await (requestConfirmDialog(`Merge ${key}? Aldo then follows its deploy.`) ??
-      Promise.resolve(true));
-    if (!confirmed) return;
-    setMerging(key);
-    try {
-      await mergeAldoPullRequest(pr.environmentId, pr);
-      toastManager.add({ type: "success", title: `Merged ${key}` });
-      props.onActed();
-    } catch (cause) {
-      toastManager.add({
-        type: "error",
-        title: `Couldn't merge ${key}`,
-        description: messageOf(cause),
-      });
-    } finally {
-      setMerging(null);
-    }
+    const merged = await mergeFollowedPullRequest(pr, () => setMerging(`${pr.repo}#${pr.number}`));
+    setMerging(null);
+    if (merged) props.onActed();
   };
   const allRepos = [...new Set(props.pullRequests.map((pr) => pr.repo))];
   return (

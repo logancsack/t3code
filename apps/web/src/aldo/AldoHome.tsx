@@ -1,12 +1,14 @@
-// The home screen under Aldo: a command center for the user's agents' work,
-// with Aldo as the way to act on it. The board (left, or on top on a phone)
-// answers four questions in order: what needs me (what waits on a tap first),
-// what's happening, what got done, what's coming; all from Aldo's one read of the account (cloud.ts
-// fetchAldoHome), which never wakes a machine, refreshed with the directory
-// and when a push arrives. Aldo (right) is the conversation: typed, or the
-// orb to talk. Until a git host and an agent are connected it walks through
-// setup first. An Aldo without the home read shows what Aldo's overview says
-// instead; one without the assistant shows the board alone.
+// The home screen under Aldo: the user's agents' work, with Aldo as the way to
+// act on it, in two views (kept per device, homeFeed.ts). Aldo's view, the
+// default, is a conversation (AldoConversationPage.tsx): what's waiting and
+// what's running pinned on top, what Aldo did shown live, a thread peeked at
+// beside it. The board answers four questions in order: what needs me (what
+// waits on a tap first), what's happening, what got done, what's coming; with
+// Aldo beside it (right, or under it on a phone) as a pane. Both come from
+// Aldo's one read of the account (homeFeed.ts), which never wakes a machine.
+// Until a git host and an agent are connected it walks through setup first.
+// An Aldo without the home read shows what Aldo's overview says instead; one
+// without the assistant shows the board alone.
 
 import { useNavigate } from "@tanstack/react-router";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
@@ -15,9 +17,18 @@ import {
   CircleIcon,
   CompassIcon,
   FolderGit2Icon,
+  LayoutGridIcon,
   SparklesIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
 
 import { Button } from "../components/ui/button";
 import { Kbd } from "../components/ui/kbd";
@@ -27,6 +38,7 @@ import { toastManager } from "../components/ui/toast";
 import { cn } from "~/lib/utils";
 import { ALDO_ACCOUNT_SPECS, AldoAccountButton, useAldoAccounts } from "./AldoAccountsPanel";
 import { AldoAtAGlance, AldoPane, useAldoAssistantAvailable } from "./AldoAssistant";
+import { AldoConversationPage } from "./AldoConversationPage";
 import {
   CapacitySection,
   ConversationRow,
@@ -40,21 +52,20 @@ import {
 import { ApprovalsSection } from "./AldoApprovals";
 import { NeedsYouCard } from "./AldoHomeInbox";
 import { RoutinesSection } from "./AldoRoutines";
-import {
-  pullAldoConversation,
-  seedAldoComposer,
-  sendText,
-  useAldoAssistant,
-} from "./assistantSession";
+import { seedAldoComposer, sendText, useAldoAssistant } from "./assistantSession";
 import {
   aldoSupportsGeneralThreads,
-  fetchAldoHome,
-  requestAldoDirectoryRefresh,
   subscribeAldoEnvironments,
   type AldoAccountKind,
-  type AldoHome as AldoHomeRead,
   type AldoHomeConversation,
 } from "./cloud";
+import {
+  refreshAldoHome,
+  setAldoHomeView,
+  useAldoHomeRead,
+  useAldoHomeView,
+  type AldoHomeView,
+} from "./homeFeed";
 import { HOST_KINDS, openAldoRepositoryPicker } from "./AldoRepositoryDialog";
 import {
   boardFor,
@@ -70,97 +81,9 @@ import {
 import { aldoNotificationsStatus, enableAldoNotifications } from "./notifications";
 
 const AGENT_KINDS: ReadonlyArray<AldoAccountKind> = ["claude", "codex", "grok"];
-const REFRESH_EVERY_MS = 30_000;
-/** Directory fetches come every 15 seconds; the home read follows them no closer than this. */
-const FOLLOW_DIRECTORY_MIN_MS = 8_000;
 const LAST_SEEN_KEY = "aldo:home:seen";
 /** Shows "now" moving: elapsed times tick without a fetch. */
 const TICK_MS = 30_000;
-
-/**
- * Aldo's read of the user's work, kept fresh while the tab is in view: with
- * the directory, on a push, when the tab comes back, and every so often (a
- * read with nothing new is a 304 the browser answers from its cache, from an
- * Aldo that tags it).
- */
-function useAldoHome() {
-  const [home, setHome] = useState<AldoHomeRead | null>(null);
-  const [supported, setSupported] = useState<boolean | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const inflight = useRef(false);
-  /** A refresh asked for during a read: the read may predate what asked, so it runs again after. */
-  const again = useRef(false);
-  const fetchedAt = useRef(0);
-  const refresh = useCallback(async (force = true): Promise<void> => {
-    if (inflight.current) {
-      if (force) again.current = true;
-      return;
-    }
-    if (!force && Date.now() - fetchedAt.current < FOLLOW_DIRECTORY_MIN_MS) return;
-    inflight.current = true;
-    fetchedAt.current = Date.now();
-    try {
-      const next = await fetchAldoHome();
-      if (next) {
-        setHome(next);
-        setSupported(true);
-      } else {
-        setSupported(false);
-      }
-      setError(null);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      inflight.current = false;
-    }
-    if (again.current) {
-      again.current = false;
-      await refresh();
-    }
-  }, []);
-  useEffect(() => {
-    void refresh();
-    // A tab no one sees doesn't poll: it refreshes as it comes back (and on a push).
-    const hidden = () => document.visibilityState === "hidden";
-    // With notifications off there's no push: Aldo's heads-ups show on the regular refresh too.
-    const timer = window.setInterval(() => {
-      if (hidden()) return;
-      void refresh();
-      void pullAldoConversation();
-    }, REFRESH_EVERY_MS);
-    const unsubscribe = subscribeAldoEnvironments(() => {
-      if (!hidden()) void refresh(false);
-    });
-    const onVisible = () => {
-      if (document.visibilityState !== "visible") return;
-      void refresh();
-      void pullAldoConversation();
-    };
-    document.addEventListener("visibilitychange", onVisible);
-    // A push for a thread that finished or needs the user: refresh now rather than on the next poll.
-    const onMessage = (event: MessageEvent) => {
-      if ((event.data as { type?: unknown } | null)?.type !== "aldo-push") return;
-      requestAldoDirectoryRefresh();
-      void refresh();
-      // A heads-up is Aldo speaking: it shows in the conversation too.
-      void pullAldoConversation();
-    };
-    const worker = "serviceWorker" in navigator ? navigator.serviceWorker : null;
-    worker?.addEventListener("message", onMessage);
-    return () => {
-      window.clearInterval(timer);
-      unsubscribe();
-      document.removeEventListener("visibilitychange", onVisible);
-      worker?.removeEventListener("message", onMessage);
-    };
-  }, [refresh]);
-  // What Aldo just did shows on the board at once.
-  const acted = useAldoAssistant((s) => s.entries.filter((e) => e.kind === "action").length);
-  useEffect(() => {
-    if (acted > 0) void refresh();
-  }, [acted, refresh]);
-  return { home, supported, error, refresh };
-}
 
 /** When the user last looked at the home screen, for what's new since; recorded as they leave. */
 function useLastSeen(): string | null {
@@ -252,7 +175,11 @@ function inField(target: EventTarget | null): boolean {
 export function AldoHome() {
   const { accounts, refresh: refreshAccounts } = useAldoAccounts();
   const assistant = useAldoAssistantAvailable();
-  const { home, supported, error, refresh } = useAldoHome();
+  const { home, supported, error } = useAldoHomeRead();
+  const refresh = refreshAldoHome;
+  const view = useAldoHomeView((s) => s.view);
+  // Aldo's view needs Aldo; without it there's only the board.
+  const aldoView = assistant === true && view === "aldo";
   const lastSeen = useLastSeen();
   const now = useNow();
   const notifications = useNotifications();
@@ -308,6 +235,8 @@ export function AldoHome() {
   );
 
   useEffect(() => {
+    // Aldo's view has keys of its own (AldoConversationPage).
+    if (aldoView) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.metaKey || event.ctrlKey || event.altKey || inField(event.target)) return;
       if (event.key === "/") {
@@ -331,7 +260,7 @@ export function AldoHome() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, selectable, selected]);
+  }, [aldoView, open, selectable, selected]);
 
   useEffect(() => {
     if (selected === null) return;
@@ -382,6 +311,23 @@ export function AldoHome() {
       </section>
     ) : null;
 
+  const viewSwitch = assistant ? <ViewSwitch view={aldoView ? "aldo" : "board"} /> : null;
+  if (aldoView) {
+    return (
+      <AldoConversationPage
+        home={home}
+        supported={supported}
+        now={now}
+        viewSwitch={viewSwitch}
+        setup={setup}
+        issues={issues}
+        onEnableNotifications={notifications.enable}
+        chips={chips}
+        onChip={onChip}
+      />
+    );
+  }
+
   const rowProps = (c: AldoHomeConversation) => ({
     conversation: c,
     repos,
@@ -399,7 +345,11 @@ export function AldoHome() {
         <div ref={boardRef} className="min-h-0 min-w-0 flex-1 overflow-y-auto">
           <div className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-4 pt-14 pb-8 sm:px-5 sm:pt-6">
             <header className="flex flex-wrap items-center gap-2">
-              <h1 className="mr-auto font-semibold text-lg">Your agents</h1>
+              {viewSwitch}
+              <h1 className={cn("mr-auto font-semibold text-lg", viewSwitch && "sr-only")}>
+                Your agents
+              </h1>
+              {viewSwitch ? <span className="mr-auto" /> : null}
               <Button
                 size="sm"
                 onClick={() => openAldoRepositoryPicker("new")}
@@ -567,6 +517,43 @@ export function AldoHome() {
         ) : null}
       </div>
     </SidebarInset>
+  );
+}
+
+/** Aldo's view or the board, remembered on this device. */
+function ViewSwitch(props: { readonly view: AldoHomeView }) {
+  const option = (view: AldoHomeView, label: string, icon: ReactNode) => (
+    <button
+      type="button"
+      aria-pressed={props.view === view}
+      className={cn(
+        "flex h-7 items-center gap-1.5 rounded-md px-2.5 font-medium text-sm transition-colors",
+        props.view === view
+          ? "bg-background text-foreground shadow-xs/5"
+          : "text-muted-foreground hover:text-foreground",
+      )}
+      onClick={() => setAldoHomeView(view)}
+    >
+      {icon}
+      {label}
+    </button>
+  );
+  return (
+    <div
+      className="flex items-center gap-0.5 rounded-lg bg-muted p-0.5"
+      role="group"
+      aria-label="View"
+    >
+      {option(
+        "aldo",
+        "Aldo",
+        <span
+          aria-hidden
+          className="size-3.5 rounded-full bg-gradient-to-br from-primary/90 to-primary/50"
+        />,
+      )}
+      {option("board", "Board", <LayoutGridIcon className="size-3.5" />)}
+    </div>
   );
 }
 

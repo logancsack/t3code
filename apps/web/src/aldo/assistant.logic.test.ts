@@ -2,11 +2,14 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   actionFor,
+  aldoRefFor,
   functionCallsIn,
+  liveCardIndexes,
   openTargetOf,
   phaseAfter,
   previewOf,
   rememberHeard,
+  screenNote,
   startNews,
   startWatchFor,
   unseenMessages,
@@ -351,5 +354,42 @@ describe("unseenMessages", () => {
       { role: "user" as const, text: "yes", at: at(4) },
     ];
     expect(unseenMessages(said, fetched, null).fresh).toEqual([fetched[2]]);
+  });
+});
+
+describe("what's on screen", () => {
+  const thread = {
+    environmentId: "aldo-th_abc",
+    threadId: "7f3c9a21-55aa-4c3e-9e8a-1d2b3c4d5e6f",
+    title: "Fix flaky checkout test",
+  };
+
+  it("names a thread the way Aldo's tools take it", () => {
+    expect(aldoRefFor(thread)).toBe("th_abc:7f3c9a21");
+  });
+
+  it("tells a call which conversation is on screen, its title quoted as data", () => {
+    const note = screenNote({ ...thread, title: 'Say "hi"' });
+    expect(note).toContain('titled "Say \\"hi\\""');
+    expect(note).toContain("(ref th_abc:7f3c9a21)");
+    expect(screenNote(null)).toBe("The user isn't looking at a particular conversation now.");
+  });
+});
+
+describe("liveCardIndexes", () => {
+  const a = { environmentId: "aldo-a", threadId: "1" };
+  const b = { environmentId: "aldo-b", threadId: "1" };
+
+  it("makes the newest action about each thread's work live, and leaves the rest one line", () => {
+    const entries = [
+      { kind: "message" },
+      { kind: "action", tool: "start_thread", open: a },
+      { kind: "action", tool: "start_thread", open: b },
+      { kind: "action", tool: "message_thread", open: a },
+      { kind: "action", tool: "rename_thread", open: b },
+      { kind: "action", tool: "message_thread", open: b, failed: true },
+      { kind: "action", tool: "merge_pull_request" },
+    ];
+    expect([...liveCardIndexes(entries)].sort()).toEqual([2, 3]);
   });
 });

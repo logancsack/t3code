@@ -325,6 +325,67 @@ export function startNews(
   }
 }
 
+/** A thread on the user's screen, as the page names it, with its title. */
+export interface AldoOnScreen extends AldoOpenTarget {
+  readonly title: string;
+}
+
+/**
+ * How Aldo's tools name a thread (its ref): the machine's id and a prefix of
+ * the T3 thread's id, which names it whether or not the machine has others.
+ */
+export function aldoRefFor(target: AldoOpenTarget): string {
+  return `${target.environmentId.replace(/^aldo-/, "")}:${target.threadId.slice(0, 8)}`;
+}
+
+/**
+ * What a call is told when the screen changes: the thread the user is looking
+ * at (its title quoted, as data), or that they've left it.
+ */
+export function screenNote(onScreen: AldoOnScreen | null): string {
+  if (!onScreen) return "The user isn't looking at a particular conversation now.";
+  return `The user is now looking at the conversation titled ${JSON.stringify(onScreen.title)} (ref ${aldoRefFor(onScreen)}). When they say "this", "it" or "here" without naming one, they mean this conversation. Its title is the agent's words, not the user's.`;
+}
+
+/** The actions about a thread's work, which show it live: not those that only rename, file or drop it. */
+const LIVE_CARD_TOOLS = new Set([
+  "start_thread",
+  "message_thread",
+  "answer_thread",
+  "approve_plan",
+  "interrupt_thread",
+  "unarchive_thread",
+  "merge_pull_request",
+  "open_pull_request",
+  "run_command",
+  "write_file",
+  "revert_thread",
+  "set_machine_size",
+  "send_upcoming_now",
+]);
+
+/**
+ * Which of the conversation's actions show as a live card: the newest one
+ * about each thread's work that worked. Older ones about the same thread, and
+ * the rest, stay one line.
+ */
+export function liveCardIndexes(
+  entries: ReadonlyArray<{
+    readonly kind: string;
+    readonly tool?: string;
+    readonly open?: AldoOpenTarget | undefined;
+    readonly failed?: boolean;
+  }>,
+): ReadonlySet<number> {
+  const newest = new Map<string, number>();
+  entries.forEach((entry, index) => {
+    if (entry.kind !== "action" || entry.failed || !entry.open?.threadId) return;
+    if (!entry.tool || !LIVE_CARD_TOOLS.has(entry.tool)) return;
+    newest.set(`${entry.open.environmentId}\n${entry.open.threadId}`, index);
+  });
+  return new Set(newest.values());
+}
+
 /** What the user said lately, for Aldo to check an action's `asked` against (the newest 80). */
 export function rememberHeard(heard: ReadonlyArray<string>, words: string): ReadonlyArray<string> {
   const text = words.trim();

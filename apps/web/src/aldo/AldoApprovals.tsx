@@ -70,7 +70,8 @@ export function ApprovalsSection(props: {
   );
 }
 
-function ApprovalCard(props: {
+/** One approval in full, with its two buttons (an item of a list). */
+export function ApprovalCard(props: {
   readonly approval: AldoApproval;
   readonly now: number;
   readonly onActed: () => void;

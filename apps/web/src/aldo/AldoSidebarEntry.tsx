@@ -1,6 +1,6 @@
 // Aldo at the top of the sidebar, on every screen: its orb starts a
 // conversation (or hangs up) right where the user is, and the row opens Aldo's
-// own screen. While a conversation is on, it shows what Aldo is doing or
+// own screen (the home screen's conversation). While a conversation is on, it shows what Aldo is doing or
 // saying, with mute. Only where the server has the assistant.
 
 import { Link } from "@tanstack/react-router";
@@ -12,6 +12,7 @@ import { AldoOrb, ALDO_SHORTCUT_LABEL, useAldoAssistantAvailable } from "./AldoA
 import type { AldoAssistantPhase } from "./assistant.logic";
 import { setAldoMuted, useAldoAssistant } from "./assistantSession";
 import { isAldoCloud } from "./cloud";
+import { setAldoHomeView } from "./homeFeed";
 
 const STATUS: Record<AldoAssistantPhase, string> = {
   idle: `Talk or type · ${ALDO_SHORTCUT_LABEL}`,
@@ -43,7 +44,12 @@ export function AldoSidebarEntry() {
   return (
     <div className="flex h-10 items-center gap-2 rounded-md px-1.5 text-sm hover:bg-sidebar-row-hover">
       <AldoOrb size="xs" className="ml-0.5" />
-      <Link to="/" className="flex min-w-0 flex-1 flex-col leading-tight" aria-label="Open Aldo">
+      <Link
+        to="/"
+        className="flex min-w-0 flex-1 flex-col leading-tight"
+        aria-label="Open Aldo"
+        onClick={() => setAldoHomeView("aldo")}
+      >
         <span className="font-medium text-sidebar-foreground">Aldo</span>
         <span
           className={cn(
