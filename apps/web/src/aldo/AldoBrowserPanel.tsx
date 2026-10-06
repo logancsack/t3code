@@ -340,6 +340,9 @@ export function AldoBrowserPanel({ environmentId }: { environmentId: string }) {
           }
           case "error":
             setError(String(message.message));
+            // Before any picture, the machine has no browser to show (Chrome didn't
+            // start): reconnecting tries again, whether or not the machine closes first.
+            if (!picturedRef.current) socket.close();
             break;
         }
       };
