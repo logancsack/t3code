@@ -256,6 +256,12 @@ export function aldoStartOf(environmentId: string): "starting" | "failed" | null
   return starts.some((start) => start.state !== "failed") ? "starting" : "failed";
 }
 
+/** Where Aldo's start of one of the machine's threads stands (its T3 thread id), from the directory; null if Aldo isn't starting it. */
+export function aldoStartState(environmentId: string, threadId: string): AldoStartState | null {
+  const entry = knownEnvironments?.find((candidate) => candidate.environmentId === environmentId);
+  return entry?.starts?.[threadId] ?? null;
+}
+
 /** What a thread's panels say while its cloud agent is offline. */
 export function aldoOfflineMessage(environmentId: string): string {
   const preload = getAldoPreloadSettings();
@@ -711,6 +717,31 @@ export async function sendAldoThreadCommand(
     method: "POST",
     body: JSON.stringify({ command, patch, base }),
   });
+}
+
+/** How long Aldo has to take a message before the page sends it itself. */
+const HOLD_TIMEOUT_MS = 15_000;
+
+/**
+ * Hands Aldo a message (T3's `thread.turn.start`) for a machine this browser
+ * isn't connected to. Aldo brings the machine up and sends it, even if this
+ * page goes away; this page sends it too once connected, and T3 runs it once.
+ * False when Aldo didn't take it (an older Aldo, a message too big for it to
+ * carry, or no answer within HOLD_TIMEOUT_MS): the page sends it itself, as
+ * before.
+ */
+export async function holdAldoTurn(environmentId: string, command: unknown): Promise<boolean> {
+  const threadId = threadIdForEnvironment(environmentId);
+  try {
+    await api(`/api/environments/${threadId}/turns`, {
+      method: "POST",
+      body: JSON.stringify({ command }),
+      signal: AbortSignal.timeout(HOLD_TIMEOUT_MS),
+    });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 type ThreadDetailSource = (
