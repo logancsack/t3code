@@ -161,7 +161,7 @@ function ThreadPeek(props: {
         <>
           <StateDot conversation={c} now={props.now} />
           <h2 className="min-w-0 truncate font-semibold">{c.title}</h2>
-          <Badge variant="outline" size="sm" className="shrink-0">
+          <Badge variant="outline" size="sm" className="shrink-0 max-sm:hidden">
             {reposLabel(c.repos)}
           </Badge>
           <Button
