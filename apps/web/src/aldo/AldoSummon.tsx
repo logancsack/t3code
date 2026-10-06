@@ -170,7 +170,9 @@ function SummonBar() {
   );
 
   const ask = (text: string) => {
-    setAskedAt((at) => at ?? useAldoAssistant.getState().entries.length);
+    // Where the conversation is before the question goes in (an updater would read it after).
+    const before = useAldoAssistant.getState().entries.length;
+    setAskedAt((at) => at ?? before);
     setPeek(null);
     setQuery("");
     sendText(text);
