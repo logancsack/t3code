@@ -1,10 +1,13 @@
-// Talking to Aldo on the home screen (AldoHome.tsx): the orb to talk, the
-// composer to type (with a few things to say when it's empty), and the
-// conversation: what was said, what Aldo did (with a link to each thread).
-// The conversation itself lives in assistantSession.ts, so it carries on when
-// Aldo opens a thread (the dock shows it there). AldoAtAGlance is what needs
-// the user and what's working, read the way Aldo reads it (its overview): the
-// board for an Aldo without the home screen's read.
+// Talking to Aldo: the orb to talk, the composer to type (with a few things to
+// say when it's empty), and the conversation: what was said, and what Aldo
+// did, the newest action about each thread as a live card (AldoLiveCard.tsx).
+// The home screen lays them out as a page (AldoHome.tsx) or, beside the
+// board, as a pane (AldoPane); the summon bar shows the end of the same
+// conversation (AldoSummon.tsx). The conversation itself lives in
+// assistantSession.ts, so it carries on when Aldo opens a thread (the dock
+// shows it there). AldoAtAGlance is what needs the user and what's working,
+// read the way Aldo reads it (its overview): the board for an Aldo without
+// the home screen's read.
 
 import { Link } from "@tanstack/react-router";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
@@ -33,7 +36,14 @@ import {
 } from "../components/chat/composerAttachmentFiles";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { useThreadShells } from "../state/entities";
-import { withoutImageNotes, type AldoAssistantPhase, type AldoOpenTarget } from "./assistant.logic";
+import { AldoThreadCard } from "./AldoLiveCard";
+import {
+  ACTION_LABELS,
+  liveCardIndexes,
+  withoutImageNotes,
+  type AldoAssistantPhase,
+  type AldoOpenTarget,
+} from "./assistant.logic";
 import {
   connectAldo,
   disconnectAldo,
@@ -275,7 +285,7 @@ export function AldoOrb(props: {
   );
 }
 
-function AldoTalkControls() {
+export function AldoTalkControls() {
   const phase = useAldoAssistant((s) => s.phase);
   const micOn = useAldoAssistant((s) => s.micOn);
   const muted = useAldoAssistant((s) => s.muted);
@@ -312,7 +322,7 @@ function AldoTalkControls() {
 }
 
 /** What Aldo is saying now; or what went wrong. */
-function AldoCaption() {
+export function AldoCaption() {
   const said = useAldoAssistant((s) => s.said);
   const error = useAldoAssistant((s) => s.error);
   const phase = useAldoAssistant((s) => s.phase);
@@ -323,10 +333,19 @@ function AldoCaption() {
   return <p className="line-clamp-3 max-w-lg text-center text-foreground/90 text-sm">{said}</p>;
 }
 
-function AldoComposer(props: {
+/**
+ * Typing to Aldo. In the pane it's a field under the orb; as the page's
+ * composer (`page`) it's one large field with the orb in it, and mute and hang
+ * up while a call is on.
+ */
+export function AldoComposer(props: {
   readonly chips: ReadonlyArray<string>;
   readonly onChip: (chip: string) => void;
+  readonly variant?: "pane" | "page";
 }) {
+  const page = props.variant === "page";
+  const muted = useAldoAssistant((s) => s.muted);
+  const micOn = useAldoAssistant((s) => s.micOn);
   const [text, setText] = useState("");
   const [images, setImages] = useState<ReadonlyArray<AldoImageUpload>>([]);
   const [imageError, setImageError] = useState<string | null>(null);
@@ -398,7 +417,7 @@ function AldoComposer(props: {
   return (
     <div className="flex w-full flex-col gap-2">
       {!text && !replying && props.chips.length > 0 ? (
-        <div className="flex flex-wrap justify-center gap-1.5">
+        <div className={cn("flex flex-wrap gap-1.5", page ? "justify-start" : "justify-center")}>
           {props.chips.map((chip) => (
             <button
               key={chip}
@@ -436,7 +455,12 @@ function AldoComposer(props: {
         <p className="text-destructive-foreground text-xs">{imageError}</p>
       ) : null}
       <form
-        className="flex w-full items-center gap-2"
+        className={cn(
+          "flex w-full items-center gap-2",
+          page &&
+            "rounded-2xl border border-border/80 bg-card py-2 ps-2 pe-2 shadow-sm/5 has-focus-visible:border-primary/50",
+        )}
+        data-aldo-composer={props.variant ?? "pane"}
         onSubmit={(event) => {
           event.preventDefault();
           submit();
@@ -450,6 +474,7 @@ function AldoComposer(props: {
           addImages([...event.dataTransfer.files]);
         }}
       >
+        {page ? <AldoOrb size="sm" /> : null}
         {canAttach ? (
           <>
             <input
@@ -477,7 +502,9 @@ function AldoComposer(props: {
         ) : null}
         <Input
           ref={input}
-          className="flex-1"
+          className={cn("flex-1", page && "text-base")}
+          size={page ? "lg" : "default"}
+          unstyled={page}
           value={text}
           placeholder={
             replying
@@ -497,6 +524,28 @@ function AldoComposer(props: {
             addImages(files);
           }}
         />
+        {page && live && micOn ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label={muted ? "Unmute" : "Mute"}
+            onClick={() => setAldoMuted(!muted)}
+          >
+            {muted ? <MicOffIcon /> : <MicIcon />}
+          </Button>
+        ) : null}
+        {page && live ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label="Hang up"
+            onClick={disconnectAldo}
+          >
+            <PhoneOffIcon />
+          </Button>
+        ) : null}
         <Button
           type="submit"
           size="icon"
@@ -525,15 +574,23 @@ function threadLink(target: AldoOpenTarget, children: ReactNode, className?: str
   );
 }
 
-function AldoConversation() {
-  const entries = useAldoAssistant((s) => s.entries);
+/**
+ * The conversation: from the start, or `since` an entry (the summon bar shows
+ * what followed its question), the newest action about each thread as a live
+ * card.
+ */
+export function AldoConversation(props: { readonly since?: number } = {}) {
+  const all = useAldoAssistant((s) => s.entries);
   const loaded = useAldoAssistant((s) => s.historyLoaded);
   const replying = useAldoAssistant((s) => s.replying);
+  const since = props.since ?? 0;
+  const live = useMemo(() => liveCardIndexes(all), [all]);
+  const entries = since > 0 ? all.slice(since) : all;
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => {
     end.current?.scrollIntoView({ block: "end" });
   }, [entries.length, replying]);
-  if (loaded && entries.length === 0) {
+  if (loaded && entries.length === 0 && since === 0) {
     return (
       <div className="py-8 text-center">
         <h2 className="font-semibold text-lg">What should we get done?</h2>
@@ -548,8 +605,9 @@ function AldoConversation() {
     <div className="flex flex-col gap-3">
       {entries.map((entry, index) => (
         <ConversationEntry
-          key={entry.kind === "action" ? entry.id : `${entry.at}-${index}`}
+          key={entry.kind === "action" ? entry.id : `${entry.at}-${since + index}`}
           entry={entry}
+          live={live.has(since + index)}
         />
       ))}
       {replying ? (
@@ -562,7 +620,13 @@ function AldoConversation() {
   );
 }
 
-function ConversationEntry({ entry }: { readonly entry: AldoConversationEntry }) {
+function ConversationEntry({
+  entry,
+  live,
+}: {
+  readonly entry: AldoConversationEntry;
+  readonly live: boolean;
+}) {
   if (entry.kind === "action") {
     const label = (
       <span
@@ -575,7 +639,7 @@ function ConversationEntry({ entry }: { readonly entry: AldoConversationEntry })
         {entry.open ? <ArrowUpRightIcon className="size-3.5" /> : null}
       </span>
     );
-    return (
+    const line = (
       <div className="self-start rounded-full border border-border/60 bg-card/40 px-3 py-1 text-muted-foreground text-xs">
         {entry.href ? (
           <a href={entry.href} target="_blank" rel="noreferrer" className="hover:text-foreground">
@@ -590,6 +654,15 @@ function ConversationEntry({ entry }: { readonly entry: AldoConversationEntry })
           label
         )}
       </div>
+    );
+    return live && entry.open ? (
+      <AldoThreadCard
+        target={entry.open}
+        label={ACTION_LABELS[entry.tool] ?? entry.label}
+        fallback={line}
+      />
+    ) : (
+      line
     );
   }
   if (entry.role === "user") return <UserMessage entry={entry} />;

@@ -110,25 +110,8 @@ export function NeedsYouCard(props: {
           {c.summary && kind !== "approval" ? (
             <p className="mt-2 line-clamp-3 whitespace-pre-wrap text-sm">{c.summary}</p>
           ) : null}
-          {/* Keyed by what's asked, so a form's choices and words go when the thread moves on to another. */}
           <div className="mt-3">
-            {kind === "question" && c.pending?.kind === "question" ? (
-              <QuestionForm
-                key={c.pending.requestId}
-                target={c.thread}
-                pending={c.pending}
-                onActed={props.onActed}
-              />
-            ) : kind === "approval" && c.pending?.kind === "approval" ? (
-              <ApprovalForm
-                key={c.pending.requestId}
-                target={c.thread}
-                pending={c.pending}
-                onActed={props.onActed}
-              />
-            ) : kind === "plan" && c.plan ? (
-              <PlanForm key={c.plan.id} target={c.thread} plan={c.plan} onActed={props.onActed} />
-            ) : null}
+            <PendingForm conversation={c} onActed={props.onActed} />
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <Button variant="outline" size="compact" render={<ThreadLink target={c.thread} />}>
@@ -145,6 +128,40 @@ export function NeedsYouCard(props: {
       </div>
     </li>
   );
+}
+
+/**
+ * What a conversation waits on, to answer in place: its question, approval or
+ * plan. Keyed by what's asked, so a form's choices and words go when the
+ * thread moves on to another. Nothing for one that waits on nothing to answer.
+ */
+export function PendingForm(props: {
+  readonly conversation: AldoHomeConversation;
+  readonly onActed: () => void;
+}) {
+  const c = props.conversation;
+  const kind = needsYouKind(c);
+  if (kind === "question" && c.pending?.kind === "question")
+    return (
+      <QuestionForm
+        key={c.pending.requestId}
+        target={c.thread}
+        pending={c.pending}
+        onActed={props.onActed}
+      />
+    );
+  if (kind === "approval" && c.pending?.kind === "approval")
+    return (
+      <ApprovalForm
+        key={c.pending.requestId}
+        target={c.thread}
+        pending={c.pending}
+        onActed={props.onActed}
+      />
+    );
+  if (kind === "plan" && c.plan)
+    return <PlanForm key={c.plan.id} target={c.thread} plan={c.plan} onActed={props.onActed} />;
+  return null;
 }
 
 function QuestionForm(props: {

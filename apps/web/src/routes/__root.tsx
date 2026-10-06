@@ -16,6 +16,7 @@ import { AppSidebarLayout } from "../components/AppSidebarLayout";
 import { CommandPalette } from "../components/CommandPalette";
 import { AldoAssistantDock } from "../aldo/AldoAssistantDock";
 import { AldoRepositoryDialog } from "../aldo/AldoRepositoryDialog";
+import { AldoSummon } from "../aldo/AldoSummon";
 import { ConfirmDialogHost } from "../components/ConfirmDialogHost";
 import { ConnectOnboardingDialog } from "../components/cloud/ConnectOnboardingDialog";
 import { RelayClientInstallDialog } from "../components/cloud/RelayClientInstallDialog";
@@ -152,6 +153,7 @@ function RootRouteView() {
         <ConfirmDialogHost />
         <AldoRepositoryDialog />
         <AldoAssistantDock />
+        <AldoSummon />
         <SlowRpcRequestToastCoordinator />
         <HostedStaticEnvironmentBootstrap />
         <LandingDemoBootstrap />

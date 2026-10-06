@@ -1302,16 +1302,23 @@ export const aldoAssistant = {
   /**
    * A written turn, typed without a call (Aldo's src/lib/assistant/chat.ts);
    * null where this Aldo can't chat in writing (an older one answers a path
-   * it doesn't know with the web client's own page).
+   * it doesn't know with the web client's own page). `viewing` is the thread
+   * on screen, which Aldo names for "this one" (an older Aldo ignores it).
    */
   chat: async (
     sessionId: string | null,
     text: string,
     images: ReadonlyArray<AldoImageUpload> = [],
+    viewing: AldoHomeTarget | null = null,
   ): Promise<AldoChatTurn | null> => {
     const body = await api<Partial<AldoChatTurn>>("/api/assistant/chat", {
       method: "POST",
-      body: JSON.stringify({ sessionId, text, ...(images.length > 0 ? { images } : {}) }),
+      body: JSON.stringify({
+        sessionId,
+        text,
+        ...(images.length > 0 ? { images } : {}),
+        ...(viewing ? { viewing } : {}),
+      }),
     });
     if (typeof body.reply !== "string" || typeof body.sessionId !== "string") return null;
     return {
@@ -1763,6 +1770,36 @@ export async function approveAldoPlan(
     },
   );
   return status;
+}
+
+/** A thread's latest turns as Aldo keeps them (its last three: the messages, and what it waits on). */
+export interface AldoConversationCopy {
+  readonly state: string;
+  readonly messages: ReadonlyArray<{
+    readonly role: string;
+    readonly text: string;
+    readonly createdAt: string;
+  }>;
+}
+
+/**
+ * A thread's latest turns, from its machine while it runs, else Aldo's copy,
+ * without waking it; null where Aldo has no copy yet (or can't say).
+ */
+export async function fetchAldoConversationCopy(
+  target: AldoHomeTarget,
+): Promise<AldoConversationCopy | null> {
+  const path = `/api/environments/${threadIdForEnvironment(target.environmentId)}/conversation?t3ThreadId=${encodeURIComponent(target.threadId)}`;
+  const body = await api<{ conversation?: Partial<AldoConversationCopy> }>(path).catch(
+    (error: unknown) => {
+      if (error instanceof AldoApiError && error.status === 404) return null;
+      throw error;
+    },
+  );
+  const copy = body?.conversation;
+  return copy && Array.isArray(copy.messages)
+    ? { state: typeof copy.state === "string" ? copy.state : "", messages: copy.messages }
+    : null;
 }
 
 /** Sends a waiting delivery (a reminder, a message) now rather than when it's due. */

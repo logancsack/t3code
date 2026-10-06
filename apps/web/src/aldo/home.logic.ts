@@ -3,12 +3,15 @@
 // what shipped and what's coming, and the words for each.
 
 import { ACTION_LABELS, REVERSE_LABELS } from "./assistant.logic";
+import { waitingApprovals } from "./approvals.logic";
 import type {
+  AldoApproval,
   AldoHome,
   AldoHomeAction,
   AldoHomeConversation,
   AldoHomeDelivery,
   AldoHomePullRequest,
+  AldoHomeTarget,
   AldoHomeUsage,
   AldoPolicy,
 } from "./cloud";
@@ -546,3 +549,91 @@ export function chipPrompt(chip: string, lastSeen: string | null, now: number): 
   if (chip.startsWith("Start something in ")) return `${chip}: `;
   return chip;
 }
+
+/** Whether two targets name the same thread. */
+export function sameTarget(a: AldoHomeTarget | null | undefined, b: AldoHomeTarget): boolean {
+  return a?.environmentId === b.environmentId && a.threadId === b.threadId;
+}
+
+/** Something on the home screen's "Now" strip: what's waiting on the user, then what's running. */
+export type NowItem =
+  | { readonly kind: "approval"; readonly key: string; readonly approval: AldoApproval }
+  | {
+      readonly kind: "needs" | "working";
+      readonly key: string;
+      readonly conversation: AldoHomeConversation;
+    }
+  | { readonly kind: "merge"; readonly key: string; readonly pullRequest: AldoHomePullRequest };
+
+/** At most this many: the strip is a glance, and the board has the rest. */
+const NOW_ITEMS = 8;
+
+/**
+ * The "Now" strip, in order: approvals, conversations waiting on the user
+ * (longest first), pull requests that can merge, then what's working (newest
+ * first). A pull request whose conversation is already on the strip waits
+ * behind it rather than showing twice.
+ */
+export function nowItems(home: AldoHome, now: number): ReadonlyArray<NowItem> {
+  const board = boardFor(home.conversations, now);
+  const shown = [...board.needsYou, ...board.working];
+  const items: NowItem[] = [
+    ...waitingApprovals(home.approvals).map((approval) => ({
+      kind: "approval" as const,
+      key: `approval:${approval.id}`,
+      approval,
+    })),
+    ...board.needsYou.map((conversation) => ({
+      kind: "needs" as const,
+      key: `needs:${conversation.ref}`,
+      conversation,
+    })),
+    ...home.pullRequests
+      .filter((pr) => pr.status === "watching" && pr.stage === "green")
+      .filter((pr) => !shown.some((c) => sameTarget(pr.thread, c.thread)))
+      .map((pullRequest) => ({
+        kind: "merge" as const,
+        key: `merge:${pullRequest.repo}#${pullRequest.number}`,
+        pullRequest,
+      })),
+    ...board.working.map((conversation) => ({
+      kind: "working" as const,
+      key: `working:${conversation.ref}`,
+      conversation,
+    })),
+  ];
+  return items.slice(0, NOW_ITEMS);
+}
+
+/** What a "Now" item says after its name. */
+export function nowDetail(item: NowItem, now: number): string {
+  switch (item.kind) {
+    case "approval":
+      return "to approve";
+    case "merge":
+      return "ready to merge";
+    case "needs": {
+      const kind = needsYouKind(item.conversation);
+      return kind === "question"
+        ? "asks you"
+        : kind === "failed"
+          ? "stopped"
+          : kind === "plan"
+            ? "has a plan"
+            : "waiting on you";
+    }
+    case "working": {
+      if (isStuck(item.conversation, now)) return "stuck";
+      const words = STATE_WORDS[item.conversation.state] ?? "working";
+      const since = elapsed(item.conversation.at, now);
+      return since === "just now" ? words : `${words} ${since}`;
+    }
+  }
+}
+
+const STATE_WORDS: Record<string, string> = {
+  working: "working",
+  starting: "starting",
+  queued: "waiting for room",
+  retrying: "trying again",
+};
