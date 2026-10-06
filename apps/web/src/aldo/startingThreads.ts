@@ -123,6 +123,16 @@ export function aldoMachineConnected(environmentId: string): void {
   shown.delete(environmentId);
 }
 
+/**
+ * dispatch.ts: this page stopped waiting for a machine Aldo is bringing up
+ * for a message it holds. What's shown from here is Aldo's copy of the
+ * machine's threads (shells.ts), which says where the message stands, not
+ * this page's own copy, which would show it starting for good.
+ */
+export function releaseAldoStartingThreads(environmentId: string): void {
+  shown.delete(environmentId);
+}
+
 /** Drafts T3 took for this thread when it showed are drafts again: there is no such thread. */
 function releaseDrafts(ref: ScopedThreadRef): void {
   useComposerDraftStore.setState((state) => {

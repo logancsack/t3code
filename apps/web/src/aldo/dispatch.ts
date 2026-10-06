@@ -6,8 +6,10 @@
 // the cloud", and a new thread shows in the sidebar meanwhile
 // (startingThreads.ts). A message goes to Aldo first (holdAldoTurn), which
 // brings the machine up and sends it even if this page goes away or a first
-// boot takes minutes; T3 runs it once, however many times it's sent. A wake
-// that fails for a passing reason is tried again. Settling, archiving, pinning, snoozing, renaming or
+// boot takes minutes; T3 runs it once, however many times it's sent. For a
+// message Aldo holds, this page tries again while what fails passes, and if
+// it stops waiting first, shows Aldo's copy of the machine's threads, which
+// says where the message stands (a start Aldo gave up on, and why). Settling, archiving, pinning, snoozing, renaming or
 // deleting a sleeping machine's thread doesn't wake it: it's done at once, and
 // Aldo keeps the command for the machine (threadCommands.ts).
 
@@ -16,7 +18,7 @@ import type { EnvironmentId } from "@t3tools/contracts";
 
 import { environmentCatalog } from "../connection/catalog";
 import { keepAldoCommand } from "./threadCommands";
-import { aldoMachineConnected } from "./startingThreads";
+import { aldoMachineConnected, releaseAldoStartingThreads } from "./startingThreads";
 import { runAtomCommand } from "@t3tools/client-runtime/state/runtime";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentPresentations } from "../state/presentation";
@@ -24,6 +26,7 @@ import { toastManager } from "../components/ui/toast";
 import {
   AldoApiError,
   aldoMachineIsNew,
+  aldoStartState,
   holdAldoTurn,
   isAldoCloud,
   isAldoEnvironmentId,
@@ -33,8 +36,8 @@ import {
 
 const CONNECT_WAIT_MS = 3 * 60_000;
 const NUDGE_EVERY_MS = 8_000;
-/** How long a wake that fails for a passing reason (no answer, a slow first boot) is tried again. */
-const WAKE_RETRY_MS = 15 * 60_000;
+/** How long this page tries again, for a message Aldo holds, while bringing its machine up fails for a passing reason. */
+const HELD_RETRY_MS = 15 * 60_000;
 /** How long this page keeps connecting, after it stopped waiting, to a machine Aldo is bringing up for a held message. */
 const FOLLOW_MS = 30 * 60_000;
 
@@ -55,19 +58,6 @@ function refused(cause: unknown): boolean {
     cause.status !== 408 &&
     cause.status !== 429
   );
-}
-
-/** Creates or wakes the machine, trying again while what failed passes (Aldo or the network not answering, a start still under way). */
-async function wake(environmentId: string): Promise<void> {
-  const deadline = Date.now() + WAKE_RETRY_MS;
-  for (let attempt = 0; ; attempt++) {
-    try {
-      return await wakeAldoEnvironment(environmentId);
-    } catch (cause) {
-      if (refused(cause) || Date.now() >= deadline) throw cause;
-      await sleep(Math.min(15_000, 2_000 * 2 ** attempt));
-    }
-  }
 }
 
 export function isAldoConnected(environmentId: string): boolean {
@@ -95,7 +85,7 @@ export function ensureAldoConnected(environmentId: string): Promise<void> {
   starting.set(environmentId, aldoMachineIsNew(environmentId) ? "creating" : "reconnecting");
   const run = (async () => {
     // Aldo creates the machine the first time, else resumes it, and returns once T3 is up.
-    await wake(environmentId);
+    await wakeAldoEnvironment(environmentId);
     requestAldoDirectoryRefresh();
     // A sleeping machine's connection waits to be told to try again.
     const deadline = Date.now() + CONNECT_WAIT_MS;
@@ -149,19 +139,60 @@ export function installAldoCommandDispatch(): void {
       command.type === "thread.turn.start" &&
       !isAldoConnected(environmentId) &&
       (await holdAldoTurn(environmentId, command));
+    if (!held) {
+      await ensureAldoConnected(environmentId).catch((cause: unknown) => {
+        notifyAldoRefusal(cause);
+        throw cause;
+      });
+      return null;
+    }
+    if (await connectForHeld(environmentId, command)) return null;
+    // Aldo has it and sends it when it can, so it stays sent (sending it
+    // again from the draft would send it twice). From here the thread shows
+    // as Aldo has it, which says if the message couldn't go, and this page
+    // connects once the machine is up.
+    releaseAldoStartingThreads(environmentId);
+    requestAldoDirectoryRefresh();
+    followAldoMachine(environmentId);
+    return { sequence: 0 };
+  });
+}
+
+/**
+ * Brings the machine up for a message Aldo holds and connects to it, trying
+ * again while what fails passes (Aldo or the network not answering, a start
+ * still under way) for up to HELD_RETRY_MS. False when this page stops
+ * waiting while Aldo still has it: Aldo said no for now (out of credits, the
+ * plan's agents all busy), or the time ran out. Throws once Aldo has given up
+ * on a new thread's first message (the message goes back in the composer).
+ */
+async function connectForHeld(
+  environmentId: string,
+  command: { readonly threadId: string; readonly bootstrap?: unknown },
+): Promise<boolean> {
+  const startsThread = Boolean(
+    (command.bootstrap as { createThread?: unknown } | undefined)?.createThread,
+  );
+  const deadline = Date.now() + HELD_RETRY_MS;
+  for (let attempt = 0; ; attempt++) {
     try {
       await ensureAldoConnected(environmentId);
+      return true;
     } catch (cause) {
-      notifyAldoRefusal(cause);
-      if (!held) throw cause;
-      // Aldo has it and sends it once the machine is up, so it stays sent
-      // (sending it again from the draft would send it twice), and this page
-      // connects when the machine is up.
-      followAldoMachine(environmentId);
-      return { sequence: 0 };
+      const start = startsThread ? aldoStartState(environmentId, command.threadId) : null;
+      if (start?.state === "failed") {
+        throw new Error(start.detail ?? "Aldo couldn't start this thread.", { cause });
+      }
+      if (refused(cause)) {
+        notifyAldoRefusal(cause);
+        return false;
+      }
+      const delay = Math.min(15_000, 2_000 * 2 ** attempt);
+      if (Date.now() + delay >= deadline) return false;
+      requestAldoDirectoryRefresh();
+      await sleep(delay);
     }
-    return null;
-  });
+  }
 }
 
 const following = new Set<string>();
