@@ -6,7 +6,15 @@
 // has to leave it; Aldo's show_thread peeks here too. Setup, and what's wrong
 // with it, come first, as on the board.
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from "react";
 
 import { Kbd } from "../components/ui/kbd";
 import { Sheet, SheetPopup } from "../components/ui/sheet";
@@ -39,6 +47,32 @@ function inField(target: EventTarget | null): boolean {
   );
 }
 
+/**
+ * Keeps the conversation at its end while the user is there, as what's above
+ * it loads (setup, what's wrong) and as the peek narrows it; scrolled up, it
+ * stays put.
+ */
+function useStickToBottom(ref: RefObject<HTMLDivElement | null>): void {
+  useEffect(() => {
+    const element = ref.current;
+    if (!element) return;
+    let atEnd = true;
+    const onScroll = () => {
+      atEnd = element.scrollHeight - element.scrollTop - element.clientHeight < 48;
+    };
+    const observer = new ResizeObserver(() => {
+      if (atEnd) element.scrollTop = element.scrollHeight;
+    });
+    observer.observe(element);
+    if (element.firstElementChild) observer.observe(element.firstElementChild);
+    element.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      observer.disconnect();
+      element.removeEventListener("scroll", onScroll);
+    };
+  }, [ref]);
+}
+
 export function AldoConversationPage(props: {
   readonly home: AldoHome | null;
   /** Whether this Aldo has the home read; null until it's known. */
@@ -55,6 +89,8 @@ export function AldoConversationPage(props: {
   const wide = useMediaQuery("(min-width: 1024px)");
   const [peek, setPeek] = useState<{ target: AldoPeekTarget; key: string | null } | null>(null);
   const items = useMemo(() => (home ? nowItems(home, now) : []), [home, now]);
+  const scroller = useRef<HTMLDivElement>(null);
+  useStickToBottom(scroller);
 
   useEffect(() => {
     void loadAldoConversation();
@@ -117,8 +153,9 @@ export function AldoConversationPage(props: {
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground">
       <div className="flex h-full min-h-0 min-w-0">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <header className="flex shrink-0 flex-col gap-2.5 px-4 pt-3 pb-2.5 max-md:ps-14 sm:px-5">
-            <div className="flex items-center gap-2">
+          <header className="flex shrink-0 flex-col gap-2.5 px-4 pt-3 pb-2.5 sm:px-5">
+            {/* Beside the sidebar's button on a phone, which floats at the top left. */}
+            <div className="flex items-center gap-2 max-md:ps-10">
               {props.viewSwitch}
               {home && home.usage.agents.running > 0 ? (
                 <span className="ms-auto text-muted-foreground text-xs">
@@ -135,7 +172,7 @@ export function AldoConversationPage(props: {
               onPeek={(target, key) => setPeek({ target, key })}
             />
           </header>
-          <div className="min-h-0 flex-1 overflow-y-auto border-border/50 border-t">
+          <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto border-border/50 border-t">
             <div className="mx-auto flex w-full max-w-2xl flex-col gap-4 px-4 pt-5 pb-4 sm:px-5">
               {props.setup}
               <HealthStrip
