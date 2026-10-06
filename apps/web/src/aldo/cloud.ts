@@ -1027,6 +1027,44 @@ export async function setAldoSpendLimit(cents: number): Promise<void> {
   await api("/api/usage", { method: "PATCH", body: JSON.stringify({ spendLimitCents: cents }) });
 }
 
+/** The usage summary the Usage page shows (state/aldoWorkspaceUsage.ts checks its shape). */
+export async function fetchAldoCloudUsage(): Promise<unknown> {
+  return api<unknown>("/api/usage", { cache: "no-store" });
+}
+
+/** Where to pay for a plan: Stripe Checkout, which comes back to /usage?checkout=done or =canceled. */
+export async function startAldoCheckout(plan: string): Promise<string> {
+  const { url } = await api<{ url: string }>("/api/billing/checkout", {
+    method: "POST",
+    body: JSON.stringify({ plan }),
+  });
+  return url;
+}
+
+/**
+ * Switches the Stripe plan: an upgrade now, a downgrade when the period ends;
+ * the current plan cancels a pending downgrade. 409 when there's no Stripe
+ * subscription (check out instead), 402 when the upgrade's payment failed.
+ */
+export async function changeAldoPlan(plan: string): Promise<"now" | "period_end"> {
+  const { effective } = await api<{ effective: "now" | "period_end" }>("/api/billing/plan", {
+    method: "POST",
+    body: JSON.stringify({ plan }),
+  });
+  return effective;
+}
+
+/** Ends the plan when the period does, or with `resume`, keeps it going after all. */
+export async function cancelAldoPlan(resume: boolean): Promise<void> {
+  await api("/api/billing/cancel", { method: "POST", body: JSON.stringify({ resume }) });
+}
+
+/** Stripe's billing portal (payment method, invoices), which comes back to /usage. */
+export async function aldoBillingPortalUrl(): Promise<string> {
+  const { url } = await api<{ url: string }>("/api/billing/portal", { method: "POST" });
+  return url;
+}
+
 /** Moves a thread to another machine size. A running machine restarts, and its agent carries on. */
 export async function setAldoMachine(environmentId: string, size: AldoMachineSize): Promise<void> {
   await api(`/api/environments/${threadIdForEnvironment(environmentId)}/machine`, {

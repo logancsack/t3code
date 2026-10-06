@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { isAldoBilling, type AldoBilling } from "../aldo/billing.logic";
 import { isAldoCloud } from "../aldo/cloud";
 import { isLandingDemo } from "../landingDemo/mode";
 import { isManagedDevPc } from "../managedDevPc";
@@ -54,6 +55,8 @@ export interface AldoWorkspaceUsage {
   } | null;
   readonly alert: AldoUsageAlertLevel;
   readonly updatedAt: string | null;
+  /** Aldo cloud: the plans and what the user can do about theirs (newer Aldo only). */
+  readonly billing?: AldoBilling;
 }
 
 export type AldoUsageAlertLevel =
@@ -169,6 +172,7 @@ export function isAldoWorkspaceUsage(value: unknown): value is AldoWorkspaceUsag
   ) {
     return false;
   }
+  if (value.billing !== undefined && !isAldoBilling(value.billing)) return false;
   // A metered summary always carries its plan, period, credits, and bill.
   if (value.metered && (plan === null || period === null || credits === null || bill === null)) {
     return false;

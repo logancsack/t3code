@@ -153,8 +153,9 @@ export function aldoUsageFootnote(usage: AldoWorkspaceUsage): string | null {
 /** Why there are no credit numbers to show, when there are none. */
 export function aldoUsageUnmeteredCopy(usage: AldoWorkspaceUsage): string {
   if (isAldoCloud) {
-    return usage.configured
-      ? "Your account is complimentary, so compute isn't metered."
+    if (usage.configured) return "Your account is complimentary, so compute isn't metered.";
+    return usage.billing?.enabled
+      ? "You don't have a plan yet, so cloud agents can't start. Choose one below."
       : "You don't have a plan yet, so cloud agents can't start. Ask your Aldo admin for one.";
   }
   return usage.configured
