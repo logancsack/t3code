@@ -100,6 +100,9 @@ function localPort(url: string): number | null {
  */
 export function AldoBrowserPanel({ environmentId }: { environmentId: string }) {
   const [status, setStatus] = useState<Status>("connecting");
+  // Whether a picture of the page has been drawn: until then, a connected panel is still starting the browser.
+  const [pictured, setPictured] = useState(false);
+  const picturedRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [tabs, setTabs] = useState<ReadonlyArray<Tab>>([]);
   const [activeTab, setActiveTab] = useState<string | null>(null);
@@ -186,6 +189,11 @@ export function AldoBrowserPanel({ environmentId }: { environmentId: string }) {
       }
       context.drawImage(image, 0, 0);
       metaRef.current = metadata;
+      if (!picturedRef.current) {
+        picturedRef.current = true;
+        setPictured(true);
+        setError(null);
+      }
     };
 
     // An older machine's frames: JSON, base64.
@@ -332,6 +340,9 @@ export function AldoBrowserPanel({ environmentId }: { environmentId: string }) {
           }
           case "error":
             setError(String(message.message));
+            // Before any picture, the machine has no browser to show (Chrome didn't
+            // start): reconnecting tries again, whether or not the machine closes first.
+            if (!picturedRef.current) socket.close();
             break;
         }
       };
@@ -893,17 +904,18 @@ export function AldoBrowserPanel({ environmentId }: { environmentId: string }) {
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
         />
-        {status !== "live" ? (
+        {status !== "live" || !pictured ? (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-6 text-center text-sm text-muted-foreground">
             {status === "asleep" ? (
               aldoOfflineMessage(environmentId)
-            ) : status === "error" ? (
+            ) : status === "error" || (status === "live" && error) ? (
               <span className="max-w-sm">
                 Couldn't reach the browser{error ? `: ${error}` : ""}. Retrying…
               </span>
             ) : (
               <span className="inline-flex items-center gap-2">
-                <LoaderIcon className="size-4 animate-spin" /> Connecting to the browser…
+                <LoaderIcon className="size-4 animate-spin" />{" "}
+                {status === "live" ? "Starting the browser…" : "Connecting to the browser…"}
               </span>
             )}
           </div>
