@@ -1,6 +1,7 @@
 // The home screen as a conversation with Aldo (AldoHome.tsx's default view):
-// what's waiting on the user and what's running pinned on top (the "Now"
-// strip), then the conversation, where what Aldo did shows live, then one
+// what's waiting on the user and what's running are in the sidebar beside it
+// (AldoSidebar.tsx; pinned on top as the "Now" strip on a phone), then the
+// conversation, where what Aldo did shows live, then one
 // large composer with the orb in it. A thread opens in a peek beside the
 // conversation (over it on a phone), so someone who only talks to Aldo never
 // has to leave it; Aldo's show_thread peeks here too. Setup, and what's wrong
@@ -165,11 +166,13 @@ export function AldoConversationPage(props: {
                 </span>
               ) : null}
             </div>
+            {/* On a phone, where the sidebar is folded away; beside it, the sidebar has all this. */}
             <AldoNowStrip
               items={items}
               now={now}
               active={peek?.key ?? null}
               onPeek={(target, key) => setPeek({ target, key })}
+              className="md:hidden"
             />
           </header>
           <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto border-border/50 border-t">

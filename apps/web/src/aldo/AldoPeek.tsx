@@ -263,17 +263,29 @@ function LatestTurns(props: { readonly conversation: AldoHomeConversation }) {
       ) : (
         messages.map((m) =>
           m.role === "user" ? (
-            <p
-              key={`${m.role}:${m.createdAt}`}
-              className="max-w-[90%] self-end whitespace-pre-wrap rounded-2xl bg-muted/60 px-3.5 py-2 text-sm"
-            >
-              {withoutImageNotes(m.text).text}
-            </p>
+            <UserTurn key={`${m.role}:${m.createdAt}`} text={m.text} />
           ) : (
             <ChatMarkdown key={`${m.role}:${m.createdAt}`} text={m.text} cwd={undefined} />
           ),
         )
       )}
+    </div>
+  );
+}
+
+/** What Aldo writes to a thread ends with this line (fromAldo in Aldo's src/lib/actions.ts); the peek labels it instead. */
+const FROM_ALDO = /\s*_\(Sent by Aldo[^)]*\)_\s*$/;
+
+/** A message the user (or Aldo for them) sent the thread. */
+function UserTurn(props: { readonly text: string }) {
+  const text = withoutImageNotes(props.text).text;
+  const fromAldo = FROM_ALDO.test(text);
+  return (
+    <div className="flex max-w-[90%] flex-col items-end gap-1 self-end">
+      {fromAldo ? <span className="text-[11px] text-primary">From Aldo</span> : null}
+      <p className="whitespace-pre-wrap rounded-2xl bg-muted/60 px-3.5 py-2 text-sm">
+        {fromAldo ? text.replace(FROM_ALDO, "") : text}
+      </p>
     </div>
   );
 }
