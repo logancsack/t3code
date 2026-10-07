@@ -11,6 +11,8 @@
 // opening a thread moves the page (or, on the home screen, peeks at it), and
 // the conversation carries on (the dock shows it). Aldo hears which thread is
 // on screen (screen.ts): with each written turn, and on a call as it changes.
+// A call can open with words of its own instead of the greeting, and the page
+// can tell a call what it shows (going through decisions, walkthrough.ts).
 // A thread Aldo starts shows in the sidebar at once, and is followed until its
 // first turn is under way: if it has to wait, runs into trouble, can't start
 // or stops at once (an agent signed out), Aldo says so (or, once the
@@ -78,6 +80,12 @@ interface AldoAssistantState {
   readonly unsentImages: ReadonlyArray<AldoImageUpload> | null;
   /** A written reply is on its way (typed without a call on). */
   readonly replying: boolean;
+  /** When the call connected (ms), for how long it's been on; null without one. */
+  readonly connectedAt: number | null;
+  /** Where the call's own entries start in `entries`: what was said and done on it. */
+  readonly callFrom: number;
+  /** Aldo's voice is off on this device: its words still show. */
+  readonly voiceOff: boolean;
 }
 
 export const useAldoAssistant = create<AldoAssistantState>(() => ({
@@ -92,6 +100,9 @@ export const useAldoAssistant = create<AldoAssistantState>(() => ({
   unsent: null,
   unsentImages: null,
   replying: false,
+  connectedAt: null,
+  callFrom: 0,
+  voiceOff: false,
 }));
 
 const set = (patch: Partial<AldoAssistantState>) => useAldoAssistant.setState(patch);
@@ -130,6 +141,8 @@ let startWatches: ReadonlyArray<AldoStartWatch> = [];
 let stopWatchingStarts: (() => void) | null = null;
 /** What the call was last told is on screen (screenNote), so it hears only changes. */
 let toldScreen: string | null = null;
+/** The page told the call something to say while it was busy: the next response is asked for once it's free. */
+let promptWaiting = false;
 let stopWatchingScreen: (() => void) | null = null;
 
 /** How the conversation opens a thread on the page (the router, from the dock). */
@@ -376,7 +389,10 @@ function onEvent(event: { type: string } & Record<string, unknown>): void {
       responding = false;
       const calls = functionCallsIn(event);
       if (calls.length > 0) void runCalls(calls);
-      else if (newsWaiting.length > 0) requestResponse();
+      else if (newsWaiting.length > 0 || promptWaiting) {
+        promptWaiting = false;
+        requestResponse();
+      }
       break;
     }
     case "error": {
@@ -420,6 +436,7 @@ function teardown(): void {
   sessionId = null;
   responding = false;
   calling = false;
+  promptWaiting = false;
   // News no response had: shown instead of said.
   newsWaiting.forEach(toastStartNews);
   newsWaiting = [];
@@ -435,11 +452,23 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-/** Starts a conversation, with the microphone (the default) or typed only. */
-export async function connectAldo(options: { mic?: boolean } = {}): Promise<void> {
+/**
+ * Starts a conversation, with the microphone (the default) or typed only.
+ * `opening` is what Aldo is asked to say first, instead of the greeting.
+ */
+export async function connectAldo(
+  options: { mic?: boolean; opening?: string } = {},
+): Promise<void> {
   const { phase } = get();
   if (phase !== "idle" && phase !== "error") return;
-  set({ phase: "connecting", error: null, said: "", muted: false, micOn: false });
+  set({
+    phase: "connecting",
+    error: null,
+    said: "",
+    muted: false,
+    micOn: false,
+    connectedAt: null,
+  });
   try {
     // The microphone first, while the tap that asked for it still counts as the user's.
     // Blocked or missing, the conversation goes on typed.
@@ -460,6 +489,7 @@ export async function connectAldo(options: { mic?: boolean } = {}): Promise<void
       speaker = Object.assign(document.createElement("audio"), { autoplay: true, hidden: true });
       document.body.append(speaker);
     }
+    speaker.muted = get().voiceOff;
     peer.ontrack = (event) => {
       if (speaker) speaker.srcObject = event.streams[0] ?? null;
     };
@@ -477,20 +507,29 @@ export async function connectAldo(options: { mic?: boolean } = {}): Promise<void
       }
     });
     channel.addEventListener("open", () => {
-      set({ phase: "listening", micOn: microphone !== null });
+      set({
+        phase: "listening",
+        micOn: microphone !== null,
+        connectedAt: Date.now(),
+        callFrom: get().entries.length,
+      });
       // What's on screen first, so the greeting (or what was typed) can mean it.
       tellScreen();
       stopWatchingScreen = subscribeAldoOnScreen(tellScreen);
       const text = queuedText;
       queuedText = null;
       if (text) sendText(text);
-      else requestResponse({ instructions: GREETING });
+      else requestResponse({ instructions: options.opening ?? GREETING });
     });
     peer.onconnectionstatechange = () => {
       const state = peer?.connectionState;
       if (state === "failed" || state === "closed") {
         teardown();
-        set({ phase: "error", error: "The call with Aldo dropped. Tap to talk again." });
+        set({
+          phase: "error",
+          error: "The call with Aldo dropped. Tap to talk again.",
+          connectedAt: null,
+        });
       }
     };
     const offer = await peer.createOffer();
@@ -505,7 +544,7 @@ export async function connectAldo(options: { mic?: boolean } = {}): Promise<void
     watchLevels();
   } catch (error) {
     teardown();
-    set({ phase: "error", error: messageOf(error), unsent: queuedText });
+    set({ phase: "error", error: messageOf(error), unsent: queuedText, connectedAt: null });
     queuedText = null;
   }
 }
@@ -514,7 +553,37 @@ export async function connectAldo(options: { mic?: boolean } = {}): Promise<void
 export function disconnectAldo(): void {
   teardown();
   queuedText = null;
-  set({ phase: "idle", said: "", micOn: false, muted: false, levels: { mic: 0, aldo: 0 } });
+  set({
+    phase: "idle",
+    said: "",
+    micOn: false,
+    muted: false,
+    levels: { mic: 0, aldo: 0 },
+    connectedAt: null,
+  });
+}
+
+/**
+ * Tells a call what the page shows the user (a note Aldo reads, not words the
+ * user said), and, with `respond`, has Aldo speak to it: now, or once it's
+ * done with what it's saying or doing. Nothing without a call on.
+ */
+export function tellAldoCall(note: string, options: { readonly respond: boolean }): void {
+  if (channel?.readyState !== "open") return;
+  send({
+    type: "conversation.item.create",
+    item: { type: "message", role: "system", content: [{ type: "input_text", text: note }] },
+  });
+  if (!options.respond) return;
+  const phase = get().phase;
+  if (calling || responding || phase === "hearing") promptWaiting = true;
+  else requestResponse();
+}
+
+/** Aldo's voice on or off on this device (its words keep showing). */
+export function setAldoVoiceOff(off: boolean): void {
+  if (speaker) speaker.muted = off;
+  set({ voiceOff: off });
 }
 
 /**

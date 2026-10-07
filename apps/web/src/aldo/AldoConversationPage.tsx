@@ -1,21 +1,14 @@
 // The home screen as a conversation with Aldo (AldoHome.tsx's default view):
 // what's waiting on the user and what's running are in the sidebar beside it
-// (AldoSidebar.tsx; pinned on top as the "Now" strip on a phone), then the
-// conversation, where what Aldo did shows live, then one
-// large composer with the orb in it. A thread opens in a peek beside the
+// (AldoSidebar.tsx; the Agents tab on a phone), then the conversation, where
+// what Aldo did shows live and the day starts with Aldo's brief (AldoBrief.tsx,
+// the home screen reads it, briefFeed.ts), then one large composer with the orb in it (on a
+// phone, a big button to talk beside it). A thread opens in a peek beside the
 // conversation (over it on a phone), so someone who only talks to Aldo never
-// has to leave it; Aldo's show_thread peeks here too. Setup, and what's wrong
-// with it, come first, as on the board.
+// has to leave it; Aldo's show_thread, and the brief's things to decide, peek
+// here too. Setup, and what's wrong with it, come first, as on the board.
 
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-  type RefObject,
-} from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 
 import { Kbd } from "../components/ui/kbd";
 import { Sheet, SheetPopup } from "../components/ui/sheet";
@@ -28,13 +21,13 @@ import {
   AldoComposer,
   AldoConversation,
 } from "./AldoAssistant";
+import { useIsMobile } from "../hooks/useMediaQuery";
 import { HealthStrip } from "./AldoHomeBoard";
 import { AldoPeekContext } from "./AldoLiveCard";
-import { AldoNowStrip } from "./AldoNowStrip";
-import { AldoPeek, peekedConversation, type AldoPeekTarget } from "./AldoPeek";
+import { AldoPeek, AldoPeekerContext, peekedConversation, type AldoPeekTarget } from "./AldoPeek";
 import { loadAldoConversation, seedAldoComposer, setAldoThreadPeeker } from "./assistantSession";
 import type { AldoHome, AldoHomeTarget } from "./cloud";
-import { nowItems, type healthIssues } from "./home.logic";
+import type { healthIssues } from "./home.logic";
 import { setAldoPeekedThread } from "./screen";
 import { ALDO_SUMMON_LABEL } from "./summon.logic";
 
@@ -88,14 +81,15 @@ export function AldoConversationPage(props: {
 }) {
   const { home, now } = props;
   const wide = useMediaQuery("(min-width: 1024px)");
+  const phone = useIsMobile();
   const [peek, setPeek] = useState<{ target: AldoPeekTarget; key: string | null } | null>(null);
-  const items = useMemo(() => (home ? nowItems(home, now) : []), [home, now]);
   const scroller = useRef<HTMLDivElement>(null);
   useStickToBottom(scroller);
 
   useEffect(() => {
     void loadAldoConversation();
   }, []);
+  const peekAny = useCallback((target: AldoPeekTarget) => setPeek({ target, key: null }), []);
 
   const peekThread = useCallback(
     (target: AldoHomeTarget) => setPeek({ target: { kind: "thread", target }, key: null }),
@@ -155,27 +149,26 @@ export function AldoConversationPage(props: {
       <div className="flex h-full min-h-0 min-w-0">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <header className="flex shrink-0 flex-col gap-2.5 px-4 pt-3 pb-2.5 sm:px-5">
-            {/* Beside the sidebar's button on a phone, which floats at the top left. */}
-            <div className="flex items-center gap-2 max-md:ps-10">
-              {props.viewSwitch}
-              {home && home.usage.agents.running > 0 ? (
-                <span className="ms-auto text-muted-foreground text-xs">
-                  {home.usage.agents.running === 1
-                    ? "1 agent working"
-                    : `${home.usage.agents.running} agents working`}
-                </span>
-              ) : null}
-            </div>
-            {/* On a phone, where the sidebar is folded away; beside it, the sidebar has all this. */}
-            <AldoNowStrip
-              items={items}
-              now={now}
-              active={peek?.key ?? null}
-              onPeek={(target, key) => setPeek({ target, key })}
-              className="md:hidden"
-            />
+            {phone ? (
+              // The tabs, centered clear of the sidebar's button, which floats at the top left.
+              <div className="flex items-center justify-center">{props.viewSwitch}</div>
+            ) : (
+              <div className="flex items-center gap-2">
+                {props.viewSwitch}
+                {home && home.usage.agents.running > 0 ? (
+                  <span className="ms-auto text-muted-foreground text-xs">
+                    {home.usage.agents.running === 1
+                      ? "1 agent working"
+                      : `${home.usage.agents.running} agents working`}
+                  </span>
+                ) : null}
+              </div>
+            )}
           </header>
-          <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto border-border/50 border-t">
+          <div
+            ref={scroller}
+            className="min-h-0 flex-1 overflow-y-auto border-border/50 border-t max-md:border-t-0"
+          >
             <div className="mx-auto flex w-full max-w-2xl flex-col gap-4 px-4 pt-5 pb-4 sm:px-5">
               {props.setup}
               <HealthStrip
@@ -183,9 +176,11 @@ export function AldoConversationPage(props: {
                 onEnableNotifications={props.onEnableNotifications}
               />
               {props.supported === false ? <AldoAtAGlance /> : null}
-              <AldoPeekContext.Provider value={peekThread}>
-                <AldoConversation />
-              </AldoPeekContext.Provider>
+              <AldoPeekerContext.Provider value={peekAny}>
+                <AldoPeekContext.Provider value={peekThread}>
+                  <AldoConversation />
+                </AldoPeekContext.Provider>
+              </AldoPeekerContext.Provider>
             </div>
           </div>
           <div className="shrink-0 bg-background/95 backdrop-blur" data-aldo-assistant-footer="">

@@ -8,7 +8,9 @@
 // Aldo's one read of the account (homeFeed.ts), which never wakes a machine.
 // Until a git host and an agent are connected it walks through setup first.
 // An Aldo without the home read shows what Aldo's overview says instead; one
-// without the assistant shows the board alone.
+// without the assistant shows the board alone. On a phone the two are Aldo's
+// conversation and the Agents tab (AldoAgentsTab.tsx): every thread by what
+// it needs, made for a thumb.
 
 import { useNavigate } from "@tanstack/react-router";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
@@ -37,6 +39,7 @@ import { SidebarInset } from "../components/ui/sidebar";
 import { toastManager } from "../components/ui/toast";
 import { cn } from "~/lib/utils";
 import { ALDO_ACCOUNT_SPECS, AldoAccountButton, useAldoAccounts } from "./AldoAccountsPanel";
+import { AldoAgentsTab } from "./AldoAgentsTab";
 import { AldoAtAGlance, AldoPane, useAldoAssistantAvailable } from "./AldoAssistant";
 import { AldoConversationPage } from "./AldoConversationPage";
 import {
@@ -78,7 +81,10 @@ import {
   repoChips,
   repoName,
 } from "./home.logic";
+import { loadAldoBrief } from "./briefFeed";
+import { aldoDecisions } from "./decisions.logic";
 import { aldoNotificationsStatus, enableAldoNotifications } from "./notifications";
+import { useIsMobile } from "../hooks/useMediaQuery";
 
 const AGENT_KINDS: ReadonlyArray<AldoAccountKind> = ["claude", "codex", "grok"];
 const LAST_SEEN_KEY = "aldo:home:seen";
@@ -178,12 +184,25 @@ export function AldoHome() {
   const { home, supported, error } = useAldoHomeRead();
   const refresh = refreshAldoHome;
   const view = useAldoHomeView((s) => s.view);
+  const mobile = useIsMobile();
   // Aldo's view needs Aldo; without it there's only the board.
   const aldoView = assistant === true && view === "aldo";
   const lastSeen = useLastSeen();
   const now = useNow();
   const notifications = useNotifications();
   const navigate = useNavigate();
+
+  // The day's first look at the home screen makes Aldo's brief, whichever view it opens on;
+  // a page left open overnight has the new day's when it's looked at again.
+  useEffect(() => {
+    if (assistant !== true) return;
+    void loadAldoBrief();
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void loadAldoBrief();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [assistant]);
   const [repo, setRepo] = useState<string | null>(null);
   /** The selected conversation, by ref: it stays selected as the board refreshes around it. */
   const [selectedRef, setSelectedRef] = useState<string | null>(null);
@@ -310,6 +329,40 @@ export function AldoHome() {
         </ol>
       </section>
     ) : null;
+
+  if (mobile && assistant === true) {
+    const tabs = (
+      <PhoneTabs
+        view={aldoView ? "aldo" : "agents"}
+        waiting={home ? aldoDecisions(home, now).length : 0}
+      />
+    );
+    if (!aldoView) {
+      return (
+        <AldoAgentsTab
+          header={tabs}
+          home={home}
+          now={now}
+          setup={setup}
+          issues={issues}
+          onEnableNotifications={notifications.enable}
+        />
+      );
+    }
+    return (
+      <AldoConversationPage
+        home={home}
+        supported={supported}
+        now={now}
+        viewSwitch={tabs}
+        setup={setup}
+        issues={issues}
+        onEnableNotifications={notifications.enable}
+        chips={chips}
+        onChip={onChip}
+      />
+    );
+  }
 
   const viewSwitch = assistant ? <ViewSwitch view={aldoView ? "aldo" : "board"} /> : null;
   if (aldoView) {
@@ -553,6 +606,54 @@ function ViewSwitch(props: { readonly view: AldoHomeView }) {
         />,
       )}
       {option("board", "Board", <LayoutGridIcon className="size-3.5" />)}
+    </div>
+  );
+}
+
+/** On a phone: Aldo's conversation, or the Agents tab with how many things wait on the user. */
+function PhoneTabs(props: { readonly view: "aldo" | "agents"; readonly waiting: number }) {
+  const option = (view: "aldo" | "agents", children: ReactNode) => (
+    <button
+      type="button"
+      aria-pressed={props.view === view}
+      className={cn(
+        "flex h-8 items-center gap-1.5 rounded-full px-3.5 font-medium text-sm transition-colors",
+        props.view === view
+          ? "bg-background text-foreground shadow-xs/5"
+          : "text-muted-foreground hover:text-foreground",
+      )}
+      onClick={() => setAldoHomeView(view)}
+    >
+      {children}
+    </button>
+  );
+  return (
+    <div
+      className="flex items-center gap-0.5 rounded-full bg-muted p-0.5"
+      role="group"
+      aria-label="View"
+    >
+      {option(
+        "aldo",
+        <>
+          <span
+            aria-hidden
+            className="size-3.5 rounded-full bg-gradient-to-br from-primary/90 to-primary/50"
+          />
+          Aldo
+        </>,
+      )}
+      {option(
+        "agents",
+        <>
+          Agents
+          {props.waiting > 0 ? (
+            <span className="rounded-full bg-warning/15 px-1.5 font-semibold text-[11px] text-warning-foreground">
+              {props.waiting}
+            </span>
+          ) : null}
+        </>,
+      )}
     </div>
   );
 }

@@ -76,27 +76,23 @@ import {
 } from "../keybindings";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
 import { isTerminalFocused } from "../lib/terminalFocus";
-import { selectProjectGroupingSettings } from "../logicalProject";
 import { isModelPickerOpen } from "../modelPickerVisibility";
 import { buildSidebarProjectSnapshots } from "../sidebarProjectGrouping";
-import { useProjects, useThreadShells } from "../state/entities";
-import { usePrimaryEnvironmentId } from "../state/environments";
-import { environmentServerConfigsAtom, primaryServerKeybindingsAtom } from "../state/server";
+import { useProjects } from "../state/entities";
+import { primaryServerKeybindingsAtom } from "../state/server";
 import { threadEnvironment } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
 import { buildThreadRouteParams } from "../threadRoutes";
-import { useUiStateStore } from "../uiStateStore";
 import { cn } from "~/lib/utils";
 import { AldoProfileButton } from "./AldoAccountDialog";
 import { AldoOrb, useAldoAssistantAvailable } from "./AldoAssistant";
 import { mergeFollowedPullRequest } from "./AldoHomeBoard";
 import { AldoPeek, type AldoPeekTarget } from "./AldoPeek";
 import { setAldoMuted, useAldoAssistant } from "./assistantSession";
-import { isAldoEnvironmentId, type AldoApproval, type AldoHomeUsage } from "./cloud";
+import type { AldoApproval, AldoHomeUsage } from "./cloud";
 import { refreshAldoHome, setAldoHomeView, useAldoHomeRead } from "./homeFeed";
 import { elapsed, relativeTime } from "./home.logic";
 import {
-  aldoSidebarList,
   aldoSidebarOrder,
   repoLabel,
   searchAldoSidebar,
@@ -105,6 +101,7 @@ import {
   type AldoSidebarRow,
 } from "./sidebar.logic";
 import { ALDO_SUMMON_LABEL } from "./summon.logic";
+import { useAldoThreadList } from "./useAldoThreadList";
 
 /** Earlier threads shown at a time, when that group is open. */
 const EARLIER_PAGE = 10;
@@ -135,14 +132,8 @@ export function AldoSidebar() {
   const { pathname } = useLocation();
   const params = useParams({ strict: false }) as { environmentId?: string; threadId?: string };
   const { isMobile, setOpenMobile } = useSidebar();
-  const shells = useThreadShells();
-  const projects = useProjects();
   const { home } = useAldoHomeRead();
-  const lastVisited = useUiStateStore((s) => s.threadLastVisitedAtById);
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
-  const serverConfigs = useAtomValue(environmentServerConfigsAtom);
-  const groupingSettings = useClientSettings(selectProjectGroupingSettings);
-  const primaryEnvironmentId = usePrimaryEnvironmentId();
   const newThreadContext = useHandleNewThread();
   const now = useNow();
   const [query, setQuery] = useState("");
@@ -155,52 +146,12 @@ export function AldoSidebar() {
   const [renaming, setRenaming] = useState<string | null>(null);
   const timers = useRef<{ open?: number; close?: number }>({});
 
-  const groups = useMemo(
-    () =>
-      buildSidebarProjectSnapshots({
-        projects,
-        settings: groupingSettings,
-        primaryEnvironmentId,
-        resolveEnvironmentLabel: () => null,
-      }),
-    [groupingSettings, primaryEnvironmentId, projects],
-  );
-  const groupByProject = useMemo(() => {
-    const map = new Map<string, (typeof groups)[number]>();
-    for (const group of groups)
-      for (const ref of group.memberProjectRefs)
-        map.set(`${ref.environmentId}:${ref.projectId}`, group);
-    return map;
-  }, [groups]);
-  const groupOf = useCallback(
-    (shell: EnvironmentThreadShell) =>
-      groupByProject.get(`${shell.environmentId}:${shell.projectId}`),
-    [groupByProject],
-  );
+  const { list, groups, groupByProject, shellCount } = useAldoThreadList({ home, now, scope });
   const scopeGroup = scope === null ? null : (groups.find((g) => g.projectKey === scope) ?? null);
   useEffect(() => {
     if (scope !== null && scopeGroup === null) setScope(null);
   }, [scope, scopeGroup]);
 
-  const list = useMemo(
-    () =>
-      aldoSidebarList({
-        shells: shells.filter((shell) => isAldoEnvironmentId(shell.environmentId)),
-        home,
-        lastVisitedAt: (key) => lastVisited[key],
-        repoOf: (shell) => repoLabel(groupOf(shell)?.displayName),
-        ...(scope === null ? {} : { inScope: (shell) => groupOf(shell)?.projectKey === scope }),
-        supports: (shell) => {
-          const capabilities = serverConfigs.get(shell.environmentId)?.environment.capabilities;
-          return {
-            settlement: capabilities?.threadSettlement === true,
-            snooze: capabilities?.threadSnooze === true,
-          };
-        },
-        now: new Date(now).toISOString(),
-      }),
-    [groupOf, home, lastVisited, now, scope, serverConfigs, shells],
-  );
   const results = useMemo(() => searchAldoSidebar(list, query), [list, query]);
   const order = useMemo(
     () =>
@@ -554,7 +505,7 @@ export function AldoSidebar() {
                   : null}
               </Group>
             ) : null}
-            {shells.length === 0 && list.approvals.length === 0 ? (
+            {shellCount === 0 && list.approvals.length === 0 ? (
               <p className="px-3 py-6 text-center text-sidebar-muted-foreground text-xs">
                 No threads yet. Tell Aldo what to get done, or start one with the pen.
               </p>
@@ -767,7 +718,7 @@ const KIND_ICON: Partial<Record<AldoSidebarKind, ReactNode>> = {
   done: <span className="size-1.5 rounded-full bg-sidebar-muted-foreground/40" />,
 };
 
-function RowIcon(props: { readonly row: AldoSidebarRow }) {
+export function RowIcon(props: { readonly row: AldoSidebarRow }) {
   const { row } = props;
   if (row.kind === "working" || row.kind === "monitoring" || row.kind === "starting") {
     return row.progress !== null ? (
@@ -779,7 +730,7 @@ function RowIcon(props: { readonly row: AldoSidebarRow }) {
   return <>{KIND_ICON[row.kind]}</>;
 }
 
-function rowTime(row: AldoSidebarRow, now: number): string {
+export function rowTime(row: AldoSidebarRow, now: number): string {
   if (row.kind === "working" || row.kind === "monitoring" || row.kind === "starting") {
     return elapsed(row.at, now).replace(" min", "m").replace(" h", "h").replace("just now", "now");
   }

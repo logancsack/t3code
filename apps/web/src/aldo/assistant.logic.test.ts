@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  callDuration,
+  captionParts,
   actionFor,
   aldoRefFor,
   functionCallsIn,
@@ -391,5 +393,32 @@ describe("liveCardIndexes", () => {
       { kind: "action", tool: "merge_pull_request" },
     ];
     expect([...liveCardIndexes(entries)].sort()).toEqual([2, 3]);
+  });
+});
+
+describe("the call screen's words", () => {
+  it("shows Aldo's last sentence apart, as it trails off or is still coming", () => {
+    expect(captionParts("The upgrade's merged. Want me to get someone on it?")).toEqual({
+      lead: "The upgrade's merged.",
+      tail: "Want me to get someone on it?",
+    });
+    expect(captionParts("Merged. Sent. And the")).toEqual({
+      lead: "Merged. Sent.",
+      tail: "And the",
+    });
+    expect(captionParts("Just one sentence.")).toEqual({ lead: "Just one sentence.", tail: "" });
+    expect(captionParts("")).toEqual({ lead: "", tail: "" });
+    expect(captionParts("One. Two. Three? Four", 2)).toEqual({ lead: "Three?", tail: "Four" });
+    expect(captionParts("It's 3.5 times faster. Merge it?")).toEqual({
+      lead: "It's 3.5 times faster.",
+      tail: "Merge it?",
+    });
+  });
+
+  it("says how long the call has been on", () => {
+    expect(callDuration(42_000)).toBe("0:42");
+    expect(callDuration(12 * 60_000 + 5_000)).toBe("12:05");
+    expect(callDuration(3_729_000)).toBe("1:02:09");
+    expect(callDuration(-5)).toBe("0:00");
   });
 });

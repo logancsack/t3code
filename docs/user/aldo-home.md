@@ -2,6 +2,29 @@
 
 Aldo's home screen is where you see all of your agents' work at once and act on it, with Aldo to hand. Nothing on it wakes a sleeping agent: everything comes from what Aldo already knows.
 
+It opens on your conversation with Aldo. **Board**, at the top, switches to the board below (on a phone, **Agents**: see below); the home screen remembers which you used last on each device.
+
+## Your brief
+
+The first time you open Aldo each day (from 4 in the morning where you are), Aldo starts the day's conversation with a brief: a few sentences on where everything stands, then **Top of mind**, the few things to decide first, and **Looking ahead**, what's left on your calendar today when you've connected one.
+
+- **Top of mind** shows each thing as it stands now. An email to send has **Send**, an event **Add**, a pull request **Merge**; Aldo asks before it goes ahead. When Aldo has a reason to think it knows your answer to a question (something you told it before), it says what it would pick, and that choice is a button. Tap anything else to look at it and answer it there. What you've decided is ticked off.
+- **Listen** reads the brief aloud in Aldo's voice.
+- **Go through them** starts a call with Aldo that takes you through what's waiting on you, one at a time (below).
+
+Aldo remembers what it said in the brief, so you can ask about it afterwards.
+
+## Going through them with Aldo
+
+On **Go through them**, Aldo puts each decision to you out loud while your screen shows it with its choices. Answer out loud and Aldo acts on it, or tap a choice. **Skip for now** moves on, and **Open the thread** takes you to it. When you've been through them all, Aldo says so. Hanging up ends it; the call can carry on without it.
+
+## On a phone
+
+On a phone the home screen has two tabs:
+
+- **Aldo**: your conversation, with the brief at the start of the day, and a big button beside the composer to talk. A call fills the screen: Aldo's words as it says them, what it did on this call, and **Mute**, **Type** and **End**. The arrow at the top folds the call away so you can use the app while it goes on; the big button brings it back. The speaker button turns Aldo's voice off, leaving its words on screen.
+- **Agents**: every thread by what it needs from you, as the sidebar groups them, with how many wait on you on the tab. Sending an email or merging takes a tap on the row. Tap a thread to see what its agent last said and answer it, reply to the agent, talk to Aldo about it, or open it.
+
 ## The board
 
 The board answers four questions, in order, starting with what waits on a tap from you.
@@ -45,6 +68,6 @@ On a keyboard, **j** and **k** move through the threads, **Enter** opens the sel
 
 ## Aldo
 
-Aldo sits beside the board (on a phone, below it, folded under what it last said). Type to it, or tap the orb to talk. Chips under the composer offer things to say: what needs you, a catch-up, what shipped, or starting something in a repository you work in.
+On the board, Aldo sits beside it (on a phone, below it, folded under what it last said). Type to it, or tap the orb to talk. Chips under the composer offer things to say: what needs you, a catch-up, what shipped, or starting something in a repository you work in.
 
 Typed, your words go to Aldo in writing: it reads your threads, acts when you ask it to, and replies with what it did, each action linked to its thread. The conversation carries on turn after turn, and Aldo remembers it the next time, spoken or typed. On a call, typing goes into the call instead.
