@@ -25,6 +25,7 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
   CircleAlertIcon,
+  CircleCheckBigIcon,
   ClipboardListIcon,
   EllipsisIcon,
   FolderIcon,
@@ -984,7 +985,12 @@ function ThreadRow(props: {
   );
 }
 
-const APPROVAL_ICON = { email: MailIcon, event: CalendarPlusIcon, start: SparklesIcon } as const;
+const APPROVAL_ICON = {
+  email: MailIcon,
+  event: CalendarPlusIcon,
+  start: SparklesIcon,
+  confirm: CircleCheckBigIcon,
+} as const;
 
 function ApprovalRow(props: {
   readonly approval: AldoApproval;

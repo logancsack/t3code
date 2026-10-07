@@ -67,5 +67,10 @@ describe("approvalQuestion and approvalOutcome", () => {
     expect(approvalOutcome({ kind: "event", status: "approved" })).toBe("Added");
     expect(approvalOutcome({ kind: "start", status: "discarded" })).toBe("Skipped");
     expect(approvalOutcome({ kind: "email", status: "expired" })).toBe("Expired");
+    expect(approvalQuestion({ kind: "confirm", title: "Book a table for 4 at Poppies" })).toBe(
+      "Book a table for 4 at Poppies?",
+    );
+    expect(approvalOutcome({ kind: "confirm", status: "approved" })).toBe("Approved");
+    expect(approvalOutcome({ kind: "confirm", status: "discarded" })).toBe("Declined");
   });
 });

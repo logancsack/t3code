@@ -36,6 +36,7 @@ export function decidedLately(
 export function approvalQuestion(approval: Pick<AldoApproval, "kind" | "title">): string {
   if (approval.kind === "email") return `Send "${approval.title}"?`;
   if (approval.kind === "event") return `Add "${approval.title}" to your calendar?`;
+  if (approval.kind === "confirm") return `${approval.title}?`;
   return approval.title;
 }
 
@@ -43,13 +44,20 @@ export const APPROVAL_KIND_LABEL: Record<AldoApproval["kind"], string> = {
   email: "Email",
   event: "Event",
   start: "Suggestion",
+  confirm: "Needs your yes",
 };
 
 /** How a decided one went, in a word for its badge. */
 export function approvalOutcome(approval: Pick<AldoApproval, "kind" | "status">): string {
   if (approval.status === "expired") return "Expired";
-  if (approval.status === "discarded") return approval.kind === "start" ? "Skipped" : "Discarded";
+  if (approval.status === "discarded")
+    return approval.kind === "start"
+      ? "Skipped"
+      : approval.kind === "confirm"
+        ? "Declined"
+        : "Discarded";
   if (approval.kind === "email") return "Sent";
   if (approval.kind === "event") return "Added";
+  if (approval.kind === "confirm") return "Approved";
   return "Started";
 }
