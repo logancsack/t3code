@@ -82,6 +82,11 @@ const STILL_WORKING = "Still working on that; it'll be a few more seconds.";
 /** A delegation waits this long (the call's time) for the user to stop talking, so it has their whole request. */
 const SETTLE_MS = 700;
 const SETTLE_MAX_MS = 2_500;
+/** A delegation's request is the user's words transcribed up to about where it was made (its offset on the call's timeline). */
+const HEARD_SLACK_MS = 1_500;
+/** What the voice says when a result it was sent was refused (OpenAI rejects an update it can't take). */
+const UNSAID =
+  "I finished that, but couldn't read you the result. Check what I did on screen before asking again.";
 /** GPT-Live bills every connected second: a call nobody's used for this long is hung up. */
 const IDLE_MS = 90_000;
 /** How long a GPT-Live call has to start once OpenAI has answered. */
@@ -189,6 +194,9 @@ let liveOpening: string | undefined;
 let transcript: AldoLiveTranscript | null = null;
 /** Requests the voice handed over that Aldo is working on (and typed words it is). */
 const delegating = new Set<string>();
+/** Results sent to the voice, by the event id OpenAI names if it refuses one (to its delegation, or null). */
+const results = new Map<string, string | null>();
+let eventNumber = 0;
 /** When anyone last said anything on the call (wall clock), for hanging up one nobody's using. */
 let lastSpokeAt = 0;
 let liveTimer: ReturnType<typeof setInterval> | null = null;
@@ -496,7 +504,11 @@ function appendLive(
     type === "session.commentary.append"
       ? [cutForLive(content, APPEND_TOKENS)]
       : splitForLive(content, APPEND_TOKENS);
-  for (const part of parts) send({ type, delegation_id: delegationId, content: part });
+  for (const part of parts) {
+    const eventId = `aldo_${++eventNumber}`;
+    if (type === "session.commentary.append") results.set(eventId, delegationId);
+    send({ type, event_id: eventId, delegation_id: delegationId, content: part });
+  }
 }
 
 /**
@@ -597,13 +609,17 @@ async function delegateToAldo(
  * The voice handed something over: once the user has finished saying it,
  * Aldo does it, and the voice is told what to say.
  */
-async function runDelegation(id: string): Promise<void> {
+async function runDelegation(id: string, offset: number): Promise<void> {
   delegating.add(id);
   tickLive();
   const call = transcript;
   const until = Date.now() + SETTLE_MAX_MS;
+  // The voice can delegate as the user says their last word, or before it's transcribed: wait for it.
   const talking = () =>
-    call !== null && transcript === call && Date.now() < until && call.quietFor("user") < SETTLE_MS;
+    call !== null &&
+    transcript === call &&
+    Date.now() < until &&
+    (call.heardUntil("user") < offset - HEARD_SLACK_MS || call.quietFor("user") < SETTLE_MS);
   while (talking()) await new Promise((resolve) => setTimeout(resolve, 100));
   const session = sessionId;
   if (!call || transcript !== call || !session) {
@@ -655,9 +671,13 @@ function onLiveEvent(event: { type: string } & Record<string, unknown>): void {
     }
     case "session.delegation.created": {
       const id = (event.delegation as { id?: unknown } | undefined)?.id;
-      if (typeof id === "string" && !delegating.has(id)) void runDelegation(id);
+      if (typeof id === "string" && !delegating.has(id))
+        void runDelegation(id, Number(event.offset_ms) || 0);
       break;
     }
+    case "session.commentary.appended":
+      if (typeof event.client_event_id === "string") results.delete(event.client_event_id);
+      break;
     case "session.closed": {
       // OpenAI ended it (its time limit, a safety stop, a lost connection), or it's the close the page asked for.
       const asked = event.reason === "close_requested";
@@ -675,8 +695,15 @@ function onLiveEvent(event: { type: string } & Record<string, unknown>): void {
     }
     case "error": {
       // A refused update (one that came too late, say) leaves the call as it was.
-      const message = (event.error as { message?: unknown } | undefined)?.message;
-      if (typeof message === "string") console.warn("Aldo's voice:", message);
+      const error = event.error as { message?: unknown; client_event_id?: unknown } | undefined;
+      if (typeof error?.message === "string") console.warn("Aldo's voice:", error.message);
+      // A result the voice couldn't take: the user still hears that it's done, so they don't ask for it twice.
+      const refused = typeof error?.client_event_id === "string" ? error.client_event_id : null;
+      if (refused && results.has(refused)) {
+        const delegation = results.get(refused) ?? null;
+        results.delete(refused);
+        appendLive("session.commentary.append", UNSAID, delegation);
+      }
       break;
     }
   }
@@ -781,6 +808,7 @@ function teardown(graceful = false): void {
   liveStarted = false;
   liveOpening = undefined;
   delegating.clear();
+  results.clear();
   responding = false;
   calling = false;
   promptWaiting = false;

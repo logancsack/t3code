@@ -20,6 +20,8 @@ describe("AldoLiveTranscript", () => {
     expect(turns).toEqual([]);
     expect(transcript.saying("user")).toBe("Hey, what's on my calendar?");
     expect(transcript.quietFor("user", 1500)).toBe(500);
+    expect(transcript.heardUntil("user")).toBe(3000);
+    expect(transcript.heardUntil("assistant")).toBe(2600);
     transcript.settle(2500);
     expect(turns).toEqual(["user: Hey, what's on my calendar?", "assistant: Mm-hmm."]);
   });
