@@ -328,6 +328,15 @@ export const SETTINGS_SEARCH_ITEMS = [
     requiresAldoPhone: true,
   },
   {
+    id: "aldo-apps",
+    title: "Apps",
+    to: "/settings/integrations",
+    searchTerms: [
+      "apps mcp server connectors plugins connect disconnect zapier notion linear jira confluence atlassian airtable canva granola stripe paypal webflow supabase sentry hugging face",
+    ],
+    aldoCloudOnly: true,
+  },
+  {
     id: "aldo-generators",
     title: "Image, video and audio",
     to: "/settings/integrations",

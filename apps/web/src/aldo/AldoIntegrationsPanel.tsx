@@ -3,9 +3,9 @@
 // and files. Connecting signs in with the provider in a popup; how the sign-in
 // reports back to this tab is in integrations.logic.ts. Once one is connected,
 // Aldo's heads-ups (it looks at new mail and coming events between
-// conversations) can be turned off here. Below them, the image, video and
-// audio generators agents use with the user's own API keys
-// (AldoGeneratorRows.tsx).
+// conversations) can be turned off here. Below them, apps every agent uses
+// as MCP servers (AldoAppsSection.tsx), and the image, video and audio
+// generators agents use with the user's own API keys (AldoGeneratorRows.tsx).
 
 import { BlocksIcon, CheckCircle2Icon, SparklesIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -24,6 +24,7 @@ import {
   type AldoIntegration,
   type AldoIntegrationAccountType,
 } from "./cloud";
+import { AldoAppsSection } from "./AldoAppsSection";
 import { AldoGeneratorRows } from "./AldoGeneratorRows";
 import {
   ALDO_INTEGRATIONS_CHANNEL,
@@ -376,6 +377,7 @@ export function AldoIntegrationsPanel() {
           <HeadsUpsRow />
         ) : null}
       </SettingsSection>
+      <AldoAppsSection />
       <SettingsSection
         id="aldo-generators"
         title="Image, video and audio"
