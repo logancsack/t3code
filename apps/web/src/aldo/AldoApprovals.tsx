@@ -5,7 +5,7 @@
 // them, how the ones decided lately went. The same buttons are on the
 // notification on their devices. Shown only when Aldo reports approvals.
 
-import { CalendarPlusIcon, MailIcon, SparklesIcon } from "lucide-react";
+import { CalendarPlusIcon, CircleCheckBigIcon, MailIcon, SparklesIcon } from "lucide-react";
 import { useState } from "react";
 
 import { Badge } from "../components/ui/badge";
@@ -27,7 +27,12 @@ import { relativeTime } from "./home.logic";
 
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
-const KIND_ICON = { email: MailIcon, event: CalendarPlusIcon, start: SparklesIcon } as const;
+const KIND_ICON = {
+  email: MailIcon,
+  event: CalendarPlusIcon,
+  start: SparklesIcon,
+  confirm: CircleCheckBigIcon,
+} as const;
 
 export function ApprovalsSection(props: {
   readonly approvals: ReadonlyArray<AldoApproval>;

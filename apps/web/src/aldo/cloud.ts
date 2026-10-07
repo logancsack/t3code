@@ -1712,18 +1712,20 @@ export async function runAldoRoutine(id: string): Promise<string> {
 // ---------------------------------------------------------------------------
 // Approvals: what waits on the user's one tap. An email an agent drafted in
 // their mail (sent as it stands), an event for their calendar, or a thread
-// Aldo suggests in a heads-up. Aldo does it when they approve.
+// Aldo suggests in a heads-up: Aldo does it when they approve. Or a step an
+// agent takes itself once they say yes (`confirm`: paying, booking,
+// cancelling, submitting, calling), with where, the total and the terms.
 
 export type AldoApprovalStatus = "pending" | "sending" | "approved" | "discarded" | "expired";
 
 export interface AldoApproval {
   readonly id: string;
-  readonly kind: "email" | "event" | "start";
+  readonly kind: "email" | "event" | "start" | "confirm";
   readonly provider: "google" | "microsoft" | null;
   readonly title: string;
   /** One line: who it's to, or when. */
   readonly summary: string;
-  /** What it is in full, labeled: To, Cc, Bcc, Attached; When, Invites, Where. */
+  /** What it is in full, labeled: To, Cc, Bcc, Attached; When, Invites, Where; Where, Total, Terms. */
   readonly fields: ReadonlyArray<{ readonly label: string; readonly value: string }>;
   /** The email's text, the event's description, or what the thread would be asked. */
   readonly body: string;

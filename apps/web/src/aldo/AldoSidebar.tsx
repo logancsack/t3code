@@ -25,6 +25,7 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
   CircleAlertIcon,
+  CircleCheckBigIcon,
   ClipboardListIcon,
   EllipsisIcon,
   FolderIcon,
@@ -935,7 +936,12 @@ function ThreadRow(props: {
   );
 }
 
-const APPROVAL_ICON = { email: MailIcon, event: CalendarPlusIcon, start: SparklesIcon } as const;
+const APPROVAL_ICON = {
+  email: MailIcon,
+  event: CalendarPlusIcon,
+  start: SparklesIcon,
+  confirm: CircleCheckBigIcon,
+} as const;
 
 function ApprovalRow(props: {
   readonly approval: AldoApproval;
@@ -976,7 +982,9 @@ function ApprovalRow(props: {
             ? "Email to approve"
             : a.kind === "event"
               ? "Event to add"
-              : "Thread to start"}
+              : a.kind === "confirm"
+                ? "Needs your yes"
+                : "Thread to start"}
           {a.summary ? ` · ${a.summary}` : ""}
         </span>
       </span>
