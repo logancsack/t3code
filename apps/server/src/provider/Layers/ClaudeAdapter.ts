@@ -1375,7 +1375,10 @@ const buildUserMessageEffect = Effect.fn("buildUserMessageEffect")(function* (
 function turnStatusFromResult(result: SDKResultMessage): ProviderRuntimeTurnStatus {
   const terminalReason = (result as unknown as { readonly terminal_reason?: unknown })
     .terminal_reason;
-  if (result.subtype === "success" && terminalReason !== "api_error") {
+  // A "success" result whose is_error is set ended on an error the CLI turned
+  // into its final text (a usage limit, an API error after its retries): the
+  // turn failed, with that text as its error, rather than completed.
+  if (result.subtype === "success" && terminalReason !== "api_error" && result.is_error !== true) {
     return "completed";
   }
 

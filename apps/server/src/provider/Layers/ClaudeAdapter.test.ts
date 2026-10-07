@@ -1350,6 +1350,58 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
+  it.effect(
+    "fails a turn whose result is a success marked is_error, with its text as the error",
+    () => {
+      const harness = makeHarness();
+      return Effect.gen(function* () {
+        const adapter = yield* ClaudeAdapter;
+        const runtimeEventsFiber = yield* Stream.takeUntil(
+          adapter.streamEvents,
+          (event) => event.type === "turn.completed",
+        ).pipe(Stream.runCollect, Effect.forkChild);
+
+        yield* adapter.startSession({
+          threadId: THREAD_ID,
+          provider: ProviderDriverKind.make("claudeAgent"),
+          runtimeMode: "full-access",
+        });
+        yield* adapter.sendTurn({
+          threadId: THREAD_ID,
+          input: "Add the media integrations",
+          attachments: [],
+        });
+
+        const limit =
+          "You've hit your org's monthly spend limit · ask your admin to raise it · your session limit resets 11:50pm (UTC)";
+        harness.query.emit({
+          type: "result",
+          subtype: "success",
+          is_error: true,
+          result: limit,
+          session_id: "sdk-session-limit",
+          uuid: "result-limit",
+        } as unknown as SDKMessage);
+
+        const runtimeEvents = Array.from(yield* Fiber.join(runtimeEventsFiber));
+        const runtimeError = runtimeEvents.find((event) => event.type === "runtime.error");
+        assert.equal(runtimeError?.type, "runtime.error");
+        if (runtimeError?.type === "runtime.error") {
+          assert.equal(runtimeError.payload.message, limit);
+        }
+        const turnCompleted = runtimeEvents.findLast((event) => event.type === "turn.completed");
+        assert.equal(turnCompleted?.type, "turn.completed");
+        if (turnCompleted?.type === "turn.completed") {
+          assert.equal(turnCompleted.payload.state, "failed");
+          assert.equal(turnCompleted.payload.errorMessage, limit);
+        }
+      }).pipe(
+        Effect.provideService(Random.Random, makeDeterministicRandomService()),
+        Effect.provide(harness.layer),
+      );
+    },
+  );
+
   it.effect("maps Claude reasoning deltas, streamed tool inputs, and tool results", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {
