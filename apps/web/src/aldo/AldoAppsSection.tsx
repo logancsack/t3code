@@ -18,10 +18,25 @@ import {
   type AldoApp,
   type AldoAppCatalogEntry,
 } from "./cloud";
-import { normalizeAldoAppUrl, parseAldoAppMessage } from "./apps.logic";
+import {
+  aldoAppResultFilter,
+  normalizeAldoAppUrl,
+  parseAldoAppMessage,
+  parseAldoAppRedirect,
+  withoutAldoAppRedirect,
+  type AldoAppResult,
+} from "./apps.logic";
 import { ALDO_INTEGRATIONS_CHANNEL } from "./integrations.logic";
 
 const messageOf = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause));
+
+function toastFailure(result: AldoAppResult) {
+  toastManager.add({
+    type: "error",
+    title: "Couldn't connect the app",
+    description: result.message ?? "The sign-in didn't finish. Try again.",
+  });
+}
 
 function signIn(url: string) {
   // With the popup blocked, sign in in this tab: Aldo's last page goes back to Settings.
@@ -137,16 +152,27 @@ export function AldoAppsSection() {
 
   useEffect(() => {
     refresh();
+    // Back from a sign-in that ran in this tab (the popup was blocked).
+    const redirected = parseAldoAppRedirect(window.location.search);
+    if (redirected) {
+      // On a fresh page load the toasts start listening after this section mounts.
+      if (!redirected.ok) window.setTimeout(() => toastFailure(redirected), 0);
+      const { pathname, search, hash } = window.location;
+      window.history.replaceState(
+        window.history.state,
+        "",
+        `${pathname}${withoutAldoAppRedirect(search)}${hash}`,
+      );
+    }
+  }, [refresh]);
+
+  useEffect(() => {
+    // The popup's page posts to its opener and on the channel: each result is told once.
+    const isNew = aldoAppResultFilter();
     const settle = (payload: unknown) => {
       const result = parseAldoAppMessage(payload);
-      if (!result) return;
-      if (!result.ok) {
-        toastManager.add({
-          type: "error",
-          title: "Couldn't connect the app",
-          description: result.message ?? "The sign-in didn't finish. Try again.",
-        });
-      }
+      if (!result || !isNew(result, Date.now())) return;
+      if (!result.ok) toastFailure(result);
       refresh();
     };
     const onMessage = (event: MessageEvent) => {
