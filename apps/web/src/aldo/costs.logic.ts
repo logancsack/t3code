@@ -10,25 +10,34 @@ export interface AldoCost {
   readonly conversations: Readonly<Record<string, number>>;
 }
 
-/** Whether a value is a cost as Aldo answers it. */
+const isPrice = (value: unknown): value is number =>
+  typeof value === "number" && Number.isFinite(value);
+
+/** Whether a value is a cost as Aldo answers it: prices, all of them numbers. */
 export function isAldoCost(value: unknown): value is AldoCost {
   if (!value || typeof value !== "object") return false;
   const cost = value as { usd?: unknown; conversations?: unknown };
+  const conversations = cost.conversations;
   return (
-    typeof cost.usd === "number" &&
-    Boolean(cost.conversations) &&
-    typeof cost.conversations === "object"
+    isPrice(cost.usd) &&
+    Boolean(conversations) &&
+    typeof conversations === "object" &&
+    !Array.isArray(conversations) &&
+    Object.values(conversations as object).every(isPrice)
   );
 }
 
 const usd = (n: number) => `$${n.toFixed(2)}`;
 
-/** The line for a conversation: its share, and its machine's when it shares one; null with nothing to say. */
+/**
+ * The line for a conversation: its share, and its machine's when it shares one;
+ * only the machine's when its own share isn't known; null with nothing to say.
+ */
 export function aldoCostLine(cost: AldoCost | null, threadId: string): string | null {
   if (!cost || cost.usd <= 0) return null;
   const mine = cost.conversations[threadId];
-  const shared = Object.keys(cost.conversations).length > 1;
-  if (mine !== undefined && shared)
+  if (mine === undefined) return `So far: about ${usd(cost.usd)} at API prices for this machine`;
+  if (Object.keys(cost.conversations).length > 1)
     return `So far: about ${usd(mine)} at API prices (${usd(cost.usd)} for this machine)`;
-  return `So far: about ${usd(mine ?? cost.usd)} at API prices`;
+  return `So far: about ${usd(mine)} at API prices`;
 }

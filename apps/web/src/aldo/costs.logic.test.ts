@@ -14,10 +14,11 @@ describe("aldoCostLine", () => {
     );
   });
 
-  it("says the machine's for a conversation with no turns recorded, and nothing with no cost", () => {
+  it("says only the machine's for a conversation with no turns recorded, and nothing with no cost", () => {
     expect(aldoCostLine({ usd: 4, conversations: {} }, "a")).toBe(
-      "So far: about $4.00 at API prices",
+      "So far: about $4.00 at API prices for this machine",
     );
+    expect(aldoCostLine(cost, "c")).toBe("So far: about $30.00 at API prices for this machine");
     expect(aldoCostLine({ usd: 0, conversations: {} }, "a")).toBeNull();
     expect(aldoCostLine(null, "a")).toBeNull();
   });
@@ -25,6 +26,9 @@ describe("aldoCostLine", () => {
   it("takes only what Aldo answers as a cost", () => {
     expect(isAldoCost(cost)).toBe(true);
     expect(isAldoCost({ usd: "30" })).toBe(false);
+    expect(isAldoCost({ usd: 30, conversations: { a: "22.5", b: 7.5 } })).toBe(false);
+    expect(isAldoCost({ usd: 30, conversations: [1] })).toBe(false);
+    expect(isAldoCost({ usd: Number.NaN, conversations: {} })).toBe(false);
     expect(isAldoCost(null)).toBe(false);
   });
 });
