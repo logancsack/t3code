@@ -67,19 +67,26 @@ function conversationDecision(c: AldoHomeConversation): AldoDecision | null {
   return null;
 }
 
+/** Put away in the user's list: settled, or snoozed without asking them anything. */
+function putAway(c: AldoHomeConversation): boolean {
+  return c.settled === true || (c.snoozedUntil !== undefined && c.pending === undefined);
+}
+
 /**
  * Everything waiting on the user, in the order to go through it: Aldo's
- * approvals, then threads (waited longest first), then pull requests that can
- * merge and whose thread isn't on the list already.
+ * approvals (not ones already being carried out), then threads (waited
+ * longest first, not ones they put away), then pull requests that can merge,
+ * whose thread isn't on the list already and that Aldo won't merge on its
+ * own. Aldo's brief picks from the same (src/lib/assistant/brief.ts).
  */
 export function aldoDecisions(home: AldoHome, now: number): ReadonlyArray<AldoDecision> {
-  const needsYou = boardFor(home.conversations, now).needsYou;
+  const needsYou = boardFor(home.conversations, now).needsYou.filter((c) => !putAway(c));
   const fromThreads = needsYou.flatMap((c) => {
     const decision = conversationDecision(c);
     return decision ? [decision] : [];
   });
   const merges: AldoDecision[] = home.pullRequests
-    .filter((pr) => pr.status === "watching" && pr.stage === "green")
+    .filter((pr) => pr.status === "watching" && pr.stage === "green" && pr.mergesAt === null)
     .filter((pr) => !needsYou.some((c) => sameTarget(pr.thread, c.thread)))
     .map((pullRequest) => ({
       kind: "merge",
@@ -87,9 +94,15 @@ export function aldoDecisions(home: AldoHome, now: number): ReadonlyArray<AldoDe
       pullRequest,
     }));
   return [
-    ...waitingApprovals(home.approvals).map(
-      (approval): AldoDecision => ({ kind: "aldo-approval", key: `aldo:${approval.id}`, approval }),
-    ),
+    ...waitingApprovals(home.approvals)
+      .filter((approval) => approval.status === "pending")
+      .map(
+        (approval): AldoDecision => ({
+          kind: "aldo-approval",
+          key: `aldo:${approval.id}`,
+          approval,
+        }),
+      ),
     ...fromThreads,
     ...merges,
   ];

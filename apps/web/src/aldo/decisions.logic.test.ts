@@ -155,6 +155,23 @@ describe("aldoDecisions", () => {
     ]);
   });
 
+  it("leaves out what isn't the user's to decide now", () => {
+    const decisions = aldoDecisions(
+      home({
+        approvals: [approval("sending", { status: "sending" })],
+        conversations: [
+          { ...question, settled: true },
+          conversation({ ref: "z", thread: at("z"), state: "failed", snoozedUntil: ago(-60) }),
+          // Snoozed, but it asks: it raised its hand.
+          { ...question, ref: "s", thread: at("s"), snoozedUntil: ago(-60) },
+        ],
+        pullRequests: [pullRequest({ thread: at("m"), mergesAt: ago(-5) })],
+      }),
+      NOW,
+    );
+    expect(decisions.map((d) => d.key)).toEqual(["question:s:r1"]);
+  });
+
   it("keys a question by what it asks: a new one is a new decision", () => {
     const before = home({ conversations: [question] });
     const after = home({

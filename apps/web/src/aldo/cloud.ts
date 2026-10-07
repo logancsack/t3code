@@ -1555,6 +1555,9 @@ export interface AldoHomeConversation {
   readonly pending?: AldoHomePending;
   readonly plan?: { readonly id: string; readonly text: string };
   readonly pressure?: AldoMachinePressure | null;
+  /** Snoozed until then (only while that's ahead), or settled: put away in the user's list. */
+  readonly snoozedUntil?: string;
+  readonly settled?: true;
 }
 
 export interface AldoHomePullRequest {
