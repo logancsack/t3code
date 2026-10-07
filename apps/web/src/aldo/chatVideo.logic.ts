@@ -39,6 +39,16 @@ export function isVideoFile(path: string): boolean {
   return dot > 0 && (mediaMimeTypeFromExtension(name.slice(dot)) ?? "").startsWith("video/");
 }
 
+/** A video's shape once its metadata has loaded, or null before. */
+export function videoAspectRatio(video: {
+  readonly videoWidth: number;
+  readonly videoHeight: number;
+}): number | null {
+  return video.videoWidth > 0 && video.videoHeight > 0
+    ? video.videoWidth / video.videoHeight
+    : null;
+}
+
 /** How wide a video shows: the column, at most 40rem, and at most 32rem tall. */
 export function chatVideoWidth(aspectRatio: number): string {
   const ratio = Number.isFinite(aspectRatio) && aspectRatio > 0 ? aspectRatio : 16 / 9;

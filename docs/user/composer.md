@@ -83,6 +83,17 @@ Use Markdown image syntax to embed either kind of media:
 [Open recording](/tmp/recording.mp4)
 ```
 
+On web and desktop, a link to a video file that sits on a line of its own also shows a player,
+sized to the video's shape, with the link beneath it. Bold or italic links work the same way, and
+a `#t=12` fragment starts the video 12 seconds in. A link inside a sentence stays a link that
+opens the video when you select it. On mobile, a video link on its own line also stays a link.
+
+```markdown
+Here's the recording:
+
+[recording.mp4](/tmp/recording.mp4)
+```
+
 Relative paths resolve from the thread's workspace. Absolute paths and `file://` links refer to
 the environment's machine, even when you connect remotely or use your phone. Supported media
 can live outside the workspace, including in Downloads or `/tmp`.

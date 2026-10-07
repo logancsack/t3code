@@ -7,7 +7,7 @@ import type { ExpandedImagePreview } from "../components/chat/ExpandedImagePrevi
 import type { MediaActionSource } from "../components/media/MediaActions";
 import { MediaVideoPlayer } from "../components/media/MediaVideoPlayer";
 import { useRightPanelStore } from "../rightPanelStore";
-import { chatVideoWidth } from "./chatVideo.logic";
+import { chatVideoWidth, videoAspectRatio } from "./chatVideo.logic";
 
 /**
  * A video file a message links on a line of its own, played in place at its own shape, with
@@ -18,6 +18,8 @@ export function AldoChatVideo(props: {
   readonly path: string;
   readonly name: string;
   readonly workspaceRoot: string | undefined;
+  /** The link's own fragment, such as `#t=12` to start 12 seconds in. */
+  readonly fragment: string;
   readonly onExpand: (preview: ExpandedImagePreview) => void;
   readonly children: ReactNode;
 }) {
@@ -35,16 +37,14 @@ export function AldoChatVideo(props: {
     const element = figure.current;
     if (!element) return;
     const measure = (event: Event) => {
-      const video = event.target;
-      if (video instanceof HTMLVideoElement && video.videoWidth > 0 && video.videoHeight > 0) {
-        setAspectRatio(video.videoWidth / video.videoHeight);
-      }
+      const ratio = event.target instanceof HTMLVideoElement && videoAspectRatio(event.target);
+      if (ratio) setAspectRatio(ratio);
     };
     element.addEventListener("loadedmetadata", measure, true);
     return () => element.removeEventListener("loadedmetadata", measure, true);
   }, []);
 
-  const src = assetUrl._tag === "Success" ? assetUrl.url : null;
+  const src = assetUrl._tag === "Success" ? assetUrl.url + props.fragment : null;
   const reference = mediaFileReference(props.path, props.workspaceRoot);
   const relativePath = reference.relativePath;
   const actionsSource: MediaActionSource = {

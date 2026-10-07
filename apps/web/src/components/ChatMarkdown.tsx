@@ -2374,6 +2374,7 @@ function ChatMarkdown({
               path={videoLink.filePath}
               name={videoLink.basename}
               workspaceRoot={cwd}
+              fragment={markdownImageSourceFragment(videoHref ?? "")}
               onExpand={expandMedia}
             >
               {children}

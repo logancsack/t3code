@@ -4,6 +4,7 @@ import {
   chatVideoWidth,
   isVideoFile,
   soleParagraphLink,
+  videoAspectRatio,
   type ChatMarkdownNode,
 } from "./chatVideo.logic";
 
@@ -65,6 +66,17 @@ describe("isVideoFile", () => {
     expect(isVideoFile("src/video.ts")).toBe(false);
     expect(isVideoFile("out/mp4")).toBe(false);
     expect(isVideoFile("out/.mp4")).toBe(false);
+  });
+});
+
+describe("videoAspectRatio", () => {
+  it("reads a video's shape once its metadata has loaded", () => {
+    expect(videoAspectRatio({ videoWidth: 1280, videoHeight: 720 })).toBe(16 / 9);
+    expect(videoAspectRatio({ videoWidth: 720, videoHeight: 1280 })).toBe(9 / 16);
+  });
+
+  it("has none before", () => {
+    expect(videoAspectRatio({ videoWidth: 0, videoHeight: 0 })).toBeNull();
   });
 });
 
