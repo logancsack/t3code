@@ -34,8 +34,10 @@ import {
   classifyComposerAttachmentFile,
   normalizeComposerImageFileMimeType,
 } from "../components/chat/composerAttachmentFiles";
-import { useMediaQuery } from "../hooks/useMediaQuery";
+import { useIsMobile, useMediaQuery } from "../hooks/useMediaQuery";
 import { useThreadShells } from "../state/entities";
+import { AldoBriefEntry } from "./AldoBrief";
+import { showAldoCall } from "./callView";
 import { AldoThreadCard } from "./AldoLiveCard";
 import {
   ACTION_LABELS,
@@ -223,8 +225,10 @@ export const ALDO_SHORTCUT_LABEL =
     : "Ctrl+Shift+A";
 
 export function AldoOrb(props: {
-  readonly size?: "lg" | "sm" | "xs";
+  readonly size?: "xl" | "lg" | "sm" | "xs";
   readonly className?: string;
+  /** Just the orb, swelling with who speaks: not a button (the call screen's, AldoCallScreen.tsx). */
+  readonly display?: boolean;
 }) {
   const phase = useAldoAssistant((s) => s.phase);
   const levels = useAldoAssistant((s) => s.levels);
@@ -235,8 +239,61 @@ export function AldoOrb(props: {
       : phase === "hearing" || phase === "listening"
         ? levels.mic
         : 0;
-  const scale = 1 + Math.min(1, level * 2.5) * 0.28;
+  const scale = 1 + Math.min(1, level * 2.5) * (props.display ? 0.14 : 0.28);
   const size = props.size ?? "lg";
+  const visuals = (
+    <>
+      {size === "xl" ? (
+        <span
+          aria-hidden
+          className="absolute -inset-8 rounded-full bg-primary/10 transition-transform duration-150 motion-reduce:transition-none"
+          style={{ transform: `scale(${1 + Math.min(1, level * 2.5) * 0.25})` }}
+        />
+      ) : null}
+      <span
+        aria-hidden
+        className={cn(
+          "absolute inset-0 rounded-full bg-gradient-to-br from-primary/90 to-primary/50 shadow-lg shadow-primary/20 transition-transform duration-100 motion-reduce:transition-none",
+          (phase === "thinking" || phase === "connecting") && "animate-pulse",
+          !live && !props.display && "opacity-80",
+        )}
+        style={{ transform: `scale(${scale})` }}
+      />
+      <span
+        aria-hidden
+        className={cn(
+          "absolute rounded-full bg-background/25",
+          size === "xl"
+            ? "inset-[30%]"
+            : size === "lg"
+              ? "inset-5"
+              : size === "sm"
+                ? "inset-2"
+                : "inset-1.5",
+        )}
+      />
+      {live || props.display ? null : (
+        <MicIcon
+          className={cn(
+            "relative text-primary-foreground",
+            size === "lg" || size === "xl" ? "size-7" : size === "sm" ? "size-4" : "size-3",
+          )}
+        />
+      )}
+    </>
+  );
+  const box = cn(
+    "relative flex shrink-0 items-center justify-center rounded-full",
+    size === "xl" ? "size-40" : size === "lg" ? "size-20" : size === "sm" ? "size-9" : "size-6",
+    props.className,
+  );
+  if (props.display) {
+    return (
+      <span aria-hidden className={box}>
+        {visuals}
+      </span>
+    );
+  }
   return (
     <Tooltip>
       <TooltipTrigger
@@ -245,38 +302,11 @@ export function AldoOrb(props: {
             type="button"
             aria-label={live ? "End the conversation with Aldo" : "Talk to Aldo"}
             onClick={() => (live ? disconnectAldo() : void connectAldo())}
-            className={cn(
-              "relative flex shrink-0 items-center justify-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring",
-              size === "lg" ? "size-20" : size === "sm" ? "size-9" : "size-6",
-              props.className,
-            )}
+            className={cn(box, "outline-none focus-visible:ring-2 focus-visible:ring-ring")}
           />
         }
       >
-        <span
-          aria-hidden
-          className={cn(
-            "absolute inset-0 rounded-full bg-gradient-to-br from-primary/90 to-primary/50 shadow-lg shadow-primary/20 transition-transform duration-100 motion-reduce:transition-none",
-            (phase === "thinking" || phase === "connecting") && "animate-pulse",
-            !live && "opacity-80",
-          )}
-          style={{ transform: `scale(${scale})` }}
-        />
-        <span
-          aria-hidden
-          className={cn(
-            "absolute rounded-full bg-background/25",
-            size === "lg" ? "inset-5" : size === "sm" ? "inset-2" : "inset-1.5",
-          )}
-        />
-        {live ? null : (
-          <MicIcon
-            className={cn(
-              "relative text-primary-foreground",
-              size === "lg" ? "size-7" : size === "sm" ? "size-4" : "size-3",
-            )}
-          />
-        )}
+        {visuals}
       </TooltipTrigger>
       <TooltipPopup side={size === "xs" ? "right" : "top"}>
         {live ? "Hang up" : `Talk to Aldo (${ALDO_SHORTCUT_LABEL})`}
@@ -344,6 +374,8 @@ export function AldoComposer(props: {
   readonly variant?: "pane" | "page";
 }) {
   const page = props.variant === "page";
+  // On a phone the page's composer is a field and, beside it, a big button to talk (or back to the call).
+  const phone = useIsMobile() && page;
   const muted = useAldoAssistant((s) => s.muted);
   const micOn = useAldoAssistant((s) => s.micOn);
   const [text, setText] = useState("");
@@ -454,109 +486,138 @@ export function AldoComposer(props: {
       {canAttach && imageError ? (
         <p className="text-destructive-foreground text-xs">{imageError}</p>
       ) : null}
-      <form
-        className={cn(
-          "flex w-full items-center gap-2",
-          page &&
-            "rounded-2xl border border-border/80 bg-card py-2 ps-2 pe-2 shadow-sm/5 has-focus-visible:border-primary/50",
-        )}
-        data-aldo-composer={props.variant ?? "pane"}
-        onSubmit={(event) => {
-          event.preventDefault();
-          submit();
-        }}
-        onDragOver={(event) => {
-          if (canAttach && event.dataTransfer.types.includes("Files")) event.preventDefault();
-        }}
-        onDrop={(event) => {
-          if (!canAttach || event.dataTransfer.files.length === 0) return;
-          event.preventDefault();
-          addImages([...event.dataTransfer.files]);
-        }}
-      >
-        {page ? <AldoOrb size="sm" /> : null}
-        {canAttach ? (
-          <>
-            <input
-              ref={picker}
-              type="file"
-              accept={[...limits.types, ".heic", ".heif"].join(",")}
-              multiple
-              hidden
-              onChange={(event) => {
-                addImages([...(event.target.files ?? [])]);
-                event.target.value = "";
-              }}
-            />
+      <div className="flex w-full items-center gap-2.5">
+        <form
+          className={cn(
+            "flex w-full min-w-0 items-center gap-2",
+            page &&
+              "rounded-2xl border border-border/80 bg-card py-2 ps-2 pe-2 shadow-sm/5 has-focus-visible:border-primary/50",
+            phone && "rounded-full py-1.5 ps-3",
+          )}
+          data-aldo-composer={props.variant ?? "pane"}
+          onSubmit={(event) => {
+            event.preventDefault();
+            submit();
+          }}
+          onDragOver={(event) => {
+            if (canAttach && event.dataTransfer.types.includes("Files")) event.preventDefault();
+          }}
+          onDrop={(event) => {
+            if (!canAttach || event.dataTransfer.files.length === 0) return;
+            event.preventDefault();
+            addImages([...event.dataTransfer.files]);
+          }}
+        >
+          {page && !phone ? <AldoOrb size="sm" /> : null}
+          {canAttach ? (
+            <>
+              <input
+                ref={picker}
+                type="file"
+                accept={[...limits.types, ".heic", ".heif"].join(",")}
+                multiple
+                hidden
+                onChange={(event) => {
+                  addImages([...(event.target.files ?? [])]);
+                  event.target.value = "";
+                }}
+              />
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                aria-label="Add images"
+                disabled={images.length >= limits.max}
+                onClick={() => picker.current?.click()}
+              >
+                <ImagePlusIcon />
+              </Button>
+            </>
+          ) : null}
+          <Input
+            ref={input}
+            className={cn("flex-1", page && "text-base")}
+            size={page ? "lg" : "default"}
+            unstyled={page}
+            autoComplete="off"
+            value={text}
+            placeholder={
+              replying
+                ? "Aldo is thinking…"
+                : live
+                  ? "Or type to Aldo…"
+                  : phone
+                    ? "Talk or type to Aldo"
+                    : "Ask Aldo, or tell it what to do"
+            }
+            onChange={(event) => setText(event.target.value)}
+            onPaste={(event) => {
+              if (!canAttach) return;
+              const files = [...event.clipboardData.files].filter(
+                (file) => classifyComposerAttachmentFile(file) !== "file",
+              );
+              if (files.length === 0) return;
+              event.preventDefault();
+              addImages(files);
+            }}
+          />
+          {page && live && micOn ? (
             <Button
               type="button"
-              size="icon"
               variant="ghost"
-              aria-label="Add images"
-              disabled={images.length >= limits.max}
-              onClick={() => picker.current?.click()}
+              size="icon"
+              aria-label={muted ? "Unmute" : "Mute"}
+              onClick={() => setAldoMuted(!muted)}
             >
-              <ImagePlusIcon />
+              {muted ? <MicOffIcon /> : <MicIcon />}
             </Button>
-          </>
-        ) : null}
-        <Input
-          ref={input}
-          className={cn("flex-1", page && "text-base")}
-          size={page ? "lg" : "default"}
-          unstyled={page}
-          autoComplete="off"
-          value={text}
-          placeholder={
-            replying
-              ? "Aldo is thinking…"
-              : live
-                ? "Or type to Aldo…"
-                : "Ask Aldo, or tell it what to do"
-          }
-          onChange={(event) => setText(event.target.value)}
-          onPaste={(event) => {
-            if (!canAttach) return;
-            const files = [...event.clipboardData.files].filter(
-              (file) => classifyComposerAttachmentFile(file) !== "file",
-            );
-            if (files.length === 0) return;
-            event.preventDefault();
-            addImages(files);
-          }}
-        />
-        {page && live && micOn ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            aria-label={muted ? "Unmute" : "Mute"}
-            onClick={() => setAldoMuted(!muted)}
-          >
-            {muted ? <MicOffIcon /> : <MicIcon />}
-          </Button>
-        ) : null}
-        {page && live ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            aria-label="Hang up"
-            onClick={disconnectAldo}
-          >
-            <PhoneOffIcon />
-          </Button>
-        ) : null}
-        <Button
-          type="submit"
-          size="icon"
-          aria-label="Send"
-          disabled={preparing > 0 || (!text.trim() && !(canAttach && images.length > 0))}
-        >
-          <ArrowUpIcon />
-        </Button>
-      </form>
+          ) : null}
+          {page && live ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label="Hang up"
+              onClick={disconnectAldo}
+            >
+              <PhoneOffIcon />
+            </Button>
+          ) : null}
+          {phone && !text.trim() && !(canAttach && images.length > 0) ? null : (
+            <Button
+              type="submit"
+              size="icon"
+              aria-label="Send"
+              className={cn(phone && "rounded-full")}
+              disabled={preparing > 0 || (!text.trim() && !(canAttach && images.length > 0))}
+            >
+              <ArrowUpIcon />
+            </Button>
+          )}
+        </form>
+        {phone ? <TalkButton /> : null}
+      </div>
     </div>
+  );
+}
+
+/** The phone's big button beside the composer: talk to Aldo, or, on a call, back to it. */
+function TalkButton() {
+  const phase = useAldoAssistant((s) => s.phase);
+  const live = phase !== "idle" && phase !== "error";
+  return (
+    <button
+      type="button"
+      aria-label={live ? "Back to the call" : "Talk to Aldo"}
+      className="relative flex size-14 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary to-primary/70 text-primary-foreground shadow-lg shadow-primary/25 outline-none transition-transform focus-visible:ring-2 focus-visible:ring-ring active:scale-95"
+      onClick={() => (live ? showAldoCall() : void connectAldo())}
+    >
+      {live ? (
+        <span aria-hidden className="size-5 animate-pulse rounded-full bg-primary-foreground/80" />
+      ) : (
+        <MicIcon className="size-6" />
+      )}
+    </button>
   );
 }
 
@@ -667,6 +728,7 @@ function ConversationEntry({
     );
   }
   if (entry.role === "user") return <UserMessage entry={entry} />;
+  if (entry.source === "brief") return <AldoBriefEntry text={entry.text} at={entry.at} />;
   return (
     <p className="max-w-[85%] self-start whitespace-pre-wrap text-sm leading-relaxed">
       {entry.text}

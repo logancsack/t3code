@@ -7,7 +7,7 @@
 // peeks the same way: the card in full.
 
 import { ArrowUpRightIcon, MessageCircleQuestionIcon, XIcon } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import { createContext, useEffect, useState, type ReactNode } from "react";
 
 import ChatMarkdown from "../components/ChatMarkdown";
 import { Badge } from "../components/ui/badge";
@@ -32,6 +32,9 @@ import { modelName, needsYouKind, sameTarget } from "./home.logic";
 export type AldoPeekTarget =
   | { readonly kind: "thread"; readonly target: AldoHomeTarget }
   | { readonly kind: "approval"; readonly id: string };
+
+/** Peeks at a thread or an approval beside Aldo's conversation (the home screen gives it); absent elsewhere. */
+export const AldoPeekerContext = createContext<((peek: AldoPeekTarget) => void) | null>(null);
 
 /** The conversation a peek shows, from the home read; null when it has left it. */
 export function peekedConversation(

@@ -21,6 +21,8 @@ export interface AldoAssistantMessage {
   readonly at: string;
   /** Images the user sent with it, to show (data URLs); kept for this page only. */
   readonly images?: ReadonlyArray<string>;
+  /** What said it, when it wasn't the conversation itself: Aldo's brief for the day (AldoBrief.tsx shows it as one). */
+  readonly source?: "brief";
 }
 
 /** Something Aldo did in this conversation, shown under what was said. */
@@ -437,4 +439,31 @@ export function unseenMessages<T extends Pick<AldoAssistantMessage, "role" | "te
     return false;
   });
   return { fresh, matched };
+}
+
+/**
+ * What Aldo says, for the call screen: all but its last sentence, and the
+ * last (shown lighter, as it trails off or is still coming). With `keep`, at
+ * most that many sentences in all, the latest.
+ */
+export function captionParts(
+  text: string,
+  keep = Infinity,
+): { readonly lead: string; readonly tail: string } {
+  const shown = text
+    .trim()
+    .split(/(?<=[.!?…])\s+/)
+    .filter(Boolean)
+    .slice(-keep);
+  if (shown.length <= 1) return { lead: shown[0] ?? "", tail: "" };
+  return { lead: shown.slice(0, -1).join(" "), tail: shown.at(-1)! };
+}
+
+/** How long a call has been on: "0:42", "12:05", "1:02:09". */
+export function callDuration(ms: number): string {
+  const seconds = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = String(seconds % 60).padStart(2, "0");
+  return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${s}` : `${m}:${s}`;
 }

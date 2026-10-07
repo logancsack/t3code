@@ -1380,11 +1380,60 @@ export const aldoAssistant = {
     api("/api/assistant/history", { method: "POST", body: JSON.stringify({ sessionId, items }) }),
   history: async (limit = 50) =>
     (
-      await api<{ messages: Array<{ role: "user" | "assistant"; text: string; at: string }> }>(
-        `/api/assistant/history?limit=${limit}`,
-      )
+      await api<{
+        messages: Array<{ role: "user" | "assistant"; text: string; at: string; source?: "brief" }>;
+      }>(`/api/assistant/history?limit=${limit}`)
     ).messages,
 };
+
+/** One of the brief's things to decide first; `key` is its decision's (decisions.logic.ts). */
+export interface AldoBriefItem {
+  readonly key: string;
+  /** What it was, for once it's decided (an older Aldo leaves it out). */
+  readonly title?: string;
+  /** Why it matters now, in a few words. */
+  readonly why: string | null;
+  /** For a question: the choice Aldo would pick, with why. */
+  readonly suggestion: string | null;
+  readonly reason: string | null;
+}
+
+/** Aldo's brief for the day: the first time the user opens Aldo each day. */
+export interface AldoBrief {
+  readonly day: string;
+  /** When it was made: when it was said in the conversation. */
+  readonly at: string;
+  readonly title: string;
+  readonly text: string;
+  readonly top: ReadonlyArray<AldoBriefItem>;
+  /** The rest of today's calendar. */
+  readonly ahead: ReadonlyArray<{
+    readonly title: string;
+    readonly start: string;
+    readonly allDay: boolean;
+  }>;
+}
+
+/**
+ * Today's brief, made by this ask if it's the day's first (a few seconds);
+ * `pending` while another ask makes it. Null for an Aldo without briefs.
+ */
+export async function fetchAldoBrief(): Promise<{
+  readonly brief: AldoBrief | null;
+  readonly pending?: boolean;
+} | null> {
+  try {
+    return await api<{ brief: AldoBrief | null; pending?: boolean }>("/api/assistant/brief");
+  } catch (cause) {
+    if (cause instanceof AldoApiError && cause.status === 404) return null;
+    throw cause;
+  }
+}
+
+/** A day's brief read aloud (an mp3 the browser keeps for the day). */
+export function aldoBriefAudioUrl(day: string): string {
+  return `/api/assistant/brief/audio?day=${encodeURIComponent(day)}`;
+}
 
 /** The signed-in user, for the sidebar and the account dialog. */
 export interface AldoProfile {
@@ -1816,6 +1865,14 @@ export async function answerAldoThread(
  * showed; refused if it proposes another now), or, with changes, asks for a
  * revised one.
  */
+/** Sends a thread's agent a message as the user: now if it's free (waking it if needed), else once its turn ends. */
+export async function sendAldoThreadMessage(target: AldoHomeTarget, text: string): Promise<void> {
+  await api(`/api/environments/${threadIdForEnvironment(target.environmentId)}/messages`, {
+    method: "POST",
+    body: JSON.stringify({ text, t3ThreadId: target.threadId }),
+  });
+}
+
 export async function approveAldoPlan(
   target: AldoHomeTarget,
   planId: string,
