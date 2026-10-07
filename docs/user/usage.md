@@ -32,3 +32,12 @@ credits left, or your plan's agents at once all busy), a notice says why.
 Workspace credits come from Aldo's billing ledger, not from provider transcripts, so they stay
 visible while environments are still reporting and while a paused workspace cannot report at all.
 The refresh control reloads them along with the token totals.
+
+## A thread's cost in Aldo
+
+With Aldo cloud agents, a thread's Aldo menu in its header says what the work has cost so far at
+API prices: what the agents on its machine used, as the Usage page adds it up from their session
+history over the past 90 days. When several conversations share the machine, it shows this
+conversation's estimated share, by the tokens its turns processed, with the machine's total beside
+it; a conversation whose share isn't known yet shows only the machine's total. Like the Usage page,
+it says what the tokens would cost through the providers' APIs, not what your subscription bills.
