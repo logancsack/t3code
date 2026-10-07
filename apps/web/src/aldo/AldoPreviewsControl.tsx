@@ -31,8 +31,10 @@ import { toastManager } from "../components/ui/toast";
 import { AldoGpuComputerControl, useAldoComputerAsk } from "./AldoComputer";
 import { AldoMachineMenuSection, useAldoMachineOffer } from "./AldoMachine";
 import { useAldoBrowserRequests } from "./browserStore";
+import { aldoCostLine, type AldoCost } from "./costs.logic";
 import {
   aldoPreviewUrl,
+  fetchAldoCost,
   fetchAldoPreviews,
   fetchAldoPullRequests,
   mergeAldoPullRequest,
@@ -69,6 +71,7 @@ export function AldoPreviewsControl(props: {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [pullRequests, setPullRequests] = useState<ReadonlyArray<AldoFollowedPullRequest>>([]);
+  const [cost, setCost] = useState<AldoCost | null>(null);
   // The pull request whose Merge was chosen, waiting for the user to confirm.
   const [confirmMerge, setConfirmMerge] = useState<AldoFollowedPullRequest | null>(null);
   // The thread whose answers are wanted: one for a thread left since is dropped.
@@ -78,6 +81,7 @@ export function AldoPreviewsControl(props: {
     current.current = props.environmentId;
     setPreviews(null);
     setPullRequests([]);
+    setCost(null);
     setError(null);
     setLoading(false);
   }, [props.environmentId]);
@@ -89,6 +93,7 @@ export function AldoPreviewsControl(props: {
     fetchAldoPullRequests(environmentId)
       .then((next) => stillCurrent() && setPullRequests(next))
       .catch(() => undefined);
+    void fetchAldoCost(environmentId).then((next) => stillCurrent() && setCost(next));
     fetchAldoPreviews(environmentId)
       .then((next) => {
         if (!stillCurrent()) return;
@@ -239,6 +244,11 @@ export function AldoPreviewsControl(props: {
           ) : null}
           <MenuSeparator />
           <AldoMachineMenuSection environmentId={props.environmentId} />
+          {aldoCostLine(cost, props.threadId) ? (
+            <div className="px-2 py-1.5 text-xs text-muted-foreground">
+              {aldoCostLine(cost, props.threadId)}
+            </div>
+          ) : null}
         </MenuPopup>
         <AlertDialog
           open={confirmMerge !== null}

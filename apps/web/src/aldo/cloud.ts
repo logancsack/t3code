@@ -28,6 +28,7 @@ import * as Stream from "effect/Stream";
 import type { AldoComputer } from "./computer.logic";
 import { getAldoPreloadSettings } from "./preloadSettings";
 import type { AldoCheckCounts, AldoPullRequestStage } from "./pullRequests.logic";
+import { isAldoCost, type AldoCost } from "./costs.logic";
 
 export const isAldoCloud = import.meta.env.VITE_ALDO_CLOUD === "1";
 
@@ -1024,6 +1025,19 @@ export interface AldoPreviews {
 /** Dev servers listening in a thread's sandbox. Never wakes it. */
 export function fetchAldoPreviews(environmentId: string): Promise<AldoPreviews> {
   return api<AldoPreviews>(`/api/environments/${threadIdForEnvironment(environmentId)}/previews`);
+}
+
+/**
+ * What a thread has cost at API prices (its machine's agents, and each
+ * conversation's share); null when Aldo doesn't say (an older one has no such
+ * route). Never wakes it.
+ */
+export async function fetchAldoCost(environmentId: string): Promise<AldoCost | null> {
+  const answer = await api<{ costs?: Record<string, unknown> }>(
+    `/api/environments/costs?ids=${encodeURIComponent(environmentId)}`,
+  ).catch(() => null);
+  const cost = answer?.costs?.[environmentId];
+  return isAldoCost(cost) ? cost : null;
 }
 
 /** The owner-only link to a port in a thread's sandbox (wakes it when opened). */
