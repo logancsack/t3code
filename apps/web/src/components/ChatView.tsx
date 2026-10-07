@@ -446,6 +446,8 @@ import {
 import { useAssetUrls } from "../assets/assetUrls";
 import { useAldoPreload } from "../aldo/preload";
 import { useAldoThreadDetailMissing } from "../aldo/threadDetails";
+import { AldoThreadLoading } from "../aldo/AldoThreadLoading";
+import { useAldoThreadStart } from "../aldo/threadStart";
 import { isAldoCloud, isAldoEnvironmentId } from "../aldo/cloud";
 import { ensureAldoConnected, isAldoConnected } from "../aldo/dispatch";
 import { showAldoStartingThread, withdrawAldoStartingThread } from "../aldo/startingThreads";
@@ -2934,6 +2936,19 @@ function ChatViewContent(props: ChatViewProps) {
       deriveTimelineEntries(timelineMessages, activeThread?.proposedPlans ?? [], workLogEntries),
     [activeThread?.proposedPlans, timelineMessages, workLogEntries],
   );
+  // Aldo: a thread with nothing to show yet shows the shape of its
+  // conversation and, while Aldo is starting it (its machine coming up, or
+  // waiting for room), how the start stands, rather than an empty page.
+  const aldoThreadStart = useAldoThreadStart(
+    routeKind === "server" ? environmentId : null,
+    routeKind === "server" ? threadId : null,
+  );
+  const showAldoThreadLoading =
+    isAldoCloud &&
+    routeKind === "server" &&
+    timelineEntries.length === 0 &&
+    !isWorking &&
+    (aldoThreadStart !== null || threadDetailLoading);
   const [dockedDraftHeroThreadKey, setDockedDraftHeroThreadKey] = useState<string | null>(null);
   const draftHeroDockRequested =
     activeThreadKey !== null && dockedDraftHeroThreadKey === activeThreadKey;
@@ -7631,10 +7646,26 @@ function ChatViewContent(props: ChatViewProps) {
                 liveFollowEnabled={timelineLiveFollowEnabled}
                 onIsAtEndChange={onIsAtEndChange}
                 onManualNavigation={cancelTimelineLiveFollowForUserNavigation}
-                hideEmptyPlaceholder={isDraftHeroState || threadDetailLoading}
+                hideEmptyPlaceholder={
+                  isDraftHeroState || threadDetailLoading || showAldoThreadLoading
+                }
                 topFadeEnabled={!hasTimelineTopBanner}
                 loadEarlier={loadEarlierTurns}
               />
+              {showAldoThreadLoading ? (
+                <div className="absolute inset-0">
+                  <AldoThreadLoading
+                    start={aldoThreadStart}
+                    startedAt={activeThread.createdAt}
+                    label={
+                      aldoThreadDetailMissing
+                        ? "Waking the cloud agent to load this thread…"
+                        : "Loading messages…"
+                    }
+                    bottomInset={composerOverlayHeight}
+                  />
+                </div>
+              ) : null}
 
               {/* scroll to end pill — shown when user has scrolled away from the live edge */}
               {showScrollToBottom && (

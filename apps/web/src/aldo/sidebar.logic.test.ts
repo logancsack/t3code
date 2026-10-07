@@ -175,6 +175,31 @@ describe("aldoSidebarList", () => {
     expect(result.working[0]).toMatchObject({ detail: "Running the e2e suite", progress: 0.75 });
   });
 
+  it("says a thread Aldo is starting is starting, queued or retrying, not working", () => {
+    const connecting = { session: { status: "starting", activeTurnId: null } };
+    const result = list(
+      [shell("s", connecting), shell("q", connecting), shell("r", connecting)],
+      home({
+        conversations: [
+          conversation("s", { state: "starting" }),
+          conversation("q", {
+            state: "queued",
+            summary:
+              "Your plan runs 6 cloud agents at once, and they're all busy. Try again when one finishes.",
+          }),
+          conversation("r", { state: "retrying" }),
+        ],
+      }),
+    );
+    const byKey = Object.fromEntries(result.working.map((row) => [row.key, row]));
+    expect(byKey["aldo-s:s"]).toMatchObject({ kind: "starting", detail: "Starting" });
+    expect(byKey["aldo-q:q"]).toMatchObject({
+      kind: "starting",
+      detail: "Queued: Your plan runs 6 cloud agents at once, and they're all busy.",
+    });
+    expect(byKey["aldo-r:r"]).toMatchObject({ kind: "starting", detail: "Retrying" });
+  });
+
   it("keeps pinned threads in their own group, and snoozed ones out of sight", () => {
     const result = list([
       shell("p", { pinnedAt: ago(100), hasPendingUserInput: true }),

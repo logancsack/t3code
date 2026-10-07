@@ -193,6 +193,7 @@ import {
 import { SidebarContent, SidebarGroup, SidebarMenuButton, useSidebar } from "./ui/sidebar";
 import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
 import { AldoSidebarEntry } from "../aldo/AldoSidebarEntry";
+import { useAldoThreadStart } from "../aldo/threadStart";
 import { Popover, PopoverPopup, PopoverTrigger } from "./ui/popover";
 import { Tooltip, TooltipPopup, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 import {
@@ -828,6 +829,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   // switching sidebars must not light up every historical thread as unread.
   const isUnread = hasUnseenCompletion({ ...thread, lastVisitedAt });
   const status = resolveSidebarThreadStatus(thread);
+  // Aldo: a thread it's starting has no turn yet; it says how the start stands.
+  const aldoStart = useAldoThreadStart(thread.environmentId, thread.id);
   // A woken thread reappears at its original position (the sort is
   // deliberately static), so the pill has to carry the weight. Snoozing is
   // an explicit act, so the pill clears only when the user re-engages:
@@ -855,8 +858,19 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   // Status hues follow the system-wide convention set by sidebar v1 and the
   // mobile Live Activity/widgets (amber approval, indigo input, sky working)
   // so a thread reads the same color everywhere it surfaces.
+  const aldoStartStatus =
+    aldoStart?.tone === "failed"
+      ? { label: "Failed", icon: null, className: "text-red-700 dark:text-red-300" }
+      : aldoStart !== null && status === "working"
+        ? {
+            label: aldoStart.label,
+            icon: "working" as const,
+            className: cn("text-sky-600 dark:text-sky-400", !props.isActive && "opacity-75"),
+          }
+        : null;
   const topStatus =
-    status === "working"
+    aldoStartStatus ??
+    (status === "working"
       ? {
           label: "Working",
           icon: "working" as const,
@@ -905,7 +919,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                       icon: "done" as const,
                       className: "text-emerald-700 dark:text-emerald-300",
                     }
-                  : null;
+                  : null);
   const isWokeStatus = topStatus?.icon === "woke";
 
   const branchMismatch = resolveLocalCheckoutBranchMismatch({
@@ -1499,7 +1513,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                             wrapper around the ticking duration would make
                             screen readers announce every second. */}
                         <span role="status">{topStatus.label}</span>
-                        {status === "working" ? (
+                        {status === "working" && topStatus.icon === "working" ? (
                           <span aria-hidden>
                             <WorkingDuration startedAt={resolveWorkingStartedAt(thread)} />
                           </span>

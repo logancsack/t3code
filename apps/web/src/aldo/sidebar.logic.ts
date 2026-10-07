@@ -29,6 +29,7 @@ import type {
   AldoRoutine,
 } from "./cloud";
 import { modelName, sameTarget, WORKING_STATES } from "./home.logic";
+import { aldoStartReason } from "./threadStart.logic";
 
 /** What a thread is doing, as its row shows it. */
 export type AldoSidebarKind =
@@ -121,7 +122,10 @@ export function aldoSidebarKind(input: {
   if (status === "approval" || c?.pending?.kind === "approval") return "approval";
   if (status === "input" || c?.pending?.kind === "question") return "question";
   if (status === "failed" || c?.state === "failed") return "failed";
-  if (status === "working") return c?.state === "starting" ? "starting" : "working";
+  // A thread Aldo is starting (or queued, or trying again) shows connecting until its machine has it.
+  if (status === "working") {
+    return c && c.state !== "working" && WORKING_STATES.has(c.state) ? "starting" : "working";
+  }
   if (status === "monitoring") return "monitoring";
   if (c && WORKING_STATES.has(c.state)) return c.state === "working" ? "working" : "starting";
   if (c?.plan || shell.hasActionableProposedPlan) return "plan";
@@ -186,8 +190,13 @@ function detailFor(
         `${kind === "monitoring" ? "Watching" : "Working"}${model ? ` · ${model}` : ""}`
       );
     }
-    case "starting":
-      return summary || "Starting";
+    case "starting": {
+      const stage =
+        c?.state === "queued" ? "Queued" : c?.state === "retrying" ? "Retrying" : "Starting";
+      // Aldo tries again on its own: the refusal's advice to try again isn't the user's.
+      const reason = aldoStartReason(summary);
+      return reason ? `${stage}: ${reason}` : stage;
+    }
     case "unread":
     case "done":
       return summary || "Done";
