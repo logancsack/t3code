@@ -52,7 +52,7 @@ export function walkthroughNext(
 ): string {
   if (!next)
     return `${previous} That was the last one. Tell them that's everything for now, in a few words, warmly, and ask if there's anything else.`;
-  return `${previous} Next, ${position} of ${count}: ${decisionBrief(next)} Acknowledge the last one in a couple of words, then put this one to them.`;
+  return `${previous} Next, ${position} of ${count}: ${decisionBrief(next)} Say a word or two about the last one at most ("Okay", "Done"), then put this one to them.`;
 }
 
 /**
@@ -82,7 +82,7 @@ export function advanceAldoWalkthrough(outcome: "decided" | "skipped", how?: str
   set({ index: next });
   const previous =
     outcome === "skipped"
-      ? "The user skipped that one for now."
+      ? "The user skipped that one: it stays waiting for later, untouched (don't act on it, and don't say it's done)."
       : how
         ? `The user tapped: they ${how}. It's done.`
         : "That one's decided.";
