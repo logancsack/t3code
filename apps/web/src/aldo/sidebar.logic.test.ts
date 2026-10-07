@@ -215,6 +215,24 @@ describe("aldoSidebarList", () => {
     ]);
   });
 
+  it("counts a thread settled or snoozed only where its machine supports it, as T3 does", () => {
+    const result = aldoSidebarList({
+      shells: [
+        shell("s", { settledOverride: "settled", hasPendingUserInput: true }),
+        shell("z", { snoozedUntil: ago(-60) }),
+      ],
+      home: home(),
+      lastVisitedAt: () => ago(1),
+      repoOf: () => "shop",
+      supports: () => ({ settlement: false, snooze: false }),
+      now: NOW,
+    });
+    expect(keys(result.waiting)).toEqual(["aldo-s:s"]);
+    // An ordinary thread, done with.
+    expect(result.snoozed).toEqual([]);
+    expect(keys(result.earlier)).toEqual(["aldo-z:z"]);
+  });
+
   it("lists waiting threads longest-waiting first, and the rest newest first", () => {
     const result = list([
       shell("new", { hasPendingUserInput: true, updatedAt: ago(1) }),

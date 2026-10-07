@@ -81,7 +81,7 @@ import { isModelPickerOpen } from "../modelPickerVisibility";
 import { buildSidebarProjectSnapshots } from "../sidebarProjectGrouping";
 import { useProjects, useThreadShells } from "../state/entities";
 import { usePrimaryEnvironmentId } from "../state/environments";
-import { primaryServerKeybindingsAtom } from "../state/server";
+import { environmentServerConfigsAtom, primaryServerKeybindingsAtom } from "../state/server";
 import { threadEnvironment } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
 import { buildThreadRouteParams } from "../threadRoutes";
@@ -140,6 +140,7 @@ export function AldoSidebar() {
   const { home } = useAldoHomeRead();
   const lastVisited = useUiStateStore((s) => s.threadLastVisitedAtById);
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  const serverConfigs = useAtomValue(environmentServerConfigsAtom);
   const groupingSettings = useClientSettings(selectProjectGroupingSettings);
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const newThreadContext = useHandleNewThread();
@@ -189,9 +190,16 @@ export function AldoSidebar() {
         lastVisitedAt: (key) => lastVisited[key],
         repoOf: (shell) => repoLabel(groupOf(shell)?.displayName),
         ...(scope === null ? {} : { inScope: (shell) => groupOf(shell)?.projectKey === scope }),
+        supports: (shell) => {
+          const capabilities = serverConfigs.get(shell.environmentId)?.environment.capabilities;
+          return {
+            settlement: capabilities?.threadSettlement === true,
+            snooze: capabilities?.threadSnooze === true,
+          };
+        },
         now: new Date(now).toISOString(),
       }),
-    [groupOf, home, lastVisited, now, scope, shells],
+    [groupOf, home, lastVisited, now, scope, serverConfigs, shells],
   );
   const results = useMemo(() => searchAldoSidebar(list, query), [list, query]);
   const order = useMemo(
@@ -230,6 +238,15 @@ export function AldoSidebar() {
     },
     [isMobile, navigate, setOpenMobile],
   );
+
+  // On a phone, the drawer closes whenever the page changes: the thread menu's
+  // project settings, new thread on its branch, or archiving the open thread.
+  const shownPath = useRef(pathname);
+  useEffect(() => {
+    if (shownPath.current === pathname) return;
+    shownPath.current = pathname;
+    if (isMobile) setOpenMobile(false);
+  }, [isMobile, pathname, setOpenMobile]);
 
   // ⌘1–9 and previous/next move through the rows as they show.
   useEffect(() => {
@@ -893,8 +910,9 @@ function ThreadRow(props: {
       }}
       onPointerLeave={props.onLeave}
       onContextMenu={(event) => {
-        event.preventDefault();
+        // Renaming, the input keeps its own (cut, copy, paste).
         if (props.renaming) return;
+        event.preventDefault();
         // From the keyboard (the menu key, Shift+F10) it has no pointer: under the row.
         const rect = event.currentTarget.getBoundingClientRect();
         props.onMenu(

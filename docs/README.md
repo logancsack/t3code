@@ -22,6 +22,7 @@
 - [Your Windows computer in Aldo](./user/aldo-windows-computer.md)
 - [Your GPU computer in Aldo](./user/aldo-gpu-computer.md)
 - [The home screen in Aldo](./user/aldo-home.md)
+- [The sidebar in Aldo](./user/aldo-sidebar.md)
 - [Pull requests in Aldo](./user/aldo-pull-requests.md)
 - [Notifications in Aldo](./user/aldo-notifications.md)
 - [When cloud agents sleep in Aldo](./user/aldo-sleeping-agents.md)

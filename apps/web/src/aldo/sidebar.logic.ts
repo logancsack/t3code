@@ -6,7 +6,9 @@
 // what Aldo's home read adds: what it asks, its pull requests, its summary,
 // and what isn't a thread at all (approvals, routines, reminders). As in T3's
 // sidebar, snoozed outranks settled, and settled outranks pinned: a thread the
-// user settled is with the earlier ones, whatever it last asked.
+// user settled is with the earlier ones, whatever it last asked. Also as there,
+// a thread counts as settled or snoozed only on a machine known to support it,
+// whose menu can make it active or wake it again.
 
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 import { effectiveSnoozed } from "@t3tools/client-runtime/state/thread-settled";
@@ -105,12 +107,14 @@ export function aldoSidebarKind(input: {
   readonly ready: AldoHomePullRequest | null;
   readonly landing: AldoHomePullRequest | null;
   readonly lastVisitedAt: string | undefined;
+  /** The user settled it (on a machine that supports settling). */
+  readonly settled: boolean;
   readonly now: string;
 }): AldoSidebarKind {
   const { shell, conversation: c } = input;
   const status = resolveSidebarThreadStatus(shell);
   // Settled: done with, unless it's running again (T3 unsettles it when it can).
-  if (settled(shell)) {
+  if (input.settled) {
     if (status === "working" || status === "monitoring") return status;
     return unseen(shell, input.lastVisitedAt, input.now) ? "unread" : "done";
   }
@@ -126,10 +130,6 @@ export function aldoSidebarKind(input: {
   if (c?.state === "waiting") return "waiting";
   if (unseen(shell, input.lastVisitedAt, input.now)) return "unread";
   return "done";
-}
-
-function settled(shell: EnvironmentThreadShell): boolean {
-  return shell.settledOverride === "settled";
 }
 
 /** How long a thread the user never opened (on this device) counts as news once it's done. */
@@ -205,6 +205,11 @@ export function aldoSidebarList(input: {
   readonly repoOf: (shell: EnvironmentThreadShell) => string;
   /** Narrows threads to a project (approvals and what's scheduled stay). */
   readonly inScope?: (shell: EnvironmentThreadShell) => boolean;
+  /** Whether the thread's machine takes settling and snoozing (both, when not given). */
+  readonly supports?: (shell: EnvironmentThreadShell) => {
+    readonly settlement: boolean;
+    readonly snooze: boolean;
+  };
   readonly now: string;
 }): AldoSidebarList {
   const { home } = input;
@@ -224,12 +229,15 @@ export function aldoSidebarList(input: {
     const landing =
       prs.find((pr) => pr.stage === "deploying" || pr.stage === "deploy-failed") ?? null;
     const lastVisitedAt = input.lastVisitedAt(key);
+    const supports = input.supports?.(shell) ?? { settlement: true, snooze: true };
+    const settled = supports.settlement && shell.settledOverride === "settled";
     const kind = aldoSidebarKind({
       shell,
       conversation,
       ready,
       landing,
       lastVisitedAt,
+      settled,
       now: input.now,
     });
     const pullRequest = kind === "merge" ? ready : kind === "landing" ? landing : null;
@@ -253,8 +261,8 @@ export function aldoSidebarList(input: {
       pullRequest,
     };
     // Snoozed until it wakes (or raises its hand), then settled, then pinned, as T3 has it.
-    if (effectiveSnoozed(shell, { now: input.now })) snoozed.push(row);
-    else if (settled(shell)) settledRows.push(row);
+    if (supports.snooze && effectiveSnoozed(shell, { now: input.now })) snoozed.push(row);
+    else if (settled) settledRows.push(row);
     else if (shell.pinnedAt != null) {
       pinned.push(shell);
       pinnedKeys.add(key);
