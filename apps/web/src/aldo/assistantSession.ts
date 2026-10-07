@@ -57,7 +57,14 @@ import {
   type AldoChatTurn,
   type AldoImageUpload,
 } from "./cloud";
-import { AldoLiveTranscript, idleCall, livePhase, type AldoLiveTurn } from "./liveTranscript.logic";
+import {
+  AldoLiveTranscript,
+  cutForLive,
+  idleCall,
+  livePhase,
+  splitForLive,
+  type AldoLiveTurn,
+} from "./liveTranscript.logic";
 import { aldoOnScreen, subscribeAldoOnScreen } from "./screen";
 
 const REALTIME_CALLS_URL = "https://api.openai.com/v1/realtime/calls";
@@ -82,7 +89,9 @@ const START_MS = 20_000;
 /** How long hanging up waits for GPT-Live to confirm the call is closed (and billing stopped) before letting go. */
 const CLOSE_WAIT_MS = 3_000;
 /** What one update to the voice takes (500 tokens), with room to spare. */
-const APPEND_CHARS = 1_800;
+const APPEND_TOKENS = 450;
+/** Aldo's voice louder than this is Aldo speaking (GPT-Live streams silence between words). */
+const SPEAKING_LEVEL = 0.01;
 
 export type AldoConversationEntry =
   | ({ readonly kind: "message" } & AldoAssistantMessage)
@@ -183,6 +192,8 @@ const delegating = new Set<string>();
 /** When anyone last said anything on the call (wall clock), for hanging up one nobody's using. */
 let lastSpokeAt = 0;
 let liveTimer: ReturnType<typeof setInterval> | null = null;
+/** The connection a GPT-Live session is being made for: one hung up meanwhile is closed with OpenAI, not just dropped. */
+let startingLive: RTCPeerConnection | null = null;
 let startTimer: ReturnType<typeof setTimeout> | null = null;
 
 /** How the conversation opens a thread on the page (the router, from the dock). */
@@ -221,11 +232,12 @@ function addEntry(entry: AldoConversationEntry): void {
   set({ entries: [...get().entries, entry] });
 }
 
-function say(role: "user" | "assistant", text: string): void {
+/** What was said shows, and Aldo keeps it in the conversation's session (`session`: a call's, even as it closes). */
+function say(role: "user" | "assistant", text: string, session: string | null = sessionId): void {
   const words = text.trim();
   if (!words) return;
   addEntry({ kind: "message", role, text: words, at: new Date().toISOString() });
-  if (sessionId) void aldoAssistant.record(sessionId, [{ role, text: words }]).catch(() => {});
+  if (session) void aldoAssistant.record(session, [{ role, text: words }]).catch(() => {});
 }
 
 function send(event: Record<string, unknown>): void {
@@ -480,19 +492,10 @@ function appendLive(
   content: string,
   delegationId: string | null = null,
 ): void {
-  const parts: string[] = [];
-  if (type === "session.commentary.append" || content.length <= APPEND_CHARS) {
-    parts.push(content.length > APPEND_CHARS ? `${content.slice(0, APPEND_CHARS - 1)}…` : content);
-  } else {
-    for (const paragraph of content.split("\n\n")) {
-      const last = parts.at(-1);
-      if (last !== undefined && last.length + paragraph.length + 2 <= APPEND_CHARS)
-        parts[parts.length - 1] = `${last}\n\n${paragraph}`;
-      else
-        for (let at = 0; at < paragraph.length; at += APPEND_CHARS)
-          parts.push(paragraph.slice(at, at + APPEND_CHARS));
-    }
-  }
+  const parts =
+    type === "session.commentary.append"
+      ? [cutForLive(content, APPEND_TOKENS)]
+      : splitForLive(content, APPEND_TOKENS);
   for (const part of parts) send({ type, delegation_id: delegationId, content: part });
 }
 
@@ -503,7 +506,9 @@ function appendLive(
 async function worked(id: string | null, ask: () => Promise<string>): Promise<string> {
   const call = transcript;
   const timer = setTimeout(() => {
-    if (transcript === call) appendLive("session.commentary.append", STILL_WORKING, id);
+    if (transcript !== call) return;
+    appendLive("session.commentary.append", STILL_WORKING, id);
+    lastSpokeAt = Date.now();
   }, STILL_WORKING_MS);
   try {
     return await ask();
@@ -543,6 +548,8 @@ function onLiveStarted(): void {
 function tickLive(): void {
   if (!transcript || !liveStarted) return;
   transcript.settle();
+  // Its transcript can come before or after its audio: Aldo heard speaking is Aldo speaking.
+  if (get().levels.aldo > SPEAKING_LEVEL) lastSpokeAt = Date.now();
   const phase = livePhase({
     phase: get().phase,
     userQuietMs: transcript.quietFor("user"),
@@ -560,9 +567,9 @@ function tickLive(): void {
   }
 }
 
-/** A turn of the call ended: it shows, and Aldo keeps it. */
-function onLiveTurn(turn: AldoLiveTurn): void {
-  say(turn.role, turn.text);
+/** A turn of the call (`session`) ended: it shows, and Aldo keeps it. */
+function onLiveTurn(turn: AldoLiveTurn, session: string): void {
+  say(turn.role, turn.text, session);
   if (turn.role === "user") heard = rememberHeard(heard, turn.text);
   else set({ said: "" });
 }
@@ -607,8 +614,9 @@ async function runDelegation(id: string): Promise<void> {
   call.flush("user");
   const turns = call.all();
   const answer = await worked(id, () => delegateToAldo(session, turns, null));
-  // A call that ended meanwhile has no one to tell.
+  // A call that ended meanwhile has no one to tell. One about to be told isn't quiet.
   if (transcript === call) appendLive("session.commentary.append", answer, id);
+  lastSpokeAt = Date.now();
   delegating.delete(id);
 }
 
@@ -626,6 +634,7 @@ async function typeToLive(words: string): Promise<void> {
   call.note({ role: "user", text: words });
   const answer = await worked(null, () => delegateToAldo(session, before, words));
   if (transcript === call) appendLive("session.commentary.append", answer);
+  lastSpokeAt = Date.now();
   delegating.delete(id);
 }
 
@@ -722,11 +731,13 @@ function teardown(graceful = false): void {
   stopWatchingScreen?.();
   stopWatchingScreen = null;
   toldScreen = null;
-  // What was said up to now is kept, before the session goes.
-  transcript?.flush();
+  const closing = { channel, peer, microphone, transcript, live: live && liveStarted };
   transcript = null;
-  const closing = { channel, peer, microphone, live: live && liveStarted };
+  // What was said up to the end is kept: the last words still on their way too, when the call closes with OpenAI.
   const release = () => {
+    closing.transcript?.flush();
+    // A connection a session is still being made for is closed once it's made (connectAldo).
+    if (closing.peer && closing.peer === startingLive) return;
     closing.channel?.close();
     closing.peer?.close();
   };
@@ -736,9 +747,27 @@ function teardown(graceful = false): void {
   if (graceful && closing.live && closing.channel?.readyState === "open") {
     const timer = setTimeout(release, CLOSE_WAIT_MS);
     closing.channel.addEventListener("message", (message) => {
-      if (!String(message.data).includes('"session.closed"')) return;
-      clearTimeout(timer);
-      release();
+      let event: { type?: unknown; delta?: unknown; start_ms?: unknown; end_ms?: unknown };
+      try {
+        event = JSON.parse(String(message.data)) as typeof event;
+      } catch {
+        return;
+      }
+      if (
+        typeof event.delta === "string" &&
+        (event.type === "session.input_transcript.delta" ||
+          event.type === "session.output_transcript.delta")
+      ) {
+        closing.transcript?.add(
+          event.type === "session.input_transcript.delta" ? "user" : "assistant",
+          event.delta,
+          Number(event.start_ms) || 0,
+          Number(event.end_ms) || 0,
+        );
+      } else if (event.type === "session.closed") {
+        clearTimeout(timer);
+        release();
+      }
     });
     closing.channel.send(JSON.stringify({ type: "session.close" }));
   } else {
@@ -787,6 +816,7 @@ export async function connectAldo(
     micOn: false,
     connectedAt: null,
   });
+  let connection: RTCPeerConnection | null = null;
   try {
     // The microphone first, while the tap that asked for it still counts as the user's.
     // Blocked or missing, the conversation goes on typed.
@@ -800,7 +830,7 @@ export async function connectAldo(
           return null;
         });
     }
-    const connection = new RTCPeerConnection();
+    connection = new RTCPeerConnection();
     peer = connection;
     if (!speaker) {
       speaker = Object.assign(document.createElement("audio"), { autoplay: true, hidden: true });
@@ -815,7 +845,8 @@ export async function connectAldo(
     } else {
       connection.addTransceiver("audio", { direction: "recvonly" });
     }
-    const events = connection.createDataChannel("oai-events");
+    const made = connection;
+    const events = made.createDataChannel("oai-events");
     channel = events;
     events.addEventListener("message", (message) => {
       // A call already ended (closing with OpenAI) is no one's now.
@@ -848,9 +879,9 @@ export async function connectAldo(
       if (text) sendText(text);
       else requestResponse({ instructions: options.opening ?? GREETING });
     });
-    connection.onconnectionstatechange = () => {
-      if (peer !== connection) return;
-      const state = connection.connectionState;
+    made.onconnectionstatechange = () => {
+      if (peer !== made) return;
+      const state = made.connectionState;
       if (state === "failed" || state === "closed") {
         teardown();
         set({
@@ -860,19 +891,28 @@ export async function connectAldo(
         });
       }
     };
-    const offer = await connection.createOffer();
-    await connection.setLocalDescription(offer);
-    await gathered(connection);
-    const sdp = connection.localDescription?.sdp ?? offer.sdp ?? "";
-    const voice = await aldoAssistant.startLive(sdp);
-    if (peer !== connection) return;
+    const offer = await made.createOffer();
+    await made.setLocalDescription(offer);
+    await gathered(made);
+    const sdp = made.localDescription?.sdp ?? offer.sdp ?? "";
+    startingLive = made;
+    const voice = await aldoAssistant.startLive(sdp).finally(() => {
+      startingLive = null;
+    });
+    if (peer !== made) {
+      // Hung up while Aldo was making the call: OpenAI has it now (and bills its start), so it's closed there too.
+      if (voice) void closeAbandoned(made, events, voice.sdp);
+      else made.close();
+      return;
+    }
     if (voice) {
       live = true;
       liveOpening = options.opening;
       sessionId = voice.sessionId;
-      transcript = new AldoLiveTranscript(onLiveTurn);
+      const session = voice.sessionId;
+      transcript = new AldoLiveTranscript((turn) => onLiveTurn(turn, session));
       startTimer = setTimeout(() => {
-        if (peer !== connection || liveStarted) return;
+        if (peer !== made || liveStarted) return;
         teardown();
         set({
           phase: "error",
@@ -880,11 +920,11 @@ export async function connectAldo(
           connectedAt: null,
         });
       }, START_MS);
-      await connection.setRemoteDescription({ type: "answer", sdp: voice.sdp });
+      await made.setRemoteDescription({ type: "answer", sdp: voice.sdp });
     } else {
       // An older Aldo: a realtime call, with a short-lived key for OpenAI.
       const session = await aldoAssistant.startSession();
-      if (peer !== connection) return;
+      if (peer !== made) return;
       sessionId = session.sessionId;
       const answer = await fetch(REALTIME_CALLS_URL, {
         method: "POST",
@@ -892,14 +932,46 @@ export async function connectAldo(
         headers: { authorization: `Bearer ${session.key}`, "content-type": "application/sdp" },
       });
       if (!answer.ok) throw new Error(`Aldo's voice didn't connect (${answer.status}).`);
-      await connection.setRemoteDescription({ type: "answer", sdp: await answer.text() });
+      await made.setRemoteDescription({ type: "answer", sdp: await answer.text() });
     }
     watchLevels();
   } catch (error) {
+    // A call hung up meanwhile is gone already, and another may have started since.
+    if (connection && peer !== connection) {
+      connection.close();
+      return;
+    }
     teardown();
     set({ phase: "error", error: messageOf(error), unsent: queuedText, connectedAt: null });
     queuedText = null;
   }
+}
+
+/**
+ * Closes a GPT-Live session the user hung up on while Aldo was making it: it
+ * started with OpenAI when it was made, so it's connected only to close it,
+ * and let go once that's confirmed, or shortly after.
+ */
+async function closeAbandoned(
+  connection: RTCPeerConnection,
+  events: RTCDataChannel,
+  sdp: string,
+): Promise<void> {
+  const release = () => {
+    events.close();
+    connection.close();
+  };
+  const timer = setTimeout(release, START_MS);
+  events.addEventListener("open", () => events.send(JSON.stringify({ type: "session.close" })));
+  events.addEventListener("message", (message) => {
+    if (!String(message.data).includes('"session.closed"')) return;
+    clearTimeout(timer);
+    release();
+  });
+  await connection.setRemoteDescription({ type: "answer", sdp }).catch(() => {
+    clearTimeout(timer);
+    release();
+  });
 }
 
 /** Ends the conversation. What was said stays. */

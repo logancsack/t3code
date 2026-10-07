@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { AldoLiveTranscript, idleCall, livePhase } from "./liveTranscript.logic";
+import {
+  AldoLiveTranscript,
+  cutForLive,
+  idleCall,
+  livePhase,
+  liveTokens,
+  splitForLive,
+} from "./liveTranscript.logic";
 
 describe("AldoLiveTranscript", () => {
   it("groups fragments into a speaker's turn until they pause, with both speakers at once", () => {
@@ -28,21 +35,71 @@ describe("AldoLiveTranscript", () => {
     ]);
   });
 
-  it("flushes one speaker for a delegation, and takes typed words as a turn of their own", () => {
+  it("flushes the user for a delegation (with what began before), and takes typed words as a turn of their own", () => {
     const turns: string[] = [];
     const transcript = new AldoLiveTranscript((turn) => turns.push(turn.text));
     transcript.add("assistant", " Let me check.", 0, 400, 0);
     transcript.add("user", " Is the checkout", 300, 900, 0);
+    transcript.add("assistant", " Sure.", 1000, 1200, 0);
     transcript.flush("user");
-    expect(turns).toEqual(["Is the checkout"]);
-    expect(transcript.saying("assistant")).toBe("Let me check.");
+    expect(turns).toEqual(["Let me check. Sure.", "Is the checkout"]);
+    transcript.add("assistant", " One sec.", 2600, 2800, 0);
     transcript.note({ role: "user", text: " the one in aldo " });
     expect(transcript.all().map((turn) => turn.text)).toEqual([
+      "Let me check. Sure.",
       "Is the checkout",
+      "One sec.",
       "the one in aldo",
-      "Let me check.",
     ]);
     expect(transcript.quietFor("user")).toBe(Number.POSITIVE_INFINITY);
+  });
+});
+
+describe("AldoLiveTranscript order", () => {
+  it("keeps Aldo's question before the user's quick answer when the answer is flushed first", () => {
+    const transcript = new AldoLiveTranscript();
+    transcript.add("assistant", " Want me to archive it?", 0, 1000, 0);
+    transcript.add("user", " Yes.", 1500, 1800, 1500);
+    transcript.flush("user");
+    expect(transcript.all()).toEqual([
+      { role: "assistant", text: "Want me to archive it?" },
+      { role: "user", text: "Yes." },
+    ]);
+  });
+
+  it("lets a backchannel under the user's words end only after them", () => {
+    const turns: string[] = [];
+    const transcript = new AldoLiveTranscript((turn) => turns.push(turn.text));
+    transcript.add("user", " So the login page", 0, 1000, 0);
+    transcript.add("assistant", " Mm-hmm.", 400, 600, 400);
+    transcript.settle(1200);
+    expect(turns).toEqual([]);
+    transcript.add("user", " spins forever.", 1000, 1600, 1600);
+    transcript.settle(4000);
+    expect(turns).toEqual(["So the login page spins forever.", "Mm-hmm."]);
+  });
+
+  it("ends everything being said when the user types", () => {
+    const transcript = new AldoLiveTranscript();
+    transcript.add("assistant", " Which thread?", 0, 600, 0);
+    transcript.note({ role: "user", text: "the checkout fix" });
+    expect(transcript.all()).toEqual([
+      { role: "assistant", text: "Which thread?" },
+      { role: "user", text: "the checkout fix" },
+    ]);
+  });
+});
+
+describe("updates to the voice fit 500 tokens", () => {
+  it("counts other scripts high, and cuts and splits to fit", () => {
+    expect(liveTokens("abc")).toBe(1);
+    expect(liveTokens("日本語")).toBe(5);
+    expect(liveTokens(cutForLive("日本語".repeat(400), 450))).toBeLessThanOrEqual(450);
+    expect(cutForLive("short", 450)).toBe("short");
+    const parts = splitForLive(`${"word ".repeat(400)}\n\n${"語".repeat(500)}`, 450);
+    expect(parts.length).toBeGreaterThan(2);
+    for (const part of parts) expect(liveTokens(part)).toBeLessThanOrEqual(450);
+    expect(parts.join("").replace(/\s/g, "")).toBe(`${"word".repeat(400)}${"語".repeat(500)}`);
   });
 });
 
