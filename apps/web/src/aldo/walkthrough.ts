@@ -36,7 +36,7 @@ const get = () => useAldoWalkthrough.getState();
 export function walkthroughOpening(decision: AldoDecision, count: number): string {
   return [
     `The user wants to go through what's waiting on them, one at a time: ${count === 1 ? "there's 1" : `there are ${count}`}. Their screen shows each one with its choices as it comes up, and they can answer you out loud or tap.`,
-    "For each one: say what it is in one or two short sentences, about 25 words, plainly (their screen shows the details, so don't read them out). Say what you'd pick only when what you know about them (their notes, what they decided before) gives you a real reason, in a few words; never guess. Then stop and let them answer.",
+    "For each one: say what it is in one or two short sentences, about 25 words, plainly (their screen shows the details, so don't read them out). If what you know about them (their notes, what they decided before) gives you a real reason to pick one of the choices, say which and why in a few words; otherwise don't mention picking at all. Then stop and let them answer.",
     "When they answer out loud, act on it right away (answer_thread, decide_approval, approve_plan or merge_pull_request, quoting their words), then say it's done in a few words. If they tap instead, you'll be told. Never bring up the next one yourself: you'll be told what's next.",
     `First, 1 of ${count}: ${decisionBrief(decision)}`,
     "Start with a quick word that you're going through them, then put this one to them.",

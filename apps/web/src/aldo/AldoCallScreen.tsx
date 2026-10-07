@@ -231,7 +231,7 @@ function CallScreen(props: { readonly mobile: boolean }) {
         <div
           className={cn(
             "flex shrink-0 items-center justify-center",
-            walk.active ? (props.mobile ? "pt-6 pb-4" : "pt-3 pb-3") : "flex-1 pt-10 pb-6",
+            walk.active ? "pt-3 pb-3" : "flex-1 pt-10 pb-6",
           )}
         >
           <AldoOrb size={walk.active ? "lg" : "xl"} display />
@@ -283,8 +283,15 @@ function CallScreen(props: { readonly mobile: boolean }) {
         ) : null}
       </div>
 
-      <footer className="flex shrink-0 items-start justify-center gap-8 px-6 pt-4 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
+      <footer
+        className={cn(
+          "flex shrink-0 items-start justify-center gap-8 px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))]",
+          // Going through them, the decision's card needs the room.
+          walk.active ? "pt-2" : "pt-4",
+        )}
+      >
         <RoundButton
+          compact={walk.active}
           label={muted ? "Unmute" : "Mute"}
           disabled={!micOn}
           pressed={muted}
@@ -292,10 +299,11 @@ function CallScreen(props: { readonly mobile: boolean }) {
         >
           {muted ? <MicOffIcon /> : <MicIcon />}
         </RoundButton>
-        <RoundButton label="Type" onClick={type}>
+        <RoundButton compact={walk.active} label="Type" onClick={type}>
           <KeyboardIcon />
         </RoundButton>
         <RoundButton
+          compact={walk.active}
           label="End"
           tone="end"
           onClick={() => {
@@ -317,6 +325,7 @@ function RoundButton(props: {
   readonly tone?: "end";
   readonly disabled?: boolean;
   readonly pressed?: boolean;
+  readonly compact?: boolean;
 }) {
   return (
     <div className="flex flex-col items-center gap-1.5">
@@ -327,7 +336,8 @@ function RoundButton(props: {
         disabled={props.disabled}
         onClick={props.onClick}
         className={cn(
-          "flex size-16 items-center justify-center rounded-full border transition-colors disabled:opacity-40 [&_svg]:size-6",
+          "flex items-center justify-center rounded-full border transition-colors disabled:opacity-40",
+          props.compact ? "size-13 [&_svg]:size-5" : "size-16 [&_svg]:size-6",
           props.tone === "end"
             ? "border-transparent bg-destructive text-white hover:bg-destructive/90"
             : props.pressed
