@@ -137,6 +137,8 @@ import {
 } from "../markdown-links";
 import { readLocalApi } from "../localApi";
 import { useAssetUrlRefresh, useAssetUrlState } from "../assets/assetUrls";
+import { AldoChatVideo } from "../aldo/AldoChatVideo";
+import { isVideoFile, soleParagraphLink } from "../aldo/chatVideo.logic";
 import { cn } from "../lib/utils";
 import { useRemoteOpenResolution, type RemoteOpenMode } from "../remoteOpen";
 import { useRightPanelStore } from "../rightPanelStore";
@@ -2359,7 +2361,26 @@ function ChatMarkdown({
         }
         return <div {...props}>{children}</div>;
       },
-      p({ node: _node, children, ...props }) {
+      p({ node, children, ...props }) {
+        const videoHref = threadRef ? soleParagraphLink(node) : null;
+        const videoLink = videoHref
+          ? (markdownFileLinkMetaByHref.get(normalizeMarkdownLinkHrefKey(videoHref)) ??
+            resolveMarkdownFileLinkMeta(normalizeMarkdownLinkHrefKey(videoHref), cwd))
+          : null;
+        if (threadRef && videoLink && !videoLink.line && isVideoFile(videoLink.filePath)) {
+          return (
+            <AldoChatVideo
+              threadRef={threadRef}
+              path={videoLink.filePath}
+              name={videoLink.basename}
+              workspaceRoot={cwd}
+              fragment={markdownImageSourceFragment(videoHref ?? "")}
+              onExpand={expandMedia}
+            >
+              {children}
+            </AldoChatVideo>
+          );
+        }
         return <p {...props}>{renderSkillInlineMarkdownChildren(children, skills)}</p>;
       },
       blockquote({ node: _node, children, ...props }) {
