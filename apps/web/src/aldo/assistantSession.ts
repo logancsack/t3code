@@ -84,9 +84,8 @@ const SETTLE_MS = 700;
 const SETTLE_MAX_MS = 2_500;
 /** A delegation's request is the user's words transcribed up to about where it was made (its offset on the call's timeline). */
 const HEARD_SLACK_MS = 1_500;
-/** What the voice says when a result it was sent was refused (OpenAI rejects an update it can't take). */
-const UNSAID =
-  "I finished that, but couldn't read you the result. Check what I did on screen before asking again.";
+/** What the voice says when a result it was sent was refused (OpenAI rejects an update it can't take): it's on screen instead. */
+const UNSAID = "I couldn't say that result out loud, so it's on the user's screen now.";
 /** GPT-Live bills every connected second: a call nobody's used for this long is hung up. */
 const IDLE_MS = 90_000;
 /** How long a GPT-Live call has to start once OpenAI has answered. */
@@ -194,8 +193,8 @@ let liveOpening: string | undefined;
 let transcript: AldoLiveTranscript | null = null;
 /** Requests the voice handed over that Aldo is working on (and typed words it is). */
 const delegating = new Set<string>();
-/** Results sent to the voice, by the event id OpenAI names if it refuses one (to its delegation, or null). */
-const results = new Map<string, string | null>();
+/** Results sent to the voice (what they said), by the event id OpenAI names if it refuses one. */
+const results = new Map<string, string>();
 let eventNumber = 0;
 /** When anyone last said anything on the call (wall clock), for hanging up one nobody's using. */
 let lastSpokeAt = 0;
@@ -493,12 +492,15 @@ function onEvent(event: { type: string } & Record<string, unknown>): void {
 /**
  * An update for the voice: instructions, quiet context, or something to say
  * (500 tokens each at most). Instructions and context too long for one go in
- * parts, a paragraph at a time; something to say is cut short.
+ * parts, a paragraph at a time; something to say is cut short. A `result`
+ * (what Aldo found or did, not progress) is kept until the voice takes it, so
+ * one it refuses can be shown instead.
  */
 function appendLive(
   type: "session.instructions.append" | "session.thinking.append" | "session.commentary.append",
   content: string,
   delegationId: string | null = null,
+  result = false,
 ): void {
   const parts =
     type === "session.commentary.append"
@@ -506,7 +508,7 @@ function appendLive(
       : splitForLive(content, APPEND_TOKENS);
   for (const part of parts) {
     const eventId = `aldo_${++eventNumber}`;
-    if (type === "session.commentary.append") results.set(eventId, delegationId);
+    if (result) results.set(eventId, content);
     send({ type, event_id: eventId, delegation_id: delegationId, content: part });
   }
 }
@@ -615,11 +617,11 @@ async function runDelegation(id: string, offset: number): Promise<void> {
   const call = transcript;
   const until = Date.now() + SETTLE_MAX_MS;
   // The voice can delegate as the user says their last word, or before it's transcribed: wait for it.
-  const talking = () =>
-    call !== null &&
-    transcript === call &&
-    Date.now() < until &&
-    (call.heardUntil("user") < offset - HEARD_SLACK_MS || call.quietFor("user") < SETTLE_MS);
+  const talking = () => {
+    if (call === null || transcript !== call || Date.now() >= until) return false;
+    const heard = call.heardUntil("user");
+    return heard === 0 || heard < offset - HEARD_SLACK_MS || call.quietFor("user") < SETTLE_MS;
+  };
   while (talking()) await new Promise((resolve) => setTimeout(resolve, 100));
   const session = sessionId;
   if (!call || transcript !== call || !session) {
@@ -631,7 +633,7 @@ async function runDelegation(id: string, offset: number): Promise<void> {
   const turns = call.all();
   const answer = await worked(id, () => delegateToAldo(session, turns, null));
   // A call that ended meanwhile has no one to tell. One about to be told isn't quiet.
-  if (transcript === call) appendLive("session.commentary.append", answer, id);
+  if (transcript === call) appendLive("session.commentary.append", answer, id, true);
   lastSpokeAt = Date.now();
   delegating.delete(id);
 }
@@ -649,7 +651,7 @@ async function typeToLive(words: string): Promise<void> {
   const before = call.all();
   call.note({ role: "user", text: words });
   const answer = await worked(null, () => delegateToAldo(session, before, words));
-  if (transcript === call) appendLive("session.commentary.append", answer);
+  if (transcript === call) appendLive("session.commentary.append", answer, null, true);
   lastSpokeAt = Date.now();
   delegating.delete(id);
 }
@@ -697,12 +699,14 @@ function onLiveEvent(event: { type: string } & Record<string, unknown>): void {
       // A refused update (one that came too late, say) leaves the call as it was.
       const error = event.error as { message?: unknown; client_event_id?: unknown } | undefined;
       if (typeof error?.message === "string") console.warn("Aldo's voice:", error.message);
-      // A result the voice couldn't take: the user still hears that it's done, so they don't ask for it twice.
+      // A result the voice couldn't take shows on screen instead, and the voice says so (once, for the
+      // whole session: its delegation may be what was refused), so the user doesn't ask for it twice.
       const refused = typeof error?.client_event_id === "string" ? error.client_event_id : null;
-      if (refused && results.has(refused)) {
-        const delegation = results.get(refused) ?? null;
+      const unsaid = refused ? results.get(refused) : undefined;
+      if (refused && unsaid !== undefined) {
         results.delete(refused);
-        appendLive("session.commentary.append", UNSAID, delegation);
+        say("assistant", unsaid);
+        appendLive("session.commentary.append", UNSAID);
       }
       break;
     }
