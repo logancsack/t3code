@@ -1386,8 +1386,68 @@ export interface AldoChatTurn {
   }>;
 }
 
+/** A call on GPT-Live: Aldo's session for it, and OpenAI's answer to the browser's WebRTC offer. */
+export interface AldoLiveVoice {
+  readonly sessionId: string;
+  readonly sdp: string;
+  readonly model: string;
+}
+
+/** What Aldo did with a request the voice handed over, and what the voice should say. */
+export interface AldoDelegated {
+  readonly say: string;
+  readonly calls: AldoChatTurn["calls"];
+}
+
 export const aldoAssistant = {
+  /** A realtime session, for an Aldo from before GPT-Live (startLive returned null). */
   startSession: () => api<AldoVoiceSession>("/api/assistant/session", { method: "POST" }),
+  /**
+   * A call on GPT-Live, made by Aldo from the browser's offer (Aldo's
+   * src/lib/assistant/session.ts); null where this Aldo doesn't have it (an
+   * older one, or one that's turned it off), which then takes a realtime call.
+   */
+  startLive: async (sdp: string): Promise<AldoLiveVoice | null> => {
+    const body = await api<Partial<AldoLiveVoice>>("/api/assistant/live", {
+      method: "POST",
+      body: JSON.stringify({ sdp }),
+    }).catch((error: unknown) => {
+      if (error instanceof AldoApiError && (error.status === 404 || error.status === 405))
+        return null;
+      throw error;
+    });
+    if (!body || typeof body.sdp !== "string" || typeof body.sessionId !== "string") return null;
+    return {
+      sessionId: body.sessionId,
+      sdp: body.sdp,
+      model: typeof body.model === "string" ? body.model : "",
+    };
+  },
+  /**
+   * Has Aldo do what the voice handed over (src/lib/assistant/delegation.ts):
+   * the call's transcript so far, what the user typed on it if that's what
+   * this is, and the thread on screen.
+   */
+  delegate: async (
+    sessionId: string,
+    transcript: ReadonlyArray<{ role: "user" | "assistant"; text: string }>,
+    typed: string | null,
+    viewing: AldoHomeTarget | null,
+  ): Promise<AldoDelegated> => {
+    const body = await api<Partial<AldoDelegated>>("/api/assistant/delegate", {
+      method: "POST",
+      body: JSON.stringify({
+        sessionId,
+        transcript,
+        ...(typed ? { typed } : {}),
+        ...(viewing ? { viewing } : {}),
+      }),
+    });
+    return {
+      say: typeof body.say === "string" ? body.say : "",
+      calls: Array.isArray(body.calls) ? body.calls : [],
+    };
+  },
   /**
    * A written turn, typed without a call (Aldo's src/lib/assistant/chat.ts);
    * null where this Aldo can't chat in writing (an older one answers a path
