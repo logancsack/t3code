@@ -7,8 +7,14 @@
 // and the thread itself. Going through what waits with Aldo starts here too.
 
 import { useNavigate } from "@tanstack/react-router";
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import {
+  isAtomCommandInterrupted,
+  squashAtomCommandFailure,
+} from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import {
+  AlarmClockOffIcon,
   ArrowUpIcon,
   ArrowUpRightIcon,
   ChevronDownIcon,
@@ -22,6 +28,7 @@ import { Input } from "../components/ui/input";
 import { SidebarInset } from "../components/ui/sidebar";
 import { toastManager } from "../components/ui/toast";
 import { cn } from "~/lib/utils";
+import { useThreadActions } from "../hooks/useThreadActions";
 import { ApprovalCard } from "./AldoApprovals";
 import { confirmQuickChoice, DecisionIcon, quickChoice } from "./AldoBrief";
 import { HealthStrip } from "./AldoHomeBoard";
@@ -44,7 +51,8 @@ import type { AldoSidebarRow } from "./sidebar.logic";
 import { useAldoThreadList } from "./useAldoThreadList";
 import { startAldoWalkthrough } from "./walkthrough";
 
-const EARLIER_SHOWN = 15;
+/** Earlier threads shown at a time, when that group is open. */
+const EARLIER_PAGE = 15;
 
 export function AldoAgentsTab(props: {
   readonly header: ReactNode;
@@ -58,11 +66,13 @@ export function AldoAgentsTab(props: {
   const { list, shellCount } = useAldoThreadList({ home, now, scope: null });
   const decisions = useMemo(() => (home ? aldoDecisions(home, now) : []), [home, now]);
   const [open, setOpen] = useState<string | null>(null);
-  const [earlier, setEarlier] = useState(false);
+  const [earlierShown, setEarlierShown] = useState(0);
+  const [snoozedOpen, setSnoozedOpen] = useState(false);
   const toggle = (key: string) => setOpen((current) => (current === key ? null : key));
   const waiting = list.approvals.length + list.waiting.length;
+  // What waits counts pinned threads too, as the tab's badge does.
   const summary = [
-    waiting > 0 ? `${waiting} waiting` : null,
+    decisions.length > 0 ? `${decisions.length} waiting` : null,
     list.working.length > 0 ? `${list.working.length} working` : null,
     list.landing.length > 0 ? `${list.landing.length} landing` : null,
     list.unread.length > 0 ? `${list.unread.length} unread` : null,
@@ -85,6 +95,20 @@ export function AldoAgentsTab(props: {
       <header className="flex shrink-0 flex-col items-center gap-1.5 px-4 pt-3 pb-2">
         {props.header}
         {summary ? <p className="text-muted-foreground text-xs">{summary}</p> : null}
+        {decisions.length > 0 ? (
+          <Button
+            size="xs"
+            variant="outline"
+            className="rounded-full"
+            onClick={() => startAldoWalkthrough(decisions)}
+          >
+            <span
+              aria-hidden
+              className="size-2.5 rounded-full bg-gradient-to-br from-primary/90 to-primary/50"
+            />
+            Go through them with Aldo
+          </Button>
+        ) : null}
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto pb-[max(1.5rem,env(safe-area-inset-bottom))]">
         <div className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-3 pt-2">
@@ -96,26 +120,7 @@ export function AldoAgentsTab(props: {
             </AgentGroup>
           ) : null}
           {waiting > 0 ? (
-            <AgentGroup
-              title="Waiting on you"
-              tone="amber"
-              action={
-                decisions.length > 0 ? (
-                  <Button
-                    size="xs"
-                    variant="outline"
-                    className="rounded-full"
-                    onClick={() => startAldoWalkthrough(decisions)}
-                  >
-                    <span
-                      aria-hidden
-                      className="size-2.5 rounded-full bg-gradient-to-br from-primary/90 to-primary/50"
-                    />
-                    Go through them
-                  </Button>
-                ) : null
-              }
-            >
+            <AgentGroup title="Waiting on you" tone="amber">
               {list.approvals.map((a) => (
                 <ApprovalRow
                   key={a.id}
@@ -152,17 +157,50 @@ export function AldoAgentsTab(props: {
                 <Button
                   size="xs"
                   variant="ghost"
-                  aria-expanded={earlier}
-                  onClick={() => setEarlier((v) => !v)}
+                  aria-expanded={earlierShown > 0}
+                  onClick={() => setEarlierShown((shown) => (shown > 0 ? 0 : EARLIER_PAGE))}
                 >
-                  {earlier ? "Hide" : "Show"}
+                  {earlierShown > 0 ? "Hide" : "Show"}
                   <ChevronDownIcon
-                    className={cn("transition-transform", earlier && "rotate-180")}
+                    className={cn("transition-transform", earlierShown > 0 && "rotate-180")}
                   />
                 </Button>
               }
             >
-              {earlier ? list.earlier.slice(0, EARLIER_SHOWN).map(row) : null}
+              {list.earlier.slice(0, earlierShown).map(row)}
+              {earlierShown > 0 && list.earlier.length > earlierShown ? (
+                <li>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="mx-1 my-1 text-muted-foreground"
+                    onClick={() => setEarlierShown((shown) => shown + EARLIER_PAGE)}
+                  >
+                    Show {Math.min(EARLIER_PAGE, list.earlier.length - earlierShown)} more
+                  </Button>
+                </li>
+              ) : null}
+            </AgentGroup>
+          ) : null}
+          {list.snoozed.length > 0 ? (
+            <AgentGroup
+              title={`Snoozed · ${list.snoozed.length}`}
+              tone="muted"
+              action={
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  aria-expanded={snoozedOpen}
+                  onClick={() => setSnoozedOpen((v) => !v)}
+                >
+                  {snoozedOpen ? "Hide" : "Show"}
+                  <ChevronDownIcon
+                    className={cn("transition-transform", snoozedOpen && "rotate-180")}
+                  />
+                </Button>
+              }
+            >
+              {snoozedOpen ? list.snoozed.map(row) : null}
             </AgentGroup>
           ) : null}
           {shellCount === 0 && list.approvals.length === 0 ? (
@@ -341,6 +379,24 @@ function AgentDetail(props: {
   const pullRequests = props.home ? pullRequestsOf(props.home, target, props.now) : [];
   const [reply, setReply] = useState("");
   const [sending, setSending] = useState(false);
+  const actions = useThreadActions();
+  const [waking, setWaking] = useState(false);
+  const snoozed = row.shell.snoozedUntil != null && Date.parse(row.shell.snoozedUntil) > props.now;
+  const wake = async () => {
+    setWaking(true);
+    const result = await actions.unsnoozeThread(
+      scopeThreadRef(row.shell.environmentId, row.shell.id),
+    );
+    setWaking(false);
+    if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+      const error = squashAtomCommandFailure(result);
+      toastManager.add({
+        type: "error",
+        title: "Couldn't wake it",
+        description: error instanceof Error ? error.message : "An error occurred.",
+      });
+    }
+  };
   // While it's open, it's what Aldo hears is on screen: "this one" means it.
   const { environmentId, id: threadId, title } = row.shell;
   useEffect(() => {
@@ -427,6 +483,12 @@ function AgentDetail(props: {
         </form>
       )}
       <div className="flex items-center gap-2">
+        {snoozed ? (
+          <Button size="sm" variant="outline" disabled={waking} onClick={() => void wake()}>
+            {waking ? <LoaderCircleIcon className="animate-spin" /> : <AlarmClockOffIcon />}
+            Wake it
+          </Button>
+        ) : null}
         <Button
           size="sm"
           variant="outline"

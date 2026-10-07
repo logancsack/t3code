@@ -81,6 +81,7 @@ import {
   repoChips,
   repoName,
 } from "./home.logic";
+import { loadAldoBrief } from "./briefFeed";
 import { aldoDecisions } from "./decisions.logic";
 import { aldoNotificationsStatus, enableAldoNotifications } from "./notifications";
 import { useIsMobile } from "../hooks/useMediaQuery";
@@ -190,6 +191,18 @@ export function AldoHome() {
   const now = useNow();
   const notifications = useNotifications();
   const navigate = useNavigate();
+
+  // The day's first look at the home screen makes Aldo's brief, whichever view it opens on;
+  // a page left open overnight has the new day's when it's looked at again.
+  useEffect(() => {
+    if (assistant !== true) return;
+    void loadAldoBrief();
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void loadAldoBrief();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [assistant]);
   const [repo, setRepo] = useState<string | null>(null);
   /** The selected conversation, by ref: it stays selected as the board refreshes around it. */
   const [selectedRef, setSelectedRef] = useState<string | null>(null);

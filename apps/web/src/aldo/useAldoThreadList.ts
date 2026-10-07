@@ -74,5 +74,9 @@ export function useAldoThreadList(input: {
     [groupOf, home, lastVisited, now, scope, serverConfigs, shells],
   );
 
-  return { list, groups, groupByProject, shellCount: shells.length };
+  const shellCount = useMemo(
+    () => shells.filter((shell) => isAldoEnvironmentId(shell.environmentId)).length,
+    [shells],
+  );
+  return { list, groups, groupByProject, shellCount };
 }

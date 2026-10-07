@@ -10,6 +10,8 @@ import { pullAldoConversation } from "./assistantSession";
 import { fetchAldoBrief, type AldoBrief } from "./cloud";
 
 const PENDING_RETRY_MS = 4_000;
+/** The day's brief comes from this hour on, as Aldo makes it (brief.ts DAY_STARTS_HOUR). */
+const DAY_STARTS_HOUR = 4;
 const PENDING_TRIES = 15;
 
 export const useAldoBrief = create<{ readonly brief: AldoBrief | null }>(() => ({ brief: null }));
@@ -18,15 +20,16 @@ let loading: Promise<void> | null = null;
 /** The local day the brief was last read for. */
 let readFor: string | null = null;
 
-function localDay(): string {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+/** The brief's day: until 4 in the morning, it's still the day before. */
+function briefDay(): string {
+  const at = new Date(Date.now() - DAY_STARTS_HOUR * 60 * 60 * 1000);
+  return `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, "0")}-${String(at.getDate()).padStart(2, "0")}`;
 }
 
 /** Reads today's brief, once a day per page (`again` reads it anyway). */
 export function loadAldoBrief(again = false): Promise<void> {
   if (loading) return loading;
-  const day = localDay();
+  const day = briefDay();
   if (!again && readFor === day) return Promise.resolve();
   loading = (async () => {
     for (let tries = 0; tries < PENDING_TRIES; tries += 1) {

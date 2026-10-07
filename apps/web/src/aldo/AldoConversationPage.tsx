@@ -2,7 +2,7 @@
 // what's waiting on the user and what's running are in the sidebar beside it
 // (AldoSidebar.tsx; the Agents tab on a phone), then the conversation, where
 // what Aldo did shows live and the day starts with Aldo's brief (AldoBrief.tsx,
-// read here, briefFeed.ts), then one large composer with the orb in it (on a
+// the home screen reads it, briefFeed.ts), then one large composer with the orb in it (on a
 // phone, a big button to talk beside it). A thread opens in a peek beside the
 // conversation (over it on a phone), so someone who only talks to Aldo never
 // has to leave it; Aldo's show_thread, and the brief's things to decide, peek
@@ -26,7 +26,6 @@ import { HealthStrip } from "./AldoHomeBoard";
 import { AldoPeekContext } from "./AldoLiveCard";
 import { AldoPeek, AldoPeekerContext, peekedConversation, type AldoPeekTarget } from "./AldoPeek";
 import { loadAldoConversation, seedAldoComposer, setAldoThreadPeeker } from "./assistantSession";
-import { loadAldoBrief } from "./briefFeed";
 import type { AldoHome, AldoHomeTarget } from "./cloud";
 import type { healthIssues } from "./home.logic";
 import { setAldoPeekedThread } from "./screen";
@@ -89,13 +88,6 @@ export function AldoConversationPage(props: {
 
   useEffect(() => {
     void loadAldoConversation();
-    void loadAldoBrief();
-    // A page left open overnight has the new day's brief when it's looked at again.
-    const onVisible = () => {
-      if (document.visibilityState === "visible") void loadAldoBrief();
-    };
-    document.addEventListener("visibilitychange", onVisible);
-    return () => document.removeEventListener("visibilitychange", onVisible);
   }, []);
   const peekAny = useCallback((target: AldoPeekTarget) => setPeek({ target, key: null }), []);
 

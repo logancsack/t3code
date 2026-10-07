@@ -10,6 +10,7 @@
 import { create } from "zustand";
 
 import { aldoAssistantLive, connectAldo, tellAldoCall } from "./assistantSession";
+import { showAldoCall } from "./callView";
 import { decisionBrief, type AldoDecision } from "./decisions.logic";
 
 export interface AldoWalkthroughState {
@@ -67,8 +68,11 @@ export function startAldoWalkthrough(
   if (!first) return;
   set({ active: true, decisions, index: 0, suggestions });
   const opening = walkthroughOpening(first, decisions.length);
-  if (aldoAssistantLive()) tellAldoCall(opening, { respond: true });
-  else void connectAldo({ opening });
+  if (aldoAssistantLive()) {
+    // A call folded away on a phone comes back, with the first of them.
+    showAldoCall();
+    tellAldoCall(opening, { respond: true });
+  } else void connectAldo({ opening });
 }
 
 /**

@@ -25,7 +25,6 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
-import { requestConfirmDialog } from "../confirmDialog";
 import { useIsMobile } from "../hooks/useMediaQuery";
 import { cn } from "~/lib/utils";
 import { AldoOrb } from "./AldoAssistant";
@@ -49,7 +48,7 @@ import {
   type AldoDecision,
 } from "./decisions.logic";
 import { minimizeAldoCall, useAldoCallView } from "./callView";
-import { useAldoHomeFeed } from "./homeFeed";
+import { refreshAldoHome, useAldoHomeFeed } from "./homeFeed";
 import { advanceAldoWalkthrough, stopAldoWalkthrough, useAldoWalkthrough } from "./walkthrough";
 
 function useTicking(on: boolean): number {
@@ -415,6 +414,8 @@ function WalkCard(props: {
   // A question the taps don't cover (several, or several choices each) is answered in full here.
   const fullForm = d.kind === "question" && choices.length === 0;
   const [words, setWords] = useState("");
+  // Discarding an email's draft is asked here, in the card: a dialog would open under the call.
+  const [discarding, setDiscarding] = useState(false);
   return (
     <div className="mt-6 flex w-full max-w-md flex-col gap-3 rounded-2xl border border-border/70 bg-card/40 p-4">
       <div className="flex items-start gap-2.5">
@@ -437,8 +438,37 @@ function WalkCard(props: {
       {fullForm && d.kind === "question" ? (
         <PendingForm
           conversation={d.conversation}
-          onActed={() => advanceAldoWalkthrough("decided", "answered it")}
+          onActed={() => {
+            void refreshAldoHome();
+            advanceAldoWalkthrough("decided", "answered it");
+          }}
         />
+      ) : discarding && d.kind === "aldo-approval" ? (
+        <div className="flex flex-col gap-2">
+          <p className="text-sm">
+            Discard this draft? It's deleted from your drafts, and isn't sent.
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            <Button
+              size="lg"
+              variant="destructive"
+              className="h-11"
+              disabled={busy !== null}
+              onClick={() => void choose("discard", { kind: "aldo", decision: "discard" })}
+            >
+              {busy === "discard" ? "Working…" : d.approval.discardLabel}
+            </Button>
+            <Button
+              size="lg"
+              variant="outline"
+              className="h-11"
+              disabled={busy !== null}
+              onClick={() => setDiscarding(false)}
+            >
+              Keep it
+            </Button>
+          </div>
+        </div>
       ) : choices.length > 0 ? (
         <>
           <p className="text-muted-foreground text-xs">Say it, or tap</p>
@@ -463,12 +493,7 @@ function WalkCard(props: {
                     c.id === "discard" &&
                     d.approval.kind === "email"
                   ) {
-                    void (
-                      requestConfirmDialog(
-                        "Discard this draft? It's deleted from your drafts, and isn't sent.",
-                        { variant: "destructive" },
-                      ) ?? Promise.resolve(true)
-                    ).then((ok) => (ok ? choose(c.id, c.choice) : undefined));
+                    setDiscarding(true);
                     return;
                   }
                   void choose(c.id, c.choice);
