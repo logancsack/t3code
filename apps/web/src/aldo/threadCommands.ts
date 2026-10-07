@@ -119,6 +119,7 @@ async function keep(
   );
   if (patch === null) return null;
   if (patch === "nothing") return { sequence: shell.snapshotSequence };
+  if ("refuse" in patch) throw new Error(patch.refuse);
 
   const changed: CachedShell = {
     ...shell,

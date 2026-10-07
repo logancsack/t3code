@@ -4,7 +4,11 @@
 // one line says, and the order the thread shortcuts move through. A thread's
 // state comes from its shell (T3's own status, unread and snooze rules) with
 // what Aldo's home read adds: what it asks, its pull requests, its summary,
-// and what isn't a thread at all (approvals, routines, reminders).
+// and what isn't a thread at all (approvals, routines, reminders). As in T3's
+// sidebar, snoozed outranks settled, and settled outranks pinned: a thread the
+// user settled is with the earlier ones, whatever it last asked. Also as there,
+// a thread counts as settled or snoozed only on a machine known to support it,
+// whose menu can make it active or wake it again.
 
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 import { effectiveSnoozed } from "@t3tools/client-runtime/state/thread-settled";
@@ -103,10 +107,17 @@ export function aldoSidebarKind(input: {
   readonly ready: AldoHomePullRequest | null;
   readonly landing: AldoHomePullRequest | null;
   readonly lastVisitedAt: string | undefined;
+  /** The user settled it (on a machine that supports settling). */
+  readonly settled: boolean;
   readonly now: string;
 }): AldoSidebarKind {
   const { shell, conversation: c } = input;
   const status = resolveSidebarThreadStatus(shell);
+  // Settled: done with, unless it's running again (T3 unsettles it when it can).
+  if (input.settled) {
+    if (status === "working" || status === "monitoring") return status;
+    return unseen(shell, input.lastVisitedAt, input.now) ? "unread" : "done";
+  }
   if (status === "approval" || c?.pending?.kind === "approval") return "approval";
   if (status === "input" || c?.pending?.kind === "question") return "question";
   if (status === "failed" || c?.state === "failed") return "failed";
@@ -194,12 +205,18 @@ export function aldoSidebarList(input: {
   readonly repoOf: (shell: EnvironmentThreadShell) => string;
   /** Narrows threads to a project (approvals and what's scheduled stay). */
   readonly inScope?: (shell: EnvironmentThreadShell) => boolean;
+  /** Whether the thread's machine takes settling and snoozing (both, when not given). */
+  readonly supports?: (shell: EnvironmentThreadShell) => {
+    readonly settlement: boolean;
+    readonly snooze: boolean;
+  };
   readonly now: string;
 }): AldoSidebarList {
   const { home } = input;
   const pinned: EnvironmentThreadShell[] = [];
   const rows: AldoSidebarRow[] = [];
   const snoozed: AldoSidebarRow[] = [];
+  const settledRows: AldoSidebarRow[] = [];
   const pinnedKeys = new Set<string>();
   for (const shell of input.shells) {
     if (shell.archivedAt !== null) continue;
@@ -212,12 +229,15 @@ export function aldoSidebarList(input: {
     const landing =
       prs.find((pr) => pr.stage === "deploying" || pr.stage === "deploy-failed") ?? null;
     const lastVisitedAt = input.lastVisitedAt(key);
+    const supports = input.supports?.(shell) ?? { settlement: true, snooze: true };
+    const settled = supports.settlement && shell.settledOverride === "settled";
     const kind = aldoSidebarKind({
       shell,
       conversation,
       ready,
       landing,
       lastVisitedAt,
+      settled,
       now: input.now,
     });
     const pullRequest = kind === "merge" ? ready : kind === "landing" ? landing : null;
@@ -240,8 +260,9 @@ export function aldoSidebarList(input: {
       conversation,
       pullRequest,
     };
-    // Snoozed until it wakes (or raises its hand), as T3 has it.
-    if (effectiveSnoozed(shell, { now: input.now })) snoozed.push(row);
+    // Snoozed until it wakes (or raises its hand), then settled, then pinned, as T3 has it.
+    if (supports.snooze && effectiveSnoozed(shell, { now: input.now })) snoozed.push(row);
+    else if (settled) settledRows.push(row);
     else if (shell.pinnedAt != null) {
       pinned.push(shell);
       pinnedKeys.add(key);
@@ -253,7 +274,6 @@ export function aldoSidebarList(input: {
   );
   const rowByKey = new Map(rows.map((row) => [row.key, row]));
   const loose = rows.filter((row) => !pinnedKeys.has(row.key));
-  const settled = (row: AldoSidebarRow) => row.shell.settledOverride === "settled";
   return {
     pinned: pinnedOrder.flatMap((key) => {
       const row = rowByKey.get(key);
@@ -264,10 +284,8 @@ export function aldoSidebarList(input: {
     waiting: loose.filter((row) => WAITING_KINDS.has(row.kind)).toSorted(byAtAsc),
     working: loose.filter((row) => WORKING_KINDS.has(row.kind)).toSorted(byAtDesc),
     landing: loose.filter((row) => row.kind === "landing").toSorted(byAtDesc),
-    unread: loose.filter((row) => row.kind === "unread" && !settled(row)).toSorted(byAtDesc),
-    earlier: loose
-      .filter((row) => row.kind === "done" || (row.kind === "unread" && settled(row)))
-      .toSorted(byAtDesc),
+    unread: loose.filter((row) => row.kind === "unread").toSorted(byAtDesc),
+    earlier: [...loose.filter((row) => row.kind === "done"), ...settledRows].toSorted(byAtDesc),
     snoozed: snoozed.toSorted((a, b) =>
       (a.shell.snoozedUntil ?? "").localeCompare(b.shell.snoozedUntil ?? ""),
     ),

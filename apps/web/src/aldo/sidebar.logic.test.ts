@@ -193,6 +193,46 @@ describe("aldoSidebarList", () => {
     expect(keys(result.earlier)).toEqual(["aldo-s:s"]);
   });
 
+  it("never has a settled thread waiting on the user, pinned or not", () => {
+    const result = list(
+      [
+        shell("q", { settledOverride: "settled" }),
+        shell("m", { settledOverride: "settled" }),
+        shell("p", { settledOverride: "settled", pinnedAt: ago(100), hasPendingUserInput: true }),
+      ],
+      home({
+        conversations: [conversation("q", { state: "waiting" })],
+        pullRequests: [pullRequest("m")],
+      }),
+      { "aldo-q:q": ago(1), "aldo-m:m": ago(1), "aldo-p:p": ago(1) },
+    );
+    expect(result.waiting).toEqual([]);
+    expect(result.pinned).toEqual([]);
+    expect(result.earlier.map((row) => [row.key, row.kind]).toSorted()).toEqual([
+      ["aldo-m:m", "done"],
+      ["aldo-p:p", "done"],
+      ["aldo-q:q", "done"],
+    ]);
+  });
+
+  it("counts a thread settled or snoozed only where its machine supports it, as T3 does", () => {
+    const result = aldoSidebarList({
+      shells: [
+        shell("s", { settledOverride: "settled", hasPendingUserInput: true }),
+        shell("z", { snoozedUntil: ago(-60) }),
+      ],
+      home: home(),
+      lastVisitedAt: () => ago(1),
+      repoOf: () => "shop",
+      supports: () => ({ settlement: false, snooze: false }),
+      now: NOW,
+    });
+    expect(keys(result.waiting)).toEqual(["aldo-s:s"]);
+    // An ordinary thread, done with.
+    expect(result.snoozed).toEqual([]);
+    expect(keys(result.earlier)).toEqual(["aldo-z:z"]);
+  });
+
   it("lists waiting threads longest-waiting first, and the rest newest first", () => {
     const result = list([
       shell("new", { hasPendingUserInput: true, updatedAt: ago(1) }),
