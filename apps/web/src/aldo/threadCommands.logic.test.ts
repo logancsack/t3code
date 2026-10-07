@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  ALDO_SETTLE_BLOCKED,
   aldoCommandPatch,
   applyAldoShellPatch,
   restoreAldoShellThread,
@@ -75,13 +76,25 @@ describe("aldoCommandPatch", () => {
     });
   });
 
-  it("leaves a settle T3 would refuse to the machine", () => {
+  it("leaves a settle T3 would refuse to the machine, unless it's asleep and asks the user", () => {
     expect(
       patchFor(command("thread.settle"), thread({ session: { status: "running" } }), NOW),
     ).toBeNull();
     expect(
-      patchFor(command("thread.settle"), thread({ hasPendingUserInput: true }), NOW),
+      patchFor(command("thread.settle"), thread({ hasPendingUserInput: true }), NOW, false),
     ).toBeNull();
+    // Asleep, its shell can't have moved on: T3's answer, without waking it.
+    expect(patchFor(command("thread.settle"), thread({ hasPendingUserInput: true }), NOW)).toEqual({
+      refuse: ALDO_SETTLE_BLOCKED,
+    });
+    // Its turn stays open while it asks, so its session reads as running.
+    expect(
+      patchFor(
+        command("thread.settle"),
+        thread({ hasPendingApprovals: true, session: { status: "running" } }),
+        NOW,
+      ),
+    ).toEqual({ refuse: ALDO_SETTLE_BLOCKED });
   });
 
   it("unsettles, stamping its return to the active list once", () => {

@@ -4,7 +4,9 @@
 // one line says, and the order the thread shortcuts move through. A thread's
 // state comes from its shell (T3's own status, unread and snooze rules) with
 // what Aldo's home read adds: what it asks, its pull requests, its summary,
-// and what isn't a thread at all (approvals, routines, reminders).
+// and what isn't a thread at all (approvals, routines, reminders). As in T3's
+// sidebar, snoozed outranks settled, and settled outranks pinned: a thread the
+// user settled is with the earlier ones, whatever it last asked.
 
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 import { effectiveSnoozed } from "@t3tools/client-runtime/state/thread-settled";
@@ -107,6 +109,11 @@ export function aldoSidebarKind(input: {
 }): AldoSidebarKind {
   const { shell, conversation: c } = input;
   const status = resolveSidebarThreadStatus(shell);
+  // Settled: done with, unless it's running again (T3 unsettles it when it can).
+  if (settled(shell)) {
+    if (status === "working" || status === "monitoring") return status;
+    return unseen(shell, input.lastVisitedAt, input.now) ? "unread" : "done";
+  }
   if (status === "approval" || c?.pending?.kind === "approval") return "approval";
   if (status === "input" || c?.pending?.kind === "question") return "question";
   if (status === "failed" || c?.state === "failed") return "failed";
@@ -119,6 +126,10 @@ export function aldoSidebarKind(input: {
   if (c?.state === "waiting") return "waiting";
   if (unseen(shell, input.lastVisitedAt, input.now)) return "unread";
   return "done";
+}
+
+function settled(shell: EnvironmentThreadShell): boolean {
+  return shell.settledOverride === "settled";
 }
 
 /** How long a thread the user never opened (on this device) counts as news once it's done. */
@@ -200,6 +211,7 @@ export function aldoSidebarList(input: {
   const pinned: EnvironmentThreadShell[] = [];
   const rows: AldoSidebarRow[] = [];
   const snoozed: AldoSidebarRow[] = [];
+  const settledRows: AldoSidebarRow[] = [];
   const pinnedKeys = new Set<string>();
   for (const shell of input.shells) {
     if (shell.archivedAt !== null) continue;
@@ -240,8 +252,9 @@ export function aldoSidebarList(input: {
       conversation,
       pullRequest,
     };
-    // Snoozed until it wakes (or raises its hand), as T3 has it.
+    // Snoozed until it wakes (or raises its hand), then settled, then pinned, as T3 has it.
     if (effectiveSnoozed(shell, { now: input.now })) snoozed.push(row);
+    else if (settled(shell)) settledRows.push(row);
     else if (shell.pinnedAt != null) {
       pinned.push(shell);
       pinnedKeys.add(key);
@@ -253,7 +266,6 @@ export function aldoSidebarList(input: {
   );
   const rowByKey = new Map(rows.map((row) => [row.key, row]));
   const loose = rows.filter((row) => !pinnedKeys.has(row.key));
-  const settled = (row: AldoSidebarRow) => row.shell.settledOverride === "settled";
   return {
     pinned: pinnedOrder.flatMap((key) => {
       const row = rowByKey.get(key);
@@ -264,10 +276,8 @@ export function aldoSidebarList(input: {
     waiting: loose.filter((row) => WAITING_KINDS.has(row.kind)).toSorted(byAtAsc),
     working: loose.filter((row) => WORKING_KINDS.has(row.kind)).toSorted(byAtDesc),
     landing: loose.filter((row) => row.kind === "landing").toSorted(byAtDesc),
-    unread: loose.filter((row) => row.kind === "unread" && !settled(row)).toSorted(byAtDesc),
-    earlier: loose
-      .filter((row) => row.kind === "done" || (row.kind === "unread" && settled(row)))
-      .toSorted(byAtDesc),
+    unread: loose.filter((row) => row.kind === "unread").toSorted(byAtDesc),
+    earlier: [...loose.filter((row) => row.kind === "done"), ...settledRows].toSorted(byAtDesc),
     snoozed: snoozed.toSorted((a, b) =>
       (a.shell.snoozedUntil ?? "").localeCompare(b.shell.snoozedUntil ?? ""),
     ),

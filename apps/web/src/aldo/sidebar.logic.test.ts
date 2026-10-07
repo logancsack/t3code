@@ -193,6 +193,28 @@ describe("aldoSidebarList", () => {
     expect(keys(result.earlier)).toEqual(["aldo-s:s"]);
   });
 
+  it("never has a settled thread waiting on the user, pinned or not", () => {
+    const result = list(
+      [
+        shell("q", { settledOverride: "settled" }),
+        shell("m", { settledOverride: "settled" }),
+        shell("p", { settledOverride: "settled", pinnedAt: ago(100), hasPendingUserInput: true }),
+      ],
+      home({
+        conversations: [conversation("q", { state: "waiting" })],
+        pullRequests: [pullRequest("m")],
+      }),
+      { "aldo-q:q": ago(1), "aldo-m:m": ago(1), "aldo-p:p": ago(1) },
+    );
+    expect(result.waiting).toEqual([]);
+    expect(result.pinned).toEqual([]);
+    expect(result.earlier.map((row) => [row.key, row.kind]).toSorted()).toEqual([
+      ["aldo-m:m", "done"],
+      ["aldo-p:p", "done"],
+      ["aldo-q:q", "done"],
+    ]);
+  });
+
   it("lists waiting threads longest-waiting first, and the rest newest first", () => {
     const result = list([
       shell("new", { hasPendingUserInput: true, updatedAt: ago(1) }),

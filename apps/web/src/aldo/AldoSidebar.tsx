@@ -3,14 +3,19 @@
 // it needs from the user rather than by project: waiting on you (and the
 // approvals that aren't a thread's), working, landing, unread, then folded,
 // earlier, snoozed and what's scheduled (sidebar.logic.ts). Hovering a row (or
-// Space on it) peeks at the thread, answered in place; its menu pins, settles,
-// snoozes, archives and deletes as T3's does, and ⌘1–9 and previous/next move
-// through the rows as they show. At the foot: which projects it shows, the
-// month's credits, and the user, whose picture opens their account
-// (AldoAccountDialog.tsx). The classic sidebar is one switch away there.
+// Space on it) peeks at the thread, answered in place; its menu (a right-click,
+// a tap and hold, or its "…") is T3's own thread menu, and ⌘1–9 and
+// previous/next move through the rows as they show. At the foot: which
+// projects it shows, the month's credits, and the user, whose picture opens
+// their account (AldoAccountDialog.tsx). The classic sidebar is one switch
+// away there.
 
 import { useAtomValue } from "@effect/atom-react";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import {
+  isAtomCommandInterrupted,
+  squashAtomCommandFailure,
+} from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { Link, useLocation, useNavigate, useParams } from "@tanstack/react-router";
@@ -45,32 +50,25 @@ import {
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
 
 import { openCommandPalette } from "../commandPaletteBus";
 import { composerDraftHasUserContent, DraftId, useComposerDraftStore } from "../composerDraftStore";
+import { resolveRenameCommit } from "../components/chat/ChatHeader";
 import { SidebarChromeHeader } from "../components/sidebar/SidebarChrome";
-import { resolveSnoozePresets, snoozeWakeDescription } from "../components/Sidebar.snooze";
-import {
-  Menu,
-  MenuItem,
-  MenuPopup,
-  MenuSeparator,
-  MenuSub,
-  MenuSubPopup,
-  MenuSubTrigger,
-  MenuTrigger,
-} from "../components/ui/menu";
+import { snoozeWakeDescription } from "../components/Sidebar.snooze";
+import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "../components/ui/menu";
 import { Popover, PopoverPopup } from "../components/ui/popover";
 import { SidebarContent, useSidebar } from "../components/ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { toastManager } from "../components/ui/toast";
-import { requestConfirmDialog } from "../confirmDialog";
 import { isElectron } from "../env";
 import { useClientSettings } from "../hooks/useSettings";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
-import { useThreadActions } from "../hooks/useThreadActions";
+import { useThreadActionMenu } from "../hooks/useThreadActionMenu";
 import {
   resolveShortcutCommand,
   threadJumpIndexFromCommand,
@@ -84,6 +82,8 @@ import { buildSidebarProjectSnapshots } from "../sidebarProjectGrouping";
 import { useProjects, useThreadShells } from "../state/entities";
 import { usePrimaryEnvironmentId } from "../state/environments";
 import { primaryServerKeybindingsAtom } from "../state/server";
+import { threadEnvironment } from "../state/threads";
+import { useAtomCommand } from "../state/use-atom-command";
 import { buildThreadRouteParams } from "../threadRoutes";
 import { useUiStateStore } from "../uiStateStore";
 import { cn } from "~/lib/utils";
@@ -111,6 +111,9 @@ const EARLIER_PAGE = 10;
 /** How long the pointer rests on a row before it peeks, and lingers after leaving. */
 const PEEK_OPEN_MS = 450;
 const PEEK_CLOSE_MS = 220;
+/** How long a finger rests on a row before its menu opens, and how far it may drift meanwhile. */
+const HOLD_MS = 500;
+const HOLD_SLOP_PX = 10;
 const TICK_MS = 30_000;
 
 function useNow(): number {
@@ -123,7 +126,9 @@ function useNow(): number {
 }
 
 type Peek = { readonly key: string; readonly target: AldoPeekTarget; readonly anchor: HTMLElement };
-type RowMenu = { readonly row: AldoSidebarRow; readonly anchor: HTMLElement };
+type Point = { readonly x: number; readonly y: number };
+/** A row's menu to open, and where; `id` tells one opening from the next. */
+type MenuRequest = { readonly row: AldoSidebarRow; readonly at: Point; readonly id: number };
 
 export function AldoSidebar() {
   const navigate = useNavigate();
@@ -145,7 +150,8 @@ export function AldoSidebar() {
   const [snoozedOpen, setSnoozedOpen] = useState(false);
   const [scheduledOpen, setScheduledOpen] = useState(false);
   const [peek, setPeek] = useState<Peek | null>(null);
-  const [rowMenu, setRowMenu] = useState<RowMenu | null>(null);
+  const [menu, setMenu] = useState<MenuRequest | null>(null);
+  const [renaming, setRenaming] = useState<string | null>(null);
   const timers = useRef<{ open?: number; close?: number }>({});
 
   const groups = useMemo(
@@ -325,11 +331,13 @@ export function AldoSidebar() {
         },
         anchor,
       ),
-    onMenu: (anchor: HTMLElement) => {
+    onMenu: (at: Point) => {
       clearTimers();
       setPeek(null);
-      setRowMenu({ row, anchor });
+      setMenu((current) => ({ row, at, id: (current?.id ?? 0) + 1 }));
     },
+    renaming: renaming === row.key,
+    onRenamed: () => setRenaming(null),
   });
 
   const searching = query.trim().length > 0;
@@ -573,7 +581,7 @@ export function AldoSidebar() {
           ) : null}
         </PopoverPopup>
       </Popover>
-      <RowMenuPopup menu={rowMenu} onClose={() => setRowMenu(null)} onOpen={openThread} />
+      <ThreadMenu request={menu} onRename={(row) => setRenaming(row.key)} />
     </>
   );
 }
@@ -761,20 +769,92 @@ function rowTime(row: AldoSidebarRow, now: number): string {
   return relativeTime(row.at, now).replace(" ago", "");
 }
 
+/**
+ * A row's menu from a tap and hold, on touch screens: iOS never sends
+ * contextmenu, and Android sends one partway through the hold, which would
+ * close the menu the hold opened (and open the browser's own). So while a
+ * finger is down the page doesn't get contextmenu (Android's opens the menu
+ * at once instead), and the tap that ends a hold doesn't open the thread.
+ */
+function useHold(onMenu: (at: Point) => void) {
+  const hold = useRef<{ timer: number; x: number; y: number } | null>(null);
+  const held = useRef(false);
+  const onMenuRef = useRef(onMenu);
+  onMenuRef.current = onMenu;
+
+  const fire = useCallback(() => {
+    const current = hold.current;
+    if (!current || held.current) return;
+    window.clearTimeout(current.timer);
+    held.current = true;
+    onMenuRef.current({ x: current.x, y: current.y });
+  }, []);
+  const swallow = useCallback(
+    (event: Event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      fire();
+    },
+    [fire],
+  );
+  const end = useCallback(() => {
+    if (!hold.current) return;
+    window.clearTimeout(hold.current.timer);
+    hold.current = null;
+    // Android's contextmenu can trail the finger lifting.
+    window.setTimeout(() => window.removeEventListener("contextmenu", swallow, true), 400);
+  }, [swallow]);
+  useEffect(() => () => window.removeEventListener("contextmenu", swallow, true), [swallow]);
+
+  return {
+    onPointerDown: (event: ReactPointerEvent) => {
+      held.current = false;
+      if (event.pointerType === "mouse") return;
+      end();
+      hold.current = {
+        x: event.clientX,
+        y: event.clientY,
+        timer: window.setTimeout(fire, HOLD_MS),
+      };
+      window.addEventListener("contextmenu", swallow, true);
+    },
+    onPointerMove: (event: ReactPointerEvent) => {
+      const current = hold.current;
+      if (
+        current &&
+        Math.hypot(event.clientX - current.x, event.clientY - current.y) > HOLD_SLOP_PX
+      ) {
+        end();
+      }
+    },
+    onPointerUp: end,
+    onPointerCancel: end,
+    onClickCapture: (event: ReactMouseEvent) => {
+      if (!held.current) return;
+      held.current = false;
+      event.preventDefault();
+      event.stopPropagation();
+    },
+  };
+}
+
 function ThreadRow(props: {
   readonly row: AldoSidebarRow;
   readonly now: number;
   readonly active: boolean;
   readonly peeking: boolean;
+  readonly renaming: boolean;
   readonly onOpen: () => void;
   readonly onHover: (anchor: HTMLElement) => void;
   readonly onLeave: () => void;
   readonly onPeek: (anchor: HTMLElement) => void;
-  readonly onMenu: (anchor: HTMLElement) => void;
+  readonly onMenu: (at: Point) => void;
+  readonly onRenamed: () => void;
 }) {
   const { row } = props;
   const element = useRef<HTMLLIElement>(null);
   const [merging, setMerging] = useState(false);
+  const hold = useHold(props.onMenu);
   const timestampFormat = useClientSettings((s) => s.timestampFormat);
   const detail =
     row.shell.snoozedUntil && row.kind !== "approval" && row.kind !== "question"
@@ -798,35 +878,50 @@ function ThreadRow(props: {
       aria-current={props.active ? "page" : undefined}
       data-aldo-row={row.kind}
       className={cn(
-        "group/row relative flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
+        "group/row relative flex cursor-pointer select-none items-center gap-2.5 rounded-lg px-2 py-1.5 outline-none transition-colors [-webkit-touch-callout:none] focus-visible:ring-2 focus-visible:ring-ring",
         props.active
           ? "bg-sidebar-row-active shadow-xs/5 ring-1 ring-border/60"
           : props.peeking
             ? "bg-sidebar-row-hover"
             : "hover:bg-sidebar-row-hover",
       )}
-      onClick={props.onOpen}
+      onClick={props.renaming ? undefined : props.onOpen}
       onKeyDown={onKeyDown}
-      onMouseEnter={(event) => props.onHover(event.currentTarget)}
-      onMouseLeave={props.onLeave}
+      // Pointer rather than mouse events: a tap's emulated mouseenter would peek.
+      onPointerEnter={(event) => {
+        if (event.pointerType === "mouse") props.onHover(event.currentTarget);
+      }}
+      onPointerLeave={props.onLeave}
       onContextMenu={(event) => {
         event.preventDefault();
-        props.onMenu(event.currentTarget);
+        if (props.renaming) return;
+        // From the keyboard (the menu key, Shift+F10) it has no pointer: under the row.
+        const rect = event.currentTarget.getBoundingClientRect();
+        props.onMenu(
+          event.clientX === 0 && event.clientY === 0
+            ? { x: rect.left + 8, y: rect.bottom }
+            : { x: event.clientX, y: event.clientY },
+        );
       }}
+      {...hold}
     >
       <span className="flex size-4 shrink-0 items-center justify-center">
         <RowIcon row={row} />
       </span>
       <span className="flex min-w-0 flex-1 flex-col">
-        <span
-          className={cn(
-            "truncate text-[13px] text-sidebar-foreground",
-            row.unread && "font-semibold",
-            props.active && "font-medium",
-          )}
-        >
-          {row.shell.title}
-        </span>
+        {props.renaming ? (
+          <RenameInput shell={row.shell} onDone={props.onRenamed} />
+        ) : (
+          <span
+            className={cn(
+              "truncate text-[13px] text-sidebar-foreground",
+              row.unread && "font-semibold",
+              props.active && "font-medium",
+            )}
+          >
+            {row.shell.title}
+          </span>
+        )}
         <span className="truncate text-[11.5px] text-sidebar-muted-foreground">
           {detail ? `Until ${detail}` : row.detail}
           {row.repo ? ` · ${row.repo}` : ""}
@@ -860,7 +955,8 @@ function ThreadRow(props: {
           className="flex size-6 items-center justify-center rounded-md bg-sidebar-row-active text-sidebar-muted-foreground shadow-xs/5 hover:text-sidebar-foreground"
           onClick={(event) => {
             event.stopPropagation();
-            if (element.current) props.onMenu(element.current);
+            const rect = event.currentTarget.getBoundingClientRect();
+            props.onMenu({ x: rect.left, y: rect.bottom + 4 });
           }}
         >
           <EllipsisIcon className="size-3.5" />
@@ -1015,149 +1111,97 @@ function DraftGroup(props: {
   );
 }
 
-/** A thread's menu, from its "…" or a right-click: as T3's sidebar has it. */
-function RowMenuPopup(props: {
-  readonly menu: RowMenu | null;
-  readonly onClose: () => void;
-  readonly onOpen: (shell: EnvironmentThreadShell) => void;
+/**
+ * A row's menu: T3's own thread menu (useThreadActionMenu), as its sidebar
+ * and the chat header have it, so what it offers for a thread, and how it
+ * says an action failed, are T3's. Opens once for each request.
+ */
+function ThreadMenu(props: {
+  readonly request: MenuRequest | null;
+  readonly onRename: (row: AldoSidebarRow) => void;
 }) {
-  const actions = useThreadActions();
-  const markThreadUnread = useUiStateStore((s) => s.markThreadUnread);
-  const timestampFormat = useClientSettings((s) => s.timestampFormat);
-  const row = props.menu?.row ?? null;
-  const shell = row?.shell ?? null;
-  const ref = shell ? scopeThreadRef(shell.environmentId, shell.id) : null;
-  const run = (work: () => Promise<unknown> | unknown, failed: string) => {
-    props.onClose();
-    void Promise.resolve()
-      .then(work)
-      .catch((cause: unknown) =>
+  const { request, onRename } = props;
+  const shell = request?.row.shell ?? null;
+  const environmentId = shell?.environmentId ?? null;
+  const threadId = shell?.id ?? null;
+  const projectId = shell?.projectId ?? null;
+  const projects = useProjects();
+  const threadRef = useMemo(
+    () => (environmentId && threadId ? scopeThreadRef(environmentId, threadId) : null),
+    [environmentId, threadId],
+  );
+  const projectCwd =
+    projects.find((project) => project.environmentId === environmentId && project.id === projectId)
+      ?.workspaceRoot ?? null;
+  const onStartRename = useCallback(() => {
+    if (request) onRename(request.row);
+  }, [onRename, request]);
+  const { openMenu } = useThreadActionMenu({ threadRef, projectCwd, onStartRename });
+  const opened = useRef(0);
+  useEffect(() => {
+    if (!request || opened.current === request.id) return;
+    opened.current = request.id;
+    openMenu(request.at);
+  }, [openMenu, request]);
+  return null;
+}
+
+/** The row's title, to rename it in place (from the menu), as T3's sidebar does. */
+function RenameInput(props: {
+  readonly shell: EnvironmentThreadShell;
+  readonly onDone: () => void;
+}) {
+  const updateThreadMetadata = useAtomCommand(threadEnvironment.updateMetadata, {
+    reportFailure: false,
+  });
+  const input = useRef<HTMLInputElement>(null);
+  const done = useRef(false);
+  useEffect(() => {
+    input.current?.focus();
+    input.current?.select();
+  }, []);
+  const finish = (title: string | null) => {
+    if (done.current) return;
+    done.current = true;
+    props.onDone();
+    if (title === null) return;
+    const { shell } = props;
+    const resolution = resolveRenameCommit({ title, originalTitle: shell.title });
+    if (resolution.action === "reject-empty") {
+      toastManager.add({ type: "warning", title: "Thread title cannot be empty" });
+      return;
+    }
+    if (resolution.action === "noop") return;
+    void updateThreadMetadata({
+      environmentId: shell.environmentId,
+      input: { threadId: shell.id, title: resolution.title },
+    }).then((result) => {
+      if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+        const error = squashAtomCommandFailure(result);
         toastManager.add({
           type: "error",
-          title: failed,
-          description: cause instanceof Error ? cause.message : String(cause),
-        }),
-      );
+          title: "Failed to rename thread",
+          description: error instanceof Error ? error.message : "An error occurred.",
+        });
+      }
+    });
   };
-  const snoozed = Boolean(shell?.snoozedUntil && Date.parse(shell.snoozedUntil) > Date.now());
-  const settled = shell?.settledOverride === "settled";
   return (
-    <Menu open={props.menu !== null} onOpenChange={(open) => (open ? undefined : props.onClose())}>
-      <MenuPopup
-        anchor={props.menu?.anchor}
-        side="right"
-        align="start"
-        sideOffset={6}
-        className="min-w-48"
-      >
-        {shell && ref ? (
-          <>
-            <MenuItem onClick={() => run(() => props.onOpen(shell), "Couldn't open the thread")}>
-              Open
-            </MenuItem>
-            <MenuSeparator />
-            <MenuItem
-              onClick={() =>
-                run(
-                  () =>
-                    shell.pinnedAt != null
-                      ? actions.confirmAndUnpinThread(ref)
-                      : actions.pinThread(ref),
-                  "Couldn't change the pin",
-                )
-              }
-            >
-              {shell.pinnedAt != null ? "Unpin" : "Pin"}
-            </MenuItem>
-            <MenuItem
-              onClick={() =>
-                run(
-                  () => (settled ? actions.unsettleThread(ref) : actions.settleThread(ref)),
-                  settled ? "Couldn't make it active" : "Couldn't settle it",
-                )
-              }
-            >
-              {settled ? "Make active again" : "Settle"}
-            </MenuItem>
-            {snoozed ? (
-              <MenuItem onClick={() => run(() => actions.unsnoozeThread(ref), "Couldn't wake it")}>
-                Wake now
-              </MenuItem>
-            ) : (
-              <MenuSub>
-                <MenuSubTrigger>Snooze</MenuSubTrigger>
-                <MenuSubPopup>
-                  {resolveSnoozePresets(new Date(), timestampFormat).map((preset) => (
-                    <MenuItem
-                      key={preset.id}
-                      onClick={() =>
-                        run(
-                          () => actions.snoozeThread(ref, preset.snoozedUntil),
-                          "Couldn't snooze it",
-                        )
-                      }
-                    >
-                      <span className="flex-1">{preset.label}</span>
-                      <span className="text-muted-foreground text-xs">{preset.whenLabel}</span>
-                    </MenuItem>
-                  ))}
-                </MenuSubPopup>
-              </MenuSub>
-            )}
-            {shell.latestTurn?.completedAt ? (
-              <MenuItem
-                onClick={() =>
-                  run(
-                    () =>
-                      markThreadUnread(
-                        `${shell.environmentId}:${shell.id}`,
-                        shell.latestTurn?.completedAt,
-                      ),
-                    "Couldn't mark it unread",
-                  )
-                }
-              >
-                Mark unread
-              </MenuItem>
-            ) : null}
-            <MenuSeparator />
-            <MenuItem
-              onClick={() =>
-                run(async () => {
-                  await navigator.clipboard.writeText(shell.id);
-                  toastManager.add({
-                    type: "success",
-                    title: "Thread ID copied",
-                    description: shell.id,
-                  });
-                }, "Couldn't copy the ID")
-              }
-            >
-              Copy thread ID
-            </MenuItem>
-            <MenuItem onClick={() => run(() => actions.archiveThread(ref), "Couldn't archive it")}>
-              Archive
-            </MenuItem>
-            <MenuItem
-              variant="destructive"
-              onClick={() =>
-                run(async () => {
-                  const confirmed = await (requestConfirmDialog(
-                    `Delete "${shell.title}"? This can't be undone.`,
-                    {
-                      variant: "destructive",
-                    },
-                  ) ?? Promise.resolve(true));
-                  if (confirmed) await actions.deleteThread(ref);
-                }, "Couldn't delete it")
-              }
-            >
-              Delete
-            </MenuItem>
-          </>
-        ) : null}
-      </MenuPopup>
-    </Menu>
+    <input
+      ref={input}
+      defaultValue={props.shell.title}
+      aria-label="Thread title"
+      autoComplete="off"
+      className="-mx-1 min-w-0 rounded-sm bg-background px-1 text-[13px] text-sidebar-foreground outline-none ring-1 ring-ring"
+      onClick={(event) => event.stopPropagation()}
+      onKeyDown={(event) => {
+        event.stopPropagation();
+        if (event.nativeEvent.isComposing) return;
+        if (event.key === "Enter") finish(event.currentTarget.value);
+        else if (event.key === "Escape") finish(null);
+      }}
+      onBlur={(event) => finish(event.currentTarget.value)}
+    />
   );
 }
 

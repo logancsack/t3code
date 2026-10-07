@@ -56,28 +56,35 @@ export type AldoShellPatch =
   | { readonly remove: true }
   | { readonly set: Readonly<Record<string, unknown>> };
 
+/** T3's answer to settling a thread that's waiting on the user (OrchestrationThreadSettleBlockedError). */
+export const ALDO_SETTLE_BLOCKED =
+  "This thread still needs attention. Resolve or interrupt it first, then try again.";
+
+/** A command T3 would refuse, and what it would say. */
+export type AldoCommandRefusal = { readonly refuse: string };
+
 /**
  * What `command` does to `thread` (null when it isn't in the shell) on a
  * machine this browser isn't connected to: a patch to keep for it, "nothing"
  * (a machine known to be asleep, `asleep`, runs no session to stop), or null
  * when only the machine can take it (the command isn't one of these, or T3
- * would refuse it, so it says why).
+ * would refuse it, so it says why). Settling a thread that asks the user
+ * something, on a machine that's asleep (whose shell can't have moved on), is
+ * refused here with T3's words, rather than waking the machine to hear them.
  */
 export function aldoCommandPatch(
   command: AldoThreadCommand,
   thread: AldoShellThread | null,
   now: string,
   asleep: boolean,
-): AldoShellPatch | "nothing" | null {
+): AldoShellPatch | AldoCommandRefusal | "nothing" | null {
   if (command.type === "thread.session.stop") return asleep ? "nothing" : null;
   // Archived threads (not in the shell) can still be deleted.
   if (command.type === "thread.delete") return { remove: true };
   if (thread === null) return null;
   // Work T3 won't let be parked: a request waiting on the user, or a message no turn has taken up.
-  const blocked =
-    thread.hasPendingApprovals === true ||
-    thread.hasPendingUserInput === true ||
-    hasQueuedTurnStart(thread, now);
+  const asks = thread.hasPendingApprovals === true || thread.hasPendingUserInput === true;
+  const blocked = asks || hasQueuedTurnStart(thread, now);
   const working = thread.session?.status === "starting" || thread.session?.status === "running";
   const unsnoozed = thread.snoozedUntil != null ? { snoozedUntil: null, snoozedAt: null } : {};
 
@@ -86,6 +93,8 @@ export function aldoCommandPatch(
       return { remove: true };
 
     case "thread.settle": {
+      // (Its turn stays open while it asks, so its session reads as running.)
+      if (asks && asleep) return { refuse: ALDO_SETTLE_BLOCKED };
       if (working || blocked) return null;
       const already = thread.settledOverride === "settled" && thread.settledAt != null;
       return {
