@@ -936,6 +936,57 @@ export async function disconnectAldoIntegration(provider: string): Promise<void>
   await api(`/api/integrations/${encodeURIComponent(provider)}`, { method: "DELETE" });
 }
 
+// Apps: any app with a remote MCP server, connected for every agent
+// (logancsack/aldo src/lib/apps.ts). Aldo signs in to each in a popup and
+// keeps the sign-in; an older Aldo has none (null).
+
+export interface AldoApp {
+  readonly id: string;
+  readonly name: string;
+  readonly title: string;
+  readonly url: string;
+  /** connected; connecting (a sign-in under way, or never finished); failed (the app stopped accepting it). */
+  readonly status: "connected" | "connecting" | "failed";
+  readonly error: string | null;
+}
+
+export interface AldoAppCatalogEntry {
+  readonly name: string;
+  readonly title: string;
+  readonly url: string;
+  readonly about: string;
+  readonly connected: boolean;
+}
+
+export async function fetchAldoApps(): Promise<{
+  readonly catalog: ReadonlyArray<AldoAppCatalogEntry>;
+  readonly apps: ReadonlyArray<AldoApp>;
+} | null> {
+  const body = await api<{ catalog?: AldoAppCatalogEntry[]; apps?: AldoApp[] }>("/api/apps").catch(
+    (error: unknown) => {
+      if (error instanceof AldoApiError && error.status === 404) return null;
+      throw error;
+    },
+  );
+  // An older Aldo may answer with the web client's page instead of a 404.
+  return Array.isArray(body?.catalog) && Array.isArray(body?.apps)
+    ? { catalog: body.catalog, apps: body.apps }
+    : null;
+}
+
+/** The page that starts an app's sign-in: a catalog app by name, or any MCP server by its URL. */
+export function aldoAppConnectUrl(
+  target: { readonly app: string } | { readonly url: string },
+): string {
+  return "app" in target
+    ? `/api/apps/connect?app=${encodeURIComponent(target.app)}`
+    : `/api/apps/connect?url=${encodeURIComponent(target.url)}`;
+}
+
+export async function disconnectAldoApp(id: string): Promise<void> {
+  await api(`/api/apps/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
 /** Connects a generator with the user's key, using an account check where the provider supports one. */
 export async function connectAldoIntegrationKey(
   provider: string,
@@ -1717,18 +1768,20 @@ export async function runAldoRoutine(id: string): Promise<string> {
 // ---------------------------------------------------------------------------
 // Approvals: what waits on the user's one tap. An email an agent drafted in
 // their mail (sent as it stands), an event for their calendar, or a thread
-// Aldo suggests in a heads-up. Aldo does it when they approve.
+// Aldo suggests in a heads-up: Aldo does it when they approve. Or a step an
+// agent takes itself once they say yes (`confirm`: paying, booking,
+// cancelling, submitting, calling), with where, the total and the terms.
 
 export type AldoApprovalStatus = "pending" | "sending" | "approved" | "discarded" | "expired";
 
 export interface AldoApproval {
   readonly id: string;
-  readonly kind: "email" | "event" | "start";
+  readonly kind: "email" | "event" | "start" | "confirm";
   readonly provider: "google" | "microsoft" | null;
   readonly title: string;
   /** One line: who it's to, or when. */
   readonly summary: string;
-  /** What it is in full, labeled: To, Cc, Bcc, Attached; When, Invites, Where. */
+  /** What it is in full, labeled: To, Cc, Bcc, Attached; When, Invites, Where; Where, Total, Terms. */
   readonly fields: ReadonlyArray<{ readonly label: string; readonly value: string }>;
   /** The email's text, the event's description, or what the thread would be asked. */
   readonly body: string;

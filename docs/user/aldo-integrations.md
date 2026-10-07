@@ -1,6 +1,12 @@
 # Integrations in Aldo
 
-**Settings → Integrations** connects accounts your cloud agents use on your behalf: Google and Microsoft, for your mail, calendar, contacts and files, and media generators for images, video and audio.
+**Settings → Integrations** connects accounts your cloud agents use on your behalf: Google and Microsoft, for your mail, calendar, contacts and files, apps like Notion, Linear and Zapier, and media generators for images, video and audio.
+
+## Apps
+
+**Apps** connects other apps every agent can use as you, through each app's own MCP server: **Zapier** (which reaches thousands more apps through the actions you turn on in Zapier), **Notion**, **Linear**, **Jira and Confluence**, **Airtable**, **Canva**, **Granola**, **Stripe**, **PayPal**, **Webflow**, **Supabase**, **Sentry** and **Hugging Face**. Choose **Connect** and sign in to the app in the window that opens; you choose there what Aldo may do. Any other app with a remote MCP server connects by its address under **Another app**: you're asked to confirm it first, since every agent will use its tools, so connect only an app you trust.
+
+Aldo keeps the sign-in and refreshes it; no agent ever sees it. Every thread's agents get the app's tools when their machine next starts (an idle one restarts at once). An agent that needs an app you haven't connected sends you a link to connect it, and carries on once you have. You can also ask Aldo to connect one. If an app stops accepting the sign-in, its row says so: choose **Connect again**. **Disconnect** removes it from every agent.
 
 ## Image, video and audio
 

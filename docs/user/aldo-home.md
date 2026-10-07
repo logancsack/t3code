@@ -29,7 +29,7 @@ On a phone the home screen has two tabs:
 
 The board answers four questions, in order, starting with what waits on a tap from you.
 
-**Approve.** What waits on one tap from you: an email an agent drafted to send, an event for your calendar, or a thread Aldo suggests. See [Approvals and heads-ups](./aldo-approvals.md).
+**Approve.** What waits on one tap from you: an email an agent drafted to send, an event for your calendar, a thread Aldo suggests, or a step an agent takes only with your yes (paying, booking, cancelling, submitting, calling). See [Approvals and heads-ups](./aldo-approvals.md).
 
 **Needs you.** Every thread waiting on you, the one that has waited longest first:
 
