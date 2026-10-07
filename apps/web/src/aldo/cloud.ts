@@ -1386,6 +1386,32 @@ export const aldoAssistant = {
     ).messages,
 };
 
+/** The signed-in user, for the sidebar and the account dialog. */
+export interface AldoProfile {
+  readonly id: string;
+  readonly email: string;
+  readonly name: string | null;
+  readonly imageUrl: string | null;
+  /** Where they manage their sign-in (name, email, password, sessions). */
+  readonly manageUrl: string;
+  readonly signOutUrl: string;
+}
+
+/** Who's signed in; null where this Aldo can't say (an older one answers with the client's page). */
+export async function fetchAldoProfile(): Promise<AldoProfile | null> {
+  const body = await api<Partial<AldoProfile>>("/api/account").catch(() => null);
+  return body && typeof body.email === "string" && typeof body.id === "string"
+    ? {
+        id: body.id,
+        email: body.email,
+        name: typeof body.name === "string" && body.name.trim() ? body.name : null,
+        imageUrl: typeof body.imageUrl === "string" && body.imageUrl ? body.imageUrl : null,
+        manageUrl: typeof body.manageUrl === "string" ? body.manageUrl : "/account",
+        signOutUrl: typeof body.signOutUrl === "string" ? body.signOutUrl : "/sign-out",
+      }
+    : null;
+}
+
 /** What Aldo knows about the user: its profile of them and its notes. */
 export interface AldoMemoryItem {
   readonly id: string;
