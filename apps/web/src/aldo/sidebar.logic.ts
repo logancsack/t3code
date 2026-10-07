@@ -225,7 +225,10 @@ export function aldoSidebarList(input: {
     const target = { environmentId: shell.environmentId, threadId: shell.id };
     const conversation = home?.conversations.find((c) => sameTarget(c.thread, target)) ?? null;
     const prs = home?.pullRequests.filter((pr) => sameTarget(pr.thread, target)) ?? [];
-    const ready = prs.find((pr) => pr.status === "watching" && pr.stage === "green") ?? null;
+    // Ready for the user to merge: green, and not one Aldo merges on its own (mergesAt).
+    const ready =
+      prs.find((pr) => pr.status === "watching" && pr.stage === "green" && pr.mergesAt === null) ??
+      null;
     const landing =
       prs.find((pr) => pr.stage === "deploying" || pr.stage === "deploy-failed") ?? null;
     const lastVisitedAt = input.lastVisitedAt(key);

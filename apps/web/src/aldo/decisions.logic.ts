@@ -67,9 +67,12 @@ function conversationDecision(c: AldoHomeConversation): AldoDecision | null {
   return null;
 }
 
-/** Put away in the user's list: settled, or snoozed without asking them anything. */
-function putAway(c: AldoHomeConversation): boolean {
-  return c.settled === true || (c.snoozedUntil !== undefined && c.pending === undefined);
+/** Put away in the user's list: settled, or snoozed (still, by `now`) without asking them anything. */
+function putAway(c: AldoHomeConversation, now: number): boolean {
+  if (c.settled === true) return true;
+  return (
+    c.snoozedUntil !== undefined && Date.parse(c.snoozedUntil) > now && c.pending === undefined
+  );
 }
 
 /**
@@ -80,14 +83,19 @@ function putAway(c: AldoHomeConversation): boolean {
  * own. Aldo's brief picks from the same (src/lib/assistant/brief.ts).
  */
 export function aldoDecisions(home: AldoHome, now: number): ReadonlyArray<AldoDecision> {
-  const needsYou = boardFor(home.conversations, now).needsYou.filter((c) => !putAway(c));
+  const needsYou = boardFor(home.conversations, now).needsYou.filter((c) => !putAway(c, now));
   const fromThreads = needsYou.flatMap((c) => {
     const decision = conversationDecision(c);
     return decision ? [decision] : [];
   });
   const merges: AldoDecision[] = home.pullRequests
     .filter((pr) => pr.status === "watching" && pr.stage === "green" && pr.mergesAt === null)
-    .filter((pr) => !needsYou.some((c) => sameTarget(pr.thread, c.thread)))
+    // Its thread's own decision comes first; a thread put away puts away its pull request too.
+    .filter(
+      (pr) =>
+        !needsYou.some((c) => sameTarget(pr.thread, c.thread)) &&
+        !home.conversations.some((c) => sameTarget(pr.thread, c.thread) && putAway(c, now)),
+    )
     .map((pullRequest) => ({
       kind: "merge",
       key: `merge:${pullRequest.repo}#${pullRequest.number}`,

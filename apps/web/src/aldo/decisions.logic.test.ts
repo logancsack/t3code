@@ -172,6 +172,20 @@ describe("aldoDecisions", () => {
     expect(decisions.map((d) => d.key)).toEqual(["question:s:r1"]);
   });
 
+  it("puts away a thread's pull request with it, and wakes a snooze that has run out", () => {
+    const decisions = aldoDecisions(
+      home({
+        conversations: [
+          conversation({ ref: "p", thread: at("p"), state: "done", settled: true }),
+          conversation({ ref: "w", thread: at("w"), state: "failed", snoozedUntil: ago(1) }),
+        ],
+        pullRequests: [pullRequest({ thread: at("p") })],
+      }),
+      NOW,
+    );
+    expect(decisions.map((d) => d.key)).toEqual([`failed:w:${ago(5)}`]);
+  });
+
   it("keys a question by what it asks: a new one is a new decision", () => {
     const before = home({ conversations: [question] });
     const after = home({
