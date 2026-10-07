@@ -1031,7 +1031,9 @@ function ApprovalRow(props: {
             ? "Email to approve"
             : a.kind === "event"
               ? "Event to add"
-              : "Thread to start"}
+              : a.kind === "confirm"
+                ? "Needs your yes"
+                : "Thread to start"}
           {a.summary ? ` · ${a.summary}` : ""}
         </span>
       </span>

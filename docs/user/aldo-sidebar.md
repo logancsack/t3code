@@ -6,7 +6,7 @@ Aldo's sidebar lists your threads by what each needs from you, rather than by pr
 
 - **Drafts**: threads you started and haven't sent yet.
 - **Pinned**: threads you pinned, in the order you arranged them.
-- **Waiting on you**: approvals (an email to send, an event to add, a thread Aldo suggests) and threads that ask you something, have a plan to approve, stopped with an error, or have a pull request ready to merge. The one that has waited longest is first.
+- **Waiting on you**: approvals (an email to send, an event to add, a thread Aldo suggests, a step that needs your yes) and threads that ask you something, have a plan to approve, stopped with an error, or have a pull request ready to merge. The one that has waited longest is first.
 - **Working**: threads an agent is working on, with the step it's on.
 - **Landing**: pull requests that merged and are deploying.
 - **Unread**: threads that finished since you last opened them.
