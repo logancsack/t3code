@@ -8,6 +8,7 @@
 
 import {
   CalendarPlusIcon,
+  CircleCheckBigIcon,
   CheckIcon,
   ChevronRightIcon,
   CircleAlertIcon,
@@ -53,7 +54,9 @@ export function DecisionIcon(props: {
             ? MailIcon
             : d.approval.kind === "event"
               ? CalendarPlusIcon
-              : SparklesIcon,
+              : d.approval.kind === "confirm"
+                ? CircleCheckBigIcon
+                : SparklesIcon,
           "bg-warning/12 text-warning-foreground",
         ]
       : d.kind === "question"
@@ -94,6 +97,8 @@ export function quickChoice(
   d: AldoDecision,
   suggestion: string | null,
 ): { readonly label: string; readonly choice: AldoChoice; readonly primary: boolean } | null {
+  // A step that needs the user's yes (a purchase, a booking) is said yes to with its total and terms in view: in its card.
+  if (d.kind === "aldo-approval" && d.approval.kind === "confirm") return null;
   if (d.kind === "aldo-approval")
     return {
       label: d.approval.approveLabel,

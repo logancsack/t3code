@@ -191,7 +191,9 @@ export function decisionBrief(decision: AldoDecision): string {
           ? "an email draft"
           : a.kind === "event"
             ? "a calendar event"
-            : "a thread";
+            : a.kind === "confirm"
+              ? "a step an agent takes only once the user says yes (a purchase, booking, cancellation, submission or call)"
+              : "a thread to start";
       return [
         `${what} waiting on the user's OK: "${a.title}" (${a.summary}).`,
         a.body ? `It says: ${a.body.slice(0, 600)}` : "",

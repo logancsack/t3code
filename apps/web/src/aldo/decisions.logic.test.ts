@@ -204,6 +204,18 @@ describe("aldoDecisions", () => {
     expect(failed!.key).toBe(`failed:f:${ago(40)}`);
   });
 
+  it("tells Aldo what a step that needs the user's yes is", () => {
+    const [confirm] = aldoDecisions(
+      home({
+        approvals: [
+          approval("buy", { kind: "confirm", title: "Book the loft", approveLabel: "Book" }),
+        ],
+      }),
+      NOW,
+    );
+    expect(decisionBrief(confirm!)).toContain("only once the user says yes");
+  });
+
   it("keys a question by what it asks: a new one is a new decision", () => {
     const before = home({ conversations: [question] });
     const after = home({
