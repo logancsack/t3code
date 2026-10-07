@@ -192,7 +192,7 @@ let liveOpening: string | undefined;
 /** What's been said on the call, as turns (GPT-Live sends fragments). */
 let transcript: AldoLiveTranscript | null = null;
 /** Requests the voice handed over that Aldo is working on (and typed words it is). */
-const delegating = new Set<string>();
+const delegating = new Map<string, AbortController>();
 /** Results sent to the voice (what they said), by the event id OpenAI names if it refuses one. */
 const results = new Map<string, string>();
 let eventNumber = 0;
@@ -517,10 +517,14 @@ function appendLive(
  * Asks Aldo for what was handed over (`id`, or what was typed), telling the
  * voice once if it takes a while; resolves to what the voice should say.
  */
-async function worked(id: string | null, ask: () => Promise<string>): Promise<string> {
+async function worked(
+  id: string | null,
+  signal: AbortSignal,
+  ask: () => Promise<string>,
+): Promise<string> {
   const call = transcript;
   const timer = setTimeout(() => {
-    if (transcript !== call) return;
+    if (transcript !== call || signal.aborted) return;
     appendLive("session.commentary.append", STILL_WORKING, id);
     lastSpokeAt = Date.now();
   }, STILL_WORKING_MS);
@@ -529,6 +533,23 @@ async function worked(id: string | null, ask: () => Promise<string>): Promise<st
   } finally {
     clearTimeout(timer);
   }
+}
+
+/**
+ * A new request (handed over, or typed) stops the ones Aldo is still working
+ * on: the voice hands over corrections and withdrawals ("never mind"), and the
+ * new one has the whole conversation, to do what's still wanted.
+ */
+function begin(key: string): { signal: AbortSignal; stopped: boolean } {
+  let stopped = false;
+  for (const controller of delegating.values()) {
+    if (controller.signal.aborted) continue;
+    controller.abort("superseded");
+    stopped = true;
+  }
+  const controller = new AbortController();
+  delegating.set(key, controller);
+  return { signal: controller.signal, stopped };
 }
 
 /** The call started: it greets the user (or says what it was opened with, or takes what was typed). */
@@ -593,13 +614,15 @@ async function delegateToAldo(
   session: string,
   turns: ReadonlyArray<AldoLiveTurn>,
   typed: string | null,
+  signal: AbortSignal,
+  stopped: boolean,
 ): Promise<string> {
   const onScreen = aldoOnScreen();
   const viewing = onScreen
     ? { environmentId: onScreen.environmentId, threadId: onScreen.threadId }
     : null;
   try {
-    const result = await aldoAssistant.delegate(session, turns, typed, viewing);
+    const result = await aldoAssistant.delegate(session, turns, typed, viewing, signal, stopped);
     showCalls(result.calls);
     return result.say || "Done.";
   } catch (error) {
@@ -612,30 +635,40 @@ async function delegateToAldo(
  * Aldo does it, and the voice is told what to say.
  */
 async function runDelegation(id: string, offset: number): Promise<void> {
-  delegating.add(id);
+  const { signal, stopped } = begin(id);
   tickLive();
   const call = transcript;
   const until = Date.now() + SETTLE_MAX_MS;
   // The voice can delegate as the user says their last word, or before it's transcribed: wait for it.
   const talking = () => {
-    if (call === null || transcript !== call || Date.now() >= until) return false;
+    if (call === null || transcript !== call || signal.aborted || Date.now() >= until) return false;
     const heard = call.heardUntil("user");
     return heard === 0 || heard < offset - HEARD_SLACK_MS || call.quietFor("user") < SETTLE_MS;
   };
   while (talking()) await new Promise((resolve) => setTimeout(resolve, 100));
   const session = sessionId;
-  if (!call || transcript !== call || !session) {
-    delegating.delete(id);
-    return;
+  if (call && transcript === call && session && !signal.aborted) {
+    call.settle();
+    call.flush("user");
+    const turns = call.all();
+    const answer = await worked(id, signal, () =>
+      delegateToAldo(session, turns, null, signal, stopped),
+    );
+    // A call that ended meanwhile has no one to tell. One about to be told isn't quiet.
+    if (transcript === call && !signal.aborted) {
+      appendLive("session.commentary.append", answer, id, true);
+      lastSpokeAt = Date.now();
+    }
   }
-  call.settle();
-  call.flush("user");
-  const turns = call.all();
-  const answer = await worked(id, () => delegateToAldo(session, turns, null));
-  // A call that ended meanwhile has no one to tell. One about to be told isn't quiet.
-  if (transcript === call) appendLive("session.commentary.append", answer, id, true);
-  lastSpokeAt = Date.now();
-  delegating.delete(id);
+  // One a newer request replaced says nothing of its own; the voice is told quietly, so it doesn't wait on it.
+  if (signal.aborted && signal.reason === "superseded" && transcript === call && call) {
+    appendLive(
+      "session.thinking.append",
+      "Replaced by the user's newer request: nothing to say for this one.",
+      id,
+    );
+  }
+  if (delegating.get(id)?.signal === signal) delegating.delete(id);
 }
 
 /** Words typed on the call: they go to Aldo as the user's (the voice hears them too), and the voice says what came of it. */
@@ -644,16 +677,20 @@ async function typeToLive(words: string): Promise<void> {
   const session = sessionId;
   if (!call || !session) return;
   const id = `typed-${Date.now()}`;
-  delegating.add(id);
+  const { signal, stopped } = begin(id);
   lastSpokeAt = Date.now();
   tickLive();
   appendLive("session.thinking.append", `The user typed: ${words}`);
   const before = call.all();
   call.note({ role: "user", text: words });
-  const answer = await worked(null, () => delegateToAldo(session, before, words));
-  if (transcript === call) appendLive("session.commentary.append", answer, null, true);
-  lastSpokeAt = Date.now();
-  delegating.delete(id);
+  const answer = await worked(null, signal, () =>
+    delegateToAldo(session, before, words, signal, stopped),
+  );
+  if (transcript === call && !signal.aborted) {
+    appendLive("session.commentary.append", answer, null, true);
+    lastSpokeAt = Date.now();
+  }
+  if (delegating.get(id)?.signal === signal) delegating.delete(id);
 }
 
 function onLiveEvent(event: { type: string } & Record<string, unknown>): void {
@@ -811,6 +848,8 @@ function teardown(graceful = false): void {
   live = false;
   liveStarted = false;
   liveOpening = undefined;
+  // Hanging up stops what Aldo is working on for the call: nothing starts after it.
+  for (const controller of delegating.values()) controller.abort("hangup");
   delegating.clear();
   results.clear();
   responding = false;

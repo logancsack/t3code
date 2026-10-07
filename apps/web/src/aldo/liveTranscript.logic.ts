@@ -41,7 +41,8 @@ export class AldoLiveTranscript {
     wall = Date.now(),
   ): void {
     const turn = this.open.get(role);
-    if (turn && start - turn.end > this.gapMs) this.finish(role);
+    // After a pause it's a new turn: the old one ends, after any that began before it.
+    if (turn && start - turn.end > this.gapMs) this.flush(role);
     const current = this.open.get(role);
     if (current) {
       current.text += delta;
