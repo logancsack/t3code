@@ -186,6 +186,24 @@ describe("aldoDecisions", () => {
     expect(decisions.map((d) => d.key)).toEqual([`failed:w:${ago(5)}`]);
   });
 
+  it("keys what waits otherwise by when it got there, not by a rename since", () => {
+    const [failed] = aldoDecisions(
+      home({
+        conversations: [
+          conversation({
+            ref: "f",
+            thread: at("f"),
+            state: "failed",
+            at: ago(1),
+            stateAt: ago(40),
+          }),
+        ],
+      }),
+      NOW,
+    );
+    expect(failed!.key).toBe(`failed:f:${ago(40)}`);
+  });
+
   it("keys a question by what it asks: a new one is a new decision", () => {
     const before = home({ conversations: [question] });
     const after = home({

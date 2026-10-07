@@ -62,8 +62,9 @@ function conversationDecision(c: AldoHomeConversation): AldoDecision | null {
     };
   if (kind === "plan" && c.plan)
     return { kind, key: `plan:${c.ref}:${c.plan.id}`, conversation: c, plan: c.plan };
+  // By when it got there (a rename or a pin moves `at`, not this), as Aldo's brief keys it.
   if (kind === "failed" || kind === "waiting")
-    return { kind, key: `${kind}:${c.ref}:${c.at}`, conversation: c };
+    return { kind, key: `${kind}:${c.ref}:${c.stateAt ?? c.at}`, conversation: c };
   return null;
 }
 
