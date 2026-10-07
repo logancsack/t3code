@@ -20,6 +20,8 @@ describe("AldoLiveTranscript", () => {
     expect(turns).toEqual([]);
     expect(transcript.saying("user")).toBe("Hey, what's on my calendar?");
     expect(transcript.quietFor("user", 1500)).toBe(500);
+    expect(transcript.heardUntil("user")).toBe(3000);
+    expect(transcript.heardUntil("assistant")).toBe(2600);
     transcript.settle(2500);
     expect(turns).toEqual(["user: Hey, what's on my calendar?", "assistant: Mm-hmm."]);
   });
@@ -77,6 +79,16 @@ describe("AldoLiveTranscript order", () => {
     transcript.add("user", " spins forever.", 1000, 1600, 1600);
     transcript.settle(4000);
     expect(turns).toEqual(["So the login page spins forever.", "Mm-hmm."]);
+  });
+
+  it("ends a turn split by a pause after the user's turn that began before it", () => {
+    const turns: string[] = [];
+    const transcript = new AldoLiveTranscript((turn) => turns.push(`${turn.role}: ${turn.text}`));
+    transcript.add("user", " So the login page", 0, 1000, 0);
+    transcript.add("assistant", " Mm-hmm.", 400, 600, 400);
+    transcript.add("user", " spins forever", 1000, 2000, 1000);
+    transcript.add("assistant", " Got it.", 2500, 2900, 1100);
+    expect(turns).toEqual(["user: So the login page spins forever", "assistant: Mm-hmm."]);
   });
 
   it("ends everything being said when the user types", () => {

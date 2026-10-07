@@ -1433,10 +1433,16 @@ export const aldoAssistant = {
     transcript: ReadonlyArray<{ role: "user" | "assistant"; text: string }>,
     typed: string | null,
     viewing: AldoHomeTarget | null,
+    /** Stops it (a newer request, a hangup): Aldo starts nothing after that. */
+    signal?: AbortSignal,
+    /** It replaced an earlier request still being worked on. */
+    stopped = false,
   ): Promise<AldoDelegated> => {
     const body = await api<Partial<AldoDelegated>>("/api/assistant/delegate", {
       method: "POST",
+      ...(signal ? { signal } : {}),
       body: JSON.stringify({
+        ...(stopped ? { stopped } : {}),
         sessionId,
         transcript,
         ...(typed ? { typed } : {}),

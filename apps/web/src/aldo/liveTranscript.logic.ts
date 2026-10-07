@@ -21,6 +21,8 @@ interface OpenTurn {
 
 export class AldoLiveTranscript {
   private readonly open = new Map<AldoLiveTurn["role"], OpenTurn>();
+  /** How far into the timeline each speaker's words have come (ms). */
+  private readonly until = new Map<AldoLiveTurn["role"], number>();
   /** The furthest the timeline has been seen, and when (wall clock), to tell how long it's been quiet. */
   private seen = { at: 0, wall: 0 };
   readonly turns: AldoLiveTurn[] = [];
@@ -39,7 +41,8 @@ export class AldoLiveTranscript {
     wall = Date.now(),
   ): void {
     const turn = this.open.get(role);
-    if (turn && start - turn.end > this.gapMs) this.finish(role);
+    // After a pause it's a new turn: the old one ends, after any that began before it.
+    if (turn && start - turn.end > this.gapMs) this.flush(role);
     const current = this.open.get(role);
     if (current) {
       current.text += delta;
@@ -48,6 +51,12 @@ export class AldoLiveTranscript {
       this.open.set(role, { text: delta, start, end });
     }
     if (end >= this.seen.at) this.seen = { at: end, wall };
+    this.until.set(role, Math.max(this.until.get(role) ?? 0, end));
+  }
+
+  /** How far into the timeline `role`'s words have been transcribed (ms); 0 before any. */
+  heardUntil(role: AldoLiveTurn["role"]): number {
+    return this.until.get(role) ?? 0;
   }
 
   /** A turn that didn't come as speech (what the user typed on the call): it ends what's being said, and is the newest. */
