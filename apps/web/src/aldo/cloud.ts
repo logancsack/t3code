@@ -1596,6 +1596,8 @@ export interface AldoHomeConversation {
   readonly machine: string;
   readonly model?: string;
   readonly at: string;
+  /** When its machine last reported its state: `at` moves with its list's changes too (a rename, a pin). */
+  readonly stateAt?: string;
   readonly pullRequests?: ReadonlyArray<{
     readonly repo: string;
     readonly number: number;
@@ -1606,6 +1608,9 @@ export interface AldoHomeConversation {
   readonly pending?: AldoHomePending;
   readonly plan?: { readonly id: string; readonly text: string };
   readonly pressure?: AldoMachinePressure | null;
+  /** Snoozed until then (only while that's ahead), or settled: put away in the user's list. */
+  readonly snoozedUntil?: string;
+  readonly settled?: true;
 }
 
 export interface AldoHomePullRequest {

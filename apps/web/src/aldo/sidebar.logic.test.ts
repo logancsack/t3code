@@ -137,6 +137,16 @@ describe("aldoSidebarList", () => {
     expect(keys(result.earlier)).toEqual(["aldo-d:d"]);
   });
 
+  it("doesn't ask the user to merge what Aldo merges on its own", () => {
+    const result = list(
+      [shell("m", { latestTurn: { completedAt: ago(50) } })],
+      home({ pullRequests: [pullRequest("m", { mergesAt: ago(-5) })] }),
+      { "aldo-m:m": ago(10) },
+    );
+    expect(result.waiting).toEqual([]);
+    expect(keys(result.earlier)).toEqual(["aldo-m:m"]);
+  });
+
   it("says what each asks or does, from Aldo's read when the shell can't", () => {
     const result = list(
       [

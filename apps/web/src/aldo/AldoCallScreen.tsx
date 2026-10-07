@@ -425,6 +425,17 @@ function WalkCard(props: {
           <p className="line-clamp-3 text-muted-foreground text-xs">{decisionAsk(d)}</p>
         </div>
       </div>
+      {/* What it is in full: who it's to, when, where, the total and the terms. */}
+      {d.kind === "aldo-approval" && d.approval.fields.length > 0 ? (
+        <dl className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 text-xs">
+          {d.approval.fields.map((f) => (
+            <div key={f.label} className="contents">
+              <dt className="text-muted-foreground">{f.label}</dt>
+              <dd className="min-w-0 break-words">{f.value}</dd>
+            </div>
+          ))}
+        </dl>
+      ) : null}
       {d.kind === "aldo-approval" && d.approval.body ? (
         <p className="line-clamp-3 whitespace-pre-wrap rounded-lg bg-background/60 px-2.5 py-2 text-xs">
           {d.approval.body}

@@ -155,6 +155,67 @@ describe("aldoDecisions", () => {
     ]);
   });
 
+  it("leaves out what isn't the user's to decide now", () => {
+    const decisions = aldoDecisions(
+      home({
+        approvals: [approval("sending", { status: "sending" })],
+        conversations: [
+          { ...question, settled: true },
+          conversation({ ref: "z", thread: at("z"), state: "failed", snoozedUntil: ago(-60) }),
+          // Snoozed, but it asks: it raised its hand.
+          { ...question, ref: "s", thread: at("s"), snoozedUntil: ago(-60) },
+        ],
+        pullRequests: [pullRequest({ thread: at("m"), mergesAt: ago(-5) })],
+      }),
+      NOW,
+    );
+    expect(decisions.map((d) => d.key)).toEqual(["question:s:r1"]);
+  });
+
+  it("puts away a thread's pull request with it, and wakes a snooze that has run out", () => {
+    const decisions = aldoDecisions(
+      home({
+        conversations: [
+          conversation({ ref: "p", thread: at("p"), state: "done", settled: true }),
+          conversation({ ref: "w", thread: at("w"), state: "failed", snoozedUntil: ago(1) }),
+        ],
+        pullRequests: [pullRequest({ thread: at("p") })],
+      }),
+      NOW,
+    );
+    expect(decisions.map((d) => d.key)).toEqual([`failed:w:${ago(5)}`]);
+  });
+
+  it("keys what waits otherwise by when it got there, not by a rename since", () => {
+    const [failed] = aldoDecisions(
+      home({
+        conversations: [
+          conversation({
+            ref: "f",
+            thread: at("f"),
+            state: "failed",
+            at: ago(1),
+            stateAt: ago(40),
+          }),
+        ],
+      }),
+      NOW,
+    );
+    expect(failed!.key).toBe(`failed:f:${ago(40)}`);
+  });
+
+  it("tells Aldo what a step that needs the user's yes is", () => {
+    const [confirm] = aldoDecisions(
+      home({
+        approvals: [
+          approval("buy", { kind: "confirm", title: "Book the loft", approveLabel: "Book" }),
+        ],
+      }),
+      NOW,
+    );
+    expect(decisionBrief(confirm!)).toContain("only once the user says yes");
+  });
+
   it("keys a question by what it asks: a new one is a new decision", () => {
     const before = home({ conversations: [question] });
     const after = home({

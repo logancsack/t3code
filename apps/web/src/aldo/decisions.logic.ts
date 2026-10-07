@@ -62,34 +62,56 @@ function conversationDecision(c: AldoHomeConversation): AldoDecision | null {
     };
   if (kind === "plan" && c.plan)
     return { kind, key: `plan:${c.ref}:${c.plan.id}`, conversation: c, plan: c.plan };
+  // By when it got there (a rename or a pin moves `at`, not this), as Aldo's brief keys it.
   if (kind === "failed" || kind === "waiting")
-    return { kind, key: `${kind}:${c.ref}:${c.at}`, conversation: c };
+    return { kind, key: `${kind}:${c.ref}:${c.stateAt ?? c.at}`, conversation: c };
   return null;
+}
+
+/** Put away in the user's list: settled, or snoozed (still, by `now`) without asking them anything. */
+function putAway(c: AldoHomeConversation, now: number): boolean {
+  if (c.settled === true) return true;
+  return (
+    c.snoozedUntil !== undefined && Date.parse(c.snoozedUntil) > now && c.pending === undefined
+  );
 }
 
 /**
  * Everything waiting on the user, in the order to go through it: Aldo's
- * approvals, then threads (waited longest first), then pull requests that can
- * merge and whose thread isn't on the list already.
+ * approvals (not ones already being carried out), then threads (waited
+ * longest first, not ones they put away), then pull requests that can merge,
+ * whose thread isn't on the list already and that Aldo won't merge on its
+ * own. Aldo's brief picks from the same (src/lib/assistant/brief.ts).
  */
 export function aldoDecisions(home: AldoHome, now: number): ReadonlyArray<AldoDecision> {
-  const needsYou = boardFor(home.conversations, now).needsYou;
+  const needsYou = boardFor(home.conversations, now).needsYou.filter((c) => !putAway(c, now));
   const fromThreads = needsYou.flatMap((c) => {
     const decision = conversationDecision(c);
     return decision ? [decision] : [];
   });
   const merges: AldoDecision[] = home.pullRequests
-    .filter((pr) => pr.status === "watching" && pr.stage === "green")
-    .filter((pr) => !needsYou.some((c) => sameTarget(pr.thread, c.thread)))
+    .filter((pr) => pr.status === "watching" && pr.stage === "green" && pr.mergesAt === null)
+    // Its thread's own decision comes first; a thread put away puts away its pull request too.
+    .filter(
+      (pr) =>
+        !needsYou.some((c) => sameTarget(pr.thread, c.thread)) &&
+        !home.conversations.some((c) => sameTarget(pr.thread, c.thread) && putAway(c, now)),
+    )
     .map((pullRequest) => ({
       kind: "merge",
       key: `merge:${pullRequest.repo}#${pullRequest.number}`,
       pullRequest,
     }));
   return [
-    ...waitingApprovals(home.approvals).map(
-      (approval): AldoDecision => ({ kind: "aldo-approval", key: `aldo:${approval.id}`, approval }),
-    ),
+    ...waitingApprovals(home.approvals)
+      .filter((approval) => approval.status === "pending")
+      .map(
+        (approval): AldoDecision => ({
+          kind: "aldo-approval",
+          key: `aldo:${approval.id}`,
+          approval,
+        }),
+      ),
     ...fromThreads,
     ...merges,
   ];
@@ -169,7 +191,9 @@ export function decisionBrief(decision: AldoDecision): string {
           ? "an email draft"
           : a.kind === "event"
             ? "a calendar event"
-            : "a thread";
+            : a.kind === "confirm"
+              ? "a step an agent takes only once the user says yes (a purchase, booking, cancellation, submission or call)"
+              : "a thread to start";
       return [
         `${what} waiting on the user's OK: "${a.title}" (${a.summary}).`,
         a.body ? `It says: ${a.body.slice(0, 600)}` : "",
