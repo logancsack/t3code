@@ -20,6 +20,7 @@ import { installManagedCommandDispatch, prepareManagedDevPc } from "./managedDev
 import { installAldoCommandDispatch } from "./aldo/dispatch";
 import { installAldoServerConfigCapture } from "./aldo/serverConfig";
 import { installAldoNotificationsSync } from "./aldo/notifications";
+import { installAldoReconnect } from "./aldo/reconnect";
 import { installAldoShellSync } from "./aldo/shells";
 import { installAldoThreadDetails } from "./aldo/threadDetails";
 import { installAldoVersionCheck } from "./aldo/version";
@@ -39,6 +40,7 @@ async function renderApp() {
     installAldoNotificationsSync();
     installAldoShellSync();
     installAldoThreadDetails();
+    installAldoReconnect();
     await prepareManagedDevPc();
   } else {
     initializeLandingDemoClientSettings();
