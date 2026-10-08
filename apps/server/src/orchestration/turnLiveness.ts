@@ -12,10 +12,12 @@ import {
  * A turn that looks silent is not necessarily dead: it may be waiting on a
  * tool it launched (a build, a test run, CI) or on the human (an approval or
  * user-input request). Those waits are legitimately unbounded, so the stall
- * watchdog must never time them out. The only wait with a bounded honest
- * duration is waiting on the model itself — a healthy model wait produces a
- * steady stream of content deltas, and prolonged total silence there means
- * the provider connection is dead, not thinking.
+ * watchdog must never time them out. Waiting on the model is not bounded
+ * either, only total silence is: any runtime event for the turn is a sign
+ * of life, including reasoning progress that carries no text (adapters
+ * surface it as an empty reasoning delta, which the transcript drops), so a
+ * model may think for as long as it needs. Prolonged total silence means the
+ * provider connection is dead, not thinking.
  */
 export interface TurnLiveness {
   readonly turnId: TurnId;

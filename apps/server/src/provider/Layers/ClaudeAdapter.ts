@@ -3463,6 +3463,18 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         });
         return;
       case "thinking_tokens":
+        // During redacted thinking the API streams only these token
+        // estimates. They carry no text to show, but they are the model's
+        // sign of life: surface them as an empty reasoning delta, which the
+        // transcript drops and the turn's liveness counts.
+        if (!context.turnState) {
+          return;
+        }
+        yield* offerRuntimeEvent({
+          ...base,
+          type: "content.delta",
+          payload: { streamKind: "reasoning_text", delta: "" },
+        });
         return;
       case "api_retry":
         // Transport-level retry heartbeat. Surfacing each attempt as a
