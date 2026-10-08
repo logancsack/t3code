@@ -5531,6 +5531,8 @@ function ChatViewContent(props: ChatViewProps) {
 
   useEffect(() => {
     const handler = (event: globalThis.KeyboardEvent) => {
+      // noVNC handles desktop typing and shortcuts after this capture handler.
+      if (aldoDesktopOwnsKeyboard(event.target)) return;
       if (preventRepeatedTerminalCloseShortcut(event, keybindings)) {
         event.stopPropagation();
         return;
