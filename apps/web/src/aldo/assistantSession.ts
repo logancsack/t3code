@@ -23,14 +23,23 @@
 // sidebar at once, and is followed until its first turn is under way: if it
 // has to wait, runs into trouble, can't start or stops at once (an agent
 // signed out), Aldo says so (or, once the conversation has ended, a toast
-// does).
+// does). On a GPT-Live call, what comes back of work handed over (an answer,
+// a question for the user, a failure, a start that has to wait) and what an
+// agent tells the user itself are Aldo's to tell (followups): the page asks
+// for them while the call is on, and the voice brings each up unprompted at
+// a pause, once (an Aldo that has them tells of a start itself, too).
 
 import { create } from "zustand";
 
 import { toastManager } from "../components/ui/toast";
 import {
   actionFor,
+  followupAction,
+  followupPrompt,
+  followupsEvery,
   functionCallsIn,
+  newsPause,
+  NEWS_UNSPOKEN_MS,
   openTargetOf,
   previewOf,
   phaseAfter,
@@ -55,6 +64,7 @@ import {
   requestAldoDirectoryRefresh,
   subscribeAldoEnvironments,
   type AldoChatTurn,
+  type AldoFollowupNews,
   type AldoImageUpload,
 } from "./cloud";
 import {
@@ -198,6 +208,21 @@ const results = new Map<string, string>();
 let eventNumber = 0;
 /** When anyone last said anything on the call (wall clock), for hanging up one nobody's using. */
 let lastSpokeAt = 0;
+/** Whether this Aldo tells a call what came back of work it handed over; null until asked. */
+let followupsSupported: boolean | null = null;
+/** What's back to tell, as Aldo last said (in the order to say it), and how much is still working. */
+let followups: ReadonlyArray<AldoFollowupNews> = [];
+let following = 0;
+let followupsTimer: ReturnType<typeof setTimeout> | null = null;
+let followupsDue = 0;
+let readingFollowups = false;
+let tellingFollowup = false;
+/** News claimed for this call and not yet said: said at the next pause, or kept in the conversation if the call ends first. */
+let claimed: { news: AldoFollowupNews; line: string; session: string } | null = null;
+/** When the last result or news went to the voice, and how far Aldo's words had come then (past it, it's being said). */
+let resultSentAt = 0;
+let sentFrom = 0;
+let newsSaidAt = 0;
 let liveTimer: ReturnType<typeof setInterval> | null = null;
 /** The connection a GPT-Live session is being made for: one hung up meanwhile is closed with OpenAI, not just dropped. */
 let startingLive: RTCPeerConnection | null = null;
@@ -358,6 +383,10 @@ function tellAldo(news: AldoStartNews): void {
 }
 
 function tellStartNews(watch: AldoStartWatch, news: AldoStartNews): void {
+  // On a call where Aldo tells what came of its work (followups), it tells this too, with a line of its own:
+  // only a retry, which it doesn't tell, shows here.
+  const aldoTells = live && liveStarted && followupsSupported === true;
+  if (aldoTells && news.state !== "retrying") return;
   addEntry({
     kind: "action",
     id: `start-${watch.threadId}-${news.state}`,
@@ -366,6 +395,7 @@ function tellStartNews(watch: AldoStartWatch, news: AldoStartNews): void {
     failed: news.state !== "queued",
     open: { environmentId: watch.environmentId, threadId: watch.threadId },
   });
+  if (aldoTells) return;
   if (aldoAssistantLive() && channel?.readyState === "open" && (!live || liveStarted))
     tellAldo(news);
   else toastStartNews(news);
@@ -500,7 +530,8 @@ function appendLive(
   type: "session.instructions.append" | "session.thinking.append" | "session.commentary.append",
   content: string,
   delegationId: string | null = null,
-  result = false,
+  /** A result, kept to show if it's refused: the content itself, or what to show instead. */
+  result: boolean | string = false,
 ): void {
   const parts =
     type === "session.commentary.append"
@@ -508,7 +539,7 @@ function appendLive(
       : splitForLive(content, APPEND_TOKENS);
   for (const part of parts) {
     const eventId = `aldo_${++eventNumber}`;
-    if (result) results.set(eventId, content);
+    if (result) results.set(eventId, typeof result === "string" ? result : content);
     send({ type, event_id: eventId, delegation_id: delegationId, content: part });
   }
 }
@@ -577,6 +608,105 @@ function onLiveStarted(): void {
       liveOpening ? `${liveOpening}\n\nSay it to the user now.` : LIVE_GREETING,
     );
   liveTimer = setInterval(tickLive, 250);
+  // What came back shortly before (a call that dropped and came back) is told once the greeting's done.
+  readFollowupsSoon(0);
+}
+
+/** Asks Aldo again what's back to tell the call, in `ms` (sooner replaces later, not the other way round). */
+function readFollowupsSoon(ms: number): void {
+  if (followupsSupported === false || !live || !liveStarted || !sessionId) return;
+  const due = Date.now() + ms;
+  if (followupsTimer && followupsDue <= due) return;
+  if (followupsTimer) clearTimeout(followupsTimer);
+  followupsDue = due;
+  followupsTimer = setTimeout(() => void readFollowups(), ms);
+}
+
+async function readFollowups(): Promise<void> {
+  followupsTimer = null;
+  const session = sessionId;
+  if (!session || !live || !liveStarted || readingFollowups) return;
+  readingFollowups = true;
+  try {
+    const read = await aldoAssistant.followups(session);
+    if (sessionId !== session) return;
+    followupsSupported = read !== null;
+    // What the last read had and this one doesn't is no one's to say now.
+    followups = read?.news ?? [];
+    following = read?.following ?? 0;
+  } catch {
+    // Asked again later.
+  } finally {
+    readingFollowups = false;
+    // A call that started while this one's read was out asks for its own now.
+    readFollowupsSoon(
+      sessionId === session ? followupsEvery({ following, news: followups.length }) : 0,
+    );
+  }
+}
+
+/**
+ * At a pause, the first news is claimed: once, and only if it's still how the
+ * work stands. It's said at the pause after (the claim takes a moment, and the
+ * user may have started speaking meanwhile).
+ */
+function tellFollowupAtPause(): void {
+  const call = transcript;
+  const session = sessionId;
+  if (!call || !session || tellingFollowup || (!claimed && followups.length === 0)) return;
+  if (!atPause(call)) return;
+  if (claimed) {
+    const { news, line } = claimed;
+    claimed = null;
+    appendLive("session.instructions.append", followupPrompt(line), null, line);
+    addEntry({ kind: "action", ...followupAction(news) });
+    sent(call);
+    newsSaidAt = Date.now();
+    return;
+  }
+  const [next, ...rest] = followups;
+  if (!next) return;
+  followups = rest;
+  tellingFollowup = true;
+  void aldoAssistant
+    .claimFollowup(session, next.id, next.outcome)
+    .then((line) => {
+      if (!line) return;
+      if (transcript === call) claimed = { news: next, line, session };
+      else keepUnsaid(next, line, session);
+    })
+    .catch(() => {})
+    .finally(() => {
+      tellingFollowup = false;
+    });
+}
+
+/** Claimed news the call ended before saying: it shows in the conversation, since no other call will tell it. */
+function keepUnsaid(news: AldoFollowupNews, line: string, session: string): void {
+  say("assistant", line, session);
+  addEntry({ kind: "action", ...followupAction(news) });
+}
+
+function atPause(call: AldoLiveTranscript): boolean {
+  const now = call.now();
+  return newsPause({
+    userQuietMs: now - call.heardUntil("user"),
+    aldoQuietMs: now - call.heardUntil("assistant"),
+    aldoSpeaking: get().levels.aldo > SPEAKING_LEVEL,
+    greeted: call.heardUntil("assistant") > 0,
+    // A request being worked on, or a result the voice hasn't started on: those come first.
+    busy:
+      delegating.size > 0 ||
+      (call.heardUntil("assistant") <= sentFrom && Date.now() - resultSentAt < NEWS_UNSPOKEN_MS),
+    sinceResultMs: Date.now() - resultSentAt,
+    sinceNewsMs: Date.now() - newsSaidAt,
+  });
+}
+
+/** A result (or news) went to the voice: nothing else comes up until it's being said, and the line isn't quiet. */
+function sent(call: AldoLiveTranscript): void {
+  resultSentAt = lastSpokeAt = Date.now();
+  sentFrom = call.heardUntil("assistant");
 }
 
 /** The orb follows who's speaking; a call nobody's used for a while is hung up. */
@@ -592,6 +722,7 @@ function tickLive(): void {
     delegating: delegating.size,
   });
   if (phase !== get().phase) set({ phase });
+  tellFollowupAtPause();
   if (idleCall({ lastSpokeAt, delegating: delegating.size, now: Date.now(), idleMs: IDLE_MS })) {
     toastManager.add({
       type: "info",
@@ -657,7 +788,9 @@ async function runDelegation(id: string, offset: number): Promise<void> {
     // A call that ended meanwhile has no one to tell. One about to be told isn't quiet.
     if (transcript === call && !signal.aborted) {
       appendLive("session.commentary.append", answer, id, true);
-      lastSpokeAt = Date.now();
+      sent(call);
+      // It may have handed work to a thread: what comes of it is followed from now.
+      readFollowupsSoon(1_000);
     }
   }
   // One a newer request replaced says nothing of its own; the voice is told quietly, so it doesn't wait on it.
@@ -688,7 +821,8 @@ async function typeToLive(words: string): Promise<void> {
   );
   if (transcript === call && !signal.aborted) {
     appendLive("session.commentary.append", answer, null, true);
-    lastSpokeAt = Date.now();
+    sent(call);
+    readFollowupsSoon(1_000);
   }
   if (delegating.get(id)?.signal === signal) delegating.delete(id);
 }
@@ -852,6 +986,14 @@ function teardown(graceful = false): void {
   for (const controller of delegating.values()) controller.abort("hangup");
   delegating.clear();
   results.clear();
+  // News not yet claimed stays Aldo's: the user's devices were told, and the next call within a while tells it.
+  if (followupsTimer) clearTimeout(followupsTimer);
+  followupsTimer = null;
+  if (claimed) keepUnsaid(claimed.news, claimed.line, claimed.session);
+  claimed = null;
+  followups = [];
+  following = 0;
+  resultSentAt = sentFrom = newsSaidAt = 0;
   responding = false;
   calling = false;
   promptWaiting = false;

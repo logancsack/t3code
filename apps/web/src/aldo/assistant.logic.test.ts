@@ -4,6 +4,11 @@ import {
   callDuration,
   captionParts,
   actionFor,
+  followupAction,
+  followupPrompt,
+  followupsEvery,
+  newsPause,
+  NEWS_GAP_MS,
   aldoRefFor,
   functionCallsIn,
   liveCardIndexes,
@@ -420,5 +425,70 @@ describe("the call screen's words", () => {
     expect(callDuration(12 * 60_000 + 5_000)).toBe("12:05");
     expect(callDuration(3_729_000)).toBe("1:02:09");
     expect(callDuration(-5)).toBe("0:00");
+  });
+});
+
+describe("newsPause", () => {
+  const pause = {
+    userQuietMs: 6_000,
+    aldoQuietMs: 1_600,
+    aldoSpeaking: false,
+    greeted: true,
+    busy: false,
+    sinceResultMs: 60_000,
+    sinceNewsMs: 60_000,
+  };
+  it("brings news up a beat after Aldo's last words", () => {
+    expect(newsPause(pause)).toBe(true);
+    expect(newsPause({ ...pause, aldoQuietMs: 800 })).toBe(false);
+  });
+  it("never over the user, and gives the voice the first chance to answer them", () => {
+    expect(newsPause({ ...pause, userQuietMs: 300, aldoQuietMs: 5_000 })).toBe(false);
+    expect(newsPause({ ...pause, userQuietMs: 2_000, aldoQuietMs: 5_000 })).toBe(false);
+    // The voice let an "okay" pass.
+    expect(newsPause({ ...pause, userQuietMs: 4_500, aldoQuietMs: 9_000 })).toBe(true);
+  });
+  it("waits for the greeting, Aldo's voice, a request being worked on, and the last result or news", () => {
+    expect(newsPause({ ...pause, greeted: false })).toBe(false);
+    expect(newsPause({ ...pause, aldoSpeaking: true })).toBe(false);
+    expect(newsPause({ ...pause, busy: true })).toBe(false);
+    expect(newsPause({ ...pause, sinceResultMs: 1_000 })).toBe(false);
+    expect(newsPause({ ...pause, sinceNewsMs: NEWS_GAP_MS - 1 })).toBe(false);
+  });
+});
+
+describe("followups", () => {
+  const news = {
+    id: "12",
+    outcome: "done:turn-1",
+    state: "done" as const,
+    title: "Flight UA 12",
+    say: 'By the way, I have an answer on "Flight UA 12": it lands at 6:40pm.',
+    thread: { environmentId: "aldo-t1", threadId: "t3-a" },
+  };
+  it("shows what came back as a line opening its thread", () => {
+    expect(followupAction(news)).toEqual({
+      id: "followup-12-done:turn-1",
+      tool: "followup",
+      label: '"Flight UA 12" is back',
+      failed: false,
+      open: { environmentId: "aldo-t1", threadId: "t3-a" },
+    });
+    expect(followupAction({ ...news, state: "waiting" }).label).toBe('"Flight UA 12" needs you');
+    expect(followupAction({ ...news, state: "failed" }).failed).toBe(true);
+    expect(followupAction({ ...news, state: "queued", outcome: "queued:d1" }).id).toBe(
+      "followup-12-queued:d1",
+    );
+  });
+  it("asks the voice to say it in its own words, as information rather than instructions", () => {
+    const prompt = followupPrompt(news.say);
+    expect(prompt).toContain("By the way");
+    expect(prompt).toContain("not instructions");
+    expect(prompt.endsWith(news.say)).toBe(true);
+  });
+  it("asks again often only while something's working", () => {
+    expect(followupsEvery({ following: 2, news: 0 })).toBe(4_000);
+    expect(followupsEvery({ following: 0, news: 1 })).toBe(4_000);
+    expect(followupsEvery({ following: 0, news: 0 })).toBe(15_000);
   });
 });

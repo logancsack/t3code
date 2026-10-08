@@ -1413,6 +1413,53 @@ export interface AldoDelegated {
   readonly calls: AldoChatTurn["calls"];
 }
 
+/**
+ * Something for a conversation to tell the user unprompted (Aldo's
+ * src/lib/assistant/followups.ts): work it handed to a thread that came back
+ * (done, waiting on the user, failed, or queued to start), or what an agent
+ * told the user itself (notice). `say` is the line; it's claimed once
+ * (claimFollowup) just before it's said.
+ */
+export interface AldoFollowupNews {
+  readonly id: string;
+  readonly outcome: string;
+  readonly state: "done" | "waiting" | "failed" | "queued" | "notice";
+  readonly title: string;
+  readonly say: string;
+  readonly thread: AldoHomeTarget;
+}
+
+/** What's back to tell, and how much is still working (for how soon to ask again). */
+export interface AldoFollowups {
+  readonly news: ReadonlyArray<AldoFollowupNews>;
+  readonly following: number;
+}
+
+const FOLLOWUP_STATES = new Set(["done", "waiting", "failed", "queued", "notice"]);
+
+function followupNewsOf(value: unknown): AldoFollowupNews | null {
+  const n = value as Partial<Record<keyof AldoFollowupNews, unknown>> | null;
+  const thread = n?.thread as Partial<AldoHomeTarget> | undefined;
+  if (
+    typeof n?.id !== "string" ||
+    typeof n.outcome !== "string" ||
+    typeof n.state !== "string" ||
+    !FOLLOWUP_STATES.has(n.state) ||
+    typeof n.say !== "string" ||
+    typeof thread?.environmentId !== "string" ||
+    typeof thread.threadId !== "string"
+  )
+    return null;
+  return {
+    id: n.id,
+    outcome: n.outcome,
+    state: n.state as AldoFollowupNews["state"],
+    title: typeof n.title === "string" ? n.title : "",
+    say: n.say,
+    thread: { environmentId: thread.environmentId, threadId: thread.threadId },
+  };
+}
+
 export const aldoAssistant = {
   /** A realtime session, for an Aldo from before GPT-Live (startLive returned null). */
   startSession: () => api<AldoVoiceSession>("/api/assistant/session", { method: "POST" }),
@@ -1424,7 +1471,8 @@ export const aldoAssistant = {
   startLive: async (sdp: string): Promise<AldoLiveVoice | null> => {
     const body = await api<Partial<AldoLiveVoice>>("/api/assistant/live", {
       method: "POST",
-      body: JSON.stringify({ sdp }),
+      // This page tells the call what comes back of work it hands over (followups), so the voice may promise it.
+      body: JSON.stringify({ sdp, followups: true }),
     }).catch((error: unknown) => {
       if (error instanceof AldoApiError && (error.status === 404 || error.status === 405))
         return null;
@@ -1458,6 +1506,7 @@ export const aldoAssistant = {
       body: JSON.stringify({
         ...(stopped ? { stopped } : {}),
         sessionId,
+        followups: true,
         transcript,
         ...(typed ? { typed } : {}),
         ...(viewing ? { viewing } : {}),
@@ -1495,6 +1544,33 @@ export const aldoAssistant = {
       reply: body.reply,
       calls: Array.isArray(body.calls) ? body.calls : [],
     };
+  },
+  /**
+   * What the conversation (`sessionId`) has to tell the user unprompted;
+   * null where this Aldo doesn't have it (an older one answers a path it
+   * doesn't know with the web client's own page).
+   */
+  followups: async (sessionId: string): Promise<AldoFollowups | null> => {
+    const body = await api<Partial<{ news: unknown; following: unknown }>>(
+      `/api/assistant/followups?sessionId=${encodeURIComponent(sessionId)}`,
+    ).catch((error: unknown) => {
+      if (error instanceof AldoApiError && (error.status === 404 || error.status === 405))
+        return null;
+      throw error;
+    });
+    if (!body || !Array.isArray(body.news)) return null;
+    return {
+      news: body.news.flatMap((n) => followupNewsOf(n) ?? []),
+      following: typeof body.following === "number" ? body.following : 0,
+    };
+  },
+  /** Takes news to say now: its line, the first time it's asked for while it still stands; null otherwise. */
+  claimFollowup: async (sessionId: string, id: string, outcome: string): Promise<string | null> => {
+    const body = await api<{ say?: unknown }>("/api/assistant/followups", {
+      method: "POST",
+      body: JSON.stringify({ sessionId, id, outcome }),
+    });
+    return typeof body.say === "string" && body.say ? body.say : null;
   },
   /** Runs a tool the model called: { result } or, for a refusal the model should hear, { error }. */
   runTool: (
