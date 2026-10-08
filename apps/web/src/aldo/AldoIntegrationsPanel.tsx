@@ -3,29 +3,43 @@
 // and files. Connecting signs in with the provider in a popup; how the sign-in
 // reports back to this tab is in integrations.logic.ts. Once one is connected,
 // Aldo's heads-ups (it looks at new mail and coming events between
-// conversations) can be turned off here. Below them, apps every agent uses
-// as MCP servers (AldoAppsSection.tsx), and the image, video and audio
+// conversations) can be turned off here, and the agents' own email address
+// (their agent inbox) is claimed and shown, once this Aldo has them. Below them, apps
+// every agent uses as MCP servers (AldoAppsSection.tsx), and the image, video and audio
 // generators agents use with the user's own API keys (AldoGeneratorRows.tsx).
 
-import { BlocksIcon, CheckCircle2Icon, SparklesIcon } from "lucide-react";
+import { BlocksIcon, CheckCircle2Icon, CopyIcon, LoaderIcon, SparklesIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { SettingsRow, SettingsSection } from "../components/settings/settingsLayout";
 import { Button } from "../components/ui/button";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+  InputGroupText,
+} from "../components/ui/input-group";
 import { Switch } from "../components/ui/switch";
 import { toastManager } from "../components/ui/toast";
 import {
   aldoIntegrationConnectUrl,
+  checkAldoAgentHandle,
+  claimAldoAgentAddress,
   disconnectAldoIntegration,
+  fetchAldoAgentInbox,
   fetchAldoHeadsUps,
   fetchAldoIntegrations,
   setAldoHeadsUps,
+  type AldoAgentHandleCheck,
+  type AldoAgentInbox,
+  type AldoAgentInboxAddress,
   type AldoHeadsUps,
   type AldoIntegration,
   type AldoIntegrationAccountType,
 } from "./cloud";
 import { AldoAppsSection } from "./AldoAppsSection";
 import { AldoGeneratorRows } from "./AldoGeneratorRows";
+import { agentHandleProblem, normalizeAgentHandle } from "./agentInbox.logic";
 import {
   ALDO_INTEGRATIONS_CHANNEL,
   describeAldoCapabilities,
@@ -274,6 +288,207 @@ function HeadsUpsRow() {
   );
 }
 
+const AGENT_INBOX_DESCRIPTION =
+  "Your agents' own email address, shared by all your threads: for signing up for things, getting codes and links, and writing to people for a task. It isn't your mail.";
+
+/** Picking the agents' address: a handle at Aldo's mail domain, checked as it's typed, claimed for good. */
+function ClaimAgentAddress(props: {
+  readonly domain: string;
+  readonly onClaimed: (inbox: AldoAgentInboxAddress) => void;
+}) {
+  const [typed, setTyped] = useState("");
+  const [check, setCheck] = useState<AldoAgentHandleCheck | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const [claiming, setClaiming] = useState(false);
+  const handle = normalizeAgentHandle(typed);
+  const problem = handle ? agentHandleProblem(handle) : null;
+  useEffect(() => {
+    setConfirming(false);
+    if (!handle || problem) return;
+    let live = true;
+    // Asked once the typing pauses; only the answer for what's typed now shows.
+    const timer = window.setTimeout(() => {
+      checkAldoAgentHandle(handle)
+        .then((next) => {
+          if (live) setCheck(next);
+        })
+        .catch(() => undefined);
+    }, 350);
+    return () => {
+      live = false;
+      window.clearTimeout(timer);
+    };
+  }, [handle, problem]);
+  const current = check?.handle === handle ? check : null;
+  const address = `${handle}@${props.domain}`;
+  const claim = () => {
+    setClaiming(true);
+    claimAldoAgentAddress(handle)
+      .then(props.onClaimed)
+      .catch((cause: unknown) => {
+        setConfirming(false);
+        setCheck({ handle, address, available: false, reason: messageOf(cause) });
+      })
+      .finally(() => setClaiming(false));
+  };
+  const status = !handle ? (
+    "Pick a handle, like one on a social site. It's yours for good: an address can't be changed or given up, so mail meant for it never reaches someone else."
+  ) : problem ? (
+    <span className="text-warning-foreground">{problem}</span>
+  ) : !current ? (
+    "Checking…"
+  ) : current.available ? (
+    <span className="inline-flex items-center gap-1 text-success-foreground">
+      <CheckCircle2Icon className="size-3.5" />
+      {current.address} is available
+    </span>
+  ) : (
+    <span className="text-warning-foreground">
+      {current.reason ?? "That one can't be claimed."}
+    </span>
+  );
+  return (
+    <SettingsRow
+      title="Agent inbox"
+      description={AGENT_INBOX_DESCRIPTION}
+      status={
+        confirming ? (
+          <span className="text-foreground">
+            Claim {address} for good? You can't change it later.
+          </span>
+        ) : (
+          status
+        )
+      }
+      control={
+        confirming ? (
+          <>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={claiming}
+              onClick={() => setConfirming(false)}
+            >
+              Keep editing
+            </Button>
+            <Button size="sm" disabled={claiming} onClick={claim}>
+              {claiming ? <LoaderIcon className="size-3.5 animate-spin" /> : null}
+              Claim it
+            </Button>
+          </>
+        ) : (
+          <form
+            className="flex w-full gap-2 sm:w-auto"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (current?.available) setConfirming(true);
+            }}
+          >
+            <InputGroup className="min-w-0 flex-1 sm:w-72">
+              <InputGroupInput
+                aria-label="Handle for your agents' address"
+                placeholder="handle"
+                autoComplete="off"
+                spellCheck={false}
+                value={typed}
+                onChange={(event) => setTyped(event.currentTarget.value)}
+              />
+              <InputGroupAddon align="inline-end">
+                <InputGroupText>@{props.domain}</InputGroupText>
+              </InputGroupAddon>
+            </InputGroup>
+            <Button size="sm" type="submit" disabled={!current?.available}>
+              Claim
+            </Button>
+          </form>
+        )
+      }
+    />
+  );
+}
+
+/** The agents' own email address; shown once Aldo has agent inboxes (a read that fails leaves it out). */
+function AgentInboxRow() {
+  const [state, setState] = useState<AldoAgentInbox | null>(null);
+  // Only the latest read's answer shows.
+  const latest = useRef(0);
+  const load = useCallback(() => {
+    const request = ++latest.current;
+    fetchAldoAgentInbox()
+      .then((next) => {
+        if (request === latest.current) setState(next);
+      })
+      .catch(() => undefined);
+  }, []);
+  useEffect(() => {
+    load();
+    // An agent (or Aldo) may claim it while Settings is open.
+    window.addEventListener("focus", load);
+    return () => {
+      latest.current++;
+      window.removeEventListener("focus", load);
+    };
+  }, [load]);
+  if (!state?.available) return null;
+  const email = state.inbox?.email;
+  if (!email && state.domain) {
+    return (
+      <ClaimAgentAddress
+        domain={state.domain}
+        onClaimed={(inbox) => {
+          latest.current++;
+          setState({ ...state, inbox });
+          toastManager.add({
+            type: "success",
+            title: "Address claimed",
+            description: `Your agents can use ${inbox.email} now.`,
+          });
+        }}
+      />
+    );
+  }
+  const copy = () => {
+    if (!email) return;
+    // Without the Clipboard API (an insecure page, an older browser), the address is shown to copy by hand.
+    if (typeof navigator.clipboard?.writeText !== "function") {
+      toastManager.add({ type: "info", title: "Your agents' address", description: email });
+      return;
+    }
+    void navigator.clipboard
+      .writeText(email)
+      .then(() =>
+        toastManager.add({ type: "success", title: "Address copied", description: email }),
+      )
+      .catch(() =>
+        toastManager.add({ type: "error", title: "Couldn't copy it", description: email }),
+      );
+  };
+  return (
+    <SettingsRow
+      title="Agent inbox"
+      description={AGENT_INBOX_DESCRIPTION}
+      status={
+        email ? (
+          <span className="inline-flex items-center gap-1 text-success-foreground">
+            <CheckCircle2Icon className="size-3.5" />
+            {email}
+          </span>
+        ) : (
+          "Not claimed yet."
+        )
+      }
+      control={
+        email ? (
+          <Button size="sm" variant="outline" onClick={copy}>
+            <CopyIcon className="size-3.5" />
+            Copy address
+          </Button>
+        ) : null
+      }
+    />
+  );
+}
+
 export function AldoIntegrationsPanel() {
   const [integrations, setIntegrations] = useState<ReadonlyArray<AldoIntegration> | null>(null);
   const [unsupported, setUnsupported] = useState(false);
@@ -376,6 +591,7 @@ export function AldoIntegrationsPanel() {
         ) ? (
           <HeadsUpsRow />
         ) : null}
+        <AgentInboxRow />
       </SettingsSection>
       <AldoAppsSection />
       <SettingsSection
