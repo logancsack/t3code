@@ -445,6 +445,7 @@ import {
 } from "../versionSkew";
 import { useAssetUrls } from "../assets/assetUrls";
 import { useAldoPreload } from "../aldo/preload";
+import { aldoDesktopOwnsKeyboard } from "../aldo/desktopInput.logic";
 import { useAldoThreadDetailMissing } from "../aldo/threadDetails";
 import { AldoThreadLoading } from "../aldo/AldoThreadLoading";
 import { useAldoThreadStart } from "../aldo/threadStart";
@@ -3313,6 +3314,7 @@ function ChatViewContent(props: ChatViewProps) {
   ]);
 
   const focusComposer = useCallback(() => {
+    if (aldoDesktopOwnsKeyboard(document.activeElement)) return;
     composerRef.current?.focusAtEnd();
   }, [composerRef]);
   const scheduleComposerFocus = useCallback(() => {
@@ -5529,6 +5531,8 @@ function ChatViewContent(props: ChatViewProps) {
 
   useEffect(() => {
     const handler = (event: globalThis.KeyboardEvent) => {
+      // noVNC handles desktop typing and shortcuts after this capture handler.
+      if (aldoDesktopOwnsKeyboard(event.target)) return;
       if (preventRepeatedTerminalCloseShortcut(event, keybindings)) {
         event.stopPropagation();
         return;

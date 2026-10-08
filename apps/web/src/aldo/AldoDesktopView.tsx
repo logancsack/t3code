@@ -232,7 +232,11 @@ export function AldoDesktopView({
 
   const what = screen === "windows" ? "your Windows computer" : "the desktop";
   return (
-    <div ref={rootRef} className="relative min-h-0 flex-1 overflow-hidden bg-muted/30">
+    <div
+      ref={rootRef}
+      data-aldo-desktop=""
+      className="relative min-h-0 flex-1 overflow-hidden bg-muted/30"
+    >
       {/* The video, under noVNC's screen (which stays empty over it). */}
       <canvas
         ref={canvasRef}
