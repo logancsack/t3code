@@ -870,6 +870,80 @@ export async function fetchAldoIntegrations(): Promise<ReadonlyArray<AldoIntegra
   return Array.isArray(body?.integrations) ? body.integrations : null;
 }
 
+export interface AldoAgentInboxAddress {
+  readonly email: string;
+  readonly displayName: string;
+}
+
+/** The user's agent inbox: an email address of their agents' own, at a handle the user claims. */
+export interface AldoAgentInbox {
+  /** False when this Aldo has no agent inboxes. */
+  readonly available: boolean;
+  /** The domain addresses are at (an Aldo that doesn't say has no claiming). */
+  readonly domain?: string;
+  readonly inbox: AldoAgentInboxAddress | null;
+}
+
+const inboxAddressOf = (value: unknown): AldoAgentInboxAddress | null => {
+  const inbox = value as Partial<AldoAgentInboxAddress> | null | undefined;
+  return inbox && typeof inbox.email === "string"
+    ? {
+        email: inbox.email,
+        displayName: typeof inbox.displayName === "string" ? inbox.displayName : "",
+      }
+    : null;
+};
+
+/** The user's agent inbox and whether this Aldo has them; null for an Aldo without them. */
+export async function fetchAldoAgentInbox(): Promise<AldoAgentInbox | null> {
+  const body = await api<Partial<AldoAgentInbox>>("/api/agent-inbox").catch((error: unknown) => {
+    if (error instanceof AldoApiError && error.status === 404) return null;
+    throw error;
+  });
+  // An older Aldo may answer with the web client's page instead of a 404.
+  if (typeof body?.available !== "boolean") return null;
+  return {
+    available: body.available,
+    ...(typeof body.domain === "string" && body.domain ? { domain: body.domain } : {}),
+    inbox: inboxAddressOf(body.inbox),
+  };
+}
+
+export interface AldoAgentHandleCheck {
+  readonly handle: string;
+  readonly address: string;
+  readonly available: boolean;
+  /** Why it can't be claimed. */
+  readonly reason?: string;
+}
+
+/** Whether a handle can be claimed as the agents' address. */
+export async function checkAldoAgentHandle(handle: string): Promise<AldoAgentHandleCheck> {
+  const body = await api<Partial<AldoAgentHandleCheck>>(
+    `/api/agent-inbox?handle=${encodeURIComponent(handle)}`,
+  );
+  if (typeof body.available !== "boolean" || typeof body.address !== "string") {
+    throw new Error("This Aldo can't check handles.");
+  }
+  return {
+    handle: typeof body.handle === "string" ? body.handle : handle,
+    address: body.address,
+    available: body.available,
+    ...(typeof body.reason === "string" ? { reason: body.reason } : {}),
+  };
+}
+
+/** Claims the agents' address at `handle`, for good. */
+export async function claimAldoAgentAddress(handle: string): Promise<AldoAgentInboxAddress> {
+  const body = await api<{ inbox?: unknown }>("/api/agent-inbox", {
+    method: "POST",
+    body: JSON.stringify({ handle }),
+  });
+  const inbox = inboxAddressOf(body.inbox);
+  if (!inbox) throw new Error("This Aldo didn't say which address it claimed.");
+  return inbox;
+}
+
 export interface AldoPhoneSettings {
   readonly smsTermsUrl?: string;
   readonly available: boolean;
