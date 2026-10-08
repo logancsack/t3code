@@ -2,6 +2,11 @@
 // handle, like one on a social site, checked here as it's typed. Aldo checks
 // it again, and has the last word (reserved handles, ones that are taken).
 
+/** What the handle field keeps of what's typed or pasted: an address loses its domain, which the field shows beside it. */
+export function handleFieldValue(input: string): string {
+  return input.split("@")[0] ?? "";
+}
+
 /** A handle as typed: lowercase, without an @ and what follows. */
 export function normalizeAgentHandle(input: string): string {
   return input.trim().toLowerCase().split("@")[0] ?? "";

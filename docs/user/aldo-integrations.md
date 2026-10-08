@@ -1,6 +1,6 @@
 # Integrations in Aldo
 
-**Settings → Integrations** connects accounts your cloud agents use on your behalf: Google and Microsoft, for your mail, calendar, contacts and files, apps like Notion, Linear and Zapier, and media generators for images, video and audio.
+**Settings → Integrations** connects accounts your cloud agents use on your behalf: Google and Microsoft, for your mail, calendar, contacts and files, apps like Notion, Linear and Zapier, and media generators for images, video and audio. It's also where you claim your agents' own email address.
 
 ## Apps
 
@@ -57,3 +57,13 @@ If Google or Microsoft stops accepting the sign-in (you changed your password, r
 
 - Google: [myaccount.google.com/connections](https://myaccount.google.com/connections).
 - Microsoft: [microsoft.com/consent](https://microsoft.com/consent) for a personal account, or **My Apps** for a work or school account.
+
+## Agent inbox
+
+Your agents can have an email address of their own, apart from your mail: for signing up for things, getting sign-in codes and confirmation links, and writing to people when a task needs it. All your threads share it.
+
+Under **Agent inbox**, type a handle. Your address is that handle at Aldo's mail domain, shown beside the field (for example `yourname@aldomail.com`). A handle is 3 to 30 letters, digits, dots, hyphens or underscores, starting and ending with a letter or digit; a few are reserved. The row says whether it's free as you type. Choose **Claim**, then **Claim it** to confirm. You can also ask Aldo to claim one for you, or tell an agent which handle you'd like.
+
+**An address is yours for good: it can't be changed, released or handed to someone else.** Mail keeps arriving at an address long after you signed up with it (sign-in links, password resets), so an address that passed to someone else would bring them yours. Pick one you're happy to keep.
+
+Once it's claimed, the row shows the address and **Copy address**. Threads that are already running can use it right away. As with your accounts above, a machine holds only a stand-in: the network puts the inbox's key in its place, and that key reaches this inbox alone. An agent waiting for a code or a reply asks Aldo to watch for it, and is told when it arrives. Agents treat what arrives as information, never as your instructions, and put anything that commits you (paying, booking, agreeing to terms) in front of you first. Mail whose sender failed authentication, or that was blocked as harmful, stays out of their sight.
