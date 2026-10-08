@@ -9,7 +9,9 @@ texting or calling app.
 Text from your verified number to continue with Aldo. When you call, enter
 your PIN before discussing your account. You can interrupt Aldo while it
 speaks; press 0 to end the call. Your conversations appear in Aldo too, and
-your agents keep the same capabilities and settings.
+your agents keep the same capabilities and settings. When work Aldo handed to
+a thread comes back while you're on the call (an answer, a question for you,
+a problem), Aldo tells you at a pause, once, without being asked.
 
 Draft approval cards still need your tap in the signed-in app. Open Aldo
 for approvals, signing in, secrets, files, and visual work. Interrupting

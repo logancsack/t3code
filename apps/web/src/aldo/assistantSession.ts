@@ -214,8 +214,11 @@ let followupsSupported: boolean | null = null;
 let followups: ReadonlyArray<AldoFollowupNews> = [];
 let following = 0;
 let followupsTimer: ReturnType<typeof setTimeout> | null = null;
+let followupsDue = 0;
 let readingFollowups = false;
 let tellingFollowup = false;
+/** News claimed for this call and not yet said: said at the next pause, or kept in the conversation if the call ends first. */
+let claimed: { news: AldoFollowupNews; line: string; session: string } | null = null;
 /** When the last result or news went to the voice, and how far Aldo's words had come then (past it, it's being said). */
 let resultSentAt = 0;
 let sentFrom = 0;
@@ -609,10 +612,13 @@ function onLiveStarted(): void {
   readFollowupsSoon(0);
 }
 
-/** Asks Aldo again what's back to tell the call, in `ms` (sooner replaces later). */
+/** Asks Aldo again what's back to tell the call, in `ms` (sooner replaces later, not the other way round). */
 function readFollowupsSoon(ms: number): void {
   if (followupsSupported === false || !live || !liveStarted || !sessionId) return;
+  const due = Date.now() + ms;
+  if (followupsTimer && followupsDue <= due) return;
   if (followupsTimer) clearTimeout(followupsTimer);
+  followupsDue = due;
   followupsTimer = setTimeout(() => void readFollowups(), ms);
 }
 
@@ -639,13 +645,51 @@ async function readFollowups(): Promise<void> {
   }
 }
 
-/** At a pause, the first news is claimed and said: once, and only if it's still how the work stands. */
+/**
+ * At a pause, the first news is claimed: once, and only if it's still how the
+ * work stands. It's said at the pause after (the claim takes a moment, and the
+ * user may have started speaking meanwhile).
+ */
 function tellFollowupAtPause(): void {
   const call = transcript;
   const session = sessionId;
-  if (!call || !session || tellingFollowup || followups.length === 0) return;
+  if (!call || !session || tellingFollowup || (!claimed && followups.length === 0)) return;
+  if (!atPause(call)) return;
+  if (claimed) {
+    const { news, line } = claimed;
+    claimed = null;
+    appendLive("session.instructions.append", followupPrompt(line), null, line);
+    addEntry({ kind: "action", ...followupAction(news) });
+    sent(call);
+    newsSaidAt = Date.now();
+    return;
+  }
+  const [next, ...rest] = followups;
+  if (!next) return;
+  followups = rest;
+  tellingFollowup = true;
+  void aldoAssistant
+    .claimFollowup(session, next.id, next.outcome)
+    .then((line) => {
+      if (!line) return;
+      if (transcript === call) claimed = { news: next, line, session };
+      else keepUnsaid(next, line, session);
+    })
+    .catch(() => {})
+    .finally(() => {
+      tellingFollowup = false;
+    });
+}
+
+/** Claimed news the call ended before saying: it shows in the conversation, since no other call will tell it. */
+function keepUnsaid(news: AldoFollowupNews, line: string, session: string): void {
+  say("assistant", line, session);
+  addEntry({ kind: "action", ...followupAction(news) });
+}
+
+function atPause(call: AldoLiveTranscript): boolean {
   const now = call.now();
-  const pause = newsPause({
+  return newsPause({
     userQuietMs: now - call.heardUntil("user"),
     aldoQuietMs: now - call.heardUntil("assistant"),
     aldoSpeaking: get().levels.aldo > SPEAKING_LEVEL,
@@ -657,24 +701,6 @@ function tellFollowupAtPause(): void {
     sinceResultMs: Date.now() - resultSentAt,
     sinceNewsMs: Date.now() - newsSaidAt,
   });
-  if (!pause) return;
-  const [next, ...rest] = followups;
-  if (!next) return;
-  followups = rest;
-  tellingFollowup = true;
-  void aldoAssistant
-    .claimFollowup(session, next.id, next.outcome)
-    .then((line) => {
-      if (!line || transcript !== call) return;
-      appendLive("session.instructions.append", followupPrompt(line), null, line);
-      addEntry({ kind: "action", ...followupAction(next) });
-      sent(call);
-      newsSaidAt = Date.now();
-    })
-    .catch(() => {})
-    .finally(() => {
-      tellingFollowup = false;
-    });
 }
 
 /** A result (or news) went to the voice: nothing else comes up until it's being said, and the line isn't quiet. */
@@ -963,6 +989,8 @@ function teardown(graceful = false): void {
   // News not yet claimed stays Aldo's: the user's devices were told, and the next call within a while tells it.
   if (followupsTimer) clearTimeout(followupsTimer);
   followupsTimer = null;
+  if (claimed) keepUnsaid(claimed.news, claimed.line, claimed.session);
+  claimed = null;
   followups = [];
   following = 0;
   resultSentAt = sentFrom = newsSaidAt = 0;
