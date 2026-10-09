@@ -25,9 +25,12 @@ import * as Effect from "effect/Effect";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as PubSub from "effect/PubSub";
+import * as Queue from "effect/Queue";
+import * as Result from "effect/Result";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
@@ -58,6 +61,8 @@ import {
   ProviderCommandReactorLive,
 } from "./ProviderCommandReactor.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
+import { RuntimeReceiptBus } from "../Services/RuntimeReceiptBus.ts";
+import { RuntimeReceiptBusTest } from "./RuntimeReceiptBus.ts";
 import { ProviderCommandReactor } from "../Services/ProviderCommandReactor.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -95,7 +100,10 @@ async function waitFor(
 
 describe("ProviderCommandReactor", () => {
   let runtime: ManagedRuntime.ManagedRuntime<
-    OrchestrationEngineService | ProviderCommandReactor | ProjectionSnapshotQuery,
+    | OrchestrationEngineService
+    | ProviderCommandReactor
+    | ProjectionSnapshotQuery
+    | RuntimeReceiptBus,
     unknown
   > | null = null;
   let scope: Scope.Closeable | null = null;
@@ -153,6 +161,10 @@ describe("ProviderCommandReactor", () => {
     readonly titleRegenerationCompletionDispatchFailures?: number;
     readonly titleRegenerationBeforeStart?: "one" | "two";
     readonly turnStartBeforeStart?: boolean;
+    /** Commands dispatched before the reactor starts, e.g. to leave a turn start pending. */
+    readonly beforeStart?: ReadonlyArray<
+      Parameters<OrchestrationEngineService["Service"]["dispatch"]>[0]
+    >;
     readonly interruptTurnEffect?: () => Effect.Effect<void, ProviderAdapterRequestError>;
     readonly stopSessionEffect?: () => Effect.Effect<void, ProviderAdapterRequestError>;
     readonly startSessionEffect?: (
@@ -443,6 +455,7 @@ describe("ProviderCommandReactor", () => {
           generateThreadTitle,
         }),
       ),
+      Layer.provideMerge(RuntimeReceiptBusTest),
       Layer.provideMerge(ServerSettingsService.layerTest()),
       Layer.provideMerge(ServerConfig.layerTest(process.cwd(), baseDir)),
       Layer.provideMerge(NodeServices.layer),
@@ -453,6 +466,7 @@ describe("ProviderCommandReactor", () => {
     const engine = await runtime.runPromise(Effect.service(OrchestrationEngineService));
     const snapshotQuery = await runtime.runPromise(Effect.service(ProjectionSnapshotQuery));
     const reactor = await runtime.runPromise(Effect.service(ProviderCommandReactor));
+    const receiptBus = await runtime.runPromise(Effect.service(RuntimeReceiptBus));
     const runEffect = <A, E>(effect: Effect.Effect<A, E>) => runtime!.runPromise(effect);
 
     await Effect.runPromise(
@@ -535,6 +549,10 @@ describe("ProviderCommandReactor", () => {
       );
     }
 
+    for (const command of input?.beforeStart ?? []) {
+      await runEffect(engine.dispatch(command));
+    }
+
     scope = await Effect.runPromise(Scope.make("sequential"));
     await Effect.runPromise(reactor.start().pipe(Scope.provide(scope)));
     const drain = () => Effect.runPromise(reactor.drain);
@@ -558,6 +576,7 @@ describe("ProviderCommandReactor", () => {
       stateDir,
       drain,
       runEffect,
+      receipts: receiptBus.streamEventsForTest,
       get titleRegenerationCompletionDispatchAttempts() {
         return titleRegenerationCompletionDispatchAttempts;
       },
@@ -617,42 +636,82 @@ describe("ProviderCommandReactor", () => {
     ).toBe(true);
   });
 
-  // Cursor, Grok, Prime and Muse resolve sendTurn only when the whole turn ends.
-  const makeBlockingSendTurn = Effect.gen(function* () {
-    const started = yield* Deferred.make<void>();
-    const finish = yield* Deferred.make<void>();
-    const state = { interrupted: false };
-    const sendTurnEffect = () =>
-      Deferred.succeed(started, undefined).pipe(
-        Effect.andThen(Deferred.await(finish)),
-        Effect.as({ threadId: ThreadId.make("thread-1"), turnId: asTurnId("turn-long") }),
-        Effect.onInterrupt(() =>
-          Effect.sync(() => {
-            state.interrupted = true;
-          }),
-        ),
-      );
-    return { started, finish, state, sendTurnEffect };
+  type DispatchCommand = Parameters<OrchestrationEngineService["Service"]["dispatch"]>[0];
+
+  const turnStart = (messageId: string): DispatchCommand => ({
+    type: "thread.turn.start",
+    commandId: CommandId.make(`cmd-turn-start-${messageId}`),
+    threadId: ThreadId.make("thread-1"),
+    message: {
+      messageId: asMessageId(messageId),
+      role: "user",
+      text: `request ${messageId}`,
+      attachments: [],
+    },
+    interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+    runtimeMode: "approval-required",
+    createdAt: "2026-01-01T00:00:00.000Z",
   });
 
-  const startLongTurn = (harness: Awaited<ReturnType<typeof createHarness>>) =>
-    harness.engine.dispatch({
-      type: "thread.turn.start",
-      commandId: CommandId.make("cmd-turn-start-long"),
+  // What ingestion projects from the provider's lifecycle events.
+  const sessionSet = (
+    label: string,
+    status: "starting" | "running" | "ready",
+    activeTurnId: string | null,
+  ): DispatchCommand => ({
+    type: "thread.session.set",
+    commandId: CommandId.make(`cmd-session-set-${label}`),
+    threadId: ThreadId.make("thread-1"),
+    session: {
       threadId: ThreadId.make("thread-1"),
-      message: {
-        messageId: asMessageId("user-message-long"),
-        role: "user",
-        text: "work for a long time",
-        attachments: [],
-      },
-      interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+      status,
+      providerName: "codex",
+      providerInstanceId: ProviderInstanceId.make("codex"),
       runtimeMode: "approval-required",
-      createdAt: "2026-01-01T00:00:00.000Z",
-    });
+      activeTurnId: activeTurnId === null ? null : asTurnId(activeTurnId),
+      lastError: null,
+      updatedAt: "2026-01-01T00:00:01.000Z",
+    },
+    createdAt: "2026-01-01T00:00:01.000Z",
+  });
 
-  // Lets fibers woken by the TestClock (or just forked) run.
-  const settle = Effect.sleep(Duration.millis(100)).pipe(TestClock.withLive);
+  // Cursor, Grok, Prime and Muse resolve sendTurn only when the whole turn
+  // ends, and a steer's only when the turn it joined does.
+  const makeBlockingSendTurn = Effect.gen(function* () {
+    const started = yield* Queue.unbounded<void>();
+    const finish = yield* Deferred.make<void>();
+    const interrupted = yield* Deferred.make<void>();
+    const sendTurnEffect = () =>
+      Queue.offer(started, undefined).pipe(
+        Effect.andThen(Deferred.await(finish)),
+        Effect.as({ threadId: ThreadId.make("thread-1"), turnId: asTurnId("turn-long") }),
+        Effect.onInterrupt(() => Deferred.succeed(interrupted, undefined).pipe(Effect.asVoid)),
+      );
+    return { started, finish, interrupted, sendTurnEffect };
+  });
+
+  const startBlockingHarness = Effect.gen(function* () {
+    const blocking = yield* makeBlockingSendTurn;
+    const testClock = yield* TestClock.testClockWith(Effect.succeed);
+    const harness = yield* Effect.promise(() =>
+      createHarness({ reactorClock: testClock, sendTurnEffect: blocking.sendTurnEffect }),
+    );
+    return { blocking, harness };
+  });
+
+  // The receipts of the next `count` turn start deadlines to pass, by message.
+  const nextDeadlines = (harness: Awaited<ReturnType<typeof createHarness>>, count: number) =>
+    harness.receipts.pipe(
+      Stream.filterMap((receipt) =>
+        receipt.type === "turn.start.deadline-passed"
+          ? Result.succeed([String(receipt.messageId), receipt.taken] as const)
+          : Result.failVoid,
+      ),
+      Stream.take(count),
+      Stream.runCollect,
+      Effect.map((passed) => new Map(passed)),
+      Effect.forkChild({ startImmediately: true }),
+    );
 
   const readThread = (harness: Awaited<ReturnType<typeof createHarness>>) =>
     Effect.promise(() => harness.readModel()).pipe(
@@ -661,85 +720,113 @@ describe("ProviderCommandReactor", () => {
       ),
     );
 
+  const startFailed = (thread: { readonly activities: ReadonlyArray<{ readonly kind: string }> }) =>
+    thread.activities.some((activity) => activity.kind === "provider.turn.start.failed");
+
   effectIt.effect(
     "never ends a started turn whose blocking sendTurn outlasts the start deadline",
     () =>
       Effect.gen(function* () {
-        const blocking = yield* makeBlockingSendTurn;
-        const testClock = yield* TestClock.testClockWith(Effect.succeed);
-        const harness = yield* Effect.promise(() =>
-          createHarness({ reactorClock: testClock, sendTurnEffect: blocking.sendTurnEffect }),
-        );
-        yield* startLongTurn(harness);
-        yield* Deferred.await(blocking.started);
-        yield* settle;
+        const { blocking, harness } = yield* startBlockingHarness;
+        yield* harness.engine.dispatch(turnStart("user-message-long"));
+        yield* Queue.take(blocking.started);
+        yield* harness.engine.dispatch(sessionSet("long-turn-running", "running", "turn-long"));
 
-        // The provider starts the turn: ingestion projects its turn.started.
-        yield* harness.engine.dispatch({
-          type: "thread.session.set",
-          commandId: CommandId.make("cmd-session-set-long-turn-running"),
-          threadId: ThreadId.make("thread-1"),
-          session: {
-            threadId: ThreadId.make("thread-1"),
-            status: "running",
-            providerName: "codex",
-            runtimeMode: "approval-required",
-            activeTurnId: asTurnId("turn-long"),
-            lastError: null,
-            updatedAt: "2026-01-01T00:00:01.000Z",
-          },
-          createdAt: "2026-01-01T00:00:01.000Z",
-        });
-
+        const deadlines = yield* nextDeadlines(harness, 1);
         yield* TestClock.adjust(Duration.minutes(30));
-        yield* settle;
+        expect(yield* Fiber.join(deadlines)).toEqual(new Map([["user-message-long", true]]));
 
-        expect(blocking.state.interrupted).toBe(false);
+        expect(yield* Deferred.isDone(blocking.interrupted)).toBe(false);
         const thread = yield* readThread(harness);
         expect(thread?.session?.status).toBe("running");
         expect(thread?.session?.lastError).toBeNull();
-        expect(
-          thread?.activities.some((activity) => activity.kind === "provider.turn.start.failed"),
-        ).toBe(false);
+        expect(thread && startFailed(thread)).toBe(false);
 
         yield* Deferred.succeed(blocking.finish, undefined);
       }),
   );
 
-  effectIt.effect("still fails a turn start the provider never starts within 10 minutes", () =>
+  effectIt.effect("never ends a steer into a running turn at the start deadline", () =>
     Effect.gen(function* () {
-      const blocking = yield* makeBlockingSendTurn;
-      const testClock = yield* TestClock.testClockWith(Effect.succeed);
-      const harness = yield* Effect.promise(() =>
-        createHarness({ reactorClock: testClock, sendTurnEffect: blocking.sendTurnEffect }),
-      );
-      yield* startLongTurn(harness);
-      yield* Deferred.await(blocking.started);
-      yield* settle;
+      const { blocking, harness } = yield* startBlockingHarness;
+      yield* harness.engine.dispatch(turnStart("user-message-long"));
+      yield* Queue.take(blocking.started);
+      yield* harness.engine.dispatch(sessionSet("long-turn-running", "running", "turn-long"));
+      // The steer joins the running turn under its id: no turn.started, so
+      // no turn carries its message.
+      yield* harness.engine.dispatch(turnStart("user-message-steer"));
+      yield* Queue.take(blocking.started);
 
-      yield* TestClock.adjust(Duration.minutes(9));
-      yield* settle;
-      expect(blocking.state.interrupted).toBe(false);
-      expect((yield* readThread(harness))?.session?.status).not.toBe("error");
-
-      yield* TestClock.adjust(Duration.minutes(1));
-      yield* Effect.promise(() =>
-        waitFor(async () => {
-          const readModel = await harness.readModel();
-          return (
-            readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"))?.session
-              ?.status === "error"
-          );
-        }),
+      const deadlines = yield* nextDeadlines(harness, 2);
+      yield* TestClock.adjust(Duration.minutes(30));
+      expect(yield* Fiber.join(deadlines)).toEqual(
+        new Map([
+          ["user-message-long", true],
+          ["user-message-steer", true],
+        ]),
       );
-      expect(blocking.state.interrupted).toBe(true);
+
+      expect(yield* Deferred.isDone(blocking.interrupted)).toBe(false);
       const thread = yield* readThread(harness);
-      expect(thread?.session?.lastError).toContain("did not start the turn within 10 minutes");
-      expect(
-        thread?.activities.some((activity) => activity.kind === "provider.turn.start.failed"),
-      ).toBe(true);
+      expect(thread?.session?.status).toBe("running");
+      expect(thread?.session?.lastError).toBeNull();
+      expect(thread && startFailed(thread)).toBe(false);
+
+      yield* Deferred.succeed(blocking.finish, undefined);
     }),
   );
+
+  effectIt.effect("still fails a turn start the provider never starts within 10 minutes", () =>
+    Effect.gen(function* () {
+      const { blocking, harness } = yield* startBlockingHarness;
+      yield* harness.engine.dispatch(turnStart("user-message-long"));
+      yield* Queue.take(blocking.started);
+      const deadlines = yield* nextDeadlines(harness, 1);
+
+      yield* TestClock.adjust(Duration.minutes(9));
+      expect(yield* Deferred.isDone(blocking.interrupted)).toBe(false);
+      expect((yield* readThread(harness))?.session?.status).toBe("starting");
+
+      yield* TestClock.adjust(Duration.minutes(1));
+      expect(yield* Fiber.join(deadlines)).toEqual(new Map([["user-message-long", false]]));
+      yield* Deferred.await(blocking.interrupted);
+      const thread = yield* readThread(harness);
+      expect(thread?.session?.status).toBe("error");
+      expect(thread?.session?.lastError).toContain("did not start the turn within 10 minutes");
+      expect(thread && startFailed(thread)).toBe(true);
+    }),
+  );
+
+  // The reconcile pass at reactor startup, over turn starts requested long ago.
+  it("settles an expired turn start the provider never started", async () => {
+    const harness = await createHarness({
+      beforeStart: [turnStart("user-message-lost"), sessionSet("lost-starting", "starting", null)],
+    });
+
+    const thread = await harness.runEffect(readThread(harness));
+    expect(thread?.session?.status).toBe("error");
+    expect(thread?.session?.lastError).toContain("marked complete with an infrastructure error");
+    expect(thread && startFailed(thread)).toBe(true);
+  });
+
+  it("leaves an expired steer alone while the turn it joined runs, and once it ended", async () => {
+    const steered = [
+      turnStart("user-message-long"),
+      sessionSet("long-turn-running", "running", "turn-long"),
+      turnStart("user-message-steer"),
+    ];
+    for (const [beforeStart, status] of [
+      [steered, "running"],
+      [[...steered, sessionSet("long-turn-ended", "ready", null)], "ready"],
+    ] as const) {
+      const harness = await createHarness({ beforeStart });
+
+      const thread = await harness.runEffect(readThread(harness));
+      expect(thread?.session?.status).toBe(status);
+      expect(thread?.session?.lastError).toBeNull();
+      expect(thread && startFailed(thread)).toBe(false);
+    }
+  });
 
   effectIt.effect("projects starting before a slow provider session finishes", () =>
     Effect.gen(function* () {
