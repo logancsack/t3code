@@ -27,23 +27,29 @@ import {
   AldoApiError,
   aldoMachineIsNew,
   aldoStartState,
+  getAldoEnvironments,
   holdAldoTurn,
   isAldoCloud,
   isAldoEnvironmentId,
   requestAldoDirectoryRefresh,
   wakeAldoEnvironment,
 } from "./cloud";
+import { describeAldoThreadStart } from "./threadStart.logic";
 
 const CONNECT_WAIT_MS = 3 * 60_000;
 const NUDGE_EVERY_MS = 8_000;
 /** How long this page tries again, for a message Aldo holds, while bringing its machine up fails for a passing reason. */
 const HELD_RETRY_MS = 15 * 60_000;
+/** How long it keeps trying past that while Aldo says the message is still on its way (Aldo tries for about half an hour). */
+const HELD_MAX_MS = 60 * 60_000;
 /** How long this page keeps connecting, after it stopped waiting, to a machine Aldo is bringing up for a held message. */
 const FOLLOW_MS = 30 * 60_000;
 
 const inFlight = new Map<string, Promise<void>>();
 /** Whether each machine being brought up is new or waking, for the thread's status line. */
 const starting = new Map<string, "creating" | "reconnecting">();
+/** The T3 thread of the message Aldo holds for each machine, while this page waits for it to go. */
+const heldThreads = new Map<string, string>();
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -67,8 +73,24 @@ export function isAldoConnected(environmentId: string): boolean {
   return presentation?.connection.phase === "connected";
 }
 
-/** What the thread says while its message waits for the cloud agent. */
+/**
+ * What the thread says while its message waits for the cloud agent: where
+ * Aldo says the message it holds stands (waiting for room, trying again),
+ * else what this page is doing for it.
+ */
 export function aldoStartingLabel(environmentId: string): string {
+  const threadId = heldThreads.get(environmentId);
+  const held = threadId === undefined ? null : aldoStartState(environmentId, threadId);
+  if (held && held.state !== "starting") {
+    const environment = getAldoEnvironments()?.find(
+      (entry) => entry.environmentId === environmentId,
+    );
+    return describeAldoThreadStart({
+      start: held,
+      machine: environment?.state ?? null,
+      repos: environment ? (environment.repos ?? [environment.repo]) : [],
+    }).title;
+  }
   const kind =
     starting.get(environmentId) ?? (aldoMachineIsNew(environmentId) ? "creating" : "reconnecting");
   return kind === "creating" ? "Creating your cloud agent" : "Reconnecting to the cloud";
@@ -146,7 +168,12 @@ export function installAldoCommandDispatch(): void {
       });
       return null;
     }
-    if (await connectForHeld(environmentId, command)) return null;
+    heldThreads.set(environmentId, command.threadId);
+    try {
+      if (await connectForHeld(environmentId, command)) return null;
+    } finally {
+      heldThreads.delete(environmentId);
+    }
     // Aldo has it and sends it when it can, so it stays sent (sending it
     // again from the draft would send it twice). From here the thread shows
     // as Aldo has it, which says if the message couldn't go, and this page
@@ -161,34 +188,38 @@ export function installAldoCommandDispatch(): void {
 /**
  * Brings the machine up for a message Aldo holds and connects to it, trying
  * again while what fails passes (Aldo or the network not answering, a start
- * still under way) for up to HELD_RETRY_MS. False when this page stops
- * waiting while Aldo still has it: Aldo said no for now (out of credits, the
- * plan's agents all busy), or the time ran out. Throws once Aldo has given up
- * on a new thread's first message (the message goes back in the composer).
+ * still under way) for up to HELD_RETRY_MS, and past that for as long as
+ * Aldo says the message is still on its way (up to HELD_MAX_MS). False when
+ * this page stops waiting while Aldo still has it: Aldo said no for now (out
+ * of credits, the plan's agents all busy), or the time ran out. Throws once
+ * Aldo has given up on the message, with why (the message goes back in the
+ * composer).
  */
 async function connectForHeld(
   environmentId: string,
-  command: { readonly threadId: string; readonly bootstrap?: unknown },
+  command: { readonly threadId: string },
 ): Promise<boolean> {
-  const startsThread = Boolean(
-    (command.bootstrap as { createThread?: unknown } | undefined)?.createThread,
-  );
   const deadline = Date.now() + HELD_RETRY_MS;
+  const latest = Date.now() + HELD_MAX_MS;
   for (let attempt = 0; ; attempt++) {
     try {
       await ensureAldoConnected(environmentId);
       return true;
     } catch (cause) {
-      const start = startsThread ? aldoStartState(environmentId, command.threadId) : null;
-      if (start?.state === "failed") {
-        throw new Error(start.detail ?? "Aldo couldn't start this thread.", { cause });
+      const held = aldoStartState(environmentId, command.threadId);
+      if (held?.state === "failed") {
+        const gaveUp =
+          held.kind === "message"
+            ? "Aldo couldn't send your message."
+            : "Aldo couldn't start this thread.";
+        throw new Error(held.detail ?? gaveUp, { cause });
       }
       if (refused(cause)) {
         notifyAldoRefusal(cause);
         return false;
       }
       const delay = Math.min(15_000, 2_000 * 2 ** attempt);
-      if (Date.now() + delay >= deadline) return false;
+      if (Date.now() + delay >= (held ? latest : deadline)) return false;
       requestAldoDirectoryRefresh();
       await sleep(delay);
     }

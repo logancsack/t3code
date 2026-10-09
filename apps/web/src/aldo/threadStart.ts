@@ -2,8 +2,11 @@
 // thread (AldoThreadLoading.tsx) and the sidebar to show instead of an empty
 // thread "Working". The words are threadStart.logic.ts's.
 
+import type { EnvironmentId } from "@t3tools/contracts";
 import { useMemo, useSyncExternalStore } from "react";
 
+import { appAtomRegistry } from "../rpc/atomRegistry";
+import { environmentPresentations } from "../state/presentation";
 import {
   getAldoEnvironments,
   isAldoCloud,
@@ -20,10 +23,21 @@ function environmentOf(environmentId: string): AldoEnvironment | null {
 
 const subscribeNever = () => () => undefined;
 
+function isConnected(environmentId: string): boolean {
+  return (
+    appAtomRegistry
+      .get(environmentPresentations.presentationsAtom)
+      .get(environmentId as EnvironmentId)?.connection.phase === "connected"
+  );
+}
+
 /**
- * Aldo's start of this thread, in words; null when Aldo isn't starting it.
- * Rows read only their start and their machine's state, so a directory fetch
- * re-renders the threads that are starting, not every row.
+ * Aldo's start of this thread, or the message it holds for it, in words; null
+ * when there's none. A message held for a thread this page is connected to
+ * says nothing the thread doesn't: T3 shows it once it has it, and one that
+ * couldn't be sent can be sent again from here. Rows read only their start
+ * and their machine's state, so a directory fetch re-renders the threads that
+ * are starting, not every row.
  */
 export function useAldoThreadStart(
   environmentId: string | null,
@@ -35,8 +49,11 @@ export function useAldoThreadStart(
     threadId !== null &&
     isAldoEnvironmentId(environmentId);
   const subscribe = applies ? subscribeAldoEnvironments : subscribeNever;
-  const readStart = (): AldoStartState | null =>
-    applies ? (environmentOf(environmentId)?.starts?.[threadId] ?? null) : null;
+  const readStart = (): AldoStartState | null => {
+    if (!applies) return null;
+    const start = environmentOf(environmentId)?.starts?.[threadId] ?? null;
+    return start?.kind === "message" && isConnected(environmentId) ? null : start;
+  };
   const start = useSyncExternalStore(subscribe, readStart, readStart);
   const readMachine = (): AldoEnvironment["state"] | null =>
     applies && start ? (environmentOf(environmentId)?.state ?? null) : null;

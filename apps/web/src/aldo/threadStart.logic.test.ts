@@ -98,6 +98,58 @@ describe("describeAldoThreadStart", () => {
       step: null,
     });
   });
+
+  it("says where a message to a thread that's there stands: on its way, trying again, or not sent", () => {
+    expect(
+      describeAldoThreadStart({
+        start: { kind: "message", state: "starting" },
+        machine: "stopped",
+        repos: REPOS,
+      }),
+    ).toMatchObject({
+      tone: "progress",
+      label: "Sending",
+      title: "Waking your cloud agent",
+      step: 0,
+    });
+    expect(
+      describeAldoThreadStart({
+        start: { kind: "message", state: "starting" },
+        machine: "ready",
+        repos: REPOS,
+      }),
+    ).toMatchObject({ label: "Sending", title: "Sending your message", step: 1 });
+    expect(
+      describeAldoThreadStart({
+        start: { kind: "message", state: "retrying", detail: "T3 didn't start within 90 seconds." },
+        machine: "ready",
+        repos: REPOS,
+      }),
+    ).toMatchObject({
+      tone: "retrying",
+      label: "Retrying",
+      title: "Trying again",
+      reason: "T3 didn't start within 90 seconds.",
+      step: 1,
+    });
+    expect(
+      describeAldoThreadStart({
+        start: {
+          kind: "message",
+          state: "failed",
+          detail: "Couldn't send your message: the machine is out of credits.",
+        },
+        machine: "stopped",
+        repos: REPOS,
+      }),
+    ).toMatchObject({
+      tone: "failed",
+      label: "Failed",
+      title: "Couldn't send your message",
+      reason: "the machine is out of credits.",
+      step: null,
+    });
+  });
 });
 
 describe("aldoStartReason", () => {

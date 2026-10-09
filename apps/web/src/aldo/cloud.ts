@@ -74,6 +74,12 @@ export interface AldoThreadAttention {
 
 /** Where a thread Aldo is starting stands, and why when it isn't simply starting. */
 export interface AldoStartState {
+  /**
+   * What Aldo holds: a thread's first message, which makes it ("start"), or a
+   * message to a thread that's there, sent while the device wasn't connected
+   * to its machine ("message"). An older Aldo leaves it out: a start.
+   */
+  readonly kind?: "start" | "message";
   readonly state: "starting" | "queued" | "retrying" | "failed";
   readonly detail?: string;
 }

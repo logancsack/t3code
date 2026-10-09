@@ -279,7 +279,9 @@ export function startNews(
   if (!environment) return { news: null, done: false };
   if (!environment.starts) return { news: null, done: true };
   const title = `"${watch.title}"`;
-  const start = environment.starts[watch.threadId];
+  const held = environment.starts[watch.threadId];
+  // A message held for the thread once it's there isn't its start.
+  const start = held?.kind === "message" ? undefined : held;
   if (!start) {
     const turn = environment.attention?.[watch.threadId];
     if (!turn) return { news: null, done: false };
