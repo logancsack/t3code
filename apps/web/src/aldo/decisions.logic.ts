@@ -14,7 +14,7 @@ import type {
   AldoHomePending,
   AldoHomePullRequest,
 } from "./cloud";
-import { boardFor, needsYouKind, sameTarget } from "./home.logic";
+import { boardFor, isPausedMidTurn, needsYouKind, sameTarget } from "./home.logic";
 
 export type AldoDecision =
   | { readonly kind: "aldo-approval"; readonly key: string; readonly approval: AldoApproval }
@@ -86,7 +86,7 @@ function putAway(c: AldoHomeConversation, now: number): boolean {
 export function aldoDecisions(home: AldoHome, now: number): ReadonlyArray<AldoDecision> {
   // A thread paused mid-turn needs opening, not a decision (Aldo's brief leaves it out too).
   const needsYou = boardFor(home.conversations, now).needsYou.filter(
-    (c) => !putAway(c, now) && needsYouKind(c) !== "paused",
+    (c) => !putAway(c, now) && !isPausedMidTurn(c),
   );
   const fromThreads = needsYou.flatMap((c) => {
     const decision = conversationDecision(c);
@@ -118,6 +118,16 @@ export function aldoDecisions(home: AldoHome, now: number): ReadonlyArray<AldoDe
     ...fromThreads,
     ...merges,
   ];
+}
+
+/**
+ * How many things wait on the user, for the phone's badge and summary: the
+ * decisions, and the threads paused mid-turn (not put away), which opening
+ * them carries on rather than a decision.
+ */
+export function aldoWaitingCount(home: AldoHome, now: number): number {
+  const paused = home.conversations.filter((c) => isPausedMidTurn(c) && !putAway(c, now));
+  return aldoDecisions(home, now).length + paused.length;
 }
 
 /** Whether a decision can be made without opening its thread: a tap, or a few words. */

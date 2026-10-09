@@ -82,7 +82,7 @@ import {
   repoName,
 } from "./home.logic";
 import { loadAldoBrief } from "./briefFeed";
-import { aldoDecisions } from "./decisions.logic";
+import { aldoWaitingCount } from "./decisions.logic";
 import { aldoNotificationsStatus, enableAldoNotifications } from "./notifications";
 import { useIsMobile } from "../hooks/useMediaQuery";
 
@@ -334,7 +334,7 @@ export function AldoHome() {
     const tabs = (
       <PhoneTabs
         view={aldoView ? "aldo" : "agents"}
-        waiting={home ? aldoDecisions(home, now).length : 0}
+        waiting={home ? aldoWaitingCount(home, now) : 0}
       />
     );
     if (!aldoView) {

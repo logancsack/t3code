@@ -133,7 +133,8 @@ export function NeedsYouCard(props: {
 /**
  * What a conversation waits on, to answer in place: its question, approval or
  * plan. Keyed by what's asked, so a form's choices and words go when the
- * thread moves on to another. Nothing for one that waits on nothing to answer.
+ * thread moves on to another. One paused mid-turn says so, with the way to
+ * carry on (opening it). Nothing for one that waits on nothing to answer.
  */
 export function PendingForm(props: {
   readonly conversation: AldoHomeConversation;
@@ -161,6 +162,16 @@ export function PendingForm(props: {
     );
   if (kind === "plan" && c.plan)
     return <PlanForm key={c.plan.id} target={c.thread} plan={c.plan} onActed={props.onActed} />;
+  if (kind === "paused")
+    return (
+      <div className="flex flex-wrap items-center gap-2 text-muted-foreground text-sm">
+        <span>Its machine went to sleep mid-turn.</span>
+        <Button variant="outline" size="compact" render={<ThreadLink target={c.thread} />}>
+          Open to carry on
+          <ArrowUpRightIcon />
+        </Button>
+      </div>
+    );
   return null;
 }
 

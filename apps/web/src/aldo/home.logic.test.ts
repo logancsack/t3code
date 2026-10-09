@@ -73,6 +73,8 @@ describe("needsYouKind", () => {
     expect(needsYouKind(conversation({ state: "failed" }))).toBe("failed");
     expect(needsYouKind(conversation({ state: "waiting" }))).toBe("waiting");
     expect(needsYouKind(conversation({ state: "paused" }))).toBe("paused");
+    // An older Aldo's read: working, on a machine asleep.
+    expect(needsYouKind(conversation({ state: "working", machine: "asleep" }))).toBe("paused");
     expect(
       needsYouKind(
         conversation({
@@ -112,6 +114,20 @@ describe("boardFor", () => {
     expect(board.needsYou.map((c) => c.ref)).toEqual(["c", "a"]);
     expect(board.working.map((c) => c.ref)).toEqual(["g", "b"]);
     expect(board.done.map((c) => c.ref)).toEqual(["d"]);
+  });
+
+  it("puts a conversation paused mid-turn with what needs the user, not working", () => {
+    const board = boardFor(
+      [
+        conversation({ ref: "p", state: "paused", machine: "asleep", at: ago(300) }),
+        conversation({ ref: "o", state: "working", machine: "asleep", at: ago(200) }),
+        conversation({ ref: "w", state: "working", machine: "running", at: ago(2) }),
+      ],
+      NOW,
+    );
+    expect(board.needsYou.map((c) => c.ref)).toEqual(["p", "o"]);
+    expect(board.working.map((c) => c.ref)).toEqual(["w"]);
+    expect(isStuck(board.needsYou[1]!, NOW)).toBe(false);
   });
 });
 

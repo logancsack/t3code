@@ -43,7 +43,7 @@ import {
   type AldoHomeConversation,
 } from "./cloud";
 import { decideAldo } from "./decide";
-import { aldoDecisions, type AldoDecision } from "./decisions.logic";
+import { aldoDecisions, aldoWaitingCount, type AldoDecision } from "./decisions.logic";
 import { refreshAldoHome } from "./homeFeed";
 import { needsYouKind, relativeTime, type healthIssues } from "./home.logic";
 import { setAldoPeekedThread } from "./screen";
@@ -65,6 +65,7 @@ export function AldoAgentsTab(props: {
   const { home, now } = props;
   const { list, shellCount } = useAldoThreadList({ home, now, scope: null });
   const decisions = useMemo(() => (home ? aldoDecisions(home, now) : []), [home, now]);
+  const waitingCount = useMemo(() => (home ? aldoWaitingCount(home, now) : 0), [home, now]);
   const [open, setOpen] = useState<string | null>(null);
   const [earlierShown, setEarlierShown] = useState(0);
   const [snoozedOpen, setSnoozedOpen] = useState(false);
@@ -72,7 +73,7 @@ export function AldoAgentsTab(props: {
   const waiting = list.approvals.length + list.waiting.length;
   // What waits counts pinned threads too, as the tab's badge does.
   const summary = [
-    decisions.length > 0 ? `${decisions.length} waiting` : null,
+    waitingCount > 0 ? `${waitingCount} waiting` : null,
     list.working.length > 0 ? `${list.working.length} working` : null,
     list.landing.length > 0 ? `${list.landing.length} landing` : null,
     list.unread.length > 0 ? `${list.unread.length} unread` : null,

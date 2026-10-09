@@ -9,6 +9,7 @@ import type {
 } from "./cloud";
 import {
   aldoDecisions,
+  aldoWaitingCount,
   decidesInPlace,
   decisionAsk,
   decisionBrief,
@@ -175,6 +176,27 @@ describe("aldoDecisions", () => {
       NOW,
     );
     expect(decisions.map((d) => d.key)).toEqual(["question:s:r1", "merge:acme/shop#9"]);
+  });
+
+  it("counts threads paused mid-turn among what waits, though they aren't decisions", () => {
+    const read = home({
+      conversations: [
+        { ...question, ref: "s", thread: at("s") },
+        conversation({ ref: "p", thread: at("p"), state: "paused", machine: "asleep" }),
+        // An older Aldo's read of one.
+        conversation({ ref: "o", thread: at("o"), state: "working", machine: "asleep" }),
+        conversation({
+          ref: "x",
+          thread: at("x"),
+          state: "paused",
+          machine: "asleep",
+          settled: true,
+        }),
+        conversation({ ref: "w", thread: at("w"), state: "working", machine: "running" }),
+      ],
+    });
+    expect(aldoDecisions(read, NOW).map((d) => d.key)).toEqual(["question:s:r1"]);
+    expect(aldoWaitingCount(read, NOW)).toBe(3);
   });
 
   it("puts away a thread's pull request with it, and wakes a snooze that has run out", () => {
