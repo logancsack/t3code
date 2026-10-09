@@ -2,6 +2,7 @@ import {
   type ChatAttachment,
   CommandId,
   EventId,
+  type MessageId,
   type ModelSelection,
   type OrchestrationEvent,
   ProviderDriverKind,
@@ -38,6 +39,7 @@ import { ProviderService } from "../../provider/Services/ProviderService.ts";
 import { ProviderRegistry } from "../../provider/Services/ProviderRegistry.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
+import { RuntimeReceiptBus } from "../Services/RuntimeReceiptBus.ts";
 import { ProjectionTurnRepository } from "../../persistence/Services/ProjectionTurns.ts";
 import { ProjectionTurnRepositoryLive } from "../../persistence/Layers/ProjectionTurns.ts";
 import {
@@ -320,6 +322,7 @@ const make = Effect.gen(function* () {
   const vcsStatusBroadcaster = yield* VcsStatusBroadcaster;
   const textGeneration = yield* TextGeneration;
   const serverSettingsService = yield* ServerSettingsService;
+  const receiptBus = yield* RuntimeReceiptBus;
   const serverCommandId = (tag: string) =>
     crypto.randomUUIDv4.pipe(Effect.map((uuid) => CommandId.make(`server:${tag}:${uuid}`)));
   const serverEventId = () => crypto.randomUUIDv4.pipe(Effect.map(EventId.make));
@@ -490,6 +493,24 @@ const make = Effect.gen(function* () {
     return yield* projectionSnapshotQuery
       .getThreadDetailById(threadId, { activityKinds: [] })
       .pipe(Effect.map(Option.getOrUndefined));
+  });
+
+  /**
+   * Whether the provider took a turn start request: it started a turn for it
+   * (projected as a turn carrying its message), or a turn is running on the
+   * thread, which a request sent during it joins. Claude, OpenCode, Cursor,
+   * Grok, Prime and Muse steer the running turn with it, under that turn's id
+   * and with no new turn.started; Codex queues it behind.
+   */
+  const isTurnStartTaken = Effect.fnUntraced(function* (threadId: ThreadId, messageId: MessageId) {
+    const turns = yield* projectionTurnRepository.listByThreadId({ threadId });
+    if (turns.some((turn) => turn.turnId !== null && turn.pendingMessageId === messageId)) {
+      return true;
+    }
+    const thread = yield* projectionSnapshotQuery
+      .getThreadShellById(threadId)
+      .pipe(Effect.map(Option.getOrUndefined));
+    return thread?.session?.status === "running" && thread.session.activeTurnId !== null;
   });
 
   const rejectStartedThreadModelChangeIfRequired = Effect.fnUntraced(function* (input: {
@@ -1235,34 +1256,46 @@ const make = Effect.gen(function* () {
       return;
     }
 
-    // Some adapters' sendTurn resolves only when the whole turn ends, so the
-    // deadline bounds the turn's start, never the turn: once the provider
-    // has started this request's turn (projected as a turn carrying its
-    // message), the call may run for as long as the turn does.
-    const turnStartAdoptionDeadline = Effect.sleep(TURN_START_ADOPTION_TIMEOUT).pipe(
-      Effect.andThen(projectionTurnRepository.listByThreadId({ threadId: event.payload.threadId })),
-      Effect.map((turns) =>
-        turns.some(
-          (turn) => turn.turnId !== null && turn.pendingMessageId === event.payload.messageId,
-        ),
-      ),
+    // Cursor, Grok, Prime and Muse resolve sendTurn only when the whole turn
+    // ends, and a steer's only when the turn it joined does, so the deadline
+    // bounds the request's start, never the turn: once the provider has taken
+    // the request, the call may run for as long as the turn does. Otherwise
+    // the hung call is interrupted and the thread settles with a visible error.
+    const turnStartDeadline = Effect.sleep(TURN_START_ADOPTION_TIMEOUT).pipe(
+      Effect.andThen(isTurnStartTaken(event.payload.threadId, event.payload.messageId)),
       // Unsure is not a reason to end a turn that may be running; the
       // reconcile loop below still settles a request that never started.
       Effect.orElseSucceed(() => true),
-      Effect.flatMap((adopted) =>
-        adopted
-          ? Effect.never
-          : Effect.fail(
-              new Cause.TimeoutError("The provider did not start the turn within 10 minutes."),
+      Effect.tap((taken) =>
+        taken
+          ? Effect.void
+          : recoverTurnStartFailure(
+              Cause.fail(
+                new Cause.TimeoutError("The provider did not start the turn within 10 minutes."),
+              ),
             ),
       ),
+      Effect.tap((taken) =>
+        Clock.currentTimeMillis.pipe(
+          Effect.flatMap((nowMs) =>
+            receiptBus.publish({
+              type: "turn.start.deadline-passed",
+              threadId: event.payload.threadId,
+              messageId: event.payload.messageId,
+              taken,
+              createdAt: DateTime.formatIso(DateTime.makeUnsafe(nowMs)),
+            }),
+          ),
+        ),
+      ),
+      Effect.flatMap((taken) => (taken ? Effect.never : Effect.void)),
     );
 
     yield* providerService
       .sendTurn(sendTurnRequest.value)
       .pipe(
-        Effect.raceFirst(turnStartAdoptionDeadline),
         Effect.catchCause(recoverTurnStartFailure),
+        Effect.raceFirst(turnStartDeadline),
         Effect.forkScoped,
       );
   });
@@ -1562,9 +1595,16 @@ const make = Effect.gen(function* () {
 
   const worker = yield* makeDrainableWorker(processDomainEventSafely);
 
+  // Expired requests the provider took without a turn of their own: each
+  // stays pending until the thread's next turn starts, but needs no second look.
+  const takenTurnStarts = new Set<string>();
+  const turnStartKey = (pending: { readonly threadId: ThreadId; readonly messageId: MessageId }) =>
+    `${pending.threadId}:${pending.messageId}`;
+
   const recoverInterruptedTurnStarts = Effect.fn("recoverInterruptedTurnStarts")(function* (
     pendingStarts: ReadonlyArray<{
       readonly threadId: ThreadId;
+      readonly messageId: MessageId;
       readonly requestedAt: string;
     }>,
   ) {
@@ -1617,6 +1657,25 @@ const make = Effect.gen(function* () {
             return;
           }
 
+          // A request sent during a turn has no turn of its own: the provider
+          // took it into that turn (a steer, under its id) or queued it behind
+          // (Codex). The thread is still running, or has moved on since the
+          // request (the turn ended), and turn liveness guards the turn. Any
+          // other request needs settling: the reactor holds a thread it starts
+          // a turn for in "starting" until the provider starts it, and one it
+          // never took (the server stopped first) left the thread as it was.
+          const session = thread.session;
+          if (
+            session !== null &&
+            (session.status === "running" ||
+              (session.status !== "starting" &&
+                DateTime.toEpochMillis(DateTime.makeUnsafe(session.updatedAt)) >
+                  DateTime.toEpochMillis(DateTime.makeUnsafe(pending.requestedAt))))
+          ) {
+            takenTurnStarts.add(turnStartKey(pending));
+            return;
+          }
+
           // Retrying an ambiguous provider side effect can execute the user's
           // prompt twice. Prefer a durable, visible terminal error; the user
           // can safely retry from the preserved message.
@@ -1665,11 +1724,16 @@ const make = Effect.gen(function* () {
     const reconcileInterruptedTurnStarts = Effect.fn("reconcileInterruptedTurnStarts")(
       function* () {
         const pendingStarts = yield* projectionTurnRepository.listPendingTurnStarts();
+        const pendingKeys = new Set(pendingStarts.map(turnStartKey));
+        for (const key of takenTurnStarts) {
+          if (!pendingKeys.has(key)) takenTurnStarts.delete(key);
+        }
         const nowMs = yield* Clock.currentTimeMillis;
         const expired = pendingStarts.filter(
           (pending) =>
+            !takenTurnStarts.has(turnStartKey(pending)) &&
             nowMs - DateTime.toEpochMillis(DateTime.makeUnsafe(pending.requestedAt)) >=
-            Duration.toMillis(TURN_START_ADOPTION_TIMEOUT),
+              Duration.toMillis(TURN_START_ADOPTION_TIMEOUT),
         );
         if (expired.length > 0) yield* recoverInterruptedTurnStarts(expired);
       },

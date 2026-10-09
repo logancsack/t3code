@@ -326,6 +326,48 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
     }),
   );
 
+  it.effect("surfaces Cursor thought chunks as reasoning deltas for turn liveness", () =>
+    Effect.gen(function* () {
+      const adapter = yield* CursorAdapter;
+      const settings = yield* ServerSettingsService;
+      const threadId = ThreadId.make("cursor-thought-chunks");
+
+      const wrapperPath = yield* Effect.promise(() =>
+        makeMockAgentWrapper({ T3_ACP_EMIT_PRIME_UPDATES: "1" }),
+      );
+      yield* settings.updateSettings({ providers: { cursor: { binaryPath: wrapperPath } } });
+
+      const reasoningFiber = yield* adapter.streamEvents.pipe(
+        Stream.filter(
+          (event) =>
+            event.threadId === threadId &&
+            event.type === "content.delta" &&
+            event.payload.streamKind === "reasoning_text",
+        ),
+        Stream.runHead,
+        Effect.forkChild({ startImmediately: true }),
+      );
+
+      yield* adapter.startSession({
+        threadId,
+        provider: ProviderDriverKind.make("cursor"),
+        cwd: process.cwd(),
+        runtimeMode: "full-access",
+        modelSelection: { instanceId: ProviderInstanceId.make("cursor"), model: "default" },
+      });
+      const turn = yield* adapter.sendTurn({ threadId, input: "think it over", attachments: [] });
+
+      const reasoning = yield* Fiber.join(reasoningFiber);
+      assert.equal(reasoning._tag, "Some");
+      if (reasoning._tag === "Some" && reasoning.value.type === "content.delta") {
+        assert.equal(reasoning.value.payload.delta, "prime mock reasoning");
+        assert.equal(String(reasoning.value.turnId), String(turn.turnId));
+      }
+
+      yield* adapter.stopSession(threadId);
+    }),
+  );
+
   it.effect("closes the ACP child process when a session stops", () =>
     Effect.gen(function* () {
       const adapter = yield* CursorAdapter;
