@@ -157,6 +157,27 @@ describe("turnLiveness", () => {
     expect(stalledTurns(entries, 599_000 + thresholds.modelSilenceMs, thresholds)).toHaveLength(1);
   });
 
+  it("never stalls a turn that only shows thinking progress, however long it thinks", () => {
+    // Redacted thinking (Claude's thinking_tokens) and private reasoning
+    // (Codex's reasoning notifications) arrive as text-free reasoning deltas.
+    const thinking = () =>
+      event({ type: "content.delta", payload: { streamKind: "reasoning_text", delta: "" } });
+    const minute = 60 * 1000;
+    let liveness = runningTurn(0);
+    for (let atMs = 3 * minute; atMs <= 30 * minute; atMs += 3 * minute) {
+      expect(stalledTurns(new Map([[threadId, liveness]]), atMs, thresholds)).toEqual([]);
+      liveness = applyRuntimeEvent(liveness, thinking(), atMs)!;
+    }
+    const entries = new Map([[threadId, liveness]]);
+    expect(stalledTurns(entries, 30 * minute + thresholds.modelSilenceMs - 1, thresholds)).toEqual(
+      [],
+    );
+    // A stream that then goes dead still stalls.
+    expect(stalledTurns(entries, 30 * minute + thresholds.modelSilenceMs, thresholds)).toHaveLength(
+      1,
+    );
+  });
+
   it("judges snapshot-seeded turns against the recovery grace and live events reclassify them", () => {
     const seeded = seededTurnLiveness(turnId, 0);
     const entries = new Map([[threadId, seeded]]);

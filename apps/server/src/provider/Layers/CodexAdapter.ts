@@ -1634,6 +1634,27 @@ function mapToRuntimeEvents(
 }
 
 /**
+ * A turn-scoped notification nothing above maps (safety buffering, hooks,
+ * raw response items, ...) is still the turn's sign of life: surface it as an
+ * empty delta, which the transcript drops and turn liveness counts.
+ */
+function mapTurnLiveness(
+  event: ProviderEvent,
+  canonicalThreadId: ThreadId,
+): ReadonlyArray<ProviderRuntimeEvent> {
+  if (event.kind !== "notification" || !event.turnId) {
+    return [];
+  }
+  return [
+    {
+      ...runtimeEventBase(event, canonicalThreadId),
+      type: "content.delta",
+      payload: { streamKind: "unknown", delta: "" },
+    },
+  ];
+}
+
+/**
  * Build a Codex provider adapter bound to a specific `CodexSettings` payload.
  *
  * The adapter is a captured closure over `codexConfig` — the `binaryPath` and
@@ -1751,6 +1772,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
                 turnId: event.turnId,
                 itemId: event.itemId,
               });
+              yield* Queue.offerAll(runtimeEventQueue, mapTurnLiveness(event, event.threadId));
               return;
             }
             yield* Queue.offerAll(runtimeEventQueue, runtimeEvents);

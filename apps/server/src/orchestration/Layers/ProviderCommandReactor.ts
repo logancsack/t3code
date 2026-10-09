@@ -1235,10 +1235,33 @@ const make = Effect.gen(function* () {
       return;
     }
 
+    // Some adapters' sendTurn resolves only when the whole turn ends, so the
+    // deadline bounds the turn's start, never the turn: once the provider
+    // has started this request's turn (projected as a turn carrying its
+    // message), the call may run for as long as the turn does.
+    const turnStartAdoptionDeadline = Effect.sleep(TURN_START_ADOPTION_TIMEOUT).pipe(
+      Effect.andThen(projectionTurnRepository.listByThreadId({ threadId: event.payload.threadId })),
+      Effect.map((turns) =>
+        turns.some(
+          (turn) => turn.turnId !== null && turn.pendingMessageId === event.payload.messageId,
+        ),
+      ),
+      // Unsure is not a reason to end a turn that may be running; the
+      // reconcile loop below still settles a request that never started.
+      Effect.orElseSucceed(() => true),
+      Effect.flatMap((adopted) =>
+        adopted
+          ? Effect.never
+          : Effect.fail(
+              new Cause.TimeoutError("The provider did not start the turn within 10 minutes."),
+            ),
+      ),
+    );
+
     yield* providerService
       .sendTurn(sendTurnRequest.value)
       .pipe(
-        Effect.timeout(TURN_START_ADOPTION_TIMEOUT),
+        Effect.raceFirst(turnStartAdoptionDeadline),
         Effect.catchCause(recoverTurnStartFailure),
         Effect.forkScoped,
       );

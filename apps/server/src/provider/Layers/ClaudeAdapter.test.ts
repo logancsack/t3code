@@ -1402,6 +1402,50 @@ describe("ClaudeAdapterLive", () => {
     },
   );
 
+  it.effect("surfaces redacted thinking progress as a text-free reasoning delta", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+
+      const thinkingFiber = yield* adapter.streamEvents.pipe(
+        Stream.filter((event) => event.type === "content.delta"),
+        Stream.take(1),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+      const turn = yield* adapter.sendTurn({
+        threadId: session.threadId,
+        input: "think hard",
+        attachments: [],
+      });
+
+      harness.query.emit({
+        type: "system",
+        subtype: "thinking_tokens",
+        estimated_tokens: 480,
+        estimated_tokens_delta: 32,
+        session_id: "sdk-session-thinking",
+        uuid: "thinking-tokens-1",
+      } as unknown as SDKMessage);
+
+      const [thinking] = Array.from(yield* Fiber.join(thinkingFiber));
+      assert.equal(thinking?.type, "content.delta");
+      if (thinking?.type === "content.delta") {
+        assert.equal(thinking.turnId, turn.turnId);
+        assert.deepEqual(thinking.payload, { streamKind: "reasoning_text", delta: "" });
+      }
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
   it.effect("maps Claude reasoning deltas, streamed tool inputs, and tool results", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {

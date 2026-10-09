@@ -644,7 +644,11 @@ lifecycleLayer("CodexAdapterLive lifecycle", (it) => {
   it.effect("does not reactivate an idle child after a parent interaction", () =>
     Effect.gen(function* () {
       const { adapter, runtime } = yield* startLifecycleRuntime();
-      const eventsFiber = yield* Stream.runCollect(Stream.take(adapter.streamEvents, 3)).pipe(
+      // The interaction is still the turn's sign of life, never a task update.
+      const eventsFiber = yield* adapter.streamEvents.pipe(
+        Stream.filter((event) => event.type !== "content.delta"),
+        Stream.take(3),
+        Stream.runCollect,
         Effect.forkChild,
       );
 
@@ -699,6 +703,45 @@ lifecycleLayer("CodexAdapterLive lifecycle", (it) => {
           { taskId: "child-2", status: "running" },
         ],
       );
+    }),
+  );
+
+  it.effect("surfaces an unmapped turn notification as the turn's sign of life", () =>
+    Effect.gen(function* () {
+      const { adapter, runtime } = yield* startLifecycleRuntime();
+      const firstEventFiber = yield* Stream.runHead(adapter.streamEvents).pipe(Effect.forkChild);
+
+      // Thread-scoped noise proves nothing about a turn and stays dropped.
+      yield* runtime.emit({
+        id: asEventId("evt-thread-noise"),
+        kind: "notification",
+        provider: ProviderDriverKind.make("codex"),
+        createdAt: "2026-01-01T00:00:00.000Z",
+        method: "unmapped/threadNotification",
+        threadId: asThreadId("thread-1"),
+        payload: {},
+      });
+      yield* runtime.emit({
+        id: asEventId("evt-turn-progress"),
+        kind: "notification",
+        provider: ProviderDriverKind.make("codex"),
+        createdAt: "2026-01-01T00:00:00.000Z",
+        method: "unmapped/turnProgress",
+        threadId: asThreadId("thread-1"),
+        turnId: asTurnId("turn-1"),
+        payload: {},
+      });
+
+      const firstEvent = yield* Fiber.join(firstEventFiber);
+      NodeAssert.equal(firstEvent._tag, "Some");
+      if (firstEvent._tag !== "Some") {
+        return;
+      }
+      NodeAssert.equal(firstEvent.value.type, "content.delta");
+      NodeAssert.equal(firstEvent.value.turnId, "turn-1");
+      if (firstEvent.value.type === "content.delta") {
+        NodeAssert.deepStrictEqual(firstEvent.value.payload, { streamKind: "unknown", delta: "" });
+      }
     }),
   );
 
