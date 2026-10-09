@@ -790,8 +790,22 @@ export function makeCursorAdapter(
                     yield* Deferred.succeed(event.acknowledge, undefined);
                     return;
                   case "ModeChanged":
-                  case "ThoughtDelta":
                   case "SessionInfoUpdated":
+                    return;
+                  case "ThoughtDelta":
+                    // Streamed reasoning: the transcript drops it, but it is
+                    // the model's sign of life, which turn liveness counts.
+                    yield* offerRuntimeEvent(
+                      makeAcpContentDeltaEvent({
+                        stamp: yield* makeEventStamp(),
+                        provider: PROVIDER,
+                        threadId: ctx.threadId,
+                        turnId: ctx.activeTurnId,
+                        text: event.text,
+                        streamKind: "reasoning_text",
+                        rawPayload: event.rawPayload,
+                      }),
+                    );
                     return;
                   case "AssistantItemStarted":
                     yield* offerRuntimeEvent(
