@@ -39,6 +39,7 @@ export type AldoSidebarKind =
   | "failed"
   | "waiting"
   | "merge"
+  | "paused"
   | "working"
   | "monitoring"
   | "starting"
@@ -53,6 +54,7 @@ const WAITING_KINDS: ReadonlySet<AldoSidebarKind> = new Set([
   "failed",
   "waiting",
   "merge",
+  "paused",
 ]);
 const WORKING_KINDS: ReadonlySet<AldoSidebarKind> = new Set(["working", "monitoring", "starting"]);
 
@@ -110,24 +112,33 @@ export function aldoSidebarKind(input: {
   readonly lastVisitedAt: string | undefined;
   /** The user settled it (on a machine that supports settling). */
   readonly settled: boolean;
+  /**
+   * Its machine is asleep: what its shell last said (working, say) is from
+   * before it slept, and its turn waits for the user to open it again.
+   */
+  readonly asleep?: boolean;
   readonly now: string;
 }): AldoSidebarKind {
   const { shell, conversation: c } = input;
   const status = resolveSidebarThreadStatus(shell);
   // Settled: done with, unless it's running again (T3 unsettles it when it can).
   if (input.settled) {
-    if (status === "working" || status === "monitoring") return status;
+    if (status === "working" || status === "monitoring") return input.asleep ? "paused" : status;
     return unseen(shell, input.lastVisitedAt, input.now) ? "unread" : "done";
   }
   if (status === "approval" || c?.pending?.kind === "approval") return "approval";
   if (status === "input" || c?.pending?.kind === "question") return "question";
   if (status === "failed" || c?.state === "failed") return "failed";
   // A thread Aldo is starting (or queued, or trying again) shows connecting until its machine has it.
+  // One whose machine is asleep is paused mid-turn, whatever it said before it slept.
   if (status === "working") {
-    return c && c.state !== "working" && WORKING_STATES.has(c.state) ? "starting" : "working";
+    if (c && c.state !== "working" && WORKING_STATES.has(c.state)) return "starting";
+    return input.asleep ? "paused" : "working";
   }
-  if (status === "monitoring") return "monitoring";
-  if (c && WORKING_STATES.has(c.state)) return c.state === "working" ? "working" : "starting";
+  if (status === "monitoring") return input.asleep ? "paused" : "monitoring";
+  // Paused: Aldo's word for working on a machine that went to sleep (stale once this page is connected to it).
+  if (c?.state === "working" || c?.state === "paused") return input.asleep ? "paused" : "working";
+  if (c && WORKING_STATES.has(c.state)) return "starting";
   if (c?.plan || shell.hasActionableProposedPlan) return "plan";
   if (input.ready) return "merge";
   if (input.landing) return "landing";
@@ -180,6 +191,8 @@ function detailFor(
       return summary || "Waiting on you";
     case "merge":
       return pr ? `#${pr.number} ready to merge` : "Ready to merge";
+    case "paused":
+      return "Paused mid-turn: open it to carry on";
     case "landing":
       return pr ? `#${pr.number} merged · deploying` : "Merged · deploying";
     case "working":
@@ -214,6 +227,11 @@ export function aldoSidebarList(input: {
   readonly repoOf: (shell: EnvironmentThreadShell) => string;
   /** Narrows threads to a project (approvals and what's scheduled stay). */
   readonly inScope?: (shell: EnvironmentThreadShell) => boolean;
+  /**
+   * Whether this page is connected to the thread's machine: it's up then,
+   * whatever Aldo's last read said (not connected, when not given).
+   */
+  readonly connected?: (shell: EnvironmentThreadShell) => boolean;
   /** Whether the thread's machine takes settling and snoozing (both, when not given). */
   readonly supports?: (shell: EnvironmentThreadShell) => {
     readonly settlement: boolean;
@@ -243,6 +261,9 @@ export function aldoSidebarList(input: {
     const lastVisitedAt = input.lastVisitedAt(key);
     const supports = input.supports?.(shell) ?? { settlement: true, snooze: true };
     const settled = supports.settlement && shell.settledOverride === "settled";
+    const asleep =
+      !(input.connected?.(shell) ?? false) &&
+      (conversation?.machine === "asleep" || conversation?.machine === "failed");
     const kind = aldoSidebarKind({
       shell,
       conversation,
@@ -250,6 +271,7 @@ export function aldoSidebarList(input: {
       landing,
       lastVisitedAt,
       settled,
+      asleep,
       now: input.now,
     });
     const pullRequest = kind === "merge" ? ready : kind === "landing" ? landing : null;

@@ -12,6 +12,7 @@ import { selectProjectGroupingSettings } from "../logicalProject";
 import { buildSidebarProjectSnapshots } from "../sidebarProjectGrouping";
 import { useProjects, useThreadShells } from "../state/entities";
 import { usePrimaryEnvironmentId } from "../state/environments";
+import { environmentPresentations } from "../state/presentation";
 import { environmentServerConfigsAtom } from "../state/server";
 import { useUiStateStore } from "../uiStateStore";
 import { isAldoEnvironmentId, type AldoHome } from "./cloud";
@@ -27,6 +28,7 @@ export function useAldoThreadList(input: {
   const projects = useProjects();
   const lastVisited = useUiStateStore((s) => s.threadLastVisitedAtById);
   const serverConfigs = useAtomValue(environmentServerConfigsAtom);
+  const presentations = useAtomValue(environmentPresentations.presentationsAtom);
   const groupingSettings = useClientSettings(selectProjectGroupingSettings);
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const { home, now, scope } = input;
@@ -62,6 +64,8 @@ export function useAldoThreadList(input: {
         lastVisitedAt: (key) => lastVisited[key],
         repoOf: (shell) => repoLabel(groupOf(shell)?.displayName),
         ...(scope === null ? {} : { inScope: (shell) => groupOf(shell)?.projectKey === scope }),
+        connected: (shell) =>
+          presentations.get(shell.environmentId)?.connection.phase === "connected",
         supports: (shell) => {
           const capabilities = serverConfigs.get(shell.environmentId)?.environment.capabilities;
           return {
@@ -71,7 +75,7 @@ export function useAldoThreadList(input: {
         },
         now: new Date(now).toISOString(),
       }),
-    [groupOf, home, lastVisited, now, scope, serverConfigs, shells],
+    [groupOf, home, lastVisited, now, presentations, scope, serverConfigs, shells],
   );
 
   const shellCount = useMemo(

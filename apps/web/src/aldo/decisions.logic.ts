@@ -84,7 +84,10 @@ function putAway(c: AldoHomeConversation, now: number): boolean {
  * own. Aldo's brief picks from the same (src/lib/assistant/brief.ts).
  */
 export function aldoDecisions(home: AldoHome, now: number): ReadonlyArray<AldoDecision> {
-  const needsYou = boardFor(home.conversations, now).needsYou.filter((c) => !putAway(c, now));
+  // A thread paused mid-turn needs opening, not a decision (Aldo's brief leaves it out too).
+  const needsYou = boardFor(home.conversations, now).needsYou.filter(
+    (c) => !putAway(c, now) && needsYouKind(c) !== "paused",
+  );
   const fromThreads = needsYou.flatMap((c) => {
     const decision = conversationDecision(c);
     return decision ? [decision] : [];

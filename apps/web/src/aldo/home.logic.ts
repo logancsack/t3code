@@ -22,19 +22,22 @@ const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 
-export type NeedsYouKind = "question" | "approval" | "plan" | "waiting" | "failed";
+export type NeedsYouKind = "question" | "approval" | "plan" | "waiting" | "paused" | "failed";
 
 export const NEEDS_YOU_LABEL: Record<NeedsYouKind, string> = {
   question: "Question",
   approval: "Approval",
   plan: "Plan to approve",
   waiting: "Waiting on you",
+  paused: "Paused mid-turn",
   failed: "Stopped with an error",
 };
 
 /** Why a conversation needs the user, or null if it doesn't. */
 export function needsYouKind(c: AldoHomeConversation): NeedsYouKind | null {
   if (c.state === "failed") return "failed";
+  // Its machine went to sleep mid-turn: opening the thread wakes it to carry on.
+  if (c.state === "paused") return "paused";
   if (c.state !== "waiting") return null;
   if (c.pending?.kind === "question") return "question";
   if (c.pending?.kind === "approval") return "approval";

@@ -200,6 +200,33 @@ describe("aldoSidebarList", () => {
     expect(byKey["aldo-r:r"]).toMatchObject({ kind: "starting", detail: "Retrying" });
   });
 
+  it("says a thread whose machine went to sleep mid-turn is paused, waiting on the user", () => {
+    const running = { session: { status: "running", activeTurnId: "t1" } };
+    const result = aldoSidebarList({
+      shells: [shell("kept", running), shell("said"), shell("up", running), shell("on", running)],
+      home: home({
+        conversations: [
+          // Its kept shell still says working; Aldo knows its machine is asleep.
+          conversation("kept", { state: "working", machine: "asleep" }),
+          // Aldo says paused (a newer Aldo).
+          conversation("said", { state: "paused", machine: "asleep" }),
+          // Aldo's read is behind: this page is connected to it, so it's up.
+          conversation("up", { state: "paused", machine: "asleep" }),
+          conversation("on", { state: "working", machine: "running" }),
+        ],
+      }),
+      lastVisitedAt: () => undefined,
+      repoOf: () => "shop",
+      connected: (s) => s.id === "up",
+      now: NOW,
+    });
+    expect(result.waiting.map((row) => [row.key, row.kind, row.detail])).toEqual([
+      ["aldo-kept:kept", "paused", "Paused mid-turn: open it to carry on"],
+      ["aldo-said:said", "paused", "Paused mid-turn: open it to carry on"],
+    ]);
+    expect(keys(result.working).toSorted()).toEqual(["aldo-on:on", "aldo-up:up"]);
+  });
+
   it("keeps pinned threads in their own group, and snoozed ones out of sight", () => {
     const result = list([
       shell("p", { pinnedAt: ago(100), hasPendingUserInput: true }),
