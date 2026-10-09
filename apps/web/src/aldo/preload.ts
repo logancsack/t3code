@@ -10,18 +10,22 @@
 // A thread with nothing to show (neither Aldo nor this browser has a copy of
 // it, threadDetails.ts) wakes its machine regardless, once: the machine then
 // reports it, and it opens without waking from then on. So does one whose
-// machine went to sleep mid-turn: its turn carries on. A thread on screen
+// machine went to sleep mid-turn, so its turn carries on, once the page is in
+// use (not while it's left unattended). A thread on screen
 // keeps its machine up while the page is in use; one left open and untouched
 // for half an hour lets it sleep, and using the page again brings it back.
 
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useAtomValue } from "@effect/atom-react";
+import type { EnvironmentId } from "@t3tools/contracts";
+import { Atom } from "effect/unstable/reactivity";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { resolveSidebarThreadStatus } from "../components/Sidebar.logic";
-import { useThreadShells } from "../state/entities";
+import { environmentThreadShells } from "../state/threads";
 
 import {
+  aldoMachineIsAsleep,
   aldoStartOf,
-  getAldoEnvironments,
   isAldoCloud,
   isAldoEnvironmentId,
   subscribeAldoEnvironments,
@@ -91,26 +95,39 @@ function scheduleUnload(environmentId: string): void {
 }
 
 /**
+ * Whether one of a machine's threads has a turn on, as its kept shell says:
+ * read from that machine's shells alone, so other agents' updates don't touch
+ * the thread on screen.
+ */
+const turnOnAtom = Atom.family((environmentId: string) =>
+  Atom.make((get) =>
+    get(environmentThreadShells.environmentThreadRefsAtom(environmentId as EnvironmentId)).some(
+      (ref) => {
+        const shell = get(environmentThreadShells.threadShellAtom(ref));
+        if (!shell) return false;
+        const status = resolveSidebarThreadStatus(shell);
+        return status === "working" || status === "monitoring";
+      },
+    ),
+  ).pipe(Atom.withLabel(`aldo-turn-on:${environmentId}`)),
+);
+const NO_TURN_ATOM = Atom.make(false).pipe(Atom.withLabel("aldo-turn-on:none"));
+
+/**
  * Whether a machine went to sleep with a turn on: the directory has it asleep
  * while a thread's kept shell still says it's working.
  */
 function useAldoPausedMidTurn(environmentId: string | null): boolean {
-  const shells = useThreadShells();
-  const directory = useSyncExternalStore(
+  const turnOn = useAtomValue(environmentId === null ? NO_TURN_ATOM : turnOnAtom(environmentId));
+  const asleep = useSyncExternalStore(
     subscribeAldoEnvironments,
-    getAldoEnvironments,
-    () => null,
+    useCallback(
+      () => environmentId !== null && aldoMachineIsAsleep(environmentId),
+      [environmentId],
+    ),
+    () => false,
   );
-  return useMemo(() => {
-    if (environmentId === null) return false;
-    const state = directory?.find((entry) => entry.environmentId === environmentId)?.state;
-    if (state !== "stopped" && state !== "failed") return false;
-    return shells.some((shell) => {
-      if (shell.environmentId !== environmentId) return false;
-      const status = resolveSidebarThreadStatus(shell);
-      return status === "working" || status === "monitoring";
-    });
-  }, [directory, environmentId, shells]);
+  return turnOn && asleep;
 }
 
 /**
@@ -132,7 +149,23 @@ export function useAldoPreload(
   // Once woken to show the thread (or carry its turn on), the machine stays up while it's on screen.
   const [wokenToShow, setWokenToShow] = useState<string | null>(null);
   useEffect(() => {
-    if ((nothingToShow || pausedMidTurn) && environmentId !== null) setWokenToShow(environmentId);
+    if (environmentId === null) return;
+    if (nothingToShow) {
+      setWokenToShow(environmentId);
+      return;
+    }
+    if (!pausedMidTurn) return;
+    // Paused mid-turn: carried on when the page is in use (opening the thread,
+    // or using the page again), not while it's left unattended.
+    const carryOn = () => setWokenToShow(environmentId);
+    if (Date.now() - lastUsedAt <= UNATTENDED_MS) {
+      carryOn();
+      return;
+    }
+    resumeListeners.add(carryOn);
+    return () => {
+      resumeListeners.delete(carryOn);
+    };
   }, [environmentId, nothingToShow, pausedMidTurn]);
   const toShow = isThread && environmentId !== null && wokenToShow === environmentId;
   const toShowRef = useRef(toShow);
