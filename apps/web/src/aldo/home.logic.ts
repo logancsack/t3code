@@ -33,11 +33,23 @@ export const NEEDS_YOU_LABEL: Record<NeedsYouKind, string> = {
   failed: "Stopped with an error",
 };
 
+/**
+ * Its machine went to sleep mid-turn, and opening the thread wakes it to
+ * carry on: Aldo says so (paused), or an older Aldo's read has it working on
+ * a machine asleep. (Aldo's read follows a wake within seconds; the sidebar,
+ * whose shells are live, goes by this page's connection too.)
+ */
+export function isPausedMidTurn(c: AldoHomeConversation): boolean {
+  return (
+    c.state === "paused" ||
+    (c.state === "working" && (c.machine === "asleep" || c.machine === "failed"))
+  );
+}
+
 /** Why a conversation needs the user, or null if it doesn't. */
 export function needsYouKind(c: AldoHomeConversation): NeedsYouKind | null {
   if (c.state === "failed") return "failed";
-  // Its machine went to sleep mid-turn: opening the thread wakes it to carry on.
-  if (c.state === "paused") return "paused";
+  if (isPausedMidTurn(c)) return "paused";
   if (c.state !== "waiting") return null;
   if (c.pending?.kind === "question") return "question";
   if (c.pending?.kind === "approval") return "approval";
@@ -48,7 +60,7 @@ export function needsYouKind(c: AldoHomeConversation): NeedsYouKind | null {
 export const WORKING_STATES = new Set(["working", "starting", "queued", "retrying"]);
 
 export function isStuck(c: AldoHomeConversation, now: number): boolean {
-  return c.state === "working" && now - Date.parse(c.at) > STUCK_MS;
+  return c.state === "working" && !isPausedMidTurn(c) && now - Date.parse(c.at) > STUCK_MS;
 }
 
 export interface HomeBoard {
@@ -71,7 +83,9 @@ export function boardFor(
     needsYou: conversations
       .filter((c) => needsYouKind(c) !== null)
       .sort((a, b) => a.at.localeCompare(b.at)),
-    working: conversations.filter((c) => WORKING_STATES.has(c.state)).sort(byAt),
+    working: conversations
+      .filter((c) => WORKING_STATES.has(c.state) && !isPausedMidTurn(c))
+      .sort(byAt),
     done: conversations
       .filter((c) => c.state === "done" && now - Date.parse(c.at) < DONE_WINDOW_MS)
       .sort(byAt),

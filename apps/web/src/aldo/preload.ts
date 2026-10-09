@@ -9,14 +9,19 @@
 // until it's up, and then connected; one Aldo couldn't start isn't brought up.
 // A thread with nothing to show (neither Aldo nor this browser has a copy of
 // it, threadDetails.ts) wakes its machine regardless, once: the machine then
-// reports it, and it opens without waking from then on. A thread on screen
+// reports it, and it opens without waking from then on. So does one whose
+// machine went to sleep mid-turn: its turn carries on. A thread on screen
 // keeps its machine up while the page is in use; one left open and untouched
 // for half an hour lets it sleep, and using the page again brings it back.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+
+import { resolveSidebarThreadStatus } from "../components/Sidebar.logic";
+import { useThreadShells } from "../state/entities";
 
 import {
   aldoStartOf,
+  getAldoEnvironments,
   isAldoCloud,
   isAldoEnvironmentId,
   subscribeAldoEnvironments,
@@ -86,10 +91,34 @@ function scheduleUnload(environmentId: string): void {
 }
 
 /**
+ * Whether a machine went to sleep with a turn on: the directory has it asleep
+ * while a thread's kept shell still says it's working.
+ */
+function useAldoPausedMidTurn(environmentId: string | null): boolean {
+  const shells = useThreadShells();
+  const directory = useSyncExternalStore(
+    subscribeAldoEnvironments,
+    getAldoEnvironments,
+    () => null,
+  );
+  return useMemo(() => {
+    if (environmentId === null) return false;
+    const state = directory?.find((entry) => entry.environmentId === environmentId)?.state;
+    if (state !== "stopped" && state !== "failed") return false;
+    return shells.some((shell) => {
+      if (shell.environmentId !== environmentId) return false;
+      const status = resolveSidebarThreadStatus(shell);
+      return status === "working" || status === "monitoring";
+    });
+  }, [directory, environmentId, shells]);
+}
+
+/**
  * Preloads the cloud agent of the thread on screen: `isThread` is false for
  * a new thread's draft (its machine is created) and true for an existing
  * thread (its machine is woken). `nothingToShow`: the thread has no copy
- * anywhere, so its machine is woken to show it, whatever the setting. Also
+ * anywhere, so its machine is woken to show it, whatever the setting, as is
+ * one that went to sleep mid-turn, so its turn carries on. Also
  * keeps an agent that's up from idling out while the thread is on screen and the page is in use.
  */
 export function useAldoPreload(
@@ -99,11 +128,12 @@ export function useAldoPreload(
   nothingToShow = false,
 ): void {
   const settings = useAldoPreloadSettings();
-  // Once woken to show the thread, the machine stays up while it's on screen.
+  const pausedMidTurn = useAldoPausedMidTurn(isThread ? environmentId : null);
+  // Once woken to show the thread (or carry its turn on), the machine stays up while it's on screen.
   const [wokenToShow, setWokenToShow] = useState<string | null>(null);
   useEffect(() => {
-    if (nothingToShow && environmentId !== null) setWokenToShow(environmentId);
-  }, [environmentId, nothingToShow]);
+    if ((nothingToShow || pausedMidTurn) && environmentId !== null) setWokenToShow(environmentId);
+  }, [environmentId, nothingToShow, pausedMidTurn]);
   const toShow = isThread && environmentId !== null && wokenToShow === environmentId;
   const toShowRef = useRef(toShow);
   toShowRef.current = toShow;
