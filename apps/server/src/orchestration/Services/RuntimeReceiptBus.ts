@@ -1,12 +1,13 @@
 /**
- * RuntimeReceiptBus - Internal checkpoint-reactor synchronization receipts.
+ * RuntimeReceiptBus - Internal orchestration-reactor synchronization receipts.
  *
  * This service exists to expose short-lived orchestration milestones that are
  * useful in tests and harnesses but are not part of the production runtime
  * event model. `CheckpointReactor` publishes receipts such as baseline capture,
- * diff finalization, and turn-processing quiescence so integration tests can
- * wait for those exact points without inferring them indirectly from persisted
- * state.
+ * diff finalization, and turn-processing quiescence, and
+ * `ProviderCommandReactor` the passing of a turn start's deadline, so
+ * integration tests can wait for those exact points without inferring them
+ * indirectly from persisted state.
  *
  * Production code should only call `publish`. Test code may subscribe via
  * `streamEventsForTest`, which is intentionally named to make the intended
@@ -14,7 +15,14 @@
  *
  * @module RuntimeReceiptBus
  */
-import { CheckpointRef, IsoDateTime, NonNegativeInt, ThreadId, TurnId } from "@t3tools/contracts";
+import {
+  CheckpointRef,
+  IsoDateTime,
+  MessageId,
+  NonNegativeInt,
+  ThreadId,
+  TurnId,
+} from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
@@ -49,10 +57,21 @@ export const TurnProcessingQuiescedReceipt = Schema.Struct({
 });
 export type TurnProcessingQuiescedReceipt = typeof TurnProcessingQuiescedReceipt.Type;
 
+/** A turn start's deadline passed: the provider had taken the request, or it was failed. */
+export const TurnStartDeadlinePassedReceipt = Schema.Struct({
+  type: Schema.Literal("turn.start.deadline-passed"),
+  threadId: ThreadId,
+  messageId: MessageId,
+  taken: Schema.Boolean,
+  createdAt: IsoDateTime,
+});
+export type TurnStartDeadlinePassedReceipt = typeof TurnStartDeadlinePassedReceipt.Type;
+
 export const OrchestrationRuntimeReceipt = Schema.Union([
   CheckpointBaselineCapturedReceipt,
   CheckpointDiffFinalizedReceipt,
   TurnProcessingQuiescedReceipt,
+  TurnStartDeadlinePassedReceipt,
 ]);
 export type OrchestrationRuntimeReceipt = typeof OrchestrationRuntimeReceipt.Type;
 

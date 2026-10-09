@@ -24,6 +24,7 @@ import {
   type RuntimeTaskUsage,
   ProviderApprovalDecision,
   ThreadId,
+  type TurnId,
   ProviderSendTurnInput,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
@@ -1636,13 +1637,16 @@ function mapToRuntimeEvents(
 /**
  * A turn-scoped notification nothing above maps (safety buffering, hooks,
  * raw response items, ...) is still the turn's sign of life: surface it as an
- * empty delta, which the transcript drops and turn liveness counts.
+ * empty delta, which the transcript drops and turn liveness counts. Only the
+ * running turn's: a late one from a turn already over (Codex can flush its
+ * queue after the next turn started) must not keep a dead turn looking alive.
  */
 function mapTurnLiveness(
   event: ProviderEvent,
   canonicalThreadId: ThreadId,
+  activeTurnId: TurnId | undefined,
 ): ReadonlyArray<ProviderRuntimeEvent> {
-  if (event.kind !== "notification" || !event.turnId) {
+  if (event.kind !== "notification" || !event.turnId || event.turnId !== activeTurnId) {
     return [];
   }
   return [
@@ -1772,7 +1776,11 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
                 turnId: event.turnId,
                 itemId: event.itemId,
               });
-              yield* Queue.offerAll(runtimeEventQueue, mapTurnLiveness(event, event.threadId));
+              const { activeTurnId } = yield* runtime.getSession;
+              yield* Queue.offerAll(
+                runtimeEventQueue,
+                mapTurnLiveness(event, event.threadId, activeTurnId),
+              );
               return;
             }
             yield* Queue.offerAll(runtimeEventQueue, runtimeEvents);

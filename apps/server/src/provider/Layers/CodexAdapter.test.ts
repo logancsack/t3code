@@ -63,17 +63,18 @@ class FakeCodexRuntime implements CodexSessionRuntimeShape {
   private readonly eventQueue = Effect.runSync(Queue.unbounded<ProviderEvent>());
   private readonly now = "2026-01-01T00:00:00.000Z";
 
-  public readonly startImpl = vi.fn(() =>
-    Promise.resolve({
-      provider: ProviderDriverKind.make("codex"),
-      status: "ready" as const,
-      runtimeMode: this.options.runtimeMode,
-      threadId: this.options.threadId,
-      cwd: this.options.cwd,
-      ...(this.options.model ? { model: this.options.model } : {}),
-      createdAt: this.now,
-      updatedAt: this.now,
-    } satisfies ProviderSession),
+  public readonly startImpl = vi.fn(
+    (): Promise<ProviderSession> =>
+      Promise.resolve({
+        provider: ProviderDriverKind.make("codex"),
+        status: "ready" as const,
+        runtimeMode: this.options.runtimeMode,
+        threadId: this.options.threadId,
+        cwd: this.options.cwd,
+        ...(this.options.model ? { model: this.options.model } : {}),
+        createdAt: this.now,
+        updatedAt: this.now,
+      } satisfies ProviderSession),
   );
 
   public readonly sendTurnImpl = vi.fn(
@@ -706,9 +707,15 @@ lifecycleLayer("CodexAdapterLive lifecycle", (it) => {
     }),
   );
 
-  it.effect("surfaces an unmapped turn notification as the turn's sign of life", () =>
+  it.effect("surfaces an unmapped notification of the running turn as its sign of life", () =>
     Effect.gen(function* () {
       const { adapter, runtime } = yield* startLifecycleRuntime();
+      const session = yield* runtime.getSession;
+      runtime.startImpl.mockResolvedValue({
+        ...session,
+        status: "running",
+        activeTurnId: asTurnId("turn-1"),
+      });
       const firstEventFiber = yield* Stream.runHead(adapter.streamEvents).pipe(Effect.forkChild);
 
       // Thread-scoped noise proves nothing about a turn and stays dropped.
@@ -719,6 +726,18 @@ lifecycleLayer("CodexAdapterLive lifecycle", (it) => {
         createdAt: "2026-01-01T00:00:00.000Z",
         method: "unmapped/threadNotification",
         threadId: asThreadId("thread-1"),
+        payload: {},
+      });
+      // So does a late one from a turn already over: it must not keep the
+      // running turn looking alive.
+      yield* runtime.emit({
+        id: asEventId("evt-superseded-turn-progress"),
+        kind: "notification",
+        provider: ProviderDriverKind.make("codex"),
+        createdAt: "2026-01-01T00:00:00.000Z",
+        method: "unmapped/turnProgress",
+        threadId: asThreadId("thread-1"),
+        turnId: asTurnId("turn-0"),
         payload: {},
       });
       yield* runtime.emit({
