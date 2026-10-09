@@ -39,7 +39,7 @@ import {
 } from "./cloud";
 import { AldoAppsSection } from "./AldoAppsSection";
 import { AldoGeneratorRows } from "./AldoGeneratorRows";
-import { agentHandleProblem, normalizeAgentHandle } from "./agentInbox.logic";
+import { agentHandleProblem, handleFieldValue, normalizeAgentHandle } from "./agentInbox.logic";
 import {
   ALDO_INTEGRATIONS_CHANNEL,
   describeAldoCapabilities,
@@ -298,6 +298,9 @@ function ClaimAgentAddress(props: {
 }) {
   const [typed, setTyped] = useState("");
   const [check, setCheck] = useState<AldoAgentHandleCheck | null>(null);
+  // The handle whose check didn't get an answer, and a count Try again bumps to ask again.
+  const [unchecked, setUnchecked] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
   const [confirming, setConfirming] = useState(false);
   const [claiming, setClaiming] = useState(false);
   const handle = normalizeAgentHandle(typed);
@@ -312,29 +315,52 @@ function ClaimAgentAddress(props: {
         .then((next) => {
           if (live) setCheck(next);
         })
-        .catch(() => undefined);
+        .catch(() => {
+          if (live) setUnchecked(handle);
+        });
     }, 350);
     return () => {
       live = false;
       window.clearTimeout(timer);
     };
-  }, [handle, problem]);
+  }, [handle, problem, attempt]);
   const current = check?.handle === handle ? check : null;
   const address = `${handle}@${props.domain}`;
-  const claim = () => {
+  const claim = async () => {
     setClaiming(true);
-    claimAldoAgentAddress(handle)
-      .then(props.onClaimed)
-      .catch((cause: unknown) => {
+    try {
+      props.onClaimed(await claimAldoAgentAddress(handle));
+    } catch (cause) {
+      // A claim whose answer went missing may have gone through: Aldo's record decides.
+      const latest = await fetchAldoAgentInbox().catch(() => null);
+      if (latest?.inbox) {
+        props.onClaimed(latest.inbox);
+      } else {
         setConfirming(false);
         setCheck({ handle, address, available: false, reason: messageOf(cause) });
-      })
-      .finally(() => setClaiming(false));
+      }
+    } finally {
+      setClaiming(false);
+    }
   };
   const status = !handle ? (
     "Pick a handle, like one on a social site. It's yours for good: an address can't be changed or given up, so mail meant for it never reaches someone else."
   ) : problem ? (
     <span className="text-warning-foreground">{problem}</span>
+  ) : !current && unchecked === handle ? (
+    <span className="inline-flex items-center gap-1.5 text-warning-foreground">
+      Couldn't check that handle.
+      <Button
+        size="micro"
+        variant="outline"
+        onClick={() => {
+          setUnchecked(null);
+          setAttempt((count) => count + 1);
+        }}
+      >
+        Try again
+      </Button>
+    </span>
   ) : !current ? (
     "Checking…"
   ) : current.available ? (
@@ -371,7 +397,7 @@ function ClaimAgentAddress(props: {
             >
               Keep editing
             </Button>
-            <Button size="sm" disabled={claiming} onClick={claim}>
+            <Button size="sm" disabled={claiming} onClick={() => void claim()}>
               {claiming ? <LoaderIcon className="size-3.5 animate-spin" /> : null}
               Claim it
             </Button>
@@ -391,7 +417,7 @@ function ClaimAgentAddress(props: {
                 autoComplete="off"
                 spellCheck={false}
                 value={typed}
-                onChange={(event) => setTyped(event.currentTarget.value)}
+                onChange={(event) => setTyped(handleFieldValue(event.currentTarget.value))}
               />
               <InputGroupAddon align="inline-end">
                 <InputGroupText>@{props.domain}</InputGroupText>

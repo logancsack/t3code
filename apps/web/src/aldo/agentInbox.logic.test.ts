@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { agentHandleProblem, normalizeAgentHandle } from "./agentInbox.logic";
+import { agentHandleProblem, handleFieldValue, normalizeAgentHandle } from "./agentInbox.logic";
+
+describe("handleFieldValue", () => {
+  it("keeps the handle of a pasted address, as typed", () => {
+    expect(handleFieldValue("Logan@aldomail.com")).toBe("Logan");
+    expect(handleFieldValue("logan.s")).toBe("logan.s");
+    expect(handleFieldValue("@aldomail.com")).toBe("");
+  });
+});
 
 describe("normalizeAgentHandle", () => {
   it("takes the handle out of what's typed", () => {
