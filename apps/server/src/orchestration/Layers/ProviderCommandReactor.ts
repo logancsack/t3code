@@ -1657,13 +1657,21 @@ const make = Effect.gen(function* () {
             return;
           }
 
-          // Only a thread still waiting on the request needs settling: the
-          // reactor holds a thread it starts a turn for in "starting" until the
-          // provider starts it. A request sent during a turn leaves the thread
-          // running, then ready once that turn ends: the provider took it
-          // without a turn of its own (a steer into that turn, or a Codex
-          // follow-up queued behind it), and turn liveness guards the turn.
-          if (thread.session !== null && thread.session.status !== "starting") {
+          // A request sent during a turn has no turn of its own: the provider
+          // took it into that turn (a steer, under its id) or queued it behind
+          // (Codex). The thread is still running, or has moved on since the
+          // request (the turn ended), and turn liveness guards the turn. Any
+          // other request needs settling: the reactor holds a thread it starts
+          // a turn for in "starting" until the provider starts it, and one it
+          // never took (the server stopped first) left the thread as it was.
+          const session = thread.session;
+          if (
+            session !== null &&
+            (session.status === "running" ||
+              (session.status !== "starting" &&
+                DateTime.toEpochMillis(DateTime.makeUnsafe(session.updatedAt)) >
+                  DateTime.toEpochMillis(DateTime.makeUnsafe(pending.requestedAt))))
+          ) {
             takenTurnStarts.add(turnStartKey(pending));
             return;
           }

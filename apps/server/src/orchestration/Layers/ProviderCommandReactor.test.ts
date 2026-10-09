@@ -24,6 +24,7 @@ import {
 import * as Effect from "effect/Effect";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
+import * as DateTime from "effect/DateTime";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
@@ -638,7 +639,10 @@ describe("ProviderCommandReactor", () => {
 
   type DispatchCommand = Parameters<OrchestrationEngineService["Service"]["dispatch"]>[0];
 
-  const turnStart = (messageId: string): DispatchCommand => ({
+  const secondsIn = (seconds: number) =>
+    DateTime.formatIso(DateTime.add(DateTime.makeUnsafe("2026-01-01T00:00:00.000Z"), { seconds }));
+
+  const turnStart = (messageId: string, atSeconds = 0): DispatchCommand => ({
     type: "thread.turn.start",
     commandId: CommandId.make(`cmd-turn-start-${messageId}`),
     threadId: ThreadId.make("thread-1"),
@@ -650,7 +654,7 @@ describe("ProviderCommandReactor", () => {
     },
     interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
     runtimeMode: "approval-required",
-    createdAt: "2026-01-01T00:00:00.000Z",
+    createdAt: secondsIn(atSeconds),
   });
 
   // What ingestion projects from the provider's lifecycle events.
@@ -658,6 +662,7 @@ describe("ProviderCommandReactor", () => {
     label: string,
     status: "starting" | "running" | "ready",
     activeTurnId: string | null,
+    atSeconds = 1,
   ): DispatchCommand => ({
     type: "thread.session.set",
     commandId: CommandId.make(`cmd-session-set-${label}`),
@@ -670,9 +675,9 @@ describe("ProviderCommandReactor", () => {
       runtimeMode: "approval-required",
       activeTurnId: activeTurnId === null ? null : asTurnId(activeTurnId),
       lastError: null,
-      updatedAt: "2026-01-01T00:00:01.000Z",
+      updatedAt: secondsIn(atSeconds),
     },
-    createdAt: "2026-01-01T00:00:01.000Z",
+    createdAt: secondsIn(atSeconds),
   });
 
   // Cursor, Grok, Prime and Muse resolve sendTurn only when the whole turn
@@ -809,15 +814,28 @@ describe("ProviderCommandReactor", () => {
     expect(thread && startFailed(thread)).toBe(true);
   });
 
+  // The server stopped after the request was recorded but before the reactor
+  // took it: the thread is as the request found it, and nothing will run it.
+  it("settles an expired turn start lost before the reactor took it", async () => {
+    const harness = await createHarness({
+      beforeStart: [sessionSet("lost-ready", "ready", null, 1), turnStart("user-message-lost", 2)],
+    });
+
+    const thread = await harness.runEffect(readThread(harness));
+    expect(thread?.session?.status).toBe("error");
+    expect(thread?.session?.lastError).toContain("marked complete with an infrastructure error");
+    expect(thread && startFailed(thread)).toBe(true);
+  });
+
   it("leaves an expired steer alone while the turn it joined runs, and once it ended", async () => {
     const steered = [
-      turnStart("user-message-long"),
-      sessionSet("long-turn-running", "running", "turn-long"),
-      turnStart("user-message-steer"),
+      turnStart("user-message-long", 0),
+      sessionSet("long-turn-running", "running", "turn-long", 1),
+      turnStart("user-message-steer", 2),
     ];
     for (const [beforeStart, status] of [
       [steered, "running"],
-      [[...steered, sessionSet("long-turn-ended", "ready", null)], "ready"],
+      [[...steered, sessionSet("long-turn-ended", "ready", null, 3)], "ready"],
     ] as const) {
       const harness = await createHarness({ beforeStart });
 
