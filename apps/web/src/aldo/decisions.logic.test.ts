@@ -164,12 +164,17 @@ describe("aldoDecisions", () => {
           conversation({ ref: "z", thread: at("z"), state: "failed", snoozedUntil: ago(-60) }),
           // Snoozed, but it asks: it raised its hand.
           { ...question, ref: "s", thread: at("s"), snoozedUntil: ago(-60) },
+          // Paused mid-turn: opening it carries on, nothing to decide (its pull request still can be).
+          conversation({ ref: "p", thread: at("p"), state: "paused" }),
         ],
-        pullRequests: [pullRequest({ thread: at("m"), mergesAt: ago(-5) })],
+        pullRequests: [
+          pullRequest({ thread: at("m"), mergesAt: ago(-5) }),
+          pullRequest({ thread: at("p"), number: 9 }),
+        ],
       }),
       NOW,
     );
-    expect(decisions.map((d) => d.key)).toEqual(["question:s:r1"]);
+    expect(decisions.map((d) => d.key)).toEqual(["question:s:r1", "merge:acme/shop#9"]);
   });
 
   it("puts away a thread's pull request with it, and wakes a snooze that has run out", () => {

@@ -15,6 +15,8 @@
 
 import { setOrchestrationCommandDispatchOverride } from "@t3tools/client-runtime/operations";
 import type { EnvironmentId } from "@t3tools/contracts";
+import * as Option from "effect/Option";
+import { AsyncResult } from "effect/unstable/reactivity";
 
 import { environmentCatalog } from "../connection/catalog";
 import { keepAldoCommand } from "./threadCommands";
@@ -74,6 +76,23 @@ export function isAldoConnected(environmentId: string): boolean {
 }
 
 /**
+ * Whether to tell a machine's connection to try again now: only while it
+ * waits to (backing off, or not trying). An attempt under way has a deadline
+ * of its own, and a nudge would cut it off, so a slow one (a big thread's
+ * first sync on a phone, say) would start over every few seconds; a nudge to
+ * one connected drops it.
+ */
+function wantsNudge(environmentId: string): boolean {
+  const state = AsyncResult.value(
+    appAtomRegistry.get(environmentCatalog.stateAtom(environmentId as EnvironmentId)),
+  );
+  return (
+    Option.isNone(state) ||
+    (state.value.phase !== "connecting" && state.value.phase !== "connected")
+  );
+}
+
+/**
  * What the thread says while its message waits for the cloud agent: where
  * Aldo says the message it holds stands (waiting for room, trying again),
  * else what this page is doing for it.
@@ -119,7 +138,7 @@ export function ensureAldoConnected(environmentId: string): Promise<void> {
         aldoMachineConnected(environmentId);
         return;
       }
-      if (Date.now() >= nextNudge) {
+      if (Date.now() >= nextNudge && wantsNudge(environmentId)) {
         nextNudge = Date.now() + NUDGE_EVERY_MS;
         void runAtomCommand(
           appAtomRegistry,
@@ -236,12 +255,14 @@ function followAldoMachine(environmentId: string): void {
     const deadline = Date.now() + FOLLOW_MS;
     while (Date.now() < deadline && !isAldoConnected(environmentId)) {
       requestAldoDirectoryRefresh();
-      void runAtomCommand(
-        appAtomRegistry,
-        environmentCatalog.retryNow,
-        environmentId as EnvironmentId,
-        { reportFailure: false },
-      );
+      if (wantsNudge(environmentId)) {
+        void runAtomCommand(
+          appAtomRegistry,
+          environmentCatalog.retryNow,
+          environmentId as EnvironmentId,
+          { reportFailure: false },
+        );
+      }
       await sleep(NUDGE_EVERY_MS);
     }
     if (isAldoConnected(environmentId)) aldoMachineConnected(environmentId);

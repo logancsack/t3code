@@ -72,6 +72,7 @@ describe("needsYouKind", () => {
     expect(needsYouKind(conversation({ state: "working" }))).toBeNull();
     expect(needsYouKind(conversation({ state: "failed" }))).toBe("failed");
     expect(needsYouKind(conversation({ state: "waiting" }))).toBe("waiting");
+    expect(needsYouKind(conversation({ state: "paused" }))).toBe("paused");
     expect(
       needsYouKind(
         conversation({
