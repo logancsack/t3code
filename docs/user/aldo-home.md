@@ -40,7 +40,7 @@ The board answers four questions, in order, starting with what waits on a tap fr
 
 Answering a thread whose agent has gone to sleep wakes it, so a button can take a moment. **Open** goes to the thread; **Ask Aldo** starts a message to Aldo about it.
 
-**Working now.** Each thread that's working, with its model, how long it has been at it, and what it last said. A thread that hasn't moved for an hour is marked **stuck**. A thread whose machine is running short of memory or CPU offers **Switch to 2× machine** here.
+**Working now.** Each thread that's working, with its model, how long it has been at it, and what it last said. A thread that hasn't moved for an hour is marked **stuck**. Sail machines have 8 vCPUs and memory that grows automatically with your work, up to 32 GB. Threads using manual sizing offer **Switch to 2× machine** here when their machine is running short of memory or CPU.
 
 **Pull requests.** Every pull request Aldo follows, in three lanes: **open** (draft, checks running, failing, or green), **shipping** (merged, deploying), and **shipped** (deployed in the last two days). Each shows its stage, how many fixes the agent has made, whether reviews went to you, and, when your policy has Aldo merge green pull requests, when it will. **Merge** merges a green one yourself. See [Pull requests in Aldo](./aldo-pull-requests.md).
 

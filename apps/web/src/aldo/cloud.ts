@@ -45,6 +45,8 @@ export interface AldoEnvironment {
   readonly state: "new" | "ready" | "stopped" | "failed";
   /** Standard: 4 vCPU, 8 GB. 2x: 8 vCPU, 16 GB, twice the usage. */
   readonly machine?: AldoMachineSize;
+  /** Automatic sizing has no manual upgrades. Older servers leave this out. */
+  readonly machineSizing?: "automatic";
   /** A recent report of the machine running short while its agent worked. */
   readonly pressure?: AldoMachinePressure | null;
   /**
@@ -1850,6 +1852,7 @@ export interface AldoHomeConversation {
   readonly summary?: string;
   /** Its machine: running, asleep, not created, failed. */
   readonly machine: string;
+  readonly machineSizing?: "automatic";
   readonly model?: string;
   readonly at: string;
   /** When its machine last reported its state: `at` moves with its list's changes too (a rename, a pin). */
