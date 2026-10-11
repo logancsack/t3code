@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 
 import type { DailyTotals, HourlyTotals } from "@t3tools/shared/usageMerge";
 
+import { AldoProviderLimitsSection, useAldoProviderLimits } from "../../aldo/AldoProviderLimits";
 import { isAldoCloud } from "../../aldo/cloud";
 import { aldoUsageNotes } from "../../aldo/usage.logic";
 import { isElectron } from "../../env";
@@ -56,6 +57,7 @@ export function UsagePage() {
   const isPast24Hours = windowDays === 1;
   const { merged, environments, isPending, isPartial, refresh } = useUsage(window);
   const aldoWorkspace = useAldoWorkspaceUsage();
+  const providerLimits = useAldoProviderLimits();
 
   // Hold the content until every environment is terminal. Rendering merged
   // totals while devices are still answering makes every number on the page
@@ -99,6 +101,7 @@ export function UsagePage() {
   };
   const refreshWindow = () => {
     aldoWorkspace.refresh();
+    providerLimits.refresh();
     const nextWindow = makeWindow(windowDays, undefined, isPast24Hours ? "hour" : "day");
     if (
       nextWindow.sinceDay === window.sinceDay &&
@@ -214,6 +217,12 @@ export function UsagePage() {
 
         <ScrollArea className="min-h-0 flex-1">
           <WorkspacePageContainer width="wide">
+            {/*
+              Aldo cloud: what's left of each plan, read by Aldo's server, so
+              it shows while environments are still answering.
+            */}
+            <AldoProviderLimitsSection state={providerLimits.state} />
+
             {settling ? (
               <>
                 {/* Aldo keeps its machines out of sight. */}
