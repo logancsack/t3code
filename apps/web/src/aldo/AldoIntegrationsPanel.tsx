@@ -1,6 +1,7 @@
 // Settings → Integrations: accounts the user connects for their agents to use,
 // beyond their code: Google and Microsoft, for their mail, calendar, contacts
-// and files. Connecting signs in with the provider in a popup; how the sign-in
+// and files, and the user's Link wallet, which agents pay from with the user's
+// approval each time. Connecting signs in with the provider in a popup; how the sign-in
 // reports back to this tab is in integrations.logic.ts. Once one is connected,
 // Aldo's heads-ups (it looks at new mail and coming events between
 // conversations) can be turned off here, and the agents' own email address
@@ -80,6 +81,12 @@ const INTEGRATIONS: Record<
       { type: "personal", label: "Connect personal account" },
     ],
   },
+  link: {
+    name: "Link",
+    description:
+      "Lets your agents pay from your Link wallet. Each purchase waits for your approval in Link, and the card it gives works once, for that amount, at that store.",
+    accounts: [{ label: "Connect Link" }],
+  },
 };
 
 const ACCOUNT_TYPE: Record<AldoIntegrationAccountType, string> = {
@@ -142,6 +149,7 @@ function IntegrationRow(props: {
 
   return (
     <SettingsRow
+      id={`aldo-integration-${integration.provider}`}
       title={spec.name}
       description={spec.description}
       status={

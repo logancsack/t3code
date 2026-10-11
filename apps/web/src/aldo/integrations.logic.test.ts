@@ -107,6 +107,9 @@ describe("describeAldoCapabilities", () => {
       "mail, calendar and contacts",
     );
     expect(describeAldoCapabilities(["mail", "something-newer", "files"])).toBe("mail and files");
+    expect(describeAldoCapabilities(["payments"])).toBe(
+      "Link wallet, with your approval for each purchase",
+    );
     expect(describeAldoCapabilities([])).toBe("");
   });
 });

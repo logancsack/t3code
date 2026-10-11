@@ -13,6 +13,7 @@ const CAPABILITY_NAMES: Record<string, string> = {
   calendar: "calendar",
   contacts: "contacts",
   files: "files",
+  payments: "Link wallet, with your approval for each purchase",
 };
 
 /** ["mail", "calendar", "files"] → "mail, calendar and files" (what a newer Aldo adds and this client doesn't know is left out). */

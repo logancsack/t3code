@@ -322,6 +322,15 @@ export const SETTINGS_SEARCH_ITEMS = [
     aldoCloudOnly: true,
   },
   {
+    id: "aldo-integration-link",
+    title: "Link",
+    to: "/settings/integrations",
+    searchTerms: [
+      "link wallet stripe payments pay card credit debit buy purchase checkout approve approval spend connect disconnect",
+    ],
+    aldoCloudOnly: true,
+  },
+  {
     id: "aldo-phone",
     title: "Text and call Aldo",
     to: "/settings/integrations",
