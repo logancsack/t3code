@@ -103,6 +103,27 @@ export function withoutImageNotes(text: string): {
   return { text: words.trim(), images };
 }
 
+/**
+ * A message of Aldo's in runs of text, its https links apart, for the page to
+ * make them links: what a thread made (a shared file, a pull request) and the
+ * thread itself, which Aldo passes on when work it handed over comes back.
+ */
+export function linkRuns(
+  text: string,
+): ReadonlyArray<{ readonly text: string; readonly at: number; readonly href?: string }> {
+  const runs: { text: string; at: number; href?: string }[] = [];
+  let last = 0;
+  for (const match of text.matchAll(/https:\/\/[^\s<>()[\]"'`]+/g)) {
+    const url = match[0].replace(/[).,;:!?*_'">\]]+$/, "");
+    const at = match.index ?? 0;
+    if (at > last) runs.push({ text: text.slice(last, at), at: last });
+    runs.push({ text: url, at, href: url });
+    last = at + url.length;
+  }
+  if (last < text.length) runs.push({ text: text.slice(last), at: last });
+  return runs;
+}
+
 /** The app a tool's result asks the page to open in a new tab (open_preview), if any. */
 export function previewOf(outcome: unknown): string | null {
   const url = (outcome as { result?: { preview?: { url?: unknown } } } | null)?.result?.preview
