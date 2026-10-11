@@ -126,16 +126,26 @@ export function linkRuns(
 
 /**
  * A link without the prose after it: the sentence's punctuation, and the `*`
- * or `_` that close emphasis opened right before it (`**https://…**`). A `_`
- * or `*` of the link's own, with nothing opening before it, stays.
+ * or `_` that close emphasis opened right before it (`**https://…**`, closed
+ * in reverse, `**_https://…_**`), each opener once. A `_` or `*` of the link's
+ * own stays.
  */
 function linkEnd(raw: string, before: string): string {
   let url = raw;
+  let open = /[*_]{1,3}$/.exec(before)?.[0] ?? "";
   for (let was = ""; was !== url; ) {
     was = url;
-    url = url.replace(/[).,;:!?">\]]+$/, "");
-    const mark = /[*_]+$/.exec(url)?.[0];
-    if (mark && before.endsWith(mark)) url = url.slice(0, -mark.length);
+    let end = url.length;
+    while (end > 0 && ').,;:!?">]'.includes(url[end - 1]!)) end--;
+    url = url.slice(0, end);
+    for (let n = Math.min(open.length, url.length); n > 0; n--) {
+      let closes = true;
+      for (let i = 0; i < n; i++) closes &&= url[url.length - n + i] === open[open.length - 1 - i];
+      if (!closes) continue;
+      url = url.slice(0, -n);
+      open = open.slice(0, -n);
+      break;
+    }
   }
   return url;
 }
