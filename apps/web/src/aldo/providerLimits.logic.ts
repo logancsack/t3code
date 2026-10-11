@@ -67,7 +67,8 @@ function isProviderLimits(value: unknown): value is AldoProviderLimits {
     limits.lines.every(isText) &&
     isTextOrNull(limits.error) &&
     isTextOrNull(limits.url) &&
-    isText(limits.checkedAt)
+    isText(limits.checkedAt) &&
+    Number.isFinite(Date.parse(limits.checkedAt))
   );
 }
 
@@ -95,7 +96,9 @@ export function limitResetCopy(iso: string | null, now: number, timeZone?: strin
   const at = Date.parse(iso);
   if (!Number.isFinite(at)) return null;
   const ms = at - now;
-  if (ms <= MINUTE) return "Resets now";
+  // The page reads again once a reset passes (nextLimitReset), so this shows only until it has.
+  if (ms <= 0) return "Has reset";
+  if (ms < MINUTE) return "Resets in under a minute";
   if (ms < HOUR) return `Resets in ${Math.ceil(ms / MINUTE)} min`;
   if (ms < DAY) {
     const hours = Math.floor(ms / HOUR);
@@ -166,4 +169,19 @@ export function limitsCheckedCopy(
   if (ms < MINUTE) return "Checked just now";
   if (ms < HOUR) return `Checked ${Math.floor(ms / MINUTE)} min ago`;
   return `Checked ${Math.floor(ms / HOUR)} h ago`;
+}
+
+/**
+ * How long until the next limit resets, for reading again then (a reading
+ * from before it would go on showing what's since been renewed); null with
+ * none ahead. At most a day, as far as a timer reliably waits.
+ */
+export function nextLimitReset(
+  providers: ReadonlyArray<AldoProviderLimits>,
+  now: number,
+): number | null {
+  const ahead = providers
+    .flatMap((limits) => limits.windows.map((window) => Date.parse(window.resetsAt ?? "")))
+    .filter((at) => Number.isFinite(at) && at > now);
+  return ahead.length === 0 ? null : Math.min(Math.min(...ahead) - now, DAY);
 }

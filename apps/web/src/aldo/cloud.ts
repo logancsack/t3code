@@ -1128,9 +1128,11 @@ export async function fetchAldoCost(environmentId: string): Promise<AldoCost | n
  */
 export async function fetchAldoProviderLimits(
   refresh = false,
+  signal?: AbortSignal,
 ): Promise<ReadonlyArray<AldoProviderLimits> | null> {
   const body = await api<unknown>(`/api/usage/limits${refresh ? "?refresh=1" : ""}`, {
     cache: "no-store",
+    ...(signal ? { signal } : {}),
   }).catch((error: unknown) => {
     if (error instanceof AldoApiError && error.status === 404) return null;
     throw error;

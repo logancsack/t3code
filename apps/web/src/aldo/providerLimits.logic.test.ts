@@ -9,6 +9,7 @@ import {
   limitsCheckedCopy,
   limitTone,
   limitUsedCopy,
+  nextLimitReset,
   type AldoProviderLimits,
 } from "./providerLimits.logic";
 
@@ -41,7 +42,8 @@ describe("aldoProviderLimitsOf", () => {
     const aldo = { ...claude, id: "aldo", name: "Aldo", url: "/usage", windows: [] };
     const odd = { ...claude, id: "grok", state: "sideways" };
     const noWindows = { ...claude, id: "luma", windows: [{ label: "Month" }] };
-    expect(aldoProviderLimitsOf({ providers: [aldo, claude, odd, noWindows] })).toEqual([
+    const undated = { ...claude, id: "fal", checkedAt: "recently" };
+    expect(aldoProviderLimitsOf({ providers: [aldo, claude, odd, noWindows, undated] })).toEqual([
       aldo,
       claude,
     ]);
@@ -56,7 +58,7 @@ describe("aldoProviderLimitsOf", () => {
 
 describe("limitResetCopy", () => {
   it("counts down within a day", () => {
-    expect(limitResetCopy(ahead(0.5), NOW)).toBe("Resets now");
+    expect(limitResetCopy(ahead(0.5), NOW)).toBe("Resets in under a minute");
     expect(limitResetCopy(ahead(25), NOW)).toBe("Resets in 25 min");
     expect(limitResetCopy(ahead(85), NOW)).toBe("Resets in 1 h 25 min");
     expect(limitResetCopy(ahead(180), NOW)).toBe("Resets in 3 h");
@@ -65,6 +67,11 @@ describe("limitResetCopy", () => {
   it("names the day and time within a week, then the date", () => {
     expect(limitResetCopy("2026-10-13T00:00:00Z", NOW, "UTC")).toBe("Resets Tue 12:00 AM");
     expect(limitResetCopy("2026-10-31T00:00:00Z", NOW, "UTC")).toBe("Resets Oct 31");
+  });
+
+  it("says a reset that's passed has happened, not that it's about to", () => {
+    expect(limitResetCopy(ahead(0), NOW)).toBe("Has reset");
+    expect(limitResetCopy(ahead(-90), NOW)).toBe("Has reset");
   });
 
   it("says nothing without a time", () => {
@@ -114,5 +121,17 @@ describe("a provider's row", () => {
       "Checked just now",
     );
     expect(limitsCheckedCopy([], NOW)).toBeNull();
+  });
+});
+
+describe("nextLimitReset", () => {
+  it("waits for the soonest reset ahead, a day at most", () => {
+    expect(nextLimitReset([claude], NOW)).toBe(2 * 60 * 60_000);
+    const passed = {
+      ...claude,
+      windows: [{ ...claude.windows[0]!, resetsAt: ahead(-5) }, claude.windows[1]!],
+    };
+    expect(nextLimitReset([passed], NOW)).toBe(24 * 60 * 60_000);
+    expect(nextLimitReset([{ ...claude, windows: [] }], NOW)).toBeNull();
   });
 });

@@ -19,6 +19,7 @@ import {
   limitsCheckedCopy,
   limitTone,
   limitUsedCopy,
+  nextLimitReset,
   type AldoLimitWindow,
   type AldoProviderLimits,
 } from "./providerLimits.logic";
@@ -33,10 +34,16 @@ export type AldoProviderLimitsState =
 const providersOf = (state: AldoProviderLimitsState) =>
   state.status === "unavailable" ? null : state.providers;
 
+/** Aldo reads the providers at once, each within 10 seconds; past this, something's stuck. */
+const REQUEST_TIMEOUT_MS = 30_000;
+/** After a reset, a moment for the provider to have renewed it; and never sooner than a minute apart. */
+const RESET_SLACK_MS = 5_000;
+const RESET_READ_MIN_MS = 60_000;
+
 /**
- * Loads the limits on mount; `refresh()` asks the providers again (Aldo
- * answers from its last reading when it's only seconds old). A failed refresh
- * keeps what was shown.
+ * Loads the limits on mount, and again when a limit resets; `refresh()` asks
+ * the providers again (Aldo answers from its last reading when it's only
+ * seconds old). A failed refresh keeps what was shown.
  */
 export function useAldoProviderLimits(): {
   readonly state: AldoProviderLimitsState;
@@ -46,24 +53,27 @@ export function useAldoProviderLimits(): {
   const [state, setState] = useState<AldoProviderLimitsState>(() =>
     available ? { status: "loading", providers: null } : { status: "unavailable" },
   );
-  const latest = useRef(0);
+  const request = useRef<AbortController | null>(null);
 
   const load = useCallback(
     (refresh: boolean) => {
       if (!available) return;
-      const request = ++latest.current;
+      request.current?.abort();
+      const controller = new AbortController();
+      request.current = controller;
       setState((previous) =>
         previous.status === "unavailable"
           ? previous
           : { status: "loading", providers: providersOf(previous) },
       );
-      void fetchAldoProviderLimits(refresh).then(
+      const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]);
+      void fetchAldoProviderLimits(refresh, signal).then(
         (providers) => {
-          if (request !== latest.current) return;
+          if (controller.signal.aborted) return;
           setState(providers ? { status: "ready", providers } : { status: "unavailable" });
         },
         () => {
-          if (request !== latest.current) return;
+          if (controller.signal.aborted) return;
           setState((previous) =>
             previous.status === "unavailable"
               ? previous
@@ -78,9 +88,22 @@ export function useAldoProviderLimits(): {
   useEffect(() => {
     load(false);
     return () => {
-      latest.current += 1;
+      request.current?.abort();
     };
   }, [load]);
+
+  // Read again once the next limit resets, so a renewed one doesn't go on showing as used.
+  const readyProviders = state.status === "ready" ? state.providers : null;
+  useEffect(() => {
+    if (!readyProviders) return;
+    const wait = nextLimitReset(readyProviders, Date.now());
+    if (wait === null) return;
+    const timer = window.setTimeout(
+      () => load(true),
+      Math.max(wait + RESET_SLACK_MS, RESET_READ_MIN_MS),
+    );
+    return () => window.clearTimeout(timer);
+  }, [readyProviders, load]);
 
   const refresh = useCallback(() => load(true), [load]);
   return { state, refresh };
@@ -229,6 +252,7 @@ function LimitMeter({ window, now }: { readonly window: AldoLimitWindow; readonl
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={Math.round(Math.min(100, Math.max(0, window.usedPercent)))}
+        aria-valuetext={limitUsedCopy(window.usedPercent)}
       >
         <div
           className={cn(
