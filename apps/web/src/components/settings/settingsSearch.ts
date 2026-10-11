@@ -12,6 +12,7 @@ export type SettingsPath =
   | "/settings/integrations"
   | "/settings/source-control"
   | "/settings/instructions"
+  | "/settings/skills"
   | "/settings/memory"
   | "/settings/vault"
   | "/settings/environments"
@@ -66,6 +67,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/integrations": "Integrations",
   "/settings/source-control": "Source Control",
   "/settings/instructions": "Instructions",
+  "/settings/skills": "Skills",
   "/settings/memory": "Memory",
   "/settings/vault": "Vault",
   "/settings/environments": "Environments",
