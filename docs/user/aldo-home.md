@@ -23,7 +23,7 @@ On **Go through them**, Aldo puts each decision to you out loud while your scree
 On a phone the home screen has two tabs:
 
 - **Aldo**: your conversation, with the brief at the start of the day, and a big button beside the composer to talk. A call fills the screen: Aldo's words as it says them, what it did on this call, and **Mute**, **Type** and **End**. The arrow at the top folds the call away so you can use the app while it goes on; the big button brings it back. The speaker button turns Aldo's voice off, leaving its words on screen.
-- **Agents**: every thread by what it needs from you, as the sidebar groups them, with how many wait on you on the tab. Sending an email or merging takes a tap on the row. Tap a thread to see what its agent last said and answer it, reply to the agent, talk to Aldo about it, or open it.
+- **Agents**: every thread by what it needs from you (waiting on you, working, landing, unread), with how many wait on you on the tab. Sending an email or merging takes a tap on the row. Tap a thread to see what its agent last said and answer it, reply to the agent, talk to Aldo about it, or open it.
 
 ## The board
 

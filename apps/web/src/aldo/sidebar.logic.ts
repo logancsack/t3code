@@ -1,14 +1,14 @@
-// The parts of Aldo's sidebar (AldoSidebar.tsx) that don't touch the page:
-// which group each thread is in, by what it needs from the user rather than
-// by project (waiting on you, working, landing, unread, earlier), what its
-// one line says, and the order the thread shortcuts move through. A thread's
-// state comes from its shell (T3's own status, unread and snooze rules) with
-// what Aldo's home read adds: what it asks, its pull requests, its summary,
-// and what isn't a thread at all (approvals, routines, reminders). As in T3's
-// sidebar, snoozed outranks settled, and settled outranks pinned: a thread the
-// user settled is with the earlier ones, whatever it last asked. Also as there,
-// a thread counts as settled or snoozed only on a machine known to support it,
-// whose menu can make it active or wake it again.
+// The parts of the phone's Agents tab (AldoAgentsTab.tsx) that don't touch
+// the page: which group each thread is in, by what it needs from the user
+// rather than by project (waiting on you, working, landing, unread, earlier),
+// and what its one line says. A thread's state comes from its shell (T3's own
+// status, unread and snooze rules) with what Aldo's home read adds: what it
+// asks, its pull requests, its summary, and the approvals that aren't a
+// thread's. As in T3's sidebar, snoozed outranks settled, and settled
+// outranks pinned: a thread the user settled is with the earlier ones,
+// whatever it last asked. Also as there, a thread counts as settled or
+// snoozed only on a machine known to support it, whose menu can make it
+// active or wake it again.
 
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 import { effectiveSnoozed } from "@t3tools/client-runtime/state/thread-settled";
@@ -20,14 +20,7 @@ import {
   sortPinnedThreadsForSidebar,
 } from "../components/Sidebar.logic";
 import { waitingApprovals } from "./approvals.logic";
-import type {
-  AldoApproval,
-  AldoHome,
-  AldoHomeConversation,
-  AldoHomeDelivery,
-  AldoHomePullRequest,
-  AldoRoutine,
-} from "./cloud";
+import type { AldoApproval, AldoHome, AldoHomeConversation, AldoHomePullRequest } from "./cloud";
 import { modelName, sameTarget, WORKING_STATES } from "./home.logic";
 import { aldoStartReason } from "./threadStart.logic";
 
@@ -76,10 +69,6 @@ export interface AldoSidebarRow {
   readonly pullRequest: AldoHomePullRequest | null;
 }
 
-export type AldoScheduledItem =
-  | { readonly kind: "routine"; readonly key: string; readonly routine: AldoRoutine }
-  | { readonly kind: "delivery"; readonly key: string; readonly delivery: AldoHomeDelivery };
-
 export interface AldoSidebarList {
   readonly pinned: ReadonlyArray<AldoSidebarRow>;
   /** Approvals that aren't a thread's (an email to send, an event to add). */
@@ -90,7 +79,6 @@ export interface AldoSidebarList {
   readonly unread: ReadonlyArray<AldoSidebarRow>;
   readonly earlier: ReadonlyArray<AldoSidebarRow>;
   readonly snoozed: ReadonlyArray<AldoSidebarRow>;
-  readonly scheduled: ReadonlyArray<AldoScheduledItem>;
 }
 
 export function aldoThreadKey(environmentId: string, threadId: string): string {
@@ -219,14 +207,12 @@ function detailFor(
 const byAtAsc = (a: AldoSidebarRow, b: AldoSidebarRow) => a.at.localeCompare(b.at);
 const byAtDesc = (a: AldoSidebarRow, b: AldoSidebarRow) => b.at.localeCompare(a.at);
 
-/** Every thread in its group, and what isn't a thread, for the sidebar. */
+/** Every thread in its group, and the approvals that aren't a thread's. */
 export function aldoSidebarList(input: {
   readonly shells: ReadonlyArray<EnvironmentThreadShell>;
   readonly home: AldoHome | null;
   readonly lastVisitedAt: (key: string) => string | undefined;
   readonly repoOf: (shell: EnvironmentThreadShell) => string;
-  /** Narrows threads to a project (approvals and what's scheduled stay). */
-  readonly inScope?: (shell: EnvironmentThreadShell) => boolean;
   /**
    * Whether this page is connected to the thread's machine: it's up then,
    * whatever Aldo's last read said (not connected, when not given).
@@ -247,7 +233,6 @@ export function aldoSidebarList(input: {
   const pinnedKeys = new Set<string>();
   for (const shell of input.shells) {
     if (shell.archivedAt !== null) continue;
-    if (input.inScope && !input.inScope(shell)) continue;
     const key = aldoThreadKey(shell.environmentId, shell.id);
     const target = { environmentId: shell.environmentId, threadId: shell.id };
     const conversation = home?.conversations.find((c) => sameTarget(c.thread, target)) ?? null;
@@ -323,58 +308,7 @@ export function aldoSidebarList(input: {
     snoozed: snoozed.toSorted((a, b) =>
       (a.shell.snoozedUntil ?? "").localeCompare(b.shell.snoozedUntil ?? ""),
     ),
-    scheduled: scheduledItems(home),
   };
-}
-
-/** Routines that will run, then what's due to be sent, soonest first. */
-function scheduledItems(home: AldoHome | null): ReadonlyArray<AldoScheduledItem> {
-  if (!home) return [];
-  const routines: AldoScheduledItem[] = (home.routines ?? [])
-    .filter((routine) => routine.enabled && routine.nextRunAt)
-    .toSorted((a, b) => (a.nextRunAt ?? "").localeCompare(b.nextRunAt ?? ""))
-    .map((routine) => ({ kind: "routine", key: `routine:${routine.id}`, routine }));
-  const deliveries: AldoScheduledItem[] = home.upcoming
-    .toSorted((a, b) => a.dueAt.localeCompare(b.dueAt))
-    .map((delivery) => ({ kind: "delivery", key: `delivery:${delivery.id}`, delivery }));
-  return [...routines, ...deliveries];
-}
-
-/** Threads whose titles have the words, in the order they show. */
-export function searchAldoSidebar(
-  list: AldoSidebarList,
-  query: string,
-): ReadonlyArray<AldoSidebarRow> {
-  const words = query.trim().toLowerCase();
-  if (!words) return [];
-  return [
-    ...list.pinned,
-    ...list.waiting,
-    ...list.working,
-    ...list.landing,
-    ...list.unread,
-    ...list.earlier,
-    ...list.snoozed,
-  ].filter((row) => row.shell.title.toLowerCase().includes(words));
-}
-
-/**
- * The threads the shortcuts move through (⌘1–9, previous and next), top to
- * bottom as they show: folded groups count only when open.
- */
-export function aldoSidebarOrder(
-  list: AldoSidebarList,
-  open: { readonly earlier: number; readonly snoozed: boolean },
-): ReadonlyArray<string> {
-  return [
-    ...list.pinned,
-    ...list.waiting,
-    ...list.working,
-    ...list.landing,
-    ...list.unread,
-    ...list.earlier.slice(0, open.earlier),
-    ...(open.snoozed ? list.snoozed : []),
-  ].map((row) => row.key);
 }
 
 /** A project's label in a word: the repository's name, or General. */

@@ -1,7 +1,6 @@
 // The user's threads grouped by what each needs from them (sidebar.logic.ts),
-// as Aldo's sidebar (AldoSidebar.tsx) and the phone's Agents tab
-// (AldoAgentsTab.tsx) both show them: from T3's shells and Aldo's home read,
-// with each thread's project, narrowed to one project when `scope` names one.
+// as the phone's Agents tab (AldoAgentsTab.tsx) shows them: from T3's shells
+// and Aldo's home read, with each thread's project.
 
 import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
@@ -18,12 +17,7 @@ import { useUiStateStore } from "../uiStateStore";
 import { isAldoEnvironmentId, type AldoHome } from "./cloud";
 import { aldoSidebarList, repoLabel } from "./sidebar.logic";
 
-export function useAldoThreadList(input: {
-  readonly home: AldoHome | null;
-  readonly now: number;
-  /** A project to narrow to (its key), or null for all of them. */
-  readonly scope: string | null;
-}) {
+export function useAldoThreadList(input: { readonly home: AldoHome | null; readonly now: number }) {
   const shells = useThreadShells();
   const projects = useProjects();
   const lastVisited = useUiStateStore((s) => s.threadLastVisitedAtById);
@@ -31,7 +25,7 @@ export function useAldoThreadList(input: {
   const presentations = useAtomValue(environmentPresentations.presentationsAtom);
   const groupingSettings = useClientSettings(selectProjectGroupingSettings);
   const primaryEnvironmentId = usePrimaryEnvironmentId();
-  const { home, now, scope } = input;
+  const { home, now } = input;
 
   const groups = useMemo(
     () =>
@@ -63,7 +57,6 @@ export function useAldoThreadList(input: {
         home,
         lastVisitedAt: (key) => lastVisited[key],
         repoOf: (shell) => repoLabel(groupOf(shell)?.displayName),
-        ...(scope === null ? {} : { inScope: (shell) => groupOf(shell)?.projectKey === scope }),
         connected: (shell) =>
           presentations.get(shell.environmentId)?.connection.phase === "connected",
         supports: (shell) => {
@@ -75,12 +68,12 @@ export function useAldoThreadList(input: {
         },
         now: new Date(now).toISOString(),
       }),
-    [groupOf, home, lastVisited, now, presentations, scope, serverConfigs, shells],
+    [groupOf, home, lastVisited, now, presentations, serverConfigs, shells],
   );
 
   const shellCount = useMemo(
     () => shells.filter((shell) => isAldoEnvironmentId(shell.environmentId)).length,
     [shells],
   );
-  return { list, groups, groupByProject, shellCount };
+  return { list, shellCount };
 }

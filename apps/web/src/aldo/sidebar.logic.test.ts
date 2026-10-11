@@ -2,7 +2,7 @@ import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/model
 import { describe, expect, it } from "vite-plus/test";
 
 import type { AldoHome, AldoHomeConversation, AldoHomePullRequest } from "./cloud";
-import { aldoSidebarList, aldoSidebarOrder, repoLabel, searchAldoSidebar } from "./sidebar.logic";
+import { aldoSidebarList, repoLabel } from "./sidebar.logic";
 
 const NOW = "2026-10-07T12:00:00.000Z";
 const ago = (minutes: number) => new Date(Date.parse(NOW) - minutes * 60_000).toISOString();
@@ -306,7 +306,7 @@ describe("aldoSidebarList", () => {
     expect(keys(result.working)).toEqual(["aldo-w2:w2", "aldo-w1:w1"]);
   });
 
-  it("has the approvals and what's scheduled, which aren't threads", () => {
+  it("has the approvals that aren't a thread's", () => {
     const result = list(
       [],
       home({
@@ -330,22 +330,9 @@ describe("aldoSidebarList", () => {
             decidedAt: null,
           },
         ],
-        upcoming: [
-          {
-            id: "r1",
-            kind: "reminder",
-            thread: { environmentId: "aldo-x", threadId: "x" },
-            threadTitle: "X",
-            message: "check CI",
-            dueAt: ago(-30),
-            createdAt: ago(5),
-            held: false,
-          },
-        ],
       }),
     );
     expect(result.approvals.map((a) => a.id)).toEqual(["ap"]);
-    expect(result.scheduled.map((item) => item.key)).toEqual(["delivery:r1"]);
   });
 
   it("works without Aldo's read, from the shells alone", () => {
@@ -355,35 +342,7 @@ describe("aldoSidebarList", () => {
   });
 });
 
-describe("the sidebar's order and search", () => {
-  const result = list(
-    [
-      shell("q", { hasPendingUserInput: true, title: "Usage alerts" }),
-      shell("w", { session: { status: "running", activeTurnId: "t" }, title: "Checkout fix" }),
-      shell("d1", { latestTurn: { completedAt: ago(50) }, updatedAt: ago(60) }),
-      shell("d2", { latestTurn: { completedAt: ago(50) }, updatedAt: ago(70) }),
-    ],
-    home(),
-    { "aldo-d1:d1": ago(1), "aldo-d2:d2": ago(1) },
-  );
-
-  it("moves through the rows as they show, folded groups only when open", () => {
-    expect(aldoSidebarOrder(result, { earlier: 0, snoozed: false })).toEqual([
-      "aldo-q:q",
-      "aldo-w:w",
-    ]);
-    expect(aldoSidebarOrder(result, { earlier: 1, snoozed: false })).toEqual([
-      "aldo-q:q",
-      "aldo-w:w",
-      "aldo-d1:d1",
-    ]);
-  });
-
-  it("finds threads by title", () => {
-    expect(keys(searchAldoSidebar(result, "checkout"))).toEqual(["aldo-w:w"]);
-    expect(searchAldoSidebar(result, "  ")).toEqual([]);
-  });
-
+describe("repoLabel", () => {
   it("names projects in a word", () => {
     expect(repoLabel("logancsack/aldo")).toBe("aldo");
     expect(repoLabel("aldo:general")).toBe("General");
