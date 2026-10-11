@@ -47,26 +47,34 @@ function SkillEditor(props: {
   const [instructions, setInstructions] = useState(props.saved?.instructions ?? "");
   // What's saved now, when it changed while the user was editing ("removed": it's gone).
   const [changed, setChanged] = useState<AldoSkill | "removed" | null>(null);
+  // All the skills as they were then: the list shows them once this editor closes.
+  const [latest, setLatest] = useState<AldoSkill[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmingRemove, setConfirmingRemove] = useState(false);
   const isNew = props.saved === null;
   const nameOk = name.length <= 64 && NAME.test(name);
 
-  const save = async () => {
+  const close = () => {
+    if (latest) props.onSaved(latest);
+    props.onClose();
+  };
+
+  // Saves or removes; if the skill changed since `base`, shows what's saved now instead.
+  const run = async (action: () => Promise<AldoSkill[]>) => {
     setBusy(true);
     setError(null);
     try {
-      props.onSaved(
-        await aldoSkills.save({ name, description, instructions }, base?.updated_at ?? null),
-      );
+      props.onSaved(await action());
       props.onClose();
     } catch (cause) {
       if (cause instanceof AldoApiError && cause.status === 409 && !isNew) {
         try {
-          const latest = (await aldoSkills.list()).find((s) => s.name === name) ?? null;
-          setBase(latest);
-          setChanged(latest ?? "removed");
+          const skills = await aldoSkills.list();
+          const now = skills.find((s) => s.name === name) ?? null;
+          setLatest(skills);
+          setBase(now);
+          setChanged(now ?? "removed");
         } catch (again) {
           setError(messageOf(again));
         }
@@ -76,20 +84,12 @@ function SkillEditor(props: {
       }
     } finally {
       setBusy(false);
+      setConfirmingRemove(false);
     }
   };
-
-  const remove = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      props.onSaved(await aldoSkills.remove(name));
-      props.onClose();
-    } catch (cause) {
-      setError(messageOf(cause));
-      setBusy(false);
-    }
-  };
+  const since = base?.updated_at ?? null;
+  const save = () => run(() => aldoSkills.save({ name, description, instructions }, since));
+  const remove = () => run(() => aldoSkills.remove(name, since));
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -105,6 +105,7 @@ function SkillEditor(props: {
             <Input
               placeholder="e.g. podcast-clips"
               value={name}
+              disabled={busy}
               // Spaces and capitals become what a name can hold.
               onChange={(e) => setName(e.currentTarget.value.toLowerCase().replace(/[\s_]+/g, "-"))}
             />
@@ -129,6 +130,7 @@ function SkillEditor(props: {
             placeholder={PLACEHOLDERS.description}
             className="text-sm"
             value={description}
+            disabled={busy}
             onChange={(e) => setDescription(e.currentTarget.value)}
           />
         </label>
@@ -138,6 +140,7 @@ function SkillEditor(props: {
             placeholder={PLACEHOLDERS.instructions}
             className="font-mono text-xs"
             value={instructions}
+            disabled={busy}
             onChange={(e) => setInstructions(e.currentTarget.value)}
           />
         </label>
@@ -150,7 +153,7 @@ function SkillEditor(props: {
                 <p>
                   This skill changed while you were editing (an agent may have saved something you
                   asked it to). This is what's saved now. Save again to replace it with yours, or
-                  copy what you need from it first.
+                  remove it, or copy what you need from it first.
                 </p>
                 <p className="text-muted-foreground">{changed.description}</p>
                 <pre className="max-h-40 overflow-auto whitespace-pre-wrap text-muted-foreground">
@@ -168,6 +171,7 @@ function SkillEditor(props: {
                 type="button"
                 size="compact"
                 variant="ghost"
+                disabled={busy}
                 onClick={() => setConfirmingRemove(false)}
               >
                 Keep
@@ -179,7 +183,7 @@ function SkillEditor(props: {
                 disabled={busy}
                 onClick={() => void remove()}
               >
-                Remove
+                {busy ? "Removing…" : "Remove"}
               </Button>
             </>
           ) : (
@@ -193,13 +197,7 @@ function SkillEditor(props: {
             </Button>
           )}
           <span className="flex-1" />
-          <Button
-            type="button"
-            size="compact"
-            variant="ghost"
-            disabled={busy}
-            onClick={props.onClose}
-          >
+          <Button type="button" size="compact" variant="ghost" disabled={busy} onClick={close}>
             {isNew ? "Cancel" : "Close"}
           </Button>
           <Button
@@ -207,7 +205,7 @@ function SkillEditor(props: {
             size="compact"
             disabled={busy || !nameOk || !description.trim() || !instructions.trim()}
           >
-            {busy ? "Saving…" : "Save"}
+            {busy && !confirmingRemove ? "Saving…" : "Save"}
           </Button>
         </div>
       </form>

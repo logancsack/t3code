@@ -339,6 +339,15 @@ export const SETTINGS_SEARCH_ITEMS = [
     aldoCloudOnly: true,
   },
   {
+    id: "aldo-skills",
+    title: "Skills",
+    to: "/settings/skills",
+    searchTerms: [
+      "skills how agents do a task steps feedback do avoid teach save_skill skill.md new edit remove",
+    ],
+    aldoCloudOnly: true,
+  },
+  {
     id: "aldo-generators",
     title: "Image, video and audio",
     to: "/settings/integrations",

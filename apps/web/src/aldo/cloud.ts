@@ -1391,12 +1391,16 @@ export const aldoSkills = {
         body: JSON.stringify({ ...skill, since }),
       })
     ).skills,
-  remove: async (name: string) =>
-    (
-      await api<{ skills: AldoSkill[] }>(`/api/skills?name=${encodeURIComponent(name)}`, {
-        method: "DELETE",
-      })
-    ).skills,
+  /**
+   * Removes a skill. With `since`, the updated_at of the version the user was
+   * looking at, Aldo refuses with a 409 if it's changed since (an older Aldo
+   * removes it regardless).
+   */
+  remove: async (name: string, since: string | null) => {
+    const query = new URLSearchParams({ name, ...(since ? { since } : {}) });
+    return (await api<{ skills: AldoSkill[] }>(`/api/skills?${query}`, { method: "DELETE" }))
+      .skills;
+  },
 };
 
 /** How a vault secret reaches a thread: a variable, injected into requests to some sites, or a file. */
