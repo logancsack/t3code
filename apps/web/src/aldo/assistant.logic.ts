@@ -103,6 +103,43 @@ export function withoutImageNotes(text: string): {
   return { text: words.trim(), images };
 }
 
+/**
+ * A message of Aldo's in runs of text, its https links apart, for the page to
+ * make them links: what a thread made (a shared file, a pull request) and the
+ * thread itself, which Aldo passes on when work it handed over comes back.
+ */
+export function linkRuns(
+  text: string,
+): ReadonlyArray<{ readonly text: string; readonly at: number; readonly href?: string }> {
+  const runs: { text: string; at: number; href?: string }[] = [];
+  let last = 0;
+  for (const match of text.matchAll(/https:\/\/[^\s<>()[\]"'`]+/g)) {
+    const at = match.index ?? 0;
+    const url = linkEnd(match[0], text.slice(0, at));
+    if (at > last) runs.push({ text: text.slice(last, at), at: last });
+    runs.push({ text: url, at, href: url });
+    last = at + url.length;
+  }
+  if (last < text.length) runs.push({ text: text.slice(last), at: last });
+  return runs;
+}
+
+/**
+ * A link without the prose after it: the sentence's punctuation, and the `*`
+ * or `_` that close emphasis opened right before it (`**https://…**`). A `_`
+ * or `*` of the link's own, with nothing opening before it, stays.
+ */
+function linkEnd(raw: string, before: string): string {
+  let url = raw;
+  for (let was = ""; was !== url; ) {
+    was = url;
+    url = url.replace(/[).,;:!?">\]]+$/, "");
+    const mark = /[*_]+$/.exec(url)?.[0];
+    if (mark && before.endsWith(mark)) url = url.slice(0, -mark.length);
+  }
+  return url;
+}
+
 /** The app a tool's result asks the page to open in a new tab (open_preview), if any. */
 export function previewOf(outcome: unknown): string | null {
   const url = (outcome as { result?: { preview?: { url?: unknown } } } | null)?.result?.preview

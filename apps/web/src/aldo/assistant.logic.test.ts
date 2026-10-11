@@ -11,6 +11,7 @@ import {
   NEWS_GAP_MS,
   aldoRefFor,
   functionCallsIn,
+  linkRuns,
   liveCardIndexes,
   openTargetOf,
   phaseAfter,
@@ -490,5 +491,39 @@ describe("followups", () => {
     expect(followupsEvery({ following: 2, news: 0 })).toBe(4_000);
     expect(followupsEvery({ following: 0, news: 1 })).toBe(4_000);
     expect(followupsEvery({ following: 0, news: 0 })).toBe(15_000);
+  });
+});
+
+describe("linkRuns", () => {
+  it("sets a message's https links apart, without the punctuation after them", () => {
+    expect(
+      linkRuns(
+        "Your cartoon is ready.\n\nShared link: https://aldo.computer/s/abc.\nThread: https://aldo.computer/aldo-x/t",
+      ),
+    ).toEqual([
+      { text: "Your cartoon is ready.\n\nShared link: ", at: 0 },
+      { text: "https://aldo.computer/s/abc", at: 37, href: "https://aldo.computer/s/abc" },
+      { text: ".\nThread: ", at: 64 },
+      { text: "https://aldo.computer/aldo-x/t", at: 74, href: "https://aldo.computer/aldo-x/t" },
+    ]);
+  });
+
+  it("keeps a link's own ending, and leaves out the emphasis around it", () => {
+    expect(linkRuns("Open https://aldo.computer/s/abc_ now")[1]?.href).toBe(
+      "https://aldo.computer/s/abc_",
+    );
+    expect(linkRuns("See **https://aldo.computer/s/abc**.")[1]?.href).toBe(
+      "https://aldo.computer/s/abc",
+    );
+    expect(linkRuns("See _https://aldo.computer/s/a_b_, then")[1]?.href).toBe(
+      "https://aldo.computer/s/a_b",
+    );
+  });
+
+  it("leaves words without links, and other schemes, as they are", () => {
+    expect(linkRuns("Nothing to open here.")).toEqual([{ text: "Nothing to open here.", at: 0 }]);
+    expect(linkRuns("Not javascript:alert(1) or http://localhost:3000")).toEqual([
+      { text: "Not javascript:alert(1) or http://localhost:3000", at: 0 },
+    ]);
   });
 });

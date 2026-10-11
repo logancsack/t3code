@@ -41,6 +41,7 @@ import { showAldoCall } from "./callView";
 import { AldoThreadCard } from "./AldoLiveCard";
 import {
   ACTION_LABELS,
+  linkRuns,
   liveCardIndexes,
   withoutImageNotes,
   type AldoAssistantPhase,
@@ -730,8 +731,22 @@ function ConversationEntry({
   if (entry.role === "user") return <UserMessage entry={entry} />;
   if (entry.source === "brief") return <AldoBriefEntry text={entry.text} at={entry.at} />;
   return (
-    <p className="max-w-[85%] self-start whitespace-pre-wrap text-sm leading-relaxed">
-      {entry.text}
+    <p className="max-w-[85%] self-start whitespace-pre-wrap break-words text-sm leading-relaxed">
+      {linkRuns(entry.text).map((run) =>
+        run.href ? (
+          <a
+            key={run.at}
+            href={run.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline underline-offset-2 hover:text-foreground"
+          >
+            {run.text}
+          </a>
+        ) : (
+          run.text
+        ),
+      )}
     </p>
   );
 }
