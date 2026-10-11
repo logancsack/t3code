@@ -33,6 +33,21 @@ Workspace credits come from Aldo's billing ledger, not from provider transcripts
 visible while environments are still reporting and while a paused workspace cannot report at all.
 The refresh control reloads them along with the token totals.
 
+## Plan limits in Aldo
+
+With Aldo cloud agents, **Plan limits** at the top of the Usage page shows how much is left of
+each plan your agents run on, and when each limit resets: your Aldo plan's credits, and each
+provider you connected. Claude shows its five-hour session and weekly limits, ChatGPT its Codex
+limits and credits, Grok its billing period, Runway its credit balance and monthly spend, and
+ElevenLabs its monthly characters. A limit turns amber at 80% and red when it's used up. Higgsfield,
+Luma, fal and Replicate don't report usage to apps, so their entries link to their own pages.
+
+Aldo reads these from its server with the sign-ins and keys it keeps, so no machine is woken.
+Readings are kept for a few minutes; the refresh control asks the providers again. To read Claude's
+limits, Aldo sends a one-token message, as Claude Code does when it starts, which counts toward
+your plan and starts a five-hour session if none is going. Aldo's assistant can answer the same
+question when you ask how much of a plan is left.
+
 ## A thread's cost in Aldo
 
 With Aldo cloud agents, a thread's Aldo menu in its header says what the work has cost so far at

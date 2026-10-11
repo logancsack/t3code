@@ -29,6 +29,7 @@ import type { AldoComputer } from "./computer.logic";
 import { getAldoPreloadSettings } from "./preloadSettings";
 import type { AldoCheckCounts, AldoPullRequestStage } from "./pullRequests.logic";
 import { isAldoCost, type AldoCost } from "./costs.logic";
+import { aldoProviderLimitsOf, type AldoProviderLimits } from "./providerLimits.logic";
 
 export const isAldoCloud = import.meta.env.VITE_ALDO_CLOUD === "1";
 
@@ -1118,6 +1119,23 @@ export async function fetchAldoCost(environmentId: string): Promise<AldoCost | n
   ).catch(() => null);
   const cost = answer?.costs?.[environmentId];
   return isAldoCost(cost) ? cost : null;
+}
+
+/**
+ * What's left of Aldo's plan and each connected provider's (the Usage page's
+ * Plan limits); `refresh` asks the providers again unless just asked. Null
+ * from an Aldo that doesn't read them.
+ */
+export async function fetchAldoProviderLimits(
+  refresh = false,
+): Promise<ReadonlyArray<AldoProviderLimits> | null> {
+  const body = await api<unknown>(`/api/usage/limits${refresh ? "?refresh=1" : ""}`, {
+    cache: "no-store",
+  }).catch((error: unknown) => {
+    if (error instanceof AldoApiError && error.status === 404) return null;
+    throw error;
+  });
+  return aldoProviderLimitsOf(body);
 }
 
 /** The owner-only link to a port in a thread's sandbox (wakes it when opened). */
