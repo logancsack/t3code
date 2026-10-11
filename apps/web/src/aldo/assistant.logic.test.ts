@@ -508,6 +508,18 @@ describe("linkRuns", () => {
     ]);
   });
 
+  it("keeps a link's own ending, and leaves out the emphasis around it", () => {
+    expect(linkRuns("Open https://aldo.computer/s/abc_ now")[1]?.href).toBe(
+      "https://aldo.computer/s/abc_",
+    );
+    expect(linkRuns("See **https://aldo.computer/s/abc**.")[1]?.href).toBe(
+      "https://aldo.computer/s/abc",
+    );
+    expect(linkRuns("See _https://aldo.computer/s/a_b_, then")[1]?.href).toBe(
+      "https://aldo.computer/s/a_b",
+    );
+  });
+
   it("leaves words without links, and other schemes, as they are", () => {
     expect(linkRuns("Nothing to open here.")).toEqual([{ text: "Nothing to open here.", at: 0 }]);
     expect(linkRuns("Not javascript:alert(1) or http://localhost:3000")).toEqual([
