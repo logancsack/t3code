@@ -518,6 +518,12 @@ describe("linkRuns", () => {
     expect(linkRuns("See _https://aldo.computer/s/a_b_, then")[1]?.href).toBe(
       "https://aldo.computer/s/a_b",
     );
+    expect(linkRuns("**_https://aldo.computer/s/abc_**")[1]?.href).toBe(
+      "https://aldo.computer/s/abc",
+    );
+    expect(linkRuns("**https://aldo.computer/s/abc_**")[1]?.href).toBe(
+      "https://aldo.computer/s/abc_",
+    );
   });
 
   it("leaves words without links, and other schemes, as they are", () => {
