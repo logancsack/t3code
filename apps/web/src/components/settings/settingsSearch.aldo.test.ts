@@ -52,3 +52,15 @@ describe("Aldo phone settings search", () => {
     }
   });
 });
+
+describe("Aldo Link settings search", () => {
+  it("finds the Link wallet row by what people call it", () => {
+    const items = filterAvailableSettingsSearchItems(availability);
+    for (const query of ["link", "wallet", "payments"]) {
+      expect(searchSettings(query, items)[0]).toMatchObject({
+        id: "aldo-integration-link",
+        to: "/settings/integrations",
+      });
+    }
+  });
+});

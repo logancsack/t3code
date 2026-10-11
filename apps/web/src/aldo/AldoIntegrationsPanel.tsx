@@ -149,6 +149,7 @@ function IntegrationRow(props: {
 
   return (
     <SettingsRow
+      id={`aldo-integration-${integration.provider}`}
       title={spec.name}
       description={spec.description}
       status={

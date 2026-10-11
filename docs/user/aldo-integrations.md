@@ -1,6 +1,6 @@
 # Integrations in Aldo
 
-**Settings → Integrations** connects accounts your cloud agents use on your behalf: Google and Microsoft, for your mail, calendar, contacts and files, apps like Notion, Linear and Zapier, and media generators for images, video and audio. It's also where you claim your agents' own email address.
+**Settings → Integrations** connects accounts your cloud agents use on your behalf: Google and Microsoft, for your mail, calendar, contacts and files, your Link wallet, for paying at checkouts with your approval each time, apps like Notion, Linear and Zapier, and media generators for images, video and audio. It's also where you claim your agents' own email address.
 
 ## Apps
 
@@ -57,6 +57,20 @@ If Google or Microsoft stops accepting the sign-in (you changed your password, r
 
 - Google: [myaccount.google.com/connections](https://myaccount.google.com/connections).
 - Microsoft: [microsoft.com/consent](https://microsoft.com/consent) for a personal account, or **My Apps** for a work or school account.
+
+## Link
+
+Connecting your [Link](https://link.com) wallet (Stripe's) lets agents pay at a checkout with a card from it, and only with your approval each time. The row appears once your Aldo offers Link.
+
+Choose **Connect Link**. Link's sign-in opens in a new window: sign in, review what Aldo asks for, and allow it. The window closes and the row shows the account you connected.
+
+When you've asked an agent to buy something, it goes through the checkout up to the payment step, then asks Link for that store and total. Your devices get a notification that opens Link, where you see what it's for, the store and the total, and **approve or decline**. Nothing is paid until you approve, and the agent never approves for you.
+
+Once you approve, Link gives a card that works **once**, for **up to the total you approved**, for a few hours. Aldo types it into the checkout itself, only on that store's site, so the card number stays out of the conversation; the agent sees its last four digits, checks the total and places the order. If the total changes, the agent cancels the payment and asks you again. Once the store charges it, it counts in what Home says agents spent this month.
+
+Agents can have at most 3 payments waiting on your approval at once, and ask for at most 20 a day. When a task needs a card payment and Link isn't connected, agents ask you to connect it or to pay yourself; they never ask for your card number.
+
+**Disconnect** cancels any payment still waiting on you and ends Aldo's access to your wallet, at Link too. If Link stops accepting the sign-in, the row says so: choose **Connect again**.
 
 ## Agent inbox
 
