@@ -831,7 +831,7 @@ export const aldoAuthConnectors = {
 export type AldoIntegrationAccountType = "work" | "personal";
 
 /** What agents can do with a connected account. */
-export type AldoIntegrationCapability = "mail" | "calendar" | "contacts" | "files";
+export type AldoIntegrationCapability = "mail" | "calendar" | "contacts" | "files" | "payments";
 
 export interface AldoIntegration {
   readonly provider: string;
