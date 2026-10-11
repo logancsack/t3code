@@ -524,6 +524,13 @@ describe("linkRuns", () => {
     expect(linkRuns("**https://aldo.computer/s/abc_**")[1]?.href).toBe(
       "https://aldo.computer/s/abc_",
     );
+    expect(linkRuns("_https://aldo.computer/s/abc__ and")[1]?.href).toBe(
+      "https://aldo.computer/s/abc_",
+    );
+    const long = `https://aldo.computer/s/l${"_".repeat(50_000)}${".".repeat(50_000)}`;
+    const started = Date.now();
+    expect(linkRuns(`_${long}`)[1]?.href).toBe(`https://aldo.computer/s/l${"_".repeat(49_999)}`);
+    expect(Date.now() - started).toBeLessThan(500);
   });
 
   it("leaves words without links, and other schemes, as they are", () => {
