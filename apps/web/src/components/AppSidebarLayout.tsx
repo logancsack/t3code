@@ -18,8 +18,7 @@ import { primaryServerKeybindingsAtom } from "../state/server";
 import { useEnvironmentIdentificationMode, useLegacySidebarEnabled } from "../hooks/useSettings";
 import LegacyThreadSidebar from "./LegacySidebar";
 import ThreadSidebar from "./Sidebar";
-import { AldoProfileButton, useAldoClassicSidebar } from "../aldo/AldoAccountDialog";
-import { AldoSidebar } from "../aldo/AldoSidebar";
+import { AldoProfileButton } from "../aldo/AldoAccountDialog";
 import { isAldoCloud } from "../aldo/cloud";
 import { SettingsSidebarNav } from "./settings/SettingsSidebarNav";
 import { SidebarChromeHeader } from "./sidebar/SidebarChrome";
@@ -143,8 +142,6 @@ function ProjectProjectionRetention() {
 export function AppSidebarLayout({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const legacySidebarEnabled = useLegacySidebarEnabled();
-  // Aldo's own sidebar, unless the user switched back to T3's (AldoAccountDialog.tsx).
-  const classicAldoSidebar = useAldoClassicSidebar((s) => s.classic);
   // Settings routes show the settings nav in place of whichever thread
   // sidebar is active.
   const pathname = useLocation({ select: (location) => location.pathname });
@@ -240,8 +237,6 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
             </>
           ) : legacySidebarEnabled ? (
             <LegacyThreadSidebar />
-          ) : isAldoCloud && !classicAldoSidebar ? (
-            <AldoSidebar />
           ) : (
             <>
               <ThreadSidebar />

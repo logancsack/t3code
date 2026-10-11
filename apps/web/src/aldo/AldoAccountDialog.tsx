@@ -1,4 +1,4 @@
-// The user's account, from the foot of Aldo's sidebar (AldoSidebar.tsx): who's
+// The user's account, from the foot of the sidebar (AppSidebarLayout.tsx): who's
 // signed in (their name and picture from their sign-in), their plan and
 // credits, where everything about their account lives (the agents and
 // accounts they connected, what Aldo remembers, their vault, how the app
@@ -21,11 +21,9 @@ import {
   SettingsIcon,
 } from "lucide-react";
 import { useEffect, useState, type ComponentType } from "react";
-import { create } from "zustand";
 
 import { Button } from "../components/ui/button";
 import { Dialog, DialogDescription, DialogPopup, DialogTitle } from "../components/ui/dialog";
-import { Switch } from "../components/ui/switch";
 import { cn } from "~/lib/utils";
 import { fetchAldoProfile, type AldoHomeUsage, type AldoProfile } from "./cloud";
 import { useAldoHomeFeed } from "./homeFeed";
@@ -92,32 +90,6 @@ export function AldoAvatar(props: {
 }
 
 // ---------------------------------------------------------------------------
-// Which sidebar: Aldo's (the default), or T3's own, kept per device.
-
-const CLASSIC_KEY = "aldo:sidebar:classic";
-
-function storedClassic(): boolean {
-  try {
-    return window.localStorage.getItem(CLASSIC_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
-
-export const useAldoClassicSidebar = create<{ readonly classic: boolean }>(() => ({
-  classic: typeof window === "undefined" ? false : storedClassic(),
-}));
-
-export function setAldoClassicSidebar(classic: boolean): void {
-  useAldoClassicSidebar.setState({ classic });
-  try {
-    window.localStorage.setItem(CLASSIC_KEY, classic ? "1" : "0");
-  } catch {
-    // Private mode: the choice lasts this page.
-  }
-}
-
-// ---------------------------------------------------------------------------
 
 const PLACES: ReadonlyArray<{
   readonly to: string;
@@ -167,7 +139,6 @@ export function AldoAccountDialog(props: {
   readonly usage: AldoHomeUsage | null;
 }) {
   const navigate = useNavigate();
-  const classic = useAldoClassicSidebar((s) => s.classic);
   const { profile, usage } = props;
   const go = (to: string) => {
     props.onOpenChange(false);
@@ -249,15 +220,6 @@ export function AldoAccountDialog(props: {
               </button>
             ))}
           </nav>
-          <label className="flex items-center gap-3 rounded-lg border border-border/60 px-3 py-2.5">
-            <span className="min-w-0 flex-1">
-              <span className="block font-medium text-sm">Classic sidebar</span>
-              <span className="block text-muted-foreground text-xs">
-                Threads by project, as before
-              </span>
-            </span>
-            <Switch checked={classic} onCheckedChange={(on) => setAldoClassicSidebar(on)} />
-          </label>
         </div>
         <div className="flex items-center gap-2 border-border/60 border-t px-6 py-3">
           <Button size="sm" variant="ghost" onClick={() => go("/settings/general")}>

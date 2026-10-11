@@ -1,6 +1,6 @@
 // The phone's Agents tab (AldoHome.tsx): every thread by what it needs from
-// the user, as Aldo's sidebar groups them (useAldoThreadList.ts), in rows made
-// for a thumb: how many wait, work, land and are unread, then each group.
+// the user (useAldoThreadList.ts), in rows made for a thumb: how many wait,
+// work, land and are unread, then each group.
 // What takes one tap has its button on the row (send, merge); tapping a row
 // opens it in place: what the agent last said, what it asks (answered right
 // there), its pull requests, a reply to the agent, talking to Aldo about it,
@@ -17,9 +17,16 @@ import {
   AlarmClockOffIcon,
   ArrowUpIcon,
   ArrowUpRightIcon,
+  CheckCircle2Icon,
   ChevronDownIcon,
+  CircleAlertIcon,
+  CirclePauseIcon,
+  ClipboardListIcon,
+  GitMergeIcon,
   LoaderCircleIcon,
+  MessageCircleQuestionIcon,
   MicIcon,
+  ShieldQuestionIcon,
 } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
@@ -34,7 +41,6 @@ import { confirmQuickChoice, DecisionIcon, quickChoice } from "./AldoBrief";
 import { HealthStrip } from "./AldoHomeBoard";
 import { PendingForm } from "./AldoHomeInbox";
 import { pullRequestsOf, PullRequestLine } from "./AldoLiveCard";
-import { RowIcon, rowTime } from "./AldoSidebar";
 import { connectAldo } from "./assistantSession";
 import {
   sendAldoThreadMessage,
@@ -45,9 +51,9 @@ import {
 import { decideAldo } from "./decide";
 import { aldoDecisions, aldoWaitingCount, type AldoDecision } from "./decisions.logic";
 import { refreshAldoHome } from "./homeFeed";
-import { needsYouKind, relativeTime, type healthIssues } from "./home.logic";
+import { elapsed, needsYouKind, relativeTime, type healthIssues } from "./home.logic";
 import { setAldoPeekedThread } from "./screen";
-import type { AldoSidebarRow } from "./sidebar.logic";
+import type { AldoSidebarKind, AldoSidebarRow } from "./sidebar.logic";
 import { useAldoThreadList } from "./useAldoThreadList";
 import { startAldoWalkthrough } from "./walkthrough";
 
@@ -63,7 +69,7 @@ export function AldoAgentsTab(props: {
   readonly onEnableNotifications: () => void;
 }) {
   const { home, now } = props;
-  const { list, shellCount } = useAldoThreadList({ home, now, scope: null });
+  const { list, shellCount } = useAldoThreadList({ home, now });
   const decisions = useMemo(() => (home ? aldoDecisions(home, now) : []), [home, now]);
   const waitingCount = useMemo(() => (home ? aldoWaitingCount(home, now) : 0), [home, now]);
   const [open, setOpen] = useState<string | null>(null);
@@ -317,6 +323,58 @@ function ApprovalRow(props: {
       ) : null}
     </li>
   );
+}
+
+function ProgressRing(props: { readonly value: number }) {
+  const length = 2 * Math.PI * 7;
+  return (
+    <svg viewBox="0 0 20 20" className="size-4" aria-hidden>
+      <circle cx="10" cy="10" r="7" fill="none" className="stroke-primary/20" strokeWidth="2.5" />
+      <circle
+        cx="10"
+        cy="10"
+        r="7"
+        fill="none"
+        className="stroke-primary"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        strokeDasharray={`${length * props.value} ${length}`}
+        transform="rotate(-90 10 10)"
+      />
+    </svg>
+  );
+}
+
+const KIND_ICON: Partial<Record<AldoSidebarKind, ReactNode>> = {
+  approval: <ShieldQuestionIcon className="size-3.5 text-warning-foreground" />,
+  question: <MessageCircleQuestionIcon className="size-3.5 text-warning-foreground" />,
+  plan: <ClipboardListIcon className="size-3.5 text-warning-foreground" />,
+  waiting: <span className="size-2 rounded-full bg-warning" />,
+  failed: <CircleAlertIcon className="size-3.5 text-destructive-foreground" />,
+  merge: <GitMergeIcon className="size-3.5 text-success-foreground" />,
+  paused: <CirclePauseIcon className="size-3.5 text-warning-foreground" />,
+  landing: <GitMergeIcon className="size-3.5 text-primary" />,
+  unread: <CheckCircle2Icon className="size-3.5 text-success-foreground" />,
+  done: <span className="size-1.5 rounded-full bg-sidebar-muted-foreground/40" />,
+};
+
+function RowIcon(props: { readonly row: AldoSidebarRow }) {
+  const { row } = props;
+  if (row.kind === "working" || row.kind === "monitoring" || row.kind === "starting") {
+    return row.progress !== null ? (
+      <ProgressRing value={row.progress} />
+    ) : (
+      <span className="size-3.5 animate-spin rounded-full border-2 border-primary/20 border-t-primary" />
+    );
+  }
+  return <>{KIND_ICON[row.kind]}</>;
+}
+
+function rowTime(row: AldoSidebarRow, now: number): string {
+  if (row.kind === "working" || row.kind === "monitoring" || row.kind === "starting") {
+    return elapsed(row.at, now).replace(" min", "m").replace(" h", "h").replace("just now", "now");
+  }
+  return relativeTime(row.at, now).replace(" ago", "");
 }
 
 function AgentRow(props: {

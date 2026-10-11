@@ -1,6 +1,6 @@
 // The home screen as a conversation with Aldo (AldoHome.tsx's default view):
-// what's waiting on the user and what's running are in the sidebar beside it
-// (AldoSidebar.tsx; the Agents tab on a phone), then the conversation, where
+// what's waiting on the user and what's running are in T3's sidebar beside it
+// (the Agents tab on a phone), then the conversation, where
 // what Aldo did shows live and the day starts with Aldo's brief (AldoBrief.tsx,
 // the home screen reads it, briefFeed.ts), then one large composer with the orb in it (on a
 // phone, a big button to talk beside it). A thread opens in a peek beside the
