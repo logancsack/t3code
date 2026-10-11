@@ -54,9 +54,10 @@ async function switchMachine(environmentId: string, size: AldoMachineSize): Prom
 export function useAldoMachineOffer(environmentId: string): void {
   const environment = useAldoEnvironment(environmentId);
   const machine = environment?.machine ?? "standard";
+  const automatic = environment?.machineSizing === "automatic";
   const pressure = environment?.pressure;
   useEffect(() => {
-    if (!pressure || machine !== "standard") return;
+    if (automatic || !pressure || machine !== "standard") return;
     const key = `${environmentId}:${pressure.at}`;
     if (offered.has(key)) return;
     offered.add(key);
@@ -78,7 +79,7 @@ export function useAldoMachineOffer(environmentId: string): void {
         },
       }),
     );
-  }, [environmentId, machine, pressure]);
+  }, [automatic, environmentId, machine, pressure]);
 }
 
 /** The Previews menu's machine section: its size, and a switch to the other one. */
@@ -86,17 +87,23 @@ export function AldoMachineMenuSection(props: { environmentId: string }) {
   const environment = useAldoEnvironment(props.environmentId);
   if (!environment) return null;
   const machine = environment.machine ?? "standard";
+  const automatic = environment.machineSizing === "automatic";
   const other: AldoMachineSize = machine === "2x" ? "standard" : "2x";
   return (
     <MenuGroup>
       <MenuGroupLabel className="flex items-center gap-1.5">
-        <CpuIcon className="size-3.5" /> Machine: {MACHINE_LABELS[machine]}
+        <CpuIcon className="size-3.5" /> Machine:{" "}
+        {automatic ? "8 vCPUs · up to 32 GB memory" : MACHINE_LABELS[machine]}
       </MenuGroupLabel>
-      <MenuItem onClick={() => void switchMachine(props.environmentId, other)}>
-        {other === "2x"
-          ? "Upgrade to 2× (8 vCPU, 16 GB, 2 credits an hour)"
-          : "Switch back to standard (4 vCPU, 8 GB, 1 credit an hour)"}
-      </MenuItem>
+      {automatic ? (
+        <MenuGroupLabel>Memory grows with your work.</MenuGroupLabel>
+      ) : (
+        <MenuItem onClick={() => void switchMachine(props.environmentId, other)}>
+          {other === "2x"
+            ? "Upgrade to 2× (8 vCPU, 16 GB, 2 credits an hour)"
+            : "Switch back to standard (4 vCPU, 8 GB, 1 credit an hour)"}
+        </MenuItem>
+      )}
     </MenuGroup>
   );
 }

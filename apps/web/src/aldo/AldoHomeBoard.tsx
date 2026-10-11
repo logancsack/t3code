@@ -224,14 +224,16 @@ export function ConversationRow(props: {
             <span className="text-warning-foreground">
               {c.pressure.kind === "memory" ? "Running short on memory." : "Every CPU is busy."}
             </span>
-            <Button
-              size="compact"
-              variant="outline"
-              disabled={switching}
-              onClick={() => void switchMachine()}
-            >
-              {switching ? "Switching…" : "Switch to 2× machine"}
-            </Button>
+            {c.machineSizing !== "automatic" ? (
+              <Button
+                size="compact"
+                variant="outline"
+                disabled={switching}
+                onClick={() => void switchMachine()}
+              >
+                {switching ? "Switching…" : "Switch to 2× machine"}
+              </Button>
+            ) : null}
           </div>
         ) : null}
       </div>
