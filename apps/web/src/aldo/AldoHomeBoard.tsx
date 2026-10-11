@@ -611,6 +611,9 @@ export function PolicySection(props: { readonly policy: AldoHome["policy"] }) {
           <Link to="/settings/instructions" className="text-muted-foreground hover:text-foreground">
             Your instructions for agents
           </Link>
+          <Link to="/settings/skills" className="text-muted-foreground hover:text-foreground">
+            Your agents' skills
+          </Link>
         </div>
       </div>
     </Section>

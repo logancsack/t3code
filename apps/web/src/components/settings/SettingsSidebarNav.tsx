@@ -15,6 +15,7 @@ import {
   BrainIcon,
   BotIcon,
   GitBranchIcon,
+  GraduationCapIcon,
   LockKeyholeIcon,
   BoxesIcon,
   NotebookPenIcon,
@@ -65,6 +66,7 @@ const SETTINGS_SECTION_ICONS: Readonly<
   "/settings/integrations": BlocksIcon,
   "/settings/source-control": GitBranchIcon,
   "/settings/instructions": NotebookPenIcon,
+  "/settings/skills": GraduationCapIcon,
   "/settings/memory": BrainIcon,
   "/settings/vault": LockKeyholeIcon,
   "/settings/environments": BoxesIcon,
@@ -81,6 +83,7 @@ export const SETTINGS_NAV_ITEMS: ReadonlyArray<{
   .filter(
     (to) =>
       (to !== "/settings/instructions" &&
+        to !== "/settings/skills" &&
         to !== "/settings/memory" &&
         to !== "/settings/vault" &&
         to !== "/settings/environments") ||

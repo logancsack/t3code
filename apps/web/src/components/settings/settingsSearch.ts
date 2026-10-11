@@ -12,6 +12,7 @@ export type SettingsPath =
   | "/settings/integrations"
   | "/settings/source-control"
   | "/settings/instructions"
+  | "/settings/skills"
   | "/settings/memory"
   | "/settings/vault"
   | "/settings/environments"
@@ -66,6 +67,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/integrations": "Integrations",
   "/settings/source-control": "Source Control",
   "/settings/instructions": "Instructions",
+  "/settings/skills": "Skills",
   "/settings/memory": "Memory",
   "/settings/vault": "Vault",
   "/settings/environments": "Environments",
@@ -333,6 +335,15 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/integrations",
     searchTerms: [
       "apps mcp server connectors plugins connect disconnect zapier notion linear jira confluence atlassian airtable canva granola stripe paypal webflow supabase sentry hugging face",
+    ],
+    aldoCloudOnly: true,
+  },
+  {
+    id: "aldo-skills",
+    title: "Skills",
+    to: "/settings/skills",
+    searchTerms: [
+      "skills how agents do a task steps feedback do avoid teach save_skill skill.md new edit remove",
     ],
     aldoCloudOnly: true,
   },

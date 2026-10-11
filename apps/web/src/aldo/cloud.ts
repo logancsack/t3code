@@ -1359,6 +1359,50 @@ export const aldoInstructions = {
     ).instructions,
 };
 
+/** One of the user's skills: how their agents do a kind of task, loaded when a task needs it. */
+export interface AldoSkill {
+  readonly name: string;
+  readonly description: string;
+  readonly instructions: string;
+  readonly updated_at: string;
+}
+
+/** Settings → Skills. */
+export const aldoSkills = {
+  list: async () => {
+    const { skills } = await api<{ skills?: AldoSkill[] }>("/api/skills");
+    // An older Aldo answers with the web client's page: it has no skills.
+    if (!Array.isArray(skills))
+      throw new AldoApiError(404, "This Aldo server doesn't have skills yet.");
+    return skills;
+  },
+  /**
+   * Saves a skill. `since` is the updated_at of the version the edit started
+   * from (null for a new one): if it's changed since, or a new one's name is
+   * taken, Aldo refuses with a 409.
+   */
+  save: async (
+    skill: Pick<AldoSkill, "name" | "description" | "instructions">,
+    since: string | null,
+  ) =>
+    (
+      await api<{ skills: AldoSkill[] }>("/api/skills", {
+        method: "POST",
+        body: JSON.stringify({ ...skill, since }),
+      })
+    ).skills,
+  /**
+   * Removes a skill. With `since`, the updated_at of the version the user was
+   * looking at, Aldo refuses with a 409 if it's changed since (an older Aldo
+   * removes it regardless).
+   */
+  remove: async (name: string, since: string | null) => {
+    const query = new URLSearchParams({ name, ...(since ? { since } : {}) });
+    return (await api<{ skills: AldoSkill[] }>(`/api/skills?${query}`, { method: "DELETE" }))
+      .skills;
+  },
+};
+
 /** How a vault secret reaches a thread: a variable, injected into requests to some sites, or a file. */
 export type AldoSecretKind = "env" | "request" | "file";
 

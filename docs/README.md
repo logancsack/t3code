@@ -14,6 +14,7 @@
 - [Keeping app and server in sync](./user/updating.md)
 - [Source control integrations](./user/source-control.md)
 - [Instructions in Aldo](./user/aldo-instructions.md)
+- [Skills in Aldo](./user/aldo-skills.md)
 - [The Vault in Aldo](./user/vault.md)
 - [Integrations in Aldo](./user/aldo-integrations.md)
 - [Routines in Aldo](./user/aldo-routines.md)
