@@ -318,7 +318,7 @@ export function ShipLaneSection(props: {
         {(["open", "shipping", "shipped"] as const).map((lane) =>
           lanes[lane].length === 0 ? null : (
             <div key={lane}>
-              <h3 className="px-2 pt-1.5 pb-0.5 font-medium text-muted-foreground text-[11px] uppercase tracking-wide">
+              <h3 className="px-2 pt-1.5 pb-0.5 font-medium text-muted-foreground text-xs">
                 {LANE_TITLE[lane]}
               </h3>
               <ul>

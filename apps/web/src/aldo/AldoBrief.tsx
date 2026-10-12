@@ -237,9 +237,7 @@ function TopOfMind(props: {
   const more = decisions ? decisions.filter((d) => !shown.has(d.key)).length : 0;
   return (
     <div className="overflow-hidden rounded-2xl border border-border/70 bg-card/40">
-      <h3 className="border-border/60 border-b px-4 pt-3 pb-2 font-semibold text-[11px] text-muted-foreground uppercase tracking-wider">
-        Top of mind
-      </h3>
+      <h3 className="border-border/60 border-b px-4 pt-3 pb-2 font-medium text-sm">Top of mind</h3>
       <ul className="divide-y divide-border/60">
         {props.items.map((item) =>
           decisions === null ? (

@@ -686,7 +686,7 @@ function RepoRow(props: {
           <span className="line-clamp-1 text-muted-foreground text-xs">{props.subtitle}</span>
         ) : null}
       </span>
-      <span className="shrink-0 rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground uppercase tracking-wide">
+      <span className="shrink-0 rounded border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground">
         {HOST_LABELS[props.host]}
       </span>
     </button>

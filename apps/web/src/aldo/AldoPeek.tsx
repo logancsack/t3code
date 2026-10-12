@@ -248,9 +248,7 @@ function LatestTurns(props: { readonly conversation: AldoHomeConversation }) {
   const messages = copy?.messages.filter((m) => m.text.trim()) ?? [];
   return (
     <div className="flex flex-col gap-3">
-      <h3 className="font-medium text-[11px] text-muted-foreground uppercase tracking-wide">
-        Latest in the thread
-      </h3>
+      <h3 className="font-medium text-muted-foreground text-xs">Latest in the thread</h3>
       {copy === undefined && !error ? (
         <div className="flex flex-col gap-2">
           <Skeleton className="h-4 w-3/4" />
