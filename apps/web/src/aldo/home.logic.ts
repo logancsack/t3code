@@ -238,10 +238,15 @@ export function repoChips(home: Pick<AldoHome, "conversations">): ReadonlyArray<
     .map(([repo]) => repo);
 }
 
-/** The repository's short name, with its owner only when two share a name. */
+/** The repository's short name (an Aldo project's slug), with its owner only when two share a name. */
 export function repoName(repo: string, all: ReadonlyArray<string>): string {
-  const name = repo.split("/").at(-1) ?? repo;
-  const sameName = all.filter((r) => (r.split("/").at(-1) ?? r) === name).length > 1;
+  const short = (r: string) =>
+    r
+      .replace(/^aldo:/, "")
+      .split("/")
+      .at(-1) ?? r;
+  const name = short(repo);
+  const sameName = all.filter((r) => short(r) === name).length > 1;
   return sameName ? repo : name;
 }
 

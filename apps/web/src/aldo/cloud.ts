@@ -99,6 +99,8 @@ export type AldoAccountKind = "github" | "claude" | "codex" | "grok";
 /** Git hosts connected with an access token (GitHub has its own sign-in wizard). */
 export type AldoGitHostKind = "gitlab" | "bitbucket" | "azure";
 export type AldoHostKind = "github" | AldoGitHostKind;
+/** Where a new project goes: a git host, or Aldo itself (a project of work that isn't code, `aldo:<slug>`). */
+export type AldoProjectHost = AldoHostKind | "aldo";
 
 export interface AldoAccount {
   readonly connected: boolean;
@@ -162,11 +164,19 @@ async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 let knownEnvironments: ReadonlyArray<AldoEnvironment> | null = null;
 /** What this Aldo can do that an older one couldn't, as its directory says (none before the first listing). */
-let aldoFeatures: { readonly general: boolean } = { general: false };
+let aldoFeatures: { readonly general: boolean; readonly projects: boolean } = {
+  general: false,
+  projects: false,
+};
 
 /** Whether threads can start without a repository (General), as the directory said. */
 export function aldoSupportsGeneralThreads(): boolean {
   return aldoFeatures.general;
+}
+
+/** Whether Aldo keeps projects itself (`aldo:<slug>`, for work that isn't code), as the directory said. */
+export function aldoSupportsProjects(): boolean {
+  return aldoFeatures.projects;
 }
 const directoryListeners = new Set<() => void>();
 let refreshRequested = true;
@@ -318,9 +328,9 @@ async function syncDirectory(environments: ReadonlyArray<AldoEnvironment>): Prom
 async function fetchEnvironments(): Promise<ReadonlyArray<AldoEnvironment>> {
   const { environments, features } = await api<{
     environments: AldoEnvironment[];
-    features?: { general?: boolean };
+    features?: { general?: boolean; projects?: boolean };
   }>("/api/environments");
-  aldoFeatures = { general: features?.general === true };
+  aldoFeatures = { general: features?.general === true, projects: features?.projects === true };
   // A listing that started before a deletion finished can still include its machine.
   const listed = environments.filter((environment) => !hiddenByDeletion(environment.environmentId));
   knownEnvironments = listed;
@@ -537,8 +547,8 @@ export function touchAldoEnvironment(environmentId: string): void {
  * waits until it is running. Returns the new environment.
  */
 export interface AldoNewProject {
-  /** Where to create it (default GitHub). */
-  readonly host?: AldoHostKind;
+  /** Where to create it (default GitHub). In Aldo, `name` is the project's title. */
+  readonly host?: AldoProjectHost;
   readonly name: string;
   readonly description?: string;
   readonly isPrivate: boolean;
@@ -1157,7 +1167,7 @@ export async function aldoBrowserConnection(
   );
 }
 
-/** Repositories from every connected host, and hosts that couldn't be listed. */
+/** Repositories from every connected host (and Aldo's own projects, `aldo:<slug>`), and hosts that couldn't be listed. */
 export async function listAldoRepositoryDirectory(): Promise<{
   repositories: ReadonlyArray<SourceControlRepositorySummary>;
   errors: ReadonlyArray<string>;

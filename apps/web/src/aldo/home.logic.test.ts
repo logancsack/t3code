@@ -293,6 +293,9 @@ describe("filters", () => {
     expect(repoChips(home)).toEqual(["acme/api", "acme/shop"]);
     expect(repoName("acme/shop", ["acme/shop", "acme/api"])).toBe("shop");
     expect(repoName("acme/shop", ["acme/shop", "other/shop"])).toBe("acme/shop");
+    expect(repoName("aldo:podcast-clips", ["aldo:podcast-clips", "acme/shop"])).toBe(
+      "podcast-clips",
+    );
   });
 
   it("narrows every part of the board to one repository", () => {

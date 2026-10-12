@@ -43,11 +43,13 @@ import { cn } from "../lib/utils";
 import { AldoAccountButton, useAldoAccounts } from "./AldoAccountsPanel";
 import {
   aldoSupportsGeneralThreads,
+  aldoSupportsProjects,
   isAldoCloud,
   listAldoRepositoryDirectory,
   subscribeAldoEnvironments,
   type AldoAccount,
   type AldoHostKind,
+  type AldoProjectHost,
 } from "./cloud";
 import { startAldoSandbox } from "./threads";
 
@@ -57,22 +59,24 @@ const MAX_REPOS = 6;
 /** A new project, existing repositories, or none (General: work that isn't code). */
 type Mode = "new" | "existing" | "general";
 
-const HOST_LABELS: Record<AldoHostKind, string> = {
+const HOST_LABELS: Record<AldoProjectHost, string> = {
   github: "GitHub",
   gitlab: "GitLab",
   bitbucket: "Bitbucket",
   azure: "Azure DevOps",
+  aldo: "Aldo",
 };
-export const HOST_KINDS = Object.keys(HOST_LABELS) as AldoHostKind[];
+/** The git hosts (Aldo's own projects need no account). */
+export const HOST_KINDS: ReadonlyArray<AldoHostKind> = ["github", "gitlab", "bitbucket", "azure"];
 
-/** "gitlab:group/project" → GitLab; "owner/repo" → GitHub. */
-function hostOf(ref: string): AldoHostKind {
-  const match = /^(gitlab|bitbucket|azure):/.exec(ref);
-  return (match?.[1] as AldoHostKind | undefined) ?? "github";
+/** "gitlab:group/project" → GitLab; "aldo:podcast-clips" → Aldo; "owner/repo" → GitHub. */
+function hostOf(ref: string): AldoProjectHost {
+  const match = /^(gitlab|bitbucket|azure|aldo):/.exec(ref);
+  return (match?.[1] as AldoProjectHost | undefined) ?? "github";
 }
 
 function pathOf(ref: string): string {
-  return ref.replace(/^(gitlab|bitbucket|azure):/, "");
+  return ref.replace(/^(gitlab|bitbucket|azure|aldo):/, "");
 }
 
 function shortName(ref: string): string {
@@ -112,6 +116,26 @@ function slugify(text: string): string {
     .slice(0, 100);
 }
 
+/** "Podcast Clips!" → "podcast-clips": an Aldo project's slug, as Aldo makes it from the title. */
+function projectSlug(title: string): string {
+  const slug = title
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+/, "")
+    .slice(0, 44)
+    .replace(/-+$/, "");
+  return slug || "project";
+}
+
+/** With Aldo's own projects, which aren't repositories on a git host. */
+const PROJECT_DESCRIPTIONS: Partial<Record<Mode, string>> = {
+  new: "A repository on your git host for code, or an Aldo project for work that isn't code (a business, a reporting process, a trip): Aldo keeps its files, notes and history, shared by every thread in it. Aldo creates it and a cloud agent to work in it.",
+  existing:
+    "Pick one or more repositories or projects. The thread gets its own cloud agent, with each repository cloned on a new branch (and a project on main, which every thread in it shares).",
+};
+
 const DESCRIPTIONS: Record<Mode, string> = {
   new: "Aldo creates the repository and a cloud agent to work in it. Tell the agent what to build.",
   existing:
@@ -129,18 +153,28 @@ function StartPicker(props: { readonly initialMode: Mode; readonly onDone: () =>
     aldoSupportsGeneralThreads,
     () => false,
   );
+  const projects = useSyncExternalStore(
+    subscribeAldoEnvironments,
+    aldoSupportsProjects,
+    () => false,
+  );
+  /** Where a new project can go: the connected git hosts, and Aldo itself. */
+  const newHosts: ReadonlyArray<AldoProjectHost> = projects
+    ? [...connectedHosts, "aldo"]
+    : connectedHosts;
   const [mode, setMode] = useState<Mode>(
     props.initialMode === "general" && !general ? "existing" : props.initialMode,
   );
-  // Without a git host, a thread outside a repository is the one there is to start.
-  const shownMode: Mode =
-    general && accounts !== null && connectedHosts.length === 0 ? "general" : mode;
+  // Without a git host (or Aldo's projects), a thread outside a repository is the one there is to start.
+  const shownMode: Mode = general && accounts !== null && newHosts.length === 0 ? "general" : mode;
 
   return (
     <DialogPopup className="flex max-h-[min(760px,calc(100dvh-2rem))] w-[min(680px,calc(100vw-2rem))] flex-col">
       <DialogHeader>
         <DialogTitle>{shownMode === "new" ? "New project" : "Start a thread"}</DialogTitle>
-        <DialogDescription>{DESCRIPTIONS[shownMode]}</DialogDescription>
+        <DialogDescription>
+          {(projects ? PROJECT_DESCRIPTIONS[shownMode] : undefined) ?? DESCRIPTIONS[shownMode]}
+        </DialogDescription>
       </DialogHeader>
       {accounts === null && accountsError ? (
         <DialogPanel className="flex flex-col items-start gap-3">
@@ -155,7 +189,7 @@ function StartPicker(props: { readonly initialMode: Mode; readonly onDone: () =>
         <DialogPanel>
           <LoaderCircleIcon className="mx-auto size-5 animate-spin text-muted-foreground" />
         </DialogPanel>
-      ) : connectedHosts.length === 0 ? (
+      ) : newHosts.length === 0 ? (
         <>
           {general ? <GeneralThreadStart onDone={props.onDone} /> : null}
           <DialogPanel className="flex flex-col items-start gap-3">
@@ -186,7 +220,8 @@ function StartPicker(props: { readonly initialMode: Mode; readonly onDone: () =>
                 <SparklesIcon className="size-3.5" /> New project
               </ModeButton>
               <ModeButton active={mode === "existing"} onClick={() => setMode("existing")}>
-                <FolderGit2Icon className="size-3.5" /> Repositories
+                <FolderGit2Icon className="size-3.5" />{" "}
+                {connectedHosts.length === 0 ? "Projects" : "Repositories"}
               </ModeButton>
               {general ? (
                 <ModeButton active={mode === "general"} onClick={() => setMode("general")}>
@@ -196,7 +231,7 @@ function StartPicker(props: { readonly initialMode: Mode; readonly onDone: () =>
             </div>
           </div>
           {mode === "new" ? (
-            <NewProjectForm hosts={connectedHosts} accounts={accounts} onDone={props.onDone} />
+            <NewProjectForm hosts={newHosts} accounts={accounts} onDone={props.onDone} />
           ) : mode === "general" ? (
             <GeneralThreadStart onDone={props.onDone} />
           ) : (
@@ -277,12 +312,12 @@ function ModeButton(props: {
 }
 
 function NewProjectForm(props: {
-  readonly hosts: ReadonlyArray<AldoHostKind>;
+  readonly hosts: ReadonlyArray<AldoProjectHost>;
   readonly accounts: Partial<Record<AldoHostKind, AldoAccount>>;
   readonly onDone: () => void;
 }) {
   const handleNewThread = useNewThreadHandler();
-  const [host, setHost] = useState<AldoHostKind>(
+  const [host, setHost] = useState<AldoProjectHost>(
     props.hosts.includes("github") ? "github" : props.hosts[0]!,
   );
   const [title, setTitle] = useState("");
@@ -290,8 +325,12 @@ function NewProjectForm(props: {
   const [isPrivate, setIsPrivate] = useState(true);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const name = slugify(title);
-  const account = props.accounts[host]?.account?.replace(/^@/, "") ?? null;
+  // An Aldo project is named by its title (Aldo makes its slug); a repository by its name.
+  const inAldo = host === "aldo";
+  const name = inAldo ? title.trim() : slugify(title);
+  const shownName = inAldo ? `aldo:${projectSlug(name)}` : name;
+  const account =
+    host === "aldo" ? null : (props.accounts[host]?.account?.replace(/^@/, "") ?? null);
 
   const create = async (event: FormEvent) => {
     event.preventDefault();
@@ -303,7 +342,7 @@ function NewProjectForm(props: {
         create: {
           host,
           name,
-          isPrivate,
+          isPrivate: inAldo || isPrivate,
           ...(description.trim() ? { description: description.trim() } : {}),
         },
       });
@@ -321,7 +360,7 @@ function NewProjectForm(props: {
         <span className="font-medium text-sm">Name</span>
         <Input
           autoFocus
-          placeholder="e.g. Recipe planner"
+          placeholder={inAldo ? "e.g. Podcast clips business" : "e.g. Recipe planner"}
           value={title}
           disabled={creating}
           onChange={(event) => setTitle(event.currentTarget.value)}
@@ -329,9 +368,12 @@ function NewProjectForm(props: {
         <span className="text-muted-foreground text-xs">
           {name ? (
             <>
-              Creates <span className="font-mono">{name}</span> on {HOST_LABELS[host]}
+              Creates <span className="font-mono">{shownName}</span>{" "}
+              {inAldo ? "in Aldo" : `on ${HOST_LABELS[host]}`}
               {account ? ` (${account})` : ""}
             </>
+          ) : inAldo ? (
+            "Every thread in the project shares its files, notes and history."
           ) : (
             "Becomes the repository name."
           )}
@@ -340,15 +382,14 @@ function NewProjectForm(props: {
       {props.hosts.length > 1 ? (
         <label className="flex flex-col gap-1.5">
           <span className="font-medium text-sm">Where</span>
-          <Select value={host} onValueChange={(value) => setHost(value as AldoHostKind)}>
+          <Select value={host} onValueChange={(value) => setHost(value as AldoProjectHost)}>
             <SelectTrigger className="h-9 text-sm" disabled={creating}>
-              <SelectValue>{HOST_LABELS[host]}</SelectValue>
+              <SelectValue>{hostChoice(host, props.accounts)}</SelectValue>
             </SelectTrigger>
             <SelectPopup align="start" alignItemWithTrigger={false}>
               {props.hosts.map((kind) => (
                 <SelectItem key={kind} value={kind}>
-                  {HOST_LABELS[kind]}
-                  {props.accounts[kind]?.account ? ` · ${props.accounts[kind]!.account}` : ""}
+                  {hostChoice(kind, props.accounts)}
                 </SelectItem>
               ))}
             </SelectPopup>
@@ -360,31 +401,43 @@ function NewProjectForm(props: {
           Description <span className="font-normal text-muted-foreground">(optional)</span>
         </span>
         <Textarea
-          placeholder="What is it? It goes on the repository and in its README."
+          placeholder={
+            inAldo
+              ? "What is it for, and how should the work be done? It goes in the project's AGENTS.md, which every thread in it reads."
+              : "What is it? It goes on the repository and in its README."
+          }
           className="min-h-16"
           value={description}
           disabled={creating}
           onChange={(event) => setDescription(event.currentTarget.value)}
         />
       </label>
-      <label className="flex items-center justify-between gap-4 rounded-lg border border-border px-3 py-2.5">
-        <span className="flex flex-col">
-          <span className="font-medium text-sm">Private repository</span>
-          <span className="text-muted-foreground text-xs">
-            {isPrivate ? "Only you (and people you invite) can see it." : "Anyone can see it."}
+      {inAldo ? (
+        props.hosts.length === 1 ? (
+          <p className="text-muted-foreground text-xs">
+            For code, connect GitHub (or another git host in Settings → Source Control).
+          </p>
+        ) : null
+      ) : (
+        <label className="flex items-center justify-between gap-4 rounded-lg border border-border px-3 py-2.5">
+          <span className="flex flex-col">
+            <span className="font-medium text-sm">Private repository</span>
+            <span className="text-muted-foreground text-xs">
+              {isPrivate ? "Only you (and people you invite) can see it." : "Anyone can see it."}
+            </span>
           </span>
-        </span>
-        <Switch
-          checked={isPrivate}
-          disabled={creating}
-          onCheckedChange={(checked) => setIsPrivate(checked)}
-        />
-      </label>
+          <Switch
+            checked={isPrivate}
+            disabled={creating}
+            onCheckedChange={(checked) => setIsPrivate(checked)}
+          />
+        </label>
+      )}
       {error ? <p className="text-destructive-foreground text-sm">{error}</p> : null}
       <div className="flex items-center justify-end gap-2">
         {creating ? (
           <span className="mr-auto flex items-center gap-2 text-muted-foreground text-sm">
-            <LoaderCircleIcon className="size-4 animate-spin" /> Creating {name}…
+            <LoaderCircleIcon className="size-4 animate-spin" /> Creating {shownName}…
           </span>
         ) : null}
         <Button type="button" variant="ghost" onClick={props.onDone}>
@@ -398,6 +451,16 @@ function NewProjectForm(props: {
   );
 }
 
+/** A host in the new project's "Where": a git host with the account on it, or Aldo. */
+function hostChoice(
+  kind: AldoProjectHost,
+  accounts: Partial<Record<AldoHostKind, AldoAccount>>,
+): string {
+  if (kind === "aldo") return "Aldo · a project for work that isn't code";
+  const account = accounts[kind]?.account;
+  return account ? `${HOST_LABELS[kind]} · ${account}` : HOST_LABELS[kind];
+}
+
 /** A typed repository ref or a pasted URL, if it looks like one. */
 function typedRef(query: string): string | null {
   const text = query
@@ -408,6 +471,7 @@ function typedRef(query: string): string | null {
     return text;
   if (/^(gitlab|bitbucket|azure):[^\s]+\/[^\s]+$/.test(text) || /^[\w.-]+\/[\w.-]+$/.test(text))
     return text;
+  if (/^aldo:[a-z0-9-]+$/.test(text)) return text;
   return null;
 }
 
@@ -515,7 +579,7 @@ function ExistingRepositoryPicker(props: { readonly onDone: () => void }) {
           <RepoRow
             key={repo.nameWithOwner}
             refName={repo.nameWithOwner}
-            title={pathOf(repo.nameWithOwner)}
+            title={hostOf(repo.nameWithOwner) === "aldo" ? repo.name : pathOf(repo.nameWithOwner)}
             subtitle={repo.description}
             host={hostOf(repo.nameWithOwner)}
             isPrivate={repo.isPrivate}
@@ -524,7 +588,9 @@ function ExistingRepositoryPicker(props: { readonly onDone: () => void }) {
           />
         ))}
         {!isLoading && visible.length === 0 && !manual ? (
-          <p className="px-2 py-6 text-muted-foreground text-sm">No repositories match.</p>
+          <p className="px-2 py-6 text-muted-foreground text-sm">
+            {query.trim() ? "No repositories match." : "None yet: make one under New project."}
+          </p>
         ) : null}
         {hostErrors.map((message) => (
           <p key={message} className="px-2 py-1 text-destructive-foreground text-xs">
@@ -587,7 +653,7 @@ function RepoRow(props: {
   readonly refName: string;
   readonly title: string;
   readonly subtitle: string | null;
-  readonly host: AldoHostKind;
+  readonly host: AldoProjectHost;
   readonly isPrivate: boolean;
   readonly checked: boolean;
   readonly onToggle: () => void;
