@@ -37,6 +37,8 @@ export interface SettingsSearchItem {
   /** Only in Aldo cloud mode, whose page at this path differs from T3's. */
   readonly aldoCloudOnly?: boolean;
   readonly requiresAldoPhone?: boolean;
+  /** Its row renders only once Aldo says it has agent inboxes. */
+  readonly requiresAldoAgentInbox?: boolean;
   readonly primaryOnly?: boolean;
   readonly providerSettingsOnly?: boolean;
   readonly localBackendManagementOnly?: boolean;
@@ -52,6 +54,7 @@ export interface SettingsSearchAvailability {
   readonly isWslSettingsRowVisible: boolean;
   readonly hasThreadAutoSettlement: boolean;
   readonly hasAldoPhoneApi?: boolean;
+  readonly hasAldoAgentInbox?: boolean;
 }
 
 /**
@@ -331,6 +334,16 @@ export const SETTINGS_SEARCH_ITEMS = [
     aldoCloudOnly: true,
   },
   {
+    id: "aldo-agent-inbox",
+    title: "Agent inbox",
+    to: "/settings/integrations",
+    searchTerms: [
+      "agent inbox email address mail handle claim agentmail aldomail sender name display name from rename",
+    ],
+    aldoCloudOnly: true,
+    requiresAldoAgentInbox: true,
+  },
+  {
     id: "aldo-phone",
     title: "Text and call Aldo",
     to: "/settings/integrations",
@@ -540,6 +553,7 @@ export function filterAvailableSettingsSearchItems(
       (!item.wslAvailableOnly || availability.isWslSettingsRowVisible) &&
       (!item.requiresThreadAutoSettlement || availability.hasThreadAutoSettlement) &&
       (!item.requiresAldoPhone || availability.hasAldoPhoneApi === true) &&
+      (!item.requiresAldoAgentInbox || availability.hasAldoAgentInbox === true) &&
       // Aldo has no Connections page: it connects cloud agents itself.
       (item.to !== "/settings/connections" || !isAldoCloud) &&
       // Its Integrations page lists accounts instead of the preview browser's settings.
