@@ -71,6 +71,7 @@ describe("senderNameProblem", () => {
       expect(senderNameProblem(name)).toMatch(/leave out/i);
     }
     expect(senderNameProblem("evil\u202eman")).toMatch(/turn text around/i);
+    expect(senderNameProblem("evil\u061cman")).toMatch(/turn text around/i);
     expect(senderNameProblem("a\u0000b")).toMatch(/control/i);
   });
 });

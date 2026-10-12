@@ -40,7 +40,7 @@ export function senderNameProblem(name: string): string | null {
   if (/[()<>[\]:;@\\,"]/.test(name)) {
     return 'Leave out , ; : @ " \\ ( ) < > [ ]: mail uses them around addresses.';
   }
-  if (/[\p{Cc}\u200e\u200f\u202a-\u202e\u2066-\u2069]/u.test(name)) {
+  if (/[\p{Cc}\p{Bidi_Control}]/u.test(name)) {
     return "No control characters, or ones that turn text around.";
   }
   return null;

@@ -9,19 +9,21 @@ import { useEnvironments, usePrimaryEnvironmentId } from "~/state/environments";
 import { useEnvironmentQuery } from "~/state/query";
 import { usePrimarySessionState } from "~/environments/primary";
 import { primaryServerConfigAtom } from "~/state/server";
-import { fetchAldoPhone, isAldoCloud } from "../../aldo/cloud";
+import { fetchAldoAgentInbox, fetchAldoPhone, isAldoCloud } from "../../aldo/cloud";
 import { isWslSettingsRowVisible } from "./ConnectionsSettings.logic";
 import { isProviderSettingsEnvironmentAvailable } from "./ProviderSettingsPanel.logic";
 import { filterAvailableSettingsSearchItems } from "./settingsSearch";
 
 export function useAvailableSettingsSearchItems() {
   const [hasAldoPhoneApi, setHasAldoPhoneApi] = useState(false);
+  const [hasAldoAgentInbox, setHasAldoAgentInbox] = useState(false);
   useEffect(() => {
     if (!isAldoCloud) return;
     let current = true;
     let latest = 0;
     // Both settings search and the command palette use this hook. A supported
     // API can still report an unconfigured provider; its settings section exists.
+    // The agent inbox row shows only once Aldo says it has inboxes.
     const refresh = () => {
       const seq = ++latest;
       void fetchAldoPhone()
@@ -31,6 +33,11 @@ export function useAvailableSettingsSearchItems() {
         .catch(() => {
           // Keep known support through an outage; retry when focus or network returns.
         });
+      void fetchAldoAgentInbox()
+        .then((inbox) => {
+          if (current && seq === latest) setHasAldoAgentInbox(inbox?.available === true);
+        })
+        .catch(() => undefined);
     };
     refresh();
     window.addEventListener("focus", refresh);
@@ -56,6 +63,7 @@ export function useAvailableSettingsSearchItems() {
     () =>
       filterAvailableSettingsSearchItems({
         hasAldoPhoneApi,
+        hasAldoAgentInbox,
         hasCloudPublicConfig: hasCloudPublicConfig(),
         hasPrimaryEnvironment: primaryEnvironmentId !== null,
         hasProviderSettingsEnvironment: environments.some((environment) =>
@@ -74,6 +82,7 @@ export function useAvailableSettingsSearchItems() {
       }),
     [
       hasAldoPhoneApi,
+      hasAldoAgentInbox,
       canManageLocalBackend,
       desktopWsl.data,
       desktopWsl.error,

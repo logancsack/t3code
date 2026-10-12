@@ -66,8 +66,15 @@ describe("Aldo Link settings search", () => {
 });
 
 describe("Aldo agent inbox settings search", () => {
+  it.each([undefined, false])("hides the inbox until Aldo has inboxes (%s)", (available) => {
+    const items = filterAvailableSettingsSearchItems(
+      available === undefined ? availability : { ...availability, hasAldoAgentInbox: available },
+    );
+    expect(items.some((item) => item.id === "aldo-agent-inbox")).toBe(false);
+  });
+
   it("finds the agent inbox row by its address and its sender name", () => {
-    const items = filterAvailableSettingsSearchItems(availability);
+    const items = filterAvailableSettingsSearchItems({ ...availability, hasAldoAgentInbox: true });
     for (const query of ["agent inbox", "sender name", "email address"]) {
       expect(searchSettings(query, items)[0]).toMatchObject({
         id: "aldo-agent-inbox",
