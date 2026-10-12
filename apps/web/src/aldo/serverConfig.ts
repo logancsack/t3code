@@ -18,6 +18,7 @@ import {
   isAldoEnvironmentId,
   reportAldoServerConfig,
 } from "./cloud";
+import { providerInstances } from "./serverConfig.logic";
 
 type EncodedConfig = {
   environment: Record<string, unknown>;
@@ -59,8 +60,13 @@ function newestProviderCheck(config: ServerConfig): string {
   }, "");
 }
 
-/** Whether `a` says more of the user's agents than `b`: fewer providers unchecked, then checked last. */
+/**
+ * Whether `a` says more of the user's agents than `b`: more providers (its T3
+ * started after one shipped), then fewer unchecked, then checked last.
+ */
 function saysMore(a: ServerConfig, b: ServerConfig): boolean {
+  const providers = a.providers.length - b.providers.length;
+  if (providers !== 0) return providers > 0;
   const unchecked = uncheckedProviders(a) - uncheckedProviders(b);
   return unchecked !== 0 ? unchecked < 0 : newestProviderCheck(a) > newestProviderCheck(b);
 }
@@ -98,6 +104,11 @@ function capture(): void {
   void reportAldoServerConfig(encoded).catch(() => {
     reportedProviders = null;
   });
+}
+
+/** The provider instances the newest config lists ("" before there is one): seeded copies follow it. */
+export function aldoTemplateProviders(): string {
+  return latest ? providerInstances(latest).join(",") : "";
 }
 
 /** Starts following cloud agents' configs. */
