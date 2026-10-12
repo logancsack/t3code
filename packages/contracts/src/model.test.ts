@@ -10,9 +10,9 @@ import {
 describe("Muse Code model metadata", () => {
   const muse = ProviderDriverKind.make("muse");
 
-  it("uses Muse Spark 1.2 as the interactive and text-generation default", () => {
-    expect(DEFAULT_MODEL_BY_PROVIDER[muse]).toBe("muse-spark-1.2");
-    expect(DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER[muse]).toBe("muse-spark-1.2");
+  it("uses Muse Spark 1.3 as the interactive and text-generation default", () => {
+    expect(DEFAULT_MODEL_BY_PROVIDER[muse]).toBe("muse-spark-1.3");
+    expect(DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER[muse]).toBe("muse-spark-1.3");
   });
 
   it("uses the full product name in provider presentation", () => {

@@ -79,32 +79,35 @@ export function AldoAccountsPanel(props: {
   const { accounts, error, refresh } = useAldoAccounts();
   return (
     <SettingsSection title={props.title}>
-      {props.kinds.map((kind) => {
-        const spec = ALDO_ACCOUNT_SPECS[kind];
-        const account = accounts?.[kind];
-        return (
-          <SettingsRow
-            key={kind}
-            title={spec.title}
-            description={spec.description}
-            status={accountStatus(account)}
-            control={
-              <>
-                {account?.connected ? (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => void disconnectAldoAccount(kind).then(refresh)}
-                  >
-                    Disconnect
-                  </Button>
-                ) : null}
-                <AldoAccountButton kind={kind} account={account} onConnected={refresh} />
-              </>
-            }
-          />
-        );
-      })}
+      {/* Only what Aldo connects: an older Aldo doesn't list Muse Code, so it waits for the list. */}
+      {props.kinds
+        .filter((kind) => (accounts ? kind in accounts : kind !== "muse"))
+        .map((kind) => {
+          const spec = ALDO_ACCOUNT_SPECS[kind];
+          const account = accounts?.[kind];
+          return (
+            <SettingsRow
+              key={kind}
+              title={spec.title}
+              description={spec.description}
+              status={accountStatus(account)}
+              control={
+                <>
+                  {account?.connected ? (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => void disconnectAldoAccount(kind).then(refresh)}
+                    >
+                      Disconnect
+                    </Button>
+                  ) : null}
+                  <AldoAccountButton kind={kind} account={account} onConnected={refresh} />
+                </>
+              }
+            />
+          );
+        })}
       {props.extra?.(accounts, refresh)}
       {error ? <p className="px-4 text-destructive-foreground text-sm">{error}</p> : null}
     </SettingsSection>

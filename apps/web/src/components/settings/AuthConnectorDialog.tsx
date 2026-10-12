@@ -43,7 +43,7 @@ import { toastManager } from "../ui/toast";
 import { APP_BASE_NAME } from "../../branding";
 import { managedWorkspaceBrowserUrl } from "../../managedDevPc";
 import { aldoAuthConnectors, isAldoCloud } from "../../aldo/cloud";
-import { aldoAccountMethod } from "../../aldo/accountSpecs";
+import { useAldoAccountMethod } from "../../aldo/accountSpecs";
 
 export type AuthConnectorMethodOption = {
   readonly method: AuthConnectorMethod;
@@ -167,9 +167,9 @@ export function AuthConnectorDialog(props: {
   const callbackInputRef = useRef<HTMLTextAreaElement | null>(null);
 
   // Aldo runs one subscription sign-in per service and keeps it on the account.
-  // Aldo keeps GitHub, Claude, Codex and Grok on the account; anything else
+  // Aldo keeps GitHub, Claude, Codex, Grok and Muse Code on the account; anything else
   // (OpenCode, say) signs in inside the thread's own sandbox as usual.
-  const aldoMethod = isAldoCloud ? aldoAccountMethod(connector) : null;
+  const aldoMethod = useAldoAccountMethod(connector, isAldoCloud);
   const ACCOUNT_SCOPED = aldoMethod !== null;
   const CREDENTIAL_SCOPE_COPY = ACCOUNT_SCOPED
     ? "Saved to your Aldo account for every thread."

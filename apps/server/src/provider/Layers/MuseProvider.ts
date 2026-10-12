@@ -36,39 +36,64 @@ const VERSION_PROBE_TIMEOUT_MS = 4_000;
 const SKILLS_PROBE_TIMEOUT_MS = 4_000;
 const SKILLS_PROBE_MAX_OUTPUT_BYTES = 2 * 1024 * 1024;
 const decodeUnknownJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown));
-export const DEFAULT_MUSE_MODEL = "muse-spark-1.2";
+export const DEFAULT_MUSE_MODEL = "muse-spark-1.3";
 
+// Meta's efforts (Muse Code 1.4.6): it refuses "none"; "ultra" depends on the plan
+// (and runs at a model's highest level); "max" is served only by Muse Spark 1.3
+// and Muse Wonder.
 export const MUSE_REASONING_EFFORTS = [
-  "none",
   "minimal",
   "low",
   "medium",
   "high",
   "xhigh",
+  "max",
   "ultra",
 ] as const;
 
 export type MuseReasoningEffort = (typeof MUSE_REASONING_EFFORTS)[number];
 
-export const MUSE_MODEL_CAPABILITIES: ModelCapabilities = createModelCapabilities({
-  optionDescriptors: [
-    buildSelectOptionDescriptor({
-      id: "reasoningEffort",
-      label: "Reasoning",
-      options: MUSE_REASONING_EFFORTS.map((value) => ({
-        value,
-        label: value === "xhigh" ? "Extra high" : value.charAt(0).toUpperCase() + value.slice(1),
-        ...(value === "high" ? { isDefault: true as const } : {}),
-      })),
-    }),
-  ],
-});
+/** Whether Meta serves the "max" effort for a model. */
+export function museModelOffersMax(model: string): boolean {
+  return /^muse-(spark-1\.3|wonder)\b/.test(model);
+}
+
+function museModelCapabilities(offersMax: boolean): ModelCapabilities {
+  return createModelCapabilities({
+    optionDescriptors: [
+      buildSelectOptionDescriptor({
+        id: "reasoningEffort",
+        label: "Reasoning",
+        options: MUSE_REASONING_EFFORTS.filter((value) => offersMax || value !== "max").map(
+          (value) => ({
+            value,
+            label:
+              value === "xhigh" ? "Extra high" : value.charAt(0).toUpperCase() + value.slice(1),
+            ...(value === "high" ? { isDefault: true as const } : {}),
+          }),
+        ),
+      }),
+    ],
+  });
+}
+
+/** Muse Spark 1.2 and custom models: every effort but max. */
+export const MUSE_MODEL_CAPABILITIES: ModelCapabilities = museModelCapabilities(false);
+
+const MUSE_SPARK_1_3_CAPABILITIES: ModelCapabilities = museModelCapabilities(true);
 
 const MUSE_BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
   {
     slug: DEFAULT_MUSE_MODEL,
-    name: "Muse Spark 1.2",
+    name: "Muse Spark 1.3",
     isDefault: true,
+    isCustom: false,
+    capabilities: MUSE_SPARK_1_3_CAPABILITIES,
+  },
+  {
+    slug: "muse-spark-1.2",
+    name: "Muse Spark 1.2",
+    isDefault: false,
     isCustom: false,
     capabilities: MUSE_MODEL_CAPABILITIES,
   },
@@ -87,8 +112,16 @@ export function parseMuseCliVersion(output: string): string | null {
   return output.match(/\b(\d+\.\d+\.\d+-R\d+(?:\.\d+)?)\b/)?.[1] ?? parseGenericCliVersion(output);
 }
 
-export function resolveMuseReasoningEffort(value: string | undefined): MuseReasoningEffort {
-  return MUSE_REASONING_EFFORTS.find((effort) => effort === value) ?? "high";
+/**
+ * The effort to run a model at: one of Meta's, high otherwise, and xhigh for
+ * max on a model Meta doesn't serve it for (kept across a model switch, say).
+ */
+export function resolveMuseReasoningEffort(
+  value: string | undefined,
+  model: string,
+): MuseReasoningEffort {
+  const effort = MUSE_REASONING_EFFORTS.find((candidate) => candidate === value) ?? "high";
+  return effort === "max" && !museModelOffersMax(model) ? "xhigh" : effort;
 }
 
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {

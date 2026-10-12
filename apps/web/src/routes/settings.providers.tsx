@@ -9,7 +9,7 @@ function SettingsProvidersRoute() {
   if (isAldoCloud) {
     return (
       <SettingsPageContainer>
-        <AldoAccountsPanel title="AI subscriptions" kinds={["claude", "codex", "grok"]} />
+        <AldoAccountsPanel title="AI subscriptions" kinds={["claude", "codex", "grok", "muse"]} />
       </SettingsPageContainer>
     );
   }

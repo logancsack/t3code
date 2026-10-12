@@ -27,10 +27,11 @@ type EncodedConfig = {
 const encodeServerConfig = Schema.encodeUnknownSync(ServerConfig);
 
 /** Which Aldo sign-in each provider driver runs on. */
-const ACCOUNT_FOR_DRIVER: Record<string, "claude" | "codex" | "grok"> = {
+const ACCOUNT_FOR_DRIVER: Record<string, "claude" | "codex" | "grok" | "muse"> = {
   claudeAgent: "claude",
   codex: "codex",
   grok: "grok",
+  muse: "muse",
 };
 
 let latest: EncodedConfig | null = null;
@@ -140,7 +141,8 @@ export async function aldoServerConfigsFor(
   const providers = base.providers.map((provider) => {
     const account = ACCOUNT_FOR_DRIVER[String(provider.driver)];
     const auth = (provider.auth ?? {}) as Record<string, unknown>;
-    if (!account || !accounts) return provider;
+    // An Aldo that doesn't keep this sign-in (an older one, for Muse Code) leaves it to the machine.
+    if (!account || !accounts || !(account in accounts)) return provider;
     if (accounts[account]?.connected === true) {
       if (auth.status === "authenticated") return provider;
       const { message: _message, ...rest } = provider;

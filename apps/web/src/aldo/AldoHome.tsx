@@ -86,7 +86,7 @@ import { aldoWaitingCount } from "./decisions.logic";
 import { aldoNotificationsStatus, enableAldoNotifications } from "./notifications";
 import { useIsMobile } from "../hooks/useMediaQuery";
 
-const AGENT_KINDS: ReadonlyArray<AldoAccountKind> = ["claude", "codex", "grok"];
+const AGENT_KINDS: ReadonlyArray<AldoAccountKind> = ["claude", "codex", "grok", "muse"];
 const LAST_SEEN_KEY = "aldo:home:seen";
 /** Shows "now" moving: elapsed times tick without a fetch. */
 const TICK_MS = 30_000;
@@ -211,7 +211,7 @@ export function AldoHome() {
 
   const sourceHost = HOST_KINDS.find((kind) => accounts?.[kind]?.connected === true);
   const sourceReady = sourceHost !== undefined;
-  const agentReady = AGENT_KINDS.some((kind) => accounts?.[kind].connected === true);
+  const agentReady = AGENT_KINDS.some((kind) => accounts?.[kind]?.connected === true);
   // Threads that aren't in a repository need no git host; an older Aldo's do (the directory says, once listed).
   const general = useSyncExternalStore(
     subscribeAldoEnvironments,
@@ -317,7 +317,8 @@ export function AldoHome() {
               onConnected={refreshAccounts}
             />
           )}
-          {AGENT_KINDS.map((kind) => (
+          {/* Only the agents Aldo connects (an older one doesn't list Muse Code). */}
+          {AGENT_KINDS.filter((kind) => kind in accounts).map((kind) => (
             <SetupRow
               key={kind}
               kind={kind}

@@ -1,5 +1,7 @@
+import { useEffect, useState } from "react";
+
 import type { AuthConnectorMethodOption } from "../components/settings/AuthConnectorDialog";
-import type { AldoAccountKind } from "./cloud";
+import { aldoReportsAccount, fetchAldoAccounts, type AldoAccountKind } from "./cloud";
 
 export type AccountSpec = {
   readonly kind: AldoAccountKind;
@@ -67,11 +69,57 @@ export const ALDO_ACCOUNT_SPECS: Record<AldoAccountKind, AccountSpec> = {
       waitingMessage: "Waiting for xAI to confirm the code…",
     },
   },
+  muse: {
+    kind: "muse",
+    title: "Muse Code",
+    description:
+      "Runs Muse Code on your Muse Code plan from Meta, in its Contributor mode: more usage, and Meta may train on what the agent sees.",
+    serviceName: "Muse Code",
+    method: {
+      method: "account",
+      label: "Sign in with Meta",
+      description: "Use your Muse Code plan through Meta's device sign-in.",
+      browserName: "Meta",
+      authorizeInstruction: "Check that the code matches on Meta's page, then approve access.",
+      waitingMessage: "Waiting for Meta to confirm…",
+    },
+  },
 };
 
-/** The sign-in Aldo runs for a connector, or null if Aldo can't connect it. */
+/**
+ * The sign-in Aldo runs for a connector, or null if Aldo can't connect it. An
+ * Aldo that predates Muse Code doesn't report it, and leaves its sign-in to
+ * the thread's own sandbox.
+ */
 export function aldoAccountMethod(connector: string): AuthConnectorMethodOption | null {
-  return connector in ALDO_ACCOUNT_SPECS
-    ? ALDO_ACCOUNT_SPECS[connector as AldoAccountKind].method
-    : null;
+  if (!(connector in ALDO_ACCOUNT_SPECS)) return null;
+  const reported = aldoReportsAccount(connector);
+  if (reported === false || (reported === null && connector === "muse")) return null;
+  return ALDO_ACCOUNT_SPECS[connector as AldoAccountKind].method;
+}
+
+let asking: Promise<unknown> | null = null;
+
+/** aldoAccountMethod, asking Aldo which accounts it keeps if nothing has yet. */
+export function useAldoAccountMethod(
+  connector: string,
+  enabled: boolean,
+): AuthConnectorMethodOption | null {
+  const [, setAnswered] = useState(false);
+  const unknown =
+    enabled && connector in ALDO_ACCOUNT_SPECS && aldoReportsAccount(connector) === null;
+  useEffect(() => {
+    if (!unknown) return;
+    let cancelled = false;
+    asking ??= fetchAldoAccounts().catch(() => {
+      asking = null;
+    });
+    void asking.then(() => {
+      if (!cancelled) setAnswered(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [unknown]);
+  return enabled ? aldoAccountMethod(connector) : null;
 }

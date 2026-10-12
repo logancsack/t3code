@@ -12,24 +12,30 @@ import {
   hasStoredMuseCredential,
   parseMuseCliVersion,
   parseMuseSkillsListOutput,
+  resolveMuseReasoningEffort,
 } from "./MuseProvider.ts";
 
 const decodeMuseSettings = Schema.decodeSync(MuseSettings);
 const encodeUnknownJson = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
 
 describe("buildInitialMuseProviderSnapshot", () => {
-  it.effect("publishes the built-in Muse model and reasoning controls", () =>
+  it.effect("publishes the built-in Muse models and reasoning controls", () =>
     Effect.gen(function* () {
       const snapshot = yield* buildInitialMuseProviderSnapshot(decodeMuseSettings({}));
       expect(snapshot.displayName).toBe("Muse Code");
       expect(snapshot.badgeLabel).toBe("Beta");
       expect(snapshot.showInteractionModeToggle).toBe(true);
       expect(snapshot.status).toBe("warning");
-      expect(snapshot.models).toHaveLength(1);
+      expect(snapshot.models).toHaveLength(2);
       expect(snapshot.models[0]).toMatchObject({
+        slug: "muse-spark-1.3",
+        name: "Muse Spark 1.3",
+        isDefault: true,
+      });
+      expect(snapshot.models[1]).toMatchObject({
         slug: "muse-spark-1.2",
         name: "Muse Spark 1.2",
-        isDefault: true,
+        isDefault: false,
       });
       expect(snapshot.models[0]?.capabilities?.optionDescriptors).toEqual([
         {
@@ -37,17 +43,23 @@ describe("buildInitialMuseProviderSnapshot", () => {
           label: "Reasoning",
           type: "select",
           options: [
-            { id: "none", label: "None" },
             { id: "minimal", label: "Minimal" },
             { id: "low", label: "Low" },
             { id: "medium", label: "Medium" },
             { id: "high", label: "High", isDefault: true },
             { id: "xhigh", label: "Extra high" },
+            { id: "max", label: "Max" },
             { id: "ultra", label: "Ultra" },
           ],
           currentValue: "high",
         },
       ]);
+      const spark12Efforts = snapshot.models[1]?.capabilities?.optionDescriptors?.[0];
+      expect(
+        spark12Efforts && "options" in spark12Efforts
+          ? spark12Efforts.options.map((option) => option.id)
+          : [],
+      ).toEqual(["minimal", "low", "medium", "high", "xhigh", "ultra"]);
     }),
   );
 
@@ -176,6 +188,7 @@ it.layer(NodeServices.layer)("checkMuseProviderStatus", (it) => {
           label: "Meta API key",
         });
         expect(snapshot.models.map((model) => model.slug)).toEqual([
+          "muse-spark-1.3",
           "muse-spark-1.2",
           "muse-spark-preview",
         ]);
@@ -442,4 +455,20 @@ it.layer(NodeServices.layer)("checkMuseProviderStatus", (it) => {
       }),
     ),
   );
+});
+
+describe("resolveMuseReasoningEffort", () => {
+  it("keeps Meta's efforts and falls back to high for one Meta refuses", () => {
+    expect(resolveMuseReasoningEffort("max", "muse-spark-1.3")).toBe("max");
+    expect(resolveMuseReasoningEffort("ultra", "muse-spark-1.2")).toBe("ultra");
+    // Offered before Meta's CLI refused it; a thread that saved it runs on high.
+    expect(resolveMuseReasoningEffort("none", "muse-spark-1.3")).toBe("high");
+    expect(resolveMuseReasoningEffort(undefined, "muse-spark-1.3")).toBe("high");
+  });
+
+  it("runs max at xhigh on a model Meta doesn't serve it for", () => {
+    expect(resolveMuseReasoningEffort("max", "muse-spark-1.2")).toBe("xhigh");
+    expect(resolveMuseReasoningEffort("max", "my-custom-model")).toBe("xhigh");
+    expect(resolveMuseReasoningEffort("max", "muse-wonder-1.0")).toBe("max");
+  });
 });
