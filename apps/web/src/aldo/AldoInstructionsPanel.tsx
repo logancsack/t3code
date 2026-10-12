@@ -20,11 +20,12 @@ const HOSTS: Record<string, string> = {
   gitlab: "GitLab",
   bitbucket: "Bitbucket",
   azure: "Azure DevOps",
+  aldo: "Aldo project",
 };
 
 /** A repository as the user knows it, with its host unless it's GitHub (the same path can be on two hosts). */
 function projectLabel(ref: string): string {
-  const [, host, path] = /^(gitlab|bitbucket|azure):(.*)$/.exec(ref) ?? [];
+  const [, host, path] = /^(gitlab|bitbucket|azure|aldo):(.*)$/.exec(ref) ?? [];
   return host && path ? `${path} (${HOSTS[host]})` : ref;
 }
 

@@ -311,11 +311,12 @@ export function AldoEnvironmentsPanel() {
       .then((repositories) => setAccountRepos(repositories.map((r) => r.nameWithOwner)))
       .catch(() => setAccountRepos([]));
   }, []);
+  // (Aldo's own projects, `aldo:<slug>`, have nothing to prebuild.)
   const repoOptions = useMemo(
     () =>
-      [
-        ...new Set([...(threads ?? []).flatMap((t) => t.repos ?? [t.repo]), ...accountRepos]),
-      ].sort(),
+      [...new Set([...(threads ?? []).flatMap((t) => t.repos ?? [t.repo]), ...accountRepos])]
+        .filter((repo) => !repo.startsWith("aldo:"))
+        .sort(),
     [threads, accountRepos],
   );
 
