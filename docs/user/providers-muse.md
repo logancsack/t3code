@@ -19,7 +19,7 @@ Muse sessions keep a stable Muse session ID across turns, so normal conversation
 works after T3 Code reconnects. The integration also supports:
 
 - streamed responses and the canonical T3 work log for Muse tool activity
-- Muse Spark model selection and reasoning-effort controls (Minimal to Max, and Ultra on plans that include it)
+- Muse Spark model selection and reasoning-effort controls (Minimal to Extra high, Max on Muse Spark 1.3, and Ultra on plans that include it)
 - image and file attachments
 - Plan mode, with write and shell tools disabled
 - turn interruption and queued follow-up messages

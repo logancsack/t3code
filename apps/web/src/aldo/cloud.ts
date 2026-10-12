@@ -802,10 +802,20 @@ export async function listAldoRepositories(): Promise<
 // ---------------------------------------------------------------------------
 // Accounts (sign-in wizards)
 
+let reportedAccounts: ReadonlySet<string> | null = null;
+
 export async function fetchAldoAccounts(): Promise<
   Record<AldoAccountKind | AldoGitHostKind, AldoAccount>
 > {
-  return api<Record<AldoAccountKind | AldoGitHostKind, AldoAccount>>("/api/connections");
+  const accounts =
+    await api<Record<AldoAccountKind | AldoGitHostKind, AldoAccount>>("/api/connections");
+  reportedAccounts = new Set(Object.keys(accounts));
+  return accounts;
+}
+
+/** Whether Aldo keeps this kind of account, or null before it has said. */
+export function aldoReportsAccount(kind: string): boolean | null {
+  return reportedAccounts ? reportedAccounts.has(kind) : null;
 }
 
 /** Connects GitLab, Bitbucket or Azure DevOps with an access token. */

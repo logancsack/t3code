@@ -54,6 +54,12 @@ describe("buildInitialMuseProviderSnapshot", () => {
           currentValue: "high",
         },
       ]);
+      const spark12Efforts = snapshot.models[1]?.capabilities?.optionDescriptors?.[0];
+      expect(
+        spark12Efforts && "options" in spark12Efforts
+          ? spark12Efforts.options.map((option) => option.id)
+          : [],
+      ).toEqual(["minimal", "low", "medium", "high", "xhigh", "ultra"]);
     }),
   );
 
@@ -453,9 +459,16 @@ it.layer(NodeServices.layer)("checkMuseProviderStatus", (it) => {
 
 describe("resolveMuseReasoningEffort", () => {
   it("keeps Meta's efforts and falls back to high for one Meta refuses", () => {
-    expect(resolveMuseReasoningEffort("max")).toBe("max");
+    expect(resolveMuseReasoningEffort("max", "muse-spark-1.3")).toBe("max");
+    expect(resolveMuseReasoningEffort("ultra", "muse-spark-1.2")).toBe("ultra");
     // Offered before Meta's CLI refused it; a thread that saved it runs on high.
-    expect(resolveMuseReasoningEffort("none")).toBe("high");
-    expect(resolveMuseReasoningEffort(undefined)).toBe("high");
+    expect(resolveMuseReasoningEffort("none", "muse-spark-1.3")).toBe("high");
+    expect(resolveMuseReasoningEffort(undefined, "muse-spark-1.3")).toBe("high");
+  });
+
+  it("runs max at xhigh on a model Meta doesn't serve it for", () => {
+    expect(resolveMuseReasoningEffort("max", "muse-spark-1.2")).toBe("xhigh");
+    expect(resolveMuseReasoningEffort("max", "my-custom-model")).toBe("xhigh");
+    expect(resolveMuseReasoningEffort("max", "muse-wonder-1.0")).toBe("max");
   });
 });

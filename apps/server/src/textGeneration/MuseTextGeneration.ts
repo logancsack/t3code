@@ -107,6 +107,7 @@ export const makeMuseTextGeneration = Effect.fn("makeMuseTextGeneration")(functi
       const command = museSettings.binaryPath || "muse";
       const reasoningEffort = resolveMuseReasoningEffort(
         getModelSelectionStringOptionValue(modelSelection, "reasoningEffort"),
+        modelSelection.model,
       );
       const launchArgs = filterMuseLaunchArgs(museSettings.launchArgs);
       const promptFile = yield* fileSystem.makeTempFileScoped({

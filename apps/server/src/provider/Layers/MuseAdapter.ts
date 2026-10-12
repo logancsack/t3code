@@ -61,23 +61,13 @@ import {
   type MuseJsonEvent,
   type MuseTerminalRecord,
 } from "./MuseProtocol.ts";
+import { resolveMuseReasoningEffort } from "./MuseProvider.ts";
 
 const PROVIDER = ProviderDriverKind.make("muse");
 const MUSE_RESUME_VERSION = 1 as const;
 const DEFAULT_MUSE_MODEL = "muse-spark-1.3";
-const DEFAULT_REASONING_EFFORT = "high";
 const MAX_DIAGNOSTIC_CHARS = 16_000;
 const decodeUnknownJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown));
-
-const MUSE_REASONING_EFFORTS = new Set([
-  "minimal",
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-  "max",
-  "ultra",
-]);
 
 interface MuseTurnSnapshot {
   readonly id: TurnId;
@@ -188,9 +178,11 @@ function museResumeCursor(sessionId: string) {
   return { schemaVersion: MUSE_RESUME_VERSION, sessionId } as const;
 }
 
-function reasoningEffortFromTurn(input: ProviderSendTurnInput): string {
-  const requested = getModelSelectionStringOptionValue(input.modelSelection, "reasoningEffort");
-  return requested && MUSE_REASONING_EFFORTS.has(requested) ? requested : DEFAULT_REASONING_EFFORT;
+function reasoningEffortFromTurn(input: ProviderSendTurnInput, model: string): string {
+  return resolveMuseReasoningEffort(
+    getModelSelectionStringOptionValue(input.modelSelection, "reasoningEffort"),
+    model,
+  );
 }
 
 function planPrompt(prompt: string): string {
@@ -571,7 +563,7 @@ export const makeMuseAdapter = Effect.fn("makeMuseAdapter")(function* (
       const prompt = input.interactionMode === "plan" ? planPrompt(basePrompt) : basePrompt;
       const turnId = TurnId.make(`muse-turn-${yield* randomUUIDv4}`);
       const model = input.modelSelection?.model ?? context.session.model ?? DEFAULT_MUSE_MODEL;
-      const reasoningEffort = reasoningEffortFromTurn(input);
+      const reasoningEffort = reasoningEffortFromTurn(input, model);
       const startedAt = DateTime.formatIso(yield* DateTime.now);
       const turn: MuseTurnSnapshot = {
         id: turnId,
