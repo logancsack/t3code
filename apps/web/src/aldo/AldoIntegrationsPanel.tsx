@@ -5,7 +5,8 @@
 // reports back to this tab is in integrations.logic.ts. Once one is connected,
 // Aldo's heads-ups (it looks at new mail and coming events between
 // conversations) can be turned off here, and the agents' own email address
-// (their agent inbox) is claimed and shown, once this Aldo has them. Below them, apps
+// (their agent inbox) is claimed and shown, with the name its mail goes out
+// under, which the user changes as they like, once this Aldo has them. Below them, apps
 // every agent uses as MCP servers (AldoAppsSection.tsx), and the image, video and audio
 // generators agents use with the user's own API keys (AldoGeneratorRows.tsx).
 
@@ -14,6 +15,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { SettingsRow, SettingsSection } from "../components/settings/settingsLayout";
 import { Button } from "../components/ui/button";
+import { Input } from "../components/ui/input";
 import {
   InputGroup,
   InputGroupAddon,
@@ -30,6 +32,7 @@ import {
   fetchAldoAgentInbox,
   fetchAldoHeadsUps,
   fetchAldoIntegrations,
+  renameAldoAgentInbox,
   setAldoHeadsUps,
   type AldoAgentHandleCheck,
   type AldoAgentInbox,
@@ -40,7 +43,13 @@ import {
 } from "./cloud";
 import { AldoAppsSection } from "./AldoAppsSection";
 import { AldoGeneratorRows } from "./AldoGeneratorRows";
-import { agentHandleProblem, handleFieldValue, normalizeAgentHandle } from "./agentInbox.logic";
+import {
+  agentHandleProblem,
+  handleFieldValue,
+  normalizeAgentHandle,
+  normalizeSenderName,
+  senderNameProblem,
+} from "./agentInbox.logic";
 import {
   ALDO_INTEGRATIONS_CHANNEL,
   describeAldoCapabilities,
@@ -383,6 +392,7 @@ function ClaimAgentAddress(props: {
   );
   return (
     <SettingsRow
+      id="aldo-agent-inbox"
       title="Agent inbox"
       description={AGENT_INBOX_DESCRIPTION}
       status={
@@ -436,6 +446,82 @@ function ClaimAgentAddress(props: {
             </Button>
           </form>
         )
+      }
+    />
+  );
+}
+
+/** The name the agents' mail goes out under, beside its address: the user changes it as they like, unlike the address. */
+function AgentSenderNameRow(props: {
+  readonly inbox: AldoAgentInboxAddress;
+  readonly onRenamed: (inbox: AldoAgentInboxAddress) => void;
+}) {
+  const { inbox } = props;
+  // What's typed; null shows the saved name, which Aldo or an agent may change meanwhile.
+  const [draft, setDraft] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const name = normalizeSenderName(draft ?? inbox.displayName);
+  const changed = name !== inbox.displayName;
+  const problem = changed ? senderNameProblem(name) : null;
+  const save = async () => {
+    setSaving(true);
+    try {
+      const renamed = await renameAldoAgentInbox(name);
+      setDraft(null);
+      props.onRenamed(renamed);
+      toastManager.add({
+        type: "success",
+        title: "Sender name saved",
+        description: `Your agents' mail goes out as ${renamed.displayName} now.`,
+      });
+    } catch (cause) {
+      toastManager.add({
+        type: "error",
+        title: "Couldn't change the sender name",
+        description: messageOf(cause),
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <SettingsRow
+      title="Sender name"
+      description="What people see beside your agents' address in the mail they send, for every thread. Change it whenever you like; the address stays."
+      status={
+        problem ? (
+          <span className="text-warning-foreground">{problem}</span>
+        ) : (
+          <span className="break-words">
+            {changed ? "Will go out as " : "Goes out as "}
+            <span className="text-foreground">
+              {name ? `${name} <${inbox.email}>` : inbox.email}
+            </span>
+          </span>
+        )
+      }
+      control={
+        <form
+          className="flex w-full gap-2 sm:w-auto"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (changed && !problem && !saving) void save();
+          }}
+        >
+          <Input
+            className="min-w-0 flex-1 sm:w-64"
+            aria-label="Sender name for your agents' mail"
+            placeholder="Your agent"
+            autoComplete="off"
+            value={draft ?? inbox.displayName}
+            disabled={saving}
+            onChange={(event) => setDraft(event.currentTarget.value)}
+          />
+          <Button size="sm" type="submit" disabled={!changed || problem !== null || saving}>
+            {saving ? <LoaderIcon className="size-3.5 animate-spin" /> : null}
+            Save
+          </Button>
+        </form>
       }
     />
   );
@@ -498,28 +584,40 @@ function AgentInboxRow() {
       );
   };
   return (
-    <SettingsRow
-      title="Agent inbox"
-      description={AGENT_INBOX_DESCRIPTION}
-      status={
-        email ? (
-          <span className="inline-flex items-center gap-1 text-success-foreground">
-            <CheckCircle2Icon className="size-3.5" />
-            {email}
-          </span>
-        ) : (
-          "Not claimed yet."
-        )
-      }
-      control={
-        email ? (
-          <Button size="sm" variant="outline" onClick={copy}>
-            <CopyIcon className="size-3.5" />
-            Copy address
-          </Button>
-        ) : null
-      }
-    />
+    <>
+      <SettingsRow
+        id="aldo-agent-inbox"
+        title="Agent inbox"
+        description={AGENT_INBOX_DESCRIPTION}
+        status={
+          email ? (
+            <span className="inline-flex items-center gap-1 text-success-foreground">
+              <CheckCircle2Icon className="size-3.5" />
+              {email}
+            </span>
+          ) : (
+            "Not claimed yet."
+          )
+        }
+        control={
+          email ? (
+            <Button size="sm" variant="outline" onClick={copy}>
+              <CopyIcon className="size-3.5" />
+              Copy address
+            </Button>
+          ) : null
+        }
+      />
+      {state.inbox && state.renamable ? (
+        <AgentSenderNameRow
+          inbox={state.inbox}
+          onRenamed={(inbox) => {
+            latest.current++;
+            setState({ ...state, inbox });
+          }}
+        />
+      ) : null}
+    </>
   );
 }
 

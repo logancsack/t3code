@@ -64,3 +64,15 @@ describe("Aldo Link settings search", () => {
     }
   });
 });
+
+describe("Aldo agent inbox settings search", () => {
+  it("finds the agent inbox row by its address and its sender name", () => {
+    const items = filterAvailableSettingsSearchItems(availability);
+    for (const query of ["agent inbox", "sender name", "email address"]) {
+      expect(searchSettings(query, items)[0]).toMatchObject({
+        id: "aldo-agent-inbox",
+        to: "/settings/integrations",
+      });
+    }
+  });
+});

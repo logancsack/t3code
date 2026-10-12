@@ -890,6 +890,8 @@ export interface AldoAgentInbox {
   readonly available: boolean;
   /** The domain addresses are at (an Aldo that doesn't say has no claiming). */
   readonly domain?: string;
+  /** Whether its sender name can be changed here (an older Aldo leaves it out: it can't). */
+  readonly renamable: boolean;
   readonly inbox: AldoAgentInboxAddress | null;
 }
 
@@ -914,6 +916,7 @@ export async function fetchAldoAgentInbox(): Promise<AldoAgentInbox | null> {
   return {
     available: body.available,
     ...(typeof body.domain === "string" && body.domain ? { domain: body.domain } : {}),
+    renamable: body.renamable === true,
     inbox: inboxAddressOf(body.inbox),
   };
 }
@@ -950,6 +953,17 @@ export async function claimAldoAgentAddress(handle: string): Promise<AldoAgentIn
   });
   const inbox = inboxAddressOf(body.inbox);
   if (!inbox) throw new Error("This Aldo didn't say which address it claimed.");
+  return inbox;
+}
+
+/** Changes the name the agents' mail goes out under, beside its address. */
+export async function renameAldoAgentInbox(displayName: string): Promise<AldoAgentInboxAddress> {
+  const body = await api<{ inbox?: unknown }>("/api/agent-inbox", {
+    method: "PATCH",
+    body: JSON.stringify({ displayName }),
+  });
+  const inbox = inboxAddressOf(body.inbox);
+  if (!inbox) throw new Error("This Aldo didn't say what the inbox is called now.");
   return inbox;
 }
 

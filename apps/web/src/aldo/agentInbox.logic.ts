@@ -1,6 +1,7 @@
 // The agents' address a user claims (Settings → Integrations → Agent inbox): a
 // handle, like one on a social site, checked here as it's typed. Aldo checks
-// it again, and has the last word (reserved handles, ones that are taken).
+// it again, and has the last word (reserved handles, ones that are taken). The
+// same for the name its mail goes out under, which the user changes as they like.
 
 /** What the handle field keeps of what's typed or pasted: an address loses its domain, which the field shows beside it. */
 export function handleFieldValue(input: string): string {
@@ -21,5 +22,26 @@ export function agentHandleProblem(handle: string): string | null {
     return "Start and end with a letter or digit.";
   }
   if (/[._-]{2}/.test(handle)) return "No two dots, hyphens or underscores in a row.";
+  return null;
+}
+
+/** Most characters a sender name has (Aldo's limit: mail apps cut longer ones short). */
+export const SENDER_NAME_MAX = 64;
+
+/** A sender name as typed: spaces and line breaks run together, as Aldo keeps it. */
+export function normalizeSenderName(input: string): string {
+  return input.replace(/\s+/g, " ").trim();
+}
+
+/** What's wrong with a sender name, or null: what mail puts around addresses, control characters and ones that turn text around aren't allowed. */
+export function senderNameProblem(name: string): string | null {
+  if (!name) return "Type a name.";
+  if (name.length > SENDER_NAME_MAX) return `At most ${SENDER_NAME_MAX} characters.`;
+  if (/[()<>[\]:;@\\,"]/.test(name)) {
+    return 'Leave out , ; : @ " \\ ( ) < > [ ]: mail uses them around addresses.';
+  }
+  if (/[\p{Cc}\u200e\u200f\u202a-\u202e\u2066-\u2069]/u.test(name)) {
+    return "No control characters, or ones that turn text around.";
+  }
   return null;
 }

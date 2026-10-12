@@ -331,6 +331,15 @@ export const SETTINGS_SEARCH_ITEMS = [
     aldoCloudOnly: true,
   },
   {
+    id: "aldo-agent-inbox",
+    title: "Agent inbox",
+    to: "/settings/integrations",
+    searchTerms: [
+      "agent inbox email address mail handle claim agentmail aldomail sender name display name from rename",
+    ],
+    aldoCloudOnly: true,
+  },
+  {
     id: "aldo-phone",
     title: "Text and call Aldo",
     to: "/settings/integrations",
