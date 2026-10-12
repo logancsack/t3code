@@ -397,7 +397,7 @@ function SummonList(props: {
       {props.sections.map((section) => (
         <div key={section.title ?? "typed"} className="flex flex-col">
           {section.title ? (
-            <h3 className="px-2.5 pt-2 pb-1 font-medium text-[11px] text-muted-foreground uppercase tracking-wide">
+            <h3 className="px-2.5 pt-2 pb-1 font-medium text-muted-foreground text-xs">
               {section.title}
             </h3>
           ) : null}

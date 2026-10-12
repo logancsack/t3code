@@ -250,7 +250,7 @@ function AgentGroup(props: {
 }) {
   return (
     <section className="flex flex-col gap-1">
-      <h2 className="flex items-center gap-2 px-3 font-semibold text-[11px] text-muted-foreground uppercase tracking-wider">
+      <h2 className="flex items-center gap-2 px-3 font-medium text-muted-foreground text-xs">
         <span aria-hidden className={cn("size-2 rounded-full", TONE_DOT[props.tone])} />
         <span className="flex-1">{props.title}</span>
         {props.action}
