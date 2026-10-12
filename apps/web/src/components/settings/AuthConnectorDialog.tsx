@@ -167,7 +167,7 @@ export function AuthConnectorDialog(props: {
   const callbackInputRef = useRef<HTMLTextAreaElement | null>(null);
 
   // Aldo runs one subscription sign-in per service and keeps it on the account.
-  // Aldo keeps GitHub, Claude, Codex and Grok on the account; anything else
+  // Aldo keeps GitHub, Claude, Codex, Grok and Muse Code on the account; anything else
   // (OpenCode, say) signs in inside the thread's own sandbox as usual.
   const aldoMethod = isAldoCloud ? aldoAccountMethod(connector) : null;
   const ACCOUNT_SCOPED = aldoMethod !== null;

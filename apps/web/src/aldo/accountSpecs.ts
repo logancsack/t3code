@@ -67,6 +67,21 @@ export const ALDO_ACCOUNT_SPECS: Record<AldoAccountKind, AccountSpec> = {
       waitingMessage: "Waiting for xAI to confirm the code…",
     },
   },
+  muse: {
+    kind: "muse",
+    title: "Muse Code",
+    description:
+      "Runs Muse Code on your Muse Code plan from Meta, in its Contributor mode: more usage, and Meta may train on what the agent sees.",
+    serviceName: "Muse Code",
+    method: {
+      method: "account",
+      label: "Sign in with Meta",
+      description: "Use your Muse Code plan through Meta's device sign-in.",
+      browserName: "Meta",
+      authorizeInstruction: "Check that the code matches on Meta's page, then approve access.",
+      waitingMessage: "Waiting for Meta to confirm…",
+    },
+  },
 };
 
 /** The sign-in Aldo runs for a connector, or null if Aldo can't connect it. */

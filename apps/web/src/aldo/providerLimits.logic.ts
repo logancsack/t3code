@@ -18,7 +18,7 @@ export interface AldoLimitWindow {
 export type AldoLimitState = "ok" | "near" | "reached" | "unknown";
 
 export interface AldoProviderLimits {
-  /** "aldo", "claude", "codex", "grok", or a media generator's id. */
+  /** "aldo", "claude", "codex", "grok", "muse", or a media generator's id. */
   readonly id: string;
   readonly name: string;
   readonly plan: string | null;

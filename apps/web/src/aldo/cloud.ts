@@ -95,7 +95,7 @@ export interface AldoMachinePressure {
   readonly at: string;
 }
 
-export type AldoAccountKind = "github" | "claude" | "codex" | "grok";
+export type AldoAccountKind = "github" | "claude" | "codex" | "grok" | "muse";
 /** Git hosts connected with an access token (GitHub has its own sign-in wizard). */
 export type AldoGitHostKind = "gitlab" | "bitbucket" | "azure";
 export type AldoHostKind = "github" | AldoGitHostKind;

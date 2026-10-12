@@ -6,7 +6,7 @@
 import { ExternalLinkIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { ClaudeAI, GrokIcon, type Icon, OpenAI } from "../components/Icons";
+import { ClaudeAI, GrokIcon, type Icon, MuseCodeIcon, OpenAI } from "../components/Icons";
 import { useNowMinute } from "../hooks/useNowMinute";
 import { isLandingDemo } from "../landingDemo/mode";
 import { cn } from "../lib/utils";
@@ -167,6 +167,7 @@ const MARKS: Readonly<Record<string, Icon | undefined>> = {
   claude: ClaudeAI,
   codex: OpenAI,
   grok: GrokIcon,
+  muse: MuseCodeIcon,
 };
 
 function ProviderLimitsCard({

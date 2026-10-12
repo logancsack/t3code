@@ -36,15 +36,16 @@ const VERSION_PROBE_TIMEOUT_MS = 4_000;
 const SKILLS_PROBE_TIMEOUT_MS = 4_000;
 const SKILLS_PROBE_MAX_OUTPUT_BYTES = 2 * 1024 * 1024;
 const decodeUnknownJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown));
-export const DEFAULT_MUSE_MODEL = "muse-spark-1.2";
+export const DEFAULT_MUSE_MODEL = "muse-spark-1.3";
 
+// Meta's efforts (Muse Code 1.4.6): it refuses "none"; "ultra" depends on the plan.
 export const MUSE_REASONING_EFFORTS = [
-  "none",
   "minimal",
   "low",
   "medium",
   "high",
   "xhigh",
+  "max",
   "ultra",
 ] as const;
 
@@ -67,8 +68,15 @@ export const MUSE_MODEL_CAPABILITIES: ModelCapabilities = createModelCapabilitie
 const MUSE_BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
   {
     slug: DEFAULT_MUSE_MODEL,
-    name: "Muse Spark 1.2",
+    name: "Muse Spark 1.3",
     isDefault: true,
+    isCustom: false,
+    capabilities: MUSE_MODEL_CAPABILITIES,
+  },
+  {
+    slug: "muse-spark-1.2",
+    name: "Muse Spark 1.2",
+    isDefault: false,
     isCustom: false,
     capabilities: MUSE_MODEL_CAPABILITIES,
   },
