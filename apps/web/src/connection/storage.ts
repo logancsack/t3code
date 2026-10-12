@@ -34,6 +34,7 @@ import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 
 import { aldoKeepsEnvironmentCache, aldoThreadDetail } from "../aldo/cloud";
+import { withMissingProviders } from "../aldo/serverConfig.logic";
 
 const DATABASE_NAME = "t3code:connection-runtime";
 const DATABASE_VERSION = 4;
@@ -802,8 +803,10 @@ export function seedEnvironmentCache(input: {
  * Aldo: writes the server config given for each environment that has none
  * cached (a sleeping machine this browser never connected to), so its threads
  * open with models to send with; a cached one, from the machine itself, is
- * kept. Checked and written in one transaction. Returns the environments
- * written, and the ones that already had one.
+ * kept, with the providers the given one lists that it lacks added (its T3
+ * started before they shipped, and gets them when it starts again). Checked
+ * and written in one transaction. Returns the environments written, and the
+ * ones whose cached config was kept as it was.
  */
 export function seedMissingServerConfigs(
   configs: ReadonlyMap<EnvironmentId, unknown>,
@@ -845,11 +848,15 @@ export function seedMissingServerConfigs(
             for (const [environmentId, value] of encoded) {
               const request = store.get(environmentId);
               request.addEventListener("success", () => {
-                if (request.result !== undefined) {
+                const next =
+                  request.result === undefined
+                    ? value
+                    : withMissingProviders(request.result, value);
+                if (next === null) {
                   kept.push(environmentId);
                   return;
                 }
-                store.put(value, environmentId);
+                store.put(next, environmentId);
                 written.push(environmentId);
               });
             }

@@ -34,7 +34,7 @@ import {
   setAldoDirectorySync,
   type AldoEnvironment,
 } from "./cloud";
-import { aldoServerConfigsFor } from "./serverConfig";
+import { aldoServerConfigsFor, aldoTemplateProviders } from "./serverConfig";
 import { aldoShellCandidates, planAldoShellSync } from "./shells.logic";
 import { aldoShowsStartingThread, clearLeftoverAldoThreads } from "./startingThreads";
 
@@ -45,8 +45,8 @@ const BATCH = 100;
 const known = new Map<string, number>();
 /** Machines Aldo had no shell for whose cache this tab has looked at for a copy to offer. */
 const offerChecked = new Set<string>();
-/** Machines whose cache this tab has looked at for models. */
-const modelsChecked = new Set<string>();
+/** Machines whose cache this tab has looked at for models, with the providers the newest config listed then. */
+const modelsChecked = new Map<string, string>();
 
 type Phase = EnvironmentPresentation["connection"]["phase"];
 
@@ -95,17 +95,27 @@ async function download(environments: ReadonlyArray<AldoEnvironment>): Promise<S
 }
 
 /**
- * Models for the machines that aren't connected and have none cached, once
- * each per tab: one that didn't get them (no cloud agent has reported any yet,
- * or Aldo couldn't be reached) is tried again on the next directory fetch.
+ * Models for the machines that aren't connected and have none cached, or a
+ * cached copy that lacks a provider the newest config lists: once each per
+ * tab, and again when the newest config lists other providers or after the
+ * machine was connected (its own config replaced the cache then). One that
+ * didn't get them (no cloud agent has reported any yet, or Aldo couldn't be
+ * reached) is tried again on the next directory fetch.
  */
 async function seedModels(environments: ReadonlyArray<AldoEnvironment>): Promise<void> {
+  const providers = aldoTemplateProviders();
+  // A connected machine writes its own config over the cache: checked again once it isn't.
+  for (const environment of environments) {
+    if (isLive(environment.environmentId)) modelsChecked.delete(environment.environmentId);
+  }
   const ids = environments
     .map((environment) => environment.environmentId)
-    .filter((environmentId) => !modelsChecked.has(environmentId) && !isLive(environmentId));
+    .filter(
+      (environmentId) => modelsChecked.get(environmentId) !== providers && !isLive(environmentId),
+    );
   if (ids.length === 0) return;
   // Held while in flight, so a fetch that comes meanwhile doesn't do them again.
-  for (const environmentId of ids) modelsChecked.add(environmentId);
+  for (const environmentId of ids) modelsChecked.set(environmentId, providers);
   let done = new Set<string>();
   try {
     const configs = await aldoServerConfigsFor(ids);
