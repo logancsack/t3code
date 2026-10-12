@@ -62,6 +62,7 @@ import {
   formatMailSize,
   formatMailTime,
   hasRemoteMailContent,
+  keepShownMail,
   linkifyMailText,
   mailBody,
   mailConversations,
@@ -197,14 +198,6 @@ function Notice(props: {
   );
 }
 
-/** Whether two reads of a conversation have the same messages (its messages don't change, so the one shown can stay). */
-function sameMessages(a: AldoMailThread, b: AldoMailThread): boolean {
-  return (
-    a.messages.length === b.messages.length &&
-    a.messages.every((m, i) => m.id === b.messages[i]?.id)
-  );
-}
-
 function MailBrowser(props: {
   readonly email: string;
   readonly search: AldoMailSearch;
@@ -267,23 +260,30 @@ function MailBrowser(props: {
       .finally(() => setLoadingMore(false));
   };
 
-  const [thread, setThread] = useState<AldoMailThread | null>(null);
+  // The conversation shown, and when it was read (the links to its pictures last a while).
+  const [thread, setThread] = useState<{ mail: AldoMailThread; at: number } | null>(null);
   const [threadError, setThreadError] = useState<{ id: string; message: string } | null>(null);
+  const [threadLoading, setThreadLoading] = useState(false);
   const threadRequest = useRef(0);
   const loadThread = useCallback(() => {
     if (!threadId) return;
     const request = ++threadRequest.current;
+    setThreadLoading(true);
     fetchAldoMailThread(threadId)
       .then((next) => {
         if (request !== threadRequest.current) return;
+        const now = Date.now();
         setThread((shown) =>
-          shown && shown.id === next.id && sameMessages(shown, next) ? shown : next,
+          shown && keepShownMail(shown.mail, shown.at, next, now) ? shown : { mail: next, at: now },
         );
         setThreadError(null);
       })
       .catch((cause: unknown) => {
         if (request === threadRequest.current)
           setThreadError({ id: threadId, message: messageOf(cause) });
+      })
+      .finally(() => {
+        if (request === threadRequest.current) setThreadLoading(false);
       });
   }, [threadId]);
   useEffect(loadThread, [loadThread]);
@@ -295,7 +295,7 @@ function MailBrowser(props: {
   useLiveRefresh(refresh, { key: "aldo-mail" });
 
   const shownList = list?.key === listKey ? list : null;
-  const shownThread = thread && thread.id === threadId ? thread : null;
+  const shownThread = thread && thread.mail.id === threadId ? thread.mail : null;
   const where = { ...(folder !== "inbox" ? { folder } : {}), ...(q ? { q } : {}) };
 
   return (
@@ -303,7 +303,9 @@ function MailBrowser(props: {
       email={props.email}
       actions={
         <Button size="icon-sm" variant="ghost" aria-label="Refresh mail" onClick={refresh}>
-          <RefreshCwIcon className={cn("size-3.5", listLoading && "animate-spin")} />
+          <RefreshCwIcon
+            className={cn("size-3.5", (listLoading || threadLoading) && "animate-spin")}
+          />
         </Button>
       }
     >
@@ -548,6 +550,12 @@ function MailConversation(props: {
   const last = thread.messages.at(-1)?.id ?? null;
   const first = thread.messages.some((m) => m.id === props.picked) ? props.picked : last;
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set(first ? [first] : []));
+  // Another of its messages picked in the list opens too.
+  const [opened, setOpened] = useState(first);
+  if (first !== opened) {
+    setOpened(first);
+    if (first) setOpen((current) => new Set(current).add(first));
+  }
   const [remote, setRemote] = useState(false);
   const hidden =
     !remote && thread.messages.some((m) => (m.html ? hasRemoteMailContent(m.html) : false));
@@ -640,8 +648,8 @@ function MailMessageView(props: {
   const ref = useRef<HTMLElement>(null);
   useEffect(() => {
     if (props.focus) ref.current?.scrollIntoView({ block: "start" });
-    // Only as the conversation opens.
-  }, []);
+    // As it's picked, not as the conversation is read again.
+  }, [props.focus]);
   const sender = parseMailAddress(message.from);
   const name = sender.name || sender.address || "Unknown sender";
   if (!props.open) {
@@ -744,9 +752,14 @@ function MailMessageView(props: {
             ),
           )}
         </div>
-      ) : (
+      ) : message.clipped ? null : (
         <p className="text-muted-foreground text-sm italic">No text.</p>
       )}
+      {message.clipped ? (
+        <p className="text-muted-foreground text-xs">
+          This message is too long to show here in full. An agent can read all of it.
+        </p>
+      ) : null}
       {body?.quotes ? (
         <div>
           <Button

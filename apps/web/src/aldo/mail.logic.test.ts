@@ -5,6 +5,7 @@ import {
   formatMailSize,
   hasRemoteMailContent,
   inlineImageOrigins,
+  keepShownMail,
   linkifyMailText,
   mailBody,
   mailContentSecurityPolicy,
@@ -166,17 +167,33 @@ describe("mailSnippet", () => {
 
 describe("mailFiles", () => {
   const files = [
-    { id: "logo", contentId: "Logo@x", contentType: "image/png", inline: true },
-    { id: "photo", contentId: "photo@x", contentType: "image/jpeg", inline: true },
+    {
+      id: "logo",
+      contentId: "Logo@x",
+      contentType: "image/png",
+      inline: true,
+      url: "https://cdn/l",
+    },
+    {
+      id: "photo",
+      contentId: "photo@x",
+      contentType: "image/jpeg",
+      inline: true,
+      url: "https://cdn/p",
+    },
+    { id: "chart", contentId: "chart@x", contentType: "image/svg+xml", inline: true },
     { id: "pdf", contentType: "application/pdf", inline: false },
   ];
   it("lists all but the images shown inside the mail", () => {
-    const listed = mailFiles({ html: '<img src="cid:logo@x">', attachments: files });
-    expect(listed.map((file) => file.id)).toEqual(["photo", "pdf"]);
+    const listed = mailFiles({
+      html: '<img src="cid:logo@x"><img src="cid:chart@x">',
+      attachments: files,
+    });
+    expect(listed.map((file) => file.id)).toEqual(["photo", "chart", "pdf"]);
   });
 
   it("lists every file of a text message", () => {
-    expect(mailFiles({ attachments: files })).toHaveLength(3);
+    expect(mailFiles({ attachments: files })).toHaveLength(4);
   });
 });
 
@@ -248,6 +265,19 @@ describe("linkifyMailText", () => {
     ]);
   });
 
+  it("keeps a closing bracket the address opened", () => {
+    expect(
+      linkifyMailText("(see https://en.wikipedia.org/wiki/Function_(mathematics)).").map((part) =>
+        part.kind === "link" ? part.value : null,
+      ),
+    ).toContain("https://en.wikipedia.org/wiki/Function_(mathematics)");
+    expect(linkifyMailText("[https://x.test/a]")[1]).toEqual({
+      kind: "link",
+      value: "https://x.test/a",
+      start: 1,
+    });
+  });
+
   it("links nothing else", () => {
     expect(linkifyMailText("javascript:alert(1) ftp://x")).toEqual([
       { kind: "text", value: "javascript:alert(1) ftp://x", start: 0 },
@@ -292,6 +322,8 @@ describe("hasRemoteMailContent", () => {
     );
     expect(hasRemoteMailContent("<style>@import 'https://x.test/a.css';</style>")).toBe(true);
     expect(hasRemoteMailContent('<link rel="stylesheet" href="https://x.test/a.css">')).toBe(true);
+    expect(hasRemoteMailContent('<svg><image href="https://x.test/a.png"/></svg>')).toBe(true);
+    expect(hasRemoteMailContent("<svg><image xlink:href='//x.test/a.png'/></svg>")).toBe(true);
   });
 
   it("doesn't count links, or images written into the mail", () => {
@@ -364,5 +396,34 @@ describe("mailDocument", () => {
     expect(document).toContain(
       '<body bgcolor="#eee"><div id="aldo-mail-root"><p>Hi</p></div></body>',
     );
+  });
+});
+
+describe("keepShownMail", () => {
+  const now = Date.parse("2026-10-12T12:00:00Z");
+  const thread = (expiresAt?: string) => ({
+    id: "thd_1",
+    messages: [
+      { id: "a", attachments: [] },
+      {
+        id: "b",
+        attachments: [{ url: "https://cdn/logo?sig=1", ...(expiresAt ? { expiresAt } : {}) }],
+      },
+    ],
+  });
+  it("keeps the shown conversation while its messages and image links hold", () => {
+    expect(keepShownMail(thread("2026-10-12T13:00:00Z"), now, thread(), now)).toBe(true);
+  });
+
+  it("takes a read with new messages", () => {
+    const next = { ...thread(), messages: [...thread().messages, { id: "c", attachments: [] }] };
+    expect(keepShownMail(thread("2026-10-12T13:00:00Z"), now, next, now)).toBe(false);
+  });
+
+  it("takes a read with fresh image links once the shown ones are about to expire", () => {
+    expect(keepShownMail(thread("2026-10-12T12:00:30Z"), now, thread(), now)).toBe(false);
+    // Without an expiry, links are taken to last ten minutes from when they were read.
+    expect(keepShownMail(thread(), now - 5 * 60_000, thread(), now)).toBe(true);
+    expect(keepShownMail(thread(), now - 10 * 60_000, thread(), now)).toBe(false);
   });
 });

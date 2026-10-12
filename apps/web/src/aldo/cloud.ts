@@ -1005,9 +1005,10 @@ export interface AldoMailAttachment {
   readonly size: number;
   readonly contentType: string;
   readonly inline: boolean;
-  /** For an image inside the mail: what its HTML calls it (`cid:`), and where it is for a while. */
+  /** For an image inside the mail: what its HTML calls it (`cid:`), and where it is until `expiresAt`. */
   readonly contentId?: string;
   readonly url?: string;
+  readonly expiresAt?: string;
 }
 
 export interface AldoMailMessage {
@@ -1025,6 +1026,8 @@ export interface AldoMailMessage {
   readonly html?: string;
   readonly extractedText?: string;
   readonly extractedHtml?: string;
+  /** A body was too long to send whole: cut off, or left out. */
+  readonly clipped?: boolean;
   readonly attachments: ReadonlyArray<AldoMailAttachment>;
 }
 
@@ -1104,6 +1107,7 @@ export async function fetchAldoMailThread(
             inline: a.inline === true,
             ...(typeof a.contentId === "string" && a.contentId ? { contentId: a.contentId } : {}),
             ...(typeof a.url === "string" && a.url.startsWith("https://") ? { url: a.url } : {}),
+            ...(typeof a.expiresAt === "string" && a.expiresAt ? { expiresAt: a.expiresAt } : {}),
           },
         ];
       },
@@ -1124,6 +1128,7 @@ export async function fetchAldoMailThread(
         ...optional("html"),
         ...optional("extractedText"),
         ...optional("extractedHtml"),
+        ...(mail.clipped === true ? { clipped: true } : {}),
         attachments,
       },
     ];
@@ -1131,7 +1136,7 @@ export async function fetchAldoMailThread(
   return { id: str(thread.id) || threadId, subject: str(thread.subject), messages };
 }
 
-/** Where an attachment of the agents' mail downloads from: Aldo sends the browser on to AgentMail's signed address for it. */
+/** Where an attachment of the agents' mail downloads from: Aldo checks it, then sends the browser on to AgentMail's signed address for it. */
 export function aldoMailAttachmentUrl(threadId: string, attachmentId: string): string {
   return `/api/agent-inbox/threads/${encodeURIComponent(threadId)}/attachments/${encodeURIComponent(attachmentId)}`;
 }

@@ -191,7 +191,7 @@ export interface AldoMailFile extends AldoMailInlineImage {
   readonly contentType: string;
 }
 
-/** The files a message carries to list under it: all but the images shown inside it. */
+/** The files a message carries to list under it: all but the images shown inside it (those Aldo gave an address for). */
 export function mailFiles<T extends AldoMailFile>(message: {
   readonly html?: string;
   readonly extractedHtml?: string;
@@ -202,10 +202,47 @@ export function mailFiles<T extends AldoMailFile>(message: {
     (file) =>
       !(
         file.contentId &&
+        file.url &&
         file.contentType.startsWith("image/") &&
         html.includes(`cid:${file.contentId.toLowerCase()}`)
       ),
   );
+}
+
+/** How long a link to a picture inside mail lasts when Aldo doesn't say (AgentMail signs them for a while). */
+const MAIL_LINK_DEFAULT_MS = 10 * 60_000;
+/** How long before such a link expires that a conversation read again takes the shown one's place. */
+const MAIL_LINK_MARGIN_MS = 60_000;
+
+/**
+ * Whether a conversation read again can leave the one shown as it is, so
+ * nothing on screen reloads: the same messages, with the links to the
+ * pictures inside them (read at `loadedAt`) good for a while yet.
+ */
+export function keepShownMail(
+  shown: AldoMailThreadLinks,
+  loadedAt: number,
+  next: AldoMailThreadLinks,
+  now: number,
+): boolean {
+  if (shown.id !== next.id || shown.messages.length !== next.messages.length) return false;
+  if (!shown.messages.every((message, i) => message.id === next.messages[i]?.id)) return false;
+  return shown.messages.every((message) =>
+    message.attachments.every((file) => {
+      if (!file.url) return true;
+      const said = file.expiresAt ? Date.parse(file.expiresAt) : Number.NaN;
+      const ends = Number.isFinite(said) ? said : loadedAt + MAIL_LINK_DEFAULT_MS;
+      return ends - now > MAIL_LINK_MARGIN_MS;
+    }),
+  );
+}
+
+export interface AldoMailThreadLinks {
+  readonly id: string;
+  readonly messages: ReadonlyArray<{
+    readonly id: string;
+    readonly attachments: ReadonlyArray<{ readonly url?: string; readonly expiresAt?: string }>;
+  }>;
 }
 
 /** A folder or search's list as loaded: its key (folder or search), messages so far, and where the next page starts. */
@@ -273,9 +310,14 @@ export function linkifyMailText(text: string): ReadonlyArray<{
   let last = 0;
   for (const match of text.matchAll(pattern)) {
     let url = match[0];
-    // Punctuation that ends a sentence isn't part of the address.
-    const trailing = /[.,;:!?)\]]+$/.exec(url)?.[0] ?? "";
-    if (trailing) url = url.slice(0, -trailing.length);
+    // Punctuation that ends a sentence isn't part of the address, nor a bracket it doesn't open.
+    for (;;) {
+      const end = url.at(-1) ?? "";
+      const opener = end === ")" ? "(" : end === "]" ? "[" : null;
+      const unopened = opener !== null && url.split(opener).length < url.split(end).length;
+      if (!unopened && !(end && ".,;:!?".includes(end))) break;
+      url = url.slice(0, -1);
+    }
     const start = match.index ?? 0;
     if (start > last) parts.push({ kind: "text", value: text.slice(last, start), start: last });
     parts.push({ kind: "link", value: url, start });
@@ -314,6 +356,7 @@ export function withInlineImages(html: string, images: ReadonlyArray<AldoMailInl
 export function hasRemoteMailContent(html: string): boolean {
   return (
     /\b(?:src|srcset|background|poster)\s*=\s*["']?\s*(?:https?:)?\/\//i.test(html) ||
+    /<(?:image|use|feimage)\b[^>]*?\s(?:xlink:)?href\s*=\s*["']?\s*(?:https?:)?\/\//i.test(html) ||
     /url\(\s*["']?\s*(?:https?:)?\/\//i.test(html) ||
     /@import\b/i.test(html) ||
     /<link\b[^>]*\bstylesheet\b/i.test(html)
