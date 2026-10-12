@@ -97,12 +97,17 @@ async function download(environments: ReadonlyArray<AldoEnvironment>): Promise<S
 /**
  * Models for the machines that aren't connected and have none cached, or a
  * cached copy that lacks a provider the newest config lists: once each per
- * tab, and again when the newest config lists other providers. One that
+ * tab, and again when the newest config lists other providers or after the
+ * machine was connected (its own config replaced the cache then). One that
  * didn't get them (no cloud agent has reported any yet, or Aldo couldn't be
  * reached) is tried again on the next directory fetch.
  */
 async function seedModels(environments: ReadonlyArray<AldoEnvironment>): Promise<void> {
   const providers = aldoTemplateProviders();
+  // A connected machine writes its own config over the cache: checked again once it isn't.
+  for (const environment of environments) {
+    if (isLive(environment.environmentId)) modelsChecked.delete(environment.environmentId);
+  }
   const ids = environments
     .map((environment) => environment.environmentId)
     .filter(

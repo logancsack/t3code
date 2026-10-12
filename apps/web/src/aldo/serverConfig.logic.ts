@@ -2,15 +2,50 @@
 // before a provider shipped (Muse Code, say) lists fewer, and gets the rest
 // when its T3 starts again.
 
-type ListsProviders = { readonly providers: ReadonlyArray<{ readonly instanceId?: unknown }> };
+type Provider = { readonly instanceId?: unknown; readonly driver?: unknown };
+type ListsProviders<P extends Provider = Provider> = { readonly providers: ReadonlyArray<P> };
 
 /** The provider instances a config lists, sorted. */
 export function providerInstances(config: ListsProviders): string[] {
   return config.providers.map((provider) => String(provider.instanceId)).sort();
 }
 
-/** Whether `cached` lacks a provider instance `given` lists. */
-export function lacksProviders(cached: ListsProviders, given: ListsProviders): boolean {
+/**
+ * How many kinds of agent a config lists: a T3 that started after one shipped
+ * lists more (instances the user added of one kind don't count).
+ */
+export function providerKinds(config: ListsProviders): number {
+  return new Set(config.providers.map((provider) => String(provider.driver))).size;
+}
+
+/** The providers `given` lists that `cached` doesn't, in `given`'s order. */
+export function missingProviders<P extends Provider>(
+  cached: ListsProviders,
+  given: ListsProviders<P>,
+): P[] {
   const listed = new Set(providerInstances(cached));
-  return providerInstances(given).some((instanceId) => !listed.has(instanceId));
+  return given.providers.filter((provider) => !listed.has(String(provider.instanceId)));
+}
+
+/**
+ * A stored server config with the providers of `given` (stored the same way)
+ * that it lacks added after its own, or null if it lacks none or can't be read.
+ */
+export function withMissingProviders(raw: unknown, given: string): string | null {
+  if (typeof raw !== "string") return null;
+  try {
+    type Stored = { config?: { providers?: unknown } };
+    const stored = JSON.parse(raw) as Stored;
+    const providers = stored.config?.providers;
+    const offered = (JSON.parse(given) as Stored).config?.providers;
+    if (!Array.isArray(providers) || !Array.isArray(offered)) return null;
+    const missing = missingProviders({ providers }, { providers: offered });
+    if (missing.length === 0) return null;
+    return JSON.stringify({
+      ...stored,
+      config: { ...stored.config, providers: [...providers, ...missing] },
+    });
+  } catch {
+    return null;
+  }
 }

@@ -34,7 +34,7 @@ import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 
 import { aldoKeepsEnvironmentCache, aldoThreadDetail } from "../aldo/cloud";
-import { lacksProviders } from "../aldo/serverConfig.logic";
+import { withMissingProviders } from "../aldo/serverConfig.logic";
 
 const DATABASE_NAME = "t3code:connection-runtime";
 const DATABASE_VERSION = 4;
@@ -803,10 +803,10 @@ export function seedEnvironmentCache(input: {
  * Aldo: writes the server config given for each environment that has none
  * cached (a sleeping machine this browser never connected to), so its threads
  * open with models to send with; a cached one, from the machine itself, is
- * kept, unless it lacks a provider the given one lists (its T3 started before
- * that provider shipped, and gets it when it starts again). Checked and
- * written in one transaction. Returns the environments written, and the ones
- * that already had one.
+ * kept, with the providers the given one lists that it lacks added (its T3
+ * started before they shipped, and gets them when it starts again). Checked
+ * and written in one transaction. Returns the environments written, and the
+ * ones whose cached config was kept as it was.
  */
 export function seedMissingServerConfigs(
   configs: ReadonlyMap<EnvironmentId, unknown>,
@@ -817,11 +817,9 @@ export function seedMissingServerConfigs(
       (database) =>
         Effect.gen(function* () {
           const encoded = new Map<EnvironmentId, string>();
-          const given = new Map<EnvironmentId, ServerConfig>();
           for (const [environmentId, raw] of configs) {
             const config = yield* decodeServerConfig(raw).pipe(Effect.option);
             if (Option.isNone(config)) continue;
-            given.set(environmentId, config.value);
             const stored = yield* encodeStoredServerConfig({
               schemaVersion: 1,
               environmentId,
@@ -850,16 +848,15 @@ export function seedMissingServerConfigs(
             for (const [environmentId, value] of encoded) {
               const request = store.get(environmentId);
               request.addEventListener("success", () => {
-                const cached = storedServerConfigProviders(request.result);
-                const config = given.get(environmentId);
-                if (
-                  request.result !== undefined &&
-                  !(cached && config && lacksProviders({ providers: cached }, config))
-                ) {
+                const next =
+                  request.result === undefined
+                    ? value
+                    : withMissingProviders(request.result, value);
+                if (next === null) {
                   kept.push(environmentId);
                   return;
                 }
-                store.put(value, environmentId);
+                store.put(next, environmentId);
                 written.push(environmentId);
               });
             }
@@ -868,19 +865,6 @@ export function seedMissingServerConfigs(
       (database) => Effect.sync(() => database.close()),
     ),
   );
-}
-
-/** The providers a stored server config lists, read without decoding it. */
-function storedServerConfigProviders(
-  raw: unknown,
-): ReadonlyArray<{ readonly instanceId?: unknown }> | null {
-  if (typeof raw !== "string") return null;
-  try {
-    const providers = (JSON.parse(raw) as { config?: { providers?: unknown } }).config?.providers;
-    return Array.isArray(providers) ? providers : null;
-  } catch {
-    return null;
-  }
 }
 
 /** A cached shell as stored, read without decoding it (aldo/shells.ts compares many at once). */
