@@ -10,7 +10,15 @@
 // every agent uses as MCP servers (AldoAppsSection.tsx), and the image, video and audio
 // generators agents use with the user's own API keys (AldoGeneratorRows.tsx).
 
-import { BlocksIcon, CheckCircle2Icon, CopyIcon, LoaderIcon, SparklesIcon } from "lucide-react";
+import { useNavigate } from "@tanstack/react-router";
+import {
+  BlocksIcon,
+  CheckCircle2Icon,
+  CopyIcon,
+  InboxIcon,
+  LoaderIcon,
+  SparklesIcon,
+} from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { SettingsRow, SettingsSection } from "../components/settings/settingsLayout";
@@ -529,6 +537,7 @@ function AgentSenderNameRow(props: {
 
 /** The agents' own email address; shown once Aldo has agent inboxes (a read that fails leaves it out). */
 function AgentInboxRow() {
+  const navigate = useNavigate();
   const [state, setState] = useState<AldoAgentInbox | null>(null);
   // Only the latest read's answer shows.
   const latest = useRef(0);
@@ -601,10 +610,18 @@ function AgentInboxRow() {
         }
         control={
           email ? (
-            <Button size="sm" variant="outline" onClick={copy}>
-              <CopyIcon className="size-3.5" />
-              Copy address
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              {state.mail ? (
+                <Button size="sm" variant="outline" onClick={() => void navigate({ to: "/mail" })}>
+                  <InboxIcon className="size-3.5" />
+                  Open inbox
+                </Button>
+              ) : null}
+              <Button size="sm" variant="outline" onClick={copy}>
+                <CopyIcon className="size-3.5" />
+                Copy address
+              </Button>
+            </div>
           ) : null
         }
       />

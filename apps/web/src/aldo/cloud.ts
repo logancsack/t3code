@@ -902,6 +902,8 @@ export interface AldoAgentInbox {
   readonly domain?: string;
   /** Whether its sender name can be changed here (an older Aldo leaves it out: it can't). */
   readonly renamable: boolean;
+  /** Whether its mail can be read on the Mail page (an older Aldo leaves it out: it can't). */
+  readonly mail: boolean;
   readonly inbox: AldoAgentInboxAddress | null;
 }
 
@@ -927,6 +929,7 @@ export async function fetchAldoAgentInbox(): Promise<AldoAgentInbox | null> {
     available: body.available,
     ...(typeof body.domain === "string" && body.domain ? { domain: body.domain } : {}),
     renamable: body.renamable === true,
+    mail: body.mail === true,
     inbox: inboxAddressOf(body.inbox),
   };
 }
@@ -975,6 +978,167 @@ export async function renameAldoAgentInbox(displayName: string): Promise<AldoAge
   const inbox = inboxAddressOf(body.inbox);
   if (!inbox) throw new Error("This Aldo didn't say what the inbox is called now.");
   return inbox;
+}
+
+// ---------------------------------------------------------------------------
+// The agents' mail, read on the Mail page (AldoMail.tsx)
+
+/** A message in a folder or search, without its body. */
+export interface AldoMailSummary {
+  readonly id: string;
+  readonly threadId: string;
+  readonly from: string;
+  readonly to: ReadonlyArray<string>;
+  readonly subject: string;
+  readonly preview: string;
+  readonly at: string;
+  /** The agents sent it. */
+  readonly sent: boolean;
+  readonly spam: boolean;
+  /** Files attached, not counting images shown inside it. */
+  readonly attachments: number;
+}
+
+export interface AldoMailAttachment {
+  readonly id: string;
+  readonly filename: string;
+  readonly size: number;
+  readonly contentType: string;
+  readonly inline: boolean;
+  /** For an image inside the mail: what its HTML calls it (`cid:`), and where it is until `expiresAt`. */
+  readonly contentId?: string;
+  readonly url?: string;
+  readonly expiresAt?: string;
+}
+
+export interface AldoMailMessage {
+  readonly id: string;
+  readonly from: string;
+  readonly to: ReadonlyArray<string>;
+  readonly cc: ReadonlyArray<string>;
+  readonly replyTo: ReadonlyArray<string>;
+  readonly subject: string;
+  readonly at: string;
+  readonly sent: boolean;
+  readonly spam: boolean;
+  readonly reply: boolean;
+  readonly text?: string;
+  readonly html?: string;
+  readonly extractedText?: string;
+  readonly extractedHtml?: string;
+  /** A body was too long to send whole: cut off, or left out. */
+  readonly clipped?: boolean;
+  readonly attachments: ReadonlyArray<AldoMailAttachment>;
+}
+
+/** A conversation, oldest message first. */
+export interface AldoMailThread {
+  readonly id: string;
+  readonly subject: string;
+  readonly messages: ReadonlyArray<AldoMailMessage>;
+}
+
+const str = (value: unknown) => (typeof value === "string" ? value : "");
+const strs = (value: unknown) =>
+  Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
+
+/** A page of the agents' mail: a folder, newest first, or a search (`q`), best match first; `page` is the last page's `next`. */
+export async function fetchAldoMail(
+  input: { readonly folder: string; readonly q?: string; readonly page?: string | null },
+  signal?: AbortSignal,
+): Promise<{ readonly messages: ReadonlyArray<AldoMailSummary>; readonly next: string | null }> {
+  const query = new URLSearchParams({ folder: input.folder });
+  if (input.q) query.set("q", input.q);
+  if (input.page) query.set("page", input.page);
+  const body = await api<{ messages?: unknown; next?: unknown }>(
+    `/api/agent-inbox/messages?${query}`,
+    { cache: "no-store", ...(signal ? { signal } : {}) },
+  );
+  if (!Array.isArray(body.messages)) throw new Error("This Aldo can't show your agents' mail.");
+  const messages = body.messages.flatMap((item): AldoMailSummary[] => {
+    const mail = item as Record<string, unknown>;
+    if (typeof mail.id !== "string" || typeof mail.threadId !== "string") return [];
+    return [
+      {
+        id: mail.id,
+        threadId: mail.threadId,
+        from: str(mail.from),
+        to: strs(mail.to),
+        subject: str(mail.subject),
+        preview: str(mail.preview),
+        at: str(mail.at),
+        sent: mail.sent === true,
+        spam: mail.spam === true,
+        attachments: typeof mail.attachments === "number" ? mail.attachments : 0,
+      },
+    ];
+  });
+  return { messages, next: typeof body.next === "string" && body.next ? body.next : null };
+}
+
+/** A conversation in the agents' inbox, every message whole. */
+export async function fetchAldoMailThread(
+  threadId: string,
+  signal?: AbortSignal,
+): Promise<AldoMailThread> {
+  const body = await api<{ thread?: Record<string, unknown> }>(
+    `/api/agent-inbox/threads/${encodeURIComponent(threadId)}`,
+    { cache: "no-store", ...(signal ? { signal } : {}) },
+  );
+  const thread = body.thread;
+  if (!thread || !Array.isArray(thread.messages)) {
+    throw new Error("This Aldo can't show that conversation.");
+  }
+  const messages = thread.messages.flatMap((item): AldoMailMessage[] => {
+    const mail = item as Record<string, unknown>;
+    if (typeof mail.id !== "string") return [];
+    const optional = (key: "text" | "html" | "extractedText" | "extractedHtml") =>
+      typeof mail[key] === "string" && mail[key] ? { [key]: mail[key] } : {};
+    const attachments = (Array.isArray(mail.attachments) ? mail.attachments : []).flatMap(
+      (entry): AldoMailAttachment[] => {
+        const a = entry as Record<string, unknown>;
+        if (typeof a.id !== "string") return [];
+        return [
+          {
+            id: a.id,
+            filename: str(a.filename),
+            size: typeof a.size === "number" ? a.size : 0,
+            contentType: str(a.contentType) || "application/octet-stream",
+            inline: a.inline === true,
+            ...(typeof a.contentId === "string" && a.contentId ? { contentId: a.contentId } : {}),
+            ...(typeof a.url === "string" && a.url.startsWith("https://") ? { url: a.url } : {}),
+            ...(typeof a.expiresAt === "string" && a.expiresAt ? { expiresAt: a.expiresAt } : {}),
+          },
+        ];
+      },
+    );
+    return [
+      {
+        id: mail.id,
+        from: str(mail.from),
+        to: strs(mail.to),
+        cc: strs(mail.cc),
+        replyTo: strs(mail.replyTo),
+        subject: str(mail.subject),
+        at: str(mail.at),
+        sent: mail.sent === true,
+        spam: mail.spam === true,
+        reply: mail.reply === true,
+        ...optional("text"),
+        ...optional("html"),
+        ...optional("extractedText"),
+        ...optional("extractedHtml"),
+        ...(mail.clipped === true ? { clipped: true } : {}),
+        attachments,
+      },
+    ];
+  });
+  return { id: str(thread.id) || threadId, subject: str(thread.subject), messages };
+}
+
+/** Where an attachment of the agents' mail downloads from: Aldo checks it, then sends the browser on to AgentMail's signed address for it. */
+export function aldoMailAttachmentUrl(threadId: string, attachmentId: string): string {
+  return `/api/agent-inbox/threads/${encodeURIComponent(threadId)}/attachments/${encodeURIComponent(attachmentId)}`;
 }
 
 export interface AldoPhoneSettings {
