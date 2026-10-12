@@ -14,6 +14,7 @@ import {
   ChevronsUpDownIcon,
   FolderGit2Icon,
   GraduationCapIcon,
+  InboxIcon,
   KeyRoundIcon,
   LogOutIcon,
   PaletteIcon,
@@ -115,6 +116,12 @@ const PLACES: ReadonlyArray<{
     label: "Connected accounts",
     detail: "Mail, calendar, phone and heads-ups",
     icon: PlugIcon,
+  },
+  {
+    to: "/mail",
+    label: "Agent inbox",
+    detail: "Mail your agents received and sent",
+    icon: InboxIcon,
   },
   { to: "/settings/memory", label: "Memory", detail: "What Aldo knows about you", icon: BrainIcon },
   {
