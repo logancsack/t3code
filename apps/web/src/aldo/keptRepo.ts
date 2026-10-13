@@ -5,13 +5,27 @@
 
 import { useSyncExternalStore } from "react";
 
-import { aldoThreadInKeptRepo, isAldoCloud, subscribeAldoEnvironments } from "./cloud";
+import {
+  aldoThreadInGeneral,
+  aldoThreadInKeptRepo,
+  isAldoCloud,
+  subscribeAldoEnvironments,
+} from "./cloud";
 
 /** Whether this machine's thread works in a repository Aldo keeps (always false outside Aldo). */
 export function useAldoKeptRepo(environmentId: string | null | undefined): boolean {
   return useSyncExternalStore(
     subscribeAldoEnvironments,
     () => isAldoCloud && !!environmentId && aldoThreadInKeptRepo(environmentId),
+    () => false,
+  );
+}
+
+/** Whether this machine's thread works in General, outside any repository or project (always false outside Aldo). */
+export function useAldoGeneral(environmentId: string | null | undefined): boolean {
+  return useSyncExternalStore(
+    subscribeAldoEnvironments,
+    () => isAldoCloud && !!environmentId && aldoThreadInGeneral(environmentId),
     () => false,
   );
 }

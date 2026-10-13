@@ -277,6 +277,11 @@ export function aldoThreadInKeptRepo(environmentId: string): boolean {
   return repo !== undefined && (repo === "" || repo.startsWith("aldo:"));
 }
 
+/** Whether a thread works in General's folder: in no repository and no project. */
+export function aldoThreadInGeneral(environmentId: string): boolean {
+  return knownEnvironments?.find((entry) => entry.environmentId === environmentId)?.repo === "";
+}
+
 /** Whether a thread's machine is still to be created (it is when its first message is sent). */
 export function aldoMachineIsNew(environmentId: string): boolean {
   return knownEnvironments?.find((entry) => entry.environmentId === environmentId)?.state === "new";

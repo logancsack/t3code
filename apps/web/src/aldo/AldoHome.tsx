@@ -76,6 +76,7 @@ import {
   type AldoHomeView,
 } from "./homeFeed";
 import { HOST_KINDS, openAldoRepositoryPicker } from "./AldoRepositoryDialog";
+import { useStartAldoThread } from "./newThread";
 import {
   boardFor,
   chipPrompt,
@@ -634,11 +635,16 @@ function NewMenu(props: {
   readonly projects: boolean;
   readonly repositories: boolean;
 }) {
-  // An older Aldo can't start a thread outside a repository.
-  const thread = () => openAldoRepositoryPicker(props.general ? "general" : "existing");
+  // A General draft at once; an older Aldo can't start a thread outside a repository.
+  const { start, starting } = useStartAldoThread();
+  const thread = () => (props.general ? void start([]) : openAldoRepositoryPicker("existing"));
   return (
     <Group aria-label="New">
-      <Button size="sm" onClick={thread} disabled={!props.general && !props.repositories}>
+      <Button
+        size="sm"
+        onClick={thread}
+        disabled={starting || (!props.general && !props.repositories)}
+      >
         <PlusIcon className="size-4" />
         New
       </Button>

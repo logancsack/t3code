@@ -51,6 +51,7 @@ import {
   type AldoHostKind,
   type AldoProjectHost,
 } from "./cloud";
+import { dropAldoCarriedDraft, landAldoCarriedDraft } from "./newThread";
 import { startAldoSandbox } from "./threads";
 
 const OPEN_EVENT = "aldo:open-repository-picker";
@@ -98,7 +99,15 @@ export function AldoRepositoryDialog() {
   }, []);
   if (!isAldoCloud) return null;
   return (
-    <Dialog open={open !== null} onOpenChange={(next) => !next && setOpen(null)}>
+    <Dialog
+      open={open !== null}
+      onOpenChange={(next) => {
+        if (next) return;
+        // Dismissed: a draft's words it was to take along stay where they are.
+        dropAldoCarriedDraft();
+        setOpen(null);
+      }}
+    >
       {open ? <StartPicker initialMode={open} onDone={() => setOpen(null)} /> : null}
     </Dialog>
   );
@@ -255,7 +264,7 @@ function GeneralThreadStart(props: { readonly onDone: () => void }) {
     try {
       const projectRef = await startAldoSandbox({ repos: [] });
       props.onDone();
-      await handleNewThread(projectRef);
+      landAldoCarriedDraft(await handleNewThread(projectRef));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
       setStarting(false);
@@ -347,7 +356,7 @@ function NewProjectForm(props: {
         },
       });
       props.onDone();
-      await handleNewThread(projectRef);
+      landAldoCarriedDraft(await handleNewThread(projectRef));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
       setCreating(false);
@@ -530,7 +539,7 @@ function ExistingRepositoryPicker(props: { readonly onDone: () => void }) {
     try {
       const projectRef = await startAldoSandbox({ repos: selected });
       props.onDone();
-      await handleNewThread(projectRef);
+      landAldoCarriedDraft(await handleNewThread(projectRef));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
       setStarting(false);

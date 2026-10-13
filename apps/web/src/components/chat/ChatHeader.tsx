@@ -48,7 +48,8 @@ import {
 import { cn } from "~/lib/utils";
 import { AldoPreviewsControl } from "~/aldo/AldoPreviewsControl";
 import { isAldoCloud, isAldoEnvironmentId } from "~/aldo/cloud";
-import { useAldoKeptRepo } from "~/aldo/keptRepo";
+import { AldoPlaceChip } from "~/aldo/AldoPlaceChip";
+import { useAldoGeneral, useAldoKeptRepo } from "~/aldo/keptRepo";
 import { useRightPanelStore } from "~/rightPanelStore";
 
 interface ChatHeaderProps {
@@ -162,6 +163,9 @@ export const ChatHeader = memo(function ChatHeader({
   // Aldo: a General thread, or one in a project Aldo keeps, isn't software
   // work (and Aldo syncs it itself), so no git actions, editors or scripts.
   const aldoKeptRepo = useAldoKeptRepo(activeThreadEnvironmentId);
+  // Aldo: a General draft can still move to a project or repository.
+  const aldoGeneralDraft =
+    useAldoGeneral(activeThreadEnvironmentId) && !isServerThread && draftId !== undefined;
   const updateThreadMetadata = useAtomCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
   });
@@ -316,7 +320,9 @@ export const ChatHeader = memo(function ChatHeader({
   );
 
   let projectControl: ReactNode = null;
-  if (activeProjectName && aldoKeptRepo) {
+  if (aldoGeneralDraft && draftId) {
+    projectControl = <AldoPlaceChip draftId={draftId} />;
+  } else if (activeProjectName && aldoKeptRepo) {
     projectControl = renderProjectMenu(null, null);
   } else if (activeProjectName && activeProjectScripts) {
     projectControl = (
@@ -383,7 +389,7 @@ export const ChatHeader = memo(function ChatHeader({
         {/* The project always leads the header: knowing which project a
             thread lives in is priority zero, and the thread title alone
             doesn't answer it. */}
-        {activeProjectName ? (
+        {activeProjectName || aldoGeneralDraft ? (
           <>
             <WorkspaceBreadcrumbItem className="shrink">{projectControl}</WorkspaceBreadcrumbItem>
             <WorkspaceBreadcrumbSeparator />

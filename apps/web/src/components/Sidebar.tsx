@@ -121,7 +121,13 @@ import { formatRelativeTimeLabel, parseTimestampDate } from "../timestampFormat"
 import type { SidebarThreadSummary } from "../types";
 import { cn } from "~/lib/utils";
 import { AldoThreadBadge, isAldoThreadId } from "./ManagedDevPcAgent";
-import { aldoThreadInKeptRepo, displayedThreadBranch, isAldoCloud } from "../aldo/cloud";
+import {
+  aldoSupportsGeneralThreads,
+  aldoThreadInKeptRepo,
+  displayedThreadBranch,
+  isAldoCloud,
+} from "../aldo/cloud";
+import { useStartAldoThread } from "../aldo/newThread";
 import { buildThreadActionMenuItems } from "./threadActionMenu.logic";
 import {
   animatePinnedLayoutChanges,
@@ -3412,8 +3418,15 @@ export default function Sidebar() {
   // falling back to the top project) — same resolution the command palette
   // uses. The command palette already offers a "New thread in..." submenu
   // for multi-project setups.
+  const { start: startAldoThread } = useStartAldoThread();
   const handleNewThreadClick = useCallback(
     (event?: ReactMouseEvent) => {
+      // Aldo: a General draft at once; its "General ▾" moves it before it's sent.
+      if (isAldoCloud && aldoSupportsGeneralThreads() && !event?.shiftKey) {
+        if (isMobile) setOpenMobile(false);
+        void startAldoThread([]);
+        return;
+      }
       // One project: nothing to pick, create immediately. Shift+click creates
       // directly in the current project even with several projects, skipping
       // the palette picker.
@@ -3430,7 +3443,7 @@ export default function Sidebar() {
       if (isMobile) setOpenMobile(false);
       openCommandPalette({ open: "new-thread-in" });
     },
-    [isMobile, newThreadContext, projectGroups.length, setOpenMobile],
+    [isMobile, newThreadContext, projectGroups.length, setOpenMobile, startAldoThread],
   );
 
   // The button mirrors chat.new: in multi-project setups both route through

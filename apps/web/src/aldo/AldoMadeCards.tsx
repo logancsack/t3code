@@ -21,7 +21,7 @@ import {
 import { memo, useMemo, useState, type ReactNode } from "react";
 
 import { useAssetUrlState } from "../assets/assetUrls";
-import { composerTargetKey, useComposerDraftStore } from "../composerDraftStore";
+import { readComposerThreadPrompt, useComposerDraftStore } from "../composerDraftStore";
 import { cn } from "../lib/utils";
 import { useRightPanelStore } from "../rightPanelStore";
 import {
@@ -78,9 +78,12 @@ function ImageThumb(props: {
 }
 
 function shareInComposer(threadRef: ScopedThreadRef, name: string) {
-  const store = useComposerDraftStore.getState();
-  const draft = store.draftsByThreadKey[composerTargetKey(threadRef)]?.prompt ?? "";
-  store.setPrompt(threadRef, promptWith(draft, `Share ${name} with a link.`));
+  useComposerDraftStore
+    .getState()
+    .setPrompt(
+      threadRef,
+      promptWith(readComposerThreadPrompt(threadRef), `Share ${name} with a link.`),
+    );
   window.setTimeout(
     () => document.querySelector<HTMLElement>('[data-testid="composer-editor"]')?.focus(),
     50,
