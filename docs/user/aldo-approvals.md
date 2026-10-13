@@ -37,9 +37,9 @@ Instead of explaining a task, you can show it once. **Teach this** is in the too
 1. Choose **Teach this**. The browser shows **Recording**, with how long it's run and **Stop**. Agents wait while it records, and it stops by itself after 10 minutes.
 2. Do the task, start to finish, as you'd want it done.
 3. Choose **Stop**, then say in a sentence what your agent should learn to do, like "Book a table on OpenTable for the time and party size I say".
-4. **Teach it** puts a message in the thread's message box, with the steps you took. Read it over and send it. **Discard** throws the recording away.
+4. **Teach it** puts a message in the message box of the thread you started recording from, with the steps you took. Read it over and send it. **Discard** throws the recording away.
 
-From **Do it now**, **I'm done** waits until the recording is taught or discarded, so a recording isn't left behind when you hand the browser back.
+While a recording is under way or waiting, **I'm done** (from **Do it now**, or in the Browser panel's bar) waits until it's taught or discarded, so a recording isn't left behind when you hand the browser back.
 
 The message asks the agent to write a skill from it (it shows up in **Settings â†’ Skills**), with what was particular to this time (a date, a name, a party size) as inputs it asks for. If it can do so without committing you to anything, it tries the skill once on another input, stopping before any step that books, buys, sends or submits. Then it tells you what the skill does, and offers to run it as a routine if that would help.
 
@@ -47,7 +47,7 @@ The message asks the agent to write a skill from it (it shows up in **Settings â
 
 **What it never records**: passwords, one-time codes, and card details (the number, the security code, the expiry date). For those the step says only that you typed one, such as "Typed a password into Password". Parts of an address that can carry a sign-in (tokens, codes, keys) are left out, and a value from your vault shows as its name, never its value. Scrolling, hovering, and what you do inside a frame from another site (such as a payment form a store embeds) aren't recorded either.
 
-**Where it goes**: while you record and until you choose, the steps live only in the memory of the thread's computer. A recording never goes into Aldo's logs, events, or database. **Teach it** gives the steps once to your browser, which puts them in the message box; **Discard**, or half an hour without either, deletes them. Once you send the message, it's part of that conversation like anything else you send, and nothing else keeps it.
+**Where it goes**: while you record and until you choose, the steps live only in the memory of the thread's computer. A recording never goes into Aldo's logs, events, or database. **Teach it** gives the steps to your browser, which puts them in the message box, and they're deleted once it has them; **Discard**, or half an hour without either, deletes them. Once you send the message, it's part of that conversation like anything else you send, and nothing else keeps it.
 
 ## Heads-ups
 

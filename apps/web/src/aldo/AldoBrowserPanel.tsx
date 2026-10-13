@@ -165,6 +165,8 @@ export function AldoBrowserPanel({
   const teachStepsWait = useRef<((steps: string[] | null, id?: string) => void) | null>(null);
   const route = useParams({ strict: false }) as { environmentId?: string; threadId?: string };
   const teachThread = threadId ?? (route.environmentId === environmentId ? route.threadId : null);
+  // The conversation a recording started from: its lesson goes there, wherever the user went since.
+  const [teachFrom, setTeachFrom] = useState<string | null>(null);
   const [address, setAddress] = useState("");
   const [editingAddress, setEditingAddress] = useState(false);
   const [now, setNow] = useState(() => Date.now());
@@ -679,9 +681,15 @@ export function AldoBrowserPanel({
   const canTeach = teach?.state === "off" && Boolean(teachThread) && connected;
   const teaching = teach?.state === "recording" || teach?.state === "recorded";
   useEffect(() => onTeaching?.(teaching), [onTeaching, teaching]);
+  useEffect(() => {
+    if (!teaching) setTeachFrom(null);
+  }, [teaching]);
+  // One started elsewhere (another panel, another device) goes to the conversation on screen.
+  const lessonThread = (teaching && teachFrom) || teachThread;
   /** It records the browser, so that's what shows, not the Desktop's apps. */
   const startTeaching = () => {
     setView("browser");
+    setTeachFrom(teachThread ?? null);
     send({ type: "teach", action: "start" });
   };
   /**
@@ -693,12 +701,12 @@ export function AldoBrowserPanel({
    */
   const teachIt = (sentence: string) =>
     new Promise<void>((resolve, reject) => {
-      if (!teachThread) return reject(new Error("Open the conversation to teach its agent."));
+      if (!lessonThread) return reject(new Error("Open the conversation to teach its agent."));
       const unreachable = new Error(
         "Couldn't reach its computer's browser. Try again in a moment.",
       );
       if (socketRef.current?.readyState !== WebSocket.OPEN) return reject(unreachable);
-      const target = scopeThreadRef(environmentId as EnvironmentId, teachThread as ThreadId);
+      const target = scopeThreadRef(environmentId as EnvironmentId, lessonThread as ThreadId);
       const timer = setTimeout(() => reject(unreachable), 15_000);
       teachStepsWait.current = (steps, id) => {
         clearTimeout(timer);
@@ -937,7 +945,7 @@ export function AldoBrowserPanel({
         </Menu>
       </div>
 
-      {inTakeover ? null : <AldoHandoffBar environmentId={environmentId} />}
+      {inTakeover ? null : <AldoHandoffBar environmentId={environmentId} teaching={teaching} />}
 
       {teach?.state === "recording" ? (
         <AldoTeachBar

@@ -29,7 +29,10 @@ export function AldoTeachBar(props: {
       className="flex shrink-0 items-center gap-2 border-b border-destructive/30 bg-destructive/8 px-3 py-1.5 text-xs"
     >
       <span className="size-2 shrink-0 rounded-full bg-destructive" aria-hidden />
-      <span className="shrink-0 font-medium tabular-nums">Recording · {clock}</span>
+      {/* The clock ticks outside what's announced: "Recording" is said once. */}
+      <span className="shrink-0 font-medium tabular-nums">
+        Recording<span aria-hidden> · {clock}</span>
+      </span>
       <span className="min-w-0 flex-1 truncate text-muted-foreground">
         Do the task here. Agents wait; passwords aren't recorded.
       </span>
