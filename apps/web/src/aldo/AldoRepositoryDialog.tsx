@@ -21,7 +21,6 @@ import {
 
 import { Button } from "../components/ui/button";
 import {
-  Dialog,
   DialogDescription,
   DialogHeader,
   DialogPanel,
@@ -44,21 +43,17 @@ import { AldoAccountButton, useAldoAccounts } from "./AldoAccountsPanel";
 import {
   aldoSupportsGeneralThreads,
   aldoSupportsProjects,
-  isAldoCloud,
   listAldoRepositoryDirectory,
   subscribeAldoEnvironments,
   type AldoAccount,
   type AldoHostKind,
   type AldoProjectHost,
 } from "./cloud";
+import { HOST_KINDS, type AldoStartMode as Mode } from "./AldoRepositoryPicker";
 import { dropAldoCarriedDraft, landAldoCarriedDraft } from "./newThread";
 import { startAldoSandbox } from "./threads";
 
-const OPEN_EVENT = "aldo:open-repository-picker";
 const MAX_REPOS = 6;
-
-/** A new project, existing repositories, or none (General: work that isn't code). */
-type Mode = "new" | "existing" | "general";
 
 const HOST_LABELS: Record<AldoProjectHost, string> = {
   github: "GitHub",
@@ -67,8 +62,6 @@ const HOST_LABELS: Record<AldoProjectHost, string> = {
   azure: "Azure DevOps",
   aldo: "Aldo",
 };
-/** The git hosts (Aldo's own projects need no account). */
-export const HOST_KINDS: ReadonlyArray<AldoHostKind> = ["github", "gitlab", "bitbucket", "azure"];
 
 /** "gitlab:group/project" → GitLab; "aldo:podcast-clips" → Aldo; "owner/repo" → GitHub. */
 function hostOf(ref: string): AldoProjectHost {
@@ -84,41 +77,20 @@ function shortName(ref: string): string {
   return pathOf(ref).split("/").at(-1) ?? ref;
 }
 
-/** Opens the start dialog: a new project, a thread in existing repositories, or one in none. */
-export function openAldoRepositoryPicker(mode: Mode = "existing"): void {
-  window.dispatchEvent(new CustomEvent<Mode>(OPEN_EVENT, { detail: mode }));
-}
-
-export function AldoRepositoryDialog() {
-  const [open, setOpen] = useState<Mode | null>(null);
-  useEffect(() => {
-    if (!isAldoCloud) return;
-    const handleOpen = (event: Event) => setOpen((event as CustomEvent<Mode>).detail ?? "existing");
-    window.addEventListener(OPEN_EVENT, handleOpen);
-    return () => window.removeEventListener(OPEN_EVENT, handleOpen);
-  }, []);
-  if (!isAldoCloud) return null;
+/** The start dialog, loaded when it's first opened (AldoRepositoryPicker.tsx). */
+export function AldoStartDialog(props: {
+  readonly initialMode: Mode;
+  readonly onClose: () => void;
+}) {
   return (
-    <Dialog
-      open={open !== null}
-      onOpenChange={(next) => {
-        if (next) return;
-        // Dismissed: a draft's words it was to take along stay where they are.
+    <StartPicker
+      initialMode={props.initialMode}
+      onDone={props.onClose}
+      onCancel={() => {
         dropAldoCarriedDraft();
-        setOpen(null);
+        props.onClose();
       }}
-    >
-      {open ? (
-        <StartPicker
-          initialMode={open}
-          onDone={() => setOpen(null)}
-          onCancel={() => {
-            dropAldoCarriedDraft();
-            setOpen(null);
-          }}
-        />
-      ) : null}
-    </Dialog>
+    />
   );
 }
 

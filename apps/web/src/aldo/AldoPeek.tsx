@@ -7,9 +7,8 @@
 // peeks the same way: the card in full.
 
 import { ArrowUpRightIcon, MessageCircleQuestionIcon, XIcon } from "lucide-react";
-import { createContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, lazy, Suspense, useEffect, useState, type ReactNode } from "react";
 
-import ChatMarkdown from "../components/ChatMarkdown";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Skeleton } from "../components/ui/skeleton";
@@ -28,6 +27,10 @@ import {
 } from "./cloud";
 import { refreshAldoHome } from "./homeFeed";
 import { modelName, needsYouKind, sameTarget } from "./home.logic";
+
+// The markdown renderer loads with the first peek, not with the app.
+const loadChatMarkdown = () => import("../components/ChatMarkdown");
+const ChatMarkdown = lazy(loadChatMarkdown);
 
 export type AldoPeekTarget =
   | { readonly kind: "thread"; readonly target: AldoHomeTarget }
@@ -234,6 +237,8 @@ function LatestTurns(props: { readonly conversation: AldoHomeConversation }) {
   useEffect(() => {
     let current = true;
     setError(null);
+    // Fetched alongside the turns, so the skeleton covers both.
+    void loadChatMarkdown();
     void fetchAldoConversationCopy({ environmentId, threadId })
       .then((next) => {
         if (current) setCopy(next);
@@ -250,11 +255,7 @@ function LatestTurns(props: { readonly conversation: AldoHomeConversation }) {
     <div className="flex flex-col gap-3">
       <h3 className="font-medium text-muted-foreground text-xs">Latest in the thread</h3>
       {copy === undefined && !error ? (
-        <div className="flex flex-col gap-2">
-          <Skeleton className="h-4 w-3/4" />
-          <Skeleton className="h-4 w-full" />
-          <Skeleton className="h-4 w-2/3" />
-        </div>
+        <TurnsSkeleton />
       ) : error ? (
         <p className="text-destructive-foreground text-xs">{error}</p>
       ) : messages.length === 0 ? (
@@ -262,14 +263,26 @@ function LatestTurns(props: { readonly conversation: AldoHomeConversation }) {
           {c.summary ?? "Aldo has no copy of its turns yet. Open the thread to see it all."}
         </p>
       ) : (
-        messages.map((m) =>
-          m.role === "user" ? (
-            <UserTurn key={`${m.role}:${m.createdAt}`} text={m.text} />
-          ) : (
-            <ChatMarkdown key={`${m.role}:${m.createdAt}`} text={m.text} cwd={undefined} />
-          ),
-        )
+        <Suspense fallback={<TurnsSkeleton />}>
+          {messages.map((m) =>
+            m.role === "user" ? (
+              <UserTurn key={`${m.role}:${m.createdAt}`} text={m.text} />
+            ) : (
+              <ChatMarkdown key={`${m.role}:${m.createdAt}`} text={m.text} cwd={undefined} />
+            ),
+          )}
+        </Suspense>
       )}
+    </div>
+  );
+}
+
+function TurnsSkeleton() {
+  return (
+    <div className="flex flex-col gap-2">
+      <Skeleton className="h-4 w-3/4" />
+      <Skeleton className="h-4 w-full" />
+      <Skeleton className="h-4 w-2/3" />
     </div>
   );
 }

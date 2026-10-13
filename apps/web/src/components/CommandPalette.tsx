@@ -55,6 +55,8 @@ import {
   TextSearchIcon,
 } from "lucide-react";
 import {
+  lazy,
+  Suspense,
   useCallback,
   useDeferredValue,
   useEffect,
@@ -152,8 +154,6 @@ import { GitHubRepositoryBrowser } from "./GitHubRepositoryBrowser";
 import { findProjectForGitHubRepository } from "./GitHubRepositoryBrowser.logic";
 import { AzureDevOpsIcon, BitbucketIcon, GitHubIcon, GitLabIcon } from "./Icons";
 import { ProjectFavicon } from "./ProjectFavicon";
-import { ProjectFilePicker } from "./files/ProjectFilePicker";
-import { ProjectContentSearchDialog } from "./search/ProjectContentSearchDialog";
 import { toggleThemeEditorForTheme } from "./settings/themeEditorStore";
 import { searchSettings, SETTINGS_SECTION_LABELS } from "./settings/settingsSearch";
 import {
@@ -183,7 +183,7 @@ import {
   buildSidebarProjectSnapshots,
 } from "../sidebarProjectGrouping";
 import { displayedThreadBranch, isAldoCloud } from "../aldo/cloud";
-import { openAldoRepositoryPicker } from "../aldo/AldoRepositoryDialog";
+import { openAldoRepositoryPicker } from "../aldo/AldoRepositoryPicker";
 import type { Project } from "../types";
 
 const EMPTY_BROWSE_ENTRIES: FilesystemBrowseResult["entries"] = [];
@@ -546,6 +546,16 @@ export function CommandPalette({ children }: { children: ReactNode }) {
   );
 }
 
+// The file picker and content search load when first opened, not with the app.
+const ProjectFilePicker = lazy(() =>
+  import("./files/ProjectFilePicker").then((module) => ({ default: module.ProjectFilePicker })),
+);
+const ProjectContentSearchDialog = lazy(() =>
+  import("./search/ProjectContentSearchDialog").then((module) => ({
+    default: module.ProjectContentSearchDialog,
+  })),
+);
+
 function CommandPaletteDialog(props: {
   readonly mode: SearchOverlayMode;
   readonly openIntent: CommandPaletteOpenIntent | null;
@@ -577,9 +587,13 @@ function CommandPaletteDialog(props: {
       }}
     >
       {props.mode === "files" ? (
-        <ProjectFilePicker setOpen={props.setOpen} />
+        <Suspense fallback={null}>
+          <ProjectFilePicker setOpen={props.setOpen} />
+        </Suspense>
       ) : props.mode === "content" ? (
-        <ProjectContentSearchDialog onOpenChange={props.setOpen} />
+        <Suspense fallback={null}>
+          <ProjectContentSearchDialog onOpenChange={props.setOpen} />
+        </Suspense>
       ) : (
         <OpenCommandPaletteDialog
           openIntent={props.openIntent}
