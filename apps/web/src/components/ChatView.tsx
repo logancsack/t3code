@@ -2342,7 +2342,7 @@ function ChatViewContent(props: ChatViewProps) {
           variant: unavailableConnection.phase === "error" ? "error" : "warning",
           icon: <WifiOffIcon />,
           title: isAldoCloud
-            ? "Can't reach this thread's cloud agent"
+            ? "Can't reach this thread's computer"
             : `${activeEnvironmentActionUnavailableState.label}: ${connectionStatusTitle(unavailableConnection)}`,
           description:
             unavailableConnection.error ??

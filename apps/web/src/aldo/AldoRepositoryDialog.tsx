@@ -140,15 +140,15 @@ function projectSlug(title: string): string {
 
 /** With Aldo's own projects, which aren't repositories on a git host. */
 const PROJECT_DESCRIPTIONS: Partial<Record<Mode, string>> = {
-  new: "A repository on your git host for code, or an Aldo project for work that isn't code (a business, a reporting process, a trip): Aldo keeps its files, notes and history, shared by every thread in it. Aldo creates it and a cloud agent to work in it.",
+  new: "A repository on your git host for code, or an Aldo project for work that isn't code (a business, a reporting process, a trip): Aldo keeps its files, notes and history, shared by every thread in it. Aldo creates it, and an agent works in it on a computer of its own.",
   existing:
-    "Pick one or more repositories or projects. The thread gets its own cloud agent, with each repository cloned on a new branch (and a project on main, which every thread in it shares).",
+    "Pick one or more repositories or projects. The thread's agent gets a computer of its own, with each repository cloned on a new branch (and a project on main, which every thread in it shares).",
 };
 
 const DESCRIPTIONS: Record<Mode, string> = {
-  new: "Aldo creates the repository and a cloud agent to work in it. Tell the agent what to build.",
+  new: "Aldo creates the repository, and an agent works in it on a computer of its own. Tell it what to build.",
   existing:
-    "Pick one or more repositories. The thread gets its own cloud agent, with each one cloned on a new branch.",
+    "Pick one or more repositories. The thread's agent gets a computer of its own, with each one cloned on a new branch.",
   general:
     "For work that isn't code: research, errands, email, documents, anything on the web. The thread's agent gets its own computer, with a browser and the accounts you connected, and the thread shows under General.",
 };

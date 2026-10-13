@@ -19,8 +19,8 @@ interface UsageStatus {
  */
 export type AldoUsageAnswers = "loading" | "failed" | Readonly<Record<string, unknown>>;
 
-export const ALDO_UNREPORTED_USAGE = "This cloud agent hasn't reported its usage yet.";
-export const ALDO_UNREAD_USAGE = "This cloud agent's usage couldn't be read.";
+export const ALDO_UNREPORTED_USAGE = "This thread's computer hasn't reported its usage yet.";
+export const ALDO_UNREAD_USAGE = "This thread's computer's usage couldn't be read.";
 
 const decodeSummary = Schema.decodeUnknownOption(UsageSummary);
 
@@ -46,7 +46,7 @@ export function withAldoUsage<S extends UsageStatus>(
 }
 
 function agents(count: number): string {
-  return count === 1 ? "1 cloud agent" : `${count} cloud agents`;
+  return count === 1 ? "1 computer" : `${count} computers`;
 }
 
 /** The lines for the agents left out (by their errors), instead of one each. */

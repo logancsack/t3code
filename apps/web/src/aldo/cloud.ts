@@ -313,15 +313,15 @@ export function aldoStartState(environmentId: string, threadId: string): AldoSta
 /** What a thread's panels say while its cloud agent is offline. */
 export function aldoOfflineMessage(environmentId: string): string {
   const preload = getAldoPreloadSettings();
-  if (aldoStartOf(environmentId) === "starting") return "Starting the cloud agent…";
+  if (aldoStartOf(environmentId) === "starting") return "Starting its computer…";
   if (aldoMachineIsNew(environmentId)) {
     return preload.newThreads
-      ? "Starting the cloud agent…"
-      : "The cloud agent starts when you send your first message.";
+      ? "Starting its computer…"
+      : "Its computer starts when you send your first message.";
   }
   return preload.openedThreads
     ? "Reconnecting to the cloud…"
-    : "This cloud agent is asleep. It wakes when you send a message.";
+    : "Its computer is asleep. It wakes when you send a message.";
 }
 
 export function requestAldoDirectoryRefresh(): void {
@@ -482,7 +482,7 @@ export const aldoEnvironmentGateway = {
           : Effect.fail(
               new ConnectionBlockedError({
                 reason: "dormant",
-                detail: "This cloud agent is asleep.",
+                detail: "Its computer is asleep.",
               }),
             ),
       ),
@@ -553,7 +553,7 @@ export async function removeAldoProjectSandbox(environmentId: string): Promise<v
 
 /** How removing a project in Aldo reads in a confirmation. */
 export const ALDO_PROJECT_REMOVAL_NOTE =
-  "This also deletes the project's cloud agents, including any changes they haven't pushed.";
+  "This also deletes the computers of the project's threads, including any changes they haven't pushed.";
 
 /**
  * Puts back a machine started or woken ahead of use once the user has left

@@ -2,7 +2,7 @@
 // thread's machine is created when its first message is sent): T3 hands each
 // command here before sending it; Aldo creates or wakes the machine and
 // connects to it, and then T3 sends the command as usual. Until then the
-// thread shows the message and "Creating your cloud agent" or "Reconnecting to
+// thread shows the message and "Setting up its computer" or "Reconnecting to
 // the cloud", and a new thread shows in the sidebar meanwhile
 // (startingThreads.ts). A message goes to Aldo first (holdAldoTurn), which
 // brings the machine up and sends it even if this page goes away or a first
@@ -112,7 +112,7 @@ export function aldoStartingLabel(environmentId: string): string {
   }
   const kind =
     starting.get(environmentId) ?? (aldoMachineIsNew(environmentId) ? "creating" : "reconnecting");
-  return kind === "creating" ? "Creating your cloud agent" : "Reconnecting to the cloud";
+  return kind === "creating" ? "Setting up its computer" : "Reconnecting to the cloud";
 }
 
 /** Creates or wakes a thread's cloud agent and waits until the client is connected to it. */
@@ -149,7 +149,7 @@ export function ensureAldoConnected(environmentId: string): Promise<void> {
       }
       await sleep(250);
     }
-    throw new Error("The cloud agent didn't come online. Try sending again.");
+    throw new Error("Its computer didn't come online. Try sending again.");
   })().finally(() => {
     inFlight.delete(environmentId);
     starting.delete(environmentId);
@@ -283,7 +283,8 @@ export function notifyAldoRefusal(cause: unknown): void {
   if (refusalToastId !== null) toastManager.close(refusalToastId);
   refusalToastId = toastManager.add({
     type: "warning",
-    title: cause.status === 402 ? "This cloud agent can't start" : "Too many cloud agents at once",
+    title:
+      cause.status === 402 ? "This thread's computer can't start" : "Too many computers at once",
     description: cause.message,
     timeout: 0,
     ...(cause.status === 402

@@ -18,7 +18,7 @@ describe("describeAldoThreadStart", () => {
     expect(view).toMatchObject({
       tone: "progress",
       label: "Starting",
-      title: "Creating your cloud agent",
+      title: "Setting up its computer",
       reason: null,
       step: 0,
     });
@@ -45,7 +45,7 @@ describe("describeAldoThreadStart", () => {
   it("wakes a machine that's asleep", () => {
     expect(
       describeAldoThreadStart({ start: { state: "starting" }, machine: "stopped", repos: REPOS }),
-    ).toMatchObject({ title: "Waking your cloud agent", step: 0 });
+    ).toMatchObject({ title: "Waking its computer", step: 0 });
   });
 
   it("says why it waits, without telling the user to try again themselves", () => {
@@ -109,7 +109,7 @@ describe("describeAldoThreadStart", () => {
     ).toMatchObject({
       tone: "progress",
       label: "Sending",
-      title: "Waking your cloud agent",
+      title: "Waking its computer",
       step: 0,
     });
     expect(

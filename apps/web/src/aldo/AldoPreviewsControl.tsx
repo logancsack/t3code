@@ -156,7 +156,7 @@ export function AldoPreviewsControl(props: {
             <div className="px-2 py-3 text-xs text-muted-foreground">
               {aldoMachineIsNew(props.environmentId)
                 ? aldoOfflineMessage(props.environmentId)
-                : "This cloud agent is asleep. Opening a preview's link reconnects it."}
+                : "Its computer is asleep. Opening a preview's link wakes it."}
             </div>
           ) : ports.length === 0 ? (
             <div className="space-y-1 px-2 py-3 text-xs text-muted-foreground">

@@ -103,7 +103,7 @@ export function describeAldoThreadStart(input: {
         return {
           tone: "progress",
           label: "Starting",
-          title: "Waking your cloud agent",
+          title: "Waking its computer",
           body: `Its computer is starting again. ${SOON}`,
           reason: null,
           step,
@@ -112,7 +112,7 @@ export function describeAldoThreadStart(input: {
       return {
         tone: "progress",
         label: "Starting",
-        title: "Creating your cloud agent",
+        title: "Setting up its computer",
         body:
           repos.length > 0
             ? `Setting up its computer and cloning ${listed(repos)}. ${SOON}`
@@ -175,7 +175,7 @@ function describeHeldMessage(
         : {
             tone: "progress",
             label: "Sending",
-            title: "Waking your cloud agent",
+            title: "Waking its computer",
             body: "Its computer is starting again. Your message goes to the agent as soon as it's up.",
             reason: null,
             step,
