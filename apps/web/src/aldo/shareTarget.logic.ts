@@ -99,6 +99,7 @@ export type AldoShareRefusal =
   | "unsupported-image"
   | "empty"
   | "too-large"
+  | "no-files"
   | "image-too-large"
   | "unreadable"
   | "missing";
@@ -111,40 +112,64 @@ export interface AldoShareRefused {
 export interface AldoShareLimits {
   /** Attachments one message takes. */
   readonly attachments: number;
-  /** The largest file (not image) the composer takes before the agent's computer says. */
-  readonly fileBytes: number;
+  /** The largest file (not image) the draft's computer takes, as its composer says; null when it takes none. */
+  readonly fileBytes: number | null;
 }
 
-export const ALDO_SHARE_LIMITS: AldoShareLimits = {
+/** Before the draft's computer says otherwise. */
+export const ALDO_SHARE_LIMITS = {
   attachments: PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   fileBytes: PROVIDER_SEND_TURN_MAX_FILE_BYTES,
-};
+} satisfies AldoShareLimits;
 
-/**
- * Which shared files the composer takes, as images (made smaller to fit, as
- * a pasted one is) or as files, and which it doesn't, in the order shared.
- */
+/** A shared file the composer may take: as an image (made smaller to fit, as a pasted one is) or as a file. */
+export interface AldoShareCandidate<F> {
+  readonly kind: "image" | "file";
+  readonly file: F;
+}
+
+/** Which shared files the composer may take, in the order shared, and which it can't anywhere (an image it can't attach, an empty file). */
 export function sortAldoSharedFiles<F extends Pick<File, "name" | "type" | "size">>(
   files: ReadonlyArray<F>,
-  limits: AldoShareLimits = ALDO_SHARE_LIMITS,
-): { readonly images: F[]; readonly files: F[]; readonly refused: AldoShareRefused[] } {
-  const images: F[] = [];
-  const others: F[] = [];
+): { readonly candidates: AldoShareCandidate<F>[]; readonly refused: AldoShareRefused[] } {
+  const candidates: AldoShareCandidate<F>[] = [];
   const refused: AldoShareRefused[] = [];
   for (const file of files) {
-    const refuse = (why: AldoShareRefusal) => refused.push({ name: file.name || "file", why });
-    if (images.length + others.length >= limits.attachments) {
-      refuse("too-many");
-      continue;
-    }
     const kind = classifyComposerAttachmentFile(file);
-    if (kind === "unsupported-image") refuse("unsupported-image");
-    else if (kind === "image") images.push(file);
-    else if (file.size <= 0) refuse("empty");
-    else if (file.size > limits.fileBytes) refuse("too-large");
-    else others.push(file);
+    if (kind === "unsupported-image")
+      refused.push({ name: file.name || "file", why: "unsupported-image" });
+    else if (kind === "file" && file.size <= 0)
+      refused.push({ name: file.name || "file", why: "empty" });
+    else candidates.push({ kind, file });
   }
-  return { images, files: others, refused };
+  return { candidates, refused };
+}
+
+/**
+ * What a draft takes of them, in the order shared, up to `limits.attachments`:
+ * the images, but those that couldn't be made ready (`unready`, refused
+ * already, which take no slot), and the files its computer takes
+ * (`limits.fileBytes`). Why each other wasn't.
+ */
+export function fitAldoSharedFiles<F extends Pick<File, "name" | "size">>(
+  candidates: ReadonlyArray<AldoShareCandidate<F>>,
+  unready: ReadonlySet<AldoShareCandidate<F>>,
+  limits: AldoShareLimits = ALDO_SHARE_LIMITS,
+): { readonly taken: AldoShareCandidate<F>[]; readonly refused: AldoShareRefused[] } {
+  const taken: AldoShareCandidate<F>[] = [];
+  const refused: AldoShareRefused[] = [];
+  for (const candidate of candidates) {
+    if (unready.has(candidate)) continue;
+    const refuse = (why: AldoShareRefusal) =>
+      refused.push({ name: candidate.file.name || "file", why });
+    const { fileBytes } = limits;
+    if (candidate.kind === "file" && fileBytes === null) refuse("no-files");
+    else if (candidate.kind === "file" && fileBytes !== null && candidate.file.size > fileBytes)
+      refuse("too-large");
+    else if (taken.length >= limits.attachments) refuse("too-many");
+    else taken.push(candidate);
+  }
+  return { taken, refused };
 }
 
 function refusalSentence(refused: AldoShareRefused, limits: AldoShareLimits): string {
@@ -157,7 +182,12 @@ function refusalSentence(refused: AldoShareRefused, limits: AldoShareLimits): st
     case "empty":
       return `'${name}' is empty.`;
     case "too-large":
-      return fileAttachmentTooLargeMessage(name, limits.fileBytes);
+      return fileAttachmentTooLargeMessage(
+        name,
+        limits.fileBytes ?? PROVIDER_SEND_TURN_MAX_FILE_BYTES,
+      );
+    case "no-files":
+      return `'${name}' couldn't be attached: this thread's computer doesn't take files.`;
     case "image-too-large":
       return `'${name}' is too large, even made smaller.`;
     case "unreadable":

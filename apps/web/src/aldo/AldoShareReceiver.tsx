@@ -2,12 +2,17 @@
 // to send (shareTarget.logic.ts). It's a General draft, or where a new thread
 // opens on an Aldo without General threads. The words go in the prompt, the
 // files the composer takes are attached as a pasted file would be, and a
-// toast names the rest. Mounted once, in Aldo.
+// toast names the rest. Mounted once, in Aldo; as the app opens, it also gives
+// drafts a share put files in their bytes back (shareDraftFiles.ts).
 
+import { clampFileAttachmentUploadBytes } from "@t3tools/client-runtime/state/attachments";
 import { PROVIDER_SEND_TURN_MAX_IMAGE_BYTES } from "@t3tools/contracts";
 import { useEffect, useRef } from "react";
 
-import { normalizeComposerImageFileMimeType } from "../components/chat/composerAttachmentFiles";
+import {
+  fileAttachmentStagingLimit,
+  normalizeComposerImageFileMimeType,
+} from "../components/chat/composerAttachmentFiles";
 import { toastManager } from "../components/ui/toast";
 import {
   type ComposerFileAttachment,
@@ -18,6 +23,8 @@ import {
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { prepareImageForAttachment } from "../lib/imageCompression";
 import { randomUUID } from "../lib/utils";
+import { appAtomRegistry } from "../rpc/atomRegistry";
+import { environmentServerConfigsAtom } from "../state/server";
 import { videoMimeType } from "../types";
 import {
   aldoSupportsGeneralThreads,
@@ -26,53 +33,76 @@ import {
   subscribeAldoEnvironments,
 } from "./cloud";
 import { useStartAldoThread } from "./newThread";
+import { keepAldoDraftFiles, restoreAldoDraftFiles } from "./shareDraftFiles";
 import { dropAldoShare, readAldoShare } from "./shareTarget";
 import {
+  ALDO_SHARE_LIMITS,
   aldoSharePrompt,
   aldoShareRefusedNotice,
+  fitAldoSharedFiles,
   parseAldoShareParam,
   sortAldoSharedFiles,
+  type AldoShareCandidate,
   type AldoShareParam,
   type AldoShareRefused,
 } from "./shareTarget.logic";
 
 /**
- * A share still to open, kept for this tab until it has: when the session ran
- * out, the page goes to sign in and comes back without the address it had.
+ * The shares still to open, oldest first, kept for this tab until each has:
+ * when the session ran out, the page goes to sign in and comes back without
+ * the address it had; and a share that comes while another opens (the app
+ * opened again) waits its turn instead of taking the other's place.
  */
 const PENDING_KEY = "aldo:share-pending";
 
-function pendingShare(): AldoShareParam | null {
+function pendingIds(): string[] {
   try {
-    const id = window.sessionStorage.getItem(PENDING_KEY);
-    return id ? parseAldoShareParam(`?share=${encodeURIComponent(id)}`) : null;
+    const value = window.sessionStorage.getItem(PENDING_KEY);
+    if (!value) return [];
+    // An earlier version kept one id, as it is.
+    const ids: unknown = value.startsWith("[") ? JSON.parse(value) : [value];
+    return Array.isArray(ids) ? ids.filter((id): id is string => typeof id === "string") : [];
   } catch {
-    return null;
+    return [];
+  }
+}
+
+function setPendingIds(ids: ReadonlyArray<string>): void {
+  try {
+    if (ids.length > 0) window.sessionStorage.setItem(PENDING_KEY, JSON.stringify(ids));
+    else window.sessionStorage.removeItem(PENDING_KEY);
+  } catch {
+    // Without storage each opens now or not at all.
   }
 }
 
 function keepPending(share: AldoShareParam): void {
-  if (share.kind !== "kept") return;
-  try {
-    window.sessionStorage.setItem(PENDING_KEY, share.id);
-  } catch {
-    // Without storage it opens now or not at all.
+  if (share.kind === "kept" && !pendingIds().includes(share.id)) {
+    setPendingIds([...pendingIds(), share.id]);
   }
 }
 
-function forgetPending(): void {
-  try {
-    window.sessionStorage.removeItem(PENDING_KEY);
-  } catch {
-    // Nothing kept.
-  }
+function forgetPending(share: AldoShareParam): void {
+  if (share.kind === "kept") setPendingIds(pendingIds().filter((id) => id !== share.id));
 }
 
-/** Read before the router settles the address: the share the app was opened with, or one a sign-in came between. */
-let opened: AldoShareParam | null =
-  typeof window === "undefined" || !isAldoCloud
-    ? null
-    : (parseAldoShareParam(window.location.search) ?? pendingShare());
+/** Read before the router settles the address: those waiting (a sign-in came between, or one still opening), then the one the app was opened with. */
+function sharesToOpen(): AldoShareParam[] {
+  const waiting = pendingIds().flatMap((id) => {
+    const share = parseAldoShareParam(`?share=${encodeURIComponent(id)}`);
+    return share ? [share] : [];
+  });
+  const now = parseAldoShareParam(window.location.search);
+  if (!now) return waiting;
+  return [
+    ...waiting.filter(
+      (share) => now.kind !== "kept" || share.kind !== "kept" || share.id !== now.id,
+    ),
+    now,
+  ];
+}
+
+let opened: AldoShareParam[] = typeof window === "undefined" || !isAldoCloud ? [] : sharesToOpen();
 
 /** How long a share waits for Aldo's directory, which says whether General threads are there. */
 const DIRECTORY_WAIT_MS = 30_000;
@@ -93,15 +123,19 @@ export function AldoShareReceiver() {
   const openers = useRef<Openers>({ start, handleNewThread, defaultProjectRef });
   openers.current = { start, handleNewThread, defaultProjectRef };
   useEffect(() => {
-    const share = opened;
-    opened = null;
-    if (!share) return;
-    keepPending(share);
+    const shares = opened;
+    opened = [];
+    for (const share of shares) keepPending(share);
     // A reload doesn't open it again.
     const url = new URL(window.location.href);
-    url.searchParams.delete("share");
-    window.history.replaceState(window.history.state, "", url);
-    void receive(share, () => openers.current);
+    if (url.searchParams.has("share")) {
+      url.searchParams.delete("share");
+      window.history.replaceState(window.history.state, "", url);
+    }
+    void (async () => {
+      await restoreAldoDraftFiles().catch(() => undefined);
+      for (const share of shares) await receive(share, () => openers.current);
+    })();
   }, []);
   return null;
 }
@@ -167,18 +201,32 @@ async function openDraft(current: () => Openers): Promise<DraftId | null> {
   return draft?.draftId ?? null;
 }
 
-/** The images as a pasted image is: made smaller to fit when over the limit. */
+type Candidate = AldoShareCandidate<File>;
+
+/**
+ * The images, in the order shared, as a pasted image is (made smaller to fit
+ * when over the limit), until as many are ready as a message takes; one that
+ * can't be is refused (`unready`), and the next takes its place.
+ */
 async function prepareImages(
-  files: ReadonlyArray<File>,
+  candidates: ReadonlyArray<Candidate>,
   refused: AldoShareRefused[],
-): Promise<ComposerImageAttachment[]> {
-  const images: ComposerImageAttachment[] = [];
-  for (const shared of files) {
+): Promise<{
+  readonly ready: Map<Candidate, ComposerImageAttachment>;
+  readonly unready: Set<Candidate>;
+}> {
+  const ready = new Map<Candidate, ComposerImageAttachment>();
+  const unready = new Set<Candidate>();
+  for (const candidate of candidates) {
+    if (candidate.kind !== "image") continue;
+    if (ready.size >= ALDO_SHARE_LIMITS.attachments) break;
+    const shared = candidate.file;
     const prepared = await prepareImageForAttachment(
       normalizeComposerImageFileMimeType(shared),
       PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
     );
     if (!prepared.ok) {
+      unready.add(candidate);
       refused.push({
         name: shared.name || "image",
         why: prepared.reason === "unreadable" ? "unreadable" : "image-too-large",
@@ -186,7 +234,7 @@ async function prepareImages(
       continue;
     }
     const file = prepared.file;
-    images.push({
+    ready.set(candidate, {
       type: "image",
       id: randomUUID(),
       name: file.name || "image",
@@ -196,10 +244,24 @@ async function prepareImages(
       file,
     });
   }
-  return images;
+  return { ready, unready };
 }
 
-function attachFiles(draftId: DraftId, files: ReadonlyArray<File>): void {
+/** The largest file the draft's computer takes, as its composer says; null when it takes none. */
+function draftFileBytes(draftId: DraftId): number | null {
+  const environmentId = useComposerDraftStore.getState().getDraftSession(draftId)?.environmentId;
+  const config = environmentId
+    ? (appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId) ?? null)
+    : null;
+  const advertised = config?.environment.capabilities.fileAttachments?.maxUploadBytes ?? null;
+  return fileAttachmentStagingLimit({
+    attachmentUploadsCapabilityKnown: config !== null,
+    supportsAttachmentUploads: config?.environment.capabilities.attachmentUploads === true,
+    maxFileAttachmentBytes: advertised === null ? null : clampFileAttachmentUploadBytes(advertised),
+  });
+}
+
+function attachFiles(draftId: DraftId, files: ReadonlyArray<File>): ComposerFileAttachment[] {
   const attachments = files.map((shared): ComposerFileAttachment => {
     const mimeType =
       videoMimeType({ name: shared.name, mimeType: shared.type }) ??
@@ -218,6 +280,7 @@ function attachFiles(draftId: DraftId, files: ReadonlyArray<File>): void {
     };
   });
   if (attachments.length > 0) useComposerDraftStore.getState().addFiles(draftId, attachments);
+  return attachments;
 }
 
 async function receive(share: AldoShareParam, current: () => Openers): Promise<void> {
@@ -234,19 +297,32 @@ async function receive(share: AldoShareParam, current: () => Openers): Promise<v
       ...sorted.refused,
     ];
     // Ready before the draft shows, so it can't be sent without them.
-    const images = await prepareImages(sorted.images, refused);
+    const images = await prepareImages(sorted.candidates, refused);
     const draftId = await openDraft(current);
     if (!draftId) {
-      for (const image of images) URL.revokeObjectURL(image.previewUrl);
+      for (const image of images.ready.values()) URL.revokeObjectURL(image.previewUrl);
       return;
     }
+    // As many as a message takes, in the order shared; files as the draft's computer takes them.
+    const limits = { ...ALDO_SHARE_LIMITS, fileBytes: draftFileBytes(draftId) };
+    const fit = fitAldoSharedFiles(sorted.candidates, images.unready, limits);
+    refused.push(...fit.refused);
+    const taken = new Set(fit.taken);
+    for (const [candidate, image] of images.ready) {
+      if (!taken.has(candidate)) URL.revokeObjectURL(image.previewUrl);
+    }
     if (prompt) useComposerDraftStore.getState().setPrompt(draftId, prompt);
-    attachFiles(draftId, sorted.files);
-    if (images.length > 0) useComposerDraftStore.getState().addImages(draftId, images);
-    const notice = aldoShareRefusedNotice(refused);
+    const files = attachFiles(
+      draftId,
+      fit.taken.filter((candidate) => candidate.kind === "file").map((candidate) => candidate.file),
+    );
+    const ready = fit.taken.flatMap((candidate) => images.ready.get(candidate) ?? []);
+    if (ready.length > 0) useComposerDraftStore.getState().addImages(draftId, ready);
+    const notice = aldoShareRefusedNotice(refused, limits);
     if (notice) toastManager.add({ type: "warning", ...notice });
+    await keepAldoDraftFiles(draftId, files).catch(() => undefined);
   } finally {
-    forgetPending();
+    forgetPending(share);
     await dropAldoShare(share.id).catch(() => undefined);
   }
 }

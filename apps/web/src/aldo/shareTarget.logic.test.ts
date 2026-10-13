@@ -6,6 +6,7 @@ import {
   aldoShareKeyIsFor,
   aldoSharePrompt,
   aldoShareRefusedNotice,
+  fitAldoSharedFiles,
   parseAldoShareDetails,
   parseAldoShareParam,
   sortAldoSharedFiles,
@@ -104,23 +105,53 @@ describe("share to Aldo", () => {
       file("empty.txt", "text/plain", 0),
       file("huge.zip", "application/zip", ALDO_SHARE_LIMITS.fileBytes + 1),
     ]);
-    expect(sorted.images.map((f) => f.name)).toEqual(["menu.jpg", "IMG_0001.HEIC", "photo.png"]);
-    expect(sorted.files.map((f) => f.name)).toEqual(["report.pdf", "clip.mp4"]);
     expect(sorted.refused).toEqual([
       { name: "drawing.bmp", why: "unsupported-image" },
       { name: "empty.txt", why: "empty" },
-      { name: "huge.zip", why: "too-large" },
     ]);
+    const fit = fitAldoSharedFiles(sorted.candidates, new Set());
+    expect(fit.taken.map(({ kind, file }) => `${kind} ${file.name}`)).toEqual([
+      "image menu.jpg",
+      "file report.pdf",
+      "image IMG_0001.HEIC",
+      "image photo.png",
+      "file clip.mp4",
+    ]);
+    expect(fit.refused).toEqual([{ name: "huge.zip", why: "too-large" }]);
   });
 
-  it("attaches no more than a message takes", () => {
+  it("attaches no more than a message takes, an image that couldn't be made ready leaving its place to the next", () => {
     const many = Array.from({ length: 10 }, (_, i) => file(`photo-${i}.jpg`, "image/jpeg"));
-    const sorted = sortAldoSharedFiles(many, { attachments: 8, fileBytes: 1000 });
-    expect(sorted.images).toHaveLength(8);
-    expect(sorted.refused).toEqual([
+    const { candidates } = sortAldoSharedFiles(many);
+    const limits = { attachments: 8, fileBytes: 1000 };
+    expect(fitAldoSharedFiles(candidates, new Set(), limits).refused).toEqual([
       { name: "photo-8.jpg", why: "too-many" },
       { name: "photo-9.jpg", why: "too-many" },
     ]);
+    const fit = fitAldoSharedFiles(candidates, new Set([candidates[2]!]), limits);
+    expect(fit.taken.map(({ file }) => file.name)).not.toContain("photo-2.jpg");
+    expect(fit.taken).toHaveLength(8);
+    expect(fit.refused).toEqual([{ name: "photo-9.jpg", why: "too-many" }]);
+  });
+
+  it("attaches files only as the draft's computer takes them", () => {
+    const { candidates } = sortAldoSharedFiles([
+      file("menu.jpg", "image/jpeg"),
+      file("report.pdf", "application/pdf", 500),
+      file("notes.txt", "text/plain", 50),
+    ]);
+    const none = fitAldoSharedFiles(candidates, new Set(), { attachments: 8, fileBytes: null });
+    expect(none.taken.map(({ file }) => file.name)).toEqual(["menu.jpg"]);
+    expect(none.refused).toEqual([
+      { name: "report.pdf", why: "no-files" },
+      { name: "notes.txt", why: "no-files" },
+    ]);
+    const small = fitAldoSharedFiles(candidates, new Set(), { attachments: 8, fileBytes: 100 });
+    expect(small.taken.map(({ file }) => file.name)).toEqual(["menu.jpg", "notes.txt"]);
+    expect(small.refused).toEqual([{ name: "report.pdf", why: "too-large" }]);
+    expect(aldoShareRefusedNotice(none.refused.slice(0, 1))?.description).toBe(
+      "'report.pdf' couldn't be attached: this thread's computer doesn't take files.",
+    );
   });
 
   it("names what wasn't attached, and why", () => {
