@@ -68,6 +68,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 import { flushSync } from "react-dom";
 import { useNavigate } from "@tanstack/react-router";
@@ -449,7 +450,12 @@ import { aldoDesktopOwnsKeyboard } from "../aldo/desktopInput.logic";
 import { useAldoThreadDetailMissing } from "../aldo/threadDetails";
 import { AldoThreadLoading } from "../aldo/AldoThreadLoading";
 import { useAldoThreadStart } from "../aldo/threadStart";
-import { isAldoCloud, isAldoEnvironmentId } from "../aldo/cloud";
+import {
+  aldoThreadInKeptRepo,
+  isAldoCloud,
+  isAldoEnvironmentId,
+  subscribeAldoEnvironments,
+} from "../aldo/cloud";
 import { ensureAldoConnected, isAldoConnected } from "../aldo/dispatch";
 import { showAldoStartingThread, withdrawAldoStartingThread } from "../aldo/startingThreads";
 
@@ -3151,11 +3157,20 @@ function ChatViewContent(props: ChatViewProps) {
     terminalUiLaunchContext?.threadId === activeThreadId ? terminalUiLaunchContext : null;
   // Default true while loading to avoid toolbar flicker.
   const isGitRepo = gitStatusQuery.data?.isRepo ?? true;
-  const showComposerContextStrip = shouldShowComposerContextStrip({
-    hasActiveProject: activeProject !== null,
-    isGitRepo,
-    showEnvironmentIndicator: showComposerEnvironmentIndicator,
-  });
+  // Aldo: a General thread, or one in a project Aldo keeps, has no branch
+  // worth showing (and the strip shows nothing else in the cloud).
+  const aldoKeptRepo = useSyncExternalStore(
+    subscribeAldoEnvironments,
+    () => isAldoCloud && aldoThreadInKeptRepo(environmentId),
+    () => false,
+  );
+  const showComposerContextStrip =
+    !aldoKeptRepo &&
+    shouldShowComposerContextStrip({
+      hasActiveProject: activeProject !== null,
+      isGitRepo,
+      showEnvironmentIndicator: showComposerEnvironmentIndicator,
+    });
   const initialDiffPanelGitScope =
     gitStatusQuery.data?.hasWorkingTreeChanges === true ? "unstaged" : "branch";
   const diffPanelGitStatusResolutionKey = gitStatusQuery.data ? "resolved" : "pending";

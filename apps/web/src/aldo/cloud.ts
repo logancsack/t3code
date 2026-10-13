@@ -254,6 +254,17 @@ export function displayedThreadBranch(
   return placeholder ? null : branch;
 }
 
+/**
+ * Whether a thread's main repository is one Aldo keeps, not one on a git host:
+ * none (General's folder, `""` in the directory) or one of the user's projects
+ * (`aldo:<slug>`, whose threads all work on its `main`). Its branch means
+ * nothing to the user.
+ */
+export function aldoThreadInKeptRepo(environmentId: string): boolean {
+  const repo = knownEnvironments?.find((entry) => entry.environmentId === environmentId)?.repo;
+  return repo !== undefined && (repo === "" || repo.startsWith("aldo:"));
+}
+
 /** Whether a thread's machine is still to be created (it is when its first message is sent). */
 export function aldoMachineIsNew(environmentId: string): boolean {
   return knownEnvironments?.find((entry) => entry.environmentId === environmentId)?.state === "new";
