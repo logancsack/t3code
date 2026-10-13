@@ -6,22 +6,39 @@
 // can't run) does the full card ask for one first (AldoSetupCard).
 
 import { CheckCircle2Icon, ChevronRightIcon, CircleIcon, CodeIcon } from "lucide-react";
-import { useState } from "react";
+import { useState, type ComponentProps } from "react";
 
+import { ScrollArea } from "../components/ui/scroll-area";
 import {
   Sheet,
   SheetDescription,
   SheetHeader,
-  SheetPanel,
   SheetPopup,
   SheetTitle,
 } from "../components/ui/sheet";
+import { cn } from "../lib/utils";
 import { ALDO_ACCOUNT_SPECS, AldoAccountButton } from "./AldoAccountsPanel";
 import type { AldoAccount, AldoAccountKind, AldoGitHostKind, AldoHostKind } from "./cloud";
 
 export const AGENT_KINDS: ReadonlyArray<AldoAccountKind> = ["claude", "codex", "grok", "muse"];
 
 type Accounts = Record<AldoAccountKind | AldoGitHostKind, AldoAccount>;
+
+/** The sheet's scrolling body (T3's `SheetPanel`, which T3 no longer ships). */
+function SheetPanel({ className, ...props }: ComponentProps<"div">) {
+  return (
+    <ScrollArea scrollFade>
+      <div
+        className={cn(
+          "p-6 in-[[data-slot=sheet-popup]:has([data-slot=sheet-header])]:pt-1 in-[[data-slot=sheet-popup]:has([data-slot=sheet-footer]:not(.border-t))]:pb-1",
+          className,
+        )}
+        data-slot="sheet-panel"
+        {...props}
+      />
+    </ScrollArea>
+  );
+}
 
 /** The subscriptions this Aldo connects (an older one doesn't list Muse Code). */
 function agentKinds(accounts: Accounts): ReadonlyArray<AldoAccountKind> {

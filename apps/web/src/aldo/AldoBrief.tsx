@@ -13,7 +13,6 @@ import {
   ChevronRightIcon,
   CircleAlertIcon,
   ClipboardListIcon,
-  GitMergeIcon,
   HandIcon,
   HourglassIcon,
   LoaderCircleIcon,
@@ -26,6 +25,7 @@ import {
 } from "lucide-react";
 import { useContext, useEffect, useMemo, useRef, useState } from "react";
 
+import { PullRequestGlyph } from "../components/pullRequest/pullRequestIcons";
 import { Button } from "../components/ui/button";
 import { Skeleton } from "../components/ui/skeleton";
 import { toastManager } from "../components/ui/toast";
@@ -70,7 +70,7 @@ export function DecisionIcon(props: {
             : d.kind === "plan"
               ? [ClipboardListIcon, "bg-primary/10 text-primary"]
               : d.kind === "merge"
-                ? [GitMergeIcon, "bg-success/12 text-success-foreground"]
+                ? [PullRequestGlyph.merged, "bg-success/12 text-success-foreground"]
                 : d.kind === "failed"
                   ? [CircleAlertIcon, "bg-destructive/10 text-destructive-foreground"]
                   : [HourglassIcon, "bg-warning/12 text-warning-foreground"];

@@ -5,9 +5,10 @@
 // it. An Aldo without the home read, or a thread it doesn't list yet, shows
 // the one line Aldo's action always had.
 
-import { ArrowUpRightIcon, EyeIcon, GitPullRequestIcon } from "lucide-react";
+import { ArrowUpRightIcon, EyeIcon } from "lucide-react";
 import { createContext, useContext, useState, type ReactNode } from "react";
 
+import { PullRequestGlyph } from "../components/pullRequest/pullRequestIcons";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { cn } from "~/lib/utils";
@@ -88,7 +89,10 @@ export function PullRequestLine(props: { readonly pullRequest: AldoHomePullReque
   const mergeable = pr.status === "watching" && pr.stage === "green";
   return (
     <div className="flex items-center gap-2 text-xs">
-      <GitPullRequestIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+      <PullRequestGlyph.pullRequest
+        className="size-3.5 shrink-0 text-muted-foreground"
+        aria-hidden
+      />
       <a
         href={pr.url}
         target="_blank"

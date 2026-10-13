@@ -15,8 +15,9 @@ import {
 
 const availability: SettingsSearchAvailability = {
   hasCloudPublicConfig: false,
-  hasPrimaryEnvironment: false,
+  hasEnvironment: false,
   hasProviderSettingsEnvironment: false,
+  hasMacProviderSettingsEnvironment: false,
   canManageLocalBackend: false,
   isWslSettingsRowVisible: false,
   hasThreadAutoSettlement: false,

@@ -1,9 +1,10 @@
 // The right panel in a thread on work that isn't code (General, an Aldo
 // project): what it needs first is the agent's browser and the files it makes,
-// so those lead; the terminal, the diff and the subagents follow under "More".
-// Subagents are "Helpers" there, since "Agents" already means the threads.
+// so those lead; the terminal, the diff, the subagents and a device follow
+// under "More". Subagents are "Helpers" there, since "Agents" already means
+// the threads.
 
-const MORE = new Set(["Terminal", "Diff", "Agents"]);
+const MORE = new Set(["Terminal", "Diff", "Agents", "Device"]);
 
 const FOR_WORK: Record<string, { label?: string; description: string; shortcut?: string }> = {
   Files: { description: "What the agent made and works with." },

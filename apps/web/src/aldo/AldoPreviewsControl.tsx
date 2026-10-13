@@ -1,13 +1,8 @@
-import {
-  AppWindowIcon,
-  ExternalLinkIcon,
-  GitMergeIcon,
-  LoaderIcon,
-  PanelRightIcon,
-} from "lucide-react";
+import { AppWindowIcon, ExternalLinkIcon, LoaderIcon, PanelRightIcon } from "lucide-react";
 import type { ThreadId } from "@t3tools/contracts";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { PullRequestGlyph } from "../components/pullRequest/pullRequestIcons";
 import {
   Menu,
   MenuGroup,
@@ -219,7 +214,7 @@ export function AldoPreviewsControl(props: {
                       key={`merge:${pr.repo}#${pr.number}`}
                       onClick={() => setConfirmMerge(pr)}
                     >
-                      <GitMergeIcon className="size-3.5" /> Merge{" "}
+                      <PullRequestGlyph.merged className="size-3.5" /> Merge{" "}
                       {aldoPullRequestShortRef(pr, pullRequests)}
                     </MenuItem>
                   ))}

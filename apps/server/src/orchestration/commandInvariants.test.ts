@@ -12,12 +12,7 @@ import {
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 
-import {
-  findThreadById,
-  listThreadsByProjectId,
-  requireThread,
-  requireThreadAbsent,
-} from "./commandInvariants.ts";
+import { listThreadsByProjectId, requireThread, requireThreadAbsent } from "./commandInvariants.ts";
 
 const now = "2026-01-01T00:00:00.000Z";
 
@@ -65,6 +60,7 @@ const readModel: OrchestrationReadModel = {
       runtimeMode: "full-access",
       branch: null,
       worktreePath: null,
+      pullRequests: [],
       createdAt: now,
       updatedAt: now,
       archivedAt: null,
@@ -90,6 +86,7 @@ const readModel: OrchestrationReadModel = {
       runtimeMode: "full-access",
       branch: null,
       worktreePath: null,
+      pullRequests: [],
       createdAt: now,
       updatedAt: now,
       archivedAt: null,
@@ -122,9 +119,7 @@ const messageSendCommand: OrchestrationCommand = {
 };
 
 describe("commandInvariants", () => {
-  it("finds threads by id and project", () => {
-    expect(findThreadById(readModel, ThreadId.make("thread-1"))?.projectId).toBe("project-a");
-    expect(findThreadById(readModel, ThreadId.make("missing"))).toBeUndefined();
+  it("lists threads by project", () => {
     expect(
       listThreadsByProjectId(readModel, ProjectId.make("project-b")).map((thread) => thread.id),
     ).toEqual([ThreadId.make("thread-2")]);

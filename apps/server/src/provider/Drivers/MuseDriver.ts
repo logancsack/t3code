@@ -30,8 +30,6 @@ import { mergeProviderInstanceEnvironment } from "../ProviderInstanceEnvironment
 import {
   createProviderVersionAdvisory,
   makeManualOnlyProviderMaintenanceCapabilities,
-  makeStaticProviderMaintenanceResolver,
-  resolveProviderMaintenanceCapabilitiesEffect,
 } from "../providerMaintenance.ts";
 import {
   haveProviderSnapshotSettingsChanged,
@@ -42,12 +40,11 @@ import {
 const decodeMuseSettings = Schema.decodeSync(MuseSettings);
 const DRIVER_KIND = ProviderDriverKind.make("muse");
 const SNAPSHOT_REFRESH_INTERVAL = Duration.minutes(5);
-const UPDATE = makeStaticProviderMaintenanceResolver(
-  makeManualOnlyProviderMaintenanceCapabilities({
-    provider: DRIVER_KIND,
-    packageName: null,
-  }),
-);
+// Updated outside T3, so only ever a manual update.
+const MAINTENANCE = makeManualOnlyProviderMaintenanceCapabilities({
+  provider: DRIVER_KIND,
+  packageName: null,
+});
 
 export type MuseDriverEnv =
   | BackgroundPolicy.BackgroundPolicy
@@ -103,10 +100,7 @@ export const MuseDriver: ProviderDriver<MuseSettings, MuseDriverEnv> = {
         continuationGroupKey: continuationIdentity.continuationKey,
       });
       const effectiveConfig = { ...config, enabled } satisfies MuseSettings;
-      const maintenanceCapabilities = yield* resolveProviderMaintenanceCapabilitiesEffect(UPDATE, {
-        binaryPath: effectiveConfig.binaryPath,
-        env: processEnv,
-      });
+      const resolveMaintenance = () => Effect.succeed(MAINTENANCE);
 
       const adapter = yield* makeMuseAdapter(effectiveConfig, {
         instanceId,
@@ -123,7 +117,7 @@ export const MuseDriver: ProviderDriver<MuseSettings, MuseDriverEnv> = {
       );
       const snapshotSettings = makeProviderSnapshotSettingsSource(effectiveConfig, serverSettings);
       const snapshot = yield* makeManagedServerProvider<ProviderSnapshotSettings<MuseSettings>>({
-        maintenanceCapabilities,
+        resolveMaintenance,
         getSettings: snapshotSettings.getSettings,
         streamSettings: snapshotSettings.streamSettings,
         haveSettingsChanged: haveProviderSnapshotSettingsChanged,
@@ -137,7 +131,7 @@ export const MuseDriver: ProviderDriver<MuseSettings, MuseDriverEnv> = {
               driver: DRIVER_KIND,
               currentVersion: currentSnapshot.version,
               checkedAt: currentSnapshot.checkedAt,
-              maintenanceCapabilities,
+              maintenanceCapabilities: MAINTENANCE,
             }),
           }),
         refreshInterval: SNAPSHOT_REFRESH_INTERVAL,

@@ -22,7 +22,6 @@ import {
   CircleAlertIcon,
   CirclePauseIcon,
   ClipboardListIcon,
-  GitMergeIcon,
   LoaderCircleIcon,
   MessageCircleQuestionIcon,
   MicIcon,
@@ -30,6 +29,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
+import { PullRequestGlyph } from "../components/pullRequest/pullRequestIcons";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { SidebarInset } from "../components/ui/sidebar";
@@ -352,9 +352,9 @@ const KIND_ICON: Partial<Record<AldoSidebarKind, ReactNode>> = {
   plan: <ClipboardListIcon className="size-3.5 text-warning-foreground" />,
   waiting: <span className="size-2 rounded-full bg-warning" />,
   failed: <CircleAlertIcon className="size-3.5 text-destructive-foreground" />,
-  merge: <GitMergeIcon className="size-3.5 text-success-foreground" />,
+  merge: <PullRequestGlyph.merged className="size-3.5 text-success-foreground" />,
   paused: <CirclePauseIcon className="size-3.5 text-warning-foreground" />,
-  landing: <GitMergeIcon className="size-3.5 text-primary" />,
+  landing: <PullRequestGlyph.merged className="size-3.5 text-primary" />,
   unread: <CheckCircle2Icon className="size-3.5 text-success-foreground" />,
   done: <span className="size-1.5 rounded-full bg-sidebar-muted-foreground/40" />,
 };

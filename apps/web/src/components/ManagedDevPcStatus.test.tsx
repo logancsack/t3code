@@ -12,8 +12,11 @@ vi.mock("@tanstack/react-router", async (importOriginal) => {
   return {
     ...actual,
     useNavigate: () => () => Promise.resolve(),
-    useLocation: ({ select }: { select: (location: { hash: string }) => unknown }) =>
-      select({ hash: "" }),
+    useLocation: ({
+      select,
+    }: {
+      select: (location: { hash: string; state: Record<string, unknown> }) => unknown;
+    }) => select({ hash: "", state: {} }),
   };
 });
 

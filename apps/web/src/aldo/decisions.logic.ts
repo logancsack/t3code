@@ -121,13 +121,11 @@ export function aldoDecisions(home: AldoHome, now: number): ReadonlyArray<AldoDe
   return [
     ...waitingApprovals(home.approvals)
       .filter((approval) => approval.status === "pending")
-      .map(
-        (approval): AldoDecision => ({
-          kind: "aldo-approval",
-          key: `aldo:${approval.id}`,
-          approval,
-        }),
-      ),
+      .map((approval): AldoDecision => ({
+        kind: "aldo-approval",
+        key: `aldo:${approval.id}`,
+        approval,
+      })),
     ...fromThreads,
     ...merges,
   ];

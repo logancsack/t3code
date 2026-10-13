@@ -42,7 +42,11 @@ const snapshotLoaderLayer = isLandingDemo()
     );
 const connectionServicesLayer = isLandingDemo()
   ? Connection.makeLayer(landingDemoRpcSessionLayer)
-  : Connection.layerWithOptions({ environmentThemes: true });
+  : Connection.layerWithOptions({
+      environmentThemes: true,
+      usageLimitSources: true,
+      usageLimitsCommand: true,
+    });
 
 type ConnectionLayerSource =
   | typeof Connection.layer
@@ -52,10 +56,8 @@ type ConnectionLayerSource =
   | typeof backgroundActivityObserverLayer
   | typeof backgroundActivityReporterLayer;
 
-const providedClientConnectionLayer = Layer.merge(
-  connectionServicesLayer,
-  snapshotLoaderLayer,
-).pipe(
+const providedClientConnectionLayer = snapshotLoaderLayer.pipe(
+  Layer.provideMerge(connectionServicesLayer),
   Layer.provideMerge(
     Layer.mergeAll(
       runtimeContextLayer,

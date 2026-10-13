@@ -61,6 +61,7 @@ function makeReadModel(input: {
         interactionMode: "default",
         branch: null,
         worktreePath: null,
+        pullRequests: [],
         latestTurn: input.latestTurn,
         createdAt: NOW,
         updatedAt: NOW,

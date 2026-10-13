@@ -29,8 +29,6 @@ import { mergeProviderInstanceEnvironment } from "../ProviderInstanceEnvironment
 import {
   createProviderVersionAdvisory,
   makeManualOnlyProviderMaintenanceCapabilities,
-  makeStaticProviderMaintenanceResolver,
-  resolveProviderMaintenanceCapabilitiesEffect,
 } from "../providerMaintenance.ts";
 import {
   haveProviderSnapshotSettingsChanged,
@@ -41,12 +39,11 @@ import {
 const decodePrimeSettings = Schema.decodeSync(PrimeSettings);
 const DRIVER_KIND = ProviderDriverKind.make("primeAgent");
 const SNAPSHOT_REFRESH_INTERVAL = Duration.minutes(5);
-const UPDATE = makeStaticProviderMaintenanceResolver(
-  makeManualOnlyProviderMaintenanceCapabilities({
-    provider: DRIVER_KIND,
-    packageName: null,
-  }),
-);
+// Updated outside T3, so only ever a manual update.
+const MAINTENANCE = makeManualOnlyProviderMaintenanceCapabilities({
+  provider: DRIVER_KIND,
+  packageName: null,
+});
 
 export type PrimeDriverEnv =
   | BackgroundPolicy.BackgroundPolicy
@@ -101,10 +98,7 @@ export const PrimeDriver: ProviderDriver<PrimeSettings, PrimeDriverEnv> = {
         continuationGroupKey: continuationIdentity.continuationKey,
       });
       const effectiveConfig = { ...config, enabled } satisfies PrimeSettings;
-      const maintenanceCapabilities = yield* resolveProviderMaintenanceCapabilitiesEffect(UPDATE, {
-        binaryPath: effectiveConfig.binaryPath,
-        env: processEnv,
-      });
+      const resolveMaintenance = () => Effect.succeed(MAINTENANCE);
 
       const adapter = yield* makePrimeAdapter(effectiveConfig, {
         instanceId,
@@ -120,7 +114,7 @@ export const PrimeDriver: ProviderDriver<PrimeSettings, PrimeDriverEnv> = {
       );
       const snapshotSettings = makeProviderSnapshotSettingsSource(effectiveConfig, serverSettings);
       const snapshot = yield* makeManagedServerProvider<ProviderSnapshotSettings<PrimeSettings>>({
-        maintenanceCapabilities,
+        resolveMaintenance,
         getSettings: snapshotSettings.getSettings,
         streamSettings: snapshotSettings.streamSettings,
         haveSettingsChanged: haveProviderSnapshotSettingsChanged,
@@ -134,7 +128,7 @@ export const PrimeDriver: ProviderDriver<PrimeSettings, PrimeDriverEnv> = {
               driver: DRIVER_KIND,
               currentVersion: currentSnapshot.version,
               checkedAt: currentSnapshot.checkedAt,
-              maintenanceCapabilities,
+              maintenanceCapabilities: MAINTENANCE,
             }),
           }),
         refreshInterval: SNAPSHOT_REFRESH_INTERVAL,

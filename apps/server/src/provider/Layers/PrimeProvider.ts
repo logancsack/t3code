@@ -1,5 +1,5 @@
 import * as NodeOS from "node:os";
-import type { PrimeSettings, ServerProviderModel } from "@t3tools/contracts";
+import type { CustomModelSetting, PrimeSettings, ServerProviderModel } from "@t3tools/contracts";
 import { createModelCapabilities } from "@t3tools/shared/model";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 import * as DateTime from "effect/DateTime";
@@ -151,12 +151,14 @@ export function parsePrimeModelListOutput(output: string): ReadonlyArray<ServerP
 }
 
 function primeModelsFromSettings(
-  customModels: ReadonlyArray<string>,
+  customModels: ReadonlyArray<CustomModelSetting>,
   discoveredModels: ReadonlyArray<ServerProviderModel> = [],
 ): ReadonlyArray<ServerProviderModel> {
   return providerModelsFromSettings(
     [AUTO_MODEL, ...discoveredModels],
-    customModels.filter((model) => parsePrimeModelSlug(model) !== undefined),
+    customModels.filter(
+      (model) => parsePrimeModelSlug(typeof model === "string" ? model : model.slug) !== undefined,
+    ),
     EMPTY_CAPABILITIES,
   );
 }
