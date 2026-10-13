@@ -86,6 +86,8 @@ interface RightPanelTabsProps {
   diffAvailable: boolean;
   filesAvailable: boolean;
   pullRequestAvailable: boolean;
+  /** Aldo: false for work that isn't software, which never has pull requests: no surface for one. */
+  offersPullRequests?: boolean | undefined;
   agentsAvailable: boolean;
   pullRequestStatuses?: Readonly<Record<string, PullRequestTabStatus>>;
   /** Running + waiting subagents; badges the Agents card in the empty state. */
@@ -105,7 +107,10 @@ const SURFACE_DISABLED_REASONS = {
   browser: `Browser previews are only available in the ${APP_BASE_NAME} desktop app.`,
   terminal: "Terminal surfaces are only available from a project thread.",
   files: "Files are only available when a project is open.",
-  diff: "Diff is only available for server threads in Git repositories.",
+  // Aldo: every thread's folder is a Git repository, so only a draft has no diff.
+  diff: isAldoCloud
+    ? "Diff is available once the thread starts."
+    : "Diff is only available for server threads in Git repositories.",
   pullRequest: "This thread's branch has no pull request yet.",
   agents: "Agents are only available from a thread.",
 } as const;
@@ -127,7 +132,7 @@ const SURFACE_UNAVAILABLE_HINTS = {
   browser: "Only available in the desktop app.",
   terminal: "Available when a project is open.",
   files: "Available when a project is open.",
-  diff: "Available for Git repositories.",
+  diff: isAldoCloud ? "Available once the thread starts." : "Available for Git repositories.",
   pullRequest: "No pull request on this branch yet.",
   agents: "Available from a thread.",
 } as const;
@@ -265,6 +270,7 @@ function RightPanelEmptyState(props: {
   diffAvailable: boolean;
   filesAvailable: boolean;
   pullRequestAvailable: boolean;
+  offersPullRequests: boolean;
   agentsAvailable: boolean;
   liveAgentCount: number;
 }) {
@@ -331,16 +337,20 @@ function RightPanelEmptyState(props: {
       onClick: props.onAddDiff,
       badgeCount: 0,
     },
-    {
-      label: "Pull request",
-      description: "Open this branch's pull request.",
-      icon: GitPullRequest,
-      shortcut: "P",
-      available: props.pullRequestAvailable,
-      disabledReason: SURFACE_UNAVAILABLE_HINTS.pullRequest,
-      onClick: props.onAddPullRequest,
-      badgeCount: 0,
-    },
+    ...(props.offersPullRequests
+      ? [
+          {
+            label: "Pull request",
+            description: "Open this branch's pull request.",
+            icon: GitPullRequest,
+            shortcut: "P",
+            available: props.pullRequestAvailable,
+            disabledReason: SURFACE_UNAVAILABLE_HINTS.pullRequest,
+            onClick: props.onAddPullRequest,
+            badgeCount: 0,
+          },
+        ]
+      : []),
     {
       label: "Agents",
       description: "Follow subagents and workflows.",
@@ -686,14 +696,18 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       disabledReason: SURFACE_DISABLED_REASONS.diff,
       onClick: props.onAddDiff,
     },
-    {
-      label: "Pull request",
-      icon: GitPullRequest,
-      shortcut: "P",
-      available: props.pullRequestAvailable,
-      disabledReason: SURFACE_DISABLED_REASONS.pullRequest,
-      onClick: props.onAddPullRequest,
-    },
+    ...(props.offersPullRequests === false
+      ? []
+      : [
+          {
+            label: "Pull request",
+            icon: GitPullRequest,
+            shortcut: "P",
+            available: props.pullRequestAvailable,
+            disabledReason: SURFACE_DISABLED_REASONS.pullRequest,
+            onClick: props.onAddPullRequest,
+          },
+        ]),
     {
       label: "Agents",
       icon: Bot,
@@ -999,6 +1013,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             diffAvailable={props.diffAvailable}
             filesAvailable={props.filesAvailable}
             pullRequestAvailable={props.pullRequestAvailable}
+            offersPullRequests={props.offersPullRequests !== false}
             agentsAvailable={props.agentsAvailable}
             liveAgentCount={props.liveAgentCount}
           />

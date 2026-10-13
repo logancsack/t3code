@@ -182,7 +182,7 @@ import {
   buildSidebarProjectPickerEntries,
   buildSidebarProjectSnapshots,
 } from "../sidebarProjectGrouping";
-import { isAldoCloud } from "../aldo/cloud";
+import { displayedThreadBranch, isAldoCloud } from "../aldo/cloud";
 import { openAldoRepositoryPicker } from "../aldo/AldoRepositoryDialog";
 import type { Project } from "../types";
 
@@ -1219,7 +1219,7 @@ function OpenCommandPaletteDialog(props: {
               projectCwd={projectCwdById.get(thread.projectId) ?? null}
               projectFaviconPath={projectFaviconPathById.get(thread.projectId) ?? null}
               projectTitle={projectTitle ?? null}
-              branch={thread.branch}
+              branch={displayedThreadBranch(thread.environmentId, thread.branch)}
               worktreePath={thread.worktreePath}
               isCurrent={thread.id === activeThreadId}
               driverKind={providerEntry?.driverKind ?? null}

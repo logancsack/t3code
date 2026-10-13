@@ -68,7 +68,6 @@ import {
   useMemo,
   useRef,
   useState,
-  useSyncExternalStore,
 } from "react";
 import { flushSync } from "react-dom";
 import { useNavigate } from "@tanstack/react-router";
@@ -450,12 +449,8 @@ import { aldoDesktopOwnsKeyboard } from "../aldo/desktopInput.logic";
 import { useAldoThreadDetailMissing } from "../aldo/threadDetails";
 import { AldoThreadLoading } from "../aldo/AldoThreadLoading";
 import { useAldoThreadStart } from "../aldo/threadStart";
-import {
-  aldoThreadInKeptRepo,
-  isAldoCloud,
-  isAldoEnvironmentId,
-  subscribeAldoEnvironments,
-} from "../aldo/cloud";
+import { isAldoCloud, isAldoEnvironmentId } from "../aldo/cloud";
+import { useAldoKeptRepo } from "../aldo/keptRepo";
 import { ensureAldoConnected, isAldoConnected } from "../aldo/dispatch";
 import { showAldoStartingThread, withdrawAldoStartingThread } from "../aldo/startingThreads";
 
@@ -3159,11 +3154,7 @@ function ChatViewContent(props: ChatViewProps) {
   const isGitRepo = gitStatusQuery.data?.isRepo ?? true;
   // Aldo: a General thread, or one in a project Aldo keeps, has no branch
   // worth showing (and the strip shows nothing else in the cloud).
-  const aldoKeptRepo = useSyncExternalStore(
-    subscribeAldoEnvironments,
-    () => isAldoCloud && aldoThreadInKeptRepo(environmentId),
-    () => false,
-  );
+  const aldoKeptRepo = useAldoKeptRepo(environmentId);
   const showComposerContextStrip =
     !aldoKeptRepo &&
     shouldShowComposerContextStrip({
@@ -5064,7 +5055,8 @@ function ChatViewContent(props: ChatViewProps) {
     localCheckoutBranchMismatch,
   );
   const showBranchMismatchBanner = shouldShowBranchMismatchBanner({
-    hasMismatch: localCheckoutBranchMismatch !== null,
+    // Aldo: work that isn't software has no branch to restore.
+    hasMismatch: localCheckoutBranchMismatch !== null && !aldoKeptRepo,
     isDismissed: isBranchMismatchDismissedForSession(activeBranchMismatchKey),
     composerHasContent: composerHasUnsentContent,
     wasShownForCurrentMismatch:
@@ -8005,6 +7997,7 @@ function ChatViewContent(props: ChatViewProps) {
           diffAvailable={isServerThread && isGitRepo}
           filesAvailable={activeProject !== null}
           pullRequestAvailable={pullRequestSurfaceAvailable}
+          offersPullRequests={!aldoKeptRepo}
           agentsAvailable
           pullRequestStatuses={pullRequestTabStatuses}
           liveAgentCount={agentPanelModel.liveCount}
@@ -8046,6 +8039,7 @@ function ChatViewContent(props: ChatViewProps) {
             diffAvailable={isServerThread && isGitRepo}
             filesAvailable={activeProject !== null}
             pullRequestAvailable={pullRequestSurfaceAvailable}
+            offersPullRequests={!aldoKeptRepo}
             agentsAvailable
             pullRequestStatuses={pullRequestTabStatuses}
             liveAgentCount={agentPanelModel.liveCount}

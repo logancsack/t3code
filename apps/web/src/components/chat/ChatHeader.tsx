@@ -18,7 +18,6 @@ import {
   useMemo,
   useRef,
   useState,
-  useSyncExternalStore,
   type ReactNode,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
@@ -48,12 +47,8 @@ import {
 } from "../WorkspaceBreadcrumb";
 import { cn } from "~/lib/utils";
 import { AldoPreviewsControl } from "~/aldo/AldoPreviewsControl";
-import {
-  aldoThreadRepo,
-  isAldoCloud,
-  isAldoEnvironmentId,
-  subscribeAldoEnvironments,
-} from "~/aldo/cloud";
+import { isAldoCloud, isAldoEnvironmentId } from "~/aldo/cloud";
+import { useAldoKeptRepo } from "~/aldo/keptRepo";
 import { useRightPanelStore } from "~/rightPanelStore";
 
 interface ChatHeaderProps {
@@ -164,12 +159,9 @@ export const ChatHeader = memo(function ChatHeader({
     () => scopeThreadRef(activeThreadEnvironmentId, activeThreadId),
     [activeThreadEnvironmentId, activeThreadId],
   );
-  // Aldo: a General thread's folder has nowhere to push or publish, so no git actions.
-  const aldoGeneral = useSyncExternalStore(
-    subscribeAldoEnvironments,
-    () => isAldoCloud && aldoThreadRepo(activeThreadEnvironmentId) === "",
-    () => false,
-  );
+  // Aldo: a General thread, or one in a project Aldo keeps, isn't software
+  // work (and Aldo syncs it itself), so no git actions, editors or scripts.
+  const aldoKeptRepo = useAldoKeptRepo(activeThreadEnvironmentId);
   const updateThreadMetadata = useAtomCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
   });
@@ -315,7 +307,7 @@ export const ChatHeader = memo(function ChatHeader({
       </MenuTrigger>
       <MenuPopup align="start" className="min-w-52">
         <MenuItem onClick={onNewThreadInProject}>New thread</MenuItem>
-        <MenuSeparator />
+        {openInMenuItems || projectScriptMenuItems ? <MenuSeparator /> : null}
         {openInMenuItems}
         {openInMenuItems && projectScriptMenuItems ? <MenuSeparator /> : null}
         {projectScriptMenuItems}
@@ -324,7 +316,9 @@ export const ChatHeader = memo(function ChatHeader({
   );
 
   let projectControl: ReactNode = null;
-  if (activeProjectName && activeProjectScripts) {
+  if (activeProjectName && aldoKeptRepo) {
+    projectControl = renderProjectMenu(null, null);
+  } else if (activeProjectName && activeProjectScripts) {
     projectControl = (
       <ProjectScriptsControl
         scripts={activeProjectScripts}
@@ -466,7 +460,7 @@ export const ChatHeader = memo(function ChatHeader({
             }
           />
         ) : null}
-        {activeProjectName && !aldoGeneral && (
+        {activeProjectName && !aldoKeptRepo && (
           <GitActionsControl
             gitCwd={gitCwd}
             activeThreadRef={scopeThreadRef(activeThreadEnvironmentId, activeThreadId)}
