@@ -8,10 +8,10 @@ import { setAldoPreloadSettings, useAldoPreloadSettings } from "./preloadSetting
 export function AldoPreloadSettings() {
   const settings = useAldoPreloadSettings();
   return (
-    <SettingsSection title="Cloud agents" icon={<CloudIcon className="size-4" />}>
+    <SettingsSection title="Computers" icon={<CloudIcon className="size-4" />}>
       <SettingsRow
         title="Start new threads' agents right away"
-        description="A new thread's cloud agent starts as soon as the thread opens, so your first message goes out without waiting. If you leave without sending anything, it's removed."
+        description="A new thread's computer starts as soon as the thread opens, so your first message goes out without waiting. If you leave without sending anything, it's removed."
         control={
           <Switch
             checked={settings.newThreads}
@@ -22,7 +22,7 @@ export function AldoPreloadSettings() {
       />
       <SettingsRow
         title="Wake agents when you open a thread"
-        description="Opening a thread wakes its cloud agent in the background, so replies start without waiting. If you leave without sending anything, it goes back to sleep."
+        description="Opening a thread wakes its computer in the background, so replies start without waiting. If you leave without sending anything, it goes back to sleep."
         control={
           <Switch
             checked={settings.openedThreads}

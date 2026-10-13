@@ -41,14 +41,14 @@ async function switchMachine(environmentId: string, size: AldoMachineSize): Prom
     await setAldoMachine(environmentId, size);
     toastManager.add({
       type: "success",
-      title: size === "2x" ? "Upgrading to a 2× machine" : "Switching back to a standard machine",
-      description: "The cloud agent restarts in a moment and carries on where it left off.",
+      title: size === "2x" ? "Upgrading to a 2× computer" : "Switching back to a standard computer",
+      description: "Its computer restarts in a moment, and the agent carries on where it left off.",
       timeout: 8000,
     });
   } catch (cause) {
     toastManager.add({
       type: "error",
-      title: "Couldn't change the machine",
+      title: "Couldn't change its computer",
       description: cause instanceof Error ? cause.message : String(cause),
       timeout: 10_000,
     });
@@ -56,8 +56,10 @@ async function switchMachine(environmentId: string, size: AldoMachineSize): Prom
 }
 
 /**
- * Offers a 2× machine when this thread's machine reports running short (out
- * of memory, or every CPU busy) while its agent works.
+ * Offers a 2× computer when this thread's computer reports running short (out
+ * of memory, or every CPU busy) while its agent works. Only an older Aldo,
+ * which sizes computers by hand: one that sizes them itself shows a report as
+ * information where the thread is listed (AldoHomeBoard.tsx).
  */
 export function useAldoMachineOffer(environmentId: string): void {
   const environment = useAldoEnvironment(environmentId);
@@ -79,9 +81,9 @@ export function useAldoMachineOffer(environmentId: string): void {
         type: "warning",
         title:
           pressure.kind === "memory"
-            ? "This cloud agent is running low on memory"
-            : "This cloud agent's CPUs are maxed out",
-        description: `${pressure.detail} A 2× machine has 8 vCPUs and 16 GB and uses 2 credits an hour instead of 1. Upgrading restarts the machine, and the agent carries on where it left off.`,
+            ? "This thread's computer is running low on memory"
+            : "This thread's computer has every CPU busy",
+        description: `${pressure.detail} A 2× computer has 8 vCPUs and 16 GB and uses 2 credits an hour instead of 1. Upgrading restarts it, and the agent carries on where it left off.`,
         timeout: 0,
         actionProps: {
           children: "Upgrade to 2×",
@@ -97,7 +99,11 @@ export function useAldoMachineOffer(environmentId: string): void {
   }, [automatic, environmentId, machine, pressure]);
 }
 
-/** The Previews menu's machine details, with a switch when sizing is manual. */
+/**
+ * The Previews menu's word on the thread's computer. Aldo sizes every
+ * computer itself (memory grows with the work), so there's nothing to choose;
+ * an older Aldo that sizes them by hand offers the switch.
+ */
 export function AldoMachineMenuSection(props: { environmentId: string }) {
   const environment = useAldoEnvironment(props.environmentId);
   if (!environment) return null;
@@ -108,7 +114,7 @@ export function AldoMachineMenuSection(props: { environmentId: string }) {
     <MenuGroup>
       <MenuGroupLabel className="flex items-center gap-1.5">
         <CpuIcon aria-hidden="true" className="size-3.5" />
-        {automatic ? "Machine" : `Machine: ${MACHINE_LABELS[machine]}`}
+        {automatic ? "Its computer" : `Its computer: ${MACHINE_LABELS[machine]}`}
       </MenuGroupLabel>
       {automatic ? (
         <MenuItem closeOnClick={false} className="cursor-default flex-col items-start gap-0.5">

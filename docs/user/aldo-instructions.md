@@ -1,6 +1,6 @@
 # Instructions in Aldo
 
-**Settings → Instructions** holds what every cloud agent is told about how you work, like a `CLAUDE.md` or `AGENTS.md` of your own that stays out of your repositories. Claude, Codex, OpenCode and Grok all get them.
+**Settings → Instructions** holds what every agent is told about how you work, like a `CLAUDE.md` or `AGENTS.md` of your own that stays out of your repositories. Claude, Codex, OpenCode and Grok all get them.
 
 ## All projects, or one
 

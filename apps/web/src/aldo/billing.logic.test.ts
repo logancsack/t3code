@@ -148,7 +148,7 @@ describe("aldoBillingView", () => {
     const view = aldoBillingView(ended);
     expect(view).toMatchObject({ kind: "choose", ended: "Pro" });
     expect(aldoPlanSummary(view!)).toBe(
-      "Your Pro plan has ended, so cloud agents can't start. Choose a plan to keep going.",
+      "Your Pro plan has ended, so agents can't start. Choose a plan to keep going.",
     );
   });
 

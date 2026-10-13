@@ -51,6 +51,7 @@ import {
   type AldoHostKind,
   type AldoProjectHost,
 } from "./cloud";
+import { dropAldoCarriedDraft, landAldoCarriedDraft } from "./newThread";
 import { startAldoSandbox } from "./threads";
 
 const OPEN_EVENT = "aldo:open-repository-picker";
@@ -98,8 +99,25 @@ export function AldoRepositoryDialog() {
   }, []);
   if (!isAldoCloud) return null;
   return (
-    <Dialog open={open !== null} onOpenChange={(next) => !next && setOpen(null)}>
-      {open ? <StartPicker initialMode={open} onDone={() => setOpen(null)} /> : null}
+    <Dialog
+      open={open !== null}
+      onOpenChange={(next) => {
+        if (next) return;
+        // Dismissed: a draft's words it was to take along stay where they are.
+        dropAldoCarriedDraft();
+        setOpen(null);
+      }}
+    >
+      {open ? (
+        <StartPicker
+          initialMode={open}
+          onDone={() => setOpen(null)}
+          onCancel={() => {
+            dropAldoCarriedDraft();
+            setOpen(null);
+          }}
+        />
+      ) : null}
     </Dialog>
   );
 }
@@ -131,20 +149,26 @@ function projectSlug(title: string): string {
 
 /** With Aldo's own projects, which aren't repositories on a git host. */
 const PROJECT_DESCRIPTIONS: Partial<Record<Mode, string>> = {
-  new: "A repository on your git host for code, or an Aldo project for work that isn't code (a business, a reporting process, a trip): Aldo keeps its files, notes and history, shared by every thread in it. Aldo creates it and a cloud agent to work in it.",
+  new: "A repository on your git host for code, or an Aldo project for work that isn't code (a business, a reporting process, a trip): Aldo keeps its files, notes and history, shared by every thread in it. Aldo creates it, and an agent works in it on a computer of its own.",
   existing:
-    "Pick one or more repositories or projects. The thread gets its own cloud agent, with each repository cloned on a new branch (and a project on main, which every thread in it shares).",
+    "Pick one or more repositories or projects. The thread's agent gets a computer of its own, with each repository cloned on a new branch (and a project on main, which every thread in it shares).",
 };
 
 const DESCRIPTIONS: Record<Mode, string> = {
-  new: "Aldo creates the repository and a cloud agent to work in it. Tell the agent what to build.",
+  new: "Aldo creates the repository, and an agent works in it on a computer of its own. Tell it what to build.",
   existing:
-    "Pick one or more repositories. The thread gets its own cloud agent, with each one cloned on a new branch.",
+    "Pick one or more repositories. The thread's agent gets a computer of its own, with each one cloned on a new branch.",
   general:
-    "For work that isn't code: research, errands, email, documents, anything on the web. The thread gets its own cloud agent with a browser and the accounts you connected, and shows under General.",
+    "For work that isn't code: research, errands, email, documents, anything on the web. The thread's agent gets its own computer, with a browser and the accounts you connected, and the thread shows under General.",
 };
 
-function StartPicker(props: { readonly initialMode: Mode; readonly onDone: () => void }) {
+function StartPicker(props: {
+  readonly initialMode: Mode;
+  /** Started: what it carries lands in the new draft. */
+  readonly onDone: () => void;
+  /** Cancelled: a draft's words it was to take along stay where they are. */
+  readonly onCancel: () => void;
+}) {
   const { accounts, error: accountsError, refresh: refreshAccounts } = useAldoAccounts();
   const connectedHosts = HOST_KINDS.filter((kind) => accounts?.[kind]?.connected === true);
   // An older Aldo can't start a thread without a repository (the directory says, once listed).
@@ -191,12 +215,12 @@ function StartPicker(props: { readonly initialMode: Mode; readonly onDone: () =>
         </DialogPanel>
       ) : newHosts.length === 0 ? (
         <>
-          {general ? <GeneralThreadStart onDone={props.onDone} /> : null}
+          {general ? <GeneralThreadStart onDone={props.onDone} onCancel={props.onCancel} /> : null}
           <DialogPanel className="flex flex-col items-start gap-3">
             <p className="text-muted-foreground text-sm">
               {general ? "To work on code, connect" : "Connect"} GitHub (or GitLab, Bitbucket or
-              Azure DevOps in Settings → Source Control) so threads can clone your repositories and
-              open pull requests.
+              Azure DevOps in Settings → Git hosts) so threads can clone your repositories and open
+              pull requests.
             </p>
             <AldoAccountButton
               kind="github"
@@ -225,17 +249,22 @@ function StartPicker(props: { readonly initialMode: Mode; readonly onDone: () =>
               </ModeButton>
               {general ? (
                 <ModeButton active={mode === "general"} onClick={() => setMode("general")}>
-                  <CompassIcon className="size-3.5" /> No repository
+                  <CompassIcon className="size-3.5" /> General
                 </ModeButton>
               ) : null}
             </div>
           </div>
           {mode === "new" ? (
-            <NewProjectForm hosts={newHosts} accounts={accounts} onDone={props.onDone} />
+            <NewProjectForm
+              hosts={newHosts}
+              accounts={accounts}
+              onDone={props.onDone}
+              onCancel={props.onCancel}
+            />
           ) : mode === "general" ? (
-            <GeneralThreadStart onDone={props.onDone} />
+            <GeneralThreadStart onDone={props.onDone} onCancel={props.onCancel} />
           ) : (
-            <ExistingRepositoryPicker onDone={props.onDone} />
+            <ExistingRepositoryPicker onDone={props.onDone} onCancel={props.onCancel} />
           )}
         </>
       )}
@@ -244,7 +273,7 @@ function StartPicker(props: { readonly initialMode: Mode; readonly onDone: () =>
 }
 
 /** Starts a thread that isn't in a repository: it opens at once, ready for what to do. */
-function GeneralThreadStart(props: { readonly onDone: () => void }) {
+function GeneralThreadStart(props: { readonly onDone: () => void; readonly onCancel: () => void }) {
   const handleNewThread = useNewThreadHandler();
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -255,7 +284,7 @@ function GeneralThreadStart(props: { readonly onDone: () => void }) {
     try {
       const projectRef = await startAldoSandbox({ repos: [] });
       props.onDone();
-      await handleNewThread(projectRef);
+      landAldoCarriedDraft(await handleNewThread(projectRef));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
       setStarting(false);
@@ -277,7 +306,7 @@ function GeneralThreadStart(props: { readonly onDone: () => void }) {
             <LoaderCircleIcon className="size-4 animate-spin" /> Opening…
           </span>
         ) : null}
-        <Button type="button" variant="ghost" onClick={props.onDone}>
+        <Button type="button" variant="ghost" onClick={starting ? props.onDone : props.onCancel}>
           {starting ? "Hide" : "Cancel"}
         </Button>
         <Button type="button" disabled={starting} onClick={() => void start()}>
@@ -315,6 +344,7 @@ function NewProjectForm(props: {
   readonly hosts: ReadonlyArray<AldoProjectHost>;
   readonly accounts: Partial<Record<AldoHostKind, AldoAccount>>;
   readonly onDone: () => void;
+  readonly onCancel: () => void;
 }) {
   const handleNewThread = useNewThreadHandler();
   const [host, setHost] = useState<AldoProjectHost>(
@@ -347,7 +377,7 @@ function NewProjectForm(props: {
         },
       });
       props.onDone();
-      await handleNewThread(projectRef);
+      landAldoCarriedDraft(await handleNewThread(projectRef));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
       setCreating(false);
@@ -403,7 +433,7 @@ function NewProjectForm(props: {
         <Textarea
           placeholder={
             inAldo
-              ? "What is it for, and how should the work be done? It goes in the project's AGENTS.md, which every thread in it reads."
+              ? "What is it for, and how should the work be done? It goes in the project's shared notes, which every thread in it reads."
               : "What is it? It goes on the repository and in its README."
           }
           className="min-h-16"
@@ -415,7 +445,7 @@ function NewProjectForm(props: {
       {inAldo ? (
         props.hosts.length === 1 ? (
           <p className="text-muted-foreground text-xs">
-            For code, connect GitHub (or another git host in Settings → Source Control).
+            For code, connect GitHub (or another git host in Settings → Git hosts).
           </p>
         ) : null
       ) : (
@@ -440,7 +470,7 @@ function NewProjectForm(props: {
             <LoaderCircleIcon className="size-4 animate-spin" /> Creating {shownName}…
           </span>
         ) : null}
-        <Button type="button" variant="ghost" onClick={props.onDone}>
+        <Button type="button" variant="ghost" onClick={creating ? props.onDone : props.onCancel}>
           {creating ? "Hide" : "Cancel"}
         </Button>
         <Button type="submit" disabled={!name || creating}>
@@ -475,7 +505,10 @@ function typedRef(query: string): string | null {
   return null;
 }
 
-function ExistingRepositoryPicker(props: { readonly onDone: () => void }) {
+function ExistingRepositoryPicker(props: {
+  readonly onDone: () => void;
+  readonly onCancel: () => void;
+}) {
   const handleNewThread = useNewThreadHandler();
   const [repositories, setRepositories] = useState<ReadonlyArray<SourceControlRepositorySummary>>(
     [],
@@ -530,7 +563,7 @@ function ExistingRepositoryPicker(props: { readonly onDone: () => void }) {
     try {
       const projectRef = await startAldoSandbox({ repos: selected });
       props.onDone();
-      await handleNewThread(projectRef);
+      landAldoCarriedDraft(await handleNewThread(projectRef));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
       setStarting(false);
@@ -634,7 +667,7 @@ function ExistingRepositoryPicker(props: { readonly onDone: () => void }) {
             <LoaderCircleIcon className="size-4 animate-spin" /> Opening…
           </span>
         ) : null}
-        <Button type="button" variant="ghost" onClick={props.onDone}>
+        <Button type="button" variant="ghost" onClick={starting ? props.onDone : props.onCancel}>
           {starting ? "Hide" : "Cancel"}
         </Button>
         <Button

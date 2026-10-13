@@ -165,7 +165,7 @@ export function PendingForm(props: {
   if (kind === "paused")
     return (
       <div className="flex flex-wrap items-center gap-2 text-muted-foreground text-sm">
-        <span>Its machine went to sleep mid-turn.</span>
+        <span>Its computer went to sleep mid-turn.</span>
         <Button variant="outline" size="compact" render={<ThreadLink target={c.thread} />}>
           Open to carry on
           <ArrowUpRightIcon />

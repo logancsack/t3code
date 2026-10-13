@@ -473,7 +473,7 @@ export function AldoVaultPanel() {
             ? `Saved ${secret.name}. Requests to ${secret.hosts} get it now; agents see a stand-in.`
             : secret.kind === "file"
               ? `Saved ${secret.name} to ${secret.path} in running threads.`
-              : `Saved ${secret.name}. Agents' new commands see it now; restart running dev servers to pick it up.`,
+              : `Saved ${secret.name}. Agents' new commands see it now; restart running previews to pick it up.`,
         );
         setSecret(null);
       },
@@ -590,8 +590,8 @@ export function AldoVaultPanel() {
             {requested.why ? `: ${requested.why}` : ""}. Paste the value below, not in the
             conversation.{" "}
             {secret.kind === "request"
-              ? "Injected into requests, it never reaches the cloud machine; agents only see a stand-in."
-              : "As a variable or a file it's on the cloud machine, where agents can read it; for an API key, prefer Injected into requests."}{" "}
+              ? "Injected into requests, it never reaches the agent's computer; agents only see a stand-in."
+              : "As a variable or a file it's on the agent's computer, where agents can read it; for an API key, prefer Injected into requests."}{" "}
             The thread that asked carries on once it's saved.
           </p>
         ) : null}

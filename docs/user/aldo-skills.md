@@ -1,6 +1,6 @@
 # Skills in Aldo
 
-A skill is how you want a kind of task done: the steps, what to do and what to avoid, the feedback you've given. **Settings → Skills** holds yours. They're saved to your account, and every cloud agent in every thread has them: Claude, Codex, OpenCode and Grok.
+A skill is how you want a kind of task done: the steps, what to do and what to avoid, the feedback you've given. **Settings → Skills** holds yours. They're saved to your account, and every agent in every thread has them: Claude, Codex, OpenCode and Grok.
 
 Each agent sees every skill's name and what it's for, and reads the rest only when a task matches. A skill for podcast clips, say, is followed whenever an agent makes clips, in any thread, without you pasting your feedback again.
 

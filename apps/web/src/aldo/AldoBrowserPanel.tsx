@@ -600,7 +600,7 @@ export function AldoBrowserPanel({ environmentId }: { environmentId: string }) {
   /** An offer's password: the machine sends it only when asked, once the user chose Save. */
   const loginOfferPassword = (id: string) =>
     new Promise<string>((resolve, reject) => {
-      const unreachable = "Couldn't reach the cloud agent's browser. Try again in a moment.";
+      const unreachable = "Couldn't reach its computer's browser. Try again in a moment.";
       const finish = (password: string | null, failure?: string) => {
         clearTimeout(timer);
         passwordWaits.current.delete(id);

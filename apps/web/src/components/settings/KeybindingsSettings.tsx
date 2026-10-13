@@ -69,6 +69,8 @@ import {
   whenAstToExpression,
 } from "./KeybindingsSettings.logic";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
+import { AldoKeysSection } from "../../aldo/AldoKeys";
+import { isAldoCloud } from "../../aldo/cloud";
 import { searchableSetting } from "./settingsSearch";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -1534,6 +1536,7 @@ export function KeybindingsSettingsPanel() {
 
         <KeybindingsList {...listProps} />
       </SettingsSection>
+      {isAldoCloud ? <AldoKeysSection /> : null}
     </SettingsPageContainer>
   );
 }

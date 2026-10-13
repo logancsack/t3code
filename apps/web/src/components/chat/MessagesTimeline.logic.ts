@@ -255,6 +255,8 @@ export type MessagesTimelineRow =
       createdAt: string | null;
       toolWait: ActiveToolWait | null;
       status: "waking" | "working";
+      /** What the turn is doing, in words (`WorkWords.working`). */
+      words?: string | null;
     }
   | {
       kind: "thinking";
@@ -394,6 +396,19 @@ function workEntryIsActiveTurnActivity(entry: WorkLogEntry): boolean {
 }
 
 /**
+ * Steps in words, for threads that aren't code (Aldo's `aldoWorkWords`). Each
+ * returns null to keep the timeline's own label.
+ */
+export interface WorkWords {
+  /** One step, under way or done. */
+  readonly step: (entry: WorkLogEntry, active: boolean) => string | null;
+  /** What a run of steps did, in a line. */
+  readonly recap: (entries: ReadonlyArray<WorkLogEntry>) => string | null;
+  /** What the turn is doing now, given its steps so far. */
+  readonly working: (entries: ReadonlyArray<WorkLogEntry>) => string | null;
+}
+
+/**
  * Settled turns keep only their terminal assistant message visible.
  * Everything before it folds behind a "Worked for ..." row anchored at the
  * first hidden entry, so the duration leads directly into the final response.
@@ -403,6 +418,7 @@ function deriveTurnFolds(input: {
   terminalAssistantMessageIds: ReadonlySet<string>;
   latestTurn: TimelineLatestTurn | null;
   unsettledTurnId: TurnId | null;
+  workWords: WorkWords | null;
 }): ReadonlyMap<string, TurnFold> {
   interface TurnGroup {
     entries: Array<TimelineEntry>;
@@ -510,13 +526,24 @@ function deriveTurnFolds(input: {
               lastEntryEnd,
           );
     const duration = elapsedMs !== null ? formatDuration(elapsedMs) : null;
+    const recap = isLatestInterruptedTurn
+      ? null
+      : (input.workWords?.recap(
+          group.entries.flatMap((entry) =>
+            entry.kind === "work" && hiddenEntryIds.has(entry.id) ? [entry.entry] : [],
+          ),
+        ) ?? null);
     const label = isLatestInterruptedTurn
       ? duration
         ? `You stopped after ${duration}`
         : "You stopped this response"
-      : duration
-        ? `Worked for ${duration}`
-        : "Worked";
+      : recap
+        ? duration
+          ? `${recap} · ${duration}`
+          : recap
+        : duration
+          ? `Worked for ${duration}`
+          : "Worked";
 
     foldsByAnchorEntryId.set(firstHiddenEntry.id, {
       turnId,
@@ -541,6 +568,7 @@ export function deriveMessagesTimelineRows(input: {
   activeToolWait?: ActiveToolWait | null;
   turnDiffSummaryByAssistantMessageId: ReadonlyMap<MessageId, TurnDiffSummary>;
   revertTurnCountByUserMessageId: ReadonlyMap<MessageId, number>;
+  workWords?: WorkWords | null;
 }): MessagesTimelineRow[] {
   const nextRows: MessagesTimelineRow[] = [];
   const durationStartByMessageId = computeMessageDurationStart(
@@ -556,6 +584,7 @@ export function deriveMessagesTimelineRows(input: {
     terminalAssistantMessageIds,
     latestTurn: input.latestTurn ?? null,
     unsettledTurnId,
+    workWords: input.workWords ?? null,
   });
   const collapsedEntryIds = new Set<string>();
   for (const fold of foldsByAnchorEntryId.values()) {
@@ -637,12 +666,20 @@ export function deriveMessagesTimelineRows(input: {
     activeWorkRow === null ? [] : activeToolEntries.map((entry) => entry.id),
   );
   const appendWorkingRow = () => {
+    const words = input.workWords
+      ? input.workWords.working(
+          input.timelineEntries.flatMap((entry, index) =>
+            entry.kind === "work" && entryBelongsToActiveTurn(entry, index) ? [entry.entry] : [],
+          ),
+        )
+      : null;
     nextRows.push({
       kind: "working",
       id: "working-indicator-row",
       createdAt: input.activeTurnStartedAt,
       toolWait: input.activeToolWait ?? null,
       status: input.isWakingWorkspace ? "waking" : "working",
+      ...(words ? { words } : {}),
     });
   };
   let hasActivityRow = false;
@@ -807,7 +844,8 @@ export function deriveMessagesTimelineRows(input: {
               visibleGroupedEntries.length === 1 &&
               !workLogEntryIsToolLike(visibleGroupedEntries[0]!)
                 ? visibleGroupedEntries[0]!.label
-                : summarizeToolGroup(visibleGroupedEntries),
+                : (input.workWords?.recap(visibleGroupedEntries) ??
+                  summarizeToolGroup(visibleGroupedEntries)),
             summaryKind,
             hasFailure:
               latestToolEntry !== undefined &&
@@ -971,6 +1009,7 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
       return (
         a.createdAt === bw.createdAt &&
         a.status === bw.status &&
+        a.words === bw.words &&
         a.toolWait?.label === bw.toolWait?.label &&
         a.toolWait?.startedAt === bw.toolWait?.startedAt
       );

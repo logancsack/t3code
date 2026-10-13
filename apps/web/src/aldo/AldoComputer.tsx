@@ -306,7 +306,7 @@ export function useAldoComputerAsk(environmentId: string, threadId: ThreadId): v
             description:
               current.kind === "windows"
                 ? "See it in the Desktop view: choose Windows."
-                : "Your agent uses it from its machine. It stops when the thread is done.",
+                : "Your agent uses it from its own computer. It stops when the thread is done.",
             timeout: 8000,
             actionProps: stopAction(() => readyId),
             actionVariant: "outline",

@@ -110,7 +110,7 @@ export function RoutinesSection(props: {
   const copyWebhook = (url: string) => {
     // Without the Clipboard API (an insecure page, an older browser), the URL is shown to copy by hand.
     if (typeof navigator.clipboard?.writeText !== "function") {
-      toastManager.add({ type: "info", title: "Copy the webhook URL", description: url });
+      toastManager.add({ type: "info", title: "Copy the link that runs it", description: url });
       return;
     }
     void navigator.clipboard
@@ -118,8 +118,8 @@ export function RoutinesSection(props: {
       .then(() =>
         toastManager.add({
           type: "success",
-          title: "Webhook URL copied",
-          description: "Anything that POSTs to it runs the routine; keep it private.",
+          title: "Link copied",
+          description: "Whatever sends to it runs the routine with what it sent; keep it private.",
         }),
       )
       .catch(() =>
@@ -198,8 +198,8 @@ export function RoutinesSection(props: {
                     <Button
                       size="icon"
                       variant="ghost"
-                      aria-label="Copy webhook URL"
-                      title="Copy webhook URL"
+                      aria-label="Copy the link that runs it"
+                      title="Copy the link that runs it"
                       onClick={() => copyWebhook(routine.webhook!)}
                     >
                       <CopyIcon className="size-3.5" />
@@ -290,7 +290,7 @@ function NewRoutine(props: {
         title: `"${routine.title}" is set up`,
         description: routine.nextRunAt
           ? `It runs ${routine.when.charAt(0).toLowerCase()}${routine.when.slice(1)}.`
-          : "Copy its webhook URL from the list to use it.",
+          : "Copy the link that runs it from the list.",
       });
       setSaving(false);
       props.onDone(true);
@@ -424,10 +424,10 @@ function NewRoutine(props: {
             <span className="flex items-start gap-2">
               <WebhookIcon className="mt-0.5 size-4 text-muted-foreground" />
               <span className="flex flex-col">
-                <span className="font-medium text-sm">Also run it from a webhook</span>
+                <span className="font-medium text-sm">Also run it from a link</span>
                 <span className="text-muted-foreground text-xs">
-                  A private URL that runs it with whatever is POSTed to it: an alert, a form,
-                  another app.
+                  A private link that runs it with whatever is sent to it: an alert, a form, another
+                  app.
                 </span>
               </span>
             </span>

@@ -1,5 +1,12 @@
 import { isAldoCloud } from "../../aldo/cloud";
 import { aldoStartingLabel } from "../../aldo/dispatch";
+import { AldoNotifyOffer } from "../../aldo/AldoNotifyOffer";
+import { useAldoKeptRepo } from "../../aldo/keptRepo";
+import { AldoMadeCards } from "../../aldo/AldoMadeCards";
+import { AldoNextChips } from "../../aldo/AldoNextChips";
+import { splitAldoNext } from "../../aldo/next.logic";
+import type { AldoShare } from "../../aldo/made.logic";
+import { aldoSharesByTurn, aldoWorkWords } from "../../aldo/workLabels.logic";
 import {
   type ChatFileAttachment,
   type EnvironmentId,
@@ -118,6 +125,7 @@ import {
   type MessagesTimelineRow,
   TIMELINE_MINIMAP_MIN_ITEMS,
   type TimelineLatestTurn,
+  type WorkWords,
 } from "./MessagesTimeline.logic";
 import { TerminalContextInlineChip } from "./TerminalContextInlineChip";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -178,6 +186,12 @@ interface TimelineRowSharedState {
   onToggleWorkGroup: (groupId: string, anchorKey: string) => void;
   agentPanelModel: AgentPanelModel;
   onOpenAgents: () => void;
+  /** Steps in words, in threads that aren't code. */
+  workWords: WorkWords | null;
+  /** What each turn shared by link, for "What it made" (threads that aren't code). */
+  aldoSharesByTurnId: ReadonlyMap<string, ReadonlyArray<AldoShare>>;
+  /** Sends a follow-up the agent offered as the user's next message. */
+  onSendFollowUp: ((text: string) => Promise<boolean>) | null;
 }
 
 interface TimelineRowActivityState {
@@ -282,6 +296,8 @@ interface MessagesTimelineProps {
   topFadeEnabled?: boolean;
   /** Non-null when older turns exist beyond the loaded window. */
   loadEarlier?: { readonly loading: boolean; readonly onLoadEarlier: () => void } | null;
+  /** Sends a follow-up the agent offered (Aldo's `aldo-next`) as the user's next message. */
+  onSendFollowUp?: ((text: string) => Promise<boolean>) | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -327,6 +343,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   hideEmptyPlaceholder = false,
   topFadeEnabled = false,
   loadEarlier = null,
+  onSendFollowUp = null,
 }: MessagesTimelineProps) {
   const [expandedTurnIds, setExpandedTurnIds] = useState<ReadonlySet<TurnId>>(new Set());
   const [expandedWorkGroupIds, setExpandedWorkGroupIds] = useState<ReadonlySet<string>>(new Set());
@@ -451,6 +468,24 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     });
   }, [latestTurn]);
 
+  // Threads on work that isn't software say what their steps did in words.
+  const workWords = useAldoKeptRepo(activeThreadEnvironmentId) ? aldoWorkWords : null;
+  // Kept as one value until a share changes, so rows don't re-render as the agent streams.
+  const aldoSharesKey = useMemo(
+    () =>
+      workWords
+        ? JSON.stringify(
+            aldoSharesByTurn(
+              timelineEntries.flatMap((entry) => (entry.kind === "work" ? [entry.entry] : [])),
+            ),
+          )
+        : "[]",
+    [workWords, timelineEntries],
+  );
+  const aldoSharesByTurnId = useMemo(
+    () => new Map<string, ReadonlyArray<AldoShare>>(JSON.parse(aldoSharesKey)),
+    [aldoSharesKey],
+  );
   const rawRows = useMemo(
     () =>
       deriveMessagesTimelineRows({
@@ -465,6 +500,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
         activeToolWait,
         turnDiffSummaryByAssistantMessageId,
         revertTurnCountByUserMessageId,
+        workWords,
       }),
     [
       timelineEntries,
@@ -478,6 +514,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       activeToolWait,
       turnDiffSummaryByAssistantMessageId,
       revertTurnCountByUserMessageId,
+      workWords,
     ],
   );
   const rows = useStableRows(rawRows);
@@ -585,6 +622,9 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onToggleWorkGroup,
       agentPanelModel,
       onOpenAgents,
+      workWords,
+      aldoSharesByTurnId,
+      onSendFollowUp,
     }),
     [
       timestampFormat,
@@ -604,6 +644,9 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onToggleWorkGroup,
       agentPanelModel,
       onOpenAgents,
+      workWords,
+      aldoSharesByTurnId,
+      onSendFollowUp,
     ],
   );
   const activityState = useMemo<TimelineRowActivityState>(
@@ -1278,9 +1321,36 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
   );
 }
 
+const NO_TURN_FILES: TurnDiffSummary["files"] = [];
+const NO_TURN_SHARES: ReadonlyArray<AldoShare> = [];
+
+/** An agent's offered follow-ups, under the thread's latest answer while nothing runs. */
+function AldoNextRow(props: {
+  readonly turnId: TurnId | null;
+  readonly next: ReadonlyArray<string>;
+}) {
+  const { onSendFollowUp } = use(TimelineRowCtx);
+  const { isWorking, latestTurnId } = use(TimelineRowActivityCtx);
+  if (!onSendFollowUp || isWorking || props.turnId === null || props.turnId !== latestTurnId) {
+    return null;
+  }
+  return <AldoNextChips next={props.next} onSend={onSendFollowUp} />;
+}
+
 function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
-  const messageText = row.message.text || (row.message.streaming ? "" : "(empty response)");
+  const fullText = row.message.text || (row.message.streaming ? "" : "(empty response)");
+  // Aldo's agents end a finished task with follow-ups in an `aldo-next` block: offered as chips, not shown as code.
+  const aldoNext = useMemo(() => (isAldoCloud ? splitAldoNext(fullText) : null), [fullText]);
+  const messageText = aldoNext?.text ?? fullText;
+  const changedFiles = (
+    <AssistantChangedFilesSection
+      turnSummary={row.assistantTurnDiffSummary}
+      routeThreadKey={ctx.routeThreadKey}
+      resolvedTheme={ctx.resolvedTheme}
+      onOpenTurnDiff={ctx.onOpenTurnDiff}
+    />
+  );
 
   return (
     <>
@@ -1295,12 +1365,23 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
           onUseArtifactTemplate={ctx.onUseArtifactTemplate}
           onImageExpand={ctx.onImageExpand}
         />
-        <AssistantChangedFilesSection
-          turnSummary={row.assistantTurnDiffSummary}
-          routeThreadKey={ctx.routeThreadKey}
-          resolvedTheme={ctx.resolvedTheme}
-          onOpenTurnDiff={ctx.onOpenTurnDiff}
-        />
+        {aldoNext && aldoNext.next.length > 0 && row.showAssistantMeta ? (
+          <AldoNextRow turnId={row.message.turnId ?? null} next={aldoNext.next} />
+        ) : null}
+        {ctx.workWords && row.showAssistantMeta ? (
+          <AldoMadeCards
+            files={row.assistantTurnDiffSummary?.files ?? NO_TURN_FILES}
+            shares={
+              (row.message.turnId && ctx.aldoSharesByTurnId.get(row.message.turnId)) ||
+              NO_TURN_SHARES
+            }
+            threadRef={ctx.threadRef}
+            workspaceRoot={ctx.workspaceRoot}
+            allChanges={changedFiles}
+          />
+        ) : (
+          changedFiles
+        )}
         {row.showAssistantMeta ? (
           <div className="mt-1.5 flex items-center gap-2 text-xs tabular-nums opacity-0 transition-opacity duration-200 focus-within:opacity-100 group-hover/assistant:opacity-100">
             <AssistantCopyButton row={row} />
@@ -1325,7 +1406,11 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
 
 function AssistantCopyButton({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const assistantCopyState = resolveAssistantMessageCopyState({
-    text: row.message.text ?? null,
+    // Without Aldo's follow-ups block, which isn't part of the answer.
+    text:
+      isAldoCloud && row.message.text
+        ? splitAldoNext(row.message.text).text
+        : (row.message.text ?? null),
     showCopyButton: row.showAssistantCopyButton,
     streaming: row.assistantCopyStreaming,
   });
@@ -1383,6 +1468,10 @@ function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "workin
               Setting up worktree…
               <ActivityShimmerOverlay>Setting up worktree…</ActivityShimmerOverlay>
             </>
+          ) : row.words && row.createdAt ? (
+            <>
+              {row.words} · <WorkingTimer createdAt={row.createdAt} />
+            </>
           ) : toolWait ? (
             <>
               Running <span className="font-mono">{toolWait.label}</span> for{" "}
@@ -1400,6 +1489,7 @@ function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "workin
           <span className="min-w-0 truncate text-muted-foreground/55">· {workingStepLabel}</span>
         ) : null}
       </div>
+      {isAldoCloud && row.status !== "waking" ? <AldoNotifyOffer /> : null}
     </div>
   );
 }
@@ -1636,7 +1726,9 @@ function LiveActivityContent({
 
 function LiveWorkEntryTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "work-live" }> }) {
   const ctx = use(TimelineRowCtx);
-  const label = liveWorkEntryLabel(row.entry, ctx.workspaceRoot, row.active);
+  const label =
+    ctx.workWords?.step(row.entry, row.active) ??
+    liveWorkEntryLabel(row.entry, ctx.workspaceRoot, row.active);
   const failed = workEntryDisplayIndicatesToolFailure(row.entry);
 
   return (
@@ -2552,14 +2644,17 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   isExpandedToolGroupEntry: boolean;
 }) {
   const { workEntry, workspaceRoot, isExpandedToolGroupEntry } = props;
-  const { threadRef, onImageExpand } = use(TimelineRowCtx);
+  const { threadRef, onImageExpand, workWords } = use(TimelineRowCtx);
   const [expanded, setExpanded] = useState(false);
   const iconConfig = workToneIcon(workEntry.tone);
   const showWarningIndicator = workEntry.sourceActivityKind === "runtime.warning";
   const showFailedIndicator = workEntryDisplayIndicatesToolFailure(workEntry);
   const entryIconName =
     showWarningIndicator || showFailedIndicator ? "circle-alert" : workEntryIconName(workEntry);
-  const displayText = workEntryPreview(workEntry, workspaceRoot) ?? toolWorkEntryHeading(workEntry);
+  const displayText =
+    workWords?.step(workEntry, false) ??
+    workEntryPreview(workEntry, workspaceRoot) ??
+    toolWorkEntryHeading(workEntry);
   const expandedBody = buildToolCallExpandedBody(workEntry, workspaceRoot);
   const viewedImagePath = workEntryViewedImagePath(workEntry);
   const viewedImage =

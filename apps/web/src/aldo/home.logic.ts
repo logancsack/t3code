@@ -323,7 +323,7 @@ const FAILED_LABELS: Record<string, string> = {
   settle_thread: "Couldn't settle a thread",
   answer_computer_request: "Couldn't answer a computer request",
   stop_computer: "Couldn't stop a computer",
-  set_machine_size: "Couldn't change a machine's size",
+  set_machine_size: "Couldn't change a computer's size",
   send_upcoming_now: "Couldn't send a queued message",
   cancel_upcoming: "Couldn't cancel a queued message",
   create_routine: "Couldn't set up a routine",
@@ -418,42 +418,61 @@ export interface HealthIssue {
   readonly tone: "warn" | "bad";
   /** Where to fix it: a settings page. */
   readonly href?: string;
-  /** Or something the page can do. */
-  readonly action?: "enable-notifications";
 }
 
 /**
- * What's wrong with the setup, for the strip that shows only then: an agent's
- * sign-in that expired (as the user's machines report it), a plan that can't
- * run, an environment whose build failed, notifications off on this device.
+ * The sign-in each agent runs on, by its instance on the user's machines. An
+ * agent that isn't here (Aldo's models, through OpenCode) needs none of the
+ * user's, so it's never signed out.
  */
-export function healthIssues(
-  home: Pick<AldoHome, "health" | "usage">,
-  notifications: "on" | "off" | "blocked" | "unavailable",
-): ReadonlyArray<HealthIssue> {
+const PROVIDER_ACCOUNT: Record<string, string> = {
+  claudeAgent: "claude",
+  claude: "claude",
+  codex: "codex",
+  grok: "grok",
+  muse: "muse",
+};
+
+/** ["Codex", "Grok"] → "Codex and Grok". */
+function listed(names: ReadonlyArray<string>): string {
+  return names.length <= 1
+    ? (names[0] ?? "")
+    : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
+}
+
+/**
+ * What's wrong with the setup, for the strip that shows only then: a
+ * subscription the user connected whose sign-in expired (as their machines
+ * report it; one they never connected isn't wrong), a plan that can't run, an
+ * environment whose build failed. Notifications are offered when they matter
+ * instead (AldoNotifyOffer.tsx), not here.
+ */
+export function healthIssues(home: Pick<AldoHome, "health" | "usage">): ReadonlyArray<HealthIssue> {
   const issues: HealthIssue[] = [];
-  for (const provider of home.health.providers) {
-    if (!provider.signedIn) {
-      issues.push({
-        id: `provider-${provider.id}`,
-        text: `${provider.name} is signed out on your cloud agents. Reconnect it.`,
-        tone: "bad",
-        href: "/settings/providers",
-      });
-    }
+  const signedOut = home.health.providers.filter((provider) => {
+    const account = PROVIDER_ACCOUNT[provider.id];
+    return !provider.signedIn && account !== undefined && home.health.connected.includes(account);
+  });
+  if (signedOut.length > 0) {
+    issues.push({
+      id: "providers",
+      text: `${listed(signedOut.map((p) => p.name))} ${signedOut.length === 1 ? "needs" : "need"} signing in again.`,
+      tone: "bad",
+      href: "/settings/providers",
+    });
   }
   const period = home.usage.period?.status;
   if (period === "past_due") {
     issues.push({
       id: "plan",
-      text: "Your last payment didn't go through, so cloud agents can't start.",
+      text: "Your last payment didn't go through, so agents can't start.",
       tone: "bad",
       href: "/usage",
     });
   } else if (period === "canceled") {
     issues.push({
       id: "plan",
-      text: "Your plan has ended, so cloud agents can't start.",
+      text: "Your plan has ended, so agents can't start.",
       tone: "bad",
       href: "/usage",
     });
@@ -476,27 +495,20 @@ export function healthIssues(
     if (env.status === "failed") {
       issues.push({
         id: `env-${env.repos.join(",")}`,
-        text: `The ready-to-go environment for ${env.repos.map((r) => r.split("/").at(-1) ?? r).join(" + ")} failed to build. New threads start without it.`,
+        text: `The ready-to-go setup for ${env.repos.map((r) => r.split("/").at(-1) ?? r).join(" + ")} failed to build. New threads start without it.`,
         tone: "warn",
         href: "/settings/environments",
       });
     }
   }
-  if (notifications === "off") {
-    issues.push({
-      id: "notifications",
-      text: "Notifications are off on this device, so you'll only hear from agents here.",
-      tone: "warn",
-      action: "enable-notifications",
-    });
-  } else if (notifications === "blocked") {
-    issues.push({
-      id: "notifications",
-      text: "Your browser blocks notifications for Aldo. Allow them in its site settings to hear from agents away from this tab.",
-      tone: "warn",
-    });
-  }
   return issues;
+}
+
+/** Whether the plan lets agents run now: a complimentary one, or a paid one that's active. */
+export function planRunning(usage: AldoHome["usage"]): boolean {
+  if (!usage.configured) return false;
+  const status = usage.period?.status;
+  return status === undefined || status === "active" || status === "trialing";
 }
 
 /** How Aldo works for the user, from the policy agents follow, in a line each. */

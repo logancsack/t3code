@@ -470,6 +470,79 @@ describe("deriveMessagesTimelineRows", () => {
     expect(assistantRow?.assistantTurnDiffSummary).toBe(assistantTurnDiffSummary);
   });
 
+  it("puts a settled turn's steps and the working line in words when given them", () => {
+    const words = {
+      step: () => null,
+      recap: (entries: ReadonlyArray<{ label: string }>) =>
+        entries.length > 0 ? `Did ${entries.map((entry) => entry.label).join(", ")}` : null,
+      working: (entries: ReadonlyArray<{ label: string }>) =>
+        entries.length > 0 ? `Doing ${entries.at(-1)!.label}` : null,
+    };
+    const message = (
+      id: string,
+      role: "user" | "assistant",
+      at: string,
+      turnId: string | null,
+    ) => ({
+      id: `${id}-entry`,
+      kind: "message" as const,
+      createdAt: at,
+      message: {
+        id: id as never,
+        role,
+        text: id,
+        turnId: turnId as never,
+        createdAt: at,
+        updatedAt: at,
+        streaming: false,
+      },
+    });
+    const work = (id: string, at: string, turnId: string) => ({
+      id: `${id}-entry`,
+      kind: "work" as const,
+      createdAt: at,
+      entry: { id, createdAt: at, turnId: turnId as never, label: id, tone: "tool" as const },
+    });
+    const settled = deriveMessagesTimelineRows({
+      timelineEntries: [
+        message("user-1", "user", "2026-01-01T00:00:00Z", null),
+        work("open-site", "2026-01-01T00:00:05Z", "turn-1"),
+        work("make-sheet", "2026-01-01T00:00:08Z", "turn-1"),
+        message("answer", "assistant", "2026-01-01T00:00:20Z", "turn-1"),
+      ],
+      isWorking: false,
+      activeTurnStartedAt: null,
+      turnDiffSummaryByAssistantMessageId: new Map(),
+      revertTurnCountByUserMessageId: new Map(),
+      workWords: words,
+    });
+    expect(settled.find((row) => row.kind === "turn-fold")).toMatchObject({
+      label: "Did open-site, make-sheet · 20s",
+    });
+
+    const working = deriveMessagesTimelineRows({
+      timelineEntries: [
+        message("user-1", "user", "2026-01-01T00:00:00Z", null),
+        work("open-site", "2026-01-01T00:00:05Z", "turn-2"),
+      ],
+      latestTurn: {
+        turnId: "turn-2" as never,
+        state: "running",
+        startedAt: "2026-01-01T00:00:00Z",
+        completedAt: null,
+      } as never,
+      runningTurnId: "turn-2" as never,
+      isWorking: true,
+      activeTurnStartedAt: "2026-01-01T00:00:00Z",
+      turnDiffSummaryByAssistantMessageId: new Map(),
+      revertTurnCountByUserMessageId: new Map(),
+      workWords: words,
+    });
+    expect(working.find((row) => row.kind === "working")).toMatchObject({
+      words: "Doing open-site",
+    });
+  });
+
   it("folds the first assistant message and settled work before the terminal response", () => {
     const timelineEntries = [
       {

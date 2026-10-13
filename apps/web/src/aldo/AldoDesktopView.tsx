@@ -271,7 +271,7 @@ export function AldoDesktopView({
 }
 
 const SCREENS: ReadonlyArray<readonly [AldoDesktopScreen, string]> = [
-  ["machine", "This machine"],
+  ["machine", "Agent's computer"],
   ["windows", "Windows"],
 ];
 

@@ -74,8 +74,9 @@ export function AldoConversationPage(props: {
   readonly now: number;
   readonly viewSwitch: ReactNode;
   readonly setup: ReactNode;
+  /** Under the empty conversation's welcome: the first run's starters. */
+  readonly welcome: ReactNode;
   readonly issues: ReturnType<typeof healthIssues>;
-  readonly onEnableNotifications: () => void;
   readonly chips: ReadonlyArray<string>;
   readonly onChip: (chip: string) => void;
 }) {
@@ -171,14 +172,11 @@ export function AldoConversationPage(props: {
           >
             <div className="mx-auto flex w-full max-w-2xl flex-col gap-4 px-4 pt-5 pb-4 sm:px-5">
               {props.setup}
-              <HealthStrip
-                issues={props.issues}
-                onEnableNotifications={props.onEnableNotifications}
-              />
+              <HealthStrip issues={props.issues} />
               {props.supported === false ? <AldoAtAGlance /> : null}
               <AldoPeekerContext.Provider value={peekAny}>
                 <AldoPeekContext.Provider value={peekThread}>
-                  <AldoConversation />
+                  <AldoConversation empty={props.welcome} />
                 </AldoPeekContext.Provider>
               </AldoPeekerContext.Provider>
             </div>

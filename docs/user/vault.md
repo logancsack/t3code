@@ -1,6 +1,6 @@
 # The Vault in Aldo
 
-**Settings → Vault** holds the secrets and website logins your cloud agents use. Values are encrypted when you save them and never shown again, here or to agents' tools. You can only replace or delete them.
+**Settings → Vault** holds the secrets and website logins your agents use. Values are encrypted when you save them and never shown again, here or to agents' tools. You can only replace or delete them.
 
 ## Secrets
 

@@ -8,7 +8,6 @@ import { Link } from "@tanstack/react-router";
 import {
   AlertTriangleIcon,
   ArrowUpRightIcon,
-  BellRingIcon,
   ClockIcon,
   GitPullRequestIcon,
   MessageCircleQuestionIcon,
@@ -26,7 +25,6 @@ import {
   cancelAldoDelivery,
   mergeAldoPullRequest,
   sendAldoDeliveryNow,
-  setAldoMachine,
   type AldoHome,
   type AldoHomeAction,
   type AldoHomeConversation,
@@ -86,10 +84,7 @@ function NewBadge() {
   );
 }
 
-export function HealthStrip(props: {
-  readonly issues: ReadonlyArray<HealthIssue>;
-  readonly onEnableNotifications: () => void;
-}) {
+export function HealthStrip(props: { readonly issues: ReadonlyArray<HealthIssue> }) {
   if (props.issues.length === 0) return null;
   return (
     <ul className="flex flex-col gap-1.5">
@@ -105,12 +100,7 @@ export function HealthStrip(props: {
         >
           <AlertTriangleIcon className="size-4 shrink-0" />
           <span className="min-w-0 flex-1">{issue.text}</span>
-          {issue.action === "enable-notifications" ? (
-            <Button size="compact" variant="outline" onClick={props.onEnableNotifications}>
-              <BellRingIcon />
-              Turn on
-            </Button>
-          ) : issue.href ? (
+          {issue.href ? (
             <Button size="compact" variant="outline" render={<Link to={issue.href} />}>
               Fix
             </Button>
@@ -138,22 +128,9 @@ export function ConversationRow(props: {
   readonly onActed: () => void;
 }) {
   const c = props.conversation;
-  const [switching, setSwitching] = useState(false);
   const stuck = isStuck(c, props.now);
   const working = c.state === "working";
   const model = modelName(c.model);
-  const switchMachine = async () => {
-    setSwitching(true);
-    try {
-      await setAldoMachine(c.thread.environmentId, "2x");
-      toastManager.add({ type: "success", title: "Switching to a 2× machine" });
-      props.onActed();
-    } catch (cause) {
-      toastManager.add({ type: "error", title: "Couldn't switch", description: messageOf(cause) });
-    } finally {
-      setSwitching(false);
-    }
-  };
   return (
     <li
       data-selected={props.selected || undefined}
@@ -220,21 +197,12 @@ export function ConversationRow(props: {
           <p className="mt-1 line-clamp-2 text-muted-foreground text-xs">{c.summary}</p>
         ) : null}
         {c.pressure && working ? (
-          <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs">
-            <span className="text-warning-foreground">
-              {c.pressure.kind === "memory" ? "Running short on memory." : "Every CPU is busy."}
-            </span>
-            {c.machineSizing !== "automatic" ? (
-              <Button
-                size="compact"
-                variant="outline"
-                disabled={switching}
-                onClick={() => void switchMachine()}
-              >
-                {switching ? "Switching…" : "Switch to 2× machine"}
-              </Button>
-            ) : null}
-          </div>
+          // Information only: Aldo sizes the computer itself.
+          <p className="mt-1.5 text-muted-foreground text-xs">
+            {c.pressure.kind === "memory"
+              ? "Its computer is short on memory, so it's getting more."
+              : "Every CPU on its computer is busy, so this may take a little longer."}
+          </p>
         ) : null}
       </div>
       {props.assistant ? (

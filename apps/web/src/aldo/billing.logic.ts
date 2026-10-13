@@ -211,7 +211,7 @@ export function aldoCancelCopy(
 ): AldoBillingConfirmation {
   return {
     title: "Cancel your plan?",
-    description: `${planName} ends ${onPeriodEnd(periodEnd)}, and you aren't charged again. Until then you keep its credits; after that, cloud agents can't start until you choose a plan again.`,
+    description: `${planName} ends ${onPeriodEnd(periodEnd)}, and you aren't charged again. Until then you keep its credits; after that, agents can't start until you choose a plan again.`,
     confirm: "Cancel plan",
   };
 }
@@ -225,7 +225,7 @@ export function aldoPlanSummary(view: AldoBillingView): string | null {
   switch (view.kind) {
     case "choose":
       return view.ended
-        ? `Your ${view.ended} plan has ended, so cloud agents can't start. Choose a plan to keep going.`
+        ? `Your ${view.ended} plan has ended, so agents can't start. Choose a plan to keep going.`
         : null;
     case "fixed":
       return `${view.plan.name}, set by your Aldo admin. Renews ${onPeriodEnd(view.periodEnd)}.`;

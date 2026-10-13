@@ -729,7 +729,7 @@ export function useThreadActions() {
             [
               `Delete thread "${title}"?`,
               isAldoCloud && isAldoEnvironmentId(target.environmentId)
-                ? "This permanently deletes the thread and its cloud agent, including any changes it hasn't pushed."
+                ? "This permanently deletes the thread and its computer, including any changes it hasn't pushed."
                 : "This permanently clears conversation history for this thread.",
             ].join("\n"),
             { variant: "destructive" },

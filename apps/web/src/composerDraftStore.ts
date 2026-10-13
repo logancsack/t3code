@@ -4018,6 +4018,11 @@ export function useComposerThreadDraft(threadRef: ComposerThreadTarget): Compose
   });
 }
 
+/** What's in a thread's composer now, read once rather than followed. */
+export function readComposerThreadPrompt(threadRef: ComposerThreadTarget): string {
+  return getComposerDraftState(useComposerDraftStore.getState(), threadRef)?.prompt ?? "";
+}
+
 export function useComposerDraftModelState(
   threadRef: ComposerThreadTarget,
 ): ComposerDraftModelState {

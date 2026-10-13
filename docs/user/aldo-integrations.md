@@ -1,6 +1,6 @@
 # Integrations in Aldo
 
-**Settings → Integrations** connects accounts your cloud agents use on your behalf: Google and Microsoft, for your mail, calendar, contacts and files, your Link wallet, for paying at checkouts with your approval each time, apps like Notion, Linear and Zapier, and media generators for images, video and audio. It's also where you claim your agents' own email address.
+**Settings → Integrations** connects accounts your agents use on your behalf: Google and Microsoft, for your mail, calendar, contacts and files, your Link wallet, for paying at checkouts with your approval each time, apps like Notion, Linear and Zapier, and media generators for images, video and audio. It's also where you claim your agents' own email address.
 
 ## Apps
 

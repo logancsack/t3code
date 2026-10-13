@@ -354,7 +354,7 @@ export function AldoEnvironmentsPanel() {
     >
       <p className="px-3 text-sm text-muted-foreground sm:px-4">
         A ready-to-go environment prebuilds a repository (or a set of repositories) with
-        dependencies installed, so new threads start working immediately, with their dev servers
+        dependencies installed, so new threads start working immediately, with their previews
         already running. Agents set one up with <code className="text-xs">save_environment</code>, a
         repository can define one in <code className="text-xs">.aldo/environment.json</code>, or add
         one here. Aldo rebuilds them daily.

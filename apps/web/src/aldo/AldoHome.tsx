@@ -6,20 +6,22 @@
 // waits on a tap first), what's happening, what got done, what's coming; with
 // Aldo beside it (right, or under it on a phone) as a pane. Both come from
 // Aldo's one read of the account (homeFeed.ts), which never wakes a machine.
-// Until a git host and an agent are connected it walks through setup first.
+// Until agents can run (on Aldo's models or a subscription of the user's) it
+// asks for setup first; after, one line offers what's missing (AldoSetup.tsx),
+// and the first few threads start from tappable starters (AldoStarters.tsx).
 // An Aldo without the home read shows what Aldo's overview says instead; one
 // without the assistant shows the board alone. On a phone the two are Aldo's
-// conversation and the Agents tab (AldoAgentsTab.tsx): every thread by what
+// conversation and the Threads tab (AldoAgentsTab.tsx): every thread by what
 // it needs, made for a thumb.
 
 import { useNavigate } from "@tanstack/react-router";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import {
-  CheckCircle2Icon,
-  CircleIcon,
+  ChevronDownIcon,
   CompassIcon,
   FolderGit2Icon,
   LayoutGridIcon,
+  PlusIcon,
   SparklesIcon,
 } from "lucide-react";
 import {
@@ -33,12 +35,13 @@ import {
 } from "react";
 
 import { Button } from "../components/ui/button";
+import { Group, GroupSeparator } from "../components/ui/group";
 import { Kbd } from "../components/ui/kbd";
+import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../components/ui/menu";
 import { Skeleton } from "../components/ui/skeleton";
 import { SidebarInset } from "../components/ui/sidebar";
-import { toastManager } from "../components/ui/toast";
 import { cn } from "~/lib/utils";
-import { ALDO_ACCOUNT_SPECS, AldoAccountButton, useAldoAccounts } from "./AldoAccountsPanel";
+import { useAldoAccounts } from "./AldoAccountsPanel";
 import { AldoAgentsTab } from "./AldoAgentsTab";
 import { AldoAtAGlance, AldoPane, useAldoAssistantAvailable } from "./AldoAssistant";
 import { AldoConversationPage } from "./AldoConversationPage";
@@ -55,11 +58,14 @@ import {
 import { ApprovalsSection } from "./AldoApprovals";
 import { NeedsYouCard } from "./AldoHomeInbox";
 import { RoutinesSection } from "./AldoRoutines";
+import { AGENT_KINDS, AldoSetupCard, AldoSetupLine } from "./AldoSetup";
+import { AldoStarters, STARTERS_UNTIL_THREADS } from "./AldoStarters";
 import { seedAldoComposer, sendText, useAldoAssistant } from "./assistantSession";
 import {
+  aldoOffersItsModels,
   aldoSupportsGeneralThreads,
+  aldoSupportsProjects,
   subscribeAldoEnvironments,
-  type AldoAccountKind,
   type AldoHomeConversation,
 } from "./cloud";
 import {
@@ -70,6 +76,7 @@ import {
   type AldoHomeView,
 } from "./homeFeed";
 import { HOST_KINDS, openAldoRepositoryPicker } from "./AldoRepositoryDialog";
+import { useStartAldoThread } from "./newThread";
 import {
   boardFor,
   chipPrompt,
@@ -78,15 +85,14 @@ import {
   healthIssues,
   isNewSince,
   moveSelection,
+  planRunning,
   repoChips,
   repoName,
 } from "./home.logic";
 import { loadAldoBrief } from "./briefFeed";
 import { aldoWaitingCount } from "./decisions.logic";
-import { aldoNotificationsStatus, enableAldoNotifications } from "./notifications";
 import { useIsMobile } from "../hooks/useMediaQuery";
 
-const AGENT_KINDS: ReadonlyArray<AldoAccountKind> = ["claude", "codex", "grok", "muse"];
 const LAST_SEEN_KEY = "aldo:home:seen";
 /** Shows "now" moving: elapsed times tick without a fetch. */
 const TICK_MS = 30_000;
@@ -131,43 +137,6 @@ function useNow(): number {
   return now;
 }
 
-function useNotifications(): { status: NotificationsState; enable: () => void } {
-  const [status, setStatus] = useState<NotificationsState>("unavailable");
-  const [key, setKey] = useState<string | null>(null);
-  useEffect(() => {
-    let current = true;
-    void aldoNotificationsStatus().then((next) => {
-      if (!current) return;
-      if (next.availability !== "available") setStatus("unavailable");
-      else {
-        setKey(next.key);
-        setStatus(next.on ? "on" : next.blocked ? "blocked" : next.key ? "off" : "unavailable");
-      }
-    });
-    return () => {
-      current = false;
-    };
-  }, []);
-  const enable = useCallback(() => {
-    void enableAldoNotifications(key)
-      .then((on) => {
-        setStatus(on ? "on" : "off");
-        if (on)
-          toastManager.add({ type: "success", title: "Notifications are on for this device" });
-      })
-      .catch((cause: unknown) =>
-        toastManager.add({
-          type: "error",
-          title: "Couldn't turn notifications on",
-          description: cause instanceof Error ? cause.message : String(cause),
-        }),
-      );
-  }, [key]);
-  return { status, enable };
-}
-
-type NotificationsState = Parameters<typeof healthIssues>[1];
-
 function inField(target: EventTarget | null): boolean {
   const element = target as HTMLElement | null;
   if (!element) return false;
@@ -189,7 +158,6 @@ export function AldoHome() {
   const aldoView = assistant === true && view === "aldo";
   const lastSeen = useLastSeen();
   const now = useNow();
-  const notifications = useNotifications();
   const navigate = useNavigate();
 
   // The day's first look at the home screen makes Aldo's brief, whichever view it opens on;
@@ -218,17 +186,29 @@ export function AldoHome() {
     aldoSupportsGeneralThreads,
     () => false,
   );
-  const setupDone = agentReady && (sourceReady || general);
+  // Aldo's own projects need no git host either.
+  const projects = useSyncExternalStore(
+    subscribeAldoEnvironments,
+    aldoSupportsProjects,
+    () => false,
+  );
+  // Agents run on Aldo's models once the plan is active: a subscription of the user's is an upgrade.
+  const aldoModels = useSyncExternalStore(
+    subscribeAldoEnvironments,
+    aldoOffersItsModels,
+    () => false,
+  );
+  const canRun = agentReady || (aldoModels && home !== null && planRunning(home.usage));
+  const setupDone = canRun && (sourceReady || general);
+  /** The first few threads: starters show, and the setup line until both are connected. */
+  const firstRun = home !== null && home.conversations.length < STARTERS_UNTIL_THREADS;
 
   const repos = useMemo(() => (home ? repoChips(home) : []), [home]);
   // A repository whose chip has gone (its last conversation left) no longer narrows anything.
   const activeRepo = repo !== null && repos.includes(repo) ? repo : null;
   const shown = useMemo(() => (home ? filterHome(home, activeRepo) : null), [home, activeRepo]);
   const board = useMemo(() => (shown ? boardFor(shown.conversations, now) : null), [shown, now]);
-  const issues = useMemo(
-    () => (home ? healthIssues(home, notifications.status) : []),
-    [home, notifications.status],
-  );
+  const issues = useMemo(() => (home ? healthIssues(home) : []), [home]);
   const chips = useMemo(
     () => composerChips(home, { conversationEmpty, lastSeen }),
     [home, conversationEmpty, lastSeen],
@@ -299,37 +279,36 @@ export function AldoHome() {
 
   if (assistant === null) return <SidebarInset className="h-dvh bg-background" />;
 
-  const setup =
-    accounts && !setupDone ? (
-      <section className="rounded-xl border border-border/60 bg-card/30 p-4">
-        <h2 className="font-medium text-sm">{assistant ? "Set up Aldo" : "Welcome to Aldo"}</h2>
-        <p className="mt-1 text-muted-foreground text-xs">
-          {general
-            ? `Connect at least one of your agent subscriptions, once${assistant ? ", so Aldo can start threads for you" : ""}, and GitHub (or another git host in Settings → Source Control) for work on code.`
-            : `Connect GitHub (or another git host in Settings → Source Control) and at least one of your agent subscriptions, once${assistant ? ", so Aldo can start threads for you" : ""}.`}
-        </p>
-        <ol className="mt-3 space-y-2 text-left">
-          {sourceHost && sourceHost !== "github" ? null : (
-            <SetupRow
-              kind="github"
-              connected={sourceReady}
-              label={accounts.github.account}
-              onConnected={refreshAccounts}
-            />
-          )}
-          {/* Only the agents Aldo connects (an older one doesn't list Muse Code). */}
-          {AGENT_KINDS.filter((kind) => kind in accounts).map((kind) => (
-            <SetupRow
-              key={kind}
-              kind={kind}
-              connected={accounts[kind].connected}
-              label={accounts[kind].account}
-              onConnected={refreshAccounts}
-            />
-          ))}
-        </ol>
-      </section>
+  // Nothing can run yet: the card asks for a subscription (or, on an older Aldo
+  // without General threads, a repository too). Once agents can run, one line
+  // offers what's missing, for the first few threads.
+  const setupLine =
+    accounts && setupDone && (!agentReady || !sourceReady) && firstRun ? (
+      <AldoSetupLine accounts={accounts} sourceReady={sourceReady} onConnected={refreshAccounts} />
     ) : null;
+  const setupCard =
+    accounts && !setupDone ? (
+      <AldoSetupCard
+        accounts={accounts}
+        sourceHost={sourceHost}
+        general={general}
+        assistant={assistant === true}
+        onConnected={refreshAccounts}
+      />
+    ) : null;
+  const setup = setupCard ?? setupLine;
+  // In Aldo's empty conversation, the starters, with the line under them.
+  const welcome =
+    firstRun && setupCard === null ? (
+      <>
+        <AldoStarters sourceReady={sourceReady} />
+        {setupLine}
+      </>
+    ) : null;
+  const conversationSetup = welcome && conversationEmpty ? setupCard : setup;
+  const newMenu = (
+    <NewMenu general={general} projects={projects || sourceReady} repositories={sourceReady} />
+  );
 
   if (mobile && assistant === true) {
     const tabs = (
@@ -339,16 +318,7 @@ export function AldoHome() {
       />
     );
     if (!aldoView) {
-      return (
-        <AldoAgentsTab
-          header={tabs}
-          home={home}
-          now={now}
-          setup={setup}
-          issues={issues}
-          onEnableNotifications={notifications.enable}
-        />
-      );
+      return <AldoAgentsTab header={tabs} home={home} now={now} setup={setup} issues={issues} />;
     }
     return (
       <AldoConversationPage
@@ -356,9 +326,9 @@ export function AldoHome() {
         supported={supported}
         now={now}
         viewSwitch={tabs}
-        setup={setup}
+        setup={conversationSetup}
+        welcome={welcome}
         issues={issues}
-        onEnableNotifications={notifications.enable}
         chips={chips}
         onChip={onChip}
       />
@@ -373,9 +343,9 @@ export function AldoHome() {
         supported={supported}
         now={now}
         viewSwitch={viewSwitch}
-        setup={setup}
+        setup={conversationSetup}
+        welcome={welcome}
         issues={issues}
-        onEnableNotifications={notifications.enable}
         chips={chips}
         onChip={onChip}
       />
@@ -401,36 +371,10 @@ export function AldoHome() {
             <header className="flex flex-wrap items-center gap-2">
               {viewSwitch}
               <h1 className={cn("mr-auto font-semibold text-lg", viewSwitch && "sr-only")}>
-                Your agents
+                Your threads
               </h1>
               {viewSwitch ? <span className="mr-auto" /> : null}
-              <Button
-                size="sm"
-                onClick={() => openAldoRepositoryPicker("new")}
-                disabled={!sourceReady}
-              >
-                <SparklesIcon className="size-4" />
-                New project
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => openAldoRepositoryPicker("existing")}
-                disabled={!sourceReady}
-              >
-                <FolderGit2Icon className="size-4" />
-                Open a repository
-              </Button>
-              {general ? (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => openAldoRepositoryPicker("general")}
-                >
-                  <CompassIcon className="size-4" />
-                  New thread
-                </Button>
-              ) : null}
+              {newMenu}
             </header>
             {setup}
             {repos.length > 1 ? (
@@ -450,7 +394,7 @@ export function AldoHome() {
                 ))}
               </div>
             ) : null}
-            <HealthStrip issues={issues} onEnableNotifications={notifications.enable} />
+            <HealthStrip issues={issues} />
             {error && !home ? <p className="text-destructive-foreground text-sm">{error}</p> : null}
             {supported === false ? <AldoAtAGlance /> : null}
             {supported === null && !home ? (
@@ -492,11 +436,11 @@ export function AldoHome() {
                 board.working.length === 0 &&
                 board.done.length === 0 ? (
                   <div className="rounded-xl border border-border/60 border-dashed px-5 py-8 text-center">
-                    <p className="font-medium text-sm">Nothing's running</p>
+                    <p className="font-medium text-sm">Nothing yet</p>
                     <p className="mt-1 text-muted-foreground text-xs">
                       {assistant
-                        ? "Tell Aldo what to get done, or start a thread in a repository."
-                        : "Start a new project, or open a repository. Every thread gets its own cloud agent."}
+                        ? "What you start shows here: what needs you first, then what's working and what's done. Tell Aldo what to get done, or start a thread with New."
+                        : "What you start shows here: what needs you first, then what's working and what's done. Start a thread with New: each gets an agent with its own computer."}
                     </p>
                   </div>
                 ) : null}
@@ -611,7 +555,7 @@ function ViewSwitch(props: { readonly view: AldoHomeView }) {
   );
 }
 
-/** On a phone: Aldo's conversation, or the Agents tab with how many things wait on the user. */
+/** On a phone: Aldo's conversation, or the Threads tab with how many things wait on the user. */
 function PhoneTabs(props: { readonly view: "aldo" | "agents"; readonly waiting: number }) {
   const option = (view: "aldo" | "agents", children: ReactNode) => (
     <button
@@ -647,7 +591,7 @@ function PhoneTabs(props: { readonly view: "aldo" | "agents"; readonly waiting: 
       {option(
         "agents",
         <>
-          Agents
+          Threads
           {props.waiting > 0 ? (
             <span className="rounded-full bg-warning/15 px-1.5 font-semibold text-[11px] text-warning-foreground">
               {props.waiting}
@@ -681,31 +625,50 @@ function RepoChip(props: {
   );
 }
 
-function SetupRow(props: {
-  readonly kind: AldoAccountKind;
-  readonly connected: boolean;
-  readonly label: string | null;
-  readonly onConnected: () => void;
+/**
+ * One "New": a thread, the default when it's clicked, and in its menu a
+ * project (an Aldo one needs no git host) or a thread in repositories, once
+ * a git host is connected.
+ */
+function NewMenu(props: {
+  readonly general: boolean;
+  readonly projects: boolean;
+  readonly repositories: boolean;
 }) {
-  const spec = ALDO_ACCOUNT_SPECS[props.kind];
+  // A General draft at once; an older Aldo can't start a thread outside a repository.
+  const { start, starting } = useStartAldoThread();
+  const thread = () => (props.general ? void start([]) : openAldoRepositoryPicker("existing"));
   return (
-    <li className="flex items-center gap-3 rounded-xl border border-border/60 bg-card/30 px-4 py-3">
-      {props.connected ? (
-        <CheckCircle2Icon className="size-5 shrink-0 text-success-foreground" />
-      ) : (
-        <CircleIcon className="size-5 shrink-0 text-muted-foreground/60" />
-      )}
-      <div className="min-w-0 flex-1">
-        <div className="font-medium text-sm">{spec.title}</div>
-        <div className="truncate text-muted-foreground text-xs">
-          {props.connected
-            ? `Connected${props.label ? ` as ${props.label}` : ""}`
-            : spec.description}
-        </div>
-      </div>
-      {props.connected ? null : (
-        <AldoAccountButton kind={props.kind} account={undefined} onConnected={props.onConnected} />
-      )}
-    </li>
+    <Group aria-label="New">
+      <Button
+        size="sm"
+        onClick={thread}
+        disabled={starting || (!props.general && !props.repositories)}
+      >
+        <PlusIcon className="size-4" />
+        New
+      </Button>
+      <GroupSeparator />
+      <Menu>
+        <MenuTrigger render={<Button aria-label="More to start" size="icon-sm" />}>
+          <ChevronDownIcon aria-hidden className="size-4" />
+        </MenuTrigger>
+        <MenuPopup align="end" className="min-w-52">
+          {props.general ? (
+            <MenuItem onClick={thread}>
+              <CompassIcon className="size-4" /> Thread
+            </MenuItem>
+          ) : null}
+          <MenuItem disabled={!props.projects} onClick={() => openAldoRepositoryPicker("new")}>
+            <SparklesIcon className="size-4" /> Project
+          </MenuItem>
+          {props.repositories ? (
+            <MenuItem onClick={() => openAldoRepositoryPicker("existing")}>
+              <FolderGit2Icon className="size-4" /> Thread in a repository
+            </MenuItem>
+          ) : null}
+        </MenuPopup>
+      </Menu>
+    </Group>
   );
 }

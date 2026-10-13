@@ -90,6 +90,7 @@ import {
   type ComposerBannerStackItem,
 } from "./ComposerBannerStack";
 import { useAldoComposerBannerItem } from "../ManagedDevPcAgent";
+import { useAldoKeptRepo } from "~/aldo/keptRepo";
 import { compressImageForStash, prepareImageForAttachment } from "../../lib/imageCompression";
 import {
   fileAttachmentTooLargeMessage,
@@ -2993,6 +2994,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       }
     : null;
   const aldoStackItem = useAldoComposerBannerItem();
+  // Aldo: work that isn't code shows no modes; they stay in the "…" menu.
+  const aldoKeptRepo = useAldoKeptRepo(environmentId);
   const bannerStackItems = [
     ...(aldoStackItem ? [aldoStackItem] : []),
     ...(activityStackItem ? [activityStackItem] : []),
@@ -4256,7 +4259,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     />
                   )}
 
-                  {isComposerFooterCompact ? (
+                  {isComposerFooterCompact || aldoKeptRepo ? (
                     <CompactComposerControlsMenu
                       interactionMode={interactionMode}
                       runtimeMode={runtimeMode}

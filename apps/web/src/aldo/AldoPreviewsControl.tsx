@@ -148,7 +148,7 @@ export function AldoPreviewsControl(props: {
         <MenuPopup align="end" className="w-80">
           {loading && !previews ? (
             <div className="flex items-center gap-2 px-2 py-3 text-xs text-muted-foreground">
-              <LoaderIcon className="size-3.5 animate-spin" /> Looking for dev servers…
+              <LoaderIcon className="size-3.5 animate-spin" /> Looking for previews…
             </div>
           ) : error ? (
             <div className="px-2 py-3 text-xs text-destructive-foreground">{error}</div>
@@ -156,14 +156,14 @@ export function AldoPreviewsControl(props: {
             <div className="px-2 py-3 text-xs text-muted-foreground">
               {aldoMachineIsNew(props.environmentId)
                 ? aldoOfflineMessage(props.environmentId)
-                : "This cloud agent is asleep. Opening a preview's link reconnects it."}
+                : "Its computer is asleep. Opening a preview's link wakes it."}
             </div>
           ) : ports.length === 0 ? (
             <div className="space-y-1 px-2 py-3 text-xs text-muted-foreground">
-              <p>No dev servers are running.</p>
+              <p>Nothing to preview yet.</p>
               <p>
-                Ask the agent to start one. It keeps it running across sleeps and shares a preview
-                link.
+                Ask the agent to start what it made. It keeps it running across sleeps and shares a
+                preview link.
               </p>
             </div>
           ) : (

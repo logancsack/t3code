@@ -2342,7 +2342,7 @@ function ChatViewContent(props: ChatViewProps) {
           variant: unavailableConnection.phase === "error" ? "error" : "warning",
           icon: <WifiOffIcon />,
           title: isAldoCloud
-            ? "Can't reach this thread's cloud agent"
+            ? "Can't reach this thread's computer"
             : `${activeEnvironmentActionUnavailableState.label}: ${connectionStatusTitle(unavailableConnection)}`,
           description:
             unavailableConnection.error ??
@@ -6961,6 +6961,12 @@ function ChatViewContent(props: ChatViewProps) {
     ],
   );
 
+  // A follow-up an Aldo agent offered at the end of its answer, sent as the next message.
+  const onSendFollowUp = useCallback(
+    (text: string) => onSubmitPlanFollowUp({ text, interactionMode, linkProposedPlan: false }),
+    [interactionMode, onSubmitPlanFollowUp],
+  );
+
   // A question whose turn is over can't take its answer any more, so the
   // answer goes to the agent as a new message. Answering the question as well,
   // once the new turn's session holds it, gets the server to close it.
@@ -7662,6 +7668,7 @@ function ChatViewContent(props: ChatViewProps) {
                 }
                 topFadeEnabled={!hasTimelineTopBanner}
                 loadEarlier={loadEarlierTurns}
+                onSendFollowUp={isAldoCloud ? onSendFollowUp : null}
               />
               {showAldoThreadLoading ? (
                 <div className="absolute inset-0">

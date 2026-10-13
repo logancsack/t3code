@@ -27,7 +27,7 @@ export const ROUTINE_FREQUENCIES: ReadonlyArray<{
   { value: "week", label: "Every week" },
   { value: "month", label: "Every month" },
   { value: "hours", label: "Every few hours" },
-  { value: "webhook", label: "Only when its webhook is called" },
+  { value: "webhook", label: "Only from a link that runs it" },
 ];
 
 export interface RoutineForm {
@@ -125,7 +125,7 @@ export function routineStatus(
 ): string {
   if (!routine.enabled) return "Paused";
   if (routine.nextRunAt) return `Next ${dueIn(routine.nextRunAt)}`;
-  return routine.webhook ? "Webhook" : "When you run it";
+  return routine.webhook ? "From its link" : "When you run it";
 }
 
 /** How its last run went, for the user: Aldo's note, without its "failed: " prefix. */

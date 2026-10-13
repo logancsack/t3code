@@ -45,7 +45,7 @@ export interface AldoEnvironment {
   readonly state: "new" | "ready" | "stopped" | "failed";
   /** Standard: 4 vCPU, 8 GB. 2x: 8 vCPU, 16 GB, twice the usage. */
   readonly machine?: AldoMachineSize;
-  /** Automatic sizing has no manual upgrades. Older servers leave this out. */
+  /** Aldo sizes every machine itself. */
   readonly machineSizing?: "automatic";
   /** A recent report of the machine running short while its agent worked. */
   readonly pressure?: AldoMachinePressure | null;
@@ -164,9 +164,14 @@ async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 let knownEnvironments: ReadonlyArray<AldoEnvironment> | null = null;
 /** What this Aldo can do that an older one couldn't, as its directory says (none before the first listing). */
-let aldoFeatures: { readonly general: boolean; readonly projects: boolean } = {
+let aldoFeatures: {
+  readonly general: boolean;
+  readonly projects: boolean;
+  readonly aldoModels: boolean;
+} = {
   general: false,
   projects: false,
+  aldoModels: false,
 };
 
 /** Whether threads can start without a repository (General), as the directory said. */
@@ -177,6 +182,11 @@ export function aldoSupportsGeneralThreads(): boolean {
 /** Whether Aldo keeps projects itself (`aldo:<slug>`, for work that isn't code), as the directory said. */
 export function aldoSupportsProjects(): boolean {
   return aldoFeatures.projects;
+}
+
+/** Whether agents can run on Aldo's own models, with no subscription of the user's, as the directory said. */
+export function aldoOffersItsModels(): boolean {
+  return aldoFeatures.aldoModels;
 }
 const directoryListeners = new Set<() => void>();
 let refreshRequested = true;
@@ -267,6 +277,11 @@ export function aldoThreadInKeptRepo(environmentId: string): boolean {
   return repo !== undefined && (repo === "" || repo.startsWith("aldo:"));
 }
 
+/** Whether a thread works in General's folder: in no repository and no project. */
+export function aldoThreadInGeneral(environmentId: string): boolean {
+  return knownEnvironments?.find((entry) => entry.environmentId === environmentId)?.repo === "";
+}
+
 /** Whether a thread's machine is still to be created (it is when its first message is sent). */
 export function aldoMachineIsNew(environmentId: string): boolean {
   return knownEnvironments?.find((entry) => entry.environmentId === environmentId)?.state === "new";
@@ -298,15 +313,15 @@ export function aldoStartState(environmentId: string, threadId: string): AldoSta
 /** What a thread's panels say while its cloud agent is offline. */
 export function aldoOfflineMessage(environmentId: string): string {
   const preload = getAldoPreloadSettings();
-  if (aldoStartOf(environmentId) === "starting") return "Starting the cloud agent…";
+  if (aldoStartOf(environmentId) === "starting") return "Starting its computer…";
   if (aldoMachineIsNew(environmentId)) {
     return preload.newThreads
-      ? "Starting the cloud agent…"
-      : "The cloud agent starts when you send your first message.";
+      ? "Starting its computer…"
+      : "Its computer starts when you send your first message.";
   }
   return preload.openedThreads
     ? "Reconnecting to the cloud…"
-    : "This cloud agent is asleep. It wakes when you send a message.";
+    : "Its computer is asleep. It wakes when you send a message.";
 }
 
 export function requestAldoDirectoryRefresh(): void {
@@ -341,9 +356,13 @@ async function syncDirectory(environments: ReadonlyArray<AldoEnvironment>): Prom
 async function fetchEnvironments(): Promise<ReadonlyArray<AldoEnvironment>> {
   const { environments, features } = await api<{
     environments: AldoEnvironment[];
-    features?: { general?: boolean; projects?: boolean };
+    features?: { general?: boolean; projects?: boolean; aldoModels?: boolean };
   }>("/api/environments");
-  aldoFeatures = { general: features?.general === true, projects: features?.projects === true };
+  aldoFeatures = {
+    general: features?.general === true,
+    projects: features?.projects === true,
+    aldoModels: features?.aldoModels === true,
+  };
   // A listing that started before a deletion finished can still include its machine.
   const listed = environments.filter((environment) => !hiddenByDeletion(environment.environmentId));
   knownEnvironments = listed;
@@ -463,7 +482,7 @@ export const aldoEnvironmentGateway = {
           : Effect.fail(
               new ConnectionBlockedError({
                 reason: "dormant",
-                detail: "This cloud agent is asleep.",
+                detail: "Its computer is asleep.",
               }),
             ),
       ),
@@ -534,7 +553,7 @@ export async function removeAldoProjectSandbox(environmentId: string): Promise<v
 
 /** How removing a project in Aldo reads in a confirmation. */
 export const ALDO_PROJECT_REMOVAL_NOTE =
-  "This also deletes the project's cloud agents, including any changes they haven't pushed.";
+  "This also deletes the computers of the project's threads, including any changes they haven't pushed.";
 
 /**
  * Puts back a machine started or woken ahead of use once the user has left
@@ -1443,7 +1462,7 @@ export async function aldoBillingPortalUrl(): Promise<string> {
   return url;
 }
 
-/** Moves a thread to another machine size. A running machine restarts, and its agent carries on. */
+/** Moves a thread to another computer size (an older Aldo, which sizes them by hand). A running one restarts, and its agent carries on. */
 export async function setAldoMachine(environmentId: string, size: AldoMachineSize): Promise<void> {
   await api(`/api/environments/${threadIdForEnvironment(environmentId)}/machine`, {
     method: "POST",

@@ -11,7 +11,7 @@ import type { AldoEnvironment, AldoStartState } from "./cloud";
 export type AldoThreadStartTone = "progress" | "waiting" | "retrying" | "failed";
 
 /** The steps of a start, in the order the thread shows them. */
-export const ALDO_START_STEPS = ["Machine", "Agent", "Conversation"] as const;
+export const ALDO_START_STEPS = ["Computer", "Agent", "Conversation"] as const;
 
 export interface AldoThreadStartView {
   readonly tone: AldoThreadStartTone;
@@ -94,7 +94,7 @@ export function describeAldoThreadStart(input: {
           tone: "progress",
           label: "Starting",
           title: "Starting the agent",
-          body: "Its machine is up. The agent gets its first message in a moment.",
+          body: "Its computer is up. The agent gets its first message in a moment.",
           reason: null,
           step,
         };
@@ -103,8 +103,8 @@ export function describeAldoThreadStart(input: {
         return {
           tone: "progress",
           label: "Starting",
-          title: "Waking your cloud agent",
-          body: `Its machine is starting again. ${SOON}`,
+          title: "Waking its computer",
+          body: `Its computer is starting again. ${SOON}`,
           reason: null,
           step,
         };
@@ -112,11 +112,11 @@ export function describeAldoThreadStart(input: {
       return {
         tone: "progress",
         label: "Starting",
-        title: "Creating your cloud agent",
+        title: "Setting up its computer",
         body:
           repos.length > 0
-            ? `Setting up its machine and cloning ${listed(repos)}. ${SOON}`
-            : `Setting up its machine. ${SOON}`,
+            ? `Setting up its computer and cloning ${listed(repos)}. ${SOON}`
+            : `Setting up its computer. ${SOON}`,
         reason: null,
         step,
       };
@@ -168,15 +168,15 @@ function describeHeldMessage(
             tone: "progress",
             label: "Sending",
             title: "Sending your message",
-            body: "Its machine is up. The agent gets it in a moment.",
+            body: "Its computer is up. The agent gets it in a moment.",
             reason: null,
             step,
           }
         : {
             tone: "progress",
             label: "Sending",
-            title: "Waking your cloud agent",
-            body: "Its machine is starting again. Your message goes to the agent as soon as it's up.",
+            title: "Waking its computer",
+            body: "Its computer is starting again. Your message goes to the agent as soon as it's up.",
             reason: null,
             step,
           };

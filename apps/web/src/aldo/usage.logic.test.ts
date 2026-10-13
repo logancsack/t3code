@@ -112,7 +112,7 @@ describe("withAldoUsage", () => {
 describe("aldoUsageNotes", () => {
   it("says how many agents aren't counted, one line per reason", () => {
     expect(aldoUsageNotes([ALDO_UNREPORTED_USAGE])).toEqual([
-      "Usage from 1 cloud agent isn't counted yet: it reports it the next time it runs.",
+      "Usage from 1 computer isn't counted yet: it reports it the next time it runs.",
     ]);
     expect(
       aldoUsageNotes([
@@ -122,8 +122,8 @@ describe("aldoUsageNotes", () => {
         "This environment could not report usage.",
       ]),
     ).toEqual([
-      "Usage from 2 cloud agents isn't counted yet: each reports it the next time it runs.",
-      "Usage from 2 cloud agents couldn't be read. Refresh to try again.",
+      "Usage from 2 computers isn't counted yet: each reports it the next time it runs.",
+      "Usage from 2 computers couldn't be read. Refresh to try again.",
     ]);
     expect(aldoUsageNotes([])).toEqual([]);
   });
