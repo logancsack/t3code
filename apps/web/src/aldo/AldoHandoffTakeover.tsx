@@ -2,7 +2,8 @@
 // (AldoHandoffCard.tsx): the page, one sentence of what to do, and a large
 // "I'm done" that hands it back. It opens from the card's "Do it now", the
 // Browser panel's "Take over", or a notification's "Do it now", which opens
-// the conversation with `?handoff=<id>`. Touch works as in the Browser panel.
+// the conversation with `?handoff=<id>`. Touch works as in the Browser panel,
+// and so does "Teach this", which teaches the conversation that asked.
 
 import { LoaderIcon, XIcon } from "lucide-react";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
@@ -97,6 +98,7 @@ function Takeover({ id }: { readonly id: string }) {
             <AldoBrowserPanel
               key={handoff.thread.environmentId}
               environmentId={handoff.thread.environmentId}
+              threadId={handoff.thread.threadId}
               inTakeover
             />
           </Suspense>

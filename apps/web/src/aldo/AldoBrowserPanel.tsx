@@ -6,6 +6,7 @@ import {
   EllipsisIcon,
   ExternalLinkIcon,
   GlobeIcon,
+  GraduationCapIcon,
   HandIcon,
   LoaderIcon,
   MonitorIcon,
@@ -24,7 +25,11 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { useParams } from "@tanstack/react-router";
 
+import { readComposerThreadPrompt, useComposerDraftStore } from "../composerDraftStore";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import {
@@ -35,12 +40,14 @@ import {
   MenuSeparator,
   MenuTrigger,
 } from "../components/ui/menu";
+import { toastManager } from "../components/ui/toast";
 import { cn } from "../lib/utils";
 import { useAldoBrowserRequests } from "./browserStore";
 import { stopAldoThreadComputer, useAldoComputer } from "./AldoComputer";
 import { AldoDesktopScreenSwitch, AldoDesktopView } from "./AldoDesktopView";
 import { AldoHandoffBar, useAldoHandoffTakeover } from "./AldoHandoffCard";
 import { AldoLoginOfferCard } from "./AldoLoginOfferCard";
+import { AldoTeachBar, AldoTeachForm } from "./AldoTeach";
 import {
   AldoApiError,
   aldoBrowserConnection,
@@ -66,6 +73,13 @@ import {
 } from "./loginOffers.logic";
 import { neverSaveLoginsFor, useAldoNeverSaveLogins } from "./neverSaveLogins";
 import { useAldoPageVisible } from "./pageVisibility";
+import { promptWith } from "./summon.logic";
+import {
+  aldoTeachMessage,
+  parseAldoTeach,
+  parseAldoTeachSteps,
+  type AldoTeach,
+} from "./teach.logic";
 
 type Tab = { id: string; url: string; title: string };
 type Nav = { url: string; canGoBack: boolean; canGoForward: boolean; loading: boolean };
@@ -101,9 +115,12 @@ function localPort(url: string): number | null {
  */
 export function AldoBrowserPanel({
   environmentId,
+  threadId,
   inTakeover = false,
 }: {
   environmentId: string;
+  /** The conversation "Teach this" teaches; else the one on screen, when it's this machine's. */
+  threadId?: string;
   /** Full screen for a handoff (AldoHandoffTakeover.tsx), which says what to do itself. */
   inTakeover?: boolean;
 }) {
@@ -137,6 +154,12 @@ export function AldoBrowserPanel({
   // Saves waiting for an offer's password from the machine.
   const passwordWaits = useRef(new Map<string, (password: string | null) => void>());
   const neverSave = useAldoNeverSaveLogins();
+  // "Teach this" (teach.logic.ts): how the recording stands, once the machine says it can record.
+  const [teach, setTeach] = useState<AldoTeach | null>(null);
+  // Teaching it, waiting for the steps from the machine.
+  const teachStepsWait = useRef<((steps: string[] | null) => void) | null>(null);
+  const route = useParams({ strict: false }) as { environmentId?: string; threadId?: string };
+  const teachThread = threadId ?? (route.environmentId === environmentId ? route.threadId : null);
   const [address, setAddress] = useState("");
   const [editingAddress, setEditingAddress] = useState(false);
   const [now, setNow] = useState(() => Date.now());
@@ -332,6 +355,12 @@ export function AldoBrowserPanel({
             );
             break;
           }
+          case "teach":
+            setTeach(parseAldoTeach(message));
+            break;
+          case "teachSteps":
+            teachStepsWait.current?.(parseAldoTeachSteps(message.steps));
+            break;
           case "loginOffers": {
             const offers = parseAldoLoginOffers(message.offers);
             loginAnswersRef.current = pendingAldoLoginAnswers(loginAnswersRef.current, offers);
@@ -635,6 +664,54 @@ export function AldoBrowserPanel({
     send({ type: "loginOffer", id, saved });
   };
 
+  const canTeach = teach?.state === "off" && Boolean(teachThread) && status === "live";
+  const startTeaching = () => send({ type: "teach", action: "start" });
+  /** The recording's steps: the machine gives them once, to this panel, and forgets them. */
+  const takeTeachSteps = () =>
+    new Promise<string[] | null>((resolve, reject) => {
+      const unreachable = new Error(
+        "Couldn't reach its computer's browser. Try again in a moment.",
+      );
+      if (socketRef.current?.readyState !== WebSocket.OPEN) return reject(unreachable);
+      const timer = setTimeout(() => {
+        teachStepsWait.current = null;
+        reject(unreachable);
+      }, 15_000);
+      teachStepsWait.current = (steps) => {
+        clearTimeout(timer);
+        teachStepsWait.current = null;
+        resolve(steps);
+      };
+      send({ type: "teach", action: "take" });
+    });
+  /** Puts the lesson in the conversation's message box, for the user to read over and send. */
+  const teachIt = async (sentence: string) => {
+    if (!teachThread) throw new Error("Open the conversation to teach its agent.");
+    const steps = await takeTeachSteps();
+    if (!steps) throw new Error("That recording is gone from its computer. Teach this again.");
+    const target = scopeThreadRef(environmentId as EnvironmentId, teachThread as ThreadId);
+    useComposerDraftStore
+      .getState()
+      .setPrompt(
+        target,
+        promptWith(readComposerThreadPrompt(target), aldoTeachMessage(sentence, steps)),
+      );
+    toastManager.add({
+      type: "success",
+      title: "Your lesson is in the message box",
+      description: inTakeover
+        ? "Send it to your agent once you're done here."
+        : "Read it over, then send it to your agent.",
+      timeout: 8000,
+    });
+    if (!inTakeover) {
+      window.setTimeout(
+        () => document.querySelector<HTMLElement>('[data-testid="composer-editor"]')?.focus(),
+        50,
+      );
+    }
+  };
+
   const active = tabs.find((tab) => tab.id === activeTab) ?? null;
   const agentActive = now - control.agentActiveAt < AGENT_ACTIVE_MS && !control.human;
   const port = localPort(shownUrl);
@@ -777,6 +854,11 @@ export function AldoBrowserPanel({
             />
           </form>
         </div>
+        {inTakeover && canTeach ? (
+          <Button type="button" size="xs" variant="outline" onClick={startTeaching}>
+            <GraduationCapIcon /> Teach this
+          </Button>
+        ) : null}
         <Button
           type="button"
           variant={control.explicit ? "default" : "ghost"}
@@ -817,13 +899,24 @@ export function AldoBrowserPanel({
             >
               Follow the agent's tab
             </MenuCheckboxItem>
+            {canTeach ? (
+              <>
+                <MenuSeparator />
+                <MenuItem onClick={startTeaching}>
+                  <GraduationCapIcon className="size-3.5" />
+                  Teach this
+                </MenuItem>
+              </>
+            ) : null}
           </MenuPopup>
         </Menu>
       </div>
 
       {inTakeover ? null : <AldoHandoffBar environmentId={environmentId} />}
 
-      {control.explicit ? (
+      {teach?.state === "recording" ? (
+        <AldoTeachBar teach={teach} onStop={() => send({ type: "teach", action: "stop" })} />
+      ) : control.explicit ? (
         <div className="flex shrink-0 items-center gap-2 border-b border-border bg-primary/8 px-3 py-1.5 text-xs">
           <HandIcon className="size-3.5 shrink-0 text-primary" />
           <span className="min-w-0 flex-1">
@@ -855,7 +948,18 @@ export function AldoBrowserPanel({
         </div>
       ) : null}
 
-      {loginOffer ? (
+      {teach?.state === "recorded" ? (
+        // Over the top of the page, until it's taught or discarded (on any device).
+        <div className="relative z-20 h-0 shrink-0">
+          <div className="absolute top-2 left-1/2 w-[min(26rem,calc(100%-1rem))] -translate-x-1/2">
+            <AldoTeachForm
+              teach={teach}
+              onTeach={teachIt}
+              onDiscard={() => send({ type: "teach", action: "discard" })}
+            />
+          </div>
+        </div>
+      ) : loginOffer ? (
         // Over the top corner of the page or the desktop, which stay usable around it.
         <div className="relative z-20 h-0 shrink-0">
           <div className="absolute top-2 right-2 w-[min(22rem,calc(100%-1rem))]">
