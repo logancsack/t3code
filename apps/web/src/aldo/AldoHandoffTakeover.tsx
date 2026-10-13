@@ -121,9 +121,10 @@ function Takeover({ id }: { readonly id: string }) {
             </Button>
             <p className="text-center text-muted-foreground text-xs">
               Your agent waits until you hand it back ·{" "}
+              {/* A finger needs 44px; the line grows on touch screens only. */}
               <button
                 type="button"
-                className="underline underline-offset-2 hover:text-foreground disabled:opacity-60"
+                className="underline underline-offset-2 hover:text-foreground disabled:opacity-60 pointer-coarse:inline-flex pointer-coarse:min-h-11 pointer-coarse:items-center"
                 disabled={busy !== null}
                 onClick={() => void answer({ decision: "skip" })}
               >
