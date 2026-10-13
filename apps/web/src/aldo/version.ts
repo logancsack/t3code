@@ -7,6 +7,7 @@
 
 import { toastManager } from "../components/ui/toast";
 import { isAldoCloud } from "./cloud";
+import { updateAldoServiceWorker } from "./serviceWorker";
 import {
   aldoVersionCheckDue,
   INITIAL_ALDO_VERSION_STATE,
@@ -70,6 +71,8 @@ export function installAldoVersionCheck(): void {
     window.clearInterval(timer);
     document.removeEventListener("visibilitychange", onVisible);
     window.removeEventListener("focus", onVisible);
+    // The new version's files download now, so the reload (or next launch) has them.
+    updateAldoServiceWorker();
     showReloadNotice();
   }
   document.addEventListener("visibilitychange", onVisible);
