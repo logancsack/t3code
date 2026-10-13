@@ -4,6 +4,7 @@ import { AldoNotifyOffer } from "../../aldo/AldoNotifyOffer";
 import { useAldoKeptRepo } from "../../aldo/keptRepo";
 import { AldoMadeCards } from "../../aldo/AldoMadeCards";
 import { AldoNextChips } from "../../aldo/AldoNextChips";
+import { AldoStallLine, useAldoStall } from "../../aldo/AldoStall";
 import { splitAldoNext } from "../../aldo/next.logic";
 import type { AldoShare } from "../../aldo/made.logic";
 import { aldoSharesByTurn, aldoWorkWords } from "../../aldo/workLabels.logic";
@@ -1444,11 +1445,18 @@ function ProposedPlanTimelineRow({
 
 function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "working" }> }) {
   const { isPreparingWorktree, workingStepLabel } = use(TimelineRowActivityCtx);
-  const { activeThreadEnvironmentId } = use(TimelineRowCtx);
+  const { activeThreadEnvironmentId, routeThreadKey, workWords } = use(TimelineRowCtx);
   // Say what the turn is actually waiting on. A tool the agent launched (a
   // build, a test run) is legitimately unbounded, so it gets its own label
   // and elapsed time instead of an anonymous ever-growing "Working for".
   const toolWait = row.toolWait;
+  // Aldo: in threads that aren't code, a turn that has stopped moving says so.
+  const aldoStall = useAldoStall({
+    threadKey: routeThreadKey,
+    enabled: workWords !== null && row.status === "working" && !isPreparingWorktree,
+    startedAt: row.createdAt,
+    words: row.words ?? null,
+  });
   return (
     <div className="border-b border-border/60 pb-2 pt-1" data-working-status={row.status}>
       <div className="flex h-6 min-w-0 items-baseline gap-2 px-1 text-sm leading-relaxed text-muted-foreground tabular-nums">
@@ -1456,7 +1464,9 @@ function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "workin
           key={row.status === "waking" ? "waking" : isPreparingWorktree ? "setup" : "working"}
           className="relative min-w-0 shrink overflow-hidden truncate whitespace-nowrap transition-opacity duration-150 starting:opacity-0 motion-reduce:transition-none"
         >
-          {row.status === "waking" && row.createdAt ? (
+          {aldoStall ? (
+            <AldoStallLine stall={aldoStall} />
+          ) : row.status === "waking" && row.createdAt ? (
             <>
               {isAldoCloud && activeThreadEnvironmentId
                 ? aldoStartingLabel(activeThreadEnvironmentId)
@@ -1485,7 +1495,7 @@ function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "workin
             "Working..."
           )}
         </span>
-        {workingStepLabel ? (
+        {workingStepLabel && !aldoStall ? (
           <span className="min-w-0 truncate text-muted-foreground/55">· {workingStepLabel}</span>
         ) : null}
       </div>

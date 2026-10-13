@@ -445,6 +445,7 @@ import {
 } from "../versionSkew";
 import { useAssetUrls } from "../assets/assetUrls";
 import { useAldoPreload } from "../aldo/preload";
+import { useAldoStallSignals } from "../aldo/AldoStall";
 import { aldoDesktopOwnsKeyboard } from "../aldo/desktopInput.logic";
 import { useAldoThreadDetailMissing } from "../aldo/threadDetails";
 import { AldoThreadLoading } from "../aldo/AldoThreadLoading";
@@ -6966,6 +6967,15 @@ function ChatViewContent(props: ChatViewProps) {
     (text: string) => onSubmitPlanFollowUp({ text, interactionMode, linkProposedPlan: false }),
     [interactionMode, onSubmitPlanFollowUp],
   );
+  // Aldo: what the working line needs to say a turn has stopped moving, with Nudge and Stop.
+  useAldoStallSignals({
+    threadKey: isServerThread ? routeThreadKey : null,
+    activities: threadActivities,
+    messages: timelineMessages,
+    waitingOnYou: pendingApprovals.length > 0 || pendingUserInputs.length > 0,
+    send: onSendFollowUp,
+    stop: onInterrupt,
+  });
 
   // A question whose turn is over can't take its answer any more, so the
   // answer goes to the agent as a new message. Answering the question as well,
