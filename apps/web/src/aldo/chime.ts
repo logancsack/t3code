@@ -1,8 +1,9 @@
 // An optional sound while Aldo is open: a soft chime when a thread finishes
 // or needs the user (chime.logic.ts says when), off unless they turn it on
-// in Settings → General, per browser. It's made here with Web Audio rather
-// than shipped as a file. It listens only while the page shows, and not for
-// the thread the user is looking at; notifications cover the rest.
+// in Settings → General, per browser (every open tab follows). It's made here
+// with Web Audio rather than shipped as a file. It listens only while the
+// page shows, and not for the thread the user is looking at; notifications
+// cover the rest.
 
 import { useEffect, useSyncExternalStore } from "react";
 
@@ -39,9 +40,22 @@ export function setAldoSound(next: boolean): void {
   for (const listener of listeners) listener();
 }
 
+/** The setting changed in another tab or window of Aldo: this one follows. */
+function onStorage(event: StorageEvent): void {
+  if (event.key !== null && event.key !== STORAGE_KEY) return;
+  const next = read();
+  if (next === on) return;
+  on = next;
+  for (const listener of listeners) listener();
+}
+
 function subscribe(listener: () => void): () => void {
+  if (listeners.size === 0) window.addEventListener("storage", onStorage);
   listeners.add(listener);
-  return () => listeners.delete(listener);
+  return () => {
+    listeners.delete(listener);
+    if (listeners.size === 0) window.removeEventListener("storage", onStorage);
+  };
 }
 
 export function useAldoSound(): boolean {
