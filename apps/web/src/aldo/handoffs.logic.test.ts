@@ -76,9 +76,9 @@ describe("handoffs", () => {
   });
 
   it("names the site to skip", () => {
-    expect(aldoHandoffSkipLabel(handoff())).toBe("Skip Opentable");
-    expect(aldoHandoffSkipLabel(handoff({ site: "www.accounts.google.com" }))).toBe(
-      "Skip Accounts",
+    expect(aldoHandoffSkipLabel(handoff())).toBe("Skip opentable.com");
+    expect(aldoHandoffSkipLabel(handoff({ site: "accounts.google.com" }))).toBe(
+      "Skip accounts.google.com",
     );
     expect(aldoHandoffSkipLabel(handoff({ site: null }))).toBe("Skip it");
   });

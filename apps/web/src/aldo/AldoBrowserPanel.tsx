@@ -922,7 +922,7 @@ export function AldoBrowserPanel({
               aldoOfflineMessage(environmentId)
             ) : status === "error" || (status === "live" && error) ? (
               <span className="max-w-sm">
-                Couldn't reach the browser{error ? `: ${error}` : ""}. Retrying…
+                Couldn't reach the browser{error ? `: ${error.replace(/\.+$/, "")}` : ""}. Retrying…
               </span>
             ) : (
               <span className="inline-flex items-center gap-2">

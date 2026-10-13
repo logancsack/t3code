@@ -77,11 +77,10 @@ export function aldoHandoffWantsCode(h: Pick<AldoHandoff, "kind">): boolean {
   return CODE_KINDS.has(h.kind);
 }
 
-/** "Skip OpenTable", from the site's name; "Skip it" without one. */
+/** "Skip opentable.com", the site as it's written (a name made from it would guess its capitals); "Skip it" without one. */
 export function aldoHandoffSkipLabel(h: Pick<AldoHandoff, "site">): string {
-  if (!h.site) return "Skip it";
-  const name = h.site.replace(/^www\./, "").split(".")[0] ?? h.site;
-  return `Skip ${name.charAt(0).toUpperCase()}${name.slice(1)}`;
+  const site = h.site?.trim().replace(/^www\./, "");
+  return site ? `Skip ${site}` : "Skip it";
 }
 
 /** A code as the user typed it, without the spaces and dashes codes are often shown with. */
