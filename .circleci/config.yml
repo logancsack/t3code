@@ -26,7 +26,8 @@ commands:
             version=$(sed -n 's/^  vite-plus: //p' pnpm-workspace.yaml)
             curl -fsSL "https://raw.githubusercontent.com/voidzero-dev/vite-plus/v${version}/packages/cli/install.sh" \
               | VP_VERSION="$version" bash
-            echo 'export PATH="$HOME/.vite-plus/bin:$PATH"' >> "$BASH_ENV"
+            # Vite+ 1.0 installs under ~/.local/share/vite-plus (0.x used ~/.vite-plus).
+            echo 'export PATH="$HOME/.local/share/vite-plus/bin:$PATH"' >> "$BASH_ENV"
       - run:
           name: Install dependencies
           command: vp install
