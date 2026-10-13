@@ -158,7 +158,6 @@ function RootRouteView() {
         {isAldoCloud ? <AldoAttentionSync /> : null}
         <AldoAssistantDock />
         <AldoSummon />
-        {isAldoCloud ? <AldoHandoffTakeoverHost /> : null}
         <SlowRpcRequestToastCoordinator />
         <HostedStaticEnvironmentBootstrap />
         <LandingDemoBootstrap />
@@ -166,6 +165,9 @@ function RootRouteView() {
         {primaryEnvironmentAuthenticated ? <PlanAgentSelectionHeal /> : null}
         {primaryEnvironmentAuthenticated ? <ProviderUpdateLaunchNotification /> : null}
         {appShell}
+        {/* After the app shell, so the full-screen takeover covers its floating
+            sidebar toggle instead of sitting under it. */}
+        {isAldoCloud ? <AldoHandoffTakeoverHost /> : null}
         {/* Above the router: a theme draft is judged by walking the app, so the
             editor has to survive navigation away from settings. */}
         <ThemeEditorHost />
