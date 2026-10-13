@@ -11,7 +11,12 @@ import { Input } from "../components/ui/input";
 import { aldoTeachClock, type AldoTeach } from "./teach.logic";
 
 /** Under the toolbar while it records: "Recording · 2:14", and Stop. */
-export function AldoTeachBar(props: { readonly teach: AldoTeach; readonly onStop: () => void }) {
+export function AldoTeachBar(props: {
+  readonly teach: AldoTeach;
+  /** Whether the machine's browser is reachable: Stop waits for it. */
+  readonly connected: boolean;
+  readonly onStop: () => void;
+}) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000);
@@ -28,7 +33,13 @@ export function AldoTeachBar(props: { readonly teach: AldoTeach; readonly onStop
       <span className="min-w-0 flex-1 truncate text-muted-foreground">
         Do the task here. Agents wait; passwords aren't recorded.
       </span>
-      <Button type="button" size="compact" variant="outline" onClick={props.onStop}>
+      <Button
+        type="button"
+        size="compact"
+        variant="outline"
+        disabled={!props.connected}
+        onClick={props.onStop}
+      >
         <SquareIcon className="size-3 fill-current" /> Stop
       </Button>
     </div>
@@ -38,6 +49,8 @@ export function AldoTeachBar(props: { readonly teach: AldoTeach; readonly onStop
 /** Over the page once a recording stopped: what it's for, then Teach it or Discard. */
 export function AldoTeachForm(props: {
   readonly teach: AldoTeach;
+  /** Whether the machine's browser is reachable: Teach it and Discard wait for it. */
+  readonly connected: boolean;
   /** Teaches it: rejects with what went wrong, which the form shows. */
   readonly onTeach: (sentence: string) => Promise<void>;
   readonly onDiscard: () => void;
@@ -49,7 +62,7 @@ export function AldoTeachForm(props: {
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!sentence.trim() || busy) return;
+    if (!sentence.trim() || busy || !props.connected) return;
     setBusy(true);
     setError(null);
     try {
@@ -97,13 +110,17 @@ export function AldoTeachForm(props: {
           type="button"
           size="compact"
           variant="ghost"
-          disabled={busy}
+          disabled={busy || !props.connected}
           onClick={props.onDiscard}
         >
           Discard
         </Button>
         {steps > 0 ? (
-          <Button type="submit" size="compact" disabled={busy || !sentence.trim()}>
+          <Button
+            type="submit"
+            size="compact"
+            disabled={busy || !sentence.trim() || !props.connected}
+          >
             {busy ? <LoaderIcon className="size-3.5 animate-spin" /> : null} Teach it
           </Button>
         ) : null}

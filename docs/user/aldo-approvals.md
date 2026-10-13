@@ -39,6 +39,8 @@ Instead of explaining a task, you can show it once. **Teach this** is in the too
 3. Choose **Stop**, then say in a sentence what your agent should learn to do, like "Book a table on OpenTable for the time and party size I say".
 4. **Teach it** puts a message in the thread's message box, with the steps you took. Read it over and send it. **Discard** throws the recording away.
 
+From **Do it now**, **I'm done** waits until the recording is taught or discarded, so a recording isn't left behind when you hand the browser back.
+
 The message asks the agent to write a skill from it (it shows up in **Settings → Skills**), with what was particular to this time (a date, a name, a party size) as inputs it asks for. If it can do so without committing you to anything, it tries the skill once on another input, stopping before any step that books, buys, sends or submits. Then it tells you what the skill does, and offers to run it as a routine if that would help.
 
 **What it records**: the pages you go to (their address and title), what you click (a button's or link's name), what you type into each field (the final text, with the field's label), what you choose in lists, checkboxes and options, and when you send a form or press Enter. It records only while it says **Recording**, and only your own steps in the agent's browser, in every tab.

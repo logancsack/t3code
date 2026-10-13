@@ -117,14 +117,19 @@ export function AldoBrowserPanel({
   environmentId,
   threadId,
   inTakeover = false,
+  onTeaching,
 }: {
   environmentId: string;
   /** The conversation "Teach this" teaches; else the one on screen, when it's this machine's. */
   threadId?: string;
   /** Full screen for a handoff (AldoHandoffTakeover.tsx), which says what to do itself. */
   inTakeover?: boolean;
+  /** Whether a recording is under way or waiting to be taught: the takeover holds its "I'm done" meanwhile. */
+  onTeaching?: (teaching: boolean) => void;
 }) {
   const [status, setStatus] = useState<Status>("connecting");
+  // Whether what's sent reaches the machine: status stays "live" from a dropped connection until the next try.
+  const [connected, setConnected] = useState(false);
   // Whether a picture of the page has been drawn: until then, a connected panel is still starting the browser.
   const [pictured, setPictured] = useState(false);
   const picturedRef = useRef(false);
@@ -156,7 +161,7 @@ export function AldoBrowserPanel({
   const neverSave = useAldoNeverSaveLogins();
   // "Teach this" (teach.logic.ts): how the recording stands, once the machine says it can record.
   const [teach, setTeach] = useState<AldoTeach | null>(null);
-  // Teaching it, waiting for the steps from the machine.
+  // Teaching it: what to do with the steps once the machine gives them, even after the form gave up waiting.
   const teachStepsWait = useRef<((steps: string[] | null) => void) | null>(null);
   const route = useParams({ strict: false }) as { environmentId?: string; threadId?: string };
   const teachThread = threadId ?? (route.environmentId === environmentId ? route.threadId : null);
@@ -317,6 +322,7 @@ export function AldoBrowserPanel({
         : null;
       socket.onopen = () => {
         attempt = 0;
+        setConnected(true);
         setStatus("live");
         setError(null);
         sendViewport();
@@ -388,7 +394,9 @@ export function AldoBrowserPanel({
       socket.onclose = () => {
         player?.close();
         if (socketRef.current === socket) socketRef.current = null;
-        if (!disposed) schedule(Math.min(15_000, 1000 * 2 ** attempt++));
+        if (disposed) return;
+        setConnected(false);
+        schedule(Math.min(15_000, 1000 * 2 ** attempt++));
       };
     };
 
@@ -398,6 +406,7 @@ export function AldoBrowserPanel({
       if (retry) clearTimeout(retry);
       socketRef.current?.close();
       socketRef.current = null;
+      setConnected(false);
     };
   }, [environmentId, sendViewport, viewportSize]);
 
@@ -664,52 +673,64 @@ export function AldoBrowserPanel({
     send({ type: "loginOffer", id, saved });
   };
 
-  const canTeach = teach?.state === "off" && Boolean(teachThread) && status === "live";
-  const startTeaching = () => send({ type: "teach", action: "start" });
-  /** The recording's steps: the machine gives them once, to this panel, and forgets them. */
-  const takeTeachSteps = () =>
-    new Promise<string[] | null>((resolve, reject) => {
+  const canTeach = teach?.state === "off" && Boolean(teachThread) && connected;
+  const teaching = teach?.state === "recording" || teach?.state === "recorded";
+  useEffect(() => onTeaching?.(teaching), [onTeaching, teaching]);
+  /** It records the browser, so that's what shows, not the Desktop's apps. */
+  const startTeaching = () => {
+    setView("browser");
+    send({ type: "teach", action: "start" });
+  };
+  /**
+   * Puts the lesson in the conversation's message box, for the user to read
+   * over and send. The machine gives the steps once, to this panel: steps that
+   * come after the form gave up waiting still go in, and only once they're in
+   * (kept on this device) is the machine told it may forget them.
+   */
+  const teachIt = (sentence: string) =>
+    new Promise<void>((resolve, reject) => {
+      if (!teachThread) return reject(new Error("Open the conversation to teach its agent."));
       const unreachable = new Error(
         "Couldn't reach its computer's browser. Try again in a moment.",
       );
       if (socketRef.current?.readyState !== WebSocket.OPEN) return reject(unreachable);
-      const timer = setTimeout(() => {
-        teachStepsWait.current = null;
-        reject(unreachable);
-      }, 15_000);
+      const target = scopeThreadRef(environmentId as EnvironmentId, teachThread as ThreadId);
+      const timer = setTimeout(() => reject(unreachable), 15_000);
       teachStepsWait.current = (steps) => {
         clearTimeout(timer);
         teachStepsWait.current = null;
-        resolve(steps);
+        if (!steps) {
+          return reject(new Error("That recording is gone from its computer. Teach this again."));
+        }
+        useComposerDraftStore
+          .getState()
+          .setPrompt(
+            target,
+            promptWith(readComposerThreadPrompt(target), aldoTeachMessage(sentence, steps)),
+          );
+        // A machine that forgot them as it gave them ignores this.
+        send({ type: "teach", action: "taken" });
+        toastManager.add({
+          type: "success",
+          title: "Your lesson is in the message box",
+          description: inTakeover
+            ? "Send it to your agent once you're done here."
+            : "Read it over, then send it to your agent.",
+          timeout: 8000,
+        });
+        if (!inTakeover) {
+          window.setTimeout(
+            () => document.querySelector<HTMLElement>('[data-testid="composer-editor"]')?.focus(),
+            50,
+          );
+        }
+        resolve();
       };
       send({ type: "teach", action: "take" });
     });
-  /** Puts the lesson in the conversation's message box, for the user to read over and send. */
-  const teachIt = async (sentence: string) => {
-    if (!teachThread) throw new Error("Open the conversation to teach its agent.");
-    const steps = await takeTeachSteps();
-    if (!steps) throw new Error("That recording is gone from its computer. Teach this again.");
-    const target = scopeThreadRef(environmentId as EnvironmentId, teachThread as ThreadId);
-    useComposerDraftStore
-      .getState()
-      .setPrompt(
-        target,
-        promptWith(readComposerThreadPrompt(target), aldoTeachMessage(sentence, steps)),
-      );
-    toastManager.add({
-      type: "success",
-      title: "Your lesson is in the message box",
-      description: inTakeover
-        ? "Send it to your agent once you're done here."
-        : "Read it over, then send it to your agent.",
-      timeout: 8000,
-    });
-    if (!inTakeover) {
-      window.setTimeout(
-        () => document.querySelector<HTMLElement>('[data-testid="composer-editor"]')?.focus(),
-        50,
-      );
-    }
+  const discardTeaching = () => {
+    teachStepsWait.current = null;
+    send({ type: "teach", action: "discard" });
   };
 
   const active = tabs.find((tab) => tab.id === activeTab) ?? null;
@@ -915,7 +936,11 @@ export function AldoBrowserPanel({
       {inTakeover ? null : <AldoHandoffBar environmentId={environmentId} />}
 
       {teach?.state === "recording" ? (
-        <AldoTeachBar teach={teach} onStop={() => send({ type: "teach", action: "stop" })} />
+        <AldoTeachBar
+          teach={teach}
+          connected={connected}
+          onStop={() => send({ type: "teach", action: "stop" })}
+        />
       ) : control.explicit ? (
         <div className="flex shrink-0 items-center gap-2 border-b border-border bg-primary/8 px-3 py-1.5 text-xs">
           <HandIcon className="size-3.5 shrink-0 text-primary" />
@@ -954,8 +979,9 @@ export function AldoBrowserPanel({
           <div className="absolute top-2 left-1/2 w-[min(26rem,calc(100%-1rem))] -translate-x-1/2">
             <AldoTeachForm
               teach={teach}
+              connected={connected}
               onTeach={teachIt}
-              onDiscard={() => send({ type: "teach", action: "discard" })}
+              onDiscard={discardTeaching}
             />
           </div>
         </div>
