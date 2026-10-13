@@ -72,11 +72,14 @@ function answer(): void {
   }
 }
 
-/** "Want a ping when it's done? · Turn on", while notifications are off here and it hasn't been answered. */
+/**
+ * "Want a ping when it's done? · Turn on", while notifications are off here
+ * and it hasn't been answered; blocked in the browser, where to allow them.
+ */
 export function AldoNotifyOffer() {
   const notifications = useAldoNotifications();
   const [hidden, setHidden] = useState(answered);
-  if (hidden || notifications.status !== "off") return null;
+  if (hidden || (notifications.status !== "off" && notifications.status !== "blocked")) return null;
   const close = () => {
     answer();
     setHidden(true);
@@ -84,15 +87,24 @@ export function AldoNotifyOffer() {
   return (
     <div className="mt-1 flex items-center gap-2 px-1 text-muted-foreground text-xs">
       <BellRingIcon className="size-3.5 shrink-0" />
-      <span>Want a ping when it's done?</span>
-      <button
-        type="button"
-        className="font-medium text-foreground hover:underline"
-        // Only once they're on: a failed save says why and keeps the offer to try again.
-        onClick={() => void notifications.enable().then((on) => on && close())}
-      >
-        Turn on
-      </button>
+      {notifications.status === "blocked" ? (
+        <span>
+          This browser blocks Aldo's notifications. Allow them in its site settings for a ping when
+          it's done.
+        </span>
+      ) : (
+        <>
+          <span>Want a ping when it's done?</span>
+          <button
+            type="button"
+            className="font-medium text-foreground hover:underline"
+            // Only once they're on: a failed save says why and keeps the offer to try again.
+            onClick={() => void notifications.enable().then((on) => on && close())}
+          >
+            Turn on
+          </button>
+        </>
+      )}
       <button
         type="button"
         aria-label="Not now"

@@ -22,6 +22,8 @@ import { useThreadSelectionStore } from "../threadSelectionStore";
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
 import { primaryServerKeybindingsAtom } from "~/state/server";
 import { APP_BASE_NAME } from "../branding";
+import { aldoSupportsGeneralThreads, isAldoCloud } from "../aldo/cloud";
+import { useStartAldoThread } from "../aldo/newThread";
 
 function ChatRouteGlobalShortcuts() {
   const clearSelection = useThreadSelectionStore((state) => state.clearSelection);
@@ -29,6 +31,7 @@ function ChatRouteGlobalShortcuts() {
   const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread, routeThreadRef } =
     useHandleNewThread();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  const { start: startAldoThread } = useStartAldoThread();
   const legacySidebarEnabled = useLegacySidebarEnabled();
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const projects = useProjects();
@@ -93,6 +96,11 @@ function ChatRouteGlobalShortcuts() {
       if (command === "chat.new") {
         event.preventDefault();
         event.stopPropagation();
+        // Aldo: a General draft at once, as the sidebar's New does.
+        if (isAldoCloud && aldoSupportsGeneralThreads()) {
+          void startAldoThread([]);
+          return;
+        }
         // The default sidebar routes creation through the command palette
         // whenever there is a real choice to make; the legacy sidebar (and
         // single-project setups) keep the immediate contextual create.
@@ -169,6 +177,7 @@ function ChatRouteGlobalShortcuts() {
     routeThreadRef,
     selectedThreadKeysSize,
     legacySidebarEnabled,
+    startAldoThread,
     terminalOpen,
   ]);
 

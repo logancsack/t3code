@@ -715,6 +715,9 @@ export function aldoWorkStep(entry: Entry): AldoStep | null {
 
 function workStep(entry: Entry): AldoStep | null {
   if (entry.tone === "thinking" || entry.tone === "error") return null;
+  // Failed, declined or stopped by the provider's account: T3's label says so.
+  const status = entry.toolLifecycleStatus;
+  if (status === "failed" || status === "declined" || status === "stopped") return null;
   const call = aldoToolCall(entry);
   if (call?.server === "playwright") return browserStep(call);
   if (call?.server === "aldo") return aldoStep(call);

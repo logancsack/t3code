@@ -43,7 +43,7 @@ export function AldoPlaceChip(props: { readonly draftId: DraftId }) {
       .then(({ repositories }) =>
         setProjects(
           repositories
-            .filter((repo) => repo.nameWithOwner.startsWith("aldo:"))
+            .filter((repo) => repo.nameWithOwner.startsWith("aldo:") && !repo.isArchived)
             .slice(0, MOST_PROJECTS)
             .map((repo) => ({ ref: repo.nameWithOwner, name: repo.name })),
         ),

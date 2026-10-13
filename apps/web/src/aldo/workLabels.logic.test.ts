@@ -205,6 +205,15 @@ describe("aldoWorkStep", () => {
     ).toBeNull();
     expect(aldoWorkStep({ ...command("ls"), tone: "error" })).toBeNull();
     expect(aldoWorkStep(entry({ tone: "thinking", label: "Thinking" }))).toBeNull();
+    // Failed, declined or stopped by the provider's own account, without an error tone.
+    for (const status of ["failed", "declined", "stopped"] as const) {
+      const share = codex("aldo", "share_file", { path: "/tmp/plan.html" });
+      expect(aldoWorkStep({ ...share, toolLifecycleStatus: status })).toBeNull();
+      expect(aldoWorkStep({ ...command("git push"), toolLifecycleStatus: status })).toBeNull();
+    }
+    expect(
+      aldoWorkStep({ ...command("git push"), toolLifecycleStatus: "completed" }),
+    ).not.toBeNull();
   });
 });
 
