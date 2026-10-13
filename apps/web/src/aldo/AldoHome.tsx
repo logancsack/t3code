@@ -199,7 +199,8 @@ export function AldoHome() {
     () => false,
   );
   const canRun = agentReady || (aldoModels && home !== null && planRunning(home.usage));
-  const setupDone = canRun && (sourceReady || general);
+  // Somewhere to work: a git host, General, or an Aldo project (which needs no git host).
+  const setupDone = canRun && (sourceReady || general || projects);
   /** The first few threads: starters show, and the setup line until both are connected. */
   const firstRun = home !== null && home.conversations.length < STARTERS_UNTIL_THREADS;
 

@@ -15,6 +15,8 @@ import type { ChatMessage } from "../types";
 import { useAldoAssistantAvailable } from "./AldoAssistant";
 import { openAldoSummonWith } from "./AldoSummon";
 import { isAldoCloud } from "./cloud";
+import { aldoHandoffFor } from "./handoffs.logic";
+import { useAldoHomeFeed } from "./homeFeed";
 import {
   ALDO_NUDGE,
   ALDO_WAITING_WORDS,
@@ -61,11 +63,17 @@ export function useAldoStallSignals(input: {
   readonly activities: ReadonlyArray<Pick<OrchestrationThreadActivity, "createdAt">>;
   readonly messages: ReadonlyArray<ChatMessage>;
   readonly waitingOnYou: boolean;
+  /** The thread, for whether Aldo has its agent waiting on the user in its browser (a handoff). */
+  readonly target: { readonly environmentId: string; readonly threadId: string } | null;
   /** Sends a message to the agent; false when it couldn't go. */
   readonly send: ((text: string) => Promise<boolean>) | null;
   readonly stop: () => unknown;
 }): void {
-  const { threadKey, activities, messages, waitingOnYou, send, stop } = input;
+  const { threadKey, activities, messages, target, send, stop } = input;
+  // A handoff waits on the user outside the turn's own requests: it isn't a stall either.
+  const home = useAldoHomeFeed((s) => s.home);
+  const waitingOnYou =
+    input.waitingOnYou || (target !== null && aldoHandoffFor(home, target) !== null);
   const { at, key } = useMemo(
     () => (isAldoCloud ? aldoThreadProgress(activities, messages) : { at: null, key: "" }),
     [activities, messages],

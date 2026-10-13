@@ -16,6 +16,7 @@ import { Button } from "../components/ui/button";
 import { toastManager } from "../components/ui/toast";
 import { requestConfirmDialog } from "../confirmDialog";
 import { cn } from "~/lib/utils";
+import { aldoApprovalRulesChanged } from "./AldoApprovalRules";
 import { Section } from "./AldoHomeBoard";
 import { ThreadLink } from "./AldoHomeInbox";
 import {
@@ -85,6 +86,7 @@ export function ApprovalsSection(props: {
 
 /** What was done, and the rule it saved, with Undo for the rule (what was done stays done). */
 function toastRule(message: string, rule: { readonly id: string; readonly text: string }) {
+  aldoApprovalRulesChanged();
   const id = toastManager.add({
     type: "success",
     title: message,
@@ -95,7 +97,10 @@ function toastRule(message: string, rule: { readonly id: string; readonly text: 
       onClick: () => {
         toastManager.close(id);
         void removeAldoApprovalRule(rule.id).then(
-          () => toastManager.add({ type: "info", title: "Agents will ask again next time." }),
+          () => {
+            aldoApprovalRulesChanged();
+            toastManager.add({ type: "info", title: "Agents will ask again next time." });
+          },
           (cause: unknown) =>
             toastManager.add({
               type: "error",

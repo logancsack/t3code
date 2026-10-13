@@ -258,6 +258,8 @@ function GeneralThreadStart(props: { readonly onDone: () => void; readonly onCan
       props.onDone();
       landAldoCarriedDraft(await handleNewThread(projectRef));
     } catch (cause) {
+      // Hidden, or failed after closing, the dialog can't drop them later: the words stay where they were typed.
+      dropAldoCarriedDraft();
       setError(cause instanceof Error ? cause.message : String(cause));
       setStarting(false);
     }
@@ -351,6 +353,8 @@ function NewProjectForm(props: {
       props.onDone();
       landAldoCarriedDraft(await handleNewThread(projectRef));
     } catch (cause) {
+      // Hidden, or failed after closing, the dialog can't drop them later: the words stay where they were typed.
+      dropAldoCarriedDraft();
       setError(cause instanceof Error ? cause.message : String(cause));
       setCreating(false);
     }
@@ -537,6 +541,8 @@ function ExistingRepositoryPicker(props: {
       props.onDone();
       landAldoCarriedDraft(await handleNewThread(projectRef));
     } catch (cause) {
+      // Hidden, or failed after closing, the dialog can't drop them later: the words stay where they were typed.
+      dropAldoCarriedDraft();
       setError(cause instanceof Error ? cause.message : String(cause));
       setStarting(false);
     }
