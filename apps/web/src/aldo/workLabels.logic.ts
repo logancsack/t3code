@@ -213,6 +213,46 @@ export function aldoToolCall(entry: Entry): ToolCall | null {
   return null;
 }
 
+/** A file a step shared by link (share_file): its path, title and, where the agent recorded aldod's reply, the link. */
+export function aldoShareOf(
+  entry: Entry,
+): { path: string | null; title: string | null; url: string | null } | null {
+  const call = aldoToolCall(entry);
+  if (call?.server !== "aldo" || call.tool !== "share_file") return null;
+  if (entry.tone === "error" || entry.toolLifecycleStatus === "failed") return null;
+  // aldod answers 'Shared "<title>": <url> (…)'.
+  const reply = call.output ? /^Shared "([\s\S]*?)": (https:\/\/\S+)/m.exec(call.output) : null;
+  return {
+    path: text(call.args?.path),
+    title: text(call.args?.title) ?? text(reply?.[1]),
+    url: reply?.[2] ?? null,
+  };
+}
+
+/** The files a timeline's turns shared by link, by turn. */
+export function aldoSharesByTurn(
+  entries: ReadonlyArray<Entry & Pick<WorkLogEntry, "turnId">>,
+): Array<[string, Array<NonNullable<ReturnType<typeof aldoShareOf>>>]> {
+  const byTurn = new Map<string, Array<NonNullable<ReturnType<typeof aldoShareOf>>>>();
+  for (const entry of entries) {
+    if (!entry.turnId) continue;
+    // Cheaply past every step that isn't one.
+    const tool = record(entry.toolData)?.tool;
+    if (
+      tool !== "share_file" &&
+      !entry.detail?.includes("share_file") &&
+      !entry.toolTitle?.includes("share_file")
+    )
+      continue;
+    const share = aldoShareOf(entry);
+    if (!share) continue;
+    const list = byTurn.get(entry.turnId) ?? [];
+    list.push(share);
+    byTurn.set(entry.turnId, list);
+  }
+  return [...byTurn];
+}
+
 /** "https://www.opentable.com/r/x" → "opentable.com". */
 export function aldoSiteOf(url: string | null | undefined): string | null {
   if (!url) return null;
@@ -660,8 +700,20 @@ function fileStep(entry: Entry, call: ToolCall | null): AldoStep | null {
   return step("edit", `Saved ${name}${more}`, `Working on ${name}`, { subject: name });
 }
 
+// Entries are kept objects (session-logic caches them per activity), so a
+// timeline that updates as the agent streams labels each step once.
+const stepCache = new WeakMap<Entry, AldoStep | null>();
+
 /** One step in plain words, or null to keep T3's label. */
 export function aldoWorkStep(entry: Entry): AldoStep | null {
+  const cached = stepCache.get(entry);
+  if (cached !== undefined) return cached;
+  const found = workStep(entry);
+  stepCache.set(entry, found);
+  return found;
+}
+
+function workStep(entry: Entry): AldoStep | null {
   if (entry.tone === "thinking" || entry.tone === "error") return null;
   const call = aldoToolCall(entry);
   if (call?.server === "playwright") return browserStep(call);

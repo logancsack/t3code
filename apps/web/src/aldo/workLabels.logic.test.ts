@@ -2,6 +2,8 @@ import { describe, expect, it } from "vite-plus/test";
 
 import type { WorkLogEntry } from "../session-logic";
 import {
+  aldoShareOf,
+  aldoSharesByTurn,
   aldoSiteOf,
   aldoStepsInOrder,
   aldoWorkingWords,
@@ -277,5 +279,44 @@ describe("aldoWorkingWords", () => {
     expect(aldoWorkingWords([{ ...ask, toolLifecycleStatus: "completed" }])).toBeNull();
     expect(aldoWorkingWords([command("make")])).toBeNull();
     expect(aldoWorkingWords([])).toBeNull();
+  });
+});
+
+describe("aldoShareOf", () => {
+  it("reads the file, its title and the link aldod gave", () => {
+    expect(
+      aldoShareOf(
+        codex(
+          "aldo",
+          "share_file",
+          { path: "trip/plan.html", title: "Lisbon in May" },
+          {
+            content: [
+              {
+                type: "text",
+                text: 'Shared "Lisbon in May": https://aldo.example/s/abc (anyone with the link can open it). Give the user the link.',
+              },
+            ],
+          },
+        ),
+      ),
+    ).toEqual({
+      path: "trip/plan.html",
+      title: "Lisbon in May",
+      url: "https://aldo.example/s/abc",
+    });
+    expect(
+      aldoShareOf(
+        opencode("aldo_share_file", 'Shared "Menu": https://aldo.example/s/x (only the user)'),
+      ),
+    ).toEqual({ path: null, title: "Menu", url: "https://aldo.example/s/x" });
+    expect(aldoShareOf(codex("aldo", "notify_user", { message: "hi" }))).toBeNull();
+  });
+
+  it("collects each turn's shares", () => {
+    const share = { ...claude("mcp__aldo__share_file", { path: "a.pdf" }), turnId: "t1" as never };
+    expect(aldoSharesByTurn([share, { ...command("ls"), turnId: "t1" as never }])).toEqual([
+      ["t1", [{ path: "a.pdf", title: null, url: null }]],
+    ]);
   });
 });

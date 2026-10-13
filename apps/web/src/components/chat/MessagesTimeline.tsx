@@ -2,7 +2,9 @@ import { isAldoCloud } from "../../aldo/cloud";
 import { aldoStartingLabel } from "../../aldo/dispatch";
 import { AldoNotifyOffer } from "../../aldo/AldoNotifyOffer";
 import { useAldoKeptRepo } from "../../aldo/keptRepo";
-import { aldoWorkWords } from "../../aldo/workLabels.logic";
+import { AldoMadeCards } from "../../aldo/AldoMadeCards";
+import type { AldoShare } from "../../aldo/made.logic";
+import { aldoSharesByTurn, aldoWorkWords } from "../../aldo/workLabels.logic";
 import {
   type ChatFileAttachment,
   type EnvironmentId,
@@ -184,6 +186,8 @@ interface TimelineRowSharedState {
   onOpenAgents: () => void;
   /** Steps in words, in threads that aren't code. */
   workWords: WorkWords | null;
+  /** What each turn shared by link, for "What it made" (threads that aren't code). */
+  aldoSharesByTurnId: ReadonlyMap<string, ReadonlyArray<AldoShare>>;
 }
 
 interface TimelineRowActivityState {
@@ -459,6 +463,22 @@ export const MessagesTimeline = memo(function MessagesTimeline({
 
   // Threads on work that isn't software say what their steps did in words.
   const workWords = useAldoKeptRepo(activeThreadEnvironmentId) ? aldoWorkWords : null;
+  // Kept as one value until a share changes, so rows don't re-render as the agent streams.
+  const aldoSharesKey = useMemo(
+    () =>
+      workWords
+        ? JSON.stringify(
+            aldoSharesByTurn(
+              timelineEntries.flatMap((entry) => (entry.kind === "work" ? [entry.entry] : [])),
+            ),
+          )
+        : "[]",
+    [workWords, timelineEntries],
+  );
+  const aldoSharesByTurnId = useMemo(
+    () => new Map<string, ReadonlyArray<AldoShare>>(JSON.parse(aldoSharesKey)),
+    [aldoSharesKey],
+  );
   const rawRows = useMemo(
     () =>
       deriveMessagesTimelineRows({
@@ -596,6 +616,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       agentPanelModel,
       onOpenAgents,
       workWords,
+      aldoSharesByTurnId,
     }),
     [
       timestampFormat,
@@ -616,6 +637,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       agentPanelModel,
       onOpenAgents,
       workWords,
+      aldoSharesByTurnId,
     ],
   );
   const activityState = useMemo<TimelineRowActivityState>(
@@ -1290,9 +1312,20 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
   );
 }
 
+const NO_TURN_FILES: TurnDiffSummary["files"] = [];
+const NO_TURN_SHARES: ReadonlyArray<AldoShare> = [];
+
 function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
   const messageText = row.message.text || (row.message.streaming ? "" : "(empty response)");
+  const changedFiles = (
+    <AssistantChangedFilesSection
+      turnSummary={row.assistantTurnDiffSummary}
+      routeThreadKey={ctx.routeThreadKey}
+      resolvedTheme={ctx.resolvedTheme}
+      onOpenTurnDiff={ctx.onOpenTurnDiff}
+    />
+  );
 
   return (
     <>
@@ -1307,12 +1340,20 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
           onUseArtifactTemplate={ctx.onUseArtifactTemplate}
           onImageExpand={ctx.onImageExpand}
         />
-        <AssistantChangedFilesSection
-          turnSummary={row.assistantTurnDiffSummary}
-          routeThreadKey={ctx.routeThreadKey}
-          resolvedTheme={ctx.resolvedTheme}
-          onOpenTurnDiff={ctx.onOpenTurnDiff}
-        />
+        {ctx.workWords && row.showAssistantMeta ? (
+          <AldoMadeCards
+            files={row.assistantTurnDiffSummary?.files ?? NO_TURN_FILES}
+            shares={
+              (row.message.turnId && ctx.aldoSharesByTurnId.get(row.message.turnId)) ||
+              NO_TURN_SHARES
+            }
+            threadRef={ctx.threadRef}
+            workspaceRoot={ctx.workspaceRoot}
+            allChanges={changedFiles}
+          />
+        ) : (
+          changedFiles
+        )}
         {row.showAssistantMeta ? (
           <div className="mt-1.5 flex items-center gap-2 text-xs tabular-nums opacity-0 transition-opacity duration-200 focus-within:opacity-100 group-hover/assistant:opacity-100">
             <AssistantCopyButton row={row} />
