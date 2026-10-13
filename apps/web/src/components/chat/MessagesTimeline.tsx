@@ -3,6 +3,8 @@ import { aldoStartingLabel } from "../../aldo/dispatch";
 import { AldoNotifyOffer } from "../../aldo/AldoNotifyOffer";
 import { useAldoKeptRepo } from "../../aldo/keptRepo";
 import { AldoMadeCards } from "../../aldo/AldoMadeCards";
+import { AldoNextChips } from "../../aldo/AldoNextChips";
+import { splitAldoNext } from "../../aldo/next.logic";
 import type { AldoShare } from "../../aldo/made.logic";
 import { aldoSharesByTurn, aldoWorkWords } from "../../aldo/workLabels.logic";
 import {
@@ -188,6 +190,8 @@ interface TimelineRowSharedState {
   workWords: WorkWords | null;
   /** What each turn shared by link, for "What it made" (threads that aren't code). */
   aldoSharesByTurnId: ReadonlyMap<string, ReadonlyArray<AldoShare>>;
+  /** Sends a follow-up the agent offered as the user's next message. */
+  onSendFollowUp: ((text: string) => Promise<boolean>) | null;
 }
 
 interface TimelineRowActivityState {
@@ -292,6 +296,8 @@ interface MessagesTimelineProps {
   topFadeEnabled?: boolean;
   /** Non-null when older turns exist beyond the loaded window. */
   loadEarlier?: { readonly loading: boolean; readonly onLoadEarlier: () => void } | null;
+  /** Sends a follow-up the agent offered (Aldo's `aldo-next`) as the user's next message. */
+  onSendFollowUp?: ((text: string) => Promise<boolean>) | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -337,6 +343,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   hideEmptyPlaceholder = false,
   topFadeEnabled = false,
   loadEarlier = null,
+  onSendFollowUp = null,
 }: MessagesTimelineProps) {
   const [expandedTurnIds, setExpandedTurnIds] = useState<ReadonlySet<TurnId>>(new Set());
   const [expandedWorkGroupIds, setExpandedWorkGroupIds] = useState<ReadonlySet<string>>(new Set());
@@ -617,6 +624,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onOpenAgents,
       workWords,
       aldoSharesByTurnId,
+      onSendFollowUp,
     }),
     [
       timestampFormat,
@@ -638,6 +646,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onOpenAgents,
       workWords,
       aldoSharesByTurnId,
+      onSendFollowUp,
     ],
   );
   const activityState = useMemo<TimelineRowActivityState>(
@@ -1315,9 +1324,25 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
 const NO_TURN_FILES: TurnDiffSummary["files"] = [];
 const NO_TURN_SHARES: ReadonlyArray<AldoShare> = [];
 
+/** An agent's offered follow-ups, under the thread's latest answer while nothing runs. */
+function AldoNextRow(props: {
+  readonly turnId: TurnId | null;
+  readonly next: ReadonlyArray<string>;
+}) {
+  const { onSendFollowUp } = use(TimelineRowCtx);
+  const { isWorking, latestTurnId } = use(TimelineRowActivityCtx);
+  if (!onSendFollowUp || isWorking || props.turnId === null || props.turnId !== latestTurnId) {
+    return null;
+  }
+  return <AldoNextChips next={props.next} onSend={onSendFollowUp} />;
+}
+
 function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
-  const messageText = row.message.text || (row.message.streaming ? "" : "(empty response)");
+  const fullText = row.message.text || (row.message.streaming ? "" : "(empty response)");
+  // Aldo's agents end a finished task with follow-ups in an `aldo-next` block: offered as chips, not shown as code.
+  const aldoNext = useMemo(() => (isAldoCloud ? splitAldoNext(fullText) : null), [fullText]);
+  const messageText = aldoNext?.text ?? fullText;
   const changedFiles = (
     <AssistantChangedFilesSection
       turnSummary={row.assistantTurnDiffSummary}
@@ -1340,6 +1365,9 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
           onUseArtifactTemplate={ctx.onUseArtifactTemplate}
           onImageExpand={ctx.onImageExpand}
         />
+        {aldoNext && aldoNext.next.length > 0 && row.showAssistantMeta ? (
+          <AldoNextRow turnId={row.message.turnId ?? null} next={aldoNext.next} />
+        ) : null}
         {ctx.workWords && row.showAssistantMeta ? (
           <AldoMadeCards
             files={row.assistantTurnDiffSummary?.files ?? NO_TURN_FILES}
@@ -1378,7 +1406,11 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
 
 function AssistantCopyButton({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const assistantCopyState = resolveAssistantMessageCopyState({
-    text: row.message.text ?? null,
+    // Without Aldo's follow-ups block, which isn't part of the answer.
+    text:
+      isAldoCloud && row.message.text
+        ? splitAldoNext(row.message.text).text
+        : (row.message.text ?? null),
     showCopyButton: row.showAssistantCopyButton,
     streaming: row.assistantCopyStreaming,
   });
