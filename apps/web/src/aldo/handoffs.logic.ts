@@ -77,10 +77,40 @@ export function aldoHandoffWantsCode(h: Pick<AldoHandoff, "kind">): boolean {
   return CODE_KINDS.has(h.kind);
 }
 
-/** "Skip opentable.com", the site as it's written (a name made from it would guess its capitals); "Skip it" without one. */
-export function aldoHandoffSkipLabel(h: Pick<AldoHandoff, "site">): string {
-  const site = h.site?.trim().replace(/^www\./, "");
-  return site ? `Skip ${site}` : "Skip it";
+/** Second-level suffixes under a country's (co.uk, com.au, ne.jp). */
+const SECOND_LEVEL = new Set(["co", "com", "net", "org", "gov", "ac", "edu", "ne", "or"]);
+
+/**
+ * What the user knows a site as: its name as the reason writes it
+ * ("OpenTable wants to check you're human" on www.opentable.com), else its
+ * domain. The same as Aldo's notification says (its siteName).
+ */
+export function aldoHandoffSiteName(h: Pick<AldoHandoff, "site" | "reason">): string | null {
+  const site = h.site?.trim().toLowerCase();
+  if (!site) return null;
+  const labels = site.split(".");
+  // The name before the suffix: opentable in opentable.com, google in accounts.google.com, bbc in bbc.co.uk.
+  const twoPart =
+    labels.length > 2 && labels.at(-1)!.length === 2 && SECOND_LEVEL.has(labels.at(-2)!);
+  const domain = labels.slice(twoPart ? -3 : -2);
+  const name = domain[0];
+  const words = h.reason.match(/[\p{L}\p{N}][\p{L}\p{N}&'.-]*/gu) ?? [];
+  const plain = (text: string) => text.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+  for (let i = 0; i < words.length; i++) {
+    const one = words[i]!.replace(/['.-]+$/, "");
+    if (plain(one) === name) return one;
+    // "Open Table", in two words.
+    const two = words[i + 1];
+    if (two !== undefined && plain(one + two) === name)
+      return `${one} ${two.replace(/['.-]+$/, "")}`;
+  }
+  return domain.join(".");
+}
+
+/** "Skip OpenTable", by the name the reason gives the site, or its domain; "Skip it" without one. */
+export function aldoHandoffSkipLabel(h: Pick<AldoHandoff, "site" | "reason">): string {
+  const name = aldoHandoffSiteName(h);
+  return name ? `Skip ${name}` : "Skip it";
 }
 
 /** A code as the user typed it, without the spaces and dashes codes are often shown with. */

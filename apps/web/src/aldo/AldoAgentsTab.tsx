@@ -485,7 +485,7 @@ function AgentDetail(props: {
   };
   return (
     <div className="flex flex-col gap-3 px-3 pb-3">
-      {c?.summary && asks !== "question" && asks !== "approval" ? (
+      {c?.summary && asks !== "question" && asks !== "approval" && asks !== "handoff" ? (
         <blockquote className="rounded-xl border border-border/60 bg-background/60 px-3 py-2 text-sm leading-relaxed">
           “{c.summary}”
         </blockquote>
@@ -503,7 +503,10 @@ function AgentDetail(props: {
           ))}
         </div>
       ) : null}
-      {asks === "question" || asks === "approval" || asks === "plan" ? null : (
+      {asks === "question" ||
+      asks === "approval" ||
+      asks === "handoff" ||
+      asks === "plan" ? null : (
         <form
           className="flex items-center gap-2 rounded-full border border-border/80 bg-background py-1 ps-3.5 pe-1"
           onSubmit={(event) => {

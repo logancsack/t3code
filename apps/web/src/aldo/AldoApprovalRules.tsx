@@ -9,10 +9,18 @@ import { fetchAldoApprovalRules, removeAldoApprovalRule, type AldoApprovalRule }
 
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
+/** Lists on screen, read again when a rule is made or undone here. */
+const reloads = new Set<() => void>();
+
+/** Says a rule was made or removed elsewhere on the page (Always allow, its Undo). */
+export function aldoApprovalRulesChanged(): void {
+  for (const reload of reloads) reload();
+}
+
 /**
  * What the user always allows, each with Remove; nothing until they've made
  * a rule, or on an Aldo without rules. Read again when the page comes back,
- * so a rule made on another device shows.
+ * so a rule made on another device shows, and when one is made or undone here.
  */
 export function AldoApprovalRules() {
   const [rules, setRules] = useState<ReadonlyArray<AldoApprovalRule> | null>(null);
@@ -26,9 +34,11 @@ export function AldoApprovalRules() {
       );
     load();
     window.addEventListener("focus", load);
+    reloads.add(load);
     return () => {
       current = false;
       window.removeEventListener("focus", load);
+      reloads.delete(load);
     };
   }, []);
   if (!rules || rules.length === 0) return null;

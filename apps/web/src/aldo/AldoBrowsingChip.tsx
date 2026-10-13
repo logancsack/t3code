@@ -38,12 +38,10 @@ export function AldoBrowsingChip(props: {
           : "border-border bg-muted/40 text-muted-foreground hover:bg-accent hover:text-foreground",
       )}
     >
+      {/* Still: a browsing session can last hours, and a pulse would repaint all along. */}
       <span
         aria-hidden
-        className={cn(
-          "size-1.5 shrink-0 rounded-full",
-          handoff ? "bg-warning" : "animate-pulse bg-primary",
-        )}
+        className={cn("size-1.5 shrink-0 rounded-full", handoff ? "bg-warning" : "bg-primary")}
       />
       <span className="truncate">On {site}</span>
     </button>
