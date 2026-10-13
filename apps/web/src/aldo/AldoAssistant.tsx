@@ -63,6 +63,7 @@ import {
   type AldoImageLimits,
   type AldoImageUpload,
 } from "./cloud";
+import { noteAldoComposerTyping } from "./warm";
 
 const OVERVIEW_EVERY_MS = 20_000;
 
@@ -552,7 +553,11 @@ export function AldoComposer(props: {
                     ? "Talk or type to Aldo"
                     : "Ask Aldo, or tell it what to do"
             }
-            onChange={(event) => setText(event.target.value)}
+            onChange={(event) => {
+              setText(event.target.value);
+              // A machine warm for the thread Aldo may start from this (warm.ts).
+              noteAldoComposerTyping(event.target.value);
+            }}
             onPaste={(event) => {
               if (!canAttach) return;
               const files = [...event.clipboardData.files].filter(
