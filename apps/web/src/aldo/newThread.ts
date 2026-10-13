@@ -31,12 +31,12 @@ export function dropAldoCarriedDraft(): void {
   carried = null;
 }
 
-/** Opens a draft thread in `repos` (none: General) at once; `carry` moves a draft's words into it. */
+/** Opens a draft thread in `repos` (none: General) at once; `carry` moves a draft's words into it. Resolves with the draft that opened, or null. */
 export function useStartAldoThread(): {
   readonly start: (
     repos: ReadonlyArray<string>,
     carry?: { readonly from: DraftId; readonly prompt: string },
-  ) => Promise<void>;
+  ) => Promise<{ readonly draftId: DraftId } | null>;
   readonly starting: boolean;
 } {
   const handleNewThread = useNewThreadHandler();
@@ -50,7 +50,9 @@ export function useStartAldoThread(): {
       try {
         const projectRef = await startAldoSandbox({ repos });
         if (carry) carryAldoDraft(carry.from, carry.prompt);
-        landAldoCarriedDraft(await handleNewThread(projectRef));
+        const opened = await handleNewThread(projectRef);
+        landAldoCarriedDraft(opened);
+        return opened;
       } catch (cause) {
         dropAldoCarriedDraft();
         toastManager.add({
@@ -58,6 +60,7 @@ export function useStartAldoThread(): {
           title: "Couldn't open a new thread",
           description: cause instanceof Error ? cause.message : String(cause),
         });
+        return null;
       } finally {
         setStarting(false);
       }

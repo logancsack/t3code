@@ -17,6 +17,7 @@ import { CommandPalette } from "../components/CommandPalette";
 import { AldoAssistantDock } from "../aldo/AldoAssistantDock";
 import { AldoHandoffTakeoverHost } from "../aldo/AldoHandoffTakeover";
 import { AldoRepositoryDialog } from "../aldo/AldoRepositoryDialog";
+import { AldoShareReceiver } from "../aldo/AldoShareReceiver";
 import { AldoSummon } from "../aldo/AldoSummon";
 import { AldoAttentionSync, useAldoAttentionCount } from "../aldo/attentionBadge";
 import { isAldoCloud } from "../aldo/cloud";
@@ -159,6 +160,7 @@ function RootRouteView() {
         <AldoAssistantDock />
         <AldoSummon />
         {isAldoCloud ? <AldoHandoffTakeoverHost /> : null}
+        {isAldoCloud ? <AldoShareReceiver /> : null}
         <SlowRpcRequestToastCoordinator />
         <HostedStaticEnvironmentBootstrap />
         <LandingDemoBootstrap />

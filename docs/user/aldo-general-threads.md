@@ -7,8 +7,18 @@ Not everything is code. A thread can work without a repository: research somethi
 - **New** on the home screen, or **New thread** in the sidebar, opens one at once, ready to type in. Before you send it, **General ▾** at the top moves it to one of your projects, a repository or a new project, taking what you typed along.
 - In the start dialog, **No repository**.
 - Or tell Aldo what you want done. When it isn't about code in one of your repositories, Aldo starts a General thread.
+- Or share something to Aldo from another app on your phone: see [Sharing to Aldo](#sharing-to-aldo).
 
 You don't need GitHub or another git host connected for these, only an agent subscription.
+
+## Sharing to Aldo
+
+On Android, once Aldo is on your home screen (in Chrome, **Install app** or **Add to Home screen**), Aldo shows in other apps' share sheets. Share a page, some words, photos or files to it, and Aldo opens a new General thread with them in the message box: the words and the link in the message, the photos and files attached. Nothing is sent until you send it, so you can say first what you want done with it.
+
+- A message takes up to eight attachments, as when you attach them yourself. What Aldo can't attach (an image type it doesn't take, an empty file, one over the size limit) is left out, and a note names it.
+- If Aldo was on your home screen before it could take shares, it shows in the share sheet once your phone updates the app, which can take a day. Removing it from the home screen and adding it again does it at once.
+- If what you shared didn't reach Aldo, Aldo says so when it opens. Share it again.
+- iPhone and iPad don't let apps added to the Home Screen take shares. Copy the link or save the file there, then paste or attach it in a new thread.
 
 ## What the agent has
 
