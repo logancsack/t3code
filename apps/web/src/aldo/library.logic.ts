@@ -43,9 +43,13 @@ export function parseAldoShares(value: unknown): AldoShareView[] | null {
     ) {
       return [];
     }
-    const repos = Array.isArray(share.repos)
-      ? share.repos.filter((repo): repo is string => typeof repo === "string")
-      : null;
+    const environmentId =
+      typeof share.environmentId === "string" && share.environmentId ? share.environmentId : null;
+    // A thread that's gone has no computer and no repositories to say where it came from.
+    const repos =
+      environmentId && Array.isArray(share.repos)
+        ? share.repos.filter((repo): repo is string => typeof repo === "string")
+        : null;
     return [
       {
         id: share.id,
@@ -56,9 +60,7 @@ export function parseAldoShares(value: unknown): AldoShareView[] | null {
         public: share.public !== false,
         views: typeof share.views === "number" ? share.views : 0,
         createdAt: share.createdAt,
-        ...(typeof share.environmentId === "string" && share.environmentId
-          ? { environmentId: share.environmentId }
-          : {}),
+        ...(environmentId ? { environmentId } : {}),
         ...(repos ? { repos } : {}),
       },
     ];

@@ -77,6 +77,21 @@ describe("parseAldoShares", () => {
       },
     ]);
   });
+
+  it("doesn't take a gone thread's empty repositories for General", () => {
+    const [share] = parseAldoShares([
+      {
+        id: "c",
+        url: "https://aldo.example/s/c",
+        createdAt: "2026-10-12T10:00:00.000Z",
+        environmentId: null,
+        repos: [],
+      },
+    ])!;
+    expect(share?.environmentId).toBeUndefined();
+    expect(share?.repos).toBeUndefined();
+    expect(aldoShareProject(share?.repos)).toBeNull();
+  });
 });
 
 describe("aldoLibraryWhen", () => {
