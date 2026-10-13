@@ -31,6 +31,9 @@ export function dropAldoCarriedDraft(): void {
   carried = null;
 }
 
+/** The start under way, shared by every place that opens a thread. */
+let opening: Promise<{ readonly draftId: DraftId } | null> | null = null;
+
 /** Opens a draft thread in `repos` (none: General) at once; `carry` moves a draft's words into it. Resolves with the draft that opened, or null. */
 export function useStartAldoThread(): {
   readonly start: (
@@ -46,24 +49,31 @@ export function useStartAldoThread(): {
       repos: ReadonlyArray<string>,
       carry?: { readonly from: DraftId; readonly prompt: string },
     ) => {
+      // One start at a time, whichever button or key asked: a second would make another computer.
+      if (opening) return opening;
       setStarting(true);
-      try {
-        const projectRef = await startAldoSandbox({ repos });
-        if (carry) carryAldoDraft(carry.from, carry.prompt);
-        const opened = await handleNewThread(projectRef);
-        landAldoCarriedDraft(opened);
-        return opened;
-      } catch (cause) {
-        dropAldoCarriedDraft();
-        toastManager.add({
-          type: "error",
-          title: "Couldn't open a new thread",
-          description: cause instanceof Error ? cause.message : String(cause),
-        });
-        return null;
-      } finally {
-        setStarting(false);
-      }
+      const run = async () => {
+        try {
+          const projectRef = await startAldoSandbox({ repos });
+          if (carry) carryAldoDraft(carry.from, carry.prompt);
+          const opened = await handleNewThread(projectRef);
+          landAldoCarriedDraft(opened);
+          return opened;
+        } catch (cause) {
+          dropAldoCarriedDraft();
+          toastManager.add({
+            type: "error",
+            title: "Couldn't open a new thread",
+            description: cause instanceof Error ? cause.message : String(cause),
+          });
+          return null;
+        } finally {
+          setStarting(false);
+          opening = null;
+        }
+      };
+      opening = run();
+      return opening;
     },
     [handleNewThread],
   );

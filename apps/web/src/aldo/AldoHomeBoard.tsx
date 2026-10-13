@@ -198,11 +198,13 @@ export function ConversationRow(props: {
           <p className="mt-1 line-clamp-2 text-muted-foreground text-xs">{c.summary}</p>
         ) : null}
         {c.pressure && working ? (
-          // Information only: Aldo sizes the computer itself.
+          // Information only. Only a computer Aldo sizes itself gets more on its own.
           <p className="mt-1.5 text-muted-foreground text-xs">
-            {c.pressure.kind === "memory"
-              ? "Its computer is short on memory, so it's getting more."
-              : "Every CPU on its computer is busy, so this may take a little longer."}
+            {c.pressure.kind !== "memory"
+              ? "Every CPU on its computer is busy, so this may take a little longer."
+              : c.machineSizing === "automatic"
+                ? "Its computer is short on memory, so it's getting more."
+                : "Its computer is short on memory."}
           </p>
         ) : null}
       </div>
