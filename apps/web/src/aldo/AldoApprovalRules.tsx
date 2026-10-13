@@ -1,0 +1,71 @@
+// What the user always allows ("Agents can send email to alex@example.com
+// without asking"): the rules they made with "Always allow" on an approval
+// (AldoApprovals.tsx), under "How Aldo works for you", each with Remove.
+
+import { useEffect, useState } from "react";
+
+import { toastManager } from "../components/ui/toast";
+import { fetchAldoApprovalRules, removeAldoApprovalRule, type AldoApprovalRule } from "./cloud";
+
+const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
+/**
+ * What the user always allows, each with Remove; nothing until they've made
+ * a rule, or on an Aldo without rules. Read again when the page comes back,
+ * so a rule made on another device shows.
+ */
+export function AldoApprovalRules() {
+  const [rules, setRules] = useState<ReadonlyArray<AldoApprovalRule> | null>(null);
+  const [removing, setRemoving] = useState<string | null>(null);
+  useEffect(() => {
+    let current = true;
+    const load = () =>
+      void fetchAldoApprovalRules().then(
+        (next) => current && setRules(next),
+        () => undefined,
+      );
+    load();
+    window.addEventListener("focus", load);
+    return () => {
+      current = false;
+      window.removeEventListener("focus", load);
+    };
+  }, []);
+  if (!rules || rules.length === 0) return null;
+  const remove = async (rule: AldoApprovalRule) => {
+    setRemoving(rule.id);
+    try {
+      await removeAldoApprovalRule(rule.id);
+      setRules((list) => list?.filter((r) => r.id !== rule.id) ?? null);
+    } catch (cause) {
+      toastManager.add({
+        type: "error",
+        title: "Couldn't remove the rule",
+        description: messageOf(cause),
+      });
+    } finally {
+      setRemoving(null);
+    }
+  };
+  return (
+    <div className="mt-2 border-border/50 border-t pt-2">
+      <p className="text-muted-foreground text-xs">What you always allow</p>
+      <ul className="mt-1 flex flex-col gap-1 text-xs">
+        {rules.map((rule) => (
+          <li key={rule.id} className="flex items-start gap-2">
+            <span className="min-w-0 flex-1">{rule.text}</span>
+            <button
+              type="button"
+              className="shrink-0 text-muted-foreground hover:text-foreground disabled:opacity-60"
+              disabled={removing === rule.id}
+              onClick={() => void remove(rule)}
+              aria-label={`Stop allowing: ${rule.text}`}
+            >
+              {removing === rule.id ? "Removing…" : "Remove"}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}

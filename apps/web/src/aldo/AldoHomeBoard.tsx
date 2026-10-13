@@ -20,6 +20,7 @@ import { Button } from "../components/ui/button";
 import { toastManager } from "../components/ui/toast";
 import { requestConfirmDialog } from "../confirmDialog";
 import { cn } from "~/lib/utils";
+import { AldoApprovalRules } from "./AldoApprovalRules";
 import { askAldoAbout, ThreadLink } from "./AldoHomeInbox";
 import {
   cancelAldoDelivery,
@@ -572,6 +573,7 @@ export function PolicySection(props: { readonly policy: AldoHome["policy"] }) {
             <li key={line}>{line}</li>
           ))}
         </ul>
+        <AldoApprovalRules />
         <div className="mt-2 flex flex-wrap gap-x-3 text-xs">
           <Link to="/settings/memory" className="text-muted-foreground hover:text-foreground">
             What Aldo knows about you

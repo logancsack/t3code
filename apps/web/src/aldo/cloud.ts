@@ -2328,17 +2328,55 @@ export interface AldoApproval {
   readonly threadTitle: string | null;
   readonly createdAt: string;
   readonly decidedAt: string | null;
+  /**
+   * The rule "Always allow" would make of it, in plain words ("Agents can send
+   * email to alex@example.com without asking"): only an email to a few named
+   * people or an event with no guests, and only from an Aldo that has rules.
+   */
+  readonly always?: string;
 }
 
-/** Approves or discards one; says what was done. Aldo refuses (409) an email whose draft changed since it was shown. */
+/** A rule the user made with "Always allow": agents do what it covers exactly without asking. */
+export interface AldoApprovalRule {
+  readonly id: string;
+  readonly kind: "email" | "event";
+  readonly text: string;
+  readonly createdAt: string;
+}
+
+/**
+ * Approves or discards one; says what was done. Aldo refuses (409) an email
+ * whose draft changed since it was shown. `always` approves it and saves its
+ * rule (`rule`, when that worked).
+ */
 export async function decideAldoApproval(
   id: string,
-  decision: "approve" | "discard",
-): Promise<{ readonly approval: Omit<AldoApproval, "threadTitle">; readonly message: string }> {
+  decision: "approve" | "discard" | "always",
+): Promise<{
+  readonly approval: Omit<AldoApproval, "threadTitle">;
+  readonly message: string;
+  readonly rule?: { readonly id: string; readonly text: string };
+}> {
   return api(`/api/approvals/${encodeURIComponent(id)}`, {
     method: "POST",
     body: JSON.stringify({ decision }),
   });
+}
+
+/** The user's "Always allow" rules, oldest first; null where this Aldo has none. */
+export async function fetchAldoApprovalRules(): Promise<ReadonlyArray<AldoApprovalRule> | null> {
+  try {
+    const { rules } = await api<{ rules?: ReadonlyArray<AldoApprovalRule> }>("/api/approval-rules");
+    return Array.isArray(rules) ? rules : null;
+  } catch (cause) {
+    if (cause instanceof AldoApiError && cause.status === 404) return null;
+    throw cause;
+  }
+}
+
+/** Removes a rule (Undo, or the list of them): agents ask again from now on. */
+export async function removeAldoApprovalRule(id: string): Promise<void> {
+  await api(`/api/approval-rules/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
 /** Aldo's heads-ups: whether it looks at the user's new mail and coming events between conversations. */
