@@ -243,6 +243,27 @@ describe("aldoDecisions", () => {
     expect(decisionBrief(confirm!)).toContain("only once the user says yes");
   });
 
+  it("lists what an agent waits on the user for in its browser, keyed by the request", () => {
+    const asking = conversation({
+      ref: "t9",
+      thread: at("t9"),
+      title: "Dinner Friday",
+      state: "waiting",
+      at: ago(2),
+      pending: {
+        kind: "handoff",
+        requestId: "ho_1",
+        summary: "OpenTable wants to check you're human",
+      },
+    });
+    const [decision] = aldoDecisions(home({ conversations: [asking] }), NOW);
+    expect(decision?.kind).toBe("handoff");
+    expect(decision?.key).toBe("handoff:t9:ho_1");
+    expect(decision && decidesInPlace(decision)).toBe(true);
+    expect(decision && decisionAsk(decision)).toBe("OpenTable wants to check you're human");
+    expect(decision && decisionBrief(decision)).toContain("needs the user in its browser");
+  });
+
   it("keys a question by what it asks: a new one is a new decision", () => {
     const before = home({ conversations: [question] });
     const after = home({

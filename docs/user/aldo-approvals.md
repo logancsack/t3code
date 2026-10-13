@@ -13,7 +13,22 @@ Approvals show at the top of the home screen under **Approve**, and on your devi
 
 For an email, an event or a suggestion, on a computer or an Android phone the notification has the same two buttons, so you can decide without opening Aldo. A step that needs your yes always opens its card, so you see its terms before you decide. On an iPhone, tap the notification to open the home screen and decide there. You can also tell Aldo: "send the reply to Sam".
 
+**Always allow…** sits on some emails and events: one to a few people you name, or an event with no guests. It approves this one and saves a rule in plain words, like "Always let agents email maya@example.com without asking" or "Always let agents add events to my calendar with no guests". From then on, agents do exactly what the rule covers without asking you. The toast that confirms it has **Undo**, and every rule is listed under **How Aldo works for you** on the home screen, with **Remove**. Steps that need your yes (paying, booking, cancelling, submitting, calling) never offer it: each one is asked about on its own.
+
 If an email's draft changed after you were shown it, it isn't sent: the card shows it again as it is now, for you to look at before you send it. What you decided in the last day stays listed under the cards. An approval you leave for a week expires; an email draft stays in your drafts.
+
+## When an agent needs you in its browser
+
+Some things only you can get past: a check that you're human, a sign-in, a code sent to your phone or email, a number to match, or approving a sign-in on another device. When an agent meets one, it asks you at once and stops, rather than waiting in the chat.
+
+The thread shows a card over its message box, with what it is, about how long it takes, and what to do:
+
+- **Do it now** opens the agent's browser full screen, on the page. Do what it asks (tick the box, sign in), then tap **I'm done**, and the agent carries on from there. It works by touch on a phone.
+- **A code**: type it into the card's field and tap **Type it in**. Aldo puts it into the page's code field for you. It's never kept, and the agent never sees it. If the page has no field ready for it, you're told to open the browser and type it there.
+- **On another device** (approving a sign-in, tapping a number): do it there, then tap **I'm done**.
+- **Skip** tells the agent to go on without that site. It says what it couldn't check.
+
+The same request shows under **Needs you** on the home screen, and comes to your devices as a notification with **Do it now** and **Skip**. While it's open, the Browser panel says "Your agent is waiting for you here", with **Take over**. If you don't answer in time (half an hour, unless the agent said otherwise), the agent is told to go on without it.
 
 ## Heads-ups
 

@@ -451,6 +451,7 @@ import { AldoThreadLoading } from "../aldo/AldoThreadLoading";
 import { useAldoThreadStart } from "../aldo/threadStart";
 import { isAldoCloud, isAldoEnvironmentId } from "../aldo/cloud";
 import { useAldoKeptRepo } from "../aldo/keptRepo";
+import { AldoHandoffCard } from "../aldo/AldoHandoffCard";
 import { ensureAldoConnected, isAldoConnected } from "../aldo/dispatch";
 import { showAldoStartingThread, withdrawAldoStartingThread } from "../aldo/startingThreads";
 
@@ -7739,6 +7740,12 @@ function ChatViewContent(props: ChatViewProps) {
                         />
                       </div>
                     </div>
+                  ) : null}
+                  {isAldoCloud && !isDraftHeroState && activeThreadRef ? (
+                    <AldoHandoffCard
+                      environmentId={activeThreadRef.environmentId}
+                      threadId={activeThreadRef.threadId}
+                    />
                   ) : null}
                   <div
                     className="relative"

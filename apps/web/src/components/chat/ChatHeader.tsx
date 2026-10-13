@@ -46,6 +46,7 @@ import {
   WorkspaceBreadcrumbSeparator,
 } from "../WorkspaceBreadcrumb";
 import { cn } from "~/lib/utils";
+import { AldoBrowsingChip } from "~/aldo/AldoBrowsingChip";
 import { AldoPreviewsControl } from "~/aldo/AldoPreviewsControl";
 import { isAldoCloud, isAldoEnvironmentId } from "~/aldo/cloud";
 import { AldoPlaceChip } from "~/aldo/AldoPlaceChip";
@@ -455,6 +456,17 @@ export const ChatHeader = memo(function ChatHeader({
           rightPanelOpen ? "pr-0" : "pr-16",
         )}
       >
+        {isAldoCloud && isAldoEnvironmentId(activeThreadEnvironmentId) && isServerThread ? (
+          <AldoBrowsingChip
+            environmentId={activeThreadEnvironmentId}
+            threadId={activeThreadId}
+            onOpenBrowser={() =>
+              useRightPanelStore
+                .getState()
+                .open(scopeThreadRef(activeThreadEnvironmentId, activeThreadId), "workspaceBrowser")
+            }
+          />
+        ) : null}
         {isAldoCloud && isAldoEnvironmentId(activeThreadEnvironmentId) ? (
           <AldoPreviewsControl
             environmentId={activeThreadEnvironmentId}

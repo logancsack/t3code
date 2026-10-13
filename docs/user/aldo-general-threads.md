@@ -14,6 +14,8 @@ You don't need GitHub or another git host connected for these, only an agent sub
 
 The same computer every thread gets: a terminal, a real browser you can watch and take over, a desktop for apps, your saved logins, your vault, and the accounts you connected in [Integrations](./aldo-integrations.md), like your mail and calendar.
 
+While the agent works in its browser, the thread's header says where ("On opentable.com"); tap it to watch in the Browser panel. When it meets what only you can get past there, like a check that you're human or a code sent to your phone, a card over the message box asks you: see [When an agent needs you in its browser](./aldo-approvals.md#when-an-agent-needs-you-in-its-browser).
+
 Instead of a repository, the agent works in a folder of its own. Like a repository, it keeps a history of each turn's changes, so you can see what a turn changed and revert to an earlier one. The agent keeps what it makes for you there, or in your OneDrive or Google Drive when you've connected one, and tells you where.
 
 ## What's different

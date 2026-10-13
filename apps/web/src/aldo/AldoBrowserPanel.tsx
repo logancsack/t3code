@@ -39,6 +39,7 @@ import { cn } from "../lib/utils";
 import { useAldoBrowserRequests } from "./browserStore";
 import { stopAldoThreadComputer, useAldoComputer } from "./AldoComputer";
 import { AldoDesktopScreenSwitch, AldoDesktopView } from "./AldoDesktopView";
+import { AldoHandoffBar, useAldoHandoffTakeover } from "./AldoHandoffCard";
 import { AldoLoginOfferCard } from "./AldoLoginOfferCard";
 import {
   AldoApiError,
@@ -98,7 +99,14 @@ function localPort(url: string): number | null {
  * can browse and type in it; agents drive the same browser, and "Take control"
  * holds them off (for sign-ins, 2FA or anything the user wants to do alone).
  */
-export function AldoBrowserPanel({ environmentId }: { environmentId: string }) {
+export function AldoBrowserPanel({
+  environmentId,
+  inTakeover = false,
+}: {
+  environmentId: string;
+  /** Full screen for a handoff (AldoHandoffTakeover.tsx), which says what to do itself. */
+  inTakeover?: boolean;
+}) {
   const [status, setStatus] = useState<Status>("connecting");
   // Whether a picture of the page has been drawn: until then, a connected panel is still starting the browser.
   const [pictured, setPictured] = useState(false);
@@ -135,7 +143,9 @@ export function AldoBrowserPanel({ environmentId }: { environmentId: string }) {
   const [focused, setFocused] = useState(false);
   // Nothing streams while nobody can see it: the Desktop view is up, or the page is hidden.
   const pageVisible = useAldoPageVisible();
-  const paused = view === "desktop" || !pageVisible;
+  // Nor while a handoff's takeover covers it: that one streams.
+  const takenOver = useAldoHandoffTakeover((s) => s.id !== null) && !inTakeover;
+  const paused = view === "desktop" || !pageVisible || takenOver;
   const pausedRef = useRef(paused);
   pausedRef.current = paused;
 
@@ -810,6 +820,8 @@ export function AldoBrowserPanel({ environmentId }: { environmentId: string }) {
           </MenuPopup>
         </Menu>
       </div>
+
+      {inTakeover ? null : <AldoHandoffBar environmentId={environmentId} />}
 
       {control.explicit ? (
         <div className="flex shrink-0 items-center gap-2 border-b border-border bg-primary/8 px-3 py-1.5 text-xs">

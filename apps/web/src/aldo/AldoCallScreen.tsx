@@ -454,6 +454,14 @@ function WalkCard(props: {
             advanceAldoWalkthrough("decided", "answered it");
           }}
         />
+      ) : d.kind === "handoff" ? (
+        <PendingForm
+          conversation={d.conversation}
+          onActed={() => {
+            void refreshAldoHome();
+            advanceAldoWalkthrough("decided", "handled it");
+          }}
+        />
       ) : discarding && d.kind === "aldo-approval" ? (
         <div className="flex flex-col gap-2">
           <p className="text-sm">

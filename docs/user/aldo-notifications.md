@@ -13,7 +13,7 @@ Open **Settings → General → Notifications** on the device and turn on **Noti
 
 You get one notification per thread, replaced by the next one from the same thread:
 
-- **Needs you**: the agent asked you a question, wants an approval, or has a plan for you to review.
+- **Needs you**: the agent asked you a question, wants an approval, or has a plan for you to review. When it needs you in its browser (a check that you're human, a sign-in, a code), the notification has **Do it now**, which opens its browser full screen, and **Skip**. See [When an agent needs you in its browser](./aldo-approvals.md#when-an-agent-needs-you-in-its-browser).
 - **Done**: the agent finished a turn, with the first line of what it said.
 - **Stopped with an error**: the agent's turn failed.
 

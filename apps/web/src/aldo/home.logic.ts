@@ -22,11 +22,19 @@ const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 
-export type NeedsYouKind = "question" | "approval" | "plan" | "waiting" | "paused" | "failed";
+export type NeedsYouKind =
+  | "question"
+  | "approval"
+  | "handoff"
+  | "plan"
+  | "waiting"
+  | "paused"
+  | "failed";
 
 export const NEEDS_YOU_LABEL: Record<NeedsYouKind, string> = {
   question: "Question",
   approval: "Approval",
+  handoff: "Needs you in its browser",
   plan: "Plan to approve",
   waiting: "Waiting on you",
   paused: "Paused mid-turn",
@@ -53,6 +61,7 @@ export function needsYouKind(c: AldoHomeConversation): NeedsYouKind | null {
   if (c.state !== "waiting") return null;
   if (c.pending?.kind === "question") return "question";
   if (c.pending?.kind === "approval") return "approval";
+  if (c.pending?.kind === "handoff") return "handoff";
   if (c.plan) return "plan";
   return "waiting";
 }

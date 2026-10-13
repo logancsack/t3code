@@ -487,7 +487,8 @@ function AgentDetail(props: {
           “{c.summary}”
         </blockquote>
       ) : null}
-      {c && (asks === "question" || asks === "approval" || asks === "plan") ? (
+      {c &&
+      (asks === "question" || asks === "approval" || asks === "handoff" || asks === "plan") ? (
         <div className="rounded-xl border border-warning/50 bg-background/60 p-3">
           <PendingForm conversation={c} onActed={() => void refreshAldoHome()} />
         </div>

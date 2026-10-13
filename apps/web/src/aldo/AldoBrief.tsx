@@ -14,6 +14,7 @@ import {
   CircleAlertIcon,
   ClipboardListIcon,
   GitMergeIcon,
+  HandIcon,
   HourglassIcon,
   LoaderCircleIcon,
   MailIcon,
@@ -63,13 +64,15 @@ export function DecisionIcon(props: {
         ? [MessageCircleQuestionIcon, "bg-primary/10 text-primary"]
         : d.kind === "approval"
           ? [ShieldQuestionIcon, "bg-warning/12 text-warning-foreground"]
-          : d.kind === "plan"
-            ? [ClipboardListIcon, "bg-primary/10 text-primary"]
-            : d.kind === "merge"
-              ? [GitMergeIcon, "bg-success/12 text-success-foreground"]
-              : d.kind === "failed"
-                ? [CircleAlertIcon, "bg-destructive/10 text-destructive-foreground"]
-                : [HourglassIcon, "bg-warning/12 text-warning-foreground"];
+          : d.kind === "handoff"
+            ? [HandIcon, "bg-warning/12 text-warning-foreground"]
+            : d.kind === "plan"
+              ? [ClipboardListIcon, "bg-primary/10 text-primary"]
+              : d.kind === "merge"
+                ? [GitMergeIcon, "bg-success/12 text-success-foreground"]
+                : d.kind === "failed"
+                  ? [CircleAlertIcon, "bg-destructive/10 text-destructive-foreground"]
+                  : [HourglassIcon, "bg-warning/12 text-warning-foreground"];
   return (
     <span
       aria-hidden

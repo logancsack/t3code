@@ -92,6 +92,14 @@ describe("needsYouKind", () => {
         }),
       ),
     ).toBe("approval");
+    expect(
+      needsYouKind(
+        conversation({
+          state: "waiting",
+          pending: { kind: "handoff", requestId: "ho_1", summary: "A quick check on OpenTable" },
+        }),
+      ),
+    ).toBe("handoff");
     expect(needsYouKind(conversation({ state: "waiting", plan: { id: "p", text: "1. do" } }))).toBe(
       "plan",
     );
