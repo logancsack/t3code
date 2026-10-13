@@ -726,7 +726,10 @@ export function AldoIntegrationsPanel() {
           <p className="px-3 text-sm text-muted-foreground sm:px-4">Loading…</p>
         ) : null}
         {integrations && shown.length === 0 ? (
-          <p className="px-3 text-sm text-muted-foreground sm:px-4">Nothing to connect yet.</p>
+          <p className="px-3 text-sm text-muted-foreground sm:px-4">
+            Nothing to connect yet. Accounts like Google show here, ready to connect, once Aldo
+            offers them.
+          </p>
         ) : null}
         {shown.map((integration) => (
           <IntegrationRow

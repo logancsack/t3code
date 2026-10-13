@@ -152,10 +152,11 @@ export function AldoPane(props: {
 /** The orb: tap to talk or hang up; it swells with whoever is speaking. */
 let assistantInfo: ReturnType<typeof aldoAssistantInfo> | null = null;
 
-/** Whether this Aldo has the assistant, asked once per page; null until it's known. */
-export function useAldoAssistantAvailable(): boolean | null {
+/** Whether this Aldo has the assistant, asked once per page (not until `ask`); null until it's known. */
+export function useAldoAssistantAvailable(ask = true): boolean | null {
   const [available, setAvailable] = useState<boolean | null>(null);
   useEffect(() => {
+    if (!ask) return;
     let current = true;
     assistantInfo ??= aldoAssistantInfo();
     void assistantInfo.then((info) => {
@@ -164,7 +165,7 @@ export function useAldoAssistantAvailable(): boolean | null {
     return () => {
       current = false;
     };
-  }, []);
+  }, [ask]);
   return available;
 }
 

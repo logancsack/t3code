@@ -12,9 +12,11 @@
 // An Aldo without the home read shows what Aldo's overview says instead; one
 // without the assistant shows the board alone. On a phone the two are Aldo's
 // conversation and the Threads tab (AldoAgentsTab.tsx): every thread by what
-// it needs, made for a thumb.
+// it needs, made for a thumb. In simple mode (simpleMode.ts) it shows the
+// rail's place instead: Aldo's conversation, Needs you or the Library
+// (AldoSimplePlaces.tsx).
 
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useRouter } from "@tanstack/react-router";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import {
   ChevronDownIcon,
@@ -59,6 +61,8 @@ import { ApprovalsSection } from "./AldoApprovals";
 import { NeedsYouCard } from "./AldoHomeInbox";
 import { RoutinesSection } from "./AldoRoutines";
 import { AGENT_KINDS, AldoSetupCard, AldoSetupLine } from "./AldoSetup";
+import { AldoSimpleTabs } from "./AldoSimpleRail";
+import { AldoSimpleLibrary, AldoSimpleNeedsYou } from "./AldoSimplePlaces";
 import { AldoStarters, STARTERS_UNTIL_THREADS } from "./AldoStarters";
 import { seedAldoComposer, sendText, useAldoAssistant } from "./assistantSession";
 import {
@@ -90,6 +94,8 @@ import {
   repoName,
 } from "./home.logic";
 import { loadAldoBrief } from "./briefFeed";
+import { morphIntoThread } from "./morph";
+import { useAldoSimple } from "./simpleMode";
 import { aldoWaitingCount } from "./decisions.logic";
 import { useIsMobile } from "../hooks/useMediaQuery";
 
@@ -156,6 +162,9 @@ export function AldoHome() {
   const mobile = useIsMobile();
   // Aldo's view needs Aldo; without it there's only the board.
   const aldoView = assistant === true && view === "aldo";
+  // Simple mode's place, which shows in place of either view. It needs Aldo:
+  // without it, the sidebar shows as usual (useAldoSimpleRail), and so does the board.
+  const simplePlace = useAldoSimple((s) => (s.on && assistant === true ? s.place : null));
   const lastSeen = useLastSeen();
   const now = useNow();
   const navigate = useNavigate();
@@ -222,6 +231,8 @@ export function AldoHome() {
   const selectedIndex = selectable.findIndex((c) => c.ref === selectedRef);
   const selected = selectedIndex === -1 ? null : selectedIndex;
 
+  const router = useRouter();
+  /** Opens the selected conversation, its row growing into the thread. */
   const open = useCallback(
     (c: AldoHomeConversation) =>
       void navigate({
@@ -230,13 +241,17 @@ export function AldoHome() {
           environmentId: c.thread.environmentId as EnvironmentId,
           threadId: c.thread.threadId as ThreadId,
         },
+        viewTransition: morphIntoThread(
+          router,
+          boardRef.current?.querySelector<HTMLElement>("[data-selected]") ?? null,
+        ),
       }),
-    [navigate],
+    [navigate, router],
   );
 
   useEffect(() => {
-    // Aldo's view has keys of its own (AldoConversationPage).
-    if (aldoView) return;
+    // Aldo's view has keys of its own (AldoConversationPage), as do simple mode's places.
+    if (aldoView || simplePlace !== null) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.metaKey || event.ctrlKey || event.altKey || inField(event.target)) return;
       if (event.key === "/") {
@@ -260,7 +275,7 @@ export function AldoHome() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [aldoView, open, selectable, selected]);
+  }, [aldoView, simplePlace, open, selectable, selected]);
 
   useEffect(() => {
     if (selected === null) return;
@@ -310,6 +325,38 @@ export function AldoHome() {
   const newMenu = (
     <NewMenu general={general} projects={projects || sourceReady} repositories={sourceReady} />
   );
+
+  if (simplePlace !== null) {
+    // On a phone the places are tabs at the top; on a wider screen they're on the rail.
+    const tabs = mobile ? <AldoSimpleTabs /> : null;
+    if (simplePlace === "needs") {
+      return (
+        <AldoSimpleNeedsYou
+          home={home}
+          supported={supported}
+          error={error}
+          now={now}
+          tabs={tabs}
+          issues={issues}
+          assistant={assistant === true}
+        />
+      );
+    }
+    if (simplePlace === "library") return <AldoSimpleLibrary tabs={tabs} />;
+    return (
+      <AldoConversationPage
+        home={home}
+        supported={supported}
+        now={now}
+        viewSwitch={tabs}
+        setup={conversationSetup}
+        welcome={welcome}
+        issues={issues}
+        chips={chips}
+        onChip={onChip}
+      />
+    );
+  }
 
   if (mobile && assistant === true) {
     const tabs = (
@@ -437,7 +484,12 @@ export function AldoHome() {
                 board.working.length === 0 &&
                 board.done.length === 0 ? (
                   <div className="rounded-xl border border-border/60 border-dashed px-5 py-8 text-center">
-                    <p className="font-medium text-sm">Nothing yet</p>
+                    {/* Done threads leave the board after two days: it's caught up, not empty. */}
+                    <p className="font-medium text-sm">
+                      {shown.conversations.some((c) => c.state !== "new")
+                        ? "All caught up"
+                        : "Nothing yet"}
+                    </p>
                     <p className="mt-1 text-muted-foreground text-xs">
                       {assistant
                         ? "What you start shows here: what needs you first, then what's working and what's done. Tell Aldo what to get done, or start a thread with New."

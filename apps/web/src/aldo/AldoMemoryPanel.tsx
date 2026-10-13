@@ -253,7 +253,10 @@ export function AldoMemoryPanel() {
               ))}
             </ul>
             {notes.length === 0 && !adding ? (
-              <p className="text-muted-foreground text-sm">No notes yet.</p>
+              <p className="text-muted-foreground text-sm">
+                No notes yet. Facts about you and your work show here, one each, as Aldo picks them
+                up while you talk.
+              </p>
             ) : null}
           </div>
         </>

@@ -2,8 +2,8 @@
 // signed in (their name and picture from their sign-in), their plan and
 // credits, where everything about their account lives (the agents and
 // accounts they connected, what Aldo remembers, their vault, how the app
-// looks), managing their sign-in itself, and signing out. An Aldo that can't
-// say who's signed in still shows the rest.
+// looks), simple mode, managing their sign-in itself, and signing out. An Aldo
+// that can't say who's signed in still shows the rest.
 
 import { useNavigate } from "@tanstack/react-router";
 import {
@@ -18,6 +18,7 @@ import {
   KeyRoundIcon,
   LogOutIcon,
   PaletteIcon,
+  PanelLeftIcon,
   PlugIcon,
   ScrollTextIcon,
   SettingsIcon,
@@ -27,9 +28,11 @@ import { useEffect, useState, type ComponentType } from "react";
 
 import { Button } from "../components/ui/button";
 import { Dialog, DialogDescription, DialogPopup, DialogTitle } from "../components/ui/dialog";
+import { Switch } from "../components/ui/switch";
 import { cn } from "~/lib/utils";
 import { fetchAldoProfile, type AldoHomeUsage, type AldoProfile } from "./cloud";
 import { useAldoHomeFeed } from "./homeFeed";
+import { setAldoSimpleMode, useAldoSimpleMode } from "./simpleMode";
 
 // ---------------------------------------------------------------------------
 // Who's signed in, asked once per page.
@@ -160,6 +163,7 @@ export function AldoAccountDialog(props: {
   readonly usage: AldoHomeUsage | null;
 }) {
   const navigate = useNavigate();
+  const simple = useAldoSimpleMode();
   const { profile, usage } = props;
   const go = (to: string) => {
     props.onOpenChange(false);
@@ -190,7 +194,8 @@ export function AldoAccountDialog(props: {
             </Button>
           ) : null}
         </div>
-        <div className="flex flex-col gap-4 px-6 pb-2">
+        {/* On a short screen the list scrolls, between who's signed in and signing out. */}
+        <div className="flex min-h-0 flex-col gap-4 overflow-y-auto px-6 pb-2">
           <button
             type="button"
             className="flex flex-col gap-2 rounded-xl border border-border/70 bg-card/40 p-3 text-left transition-colors hover:bg-accent/50"
@@ -240,6 +245,24 @@ export function AldoAccountDialog(props: {
                 <ChevronRightIcon className="size-4 shrink-0 text-muted-foreground/60" />
               </button>
             ))}
+            <label className="flex cursor-pointer items-center gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-accent/60">
+              <PanelLeftIcon className="size-4 shrink-0 text-muted-foreground" />
+              <span className="min-w-0 flex-1">
+                <span className="block font-medium text-sm">Simple mode</span>
+                <span className="block truncate text-muted-foreground text-xs">
+                  Just Aldo, what needs you, and your Library
+                </span>
+              </span>
+              <Switch
+                checked={simple}
+                onCheckedChange={(checked) => {
+                  // The sidebar or the rail this opened from goes with the change.
+                  props.onOpenChange(false);
+                  setAldoSimpleMode(checked);
+                }}
+                aria-label="Simple mode"
+              />
+            </label>
           </nav>
         </div>
         <div className="flex items-center gap-2 border-border/60 border-t px-6 py-3">
@@ -265,10 +288,33 @@ export function AldoAccountDialog(props: {
 }
 
 /** Who's signed in, at the foot of the sidebar: their picture and name, opening their account. */
-export function AldoProfileButton(props: { readonly className?: string }) {
+export function AldoProfileButton(props: {
+  readonly className?: string;
+  /** Their picture alone, for simple mode's rail. */
+  readonly compact?: boolean;
+}) {
   const profile = useAldoProfile();
   const usage = useAldoHomeFeed((s) => s.home?.usage ?? null);
   const [open, setOpen] = useState(false);
+  if (props.compact) {
+    return (
+      <>
+        <button
+          type="button"
+          className={cn(
+            "rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            props.className,
+          )}
+          aria-label="Your account"
+          data-aldo-profile=""
+          onClick={() => setOpen(true)}
+        >
+          <AldoAvatar profile={profile} />
+        </button>
+        <AldoAccountDialog open={open} onOpenChange={setOpen} profile={profile} usage={usage} />
+      </>
+    );
+  }
   return (
     <>
       <button
