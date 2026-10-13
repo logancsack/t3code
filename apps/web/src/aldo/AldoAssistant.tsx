@@ -446,6 +446,8 @@ export function AldoComposer(props: {
     if (!text.trim() && sending.length === 0) return;
     sendText(text, sending);
     setText("");
+    // Sent words aren't a draft: nothing is warmed for them later (warm.ts).
+    noteAldoComposerTyping("");
     if (sending.length > 0) setImages([]);
     setImageError(null);
   };
