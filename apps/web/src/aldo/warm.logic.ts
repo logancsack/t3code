@@ -34,6 +34,15 @@ export function aldoWarmDue(state: AldoWarmState, input: AldoWarmInput): boolean
   return input.now - state.askedAt >= ALDO_WARM_EVERY_MS;
 }
 
+/**
+ * Whether this keystroke would ask but for Aldo's directory not having said
+ * (yet: it's still loading, or Aldo is out of reach) that it starts threads
+ * outside a repository; the words are asked for once it does.
+ */
+export function aldoWarmAwaitsGeneral(state: AldoWarmState, input: AldoWarmInput): boolean {
+  return !input.general && aldoWarmDue(state, { ...input, general: true });
+}
+
 /** The state as an ask goes out: the next waits its minute from now, whatever the answer. */
 export function askingAldoWarm(state: AldoWarmState, now: number): AldoWarmState {
   return { ...state, askedAt: now };

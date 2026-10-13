@@ -2,6 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   ALDO_WARM_EVERY_MS,
+  aldoWarmAwaitsGeneral,
   aldoWarmDue,
   answeredAldoWarm,
   askingAldoWarm,
@@ -34,6 +35,32 @@ describe("aldoWarmDue", () => {
 
   it("doesn't ask an Aldo that can't start a thread outside a repository", () => {
     expect(aldoWarmDue(INITIAL_ALDO_WARM_STATE, { ...typing, general: false })).toBe(false);
+  });
+});
+
+describe("aldoWarmAwaitsGeneral", () => {
+  it("waits for the directory when words were typed before it said Aldo starts General threads", () => {
+    const early = { ...typing, general: false };
+    expect(aldoWarmDue(INITIAL_ALDO_WARM_STATE, early)).toBe(false);
+    expect(aldoWarmAwaitsGeneral(INITIAL_ALDO_WARM_STATE, early)).toBe(true);
+    // Refused keystrokes start no minute: once it says so, the same words ask at once.
+    expect(aldoWarmDue(INITIAL_ALDO_WARM_STATE, { ...typing, now: T0 + 1_000 })).toBe(true);
+  });
+
+  it("doesn't wait when it already says so, or when nothing else would ask", () => {
+    expect(aldoWarmAwaitsGeneral(INITIAL_ALDO_WARM_STATE, typing)).toBe(false);
+    for (const input of [
+      { ...typing, general: false, text: " " },
+      { ...typing, general: false, newThreads: false },
+    ]) {
+      expect(aldoWarmAwaitsGeneral(INITIAL_ALDO_WARM_STATE, input)).toBe(false);
+    }
+    const older = answeredAldoWarm(INITIAL_ALDO_WARM_STATE, 404);
+    expect(aldoWarmAwaitsGeneral(older, { ...typing, general: false })).toBe(false);
+    const asked = askingAldoWarm(INITIAL_ALDO_WARM_STATE, T0);
+    expect(aldoWarmAwaitsGeneral(asked, { ...typing, general: false, now: T0 + 1_000 })).toBe(
+      false,
+    );
   });
 });
 
