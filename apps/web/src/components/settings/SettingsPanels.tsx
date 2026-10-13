@@ -122,6 +122,7 @@ import {
 } from "../ui/number-field";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
+import { ALDO_ARCHIVE_EMPTY } from "../../aldo/AldoEmptyStates";
 import { AldoNotificationSettings } from "../../aldo/AldoNotificationSettings";
 import { AldoPreloadSettings } from "../../aldo/AldoPreloadSettings";
 import { AldoSimpleModeSettings } from "../../aldo/AldoSimpleModeSettings";
@@ -2726,7 +2727,8 @@ export function ArchivedThreadsPanel() {
             description={
               isLoadingArchive
                 ? "Checking connected environments."
-                : (archiveError ?? "Archived threads will appear here.")
+                : (archiveError ??
+                  (isAldoCloud ? ALDO_ARCHIVE_EMPTY : "Archived threads will appear here."))
             }
           />
         </SettingsSection>

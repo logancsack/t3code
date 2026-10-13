@@ -6,7 +6,7 @@
 // there), its pull requests, a reply to the agent, talking to Aldo about it,
 // and the thread itself. Going through what waits with Aldo starts here too.
 
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useRouter } from "@tanstack/react-router";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
   isAtomCommandInterrupted,
@@ -51,6 +51,7 @@ import {
 import { decideAldo } from "./decide";
 import { aldoDecisions, aldoWaitingCount, type AldoDecision } from "./decisions.logic";
 import { refreshAldoHome } from "./homeFeed";
+import { aldoMorphSource, morphIntoThread } from "./morph";
 import { elapsed, needsYouKind, relativeTime, type healthIssues } from "./home.logic";
 import { setAldoPeekedThread } from "./screen";
 import type { AldoSidebarKind, AldoSidebarRow } from "./sidebar.logic";
@@ -211,7 +212,8 @@ export function AldoAgentsTab(props: {
           ) : null}
           {shellCount === 0 && list.approvals.length === 0 ? (
             <p className="px-3 py-10 text-center text-muted-foreground text-sm">
-              No threads yet. Tell Aldo what to get done.
+              No threads yet. What you start shows here, with what needs you first. Tell Aldo what
+              to get done.
             </p>
           ) : null}
         </div>
@@ -430,6 +432,7 @@ function AgentDetail(props: {
   readonly now: number;
 }) {
   const navigate = useNavigate();
+  const router = useRouter();
   const { row } = props;
   const c = props.conversation;
   const target = { environmentId: row.shell.environmentId, threadId: row.shell.id };
@@ -554,13 +557,14 @@ function AgentDetail(props: {
         <Button
           size="sm"
           variant="outline"
-          onClick={() =>
+          onClick={(event) =>
             void navigate({
               to: "/$environmentId/$threadId",
               params: {
                 environmentId: target.environmentId as EnvironmentId,
                 threadId: target.threadId as ThreadId,
               },
+              viewTransition: morphIntoThread(router, aldoMorphSource(event.currentTarget)),
             })
           }
         >

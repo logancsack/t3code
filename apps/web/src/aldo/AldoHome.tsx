@@ -16,7 +16,7 @@
 // rail's place instead: Aldo's conversation, Needs you or the Library
 // (AldoSimplePlaces.tsx).
 
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useRouter } from "@tanstack/react-router";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import {
   ChevronDownIcon,
@@ -94,6 +94,7 @@ import {
   repoName,
 } from "./home.logic";
 import { loadAldoBrief } from "./briefFeed";
+import { morphIntoThread } from "./morph";
 import { useAldoSimple } from "./simpleMode";
 import { aldoWaitingCount } from "./decisions.logic";
 import { useIsMobile } from "../hooks/useMediaQuery";
@@ -231,6 +232,8 @@ export function AldoHome() {
   const selectedIndex = selectable.findIndex((c) => c.ref === selectedRef);
   const selected = selectedIndex === -1 ? null : selectedIndex;
 
+  const router = useRouter();
+  /** Opens the selected conversation, its row growing into the thread. */
   const open = useCallback(
     (c: AldoHomeConversation) =>
       void navigate({
@@ -239,8 +242,12 @@ export function AldoHome() {
           environmentId: c.thread.environmentId as EnvironmentId,
           threadId: c.thread.threadId as ThreadId,
         },
+        viewTransition: morphIntoThread(
+          router,
+          boardRef.current?.querySelector<HTMLElement>("[data-selected]") ?? null,
+        ),
       }),
-    [navigate],
+    [navigate, router],
   );
 
   useEffect(() => {
@@ -477,7 +484,12 @@ export function AldoHome() {
                 board.working.length === 0 &&
                 board.done.length === 0 ? (
                   <div className="rounded-xl border border-border/60 border-dashed px-5 py-8 text-center">
-                    <p className="font-medium text-sm">Nothing yet</p>
+                    {/* Done threads leave the board after two days: it's caught up, not empty. */}
+                    <p className="font-medium text-sm">
+                      {shown.conversations.some((c) => c.state !== "new")
+                        ? "All caught up"
+                        : "Nothing yet"}
+                    </p>
                     <p className="mt-1 text-muted-foreground text-xs">
                       {assistant
                         ? "What you start shows here: what needs you first, then what's working and what's done. Tell Aldo what to get done, or start a thread with New."
