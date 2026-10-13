@@ -540,6 +540,9 @@ const WorkspaceBrowserPanel = lazy(() =>
 );
 const DiffPanel = lazy(() => import("./DiffPanel"));
 const FilePreviewPanel = lazy(() => import("./files/FilePreviewPanel"));
+const AldoLibraryPanel = lazy(() =>
+  import("../aldo/AldoLibrary").then((module) => ({ default: module.AldoLibraryPanel })),
+);
 const EMPTY_PENDING_FILE_SURFACE_IDS: ReadonlySet<string> = new Set();
 const TYPE_TO_FOCUS_EDITABLE_SELECTOR = [
   "input",
@@ -3843,6 +3846,10 @@ function ChatViewContent(props: ChatViewProps) {
   const addAgentsSurface = useCallback(() => {
     if (!activeThreadRef) return;
     useRightPanelStore.getState().open(activeThreadRef, "agents");
+  }, [activeThreadRef]);
+  const addLibrarySurface = useCallback(() => {
+    if (!activeThreadRef) return;
+    useRightPanelStore.getState().open(activeThreadRef, "library");
   }, [activeThreadRef]);
   const openFileSurface = useCallback(
     (relativePath: string) => {
@@ -7481,6 +7488,15 @@ function ChatViewContent(props: ChatViewProps) {
         composerDraftTarget={composerDraftTarget}
         onStateChange={handlePullRequestTabStatusChange}
       />
+    ) : activeRightPanelSurface?.kind === "library" ? (
+      <Suspense fallback={null}>
+        <AldoLibraryPanel
+          threadRef={activeThreadRef}
+          checkpoints={activeThread.checkpoints}
+          workLogEntries={workLogEntries}
+          workspaceRoot={activeWorkspaceRoot}
+        />
+      </Suspense>
     ) : activeRightPanelSurface?.kind === "agents" ? (
       <AgentsPanel
         model={agentPanelModel}
@@ -7999,6 +8015,7 @@ function ChatViewContent(props: ChatViewProps) {
           onAddFiles={addFilesSurface}
           onAddPullRequest={addPullRequestSurface}
           onAddAgents={addAgentsSurface}
+          onAddLibrary={aldoKeptRepo ? addLibrarySurface : undefined}
           browserAvailable={isPreviewSupportedInRuntime()}
           terminalAvailable={activeProject !== null}
           diffAvailable={isServerThread && isGitRepo}
@@ -8041,6 +8058,7 @@ function ChatViewContent(props: ChatViewProps) {
             onAddFiles={addFilesSurface}
             onAddPullRequest={addPullRequestSurface}
             onAddAgents={addAgentsSurface}
+            onAddLibrary={aldoKeptRepo ? addLibrarySurface : undefined}
             browserAvailable={isPreviewSupportedInRuntime()}
             terminalAvailable={activeProject !== null}
             diffAvailable={isServerThread && isGitRepo}

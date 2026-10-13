@@ -9,11 +9,14 @@
 // under, which the user changes as they like, once this Aldo has them. Below them, apps
 // every agent uses as MCP servers (AldoAppsSection.tsx), and the image, video and audio
 // generators agents use with the user's own API keys (AldoGeneratorRows.tsx).
+// The files agents shared by link have a page of their own (Settings → Shared
+// files, AldoLibrary.tsx), linked from here.
 
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import {
   BlocksIcon,
   CheckCircle2Icon,
+  ChevronRightIcon,
   CopyIcon,
   InboxIcon,
   LoaderIcon,
@@ -741,6 +744,17 @@ export function AldoIntegrationsPanel() {
           <HeadsUpsRow />
         ) : null}
         <AgentInboxRow />
+        <SettingsRow
+          id="aldo-shared-files"
+          title="Shared files"
+          description="Pages and files your agents shared by link: who can open each, and Stop sharing."
+          control={
+            <Button size="sm" variant="outline" render={<Link to="/settings/shared" />}>
+              Files your agents shared
+              <ChevronRightIcon className="size-3.5" />
+            </Button>
+          }
+        />
       </SettingsSection>
       <AldoAppsSection />
       <SettingsSection

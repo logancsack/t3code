@@ -77,7 +77,35 @@ function ImageThumb(props: {
   );
 }
 
-function shareInComposer(threadRef: ScopedThreadRef, name: string) {
+/** A made thing's icon by its kind, or the image itself when it's one in the thread's folder. */
+export function AldoMadeThumb(props: {
+  readonly kind: AldoMadeKind | null;
+  readonly path: string | null;
+  readonly threadRef: ScopedThreadRef | null;
+  readonly workspaceRoot: string | undefined;
+}) {
+  const { icon: Icon, tint } = (props.kind && KIND_ICON[props.kind]) || {
+    icon: FileIcon,
+    tint: "bg-muted text-muted-foreground",
+  };
+  const iconBox = (
+    <span className={cn("flex size-10 shrink-0 items-center justify-center rounded-md", tint)}>
+      <Icon className="size-5" />
+    </span>
+  );
+  return props.kind === "image" && props.path && props.threadRef && props.workspaceRoot ? (
+    <ImageThumb
+      threadRef={props.threadRef}
+      absolutePath={joinPath(props.workspaceRoot, props.path)}
+      fallback={iconBox}
+    />
+  ) : (
+    iconBox
+  );
+}
+
+/** Asks the agent to share a file by link: the sentence goes in the composer, to send. */
+export function aldoAskToShare(threadRef: ScopedThreadRef, name: string) {
   useComposerDraftStore
     .getState()
     .setPrompt(
@@ -97,12 +125,6 @@ function MadeCard(props: {
 }) {
   const { item, threadRef, workspaceRoot } = props;
   const [copied, setCopied] = useState(false);
-  const { icon: Icon, tint } = KIND_ICON[item.kind] ?? { icon: FileIcon, tint: "" };
-  const iconBox = (
-    <span className={cn("flex size-10 shrink-0 items-center justify-center rounded-md", tint)}>
-      <Icon className="size-5" />
-    </span>
-  );
   const canOpen = item.path !== null && threadRef !== null;
   const open = () => {
     if (item.path && threadRef) useRightPanelStore.getState().openFile(threadRef, item.path);
@@ -117,15 +139,12 @@ function MadeCard(props: {
         onClick={open}
         aria-label={canOpen ? `Open ${item.name}` : undefined}
       >
-        {item.kind === "image" && item.path && threadRef && workspaceRoot ? (
-          <ImageThumb
-            threadRef={threadRef}
-            absolutePath={joinPath(workspaceRoot, item.path)}
-            fallback={iconBox}
-          />
-        ) : (
-          iconBox
-        )}
+        <AldoMadeThumb
+          kind={item.kind}
+          path={item.path}
+          threadRef={threadRef}
+          workspaceRoot={workspaceRoot}
+        />
         <span className="min-w-0">
           <span className="block truncate font-medium text-sm">{item.sharedAs ?? item.name}</span>
           <span className="block truncate text-muted-foreground text-xs">
@@ -155,7 +174,7 @@ function MadeCard(props: {
           <button
             type="button"
             className={action}
-            onClick={() => shareInComposer(threadRef, item.name)}
+            onClick={() => aldoAskToShare(threadRef, item.name)}
             aria-label={`Ask the agent to share ${item.name} by link`}
           >
             Share

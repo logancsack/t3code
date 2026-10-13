@@ -20,6 +20,7 @@ import { Route as SettingsWorkspaceRouteImport } from './routes/settings.workspa
 import { Route as SettingsVaultRouteImport } from './routes/settings.vault'
 import { Route as SettingsSourceControlRouteImport } from './routes/settings.source-control'
 import { Route as SettingsSkillsRouteImport } from './routes/settings.skills'
+import { Route as SettingsSharedRouteImport } from './routes/settings.shared'
 import { Route as SettingsProvidersRouteImport } from './routes/settings.providers'
 import { Route as SettingsMemoryRouteImport } from './routes/settings.memory'
 import { Route as SettingsKeybindingsRouteImport } from './routes/settings.keybindings'
@@ -89,6 +90,11 @@ const SettingsSourceControlRoute = SettingsSourceControlRouteImport.update({
 const SettingsSkillsRoute = SettingsSkillsRouteImport.update({
   id: '/skills',
   path: '/skills',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsSharedRoute = SettingsSharedRouteImport.update({
+  id: '/shared',
+  path: '/shared',
   getParentRoute: () => SettingsRoute,
 } as any)
 const SettingsProvidersRoute = SettingsProvidersRouteImport.update({
@@ -194,6 +200,7 @@ export interface FileRoutesByFullPath {
   '/settings/keybindings': typeof SettingsKeybindingsRoute
   '/settings/memory': typeof SettingsMemoryRoute
   '/settings/providers': typeof SettingsProvidersRoute
+  '/settings/shared': typeof SettingsSharedRoute
   '/settings/skills': typeof SettingsSkillsRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
   '/settings/vault': typeof SettingsVaultRoute
@@ -221,6 +228,7 @@ export interface FileRoutesByTo {
   '/settings/keybindings': typeof SettingsKeybindingsRoute
   '/settings/memory': typeof SettingsMemoryRoute
   '/settings/providers': typeof SettingsProvidersRoute
+  '/settings/shared': typeof SettingsSharedRoute
   '/settings/skills': typeof SettingsSkillsRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
   '/settings/vault': typeof SettingsVaultRoute
@@ -251,6 +259,7 @@ export interface FileRoutesById {
   '/settings/keybindings': typeof SettingsKeybindingsRoute
   '/settings/memory': typeof SettingsMemoryRoute
   '/settings/providers': typeof SettingsProvidersRoute
+  '/settings/shared': typeof SettingsSharedRoute
   '/settings/skills': typeof SettingsSkillsRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
   '/settings/vault': typeof SettingsVaultRoute
@@ -282,6 +291,7 @@ export interface FileRouteTypes {
     | '/settings/keybindings'
     | '/settings/memory'
     | '/settings/providers'
+    | '/settings/shared'
     | '/settings/skills'
     | '/settings/source-control'
     | '/settings/vault'
@@ -309,6 +319,7 @@ export interface FileRouteTypes {
     | '/settings/keybindings'
     | '/settings/memory'
     | '/settings/providers'
+    | '/settings/shared'
     | '/settings/skills'
     | '/settings/source-control'
     | '/settings/vault'
@@ -338,6 +349,7 @@ export interface FileRouteTypes {
     | '/settings/keybindings'
     | '/settings/memory'
     | '/settings/providers'
+    | '/settings/shared'
     | '/settings/skills'
     | '/settings/source-control'
     | '/settings/vault'
@@ -435,6 +447,13 @@ declare module '@tanstack/react-router' {
       path: '/skills'
       fullPath: '/settings/skills'
       preLoaderRoute: typeof SettingsSkillsRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/shared': {
+      id: '/settings/shared'
+      path: '/shared'
+      fullPath: '/settings/shared'
+      preLoaderRoute: typeof SettingsSharedRouteImport
       parentRoute: typeof SettingsRoute
     }
     '/settings/providers': {
@@ -580,6 +599,7 @@ interface SettingsRouteChildren {
   SettingsKeybindingsRoute: typeof SettingsKeybindingsRoute
   SettingsMemoryRoute: typeof SettingsMemoryRoute
   SettingsProvidersRoute: typeof SettingsProvidersRoute
+  SettingsSharedRoute: typeof SettingsSharedRoute
   SettingsSkillsRoute: typeof SettingsSkillsRoute
   SettingsSourceControlRoute: typeof SettingsSourceControlRoute
   SettingsVaultRoute: typeof SettingsVaultRoute
@@ -598,6 +618,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsKeybindingsRoute: SettingsKeybindingsRoute,
   SettingsMemoryRoute: SettingsMemoryRoute,
   SettingsProvidersRoute: SettingsProvidersRoute,
+  SettingsSharedRoute: SettingsSharedRoute,
   SettingsSkillsRoute: SettingsSkillsRoute,
   SettingsSourceControlRoute: SettingsSourceControlRoute,
   SettingsVaultRoute: SettingsVaultRoute,

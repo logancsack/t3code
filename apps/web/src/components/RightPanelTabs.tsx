@@ -6,6 +6,7 @@ import {
   Files,
   GitPullRequest,
   Globe2,
+  LibraryBig,
   MonitorSmartphone,
   Plus,
   TerminalSquare,
@@ -90,6 +91,8 @@ interface RightPanelTabsProps {
   onAddFiles: () => void;
   onAddPullRequest: () => void;
   onAddAgents: () => void;
+  /** Aldo: what a thread that isn't code made and shared; absent for every other thread. */
+  onAddLibrary?: (() => void) | undefined;
   browserAvailable: boolean;
   terminalAvailable: boolean;
   diffAvailable: boolean;
@@ -274,6 +277,7 @@ function RightPanelEmptyState(props: {
   onAddFiles: () => void;
   onAddPullRequest: () => void;
   onAddAgents: () => void;
+  onAddLibrary: (() => void) | null;
   browserAvailable: boolean;
   terminalAvailable: boolean;
   diffAvailable: boolean;
@@ -336,6 +340,20 @@ function RightPanelEmptyState(props: {
       onClick: props.onAddFiles,
       badgeCount: 0,
     },
+    ...(props.onAddLibrary
+      ? [
+          {
+            label: "Library",
+            description: "What the agent made and shared, by day.",
+            icon: LibraryBig,
+            shortcut: "L",
+            available: true,
+            disabledReason: null,
+            onClick: props.onAddLibrary,
+            badgeCount: 0,
+          },
+        ]
+      : []),
     {
       label: "Diff",
       description: "Review changes in this thread.",
@@ -564,6 +582,8 @@ function surfaceTitle(
       return `#${surface.number}`;
     case "agents":
       return "Agents";
+    case "library":
+      return "Library";
     case "workspaceBrowser":
       return isAldoCloud ? "Browser" : "Workspace browser";
     case "preview": {
@@ -653,6 +673,8 @@ function SurfaceIcon({
     }
     case "agents":
       return <Bot className="size-3 shrink-0" />;
+    case "library":
+      return <LibraryBig className="size-3 shrink-0" />;
   }
 }
 
@@ -707,6 +729,18 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       disabledReason: SURFACE_DISABLED_REASONS.files,
       onClick: props.onAddFiles,
     },
+    ...(props.onAddLibrary
+      ? [
+          {
+            label: "Library",
+            icon: LibraryBig,
+            shortcut: "L",
+            available: true,
+            disabledReason: null,
+            onClick: props.onAddLibrary,
+          },
+        ]
+      : []),
     {
       label: "Diff",
       icon: FileDiff,
@@ -1039,6 +1073,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             onAddFiles={props.onAddFiles}
             onAddPullRequest={props.onAddPullRequest}
             onAddAgents={props.onAddAgents}
+            onAddLibrary={props.onAddLibrary ?? null}
             browserAvailable={props.browserAvailable}
             terminalAvailable={props.terminalAvailable}
             diffAvailable={props.diffAvailable}
