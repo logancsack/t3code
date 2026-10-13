@@ -11,7 +11,7 @@ export function AldoPreloadSettings() {
     <SettingsSection title="Computers" icon={<CloudIcon className="size-4" />}>
       <SettingsRow
         title="Start new threads' agents right away"
-        description="A new thread's computer starts as soon as the thread opens, so your first message goes out without waiting. If you leave without sending anything, it's removed."
+        description="A new thread's computer starts as soon as the thread opens, so your first message goes out without waiting. Typing to Aldo on the home screen starts one for a thread it may start for you. If nothing uses it, it's removed."
         control={
           <Switch
             checked={settings.newThreads}

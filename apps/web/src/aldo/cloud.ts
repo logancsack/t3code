@@ -557,6 +557,21 @@ export const ALDO_PROJECT_REMOVAL_NOTE =
   "This also deletes the computers of the project's threads, including any changes they haven't pushed.";
 
 /**
+ * Asks Aldo for a machine warm for the next thread it starts (the user is
+ * typing to it on the home screen; warm.ts). Its answer's status: 202 warm or
+ * warming, 204 nothing to do, 404 from an Aldo without warm machines; null if
+ * none came. Never throws, and never sends the user off to sign in mid-sentence.
+ */
+export async function warmAldoMachine(): Promise<number | null> {
+  try {
+    const response = await fetch("/api/home/warm", { method: "POST", credentials: "same-origin" });
+    return response.status;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Puts back a machine started or woken ahead of use once the user has left
  * without sending anything (deleted if it never got a thread, else paused).
  */
