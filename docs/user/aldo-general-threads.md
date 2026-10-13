@@ -29,6 +29,7 @@ In a General thread, or one in an Aldo project, the thread reads as words rather
 - While the agent works, a line says what it's doing ("Working on opentable.com", "Making Budget.xlsx"), and each step it took reads the same way.
 - When it's done, the turn folds into one line of what it did ("Visited 3 sites, made Budget.xlsx · 4m"), which opens to the steps.
 - **What it made** shows a card for each sheet, document, deck, PDF, image or page the turn made or shared. A card opens the file beside the thread; **Copy link** copies a shared file's link, and **Share** asks the agent to share it. **All changes** lists every file the turn touched.
+- **Library**, in the panel beside the thread, lists everything the thread made or shared, by day, and who can open each shared link. See [The Library](./aldo-library.md).
 - When the agent offers what it could do next, those show as buttons under its answer. Tap one to send it.
 
 If the work turns out to need a repository after all, the agent can add one to the thread, and work and open pull requests there.
