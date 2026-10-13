@@ -3,6 +3,7 @@ import type { ServerUpdateState } from "@t3tools/client-runtime/state/server";
 import { compareSemverVersions, parseSemver } from "@t3tools/shared/semver";
 import * as Schema from "effect/Schema";
 
+import { isAldoCloud } from "./aldo/cloud";
 import { APP_VERSION } from "./branding";
 import { getLocalStorageItem, setLocalStorageItem } from "./hooks/useLocalStorage";
 
@@ -51,10 +52,14 @@ function versionCore(version: string): string {
  * build and a nightly build with the same core do not cause an update warning.
  * A server ahead of the client does not need an update. Versions that do not
  * parse as semver fall back to plain string inequality.
+ *
+ * None in Aldo: Aldo updates its machines' servers, which its users can't, and
+ * `npx t3` would replace the fork's server with stock T3.
  */
 export function resolveVersionMismatch(
   serverVersion: string | null | undefined,
 ): VersionMismatch | null {
+  if (isAldoCloud) return null;
   const normalizedClientVersion = normalizeVersion(APP_VERSION);
   const normalizedServerVersion = normalizeVersion(serverVersion);
   if (!normalizedClientVersion || !normalizedServerVersion) {
