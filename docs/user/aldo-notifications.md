@@ -19,7 +19,7 @@ You get one notification per thread, replaced by the next one from the same thre
 
 Aldo also tells you when something waits on your approval (an email to send, an event to add), with **Send** and **Discard** buttons where your device shows them, and gives you its [heads-ups](./aldo-approvals.md#heads-ups).
 
-Tap a notification to open the thread. While Aldo is open in front of you, notifications arrive without a sound.
+Tap a notification to open the thread. While Aldo is open in front of you, notifications arrive without a sound. While a thread's conversation is on your screen, notifications about it come quietly on your other devices too, so your phone doesn't ring for what you're already looking at.
 
 A failed deploy after a merge goes to the agent first; you hear about it when the agent finishes looking into it.
 
