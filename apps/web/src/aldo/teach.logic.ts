@@ -4,8 +4,9 @@
 // (save_skill), try it on another input, and offer it as a routine. The
 // machine records (Aldo's sandbox-agent/browser/teach.ts): it says how the
 // recording stands in `teach` messages, which older machines don't send (so
-// the panel offers Teach this only once one has), and gives the steps once,
-// to the panel that asks, in a `teachSteps` message. Passwords, one-time codes
+// the panel offers Teach this only once one has), and gives the steps to the
+// panel that asks, in a `teachSteps` message with an id, keeping them until
+// the panel says it has them (`taken` with that id). Passwords, one-time codes
 // and card details are never in them, only that one was typed.
 
 export type AldoTeachState = "off" | "recording" | "recorded";

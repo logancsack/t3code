@@ -162,7 +162,7 @@ export function AldoBrowserPanel({
   // "Teach this" (teach.logic.ts): how the recording stands, once the machine says it can record.
   const [teach, setTeach] = useState<AldoTeach | null>(null);
   // Teaching it: what to do with the steps once the machine gives them, even after the form gave up waiting.
-  const teachStepsWait = useRef<((steps: string[] | null) => void) | null>(null);
+  const teachStepsWait = useRef<((steps: string[] | null, id?: string) => void) | null>(null);
   const route = useParams({ strict: false }) as { environmentId?: string; threadId?: string };
   const teachThread = threadId ?? (route.environmentId === environmentId ? route.threadId : null);
   const [address, setAddress] = useState("");
@@ -365,7 +365,10 @@ export function AldoBrowserPanel({
             setTeach(parseAldoTeach(message));
             break;
           case "teachSteps":
-            teachStepsWait.current?.(parseAldoTeachSteps(message.steps));
+            teachStepsWait.current?.(
+              parseAldoTeachSteps(message.steps),
+              typeof message.id === "string" ? message.id : undefined,
+            );
             break;
           case "loginOffers": {
             const offers = parseAldoLoginOffers(message.offers);
@@ -683,9 +686,10 @@ export function AldoBrowserPanel({
   };
   /**
    * Puts the lesson in the conversation's message box, for the user to read
-   * over and send. The machine gives the steps once, to this panel: steps that
-   * come after the form gave up waiting still go in, and only once they're in
-   * (kept on this device) is the machine told it may forget them.
+   * over and send. The machine gives the steps to this panel: steps that come
+   * after the form gave up waiting still go in, and only once they're in (kept
+   * on this device) is the machine told it may forget them (an older machine
+   * forgot them as it gave them).
    */
   const teachIt = (sentence: string) =>
     new Promise<void>((resolve, reject) => {
@@ -696,7 +700,7 @@ export function AldoBrowserPanel({
       if (socketRef.current?.readyState !== WebSocket.OPEN) return reject(unreachable);
       const target = scopeThreadRef(environmentId as EnvironmentId, teachThread as ThreadId);
       const timer = setTimeout(() => reject(unreachable), 15_000);
-      teachStepsWait.current = (steps) => {
+      teachStepsWait.current = (steps, id) => {
         clearTimeout(timer);
         teachStepsWait.current = null;
         if (!steps) {
@@ -708,8 +712,8 @@ export function AldoBrowserPanel({
             target,
             promptWith(readComposerThreadPrompt(target), aldoTeachMessage(sentence, steps)),
           );
-        // A machine that forgot them as it gave them ignores this.
-        send({ type: "teach", action: "taken" });
+        // Those steps, by their id, may go now; a machine that forgot them as it gave them ignores this.
+        send({ type: "teach", action: "taken", ...(id ? { id } : {}) });
         toastManager.add({
           type: "success",
           title: "Your lesson is in the message box",
