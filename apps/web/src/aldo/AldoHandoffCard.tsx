@@ -7,13 +7,14 @@
 // reports handoffs.
 
 import { HandIcon, LoaderIcon } from "lucide-react";
-import { useState } from "react";
+import { useState, type MouseEvent } from "react";
 import { create } from "zustand";
 
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { toastManager } from "../components/ui/toast";
 import { AldoApiError, resolveAldoHandoff, type AldoHandoff } from "./cloud";
+import { aldoMorph, aldoMorphSource } from "./morph";
 import {
   aldoHandoffCode,
   aldoHandoffElsewhere,
@@ -31,12 +32,27 @@ const messageOf = (error: unknown) => (error instanceof Error ? error.message : 
 /** The handoff whose agent's browser fills the screen (AldoHandoffTakeover.tsx), if any. */
 export const useAldoHandoffTakeover = create<{ readonly id: string | null }>(() => ({ id: null }));
 
-export function openAldoHandoffTakeover(id: string): void {
-  useAldoHandoffTakeover.setState({ id });
+/** What opened the takeover, for it to shrink back into on closing. */
+let opener: HTMLElement | null = null;
+const takeoverElement = () => document.querySelector<HTMLElement>("[data-aldo-takeover]");
+
+/** Opens the takeover, growing out of `from` (the card or button that opened it) where it can. */
+export function openAldoHandoffTakeover(id: string, from?: Element | null): void {
+  if (useAldoHandoffTakeover.getState().id === id) return;
+  const source = from instanceof HTMLElement ? (aldoMorphSource(from) ?? from) : null;
+  opener = source;
+  aldoMorph(() => useAldoHandoffTakeover.setState({ id }), source, takeoverElement);
 }
 
 export function closeAldoHandoffTakeover(): void {
-  useAldoHandoffTakeover.setState({ id: null });
+  if (useAldoHandoffTakeover.getState().id === null) return;
+  const back = opener?.isConnected ? opener : null;
+  opener = null;
+  aldoMorph(
+    () => useAldoHandoffTakeover.setState({ id: null }),
+    takeoverElement(),
+    () => back,
+  );
 }
 
 export type AldoHandoffAnswer =
@@ -94,6 +110,7 @@ function HandoffCard({ handoff }: { readonly handoff: AldoHandoff }) {
     <section
       aria-label="Your agent needs you"
       className="mb-2 overflow-hidden rounded-xl border border-warning/40 bg-background shadow-sm"
+      data-aldo-handoff-card=""
     >
       <div className="bg-warning/8 p-3 sm:p-4">
         <p className="flex items-center gap-1.5 font-semibold text-[11px] text-warning uppercase tracking-wide">
@@ -126,7 +143,8 @@ export function AldoHandoffActions(props: {
     if (await answerAldoHandoff(handoff, next)) props.onActed?.();
     else setBusy(null);
   };
-  const open = () => openAldoHandoffTakeover(handoff.id);
+  const open = (event: MouseEvent<HTMLElement>) =>
+    openAldoHandoffTakeover(handoff.id, event.currentTarget);
   const spinner = (decision: typeof busy) =>
     busy === decision ? <LoaderIcon className="size-3.5 animate-spin" /> : null;
   return (
@@ -232,7 +250,7 @@ export function AldoHandoffBar(props: {
         type="button"
         size="compact"
         disabled={busy}
-        onClick={() => openAldoHandoffTakeover(handoff.id)}
+        onClick={(event) => openAldoHandoffTakeover(handoff.id, event.currentTarget)}
       >
         Take over
       </Button>

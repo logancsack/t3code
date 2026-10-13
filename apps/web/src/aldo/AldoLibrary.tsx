@@ -1,9 +1,10 @@
 // The Library: what agents made and shared. In a thread that isn't code it's
 // a right-panel tab: the files its turns made, each opening beside the thread,
 // and what it shared by link. Settings → Shared files lists everything the
-// user's agents shared. A shared one says who can open it, and can be copied,
-// opened, or stopped (its link stops working at once). Grouping and labels are
-// in library.logic.ts.
+// user's agents shared, and so does simple mode's Library
+// (AldoSimplePlaces.tsx). A shared one says who can open it, and can be
+// copied, opened, or stopped (its link stops working at once). Grouping and
+// labels are in library.logic.ts.
 
 import type { EnvironmentId, ScopedThreadRef, ThreadId } from "@t3tools/contracts";
 import { Link } from "@tanstack/react-router";
@@ -459,8 +460,22 @@ function useThreadOf(): (environmentId: string | undefined) => {
   );
 }
 
-/** Settings → Shared files: everything the user's agents shared, by when, and where from where Aldo says. */
+/** Settings → Shared files: what it's for, then everything shared. */
 export function AldoSharedFilesPanel() {
+  return (
+    <SettingsSection title="Shared files" icon={<Share2Icon className="size-4" />}>
+      <p className="px-3 text-muted-foreground text-sm sm:px-4">
+        Pages and files your agents shared by link, newest first. A public link opens for anyone who
+        has it; one only you can open asks for your Aldo sign-in. Stop sharing turns its link off at
+        once and deletes the shared copy; the agent's own file stays where it is.
+      </p>
+      <AldoSharedFiles />
+    </SettingsSection>
+  );
+}
+
+/** Everything the user's agents shared, by when, and where from where Aldo says. */
+export function AldoSharedFiles() {
   const { shares, error, removed } = useAldoShares("");
   const threadOf = useThreadOf();
   const [project, setProject] = useState<string | null>(null);
@@ -489,12 +504,7 @@ export function AldoSharedFilesPanel() {
     [threadOf],
   );
   return (
-    <SettingsSection title="Shared files" icon={<Share2Icon className="size-4" />}>
-      <p className="px-3 text-muted-foreground text-sm sm:px-4">
-        Pages and files your agents shared by link, newest first. A public link opens for anyone who
-        has it; one only you can open asks for your Aldo sign-in. Stop sharing turns its link off at
-        once and deletes the shared copy; the agent's own file stays where it is.
-      </p>
+    <>
       {shares === null ? (
         <p className="px-3 text-muted-foreground text-sm sm:px-4">
           This Aldo server doesn't list shared files yet.
@@ -542,6 +552,6 @@ export function AldoSharedFilesPanel() {
           ) : null}
         </div>
       ) : null}
-    </SettingsSection>
+    </>
   );
 }

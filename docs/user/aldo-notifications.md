@@ -23,6 +23,10 @@ Tap a notification to open the thread. While Aldo is open in front of you, notif
 
 A failed deploy after a merge goes to the agent first; you hear about it when the agent finishes looking into it.
 
+## A sound while Aldo is open
+
+Turn on **Play a sound when a thread finishes or needs you** in **Settings → General → Notifications** for a soft chime while Aldo is open on that device. It doesn't play for the thread you're looking at, and several threads at once make one sound. It's off until you turn it on, and each browser keeps its own setting.
+
 ## Turn them off
 
 Turn off **Notifications on this device** in the same place, or block notifications for Aldo in your browser's settings.

@@ -373,7 +373,10 @@ export function AldoEnvironmentsPanel() {
         />
       ) : null}
       {envs && envs.length === 0 && !draft ? (
-        <p className="px-3 text-muted-foreground text-sm sm:px-4">No environments yet.</p>
+        <p className="px-3 text-muted-foreground text-sm sm:px-4">
+          No environments yet. A repository's ready-to-go setup shows here once an agent saves one
+          or you add one.
+        </p>
       ) : null}
       {envs === null ? (
         <LoaderCircleIcon className="mx-4 size-4 animate-spin text-muted-foreground" />

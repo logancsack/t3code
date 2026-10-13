@@ -3,10 +3,12 @@
 // installed app's icon badge. All three read the one count the home screen's
 // Threads tab shows (decisions.logic.ts aldoWaitingCount), from Aldo's home
 // read, which stays fresh on every page while AldoAttentionSync is mounted.
+// The optional sound (chime.ts) listens to the same read from here.
 
 import { useEffect } from "react";
 import { create } from "zustand";
 
+import { useAldoChime } from "./chime";
 import { aldoWaitingCount } from "./decisions.logic";
 import { useAldoHomeRead } from "./homeFeed";
 
@@ -42,9 +44,10 @@ export function useAldoAttentionCount(): number {
   return useCount((s) => s.count);
 }
 
-/** Keeps the count, the favicon and the badge in step, in the signed-in app. */
+/** Keeps the count, the favicon and the badge in step, in the signed-in app, and plays the optional sound. */
 export function AldoAttentionSync(): null {
   const { home } = useAldoHomeRead();
+  useAldoChime();
   const count = home ? aldoWaitingCount(home, Date.now()) : 0;
   useEffect(() => {
     useCount.setState({ count });

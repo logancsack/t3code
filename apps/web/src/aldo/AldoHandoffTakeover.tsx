@@ -76,6 +76,7 @@ function Takeover({ id }: { readonly id: string }) {
       aria-modal="true"
       aria-label="Your agent's browser"
       className="fixed inset-0 z-50 flex flex-col bg-background pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]"
+      data-aldo-takeover=""
     >
       <header className="flex shrink-0 items-center gap-2 border-b border-border px-2 py-1.5">
         <Button
@@ -131,9 +132,10 @@ function Takeover({ id }: { readonly id: string }) {
             ) : (
               <p className="text-center text-muted-foreground text-xs">
                 Your agent waits until you hand it back ·{" "}
+                {/* A finger needs 44px; the line grows on touch screens only. */}
                 <button
                   type="button"
-                  className="underline underline-offset-2 hover:text-foreground disabled:opacity-60"
+                  className="underline underline-offset-2 hover:text-foreground disabled:opacity-60 pointer-coarse:inline-flex pointer-coarse:min-h-11 pointer-coarse:items-center"
                   disabled={busy !== null}
                   onClick={() => void answer({ decision: "skip" })}
                 >

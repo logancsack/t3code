@@ -27,7 +27,7 @@ import {
   useAldoAssistant,
 } from "./assistantSession";
 import { isAldoCloud } from "./cloud";
-import { setAldoHomeView } from "./homeFeed";
+import { showAldoConversation, useAldoSimple } from "./simpleMode";
 import { stopAldoWalkthrough } from "./walkthrough";
 
 /** Mod+Shift+A: talk to Aldo, or hang up. */
@@ -50,6 +50,8 @@ export function AldoAssistantDock() {
   const micOn = useAldoAssistant((s) => s.micOn);
   const mobile = useIsMobile();
   const minimized = useAldoCallView((s) => s.minimized);
+  // Simple mode's other places are on the home screen too, without Aldo's conversation.
+  const elsewhere = useAldoSimple((s) => s.on && s.place !== "aldo");
   const live = phase !== "idle" && phase !== "error";
 
   // Each call opens the call screen again; one that ends (or fails) ends going through decisions.
@@ -86,7 +88,7 @@ export function AldoAssistantDock() {
 
   if (!isAldoCloud || !live) return null;
   // On a phone the call screen covers the page until it's folded away.
-  if (pathname === "/" || (mobile && !minimized)) return <AldoCallScreen />;
+  if ((pathname === "/" && !elsewhere) || (mobile && !minimized)) return <AldoCallScreen />;
   return (
     <>
       <AldoCallScreen />
@@ -113,7 +115,7 @@ export function AldoAssistantDock() {
             <Link
               to="/"
               className="min-w-0 flex-1 truncate px-1 text-sm"
-              onClick={() => setAldoHomeView("aldo")}
+              onClick={showAldoConversation}
             >
               {said ||
                 (phase === "thinking"
