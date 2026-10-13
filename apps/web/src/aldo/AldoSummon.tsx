@@ -6,6 +6,8 @@
 // screen's; or go into the thread's own composer for its agent (⌘↵), to send
 // from there; or jump to a thread whose title has them. With nothing typed,
 // Space starts a call. On the home screen's conversation, ⌘I is its composer.
+// A stalled turn's Ask Aldo (AldoStall.tsx) opens the bar with a question
+// about its thread already typed.
 
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
@@ -57,14 +59,23 @@ import {
   type SummonThread,
 } from "./summon.logic";
 
-export const useAldoSummon = create<{ readonly open: boolean }>(() => ({ open: false }));
+/** `query`: words the bar opens with, as if typed. */
+export const useAldoSummon = create<{ readonly open: boolean; readonly query: string }>(() => ({
+  open: false,
+  query: "",
+}));
 
 export function openAldoSummon(): void {
   useAldoSummon.setState({ open: true });
 }
 
+/** Opens the bar with words already in it (a question about the thread on screen), to ask or edit. */
+export function openAldoSummonWith(query: string): void {
+  useAldoSummon.setState({ open: true, query });
+}
+
 export function closeAldoSummon(): void {
-  useAldoSummon.setState({ open: false });
+  useAldoSummon.setState({ open: false, query: "" });
 }
 
 const NO_THREAD = scopeThreadRef("" as EnvironmentId, "" as ThreadId);
@@ -100,7 +111,7 @@ export function AldoSummon() {
         seedAldoComposer("");
         return;
       }
-      useAldoSummon.setState((s) => ({ open: !s.open }));
+      useAldoSummon.setState((s) => (s.open ? { open: false, query: "" } : { open: true }));
     };
     // Before the page's own keys (an editor's italic), so it works from a composer too.
     window.addEventListener("keydown", onKey, true);
@@ -128,7 +139,9 @@ function SummonBar() {
   const shells = useThreadShells();
   const phase = useAldoAssistant((s) => s.phase);
   const replying = useAldoAssistant((s) => s.replying);
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(() => useAldoSummon.getState().query);
+  /** Opened with words in it: the caret goes after them. */
+  const seeded = useRef(query.length > 0);
   const [selected, setSelected] = useState(0);
   /** Where the conversation was when the bar first asked Aldo: what follows shows under it. */
   const [askedAt, setAskedAt] = useState<number | null>(null);
@@ -252,6 +265,12 @@ function SummonBar() {
               }
               className="min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-muted-foreground"
               onChange={(event) => setQuery(event.target.value)}
+              onFocus={(event) => {
+                if (!seeded.current) return;
+                seeded.current = false;
+                const end = event.currentTarget.value.length;
+                event.currentTarget.setSelectionRange(end, end);
+              }}
               onKeyDown={(event) => {
                 const next = moveSummonSelection(selected, rows.length, event.key);
                 if (next !== null && !answering) {
