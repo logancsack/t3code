@@ -4604,6 +4604,30 @@ function ChatViewContent(props: ChatViewProps) {
     }
   }, []);
 
+  // Rotating a phone re-measures every row at the new width after the list has
+  // pinned itself to the end, which can leave the last message under the
+  // composer. Once the resize settles, pin again if the user was following.
+  useEffect(() => {
+    let timer: number | null = null;
+    const onResize = () => {
+      if (timer !== null) window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        timer = null;
+        if (
+          timelineScrollModeRef.current === "following-end" &&
+          liveFollowUserScrollGenerationRef.current === anchorUserScrollGenerationRef.current
+        ) {
+          void legendListRef.current?.scrollToEnd?.({ animated: false });
+        }
+      }, 200);
+    };
+    window.addEventListener("resize", onResize);
+    return () => {
+      window.removeEventListener("resize", onResize);
+      if (timer !== null) window.clearTimeout(timer);
+    };
+  }, []);
+
   // Anchored end space intentionally disables LegendList's normal end-follow so
   // the sent message can stay near the top. T3 only owns streaming adjustments
   // during that mode; LegendList owns ordinary end-follow everywhere else.

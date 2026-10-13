@@ -3704,10 +3704,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           >
             {showCollapsedMobilePromptRow ? (
               <div className="flex items-center justify-between gap-2 px-3 py-2">
+                {/* It spans the row's padding so a tap anywhere on the row expands it. */}
                 <button
                   type="button"
                   className={cn(
-                    "min-w-0 flex-1 truncate bg-transparent p-0 text-left text-[14px] focus:outline-none",
+                    "-my-2 -ms-3 min-w-0 flex-1 self-stretch truncate bg-transparent py-2 ps-3 pe-0 text-left text-[14px] focus:outline-none",
                     (activePendingProgress ? activePendingProgress.customAnswer : prompt.trim())
                       ? "text-foreground"
                       : "text-placeholder",
@@ -3728,7 +3729,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 </button>
                 <button
                   type="button"
-                  className="flex size-8 shrink-0 items-center justify-center rounded-full bg-message-action text-message-action-foreground hover:bg-message-action-hover disabled:opacity-30"
+                  className="relative flex size-8 shrink-0 items-center justify-center rounded-full bg-message-action text-message-action-foreground pointer-coarse:after:absolute pointer-coarse:after:size-full pointer-coarse:after:min-h-11 pointer-coarse:after:min-w-11 hover:bg-message-action-hover disabled:opacity-30"
                   disabled={collapsedComposerPrimaryActionDisabled}
                   aria-label={collapsedComposerPrimaryActionLabel}
                   onPointerDown={(event) => event.preventDefault()}
