@@ -445,12 +445,15 @@ import {
 } from "../versionSkew";
 import { useAssetUrls } from "../assets/assetUrls";
 import { useAldoPreload } from "../aldo/preload";
+import { useAldoFocusReport } from "../aldo/focus";
+import { useAldoStallSignals } from "../aldo/AldoStall";
 import { aldoDesktopOwnsKeyboard } from "../aldo/desktopInput.logic";
 import { useAldoThreadDetailMissing } from "../aldo/threadDetails";
 import { AldoThreadLoading } from "../aldo/AldoThreadLoading";
 import { useAldoThreadStart } from "../aldo/threadStart";
 import { isAldoCloud, isAldoEnvironmentId } from "../aldo/cloud";
 import { useAldoKeptRepo } from "../aldo/keptRepo";
+import { AldoHandoffCard } from "../aldo/AldoHandoffCard";
 import { ensureAldoConnected, isAldoConnected } from "../aldo/dispatch";
 import { showAldoStartingThread, withdrawAldoStartingThread } from "../aldo/startingThreads";
 
@@ -540,6 +543,9 @@ const WorkspaceBrowserPanel = lazy(() =>
 );
 const DiffPanel = lazy(() => import("./DiffPanel"));
 const FilePreviewPanel = lazy(() => import("./files/FilePreviewPanel"));
+const AldoLibraryPanel = lazy(() =>
+  import("../aldo/AldoLibrary").then((module) => ({ default: module.AldoLibraryPanel })),
+);
 const EMPTY_PENDING_FILE_SURFACE_IDS: ReadonlySet<string> = new Set();
 const TYPE_TO_FOCUS_EDITABLE_SELECTOR = [
   "input",
@@ -2072,6 +2078,8 @@ function ChatViewContent(props: ChatViewProps) {
     activeEnvironment?.connection.phase,
     aldoThreadDetailMissing && threadDetailLoading,
   );
+  // Aldo: while this conversation is on screen, notifications about it come quietly.
+  useAldoFocusReport(activeEnvironment?.environmentId ?? null, isServerThread ? threadId : null);
   const logicalProjectEnvironments = useMemo(() => {
     if (!activeProject) return [];
     const logicalKey = deriveLogicalProjectKeyFromSettings(activeProject, projectGroupingSettings);
@@ -3843,6 +3851,10 @@ function ChatViewContent(props: ChatViewProps) {
   const addAgentsSurface = useCallback(() => {
     if (!activeThreadRef) return;
     useRightPanelStore.getState().open(activeThreadRef, "agents");
+  }, [activeThreadRef]);
+  const addLibrarySurface = useCallback(() => {
+    if (!activeThreadRef) return;
+    useRightPanelStore.getState().open(activeThreadRef, "library");
   }, [activeThreadRef]);
   const openFileSurface = useCallback(
     (relativePath: string) => {
@@ -6966,6 +6978,16 @@ function ChatViewContent(props: ChatViewProps) {
     (text: string) => onSubmitPlanFollowUp({ text, interactionMode, linkProposedPlan: false }),
     [interactionMode, onSubmitPlanFollowUp],
   );
+  // Aldo: what the working line needs to say a turn has stopped moving, with Nudge and Stop.
+  useAldoStallSignals({
+    threadKey: isServerThread ? routeThreadKey : null,
+    activities: threadActivities,
+    messages: timelineMessages,
+    waitingOnYou: pendingApprovals.length > 0 || pendingUserInputs.length > 0,
+    target: isServerThread ? (activeThreadRef ?? null) : null,
+    send: onSendFollowUp,
+    stop: onInterrupt,
+  });
 
   // A question whose turn is over can't take its answer any more, so the
   // answer goes to the agent as a new message. Answering the question as well,
@@ -7481,6 +7503,15 @@ function ChatViewContent(props: ChatViewProps) {
         composerDraftTarget={composerDraftTarget}
         onStateChange={handlePullRequestTabStatusChange}
       />
+    ) : activeRightPanelSurface?.kind === "library" ? (
+      <Suspense fallback={null}>
+        <AldoLibraryPanel
+          threadRef={activeThreadRef}
+          checkpoints={activeThread.checkpoints}
+          workLogEntries={workLogEntries}
+          workspaceRoot={activeWorkspaceRoot}
+        />
+      </Suspense>
     ) : activeRightPanelSurface?.kind === "agents" ? (
       <AgentsPanel
         model={agentPanelModel}
@@ -7739,6 +7770,12 @@ function ChatViewContent(props: ChatViewProps) {
                         />
                       </div>
                     </div>
+                  ) : null}
+                  {isAldoCloud && !isDraftHeroState && activeThreadRef ? (
+                    <AldoHandoffCard
+                      environmentId={activeThreadRef.environmentId}
+                      threadId={activeThreadRef.threadId}
+                    />
                   ) : null}
                   <div
                     className="relative"
@@ -7999,6 +8036,7 @@ function ChatViewContent(props: ChatViewProps) {
           onAddFiles={addFilesSurface}
           onAddPullRequest={addPullRequestSurface}
           onAddAgents={addAgentsSurface}
+          onAddLibrary={aldoKeptRepo ? addLibrarySurface : undefined}
           browserAvailable={isPreviewSupportedInRuntime()}
           terminalAvailable={activeProject !== null}
           diffAvailable={isServerThread && isGitRepo}
@@ -8041,6 +8079,7 @@ function ChatViewContent(props: ChatViewProps) {
             onAddFiles={addFilesSurface}
             onAddPullRequest={addPullRequestSurface}
             onAddAgents={addAgentsSurface}
+            onAddLibrary={aldoKeptRepo ? addLibrarySurface : undefined}
             browserAvailable={isPreviewSupportedInRuntime()}
             terminalAvailable={activeProject !== null}
             diffAvailable={isServerThread && isGitRepo}

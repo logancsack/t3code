@@ -15,6 +15,7 @@ import { resolveServerBackedAppDisplayName } from "../branding.logic";
 import { AppSidebarLayout } from "../components/AppSidebarLayout";
 import { CommandPalette } from "../components/CommandPalette";
 import { AldoAssistantDock } from "../aldo/AldoAssistantDock";
+import { AldoHandoffTakeoverHost } from "../aldo/AldoHandoffTakeover";
 import { AldoRepositoryDialog } from "../aldo/AldoRepositoryDialog";
 import { AldoSummon } from "../aldo/AldoSummon";
 import { AldoAttentionSync, useAldoAttentionCount } from "../aldo/attentionBadge";
@@ -157,6 +158,7 @@ function RootRouteView() {
         {isAldoCloud ? <AldoAttentionSync /> : null}
         <AldoAssistantDock />
         <AldoSummon />
+        {isAldoCloud ? <AldoHandoffTakeoverHost /> : null}
         <SlowRpcRequestToastCoordinator />
         <HostedStaticEnvironmentBootstrap />
         <LandingDemoBootstrap />

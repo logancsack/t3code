@@ -29,6 +29,7 @@ import type { AldoComputer } from "./computer.logic";
 import { getAldoPreloadSettings } from "./preloadSettings";
 import type { AldoCheckCounts, AldoPullRequestStage } from "./pullRequests.logic";
 import { isAldoCost, type AldoCost } from "./costs.logic";
+import { parseAldoShares, type AldoShareView } from "./library.logic";
 import { aldoProviderLimitsOf, type AldoProviderLimits } from "./providerLimits.logic";
 
 export const isAldoCloud = import.meta.env.VITE_ALDO_CLOUD === "1";
@@ -565,10 +566,23 @@ export async function unloadAldoEnvironment(environmentId: string): Promise<void
   requestAldoDirectoryRefresh();
 }
 
-/** Tells Aldo the user is looking at this thread, so it isn't stopped for idleness. */
-export function touchAldoEnvironment(environmentId: string): void {
+/**
+ * Tells Aldo the user is looking at this thread, so it isn't stopped for
+ * idleness. `presence`: which conversation is on screen and whether the page
+ * is visible and focused (focus.ts), so notifications about it come quietly
+ * while it is; an older Aldo ignores it. `keepalive`: sent as the page goes away.
+ */
+export function touchAldoEnvironment(
+  environmentId: string,
+  presence?: { readonly thread: string; readonly focused: boolean },
+  options: { readonly keepalive?: boolean } = {},
+): void {
   const threadId = threadIdForEnvironment(environmentId);
-  void api(`/api/environments/${threadId}/touch`, { method: "POST" }).catch(() => undefined);
+  void api(`/api/environments/${threadId}/touch`, {
+    method: "POST",
+    ...(presence ? { body: JSON.stringify(presence) } : {}),
+    ...(options.keepalive ? { keepalive: true } : {}),
+  }).catch(() => undefined);
 }
 
 // ---------------------------------------------------------------------------
@@ -1372,6 +1386,26 @@ export async function fetchAldoProviderLimits(
   return aldoProviderLimitsOf(body);
 }
 
+/**
+ * The pages and files the user's agents shared by link, newest first (the
+ * Library); null from an Aldo that doesn't list them.
+ */
+export async function fetchAldoShares(): Promise<ReadonlyArray<AldoShareView> | null> {
+  const body = await api<{ shares?: unknown }>("/api/shares", { cache: "no-store" }).catch(
+    (error: unknown) => {
+      if (error instanceof AldoApiError && error.status === 404) return null;
+      throw error;
+    },
+  );
+  // An older Aldo may answer with the web client's page instead of a 404.
+  return parseAldoShares(body?.shares);
+}
+
+/** Stops sharing one: its link stops working at once and Aldo deletes its copy (404 when already gone). */
+export async function stopAldoShare(id: string): Promise<void> {
+  await api(`/api/shares/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
 /** The owner-only link to a port in a thread's sandbox (wakes it when opened). */
 export function aldoPreviewUrl(environmentId: string, port: number): string {
   return `/p/${threadIdForEnvironment(environmentId)}/${port}`;
@@ -2112,6 +2146,12 @@ export type AldoHomePending =
       readonly summary: string;
       readonly detail?: string;
       readonly options: ReadonlyArray<{ readonly decision: string; readonly label: string }>;
+    }
+  | {
+      /** What only the user can get past in its browser: its card is the handoff `requestId` in `handoffs`. */
+      readonly kind: "handoff";
+      readonly requestId: string;
+      readonly summary: string;
     };
 
 export interface AldoHomeConversation {
@@ -2141,6 +2181,8 @@ export interface AldoHomeConversation {
   readonly pending?: AldoHomePending;
   readonly plan?: { readonly id: string; readonly text: string };
   readonly pressure?: AldoMachinePressure | null;
+  /** The site its agent is working on in the browser, while it works there (a newer Aldo). */
+  readonly browsing?: { readonly site: string; readonly at: string } | null;
   /** Snoozed until then (only while that's ahead), or settled: put away in the user's list. */
   readonly snoozedUntil?: string;
   readonly settled?: true;
@@ -2328,17 +2370,55 @@ export interface AldoApproval {
   readonly threadTitle: string | null;
   readonly createdAt: string;
   readonly decidedAt: string | null;
+  /**
+   * The rule "Always allow" would make of it, in plain words ("Agents can send
+   * email to alex@example.com without asking"): only an email to a few named
+   * people or an event with no guests, and only from an Aldo that has rules.
+   */
+  readonly always?: string;
 }
 
-/** Approves or discards one; says what was done. Aldo refuses (409) an email whose draft changed since it was shown. */
+/** A rule the user made with "Always allow": agents do what it covers exactly without asking. */
+export interface AldoApprovalRule {
+  readonly id: string;
+  readonly kind: "email" | "event";
+  readonly text: string;
+  readonly createdAt: string;
+}
+
+/**
+ * Approves or discards one; says what was done. Aldo refuses (409) an email
+ * whose draft changed since it was shown. `always` approves it and saves its
+ * rule (`rule`, when that worked).
+ */
 export async function decideAldoApproval(
   id: string,
-  decision: "approve" | "discard",
-): Promise<{ readonly approval: Omit<AldoApproval, "threadTitle">; readonly message: string }> {
+  decision: "approve" | "discard" | "always",
+): Promise<{
+  readonly approval: Omit<AldoApproval, "threadTitle">;
+  readonly message: string;
+  readonly rule?: { readonly id: string; readonly text: string };
+}> {
   return api(`/api/approvals/${encodeURIComponent(id)}`, {
     method: "POST",
     body: JSON.stringify({ decision }),
   });
+}
+
+/** The user's "Always allow" rules, oldest first; null where this Aldo has none. */
+export async function fetchAldoApprovalRules(): Promise<ReadonlyArray<AldoApprovalRule> | null> {
+  try {
+    const { rules } = await api<{ rules?: ReadonlyArray<AldoApprovalRule> }>("/api/approval-rules");
+    return Array.isArray(rules) ? rules : null;
+  } catch (cause) {
+    if (cause instanceof AldoApiError && cause.status === 404) return null;
+    throw cause;
+  }
+}
+
+/** Removes a rule (Undo, or the list of them): agents ask again from now on. */
+export async function removeAldoApprovalRule(id: string): Promise<void> {
+  await api(`/api/approval-rules/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
 /** Aldo's heads-ups: whether it looks at the user's new mail and coming events between conversations. */
@@ -2384,6 +2464,8 @@ export interface AldoHome {
   readonly approvals?: ReadonlyArray<AldoApproval>;
   /** The user's routines (an older Aldo leaves them out). */
   readonly routines?: ReadonlyArray<AldoRoutine>;
+  /** What only the user can get past in an agent's browser, open now, newest first (a newer Aldo). */
+  readonly handoffs?: ReadonlyArray<AldoHandoff>;
   readonly actions: ReadonlyArray<AldoHomeAction>;
   readonly usage: AldoHomeUsage;
   readonly spends: {
@@ -2419,6 +2501,48 @@ export interface AldoHome {
       readonly policy: AldoPolicy;
     }>;
   };
+}
+
+// ---------------------------------------------------------------------------
+// Handoffs: an agent in its browser met what only the user can get past (a
+// captcha, a sign-in, a code sent to them, a number to match, a tap on
+// another device) and asked them. They do it in its browser and hand it back,
+// type the code for Aldo to put in the page, or skip it.
+
+export interface AldoHandoff {
+  readonly id: string;
+  /** captcha, sign_in, code, number_match, approve_on_device, other; maybe more later. */
+  readonly kind: string;
+  /** Why, as the agent put it ("OpenTable wants to check you're human"). */
+  readonly reason: string;
+  /** What to do, in a sentence, when the agent said ("Tick the box, then hand it back"). */
+  readonly how: string | null;
+  readonly site: string | null;
+  readonly url: string | null;
+  /** How long it usually takes, when the agent knew. */
+  readonly seconds: number | null;
+  readonly thread: AldoHomeTarget;
+  readonly threadTitle: string;
+  readonly createdAt: string;
+  readonly expiresAt: string;
+}
+
+/**
+ * The user's answer to a handoff: done (they got it past the check), skip, or
+ * a code for Aldo to type into the page's focused field (never kept). Says
+ * what happened; a code that couldn't be typed is refused (409, 502) saying
+ * what to do instead, and the handoff stays open.
+ */
+export async function resolveAldoHandoff(
+  id: string,
+  answer:
+    | { readonly decision: "done" | "skip" }
+    | { readonly decision: "code"; readonly code: string },
+): Promise<{ readonly outcome: string; readonly message: string }> {
+  return api(`/api/handoffs/${encodeURIComponent(id)}`, {
+    method: "POST",
+    body: JSON.stringify(answer),
+  });
 }
 
 /** The home screen's read; null where this Aldo doesn't have it (an older one answers with the web client's own page). */

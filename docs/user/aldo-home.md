@@ -35,6 +35,7 @@ The board answers four questions, in order, starting with what waits on a tap fr
 
 - A **question** shows its choices. Tap one to answer, or type an answer of your own. A question that allows several choices sends them together.
 - An **approval** shows what the agent wants to do, with its details, and the choices the agent offered (allow, allow for this session, deny).
+- **Needs you in its browser**: the agent met what only you can get past, like a check that you're human or a code sent to you. **Do it now** opens its browser full screen; a code goes in the field. See [When an agent needs you in its browser](./aldo-approvals.md#when-an-agent-needs-you-in-its-browser).
 - A **plan to approve** shows the plan. **Approve plan** has the agent carry it out; **Ask for changes** sends your changes back for a revised plan.
 - A thread that **stopped with an error** says why.
 

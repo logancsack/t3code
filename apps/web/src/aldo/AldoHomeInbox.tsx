@@ -15,6 +15,7 @@ import { Textarea } from "../components/ui/textarea";
 import { toastManager } from "../components/ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { cn } from "~/lib/utils";
+import { AldoHandoffActions } from "./AldoHandoffCard";
 import { seedAldoComposer } from "./assistantSession";
 import {
   AldoApiError,
@@ -25,6 +26,7 @@ import {
   type AldoHomeTarget,
 } from "./cloud";
 import { elapsed, modelName, NEEDS_YOU_LABEL, needsYouKind, repoName } from "./home.logic";
+import { useAldoHomeFeed } from "./homeFeed";
 
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
 /** Aldo refused because the thread is waiting on something else now: the board should show it. */
@@ -160,6 +162,10 @@ export function PendingForm(props: {
         onActed={props.onActed}
       />
     );
+  if (kind === "handoff" && c.pending?.kind === "handoff")
+    return (
+      <HandoffForm key={c.pending.requestId} id={c.pending.requestId} onActed={props.onActed} />
+    );
   if (kind === "plan" && c.plan)
     return <PlanForm key={c.plan.id} target={c.thread} plan={c.plan} onActed={props.onActed} />;
   if (kind === "paused")
@@ -173,6 +179,16 @@ export function PendingForm(props: {
       </div>
     );
   return null;
+}
+
+/** What its agent waits on the user for in its browser, with the card's buttons. */
+function HandoffForm(props: { readonly id: string; readonly onActed: () => void }) {
+  const handoff = useAldoHomeFeed((s) => s.home?.handoffs?.find((h) => h.id === props.id));
+  return handoff ? (
+    <div>
+      <AldoHandoffActions handoff={handoff} onActed={props.onActed} />
+    </div>
+  ) : null;
 }
 
 function QuestionForm(props: {

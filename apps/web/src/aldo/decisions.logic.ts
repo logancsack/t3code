@@ -31,6 +31,12 @@ export type AldoDecision =
       readonly pending: Extract<AldoHomePending, { kind: "approval" }>;
     }
   | {
+      readonly kind: "handoff";
+      readonly key: string;
+      readonly conversation: AldoHomeConversation;
+      readonly pending: Extract<AldoHomePending, { kind: "handoff" }>;
+    }
+  | {
       readonly kind: "plan";
       readonly key: string;
       readonly conversation: AldoHomeConversation;
@@ -57,6 +63,13 @@ function conversationDecision(c: AldoHomeConversation): AldoDecision | null {
     return {
       kind,
       key: `approval:${c.ref}:${c.pending.requestId}`,
+      conversation: c,
+      pending: c.pending,
+    };
+  if (kind === "handoff" && c.pending?.kind === "handoff")
+    return {
+      kind,
+      key: `handoff:${c.ref}:${c.pending.requestId}`,
       conversation: c,
       pending: c.pending,
     };
@@ -158,6 +171,8 @@ export function decisionAsk(decision: AldoDecision): string {
     }
     case "approval":
       return decision.pending.summary;
+    case "handoff":
+      return decision.pending.summary || "Needs you in its browser";
     case "plan":
       return "Has a plan for you to approve";
     case "merge": {
@@ -229,6 +244,10 @@ export function decisionBrief(decision: AldoDecision): string {
       const c = decision.conversation;
       const options = decision.pending.options.map((o) => `"${o.label}"`).join(", ");
       return `The thread "${c.title}" (ref ${c.ref}) asks the user's OK: ${decision.pending.summary}. Their choices: ${options}.`;
+    }
+    case "handoff": {
+      const c = decision.conversation;
+      return `The thread "${c.title}" (ref ${c.ref}) needs the user in its browser: ${decision.pending.summary || "something only they can get past"}. They do it on their screen, from the card's "Do it now", which opens the agent's browser; or skip it there.`;
     }
     case "plan":
       return `The thread "${decision.conversation.title}" (ref ${decision.conversation.ref}) has a plan to approve: ${decision.plan.text.slice(0, 600)}. The user can approve it, or ask for changes.`;

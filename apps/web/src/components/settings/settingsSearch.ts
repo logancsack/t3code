@@ -15,6 +15,7 @@ export type SettingsPath =
   | "/settings/skills"
   | "/settings/memory"
   | "/settings/vault"
+  | "/settings/shared"
   | "/settings/environments"
   | "/settings/connections"
   | "/settings/archived";
@@ -74,6 +75,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/skills": "Skills",
   "/settings/memory": "Memory",
   "/settings/vault": "Vault",
+  "/settings/shared": "Shared files",
   "/settings/environments": "Environments",
   "/settings/connections": isManagedDevPc ? "Server connections" : "Connections",
   "/settings/archived": "Archive",
@@ -383,6 +385,15 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/vault",
     searchTerms: [
       "vault secrets api keys tokens passwords logins saved credentials environment variables files",
+    ],
+    aldoCloudOnly: true,
+  },
+  {
+    id: "aldo-shared",
+    title: "Shared files",
+    to: "/settings/shared",
+    searchTerms: [
+      "library shared files pages links public only me stop sharing unshare what agents made share_file",
     ],
     aldoCloudOnly: true,
   },

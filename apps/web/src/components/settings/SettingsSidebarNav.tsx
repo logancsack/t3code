@@ -25,6 +25,7 @@ import {
   SearchIcon,
   ServerIcon,
   Settings2Icon,
+  Share2Icon,
   XIcon,
 } from "lucide-react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
@@ -69,6 +70,7 @@ const SETTINGS_SECTION_ICONS: Readonly<
   "/settings/skills": GraduationCapIcon,
   "/settings/memory": BrainIcon,
   "/settings/vault": LockKeyholeIcon,
+  "/settings/shared": Share2Icon,
   "/settings/environments": BoxesIcon,
   "/settings/connections": Link2Icon,
   "/settings/archived": ArchiveIcon,
@@ -86,6 +88,7 @@ export const SETTINGS_NAV_ITEMS: ReadonlyArray<{
         to !== "/settings/skills" &&
         to !== "/settings/memory" &&
         to !== "/settings/vault" &&
+        to !== "/settings/shared" &&
         to !== "/settings/environments") ||
       isAldoCloud,
   )

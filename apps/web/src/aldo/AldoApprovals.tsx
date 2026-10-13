@@ -4,6 +4,9 @@
 // suggests in a heads-up (Start it). Each shows what it is in full; under
 // them, how the ones decided lately went. The same buttons are on the
 // notification on their devices. Shown only when Aldo reports approvals.
+// An email to a few named people or an event with no guests can also be
+// always allowed: it's approved and becomes a rule, undone from the toast
+// or the list under "How Aldo works for you" (AldoHomeBoard.tsx).
 
 import { CalendarPlusIcon, CircleCheckBigIcon, MailIcon, SparklesIcon } from "lucide-react";
 import { useState } from "react";
@@ -13,9 +16,15 @@ import { Button } from "../components/ui/button";
 import { toastManager } from "../components/ui/toast";
 import { requestConfirmDialog } from "../confirmDialog";
 import { cn } from "~/lib/utils";
+import { aldoApprovalRulesChanged } from "./AldoApprovalRules";
 import { Section } from "./AldoHomeBoard";
 import { ThreadLink } from "./AldoHomeInbox";
-import { AldoApiError, decideAldoApproval, type AldoApproval } from "./cloud";
+import {
+  AldoApiError,
+  decideAldoApproval,
+  removeAldoApprovalRule,
+  type AldoApproval,
+} from "./cloud";
 import {
   APPROVAL_KIND_LABEL,
   approvalOutcome,
@@ -75,18 +84,47 @@ export function ApprovalsSection(props: {
   );
 }
 
-/** One approval in full, with its two buttons (an item of a list). */
+/** What was done, and the rule it saved, with Undo for the rule (what was done stays done). */
+function toastRule(message: string, rule: { readonly id: string; readonly text: string }) {
+  aldoApprovalRulesChanged();
+  const id = toastManager.add({
+    type: "success",
+    title: message,
+    description: `Saved as a rule: ${rule.text}.`,
+    timeout: 10_000,
+    actionProps: {
+      children: "Undo",
+      onClick: () => {
+        toastManager.close(id);
+        void removeAldoApprovalRule(rule.id).then(
+          () => {
+            aldoApprovalRulesChanged();
+            toastManager.add({ type: "info", title: "Agents will ask again next time." });
+          },
+          (cause: unknown) =>
+            toastManager.add({
+              type: "error",
+              title: "Couldn't undo the rule",
+              description: messageOf(cause),
+            }),
+        );
+      },
+    },
+  });
+}
+
+/** One approval in full, with its buttons (an item of a list). */
 export function ApprovalCard(props: {
   readonly approval: AldoApproval;
   readonly now: number;
   readonly onActed: () => void;
 }) {
   const a = props.approval;
-  const [busy, setBusy] = useState<"approve" | "discard" | null>(null);
+  const [busy, setBusy] = useState<"approve" | "discard" | "always" | null>(null);
   const [expanded, setExpanded] = useState(false);
   const Icon = KIND_ICON[a.kind];
   const sending = a.status === "sending";
-  const decide = async (decision: "approve" | "discard") => {
+  const decide = async (decision: "approve" | "discard" | "always") => {
     if (decision === "discard" && a.kind === "email") {
       const confirmed = await (requestConfirmDialog(
         "Discard this draft? It's deleted from your drafts, and isn't sent.",
@@ -94,10 +132,17 @@ export function ApprovalCard(props: {
       ) ?? Promise.resolve(true));
       if (!confirmed) return;
     }
+    if (decision === "always") {
+      const confirmed = await (requestConfirmDialog(
+        `${a.always}, from now on? This one is approved now too, and you can undo the rule.`,
+      ) ?? Promise.resolve(true));
+      if (!confirmed) return;
+    }
     setBusy(decision);
     try {
-      const { message } = await decideAldoApproval(a.id, decision);
-      toastManager.add({ type: "success", title: message });
+      const { message, rule } = await decideAldoApproval(a.id, decision);
+      if (rule) toastRule(message, rule);
+      else toastManager.add({ type: "success", title: message });
     } catch (cause) {
       // A draft that changed since it was shown comes back as it is now, to look at again.
       const changed = cause instanceof AldoApiError && cause.status === 409;
@@ -173,6 +218,17 @@ export function ApprovalCard(props: {
             >
               {busy === "discard" ? "Working…" : a.discardLabel}
             </Button>
+            {a.always ? (
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={busy !== null || sending}
+                onClick={() => void decide("always")}
+                aria-label={`${a.approveLabel}, and always allow: ${a.always}`}
+              >
+                {busy === "always" ? "Working…" : "Always allow…"}
+              </Button>
+            ) : null}
           </div>
         </div>
       </div>
