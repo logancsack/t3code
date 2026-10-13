@@ -4,7 +4,13 @@
 
 import { lazy, Suspense, useEffect, useState } from "react";
 
-import { Dialog } from "../components/ui/dialog";
+import {
+  Dialog,
+  DialogDescription,
+  DialogHeader,
+  DialogPopup,
+  DialogTitle,
+} from "../components/ui/dialog";
 import { isAldoCloud, type AldoHostKind } from "./cloud";
 import { dropAldoCarriedDraft } from "./newThread";
 
@@ -46,10 +52,22 @@ export function AldoRepositoryPicker() {
       }}
     >
       {open ? (
-        <Suspense fallback={null}>
+        <Suspense fallback={<AldoStartDialogOpening mode={open} />}>
           <AldoStartDialog initialMode={open} onClose={() => setOpen(null)} />
         </Suspense>
       ) : null}
     </Dialog>
+  );
+}
+
+/** The dialog's frame while its code loads (a slow link), so the click shows and can be undone. */
+function AldoStartDialogOpening(props: { readonly mode: AldoStartMode }) {
+  return (
+    <DialogPopup className="w-[min(680px,calc(100vw-2rem))]">
+      <DialogHeader>
+        <DialogTitle>{props.mode === "new" ? "New project" : "Start a thread"}</DialogTitle>
+        <DialogDescription>Opening…</DialogDescription>
+      </DialogHeader>
+    </DialogPopup>
   );
 }

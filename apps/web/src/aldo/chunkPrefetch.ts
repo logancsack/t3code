@@ -14,15 +14,18 @@ interface NetworkInformationLike {
   readonly effectiveType?: string;
 }
 
-/** Set while fetching ahead of use: a failure then is nobody's to see. */
+/** Set while fetching ahead of use: a failure then is nobody's to see, unless a page the user opened is loading too. */
 let prefetching = false;
+let appRouter: AppRouter | null = null;
 const RELOADED_AT = "aldo:reloaded-for-code";
 /** A reload that didn't bring the part either: the failure shows as it would. */
 const RELOAD_AGAIN_AFTER_MS = 60_000;
 
 /** A part of the app didn't load: reload into the version that has it, unless offline or just reloaded. */
 function reloadForMissingCode(event: Event): void {
-  if (prefetching || !navigator.onLine) return;
+  // While fetching ahead, a page the user opened may be what failed: the
+  // event doesn't say whose it was, so a loading page counts as theirs.
+  if ((prefetching && !appRouter?.state.isLoading) || !navigator.onLine) return;
   try {
     if (Date.now() - Number(sessionStorage.getItem(RELOADED_AT) ?? 0) < RELOAD_AGAIN_AFTER_MS)
       return;
@@ -35,6 +38,7 @@ function reloadForMissingCode(event: Event): void {
 }
 
 export function installAldoChunkPrefetch(router: AppRouter): void {
+  appRouter = router;
   if (isAldoCloud) window.addEventListener("vite:preloadError", reloadForMissingCode);
   // Data saver or a 2G link: nothing ahead of use.
   const connection = (navigator as { connection?: NetworkInformationLike }).connection;
