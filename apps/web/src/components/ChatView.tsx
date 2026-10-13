@@ -445,6 +445,7 @@ import {
 } from "../versionSkew";
 import { useAssetUrls } from "../assets/assetUrls";
 import { useAldoPreload } from "../aldo/preload";
+import { useAldoFocusReport } from "../aldo/focus";
 import { useAldoStallSignals } from "../aldo/AldoStall";
 import { aldoDesktopOwnsKeyboard } from "../aldo/desktopInput.logic";
 import { useAldoThreadDetailMissing } from "../aldo/threadDetails";
@@ -2073,6 +2074,8 @@ function ChatViewContent(props: ChatViewProps) {
     activeEnvironment?.connection.phase,
     aldoThreadDetailMissing && threadDetailLoading,
   );
+  // Aldo: while this conversation is on screen, notifications about it come quietly.
+  useAldoFocusReport(activeEnvironment?.environmentId ?? null, isServerThread ? threadId : null);
   const logicalProjectEnvironments = useMemo(() => {
     if (!activeProject) return [];
     const logicalKey = deriveLogicalProjectKeyFromSettings(activeProject, projectGroupingSettings);

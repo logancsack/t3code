@@ -565,10 +565,23 @@ export async function unloadAldoEnvironment(environmentId: string): Promise<void
   requestAldoDirectoryRefresh();
 }
 
-/** Tells Aldo the user is looking at this thread, so it isn't stopped for idleness. */
-export function touchAldoEnvironment(environmentId: string): void {
+/**
+ * Tells Aldo the user is looking at this thread, so it isn't stopped for
+ * idleness. `presence`: which conversation is on screen and whether the page
+ * is visible and focused (focus.ts), so notifications about it come quietly
+ * while it is; an older Aldo ignores it. `keepalive`: sent as the page goes away.
+ */
+export function touchAldoEnvironment(
+  environmentId: string,
+  presence?: { readonly thread: string; readonly focused: boolean },
+  options: { readonly keepalive?: boolean } = {},
+): void {
   const threadId = threadIdForEnvironment(environmentId);
-  void api(`/api/environments/${threadId}/touch`, { method: "POST" }).catch(() => undefined);
+  void api(`/api/environments/${threadId}/touch`, {
+    method: "POST",
+    ...(presence ? { body: JSON.stringify(presence) } : {}),
+    ...(options.keepalive ? { keepalive: true } : {}),
+  }).catch(() => undefined);
 }
 
 // ---------------------------------------------------------------------------

@@ -51,6 +51,11 @@ const UNATTENDED_MS = 30 * 60 * 1000;
 
 /** When the user last used the page: the pointer, a key, a touch, the wheel, or coming back to the tab or window. */
 let lastUsedAt = Date.now();
+
+/** When the user last used the page (focus.ts tells a page in use from one left alone). */
+export function aldoPageUsedAt(): number {
+  return lastUsedAt;
+}
 /** Run when the page is used after a pause: the agent on screen may need a touch, or waking. */
 const resumeListeners = new Set<() => void>();
 
