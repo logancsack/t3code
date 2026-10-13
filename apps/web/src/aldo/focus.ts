@@ -15,8 +15,8 @@ import { aldoPageUsedAt } from "./preload";
 const TICK_MS = 15_000;
 /** Focus going into a frame on the page (a preview, the agent's browser) blurs the window on its way. */
 const BLUR_SETTLE_MS = 250;
-/** Using the page again says so at once, rather than at the next look. */
-const USE_EVENTS = ["pointerdown", "keydown", "touchstart"] as const;
+/** Using the page again says so at once, rather than at the next look: the same uses preload.ts counts. */
+const USE_EVENTS = ["pointerdown", "pointermove", "keydown", "wheel", "touchstart"] as const;
 
 let onScreen: AldoFocusTarget | null = null;
 /** The page is going away (closed, or kept for back and forward): nothing of it is on screen. */

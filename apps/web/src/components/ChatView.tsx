@@ -7008,6 +7008,7 @@ function ChatViewContent(props: ChatViewProps) {
     activities: threadActivities,
     messages: timelineMessages,
     waitingOnYou: pendingApprovals.length > 0 || pendingUserInputs.length > 0,
+    target: isServerThread ? (activeThreadRef ?? null) : null,
     send: onSendFollowUp,
     stop: onInterrupt,
   });

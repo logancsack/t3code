@@ -75,11 +75,26 @@ describe("handoffs", () => {
     expect(aldoHandoffCode("AB-12")).toBe("AB12");
   });
 
-  it("names the site to skip", () => {
-    expect(aldoHandoffSkipLabel(handoff())).toBe("Skip opentable.com");
-    expect(aldoHandoffSkipLabel(handoff({ site: "accounts.google.com" }))).toBe(
-      "Skip accounts.google.com",
-    );
+  it("names the site to skip as the reason does, else by its domain", () => {
+    expect(aldoHandoffSkipLabel(handoff())).toBe("Skip OpenTable");
+    expect(
+      aldoHandoffSkipLabel(
+        handoff({ site: "accounts.google.com", reason: "Google wants a code it texted you" }),
+      ),
+    ).toBe("Skip Google");
+    expect(
+      aldoHandoffSkipLabel(handoff({ site: "bbc.co.uk", reason: "The BBC wants you to sign in" })),
+    ).toBe("Skip BBC");
+    expect(
+      aldoHandoffSkipLabel(
+        handoff({ site: "my.example-shop.com", reason: "A check you're human" }),
+      ),
+    ).toBe("Skip example-shop.com");
+    expect(
+      aldoHandoffSkipLabel(
+        handoff({ site: "shop.opentable.com", reason: "Open Table wants to check" }),
+      ),
+    ).toBe("Skip Open Table");
     expect(aldoHandoffSkipLabel(handoff({ site: null }))).toBe("Skip it");
   });
 
