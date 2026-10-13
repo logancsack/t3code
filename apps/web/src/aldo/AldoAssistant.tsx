@@ -393,6 +393,8 @@ export function AldoComposer(props: {
   const live = phase !== "idle" && phase !== "error";
   // Images go in writing: not into a call.
   const canAttach = limits !== null && !live;
+  // Words left behind aren't a draft: nothing is warmed for them later (warm.ts).
+  useEffect(() => () => noteAldoComposerTyping(""), []);
   // Images that couldn't be sent come back before any added since, as their words do.
   useEffect(() => {
     if (unsentImages === null) return;
