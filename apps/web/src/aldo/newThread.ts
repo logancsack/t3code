@@ -31,8 +31,11 @@ export function dropAldoCarriedDraft(): void {
   carried = null;
 }
 
-/** The start under way, shared by every place that opens a thread. */
-let opening: Promise<{ readonly draftId: DraftId } | null> | null = null;
+/** The start under way, shared by every place that opens a thread, with where it opens (its repositories). */
+let opening: {
+  readonly repos: string;
+  readonly done: Promise<{ readonly draftId: DraftId } | null>;
+} | null = null;
 
 /** Opens a draft thread in `repos` (none: General) at once; `carry` moves a draft's words into it. Resolves with the draft that opened, or null. */
 export function useStartAldoThread(): {
@@ -49,8 +52,11 @@ export function useStartAldoThread(): {
       repos: ReadonlyArray<string>,
       carry?: { readonly from: DraftId; readonly prompt: string },
     ) => {
-      // One start at a time, whichever button or key asked: a second would make another computer.
-      if (opening) return opening;
+      const key = repos.join("\n");
+      // One elsewhere goes first; then this one opens where it was asked, not in that one's draft.
+      for (let other = opening; other && other.repos !== key; other = opening) await other.done;
+      // One start at a time for the same place, whichever button or key asked: a second would make another computer.
+      if (opening) return opening.done;
       setStarting(true);
       const run = async () => {
         try {
@@ -72,8 +78,9 @@ export function useStartAldoThread(): {
           opening = null;
         }
       };
-      opening = run();
-      return opening;
+      const done = run();
+      opening = { repos: key, done };
+      return done;
     },
     [handleNewThread],
   );

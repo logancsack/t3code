@@ -36,14 +36,48 @@ import {
   type AldoShareRefused,
 } from "./shareTarget.logic";
 
-/** Read before the router settles the address: the share the app was opened with. */
+/**
+ * A share still to open, kept for this tab until it has: when the session ran
+ * out, the page goes to sign in and comes back without the address it had.
+ */
+const PENDING_KEY = "aldo:share-pending";
+
+function pendingShare(): AldoShareParam | null {
+  try {
+    const id = window.sessionStorage.getItem(PENDING_KEY);
+    return id ? parseAldoShareParam(`?share=${encodeURIComponent(id)}`) : null;
+  } catch {
+    return null;
+  }
+}
+
+function keepPending(share: AldoShareParam): void {
+  if (share.kind !== "kept") return;
+  try {
+    window.sessionStorage.setItem(PENDING_KEY, share.id);
+  } catch {
+    // Without storage it opens now or not at all.
+  }
+}
+
+function forgetPending(): void {
+  try {
+    window.sessionStorage.removeItem(PENDING_KEY);
+  } catch {
+    // Nothing kept.
+  }
+}
+
+/** Read before the router settles the address: the share the app was opened with, or one a sign-in came between. */
 let opened: AldoShareParam | null =
   typeof window === "undefined" || !isAldoCloud
     ? null
-    : parseAldoShareParam(window.location.search);
+    : (parseAldoShareParam(window.location.search) ?? pendingShare());
 
 /** How long a share waits for Aldo's directory, which says whether General threads are there. */
 const DIRECTORY_WAIT_MS = 30_000;
+/** Then, on an Aldo without General threads, for the projects, which come in after the directory. */
+const PROJECTS_WAIT_MS = 10_000;
 
 interface Openers {
   readonly start: ReturnType<typeof useStartAldoThread>["start"];
@@ -62,6 +96,7 @@ export function AldoShareReceiver() {
     const share = opened;
     opened = null;
     if (!share) return;
+    keepPending(share);
     // A reload doesn't open it again.
     const url = new URL(window.location.href);
     url.searchParams.delete("share");
@@ -97,6 +132,18 @@ function directoryLoaded(ms: number): Promise<boolean> {
   });
 }
 
+/** Where a new thread opens, once the projects have come in, waiting up to `ms`. */
+async function defaultProject(
+  current: () => Openers,
+  ms: number,
+): Promise<Openers["defaultProjectRef"]> {
+  const until = Date.now() + ms;
+  while (!current().defaultProjectRef && Date.now() < until) {
+    await new Promise((resolve) => window.setTimeout(resolve, 250));
+  }
+  return current().defaultProjectRef;
+}
+
 async function openDraft(current: () => Openers): Promise<DraftId | null> {
   if (!(await directoryLoaded(DIRECTORY_WAIT_MS))) {
     toastManager.add({
@@ -106,10 +153,10 @@ async function openDraft(current: () => Openers): Promise<DraftId | null> {
     });
     return null;
   }
-  const { start, handleNewThread, defaultProjectRef } = current();
   // start says itself when it can't open one.
-  if (aldoSupportsGeneralThreads()) return (await start([]))?.draftId ?? null;
-  const draft = defaultProjectRef ? await handleNewThread(defaultProjectRef) : null;
+  if (aldoSupportsGeneralThreads()) return (await current().start([]))?.draftId ?? null;
+  const projectRef = await defaultProject(current, PROJECTS_WAIT_MS);
+  const draft = projectRef ? await current().handleNewThread(projectRef) : null;
   if (!draft) {
     toastManager.add({
       type: "error",
@@ -120,14 +167,13 @@ async function openDraft(current: () => Openers): Promise<DraftId | null> {
   return draft?.draftId ?? null;
 }
 
-async function attachImages(
-  draftId: DraftId,
+/** The images as a pasted image is: made smaller to fit when over the limit. */
+async function prepareImages(
   files: ReadonlyArray<File>,
   refused: AldoShareRefused[],
-): Promise<void> {
+): Promise<ComposerImageAttachment[]> {
   const images: ComposerImageAttachment[] = [];
   for (const shared of files) {
-    // As a pasted image: made smaller to fit when it's over the limit.
     const prepared = await prepareImageForAttachment(
       normalizeComposerImageFileMimeType(shared),
       PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
@@ -150,7 +196,7 @@ async function attachImages(
       file,
     });
   }
-  if (images.length > 0) useComposerDraftStore.getState().addImages(draftId, images);
+  return images;
 }
 
 function attachFiles(draftId: DraftId, files: ReadonlyArray<File>): void {
@@ -182,19 +228,25 @@ async function receive(share: AldoShareParam, current: () => Openers): Promise<v
     const kept = await readAldoShare(share.id).catch(() => null);
     const prompt = kept ? aldoSharePrompt(kept.details) : "";
     if (!kept || (!prompt && kept.details.files.length === 0)) return missed();
-    const draftId = await openDraft(current);
-    if (!draftId) return;
-    if (prompt) useComposerDraftStore.getState().setPrompt(draftId, prompt);
     const sorted = sortAldoSharedFiles(kept.files);
     const refused: AldoShareRefused[] = [
       ...kept.missing.map((name): AldoShareRefused => ({ name, why: "missing" })),
       ...sorted.refused,
     ];
+    // Ready before the draft shows, so it can't be sent without them.
+    const images = await prepareImages(sorted.images, refused);
+    const draftId = await openDraft(current);
+    if (!draftId) {
+      for (const image of images) URL.revokeObjectURL(image.previewUrl);
+      return;
+    }
+    if (prompt) useComposerDraftStore.getState().setPrompt(draftId, prompt);
     attachFiles(draftId, sorted.files);
-    await attachImages(draftId, sorted.images, refused);
+    if (images.length > 0) useComposerDraftStore.getState().addImages(draftId, images);
     const notice = aldoShareRefusedNotice(refused);
     if (notice) toastManager.add({ type: "warning", ...notice });
   } finally {
+    forgetPending();
     await dropAldoShare(share.id).catch(() => undefined);
   }
 }
