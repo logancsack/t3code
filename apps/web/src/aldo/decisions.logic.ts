@@ -82,7 +82,7 @@ function conversationDecision(c: AldoHomeConversation): AldoDecision | null {
 }
 
 /** Put away in the user's list: settled, or snoozed (still, by `now`) without asking them anything. */
-function putAway(c: AldoHomeConversation, now: number): boolean {
+export function putAway(c: AldoHomeConversation, now: number): boolean {
   if (c.settled === true) return true;
   return (
     c.snoozedUntil !== undefined && Date.parse(c.snoozedUntil) > now && c.pending === undefined

@@ -45,7 +45,8 @@ import {
   useAldoAssistant,
 } from "./assistantSession";
 import { isAldoCloud, isAldoEnvironmentId, type AldoHomeTarget } from "./cloud";
-import { refreshAldoHome, setAldoHomeView, useAldoHomeRead, useAldoHomeView } from "./homeFeed";
+import { refreshAldoHome, useAldoHomeRead } from "./homeFeed";
+import { aldoHomeShowsConversation, showAldoConversation } from "./simpleMode";
 import { NEEDS_YOU_LABEL, needsYouKind } from "./home.logic";
 import { setAldoRouteThread, useAldoOnScreen } from "./screen";
 import {
@@ -107,7 +108,7 @@ export function AldoSummon() {
       event.preventDefault();
       event.stopPropagation();
       // Aldo's own page has its composer right there.
-      if (pathname === "/" && useAldoHomeView.getState().view === "aldo") {
+      if (pathname === "/" && aldoHomeShowsConversation()) {
         seedAldoComposer("");
         return;
       }
@@ -354,7 +355,7 @@ function SummonBar() {
               className="ms-auto flex items-center gap-1 hover:text-foreground"
               onClick={() => {
                 closeAldoSummon();
-                setAldoHomeView("aldo");
+                showAldoConversation();
                 void navigate({ to: "/" });
               }}
             >

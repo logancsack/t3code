@@ -260,7 +260,7 @@ function AgentGroup(props: {
 }
 
 /** A row's one tap, if it has one (send, merge, Aldo's pick), on the row itself. */
-function QuickButton(props: {
+export function QuickButton(props: {
   readonly decision: AldoDecision;
   readonly suggestion?: string | null;
 }) {

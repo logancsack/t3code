@@ -124,6 +124,7 @@ import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../
 import { Switch } from "../ui/switch";
 import { AldoNotificationSettings } from "../../aldo/AldoNotificationSettings";
 import { AldoPreloadSettings } from "../../aldo/AldoPreloadSettings";
+import { AldoSimpleModeSettings } from "../../aldo/AldoSimpleModeSettings";
 import { isAldoCloud } from "../../aldo/cloud";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -2067,6 +2068,7 @@ export function GeneralSettingsPanel() {
         <>
           <AldoPreloadSettings />
           <AldoNotificationSettings />
+          <AldoSimpleModeSettings />
         </>
       ) : null}
       <SettingsSection title="General">

@@ -83,3 +83,25 @@ describe("Aldo agent inbox settings search", () => {
     }
   });
 });
+
+describe("Aldo simple mode settings search", () => {
+  it("finds simple mode by what people call it", () => {
+    const items = filterAvailableSettingsSearchItems(availability);
+    for (const query of ["simple", "rail", "hide threads"]) {
+      expect(searchSettings(query, items)[0]).toMatchObject({
+        id: "aldo-simple-mode",
+        to: "/settings/general",
+      });
+    }
+  });
+
+  it("is only in Aldo cloud mode", () => {
+    mode.cloud = false;
+    try {
+      const items = filterAvailableSettingsSearchItems(availability);
+      expect(items.some((item) => item.id === "aldo-simple-mode")).toBe(false);
+    } finally {
+      mode.cloud = true;
+    }
+  });
+});

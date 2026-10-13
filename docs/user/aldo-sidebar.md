@@ -6,3 +6,5 @@ Aldo's sidebar is T3's: your threads by project, as [Organizing threads](./threa
 - **Your account**, at the foot: your picture and name. Choose them to see your plan and credits, the settings for your agents, accounts, memory, instructions, vault and appearance, and to manage your sign-in or sign out.
 
 On a phone, the home screen's **Threads** tab lists every thread by what it needs from you.
+
+If you'd rather not see threads at all, [simple mode](./aldo-home.md#simple-mode) puts a narrow rail with just Aldo, what needs you and your Library in place of the sidebar.

@@ -19,6 +19,7 @@ import { useEnvironmentIdentificationMode, useLegacySidebarEnabled } from "../ho
 import LegacyThreadSidebar from "./LegacySidebar";
 import ThreadSidebar from "./Sidebar";
 import { AldoProfileButton } from "../aldo/AldoAccountDialog";
+import { AldoSimpleRail, useAldoSimpleRail } from "../aldo/AldoSimpleRail";
 import { isAldoCloud } from "../aldo/cloud";
 import { SettingsSidebarNav } from "./settings/SettingsSidebarNav";
 import { SidebarChromeHeader } from "./sidebar/SidebarChrome";
@@ -146,6 +147,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
   // sidebar is active.
   const pathname = useLocation({ select: (location) => location.pathname });
   const isOnSettings = pathname === "/settings" || pathname.startsWith("/settings/");
+  const aldoSimpleRail = useAldoSimpleRail(isOnSettings);
   const isMacosDesktop = isElectron && isMacPlatform(navigator.platform);
   const [sidebarWidth, setSidebarWidth] = useState(readInitialThreadSidebarWidth);
   // Subscribed rather than read once: the clamp must track live window size,
@@ -210,6 +212,21 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
       unsubscribe?.();
     };
   }, [navigate, pathname]);
+
+  // Aldo's simple mode, when the user turns it on: its rail in place of the
+  // sidebar (on a phone, the places in the sheet the sidebar's button opens).
+  if (aldoSimpleRail) {
+    return (
+      <ManagedDevPcAgentProvider>
+        <SidebarProvider className="h-dvh! min-h-0!" defaultOpen style={sidebarProviderStyle}>
+          <ProjectProjectionRetention />
+          <AldoSimpleRail />
+          {children}
+          {aldoSimpleRail === "sheet" ? <SidebarControl /> : null}
+        </SidebarProvider>
+      </ManagedDevPcAgentProvider>
+    );
+  }
 
   return (
     <ManagedDevPcAgentProvider>
