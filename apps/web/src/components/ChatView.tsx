@@ -450,6 +450,7 @@ import { useAldoThreadDetailMissing } from "../aldo/threadDetails";
 import { AldoThreadLoading } from "../aldo/AldoThreadLoading";
 import { useAldoThreadStart } from "../aldo/threadStart";
 import { isAldoCloud, isAldoEnvironmentId } from "../aldo/cloud";
+import { useAldoKeptRepo } from "../aldo/keptRepo";
 import { ensureAldoConnected, isAldoConnected } from "../aldo/dispatch";
 import { showAldoStartingThread, withdrawAldoStartingThread } from "../aldo/startingThreads";
 
@@ -3151,11 +3152,16 @@ function ChatViewContent(props: ChatViewProps) {
     terminalUiLaunchContext?.threadId === activeThreadId ? terminalUiLaunchContext : null;
   // Default true while loading to avoid toolbar flicker.
   const isGitRepo = gitStatusQuery.data?.isRepo ?? true;
-  const showComposerContextStrip = shouldShowComposerContextStrip({
-    hasActiveProject: activeProject !== null,
-    isGitRepo,
-    showEnvironmentIndicator: showComposerEnvironmentIndicator,
-  });
+  // Aldo: a General thread, or one in a project Aldo keeps, has no branch
+  // worth showing (and the strip shows nothing else in the cloud).
+  const aldoKeptRepo = useAldoKeptRepo(environmentId);
+  const showComposerContextStrip =
+    !aldoKeptRepo &&
+    shouldShowComposerContextStrip({
+      hasActiveProject: activeProject !== null,
+      isGitRepo,
+      showEnvironmentIndicator: showComposerEnvironmentIndicator,
+    });
   const initialDiffPanelGitScope =
     gitStatusQuery.data?.hasWorkingTreeChanges === true ? "unstaged" : "branch";
   const diffPanelGitStatusResolutionKey = gitStatusQuery.data ? "resolved" : "pending";
@@ -5049,7 +5055,8 @@ function ChatViewContent(props: ChatViewProps) {
     localCheckoutBranchMismatch,
   );
   const showBranchMismatchBanner = shouldShowBranchMismatchBanner({
-    hasMismatch: localCheckoutBranchMismatch !== null,
+    // Aldo: work that isn't software has no branch to restore.
+    hasMismatch: localCheckoutBranchMismatch !== null && !aldoKeptRepo,
     isDismissed: isBranchMismatchDismissedForSession(activeBranchMismatchKey),
     composerHasContent: composerHasUnsentContent,
     wasShownForCurrentMismatch:
@@ -7990,6 +7997,7 @@ function ChatViewContent(props: ChatViewProps) {
           diffAvailable={isServerThread && isGitRepo}
           filesAvailable={activeProject !== null}
           pullRequestAvailable={pullRequestSurfaceAvailable}
+          offersPullRequests={!aldoKeptRepo}
           agentsAvailable
           pullRequestStatuses={pullRequestTabStatuses}
           liveAgentCount={agentPanelModel.liveCount}
@@ -8031,6 +8039,7 @@ function ChatViewContent(props: ChatViewProps) {
             diffAvailable={isServerThread && isGitRepo}
             filesAvailable={activeProject !== null}
             pullRequestAvailable={pullRequestSurfaceAvailable}
+            offersPullRequests={!aldoKeptRepo}
             agentsAvailable
             pullRequestStatuses={pullRequestTabStatuses}
             liveAgentCount={agentPanelModel.liveCount}

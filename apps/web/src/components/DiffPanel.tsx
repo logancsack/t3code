@@ -21,10 +21,11 @@ import {
   SearchIcon,
   TextWrapIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useOpenInPreferredEditor } from "../editorPreferences";
 import { type DraftId } from "../composerDraftStore";
 import { openDiffFilePrimaryAction } from "../diffFileActions";
+import { useAldoKeptRepo } from "~/aldo/keptRepo";
 import { useCheckpointDiff } from "~/lib/checkpointDiffState";
 import { cn } from "~/lib/utils";
 import { selectThreadDiffPanelSelection, useDiffPanelStore } from "../diffPanelStore";
@@ -123,6 +124,10 @@ export default function DiffPanel({
   });
   const activeThreadId = routeThreadRef?.threadId ?? null;
   const activeThread = useThread(routeThreadRef);
+  // Aldo: work that isn't software (General, a project Aldo keeps) has one
+  // branch, so no branch comparison; its turns, and changes not yet committed.
+  const aldoKeptRepo = useAldoKeptRepo(activeThread?.environmentId);
+  const workingTreeLabel = aldoKeptRepo ? "Current changes" : "Working tree";
   const activeProjectId = activeThread?.projectId ?? null;
   const activeProject = useProject(
     activeThread && activeProjectId
@@ -200,10 +205,15 @@ export default function DiffPanel({
     selectedTurn &&
     (selectedTurn.checkpointTurnCount ?? inferredCheckpointTurnCountByTurnId[selectedTurn.turnId]);
   const latestTurn = orderedTurnDiffSummaries[0];
+  useLayoutEffect(() => {
+    if (!aldoKeptRepo || !routeThreadRef || diffSelection.kind !== "branch") return;
+    if (latestTurn) useDiffPanelStore.getState().selectTurn(routeThreadRef, latestTurn.turnId);
+    else useDiffPanelStore.getState().selectGitScope(routeThreadRef, "unstaged");
+  }, [aldoKeptRepo, diffSelection.kind, latestTurn, routeThreadRef]);
   const selectedScopeLabel =
     selectedTurnId === null
       ? selectedGitScope === "unstaged"
-        ? "Working tree"
+        ? workingTreeLabel
         : "Branch changes"
       : selectedTurn?.turnId === latestTurn?.turnId
         ? "Latest turn"
@@ -220,7 +230,7 @@ export default function DiffPanel({
   const reviewSectionTitle = selectedTurn
     ? `Turn ${selectedCheckpointTurnCount ?? "?"}`
     : selectedGitScope === "unstaged"
-      ? "Working tree"
+      ? workingTreeLabel
       : "Branch changes";
   const selectedCheckpointRange = useMemo(
     () =>
@@ -517,18 +527,20 @@ export default function DiffPanel({
               }
               onClick={() => selectGitScope("unstaged")}
             >
-              <span>Working tree</span>
+              <span>{workingTreeLabel}</span>
             </DropdownMenuItem>
-            <DropdownMenuItem
-              className={
-                selectedTurnId === null && selectedGitScope === "branch"
-                  ? "bg-foreground/[0.08]"
-                  : undefined
-              }
-              onClick={() => selectGitScope("branch")}
-            >
-              <span>Branch changes</span>
-            </DropdownMenuItem>
+            {aldoKeptRepo ? null : (
+              <DropdownMenuItem
+                className={
+                  selectedTurnId === null && selectedGitScope === "branch"
+                    ? "bg-foreground/[0.08]"
+                    : undefined
+                }
+                onClick={() => selectGitScope("branch")}
+              >
+                <span>Branch changes</span>
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem
               className={
                 selectedTurnId !== null && selectedTurn?.turnId === latestTurn?.turnId
@@ -849,11 +861,13 @@ export default function DiffPanel({
               isLoadingSelectedPatch ? (
                 <DiffPanelLoadingState
                   label={
-                    selectedTurn
-                      ? "Loading checkpoint diff..."
-                      : selectedGitScope === "unstaged"
-                        ? "Loading working tree diff..."
-                        : "Loading branch diff..."
+                    aldoKeptRepo
+                      ? "Loading changes..."
+                      : selectedTurn
+                        ? "Loading checkpoint diff..."
+                        : selectedGitScope === "unstaged"
+                          ? "Loading working tree diff..."
+                          : "Loading branch diff..."
                   }
                 />
               ) : (

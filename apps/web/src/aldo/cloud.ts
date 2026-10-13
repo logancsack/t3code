@@ -240,18 +240,31 @@ export function aldoProjectSandboxes(environmentId: string): ReadonlyArray<AldoE
 /**
  * The branch to show for a thread. Each Aldo machine starts on its own
  * `aldo/<machine id>` branch, which says nothing to the user, so it's hidden;
- * branches the agent makes still show.
+ * branches the agent makes still show, except in a repository Aldo keeps
+ * (work that isn't software, aldoThreadInKeptRepo), which shows none.
  */
 export function displayedThreadBranch(
   environmentId: string,
   branch: string | null | undefined,
 ): string | null {
   if (!branch) return null;
-  const placeholder =
+  const hidden =
     isAldoCloud &&
     isAldoEnvironmentId(environmentId) &&
-    branch === `aldo/${threadIdForEnvironment(environmentId)}`;
-  return placeholder ? null : branch;
+    (branch === `aldo/${threadIdForEnvironment(environmentId)}` ||
+      aldoThreadInKeptRepo(environmentId));
+  return hidden ? null : branch;
+}
+
+/**
+ * Whether a thread's main repository is one Aldo keeps, not one on a git host:
+ * none (General's folder, `""` in the directory) or one of the user's projects
+ * (`aldo:<slug>`: a business, a process, a trip; its threads all work on its
+ * `main`, which Aldo syncs). Its branches and git actions mean nothing to the user.
+ */
+export function aldoThreadInKeptRepo(environmentId: string): boolean {
+  const repo = knownEnvironments?.find((entry) => entry.environmentId === environmentId)?.repo;
+  return repo !== undefined && (repo === "" || repo.startsWith("aldo:"));
 }
 
 /** Whether a thread's machine is still to be created (it is when its first message is sent). */

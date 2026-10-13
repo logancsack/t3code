@@ -121,7 +121,7 @@ import { formatRelativeTimeLabel, parseTimestampDate } from "../timestampFormat"
 import type { SidebarThreadSummary } from "../types";
 import { cn } from "~/lib/utils";
 import { AldoThreadBadge, isAldoThreadId } from "./ManagedDevPcAgent";
-import { displayedThreadBranch, isAldoCloud } from "../aldo/cloud";
+import { aldoThreadInKeptRepo, displayedThreadBranch, isAldoCloud } from "../aldo/cloud";
 import { buildThreadActionMenuItems } from "./threadActionMenu.logic";
 import {
   animatePinnedLayoutChanges,
@@ -337,7 +337,7 @@ function SidebarThreadTooltip({
               <div className="min-w-0 truncate text-foreground/75">{thread.branch}</div>
             </div>
           ) : null}
-          {branchMismatch ? (
+          {branchMismatch && !aldoThreadInKeptRepo(thread.environmentId) ? (
             <div className="flex min-w-0 items-start gap-2 text-warning">
               <CircleAlertIcon aria-hidden className="mt-0.5 size-3 shrink-0 stroke-current" />
               <div className="min-w-0 flex-1 wrap-break-word leading-5">

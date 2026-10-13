@@ -5,6 +5,7 @@ import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/envir
 import { FolderPlusIcon } from "lucide-react";
 import { useCallback, useMemo } from "react";
 
+import { useAldoKeptRepo } from "~/aldo/keptRepo";
 import { openCommandPalette } from "~/commandPaletteBus";
 import { useClientSettings } from "~/hooks/useSettings";
 import { hasExplicitComposerModelSelection } from "~/lib/chatThreadActions";
@@ -51,6 +52,8 @@ export function DraftHeroHeadline({
   const applyStickyState = useComposerDraftStore((store) => store.applyStickyState);
   const setModelSelection = useComposerDraftStore((store) => store.setModelSelection);
   const openAddProject = useCallback(() => openCommandPalette({ open: "add-project" }), []);
+  // Aldo: work that isn't software (General, a project Aldo keeps) isn't built.
+  const aldoKeptRepo = useAldoKeptRepo(activeProjectRef?.environmentId);
 
   const environmentLabelById = useMemo(
     () =>
@@ -192,7 +195,9 @@ export function DraftHeroHeadline({
   return (
     <h1 className="mx-auto w-full max-w-5xl text-center font-normal text-2xl text-foreground tracking-tight sm:text-3xl">
       {hasResolvedProject ? (
-        <>What should we build in {projectSelector}?</>
+        <>
+          What should we {aldoKeptRepo ? "get done" : "build"} in {projectSelector}?
+        </>
       ) : canChooseProject ? (
         <>{projectSelector} to start</>
       ) : (
