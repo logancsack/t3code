@@ -28,7 +28,9 @@ export function AldoBrowsingChip(props: {
           ? `Your agent waits for you on ${site}: take over its browser`
           : `Your agent is on ${site}: open its browser`
       }
-      onClick={() => (handoff ? openAldoHandoffTakeover(handoff.id) : props.onOpenBrowser())}
+      onClick={(event) =>
+        handoff ? openAldoHandoffTakeover(handoff.id, event.currentTarget) : props.onOpenBrowser()
+      }
       className={cn(
         "inline-flex min-w-0 max-w-44 shrink items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring",
         handoff

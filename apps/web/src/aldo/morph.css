@@ -1,0 +1,22 @@
+/* Aldo's morphs (morph.ts): short, and only while one of them runs. */
+html[data-aldo-morph]::view-transition-group(*) {
+  animation-duration: 200ms;
+  animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* Both ends fill the moving box at their own size from its top left: the row
+   stays sharp as it fades, and what it opens shows through as the box grows. */
+html[data-aldo-morph]::view-transition-old(aldo-morph),
+html[data-aldo-morph]::view-transition-new(aldo-morph) {
+  height: 100%;
+  object-fit: none;
+  object-position: left top;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-aldo-morph]::view-transition-group(*),
+  html[data-aldo-morph]::view-transition-old(*),
+  html[data-aldo-morph]::view-transition-new(*) {
+    animation: none;
+  }
+}

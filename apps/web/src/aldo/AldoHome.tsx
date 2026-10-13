@@ -14,7 +14,7 @@
 // conversation and the Threads tab (AldoAgentsTab.tsx): every thread by what
 // it needs, made for a thumb.
 
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useRouter } from "@tanstack/react-router";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import {
   ChevronDownIcon,
@@ -90,6 +90,7 @@ import {
   repoName,
 } from "./home.logic";
 import { loadAldoBrief } from "./briefFeed";
+import { morphIntoThread } from "./morph";
 import { aldoWaitingCount } from "./decisions.logic";
 import { useIsMobile } from "../hooks/useMediaQuery";
 
@@ -221,6 +222,8 @@ export function AldoHome() {
   const selectedIndex = selectable.findIndex((c) => c.ref === selectedRef);
   const selected = selectedIndex === -1 ? null : selectedIndex;
 
+  const router = useRouter();
+  /** Opens the selected conversation, its row growing into the thread. */
   const open = useCallback(
     (c: AldoHomeConversation) =>
       void navigate({
@@ -229,8 +232,12 @@ export function AldoHome() {
           environmentId: c.thread.environmentId as EnvironmentId,
           threadId: c.thread.threadId as ThreadId,
         },
+        viewTransition: morphIntoThread(
+          router,
+          boardRef.current?.querySelector<HTMLElement>("[data-selected]") ?? null,
+        ),
       }),
-    [navigate],
+    [navigate, router],
   );
 
   useEffect(() => {
