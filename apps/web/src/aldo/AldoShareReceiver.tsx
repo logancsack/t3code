@@ -188,7 +188,9 @@ async function openDraft(current: () => Openers): Promise<DraftId | null> {
     return null;
   }
   // start says itself when it can't open one.
-  if (aldoSupportsGeneralThreads()) return (await current().start([]))?.draftId ?? null;
+  // A draft of its own, not one the user is opening meanwhile.
+  if (aldoSupportsGeneralThreads())
+    return (await current().start([], undefined, true))?.draftId ?? null;
   const projectRef = await defaultProject(current, PROJECTS_WAIT_MS);
   const draft = projectRef ? await current().handleNewThread(projectRef) : null;
   if (!draft) {
@@ -320,7 +322,7 @@ async function receive(share: AldoShareParam, current: () => Openers): Promise<v
     if (ready.length > 0) useComposerDraftStore.getState().addImages(draftId, ready);
     const notice = aldoShareRefusedNotice(refused, limits);
     if (notice) toastManager.add({ type: "warning", ...notice });
-    await keepAldoDraftFiles(draftId, files).catch(() => undefined);
+    await keepAldoDraftFiles(draftId, [...files, ...ready]).catch(() => undefined);
   } finally {
     forgetPending(share);
     await dropAldoShare(share.id).catch(() => undefined);

@@ -103,11 +103,13 @@ describe("share to Aldo", () => {
       file("clip.mp4", "video/mp4"),
       file("drawing.bmp", "image/bmp"),
       file("empty.txt", "text/plain", 0),
+      file("empty.jpg", "image/jpeg", 0),
       file("huge.zip", "application/zip", ALDO_SHARE_LIMITS.fileBytes + 1),
     ]);
     expect(sorted.refused).toEqual([
       { name: "drawing.bmp", why: "unsupported-image" },
       { name: "empty.txt", why: "empty" },
+      { name: "empty.jpg", why: "empty" },
     ]);
     const fit = fitAldoSharedFiles(sorted.candidates, new Set());
     expect(fit.taken.map(({ kind, file }) => `${kind} ${file.name}`)).toEqual([

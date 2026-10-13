@@ -138,8 +138,7 @@ export function sortAldoSharedFiles<F extends Pick<File, "name" | "type" | "size
     const kind = classifyComposerAttachmentFile(file);
     if (kind === "unsupported-image")
       refused.push({ name: file.name || "file", why: "unsupported-image" });
-    else if (kind === "file" && file.size <= 0)
-      refused.push({ name: file.name || "file", why: "empty" });
+    else if (file.size <= 0) refused.push({ name: file.name || "file", why: "empty" });
     else candidates.push({ kind, file });
   }
   return { candidates, refused };

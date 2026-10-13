@@ -7,6 +7,7 @@ import { useCallback, useState } from "react";
 import { toastManager } from "../components/ui/toast";
 import { useComposerDraftStore, type DraftId } from "../composerDraftStore";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
+import { randomUUID } from "../lib/utils";
 import { startAldoSandbox } from "./threads";
 
 /** What's typed in a draft being moved, for the draft it moves to (AldoRepositoryDialog). */
@@ -31,18 +32,41 @@ export function dropAldoCarriedDraft(): void {
   carried = null;
 }
 
-/** The start under way, shared by every place that opens a thread, with where it opens (its repositories). */
-let opening: {
-  readonly repos: string;
-  readonly done: Promise<{ readonly draftId: DraftId } | null>;
-} | null = null;
+type Opened = { readonly draftId: DraftId } | null;
 
-/** Opens a draft thread in `repos` (none: General) at once; `carry` moves a draft's words into it. Resolves with the draft that opened, or null. */
+/** The start under way, shared by every place that opens a thread, with where it opens (its repositories). */
+let opening: { readonly place: string; readonly done: Promise<Opened> } | null = null;
+
+/**
+ * Opens a thread in `place` (its repositories; a share's is its own) with
+ * `open`: one elsewhere goes first, then this one opens where it was asked,
+ * not in that one's draft; one under way for the same place, whichever button
+ * or key asked, is the one it opens (a second would make another computer).
+ */
+export async function openAldoThreadOnce(
+  place: string,
+  open: () => Promise<Opened>,
+): Promise<Opened> {
+  for (let other = opening; other && other.place !== place; other = opening) await other.done;
+  if (opening) return opening.done;
+  const done = open().finally(() => {
+    opening = null;
+  });
+  opening = { place, done };
+  return done;
+}
+
+/**
+ * Opens a draft thread in `repos` (none: General) at once; `carry` moves a
+ * draft's words into it, and `alone` opens one of its own (what was shared),
+ * never the one another start opens. Resolves with the draft that opened, or null.
+ */
 export function useStartAldoThread(): {
   readonly start: (
     repos: ReadonlyArray<string>,
     carry?: { readonly from: DraftId; readonly prompt: string },
-  ) => Promise<{ readonly draftId: DraftId } | null>;
+    alone?: boolean,
+  ) => Promise<Opened>;
   readonly starting: boolean;
 } {
   const handleNewThread = useNewThreadHandler();
@@ -51,14 +75,12 @@ export function useStartAldoThread(): {
     async (
       repos: ReadonlyArray<string>,
       carry?: { readonly from: DraftId; readonly prompt: string },
+      alone = false,
     ) => {
-      const key = repos.join("\n");
-      // One elsewhere goes first; then this one opens where it was asked, not in that one's draft.
-      for (let other = opening; other && other.repos !== key; other = opening) await other.done;
-      // One start at a time for the same place, whichever button or key asked: a second would make another computer.
-      if (opening) return opening.done;
-      setStarting(true);
-      const run = async () => {
+      // One alone is a place of its own: it waits for the others, and they for it.
+      const place = alone ? randomUUID() : repos.join("\n");
+      return openAldoThreadOnce(place, async () => {
+        setStarting(true);
         try {
           const projectRef = await startAldoSandbox({ repos });
           if (carry) carryAldoDraft(carry.from, carry.prompt);
@@ -75,12 +97,8 @@ export function useStartAldoThread(): {
           return null;
         } finally {
           setStarting(false);
-          opening = null;
         }
-      };
-      const done = run();
-      opening = { repos: key, done };
-      return done;
+      });
     },
     [handleNewThread],
   );
