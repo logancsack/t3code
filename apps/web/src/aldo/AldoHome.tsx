@@ -79,7 +79,7 @@ import {
   useAldoHomeView,
   type AldoHomeView,
 } from "./homeFeed";
-import { HOST_KINDS, openAldoRepositoryPicker } from "./AldoRepositoryDialog";
+import { HOST_KINDS, openAldoRepositoryPicker } from "./AldoRepositoryPicker";
 import { useStartAldoThread } from "./newThread";
 import {
   boardFor,

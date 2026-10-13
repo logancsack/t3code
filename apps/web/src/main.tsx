@@ -22,6 +22,7 @@ import { installAldoServerConfigCapture } from "./aldo/serverConfig";
 import { installAldoNotificationsSync } from "./aldo/notifications";
 import { installAldoServiceWorker } from "./aldo/serviceWorker";
 import { installAldoReconnect } from "./aldo/reconnect";
+import { installAldoChunkPrefetch } from "./aldo/chunkPrefetch";
 import { installAldoShellSync } from "./aldo/shells";
 import { installAldoThreadDetails } from "./aldo/threadDetails";
 import { installAldoVersionCheck } from "./aldo/version";
@@ -52,6 +53,7 @@ async function renderApp() {
   // Electron loads the app from a file-backed shell, so hash history avoids path resolution issues.
   const history = isElectron || landingDemo ? createHashHistory() : createBrowserHistory();
   const router = getRouter(history);
+  installAldoChunkPrefetch(router);
 
   if (isElectron) {
     syncDocumentElectronPlatformClasses(navigator.platform);

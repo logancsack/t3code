@@ -63,6 +63,7 @@ import {
   type AldoImageLimits,
   type AldoImageUpload,
 } from "./cloud";
+import { noteAldoComposerTyping } from "./warm";
 
 const OVERVIEW_EVERY_MS = 20_000;
 
@@ -393,6 +394,8 @@ export function AldoComposer(props: {
   const live = phase !== "idle" && phase !== "error";
   // Images go in writing: not into a call.
   const canAttach = limits !== null && !live;
+  // Words left behind aren't a draft: nothing is warmed for them later (warm.ts).
+  useEffect(() => () => noteAldoComposerTyping(""), []);
   // Images that couldn't be sent come back before any added since, as their words do.
   useEffect(() => {
     if (unsentImages === null) return;
@@ -446,6 +449,8 @@ export function AldoComposer(props: {
     if (!text.trim() && sending.length === 0) return;
     sendText(text, sending);
     setText("");
+    // Sent words aren't a draft: nothing is warmed for them later (warm.ts).
+    noteAldoComposerTyping("");
     if (sending.length > 0) setImages([]);
     setImageError(null);
   };
@@ -553,7 +558,11 @@ export function AldoComposer(props: {
                     ? "Talk or type to Aldo"
                     : "Ask Aldo, or tell it what to do"
             }
-            onChange={(event) => setText(event.target.value)}
+            onChange={(event) => {
+              setText(event.target.value);
+              // A machine warm for the thread Aldo may start from this (warm.ts).
+              noteAldoComposerTyping(event.target.value);
+            }}
             onPaste={(event) => {
               if (!canAttach) return;
               const files = [...event.clipboardData.files].filter(

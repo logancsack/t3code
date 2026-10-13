@@ -2,6 +2,8 @@ import { ManagedDevPcAgentProvider } from "./ManagedDevPcAgent";
 import { useAtomValue } from "@effect/atom-react";
 import * as Schema from "effect/Schema";
 import {
+  lazy,
+  Suspense,
   useEffect,
   useState,
   useSyncExternalStore,
@@ -16,12 +18,10 @@ import { resolveShortcutCommand, shortcutLabelForCommand } from "../keybindings"
 import { cn, isMacPlatform } from "../lib/utils";
 import { primaryServerKeybindingsAtom } from "../state/server";
 import { useEnvironmentIdentificationMode, useLegacySidebarEnabled } from "../hooks/useSettings";
-import LegacyThreadSidebar from "./LegacySidebar";
 import ThreadSidebar from "./Sidebar";
 import { AldoProfileButton } from "../aldo/AldoAccountDialog";
 import { AldoSimpleRail, useAldoSimpleRail } from "../aldo/AldoSimpleRail";
 import { isAldoCloud } from "../aldo/cloud";
-import { SettingsSidebarNav } from "./settings/SettingsSidebarNav";
 import { SidebarChromeHeader } from "./sidebar/SidebarChrome";
 import {
   resolveSidebarStageFocusRingOffsetClass,
@@ -266,5 +266,30 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
         <SidebarControl />
       </SidebarProvider>
     </ManagedDevPcAgentProvider>
+  );
+}
+
+// The opt-in legacy sidebar and the settings nav load when first shown, not
+// with the first screen.
+const LazyLegacyThreadSidebar = lazy(() => import("./LegacySidebar"));
+const LazySettingsSidebarNav = lazy(() =>
+  import("./settings/SettingsSidebarNav").then((module) => ({
+    default: module.SettingsSidebarNav,
+  })),
+);
+
+function LegacyThreadSidebar() {
+  return (
+    <Suspense fallback={null}>
+      <LazyLegacyThreadSidebar />
+    </Suspense>
+  );
+}
+
+function SettingsSidebarNav(props: { readonly pathname: string }) {
+  return (
+    <Suspense fallback={null}>
+      <LazySettingsSidebarNav pathname={props.pathname} />
+    </Suspense>
   );
 }

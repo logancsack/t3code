@@ -16,7 +16,7 @@ import {
 import { useEffect, useState } from "react";
 
 import { cn } from "~/lib/utils";
-import { openAldoRepositoryPicker } from "./AldoRepositoryDialog";
+import { openAldoRepositoryPicker } from "./AldoRepositoryPicker";
 import { seedAldoComposer } from "./assistantSession";
 import { aldoIntegrationConnectUrl, fetchAldoIntegrations, type AldoIntegration } from "./cloud";
 
