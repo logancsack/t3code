@@ -573,7 +573,6 @@ export function AldoBrowserPanel({
     canvas.addEventListener("wheel", onWheel, { passive: false });
     return () => canvas.removeEventListener("wheel", onWheel);
     // pagePoint reads refs only.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [send]);
 
   // Keyboard input goes through a hidden textarea: real keys are sent as key

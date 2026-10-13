@@ -21,5 +21,6 @@ export function aldoApprovalSentence(kind: string, appName: string | null | unde
   if (kind === "mcp-elicitation") return `Your agent wants to use ${appName || "an app"}.`;
   if (kind === "command") return "Your agent wants to run a command.";
   if (kind === "file-read") return "Your agent wants to read a file.";
+  if (kind === "permission") return "Your agent wants more access.";
   return "Your agent wants to change a file.";
 }

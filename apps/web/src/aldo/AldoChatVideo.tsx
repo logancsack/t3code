@@ -3,7 +3,6 @@ import type { ScopedThreadRef } from "@t3tools/contracts";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
 import { useAssetUrlRefresh, useAssetUrlState } from "../assets/assetUrls";
-import type { ExpandedImagePreview } from "../components/chat/ExpandedImagePreview";
 import type { MediaActionSource } from "../components/media/MediaActions";
 import { MediaVideoPlayer } from "../components/media/MediaVideoPlayer";
 import { useRightPanelStore } from "../rightPanelStore";
@@ -20,7 +19,6 @@ export function AldoChatVideo(props: {
   readonly workspaceRoot: string | undefined;
   /** The link's own fragment, such as `#t=12` to start 12 seconds in. */
   readonly fragment: string;
-  readonly onExpand: (preview: ExpandedImagePreview) => void;
   readonly children: ReactNode;
 }) {
   const { environmentId, threadId } = props.threadRef;
@@ -76,20 +74,6 @@ export function AldoChatVideo(props: {
         videoClassName="block aspect-(--aldo-video-aspect) rounded-lg border border-border/40"
         onRetry={refresh}
         actionsSource={actionsSource}
-        onExpand={(expandSrc) =>
-          props.onExpand({
-            images: [
-              {
-                src: expandSrc,
-                name: props.name,
-                type: "video",
-                autoPlay: false,
-                actionsSource: { ...actionsSource, src: expandSrc },
-              },
-            ],
-            index: 0,
-          })
-        }
       />
       <figcaption className="max-w-full">{props.children}</figcaption>
     </figure>

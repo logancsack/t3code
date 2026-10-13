@@ -9,12 +9,12 @@ import {
   AlertTriangleIcon,
   ArrowUpRightIcon,
   ClockIcon,
-  GitPullRequestIcon,
   MessageCircleQuestionIcon,
   SparklesIcon,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
+import { PullRequestGlyph } from "../components/pullRequest/pullRequestIcons";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { toastManager } from "../components/ui/toast";
@@ -190,7 +190,7 @@ export function ConversationRow(props: {
               rel="noreferrer"
               className="inline-flex items-center gap-0.5 hover:text-foreground"
             >
-              <GitPullRequestIcon className="size-3" />#{pr.number}
+              <PullRequestGlyph.pullRequest className="size-3" />#{pr.number}
             </a>
           ))}
         </div>
@@ -302,7 +302,7 @@ export function ShipLaneSection(props: {
                       key={key}
                       className="flex items-start gap-2.5 rounded-lg px-2 py-1.5 hover:bg-accent/40"
                     >
-                      <GitPullRequestIcon className="mt-1 size-3.5 shrink-0 text-muted-foreground" />
+                      <PullRequestGlyph.pullRequest className="mt-1 size-3.5 shrink-0 text-muted-foreground" />
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                           <a

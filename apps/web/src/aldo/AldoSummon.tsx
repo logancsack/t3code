@@ -16,7 +16,6 @@ import { useLocation, useNavigate, useParams } from "@tanstack/react-router";
 import {
   ArrowUpRightIcon,
   FileDiffIcon,
-  GitMergeIcon,
   MailIcon,
   MessageCircleQuestionIcon,
   MessageSquareIcon,
@@ -27,6 +26,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { create } from "zustand";
 
 import { useComposerThreadDraft, useComposerDraftStore } from "../composerDraftStore";
+import { PullRequestGlyph } from "../components/pullRequest/pullRequestIcons";
 import { Badge } from "../components/ui/badge";
 import { DialogBackdrop, DialogPortal, DialogViewport } from "../components/ui/dialog";
 import { Kbd } from "../components/ui/kbd";
@@ -491,7 +491,7 @@ function RowContent({ row, selected }: { readonly row: SummonRow; readonly selec
     case "merge":
       return (
         <>
-          <GitMergeIcon className={cn(icon, "text-success-foreground")} />
+          <PullRequestGlyph.merged className={cn(icon, "text-success-foreground")} />
           <span className="min-w-0 truncate">
             Merge #{row.pullRequest.number} {row.pullRequest.title}
           </span>

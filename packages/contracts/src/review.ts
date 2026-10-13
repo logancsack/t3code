@@ -8,11 +8,26 @@ export const ReviewDiffPreviewInput = Schema.Struct({
   cwd: TrimmedNonEmptyString,
   baseRef: Schema.optional(TrimmedNonEmptyString),
   ignoreWhitespace: Schema.optionalKey(Schema.Boolean),
+  file: Schema.optionalKey(
+    Schema.Struct({
+      path: Schema.NonEmptyString,
+      previousPath: Schema.NullOr(Schema.NonEmptyString),
+      sourceKind: Schema.Literals(["working-tree", "branch-range"]),
+    }),
+  ),
 });
 export type ReviewDiffPreviewInput = typeof ReviewDiffPreviewInput.Type;
 
 export const ReviewDiffPreviewSourceKind = Schema.Literals(["working-tree", "branch-range"]);
 export type ReviewDiffPreviewSourceKind = typeof ReviewDiffPreviewSourceKind.Type;
+
+export const ReviewDiffFileStat = Schema.Struct({
+  path: Schema.String,
+  previousPath: Schema.NullOr(Schema.String),
+  additions: Schema.Number,
+  deletions: Schema.Number,
+});
+export type ReviewDiffFileStat = typeof ReviewDiffFileStat.Type;
 
 export const ReviewDiffPreviewSource = Schema.Struct({
   id: TrimmedNonEmptyString,
@@ -23,6 +38,8 @@ export const ReviewDiffPreviewSource = Schema.Struct({
   diff: Schema.String,
   diffHash: TrimmedNonEmptyString,
   truncated: Schema.Boolean,
+  /** Complete statistics, independent of patch limits. Absent on older servers. */
+  files: Schema.optionalKey(Schema.Array(ReviewDiffFileStat)),
 });
 export type ReviewDiffPreviewSource = typeof ReviewDiffPreviewSource.Type;
 
@@ -132,7 +149,7 @@ export const GrokReviewReport = Schema.Struct({
 });
 export type GrokReviewReport = typeof GrokReviewReport.Type;
 
-export class GrokReviewError extends Schema.TaggedErrorClass<GrokReviewError>()("GrokReviewError", {
+export class GrokReviewError extends Schema.TaggedError<GrokReviewError>()("GrokReviewError", {
   operation: TrimmedNonEmptyString,
   detail: TrimmedNonEmptyString,
   cause: Schema.optional(Schema.Defect()),
@@ -142,7 +159,7 @@ export class GrokReviewError extends Schema.TaggedErrorClass<GrokReviewError>()(
   }
 }
 
-export class GrokReviewUnavailableError extends Schema.TaggedErrorClass<GrokReviewUnavailableError>()(
+export class GrokReviewUnavailableError extends Schema.TaggedError<GrokReviewUnavailableError>()(
   "GrokReviewUnavailableError",
   {
     capability: Schema.Literal("review"),

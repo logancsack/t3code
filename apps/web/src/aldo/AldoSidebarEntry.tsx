@@ -42,7 +42,7 @@ export function AldoSidebarEntry() {
           ? "Thinking…"
           : STATUS[phase];
   return (
-    <div className="flex h-10 items-center gap-2 rounded-md px-1.5 text-sm hover:bg-sidebar-row-hover">
+    <div className="mb-1 flex h-10 items-center gap-2 rounded-md px-1.5 text-sm hover:bg-sidebar-row-hover">
       <AldoOrb size="xs" className="ml-0.5" />
       <Link
         to="/"

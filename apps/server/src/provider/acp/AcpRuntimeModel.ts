@@ -86,6 +86,16 @@ export type AcpParsedSessionEvent =
       readonly modeId: string;
     }
   | {
+      readonly _tag: "AvailableCommandsUpdated";
+      readonly availableCommands: ReadonlyArray<EffectAcpSchema.AvailableCommand>;
+      readonly rawPayload: unknown;
+    }
+  | {
+      readonly _tag: "ConfigOptionsUpdated";
+      readonly configOptions: ReadonlyArray<EffectAcpSchema.SessionConfigOption>;
+      readonly rawPayload: unknown;
+    }
+  | {
       readonly _tag: "AssistantItemStarted";
       readonly itemId: string;
     }
@@ -728,13 +738,24 @@ export const waitForSessionLoadReplayIdle = (input: {
     }
   });
 
+/**
+ * Model state some agents (Grok) advertise in `initialize._meta.modelState`, before any
+ * session exists. Undefined when the agent does not advertise it or the shape is unknown.
+ */
+export function sessionModelStateFromInitialize(
+  initializeResult: EffectAcpSchema.InitializeResponse,
+): EffectAcpSchema.SessionModelState | undefined {
+  const meta = initializeResult._meta;
+  const modelState = isRecord(meta) ? meta.modelState : undefined;
+  return isSessionModelState(modelState) ? modelState : undefined;
+}
+
 export function syntheticLoadSessionResponseFromInitialize(
   initializeResult: EffectAcpSchema.InitializeResponse,
 ): EffectAcpSchema.LoadSessionResponse {
   const meta = initializeResult._meta;
-  const modelState = isRecord(meta) ? meta.modelState : undefined;
   const modeState = isRecord(meta) ? meta.modeState : undefined;
-  const models = isSessionModelState(modelState) ? modelState : undefined;
+  const models = sessionModelStateFromInitialize(initializeResult);
   const modes = isSessionModeState(modeState) ? modeState : undefined;
 
   return {
@@ -782,6 +803,22 @@ export function parseSessionUpdateEvent(params: EffectAcpSchema.SessionNotificat
   let modeId: string | undefined;
 
   switch (upd.sessionUpdate) {
+    case "config_option_update": {
+      events.push({
+        _tag: "ConfigOptionsUpdated",
+        configOptions: upd.configOptions,
+        rawPayload: params,
+      });
+      break;
+    }
+    case "available_commands_update": {
+      events.push({
+        _tag: "AvailableCommandsUpdated",
+        availableCommands: upd.availableCommands,
+        rawPayload: params,
+      });
+      break;
+    }
     case "current_mode_update": {
       modeId = upd.currentModeId.trim();
       if (modeId) {

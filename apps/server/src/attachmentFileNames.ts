@@ -1,4 +1,5 @@
-import Mime from "@effect/platform-node/Mime";
+import * as Option from "effect/Option";
+import * as Mime from "effect/unstable/http/Mime";
 
 /**
  * Naming for non-image attachments on disk.
@@ -39,7 +40,7 @@ export function inferAttachmentFileExtension(input: {
   }
 
   // `Mime.getExtension` yields a bare extension with no leading dot.
-  const fromMime = Mime.getExtension(input.mimeType);
+  const fromMime = Option.getOrNull(Mime.getExtension(input.mimeType));
   if (fromMime && BARE_EXTENSION_PATTERN.test(fromMime)) {
     return `.${fromMime.toLowerCase()}`;
   }

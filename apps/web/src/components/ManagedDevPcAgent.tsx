@@ -1,4 +1,5 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { derivePendingRequests } from "@t3tools/client-runtime/pending-requests";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 import type { ScopedThreadRef, ThreadId } from "@t3tools/contracts";
 import { useNavigate, useParams } from "@tanstack/react-router";
@@ -11,7 +12,6 @@ import { useIsMobile } from "../hooks/useMediaQuery";
 import { isLandingDemo } from "../landingDemo/mode";
 import { isManagedDevPc } from "../managedDevPc";
 import { cn } from "~/lib/utils";
-import { derivePendingApprovals } from "../session-logic";
 import { useThread, useThreadShells } from "../state/entities";
 import { threadEnvironment } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
@@ -230,7 +230,7 @@ function AldoThreadCard({ threadRef }: { threadRef: ScopedThreadRef }) {
   const thread = useThread(threadRef);
   const respond = useAtomCommand(threadEnvironment.respondToApproval, { reportFailure: false });
   const approvals = useMemo(
-    () => (thread ? derivePendingApprovals(thread.activities) : []),
+    () => (thread ? derivePendingRequests(thread.activities).approvals : []),
     [thread],
   );
   const approval = approvals[0];
@@ -321,7 +321,6 @@ export function useAldoComposerBannerItem(): ComposerBannerStackContent | null {
             id: "aldo-agent",
             variant: "default" as const,
             priority: "activity" as const,
-            className: "dark:shadow-none",
             content: <AldoComposerStrip />,
           }
         : null,

@@ -133,7 +133,7 @@ export function linkRuns(
 function linkEnd(raw: string, before: string): string {
   let url = raw;
   let open = /[*_]{1,3}$/.exec(before)?.[0] ?? "";
-  for (let was = ""; was !== url; ) {
+  for (let was = ""; was !== url;) {
     was = url;
     let end = url.length;
     while (end > 0 && ').,;:!?">]'.includes(url[end - 1]!)) end--;

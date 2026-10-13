@@ -158,12 +158,10 @@ function runCandidate(
       deadline: input.deadline,
     })
     .pipe(
-      Effect.map(
-        (candidate): AgentOutcome => ({
-          label: input.label,
-          result: { _tag: "Success", candidate: normalizeGrokReviewCandidate(candidate) },
-        }),
-      ),
+      Effect.map((candidate): AgentOutcome => ({
+        label: input.label,
+        result: { _tag: "Success", candidate: normalizeGrokReviewCandidate(candidate) },
+      })),
       Effect.catch((error) =>
         Effect.succeed({
           label: input.label,

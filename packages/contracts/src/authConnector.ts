@@ -105,7 +105,7 @@ export const AuthConnectorSubmitInput = Schema.Struct({
 });
 export type AuthConnectorSubmitInput = typeof AuthConnectorSubmitInput.Type;
 
-export class AuthConnectorError extends Schema.TaggedErrorClass<AuthConnectorError>()(
+export class AuthConnectorError extends Schema.TaggedError<AuthConnectorError>()(
   "AuthConnectorError",
   {
     operation: Schema.String,

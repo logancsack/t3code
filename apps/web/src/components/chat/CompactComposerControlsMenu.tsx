@@ -1,7 +1,6 @@
 import { ProviderInteractionMode, RuntimeMode } from "@t3tools/contracts";
 import { memo, type ReactNode } from "react";
 import { EllipsisIcon } from "lucide-react";
-import { Button } from "../ui/button";
 import {
   Menu,
   MenuItem,
@@ -11,6 +10,9 @@ import {
   MenuSeparator as MenuDivider,
   MenuTrigger,
 } from "../ui/menu";
+import { ComposerControl, ComposerControlIcon } from "./ComposerControl";
+import { useComposerMenuProps } from "./composerEventScope";
+import { useComposerMenuState } from "./useComposerMenuState";
 
 const RUNTIME_MODE_LABELS: Record<RuntimeMode, string> = {
   "approval-required": "Supervised",
@@ -26,9 +28,19 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
   supportedRuntimeModes: ReadonlyArray<RuntimeMode>;
   showInteractionModeToggle: boolean;
   traitsMenuContent?: ReactNode;
+  size?: "sm" | "xs";
+  /**
+   * The resting strip keeps this menu mounted out of flow while every block
+   * fits inline. Its portaled popup would outlive that transition, so an
+   * open menu closes when its trigger hides.
+   */
+  hidden?: boolean;
   onToggleInteractionMode: () => void;
   onRuntimeModeChange: (mode: RuntimeMode) => void;
 }) {
+  const composerFloatingLayerProps = useComposerMenuProps();
+  const size = props.size ?? "sm";
+  const [open, setOpen] = useComposerMenuState(props.hidden);
   const supportedRuntimeModes =
     props.supportedRuntimeModes.length > 0 ? props.supportedRuntimeModes : ALL_RUNTIME_MODES;
   const displayedRuntimeMode = supportedRuntimeModes.includes(props.runtimeMode)
@@ -37,24 +49,26 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
   const isRuntimeModeFixed = supportedRuntimeModes.length === 1;
 
   return (
-    <Menu>
+    <Menu open={open} onOpenChange={setOpen}>
       <MenuTrigger
         render={
-          <Button
-            size="sm"
-            variant="ghost"
-            className="shrink-0 px-2 text-muted-foreground/70 hover:text-foreground/80"
+          <ComposerControl
+            size={size}
+            className="shrink-0"
             aria-label={
               isRuntimeModeFixed
                 ? `More composer controls; ${RUNTIME_MODE_LABELS[displayedRuntimeMode]} required`
                 : "More composer controls"
             }
+            data-composer-shortcut={
+              props.traitsMenuContent ? "composer.mode composer.effort" : "composer.mode"
+            }
           />
         }
       >
-        <EllipsisIcon aria-hidden="true" className="size-4" />
+        <ComposerControlIcon icon={EllipsisIcon} size={size} />
       </MenuTrigger>
-      <MenuPopup align="start">
+      <MenuPopup align="start" {...composerFloatingLayerProps}>
         {props.traitsMenuContent ? (
           <>
             {props.traitsMenuContent}

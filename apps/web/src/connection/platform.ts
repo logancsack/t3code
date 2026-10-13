@@ -54,6 +54,7 @@ import {
 } from "../environments/primary/target";
 import { clearComposerDraftsEnvironment } from "../composerDraftStore";
 import { isHostedStaticApp } from "../hostedPairing";
+import { isLocalEnvironmentDisabled } from "../localEnvironment";
 import { isManagedWorkspaceUnavailable, prepareManagedWebSocketUrl } from "../managedDevPc";
 import {
   readManagedPrimaryEnvironmentDescriptor,
@@ -192,6 +193,9 @@ const capabilitiesLayer = Layer.effectContext(
       scopes: AuthStandardClientScopes,
     });
     const cloudSession = CloudSession.of({
+      identity: Effect.sync(() =>
+        Option.fromNullishOr(appAtomRegistry.get(managedRelaySessionAtom)),
+      ),
       clerkToken: Effect.gen(function* () {
         const session = appAtomRegistry.get(managedRelaySessionAtom);
         if (session === null) {
@@ -219,7 +223,7 @@ const capabilitiesLayer = Layer.effectContext(
       }),
     });
     const identity = RelayDeviceIdentity.of({
-      deviceId: Effect.succeed(Option.none()),
+      deviceId: Effect.succeedNone,
     });
     const primaryAuth = PrimaryEnvironmentAuth.of({
       bearerToken: Effect.tryPromise({
@@ -522,7 +526,7 @@ const platformConnectionSourceLayer = Layer.effect(
         registrations: aldoPlatformRegistrations(),
       });
     }
-    if (isHostedStaticApp()) {
+    if (isHostedStaticApp() || isLocalEnvironmentDisabled()) {
       return PlatformConnectionSource.of({
         registrations: Stream.empty,
       });

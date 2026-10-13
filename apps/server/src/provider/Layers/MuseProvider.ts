@@ -1,4 +1,5 @@
 import {
+  type CustomModelSetting,
   type ModelCapabilities,
   type MuseSettings,
   type ServerProviderModel,
@@ -304,7 +305,7 @@ export const hasStoredMuseCredential = Effect.fn("hasStoredMuseCredential")(func
 });
 
 function museModelsFromSettings(
-  customModels: ReadonlyArray<string>,
+  customModels: ReadonlyArray<CustomModelSetting>,
   catalogModels: ReadonlyArray<ServerProviderModel> = [],
 ): ReadonlyArray<ServerProviderModel> {
   return providerModelsFromSettings(

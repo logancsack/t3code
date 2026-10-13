@@ -4,6 +4,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   getProviderStatusBannerKey,
+  getProviderStatusMessage,
   ProviderStatusBanner,
   shouldShowProviderStatusBanner,
 } from "./ProviderStatusBanner";
@@ -27,6 +28,42 @@ function warningProvider(): ServerProvider {
 }
 
 describe("ProviderStatusBanner", () => {
+  it("waits for an Antigravity auth result before showing a sign-in warning", () => {
+    const status: ServerProvider = {
+      ...warningProvider(),
+      instanceId: ProviderInstanceId.make("google_work"),
+      driver: ProviderDriverKind.make("antigravity"),
+      auth: { status: "unknown" },
+      message: "Antigravity is installed. Google account access is not checked yet.",
+    };
+
+    expect(shouldShowProviderStatusBanner(status, null)).toBe(false);
+    expect(
+      shouldShowProviderStatusBanner(
+        {
+          ...status,
+          auth: { status: "unauthenticated" },
+          message: "Sign in with Google to use Antigravity.",
+        },
+        null,
+      ),
+    ).toBe(true);
+  });
+
+  it("shows Antigravity installation failures, not checks still in progress", () => {
+    const status: ServerProvider = {
+      ...warningProvider(),
+      driver: ProviderDriverKind.make("antigravity"),
+      auth: { status: "unknown" },
+    };
+
+    expect(
+      shouldShowProviderStatusBanner({ ...status, status: "error", installed: false }, null),
+    ).toBe(true);
+    expect(shouldShowProviderStatusBanner({ ...status, installed: false }, null)).toBe(false);
+    expect(shouldShowProviderStatusBanner({ ...status, status: "error" }, null)).toBe(false);
+  });
+
   it("does not show a global banner for non-actionable provider warnings", () => {
     const status = warningProvider();
 
@@ -83,5 +120,57 @@ describe("ProviderStatusBanner", () => {
 
     expect(markup).toContain('role="alert"');
     expect(markup).toContain('aria-label="Dismiss Codex provider error"');
+  });
+});
+
+describe("getProviderStatusMessage", () => {
+  it("preserves the environment's authentication error", () => {
+    const message = "SUBSCRIPTION_REQUIRED: This Google account cannot use Antigravity.";
+    expect(
+      getProviderStatusMessage({
+        ...warningProvider(),
+        driver: ProviderDriverKind.make("antigravity"),
+        status: "error",
+        auth: { status: "unauthenticated" },
+        message,
+      }),
+    ).toBe(message);
+  });
+
+  it("points a signed-out Antigravity account to Google sign-in without a CLI command", () => {
+    expect(
+      getProviderStatusMessage({
+        ...warningProvider(),
+        driver: ProviderDriverKind.make("antigravity"),
+        status: "error",
+        auth: { status: "unauthenticated" },
+        message: "",
+      }),
+    ).toBe("Open provider setup to sign in with Google.");
+  });
+
+  it("requires installation on the environment before sign-in", () => {
+    expect(
+      getProviderStatusMessage({
+        ...warningProvider(),
+        driver: ProviderDriverKind.make("antigravity"),
+        displayName: "Google work account",
+        installed: false,
+        status: "error",
+        auth: { status: "unauthenticated" },
+        message: "",
+      }),
+    ).toBe("Open provider setup to install Antigravity on this environment.");
+  });
+
+  it("asks to reconnect the account for a provider without integrated setup", () => {
+    expect(
+      getProviderStatusMessage({
+        ...warningProvider(),
+        status: "error",
+        auth: { status: "unauthenticated" },
+        message: "",
+      }),
+    ).toBe("Reconnect your account to authenticate again.");
   });
 });

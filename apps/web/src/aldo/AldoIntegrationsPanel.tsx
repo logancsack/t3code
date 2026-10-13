@@ -27,12 +27,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { SettingsRow, SettingsSection } from "../components/settings/settingsLayout";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
-import {
-  InputGroup,
-  InputGroupAddon,
-  InputGroupInput,
-  InputGroupText,
-} from "../components/ui/input-group";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "../components/ui/input-group";
 import { Switch } from "../components/ui/switch";
 import { toastManager } from "../components/ui/toast";
 import {
@@ -449,7 +444,9 @@ function ClaimAgentAddress(props: {
                 onChange={(event) => setTyped(handleFieldValue(event.currentTarget.value))}
               />
               <InputGroupAddon align="inline-end">
-                <InputGroupText>@{props.domain}</InputGroupText>
+                <span className="line-clamp-1 leading-none text-muted-foreground">
+                  @{props.domain}
+                </span>
               </InputGroupAddon>
             </InputGroup>
             <Button size="sm" type="submit" disabled={!current?.available}>

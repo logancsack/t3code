@@ -4,6 +4,8 @@ import { afterAll, describe, expect, it, vi } from "vite-plus/test";
 vi.stubEnv("VITE_DEVPC_MANAGED", "1");
 vi.resetModules();
 vi.stubGlobal("window", {
+  // The preview panel clamps its width against the viewport.
+  innerWidth: 1280,
   __DEVPC_MANAGED_BOOTSTRAP__: {
     managed: true,
     state: "ready",
@@ -21,6 +23,7 @@ function markupWith(onAddWorkspaceBrowser: (() => void) | undefined) {
       mode="inline"
       maximized={false}
       surfaces={[]}
+      environmentId={null}
       activeSurfaceId={null}
       pendingSurfaceIds={new Set()}
       previewSessions={{}}
@@ -33,19 +36,24 @@ function markupWith(onAddWorkspaceBrowser: (() => void) | undefined) {
       onCloseAllSurfaces={() => {}}
       onCopyFilePath={() => {}}
       onAddBrowser={() => {}}
+      onAddBrowserInProfile={() => {}}
       {...(onAddWorkspaceBrowser ? { onAddWorkspaceBrowser } : {})}
       onAddTerminal={() => {}}
       onAddDiff={() => {}}
       onAddFiles={() => {}}
       onAddPullRequest={() => {}}
+      onAddPullRequests={() => {}}
       onAddAgents={() => {}}
+      onAddDevice={() => {}}
       liveAgentCount={0}
       browserAvailable={false}
       terminalAvailable={false}
       diffAvailable={false}
       filesAvailable={false}
       pullRequestAvailable={false}
+      pullRequestsAvailable={false}
       agentsAvailable={false}
+      deviceAvailable={false}
     >
       {null}
     </RightPanelTabs>,

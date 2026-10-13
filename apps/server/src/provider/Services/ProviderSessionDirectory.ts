@@ -1,4 +1,5 @@
 import type {
+  AgentSessionImportSource,
   ProviderInstanceId,
   ProviderDriverKind,
   ProviderSessionRuntimeStatus,
@@ -40,9 +41,14 @@ export type ProviderSessionDirectoryWriteError =
   | ProviderValidationError
   | ProviderSessionDirectoryPersistenceError;
 
+export interface ProviderSessionDirectoryUpsertOptions {
+  readonly onConflict?: "update" | "ignore";
+}
+
 export interface ProviderSessionDirectoryShape {
   readonly upsert: (
     binding: ProviderRuntimeBinding,
+    options?: ProviderSessionDirectoryUpsertOptions,
   ) => Effect.Effect<void, ProviderSessionDirectoryWriteError>;
 
   /**
@@ -54,6 +60,12 @@ export interface ProviderSessionDirectoryShape {
     binding: ProviderRuntimeBinding,
     expected: { readonly sessionGeneration: string | null },
   ) => Effect.Effect<boolean, ProviderSessionDirectoryWriteError>;
+
+  /** Record an imported file without changing the current provider session. */
+  readonly recordImportedTranscript: (input: {
+    readonly threadId: ThreadId;
+    readonly source: AgentSessionImportSource;
+  }) => Effect.Effect<void, ProviderSessionDirectoryPersistenceError>;
 
   readonly getProvider: (
     threadId: ThreadId,
@@ -68,7 +80,10 @@ export interface ProviderSessionDirectoryShape {
     ProviderSessionDirectoryPersistenceError
   >;
 
-  readonly listBindings: () => Effect.Effect<
+  /** `excludeStopped` skips stopped rows in the query, not after decoding. */
+  readonly listBindings: (options?: {
+    readonly excludeStopped?: boolean;
+  }) => Effect.Effect<
     ReadonlyArray<ProviderRuntimeBindingWithMetadata>,
     ProviderSessionDirectoryPersistenceError
   >;

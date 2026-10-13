@@ -6,7 +6,10 @@ export interface StateStorage<R = unknown> {
   removeItem: (name: string) => R;
 }
 
-export interface DebouncedStorage<R = unknown> extends StateStorage<R> {
+export interface DeferredStorage<TValue> {
+  getItem: (name: string) => string | null | Promise<string | null>;
+  setItem: (name: string, value: TValue) => void;
+  removeItem: (name: string) => void;
   flush: () => void;
 }
 
@@ -23,7 +26,7 @@ export function createMemoryStorage(): StateStorage {
   };
 }
 
-export function isStateStorage(
+function isStateStorage(
   storage: Partial<StateStorage> | null | undefined,
 ): storage is StateStorage {
   return (
@@ -39,15 +42,18 @@ export function resolveStorage(storage: Partial<StateStorage> | null | undefined
   return isStateStorage(storage) ? storage : createMemoryStorage();
 }
 
-export function createDebouncedStorage(
+/** Keep the latest value and serialize it when the debounce fires or `flush` runs. */
+export function createDeferredStorage<TValue>(
   baseStorage: Partial<StateStorage> | null | undefined,
+  serialize: (value: TValue) => string,
   debounceMs: number = 300,
-): DebouncedStorage {
+): DeferredStorage<TValue> {
   const resolvedStorage = resolveStorage(baseStorage);
   const debouncedSetItem = new Debouncer(
-    (name: string, value: string) => {
+    (name: string, value: TValue) => {
+      const serialized = serialize(value);
       try {
-        resolvedStorage.setItem(name, value);
+        resolvedStorage.setItem(name, serialized);
       } catch {
         // Writing a composer draft that carries a large attachment can exceed
         // the origin's storage quota. That is a recoverable outcome — the draft
@@ -66,6 +72,8 @@ export function createDebouncedStorage(
     },
     removeItem: (name) => {
       debouncedSetItem.cancel();
+      // cancel() leaves the captured value in Pacer's lastArgs.
+      debouncedSetItem.reset();
       resolvedStorage.removeItem(name);
     },
     flush: () => {
