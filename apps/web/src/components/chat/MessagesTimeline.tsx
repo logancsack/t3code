@@ -1,6 +1,8 @@
 import { isAldoCloud } from "../../aldo/cloud";
 import { aldoStartingLabel } from "../../aldo/dispatch";
 import { AldoNotifyOffer } from "../../aldo/AldoNotifyOffer";
+import { useAldoKeptRepo } from "../../aldo/keptRepo";
+import { aldoWorkWords } from "../../aldo/workLabels.logic";
 import {
   type ChatFileAttachment,
   type EnvironmentId,
@@ -119,6 +121,7 @@ import {
   type MessagesTimelineRow,
   TIMELINE_MINIMAP_MIN_ITEMS,
   type TimelineLatestTurn,
+  type WorkWords,
 } from "./MessagesTimeline.logic";
 import { TerminalContextInlineChip } from "./TerminalContextInlineChip";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -179,6 +182,8 @@ interface TimelineRowSharedState {
   onToggleWorkGroup: (groupId: string, anchorKey: string) => void;
   agentPanelModel: AgentPanelModel;
   onOpenAgents: () => void;
+  /** Steps in words, in threads that aren't code. */
+  workWords: WorkWords | null;
 }
 
 interface TimelineRowActivityState {
@@ -452,6 +457,8 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     });
   }, [latestTurn]);
 
+  // Threads on work that isn't software say what their steps did in words.
+  const workWords = useAldoKeptRepo(activeThreadEnvironmentId) ? aldoWorkWords : null;
   const rawRows = useMemo(
     () =>
       deriveMessagesTimelineRows({
@@ -466,6 +473,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
         activeToolWait,
         turnDiffSummaryByAssistantMessageId,
         revertTurnCountByUserMessageId,
+        workWords,
       }),
     [
       timelineEntries,
@@ -479,6 +487,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       activeToolWait,
       turnDiffSummaryByAssistantMessageId,
       revertTurnCountByUserMessageId,
+      workWords,
     ],
   );
   const rows = useStableRows(rawRows);
@@ -586,6 +595,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onToggleWorkGroup,
       agentPanelModel,
       onOpenAgents,
+      workWords,
     }),
     [
       timestampFormat,
@@ -605,6 +615,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onToggleWorkGroup,
       agentPanelModel,
       onOpenAgents,
+      workWords,
     ],
   );
   const activityState = useMemo<TimelineRowActivityState>(
@@ -1384,6 +1395,10 @@ function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "workin
               Setting up worktree…
               <ActivityShimmerOverlay>Setting up worktree…</ActivityShimmerOverlay>
             </>
+          ) : row.words && row.createdAt ? (
+            <>
+              {row.words} · <WorkingTimer createdAt={row.createdAt} />
+            </>
           ) : toolWait ? (
             <>
               Running <span className="font-mono">{toolWait.label}</span> for{" "}
@@ -1638,7 +1653,9 @@ function LiveActivityContent({
 
 function LiveWorkEntryTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "work-live" }> }) {
   const ctx = use(TimelineRowCtx);
-  const label = liveWorkEntryLabel(row.entry, ctx.workspaceRoot, row.active);
+  const label =
+    ctx.workWords?.step(row.entry, row.active) ??
+    liveWorkEntryLabel(row.entry, ctx.workspaceRoot, row.active);
   const failed = workEntryDisplayIndicatesToolFailure(row.entry);
 
   return (
@@ -2554,14 +2571,17 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   isExpandedToolGroupEntry: boolean;
 }) {
   const { workEntry, workspaceRoot, isExpandedToolGroupEntry } = props;
-  const { threadRef, onImageExpand } = use(TimelineRowCtx);
+  const { threadRef, onImageExpand, workWords } = use(TimelineRowCtx);
   const [expanded, setExpanded] = useState(false);
   const iconConfig = workToneIcon(workEntry.tone);
   const showWarningIndicator = workEntry.sourceActivityKind === "runtime.warning";
   const showFailedIndicator = workEntryDisplayIndicatesToolFailure(workEntry);
   const entryIconName =
     showWarningIndicator || showFailedIndicator ? "circle-alert" : workEntryIconName(workEntry);
-  const displayText = workEntryPreview(workEntry, workspaceRoot) ?? toolWorkEntryHeading(workEntry);
+  const displayText =
+    workWords?.step(workEntry, false) ??
+    workEntryPreview(workEntry, workspaceRoot) ??
+    toolWorkEntryHeading(workEntry);
   const expandedBody = buildToolCallExpandedBody(workEntry, workspaceRoot);
   const viewedImagePath = workEntryViewedImagePath(workEntry);
   const viewedImage =
