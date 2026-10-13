@@ -21,6 +21,7 @@ import {
   PlugIcon,
   ScrollTextIcon,
   SettingsIcon,
+  Share2Icon,
 } from "lucide-react";
 import { useEffect, useState, type ComponentType } from "react";
 
@@ -137,6 +138,12 @@ const PLACES: ReadonlyArray<{
     icon: GraduationCapIcon,
   },
   { to: "/settings/vault", label: "Vault", detail: "Secrets and saved logins", icon: KeyRoundIcon },
+  {
+    to: "/settings/shared",
+    label: "Shared files",
+    detail: "Pages and files your agents shared by link",
+    icon: Share2Icon,
+  },
   { to: "/settings/appearance", label: "Appearance", detail: "Theme and fonts", icon: PaletteIcon },
 ];
 

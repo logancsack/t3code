@@ -29,6 +29,7 @@ import type { AldoComputer } from "./computer.logic";
 import { getAldoPreloadSettings } from "./preloadSettings";
 import type { AldoCheckCounts, AldoPullRequestStage } from "./pullRequests.logic";
 import { isAldoCost, type AldoCost } from "./costs.logic";
+import { parseAldoShares, type AldoShareView } from "./library.logic";
 import { aldoProviderLimitsOf, type AldoProviderLimits } from "./providerLimits.logic";
 
 export const isAldoCloud = import.meta.env.VITE_ALDO_CLOUD === "1";
@@ -1383,6 +1384,26 @@ export async function fetchAldoProviderLimits(
     throw error;
   });
   return aldoProviderLimitsOf(body);
+}
+
+/**
+ * The pages and files the user's agents shared by link, newest first (the
+ * Library); null from an Aldo that doesn't list them.
+ */
+export async function fetchAldoShares(): Promise<ReadonlyArray<AldoShareView> | null> {
+  const body = await api<{ shares?: unknown }>("/api/shares", { cache: "no-store" }).catch(
+    (error: unknown) => {
+      if (error instanceof AldoApiError && error.status === 404) return null;
+      throw error;
+    },
+  );
+  // An older Aldo may answer with the web client's page instead of a 404.
+  return parseAldoShares(body?.shares);
+}
+
+/** Stops sharing one: its link stops working at once and Aldo deletes its copy (404 when already gone). */
+export async function stopAldoShare(id: string): Promise<void> {
+  await api(`/api/shares/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
 /** The owner-only link to a port in a thread's sandbox (wakes it when opened). */
