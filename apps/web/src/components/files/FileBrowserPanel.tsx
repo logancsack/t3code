@@ -8,6 +8,8 @@ import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
 import { ChevronsDownUpIcon, ChevronsUpDownIcon, RotateCw } from "lucide-react";
 import { useEffect, useMemo, useRef } from "react";
 
+import { AldoFilesEmpty } from "~/aldo/AldoEmptyStates";
+import { isAldoCloud } from "~/aldo/cloud";
 import { Button } from "~/components/ui/button";
 import { InputGroup, InputGroupInput } from "~/components/ui/input-group";
 import { toastManager } from "~/components/ui/toast";
@@ -414,6 +416,7 @@ export default function FileBrowserPanel({
           </Tooltip>
         ) : null}
       </div>
+      {isAldoCloud && entriesQuery.data?.entries.length === 0 ? <AldoFilesEmpty /> : null}
       {entriesQuery.error && entriesQuery.data === null ? (
         <div className="p-4 text-xs leading-relaxed text-destructive">{entriesQuery.error}</div>
       ) : (

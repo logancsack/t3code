@@ -212,7 +212,8 @@ export function AldoAgentsTab(props: {
           ) : null}
           {shellCount === 0 && list.approvals.length === 0 ? (
             <p className="px-3 py-10 text-center text-muted-foreground text-sm">
-              No threads yet. Tell Aldo what to get done.
+              No threads yet. What you start shows here, what needs you first. Tell Aldo what to get
+              done.
             </p>
           ) : null}
         </div>

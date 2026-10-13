@@ -443,7 +443,12 @@ export function AldoHome() {
                 board.working.length === 0 &&
                 board.done.length === 0 ? (
                   <div className="rounded-xl border border-border/60 border-dashed px-5 py-8 text-center">
-                    <p className="font-medium text-sm">Nothing yet</p>
+                    {/* Done threads leave the board after two days: it's caught up, not empty. */}
+                    <p className="font-medium text-sm">
+                      {shown.conversations.some((c) => c.state !== "new")
+                        ? "All caught up"
+                        : "Nothing yet"}
+                    </p>
                     <p className="mt-1 text-muted-foreground text-xs">
                       {assistant
                         ? "What you start shows here: what needs you first, then what's working and what's done. Tell Aldo what to get done, or start a thread with New."
