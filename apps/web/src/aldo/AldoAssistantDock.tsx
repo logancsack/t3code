@@ -10,12 +10,11 @@
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { KeyboardIcon, MicIcon, MicOffIcon, PhoneOffIcon } from "lucide-react";
-import { useEffect } from "react";
+import { lazy, Suspense, useEffect } from "react";
 
 import { Button } from "../components/ui/button";
 import { useIsMobile } from "../hooks/useMediaQuery";
 import { AldoOrb, useAldoAssistantAvailable } from "./AldoAssistant";
-import { AldoCallScreen } from "./AldoCallScreen";
 import { showAldoCall, useAldoCallView } from "./callView";
 import { openAldoSummon } from "./AldoSummon";
 import {
@@ -142,5 +141,18 @@ export function AldoAssistantDock() {
         </div>
       </div>
     </>
+  );
+}
+
+// The call screen loads with the first call, not with the app.
+const LazyAldoCallScreen = lazy(() =>
+  import("./AldoCallScreen").then((module) => ({ default: module.AldoCallScreen })),
+);
+
+function AldoCallScreen() {
+  return (
+    <Suspense fallback={null}>
+      <LazyAldoCallScreen />
+    </Suspense>
   );
 }

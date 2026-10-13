@@ -225,7 +225,8 @@ export default defineConfig(() => {
     plugins: [
       ...(aldoCloud ? [aldoBrandingPlugin()] : []),
       devCompressionPlugin(),
-      tanstackRouter(),
+      // Each route loads when it is first opened, not with the first screen.
+      tanstackRouter({ autoCodeSplitting: true }),
       react(),
       babel({
         // We need to be explicit about the parser options after moving to @vitejs/plugin-react v6.0.0
@@ -332,6 +333,15 @@ export default defineConfig(() => {
       outDir: "dist",
       emptyOutDir: true,
       sourcemap: buildSourcemap,
+      rolldownOptions: {
+        output: {
+          codeSplitting: {
+            // What the first screen loads goes in one chunk rather than a
+            // couple hundred small ones; routes and panels split off it.
+            groups: [{ name: "index", tags: ["$initial" as const] }],
+          },
+        },
+      },
     },
     test: {
       projects: [defineProject(unitTestProject)],

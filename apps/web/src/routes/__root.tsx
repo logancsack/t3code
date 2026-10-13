@@ -16,7 +16,7 @@ import { AppSidebarLayout } from "../components/AppSidebarLayout";
 import { CommandPalette } from "../components/CommandPalette";
 import { AldoAssistantDock } from "../aldo/AldoAssistantDock";
 import { AldoHandoffTakeoverHost } from "../aldo/AldoHandoffTakeover";
-import { AldoRepositoryDialog } from "../aldo/AldoRepositoryDialog";
+import { AldoRepositoryPicker } from "../aldo/AldoRepositoryPicker";
 import { AldoSummon } from "../aldo/AldoSummon";
 import { AldoAttentionSync, useAldoAttentionCount } from "../aldo/attentionBadge";
 import { isAldoCloud } from "../aldo/cloud";
@@ -154,7 +154,7 @@ function RootRouteView() {
         <ConnectOnboardingDialog />
         <SshPasswordPromptDialog />
         <ConfirmDialogHost />
-        <AldoRepositoryDialog />
+        <AldoRepositoryPicker />
         {isAldoCloud ? <AldoAttentionSync /> : null}
         <AldoAssistantDock />
         <AldoSummon />

@@ -22,7 +22,7 @@ import {
   MenuTrigger,
 } from "../components/ui/menu";
 import { readComposerThreadPrompt, type DraftId } from "../composerDraftStore";
-import { openAldoRepositoryPicker } from "./AldoRepositoryDialog";
+import { openAldoRepositoryPicker } from "./AldoRepositoryPicker";
 import { aldoSupportsProjects, listAldoRepositoryDirectory } from "./cloud";
 import { carryAldoDraft, useStartAldoThread } from "./newThread";
 
