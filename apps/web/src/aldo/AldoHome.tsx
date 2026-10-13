@@ -162,10 +162,9 @@ export function AldoHome() {
   const mobile = useIsMobile();
   // Aldo's view needs Aldo; without it there's only the board.
   const aldoView = assistant === true && view === "aldo";
-  // Simple mode's place, which shows in place of either view (Aldo's needs Aldo too).
-  const simplePlace = useAldoSimple((s) =>
-    s.on && (s.place !== "aldo" || assistant === true) ? s.place : null,
-  );
+  // Simple mode's place, which shows in place of either view. It needs Aldo:
+  // without it, the sidebar shows as usual (useAldoSimpleRail), and so does the board.
+  const simplePlace = useAldoSimple((s) => (s.on && assistant === true ? s.place : null));
   const lastSeen = useLastSeen();
   const now = useNow();
   const navigate = useNavigate();
@@ -335,6 +334,7 @@ export function AldoHome() {
         <AldoSimpleNeedsYou
           home={home}
           supported={supported}
+          error={error}
           now={now}
           tabs={tabs}
           issues={issues}

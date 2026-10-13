@@ -106,11 +106,18 @@ describe("simple mode's setting", () => {
   });
 
   it("puts the rail in place of the sidebar in Aldo, except in settings", () => {
-    expect(simpleRailShows({ cloud: true, on: true, settings: false })).toBe(true);
-    expect(simpleRailShows({ cloud: true, on: true, settings: true })).toBe(false);
-    expect(simpleRailShows({ cloud: true, on: false, settings: false })).toBe(false);
+    const shows = { cloud: true, on: true, settings: false, assistant: true };
+    expect(simpleRailShows(shows)).toBe(true);
+    expect(simpleRailShows({ ...shows, settings: true })).toBe(false);
+    expect(simpleRailShows({ ...shows, on: false })).toBe(false);
     // Stock T3 never shows it, whatever a browser kept.
-    expect(simpleRailShows({ cloud: false, on: true, settings: false })).toBe(false);
+    expect(simpleRailShows({ ...shows, cloud: false })).toBe(false);
+  });
+
+  it("keeps the sidebar on an Aldo without the assistant, and shows while that's unknown", () => {
+    const shows = { cloud: true, on: true, settings: false };
+    expect(simpleRailShows({ ...shows, assistant: false })).toBe(false);
+    expect(simpleRailShows({ ...shows, assistant: null })).toBe(true);
   });
 });
 

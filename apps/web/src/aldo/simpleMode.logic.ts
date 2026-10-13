@@ -23,13 +23,19 @@ export function simpleModeFrom(stored: string | null | undefined): boolean {
   return stored === "on";
 }
 
-/** The rail stands in for the sidebar in Aldo when it's on, except in settings, which lists its own pages there. */
+/**
+ * The rail stands in for the sidebar in Aldo when it's on, except in settings,
+ * which lists its own pages there, and on an Aldo without the assistant, where
+ * there's no Aldo to talk to (it shows until that's known, so it doesn't flash in).
+ */
 export function simpleRailShows(input: {
   readonly cloud: boolean;
   readonly on: boolean;
   readonly settings: boolean;
+  /** Whether this Aldo has the assistant; null until it's known. */
+  readonly assistant: boolean | null;
 }): boolean {
-  return input.cloud && input.on && !input.settings;
+  return input.cloud && input.on && !input.settings && input.assistant !== false;
 }
 
 /** The place the page shows: one on the home screen, none on a thread or another page. */

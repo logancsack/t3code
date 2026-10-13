@@ -100,6 +100,8 @@ export function AldoSimpleNeedsYou(props: {
   readonly home: AldoHome | null;
   /** Whether this Aldo has the home read; null until it's known. */
   readonly supported: boolean | null;
+  /** Why the last read failed, if it did. */
+  readonly error: string | null;
   readonly now: number;
   readonly tabs: ReactNode;
   readonly issues: ReturnType<typeof healthIssues>;
@@ -143,7 +145,10 @@ export function AldoSimpleNeedsYou(props: {
           This Aldo can't list what needs you yet. Ask Aldo instead.
         </p>
       ) : null}
-      {props.supported === null && !home ? (
+      {props.error && !home ? (
+        <p className="text-destructive-foreground text-sm">{props.error}</p>
+      ) : null}
+      {props.supported === null && !home && !props.error ? (
         <div className="flex flex-col gap-2">
           <Skeleton className="h-24 w-full rounded-xl" />
           <Skeleton className="h-24 w-full rounded-xl" />

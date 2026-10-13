@@ -22,7 +22,7 @@ import { toastManager } from "../components/ui/toast";
 import { useIsMobile } from "../hooks/useMediaQuery";
 import { cn } from "~/lib/utils";
 import { AldoProfileButton } from "./AldoAccountDialog";
-import { AldoOrb } from "./AldoAssistant";
+import { AldoOrb, useAldoAssistantAvailable } from "./AldoAssistant";
 import { useAldoAttentionCount } from "./attentionBadge";
 import { isAldoCloud } from "./cloud";
 import { setAldoSimpleMode, setAldoSimplePlace, useAldoSimple } from "./simpleMode";
@@ -40,7 +40,9 @@ import {
 export function useAldoSimpleRail(settings: boolean): "rail" | "sheet" | null {
   const on = useAldoSimple((s) => s.on);
   const mobile = useIsMobile();
-  if (!simpleRailShows({ cloud: isAldoCloud, on, settings })) return null;
+  // Asked only when it's on: stock T3 has no Aldo to ask.
+  const assistant = useAldoAssistantAvailable(isAldoCloud && on);
+  if (!simpleRailShows({ cloud: isAldoCloud, on, settings, assistant })) return null;
   return mobile ? "sheet" : "rail";
 }
 
