@@ -6,6 +6,7 @@ import {
   EllipsisIcon,
   ExternalLinkIcon,
   GlobeIcon,
+  GraduationCapIcon,
   HandIcon,
   LoaderIcon,
   MonitorIcon,
@@ -24,7 +25,11 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { useParams } from "@tanstack/react-router";
 
+import { readComposerThreadPrompt, useComposerDraftStore } from "../composerDraftStore";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import {
@@ -35,12 +40,14 @@ import {
   MenuSeparator,
   MenuTrigger,
 } from "../components/ui/menu";
+import { toastManager } from "../components/ui/toast";
 import { cn } from "../lib/utils";
 import { useAldoBrowserRequests } from "./browserStore";
 import { stopAldoThreadComputer, useAldoComputer } from "./AldoComputer";
 import { AldoDesktopScreenSwitch, AldoDesktopView } from "./AldoDesktopView";
 import { AldoHandoffBar, useAldoHandoffTakeover } from "./AldoHandoffCard";
 import { AldoLoginOfferCard } from "./AldoLoginOfferCard";
+import { AldoTeachBar, AldoTeachForm } from "./AldoTeach";
 import {
   AldoApiError,
   aldoBrowserConnection,
@@ -66,6 +73,13 @@ import {
 } from "./loginOffers.logic";
 import { neverSaveLoginsFor, useAldoNeverSaveLogins } from "./neverSaveLogins";
 import { useAldoPageVisible } from "./pageVisibility";
+import { promptWith } from "./summon.logic";
+import {
+  aldoTeachMessage,
+  parseAldoTeach,
+  parseAldoTeachSteps,
+  type AldoTeach,
+} from "./teach.logic";
 
 type Tab = { id: string; url: string; title: string };
 type Nav = { url: string; canGoBack: boolean; canGoForward: boolean; loading: boolean };
@@ -101,13 +115,21 @@ function localPort(url: string): number | null {
  */
 export function AldoBrowserPanel({
   environmentId,
+  threadId,
   inTakeover = false,
+  onTeaching,
 }: {
   environmentId: string;
+  /** The conversation "Teach this" teaches; else the one on screen, when it's this machine's. */
+  threadId?: string;
   /** Full screen for a handoff (AldoHandoffTakeover.tsx), which says what to do itself. */
   inTakeover?: boolean;
+  /** Whether a recording is under way or waiting to be taught: the takeover holds its "I'm done" meanwhile. */
+  onTeaching?: (teaching: boolean) => void;
 }) {
   const [status, setStatus] = useState<Status>("connecting");
+  // Whether what's sent reaches the machine: status stays "live" from a dropped connection until the next try.
+  const [connected, setConnected] = useState(false);
   // Whether a picture of the page has been drawn: until then, a connected panel is still starting the browser.
   const [pictured, setPictured] = useState(false);
   const picturedRef = useRef(false);
@@ -137,6 +159,14 @@ export function AldoBrowserPanel({
   // Saves waiting for an offer's password from the machine.
   const passwordWaits = useRef(new Map<string, (password: string | null) => void>());
   const neverSave = useAldoNeverSaveLogins();
+  // "Teach this" (teach.logic.ts): how the recording stands, once the machine says it can record.
+  const [teach, setTeach] = useState<AldoTeach | null>(null);
+  // Teaching it: what to do with the steps once the machine gives them, even after the form gave up waiting.
+  const teachStepsWait = useRef<((steps: string[] | null, id?: string) => void) | null>(null);
+  const route = useParams({ strict: false }) as { environmentId?: string; threadId?: string };
+  const teachThread = threadId ?? (route.environmentId === environmentId ? route.threadId : null);
+  // The conversation a recording started from: its lesson goes there, wherever the user went since.
+  const [teachFrom, setTeachFrom] = useState<string | null>(null);
   const [address, setAddress] = useState("");
   const [editingAddress, setEditingAddress] = useState(false);
   const [now, setNow] = useState(() => Date.now());
@@ -294,6 +324,7 @@ export function AldoBrowserPanel({
         : null;
       socket.onopen = () => {
         attempt = 0;
+        setConnected(true);
         setStatus("live");
         setError(null);
         sendViewport();
@@ -332,6 +363,15 @@ export function AldoBrowserPanel({
             );
             break;
           }
+          case "teach":
+            setTeach(parseAldoTeach(message));
+            break;
+          case "teachSteps":
+            teachStepsWait.current?.(
+              parseAldoTeachSteps(message.steps),
+              typeof message.id === "string" ? message.id : undefined,
+            );
+            break;
           case "loginOffers": {
             const offers = parseAldoLoginOffers(message.offers);
             loginAnswersRef.current = pendingAldoLoginAnswers(loginAnswersRef.current, offers);
@@ -359,7 +399,9 @@ export function AldoBrowserPanel({
       socket.onclose = () => {
         player?.close();
         if (socketRef.current === socket) socketRef.current = null;
-        if (!disposed) schedule(Math.min(15_000, 1000 * 2 ** attempt++));
+        if (disposed) return;
+        setConnected(false);
+        schedule(Math.min(15_000, 1000 * 2 ** attempt++));
       };
     };
 
@@ -369,6 +411,7 @@ export function AldoBrowserPanel({
       if (retry) clearTimeout(retry);
       socketRef.current?.close();
       socketRef.current = null;
+      setConnected(false);
     };
   }, [environmentId, sendViewport, viewportSize]);
 
@@ -635,6 +678,73 @@ export function AldoBrowserPanel({
     send({ type: "loginOffer", id, saved });
   };
 
+  const canTeach = teach?.state === "off" && Boolean(teachThread) && connected;
+  const teaching = teach?.state === "recording" || teach?.state === "recorded";
+  useEffect(() => onTeaching?.(teaching), [onTeaching, teaching]);
+  useEffect(() => {
+    if (!teaching) setTeachFrom(null);
+  }, [teaching]);
+  // One started elsewhere (another panel, another device) goes to the conversation on screen.
+  const lessonThread = (teaching && teachFrom) || teachThread;
+  /** It records the browser, so that's what shows, not the Desktop's apps. */
+  const startTeaching = () => {
+    setView("browser");
+    setTeachFrom(teachThread ?? null);
+    send({ type: "teach", action: "start" });
+  };
+  /**
+   * Puts the lesson in the conversation's message box, for the user to read
+   * over and send. The machine gives the steps to this panel: steps that come
+   * after the form gave up waiting still go in, and only once they're in (kept
+   * on this device) is the machine told it may forget them (an older machine
+   * forgot them as it gave them).
+   */
+  const teachIt = (sentence: string) =>
+    new Promise<void>((resolve, reject) => {
+      if (!lessonThread) return reject(new Error("Open the conversation to teach its agent."));
+      const unreachable = new Error(
+        "Couldn't reach its computer's browser. Try again in a moment.",
+      );
+      if (socketRef.current?.readyState !== WebSocket.OPEN) return reject(unreachable);
+      const target = scopeThreadRef(environmentId as EnvironmentId, lessonThread as ThreadId);
+      const timer = setTimeout(() => reject(unreachable), 15_000);
+      teachStepsWait.current = (steps, id) => {
+        clearTimeout(timer);
+        teachStepsWait.current = null;
+        if (!steps) {
+          return reject(new Error("That recording is gone from its computer. Teach this again."));
+        }
+        useComposerDraftStore
+          .getState()
+          .setPrompt(
+            target,
+            promptWith(readComposerThreadPrompt(target), aldoTeachMessage(sentence, steps)),
+          );
+        // Those steps, by their id, may go now; a machine that forgot them as it gave them ignores this.
+        send({ type: "teach", action: "taken", ...(id ? { id } : {}) });
+        toastManager.add({
+          type: "success",
+          title: "Your lesson is in the message box",
+          description: inTakeover
+            ? "Send it to your agent once you're done here."
+            : "Read it over, then send it to your agent.",
+          timeout: 8000,
+        });
+        if (!inTakeover) {
+          window.setTimeout(
+            () => document.querySelector<HTMLElement>('[data-testid="composer-editor"]')?.focus(),
+            50,
+          );
+        }
+        resolve();
+      };
+      send({ type: "teach", action: "take" });
+    });
+  const discardTeaching = () => {
+    teachStepsWait.current = null;
+    send({ type: "teach", action: "discard" });
+  };
+
   const active = tabs.find((tab) => tab.id === activeTab) ?? null;
   const agentActive = now - control.agentActiveAt < AGENT_ACTIVE_MS && !control.human;
   const port = localPort(shownUrl);
@@ -777,6 +887,11 @@ export function AldoBrowserPanel({
             />
           </form>
         </div>
+        {inTakeover && canTeach ? (
+          <Button type="button" size="xs" variant="outline" onClick={startTeaching}>
+            <GraduationCapIcon /> Teach this
+          </Button>
+        ) : null}
         <Button
           type="button"
           variant={control.explicit ? "default" : "ghost"}
@@ -817,13 +932,28 @@ export function AldoBrowserPanel({
             >
               Follow the agent's tab
             </MenuCheckboxItem>
+            {canTeach ? (
+              <>
+                <MenuSeparator />
+                <MenuItem onClick={startTeaching}>
+                  <GraduationCapIcon className="size-3.5" />
+                  Teach this
+                </MenuItem>
+              </>
+            ) : null}
           </MenuPopup>
         </Menu>
       </div>
 
-      {inTakeover ? null : <AldoHandoffBar environmentId={environmentId} />}
+      {inTakeover ? null : <AldoHandoffBar environmentId={environmentId} teaching={teaching} />}
 
-      {control.explicit ? (
+      {teach?.state === "recording" ? (
+        <AldoTeachBar
+          teach={teach}
+          connected={connected}
+          onStop={() => send({ type: "teach", action: "stop" })}
+        />
+      ) : control.explicit ? (
         <div className="flex shrink-0 items-center gap-2 border-b border-border bg-primary/8 px-3 py-1.5 text-xs">
           <HandIcon className="size-3.5 shrink-0 text-primary" />
           <span className="min-w-0 flex-1">
@@ -855,7 +985,19 @@ export function AldoBrowserPanel({
         </div>
       ) : null}
 
-      {loginOffer ? (
+      {teach?.state === "recorded" ? (
+        // Over the top of the page, until it's taught or discarded (on any device).
+        <div className="relative z-20 h-0 shrink-0">
+          <div className="absolute top-2 left-1/2 w-[min(26rem,calc(100%-1rem))] -translate-x-1/2">
+            <AldoTeachForm
+              teach={teach}
+              connected={connected}
+              onTeach={teachIt}
+              onDiscard={discardTeaching}
+            />
+          </div>
+        </div>
+      ) : loginOffer ? (
         // Over the top corner of the page or the desktop, which stay usable around it.
         <div className="relative z-20 h-0 shrink-0">
           <div className="absolute top-2 right-2 w-[min(22rem,calc(100%-1rem))]">

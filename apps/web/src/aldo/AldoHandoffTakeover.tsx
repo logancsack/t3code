@@ -2,7 +2,9 @@
 // (AldoHandoffCard.tsx): the page, one sentence of what to do, and a large
 // "I'm done" that hands it back. It opens from the card's "Do it now", the
 // Browser panel's "Take over", or a notification's "Do it now", which opens
-// the conversation with `?handoff=<id>`. Touch works as in the Browser panel.
+// the conversation with `?handoff=<id>`. Touch works as in the Browser panel,
+// and so does "Teach this", which teaches the conversation that asked: it's
+// handed back only once a recording is taught or discarded.
 
 import { LoaderIcon, XIcon } from "lucide-react";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
@@ -45,6 +47,7 @@ function Takeover({ id }: { readonly id: string }) {
   const { home, supported } = useAldoHomeRead();
   const handoff = home?.handoffs?.find((h) => h.id === id) ?? null;
   const [busy, setBusy] = useState<"done" | "skip" | null>(null);
+  const [teaching, setTeaching] = useState(false);
   const answered = useRef(false);
   // Gone from the read: done on another device, skipped, or run out.
   const gone = supported === false || (home !== null && handoff === null);
@@ -98,7 +101,9 @@ function Takeover({ id }: { readonly id: string }) {
             <AldoBrowserPanel
               key={handoff.thread.environmentId}
               environmentId={handoff.thread.environmentId}
+              threadId={handoff.thread.threadId}
               inTakeover
+              onTeaching={setTeaching}
             />
           </Suspense>
         ) : (
@@ -115,23 +120,29 @@ function Takeover({ id }: { readonly id: string }) {
               type="button"
               size="xl"
               className="w-full font-semibold"
-              disabled={busy !== null}
+              disabled={busy !== null || teaching}
               onClick={() => void answer({ decision: "done" })}
             >
               {busy === "done" ? <LoaderIcon className="size-4 animate-spin" /> : null} I'm done
             </Button>
-            <p className="text-center text-muted-foreground text-xs">
-              Your agent waits until you hand it back ·{" "}
-              {/* A finger needs 44px; the line grows on touch screens only. */}
-              <button
-                type="button"
-                className="underline underline-offset-2 hover:text-foreground disabled:opacity-60 pointer-coarse:inline-flex pointer-coarse:min-h-11 pointer-coarse:items-center"
-                disabled={busy !== null}
-                onClick={() => void answer({ decision: "skip" })}
-              >
-                {aldoHandoffSkipLabel(handoff)}
-              </button>
-            </p>
+            {teaching ? (
+              <p className="text-center text-muted-foreground text-xs">
+                Finish the recording (teach it or discard it) to hand it back.
+              </p>
+            ) : (
+              <p className="text-center text-muted-foreground text-xs">
+                Your agent waits until you hand it back ·{" "}
+                {/* A finger needs 44px; the line grows on touch screens only. */}
+                <button
+                  type="button"
+                  className="underline underline-offset-2 hover:text-foreground disabled:opacity-60 pointer-coarse:inline-flex pointer-coarse:min-h-11 pointer-coarse:items-center"
+                  disabled={busy !== null}
+                  onClick={() => void answer({ decision: "skip" })}
+                >
+                  {aldoHandoffSkipLabel(handoff)}
+                </button>
+              </p>
+            )}
           </div>
         </footer>
       ) : null}

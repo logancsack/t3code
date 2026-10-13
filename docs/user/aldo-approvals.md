@@ -30,6 +30,25 @@ The thread shows a card over its message box, with what it is, about how long it
 
 The same request shows under **Needs you** on the home screen, and comes to your devices as a notification with **Do it now** and **Skip**. While it's open, the Browser panel says "Your agent is waiting for you here", with **Take over**. If you don't answer in time (half an hour, unless the agent said otherwise), the agent is told to go on without it.
 
+## Teaching your agent a task
+
+Instead of explaining a task, you can show it once. **Teach this** is in the toolbar of the agent's browser when you've opened it with **Do it now**, and in the Browser panel's **…** menu. It records you doing the task in the agent's browser:
+
+1. Choose **Teach this**. The browser shows **Recording**, with how long it's run and **Stop**. Agents wait while it records, and it stops by itself after 10 minutes.
+2. Do the task, start to finish, as you'd want it done.
+3. Choose **Stop**, then say in a sentence what your agent should learn to do, like "Book a table on OpenTable for the time and party size I say".
+4. **Teach it** puts a message in the message box of the thread you started recording from, with the steps you took. Read it over and send it. **Discard** throws the recording away.
+
+While a recording is under way or waiting, **I'm done** (from **Do it now**, or in the Browser panel's bar) waits until it's taught or discarded, so a recording isn't left behind when you hand the browser back.
+
+The message asks the agent to write a skill from it (it shows up in **Settings → Skills**), with what was particular to this time (a date, a name, a party size) as inputs it asks for. If it can do so without committing you to anything, it tries the skill once on another input, stopping before any step that books, buys, sends or submits. Then it tells you what the skill does, and offers to run it as a routine if that would help.
+
+**What it records**: the pages you go to (their address and title), what you click (a button's or link's name), what you type into each field (the final text, with the field's label), what you choose in lists, checkboxes and options, and when you send a form or press Enter. It records only while it says **Recording**, and only your own steps in the agent's browser, in every tab.
+
+**What it never records**: passwords, one-time codes, and card details (the number, the security code, the expiry date). For those the step says only that you typed one, such as "Typed a password into Password". Parts of an address that can carry a sign-in (tokens, codes, keys) are left out, and a value from your vault shows as its name, never its value. Scrolling, hovering, and what you do inside a frame from another site (such as a payment form a store embeds) aren't recorded either.
+
+**Where it goes**: while you record and until you choose, the steps live only in the memory of the thread's computer. A recording never goes into Aldo's logs, events, or database. **Teach it** gives the steps to your browser, which puts them in the message box, and they're deleted once it has them; **Discard**, or half an hour without either, deletes them. Once you send the message, it's part of that conversation like anything else you send, and nothing else keeps it.
+
 ## Heads-ups
 
 When your Google or Microsoft account is connected, Aldo looks at your new mail and coming events every half hour of your day (7 AM to 9:30 PM where you are) and tells you what's worth knowing: someone who needs an answer soon, a meeting that moved or clashes with another, an invitation you haven't answered. Most looks say nothing. Newsletters, receipts and automated mail are left out, and so is anything that looks like phishing.

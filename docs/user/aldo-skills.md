@@ -10,6 +10,8 @@ Tell an agent in any thread, for example "Make a skill for podcast clips with th
 
 To change one, ask any agent to add to it ("Add to the podcast clips skill: never cut mid-laugh"). When you give feedback on work a skill covered, the agent offers to add it. Agents never put a value from your vault in a skill.
 
+For a task in a website, you can show it instead: **Teach this** records you doing it once in the agent's browser, and the agent writes the skill from that. See [Teaching your agent a task](./aldo-approvals.md#teaching-your-agent-a-task).
+
 ## Writing one yourself
 
 Choose **New skill**:
