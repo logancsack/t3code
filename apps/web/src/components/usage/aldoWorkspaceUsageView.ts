@@ -155,8 +155,8 @@ export function aldoUsageUnmeteredCopy(usage: AldoWorkspaceUsage): string {
   if (isAldoCloud) {
     if (usage.configured) return "Your account is complimentary, so compute isn't metered.";
     return usage.billing?.enabled
-      ? "You don't have a plan yet, so cloud agents can't start. Choose one below."
-      : "You don't have a plan yet, so cloud agents can't start. Ask your Aldo admin for one.";
+      ? "You don't have a plan yet, so agents can't start. Choose one below."
+      : "You don't have a plan yet, so agents can't start. Ask your Aldo admin for one.";
   }
   return usage.configured
     ? "This workspace is complimentary, so compute is not metered."

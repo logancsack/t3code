@@ -1480,7 +1480,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         toastManager.add(
           stackedThreadToast({
             type: "error",
-            title: `Removed "${member.title}", but not its cloud agents`,
+            title: `Removed "${member.title}", but not its computers`,
             description: cause instanceof Error ? cause.message : "Aldo couldn't delete it.",
           }),
         ),
