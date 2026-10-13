@@ -255,14 +255,22 @@ export function displayedThreadBranch(
 }
 
 /**
+ * A thread's main repository as the directory has it: `""` for a General
+ * thread (a folder of its own, with nowhere to push), or null when the
+ * directory doesn't have the thread.
+ */
+export function aldoThreadRepo(environmentId: string): string | null {
+  return knownEnvironments?.find((entry) => entry.environmentId === environmentId)?.repo ?? null;
+}
+
+/**
  * Whether a thread's main repository is one Aldo keeps, not one on a git host:
- * none (General's folder, `""` in the directory) or one of the user's projects
- * (`aldo:<slug>`, whose threads all work on its `main`). Its branch means
- * nothing to the user.
+ * none (General) or one of the user's projects (`aldo:<slug>`, whose threads
+ * all work on its `main`). Its branch means nothing to the user.
  */
 export function aldoThreadInKeptRepo(environmentId: string): boolean {
-  const repo = knownEnvironments?.find((entry) => entry.environmentId === environmentId)?.repo;
-  return repo !== undefined && (repo === "" || repo.startsWith("aldo:"));
+  const repo = aldoThreadRepo(environmentId);
+  return repo !== null && (repo === "" || repo.startsWith("aldo:"));
 }
 
 /** Whether a thread's machine is still to be created (it is when its first message is sent). */

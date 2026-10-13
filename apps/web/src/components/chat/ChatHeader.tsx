@@ -18,6 +18,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type ReactNode,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
@@ -47,7 +48,12 @@ import {
 } from "../WorkspaceBreadcrumb";
 import { cn } from "~/lib/utils";
 import { AldoPreviewsControl } from "~/aldo/AldoPreviewsControl";
-import { isAldoCloud, isAldoEnvironmentId } from "~/aldo/cloud";
+import {
+  aldoThreadRepo,
+  isAldoCloud,
+  isAldoEnvironmentId,
+  subscribeAldoEnvironments,
+} from "~/aldo/cloud";
 import { useRightPanelStore } from "~/rightPanelStore";
 
 interface ChatHeaderProps {
@@ -157,6 +163,12 @@ export const ChatHeader = memo(function ChatHeader({
   const activeThreadRef = useMemo(
     () => scopeThreadRef(activeThreadEnvironmentId, activeThreadId),
     [activeThreadEnvironmentId, activeThreadId],
+  );
+  // Aldo: a General thread's folder has nowhere to push or publish, so no git actions.
+  const aldoGeneral = useSyncExternalStore(
+    subscribeAldoEnvironments,
+    () => isAldoCloud && aldoThreadRepo(activeThreadEnvironmentId) === "",
+    () => false,
   );
   const updateThreadMetadata = useAtomCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
@@ -454,7 +466,7 @@ export const ChatHeader = memo(function ChatHeader({
             }
           />
         ) : null}
-        {activeProjectName && (
+        {activeProjectName && !aldoGeneral && (
           <GitActionsControl
             gitCwd={gitCwd}
             activeThreadRef={scopeThreadRef(activeThreadEnvironmentId, activeThreadId)}
