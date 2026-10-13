@@ -21,12 +21,12 @@ rate. When included or authorized credits run low, the same warning Aldo shows o
 appears here. **Manage capacity** opens the Aldo account page, where you can add credits or upgrade
 hardware. Complimentary workspaces show their hardware but no credit meter.
 
-With Aldo cloud agents, the section shows the credits of your Aldo plan instead. A credit is an
+In Aldo, the section shows the credits of your Aldo plan instead. A credit is an
 hour of a standard machine; a 2× machine uses 2 an hour. Past the plan's included credits, agents
 keep working as extra usage, billed per credit, up to your extra usage limit. **Extra usage limit**
 sets that limit in dollars; set it to $0 to stop at the included credits. When credits and the
-limit are used up, cloud agents stop once their turn finishes and won't start until the next
-cycle or a higher limit. If Aldo can't start a cloud agent when you send a message (no plan, no
+limit are used up, agents stop once their turn finishes and won't start until the next
+cycle or a higher limit. If Aldo can't start an agent when you send a message (no plan, no
 credits left, or your plan's agents at once all busy), a notice says why.
 
 Workspace credits come from Aldo's billing ledger, not from provider transcripts, so they stay
@@ -35,7 +35,7 @@ The refresh control reloads them along with the token totals.
 
 ## Plan limits in Aldo
 
-With Aldo cloud agents, **Plan limits** at the top of the Usage page shows how much is left of
+In Aldo, **Plan limits** at the top of the Usage page shows how much is left of
 each plan your agents run on, and when each limit resets: your Aldo plan's credits, and each
 provider you connected. Claude shows its five-hour session and weekly limits, ChatGPT its Codex
 limits and credits (and a workspace's spend limit for you), Grok its billing period, Runway its
@@ -52,7 +52,7 @@ question when you ask how much of a plan is left.
 
 ## A thread's cost in Aldo
 
-With Aldo cloud agents, a thread's Aldo menu in its header says what the work has cost so far at
+In Aldo, a thread's Aldo menu in its header says what the work has cost so far at
 API prices: what the agents on its machine used, as the Usage page adds it up from their session
 history over the past 90 days. When several conversations share the machine, it shows this
 conversation's estimated share, by the tokens its turns processed, with the machine's total beside
