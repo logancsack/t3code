@@ -174,7 +174,7 @@ function MadeCard(props: {
           <button
             type="button"
             className={action}
-            onClick={() => aldoAskToShare(threadRef, item.name)}
+            onClick={() => aldoAskToShare(threadRef, item.path ?? item.name)}
             aria-label={`Ask the agent to share ${item.name} by link`}
           >
             Share
