@@ -1,6 +1,8 @@
 // The first screen loads only what it shows. Once it's up and the browser is
 // idle, this fetches what the next click most likely needs (a thread, the
 // palette's pickers, settings), so those open without waiting on the network.
+// In Aldo, a part that can't load because Aldo was deployed again since the
+// page loaded (its old files are gone) reloads the page into the new version.
 
 import type { AppRouter } from "../router";
 import { isAldoCloud } from "./cloud";
@@ -12,7 +14,28 @@ interface NetworkInformationLike {
   readonly effectiveType?: string;
 }
 
+/** Set while fetching ahead of use: a failure then is nobody's to see. */
+let prefetching = false;
+const RELOADED_AT = "aldo:reloaded-for-code";
+/** A reload that didn't bring the part either: the failure shows as it would. */
+const RELOAD_AGAIN_AFTER_MS = 60_000;
+
+/** A part of the app didn't load: reload into the version that has it, unless offline or just reloaded. */
+function reloadForMissingCode(event: Event): void {
+  if (prefetching || !navigator.onLine) return;
+  try {
+    if (Date.now() - Number(sessionStorage.getItem(RELOADED_AT) ?? 0) < RELOAD_AGAIN_AFTER_MS)
+      return;
+    sessionStorage.setItem(RELOADED_AT, String(Date.now()));
+  } catch {
+    return;
+  }
+  event.preventDefault();
+  window.location.reload();
+}
+
 export function installAldoChunkPrefetch(router: AppRouter): void {
+  if (isAldoCloud) window.addEventListener("vite:preloadError", reloadForMissingCode);
   // Data saver or a 2G link: nothing ahead of use.
   const connection = (navigator as { connection?: NetworkInformationLike }).connection;
   if (connection?.saveData || connection?.effectiveType?.endsWith("2g")) return;
@@ -45,10 +68,13 @@ async function prefetch(router: AppRouter): Promise<void> {
   // One at a time, so they don't crowd out what the page is fetching. A failed
   // fetch is ignored here; whatever needs it reports it as before.
   for (const load of next) {
+    prefetching = true;
     try {
       await load();
     } catch {
       // Nothing to do ahead of use.
+    } finally {
+      prefetching = false;
     }
   }
 }
