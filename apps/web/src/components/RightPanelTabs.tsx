@@ -18,6 +18,7 @@ import {
   type MouseEvent as ReactMouseEvent,
   type ReactElement,
   type ReactNode,
+  Fragment,
   useCallback,
   useEffect,
   useRef,
@@ -31,10 +32,18 @@ import { cn } from "~/lib/utils";
 import { readLocalApi } from "~/localApi";
 import { hasSharedBrowser } from "~/aldo/sharedBrowser";
 import { isAldoCloud } from "~/aldo/cloud";
+import { aldoSurfacesForWork } from "~/aldo/surfaces";
 import { Button } from "~/components/ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { Kbd } from "~/components/ui/kbd";
-import { Menu, MenuItem, MenuPopup, MenuShortcut, MenuTrigger } from "~/components/ui/menu";
+import {
+  Menu,
+  MenuGroupLabel,
+  MenuItem,
+  MenuPopup,
+  MenuShortcut,
+  MenuTrigger,
+} from "~/components/ui/menu";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { PanelTabCloseButton } from "~/components/ui/panel-tab-close-button";
 import { faviconUrlForOrigin } from "~/lib/favicon";
@@ -365,7 +374,12 @@ function RightPanelEmptyState(props: {
 
   type SurfaceAction = (typeof actions)[number];
 
-  const availableActions = actions.filter((action) => action.available);
+  // Aldo: work that isn't code leads with the browser and files, the rest under "More".
+  const arranged = props.offersPullRequests ? null : aldoSurfacesForWork<SurfaceAction>(actions);
+  const ordered: ReadonlyArray<SurfaceAction> = arranged
+    ? [...arranged.first, ...arranged.more]
+    : actions;
+  const availableActions = ordered.filter((action) => action.available);
   const highlightIndex =
     availableActions.length === 0 ? -1 : Math.min(highlight, availableActions.length - 1);
 
@@ -450,6 +464,47 @@ function RightPanelEmptyState(props: {
     "rounded-lg border border-border/80 bg-card dark:border-transparent dark:shadow-none dark:inset-ring-1 dark:inset-ring-white/5";
   const highlightedCardClass = "bg-accent/60 dark:inset-ring-white/20";
 
+  const renderAction = (action: SurfaceAction) =>
+    action.available ? (
+      <button
+        key={action.label}
+        type="button"
+        onClick={action.onClick}
+        onMouseEnter={() => setHighlight(availableActions.indexOf(action))}
+        onMouseLeave={() =>
+          setHighlight((current) => (current === availableActions.indexOf(action) ? -1 : current))
+        }
+        className={cn(
+          "relative flex w-full cursor-pointer flex-col items-start p-4 text-left transition hover:border-border hover:bg-accent/60",
+          cardShellClass,
+          isHighlighted(action) && highlightedCardClass,
+        )}
+      >
+        <Kbd className="absolute top-3 right-3">{action.shortcut}</Kbd>
+        <span className="flex items-center gap-2 pe-8">
+          {actionIcon(action)}
+          <span className="font-medium text-sm">{action.label}</span>
+        </span>
+        <span className="mt-1.5 text-muted-foreground text-xs leading-relaxed">
+          {action.description}
+        </span>
+      </button>
+    ) : (
+      <div
+        key={action.label}
+        className={cn("relative flex w-full flex-col items-start p-4 opacity-40", cardShellClass)}
+      >
+        <Kbd className="absolute top-3 right-3">{action.shortcut}</Kbd>
+        <span className="flex items-center gap-2 pe-8">
+          {actionIcon(action)}
+          <span className="font-medium text-sm">{action.label}</span>
+        </span>
+        <span className="mt-1.5 text-muted-foreground text-xs leading-relaxed">
+          {action.disabledReason}
+        </span>
+      </div>
+    );
+
   return (
     <div
       ref={focusOnMount}
@@ -472,50 +527,14 @@ function RightPanelEmptyState(props: {
           </p>
         </div>
         <div className="grid grid-cols-2 gap-2">
-          {actions.map((action) =>
-            action.available ? (
-              <button
-                key={action.label}
-                type="button"
-                onClick={action.onClick}
-                onMouseEnter={() => setHighlight(availableActions.indexOf(action))}
-                onMouseLeave={() =>
-                  setHighlight((current) =>
-                    current === availableActions.indexOf(action) ? -1 : current,
-                  )
-                }
-                className={cn(
-                  "relative flex w-full cursor-pointer flex-col items-start p-4 text-left transition hover:border-border hover:bg-accent/60",
-                  cardShellClass,
-                  isHighlighted(action) && highlightedCardClass,
-                )}
-              >
-                <Kbd className="absolute top-3 right-3">{action.shortcut}</Kbd>
-                <span className="flex items-center gap-2 pe-8">
-                  {actionIcon(action)}
-                  <span className="font-medium text-sm">{action.label}</span>
-                </span>
-                <span className="mt-1.5 text-muted-foreground text-xs leading-relaxed">
-                  {action.description}
-                </span>
-              </button>
+          {ordered.map((action) =>
+            action === arranged?.more[0] ? (
+              <Fragment key="more">
+                <p className="col-span-2 mt-2 px-1 text-muted-foreground text-xs">More</p>
+                {renderAction(action)}
+              </Fragment>
             ) : (
-              <div
-                key={action.label}
-                className={cn(
-                  "relative flex w-full flex-col items-start p-4 opacity-40",
-                  cardShellClass,
-                )}
-              >
-                <Kbd className="absolute top-3 right-3">{action.shortcut}</Kbd>
-                <span className="flex items-center gap-2 pe-8">
-                  {actionIcon(action)}
-                  <span className="font-medium text-sm">{action.label}</span>
-                </span>
-                <span className="mt-1.5 text-muted-foreground text-xs leading-relaxed">
-                  {action.disabledReason}
-                </span>
-              </div>
+              renderAction(action)
             ),
           )}
         </div>
@@ -718,8 +737,15 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
     },
   ];
 
+  // Aldo: work that isn't code leads with the browser and files, the rest under "More".
+  const arrangedAddActions =
+    props.offersPullRequests === false ? aldoSurfacesForWork(addSurfaceActions) : null;
+  const orderedAddActions = arrangedAddActions
+    ? [...arrangedAddActions.first, ...arrangedAddActions.more]
+    : addSurfaceActions;
+
   const handleAddSurfaceMenuKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-    const action = surfaceShortcutActionForKey(addSurfaceActions, event.nativeEvent);
+    const action = surfaceShortcutActionForKey(orderedAddActions, event.nativeEvent);
     if (!action) return;
     event.preventDefault();
     event.stopPropagation();
@@ -972,21 +998,26 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                   className="min-w-44"
                   onKeyDownCapture={handleAddSurfaceMenuKeyDown}
                 >
-                  {addSurfaceActions.map((action) => {
+                  {orderedAddActions.map((action) => {
                     const Icon = action.icon;
                     return (
-                      <SurfaceMenuItem
-                        key={action.label}
-                        available={action.available}
-                        {...(action.disabledReason
-                          ? { disabledReason: action.disabledReason }
-                          : {})}
-                        shortcut={action.shortcut}
-                        onClick={action.onClick}
-                      >
-                        <Icon />
-                        {action.label}
-                      </SurfaceMenuItem>
+                      <Fragment key={action.label}>
+                        {action === arrangedAddActions?.more[0] ? (
+                          <MenuGroupLabel>More</MenuGroupLabel>
+                        ) : null}
+                        <SurfaceMenuItem
+                          key={action.label}
+                          available={action.available}
+                          {...(action.disabledReason
+                            ? { disabledReason: action.disabledReason }
+                            : {})}
+                          shortcut={action.shortcut}
+                          onClick={action.onClick}
+                        >
+                          <Icon />
+                          {action.label}
+                        </SurfaceMenuItem>
+                      </Fragment>
                     );
                   })}
                 </MenuPopup>

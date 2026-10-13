@@ -162,3 +162,26 @@ export function aldoUsageUnmeteredCopy(usage: AldoWorkspaceUsage): string {
     ? "This workspace is complimentary, so compute is not metered."
     : "Usage billing is not configured for this environment.";
 }
+
+/** "about 900": a projection rounded to what it can promise. */
+function roughly(credits: number): string {
+  const step = credits >= 1000 ? 100 : credits >= 100 ? 10 : 1;
+  return formatCredits(Math.max(0, Math.round(credits / step) * step));
+}
+
+/**
+ * The usage page's first line, in words: "You've used 412 of 2,000 credits
+ * this month; at this pace you'll have about 900 left." Null without credits
+ * (an unmetered plan says so below).
+ */
+export function aldoUsageSentence(usage: AldoWorkspaceUsage): string | null {
+  const credits = usage.credits;
+  if (!credits) return null;
+  const used = `You've used ${formatCredits(credits.used)} of ${formatCredits(credits.included)} credits this month`;
+  if (credits.projected === null) return `${used}.`;
+  if (credits.projected <= credits.included)
+    return `${used}; at this pace you'll have about ${roughly(credits.included - credits.projected)} left.`;
+  if (credits.projected <= credits.authorized)
+    return `${used}; at this pace you'll go about ${roughly(credits.projected - credits.included)} over, within your extra usage limit.`;
+  return `${used}; at this pace you'll run out before the month ends.`;
+}

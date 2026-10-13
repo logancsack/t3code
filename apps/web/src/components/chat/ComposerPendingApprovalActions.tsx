@@ -4,6 +4,8 @@ import {
   type ProviderApprovalOption,
 } from "@t3tools/contracts";
 import { memo } from "react";
+import { aldoApprovalOption } from "~/aldo/approvalWords";
+import { isAldoCloud } from "~/aldo/cloud";
 import { Button } from "../ui/button";
 
 interface ComposerPendingApprovalActionsProps {
@@ -32,7 +34,7 @@ export const ComposerPendingApprovalActions = memo(function ComposerPendingAppro
 }: ComposerPendingApprovalActionsProps) {
   return (
     <>
-      {options.map((option) => (
+      {(isAldoCloud ? options.map(aldoApprovalOption) : options).map((option) => (
         <Button
           key={option.decision}
           size="micro"

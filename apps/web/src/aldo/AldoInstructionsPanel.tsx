@@ -251,10 +251,10 @@ export function AldoInstructionsPanel() {
       }
     >
       <p className="px-3 text-sm text-muted-foreground sm:px-4">
-        What every agent is told, like a CLAUDE.md or AGENTS.md of your own that stays out of your
-        repositories: for all projects, or for one. When you ask an agent to remember something for
-        later threads, it's saved here too. A thread picks up changes the next time its machine
-        starts or wakes. A repository's own AGENTS.md or CLAUDE.md still applies.
+        What every agent is told, for all projects or for one, kept out of your repositories. When
+        you ask an agent to remember something for later threads, it's saved here too. A thread
+        picks up changes the next time its computer starts or wakes. A repository's own notes for
+        agents (AGENTS.md or CLAUDE.md) still apply.
       </p>
       {unsupported ? (
         <p className="px-3 text-sm text-muted-foreground sm:px-4">

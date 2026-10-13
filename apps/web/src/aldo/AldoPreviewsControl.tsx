@@ -29,7 +29,7 @@ import {
 import { Button } from "../components/ui/button";
 import { toastManager } from "../components/ui/toast";
 import { AldoGpuComputerControl, useAldoComputerAsk } from "./AldoComputer";
-import { AldoMachineMenuSection, useAldoMachineOffer } from "./AldoMachine";
+import { AldoMachineMenuSection } from "./AldoMachine";
 import { useAldoBrowserRequests } from "./browserStore";
 import { aldoCostLine, type AldoCost } from "./costs.logic";
 import {
@@ -65,7 +65,6 @@ export function AldoPreviewsControl(props: {
   threadId: ThreadId;
   onOpenBrowser: () => void;
 }) {
-  useAldoMachineOffer(props.environmentId);
   useAldoComputerAsk(props.environmentId, props.threadId);
   const [previews, setPreviews] = useState<AldoPreviews | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -148,7 +147,7 @@ export function AldoPreviewsControl(props: {
         <MenuPopup align="end" className="w-80">
           {loading && !previews ? (
             <div className="flex items-center gap-2 px-2 py-3 text-xs text-muted-foreground">
-              <LoaderIcon className="size-3.5 animate-spin" /> Looking for dev servers…
+              <LoaderIcon className="size-3.5 animate-spin" /> Looking for previews…
             </div>
           ) : error ? (
             <div className="px-2 py-3 text-xs text-destructive-foreground">{error}</div>
@@ -160,10 +159,10 @@ export function AldoPreviewsControl(props: {
             </div>
           ) : ports.length === 0 ? (
             <div className="space-y-1 px-2 py-3 text-xs text-muted-foreground">
-              <p>No dev servers are running.</p>
+              <p>Nothing to preview yet.</p>
               <p>
-                Ask the agent to start one. It keeps it running across sleeps and shares a preview
-                link.
+                Ask the agent to start what it made. It keeps it running across sleeps and shares a
+                preview link.
               </p>
             </div>
           ) : (
@@ -243,7 +242,7 @@ export function AldoPreviewsControl(props: {
             </>
           ) : null}
           <MenuSeparator />
-          <AldoMachineMenuSection environmentId={props.environmentId} />
+          <AldoMachineMenuSection />
           {aldoCostLine(cost, props.threadId) ? (
             <div className="px-2 py-1.5 text-xs text-muted-foreground">
               {aldoCostLine(cost, props.threadId)}

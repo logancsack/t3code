@@ -32,7 +32,7 @@ describe("describeAldoThreadStart", () => {
       repos: [""],
     });
     expect(view.body).toBe(
-      "Setting up its machine. The agent gets its first message as soon as it's up.",
+      "Setting up its computer. The agent gets its first message as soon as it's up.",
     );
   });
 

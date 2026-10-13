@@ -36,6 +36,7 @@ import {
 import { WorkspacePageContainer } from "../WorkspacePageContainer";
 import { WorkspacePageHeader } from "../WorkspacePageHeader";
 import { AldoWorkspaceUsageSection } from "./AldoWorkspaceUsage";
+import { aldoUsageSentence } from "./aldoWorkspaceUsageView";
 import { UsageProviderChart, type UsageChartMetric } from "./UsageProviderChart";
 import { PROVIDER_ORDER, PROVIDER_PRESENTATION, providersWithUsage } from "./usageProviders";
 
@@ -57,6 +58,9 @@ export function UsagePage() {
   const isPast24Hours = windowDays === 1;
   const { merged, environments, isPending, isPartial, refresh } = useUsage(window);
   const aldoWorkspace = useAldoWorkspaceUsage();
+  const aldoUsage = aldoWorkspace.state.status === "unavailable" ? null : aldoWorkspace.state.usage;
+  // Aldo: token and cache numbers wait behind Details.
+  const [tokenDetails, setTokenDetails] = useState(!isAldoCloud);
   const providerLimits = useAldoProviderLimits();
 
   // Hold the content until every environment is terminal. Rendering merged
@@ -221,6 +225,10 @@ export function UsagePage() {
               Aldo cloud: what's left of each plan, read by Aldo's server, so
               it shows while environments are still answering.
             */}
+            {/* Aldo: the month in one sentence first; the counters follow. */}
+            {isAldoCloud && aldoUsage && aldoUsageSentence(aldoUsage) ? (
+              <p className="text-base text-foreground">{aldoUsageSentence(aldoUsage)}</p>
+            ) : null}
             <AldoProviderLimitsSection state={providerLimits.state} />
 
             {settling ? (
@@ -330,7 +338,17 @@ export function UsagePage() {
               onChanged={aldoWorkspace.refresh}
             />
 
-            {settling ? null : (
+            {settling ? null : !tokenDetails ? (
+              // Aldo: token and cache numbers are details most people never need.
+              <Button
+                className="self-start"
+                size="xs"
+                variant="ghost"
+                onClick={() => setTokenDetails(true)}
+              >
+                Details: tokens, cache and models
+              </Button>
+            ) : (
               <>
                 <section className="flex flex-col gap-2">
                   <h2 className="text-sm font-medium text-foreground">Totals</h2>

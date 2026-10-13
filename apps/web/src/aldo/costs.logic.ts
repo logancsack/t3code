@@ -36,8 +36,8 @@ const usd = (n: number) => `$${n.toFixed(2)}`;
 export function aldoCostLine(cost: AldoCost | null, threadId: string): string | null {
   if (!cost || cost.usd <= 0) return null;
   const mine = cost.conversations[threadId];
-  if (mine === undefined) return `So far: about ${usd(cost.usd)} at API prices for this machine`;
+  if (mine === undefined) return `So far: about ${usd(cost.usd)} at API prices for its computer`;
   if (Object.keys(cost.conversations).length > 1)
-    return `So far: about ${usd(mine)} at API prices (${usd(cost.usd)} for this machine)`;
+    return `So far: about ${usd(mine)} at API prices (${usd(cost.usd)} for its computer)`;
   return `So far: about ${usd(mine)} at API prices`;
 }

@@ -66,9 +66,10 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/appearance": "Appearance",
   "/settings/workspace": "Workspace",
   "/settings/keybindings": "Keybindings",
-  "/settings/providers": "Providers",
+  // Aldo: what runs the agents, and where code lives, in the words people use.
+  "/settings/providers": isAldoCloud ? "AI subscriptions" : "Providers",
   "/settings/integrations": "Integrations",
-  "/settings/source-control": "Source Control",
+  "/settings/source-control": isAldoCloud ? "Git hosts" : "Source Control",
   "/settings/instructions": "Instructions",
   "/settings/skills": "Skills",
   "/settings/memory": "Memory",
@@ -302,7 +303,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "providers",
-    title: "Providers",
+    title: isAldoCloud ? "AI subscriptions" : "Providers",
     to: "/settings/providers",
     searchTerms: [
       "agents cli codex claude cursor grok opencode instances authentication api key models configuration binary path config directory endpoint arguments environment variables display name accent color custom favorite hidden auto compact",
@@ -361,6 +362,40 @@ export const SETTINGS_SEARCH_ITEMS = [
     aldoCloudOnly: true,
   },
   {
+    id: "aldo-instructions",
+    title: "Instructions",
+    to: "/settings/instructions",
+    searchTerms: [
+      "instructions every project agents read preferences conventions how I like things done remember rules",
+    ],
+    aldoCloudOnly: true,
+  },
+  {
+    id: "aldo-memory",
+    title: "Memory",
+    to: "/settings/memory",
+    searchTerms: ["memory remembered facts what agents know about me notes forget"],
+    aldoCloudOnly: true,
+  },
+  {
+    id: "aldo-vault",
+    title: "Vault",
+    to: "/settings/vault",
+    searchTerms: [
+      "vault secrets api keys tokens passwords logins saved credentials environment variables files",
+    ],
+    aldoCloudOnly: true,
+  },
+  {
+    id: "aldo-environments",
+    title: "Environments",
+    to: "/settings/environments",
+    searchTerms: [
+      "environments ready-to-go setup install build workspace computer prebuilt dependencies",
+    ],
+    aldoCloudOnly: true,
+  },
+  {
     id: "aldo-skills",
     title: "Skills",
     to: "/settings/skills",
@@ -415,7 +450,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "source-control",
-    title: "Source control",
+    title: isAldoCloud ? "Git hosts" : "Source control",
     to: "/settings/source-control",
     searchTerms: [
       "version control git github gitlab bitbucket azure devops hosting integrations credentials scan server environment",

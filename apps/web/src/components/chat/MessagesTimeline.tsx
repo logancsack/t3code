@@ -1,5 +1,6 @@
 import { isAldoCloud } from "../../aldo/cloud";
 import { aldoStartingLabel } from "../../aldo/dispatch";
+import { AldoNotifyOffer } from "../../aldo/AldoNotifyOffer";
 import {
   type ChatFileAttachment,
   type EnvironmentId,
@@ -1400,6 +1401,7 @@ function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "workin
           <span className="min-w-0 truncate text-muted-foreground/55">· {workingStepLabel}</span>
         ) : null}
       </div>
+      {isAldoCloud && row.status !== "waking" ? <AldoNotifyOffer /> : null}
     </div>
   );
 }

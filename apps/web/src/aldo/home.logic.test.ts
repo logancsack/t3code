@@ -11,6 +11,7 @@ import {
   elapsed,
   filterHome,
   healthIssues,
+  planRunning,
   isNewSince,
   isStuck,
   mergeCountdown,
@@ -467,55 +468,67 @@ describe("healthIssues", () => {
 
   it("is empty when all is well", () => {
     expect(
-      healthIssues(
-        {
-          usage,
-          health: {
-            providers: [{ id: "claude", name: "Claude", signedIn: true }],
-            connected: ["claude"],
-            environments: [],
-          },
+      healthIssues({
+        usage,
+        health: {
+          providers: [{ id: "claudeAgent", name: "Claude", signedIn: true }],
+          connected: ["claude"],
+          environments: [],
         },
-        "on",
-      ),
+      }),
     ).toEqual([]);
   });
 
   it("names what's wrong", () => {
-    const issues = healthIssues(
-      {
-        usage: { ...usage, alert: "spend_reached" },
-        health: {
-          providers: [{ id: "codex", name: "Codex", signedIn: false }],
-          connected: [],
-          environments: [{ repos: ["acme/shop"], status: "failed", at: ago(1) }],
-        },
+    const issues = healthIssues({
+      usage: { ...usage, alert: "spend_reached" },
+      health: {
+        providers: [{ id: "codex", name: "Codex", signedIn: false }],
+        connected: ["codex"],
+        environments: [{ repos: ["acme/shop"], status: "failed", at: ago(1) }],
       },
-      "off",
-    );
-    expect(issues.map((i) => i.id)).toEqual([
-      "provider-codex",
-      "credits",
-      "env-acme/shop",
-      "notifications",
-    ]);
+    });
+    expect(issues.map((i) => i.id)).toEqual(["providers", "credits", "env-acme/shop"]);
+    expect(issues[0]!.text).toBe("Codex needs signing in again.");
     expect(issues[0]!.href).toBe("/settings/providers");
-    expect(issues[3]!.action).toBe("enable-notifications");
   });
 
-  it("says when the browser blocks notifications, with nothing to click", () => {
-    const [issue] = healthIssues(
-      { usage, health: { providers: [], connected: [], environments: [] } },
-      "blocked",
-    );
-    expect(issue!.id).toBe("notifications");
-    expect(issue!.action).toBeUndefined();
-    expect(
-      healthIssues(
-        { usage, health: { providers: [], connected: [], environments: [] } },
-        "unavailable",
-      ),
-    ).toEqual([]);
+  it("warns only about subscriptions the user connected, in one line", () => {
+    const [issue, ...rest] = healthIssues({
+      usage,
+      health: {
+        providers: [
+          { id: "claudeAgent", name: "Claude", signedIn: false },
+          { id: "codex", name: "Codex", signedIn: false },
+          { id: "grok", name: "Grok", signedIn: false },
+          { id: "opencode", name: "OpenCode", signedIn: false },
+        ],
+        connected: ["codex", "grok", "github"],
+        environments: [],
+      },
+    });
+    expect(issue!.text).toBe("Codex and Grok need signing in again.");
+    expect(rest).toEqual([]);
+  });
+});
+
+describe("planRunning", () => {
+  const usage = {
+    configured: true,
+    metered: true,
+    plan: null,
+    period: { status: "active", start: ago(60), end: ago(-60) },
+    credits: null,
+    bill: null,
+    alert: "none",
+    agents: { running: 0, limit: null },
+  };
+
+  it("runs on an active or complimentary plan, not without one or past due", () => {
+    expect(planRunning(usage)).toBe(true);
+    expect(planRunning({ ...usage, metered: false, period: null })).toBe(true);
+    expect(planRunning({ ...usage, configured: false, period: null })).toBe(false);
+    expect(planRunning({ ...usage, period: { ...usage.period, status: "past_due" } })).toBe(false);
   });
 });
 

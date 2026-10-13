@@ -6,6 +6,7 @@ import {
   aldoUsageFacts,
   aldoUsageFootnote,
   aldoUsageMeterFraction,
+  aldoUsageSentence,
   aldoUsageUnmeteredCopy,
 } from "./aldoWorkspaceUsageView";
 
@@ -126,5 +127,27 @@ describe("aldoUsageAlertCopy", () => {
     ] as const) {
       expect(aldoUsageAlertCopy(level)).toEqual(expect.any(String));
     }
+  });
+});
+
+describe("aldoUsageSentence", () => {
+  it("says what's used and what the pace leaves", () => {
+    expect(aldoUsageSentence(metered)).toBe(
+      "You've used 40.3 of 250 credits this month; at this pace you'll have about 170 left.",
+    );
+  });
+
+  it("says when the pace runs past the plan, or out", () => {
+    const credits = metered.credits!;
+    expect(aldoUsageSentence({ ...metered, credits: { ...credits, projected: 280 } })).toBe(
+      "You've used 40.3 of 250 credits this month; at this pace you'll go about 30 over, within your extra usage limit.",
+    );
+    expect(aldoUsageSentence({ ...metered, credits: { ...credits, projected: 400 } })).toBe(
+      "You've used 40.3 of 250 credits this month; at this pace you'll run out before the month ends.",
+    );
+    expect(aldoUsageSentence({ ...metered, credits: { ...credits, projected: null } })).toBe(
+      "You've used 40.3 of 250 credits this month.",
+    );
+    expect(aldoUsageSentence({ ...metered, credits: null })).toBeNull();
   });
 });

@@ -168,6 +168,9 @@ const ALDO_PROSE_REPLACEMENTS: ReadonlyArray<readonly [string, string]> = [
   ["T3 system footprint", "Aldo system footprint"],
   ["known T3 operations", "known Aldo operations"],
   ["Managed DevPC", "Aldo"],
+  // Settings pages by the names Aldo gives them (settingsSearch.ts).
+  ["Open Settings -> Source Control", "Open Settings → Git hosts"],
+  ["Source Control Providers", "Git hosts"],
   ["`T3`", "`Aldo`"],
 ];
 
@@ -177,7 +180,13 @@ function aldoBrandingPlugin(): Plugin {
     apply: "build",
     transformIndexHtml(html) {
       return html
-        .replace(/<title>[^<]*<\/title>/, "<title>Aldo</title>")
+        .replace(
+          /<title>[^<]*<\/title>/,
+          [
+            "<title>Aldo</title>",
+            '<meta name="description" content="Agents that get things done, each with its own computer." />',
+          ].join("\n    "),
+        )
         .replace(
           /<link rel="icon"[^>]*>/,
           [

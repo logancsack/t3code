@@ -39,6 +39,7 @@ import { useThreadShells } from "../state/entities";
 import { AldoBriefEntry } from "./AldoBrief";
 import { showAldoCall } from "./callView";
 import { AldoThreadCard } from "./AldoLiveCard";
+import { ALDO_TALK_LABEL } from "./summon.logic";
 import {
   ACTION_LABELS,
   linkRuns,
@@ -220,10 +221,7 @@ async function imageUpload(
 }
 
 /** How to talk to Aldo from anywhere (AldoAssistantDock listens for it). */
-export const ALDO_SHORTCUT_LABEL =
-  typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform)
-    ? "⌘⇧A"
-    : "Ctrl+Shift+A";
+export const ALDO_SHORTCUT_LABEL = ALDO_TALK_LABEL;
 
 export function AldoOrb(props: {
   readonly size?: "xl" | "lg" | "sm" | "xs";
@@ -425,15 +423,18 @@ export function AldoComposer(props: {
       })
       .finally(() => setPreparing((n) => n - 1));
   };
+  /** The words last seeded, so another seed replaces them while they're untouched. */
+  const seeded = useRef<string | null>(null);
   // What couldn't be sent comes back to be sent again, and words seeded for
   // the user to finish; a draft already in the field is kept, after them.
   useEffect(() => {
     if (unsent === null) return;
     setText((current) => {
-      if (!current.trim()) return unsent;
+      if (!current.trim() || current === seeded.current) return unsent;
       if (!unsent.trim()) return current;
       return `${unsent} ${current}`;
     });
+    seeded.current = unsent;
     useAldoAssistant.setState({ unsent: null });
     input.current?.focus();
   }, [unsent]);
@@ -642,7 +643,13 @@ function threadLink(target: AldoOpenTarget, children: ReactNode, className?: str
  * what followed its question), the newest action about each thread as a live
  * card.
  */
-export function AldoConversation(props: { readonly since?: number } = {}) {
+export function AldoConversation(
+  props: {
+    readonly since?: number;
+    /** Shown under the empty conversation's welcome (the first run's starters). */
+    readonly empty?: ReactNode;
+  } = {},
+) {
   const all = useAldoAssistant((s) => s.entries);
   const loaded = useAldoAssistant((s) => s.historyLoaded);
   const replying = useAldoAssistant((s) => s.replying);
@@ -655,12 +662,15 @@ export function AldoConversation(props: { readonly since?: number } = {}) {
   }, [entries.length, replying]);
   if (loaded && entries.length === 0 && since === 0) {
     return (
-      <div className="py-8 text-center">
-        <h2 className="font-semibold text-lg">What should we get done?</h2>
-        <p className="mx-auto mt-2 max-w-xs text-muted-foreground text-sm">
-          Tell Aldo what you want, typed or out loud. It starts threads, briefs their agents,
-          follows them, and tells you how it went.
-        </p>
+      <div className="flex flex-col gap-5 py-8">
+        <div className="text-center">
+          <h2 className="font-semibold text-lg">What should we get done?</h2>
+          <p className="mx-auto mt-2 max-w-sm text-muted-foreground text-sm">
+            Say it or type it. Aldo gives each job an agent with its own computer, keeps an eye on
+            it, and tells you how it went.
+          </p>
+        </div>
+        {props.empty}
       </div>
     );
   }

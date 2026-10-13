@@ -7,7 +7,7 @@ describe("aldoCostLine", () => {
 
   it("says a conversation's share, and its machine's when it shares one", () => {
     expect(aldoCostLine(cost, "a")).toBe(
-      "So far: about $22.50 at API prices ($30.00 for this machine)",
+      "So far: about $22.50 at API prices ($30.00 for its computer)",
     );
     expect(aldoCostLine({ usd: 4, conversations: { a: 4 } }, "a")).toBe(
       "So far: about $4.00 at API prices",
@@ -16,9 +16,9 @@ describe("aldoCostLine", () => {
 
   it("says only the machine's for a conversation with no turns recorded, and nothing with no cost", () => {
     expect(aldoCostLine({ usd: 4, conversations: {} }, "a")).toBe(
-      "So far: about $4.00 at API prices for this machine",
+      "So far: about $4.00 at API prices for its computer",
     );
-    expect(aldoCostLine(cost, "c")).toBe("So far: about $30.00 at API prices for this machine");
+    expect(aldoCostLine(cost, "c")).toBe("So far: about $30.00 at API prices for its computer");
     expect(aldoCostLine({ usd: 0, conversations: {} }, "a")).toBeNull();
     expect(aldoCostLine(null, "a")).toBeNull();
   });

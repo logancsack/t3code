@@ -1929,6 +1929,138 @@ export function GeneralSettingsPanel() {
     DEFAULT_UNIFIED_SETTINGS.backgroundActivity,
   );
 
+  // Aldo: settings that only matter to code, in a section of their own.
+  const whitespaceRow = (
+    <SettingsRow
+      {...searchableSetting("hide-whitespace-changes")}
+      description="Set whether the diff panel ignores whitespace-only edits by default."
+      resetAction={
+        settings.diffIgnoreWhitespace !== DEFAULT_UNIFIED_SETTINGS.diffIgnoreWhitespace ? (
+          <SettingResetButton
+            label="diff whitespace changes"
+            onClick={() =>
+              updateSettings({
+                diffIgnoreWhitespace: DEFAULT_UNIFIED_SETTINGS.diffIgnoreWhitespace,
+              })
+            }
+          />
+        ) : null
+      }
+      control={
+        <Switch
+          checked={settings.diffIgnoreWhitespace}
+          onCheckedChange={(checked) => updateSettings({ diffIgnoreWhitespace: Boolean(checked) })}
+          aria-label="Hide whitespace changes by default"
+        />
+      }
+    />
+  );
+  const newThreadRows = (
+    <>
+      <SettingsRow
+        {...searchableSetting("new-threads")}
+        description="Pick the default workspace mode for newly created draft threads."
+        resetAction={
+          settings.defaultThreadEnvMode !== DEFAULT_UNIFIED_SETTINGS.defaultThreadEnvMode ||
+          settings.newWorktreesStartFromOrigin !==
+            DEFAULT_UNIFIED_SETTINGS.newWorktreesStartFromOrigin ? (
+            <SettingResetButton
+              label="new threads"
+              onClick={() =>
+                updateSettings({
+                  defaultThreadEnvMode: DEFAULT_UNIFIED_SETTINGS.defaultThreadEnvMode,
+                  newWorktreesStartFromOrigin: DEFAULT_UNIFIED_SETTINGS.newWorktreesStartFromOrigin,
+                })
+              }
+            />
+          ) : null
+        }
+        control={
+          <Select
+            value={settings.defaultThreadEnvMode}
+            onValueChange={(value) => {
+              if (value === "local" || value === "worktree") {
+                updateSettings({ defaultThreadEnvMode: value });
+              }
+            }}
+          >
+            <SelectTrigger className="w-full sm:w-44" aria-label="Default thread mode">
+              <SelectValue>
+                {settings.defaultThreadEnvMode === "worktree" ? "New worktree" : "Local"}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectPopup align="end" alignItemWithTrigger={false}>
+              <SelectItem hideIndicator value="local">
+                Local
+              </SelectItem>
+              <SelectItem hideIndicator value="worktree">
+                New worktree
+              </SelectItem>
+            </SelectPopup>
+          </Select>
+        }
+      />
+
+      {settings.defaultThreadEnvMode === "worktree" ? (
+        <SettingsRow
+          className="bg-muted/20 sm:pl-9"
+          title={searchableSetting("start-from-origin").title}
+          description="Creates the worktree from the latest matching branch on origin instead of your local branch."
+          resetAction={
+            settings.newWorktreesStartFromOrigin !==
+            DEFAULT_UNIFIED_SETTINGS.newWorktreesStartFromOrigin ? (
+              <SettingResetButton
+                label="new worktrees start from origin"
+                onClick={() =>
+                  updateSettings({
+                    newWorktreesStartFromOrigin:
+                      DEFAULT_UNIFIED_SETTINGS.newWorktreesStartFromOrigin,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.newWorktreesStartFromOrigin}
+              onCheckedChange={(checked) =>
+                updateSettings({ newWorktreesStartFromOrigin: Boolean(checked) })
+              }
+              aria-label="Start new worktrees from origin by default"
+            />
+          }
+        />
+      ) : null}
+
+      <SettingsRow
+        {...searchableSetting("add-project-starts-in")}
+        description='Leave empty to use "~/" when the Add Project browser opens.'
+        resetAction={
+          settings.addProjectBaseDirectory !== DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory ? (
+            <SettingResetButton
+              label="add project base directory"
+              onClick={() =>
+                updateSettings({
+                  addProjectBaseDirectory: DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory,
+                })
+              }
+            />
+          ) : null
+        }
+        control={
+          <DraftInput
+            className="w-full sm:w-72"
+            value={settings.addProjectBaseDirectory}
+            onCommit={(next) => updateSettings({ addProjectBaseDirectory: next })}
+            placeholder="~/"
+            spellCheck={false}
+            aria-label="Add project base directory"
+          />
+        }
+      />
+    </>
+  );
+
   return (
     <SettingsPageContainer>
       {isAldoCloud ? (
@@ -2091,31 +2223,7 @@ export function GeneralSettingsPanel() {
           }
         />
 
-        <SettingsRow
-          {...searchableSetting("hide-whitespace-changes")}
-          description="Set whether the diff panel ignores whitespace-only edits by default."
-          resetAction={
-            settings.diffIgnoreWhitespace !== DEFAULT_UNIFIED_SETTINGS.diffIgnoreWhitespace ? (
-              <SettingResetButton
-                label="diff whitespace changes"
-                onClick={() =>
-                  updateSettings({
-                    diffIgnoreWhitespace: DEFAULT_UNIFIED_SETTINGS.diffIgnoreWhitespace,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <Switch
-              checked={settings.diffIgnoreWhitespace}
-              onCheckedChange={(checked) =>
-                updateSettings({ diffIgnoreWhitespace: Boolean(checked) })
-              }
-              aria-label="Hide whitespace changes by default"
-            />
-          }
-        />
+        {isAldoCloud ? null : whitespaceRow}
 
         <SettingsRow
           {...searchableSetting("skills-in-slash-menu")}
@@ -2253,109 +2361,7 @@ export function GeneralSettingsPanel() {
           }
         />
 
-        <SettingsRow
-          {...searchableSetting("new-threads")}
-          description="Pick the default workspace mode for newly created draft threads."
-          resetAction={
-            settings.defaultThreadEnvMode !== DEFAULT_UNIFIED_SETTINGS.defaultThreadEnvMode ||
-            settings.newWorktreesStartFromOrigin !==
-              DEFAULT_UNIFIED_SETTINGS.newWorktreesStartFromOrigin ? (
-              <SettingResetButton
-                label="new threads"
-                onClick={() =>
-                  updateSettings({
-                    defaultThreadEnvMode: DEFAULT_UNIFIED_SETTINGS.defaultThreadEnvMode,
-                    newWorktreesStartFromOrigin:
-                      DEFAULT_UNIFIED_SETTINGS.newWorktreesStartFromOrigin,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <Select
-              value={settings.defaultThreadEnvMode}
-              onValueChange={(value) => {
-                if (value === "local" || value === "worktree") {
-                  updateSettings({ defaultThreadEnvMode: value });
-                }
-              }}
-            >
-              <SelectTrigger className="w-full sm:w-44" aria-label="Default thread mode">
-                <SelectValue>
-                  {settings.defaultThreadEnvMode === "worktree" ? "New worktree" : "Local"}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectPopup align="end" alignItemWithTrigger={false}>
-                <SelectItem hideIndicator value="local">
-                  Local
-                </SelectItem>
-                <SelectItem hideIndicator value="worktree">
-                  New worktree
-                </SelectItem>
-              </SelectPopup>
-            </Select>
-          }
-        />
-
-        {settings.defaultThreadEnvMode === "worktree" ? (
-          <SettingsRow
-            className="bg-muted/20 sm:pl-9"
-            title={searchableSetting("start-from-origin").title}
-            description="Creates the worktree from the latest matching branch on origin instead of your local branch."
-            resetAction={
-              settings.newWorktreesStartFromOrigin !==
-              DEFAULT_UNIFIED_SETTINGS.newWorktreesStartFromOrigin ? (
-                <SettingResetButton
-                  label="new worktrees start from origin"
-                  onClick={() =>
-                    updateSettings({
-                      newWorktreesStartFromOrigin:
-                        DEFAULT_UNIFIED_SETTINGS.newWorktreesStartFromOrigin,
-                    })
-                  }
-                />
-              ) : null
-            }
-            control={
-              <Switch
-                checked={settings.newWorktreesStartFromOrigin}
-                onCheckedChange={(checked) =>
-                  updateSettings({ newWorktreesStartFromOrigin: Boolean(checked) })
-                }
-                aria-label="Start new worktrees from origin by default"
-              />
-            }
-          />
-        ) : null}
-
-        <SettingsRow
-          {...searchableSetting("add-project-starts-in")}
-          description='Leave empty to use "~/" when the Add Project browser opens.'
-          resetAction={
-            settings.addProjectBaseDirectory !==
-            DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory ? (
-              <SettingResetButton
-                label="add project base directory"
-                onClick={() =>
-                  updateSettings({
-                    addProjectBaseDirectory: DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <DraftInput
-              className="w-full sm:w-72"
-              value={settings.addProjectBaseDirectory}
-              onCommit={(next) => updateSettings({ addProjectBaseDirectory: next })}
-              placeholder="~/"
-              spellCheck={false}
-              aria-label="Add project base directory"
-            />
-          }
-        />
+        {isAldoCloud ? null : newThreadRows}
 
         <SettingsRow
           {...searchableSetting("unpin-confirmation")}
@@ -2548,6 +2554,12 @@ export function GeneralSettingsPanel() {
           }
         />
       </SettingsSection>
+      {isAldoCloud ? (
+        <SettingsSection title="For code">
+          {whitespaceRow}
+          {newThreadRows}
+        </SettingsSection>
+      ) : null}
 
       <SettingsSection title="About">
         {isElectron || HOSTED_APP_CHANNEL ? (

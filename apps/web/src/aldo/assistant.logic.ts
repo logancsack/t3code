@@ -195,7 +195,7 @@ export const ACTION_LABELS: Record<string, string> = {
   settle_thread: "Settled a thread",
   answer_computer_request: "Answered a computer request",
   stop_computer: "Stopped a computer",
-  set_machine_size: "Changed a machine's size",
+  set_machine_size: "Changed a computer's size",
   send_upcoming_now: "Sent a queued message now",
   cancel_upcoming: "Canceled a queued message",
   create_routine: "Set up a routine",

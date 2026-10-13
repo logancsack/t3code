@@ -17,6 +17,8 @@ import { CommandPalette } from "../components/CommandPalette";
 import { AldoAssistantDock } from "../aldo/AldoAssistantDock";
 import { AldoRepositoryDialog } from "../aldo/AldoRepositoryDialog";
 import { AldoSummon } from "../aldo/AldoSummon";
+import { AldoAttentionSync, useAldoAttentionCount } from "../aldo/attentionBadge";
+import { isAldoCloud } from "../aldo/cloud";
 import { ConfirmDialogHost } from "../components/ConfirmDialogHost";
 import { ConnectOnboardingDialog } from "../components/cloud/ConnectOnboardingDialog";
 import { RelayClientInstallDialog } from "../components/cloud/RelayClientInstallDialog";
@@ -152,6 +154,7 @@ function RootRouteView() {
         <SshPasswordPromptDialog />
         <ConfirmDialogHost />
         <AldoRepositoryDialog />
+        {isAldoCloud ? <AldoAttentionSync /> : null}
         <AldoAssistantDock />
         <AldoSummon />
         <SlowRpcRequestToastCoordinator />
@@ -263,10 +266,13 @@ function DocumentTitleSync() {
     fallbackStageLabel: APP_STAGE_LABEL,
     primaryServerVersion,
   });
+  // Aldo: "(2) Aldo" while two things wait on the user.
+  const waiting = useAldoAttentionCount();
+  const shown = waiting > 0 ? `(${waiting}) ${title}` : title;
 
   useEffect(() => {
-    document.title = title;
-  }, [title]);
+    document.title = shown;
+  }, [shown]);
 
   return null;
 }

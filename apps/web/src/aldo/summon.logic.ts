@@ -14,6 +14,9 @@ const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigat
 /** How to summon Aldo from anywhere. */
 export const ALDO_SUMMON_LABEL = isMac ? "⌘I" : "Ctrl+I";
 
+/** How to talk to Aldo from anywhere (AldoAssistantDock listens for it). */
+export const ALDO_TALK_LABEL = isMac ? "⌘⇧A" : "Ctrl+Shift+A";
+
 /** Mod+I: Aldo, over whatever's on screen. */
 export function isSummonShortcut(
   event: Pick<KeyboardEvent, "metaKey" | "ctrlKey" | "shiftKey" | "altKey" | "key">,

@@ -66,7 +66,6 @@ export function AldoAgentsTab(props: {
   readonly now: number;
   readonly setup: ReactNode;
   readonly issues: ReturnType<typeof healthIssues>;
-  readonly onEnableNotifications: () => void;
 }) {
   const { home, now } = props;
   const { list, shellCount } = useAldoThreadList({ home, now });
@@ -120,7 +119,7 @@ export function AldoAgentsTab(props: {
       <div className="min-h-0 flex-1 overflow-y-auto pb-[max(1.5rem,env(safe-area-inset-bottom))]">
         <div className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-3 pt-2">
           {props.setup}
-          <HealthStrip issues={props.issues} onEnableNotifications={props.onEnableNotifications} />
+          <HealthStrip issues={props.issues} />
           {list.pinned.length > 0 ? (
             <AgentGroup title="Pinned" tone="muted">
               {list.pinned.map(row)}

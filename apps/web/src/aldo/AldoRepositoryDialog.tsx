@@ -141,7 +141,7 @@ const DESCRIPTIONS: Record<Mode, string> = {
   existing:
     "Pick one or more repositories. The thread gets its own cloud agent, with each one cloned on a new branch.",
   general:
-    "For work that isn't code: research, errands, email, documents, anything on the web. The thread gets its own cloud agent with a browser and the accounts you connected, and shows under General.",
+    "For work that isn't code: research, errands, email, documents, anything on the web. The thread's agent gets its own computer, with a browser and the accounts you connected, and the thread shows under General.",
 };
 
 function StartPicker(props: { readonly initialMode: Mode; readonly onDone: () => void }) {
@@ -195,8 +195,8 @@ function StartPicker(props: { readonly initialMode: Mode; readonly onDone: () =>
           <DialogPanel className="flex flex-col items-start gap-3">
             <p className="text-muted-foreground text-sm">
               {general ? "To work on code, connect" : "Connect"} GitHub (or GitLab, Bitbucket or
-              Azure DevOps in Settings → Source Control) so threads can clone your repositories and
-              open pull requests.
+              Azure DevOps in Settings → Git hosts) so threads can clone your repositories and open
+              pull requests.
             </p>
             <AldoAccountButton
               kind="github"
@@ -225,7 +225,7 @@ function StartPicker(props: { readonly initialMode: Mode; readonly onDone: () =>
               </ModeButton>
               {general ? (
                 <ModeButton active={mode === "general"} onClick={() => setMode("general")}>
-                  <CompassIcon className="size-3.5" /> No repository
+                  <CompassIcon className="size-3.5" /> General
                 </ModeButton>
               ) : null}
             </div>
@@ -403,7 +403,7 @@ function NewProjectForm(props: {
         <Textarea
           placeholder={
             inAldo
-              ? "What is it for, and how should the work be done? It goes in the project's AGENTS.md, which every thread in it reads."
+              ? "What is it for, and how should the work be done? It goes in the project's shared notes, which every thread in it reads."
               : "What is it? It goes on the repository and in its README."
           }
           className="min-h-16"
@@ -415,7 +415,7 @@ function NewProjectForm(props: {
       {inAldo ? (
         props.hosts.length === 1 ? (
           <p className="text-muted-foreground text-xs">
-            For code, connect GitHub (or another git host in Settings → Source Control).
+            For code, connect GitHub (or another git host in Settings → Git hosts).
           </p>
         ) : null
       ) : (
