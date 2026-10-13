@@ -308,7 +308,10 @@ export function AldoSkillsPanel() {
             )}
           </ul>
           {skills.length === 0 && !adding ? (
-            <p className="text-muted-foreground text-sm">No skills yet.</p>
+            <p className="text-muted-foreground text-sm">
+              No skills yet. When you show an agent how you like something done, it can save a skill
+              here, and every agent uses it.
+            </p>
           ) : null}
         </div>
       ) : null}

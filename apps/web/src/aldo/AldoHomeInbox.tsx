@@ -3,7 +3,7 @@
 // Aldo as the user (cloud.ts answerAldoThread, approveAldoPlan), which wakes
 // the thread's machine if it sleeps, so a button can take a little while.
 
-import { Link } from "@tanstack/react-router";
+import { Link, useRouter } from "@tanstack/react-router";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { ArrowUpRightIcon, MessageCircleQuestionIcon } from "lucide-react";
 import { useState, type ReactNode } from "react";
@@ -27,16 +27,19 @@ import {
 } from "./cloud";
 import { elapsed, modelName, NEEDS_YOU_LABEL, needsYouKind, repoName } from "./home.logic";
 import { useAldoHomeFeed } from "./homeFeed";
+import { aldoCanMorph, aldoMorphSource, morphIntoThread } from "./morph";
 
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
 /** Aldo refused because the thread is waiting on something else now: the board should show it. */
 const movedOn = (error: unknown) => error instanceof AldoApiError && error.status === 409;
 
+/** A thread's title or "Open" button: the row it's on grows into the thread (morph.ts). */
 export function ThreadLink(props: {
   readonly target: AldoHomeTarget;
   readonly children?: ReactNode;
   readonly className?: string;
 }) {
+  const router = useRouter();
   return (
     <Link
       to="/$environmentId/$threadId"
@@ -45,6 +48,18 @@ export function ThreadLink(props: {
         threadId: props.target.threadId as ThreadId,
       }}
       className={props.className}
+      viewTransition={aldoCanMorph()}
+      onClick={(event) => {
+        // Only a plain click opens it here; the others open a new tab or window.
+        const plain =
+          event.button === 0 &&
+          !event.metaKey &&
+          !event.ctrlKey &&
+          !event.shiftKey &&
+          !event.altKey;
+        if (plain && !event.defaultPrevented)
+          morphIntoThread(router, aldoMorphSource(event.currentTarget) ?? event.currentTarget);
+      }}
     >
       {props.children}
     </Link>

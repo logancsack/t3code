@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { SettingsRow, SettingsSection } from "../components/settings/settingsLayout";
 import { Switch } from "../components/ui/switch";
+import { playAldoChime, setAldoSound, useAldoSound } from "./chime";
 import {
   aldoNotificationsStatus,
   disableAldoNotifications,
@@ -13,8 +14,12 @@ import {
 const DESCRIPTION =
   "Get a notification on this device when a thread finishes or needs you, even with Aldo closed.";
 
-/** Settings → General: notifications on this device (notifications.ts). Hidden where they can't work. */
+/**
+ * Settings → General: notifications on this device (notifications.ts), shown
+ * where they can work, and the optional sound while Aldo is open (chime.ts).
+ */
 export function AldoNotificationSettings() {
+  const sound = useAldoSound();
   const [status, setStatus] = useState<AldoNotificationsStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -34,7 +39,31 @@ export function AldoNotificationSettings() {
     };
   }, [refresh]);
 
-  if (!status || status.availability === "unsupported") return null;
+  const soundRow = (
+    <SettingsRow
+      title="Play a sound when a thread finishes or needs you"
+      description="A soft chime while Aldo is open on this device, except for the thread you're looking at."
+      control={
+        <Switch
+          checked={sound}
+          onCheckedChange={(checked) => {
+            setAldoSound(checked);
+            // Turning it on plays it once, so the user knows the sound.
+            if (checked) playAldoChime();
+          }}
+          aria-label="Play a sound when a thread finishes or needs you"
+        />
+      }
+    />
+  );
+
+  if (!status || status.availability === "unsupported") {
+    return (
+      <SettingsSection title="Notifications" icon={<BellIcon className="size-4" />}>
+        {soundRow}
+      </SettingsSection>
+    );
+  }
 
   const toggle = async (checked: boolean) => {
     setBusy(true);
@@ -75,6 +104,7 @@ export function AldoNotificationSettings() {
           ) : null
         }
       />
+      {soundRow}
     </SettingsSection>
   );
 }

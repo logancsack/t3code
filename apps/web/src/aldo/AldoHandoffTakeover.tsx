@@ -73,6 +73,7 @@ function Takeover({ id }: { readonly id: string }) {
       aria-modal="true"
       aria-label="Your agent's browser"
       className="fixed inset-0 z-50 flex flex-col bg-background pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]"
+      data-aldo-takeover=""
     >
       <header className="flex shrink-0 items-center gap-2 border-b border-border px-2 py-1.5">
         <Button

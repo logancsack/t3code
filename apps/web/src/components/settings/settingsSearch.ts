@@ -164,6 +164,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["long lines code blocks tables diffs file previews"],
   },
   {
+    id: "aldo-simple-mode",
+    title: "Simple mode",
+    to: "/settings/general",
+    searchTerms: ["rail sidebar hide threads just aldo needs you library layout full view"],
+    aldoCloudOnly: true,
+  },
+  {
     id: "project-grouping",
     title: "Project grouping",
     to: "/settings/general",

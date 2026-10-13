@@ -4,6 +4,18 @@ Aldo's home screen is where you see all of your agents' work at once and act on 
 
 It opens on your conversation with Aldo. **Board**, at the top, switches to the board below (on a phone, **Threads**: see below); the home screen remembers which you used last on each device.
 
+## Simple mode
+
+If you only talk to Aldo and never open a thread yourself, simple mode trades the sidebar for a narrow rail with three places:
+
+- **Aldo**: your conversation with Aldo. Type to it, or tap the orb to talk.
+- **Needs you**: everything waiting on you, with how many on the rail: approvals, questions, plans, what only you can do in an agent's browser, and pull requests ready to merge. Answer each right there, or **Go through them with Aldo** on a call.
+- **Library**: everything your agents shared by link, newest first. See [the Library](./aldo-library.md).
+
+Tapping a thread (**Open** on something that needs you, say) opens it with the rail still beside it. At the foot of the rail, **Full view** brings the sidebar back, and your picture opens your account. On a phone, the three places are tabs at the top of the home screen, and the button at the top left opens them, with **Full view** and your account.
+
+Turn simple mode on or off in **Settings → General → Layout**, or with the **Simple mode** switch in your account. It's off unless you turn it on, and it applies to the device you set it on.
+
 ## Your brief
 
 The first time you open Aldo each day (from 4 in the morning where you are), Aldo starts the day's conversation with a brief: a few sentences on where everything stands, then **Top of mind**, the few things to decide first, and **Looking ahead**, what's left on your calendar today when you've connected one.

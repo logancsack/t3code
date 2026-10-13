@@ -40,6 +40,7 @@ import { aldoBriefAudioUrl, type AldoBrief, type AldoBriefItem } from "./cloud";
 import { decideAldo, type AldoChoice } from "./decide";
 import { aldoDecisions, decisionAsk, decisionTitle, type AldoDecision } from "./decisions.logic";
 import { setAldoHomeView, useAldoHomeFeed } from "./homeFeed";
+import { setAldoSimplePlace, useAldoSimpleMode } from "./simpleMode";
 import { startAldoWalkthrough } from "./walkthrough";
 
 /** A decision's kind, at a glance: what it is and how much it waits on the user. */
@@ -235,6 +236,9 @@ function TopOfMind(props: {
   readonly decisions: ReadonlyArray<AldoDecision> | null;
 }) {
   const mobile = useIsMobile();
+  const simple = useAldoSimpleMode();
+  // The rest are on the phone's Threads tab, or simple mode's Needs you.
+  const listed = simple || mobile;
   const { decisions } = props;
   const shown = new Set(props.items.map((i) => i.key));
   const more = decisions ? decisions.filter((d) => !shown.has(d.key)).length : 0;
@@ -262,11 +266,13 @@ function TopOfMind(props: {
           <button
             type="button"
             className="inline-flex items-center gap-1 hover:text-foreground"
-            onClick={() => (mobile ? setAldoHomeView("agents") : undefined)}
-            disabled={!mobile}
+            onClick={() =>
+              simple ? setAldoSimplePlace("needs") : mobile ? setAldoHomeView("agents") : undefined
+            }
+            disabled={!listed}
           >
             {more === 1 ? "1 more waits on you" : `${more} more wait on you`}
-            {mobile ? <ChevronRightIcon className="size-3.5" /> : null}
+            {listed ? <ChevronRightIcon className="size-3.5" /> : null}
           </button>
         ) : (
           <>
