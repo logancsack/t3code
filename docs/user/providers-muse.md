@@ -1,7 +1,10 @@
 # Muse Code
 
 Muse Code is a Beta provider in T3 Code. It uses Meta's `muse exec` headless interface and
-defaults to the Muse Spark 1.3 model; Muse Spark 1.2 is still offered.
+defaults to the Muse Spark 1.3 model. The model picker lists the models Meta's catalog offers your
+account (Muse Wonder, Muse Spark, and their Contributor versions, which use less of your plan and
+which Meta may train on), read from `muse serve` when T3 Code checks the provider; if the catalog
+can't be read, it lists Muse Wonder 1.0, Muse Spark 1.3 and Muse Spark 1.2.
 
 ## Install and connect
 
@@ -19,7 +22,7 @@ Muse sessions keep a stable Muse session ID across turns, so normal conversation
 works after T3 Code reconnects. The integration also supports:
 
 - streamed responses and the canonical T3 work log for Muse tool activity
-- Muse Spark model selection and reasoning-effort controls (Minimal to Extra high, Max on Muse Spark 1.3, and Ultra on plans that include it)
+- Model selection and reasoning-effort controls (Minimal to Extra high, Max on the models Meta serves it for, and Ultra on plans that include it)
 - image and file attachments
 - Plan mode, with write and shell tools disabled
 - turn interruption and queued follow-up messages

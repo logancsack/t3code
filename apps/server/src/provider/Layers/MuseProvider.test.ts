@@ -11,12 +11,62 @@ import {
   checkMuseProviderStatus,
   hasStoredMuseCredential,
   parseMuseCliVersion,
+  parseMuseModelListOutput,
   parseMuseSkillsListOutput,
   resolveMuseReasoningEffort,
 } from "./MuseProvider.ts";
 
 const decodeMuseSettings = Schema.decodeSync(MuseSettings);
 const encodeUnknownJson = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
+
+const EFFORTS = ["minimal", "low", "medium", "high", "xhigh", "max"];
+
+/** Muse 1.4.7's `model/list` answer, as `muse serve` writes it after its `initialize` answer. */
+const modelListOutput = (
+  models: ReadonlyArray<{
+    readonly modelId: string;
+    readonly displayLabel?: string;
+    readonly isDefault?: boolean;
+    readonly variants?: unknown;
+  }>,
+) =>
+  [
+    encodeUnknownJson({ id: 1, jsonrpc: "2.0", result: { experimentalApi: false } }),
+    encodeUnknownJson({
+      id: 2,
+      jsonrpc: "2.0",
+      result: {
+        models: models.map((model) => ({
+          displayLabel: model.modelId,
+          isActive: false,
+          isDefault: false,
+          variants: EFFORTS,
+          ...model,
+        })),
+        profileId: "tbh",
+        providerId: "meta",
+        source: "providerCatalog",
+      },
+    }),
+    "",
+  ].join("\n");
+
+const META_CATALOG = [
+  { modelId: "muse-wonder-1.0" },
+  { modelId: "muse-spark-1.3" },
+  { modelId: "muse-spark-1.3-contributor", isDefault: true },
+  { modelId: "muse-spark-1.2", variants: EFFORTS.filter((effort) => effort !== "max") },
+  { modelId: "muse-spark-1.2-contributor", variants: { unknown: true } },
+];
+
+const effortsOf = (model: { readonly capabilities: unknown } | undefined) => {
+  const descriptor = (
+    model?.capabilities as { optionDescriptors?: ReadonlyArray<{ options?: unknown }> } | null
+  )?.optionDescriptors?.[0];
+  return Array.isArray(descriptor?.options)
+    ? descriptor.options.map((option: { id: string }) => option.id)
+    : [];
+};
 
 describe("buildInitialMuseProviderSnapshot", () => {
   it.effect("publishes the built-in Muse models and reasoning controls", () =>
@@ -26,18 +76,23 @@ describe("buildInitialMuseProviderSnapshot", () => {
       expect(snapshot.badgeLabel).toBe("Beta");
       expect(snapshot.showInteractionModeToggle).toBe(true);
       expect(snapshot.status).toBe("warning");
-      expect(snapshot.models).toHaveLength(2);
+      expect(snapshot.models).toHaveLength(3);
       expect(snapshot.models[0]).toMatchObject({
+        slug: "muse-wonder-1.0",
+        name: "Muse Wonder 1.0",
+        isDefault: false,
+      });
+      expect(snapshot.models[1]).toMatchObject({
         slug: "muse-spark-1.3",
         name: "Muse Spark 1.3",
         isDefault: true,
       });
-      expect(snapshot.models[1]).toMatchObject({
+      expect(snapshot.models[2]).toMatchObject({
         slug: "muse-spark-1.2",
         name: "Muse Spark 1.2",
         isDefault: false,
       });
-      expect(snapshot.models[0]?.capabilities?.optionDescriptors).toEqual([
+      expect(snapshot.models[1]?.capabilities?.optionDescriptors).toEqual([
         {
           id: "reasoningEffort",
           label: "Reasoning",
@@ -54,7 +109,7 @@ describe("buildInitialMuseProviderSnapshot", () => {
           currentValue: "high",
         },
       ]);
-      const spark12Efforts = snapshot.models[1]?.capabilities?.optionDescriptors?.[0];
+      const spark12Efforts = snapshot.models[2]?.capabilities?.optionDescriptors?.[0];
       expect(
         spark12Efforts && "options" in spark12Efforts
           ? spark12Efforts.options.map((option) => option.id)
@@ -79,6 +134,47 @@ describe("buildInitialMuseProviderSnapshot", () => {
 describe("parseMuseCliVersion", () => {
   it("prefers Meta's release build identifier", () => {
     expect(parseMuseCliVersion("Muse Code 0.1.0 (0.1.0-R708.1)")).toBe("0.1.0-R708.1");
+  });
+});
+
+describe("parseMuseModelListOutput", () => {
+  it("lists Meta's models newest first, with the efforts each serves", () => {
+    const models = parseMuseModelListOutput(
+      modelListOutput([...META_CATALOG, { modelId: "muse-image-1.0", displayLabel: "Muse Image" }]),
+    );
+    expect(models.map(({ slug, name, isDefault }) => ({ slug, name, isDefault }))).toEqual([
+      { slug: "muse-wonder-1.0", name: "Muse Wonder 1.0", isDefault: false },
+      { slug: "muse-spark-1.3", name: "Muse Spark 1.3", isDefault: true },
+      { slug: "muse-spark-1.3-contributor", name: "Muse Spark 1.3 Contributor", isDefault: false },
+      { slug: "muse-spark-1.2", name: "Muse Spark 1.2", isDefault: false },
+      { slug: "muse-spark-1.2-contributor", name: "Muse Spark 1.2 Contributor", isDefault: false },
+      { slug: "muse-image-1.0", name: "Muse Image", isDefault: false },
+    ]);
+    expect(effortsOf(models[0])).toEqual([...EFFORTS, "ultra"]);
+    expect(effortsOf(models[3])).toEqual(["minimal", "low", "medium", "high", "xhigh", "ultra"]);
+    // Efforts Meta doesn't list: as the model's name says.
+    expect(effortsOf(models[4])).toEqual(["minimal", "low", "medium", "high", "xhigh", "ultra"]);
+  });
+
+  it("takes the catalog's default when Muse Spark 1.3 isn't listed", () => {
+    const models = parseMuseModelListOutput(
+      modelListOutput([
+        { modelId: "muse-spark-1.4" },
+        { modelId: "muse-spark-1.4-contributor", isDefault: true },
+      ]),
+    );
+    expect(models.map((model) => model.isDefault)).toEqual([false, true]);
+  });
+
+  it("finds no models in an answer without them", () => {
+    expect(parseMuseModelListOutput("")).toEqual([]);
+    expect(parseMuseModelListOutput("Muse Code 1.4.7 (1.4.7-R6101.1)\n")).toEqual([]);
+    expect(parseMuseModelListOutput(modelListOutput([]))).toEqual([]);
+    expect(
+      parseMuseModelListOutput(
+        encodeUnknownJson({ id: 2, jsonrpc: "2.0", error: { code: -32601, message: "no" } }),
+      ),
+    ).toEqual([]);
   });
 });
 
@@ -188,10 +284,54 @@ it.layer(NodeServices.layer)("checkMuseProviderStatus", (it) => {
           label: "Meta API key",
         });
         expect(snapshot.models.map((model) => model.slug)).toEqual([
+          "muse-wonder-1.0",
           "muse-spark-1.3",
           "muse-spark-1.2",
           "muse-spark-preview",
         ]);
+      }),
+    ),
+  );
+
+  it.effect("lists the models Muse's own host reports, then custom ones", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const directory = yield* fs.makeTempDirectoryScoped({ prefix: "t3code-muse-models-" });
+        const binaryPath = path.join(directory, "muse");
+        yield* fs.writeFileString(
+          binaryPath,
+          [
+            "#!/bin/sh",
+            '[ "$MUSE_NO_AUTO_UPDATE" = "1" ] || exit 9',
+            'if [ "$1" = "--version" ]; then',
+            '  printf "%s\\n" "Muse Code 1.4.7 (1.4.7-R6101.1)"',
+            "  exit 0",
+            "fi",
+            '[ "$1" = "serve" ] && [ "$2" = "--no-session-log" ] || exit 5',
+            'input="$(cat)"',
+            'case "$input" in *\'"method":"initialize"\'*\'"method":"model/list"\'*) ;; *) exit 4 ;; esac',
+            `printf '%s' '${modelListOutput(META_CATALOG)}'`,
+            "",
+          ].join("\n"),
+        );
+        yield* fs.chmod(binaryPath, 0o755);
+
+        const snapshot = yield* checkMuseProviderStatus(
+          decodeMuseSettings({ binaryPath, customModels: ["muse-spark-preview"] }),
+          { ...process.env, META_API_KEY: "test-key-not-logged" },
+        );
+        expect(snapshot.status).toBe("ready");
+        expect(snapshot.models.map((model) => model.slug)).toEqual([
+          "muse-wonder-1.0",
+          "muse-spark-1.3",
+          "muse-spark-1.3-contributor",
+          "muse-spark-1.2",
+          "muse-spark-1.2-contributor",
+          "muse-spark-preview",
+        ]);
+        expect(snapshot.models.find((model) => model.isDefault)?.slug).toBe("muse-spark-1.3");
       }),
     ),
   );
@@ -470,5 +610,7 @@ describe("resolveMuseReasoningEffort", () => {
     expect(resolveMuseReasoningEffort("max", "muse-spark-1.2")).toBe("xhigh");
     expect(resolveMuseReasoningEffort("max", "my-custom-model")).toBe("xhigh");
     expect(resolveMuseReasoningEffort("max", "muse-wonder-1.0")).toBe("max");
+    expect(resolveMuseReasoningEffort("max", "muse-spark-1.3-contributor")).toBe("max");
+    expect(resolveMuseReasoningEffort("max", "muse-spark-1.2-contributor")).toBe("xhigh");
   });
 });

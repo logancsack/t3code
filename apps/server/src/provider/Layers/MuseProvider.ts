@@ -14,6 +14,7 @@ import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 import {
@@ -35,12 +36,14 @@ const MUSE_PRESENTATION = {
 const VERSION_PROBE_TIMEOUT_MS = 4_000;
 const SKILLS_PROBE_TIMEOUT_MS = 4_000;
 const SKILLS_PROBE_MAX_OUTPUT_BYTES = 2 * 1024 * 1024;
+const MODELS_PROBE_TIMEOUT_MS = 6_000;
+const MODELS_PROBE_MAX_OUTPUT_BYTES = 1024 * 1024;
 const decodeUnknownJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown));
 export const DEFAULT_MUSE_MODEL = "muse-spark-1.3";
 
-// Meta's efforts (Muse Code 1.4.6): it refuses "none"; "ultra" depends on the plan
-// (and runs at a model's highest level); "max" is served only by Muse Spark 1.3
-// and Muse Wonder.
+// Meta's efforts (Muse Code 1.4.7): it refuses "none"; "ultra" depends on the plan
+// (and runs at a model's highest level); "max" is served by every model but the
+// Muse Spark 1.2 ones. Meta's catalog says which efforts each model has.
 export const MUSE_REASONING_EFFORTS = [
   "minimal",
   "low",
@@ -53,25 +56,28 @@ export const MUSE_REASONING_EFFORTS = [
 
 export type MuseReasoningEffort = (typeof MUSE_REASONING_EFFORTS)[number];
 
-/** Whether Meta serves the "max" effort for a model. */
+/** Whether Meta serves the "max" effort for a model (one of Meta's but Muse Spark 1.2's). */
 export function museModelOffersMax(model: string): boolean {
-  return /^muse-(spark-1\.3|wonder)\b/.test(model);
+  return model.startsWith("muse-") && !/^muse-spark-1\.2\b/.test(model);
 }
 
 function museModelCapabilities(offersMax: boolean): ModelCapabilities {
+  return museEffortCapabilities(
+    MUSE_REASONING_EFFORTS.filter((value) => offersMax || value !== "max"),
+  );
+}
+
+function museEffortCapabilities(efforts: ReadonlyArray<MuseReasoningEffort>): ModelCapabilities {
   return createModelCapabilities({
     optionDescriptors: [
       buildSelectOptionDescriptor({
         id: "reasoningEffort",
         label: "Reasoning",
-        options: MUSE_REASONING_EFFORTS.filter((value) => offersMax || value !== "max").map(
-          (value) => ({
-            value,
-            label:
-              value === "xhigh" ? "Extra high" : value.charAt(0).toUpperCase() + value.slice(1),
-            ...(value === "high" ? { isDefault: true as const } : {}),
-          }),
-        ),
+        options: efforts.map((value) => ({
+          value,
+          label: value === "xhigh" ? "Extra high" : value.charAt(0).toUpperCase() + value.slice(1),
+          ...(value === "high" ? { isDefault: true as const } : {}),
+        })),
       }),
     ],
   });
@@ -80,15 +86,23 @@ function museModelCapabilities(offersMax: boolean): ModelCapabilities {
 /** Muse Spark 1.2 and custom models: every effort but max. */
 export const MUSE_MODEL_CAPABILITIES: ModelCapabilities = museModelCapabilities(false);
 
-const MUSE_SPARK_1_3_CAPABILITIES: ModelCapabilities = museModelCapabilities(true);
+const MUSE_MAX_CAPABILITIES: ModelCapabilities = museModelCapabilities(true);
 
+/** Meta's models when its catalog can't be read (Muse isn't signed in, say). */
 const MUSE_BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
+  {
+    slug: "muse-wonder-1.0",
+    name: "Muse Wonder 1.0",
+    isDefault: false,
+    isCustom: false,
+    capabilities: MUSE_MAX_CAPABILITIES,
+  },
   {
     slug: DEFAULT_MUSE_MODEL,
     name: "Muse Spark 1.3",
     isDefault: true,
     isCustom: false,
-    capabilities: MUSE_SPARK_1_3_CAPABILITIES,
+    capabilities: MUSE_MAX_CAPABILITIES,
   },
   {
     slug: "muse-spark-1.2",
@@ -98,6 +112,76 @@ const MUSE_BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
     capabilities: MUSE_MODEL_CAPABILITIES,
   },
 ];
+
+/** "muse-spark-1.3-contributor" as "Muse Spark 1.3 Contributor". */
+function museModelName(slug: string): string {
+  return slug
+    .split("-")
+    .filter((word) => word.length > 0)
+    .map((word) => (/^\d/.test(word) ? word : word.charAt(0).toUpperCase() + word.slice(1)))
+    .join(" ");
+}
+
+/**
+ * The requests `muse serve` answers to list Meta's models: it reads one JSON
+ * message a line and exits when its input ends, after answering them.
+ */
+const MUSE_MODEL_LIST_REQUESTS = `${[
+  {
+    jsonrpc: "2.0",
+    id: 1,
+    method: "initialize",
+    params: { clientInfo: { name: "t3code", version: "1" } },
+  },
+  { jsonrpc: "2.0", method: "initialized" },
+  { jsonrpc: "2.0", id: 2, method: "model/list", params: {} },
+]
+  .map((message) => JSON.stringify(message))
+  .join("\n")}\n`;
+
+/**
+ * Meta's models from Muse's `model/list` answer (its visible models, newest
+ * first), with the efforts each one serves. Muse Spark 1.3 stays the default
+ * while Meta lists it (its catalog's default is a Contributor model, on which
+ * Meta may train); otherwise the catalog's default is. Empty if the answer
+ * isn't there or lists none.
+ */
+export function parseMuseModelListOutput(output: string): ReadonlyArray<ServerProviderModel> {
+  for (const line of output.split("\n")) {
+    const decoded = Option.getOrUndefined(decodeUnknownJson(line));
+    if (!isRecord(decoded) || decoded.id !== 2 || !isRecord(decoded.result)) continue;
+    const rows = Array.isArray(decoded.result.models) ? decoded.result.models : [];
+    const models: Array<ServerProviderModel & { readonly catalogDefault: boolean }> = [];
+    for (const row of rows) {
+      if (!isRecord(row)) continue;
+      const slug = nonEmptyString(row.modelId);
+      if (!slug || models.some((model) => model.slug === slug)) continue;
+      const label = nonEmptyString(row.displayLabel);
+      const variants = Array.isArray(row.variants) ? row.variants : undefined;
+      models.push({
+        slug,
+        name: label && label !== slug ? label : museModelName(slug),
+        isCustom: false,
+        capabilities: variants
+          ? museEffortCapabilities(
+              MUSE_REASONING_EFFORTS.filter(
+                (value) => value === "ultra" || variants.includes(value),
+              ),
+            )
+          : museModelCapabilities(museModelOffersMax(slug)),
+        catalogDefault: row.isDefault === true,
+      });
+    }
+    const defaultSlug = models.some((model) => model.slug === DEFAULT_MUSE_MODEL)
+      ? DEFAULT_MUSE_MODEL
+      : (models.find((model) => model.catalogDefault) ?? models[0])?.slug;
+    return models.map(({ catalogDefault: _catalogDefault, ...model }) => ({
+      ...model,
+      isDefault: model.slug === defaultSlug,
+    }));
+  }
+  return [];
+}
 
 export function makeMuseEnvironment(
   environment: NodeJS.ProcessEnv = process.env,
@@ -221,8 +305,13 @@ export const hasStoredMuseCredential = Effect.fn("hasStoredMuseCredential")(func
 
 function museModelsFromSettings(
   customModels: ReadonlyArray<string>,
+  catalogModels: ReadonlyArray<ServerProviderModel> = [],
 ): ReadonlyArray<ServerProviderModel> {
-  return providerModelsFromSettings(MUSE_BUILT_IN_MODELS, customModels, MUSE_MODEL_CAPABILITIES);
+  return providerModelsFromSettings(
+    catalogModels.length > 0 ? catalogModels : MUSE_BUILT_IN_MODELS,
+    customModels,
+    MUSE_MODEL_CAPABILITIES,
+  );
 }
 
 export const buildInitialMuseProviderSnapshot = Effect.fn("buildInitialMuseProviderSnapshot")(
@@ -319,6 +408,41 @@ const discoverMuseSkills = Effect.fn("discoverMuseSkills")(function* (
   return parseMuseSkillsListOutput(output.stdout);
 });
 
+/** Meta's models as Muse lists them for this sign-in, or none if it can't say. */
+const discoverMuseModels = Effect.fn("discoverMuseModels")(function* (
+  museSettings: MuseSettings,
+  environment: NodeJS.ProcessEnv,
+  cwd: string,
+): Effect.fn.Return<
+  ReadonlyArray<ServerProviderModel>,
+  never,
+  ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
+> {
+  const command = museSettings.binaryPath || "muse";
+  const probe = yield* resolveSpawnCommand(command, ["serve", "--no-session-log"], {
+    env: environment,
+  }).pipe(
+    Effect.flatMap((spawnCommand) =>
+      spawnAndCollect(
+        command,
+        ChildProcess.make(spawnCommand.command, spawnCommand.args, {
+          cwd,
+          env: environment,
+          shell: spawnCommand.shell,
+          stdin: { stream: Stream.encodeText(Stream.make(MUSE_MODEL_LIST_REQUESTS)) },
+        }),
+        { maxOutputBytes: MODELS_PROBE_MAX_OUTPUT_BYTES },
+      ),
+    ),
+    Effect.timeoutOption(MODELS_PROBE_TIMEOUT_MS),
+    Effect.result,
+  );
+  if (Result.isFailure(probe) || Option.isNone(probe.success)) return [];
+  const output = probe.success.value;
+  if (output.stdoutTruncated) return [];
+  return parseMuseModelListOutput(output.stdout);
+});
+
 export const checkMuseProviderStatus = Effect.fn("checkMuseProviderStatus")(function* (
   museSettings: MuseSettings,
   environment: NodeJS.ProcessEnv = process.env,
@@ -393,7 +517,13 @@ export const checkMuseProviderStatus = Effect.fn("checkMuseProviderStatus")(func
     });
   }
 
-  const skills = yield* discoverMuseSkills(museSettings, resolvedEnvironment, cwd);
+  const [skills, catalogModels] = yield* Effect.all(
+    [
+      discoverMuseSkills(museSettings, resolvedEnvironment, cwd),
+      discoverMuseModels(museSettings, resolvedEnvironment, cwd),
+    ],
+    { concurrency: "unbounded" },
+  );
   const hasApiKey = Boolean(resolvedEnvironment.META_API_KEY?.trim());
   const storedCredential = hasApiKey
     ? ("missing" as const)
@@ -405,7 +535,7 @@ export const checkMuseProviderStatus = Effect.fn("checkMuseProviderStatus")(func
     presentation: MUSE_PRESENTATION,
     enabled: true,
     checkedAt,
-    models,
+    models: museModelsFromSettings(museSettings.customModels, catalogModels),
     skills,
     probe: {
       installed: true,
