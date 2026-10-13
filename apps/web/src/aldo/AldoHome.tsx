@@ -278,14 +278,15 @@ export function AldoHome() {
 
   if (assistant === null) return <SidebarInset className="h-dvh bg-background" />;
 
-  // Nothing can run yet: the card asks for a subscription. Once agents can run,
-  // one line offers what's missing, for the first few threads.
+  // Nothing can run yet: the card asks for a subscription (or, on an older Aldo
+  // without General threads, a repository too). Once agents can run, one line
+  // offers what's missing, for the first few threads.
   const setupLine =
-    accounts && canRun && (!agentReady || !sourceReady) && (setupDone ? firstRun : true) ? (
+    accounts && setupDone && (!agentReady || !sourceReady) && firstRun ? (
       <AldoSetupLine accounts={accounts} sourceReady={sourceReady} onConnected={refreshAccounts} />
     ) : null;
   const setupCard =
-    accounts && !canRun && !setupDone ? (
+    accounts && !setupDone ? (
       <AldoSetupCard
         accounts={accounts}
         sourceHost={sourceHost}

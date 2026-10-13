@@ -145,6 +145,14 @@ describe("aldoUsageSentence", () => {
     expect(aldoUsageSentence({ ...metered, credits: { ...credits, projected: 400 } })).toBe(
       "You've used 40.3 of 250 credits this month; at this pace you'll run out before the month ends.",
     );
+    expect(
+      aldoUsageSentence({
+        ...metered,
+        credits: { ...credits, projected: 400, economyIncluded: 125, economyRemaining: 100 },
+      }),
+    ).toBe(
+      "You've used 40.3 of 250 credits this month; at this pace you'll use them up before the month ends, and agents then keep working one at a time on the economy lane.",
+    );
     expect(aldoUsageSentence({ ...metered, credits: { ...credits, projected: null } })).toBe(
       "You've used 40.3 of 250 credits this month.",
     );

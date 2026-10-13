@@ -183,5 +183,8 @@ export function aldoUsageSentence(usage: AldoWorkspaceUsage): string | null {
     return `${used}; at this pace you'll have about ${roughly(credits.included - credits.projected)} left.`;
   if (credits.projected <= credits.authorized)
     return `${used}; at this pace you'll go about ${roughly(credits.projected - credits.included)} over, within your extra usage limit.`;
+  const economy = credits.economyRemaining;
+  if (economy !== undefined && economy > 0)
+    return `${used}; at this pace you'll use them up before the month ends, and agents then keep working one at a time on the economy lane.`;
   return `${used}; at this pace you'll run out before the month ends.`;
 }

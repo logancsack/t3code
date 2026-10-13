@@ -1457,6 +1457,15 @@ export async function aldoBillingPortalUrl(): Promise<string> {
   return url;
 }
 
+/** Moves a thread to another computer size (an older Aldo, which sizes them by hand). A running one restarts, and its agent carries on. */
+export async function setAldoMachine(environmentId: string, size: AldoMachineSize): Promise<void> {
+  await api(`/api/environments/${threadIdForEnvironment(environmentId)}/machine`, {
+    method: "POST",
+    body: JSON.stringify({ size }),
+  });
+  requestAldoDirectoryRefresh();
+}
+
 /** Answers a thread's agent asking for one of the user's computers: agreeing starts it. */
 export async function answerAldoComputer(
   environmentId: string,

@@ -2,7 +2,7 @@
 
 Aldo's home screen is where you see all of your agents' work at once and act on it, with Aldo to hand. Nothing on it wakes a sleeping agent: everything comes from what Aldo already knows.
 
-It opens on your conversation with Aldo. **Board**, at the top, switches to the board below (on a phone, **Agents**: see below); the home screen remembers which you used last on each device.
+It opens on your conversation with Aldo. **Board**, at the top, switches to the board below (on a phone, **Threads**: see below); the home screen remembers which you used last on each device.
 
 ## Your brief
 
@@ -23,7 +23,7 @@ On **Go through them**, Aldo puts each decision to you out loud while your scree
 On a phone the home screen has two tabs:
 
 - **Aldo**: your conversation, with the brief at the start of the day, and a big button beside the composer to talk. A call fills the screen: Aldo's words as it says them, what it did on this call, and **Mute**, **Type** and **End**. The arrow at the top folds the call away so you can use the app while it goes on; the big button brings it back. The speaker button turns Aldo's voice off, leaving its words on screen.
-- **Agents**: every thread by what it needs from you (waiting on you, working, landing, unread), with how many wait on you on the tab. Sending an email or merging takes a tap on the row. Tap a thread to see what its agent last said and answer it, reply to the agent, talk to Aldo about it, or open it.
+- **Threads**: every thread by what it needs from you (waiting on you, working, landing, unread), with how many wait on you on the tab. Sending an email or merging takes a tap on the row. Tap a thread to see what its agent last said and answer it, reply to the agent, talk to Aldo about it, or open it.
 
 ## The board
 
@@ -40,7 +40,7 @@ The board answers four questions, in order, starting with what waits on a tap fr
 
 Answering a thread whose agent has gone to sleep wakes it, so a button can take a moment. **Open** goes to the thread; **Ask Aldo** starts a message to Aldo about it.
 
-**Working now.** Each thread that's working, with its model, how long it has been at it, and what it last said. A thread that hasn't moved for an hour is marked **stuck**. Sail machines have 8 vCPUs and memory that grows automatically with your work, up to 32 GB. Threads using manual sizing offer **Switch to 2× machine** here when their machine is running short of memory or CPU.
+**Working now.** Each thread that's working, with its model, how long it has been at it, and what it last said. A thread that hasn't moved for an hour is marked **stuck**. Each thread's computer has 8 vCPUs and memory that grows automatically with your work, up to 32 GB; when it runs short, the thread says so here while Aldo gives it more.
 
 **Pull requests.** Every pull request Aldo follows, in three lanes: **open** (draft, checks running, failing, or green), **shipping** (merged, deploying), and **shipped** (deployed in the last two days). Each shows its stage, how many fixes the agent has made, whether reviews went to you, and, when your policy has Aldo merge green pull requests, when it will. **Merge** merges a green one yourself. See [Pull requests in Aldo](./aldo-pull-requests.md).
 
@@ -54,11 +54,11 @@ Answering a thread whose agent has gone to sleep wakes it, so a button can take 
 
 Below those, a line shows how many agents are running against your plan, your credits, and what agents have spent, and **How Aldo works for you** shows the policy your agents follow (merging, spending, automated reviews).
 
-When something needs fixing, a strip at the top says so: an agent that's signed out on your cloud agents, credits used up, an environment that failed to build, or notifications off on this device. Each has a way to fix it.
+When something needs fixing, a strip at the top says so: an agent signed out of an account you connected, credits used up, an environment that failed to build, or notifications off on this device. Each has a way to fix it.
 
 ## Starting work
 
-At the top, **New project** creates a repository and starts a thread in it, **Open a repository** starts one in repositories you have, and **New thread** starts one in no repository, for work that isn't code (see [Threads without a repository](./aldo-general-threads.md)). Or tell Aldo what you want done.
+At the top, **New** starts a thread in no repository, for work that isn't code (see [Threads without a repository](./aldo-general-threads.md)). The arrow beside it has **Project**, which creates a project and starts a thread in it, and, once a git host is connected, **Thread in a repository**, which starts one in repositories you have. Or tell Aldo what you want done.
 
 ## Narrowing and moving
 

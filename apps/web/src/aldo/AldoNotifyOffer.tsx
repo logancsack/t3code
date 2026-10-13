@@ -88,7 +88,8 @@ export function AldoNotifyOffer() {
       <button
         type="button"
         className="font-medium text-foreground hover:underline"
-        onClick={() => void notifications.enable().then(close)}
+        // Only once they're on: a failed save says why and keeps the offer to try again.
+        onClick={() => void notifications.enable().then((on) => on && close())}
       >
         Turn on
       </button>

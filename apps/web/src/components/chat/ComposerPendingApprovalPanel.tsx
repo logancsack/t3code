@@ -45,13 +45,14 @@ export const ComposerPendingApprovalPanel = memo(function ComposerPendingApprova
       role="group"
     >
       {sentence ? <span className="shrink-0 text-xs text-foreground">{sentence}</span> : null}
-      {sentence && !detailsOpen && approval.detail ? (
+      {sentence && approval.detail ? (
         <button
           type="button"
+          aria-expanded={detailsOpen}
           className="shrink-0 text-[11px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-          onClick={() => setDetailsFor(approval.requestId)}
+          onClick={() => setDetailsFor(detailsOpen ? null : approval.requestId)}
         >
-          Details
+          {detailsOpen ? "Hide" : "Details"}
         </button>
       ) : null}
       {approval.appName && !sentence ? (

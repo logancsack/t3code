@@ -4,7 +4,7 @@ Not everything is code. A thread can work without a repository: research somethi
 
 ## Starting one
 
-- On the home screen, **New thread**, or in the start dialog, **No repository**.
+- On the home screen, **New**, or in the start dialog, **No repository**.
 - Or tell Aldo what you want done. When it isn't about code in one of your repositories, Aldo starts a General thread.
 - Or **New thread** in the General project in the sidebar.
 

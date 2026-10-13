@@ -29,7 +29,7 @@ import {
 import { Button } from "../components/ui/button";
 import { toastManager } from "../components/ui/toast";
 import { AldoGpuComputerControl, useAldoComputerAsk } from "./AldoComputer";
-import { AldoMachineMenuSection } from "./AldoMachine";
+import { AldoMachineMenuSection, useAldoMachineOffer } from "./AldoMachine";
 import { useAldoBrowserRequests } from "./browserStore";
 import { aldoCostLine, type AldoCost } from "./costs.logic";
 import {
@@ -65,6 +65,7 @@ export function AldoPreviewsControl(props: {
   threadId: ThreadId;
   onOpenBrowser: () => void;
 }) {
+  useAldoMachineOffer(props.environmentId);
   useAldoComputerAsk(props.environmentId, props.threadId);
   const [previews, setPreviews] = useState<AldoPreviews | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -242,7 +243,7 @@ export function AldoPreviewsControl(props: {
             </>
           ) : null}
           <MenuSeparator />
-          <AldoMachineMenuSection />
+          <AldoMachineMenuSection environmentId={props.environmentId} />
           {aldoCostLine(cost, props.threadId) ? (
             <div className="px-2 py-1.5 text-xs text-muted-foreground">
               {aldoCostLine(cost, props.threadId)}

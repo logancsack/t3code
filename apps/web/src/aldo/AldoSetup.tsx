@@ -171,8 +171,9 @@ export function AldoSetupLine(props: {
           <SheetHeader>
             <SheetTitle>Your accounts</SheetTitle>
             <SheetDescription>
-              Agents already run on Aldo's models. Connect a plan of yours to run them on it
-              instead, and GitHub so they can work on your code.
+              {connected.length > 0
+                ? `Agents run on your ${listed(connected.map((kind) => PLAN_NAMES[kind]))} plan. Connect another, and GitHub so they can work on your code.`
+                : "Agents already run on Aldo's models. Connect a plan of yours to run them on it instead, and GitHub so they can work on your code."}
             </SheetDescription>
           </SheetHeader>
           <SheetPanel className="flex flex-col gap-5">
