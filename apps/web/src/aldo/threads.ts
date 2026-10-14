@@ -35,6 +35,7 @@ import {
   type AldoEnvironment,
   type AldoNewProject,
   type AldoPlannedProject,
+  type AldoPullRequestBranch,
 } from "./cloud";
 import { ensureAldoConnected } from "./dispatch";
 import { aldoServerConfigFor } from "./serverConfig";
@@ -118,23 +119,26 @@ function plannedShell(project: AldoPlannedProject) {
  * Opens a new thread's cloud agent (a machine) without starting it: in
  * repositories, like another thread's, in a new repository, or in none
  * (`repos: []`: a General thread, for work that isn't code). Uses an idle
- * machine of the same project when there is one; otherwise records a new
- * one and registers it with its project and models. Returns its project.
+ * machine of the same project when there is one, unless it's asked for on a
+ * branch (an idle one is on its own); otherwise records a new one and
+ * registers it with its project and models. Returns its project.
  */
 export async function startAldoSandbox(input: {
   readonly repo?: string;
   readonly fromEnvironmentId?: string;
   readonly branch?: string;
+  readonly pullRequest?: AldoPullRequestBranch;
   readonly create?: AldoNewProject;
   readonly repos?: ReadonlyArray<string>;
 }): Promise<ScopedProjectRef> {
-  const idle = input.create
-    ? null
-    : idleMachine(
-        input.fromEnvironmentId
-          ? aldoProjectSandboxes(input.fromEnvironmentId)
-          : aldoSandboxesFor(input.repos ?? (input.repo ? [input.repo] : [])),
-      );
+  const idle =
+    input.create || input.branch || input.pullRequest
+      ? null
+      : idleMachine(
+          input.fromEnvironmentId
+            ? aldoProjectSandboxes(input.fromEnvironmentId)
+            : aldoSandboxesFor(input.repos ?? (input.repo ? [input.repo] : [])),
+        );
   if (idle) return idle;
 
   const threadId = newAldoThreadId();

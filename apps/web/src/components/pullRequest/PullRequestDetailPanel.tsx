@@ -53,6 +53,12 @@ import {
   type ReactNode,
 } from "react";
 
+import { isAldoCloud } from "~/aldo/cloud";
+import {
+  ALDO_PULL_REQUEST_CHECKOUT,
+  aldoOpensThreadOn,
+  openAldoPullRequestThread,
+} from "~/aldo/pullRequestThreads";
 import { type DraftId, useComposerDraftStore } from "~/composerDraftStore";
 import { useNewThreadHandler } from "~/hooks/useHandleNewThread";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
@@ -920,10 +926,11 @@ export function PullRequestDetailPanel({
     reference.projectId,
   ]);
   // Beside a thread there is nothing to pick: the hand-offs land in that thread's composer, and
-  // the thread is already on one server's copy of the branch.
+  // the thread is already on one server's copy of the branch. Nor in Aldo, where each machine is
+  // one thread's: a checkout opens a thread on a machine of its own.
   const pickableEnvironments = useMemo(
     () =>
-      context === "page"
+      context === "page" && !isAldoCloud
         ? resolvePickableEnvironments(
             { environmentId, projectId: reference.projectId },
             projects,
@@ -1194,6 +1201,17 @@ export function PullRequestDetailPanel({
         title: "Added to the composer",
         description: "The task is in the composer — read it over, then send.",
       });
+      return;
+    }
+    if (isAldoCloud) {
+      setHandoff(kind);
+      await openAldoPullRequestThread(
+        environmentId,
+        handoffSummary,
+        newThread,
+        task === null ? null : (draftId) => writeTaskToComposer(draftId, task),
+      );
+      setHandoff(null);
       return;
     }
     if (checkoutRoot === null) return;
@@ -1540,8 +1558,10 @@ export function PullRequestDetailPanel({
         ).length
       : 0;
 
+  // Aldo checks out only an open pull request, and only an Aldo that can put a thread on its branch.
+  const aldoCannotCheckOut = isAldoCloud && !aldoOpensThreadOn(handoffSummary);
   const checkoutControl =
-    context === "page" ? (
+    context === "page" && !aldoCannotCheckOut ? (
       <Menu>
         <Tooltip>
           <TooltipTrigger
@@ -1570,21 +1590,27 @@ export function PullRequestDetailPanel({
           <MenuItem onClick={() => startCheckout("worktree")}>
             <GitBranchIcon className="mt-1 size-3.5 shrink-0 self-start" />
             <span className="flex min-w-0 flex-col">
-              <span>In a separate worktree</span>
+              <span>
+                {isAldoCloud ? ALDO_PULL_REQUEST_CHECKOUT.label : "In a separate worktree"}
+              </span>
               <span className="text-xs text-muted-foreground">
-                Its own folder and thread. Nothing you have open moves.
+                {isAldoCloud
+                  ? ALDO_PULL_REQUEST_CHECKOUT.detail
+                  : "Its own folder and thread. Nothing you have open moves."}
               </span>
             </span>
           </MenuItem>
-          <MenuItem onClick={() => startCheckout("local")}>
-            <FolderGit2Icon className="mt-1 size-3.5 shrink-0 self-start" />
-            <span className="flex min-w-0 flex-col">
-              <span>In this repository</span>
-              <span className="text-xs text-muted-foreground">
-                Switches the branch you are working in, like `gh pr checkout`.
+          {isAldoCloud ? null : (
+            <MenuItem onClick={() => startCheckout("local")}>
+              <FolderGit2Icon className="mt-1 size-3.5 shrink-0 self-start" />
+              <span className="flex min-w-0 flex-col">
+                <span>In this repository</span>
+                <span className="text-xs text-muted-foreground">
+                  Switches the branch you are working in, like `gh pr checkout`.
+                </span>
               </span>
-            </span>
-          </MenuItem>
+            </MenuItem>
+          )}
           {pickableEnvironments.length > 0 ? (
             <ActOnEnvironmentPicker
               environments={pickableEnvironments}
@@ -1605,7 +1631,10 @@ export function PullRequestDetailPanel({
             <Button
               size="xs"
               variant="destructive-outline"
-              disabled={handoff !== null || (attachTarget === null && checkoutRoot === null)}
+              disabled={
+                handoff !== null ||
+                (attachTarget === null && (checkoutRoot === null || aldoCannotCheckOut))
+              }
               onClick={startResolveConflicts}
               aria-label={handoff === "conflicts" ? "Preparing..." : "Resolve conflicts"}
             >
