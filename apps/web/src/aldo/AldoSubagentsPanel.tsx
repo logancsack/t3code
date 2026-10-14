@@ -156,7 +156,7 @@ export function AldoSubagentsPanel() {
           onChange={(value) => change(agent.kind, value)}
         />
       ))}
-      <p className="px-4 pb-3 text-muted-foreground text-xs">
+      <p className="px-4 py-3 text-muted-foreground text-xs">
         A model you ask an agent to give a subagent still wins. Changes reach new conversations
         within 10 minutes.
       </p>
