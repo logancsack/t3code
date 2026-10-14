@@ -52,14 +52,7 @@ function isWorktreeSubmodules(value: string | null): value is WorktreeSubmodules
   return value !== null && (WORKTREE_SUBMODULES_OPTIONS as readonly string[]).includes(value);
 }
 
-export function ProjectDefaultsSettings({
-  category,
-  worktreeRowsOnly = false,
-}: {
-  category: ProjectSettingsCategory;
-  /** Aldo: only the workspace and submodules rows, for General's "For code" section. */
-  worktreeRowsOnly?: boolean;
-}) {
+export function ProjectDefaultsSettings({ category }: { category: ProjectSettingsCategory }) {
   const { scope, target, targets, connectedEnvironments } = useSettingsScope();
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
@@ -303,15 +296,12 @@ export function ProjectDefaultsSettings({
       }
     />
   );
-  // Aldo: settings that only matter to code sit in a section of their own,
-  // General's "For code", which renders these rows alone (`worktreeRowsOnly`).
   const worktreeRows = (
     <>
       {workspaceRow}
       {submodulesRow}
     </>
   );
-  if (worktreeRowsOnly) return worktreeRows;
 
   return (
     <SettingsSection
@@ -400,7 +390,7 @@ export function ProjectDefaultsSettings({
               </Select>
             }
           />
-          {/* Aldo shows these under General's "For code" instead. */}
+          {/* Each Aldo thread works in its machine's own checkout, so these do nothing there. */}
           {isAldoCloud ? null : worktreeRows}
         </>
       ) : category === "source-control" ? (

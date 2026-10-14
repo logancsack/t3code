@@ -50,6 +50,7 @@ import {
 import { ManagedDevPcFooterAccount } from "../ManagedDevPcAccount";
 import { isManagedDevPc } from "../../managedDevPc";
 import { isAldoCloud } from "../../aldo/cloud";
+import { ALDO_HIDDEN_SETTINGS_PATHS } from "../../aldo/settings.logic";
 import { SidebarUtilityMenu } from "../sidebar/SidebarChrome";
 import { scrollToSettingsTarget } from "./settingsLayout";
 import {
@@ -125,7 +126,8 @@ const SETTINGS_NAV_ITEMS: ReadonlyArray<{
       isAldoCloud,
   )
   // Aldo connects each thread's cloud agent itself; there's nothing to manage.
-  .filter((to) => to !== "/settings/connections" || !isAldoCloud)
+  // SnapShots and Storage don't apply to its machines either.
+  .filter((to) => !isAldoCloud || !ALDO_HIDDEN_SETTINGS_PATHS.has(to))
   .map((to) => ({
     to,
     label: SETTINGS_SECTION_LABELS[to],

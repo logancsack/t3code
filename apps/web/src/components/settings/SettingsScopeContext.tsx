@@ -5,6 +5,8 @@ import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
 import { createContext, type ReactNode, useContext, useMemo } from "react";
 
+import { isAldoCloud } from "../../aldo/cloud";
+import { aldoSettingsScopeSearch } from "../../aldo/settings.logic";
 import { useEnvironments, usePrimaryEnvironmentId } from "../../state/environments";
 import { getProjectFileQueryAtom, optimisticFileAtom } from "../files/projectFilesQueryState";
 import { useSettingsProjectGroups } from "./useSettingsProjectGroups";
@@ -118,7 +120,12 @@ export function SettingsScopeProvider({
   onChange: (next: SettingsScopeSearch) => void;
   children: ReactNode;
 }) {
-  const resolved = useResolvedSettingsScope(search, singleEnvironment);
+  // Aldo: a project or every thread, never one machine.
+  const scopeSearch = useMemo(
+    () => (isAldoCloud ? aldoSettingsScopeSearch(search) : search),
+    [search],
+  );
+  const resolved = useResolvedSettingsScope(scopeSearch, singleEnvironment);
   const value = useMemo(
     () => ({ ...resolved, singleEnvironment, selectScope: onChange }),
     [onChange, resolved, singleEnvironment],
