@@ -4,7 +4,7 @@ Not everything is code. A thread can work without a repository: research somethi
 
 ## Starting one
 
-- **New** on the home screen, or **New thread** in the sidebar, opens one at once, ready to type in. Before you send it, **General ▾** at the top moves it to one of your projects, a repository or a new project, taking what you typed along.
+- **New** on the home screen, or **New thread** in the sidebar from a General thread, opens one at once, ready to type in. Before you send it, the place chip in its message box moves it to one of your projects, a repository or a new project, taking what you typed along. See [Where a thread works](./aldo-where-threads-work.md).
 - In the start dialog, **No repository**.
 - Or tell Aldo what you want done. When it isn't about code in one of your repositories, Aldo starts a General thread.
 - Or share something to Aldo from another app on your phone: see [Sharing to Aldo](#sharing-to-aldo).

@@ -1904,6 +1904,32 @@ html[data-theme-id="prism"] [data-composer-send]:enabled:hover {
   background-color: color-mix(in srgb, var(--primary) 86%, transparent);
 }
 
+/* Aldo: a thread's send button is neutral, solid ink once there's something to
+   send; Aldo's blue is for Aldo itself (its orb, its dock), so a thread doesn't
+   read as a conversation with Aldo. */
+[data-aldo-thread-composer] {
+  --message-action: var(--foreground);
+  --message-action-foreground: var(--background);
+  --message-action-hover: color-mix(in srgb, var(--foreground) 88%, var(--background));
+}
+
+[data-aldo-thread-composer] [data-composer-send]:disabled {
+  background-color: var(--accent);
+  color: var(--muted-foreground);
+}
+
+html[data-theme-id="prism"] [data-aldo-thread-composer] [data-composer-send] {
+  background-color: color-mix(in srgb, var(--foreground) 74%, transparent);
+}
+
+html[data-theme-id="prism"] [data-aldo-thread-composer] [data-composer-send]:enabled:hover {
+  background-color: color-mix(in srgb, var(--foreground) 86%, transparent);
+}
+
+html[data-theme-id="prism"] [data-aldo-thread-composer] [data-composer-send]:disabled {
+  background-color: color-mix(in srgb, var(--accent) 74%, transparent);
+}
+
 /* Toolbar pills: small lenses. */
 html[data-theme-id="prism"] [data-chat-header] [data-slot="button"],
 html[data-theme-id="prism"] [data-chat-header] [data-slot="menu-trigger"],

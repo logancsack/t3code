@@ -29,7 +29,7 @@ import { stackedThreadToast, toastManager } from "~/components/ui/toast";
 import { primaryServerKeybindingsAtom } from "~/state/server";
 import { APP_BASE_NAME } from "../branding";
 import { aldoSupportsGeneralThreads, isAldoCloud } from "../aldo/cloud";
-import { useStartAldoThread } from "../aldo/newThread";
+import { aldoNewThreadPlace, useStartAldoThread } from "../aldo/newThread";
 
 function ChatRouteGlobalShortcuts() {
   const clearSelection = useThreadSelectionStore((state) => state.clearSelection);
@@ -132,9 +132,11 @@ function ChatRouteGlobalShortcuts() {
       if (command === "chat.new") {
         event.preventDefault();
         event.stopPropagation();
-        // Aldo: a General draft at once, as the sidebar's New does.
+        // Aldo: a draft at once where the user is, as the sidebar's New does.
         if (isAldoCloud && aldoSupportsGeneralThreads()) {
-          void startAldoThread([]);
+          void startAldoThread(
+            aldoNewThreadPlace(activeThread?.environmentId ?? activeDraftThread?.environmentId),
+          );
           return;
         }
         // The default sidebar routes creation through the command palette

@@ -26,6 +26,7 @@
 - [Routines in Aldo](./user/aldo-routines.md)
 - [Approvals and heads-ups in Aldo](./user/aldo-approvals.md)
 - [Threads without a repository in Aldo](./user/aldo-general-threads.md)
+- [Where a thread works in Aldo](./user/aldo-where-threads-work.md)
 - [The Library in Aldo](./user/aldo-library.md)
 - [Your Windows computer in Aldo](./user/aldo-windows-computer.md)
 - [Your GPU computer in Aldo](./user/aldo-gpu-computer.md)

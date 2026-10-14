@@ -26,7 +26,8 @@ import {
 import { createPortal } from "react-dom";
 import GitActionsControl from "../GitActionsControl";
 import { isTrailingDoubleClick } from "../Sidebar.logic";
-import { type DraftId } from "~/composerDraftStore";
+import { type DraftId, useComposerDraftStore } from "~/composerDraftStore";
+import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { toastManager } from "../ui/toast";
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "../ui/menu";
@@ -56,8 +57,9 @@ import { Button } from "../ui/button";
 import { AldoBrowsingChip } from "~/aldo/AldoBrowsingChip";
 import { AldoPreviewsControl } from "~/aldo/AldoPreviewsControl";
 import { isAldoCloud, isAldoEnvironmentId } from "~/aldo/cloud";
-import { AldoPlaceChip } from "~/aldo/AldoPlaceChip";
-import { useAldoGeneral, useAldoKeptRepo } from "~/aldo/keptRepo";
+import { AldoMoveThreadPicker, AldoThreadPlace, useAldoMovesThreads } from "~/aldo/AldoThreadPlace";
+import { useAldoKeptRepo } from "~/aldo/keptRepo";
+import { draftTitle } from "~/aldo/places.logic";
 import { useRightPanelStore } from "~/rightPanelStore";
 
 interface ChatHeaderProps {
@@ -85,6 +87,8 @@ interface ChatHeaderProps {
     input: NewProjectScriptInput,
   ) => Promise<ProjectScriptActionResult>;
   onDeleteProjectScript: (scriptId: string) => Promise<ProjectScriptActionResult>;
+  /** Aldo: sends the user's message to a sent thread's agent (moving the thread is one it hands off). */
+  onSendAldoMessage?: ((text: string) => Promise<boolean>) | undefined;
 }
 
 /**
@@ -151,6 +155,7 @@ export const ChatHeader = memo(function ChatHeader({
   onAddProjectScript,
   onUpdateProjectScript,
   onDeleteProjectScript,
+  onSendAldoMessage,
 }: ChatHeaderProps) {
   const { active: panelAnimationsActive, durationMs: panelAnimationDurationMs } =
     usePanelAnimationSettings();
@@ -225,9 +230,23 @@ export const ChatHeader = memo(function ChatHeader({
   // Aldo: a General thread, or one in a project Aldo keeps, isn't software
   // work (and Aldo syncs it itself), so no git actions, editors or scripts.
   const aldoKeptRepo = useAldoKeptRepo(activeThreadEnvironmentId);
-  // Aldo: a General draft can still move to a project or repository.
-  const aldoGeneralDraft =
-    useAldoGeneral(activeThreadEnvironmentId) && !isServerThread && draftId !== undefined;
+  // Aldo: where the thread works leads the header. A draft moves from its
+  // composer's chip; a sent thread moves here, as a handoff its agent makes.
+  const aldoThread = isAldoCloud && isAldoEnvironmentId(activeThreadEnvironmentId);
+  const aldoDraft = aldoThread && !isServerThread && draftId !== undefined;
+  const aldoMoves = useAldoMovesThreads() && aldoThread && isServerThread && !!onSendAldoMessage;
+  const [aldoMoveOpen, setAldoMoveOpen] = useState(false);
+  const aldoPlaceAnchorRef = useRef<HTMLSpanElement | null>(null);
+  // A draft's title is its first line until it's sent, and it's untitled before that.
+  const aldoDraftPrompt = useComposerDraftStore((store) =>
+    aldoDraft && draftId ? (store.getComposerDraft(draftId)?.prompt ?? "") : "",
+  );
+  const aldoDraftTitle = aldoDraft
+    ? draftTitle(
+        replaceComposerContextReferences(aldoDraftPrompt, (occurrence) => occurrence.label),
+      )
+    : null;
+  const shownTitle = aldoDraft ? (aldoDraftTitle ?? "Untitled") : activeThreadTitle;
   const updateThreadMetadata = useAtomCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
   });
@@ -388,6 +407,9 @@ export const ChatHeader = memo(function ChatHeader({
       </MenuTrigger>
       <MenuPopup align="start" className="min-w-52">
         <MenuItem onClick={onNewThreadInProject}>New thread</MenuItem>
+        {aldoMoves ? (
+          <MenuItem onClick={() => setAldoMoveOpen(true)}>Move to another project…</MenuItem>
+        ) : null}
         {openInMenuItems || projectScriptMenuItems ? <MenuSeparator /> : null}
         {openInMenuItems}
         {openInMenuItems && projectScriptMenuItems ? <MenuSeparator /> : null}
@@ -397,8 +419,14 @@ export const ChatHeader = memo(function ChatHeader({
   );
 
   let projectControl: ReactNode = null;
-  if (aldoGeneralDraft && draftId) {
-    projectControl = <AldoPlaceChip draftId={draftId} />;
+  if (aldoDraft || (aldoThread && aldoKeptRepo)) {
+    projectControl = (
+      <AldoThreadPlace
+        environmentId={activeThreadEnvironmentId}
+        project={activeProject}
+        onSendMessage={isServerThread ? onSendAldoMessage : undefined}
+      />
+    );
   } else if (activeProjectName && aldoKeptRepo) {
     projectControl = renderProjectMenu(null, null);
   } else if (activeProjectName && activeProjectScripts) {
@@ -478,9 +506,26 @@ export const ChatHeader = memo(function ChatHeader({
         {/* The project always leads the header: knowing which project a
             thread lives in is priority zero, and the thread title alone
             doesn't answer it. */}
-        {activeProject || aldoGeneralDraft ? (
+        {activeProject || aldoDraft ? (
           <>
-            <WorkspaceBreadcrumbItem className="shrink">{projectControl}</WorkspaceBreadcrumbItem>
+            <WorkspaceBreadcrumbItem className="shrink">
+              {aldoMoves && !aldoKeptRepo ? (
+                // A thread in a repository keeps its project menu, whose "Move to…" opens this.
+                <span ref={aldoPlaceAnchorRef} className="inline-flex min-w-0">
+                  {projectControl}
+                  <AldoMoveThreadPicker
+                    environmentId={activeThreadEnvironmentId}
+                    project={activeProject}
+                    onSendMessage={onSendAldoMessage!}
+                    open={aldoMoveOpen}
+                    onOpenChange={setAldoMoveOpen}
+                    anchor={aldoPlaceAnchorRef}
+                  />
+                </span>
+              ) : (
+                projectControl
+              )}
+            </WorkspaceBreadcrumbItem>
             <WorkspaceBreadcrumbSeparator>
               <WorkspaceBreadcrumbText>/</WorkspaceBreadcrumbText>
             </WorkspaceBreadcrumbSeparator>
@@ -527,14 +572,16 @@ export const ChatHeader = memo(function ChatHeader({
               </TooltipTrigger>
               <TooltipPopup side="top">{activeThreadTitle}</TooltipPopup>
             </Tooltip>
+          ) : aldoDraft && aldoDraftTitle === null ? (
+            <h2 className="min-w-0 flex-1 truncate text-muted-foreground/70 text-sm italic">
+              Untitled
+            </h2>
           ) : (
             <Tooltip>
-              <TooltipTrigger
-                render={<h2 aria-label={activeThreadTitle} className="min-w-0 flex-1" />}
-              >
-                <WorkspaceBreadcrumbText>{activeThreadTitle}</WorkspaceBreadcrumbText>
+              <TooltipTrigger render={<h2 aria-label={shownTitle} className="min-w-0 flex-1" />}>
+                <WorkspaceBreadcrumbText>{shownTitle}</WorkspaceBreadcrumbText>
               </TooltipTrigger>
-              <TooltipPopup side="top">{activeThreadTitle}</TooltipPopup>
+              <TooltipPopup side="top">{shownTitle}</TooltipPopup>
             </Tooltip>
           )}
         </WorkspaceBreadcrumbItem>
@@ -563,7 +610,8 @@ export const ChatHeader = memo(function ChatHeader({
             }
           />
         ) : null}
-        {isAldoCloud && isAldoEnvironmentId(activeThreadEnvironmentId) ? (
+        {/* Nothing to preview before the thread's agent has started. */}
+        {isAldoCloud && isAldoEnvironmentId(activeThreadEnvironmentId) && isServerThread ? (
           <AldoPreviewsControl
             environmentId={activeThreadEnvironmentId}
             threadId={activeThreadId}

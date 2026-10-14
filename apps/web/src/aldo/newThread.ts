@@ -1,6 +1,7 @@
-// Starting a thread at once (B1): "New" opens a General draft, ready to type
-// in, and the draft's "General ▾" chip (AldoPlaceChip) moves it to a project
-// or repository before its first message, taking what's typed along. T3's own
+// Starting a thread at once (B1): "New" opens a draft where the user is (in
+// the project of the thread on screen, else General), ready to type in, and
+// the draft's place picker (AldoDraftPlace) moves it to another project or
+// repository before its first message, taking what's typed along. T3's own
 // ways in (its "without a project", its draft's project picker) do the same,
 // each thread on a machine of its own.
 
@@ -13,7 +14,13 @@ import { useComposerDraftStore, type DraftId } from "../composerDraftStore";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { randomUUID } from "../lib/utils";
 import { waitForProject } from "../state/entities";
-import { aldoSupportsGeneralThreads, isAldoCloud, subscribeAldoEnvironments } from "./cloud";
+import {
+  aldoSupportsGeneralThreads,
+  getAldoEnvironments,
+  isAldoCloud,
+  subscribeAldoEnvironments,
+  type AldoNewProject,
+} from "./cloud";
 import { aldoProjectRefForNewThread, startAldoSandbox } from "./threads";
 
 /** What's typed in a draft being moved, for the draft it moves to (AldoRepositoryDialog). */
@@ -113,21 +120,42 @@ export function useStartAldoThread(): {
   return { start, starting };
 }
 
+/**
+ * Where "New" opens a thread: in the project of the thread on screen (its
+ * machine's repositories, as T3's New does), else General (none).
+ */
+export function aldoNewThreadPlace(
+  environmentId: string | null | undefined,
+): ReadonlyArray<string> {
+  const machine = getAldoEnvironments()?.find((entry) => entry.environmentId === environmentId);
+  return machine ? (machine.repos ?? [machine.repo]).filter((ref) => ref.length > 0) : [];
+}
+
 /** Each draft's latest move asked for (aldoProjectForMovedDraft), so only that one lands. */
 const latestMoves = new Map<DraftId, number>();
 let moves = 0;
 
 /**
- * Where a draft moving to another place before its first message goes (T3's
- * project picker on a draft): to `target`'s project (null: General) on a
- * machine of its own, an idle one or a new one, never another thread's.
+ * Where a draft can move: a project the client has (another machine of it),
+ * repositories (none: General), or a new project; null is General.
+ */
+export type AldoDraftTarget =
+  | ScopedProjectRef
+  | { readonly repos: ReadonlyArray<string> }
+  | { readonly create: AldoNewProject }
+  | null;
+
+/**
+ * Where a draft moving to another place before its first message goes (the
+ * place picker, T3's project picker on a draft): to `target` (null: General)
+ * on a machine of its own, an idle one or a new one, never another thread's.
  * Resolves with the project for the draft to take, or null when another move
  * was asked for meanwhile, the draft was sent (it stays where it went), or
  * the machine couldn't be had (which it shows).
  */
 export async function aldoProjectForMovedDraft(
   draftId: DraftId,
-  target: ScopedProjectRef | null,
+  target: AldoDraftTarget,
 ): Promise<EnvironmentProject | null> {
   const move = ++moves;
   latestMoves.set(draftId, move);
@@ -138,12 +166,16 @@ export async function aldoProjectForMovedDraft(
   return latest && project !== null && draft !== null && draft.promotedTo == null ? project : null;
 }
 
-async function movedDraftProject(
-  target: ScopedProjectRef | null,
-): Promise<EnvironmentProject | null> {
+async function movedDraftProject(target: AldoDraftTarget): Promise<EnvironmentProject | null> {
   // When there's no machine to be had, startAldoSandbox says why.
   const projectRef = await (
-    target === null ? startAldoSandbox({ repos: [] }) : aldoProjectRefForNewThread(target)
+    target === null
+      ? startAldoSandbox({ repos: [] })
+      : "repos" in target
+        ? startAldoSandbox({ repos: target.repos })
+        : "create" in target
+          ? startAldoSandbox({ create: target.create })
+          : aldoProjectRefForNewThread(target)
   ).catch(() => null);
   if (projectRef === null) return null;
   return waitForProject(projectRef).catch((cause: unknown) => {

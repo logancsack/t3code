@@ -559,6 +559,12 @@ import { describeAldoWakeFailure } from "../aldo/threadStart.logic";
 import { isAldoCloud, isAldoEnvironmentId } from "../aldo/cloud";
 import { useAldoKeptRepo } from "../aldo/keptRepo";
 import { AldoHandoffCard } from "../aldo/AldoHandoffCard";
+import {
+  AldoComposerPlaceChip,
+  AldoDraftWhereCard,
+  AldoPlaceSuggestion,
+  AldoThreadFirstLine,
+} from "../aldo/AldoDraftPlace";
 import { aldoImagesGoInline, ensureAldoConnected } from "../aldo/dispatch";
 import { aldoAttachmentOf, aldoCarriesAttachments } from "../aldo/files";
 import { showAldoStartingThread, withdrawAldoStartingThread } from "../aldo/startingThreads";
@@ -3794,16 +3800,21 @@ export default function ChatView(props: ChatViewProps) {
   const [dockedDraftHeroThreadKey, setDockedDraftHeroThreadKey] = useState<string | null>(null);
   const draftHeroDockRequested =
     activeThreadKey !== null && dockedDraftHeroThreadKey === activeThreadKey;
-  const isDraftHeroState = resolveDraftHeroState({
-    isLocalDraftThread,
-    hasTimelineEntries: timelineEntries.length > 0,
-    isWorking,
-    draftHeroDockRequested,
-    backgroundSubmissionPending,
-    // A cancelled or failed setup card stays on the draft's timeline; the
-    // hero headline would paint over it.
-    hasWorktreeSetupCard: worktreeSetup !== null,
-  });
+  // Aldo: a draft is the thread it'll be, so its composer sits where it'll
+  // stay, and its timeline starts with where it works (AldoDraftWhereCard).
+  const aldoDraft = isAldoCloud && isLocalDraftThread && isAldoEnvironmentId(environmentId);
+  const isDraftHeroState =
+    !aldoDraft &&
+    resolveDraftHeroState({
+      isLocalDraftThread,
+      hasTimelineEntries: timelineEntries.length > 0,
+      isWorking,
+      draftHeroDockRequested,
+      backgroundSubmissionPending,
+      // A cancelled or failed setup card stays on the draft's timeline; the
+      // hero headline would paint over it.
+      hasWorktreeSetupCard: worktreeSetup !== null,
+    });
   const [
     attachDraftHeroTransitionGroupRef,
     attachDraftHeroComposerAnchorRef,
@@ -3965,6 +3976,47 @@ export default function ChatView(props: ChatViewProps) {
   // only hosts a resting composer's controls.
   const aldoKeptRepo = useAldoKeptRepo(environmentId);
   const composerStripShowsGit = isGitRepo && !aldoKeptRepo;
+  // Aldo: an unsent draft has no session yet, which isn't worth saying; work
+  // that isn't code gets words for it.
+  const aldoComposerPlaceholder = !isAldoCloud
+    ? undefined
+    : aldoKeptRepo
+      ? aldoDraft
+        ? "Describe the task: research, an errand, a document…"
+        : "Reply, or ask for what's next…"
+      : aldoDraft
+        ? "Ask anything, @tag files/folders, $use skills, or / for commands"
+        : undefined;
+  // Aldo's additions to the timeline and composer, stable so neither (both
+  // memoized) redraws for them: a sent thread's first line, a draft's place chip.
+  const aldoFirstLineEnvironmentId =
+    isAldoCloud && isServerThread && activeThread && isAldoEnvironmentId(activeThread.environmentId)
+      ? activeThread.environmentId
+      : null;
+  const aldoThreadStartedAt = activeThread?.createdAt ?? null;
+  const aldoFirstLine = useMemo(
+    () =>
+      aldoFirstLineEnvironmentId && aldoThreadStartedAt ? (
+        <AldoThreadFirstLine
+          environmentId={aldoFirstLineEnvironmentId}
+          project={activeProject}
+          startedAt={aldoThreadStartedAt}
+        />
+      ) : null,
+    [activeProject, aldoFirstLineEnvironmentId, aldoThreadStartedAt],
+  );
+  const renderAldoPlaceChip = useCallback(
+    (size: "sm" | "xs") =>
+      draftId ? (
+        <AldoComposerPlaceChip
+          draftId={draftId}
+          environmentId={environmentId}
+          project={activeProject}
+          size={size}
+        />
+      ) : null,
+    [activeProject, draftId, environmentId],
+  );
   // Keep a hidden, off-flow strip mounted for existing threads so the composer
   // can measure whether its relocated controls fit. The visible chrome remains
   // content-driven: Git/environment context or controls that actually fit.
@@ -9417,6 +9469,12 @@ export default function ChatView(props: ChatViewProps) {
     (text: string) => onSubmitPlanFollowUp({ text, interactionMode, linkProposedPlan: false }),
     [interactionMode, onSubmitPlanFollowUp],
   );
+  // Aldo: a move asks its agent to hand the thread off, a tool call Plan mode would only plan.
+  const onSendAldoMove = useCallback(
+    (text: string) =>
+      onSubmitPlanFollowUp({ text, interactionMode: "default", linkProposedPlan: false }),
+    [onSubmitPlanFollowUp],
+  );
   // Aldo: what the working line needs to say a turn has stopped moving, with Nudge and Stop.
   useAldoStallSignals({
     threadKey: isServerThread ? routeThreadKey : null,
@@ -10237,6 +10295,7 @@ export default function ChatView(props: ChatViewProps) {
             onAddProjectScript={saveProjectScript}
             onUpdateProjectScript={updateProjectScript}
             onDeleteProjectScript={deleteProjectScript}
+            onSendAldoMessage={isAldoCloud && isServerThread ? onSendAldoMove : undefined}
           />
         </WorkspacePageHeader>
 
@@ -10380,7 +10439,7 @@ export default function ChatView(props: ChatViewProps) {
                 onManualNavigation={cancelTimelineLiveFollowForUserNavigation}
                 cancelPositionRestoreRef={cancelPositionRestoreRef}
                 hideEmptyPlaceholder={
-                  isDraftHeroState || threadDetailLoading || showAldoThreadLoading
+                  isDraftHeroState || aldoDraft || threadDetailLoading || showAldoThreadLoading
                 }
                 topFadeEnabled={!hasTimelineTopBanner}
                 loadEarlier={paintOnlyDisplayedTimeline ? null : loadEarlierTurns}
@@ -10393,7 +10452,22 @@ export default function ChatView(props: ChatViewProps) {
                 )}
                 onRemoveQueuedMessage={onRemoveQueuedMessage}
                 onSendFollowUp={isAldoCloud && !paintOnlyDisplayedTimeline ? onSendFollowUp : null}
+                leadingHeader={aldoFirstLine}
               />
+              {aldoDraft && draftId && displayedTimeline.entries.length === 0 ? (
+                <div
+                  className="pointer-events-none absolute inset-0 flex flex-col justify-center overflow-hidden ps-(--workspace-gutter-start) pe-(--workspace-gutter-end)"
+                  style={{ paddingBottom: composerTimelineInset }}
+                >
+                  <div className="px-3 pb-10 sm:px-5">
+                    <AldoDraftWhereCard
+                      draftId={draftId}
+                      environmentId={environmentId}
+                      project={activeProject}
+                    />
+                  </div>
+                </div>
+              ) : null}
               {showAldoThreadLoading ? (
                 <div className="absolute inset-0">
                   <AldoThreadLoading
@@ -10451,6 +10525,10 @@ export default function ChatView(props: ChatViewProps) {
               >
                 <div
                   data-chat-composer-stack="true"
+                  // Aldo: a thread's controls are neutral; Aldo's blue is Aldo's own (index.css).
+                  data-aldo-thread-composer={
+                    isAldoCloud && isAldoEnvironmentId(environmentId) ? "" : undefined
+                  }
                   className="group/composer-stack pointer-events-auto relative z-10 mx-auto w-full max-w-(--chat-max-width)"
                 >
                   {isDraftHeroState ? (
@@ -10472,6 +10550,13 @@ export default function ChatView(props: ChatViewProps) {
                         />
                       </div>
                     </div>
+                  ) : null}
+                  {aldoDraft && draftId ? (
+                    <AldoPlaceSuggestion
+                      draftId={draftId}
+                      environmentId={environmentId}
+                      project={activeProject}
+                    />
                   ) : null}
                   {isAldoCloud && !isDraftHeroState && activeThreadRef ? (
                     <AldoHandoffCard
@@ -10519,6 +10604,10 @@ export default function ChatView(props: ChatViewProps) {
                             isLocalDraftThread={isLocalDraftThread}
                             forceExpandedOnMobile={forceExpandedMobileComposer && isDraftHeroState}
                             projectSelectionRequired={isLocalDraftThread && activeProject === null}
+                            renderLeadingControl={
+                              aldoDraft && draftId ? renderAldoPlaceChip : undefined
+                            }
+                            idlePlaceholder={aldoComposerPlaceholder}
                             phase={phase}
                             isConnecting={isConnecting}
                             isSendBusy={isSendBusy}

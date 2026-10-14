@@ -182,12 +182,16 @@ let aldoFeatures: {
   readonly aldoModels: boolean;
   readonly pullRequests: boolean;
   readonly heldFiles: boolean;
+  readonly moves: boolean;
+  readonly routing: boolean;
 } = {
   general: false,
   projects: false,
   aldoModels: false,
   pullRequests: false,
   heldFiles: false,
+  moves: false,
+  routing: false,
 };
 
 /** Whether threads can start without a repository (General), as the directory said. */
@@ -213,6 +217,16 @@ export function aldoStartsPullRequestThreads(): boolean {
 /** Whether Aldo keeps a message's images and files until it's sent (uploadAldoFile), as the directory said. */
 export function aldoKeepsFiles(): boolean {
   return aldoFeatures.heldFiles;
+}
+
+/** Whether a thread's agent can move its conversation to another project (`continue_in_new_thread` with `move`), as the directory said. */
+export function aldoMovesThreads(): boolean {
+  return aldoFeatures.moves;
+}
+
+/** Whether Aldo says which of the user's projects a draft's words belong to (`POST /api/routing`), as the directory said. */
+export function aldoRoutesDrafts(): boolean {
+  return aldoFeatures.routing;
 }
 const directoryListeners = new Set<() => void>();
 let refreshRequested = true;
@@ -399,6 +413,8 @@ async function fetchEnvironments(): Promise<ReadonlyArray<AldoEnvironment>> {
       aldoModels?: boolean;
       pullRequests?: boolean;
       heldFiles?: boolean;
+      moves?: boolean;
+      routing?: boolean;
     };
   }>("/api/environments");
   aldoFeatures = {
@@ -407,6 +423,8 @@ async function fetchEnvironments(): Promise<ReadonlyArray<AldoEnvironment>> {
     aldoModels: features?.aldoModels === true,
     pullRequests: features?.pullRequests === true,
     heldFiles: features?.heldFiles === true,
+    moves: features?.moves === true,
+    routing: features?.routing === true,
   };
   // A listing that started before a deletion finished can still include its machine.
   const listed = environments.filter((environment) => !hiddenByDeletion(environment.environmentId));
@@ -1639,6 +1657,24 @@ export async function aldoBrowserConnection(
     `/api/environments/${threadIdForEnvironment(environmentId)}/browser`,
     { method: "POST" },
   );
+}
+
+/** One of the user's projects a draft's words point to, and why: a name it says, or words its threads use. */
+export interface AldoRoutedProject {
+  readonly name: string;
+  readonly repos: ReadonlyArray<string>;
+  /** Whether the words name it (else they match what its threads are about). */
+  readonly named: boolean;
+  readonly words: ReadonlyArray<string>;
+}
+
+/** Which of the user's projects `text` belongs to, if one clearly does (aldoRoutesDrafts). */
+export async function routeAldoDraft(text: string): Promise<AldoRoutedProject | null> {
+  const { project } = await api<{ project: AldoRoutedProject | null }>("/api/routing", {
+    method: "POST",
+    body: JSON.stringify({ text }),
+  });
+  return project;
 }
 
 /** Repositories from every connected host (and Aldo's own projects, `aldo:<slug>`), and hosts that couldn't be listed. */

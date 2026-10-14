@@ -1,7 +1,9 @@
-// Aldo at the top of the sidebar, on every screen: its orb starts a
-// conversation (or hangs up) right where the user is, and the row opens Aldo's
-// own screen (the home screen's conversation). While a conversation is on, it shows what Aldo is doing or
-// saying, with mute. Only where the server has the assistant.
+// Aldo at the top of the sidebar, on every screen: a pill, so it reads as a
+// control rather than the first thread of the list. Its orb starts a
+// conversation (or hangs up) right where the user is, and the pill opens
+// Aldo's own screen (the home screen's conversation). While a conversation is
+// on, it shows what Aldo is doing or saying, with mute. Only where the server
+// has the assistant.
 
 import { Link } from "@tanstack/react-router";
 import { MicIcon, MicOffIcon } from "lucide-react";
@@ -42,22 +44,27 @@ export function AldoSidebarEntry() {
           ? "Thinking…"
           : STATUS[phase];
   return (
-    <div className="mb-1 flex h-10 items-center gap-2 rounded-md px-1.5 text-sm hover:bg-sidebar-row-hover">
-      <AldoOrb size="xs" className="ml-0.5" />
+    <div
+      className={cn(
+        "mb-1.5 flex h-9 items-center gap-2 rounded-full border border-primary/35 bg-primary/10 ps-1 pe-1 text-sm transition-colors hover:bg-primary/15",
+        live && "border-primary/60",
+      )}
+    >
+      <AldoOrb size="xs" />
       <Link
         to="/"
-        className="flex min-w-0 flex-1 flex-col leading-tight"
+        className="flex min-w-0 flex-1 items-center gap-2 pe-2 leading-tight"
         aria-label="Open Aldo"
         onClick={() => setAldoHomeView("aldo")}
       >
-        <span className="font-medium text-sidebar-foreground">Aldo</span>
+        <span className="font-semibold text-sidebar-foreground">Aldo</span>
         <span
           className={cn(
-            "truncate text-[11px] text-sidebar-muted-foreground",
+            "ms-auto min-w-0 truncate text-[11px] text-sidebar-muted-foreground",
             live && "text-sidebar-foreground/80",
           )}
         >
-          {status}
+          {phase === "idle" && !replying ? ALDO_SHORTCUT_LABEL : status}
         </span>
       </Link>
       {live && micOn ? (
