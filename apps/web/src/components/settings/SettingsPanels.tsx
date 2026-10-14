@@ -145,6 +145,7 @@ import { AldoNotificationSettings } from "../../aldo/AldoNotificationSettings";
 import { AldoPreloadSettings } from "../../aldo/AldoPreloadSettings";
 import { AldoSimpleModeSettings } from "../../aldo/AldoSimpleModeSettings";
 import { isAldoCloud } from "../../aldo/cloud";
+import { aldoSavesSettings } from "../../aldo/machineSettings.logic";
 import { ScopedSwitch } from "./ScopedSwitch";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -2162,31 +2163,39 @@ export function GeneralSettingsPanel() {
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
   const navigate = useNavigate();
-  const { scope, environment, connectedEnvironments } = useSettingsScope();
+  const { scope, environment, connectedEnvironments, aldo } = useSettingsScope();
   // The representative environment supplies the provider list for pickers;
   // a fanned-out model choice is validated against every target before it
   // is written. Per-machine tuning (background activity overrides) still
   // needs exactly one environment.
   const environmentId = environment?.environmentId ?? null;
   const isEnvironmentScope = scope.environmentIds.length === 1 && environmentId !== null;
-  const hasServerTargets = connectedEnvironments.length > 0;
+  const hasServerTargets =
+    connectedEnvironments.length > 0 ||
+    // Aldo: the user's settings save with no machine connected.
+    (isAldoCloud && aldoSavesSettings(aldo, ["textGenerationModelSelection"]));
   const [backgroundActivityDialogOpen, setBackgroundActivityDialogOpen] = useState(false);
   const [tokenStreamingWarningOpen, setTokenStreamingWarningOpen] = useState(false);
   const mixedResponseStreamingMode = useScopedSettingsMixed(["responseStreamingMode"]);
   const lastEnabledProjectGroupingMode = useRef<SidebarProjectGroupingMode>(
     readLastEnabledProjectGroupingMode(),
   );
-  const serverProviders = environment?.serverConfig?.providers ?? EMPTY_SERVER_PROVIDERS;
+  const serverProviders =
+    environment?.serverConfig?.providers ??
+    (isAldoCloud ? aldo?.providers : null) ??
+    EMPTY_SERVER_PROVIDERS;
   const supportsAutoSettlement =
     connectedEnvironments.length > 0 &&
     connectedEnvironments.every(
       (target) => target.serverConfig?.environment.capabilities.threadAutoSettlement === true,
     );
   const supportsRestartContinuation =
-    connectedEnvironments.length > 0 &&
-    connectedEnvironments.every(
-      (target) => target.serverConfig?.environment.capabilities.threadRestartContinuation === true,
-    );
+    (connectedEnvironments.length > 0 &&
+      connectedEnvironments.every(
+        (target) =>
+          target.serverConfig?.environment.capabilities.threadRestartContinuation === true,
+      )) ||
+    (isAldoCloud && aldoSavesSettings(aldo, ["continueThreadsAfterServerUpdate"]));
 
   const textGenerationProviders = serverProviders.filter(
     (provider) => provider.supportsTextGeneration !== false,

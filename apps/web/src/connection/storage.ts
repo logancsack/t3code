@@ -45,7 +45,7 @@ import * as Stream from "effect/Stream";
 import { projectFaviconCache } from "../assets/projectFaviconCache";
 
 import { aldoKeepsEnvironmentCache, aldoThreadDetail } from "../aldo/cloud";
-import { withMissingProviders } from "../aldo/serverConfig.logic";
+import { withAldoTemplate } from "../aldo/serverConfig.logic";
 
 const DATABASE_NAME = "t3code:connection-runtime";
 const DATABASE_VERSION = 4;
@@ -932,12 +932,14 @@ export function seedEnvironmentCache(input: {
  * cached (a sleeping machine this browser never connected to), so its threads
  * open with models to send with; a cached one, from the machine itself, is
  * kept, with the providers the given one lists that it lacks added (its T3
- * started before they shipped, and gets them when it starts again). Checked
- * and written in one transaction. Returns the environments written, and the
- * ones whose cached config was kept as it was.
+ * started before they shipped, and gets them when it starts again), and the
+ * user's `settings` that Aldo keeps over its own (it gets those as it wakes).
+ * Checked and written in one transaction. Returns the environments written,
+ * and the ones whose cached config was kept as it was.
  */
 export function seedMissingServerConfigs(
   configs: ReadonlyMap<EnvironmentId, unknown>,
+  settings: Readonly<Record<string, unknown>> = {},
 ): Promise<{ readonly written: EnvironmentId[]; readonly kept: EnvironmentId[] }> {
   return Effect.runPromise(
     Effect.acquireUseRelease(
@@ -979,7 +981,7 @@ export function seedMissingServerConfigs(
                 const next =
                   request.result === undefined
                     ? value
-                    : withMissingProviders(request.result, value);
+                    : withAldoTemplate(request.result, value, settings);
                 if (next === null) {
                   kept.push(environmentId);
                   return;

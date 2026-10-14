@@ -723,6 +723,31 @@ export async function reportAldoServerConfig(config: unknown): Promise<void> {
   await api("/api/models", { method: "POST", body: JSON.stringify({ config }) });
 }
 
+/**
+ * The T3 settings Aldo keeps as the user's and writes into every machine
+ * (machineSettings.ts), or null from an Aldo that doesn't keep them.
+ */
+export async function fetchAldoMachineSettings(): Promise<unknown> {
+  const body = await api<{ settings?: unknown }>("/api/machine-settings").catch(
+    (error: unknown) => {
+      if (error instanceof AldoApiError && error.status === 404) return null;
+      throw error;
+    },
+  );
+  // An older Aldo may answer with the web client's page instead of a 404.
+  const settings = body?.settings;
+  return settings && typeof settings === "object" && !Array.isArray(settings) ? settings : null;
+}
+
+/** Saves the ones `settings` names over the ones saved before; answers with all of them. */
+export async function saveAldoMachineSettings(settings: Record<string, unknown>): Promise<unknown> {
+  const body = await api<{ settings?: unknown }>("/api/machine-settings", {
+    method: "POST",
+    body: JSON.stringify({ settings }),
+  });
+  return body.settings;
+}
+
 /** Machines' threads (T3 shells) as their aldod last reported them, by thread id. Never wakes one. */
 export async function fetchAldoShells(
   threadIds: ReadonlyArray<string>,

@@ -18,6 +18,7 @@ import {
   isAldoEnvironmentId,
   reportAldoServerConfig,
 } from "./cloud";
+import { loadAldoMachineSettings } from "./machineSettings";
 import { providerInstances, providerKinds } from "./serverConfig.logic";
 
 type EncodedConfig = {
@@ -138,8 +139,9 @@ async function template(): Promise<EncodedConfig | null> {
  * each provider's sign-in set from the user's Aldo accounts (a machine gets
  * those sign-ins when it starts, whatever the reporting machine had):
  * connected ones signed in, disconnected ones signed out. If the accounts
- * can't be read, providers stay as reported. None before any cloud agent has
- * ever reported one.
+ * can't be read, providers stay as reported. Its settings carry the user's
+ * that Aldo keeps (machineSettings.ts), which every machine gets as it starts.
+ * None before any cloud agent has ever reported one.
  */
 export async function aldoServerConfigsFor(
   environmentIds: ReadonlyArray<string>,
@@ -148,7 +150,11 @@ export async function aldoServerConfigsFor(
   if (environmentIds.length === 0) return configs;
   const base = await template();
   if (!base) return configs;
-  const accounts = await fetchAldoAccounts().catch(() => null);
+  const [accounts, kept] = await Promise.all([
+    fetchAldoAccounts().catch(() => null),
+    loadAldoMachineSettings(),
+  ]);
+  const settings = { ...(base.settings as Record<string, unknown> | undefined), ...kept };
   const providers = base.providers.map((provider) => {
     const account = ACCOUNT_FOR_DRIVER[String(provider.driver)];
     const auth = (provider.auth ?? {}) as Record<string, unknown>;
@@ -172,6 +178,7 @@ export async function aldoServerConfigsFor(
       ...base,
       environment: { ...base.environment, environmentId },
       providers,
+      settings,
     });
   }
   return configs;
