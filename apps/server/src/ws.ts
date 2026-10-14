@@ -60,9 +60,11 @@ import {
   ProviderSetupError,
   RelayClientInstallFailedError,
   type RelayClientInstallProgressEvent,
+  ServerProviderUpdateError,
   ServerSelfUpdateError,
   type ServerSelfUpdateProgressEvent,
   type ServerLifecycleStreamEvent,
+  type ServerProvider,
   type FilesystemBrowseFailure,
   FilesystemBrowseError,
   AssetWorkspaceContextNotFoundError,
@@ -1190,12 +1192,16 @@ const makeWsRpcLayer = (
           };
         });
 
+      // A managed machine refuses provider updates (serverUpdateProvider), so its clients aren't offered one.
+      const forClients = (providers: ReadonlyArray<ServerProvider>) =>
+        config.managedDevPc ? ProviderMaintenance.withoutProviderUpdates(providers) : providers;
+
       // Only clients that answer /usage-limits themselves see it in the catalogs;
       // an older client would send the injected command to the provider.
       const loadServerConfig = (options: { readonly usageLimitsCommand: boolean }) =>
         Effect.gen(function* () {
           const keybindingsConfig = yield* keybindings.loadConfigState;
-          const currentProviders = yield* providerRegistry.getProviders;
+          const currentProviders = forClients(yield* providerRegistry.getProviders);
           const providers = options.usageLimitsCommand
             ? withUsageLimitsCommands(currentProviders, yield* usageLimitSources.current)
             : currentProviders;
@@ -1817,7 +1823,7 @@ const makeWsRpcLayer = (
                   providers = yield* providerRegistry.refreshInstance(instance.instanceId);
                 }
               }
-              return { providers };
+              return { providers: forClients(providers) };
             }),
             { "rpc.aggregate": "server" },
           ),
@@ -1838,7 +1844,16 @@ const makeWsRpcLayer = (
         [WS_METHODS.serverUpdateProvider]: (input) =>
           observeRpcEffect(
             WS_METHODS.serverUpdateProvider,
-            providerMaintenanceRunner.updateProvider(input),
+            // A managed machine's host installs and pins its provider CLIs, as
+            // it does the server; an update here would replace them under it.
+            config.managedDevPc
+              ? Effect.fail(
+                  new ServerProviderUpdateError({
+                    provider: input.provider,
+                    reason: "This machine's providers are managed by its host.",
+                  }),
+                )
+              : providerMaintenanceRunner.updateProvider(input),
             {
               "rpc.aggregate": "server",
             },
@@ -3075,7 +3090,7 @@ const makeWsRpcLayer = (
                 Stream.concat(
                   Stream.fromEffect(providerRegistry.getProviders),
                   providerRegistry.streamChanges,
-                ),
+                ).pipe(Stream.map(forClients)),
                 usageLimitSources.streamChanges.pipe(
                   // Quota updates already have their own stream. Republish the model
                   // catalog only when the set of providers offered the command changes.

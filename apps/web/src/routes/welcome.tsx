@@ -4,6 +4,7 @@ import { EnvironmentId } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import * as Option from "effect/Option";
 
+import { isAldoCloud } from "../aldo/cloud";
 import { NoProjectsHero } from "../components/NoProjectsHero";
 import { WelcomeWizard } from "../components/onboarding/WelcomeWizard";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
@@ -13,6 +14,11 @@ const decodeEnvironmentId = Schema.decodeOption(EnvironmentId);
 /** Onboarding overlays the workspace. Visiting /welcome reopens setup. */
 export const Route = createFileRoute("/welcome")({
   beforeLoad: ({ context }) => {
+    // Aldo sets up each machine's agents itself. Codex's managed sign-in here
+    // would keep a rotating refresh token on one machine, outside Aldo's broker.
+    if (isAldoCloud) {
+      throw redirect({ to: "/", replace: true });
+    }
     const { authGateState } = context;
     if (authGateState.status !== "authenticated" && authGateState.status !== "hosted-static") {
       throw redirect({ to: "/pair", replace: true });

@@ -7992,7 +7992,10 @@ export default function ChatView(props: ChatViewProps) {
       activeThreadKey &&
       (queueStillSending ||
         (phase === "running" &&
-          (settings.followUpBehavior === "queue") !== (submissionIntent === "alternate")))
+          // Aldo steers: a queue lives in this tab and is lost with it, while a
+          // message sent now reaches the machine (Codex queues it there).
+          ((isAldoCloud ? "steer" : settings.followUpBehavior) === "queue") !==
+            (submissionIntent === "alternate")))
     ) {
       const sendSettings = readComposerSendSettings(sendCtx);
       if (
@@ -10475,8 +10478,10 @@ export default function ChatView(props: ChatViewProps) {
                           <ChatComposer
                             multipleModelSelections={multipleModelSelections}
                             supportsMultipleModels={
+                              // Each model would get a thread on this one machine.
+                              !isAldoCloud &&
                               serverConfig?.environment.capabilities.requiredWorktreeBootstrap ===
-                              true
+                                true
                             }
                             onMultipleModelSelectionsChange={setMultipleModelSelections}
                             composerRef={composerRef}

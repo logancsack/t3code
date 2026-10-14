@@ -1,5 +1,6 @@
 import { isElectron } from "~/env";
 import { isAldoCloud } from "../../aldo/cloud";
+import { aldoShowsSettingsSearchItem } from "../../aldo/settings.logic";
 import { isManagedDevPc } from "../../managedDevPc";
 import { isMacPlatform, isWindowsPlatform, normalizeSearchText } from "~/lib/utils";
 import { STATIC_KEYBINDING_COMMANDS, type KeybindingCommand } from "@t3tools/contracts";
@@ -290,6 +291,20 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Word wrap",
     to: "/settings/appearance",
     searchTerms: ["long lines code blocks tables diffs file previews"],
+  },
+  {
+    id: "aldo-notifications",
+    title: "Notifications on this device",
+    to: "/settings/general",
+    searchTerms: ["push alerts notify phone browser finished needs you"],
+    aldoCloudOnly: true,
+  },
+  {
+    id: "aldo-notification-sound",
+    title: "Play a sound when a thread finishes or needs you",
+    to: "/settings/general",
+    searchTerms: ["notifications chime sound audio alert"],
+    aldoCloudOnly: true,
   },
   {
     id: "aldo-simple-mode",
@@ -823,9 +838,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "source-control",
     title: isAldoCloud ? "Git hosts" : "Source control",
     to: "/settings/source-control",
-    scope: "environment-defaults",
+    // Aldo's Git hosts are the account's, at any selection.
+    ...(isAldoCloud ? {} : { scope: "environment-defaults" }),
     searchTerms: [
-      "version control git github gitlab forgejo gitea tea codeberg bitbucket azure devops hosting integrations credentials scan server environment",
+      // Aldo has no Forgejo or Gitea hosts.
+      isAldoCloud
+        ? "version control git github gitlab bitbucket azure devops hosting integrations credentials scan server environment"
+        : "version control git github gitlab forgejo gitea tea codeberg bitbucket azure devops hosting integrations credentials scan server environment",
     ],
   },
   {
@@ -993,7 +1012,7 @@ const SETTINGS_CATEGORY_SCOPES: Readonly<Record<SettingsPath, SettingsSearchScop
   "/settings/keybindings": null,
   "/settings/providers": null,
   "/settings/integrations": null,
-  "/settings/source-control": "environment-defaults",
+  "/settings/source-control": isAldoCloud ? null : "environment-defaults",
   // Aldo's own pages are the account's, at any selection.
   "/settings/instructions": null,
   "/settings/skills": null,
@@ -1125,11 +1144,8 @@ export function filterAvailableSettingsSearchItems(
       (!item.requiresThreadAutoSettlement || availability.hasThreadAutoSettlement) &&
       (!item.requiresAldoPhone || availability.hasAldoPhoneApi === true) &&
       (!item.requiresAldoAgentInbox || availability.hasAldoAgentInbox === true) &&
-      // Aldo has no Connections page: it connects cloud agents itself.
-      (item.to !== "/settings/connections" || !isAldoCloud) &&
-      // Its Integrations page lists accounts instead of the preview browser's settings.
-      (item.to !== "/settings/integrations" || !isAldoCloud || item.aldoCloudOnly === true) &&
-      (!item.aldoCloudOnly || isAldoCloud),
+      // Aldo leaves out T3's pages and rows that don't apply to its machines.
+      (isAldoCloud ? aldoShowsSettingsSearchItem(item) : !item.aldoCloudOnly),
   );
 }
 

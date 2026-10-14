@@ -1,5 +1,5 @@
-// Aldo's own keys, listed on the Keybindings page beside T3's (which come
-// from keybindings.json and can be changed; these can't).
+// Aldo's own keys, listed on the Keybindings page beside T3's defaults.
+// Neither can be changed.
 
 import { Kbd } from "../components/ui/kbd";
 import { SettingsRow, SettingsSection } from "../components/settings/settingsLayout";

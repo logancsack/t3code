@@ -69,6 +69,7 @@ import {
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 import { AldoKeysSection } from "../../aldo/AldoKeys";
 import { isAldoCloud } from "../../aldo/cloud";
+import { ALDO_HIDDEN_KEYBINDING_COMMANDS } from "../../aldo/settings.logic";
 import { keybindingSearchAnchorId, searchableSetting } from "./settingsSearch";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -1052,6 +1053,29 @@ function KeybindingSettingsRow(props: KeybindingRowProps) {
   );
 }
 
+/**
+ * Aldo: a binding without its editor. The app applies T3's default bindings
+ * there (it has no primary environment to read edits from), so they can't change.
+ */
+function KeybindingReadOnlyRow({ row, anchorId }: KeybindingRowProps) {
+  return (
+    <SettingsRow
+      id={anchorId}
+      className="rounded-none"
+      title={<KeybindingRowTitle row={row} />}
+      description={
+        <span className="flex h-6 items-center gap-1.5">
+          <span className="text-xs leading-none text-muted-foreground/70">When</span>
+          <span className="truncate font-mono text-xs">{row.when || "Always"}</span>
+        </span>
+      }
+      control={<KeybindingPill value={row.key} />}
+    />
+  );
+}
+
+const BindingRow = isAldoCloud ? KeybindingReadOnlyRow : KeybindingSettingsRow;
+
 /** Draft state for a binding that does not exist yet. */
 function useNewKeybindingDraft({
   allRows,
@@ -1297,7 +1321,7 @@ function KeybindingsList(props: KeybindingsListProps) {
     <div>
       {isAddingBinding ? <NewKeybindingSettingsRow {...newProps} /> : null}
       {rows.map((row) => (
-        <KeybindingSettingsRow
+        <BindingRow
           key={row.id}
           row={row}
           anchorId={anchorIds.get(row.id)}
@@ -1332,11 +1356,14 @@ export function KeybindingsSettingsPanel() {
   // fan out to every connected environment in the selection, so one
   // shortcut change reaches each machine the user runs T3 Code on.
   const { environment: primaryEnvironment, connectedEnvironments } = useSettingsScope();
-  const serverKeybindings = primaryEnvironment?.serverConfig?.keybindings;
-  const keybindings = useMemo(
-    () => mergeWithDefaultKeybindings(serverKeybindings ?? []),
-    [serverKeybindings],
-  );
+  // Aldo lists what the app applies there: the defaults, never a machine's edits.
+  const serverKeybindings = isAldoCloud ? undefined : primaryEnvironment?.serverConfig?.keybindings;
+  const keybindings = useMemo(() => {
+    const merged = mergeWithDefaultKeybindings(serverKeybindings ?? []);
+    return isAldoCloud
+      ? merged.filter((binding) => !ALDO_HIDDEN_KEYBINDING_COMMANDS.has(binding.command))
+      : merged;
+  }, [serverKeybindings]);
   const keybindingsConfigPath = primaryEnvironment?.serverConfig?.keybindingsConfigPath ?? null;
   const availableEditors = primaryEnvironment?.serverConfig?.availableEditors ?? [];
   const upsertKeybinding = useAtomCommand(serverEnvironment.upsertKeybinding, {
@@ -1526,43 +1553,49 @@ export function KeybindingsSettingsPanel() {
               inputRef={searchInputRef}
               collapsedAccessory={bindingsCount}
             />
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    type="button"
-                    size="icon-xs"
-                    variant="ghost-muted"
-                    onClick={() => setIsAddingBinding(true)}
-                    aria-label="Add keybinding"
-                  >
-                    <PlusIcon />
-                  </Button>
-                }
-              />
-              <TooltipPopup side="top">Add keybinding</TooltipPopup>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    type="button"
-                    size="icon-xs"
-                    variant="ghost-muted"
-                    disabled={!keybindingsConfigPath}
-                    onClick={openKeybindingsFile}
-                    aria-label="Open keybindings.json"
-                  >
-                    <FileJsonIcon />
-                  </Button>
-                }
-              />
-              <TooltipPopup side="top">Open keybindings.json</TooltipPopup>
-            </Tooltip>
+            {/* Aldo's keybindings can't change, and there's no editor on its machines. */}
+            {isAldoCloud ? null : (
+              <>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        type="button"
+                        size="icon-xs"
+                        variant="ghost-muted"
+                        onClick={() => setIsAddingBinding(true)}
+                        aria-label="Add keybinding"
+                      >
+                        <PlusIcon />
+                      </Button>
+                    }
+                  />
+                  <TooltipPopup side="top">Add keybinding</TooltipPopup>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        type="button"
+                        size="icon-xs"
+                        variant="ghost-muted"
+                        disabled={!keybindingsConfigPath}
+                        onClick={openKeybindingsFile}
+                        aria-label="Open keybindings.json"
+                      >
+                        <FileJsonIcon />
+                      </Button>
+                    }
+                  />
+                  <TooltipPopup side="top">Open keybindings.json</TooltipPopup>
+                </Tooltip>
+              </>
+            )}
           </div>
         }
       >
-        {!isElectron ? <BrowserKeybindingNotice /> : null}
+        {/* Aldo has no desktop app to suggest. */}
+        {!isElectron && !isAldoCloud ? <BrowserKeybindingNotice /> : null}
 
         <KeybindingsList {...listProps} />
       </SettingsSection>

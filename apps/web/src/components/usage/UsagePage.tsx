@@ -86,7 +86,7 @@ import { UsagePriceOverrides } from "./UsagePriceOverrides";
 import { UsageProviderChart } from "./UsageProviderChart";
 import { sortModelsByTokens } from "./usageBreakdown";
 import {
-  METRIC_OPTIONS,
+  METRIC_OPTIONS as USAGE_METRIC_OPTIONS,
   WINDOW_OPTIONS,
   resolveUsageShortcut,
   type UsageMetric,
@@ -98,6 +98,12 @@ import {
   saveUsagePagePreferences,
   type UsagePagePreferences,
 } from "./usagePagePreferences";
+
+// Aldo has no Limits tab: its own plan limits head the page, read by its server,
+// while T3's would count only the machines that are awake.
+const METRIC_OPTIONS = isAldoCloud
+  ? USAGE_METRIC_OPTIONS.filter((option) => option.value !== "limits")
+  : USAGE_METRIC_OPTIONS;
 
 function isUsageMetric(value: string | null | undefined): value is UsageMetric {
   return METRIC_OPTIONS.some((option) => option.value === value);
@@ -1166,11 +1172,16 @@ function UsageEnvironmentFilter({
               contractMismatches={contractMismatches}
             />
           ) : null}
-          <MenuSeparator />
-          <MenuItem onClick={() => setModelPricesOpen(true)}>
-            <SlidersHorizontalIcon aria-hidden />
-            Model prices
-          </MenuItem>
+          {/* Aldo: prices written to the awake machines never reach new threads. */}
+          {isAldoCloud ? null : (
+            <>
+              <MenuSeparator />
+              <MenuItem onClick={() => setModelPricesOpen(true)}>
+                <SlidersHorizontalIcon aria-hidden />
+                Model prices
+              </MenuItem>
+            </>
+          )}
         </MenuPopup>
       </Menu>
       {modelPricesOpen ? (

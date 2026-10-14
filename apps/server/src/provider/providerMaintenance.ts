@@ -709,6 +709,29 @@ export const resolveLatestProviderVersion = Effect.fn("resolveLatestProviderVers
   return version;
 });
 
+/**
+ * The providers as a client of a managed machine sees them: its host installs
+ * and pins their CLIs, and the server refuses to update them, so none offers
+ * an update.
+ */
+export function withoutProviderUpdates(
+  providers: ReadonlyArray<ServerProvider>,
+): ReadonlyArray<ServerProvider> {
+  return providers.map((provider) =>
+    provider.versionAdvisory
+      ? {
+          ...provider,
+          versionAdvisory: {
+            ...provider.versionAdvisory,
+            updateCommand: null,
+            canUpdate: false,
+            canInstallVersion: false,
+          },
+        }
+      : provider,
+  );
+}
+
 export const enrichProviderSnapshotWithVersionAdvisory = Effect.fn(
   "enrichProviderSnapshotWithVersionAdvisory",
 )(function* (
