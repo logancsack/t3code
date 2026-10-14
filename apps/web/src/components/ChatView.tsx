@@ -8154,20 +8154,21 @@ export default function ChatView(props: ChatViewProps) {
       setThreadError(threadIdForSend, attachmentCapabilitiesBeforeUpload.fileBlockReason);
       return;
     }
+    // Aldo: images for a cloud agent that isn't up yet (a new thread's is
+    // created by its first message) go inside the message, like its words, so
+    // Aldo holds it whole and sends it even if this page goes away
+    // (aldo/dispatch.ts). Files can only upload to the agent.
+    const aldoAgentOffline =
+      isAldoCloud && isAldoEnvironmentId(environmentId) && !isAldoConnected(environmentId);
     const turnUsesAttachmentUploads =
       composerFilesSnapshot.length > 0
         ? attachmentCapabilitiesBeforeUpload.supportsAttachmentUploads
-        : supportsAttachmentUploads;
-    // Aldo: when the thread's cloud agent isn't up yet (a new thread's is
-    // created by its first message), the message goes out like one without
-    // attachments: it shows at once and the composer clears, and the
-    // attachments upload once the agent is up (below, with the turn's).
+        : supportsAttachmentUploads && !aldoAgentOffline;
+    // Aldo: a message with files for a cloud agent that isn't up goes out like
+    // one without attachments: it shows at once and the composer clears, and
+    // the attachments upload once the agent is up (below, with the turn's).
     const uploadsAwaitAldoAgent =
-      turnUsesAttachmentUploads &&
-      composerAttachmentsSnapshot.length > 0 &&
-      isAldoCloud &&
-      isAldoEnvironmentId(environmentId) &&
-      !isAldoConnected(environmentId);
+      turnUsesAttachmentUploads && composerAttachmentsSnapshot.length > 0 && aldoAgentOffline;
     if (
       turnUsesAttachmentUploads &&
       composerAttachmentsSnapshot.length > 0 &&
