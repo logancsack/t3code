@@ -77,23 +77,28 @@ export function buildAldoPlaces<TProject>(input: {
   const places = new Map<string, AldoPlace<TProject>>();
   const latest = (left: string | null, right: string | null) =>
     left === null ? right : right === null ? left : left > right ? left : right;
+  // A sidebar project can group machines on different repositories (the same first one, other
+  // companions): each set is a place of its own, told apart by its detail.
   for (const group of input.groups) {
-    const repos = group.environmentIds
-      .map((environmentId) => reposByMachine.get(environmentId))
-      .find((found) => found !== undefined);
-    if (!repos || repos.length === 0) continue;
-    const activeAt = group.environmentIds.reduce<string | null>(
-      (at, environmentId) => latest(at, input.activity.get(environmentId) ?? null),
-      null,
-    );
-    const key = placeKey(repos);
-    const known = places.get(key);
-    places.set(
-      key,
-      known
-        ? { ...known, activeAt: latest(known.activeAt, activeAt) }
-        : { repos, name: group.name, detail: placeDetail(repos), activeAt, project: group.project },
-    );
+    for (const environmentId of group.environmentIds) {
+      const repos = reposByMachine.get(environmentId);
+      if (!repos || repos.length === 0) continue;
+      const activeAt = input.activity.get(environmentId) ?? null;
+      const key = placeKey(repos);
+      const known = places.get(key);
+      places.set(
+        key,
+        known
+          ? { ...known, activeAt: latest(known.activeAt, activeAt) }
+          : {
+              repos,
+              name: group.name,
+              detail: placeDetail(repos),
+              activeAt,
+              project: group.project,
+            },
+      );
+    }
   }
   for (const { ref, name } of input.aldoProjects) {
     if (places.has(ref)) continue;

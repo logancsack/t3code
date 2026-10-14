@@ -76,6 +76,37 @@ describe("buildAldoPlaces", () => {
     });
   });
 
+  it("makes a place of each set of repositories a project groups", () => {
+    const places = buildAldoPlaces({
+      machines: [
+        { environmentId: "aldo-solo", repos: ["logancsack/aldo"] },
+        { environmentId: "aldo-pair-1", repos: ["logancsack/aldo", "logancsack/t3code"] },
+        { environmentId: "aldo-pair-2", repos: ["logancsack/aldo", "logancsack/t3code"] },
+      ],
+      groups: [
+        {
+          name: "aldo",
+          project: "app",
+          environmentIds: ["aldo-solo", "aldo-pair-1", "aldo-pair-2"],
+        },
+      ],
+      activity: new Map([
+        ["aldo-solo", "2026-10-12T08:00:00Z"],
+        ["aldo-pair-1", "2026-10-13T08:00:00Z"],
+        ["aldo-pair-2", "2026-10-14T08:00:00Z"],
+      ]),
+      aldoProjects: [],
+    });
+    expect(places.map((place) => [place.repos, place.detail, place.activeAt])).toEqual([
+      [
+        ["logancsack/aldo", "logancsack/t3code"],
+        "Repositories · aldo, t3code",
+        "2026-10-14T08:00:00Z",
+      ],
+      [["logancsack/aldo"], "Repository", "2026-10-12T08:00:00Z"],
+    ]);
+  });
+
   it("skips a project whose machines the directory doesn't list", () => {
     const places = buildAldoPlaces({
       machines: [],

@@ -296,7 +296,9 @@ export function AldoPlaceSuggestion(props: {
       window.clearTimeout(timer);
     };
   }, [asks, routed?.text, text]);
-  const suggested = asks ? routed?.project : null;
+  // Kept while the user types on, so it doesn't flicker, but not once they've changed what it read.
+  const current = asks && routed !== null && text.startsWith(routed.text);
+  const suggested = current ? routed.project : null;
   if (!suggested || suggested.repos.length === 0 || dismissed.has(placeKey(suggested.repos))) {
     return null;
   }

@@ -9469,6 +9469,12 @@ export default function ChatView(props: ChatViewProps) {
     (text: string) => onSubmitPlanFollowUp({ text, interactionMode, linkProposedPlan: false }),
     [interactionMode, onSubmitPlanFollowUp],
   );
+  // Aldo: a move asks its agent to hand the thread off, a tool call Plan mode would only plan.
+  const onSendAldoMove = useCallback(
+    (text: string) =>
+      onSubmitPlanFollowUp({ text, interactionMode: "default", linkProposedPlan: false }),
+    [onSubmitPlanFollowUp],
+  );
   // Aldo: what the working line needs to say a turn has stopped moving, with Nudge and Stop.
   useAldoStallSignals({
     threadKey: isServerThread ? routeThreadKey : null,
@@ -10289,7 +10295,7 @@ export default function ChatView(props: ChatViewProps) {
             onAddProjectScript={saveProjectScript}
             onUpdateProjectScript={updateProjectScript}
             onDeleteProjectScript={deleteProjectScript}
-            onSendAldoMessage={isAldoCloud && isServerThread ? onSendFollowUp : undefined}
+            onSendAldoMessage={isAldoCloud && isServerThread ? onSendAldoMove : undefined}
           />
         </WorkspacePageHeader>
 

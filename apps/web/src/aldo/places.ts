@@ -14,7 +14,6 @@ import { useProjects, useThreadShells } from "../state/entities";
 import { usePrimaryEnvironmentId } from "../state/environments";
 import type { AldoPickedPlace } from "./AldoPlaceTile";
 import {
-  aldoSupportsProjects,
   getAldoEnvironments,
   listAldoRepositoryDirectory,
   subscribeAldoEnvironments,
@@ -100,7 +99,7 @@ export function useAldoPlaces(withDirectory: boolean): {
   const threads = useThreadShells();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const groupingSettings = useClientSettings(selectProjectGroupingSettings);
-  const repositories = useAldoRepositories(withDirectory && aldoSupportsProjects());
+  const repositories = useAldoRepositories(withDirectory);
   const places = useMemo(() => {
     const groups = buildSidebarProjectSnapshots({
       projects,

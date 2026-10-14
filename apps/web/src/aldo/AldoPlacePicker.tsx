@@ -31,7 +31,6 @@ import { useIsMobile } from "../hooks/useMediaQuery";
 import { cn } from "../lib/utils";
 import { formatRelativeTime } from "../timestampFormat";
 import { AldoPlaceTile, type AldoPickedPlace } from "./AldoPlaceTile";
-import { aldoSupportsProjects } from "./cloud";
 import {
   aldoProjectSlug,
   filterAldoPlaces,
@@ -92,13 +91,18 @@ export function AldoPlacePicker(props: {
       setOpen(false);
       act(value);
     };
+  // Picking where a draft already is only closes the picker.
+  const here = props.mode === "draft" && props.current !== null ? placeKey(props.current) : null;
+  const pick = (place: AldoPlaceChoice) => {
+    if (placeKey(place.repos) !== here) props.onPick(place);
+  };
   const list = open ? (
     <AldoPlaceList
       mode={props.mode}
       current={props.current}
       showTitle={isMobile || props.mode === "move"}
       autoFocus={!isMobile}
-      onPick={closeThen(props.onPick)}
+      onPick={closeThen(pick)}
       onCreate={props.onCreate ? closeThen(props.onCreate) : null}
       onMore={props.onMore ? closeThen<void>(props.onMore) : undefined}
     />
@@ -289,7 +293,7 @@ function AldoPlaceList(props: {
   useEffect(() => {
     if (props.autoFocus) inputRef.current?.focus();
   }, [props.autoFocus]);
-  const loading = repositories === null && aldoSupportsProjects();
+  const loading = repositories === null;
 
   const rowIndex = new Map(rows.map((row, at) => [row.key, at]));
   const renderRow = (row: Row) => {
