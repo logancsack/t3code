@@ -89,7 +89,9 @@ describe("aldoProjectForMovedDraft", () => {
 
   it("says so when it can't have a machine, and leaves the draft", async () => {
     const toast = vi.spyOn(toastManager, "add");
-    threads.startAldoSandbox.mockRejectedValueOnce(new Error("You've reached your plan's machines."));
+    threads.startAldoSandbox.mockRejectedValueOnce(
+      new Error("You've reached your plan's machines."),
+    );
     expect(await aldoProjectForMovedDraft(draftId, null)).toBeNull();
     expect(toast).toHaveBeenCalledWith(
       expect.objectContaining({
