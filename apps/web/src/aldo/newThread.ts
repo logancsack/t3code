@@ -1,14 +1,20 @@
 // Starting a thread at once (B1): "New" opens a General draft, ready to type
 // in, and the draft's "General ▾" chip (AldoPlaceChip) moves it to a project
-// or repository before its first message, taking what's typed along.
+// or repository before its first message, taking what's typed along. T3's own
+// ways in (its "without a project", its draft's project picker) do the same,
+// each thread on a machine of its own.
 
-import { useCallback, useState } from "react";
+import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
+import type { ScopedProjectRef } from "@t3tools/contracts";
+import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 
 import { toastManager } from "../components/ui/toast";
 import { useComposerDraftStore, type DraftId } from "../composerDraftStore";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { randomUUID } from "../lib/utils";
-import { startAldoSandbox } from "./threads";
+import { waitForProject } from "../state/entities";
+import { aldoSupportsGeneralThreads, isAldoCloud, subscribeAldoEnvironments } from "./cloud";
+import { aldoProjectRefForNewThread, startAldoSandbox } from "./threads";
 
 /** What's typed in a draft being moved, for the draft it moves to (AldoRepositoryDialog). */
 let carried: { readonly from: DraftId; readonly prompt: string } | null = null;
@@ -103,4 +109,59 @@ export function useStartAldoThread(): {
     [handleNewThread],
   );
   return { start, starting };
+}
+
+/** Counts the moves of a draft asked for (aldoProjectForMovedDraft), so only the latest lands. */
+let latestMove = 0;
+
+/**
+ * Where a draft moving to another place before its first message goes (T3's
+ * project picker on a draft): to `target`'s project (null: General) on a
+ * machine of its own, an idle one or a new one, never another thread's.
+ * Resolves with the project for the draft to take, or null when another move
+ * was asked for meanwhile, or the draft was sent (it stays where it went).
+ */
+export async function aldoProjectForMovedDraft(
+  draftId: DraftId,
+  target: ScopedProjectRef | null,
+): Promise<EnvironmentProject | null> {
+  const move = ++latestMove;
+  const projectRef =
+    target === null
+      ? await startAldoSandbox({ repos: [] })
+      : await aldoProjectRefForNewThread(target);
+  const project = await waitForProject(projectRef);
+  const draft = useComposerDraftStore.getState().getDraftSession(draftId);
+  return move === latestMove && draft !== null && draft.promotedTo == null ? project : null;
+}
+
+/**
+ * Whether a thread can start without a project, in General: never outside
+ * Aldo, nor on an older Aldo (its directory says, once listed).
+ */
+export function useAldoGeneralThreads(): boolean {
+  return useSyncExternalStore(
+    subscribeAldoEnvironments,
+    () => isAldoCloud && aldoSupportsGeneralThreads(),
+    () => false,
+  );
+}
+
+/**
+ * T3's "without a project" in Aldo: a General draft at once, on a computer of
+ * its own, as New opens (T3's scratch project would go on the machine of the
+ * thread on screen). Null where there's none (useAldoGeneralThreads).
+ */
+export function useAldoStartWithoutProject(): (() => Promise<void>) | null {
+  const { start } = useStartAldoThread();
+  const general = useAldoGeneralThreads();
+  return useMemo(
+    () =>
+      general
+        ? async () => {
+            await start([]);
+          }
+        : null,
+    [general, start],
+  );
 }

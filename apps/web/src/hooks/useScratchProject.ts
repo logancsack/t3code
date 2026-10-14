@@ -7,6 +7,7 @@ import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { useCallback } from "react";
 
+import { isAldoCloud } from "~/aldo/cloud";
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
 import { waitForProject } from "~/state/entities";
 import { useEnvironments } from "~/state/environments";
@@ -38,6 +39,9 @@ export function useScratchProject() {
   /** The scratch folder of a connected environment, or null when it offers none. */
   const scratchWorkspaceRootFor = useCallback(
     (environmentId: EnvironmentId | null): string | null => {
+      // Aldo: a machine is its thread's alone, so a thread without a project
+      // starts in General on its own (aldo/newThread.ts), not in this folder.
+      if (isAldoCloud) return null;
       const environment = environments.find((entry) => entry.environmentId === environmentId);
       return environment?.connection.phase === "connected"
         ? (environment.serverConfig?.scratchWorkspaceRoot ?? null)
