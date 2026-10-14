@@ -392,6 +392,9 @@ export class GitVcsDriver extends Context.Service<
 const WORKSPACE_FILES_MAX_OUTPUT_BYTES = 16 * 1024 * 1024;
 const CHECKPOINT_RECOVERY_MAX_CANDIDATES = 64;
 const CHECKPOINT_RECOVERY_TIMEOUT = "5 seconds";
+// Staging hashes every new or changed file (through Git LFS's clean filter for
+// media), so gigabytes of fresh renders outlast the default 30 seconds.
+const CHECKPOINT_STAGE_TIMEOUT_MS = 5 * 60_000;
 const GIT_CHECK_IGNORE_MAX_STDIN_BYTES = 256 * 1024;
 const CHECKPOINT_DIFF_MAX_OUTPUT_BYTES = 10_000_000;
 const WORKSPACE_GIT_HARDENED_CONFIG_ARGS = [
@@ -947,6 +950,7 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
               ...exclusions,
             ],
             env: commitEnv,
+            timeoutMs: CHECKPOINT_STAGE_TIMEOUT_MS,
           });
         yield* stageFiles([]).pipe(
           Effect.catchTags({
@@ -990,13 +994,15 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
                   }
                 }
                 if (exclusions.length === 0) return yield* error;
-                return yield* stageFiles(exclusions);
+                return exclusions;
               }).pipe(
-                // One budget covers discovery, queued Git admission, probes, and the staging retry.
+                // One budget covers discovery, queued Git admission, and probes. The retry
+                // restages the whole tree, so it gets staging's own timeout.
                 Effect.timeoutOrElse({
                   duration: CHECKPOINT_RECOVERY_TIMEOUT,
                   orElse: () => Effect.fail(error),
                 }),
+                Effect.flatMap(stageFiles),
               ),
           }),
         );

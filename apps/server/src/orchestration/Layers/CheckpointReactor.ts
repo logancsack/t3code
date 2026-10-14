@@ -43,6 +43,8 @@ import * as PullRequestService from "../../pullRequest/PullRequestService.ts";
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 
+const CHECKPOINT_WORKERS = 8;
+
 type ReactorInput =
   | {
       readonly source: "runtime";
@@ -1020,7 +1022,17 @@ const make = Effect.gen(function* () {
       ),
     );
 
-  const worker = yield* makeDrainableWorker(processInputSafely);
+  // A capture in a big working tree can take minutes, so one thread's mustn't hold
+  // up another's baseline or revert. Each thread maps to one worker, keeping its own
+  // events in order.
+  const workers = yield* Effect.forEach(Array.from({ length: CHECKPOINT_WORKERS }), () =>
+    makeDrainableWorker(processInputSafely),
+  );
+  const enqueue = (threadId: ThreadId, input: ReactorInput) => {
+    let hash = 0;
+    for (let i = 0; i < threadId.length; i++) hash = (hash * 31 + threadId.charCodeAt(i)) >>> 0;
+    return workers[hash % workers.length]!.enqueue(input);
+  };
 
   const start: CheckpointReactorShape["start"] = Effect.fn("start")(function* () {
     yield* forkParked(
@@ -1032,7 +1044,7 @@ const make = Effect.gen(function* () {
         ) {
           return Effect.void;
         }
-        return worker.enqueue({ source: "domain", event });
+        return enqueue(event.payload.threadId, { source: "domain", event });
       }),
     );
 
@@ -1046,14 +1058,14 @@ const make = Effect.gen(function* () {
         ) {
           return Effect.void;
         }
-        return worker.enqueue({ source: "runtime", event });
+        return enqueue(event.threadId, { source: "runtime", event });
       }),
     );
   });
 
   return {
     start,
-    drain: worker.drain.pipe(
+    drain: Effect.forEach(workers, (worker) => worker.drain, { discard: true }).pipe(
       Effect.andThen(statusRefreshWorker.drain),
       Effect.andThen(entryRefreshWorker.drain),
     ),
