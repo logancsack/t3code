@@ -11765,6 +11765,61 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
+  it.effect("offers a managed machine's clients no provider update", () =>
+    Effect.gen(function* () {
+      const provider = {
+        instanceId: ProviderInstanceId.make("codex"),
+        driver: ProviderDriverKind.make("codex"),
+        enabled: true,
+        installed: true,
+        version: "1.0.0",
+        status: "ready" as const,
+        auth: { status: "authenticated" as const },
+        checkedAt: "2026-04-11T00:00:00.000Z",
+        models: [],
+        slashCommands: [],
+        skills: [],
+        versionAdvisory: {
+          status: "behind_latest" as const,
+          currentVersion: "1.0.0",
+          latestVersion: "1.1.0",
+          updateCommand: "npm install -g @openai/codex@latest",
+          canUpdate: true,
+          canInstallVersion: true,
+          checkedAt: "2026-04-11T00:00:00.000Z",
+          message: "Update available.",
+        },
+      };
+      yield* buildAppUnderTest({
+        config: { managedDevPc: true },
+        layers: {
+          providerRegistry: {
+            getProviders: Effect.succeed([provider]),
+            refresh: () => Effect.succeed([provider]),
+          },
+        },
+      });
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const [config, refreshed] = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          Effect.all([
+            client[WS_METHODS.serverGetConfig]({}),
+            client[WS_METHODS.serverRefreshProviders]({}),
+          ]),
+        ),
+      );
+      for (const providers of [config.providers, refreshed.providers]) {
+        assert.deepInclude(providers[0]?.versionAdvisory, {
+          status: "behind_latest",
+          latestVersion: "1.1.0",
+          updateCommand: null,
+          canUpdate: false,
+          canInstallVersion: false,
+        });
+      }
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
   it.effect("serves the provider catalog to the managed coordinator", () =>
     Effect.gen(function* () {
       const providers = [
