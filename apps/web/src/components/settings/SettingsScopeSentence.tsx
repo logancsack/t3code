@@ -36,10 +36,12 @@ export const SETTINGS_DEVICE_ONLY_PATHS: ReadonlySet<string> = new Set([
   "/settings/snap-shot",
   "/settings/connections",
   // The managed workspace's page, and Aldo's: the account's, at any selection.
-  // Aldo shows its accounts in place of Providers, Integrations and Source Control.
+  // Aldo shows its accounts in place of Providers, Integrations and Source Control,
+  // and its keybindings can't be changed.
   "/settings/workspace",
   ...(isAldoCloud
     ? [
+        "/settings/keybindings",
         "/settings/providers",
         "/settings/integrations",
         "/settings/source-control",
@@ -86,13 +88,16 @@ export function SettingsScopeSentence() {
         <span className="shrink-0">Applying settings for</span>
         <ProjectScopeMenu {...props} />
       </span>
-      <span className="flex min-w-0 items-center gap-1.5">
-        <span className="shrink-0">
-          {/* A legacy checkout link names one environment without `machine`. */}
-          {scope.search.machine || scope.scope.kind === "checkout" ? "on" : "across"}
+      {/* Aldo keeps the machines out of sight: a setting applies to every thread's. */}
+      {isAldoCloud ? null : (
+        <span className="flex min-w-0 items-center gap-1.5">
+          <span className="shrink-0">
+            {/* A legacy checkout link names one environment without `machine`. */}
+            {scope.search.machine || scope.scope.kind === "checkout" ? "on" : "across"}
+          </span>
+          <EnvironmentScopeMenu {...props} />
         </span>
-        <EnvironmentScopeMenu {...props} />
-      </span>
+      )}
     </p>
   );
 }

@@ -244,7 +244,9 @@ function RootRouteView() {
           <ConnectOnboardingDialog />
           <SshPasswordPromptDialog />
           <SnapShotCoordinator />
-          <ThreadNotificationCoordinator />
+          {/* Aldo alerts for every thread itself; T3's would double them and
+              fight AldoAttentionSync over the favicon badge. */}
+          {isAldoCloud ? null : <ThreadNotificationCoordinator />}
           <QueuedMessageSender />
           <ConfirmDialogHost />
           <CustomSnoozeDialogHost />

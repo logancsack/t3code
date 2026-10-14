@@ -8,6 +8,7 @@ import { createContext, type ReactNode, useContext, useMemo } from "react";
 import { isAldoCloud } from "../../aldo/cloud";
 import { useAldoMachineSettings } from "../../aldo/machineSettings";
 import { aldoSettingsSelection } from "../../aldo/machineSettings.logic";
+import { aldoSettingsScopeSearch } from "../../aldo/settings.logic";
 import { useEnvironments, usePrimaryEnvironmentId } from "../../state/environments";
 import { getProjectFileQueryAtom, optimisticFileAtom } from "../files/projectFilesQueryState";
 import { useSettingsProjectGroups } from "./useSettingsProjectGroups";
@@ -123,7 +124,12 @@ export function SettingsScopeProvider({
   onChange: (next: SettingsScopeSearch) => void;
   children: ReactNode;
 }) {
-  const resolved = useResolvedSettingsScope(search, singleEnvironment);
+  // Aldo: a project or every thread, never one machine.
+  const scopeSearch = useMemo(
+    () => (isAldoCloud ? aldoSettingsScopeSearch(search) : search),
+    [search],
+  );
+  const resolved = useResolvedSettingsScope(scopeSearch, singleEnvironment);
   const value = useMemo(
     () => ({ ...resolved, singleEnvironment, selectScope: onChange }),
     [onChange, resolved, singleEnvironment],

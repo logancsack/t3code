@@ -556,10 +556,12 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.timestampFormat !== DEFAULT_UNIFIED_SETTINGS.timestampFormat
         ? ["Time format"]
         : []),
-      ...(settings.notificationMode !== DEFAULT_UNIFIED_SETTINGS.notificationMode
+      // Aldo doesn't show T3's notification, follow-up, update-check or worktree rows.
+      ...(!isAldoCloud && settings.notificationMode !== DEFAULT_UNIFIED_SETTINGS.notificationMode
         ? ["Thread notifications"]
         : []),
-      ...(settings.inAppNotificationsEnabled !== DEFAULT_UNIFIED_SETTINGS.inAppNotificationsEnabled
+      ...(!isAldoCloud &&
+      settings.inAppNotificationsEnabled !== DEFAULT_UNIFIED_SETTINGS.inAppNotificationsEnabled
         ? ["In-app notifications"]
         : []),
       ...(settings.sidebarThreadPreviewCount !== DEFAULT_UNIFIED_SETTINGS.sidebarThreadPreviewCount
@@ -602,7 +604,7 @@ export function useSettingsRestore(onRestored?: () => void) {
         ? ["Rich text composer"]
         : []),
       ...(settings.sendShortcut !== DEFAULT_UNIFIED_SETTINGS.sendShortcut ? ["Send shortcut"] : []),
-      ...(settings.followUpBehavior !== DEFAULT_UNIFIED_SETTINGS.followUpBehavior
+      ...(!isAldoCloud && settings.followUpBehavior !== DEFAULT_UNIFIED_SETTINGS.followUpBehavior
         ? ["Follow-up behavior"]
         : []),
       ...(settings.contextWindowMeterEnabled !== DEFAULT_UNIFIED_SETTINGS.contextWindowMeterEnabled
@@ -611,8 +613,8 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.responseStreamingMode !== DEFAULT_UNIFIED_SETTINGS.responseStreamingMode
         ? ["Response streaming"]
         : []),
-      ...(settings.enableProviderUpdateChecks !==
-      DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks
+      ...(!isAldoCloud &&
+      settings.enableProviderUpdateChecks !== DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks
         ? ["Provider update checks"]
         : []),
       ...(settings.continueThreadsAfterServerUpdate !==
@@ -620,14 +622,16 @@ export function useSettingsRestore(onRestored?: () => void) {
         ? ["Continue threads after restarts"]
         : []),
       ...(isBackgroundActivityDirty ? ["Background activity"] : []),
-      ...(settings.defaultThreadEnvMode !== DEFAULT_UNIFIED_SETTINGS.defaultThreadEnvMode
+      ...(!isAldoCloud &&
+      settings.defaultThreadEnvMode !== DEFAULT_UNIFIED_SETTINGS.defaultThreadEnvMode
         ? ["New thread mode"]
         : []),
-      ...(settings.newWorktreesStartFromOrigin !==
-      DEFAULT_UNIFIED_SETTINGS.newWorktreesStartFromOrigin
+      ...(!isAldoCloud &&
+      settings.newWorktreesStartFromOrigin !== DEFAULT_UNIFIED_SETTINGS.newWorktreesStartFromOrigin
         ? ["New worktrees start from origin"]
         : []),
-      ...(settings.addProjectBaseDirectory !== DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory
+      ...(!isAldoCloud &&
+      settings.addProjectBaseDirectory !== DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory
         ? ["Add project base directory"]
         : []),
       ...(settings.confirmThreadUnpin !== DEFAULT_UNIFIED_SETTINGS.confirmThreadUnpin
@@ -2603,18 +2607,23 @@ export function GeneralSettingsPanel() {
       </SettingsSection>
 
       <SettingsSection id="behavior" title="Behavior">
-        <NotificationSettings />
-        <SettingsRow
-          {...searchableSetting("in-app-notifications")}
-          description="Show a toast when another thread finishes, fails, or needs input or approval while this app has focus."
-          control={
-            <Switch
-              checked={settings.inAppNotificationsEnabled}
-              onCheckedChange={(checked) => updateSettings({ inAppNotificationsEnabled: checked })}
-              aria-label="In-app notifications"
-            />
-          }
-        />
+        {/* Aldo alerts and chimes itself, for every thread, awake or asleep. */}
+        {isAldoCloud ? null : <NotificationSettings />}
+        {isAldoCloud ? null : (
+          <SettingsRow
+            {...searchableSetting("in-app-notifications")}
+            description="Show a toast when another thread finishes, fails, or needs input or approval while this app has focus."
+            control={
+              <Switch
+                checked={settings.inAppNotificationsEnabled}
+                onCheckedChange={(checked) =>
+                  updateSettings({ inAppNotificationsEnabled: checked })
+                }
+                aria-label="In-app notifications"
+              />
+            }
+          />
+        )}
         <SettingsRow
           {...searchableSetting("time-format")}
           description="System default follows your browser or OS clock preference."
@@ -2855,77 +2864,84 @@ export function GeneralSettingsPanel() {
           }
         />
 
-        <SettingsRow
-          {...searchableSetting("follow-up-behavior")}
-          description={
-            "Queue follow-ups while the agent runs or steer the current run. " +
-            (settings.sendShortcut === "mod-enter-multiline"
-              ? `Press ${modifierLabel} + Enter for single-line prompts or ${modifierLabel} + Shift + Enter for multiline prompts to do the opposite for one message.`
-              : `Press ${modifierLabel}${settings.sendShortcut === "mod-enter" ? " + Shift" : ""} + Enter to do the opposite for one message.`)
-          }
-          resetAction={
-            settings.followUpBehavior !== DEFAULT_UNIFIED_SETTINGS.followUpBehavior ? (
-              <SettingResetButton
-                label="follow-up behavior"
-                onClick={() =>
-                  updateSettings({
-                    followUpBehavior: DEFAULT_UNIFIED_SETTINGS.followUpBehavior,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <Select
-              value={settings.followUpBehavior}
-              onValueChange={(value) => {
-                if (value === "queue" || value === "steer") {
-                  updateSettings({ followUpBehavior: value });
-                }
-              }}
-            >
-              <SelectTrigger size="sm" className="w-auto min-w-0" aria-label="Follow-up behavior">
-                <SelectValue>
-                  {settings.followUpBehavior === "queue" ? "Queue" : "Steer"}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectPopup align="end" alignItemWithTrigger={false}>
-                <SelectItem value="queue">Queue</SelectItem>
-                <SelectItem value="steer">Steer</SelectItem>
-              </SelectPopup>
-            </Select>
-          }
-        />
+        {/* A follow-up always steers in Aldo; mod+Enter queues one. */}
+        {isAldoCloud ? null : (
+          <SettingsRow
+            {...searchableSetting("follow-up-behavior")}
+            description={
+              "Queue follow-ups while the agent runs or steer the current run. " +
+              (settings.sendShortcut === "mod-enter-multiline"
+                ? `Press ${modifierLabel} + Enter for single-line prompts or ${modifierLabel} + Shift + Enter for multiline prompts to do the opposite for one message.`
+                : `Press ${modifierLabel}${settings.sendShortcut === "mod-enter" ? " + Shift" : ""} + Enter to do the opposite for one message.`)
+            }
+            resetAction={
+              settings.followUpBehavior !== DEFAULT_UNIFIED_SETTINGS.followUpBehavior ? (
+                <SettingResetButton
+                  label="follow-up behavior"
+                  onClick={() =>
+                    updateSettings({
+                      followUpBehavior: DEFAULT_UNIFIED_SETTINGS.followUpBehavior,
+                    })
+                  }
+                />
+              ) : null
+            }
+            control={
+              <Select
+                value={settings.followUpBehavior}
+                onValueChange={(value) => {
+                  if (value === "queue" || value === "steer") {
+                    updateSettings({ followUpBehavior: value });
+                  }
+                }}
+              >
+                <SelectTrigger size="sm" className="w-auto min-w-0" aria-label="Follow-up behavior">
+                  <SelectValue>
+                    {settings.followUpBehavior === "queue" ? "Queue" : "Steer"}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectPopup align="end" alignItemWithTrigger={false}>
+                  <SelectItem value="queue">Queue</SelectItem>
+                  <SelectItem value="steer">Steer</SelectItem>
+                </SelectPopup>
+              </Select>
+            }
+          />
+        )}
 
-        <SettingsRow
-          serverScoped
-          settingKeys={["enableProviderUpdateChecks"]}
-          {...searchableSetting("provider-update-checks")}
-          description="Check installed provider CLIs for newer available versions."
-          resetAction={
-            settings.enableProviderUpdateChecks !==
-            DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks ? (
-              <SettingResetButton
-                label="provider update checks"
-                onClick={() =>
-                  updateSettings({
-                    enableProviderUpdateChecks: DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks,
-                  })
+        {/* Aldo keeps update checks on, so model pickers stay current. */}
+        {isAldoCloud ? null : (
+          <SettingsRow
+            serverScoped
+            settingKeys={["enableProviderUpdateChecks"]}
+            {...searchableSetting("provider-update-checks")}
+            description="Check installed provider CLIs for newer available versions."
+            resetAction={
+              settings.enableProviderUpdateChecks !==
+              DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks ? (
+                <SettingResetButton
+                  label="provider update checks"
+                  onClick={() =>
+                    updateSettings({
+                      enableProviderUpdateChecks:
+                        DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks,
+                    })
+                  }
+                />
+              ) : null
+            }
+            control={
+              <ScopedSwitch
+                settingKeys={["enableProviderUpdateChecks"]}
+                checked={settings.enableProviderUpdateChecks}
+                onCheckedChange={(checked) =>
+                  updateSettings({ enableProviderUpdateChecks: Boolean(checked) })
                 }
+                aria-label="Check provider versions"
               />
-            ) : null
-          }
-          control={
-            <ScopedSwitch
-              settingKeys={["enableProviderUpdateChecks"]}
-              checked={settings.enableProviderUpdateChecks}
-              onCheckedChange={(checked) =>
-                updateSettings({ enableProviderUpdateChecks: Boolean(checked) })
-              }
-              aria-label="Check provider versions"
-            />
-          }
-        />
+            }
+          />
+        )}
 
         <SettingsRow
           {...searchableSetting("continue-threads-after-server-update")}
@@ -3296,13 +3312,8 @@ export function GeneralSettingsPanel() {
           }
         />
       </SettingsSection>
-      {isAldoCloud ? (
-        <SettingsSection title="For code">
-          {diffRows}
-          <ProjectDefaultsSettings category="general" worktreeRowsOnly />
-          {projectRows}
-        </SettingsSection>
-      ) : null}
+      {/* Aldo: each thread works in its machine's own checkout, so only the diff rows apply. */}
+      {isAldoCloud ? <SettingsSection title="For code">{diffRows}</SettingsSection> : null}
 
       <SettingsSection id="about" title="About">
         {isElectron || HOSTED_APP_CHANNEL ? (
@@ -3314,26 +3325,32 @@ export function GeneralSettingsPanel() {
           />
         )}
       </SettingsSection>
-      <SettingsSection title="Diagnostics">
-        <SettingsRow
-          {...searchableSetting("diagnostics")}
-          description={
-            isEnvironmentScope
-              ? "Inspect processes, resource use, and logs on this environment."
-              : "Inspect processes, resource use, and logs on one environment at a time."
-          }
-          control={
-            <Button
-              render={
-                <Link to="/settings/diagnostics" search={{ machine: environmentId ?? undefined }} />
-              }
-              size="sm"
-              variant="outline"
-            >
-              View diagnostics
-            </Button>
-          }
-        />
+      <SettingsSection title={isAldoCloud ? "Licenses" : "Diagnostics"}>
+        {/* It would inspect, and kill processes on, one arbitrary thread's machine. */}
+        {isAldoCloud ? null : (
+          <SettingsRow
+            {...searchableSetting("diagnostics")}
+            description={
+              isEnvironmentScope
+                ? "Inspect processes, resource use, and logs on this environment."
+                : "Inspect processes, resource use, and logs on one environment at a time."
+            }
+            control={
+              <Button
+                render={
+                  <Link
+                    to="/settings/diagnostics"
+                    search={{ machine: environmentId ?? undefined }}
+                  />
+                }
+                size="sm"
+                variant="outline"
+              >
+                View diagnostics
+              </Button>
+            }
+          />
+        )}
         <SettingsRow
           {...searchableSetting("open-source-licenses")}
           description="Notices for dependencies, assets, and optional tools used by T3 Code."
