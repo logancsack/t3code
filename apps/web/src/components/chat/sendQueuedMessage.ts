@@ -29,6 +29,7 @@ import {
   resolveThreadMetadataUpdateForNextTurn,
   revokeBlobPreviewUrl,
 } from "../ChatView.logic";
+import { aldoImagesGoInline } from "../../aldo/dispatch";
 import { toastManager } from "../ui/toast";
 import { fileAttachmentCapabilityBlockReason } from "./composerAttachmentFiles";
 import { ATTACHMENT_ONLY_BOOTSTRAP_PROMPT } from "./composerPromptHistory";
@@ -100,7 +101,11 @@ export async function sendQueuedMessage(
     );
 
     assertFilesAllowed();
-    const useUploads = readConfig()?.environment.capabilities.attachmentUploads === true;
+    // Aldo: images for a cloud agent that isn't up go inside the message (aldo/dispatch.ts).
+    const imagesInline = aldoImagesGoInline(environmentId);
+    const useUploads =
+      readConfig()?.environment.capabilities.attachmentUploads === true &&
+      (message.files.length > 0 || !imagesInline);
     if (useUploads && attachments.length > 0) {
       for (const attachment of attachments) {
         startAttachmentUpload({ environmentId, image: attachment, draftTarget: threadRef });
@@ -197,7 +202,7 @@ export async function sendQueuedMessage(
       },
     });
     queue.finishSend(threadKey, message.id);
-    if (useUploads) releaseDraftAttachments(attachments);
+    if (useUploads || imagesInline) releaseDraftAttachments(attachments);
     for (const image of message.images) revokeBlobPreviewUrl(image.previewUrl);
   } catch (error) {
     if (!queue.failSend(threadKey, message.id)) return;
