@@ -3,7 +3,7 @@
 // for its provider, and for Codex each model's reasoning efforts. Claude Code
 // has no default effort for subagents: they run at the main agent's.
 
-import type { AldoSubagentDefault, AldoSubagentProvider } from "./cloud";
+import type { AldoSubagentDefault, AldoSubagentProvider, AldoSubagents } from "./cloud";
 
 export interface SubagentAgent {
   readonly kind: AldoSubagentProvider;
@@ -51,9 +51,19 @@ const REASONING_OPTION = "reasoningEffort";
 const MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,99}$/;
 const EFFORT_ID = /^[a-z]{1,20}$/;
 
+/** The choices that aren't a model or an effort: neither id can be spelled like this. */
+export const SAME_AS_MAIN = "(main agent)";
+export const MODELS_DEFAULT = "(model's default)";
+
+/** Models the user hid from an instance's picker (Settings → Models), by instance. */
+export type HiddenModels = Readonly<
+  Record<string, { readonly hiddenModels: ReadonlyArray<string> }>
+>;
+
 type EncodedModel = {
   slug?: unknown;
   name?: unknown;
+  isCustom?: unknown;
   capabilities?: { optionDescriptors?: ReadonlyArray<Record<string, unknown>> } | null;
 };
 
@@ -73,21 +83,25 @@ function effortsOf(model: EncodedModel): SubagentEffort[] {
 
 /**
  * The models an agent's subagents can run on: every model its provider's
- * instances list (once each), in their order. One Aldo couldn't write into
- * a config file is left out.
+ * instances list (once each), in their order, but those the user hid from
+ * the model picker (as it does, a custom model stays). One Aldo couldn't
+ * write into a config file is left out.
  */
 export function subagentModels(
   providers: ReadonlyArray<Record<string, unknown>>,
   agent: SubagentAgent,
+  hidden: HiddenModels = {},
 ): SubagentModel[] {
   const out = new Map<string, SubagentModel>();
   for (const provider of providers) {
     if (provider.driver !== agent.driver || provider.enabled === false) continue;
     const models = Array.isArray(provider.models) ? (provider.models as EncodedModel[]) : [];
+    const hiddenHere = new Set(hidden[String(provider.instanceId)]?.hiddenModels ?? []);
     for (const model of models) {
       if (typeof model.slug !== "string" || !MODEL_ID.test(model.slug) || out.has(model.slug)) {
         continue;
       }
+      if (model.isCustom !== true && hiddenHere.has(model.slug)) continue;
       out.set(model.slug, {
         slug: model.slug,
         name: typeof model.name === "string" ? model.name : model.slug,
@@ -108,6 +122,31 @@ export function offeredModels(
 ): SubagentModel[] {
   if (!saved || models.some((model) => model.slug === saved.model)) return [...models];
   return [...models, { slug: saved.model, name: saved.model, efforts: [] }];
+}
+
+/**
+ * The efforts to offer with the saved model: its own, and the one saved if
+ * it no longer lists it (so what Aldo still applies shows, and can be reset).
+ */
+export function offeredEfforts(
+  models: ReadonlyArray<SubagentModel>,
+  saved: AldoSubagentDefault | undefined,
+): SubagentEffort[] {
+  if (!saved) return [];
+  const efforts = models.find((model) => model.slug === saved.model)?.efforts ?? [];
+  const reasoning = saved.reasoning;
+  if (!reasoning || efforts.some((effort) => effort.id === reasoning)) return [...efforts];
+  return [...efforts, { id: reasoning, label: reasoning }];
+}
+
+/** The defaults with one agent's changed (null: back on its own model). */
+export function withSubagentDefault(
+  defaults: AldoSubagents,
+  kind: AldoSubagentProvider,
+  value: AldoSubagentDefault | null,
+): AldoSubagents {
+  const { [kind]: _previous, ...rest } = defaults;
+  return value ? { ...rest, [kind]: value } : rest;
 }
 
 /**
