@@ -2,6 +2,7 @@ import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environ
 import { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
+import { toastManager } from "../components/ui/toast";
 import { DraftId, useComposerDraftStore } from "../composerDraftStore";
 
 const threads = vi.hoisted(() => ({
@@ -84,5 +85,19 @@ describe("aldoProjectForMovedDraft", () => {
     setDraft(scopeThreadRef(repo.environmentId, ThreadId.make("thread-1")));
     machine.resolve(general);
     expect(await move).toBeNull();
+  });
+
+  it("says so when it can't have a machine, and leaves the draft", async () => {
+    const toast = vi.spyOn(toastManager, "add");
+    threads.startAldoSandbox.mockRejectedValueOnce(new Error("You've reached your plan's machines."));
+    expect(await aldoProjectForMovedDraft(draftId, null)).toBeNull();
+    expect(toast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "error",
+        title: "Couldn't move the draft",
+        description: "You've reached your plan's machines.",
+      }),
+    );
+    toast.mockRestore();
   });
 });

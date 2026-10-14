@@ -119,18 +119,29 @@ let latestMove = 0;
  * project picker on a draft): to `target`'s project (null: General) on a
  * machine of its own, an idle one or a new one, never another thread's.
  * Resolves with the project for the draft to take, or null when another move
- * was asked for meanwhile, or the draft was sent (it stays where it went).
+ * was asked for meanwhile, the draft was sent (it stays where it went), or
+ * the machine couldn't be had (which it shows).
  */
 export async function aldoProjectForMovedDraft(
   draftId: DraftId,
   target: ScopedProjectRef | null,
 ): Promise<EnvironmentProject | null> {
   const move = ++latestMove;
-  const projectRef =
-    target === null
-      ? await startAldoSandbox({ repos: [] })
-      : await aldoProjectRefForNewThread(target);
-  const project = await waitForProject(projectRef);
+  let project: EnvironmentProject;
+  try {
+    const projectRef =
+      target === null
+        ? await startAldoSandbox({ repos: [] })
+        : await aldoProjectRefForNewThread(target);
+    project = await waitForProject(projectRef);
+  } catch (cause) {
+    toastManager.add({
+      type: "error",
+      title: "Couldn't move the draft",
+      description: cause instanceof Error ? cause.message : String(cause),
+    });
+    return null;
+  }
   const draft = useComposerDraftStore.getState().getDraftSession(draftId);
   return move === latestMove && draft !== null && draft.promotedTo == null ? project : null;
 }

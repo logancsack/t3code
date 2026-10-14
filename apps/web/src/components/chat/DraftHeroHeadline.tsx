@@ -224,7 +224,7 @@ export function DraftHeroHeadline({
     if (!draftId) {
       return false;
     }
-    const project = await aldoProjectForMovedDraft(draftId, target).catch(() => null);
+    const project = await aldoProjectForMovedDraft(draftId, target);
     if (!project || latestTargetRef.current.draftId !== draftId) {
       return false;
     }
