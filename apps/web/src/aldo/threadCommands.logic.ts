@@ -15,6 +15,8 @@ export interface AldoShellThread {
   readonly snoozedAt?: string | null;
   readonly pinnedAt?: string | null;
   readonly pinOrderKey?: string | null;
+  readonly activeOrderKey?: string | null;
+  readonly autoSettleDisabledAt?: string | null;
   readonly titleRegeneration?: unknown;
   readonly session?: { readonly status: string } | null;
   readonly hasPendingApprovals?: boolean;
@@ -102,8 +104,9 @@ export function aldoCommandPatch(
           settledOverride: "settled",
           settledAt: already ? thread.settledAt : now,
           unsettledAt: null,
-          // Settling unpins and wakes it, as T3 does.
+          // Settling unpins and wakes it, and gives up its place in the active list, as T3 does.
           ...(thread.pinnedAt != null ? { pinnedAt: null, pinOrderKey: null } : {}),
+          ...(thread.activeOrderKey != null ? { activeOrderKey: null } : {}),
           ...unsnoozed,
           updatedAt:
             already && thread.pinnedAt == null && thread.snoozedUntil == null
@@ -182,6 +185,28 @@ export function aldoCommandPatch(
         set: {
           pinOrderKey: orderKey,
           updatedAt: thread.pinOrderKey === orderKey ? thread.updatedAt : now,
+        },
+      };
+    }
+
+    case "thread.active.reorder": {
+      const orderKey = typeof command.orderKey === "string" ? command.orderKey : null;
+      // Only a thread in the active list has a place there.
+      if (thread.pinnedAt != null || thread.settledOverride === "settled" || orderKey === null) {
+        return null;
+      }
+      // Arranging the list isn't activity: updatedAt stays.
+      return { set: { activeOrderKey: orderKey } };
+    }
+
+    case "thread.auto-settle.set": {
+      if (typeof command.enabled !== "boolean") return null;
+      const disabledAt = thread.autoSettleDisabledAt ?? null;
+      const unchanged = command.enabled ? disabledAt === null : disabledAt !== null;
+      return {
+        set: {
+          autoSettleDisabledAt: command.enabled ? null : (disabledAt ?? now),
+          updatedAt: unchanged ? thread.updatedAt : now,
         },
       };
     }

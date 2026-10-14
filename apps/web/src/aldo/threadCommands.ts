@@ -1,13 +1,14 @@
-// Settling, archiving, pinning, snoozing, renaming or deleting a thread whose
-// machine sleeps, at once and without waking it. T3 sends each command to the
-// thread's machine and shows the change when the machine's event comes back,
-// so on a sleeping machine every one of these waited half a minute for it to
-// wake. For a machine this browser isn't connected to, the change is made
-// here instead, in T3's cached shell, as T3 would make it
-// (threadCommands.logic.ts), and the command goes to Aldo with it: Aldo makes
-// the same change to its copy, so the user's other devices see it, and sends
-// the command to T3 now if the machine runs, else when it next starts. When
-// the machine connects, T3's own shell replaces this one.
+// Settling, archiving, pinning, snoozing, renaming, arranging or deleting a
+// thread whose machine sleeps, or turning its auto-settle off, at once and
+// without waking it. T3 sends each command to the thread's machine and shows
+// the change when the machine's event comes back, so on a sleeping machine
+// every one of these waited half a minute for it to wake. For a machine this
+// browser isn't connected to, the change is made here instead, in T3's
+// cached shell, as T3 would make it (threadCommands.logic.ts), and the
+// command goes to Aldo with it: Aldo makes the same change to its copy, so
+// the user's other devices see it, and sends the command to T3 now if the
+// machine runs, else when it next starts. When the machine connects, T3's
+// own shell replaces this one.
 
 import type { EnvironmentId } from "@t3tools/contracts";
 
@@ -151,8 +152,11 @@ async function keep(
       await takeAldoShell(environmentId, shell.snapshotSequence).catch(() => undefined);
       return keep(environmentId, command, false);
     }
-    // An Aldo without kept commands: the machine takes it, as before.
-    if (cause instanceof AldoApiError && cause.status === 404) return null;
+    // An Aldo without kept commands (404), or older than this client, which
+    // doesn't keep this one (400): the machine takes it, as before.
+    if (cause instanceof AldoApiError && (cause.status === 404 || cause.status === 400)) {
+      return null;
+    }
     throw cause;
   }
 }
