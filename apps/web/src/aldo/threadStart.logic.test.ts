@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  aldoMachineStart,
   aldoStartReason,
   describeAldoThreadStart,
   describeAldoWakeFailure,
@@ -201,5 +202,30 @@ describe("describeAldoWakeFailure", () => {
 
   it("keeps a long reason to one short line", () => {
     expect(describeAldoWakeFailure("x".repeat(1000)).reason).toHaveLength(300);
+  });
+});
+
+describe("aldoMachineStart", () => {
+  const failed = { state: "failed", detail: "Couldn't start: error: …" } as const;
+
+  it("is neither when Aldo isn't starting anything on the machine", () => {
+    expect(aldoMachineStart(undefined, "thread-b")).toBeNull();
+    expect(aldoMachineStart({}, null)).toBeNull();
+  });
+
+  it("is starting while any start on the machine is under way", () => {
+    expect(aldoMachineStart({ a: failed, c: { state: "retrying" } }, "thread-b")).toBe("starting");
+  });
+
+  it("is failed for the thread whose start failed", () => {
+    expect(aldoMachineStart({ a: failed }, "a")).toBe("failed");
+  });
+
+  it("leaves the machine to another thread on it when one thread's start failed", () => {
+    expect(aldoMachineStart({ a: failed }, "b")).toBeNull();
+  });
+
+  it("is failed once every start failed, with no thread on screen", () => {
+    expect(aldoMachineStart({ a: failed, c: failed })).toBe("failed");
   });
 });

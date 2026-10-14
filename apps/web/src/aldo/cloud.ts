@@ -31,6 +31,7 @@ import type { AldoCheckCounts, AldoPullRequestStage } from "./pullRequests.logic
 import { isAldoCost, type AldoCost } from "./costs.logic";
 import { parseAldoShares, type AldoShareView } from "./library.logic";
 import { aldoProviderLimitsOf, type AldoProviderLimits } from "./providerLimits.logic";
+import { aldoMachineStart } from "./threadStart.logic";
 
 export const isAldoCloud = import.meta.env.VITE_ALDO_CLOUD === "1";
 
@@ -296,13 +297,15 @@ export function aldoMachineIsAsleep(environmentId: string): boolean {
 
 /**
  * Whether Aldo is starting a thread on this machine (it brings the machine up
- * itself), or couldn't start one (there's no machine to bring up), or neither.
+ * itself), or couldn't start the thread on screen (`threadId`; with none,
+ * any), so there's nothing to bring up for it, or neither (aldoMachineStart).
  */
-export function aldoStartOf(environmentId: string): "starting" | "failed" | null {
+export function aldoStartOf(
+  environmentId: string,
+  threadId: string | null = null,
+): "starting" | "failed" | null {
   const entry = knownEnvironments?.find((candidate) => candidate.environmentId === environmentId);
-  const starts = Object.values(entry?.starts ?? {});
-  if (starts.length === 0) return null;
-  return starts.some((start) => start.state !== "failed") ? "starting" : "failed";
+  return aldoMachineStart(entry?.starts, threadId);
 }
 
 /** Where Aldo's start of one of the machine's threads stands (its T3 thread id), from the directory; null if Aldo isn't starting it. */

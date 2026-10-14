@@ -2498,7 +2498,7 @@ export default function ChatView(props: ChatViewProps) {
   );
   const aldoWake = useAldoPreload(
     activeEnvironment?.environmentId ?? null,
-    isServerThread,
+    isServerThread ? threadId : null,
     activeEnvironment?.connection.phase,
     aldoThreadDetailMissing && threadDetailLoading,
   );
