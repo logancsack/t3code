@@ -4,6 +4,9 @@ const state = vi.hoisted(() => ({
   threads: {} as Record<string, number>,
   projects: [] as Array<{ environmentId: string; id: string }>,
   sandboxes: [] as Array<{ environmentId: string }>,
+  onAskedBranch: [] as string[],
+  drafts: {} as Record<string, { environmentId: string; promotedTo?: unknown }>,
+  prompts: {} as Record<string, string>,
   created: [] as unknown[],
 }));
 
@@ -17,6 +20,7 @@ vi.mock("./cloud", () => ({
   isAldoEnvironmentId: (id: string) => id.startsWith("aldo-"),
   aldoProjectSandboxes: () => state.sandboxes,
   aldoSandboxesFor: () => state.sandboxes,
+  aldoMachineOnAskedBranch: (id: string) => state.onAskedBranch.includes(id),
   createAldoEnvironment: (input: unknown) => {
     state.created.push(input);
     return Promise.reject(new Error("not in this test"));
@@ -35,6 +39,15 @@ vi.mock("../connection/storage", () => ({
   seedEnvironmentCache: () => Promise.resolve(),
 }));
 vi.mock("../components/ui/toast", () => ({ toastManager: { add: () => "toast" } }));
+vi.mock("../composerDraftStore", () => ({
+  composerDraftHasUserContent: (draft: { prompt: string } | undefined) => Boolean(draft?.prompt),
+  useComposerDraftStore: {
+    getState: () => ({
+      draftThreadsByThreadKey: state.drafts,
+      getComposerDraft: (draftId: string) => ({ prompt: state.prompts[draftId] ?? "" }),
+    }),
+  },
+}));
 
 import type { ScopedProjectRef } from "@t3tools/contracts";
 
@@ -49,6 +62,9 @@ beforeEach(() => {
     { environmentId: "aldo-older", id: "p" },
   ];
   state.sandboxes = [{ environmentId: "aldo-older" }, { environmentId: "aldo-pr" }];
+  state.onAskedBranch = [];
+  state.drafts = {};
+  state.prompts = {};
   state.created = [];
 });
 
@@ -63,5 +79,31 @@ describe("aldoProjectRefForNewThread", () => {
     state.threads = { "aldo-pr": 1 };
     await expect(aldoProjectRefForNewThread(ref("aldo-pr"))).resolves.toEqual(ref("aldo-older"));
     expect(state.created).toEqual([]);
+  });
+
+  it("leaves a machine to its draft once a task is in it, as to a thread", async () => {
+    state.drafts = { fix: { environmentId: "aldo-pr", promotedTo: null } };
+    state.prompts = { fix: "Fix the failing check" };
+    await expect(aldoProjectRefForNewThread(ref("aldo-pr"))).resolves.toEqual(ref("aldo-older"));
+  });
+
+  it("still uses a machine whose draft is empty (T3 reuses that draft)", async () => {
+    state.threads = { "aldo-pr": 1 };
+    state.drafts = { empty: { environmentId: "aldo-older", promotedTo: null } };
+    await expect(aldoProjectRefForNewThread(ref("aldo-pr"))).resolves.toEqual(ref("aldo-older"));
+  });
+
+  it("keeps a pull request's machine for the first draft it opens alone", async () => {
+    state.onAskedBranch = ["aldo-pr"];
+    await expect(aldoProjectRefForNewThread(ref("aldo-pr"))).resolves.toEqual(ref("aldo-pr"));
+    state.drafts = { checkout: { environmentId: "aldo-pr", promotedTo: null } };
+    await expect(aldoProjectRefForNewThread(ref("aldo-pr"))).resolves.toEqual(ref("aldo-older"));
+  });
+
+  it("never gives another thread an idle machine on a pull request's branch", async () => {
+    state.threads = { "aldo-pr": 1 };
+    state.onAskedBranch = ["aldo-older"];
+    await expect(aldoProjectRefForNewThread(ref("aldo-pr"))).rejects.toThrow("not in this test");
+    expect(state.created).toHaveLength(1);
   });
 });

@@ -50,13 +50,22 @@ export async function openAldoPullRequestThread(
     });
     return;
   }
+  // Aldo works only on an open one: a finding's Fix is still there on one that's merged or closed.
+  if (pullRequest.state !== "open") {
+    toastManager.add({
+      type: "error",
+      title: `This pull request is ${pullRequest.state}`,
+      description: "A thread works only on an open pull request's branch.",
+    });
+    return;
+  }
   const toastId = toastManager.add({
     type: "loading",
     title: "Opening a thread on the pull request's branch...",
   });
   // Loaded here, so the panel (and its upstream tests) don't import Aldo's machines with it.
   // When Aldo doesn't record the thread (a fork's pull request, say), startAldoSandbox says why.
-  const { startAldoSandbox } = await import("./threads");
+  const { discardAldoSandbox, startAldoSandbox } = await import("./threads");
   const projectRef = await startAldoSandbox(
     aldoPullRequestThreadRequest(fromEnvironmentId, pullRequest),
   ).catch(() => null);
@@ -66,6 +75,8 @@ export async function openAldoPullRequestThread(
   }
   const opened = await openThread(projectRef).catch(() => null);
   if (opened === null) {
+    // Recorded for this thread alone: no other thread takes a pull request's machine.
+    void discardAldoSandbox(projectRef.environmentId).catch(() => undefined);
     toastManager.update(toastId, {
       type: "error",
       title: "Could not open the thread",

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 const aldo = vi.hoisted(() => ({
   startsThem: true,
   started: [] as unknown[],
+  discarded: [] as string[],
   start: null as null | (() => Promise<unknown>),
   toasts: [] as Array<{ readonly id?: string; readonly options?: unknown; readonly closed?: true }>,
 }));
@@ -12,6 +13,10 @@ vi.mock("./threads", () => ({
   startAldoSandbox: (input: unknown) => {
     aldo.started.push(input);
     return aldo.start!();
+  },
+  discardAldoSandbox: (environmentId: string) => {
+    aldo.discarded.push(environmentId);
+    return Promise.resolve();
   },
 }));
 vi.mock("../components/ui/toast", () => ({
@@ -34,6 +39,7 @@ const PROJECT = { environmentId: "aldo-new", projectId: "project" };
 beforeEach(() => {
   aldo.startsThem = true;
   aldo.started = [];
+  aldo.discarded = [];
   aldo.start = async () => PROJECT;
   aldo.toasts = [];
 });
@@ -77,5 +83,36 @@ describe("openAldoPullRequestThread", () => {
     expect(aldo.started).toEqual([]);
     expect(openThread).not.toHaveBeenCalled();
     expect(aldo.toasts).toMatchObject([{ options: { type: "error" } }]);
+  });
+
+  it("starts nothing on a pull request that isn't open", async () => {
+    const openThread = vi.fn();
+    await openAldoPullRequestThread(
+      "aldo-panel",
+      { ...PULL_REQUEST, state: "merged" },
+      openThread,
+      null,
+    );
+    expect(aldo.started).toEqual([]);
+    expect(openThread).not.toHaveBeenCalled();
+    expect(aldo.toasts).toMatchObject([
+      { options: { type: "error", title: "This pull request is merged" } },
+    ]);
+  });
+
+  it("deletes the machine it recorded when the thread doesn't open", async () => {
+    await openAldoPullRequestThread("aldo-panel", PULL_REQUEST, async () => null, null);
+    expect(aldo.discarded).toEqual(["aldo-new"]);
+    expect(aldo.toasts.at(-1)).toMatchObject({ id: "toast", options: { type: "error" } });
+  });
+
+  it("keeps the machine of a thread that opened", async () => {
+    await openAldoPullRequestThread(
+      "aldo-panel",
+      PULL_REQUEST,
+      async () => ({ draftId: DraftId.make("draft") }),
+      null,
+    );
+    expect(aldo.discarded).toEqual([]);
   });
 });

@@ -7,7 +7,8 @@
 // in T3's cache, so the thread is ready to type in before anything runs. The
 // machine is created when the first message is sent (see dispatch.ts). A
 // project's machine with no threads yet (a draft that was never sent) is used
-// before recording another.
+// before recording another, unless it's on a branch it was asked for (a pull
+// request's): that one is for the draft it was recorded for.
 
 import {
   normalizeGitRemoteUrl,
@@ -17,11 +18,17 @@ import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentId, ScopedProjectRef } from "@t3tools/contracts";
 
 import { toastManager } from "../components/ui/toast";
+import {
+  composerDraftHasUserContent,
+  type DraftId,
+  useComposerDraftStore,
+} from "../composerDraftStore";
 import { randomUUID } from "../lib/utils";
 import { clearEnvironmentCache, seedEnvironmentCache } from "../connection/storage";
 import { readEnvironmentThreadRefs, readProjects } from "../state/entities";
 import {
   aldoEnvironmentIdFor,
+  aldoMachineOnAskedBranch,
   aldoProjectSandboxes,
   aldoSandboxesFor,
   createAldoEnvironment,
@@ -62,10 +69,35 @@ async function waitForAldoProject(environmentId: string): Promise<ScopedProjectR
   throw new Error("The thread didn't open. Try again.");
 }
 
-/** One of these machines with no threads yet whose project is loaded. */
+/** Whether a draft not sent yet is on a machine; `invested`: one with something in it. */
+function hasDraft(environmentId: string, invested: boolean): boolean {
+  const { draftThreadsByThreadKey, getComposerDraft } = useComposerDraftStore.getState();
+  return Object.entries(draftThreadsByThreadKey).some(
+    ([draftId, draft]) =>
+      draft.environmentId === environmentId &&
+      draft.promotedTo == null &&
+      (!invested || composerDraftHasUserContent(getComposerDraft(draftId as DraftId))),
+  );
+}
+
+/**
+ * Whether a machine has no thread yet, nor a draft with something in it (a
+ * task a pull request's Fix wrote there, say): that draft's thread is to be
+ * the machine's one. An empty draft T3 reuses for the next new thread.
+ */
+function isIdle(environmentId: string): boolean {
+  return (
+    readEnvironmentThreadRefs(environmentId as EnvironmentId).length === 0 &&
+    !hasDraft(environmentId, true)
+  );
+}
+
+/** One of these machines that's idle (isIdle), on its own branch, and whose project is loaded. */
 function idleMachine(sandboxes: ReadonlyArray<AldoEnvironment>): ScopedProjectRef | null {
   for (const sandbox of sandboxes) {
-    if (readEnvironmentThreadRefs(sandbox.environmentId as EnvironmentId).length > 0) continue;
+    if (!isIdle(sandbox.environmentId) || aldoMachineOnAskedBranch(sandbox.environmentId)) {
+      continue;
+    }
     const project = loadedProject(sandbox.environmentId);
     if (project) return project;
   }
@@ -191,19 +223,29 @@ export async function startAldoSandbox(input: {
 
 /**
  * Where a new thread in `projectRef` should live: outside Aldo, the project
- * itself; in Aldo, that machine while it has no thread (one just recorded for
- * it, which may be on a branch of its own), else an idle machine of the
- * project, or a new one.
+ * itself; in Aldo, that machine while it's idle (one just recorded for it,
+ * which may be on a branch it was asked for: then only until its first draft
+ * opens), else an idle machine of the project, or a new one.
  */
 export async function aldoProjectRefForNewThread(
   projectRef: ScopedProjectRef,
 ): Promise<ScopedProjectRef> {
-  if (!isAldoCloud || !isAldoEnvironmentId(projectRef.environmentId)) return projectRef;
-  if (readEnvironmentThreadRefs(projectRef.environmentId).length === 0) {
-    const own = loadedProject(projectRef.environmentId);
+  const { environmentId } = projectRef;
+  if (!isAldoCloud || !isAldoEnvironmentId(environmentId)) return projectRef;
+  if (
+    isIdle(environmentId) &&
+    !(aldoMachineOnAskedBranch(environmentId) && hasDraft(environmentId, false))
+  ) {
+    const own = loadedProject(environmentId);
     if (own) return own;
   }
-  return startAldoSandbox({ fromEnvironmentId: projectRef.environmentId });
+  return startAldoSandbox({ fromEnvironmentId: environmentId });
+}
+
+/** Deletes a machine just recorded for a thread that didn't open after all. */
+export async function discardAldoSandbox(environmentId: string): Promise<void> {
+  await deleteAldoEnvironment(environmentId);
+  await clearEnvironmentCache(environmentId as EnvironmentId).catch(() => undefined);
 }
 
 /**

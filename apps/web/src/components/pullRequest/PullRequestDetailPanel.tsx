@@ -1076,7 +1076,10 @@ export function PullRequestDetailPanel({
   };
 
   const attachTarget = composerDraftTarget ?? null;
-  const handoffLabels = pullRequestHandoffLabels(attachTarget !== null);
+  // Aldo: a task lands beside the thread only for its own pull request, whose branch its machine is
+  // on; any other opens a thread on the pull request's branch.
+  const handoffTarget = isAldoCloud && context !== "thread" ? null : attachTarget;
+  const handoffLabels = pullRequestHandoffLabels(handoffTarget !== null);
 
   const writeTaskToComposer = (target: ScopedThreadRef | DraftId, task: ThreadTask) => {
     const store = useComposerDraftStore.getState();
@@ -1194,8 +1197,8 @@ export function PullRequestDetailPanel({
     mode: "worktree" | "local" = "worktree",
   ) => {
     if (!handoffSummary || handoff !== null) return;
-    if (attachTarget !== null && task !== null) {
-      writeTaskToComposer(attachTarget, task);
+    if (handoffTarget !== null && task !== null) {
+      writeTaskToComposer(handoffTarget, task);
       toastManager.add({
         type: "success",
         title: "Added to the composer",
@@ -1633,7 +1636,7 @@ export function PullRequestDetailPanel({
               variant="destructive-outline"
               disabled={
                 handoff !== null ||
-                (attachTarget === null && (checkoutRoot === null || aldoCannotCheckOut))
+                (handoffTarget === null && (checkoutRoot === null || aldoCannotCheckOut))
               }
               onClick={startResolveConflicts}
               aria-label={handoff === "conflicts" ? "Preparing..." : "Resolve conflicts"}

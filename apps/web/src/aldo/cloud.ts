@@ -298,6 +298,15 @@ export function aldoThreadInGeneral(environmentId: string): boolean {
   return knownEnvironments?.find((entry) => entry.environmentId === environmentId)?.repo === "";
 }
 
+/**
+ * Whether a machine was recorded on a branch it was asked for (a pull
+ * request's), not on its own aldo/<id>: it's for the thread it was recorded for.
+ */
+export function aldoMachineOnAskedBranch(environmentId: string): boolean {
+  const entry = knownEnvironments?.find((candidate) => candidate.environmentId === environmentId);
+  return entry !== undefined && entry.branch !== `aldo/${entry.threadId}`;
+}
+
 /** Whether a thread's machine is still to be created (it is when its first message is sent). */
 export function aldoMachineIsNew(environmentId: string): boolean {
   return knownEnvironments?.find((entry) => entry.environmentId === environmentId)?.state === "new";
