@@ -465,16 +465,21 @@ function RightPanelEmptyState(props: {
       onClick: props.onAddAgents,
       badgeCount: props.liveAgentCount,
     },
-    {
-      label: "Device",
-      description: "Watch an iOS Simulator or Android Emulator.",
-      icon: Smartphone,
-      shortcut: "M",
-      available: props.deviceAvailable,
-      disabledReason: SURFACE_UNAVAILABLE_HINTS.device,
-      onClick: props.onAddDevice,
-      badgeCount: 0,
-    },
+    // Aldo's machines run neither iOS Simulators (macOS) nor Android Emulators (no KVM).
+    ...(isAldoCloud
+      ? []
+      : [
+          {
+            label: "Device",
+            description: "Watch an iOS Simulator or Android Emulator.",
+            icon: Smartphone,
+            shortcut: "M",
+            available: props.deviceAvailable,
+            disabledReason: SURFACE_UNAVAILABLE_HINTS.device,
+            onClick: props.onAddDevice,
+            badgeCount: 0,
+          },
+        ]),
   ] as const;
 
   type SurfaceAction = (typeof actions)[number];
@@ -1041,14 +1046,6 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
           },
         ]),
     {
-      label: "Linked pull requests",
-      icon: PullRequestGlyph.link,
-      shortcut: "L",
-      available: props.pullRequestsAvailable,
-      disabledReason: SURFACE_DISABLED_REASONS.pullRequests,
-      onClick: props.onAddPullRequests,
-    },
-    {
       label: "Agents",
       icon: Bot,
       shortcut: "A",
@@ -1056,14 +1053,19 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       disabledReason: SURFACE_DISABLED_REASONS.agents,
       onClick: props.onAddAgents,
     },
-    {
-      label: "Device",
-      icon: Smartphone,
-      shortcut: "M",
-      available: props.deviceAvailable,
-      disabledReason: SURFACE_DISABLED_REASONS.device,
-      onClick: props.onAddDevice,
-    },
+    // Aldo's machines run neither iOS Simulators (macOS) nor Android Emulators (no KVM).
+    ...(isAldoCloud
+      ? []
+      : [
+          {
+            label: "Device",
+            icon: Smartphone,
+            shortcut: "M",
+            available: props.deviceAvailable,
+            disabledReason: SURFACE_DISABLED_REASONS.device,
+            onClick: props.onAddDevice,
+          },
+        ]),
   ];
 
   // Aldo: work that isn't code leads with the browser and files, the rest under "More".

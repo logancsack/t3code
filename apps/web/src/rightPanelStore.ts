@@ -17,6 +17,8 @@ import {
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
+import { isAldoCloud } from "./aldo/cloud";
+import { withoutDeviceSurfaces } from "./aldo/rightPanel.logic";
 import { resolveStorage } from "./lib/storage";
 
 const RIGHT_PANEL_KINDS = [
@@ -894,6 +896,12 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
         ),
       }),
       migrate: migratePersistedRightPanelState,
+      merge: (persisted, current) => {
+        const merged = { ...current, ...(persisted as Partial<RightPanelStoreState>) };
+        return isAldoCloud
+          ? { ...merged, byThreadKey: withoutDeviceSurfaces(merged.byThreadKey) }
+          : merged;
+      },
     },
   ),
 );
