@@ -6,7 +6,8 @@
 // that never got a thread is deleted, a woken one goes back to sleep. Aldo's
 // sweep does the same for tabs that close first. Both are settings
 // (preloadSettings.ts). A machine Aldo is starting a thread on is left to it
-// until it's up, and then connected; one Aldo couldn't start isn't brought up.
+// until it's up, and then connected; one Aldo couldn't start a thread on isn't
+// brought up for that thread (its other threads still wake it).
 // A thread with nothing to show (neither Aldo nor this browser has a copy of
 // it, threadDetails.ts) wakes its machine regardless, once: the machine then
 // reports it, and it opens without waking from then on. One that doesn't wake
@@ -138,9 +139,9 @@ function useAldoPausedMidTurn(environmentId: string | null): boolean {
 }
 
 /**
- * Preloads the cloud agent of the thread on screen: `isThread` is false for
- * a new thread's draft (its machine is created) and true for an existing
- * thread (its machine is woken). `nothingToShow`: the thread has no copy
+ * Preloads the cloud agent of the thread on screen: `threadId` is null for
+ * a new thread's draft (its machine is created) and an existing thread's id
+ * (its machine is woken). `nothingToShow`: the thread has no copy
  * anywhere, so its machine is woken to show it, whatever the setting, as is
  * one that went to sleep mid-turn, so its turn carries on. Also
  * keeps an agent that's up from idling out while the thread is on screen and the page is in use.
@@ -149,10 +150,11 @@ function useAldoPausedMidTurn(environmentId: string | null): boolean {
  */
 export function useAldoPreload(
   environmentId: string | null,
-  isThread: boolean,
+  threadId: string | null,
   phase: string | undefined,
   nothingToShow = false,
 ) {
+  const isThread = threadId !== null;
   const settings = useAldoPreloadSettings();
   const pausedMidTurn = useAldoPausedMidTurn(isThread ? environmentId : null);
   // Once woken to show the thread (or carry its turn on), the machine stays up while it's on screen.
@@ -197,13 +199,13 @@ export function useAldoPreload(
     const preload = () => {
       // Already up: it isn't this visit's to put back.
       if (document.visibilityState !== "visible" || isAldoConnected(environmentId)) return;
-      const start = aldoStartOf(environmentId);
-      // Aldo couldn't start its thread: there's nothing to bring up.
+      const start = aldoStartOf(environmentId, threadId);
+      // Aldo couldn't start this thread: there's nothing to bring up for it.
       if (start === "failed") return;
       // Aldo is bringing it up (bringing it up here too would race it): connect once it has.
       if (start === "starting") {
         stopWaiting ??= subscribeAldoEnvironments(() => {
-          if (aldoStartOf(environmentId) === "starting") return;
+          if (aldoStartOf(environmentId, threadId) === "starting") return;
           stopWaiting?.();
           stopWaiting = null;
           preload();
@@ -240,7 +242,7 @@ export function useAldoPreload(
       if (retryRef.current === preload) retryRef.current = null;
       if (preloaded && aldoLastSentAt(environmentId) < openedAt) scheduleUnload(environmentId);
     };
-  }, [applies, enabled, environmentId]);
+  }, [applies, enabled, environmentId, threadId]);
 
   useEffect(() => {
     if (!applies || environmentId === null || phase !== "connected") return;

@@ -27,6 +27,24 @@ export interface AldoThreadStartView {
   readonly step: number | null;
 }
 
+/**
+ * From a machine's starts: whether Aldo is starting a thread on it (it brings
+ * the machine up itself), or couldn't start the thread on screen (`threadId`),
+ * so there's nothing to bring up for it, or neither. Another thread's failed
+ * start doesn't count: Aldo removes a machine after a failed start only when
+ * no other thread is on it, so the one on screen still has its machine to
+ * wake. With no `threadId`, it failed once every start on it has.
+ */
+export function aldoMachineStart(
+  starts: Readonly<Record<string, AldoStartState>> | undefined,
+  threadId: string | null = null,
+): "starting" | "failed" | null {
+  const all = Object.values(starts ?? {});
+  if (all.length === 0) return null;
+  if (all.some((start) => start.state !== "failed")) return "starting";
+  return threadId === null || starts?.[threadId] ? "failed" : null;
+}
+
 /** "a", "a and b", "a, b and c". */
 function listed(items: ReadonlyArray<string>): string {
   if (items.length <= 1) return items[0] ?? "";
