@@ -1116,3 +1116,49 @@ it.effect("GitVcsDriver flushes checkpoint objects and refs to disk before publi
     ),
   );
 });
+
+it.effect("GitVcsDriver gives checkpoint staging longer than the default Git timeout", () => {
+  const timeouts: Array<[ReadonlyArray<string>, number | undefined]> = [];
+
+  return Effect.gen(function* () {
+    const driver = yield* GitVcsDriver.makeVcsDriverShape();
+
+    yield* driver.checkpoints.captureCheckpoint({
+      cwd: "/repo",
+      checkpointRef: CheckpointRef.make("refs/t3/checkpoints/thread/turn/1"),
+    });
+
+    const staging = timeouts.filter(([args]) => args.includes("add"));
+    assert.strictEqual(staging.length, 1);
+    assert.strictEqual(staging[0]?.[1], 5 * 60_000);
+    for (const [args, timeoutMs] of timeouts) {
+      if (!args.includes("add")) assert.isUndefined(timeoutMs, args.join(" "));
+    }
+  }).pipe(
+    Effect.provide(
+      Layer.mergeAll(
+        NodeServices.layer,
+        Layer.mock(VcsProcess.VcsProcess)({
+          run: (input) =>
+            Effect.sync(() => {
+              timeouts.push([input.args, input.timeoutMs]);
+              const stdout = input.args.includes("write-tree")
+                ? "tree0000\n"
+                : input.args.includes("commit-tree")
+                  ? "commit0000\n"
+                  : input.args.includes("--git-common-dir")
+                    ? ".git\n"
+                    : "";
+              return {
+                exitCode: ChildProcessSpawner.ExitCode(0),
+                stdout,
+                stderr: "",
+                stdoutTruncated: false,
+                stderrTruncated: false,
+              };
+            }),
+        }),
+      ),
+    ),
+  );
+});
