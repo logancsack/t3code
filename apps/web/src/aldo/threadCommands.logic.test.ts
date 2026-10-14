@@ -64,6 +64,18 @@ describe("aldoCommandPatch", () => {
     });
   });
 
+  it("settles a thread out of its place in the active list", () => {
+    expect(patchFor(command("thread.settle"), thread({ activeOrderKey: "m" }), NOW)).toEqual({
+      set: {
+        settledOverride: "settled",
+        settledAt: NOW,
+        unsettledAt: null,
+        activeOrderKey: null,
+        updatedAt: NOW,
+      },
+    });
+  });
+
   it("keeps a settled thread's times when it's settled again", () => {
     expect(
       patchFor(
@@ -174,6 +186,53 @@ describe("aldoCommandPatch", () => {
         NOW,
       ),
     ).toEqual({ set: { snoozedUntil: null, snoozedAt: null, updatedAt: NOW } });
+  });
+
+  it("arranges an active thread in its list, which isn't activity", () => {
+    expect(
+      patchFor(
+        command("thread.active.reorder", { orderKey: "b" }),
+        thread({ activeOrderKey: "a" }),
+      ),
+    ).toEqual({ set: { activeOrderKey: "b" } });
+    // Snoozed, it keeps its place for when it's back.
+    expect(
+      patchFor(command("thread.active.reorder", { orderKey: "b" }), thread({ snoozedUntil: NOW })),
+    ).toEqual({ set: { activeOrderKey: "b" } });
+    // Pinned or settled, it has no place there: T3's to refuse.
+    expect(
+      patchFor(command("thread.active.reorder", { orderKey: "b" }), thread({ pinnedAt: BEFORE })),
+    ).toBeNull();
+    expect(
+      patchFor(
+        command("thread.active.reorder", { orderKey: "b" }),
+        thread({ settledOverride: "settled", settledAt: BEFORE }),
+      ),
+    ).toBeNull();
+    expect(patchFor(command("thread.active.reorder"), thread())).toBeNull();
+    expect(patchFor(command("thread.active.reorder", { orderKey: "b" }), null)).toBeNull();
+  });
+
+  it("turns auto-settle off and on, keeping its times when it's already so", () => {
+    expect(patchFor(command("thread.auto-settle.set", { enabled: false }), thread())).toEqual({
+      set: { autoSettleDisabledAt: NOW, updatedAt: NOW },
+    });
+    expect(
+      patchFor(
+        command("thread.auto-settle.set", { enabled: false }),
+        thread({ autoSettleDisabledAt: BEFORE }),
+      ),
+    ).toEqual({ set: { autoSettleDisabledAt: BEFORE, updatedAt: BEFORE } });
+    expect(
+      patchFor(
+        command("thread.auto-settle.set", { enabled: true }),
+        thread({ autoSettleDisabledAt: BEFORE }),
+      ),
+    ).toEqual({ set: { autoSettleDisabledAt: null, updatedAt: NOW } });
+    expect(patchFor(command("thread.auto-settle.set", { enabled: true }), thread())).toEqual({
+      set: { autoSettleDisabledAt: null, updatedAt: BEFORE },
+    });
+    expect(patchFor(command("thread.auto-settle.set"), thread())).toBeNull();
   });
 
   it("renames, but leaves any other meta update to the machine", () => {
