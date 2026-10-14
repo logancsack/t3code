@@ -33,8 +33,11 @@ import { parseAldoShares, type AldoShareView } from "./library.logic";
 import { aldoProviderLimitsOf, type AldoProviderLimits } from "./providerLimits.logic";
 import { aldoMachineStart } from "./threadStart.logic";
 import {
+  ALDO_FILE_PART_BYTES,
   aldoHeldCommand,
+  aldoHeldFileCommand,
   aldoHoldAgain,
+  aldoMissingParts,
   aldoPartsOf,
   aldoUploadsOf,
   type AldoUpload,
@@ -178,11 +181,13 @@ let aldoFeatures: {
   readonly projects: boolean;
   readonly aldoModels: boolean;
   readonly pullRequests: boolean;
+  readonly heldFiles: boolean;
 } = {
   general: false,
   projects: false,
   aldoModels: false,
   pullRequests: false,
+  heldFiles: false,
 };
 
 /** Whether threads can start without a repository (General), as the directory said. */
@@ -203,6 +208,11 @@ export function aldoOffersItsModels(): boolean {
 /** Whether Aldo starts a thread on a pull request's branch (`pullRequest`), as the directory said. */
 export function aldoStartsPullRequestThreads(): boolean {
   return aldoFeatures.pullRequests;
+}
+
+/** Whether Aldo keeps a message's images and files until it's sent (uploadAldoFile), as the directory said. */
+export function aldoKeepsFiles(): boolean {
+  return aldoFeatures.heldFiles;
 }
 const directoryListeners = new Set<() => void>();
 let refreshRequested = true;
@@ -388,6 +398,7 @@ async function fetchEnvironments(): Promise<ReadonlyArray<AldoEnvironment>> {
       projects?: boolean;
       aldoModels?: boolean;
       pullRequests?: boolean;
+      heldFiles?: boolean;
     };
   }>("/api/environments");
   aldoFeatures = {
@@ -395,6 +406,7 @@ async function fetchEnvironments(): Promise<ReadonlyArray<AldoEnvironment>> {
     projects: features?.projects === true,
     aldoModels: features?.aldoModels === true,
     pullRequests: features?.pullRequests === true,
+    heldFiles: features?.heldFiles === true,
   };
   // A listing that started before a deletion finished can still include its machine.
   const listed = environments.filter((environment) => !hiddenByDeletion(environment.environmentId));
@@ -917,31 +929,85 @@ async function uploadAldoImage(threadId: string, upload: AldoUpload): Promise<bo
   return true;
 }
 
+/** Each file's upload to Aldo under way, by id: another for the same file goes after it. */
+const fileUploads = new Map<string, Promise<void>>();
+
+/**
+ * Sends Aldo the parts of a file a message carries that it doesn't have yet
+ * (`id`: the attachment's, aldoAttachmentId), so an upload begun as the file
+ * was attached, or one a page went away from, carries on where it stopped.
+ * One already under way for the file finishes first. Tries again while Aldo
+ * doesn't answer.
+ */
+export function uploadAldoFile(environmentId: string, id: string, file: Blob): Promise<void> {
+  const run = (fileUploads.get(id) ?? Promise.resolve())
+    .catch(() => undefined)
+    .then(() => sendAldoFileParts(environmentId, id, file));
+  fileUploads.set(id, run);
+  const forget = () => {
+    if (fileUploads.get(id) === run) fileUploads.delete(id);
+  };
+  run.then(forget, forget);
+  return run;
+}
+
+async function sendAldoFileParts(environmentId: string, id: string, file: Blob): Promise<void> {
+  const threadId = threadIdForEnvironment(environmentId);
+  const path = `/api/environments/${threadId}/files?upload=${encodeURIComponent(id)}`;
+  const { parts } = await untilAnswered(() =>
+    api<{ parts: Array<{ part: number; bytes: number }> }>(path, {
+      signal: AbortSignal.timeout(HOLD_TIMEOUT_MS),
+    }),
+  );
+  for (const part of aldoMissingParts(file.size, parts)) {
+    const body = file.slice(part * ALDO_FILE_PART_BYTES, (part + 1) * ALDO_FILE_PART_BYTES);
+    await untilAnswered(() =>
+      api(`${path}&part=${part}`, {
+        method: "POST",
+        headers: { "content-type": "application/octet-stream" },
+        body,
+        signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS),
+      }),
+    );
+  }
+}
+
 /**
  * Hands Aldo a message (T3's `thread.turn.start`) for a machine this browser
- * isn't connected to. Aldo brings the machine up and sends it, even if this
- * page goes away; this page sends it too once connected, and T3 runs it once.
- * Images too big to go with it go first, in parts (held.logic.ts), so Aldo
- * holds any message. Tries again for as long as Aldo doesn't answer (the
- * message waits on the device meanwhile: outbox.ts). "held" once Aldo has it;
- * "refused" when Aldo won't hold it (an older Aldo's limit, a thread that's
- * gone): the page sends it itself, as before.
+ * isn't connected to, or one with `files` (its attachments' files, by the id
+ * each is named by) however the machine is. Aldo brings the machine up and
+ * sends it, even if this page goes away; this page sends one without files
+ * too once connected, and T3 runs it once. Files go first, the parts Aldo
+ * doesn't have yet (uploadAldoFile); without them, images too big to go with
+ * the message go first, in parts (held.logic.ts). `now`: sent from a page
+ * connected to the machine, it goes at once. Tries again for as long as Aldo
+ * doesn't answer (the message waits on the device meanwhile: outbox.ts).
+ * "held" once Aldo has it; "refused" when Aldo won't hold one without files
+ * (an older Aldo's limit, a thread that's gone): the page sends it itself, as
+ * before. One with files Aldo won't hold throws Aldo's reason.
  */
 export async function holdAldoTurn(
   environmentId: string,
   command: unknown,
+  files: ReadonlyMap<string, Blob> | null = null,
+  now = false,
 ): Promise<"held" | "refused"> {
   const threadId = threadIdForEnvironment(environmentId);
   for (let tries = 0; ; tries++) {
-    const uploads = aldoUploadsOf(command);
     let held = command;
-    if (uploads.length > 0) {
-      let uploaded = true;
-      for (const upload of uploads) {
-        if (!(uploaded = await uploadAldoImage(threadId, upload))) break;
+    if (files) {
+      for (const [id, file] of files) await uploadAldoFile(environmentId, id, file);
+      held = aldoHeldFileCommand(command, files, now);
+    } else {
+      const uploads = aldoUploadsOf(command);
+      if (uploads.length > 0) {
+        let uploaded = true;
+        for (const upload of uploads) {
+          if (!(uploaded = await uploadAldoImage(threadId, upload))) break;
+        }
+        // An Aldo that takes no uploads holds images inline, as before.
+        if (uploaded) held = aldoHeldCommand(command, uploads);
       }
-      // An Aldo that takes no uploads holds images inline, as before.
-      if (uploaded) held = aldoHeldCommand(command, uploads);
     }
     const body = JSON.stringify({ command: held });
     try {
@@ -956,8 +1022,9 @@ export async function holdAldoTurn(
       return "held";
     } catch (cause) {
       if (!(cause instanceof AldoApiError) || cause.status === 401) throw cause;
-      // Its images' parts were gone by the time Aldo held it (kept a week): sent again, once.
+      // Its uploads' parts were gone by the time Aldo held it (kept a day unnamed): sent again, once.
       if (cause.status === 409 && held !== command && tries === 0) continue;
+      if (files) throw cause;
       return "refused";
     }
   }
