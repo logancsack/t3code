@@ -57,6 +57,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { Kbd } from "~/components/ui/kbd";
 import {
   Menu,
+  MenuGroup,
   MenuGroupLabel,
   MenuItem,
   MenuPopup,
@@ -1418,7 +1419,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                   sideOffset={6}
                   onKeyDownCapture={handleAddSurfaceMenuKeyDown}
                 >
-                  {orderedAddActions.map((action) => {
+                  {(arrangedAddActions?.first ?? addSurfaceActions).map((action) => {
                     const Icon = action.icon;
                     // Browser collapses into one row: clicking the trigger opens
                     // the default profile (the common case stays one click),
@@ -1474,10 +1475,25 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                       );
                     }
                     return (
-                      <Fragment key={action.label}>
-                        {action === arrangedAddActions?.more[0] ? (
-                          <MenuGroupLabel>More</MenuGroupLabel>
-                        ) : null}
+                      <SurfaceMenuItem
+                        key={action.label}
+                        available={action.available}
+                        {...(action.disabledReason
+                          ? { disabledReason: action.disabledReason }
+                          : {})}
+                        shortcut={action.shortcut}
+                        onClick={action.onClick}
+                      >
+                        <Icon />
+                        {action.label}
+                      </SurfaceMenuItem>
+                    );
+                  })}
+                  {/* Aldo: a group label only renders inside its group (Base UI throws otherwise). */}
+                  {arrangedAddActions && arrangedAddActions.more.length > 0 ? (
+                    <MenuGroup>
+                      <MenuGroupLabel>More</MenuGroupLabel>
+                      {arrangedAddActions.more.map((action) => (
                         <SurfaceMenuItem
                           key={action.label}
                           available={action.available}
@@ -1487,12 +1503,12 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                           shortcut={action.shortcut}
                           onClick={action.onClick}
                         >
-                          <Icon />
+                          <action.icon />
                           {action.label}
                         </SurfaceMenuItem>
-                      </Fragment>
-                    );
-                  })}
+                      ))}
+                    </MenuGroup>
+                  ) : null}
                 </MenuPopup>
               </Menu>
             ) : null}
