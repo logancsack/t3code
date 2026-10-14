@@ -73,6 +73,22 @@ describe("aldoProjectForMovedDraft", () => {
     expect(project).toEqual({ environmentId: ownRepo.environmentId, id: ownRepo.projectId });
   });
 
+  it("moves a draft to a project picked by its repositories, with no machine there yet", async () => {
+    threads.startAldoSandbox.mockResolvedValue(ownRepo);
+    const project = await aldoProjectForMovedDraft(draftId, { repos: ["aldo:trip-plans"] });
+    expect(threads.startAldoSandbox).toHaveBeenCalledWith({ repos: ["aldo:trip-plans"] });
+    expect(threads.aldoProjectRefForNewThread).not.toHaveBeenCalled();
+    expect(project).toEqual({ environmentId: ownRepo.environmentId, id: ownRepo.projectId });
+  });
+
+  it("moves a draft to a new project, made with its machine", async () => {
+    threads.startAldoSandbox.mockResolvedValue(ownRepo);
+    const create = { host: "aldo", name: "Trip plans", isPrivate: true } as const;
+    const project = await aldoProjectForMovedDraft(draftId, { create });
+    expect(threads.startAldoSandbox).toHaveBeenCalledWith({ create });
+    expect(project).toEqual({ environmentId: ownRepo.environmentId, id: ownRepo.projectId });
+  });
+
   it("drops a move that a later one overtook, whichever is ready first", async () => {
     const first = deferred<typeof general>();
     threads.startAldoSandbox.mockReturnValueOnce(first.promise);

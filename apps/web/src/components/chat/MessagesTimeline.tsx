@@ -495,6 +495,8 @@ interface MessagesTimelineProps {
   onRemoveQueuedMessage?: (id: string) => void;
   /** Sends a follow-up the agent offered (Aldo's `aldo-next`) as the user's next message. */
   onSendFollowUp?: ((text: string) => Promise<boolean>) | null;
+  /** The thread's first line, above its first message once its start is loaded (Aldo: where it works). */
+  leadingHeader?: React.ReactNode;
 }
 
 // ---------------------------------------------------------------------------
@@ -558,6 +560,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   steerQueuedMessageShortcutLabel = null,
   onRemoveQueuedMessage = NOOP_QUEUED_MESSAGE_ACTION,
   onSendFollowUp = null,
+  leadingHeader = null,
 }: MessagesTimelineProps) {
   const listIdentityKey = displayThreadKey ?? routeThreadKey;
   const rememberedPosition = useMemo(
@@ -1400,6 +1403,11 @@ export const MessagesTimeline = memo(function MessagesTimeline({
                   onLoadEarlier={loadEarlier.onLoadEarlier}
                   fade={topFadeEnabled}
                 />
+              ) : leadingHeader ? (
+                <>
+                  {topFadeEnabled ? TIMELINE_LIST_FADE_HEADER : TIMELINE_LIST_HEADER}
+                  {leadingHeader}
+                </>
               ) : topFadeEnabled ? (
                 TIMELINE_LIST_FADE_HEADER
               ) : (

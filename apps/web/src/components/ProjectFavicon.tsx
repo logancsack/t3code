@@ -13,6 +13,8 @@ import { deriveProjectIdentity } from "../projectIdentity";
 import { projectIconColorClassName } from "../projectIconColors";
 import { ProjectMonogram } from "./ProjectMonogram";
 import { cn } from "~/lib/utils";
+import { AldoGeneralTile } from "~/aldo/AldoGeneralTile";
+import { useAldoGeneral } from "~/aldo/keptRepo";
 
 const DynamicIcon = lazy(() =>
   import("lucide-react/dynamic").then((module) => ({ default: module.DynamicIcon })),
@@ -43,6 +45,9 @@ export function ProjectFavicon(input: {
       faviconPath: project.faviconPath,
     }),
   );
+  // Aldo: General is no project, so it gets no letters or colour, just an empty tile.
+  const aldoGeneral = useAldoGeneral(project.environmentId);
+  if (aldoGeneral) return <AldoGeneralTile className={input.className} />;
   if (project.projectIcon?.kind === "monogram") {
     return (
       <ProjectMonogram

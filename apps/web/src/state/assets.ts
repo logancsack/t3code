@@ -6,6 +6,8 @@ import { Atom } from "effect/unstable/reactivity";
 
 import { connectionAtomRuntime } from "../connection/runtime";
 import { projectFaviconCache } from "../assets/projectFaviconCache";
+import { isAldoCloud } from "../aldo/cloud";
+import { aldoProjectFaviconCache } from "../aldo/projectFavicons";
 import { isElectron } from "../env";
 import { primaryEnvironmentIdAtom } from "./primaryEnvironment";
 import { environmentProjectClonesAtom } from "./projectClones";
@@ -29,7 +31,8 @@ export const assetEnvironment = createAssetEnvironmentAtoms(
 );
 
 export const projectFaviconUrlAtom = createProjectFaviconUrlAtomFamily({
-  imageCache: projectFaviconCache,
+  // Aldo: a project's icon shows on all of its machines' threads, asleep or not.
+  imageCache: isAldoCloud ? aldoProjectFaviconCache(projectFaviconCache) : projectFaviconCache,
   createUrl: assetEnvironment.createUrl,
   preparedConnection: environmentSession.preparedConnectionValueAtom,
   projectClones: environmentProjectClonesAtom,

@@ -51,6 +51,7 @@ import {
 } from "./cloud";
 import { HOST_KINDS, type AldoStartMode as Mode } from "./AldoRepositoryPicker";
 import { dropAldoCarriedDraft, landAldoCarriedDraft } from "./newThread";
+import { aldoProjectSlug, typedRepositoryRef } from "./places.logic";
 import { startAldoSandbox } from "./threads";
 
 const MAX_REPOS = 6;
@@ -104,19 +105,6 @@ function slugify(text: string): string {
     .replace(/-{2,}/g, "-")
     .replace(/^[-.]+|[-.]+$/g, "")
     .slice(0, 100);
-}
-
-/** "Podcast Clips!" → "podcast-clips": an Aldo project's slug, as Aldo makes it from the title. */
-function projectSlug(title: string): string {
-  const slug = title
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+/, "")
-    .slice(0, 44)
-    .replace(/-+$/, "");
-  return slug || "project";
 }
 
 /** With Aldo's own projects, which aren't repositories on a git host. */
@@ -332,7 +320,7 @@ function NewProjectForm(props: {
   // An Aldo project is named by its title (Aldo makes its slug); a repository by its name.
   const inAldo = host === "aldo";
   const name = inAldo ? title.trim() : slugify(title);
-  const shownName = inAldo ? `aldo:${projectSlug(name)}` : name;
+  const shownName = inAldo ? `aldo:${aldoProjectSlug(name)}` : name;
   const account =
     host === "aldo" ? null : (props.accounts[host]?.account?.replace(/^@/, "") ?? null);
 
@@ -467,20 +455,6 @@ function hostChoice(
   return account ? `${HOST_LABELS[kind]} · ${account}` : HOST_LABELS[kind];
 }
 
-/** A typed repository ref or a pasted URL, if it looks like one. */
-function typedRef(query: string): string | null {
-  const text = query
-    .trim()
-    .replace(/\.git$/, "")
-    .replace(/\/$/, "");
-  if (/^(?:https?:\/\/)?(github\.com|gitlab\.com|bitbucket\.org|dev\.azure\.com)\//.test(text))
-    return text;
-  if (/^(gitlab|bitbucket|azure):[^\s]+\/[^\s]+$/.test(text) || /^[\w.-]+\/[\w.-]+$/.test(text))
-    return text;
-  if (/^aldo:[a-z0-9-]+$/.test(text)) return text;
-  return null;
-}
-
 function ExistingRepositoryPicker(props: {
   readonly onDone: () => void;
   readonly onCancel: () => void;
@@ -519,7 +493,7 @@ function ExistingRepositoryPicker(props: {
       .slice(0, 200);
   }, [repositories, query]);
 
-  const manual = typedRef(query);
+  const manual = typedRepositoryRef(query);
   const manualIsListed = manual !== null && repositories.some((r) => r.nameWithOwner === manual);
 
   const toggle = (ref: string) => {

@@ -71,7 +71,7 @@ When something needs fixing, a strip at the top says so: an agent signed out of 
 
 ## Starting work
 
-At the top, **New** opens a thread at once, ready to type in, in General: for work that isn't code (see [Threads without a repository](./aldo-general-threads.md)). Before you send it, **General ▾** at the top of the thread moves it to one of your projects or a repository. The arrow beside it has **Project**, which creates a project and starts a thread in it, and, once a git host is connected, **Thread in a repository**, which starts one in repositories you have. Or tell Aldo what you want done.
+At the top, **New** opens a thread at once, ready to type in, in General: for work that isn't code (see [Threads without a repository](./aldo-general-threads.md)). Before you send it, the place chip in its message box moves it to one of your projects or a repository. The arrow beside **New** starts one somewhere else from the outset: General, one of your projects, a repository, or a new project. See [Where a thread works](./aldo-where-threads-work.md). Or tell Aldo what you want done.
 
 ## Narrowing and moving
 

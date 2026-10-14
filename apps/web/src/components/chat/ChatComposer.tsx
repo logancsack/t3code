@@ -1383,6 +1383,10 @@ export interface ChatComposerProps {
   isLocalDraftThread: boolean;
   forceExpandedOnMobile: boolean;
   projectSelectionRequired: boolean;
+  /** Aldo: where the thread works, before the agent's picker (a draft's place chip), at the controls' size. */
+  renderLeadingControl?: ((size: "sm" | "xs") => ReactNode) | undefined;
+  /** What an empty composer says when nothing else needs saying (Aldo: one for the work). */
+  idlePlaceholder?: string | undefined;
 
   // Session phase
   phase: SessionPhase;
@@ -1544,6 +1548,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     isLocalDraftThread: _isLocalDraftThread,
     forceExpandedOnMobile,
     projectSelectionRequired,
+    renderLeadingControl,
+    idlePlaceholder,
     phase,
     isConnecting,
     isSendBusy,
@@ -5146,6 +5152,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           data-resting-controls-separator="true"
         />
       ) : null}
+      {renderLeadingControl?.(composerControlsInStrip ? "xs" : "sm")}
       <ProviderModelPicker
         isComposerOwned
         disabled={providerCatalogPending || isSendBusy}
@@ -5203,7 +5210,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         triggerClassName={
           composerControlsInStrip
             ? "min-w-13 shrink text-xs! @max-[640px]/composer-surface:[&_[data-chat-provider-model-picker-label]]:w-0 @max-[640px]/composer-surface:[&_[data-chat-provider-model-picker-label]]:flex-none"
-            : "-ms-2.5 min-w-13"
+            : renderLeadingControl
+              ? "min-w-13"
+              : "-ms-2.5 min-w-13"
         }
         terminalOpen={terminalOpen}
         open={isComposerModelPickerOpen}
@@ -7052,9 +7061,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                                 ? providerAuthenticationRequired
                                   ? `Reconnect ${selectedProviderDisplayName} to continue`
                                   : "Enable a provider in Settings to send a message"
-                                : phase === "disconnected"
-                                  ? DISCONNECTED_COMPOSER_PLACEHOLDER
-                                  : "Ask anything, @tag files/folders, $use skills, or / for commands"
+                                : (idlePlaceholder ??
+                                  (phase === "disconnected"
+                                    ? DISCONNECTED_COMPOSER_PLACEHOLDER
+                                    : "Ask anything, @tag files/folders, $use skills, or / for commands"))
                     }
                     disabled={
                       isConnecting ||

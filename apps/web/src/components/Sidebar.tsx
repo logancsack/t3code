@@ -76,6 +76,7 @@ import {
   useReducer,
   useRef,
   useState,
+  useSyncExternalStore,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
@@ -158,10 +159,12 @@ import { AldoThreadBadge, isAldoThreadId } from "./ManagedDevPcAgent";
 import {
   aldoSupportsGeneralThreads,
   aldoThreadInKeptRepo,
+  subscribeAldoEnvironments,
   displayedThreadBranch,
   isAldoCloud,
+  isAldoEnvironmentId,
 } from "../aldo/cloud";
-import { useStartAldoThread } from "../aldo/newThread";
+import { aldoNewThreadPlace, useStartAldoThread } from "../aldo/newThread";
 import { buildThreadActionMenuItems } from "./threadActionMenu.logic";
 import {
   animateSidebarLayoutChanges,
@@ -756,7 +759,8 @@ function SidebarSectionHeader(props: {
 const SidebarDraftRow = memo(function SidebarDraftRow(props: {
   draftId: DraftId;
   session: DraftSessionState;
-  composer: ComposerThreadDraftState;
+  /** Null for the open draft before anything is typed in it (Aldo shows it, untitled). */
+  composer: ComposerThreadDraftState | null;
   project: ProjectFaviconProject | null;
   projectDisplayName: string | null;
   isActive: boolean;
@@ -764,22 +768,27 @@ const SidebarDraftRow = memo(function SidebarDraftRow(props: {
   onDiscard: (draftId: DraftId) => void;
 }) {
   const { composer, draftId, onDiscard, onNavigate, session } = props;
-  const promptPreview =
-    replaceComposerContextReferences(composer.prompt, (occurrence) => occurrence.label)
-      .trim()
-      .split("\n", 1)[0] ?? "";
+  const promptPreview = composer
+    ? (replaceComposerContextReferences(composer.prompt, (occurrence) => occurrence.label)
+        .trim()
+        .split("\n", 1)[0] ?? "")
+    : "";
   // images mirrors persistedAttachments once rehydration finishes; before
   // that only the persisted list is populated, hence max not sum.
-  const attachmentCount =
-    Math.max(composer.images.length, composer.persistedAttachments.length) +
-    composer.files.length +
-    composer.terminalContexts.length +
-    composer.previewAnnotations.length +
-    composer.reviewComments.length;
+  const attachmentCount = composer
+    ? Math.max(composer.images.length, composer.persistedAttachments.length) +
+      composer.files.length +
+      composer.terminalContexts.length +
+      composer.previewAnnotations.length +
+      composer.reviewComments.length
+    : 0;
+  const untitled = promptPreview.length === 0 && attachmentCount === 0;
   const preview =
     promptPreview.length > 0
       ? promptPreview
-      : `${attachmentCount} attachment${attachmentCount === 1 ? "" : "s"}`;
+      : untitled
+        ? "Untitled"
+        : `${attachmentCount} attachment${attachmentCount === 1 ? "" : "s"}`;
   const accessibility = resolveSidebarRowAccessibility({
     title: preview,
     statusLabel: "Unsent draft",
@@ -851,7 +860,13 @@ const SidebarDraftRow = memo(function SidebarDraftRow(props: {
               </Tooltip>
             </span>
           </div>
-          <div aria-hidden className="mt-0.5 truncate text-sm font-medium text-foreground/90">
+          <div
+            aria-hidden
+            className={cn(
+              "mt-0.5 truncate text-sm font-medium text-foreground/90",
+              untitled && "font-normal text-muted-foreground/70 italic",
+            )}
+          >
             {preview}
           </div>
         </div>
@@ -863,7 +878,7 @@ const SidebarDraftRow = memo(function SidebarDraftRow(props: {
 interface SidebarDraftRowData {
   draftId: DraftId;
   session: DraftSessionState;
-  composer: ComposerThreadDraftState;
+  composer: ComposerThreadDraftState | null;
 }
 
 // Draft sessions with user content, surfaced above the pinned block so an
@@ -920,6 +935,16 @@ const SidebarDraftBlock = memo(function SidebarDraftBlock(props: {
         continue;
       }
       if (draftKey === props.routeDraftId) {
+        // Aldo: the open draft is the thread being made, so it's in the list
+        // at once and its title writes itself as it's typed (untitled until then).
+        if (isAldoCloud && isAldoEnvironmentId(session.environmentId)) {
+          rows.push({
+            draftId: DraftId.make(draftKey),
+            session,
+            composer: draftsByThreadKey[draftKey] ?? null,
+          });
+          continue;
+        }
         // Open draft: render the frozen entry snapshot, or nothing for a
         // draft that has never been left. Gated on the LIVE session above so
         // send/discard still removes the row immediately.
@@ -4572,12 +4597,24 @@ export default function Sidebar() {
   // uses. The command palette already offers a "New thread in..." submenu
   // for multi-project setups.
   const { start: startAldoThread } = useStartAldoThread();
+  // Aldo: a thread needs no project (it can work in General), once the directory says so.
+  const aldoGeneral = useSyncExternalStore(
+    subscribeAldoEnvironments,
+    () => isAldoCloud && aldoSupportsGeneralThreads(),
+    () => false,
+  );
   const handleNewThreadClick = useCallback(
     (event?: ReactMouseEvent) => {
-      // Aldo: a General draft at once; its "General ▾" moves it before it's sent.
+      // Aldo: a draft at once, in the project of the thread on screen, else
+      // General; its place picker moves it before it's sent.
       if (isAldoCloud && aldoSupportsGeneralThreads() && !event?.shiftKey) {
         if (isMobile) setOpenMobile(false);
-        void startAldoThread([]);
+        void startAldoThread(
+          aldoNewThreadPlace(
+            newThreadContext.activeThread?.environmentId ??
+              newThreadContext.activeDraftThread?.environmentId,
+          ),
+        );
         return;
       }
       // One project: nothing to pick, create immediately. Shift+click creates
@@ -4758,7 +4795,7 @@ export default function Sidebar() {
               }
               onNewProject={openAddProjectCommandPalette}
               onNewThread={handleNewThreadClick}
-              newThreadDisabled={projects.length === 0}
+              newThreadDisabled={projects.length === 0 && !aldoGeneral}
               newThreadShortcutLabel={newThreadShortcutLabel}
               newThreadInProjectShortcutLabel={newThreadInProjectShortcutLabel}
               showNewThreadInProjectHint={projectGroups.length > 1}

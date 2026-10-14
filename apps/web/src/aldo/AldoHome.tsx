@@ -20,7 +20,6 @@ import { useNavigate, useRouter } from "@tanstack/react-router";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import {
   ChevronDownIcon,
-  CompassIcon,
   FolderGit2Icon,
   LayoutGridIcon,
   PlusIcon,
@@ -81,6 +80,10 @@ import {
 } from "./homeFeed";
 import { HOST_KINDS, openAldoRepositoryPicker } from "./AldoRepositoryPicker";
 import { useStartAldoThread } from "./newThread";
+import { AldoPlacePicker } from "./AldoPlacePicker";
+import { forgetAldoRepositories } from "./places";
+import { startAldoSandbox } from "./threads";
+import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import {
   boardFor,
   chipPrompt,
@@ -690,7 +693,16 @@ function NewMenu(props: {
 }) {
   // A General draft at once; an older Aldo can't start a thread outside a repository.
   const { start, starting } = useStartAldoThread();
+  const handleNewThread = useNewThreadHandler();
   const thread = () => (props.general ? void start([]) : openAldoRepositoryPicker("existing"));
+  // A new Aldo project, and a thread in it at once.
+  const create = async (name: string) => {
+    forgetAldoRepositories();
+    const projectRef = await startAldoSandbox({
+      create: { host: "aldo", name, isPrivate: true },
+    }).catch(() => null);
+    if (projectRef) await handleNewThread(projectRef);
+  };
   return (
     <Group aria-label="New">
       <Button
@@ -702,26 +714,38 @@ function NewMenu(props: {
         New
       </Button>
       <GroupSeparator />
-      <Menu>
-        <MenuTrigger render={<Button aria-label="More to start" size="icon-sm" />}>
-          <ChevronDownIcon aria-hidden className="size-4" />
-        </MenuTrigger>
-        <MenuPopup align="end" className="min-w-52">
-          {props.general ? (
-            <MenuItem onClick={thread}>
-              <CompassIcon className="size-4" /> Thread
+      {props.general ? (
+        // The same picker a thread has: General, a project, or a new one.
+        <AldoPlacePicker
+          mode="start"
+          current={null}
+          align="end"
+          trigger={
+            <Button aria-label="Start it in a project" size="icon-sm">
+              <ChevronDownIcon aria-hidden className="size-4" />
+            </Button>
+          }
+          onPick={(place) => void start(place.repos)}
+          onCreate={props.projects ? (name) => void create(name) : null}
+          onMore={() => openAldoRepositoryPicker(props.projects ? "new" : "existing")}
+        />
+      ) : (
+        <Menu>
+          <MenuTrigger render={<Button aria-label="More to start" size="icon-sm" />}>
+            <ChevronDownIcon aria-hidden className="size-4" />
+          </MenuTrigger>
+          <MenuPopup align="end" className="min-w-52">
+            <MenuItem disabled={!props.projects} onClick={() => openAldoRepositoryPicker("new")}>
+              <SparklesIcon className="size-4" /> Project
             </MenuItem>
-          ) : null}
-          <MenuItem disabled={!props.projects} onClick={() => openAldoRepositoryPicker("new")}>
-            <SparklesIcon className="size-4" /> Project
-          </MenuItem>
-          {props.repositories ? (
-            <MenuItem onClick={() => openAldoRepositoryPicker("existing")}>
-              <FolderGit2Icon className="size-4" /> Thread in a repository
-            </MenuItem>
-          ) : null}
-        </MenuPopup>
-      </Menu>
+            {props.repositories ? (
+              <MenuItem onClick={() => openAldoRepositoryPicker("existing")}>
+                <FolderGit2Icon className="size-4" /> Thread in a repository
+              </MenuItem>
+            ) : null}
+          </MenuPopup>
+        </Menu>
+      )}
     </Group>
   );
 }
