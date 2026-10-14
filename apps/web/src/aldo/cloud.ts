@@ -32,6 +32,13 @@ import { isAldoCost, type AldoCost } from "./costs.logic";
 import { parseAldoShares, type AldoShareView } from "./library.logic";
 import { aldoProviderLimitsOf, type AldoProviderLimits } from "./providerLimits.logic";
 import { aldoMachineStart } from "./threadStart.logic";
+import {
+  aldoHeldCommand,
+  aldoHoldAgain,
+  aldoPartsOf,
+  aldoUploadsOf,
+  type AldoUpload,
+} from "./held.logic";
 
 export const isAldoCloud = import.meta.env.VITE_ALDO_CLOUD === "1";
 
@@ -803,28 +810,100 @@ export async function sendAldoThreadCommand(
   });
 }
 
-/** How long Aldo has to take a message before the page sends it itself. */
-const HOLD_TIMEOUT_MS = 15_000;
+/** How long one try at handing Aldo a message waits for its answer. */
+const HOLD_TIMEOUT_MS = 20_000;
+/** How long one part of an image waits for Aldo's answer: a few MB from a phone. */
+const UPLOAD_TIMEOUT_MS = 120_000;
+/** A held message this small goes as a keepalive request, which outlives the page. */
+const KEEPALIVE_MAX_BYTES = 60_000;
+
+/** Runs `request` again while it gets no answer or Aldo is in trouble (aldoHoldAgain), for as long as that lasts. */
+async function untilAnswered<A>(request: () => Promise<A>): Promise<A> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await request();
+    } catch (cause) {
+      // fetch rejects with a TypeError when nothing answered; a timeout with a DOMException.
+      const status =
+        cause instanceof AldoApiError
+          ? cause.status
+          : cause instanceof TypeError || cause instanceof DOMException
+            ? null
+            : undefined;
+      if (status === undefined || !aldoHoldAgain(status)) throw cause;
+      await new Promise((resolve) => setTimeout(resolve, Math.min(15_000, 1_000 * 2 ** attempt)));
+    }
+  }
+}
+
+/** Sends one of a message's images to Aldo, in parts; false when this Aldo takes no uploads. */
+async function uploadAldoImage(threadId: string, upload: AldoUpload): Promise<boolean> {
+  for (const [part, text] of aldoPartsOf(upload.dataUrl).entries()) {
+    try {
+      await untilAnswered(() =>
+        api(
+          `/api/environments/${threadId}/uploads?upload=${encodeURIComponent(upload.id)}&part=${part}`,
+          {
+            method: "POST",
+            headers: { "content-type": "text/plain" },
+            body: text,
+            signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS),
+          },
+        ),
+      );
+    } catch (cause) {
+      if (cause instanceof AldoApiError && (cause.status === 404 || cause.status === 405)) {
+        return false;
+      }
+      throw cause;
+    }
+  }
+  return true;
+}
 
 /**
  * Hands Aldo a message (T3's `thread.turn.start`) for a machine this browser
  * isn't connected to. Aldo brings the machine up and sends it, even if this
  * page goes away; this page sends it too once connected, and T3 runs it once.
- * False when Aldo didn't take it (an older Aldo, a message too big for it to
- * carry, or no answer within HOLD_TIMEOUT_MS): the page sends it itself, as
- * before.
+ * Images too big to go with it go first, in parts (held.logic.ts), so Aldo
+ * holds any message. Tries again for as long as Aldo doesn't answer (the
+ * message waits on the device meanwhile: outbox.ts). "held" once Aldo has it;
+ * "refused" when Aldo won't hold it (an older Aldo's limit, a thread that's
+ * gone): the page sends it itself, as before.
  */
-export async function holdAldoTurn(environmentId: string, command: unknown): Promise<boolean> {
+export async function holdAldoTurn(
+  environmentId: string,
+  command: unknown,
+): Promise<"held" | "refused"> {
   const threadId = threadIdForEnvironment(environmentId);
-  try {
-    await api(`/api/environments/${threadId}/turns`, {
-      method: "POST",
-      body: JSON.stringify({ command }),
-      signal: AbortSignal.timeout(HOLD_TIMEOUT_MS),
-    });
-    return true;
-  } catch {
-    return false;
+  for (let tries = 0; ; tries++) {
+    const uploads = aldoUploadsOf(command);
+    let held = command;
+    if (uploads.length > 0) {
+      let uploaded = true;
+      for (const upload of uploads) {
+        if (!(uploaded = await uploadAldoImage(threadId, upload))) break;
+      }
+      // An Aldo that takes no uploads holds images inline, as before.
+      if (uploaded) held = aldoHeldCommand(command, uploads);
+    }
+    const body = JSON.stringify({ command: held });
+    try {
+      await untilAnswered(() =>
+        api(`/api/environments/${threadId}/turns`, {
+          method: "POST",
+          body,
+          keepalive: new TextEncoder().encode(body).length < KEEPALIVE_MAX_BYTES,
+          signal: AbortSignal.timeout(HOLD_TIMEOUT_MS),
+        }),
+      );
+      return "held";
+    } catch (cause) {
+      if (!(cause instanceof AldoApiError) || cause.status === 401) throw cause;
+      // Its images' parts were gone by the time Aldo held it (kept a week): sent again, once.
+      if (cause.status === 409 && held !== command && tries === 0) continue;
+      return "refused";
+    }
   }
 }
 
