@@ -1821,10 +1821,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
   // Aldo: attachments going to Aldo with the message start uploading as they're attached.
   useEffect(() => {
+    if (!attachmentUploadsDeferred) return;
     for (const attachment of [...composerImages, ...composerFiles]) {
       startAldoUpload(environmentId, attachment);
     }
-  }, [composerFiles, composerImages, environmentId]);
+  }, [attachmentUploadsDeferred, composerFiles, composerImages, environmentId]);
 
   useEffect(() => {
     if (!attachmentUploadsCapabilityKnown || attachmentUploadsDeferred) {

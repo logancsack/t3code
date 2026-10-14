@@ -16,8 +16,8 @@ import { aldoAttachmentId, aldoOwnUuid } from "./held.logic";
 
 type ComposerAttachment = ComposerImageAttachment | ComposerFileAttachment;
 
-/** How long a message's files stay here once it's dispatched: past the other turns of a send to several models. */
-const KEEP_MS = 60_000;
+/** How long a message's files stay here once named: past its send (to several models, too), or one that failed first. */
+const KEEP_MS = 10 * 60_000;
 
 /** The files of the attachments messages name, by the id each names one by, until the messages are handed to Aldo. */
 const named = new Map<string, Blob>();
@@ -41,7 +41,11 @@ export function aldoAttachmentOf(attachment: ComposerAttachment): ChatAttachment
   if (!attachment.file || !id) {
     throw new Error(`Attachment '${attachment.name}' can't be sent: attach it again.`);
   }
-  named.set(id, attachment.file);
+  const file = attachment.file;
+  named.set(id, file);
+  setTimeout(() => {
+    if (named.get(id) === file) named.delete(id);
+  }, KEEP_MS);
   return {
     type: attachment.type,
     id,
@@ -60,10 +64,7 @@ export function aldoFilesOf(command: {
   for (const attachment of command.message?.attachments ?? []) {
     const id = (attachment as { readonly id?: unknown }).id;
     const file = typeof id === "string" ? named.get(id) : undefined;
-    if (typeof id === "string" && file) {
-      files.set(id, file);
-      setTimeout(() => named.delete(id), KEEP_MS);
-    }
+    if (typeof id === "string" && file) files.set(id, file);
   }
   return files.size > 0 ? files : null;
 }

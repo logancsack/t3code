@@ -2716,16 +2716,6 @@ export default function ChatView(props: ChatViewProps) {
     advertisedFileAttachmentBytes === null
       ? null
       : clampFileAttachmentUploadBytes(advertisedFileAttachmentBytes);
-  // Aldo: attachments go to Aldo with the message, not to the thread's cloud
-  // agent (aldo/files.ts). On an Aldo that doesn't keep files they upload to
-  // the agent, which a new thread doesn't have until its first message is
-  // sent (and a sleeping one is still waking): until it's connected they wait
-  // instead of failing; sending brings the agent up and uploads them first.
-  const attachmentUploadsDeferred =
-    aldoCarriesAttachments(environmentId) ||
-    (isAldoCloud &&
-      isAldoEnvironmentId(environmentId) &&
-      environmentById.get(environmentId)?.connection.phase !== "connected");
   const envLocked = Boolean(
     activeThread &&
     (activeThread.messages.length > 0 ||
@@ -3058,6 +3048,18 @@ export default function ChatView(props: ChatViewProps) {
       ),
     [answeredByMessageRequestIds, derivedPendingUserInputs],
   );
+  // Aldo: a message's attachments go to Aldo with it, not to the thread's
+  // cloud agent (aldo/files.ts); an answer to the agent's question still
+  // uploads its own to the agent, which is up to ask it. On an Aldo that
+  // doesn't keep files they upload to the agent, which a new thread doesn't
+  // have until its first message is sent (and a sleeping one is still
+  // waking): until it's connected they wait instead of failing; sending
+  // brings the agent up and uploads them first.
+  const attachmentUploadsDeferred =
+    (aldoCarriesAttachments(environmentId) && pendingUserInputs.length === 0) ||
+    (isAldoCloud &&
+      isAldoEnvironmentId(environmentId) &&
+      environmentById.get(environmentId)?.connection.phase !== "connected");
   const activeSessionTurnId =
     activeThread?.session?.status === "running" ? activeThread.session.activeTurnId : null;
   const activeToolWait = useMemo(
