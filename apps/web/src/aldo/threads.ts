@@ -191,12 +191,18 @@ export async function startAldoSandbox(input: {
 
 /**
  * Where a new thread in `projectRef` should live: outside Aldo, the project
- * itself; in Aldo, an idle machine of the project, or a new one.
+ * itself; in Aldo, that machine while it has no thread (one just recorded for
+ * it, which may be on a branch of its own), else an idle machine of the
+ * project, or a new one.
  */
 export async function aldoProjectRefForNewThread(
   projectRef: ScopedProjectRef,
 ): Promise<ScopedProjectRef> {
   if (!isAldoCloud || !isAldoEnvironmentId(projectRef.environmentId)) return projectRef;
+  if (readEnvironmentThreadRefs(projectRef.environmentId).length === 0) {
+    const own = loadedProject(projectRef.environmentId);
+    if (own) return own;
+  }
   return startAldoSandbox({ fromEnvironmentId: projectRef.environmentId });
 }
 
