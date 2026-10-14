@@ -6,7 +6,7 @@
 // Settings shows the user's values and saves a change to Aldo as well
 // (machineSettings.ts), which writes it into every machine: the running ones
 // at once, the rest as they start or wake. Picking one environment changes
-// that machine alone, until it next wakes with the user's. Per-project
+// that machine alone, until the user's next change. Per-project
 // overrides stay each machine's own: T3 keys them by its project id, which
 // differs on each of a repository's machines. Pure, so it's tested on its own.
 
