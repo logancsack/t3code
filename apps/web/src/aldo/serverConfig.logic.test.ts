@@ -4,6 +4,7 @@ import {
   missingProviders,
   providerInstances,
   providerKinds,
+  withAldoTemplate,
   withMissingProviders,
 } from "./serverConfig.logic";
 
@@ -65,5 +66,48 @@ describe("withMissingProviders", () => {
     expect(withMissingProviders(stored("codex", "muse"), stored("muse"))).toBeNull();
     expect(withMissingProviders("{", stored("muse"))).toBeNull();
     expect(withMissingProviders(undefined, stored("muse"))).toBeNull();
+  });
+});
+
+describe("withAldoTemplate", () => {
+  const stored = (ids: string[], settings: Record<string, unknown>) =>
+    JSON.stringify({
+      schemaVersion: 1,
+      environmentId: "env",
+      config: { ...config(...ids), settings },
+    });
+  const own = { defaultRuntimeMode: "full-access", responseStreamingMode: "paragraph", x: 1 };
+
+  it("puts the user's settings over a cached config's own, as the machine gets them when it wakes", () => {
+    const merged = withAldoTemplate(stored(["codex"], own), stored(["codex"], {}), {
+      defaultRuntimeMode: "approval-required",
+    });
+    expect(JSON.parse(merged!).config.settings).toEqual({
+      ...own,
+      defaultRuntimeMode: "approval-required",
+    });
+  });
+
+  it("adds the providers it lacks as well", () => {
+    const merged = withAldoTemplate(stored(["codex"], own), stored(["codex", "muse"], {}), {
+      responseStreamingMode: "turn",
+    });
+    expect(JSON.parse(merged!).config).toEqual({
+      ...config("codex", "muse"),
+      settings: { ...own, responseStreamingMode: "turn" },
+    });
+  });
+
+  it("leaves a cached config that already has them, or can't be read", () => {
+    expect(
+      withAldoTemplate(stored(["codex"], own), stored(["codex"], {}), {
+        responseStreamingMode: "paragraph",
+      }),
+    ).toBeNull();
+    expect(withAldoTemplate(stored(["codex"], own), stored(["codex"], {}), {})).toBeNull();
+    expect(
+      withAldoTemplate("{", stored(["codex"], {}), { responseStreamingMode: "turn" }),
+    ).toBeNull();
+    expect(withAldoTemplate(undefined, stored(["codex"], {}), {})).toBeNull();
   });
 });

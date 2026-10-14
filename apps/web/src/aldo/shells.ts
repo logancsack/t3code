@@ -34,6 +34,7 @@ import {
   setAldoDirectorySync,
   type AldoEnvironment,
 } from "./cloud";
+import { getAldoMachineSettings, subscribeAldoMachineSettings } from "./machineSettings";
 import { aldoServerConfigsFor, aldoTemplateProviders } from "./serverConfig";
 import { aldoShellCandidates, planAldoShellSync } from "./shells.logic";
 import { aldoShowsStartingThread, clearLeftoverAldoThreads } from "./startingThreads";
@@ -45,8 +46,10 @@ const BATCH = 100;
 const known = new Map<string, number>();
 /** Machines Aldo had no shell for whose cache this tab has looked at for a copy to offer. */
 const offerChecked = new Set<string>();
-/** Machines whose cache this tab has looked at for models, with the providers the newest config listed then. */
+/** Machines whose cache this tab has looked at for models, with the providers the newest config listed then (and the user's settings). */
 const modelsChecked = new Map<string, string>();
+/** The directory as last fetched: a change to the user's settings reaches its sleeping machines' caches at once. */
+let directory: ReadonlyArray<AldoEnvironment> = [];
 
 type Phase = EnvironmentPresentation["connection"]["phase"];
 
@@ -96,14 +99,16 @@ async function download(environments: ReadonlyArray<AldoEnvironment>): Promise<S
 
 /**
  * Models for the machines that aren't connected and have none cached, or a
- * cached copy that lacks a provider the newest config lists: once each per
- * tab, and again when the newest config lists other providers or after the
- * machine was connected (its own config replaced the cache then). One that
- * didn't get them (no cloud agent has reported any yet, or Aldo couldn't be
- * reached) is tried again on the next directory fetch.
+ * cached copy that lacks a provider the newest config lists or the user's
+ * settings Aldo keeps: once each per tab, and again when the newest config
+ * lists other providers, the user changes a setting, or after the machine was
+ * connected (its own config replaced the cache then). One that didn't get them
+ * (no cloud agent has reported any yet, or Aldo couldn't be reached) is tried
+ * again on the next directory fetch.
  */
 async function seedModels(environments: ReadonlyArray<AldoEnvironment>): Promise<void> {
-  const providers = aldoTemplateProviders();
+  const settings = getAldoMachineSettings() ?? {};
+  const template = `${aldoTemplateProviders()} ${JSON.stringify(settings)}`;
   // A connected machine writes its own config over the cache: checked again once it isn't.
   for (const environment of environments) {
     if (isLive(environment.environmentId)) modelsChecked.delete(environment.environmentId);
@@ -111,11 +116,11 @@ async function seedModels(environments: ReadonlyArray<AldoEnvironment>): Promise
   const ids = environments
     .map((environment) => environment.environmentId)
     .filter(
-      (environmentId) => modelsChecked.get(environmentId) !== providers && !isLive(environmentId),
+      (environmentId) => modelsChecked.get(environmentId) !== template && !isLive(environmentId),
     );
   if (ids.length === 0) return;
   // Held while in flight, so a fetch that comes meanwhile doesn't do them again.
-  for (const environmentId of ids) modelsChecked.set(environmentId, providers);
+  for (const environmentId of ids) modelsChecked.set(environmentId, template);
   let done = new Set<string>();
   try {
     const configs = await aldoServerConfigsFor(ids);
@@ -124,6 +129,7 @@ async function seedModels(environments: ReadonlyArray<AldoEnvironment>): Promise
       new Map(
         [...configs].map(([environmentId, config]) => [environmentId as EnvironmentId, config]),
       ),
+      settings,
     );
     done = new Set([...written, ...kept]);
     // Already registered: its config reloads from the cache.
@@ -175,7 +181,9 @@ let running: Promise<void> | null = null;
 /** Brings this browser's copies of the machines' threads up to date on every directory fetch. */
 export function installAldoShellSync(): void {
   if (!isAldoCloud) return;
+  subscribeAldoMachineSettings(() => void seedModels(directory).catch(() => undefined));
   setAldoDirectorySync((environments) => {
+    directory = environments;
     // Not waited for: a machine that registers first reloads its models once they're in.
     void seedModels(environments).catch(() => undefined);
     // One at a time: a fetch that comes while one runs (slow Aldo) waits for it.

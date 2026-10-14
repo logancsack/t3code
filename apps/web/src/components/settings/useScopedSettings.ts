@@ -6,6 +6,9 @@ import {
 } from "@t3tools/contracts";
 import { useCallback, useMemo } from "react";
 
+import { isAldoCloud } from "../../aldo/cloud";
+import { keepAldoMachineSettings } from "../../aldo/machineSettings";
+import { withAldoMachineSettings } from "../../aldo/machineSettings.logic";
 import {
   mergeEnvironmentSettings,
   persistClientSettingsPatch,
@@ -30,9 +33,14 @@ import {
 export function useScopedSettings<T = UnifiedSettings>(
   selector?: (settings: UnifiedSettings) => T,
 ): T {
-  const { target } = useSettingsScope();
+  const { target, aldo } = useSettingsScope();
   const clientSettings = useClientSettings();
-  const serverSettings = target?.settings ?? DEFAULT_SERVER_SETTINGS;
+  // Aldo: with no machine connected, the user's values over the defaults.
+  const serverSettings = useMemo(
+    () =>
+      target?.settings ?? withAldoMachineSettings(DEFAULT_SERVER_SETTINGS, aldo?.settings ?? null),
+    [aldo, target],
+  );
   const settings = useMemo(
     () => mergeEnvironmentSettings(serverSettings, clientSettings),
     [clientSettings, serverSettings],
@@ -82,11 +90,15 @@ function useRunScopedPlan() {
 }
 
 export function useUpdateScopedSettings() {
-  const { scope, environments } = useSettingsScope();
+  const { scope, environments, aldo } = useSettingsScope();
   const run = useRunScopedPlan();
   return useCallback(
-    (patch: ScopedSettingsPatch) => run(planScopedSettingsPatch(scope, environments, patch)),
-    [environments, run, scope],
+    (patch: ScopedSettingsPatch) => {
+      const plan = planScopedSettingsPatch(scope, environments, patch);
+      // Aldo: the user's settings go to Aldo too, for the machines that aren't connected.
+      run(isAldoCloud ? keepAldoMachineSettings(aldo, patch, plan) : plan);
+    },
+    [aldo, environments, run, scope],
   );
 }
 

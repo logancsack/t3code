@@ -9,6 +9,7 @@ import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { useNavigate } from "@tanstack/react-router";
 
 import { isAldoCloud } from "../../aldo/cloud";
+import { aldoSavesSettings } from "../../aldo/machineSettings.logic";
 import { getCustomModelOptionsByInstance } from "../../modelSelection";
 import {
   applyProviderInstanceSettings,
@@ -53,7 +54,7 @@ function isWorktreeSubmodules(value: string | null): value is WorktreeSubmodules
 }
 
 export function ProjectDefaultsSettings({ category }: { category: ProjectSettingsCategory }) {
-  const { scope, target, targets, connectedEnvironments } = useSettingsScope();
+  const { scope, target, targets, connectedEnvironments, aldo } = useSettingsScope();
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
   const navigate = useNavigate();
@@ -61,7 +62,11 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
   const representative = target
     ? environments.find((environment) => environment.environmentId === target.environmentId)
     : undefined;
-  const providers = representative?.serverConfig?.providers ?? EMPTY_SERVER_PROVIDERS;
+  const providers =
+    representative?.serverConfig?.providers ??
+    // Aldo: with no machine connected, a sleeping one's, to choose the user's model from.
+    (isAldoCloud ? aldo?.providers : null) ??
+    EMPTY_SERVER_PROVIDERS;
   const selection = resolveDefaultProviderModelSelection(providers, settings.defaultModelSelection);
   const entries = sortProviderInstanceEntries(
     applyProviderInstanceSettings(deriveProviderInstanceEntries(providers), settings),
@@ -84,6 +89,9 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
   const modelSource = useScopedSettingSource(["defaultModelSelection"]);
   const isProjectScope = scope.kind === "project" || scope.kind === "checkout";
   const unavailable = connectedEnvironments.length === 0;
+  // Aldo: the user's model saves with no machine connected.
+  const modelUnavailable =
+    unavailable && !(isAldoCloud && aldoSavesSettings(aldo, ["defaultModelSelection"]));
   // File-backed keys show their effective value; the target already carries
   // the checkout's t3.json, and a null file here only fills the built-in.
   // The reset arrow beside the title clears the tier (SettingsRow handles a
@@ -143,7 +151,7 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
           : "Default model for new threads. Projects can override it."
       }
       status={
-        unavailable || mixedModel || modelSource === "project"
+        modelUnavailable || mixedModel || modelSource === "project"
           ? undefined
           : settings.defaultModelSelection === null
             ? "Automatic"

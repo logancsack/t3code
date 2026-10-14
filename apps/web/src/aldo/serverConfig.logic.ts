@@ -49,3 +49,35 @@ export function withMissingProviders(raw: unknown, given: string): string | null
     return null;
   }
 }
+
+/**
+ * A stored server config brought up to the template (`given`, stored the same
+ * way): the providers it lacks (withMissingProviders), and `settings`, the
+ * user's that Aldo keeps (machineSettings.logic.ts), over its own, as the
+ * machine gets them when it next runs. Null if it lacks neither, or can't be read.
+ */
+export function withAldoTemplate(
+  raw: unknown,
+  given: string,
+  settings: Readonly<Record<string, unknown>>,
+): string | null {
+  const withProviders = withMissingProviders(raw, given);
+  const current = withProviders ?? raw;
+  if (typeof current !== "string") return null;
+  try {
+    type Stored = { config?: { settings?: Record<string, unknown> } };
+    const stored = JSON.parse(current) as Stored;
+    const own = stored.config?.settings;
+    if (!stored.config || !own || typeof own !== "object") return withProviders;
+    const changed = Object.entries(settings).filter(
+      ([key, value]) => JSON.stringify(own[key]) !== JSON.stringify(value),
+    );
+    if (changed.length === 0) return withProviders;
+    return JSON.stringify({
+      ...stored,
+      config: { ...stored.config, settings: { ...own, ...Object.fromEntries(changed) } },
+    });
+  } catch {
+    return withProviders;
+  }
+}

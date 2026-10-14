@@ -18,6 +18,8 @@ import {
   PRIMARY_SETTINGS_UNAVAILABLE_MESSAGE,
   usePrimarySettingsAvailable,
 } from "../../hooks/useSettings";
+import { isAldoCloud } from "../../aldo/cloud";
+import { aldoSavesSettings } from "../../aldo/machineSettings.logic";
 import { cn } from "../../lib/utils";
 import { WorkspacePageContainer, type WorkspacePageWidth } from "../WorkspacePageContainer";
 import { Button } from "../ui/button";
@@ -295,7 +297,9 @@ export function SettingsRow({
     context && isProjectScope ? scopedSettingsSource(context.targets, scopedKeys) : null;
   const unavailable =
     serverScoped &&
-    !(context ? context.connectedEnvironments.length > 0 : primarySettingsAvailable);
+    !(context ? context.connectedEnvironments.length > 0 : primarySettingsAvailable) &&
+    // Aldo: the user's settings save with no machine connected.
+    !(isAldoCloud && aldoSavesSettings(context?.aldo, settingKeys));
   const inheritedFrom =
     source === "environment" && context?.scope.environmentIds.length === 1
       ? (context.environments.find(
