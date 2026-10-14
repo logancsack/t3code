@@ -9,7 +9,8 @@
 // until it's up, and then connected; one Aldo couldn't start isn't brought up.
 // A thread with nothing to show (neither Aldo nor this browser has a copy of
 // it, threadDetails.ts) wakes its machine regardless, once: the machine then
-// reports it, and it opens without waking from then on. So does one whose
+// reports it, and it opens without waking from then on. One that doesn't wake
+// says why on the thread, with a way to try again. So does one whose
 // machine went to sleep mid-turn, so its turn carries on, once the page is in
 // use (not while it's left unattended). A thread on screen
 // keeps its machine up while the page is in use; one left open and untouched
@@ -36,6 +37,7 @@ import {
   aldoLastSentAt,
   ensureAldoConnected,
   isAldoConnected,
+  isAldoRefusal,
   notifyAldoRefusal,
 } from "./dispatch";
 import { useAldoPreloadSettings } from "./preloadSettings";
@@ -142,13 +144,15 @@ function useAldoPausedMidTurn(environmentId: string | null): boolean {
  * anywhere, so its machine is woken to show it, whatever the setting, as is
  * one that went to sleep mid-turn, so its turn carries on. Also
  * keeps an agent that's up from idling out while the thread is on screen and the page is in use.
+ * Returns why a machine woken to show the thread didn't wake (null while it
+ * may yet), for the thread to show in place of loading, and a way to try again.
  */
 export function useAldoPreload(
   environmentId: string | null,
   isThread: boolean,
   phase: string | undefined,
   nothingToShow = false,
-): void {
+) {
   const settings = useAldoPreloadSettings();
   const pausedMidTurn = useAldoPausedMidTurn(isThread ? environmentId : null);
   // Once woken to show the thread (or carry its turn on), the machine stays up while it's on screen.
@@ -175,6 +179,10 @@ export function useAldoPreload(
   const toShow = isThread && environmentId !== null && wokenToShow === environmentId;
   const toShowRef = useRef(toShow);
   toShowRef.current = toShow;
+  const [wakeFailure, setWakeFailure] = useState<{ environmentId: string; message: string } | null>(
+    null,
+  );
+  const retryRef = useRef<(() => void) | null>(null);
   const enabled = isThread ? settings.openedThreads || toShow : settings.newThreads;
   const applies = isAldoCloud && environmentId !== null && isAldoEnvironmentId(environmentId);
 
@@ -203,11 +211,20 @@ export function useAldoPreload(
         return;
       }
       preloaded = true;
-      // Woken to show the thread, a refusal is the user's to know.
+      setWakeFailure(null);
+      // Woken to show the thread, why it didn't wake is the user's to know: a
+      // refusal as a notice, anything else on the thread, which has nothing else to show.
       void ensureAldoConnected(environmentId).catch((cause: unknown) => {
-        if (toShowRef.current) notifyAldoRefusal(cause);
+        if (!toShowRef.current) return;
+        if (isAldoRefusal(cause)) notifyAldoRefusal(cause);
+        else
+          setWakeFailure({
+            environmentId,
+            message: cause instanceof Error ? cause.message : String(cause),
+          });
       });
     };
+    retryRef.current = preload;
     const timer = window.setTimeout(preload, DWELL_MS);
     // Back to a tab that sat hidden, or to a page left untouched (its agent may have gone to sleep meanwhile).
     const onVisibility = () => {
@@ -220,6 +237,7 @@ export function useAldoPreload(
       stopWaiting?.();
       document.removeEventListener("visibilitychange", onVisibility);
       resumeListeners.delete(preload);
+      if (retryRef.current === preload) retryRef.current = null;
       if (preloaded && aldoLastSentAt(environmentId) < openedAt) scheduleUnload(environmentId);
     };
   }, [applies, enabled, environmentId]);
@@ -238,4 +256,13 @@ export function useAldoPreload(
       resumeListeners.delete(touch);
     };
   }, [applies, environmentId, phase]);
+
+  const retryWake = useCallback(() => retryRef.current?.(), []);
+  return {
+    wakeFailure:
+      wakeFailure?.environmentId === environmentId && phase !== "connected"
+        ? wakeFailure.message
+        : null,
+    retryWake,
+  };
 }
