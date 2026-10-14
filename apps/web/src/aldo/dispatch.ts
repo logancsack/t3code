@@ -6,7 +6,9 @@
 // the cloud", and a new thread shows in the sidebar meanwhile
 // (startingThreads.ts). A message goes to Aldo first (holdAldoTurn), which
 // brings the machine up and sends it even if this page goes away or a first
-// boot takes minutes; T3 runs it once, however many times it's sent. For a
+// boot takes minutes; T3 runs it once, however many times it's sent. The
+// device keeps it until Aldo has it, trying again while Aldo doesn't answer,
+// and after the app is next opened if the page went away first (outbox.ts). For a
 // message Aldo holds, this page tries again while what fails passes, and if
 // it stops waiting first, shows Aldo's copy of the machine's threads, which
 // says where the message stands (a start Aldo gave up on, and why). Settling, archiving, pinning, snoozing, renaming or
@@ -20,6 +22,7 @@ import { AsyncResult } from "effect/unstable/reactivity";
 
 import { environmentCatalog } from "../connection/catalog";
 import { keepAldoCommand } from "./threadCommands";
+import { dropOutgoing, keepOutgoing, outgoing } from "./outbox";
 import { aldoMachineConnected, releaseAldoStartingThreads } from "./startingThreads";
 import { runAtomCommand } from "@t3tools/client-runtime/state/runtime";
 import { appAtomRegistry } from "../rpc/atomRegistry";
@@ -195,9 +198,62 @@ export function aldoLastSentAt(environmentId: string): number {
   return lastSentAt.get(environmentId) ?? 0;
 }
 
+/** Messages this page is handing to Aldo now, which resuming the outbox leaves to it. */
+const handing = new Set<string>();
+
+/**
+ * Hands Aldo a message for a machine this page isn't connected to, kept on the
+ * device until Aldo has it (outbox.ts), trying again for as long as Aldo
+ * doesn't answer. True once Aldo holds it; false when Aldo won't hold it (the
+ * page sends it itself, as before).
+ */
+async function handToAldo(
+  environmentId: string,
+  command: { readonly commandId: string },
+): Promise<boolean> {
+  handing.add(command.commandId);
+  try {
+    await keepOutgoing(environmentId, command);
+    const outcome = await holdAldoTurn(environmentId, command);
+    await dropOutgoing(command.commandId);
+    return outcome === "held";
+  } catch (cause) {
+    // Signed out: it goes once the user signs in again (the page is on its way there).
+    // Anything else goes back in the composer, so it isn't also sent from here later.
+    if (!(cause instanceof AldoApiError && cause.status === 401)) {
+      await dropOutgoing(command.commandId);
+    }
+    throw cause;
+  } finally {
+    handing.delete(command.commandId);
+  }
+}
+
+let resuming = false;
+
+/** Hands Aldo the messages a page went away from before Aldo had them: as the app opens, and back online. */
+async function resumeAldoOutbox(): Promise<void> {
+  if (resuming) return;
+  resuming = true;
+  try {
+    for (const entry of await outgoing()) {
+      if (handing.has(entry.commandId)) continue;
+      const command = entry.command as { readonly commandId: string };
+      if (await handToAldo(entry.environmentId, command)) requestAldoDirectoryRefresh();
+      else console.warn(`Aldo wouldn't hold message ${entry.commandId}; it wasn't sent.`);
+    }
+  } catch (cause) {
+    console.warn("Couldn't hand Aldo the messages waiting on this device.", cause);
+  } finally {
+    resuming = false;
+  }
+}
+
 /** Routes commands for Aldo threads through ensureAldoConnected. */
 export function installAldoCommandDispatch(): void {
   if (!isAldoCloud) return;
+  void resumeAldoOutbox();
+  window.addEventListener("online", () => void resumeAldoOutbox());
   setOrchestrationCommandDispatchOverride(async ({ command, environmentId }) => {
     if (!isAldoEnvironmentId(environmentId)) return null;
     if (command.type === "thread.turn.start") lastSentAt.set(environmentId, Date.now());
@@ -209,7 +265,7 @@ export function installAldoCommandDispatch(): void {
     const held =
       command.type === "thread.turn.start" &&
       !isAldoConnected(environmentId) &&
-      (await holdAldoTurn(environmentId, command));
+      (await handToAldo(environmentId, command));
     if (!held) {
       await ensureAldoConnected(environmentId).catch((cause: unknown) => {
         notifyAldoRefusal(cause);
