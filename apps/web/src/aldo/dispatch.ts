@@ -6,9 +6,11 @@
 // the cloud", and a new thread shows in the sidebar meanwhile
 // (startingThreads.ts). A message goes to Aldo first (holdAldoTurn), which
 // brings the machine up and sends it even if this page goes away or a first
-// boot takes minutes; T3 runs it once, however many times it's sent. The
-// device keeps it until Aldo has it, trying again while Aldo doesn't answer,
-// and after the app is next opened if the page went away first (outbox.ts). For a
+// boot takes minutes; T3 runs it once, however many times it's sent. One with
+// images or files goes to Aldo however the machine is, its files first
+// (files.ts), and only Aldo sends it. The device keeps it until Aldo has it,
+// trying again while Aldo doesn't answer, and after the app is next opened or
+// back on screen if the page went away first (outbox.ts). For a
 // message Aldo holds, this page tries again while what fails passes, and if
 // it stops waiting first, shows Aldo's copy of the machine's threads, which
 // says where the message stands (a start Aldo gave up on, and why). Settling, archiving, pinning, snoozing, renaming or
@@ -22,6 +24,7 @@ import { AsyncResult } from "effect/unstable/reactivity";
 
 import { environmentCatalog } from "../connection/catalog";
 import { keepAldoCommand } from "./threadCommands";
+import { aldoFilesOf } from "./files";
 import { dropOutgoing, keepOutgoing, outgoing } from "./outbox";
 import { aldoMachineConnected, releaseAldoStartingThreads } from "./startingThreads";
 import { runAtomCommand } from "@t3tools/client-runtime/state/runtime";
@@ -212,19 +215,23 @@ export function aldoLastSentAt(environmentId: string): number {
 const handing = new Set<string>();
 
 /**
- * Hands Aldo a message for a machine this page isn't connected to, kept on the
- * device until Aldo has it (outbox.ts), trying again for as long as Aldo
- * doesn't answer. True once Aldo holds it; false when Aldo won't hold it (the
- * page sends it itself, as before).
+ * Hands Aldo a message for a machine this page isn't connected to, or one with
+ * `files` (files.ts), kept on the device with them until Aldo has it
+ * (outbox.ts), trying again for as long as Aldo doesn't answer. `now`: this
+ * page is connected to the machine, so it goes at once. True once Aldo holds
+ * it; false when Aldo won't hold one without files (the page sends it itself,
+ * as before).
  */
 async function handToAldo(
   environmentId: string,
   command: { readonly commandId: string },
+  files: ReadonlyMap<string, Blob> | null,
+  now: boolean,
 ): Promise<boolean> {
   handing.add(command.commandId);
   try {
-    await keepOutgoing(environmentId, command);
-    const outcome = await holdAldoTurn(environmentId, command);
+    await keepOutgoing(environmentId, command, files);
+    const outcome = await holdAldoTurn(environmentId, command, files, now);
     await dropOutgoing(command.commandId);
     return outcome === "held";
   } catch (cause) {
@@ -241,7 +248,12 @@ async function handToAldo(
 
 let resuming = false;
 
-/** Hands Aldo the messages a page went away from before Aldo had them: as the app opens, and back online. */
+/**
+ * Hands Aldo the messages a page went away from before Aldo had them (as the
+ * app opens, comes back on screen, or is back online), with what's left of
+ * their files. They go as held ones do, not at once: the turn they were sent
+ * into may be long over.
+ */
 async function resumeAldoOutbox(): Promise<void> {
   if (resuming) return;
   resuming = true;
@@ -249,8 +261,9 @@ async function resumeAldoOutbox(): Promise<void> {
     for (const entry of await outgoing()) {
       if (handing.has(entry.commandId)) continue;
       const command = entry.command as { readonly commandId: string };
-      if (await handToAldo(entry.environmentId, command)) requestAldoDirectoryRefresh();
-      else console.warn(`Aldo wouldn't hold message ${entry.commandId}; it wasn't sent.`);
+      if (await handToAldo(entry.environmentId, command, entry.files ?? null, false)) {
+        requestAldoDirectoryRefresh();
+      } else console.warn(`Aldo wouldn't hold message ${entry.commandId}; it wasn't sent.`);
     }
   } catch (cause) {
     console.warn("Couldn't hand Aldo the messages waiting on this device.", cause);
@@ -264,6 +277,10 @@ export function installAldoCommandDispatch(): void {
   if (!isAldoCloud) return;
   void resumeAldoOutbox();
   window.addEventListener("online", () => void resumeAldoOutbox());
+  // A phone suspends a page it isn't showing: what it was sending carries on as it's back.
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") void resumeAldoOutbox();
+  });
   setOrchestrationCommandDispatchOverride(async ({ command, environmentId }) => {
     if (!isAldoEnvironmentId(environmentId)) return null;
     if (command.type === "thread.turn.start") lastSentAt.set(environmentId, Date.now());
@@ -271,11 +288,14 @@ export function installAldoCommandDispatch(): void {
     // (Not while this tab is bringing the machine up for a message: those wait for it, in order.)
     const kept = inFlight.has(environmentId) ? null : await keepAldoCommand(environmentId, command);
     if (kept) return kept;
-    // A message for a machine this page isn't connected to goes to Aldo first.
+    // A message for a machine this page isn't connected to goes to Aldo first, and one with
+    // files however the machine is: Aldo puts them on it, so only Aldo can send it.
+    const files = command.type === "thread.turn.start" ? aldoFilesOf(command) : null;
+    const connected = isAldoConnected(environmentId);
     const held =
       command.type === "thread.turn.start" &&
-      !isAldoConnected(environmentId) &&
-      (await handToAldo(environmentId, command));
+      (files !== null || !connected) &&
+      (await handToAldo(environmentId, command, files, connected));
     if (!held) {
       await ensureAldoConnected(environmentId).catch((cause: unknown) => {
         notifyAldoRefusal(cause);
@@ -285,7 +305,7 @@ export function installAldoCommandDispatch(): void {
     }
     heldThreads.set(environmentId, command.threadId);
     try {
-      if (await connectForHeld(environmentId, command)) return null;
+      if (await connectForHeld(environmentId, command)) return files ? { sequence: 0 } : null;
     } finally {
       heldThreads.delete(environmentId);
     }

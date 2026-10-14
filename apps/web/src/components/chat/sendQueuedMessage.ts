@@ -30,6 +30,7 @@ import {
   revokeBlobPreviewUrl,
 } from "../ChatView.logic";
 import { aldoImagesGoInline } from "../../aldo/dispatch";
+import { aldoAttachmentOf, aldoCarriesAttachments } from "../../aldo/files";
 import { toastManager } from "../ui/toast";
 import { fileAttachmentCapabilityBlockReason } from "./composerAttachmentFiles";
 import { ATTACHMENT_ONLY_BOOTSTRAP_PROMPT } from "./composerPromptHistory";
@@ -101,9 +102,12 @@ export async function sendQueuedMessage(
     );
 
     assertFilesAllowed();
-    // Aldo: images for a cloud agent that isn't up go inside the message (aldo/dispatch.ts).
-    const imagesInline = aldoImagesGoInline(environmentId);
+    // Aldo: images and files go to Aldo with the message (aldo/files.ts); on an Aldo that
+    // doesn't keep files, images for a cloud agent that isn't up go inside it (aldo/dispatch.ts).
+    const aldoCarries = attachments.length > 0 && aldoCarriesAttachments(environmentId);
+    const imagesInline = !aldoCarries && aldoImagesGoInline(environmentId);
     const useUploads =
+      !aldoCarries &&
       readConfig()?.environment.capabilities.attachmentUploads === true &&
       (message.files.length > 0 || !imagesInline);
     if (useUploads && attachments.length > 0) {
@@ -114,6 +118,7 @@ export async function sendQueuedMessage(
     }
     const wireAttachments = await Promise.all(
       attachments.map(async (attachment) => {
+        if (aldoCarries) return aldoAttachmentOf(attachment);
         if (useUploads) {
           const uploaded = getUploadedAttachments({ environmentId, images: [attachment] })?.[0];
           if (!uploaded) throw new Error(`Attachment '${attachment.name}' did not upload.`);
@@ -202,7 +207,7 @@ export async function sendQueuedMessage(
       },
     });
     queue.finishSend(threadKey, message.id);
-    if (useUploads || imagesInline) releaseDraftAttachments(attachments);
+    if (useUploads || imagesInline || aldoCarries) releaseDraftAttachments(attachments);
     for (const image of message.images) revokeBlobPreviewUrl(image.previewUrl);
   } catch (error) {
     if (!queue.failSend(threadKey, message.id)) return;

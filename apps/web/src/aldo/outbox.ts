@@ -1,9 +1,11 @@
-// A message for a machine this page isn't connected to, kept on the device from
-// the moment it's sent until Aldo holds it (dispatch.ts): one the page went away
-// from before Aldo had it (the app closed, or the phone reclaimed it) goes when
-// the app is next open, or back online. Aldo holds a command once, however
-// often it's handed over, so handing one over again is harmless. Best effort:
-// without IndexedDB (a private window), a message goes as it did before.
+// A message for a machine this page isn't connected to, or one with files,
+// kept on the device from the moment it's sent until Aldo holds it
+// (dispatch.ts), its files with it: one the page went away from before Aldo
+// had it (the app closed, or the phone reclaimed it) goes when the app is next
+// open, comes back to the screen, or is back online, sending only what Aldo
+// doesn't have yet. Aldo holds a command once, however often it's handed over,
+// so handing one over again is harmless. Best effort: without IndexedDB (a
+// private window), a message goes as it did before.
 
 const DATABASE_NAME = "aldo:outbox";
 const DATABASE_VERSION = 1;
@@ -15,6 +17,8 @@ export interface AldoOutgoing {
   readonly commandId: string;
   readonly environmentId: string;
   readonly command: unknown;
+  /** The files it hands Aldo (files.ts), by the id its attachments name each by. */
+  readonly files?: ReadonlyMap<string, Blob>;
   readonly keptAt: number;
 }
 
@@ -48,15 +52,17 @@ async function withStore<A>(
   return request?.result;
 }
 
-/** Keeps a message until Aldo holds it. */
+/** Keeps a message, and the files it hands Aldo, until Aldo holds it. */
 export async function keepOutgoing(
   environmentId: string,
   command: { readonly commandId: string },
+  files: ReadonlyMap<string, Blob> | null = null,
 ): Promise<void> {
   const entry: AldoOutgoing = {
     commandId: command.commandId,
     environmentId,
     command,
+    ...(files ? { files } : {}),
     keptAt: Date.now(),
   };
   await withStore("readwrite", (store) => store.put(entry)).catch(() => undefined);

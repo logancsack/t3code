@@ -560,6 +560,7 @@ import { isAldoCloud, isAldoEnvironmentId } from "../aldo/cloud";
 import { useAldoKeptRepo } from "../aldo/keptRepo";
 import { AldoHandoffCard } from "../aldo/AldoHandoffCard";
 import { aldoImagesGoInline, ensureAldoConnected } from "../aldo/dispatch";
+import { aldoAttachmentOf, aldoCarriesAttachments } from "../aldo/files";
 import { showAldoStartingThread, withdrawAldoStartingThread } from "../aldo/startingThreads";
 
 const EMPTY_ACTIVITIES: OrchestrationThreadActivity[] = [];
@@ -2715,14 +2716,16 @@ export default function ChatView(props: ChatViewProps) {
     advertisedFileAttachmentBytes === null
       ? null
       : clampFileAttachmentUploadBytes(advertisedFileAttachmentBytes);
-  // Aldo: attachments upload to the thread's cloud agent, which a new thread
-  // doesn't have until its first message is sent (and a sleeping one is still
-  // waking). Until it's connected they wait instead of failing; sending brings
-  // the agent up and uploads them before the message goes out.
+  // Aldo: attachments go to Aldo with the message, not to the thread's cloud
+  // agent (aldo/files.ts). On an Aldo that doesn't keep files they upload to
+  // the agent, which a new thread doesn't have until its first message is
+  // sent (and a sleeping one is still waking): until it's connected they wait
+  // instead of failing; sending brings the agent up and uploads them first.
   const attachmentUploadsDeferred =
-    isAldoCloud &&
-    isAldoEnvironmentId(environmentId) &&
-    environmentById.get(environmentId)?.connection.phase !== "connected";
+    aldoCarriesAttachments(environmentId) ||
+    (isAldoCloud &&
+      isAldoEnvironmentId(environmentId) &&
+      environmentById.get(environmentId)?.connection.phase !== "connected");
   const envLocked = Boolean(
     activeThread &&
     (activeThread.messages.length > 0 ||
@@ -8154,15 +8157,19 @@ export default function ChatView(props: ChatViewProps) {
       setThreadError(threadIdForSend, attachmentCapabilitiesBeforeUpload.fileBlockReason);
       return;
     }
-    // Aldo: images for a cloud agent that isn't up yet (a new thread's is
-    // created by its first message) go inside the message, like its words, so
-    // Aldo holds it whole and sends it even if this page goes away. Files can
-    // only upload to the agent.
-    const aldoAgentOffline = aldoImagesGoInline(environmentId);
+    // Aldo: images and files go to Aldo with the message, however its cloud
+    // agent is, so Aldo sends it even if this page goes away (aldo/files.ts).
+    // On an Aldo that doesn't keep files, images for an agent that isn't up
+    // yet (a new thread's is created by its first message) go inside the
+    // message, like its words, and files can only upload to the agent.
+    const aldoCarries =
+      composerAttachmentsSnapshot.length > 0 && aldoCarriesAttachments(environmentId);
+    const aldoAgentOffline = !aldoCarries && aldoImagesGoInline(environmentId);
     const turnUsesAttachmentUploads =
-      composerFilesSnapshot.length > 0
+      !aldoCarries &&
+      (composerFilesSnapshot.length > 0
         ? attachmentCapabilitiesBeforeUpload.supportsAttachmentUploads
-        : supportsAttachmentUploads && !aldoAgentOffline;
+        : supportsAttachmentUploads && !aldoAgentOffline);
     // Aldo: a message with files for a cloud agent that isn't up goes out like
     // one without attachments: it shows at once and the composer clears, and
     // the attachments upload once the agent is up (below, with the turn's).
@@ -8262,6 +8269,7 @@ export default function ChatView(props: ChatViewProps) {
       : null;
     const turnAttachmentsPromise = Promise.all(
       composerAttachmentsSnapshot.map(async (attachment) => {
+        if (aldoCarries) return aldoAttachmentOf(attachment);
         if (turnUsesAttachmentUploads) {
           await aldoAgentUploads;
           const uploaded = getUploadedAttachments({ environmentId, images: [attachment] })?.[0];
@@ -8464,7 +8472,10 @@ export default function ChatView(props: ChatViewProps) {
           );
         }
         // An upload started while the agent was up isn't needed once its image went inside the message.
-        if (failedSelections.length === 0 && (turnUsesAttachmentUploads || aldoAgentOffline)) {
+        if (
+          failedSelections.length === 0 &&
+          (turnUsesAttachmentUploads || aldoAgentOffline || aldoCarries)
+        ) {
           releaseDraftAttachments(composerAttachmentsSnapshot);
         }
       } catch (error) {
@@ -8823,8 +8834,8 @@ export default function ChatView(props: ChatViewProps) {
         // snapshot is stale. Uploads may have outlasted a navigation, so only
         // the sending thread's panel clears.
         clearUsageLimitsFor(routeThreadKey);
-        // An upload started while the agent was up isn't needed once its image went inside the message.
-        if (turnUsesAttachmentUploads || aldoAgentOffline) {
+        // An upload started while the agent was up isn't needed once its image went another way.
+        if (turnUsesAttachmentUploads || aldoAgentOffline || aldoCarries) {
           releaseDraftAttachments(composerAttachmentsSnapshot);
         }
         acknowledgeActiveThreadWoke();

@@ -150,6 +150,7 @@ import {
 } from "./ComposerBannerStack";
 import { useAldoComposerBannerItem } from "../ManagedDevPcAgent";
 import { useAldoKeptRepo } from "~/aldo/keptRepo";
+import { startAldoUpload } from "~/aldo/files";
 import { compressImageForStash, prepareImageForAttachment } from "../../lib/imageCompression";
 import {
   fileAttachmentTooLargeMessage,
@@ -1355,9 +1356,10 @@ export interface ChatComposerProps {
   supportsQuestionAttachments: boolean;
   maxFileAttachmentBytes: number | null;
   /**
-   * Aldo: the environment isn't connected yet, and sending connects it and
-   * uploads the attachments first. Uploads don't start (they would fail) and
-   * don't block sending until then.
+   * Aldo: attachments go to Aldo with the message (aldo/files.ts), or the
+   * environment isn't connected yet, and sending connects it and uploads the
+   * attachments first. Uploads to the environment don't start and don't
+   * block sending.
    */
   attachmentUploadsDeferred: boolean;
   routeKind: "server" | "draft";
@@ -1816,6 +1818,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     (store) => store.syncPersistedAttachments,
   );
   const getComposerDraft = useComposerDraftStore((store) => store.getComposerDraft);
+
+  // Aldo: attachments going to Aldo with the message start uploading as they're attached.
+  useEffect(() => {
+    for (const attachment of [...composerImages, ...composerFiles]) {
+      startAldoUpload(environmentId, attachment);
+    }
+  }, [composerFiles, composerImages, environmentId]);
 
   useEffect(() => {
     if (!attachmentUploadsCapabilityKnown || attachmentUploadsDeferred) {
