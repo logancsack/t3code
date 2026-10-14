@@ -44,6 +44,9 @@ const ALDO_HIDDEN_SETTINGS_ROWS: ReadonlySet<string> = new Set([
   "project-actions",
 ]);
 
+/** Shortcuts to views Aldo leaves out: Usage's Limits tab. */
+export const ALDO_HIDDEN_KEYBINDING_COMMANDS: ReadonlySet<string> = new Set(["usage.limits"]);
+
 export function aldoShowsSettingsSearchItem(item: {
   readonly id: string;
   readonly to: string;
@@ -54,6 +57,8 @@ export function aldoShowsSettingsSearchItem(item: {
   if (item.to === "/settings/integrations") return item.aldoCloudOnly === true;
   const page = ALDO_REPLACED_SETTINGS_PAGES.get(item.to);
   if (page !== undefined) return item.id === page;
+  // A shortcut's result is its row on the Keybindings page (keybindingSearchAnchorId).
+  if (ALDO_HIDDEN_KEYBINDING_COMMANDS.has(item.id.replace(/^keybinding-/, ""))) return false;
   return !ALDO_HIDDEN_SETTINGS_ROWS.has(item.id);
 }
 

@@ -69,6 +69,7 @@ import {
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 import { AldoKeysSection } from "../../aldo/AldoKeys";
 import { isAldoCloud } from "../../aldo/cloud";
+import { ALDO_HIDDEN_KEYBINDING_COMMANDS } from "../../aldo/settings.logic";
 import { keybindingSearchAnchorId, searchableSetting } from "./settingsSearch";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -1357,10 +1358,12 @@ export function KeybindingsSettingsPanel() {
   const { environment: primaryEnvironment, connectedEnvironments } = useSettingsScope();
   // Aldo lists what the app applies there: the defaults, never a machine's edits.
   const serverKeybindings = isAldoCloud ? undefined : primaryEnvironment?.serverConfig?.keybindings;
-  const keybindings = useMemo(
-    () => mergeWithDefaultKeybindings(serverKeybindings ?? []),
-    [serverKeybindings],
-  );
+  const keybindings = useMemo(() => {
+    const merged = mergeWithDefaultKeybindings(serverKeybindings ?? []);
+    return isAldoCloud
+      ? merged.filter((binding) => !ALDO_HIDDEN_KEYBINDING_COMMANDS.has(binding.command))
+      : merged;
+  }, [serverKeybindings]);
   const keybindingsConfigPath = primaryEnvironment?.serverConfig?.keybindingsConfigPath ?? null;
   const availableEditors = primaryEnvironment?.serverConfig?.availableEditors ?? [];
   const upsertKeybinding = useAtomCommand(serverEnvironment.upsertKeybinding, {

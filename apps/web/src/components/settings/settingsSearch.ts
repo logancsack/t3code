@@ -293,6 +293,20 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["long lines code blocks tables diffs file previews"],
   },
   {
+    id: "aldo-notifications",
+    title: "Notifications on this device",
+    to: "/settings/general",
+    searchTerms: ["push alerts notify phone browser finished needs you"],
+    aldoCloudOnly: true,
+  },
+  {
+    id: "aldo-notification-sound",
+    title: "Play a sound when a thread finishes or needs you",
+    to: "/settings/general",
+    searchTerms: ["notifications chime sound audio alert"],
+    aldoCloudOnly: true,
+  },
+  {
     id: "aldo-simple-mode",
     title: "Simple mode",
     to: "/settings/general",

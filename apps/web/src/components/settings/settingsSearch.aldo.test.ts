@@ -188,3 +188,23 @@ describe("Aldo hides T3 settings it doesn't show", () => {
     }
   });
 });
+
+describe("Aldo's own notifications and hidden shortcuts in settings search", () => {
+  it("finds Aldo's notification rows in place of T3's", () => {
+    const items = filterAvailableSettingsSearchItems(availability);
+    expect(searchSettings("notifications", items).map((item) => item.id)).toContain(
+      "aldo-notifications",
+    );
+    expect(searchSettings("chime", items)[0]).toMatchObject({
+      id: "aldo-notification-sound",
+      to: "/settings/general",
+    });
+    expect(items.some((item) => item.id === "thread-notifications")).toBe(false);
+  });
+
+  it("leaves out the shortcut to Usage's Limits tab, which Aldo doesn't show", () => {
+    const items = filterAvailableSettingsSearchItems(availability);
+    expect(items.some((item) => item.id === "keybinding-usage.limits")).toBe(false);
+    expect(items.some((item) => item.id === "keybinding-usage.cost")).toBe(true);
+  });
+});

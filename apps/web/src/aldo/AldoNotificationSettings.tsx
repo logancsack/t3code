@@ -2,6 +2,7 @@ import { BellIcon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { SettingsRow, SettingsSection } from "../components/settings/settingsLayout";
+import { searchableSetting } from "../components/settings/settingsSearch";
 import { Switch } from "../components/ui/switch";
 import { playAldoChime, setAldoSound, useAldoSound } from "./chime";
 import {
@@ -41,7 +42,7 @@ export function AldoNotificationSettings() {
 
   const soundRow = (
     <SettingsRow
-      title="Play a sound when a thread finishes or needs you"
+      {...searchableSetting("aldo-notification-sound")}
       description="A soft chime while Aldo is open on this device, except for the thread you're looking at."
       control={
         <Switch
@@ -91,7 +92,7 @@ export function AldoNotificationSettings() {
   return (
     <SettingsSection title="Notifications" icon={<BellIcon className="size-4" />}>
       <SettingsRow
-        title="Notifications on this device"
+        {...searchableSetting("aldo-notifications")}
         description={description}
         control={
           status.availability === "available" ? (
