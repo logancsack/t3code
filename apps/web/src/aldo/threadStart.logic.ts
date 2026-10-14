@@ -41,7 +41,7 @@ function listed(items: ReadonlyArray<string>): string {
 export function aldoStartReason(detail: string | undefined | null): string | null {
   const reason = (detail ?? "")
     .replace(/^Couldn't (start|send your message):\s*/i, "")
-    .replace(/\s*Try again\b[^.]*\.?/g, "")
+    .replace(/\s*Try (?:sending )?again\b[^.]*\.?/g, "")
     .trim();
   return reason.length > 0 ? reason : null;
 }
@@ -181,6 +181,26 @@ function describeHeldMessage(
             step,
           };
   }
+}
+
+/**
+ * A thread whose messages are only on its machine, when waking the machine to
+ * show them failed (preload.ts): why, in its first line, with a way to try again.
+ */
+export function describeAldoWakeFailure(message: string): AldoThreadStartView {
+  const line =
+    message
+      .split("\n")
+      .find((part) => part.trim().length > 0)
+      ?.trim() ?? "";
+  return {
+    tone: "failed",
+    label: "Failed",
+    title: "Couldn't wake its cloud agent",
+    body: "This thread's messages are on its computer, which didn't start.",
+    reason: aldoStartReason(line.length > 300 ? `${line.slice(0, 299)}…` : line),
+    step: null,
+  };
 }
 
 /** "45s", "2m 05s", "1h 02m": how long it has been at it. */

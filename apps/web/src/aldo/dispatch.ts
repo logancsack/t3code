@@ -271,6 +271,11 @@ function followAldoMachine(environmentId: string): void {
 
 let refusalToastId: string | null = null;
 
+/** Whether Aldo refused to start a cloud agent (402 or 409), which notifyAldoRefusal tells the user about. */
+export function isAldoRefusal(cause: unknown): cause is AldoApiError {
+  return cause instanceof AldoApiError && (cause.status === 402 || cause.status === 409);
+}
+
 /**
  * Tells the user why their cloud agent can't start, when Aldo refused it: no
  * plan or credits left (402), or the plan's agents at once already running
@@ -278,7 +283,7 @@ let refusalToastId: string | null = null;
  * else to show): preloads fail quietly.
  */
 export function notifyAldoRefusal(cause: unknown): void {
-  if (!(cause instanceof AldoApiError) || (cause.status !== 402 && cause.status !== 409)) return;
+  if (!isAldoRefusal(cause)) return;
   // One at a time: another refused send replaces it rather than stacking.
   if (refusalToastId !== null) toastManager.close(refusalToastId);
   refusalToastId = toastManager.add({

@@ -555,6 +555,7 @@ import { aldoDesktopOwnsKeyboard } from "../aldo/desktopInput.logic";
 import { useAldoThreadDetailMissing } from "../aldo/threadDetails";
 import { AldoThreadLoading } from "../aldo/AldoThreadLoading";
 import { useAldoThreadStart } from "../aldo/threadStart";
+import { describeAldoWakeFailure } from "../aldo/threadStart.logic";
 import { isAldoCloud, isAldoEnvironmentId } from "../aldo/cloud";
 import { useAldoKeptRepo } from "../aldo/keptRepo";
 import { AldoHandoffCard } from "../aldo/AldoHandoffCard";
@@ -2495,11 +2496,15 @@ export default function ChatView(props: ChatViewProps) {
     routeKind === "server" ? environmentId : null,
     routeKind === "server" ? threadId : null,
   );
-  useAldoPreload(
+  const aldoWake = useAldoPreload(
     activeEnvironment?.environmentId ?? null,
     isServerThread,
     activeEnvironment?.connection.phase,
     aldoThreadDetailMissing && threadDetailLoading,
+  );
+  const aldoWakeFailure = useMemo(
+    () => (aldoWake.wakeFailure === null ? null : describeAldoWakeFailure(aldoWake.wakeFailure)),
+    [aldoWake.wakeFailure],
   );
   // Aldo: while this conversation is on screen, notifications about it come quietly.
   useAldoFocusReport(activeEnvironment?.environmentId ?? null, isServerThread ? threadId : null);
@@ -10373,13 +10378,14 @@ export default function ChatView(props: ChatViewProps) {
               {showAldoThreadLoading ? (
                 <div className="absolute inset-0">
                   <AldoThreadLoading
-                    start={aldoThreadStart}
+                    start={aldoThreadStart ?? aldoWakeFailure}
                     startedAt={activeThread.createdAt}
                     label={
                       aldoThreadDetailMissing
                         ? "Waking the cloud agent to load this thread…"
                         : "Loading messages…"
                     }
+                    onRetry={aldoThreadStart === null ? aldoWake.retryWake : undefined}
                     bottomInset={composerTimelineInset}
                   />
                 </div>

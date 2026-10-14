@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   aldoStartReason,
   describeAldoThreadStart,
+  describeAldoWakeFailure,
   formatAldoStartElapsed,
 } from "./threadStart.logic";
 
@@ -174,5 +175,31 @@ describe("formatAldoStartElapsed", () => {
     expect(formatAldoStartElapsed(125_000)).toBe("2m 05s");
     expect(formatAldoStartElapsed(3_720_000)).toBe("1h 02m");
     expect(formatAldoStartElapsed(Number.NaN)).toBe("0s");
+  });
+});
+
+describe("describeAldoWakeFailure", () => {
+  it("says why the machine didn't wake in the first line of Aldo's error", () => {
+    const view = describeAldoWakeFailure(
+      "Sandbox command failed (exit 1): error: Your local changes to the following files would be overwritten by checkout:\n\tpnpm-lock.yaml\nAborting",
+    );
+    expect(view).toMatchObject({
+      tone: "failed",
+      title: "Couldn't wake its cloud agent",
+      step: null,
+    });
+    expect(view.reason).toBe(
+      "Sandbox command failed (exit 1): error: Your local changes to the following files would be overwritten by checkout:",
+    );
+  });
+
+  it("leaves out advice to send again, which the thread's own button replaces", () => {
+    expect(
+      describeAldoWakeFailure("Its computer didn't come online. Try sending again.").reason,
+    ).toBe("Its computer didn't come online.");
+  });
+
+  it("keeps a long reason to one short line", () => {
+    expect(describeAldoWakeFailure("x".repeat(1000)).reason).toHaveLength(300);
   });
 });

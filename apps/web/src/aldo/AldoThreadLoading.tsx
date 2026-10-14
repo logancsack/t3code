@@ -8,6 +8,7 @@
 import { CheckIcon, CircleAlertIcon, ClockIcon, RotateCwIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { Button } from "../components/ui/button";
 import { Skeleton } from "../components/ui/skeleton";
 import { Spinner } from "../components/ui/spinner";
 import { cn } from "~/lib/utils";
@@ -102,6 +103,7 @@ function Steps(props: { readonly step: number; readonly tone: AldoThreadStartTon
 function StartCard(props: {
   readonly start: AldoThreadStartView;
   readonly startedAt: string | null;
+  readonly onRetry: (() => void) | undefined;
 }) {
   const { start } = props;
   const failed = start.tone === "failed";
@@ -140,6 +142,14 @@ function StartCard(props: {
             </p>
           ) : null}
           {start.step !== null ? <Steps step={start.step} tone={start.tone} /> : null}
+          {failed && props.onRetry ? (
+            <div className="mt-3">
+              <Button type="button" size="compact" variant="outline" onClick={props.onRetry}>
+                <RotateCwIcon aria-hidden />
+                Try again
+              </Button>
+            </div>
+          ) : null}
         </div>
       </div>
     </section>
@@ -174,6 +184,8 @@ export function AldoThreadLoading(props: {
   readonly startedAt: string | null;
   /** What it says while the messages load and Aldo isn't starting it. */
   readonly label: string;
+  /** Offered on a failed `start` that can be tried again from here. */
+  readonly onRetry?: (() => void) | undefined;
   /** Room left at the end for the composer, which sits over the thread. */
   readonly bottomInset: number;
 }) {
@@ -191,7 +203,7 @@ export function AldoThreadLoading(props: {
           <>
             {/* Its first message, on its way to the agent; nothing's on its way once it failed. */}
             {start.tone === "failed" ? null : <TurnSkeleton reply={false} />}
-            <StartCard start={start} startedAt={props.startedAt} />
+            <StartCard start={start} startedAt={props.startedAt} onRetry={props.onRetry} />
             {start.tone === "failed" ? null : (
               <div className="flex flex-col gap-2.5 opacity-60">
                 <Skeleton className={cn("h-3.5 w-10/12", SHADE)} />
