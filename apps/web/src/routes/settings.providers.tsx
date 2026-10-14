@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { EnvironmentId, ProviderInstanceId } from "@t3tools/contracts";
 
 import { AldoAccountsPanel } from "../aldo/AldoAccountsPanel";
+import { AldoSubagentsPanel } from "../aldo/AldoSubagentsPanel";
 import { isAldoCloud } from "../aldo/cloud";
 import { ProviderSettingsPanel } from "../components/settings/ProviderSettingsPanel";
 import { SettingsPageContainer } from "../components/settings/settingsLayout";
@@ -20,6 +21,7 @@ function SettingsProvidersRoute() {
     return (
       <SettingsPageContainer>
         <AldoAccountsPanel title="AI subscriptions" kinds={["claude", "codex", "grok", "muse"]} />
+        <AldoSubagentsPanel />
       </SettingsPageContainer>
     );
   }
