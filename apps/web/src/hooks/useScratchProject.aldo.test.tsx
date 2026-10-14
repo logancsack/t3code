@@ -46,9 +46,13 @@ describe("useScratchProject in Aldo", () => {
   it("offers no scratch project, so no thread lands on another thread's machine", () => {
     mode.cloud = true;
     const scratch = scratchProject();
-    expect(scratch.scratchWorkspaceRootFor(environmentId)).toBeNull();
     expect(scratch.scratchEnvironmentId(environmentId)).toBeNull();
     expect(scratch.scratchEnvironmentId(null)).toBeNull();
+  });
+
+  it("still names the folder, so a scratch project made before stays out of the project lists", () => {
+    mode.cloud = true;
+    expect(scratchProject().scratchWorkspaceRootFor(environmentId)).toBe("/home/user/.t3/scratch");
   });
 
   it("offers the machine's scratch project outside Aldo", () => {

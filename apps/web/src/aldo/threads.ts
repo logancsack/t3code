@@ -182,7 +182,16 @@ export async function startAldoSandbox(input: {
   // Before any cloud agent has reported its models there are none to show,
   // so start this one right away (preloading may already); its models appear when it's up.
   if (!hasModels) void ensureAldoConnected(environmentId).catch(() => undefined);
-  return waitForAldoProject(environmentId);
+  // Shown like the failures above, so a caller never shows one again.
+  return waitForAldoProject(environmentId).catch((cause: unknown) => {
+    toastManager.add({
+      type: "error",
+      title: input.create ? "Couldn't create the project" : "Couldn't start the thread",
+      description: cause instanceof Error ? cause.message : String(cause),
+      timeout: 10_000,
+    });
+    throw cause;
+  });
 }
 
 /**

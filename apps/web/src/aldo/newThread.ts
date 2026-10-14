@@ -88,7 +88,9 @@ export function useStartAldoThread(): {
       return openAldoThreadOnce(place, async () => {
         setStarting(true);
         try {
-          const projectRef = await startAldoSandbox({ repos });
+          // When there's no machine to be had, startAldoSandbox says why.
+          const projectRef = await startAldoSandbox({ repos }).catch(() => null);
+          if (projectRef === null) return null;
           if (carry) carryAldoDraft(carry.from, carry.prompt);
           const opened = await handleNewThread(projectRef);
           landAldoCarriedDraft(opened);
@@ -111,8 +113,9 @@ export function useStartAldoThread(): {
   return { start, starting };
 }
 
-/** Counts the moves of a draft asked for (aldoProjectForMovedDraft), so only the latest lands. */
-let latestMove = 0;
+/** Each draft's latest move asked for (aldoProjectForMovedDraft), so only that one lands. */
+const latestMoves = new Map<DraftId, number>();
+let moves = 0;
 
 /**
  * Where a draft moving to another place before its first message goes (T3's
@@ -126,24 +129,31 @@ export async function aldoProjectForMovedDraft(
   draftId: DraftId,
   target: ScopedProjectRef | null,
 ): Promise<EnvironmentProject | null> {
-  const move = ++latestMove;
-  let project: EnvironmentProject;
-  try {
-    const projectRef =
-      target === null
-        ? await startAldoSandbox({ repos: [] })
-        : await aldoProjectRefForNewThread(target);
-    project = await waitForProject(projectRef);
-  } catch (cause) {
+  const move = ++moves;
+  latestMoves.set(draftId, move);
+  const project = await movedDraftProject(target);
+  const latest = latestMoves.get(draftId) === move;
+  if (latest) latestMoves.delete(draftId);
+  const draft = useComposerDraftStore.getState().getDraftSession(draftId);
+  return latest && project !== null && draft !== null && draft.promotedTo == null ? project : null;
+}
+
+async function movedDraftProject(
+  target: ScopedProjectRef | null,
+): Promise<EnvironmentProject | null> {
+  // When there's no machine to be had, startAldoSandbox says why.
+  const projectRef = await (
+    target === null ? startAldoSandbox({ repos: [] }) : aldoProjectRefForNewThread(target)
+  ).catch(() => null);
+  if (projectRef === null) return null;
+  return waitForProject(projectRef).catch((cause: unknown) => {
     toastManager.add({
       type: "error",
       title: "Couldn't move the draft",
       description: cause instanceof Error ? cause.message : String(cause),
     });
     return null;
-  }
-  const draft = useComposerDraftStore.getState().getDraftSession(draftId);
-  return move === latestMove && draft !== null && draft.promotedTo == null ? project : null;
+  });
 }
 
 /**

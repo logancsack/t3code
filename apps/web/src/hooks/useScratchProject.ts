@@ -39,9 +39,6 @@ export function useScratchProject() {
   /** The scratch folder of a connected environment, or null when it offers none. */
   const scratchWorkspaceRootFor = useCallback(
     (environmentId: EnvironmentId | null): string | null => {
-      // Aldo: a machine is its thread's alone, so a thread without a project
-      // starts in General on its own (aldo/newThread.ts), not in this folder.
-      if (isAldoCloud) return null;
       const environment = environments.find((entry) => entry.environmentId === environmentId);
       return environment?.connection.phase === "connected"
         ? (environment.serverConfig?.scratchWorkspaceRoot ?? null)
@@ -55,6 +52,11 @@ export function useScratchProject() {
   // open), it starts on the one machine that offers it, never a silent pick.
   const scratchEnvironmentId = useCallback(
     (current: EnvironmentId | null): EnvironmentId | null => {
+      // Aldo: a machine is its thread's alone, so a thread without a project
+      // starts in General on its own (aldo/newThread.ts), never here. Its
+      // folder is still reported, so a scratch project made before is told
+      // apart from the others (isScratchProject).
+      if (isAldoCloud) return null;
       if (current !== null) return scratchWorkspaceRootFor(current) !== null ? current : null;
       const offering = environments.filter(
         (entry) => scratchWorkspaceRootFor(entry.environmentId) !== null,

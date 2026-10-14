@@ -13,24 +13,29 @@ vi.mock("./threads", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./threads")>()),
   ...threads,
 }));
+const entities = vi.hoisted(() => ({ missing: false }));
 vi.mock("../state/entities", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../state/entities")>()),
-  waitForProject: async (ref: { environmentId: string; projectId: string }) => ({
-    environmentId: ref.environmentId,
-    id: ref.projectId,
-  }),
+  waitForProject: async (ref: { environmentId: string; projectId: string }) => {
+    if (entities.missing) throw new Error("The project didn't load.");
+    return { environmentId: ref.environmentId, id: ref.projectId };
+  },
 }));
 
 import { aldoProjectForMovedDraft } from "./newThread";
 
 const draftId = DraftId.make("draft-1");
+const otherDraftId = DraftId.make("draft-2");
 const general = scopeProjectRef(EnvironmentId.make("aldo-general-2"), ProjectId.make("general"));
 const repo = scopeProjectRef(EnvironmentId.make("aldo-repo-1"), ProjectId.make("repo"));
 const ownRepo = scopeProjectRef(EnvironmentId.make("aldo-repo-2"), ProjectId.make("repo-2"));
 
 function setDraft(promotedTo: ReturnType<typeof scopeThreadRef> | null) {
   useComposerDraftStore.setState({
-    draftThreadsByThreadKey: { [draftId]: { promotedTo } as never },
+    draftThreadsByThreadKey: {
+      [draftId]: { promotedTo } as never,
+      [otherDraftId]: { promotedTo: null } as never,
+    },
   });
 }
 
@@ -44,6 +49,7 @@ function deferred<T>() {
 beforeEach(() => {
   threads.startAldoSandbox.mockReset();
   threads.aldoProjectRefForNewThread.mockReset();
+  entities.missing = false;
   setDraft(null);
 });
 
@@ -78,6 +84,23 @@ describe("aldoProjectForMovedDraft", () => {
     expect(await toGeneral).toBeNull();
   });
 
+  it("lands another draft's move made meanwhile, too", async () => {
+    const first = deferred<typeof general>();
+    threads.startAldoSandbox.mockReturnValueOnce(first.promise);
+    threads.aldoProjectRefForNewThread.mockResolvedValue(ownRepo);
+    const toGeneral = aldoProjectForMovedDraft(draftId, null);
+    const otherToRepo = aldoProjectForMovedDraft(otherDraftId, repo);
+    expect(await otherToRepo).toEqual({
+      environmentId: ownRepo.environmentId,
+      id: ownRepo.projectId,
+    });
+    first.resolve(general);
+    expect(await toGeneral).toEqual({
+      environmentId: general.environmentId,
+      id: general.projectId,
+    });
+  });
+
   it("leaves a draft sent meanwhile where it went", async () => {
     const machine = deferred<typeof general>();
     threads.startAldoSandbox.mockReturnValueOnce(machine.promise);
@@ -87,17 +110,26 @@ describe("aldoProjectForMovedDraft", () => {
     expect(await move).toBeNull();
   });
 
-  it("says so when it can't have a machine, and leaves the draft", async () => {
+  it("leaves the draft when it can't have a machine, which startAldoSandbox shows", async () => {
     const toast = vi.spyOn(toastManager, "add");
     threads.startAldoSandbox.mockRejectedValueOnce(
       new Error("You've reached your plan's machines."),
     );
     expect(await aldoProjectForMovedDraft(draftId, null)).toBeNull();
+    expect(toast).not.toHaveBeenCalled();
+    toast.mockRestore();
+  });
+
+  it("says so when the machine's project doesn't load, and leaves the draft", async () => {
+    const toast = vi.spyOn(toastManager, "add");
+    threads.startAldoSandbox.mockResolvedValue(general);
+    entities.missing = true;
+    expect(await aldoProjectForMovedDraft(draftId, null)).toBeNull();
     expect(toast).toHaveBeenCalledWith(
       expect.objectContaining({
         type: "error",
         title: "Couldn't move the draft",
-        description: "You've reached your plan's machines.",
+        description: "The project didn't load.",
       }),
     );
     toast.mockRestore();
