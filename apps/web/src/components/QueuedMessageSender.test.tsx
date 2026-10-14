@@ -27,6 +27,7 @@ vi.mock("../rpc/atomRegistry", () => ({
   appAtomRegistry: { get: () => new Map([["env-a", config]]) },
 }));
 vi.mock("../state/server", () => ({ environmentServerConfigsAtom: {} }));
+vi.mock("../aldo/dispatch", () => ({ aldoImagesGoInline: () => false }));
 vi.mock("../state/threads", () => ({
   threadEnvironment: {
     updateMetadata: "metadata",
