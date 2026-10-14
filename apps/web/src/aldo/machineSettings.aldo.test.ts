@@ -69,6 +69,31 @@ describe("the user's T3 settings in Aldo", () => {
     );
   });
 
+  it("saves a change made before Aldo first answers, which doesn't then undo it", async () => {
+    let answer!: (settings: unknown) => void;
+    cloud.fetchAldoMachineSettings.mockReturnValue(new Promise((resolve) => (answer = resolve)));
+    cloud.saveAldoMachineSettings.mockReturnValue(new Promise(() => undefined));
+    const { getAldoMachineSettings, keepAldoMachineSettings, loadAldoMachineSettings } =
+      await store();
+    const loaded = loadAldoMachineSettings();
+    const patch = { defaultRuntimeMode: "approval-required" } as const;
+    keepAldoMachineSettings(aldo, patch, planScopedSettingsPatch(all, [asleep], patch));
+    expect(cloud.saveAldoMachineSettings).toHaveBeenCalledWith(patch);
+    answer({ defaultRuntimeMode: "auto" });
+    await loaded;
+    expect(getAldoMachineSettings()).toEqual({ defaultRuntimeMode: "approval-required" });
+  });
+
+  it("still saves to Aldo when it couldn't be read", async () => {
+    cloud.fetchAldoMachineSettings.mockRejectedValue(new Error("offline"));
+    cloud.saveAldoMachineSettings.mockResolvedValue({ defaultRuntimeMode: "auto" });
+    const { keepAldoMachineSettings, loadAldoMachineSettings } = await store();
+    expect(await loadAldoMachineSettings()).toEqual({});
+    const patch = { defaultRuntimeMode: "auto" } as const;
+    keepAldoMachineSettings(aldo, patch, planScopedSettingsPatch(all, [asleep], patch));
+    expect(cloud.saveAldoMachineSettings).toHaveBeenCalledWith(patch);
+  });
+
   it("leaves a setting Aldo doesn't keep to the machines, as T3 does", async () => {
     cloud.fetchAldoMachineSettings.mockResolvedValue({});
     const { keepAldoMachineSettings, loadAldoMachineSettings } = await store();

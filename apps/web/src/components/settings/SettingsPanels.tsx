@@ -2194,12 +2194,13 @@ export function GeneralSettingsPanel() {
       (target) => target.serverConfig?.environment.capabilities.threadAutoSettlement === true,
     );
   const supportsRestartContinuation =
-    (connectedEnvironments.length > 0 &&
-      connectedEnvironments.every(
-        (target) =>
-          target.serverConfig?.environment.capabilities.threadRestartContinuation === true,
-      )) ||
-    (isAldoCloud && aldoSavesSettings(aldo, ["continueThreadsAfterServerUpdate"]));
+    connectedEnvironments.length > 0
+      ? connectedEnvironments.every(
+          (target) =>
+            target.serverConfig?.environment.capabilities.threadRestartContinuation === true,
+        )
+      : // Aldo: the user's setting saves with no machine connected.
+        isAldoCloud && aldoSavesSettings(aldo, ["continueThreadsAfterServerUpdate"]);
 
   const textGenerationProviders = serverProviders.filter(
     (provider) => provider.supportsTextGeneration !== false,

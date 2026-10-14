@@ -14,8 +14,12 @@ import {
   type AldoSettingsScope,
 } from "./machineSettings.logic";
 
-/** Null until Aldo answers, and from an Aldo that doesn't keep them: Settings works as before. */
-let kept: AldoMachineSettings | null = null;
+/**
+ * Null from an Aldo that doesn't keep them: Settings works as before. Until
+ * Aldo first answers, or if it couldn't, none saved yet: a change made then
+ * is still saved to Aldo (an older one refuses it, and is asked again).
+ */
+let kept: AldoMachineSettings | null = {};
 /** Counts the changes made here, so an answer a later change overtook isn't applied. */
 let version = 0;
 let loadedAt = 0;

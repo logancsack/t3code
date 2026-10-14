@@ -129,13 +129,15 @@ export function aldoSettingsSelection<
     connectedEnvironments.find(
       (candidate) => candidate.environmentId === selected.environment?.environmentId,
     ) ?? null;
-  // The one that lists the most providers: one whose T3 started before a provider shipped lists fewer.
+  // The one that lists the most kinds of provider: one whose T3 started before a provider shipped
+  // lists fewer (a kind's extra instances don't make up for one missing).
+  const kinds = (environment: E | null) =>
+    environment?.serverConfig
+      ? new Set(environment.serverConfig.providers.map((provider) => provider.driver)).size
+      : -1;
   const standIn = selected.environments.reduce<E | null>(
     (best, candidate) =>
-      candidate.serverConfig &&
-      candidate.serverConfig.providers.length > (best?.serverConfig?.providers.length ?? -1)
-        ? candidate
-        : best,
+      candidate.serverConfig && kinds(candidate) > kinds(best) ? candidate : best,
     null,
   );
   return {

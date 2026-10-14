@@ -10,8 +10,12 @@ import {
   withAldoMachineSettings,
 } from "./machineSettings.logic";
 
+/** Instances by id; `codex_work` is another Codex. */
 const providers = (...ids: string[]) =>
-  ids.map((instanceId) => ({ instanceId, driver: instanceId })) as unknown as ServerProvider[];
+  ids.map((instanceId) => ({
+    instanceId,
+    driver: instanceId.split("_")[0],
+  })) as unknown as ServerProvider[];
 
 function environment(id: string, options: { connected?: boolean; providers?: string[] } = {}) {
   return {
@@ -139,6 +143,24 @@ describe("aldoSettingsSelection", () => {
     );
     expect(selected.connectedEnvironments).toEqual([]);
     expect(selected.environment).toBeNull();
+    expect(selected.aldo?.providers?.map((provider) => provider.instanceId)).toEqual([
+      "codex",
+      "muse",
+    ]);
+  });
+
+  it("counts kinds of provider, not instances, to pick the sleeping machine", () => {
+    const selected = aldoSettingsSelection(
+      "all",
+      selection(
+        environment("instances", {
+          connected: false,
+          providers: ["codex", "codex_personal", "codex_work"],
+        }),
+        environment("kinds", { connected: false, providers: ["codex", "muse"] }),
+      ),
+      kept,
+    );
     expect(selected.aldo?.providers?.map((provider) => provider.instanceId)).toEqual([
       "codex",
       "muse",
