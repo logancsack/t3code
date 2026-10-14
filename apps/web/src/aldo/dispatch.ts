@@ -37,8 +37,11 @@ import {
   wakeAldoEnvironment,
 } from "./cloud";
 import { describeAldoThreadStart } from "./threadStart.logic";
+import { aldoWakeAgain } from "./reconnect.logic";
 
 const CONNECT_WAIT_MS = 3 * 60_000;
+/** How long this page asks again for a wake that gets no answer: past the longest first boot (Aldo's wake waits up to 800s). */
+const WAKE_RETRY_MS = 15 * 60_000;
 const NUDGE_EVERY_MS = 8_000;
 /** How long this page tries again, for a message Aldo holds, while bringing its machine up fails for a passing reason. */
 const HELD_RETRY_MS = 15 * 60_000;
@@ -115,6 +118,34 @@ export function aldoStartingLabel(environmentId: string): string {
   return kind === "creating" ? "Setting up its computer" : "Reconnecting to the cloud";
 }
 
+/**
+ * Asks Aldo to create the machine the first time, else resume it (it answers
+ * once T3 is up), and again while the wake gets no answer (aldoWakeAgain),
+ * for up to WAKE_RETRY_MS.
+ */
+async function wakeUntilAnswered(environmentId: string): Promise<void> {
+  const deadline = Date.now() + WAKE_RETRY_MS;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await wakeAldoEnvironment(environmentId);
+      return;
+    } catch (cause) {
+      // fetch rejects with a TypeError when no answer came at all.
+      const status =
+        cause instanceof AldoApiError
+          ? cause.status
+          : cause instanceof TypeError
+            ? null
+            : undefined;
+      const delay = Math.min(15_000, 2_000 * 2 ** attempt);
+      if (status === undefined || !aldoWakeAgain(status) || Date.now() + delay >= deadline) {
+        throw cause;
+      }
+      await sleep(delay);
+    }
+  }
+}
+
 /** Creates or wakes a thread's cloud agent and waits until the client is connected to it. */
 export function ensureAldoConnected(environmentId: string): Promise<void> {
   if (isAldoConnected(environmentId)) {
@@ -125,8 +156,7 @@ export function ensureAldoConnected(environmentId: string): Promise<void> {
   if (existing) return existing;
   starting.set(environmentId, aldoMachineIsNew(environmentId) ? "creating" : "reconnecting");
   const run = (async () => {
-    // Aldo creates the machine the first time, else resumes it, and returns once T3 is up.
-    await wakeAldoEnvironment(environmentId);
+    await wakeUntilAnswered(environmentId);
     requestAldoDirectoryRefresh();
     // A sleeping machine's connection waits to be told to try again.
     const deadline = Date.now() + CONNECT_WAIT_MS;

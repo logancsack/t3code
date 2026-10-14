@@ -24,3 +24,15 @@ export function aldoMachinesToRetry(
     )
     .map((environment) => environment.environmentId);
 }
+
+/**
+ * Whether a wake that failed is asked again: it got no answer (`status` null:
+ * the network dropped it, as a phone switching networks or going to the
+ * background during a first boot that takes minutes does), a gateway gave up
+ * waiting on it, or Aldo said "not yet" (the machine still starting for
+ * another call). Aldo converges a repeated wake on the same machine. Any other
+ * answer (a refusal, a start that failed) is the user's to know.
+ */
+export function aldoWakeAgain(status: number | null): boolean {
+  return status === null || [408, 429, 502, 503, 504].includes(status);
+}
