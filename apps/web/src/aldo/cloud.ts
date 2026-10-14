@@ -177,10 +177,12 @@ let aldoFeatures: {
   readonly general: boolean;
   readonly projects: boolean;
   readonly aldoModels: boolean;
+  readonly pullRequests: boolean;
 } = {
   general: false,
   projects: false,
   aldoModels: false,
+  pullRequests: false,
 };
 
 /** Whether threads can start without a repository (General), as the directory said. */
@@ -196,6 +198,11 @@ export function aldoSupportsProjects(): boolean {
 /** Whether agents can run on Aldo's own models, with no subscription of the user's, as the directory said. */
 export function aldoOffersItsModels(): boolean {
   return aldoFeatures.aldoModels;
+}
+
+/** Whether Aldo starts a thread on a pull request's branch (`pullRequest`), as the directory said. */
+export function aldoStartsPullRequestThreads(): boolean {
+  return aldoFeatures.pullRequests;
 }
 const directoryListeners = new Set<() => void>();
 let refreshRequested = true;
@@ -291,6 +298,15 @@ export function aldoThreadInGeneral(environmentId: string): boolean {
   return knownEnvironments?.find((entry) => entry.environmentId === environmentId)?.repo === "";
 }
 
+/**
+ * Whether a machine was recorded on a branch it was asked for (a pull
+ * request's), not on its own aldo/<id>: it's for the thread it was recorded for.
+ */
+export function aldoMachineOnAskedBranch(environmentId: string): boolean {
+  const entry = knownEnvironments?.find((candidate) => candidate.environmentId === environmentId);
+  return entry !== undefined && entry.branch !== `aldo/${entry.threadId}`;
+}
+
 /** Whether a thread's machine is still to be created (it is when its first message is sent). */
 export function aldoMachineIsNew(environmentId: string): boolean {
   return knownEnvironments?.find((entry) => entry.environmentId === environmentId)?.state === "new";
@@ -367,12 +383,18 @@ async function syncDirectory(environments: ReadonlyArray<AldoEnvironment>): Prom
 async function fetchEnvironments(): Promise<ReadonlyArray<AldoEnvironment>> {
   const { environments, features } = await api<{
     environments: AldoEnvironment[];
-    features?: { general?: boolean; projects?: boolean; aldoModels?: boolean };
+    features?: {
+      general?: boolean;
+      projects?: boolean;
+      aldoModels?: boolean;
+      pullRequests?: boolean;
+    };
   }>("/api/environments");
   aldoFeatures = {
     general: features?.general === true,
     projects: features?.projects === true,
     aldoModels: features?.aldoModels === true,
+    pullRequests: features?.pullRequests === true,
   };
   // A listing that started before a deletion finished can still include its machine.
   const listed = environments.filter((environment) => !hiddenByDeletion(environment.environmentId));
@@ -671,6 +693,12 @@ export function aldoEnvironmentIdFor(threadId: string): string {
   return `aldo-${threadId}`;
 }
 
+/** A pull request a new thread works on, and the branch the panel showed it on (Aldo refuses another). */
+export interface AldoPullRequestBranch {
+  readonly number: number;
+  readonly headBranch: string;
+}
+
 /**
  * Creates a thread's sandbox record. With `start: false` (and the thread and
  * project ids named here) its machine is only created when the thread's first
@@ -684,6 +712,8 @@ export async function createAldoEnvironment(input: {
   readonly create?: AldoNewProject;
   /** A multi-repo workspace: every repository, the main one first. */
   readonly repos?: ReadonlyArray<string>;
+  /** A pull request of its main repository: the thread is on its branch (aldoStartsPullRequestThreads). */
+  readonly pullRequest?: AldoPullRequestBranch;
   readonly id?: string;
   readonly projectId?: string;
   readonly start?: boolean;
@@ -701,6 +731,7 @@ export async function createAldoEnvironment(input: {
       branch: input.branch,
       create: input.create,
       repos: input.repos,
+      pullRequest: input.pullRequest,
       fromThreadId: input.fromEnvironmentId
         ? threadIdForEnvironment(input.fromEnvironmentId)
         : undefined,
