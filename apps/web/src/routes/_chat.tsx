@@ -112,6 +112,13 @@ function ChatRouteGlobalShortcuts() {
       }
 
       if (command === "chat.newWithoutProject") {
+        // Aldo: a General draft, on a computer of its own (none on an older Aldo).
+        if (isAldoCloud && aldoSupportsGeneralThreads()) {
+          event.preventDefault();
+          event.stopPropagation();
+          void startAldoThread([]);
+          return;
+        }
         const environmentId = scratchEnvironmentId(
           activeThread?.environmentId ?? activeDraftThread?.environmentId ?? primaryEnvironmentId,
         );

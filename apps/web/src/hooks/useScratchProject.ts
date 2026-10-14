@@ -7,6 +7,7 @@ import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { useCallback } from "react";
 
+import { isAldoCloud } from "~/aldo/cloud";
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
 import { waitForProject } from "~/state/entities";
 import { useEnvironments } from "~/state/environments";
@@ -51,6 +52,11 @@ export function useScratchProject() {
   // open), it starts on the one machine that offers it, never a silent pick.
   const scratchEnvironmentId = useCallback(
     (current: EnvironmentId | null): EnvironmentId | null => {
+      // Aldo: a machine is its thread's alone, so a thread without a project
+      // starts in General on its own (aldo/newThread.ts), never here. Its
+      // folder is still reported, so a scratch project made before is told
+      // apart from the others (isScratchProject).
+      if (isAldoCloud) return null;
       if (current !== null) return scratchWorkspaceRootFor(current) !== null ? current : null;
       const offering = environments.filter(
         (entry) => scratchWorkspaceRootFor(entry.environmentId) !== null,

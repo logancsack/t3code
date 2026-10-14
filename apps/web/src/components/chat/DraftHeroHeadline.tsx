@@ -7,7 +7,9 @@ import { FolderPlusIcon, MessageSquareDashedIcon } from "lucide-react";
 import { useAtomValue } from "@effect/atom-react";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 
-import { useAldoKeptRepo } from "~/aldo/keptRepo";
+import { isAldoCloud } from "~/aldo/cloud";
+import { useAldoGeneral, useAldoKeptRepo } from "~/aldo/keptRepo";
+import { aldoProjectForMovedDraft, useAldoGeneralThreads } from "~/aldo/newThread";
 import { openCommandPalette } from "~/commandPaletteBus";
 import { shortcutLabelForCommand } from "~/keybindings";
 import { projectIconColorClassName } from "~/projectIconColors";
@@ -106,8 +108,10 @@ export function DraftHeroHeadline({
   // Same-named projects on two machines are only told apart by where they
   // live, so rows on another machine carry its icon once the catalog spans
   // more than one environment; a single-machine catalog stays as it was.
+  // Aldo: a project spans the machines of its threads, which the picker
+  // doesn't name, so it shows no machine badge.
   const showProjectEnvironments = useMemo(
-    () => projectGroupsSpanEnvironments(projectGroups),
+    () => !isAldoCloud && projectGroupsSpanEnvironments(projectGroups),
     [projectGroups],
   );
   const environmentMachineById = useMemo(
@@ -168,6 +172,11 @@ export function DraftHeroHeadline({
   const scratchWorkspaceRoot = scratchWorkspaceRootFor(scratchTargetEnvironmentId);
   const isScratchDraft =
     activeProject !== null && isScratchProject(activeProject, scratchWorkspaceRoot);
+  // Aldo: a thread without a project is a General one (none on an older
+  // Aldo), and a General draft is already without one.
+  const aldoGeneralThreads = useAldoGeneralThreads();
+  const aldoGeneralDraft = useAldoGeneral(activeProjectRef?.environmentId);
+  const offersNoProject = isAldoCloud ? aldoGeneralThreads : scratchWorkspaceRoot !== null;
 
   // The picker can change the draft's target while the no-project home is
   // still being opened; a stale continuation must not retarget it again.
@@ -209,7 +218,21 @@ export function DraftHeroHeadline({
       }
     }
   };
+  // Aldo: the draft moves to a machine of its own there (null: General),
+  // never onto another thread's.
+  const moveAldoDraft = async (target: ScopedProjectRef | null): Promise<boolean> => {
+    if (!draftId) {
+      return false;
+    }
+    const project = await aldoProjectForMovedDraft(draftId, target);
+    if (!project || latestTargetRef.current.draftId !== draftId) {
+      return false;
+    }
+    selectProject(project, deriveLogicalProjectKeyFromSettings(project, projectGroupingSettings));
+    return true;
+  };
   const startScratch = async (): Promise<boolean> => {
+    if (isAldoCloud) return moveAldoDraft(null);
     if (scratchTargetEnvironmentId === null || isScratchDraft) {
       return false;
     }
@@ -262,6 +285,11 @@ export function DraftHeroHeadline({
             }
             const entry = projectEntryByKey.get(value as string);
             if (!entry || value === activeProjectKey) {
+              return;
+            }
+            if (isAldoCloud) {
+              const { environmentId, id } = entry.targetProject;
+              void moveAldoDraft(scopeProjectRef(environmentId, id));
               return;
             }
             selectProject(entry.targetProject, entry.group.projectKey);
@@ -337,7 +365,10 @@ export function DraftHeroHeadline({
   // above it. Focus moves to the project picker once this line has gone.
   const noProjectShortcut = shortcutLabelForCommand(keybindings, "chat.newWithoutProject");
   const orStartWithoutProject =
-    scratchWorkspaceRoot !== null && !isScratchDraft && (hasResolvedProject || canChooseProject) ? (
+    offersNoProject &&
+    !isScratchDraft &&
+    !aldoGeneralDraft &&
+    (hasResolvedProject || canChooseProject) ? (
       <Tooltip>
         <TooltipTrigger
           render={
@@ -380,7 +411,7 @@ export function DraftHeroHeadline({
       </h1>
       {/* Reserved whenever threads can skip a project, so the heading does not
           move. Without a project, the picker moves here to choose one. */}
-      {scratchWorkspaceRoot === null ? null : (
+      {!offersNoProject ? null : (
         <p className="mt-2 flex h-6 items-center text-sm">
           {isScratchDraft ? projectSelector : orStartWithoutProject}
         </p>

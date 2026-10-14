@@ -215,6 +215,7 @@ import {
 } from "../sidebarProjectGrouping";
 import { displayedThreadBranch, isAldoCloud } from "../aldo/cloud";
 import { openAldoRepositoryPicker } from "../aldo/AldoRepositoryPicker";
+import { useAldoStartWithoutProject } from "../aldo/newThread";
 import type { Project } from "../types";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 import { readPullRequestListPreferences } from "~/components/pullRequest/pullRequestListPreferences";
@@ -764,6 +765,7 @@ function OpenCommandPaletteDialog(props: {
     reportFailure: false,
   });
   const { scratchEnvironmentId, scratchWorkspaceRootFor, startScratchThread } = useScratchProject();
+  const aldoStartWithoutProject = useAldoStartWithoutProject();
   const lookupRepository = useAtomQueryRunner(sourceControlEnvironment.repository, {
     reportFailure: false,
   });
@@ -1210,6 +1212,15 @@ function OpenCommandPaletteDialog(props: {
   const scratchTargetEnvironmentId = scratchEnvironmentId(
     currentProjectEnvironmentId ?? primaryEnvironmentId,
   );
+  // Aldo: a General thread instead, on a computer of its own (none on an older Aldo).
+  const startWithoutProject = useMemo(
+    () =>
+      aldoStartWithoutProject ??
+      (scratchTargetEnvironmentId === null
+        ? null
+        : () => startScratchThread(scratchTargetEnvironmentId)),
+    [aldoStartWithoutProject, scratchTargetEnvironmentId, startScratchThread],
+  );
   const currentProjectCwd = currentProjectId
     ? (projectCwdById.get(currentProjectId) ?? null)
     : null;
@@ -1339,6 +1350,9 @@ function OpenCommandPaletteDialog(props: {
         projects: pickerProjects,
         valuePrefix: "project",
         searchTerms: (project) => {
+          // Aldo: each machine is labeled with its thread's title, which says
+          // nothing about the project, so its rows leave machines out.
+          if (isAldoCloud) return [];
           const members = projectGroupByTargetKey.get(`${project.environmentId}:${project.id}`)
             ?.memberProjects ?? [project];
           return buildCommandPaletteProjectMetadata({
@@ -1347,6 +1361,7 @@ function OpenCommandPaletteDialog(props: {
           }).searchTerms;
         },
         renderDescription: (project) => {
+          if (isAldoCloud) return project.workspaceRoot;
           const members = projectGroupByTargetKey.get(`${project.environmentId}:${project.id}`)
             ?.memberProjects ?? [project];
           const metadata = buildCommandPaletteProjectMetadata({
@@ -1393,10 +1408,12 @@ function OpenCommandPaletteDialog(props: {
             return [
               ...(group?.memberProjects.flatMap((member) => [member.title, member.workspaceRoot]) ??
                 []),
-              ...(location ? [location.label] : []),
+              // Aldo: a machine's label is its thread's title (as above).
+              ...(location && !isAldoCloud ? [location.label] : []),
             ];
           },
           renderDescription: (project) => {
+            if (isAldoCloud) return project.workspaceRoot;
             const location = projectEnvironmentLocationById.get(project.environmentId) ?? {
               kind: "remote",
               label: "Remote",
@@ -1436,7 +1453,7 @@ function OpenCommandPaletteDialog(props: {
             );
           },
         }),
-        ...(scratchTargetEnvironmentId === null
+        ...(startWithoutProject === null
           ? []
           : [
               {
@@ -1446,7 +1463,7 @@ function OpenCommandPaletteDialog(props: {
                 title: "No project",
                 icon: <MessageSquareDashedIcon className={ITEM_ICON_CLASS} />,
                 shortcutCommand: "chat.newWithoutProject" as const,
-                run: () => startScratchThread(scratchTargetEnvironmentId),
+                run: startWithoutProject,
               },
             ]),
       ]),
@@ -1456,9 +1473,8 @@ function OpenCommandPaletteDialog(props: {
       pickerProjects,
       projectEnvironmentLocationById,
       projectGroupByTargetKey,
-      scratchTargetEnvironmentId,
       scratchWorkspaceRootFor,
-      startScratchThread,
+      startWithoutProject,
     ],
   );
 
@@ -1907,6 +1923,13 @@ function OpenCommandPaletteDialog(props: {
   // New project starts on this device (options list it first); the name step
   // lists the other machines when there is a choice.
   const openNewProjectFlow = () => {
+    if (isAldoCloud) {
+      // Under Aldo a new project is a repository or an Aldo project, which its
+      // dialog makes, not a folder on the machine of a thread that's open.
+      setOpen(false);
+      openAldoRepositoryPicker("new");
+      return;
+    }
     const firstOption = newProjectEnvironmentOptions[0];
     if (firstOption) startNewProject(firstOption.environmentId, null);
   };
@@ -2013,7 +2036,7 @@ function OpenCommandPaletteDialog(props: {
     });
   }
 
-  if (scratchTargetEnvironmentId !== null) {
+  if (startWithoutProject !== null) {
     actionItems.push({
       kind: "action",
       value: "action:new-thread-without-project",
@@ -2021,7 +2044,7 @@ function OpenCommandPaletteDialog(props: {
       title: "New thread without a project",
       icon: <MessageSquareDashedIcon className={ITEM_ICON_CLASS} />,
       shortcutCommand: "chat.newWithoutProject",
-      run: () => startScratchThread(scratchTargetEnvironmentId),
+      run: startWithoutProject,
     });
   }
 
@@ -2138,7 +2161,7 @@ function OpenCommandPaletteDialog(props: {
     },
   });
 
-  if (newProjectEnvironmentOptions.length > 0) {
+  if (isAldoCloud || newProjectEnvironmentOptions.length > 0) {
     actionItems.push({
       kind: "action",
       value: "action:new-project",
