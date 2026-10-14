@@ -11751,6 +11751,20 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
+  it.effect("refuses provider updates on a managed machine", () =>
+    Effect.gen(function* () {
+      yield* buildAppUnderTest({ config: { managedDevPc: true } });
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const error = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[WS_METHODS.serverUpdateProvider]({ provider: ProviderDriverKind.make("codex") }),
+        ),
+      ).pipe(Effect.flip);
+      assert.equal(error._tag, "ServerProviderUpdateError");
+      assert.include(error.message, "This machine's providers are managed by its host.");
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
   it.effect("serves the provider catalog to the managed coordinator", () =>
     Effect.gen(function* () {
       const providers = [
