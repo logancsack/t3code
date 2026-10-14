@@ -1,4 +1,6 @@
-import { extname } from "node:path";
+// @effect-diagnostics nodeBuiltinImport:off
+
+import * as NodePath from "node:path";
 
 import { describe, expect, it } from "vite-plus/test";
 
@@ -91,7 +93,7 @@ describe("aldoAttachmentId", () => {
   const uuid = "0f8e2c1a-3b4d-4e5f-8a9b-0c1d2e3f4a5b";
   // T3's own rule (attachmentFileExtension in apps/server/src/attachmentStore.ts), on Node's path.
   const t3Extension = (name: string) => {
-    const extension = extname(name).toLowerCase();
+    const extension = NodePath.extname(name).toLowerCase();
     return extension === ".part" || !/^\.[a-z0-9]{1,10}$/.test(extension)
       ? "bin"
       : extension.slice(1);
