@@ -295,6 +295,7 @@ describe("CheckpointReactor", () => {
     readonly checkpointLookupFailure?: (
       cwd: string,
     ) => VcsProcessTimeoutError | VcsProcessSpawnError | undefined;
+    readonly checkpointLookupGate?: (cwd: string) => Effect.Effect<void>;
     readonly workspaceRefresh?: (cwd: string) => Effect.Effect<void>;
     readonly hasSession?: boolean;
     readonly seedFilesystemCheckpoints?: boolean;
@@ -384,7 +385,11 @@ describe("CheckpointReactor", () => {
               ...store,
               hasCheckpointRef: (input) => {
                 const failure = options?.checkpointLookupFailure?.(input.cwd);
-                return failure ? Effect.fail(failure) : store.hasCheckpointRef(input);
+                return failure
+                  ? Effect.fail(failure)
+                  : (options?.checkpointLookupGate?.(input.cwd) ?? Effect.void).pipe(
+                      Effect.andThen(store.hasCheckpointRef(input)),
+                    );
               },
             })),
           ),
@@ -662,6 +667,54 @@ describe("CheckpointReactor", () => {
         expect(
           model.threads[0]?.activities.some((a) => a.kind === "checkpoint.capture.failed"),
         ).toBe(false);
+      }),
+  );
+
+  effectIt.effect(
+    "captures a thread's baseline while another thread's capture is still running",
+    () =>
+      Effect.gen(function* () {
+        const entered = yield* Deferred.make<void>();
+        const release = yield* Deferred.make<void>();
+        let secondCwd = "";
+        const harness = yield* Effect.promise(() =>
+          createHarness({
+            seedFilesystemCheckpoints: false,
+            secondThreadSharingWorktree: true,
+            secondThreadWorktreePath: () => {
+              secondCwd = createGitRepository();
+              tempDirs.push(secondCwd);
+              return secondCwd;
+            },
+            checkpointLookupGate: (cwd) =>
+              cwd === secondCwd
+                ? Effect.void
+                : Deferred.succeed(entered, undefined).pipe(
+                    Effect.andThen(Deferred.await(release)),
+                  ),
+          }),
+        );
+        for (const threadId of ["thread-1", "thread-2"]) {
+          harness.provider.emit({
+            type: "turn.started",
+            eventId: EventId.make(`evt-parallel-start-${threadId}`),
+            provider: ProviderDriverKind.make("codex"),
+            createdAt: "2026-01-01T00:00:00.000Z",
+            threadId: ThreadId.make(threadId),
+            turnId: asTurnId(`turn-parallel-${threadId}`),
+          });
+          if (threadId === "thread-1") yield* Deferred.await(entered);
+        }
+        expect(yield* harness.nextReceipt).toMatchObject({
+          type: "checkpoint.baseline.captured",
+          threadId: ThreadId.make("thread-2"),
+        });
+        yield* Deferred.succeed(release, undefined);
+        expect(yield* harness.nextReceipt).toMatchObject({
+          type: "checkpoint.baseline.captured",
+          threadId: ThreadId.make("thread-1"),
+        });
+        yield* Effect.promise(harness.drain);
       }),
   );
 

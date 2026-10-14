@@ -994,13 +994,15 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
                   }
                 }
                 if (exclusions.length === 0) return yield* error;
-                return yield* stageFiles(exclusions);
+                return exclusions;
               }).pipe(
-                // One budget covers discovery, queued Git admission, probes, and the staging retry.
+                // One budget covers discovery, queued Git admission, and probes. The retry
+                // restages the whole tree, so it gets staging's own timeout.
                 Effect.timeoutOrElse({
                   duration: CHECKPOINT_RECOVERY_TIMEOUT,
                   orElse: () => Effect.fail(error),
                 }),
+                Effect.flatMap(stageFiles),
               ),
           }),
         );

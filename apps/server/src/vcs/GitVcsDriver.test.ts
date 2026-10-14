@@ -287,14 +287,13 @@ it.effect("checkpoint recovery refuses excessive candidates before probing", () 
 );
 
 it.effect.each([
-  { phase: "add", nestedRecovery: false, expireRecovery: false },
-  { phase: "update-ref", nestedRecovery: false, expireRecovery: false },
-  { phase: "update-ref", nestedRecovery: true, expireRecovery: false },
-  { phase: "add", nestedRecovery: true, expireRecovery: false },
-  { phase: "add", nestedRecovery: true, expireRecovery: true },
+  { phase: "add", nestedRecovery: false },
+  { phase: "update-ref", nestedRecovery: false },
+  { phase: "update-ref", nestedRecovery: true },
+  { phase: "add", nestedRecovery: true },
 ])(
-  "checkpoint handles a $phase lock with nestedRecovery=$nestedRecovery, expireRecovery=$expireRecovery",
-  ({ phase, nestedRecovery, expireRecovery }) =>
+  "checkpoint handles a $phase lock with nestedRecovery=$nestedRecovery",
+  ({ phase, nestedRecovery }) =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
@@ -312,7 +311,6 @@ it.effect.each([
       const privateIndexes = new Set<string>();
       let racedAttempts = 0;
       let discoveries = 0;
-      let stageError: VcsProcessExitError | undefined;
       const captureProcess = yield* VcsProcess.make.pipe(
         Effect.provideService(ProcessRunner.ProcessRunner, {
           run: (input) => {
@@ -340,16 +338,7 @@ it.effect.each([
         }),
       );
       const captureDriver = yield* GitVcsDriver.makeVcsDriverShape().pipe(
-        Effect.provideService(VcsProcess.VcsProcess, {
-          run: (input) =>
-            captureProcess.run(input).pipe(
-              Effect.tapError((error) => {
-                if (input.args.includes("add") && error._tag === "VcsProcessExitError")
-                  stageError = error;
-                return Effect.void;
-              }),
-            ),
-        }),
+        Effect.provideService(VcsProcess.VcsProcess, captureProcess),
       );
       const captureStore = yield* makeCaptureStore(captureDriver, cwd);
       const fiber = yield* captureStore.captureCheckpoint({ cwd, checkpointRef }).pipe(
@@ -367,23 +356,12 @@ it.effect.each([
       );
       yield* Deferred.await(failed);
       yield* Deferred.await(retryReached);
-      if (expireRecovery) yield* TestClock.adjust("5 seconds");
-      else yield* Deferred.succeed(allowRetry, undefined);
-      const result = yield* Fiber.join(fiber);
-      if (expireRecovery) {
-        if (Exit.isSuccess(result))
-          return yield* Effect.die("Expected the recovery deadline to expire");
-        const error = Cause.findErrorOption(result.cause);
-        assert.isTrue(error._tag === "Some");
-        if (error._tag === "Some") assert.strictEqual(error.value, stageError);
-      } else assert.isTrue(Exit.isSuccess(result));
-      assert.strictEqual(racedAttempts, expireRecovery ? 1 : 2);
+      yield* Deferred.succeed(allowRetry, undefined);
+      assert.isTrue(Exit.isSuccess(yield* Fiber.join(fiber)));
+      assert.strictEqual(racedAttempts, 2);
       assert.strictEqual(discoveries, nestedRecovery ? 1 : 0);
       assert.strictEqual(privateIndexes.size, 1);
-      assert.strictEqual(
-        yield* driver.checkpoints.hasCheckpointRef({ cwd, checkpointRef }),
-        !expireRecovery,
-      );
+      assert.strictEqual(yield* driver.checkpoints.hasCheckpointRef({ cwd, checkpointRef }), true);
       for (const index of privateIndexes) {
         assert.isFalse(yield* fs.exists(index));
         assert.isFalse(yield* fs.exists(`${index}.lock`));
@@ -392,7 +370,7 @@ it.effect.each([
     }).pipe(Effect.scoped, Effect.provide(GitCaptureContractLayer)),
 );
 
-for (const blockedPhase of ["discovery", "probe", "retry"] as const) {
+for (const blockedPhase of ["discovery", "probe"] as const) {
   it.effect(`checkpoint recovery has one deadline including ${blockedPhase}`, () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
@@ -419,22 +397,9 @@ for (const blockedPhase of ["discovery", "probe", "retry"] as const) {
             }
             const block =
               (blockedPhase === "discovery" && input.args.includes("--others")) ||
-              (blockedPhase === "probe" && input.cwd !== cwd && input.args.includes("rev-parse")) ||
-              (blockedPhase === "retry" &&
-                staging &&
-                input.args.some((arg) => arg.startsWith(":(exclude,literal)")));
+              (blockedPhase === "probe" && input.cwd !== cwd && input.args.includes("rev-parse"));
             if (block)
-              return (
-                blockedPhase === "retry"
-                  ? fs
-                      .writeFileString(
-                        `${input.env!.GIT_INDEX_FILE!}.lock`,
-                        "interrupted index write",
-                      )
-                      .pipe(Effect.orDie)
-                  : Effect.void
-              ).pipe(
-                Effect.andThen(Deferred.succeed(entered, undefined)),
+              return Deferred.succeed(entered, undefined).pipe(
                 Effect.andThen(Effect.never),
                 Effect.onInterrupt(() =>
                   Effect.sync(() => {
@@ -470,7 +435,7 @@ for (const blockedPhase of ["discovery", "probe", "retry"] as const) {
       yield* TestClock.adjust(blockedPhase === "probe" ? "2 seconds" : "5 seconds");
       const error = yield* Fiber.join(fiber);
       assert.strictEqual(error, stageError);
-      assert.strictEqual(stagingAttempts, blockedPhase === "retry" ? 2 : 1);
+      assert.strictEqual(stagingAttempts, 1);
       assert.isTrue(interrupted);
       assert.isDefined(privateIndex);
       assert.isFalse(yield* fs.exists(privateIndex!));
@@ -480,6 +445,44 @@ for (const blockedPhase of ["discovery", "probe", "retry"] as const) {
     }).pipe(Effect.scoped, Effect.provide(GitContractLayer)),
   );
 }
+
+it.effect("checkpoint recovery restages under staging's timeout, not the recovery deadline", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const liveProcess = yield* VcsProcess.VcsProcess;
+    const driver = yield* GitVcsDriver.makeVcsDriverShape();
+    const cwd = yield* fs.makeTempDirectoryScoped({ prefix: "t3-checkpoint-recovery-restage-" });
+    const { git, checkpointRef } = yield* makeCheckpointFixture(driver, cwd);
+    yield* git(["init", "empty"]);
+    const entered = yield* Deferred.make<void>();
+    const retryTimeouts: Array<number | undefined> = [];
+    const captureDriver = yield* GitVcsDriver.makeVcsDriverShape().pipe(
+      Effect.provideService(VcsProcess.VcsProcess, {
+        run: (input) => {
+          const retry =
+            input.args.includes("add") &&
+            input.args.some((arg) => arg.startsWith(":(exclude,literal)"));
+          if (!retry) return liveProcess.run(input);
+          retryTimeouts.push(input.timeoutMs);
+          // A big tree takes longer to restage than recovery's whole budget.
+          return Deferred.succeed(entered, undefined).pipe(
+            Effect.andThen(Effect.sleep("10 seconds")),
+            Effect.andThen(liveProcess.run(input)),
+          );
+        },
+      }),
+    );
+    const captureStore = yield* makeCaptureStore(captureDriver, cwd);
+    const fiber = yield* captureStore
+      .captureCheckpoint({ cwd, checkpointRef })
+      .pipe(Effect.exit, Effect.forkScoped);
+    yield* Deferred.await(entered);
+    yield* TestClock.adjust("10 seconds");
+    assert.isTrue(Exit.isSuccess(yield* Fiber.join(fiber)));
+    assert.deepStrictEqual(retryTimeouts, [5 * 60_000]);
+    assert.isTrue(yield* driver.checkpoints.hasCheckpointRef({ cwd, checkpointRef }));
+  }).pipe(Effect.scoped, Effect.provide(GitContractLayer)),
+);
 
 it.effect("checkpoint recovery preserves interruption and removes the private index", () =>
   Effect.gen(function* () {
