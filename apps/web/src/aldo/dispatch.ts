@@ -82,6 +82,16 @@ export function isAldoConnected(environmentId: string): boolean {
 }
 
 /**
+ * Whether a message's images go inside it rather than uploading to the
+ * thread's machine first: its cloud agent isn't up, so Aldo holds the message
+ * with them and sends it even if the page goes away (handToAldo). Files can
+ * only upload to the agent. Every way of sending a message asks this.
+ */
+export function aldoImagesGoInline(environmentId: string): boolean {
+  return isAldoCloud && isAldoEnvironmentId(environmentId) && !isAldoConnected(environmentId);
+}
+
+/**
  * Whether to tell a machine's connection to try again now: only while it
  * waits to (backing off, or not trying). An attempt under way has a deadline
  * of its own, and a nudge would cut it off, so a slow one (a big thread's
