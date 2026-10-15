@@ -1,8 +1,9 @@
 // What Aldo's face says under its name at the top of the conversation
 // (AldoPresence.tsx), the way a messaging app says someone is typing: what
-// Aldo is doing on a call or in writing, else how many things need the user
-// and how many agents work, else what its agents are at, else what waits on
-// the user. Pure, so it's tested on its own.
+// Aldo is doing on a call or in writing, else that it couldn't check (the
+// home read failed before anything was read), else how many things need the
+// user and how many agents work, else what its agents are at, else what waits
+// on the user. Pure, so it's tested on its own.
 
 import type { AldoAssistantPhase } from "./assistant.logic";
 import type { AldoHomeConversation } from "./cloud";
@@ -37,6 +38,8 @@ export function presenceLine(input: {
   /** What's working now, newest first. */
   readonly working: ReadonlyArray<Pick<AldoHomeConversation, "title" | "browsing">>;
   readonly waiting: number;
+  /** Nothing's been read: what's waiting and working isn't known. */
+  readonly unread?: boolean;
 }): { readonly text: string; readonly mood: AldoMood } {
   const { phase } = input;
   if (phase === "listening" || phase === "hearing")
@@ -44,6 +47,7 @@ export function presenceLine(input: {
   if (phase === "speaking") return { text: "Talking", mood: "speaking" };
   if (phase === "thinking" || phase === "connecting" || input.replying)
     return { text: "Typing…", mood: "thinking" };
+  if (input.unread) return { text: "Couldn't check on your agents", mood: "idle" };
   const [first] = input.working;
   // Both: what needs the user leads, beside the dot that says so.
   if (first && input.waiting > 0)

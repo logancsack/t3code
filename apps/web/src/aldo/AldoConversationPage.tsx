@@ -35,13 +35,15 @@ import { AldoUpNext } from "./AldoUpNext";
 import { settleAldoConversation, unsettleAldoConversation } from "./arrive";
 import { loadAldoConversation, seedAldoComposer, useAldoAssistant } from "./assistantSession";
 import type { AldoHome, AldoHomeTarget } from "./cloud";
-import { aldoDecisions } from "./decisions.logic";
+import { aldoWaitingCount } from "./decisions.logic";
 import { feedEvents, withReceipts } from "./feed.logic";
 import type { healthIssues } from "./home.logic";
 import { useAldoReceipts } from "./receipts";
 import { blinkAldo } from "./face";
 import { aldoGlide, aldoMorphSource, morphIntoThread } from "./morph";
+import { refreshAldoHome } from "./homeFeed";
 import { scrollMotion } from "./show";
+import { SECONDARY, SURFACE } from "./surface";
 
 function inField(target: EventTarget | null): boolean {
   const element = target as HTMLElement | null;
@@ -105,6 +107,8 @@ export function AldoConversationPage(props: {
   readonly home: AldoHome | null;
   /** Whether this Aldo has the home read; null until it's known. */
   readonly supported: boolean | null;
+  /** Why the home read failed, if it did. */
+  readonly error: string | null;
   readonly now: number;
   /** Simple mode's places, on a phone: over Aldo's face. */
   readonly tabs: ReactNode;
@@ -136,8 +140,16 @@ export function AldoConversationPage(props: {
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, []);
 
-  // What happened, from where the conversation starts; what Aldo does from here on it shows itself.
+  // What happened, from where the conversation starts; what Aldo does here from now on it shows itself.
   const [opened] = useState(() => Date.now());
+  const entries = useAldoAssistant((s) => s.entries);
+  const here = useMemo(
+    () =>
+      entries.flatMap((e) =>
+        e.kind === "action" ? [{ tool: e.tool, thread: e.open ?? null }] : [],
+      ),
+    [entries],
+  );
   const loaded = useAldoAssistant((s) => s.historyLoaded);
   const firstAt = useAldoAssistant((s) => {
     const first = s.entries.find((e) => e.kind === "message");
@@ -147,12 +159,17 @@ export function AldoConversationPage(props: {
   const receipts = useAldoReceipts((s) => s.receipts);
   const feed = useMemo(
     () =>
-      withReceipts(home ? feedEvents(home, { now, from: firstAt, until: opened }) : [], receipts),
-    [home, now, firstAt, opened, receipts],
+      withReceipts(
+        home ? feedEvents(home, { now, from: firstAt, until: opened, here }) : [],
+        receipts,
+      ),
+    [home, now, firstAt, opened, here, receipts],
   );
-  const waiting = useMemo(() => (home ? aldoDecisions(home, now).length : 0), [home, now]);
+  const waiting = useMemo(() => (home ? aldoWaitingCount(home, now) : 0), [home, now]);
+  // Nothing read yet, and the read failed: that's said, not taken for nothing to show.
+  const unread = home === null && props.error !== null;
   // Nothing said, nothing happened and nothing waiting: the page is one question.
-  const fresh = loaded && !said && feed.length === 0 && waiting === 0;
+  const fresh = loaded && !said && feed.length === 0 && waiting === 0 && !unread;
   useEffect(() => {
     if (!loaded || !home) return;
     // Past the first paint of what was there: from now on, what appears arrives.
@@ -205,7 +222,7 @@ export function AldoConversationPage(props: {
             {/* Centered, clear of the sidebar's button, which floats at the top left on a phone. */}
             <header className="relative flex min-h-14 shrink-0 flex-col items-center justify-center gap-2 px-4 pt-2 pb-1.5 sm:px-6">
               {props.tabs}
-              {fresh ? null : <AldoPresence home={home} now={now} />}
+              {fresh ? null : <AldoPresence home={home} now={now} unread={unread} />}
               {props.actions ? (
                 <div className="absolute end-3 top-2.5 hidden sm:block">{props.actions}</div>
               ) : null}
@@ -238,6 +255,7 @@ export function AldoConversationPage(props: {
                 <div className={cn(column, "flex flex-col gap-4 pt-3 pb-6")}>
                   {props.setup}
                   <HealthStrip issues={props.issues} />
+                  {unread ? <HomeUnread error={props.error!} /> : null}
                   {props.supported === false ? <AldoAtAGlance /> : null}
                   {conversation}
                 </div>
@@ -288,5 +306,32 @@ export function AldoConversationPage(props: {
         </div>
       </AldoOpenContext.Provider>
     </SidebarInset>
+  );
+}
+
+/** The home read failed before anything was read: what's waiting and working isn't known, so it isn't shown as nothing. */
+function HomeUnread(props: { readonly error: string }) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <div
+      role="status"
+      className={cn(SURFACE, "flex items-center gap-3 px-4 py-3 text-[14px] leading-5")}
+    >
+      <span className="min-w-0 flex-1">
+        <span className="font-medium">Couldn't check on your agents.</span>{" "}
+        <span className="text-muted-foreground">{props.error}</span>
+      </span>
+      <button
+        type="button"
+        className={cn(SECONDARY, "h-9 shrink-0 px-4 text-sm")}
+        disabled={busy}
+        onClick={() => {
+          setBusy(true);
+          void refreshAldoHome().finally(() => setBusy(false));
+        }}
+      >
+        {busy ? "Trying…" : "Try again"}
+      </button>
+    </div>
   );
 }

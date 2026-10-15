@@ -5,11 +5,13 @@
 // first, from the brief, with why), a tap on what asks (or ↗) to open its
 // thread; the next two are a line each that opens in place, and the rest
 // unfold. Decided, a card turns into the line saying what happened
-// (receipts.ts) and leaves with the next read of the home screen. On a
+// (receipts.ts) and leaves with the next read of the home screen. A thread
+// paused mid-turn waits on the user too, though only opening it carries it
+// on: it's a line that opens it. On a
 // keyboard, j and k move between cards and Enter unfolds one, then opens its
 // thread: nothing is decided without a button.
 
-import { ArrowUpRightIcon, ChevronDownIcon, LoaderCircleIcon } from "lucide-react";
+import { ArrowUpRightIcon, ChevronDownIcon, LoaderCircleIcon, MoonIcon } from "lucide-react";
 import {
   useContext,
   useEffect,
@@ -30,12 +32,12 @@ import { AldoOpenContext } from "./AldoLiveCard";
 import { AldoAvatar } from "./AldoPresence";
 import { useAldoArrive } from "./arrive";
 import { useAldoBrief } from "./briefFeed";
-import type { AldoHome } from "./cloud";
+import type { AldoHome, AldoHomeConversation } from "./cloud";
 import { decideAldoOutcome, type AldoChoice } from "./decide";
-import { aldoDecisions, decisionThread, type AldoDecision } from "./decisions.logic";
+import { aldoDecisions, decisionThread, putAway, type AldoDecision } from "./decisions.logic";
 import { pleaseAldo } from "./face";
 import { refreshAldoHome, useAldoHomeFeed } from "./homeFeed";
-import { elapsed } from "./home.logic";
+import { elapsed, isPausedMidTurn } from "./home.logic";
 import { aldoMorph } from "./morph";
 import { addAldoReceipt, useAldoReceipts } from "./receipts";
 import { movedOnText, receiptText } from "./receipts.logic";
@@ -63,6 +65,11 @@ export function AldoUpNext(props: { readonly home: AldoHome; readonly now: numbe
     );
     return [...urgent, ...first, ...list.filter((d) => !urgent.includes(d) && !first.includes(d))];
   }, [props.home, props.now, brief, receipts]);
+  // Asleep mid-turn: no decision, but it waits on the user to open it.
+  const paused = useMemo(
+    () => props.home.conversations.filter((c) => isPausedMidTurn(c) && !putAway(c, props.now)),
+    [props.home, props.now],
+  );
   const picks = useMemo(() => {
     const out: Record<string, { readonly label: string; readonly reason: string | null }> = {};
     for (const item of brief?.top ?? [])
@@ -88,9 +95,9 @@ export function AldoUpNext(props: { readonly home: AldoHome; readonly now: numbe
     window.addEventListener(SHOW_ALDO_DECISION, onShow);
     return () => window.removeEventListener(SHOW_ALDO_DECISION, onShow);
   }, [decisions]);
-  if (decisions.length === 0) return null;
+  if (decisions.length === 0 && paused.length === 0) return null;
   // The one open is the one the user opened, while it's there; else the first.
-  const open = decisions.some((d) => d.key === opened) ? opened : decisions[0]!.key;
+  const open = decisions.some((d) => d.key === opened) ? opened : (decisions[0]?.key ?? null);
   const shown = all ? decisions : decisions.slice(0, SHOWN);
   const suggestions = Object.fromEntries(Object.entries(picks).map(([k, p]) => [k, p.label]));
   return (
@@ -123,6 +130,9 @@ export function AldoUpNext(props: { readonly home: AldoHome; readonly now: numbe
             focusCardSoon(d.key);
           }}
         />
+      ))}
+      {paused.map((c) => (
+        <PausedLine key={c.ref} conversation={c} now={props.now} />
       ))}
       {decisions.length > SHOWN ? (
         <button
@@ -185,7 +195,8 @@ function focusCardSoon(key: string, reveal = false): void {
 
 /**
  * j and k move between the cards, while the conversation has the keyboard:
- * nothing focused, or a card. Not from a field or anything over the page.
+ * nothing focused, or a card. Not from a field or anything over the page (a
+ * dialog, a call going through them).
  */
 function useCardKeys(): void {
   useEffect(() => {
@@ -195,7 +206,11 @@ function useCardKeys(): void {
       const focused = document.activeElement;
       const free =
         !focused || focused === document.body || focused.closest("[data-aldo-up-next]") !== null;
-      if (!free || document.querySelector('[role="dialog"], [role="alertdialog"]')) return;
+      // Not behind anything over the page: a dialog, or a call's screen.
+      const over = document.querySelector(
+        '[role="dialog"], [role="alertdialog"], [data-aldo-call-screen]',
+      );
+      if (!free || over) return;
       const cards = [...document.querySelectorAll<HTMLElement>("[data-aldo-decision]")];
       if (cards.length === 0) return;
       event.preventDefault();
@@ -312,11 +327,14 @@ function Quoted(props: {
 /** Own answers being written, by card: one folded away keeps what was typed. */
 const drafts = new Map<string, string>();
 
-/** "Something else…": the user's own answer, a field once asked for. */
+/** "Something else…": the user's own answer (or what should change), a field once asked for. */
 function OwnWords(props: {
   /** The card's key, for what's been typed. */
   readonly draft: string;
   readonly disabled: boolean;
+  /** What asks for the field, and what it asks. */
+  readonly ask?: string;
+  readonly placeholder?: string;
   readonly onSend: (text: string) => void;
 }) {
   const [open, setOpen] = useState(() => drafts.has(props.draft));
@@ -337,7 +355,7 @@ function OwnWords(props: {
         disabled={props.disabled}
         onClick={() => setOpen(true)}
       >
-        Something else…
+        {props.ask ?? "Something else…"}
       </button>
     );
   return (
@@ -351,9 +369,9 @@ function OwnWords(props: {
     >
       <input
         autoFocus
-        aria-label="Your answer"
+        aria-label={props.placeholder ?? "Your answer"}
         className="min-w-0 flex-1 bg-transparent text-[15px] outline-none placeholder:text-muted-foreground/70"
-        placeholder="Say it in your own words"
+        placeholder={props.placeholder ?? "Say it in your own words"}
         value={words}
         disabled={props.disabled}
         onChange={(event) => setWords(event.target.value)}
@@ -488,6 +506,20 @@ function DecisionCard(props: {
           >
             {a.approveLabel}
           </Choice>
+          {a.always ? (
+            <button
+              type="button"
+              className={cn(
+                FOCUS,
+                "col-span-2 mx-auto rounded-full px-3 py-1 text-[13px] text-muted-foreground hover:text-foreground",
+              )}
+              disabled={busy !== null}
+              aria-label={`${a.approveLabel}, and always allow: ${a.always}`}
+              onClick={() => void decide("always", { kind: "aldo", decision: "always" })}
+            >
+              {busy === "always" ? "Working…" : "Always allow…"}
+            </button>
+          ) : null}
         </div>
       );
       break;
@@ -591,15 +623,24 @@ function DecisionCard(props: {
         </div>
       );
       actions = (
-        <Choice
-          primary
-          className="w-full"
-          busy={busy === "plan"}
-          disabled={busy !== null}
-          onClick={() => void decide("plan", { kind: "plan" })}
-        >
-          Approve the plan
-        </Choice>
+        <div className="flex flex-col gap-2">
+          <Choice
+            primary
+            className="w-full"
+            busy={busy === "plan"}
+            disabled={busy !== null}
+            onClick={() => void decide("plan", { kind: "plan" })}
+          >
+            Approve the plan
+          </Choice>
+          <OwnWords
+            draft={d.key}
+            disabled={busy !== null}
+            ask="Ask for changes…"
+            placeholder="What should change?"
+            onSend={(changes) => void decide("changes", { kind: "plan", changes })}
+          />
+        </div>
       );
       break;
     case "merge": {
@@ -760,6 +801,37 @@ function CardFrame(props: {
         </h4>
       </header>
       {props.children}
+    </article>
+  );
+}
+
+/** A thread whose computer went to sleep mid-turn: a line that opens it, which carries it on. */
+function PausedLine(props: { readonly conversation: AldoHomeConversation; readonly now: number }) {
+  const c = props.conversation;
+  return (
+    <article className={cn(SURFACE, "overflow-hidden")} data-aldo-paused={c.ref}>
+      <ThreadLink
+        target={c.thread}
+        className={cn(
+          FOCUS,
+          "flex min-h-13 w-full items-center gap-3 rounded-[20px] px-4 py-2.5 text-left transition-colors hover:bg-foreground/[0.025]",
+        )}
+      >
+        <MoonIcon aria-hidden className="size-4 shrink-0 text-foreground/55" strokeWidth={1.75} />
+        <span className="min-w-0 flex-1 truncate font-medium text-[14px] leading-5">
+          Paused mid-turn: open it to carry on
+        </span>
+        <span className="flex min-w-0 max-w-[40%] shrink-0 items-center gap-1.5 text-[12px] text-muted-foreground max-sm:hidden">
+          <span className="truncate">{c.title}</span>
+          <span aria-hidden>·</span>
+          <span className="shrink-0 tabular-nums">{elapsed(c.stateAt ?? c.at, props.now)}</span>
+        </span>
+        <ArrowUpRightIcon
+          aria-hidden
+          className="size-4 shrink-0 text-muted-foreground"
+          strokeWidth={1.75}
+        />
+      </ThreadLink>
     </article>
   );
 }

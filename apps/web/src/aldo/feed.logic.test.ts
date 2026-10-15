@@ -96,9 +96,38 @@ describe("feedEvents", () => {
         conversations: [conversation({ stateAt: at(90) })],
         actions: [action({ at: at(5) })],
       },
-      { now: NOW, from: at(60), until: NOW - 10 * 60_000 },
+      {
+        now: NOW,
+        from: at(60),
+        until: NOW - 10 * 60_000,
+        here: [{ tool: "start_thread", thread: target }],
+      },
     );
     expect(events).toEqual([]);
+  });
+
+  it("shows what Aldo did from another device after the page opened", () => {
+    const events = feedEvents(
+      {
+        ...empty,
+        actions: [
+          action({ id: "here", at: at(5) }),
+          action({ id: "there", tool: "message_thread", at: at(4) }),
+          action({
+            id: "elsewhere",
+            at: at(3),
+            thread: { environmentId: "aldo-m2", threadId: "t2" },
+          }),
+        ],
+      },
+      {
+        now: NOW,
+        from: null,
+        until: NOW - 10 * 60_000,
+        here: [{ tool: "start_thread", thread: target }],
+      },
+    );
+    expect(events.map((e) => e.key)).toEqual(["action:there", "action:elsewhere"]);
   });
 
   it("shows the newest action on a thread that's still going live", () => {

@@ -31,7 +31,9 @@ export function receiptText(
     case "merge":
       return `Merged #${decision.pullRequest.number} ${decision.pullRequest.title}`;
     case "plan":
-      return `Approved the plan for ${decision.conversation.title}`;
+      return choice.kind === "plan" && choice.changes
+        ? `Asked for changes to the plan for ${decision.conversation.title}`
+        : `Approved the plan for ${decision.conversation.title}`;
     case "question": {
       if (choice.kind !== "answer") break;
       const picked = Object.values(choice.answers ?? {})

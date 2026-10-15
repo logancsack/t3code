@@ -1,12 +1,19 @@
 // Aldo as someone you message: its face (the orb, with eyes that blink, look
 // up while it thinks, down while the user writes to it, and smile when
 // something's done), its name, and a line beside it saying what it's at, like
-// a messaging app's "typing…" (presence.logic.ts). Long work leaves it still;
-// only Aldo's own thinking shimmers. Tapping it opens what's working now and
-// what's coming up, each a tap from its thread: the detail behind the line,
-// not a view of its own.
+// a messaging app's "typing…" (presence.logic.ts). It's still but for its
+// eyes. Tapping it opens what's working now and what's coming up, each a tap
+// from its thread: the detail behind the line, not a view of its own; and,
+// under them, the way to what runs under the conversation (routines, what's
+// due, pull requests, usage and rules, AldoUnderTheHood.tsx).
 
-import { CalendarClockIcon, ChevronDownIcon, RepeatIcon } from "lucide-react";
+import {
+  CalendarClockIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
+  RepeatIcon,
+  SlidersHorizontalIcon,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { Popover, PopoverPopup, PopoverTrigger } from "../components/ui/popover";
@@ -18,6 +25,7 @@ import type { AldoHome } from "./cloud";
 import { aldoWaitingCount } from "./decisions.logic";
 import { PLEASED_MS, useAldoFace } from "./face";
 import { boardFor, deliveryLabel, dueIn } from "./home.logic";
+import { setAldoUnderTheHood } from "./homeFeed";
 import { faceMood, presenceLine, type AldoMood } from "./presence.logic";
 import { useAldoReceipts } from "./receipts";
 import "./presence.css";
@@ -51,13 +59,15 @@ export function AldoAvatar(props: {
   readonly aware?: boolean;
   readonly className?: string;
 }) {
-  const levels = useAldoAssistant((s) => s.levels);
   const reading = useAldoFace((s) => s.reading);
   const blinkAt = useAldoFace((s) => s.blinkAt);
   const pleased = usePleased();
   const base = props.mood ?? "idle";
   const mood = props.aware ? faceMood(base, { reading, pleased }) : base;
-  const level = mood === "speaking" ? levels.aldo : mood === "listening" ? levels.mic : 0;
+  // Only a face that speaks or hears follows the voice: the rest don't render with every level.
+  const level = useAldoAssistant((s) =>
+    mood === "speaking" ? s.levels.aldo : mood === "listening" ? s.levels.mic : 0,
+  );
   const eyes = props.size >= 20;
   const eyeWidth = Math.max(3, Math.round(props.size * 0.12));
   const eyeHeight = Math.max(4, Math.round(props.size * 0.18));
@@ -104,7 +114,12 @@ export function AldoAvatar(props: {
 }
 
 /** The top of Aldo's conversation: its face, name and what it's at, opening what's working and coming up. */
-export function AldoPresence(props: { readonly home: AldoHome | null; readonly now: number }) {
+export function AldoPresence(props: {
+  readonly home: AldoHome | null;
+  readonly now: number;
+  /** The home read failed before anything was read. */
+  readonly unread?: boolean;
+}) {
   const { home, now } = props;
   const phase = useAldoAssistant((s) => s.phase);
   const replying = useAldoAssistant((s) => s.replying);
@@ -121,10 +136,10 @@ export function AldoPresence(props: { readonly home: AldoHome | null; readonly n
         receipts.map((r) => r.key),
       )
     : 0;
-  const line = presenceLine({ phase, replying, working, waiting });
+  const line = presenceLine({ phase, replying, working, waiting, unread: props.unread === true });
   const coming = useMemo(() => (home ? comingUp(home, now) : []), [home, now]);
-  const detail = working.length > 0 || coming.length > 0;
-  // Only Aldo's own thinking shimmers: it's short. Agents' long work says how long, still.
+  // Once there's a read, there's what runs under the conversation to open.
+  const detail = home !== null;
   const thinking = line.mood === "thinking";
   const face = (
     <>
@@ -135,9 +150,7 @@ export function AldoPresence(props: { readonly home: AldoHome | null; readonly n
           {waiting > 0 && !thinking ? (
             <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-warning" />
           ) : null}
-          <span className="truncate" {...(thinking ? { "data-aldo-shimmer": "" } : {})}>
-            {line.text}
-          </span>
+          <span className="truncate">{line.text}</span>
           {detail ? (
             <ChevronDownIcon aria-hidden className="size-3 shrink-0 opacity-60" strokeWidth={2} />
           ) : null}
@@ -212,6 +225,29 @@ export function AldoPresence(props: { readonly home: AldoHome | null; readonly n
               </ul>
             </section>
           ) : null}
+          <div
+            className={cn(
+              (working.length > 0 || coming.length > 0) && "border-foreground/[0.06] border-t pt-1",
+            )}
+          >
+            <button
+              type="button"
+              className="flex w-full items-center gap-2.5 rounded-lg px-1.5 py-2 text-left outline-none hover:bg-foreground/[0.05] focus-visible:ring-2 focus-visible:ring-ring"
+              onClick={() => setAldoUnderTheHood(true)}
+            >
+              <SlidersHorizontalIcon
+                aria-hidden
+                className="size-3.5 shrink-0 text-muted-foreground"
+              />
+              <span className="min-w-0 flex-1">
+                <span className="block font-medium text-sm">Under the hood</span>
+                <span className="block truncate text-[12px] text-muted-foreground">
+                  Routines, what's scheduled, pull requests, usage
+                </span>
+              </span>
+              <ChevronRightIcon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+            </button>
+          </div>
         </div>
       </PopoverPopup>
     </Popover>

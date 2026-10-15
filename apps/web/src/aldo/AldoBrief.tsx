@@ -124,8 +124,9 @@ export function quickChoice(
 
 /**
  * Asks before a tap that goes out of Aldo (an email sent, an event added, a
- * merge) or deletes a draft. `seen`: what goes out is on screen in full (a
- * card open at the conversation's end), so the tap on its button is the yes.
+ * merge), deletes a draft, or makes a rule (always allow). `seen`: what goes
+ * out is on screen in full (a card open at the conversation's end), so the
+ * tap on its button is the yes.
  */
 export async function confirmQuickChoice(
   d: AldoDecision,
@@ -138,6 +139,15 @@ export async function confirmQuickChoice(
       (await (requestConfirmDialog(
         "Discard this draft? It's deleted from your drafts, and isn't sent.",
         { variant: "destructive" },
+      ) ?? Promise.resolve(true))) === true
+    );
+  }
+  if (choice?.kind === "aldo" && choice.decision === "always") {
+    // A rule from now on is said yes to as what it is, whatever's on screen.
+    if (d.kind !== "aldo-approval" || !d.approval.always) return false;
+    return (
+      (await (requestConfirmDialog(
+        `${d.approval.always}, from now on? This one is approved now too, and you can undo the rule.`,
       ) ?? Promise.resolve(true))) === true
     );
   }

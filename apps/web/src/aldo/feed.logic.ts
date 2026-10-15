@@ -1,7 +1,8 @@
 // What happened to the user's agents, in Aldo's conversation where it
 // happened (AldoConversationPage.tsx): threads that finished, pull requests
-// that shipped, and what Aldo did before this page opened (the page's own
-// actions are in the conversation already). What waits on the user isn't
+// that shipped, and what Aldo did, but for what this page shows itself (what
+// it did here since it opened is in the conversation already; what it did
+// from another device is only here). What waits on the user isn't
 // here: it's the live "Up next" at the conversation's end, so it never sits
 // buried in what was said. The newest of what Aldo did to a thread that's
 // still going shows it live, as a card. All from Aldo's home read, so
@@ -61,14 +62,26 @@ const SHOWN_ACTIONS = new Set([
   "merge_pull_request",
 ]);
 
+/** One of Aldo's actions the page shows itself: what it did and to which thread. */
+export interface AldoShownAction {
+  readonly tool: string;
+  readonly thread: AldoHomeTarget | null;
+}
+
 /**
  * What happened, oldest first: from `from` (the conversation's start, so
- * nothing floats above it) and within the window. Aldo's actions only from
- * before `until` (when this page opened): later ones it shows itself.
+ * nothing floats above it) and within the window. Aldo's actions from `until`
+ * on (when this page opened) only where the page doesn't show them itself
+ * (`here`): those came from another device.
  */
 export function feedEvents(
   home: Pick<AldoHome, "conversations" | "pullRequests" | "actions">,
-  options: { readonly now: number; readonly from: string | null; readonly until: number },
+  options: {
+    readonly now: number;
+    readonly from: string | null;
+    readonly until: number;
+    readonly here?: ReadonlyArray<AldoShownAction>;
+  },
 ): ReadonlyArray<AldoFeedEvent> {
   const start = Math.max(
     options.now - FEED_WINDOW_MS,
@@ -95,10 +108,20 @@ export function feedEvents(
       at: pr.mergedAt!,
       pullRequest: pr,
     }));
+  const here = options.here ?? [];
+  const shownHere = (a: AldoHomeAction) =>
+    here.some(
+      (h) =>
+        h.tool === a.tool &&
+        (h.thread === null || a.thread === null || sameTarget(h.thread, a.thread)),
+    );
   const shown = home.actions
     .filter(
       (a) =>
-        SHOWN_ACTIONS.has(a.tool) && !a.failed && within(a.at) && Date.parse(a.at) < options.until,
+        SHOWN_ACTIONS.has(a.tool) &&
+        !a.failed &&
+        within(a.at) &&
+        (Date.parse(a.at) < options.until || !shownHere(a)),
     )
     .sort((a, b) => a.at.localeCompare(b.at));
   const going = (thread: AldoHomeAction["thread"]) =>

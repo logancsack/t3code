@@ -5,6 +5,7 @@
 // read is refreshed after, so the decision leaves the page.
 
 import { toastManager } from "../components/ui/toast";
+import { toastAldoRule } from "./AldoApprovals";
 import {
   AldoApiError,
   answerAldoThread,
@@ -25,9 +26,10 @@ export type AldoChoice =
     }
   /** A thread's approval: the option chosen. */
   | { readonly kind: "decision"; readonly decision: string; readonly label: string }
-  | { readonly kind: "plan" }
-  /** One of Aldo's approvals: an email to send, an event to add, a thread to start. */
-  | { readonly kind: "aldo"; readonly decision: "approve" | "discard" }
+  /** A plan approved, or sent back with what should change. */
+  | { readonly kind: "plan"; readonly changes?: string }
+  /** One of Aldo's approvals: an email to send, an event to add, a thread to start; or approved, and always allowed. */
+  | { readonly kind: "aldo"; readonly decision: "approve" | "discard" | "always" }
   | { readonly kind: "merge" };
 
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
@@ -54,10 +56,12 @@ export function choiceWords(decision: AldoDecision, choice: AldoChoice): string 
     case "decision":
       return `chose "${choice.label}"`;
     case "plan":
-      return "approved the plan";
+      return choice.changes
+        ? `asked for changes to the plan: "${choice.changes}"`
+        : "approved the plan";
     case "aldo":
       return decision.kind === "aldo-approval"
-        ? `chose "${choice.decision === "approve" ? decision.approval.approveLabel : decision.approval.discardLabel}"`
+        ? `chose "${choice.decision === "discard" ? decision.approval.discardLabel : decision.approval.approveLabel}"${choice.decision === "always" ? ", and to always allow it" : ""}`
         : choice.decision;
     case "merge":
       return "merged it";
@@ -104,7 +108,12 @@ export async function decideAldoOutcome(
   };
   try {
     if (choice.kind === "aldo" && decision.kind === "aldo-approval") {
-      const { approval, message } = await decideAldoApproval(decision.approval.id, choice.decision);
+      const { approval, message, rule } = await decideAldoApproval(
+        decision.approval.id,
+        choice.decision,
+      );
+      // A rule it became can be undone from its toast, however quiet the card is.
+      if (rule) toastAldoRule(message, rule);
       // An approval decided before (elsewhere, or it expired or was withdrawn) is answered as it stands.
       const asked = choice.decision === "discard" ? "discarded" : "approved";
       return approval.status === asked ? done(message, message) : movedOn(message);
@@ -115,8 +124,10 @@ export async function decideAldoOutcome(
       return done(`Merged ${pr.repo}#${pr.number}`);
     }
     if (choice.kind === "plan" && decision.kind === "plan") {
-      await approveAldoPlan(decision.conversation.thread, decision.plan.id);
-      return done("The agent is carrying out the plan");
+      await approveAldoPlan(decision.conversation.thread, decision.plan.id, choice.changes);
+      return done(
+        choice.changes ? "Asked for a revised plan" : "The agent is carrying out the plan",
+      );
     }
     if (choice.kind === "answer" && decision.kind === "question") {
       await answerAldoThread(decision.conversation.thread, {

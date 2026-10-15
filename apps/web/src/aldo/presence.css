@@ -1,10 +1,10 @@
 /* Aldo's face (AldoPresence.tsx) and the conversation's small motions: eyes
    that blink once when something passes between the user and Aldo (face.ts),
    look up while Aldo thinks, down while the user writes and smile when
-   something's done; Aldo's own thinking that shimmers; the dots while it
-   types, a reply settling in whole, and what arrives after the page has.
-   Nothing loops but the dots and the shimmer, and those only while they mean
-   something. All still for reduced motion. */
+   something's done; the dots while it types, a reply settling in whole, and
+   what arrives after the page has. Nothing loops but the dots (which only
+   move and fade, so nothing repaints), and those only while Aldo types. All
+   still for reduced motion. */
 
 @keyframes aldo-blink {
   0%,
@@ -49,15 +49,6 @@
   }
 }
 
-@keyframes aldo-shimmer {
-  from {
-    background-position: 100% 0;
-  }
-  to {
-    background-position: -100% 0;
-  }
-}
-
 @keyframes aldo-attention {
   0%,
   100% {
@@ -99,23 +90,6 @@
   scale: 1.1 1.15;
 }
 
-/* Aldo thinking: the words shimmer, a light passing over them. */
-[data-aldo-shimmer] {
-  background-image: linear-gradient(
-    90deg,
-    currentColor 0%,
-    currentColor 40%,
-    var(--color-foreground) 50%,
-    currentColor 60%,
-    currentColor 100%
-  );
-  background-size: 200% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  animation: aldo-shimmer 2.4s linear infinite;
-}
-
 [data-aldo-typing] > span {
   animation: aldo-dot 1.2s infinite ease-in-out;
 }
@@ -148,10 +122,5 @@
   [data-aldo-attention] {
     animation: none;
     transition: none;
-  }
-  [data-aldo-shimmer] {
-    animation: none;
-    background: none;
-    -webkit-text-fill-color: currentColor;
   }
 }

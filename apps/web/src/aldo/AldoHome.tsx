@@ -4,8 +4,9 @@
 // lines across the middle, what waits on the user as cards at the
 // conversation's end (AldoUpNext.tsx), what's running and coming in Aldo's
 // status at the top (AldoPresence.tsx). There's no second view to switch to:
-// everything the board showed is in the conversation, and a thread tapped in
-// it opens. It comes from Aldo's one read of the account
+// what matters is in the conversation, and a thread tapped in it opens; what
+// runs under it (routines, what's due, pull requests, usage, rules) is a page
+// that status opens (AldoUnderTheHood.tsx). It comes from Aldo's one read of the account
 // (homeFeed.ts), which never wakes a machine. Until agents can run (on Aldo's
 // models or a subscription of the user's) it asks for setup first; after, one
 // line offers what's missing (AldoSetup.tsx), and the first few threads start
@@ -63,7 +64,13 @@ import {
   type AldoHomeConversation,
 } from "./cloud";
 import { useAldoFirstViewHold } from "./firstView";
-import { refreshAldoHome, useAldoHomeRead } from "./homeFeed";
+import {
+  refreshAldoHome,
+  setAldoUnderTheHood,
+  useAldoHomeRead,
+  useAldoUnderTheHood,
+} from "./homeFeed";
+import { AldoUnderTheHood } from "./AldoUnderTheHood";
 import { HOST_KINDS, openAldoRepositoryPicker } from "./AldoRepositoryPicker";
 import { useStartAldoThread } from "./newThread";
 import { ICON_BUTTON } from "./surface";
@@ -153,6 +160,13 @@ export function AldoHome() {
   // Simple mode's place, which shows in place of the conversation. It needs Aldo:
   // without it, the sidebar shows as usual (useAldoSimpleRail), and so does the board.
   const simplePlace = useAldoSimple((s) => (s.on && assistant === true ? s.place : null));
+  // What runs under the conversation, opened from Aldo's status; it closes once
+  // the home screen is left, or simple mode goes to another place.
+  const underTheHood = useAldoUnderTheHood((s) => s.open) && assistant === true;
+  useEffect(() => () => setAldoUnderTheHood(false), []);
+  useEffect(() => {
+    if (simplePlace !== null && simplePlace !== "aldo") setAldoUnderTheHood(false);
+  }, [simplePlace]);
   const lastSeen = useLastSeen();
   const now = useNow();
   const navigate = useNavigate();
@@ -316,6 +330,18 @@ export function AldoHome() {
     <NewMenu general={general} projects={projects || sourceReady} repositories={sourceReady} />
   );
 
+  if (underTheHood)
+    return (
+      <AldoUnderTheHood
+        home={home}
+        error={error}
+        repos={repos}
+        now={now}
+        lastSeen={lastSeen}
+        tabs={simplePlace !== null && mobile ? <AldoSimpleTabs /> : null}
+      />
+    );
+
   if (simplePlace !== null) {
     // On a phone the places are tabs at the top; on a wider screen they're on the rail.
     const tabs = mobile ? <AldoSimpleTabs /> : null;
@@ -337,6 +363,7 @@ export function AldoHome() {
       <AldoConversationPage
         home={home}
         supported={supported}
+        error={error}
         now={now}
         tabs={tabs}
         actions={null}
@@ -354,6 +381,7 @@ export function AldoHome() {
       <AldoConversationPage
         home={home}
         supported={supported}
+        error={error}
         now={now}
         tabs={null}
         actions={

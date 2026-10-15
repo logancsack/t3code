@@ -72,7 +72,12 @@ export function AldoCallScreen() {
   if (mobile && !minimized) return <CallScreen mobile />;
   if (!mobile && walking) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/60 p-4 backdrop-blur-sm">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Going through them with Aldo"
+        className="fixed inset-0 z-50 flex items-center justify-center bg-background/60 p-4 backdrop-blur-sm"
+      >
         <div className="flex h-[min(46rem,92dvh)] w-full max-w-md overflow-hidden rounded-2xl border border-border/70 bg-background shadow-2xl">
           <CallScreen mobile={false} />
         </div>

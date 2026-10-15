@@ -46,6 +46,10 @@ describe("presenceLine", () => {
     expect(presenceLine({ ...idle, waiting: 4 }).text).toBe("4 things need you");
     expect(presenceLine(idle).text).toBe("All caught up");
   });
+
+  it("never says all caught up when nothing could be read", () => {
+    expect(presenceLine({ ...idle, unread: true }).text).toBe("Couldn't check on your agents");
+  });
 });
 
 describe("faceMood", () => {

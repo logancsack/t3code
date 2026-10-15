@@ -125,3 +125,14 @@ export function useAldoHomeRead(): AldoHomeFeed {
   }, []);
   return useAldoHomeFeed();
 }
+
+// ---------------------------------------------------------------------------
+// Whether the home screen shows what runs under Aldo's conversation
+// (AldoUnderTheHood.tsx) in its place: opened from what Aldo's at, for this
+// visit. Leaving the home screen closes it.
+
+export const useAldoUnderTheHood = create<{ readonly open: boolean }>(() => ({ open: false }));
+
+export function setAldoUnderTheHood(open: boolean): void {
+  useAldoUnderTheHood.setState({ open });
+}
