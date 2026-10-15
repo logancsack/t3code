@@ -28,7 +28,6 @@ import { PullRequestGlyph } from "../components/pullRequest/pullRequestIcons";
 import { toastManager } from "../components/ui/toast";
 import { requestConfirmDialog } from "../confirmDialog";
 import { cn } from "~/lib/utils";
-import type { AldoPeekTarget } from "./AldoPeek";
 import { callDuration } from "./assistant.logic";
 import { useAldoAssistant } from "./assistantSession";
 import { useAldoArrive } from "./arrive";
@@ -90,14 +89,6 @@ export function DecisionIcon(props: {
       <Icon className="size-3.5" />
     </span>
   );
-}
-
-/** Where a decision peeks: its approval, or its thread. */
-export function peekOfDecision(d: AldoDecision): AldoPeekTarget | null {
-  if (d.kind === "aldo-approval") return { kind: "approval", id: d.approval.id };
-  if (d.kind === "merge")
-    return d.pullRequest.thread ? { kind: "thread", target: d.pullRequest.thread } : null;
-  return { kind: "thread", target: d.conversation.thread };
 }
 
 /** The one tap a decision takes in a list, if it takes one: its choice, and what the button says. */

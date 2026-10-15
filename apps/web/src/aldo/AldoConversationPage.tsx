@@ -8,11 +8,11 @@
 // face, one question and the composer under it, which glides down to its
 // place with the first message (the same composer: what's typed and focus
 // stay). Scrolled up, what arrives waits behind "New from Aldo". A thread
-// opens in a peek beside the conversation (over it on a phone), so someone
-// who only talks to Aldo never has to leave it; Aldo's show_thread, and the
-// brief's things to decide, peek here too. Setup, and what's wrong with it,
-// come first.
+// tapped anywhere in it opens: the thread itself, where its agent is. Setup,
+// and what's wrong with it, come first.
 
+import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { useNavigate, useRouter } from "@tanstack/react-router";
 import {
   useCallback,
   useEffect,
@@ -25,31 +25,22 @@ import {
 
 import { ArrowDownIcon } from "lucide-react";
 
-import { Sheet, SheetPopup } from "../components/ui/sheet";
 import { SidebarInset } from "../components/ui/sidebar";
-import { useMediaQuery } from "../hooks/useMediaQuery";
 import { cn } from "~/lib/utils";
 import { AldoAtAGlance, AldoCaption, AldoComposer, AldoConversation } from "./AldoAssistant";
 import { HealthStrip } from "./AldoHomeBoard";
-import { AldoPeekContext } from "./AldoLiveCard";
-import { AldoPeek, AldoPeekerContext, peekedConversation, type AldoPeekTarget } from "./AldoPeek";
+import { AldoOpenContext } from "./AldoLiveCard";
 import { AldoAvatar, AldoPresence } from "./AldoPresence";
 import { AldoUpNext } from "./AldoUpNext";
 import { settleAldoConversation, unsettleAldoConversation } from "./arrive";
-import {
-  loadAldoConversation,
-  seedAldoComposer,
-  setAldoThreadPeeker,
-  useAldoAssistant,
-} from "./assistantSession";
+import { loadAldoConversation, seedAldoComposer, useAldoAssistant } from "./assistantSession";
 import type { AldoHome, AldoHomeTarget } from "./cloud";
 import { aldoDecisions } from "./decisions.logic";
 import { feedEvents, withReceipts } from "./feed.logic";
 import type { healthIssues } from "./home.logic";
 import { useAldoReceipts } from "./receipts";
 import { blinkAldo } from "./face";
-import { aldoGlide } from "./morph";
-import { setAldoPeekedThread } from "./screen";
+import { aldoGlide, aldoMorphSource, morphIntoThread } from "./morph";
 import { scrollMotion } from "./show";
 
 function inField(target: EventTarget | null): boolean {
@@ -73,7 +64,7 @@ const AT_END_PX = 48;
 
 /**
  * Keeps the conversation at its end while the user is there, as what's above
- * it loads (setup, what's wrong) and as the peek narrows it; scrolled up, it
+ * it loads (setup, what's wrong) and as the window narrows it; scrolled up, it
  * stays put, and says when something new arrived below (true until they're
  * back at the end). Not before anything's been said: that page reads from
  * the top.
@@ -127,8 +118,8 @@ export function AldoConversationPage(props: {
   readonly onChip: (chip: string) => void;
 }) {
   const { home, now } = props;
-  const wide = useMediaQuery("(min-width: 1024px)");
-  const [peek, setPeek] = useState<{ target: AldoPeekTarget; key: string | null } | null>(null);
+  const navigate = useNavigate();
+  const router = useRouter();
   const scroller = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -170,58 +161,25 @@ export function AldoConversationPage(props: {
   }, [loaded, home]);
   const below = useStickToBottom(scroller, !fresh);
   const dock = useRef<HTMLDivElement>(null);
-  // What had focus when a peek opened, for it to go back to when it closes.
-  const peekFrom = useRef<HTMLElement | null>(null);
-  const peekAny = useCallback((target: AldoPeekTarget) => {
-    peekFrom.current ??= document.activeElement as HTMLElement | null;
-    setPeek({ target, key: null });
-  }, []);
-
-  const peekThread = useCallback(
-    (target: AldoHomeTarget) => peekAny({ kind: "thread", target }),
-    [peekAny],
+  // A thread tapped in the conversation opens: the thread itself, growing out of what was tapped.
+  const openThread = useCallback(
+    (target: AldoHomeTarget, from?: HTMLElement | null) => {
+      const morph = morphIntoThread(router, from ? (aldoMorphSource(from) ?? from) : null);
+      void navigate({
+        to: "/$environmentId/$threadId",
+        params: {
+          environmentId: target.environmentId as EnvironmentId,
+          threadId: target.threadId as ThreadId,
+        },
+        viewTransition: morph,
+      });
+    },
+    [navigate, router],
   );
-  const close = useCallback(() => {
-    setPeek(null);
-    const from = peekFrom.current;
-    peekFrom.current = null;
-    if (from?.isConnected && from !== document.body)
-      requestAnimationFrame(() => from.focus({ preventScroll: true }));
-  }, []);
-  // A thread Aldo shows opens here rather than taking the page away.
-  useEffect(() => {
-    setAldoThreadPeeker(peekThread);
-    return () => setAldoThreadPeeker(null);
-  }, [peekThread]);
-
-  // While a thread is peeked at, it's what Aldo hears is on screen.
-  const peeked = peekedConversation(home, peek?.target ?? null);
-  useEffect(() => {
-    setAldoPeekedThread(
-      peeked
-        ? {
-            environmentId: peeked.thread.environmentId,
-            threadId: peeked.thread.threadId,
-            title: peeked.title,
-          }
-        : null,
-    );
-  }, [peeked]);
-  useEffect(() => () => setAldoPeekedThread(null), []);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.metaKey || event.ctrlKey || event.altKey) return;
-      if (event.key === "Escape") {
-        // The nearest thing closes first: a menu or dialog its own, words being typed keep theirs.
-        const element = event.target as HTMLElement | null;
-        if (!peek || event.defaultPrevented || typing(element) || element?.closest("[role=dialog]"))
-          return;
-        event.preventDefault();
-        close();
-        return;
-      }
-      if (inField(event.target)) return;
+      if (event.metaKey || event.ctrlKey || event.altKey || inField(event.target)) return;
       if (event.key === "/") {
         event.preventDefault();
         seedAldoComposer("");
@@ -229,19 +187,7 @@ export function AldoConversationPage(props: {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [peek, close]);
-
-  const peekView =
-    peek && home ? (
-      <AldoPeek
-        peek={peek.target}
-        home={home}
-        now={now}
-        onClose={close}
-        {...(wide ? {} : { onAsked: close })}
-        className={wide ? "w-[30rem] shrink-0 border-border/60 border-l" : "h-full"}
-      />
-    ) : null;
+  }, []);
 
   const conversation = (
     <AldoConversation feed={feed} tail={home ? <AldoUpNext home={home} now={now} /> : null} />
@@ -253,108 +199,94 @@ export function AldoConversationPage(props: {
 
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground">
-      <AldoPeekerContext.Provider value={peekAny}>
-        <AldoPeekContext.Provider value={peekThread}>
-          <div className="flex h-full min-h-0 min-w-0">
-            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-              {/* Centered, clear of the sidebar's button, which floats at the top left on a phone. */}
-              <header className="relative flex min-h-14 shrink-0 flex-col items-center justify-center gap-2 px-4 pt-2 pb-1.5 sm:px-6">
-                {props.tabs}
-                {fresh ? null : <AldoPresence home={home} now={now} />}
-                {props.actions ? (
-                  <div className="absolute end-3 top-2.5 hidden sm:block">{props.actions}</div>
-                ) : null}
-              </header>
-              {/* The empty page centers its question and composer, a little above the middle; then it's the conversation over the composer. */}
-              {fresh ? <div aria-hidden className="min-h-4 flex-[1_1_0]" /> : null}
-              <div
-                ref={scroller}
-                className={cn(
-                  fresh
-                    ? "min-h-0 shrink overflow-y-auto"
-                    : "relative min-h-0 flex-1 overflow-y-auto [mask-image:linear-gradient(to_bottom,transparent,black_12px,black_calc(100%-12px),transparent)]",
-                )}
-              >
-                {fresh ? (
-                  <div className={cn(column, "flex flex-col gap-6")}>
-                    {props.setup}
-                    <HealthStrip issues={props.issues} />
-                    <div className="flex flex-col items-center text-center">
-                      <AldoAvatar size={48} aware />
-                      <h1 className="mt-5 font-semibold text-[24px] leading-[30px] tracking-[-0.02em] sm:text-[28px] sm:leading-[34px]">
-                        What should we get done?
-                      </h1>
-                      <p className="mt-2 max-w-md text-balance text-[14px] text-muted-foreground leading-5">
-                        Tell me what you need. I'll get it moving and keep you posted.
-                      </p>
-                    </div>
-                  </div>
-                ) : (
-                  <div className={cn(column, "flex flex-col gap-4 pt-3 pb-6")}>
-                    {props.setup}
-                    <HealthStrip issues={props.issues} />
-                    {props.supported === false ? <AldoAtAGlance /> : null}
-                    {conversation}
-                  </div>
-                )}
-              </div>
-              {/* The same composer, empty page or not, so what's typed and focus stay as it glides into place. */}
-              <div className="relative shrink-0" data-aldo-assistant-footer="">
-                {below ? (
-                  <button
-                    type="button"
-                    data-aldo-arrive=""
-                    className="absolute -top-11 left-1/2 z-10 flex h-8 -translate-x-1/2 items-center gap-1.5 rounded-full border border-foreground/[0.10] bg-popover ps-2.5 pe-3 font-medium text-[13px] shadow-composer outline-none focus-visible:ring-2 focus-visible:ring-ring dark:shadow-composer-dark"
-                    onClick={() =>
-                      scroller.current?.scrollTo({
-                        top: scroller.current.scrollHeight,
-                        behavior: scrollMotion(),
-                      })
-                    }
-                  >
-                    <ArrowDownIcon aria-hidden className="size-3.5" strokeWidth={2} />
-                    New from Aldo
-                  </button>
-                ) : null}
-                <div
-                  ref={dock}
-                  className={cn(
-                    column,
-                    "flex flex-col items-center gap-2",
-                    fresh ? "pt-6" : "pt-1 pb-[max(0.75rem,env(safe-area-inset-bottom))]",
-                  )}
-                >
-                  <AldoCaption />
-                  <AldoComposer
-                    chips={chips}
-                    onChip={props.onChip}
-                    {...(fresh
-                      ? { onSend: (send: () => void) => aldoGlide(dock.current, send) }
-                      : {})}
-                  />
-                </div>
-              </div>
-              {fresh ? (
-                <div className="flex min-h-6 flex-[1.4_1_0] flex-col overflow-y-auto pb-[max(1.5rem,env(safe-area-inset-bottom))]">
-                  {props.welcome ? <div className={cn(column, "pt-4")}>{props.welcome}</div> : null}
-                </div>
+      <AldoOpenContext.Provider value={openThread}>
+        <div className="flex h-full min-h-0 min-w-0">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+            {/* Centered, clear of the sidebar's button, which floats at the top left on a phone. */}
+            <header className="relative flex min-h-14 shrink-0 flex-col items-center justify-center gap-2 px-4 pt-2 pb-1.5 sm:px-6">
+              {props.tabs}
+              {fresh ? null : <AldoPresence home={home} now={now} />}
+              {props.actions ? (
+                <div className="absolute end-3 top-2.5 hidden sm:block">{props.actions}</div>
               ) : null}
+            </header>
+            {/* The empty page centers its question and composer, a little above the middle; then it's the conversation over the composer. */}
+            {fresh ? <div aria-hidden className="min-h-4 flex-[1_1_0]" /> : null}
+            <div
+              ref={scroller}
+              className={cn(
+                fresh
+                  ? "min-h-0 shrink overflow-y-auto"
+                  : "relative min-h-0 flex-1 overflow-y-auto [mask-image:linear-gradient(to_bottom,transparent,black_12px,black_calc(100%-12px),transparent)]",
+              )}
+            >
+              {fresh ? (
+                <div className={cn(column, "flex flex-col gap-6")}>
+                  {props.setup}
+                  <HealthStrip issues={props.issues} />
+                  <div className="flex flex-col items-center text-center">
+                    <AldoAvatar size={48} aware />
+                    <h1 className="mt-5 font-semibold text-[24px] leading-[30px] tracking-[-0.02em] sm:text-[28px] sm:leading-[34px]">
+                      What should we get done?
+                    </h1>
+                    <p className="mt-2 max-w-md text-balance text-[14px] text-muted-foreground leading-5">
+                      Tell me what you need. I'll get it moving and keep you posted.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className={cn(column, "flex flex-col gap-4 pt-3 pb-6")}>
+                  {props.setup}
+                  <HealthStrip issues={props.issues} />
+                  {props.supported === false ? <AldoAtAGlance /> : null}
+                  {conversation}
+                </div>
+              )}
             </div>
-            {wide ? peekView : null}
-          </div>
-          {!wide && peekView ? (
-            <Sheet open onOpenChange={(open) => (open ? undefined : close())}>
-              <SheetPopup
-                side="right"
-                showCloseButton={false}
-                className="max-w-none p-0 sm:max-w-md"
+            {/* The same composer, empty page or not, so what's typed and focus stay as it glides into place. */}
+            <div className="relative shrink-0" data-aldo-assistant-footer="">
+              {below ? (
+                <button
+                  type="button"
+                  data-aldo-arrive=""
+                  className="absolute -top-11 left-1/2 z-10 flex h-8 -translate-x-1/2 items-center gap-1.5 rounded-full border border-foreground/[0.10] bg-popover ps-2.5 pe-3 font-medium text-[13px] shadow-composer outline-none focus-visible:ring-2 focus-visible:ring-ring dark:shadow-composer-dark"
+                  onClick={() =>
+                    scroller.current?.scrollTo({
+                      top: scroller.current.scrollHeight,
+                      behavior: scrollMotion(),
+                    })
+                  }
+                >
+                  <ArrowDownIcon aria-hidden className="size-3.5" strokeWidth={2} />
+                  New from Aldo
+                </button>
+              ) : null}
+              <div
+                ref={dock}
+                className={cn(
+                  column,
+                  "flex flex-col items-center gap-2",
+                  fresh ? "pt-6" : "pt-1 pb-[max(0.75rem,env(safe-area-inset-bottom))]",
+                )}
               >
-                {peekView}
-              </SheetPopup>
-            </Sheet>
-          ) : null}
-        </AldoPeekContext.Provider>
-      </AldoPeekerContext.Provider>
+                <AldoCaption />
+                <AldoComposer
+                  chips={chips}
+                  onChip={props.onChip}
+                  {...(fresh
+                    ? { onSend: (send: () => void) => aldoGlide(dock.current, send) }
+                    : {})}
+                />
+              </div>
+            </div>
+            {fresh ? (
+              <div className="flex min-h-6 flex-[1.4_1_0] flex-col overflow-y-auto pb-[max(1.5rem,env(safe-area-inset-bottom))]">
+                {props.welcome ? <div className={cn(column, "pt-4")}>{props.welcome}</div> : null}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </AldoOpenContext.Provider>
     </SidebarInset>
   );
 }

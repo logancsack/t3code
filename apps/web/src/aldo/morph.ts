@@ -56,7 +56,7 @@ function clearIn(ms: number): void {
   clearTimer = setTimeout(clear, ms);
 }
 
-/** What a link or button sits on: its row, the card it's on, or the peek. */
+/** What a link or button sits on: its row, the card it's on, or the bar's peek. */
 export function aldoMorphSource(element: Element): HTMLElement | null {
   return element.closest<HTMLElement>(
     "li, [data-aldo-live-card], [data-aldo-handoff-card], [data-aldo-peek]",

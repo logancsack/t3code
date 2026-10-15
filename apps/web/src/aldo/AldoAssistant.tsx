@@ -302,7 +302,7 @@ export function AldoComposer(props: {
     },
     [],
   );
-  // The field fits what's in it, as it's typed and as it narrows (the peek opening, a window resized).
+  // The field fits what's in it, as it's typed and as it narrows (a window resized).
   useLayoutEffect(() => {
     const field = input.current;
     if (!field) return;

@@ -2,12 +2,12 @@
 // so it's the first thing above the composer and never sits buried in what was
 // said: each decision (decisions.logic.ts) as a card that's decided right
 // there. The first is open, with big buttons for the choices (Aldo's pick
-// first, from the brief, with why), a tap on what asks to peek at it and ↗ to
-// open it; the next two are a line each that opens in place, and the rest
+// first, from the brief, with why), a tap on what asks (or ↗) to open its
+// thread; the next two are a line each that opens in place, and the rest
 // unfold. Decided, a card turns into the line saying what happened
 // (receipts.ts) and leaves with the next read of the home screen. On a
-// keyboard, j and k move between cards and Enter peeks: nothing is decided
-// without a button.
+// keyboard, j and k move between cards and Enter unfolds one, then opens its
+// thread: nothing is decided without a button.
 
 import { ArrowUpRightIcon, ChevronDownIcon, LoaderCircleIcon } from "lucide-react";
 import {
@@ -23,10 +23,10 @@ import {
 
 import { cn } from "~/lib/utils";
 import { ApprovalCard } from "./AldoApprovals";
-import { confirmQuickChoice, DecisionIcon, peekOfDecision } from "./AldoBrief";
+import { confirmQuickChoice, DecisionIcon } from "./AldoBrief";
 import { AldoHandoffActions } from "./AldoHandoffCard";
 import { askAldoAbout, PendingForm, ThreadLink } from "./AldoHomeInbox";
-import { AldoPeekerContext } from "./AldoPeek";
+import { AldoOpenContext } from "./AldoLiveCard";
 import { AldoAvatar } from "./AldoPresence";
 import { useAldoArrive } from "./arrive";
 import { useAldoBrief } from "./briefFeed";
@@ -185,7 +185,7 @@ function focusCardSoon(key: string, reveal = false): void {
 
 /**
  * j and k move between the cards, while the conversation has the keyboard:
- * nothing focused, or a card. Not from a field, the peek or anything over the page.
+ * nothing focused, or a card. Not from a field or anything over the page.
  */
 function useCardKeys(): void {
   useEffect(() => {
@@ -659,7 +659,7 @@ function DecisionCard(props: {
   );
 }
 
-/** A card's frame: what asks and since when (a tap peeks, ↗ opens), what it asks, then the rest. */
+/** A card's frame: what asks and since when (a tap, or ↗, opens its thread), what it asks, then the rest. */
 function CardFrame(props: {
   readonly decision: AldoDecision;
   readonly who: string;
@@ -671,17 +671,16 @@ function CardFrame(props: {
   readonly children: ReactNode;
 }) {
   const d = props.decision;
-  const peek = useContext(AldoPeekerContext);
+  const openThread = useContext(AldoOpenContext);
   const arrive = useAldoArrive();
-  const target = peekOfDecision(d);
   const thread = decisionThread(d);
-  const onPeek = target && peek ? () => peek(target) : null;
   const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     // Only the card itself: its buttons and fields keep their own keys.
     if (event.target !== event.currentTarget || event.key !== "Enter") return;
     event.preventDefault();
-    if (onPeek) onPeek();
-    else props.onOpen();
+    // A line unfolds into its card; an open card opens its thread.
+    if (!props.open) props.onOpen();
+    else if (thread && openThread) openThread(thread, event.currentTarget);
   };
   const who = (
     <>
@@ -733,17 +732,16 @@ function CardFrame(props: {
       <header className="flex flex-col gap-1.5">
         <div className="-my-1 flex min-h-8 items-center gap-2">
           <DecisionIcon decision={d} plain />
-          {onPeek ? (
-            <button
-              type="button"
+          {thread ? (
+            <ThreadLink
+              target={thread}
               className={cn(
                 FOCUS,
                 "flex min-w-0 items-center gap-1.5 rounded-md text-[12px] text-muted-foreground leading-[18px] hover:text-foreground",
               )}
-              onClick={onPeek}
             >
               {who}
-            </button>
+            </ThreadLink>
           ) : (
             <span className="flex min-w-0 items-center gap-1.5 text-[12px] text-muted-foreground leading-[18px]">
               {who}

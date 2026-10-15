@@ -4,8 +4,8 @@
 // lines across the middle, what waits on the user as cards at the
 // conversation's end (AldoUpNext.tsx), what's running and coming in Aldo's
 // status at the top (AldoPresence.tsx). There's no second view to switch to:
-// everything the board showed is in the conversation, and a thread opens in
-// a peek beside it. It comes from Aldo's one read of the account
+// everything the board showed is in the conversation, and a thread tapped in
+// it opens. It comes from Aldo's one read of the account
 // (homeFeed.ts), which never wakes a machine. Until agents can run (on Aldo's
 // models or a subscription of the user's) it asks for setup first; after, one
 // line offers what's missing (AldoSetup.tsx), and the first few threads start

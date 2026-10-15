@@ -4,15 +4,15 @@ Aldo's home screen is where you see all of your agents' work at once and act on 
 
 It opens on your conversation with Aldo, and everything is in it, so there's no other view to switch to:
 
-- **What happened**, where it happened: a quiet line when a thread finishes (tap it for a look at the thread without leaving), when a pull request ships, and for what you decided.
-- **Threads Aldo started** for you, as cards that stay live: what each is doing and for how long, its pull requests with their checks, and **Needs you** when it waits on you, which takes you to its card. Tap a card for a look at the thread beside the conversation; **↗** opens it.
+- **What happened**, where it happened: a quiet line when a thread finishes, when a pull request ships, and for what you decided. Tap a line to open its thread.
+- **Threads Aldo started** for you, as cards that stay live: what each is doing and for how long, its pull requests with their checks, and **Needs you** when it waits on you, which takes you to its card. Tap a card to open the thread.
 - **What needs you**, at the end, just above where you type: the first open, the next two a line each that opens with a tap, and the rest behind **more**. Answer each right there; a long email or plan shows its first lines and **Show all**, and discarding a draft asks first. When you've answered, the card becomes a line saying what happened, in the words of whatever did it. If the thread had already moved on (you answered it elsewhere, say), the line says that instead, and if it didn't work the card stays.
 
 At the top, Aldo's face and a line say what it's at: thinking, or how many things wait on you and how many threads are working ("2 need you · 3 working"). Tap it to see what's working now and what's coming up. The pencil at the top right starts a thread in General, a project or a repository.
 
 Before you've said anything, the page is just Aldo, a question and the box to type in, with three things to start from under it (**More ideas** for the rest). Tapping one fills the box for you to finish; nothing is sent until you send it. Your first message slides the box down to its place.
 
-When you've scrolled up, what arrives below waits behind **New from Aldo**. **Esc** closes a look at a thread and puts you back where you were.
+When you've scrolled up, what arrives below waits behind **New from Aldo**.
 
 ## Simple mode
 
@@ -85,7 +85,7 @@ At the top, **New** opens a thread at once, ready to type in, in General: for wo
 
 With threads in more than one repository, chips at the top narrow the whole board to one.
 
-On the board, **j** and **k** move through the threads, **Enter** opens the selected one, and **/** goes to Aldo's composer. In the conversation, **j** and **k** move between what needs you and **Enter** takes a look at it; nothing is answered without a button.
+On the board, **j** and **k** move through the threads, **Enter** opens the selected one, and **/** goes to Aldo's composer. In the conversation, **j** and **k** move between what needs you, and **Enter** opens the one you're on (or, once it's open, its thread); nothing is answered without a button.
 
 ## Aldo
 

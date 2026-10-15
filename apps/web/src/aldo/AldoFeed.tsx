@@ -1,6 +1,6 @@
 // What happened to the user's agents, where it happened in Aldo's conversation
 // (feed.logic.ts): quiet lines on Aldo's side, the way an assistant shows the
-// steps it took. What finished (each a tap from a peek), what shipped, what
+// steps it took. What finished (each a tap from its thread), what shipped, what
 // Aldo did (a thread it started that's still going as its live card), and
 // what the user decided from a card this visit.
 
@@ -9,7 +9,7 @@ import { useContext, type ReactNode } from "react";
 
 import { PullRequestGlyph } from "../components/pullRequest/pullRequestIcons";
 import { cn } from "~/lib/utils";
-import { AldoPeekContext, AldoThreadCard } from "./AldoLiveCard";
+import { AldoOpenContext, AldoThreadCard } from "./AldoLiveCard";
 import { AldoAvatar } from "./AldoPresence";
 import { useAldoArrive } from "./arrive";
 import { aldoCanMorph } from "./morph";
@@ -32,7 +32,8 @@ function Line(props: {
   readonly icon: ReactNode;
   readonly children: ReactNode;
   readonly detail?: ReactNode;
-  readonly onClick?: (() => void) | undefined;
+  /** Opens what it's about, growing out of the line. */
+  readonly onClick?: ((from: HTMLElement) => void) | undefined;
   readonly receipt?: string;
 }) {
   const arrived = useAldoArrive();
@@ -61,7 +62,7 @@ function Line(props: {
       type="button"
       {...arrive}
       className={cn(className, FOCUS, "group rounded-md")}
-      onClick={props.onClick}
+      onClick={(event) => props.onClick?.(event.currentTarget)}
       {...(props.receipt ? { "data-aldo-receipt": props.receipt } : {})}
     >
       {body}
@@ -78,7 +79,7 @@ function Line(props: {
 }
 
 function EventLine(props: { readonly event: AldoFeedEvent }) {
-  const peek = useContext(AldoPeekContext);
+  const open = useContext(AldoOpenContext);
   const { event } = props;
   switch (event.kind) {
     case "finished": {
@@ -87,7 +88,7 @@ function EventLine(props: { readonly event: AldoFeedEvent }) {
         <Line
           icon={<CheckIcon className="size-4 text-success-foreground" strokeWidth={2.25} />}
           detail={c.summary}
-          onClick={peek ? () => peek(c.thread) : undefined}
+          onClick={open ? (from) => open(c.thread, from) : undefined}
         >
           <span className="font-medium text-foreground group-hover:underline group-hover:decoration-foreground/30 group-hover:underline-offset-4">
             {c.title}
@@ -114,7 +115,7 @@ function EventLine(props: { readonly event: AldoFeedEvent }) {
       );
     }
     case "decided": {
-      // What was decided opens a look at where it was decided.
+      // What was decided opens the thread it was decided for.
       const thread = event.thread;
       return (
         <Line
@@ -124,7 +125,7 @@ function EventLine(props: { readonly event: AldoFeedEvent }) {
             </span>
           }
           receipt={event.key.slice("decided:".length)}
-          onClick={thread && peek ? () => peek(thread) : undefined}
+          onClick={thread && open ? (from) => open(thread, from) : undefined}
         >
           <span className="text-foreground/85">{event.text}</span>
         </Line>
@@ -137,7 +138,7 @@ function EventLine(props: { readonly event: AldoFeedEvent }) {
       const line = (
         <Line
           icon={<AldoAvatar size={14} />}
-          onClick={thread && peek ? () => peek(thread) : undefined}
+          onClick={thread && open ? (from) => open(thread, from) : undefined}
         >
           {label}
           {a.title ? <span className="text-foreground/85"> · {a.title}</span> : null}

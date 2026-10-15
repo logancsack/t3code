@@ -1,13 +1,11 @@
-// A look at a thread without leaving Aldo: beside the home screen's
-// conversation on a wide screen, over it on a phone (AldoHome.tsx). It shows
-// what Aldo's home read has (how the thread stands, what it asks, answered in
-// place, its pull requests) and its latest turns as Aldo keeps them
-// (cloud.ts fetchAldoConversationCopy), so nothing is woken. While it's open,
-// Aldo hears it's on screen (screen.ts), so "this one" means it. An approval
-// peeks the same way: the card in full.
+// A look at a thread or an approval without leaving Aldo's bar (AldoSummon.tsx),
+// for what needs the user elsewhere. It shows what Aldo's home read has (how
+// the thread stands, what it asks, answered in place, its pull requests) and
+// its latest turns as Aldo keeps them (cloud.ts fetchAldoConversationCopy), so
+// nothing is woken. An approval shows the same way: the card in full.
 
 import { ArrowUpRightIcon, MessageCircleQuestionIcon, XIcon } from "lucide-react";
-import { createContext, lazy, Suspense, useEffect, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
 
 import { Skeleton } from "../components/ui/skeleton";
 import { cn } from "~/lib/utils";
@@ -35,9 +33,6 @@ const ChatMarkdown = lazy(loadChatMarkdown);
 export type AldoPeekTarget =
   | { readonly kind: "thread"; readonly target: AldoHomeTarget }
   | { readonly kind: "approval"; readonly id: string };
-
-/** Peeks at a thread or an approval beside Aldo's conversation (the home screen gives it); absent elsewhere. */
-export const AldoPeekerContext = createContext<((peek: AldoPeekTarget) => void) | null>(null);
 
 /** The conversation a peek shows, from the home read; null when it has left it. */
 export function peekedConversation(

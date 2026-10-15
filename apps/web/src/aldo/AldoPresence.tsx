@@ -3,15 +3,16 @@
 // something's done), its name, and a line beside it saying what it's at, like
 // a messaging app's "typing…" (presence.logic.ts). Long work leaves it still;
 // only Aldo's own thinking shimmers. Tapping it opens what's working now and
-// what's coming up, each a tap from a peek: the detail behind the line, not a
-// view of its own.
+// what's coming up, each a tap from its thread: the detail behind the line,
+// not a view of its own.
 
 import { CalendarClockIcon, ChevronDownIcon, RepeatIcon } from "lucide-react";
-import { useContext, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { Popover, PopoverPopup, PopoverTrigger } from "../components/ui/popover";
 import { cn } from "~/lib/utils";
-import { AldoPeekContext, StateDot, stateSince } from "./AldoLiveCard";
+import { StateDot, stateSince } from "./AldoLiveCard";
+import { ThreadLink } from "./AldoHomeInbox";
 import { useAldoAssistant } from "./assistantSession";
 import type { AldoHome } from "./cloud";
 import { aldoWaitingCount } from "./decisions.logic";
@@ -122,7 +123,6 @@ export function AldoPresence(props: { readonly home: AldoHome | null; readonly n
     : 0;
   const line = presenceLine({ phase, replying, working, waiting });
   const coming = useMemo(() => (home ? comingUp(home, now) : []), [home, now]);
-  const peek = useContext(AldoPeekContext);
   const detail = working.length > 0 || coming.length > 0;
   // Only Aldo's own thinking shimmers: it's short. Agents' long work says how long, still.
   const thinking = line.mood === "thinking";
@@ -172,10 +172,9 @@ export function AldoPresence(props: { readonly home: AldoHome | null; readonly n
               <ul className="flex flex-col">
                 {working.map((c) => (
                   <li key={c.ref}>
-                    <button
-                      type="button"
-                      className="flex w-full items-start gap-2.5 rounded-lg px-1.5 py-2 text-left hover:bg-foreground/[0.05]"
-                      onClick={() => peek?.(c.thread)}
+                    <ThreadLink
+                      target={c.thread}
+                      className="flex w-full items-start gap-2.5 rounded-lg px-1.5 py-2 text-left outline-none hover:bg-foreground/[0.05] focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       <StateDot conversation={c} now={now} className="mt-1.5" />
                       <span className="min-w-0 flex-1">
@@ -185,7 +184,7 @@ export function AldoPresence(props: { readonly home: AldoHome | null; readonly n
                           {stateSince(c, now)}
                         </span>
                       </span>
-                    </button>
+                    </ThreadLink>
                   </li>
                 ))}
               </ul>

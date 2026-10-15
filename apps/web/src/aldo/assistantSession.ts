@@ -14,9 +14,8 @@
 // so the next conversation picks up from this one. Typed without a call on,
 // the words go to Aldo in writing instead (its text model, with the same
 // tools): each turn comes back with Aldo's reply and what it did. The session
-// lives here, not in a screen: Aldo opening a thread moves the page (or, on
-// the home screen, peeks at it), and the conversation carries on (the dock
-// shows it). Aldo hears which thread is on screen (screen.ts): with each
+// lives here, not in a screen: Aldo opening a thread moves the page, and the
+// conversation carries on (the dock shows it). Aldo hears which thread is on screen (screen.ts): with each
 // written turn, and on a call as it changes. A call can open with words of
 // its own instead of the greeting, and the page can tell a call what it shows
 // (going through decisions, walkthrough.ts). A thread Aldo starts shows in the
@@ -235,17 +234,6 @@ export function setAldoAssistantNavigator(
   openThread = navigate;
 }
 
-/** Where a thread Aldo shows goes instead of the page: the home screen's peek, while it's there. */
-let peekThread: ((target: AldoOpenTarget) => void) | null = null;
-
-export function setAldoThreadPeeker(peek: ((target: AldoOpenTarget) => void) | null): void {
-  peekThread = peek;
-}
-
-function showThread(target: AldoOpenTarget): void {
-  (peekThread ?? openThread)?.(target);
-}
-
 /**
  * Opens the app a tool's result names (open_preview) in a new tab. A browser
  * may block it outside a click; the conversation links to it either way.
@@ -435,7 +423,7 @@ function watchStart(watch: AldoStartWatch): void {
  */
 function showCall(call: AldoFunctionCall, outcome: unknown): void {
   const open = openTargetOf(outcome);
-  if (open) showThread(open);
+  if (open) openThread?.(open);
   openPreview(outcome);
   const action = actionFor(call, outcome);
   if (action) {

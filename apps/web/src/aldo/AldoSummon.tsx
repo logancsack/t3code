@@ -33,7 +33,7 @@ import { Kbd } from "../components/ui/kbd";
 import { useThreadShells } from "../state/entities";
 import { cn } from "~/lib/utils";
 import { AldoCaption, AldoConversation, AldoOrb, useAldoAssistantAvailable } from "./AldoAssistant";
-import { AldoPeekContext, pullRequestsOf, reposLabel } from "./AldoLiveCard";
+import { AldoOpenContext, pullRequestsOf, reposLabel } from "./AldoLiveCard";
 import { mergeFollowedPullRequest } from "./AldoHomeBoard";
 import { AldoPeek, type AldoPeekTarget } from "./AldoPeek";
 import {
@@ -44,7 +44,7 @@ import {
   sendText,
   useAldoAssistant,
 } from "./assistantSession";
-import { isAldoCloud, isAldoEnvironmentId, type AldoHomeTarget } from "./cloud";
+import { isAldoCloud, isAldoEnvironmentId } from "./cloud";
 import { refreshAldoHome, useAldoHomeRead } from "./homeFeed";
 import { aldoHomeShowsConversation, showAldoConversation } from "./simpleMode";
 import { NEEDS_YOU_LABEL, needsYouKind } from "./home.logic";
@@ -178,10 +178,6 @@ function SummonBar() {
   const rows = summonRows(sections);
   useEffect(() => setSelected(0), [query]);
   const answering = askedAt !== null && !query.trim() && !peek;
-  const peekThread = useCallback(
-    (target: AldoHomeTarget) => setPeek({ kind: "thread", target }),
-    [],
-  );
 
   const ask = (text: string) => {
     // Where the conversation is before the question goes in (an updater would read it after).
@@ -192,16 +188,19 @@ function SummonBar() {
     sendText(text);
     input.current?.focus();
   };
-  const go = (target: { environmentId: string; threadId: string }) => {
-    closeAldoSummon();
-    void navigate({
-      to: "/$environmentId/$threadId",
-      params: {
-        environmentId: target.environmentId as EnvironmentId,
-        threadId: target.threadId as ThreadId,
-      },
-    });
-  };
+  const go = useCallback(
+    (target: { environmentId: string; threadId: string }) => {
+      closeAldoSummon();
+      void navigate({
+        to: "/$environmentId/$threadId",
+        params: {
+          environmentId: target.environmentId as EnvironmentId,
+          threadId: target.threadId as ThreadId,
+        },
+      });
+    },
+    [navigate],
+  );
   const writeToAgent = (text: string) => {
     if (!threadRef) return;
     useComposerDraftStore.getState().setPrompt(threadRef, promptWith(draft, text));
@@ -319,9 +318,9 @@ function SummonBar() {
               />
             ) : answering ? (
               <div className="flex flex-col gap-3 px-4 py-4" aria-live="polite">
-                <AldoPeekContext.Provider value={peekThread}>
+                <AldoOpenContext.Provider value={go}>
                   <AldoConversation since={askedAt} />
-                </AldoPeekContext.Provider>
+                </AldoOpenContext.Provider>
               </div>
             ) : (
               <SummonList

@@ -1,6 +1,6 @@
 // Aldo's read of the user's work (cloud.ts fetchAldoHome), one copy per page
 // for everything that shows it: the home screen's conversation and board, the
-// peek, the cards in Aldo's conversation and the summon bar. It's kept fresh
+// cards in Aldo's conversation and the summon bar (and its peek). It's kept fresh
 // while something on the page shows it: with the directory, on a push, when
 // the tab comes back, and every so often (a read with nothing new is a 304
 // the browser answers from its cache, from an Aldo that tags it). A tab no one

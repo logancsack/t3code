@@ -1,13 +1,13 @@
 // What Aldo did to a thread, shown live in its conversation: the thread as
 // Aldo's home read has it now (working, waiting on the user, done), as a card
-// that peeks at it when tapped: its title, where it works, what it last said
-// and its pull requests with how their checks stand, and ↗ to open it. What it asks
-// is answered at the conversation's end (AldoUpNext.tsx), where its status
-// takes the user. An Aldo without the home read, or a thread it doesn't list
-// yet, shows the one line Aldo's action always had. The peek (AldoPeek.tsx)
-// uses the pieces here too.
+// that opens it when tapped: its title, where it works, what it last said
+// and its pull requests with how their checks stand. What it asks is answered
+// at the conversation's end (AldoUpNext.tsx), where its status takes the
+// user. An Aldo without the home read, or a thread it doesn't list yet, shows
+// the one line Aldo's action always had. The bar's peek (AldoPeek.tsx) uses
+// the pieces here too.
 
-import { ArrowUpRightIcon, CheckIcon } from "lucide-react";
+import { CheckIcon } from "lucide-react";
 import { createContext, useContext, useState, type ReactNode } from "react";
 
 import { PullRequestGlyph } from "../components/pullRequest/pullRequestIcons";
@@ -31,10 +31,15 @@ import {
   stageTone,
   WORKING_STATES,
 } from "./home.logic";
-import { FOCUS, ICON_BUTTON, SURFACE } from "./surface";
+import { FOCUS, SURFACE } from "./surface";
 
-/** Peeks at a thread beside Aldo's conversation (the home screen gives it); absent elsewhere. */
-export const AldoPeekContext = createContext<((target: AldoHomeTarget) => void) | null>(null);
+/**
+ * Opens a thread Aldo's conversation shows (the home screen and the bar give
+ * it), growing out of `from` where it can; absent elsewhere.
+ */
+export const AldoOpenContext = createContext<
+  ((target: AldoHomeTarget, from?: HTMLElement | null) => void) | null
+>(null);
 
 /** Where a conversation's repositories are, in a word: "aldo", "aldo + t3code", or General. */
 export function reposLabel(repos: ReadonlyArray<string>): string {
@@ -170,7 +175,7 @@ export function AldoThreadCard(props: {
   readonly fallback: ReactNode;
 }) {
   const home = useAldoHomeFeed((s) => s.home);
-  const peek = useContext(AldoPeekContext);
+  const open = useContext(AldoOpenContext);
   const arrive = useAldoArrive();
   const conversation = home?.conversations.find((c) => sameTarget(c.thread, props.target));
   if (!home || !conversation) return props.fallback;
@@ -192,13 +197,13 @@ export function AldoThreadCard(props: {
   const status =
     kind === "failed" ? (
       <span className="text-destructive-foreground">Stopped</span>
-    ) : kind && peek ? (
-      // To its card at the end; what no card answers (a thread whose computer slept) gets a look instead.
+    ) : kind && open ? (
+      // To its card at the end; what no card answers (a thread whose computer slept) opens the thread.
       <button
         type="button"
         className={needs}
-        onClick={() => {
-          if (!showAldoDecisionOf(c.thread)) peek(c.thread);
+        onClick={(event) => {
+          if (!showAldoDecisionOf(c.thread)) open(c.thread, event.currentTarget);
         }}
       >
         {needsYou}
@@ -224,37 +229,31 @@ export function AldoThreadCard(props: {
     );
   const title = "font-medium text-[15px] leading-[22px] tracking-[-0.005em]";
   return (
-    // The whole card peeks for a pointer; its title is the button, for a keyboard and a reader.
+    // The whole card opens the thread for a pointer; its title is the link, for a keyboard and a reader.
     <div
       {...arrive}
       data-aldo-live-card=""
-      className={cn(SURFACE, "group w-full px-4 py-3.5", peek && "cursor-pointer")}
+      className={cn(SURFACE, "group w-full px-4 py-3.5", open && "cursor-pointer")}
       onClick={(event) => {
         // Its own links and buttons, and words being selected, keep their click.
         const target = event.target as HTMLElement;
-        if (!peek || target.closest("a, button") || window.getSelection()?.toString()) return;
-        peek(c.thread);
+        if (!open || target.closest("a, button") || window.getSelection()?.toString()) return;
+        open(c.thread, event.currentTarget);
       }}
     >
       <div className="flex flex-col gap-2">
         <div className="flex items-start gap-3">
           <div className="min-w-0 flex-1">
-            {peek ? (
-              <button
-                type="button"
-                className={cn(
-                  FOCUS,
-                  title,
-                  "block max-w-full truncate rounded-sm text-left group-hover:underline group-hover:decoration-foreground/25 group-hover:underline-offset-4",
-                )}
-                aria-label={`Peek at ${c.title}`}
-                onClick={() => peek(c.thread)}
-              >
-                {c.title}
-              </button>
-            ) : (
-              <p className={cn(title, "truncate")}>{c.title}</p>
-            )}
+            <ThreadLink
+              target={c.thread}
+              className={cn(
+                FOCUS,
+                title,
+                "block max-w-full truncate rounded-sm text-left group-hover:underline group-hover:decoration-foreground/25 group-hover:underline-offset-4",
+              )}
+            >
+              {c.title}
+            </ThreadLink>
             <p className="truncate text-[12px] text-muted-foreground leading-[18px]">
               {c.browsing ? c.browsing.site : reposLabel(c.repos)}
             </p>
@@ -262,16 +261,6 @@ export function AldoThreadCard(props: {
           <span className="mt-0.5 flex shrink-0 items-center text-[12px] text-muted-foreground leading-[18px] tabular-nums">
             {status}
           </span>
-          <ThreadLink
-            target={c.thread}
-            label={`Open ${c.title}`}
-            className={cn(
-              ICON_BUTTON,
-              "-me-1.5 -mt-1 pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100 pointer-fine:focus-visible:opacity-100",
-            )}
-          >
-            <ArrowUpRightIcon className="size-4" strokeWidth={1.75} />
-          </ThreadLink>
         </div>
         {c.summary ? (
           <p className="line-clamp-2 text-[14px] text-muted-foreground leading-5 dark:text-foreground/70">
