@@ -10,23 +10,31 @@ export function isAldoProjectRef(ref: string): boolean {
   return ref.startsWith("aldo:");
 }
 
+/** Whether two refs name the same repository: git hosts take Acme/App for acme/app. */
+export function sameRepo(a: string, b: string): boolean {
+  return a.toLowerCase() === b.toLowerCase();
+}
+
+const hasRepo = (repos: ReadonlyArray<string> | undefined, ref: string) =>
+  (repos ?? []).some((candidate) => sameRepo(candidate, ref));
+
 /** The Aldo project whose code `ref` is, if any. */
 export function projectOfCode(
   projects: ReadonlyArray<AldoProjectSummary>,
   ref: string,
 ): AldoProjectSummary | null {
-  return projects.find((project) => project.repos?.includes(ref)) ?? null;
+  return projects.find((project) => hasRepo(project.repos, ref)) ?? null;
 }
 
 /** A project's code with `ref` too (once). */
 export function withCode(project: AldoProjectSummary, ref: string): ReadonlyArray<string> {
   const repos = project.repos ?? [];
-  return repos.includes(ref) ? repos : [...repos, ref];
+  return hasRepo(repos, ref) ? repos : [...repos, ref];
 }
 
 /** A project's code without `ref`. */
 export function withoutCode(project: AldoProjectSummary, ref: string): ReadonlyArray<string> {
-  return (project.repos ?? []).filter((candidate) => candidate !== ref);
+  return (project.repos ?? []).filter((candidate) => !sameRepo(candidate, ref));
 }
 
 /**
@@ -39,10 +47,9 @@ export function codeChoices(
   project: AldoProjectSummary,
   projects: ReadonlyArray<AldoProjectSummary>,
 ): ReadonlyArray<{ readonly ref: string; readonly partOf: string | null }> {
-  const own = new Set(project.repos ?? []);
   return repositories
     .filter((repo) => !repo.isArchived && !isAldoProjectRef(repo.nameWithOwner))
-    .filter((repo) => !own.has(repo.nameWithOwner))
+    .filter((repo) => !hasRepo(project.repos, repo.nameWithOwner))
     .map((repo) => ({
       ref: repo.nameWithOwner,
       partOf: projectOfCode(projects, repo.nameWithOwner)?.title ?? null,
@@ -57,12 +64,11 @@ export function withSaved(
   projects: ReadonlyArray<AldoProjectSummary>,
   saved: AldoProjectSummary,
 ): ReadonlyArray<AldoProjectSummary> {
-  const taken = new Set(saved.repos ?? []);
   return projects.map((project) =>
     project.ref === saved.ref
       ? saved
-      : project.repos?.some((ref) => taken.has(ref))
-        ? { ...project, repos: project.repos.filter((ref) => !taken.has(ref)) }
+      : project.repos?.some((ref) => hasRepo(saved.repos, ref))
+        ? { ...project, repos: project.repos.filter((ref) => !hasRepo(saved.repos, ref)) }
         : project,
   );
 }

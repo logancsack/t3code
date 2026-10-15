@@ -32,6 +32,8 @@ describe("project code", () => {
   it("finds the project code is the code of", () => {
     expect(projectOfCode([clips, bakery], "acme/bakery-site")?.slug).toBe("bakery");
     expect(projectOfCode([clips, bakery, older], "acme/other")).toBeNull();
+    // Hosts take a repository in any case.
+    expect(projectOfCode([clips, bakery], "Acme/Bakery-Site")?.slug).toBe("bakery");
   });
 
   it("links and unlinks without repeating a repository", () => {
@@ -44,6 +46,8 @@ describe("project code", () => {
     expect(withCode(older, "acme/x")).toEqual(["acme/x"]);
     expect(withoutCode(bakery, "acme/bakery-app")).toEqual(["acme/bakery-site"]);
     expect(withoutCode(older, "acme/x")).toEqual([]);
+    expect(withCode(bakery, "ACME/bakery-app")).toEqual(["acme/bakery-app", "acme/bakery-site"]);
+    expect(withoutCode(bakery, "Acme/Bakery-App")).toEqual(["acme/bakery-site"]);
   });
 
   it("takes what Aldo saved at once, moving a repository from the project that had it", () => {
