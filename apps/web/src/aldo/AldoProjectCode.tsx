@@ -31,6 +31,7 @@ import {
   projectOfCode,
   withCode,
   withoutCode,
+  withSaved,
 } from "./projectCode.logic";
 
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
@@ -54,19 +55,19 @@ export function AldoProjectCodeSettings(props: { readonly environmentId: string 
   const [projects, setProjects] = useState<ReadonlyArray<AldoProjectSummary> | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const load = useCallback(() => {
-    void listAldoProjects().then(setProjects, () => undefined);
-  }, []);
+  const load = useCallback(() => listAldoProjects().then(setProjects, () => undefined), []);
   useEffect(() => {
-    if (linking && ref) load();
+    if (linking && ref) void load();
   }, [linking, ref, load]);
 
+  // Controls stay off until the list is what Aldo saved, so the next change starts from it.
   const save = useCallback(
     async (project: AldoProjectSummary, repos: ReadonlyArray<string>) => {
       setSaving(true);
       try {
-        await setAldoProjectRepos(project.slug, repos);
-        load();
+        const saved = await setAldoProjectRepos(project.slug, repos);
+        setProjects((list) => (list ? withSaved(list, saved) : list));
+        await load();
       } catch (cause) {
         toastManager.add({
           type: "error",
@@ -103,12 +104,30 @@ function ProjectCode(props: {
     readonly nameWithOwner: string;
     readonly isArchived?: boolean;
   }> | null>(null);
+  // A host that couldn't be listed, or the listing itself failing, says so (with Retry) rather than looking like none.
+  const [listErrors, setListErrors] = useState<ReadonlyArray<string>>([]);
+  const [listing, setListing] = useState(true);
+  const list = useCallback(
+    () =>
+      listAldoRepositoryDirectory()
+        .then(
+          (result) => {
+            setRepositories(result.repositories);
+            setListErrors(result.errors);
+          },
+          (cause: unknown) =>
+            setListErrors([`Couldn't list your repositories: ${messageOf(cause)}`]),
+        )
+        .finally(() => setListing(false)),
+    [],
+  );
   useEffect(() => {
-    void listAldoRepositoryDirectory().then(
-      (result) => setRepositories(result.repositories),
-      () => setRepositories([]),
-    );
-  }, []);
+    void list();
+  }, [list]);
+  const retry = () => {
+    setListing(true);
+    void list();
+  };
   const choices = useMemo(
     () => (repositories ? codeChoices(repositories, project, projects) : []),
     [repositories, project, projects],
@@ -138,42 +157,58 @@ function ProjectCode(props: {
       <SettingsRow
         title={code.length === 0 ? "Repositories" : "Add a repository"}
         description={
-          code.length === 0
-            ? `Where ${project.title}'s code is (an app, a site). Its threads know this project, and threads here can read the code, without either one's files in the other.`
-            : "Another repository with this project's code."
+          <>
+            {code.length === 0
+              ? `Where ${project.title}'s code is (an app, a site). Its threads know this project, and threads here can read the code, without either one's files in the other.`
+              : "Another repository with this project's code."}
+            {listErrors.map((error) => (
+              <span key={error} className="mt-1 block text-destructive-foreground">
+                {error}
+              </span>
+            ))}
+          </>
         }
         control={
-          <Select<string>
-            value={null}
-            onValueChange={(value) => {
-              if (value) void save(project, withCode(project, value));
-            }}
-          >
-            <SelectTrigger
-              className="h-8 w-full text-sm sm:w-64"
-              disabled={saving || repositories === null}
+          <div className="flex items-center gap-2">
+            {listErrors.length > 0 ? (
+              <Button size="sm" variant="outline" disabled={listing} onClick={retry}>
+                Retry
+              </Button>
+            ) : null}
+            <Select<string>
+              value={null}
+              onValueChange={(value) => {
+                if (value) void save(project, withCode(project, value));
+              }}
             >
-              <SelectValue>
-                {repositories === null
-                  ? "Loading repositories…"
-                  : choices.length === 0
-                    ? "No other repositories"
-                    : "Choose a repository"}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectPopup align="end" alignItemWithTrigger={false}>
-              {choices.map((choice) => (
-                <SelectItem key={choice.ref} value={choice.ref}>
-                  <span className="font-mono">{choice.ref}</span>
-                  {choice.partOf ? (
-                    <span className="ml-2 text-muted-foreground text-xs">
-                      (moves from {choice.partOf})
-                    </span>
-                  ) : null}
-                </SelectItem>
-              ))}
-            </SelectPopup>
-          </Select>
+              <SelectTrigger
+                className="h-8 w-full text-sm sm:w-64"
+                disabled={saving || repositories === null || choices.length === 0}
+              >
+                <SelectValue>
+                  {listing && repositories === null
+                    ? "Loading repositories…"
+                    : repositories === null
+                      ? "Couldn't list repositories"
+                      : choices.length === 0
+                        ? "No other repositories"
+                        : "Choose a repository"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                {choices.map((choice) => (
+                  <SelectItem key={choice.ref} value={choice.ref}>
+                    <span className="font-mono">{choice.ref}</span>
+                    {choice.partOf ? (
+                      <span className="ml-2 text-muted-foreground text-xs">
+                        (moves from {choice.partOf})
+                      </span>
+                    ) : null}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
+          </div>
         }
       />
     </SettingsSection>
@@ -190,13 +225,14 @@ function PartOf(props: {
   const current = projectOfCode(projects, code);
   if (projects.length === 0) return null;
 
+  // By ref (aldo:<slug>), which None's value can't be.
   const choose = async (value: string) => {
-    if (value === (current?.slug ?? NONE)) return;
+    if (value === (current?.ref ?? NONE)) return;
     if (value === NONE) {
       if (current) await save(current, withoutCode(current, code));
       return;
     }
-    const next = projects.find((project) => project.slug === value);
+    const next = projects.find((project) => project.ref === value);
     // Linked to one, it leaves the other (Aldo moves it).
     if (next) await save(next, withCode(next, code));
   };
@@ -208,7 +244,7 @@ function PartOf(props: {
         description="The Aldo project this repository is the code of (a business, a product). Its threads know the project and read it for context, without its files coming into the repository."
         control={
           <Select
-            value={current?.slug ?? NONE}
+            value={current?.ref ?? NONE}
             onValueChange={(value) => void choose(String(value))}
           >
             <SelectTrigger className="h-8 w-full text-sm sm:w-64" disabled={saving}>
@@ -217,7 +253,7 @@ function PartOf(props: {
             <SelectPopup align="end" alignItemWithTrigger={false}>
               <SelectItem value={NONE}>None</SelectItem>
               {projects.map((project) => (
-                <SelectItem key={project.slug} value={project.slug}>
+                <SelectItem key={project.ref} value={project.ref}>
                   {project.title}
                 </SelectItem>
               ))}

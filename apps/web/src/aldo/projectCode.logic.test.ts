@@ -7,6 +7,7 @@ import {
   projectOfCode,
   withCode,
   withoutCode,
+  withSaved,
 } from "./projectCode.logic";
 
 const project = (slug: string, repos?: string[]): AldoProjectSummary => ({
@@ -43,6 +44,15 @@ describe("project code", () => {
     expect(withCode(older, "acme/x")).toEqual(["acme/x"]);
     expect(withoutCode(bakery, "acme/bakery-app")).toEqual(["acme/bakery-site"]);
     expect(withoutCode(older, "acme/x")).toEqual([]);
+  });
+
+  it("takes what Aldo saved at once, moving a repository from the project that had it", () => {
+    const saved = project("clips", ["acme/bakery-site"]);
+    expect(withSaved([bakery, clips, older], saved)).toEqual([
+      { ...bakery, repos: ["acme/bakery-app"] },
+      saved,
+      older,
+    ]);
   });
 
   it("offers code that isn't the project's own yet, saying whose it is", () => {

@@ -48,3 +48,21 @@ export function codeChoices(
       partOf: projectOfCode(projects, repo.nameWithOwner)?.title ?? null,
     }));
 }
+
+/**
+ * The projects once Aldo saved `saved`'s code: it as Aldo returned it, and
+ * any repository it took left out of the others (linking one moves it).
+ */
+export function withSaved(
+  projects: ReadonlyArray<AldoProjectSummary>,
+  saved: AldoProjectSummary,
+): ReadonlyArray<AldoProjectSummary> {
+  const taken = new Set(saved.repos ?? []);
+  return projects.map((project) =>
+    project.ref === saved.ref
+      ? saved
+      : project.repos?.some((ref) => taken.has(ref))
+        ? { ...project, repos: project.repos.filter((ref) => !taken.has(ref)) }
+        : project,
+  );
+}
