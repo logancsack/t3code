@@ -133,6 +133,16 @@ async function template(): Promise<EncodedConfig | null> {
   return latest;
 }
 
+/** The providers, with their models, of the newest config any cloud agent reported (none before one has). */
+export async function newestAldoProviders(): Promise<ReadonlyArray<Record<string, unknown>>> {
+  return (await template())?.providers ?? [];
+}
+
+/** Calls `listener` whenever an agent's config changes, so newestAldoProviders may say more. Returns how to stop. */
+export function onAldoServerConfigChange(listener: () => void): () => void {
+  return appAtomRegistry.subscribe(environmentServerConfigsAtom, listener);
+}
+
 /**
  * The server config to show for machines that aren't running, by environment
  * id: the newest one any cloud agent reported, renamed for each machine, with

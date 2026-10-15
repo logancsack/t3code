@@ -809,6 +809,39 @@ export async function saveAldoMachineSettings(settings: Record<string, unknown>)
   return body.settings;
 }
 
+/** The agents whose subagents can have a default model of the user's. */
+export type AldoSubagentProvider = "claude" | "codex";
+/** What an agent's subagents run on when it names no model: a model id, and (Codex only) a reasoning effort. */
+export type AldoSubagentDefault = { readonly model: string; readonly reasoning?: string };
+export type AldoSubagents = Partial<Record<AldoSubagentProvider, AldoSubagentDefault>>;
+
+/**
+ * Each agent's subagent default the user chose (Settings → Providers), or
+ * null from an Aldo that doesn't keep them.
+ */
+export async function fetchAldoSubagents(): Promise<AldoSubagents | null> {
+  const body = await api<{ subagents?: unknown }>("/api/subagents").catch((error: unknown) => {
+    if (error instanceof AldoApiError && error.status === 404) return null;
+    throw error;
+  });
+  // An older Aldo may answer with the web client's page instead of a 404.
+  const subagents = body?.subagents;
+  return subagents && typeof subagents === "object" && !Array.isArray(subagents)
+    ? (subagents as AldoSubagents)
+    : null;
+}
+
+/** Sets the agents `change` names (null: its subagents run on its own model); answers with all of them. */
+export async function saveAldoSubagents(
+  change: Partial<Record<AldoSubagentProvider, AldoSubagentDefault | null>>,
+): Promise<AldoSubagents> {
+  const body = await api<{ subagents: AldoSubagents }>("/api/subagents", {
+    method: "POST",
+    body: JSON.stringify({ subagents: change }),
+  });
+  return body.subagents;
+}
+
 /** Machines' threads (T3 shells) as their aldod last reported them, by thread id. Never wakes one. */
 export async function fetchAldoShells(
   threadIds: ReadonlyArray<string>,
