@@ -5,14 +5,16 @@
 // read is refreshed after, so the decision leaves the page.
 
 import { toastManager } from "../components/ui/toast";
+import { toastAldoRule } from "./AldoApprovals";
 import {
   AldoApiError,
   answerAldoThread,
   approveAldoPlan,
   decideAldoApproval,
+  fetchAldoHome,
   mergeAldoPullRequest,
 } from "./cloud";
-import type { AldoDecision } from "./decisions.logic";
+import { decisionOpen, type AldoDecision } from "./decisions.logic";
 import { refreshAldoHome } from "./homeFeed";
 
 export type AldoChoice =
@@ -24,12 +26,23 @@ export type AldoChoice =
     }
   /** A thread's approval: the option chosen. */
   | { readonly kind: "decision"; readonly decision: string; readonly label: string }
-  | { readonly kind: "plan" }
-  /** One of Aldo's approvals: an email to send, an event to add, a thread to start. */
-  | { readonly kind: "aldo"; readonly decision: "approve" | "discard" }
+  /** A plan approved, or sent back with what should change. */
+  | { readonly kind: "plan"; readonly changes?: string }
+  /** One of Aldo's approvals: an email to send, an event to add, a thread to start; or approved, and always allowed. */
+  | { readonly kind: "aldo"; readonly decision: "approve" | "discard" | "always" }
   | { readonly kind: "merge" };
 
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
+/** Whether the home read still has a decision waiting; true when it can't be read, so nothing's taken as settled. */
+async function stillOpen(decision: AldoDecision): Promise<boolean> {
+  try {
+    const home = await fetchAldoHome();
+    return home ? decisionOpen(home, decision.key, Date.now()) : true;
+  } catch {
+    return true;
+  }
+}
 
 /** What the user chose, as words for Aldo ("answered 80%", "merged it"). */
 export function choiceWords(decision: AldoDecision, choice: AldoChoice): string {
@@ -43,58 +56,107 @@ export function choiceWords(decision: AldoDecision, choice: AldoChoice): string 
     case "decision":
       return `chose "${choice.label}"`;
     case "plan":
-      return "approved the plan";
+      return choice.changes
+        ? `asked for changes to the plan: "${choice.changes}"`
+        : "approved the plan";
     case "aldo":
       return decision.kind === "aldo-approval"
-        ? `chose "${choice.decision === "approve" ? decision.approval.approveLabel : decision.approval.discardLabel}"`
+        ? `chose "${choice.decision === "discard" ? decision.approval.discardLabel : decision.approval.approveLabel}"${choice.decision === "always" ? ", and to always allow it" : ""}`
         : choice.decision;
     case "merge":
       return "merged it";
   }
 }
 
+/** How a decision went: done as chosen, already settled some other way (nothing was done), or not done. */
+export type AldoDecided = "done" | "moved-on" | "failed";
+
+export interface AldoDecidedResult {
+  readonly outcome: AldoDecided;
+  /** What Aldo said happened, where it says (its own approvals): what's told, rather than what was asked. */
+  readonly said: string | null;
+}
+
 /**
- * Acts on a decision as the user chose; true when it's done (or had already
- * moved on, which leaves it decided all the same). Failing, it says why.
+ * Acts on a decision as the user chose; true only when it's done as chosen.
+ * Failing, it says why; done, it says so too, unless `quiet` (the card it was
+ * on says it).
  */
-export async function decideAldo(decision: AldoDecision, choice: AldoChoice): Promise<boolean> {
+export async function decideAldo(
+  decision: AldoDecision,
+  choice: AldoChoice,
+  options: { readonly quiet?: boolean } = {},
+): Promise<boolean> {
+  return (await decideAldoOutcome(decision, choice, options)).outcome === "done";
+}
+
+/** decideAldo, telling done from moved on, with what Aldo said, so what's said after is only what happened. */
+export async function decideAldoOutcome(
+  decision: AldoDecision,
+  choice: AldoChoice,
+  options: { readonly quiet?: boolean } = {},
+): Promise<AldoDecidedResult> {
+  const done = (title: string, said: string | null = null): AldoDecidedResult => {
+    if (!options.quiet) toastManager.add({ type: "success", title });
+    return { outcome: "done", said };
+  };
+  const movedOn = (said: string): AldoDecidedResult => {
+    // Quiet, the card says it moved on in the line it leaves.
+    if (!options.quiet)
+      toastManager.add({ type: "warning", title: "It had already moved on", description: said });
+    return { outcome: "moved-on", said };
+  };
   try {
     if (choice.kind === "aldo" && decision.kind === "aldo-approval") {
-      const { message } = await decideAldoApproval(decision.approval.id, choice.decision);
-      toastManager.add({ type: "success", title: message });
-    } else if (choice.kind === "merge" && decision.kind === "merge") {
+      const { approval, message, rule } = await decideAldoApproval(
+        decision.approval.id,
+        choice.decision,
+      );
+      // A rule it became can be undone from its toast, however quiet the card is.
+      if (rule) toastAldoRule(message, rule);
+      // An approval decided before (elsewhere, or it expired or was withdrawn) is answered as it stands.
+      const asked = choice.decision === "discard" ? "discarded" : "approved";
+      return approval.status === asked ? done(message, message) : movedOn(message);
+    }
+    if (choice.kind === "merge" && decision.kind === "merge") {
       const pr = decision.pullRequest;
       await mergeAldoPullRequest(pr.environmentId, pr);
-      toastManager.add({ type: "success", title: `Merged ${pr.repo}#${pr.number}` });
-    } else if (choice.kind === "plan" && decision.kind === "plan") {
-      await approveAldoPlan(decision.conversation.thread, decision.plan.id);
-      toastManager.add({ type: "success", title: "The agent is carrying out the plan" });
-    } else if (choice.kind === "answer" && decision.kind === "question") {
+      return done(`Merged ${pr.repo}#${pr.number}`);
+    }
+    if (choice.kind === "plan" && decision.kind === "plan") {
+      await approveAldoPlan(decision.conversation.thread, decision.plan.id, choice.changes);
+      return done(
+        choice.changes ? "Asked for a revised plan" : "The agent is carrying out the plan",
+      );
+    }
+    if (choice.kind === "answer" && decision.kind === "question") {
       await answerAldoThread(decision.conversation.thread, {
         requestId: decision.pending.requestId,
         ...(choice.answers ? { answers: choice.answers } : {}),
         ...(choice.text ? { text: choice.text } : {}),
       });
-      toastManager.add({ type: "success", title: "Answered" });
-    } else if (choice.kind === "decision" && decision.kind === "approval") {
+      return done("Answered");
+    }
+    if (choice.kind === "decision" && decision.kind === "approval") {
       await answerAldoThread(decision.conversation.thread, {
         requestId: decision.pending.requestId,
         decision: choice.decision,
       });
-      toastManager.add({ type: "success", title: "Decision sent" });
-    } else {
-      return false;
+      return done("Decision sent");
     }
-    return true;
+    return { outcome: "failed", said: null };
   } catch (cause) {
-    // The thread moved on (answered elsewhere, or it asks something else now): decided all the same.
-    const movedOn = cause instanceof AldoApiError && cause.status === 409;
-    toastManager.add({
-      type: movedOn ? "warning" : "error",
-      title: movedOn ? "It moved on" : "Couldn't do that",
-      description: messageOf(cause),
-    });
-    return movedOn && decision.kind !== "aldo-approval";
+    // What a thread asked, answered elsewhere or replaced by what it asks now (the
+    // thread's actions say 409), but a 409 is also "not now" (a plan while the
+    // thread works), so it's moved on only once the home read no longer has it.
+    // A merge's 409 is a refusal (checks, a draft), so it fails.
+    const threadSaidNo =
+      cause instanceof AldoApiError &&
+      cause.status === 409 &&
+      (decision.kind === "question" || decision.kind === "approval" || decision.kind === "plan");
+    if (threadSaidNo && !(await stillOpen(decision))) return movedOn(messageOf(cause));
+    toastManager.add({ type: "error", title: "Couldn't do that", description: messageOf(cause) });
+    return { outcome: "failed", said: null };
   } finally {
     void refreshAldoHome();
   }

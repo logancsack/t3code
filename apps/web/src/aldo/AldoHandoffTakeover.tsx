@@ -11,6 +11,7 @@ import { lazy, Suspense, useEffect, useRef, useState } from "react";
 
 import { Button } from "../components/ui/button";
 import { toastManager } from "../components/ui/toast";
+import { cn } from "~/lib/utils";
 import {
   answerAldoHandoff,
   closeAldoHandoffTakeover,
@@ -19,6 +20,7 @@ import {
 } from "./AldoHandoffCard";
 import { aldoHandoffHow, aldoHandoffParam, aldoHandoffSkipLabel } from "./handoffs.logic";
 import { useAldoHomeRead } from "./homeFeed";
+import { PRIMARY } from "./surface";
 
 const AldoBrowserPanel = lazy(() =>
   import("./AldoBrowserPanel").then((module) => ({ default: module.AldoBrowserPanel })),
@@ -92,7 +94,10 @@ function Takeover({ id }: { readonly id: string }) {
           <p className="truncate font-medium text-sm">
             {handoff?.threadTitle || "Your agent's browser"}
           </p>
-          <p className="truncate text-warning text-xs">You have the browser · your agent waits</p>
+          <p className="flex items-center gap-1.5 truncate text-[12px] text-muted-foreground leading-[18px]">
+            <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-warning" />
+            You have the browser · your agent waits
+          </p>
         </div>
       </header>
       <div className="flex min-h-0 flex-1 flex-col">
@@ -115,16 +120,17 @@ function Takeover({ id }: { readonly id: string }) {
       {handoff ? (
         <footer className="shrink-0 border-t border-border px-4 py-3">
           <div className="mx-auto flex w-full max-w-md flex-col gap-2">
-            <p className="text-sm">{aldoHandoffHow(handoff)}</p>
-            <Button
+            <p className="text-center text-[14px] leading-5">{aldoHandoffHow(handoff)}</p>
+            <button
               type="button"
-              size="xl"
-              className="w-full font-semibold"
+              className={cn(PRIMARY, "w-full")}
+              aria-busy={busy === "done" || undefined}
               disabled={busy !== null || teaching}
               onClick={() => void answer({ decision: "done" })}
             >
-              {busy === "done" ? <LoaderIcon className="size-4 animate-spin" /> : null} I'm done
-            </Button>
+              I'm done
+              {busy === "done" ? <LoaderIcon aria-hidden className="size-4 animate-spin" /> : null}
+            </button>
             {teaching ? (
               <p className="text-center text-muted-foreground text-xs">
                 Finish the recording (teach it or discard it) to hand it back.

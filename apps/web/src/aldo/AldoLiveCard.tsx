@@ -1,11 +1,13 @@
-// What Aldo did to a thread, shown live in its conversation (and in the peek):
-// the thread as Aldo's home read has it now (working, waiting on the user,
-// done), what it last said, what it asks (answered in place), its pull
-// requests (merged in place once green), and the ways to peek at it or open
-// it. An Aldo without the home read, or a thread it doesn't list yet, shows
-// the one line Aldo's action always had.
+// What Aldo did to a thread, shown live in its conversation: the thread as
+// Aldo's home read has it now (working, waiting on the user, done), as a card
+// that opens it when tapped: its title, where it works, what it last said
+// and its pull requests with how their checks stand. What it asks is answered
+// at the conversation's end (AldoUpNext.tsx), where its status takes the
+// user. An Aldo without the home read, or a thread it doesn't list yet, shows
+// the one line Aldo's action always had. The bar's peek (AldoPeek.tsx) uses
+// the pieces here too.
 
-import { ArrowUpRightIcon, EyeIcon } from "lucide-react";
+import { CheckIcon } from "lucide-react";
 import { createContext, useContext, useState, type ReactNode } from "react";
 
 import { PullRequestGlyph } from "../components/pullRequest/pullRequestIcons";
@@ -13,9 +15,11 @@ import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { cn } from "~/lib/utils";
 import { mergeFollowedPullRequest, TONE_VARIANT } from "./AldoHomeBoard";
-import { PendingForm, ThreadLink } from "./AldoHomeInbox";
+import { ThreadLink } from "./AldoHomeInbox";
 import type { AldoHome, AldoHomeConversation, AldoHomePullRequest, AldoHomeTarget } from "./cloud";
+import { useAldoArrive } from "./arrive";
 import { refreshAldoHome, useAldoHomeFeed } from "./homeFeed";
+import { showAldoDecisionOf } from "./show";
 import {
   elapsed,
   isStuck,
@@ -27,9 +31,15 @@ import {
   stageTone,
   WORKING_STATES,
 } from "./home.logic";
+import { FOCUS, SURFACE } from "./surface";
 
-/** Peeks at a thread beside Aldo's conversation (the home screen gives it); absent elsewhere. */
-export const AldoPeekContext = createContext<((target: AldoHomeTarget) => void) | null>(null);
+/**
+ * Opens a thread Aldo's conversation shows (the home screen and the bar give
+ * it), growing out of `from` where it can; absent elsewhere.
+ */
+export const AldoOpenContext = createContext<
+  ((target: AldoHomeTarget, from?: HTMLElement | null) => void) | null
+>(null);
 
 /** Where a conversation's repositories are, in a word: "aldo", "aldo + t3code", or General. */
 export function reposLabel(repos: ReadonlyArray<string>): string {
@@ -123,6 +133,38 @@ export function PullRequestLine(props: { readonly pullRequest: AldoHomePullReque
   );
 }
 
+/** A pull request on a thread's card: its number and title, then its checks as they run. */
+function PullRequestRow(props: { readonly pullRequest: AldoHomePullRequest }) {
+  const pr = props.pullRequest;
+  const checks = pr.checks;
+  const total = checks ? checks.passed + checks.failed + checks.running : 0;
+  return (
+    <div className="flex items-center gap-2 text-[13px] text-muted-foreground leading-5">
+      <PullRequestGlyph.pullRequest className="size-3.5 shrink-0" aria-hidden />
+      <a
+        href={pr.url}
+        target="_blank"
+        rel="noreferrer"
+        className="min-w-0 truncate text-foreground/85 hover:underline hover:decoration-foreground/30 hover:underline-offset-4"
+      >
+        #{pr.number} {pr.title}
+      </a>
+      <span
+        className={cn(
+          "ml-auto shrink-0 tabular-nums",
+          checks && checks.failed > 0 && "text-destructive-foreground",
+        )}
+      >
+        {checks && total > 0 && pr.status === "watching" && pr.stage !== "green"
+          ? checks.failed > 0
+            ? `${checks.failed} failing`
+            : `${checks.passed}/${total} checks`
+          : stageLabel(pr)}
+      </span>
+    </div>
+  );
+}
+
 /**
  * A thread Aldo acted on, live. `label` says what Aldo did ("Started a
  * thread"); `fallback` is the line shown when the home read doesn't have it.
@@ -133,56 +175,101 @@ export function AldoThreadCard(props: {
   readonly fallback: ReactNode;
 }) {
   const home = useAldoHomeFeed((s) => s.home);
-  const peek = useContext(AldoPeekContext);
+  const open = useContext(AldoOpenContext);
+  const arrive = useAldoArrive();
   const conversation = home?.conversations.find((c) => sameTarget(c.thread, props.target));
   if (!home || !conversation) return props.fallback;
   const c = conversation;
   const now = Date.now();
   const kind = needsYouKind(c);
   const pullRequests = pullRequestsOf(home, c.thread, now);
-  return (
-    <div
-      className={cn(
-        "flex w-full flex-col gap-1.5 rounded-xl border bg-card/40 p-3",
-        kind ? "border-warning/50" : "border-border/60",
-      )}
-      data-aldo-live-card=""
-    >
-      <div className="flex items-center gap-2 text-muted-foreground text-xs">
-        <StateDot conversation={c} now={now} />
-        <span className="truncate">
-          {props.label} · {reposLabel(c.repos)}
-        </span>
-        <span className="ml-auto shrink-0">{stateSince(c, now)}</span>
-      </div>
-      <ThreadLink
-        target={c.thread}
-        className="min-w-0 truncate font-medium text-sm hover:underline"
+  const working = WORKING_STATES.has(c.state);
+  const needs = cn(
+    FOCUS,
+    "flex items-center gap-1.5 rounded-full px-1 text-foreground/80 hover:text-foreground",
+  );
+  const needsYou = (
+    <>
+      <span aria-hidden className="size-1.5 rounded-full bg-warning" />
+      Needs you
+    </>
+  );
+  const status =
+    kind === "failed" ? (
+      <span className="text-destructive-foreground">Stopped</span>
+    ) : kind && open ? (
+      // To its card at the end; what no card answers (a thread whose computer slept) opens the thread.
+      <button
+        type="button"
+        className={needs}
+        onClick={(event) => {
+          if (!showAldoDecisionOf(c.thread)) open(c.thread, event.currentTarget);
+        }}
       >
-        {c.title}
+        {needsYou}
+      </button>
+    ) : kind ? (
+      <ThreadLink target={c.thread} label={`Needs you: open ${c.title}`} className={needs}>
+        {needsYou}
       </ThreadLink>
-      {c.summary && kind !== "approval" && kind !== "question" ? (
-        <p className="line-clamp-2 text-muted-foreground text-xs">{c.summary}</p>
-      ) : null}
-      {kind ? (
-        <div className="mt-1">
-          <PendingForm conversation={c} onActed={() => void refreshAldoHome()} />
+    ) : working ? (
+      // Long work leaves the screen still: how long it's been at it (once it's a minute) says it's going.
+      <span>
+        {Date.parse(c.stateAt ?? c.at) > now - 60_000
+          ? "Working"
+          : `Working · ${elapsed(c.stateAt ?? c.at, now)}`}
+      </span>
+    ) : c.state === "done" ? (
+      <span className="flex items-center gap-1">
+        <CheckIcon aria-hidden className="size-3.5 text-success-foreground" strokeWidth={2.25} />
+        Done
+      </span>
+    ) : (
+      <span>Idle</span>
+    );
+  const title = "font-medium text-[15px] leading-[22px] tracking-[-0.005em]";
+  return (
+    // The whole card opens the thread for a pointer; its title is the link, for a keyboard and a reader.
+    <div
+      {...arrive}
+      data-aldo-live-card=""
+      className={cn(SURFACE, "group w-full px-4 py-3.5", open && "cursor-pointer")}
+      onClick={(event) => {
+        // Its own links and buttons, and words being selected, keep their click.
+        const target = event.target as HTMLElement;
+        if (!open || target.closest("a, button") || window.getSelection()?.toString()) return;
+        open(c.thread, event.currentTarget);
+      }}
+    >
+      <div className="flex flex-col gap-2">
+        <div className="flex items-start gap-3">
+          <div className="min-w-0 flex-1">
+            <ThreadLink
+              target={c.thread}
+              className={cn(
+                FOCUS,
+                title,
+                "block max-w-full truncate rounded-sm text-left group-hover:underline group-hover:decoration-foreground/25 group-hover:underline-offset-4",
+              )}
+            >
+              {c.title}
+            </ThreadLink>
+            <p className="truncate text-[12px] text-muted-foreground leading-[18px]">
+              {c.browsing ? c.browsing.site : reposLabel(c.repos)}
+            </p>
+          </div>
+          <span className="mt-0.5 flex shrink-0 items-center text-[12px] text-muted-foreground leading-[18px] tabular-nums">
+            {status}
+          </span>
         </div>
-      ) : null}
-      {pullRequests.map((pr) => (
-        <PullRequestLine key={`${pr.repo}#${pr.number}`} pullRequest={pr} />
-      ))}
-      <div className="mt-1 flex flex-wrap items-center gap-1.5">
-        {peek ? (
-          <Button size="compact" variant="outline" onClick={() => peek(c.thread)}>
-            <EyeIcon />
-            Peek
-          </Button>
+        {c.summary ? (
+          <p className="line-clamp-2 text-[14px] text-muted-foreground leading-5 dark:text-foreground/70">
+            {c.summary}
+          </p>
         ) : null}
-        <Button size="compact" variant="ghost" render={<ThreadLink target={c.thread} />}>
-          Open thread
-          <ArrowUpRightIcon />
-        </Button>
+        {pullRequests.map((pr) => (
+          <PullRequestRow key={`${pr.repo}#${pr.number}`} pullRequest={pr} />
+        ))}
       </div>
     </div>
   );

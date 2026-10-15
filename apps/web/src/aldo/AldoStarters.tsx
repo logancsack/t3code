@@ -1,8 +1,9 @@
-// Starters under the first-run conversation: six kinds of work, each a card
-// that fills the composer with a sentence to finish (never sends it). One that
-// needs an account ("Sort my inbox") offers to connect it first; "Build
-// something" offers the user's repositories once a git host is connected.
-// They fold away once the user has a few threads (AldoConversationPage).
+// Starters under the first-run conversation: six kinds of work, three at first
+// and the rest a tap away, each a quiet pill under the composer that fills it
+// with a sentence to finish (never sends it). One that needs more than words says so once picked: "Sort my inbox"
+// offers to connect Gmail, "Build something" the user's repositories once a
+// git host is connected. They fold away once the user has a few threads
+// (AldoConversationPage).
 
 import {
   BriefcaseIcon,
@@ -19,16 +20,19 @@ import { cn } from "~/lib/utils";
 import { openAldoRepositoryPicker } from "./AldoRepositoryPicker";
 import { seedAldoComposer } from "./assistantSession";
 import { aldoIntegrationConnectUrl, fetchAldoIntegrations, type AldoIntegration } from "./cloud";
+import { CHIP, FOCUS } from "./surface";
 
 /** Threads the user has had before the starters fold away. */
 export const STARTERS_UNTIL_THREADS = 3;
+
+/** Starters shown before "More ideas". */
+const FIRST = 3;
 
 interface Starter {
   readonly id: string;
   readonly title: string;
   readonly detail: string;
   readonly icon: LucideIcon;
-  readonly tint: string;
   /** What it puts in the composer, to finish and send. */
   readonly words: string;
 }
@@ -36,35 +40,38 @@ interface Starter {
 const STARTERS: ReadonlyArray<Starter> = [
   {
     id: "research",
-    title: "Research and write it up",
+    title: "Research something",
     detail: "A sourced brief as a Google Doc or PDF",
     icon: FileTextIcon,
-    tint: "bg-sky-500/15 text-sky-500",
     words: "Research this and write it up as a short brief with sources, as a Google Doc: ",
-  },
-  {
-    id: "deck",
-    title: "Make a deck",
-    detail: "Slides from your notes, a link or a topic",
-    icon: PresentationIcon,
-    tint: "bg-rose-500/15 text-rose-500",
-    words: "Make a slide deck from this: ",
   },
   {
     id: "trip",
     title: "Plan a trip",
     detail: "Options checked on real sites, as a page to share",
     icon: PlaneIcon,
-    tint: "bg-emerald-500/15 text-emerald-500",
     words:
       "Plan a trip, with options checked on real sites, and give me a page I can share. Where, when and budget: ",
+  },
+  {
+    id: "build",
+    title: "Build something",
+    detail: "A site or an app, from a sentence",
+    icon: CodeIcon,
+    words: "Build a small web app that: ",
+  },
+  {
+    id: "deck",
+    title: "Make a deck",
+    detail: "Slides from your notes, a link or a topic",
+    icon: PresentationIcon,
+    words: "Make a slide deck from this: ",
   },
   {
     id: "inbox",
     title: "Sort my inbox",
     detail: "What needs you, with replies drafted",
     icon: MailIcon,
-    tint: "bg-amber-500/15 text-amber-500",
     words:
       "Go through my inbox from the last week: tell me what needs me, and draft replies for me to approve.",
   },
@@ -73,16 +80,7 @@ const STARTERS: ReadonlyArray<Starter> = [
     title: "Run a project",
     detail: "A business or process, with files every thread shares",
     icon: BriefcaseIcon,
-    tint: "bg-violet-500/15 text-violet-500",
     words: "Set up a project, with notes and files every thread in it shares, for: ",
-  },
-  {
-    id: "build",
-    title: "Build something",
-    detail: "A site or an app, from a sentence",
-    icon: CodeIcon,
-    tint: "bg-zinc-500/15 text-zinc-400",
-    words: "Build a small web app that: ",
   },
 ];
 
@@ -128,50 +126,64 @@ export function AldoStarters(props: {
   readonly sourceReady: boolean;
 }) {
   const { mail, google } = useMailConnected();
+  const [picked, setPicked] = useState<string | null>(null);
+  const [all, setAll] = useState(false);
+  const link = `rounded-sm font-medium text-foreground underline decoration-foreground/25 underline-offset-4 hover:decoration-foreground ${FOCUS}`;
+  const more =
+    picked === "inbox" && mail === false && google ? (
+      <>
+        This needs your mail.{" "}
+        <button type="button" className={link} onClick={connectGmail}>
+          Connect Gmail
+        </button>
+      </>
+    ) : picked === "build" && props.sourceReady ? (
+      <>
+        Or start from{" "}
+        <button type="button" className={link} onClick={() => openAldoRepositoryPicker("existing")}>
+          one of your repositories
+        </button>
+      </>
+    ) : null;
   return (
-    <ul className="grid grid-cols-2 gap-2 text-left sm:grid-cols-3">
-      {STARTERS.map((starter) => {
-        const Icon = starter.icon;
-        const extra =
-          starter.id === "inbox" && mail === false && google ? (
-            <button type="button" className="text-primary hover:underline" onClick={connectGmail}>
-              connect Gmail
-            </button>
-          ) : starter.id === "build" && props.sourceReady ? (
+    <div className="flex flex-col items-center gap-3">
+      <ul className="flex flex-wrap justify-center gap-2">
+        {(all ? STARTERS : STARTERS.slice(0, FIRST)).map((starter) => {
+          const Icon = starter.icon;
+          return (
+            <li key={starter.id}>
+              <button
+                type="button"
+                className={CHIP}
+                aria-description={starter.detail}
+                onClick={() => {
+                  seedAldoComposer(starter.words);
+                  setPicked(starter.id);
+                }}
+              >
+                <Icon aria-hidden className="size-4 text-muted-foreground" strokeWidth={1.75} />
+                {starter.title}
+              </button>
+            </li>
+          );
+        })}
+        {all ? null : (
+          <li>
             <button
               type="button"
-              className="text-primary hover:underline"
-              onClick={() => openAldoRepositoryPicker("existing")}
+              className={cn(CHIP, "bg-transparent dark:bg-transparent")}
+              onClick={() => setAll(true)}
             >
-              or your repo
+              More ideas
             </button>
-          ) : null;
-        return (
-          <li
-            key={starter.id}
-            className="relative flex flex-col rounded-xl border border-border/60 bg-card/30 transition-colors hover:border-border hover:bg-accent/40"
-          >
-            <button
-              type="button"
-              className={cn(
-                "flex w-full flex-1 flex-col items-start gap-1.5 p-3 text-left after:absolute after:inset-0 after:rounded-xl",
-                extra && "pb-1",
-              )}
-              onClick={() => seedAldoComposer(starter.words)}
-            >
-              <span className={cn("rounded-md p-1.5", starter.tint)}>
-                <Icon className="size-3.5" />
-              </span>
-              <span className="font-medium text-sm">{starter.title}</span>
-              <span className="text-muted-foreground text-xs leading-snug">{starter.detail}</span>
-            </button>
-            {extra ? (
-              // Above the card's own button, so it can be tapped on its own.
-              <span className="relative z-10 block px-3 pb-3 text-xs">{extra}</span>
-            ) : null}
           </li>
-        );
-      })}
-    </ul>
+        )}
+      </ul>
+      {more ? (
+        <p data-aldo-arrive="" className="text-[13px] text-muted-foreground leading-5">
+          {more}
+        </p>
+      ) : null}
+    </div>
   );
 }

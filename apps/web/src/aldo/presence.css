@@ -1,0 +1,126 @@
+/* Aldo's face (AldoPresence.tsx) and the conversation's small motions: eyes
+   that blink once when something passes between the user and Aldo (face.ts),
+   look up while Aldo thinks, down while the user writes and smile when
+   something's done; the dots while it types, a reply settling in whole, and
+   what arrives after the page has. Nothing loops but the dots (which only
+   move and fade, so nothing repaints), and those only while Aldo types. All
+   still for reduced motion. */
+
+@keyframes aldo-blink {
+  0%,
+  100% {
+    transform: scaleY(1);
+  }
+  45% {
+    transform: scaleY(0.12);
+  }
+}
+
+@keyframes aldo-dot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.35;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes aldo-arrive {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes aldo-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes aldo-attention {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+  30% {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-foreground) 14%, transparent);
+  }
+}
+
+[data-aldo-eye] {
+  animation: aldo-blink 220ms ease-in-out;
+  transform-origin: center;
+  transition: scale 160ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+[data-aldo-eyes] {
+  transition: translate 160ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+[data-aldo-eyes][data-mood="thinking"] {
+  translate: 10% -14%;
+}
+
+[data-aldo-eyes][data-mood="reading"] {
+  translate: 0 12%;
+}
+
+[data-aldo-eyes][data-mood="pleased"] {
+  translate: 0 -8%;
+}
+
+[data-aldo-eyes][data-mood="pleased"] [data-aldo-eye] {
+  scale: 1.1 0.42;
+  animation: none;
+}
+
+[data-aldo-eyes][data-mood="listening"] [data-aldo-eye] {
+  scale: 1.1 1.15;
+}
+
+[data-aldo-typing] > span {
+  animation: aldo-dot 1.2s infinite ease-in-out;
+}
+[data-aldo-typing] > span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+[data-aldo-typing] > span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+[data-aldo-arrive] {
+  animation: aldo-arrive 160ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+
+/* A reply comes whole, so it fades in whole: nothing makes the user wait to read it. */
+[data-aldo-reply] {
+  animation: aldo-fade 120ms ease-out both;
+}
+
+[data-aldo-attention] {
+  animation: aldo-attention 1.2s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-aldo-eye],
+  [data-aldo-eyes],
+  [data-aldo-typing] > span,
+  [data-aldo-arrive],
+  [data-aldo-reply],
+  [data-aldo-attention] {
+    animation: none;
+    transition: none;
+  }
+}

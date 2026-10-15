@@ -5,21 +5,22 @@
 // shared. Asking Aldo from either (Ask Aldo, or "/") goes to Aldo's place,
 // where its composer is.
 
-import { useEffect, useMemo, type ReactNode } from "react";
+import { LoaderCircleIcon } from "lucide-react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { Button } from "../components/ui/button";
 import { SidebarInset } from "../components/ui/sidebar";
 import { Skeleton } from "../components/ui/skeleton";
 import { cn } from "~/lib/utils";
-import { QuickButton } from "./AldoAgentsTab";
 import { ApprovalsSection } from "./AldoApprovals";
-import { DecisionIcon } from "./AldoBrief";
+import { confirmQuickChoice, DecisionIcon, quickChoice } from "./AldoBrief";
 import { HealthStrip, Section } from "./AldoHomeBoard";
 import { NeedsYouCard, ThreadLink } from "./AldoHomeInbox";
 import { AldoSharedFiles } from "./AldoLibrary";
 import { waitingApprovals } from "./approvals.logic";
 import { seedAldoComposer, useAldoAssistant } from "./assistantSession";
 import type { AldoHome } from "./cloud";
+import { decideAldo } from "./decide";
 import {
   aldoDecisions,
   aldoWaitingCount,
@@ -235,5 +236,34 @@ export function AldoSimpleLibrary(props: { readonly tabs: ReactNode }) {
         <AldoSharedFiles />
       </div>
     </PlacePage>
+  );
+}
+
+/** A row's one tap, if it has one (send, merge, Aldo's pick), on the row itself. */
+function QuickButton(props: {
+  readonly decision: AldoDecision;
+  readonly suggestion?: string | null;
+}) {
+  const [busy, setBusy] = useState(false);
+  const quick = quickChoice(props.decision, props.suggestion ?? null);
+  if (!quick) return null;
+  return (
+    <Button
+      size="sm"
+      variant={quick.primary ? "default" : "outline"}
+      className="shrink-0"
+      disabled={busy}
+      onClick={(event) => {
+        event.stopPropagation();
+        void (async () => {
+          if (!(await confirmQuickChoice(props.decision))) return;
+          setBusy(true);
+          await decideAldo(props.decision, quick.choice);
+          setBusy(false);
+        })();
+      }}
+    >
+      {busy ? <LoaderCircleIcon className="animate-spin" /> : quick.label}
+    </Button>
   );
 }

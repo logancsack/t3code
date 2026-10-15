@@ -1,20 +1,21 @@
-// Aldo at the top of the sidebar, on every screen: a pill, so it reads as a
-// control rather than the first thread of the list. Its orb starts a
-// conversation (or hangs up) right where the user is, and the pill opens
-// Aldo's own screen (the home screen's conversation). While a conversation is
-// on, it shows what Aldo is doing or saying, with mute. Only where the server
-// has the assistant.
+// Aldo at the top of the sidebar, on every screen: a row with its face, which
+// sets it apart from the threads below. The face starts a conversation (or
+// hangs up) right where the user is, and the row opens Aldo's own screen (the
+// home screen's conversation). While a conversation is on, it shows what Aldo
+// is doing or saying, with mute. Only where the server has the assistant.
 
 import { Link } from "@tanstack/react-router";
 import { MicIcon, MicOffIcon } from "lucide-react";
 
 import { Button } from "../components/ui/button";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { cn } from "~/lib/utils";
-import { AldoOrb, ALDO_SHORTCUT_LABEL, useAldoAssistantAvailable } from "./AldoAssistant";
+import { ALDO_SHORTCUT_LABEL, useAldoAssistantAvailable } from "./AldoAssistant";
+import { AldoAvatar } from "./AldoPresence";
 import type { AldoAssistantPhase } from "./assistant.logic";
-import { setAldoMuted, useAldoAssistant } from "./assistantSession";
+import { connectAldo, disconnectAldo, setAldoMuted, useAldoAssistant } from "./assistantSession";
+import type { AldoMood } from "./presence.logic";
 import { isAldoCloud } from "./cloud";
-import { setAldoHomeView } from "./homeFeed";
 
 const STATUS: Record<AldoAssistantPhase, string> = {
   idle: `Talk or type · ${ALDO_SHORTCUT_LABEL}`,
@@ -24,6 +25,16 @@ const STATUS: Record<AldoAssistantPhase, string> = {
   thinking: "Thinking…",
   speaking: "Speaking",
   error: "Tap to talk again",
+};
+
+const MOOD: Record<AldoAssistantPhase, AldoMood> = {
+  idle: "idle",
+  connecting: "thinking",
+  listening: "listening",
+  hearing: "listening",
+  thinking: "thinking",
+  speaking: "speaking",
+  error: "idle",
 };
 
 export function AldoSidebarEntry() {
@@ -44,23 +55,33 @@ export function AldoSidebarEntry() {
           ? "Thinking…"
           : STATUS[phase];
   return (
-    <div
-      className={cn(
-        "mb-1.5 flex h-9 items-center gap-2 rounded-full border border-primary/35 bg-primary/10 ps-1 pe-1 text-sm transition-colors hover:bg-primary/15",
-        live && "border-primary/60",
-      )}
-    >
-      <AldoOrb size="xs" />
+    <div className="mb-1 flex h-9 items-center gap-1.5 rounded-lg ps-1 pe-1 text-sm transition-colors hover:bg-sidebar-row-hover">
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <button
+              type="button"
+              aria-label={live ? "End the conversation with Aldo" : "Talk to Aldo"}
+              className="flex size-7 shrink-0 items-center justify-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              onClick={() => (live ? disconnectAldo() : void connectAldo())}
+            />
+          }
+        >
+          <AldoAvatar size={20} mood={replying ? "thinking" : MOOD[phase]} />
+        </TooltipTrigger>
+        <TooltipPopup side="right">
+          {live ? "Hang up" : `Talk to Aldo (${ALDO_SHORTCUT_LABEL})`}
+        </TooltipPopup>
+      </Tooltip>
       <Link
         to="/"
         className="flex min-w-0 flex-1 items-center gap-2 pe-2 leading-tight"
         aria-label="Open Aldo"
-        onClick={() => setAldoHomeView("aldo")}
       >
         <span className="font-semibold text-sidebar-foreground">Aldo</span>
         <span
           className={cn(
-            "ms-auto min-w-0 truncate text-[11px] text-sidebar-muted-foreground",
+            "ms-auto min-w-0 truncate text-[12px] text-sidebar-muted-foreground",
             live && "text-sidebar-foreground/80",
           )}
         >

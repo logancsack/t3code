@@ -85,7 +85,11 @@ export function ApprovalsSection(props: {
 }
 
 /** What was done, and the rule it saved, with Undo for the rule (what was done stays done). */
-function toastRule(message: string, rule: { readonly id: string; readonly text: string }) {
+/** What a decision that became a rule says, with Undo. */
+export function toastAldoRule(
+  message: string,
+  rule: { readonly id: string; readonly text: string },
+): void {
   aldoApprovalRulesChanged();
   const id = toastManager.add({
     type: "success",
@@ -141,7 +145,7 @@ export function ApprovalCard(props: {
     setBusy(decision);
     try {
       const { message, rule } = await decideAldoApproval(a.id, decision);
-      if (rule) toastRule(message, rule);
+      if (rule) toastAldoRule(message, rule);
       else toastManager.add({ type: "success", title: message });
     } catch (cause) {
       // A draft that changed since it was shown comes back as it is now, to look at again.

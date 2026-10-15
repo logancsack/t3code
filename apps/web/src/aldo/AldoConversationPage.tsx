@@ -1,61 +1,96 @@
-// The home screen as a conversation with Aldo (AldoHome.tsx's default view):
-// what's waiting on the user and what's running are in T3's sidebar beside it
-// (the Agents tab on a phone), then the conversation, where
-// what Aldo did shows live and the day starts with Aldo's brief (AldoBrief.tsx,
-// the home screen reads it, briefFeed.ts), then one large composer with the orb in it (on a
-// phone, a big button to talk beside it). A thread opens in a peek beside the
-// conversation (over it on a phone), so someone who only talks to Aldo never
-// has to leave it; Aldo's show_thread, and the brief's things to decide, peek
-// here too. Setup, and what's wrong with it, come first, as on the board.
+// The home screen as a conversation with Aldo (AldoHome.tsx), made like a
+// messaging app's chat with a teammate. At the top, Aldo's face and what it's
+// at (AldoPresence.tsx), which opens what's working and coming up. Then the
+// conversation, with what happened to the user's agents where it happened
+// (feed.logic.ts, AldoFeed.tsx), and at its end what waits on the user, as
+// cards to answer in place (AldoUpNext.tsx), so nothing needs a view of its
+// own. Then the composer. Before anything's been said, the page is Aldo's
+// face, one question and the composer under it, which glides down to its
+// place with the first message (the same composer: what's typed and focus
+// stay). Scrolled up, what arrives waits behind "New from Aldo". A thread
+// tapped anywhere in it opens: the thread itself, where its agent is. Setup,
+// and what's wrong with it, come first.
 
-import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
-
-import { Kbd } from "../components/ui/kbd";
-import { Sheet, SheetPopup } from "../components/ui/sheet";
-import { SidebarInset } from "../components/ui/sidebar";
-import { useMediaQuery } from "../hooks/useMediaQuery";
+import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { useNavigate, useRouter } from "@tanstack/react-router";
 import {
-  ALDO_SHORTCUT_LABEL,
-  AldoAtAGlance,
-  AldoCaption,
-  AldoComposer,
-  AldoConversation,
-} from "./AldoAssistant";
-import { useIsMobile } from "../hooks/useMediaQuery";
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from "react";
+
+import { ArrowDownIcon } from "lucide-react";
+
+import { SidebarInset } from "../components/ui/sidebar";
+import { cn } from "~/lib/utils";
+import { AldoAtAGlance, AldoCaption, AldoComposer, AldoConversation } from "./AldoAssistant";
 import { HealthStrip } from "./AldoHomeBoard";
-import { AldoPeekContext } from "./AldoLiveCard";
-import { AldoPeek, AldoPeekerContext, peekedConversation, type AldoPeekTarget } from "./AldoPeek";
-import { loadAldoConversation, seedAldoComposer, setAldoThreadPeeker } from "./assistantSession";
+import { AldoOpenContext } from "./AldoLiveCard";
+import { AldoAvatar, AldoPresence } from "./AldoPresence";
+import { AldoUpNext } from "./AldoUpNext";
+import { settleAldoConversation, unsettleAldoConversation } from "./arrive";
+import { loadAldoConversation, seedAldoComposer, useAldoAssistant } from "./assistantSession";
 import type { AldoHome, AldoHomeTarget } from "./cloud";
+import { aldoWaitingCount } from "./decisions.logic";
+import { feedEvents, withReceipts } from "./feed.logic";
 import type { healthIssues } from "./home.logic";
-import { setAldoPeekedThread } from "./screen";
-import { ALDO_SUMMON_LABEL } from "./summon.logic";
+import { useAldoReceipts } from "./receipts";
+import { blinkAldo } from "./face";
+import { aldoGlide, aldoMorphSource, morphIntoThread } from "./morph";
+import { refreshAldoHome } from "./homeFeed";
+import { scrollMotion } from "./show";
+import { SECONDARY, SURFACE } from "./surface";
 
 function inField(target: EventTarget | null): boolean {
   const element = target as HTMLElement | null;
   if (!element) return false;
   return (
-    element.isContentEditable ||
-    ["INPUT", "TEXTAREA", "SELECT", "BUTTON"].includes(element.tagName) ||
-    element.closest("[role=dialog]") !== null
+    typing(element) || element.tagName === "BUTTON" || element.closest("[role=dialog]") !== null
   );
 }
 
+/** Words being typed in. */
+function typing(element: HTMLElement | null): boolean {
+  return (
+    element !== null &&
+    (element.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(element.tagName))
+  );
+}
+
+/** Within this of the end, the user is at the end. */
+const AT_END_PX = 48;
+
 /**
  * Keeps the conversation at its end while the user is there, as what's above
- * it loads (setup, what's wrong) and as the peek narrows it; scrolled up, it
- * stays put.
+ * it loads (setup, what's wrong) and as the window narrows it; scrolled up, it
+ * stays put, and says when something new arrived below (true until they're
+ * back at the end). Not before anything's been said: that page reads from
+ * the top.
  */
-function useStickToBottom(ref: RefObject<HTMLDivElement | null>): void {
+function useStickToBottom(ref: RefObject<HTMLDivElement | null>, enabled: boolean): boolean {
+  const [below, setBelow] = useState(false);
   useEffect(() => {
     const element = ref.current;
-    if (!element) return;
+    if (!element || !enabled) return;
     let atEnd = true;
+    let size = `${element.scrollHeight}:${element.clientHeight}`;
+    let height = element.scrollHeight;
     const onScroll = () => {
-      atEnd = element.scrollHeight - element.scrollTop - element.clientHeight < 48;
+      // A scroll the layout made as what's on the page grew (the cards at the end
+      // arriving, the composer growing) isn't the user leaving the end.
+      if (`${element.scrollHeight}:${element.clientHeight}` !== size) return;
+      atEnd = element.scrollHeight - element.scrollTop - element.clientHeight < AT_END_PX;
+      if (atEnd) setBelow(false);
     };
     const observer = new ResizeObserver(() => {
       if (atEnd) element.scrollTop = element.scrollHeight;
+      else if (element.scrollHeight > height + 1) setBelow(true);
+      size = `${element.scrollHeight}:${element.clientHeight}`;
+      height = element.scrollHeight;
     });
     observer.observe(element);
     if (element.firstElementChild) observer.observe(element.firstElementChild);
@@ -64,15 +99,21 @@ function useStickToBottom(ref: RefObject<HTMLDivElement | null>): void {
       observer.disconnect();
       element.removeEventListener("scroll", onScroll);
     };
-  }, [ref]);
+  }, [ref, enabled]);
+  return below && enabled;
 }
 
 export function AldoConversationPage(props: {
   readonly home: AldoHome | null;
   /** Whether this Aldo has the home read; null until it's known. */
   readonly supported: boolean | null;
+  /** Why the home read failed, if it did. */
+  readonly error: string | null;
   readonly now: number;
-  readonly viewSwitch: ReactNode;
+  /** Simple mode's places, on a phone: over Aldo's face. */
+  readonly tabs: ReactNode;
+  /** At the top's end, on a wider screen: what to start. */
+  readonly actions: ReactNode;
   readonly setup: ReactNode;
   /** Under the empty conversation's welcome: the first run's starters. */
   readonly welcome: ReactNode;
@@ -81,41 +122,79 @@ export function AldoConversationPage(props: {
   readonly onChip: (chip: string) => void;
 }) {
   const { home, now } = props;
-  const wide = useMediaQuery("(min-width: 1024px)");
-  const phone = useIsMobile();
-  const [peek, setPeek] = useState<{ target: AldoPeekTarget; key: string | null } | null>(null);
+  const navigate = useNavigate();
+  const router = useRouter();
   const scroller = useRef<HTMLDivElement>(null);
-  useStickToBottom(scroller);
 
   useEffect(() => {
     void loadAldoConversation();
   }, []);
-  const peekAny = useCallback((target: AldoPeekTarget) => setPeek({ target, key: null }), []);
+  // What's there once the conversation has loaded is just there; what comes after arrives.
+  useEffect(() => () => unsettleAldoConversation(), []);
+  useEffect(() => {
+    // The user back at the page: Aldo notices, with a blink.
+    const onVisible = () => {
+      if (document.visibilityState === "visible") blinkAldo();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, []);
 
-  const peekThread = useCallback(
-    (target: AldoHomeTarget) => setPeek({ target: { kind: "thread", target }, key: null }),
-    [],
+  // What happened, from where the conversation starts; what Aldo does here from now on it shows itself.
+  const [opened] = useState(() => Date.now());
+  const entries = useAldoAssistant((s) => s.entries);
+  const here = useMemo(
+    () =>
+      entries.flatMap((e) =>
+        e.kind === "action" && !e.failed ? [{ tool: e.tool, thread: e.open ?? null }] : [],
+      ),
+    [entries],
   );
-  // A thread Aldo shows opens here rather than taking the page away.
+  const loaded = useAldoAssistant((s) => s.historyLoaded);
+  const firstAt = useAldoAssistant((s) => {
+    const first = s.entries.find((e) => e.kind === "message");
+    return first?.kind === "message" ? first.at : null;
+  });
+  const said = useAldoAssistant((s) => s.entries.length > 0 || s.replying);
+  const receipts = useAldoReceipts((s) => s.receipts);
+  const feed = useMemo(
+    () =>
+      withReceipts(
+        home ? feedEvents(home, { now, from: firstAt, until: opened, here }) : [],
+        receipts,
+      ),
+    [home, now, firstAt, opened, here, receipts],
+  );
+  const waiting = useMemo(() => (home ? aldoWaitingCount(home, now) : 0), [home, now]);
+  // Nothing read yet, and the read failed: that's said, not taken for nothing to show.
+  const unread = home === null && props.error !== null;
+  // Nothing said, nothing happened and nothing waiting: the page is one question.
+  // An older Aldo without the home read shows its overview, which the empty page has no room for.
+  const fresh =
+    loaded && !said && feed.length === 0 && waiting === 0 && !unread && props.supported !== false;
   useEffect(() => {
-    setAldoThreadPeeker(peekThread);
-    return () => setAldoThreadPeeker(null);
-  }, [peekThread]);
-
-  // While a thread is peeked at, it's what Aldo hears is on screen.
-  const peeked = peekedConversation(home, peek?.target ?? null);
-  useEffect(() => {
-    setAldoPeekedThread(
-      peeked
-        ? {
-            environmentId: peeked.thread.environmentId,
-            threadId: peeked.thread.threadId,
-            title: peeked.title,
-          }
-        : null,
-    );
-  }, [peeked]);
-  useEffect(() => () => setAldoPeekedThread(null), []);
+    if (!loaded || !home) return;
+    // Past the first paint of what was there: from now on, what appears arrives.
+    const frame = requestAnimationFrame(() => settleAldoConversation());
+    return () => cancelAnimationFrame(frame);
+  }, [loaded, home]);
+  const below = useStickToBottom(scroller, !fresh);
+  const dock = useRef<HTMLDivElement>(null);
+  // A thread tapped in the conversation opens: the thread itself, growing out of what was tapped.
+  const openThread = useCallback(
+    (target: AldoHomeTarget, from?: HTMLElement | null) => {
+      const morph = morphIntoThread(router, from ? (aldoMorphSource(from) ?? from) : null);
+      void navigate({
+        to: "/$environmentId/$threadId",
+        params: {
+          environmentId: target.environmentId as EnvironmentId,
+          threadId: target.threadId as ThreadId,
+        },
+        viewTransition: morph,
+      });
+    },
+    [navigate, router],
+  );
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -123,87 +202,138 @@ export function AldoConversationPage(props: {
       if (event.key === "/") {
         event.preventDefault();
         seedAldoComposer("");
-      } else if (event.key === "Escape" && peek) {
-        event.preventDefault();
-        setPeek(null);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [peek]);
+  }, []);
 
-  const close = () => setPeek(null);
-  const peekView =
-    peek && home ? (
-      <AldoPeek
-        peek={peek.target}
-        home={home}
-        now={now}
-        onClose={close}
-        {...(wide ? {} : { onAsked: close })}
-        className={wide ? "w-[30rem] shrink-0 border-border/60 border-l" : "h-full"}
-      />
-    ) : null;
+  const conversation = (
+    <AldoConversation feed={feed} tail={home ? <AldoUpNext home={home} now={now} /> : null} />
+  );
+  const column = "mx-auto w-full max-w-[640px] px-4 sm:px-6";
+  // The empty page's few things to say (the first run's starters say them instead);
+  // once something's been said, the composer stands alone.
+  const chips = fresh && !props.welcome ? props.chips.slice(0, 3) : [];
 
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground">
-      <div className="flex h-full min-h-0 min-w-0">
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <header className="flex shrink-0 flex-col gap-2.5 px-4 pt-3 pb-2.5 sm:px-5">
-            {phone ? (
-              // The tabs, centered clear of the sidebar's button, which floats at the top left.
-              <div className="flex items-center justify-center">{props.viewSwitch}</div>
-            ) : (
-              <div className="flex items-center gap-2">
-                {props.viewSwitch}
-                {home && home.usage.agents.running > 0 ? (
-                  <span className="ms-auto text-muted-foreground text-xs">
-                    {home.usage.agents.running === 1
-                      ? "1 agent working"
-                      : `${home.usage.agents.running} agents working`}
-                  </span>
-                ) : null}
+      <AldoOpenContext.Provider value={openThread}>
+        <div className="flex h-full min-h-0 min-w-0">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+            {/* Centered, clear of the sidebar's button, which floats at the top left on a phone. */}
+            <header className="relative flex min-h-14 shrink-0 flex-col items-center justify-center gap-2 px-4 pt-2 pb-1.5 sm:px-6">
+              {props.tabs}
+              {fresh ? null : <AldoPresence home={home} now={now} unread={unread} />}
+              {props.actions ? (
+                <div className="absolute end-3 top-2.5 hidden sm:block">{props.actions}</div>
+              ) : null}
+            </header>
+            {/* The empty page centers its question and composer, a little above the middle; then it's the conversation over the composer. */}
+            {fresh ? <div aria-hidden className="min-h-4 flex-[1_1_0]" /> : null}
+            <div
+              ref={scroller}
+              className={cn(
+                fresh
+                  ? "min-h-0 shrink overflow-y-auto"
+                  : "relative min-h-0 flex-1 overflow-y-auto [mask-image:linear-gradient(to_bottom,transparent,black_12px,black_calc(100%-12px),transparent)]",
+              )}
+            >
+              {fresh ? (
+                <div className={cn(column, "flex flex-col gap-6")}>
+                  {props.setup}
+                  <HealthStrip issues={props.issues} />
+                  <div className="flex flex-col items-center text-center">
+                    <AldoAvatar size={48} aware />
+                    <h1 className="mt-5 font-semibold text-[24px] leading-[30px] tracking-[-0.02em] sm:text-[28px] sm:leading-[34px]">
+                      What should we get done?
+                    </h1>
+                    <p className="mt-2 max-w-md text-balance text-[14px] text-muted-foreground leading-5">
+                      Tell me what you need. I'll get it moving and keep you posted.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className={cn(column, "flex flex-col gap-4 pt-3 pb-6")}>
+                  {props.setup}
+                  <HealthStrip issues={props.issues} />
+                  {unread ? <HomeUnread error={props.error!} /> : null}
+                  {props.supported === false ? <AldoAtAGlance /> : null}
+                  {conversation}
+                </div>
+              )}
+            </div>
+            {/* The same composer, empty page or not, so what's typed and focus stay as it glides into place. */}
+            <div className="relative shrink-0" data-aldo-assistant-footer="">
+              {below ? (
+                <button
+                  type="button"
+                  data-aldo-arrive=""
+                  className="absolute -top-11 left-1/2 z-10 flex h-8 -translate-x-1/2 items-center gap-1.5 rounded-full border border-foreground/[0.10] bg-popover ps-2.5 pe-3 font-medium text-[13px] shadow-composer outline-none focus-visible:ring-2 focus-visible:ring-ring dark:shadow-composer-dark"
+                  onClick={() =>
+                    scroller.current?.scrollTo({
+                      top: scroller.current.scrollHeight,
+                      behavior: scrollMotion(),
+                    })
+                  }
+                >
+                  <ArrowDownIcon aria-hidden className="size-3.5" strokeWidth={2} />
+                  New from Aldo
+                </button>
+              ) : null}
+              <div
+                ref={dock}
+                className={cn(
+                  column,
+                  "flex flex-col items-center gap-2",
+                  fresh ? "pt-6" : "pt-1 pb-[max(0.75rem,env(safe-area-inset-bottom))]",
+                )}
+              >
+                <AldoCaption />
+                <AldoComposer
+                  chips={chips}
+                  onChip={props.onChip}
+                  {...(fresh
+                    ? { onSend: (send: () => void) => aldoGlide(dock.current, send) }
+                    : {})}
+                />
               </div>
-            )}
-          </header>
-          <div
-            ref={scroller}
-            className="min-h-0 flex-1 overflow-y-auto border-border/50 border-t max-md:border-t-0"
-          >
-            <div className="mx-auto flex w-full max-w-2xl flex-col gap-4 px-4 pt-5 pb-4 sm:px-5">
-              {props.setup}
-              <HealthStrip issues={props.issues} />
-              {props.supported === false ? <AldoAtAGlance /> : null}
-              <AldoPeekerContext.Provider value={peekAny}>
-                <AldoPeekContext.Provider value={peekThread}>
-                  <AldoConversation empty={props.welcome} />
-                </AldoPeekContext.Provider>
-              </AldoPeekerContext.Provider>
             </div>
-          </div>
-          <div className="shrink-0 bg-background/95 backdrop-blur" data-aldo-assistant-footer="">
-            <div className="mx-auto flex w-full max-w-2xl flex-col items-center gap-2 px-4 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-5">
-              <AldoCaption />
-              <AldoComposer chips={props.chips} onChip={props.onChip} variant="page" />
-              <p className="hidden items-center gap-1.5 text-muted-foreground text-xs lg:flex">
-                <Kbd>/</Kbd> type
-                <span aria-hidden>·</span>
-                <Kbd>{ALDO_SHORTCUT_LABEL}</Kbd> talk
-                <span aria-hidden>·</span>
-                <Kbd>{ALDO_SUMMON_LABEL}</Kbd> Aldo from any screen
-              </p>
-            </div>
+            {fresh ? (
+              <div className="flex min-h-6 flex-[1.4_1_0] flex-col overflow-y-auto pb-[max(1.5rem,env(safe-area-inset-bottom))]">
+                {props.welcome ? <div className={cn(column, "pt-4")}>{props.welcome}</div> : null}
+              </div>
+            ) : null}
           </div>
         </div>
-        {wide ? peekView : null}
-      </div>
-      {!wide && peekView ? (
-        <Sheet open onOpenChange={(open) => (open ? undefined : close())}>
-          <SheetPopup side="right" showCloseButton={false} className="max-w-none p-0 sm:max-w-md">
-            {peekView}
-          </SheetPopup>
-        </Sheet>
-      ) : null}
+      </AldoOpenContext.Provider>
     </SidebarInset>
+  );
+}
+
+/** The home read failed before anything was read: what's waiting and working isn't known, so it isn't shown as nothing. */
+function HomeUnread(props: { readonly error: string }) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <div
+      role="status"
+      className={cn(SURFACE, "flex items-center gap-3 px-4 py-3 text-[14px] leading-5")}
+    >
+      <span className="min-w-0 flex-1">
+        <span className="font-medium">Couldn't check on your agents.</span>{" "}
+        <span className="text-muted-foreground">{props.error}</span>
+      </span>
+      <button
+        type="button"
+        className={cn(SECONDARY, "h-9 shrink-0 px-4 text-sm")}
+        disabled={busy}
+        onClick={() => {
+          setBusy(true);
+          void refreshAldoHome().finally(() => setBusy(false));
+        }}
+      >
+        {busy ? "Trying…" : "Try again"}
+      </button>
+    </div>
   );
 }
