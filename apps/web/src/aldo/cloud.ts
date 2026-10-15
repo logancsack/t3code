@@ -184,6 +184,7 @@ let aldoFeatures: {
   readonly heldFiles: boolean;
   readonly moves: boolean;
   readonly routing: boolean;
+  readonly projectRepos: boolean;
 } = {
   general: false,
   projects: false,
@@ -192,6 +193,7 @@ let aldoFeatures: {
   heldFiles: false,
   moves: false,
   routing: false,
+  projectRepos: false,
 };
 
 /** Whether threads can start without a repository (General), as the directory said. */
@@ -227,6 +229,15 @@ export function aldoMovesThreads(): boolean {
 /** Whether Aldo says which of the user's projects a draft's words belong to (`POST /api/routing`), as the directory said. */
 export function aldoRoutesDrafts(): boolean {
   return aldoFeatures.routing;
+}
+
+/**
+ * Whether an Aldo project can have repositories of its own, its code
+ * (listAldoProjects' `repos`, setAldoProjectRepos, a new repository's
+ * `project`), as the directory said.
+ */
+export function aldoLinksProjectCode(): boolean {
+  return aldoFeatures.projectRepos;
 }
 const directoryListeners = new Set<() => void>();
 let refreshRequested = true;
@@ -415,6 +426,7 @@ async function fetchEnvironments(): Promise<ReadonlyArray<AldoEnvironment>> {
       heldFiles?: boolean;
       moves?: boolean;
       routing?: boolean;
+      projectRepos?: boolean;
     };
   }>("/api/environments");
   aldoFeatures = {
@@ -425,6 +437,7 @@ async function fetchEnvironments(): Promise<ReadonlyArray<AldoEnvironment>> {
     heldFiles: features?.heldFiles === true,
     moves: features?.moves === true,
     routing: features?.routing === true,
+    projectRepos: features?.projectRepos === true,
   };
   // A listing that started before a deletion finished can still include its machine.
   const listed = environments.filter((environment) => !hiddenByDeletion(environment.environmentId));
@@ -675,6 +688,8 @@ export interface AldoNewProject {
   readonly name: string;
   readonly description?: string;
   readonly isPrivate: boolean;
+  /** On a git host: the Aldo project (`aldo:<slug>`) it's the code of (aldoLinksProjectCode). */
+  readonly project?: string;
 }
 
 /** What a new thread's machine will report as its T3 project. */
@@ -1707,6 +1722,37 @@ export async function routeAldoDraft(text: string): Promise<AldoRoutedProject | 
     method: "POST",
     body: JSON.stringify({ text }),
   });
+  return project;
+}
+
+/** One of the user's Aldo projects (`aldo:<slug>`), with the repositories of its code. */
+export interface AldoProjectSummary {
+  readonly ref: string;
+  readonly slug: string;
+  readonly title: string;
+  readonly description: string;
+  /** Its code: repositories on git hosts (left out before aldoLinksProjectCode). */
+  readonly repos?: ReadonlyArray<string>;
+}
+
+/** The user's Aldo projects, most recently worked on first. */
+export async function listAldoProjects(): Promise<ReadonlyArray<AldoProjectSummary>> {
+  const { projects } = await api<{ projects: AldoProjectSummary[] }>("/api/projects");
+  return projects;
+}
+
+/**
+ * Makes `repos` a project's code, the whole list: one that was another
+ * project's moves here (a repository is one project's at most).
+ */
+export async function setAldoProjectRepos(
+  slug: string,
+  repos: ReadonlyArray<string>,
+): Promise<AldoProjectSummary> {
+  const { project } = await api<{ project: AldoProjectSummary }>(
+    `/api/projects/${encodeURIComponent(slug)}`,
+    { method: "PATCH", body: JSON.stringify({ repos }) },
+  );
   return project;
 }
 
