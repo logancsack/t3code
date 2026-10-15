@@ -9320,7 +9320,8 @@ export default function ChatView(props: ChatViewProps) {
       }
 
       const sendCtx = composerRef.current?.getSendContext();
-      if (!sendCtx?.providerAvailable || !sendCtx.interactionModeEnabled) {
+      // Ordinary follow-ups work even when the Plan mode toggle is unavailable or off.
+      if (!sendCtx?.providerAvailable || (linkProposedPlan && !sendCtx.interactionModeEnabled)) {
         return false;
       }
       const {
