@@ -1,39 +1,25 @@
-// The home screen under Aldo: the user's agents' work, with Aldo as the way to
-// act on it, in two views (kept per device, homeFeed.ts). Aldo's view, the
-// default, is a conversation (AldoConversationPage.tsx): what's waiting and
-// what's running pinned on top, what Aldo did shown live, a thread peeked at
-// beside it. The board answers four questions in order: what needs me (what
-// waits on a tap first), what's happening, what got done, what's coming; with
-// Aldo beside it (right, or under it on a phone) as a pane. Both come from
-// Aldo's one read of the account (homeFeed.ts), which never wakes a machine.
-// Until agents can run (on Aldo's models or a subscription of the user's) it
-// asks for setup first; after, one line offers what's missing (AldoSetup.tsx),
-// and the first few threads start from tappable starters (AldoStarters.tsx).
-// An Aldo without the home read shows what Aldo's overview says instead; one
-// without the assistant shows the board alone. On a phone the two are Aldo's
-// conversation and the Threads tab (AldoAgentsTab.tsx): every thread by what
-// it needs, made for a thumb. In simple mode (simpleMode.ts) it shows the
-// rail's place instead: Aldo's conversation, Needs you or the Library
+// The home screen under Aldo: a conversation with Aldo (AldoConversationPage.tsx),
+// where the user's agents' work shows as it happens, the way a teammate
+// messages: what finished and shipped where it happened, what Aldo did as
+// lines across the middle, what waits on the user as cards at the
+// conversation's end (AldoUpNext.tsx), what's running and coming in Aldo's
+// status at the top (AldoPresence.tsx). There's no second view to switch to:
+// everything the board showed is in the conversation, and a thread opens in
+// a peek beside it. It comes from Aldo's one read of the account
+// (homeFeed.ts), which never wakes a machine. Until agents can run (on Aldo's
+// models or a subscription of the user's) it asks for setup first; after, one
+// line offers what's missing (AldoSetup.tsx), and the first few threads start
+// from tappable starters (AldoStarters.tsx). An Aldo without the home read
+// shows what Aldo's overview says instead; one without the assistant shows the
+// board, which answers four questions in order: what needs me, what's
+// happening, what got done, what's coming. In simple mode (simpleMode.ts) it
+// shows the rail's place: Aldo's conversation, Needs you or the Library
 // (AldoSimplePlaces.tsx).
 
 import { useNavigate, useRouter } from "@tanstack/react-router";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import {
-  ChevronDownIcon,
-  FolderGit2Icon,
-  LayoutGridIcon,
-  PlusIcon,
-  SparklesIcon,
-} from "lucide-react";
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  useSyncExternalStore,
-  type ReactNode,
-} from "react";
+import { ChevronDownIcon, FolderGit2Icon, PlusIcon, SparklesIcon } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import { Button } from "../components/ui/button";
 import { Group, GroupSeparator } from "../components/ui/group";
@@ -43,8 +29,7 @@ import { Skeleton } from "../components/ui/skeleton";
 import { SidebarInset } from "../components/ui/sidebar";
 import { cn } from "~/lib/utils";
 import { useAldoAccounts } from "./AldoAccountsPanel";
-import { AldoAgentsTab } from "./AldoAgentsTab";
-import { AldoAtAGlance, AldoPane, useAldoAssistantAvailable } from "./AldoAssistant";
+import { AldoAtAGlance, useAldoAssistantAvailable } from "./AldoAssistant";
 import { AldoConversationPage } from "./AldoConversationPage";
 import {
   CapacitySection,
@@ -71,13 +56,7 @@ import {
   subscribeAldoEnvironments,
   type AldoHomeConversation,
 } from "./cloud";
-import {
-  refreshAldoHome,
-  setAldoHomeView,
-  useAldoHomeRead,
-  useAldoHomeView,
-  type AldoHomeView,
-} from "./homeFeed";
+import { refreshAldoHome, useAldoHomeRead } from "./homeFeed";
 import { HOST_KINDS, openAldoRepositoryPicker } from "./AldoRepositoryPicker";
 import { useStartAldoThread } from "./newThread";
 import { AldoPlacePicker } from "./AldoPlacePicker";
@@ -99,7 +78,6 @@ import {
 import { loadAldoBrief } from "./briefFeed";
 import { morphIntoThread } from "./morph";
 import { useAldoSimple } from "./simpleMode";
-import { aldoWaitingCount } from "./decisions.logic";
 import { useIsMobile } from "../hooks/useMediaQuery";
 
 const LAST_SEEN_KEY = "aldo:home:seen";
@@ -161,18 +139,17 @@ export function AldoHome() {
   const assistant = useAldoAssistantAvailable();
   const { home, supported, error } = useAldoHomeRead();
   const refresh = refreshAldoHome;
-  const view = useAldoHomeView((s) => s.view);
   const mobile = useIsMobile();
-  // Aldo's view needs Aldo; without it there's only the board.
-  const aldoView = assistant === true && view === "aldo";
-  // Simple mode's place, which shows in place of either view. It needs Aldo:
+  // Aldo's conversation needs Aldo; without it there's the board.
+  const aldoView = assistant === true;
+  // Simple mode's place, which shows in place of the conversation. It needs Aldo:
   // without it, the sidebar shows as usual (useAldoSimpleRail), and so does the board.
   const simplePlace = useAldoSimple((s) => (s.on && assistant === true ? s.place : null));
   const lastSeen = useLastSeen();
   const now = useNow();
   const navigate = useNavigate();
 
-  // The day's first look at the home screen makes Aldo's brief, whichever view it opens on;
+  // The day's first look at the home screen makes Aldo's brief;
   // a page left open overnight has the new day's when it's looked at again.
   useEffect(() => {
     if (assistant !== true) return;
@@ -253,15 +230,10 @@ export function AldoHome() {
   );
 
   useEffect(() => {
-    // Aldo's view has keys of its own (AldoConversationPage), as do simple mode's places.
+    // The board's keys: Aldo's conversation has its own (AldoConversationPage), as do simple mode's places.
     if (aldoView || simplePlace !== null) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.metaKey || event.ctrlKey || event.altKey || inField(event.target)) return;
-      if (event.key === "/") {
-        event.preventDefault();
-        seedAldoComposer("");
-        return;
-      }
       if (
         (event.key === "Enter" || event.key === "o") &&
         selected !== null &&
@@ -351,7 +323,8 @@ export function AldoHome() {
         home={home}
         supported={supported}
         now={now}
-        viewSwitch={tabs}
+        tabs={tabs}
+        actions={null}
         setup={conversationSetup}
         welcome={welcome}
         issues={issues}
@@ -361,39 +334,14 @@ export function AldoHome() {
     );
   }
 
-  if (mobile && assistant === true) {
-    const tabs = (
-      <PhoneTabs
-        view={aldoView ? "aldo" : "agents"}
-        waiting={home ? aldoWaitingCount(home, now) : 0}
-      />
-    );
-    if (!aldoView) {
-      return <AldoAgentsTab header={tabs} home={home} now={now} setup={setup} issues={issues} />;
-    }
-    return (
-      <AldoConversationPage
-        home={home}
-        supported={supported}
-        now={now}
-        viewSwitch={tabs}
-        setup={conversationSetup}
-        welcome={welcome}
-        issues={issues}
-        chips={chips}
-        onChip={onChip}
-      />
-    );
-  }
-
-  const viewSwitch = assistant ? <ViewSwitch view={aldoView ? "aldo" : "board"} /> : null;
   if (aldoView) {
     return (
       <AldoConversationPage
         home={home}
         supported={supported}
         now={now}
-        viewSwitch={viewSwitch}
+        tabs={null}
+        actions={newMenu}
         setup={conversationSetup}
         welcome={welcome}
         issues={issues}
@@ -409,7 +357,7 @@ export function AldoHome() {
     now,
     isNew: isNewSince(c.at, lastSeen),
     selected: c.ref === selectedRef,
-    assistant: assistant === true,
+    assistant: false,
     onSelect: () => setSelectedRef(c.ref),
     onActed: () => void refresh(),
   });
@@ -420,11 +368,7 @@ export function AldoHome() {
         <div ref={boardRef} className="min-h-0 min-w-0 flex-1 overflow-y-auto">
           <div className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-4 pt-14 pb-8 sm:px-5 sm:pt-6">
             <header className="flex flex-wrap items-center gap-2">
-              {viewSwitch}
-              <h1 className={cn("mr-auto font-semibold text-lg", viewSwitch && "sr-only")}>
-                Your threads
-              </h1>
-              {viewSwitch ? <span className="mr-auto" /> : null}
+              <h1 className="mr-auto font-semibold text-lg">Your threads</h1>
               {newMenu}
             </header>
             {setup}
@@ -494,9 +438,9 @@ export function AldoHome() {
                         : "Nothing yet"}
                     </p>
                     <p className="mt-1 text-muted-foreground text-xs">
-                      {assistant
-                        ? "What you start shows here: what needs you first, then what's working and what's done. Tell Aldo what to get done, or start a thread with New."
-                        : "What you start shows here: what needs you first, then what's working and what's done. Start a thread with New: each gets an agent with its own computer."}
+                      What you start shows here: what needs you first, then what's working and
+                      what's done. Start a thread with New: each gets an agent with its own
+                      computer.
                     </p>
                   </div>
                 ) : null}
@@ -525,17 +469,6 @@ export function AldoHome() {
                     title="Done"
                     count={board.done.length}
                     {...(lastSeen ? { hint: "new since you were last here is marked" } : {})}
-                    action={
-                      assistant ? (
-                        <button
-                          type="button"
-                          className="text-muted-foreground text-xs hover:text-foreground"
-                          onClick={() => onChip("Catch me up")}
-                        >
-                          Catch me up
-                        </button>
-                      ) : null
-                    }
                   >
                     <ul className="rounded-xl border border-border/60 bg-card/30 p-1.5">
                       {board.done.map((c) => (
@@ -551,111 +484,14 @@ export function AldoHome() {
                   <p className="hidden items-center gap-1.5 px-0.5 text-muted-foreground text-xs lg:flex">
                     <Kbd>j</Kbd>
                     <Kbd>k</Kbd> move <Kbd>↵</Kbd> open
-                    {assistant ? (
-                      <>
-                        <Kbd>/</Kbd> ask Aldo
-                      </>
-                    ) : null}
                   </p>
                 ) : null}
               </>
             ) : null}
           </div>
         </div>
-        {assistant ? (
-          <AldoPane
-            chips={chips}
-            onChip={onChip}
-            className="max-h-[60dvh] shrink-0 border-border/60 border-t lg:max-h-none lg:w-[26rem] lg:border-t-0 lg:border-l"
-          />
-        ) : null}
       </div>
     </SidebarInset>
-  );
-}
-
-/** Aldo's view or the board, remembered on this device. */
-function ViewSwitch(props: { readonly view: AldoHomeView }) {
-  const option = (view: AldoHomeView, label: string, icon: ReactNode) => (
-    <button
-      type="button"
-      aria-pressed={props.view === view}
-      className={cn(
-        "flex h-7 items-center gap-1.5 rounded-md px-2.5 font-medium text-sm transition-colors",
-        props.view === view
-          ? "bg-background text-foreground shadow-xs/5"
-          : "text-muted-foreground hover:text-foreground",
-      )}
-      onClick={() => setAldoHomeView(view)}
-    >
-      {icon}
-      {label}
-    </button>
-  );
-  return (
-    <div
-      className="flex items-center gap-0.5 rounded-lg bg-muted p-0.5"
-      role="group"
-      aria-label="View"
-    >
-      {option(
-        "aldo",
-        "Aldo",
-        <span
-          aria-hidden
-          className="size-3.5 rounded-full bg-gradient-to-br from-primary/90 to-primary/50"
-        />,
-      )}
-      {option("board", "Board", <LayoutGridIcon className="size-3.5" />)}
-    </div>
-  );
-}
-
-/** On a phone: Aldo's conversation, or the Threads tab with how many things wait on the user. */
-function PhoneTabs(props: { readonly view: "aldo" | "agents"; readonly waiting: number }) {
-  const option = (view: "aldo" | "agents", children: ReactNode) => (
-    <button
-      type="button"
-      aria-pressed={props.view === view}
-      className={cn(
-        "flex h-8 items-center gap-1.5 rounded-full px-3.5 font-medium text-sm transition-colors",
-        props.view === view
-          ? "bg-background text-foreground shadow-xs/5"
-          : "text-muted-foreground hover:text-foreground",
-      )}
-      onClick={() => setAldoHomeView(view)}
-    >
-      {children}
-    </button>
-  );
-  return (
-    <div
-      className="flex items-center gap-0.5 rounded-full bg-muted p-0.5"
-      role="group"
-      aria-label="View"
-    >
-      {option(
-        "aldo",
-        <>
-          <span
-            aria-hidden
-            className="size-3.5 rounded-full bg-gradient-to-br from-primary/90 to-primary/50"
-          />
-          Aldo
-        </>,
-      )}
-      {option(
-        "agents",
-        <>
-          Threads
-          {props.waiting > 0 ? (
-            <span className="rounded-full bg-warning/15 px-1.5 font-semibold text-[11px] text-warning-foreground">
-              {props.waiting}
-            </span>
-          ) : null}
-        </>,
-      )}
-    </div>
   );
 }
 

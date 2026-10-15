@@ -46,13 +46,12 @@ export function currentSimplePlace(
   return pathname === "/" ? place : null;
 }
 
-/** Whether the home screen shows Aldo's conversation: in simple mode by its place, otherwise by the view. */
+/** Whether the home screen shows Aldo's conversation: always, but for simple mode's other places. */
 export function homeShowsConversation(input: {
   readonly simple: boolean;
   readonly place: AldoSimplePlace;
-  readonly view: string;
 }): boolean {
-  return input.simple ? input.place === "aldo" : input.view === "aldo";
+  return !input.simple || input.place === "aldo";
 }
 
 export interface AldoSimpleNeedsYou {

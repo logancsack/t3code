@@ -1,11 +1,11 @@
 // What Aldo did to a thread, shown live in its conversation (and in the peek):
 // the thread as Aldo's home read has it now (working, waiting on the user,
-// done), what it last said, what it asks (answered in place), its pull
-// requests (merged in place once green), and the ways to peek at it or open
-// it. An Aldo without the home read, or a thread it doesn't list yet, shows
+// done) as an agent's status card: what it last said, its pull requests
+// (merged in place once green), and the ways to peek at it or open it. What
+// it asks is answered at the conversation's end (AldoUpNext.tsx). An Aldo without the home read, or a thread it doesn't list yet, shows
 // the one line Aldo's action always had.
 
-import { ArrowUpRightIcon, EyeIcon } from "lucide-react";
+import { ArrowUpRightIcon, EyeIcon, FolderGit2Icon, GlobeIcon, SparklesIcon } from "lucide-react";
 import { createContext, useContext, useState, type ReactNode } from "react";
 
 import { PullRequestGlyph } from "../components/pullRequest/pullRequestIcons";
@@ -13,7 +13,7 @@ import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { cn } from "~/lib/utils";
 import { mergeFollowedPullRequest, TONE_VARIANT } from "./AldoHomeBoard";
-import { PendingForm, ThreadLink } from "./AldoHomeInbox";
+import { ThreadLink } from "./AldoHomeInbox";
 import type { AldoHome, AldoHomeConversation, AldoHomePullRequest, AldoHomeTarget } from "./cloud";
 import { refreshAldoHome, useAldoHomeFeed } from "./homeFeed";
 import {
@@ -140,49 +140,90 @@ export function AldoThreadCard(props: {
   const now = Date.now();
   const kind = needsYouKind(c);
   const pullRequests = pullRequestsOf(home, c.thread, now);
+  const [tone, status] =
+    kind === "failed"
+      ? ["bg-destructive/10 text-destructive-foreground", "Stopped"]
+      : kind
+        ? ["bg-warning/12 text-warning-foreground", "Needs you"]
+        : WORKING_STATES.has(c.state)
+          ? ["bg-primary/10 text-primary", "Working"]
+          : c.state === "done"
+            ? ["bg-success/12 text-success-foreground", "Done"]
+            : ["bg-muted text-muted-foreground", "Idle"];
+  // What it asks is answered at the conversation's end (AldoUpNext.tsx), not here too.
   return (
     <div
-      className={cn(
-        "flex w-full flex-col gap-1.5 rounded-xl border bg-card/40 p-3",
-        kind ? "border-warning/50" : "border-border/60",
-      )}
+      data-aldo-arrive=""
+      className="flex w-full flex-col gap-2.5 self-start rounded-[22px] bg-card p-3.5 sm:max-w-[88%] shadow-black/5 shadow-sm ring-1 ring-border/50 dark:bg-white/[0.06] dark:shadow-none dark:ring-0"
       data-aldo-live-card=""
     >
-      <div className="flex items-center gap-2 text-muted-foreground text-xs">
-        <StateDot conversation={c} now={now} />
-        <span className="truncate">
-          {props.label} · {reposLabel(c.repos)}
+      <div className="flex items-start gap-3">
+        <span
+          aria-hidden
+          className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-black/[0.05] dark:bg-white/[0.07]"
+        >
+          {c.browsing ? (
+            <GlobeIcon className="size-4 text-foreground/70" />
+          ) : c.repos.length > 0 ? (
+            <FolderGit2Icon className="size-4 text-foreground/70" />
+          ) : (
+            <SparklesIcon className="size-4 text-foreground/70" />
+          )}
         </span>
-        <span className="ml-auto shrink-0">{stateSince(c, now)}</span>
-      </div>
-      <ThreadLink
-        target={c.thread}
-        className="min-w-0 truncate font-medium text-sm hover:underline"
-      >
-        {c.title}
-      </ThreadLink>
-      {c.summary && kind !== "approval" && kind !== "question" ? (
-        <p className="line-clamp-2 text-muted-foreground text-xs">{c.summary}</p>
-      ) : null}
-      {kind ? (
-        <div className="mt-1">
-          <PendingForm conversation={c} onActed={() => void refreshAldoHome()} />
+        <div className="min-w-0 flex-1">
+          <ThreadLink
+            target={c.thread}
+            className="block truncate font-medium text-[15px] leading-snug hover:underline"
+          >
+            {c.title}
+          </ThreadLink>
+          <p className="mt-0.5 flex min-w-0 items-center gap-1.5 text-muted-foreground text-xs">
+            <span
+              className={cn(
+                "flex shrink-0 items-center gap-1 rounded-full px-2 py-px font-medium text-[11px]",
+                tone,
+              )}
+            >
+              <span
+                aria-hidden
+                className={cn(
+                  "size-1.5 rounded-full bg-current",
+                  status === "Working" && "animate-pulse",
+                )}
+              />
+              {status}
+              {status === "Working" ? ` · ${elapsed(c.stateAt ?? c.at, now)}` : null}
+            </span>
+            <span className="truncate">
+              {props.label} · {c.browsing ? c.browsing.site : reposLabel(c.repos)}
+            </span>
+          </p>
         </div>
+      </div>
+      {c.summary && kind !== "approval" ? (
+        <p className="line-clamp-2 text-muted-foreground text-sm">{c.summary}</p>
       ) : null}
       {pullRequests.map((pr) => (
         <PullRequestLine key={`${pr.repo}#${pr.number}`} pullRequest={pr} />
       ))}
-      <div className="mt-1 flex flex-wrap items-center gap-1.5">
+      <div className="flex gap-2">
         {peek ? (
-          <Button size="compact" variant="outline" onClick={() => peek(c.thread)}>
-            <EyeIcon />
+          <button
+            type="button"
+            className="flex h-9 flex-1 items-center justify-center gap-1.5 rounded-full bg-black/[0.05] font-medium text-sm hover:bg-black/[0.08] dark:bg-white/[0.07] dark:hover:bg-white/[0.11]"
+            onClick={() => peek(c.thread)}
+          >
+            <EyeIcon className="size-4" />
             Peek
-          </Button>
+          </button>
         ) : null}
-        <Button size="compact" variant="ghost" render={<ThreadLink target={c.thread} />}>
-          Open thread
-          <ArrowUpRightIcon />
-        </Button>
+        <ThreadLink
+          target={c.thread}
+          className="flex h-9 flex-1 items-center justify-center gap-1.5 rounded-full bg-black/[0.05] font-medium text-sm hover:bg-black/[0.08] dark:bg-white/[0.07] dark:hover:bg-white/[0.11]"
+        >
+          Open
+          <ArrowUpRightIcon className="size-4" />
+        </ThreadLink>
       </div>
     </div>
   );

@@ -14,7 +14,6 @@ import { AldoOrb, ALDO_SHORTCUT_LABEL, useAldoAssistantAvailable } from "./AldoA
 import type { AldoAssistantPhase } from "./assistant.logic";
 import { setAldoMuted, useAldoAssistant } from "./assistantSession";
 import { isAldoCloud } from "./cloud";
-import { setAldoHomeView } from "./homeFeed";
 
 const STATUS: Record<AldoAssistantPhase, string> = {
   idle: `Talk or type · ${ALDO_SHORTCUT_LABEL}`,
@@ -55,7 +54,6 @@ export function AldoSidebarEntry() {
         to="/"
         className="flex min-w-0 flex-1 items-center gap-2 pe-2 leading-tight"
         aria-label="Open Aldo"
-        onClick={() => setAldoHomeView("aldo")}
       >
         <span className="font-semibold text-sidebar-foreground">Aldo</span>
         <span

@@ -126,13 +126,20 @@ function HandoffCard({ handoff }: { readonly handoff: AldoHandoff }) {
 
 /**
  * What to do and the buttons to do it: the card's, and the home screen's
- * under a conversation that waits on one (AldoHomeInbox.tsx).
+ * under a conversation that waits on one (AldoHomeInbox.tsx). `pills` makes
+ * them the big round buttons of Aldo's conversation (AldoUpNext.tsx).
  */
 export function AldoHandoffActions(props: {
   readonly handoff: AldoHandoff;
   readonly onActed?: () => void;
+  readonly pills?: boolean;
 }) {
   const { handoff } = props;
+  const pill = props.pills
+    ? "h-11 flex-1 rounded-full text-[15px] sm:h-11 sm:text-[15px]"
+    : undefined;
+  const size = props.pills ? "lg" : "sm";
+  const quiet = props.pills ? "secondary" : "ghost";
   const [busy, setBusy] = useState<"done" | "skip" | "code" | null>(null);
   const [code, setCode] = useState("");
   const elsewhere = aldoHandoffElsewhere(handoff);
@@ -173,34 +180,62 @@ export function AldoHandoffActions(props: {
           </Button>
         </form>
       ) : null}
-      <div className="mt-3 flex flex-wrap items-center gap-2">
+      <div
+        className={
+          props.pills
+            ? "mt-1 flex flex-col gap-2 sm:flex-row"
+            : "mt-3 flex flex-wrap items-center gap-2"
+        }
+      >
         {wantsCode ? (
-          <Button type="button" size="sm" variant="outline" disabled={busy !== null} onClick={open}>
+          <Button
+            type="button"
+            size={size}
+            variant="outline"
+            className={pill}
+            disabled={busy !== null}
+            onClick={open}
+          >
             Open its browser
           </Button>
         ) : elsewhere ? (
           <>
             <Button
               type="button"
-              size="sm"
+              size={size}
+              className={pill}
               disabled={busy !== null}
               onClick={() => void answer({ decision: "done" })}
             >
               {spinner("done")} I'm done
             </Button>
-            <Button type="button" size="sm" variant="ghost" disabled={busy !== null} onClick={open}>
+            <Button
+              type="button"
+              size={size}
+              variant={quiet}
+              className={pill}
+              disabled={busy !== null}
+              onClick={open}
+            >
               Open its browser
             </Button>
           </>
         ) : (
-          <Button type="button" size="sm" disabled={busy !== null} onClick={open}>
+          <Button
+            type="button"
+            size={size}
+            className={pill}
+            disabled={busy !== null}
+            onClick={open}
+          >
             <HandIcon className="size-3.5" /> Do it now
           </Button>
         )}
         <Button
           type="button"
-          size="sm"
-          variant="ghost"
+          size={size}
+          variant={quiet}
+          className={pill}
           disabled={busy !== null}
           onClick={() => void answer({ decision: "skip" })}
         >

@@ -288,15 +288,21 @@ function fromRecord(messages: ReadonlyArray<AldoAssistantMessage>): AldoConversa
 }
 
 /** The conversation so far, from Aldo (once per page). */
-export async function loadAldoConversation(): Promise<void> {
-  if (get().historyLoaded) return;
-  const messages = await aldoAssistant.history().catch(() => []);
-  historyUntil = messages.at(-1)?.at ?? historyUntil;
-  set({
-    historyLoaded: true,
-    // Anything said since the page opened stays after what came before.
-    entries: [...fromRecord(messages), ...get().entries],
-  });
+let loadingHistory: Promise<void> | null = null;
+
+export function loadAldoConversation(): Promise<void> {
+  if (get().historyLoaded) return Promise.resolve();
+  // One load at a time, or two on the page at once would each add what was said.
+  loadingHistory ??= (async () => {
+    const messages = await aldoAssistant.history().catch(() => []);
+    historyUntil = messages.at(-1)?.at ?? historyUntil;
+    set({
+      historyLoaded: true,
+      // Anything said since the page opened stays after what came before.
+      entries: [...fromRecord(messages), ...get().entries],
+    });
+  })();
+  return loadingHistory;
 }
 
 /**

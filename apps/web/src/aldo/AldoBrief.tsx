@@ -1,16 +1,14 @@
 // Aldo's brief for the day, in the conversation where Aldo said it
 // (AldoConversation shows a message from the day's brief this way, briefFeed.ts
-// reads it): what Aldo said, Listen to hear it, "Top of mind" (the few things
-// to decide first, each as it stands now: done ones ticked, the rest decided in
-// a tap or opened in a peek, with Aldo's pick for a question when it has a
-// reason), going through them with Aldo on a call (walkthrough.ts), and the
-// rest of today's calendar. An earlier day's brief is just what was said.
+// reads it): what Aldo said, Listen to hear it, going through what to decide
+// with Aldo on a call (walkthrough.ts), and the rest of today's calendar. What
+// to decide is at the conversation's end (AldoUpNext.tsx), in the brief's
+// order, with Aldo's picks. An earlier day's brief is just what was said.
 
 import {
+  CalendarIcon,
   CalendarPlusIcon,
   CircleCheckBigIcon,
-  CheckIcon,
-  ChevronRightIcon,
   CircleAlertIcon,
   ClipboardListIcon,
   HandIcon,
@@ -22,25 +20,23 @@ import {
   PlayIcon,
   ShieldQuestionIcon,
   SparklesIcon,
+  SunIcon,
 } from "lucide-react";
-import { useContext, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { PullRequestGlyph } from "../components/pullRequest/pullRequestIcons";
 import { Button } from "../components/ui/button";
-import { Skeleton } from "../components/ui/skeleton";
 import { toastManager } from "../components/ui/toast";
 import { requestConfirmDialog } from "../confirmDialog";
-import { useIsMobile } from "../hooks/useMediaQuery";
 import { cn } from "~/lib/utils";
-import { AldoPeekerContext, type AldoPeekTarget } from "./AldoPeek";
+import type { AldoPeekTarget } from "./AldoPeek";
 import { callDuration } from "./assistant.logic";
 import { useAldoAssistant } from "./assistantSession";
 import { useAldoBrief } from "./briefFeed";
-import { aldoBriefAudioUrl, type AldoBrief, type AldoBriefItem } from "./cloud";
-import { decideAldo, type AldoChoice } from "./decide";
-import { aldoDecisions, decisionAsk, decisionTitle, type AldoDecision } from "./decisions.logic";
-import { setAldoHomeView, useAldoHomeFeed } from "./homeFeed";
-import { setAldoSimplePlace, useAldoSimpleMode } from "./simpleMode";
+import { aldoBriefAudioUrl, type AldoBrief } from "./cloud";
+import type { AldoChoice } from "./decide";
+import { aldoDecisions, type AldoDecision } from "./decisions.logic";
+import { useAldoHomeFeed } from "./homeFeed";
 import { startAldoWalkthrough } from "./walkthrough";
 
 /** A decision's kind, at a glance: what it is and how much it waits on the user. */
@@ -185,21 +181,32 @@ function BriefCard(props: { readonly brief: AldoBrief }) {
     const first = brief.top.flatMap((item) => decisions.filter((d) => d.key === item.key));
     return [...first, ...decisions.filter((d) => !first.includes(d))];
   }, [brief.top, decisions]);
+  // What it says to decide is at the conversation's end, live (AldoUpNext.tsx), so it's not repeated here.
   return (
     <section
       aria-label={brief.title}
-      className="flex w-full flex-col gap-3 self-stretch"
+      data-aldo-arrive=""
+      className="flex max-w-[88%] flex-col gap-2 self-start"
       data-aldo-brief=""
     >
-      <span className="flex items-center gap-1.5 text-muted-foreground text-xs">
-        <span
-          aria-hidden
-          className="size-2.5 rounded-full bg-gradient-to-br from-primary/90 to-primary/50"
-        />
-        {brief.title} · {timeOf(brief.at)}
-      </span>
-      <p className="text-[17px] leading-relaxed md:text-base">{brief.text}</p>
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-col gap-1.5 rounded-[22px] rounded-bl-md bg-card px-4 py-3 shadow-black/5 shadow-sm ring-1 ring-border/50 dark:bg-white/[0.06] dark:shadow-none dark:ring-0">
+        <span className="flex items-center gap-1.5 text-muted-foreground text-xs">
+          <SunIcon aria-hidden className="size-3.5 text-warning" />
+          {brief.title}'s brief · {timeOf(brief.at)}
+        </span>
+        <p className="text-[15px] leading-relaxed">{brief.text}</p>
+        {brief.ahead.length > 0 ? (
+          <p className="flex items-start gap-1.5 border-border/50 border-t pt-2 text-muted-foreground text-sm">
+            <CalendarIcon aria-hidden className="mt-0.5 size-3.5 shrink-0" />
+            <span>
+              {brief.ahead
+                .map((e) => `${e.title} ${e.allDay ? "(all day)" : timeOf(e.start)}`)
+                .join(" · ")}
+            </span>
+          </p>
+        ) : null}
+      </div>
+      <div className="flex flex-wrap items-center gap-1.5">
         <ListenButton brief={brief} />
         {toGoThrough.length > 0 ? (
           <Button
@@ -212,143 +219,11 @@ function BriefCard(props: { readonly brief: AldoBrief }) {
               aria-hidden
               className="size-3 rounded-full bg-gradient-to-br from-primary/90 to-primary/50"
             />
-            Go through {toGoThrough.length === 1 ? "it" : "them"}
+            Go through {toGoThrough.length === 1 ? "it" : `all ${toGoThrough.length}`} with Aldo
           </Button>
         ) : null}
       </div>
-      {brief.top.length > 0 ? <TopOfMind items={brief.top} decisions={decisions} /> : null}
-      {brief.ahead.length > 0 ? (
-        <p className="text-sm">
-          <span className="font-medium">Looking ahead: </span>
-          <span className="text-muted-foreground">
-            {brief.ahead
-              .map((e) => `${e.title} ${e.allDay ? "(all day)" : timeOf(e.start)}`)
-              .join(" · ")}
-          </span>
-        </p>
-      ) : null}
     </section>
-  );
-}
-
-function TopOfMind(props: {
-  readonly items: ReadonlyArray<AldoBriefItem>;
-  readonly decisions: ReadonlyArray<AldoDecision> | null;
-}) {
-  const mobile = useIsMobile();
-  const simple = useAldoSimpleMode();
-  // The rest are on the phone's Threads tab, or simple mode's Needs you.
-  const listed = simple || mobile;
-  const { decisions } = props;
-  const shown = new Set(props.items.map((i) => i.key));
-  const more = decisions ? decisions.filter((d) => !shown.has(d.key)).length : 0;
-  return (
-    <div className="overflow-hidden rounded-2xl border border-border/70 bg-card/40">
-      <h3 className="border-border/60 border-b px-4 pt-3 pb-2 font-medium text-sm">Top of mind</h3>
-      <ul className="divide-y divide-border/60">
-        {props.items.map((item) =>
-          decisions === null ? (
-            <li key={item.key} className="flex items-center gap-3 px-4 py-3">
-              <Skeleton className="size-7 rounded-lg" />
-              <Skeleton className="h-4 flex-1" />
-            </li>
-          ) : (
-            <TopRow
-              key={item.key}
-              item={item}
-              decision={decisions.find((d) => d.key === item.key) ?? null}
-            />
-          ),
-        )}
-      </ul>
-      <div className="flex items-center gap-2 border-border/60 border-t px-4 py-2.5 text-muted-foreground text-sm">
-        {more > 0 ? (
-          <button
-            type="button"
-            className="inline-flex items-center gap-1 hover:text-foreground"
-            onClick={() =>
-              simple ? setAldoSimplePlace("needs") : mobile ? setAldoHomeView("agents") : undefined
-            }
-            disabled={!listed}
-          >
-            {more === 1 ? "1 more waits on you" : `${more} more wait on you`}
-            {listed ? <ChevronRightIcon className="size-3.5" /> : null}
-          </button>
-        ) : (
-          <>
-            <CheckIcon className="size-4 text-primary" />
-            That's everything for now
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function TopRow(props: { readonly item: AldoBriefItem; readonly decision: AldoDecision | null }) {
-  const peek = useContext(AldoPeekerContext);
-  const [busy, setBusy] = useState(false);
-  const d = props.decision;
-  const { item } = props;
-  if (!d) {
-    return (
-      <li className="flex items-center gap-3 px-4 py-3 text-muted-foreground">
-        <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-success/12">
-          <CheckIcon className="size-3.5 text-success-foreground" />
-        </span>
-        <span className="min-w-0 flex-1 truncate text-sm line-through decoration-muted-foreground/50">
-          {item.title ?? "Decided"}
-        </span>
-        <span className="shrink-0 text-xs">Done</span>
-      </li>
-    );
-  }
-  const quick = quickChoice(d, item.suggestion);
-  const target = peekOfDecision(d);
-  // A question leads with what it asks, so its line names the thread.
-  const sub =
-    d.kind === "question" && item.suggestion
-      ? `Aldo suggests ${item.suggestion}${item.reason ? `: ${item.reason}` : ""}`
-      : (item.why ?? (d.kind === "question" ? decisionTitle(d) : decisionAsk(d)));
-  const title =
-    d.kind === "question"
-      ? (d.pending.questions[0]?.question ?? decisionTitle(d))
-      : decisionTitle(d);
-  return (
-    <li className="flex items-center gap-3 px-4 py-3">
-      <button
-        type="button"
-        className="flex min-w-0 flex-1 items-center gap-3 text-left"
-        disabled={!target || !peek}
-        onClick={() => (target ? peek?.(target) : undefined)}
-      >
-        <DecisionIcon decision={d} />
-        <span className="min-w-0 flex-1">
-          <span className="line-clamp-2 font-medium text-sm">{title}</span>
-          <span className="block truncate text-muted-foreground text-xs">{sub}</span>
-        </span>
-      </button>
-      {quick ? (
-        <Button
-          size="sm"
-          variant={quick.primary ? "default" : "outline"}
-          className="shrink-0"
-          disabled={busy}
-          onClick={() => {
-            void (async () => {
-              if (!(await confirmQuickChoice(d))) return;
-              setBusy(true);
-              await decideAldo(d, quick.choice);
-              setBusy(false);
-            })();
-          }}
-        >
-          {busy ? <LoaderCircleIcon className="animate-spin" /> : quick.label}
-        </Button>
-      ) : target && peek ? (
-        <ChevronRightIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-      ) : null}
-    </li>
   );
 }
 

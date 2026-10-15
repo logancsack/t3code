@@ -125,34 +125,3 @@ export function useAldoHomeRead(): AldoHomeFeed {
   }, []);
   return useAldoHomeFeed();
 }
-
-// ---------------------------------------------------------------------------
-// Which way the home screen shows the user's work: Aldo's conversation (the
-// default) or the board; on a phone, Aldo's or the Agents tab, which the
-// board's choice opens too. Kept per device.
-
-export type AldoHomeView = "aldo" | "board" | "agents";
-
-const VIEW_KEY = "aldo:home:view";
-
-function storedView(): AldoHomeView {
-  try {
-    const stored = window.localStorage.getItem(VIEW_KEY);
-    return stored === "board" || stored === "agents" ? stored : "aldo";
-  } catch {
-    return "aldo";
-  }
-}
-
-export const useAldoHomeView = create<{ readonly view: AldoHomeView }>(() => ({
-  view: typeof window === "undefined" ? "aldo" : storedView(),
-}));
-
-export function setAldoHomeView(view: AldoHomeView): void {
-  useAldoHomeView.setState({ view });
-  try {
-    window.localStorage.setItem(VIEW_KEY, view);
-  } catch {
-    // Private mode: the choice lasts this page.
-  }
-}

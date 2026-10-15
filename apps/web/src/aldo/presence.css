@@ -1,0 +1,92 @@
+/* Aldo's face (AldoPresence.tsx) and the conversation's small motions: eyes
+   that blink and look about while its agents work, the dots while it types,
+   and cards that settle in as they arrive. All still for reduced motion. */
+
+@keyframes aldo-blink {
+  0%,
+  92%,
+  100% {
+    transform: scaleY(1);
+  }
+  95% {
+    transform: scaleY(0.12);
+  }
+}
+
+@keyframes aldo-glance {
+  0%,
+  30%,
+  100% {
+    translate: 0 0;
+  }
+  40%,
+  60% {
+    translate: -14% 0;
+  }
+  70%,
+  90% {
+    translate: 14% -6%;
+  }
+}
+
+@keyframes aldo-dot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.35;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes aldo-arrive {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+[data-aldo-eye] {
+  animation: aldo-blink 5.5s infinite;
+  transform-origin: center;
+}
+
+[data-aldo-eyes][data-mood="working"] {
+  animation: aldo-glance 7s ease-in-out infinite;
+}
+
+[data-aldo-eyes][data-mood="thinking"] {
+  translate: 10% -14%;
+  transition: translate 300ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+[data-aldo-typing] > span {
+  animation: aldo-dot 1.2s infinite ease-in-out;
+}
+[data-aldo-typing] > span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+[data-aldo-typing] > span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+[data-aldo-arrive] {
+  animation: aldo-arrive 260ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-aldo-eye],
+  [data-aldo-eyes],
+  [data-aldo-typing] > span,
+  [data-aldo-arrive] {
+    animation: none;
+    transition: none;
+  }
+}

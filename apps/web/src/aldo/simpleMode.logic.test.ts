@@ -128,11 +128,10 @@ describe("where the page is", () => {
     expect(currentSimplePlace("/usage", "aldo")).toBeNull();
   });
 
-  it("shows Aldo's conversation by simple mode's place when it's on, else by the view", () => {
-    expect(homeShowsConversation({ simple: true, place: "aldo", view: "board" })).toBe(true);
-    expect(homeShowsConversation({ simple: true, place: "library", view: "aldo" })).toBe(false);
-    expect(homeShowsConversation({ simple: false, place: "library", view: "aldo" })).toBe(true);
-    expect(homeShowsConversation({ simple: false, place: "aldo", view: "board" })).toBe(false);
+  it("shows Aldo's conversation but for simple mode's other places", () => {
+    expect(homeShowsConversation({ simple: true, place: "aldo" })).toBe(true);
+    expect(homeShowsConversation({ simple: true, place: "library" })).toBe(false);
+    expect(homeShowsConversation({ simple: false, place: "library" })).toBe(true);
   });
 });
 
