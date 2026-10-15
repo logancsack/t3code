@@ -48,6 +48,7 @@ import {
   isAldoEnvironmentId,
   removeAldoProjectSandbox,
 } from "../../aldo/cloud";
+import { AldoProjectCodeSettings } from "../../aldo/AldoProjectCode";
 import { useSettingsProjectGroups } from "./useSettingsProjectGroups";
 
 const ProjectIconPickerDialog = lazy(() =>
@@ -515,6 +516,9 @@ function ProjectDetail({
           />
         </SettingsSection>
         <ProjectDefaultsSettings category="project" />
+        {isAldoCloud ? (
+          <AldoProjectCodeSettings environmentId={representative.environmentId} />
+        ) : null}
         {/* Aldo hides the machines: a project is its repository, not its checkouts. */}
         {isAldoCloud ? null : <ProjectActionsSettings />}
         {hasMultipleCheckouts && !isAldoCloud ? checkoutChoices : null}
