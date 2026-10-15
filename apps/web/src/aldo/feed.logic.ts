@@ -1,7 +1,7 @@
 // What happened to the user's agents, in Aldo's conversation where it
 // happened (AldoConversationPage.tsx): threads that finished, pull requests
 // that shipped, and what Aldo did, but for what this page shows itself (what
-// it did here since it opened is in the conversation already; what it did
+// it did here is in the conversation already; what it did
 // from another device is only here). What waits on the user isn't
 // here: it's the live "Up next" at the conversation's end, so it never sits
 // buried in what was said. The newest of what Aldo did to a thread that's
@@ -70,16 +70,15 @@ export interface AldoShownAction {
 
 /**
  * What happened, oldest first: from `from` (the conversation's start, so
- * nothing floats above it) and within the window. Aldo's actions from `until`
- * on (when this page opened) only where the page doesn't show them itself
- * (`here`): those came from another device.
+ * nothing floats above it) and within the window. Actions the conversation
+ * already shows (`here`) are reconciled even after the home page remounts:
+ * the conversation's entries live longer than the page does.
  */
 export function feedEvents(
   home: Pick<AldoHome, "conversations" | "pullRequests" | "actions">,
   options: {
     readonly now: number;
     readonly from: string | null;
-    readonly until: number;
     readonly here?: ReadonlyArray<AldoShownAction>;
   },
 ): ReadonlyArray<AldoFeedEvent> {
@@ -124,7 +123,7 @@ export function feedEvents(
   const shown = home.actions
     .filter((a) => SHOWN_ACTIONS.has(a.tool) && !a.failed && within(a.at))
     .sort((a, b) => a.at.localeCompare(b.at))
-    .filter((a) => Date.parse(a.at) < options.until || !shownHere(a));
+    .filter((a) => !shownHere(a));
   const going = (thread: AldoHomeAction["thread"]) =>
     thread !== null &&
     home.conversations.some((c) => sameTarget(thread, c.thread) && c.state !== "done");
@@ -138,6 +137,26 @@ export function feedEvents(
       !shown.slice(index + 1).some((later) => a.thread && sameTarget(later.thread, a.thread)),
   }));
   return [...finished, ...shipped, ...actions].sort((a, b) => a.at.localeCompare(b.at));
+}
+
+/** One live card per thread across the saved feed and local tool results. */
+export function dedupeLiveCards(
+  events: ReadonlyArray<AldoFeedEvent>,
+  shown: ReadonlyArray<AldoHomeTarget>,
+): ReadonlyArray<AldoFeedEvent> {
+  const key = (thread: AldoHomeTarget) => `${thread.environmentId}\n${thread.threadId}`;
+  const seen = new Set(shown.map(key));
+  // Local results own their cards; otherwise the newest live feed event does.
+  return events
+    .toReversed()
+    .map((event) => {
+      if (event.kind !== "action" || !event.live || !event.action.thread) return event;
+      const id = key(event.action.thread);
+      if (seen.has(id)) return { ...event, live: false };
+      seen.add(id);
+      return event;
+    })
+    .toReversed();
 }
 
 /** What happened with the cards the user answered this visit put in, where they were answered. */
