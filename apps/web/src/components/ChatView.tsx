@@ -554,6 +554,7 @@ import { useAldoStallSignals } from "../aldo/AldoStall";
 import { aldoDesktopOwnsKeyboard } from "../aldo/desktopInput.logic";
 import { useAldoThreadDetailMissing } from "../aldo/threadDetails";
 import { AldoThreadLoading } from "../aldo/AldoThreadLoading";
+import { useAldoFirstViewHold } from "../aldo/firstView";
 import { useAldoThreadStart } from "../aldo/threadStart";
 import { describeAldoWakeFailure } from "../aldo/threadStart.logic";
 import { isAldoCloud, isAldoEnvironmentId } from "../aldo/cloud";
@@ -3748,6 +3749,11 @@ export default function ChatView(props: ChatViewProps) {
     displayedTimeline.entries.length === 0 &&
     !isWorking &&
     (aldoThreadStart !== null || threadDetailLoading);
+  // A thread the app opens on shows with its messages (firstView.ts), unless
+  // they wait on its machine waking or starting.
+  useAldoFirstViewHold(
+    showAldoThreadLoading && aldoThreadStart === null && !aldoThreadDetailMissing,
+  );
   const latestWorktreeSetup = worktreeSetupQuery.data;
   useEffect(() => {
     if (latestWorktreeSetup) setHeldWorktreeSetup(latestWorktreeSetup);
