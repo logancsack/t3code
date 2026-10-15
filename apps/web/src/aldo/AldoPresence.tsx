@@ -25,7 +25,7 @@ import type { AldoHome } from "./cloud";
 import { aldoWaitingCount } from "./decisions.logic";
 import { PLEASED_MS, useAldoFace } from "./face";
 import { boardFor, deliveryLabel, dueIn } from "./home.logic";
-import { setAldoUnderTheHood } from "./homeFeed";
+import { setAldoUnderTheHood } from "./simpleMode";
 import { faceMood, presenceLine, type AldoMood } from "./presence.logic";
 import { useAldoReceipts } from "./receipts";
 import "./presence.css";

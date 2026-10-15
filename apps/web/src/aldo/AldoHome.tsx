@@ -64,12 +64,7 @@ import {
   type AldoHomeConversation,
 } from "./cloud";
 import { useAldoFirstViewHold } from "./firstView";
-import {
-  refreshAldoHome,
-  setAldoUnderTheHood,
-  useAldoHomeRead,
-  useAldoUnderTheHood,
-} from "./homeFeed";
+import { refreshAldoHome, useAldoHomeRead } from "./homeFeed";
 import { AldoUnderTheHood } from "./AldoUnderTheHood";
 import { HOST_KINDS, openAldoRepositoryPicker } from "./AldoRepositoryPicker";
 import { useStartAldoThread } from "./newThread";
@@ -92,7 +87,7 @@ import {
 } from "./home.logic";
 import { loadAldoBrief } from "./briefFeed";
 import { morphIntoThread } from "./morph";
-import { useAldoSimple } from "./simpleMode";
+import { setAldoUnderTheHood, useAldoSimple, useAldoUnderTheHood } from "./simpleMode";
 import { useIsMobile } from "../hooks/useMediaQuery";
 
 const LAST_SEEN_KEY = "aldo:home:seen";
@@ -596,7 +591,8 @@ function NewMenu(props: {
       <button
         type="button"
         aria-label="New thread"
-        disabled={starting || (!props.general && !props.repositories)}
+        // It opens a menu: open whenever there's somewhere to start, a project included.
+        disabled={starting || (!props.general && !props.repositories && !props.projects)}
         className={cn(ICON_BUTTON, "size-9 text-foreground/70")}
       >
         <SquarePenIcon className="size-[18px]" strokeWidth={1.75} />

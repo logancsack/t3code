@@ -108,22 +108,23 @@ export function feedEvents(
       at: pr.mergedAt!,
       pullRequest: pr,
     }));
-  const here = options.here ?? [];
-  const shownHere = (a: AldoHomeAction) =>
-    here.some(
+  // Each of the page's own actions stands for one of Aldo's, the first like it:
+  // another like it, later, came from elsewhere.
+  const unmatched = [...(options.here ?? [])];
+  const shownHere = (a: AldoHomeAction) => {
+    const at = unmatched.findIndex(
       (h) =>
         h.tool === a.tool &&
         (h.thread === null || a.thread === null || sameTarget(h.thread, a.thread)),
     );
+    if (at < 0) return false;
+    unmatched.splice(at, 1);
+    return true;
+  };
   const shown = home.actions
-    .filter(
-      (a) =>
-        SHOWN_ACTIONS.has(a.tool) &&
-        !a.failed &&
-        within(a.at) &&
-        (Date.parse(a.at) < options.until || !shownHere(a)),
-    )
-    .sort((a, b) => a.at.localeCompare(b.at));
+    .filter((a) => SHOWN_ACTIONS.has(a.tool) && !a.failed && within(a.at))
+    .sort((a, b) => a.at.localeCompare(b.at))
+    .filter((a) => Date.parse(a.at) < options.until || !shownHere(a));
   const going = (thread: AldoHomeAction["thread"]) =>
     thread !== null &&
     home.conversations.some((c) => sameTarget(thread, c.thread) && c.state !== "done");

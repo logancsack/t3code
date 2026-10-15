@@ -130,6 +130,25 @@ describe("feedEvents", () => {
     expect(events.map((e) => e.key)).toEqual(["action:there", "action:elsewhere"]);
   });
 
+  it("leaves out only one of Aldo's actions for each of the page's own", () => {
+    const events = feedEvents(
+      {
+        ...empty,
+        actions: [
+          action({ id: "here", tool: "message_thread", at: at(5) }),
+          action({ id: "again", tool: "message_thread", at: at(2) }),
+        ],
+      },
+      {
+        now: NOW,
+        from: null,
+        until: NOW - 10 * 60_000,
+        here: [{ tool: "message_thread", thread: target }],
+      },
+    );
+    expect(events.map((e) => e.key)).toEqual(["action:again"]);
+  });
+
   it("shows the newest action on a thread that's still going live", () => {
     const events = feedEvents(
       {

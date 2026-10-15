@@ -567,6 +567,12 @@ function DecisionCard(props: {
               onClick={() => void decide(o.label, { kind: "answer", answers: { [q.id]: o.label } })}
             >
               {o.label}
+              {/* What the choice means, where the thread says. */}
+              {o.description ? (
+                <span className="mt-0.5 block text-[13px] text-muted-foreground leading-5 dark:text-foreground/70">
+                  {o.description}
+                </span>
+              ) : null}
             </Choice>
           ))}
           <OwnWords

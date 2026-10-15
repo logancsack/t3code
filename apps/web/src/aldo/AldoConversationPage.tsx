@@ -146,7 +146,7 @@ export function AldoConversationPage(props: {
   const here = useMemo(
     () =>
       entries.flatMap((e) =>
-        e.kind === "action" ? [{ tool: e.tool, thread: e.open ?? null }] : [],
+        e.kind === "action" && !e.failed ? [{ tool: e.tool, thread: e.open ?? null }] : [],
       ),
     [entries],
   );
@@ -169,7 +169,9 @@ export function AldoConversationPage(props: {
   // Nothing read yet, and the read failed: that's said, not taken for nothing to show.
   const unread = home === null && props.error !== null;
   // Nothing said, nothing happened and nothing waiting: the page is one question.
-  const fresh = loaded && !said && feed.length === 0 && waiting === 0 && !unread;
+  // An older Aldo without the home read shows its overview, which the empty page has no room for.
+  const fresh =
+    loaded && !said && feed.length === 0 && waiting === 0 && !unread && props.supported !== false;
   useEffect(() => {
     if (!loaded || !home) return;
     // Past the first paint of what was there: from now on, what appears arrives.

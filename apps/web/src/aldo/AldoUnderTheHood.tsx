@@ -21,7 +21,8 @@ import {
 } from "./AldoHomeBoard";
 import { RoutinesSection } from "./AldoRoutines";
 import type { AldoHome } from "./cloud";
-import { refreshAldoHome, setAldoUnderTheHood } from "./homeFeed";
+import { refreshAldoHome } from "./homeFeed";
+import { setAldoUnderTheHood } from "./simpleMode";
 import { ICON_BUTTON } from "./surface";
 
 export function AldoUnderTheHood(props: {

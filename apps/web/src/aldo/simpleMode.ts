@@ -46,11 +46,23 @@ export function setAldoSimplePlace(place: AldoSimplePlace): void {
 
 /** Shows Aldo's conversation on the home screen, which in simple mode is one of its places. */
 export function showAldoConversation(): void {
+  setAldoUnderTheHood(false);
   if (useAldoSimple.getState().on) setAldoSimplePlace("aldo");
 }
 
 /** Whether the home screen, when it's on the page, shows Aldo's conversation (and its composer). */
 export function aldoHomeShowsConversation(): boolean {
   const { on, place } = useAldoSimple.getState();
-  return homeShowsConversation({ simple: on, place });
+  return !useAldoUnderTheHood.getState().open && homeShowsConversation({ simple: on, place });
+}
+
+// ---------------------------------------------------------------------------
+// Whether the home screen shows what runs under Aldo's conversation
+// (AldoUnderTheHood.tsx) in its place: opened from what Aldo's at, for this
+// visit. Leaving the home screen, or showing the conversation, closes it.
+
+export const useAldoUnderTheHood = create<{ readonly open: boolean }>(() => ({ open: false }));
+
+export function setAldoUnderTheHood(open: boolean): void {
+  useAldoUnderTheHood.setState({ open });
 }
