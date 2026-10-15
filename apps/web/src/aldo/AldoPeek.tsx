@@ -257,6 +257,7 @@ function LatestTurns(props: { readonly conversation: AldoHomeConversation }) {
     };
   }, [environmentId, threadId, c.at]);
   const messages = copy?.messages.filter((m) => m.text.trim()) ?? [];
+  const keys = new Map<string, number>();
   return (
     <div className="flex flex-col gap-3">
       <h3 className="font-medium text-[12px] text-muted-foreground leading-[18px]">
@@ -272,13 +273,18 @@ function LatestTurns(props: { readonly conversation: AldoHomeConversation }) {
         </p>
       ) : (
         <Suspense fallback={<TurnsSkeleton />}>
-          {messages.map((m) =>
-            m.role === "user" ? (
-              <UserTurn key={`${m.role}:${m.createdAt}`} text={m.text} />
+          {messages.map((m) => {
+            // Two turns can share a moment, so a second one there is told apart.
+            const at = `${m.role}:${m.createdAt}`;
+            const seen = keys.get(at) ?? 0;
+            keys.set(at, seen + 1);
+            const key = seen ? `${at}:${seen}` : at;
+            return m.role === "user" ? (
+              <UserTurn key={key} text={m.text} />
             ) : (
-              <ChatMarkdown key={`${m.role}:${m.createdAt}`} text={m.text} cwd={undefined} />
-            ),
-          )}
+              <ChatMarkdown key={key} text={m.text} cwd={undefined} />
+            );
+          })}
         </Suspense>
       )}
     </div>
