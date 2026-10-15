@@ -41,6 +41,14 @@ const EMPTY_SHELL_STATE: EnvironmentShellState = {
   error: Option.none(),
 };
 
+/**
+ * Whether an environment's shell state has loaded: its stored snapshot read,
+ * or found missing. Until then its atom holds the placeholder above.
+ */
+export function isEnvironmentShellStateLoaded(state: EnvironmentShellState): boolean {
+  return state !== EMPTY_SHELL_STATE;
+}
+
 function shellStatusForSnapshot(
   snapshot: Option.Option<OrchestrationShellSnapshot>,
 ): EnvironmentShellStatus {

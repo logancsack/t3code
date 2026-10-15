@@ -62,6 +62,7 @@ import {
   subscribeAldoEnvironments,
   type AldoHomeConversation,
 } from "./cloud";
+import { useAldoFirstViewHold } from "./firstView";
 import { refreshAldoHome, useAldoHomeRead } from "./homeFeed";
 import { HOST_KINDS, openAldoRepositoryPicker } from "./AldoRepositoryPicker";
 import { useStartAldoThread } from "./newThread";
@@ -142,7 +143,7 @@ function inField(target: EventTarget | null): boolean {
 }
 
 export function AldoHome() {
-  const { accounts, refresh: refreshAccounts } = useAldoAccounts();
+  const { accounts, error: accountsError, refresh: refreshAccounts } = useAldoAccounts();
   const assistant = useAldoAssistantAvailable();
   const { home, supported, error } = useAldoHomeRead();
   const refresh = refreshAldoHome;
@@ -193,6 +194,13 @@ export function AldoHome() {
     subscribeAldoEnvironments,
     aldoOffersItsModels,
     () => false,
+  );
+  // The first view waits for what decides the setup card and the board
+  // (firstView.ts, which waits for the directory itself).
+  useAldoFirstViewHold(
+    assistant === null ||
+      (accounts === null && accountsError === null) ||
+      (home === null && supported === null && error === null),
   );
   const canRun = agentReady || (aldoModels && home !== null && planRunning(home.usage));
   // Somewhere to work: a git host, General, or an Aldo project (which needs no git host).

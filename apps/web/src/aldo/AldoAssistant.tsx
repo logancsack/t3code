@@ -62,6 +62,7 @@ import {
 import { useAldoArrive, useAldoArrived } from "./arrive";
 import { blinkAldo, setAldoReading } from "./face";
 import { interleave, type AldoFeedEvent } from "./feed.logic";
+import { useAldoFirstViewHold } from "./firstView";
 import { CHIP } from "./surface";
 import { noteAldoComposerTyping } from "./warm";
 import "./presence.css";
@@ -70,15 +71,20 @@ const OVERVIEW_EVERY_MS = 20_000;
 
 /** The orb: tap to talk or hang up; it swells with whoever is speaking. */
 let assistantInfo: ReturnType<typeof aldoAssistantInfo> | null = null;
+let assistantAvailable: boolean | null = null;
 
 /** Whether this Aldo has the assistant, asked once per page (not until `ask`); null until it's known. */
 export function useAldoAssistantAvailable(ask = true): boolean | null {
-  const [available, setAvailable] = useState<boolean | null>(null);
+  // Known at once after the first answer, so a screen that opens again doesn't blank a frame.
+  const [available, setAvailable] = useState<boolean | null>(() =>
+    ask ? assistantAvailable : null,
+  );
   useEffect(() => {
     if (!ask) return;
     let current = true;
     assistantInfo ??= aldoAssistantInfo();
     void assistantInfo.then((info) => {
+      assistantAvailable = info.available;
       if (current) setAvailable(info.available);
     });
     return () => {
@@ -634,6 +640,8 @@ export function AldoConversation(
   } = {},
 ) {
   const all = useAldoAssistant((s) => s.entries);
+  const loaded = useAldoAssistant((s) => s.historyLoaded);
+  useAldoFirstViewHold(!loaded);
   const replying = useAldoAssistant((s) => s.replying);
   const since = props.since ?? 0;
   const live = useMemo(() => liveCardIndexes(all), [all]);

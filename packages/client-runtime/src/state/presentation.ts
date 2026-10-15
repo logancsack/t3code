@@ -21,6 +21,16 @@ function mapsEqual<K, V>(left: ReadonlyMap<K, V>, right: ReadonlyMap<K, V>): boo
   return true;
 }
 
+function presentsSame(left: EnvironmentPresentation, right: EnvironmentPresentation): boolean {
+  return (
+    left.entry === right.entry &&
+    left.serverConfig === right.serverConfig &&
+    left.connection.phase === right.connection.phase &&
+    left.connection.error === right.connection.error &&
+    left.connection.traceId === right.connection.traceId
+  );
+}
+
 export function createEnvironmentPresentationAtoms<E>(input: {
   readonly catalogValueAtom: Atom.Atom<EnvironmentCatalogState>;
   readonly stateAtom: (
@@ -39,7 +49,7 @@ export function createEnvironmentPresentationAtoms<E>(input: {
         AsyncResult.value(get(input.stateAtom(environmentId))),
         () => AVAILABLE_CONNECTION_STATE,
       );
-      return {
+      const next = {
         entry,
         connection:
           entry.unsupportedReason === undefined
@@ -47,6 +57,17 @@ export function createEnvironmentPresentationAtoms<E>(input: {
             : { phase: "unsupported", error: entry.unsupportedReason, traceId: null },
         serverConfig: get(input.serverConfigValueAtom(environmentId)),
       } satisfies EnvironmentPresentation;
+      // Kept when what it presents is unchanged: a connection state that reads
+      // the same (an asleep environment shows as available, as it did before it
+      // tried), or another environment's catalog change, otherwise changed
+      // presentationsAtom and re-rendered everything listing environments, once
+      // per environment.
+      const previous = get.self<EnvironmentPresentation | null>();
+      return Option.isSome(previous) &&
+        previous.value !== null &&
+        presentsSame(previous.value, next)
+        ? previous.value
+        : next;
     }).pipe(Atom.withLabel(`environment-presentation:${environmentId}`)),
   );
 

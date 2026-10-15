@@ -15,15 +15,18 @@ import { ALDO_ACCOUNT_SPECS } from "./accountSpecs";
 
 export { ALDO_ACCOUNT_SPECS };
 
+type AldoAccounts = Record<AldoAccountKind | AldoGitHostKind, AldoAccount>;
+
+/** The last answer on this page: a screen that opens again shows it while it asks again. */
+let lastAccounts: AldoAccounts | null = null;
+
 export function useAldoAccounts() {
-  const [accounts, setAccounts] = useState<Record<
-    AldoAccountKind | AldoGitHostKind,
-    AldoAccount
-  > | null>(null);
+  const [accounts, setAccounts] = useState<AldoAccounts | null>(lastAccounts);
   const [error, setError] = useState<string | null>(null);
   const refresh = useCallback(() => {
     fetchAldoAccounts()
       .then((next) => {
+        lastAccounts = next;
         setAccounts(next);
         setError(null);
       })

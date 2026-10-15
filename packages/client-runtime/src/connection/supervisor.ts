@@ -681,6 +681,11 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
       pendingRetry = Option.none();
     };
 
+    // The loop starts on a later tick than `make` returns, so what was asked
+    // before it ran (`connect`, on a supervisor just made) is answered by its
+    // first pass, which reads the intent that set. Left queued, it started a
+    // second attempt once a blocked first one ended.
+    yield* Queue.clear(signals);
     for (;;) {
       if (yield* Ref.getAndSet(resetRetryState, false)) {
         failureCount = 0;

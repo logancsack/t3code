@@ -408,20 +408,25 @@ export const make = Effect.gen(function* () {
     );
   }).pipe(Effect.withSpan("EnvironmentRegistry.start"));
 
+  /** Whether an environment is installed and running as this entry describes. */
+  const runsAs = Effect.fn("EnvironmentRegistry.runsAs")(function* (entry: ConnectionCatalogEntry) {
+    const environmentId = entry.target.environmentId;
+    const previous = (yield* SubscriptionRef.get(entries)).get(environmentId);
+    const existingScope = (yield* SubscriptionRef.get(serviceScopes)).get(environmentId);
+    return (
+      previous !== undefined &&
+      Equal.equals(previous, entry) &&
+      existingScope !== undefined &&
+      Equal.equals(existingScope.entry, entry)
+    );
+  });
+
   const installEntryLocked = Effect.fn("EnvironmentRegistry.installEntryLocked")(function* (
     entry: ConnectionCatalogEntry,
     options?: { readonly retainEquivalentRuntime?: boolean },
   ) {
     const target = entry.target;
-    const previous = (yield* SubscriptionRef.get(entries)).get(target.environmentId);
-    const existingScope = (yield* SubscriptionRef.get(serviceScopes)).get(target.environmentId);
-    if (
-      options?.retainEquivalentRuntime === true &&
-      previous !== undefined &&
-      Equal.equals(previous, entry) &&
-      existingScope !== undefined &&
-      Equal.equals(existingScope.entry, entry)
-    ) {
+    if (options?.retainEquivalentRuntime === true && (yield* runsAs(entry))) {
       return;
     }
 
@@ -483,8 +488,15 @@ export const make = Effect.gen(function* () {
     );
   });
 
+  /**
+   * Installs a platform environment. With `batch`, its entry is added there
+   * instead of to the catalog, for reconcilePlatform to install with the rest.
+   */
   const installPlatformRegistration = Effect.fn("EnvironmentRegistry.installPlatformRegistration")(
-    function* (registration: PlatformConnectionRegistration) {
+    function* (
+      registration: PlatformConnectionRegistration,
+      batch?: Array<ConnectionCatalogEntry>,
+    ) {
       const registered = connectionRegistrationCatalogEntry(registration);
       const target = registered.target;
       yield* withLeaseLock(
@@ -560,7 +572,12 @@ export const make = Effect.gen(function* () {
             );
           }
 
-          yield* installEntryLocked(entry, { retainEquivalentRuntime: true });
+          if (batch === undefined) {
+            yield* installEntryLocked(entry, { retainEquivalentRuntime: true });
+          } else if (!(yield* runsAs(entry))) {
+            yield* closeServiceScope(target.environmentId);
+            batch.push(entry);
+          }
         }),
       );
     },
@@ -651,7 +668,32 @@ export const make = Effect.gen(function* () {
         desiredIds.has(environmentId) ? Effect.void : removePlatformEnvironment(environmentId),
       { discard: true },
     );
-    yield* Effect.forEach(platformRegistrations, installPlatformRegistration, { discard: true });
+    // The new and changed environments join the catalog in one update: a host
+    // that reports many at once (one per thread, in Aldo) otherwise changed the
+    // catalog, and everything reading it, once per environment, which took
+    // seconds for a few hundred.
+    const batch: Array<ConnectionCatalogEntry> = [];
+    yield* Effect.forEach(
+      platformRegistrations,
+      (registration) => installPlatformRegistration(registration, batch),
+      { discard: true },
+    );
+    if (batch.length === 0) return;
+    yield* SubscriptionRef.update(entries, (current) => {
+      const next = new Map(current);
+      for (const entry of batch) next.set(entry.target.environmentId, entry);
+      return next;
+    });
+    // Each runtime starts as installEntryLocked starts one, unless a stream
+    // following the catalog has started it already.
+    yield* Effect.forEach(
+      batch,
+      (entry) =>
+        acquireSupervisor(entry.target.environmentId).pipe(
+          Effect.catchTag("EnvironmentNotRegisteredError", () => Effect.void),
+        ),
+      { discard: true },
+    );
   });
 
   const remove = Effect.fn("EnvironmentRegistry.remove")(function* (environmentId: EnvironmentId) {

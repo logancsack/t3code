@@ -1277,6 +1277,41 @@ describe("EnvironmentRegistry", () => {
     }),
   );
 
+  it.effect("adds a platform's environments to the catalog in one update", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness([]);
+
+      yield* Effect.gen(function* () {
+        const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+        const updates = yield* Ref.make(0);
+        yield* SubscriptionRef.changes(registry.entries).pipe(
+          Stream.runForEach(() => Ref.update(updates, (count) => count + 1)),
+          Effect.forkChild({ startImmediately: true }),
+        );
+        yield* Effect.yieldNow;
+        const before = yield* Ref.get(updates);
+
+        yield* registry.reconcilePlatform([
+          new PrimaryConnectionRegistration({ target: TARGET }),
+          new PrimaryConnectionRegistration({ target: SECOND_TARGET }),
+        ]);
+        for (const target of [TARGET, SECOND_TARGET]) {
+          yield* awaitConnectionState(
+            registry,
+            target.environmentId,
+            (state) => state.phase === "connected",
+          );
+        }
+
+        expect((yield* Ref.get(updates)) - before).toBe(1);
+        expect([...(yield* SubscriptionRef.get(registry.entries)).keys()]).toEqual([
+          TARGET.environmentId,
+          SECOND_TARGET.environmentId,
+        ]);
+      }).pipe(Effect.provide(harness.layer), Effect.scoped);
+    }),
+  );
+
   it.effect("gives a primary platform registration precedence over persisted registrations", () =>
     Effect.gen(function* () {
       const shadowedTarget = new RelayConnectionTarget({
