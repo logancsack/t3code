@@ -1060,7 +1060,7 @@ function useRestingComposerControlsLayout(host: HTMLDivElement | null, useContro
       observer.observe(controls);
       controls
         .querySelectorAll<HTMLElement>(
-          "[data-resting-block], [data-composer-control-label], [data-chat-provider-model-picker-label]",
+          "[data-resting-block], [data-composer-control-label], [data-chat-provider-model-picker-label], [data-composer-leading-control]",
         )
         .forEach((element) => observer.observe(element));
       measure();
@@ -1383,7 +1383,10 @@ export interface ChatComposerProps {
   isLocalDraftThread: boolean;
   forceExpandedOnMobile: boolean;
   projectSelectionRequired: boolean;
-  /** Aldo: where the thread works, before the agent's picker (a draft's place chip), at the controls' size. */
+  /**
+   * Aldo: where the thread works, before the agent's picker (a draft's place chip), at the
+   * controls' size. Its root carries `data-composer-leading-control`, so the controls' fit counts it.
+   */
   renderLeadingControl?: ((size: "sm" | "xs") => ReactNode) | undefined;
   /** What an empty composer says when nothing else needs saying (Aldo: one for the work). */
   idlePlaceholder?: string | undefined;

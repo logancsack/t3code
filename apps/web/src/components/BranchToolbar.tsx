@@ -657,13 +657,13 @@ export const BranchToolbar = memo(function BranchToolbar({
           />
         </div>
       ) : null}
-      {showGitControls || showEnvironmentIndicator ? (
+      {/* Aldo threads have nothing to show here (no environment, no run context), and its
+          minimum width would leave a gap before the composer's controls. */}
+      {(showGitControls && !aldoThread) || showEnvironmentIndicator ? (
         <div
           className={cn(
             "min-h-7 min-w-10 items-center gap-1 sm:min-h-6",
-            // Aldo threads have no run-context selector, so this strip stays
-            // at every width and keeps the branch at the end.
-            showGitControls && !aldoThread ? "hidden @3xl/composer-surface:flex" : "flex",
+            showGitControls ? "hidden @3xl/composer-surface:flex" : "flex",
             composerControlsHostRef ? "shrink" : "flex-1",
           )}
         >

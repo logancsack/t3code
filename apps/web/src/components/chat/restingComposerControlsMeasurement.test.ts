@@ -6,7 +6,12 @@ import {
 } from "../composerFooterLayout";
 import { measureRestingComposerControls } from "./restingComposerControlsMeasurement";
 
-function measurePicker(input: { clientWidth: number; flexGrow: string; maxWidth?: string }) {
+function measurePicker(input: {
+  clientWidth: number;
+  flexGrow: string;
+  maxWidth?: string;
+  beforePickerWidth?: number;
+}) {
   const label = { clientWidth: input.clientWidth, scrollWidth: 160 };
   const picker = {
     getBoundingClientRect: () => ({ width: 52 }),
@@ -17,6 +22,9 @@ function measurePicker(input: { clientWidth: number; flexGrow: string; maxWidth?
       if (selector === "[data-chat-provider-model-picker]") return picker;
       if (selector === "[data-resting-controls-overflow]") {
         return { getBoundingClientRect: () => ({ width: 24 }) };
+      }
+      if (selector === "[data-composer-leading-control]" && input.beforePickerWidth) {
+        return { getBoundingClientRect: () => ({ width: input.beforePickerWidth }) };
       }
       return null;
     },
@@ -66,6 +74,19 @@ describe("measureRestingComposerControls", () => {
     const measurement = measurePicker({ clientWidth: 0, flexGrow: "1" });
 
     expect(measurement.naturalFixedWidth).toBe(212);
+    expect(resolveRestingComposerControlsLayout({ ...measurement, hostWidth: 200 })).toEqual({
+      hiddenCount: 1,
+      iconOnlyCount: 1,
+      visible: true,
+    });
+  });
+
+  it("counts a control before the picker, which never moves into overflow", () => {
+    const measurement = measurePicker({ clientWidth: 0, flexGrow: "0", beforePickerWidth: 44 });
+
+    expect(measurement.naturalFixedWidth).toBe(100);
+    expect(measurement.minimumFixedWidth).toBe(100);
+    // Inline without it (above); with it, the block goes to overflow rather than clip.
     expect(resolveRestingComposerControlsLayout({ ...measurement, hostWidth: 200 })).toEqual({
       hiddenCount: 1,
       iconOnlyCount: 1,

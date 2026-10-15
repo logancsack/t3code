@@ -220,6 +220,7 @@ export function AldoComposerPlaceChip(props: {
     props.environmentId,
     props.project,
   );
+  const size = props.size ?? "sm";
   if (!place) return null;
   return (
     <AldoPlacePicker
@@ -231,18 +232,21 @@ export function AldoComposerPlaceChip(props: {
       side="top"
       trigger={
         <ComposerControl
-          size={props.size ?? "sm"}
+          size={size}
           aria-label={`Where this thread works: ${place.name}`}
           data-aldo-place-chip=""
+          data-composer-leading-control=""
           disabled={moving}
-          className="-ms-1 max-w-44 border-border/70"
+          // The strip clips what sticks out of it, so only the footer's chip sits on its edge.
+          className={cn("max-w-44 border-border/70", size === "sm" && "-ms-1")}
         >
           {moving ? (
             <LoaderCircleIcon aria-hidden className="size-3.5 animate-spin" />
           ) : (
             <AldoPlaceTile place={place} className="size-3.5" />
           )}
-          <span className="truncate">{place.name}</span>
+          {/* A phone's composer shows the tile alone: the draft's card and the header name it. */}
+          <span className="truncate @max-[480px]/composer-surface:hidden">{place.name}</span>
           <ChevronDownIcon
             aria-hidden
             data-composer-control-chevron
