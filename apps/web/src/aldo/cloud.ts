@@ -126,6 +126,14 @@ export function isAldoEnvironmentId(environmentId: string): boolean {
   return environmentId.startsWith("aldo-");
 }
 
+/**
+ * Whether a connection is one of Aldo's machines. Its token comes from Aldo as
+ * it connects (aldoEnvironmentGateway), never from the connection catalog.
+ */
+export function isAldoConnectionId(connectionId: string): boolean {
+  return connectionId.startsWith(CONNECTION_PREFIX);
+}
+
 export function threadIdForEnvironment(environmentId: string): string {
   return environmentId.replace(/^aldo-/, "");
 }
@@ -467,13 +475,45 @@ function currentRegistrations(environments: ReadonlyArray<AldoEnvironment>) {
     .map(registrationFor);
 }
 
+let firstRead: Promise<Array<BearerConnectionRegistration> | null> | null = null;
+let listMachines: (environmentIds: ReadonlyArray<EnvironmentId>) => void = () => undefined;
+const machinesListed = new Promise<ReadonlyArray<EnvironmentId>>((resolve) => {
+  listMachines = resolve;
+});
+
+/**
+ * Reads the directory now, as the page loads, rather than when the connection
+ * runtime first asks for it once the app has rendered: the first poll takes
+ * this read.
+ */
+export function startAldoDirectory(): void {
+  if (isAldoCloud) firstRead ??= readDirectory();
+}
+
+/**
+ * The machines the first directory read registers, once it has (firstView.ts);
+ * none when it fails, so a page that can't reach Aldo shows what it has.
+ */
+export function aldoMachinesListed(): Promise<ReadonlyArray<EnvironmentId>> {
+  return machinesListed;
+}
+
 async function pollDirectory(): Promise<Array<BearerConnectionRegistration> | null> {
+  if (firstRead) {
+    const read = firstRead;
+    firstRead = null;
+    return read;
+  }
   if (emitRequested && knownEnvironments) {
     emitRequested = false;
     return currentRegistrations(knownEnvironments);
   }
   const due = refreshRequested || Date.now() - lastFetchAt > IDLE_REFRESH_MS;
   if (!due || Date.now() < retryAt) return null;
+  return readDirectory();
+}
+
+async function readDirectory(): Promise<Array<BearerConnectionRegistration> | null> {
   refreshRequested = false;
   lastFetchAt = Date.now();
   try {
@@ -482,8 +522,10 @@ async function pollDirectory(): Promise<Array<BearerConnectionRegistration> | nu
     const registrations = currentRegistrations(environments);
     failedFetches = 0;
     retryAt = 0;
+    listMachines(registrations.map((registration) => registration.target.environmentId));
     return registrations;
   } catch {
+    listMachines([]);
     // Retry soon, backing off while Aldo can't be reached so every open tab doesn't hammer it.
     failedFetches += 1;
     retryAt = Date.now() + Math.min(IDLE_REFRESH_MS, 1000 * 2 ** (failedFetches - 1));
@@ -525,6 +567,11 @@ export const aldoEnvironmentGateway = {
       return Effect.succeed(Option.none());
     }
     const threadId = input.connectionId.slice(CONNECTION_PREFIX.length);
+    if (asleepAsListed(input.environmentId)) {
+      return Effect.fail(
+        new ConnectionBlockedError({ reason: "dormant", detail: "Its computer is asleep." }),
+      );
+    }
     return Effect.tryPromise({
       try: () => api<ConnectResponse>(`/api/environments/${threadId}/connect`, { method: "POST" }),
       catch: (cause) =>
@@ -554,6 +601,24 @@ export const aldoEnvironmentGateway = {
 };
 
 const wakes = new Map<string, Promise<void>>();
+
+/** Machines whose connection has been prepared on this page. */
+const prepared = new Set<string>();
+
+/**
+ * Whether a machine's first connection on this page can be told it's asleep
+ * without asking Aldo: the directory that registered it a moment ago lists it
+ * as not running (Aldo's connect says "stopped" for any machine that isn't),
+ * and this tab isn't waking it. Asking sent one request per sleeping thread on
+ * every page load. Every later attempt (a wake, a nudge, the directory saying
+ * it's up; reconnect.ts) asks Aldo.
+ */
+function asleepAsListed(environmentId: string): boolean {
+  if (prepared.has(environmentId)) return false;
+  prepared.add(environmentId);
+  const state = knownEnvironments?.find((entry) => entry.environmentId === environmentId)?.state;
+  return state !== undefined && state !== "ready" && !wakes.has(environmentId);
+}
 
 /** Starts or resumes a thread's sandbox. Concurrent calls share one request. */
 export function wakeAldoEnvironment(environmentId: string): Promise<void> {

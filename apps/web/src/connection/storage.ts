@@ -44,7 +44,7 @@ import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import { projectFaviconCache } from "../assets/projectFaviconCache";
 
-import { aldoKeepsEnvironmentCache, aldoThreadDetail } from "../aldo/cloud";
+import { aldoKeepsEnvironmentCache, aldoThreadDetail, isAldoConnectionId } from "../aldo/cloud";
 import { withAldoTemplate } from "../aldo/serverConfig.logic";
 
 const DATABASE_NAME = "t3code:connection-runtime";
@@ -93,6 +93,13 @@ const StoredVcsRefs = Schema.Struct({
 const StoredVcsRefsJson = Schema.fromJsonString(StoredVcsRefs);
 const ConnectionCatalogDocumentJson = Schema.fromJsonString(ConnectionCatalogDocument);
 const decodeConnectionCatalogDocument = Schema.decodeUnknownEffect(ConnectionCatalogDocumentJson);
+/**
+ * Aldo: the stored shells read as the directory registers its machines
+ * (readCachedShells, seedEnvironmentCache), for each machine's first load to
+ * take instead of reading it again on its own. A few hundred separate reads
+ * landed one at a time, and the sidebar rendered again for each.
+ */
+const shellsRead = new Map<EnvironmentId, string>();
 const encodeConnectionCatalogDocument = Schema.encodeEffect(ConnectionCatalogDocumentJson);
 const decodeStoredShellSnapshot = Schema.decodeUnknownEffect(StoredShellSnapshotJson);
 const decodeStoredThreadSnapshot = Schema.decodeUnknownEffect(StoredThreadSnapshotJson);
@@ -549,13 +556,19 @@ export const connectionStorageLayer = Layer.effectContext(
           ),
         ),
       put: (connectionId, credential) =>
-        catalog.update((document) => ({
-          ...document,
-          credentials: replaceCatalogValue(document.credentials, (value) => value.connectionId, {
-            connectionId,
-            credential,
-          }),
-        })),
+        // Aldo: a machine's registration carries a placeholder that's never read
+        // (aldoEnvironmentGateway has its token), and storing it rewrote the whole
+        // catalog once per machine, one after another, on every directory fetch.
+        isAldoConnectionId(connectionId)
+          ? Effect.void
+          : catalog.update((document) => ({
+              ...document,
+              credentials: replaceCatalogValue(
+                document.credentials,
+                (value) => value.connectionId,
+                { connectionId, credential },
+              ),
+            })),
       remove: (connectionId) =>
         catalog.update((document) => ({
           ...document,
@@ -588,7 +601,13 @@ export const connectionStorageLayer = Layer.effectContext(
     });
     const cacheStore = EnvironmentCacheStore.of({
       loadShell: (environmentId) =>
-        readDatabaseValue(database, SHELL_STORE_NAME, environmentId).pipe(
+        Effect.suspend(() => {
+          const read = shellsRead.get(environmentId);
+          shellsRead.delete(environmentId);
+          return read === undefined
+            ? readDatabaseValue(database, SHELL_STORE_NAME, environmentId)
+            : Effect.succeed<unknown>(read);
+        }).pipe(
           Effect.tap(() => Effect.promise(() => projectFaviconCache.hydrate())),
           Effect.flatMap((raw) => {
             if (typeof raw !== "string") {
@@ -623,6 +642,7 @@ export const connectionStorageLayer = Layer.effectContext(
             catch: (cause) => persistenceError("save-shell", cause),
           });
           yield* writeDatabaseValue(database, SHELL_STORE_NAME, environmentId, encoded);
+          shellsRead.delete(environmentId);
         }).pipe(
           Effect.mapError((cause) =>
             cause._tag === "ConnectionPersistenceError"
@@ -848,6 +868,7 @@ function withAldoThreadDetail(
 }
 
 function clearCachedEnvironment(database: IDBDatabase, environmentId: EnvironmentId) {
+  shellsRead.delete(environmentId);
   return Effect.all(
     [
       Effect.promise(() => projectFaviconCache.clearEnvironment(environmentId)),
@@ -907,6 +928,7 @@ export function seedEnvironmentCache(input: {
             snapshot,
           });
           yield* writeDatabaseValue(database, SHELL_STORE_NAME, input.environmentId, shell);
+          shellsRead.set(input.environmentId, shell);
           if (input.serverConfig !== null) {
             const config = yield* decodeServerConfig(input.serverConfig);
             const stored = yield* encodeStoredServerConfig({
@@ -1034,7 +1056,8 @@ function summarizeStoredShell(
 
 /**
  * The shells cached for these environments, in one read. Aldo compares their
- * sequences with the copies it keeps of its machines' shells.
+ * sequences with the copies it keeps of its machines' shells, and the
+ * machines' first loads take them from here (shellsRead).
  */
 export function readCachedShells(
   environmentIds: ReadonlyArray<EnvironmentId>,
@@ -1063,6 +1086,8 @@ export function readCachedShells(
               request.addEventListener("success", () => {
                 const shell = summarizeStoredShell(request.result, environmentId);
                 if (shell) shells.set(environmentId, shell);
+                if (typeof request.result === "string")
+                  shellsRead.set(environmentId, request.result);
               });
             }
           },

@@ -727,6 +727,23 @@ describe("EnvironmentSupervisor", () => {
     }),
   );
 
+  it.effect("makes one attempt for a connect sent before its loop first ran", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({ prepare: () => Effect.fail(blocked()) });
+      const supervisor = yield* EnvironmentSupervisor.make(TARGET_ENTRY).pipe(
+        Effect.provide(harness.dependencies),
+      );
+      yield* supervisor.connect;
+
+      yield* awaitState(supervisor.state, (state) => state.phase === "blocked");
+      for (let tick = 0; tick < 10; tick++) {
+        yield* Effect.yieldNow;
+      }
+
+      expect(yield* Ref.get(harness.prepareCount)).toBe(1);
+    }),
+  );
+
   it.effect("does not let platform wakeups reset an in-flight attempt", () =>
     Effect.gen(function* () {
       const firstAttemptStarted = yield* Deferred.make<void>();
