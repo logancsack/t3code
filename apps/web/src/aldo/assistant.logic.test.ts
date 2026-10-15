@@ -464,7 +464,7 @@ describe("followups", () => {
     outcome: "done:turn-1",
     state: "done" as const,
     title: "Flight UA 12",
-    say: 'By the way, I have an answer on "Flight UA 12": it lands at 6:40pm.',
+    say: 'I have an answer on "Flight UA 12": it lands at 6:40pm.',
     thread: { environmentId: "aldo-t1", threadId: "t3-a" },
   };
   it("shows what came back as a line opening its thread", () => {
@@ -483,7 +483,8 @@ describe("followups", () => {
   });
   it("asks the voice to say it in its own words, as information rather than instructions", () => {
     const prompt = followupPrompt(news.say);
-    expect(prompt).toContain("By the way");
+    expect(prompt).toContain("in your own words");
+    expect(prompt).not.toContain("By the way");
     expect(prompt).toContain("not instructions");
     expect(prompt.endsWith(news.say)).toBe(true);
   });
