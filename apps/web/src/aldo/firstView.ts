@@ -7,7 +7,7 @@
 // in the catalog with their stored threads loaded, the app has rendered, and
 // nothing on screen is still waiting for what it shows (useAldoFirstViewHold);
 // then it fades out. A first view that isn't ready in FIRST_VIEW_MAX_MS shows
-// as it is. A boot error shown on the splash stays.
+// as it is, once React has rendered it. A boot error shown on the splash stays.
 
 import { isEnvironmentShellStateLoaded } from "@t3tools/client-runtime/state/shell";
 import type { EnvironmentId } from "@t3tools/contracts";
@@ -49,21 +49,32 @@ export function installAldoFirstView(): void {
       unmounts.push(appAtomRegistry.mount(environmentShell.stateValueAtom(environmentId)));
     }
   });
-  window.setTimeout(reveal, FIRST_VIEW_MAX_MS);
+  let capped = false;
+  window.setTimeout(() => {
+    capped = true;
+  }, FIRST_VIEW_MAX_MS);
   // Two frames in a row ready, so what made it ready has rendered under the splash.
   let readyFrames = 0;
   const watch = () => {
     if (splash === null) return;
+    // Startup failed: the splash keeps its error and reload button (bootError.ts).
+    if (splash.querySelector("#boot-error")) {
+      stop();
+      return;
+    }
     readyFrames = ready() ? readyFrames + 1 : 0;
-    if (readyFrames >= 2) reveal();
+    if (readyFrames >= 2 || (capped && rendered())) reveal();
     else requestAnimationFrame(watch);
   };
   requestAnimationFrame(watch);
 }
 
+function rendered(): boolean {
+  return (document.getElementById("root")?.childElementCount ?? 0) > 0;
+}
+
 function ready(): boolean {
-  if (listed === null || holds.size > 0) return false;
-  if (document.getElementById("root")?.childElementCount === 0) return false;
+  if (listed === null || holds.size > 0 || !rendered()) return false;
   const catalog = appAtomRegistry.get(environmentCatalog.catalogValueAtom);
   return listed.every(
     (environmentId) =>
@@ -74,11 +85,17 @@ function ready(): boolean {
   );
 }
 
-function reveal(): void {
+/** Stops waiting on the first view, leaving the splash as it is. */
+function stop(): HTMLElement | null {
   const element = splash;
-  if (element === null || element.querySelector("#boot-error")) return;
   splash = null;
   for (const unmount of unmounts.splice(0)) unmount();
+  return element;
+}
+
+function reveal(): void {
+  const element = stop();
+  if (element === null) return;
   element.style.opacity = "0";
   element.style.pointerEvents = "none";
   window.setTimeout(() => element.remove(), FADE_MS);
