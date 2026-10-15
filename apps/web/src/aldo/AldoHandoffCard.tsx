@@ -13,6 +13,7 @@ import { create } from "zustand";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { toastManager } from "../components/ui/toast";
+import { cn } from "~/lib/utils";
 import { AldoApiError, resolveAldoHandoff, type AldoHandoff } from "./cloud";
 import { aldoMorph, aldoMorphSource } from "./morph";
 import {
@@ -26,6 +27,7 @@ import {
   aldoHandoffWantsCode,
 } from "./handoffs.logic";
 import { refreshAldoHome, useAldoHomeFeed, useAldoHomeRead } from "./homeFeed";
+import { PRIMARY, SECONDARY } from "./surface";
 
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
@@ -135,11 +137,6 @@ export function AldoHandoffActions(props: {
   readonly pills?: boolean;
 }) {
   const { handoff } = props;
-  const pill = props.pills
-    ? "h-11 flex-1 rounded-full text-[15px] sm:h-11 sm:text-[15px]"
-    : undefined;
-  const size = props.pills ? "lg" : "sm";
-  const quiet = props.pills ? "secondary" : "ghost";
   const [busy, setBusy] = useState<"done" | "skip" | "code" | null>(null);
   const [code, setCode] = useState("");
   const elsewhere = aldoHandoffElsewhere(handoff);
@@ -154,6 +151,87 @@ export function AldoHandoffActions(props: {
     openAldoHandoffTakeover(handoff.id, event.currentTarget);
   const spinner = (decision: typeof busy) =>
     busy === decision ? <LoaderIcon className="size-3.5 animate-spin" /> : null;
+  const skip = (
+    <>
+      {spinner("skip")} {aldoHandoffSkipLabel(handoff)}
+    </>
+  );
+  if (props.pills)
+    // Aldo's conversation (AldoUpNext.tsx): the way out on the left, the way on on the right.
+    return (
+      <>
+        <p className="text-[14px] text-muted-foreground leading-6 dark:text-foreground/70">
+          {aldoHandoffHow(handoff)}
+        </p>
+        {wantsCode ? (
+          <form
+            className="flex h-11 items-center gap-1 rounded-full bg-foreground/[0.05] ps-4 pe-1 focus-within:bg-foreground/[0.07]"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const typed = aldoHandoffCode(code);
+              if (typed && busy === null) void answer({ decision: "code", code: typed });
+            }}
+          >
+            <input
+              aria-label="The code"
+              autoComplete="one-time-code"
+              inputMode="numeric"
+              placeholder="The code"
+              className="min-w-0 flex-1 bg-transparent text-[15px] tracking-[0.08em] outline-none placeholder:tracking-normal placeholder:text-muted-foreground/70"
+              value={code}
+              disabled={busy !== null}
+              onChange={(event) => setCode(event.target.value)}
+            />
+            <button
+              type="submit"
+              className={cn(PRIMARY, "h-9 px-4 text-sm")}
+              disabled={busy !== null || !aldoHandoffCode(code)}
+            >
+              {spinner("code")} Type it in
+            </button>
+          </form>
+        ) : null}
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            className={SECONDARY}
+            disabled={busy !== null}
+            onClick={() => void answer({ decision: "skip" })}
+          >
+            {skip}
+          </button>
+          {elsewhere && !wantsCode ? (
+            <button
+              type="button"
+              className={PRIMARY}
+              disabled={busy !== null}
+              onClick={() => void answer({ decision: "done" })}
+            >
+              {spinner("done")} I'm done
+            </button>
+          ) : (
+            <button
+              type="button"
+              className={wantsCode ? SECONDARY : PRIMARY}
+              disabled={busy !== null}
+              onClick={open}
+            >
+              {wantsCode ? "Open its browser" : "Do it now"}
+            </button>
+          )}
+        </div>
+        {elsewhere && !wantsCode ? (
+          <button
+            type="button"
+            className="mx-auto -mb-1 rounded-full px-3 py-1 text-muted-foreground text-sm hover:text-foreground"
+            disabled={busy !== null}
+            onClick={open}
+          >
+            Open its browser
+          </button>
+        ) : null}
+      </>
+    );
   return (
     <>
       <p className="mt-0.5 text-muted-foreground text-sm">{aldoHandoffHow(handoff)}</p>
@@ -180,66 +258,38 @@ export function AldoHandoffActions(props: {
           </Button>
         </form>
       ) : null}
-      <div
-        className={
-          props.pills
-            ? "mt-1 flex flex-col gap-2 sm:flex-row"
-            : "mt-3 flex flex-wrap items-center gap-2"
-        }
-      >
+      <div className="mt-3 flex flex-wrap items-center gap-2">
         {wantsCode ? (
-          <Button
-            type="button"
-            size={size}
-            variant="outline"
-            className={pill}
-            disabled={busy !== null}
-            onClick={open}
-          >
+          <Button type="button" size="sm" variant="outline" disabled={busy !== null} onClick={open}>
             Open its browser
           </Button>
         ) : elsewhere ? (
           <>
             <Button
               type="button"
-              size={size}
-              className={pill}
+              size="sm"
               disabled={busy !== null}
               onClick={() => void answer({ decision: "done" })}
             >
               {spinner("done")} I'm done
             </Button>
-            <Button
-              type="button"
-              size={size}
-              variant={quiet}
-              className={pill}
-              disabled={busy !== null}
-              onClick={open}
-            >
+            <Button type="button" size="sm" variant="ghost" disabled={busy !== null} onClick={open}>
               Open its browser
             </Button>
           </>
         ) : (
-          <Button
-            type="button"
-            size={size}
-            className={pill}
-            disabled={busy !== null}
-            onClick={open}
-          >
+          <Button type="button" size="sm" disabled={busy !== null} onClick={open}>
             <HandIcon className="size-3.5" /> Do it now
           </Button>
         )}
         <Button
           type="button"
-          size={size}
-          variant={quiet}
-          className={pill}
+          size="sm"
+          variant="ghost"
           disabled={busy !== null}
           onClick={() => void answer({ decision: "skip" })}
         >
-          {spinner("skip")} {aldoHandoffSkipLabel(handoff)}
+          {skip}
         </Button>
       </div>
     </>

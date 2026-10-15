@@ -2,7 +2,17 @@
 
 Aldo's home screen is where you see all of your agents' work at once and act on it, with Aldo to hand. Nothing on it wakes a sleeping agent: everything comes from what Aldo already knows.
 
-It opens on your conversation with Aldo. **Board**, at the top, switches to the board below (on a phone, **Threads**: see below); the home screen remembers which you used last on each device.
+It opens on your conversation with Aldo, and everything is in it, so there's no other view to switch to:
+
+- **What happened**, where it happened: a quiet line when a thread finishes (tap it for a look at the thread without leaving), when a pull request ships, and for what you decided.
+- **Threads Aldo started** for you, as cards that stay live: what each is doing and for how long, its pull requests with their checks, and **Needs you** when it waits on you, which takes you to its card. Tap a card for a look at the thread beside the conversation; **↗** opens it.
+- **What needs you**, at the end, just above where you type: the first open, the next two a line each that opens with a tap, and the rest behind **more**. Answer each right there; a long email or plan shows its first lines and **Show all**, and discarding a draft asks first. When you've answered, the card becomes a line saying what happened, in the words of whatever did it. If the thread had already moved on (you answered it elsewhere, say), the line says that instead, and if it didn't work the card stays.
+
+At the top, Aldo's face and a line say what it's at: thinking, or how many things wait on you and how many threads are working ("2 need you · 3 working"). Tap it to see what's working now and what's coming up. The pencil at the top right starts a thread in General, a project or a repository.
+
+Before you've said anything, the page is just Aldo, a question and the box to type in, with three things to start from under it (**More ideas** for the rest). Tapping one fills the box for you to finish; nothing is sent until you send it. Your first message slides the box down to its place.
+
+When you've scrolled up, what arrives below waits behind **New from Aldo**. **Esc** closes a look at a thread and puts you back where you were.
 
 ## Simple mode
 
@@ -18,11 +28,12 @@ Turn simple mode on or off in **Settings → General → Layout**, or with the *
 
 ## Your brief
 
-The first time you open Aldo each day (from 4 in the morning where you are), Aldo starts the day's conversation with a brief: a few sentences on where everything stands, then **Top of mind**, the few things to decide first, and **Looking ahead**, what's left on your calendar today when you've connected one.
+The first time you open Aldo each day (from 4 in the morning where you are), Aldo starts the day's conversation with a brief: a few sentences on where everything stands, and what's left on your calendar today when you've connected one.
 
-- **Top of mind** shows each thing as it stands now. An email to send has **Send**, an event **Add**, a pull request **Merge**; Aldo asks before it goes ahead. When Aldo has a reason to think it knows your answer to a question (something you told it before), it says what it would pick, and that choice is a button. Tap anything else to look at it and answer it there. What you've decided is ticked off.
-- **Listen** reads the brief aloud in Aldo's voice.
-- **Go through them** starts a call with Aldo that takes you through what's waiting on you, one at a time (below).
+The few things Aldo thinks you should decide first come first in what needs you. When Aldo has a reason to think it knows your answer to a question (something you told it before), that choice is marked **Aldo's pick**, with why. Email, events and merges ask before they go ahead.
+
+- **Listen**, beside the brief's title, reads it aloud in Aldo's voice.
+- **Go through them with Aldo**, over what needs you, starts a call with Aldo that takes you through what's waiting on you, one at a time (below).
 
 Aldo remembers what it said in the brief, so you can ask about it afterwards.
 
@@ -32,14 +43,11 @@ On **Go through them**, Aldo puts each decision to you out loud while your scree
 
 ## On a phone
 
-On a phone the home screen has two tabs:
-
-- **Aldo**: your conversation, with the brief at the start of the day, and a big button beside the composer to talk. A call fills the screen: Aldo's words as it says them, what it did on this call, and **Mute**, **Type** and **End**. The arrow at the top folds the call away so you can use the app while it goes on; the big button brings it back. The speaker button turns Aldo's voice off, leaving its words on screen.
-- **Threads**: every thread by what it needs from you (waiting on you, working, landing, unread), with how many wait on you on the tab. Sending an email or merging takes a tap on the row. Tap a thread to see what its agent last said and answer it, reply to the agent, talk to Aldo about it, or open it.
+On a phone the home screen is the same conversation, with the button beside the box to talk. A call fills the screen: Aldo's words as it says them, what it did on this call, and **Mute**, **Type** and **End**. The arrow at the top folds the call away so you can use the app while it goes on; the dot beside the box brings it back. The speaker button turns Aldo's voice off, leaving its words on screen. Your threads are in the sidebar, behind the button at the top left.
 
 ## The board
 
-The board answers four questions, in order, starting with what waits on a tap from you.
+Where Aldo's assistant isn't available, the home screen is the board instead. The board answers four questions, in order, starting with what waits on a tap from you.
 
 **Approve.** What waits on one tap from you: an email an agent drafted to send, an event for your calendar, a thread Aldo suggests, or a step an agent takes only with your yes (paying, booking, cancelling, submitting, calling). See [Approvals and heads-ups](./aldo-approvals.md).
 
@@ -77,7 +85,7 @@ At the top, **New** opens a thread at once, ready to type in, in General: for wo
 
 With threads in more than one repository, chips at the top narrow the whole board to one.
 
-On a keyboard, **j** and **k** move through the threads, **Enter** opens the selected one, and **/** goes to Aldo's composer.
+On the board, **j** and **k** move through the threads, **Enter** opens the selected one, and **/** goes to Aldo's composer. In the conversation, **j** and **k** move between what needs you and **Enter** takes a look at it; nothing is answered without a button.
 
 ## Aldo
 

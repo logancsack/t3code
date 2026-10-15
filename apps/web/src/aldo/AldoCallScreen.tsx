@@ -39,7 +39,7 @@ import {
   setAldoVoiceOff,
   useAldoAssistant,
 } from "./assistantSession";
-import { choiceWords, decideAldo, type AldoChoice } from "./decide";
+import { choiceWords, decideAldoOutcome, type AldoChoice } from "./decide";
 import {
   decisionAsk,
   decisionOpen,
@@ -361,9 +361,11 @@ function WalkCard(props: {
   const [busy, setBusy] = useState<string | null>(null);
   const choose = async (id: string, choice: AldoChoice) => {
     setBusy(id);
-    const done = await decideAldo(d, choice);
+    const { outcome, said } = await decideAldoOutcome(d, choice);
     setBusy(null);
-    if (done) advanceAldoWalkthrough("decided", choiceWords(d, choice));
+    if (outcome === "done")
+      advanceAldoWalkthrough("decided", choiceWords(d, choice), said ?? undefined);
+    else if (outcome === "moved-on") advanceAldoWalkthrough("moved-on", said ?? undefined);
   };
   const choices = useMemo((): ReadonlyArray<{
     id: string;

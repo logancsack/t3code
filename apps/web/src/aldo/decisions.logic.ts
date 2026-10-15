@@ -134,11 +134,17 @@ export function aldoDecisions(home: AldoHome, now: number): ReadonlyArray<AldoDe
 /**
  * How many things wait on the user, for the phone's badge and summary: the
  * decisions, and the threads paused mid-turn (not put away), which opening
- * them carries on rather than a decision.
+ * them carries on rather than a decision. `answered`: decisions' keys the user
+ * has just decided, which the home read hasn't caught up with.
  */
-export function aldoWaitingCount(home: AldoHome, now: number): number {
+export function aldoWaitingCount(
+  home: AldoHome,
+  now: number,
+  answered: ReadonlyArray<string> = [],
+): number {
   const paused = home.conversations.filter((c) => isPausedMidTurn(c) && !putAway(c, now));
-  return aldoDecisions(home, now).length + paused.length;
+  const decisions = aldoDecisions(home, now).filter((d) => !answered.includes(d.key));
+  return decisions.length + paused.length;
 }
 
 /** Whether a decision can be made without opening its thread: a tap, or a few words. */

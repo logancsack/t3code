@@ -1,13 +1,35 @@
 // What Aldo's face says under its name at the top of the conversation
 // (AldoPresence.tsx), the way a messaging app says someone is typing: what
-// Aldo is doing on a call or in writing, else what its agents are at, else
-// what waits on the user. Pure, so it's tested on its own.
+// Aldo is doing on a call or in writing, else how many things need the user
+// and how many agents work, else what its agents are at, else what waits on
+// the user. Pure, so it's tested on its own.
 
 import type { AldoAssistantPhase } from "./assistant.logic";
 import type { AldoHomeConversation } from "./cloud";
 
-/** How Aldo's eyes move: still, looking about while agents work, up while it thinks. */
-export type AldoMood = "idle" | "working" | "thinking" | "listening" | "speaking";
+/**
+ * How Aldo's eyes move: still, looking about while agents work, up while it
+ * thinks, down while the user writes to it, smiling when something's done.
+ */
+export type AldoMood =
+  | "idle"
+  | "working"
+  | "thinking"
+  | "listening"
+  | "speaking"
+  | "reading"
+  | "pleased";
+
+/** The face's mood: what Aldo's at on a call or in writing first, then how it's reacting to the user. */
+export function faceMood(
+  mood: AldoMood,
+  face: { readonly reading: boolean; readonly pleased: boolean },
+): AldoMood {
+  if (mood === "listening" || mood === "speaking" || mood === "thinking") return mood;
+  if (face.pleased) return "pleased";
+  if (face.reading) return "reading";
+  return mood;
+}
 
 export function presenceLine(input: {
   readonly phase: AldoAssistantPhase;
@@ -23,6 +45,12 @@ export function presenceLine(input: {
   if (phase === "thinking" || phase === "connecting" || input.replying)
     return { text: "Typing…", mood: "thinking" };
   const [first] = input.working;
+  // Both: what needs the user leads, beside the dot that says so.
+  if (first && input.waiting > 0)
+    return {
+      text: `${input.waiting} need${input.waiting === 1 ? "s" : ""} you · ${input.working.length} working`,
+      mood: "working",
+    };
   if (first) {
     const doing = first.browsing ? `On ${first.browsing.site}` : first.title;
     const more = input.working.length - 1;

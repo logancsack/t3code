@@ -38,6 +38,8 @@ export function ThreadLink(props: {
   readonly target: AldoHomeTarget;
   readonly children?: ReactNode;
   readonly className?: string;
+  /** What it opens, said, when its children don't say it (an icon). */
+  readonly label?: string;
 }) {
   const router = useRouter();
   return (
@@ -48,6 +50,7 @@ export function ThreadLink(props: {
         threadId: props.target.threadId as ThreadId,
       }}
       className={props.className}
+      {...(props.label ? { "aria-label": props.label } : {})}
       viewTransition={aldoCanMorph()}
       onClick={(event) => {
         // Only a plain click opens it here; the others open a new tab or window.

@@ -125,3 +125,30 @@ export function aldoMorph(
     update();
   }
 }
+
+/**
+ * Makes a change that moves `element` across the page (the composer, from the
+ * empty page's middle to the foot of the conversation once something's said)
+ * with it gliding there rather than jumping; the rest crossfades. Without a
+ * morph, it just makes the change.
+ */
+export function aldoGlide(element: HTMLElement | null, update: () => void): void {
+  if (!element || !aldoCanMorph()) {
+    update();
+    return;
+  }
+  const root = document.documentElement;
+  const done = () => {
+    element.style.removeProperty("view-transition-name");
+    delete root.dataset.aldoGlide;
+  };
+  element.style.setProperty("view-transition-name", "aldo-glide");
+  root.dataset.aldoGlide = "";
+  try {
+    const transition = document.startViewTransition(() => flushSync(update));
+    void transition.finished.then(done, done);
+  } catch {
+    done();
+    update();
+  }
+}

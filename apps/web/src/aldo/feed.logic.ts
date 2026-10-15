@@ -8,7 +8,13 @@
 // nothing is woken.
 // Pure, so it's tested on its own.
 
-import type { AldoHome, AldoHomeAction, AldoHomeConversation, AldoHomePullRequest } from "./cloud";
+import type {
+  AldoHome,
+  AldoHomeAction,
+  AldoHomeConversation,
+  AldoHomePullRequest,
+  AldoHomeTarget,
+} from "./cloud";
 import { putAway } from "./decisions.logic";
 import { sameTarget } from "./home.logic";
 
@@ -35,6 +41,14 @@ export type AldoFeedEvent =
       readonly action: AldoHomeAction;
       /** The newest action on a thread that's still going: shown as the thread, live. */
       readonly live: boolean;
+    }
+  | {
+      /** A card the user answered this visit (receipts.ts): what was done. */
+      readonly kind: "decided";
+      readonly key: string;
+      readonly at: string;
+      readonly text: string;
+      readonly thread: AldoHomeTarget | null;
     };
 
 /** Aldo's actions worth a line in the conversation: what it changed about a thread or a pull request. */
@@ -100,6 +114,27 @@ export function feedEvents(
       !shown.slice(index + 1).some((later) => a.thread && sameTarget(later.thread, a.thread)),
   }));
   return [...finished, ...shipped, ...actions].sort((a, b) => a.at.localeCompare(b.at));
+}
+
+/** What happened with the cards the user answered this visit put in, where they were answered. */
+export function withReceipts(
+  events: ReadonlyArray<AldoFeedEvent>,
+  receipts: ReadonlyArray<{
+    readonly key: string;
+    readonly at: string;
+    readonly text: string;
+    readonly thread?: AldoHomeTarget | null;
+  }>,
+): ReadonlyArray<AldoFeedEvent> {
+  if (receipts.length === 0) return events;
+  const decided: AldoFeedEvent[] = receipts.map((r) => ({
+    kind: "decided",
+    key: `decided:${r.key}`,
+    at: r.at,
+    text: r.text,
+    thread: r.thread ?? null,
+  }));
+  return [...events, ...decided].sort((a, b) => a.at.localeCompare(b.at));
 }
 
 export type AldoTimelineItem<E> =

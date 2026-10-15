@@ -1,4 +1,4 @@
-/* Aldo's morphs (morph.ts): short, and only while one of them runs. */
+/* Aldo's morphs and glides (morph.ts): short, and only while one of them runs. */
 html[data-aldo-morph]::view-transition-group(*) {
   animation-duration: 200ms;
   animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
@@ -15,10 +15,19 @@ html[data-aldo-morph]::view-transition-new(aldo-morph) {
   overflow: clip;
 }
 
+/* A glide (aldoGlide): what moves takes a little longer, the way a sheet settles. */
+html[data-aldo-glide]::view-transition-group(*) {
+  animation-duration: 240ms;
+  animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+
 @media (prefers-reduced-motion: reduce) {
   html[data-aldo-morph]::view-transition-group(*),
   html[data-aldo-morph]::view-transition-old(*),
-  html[data-aldo-morph]::view-transition-new(*) {
+  html[data-aldo-morph]::view-transition-new(*),
+  html[data-aldo-glide]::view-transition-group(*),
+  html[data-aldo-glide]::view-transition-old(*),
+  html[data-aldo-glide]::view-transition-new(*) {
     animation: none;
   }
 }

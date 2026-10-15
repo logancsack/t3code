@@ -18,7 +18,13 @@
 
 import { useNavigate, useRouter } from "@tanstack/react-router";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import { ChevronDownIcon, FolderGit2Icon, PlusIcon, SparklesIcon } from "lucide-react";
+import {
+  ChevronDownIcon,
+  FolderGit2Icon,
+  PlusIcon,
+  SparklesIcon,
+  SquarePenIcon,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import { Button } from "../components/ui/button";
@@ -59,6 +65,7 @@ import {
 import { refreshAldoHome, useAldoHomeRead } from "./homeFeed";
 import { HOST_KINDS, openAldoRepositoryPicker } from "./AldoRepositoryPicker";
 import { useStartAldoThread } from "./newThread";
+import { ICON_BUTTON } from "./surface";
 import { AldoPlacePicker } from "./AldoPlacePicker";
 import { forgetAldoRepositories } from "./places";
 import { startAldoSandbox } from "./threads";
@@ -341,7 +348,14 @@ export function AldoHome() {
         supported={supported}
         now={now}
         tabs={null}
-        actions={newMenu}
+        actions={
+          <NewMenu
+            general={general}
+            projects={projects || sourceReady}
+            repositories={sourceReady}
+            quiet
+          />
+        }
         setup={conversationSetup}
         welcome={welcome}
         issues={issues}
@@ -520,12 +534,14 @@ function RepoChip(props: {
 /**
  * One "New": a thread, the default when it's clicked, and in its menu a
  * project (an Aldo one needs no git host) or a thread in repositories, once
- * a git host is connected.
+ * a git host is connected. `quiet`, it's one icon that opens where to start
+ * it: Aldo's conversation, where the way to start something is to say it.
  */
 function NewMenu(props: {
   readonly general: boolean;
   readonly projects: boolean;
   readonly repositories: boolean;
+  readonly quiet?: boolean;
 }) {
   // A General draft at once; an older Aldo can't start a thread outside a repository.
   const { start, starting } = useStartAldoThread();
@@ -539,6 +555,43 @@ function NewMenu(props: {
     }).catch(() => null);
     if (projectRef) await handleNewThread(projectRef);
   };
+  if (props.quiet) {
+    const trigger = (
+      <button
+        type="button"
+        aria-label="New thread"
+        disabled={starting || (!props.general && !props.repositories)}
+        className={cn(ICON_BUTTON, "size-9 text-foreground/70")}
+      >
+        <SquarePenIcon className="size-[18px]" strokeWidth={1.75} />
+      </button>
+    );
+    return props.general ? (
+      <AldoPlacePicker
+        mode="start"
+        current={null}
+        align="end"
+        trigger={trigger}
+        onPick={(place) => void start(place.repos)}
+        onCreate={props.projects ? (name) => void create(name) : null}
+        onMore={() => openAldoRepositoryPicker(props.projects ? "new" : "existing")}
+      />
+    ) : (
+      <Menu>
+        <MenuTrigger render={trigger} />
+        <MenuPopup align="end" className="min-w-52">
+          {props.repositories ? (
+            <MenuItem onClick={thread}>
+              <FolderGit2Icon className="size-4" /> Thread in a repository
+            </MenuItem>
+          ) : null}
+          <MenuItem disabled={!props.projects} onClick={() => openAldoRepositoryPicker("new")}>
+            <SparklesIcon className="size-4" /> Project
+          </MenuItem>
+        </MenuPopup>
+      </Menu>
+    );
+  }
   return (
     <Group aria-label="New">
       <Button
