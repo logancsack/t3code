@@ -255,7 +255,7 @@ function Choice(props: {
 }
 
 /** Lines a quote shows before "Show all" (literal, for Tailwind). */
-const CLAMP = { 4: "line-clamp-4", 6: "line-clamp-6" } as const;
+const CLAMP = { 4: "max-h-[4lh]", 6: "max-h-[6lh]" } as const;
 
 /**
  * What a card quotes (an email, a plan, a command): a few lines, and the rest
@@ -282,7 +282,13 @@ function Quoted(props: {
     <>
       <p
         ref={text}
-        className={cn("whitespace-pre-wrap", !whole && CLAMP[props.lines], props.className)}
+        className={cn(
+          "whitespace-pre-wrap",
+          // Cut short, it fades out rather than ending on an ellipsis (a blank line can be the last shown).
+          !whole && ["overflow-hidden", CLAMP[props.lines]],
+          !whole && long && "[mask-image:linear-gradient(to_bottom,black_60%,transparent)]",
+          props.className,
+        )}
       >
         {props.children}
       </p>
