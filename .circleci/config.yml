@@ -52,7 +52,7 @@ jobs:
           name: Typecheck
           command: vp run --filter 't3...' typecheck
 
-  # The server's dependencies; test-server runs the server itself.
+  # The server's dependencies include the full web suite; test-server runs the server itself.
   test:
     executor: node
     steps:
@@ -60,10 +60,6 @@ jobs:
       - run:
           name: Test
           command: vp run --parallel --concurrency-limit 4 --filter 't3^...' test
-      - run:
-          name: Test Aldo client routing
-          working_directory: apps/web
-          command: vp test run --project unit src/aldo/dispatch.test.ts src/aldo/machineSettings.logic.test.ts src/components/ChatView.logic.test.ts src/composerDraftStore.test.ts
 
   # apps/server sets `fileParallelism: false`, so its files run one at a time.
   # Sharding spreads them over separate machines instead.
