@@ -1,10 +1,12 @@
+import { settingsInbox } from "./settingsData";
+import { useSettingsResource } from "./settingsResource";
 // Settings → Agents → Your agents' email: the address agents share (their
 // agent inbox), claimed once with a handle the user picks, and the name its
 // mail goes out under, which the user changes as they like.
 
 import { useNavigate } from "@tanstack/react-router";
 import { CheckCircle2Icon, CopyIcon, InboxIcon, LoaderIcon } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { SettingsRow } from "../components/settings/settingsLayout";
 import { Button } from "../components/ui/button";
@@ -17,7 +19,6 @@ import {
   fetchAldoAgentInbox,
   renameAldoAgentInbox,
   type AldoAgentHandleCheck,
-  type AldoAgentInbox,
   type AldoAgentInboxAddress,
 } from "./cloud";
 import {
@@ -257,31 +258,10 @@ function AgentSenderNameRow(props: {
 /** The agents' own email address, and the name its mail goes out under, once Aldo has agent inboxes. */
 export function AldoAgentInboxRows() {
   const navigate = useNavigate();
-  const [state, setState] = useState<AldoAgentInbox | null>(null);
-  const [failed, setFailed] = useState(false);
-  // Only the latest read's answer shows.
-  const latest = useRef(0);
-  const load = useCallback(() => {
-    const request = ++latest.current;
-    fetchAldoAgentInbox()
-      .then((next) => {
-        if (request !== latest.current) return;
-        setState(next);
-        setFailed(false);
-      })
-      .catch(() => {
-        if (request === latest.current) setFailed(true);
-      });
-  }, []);
-  useEffect(() => {
-    load();
-    // An agent (or Aldo) may claim it while Settings is open.
-    window.addEventListener("focus", load);
-    return () => {
-      latest.current++;
-      window.removeEventListener("focus", load);
-    };
-  }, [load]);
+  const cached = useSettingsResource(settingsInbox);
+  const state = cached.data ?? null;
+  const failed = cached.error !== null;
+  const setState = settingsInbox.set;
   if (!state?.available) {
     return (
       <SettingsRow
@@ -304,7 +284,6 @@ export function AldoAgentInboxRows() {
       <ClaimAgentAddress
         domain={state.domain}
         onClaimed={(inbox) => {
-          latest.current++;
           setState({ ...state, inbox });
           toastManager.add({
             type: "success",
@@ -368,7 +347,6 @@ export function AldoAgentInboxRows() {
         <AgentSenderNameRow
           inbox={state.inbox}
           onRenamed={(inbox) => {
-            latest.current++;
             setState({ ...state, inbox });
           }}
         />

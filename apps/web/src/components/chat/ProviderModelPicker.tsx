@@ -283,48 +283,57 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
       </PopoverTrigger>
       <PopoverPopup
         {...(props.isComposerOwned ? composerFloatingLayerProps : {})}
+        animateContent={false}
         align="start"
         className="before:hidden"
         padding="none"
       >
-        {props.automaticOption ? (
-          <Button
-            variant="ghost"
-            className="w-full"
-            onClick={() => {
-              props.automaticOption?.onSelect();
-              setIsMenuOpen(false);
-            }}
-          >
-            {props.automaticOption.selected ? "✓ " : ""}
-            {props.automaticOption.label}
-          </Button>
+        {isMenuOpen ? (
+          <>
+            {props.automaticOption ? (
+              <Button
+                variant="ghost"
+                className="w-full"
+                onClick={() => {
+                  props.automaticOption?.onSelect();
+                  setIsMenuOpen(false);
+                }}
+              >
+                {props.automaticOption.selected ? "✓ " : ""}
+                {props.automaticOption.label}
+              </Button>
+            ) : null}
+            <ModelPickerContent
+              activeInstanceId={activeInstanceId}
+              model={props.model}
+              {...(props.selectedModels !== undefined
+                ? { selectedModels: props.selectedModels }
+                : {})}
+              {...(props.onToggleModel
+                ? {
+                    onToggleModel: (instanceId: ProviderInstanceId, model: string) => {
+                      if (!props.disabled) props.onToggleModel?.(instanceId, model);
+                    },
+                  }
+                : {})}
+              lockedProvider={props.lockedProvider}
+              lockedContinuationGroupKey={props.lockedContinuationGroupKey ?? null}
+              instanceEntries={props.instanceEntries}
+              {...(props.keybindings ? { keybindings: props.keybindings } : {})}
+              modelOptionsByInstance={props.modelOptionsByInstance}
+              terminalOpen={props.terminalOpen ?? false}
+              onRequestClose={() => setIsMenuOpen(false)}
+              {...(props.onOpenProviderSetup
+                ? { onOpenProviderSetup: props.onOpenProviderSetup }
+                : {})}
+              {...(props.getModelDisabledReason
+                ? { getModelDisabledReason: props.getModelDisabledReason }
+                : {})}
+              onInstanceModelChange={handleInstanceModelChange}
+            />
+          </>
         ) : null}
-        <ModelPickerContent
-          activeInstanceId={activeInstanceId}
-          model={props.model}
-          {...(props.selectedModels !== undefined ? { selectedModels: props.selectedModels } : {})}
-          {...(props.onToggleModel
-            ? {
-                onToggleModel: (instanceId: ProviderInstanceId, model: string) => {
-                  if (!props.disabled) props.onToggleModel?.(instanceId, model);
-                },
-              }
-            : {})}
-          lockedProvider={props.lockedProvider}
-          lockedContinuationGroupKey={props.lockedContinuationGroupKey ?? null}
-          instanceEntries={props.instanceEntries}
-          {...(props.keybindings ? { keybindings: props.keybindings } : {})}
-          modelOptionsByInstance={props.modelOptionsByInstance}
-          terminalOpen={props.terminalOpen ?? false}
-          onRequestClose={() => setIsMenuOpen(false)}
-          {...(props.onOpenProviderSetup ? { onOpenProviderSetup: props.onOpenProviderSetup } : {})}
-          {...(props.getModelDisabledReason
-            ? { getModelDisabledReason: props.getModelDisabledReason }
-            : {})}
-          onInstanceModelChange={handleInstanceModelChange}
-        />
-        {props.selectedModels === undefined ? (
+        {isMenuOpen && props.selectedModels === undefined ? (
           <ChatGptSharingControl provider={activeEntry?.snapshot ?? null} />
         ) : null}
       </PopoverPopup>

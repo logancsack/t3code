@@ -1,3 +1,5 @@
+import { settingsApps } from "./settingsData";
+import { useSettingsResource } from "./settingsResource";
 // Settings → Connections' apps: any app with a remote MCP server, connected
 // for every agent (Notion, Linear, Zapier and through it thousands more, or
 // one by its URL). Connecting signs in with the app in a popup, through Aldo,
@@ -5,7 +7,7 @@
 // over the integrations' channel too. A server without apps shows nothing.
 
 import { CheckCircle2Icon } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { SettingsRow } from "../components/settings/settingsLayout";
 import { Button } from "../components/ui/button";
@@ -14,7 +16,6 @@ import { toastManager } from "../components/ui/toast";
 import {
   aldoAppConnectUrl,
   disconnectAldoApp,
-  fetchAldoApps,
   type AldoApp,
   type AldoAppCatalogEntry,
 } from "./cloud";
@@ -136,27 +137,12 @@ export function AldoAppCatalogRow(props: { readonly entry: AldoAppCatalogEntry }
  * in this tab when the popup was blocked) and when the user comes back.
  */
 export function useAldoApps() {
-  const [data, setData] = useState<Awaited<ReturnType<typeof fetchAldoApps>> | undefined>(
-    undefined,
-  );
-  const [error, setError] = useState<string | null>(null);
-  const latest = useRef(0);
-
+  const { data, error } = useSettingsResource(settingsApps, true, false);
   const refresh = useCallback(() => {
-    const request = ++latest.current;
-    fetchAldoApps()
-      .then((next) => {
-        if (request !== latest.current) return;
-        setData(next);
-        setError(null);
-      })
-      .catch((cause: unknown) => {
-        if (request === latest.current) setError(messageOf(cause));
-      });
+    void settingsApps.refresh().catch(() => undefined);
   }, []);
 
   useEffect(() => {
-    refresh();
     // Back from a sign-in that ran in this tab (the popup was blocked).
     const redirected = parseAldoAppRedirect(window.location.search);
     if (redirected) {
@@ -169,7 +155,7 @@ export function useAldoApps() {
         `${pathname}${withoutAldoAppRedirect(search)}${hash}`,
       );
     }
-  }, [refresh]);
+  }, []);
 
   useEffect(() => {
     // The popup's page posts to its opener and on the channel: each result is told once.

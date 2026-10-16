@@ -1,41 +1,23 @@
 import { CheckCircle2Icon } from "lucide-react";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, type ReactNode } from "react";
 
 import { AuthConnectorDialog } from "../components/settings/AuthConnectorDialog";
 import { SettingsRow, SettingsSection } from "../components/settings/settingsLayout";
 import { Button } from "../components/ui/button";
-import {
-  disconnectAldoAccount,
-  fetchAldoAccounts,
-  type AldoAccount,
-  type AldoAccountKind,
-  type AldoGitHostKind,
-} from "./cloud";
+import { disconnectAldoAccount, type AldoAccount, type AldoAccountKind } from "./cloud";
+import { settingsAccounts, settingsRepositories } from "./settingsData";
+import { useSettingsResource } from "./settingsResource";
 import { ALDO_ACCOUNT_SPECS } from "./accountSpecs";
 
 export { ALDO_ACCOUNT_SPECS };
 
-type AldoAccounts = Record<AldoAccountKind | AldoGitHostKind, AldoAccount>;
-
-/** The last answer on this page: a screen that opens again shows it while it asks again. */
-let lastAccounts: AldoAccounts | null = null;
-
 export function useAldoAccounts() {
-  const [accounts, setAccounts] = useState<AldoAccounts | null>(lastAccounts);
-  const [error, setError] = useState<string | null>(null);
+  const { data, error } = useSettingsResource(settingsAccounts);
   const refresh = useCallback(() => {
-    fetchAldoAccounts()
-      .then((next) => {
-        lastAccounts = next;
-        setAccounts(next);
-        setError(null);
-      })
-      .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)));
+    void settingsAccounts.refresh().catch(() => undefined);
+    void settingsRepositories.refresh().catch(() => undefined);
   }, []);
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
-  return { accounts, error, refresh };
+  return { accounts: data ?? null, error, refresh };
 }
 
 export function AldoAccountButton(props: {

@@ -1,17 +1,21 @@
+import { settingsPhone } from "./settingsData";
+import { useSettingsResource } from "./settingsResource";
 import { MessageCircleIcon, PhoneIcon } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { SettingsRow, SettingsSection } from "../components/settings/settingsLayout";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Switch } from "../components/ui/switch";
-import { aldoPhone, fetchAldoPhone, type AldoPhoneSettings } from "./cloud";
+import { aldoPhone, type AldoPhoneSettings } from "./cloud";
 
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 /** Phone setup belongs to the user, never to an agent or a provider webhook. */
 export function AldoPhonePanel() {
-  const [settings, setSettings] = useState<AldoPhoneSettings | null>(null);
-  const [loaded, setLoaded] = useState(false);
+  const cached = useSettingsResource(settingsPhone);
+  const settings = cached.data ?? null;
+  const loaded = cached.data !== undefined || cached.error !== null;
+  const setSettings = settingsPhone.set;
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [phone, setPhone] = useState("");
@@ -20,41 +24,12 @@ export function AldoPhonePanel() {
   const [pin, setPin] = useState("");
   const [changing, setChanging] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
-  const latest = useRef(0);
   const mutating = useRef(false);
-  const refresh = useCallback(() => {
-    // A focus read during a write can return the old state after its result.
-    if (mutating.current) return;
-    const seq = ++latest.current;
-    fetchAldoPhone()
-      .then((next) => {
-        if (seq === latest.current) {
-          setSettings(next);
-          setLoaded(true);
-          setError(null);
-        }
-      })
-      .catch((cause: unknown) => {
-        if (seq === latest.current) {
-          setError(messageOf(cause));
-          setLoaded(true);
-        }
-      });
-  }, []);
-  useEffect(() => {
-    refresh();
-    window.addEventListener("focus", refresh);
-    return () => {
-      latest.current++;
-      window.removeEventListener("focus", refresh);
-    };
-  }, [refresh]);
   async function act(work: () => Promise<void>) {
     if (mutating.current) return;
     mutating.current = true;
     setBusy(true);
     setError(null);
-    latest.current++;
     try {
       await work();
     } catch (cause) {
@@ -64,7 +39,15 @@ export function AldoPhonePanel() {
       setBusy(false);
     }
   }
-  if (loaded && !settings && !error) return null;
+  async function update(patch: Partial<Pick<AldoPhoneSettings, "smsEnabled" | "voiceEnabled">>) {
+    await act(async () => {
+      await settingsPhone.mutate(
+        (before) => (before ? { ...before, ...patch } : before),
+        () => aldoPhone.update(patch),
+      );
+    });
+  }
+  if (loaded && !settings && !error && !cached.error) return null;
   return (
     <SettingsSection
       id="aldo-phone"
@@ -75,10 +58,18 @@ export function AldoPhonePanel() {
         One number, the same Aldo. Your conversations and agents carry on between the app, texts,
         and calls. Drafts still wait for your tap in Aldo.
       </p>
-      {error ? (
+      {error || cached.error ? (
         <p role="alert" className="px-3 text-sm text-destructive-foreground sm:px-4">
-          {error}{" "}
-          <button className="underline" onClick={refresh}>
+          {error ?? cached.error}{" "}
+          <button
+            className="underline"
+            onClick={() =>
+              void settingsPhone.refresh().then(
+                () => setError(null),
+                () => undefined,
+              )
+            }
+          >
             Refresh
           </button>
         </p>
@@ -291,7 +282,7 @@ export function AldoPhonePanel() {
                     disabled={busy || !settings.sms}
                     aria-label="Enable SMS"
                     onCheckedChange={(on) => {
-                      void act(async () => setSettings(await aldoPhone.update({ smsEnabled: on })));
+                      void update({ smsEnabled: on });
                     }}
                   />
                 }
@@ -306,9 +297,7 @@ export function AldoPhonePanel() {
                     disabled={busy || !settings.voice}
                     aria-label="Enable phone calls"
                     onCheckedChange={(on) => {
-                      void act(async () =>
-                        setSettings(await aldoPhone.update({ voiceEnabled: on })),
-                      );
+                      void update({ voiceEnabled: on });
                     }}
                   />
                 }
@@ -363,7 +352,10 @@ export function AldoPhonePanel() {
             </>
           ) : null}
           {settings.available && settings.prototype && settings.verified ? (
-            <PhonePrototype settings={settings} onChanged={refresh} />
+            <PhonePrototype
+              settings={settings}
+              onChanged={() => void settingsPhone.refresh().catch(() => undefined)}
+            />
           ) : null}
           {settings.deliveries.length ? (
             <div className="space-y-1 px-3 text-sm sm:px-4">

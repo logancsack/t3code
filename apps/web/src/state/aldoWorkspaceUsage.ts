@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback } from "react";
+import { createSettingsResource, useSettingsResource } from "../aldo/settingsResource";
 
 import { isAldoBilling, type AldoBilling } from "../aldo/billing.logic";
 import { isAldoCloud } from "../aldo/cloud";
@@ -197,58 +198,33 @@ export function aldoWorkspaceUsageAvailable(): boolean {
  * Errors keep the last good summary so a blip during refresh does not blank
  * the card; the page's refresh control is the way back.
  */
+const usageResource = createSettingsResource(async () => {
+  const response = await fetch(isAldoCloud ? ALDO_CLOUD_USAGE_PATH : ALDO_WORKSPACE_USAGE_PATH, {
+    credentials: "same-origin",
+    cache: "no-store",
+    headers: { accept: "application/json" },
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
+  const payload: unknown = await response.json().catch(() => null);
+  if (!response.ok || !isAldoWorkspaceUsage(payload)) throw new Error("Couldn't read usage.");
+  return payload;
+});
+
 export function useAldoWorkspaceUsage(): {
   readonly state: AldoWorkspaceUsageState;
   readonly refresh: () => void;
 } {
   const available = aldoWorkspaceUsageAvailable();
-  const [state, setState] = useState<AldoWorkspaceUsageState>(() =>
-    available ? { status: "loading", usage: null } : { status: "unavailable" },
-  );
-  const request = useRef<AbortController | null>(null);
-
+  const cached = useSettingsResource(usageResource, available);
+  const state: AldoWorkspaceUsageState = !available
+    ? { status: "unavailable" }
+    : cached.error
+      ? { status: "error", usage: cached.data ?? null }
+      : cached.data === undefined || cached.loading
+        ? { status: "loading", usage: cached.data ?? null }
+        : { status: "ready", usage: cached.data };
   const refresh = useCallback(() => {
-    if (!available) return;
-    request.current?.abort();
-    const controller = new AbortController();
-    request.current = controller;
-    setState((previous) => ({
-      status: "loading",
-      usage: previous.status === "unavailable" ? null : previous.usage,
-    }));
-    void fetch(isAldoCloud ? ALDO_CLOUD_USAGE_PATH : ALDO_WORKSPACE_USAGE_PATH, {
-      credentials: "same-origin",
-      cache: "no-store",
-      headers: { accept: "application/json" },
-      signal: AbortSignal.any([controller.signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]),
-    })
-      .then(async (response) => {
-        const payload: unknown = await response.json().catch(() => null);
-        if (controller.signal.aborted) return;
-        if (!response.ok || !isAldoWorkspaceUsage(payload)) {
-          setState((previous) => ({
-            status: "error",
-            usage: previous.status === "unavailable" ? null : previous.usage,
-          }));
-          return;
-        }
-        setState({ status: "ready", usage: payload });
-      })
-      .catch(() => {
-        if (controller.signal.aborted) return;
-        setState((previous) => ({
-          status: "error",
-          usage: previous.status === "unavailable" ? null : previous.usage,
-        }));
-      });
+    if (available) void usageResource.refresh().catch(() => undefined);
   }, [available]);
-
-  useEffect(() => {
-    refresh();
-    return () => {
-      request.current?.abort();
-    };
-  }, [refresh]);
-
   return { state, refresh };
 }

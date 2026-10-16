@@ -13,6 +13,7 @@ import {
   aldoRuleOptions,
   aldoRuleValue,
   aldoWorkspaceLabel,
+  optimisticPolicyEdit,
 } from "./policy.logic";
 
 const view: AldoPolicyView = {
@@ -34,6 +35,36 @@ const view: AldoPolicyView = {
   ],
   repos: ["logancsack/aldo", "logancsack/site", "logancsack/t3code"],
 };
+
+describe("optimistic policy changes", () => {
+  it("clears before merging without changing other rules or the saved view", () => {
+    const next = optimisticPolicyEdit(view, {
+      clear: [["spendThreshold"], ["mediaDefaults", "image"]],
+      set: { mediaDefaults: { audio: "ElevenLabs" }, onProviderLimit: "wait" },
+    });
+    expect(next.everywhere).toEqual({
+      merge: "auto",
+      mediaDefaults: { video: "Runway", audio: "ElevenLabs" },
+      onProviderLimit: "wait",
+    });
+    expect(view.everywhere.spendThreshold).toBe(50);
+    expect(view.everywhere.mediaDefaults).toEqual({ video: "Runway", image: null });
+  });
+
+  it("restores workspace inheritance and clears workspace merge methods decided everywhere", () => {
+    const inherited = optimisticPolicyEdit(view, {
+      repos: ["logancsack/t3code", "logancsack/aldo"],
+      clear: [["merge"]],
+    });
+    expect(aldoRuleDifferences(inherited, "merge")).toEqual([]);
+    const next = optimisticPolicyEdit(view, {
+      set: { mergeMethod: { "logancsack/aldo": "merge" } },
+    });
+    expect(next.everywhere.mergeMethod).toEqual({ "logancsack/aldo": "merge" });
+    expect(next.workspaces[0]?.policy.mergeMethod).toEqual({});
+    expect(view.workspaces[0]?.policy.mergeMethod).toEqual({ "logancsack/aldo": "squash" });
+  });
+});
 
 describe("aldoRuleValue", () => {
   it("reads the user's answer, a rule's default, or undecided", () => {

@@ -1,10 +1,12 @@
+import { settingsMemory } from "./settingsData";
+import { useSettingsResource } from "./settingsResource";
 // Settings → Memory: what Aldo knows about the user, as Aldo keeps it — its
 // profile of them (always in its mind) and its notes (one fact each). Aldo
 // writes them as it talks and after each conversation; the user can change
 // anything here, add a note, or have Aldo forget one.
 
 import { BrainIcon, LoaderCircleIcon, PlusIcon } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { SettingsSection } from "../components/settings/settingsLayout";
 import { Button } from "../components/ui/button";
@@ -40,10 +42,16 @@ function ProfileEditor(props: {
   readonly profile: AldoMemoryItem | null;
   readonly onSaved: (items: AldoMemoryItem[]) => void;
 }) {
-  const [draft, setDraft] = useState(props.profile?.body ?? "");
+  const body = props.profile?.body ?? "";
+  const [base, setBase] = useState(body);
+  const [draft, setDraft] = useState(body);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => setDraft(props.profile?.body ?? ""), [props.profile?.body]);
+  // A background read updates a clean editor without replacing what the user is typing.
+  if (body !== base) {
+    setBase(body);
+    if (draft === base) setDraft(body);
+  }
   const dirty = draft.trim() !== (props.profile?.body ?? "");
   return (
     <div className="space-y-2 px-3 sm:px-4">
@@ -122,7 +130,15 @@ function NoteEditor(props: {
         </div>
         <p className="mt-0.5 whitespace-pre-wrap text-sm text-foreground/90">{note.body}</p>
         <div className="mt-1 flex gap-1">
-          <Button size="xs" variant="ghost" onClick={() => setEditing(true)}>
+          <Button
+            size="xs"
+            variant="ghost"
+            onClick={() => {
+              setTitle(note.title);
+              setBody(note.body);
+              setEditing(true);
+            }}
+          >
             Edit
           </Button>
           <Button
@@ -187,24 +203,15 @@ function NoteEditor(props: {
 }
 
 export function AldoMemoryPanel() {
-  const [items, setItems] = useState<AldoMemoryItem[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [unsupported, setUnsupported] = useState(false);
+  const cached = useSettingsResource(settingsMemory, true, false);
+  const items = cached.data ?? null;
+  const unsupported = cached.cause instanceof AldoApiError && cached.cause.status === 404;
+  const error = unsupported ? null : cached.error;
   const [adding, setAdding] = useState(false);
-  useEffect(() => {
-    aldoMemory
-      .list()
-      .then(setItems)
-      .catch((cause: unknown) => {
-        // An Aldo from before the assistant.
-        if (cause instanceof AldoApiError && cause.status === 404) setUnsupported(true);
-        else setError(messageOf(cause));
-      });
-  }, []);
   const profile = items?.find((i) => i.kind === "profile") ?? null;
   const notes = items?.filter((i) => i.kind === "note") ?? [];
   const saved = (next: AldoMemoryItem[]) => {
-    setItems(next);
+    settingsMemory.set(next);
     setAdding(false);
   };
   return (
@@ -249,7 +256,7 @@ export function AldoMemoryPanel() {
                 <NoteEditor note={null} onSaved={saved} onCancel={() => setAdding(false)} />
               ) : null}
               {notes.map((note) => (
-                <NoteEditor key={`${note.id}:${note.updatedAt}`} note={note} onSaved={saved} />
+                <NoteEditor key={note.id} note={note} onSaved={saved} />
               ))}
             </ul>
             {notes.length === 0 && !adding ? (

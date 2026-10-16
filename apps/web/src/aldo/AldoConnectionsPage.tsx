@@ -9,7 +9,7 @@
 // how the sign-in reports back to this tab is in integrations.logic.ts.
 
 import { CheckCircle2Icon, PlusIcon, TriangleAlertIcon } from "lucide-react";
-import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useState, type ReactNode } from "react";
 
 import {
   SettingsPageContainer,
@@ -24,10 +24,11 @@ import { cn } from "~/lib/utils";
 import {
   aldoIntegrationConnectUrl,
   disconnectAldoIntegration,
-  fetchAldoIntegrations,
   type AldoIntegration,
   type AldoIntegrationAccountType,
 } from "./cloud";
+import { settingsIntegrations, settingsVault } from "./settingsData";
+import { useSettingsResource } from "./settingsResource";
 import { AldoAccountRow, useAldoAccounts } from "./AldoAccountsPanel";
 import { AldoAnotherAppRow, AldoAppCatalogRow, AldoAppRow, useAldoApps } from "./AldoAppsSection";
 import { AldoGeneratorRow } from "./AldoGeneratorRows";
@@ -222,28 +223,15 @@ function IntegrationRow(props: {
  * this tab when the popup was blocked) and when the user comes back.
  */
 function useAldoIntegrations() {
-  const [integrations, setIntegrations] = useState<ReadonlyArray<AldoIntegration> | null>(null);
-  const [unsupported, setUnsupported] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  // Refreshes overlap (focus, a sign-in's message, a disconnect); only the latest one's answer shows.
-  const latest = useRef(0);
-
+  const { data, error } = useSettingsResource(settingsIntegrations, true, false);
+  const integrations = data ?? null;
+  const unsupported = data === null;
   const refresh = useCallback(() => {
-    const request = ++latest.current;
-    fetchAldoIntegrations()
-      .then((next) => {
-        if (request !== latest.current) return;
-        setIntegrations(next);
-        setUnsupported(next === null);
-        setError(null);
-      })
-      .catch((cause: unknown) => {
-        if (request === latest.current) setError(messageOf(cause));
-      });
+    void settingsIntegrations.refresh().catch(() => undefined);
+    void settingsVault.refresh().catch(() => undefined);
   }, []);
 
   useEffect(() => {
-    refresh();
     // Back from a sign-in that ran in this tab (the popup was blocked).
     const result = parseAldoIntegrationRedirect(window.location.search);
     if (!result) return;
@@ -255,7 +243,7 @@ function useAldoIntegrations() {
       "",
       `${pathname}${withoutAldoIntegrationRedirect(search)}${hash}`,
     );
-  }, [refresh]);
+  }, []);
 
   useEffect(() => {
     const isNew = aldoIntegrationResultFilter();
