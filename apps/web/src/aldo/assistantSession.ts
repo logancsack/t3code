@@ -85,13 +85,20 @@ const GREETING =
 /** GPT-Live's greeting (it waits for the user unless told to say something, plainly). They opened the call, so they know who it is. */
 const LIVE_GREETING =
   "Say hello to the user now. They opened this call, so there's no need to say who you are: pick up the way a colleague would, in a few words (\"Hey, what's up?\"). If something needs them, say so in the same breath, then let them talk.";
-/** A request still being worked on after this long gets a word that it is, so the line isn't silent: a different one each time, promising no time. */
+/**
+ * A request still being worked on after this long gets a word that it is, so the line isn't silent: a different one
+ * each time, promising no time. Only a ninth slow request on one call hears one again, which beats silence.
+ */
 const STILL_WORKING_MS = 6_000;
 const STILL_WORKING = [
   "Still on it.",
   "Bear with me, I'm still working on that.",
   "Hang on, still working through this one.",
   "Still going. I'll tell you as soon as it's done.",
+  "Still with you, this one's taking a while.",
+  "Working on it, hang tight.",
+  "Not done yet, still at it.",
+  "Still digging into that.",
 ];
 /** A delegation waits this long (the call's time) for the user to stop talking, so it has their whole request. */
 const SETTLE_MS = 700;
