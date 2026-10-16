@@ -83,7 +83,7 @@ it("a cached server body cannot undo a successful local dismissal before the ser
   const dismissed = feed.useAldoHomeFeed.getState().home;
   await feed.refreshAldoHome();
   expect(feed.useAldoHomeFeed.getState().home).toBe(dismissed);
-  expect(dismissed?.conversations[0].chatDecision?.dismissed).toBe(true);
+  expect(dismissed?.conversations[0]?.chatDecision?.dismissed).toBe(true);
   const acknowledged = home();
   fetchHome.mockResolvedValueOnce({
     ...acknowledged,
@@ -93,5 +93,7 @@ it("a cached server body cannot undo a successful local dismissal before the ser
     })),
   });
   await feed.refreshAldoHome();
-  expect(feed.useAldoHomeFeed.getState().home?.conversations[0].chatDecision?.dismissed).toBe(true);
+  expect(feed.useAldoHomeFeed.getState().home?.conversations[0]?.chatDecision?.dismissed).toBe(
+    true,
+  );
 });
