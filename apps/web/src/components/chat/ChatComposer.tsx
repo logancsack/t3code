@@ -2759,7 +2759,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     planModeEnabled: settings.planModeEnabled,
     isComposerOwned: true,
   } satisfies Parameters<typeof renderProviderTraitsPicker>[0];
-  const providerTraitsPicker = renderProviderTraitsPicker(providerTraitsPickerInput);
+  // A routed draft has no model or effort yet; inherited traits would claim
+  // a choice that Aldo replaces when the first message is sent.
+  const providerTraitsPicker = aldoDefaultModel
+    ? null
+    : renderProviderTraitsPicker(providerTraitsPickerInput);
   const {
     controlsRef: restingComposerControlsRef,
     attachControls: attachRestingComposerControls,
