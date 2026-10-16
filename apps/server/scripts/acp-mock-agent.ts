@@ -53,7 +53,6 @@ const emitOverlappingXAiPromptCompleteOutOfOrder =
   process.env.T3_ACP_EMIT_OVERLAPPING_XAI_PROMPT_COMPLETE_OUT_OF_ORDER === "1";
 const failPrompt = process.env.T3_ACP_FAIL_PROMPT === "1";
 const exitDuringPrompt = process.env.T3_ACP_EXIT_DURING_PROMPT === "1";
-const exitAfterCreateSession = process.env.T3_ACP_EXIT_AFTER_CREATE_SESSION === "1";
 const failSetConfigOption = process.env.T3_ACP_FAIL_SET_CONFIG_OPTION === "1";
 const exitOnSetConfigOption = process.env.T3_ACP_EXIT_ON_SET_CONFIG_OPTION === "1";
 const promptResponseText = process.env.T3_ACP_PROMPT_RESPONSE_TEXT;
@@ -441,14 +440,6 @@ const program = Effect.gen(function* () {
 
   yield* agent.handleCreateSession(() =>
     Effect.gen(function* () {
-      if (exitAfterCreateSession) {
-        yield* Effect.sleep("1 millis").pipe(
-          Effect.andThen(Effect.sync(() => process.exit(9))),
-          // The session request fiber completes as soon as this handler
-          // returns, so the startup-exit probe must outlive that child scope.
-          Effect.forkDetach,
-        );
-      }
       if (antigravityProfile) {
         yield* publishAntigravityCommands(sessionId);
       }
