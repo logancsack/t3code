@@ -10,6 +10,7 @@ import { FOCUS } from "./surface";
 export function DismissChatDecision(props: {
   readonly decision: AldoChatDecision | undefined;
   readonly title: string;
+  readonly restore?: boolean;
 }) {
   const [busy, setBusy] = useState(false);
   const decision = props.decision;
@@ -18,20 +19,20 @@ export function DismissChatDecision(props: {
   const dismiss = async () => {
     setBusy(true);
     try {
-      await dismissAldoChatDecision(decision.id);
-      setAldoChatDecisionDismissed(decision.id, true);
+      await dismissAldoChatDecision(decision.id, !props.restore);
+      setAldoChatDecisionDismissed(decision.id, !props.restore);
       await refreshAldoHome();
       const toast = toastManager.add({
         type: "info",
-        title: "Hidden from Aldo chat",
+        title: props.restore ? "Shown in Aldo chat" : "Hidden from Aldo chat",
         description: "Still waiting in the thread. No answer was sent.",
         actionProps: {
-          children: "Undo",
+          children: props.restore ? "Hide again" : "Undo",
           onClick: () => {
             toastManager.close(toast);
-            void dismissAldoChatDecision(decision.id, false).then(
+            void dismissAldoChatDecision(decision.id, Boolean(props.restore)).then(
               () => {
-                setAldoChatDecisionDismissed(decision.id, false);
+                setAldoChatDecisionDismissed(decision.id, Boolean(props.restore));
                 return refreshAldoHome();
               },
               () => toastManager.add({ type: "error", title: "Couldn't show the prompt again" }),
@@ -42,7 +43,7 @@ export function DismissChatDecision(props: {
     } catch (cause) {
       toastManager.add({
         type: "error",
-        title: "Couldn't hide the prompt",
+        title: props.restore ? "Couldn't show the prompt" : "Couldn't hide the prompt",
         description: cause instanceof Error ? cause.message : String(cause),
       });
     } finally {
@@ -55,7 +56,11 @@ export function DismissChatDecision(props: {
         render={
           <button
             type="button"
-            aria-label={`Not now: hide ${props.title} from Aldo chat`}
+            aria-label={
+              props.restore
+                ? `Show ${props.title} in Aldo chat again`
+                : `Not now: hide ${props.title} from Aldo chat`
+            }
             disabled={busy}
             aria-busy={busy || undefined}
             className={cn(
@@ -66,9 +71,11 @@ export function DismissChatDecision(props: {
           />
         }
       >
-        {busy ? "Hiding…" : "Not now"}
+        {busy ? (props.restore ? "Showing…" : "Hiding…") : props.restore ? "Show again" : "Not now"}
       </TooltipTrigger>
-      <TooltipPopup>Hide from Aldo chat without answering</TooltipPopup>
+      <TooltipPopup>
+        {props.restore ? "Show in Aldo chat again" : "Hide from Aldo chat without answering"}
+      </TooltipPopup>
     </Tooltip>
   );
 }

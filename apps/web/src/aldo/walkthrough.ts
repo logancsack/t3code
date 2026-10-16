@@ -8,10 +8,11 @@
 // too. Hanging up ends it.
 
 import { create } from "zustand";
+import type { AldoHome } from "./cloud";
 
 import { aldoAssistantLive, connectAldo, tellAldoCall } from "./assistantSession";
 import { showAldoCall } from "./callView";
-import { decisionBrief, type AldoDecision } from "./decisions.logic";
+import { aldoDecisions, chatDecisionOf, decisionBrief, type AldoDecision } from "./decisions.logic";
 
 export interface AldoWalkthroughState {
   readonly active: boolean;
@@ -108,4 +109,29 @@ export function stopAldoWalkthrough(note?: string): void {
   if (!get().active) return;
   set({ active: false, decisions: [], index: 0, suggestions: {} });
   if (note) tellAldoCall(note, { respond: false });
+}
+
+/** A hidden prompt leaves an active or minimized walkthrough without being decided. */
+export function reconcileAldoWalkthrough(home: AldoHome, now = Date.now()): void {
+  const { active, decisions, index } = get();
+  if (!active) return;
+  const hidden = new Set(
+    aldoDecisions(home, now)
+      .filter((d) => chatDecisionOf(d)?.dismissed)
+      .map((d) => d.key),
+  );
+  const remaining = decisions.filter((d, i) => i < index || !hidden.has(d.key));
+  if (remaining.length === decisions.length) return;
+  set({ decisions: remaining });
+  if (decisions[index] && hidden.has(decisions[index]!.key)) {
+    tellAldoCall(
+      walkthroughNext(
+        "The user hid that prompt from Aldo chat. It is still waiting, unanswered and unapproved. Stop discussing or acting on it.",
+        remaining[index] ?? null,
+        index + 1,
+        remaining.length,
+      ),
+      { respond: true },
+    );
+  }
 }

@@ -595,6 +595,7 @@ function begin(key: string): { signal: AbortSignal; stopped: boolean } {
 function onLiveStarted(): void {
   if (liveStarted) return;
   liveStarted = true;
+  flushAldoHiddenPrompts();
   if (startTimer) clearTimeout(startTimer);
   startTimer = null;
   lastSpokeAt = Date.now();
@@ -1029,6 +1030,7 @@ export async function connectAldo(
 ): Promise<void> {
   const { phase } = get();
   if (phase !== "idle" && phase !== "error") return;
+  liveOpening = options.opening;
   set({
     phase: "connecting",
     error: null,
@@ -1092,13 +1094,14 @@ export async function connectAldo(
         connectedAt: Date.now(),
         callFrom: get().entries.length,
       });
+      flushAldoHiddenPrompts();
       // What's on screen first, so the greeting (or what was typed) can mean it.
       tellScreen();
       stopWatchingScreen = subscribeAldoOnScreen(tellScreen);
       const text = queuedText;
       queuedText = null;
       if (text) sendText(text);
-      else requestResponse({ instructions: options.opening ?? GREETING });
+      else requestResponse({ instructions: liveOpening ?? GREETING });
     });
     made.onconnectionstatechange = () => {
       if (peer !== made) return;
@@ -1128,7 +1131,6 @@ export async function connectAldo(
     }
     if (voice) {
       live = true;
-      liveOpening = options.opening;
       sessionId = voice.sessionId;
       const session = voice.sessionId;
       transcript = new AldoLiveTranscript((turn) => onLiveTurn(turn, session));
@@ -1215,6 +1217,13 @@ export function disconnectAldo(): void {
  * done with what it's saying or doing. Nothing without a call on.
  */
 export function tellAldoCall(note: string, options: { readonly respond: boolean }): void {
+  if (get().phase === "connecting" && options.respond) {
+    // Keep the call's protocol; the newer note supersedes only its pending prompt.
+    liveOpening = liveOpening
+      ? `${liveOpening}\n\nUpdate while connecting (use this instead of the earlier prompt; keep the instructions for going through decisions): ${note}`
+      : note;
+    return;
+  }
   if (channel?.readyState !== "open") return;
   if (live) {
     if (liveStarted)
@@ -1346,16 +1355,24 @@ export function setAldoMuted(muted: boolean): void {
 
 let hiddenPromptsChannel: RTCDataChannel | null = null;
 let hiddenPromptsNote = "";
+let pendingHiddenPrompts: ReadonlyArray<string> | null = null;
 
 /** Quiet context only: dismissing a prompt never sends an answer to its thread. */
 export function noteAldoHiddenPrompts(titles: ReadonlyArray<string>): void {
+  pendingHiddenPrompts = titles;
+  flushAldoHiddenPrompts();
+}
+
+function flushAldoHiddenPrompts(): void {
+  const titles = pendingHiddenPrompts;
+  if (!titles) return;
   if (channel?.readyState !== "open" || (live && !liveStarted)) return;
   const signature = JSON.stringify(titles);
   if (hiddenPromptsChannel === channel && signature === hiddenPromptsNote) return;
   hiddenPromptsChannel = channel;
   hiddenPromptsNote = signature;
   const note = `Current hidden pending prompts (this replaces the earlier hidden list): the user hid these specific pending prompts from Aldo chat: ${titles.join("; ") || "none"}. They are still waiting, unanswered and unapproved. Do not bring them up, remind the user, or ask for a decision unless they explicitly ask about them. A later, different decision should show normally.`;
-  if (live) appendLive("session.instructions.append", note);
+  if (live) appendLive("session.thinking.append", note);
   else
     send({
       type: "conversation.item.create",

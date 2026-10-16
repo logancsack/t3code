@@ -17,6 +17,8 @@ import {
   type AldoHome,
 } from "./cloud";
 
+import { reconcileAldoWalkthrough } from "./walkthrough";
+
 const REFRESH_EVERY_MS = 30_000;
 /** Directory fetches come every 15 seconds; the home read follows them no closer than this. */
 const FOLLOW_DIRECTORY_MIN_MS = 8_000;
@@ -154,6 +156,7 @@ export function setAldoChatDecisionDismissed(id: string, dismissed: boolean): vo
 }
 
 function noteHiddenPrompts(home: AldoHome): void {
+  reconcileAldoWalkthrough(home);
   noteAldoHiddenPrompts([
     ...home.conversations
       .filter((c) => c.chatDecision?.dismissed)
