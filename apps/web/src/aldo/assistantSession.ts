@@ -1343,3 +1343,22 @@ export function setAldoMuted(muted: boolean): void {
   });
   set({ muted });
 }
+
+let hiddenPromptsChannel: RTCDataChannel | null = null;
+let hiddenPromptsNote = "";
+
+/** Quiet context only: dismissing a prompt never sends an answer to its thread. */
+export function noteAldoHiddenPrompts(titles: ReadonlyArray<string>): void {
+  if (channel?.readyState !== "open" || (live && !liveStarted)) return;
+  const signature = JSON.stringify(titles);
+  if (hiddenPromptsChannel === channel && signature === hiddenPromptsNote) return;
+  hiddenPromptsChannel = channel;
+  hiddenPromptsNote = signature;
+  const note = `Current hidden pending prompts (this replaces the earlier hidden list): the user hid these specific pending prompts from Aldo chat: ${titles.join("; ") || "none"}. They are still waiting, unanswered and unapproved. Do not bring them up, remind the user, or ask for a decision unless they explicitly ask about them. A later, different decision should show normally.`;
+  if (live) appendLive("session.instructions.append", note);
+  else
+    send({
+      type: "conversation.item.create",
+      item: { type: "message", role: "system", content: [{ type: "input_text", text: note }] },
+    });
+}

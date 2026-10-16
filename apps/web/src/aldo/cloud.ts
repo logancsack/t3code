@@ -2554,7 +2554,13 @@ export type AldoHomePending =
       readonly summary: string;
     };
 
+export interface AldoChatDecision {
+  readonly id: string;
+  readonly dismissed: boolean;
+}
+
 export interface AldoHomeConversation {
+  readonly chatDecision?: AldoChatDecision;
   readonly ref: string;
   readonly thread: AldoHomeTarget;
   readonly title: string;
@@ -2590,6 +2596,7 @@ export interface AldoHomeConversation {
 }
 
 export interface AldoHomePullRequest {
+  readonly chatDecision?: AldoChatDecision;
   readonly environmentId: string;
   readonly thread: AldoHomeTarget | null;
   readonly threadTitle: string;
@@ -2810,6 +2817,7 @@ export async function runAldoRoutine(id: string): Promise<string> {
 export type AldoApprovalStatus = "pending" | "sending" | "approved" | "discarded" | "expired";
 
 export interface AldoApproval {
+  readonly chatDecision?: AldoChatDecision;
   readonly id: string;
   readonly kind: "email" | "event" | "start" | "confirm";
   readonly provider: "google" | "microsoft" | null;
@@ -3106,4 +3114,12 @@ export async function sendAldoDeliveryNow(id: string): Promise<void> {
 /** Cancels a waiting delivery: it's never sent. */
 export async function cancelAldoDelivery(id: string): Promise<void> {
   await api(`/api/deliveries/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+/** Hides or restores only the home-chat prompt; the thread keeps waiting. */
+export async function dismissAldoChatDecision(id: string, dismissed = true): Promise<void> {
+  await api("/api/assistant/decisions/dismiss", {
+    method: "POST",
+    body: JSON.stringify({ id, dismissed }),
+  });
 }

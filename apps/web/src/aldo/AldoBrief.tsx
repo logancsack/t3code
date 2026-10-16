@@ -31,6 +31,7 @@ import { cn } from "~/lib/utils";
 import { callDuration } from "./assistant.logic";
 import { useAldoAssistant } from "./assistantSession";
 import { useAldoArrive } from "./arrive";
+import { useAldoHomeFeed } from "./homeFeed";
 import { useAldoBrief } from "./briefFeed";
 import { aldoBriefAudioUrl, type AldoBrief } from "./cloud";
 import type { AldoChoice } from "./decide";
@@ -192,6 +193,18 @@ export function AldoBriefEntry(props: { readonly text: string; readonly at: stri
 
 function BriefCard(props: { readonly brief: AldoBrief }) {
   const { brief } = props;
+  const hidden = useAldoHomeFeed((s) =>
+    [
+      ...(s.home?.conversations ?? []),
+      ...(s.home?.approvals ?? []),
+      ...(s.home?.pullRequests ?? []),
+    ]
+      .filter((item) => item.chatDecision?.dismissed)
+      .map((item) => item.chatDecision!.id)
+      .sort()
+      .join(","),
+  );
+
   const arrive = useAldoArrive();
   // What it says to decide is at the conversation's end, live (AldoUpNext.tsx),
   // with the way to go through it all with Aldo; it's not repeated here.
@@ -207,7 +220,7 @@ function BriefCard(props: { readonly brief: AldoBrief }) {
         <span className="tabular-nums">
           {brief.title}'s brief · {timeOf(brief.at)}
         </span>
-        <ListenButton brief={brief} />
+        <ListenButton key={hidden} brief={brief} />
       </div>
       <p className="whitespace-pre-wrap text-[15px] leading-7">{brief.text}</p>
       {brief.ahead.length > 0 ? (
@@ -250,7 +263,7 @@ function ListenButton(props: { readonly brief: AldoBrief }) {
   const toggle = () => {
     let player = audio.current;
     if (!player) {
-      player = new Audio(aldoBriefAudioUrl(props.brief.day));
+      player = new Audio(`${aldoBriefAudioUrl(props.brief.day)}&v=${Date.now()}`);
       player.preload = "auto";
       player.addEventListener("loadedmetadata", () => {
         if (Number.isFinite(player!.duration)) setLength(player!.duration * 1000);

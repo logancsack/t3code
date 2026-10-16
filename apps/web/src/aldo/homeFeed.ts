@@ -9,7 +9,7 @@
 import { useEffect } from "react";
 import { create } from "zustand";
 
-import { pullAldoConversation, useAldoAssistant } from "./assistantSession";
+import { noteAldoHiddenPrompts, pullAldoConversation, useAldoAssistant } from "./assistantSession";
 import {
   fetchAldoHome,
   requestAldoDirectoryRefresh,
@@ -38,6 +38,7 @@ let inflight = false;
 /** A refresh asked for during a read: the read may predate what asked, so it runs again after. */
 let again = false;
 let fetchedAt = 0;
+let dismissalRevision = 0;
 
 /** Reads the home again; `force: false` follows the directory, no closer than every few seconds. */
 export async function refreshAldoHome(force = true): Promise<void> {
@@ -47,12 +48,18 @@ export async function refreshAldoHome(force = true): Promise<void> {
   }
   if (!force && Date.now() - fetchedAt < FOLLOW_DIRECTORY_MIN_MS) return;
   inflight = true;
+  const revision = dismissalRevision;
   fetchedAt = Date.now();
   try {
     const next = await fetchAldoHome();
-    useAldoHomeFeed.setState(
-      next ? { home: next, supported: true, error: null } : { supported: false, error: null },
-    );
+    // A poll begun before a persisted hide must not put the card back.
+    if (revision !== dismissalRevision) again = true;
+    else {
+      if (next) noteHiddenPrompts(next);
+      useAldoHomeFeed.setState(
+        next ? { home: next, supported: true, error: null } : { supported: false, error: null },
+      );
+    }
   } catch (cause) {
     useAldoHomeFeed.setState({ error: cause instanceof Error ? cause.message : String(cause) });
   } finally {
@@ -124,4 +131,38 @@ export function useAldoHomeRead(): AldoHomeFeed {
     };
   }, []);
   return useAldoHomeFeed();
+}
+
+/** A persisted dismissal takes effect immediately, including when the next read fails. */
+export function setAldoChatDecisionDismissed(id: string, dismissed: boolean): void {
+  const home = useAldoHomeFeed.getState().home;
+  if (!home) return;
+  dismissalRevision += 1;
+  const update = <
+    T extends { readonly chatDecision?: { readonly id: string; readonly dismissed: boolean } },
+  >(
+    item: T,
+  ): T => (item.chatDecision?.id === id ? { ...item, chatDecision: { id, dismissed } } : item);
+  const next = {
+    ...home,
+    conversations: home.conversations.map(update),
+    approvals: (home.approvals ?? []).map(update),
+    pullRequests: home.pullRequests.map(update),
+  };
+  noteHiddenPrompts(next);
+  useAldoHomeFeed.setState({ home: next });
+}
+
+function noteHiddenPrompts(home: AldoHome): void {
+  noteAldoHiddenPrompts([
+    ...home.conversations
+      .filter((c) => c.chatDecision?.dismissed)
+      .map((c) => `${c.title}: ${c.summary ?? c.state}`),
+    ...(home.approvals ?? [])
+      .filter((a) => a.chatDecision?.dismissed)
+      .map((a) => `${a.title}: ${a.summary}`),
+    ...home.pullRequests
+      .filter((pr) => pr.chatDecision?.dismissed)
+      .map((pr) => `Merge #${pr.number}: ${pr.title}`),
+  ]);
 }
