@@ -13,7 +13,8 @@ import { SettingsSection } from "../components/settings/settingsLayout";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Textarea } from "../components/ui/textarea";
-import { AldoApiError, aldoSkills, type AldoSkill } from "./cloud";
+import { AldoApiError } from "./api";
+import { aldoSkills, type AldoSkill } from "./accountApi";
 
 /** Aldo's rule for a name (the Agent Skills format's). */
 const NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;

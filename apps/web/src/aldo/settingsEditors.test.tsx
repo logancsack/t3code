@@ -2,7 +2,8 @@ import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 
-import type { AldoInstructions, AldoMemoryItem } from "./cloud";
+import { type AldoInstructions } from "./accountApi";
+import { type AldoMemoryItem } from "./assistantApi";
 
 const state = vi.hoisted(() => ({
   instructions: [] as AldoInstructions[],
@@ -24,7 +25,7 @@ vi.mock("./settingsResource", () => ({
     cause: state.cause,
   }),
 }));
-vi.mock("./cloud", () => ({
+const aldoApiMock = vi.hoisted(() => ({
   AldoApiError: class extends Error {
     constructor(
       readonly status: number,
@@ -39,6 +40,10 @@ vi.mock("./cloud", () => ({
   getAldoEnvironments: () => state.environments,
   subscribeAldoEnvironments: () => () => {},
 }));
+vi.mock("./api", () => aldoApiMock);
+vi.mock("./accountApi", () => aldoApiMock);
+vi.mock("./assistantApi", () => aldoApiMock);
+vi.mock("./directory", () => aldoApiMock);
 vi.mock("../components/settings/settingsLayout", () => ({ SettingsSection: "section" }));
 vi.mock("../components/ui/button", () => ({ Button: "button" }));
 vi.mock("../components/ui/input", () => ({ Input: "input" }));
@@ -53,7 +58,7 @@ vi.mock("../components/ui/menu", () => ({
 import { AldoInstructionsPanel } from "./AldoInstructionsPanel";
 import { AldoMemoryPanel } from "./AldoMemoryPanel";
 import { AldoSkillsPanel } from "./AldoSkillsPanel";
-import { AldoApiError } from "./cloud";
+import { AldoApiError } from "./api";
 
 let renderer: ReactTestRenderer;
 beforeEach(() => {

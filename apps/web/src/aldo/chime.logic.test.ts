@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import { CHIME_GAP_MS, chimeMemory, chimeNews, shouldChime } from "./chime.logic";
-import type { AldoHomeConversation } from "./cloud";
+import { type AldoHomeConversation } from "./homeApi";
 
 const NOW = Date.parse("2026-10-01T12:00:00Z");
 const ago = (minutes: number) => new Date(NOW - minutes * 60_000).toISOString();

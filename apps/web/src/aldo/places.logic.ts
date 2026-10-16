@@ -23,7 +23,7 @@ export interface AldoPlace<TProject = AldoPlaceProject> {
   readonly project: TProject | null;
 }
 
-export const GENERAL_NAME = "General";
+const GENERAL_NAME = "General";
 
 export function placeKey(repos: ReadonlyArray<string>): string {
   return repos.join(",");

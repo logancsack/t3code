@@ -20,7 +20,7 @@ import {
   UpcomingSection,
 } from "./AldoHomeBoard";
 import { RoutinesSection } from "./AldoRoutines";
-import type { AldoHome } from "./cloud";
+import { type AldoHome } from "./homeApi";
 import { refreshAldoHome } from "./homeFeed";
 import { setAldoUnderTheHood } from "./simpleMode";
 import { ICON_BUTTON } from "./surface";

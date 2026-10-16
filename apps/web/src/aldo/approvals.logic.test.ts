@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import type { AldoApproval } from "./cloud";
+import { type AldoApproval } from "./homeApi";
 import {
   approvalOutcome,
   approvalQuestion,

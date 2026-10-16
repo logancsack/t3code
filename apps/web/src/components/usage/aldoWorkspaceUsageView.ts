@@ -1,4 +1,4 @@
-import { isAldoCloud } from "../../aldo/cloud";
+import { isAldoCloud } from "../../aldo/api";
 import type { AldoUsageAlertLevel, AldoWorkspaceUsage } from "../../state/aldoWorkspaceUsage";
 
 const CREDITS = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 });
@@ -88,7 +88,7 @@ export interface AldoUsageFact {
   readonly value: string;
 }
 
-export function aldoUsageHardwareLabel(machine: AldoWorkspaceUsage["machine"]): string | null {
+function aldoUsageHardwareLabel(machine: AldoWorkspaceUsage["machine"]): string | null {
   if (!machine) return null;
   const rate =
     machine.creditsPerHour === 1 ? "1 credit/hour" : `${machine.creditsPerHour} credits/hour`;

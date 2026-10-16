@@ -24,7 +24,7 @@ import { cn } from "~/lib/utils";
 import { AldoProfileButton } from "./AldoAccountMenu";
 import { AldoOrb, useAldoAssistantAvailable } from "./AldoAssistant";
 import { useAldoAttentionCount } from "./attentionBadge";
-import { isAldoCloud } from "./cloud";
+import { isAldoCloud } from "./api";
 import { setAldoSimpleMode, setAldoSimplePlace, useAldoSimple } from "./simpleMode";
 import {
   ALDO_SIMPLE_PLACES,

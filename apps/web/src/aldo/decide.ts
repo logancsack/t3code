@@ -6,14 +6,9 @@
 
 import { toastManager } from "../components/ui/toast";
 import { toastAldoRule } from "./AldoApprovals";
-import {
-  AldoApiError,
-  answerAldoThread,
-  approveAldoPlan,
-  decideAldoApproval,
-  fetchAldoHome,
-  mergeAldoPullRequest,
-} from "./cloud";
+import { AldoApiError } from "./api";
+import { answerAldoThread, approveAldoPlan, decideAldoApproval, fetchAldoHome } from "./homeApi";
+import { mergeAldoPullRequest } from "./workspaceApi";
 import { decisionOpen, type AldoDecision } from "./decisions.logic";
 import { refreshAldoHome } from "./homeFeed";
 

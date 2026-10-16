@@ -1,6 +1,6 @@
 // What needs the user, answered in place: a question with its choices, an
 // approval, a plan to carry out, or a thread that stopped. Answering goes to
-// Aldo as the user (cloud.ts answerAldoThread, approveAldoPlan), which wakes
+// Aldo as the user (homeApi.ts answerAldoThread, approveAldoPlan), which wakes
 // the thread's machine if it sleeps, so a button can take a little while.
 
 import { Link, useRouter } from "@tanstack/react-router";
@@ -17,14 +17,14 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip"
 import { cn } from "~/lib/utils";
 import { AldoHandoffActions } from "./AldoHandoffCard";
 import { seedAldoComposer } from "./assistantSession";
+import { AldoApiError } from "./api";
 import {
-  AldoApiError,
   answerAldoThread,
   approveAldoPlan,
   type AldoHomeConversation,
   type AldoHomePending,
   type AldoHomeTarget,
-} from "./cloud";
+} from "./homeApi";
 import { elapsed, modelName, NEEDS_YOU_LABEL, needsYouKind, repoName } from "./home.logic";
 import { useAldoHomeFeed } from "./homeFeed";
 import { aldoCanMorph, aldoMorphSource, morphIntoThread } from "./morph";
@@ -504,8 +504,4 @@ function PlanForm(props: {
       {error ? <p className="text-destructive-foreground text-xs">{error}</p> : null}
     </div>
   );
-}
-
-export function OpenIcon() {
-  return <ArrowUpRightIcon className="size-3.5" />;
 }

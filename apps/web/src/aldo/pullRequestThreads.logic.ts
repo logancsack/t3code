@@ -2,7 +2,7 @@
 // and what they say, in Aldo (pullRequestThreads.ts). Pure, so it's tested on
 // its own.
 
-import type { AldoPullRequestBranch } from "./cloud";
+import { type AldoPullRequestBranch } from "./directory";
 
 /** The pull request as the panel has it, summary or detail. */
 export interface AldoPullRequestShown {

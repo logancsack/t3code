@@ -5,7 +5,7 @@
 // page loaded (its old files are gone) reloads the page into the new version.
 
 import type { AppRouter } from "../router";
-import { isAldoCloud } from "./cloud";
+import { isAldoCloud } from "./api";
 
 type RouteId = keyof AppRouter["routesById"];
 

@@ -1,6 +1,6 @@
 // A tab connects to a machine that woke without it. Connecting never wakes a
 // machine, so a connection Aldo told "asleep" waits to be told to try again
-// (cloud.ts); dispatch.ts tells it while this tab brings the machine up for
+// (directory.ts); dispatch.ts tells it while this tab brings the machine up for
 // a message, and nothing did when the machine was woken by something else:
 // Aldo's own work on it (a routine, a reminder, a message it held), another
 // device, or a start that took longer than this tab waited. The thread then
@@ -15,7 +15,8 @@ import { runAtomCommand } from "@t3tools/client-runtime/state/runtime";
 import { environmentCatalog } from "../connection/catalog";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentPresentations } from "../state/presentation";
-import { getAldoEnvironments, isAldoCloud, subscribeAldoEnvironments } from "./cloud";
+import { getAldoEnvironments, subscribeAldoDirectoryRefresh } from "./directory";
+import { isAldoCloud } from "./api";
 import { aldoMachinesToRetry } from "./reconnect.logic";
 
 /** A registered machine's connection phase as presented; "available" is one waiting to be told to try again. */
@@ -27,7 +28,7 @@ function phaseOf(environmentId: string): string | undefined {
 
 export function installAldoReconnect(): void {
   if (!isAldoCloud) return;
-  subscribeAldoEnvironments(() => {
+  subscribeAldoDirectoryRefresh(() => {
     for (const environmentId of aldoMachinesToRetry(getAldoEnvironments() ?? [], phaseOf)) {
       void runAtomCommand(
         appAtomRegistry,

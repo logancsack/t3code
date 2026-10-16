@@ -44,7 +44,7 @@ import {
   sendText,
   useAldoAssistant,
 } from "./assistantSession";
-import { isAldoCloud, isAldoEnvironmentId } from "./cloud";
+import { isAldoCloud, isAldoEnvironmentId } from "./api";
 import { refreshAldoHome, useAldoHomeRead } from "./homeFeed";
 import { aldoHomeShowsConversation, showAldoConversation } from "./simpleMode";
 import { NEEDS_YOU_LABEL, needsYouKind } from "./home.logic";
@@ -61,7 +61,7 @@ import {
 } from "./summon.logic";
 
 /** `query`: words the bar opens with, as if typed. */
-export const useAldoSummon = create<{ readonly open: boolean; readonly query: string }>(() => ({
+const useAldoSummon = create<{ readonly open: boolean; readonly query: string }>(() => ({
   open: false,
   query: "",
 }));
@@ -75,7 +75,7 @@ export function openAldoSummonWith(query: string): void {
   useAldoSummon.setState({ open: true, query });
 }
 
-export function closeAldoSummon(): void {
+function closeAldoSummon(): void {
   useAldoSummon.setState({ open: false, query: "" });
 }
 

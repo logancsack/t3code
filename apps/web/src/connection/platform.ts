@@ -70,7 +70,8 @@ import {
 import { connectionStorageLayer } from "./storage";
 import { LANDING_DEMO_ENVIRONMENT_ID, isLandingDemo } from "../landingDemo/mode";
 import { clientPresentationMetadata } from "./clientMetadata";
-import { aldoEnvironmentGateway, aldoPlatformRegistrations, isAldoCloud } from "../aldo/cloud";
+import { aldoEnvironmentGateway, aldoPlatformRegistrations } from "../aldo/directory";
+import { isAldoCloud } from "../aldo/api";
 
 let nextObservedRpcRequestId = 0;
 

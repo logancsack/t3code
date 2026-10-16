@@ -33,7 +33,7 @@ import { AldoOpenContext } from "./AldoLiveCard";
 import { AldoAvatar } from "./AldoPresence";
 import { useAldoArrive } from "./arrive";
 import { useAldoBrief } from "./briefFeed";
-import type { AldoHome, AldoHomeConversation } from "./cloud";
+import { type AldoHome, type AldoHomeConversation } from "./homeApi";
 import { decideAldoOutcome, type AldoChoice } from "./decide";
 import {
   aldoChatDecisions,

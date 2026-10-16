@@ -37,7 +37,7 @@ import {
   BranchToolbarBranchSelector,
   type BranchToolbarBranchSelectorHandle,
 } from "./BranchToolbarBranchSelector";
-import { isAldoCloud, isAldoEnvironmentId } from "../aldo/cloud";
+import { isAldoCloud, isAldoEnvironmentId } from "../aldo/api";
 import { BranchToolbarEnvironmentSelector } from "./BranchToolbarEnvironmentSelector";
 import { BranchToolbarEnvModeSelector } from "./BranchToolbarEnvModeSelector";
 import { PreviousWorktreeItemContent } from "./PreviousWorktreeItemContent";

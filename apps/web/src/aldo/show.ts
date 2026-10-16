@@ -2,7 +2,7 @@
 // (AldoUpNext.tsx), from wherever it's mentioned: a live card's "Needs you".
 // The cards unfold and open it if it was folded away, then bring it into view.
 
-import type { AldoHomeTarget } from "./cloud";
+import { type AldoHomeTarget } from "./homeApi";
 
 export const SHOW_ALDO_DECISION = "aldo:show-decision";
 

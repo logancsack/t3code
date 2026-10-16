@@ -1,7 +1,7 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { EnvironmentId, ProviderInstanceId } from "@t3tools/contracts";
 
-import { isAldoCloud } from "../aldo/cloud";
+import { isAldoCloud } from "../aldo/api";
 import { aldoSettingsRedirect } from "../aldo/settings.logic";
 import { ProviderSettingsPanel } from "../components/settings/ProviderSettingsPanel";
 import { useSettingsScope } from "../components/settings/SettingsScopeContext";

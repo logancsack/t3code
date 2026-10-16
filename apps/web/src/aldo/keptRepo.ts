@@ -5,12 +5,8 @@
 
 import { useSyncExternalStore } from "react";
 
-import {
-  aldoThreadInGeneral,
-  aldoThreadInKeptRepo,
-  isAldoCloud,
-  subscribeAldoEnvironments,
-} from "./cloud";
+import { aldoThreadInGeneral, aldoThreadInKeptRepo, subscribeAldoEnvironments } from "./directory";
+import { isAldoCloud } from "./api";
 
 /** Whether this machine's thread works in a repository Aldo keeps (always false outside Aldo). */
 export function useAldoKeptRepo(environmentId: string | null | undefined): boolean {

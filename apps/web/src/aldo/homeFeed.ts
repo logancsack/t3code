@@ -1,4 +1,4 @@
-// Aldo's read of the user's work (cloud.ts fetchAldoHome), one copy per page
+// Aldo's read of the user's work (homeApi.ts fetchAldoHome), one copy per page
 // for everything that shows it: the home screen's conversation and board, the
 // cards in Aldo's conversation and the summon bar (and its peek). It's kept fresh
 // while something on the page shows it: with the directory, on a push, when
@@ -10,12 +10,8 @@ import { useEffect } from "react";
 import { create } from "zustand";
 
 import { noteAldoHiddenPrompts, pullAldoConversation, useAldoAssistant } from "./assistantSession";
-import {
-  fetchAldoHome,
-  requestAldoDirectoryRefresh,
-  subscribeAldoEnvironments,
-  type AldoHome,
-} from "./cloud";
+import { fetchAldoHome, type AldoHome } from "./homeApi";
+import { requestAldoDirectoryRefresh, subscribeAldoEnvironments } from "./directory";
 
 import { reconcileAldoWalkthrough } from "./walkthrough";
 

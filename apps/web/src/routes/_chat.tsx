@@ -28,7 +28,8 @@ import { useThreadSelectionStore } from "../threadSelectionStore";
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
 import { primaryServerKeybindingsAtom } from "~/state/server";
 import { APP_BASE_NAME } from "../branding";
-import { aldoSupportsGeneralThreads, isAldoCloud } from "../aldo/cloud";
+import { aldoSupportsGeneralThreads } from "../aldo/directory";
+import { isAldoCloud } from "../aldo/api";
 import { aldoNewThreadPlace, useStartAldoThread } from "../aldo/newThread";
 
 function ChatRouteGlobalShortcuts() {

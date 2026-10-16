@@ -54,7 +54,7 @@ import {
 } from "../ui/sidebar";
 import { ManagedDevPcFooterAccount } from "../ManagedDevPcAccount";
 import { isManagedDevPc } from "../../managedDevPc";
-import { isAldoCloud } from "../../aldo/cloud";
+import { isAldoCloud } from "../../aldo/api";
 import { AldoSettingsAccountCard, AldoSettingsNav } from "../../aldo/AldoSettingsNav";
 import { ALDO_HIDDEN_SETTINGS_PATHS, ALDO_SETTINGS_PATHS } from "../../aldo/settings.logic";
 import { SidebarUtilityMenu } from "../sidebar/SidebarChrome";

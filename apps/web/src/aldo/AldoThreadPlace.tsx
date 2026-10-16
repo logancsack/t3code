@@ -11,7 +11,7 @@ import { useCallback, useSyncExternalStore, type RefObject } from "react";
 import { toastManager } from "../components/ui/toast";
 import { AldoPlacePicker, type AldoPlaceChoice } from "./AldoPlacePicker";
 import { AldoPlaceTile } from "./AldoPlaceTile";
-import { aldoMovesThreads, aldoSupportsProjects, subscribeAldoEnvironments } from "./cloud";
+import { aldoMovesThreads, aldoSupportsProjects, subscribeAldoEnvironments } from "./directory";
 import { aldoMoveMessage } from "./places.logic";
 import { useAldoPlaceOf } from "./places";
 

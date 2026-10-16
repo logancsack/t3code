@@ -11,7 +11,7 @@ import type { ScopedProjectRef } from "@t3tools/contracts";
 
 import { toastManager } from "../components/ui/toast";
 import type { DraftId } from "../composerDraftStore";
-import { aldoStartsPullRequestThreads } from "./cloud";
+import { aldoStartsPullRequestThreads } from "./directory";
 import {
   aldoOpensPullRequestThread,
   aldoPullRequestThreadOpened,

@@ -5,7 +5,7 @@
 // the URL and scope notifications use. Pages and Aldo's API never come from
 // it, and an Aldo whose worker only shows notifications is unaffected.
 
-import { isAldoCloud } from "./cloud";
+import { isAldoCloud } from "./api";
 
 const WORKER = "/sw.js";
 

@@ -22,7 +22,7 @@ import {
   SelectValue,
 } from "../components/ui/select";
 import { toastManager } from "../components/ui/toast";
-import { editAldoPolicy, type AldoPolicyView } from "./cloud";
+import { editAldoPolicy, type AldoPolicyView } from "./homeApi";
 import { refreshAldoHome } from "./homeFeed";
 import {
   aldoRuleDifferences,

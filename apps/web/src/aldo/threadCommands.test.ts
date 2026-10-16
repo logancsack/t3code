@@ -9,7 +9,7 @@ const device = vi.hoisted(() => ({
   sent: [] as Array<{ command: unknown; patch: unknown; base: number }>,
 }));
 
-vi.mock("./cloud", () => {
+const aldoApiMock = vi.hoisted(() => {
   class AldoApiError extends Error {
     constructor(
       readonly status: number,
@@ -37,6 +37,9 @@ vi.mock("./cloud", () => {
     },
   };
 });
+vi.mock("./api", () => aldoApiMock);
+vi.mock("./directory", () => aldoApiMock);
+vi.mock("./threadApi", () => aldoApiMock);
 vi.mock("../connection/storage", () => ({
   readCachedShells: async (ids: string[]) =>
     new Map(device.shell ? [[ids[0], { snapshot: device.shell }]] : []),
@@ -51,7 +54,7 @@ vi.mock("../rpc/atomRegistry", () => ({
 vi.mock("../state/presentation", () => ({ environmentPresentations: {} }));
 vi.mock("../state/shell", () => ({ environmentShell: { stateAtom: () => ({}) } }));
 
-import { AldoApiError } from "./cloud";
+import { AldoApiError } from "./api";
 import { keepAldoCommand } from "./threadCommands";
 
 const BEFORE = "2026-09-29T10:00:00.000Z";

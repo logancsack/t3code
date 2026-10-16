@@ -5,7 +5,8 @@ import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
 import { createContext, type ReactNode, useContext, useMemo } from "react";
 
-import { aldoRoutesModels, isAldoCloud } from "../../aldo/cloud";
+import { isAldoCloud } from "../../aldo/api";
+import { aldoRoutesModels } from "../../aldo/directory";
 import { useAldoMachineSettings } from "../../aldo/machineSettings";
 import { aldoSettingsSelection } from "../../aldo/machineSettings.logic";
 import { aldoSettingsScopeSearch } from "../../aldo/settings.logic";

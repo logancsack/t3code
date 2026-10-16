@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import type { AldoApproval, AldoHomeConversation, AldoHomePullRequest } from "./cloud";
+import { type AldoApproval, type AldoHomeConversation, type AldoHomePullRequest } from "./homeApi";
 import type { AldoDecision } from "./decisions.logic";
 import { withReceipts } from "./feed.logic";
 import { movedOnText, receiptText } from "./receipts.logic";

@@ -7,13 +7,9 @@ import { SettingsSection } from "../components/settings/settingsLayout";
 import { Button } from "../components/ui/button";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../components/ui/menu";
 import { Textarea } from "../components/ui/textarea";
-import {
-  AldoApiError,
-  aldoInstructions,
-  getAldoEnvironments,
-  subscribeAldoEnvironments,
-  type AldoInstructions,
-} from "./cloud";
+import { AldoApiError } from "./api";
+import { aldoInstructions, type AldoInstructions } from "./accountApi";
+import { getAldoEnvironments, subscribeAldoEnvironments } from "./directory";
 
 const EVERY_PROJECT = "*";
 

@@ -42,7 +42,8 @@ import { Textarea } from "../ui/textarea";
 import { toastManager } from "../ui/toast";
 import { APP_BASE_NAME } from "../../branding";
 import { managedWorkspaceBrowserUrl } from "../../managedDevPc";
-import { aldoAuthConnectors, isAldoCloud } from "../../aldo/cloud";
+import { aldoAuthConnectors } from "../../aldo/accountApi";
+import { isAldoCloud } from "../../aldo/api";
 import { useAldoAccountMethod } from "../../aldo/accountSpecs";
 
 export type AuthConnectorMethodOption = {

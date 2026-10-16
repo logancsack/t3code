@@ -1,6 +1,6 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 
-import { isAldoCloud } from "../aldo/cloud";
+import { isAldoCloud } from "../aldo/api";
 import { aldoSettingsRedirect } from "../aldo/settings.logic";
 import { IntegrationsSettingsPanel } from "../components/settings/IntegrationsSettings";
 

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-import type { AldoHome, AldoHomeConversation, AldoHomePullRequest } from "./cloud";
+import { type AldoHome, type AldoHomeConversation, type AldoHomePullRequest } from "./homeApi";
 import {
   actionLabel,
   boardFor,

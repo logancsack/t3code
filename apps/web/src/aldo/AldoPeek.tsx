@@ -1,7 +1,7 @@
 // A look at a thread or an approval without leaving Aldo's bar (AldoSummon.tsx),
 // for what needs the user elsewhere. It shows what Aldo's home read has (how
 // the thread stands, what it asks, answered in place, its pull requests) and
-// its latest turns as Aldo keeps them (cloud.ts fetchAldoConversationCopy), so
+// its latest turns as Aldo keeps them (homeApi.ts fetchAldoConversationCopy), so
 // nothing is woken. An approval shows the same way: the card in full.
 
 import { ArrowUpRightIcon, MessageCircleQuestionIcon, XIcon } from "lucide-react";
@@ -20,7 +20,7 @@ import {
   type AldoHome,
   type AldoHomeConversation,
   type AldoHomeTarget,
-} from "./cloud";
+} from "./homeApi";
 import { refreshAldoHome } from "./homeFeed";
 import { modelName, needsYouKind, sameTarget } from "./home.logic";
 import { AldoAvatar } from "./AldoPresence";
@@ -35,7 +35,7 @@ export type AldoPeekTarget =
   | { readonly kind: "approval"; readonly id: string };
 
 /** The conversation a peek shows, from the home read; null when it has left it. */
-export function peekedConversation(
+function peekedConversation(
   home: AldoHome | null,
   peek: AldoPeekTarget | null,
 ): AldoHomeConversation | null {

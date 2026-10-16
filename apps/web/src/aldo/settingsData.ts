@@ -1,20 +1,19 @@
 import {
   aldoInstructions,
-  aldoMemory,
-  aldoPrebuilds,
   aldoSkills,
   aldoVault,
   fetchAldoAccounts,
   fetchAldoAgentInbox,
   fetchAldoApps,
-  fetchAldoApprovalRules,
   fetchAldoHeadsUps,
   fetchAldoIntegrations,
   fetchAldoPhone,
-  fetchAldoPolicy,
-  fetchAldoSubagents,
   listAldoRepositories,
-} from "./cloud";
+} from "./accountApi";
+import { aldoMemory } from "./assistantApi";
+import { aldoPrebuilds } from "./workspaceApi";
+import { fetchAldoApprovalRules, fetchAldoPolicy } from "./homeApi";
+import { fetchAldoSubagents } from "./threadApi";
 import { createSettingsResource } from "./settingsResource";
 
 export const settingsAccounts = createSettingsResource(fetchAldoAccounts);

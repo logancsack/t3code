@@ -19,7 +19,7 @@ import { NeedsYouCard, ThreadLink } from "./AldoHomeInbox";
 import { AldoSharedFiles } from "./AldoLibrary";
 import { waitingApprovals } from "./approvals.logic";
 import { seedAldoComposer, useAldoAssistant } from "./assistantSession";
-import type { AldoHome } from "./cloud";
+import { type AldoHome } from "./homeApi";
 import { decideAldo } from "./decide";
 import {
   aldoDecisions,

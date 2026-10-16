@@ -1,10 +1,10 @@
-// Settings → Permissions: the rules agents follow (cloud.ts AldoPolicyView) as
+// Settings → Permissions: the rules agents follow (homeApi.ts AldoPolicyView) as
 // choices, the user's own for all their workspaces, and where a workspace
 // answered otherwise. An undecided rule is one an agent asks about the first
 // time it comes up; one with a default (paying past the plans, long
 // conversations) does that until the user changes it.
 
-import type { AldoPolicy, AldoPolicyPath, AldoPolicyView } from "./cloud";
+import { type AldoPolicy, type AldoPolicyPath, type AldoPolicyView } from "./homeApi";
 
 /** A rule no one has answered: an agent asks. */
 export const ALDO_UNDECIDED = "undecided";

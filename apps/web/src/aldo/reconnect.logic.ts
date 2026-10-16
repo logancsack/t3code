@@ -8,7 +8,7 @@ export interface AldoReconnectEntry {
 
 /**
  * Machines the directory says are up that this tab isn't connecting to: a
- * connection told "asleep" waits to be told to try again (cloud.ts), and
+ * connection told "asleep" waits to be told to try again (directory.ts), and
  * stays waiting when the machine is woken by something other than this tab
  * (Aldo's own work on it, another device). One not registered yet connects
  * on registration; one connecting, connected or backing off is left to it.

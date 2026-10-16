@@ -27,13 +27,9 @@ import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentPresentations } from "../state/presentation";
 import { serverEnvironment } from "../state/server";
 import { environmentShell } from "../state/shell";
-import {
-  fetchAldoShells,
-  isAldoCloud,
-  offerAldoShell,
-  setAldoDirectorySync,
-  type AldoEnvironment,
-} from "./cloud";
+import { fetchAldoShells, offerAldoShell } from "./threadApi";
+import { isAldoCloud } from "./api";
+import { setAldoDirectorySync, type AldoEnvironment } from "./directory";
 import { getAldoMachineSettings, subscribeAldoMachineSettings } from "./machineSettings";
 import { aldoServerConfigsFor, aldoTemplateProviders } from "./serverConfig";
 import { aldoShellCandidates, planAldoShellSync } from "./shells.logic";

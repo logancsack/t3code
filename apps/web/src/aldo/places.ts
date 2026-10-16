@@ -13,12 +13,8 @@ import { buildSidebarProjectSnapshots } from "../sidebarProjectGrouping";
 import { useProjects, useThreadShells } from "../state/entities";
 import { usePrimaryEnvironmentId } from "../state/environments";
 import type { AldoPickedPlace } from "./AldoPlaceTile";
-import {
-  getAldoEnvironments,
-  listAldoRepositoryDirectory,
-  subscribeAldoEnvironments,
-  type AldoEnvironment,
-} from "./cloud";
+import { getAldoEnvironments, subscribeAldoEnvironments, type AldoEnvironment } from "./directory";
+import { listAldoRepositoryDirectory } from "./workspaceApi";
 import { buildAldoPlaces, generalPlace, placeDetail, placeKey } from "./places.logic";
 
 const NO_MACHINES: ReadonlyArray<AldoEnvironment> = [];
@@ -31,7 +27,7 @@ export function useAldoMachines(): ReadonlyArray<AldoEnvironment> {
 }
 
 /** A machine's repositories, the main one first (none: General); null when the directory doesn't have it. */
-export function aldoMachineRepos(
+function aldoMachineRepos(
   machines: ReadonlyArray<AldoEnvironment>,
   environmentId: string | null | undefined,
 ): ReadonlyArray<string> | null {
@@ -47,7 +43,7 @@ let directory: {
 } | null = null;
 
 /** The user's repositories and Aldo projects, fetched at most once a minute across pickers. */
-export function loadAldoRepositories(): Promise<ReadonlyArray<SourceControlRepositorySummary>> {
+function loadAldoRepositories(): Promise<ReadonlyArray<SourceControlRepositorySummary>> {
   if (directory && Date.now() - directory.at < DIRECTORY_FRESH_MS) return directory.repositories;
   const repositories = listAldoRepositoryDirectory().then(
     (result) => result.repositories.filter((repo) => !repo.isArchived),
@@ -66,7 +62,7 @@ export function forgetAldoRepositories(): void {
 }
 
 /** The repository directory once `enabled` (a picker opened); null until it's in, [] if it can't be had. */
-export function useAldoRepositories(
+function useAldoRepositories(
   enabled: boolean,
 ): ReadonlyArray<SourceControlRepositorySummary> | null {
   const [repositories, setRepositories] =

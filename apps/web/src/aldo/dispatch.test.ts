@@ -83,14 +83,16 @@ vi.mock("./startingThreads", () => ({
   aldoMachineConnected: vi.fn(),
   releaseAldoStartingThreads: vi.fn(),
 }));
-vi.mock("./cloud", () => ({
+vi.mock("./api", () => ({
   isAldoCloud: true,
   isAldoEnvironmentId: () => true,
-  aldoRoutesModels: () => host.routes,
-  holdAldoTurn: host.hold,
   AldoApiError: host.ApiError,
+}));
+vi.mock("./directory", () => ({
+  aldoRoutesModels: () => host.routes,
   requestAldoDirectoryRefresh: vi.fn(),
 }));
+vi.mock("./threadApi", () => ({ holdAldoTurn: host.hold }));
 
 import { installAldoCommandDispatch, resumeAldoOutbox } from "./dispatch";
 

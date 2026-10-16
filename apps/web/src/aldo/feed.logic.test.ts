@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import type { AldoHomeAction, AldoHomeConversation, AldoHomePullRequest } from "./cloud";
+import {
+  type AldoHomeAction,
+  type AldoHomeConversation,
+  type AldoHomePullRequest,
+} from "./homeApi";
 import { liveCardIndexes } from "./assistant.logic";
 import { dedupeLiveCards, feedEvents, interleave } from "./feed.logic";
 

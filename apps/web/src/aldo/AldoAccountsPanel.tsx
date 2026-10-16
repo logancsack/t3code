@@ -4,7 +4,7 @@ import { useCallback, type ReactNode } from "react";
 import { AuthConnectorDialog } from "../components/settings/AuthConnectorDialog";
 import { SettingsRow, SettingsSection } from "../components/settings/settingsLayout";
 import { Button } from "../components/ui/button";
-import { disconnectAldoAccount, type AldoAccount, type AldoAccountKind } from "./cloud";
+import { disconnectAldoAccount, type AldoAccount, type AldoAccountKind } from "./accountApi";
 import { settingsAccounts, settingsRepositories } from "./settingsData";
 import { useSettingsResource } from "./settingsResource";
 import { ALDO_ACCOUNT_SPECS } from "./accountSpecs";

@@ -4,7 +4,7 @@
 // has push; on an iPhone, once Aldo is added to the Home Screen. Each device is
 // turned on by the user, and stays on until turned off here or in the browser.
 
-import { isAldoCloud } from "./cloud";
+import { isAldoCloud } from "./api";
 import {
   base64UrlToBytes,
   parseAldoPushKey,

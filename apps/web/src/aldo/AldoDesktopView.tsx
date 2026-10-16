@@ -4,7 +4,9 @@ import { useEffect, useRef, useState } from "react";
 
 import { Button } from "../components/ui/button";
 import { cn } from "../lib/utils";
-import { AldoApiError, aldoBrowserConnection, aldoOfflineMessage } from "./cloud";
+import { AldoApiError } from "./api";
+import { aldoBrowserConnection } from "./workspaceApi";
+import { aldoOfflineMessage } from "./directory";
 import { aldoDesktopScreenUrl, type AldoDesktopScreen } from "./computer.logic";
 import { aldoCanDecodeH264, AldoVideoPlayer } from "./liveVideo";
 import { ALDO_FRAME_VIDEO, aldoDesktopVideoHello, aldoDesktopVideoUrls } from "./liveVideo.logic";

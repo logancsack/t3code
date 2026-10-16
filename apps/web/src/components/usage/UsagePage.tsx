@@ -30,7 +30,7 @@ import {
 } from "@t3tools/shared/usageMerge";
 
 import { AldoProviderLimitsSection, useAldoProviderLimits } from "../../aldo/AldoProviderLimits";
-import { isAldoCloud } from "../../aldo/cloud";
+import { isAldoCloud } from "../../aldo/api";
 import { aldoUsageNotes } from "../../aldo/usage.logic";
 import { isElectron } from "../../env";
 import { cn } from "../../lib/utils";

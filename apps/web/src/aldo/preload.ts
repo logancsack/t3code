@@ -28,12 +28,11 @@ import { environmentThreadShells } from "../state/threads";
 import {
   aldoMachineIsAsleep,
   aldoStartOf,
-  isAldoCloud,
-  isAldoEnvironmentId,
   subscribeAldoEnvironments,
   touchAldoEnvironment,
   unloadAldoEnvironment,
-} from "./cloud";
+} from "./directory";
+import { isAldoCloud, isAldoEnvironmentId } from "./api";
 import {
   aldoLastSentAt,
   ensureAldoConnected,

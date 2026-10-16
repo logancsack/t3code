@@ -48,14 +48,9 @@ import { AldoDesktopScreenSwitch, AldoDesktopView } from "./AldoDesktopView";
 import { AldoHandoffBar, useAldoHandoffTakeover } from "./AldoHandoffCard";
 import { AldoLoginOfferCard } from "./AldoLoginOfferCard";
 import { AldoTeachBar, AldoTeachForm } from "./AldoTeach";
-import {
-  AldoApiError,
-  aldoBrowserConnection,
-  aldoPreviewUrl,
-  aldoOfflineMessage,
-  getAldoEnvironments,
-  subscribeAldoEnvironments,
-} from "./cloud";
+import { AldoApiError } from "./api";
+import { aldoBrowserConnection, aldoPreviewUrl } from "./workspaceApi";
+import { aldoOfflineMessage, getAldoEnvironments, subscribeAldoEnvironments } from "./directory";
 import { aldoDesktopScreen, type AldoDesktopScreen } from "./computer.logic";
 import { aldoCanDecodeH264, AldoVideoPlayer } from "./liveVideo";
 import { ALDO_FRAME_VIDEO } from "./liveVideo.logic";

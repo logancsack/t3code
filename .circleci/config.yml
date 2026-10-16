@@ -2,9 +2,9 @@ version: 2.1
 
 # CI for Aldo's side of the fork. This branch (aldo/cloud-platform) is where
 # Aldo builds the T3 server each sandbox runs and the web client it serves, so
-# the jobs cover those two and the workspace packages they depend on
-# (`t3...`). Desktop, mobile and the other upstream surfaces aren't part of
-# Aldo and aren't built or tested here. GitHub Actions is off for this repo.
+# the jobs cover those two, their workspace dependencies (`t3...`), and the
+# mobile presentation code imported by server projection tests. Desktop and
+# mobile apps aren't built here. GitHub Actions is off for this repo.
 
 executors:
   # Vite+ runs tasks on the Node that package.json's engines asks for; the
@@ -28,9 +28,18 @@ commands:
               | VP_VERSION="$version" bash
             # Vite+ 1.0 installs under ~/.local/share/vite-plus (0.x used ~/.vite-plus).
             echo 'export PATH="$HOME/.local/share/vite-plus/bin:$PATH"' >> "$BASH_ENV"
+      - restore_cache:
+          keys:
+            - pnpm-v2-{{ arch }}-{{ checksum "pnpm-lock.yaml" }}
+            - pnpm-v2-{{ arch }}-
       - run:
-          name: Install dependencies
-          command: vp install
+          name: Install Aldo build and test dependencies
+          # The server's projection tests import mobile presentation code and its Expo tsconfig.
+          command: vp install --frozen-lockfile --prefer-offline --filter 't3...' --filter '@t3tools/web...' --filter '@t3tools/mobile...' --filter @t3tools/monorepo --filter '@t3tools/scripts...' --filter '@t3tools/oxlint-plugin-t3code...'
+      - save_cache:
+          key: pnpm-v2-{{ arch }}-{{ checksum "pnpm-lock.yaml" }}
+          paths:
+            - ~/.local/share/pnpm/store
 
 jobs:
   check:
@@ -44,7 +53,7 @@ jobs:
           name: Typecheck
           command: vp run --filter 't3...' typecheck
 
-  # The server's dependencies; test-server runs the server itself.
+  # The server's dependencies include the full web suite; test-server runs the server itself.
   test:
     executor: node
     steps:
@@ -52,10 +61,6 @@ jobs:
       - run:
           name: Test
           command: vp run --parallel --concurrency-limit 4 --filter 't3^...' test
-      - run:
-          name: Test Aldo client routing
-          working_directory: apps/web
-          command: vp test run --project unit src/aldo/dispatch.test.ts src/aldo/machineSettings.logic.test.ts src/components/ChatView.logic.test.ts src/composerDraftStore.test.ts
 
   # apps/server sets `fileParallelism: false`, so its files run one at a time.
   # Sharding spreads them over separate machines instead.

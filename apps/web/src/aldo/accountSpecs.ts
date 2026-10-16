@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 import type { AuthConnectorMethodOption } from "../components/settings/AuthConnectorDialog";
-import { aldoReportsAccount, fetchAldoAccounts, type AldoAccountKind } from "./cloud";
+import { aldoReportsAccount, fetchAldoAccounts, type AldoAccountKind } from "./accountApi";
 
 export type AccountSpec = {
   readonly kind: AldoAccountKind;
@@ -91,7 +91,7 @@ export const ALDO_ACCOUNT_SPECS: Record<AldoAccountKind, AccountSpec> = {
  * Aldo that predates Muse Code doesn't report it, and leaves its sign-in to
  * the thread's own sandbox.
  */
-export function aldoAccountMethod(connector: string): AuthConnectorMethodOption | null {
+function aldoAccountMethod(connector: string): AuthConnectorMethodOption | null {
   if (!(connector in ALDO_ACCOUNT_SPECS)) return null;
   const reported = aldoReportsAccount(connector);
   if (reported === false || (reported === null && connector === "muse")) return null;

@@ -25,7 +25,7 @@ import {
   setAldoMuted,
   useAldoAssistant,
 } from "./assistantSession";
-import { isAldoCloud } from "./cloud";
+import { isAldoCloud } from "./api";
 import { showAldoConversation, useAldoSimple } from "./simpleMode";
 import { stopAldoWalkthrough } from "./walkthrough";
 

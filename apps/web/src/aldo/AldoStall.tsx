@@ -14,7 +14,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import type { ChatMessage } from "../types";
 import { useAldoAssistantAvailable } from "./AldoAssistant";
 import { openAldoSummonWith } from "./AldoSummon";
-import { isAldoCloud } from "./cloud";
+import { isAldoCloud } from "./api";
 import { aldoHandoffFor } from "./handoffs.logic";
 import { useAldoHomeFeed } from "./homeFeed";
 import {

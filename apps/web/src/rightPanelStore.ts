@@ -17,7 +17,7 @@ import {
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
-import { isAldoCloud } from "./aldo/cloud";
+import { isAldoCloud } from "./aldo/api";
 import { withoutDeviceSurfaces } from "./aldo/rightPanel.logic";
 import { resolveStorage } from "./lib/storage";
 

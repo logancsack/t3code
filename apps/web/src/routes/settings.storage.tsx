@@ -1,5 +1,5 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
-import { isAldoCloud } from "../aldo/cloud";
+import { isAldoCloud } from "../aldo/api";
 import { StorageSettingsPanel } from "../components/settings/StorageSettings";
 
 export const Route = createFileRoute("/settings/storage")({

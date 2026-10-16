@@ -58,7 +58,7 @@ import {
   aldoAssistantInfo,
   type AldoImageLimits,
   type AldoImageUpload,
-} from "./cloud";
+} from "./assistantApi";
 import { useAldoArrive, useAldoArrived } from "./arrive";
 import { blinkAldo, setAldoReading } from "./face";
 import { dedupeLiveCards, interleave, type AldoFeedEvent } from "./feed.logic";

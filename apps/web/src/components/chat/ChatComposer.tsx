@@ -1,4 +1,5 @@
-import { aldoRoutesModels, isAldoCloud } from "../../aldo/cloud";
+import { isAldoCloud } from "../../aldo/api";
+import { aldoRoutesModels } from "../../aldo/directory";
 import { useAldoMachineSettings } from "../../aldo/machineSettings";
 import { hasExplicitComposerModelSelection } from "../../lib/chatThreadActions";
 import { DESKTOP_PASTE_AS_TEXT_EVENT } from "../../lib/desktopPasteAsText";

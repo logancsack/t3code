@@ -1,7 +1,7 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 
 import { AldoMailPage } from "../aldo/AldoMail";
-import { isAldoCloud } from "../aldo/cloud";
+import { isAldoCloud } from "../aldo/api";
 import { parseAldoMailSearch, type AldoMailSearch } from "../aldo/mail.logic";
 
 function MailRoute() {

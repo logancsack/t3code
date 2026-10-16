@@ -49,7 +49,7 @@ import type { RightPanelSurface } from "~/rightPanelStore";
 import { cn } from "~/lib/utils";
 import { readLocalApi } from "~/localApi";
 import { hasSharedBrowser } from "~/aldo/sharedBrowser";
-import { isAldoCloud } from "~/aldo/cloud";
+import { isAldoCloud } from "~/aldo/api";
 import { aldoSurfacesForWork } from "~/aldo/surfaces";
 import { Button } from "~/components/ui/button";
 import { AndroidIcon, AppleIcon } from "~/components/Icons";

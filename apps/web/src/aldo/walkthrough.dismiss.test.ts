@@ -1,5 +1,5 @@
 import { beforeEach, expect, it, vi } from "vite-plus/test";
-import type { AldoHome } from "./cloud";
+import { type AldoHome } from "./homeApi";
 import { aldoChatDecisions } from "./decisions.logic";
 const call = vi.hoisted(() => ({ tell: vi.fn() }));
 vi.mock("./assistantSession", () => ({

@@ -1,7 +1,7 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 
 import { AldoAgentsPage } from "../aldo/AldoAgentsPage";
-import { isAldoCloud } from "../aldo/cloud";
+import { isAldoCloud } from "../aldo/api";
 
 export const Route = createFileRoute("/settings/agents")({
   beforeLoad: () => {

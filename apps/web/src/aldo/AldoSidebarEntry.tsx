@@ -15,7 +15,7 @@ import { AldoAvatar } from "./AldoPresence";
 import type { AldoAssistantPhase } from "./assistant.logic";
 import { connectAldo, disconnectAldo, setAldoMuted, useAldoAssistant } from "./assistantSession";
 import type { AldoMood } from "./presence.logic";
-import { isAldoCloud } from "./cloud";
+import { isAldoCloud } from "./api";
 
 const STATUS: Record<AldoAssistantPhase, string> = {
   idle: `Talk or type · ${ALDO_SHORTCUT_LABEL}`,

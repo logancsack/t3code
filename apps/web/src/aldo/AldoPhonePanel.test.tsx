@@ -2,10 +2,10 @@ import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, expect, it, vi } from "vite-plus/test";
 
-import type { AldoPhoneSettings } from "./cloud";
+import { type AldoPhoneSettings } from "./accountApi";
 
 const cloud = vi.hoisted(() => ({ read: vi.fn(), verify: vi.fn() }));
-vi.mock("./cloud", () => ({ aldoPhone: { verify: cloud.verify } }));
+vi.mock("./accountApi", () => ({ aldoPhone: { verify: cloud.verify } }));
 vi.mock("./settingsData", async () => {
   const { createSettingsResource } = await import("./settingsResource");
   return { settingsPhone: createSettingsResource<AldoPhoneSettings | null>(cloud.read) };

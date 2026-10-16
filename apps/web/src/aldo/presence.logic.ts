@@ -6,7 +6,7 @@
 // on the user. Pure, so it's tested on its own.
 
 import type { AldoAssistantPhase } from "./assistant.logic";
-import type { AldoHomeConversation } from "./cloud";
+import { type AldoHomeConversation } from "./homeApi";
 
 /**
  * How Aldo's eyes move: still, looking about while agents work, up while it

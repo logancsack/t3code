@@ -20,7 +20,8 @@ import { Popover, PopoverPopup, PopoverTrigger } from "../components/ui/popover"
 import { Switch } from "../components/ui/switch";
 import { cn } from "~/lib/utils";
 import { AldoThemeToggle } from "./AldoGeneralSettings";
-import { fetchAldoProfile, type AldoHomeUsage, type AldoProfile } from "./cloud";
+import { fetchAldoProfile, type AldoProfile } from "./assistantApi";
+import { type AldoHomeUsage } from "./homeApi";
 import { useAldoFirstViewHold } from "./firstView";
 import { useAldoHomeFeed } from "./homeFeed";
 import { setAldoSimpleMode, useAldoSimpleMode } from "./simpleMode";

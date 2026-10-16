@@ -146,7 +146,7 @@ import {
   AldoGeneralMore,
   AldoKeyboardShortcutsRow,
 } from "../../aldo/AldoGeneralSettings";
-import { isAldoCloud } from "../../aldo/cloud";
+import { isAldoCloud } from "../../aldo/api";
 import { aldoSavesSettings } from "../../aldo/machineSettings.logic";
 import { ScopedSwitch } from "./ScopedSwitch";
 import { stackedThreadToast, toastManager } from "../ui/toast";

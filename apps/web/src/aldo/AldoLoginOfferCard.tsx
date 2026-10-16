@@ -10,7 +10,7 @@ import {
   SelectValue,
 } from "../components/ui/select";
 import { toastManager } from "../components/ui/toast";
-import { aldoVault } from "./cloud";
+import { aldoVault } from "./accountApi";
 import { aldoLoginSite, aldoLoginToSave, type AldoLoginOffer } from "./loginOffers.logic";
 import { useAldoNeverSaveLogins } from "./neverSaveLogins";
 

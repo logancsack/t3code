@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 
-vi.mock("../../aldo/cloud", () => ({ isAldoCloud: true }));
+vi.mock("../../aldo/api", () => ({ isAldoCloud: true }));
 
 import { readUsagePagePreferences, saveUsagePagePreferences } from "./usagePagePreferences";
 

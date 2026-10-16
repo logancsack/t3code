@@ -2,7 +2,7 @@ import { useCallback } from "react";
 import { createSettingsResource, useSettingsResource } from "../aldo/settingsResource";
 
 import { isAldoBilling, type AldoBilling } from "../aldo/billing.logic";
-import { isAldoCloud } from "../aldo/cloud";
+import { isAldoCloud } from "../aldo/api";
 import { isLandingDemo } from "../landingDemo/mode";
 import { isManagedDevPc } from "../managedDevPc";
 
@@ -75,9 +75,9 @@ const ALERT_LEVELS: ReadonlySet<string> = new Set([
   "spend_reached",
 ]);
 
-export const ALDO_WORKSPACE_USAGE_PATH = "/_devpc/account/usage";
+const ALDO_WORKSPACE_USAGE_PATH = "/_devpc/account/usage";
 /** Aldo cloud's own usage API: the same summary, for the signed-in user. */
-export const ALDO_CLOUD_USAGE_PATH = "/api/usage";
+const ALDO_CLOUD_USAGE_PATH = "/api/usage";
 const REQUEST_TIMEOUT_MS = 10_000;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -188,7 +188,7 @@ export type AldoWorkspaceUsageState =
   | { readonly status: "ready"; readonly usage: AldoWorkspaceUsage }
   | { readonly status: "error"; readonly usage: AldoWorkspaceUsage | null };
 
-export function aldoWorkspaceUsageAvailable(): boolean {
+function aldoWorkspaceUsageAvailable(): boolean {
   return (isManagedDevPc || isAldoCloud) && !isLandingDemo();
 }
 

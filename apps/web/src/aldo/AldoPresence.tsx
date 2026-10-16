@@ -21,7 +21,7 @@ import { cn } from "~/lib/utils";
 import { StateDot, stateSince } from "./AldoLiveCard";
 import { ThreadLink } from "./AldoHomeInbox";
 import { useAldoAssistant } from "./assistantSession";
-import type { AldoHome } from "./cloud";
+import { type AldoHome } from "./homeApi";
 import { aldoWaitingCount } from "./decisions.logic";
 import { PLEASED_MS, useAldoFace } from "./face";
 import { boardFor, deliveryLabel, dueIn } from "./home.logic";

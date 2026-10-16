@@ -1,7 +1,7 @@
 import type { SnapShotSource } from "@t3tools/contracts";
 
 import type { ComposerFileAttachment } from "../../composerDraftStore";
-import { isAldoCloud } from "../../aldo/cloud";
+import { isAldoCloud } from "../../aldo/api";
 import { type ChatFileAttachment, type ChatImageAttachment, isVideoAttachment } from "../../types";
 import type {
   AssetCreateUrlResult,

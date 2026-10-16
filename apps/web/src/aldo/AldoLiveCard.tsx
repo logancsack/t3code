@@ -16,7 +16,12 @@ import { Button } from "../components/ui/button";
 import { cn } from "~/lib/utils";
 import { mergeFollowedPullRequest, TONE_VARIANT } from "./AldoHomeBoard";
 import { ThreadLink } from "./AldoHomeInbox";
-import type { AldoHome, AldoHomeConversation, AldoHomePullRequest, AldoHomeTarget } from "./cloud";
+import {
+  type AldoHome,
+  type AldoHomeConversation,
+  type AldoHomePullRequest,
+  type AldoHomeTarget,
+} from "./homeApi";
 import { useAldoArrive } from "./arrive";
 import { refreshAldoHome, useAldoHomeFeed } from "./homeFeed";
 import { showAldoDecisionOf } from "./show";

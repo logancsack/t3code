@@ -7,7 +7,7 @@ import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { useCallback } from "react";
 
-import { isAldoCloud } from "~/aldo/cloud";
+import { isAldoCloud } from "~/aldo/api";
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
 import { waitForProject } from "~/state/entities";
 import { useEnvironments } from "~/state/environments";

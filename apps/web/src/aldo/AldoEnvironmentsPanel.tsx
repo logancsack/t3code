@@ -15,11 +15,10 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import {
   aldoPrebuilds,
-  getAldoEnvironments,
-  subscribeAldoEnvironments,
   type AldoEnvironmentService,
   type AldoPrebuiltEnvironment,
-} from "./cloud";
+} from "./workspaceApi";
+import { getAldoEnvironments, subscribeAldoEnvironments } from "./directory";
 
 function ago(iso: string | null): string {
   if (!iso) return "";

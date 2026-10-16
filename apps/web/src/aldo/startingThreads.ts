@@ -20,7 +20,8 @@ import { appAtomRegistry } from "../rpc/atomRegistry";
 import { readThreadShell } from "../state/entities";
 import { environmentPresentations } from "../state/presentation";
 import { environmentShell } from "../state/shell";
-import { isAldoCloud, isAldoEnvironmentId, type AldoEnvironment } from "./cloud";
+import { isAldoCloud, isAldoEnvironmentId } from "./api";
+import { type AldoEnvironment } from "./directory";
 import { markAldoThreadPending, settleAldoThreadPending } from "./pendingThreads";
 import {
   withAldoStartingThread,

@@ -11,7 +11,8 @@ import { ClaudeAI, GrokIcon, type Icon, MuseCodeIcon, OpenAI } from "../componen
 import { useNowMinute } from "../hooks/useNowMinute";
 import { isLandingDemo } from "../landingDemo/mode";
 import { cn } from "../lib/utils";
-import { fetchAldoProviderLimits, isAldoCloud } from "./cloud";
+import { fetchAldoProviderLimits } from "./workspaceApi";
+import { isAldoCloud } from "./api";
 import {
   limitFraction,
   limitPageUrl,

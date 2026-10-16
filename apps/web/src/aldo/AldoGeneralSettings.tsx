@@ -20,7 +20,7 @@ import { useTheme } from "../hooks/useTheme";
 import { setAldoPreloadSettings, useAldoPreloadSettings } from "./preloadSettings";
 import { setAldoSimpleMode, useAldoSimpleMode } from "./simpleMode";
 
-export const ALDO_THEME_MODES = [
+const ALDO_THEME_MODES = [
   { value: "light", label: "Light" },
   { value: "dark", label: "Dark" },
   { value: "system", label: "System" },

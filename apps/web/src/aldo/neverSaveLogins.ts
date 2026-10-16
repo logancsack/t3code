@@ -6,7 +6,8 @@
 
 import { useSyncExternalStore } from "react";
 
-import { AldoApiError, aldoVault } from "./cloud";
+import { AldoApiError } from "./api";
+import { aldoVault } from "./accountApi";
 
 const STORAGE_KEY = "aldo:never-save-logins";
 const listeners = new Set<() => void>();

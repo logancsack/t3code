@@ -11,7 +11,8 @@ import {
   DialogPopup,
   DialogTitle,
 } from "../components/ui/dialog";
-import { isAldoCloud, type AldoHostKind } from "./cloud";
+import { isAldoCloud } from "./api";
+import { type AldoHostKind } from "./accountApi";
 import { dropAldoCarriedDraft } from "./newThread";
 
 const OPEN_EVENT = "aldo:open-repository-picker";

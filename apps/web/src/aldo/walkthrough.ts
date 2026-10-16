@@ -8,7 +8,7 @@
 // too. Hanging up ends it.
 
 import { create } from "zustand";
-import type { AldoHome } from "./cloud";
+import { type AldoHome } from "./homeApi";
 
 import { aldoAssistantLive, connectAldo, tellAldoCall } from "./assistantSession";
 import { showAldoCall } from "./callView";

@@ -3,7 +3,7 @@ import { SquareSlashIcon } from "lucide-react";
 
 import { AldoPersonalizationPage } from "../aldo/AldoPersonalizationTabs";
 import { AldoSkillsPanel } from "../aldo/AldoSkillsPanel";
-import { isAldoCloud } from "../aldo/cloud";
+import { isAldoCloud } from "../aldo/api";
 import { GeneralSettingsPanel } from "../components/settings/SettingsPanels";
 import { SettingsSection } from "../components/settings/settingsLayout";
 

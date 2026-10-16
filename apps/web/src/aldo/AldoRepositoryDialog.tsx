@@ -44,14 +44,14 @@ import {
   aldoLinksProjectCode,
   aldoSupportsGeneralThreads,
   aldoSupportsProjects,
+  subscribeAldoEnvironments,
+} from "./directory";
+import {
   listAldoProjects,
   listAldoRepositoryDirectory,
-  subscribeAldoEnvironments,
-  type AldoAccount,
-  type AldoHostKind,
-  type AldoProjectHost,
   type AldoProjectSummary,
-} from "./cloud";
+} from "./workspaceApi";
+import { type AldoAccount, type AldoHostKind, type AldoProjectHost } from "./accountApi";
 import { HOST_KINDS, type AldoStartMode as Mode } from "./AldoRepositoryPicker";
 import { dropAldoCarriedDraft, landAldoCarriedDraft } from "./newThread";
 import { aldoProjectSlug, typedRepositoryRef } from "./places.logic";

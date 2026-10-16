@@ -1,6 +1,6 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 
-import { isAldoCloud } from "../aldo/cloud";
+import { isAldoCloud } from "../aldo/api";
 import { aldoSettingsRedirect } from "../aldo/settings.logic";
 
 // Aldo's ready-to-go environments are on Settings → Code now.

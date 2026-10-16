@@ -1,7 +1,7 @@
 // Approvals on the home screen (AldoApprovals.tsx): which wait on the user,
 // what each asks in words, and how the ones they decided lately went.
 
-import type { AldoApproval } from "./cloud";
+import { type AldoApproval } from "./homeApi";
 
 const DAY = 24 * 60 * 60 * 1000;
 const DECIDED_SHOWN = 5;

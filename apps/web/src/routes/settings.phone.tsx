@@ -1,7 +1,7 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 
 import { AldoPhonePanel } from "../aldo/AldoPhonePanel";
-import { isAldoCloud } from "../aldo/cloud";
+import { isAldoCloud } from "../aldo/api";
 import { SettingsPageContainer } from "../components/settings/settingsLayout";
 
 function SettingsPhoneRoute() {

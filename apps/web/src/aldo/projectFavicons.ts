@@ -9,7 +9,7 @@ import type {
   ProjectFaviconTarget,
 } from "@t3tools/client-runtime/project-favicon-cache";
 
-import { getAldoEnvironments } from "./cloud";
+import { getAldoEnvironments } from "./directory";
 
 const STORAGE_KEY = "aldo:project-favicons";
 /** Icons kept, the least recently seen dropped first (each a small data URL). */

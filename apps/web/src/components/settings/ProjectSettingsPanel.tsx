@@ -42,12 +42,8 @@ import {
 import { ProjectActionsSettings } from "./ProjectActionsSettings";
 import { ProjectDefaultsSettings } from "./ProjectDefaultsSettings";
 import { projectGroupTitleNeedsUpdate } from "./ProjectSettingsPanel.logic";
-import {
-  ALDO_PROJECT_REMOVAL_NOTE,
-  isAldoCloud,
-  isAldoEnvironmentId,
-  removeAldoProjectSandbox,
-} from "../../aldo/cloud";
+import { ALDO_PROJECT_REMOVAL_NOTE, removeAldoProjectSandbox } from "../../aldo/directory";
+import { isAldoCloud, isAldoEnvironmentId } from "../../aldo/api";
 import { AldoProjectCodeSettings } from "../../aldo/AldoProjectCode";
 import { useSettingsProjectGroups } from "./useSettingsProjectGroups";
 

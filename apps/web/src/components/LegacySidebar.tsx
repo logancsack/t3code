@@ -208,12 +208,8 @@ import {
   selectProjectGroupingSettings,
 } from "../logicalProject";
 import type { SidebarThreadSummary } from "../types";
-import {
-  ALDO_PROJECT_REMOVAL_NOTE,
-  isAldoCloud,
-  isAldoEnvironmentId,
-  removeAldoProjectSandbox,
-} from "../aldo/cloud";
+import { ALDO_PROJECT_REMOVAL_NOTE, removeAldoProjectSandbox } from "../aldo/directory";
+import { isAldoCloud, isAldoEnvironmentId } from "../aldo/api";
 import {
   buildPhysicalToLogicalProjectKeyMap,
   buildSidebarProjectSnapshots,

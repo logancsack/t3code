@@ -2,7 +2,7 @@ import { createFileRoute, redirect } from "@tanstack/react-router";
 
 import { AldoMemoryPanel } from "../aldo/AldoMemoryPanel";
 import { AldoPersonalizationPage } from "../aldo/AldoPersonalizationTabs";
-import { isAldoCloud } from "../aldo/cloud";
+import { isAldoCloud } from "../aldo/api";
 
 function SettingsMemoryRoute() {
   return (

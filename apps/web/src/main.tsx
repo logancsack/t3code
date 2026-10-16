@@ -15,7 +15,7 @@ import {
 import { AppRoot } from "./AppRoot";
 import { clearChunkReloadGuard, reloadOnceForChunkLoadError } from "./lib/chunkReloadGuard";
 import { installManagedCommandDispatch, prepareManagedDevPc } from "./managedDevPc";
-import { isAldoCloud } from "./aldo/cloud";
+import { isAldoCloud } from "./aldo/api";
 import { installAldoCommandDispatch } from "./aldo/dispatch";
 import { installAldoServerConfigCapture } from "./aldo/serverConfig";
 import { installAldoMachineSettings } from "./aldo/machineSettings";

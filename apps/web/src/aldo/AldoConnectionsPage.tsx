@@ -26,7 +26,7 @@ import {
   disconnectAldoIntegration,
   type AldoIntegration,
   type AldoIntegrationAccountType,
-} from "./cloud";
+} from "./accountApi";
 import { settingsIntegrations, settingsVault } from "./settingsData";
 import { useSettingsResource } from "./settingsResource";
 import { AldoAccountRow, useAldoAccounts } from "./AldoAccountsPanel";

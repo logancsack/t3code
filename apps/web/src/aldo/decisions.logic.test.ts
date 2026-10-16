@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import type {
-  AldoApproval,
-  AldoHome,
-  AldoHomeConversation,
-  AldoHomePending,
-  AldoHomePullRequest,
-} from "./cloud";
+import {
+  type AldoApproval,
+  type AldoHome,
+  type AldoHomeConversation,
+  type AldoHomePending,
+  type AldoHomePullRequest,
+} from "./homeApi";
 import {
   aldoDecisions,
   aldoChatDecisions,

@@ -4,7 +4,7 @@ import { EnvironmentId } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import * as Option from "effect/Option";
 
-import { isAldoCloud } from "../aldo/cloud";
+import { isAldoCloud } from "../aldo/api";
 import { NoProjectsHero } from "../components/NoProjectsHero";
 import { WelcomeWizard } from "../components/onboarding/WelcomeWizard";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";

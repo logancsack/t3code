@@ -16,7 +16,8 @@ import { useLayoutEffect } from "react";
 import { environmentCatalog } from "../connection/catalog";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentShell } from "../state/shell";
-import { aldoMachinesListed, isAldoCloud, startAldoDirectory } from "./cloud";
+import { aldoMachinesListed, startAldoDirectory } from "./directory";
+import { isAldoCloud } from "./api";
 
 const FIRST_VIEW_MAX_MS = 8_000;
 const FADE_MS = 150;

@@ -36,15 +36,14 @@ import {
   withoutAldoCheckoutReturn,
   type AldoBillingPlan,
 } from "./billing.logic";
+import { AldoApiError, isAldoCloud } from "./api";
 import {
-  AldoApiError,
   aldoBillingPortalUrl,
   cancelAldoPlan,
   changeAldoPlan,
   fetchAldoCloudUsage,
-  isAldoCloud,
   startAldoCheckout,
-} from "./cloud";
+} from "./accountApi";
 
 const CHECKOUT_POLL_MS = 2_000;
 const CHECKOUT_WAIT_MS = 30_000;

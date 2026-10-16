@@ -14,7 +14,11 @@ import {
   SelectValue,
 } from "../components/ui/select";
 import { useClientSettings } from "../hooks/useSettings";
-import { saveAldoSubagents, type AldoSubagentDefault, type AldoSubagentProvider } from "./cloud";
+import {
+  saveAldoSubagents,
+  type AldoSubagentDefault,
+  type AldoSubagentProvider,
+} from "./threadApi";
 import { newestAldoProviders, onAldoServerConfigChange } from "./serverConfig";
 import {
   chooseModel,

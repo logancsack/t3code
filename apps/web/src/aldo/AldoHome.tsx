@@ -61,8 +61,8 @@ import {
   aldoSupportsGeneralThreads,
   aldoSupportsProjects,
   subscribeAldoEnvironments,
-  type AldoHomeConversation,
-} from "./cloud";
+} from "./directory";
+import { type AldoHomeConversation } from "./homeApi";
 import { useAldoFirstViewHold } from "./firstView";
 import { refreshAldoHome, useAldoHomeRead } from "./homeFeed";
 import { AldoUnderTheHood } from "./AldoUnderTheHood";
