@@ -6,7 +6,12 @@ import {
   aldoPullRequestThreadRequest,
 } from "./pullRequestThreads.logic";
 
-const PULL_REQUEST = { number: 12, headBranch: "feature/fix", state: "open" };
+const PULL_REQUEST = {
+  number: 12,
+  headBranch: "feature/fix",
+  state: "open",
+  url: "https://github.com/a/b/pull/12",
+};
 
 describe("aldoPullRequestThreadRequest", () => {
   it("asks for a machine like the panel's, on the pull request it showed", () => {
@@ -30,9 +35,9 @@ describe("aldoOpensPullRequestThread", () => {
     expect(aldoOpensPullRequestThread(true, PULL_REQUEST)).toBe(true);
   });
 
-  it("doesn't on one that's merged or closed, or with an Aldo that can't, or before it loads", () => {
-    expect(aldoOpensPullRequestThread(true, { state: "merged" })).toBe(false);
-    expect(aldoOpensPullRequestThread(true, { state: "closed" })).toBe(false);
+  it("allows looking up a merged owner, and disables actions on unsupported servers", () => {
+    expect(aldoOpensPullRequestThread(true, { state: "merged" })).toBe(true);
+    expect(aldoOpensPullRequestThread(true, { state: "closed" })).toBe(true);
     expect(aldoOpensPullRequestThread(false, PULL_REQUEST)).toBe(false);
     expect(aldoOpensPullRequestThread(true, null)).toBe(false);
   });
