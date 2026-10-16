@@ -3,6 +3,7 @@ import { ProviderInstanceId, type ModelCapabilities } from "@t3tools/contracts";
 
 import {
   applyClaudePromptEffortPrefix,
+  stripClaudePromptEffortPrefix,
   buildExplicitProviderOptionSelectionsFromDescriptors,
   buildProviderOptionSelectionsFromDescriptors,
   createModelCapabilities,
@@ -192,6 +193,19 @@ describe("applyClaudePromptEffortPrefix", () => {
     expect(applyClaudePromptEffortPrefix("/home/theo/app.ts crashed on load", "ultrathink")).toBe(
       "Ultrathink:\n/home/theo/app.ts crashed on load",
     );
+  });
+});
+
+describe("stripClaudePromptEffortPrefix", () => {
+  it.each([
+    ["Ultrathink:\nInvestigate this failure", "Investigate this failure"],
+    ["Ultrathink:\n", ""],
+    ["Ultrathink:\n  Keep this indentation\n\n", "  Keep this indentation\n\n"],
+    ["Explain the word ultrathink", "Explain the word ultrathink"],
+    ["Ultrathink: a heading I wrote", "Ultrathink: a heading I wrote"],
+    ["Quote:\nUltrathink:\nthis failure", "Quote:\nUltrathink:\nthis failure"],
+  ])("removes only the generated leading header from %j", (text, expected) => {
+    expect(stripClaudePromptEffortPrefix(text)).toBe(expected);
   });
 });
 

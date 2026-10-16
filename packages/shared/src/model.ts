@@ -429,3 +429,9 @@ export function applyClaudePromptEffortPrefix(
   }
   return `Ultrathink:\n${trimmed}`;
 }
+
+/** Removes the trait picker's generated header without trimming the user's text. */
+export function stripClaudePromptEffortPrefix(text: string): string {
+  const prefix = "Ultrathink:\n";
+  return text.startsWith(prefix) ? text.slice(prefix.length) : text;
+}
