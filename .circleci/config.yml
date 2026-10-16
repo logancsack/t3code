@@ -75,8 +75,6 @@ jobs:
           method: blobless
       - run:
           name: What this change can break
-          environment:
-            PUSHED_ONTO: << pipeline.git.base_revision >>
           command: .circleci/scope.sh /tmp/scope
       - persist_to_workspace:
           root: /tmp/scope
@@ -107,8 +105,8 @@ jobs:
             if [ -z "$SCOPE_TYPECHECK" ]; then echo "No package's sources changed."; exit 0; fi
             vp run --concurrency-limit 1 $SCOPE_TYPECHECK typecheck --checkers 1
 
-  # The server's dependencies; test-server runs the server itself. On a branch,
-  # vitest runs the tests whose imports reach a changed file.
+  # The server's dependencies; test-server runs the server itself. Vitest runs
+  # the tests whose imports reach a changed file.
   test:
     executor: node
     steps:
@@ -121,6 +119,13 @@ jobs:
             changed=(--changed "$SCOPE_BASE")
             [ "$SCOPE_FULL" = 0 ] || changed=()
             vp run --concurrency-limit 1 --filter 't3^...' test "${changed[@]}" --maxWorkers=2
+      - run:
+          name: Server tests that import client code
+          # The server's projection tests import web, mobile and client-runtime
+          # code. When test-server has nothing in scope, those this change reaches run here.
+          command: |
+            if [ "$SCOPE_SERVER" = 1 ]; then echo "test-server runs the whole server suite."; exit 0; fi
+            vp run --filter t3 test --changed "$SCOPE_BASE"
 
   # apps/server sets `fileParallelism: false`, so its files run one at a time.
   test-server:
@@ -149,8 +154,8 @@ jobs:
             vp build
       - run:
           name: Build the T3 server, as Aldo's runtime:build does
-          # runtime:build builds @t3tools/web first and bundles it; the server
-          # build takes whichever client the step above left in apps/web/dist.
+          # runtime:build builds @t3tools/web first and bundles it; here the
+          # server's build bundles the Aldo client the step above built.
           environment:
             T3CODE_TELEMETRY_ENABLED: "false"
           command: |

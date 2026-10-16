@@ -5,14 +5,17 @@
 # job of that name has work; SCOPE_CLIENT whether the Aldo client is built.
 #
 # A branch is measured from where it left aldo/cloud-platform, so its checks
-# cover the whole pull request. A trunk push is measured from the tip it
-# replaced (PUSHED_ONTO, CircleCI's pipeline.git.base_revision); a merge whose
-# tree is its pull request's head, unchanged, was checked on that branch and
-# isn't checked again.
+# cover the whole pull request. CircleCI's GitHub App pipelines don't say which
+# commit a trunk push replaced, so a merge commit is measured from its first
+# parent, the tip it was merged onto, and any other push is checked in full. A
+# merge whose tree is its pull request's head, unchanged, was checked on that
+# branch and isn't checked again.
 #
 # Paths map onto jobs by what they can break. The T3 server depends on
 # @t3tools/web only to bundle it, so web changes don't reach the server's
-# typecheck or tests. Shared config and dependencies run everything.
+# typecheck; the few server tests that import client code run with the test
+# job's, by what their imports reach. Shared config and dependencies run
+# everything.
 set -euo pipefail
 
 out=$1
@@ -20,14 +23,13 @@ trunk=aldo/cloud-platform
 mkdir -p "$out"
 git fetch --quiet origin "+refs/heads/$trunk:refs/remotes/origin/$trunk"
 
-tested=0
+check=0 full=0 test=0 server=0 client=0 tested=0
+packages=()
 if [ "${CIRCLE_BRANCH-}" = "$trunk" ]; then
   base=$(git rev-parse HEAD^1)
-  if [ -n "${PUSHED_ONTO-}" ] && git merge-base --is-ancestor "$PUSHED_ONTO" HEAD 2>/dev/null; then
-    base=$(git rev-parse "$PUSHED_ONTO")
-  fi
-  if [ "$base" = "$(git rev-parse HEAD^1)" ] && git rev-parse --quiet --verify HEAD^2 >/dev/null &&
-    [ "$(git rev-parse 'HEAD^{tree}')" = "$(git rev-parse 'HEAD^2^{tree}')" ]; then
+  if ! git rev-parse --quiet --verify HEAD^2 >/dev/null; then
+    full=1
+  elif [ "$(git rev-parse 'HEAD^{tree}')" = "$(git rev-parse 'HEAD^2^{tree}')" ]; then
     tested=1
   fi
 else
@@ -35,8 +37,6 @@ else
 fi
 changed=$(git diff --name-only --no-renames "$base" HEAD)
 
-check=0 full=0 test=0 server=0 client=0
-packages=()
 while IFS= read -r file; do
   [[ -z $file || $file == .repos/* ]] || check=1
   case "$file" in
@@ -47,8 +47,8 @@ while IFS= read -r file; do
       full=1 ;;
     apps/web/src/*.ts | apps/web/src/*.tsx)
       test=1 packages+=(apps/web) ;;
-    # Styles, assets, HTML and Vite's config reach the client's build.
-    apps/web/*)
+    # Styles, assets, HTML, Vite's config and the license list reach the client's build.
+    apps/web/* | third-party-licenses.config.json)
       test=1 client=1 packages+=(apps/web) ;;
     packages/client-runtime/*)
       test=1 packages+=(packages/client-runtime apps/web) ;;
@@ -56,12 +56,12 @@ while IFS= read -r file; do
       test=1 server=1 packages+=(all) ;;
     packages/*)
       test=1 server=1 packages+=("$(cut -d/ -f1-2 <<<"$file")" apps/server) ;;
-    # The server's tsconfig and build read scripts/lib.
-    apps/server/* | scripts/*)
+    # The server's tsconfig and build read scripts/lib, and its build the icons in assets/.
+    apps/server/* | scripts/* | assets/*)
       server=1 packages+=(apps/server) ;;
     # The server's projection tests import mobile's thread feed.
     apps/mobile/*)
-      server=1 ;;
+      test=1 ;;
   esac
 done <<<"$changed"
 
@@ -80,6 +80,8 @@ else
 fi
 
 if [ "$full" = 1 ]; then test=1 server=1 client=1; fi
+# The server's build bundles the client, so it builds both.
+if [ "$server" = 1 ]; then client=1; fi
 if [ "$tested" = 1 ]; then check=0 test=0 server=0 client=0; fi
 
 printf '%s\n' "$changed" | sed '/^$/d' > "$out/changed"
