@@ -49,7 +49,10 @@ vi.mock("./receipts", () => ({
   addAldoReceipt: backend.decide,
   useAldoReceipts: (select: (s: { receipts: never[] }) => unknown) => select({ receipts: [] }),
 }));
-vi.mock("./walkthrough", () => ({ startAldoWalkthrough: backend.decide }));
+vi.mock("./walkthrough", () => ({
+  startAldoWalkthrough: backend.decide,
+  reconcileAldoWalkthrough: vi.fn(),
+}));
 
 import { AldoUpNext } from "./AldoUpNext";
 import { refreshAldoHome, useAldoHomeFeed } from "./homeFeed";
@@ -194,5 +197,21 @@ it("hides a saved dismissal even if refreshing the home read fails", async () =>
   await hide();
   expect(container.querySelectorAll("[data-aldo-decision]")).toHaveLength(1);
   expect(backend.home!.conversations[0]!.state).toBe("waiting");
+  expect(backend.decide).not.toHaveBeenCalled();
+});
+
+it("can restore a persisted hidden prompt after remount without answering", async () => {
+  await hide();
+  await act(async () => root.unmount());
+  await mount();
+  const summary = container.querySelector("summary")!;
+  expect(summary.textContent).toContain("Hidden from chat (1)");
+  await act(async () => summary.click());
+  const show = container.querySelector<HTMLButtonElement>(
+    'button[aria-label="Show Thread 0 in Aldo chat again"]',
+  )!;
+  await act(async () => show.click());
+  expect(container.querySelectorAll("[data-aldo-decision]")).toHaveLength(2);
+  expect(backend.dismiss).toHaveBeenLastCalledWith("item-0", false);
   expect(backend.decide).not.toHaveBeenCalled();
 });

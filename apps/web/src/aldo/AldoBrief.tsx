@@ -220,7 +220,7 @@ function BriefCard(props: { readonly brief: AldoBrief }) {
         <span className="tabular-nums">
           {brief.title}'s brief · {timeOf(brief.at)}
         </span>
-        <ListenButton key={hidden} brief={brief} />
+        <ListenButton key={hidden} brief={brief} revision={hidden} />
       </div>
       <p className="whitespace-pre-wrap text-[15px] leading-7">{brief.text}</p>
       {brief.ahead.length > 0 ? (
@@ -244,7 +244,7 @@ function estimate(brief: AldoBrief): number {
 }
 
 /** Listen: Aldo reads the brief aloud, in its voice; the voice stops for a call. */
-function ListenButton(props: { readonly brief: AldoBrief }) {
+function ListenButton(props: { readonly brief: AldoBrief; readonly revision: string }) {
   const audio = useRef<HTMLAudioElement | null>(null);
   const [state, setState] = useState<"idle" | "loading" | "playing" | "paused">("idle");
   const [length, setLength] = useState<number | null>(null);
@@ -263,7 +263,9 @@ function ListenButton(props: { readonly brief: AldoBrief }) {
   const toggle = () => {
     let player = audio.current;
     if (!player) {
-      player = new Audio(`${aldoBriefAudioUrl(props.brief.day)}&v=${Date.now()}`);
+      player = new Audio(
+        `${aldoBriefAudioUrl(props.brief.day)}&v=${encodeURIComponent(props.revision)}`,
+      );
       player.preload = "auto";
       player.addEventListener("loadedmetadata", () => {
         if (Number.isFinite(player!.duration)) setLength(player!.duration * 1000);

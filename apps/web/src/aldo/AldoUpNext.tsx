@@ -104,7 +104,12 @@ export function AldoUpNext(props: { readonly home: AldoHome; readonly now: numbe
     window.addEventListener(SHOW_ALDO_DECISION, onShow);
     return () => window.removeEventListener(SHOW_ALDO_DECISION, onShow);
   }, [decisions]);
-  if (decisions.length === 0 && paused.length === 0) return null;
+  const hidden = [
+    ...props.home.conversations,
+    ...(props.home.approvals ?? []),
+    ...props.home.pullRequests,
+  ].filter((item) => item.chatDecision?.dismissed);
+  if (decisions.length === 0 && paused.length === 0 && hidden.length === 0) return null;
   // The one open is the one the user opened, while it's there; else the first.
   const open = decisions.some((d) => d.key === opened) ? opened : (decisions[0]?.key ?? null);
   const shown = all ? decisions : decisions.slice(0, SHOWN);
@@ -143,6 +148,23 @@ export function AldoUpNext(props: { readonly home: AldoHome; readonly now: numbe
       {paused.map((c) => (
         <PausedLine key={c.ref} conversation={c} now={props.now} />
       ))}
+      {hidden.length > 0 ? (
+        <details className="px-1 text-[12px] text-muted-foreground">
+          <summary className={cn(FOCUS, "cursor-pointer rounded py-2")}>
+            Hidden from chat ({hidden.length})
+          </summary>
+          <p className="py-1">Still waiting in their threads. No answers were sent.</p>
+          {hidden.map((item) => (
+            <div
+              key={item.chatDecision!.id}
+              className="flex items-center justify-between gap-3 py-1"
+            >
+              <span className="min-w-0 truncate">{item.title}</span>
+              <DismissChatDecision decision={item.chatDecision} title={item.title} restore />
+            </div>
+          ))}
+        </details>
+      ) : null}
       {decisions.length > SHOWN ? (
         <button
           type="button"
