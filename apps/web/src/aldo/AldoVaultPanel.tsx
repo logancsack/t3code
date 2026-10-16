@@ -511,7 +511,7 @@ export function AldoVaultPanel() {
   return (
     <>
       <SettingsSection title="Vault" icon={<LockKeyholeIcon className="size-4" />}>
-        <p className="px-3 text-sm text-muted-foreground sm:px-4">
+        <p className="px-3 py-3 text-sm text-muted-foreground sm:px-4">
           Secrets for your agents, under any name. Everything is encrypted and can't be read back
           here, only replaced. A secret can be a variable in every agent shell, injected into
           requests to the sites you list (agents see only a stand-in, so they can't read or leak
@@ -609,7 +609,7 @@ export function AldoVaultPanel() {
           />
         ) : null}
         {items && secrets.length === 0 && !secret && !importing ? (
-          <p className="px-3 text-sm text-muted-foreground sm:px-4">
+          <p className="px-3 py-3 text-sm text-muted-foreground sm:px-4">
             No secrets yet. Add API keys, settings and files your projects need, or import a .env
             file.
           </p>
@@ -719,7 +719,7 @@ export function AldoVaultPanel() {
           </form>
         ) : null}
         {items && logins.length === 0 && !login ? (
-          <p className="px-3 text-sm text-muted-foreground sm:px-4">
+          <p className="px-3 py-3 text-sm text-muted-foreground sm:px-4">
             No logins yet. Save the sign-ins your agents need for your app, staging or dashboards.
           </p>
         ) : null}

@@ -498,7 +498,7 @@ describe("healthIssues", () => {
     });
     expect(issues.map((i) => i.id)).toEqual(["providers", "credits", "env-acme/shop"]);
     expect(issues[0]!.text).toBe("Codex needs signing in again.");
-    expect(issues[0]!.href).toBe("/settings/providers");
+    expect(issues[0]!.href).toBe("/settings/agents");
   });
 
   it("warns only about subscriptions the user connected, in one line", () => {

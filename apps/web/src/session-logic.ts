@@ -137,6 +137,7 @@ export interface LatestProposedPlanState {
   updatedAt: string;
   turnId: TurnId | null;
   planMarkdown: string;
+  approvedAt?: string | null;
   implementedAt: string | null;
   implementationThreadId: ThreadId | null;
 }
@@ -468,9 +469,9 @@ export function findLatestProposedPlan(
 }
 
 export function hasActionableProposedPlan(
-  proposedPlan: LatestProposedPlanState | Pick<ProposedPlan, "implementedAt"> | null,
+  proposedPlan: LatestProposedPlanState | Pick<ProposedPlan, "implementedAt" | "approvedAt"> | null,
 ): boolean {
-  return proposedPlan !== null && proposedPlan.implementedAt === null;
+  return proposedPlan !== null && !proposedPlan.approvedAt && proposedPlan.implementedAt === null;
 }
 
 /**
@@ -1116,6 +1117,7 @@ function toLatestProposedPlanState(proposedPlan: ProposedPlan): LatestProposedPl
     updatedAt: proposedPlan.updatedAt,
     turnId: proposedPlan.turnId,
     planMarkdown: proposedPlan.planMarkdown,
+    ...(proposedPlan.approvedAt ? { approvedAt: proposedPlan.approvedAt } : {}),
     implementedAt: proposedPlan.implementedAt,
     implementationThreadId: proposedPlan.implementationThreadId,
   };

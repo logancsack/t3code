@@ -105,7 +105,7 @@ function useMailConnected(): { readonly mail: boolean | null; readonly google: b
   }, []);
   if (!integrations) return { mail: null, google: false };
   const mail = integrations.some(
-    // One that's connected but failing needs connecting again (AldoIntegrationsPanel), so it's not mail yet.
+    // One that's connected but failing needs connecting again (AldoConnectionsPage), so it's not mail yet.
     (i) =>
       i.connected && i.error === null && (i.can ? i.can.includes("mail") : i.provider !== "link"),
   );

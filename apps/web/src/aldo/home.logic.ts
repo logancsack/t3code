@@ -467,7 +467,7 @@ export function healthIssues(home: Pick<AldoHome, "health" | "usage">): Readonly
       id: "providers",
       text: `${listed(signedOut.map((p) => p.name))} ${signedOut.length === 1 ? "needs" : "need"} signing in again.`,
       tone: "bad",
-      href: "/settings/providers",
+      href: "/settings/agents",
     });
   }
   const period = home.usage.period?.status;
@@ -476,28 +476,28 @@ export function healthIssues(home: Pick<AldoHome, "health" | "usage">): Readonly
       id: "plan",
       text: "Your last payment didn't go through, so agents can't start.",
       tone: "bad",
-      href: "/usage",
+      href: "/settings/account",
     });
   } else if (period === "canceled") {
     issues.push({
       id: "plan",
       text: "Your plan has ended, so agents can't start.",
       tone: "bad",
-      href: "/usage",
+      href: "/settings/account",
     });
   } else if (home.usage.alert === "spend_reached" || home.usage.alert === "included_exhausted") {
     issues.push({
       id: "credits",
       text: "This month's credits are used up. Raise the spending limit to keep going.",
       tone: "bad",
-      href: "/usage",
+      href: "/settings/account",
     });
   } else if (home.usage.alert === "spend_warning" || home.usage.alert === "included_warning") {
     issues.push({
       id: "credits",
       text: "This month's credits are nearly used up.",
       tone: "warn",
-      href: "/usage",
+      href: "/settings/account",
     });
   }
   for (const env of home.health.environments) {
@@ -506,7 +506,7 @@ export function healthIssues(home: Pick<AldoHome, "health" | "usage">): Readonly
         id: `env-${env.repos.join(",")}`,
         text: `The ready-to-go setup for ${env.repos.map((r) => r.split("/").at(-1) ?? r).join(" + ")} failed to build. New threads start without it.`,
         tone: "warn",
-        href: "/settings/environments",
+        href: "/settings/code",
       });
     }
   }

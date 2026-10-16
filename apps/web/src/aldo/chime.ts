@@ -1,6 +1,6 @@
 // An optional sound while Aldo is open: a soft chime when a thread finishes
 // or needs the user (chime.logic.ts says when), off unless they turn it on
-// in Settings → General, per browser (every open tab follows). It's made here
+// in Settings → Notifications, per browser (every open tab follows). It's made here
 // with Web Audio rather than shipped as a file. It listens only while the
 // page shows, and not for the thread the user is looking at; notifications
 // cover the rest.

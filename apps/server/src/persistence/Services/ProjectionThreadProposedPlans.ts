@@ -17,6 +17,7 @@ export const ProjectionThreadProposedPlan = Schema.Struct({
   threadId: ThreadId,
   turnId: Schema.NullOr(TurnId),
   planMarkdown: TrimmedNonEmptyString,
+  approvedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   implementedAt: Schema.NullOr(IsoDateTime),
   implementationThreadId: Schema.NullOr(ThreadId),
   createdAt: IsoDateTime,

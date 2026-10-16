@@ -1,4 +1,4 @@
-// The agents' address a user claims (Settings → Integrations → Agent inbox): a
+// The agents' address a user claims (Settings → Agents → Your agents' email): a
 // handle, like one on a social site, checked here as it's typed. Aldo checks
 // it again, and has the last word (reserved handles, ones that are taken). The
 // same for the name its mail goes out under, which the user changes as they like.

@@ -4,7 +4,7 @@ import { NotificationSettings } from "./NotificationSettings";
 import { ArchiveIcon, ArchiveX, CheckIcon, ChevronRightIcon, SettingsIcon } from "lucide-react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import type { CSSProperties, ReactNode } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   type BackgroundActivityProfile,
   type DesktopUpdateChannel,
@@ -141,9 +141,11 @@ import {
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
 import { ALDO_ARCHIVE_EMPTY } from "../../aldo/AldoEmptyStates";
-import { AldoNotificationSettings } from "../../aldo/AldoNotificationSettings";
-import { AldoPreloadSettings } from "../../aldo/AldoPreloadSettings";
-import { AldoSimpleModeSettings } from "../../aldo/AldoSimpleModeSettings";
+import {
+  AldoGeneralBasics,
+  AldoGeneralMore,
+  AldoKeyboardShortcutsRow,
+} from "../../aldo/AldoGeneralSettings";
 import { isAldoCloud } from "../../aldo/cloud";
 import { aldoSavesSettings } from "../../aldo/machineSettings.logic";
 import { ScopedSwitch } from "./ScopedSwitch";
@@ -2157,7 +2159,12 @@ function LegacyFeaturesSection() {
   );
 }
 
-export function GeneralSettingsPanel() {
+export function GeneralSettingsPanel({
+  aldoPart,
+}: {
+  /** Aldo shows these rows on pages of their own: changes on Code, titles on Agents, skills on Skills. */
+  readonly aldoPart?: "diffs" | "text-generation" | "skills-in-slash-menu";
+} = {}) {
   const modifierLabel = isMacPlatform(navigator.platform) ? "⌘" : "Ctrl";
   const sendShortcutOptions = [
     { value: "enter", label: "Enter" },
@@ -2449,439 +2456,371 @@ export function GeneralSettingsPanel() {
     </>
   );
 
-  return (
-    <SettingsPageContainer>
-      {isAldoCloud ? (
-        <>
-          <AldoPreloadSettings />
-          <AldoNotificationSettings />
-          <AldoSimpleModeSettings />
-        </>
-      ) : null}
-      <ProjectDefaultsSettings category="general" />
-      <SettingsSection id="organization" title="Organization">
-        <SettingsRow
-          {...searchableSetting("project-grouping")}
-          // Aldo runs each thread on its own machine; grouping is what shows a project once.
-          {...(isAldoCloud ? { className: "hidden" } : {})}
-          description="Combine matching repositories across environments."
-          resetAction={
-            settings.sidebarProjectGroupingMode !==
-            DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode ? (
-              <SettingResetButton
-                label="project grouping"
-                onClick={() =>
-                  updateSettings({
-                    sidebarProjectGroupingMode: DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <Switch
-              checked={isProjectGroupingEnabled(settings.sidebarProjectGroupingMode)}
-              onCheckedChange={(checked) => {
-                if (!checked && settings.sidebarProjectGroupingMode !== "separate") {
-                  lastEnabledProjectGroupingMode.current = settings.sidebarProjectGroupingMode;
-                  rememberEnabledProjectGroupingMode(settings.sidebarProjectGroupingMode);
+  const sendShortcutRow = (
+    <SettingsRow
+      {...searchableSetting("send-shortcut")}
+      description="Choose when Enter sends a prompt or inserts a new line"
+      resetAction={
+        settings.sendShortcut !== DEFAULT_UNIFIED_SETTINGS.sendShortcut ? (
+          <SettingResetButton
+            label="send shortcut"
+            onClick={() => updateSettings({ sendShortcut: DEFAULT_UNIFIED_SETTINGS.sendShortcut })}
+          />
+        ) : null
+      }
+      control={
+        <Select
+          value={settings.sendShortcut}
+          onValueChange={(value) => {
+            const option = sendShortcutOptions.find((option) => option.value === value);
+            if (option) updateSettings({ sendShortcut: option.value });
+          }}
+        >
+          <SelectTrigger size="sm" className="w-auto min-w-0 max-w-full" aria-label="Send shortcut">
+            <SelectValue>
+              {sendShortcutOptions.find((option) => option.value === settings.sendShortcut)?.label}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectPopup align="end" alignItemWithTrigger={false}>
+            {sendShortcutOptions.map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                <span className="flex items-center justify-between gap-4">
+                  {option.label}
+                  {settings.sendShortcut === option.value && <CheckIcon aria-hidden="true" />}
+                </span>
+              </SelectItem>
+            ))}
+          </SelectPopup>
+        </Select>
+      }
+    />
+  );
+  const skillsInSlashMenuRow = (
+    <SettingsRow
+      {...searchableSetting("skills-in-slash-menu")}
+      description="Also include skills in the / command menu. Skills always appear when you type $."
+      resetAction={
+        settings.showSkillsInSlashMenu !== DEFAULT_UNIFIED_SETTINGS.showSkillsInSlashMenu ? (
+          <SettingResetButton
+            label="skills in slash menu"
+            onClick={() =>
+              updateSettings({
+                showSkillsInSlashMenu: DEFAULT_UNIFIED_SETTINGS.showSkillsInSlashMenu,
+              })
+            }
+          />
+        ) : null
+      }
+      control={
+        <Switch
+          checked={settings.showSkillsInSlashMenu}
+          onCheckedChange={(checked) => updateSettings({ showSkillsInSlashMenu: Boolean(checked) })}
+          aria-label="Show skills in slash menu"
+        />
+      }
+    />
+  );
+  const textGenerationRow = (
+    <SettingsRow
+      serverScoped
+      settingKeys={["textGenerationModelSelection"]}
+      {...searchableSetting("text-generation-model")}
+      description={
+        isAldoCloud
+          ? "The model that writes thread titles and other short text."
+          : "Used for thread titles and other generated text on connected devices with this provider. Source control can override it."
+      }
+      resetAction={
+        hasServerTargets && isTextGenerationModelDirty ? (
+          <SettingResetButton
+            label="text generation model"
+            onClick={() =>
+              updateSettings({
+                textGenerationModelSelection: DEFAULT_UNIFIED_SETTINGS.textGenerationModelSelection,
+              })
+            }
+          />
+        ) : null
+      }
+      control={
+        !hasServerTargets ? (
+          <span className="text-sm text-muted-foreground">
+            Connect an environment to choose its text generation model.
+          </span>
+        ) : !hasTextGenerationProvider ? (
+          <span className="text-sm text-muted-foreground">
+            No text generation providers available.
+          </span>
+        ) : (
+          <div className="flex flex-wrap items-center justify-end gap-1.5">
+            <ProviderModelPicker
+              activeInstanceId={textGenInstanceId}
+              model={textGenModel}
+              lockedProvider={null}
+              instanceEntries={textGenerationModelInstanceEntries}
+              modelOptionsByInstance={textGenerationModelOptionsByInstance}
+              triggerClassName={SETTINGS_PICKER_TRIGGER_CLASSNAME}
+              {...(mixedTextGenerationModel ? { triggerLabel: "Mixed" } : {})}
+              getModelDisabledReason={textGenerationModelDisabledReason}
+              {...(environmentId
+                ? {
+                    onOpenProviderSetup: (instanceId: ProviderInstanceId) => {
+                      void navigate({
+                        to: "/settings/providers",
+                        search: { environmentId, instanceId },
+                      });
+                    },
+                  }
+                : {})}
+              onInstanceModelChange={(instanceId, model) => {
+                const reason = textGenerationModelDisabledReason(instanceId, model);
+                if (reason) {
+                  toastManager.add({
+                    type: "error",
+                    title: "Text generation model not saved",
+                    description: reason,
+                  });
+                  return;
                 }
                 updateSettings({
-                  sidebarProjectGroupingMode: projectGroupingModeFromToggle(
-                    checked,
-                    lastEnabledProjectGroupingMode.current,
+                  textGenerationModelSelection: resolveAppModelSelectionState(
+                    {
+                      ...settings,
+                      textGenerationModelSelection: createModelSelection(instanceId, model),
+                    },
+                    textGenerationProviders,
                   ),
                 });
               }}
-              aria-label="Project grouping"
             />
-          }
-        />
-
-        <SettingsRow
-          {...searchableSetting("working-shelf")}
-          description="Fold working and monitoring threads into a Working section. They return to the top of the inbox when they need you."
-          resetAction={
-            settings.sidebarWorkingShelfEnabled !==
-            DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled ? (
-              <SettingResetButton
-                label="working section"
-                onClick={() =>
+            {textGenInstanceEntry ? (
+              <TraitsPicker
+                provider={textGenProvider}
+                models={
+                  // Use the exact instance's models (rather than the
+                  // first-kind-match) so a custom text-gen instance like
+                  // `codex_personal` gets its own model list, not the
+                  // default Codex one.
+                  textGenInstanceEntry?.models ?? []
+                }
+                model={textGenModel}
+                prompt=""
+                onPromptChange={() => {}}
+                modelOptions={textGenModelOptions}
+                allowPromptInjectedEffort={false}
+                planModeEnabled={settings.planModeEnabled}
+                triggerClassName={SETTINGS_PICKER_TRIGGER_CLASSNAME}
+                onModelOptionsChange={(nextOptions) => {
                   updateSettings({
-                    sidebarWorkingShelfEnabled: DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <Switch
-              checked={settings.sidebarWorkingShelfEnabled}
-              onCheckedChange={(checked) =>
-                updateSettings({ sidebarWorkingShelfEnabled: Boolean(checked) })
-              }
-              aria-label="Working section (beta)"
-            />
-          }
-        />
-
-        {supportsAutoSettlement ? (
-          <>
-            <SettingsRow
-              serverScoped
-              settingKeys={["sidebarAutoSettleOnMerge"]}
-              {...searchableSetting("auto-settle-merged-threads")}
-              description="Settle a thread when its pull request merges. Closed pull requests still settle automatically."
-              resetAction={
-                settings.sidebarAutoSettleOnMerge !==
-                DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge ? (
-                  <SettingResetButton
-                    label="auto-settle on merge"
-                    onClick={() =>
-                      updateSettings({
-                        sidebarAutoSettleOnMerge: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge,
-                      })
-                    }
-                  />
-                ) : null
-              }
-              control={
-                <ScopedSwitch
-                  settingKeys={["sidebarAutoSettleOnMerge"]}
-                  checked={settings.sidebarAutoSettleOnMerge}
-                  onCheckedChange={(checked) =>
-                    updateSettings({ sidebarAutoSettleOnMerge: Boolean(checked) })
-                  }
-                  aria-label="Auto-settle merged threads"
-                />
-              }
-            />
-
-            <SettingsRow
-              serverScoped
-              settingKeys={["sidebarAutoSettleAfterDays"]}
-              {...searchableSetting("auto-settle-inactive-threads")}
-              description="Sidebar threads with no activity for this long settle automatically."
-              resetAction={
-                settings.sidebarAutoSettleAfterDays !==
-                DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays ? (
-                  <SettingResetButton
-                    label="auto-settle"
-                    onClick={() =>
-                      updateSettings({
-                        sidebarAutoSettleAfterDays:
-                          DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays,
-                      })
-                    }
-                  />
-                ) : null
-              }
-              control={
-                <ScopedSwitch
-                  settingKeys={["sidebarAutoSettleAfterDays"]}
-                  checked={settings.sidebarAutoSettleAfterDays !== null}
-                  onCheckedChange={(checked) =>
-                    updateSettings({
-                      sidebarAutoSettleAfterDays: checked ? AUTO_SETTLE_DEFAULT_DAYS : null,
-                    })
-                  }
-                  aria-label="Auto-settle inactive threads"
-                />
-              }
-            />
-            {settings.sidebarAutoSettleAfterDays !== null ? (
-              <SettingsRow
-                serverScoped
-                settingKeys={["sidebarAutoSettleAfterDays"]}
-                title={searchableSetting("days-before-auto-settle").title}
-                description="Any new activity un-settles a thread automatically."
-                control={
-                  <AutoSettleDaysInput
-                    value={settings.sidebarAutoSettleAfterDays}
-                    onCommit={(days) => updateSettings({ sidebarAutoSettleAfterDays: days })}
-                  />
-                }
+                    textGenerationModelSelection: resolveAppModelSelectionState(
+                      {
+                        ...settings,
+                        textGenerationModelSelection: createModelSelection(
+                          textGenInstanceId,
+                          textGenModel,
+                          nextOptions,
+                        ),
+                      },
+                      textGenerationProviders,
+                    ),
+                  });
+                }}
               />
             ) : null}
-          </>
-        ) : null}
-      </SettingsSection>
+          </div>
+        )
+      }
+    />
+  );
+  if (aldoPart === "diffs") return diffRows;
+  if (aldoPart === "text-generation") return textGenerationRow;
+  if (aldoPart === "skills-in-slash-menu") return skillsInSlashMenuRow;
+  const More = isAldoCloud ? AldoGeneralMore : Fragment;
 
-      <SettingsSection id="behavior" title="Behavior">
-        {/* Aldo alerts and chimes itself, for every thread, awake or asleep. */}
-        {isAldoCloud ? null : <NotificationSettings />}
-        {isAldoCloud ? null : (
+  return (
+    <SettingsPageContainer>
+      {isAldoCloud ? <AldoGeneralBasics sendShortcutRow={sendShortcutRow} /> : null}
+      {isAldoCloud ? null : <ProjectDefaultsSettings category="general" />}
+      <More>
+        <SettingsSection id="organization" title="Organization">
           <SettingsRow
-            {...searchableSetting("in-app-notifications")}
-            description="Show a toast when another thread finishes, fails, or needs input or approval while this app has focus."
+            {...searchableSetting("project-grouping")}
+            // Aldo runs each thread on its own machine; grouping is what shows a project once.
+            {...(isAldoCloud ? { className: "hidden" } : {})}
+            description="Combine matching repositories across environments."
+            resetAction={
+              settings.sidebarProjectGroupingMode !==
+              DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode ? (
+                <SettingResetButton
+                  label="project grouping"
+                  onClick={() =>
+                    updateSettings({
+                      sidebarProjectGroupingMode:
+                        DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode,
+                    })
+                  }
+                />
+              ) : null
+            }
             control={
               <Switch
-                checked={settings.inAppNotificationsEnabled}
-                onCheckedChange={(checked) =>
-                  updateSettings({ inAppNotificationsEnabled: checked })
-                }
-                aria-label="In-app notifications"
+                checked={isProjectGroupingEnabled(settings.sidebarProjectGroupingMode)}
+                onCheckedChange={(checked) => {
+                  if (!checked && settings.sidebarProjectGroupingMode !== "separate") {
+                    lastEnabledProjectGroupingMode.current = settings.sidebarProjectGroupingMode;
+                    rememberEnabledProjectGroupingMode(settings.sidebarProjectGroupingMode);
+                  }
+                  updateSettings({
+                    sidebarProjectGroupingMode: projectGroupingModeFromToggle(
+                      checked,
+                      lastEnabledProjectGroupingMode.current,
+                    ),
+                  });
+                }}
+                aria-label="Project grouping"
               />
             }
           />
-        )}
-        <SettingsRow
-          {...searchableSetting("time-format")}
-          description="System default follows your browser or OS clock preference."
-          resetAction={
-            settings.timestampFormat !== DEFAULT_UNIFIED_SETTINGS.timestampFormat ? (
-              <SettingResetButton
-                label="time format"
-                onClick={() =>
-                  updateSettings({
-                    timestampFormat: DEFAULT_UNIFIED_SETTINGS.timestampFormat,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <Select
-              value={settings.timestampFormat}
-              onValueChange={(value) => {
-                if (value === "locale" || value === "12-hour" || value === "24-hour") {
-                  updateSettings({ timestampFormat: value });
-                }
-              }}
-            >
-              <SelectTrigger size="sm" className="w-full sm:w-40" aria-label="Timestamp format">
-                <SelectValue>{TIMESTAMP_FORMAT_LABELS[settings.timestampFormat]}</SelectValue>
-              </SelectTrigger>
-              <SelectPopup align="end" alignItemWithTrigger={false}>
-                <SelectItem hideIndicator value="locale">
-                  {TIMESTAMP_FORMAT_LABELS.locale}
-                </SelectItem>
-                <SelectItem hideIndicator value="12-hour">
-                  {TIMESTAMP_FORMAT_LABELS["12-hour"]}
-                </SelectItem>
-                <SelectItem hideIndicator value="24-hour">
-                  {TIMESTAMP_FORMAT_LABELS["24-hour"]}
-                </SelectItem>
-              </SelectPopup>
-            </Select>
-          }
-        />
-        <SettingsRow
-          serverScoped
-          settingKeys={["responseStreamingMode"]}
-          {...searchableSetting("response-streaming")}
-          description={
-            mixedResponseStreamingMode
-              ? "The selected targets use different streaming modes."
-              : RESPONSE_STREAMING_MODE_DESCRIPTIONS[settings.responseStreamingMode]
-          }
-          resetAction={
-            settings.responseStreamingMode !== DEFAULT_UNIFIED_SETTINGS.responseStreamingMode ? (
-              <SettingResetButton
-                label="response streaming"
-                onClick={() =>
-                  updateSettings({
-                    responseStreamingMode: DEFAULT_UNIFIED_SETTINGS.responseStreamingMode,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <>
-              <Select
-                value={mixedResponseStreamingMode ? null : settings.responseStreamingMode}
-                onValueChange={(value) => {
-                  if (value === "token") {
-                    // The legacy path needs an explicit confirmation.
-                    setTokenStreamingWarningOpen(true);
-                    return;
-                  }
-                  if (value === "turn" || value === "paragraph") {
-                    updateSettings({ responseStreamingMode: value });
-                  }
-                }}
-              >
-                <SelectTrigger size="sm" className="w-full sm:w-56" aria-label="Response streaming">
-                  <SelectValue>
-                    {(value: ResponseStreamingMode | null) =>
-                      value === null ? "Mixed" : RESPONSE_STREAMING_MODE_LABELS[value]
-                    }
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectPopup align="end" alignItemWithTrigger={false}>
-                  <SelectItem hideIndicator value="turn">
-                    {RESPONSE_STREAMING_MODE_LABELS.turn}
-                  </SelectItem>
-                  <SelectItem hideIndicator value="paragraph">
-                    {RESPONSE_STREAMING_MODE_LABELS.paragraph}
-                  </SelectItem>
-                  <SelectItem hideIndicator value="token">
-                    {RESPONSE_STREAMING_MODE_LABELS.token}
-                  </SelectItem>
-                </SelectPopup>
-              </Select>
-              <TokenStreamingWarningDialog
-                open={tokenStreamingWarningOpen}
-                onOpenChange={setTokenStreamingWarningOpen}
-                onConfirm={() => {
-                  updateSettings({ responseStreamingMode: "token" });
-                  setTokenStreamingWarningOpen(false);
-                }}
-                onUseParagraphs={() => {
-                  updateSettings({ responseStreamingMode: "paragraph" });
-                  setTokenStreamingWarningOpen(false);
-                }}
-              />
-            </>
-          }
-        />
-        {isAldoCloud ? null : diffRows}
 
-        <SettingsRow
-          {...searchableSetting("skills-in-slash-menu")}
-          description="Also include skills in the / command menu. Skills always appear when you type $."
-          resetAction={
-            settings.showSkillsInSlashMenu !== DEFAULT_UNIFIED_SETTINGS.showSkillsInSlashMenu ? (
-              <SettingResetButton
-                label="skills in slash menu"
-                onClick={() =>
-                  updateSettings({
-                    showSkillsInSlashMenu: DEFAULT_UNIFIED_SETTINGS.showSkillsInSlashMenu,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <Switch
-              checked={settings.showSkillsInSlashMenu}
-              onCheckedChange={(checked) =>
-                updateSettings({ showSkillsInSlashMenu: Boolean(checked) })
-              }
-              aria-label="Show skills in slash menu"
-            />
-          }
-        />
-
-        <SettingsRow
-          {...searchableSetting("composer-rich-text")}
-          description="Show formatted Markdown as you type."
-          resetAction={
-            settings.composerRichTextEnabled !==
-            DEFAULT_UNIFIED_SETTINGS.composerRichTextEnabled ? (
-              <SettingResetButton
-                label="rich text composer"
-                onClick={() =>
-                  updateSettings({
-                    composerRichTextEnabled: DEFAULT_UNIFIED_SETTINGS.composerRichTextEnabled,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <Switch
-              checked={settings.composerRichTextEnabled}
-              onCheckedChange={(checked) =>
-                updateSettings({ composerRichTextEnabled: Boolean(checked) })
-              }
-              aria-label="Rich text composer"
-            />
-          }
-        />
-
-        <SettingsRow
-          {...searchableSetting("composer-collapse")}
-          description="Rest the composer of an existing thread into a single line when you scroll the conversation. Focus the composer or start typing to expand it again."
-          resetAction={
-            settings.composerCollapseOnScroll !==
-            DEFAULT_UNIFIED_SETTINGS.composerCollapseOnScroll ? (
-              <SettingResetButton
-                label="collapse composer on scroll"
-                onClick={() =>
-                  updateSettings({
-                    composerCollapseOnScroll: DEFAULT_UNIFIED_SETTINGS.composerCollapseOnScroll,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <Switch
-              checked={settings.composerCollapseOnScroll}
-              onCheckedChange={(checked) =>
-                updateSettings({ composerCollapseOnScroll: Boolean(checked) })
-              }
-              aria-label="Collapse composer on scroll"
-            />
-          }
-        />
-
-        <SettingsRow
-          {...searchableSetting("send-shortcut")}
-          description="Choose when Enter sends a prompt or inserts a new line"
-          resetAction={
-            settings.sendShortcut !== DEFAULT_UNIFIED_SETTINGS.sendShortcut ? (
-              <SettingResetButton
-                label="send shortcut"
-                onClick={() =>
-                  updateSettings({ sendShortcut: DEFAULT_UNIFIED_SETTINGS.sendShortcut })
-                }
-              />
-            ) : null
-          }
-          control={
-            <Select
-              value={settings.sendShortcut}
-              onValueChange={(value) => {
-                const option = sendShortcutOptions.find((option) => option.value === value);
-                if (option) updateSettings({ sendShortcut: option.value });
-              }}
-            >
-              <SelectTrigger
-                size="sm"
-                className="w-auto min-w-0 max-w-full"
-                aria-label="Send shortcut"
-              >
-                <SelectValue>
-                  {
-                    sendShortcutOptions.find((option) => option.value === settings.sendShortcut)
-                      ?.label
-                  }
-                </SelectValue>
-              </SelectTrigger>
-              <SelectPopup align="end" alignItemWithTrigger={false}>
-                {sendShortcutOptions.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    <span className="flex items-center justify-between gap-4">
-                      {option.label}
-                      {settings.sendShortcut === option.value && <CheckIcon aria-hidden="true" />}
-                    </span>
-                  </SelectItem>
-                ))}
-              </SelectPopup>
-            </Select>
-          }
-        />
-
-        {/* A follow-up always steers in Aldo; mod+Enter queues one. */}
-        {isAldoCloud ? null : (
           <SettingsRow
-            {...searchableSetting("follow-up-behavior")}
-            description={
-              "Queue follow-ups while the agent runs or steer the current run. " +
-              (settings.sendShortcut === "mod-enter-multiline"
-                ? `Press ${modifierLabel} + Enter for single-line prompts or ${modifierLabel} + Shift + Enter for multiline prompts to do the opposite for one message.`
-                : `Press ${modifierLabel}${settings.sendShortcut === "mod-enter" ? " + Shift" : ""} + Enter to do the opposite for one message.`)
-            }
+            {...searchableSetting("working-shelf")}
+            description="Fold working and monitoring threads into a Working section. They return to the top of the inbox when they need you."
             resetAction={
-              settings.followUpBehavior !== DEFAULT_UNIFIED_SETTINGS.followUpBehavior ? (
+              settings.sidebarWorkingShelfEnabled !==
+              DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled ? (
                 <SettingResetButton
-                  label="follow-up behavior"
+                  label="working section"
                   onClick={() =>
                     updateSettings({
-                      followUpBehavior: DEFAULT_UNIFIED_SETTINGS.followUpBehavior,
+                      sidebarWorkingShelfEnabled:
+                        DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled,
+                    })
+                  }
+                />
+              ) : null
+            }
+            control={
+              <Switch
+                checked={settings.sidebarWorkingShelfEnabled}
+                onCheckedChange={(checked) =>
+                  updateSettings({ sidebarWorkingShelfEnabled: Boolean(checked) })
+                }
+                aria-label="Working section (beta)"
+              />
+            }
+          />
+
+          {supportsAutoSettlement ? (
+            <>
+              <SettingsRow
+                serverScoped
+                settingKeys={["sidebarAutoSettleOnMerge"]}
+                {...searchableSetting("auto-settle-merged-threads")}
+                description="Settle a thread when its pull request merges. Closed pull requests still settle automatically."
+                resetAction={
+                  settings.sidebarAutoSettleOnMerge !==
+                  DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge ? (
+                    <SettingResetButton
+                      label="auto-settle on merge"
+                      onClick={() =>
+                        updateSettings({
+                          sidebarAutoSettleOnMerge:
+                            DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge,
+                        })
+                      }
+                    />
+                  ) : null
+                }
+                control={
+                  <ScopedSwitch
+                    settingKeys={["sidebarAutoSettleOnMerge"]}
+                    checked={settings.sidebarAutoSettleOnMerge}
+                    onCheckedChange={(checked) =>
+                      updateSettings({ sidebarAutoSettleOnMerge: Boolean(checked) })
+                    }
+                    aria-label="Auto-settle merged threads"
+                  />
+                }
+              />
+
+              <SettingsRow
+                serverScoped
+                settingKeys={["sidebarAutoSettleAfterDays"]}
+                {...searchableSetting("auto-settle-inactive-threads")}
+                description="Sidebar threads with no activity for this long settle automatically."
+                resetAction={
+                  settings.sidebarAutoSettleAfterDays !==
+                  DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays ? (
+                    <SettingResetButton
+                      label="auto-settle"
+                      onClick={() =>
+                        updateSettings({
+                          sidebarAutoSettleAfterDays:
+                            DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays,
+                        })
+                      }
+                    />
+                  ) : null
+                }
+                control={
+                  <ScopedSwitch
+                    settingKeys={["sidebarAutoSettleAfterDays"]}
+                    checked={settings.sidebarAutoSettleAfterDays !== null}
+                    onCheckedChange={(checked) =>
+                      updateSettings({
+                        sidebarAutoSettleAfterDays: checked ? AUTO_SETTLE_DEFAULT_DAYS : null,
+                      })
+                    }
+                    aria-label="Auto-settle inactive threads"
+                  />
+                }
+              />
+              {settings.sidebarAutoSettleAfterDays !== null ? (
+                <SettingsRow
+                  serverScoped
+                  settingKeys={["sidebarAutoSettleAfterDays"]}
+                  title={searchableSetting("days-before-auto-settle").title}
+                  description="Any new activity un-settles a thread automatically."
+                  control={
+                    <AutoSettleDaysInput
+                      value={settings.sidebarAutoSettleAfterDays}
+                      onCommit={(days) => updateSettings({ sidebarAutoSettleAfterDays: days })}
+                    />
+                  }
+                />
+              ) : null}
+            </>
+          ) : null}
+        </SettingsSection>
+
+        <SettingsSection id="behavior" title="Behavior">
+          {/* Aldo alerts and chimes itself, for every thread, awake or asleep. */}
+          {isAldoCloud ? null : <NotificationSettings />}
+          {isAldoCloud ? null : (
+            <SettingsRow
+              {...searchableSetting("in-app-notifications")}
+              description="Show a toast when another thread finishes, fails, or needs input or approval while this app has focus."
+              control={
+                <Switch
+                  checked={settings.inAppNotificationsEnabled}
+                  onCheckedChange={(checked) =>
+                    updateSettings({ inAppNotificationsEnabled: checked })
+                  }
+                  aria-label="In-app notifications"
+                />
+              }
+            />
+          )}
+          <SettingsRow
+            {...searchableSetting("time-format")}
+            description="System default follows your browser or OS clock preference."
+            resetAction={
+              settings.timestampFormat !== DEFAULT_UNIFIED_SETTINGS.timestampFormat ? (
+                <SettingResetButton
+                  label="time format"
+                  onClick={() =>
+                    updateSettings({
+                      timestampFormat: DEFAULT_UNIFIED_SETTINGS.timestampFormat,
                     })
                   }
                 />
@@ -2889,43 +2828,267 @@ export function GeneralSettingsPanel() {
             }
             control={
               <Select
-                value={settings.followUpBehavior}
+                value={settings.timestampFormat}
                 onValueChange={(value) => {
-                  if (value === "queue" || value === "steer") {
-                    updateSettings({ followUpBehavior: value });
+                  if (value === "locale" || value === "12-hour" || value === "24-hour") {
+                    updateSettings({ timestampFormat: value });
                   }
                 }}
               >
-                <SelectTrigger size="sm" className="w-auto min-w-0" aria-label="Follow-up behavior">
-                  <SelectValue>
-                    {settings.followUpBehavior === "queue" ? "Queue" : "Steer"}
-                  </SelectValue>
+                <SelectTrigger size="sm" className="w-full sm:w-40" aria-label="Timestamp format">
+                  <SelectValue>{TIMESTAMP_FORMAT_LABELS[settings.timestampFormat]}</SelectValue>
                 </SelectTrigger>
                 <SelectPopup align="end" alignItemWithTrigger={false}>
-                  <SelectItem value="queue">Queue</SelectItem>
-                  <SelectItem value="steer">Steer</SelectItem>
+                  <SelectItem hideIndicator value="locale">
+                    {TIMESTAMP_FORMAT_LABELS.locale}
+                  </SelectItem>
+                  <SelectItem hideIndicator value="12-hour">
+                    {TIMESTAMP_FORMAT_LABELS["12-hour"]}
+                  </SelectItem>
+                  <SelectItem hideIndicator value="24-hour">
+                    {TIMESTAMP_FORMAT_LABELS["24-hour"]}
+                  </SelectItem>
                 </SelectPopup>
               </Select>
             }
           />
-        )}
-
-        {/* Aldo keeps update checks on, so model pickers stay current. */}
-        {isAldoCloud ? null : (
           <SettingsRow
             serverScoped
-            settingKeys={["enableProviderUpdateChecks"]}
-            {...searchableSetting("provider-update-checks")}
-            description="Check installed provider CLIs for newer available versions."
+            settingKeys={["responseStreamingMode"]}
+            {...searchableSetting("response-streaming")}
+            description={
+              mixedResponseStreamingMode
+                ? "The selected targets use different streaming modes."
+                : RESPONSE_STREAMING_MODE_DESCRIPTIONS[settings.responseStreamingMode]
+            }
             resetAction={
-              settings.enableProviderUpdateChecks !==
-              DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks ? (
+              settings.responseStreamingMode !== DEFAULT_UNIFIED_SETTINGS.responseStreamingMode ? (
                 <SettingResetButton
-                  label="provider update checks"
+                  label="response streaming"
                   onClick={() =>
                     updateSettings({
-                      enableProviderUpdateChecks:
-                        DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks,
+                      responseStreamingMode: DEFAULT_UNIFIED_SETTINGS.responseStreamingMode,
+                    })
+                  }
+                />
+              ) : null
+            }
+            control={
+              <>
+                <Select
+                  value={mixedResponseStreamingMode ? null : settings.responseStreamingMode}
+                  onValueChange={(value) => {
+                    if (value === "token") {
+                      // The legacy path needs an explicit confirmation.
+                      setTokenStreamingWarningOpen(true);
+                      return;
+                    }
+                    if (value === "turn" || value === "paragraph") {
+                      updateSettings({ responseStreamingMode: value });
+                    }
+                  }}
+                >
+                  <SelectTrigger
+                    size="sm"
+                    className="w-full sm:w-56"
+                    aria-label="Response streaming"
+                  >
+                    <SelectValue>
+                      {(value: ResponseStreamingMode | null) =>
+                        value === null ? "Mixed" : RESPONSE_STREAMING_MODE_LABELS[value]
+                      }
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectPopup align="end" alignItemWithTrigger={false}>
+                    <SelectItem hideIndicator value="turn">
+                      {RESPONSE_STREAMING_MODE_LABELS.turn}
+                    </SelectItem>
+                    <SelectItem hideIndicator value="paragraph">
+                      {RESPONSE_STREAMING_MODE_LABELS.paragraph}
+                    </SelectItem>
+                    <SelectItem hideIndicator value="token">
+                      {RESPONSE_STREAMING_MODE_LABELS.token}
+                    </SelectItem>
+                  </SelectPopup>
+                </Select>
+                <TokenStreamingWarningDialog
+                  open={tokenStreamingWarningOpen}
+                  onOpenChange={setTokenStreamingWarningOpen}
+                  onConfirm={() => {
+                    updateSettings({ responseStreamingMode: "token" });
+                    setTokenStreamingWarningOpen(false);
+                  }}
+                  onUseParagraphs={() => {
+                    updateSettings({ responseStreamingMode: "paragraph" });
+                    setTokenStreamingWarningOpen(false);
+                  }}
+                />
+              </>
+            }
+          />
+          {isAldoCloud ? null : diffRows}
+
+          {isAldoCloud ? null : skillsInSlashMenuRow}
+
+          <SettingsRow
+            {...searchableSetting("composer-rich-text")}
+            description="Show formatted Markdown as you type."
+            resetAction={
+              settings.composerRichTextEnabled !==
+              DEFAULT_UNIFIED_SETTINGS.composerRichTextEnabled ? (
+                <SettingResetButton
+                  label="rich text composer"
+                  onClick={() =>
+                    updateSettings({
+                      composerRichTextEnabled: DEFAULT_UNIFIED_SETTINGS.composerRichTextEnabled,
+                    })
+                  }
+                />
+              ) : null
+            }
+            control={
+              <Switch
+                checked={settings.composerRichTextEnabled}
+                onCheckedChange={(checked) =>
+                  updateSettings({ composerRichTextEnabled: Boolean(checked) })
+                }
+                aria-label="Rich text composer"
+              />
+            }
+          />
+
+          <SettingsRow
+            {...searchableSetting("composer-collapse")}
+            description="Rest the composer of an existing thread into a single line when you scroll the conversation. Focus the composer or start typing to expand it again."
+            resetAction={
+              settings.composerCollapseOnScroll !==
+              DEFAULT_UNIFIED_SETTINGS.composerCollapseOnScroll ? (
+                <SettingResetButton
+                  label="collapse composer on scroll"
+                  onClick={() =>
+                    updateSettings({
+                      composerCollapseOnScroll: DEFAULT_UNIFIED_SETTINGS.composerCollapseOnScroll,
+                    })
+                  }
+                />
+              ) : null
+            }
+            control={
+              <Switch
+                checked={settings.composerCollapseOnScroll}
+                onCheckedChange={(checked) =>
+                  updateSettings({ composerCollapseOnScroll: Boolean(checked) })
+                }
+                aria-label="Collapse composer on scroll"
+              />
+            }
+          />
+
+          {isAldoCloud ? null : sendShortcutRow}
+
+          {/* A follow-up always steers in Aldo; mod+Enter queues one. */}
+          {isAldoCloud ? null : (
+            <SettingsRow
+              {...searchableSetting("follow-up-behavior")}
+              description={
+                "Queue follow-ups while the agent runs or steer the current run. " +
+                (settings.sendShortcut === "mod-enter-multiline"
+                  ? `Press ${modifierLabel} + Enter for single-line prompts or ${modifierLabel} + Shift + Enter for multiline prompts to do the opposite for one message.`
+                  : `Press ${modifierLabel}${settings.sendShortcut === "mod-enter" ? " + Shift" : ""} + Enter to do the opposite for one message.`)
+              }
+              resetAction={
+                settings.followUpBehavior !== DEFAULT_UNIFIED_SETTINGS.followUpBehavior ? (
+                  <SettingResetButton
+                    label="follow-up behavior"
+                    onClick={() =>
+                      updateSettings({
+                        followUpBehavior: DEFAULT_UNIFIED_SETTINGS.followUpBehavior,
+                      })
+                    }
+                  />
+                ) : null
+              }
+              control={
+                <Select
+                  value={settings.followUpBehavior}
+                  onValueChange={(value) => {
+                    if (value === "queue" || value === "steer") {
+                      updateSettings({ followUpBehavior: value });
+                    }
+                  }}
+                >
+                  <SelectTrigger
+                    size="sm"
+                    className="w-auto min-w-0"
+                    aria-label="Follow-up behavior"
+                  >
+                    <SelectValue>
+                      {settings.followUpBehavior === "queue" ? "Queue" : "Steer"}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectPopup align="end" alignItemWithTrigger={false}>
+                    <SelectItem value="queue">Queue</SelectItem>
+                    <SelectItem value="steer">Steer</SelectItem>
+                  </SelectPopup>
+                </Select>
+              }
+            />
+          )}
+
+          {/* Aldo keeps update checks on, so model pickers stay current. */}
+          {isAldoCloud ? null : (
+            <SettingsRow
+              serverScoped
+              settingKeys={["enableProviderUpdateChecks"]}
+              {...searchableSetting("provider-update-checks")}
+              description="Check installed provider CLIs for newer available versions."
+              resetAction={
+                settings.enableProviderUpdateChecks !==
+                DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks ? (
+                  <SettingResetButton
+                    label="provider update checks"
+                    onClick={() =>
+                      updateSettings({
+                        enableProviderUpdateChecks:
+                          DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks,
+                      })
+                    }
+                  />
+                ) : null
+              }
+              control={
+                <ScopedSwitch
+                  settingKeys={["enableProviderUpdateChecks"]}
+                  checked={settings.enableProviderUpdateChecks}
+                  onCheckedChange={(checked) =>
+                    updateSettings({ enableProviderUpdateChecks: Boolean(checked) })
+                  }
+                  aria-label="Check provider versions"
+                />
+              }
+            />
+          )}
+
+          <SettingsRow
+            {...searchableSetting("continue-threads-after-server-update")}
+            serverScoped
+            settingKeys={["continueThreadsAfterServerUpdate"]}
+            description="Automatically resume interrupted threads after an update, crash, or machine restart on the selected environments."
+            status={
+              !supportsRestartContinuation
+                ? "All selected connected environments must support restart continuation."
+                : undefined
+            }
+            resetAction={
+              supportsRestartContinuation &&
+              settings.continueThreadsAfterServerUpdate !==
+                DEFAULT_UNIFIED_SETTINGS.continueThreadsAfterServerUpdate ? (
+                <SettingResetButton
+                  label="continue threads after restarts"
+                  onClick={() =>
+                    updateSettings({
+                      continueThreadsAfterServerUpdate:
+                        DEFAULT_UNIFIED_SETTINGS.continueThreadsAfterServerUpdate,
                     })
                   }
                 />
@@ -2933,389 +3096,245 @@ export function GeneralSettingsPanel() {
             }
             control={
               <ScopedSwitch
-                settingKeys={["enableProviderUpdateChecks"]}
-                checked={settings.enableProviderUpdateChecks}
+                settingKeys={["continueThreadsAfterServerUpdate"]}
+                checked={settings.continueThreadsAfterServerUpdate}
+                disabled={!supportsRestartContinuation}
                 onCheckedChange={(checked) =>
-                  updateSettings({ enableProviderUpdateChecks: Boolean(checked) })
+                  updateSettings({ continueThreadsAfterServerUpdate: Boolean(checked) })
                 }
-                aria-label="Check provider versions"
+                aria-label="Continue threads after restarts"
               />
             }
           />
+
+          <SettingsRow
+            serverScoped
+            settingKeys={["backgroundActivity"]}
+            id={searchableSetting("background-activity").id}
+            title={
+              <span className="inline-flex items-center gap-1.5">
+                {searchableSetting("background-activity").title}
+                <PolicyTooltip>
+                  This shared policy gates background work such as Git refreshes and provider health
+                  probes after their individual intervals elapse.
+                </PolicyTooltip>
+              </span>
+            }
+            description={backgroundActivityDescription}
+            resetAction={
+              canResetBackgroundActivity ? (
+                <SettingResetButton
+                  label="background activity"
+                  onClick={() => updateSettings(resetBackgroundActivitySettings())}
+                />
+              ) : null
+            }
+            control={
+              <>
+                <Select
+                  value={mixedBackgroundActivity ? null : backgroundActivityProfileOption}
+                  onValueChange={(value) => {
+                    if (value === "advanced") {
+                      if (isEnvironmentScope) setBackgroundActivityDialogOpen(true);
+                      return;
+                    }
+                    if (
+                      value === "balanced" ||
+                      value === "performance" ||
+                      value === "battery-saver"
+                    ) {
+                      updateSettings(backgroundActivityProfileSettings(value));
+                    }
+                  }}
+                >
+                  <SelectTrigger
+                    size="sm"
+                    className="w-full sm:w-40"
+                    aria-label="Background activity profile"
+                  >
+                    <SelectValue>
+                      {(value: BackgroundActivityProfileOption | null) =>
+                        value === null ? "Mixed" : BACKGROUND_ACTIVITY_PROFILE_OPTION_LABELS[value]
+                      }
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectPopup align="end" alignItemWithTrigger={false}>
+                    <SelectItem hideIndicator value="balanced">
+                      {BACKGROUND_ACTIVITY_PROFILE_LABELS.balanced}
+                    </SelectItem>
+                    <SelectItem hideIndicator value="performance">
+                      {BACKGROUND_ACTIVITY_PROFILE_LABELS.performance}
+                    </SelectItem>
+                    <SelectItem hideIndicator value="battery-saver">
+                      {BACKGROUND_ACTIVITY_PROFILE_LABELS["battery-saver"]}
+                    </SelectItem>
+                    <SelectItem hideIndicator value="advanced" disabled={!isEnvironmentScope}>
+                      {isEnvironmentScope
+                        ? BACKGROUND_ACTIVITY_PROFILE_OPTION_LABELS.advanced
+                        : `${BACKGROUND_ACTIVITY_PROFILE_OPTION_LABELS.advanced} (one environment)`}
+                    </SelectItem>
+                  </SelectPopup>
+                </Select>
+                {backgroundActivityProfileOption === "advanced" && isEnvironmentScope ? (
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <Button
+                          size="icon-sm"
+                          variant="outline"
+                          aria-label="Configure advanced background activity"
+                          onClick={() => setBackgroundActivityDialogOpen(true)}
+                        >
+                          <SettingsIcon className="size-4" />
+                        </Button>
+                      }
+                    />
+                    <TooltipPopup side="top">Configure background activity</TooltipPopup>
+                  </Tooltip>
+                ) : null}
+                <BackgroundActivityAdvancedDialog
+                  open={backgroundActivityDialogOpen && isEnvironmentScope}
+                  onOpenChange={setBackgroundActivityDialogOpen}
+                />
+              </>
+            }
+          />
+        </SettingsSection>
+
+        {isAldoCloud ? null : (
+          <SettingsSection id="projects-and-threads" title="Projects & threads">
+            {projectRows}
+          </SettingsSection>
         )}
 
-        <SettingsRow
-          {...searchableSetting("continue-threads-after-server-update")}
-          serverScoped
-          settingKeys={["continueThreadsAfterServerUpdate"]}
-          description="Automatically resume interrupted threads after an update, crash, or machine restart on the selected environments."
-          status={
-            !supportsRestartContinuation
-              ? "All selected connected environments must support restart continuation."
-              : undefined
-          }
-          resetAction={
-            supportsRestartContinuation &&
-            settings.continueThreadsAfterServerUpdate !==
-              DEFAULT_UNIFIED_SETTINGS.continueThreadsAfterServerUpdate ? (
-              <SettingResetButton
-                label="continue threads after restarts"
-                onClick={() =>
-                  updateSettings({
-                    continueThreadsAfterServerUpdate:
-                      DEFAULT_UNIFIED_SETTINGS.continueThreadsAfterServerUpdate,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <ScopedSwitch
-              settingKeys={["continueThreadsAfterServerUpdate"]}
-              checked={settings.continueThreadsAfterServerUpdate}
-              disabled={!supportsRestartContinuation}
-              onCheckedChange={(checked) =>
-                updateSettings({ continueThreadsAfterServerUpdate: Boolean(checked) })
-              }
-              aria-label="Continue threads after restarts"
-            />
-          }
-        />
-
-        <SettingsRow
-          serverScoped
-          settingKeys={["backgroundActivity"]}
-          id={searchableSetting("background-activity").id}
-          title={
-            <span className="inline-flex items-center gap-1.5">
-              {searchableSetting("background-activity").title}
-              <PolicyTooltip>
-                This shared policy gates background work such as Git refreshes and provider health
-                probes after their individual intervals elapse.
-              </PolicyTooltip>
-            </span>
-          }
-          description={backgroundActivityDescription}
-          resetAction={
-            canResetBackgroundActivity ? (
-              <SettingResetButton
-                label="background activity"
-                onClick={() => updateSettings(resetBackgroundActivitySettings())}
-              />
-            ) : null
-          }
-          control={
-            <>
-              <Select
-                value={mixedBackgroundActivity ? null : backgroundActivityProfileOption}
-                onValueChange={(value) => {
-                  if (value === "advanced") {
-                    if (isEnvironmentScope) setBackgroundActivityDialogOpen(true);
-                    return;
-                  }
-                  if (
-                    value === "balanced" ||
-                    value === "performance" ||
-                    value === "battery-saver"
-                  ) {
-                    updateSettings(backgroundActivityProfileSettings(value));
-                  }
-                }}
-              >
-                <SelectTrigger
-                  size="sm"
-                  className="w-full sm:w-40"
-                  aria-label="Background activity profile"
-                >
-                  <SelectValue>
-                    {(value: BackgroundActivityProfileOption | null) =>
-                      value === null ? "Mixed" : BACKGROUND_ACTIVITY_PROFILE_OPTION_LABELS[value]
-                    }
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectPopup align="end" alignItemWithTrigger={false}>
-                  <SelectItem hideIndicator value="balanced">
-                    {BACKGROUND_ACTIVITY_PROFILE_LABELS.balanced}
-                  </SelectItem>
-                  <SelectItem hideIndicator value="performance">
-                    {BACKGROUND_ACTIVITY_PROFILE_LABELS.performance}
-                  </SelectItem>
-                  <SelectItem hideIndicator value="battery-saver">
-                    {BACKGROUND_ACTIVITY_PROFILE_LABELS["battery-saver"]}
-                  </SelectItem>
-                  <SelectItem hideIndicator value="advanced" disabled={!isEnvironmentScope}>
-                    {isEnvironmentScope
-                      ? BACKGROUND_ACTIVITY_PROFILE_OPTION_LABELS.advanced
-                      : `${BACKGROUND_ACTIVITY_PROFILE_OPTION_LABELS.advanced} (one environment)`}
-                  </SelectItem>
-                </SelectPopup>
-              </Select>
-              {backgroundActivityProfileOption === "advanced" && isEnvironmentScope ? (
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <Button
-                        size="icon-sm"
-                        variant="outline"
-                        aria-label="Configure advanced background activity"
-                        onClick={() => setBackgroundActivityDialogOpen(true)}
-                      >
-                        <SettingsIcon className="size-4" />
-                      </Button>
-                    }
-                  />
-                  <TooltipPopup side="top">Configure background activity</TooltipPopup>
-                </Tooltip>
-              ) : null}
-              <BackgroundActivityAdvancedDialog
-                open={backgroundActivityDialogOpen && isEnvironmentScope}
-                onOpenChange={setBackgroundActivityDialogOpen}
-              />
-            </>
-          }
-        />
-      </SettingsSection>
-
-      {isAldoCloud ? null : (
-        <SettingsSection id="projects-and-threads" title="Projects & threads">
-          {projectRows}
-        </SettingsSection>
-      )}
-
-      <SettingsSection id="confirmations" title="Confirmations">
-        <SettingsRow
-          {...searchableSetting("unpin-confirmation")}
-          description="Ask before unpinning a thread from the pinned section."
-          resetAction={
-            settings.confirmThreadUnpin !== DEFAULT_UNIFIED_SETTINGS.confirmThreadUnpin ? (
-              <SettingResetButton
-                label="unpin confirmation"
-                onClick={() =>
-                  updateSettings({
-                    confirmThreadUnpin: DEFAULT_UNIFIED_SETTINGS.confirmThreadUnpin,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <Switch
-              checked={settings.confirmThreadUnpin}
-              onCheckedChange={(checked) =>
-                updateSettings({ confirmThreadUnpin: Boolean(checked) })
-              }
-              aria-label="Confirm thread unpinning"
-            />
-          }
-        />
-
-        <SettingsRow
-          {...searchableSetting("archive-confirmation")}
-          description="Require a second click on the inline archive action before a thread is archived."
-          resetAction={
-            settings.confirmThreadArchive !== DEFAULT_UNIFIED_SETTINGS.confirmThreadArchive ? (
-              <SettingResetButton
-                label="archive confirmation"
-                onClick={() =>
-                  updateSettings({
-                    confirmThreadArchive: DEFAULT_UNIFIED_SETTINGS.confirmThreadArchive,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <Switch
-              checked={settings.confirmThreadArchive}
-              onCheckedChange={(checked) =>
-                updateSettings({ confirmThreadArchive: Boolean(checked) })
-              }
-              aria-label="Confirm thread archiving"
-            />
-          }
-        />
-
-        <SettingsRow
-          {...searchableSetting("delete-confirmation")}
-          description="Ask before deleting a thread and its chat history."
-          resetAction={
-            settings.confirmThreadDelete !== DEFAULT_UNIFIED_SETTINGS.confirmThreadDelete ? (
-              <SettingResetButton
-                label="delete confirmation"
-                onClick={() =>
-                  updateSettings({
-                    confirmThreadDelete: DEFAULT_UNIFIED_SETTINGS.confirmThreadDelete,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <Switch
-              checked={settings.confirmThreadDelete}
-              onCheckedChange={(checked) =>
-                updateSettings({ confirmThreadDelete: Boolean(checked) })
-              }
-              aria-label="Confirm thread deletion"
-            />
-          }
-        />
-
-        {isElectron ? (
+        <SettingsSection id="confirmations" title="Confirmations">
           <SettingsRow
-            {...searchableSetting("quit-confirmation")}
-            description="Hold mode also quits on two quick presses."
+            {...searchableSetting("unpin-confirmation")}
+            description="Ask before unpinning a thread from the pinned section."
             resetAction={
-              settings.confirmQuit !== DEFAULT_UNIFIED_SETTINGS.confirmQuit ? (
+              settings.confirmThreadUnpin !== DEFAULT_UNIFIED_SETTINGS.confirmThreadUnpin ? (
                 <SettingResetButton
-                  label="quit shortcut behavior"
+                  label="unpin confirmation"
                   onClick={() =>
-                    updateSettings({ confirmQuit: DEFAULT_UNIFIED_SETTINGS.confirmQuit })
+                    updateSettings({
+                      confirmThreadUnpin: DEFAULT_UNIFIED_SETTINGS.confirmThreadUnpin,
+                    })
                   }
                 />
               ) : null
             }
             control={
-              <Select
-                value={settings.confirmQuit}
-                onValueChange={(value) => {
-                  if (value === "direct" || value === "hold" || value === "double-click") {
-                    updateSettings({ confirmQuit: value });
-                  }
-                }}
-              >
-                <SelectTrigger
-                  size="sm"
-                  className="w-full sm:w-40"
-                  aria-label="Quit shortcut behavior"
-                >
-                  <SelectValue>{QUIT_CONFIRMATION_MODE_LABELS[settings.confirmQuit]}</SelectValue>
-                </SelectTrigger>
-                <SelectPopup align="end" alignItemWithTrigger={false}>
-                  {Object.entries(QUIT_CONFIRMATION_MODE_LABELS).map(([value, label]) => (
-                    <SelectItem hideIndicator key={value} value={value}>
-                      {label}
-                    </SelectItem>
-                  ))}
-                </SelectPopup>
-              </Select>
+              <Switch
+                checked={settings.confirmThreadUnpin}
+                onCheckedChange={(checked) =>
+                  updateSettings({ confirmThreadUnpin: Boolean(checked) })
+                }
+                aria-label="Confirm thread unpinning"
+              />
             }
           />
-        ) : null}
-      </SettingsSection>
 
-      <SettingsSection id="text-generation" title="Text generation">
-        <SettingsRow
-          serverScoped
-          settingKeys={["textGenerationModelSelection"]}
-          {...searchableSetting("text-generation-model")}
-          description="Used for thread titles and other generated text on connected devices with this provider. Source control can override it."
-          resetAction={
-            hasServerTargets && isTextGenerationModelDirty ? (
-              <SettingResetButton
-                label="text generation model"
-                onClick={() =>
-                  updateSettings({
-                    textGenerationModelSelection:
-                      DEFAULT_UNIFIED_SETTINGS.textGenerationModelSelection,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            !hasServerTargets ? (
-              <span className="text-sm text-muted-foreground">
-                Connect an environment to choose its text generation model.
-              </span>
-            ) : !hasTextGenerationProvider ? (
-              <span className="text-sm text-muted-foreground">
-                No text generation providers available.
-              </span>
-            ) : (
-              <div className="flex flex-wrap items-center justify-end gap-1.5">
-                <ProviderModelPicker
-                  activeInstanceId={textGenInstanceId}
-                  model={textGenModel}
-                  lockedProvider={null}
-                  instanceEntries={textGenerationModelInstanceEntries}
-                  modelOptionsByInstance={textGenerationModelOptionsByInstance}
-                  triggerClassName={SETTINGS_PICKER_TRIGGER_CLASSNAME}
-                  {...(mixedTextGenerationModel ? { triggerLabel: "Mixed" } : {})}
-                  getModelDisabledReason={textGenerationModelDisabledReason}
-                  {...(environmentId
-                    ? {
-                        onOpenProviderSetup: (instanceId: ProviderInstanceId) => {
-                          void navigate({
-                            to: "/settings/providers",
-                            search: { environmentId, instanceId },
-                          });
-                        },
-                      }
-                    : {})}
-                  onInstanceModelChange={(instanceId, model) => {
-                    const reason = textGenerationModelDisabledReason(instanceId, model);
-                    if (reason) {
-                      toastManager.add({
-                        type: "error",
-                        title: "Text generation model not saved",
-                        description: reason,
-                      });
-                      return;
-                    }
+          <SettingsRow
+            {...searchableSetting("archive-confirmation")}
+            description="Require a second click on the inline archive action before a thread is archived."
+            resetAction={
+              settings.confirmThreadArchive !== DEFAULT_UNIFIED_SETTINGS.confirmThreadArchive ? (
+                <SettingResetButton
+                  label="archive confirmation"
+                  onClick={() =>
                     updateSettings({
-                      textGenerationModelSelection: resolveAppModelSelectionState(
-                        {
-                          ...settings,
-                          textGenerationModelSelection: createModelSelection(instanceId, model),
-                        },
-                        textGenerationProviders,
-                      ),
-                    });
-                  }}
+                      confirmThreadArchive: DEFAULT_UNIFIED_SETTINGS.confirmThreadArchive,
+                    })
+                  }
                 />
-                {textGenInstanceEntry ? (
-                  <TraitsPicker
-                    provider={textGenProvider}
-                    models={
-                      // Use the exact instance's models (rather than the
-                      // first-kind-match) so a custom text-gen instance like
-                      // `codex_personal` gets its own model list, not the
-                      // default Codex one.
-                      textGenInstanceEntry?.models ?? []
-                    }
-                    model={textGenModel}
-                    prompt=""
-                    onPromptChange={() => {}}
-                    modelOptions={textGenModelOptions}
-                    allowPromptInjectedEffort={false}
-                    planModeEnabled={settings.planModeEnabled}
-                    triggerClassName={SETTINGS_PICKER_TRIGGER_CLASSNAME}
-                    onModelOptionsChange={(nextOptions) => {
-                      updateSettings({
-                        textGenerationModelSelection: resolveAppModelSelectionState(
-                          {
-                            ...settings,
-                            textGenerationModelSelection: createModelSelection(
-                              textGenInstanceId,
-                              textGenModel,
-                              nextOptions,
-                            ),
-                          },
-                          textGenerationProviders,
-                        ),
-                      });
-                    }}
-                  />
-                ) : null}
-              </div>
-            )
-          }
-        />
-      </SettingsSection>
-      {/* Aldo: each thread works in its machine's own checkout, so only the diff rows apply. */}
-      {isAldoCloud ? <SettingsSection title="For code">{diffRows}</SettingsSection> : null}
+              ) : null
+            }
+            control={
+              <Switch
+                checked={settings.confirmThreadArchive}
+                onCheckedChange={(checked) =>
+                  updateSettings({ confirmThreadArchive: Boolean(checked) })
+                }
+                aria-label="Confirm thread archiving"
+              />
+            }
+          />
 
+          <SettingsRow
+            {...searchableSetting("delete-confirmation")}
+            description="Ask before deleting a thread and its chat history."
+            resetAction={
+              settings.confirmThreadDelete !== DEFAULT_UNIFIED_SETTINGS.confirmThreadDelete ? (
+                <SettingResetButton
+                  label="delete confirmation"
+                  onClick={() =>
+                    updateSettings({
+                      confirmThreadDelete: DEFAULT_UNIFIED_SETTINGS.confirmThreadDelete,
+                    })
+                  }
+                />
+              ) : null
+            }
+            control={
+              <Switch
+                checked={settings.confirmThreadDelete}
+                onCheckedChange={(checked) =>
+                  updateSettings({ confirmThreadDelete: Boolean(checked) })
+                }
+                aria-label="Confirm thread deletion"
+              />
+            }
+          />
+
+          {isElectron ? (
+            <SettingsRow
+              {...searchableSetting("quit-confirmation")}
+              description="Hold mode also quits on two quick presses."
+              resetAction={
+                settings.confirmQuit !== DEFAULT_UNIFIED_SETTINGS.confirmQuit ? (
+                  <SettingResetButton
+                    label="quit shortcut behavior"
+                    onClick={() =>
+                      updateSettings({ confirmQuit: DEFAULT_UNIFIED_SETTINGS.confirmQuit })
+                    }
+                  />
+                ) : null
+              }
+              control={
+                <Select
+                  value={settings.confirmQuit}
+                  onValueChange={(value) => {
+                    if (value === "direct" || value === "hold" || value === "double-click") {
+                      updateSettings({ confirmQuit: value });
+                    }
+                  }}
+                >
+                  <SelectTrigger
+                    size="sm"
+                    className="w-full sm:w-40"
+                    aria-label="Quit shortcut behavior"
+                  >
+                    <SelectValue>{QUIT_CONFIRMATION_MODE_LABELS[settings.confirmQuit]}</SelectValue>
+                  </SelectTrigger>
+                  <SelectPopup align="end" alignItemWithTrigger={false}>
+                    {Object.entries(QUIT_CONFIRMATION_MODE_LABELS).map(([value, label]) => (
+                      <SelectItem hideIndicator key={value} value={value}>
+                        {label}
+                      </SelectItem>
+                    ))}
+                  </SelectPopup>
+                </Select>
+              }
+            />
+          ) : null}
+        </SettingsSection>
+
+        {isAldoCloud ? null : (
+          <SettingsSection id="text-generation" title="Text generation">
+            {textGenerationRow}
+          </SettingsSection>
+        )}
+      </More>
       <SettingsSection id="about" title="About">
         {isElectron || HOSTED_APP_CHANNEL ? (
           <AboutVersionSection />
@@ -3326,7 +3345,7 @@ export function GeneralSettingsPanel() {
           />
         )}
       </SettingsSection>
-      <SettingsSection title={isAldoCloud ? "Licenses" : "Diagnostics"}>
+      <SettingsSection title={isAldoCloud ? "Shortcuts and licenses" : "Diagnostics"}>
         {/* It would inspect, and kill processes on, one arbitrary thread's machine. */}
         {isAldoCloud ? null : (
           <SettingsRow
@@ -3365,6 +3384,7 @@ export function GeneralSettingsPanel() {
             </Button>
           }
         />
+        {isAldoCloud ? <AldoKeyboardShortcutsRow /> : null}
       </SettingsSection>
 
       <LegacyFeaturesSection />

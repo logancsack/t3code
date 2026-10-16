@@ -35,7 +35,7 @@ import {
   usePanelNavigationSuppression,
 } from "../panelAnimations";
 import ThreadSidebar from "./Sidebar";
-import { AldoProfileButton } from "../aldo/AldoAccountDialog";
+import { AldoProfileButton } from "../aldo/AldoAccountMenu";
 import { AldoSimpleRail, useAldoSimpleRail } from "../aldo/AldoSimpleRail";
 import { isAldoCloud } from "../aldo/cloud";
 import { SidebarChromeHeader } from "./sidebar/SidebarChrome";

@@ -224,14 +224,14 @@ export function AldoMemoryPanel() {
         ) : null
       }
     >
-      <p className="px-3 text-sm text-muted-foreground sm:px-4">
+      <p className="px-3 py-3 text-sm text-muted-foreground sm:px-4">
         What Aldo knows about you, across every conversation: a few lines about you that it always
         has in mind, and notes, one fact each, that it looks up when they matter. Aldo writes them
         as you talk and after each conversation; change anything here, or tell Aldo to forget
         something. Secrets from your vault never go in.
       </p>
       {unsupported ? (
-        <p className="px-3 text-sm text-muted-foreground sm:px-4">
+        <p className="px-3 py-3 text-sm text-muted-foreground sm:px-4">
           This Aldo server doesn't have memory yet.
         </p>
       ) : null}

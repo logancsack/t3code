@@ -1426,6 +1426,29 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           detail: `Proposed plan '${sourceProposedPlan?.planId}' belongs to thread '${sourceThread.id}' in a different project.`,
         });
       }
+      // Accept the plan in the same command as its implementation request.
+      // Provider startup is asynchronous; a second device must not start it again.
+      if (sourcePlan && (sourcePlan.approvedAt || sourcePlan.implementedAt)) return [];
+      const approvalEvents: Array<Omit<OrchestrationEvent, "sequence">> = [];
+      if (sourcePlan && sourceThread) {
+        approvalEvents.push({
+          ...(yield* withEventBase({
+            aggregateKind: "thread",
+            aggregateId: sourceThread.id,
+            occurredAt: command.createdAt,
+            commandId: command.commandId,
+          })),
+          type: "thread.proposed-plan-upserted",
+          payload: {
+            threadId: sourceThread.id,
+            proposedPlan: {
+              ...sourcePlan,
+              approvedAt: command.createdAt,
+              updatedAt: command.createdAt,
+            },
+          },
+        });
+      }
       // A worktree bootstrap persists the message ahead of the turn with
       // `thread.message.user.append`; the turn then only references it.
       const persistedUserMessage = targetThread.messages.find(
@@ -1520,6 +1543,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         });
       }
       return [
+        ...approvalEvents,
         ...lifecycleResetEvents,
         ...(userMessageEvent ? [userMessageEvent] : []),
         turnStartRequestedEvent,
@@ -2137,7 +2161,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
     }
 
     case "thread.proposed-plan.upsert": {
-      yield* requireThread({
+      const thread = yield* requireThread({
         readModel,
         command,
         threadId: command.threadId,
@@ -2152,7 +2176,13 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         type: "thread.proposed-plan-upserted",
         payload: {
           threadId: command.threadId,
-          proposedPlan: command.proposedPlan,
+          proposedPlan: {
+            ...command.proposedPlan,
+            approvedAt:
+              thread.proposedPlans.find((p) => p.id === command.proposedPlan.id)?.approvedAt ??
+              command.proposedPlan.approvedAt ??
+              null,
+          },
         },
       };
     }

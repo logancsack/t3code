@@ -61,7 +61,7 @@ import {
   type AldoImageUpload,
 } from "./cloud";
 import { useAldoArrive, useAldoArrived } from "./arrive";
-import { interleave, type AldoFeedEvent } from "./feed.logic";
+import { dedupeLiveCards, interleave, type AldoFeedEvent } from "./feed.logic";
 import { useAldoFirstViewHold } from "./firstView";
 import { CHIP } from "./surface";
 import { noteAldoComposerTyping } from "./warm";
@@ -595,10 +595,13 @@ export function AldoConversation(
   const since = props.since ?? 0;
   const live = useMemo(() => liveCardIndexes(all), [all]);
   const entries = since > 0 ? all.slice(since) : all;
-  const items = useMemo(
-    () => interleave(entries, props.feed ?? [], (e) => (e.kind === "message" ? e.at : null)),
-    [entries, props.feed],
-  );
+  const items = useMemo(() => {
+    const shown = entries.flatMap((entry, index) =>
+      entry.kind === "action" && entry.open && live.has(since + index) ? [entry.open] : [],
+    );
+    const feed = dedupeLiveCards(props.feed ?? [], shown);
+    return interleave(entries, feed, (e) => (e.kind === "message" ? e.at : null));
+  }, [entries, props.feed, live, since]);
   const end = useRef<HTMLDivElement>(null);
   const last = entries.at(-1);
   const sent = last?.kind === "message" && last.role === "user" ? last.at : null;

@@ -184,8 +184,8 @@ function StartPicker(props: {
           <DialogPanel className="flex flex-col items-start gap-3">
             <p className="text-muted-foreground text-sm">
               {general ? "To work on code, connect" : "Connect"} GitHub (or GitLab, Bitbucket or
-              Azure DevOps in Settings → Git hosts) so threads can clone your repositories and open
-              pull requests.
+              Azure DevOps in Settings → Connections) so threads can clone your repositories and
+              open pull requests.
             </p>
             <AldoAccountButton
               kind="github"
@@ -462,7 +462,7 @@ function NewProjectForm(props: {
       {inAldo ? (
         props.hosts.length === 1 ? (
           <p className="text-muted-foreground text-xs">
-            For code, connect GitHub (or another git host in Settings → Git hosts).
+            For code, connect GitHub (or another git host in Settings → Connections).
           </p>
         ) : null
       ) : (

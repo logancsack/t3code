@@ -298,7 +298,7 @@ function EnvironmentRow(props: {
   );
 }
 
-/** Settings → Environments: prebuilt workspaces new threads start from. */
+/** Settings → Code: prebuilt workspaces new threads start from. */
 export function AldoEnvironmentsPanel() {
   const [envs, setEnvs] = useState<ReadonlyArray<AldoPrebuiltEnvironment> | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -340,6 +340,7 @@ export function AldoEnvironmentsPanel() {
 
   return (
     <SettingsSection
+      id="aldo-environments"
       title="Environments"
       icon={<BoxesIcon className="size-4" />}
       headerAction={
@@ -352,7 +353,7 @@ export function AldoEnvironmentsPanel() {
         </Button>
       }
     >
-      <p className="px-3 text-sm text-muted-foreground sm:px-4">
+      <p className="px-3 py-3 text-sm text-muted-foreground sm:px-4">
         A ready-to-go environment prebuilds a repository (or a set of repositories) with
         dependencies installed, so new threads start working immediately, with their previews
         already running. Agents set one up with <code className="text-xs">save_environment</code>, a
@@ -373,7 +374,7 @@ export function AldoEnvironmentsPanel() {
         />
       ) : null}
       {envs && envs.length === 0 && !draft ? (
-        <p className="px-3 text-muted-foreground text-sm sm:px-4">
+        <p className="px-3 py-3 text-muted-foreground text-sm sm:px-4">
           No environments yet. A repository's ready-to-go setup shows here once an agent saves one
           or you add one.
         </p>

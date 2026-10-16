@@ -1,14 +1,14 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 
 import { AldoMemoryPanel } from "../aldo/AldoMemoryPanel";
+import { AldoPersonalizationPage } from "../aldo/AldoPersonalizationTabs";
 import { isAldoCloud } from "../aldo/cloud";
-import { SettingsPageContainer } from "../components/settings/settingsLayout";
 
 function SettingsMemoryRoute() {
   return (
-    <SettingsPageContainer>
+    <AldoPersonalizationPage>
       <AldoMemoryPanel />
-    </SettingsPageContainer>
+    </AldoPersonalizationPage>
   );
 }
 

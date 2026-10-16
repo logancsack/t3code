@@ -132,8 +132,7 @@ export function AldoConversationPage(props: {
   // What's there once the conversation has loaded is just there; what comes after arrives.
   useEffect(() => () => unsettleAldoConversation(), []);
 
-  // What happened, from where the conversation starts; what Aldo does here from now on it shows itself.
-  const [opened] = useState(() => Date.now());
+  // What happened, from where the conversation starts; local actions already show themselves.
   const entries = useAldoAssistant((s) => s.entries);
   const here = useMemo(
     () =>
@@ -150,12 +149,8 @@ export function AldoConversationPage(props: {
   const said = useAldoAssistant((s) => s.entries.length > 0 || s.replying);
   const receipts = useAldoReceipts((s) => s.receipts);
   const feed = useMemo(
-    () =>
-      withReceipts(
-        home ? feedEvents(home, { now, from: firstAt, until: opened, here }) : [],
-        receipts,
-      ),
-    [home, now, firstAt, opened, here, receipts],
+    () => withReceipts(home ? feedEvents(home, { now, from: firstAt, here }) : [], receipts),
+    [home, now, firstAt, here, receipts],
   );
   const waiting = useMemo(() => (home ? aldoWaitingCount(home, now) : 0), [home, now]);
   // Nothing read yet, and the read failed: that's said, not taken for nothing to show.

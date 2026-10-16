@@ -411,8 +411,8 @@ export function notifyAldoRefusal(cause: unknown): void {
     ...(cause.status === 402
       ? {
           actionProps: {
-            children: "Open Usage",
-            onClick: () => window.location.assign("/usage"),
+            children: "Plan and billing",
+            onClick: () => window.location.assign("/settings/account"),
           },
         }
       : {}),

@@ -171,6 +171,11 @@ export function ConversationRow(props: {
               {STATE_LABEL[c.state]}
             </Badge>
           ) : null}
+          {c.approvedPlan ? (
+            <Badge variant="outline" size="sm">
+              Plan approved
+            </Badge>
+          ) : null}
           {props.isNew ? <NewBadge /> : null}
         </div>
         <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-muted-foreground text-xs">
@@ -568,7 +573,17 @@ export function CapacitySection(props: {
 export function PolicySection(props: { readonly policy: AldoHome["policy"] }) {
   const lines = policyLines(props.policy);
   return (
-    <Section title="How Aldo works for you">
+    <Section
+      title="How Aldo works for you"
+      action={
+        <Link
+          to="/settings/permissions"
+          className="text-muted-foreground text-xs hover:text-foreground"
+        >
+          Change
+        </Link>
+      }
+    >
       <div className="rounded-xl border border-border/60 bg-card/30 px-3.5 py-2.5">
         <ul className="flex flex-col gap-1 text-muted-foreground text-xs">
           {lines.map((line) => (

@@ -82,19 +82,31 @@ const TRANSCRIPT_WAIT_MS = 8_000;
 const LEVELS_EVERY_MS = 120;
 const GREETING =
   "Pick up the call: greet the user in a few words, warmly, like a colleague. If something needs them, say so in the same breath. Don't list anything.";
-/** GPT-Live's greeting (it waits for the user unless told to say something, plainly). */
+/** GPT-Live's greeting (it waits for the user unless told to say something, plainly). They opened the call, so they know who it is. */
 const LIVE_GREETING =
-  "Say hello to the user now: tell them it's Aldo, mention anything that needs them in a few words, and ask what you can do for them.";
-/** A request still being worked on after this long gets a word that it is, so the line isn't silent. */
+  "Say hello to the user now. They opened this call, so there's no need to say who you are: pick up the way a colleague would, in a few words (\"Hey, what's up?\"). If something needs them, say so in the same breath, then let them talk.";
+/**
+ * A request still being worked on after this long gets a word that it is, so the line isn't silent: a different one
+ * each time, promising no time. Only a ninth slow request on one call hears one again, which beats silence.
+ */
 const STILL_WORKING_MS = 6_000;
-const STILL_WORKING = "Still working on that; it'll be a few more seconds.";
+const STILL_WORKING = [
+  "Still on it.",
+  "Bear with me, I'm still working on that.",
+  "Hang on, still working through this one.",
+  "Still going. I'll tell you as soon as it's done.",
+  "Still with you, this one's taking a while.",
+  "Working on it, hang tight.",
+  "Not done yet, still at it.",
+  "Still digging into that.",
+];
 /** A delegation waits this long (the call's time) for the user to stop talking, so it has their whole request. */
 const SETTLE_MS = 700;
 const SETTLE_MAX_MS = 2_500;
 /** A delegation's request is the user's words transcribed up to about where it was made (its offset on the call's timeline). */
 const HEARD_SLACK_MS = 1_500;
 /** What the voice says when a result it was sent was refused (OpenAI rejects an update it can't take): it's on screen instead. */
-const UNSAID = "I couldn't say that result out loud, so it's on the user's screen now.";
+const UNSAID = "I couldn't read that one out, so it's on your screen now.";
 /** GPT-Live bills every connected second: a call nobody's used for this long is hung up. */
 const IDLE_MS = 90_000;
 /** How long a GPT-Live call has to start once OpenAI has answered. */
@@ -205,6 +217,8 @@ const delegating = new Map<string, AbortController>();
 /** Results sent to the voice (what they said), by the event id OpenAI names if it refuses one. */
 const results = new Map<string, string>();
 let eventNumber = 0;
+/** How many times this call has said it's still working on something, for the next to differ. */
+let waits = 0;
 /** When anyone last said anything on the call (wall clock), for hanging up one nobody's using. */
 let lastSpokeAt = 0;
 /** Whether this Aldo tells a call what came back of work it handed over; null until asked. */
@@ -550,7 +564,7 @@ async function worked(
   const call = transcript;
   const timer = setTimeout(() => {
     if (transcript !== call || signal.aborted) return;
-    appendLive("session.commentary.append", STILL_WORKING, id);
+    appendLive("session.commentary.append", STILL_WORKING[waits++ % STILL_WORKING.length]!, id);
     lastSpokeAt = Date.now();
   }, STILL_WORKING_MS);
   try {
@@ -987,7 +1001,7 @@ function teardown(graceful = false): void {
   claimed = null;
   followups = [];
   following = 0;
-  resultSentAt = sentFrom = newsSaidAt = 0;
+  resultSentAt = sentFrom = newsSaidAt = waits = 0;
   responding = false;
   calling = false;
   promptWaiting = false;

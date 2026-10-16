@@ -1,4 +1,5 @@
 import type { ClientSettings } from "@t3tools/contracts";
+import { NetworkIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { SettingsRow, SettingsSection } from "../components/settings/settingsLayout";
@@ -115,7 +116,7 @@ function SubagentRow(props: {
 }
 
 /**
- * Settings → Providers: what each agent's subagents run on when it doesn't
+ * Settings → Agents: what each agent's subagents run on when it doesn't
  * pick a model (by default, the main agent's). Aldo writes it into each
  * machine's Claude Code and Codex config. Hidden with an Aldo that doesn't
  * keep it.
@@ -156,7 +157,11 @@ export function AldoSubagentsPanel() {
   if (!saved) {
     if (!loadError) return null;
     return (
-      <SettingsSection title="Subagents">
+      <SettingsSection
+        id="aldo-subagents"
+        title="Subagents"
+        icon={<NetworkIcon className="size-4" />}
+      >
         <SettingsRow
           title="Couldn't load what subagents run on"
           description={loadError}
@@ -190,7 +195,11 @@ export function AldoSubagentsPanel() {
   };
 
   return (
-    <SettingsSection title="Subagents">
+    <SettingsSection
+      id="aldo-subagents"
+      title="Subagents"
+      icon={<NetworkIcon className="size-4" />}
+    >
       {SUBAGENT_AGENTS.map((agent) => (
         <SubagentRow
           key={agent.kind}
