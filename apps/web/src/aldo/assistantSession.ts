@@ -1218,7 +1218,10 @@ export function disconnectAldo(): void {
  */
 export function tellAldoCall(note: string, options: { readonly respond: boolean }): void {
   if (get().phase === "connecting" && options.respond) {
-    liveOpening = note;
+    // Keep the call's protocol; the newer note supersedes only its pending prompt.
+    liveOpening = liveOpening
+      ? `${liveOpening}\n\nUpdate while connecting (use this instead of the earlier prompt; keep the instructions for going through decisions): ${note}`
+      : note;
     return;
   }
   if (channel?.readyState !== "open") return;

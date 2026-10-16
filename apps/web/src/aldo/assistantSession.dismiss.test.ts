@@ -12,7 +12,14 @@ vi.mock("./cloud", () => ({
 }));
 vi.mock("../components/ui/toast", () => ({ toastManager: { add: vi.fn() } }));
 vi.mock("./screen", () => ({ aldoOnScreen: () => null, subscribeAldoOnScreen: () => () => {} }));
-import { connectAldo, disconnectAldo, noteAldoHiddenPrompts } from "./assistantSession";
+import {
+  connectAldo,
+  disconnectAldo,
+  noteAldoHiddenPrompts,
+  tellAldoCall,
+} from "./assistantSession";
+import { walkthroughOpening, walkthroughNext } from "./walkthrough";
+import type { AldoDecision } from "./decisions.logic";
 class Channel extends EventTarget {
   readyState = "connecting";
   sent: Array<{ type: string; content?: string; item?: { content: Array<{ text: string }> } }> = [];
@@ -79,4 +86,50 @@ it("flushes the latest hidden prompts when a connecting live call becomes ready,
   const before = channel!.sent.length;
   noteAldoHiddenPrompts(["The latest prompt"]);
   expect(channel!.sent).toHaveLength(before);
+});
+
+it("keeps the walkthrough protocol when its prompt changes while connecting", async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal("RTCPeerConnection", Peer);
+  const decision = (title: string): AldoDecision => ({
+    kind: "plan",
+    key: title,
+    plan: { id: title, text: `Plan for ${title}` },
+    conversation: {
+      ref: title,
+      title,
+      repos: [],
+      branch: "test",
+      state: "waiting",
+      machine: "asleep",
+      at: new Date().toISOString(),
+      thread: { environmentId: title, threadId: title },
+    },
+  });
+  await connectAldo({ mic: false, opening: walkthroughOpening(decision("Hidden plan"), 2) });
+  tellAldoCall(
+    walkthroughNext(
+      "The user hid that prompt. It stays unanswered; stop discussing or acting on it.",
+      decision("Remaining plan"),
+      1,
+      1,
+    ),
+    { respond: true },
+  );
+  expect(channel!.sent).toHaveLength(0);
+  channel!.open();
+  channel!.started();
+  const opening = channel!.sent
+    .filter((e) => e.type === "session.instructions.append")
+    .map((e) => e.content)
+    .join("\n");
+  expect(opening).toContain("Then stop and let them answer.");
+  expect(opening).toContain("When they answer out loud, act on it right away");
+  expect(opening).toContain("Never bring up the next one yourself");
+  expect(opening).toContain("use this instead of the earlier prompt");
+  expect(opening).toContain("It stays unanswered; stop discussing or acting on it.");
+  expect(opening).toContain("Remaining plan");
+  expect(opening.indexOf("Never bring up the next one yourself")).toBeLessThan(
+    opening.indexOf("Update while connecting"),
+  );
 });
