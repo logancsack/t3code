@@ -200,7 +200,7 @@ describe("mobile dependency graph", () => {
   it.each(PLATFORMS)("has no circular imports under %s resolution", (platform) => {
     const graph = graphs.find((candidate) => candidate.platform === platform)!;
     // Missing sources must not make the cycle check pass vacuously.
-    expect(graph.files.length).toBeGreaterThan(0);
+    expect(graph.files.length).toBeGreaterThan(500);
     expect(findCycles(graph)).toEqual([]);
   });
 });

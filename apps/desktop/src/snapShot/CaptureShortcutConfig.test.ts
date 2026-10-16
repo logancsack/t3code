@@ -53,12 +53,32 @@ it("refuses apply without a preview or for the wrong desktop", async () => {
   await expect(setup.apply(preview.id, "hyprland")).rejects.toThrow("expired");
   expect(await NodeFSP.readFile(path, "utf8")).toBe(preview.before);
 });
-it("does not overwrite edits made after preview", async () => {
+it("refuses direct and indirect conflicts introduced after preview", async () => {
   const preview = await setup.preview(target(), install);
   await NodeFSP.appendFile(path, "// edited elsewhere\n");
   await expect(setup.apply(preview.id, "niri")).rejects.toThrow("changed since");
   expect(await NodeFSP.readFile(path, "utf8")).toBe(preview.before + "// edited elsewhere\n");
   expect(await NodeFSP.readdir(directory)).toEqual(["config.kdl"]);
+  await NodeFSP.writeFile(path, 'binds {}\ninclude optional=true "later.kdl"\n');
+  const optional = await setup.preview(target(), install);
+  await NodeFSP.writeFile(
+    NodePath.join(directory, "later.kdl"),
+    "binds { Ctrl+Shift+2 { quit; } }",
+  );
+  await expect(setup.apply(optional.id, "niri")).rejects.toThrow("changed since");
+  expect(await NodeFSP.readFile(path, "utf8")).toBe(optional.before);
+  const hypr = {
+    ...target(),
+    desktop: "hyprland" as const,
+    path: NodePath.join(directory, "hyprland.conf"),
+  };
+  await NodeFSP.writeFile(hypr.path, "# unchanged\n");
+  const live = await setup.preview(hypr, install);
+  tools.hyprlandBindings.mockResolvedValue([
+    { modmask: 5, key: "2", dispatcher: "exec", arg: "kitty" },
+  ]);
+  await expect(setup.apply(live.id, "hyprland")).rejects.toThrow("already used");
+  expect(await NodeFSP.readFile(hypr.path, "utf8")).toBe(live.before);
 });
 it("rechecks after validation and cleans the staged file on concurrent edits", async () => {
   const preview = await setup.preview(target(), install);
