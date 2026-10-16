@@ -16,6 +16,7 @@ import { toastManager } from "../components/ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { cn } from "~/lib/utils";
 import { AldoHandoffActions } from "./AldoHandoffCard";
+import { AgentMarkdown, Quoted } from "./AldoQuoted";
 import { seedAldoComposer } from "./assistantSession";
 import { AldoApiError } from "./api";
 import {
@@ -421,7 +422,6 @@ function PlanForm(props: {
   readonly plan: { readonly id: string; readonly text: string };
   readonly onActed: () => void;
 }) {
-  const [open, setOpen] = useState(false);
   const [changing, setChanging] = useState(false);
   const [changes, setChanges] = useState("");
   const [busy, setBusy] = useState(false);
@@ -443,23 +443,13 @@ function PlanForm(props: {
       setBusy(false);
     }
   };
-  const lines = props.plan.text.split("\n");
-  const preview = lines.slice(0, 6).join("\n");
   return (
     <div className="flex flex-col gap-2">
-      <div className="max-h-96 overflow-auto whitespace-pre-wrap rounded-md bg-muted/50 p-2.5 text-xs leading-relaxed">
-        {open ? props.plan.text : preview}
-        {!open && lines.length > 6 ? "\n…" : ""}
+      <div className="flex flex-col gap-1.5 rounded-md bg-muted/50 p-2.5">
+        <Quoted lines={10} className="text-sm leading-6">
+          <AgentMarkdown text={props.plan.text} />
+        </Quoted>
       </div>
-      {lines.length > 6 ? (
-        <button
-          type="button"
-          className="self-start text-muted-foreground text-xs hover:text-foreground"
-          onClick={() => setOpen((v) => !v)}
-        >
-          {open ? "Show less" : "Show the whole plan"}
-        </button>
-      ) : null}
       {changing ? (
         <form
           className="flex flex-col gap-2"
