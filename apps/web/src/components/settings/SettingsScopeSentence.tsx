@@ -36,11 +36,18 @@ export const SETTINGS_DEVICE_ONLY_PATHS: ReadonlySet<string> = new Set([
   "/settings/snap-shot",
   "/settings/connections",
   // The managed workspace's page, and Aldo's: the account's, at any selection.
-  // Aldo shows its accounts in place of Providers, Integrations and Source Control,
-  // and its keybindings can't be changed.
+  // Aldo's pages are the account's; a project's own are on its page (Project
+  // settings), and its keybindings can't be changed.
   "/settings/workspace",
   ...(isAldoCloud
     ? [
+        "/settings/general",
+        "/settings/account",
+        "/settings/agents",
+        "/settings/permissions",
+        "/settings/notifications",
+        "/settings/phone",
+        "/settings/code",
         "/settings/keybindings",
         "/settings/providers",
         "/settings/integrations",

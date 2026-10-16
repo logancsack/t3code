@@ -21,7 +21,7 @@ import { useSidebar } from "../components/ui/sidebar";
 import { toastManager } from "../components/ui/toast";
 import { useIsMobile } from "../hooks/useMediaQuery";
 import { cn } from "~/lib/utils";
-import { AldoProfileButton } from "./AldoAccountDialog";
+import { AldoProfileButton } from "./AldoAccountMenu";
 import { AldoOrb, useAldoAssistantAvailable } from "./AldoAssistant";
 import { useAldoAttentionCount } from "./attentionBadge";
 import { isAldoCloud } from "./cloud";

@@ -250,14 +250,14 @@ export function AldoInstructionsPanel() {
         ) : null
       }
     >
-      <p className="px-3 text-sm text-muted-foreground sm:px-4">
+      <p className="px-3 py-3 text-sm text-muted-foreground sm:px-4">
         What every agent is told, for all projects or for one, kept out of your repositories. When
         you ask an agent to remember something for later threads, it's saved here too. A thread
         picks up changes the next time its computer starts or wakes. A repository's own notes for
         agents (AGENTS.md or CLAUDE.md) still apply.
       </p>
       {unsupported ? (
-        <p className="px-3 text-sm text-muted-foreground sm:px-4">
+        <p className="px-3 py-3 text-sm text-muted-foreground sm:px-4">
           This Aldo server doesn't have instructions yet.
         </p>
       ) : null}

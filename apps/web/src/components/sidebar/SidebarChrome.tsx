@@ -33,6 +33,8 @@ import { ManagedDevPcFooterAccount } from "../ManagedDevPcAccount";
 import { APP_BASE_NAME, APP_IS_ALDO } from "../../branding";
 import { SidebarUpdateArchitectureWarning, SidebarUpdatePill } from "./SidebarUpdatePill";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
+import { AldoSidebarLinks } from "../../aldo/AldoSidebarLinks";
+import { isAldoCloud } from "../../aldo/cloud";
 
 export const SidebarChromeHeader = memo(function SidebarChromeHeader({
   isElectron,
@@ -160,6 +162,10 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
   const isOnUtilityPage = useLocation({
     select: (location) => isSidebarUtilityPage(location.pathname),
   });
+  const isOnSettings = useLocation({
+    select: (location) =>
+      location.pathname === "/settings" || location.pathname.startsWith("/settings/"),
+  });
   const { environments } = useEnvironments();
   // The page reads every connected server, so one of them offering pull requests is enough for
   // the link to lead somewhere.
@@ -194,6 +200,13 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
     closeMobileSidebar();
     void navigateToMainApp();
   }, [closeMobileSidebar, navigateToMainApp]);
+
+  // Aldo's places, by name; Settings and Usage are in its account menu.
+  if (isAldoCloud && !isOnSettings) {
+    return (
+      <AldoSidebarLinks pullRequests={pullRequestsSupported} onNavigate={closeMobileSidebar} />
+    );
+  }
 
   return (
     <SidebarMenu className="flex-row items-center">

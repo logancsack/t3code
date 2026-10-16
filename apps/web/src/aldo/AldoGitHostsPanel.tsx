@@ -65,7 +65,8 @@ const HOSTS: Record<
   },
 };
 
-function HostRow(props: {
+/** A git host connected with a token (GitHub signs in with its own wizard). */
+export function AldoGitHostRow(props: {
   kind: AldoGitHostKind;
   account: AldoAccount | undefined;
   onChanged: () => void;
@@ -168,21 +169,5 @@ function HostRow(props: {
   );
 }
 
-/** GitLab, Bitbucket and Azure DevOps connections (GitHub signs in with its own wizard). */
-export function AldoGitHostRows(props: {
-  accounts: Partial<Record<AldoGitHostKind, AldoAccount>> | null;
-  onChanged: () => void;
-}) {
-  return (
-    <>
-      {(Object.keys(HOSTS) as AldoGitHostKind[]).map((kind) => (
-        <HostRow
-          key={kind}
-          kind={kind}
-          account={props.accounts?.[kind]}
-          onChanged={props.onChanged}
-        />
-      ))}
-    </>
-  );
-}
+/** GitLab, Bitbucket and Azure DevOps. */
+export const ALDO_GIT_HOST_KINDS = Object.keys(HOSTS) as ReadonlyArray<AldoGitHostKind>;

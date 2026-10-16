@@ -1,0 +1,271 @@
+// Settings → Permissions: the rules agents follow (cloud.ts AldoPolicyView) as
+// choices, the user's own for all their workspaces, and where a workspace
+// answered otherwise. An undecided rule is one an agent asks about the first
+// time it comes up; one with a default (paying past the plans, long
+// conversations) does that until the user changes it.
+
+import type { AldoPolicy, AldoPolicyPath, AldoPolicyView } from "./cloud";
+
+/** A rule no one has answered: an agent asks. */
+export const ALDO_UNDECIDED = "undecided";
+/** A workspace's choice that follows the user's own. */
+export const ALDO_SAME_AS_EVERYWHERE = "everywhere";
+
+export type AldoPolicyRuleId =
+  | "merge"
+  | "reviews"
+  | "spendThreshold"
+  | "paidFallback"
+  | "onProviderLimit"
+  | "contextBudget"
+  | "mediaRouting";
+
+export interface AldoPolicyOption {
+  readonly value: string;
+  readonly label: string;
+}
+
+interface RuleSpec {
+  readonly clear: AldoPolicyPath;
+  /** What the rule does while undecided, for one with a default. */
+  readonly fallback?: string;
+  readonly options: ReadonlyArray<AldoPolicyOption>;
+  /** A value of the user's that isn't one of the options (an amount an agent recorded). */
+  readonly label?: (value: string) => string;
+  readonly read: (policy: AldoPolicy) => string | undefined;
+  readonly set: (value: string) => AldoPolicy | null;
+}
+
+const dollars = (value: string) => `Up to $${Number(value).toLocaleString("en-US")}`;
+const tokens = (value: string) => {
+  const n = Number(value);
+  return n >= 1_000_000 ? `${n / 1_000_000}M tokens` : `${Math.round(n / 1000)}k tokens`;
+};
+
+const ALDO_POLICY_RULES: Readonly<Record<AldoPolicyRuleId, RuleSpec>> = {
+  merge: {
+    clear: ["merge"],
+    options: [
+      { value: "auto", label: "When checks pass" },
+      { value: "approve", label: "I merge them" },
+    ],
+    read: (p) => p.merge,
+    set: (v) => (v === "auto" || v === "approve" ? { merge: v } : null),
+  },
+  reviews: {
+    clear: ["reviews"],
+    options: [
+      { value: "important", label: "Fix what matters" },
+      { value: "all", label: "Fix everything" },
+    ],
+    read: (p) => p.reviews,
+    set: (v) => (v === "all" || v === "important" ? { reviews: v } : null),
+  },
+  spendThreshold: {
+    clear: ["spendThreshold"],
+    options: [
+      { value: "0", label: "Always ask" },
+      ...[5, 20, 50, 100, 250].map((n) => ({ value: String(n), label: dollars(String(n)) })),
+    ],
+    label: (v) => (Number(v) === 0 ? "Always ask" : dollars(v)),
+    read: (p) => (p.spendThreshold === undefined ? undefined : String(p.spendThreshold)),
+    set: (v) => {
+      const n = Number(v);
+      return Number.isFinite(n) && n >= 0 ? { spendThreshold: n } : null;
+    },
+  },
+  paidFallback: {
+    clear: ["modelRouting"],
+    fallback: "never",
+    options: [
+      { value: "never", label: "Never" },
+      { value: "authorized", label: "Allowed" },
+    ],
+    read: (p) => p.modelRouting?.paidFallback,
+    set: (v) =>
+      v === "never" || v === "authorized" ? { modelRouting: { paidFallback: v } } : null,
+  },
+  onProviderLimit: {
+    clear: ["onProviderLimit"],
+    options: [
+      { value: "switch", label: "Switch models" },
+      { value: "wait", label: "Wait for the reset" },
+    ],
+    read: (p) => p.onProviderLimit,
+    set: (v) => (v === "wait" || v === "switch" ? { onProviderLimit: v } : null),
+  },
+  contextBudget: {
+    clear: ["contextBudget"],
+    fallback: "300000",
+    options: [100_000, 200_000, 300_000, 500_000, 1_000_000].map((n) => ({
+      value: String(n),
+      label: n === 300_000 ? `${tokens(String(n))} (default)` : tokens(String(n)),
+    })),
+    label: tokens,
+    read: (p) => (p.contextBudget === undefined ? undefined : String(p.contextBudget)),
+    set: (v) => {
+      const n = Number(v);
+      return Number.isInteger(n) && n >= 100_000 && n <= 1_000_000 ? { contextBudget: n } : null;
+    },
+  },
+  mediaRouting: {
+    clear: ["mediaRouting"],
+    options: [
+      { value: "auto", label: "Agents choose" },
+      { value: "ask", label: "Show me the options" },
+    ],
+    read: (p) => p.mediaRouting,
+    set: (v) => (v === "auto" || v === "ask" ? { mediaRouting: v } : null),
+  },
+};
+
+/** The user's choice for a rule: theirs, the rule's default, or undecided. */
+export function aldoRuleValue(rule: AldoPolicyRuleId, policy: AldoPolicy): string {
+  const spec = ALDO_POLICY_RULES[rule];
+  return spec.read(policy) ?? spec.fallback ?? ALDO_UNDECIDED;
+}
+
+/**
+ * What a rule's picker offers: undecided first for one without a default (or,
+ * for a workspace, following the user's own), and a value an agent recorded
+ * that isn't among the usual ones.
+ */
+export function aldoRuleOptions(
+  rule: AldoPolicyRuleId,
+  current: string,
+  options: { readonly workspace?: boolean } = {},
+): ReadonlyArray<AldoPolicyOption> {
+  const spec = ALDO_POLICY_RULES[rule];
+  const first: AldoPolicyOption[] = options.workspace
+    ? [{ value: ALDO_SAME_AS_EVERYWHERE, label: "Same as everywhere" }]
+    : spec.fallback === undefined
+      ? [{ value: ALDO_UNDECIDED, label: "Not decided" }]
+      : [];
+  const known = spec.options.some((option) => option.value === current);
+  const recorded =
+    known || current === ALDO_UNDECIDED || current === ALDO_SAME_AS_EVERYWHERE || !spec.label
+      ? []
+      : [{ value: current, label: spec.label(current) }];
+  // Only amounts are recorded outside the options: they go in order.
+  const list =
+    recorded.length > 0
+      ? [...spec.options, ...recorded].toSorted((a, b) => Number(a.value) - Number(b.value))
+      : spec.options;
+  return [...first, ...list];
+}
+
+/** The label a picker shows for a value. */
+export function aldoRuleLabel(rule: AldoPolicyRuleId, value: string): string {
+  if (value === ALDO_SAME_AS_EVERYWHERE) return "Same as everywhere";
+  return aldoRuleOptions(rule, value).find((option) => option.value === value)?.label ?? value;
+}
+
+export interface AldoPolicyEdit {
+  readonly repos?: ReadonlyArray<string>;
+  readonly set?: AldoPolicy;
+  readonly clear?: ReadonlyArray<AldoPolicyPath>;
+}
+
+/** The change a choice makes: for all the user's workspaces, or one (`repos`). */
+export function aldoRuleEdit(
+  rule: AldoPolicyRuleId,
+  value: string,
+  repos?: ReadonlyArray<string>,
+): AldoPolicyEdit | null {
+  const spec = ALDO_POLICY_RULES[rule];
+  const where = repos ? { repos } : {};
+  if (value === ALDO_UNDECIDED || value === ALDO_SAME_AS_EVERYWHERE) {
+    return { ...where, clear: [spec.clear] };
+  }
+  const set = spec.set(value);
+  return set ? { ...where, set } : null;
+}
+
+/** A workspace by its repositories' short names: "aldo + t3code". */
+export function aldoWorkspaceLabel(repos: ReadonlyArray<string>): string {
+  return repos.map((repo) => repo.split("/").at(-1) ?? repo).join(" + ");
+}
+
+/** Workspaces whose own answer to a rule isn't the user's own, with that answer. */
+export function aldoRuleDifferences(
+  view: AldoPolicyView,
+  rule: AldoPolicyRuleId,
+): ReadonlyArray<{ readonly repos: ReadonlyArray<string>; readonly value: string }> {
+  const spec = ALDO_POLICY_RULES[rule];
+  const everywhere = spec.read(view.everywhere);
+  return view.workspaces.flatMap((workspace) => {
+    const value = spec.read(workspace.policy);
+    return value !== undefined && value !== everywhere ? [{ repos: workspace.repos, value }] : [];
+  });
+}
+
+export const ALDO_MERGE_METHODS: ReadonlyArray<AldoPolicyOption> = [
+  { value: "squash", label: "Squash" },
+  { value: "merge", label: "Merge commit" },
+  { value: "rebase", label: "Rebase" },
+];
+
+/**
+ * Each repository's merge method: the user's own for it, or a workspace's
+ * (agents record it with the workspace they're in), decided ones first.
+ */
+export function aldoMergeMethods(
+  view: AldoPolicyView,
+): ReadonlyArray<{ readonly repo: string; readonly value: string }> {
+  const rows = view.repos.map((repo) => {
+    const own = view.everywhere.mergeMethod?.[repo];
+    const workspace = view.workspaces.find((w) => w.policy.mergeMethod?.[repo] !== undefined);
+    return { repo, value: own ?? workspace?.policy.mergeMethod?.[repo] ?? ALDO_UNDECIDED };
+  });
+  const decided = (row: { value: string }) => (row.value === ALDO_UNDECIDED ? 1 : 0);
+  return rows.toSorted((a, b) => decided(a) - decided(b) || a.repo.localeCompare(b.repo));
+}
+
+/**
+ * The changes choosing a repository's merge method makes: the user's own for
+ * it (Aldo drops the workspaces' own), or, undecided, clearing it there and
+ * in each workspace that has one.
+ */
+export function aldoMergeMethodEdits(
+  view: AldoPolicyView,
+  repo: string,
+  value: string,
+): ReadonlyArray<AldoPolicyEdit> {
+  if (value !== ALDO_UNDECIDED) {
+    return ALDO_MERGE_METHODS.some((option) => option.value === value)
+      ? [{ set: { mergeMethod: { [repo]: value } } }]
+      : [];
+  }
+  const clear: AldoPolicyPath = ["mergeMethod", repo];
+  return [
+    ...(view.everywhere.mergeMethod?.[repo] !== undefined ? [{ clear: [clear] }] : []),
+    ...view.workspaces
+      .filter((w) => w.policy.mergeMethod?.[repo] !== undefined)
+      .map((w) => ({ repos: w.repos, clear: [clear] })),
+  ];
+}
+
+export const ALDO_MEDIA_TASKS: ReadonlyArray<AldoPolicyOption> = [
+  { value: "image", label: "Images" },
+  { value: "image.edit", label: "Image edits" },
+  { value: "video", label: "Video" },
+  { value: "video.edit", label: "Video edits" },
+  { value: "speech", label: "Speech" },
+  { value: "transcription", label: "Transcription" },
+  { value: "music", label: "Music" },
+  { value: "sound", label: "Sound effects" },
+  { value: "3d", label: "3D" },
+];
+
+/** The tools the user named for kinds of media, in the order the kinds are listed. */
+export function aldoMediaDefaults(
+  view: AldoPolicyView,
+): ReadonlyArray<{ readonly task: string; readonly label: string; readonly tool: string }> {
+  const defaults = view.everywhere.mediaDefaults ?? {};
+  return ALDO_MEDIA_TASKS.flatMap((task) => {
+    const tool = defaults[task.value];
+    return typeof tool === "string" && tool.trim()
+      ? [{ task: task.value, label: task.label, tool }]
+      : [];
+  });
+}

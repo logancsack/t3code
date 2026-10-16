@@ -1,14 +1,20 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
+import { SquareSlashIcon } from "lucide-react";
 
+import { AldoPersonalizationPage } from "../aldo/AldoPersonalizationTabs";
 import { AldoSkillsPanel } from "../aldo/AldoSkillsPanel";
 import { isAldoCloud } from "../aldo/cloud";
-import { SettingsPageContainer } from "../components/settings/settingsLayout";
+import { GeneralSettingsPanel } from "../components/settings/SettingsPanels";
+import { SettingsSection } from "../components/settings/settingsLayout";
 
 function SettingsSkillsRoute() {
   return (
-    <SettingsPageContainer>
+    <AldoPersonalizationPage>
       <AldoSkillsPanel />
-    </SettingsPageContainer>
+      <SettingsSection title="In the composer" icon={<SquareSlashIcon className="size-4" />}>
+        <GeneralSettingsPanel aldoPart="skills-in-slash-menu" />
+      </SettingsSection>
+    </AldoPersonalizationPage>
   );
 }
 

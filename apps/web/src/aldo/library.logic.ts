@@ -2,8 +2,8 @@
 // Today, This week and Older. What it made comes from each turn's changed
 // files (made.logic.ts); what's shared, from Aldo's list of shares (GET
 // /api/shares), matched to the thread by its computer where Aldo says which
-// one, or else by the link its share_file step recorded. Settings → Shared
-// files lists every share the same way.
+// one, or else by the link its share_file step recorded. The Library lists
+// every share the same way.
 
 import {
   aldoMadeKind,

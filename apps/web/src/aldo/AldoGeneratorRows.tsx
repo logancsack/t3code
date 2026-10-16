@@ -1,4 +1,4 @@
-// Settings → Integrations' image, video and audio generators (Runway,
+// Settings → Connections' image, video and audio generators (Runway,
 // Higgsfield, …): each connects with the user's own API key, which Aldo keeps
 // in their vault, so agents use it without ever
 // holding it. The server names and describes each one, so a generator a newer
@@ -22,7 +22,8 @@ const messageOf = (cause: unknown) => (cause instanceof Error ? cause.message : 
 
 const ONE_KEY: ReadonlyArray<AldoIntegrationKeyField> = [{ name: "key", label: "API key" }];
 
-function GeneratorRow(props: {
+/** A generator, with its key form. */
+export function AldoGeneratorRow(props: {
   readonly integration: AldoIntegration;
   readonly onChanged: () => void;
 }) {
@@ -178,23 +179,5 @@ function GeneratorRow(props: {
         </form>
       ) : null}
     </SettingsRow>
-  );
-}
-
-/** The generators this Aldo offers (integrations of kind "key"), each with its key form. */
-export function AldoGeneratorRows(props: {
-  readonly integrations: ReadonlyArray<AldoIntegration>;
-  readonly onChanged: () => void;
-}) {
-  return (
-    <>
-      {props.integrations.map((integration) => (
-        <GeneratorRow
-          key={integration.provider}
-          integration={integration}
-          onChanged={props.onChanged}
-        />
-      ))}
-    </>
   );
 }
