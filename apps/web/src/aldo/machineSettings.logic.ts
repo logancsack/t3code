@@ -68,7 +68,7 @@ export function withAldoMachineSettings<S extends ServerSettings>(
   settings: S,
   kept: AldoMachineSettings | null,
 ): S {
-  return kept && Object.keys(kept).length > 0 ? { ...settings, ...kept } : settings;
+  return kept ? { ...settings, defaultModelSelection: null, ...kept } : settings;
 }
 
 /** Whether Aldo keeps every one of `keys` (none: it keeps nothing of them). */

@@ -1,3 +1,6 @@
+import { aldoRoutesModels, isAldoCloud } from "../../aldo/cloud";
+import { useAldoMachineSettings } from "../../aldo/machineSettings";
+import { hasExplicitComposerModelSelection } from "../../lib/chatThreadActions";
 import { DESKTOP_PASTE_AS_TEXT_EVENT } from "../../lib/desktopPasteAsText";
 import { isLocalEnvironmentDisabled } from "../../localEnvironment";
 import { usePrimaryEnvironmentId } from "../../state/environments";
@@ -1637,6 +1640,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // Store subscriptions (prompt / images / terminal contexts)
   // ------------------------------------------------------------------
   const composerDraft = useComposerThreadDraft(composerDraftTarget);
+  const aldoMachineSettings = useAldoMachineSettings();
+  const aldoDefaultModel =
+    isAldoCloud &&
+    aldoRoutesModels() &&
+    routeKind === "draft" &&
+    !hasExplicitComposerModelSelection(composerDraft);
+
   // Live target key, for async flows that must notice a thread switch that
   // happened while they awaited.
   const composerDraftTargetKeyRef = useRef("");
@@ -5154,6 +5164,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       ) : null}
       {renderLeadingControl?.(composerControlsInStrip ? "xs" : "sm")}
       <ProviderModelPicker
+        {...(aldoDefaultModel
+          ? {
+              triggerLabel: aldoMachineSettings?.defaultModelSelection
+                ? `Default: ${aldoMachineSettings.defaultModelSelection.model}`
+                : "Let Aldo decide",
+            }
+          : {})}
         isComposerOwned
         disabled={providerCatalogPending || isSendBusy}
         {...(routeKind === "draft" && supportsMultipleModels

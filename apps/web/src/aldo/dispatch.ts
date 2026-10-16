@@ -18,7 +18,10 @@
 // Aldo keeps the command for the machine (threadCommands.ts).
 
 import { setOrchestrationCommandDispatchOverride } from "@t3tools/client-runtime/operations";
-import type { EnvironmentId } from "@t3tools/contracts";
+import { EnvironmentId } from "@t3tools/contracts";
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { useComposerDraftStore } from "../composerDraftStore";
+import { hasExplicitComposerModelSelection } from "../lib/chatThreadActions";
 import * as Option from "effect/Option";
 import { AsyncResult } from "effect/unstable/reactivity";
 
@@ -34,6 +37,7 @@ import { toastManager } from "../components/ui/toast";
 import {
   AldoApiError,
   aldoMachineIsNew,
+  aldoRoutesModels,
   aldoStartState,
   getAldoEnvironments,
   holdAldoTurn,
@@ -292,10 +296,26 @@ export function installAldoCommandDispatch(): void {
     // files however the machine is: Aldo puts them on it, so only Aldo can send it.
     const files = command.type === "thread.turn.start" ? aldoFilesOf(command) : null;
     const connected = isAldoConnected(environmentId);
+    const routed =
+      command.type === "thread.turn.start" &&
+      Boolean(command.bootstrap?.createThread) &&
+      aldoRoutesModels();
+    const heldCommand = routed
+      ? {
+          ...command,
+          aldoModelExplicit: hasExplicitComposerModelSelection(
+            useComposerDraftStore
+              .getState()
+              .getComposerDraft(
+                scopeThreadRef(EnvironmentId.make(environmentId), command.threadId),
+              ),
+          ),
+        }
+      : command;
     const held =
       command.type === "thread.turn.start" &&
-      (files !== null || !connected) &&
-      (await handToAldo(environmentId, command, files, connected));
+      (routed || files !== null || !connected) &&
+      (await handToAldo(environmentId, heldCommand, files, connected));
     if (!held) {
       await ensureAldoConnected(environmentId).catch((cause: unknown) => {
         notifyAldoRefusal(cause);
@@ -305,7 +325,8 @@ export function installAldoCommandDispatch(): void {
     }
     heldThreads.set(environmentId, command.threadId);
     try {
-      if (await connectForHeld(environmentId, command)) return files ? { sequence: 0 } : null;
+      if (await connectForHeld(environmentId, command))
+        return files || routed ? { sequence: 0 } : null;
     } finally {
       heldThreads.delete(environmentId);
     }

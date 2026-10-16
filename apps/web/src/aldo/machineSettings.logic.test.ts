@@ -1,4 +1,8 @@
-import { DEFAULT_SERVER_SETTINGS, type ServerProvider } from "@t3tools/contracts";
+import {
+  DEFAULT_SERVER_SETTINGS,
+  ProviderInstanceId,
+  type ServerProvider,
+} from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -99,7 +103,18 @@ describe("withAldoMachineSettings", () => {
 
   it("leaves them as they are with none kept", () => {
     expect(withAldoMachineSettings(DEFAULT_SERVER_SETTINGS, null)).toBe(DEFAULT_SERVER_SETTINGS);
-    expect(withAldoMachineSettings(DEFAULT_SERVER_SETTINGS, {})).toBe(DEFAULT_SERVER_SETTINGS);
+    expect(
+      withAldoMachineSettings(
+        {
+          ...DEFAULT_SERVER_SETTINGS,
+          defaultModelSelection: {
+            instanceId: ProviderInstanceId.make("codex"),
+            model: "inherited",
+          },
+        },
+        {},
+      ).defaultModelSelection,
+    ).toBeNull();
   });
 });
 

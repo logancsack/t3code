@@ -1,7 +1,7 @@
 import {
   DEFAULT_SERVER_SETTINGS,
   type ModelSelection,
-  type ProviderInstanceId,
+  ProviderInstanceId,
   type WorktreeSubmodules,
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
@@ -145,6 +145,10 @@ export function ProjectDefaultsSettings({
     updateSettings({ defaultModelSelection: value });
   };
 
+  const aldoModel = isAldoCloud && aldoPart === "model";
+  const automaticModel = aldoModel && settings.defaultModelSelection == null;
+  const shownSelection = aldoModel ? settings.defaultModelSelection : selection;
+
   const modelRow = (
     <SettingsRow
       serverScoped
@@ -153,16 +157,24 @@ export function ProjectDefaultsSettings({
       id="default-model"
       title="Model"
       description={
-        isProjectScope
-          ? "Model for new threads in this project."
-          : "Default model for new threads. Projects can override it."
+        aldoModel
+          ? automaticModel
+            ? "Aldo chooses the model and reasoning for each task using the room left on your plans."
+            : "Override for every new thread, including requests to Aldo. A model you choose for one thread takes priority."
+          : isProjectScope
+            ? "Model for new threads in this project."
+            : "Default model for new threads. Projects can override it."
       }
       status={
         modelUnavailable || mixedModel || modelSource === "project"
           ? undefined
           : settings.defaultModelSelection === null
-            ? "Automatic"
-            : undefined
+            ? aldoModel
+              ? "Router"
+              : "Automatic"
+            : aldoModel
+              ? "Override"
+              : undefined
       }
       resetAction={
         settings.defaultModelSelection !== null ? (
@@ -170,15 +182,29 @@ export function ProjectDefaultsSettings({
         ) : null
       }
       control={
-        selection && activeEntry ? (
+        aldoModel || (selection && activeEntry) ? (
           <div className="flex min-w-0 flex-wrap items-center justify-end gap-1.5">
             <ProviderModelPicker
-              activeInstanceId={selection.instanceId}
-              model={selection.model}
+              activeInstanceId={
+                shownSelection?.instanceId ??
+                selection?.instanceId ??
+                ProviderInstanceId.make("aldo")
+              }
+              model={shownSelection?.model ?? selection?.model ?? ""}
               lockedProvider={null}
               instanceEntries={entries}
               modelOptionsByInstance={modelOptions}
               triggerClassName={SETTINGS_PICKER_TRIGGER_CLASSNAME}
+              {...(aldoModel
+                ? {
+                    automaticOption: {
+                      label: "Let Aldo decide",
+                      selected: automaticModel,
+                      onSelect: () => setModel(null),
+                    },
+                    ...(automaticModel ? { triggerLabel: "Let Aldo decide" } : {}),
+                  }
+                : {})}
               {...(mixedModel ? { triggerLabel: "Mixed" } : {})}
               getModelDisabledReason={modelDisabledReason}
               onOpenProviderSetup={(instanceId) => {
@@ -192,7 +218,7 @@ export function ProjectDefaultsSettings({
                 setModel(createModelSelection(instanceId, model))
               }
             />
-            {!mixedModel ? (
+            {!mixedModel && selection && activeEntry && !automaticModel ? (
               <TraitsPicker
                 provider={activeEntry.driverKind}
                 models={activeEntry.models}

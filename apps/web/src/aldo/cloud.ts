@@ -192,6 +192,7 @@ let aldoFeatures: {
   readonly heldFiles: boolean;
   readonly moves: boolean;
   readonly routing: boolean;
+  readonly modelRouting: boolean;
   readonly projectRepos: boolean;
 } = {
   general: false,
@@ -201,6 +202,7 @@ let aldoFeatures: {
   heldFiles: false,
   moves: false,
   routing: false,
+  modelRouting: false,
   projectRepos: false,
 };
 
@@ -237,6 +239,11 @@ export function aldoMovesThreads(): boolean {
 /** Whether Aldo says which of the user's projects a draft's words belong to (`POST /api/routing`), as the directory said. */
 export function aldoRoutesDrafts(): boolean {
   return aldoFeatures.routing;
+}
+
+/** First messages go through Aldo's model router, even on a connected machine. */
+export function aldoRoutesModels(): boolean {
+  return aldoFeatures.modelRouting;
 }
 
 /**
@@ -434,6 +441,7 @@ async function fetchEnvironments(): Promise<ReadonlyArray<AldoEnvironment>> {
       heldFiles?: boolean;
       moves?: boolean;
       routing?: boolean;
+      modelRouting?: boolean;
       projectRepos?: boolean;
     };
   }>("/api/environments");
@@ -445,6 +453,7 @@ async function fetchEnvironments(): Promise<ReadonlyArray<AldoEnvironment>> {
     heldFiles: features?.heldFiles === true,
     moves: features?.moves === true,
     routing: features?.routing === true,
+    modelRouting: features?.modelRouting === true,
     projectRepos: features?.projectRepos === true,
   };
   // A listing that started before a deletion finished can still include its machine.
@@ -1155,7 +1164,8 @@ export async function holdAldoTurn(
       if (!(cause instanceof AldoApiError) || cause.status === 401) throw cause;
       // Its uploads' parts were gone by the time Aldo held it (kept a day unnamed): sent again, once.
       if (cause.status === 409 && held !== command && tries === 0) continue;
-      if (files) throw cause;
+      if (files || (command as { aldoModelExplicit?: unknown }).aldoModelExplicit !== undefined)
+        throw cause;
       return "refused";
     }
   }

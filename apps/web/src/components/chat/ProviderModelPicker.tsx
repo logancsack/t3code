@@ -25,6 +25,7 @@ import {
 } from "./ComposerControl";
 import { useComposerMenuProps } from "./composerEventScope";
 import { shortcutLabelForCommand } from "../../keybindings";
+import { Button } from "../ui/button";
 
 export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   /**
@@ -52,6 +53,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   /** Aggregate settings can show a neutral value without claiming one provider is selected. */
   triggerLabel?: string;
   triggerAriaLabel?: string;
+  automaticOption?: { label: string; selected: boolean; onSelect: () => void };
   onOpenChange?: (open: boolean) => void;
   onOpenProviderSetup?: (instanceId: ProviderInstanceId) => void;
   getModelDisabledReason?: (instanceId: ProviderInstanceId, model: string) => string | null;
@@ -285,6 +287,19 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
         className="before:hidden"
         padding="none"
       >
+        {props.automaticOption ? (
+          <Button
+            variant="ghost"
+            className="w-full"
+            onClick={() => {
+              props.automaticOption?.onSelect();
+              setIsMenuOpen(false);
+            }}
+          >
+            {props.automaticOption.selected ? "✓ " : ""}
+            {props.automaticOption.label}
+          </Button>
+        ) : null}
         <ModelPickerContent
           activeInstanceId={activeInstanceId}
           model={props.model}
