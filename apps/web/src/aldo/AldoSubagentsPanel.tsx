@@ -1,6 +1,8 @@
+import { settingsSubagents } from "./settingsData";
+import { useSettingsResource } from "./settingsResource";
 import type { ClientSettings } from "@t3tools/contracts";
 import { NetworkIcon } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { SettingsRow, SettingsSection } from "../components/settings/settingsLayout";
 import { Button } from "../components/ui/button";
@@ -12,13 +14,7 @@ import {
   SelectValue,
 } from "../components/ui/select";
 import { useClientSettings } from "../hooks/useSettings";
-import {
-  fetchAldoSubagents,
-  saveAldoSubagents,
-  type AldoSubagentDefault,
-  type AldoSubagentProvider,
-  type AldoSubagents,
-} from "./cloud";
+import { saveAldoSubagents, type AldoSubagentDefault, type AldoSubagentProvider } from "./cloud";
 import { newestAldoProviders, onAldoServerConfigChange } from "./serverConfig";
 import {
   chooseModel,
@@ -122,28 +118,15 @@ function SubagentRow(props: {
  * keep it.
  */
 export function AldoSubagentsPanel() {
-  const [saved, setSaved] = useState<AldoSubagents | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const cached = useSettingsResource(settingsSubagents);
+  const saved = cached.data ?? null;
+  const loadError = cached.error;
   const [providers, setProviders] = useState<ReadonlyArray<Record<string, unknown>>>([]);
   const [error, setError] = useState<string | null>(null);
   const hidden = useClientSettings(hiddenModels);
-  // What Aldo last said it keeps, to go back to if the newest change fails.
-  const confirmed = useRef<AldoSubagents>({});
-  // Changes go to Aldo one at a time, in the order they were made; only the newest one's answer shows.
-  const queue = useRef<Promise<void>>(Promise.resolve());
-  const newest = useRef(0);
-
   const load = useCallback(() => {
-    fetchAldoSubagents().then(
-      (next) => {
-        if (next) confirmed.current = next;
-        setSaved(next);
-        setLoadError(null);
-      },
-      (cause: unknown) => setLoadError(message(cause)),
-    );
+    void settingsSubagents.refresh().catch(() => undefined);
   }, []);
-  useEffect(load, [load]);
 
   // The models: the newest config's, again as an agent's changes (its first one may come after this opens).
   useEffect(() => {
@@ -176,22 +159,13 @@ export function AldoSubagentsPanel() {
   }
 
   const change = (kind: AldoSubagentProvider, value: AldoSubagentDefault | null) => {
-    setSaved((current) => withSubagentDefault(current ?? {}, kind, value));
     setError(null);
-    const turn = ++newest.current;
-    queue.current = queue.current.then(() =>
-      saveAldoSubagents({ [kind]: value }).then(
-        (next) => {
-          confirmed.current = next;
-          if (turn === newest.current) setSaved(next);
-        },
-        (cause: unknown) => {
-          setError(message(cause));
-          // A later change's answer says what Aldo keeps; the newest one failing goes back to the last it said.
-          if (turn === newest.current) setSaved(confirmed.current);
-        },
-      ),
-    );
+    void settingsSubagents
+      .mutate(
+        (current) => withSubagentDefault(current ?? {}, kind, value),
+        () => saveAldoSubagents({ [kind]: value }),
+      )
+      .catch((cause: unknown) => setError(message(cause)));
   };
 
   return (

@@ -68,6 +68,9 @@ async function prefetch(router: AppRouter): Promise<void> {
     route("/settings"),
     route(isAldoCloud ? "/settings/agents" : "/settings/general"),
     () => import("../components/settings/SettingsSidebarNav"),
+    ...(isAldoCloud
+      ? [() => import("./settingsData").then((data) => data.prefetchSettingsData())]
+      : []),
   ];
   // One at a time, so they don't crowd out what the page is fetching. A failed
   // fetch is ignored here; whatever needs it reports it as before.

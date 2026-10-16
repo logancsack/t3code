@@ -1,3 +1,5 @@
+import { settingsPrebuilds, settingsRepositories } from "./settingsData";
+import { useSettingsResource } from "./settingsResource";
 import { BoxesIcon, LoaderCircleIcon, PlusIcon, TrashIcon } from "lucide-react";
 import {
   useCallback,
@@ -14,7 +16,6 @@ import { Input } from "../components/ui/input";
 import {
   aldoPrebuilds,
   getAldoEnvironments,
-  listAldoRepositories,
   subscribeAldoEnvironments,
   type AldoEnvironmentService,
   type AldoPrebuiltEnvironment,
@@ -300,14 +301,16 @@ function EnvironmentRow(props: {
 
 /** Settings → Code: prebuilt workspaces new threads start from. */
 export function AldoEnvironmentsPanel() {
-  const [envs, setEnvs] = useState<ReadonlyArray<AldoPrebuiltEnvironment> | null>(null);
+  const cached = useSettingsResource(settingsPrebuilds);
+  const envs = cached.data ?? null;
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const threads = useSyncExternalStore(subscribeAldoEnvironments, getAldoEnvironments, () => null);
   // The connected accounts' repositories, so the first environment can come before any thread.
   const [accountRepos, setAccountRepos] = useState<ReadonlyArray<string>>([]);
   useEffect(() => {
-    listAldoRepositories()
+    settingsRepositories
+      .load()
       .then((repositories) => setAccountRepos(repositories.map((r) => r.nameWithOwner)))
       .catch(() => setAccountRepos([]));
   }, []);
@@ -321,15 +324,11 @@ export function AldoEnvironmentsPanel() {
   );
 
   const refresh = useCallback(() => {
-    aldoPrebuilds
-      .list()
-      .then((next) => {
-        setEnvs(next);
-        setError(null);
-      })
+    settingsPrebuilds
+      .refresh()
+      .then(() => setError(null))
       .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)));
   }, []);
-  useEffect(() => refresh(), [refresh]);
   // Follow builds in progress.
   const building = envs?.some((e) => e.building) ?? false;
   useEffect(() => {
@@ -360,7 +359,9 @@ export function AldoEnvironmentsPanel() {
         repository can define one in <code className="text-xs">.aldo/environment.json</code>, or add
         one here. Aldo rebuilds them daily.
       </p>
-      {error ? <p className="px-3 text-destructive-foreground text-sm sm:px-4">{error}</p> : null}
+      {error || cached.error ? (
+        <p className="px-3 text-destructive-foreground text-sm sm:px-4">{error ?? cached.error}</p>
+      ) : null}
       {draft ? (
         <EnvironmentForm
           key={draft.id ?? "new"}

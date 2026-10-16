@@ -1,3 +1,6 @@
+import { useEffect } from "react";
+import { useRouter } from "@tanstack/react-router";
+import { prefetchSettingsData } from "./settingsData";
 // Aldo's settings nav (SettingsSidebarNav.tsx, in Aldo): the account at its
 // head, then its pages in groups (settings.logic.ts ALDO_SETTINGS_NAV).
 
@@ -69,6 +72,24 @@ export function AldoSettingsNav(props: {
   readonly pathname: string;
   readonly onNavigate: (to: SettingsPath) => void;
 }) {
+  const router = useRouter();
+  useEffect(() => {
+    const warm = () => {
+      prefetchSettingsData();
+      const paths: ReadonlyArray<SettingsPath> = [
+        ...ALDO_SETTINGS_NAV.flatMap((group) =>
+          group.items.flatMap((item) => [item.to, ...(item.also ?? [])] as SettingsPath[]),
+        ),
+        "/settings/account",
+      ];
+      for (const path of paths) {
+        const route = router.routesById[path];
+        if (route) void Promise.resolve(router.loadRouteChunk(route)).catch(() => undefined);
+      }
+    };
+    const timer = window.setTimeout(warm, 0);
+    return () => window.clearTimeout(timer);
+  }, [router]);
   return (
     <nav aria-label="Settings sections" className="flex flex-col gap-3">
       {ALDO_SETTINGS_NAV.map((group) => (
@@ -80,6 +101,16 @@ export function AldoSettingsNav(props: {
               return (
                 <SidebarMenuItem key={item.to}>
                   <SidebarMenuButton
+                    onMouseEnter={() => {
+                      void Promise.resolve(router.loadRouteChunk(router.routesById[item.to])).catch(
+                        () => undefined,
+                      );
+                    }}
+                    onFocus={() => {
+                      void Promise.resolve(router.loadRouteChunk(router.routesById[item.to])).catch(
+                        () => undefined,
+                      );
+                    }}
                     isActive={aldoSettingsNavActive(item, props.pathname)}
                     onClick={() => props.onNavigate(item.to)}
                   >

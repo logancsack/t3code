@@ -1,3 +1,5 @@
+import { settingsInstructions, settingsRepositories } from "./settingsData";
+import { useSettingsResource } from "./settingsResource";
 import { LoaderCircleIcon, NotebookPenIcon, PlusIcon } from "lucide-react";
 import { useEffect, useMemo, useState, useSyncExternalStore, type FormEvent } from "react";
 
@@ -9,7 +11,6 @@ import {
   AldoApiError,
   aldoInstructions,
   getAldoEnvironments,
-  listAldoRepositories,
   subscribeAldoEnvironments,
   type AldoInstructions,
 } from "./cloud";
@@ -56,6 +57,15 @@ function InstructionsEditor(props: {
   // an agent remembered in the meantime isn't overwritten without the user seeing it.
   const [base, setBase] = useState(props.saved);
   const [draft, setDraft] = useState(props.saved?.text ?? "");
+  const [shown, setShown] = useState(props.saved);
+  // Refresh clean editors; an edit keeps its original version for the conflict check.
+  if (shown !== props.saved) {
+    setShown(props.saved);
+    if (draft === (base?.text ?? "")) {
+      setBase(props.saved);
+      setDraft(props.saved?.text ?? "");
+    }
+  }
   // What's saved now, when it changed while the user was editing.
   const [changed, setChanged] = useState<{ text: string } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -67,10 +77,9 @@ function InstructionsEditor(props: {
     setBusy(true);
     setError(null);
     try {
-      const next =
-        (await aldoInstructions.save(scope, text, base?.updated_at ?? null)).find(
-          (i) => i.scope === scope,
-        ) ?? null;
+      const list = await aldoInstructions.save(scope, text, base?.updated_at ?? null);
+      settingsInstructions.set(list);
+      const next = list.find((i) => i.scope === scope) ?? null;
       setBase(next);
       // Keep what the user typed while the save was in flight.
       setDraft((current) => (current === text ? (next?.text ?? "") : current));
@@ -80,7 +89,8 @@ function InstructionsEditor(props: {
     } catch (cause) {
       if (cause instanceof AldoApiError && cause.status === 409) {
         try {
-          const latest = (await aldoInstructions.list()).find((i) => i.scope === scope) ?? null;
+          const latest =
+            (await settingsInstructions.refresh()).find((i) => i.scope === scope) ?? null;
           setBase(latest);
           setChanged({ text: latest?.text ?? "" });
         } catch (again) {
@@ -186,30 +196,28 @@ type Entry = { scope: string; saved: AldoInstructions | null };
 
 /** Settings → Instructions: what every agent is told, for all projects and for each one. */
 export function AldoInstructionsPanel() {
-  const [entries, setEntries] = useState<ReadonlyArray<Entry> | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [unsupported, setUnsupported] = useState(false);
+  const cached = useSettingsResource(settingsInstructions, true, false);
+  const error = cached.error;
+  const unsupported = cached.cause instanceof AldoApiError && cached.cause.status === 404;
+  const [added, setAdded] = useState<ReadonlyArray<string>>([]);
+  const entries: ReadonlyArray<Entry> | null = cached.data
+    ? [
+        { scope: EVERY_PROJECT, saved: cached.data.find((i) => i.scope === EVERY_PROJECT) ?? null },
+        ...cached.data
+          .filter((i) => i.scope !== EVERY_PROJECT)
+          .map((i) => ({ scope: i.scope, saved: i })),
+        ...added
+          .filter((scope) => !cached.data?.some((i) => i.scope === scope))
+          .map((scope) => ({ scope, saved: null })),
+      ]
+    : null;
   const threads = useSyncExternalStore(subscribeAldoEnvironments, getAldoEnvironments, () => null);
   // The connected accounts' repositories too, so a project can have instructions before its first thread.
   const [accountRepos, setAccountRepos] = useState<ReadonlyArray<string>>([]);
 
   useEffect(() => {
-    aldoInstructions
-      .list()
-      .then((list) =>
-        setEntries([
-          { scope: EVERY_PROJECT, saved: list.find((i) => i.scope === EVERY_PROJECT) ?? null },
-          ...list
-            .filter((i) => i.scope !== EVERY_PROJECT)
-            .map((i) => ({ scope: i.scope, saved: i })),
-        ]),
-      )
-      .catch((cause: unknown) => {
-        // An Aldo from before instructions.
-        if (cause instanceof AldoApiError && cause.status === 404) setUnsupported(true);
-        else setError(messageOf(cause));
-      });
-    listAldoRepositories()
+    settingsRepositories
+      .load()
       .then((repositories) => setAccountRepos(repositories.map((r) => r.nameWithOwner)))
       .catch(() => setAccountRepos([]));
   }, []);
@@ -236,12 +244,7 @@ export function AldoInstructionsPanel() {
             </MenuTrigger>
             <MenuPopup align="end" className="max-w-80">
               {addable.map((repo) => (
-                <MenuItem
-                  key={repo}
-                  onClick={() =>
-                    setEntries((all) => [...(all ?? []), { scope: repo, saved: null }])
-                  }
-                >
+                <MenuItem key={repo} onClick={() => setAdded((all) => [...all, repo])}>
                   {projectLabel(repo)}
                 </MenuItem>
               ))}
@@ -270,7 +273,7 @@ export function AldoInstructionsPanel() {
           key={entry.scope}
           scope={entry.scope}
           saved={entry.saved}
-          onRemoved={() => setEntries((all) => all?.filter((e) => e.scope !== entry.scope) ?? all)}
+          onRemoved={() => setAdded((all) => all.filter((scope) => scope !== entry.scope))}
         />
       ))}
     </SettingsSection>

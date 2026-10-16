@@ -3,8 +3,9 @@
 // resets. Aldo reads them from its server (GET /api/usage/limits); an older
 // Aldo doesn't, and the section isn't shown.
 
+import { createSettingsResource, useSettingsResource } from "./settingsResource";
 import { ExternalLinkIcon } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect } from "react";
 
 import { ClaudeAI, GrokIcon, type Icon, MuseCodeIcon, OpenAI } from "../components/Icons";
 import { useNowMinute } from "../hooks/useNowMinute";
@@ -31,9 +32,6 @@ export type AldoProviderLimitsState =
   | { readonly status: "ready"; readonly providers: ReadonlyArray<AldoProviderLimits> }
   | { readonly status: "error"; readonly providers: ReadonlyArray<AldoProviderLimits> | null };
 
-const providersOf = (state: AldoProviderLimitsState) =>
-  state.status === "unavailable" ? null : state.providers;
-
 /** Aldo reads the providers at once, each within 10 seconds; past this, something's stuck. */
 const REQUEST_TIMEOUT_MS = 30_000;
 /** After a reset, a moment for the provider to have renewed it; and never sooner than a minute apart. */
@@ -45,52 +43,25 @@ const RESET_READ_MIN_MS = 60_000;
  * the providers again (Aldo answers from its last reading when it's only
  * seconds old). A failed refresh keeps what was shown.
  */
-export function useAldoProviderLimits(): {
-  readonly state: AldoProviderLimitsState;
-  readonly refresh: () => void;
-} {
+const limitsResource = createSettingsResource(
+  (refresh = false) => fetchAldoProviderLimits(refresh, AbortSignal.timeout(REQUEST_TIMEOUT_MS)),
+  60_000,
+);
+
+export function useAldoProviderLimits() {
   const available = isAldoCloud && !isLandingDemo();
-  const [state, setState] = useState<AldoProviderLimitsState>(() =>
-    available ? { status: "loading", providers: null } : { status: "unavailable" },
-  );
-  const request = useRef<AbortController | null>(null);
-
-  const load = useCallback(
-    (refresh: boolean) => {
-      if (!available) return;
-      request.current?.abort();
-      const controller = new AbortController();
-      request.current = controller;
-      setState((previous) =>
-        previous.status === "unavailable"
-          ? previous
-          : { status: "loading", providers: providersOf(previous) },
-      );
-      const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]);
-      void fetchAldoProviderLimits(refresh, signal).then(
-        (providers) => {
-          if (controller.signal.aborted) return;
-          setState(providers ? { status: "ready", providers } : { status: "unavailable" });
-        },
-        () => {
-          if (controller.signal.aborted) return;
-          setState((previous) =>
-            previous.status === "unavailable"
-              ? previous
-              : { status: "error", providers: providersOf(previous) },
-          );
-        },
-      );
-    },
-    [available],
-  );
-
-  useEffect(() => {
-    load(false);
-    return () => {
-      request.current?.abort();
-    };
-  }, [load]);
+  const cached = useSettingsResource(limitsResource, available);
+  const state: AldoProviderLimitsState =
+    !available || cached.data === null
+      ? { status: "unavailable" }
+      : cached.error
+        ? { status: "error", providers: cached.data ?? null }
+        : cached.data === undefined || cached.loading
+          ? { status: "loading", providers: cached.data ?? null }
+          : { status: "ready", providers: cached.data };
+  const load = useCallback((refresh: boolean) => {
+    void (refresh ? limitsResource.refresh() : limitsResource.load()).catch(() => undefined);
+  }, []);
 
   // Read again once the next limit resets, so a renewed one doesn't go on showing as used.
   const readyProviders = state.status === "ready" ? state.providers : null;

@@ -4,8 +4,11 @@
 // follow the user's own again (policy.logic.ts). An Aldo that doesn't let the
 // user change them here still says how to.
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useState, type ReactNode } from "react";
 
+import { settingsPolicy } from "./settingsData";
+import { useSettingsResource } from "./settingsResource";
+import { optimisticPolicyEdit } from "./policy.logic";
 import { SettingsRow } from "../components/settings/settingsLayout";
 import {
   searchableSetting,
@@ -19,7 +22,7 @@ import {
   SelectValue,
 } from "../components/ui/select";
 import { toastManager } from "../components/ui/toast";
-import { editAldoPolicy, fetchAldoPolicy, type AldoPolicyView } from "./cloud";
+import { editAldoPolicy, type AldoPolicyView } from "./cloud";
 import { refreshAldoHome } from "./homeFeed";
 import {
   aldoRuleDifferences,
@@ -37,9 +40,6 @@ const messageOf = (error: unknown) => (error instanceof Error ? error.message : 
 /** Said where a rule can't be changed here: an agent records the user's answer. */
 export const ALDO_POLICY_ASK_AN_AGENT = "To change it, tell an agent in any thread.";
 
-/** The last answer: a page that opens again shows it while it reads again. */
-let lastView: AldoPolicyView | null | undefined;
-
 export interface AldoPolicyState {
   /** Undefined while it's read; null on an Aldo that doesn't let the user change the rules here. */
   readonly view: AldoPolicyView | null | undefined;
@@ -50,57 +50,34 @@ export interface AldoPolicyState {
 }
 
 export function useAldoPolicy(): AldoPolicyState {
-  const [view, setView] = useState(lastView);
+  const { data: view, error } = useSettingsResource(settingsPolicy);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  // Each read and change takes a number: an answer shows only if nothing started after it.
-  const latest = useRef(0);
-  const show = useCallback((next: AldoPolicyView | null) => {
-    lastView = next;
-    setView(next);
-    setError(null);
-  }, []);
-  const read = useCallback(() => {
-    const ticket = ++latest.current;
-    fetchAldoPolicy().then(
-      (next) => ticket === latest.current && show(next),
-      (cause: unknown) => ticket === latest.current && setError(messageOf(cause)),
-    );
-  }, [show]);
-  useEffect(() => {
-    read();
-    return () => {
-      latest.current += 1;
-    };
-  }, [read]);
-  const edit = useCallback(
-    async (edits: ReadonlyArray<AldoPolicyEdit>) => {
-      if (edits.length === 0) return true;
-      setSaving(true);
-      try {
-        for (const change of edits) {
-          const ticket = ++latest.current;
-          const next = await editAldoPolicy(change);
-          if (ticket === latest.current) show(next);
-        }
-        return true;
-      } catch (cause) {
-        toastManager.add({
-          type: "error",
-          title: "Couldn't change the rule",
-          description: messageOf(cause),
-        });
-        // The changes before it were made: show the rules as they are.
-        read();
-        return false;
-      } finally {
-        setSaving(false);
-        // Home's "How Aldo works for you" says the same rules.
-        void refreshAldoHome();
+  const edit = useCallback(async (edits: ReadonlyArray<AldoPolicyEdit>) => {
+    if (edits.length === 0) return true;
+    setSaving(true);
+    try {
+      for (const change of edits) {
+        await settingsPolicy.mutate(
+          (before) => (before ? optimisticPolicyEdit(before, change) : before),
+          () => editAldoPolicy(change),
+        );
       }
-    },
-    [read, show],
-  );
+      return true;
+    } catch (cause) {
+      toastManager.add({
+        type: "error",
+        title: "Couldn't change the rule",
+        description: messageOf(cause),
+      });
+      // The changes before it were made: show the rules as they are.
+      void settingsPolicy.refresh().catch(() => undefined);
+      return false;
+    } finally {
+      setSaving(false);
+      // Home's "How Aldo works for you" says the same rules.
+      void refreshAldoHome();
+    }
+  }, []);
   return { view, saving, error, edit };
 }
 

@@ -1,21 +1,21 @@
+import { settingsApprovalRules } from "./settingsData";
+import { useSettingsResource } from "./settingsResource";
 // What the user always allows ("Agents can send email to alex@example.com
 // without asking"): the rules they made with "Always allow" on an approval
 // (AldoApprovals.tsx), each with Remove: under "How Aldo works for you", and
 // on Settings → Permissions.
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { toastManager } from "../components/ui/toast";
-import { fetchAldoApprovalRules, removeAldoApprovalRule, type AldoApprovalRule } from "./cloud";
+import { removeAldoApprovalRule, type AldoApprovalRule } from "./cloud";
 
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 /** Lists on screen, read again when a rule is made or undone here. */
-const reloads = new Set<() => void>();
-
 /** Says a rule was made or removed elsewhere on the page (Always allow, its Undo). */
 export function aldoApprovalRulesChanged(): void {
-  for (const reload of reloads) reload();
+  void settingsApprovalRules.refresh().catch(() => undefined);
 }
 
 /**
@@ -24,29 +24,16 @@ export function aldoApprovalRulesChanged(): void {
  * made on another device shows, and when one is made or undone here.
  */
 export function useAldoApprovalRules() {
-  const [rules, setRules] = useState<ReadonlyArray<AldoApprovalRule> | null>(null);
+  const { data } = useSettingsResource(settingsApprovalRules);
+  const rules = data ?? null;
   const [removing, setRemoving] = useState<string | null>(null);
-  useEffect(() => {
-    let current = true;
-    const load = () =>
-      void fetchAldoApprovalRules().then(
-        (next) => current && setRules(next),
-        () => undefined,
-      );
-    load();
-    window.addEventListener("focus", load);
-    reloads.add(load);
-    return () => {
-      current = false;
-      window.removeEventListener("focus", load);
-      reloads.delete(load);
-    };
-  }, []);
   const remove = async (rule: AldoApprovalRule) => {
     setRemoving(rule.id);
     try {
       await removeAldoApprovalRule(rule.id);
-      setRules((list) => list?.filter((r) => r.id !== rule.id) ?? null);
+      settingsApprovalRules.set(
+        (settingsApprovalRules.getSnapshot().data ?? []).filter((r) => r.id !== rule.id),
+      );
     } catch (cause) {
       toastManager.add({
         type: "error",

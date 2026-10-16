@@ -1,6 +1,8 @@
+import { settingsHeadsUps, settingsIntegrations } from "./settingsData";
+import { createSettingsResource, useSettingsResource } from "./settingsResource";
 import { Link } from "@tanstack/react-router";
 import { BellIcon, SparklesIcon } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import {
   SettingsPageContainer,
@@ -12,17 +14,11 @@ import { Button } from "../components/ui/button";
 import { Switch } from "../components/ui/switch";
 import { toastManager } from "../components/ui/toast";
 import { playAldoChime, setAldoSound, useAldoSound } from "./chime";
-import {
-  fetchAldoHeadsUps,
-  fetchAldoIntegrations,
-  setAldoHeadsUps,
-  type AldoHeadsUps,
-} from "./cloud";
+import { setAldoHeadsUps } from "./cloud";
 import {
   aldoNotificationsStatus,
   disableAldoNotifications,
   enableAldoNotifications,
-  type AldoNotificationsStatus,
 } from "./notifications";
 
 const DESCRIPTION =
@@ -34,16 +30,17 @@ const messageOf = (cause: unknown) => (cause instanceof Error ? cause.message : 
  * Notifications on this device (notifications.ts), shown where they can work,
  * and the optional sound while Aldo is open (chime.ts).
  */
+const deviceNotifications = createSettingsResource(aldoNotificationsStatus);
+
 export function AldoNotificationSettings() {
   const sound = useAldoSound();
-  const [status, setStatus] = useState<AldoNotificationsStatus | null>(null);
+  const status = useSettingsResource(deviceNotifications, true, false).data ?? null;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const refresh = useCallback(() => aldoNotificationsStatus().then(setStatus), []);
+  const refresh = useCallback(() => deviceNotifications.refresh(), []);
   // Read again when the user comes back, e.g. from allowing notifications in the browser's settings.
   useEffect(() => {
-    void refresh();
     const onVisible = () => {
       if (document.visibilityState === "visible") void refresh();
     };
@@ -130,33 +127,13 @@ export function AldoNotificationSettings() {
  * mail or a calendar, so without one the row says to connect one.
  */
 function HeadsUpsRow(props: { readonly connected: boolean | null }) {
-  // Undefined while it's read; null on an Aldo without heads-ups.
-  const [headsUps, setHeadsUps] = useState<AldoHeadsUps | null | undefined>(undefined);
-  const [error, setError] = useState<string | null>(null);
+  const cached = useSettingsResource(settingsHeadsUps);
+  const headsUps = cached.data;
+  const error = cached.error;
   const [saving, setSaving] = useState(false);
-  // Only the latest read's answer shows.
-  const latest = useRef(0);
-  const load = useCallback(() => {
-    const request = ++latest.current;
-    fetchAldoHeadsUps()
-      .then((next) => {
-        if (request !== latest.current) return;
-        setHeadsUps(next);
-        setError(null);
-      })
-      .catch((cause: unknown) => {
-        if (request === latest.current) setError(messageOf(cause));
-      });
-  }, []);
-  useEffect(() => {
-    load();
-    // A read that failed for a moment is tried again when the user comes back to the tab.
-    window.addEventListener("focus", load);
-    return () => {
-      latest.current++;
-      window.removeEventListener("focus", load);
-    };
-  }, [load]);
+  const load = () => {
+    void settingsHeadsUps.refresh().catch(() => undefined);
+  };
   if (error && !headsUps) {
     return (
       <SettingsRow
@@ -183,8 +160,11 @@ function HeadsUpsRow(props: { readonly connected: boolean | null }) {
   }
   const change = (on: boolean) => {
     setSaving(true);
-    setAldoHeadsUps(on)
-      .then(setHeadsUps)
+    settingsHeadsUps
+      .mutate(
+        (before) => (before ? { ...before, on } : before),
+        () => setAldoHeadsUps(on),
+      )
       .catch((cause: unknown) =>
         toastManager.add({
           type: "error",
@@ -225,28 +205,16 @@ function HeadsUpsRow(props: { readonly connected: boolean | null }) {
 
 /** Whether an account with mail or a calendar is connected: null until it's read. */
 function useMailConnected(): boolean | null {
-  const [connected, setConnected] = useState<boolean | null>(null);
-  useEffect(() => {
-    let current = true;
-    fetchAldoIntegrations().then(
-      (integrations) =>
-        current &&
-        setConnected(
-          (integrations ?? []).some(
-            (i) =>
-              i.kind !== "key" &&
-              i.connected &&
-              !i.error &&
-              (i.can ?? ["mail"]).some((c) => c === "mail" || c === "calendar"),
-          ),
-        ),
-      () => undefined,
-    );
-    return () => {
-      current = false;
-    };
-  }, []);
-  return connected;
+  const { data } = useSettingsResource(settingsIntegrations);
+  return data === undefined
+    ? null
+    : (data ?? []).some(
+        (i) =>
+          i.kind !== "key" &&
+          i.connected &&
+          !i.error &&
+          (i.can ?? ["mail"]).some((c) => c === "mail" || c === "calendar"),
+      );
 }
 
 /** Settings → Notifications: what reaches the user, on this device and from Aldo. */

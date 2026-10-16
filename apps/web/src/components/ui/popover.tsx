@@ -45,6 +45,7 @@ function PopoverPopup({
   alignOffset = 0,
   tooltipStyle = false,
   keepMounted = false,
+  animateContent = true,
   anchor,
   ...props
 }: PopoverPrimitive.Popup.Props & {
@@ -55,12 +56,14 @@ function PopoverPopup({
   alignOffset?: PopoverPrimitive.Positioner.Props["alignOffset"];
   tooltipStyle?: boolean;
   keepMounted?: PopoverPrimitive.Portal.Props["keepMounted"];
+  /** Single-trigger content can skip Viewport's cloning and layout transitions. */
+  animateContent?: boolean;
   anchor?: PopoverPrimitive.Positioner.Props["anchor"];
   width?: keyof typeof popoverPopupWidthClassName;
 }) {
   // Viewport rekeys its children when the active trigger clears on close. Persistent
   // single-trigger forms need a stable container to retain drafts and submit guards.
-  const Viewport = keepMounted ? "div" : PopoverPrimitive.Viewport;
+  const Viewport = keepMounted || !animateContent ? "div" : PopoverPrimitive.Viewport;
   return (
     <PopoverPrimitive.Portal keepMounted={keepMounted}>
       <PopoverPrimitive.Positioner
