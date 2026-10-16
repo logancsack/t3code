@@ -15,6 +15,9 @@ import { FOCUS } from "./surface";
 export const loadChatMarkdown = () => import("../components/ChatMarkdown");
 const ChatMarkdown = lazy(loadChatMarkdown);
 
+const words = (node: Nodes): string =>
+  "value" in node ? node.value : "children" in node ? node.children.map(words).join("") : "";
+
 /** A link with no scheme that isn't absolute (`src/a.ts#L3`): its words as code. */
 const WORKSPACE_LINKS = [
   () => (tree: Root) => {
@@ -22,8 +25,7 @@ const WORKSPACE_LINKS = [
       if (!("children" in node)) return;
       for (const [i, child] of node.children.entries()) {
         if (child.type === "link" && !/^(?:[a-z][a-z\d+-]*:|[/#])/i.test(child.url)) {
-          const value = child.children.map((c) => ("value" in c ? c.value : "")).join("");
-          (node.children as Nodes[])[i] = { type: "inlineCode", value };
+          (node.children as Nodes[])[i] = { type: "inlineCode", value: words(child) };
         } else walk(child);
       }
     };
@@ -67,6 +69,10 @@ export function Quoted(props: {
           !whole && long && "[mask-image:linear-gradient(to_bottom,black_60%,transparent)]",
           props.className,
         )}
+        // Tabbing to a link or chip it hides shows the rest, so focus is never out of sight.
+        onFocus={(event) => {
+          if (long && event.target.matches(":focus-visible")) setWhole(true);
+        }}
       >
         {props.children}
       </div>
@@ -99,7 +105,13 @@ export function AgentMarkdown(props: { readonly text: string; readonly className
         </div>
       }
     >
-      <ChatMarkdown {...props} cwd={undefined} extraRemarkPlugins={WORKSPACE_LINKS} />
+      {/* Its headings nest under the card's. */}
+      <ChatMarkdown
+        {...props}
+        cwd={undefined}
+        extraRemarkPlugins={WORKSPACE_LINKS}
+        headingLevelOffset={4}
+      />
     </Suspense>
   );
 }
