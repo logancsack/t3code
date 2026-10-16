@@ -139,7 +139,7 @@ export function setAldoChatDecisionDismissed(id: string, dismissed: boolean): vo
   const next = {
     ...home,
     conversations: home.conversations.map(update),
-    approvals: home.approvals?.map(update),
+    approvals: (home.approvals ?? []).map(update),
     pullRequests: home.pullRequests.map(update),
   };
   noteHiddenPrompts(next);

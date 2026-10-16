@@ -193,6 +193,18 @@ export function AldoBriefEntry(props: { readonly text: string; readonly at: stri
 
 function BriefCard(props: { readonly brief: AldoBrief }) {
   const { brief } = props;
+  const hidden = useAldoHomeFeed((s) =>
+    [
+      ...(s.home?.conversations ?? []),
+      ...(s.home?.approvals ?? []),
+      ...(s.home?.pullRequests ?? []),
+    ]
+      .filter((item) => item.chatDecision?.dismissed)
+      .map((item) => item.chatDecision!.id)
+      .sort()
+      .join(","),
+  );
+
   const arrive = useAldoArrive();
   // What it says to decide is at the conversation's end, live (AldoUpNext.tsx),
   // with the way to go through it all with Aldo; it's not repeated here.
@@ -208,7 +220,7 @@ function BriefCard(props: { readonly brief: AldoBrief }) {
         <span className="tabular-nums">
           {brief.title}'s brief · {timeOf(brief.at)}
         </span>
-        <ListenButton brief={brief} />
+        <ListenButton key={hidden} brief={brief} />
       </div>
       <p className="whitespace-pre-wrap text-[15px] leading-7">{brief.text}</p>
       {brief.ahead.length > 0 ? (
@@ -233,17 +245,6 @@ function estimate(brief: AldoBrief): number {
 
 /** Listen: Aldo reads the brief aloud, in its voice; the voice stops for a call. */
 function ListenButton(props: { readonly brief: AldoBrief }) {
-  const hidden = useAldoHomeFeed((s) =>
-    [
-      ...(s.home?.conversations ?? []),
-      ...(s.home?.approvals ?? []),
-      ...(s.home?.pullRequests ?? []),
-    ]
-      .filter((item) => item.chatDecision?.dismissed)
-      .map((item) => item.chatDecision!.id)
-      .sort()
-      .join(","),
-  );
   const audio = useRef<HTMLAudioElement | null>(null);
   const [state, setState] = useState<"idle" | "loading" | "playing" | "paused">("idle");
   const [length, setLength] = useState<number | null>(null);
@@ -259,13 +260,6 @@ function ListenButton(props: { readonly brief: AldoBrief }) {
     },
     [],
   );
-  useEffect(() => {
-    audio.current?.pause();
-    audio.current = null;
-    setState("idle");
-    setPosition(0);
-    setLength(null);
-  }, [hidden]);
   const toggle = () => {
     let player = audio.current;
     if (!player) {
