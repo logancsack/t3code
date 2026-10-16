@@ -19,6 +19,7 @@ import { cn } from "~/lib/utils";
 import { aldoApprovalRulesChanged } from "./AldoApprovalRules";
 import { Section } from "./AldoHomeBoard";
 import { ThreadLink } from "./AldoHomeInbox";
+import { AgentMarkdown, Quoted } from "./AldoQuoted";
 import { AldoApiError } from "./api";
 import { decideAldoApproval, removeAldoApprovalRule, type AldoApproval } from "./homeApi";
 import {
@@ -121,7 +122,6 @@ export function ApprovalCard(props: {
 }) {
   const a = props.approval;
   const [busy, setBusy] = useState<"approve" | "discard" | "always" | null>(null);
-  const [expanded, setExpanded] = useState(false);
   const Icon = KIND_ICON[a.kind];
   const sending = a.status === "sending";
   const decide = async (decision: "approve" | "discard" | "always") => {
@@ -157,7 +157,7 @@ export function ApprovalCard(props: {
     }
   };
   return (
-    <li className="rounded-xl border border-border/60 bg-card/30 p-3.5">
+    <li className="list-none rounded-xl border border-border/60 bg-card/30 p-3.5">
       <div className="flex items-start gap-2.5">
         <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
         <div className="min-w-0 flex-1">
@@ -188,16 +188,9 @@ export function ApprovalCard(props: {
             <p className="mt-0.5 text-muted-foreground text-xs">{a.summary}</p>
           )}
           {a.body ? (
-            <button
-              type="button"
-              className="mt-2 block w-full rounded-lg border border-border/50 bg-background/40 px-2.5 py-2 text-left"
-              onClick={() => setExpanded((open) => !open)}
-              aria-expanded={expanded}
-            >
-              <p className={cn("whitespace-pre-wrap text-sm", !expanded && "line-clamp-6")}>
-                {a.body}
-              </p>
-            </button>
+            <div className="mt-2 flex flex-col gap-1 rounded-lg border border-border/50 bg-background/40 px-2.5 py-2">
+              <ApprovalBody approval={a} lines={6} className="text-sm" />
+            </div>
           ) : null}
           {a.failed && a.result ? (
             <p className="mt-2 text-destructive-foreground text-xs">{a.result}</p>
@@ -233,5 +226,23 @@ export function ApprovalCard(props: {
         </div>
       </div>
     </li>
+  );
+}
+
+/**
+ * What an approval says: an agent's words (the brief of a thread to start, a
+ * step's details) rendered; an email's or an event's text as it goes out.
+ */
+export function ApprovalBody(props: {
+  readonly approval: AldoApproval;
+  readonly lines: 3 | 6;
+  readonly className: string;
+}) {
+  const a = props.approval;
+  const written = a.kind === "start" || a.kind === "confirm";
+  return (
+    <Quoted lines={props.lines} className={cn(!written && "whitespace-pre-wrap", props.className)}>
+      {written ? <AgentMarkdown text={a.body} className={props.className} /> : a.body}
+    </Quoted>
   );
 }
