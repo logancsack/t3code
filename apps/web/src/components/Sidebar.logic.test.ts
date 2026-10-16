@@ -1475,7 +1475,8 @@ describe("planSidebarThreadDrop", () => {
       ["a1", result.orderKey!],
       ...result.extraAssignments.map((e) => [e.id, e.orderKey] as const),
     ]);
-    const ordered = result.order.map((id) => byId.get(id)!);
+    const ordered = (result.order ?? []).map((id) => byId.get(id)!);
+    expect(ordered).toHaveLength(4);
     expect([...ordered].sort()).toEqual(ordered);
   });
 
@@ -2623,6 +2624,69 @@ describe("Working shelf (beta)", () => {
         unsettle: false,
         unsnooze: false,
       });
+    });
+
+    it("only pins when the pinned block is time-ordered (Aldo)", () => {
+      const base = {
+        pinnedOrder: ["p1", "p2"],
+        pinnedKeysById: new Map([
+          ["p1", "m"],
+          ["p2", "t"],
+        ]),
+        activeOrder: ["a1", "a2"],
+        activeKeysById: new Map<string, string | null>(),
+        activeTimeOrdered: true,
+        pinnedTimeOrdered: true,
+      };
+      // Arranging inside the block writes nothing.
+      expect(
+        planSidebarThreadDrop({
+          ...base,
+          activeKey: "p1",
+          activeSection: "pinned",
+          target: { section: "pinned", pinnedOrder: ["p2", "p1"], activeOrder: ["a1", "a2"] },
+        }),
+      ).toEqual({ kind: "none" });
+      // A thread dropped in is pinned, without an order key to write.
+      expect(
+        planSidebarThreadDrop({
+          ...base,
+          activeKey: "a1",
+          activeSection: "active",
+          target: { section: "pinned", pinnedOrder: ["p1", "a1", "p2"], activeOrder: ["a2"] },
+        }),
+      ).toEqual({ kind: "pin", order: null, orderKey: undefined, extraAssignments: [] });
+      // So is a pinned thread woken from its snooze by the drop.
+      expect(
+        planSidebarThreadDrop({
+          ...base,
+          activeKey: "z1",
+          activeSection: "snoozed",
+          activePinned: true,
+          target: {
+            section: "pinned",
+            pinnedOrder: ["z1", "p1", "p2"],
+            activeOrder: base.activeOrder,
+          },
+        }),
+      ).toEqual({ kind: "pin", order: null, orderKey: undefined, extraAssignments: [] });
+      // Settling and unpinning still work.
+      expect(
+        planSidebarThreadDrop({
+          ...base,
+          activeKey: "p1",
+          activeSection: "pinned",
+          target: { section: "settled", pinnedOrder: ["p2"], activeOrder: base.activeOrder },
+        }),
+      ).toEqual({ kind: "settle" });
+      expect(
+        planSidebarThreadDrop({
+          ...base,
+          activeKey: "p1",
+          activeSection: "pinned",
+          target: { section: "active", pinnedOrder: ["p2"], activeOrder: ["a1", "p1", "a2"] },
+        }),
+      ).toMatchObject({ kind: "move-active", order: null, unpin: true });
     });
   });
 });
