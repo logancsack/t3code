@@ -97,12 +97,18 @@ describe("actionFor", () => {
     });
   });
 
-  it("shows what went wrong when an action was refused", () => {
+  it("says what couldn't be done in a few words, keeping why for a closer look", () => {
     const call = { callId: "c2", name: "archive_thread", arguments: { thread: "x" } };
     expect(actionFor(call, { error: 'There\'s no thread "x".' })).toMatchObject({
       failed: true,
-      label: "Couldn't: There's no thread \"x\".",
+      label: "Couldn't archive a thread",
+      detail: 'There\'s no thread "x".',
     });
+  });
+
+  it("shows nothing for an action not run for want of the user's words: Aldo asks them", () => {
+    const call = { callId: "c7", name: "start_thread", arguments: { brief: "Audit the code" } };
+    expect(actionFor(call, { error: "Not done yet: asked has to be…", unasked: true })).toBeNull();
   });
 
   it("doesn't link to a thread it deleted", () => {
