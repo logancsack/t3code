@@ -88,10 +88,10 @@ const LIVE_GREETING =
 /** A request still being worked on after this long gets a word that it is, so the line isn't silent: a different one each time, promising no time. */
 const STILL_WORKING_MS = 6_000;
 const STILL_WORKING = [
-  "Still on it, one moment.",
+  "Still on it.",
   "Bear with me, I'm still working on that.",
-  "Hang on, this one's taking a little longer.",
-  "One sec, still going.",
+  "Hang on, still working through this one.",
+  "Still going. I'll tell you as soon as it's done.",
 ];
 /** A delegation waits this long (the call's time) for the user to stop talking, so it has their whole request. */
 const SETTLE_MS = 700;
