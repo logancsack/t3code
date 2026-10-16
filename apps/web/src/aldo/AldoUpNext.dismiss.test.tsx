@@ -40,7 +40,7 @@ vi.mock("./AldoHomeInbox", () => ({
   ThreadLink: ({ children }: { children: ReactNode }) => <a href="#thread">{children}</a>,
 }));
 vi.mock("./AldoLiveCard", () => ({ AldoOpenContext: createContext(null) }));
-vi.mock("./AldoHalo", () => ({ AldoHalo: () => null }));
+vi.mock("./AldoPresence", () => ({ AldoAvatar: () => null }));
 vi.mock("./briefFeed", () => ({
   useAldoBrief: (select: (s: { brief: null }) => unknown) => select({ brief: null }),
 }));

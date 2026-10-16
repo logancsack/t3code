@@ -41,7 +41,7 @@ import type { AldoDecision } from "./decisions.logic";
 export function DecisionIcon(props: {
   readonly decision: AldoDecision;
   readonly className?: string;
-  /** Just the glyph, in the text's color: Aldo's conversation, where color is for the halo. */
+  /** Just the glyph, in the text's color: Aldo's conversation, where color is for the face. */
   readonly plain?: boolean;
 }) {
   const d = props.decision;
