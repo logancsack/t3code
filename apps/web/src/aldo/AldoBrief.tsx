@@ -33,7 +33,7 @@ import { useAldoAssistant } from "./assistantSession";
 import { useAldoArrive } from "./arrive";
 import { useAldoHomeFeed } from "./homeFeed";
 import { useAldoBrief } from "./briefFeed";
-import { aldoBriefAudioUrl, type AldoBrief } from "./cloud";
+import { aldoBriefAudioUrl, type AldoBrief } from "./assistantApi";
 import type { AldoChoice } from "./decide";
 import type { AldoDecision } from "./decisions.logic";
 

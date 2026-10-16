@@ -19,12 +19,8 @@ import { formatRelativeTime } from "../timestampFormat";
 import { AldoPlacePicker, type AldoPlaceChoice } from "./AldoPlacePicker";
 import { AldoPlaceTile, type AldoPickedPlace } from "./AldoPlaceTile";
 import { openAldoRepositoryPicker } from "./AldoRepositoryPicker";
-import {
-  aldoRoutesDrafts,
-  aldoSupportsProjects,
-  routeAldoDraft,
-  type AldoRoutedProject,
-} from "./cloud";
+import { aldoRoutesDrafts, aldoSupportsProjects } from "./directory";
+import { routeAldoDraft, type AldoRoutedProject } from "./workspaceApi";
 import { useMoveAldoDraft } from "./moveDraft";
 import { carryAldoDraft } from "./newThread";
 import { placeKey, repoShortName } from "./places.logic";

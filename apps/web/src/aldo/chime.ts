@@ -8,7 +8,7 @@
 import { useEffect, useSyncExternalStore } from "react";
 
 import { chimeMemory, chimeNews, shouldChime, type ChimeMemory } from "./chime.logic";
-import type { AldoHome } from "./cloud";
+import { type AldoHome } from "./homeApi";
 import { useAldoHomeFeed } from "./homeFeed";
 import { aldoOnScreen } from "./screen";
 
@@ -25,7 +25,7 @@ function read(): boolean {
 
 let on = typeof window === "undefined" ? false : read();
 
-export function getAldoSound(): boolean {
+function getAldoSound(): boolean {
   return on;
 }
 

@@ -29,13 +29,9 @@ import { useRightPanelStore } from "../rightPanelStore";
 import type { WorkLogEntry } from "../session-logic";
 import type { TurnDiffSummary } from "../types";
 import { AldoMadeThumb, aldoAskToShare } from "./AldoMadeCards";
-import {
-  AldoApiError,
-  fetchAldoShares,
-  getAldoEnvironments,
-  stopAldoShare,
-  subscribeAldoEnvironments,
-} from "./cloud";
+import { AldoApiError } from "./api";
+import { fetchAldoShares, stopAldoShare } from "./workspaceApi";
+import { getAldoEnvironments, subscribeAldoEnvironments } from "./directory";
 import {
   aldoLibraryGroups,
   aldoShareAudience,

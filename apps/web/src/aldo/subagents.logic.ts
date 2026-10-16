@@ -3,7 +3,11 @@
 // for its provider, and for Codex each model's reasoning efforts. Claude Code
 // has no default effort for subagents: they run at the main agent's.
 
-import type { AldoSubagentDefault, AldoSubagentProvider, AldoSubagents } from "./cloud";
+import {
+  type AldoSubagentDefault,
+  type AldoSubagentProvider,
+  type AldoSubagents,
+} from "./threadApi";
 
 export interface SubagentAgent {
   readonly kind: AldoSubagentProvider;

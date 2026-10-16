@@ -21,13 +21,8 @@ import {
   SelectValue,
 } from "../components/ui/select";
 import { Textarea } from "../components/ui/textarea";
-import {
-  aldoVault,
-  getAldoEnvironments,
-  subscribeAldoEnvironments,
-  type AldoSecretKind,
-  type AldoVaultItem,
-} from "./cloud";
+import { aldoVault, type AldoSecretKind, type AldoVaultItem } from "./accountApi";
+import { getAldoEnvironments, subscribeAldoEnvironments } from "./directory";
 import {
   offerSavingLoginsFor,
   refreshAldoNeverSaveLogins,

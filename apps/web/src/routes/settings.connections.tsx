@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 import { AldoConnectionsPage } from "../aldo/AldoConnectionsPage";
-import { isAldoCloud } from "../aldo/cloud";
+import { isAldoCloud } from "../aldo/api";
 import { ConnectionsSettings } from "../components/settings/ConnectionsSettings";
 
 function SettingsConnectionsRoute() {

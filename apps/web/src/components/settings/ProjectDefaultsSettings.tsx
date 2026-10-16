@@ -8,7 +8,7 @@ import { createModelSelection } from "@t3tools/shared/model";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { useNavigate } from "@tanstack/react-router";
 
-import { isAldoCloud } from "../../aldo/cloud";
+import { isAldoCloud } from "../../aldo/api";
 import { aldoSavesSettings } from "../../aldo/machineSettings.logic";
 import { getCustomModelOptionsByInstance } from "../../modelSelection";
 import {

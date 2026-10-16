@@ -14,7 +14,7 @@ const ANSWERED_KEY = "aldo:notify-offer";
 export type AldoNotificationsState = "on" | "off" | "blocked" | "unavailable";
 
 /** Whether this device gets notifications, and a way to turn them on. */
-export function useAldoNotifications(): {
+function useAldoNotifications(): {
   readonly status: AldoNotificationsState;
   readonly enable: () => Promise<boolean>;
 } {

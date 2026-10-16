@@ -10,12 +10,8 @@ import { useEffect } from "react";
 import { create } from "zustand";
 
 import { noteAldoHiddenPrompts, pullAldoConversation, useAldoAssistant } from "./assistantSession";
-import {
-  fetchAldoHome,
-  requestAldoDirectoryRefresh,
-  subscribeAldoEnvironments,
-  type AldoHome,
-} from "./cloud";
+import { fetchAldoHome, type AldoHome } from "./homeApi";
+import { requestAldoDirectoryRefresh, subscribeAldoEnvironments } from "./directory";
 
 import { reconcileAldoWalkthrough } from "./walkthrough";
 

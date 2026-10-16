@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import type { AldoProjectSummary } from "./cloud";
+import { type AldoProjectSummary } from "./workspaceApi";
 import {
   codeChoices,
   isAldoProjectRef,

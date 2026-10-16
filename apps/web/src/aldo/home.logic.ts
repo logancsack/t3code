@@ -3,19 +3,19 @@
 // what shipped and what's coming, and the words for each.
 
 import { ACTION_LABELS, REVERSE_LABELS } from "./assistant.logic";
-import type {
-  AldoHome,
-  AldoHomeAction,
-  AldoHomeConversation,
-  AldoHomeDelivery,
-  AldoHomePullRequest,
-  AldoHomeTarget,
-  AldoHomeUsage,
-  AldoPolicy,
-} from "./cloud";
+import {
+  type AldoHome,
+  type AldoHomeAction,
+  type AldoHomeConversation,
+  type AldoHomeDelivery,
+  type AldoHomePullRequest,
+  type AldoHomeTarget,
+  type AldoHomeUsage,
+  type AldoPolicy,
+} from "./homeApi";
 
 /** A turn that hasn't moved in this long is stuck (Aldo's sweep counts it as idle). */
-export const STUCK_MS = 60 * 60 * 1000;
+const STUCK_MS = 60 * 60 * 1000;
 /** How long finished work and shipped pull requests stay on the board. */
 const DONE_WINDOW_MS = 48 * 60 * 60 * 1000;
 const MINUTE = 60_000;

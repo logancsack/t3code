@@ -6,7 +6,7 @@
 // the thread (AldoThreadLoading.tsx) and the sidebar. Pure, so it's tested on
 // its own.
 
-import type { AldoEnvironment, AldoStartState } from "./cloud";
+import { type AldoEnvironment, type AldoStartState } from "./directory";
 
 export type AldoThreadStartTone = "progress" | "waiting" | "retrying" | "failed";
 

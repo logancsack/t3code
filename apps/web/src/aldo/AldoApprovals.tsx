@@ -19,12 +19,8 @@ import { cn } from "~/lib/utils";
 import { aldoApprovalRulesChanged } from "./AldoApprovalRules";
 import { Section } from "./AldoHomeBoard";
 import { ThreadLink } from "./AldoHomeInbox";
-import {
-  AldoApiError,
-  decideAldoApproval,
-  removeAldoApprovalRule,
-  type AldoApproval,
-} from "./cloud";
+import { AldoApiError } from "./api";
+import { decideAldoApproval, removeAldoApprovalRule, type AldoApproval } from "./homeApi";
 import {
   APPROVAL_KIND_LABEL,
   approvalOutcome,

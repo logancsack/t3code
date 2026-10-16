@@ -4,7 +4,8 @@
 // user hears of a thread Aldo started that couldn't start at once, and when a
 // call brings up what came back of work it handed over.
 
-import type { AldoFollowupNews, AldoStartState, AldoThreadAttention } from "./cloud";
+import { type AldoFollowupNews } from "./assistantApi";
+import { type AldoStartState, type AldoThreadAttention } from "./directory";
 
 /** Where the conversation is, as the orb shows it. */
 export type AldoAssistantPhase =
@@ -216,7 +217,7 @@ export const REVERSE_LABELS: Record<string, string> = {
 };
 
 /** Whether a call undoes what its tool's name says (pin_thread with pinned: false, say). */
-export function reverses(call: Pick<AldoFunctionCall, "name" | "arguments">): boolean {
+function reverses(call: Pick<AldoFunctionCall, "name" | "arguments">): boolean {
   switch (call.name) {
     case "pin_thread":
       return call.arguments.pinned === false;
@@ -527,9 +528,9 @@ export function callDuration(ms: number): string {
  * last words, or this long after the user's when the voice let them pass;
  * and some time since the last result or news, so they don't run together.
  */
-export const NEWS_PAUSE_MS = 1_500;
-export const NEWS_UNANSWERED_MS = 4_000;
-export const NEWS_AFTER_RESULT_MS = 2_500;
+const NEWS_PAUSE_MS = 1_500;
+const NEWS_UNANSWERED_MS = 4_000;
+const NEWS_AFTER_RESULT_MS = 2_500;
 export const NEWS_GAP_MS = 8_000;
 /** A result (or news) sent waits this long at most for the voice to start on it before news may follow it. */
 export const NEWS_UNSPOKEN_MS = 8_000;

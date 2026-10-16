@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import type { AldoHandoff } from "./cloud";
+import { type AldoHandoff } from "./homeApi";
 import {
   aldoHandoffCode,
   aldoHandoffDuration,

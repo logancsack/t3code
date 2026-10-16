@@ -6,14 +6,13 @@ import { useEffect, useMemo, useSyncExternalStore } from "react";
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "../components/ui/menu";
 
 import { hiddenToastActionProps, stackedThreadToast, toastManager } from "../components/ui/toast";
+import { AldoApiError } from "./api";
+import { answerAldoComputer, stopAldoComputer } from "./workspaceApi";
 import {
-  AldoApiError,
-  answerAldoComputer,
   getAldoEnvironments,
   requestAldoDirectoryRefresh,
-  stopAldoComputer,
   subscribeAldoEnvironments,
-} from "./cloud";
+} from "./directory";
 import {
   aldoComputerAskDescription,
   aldoComputerKeptAnswer,

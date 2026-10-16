@@ -16,16 +16,9 @@ import { readCachedShells, seedEnvironmentCache } from "../connection/storage";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentPresentations } from "../state/presentation";
 import { environmentShell } from "../state/shell";
-import {
-  AldoApiError,
-  aldoMachineIsAsleep,
-  aldoMachineIsNew,
-  fetchAldoShells,
-  isAldoCloud,
-  isAldoEnvironmentId,
-  sendAldoThreadCommand,
-  threadIdForEnvironment,
-} from "./cloud";
+import { AldoApiError, isAldoCloud, isAldoEnvironmentId, threadIdForEnvironment } from "./api";
+import { aldoMachineIsAsleep, aldoMachineIsNew } from "./directory";
+import { fetchAldoShells, sendAldoThreadCommand } from "./threadApi";
 import {
   aldoCommandPatch,
   applyAldoShellPatch,

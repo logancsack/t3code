@@ -72,7 +72,7 @@ export function parseAldoShares(value: unknown): AldoShareView[] | null {
 
 export type AldoLibraryWhen = "today" | "week" | "older";
 
-export const ALDO_LIBRARY_WHEN_LABEL: Record<AldoLibraryWhen, string> = {
+const ALDO_LIBRARY_WHEN_LABEL: Record<AldoLibraryWhen, string> = {
   today: "Today",
   week: "This week",
   older: "Older",

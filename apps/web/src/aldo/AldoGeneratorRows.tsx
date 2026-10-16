@@ -16,7 +16,7 @@ import {
   disconnectAldoIntegration,
   type AldoIntegration,
   type AldoIntegrationKeyField,
-} from "./cloud";
+} from "./accountApi";
 
 const messageOf = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause));
 

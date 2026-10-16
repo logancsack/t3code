@@ -3,7 +3,7 @@
 // know the project, and the project's threads its code, without either
 // carrying the other's files.
 
-import type { AldoProjectSummary } from "./cloud";
+import { type AldoProjectSummary } from "./workspaceApi";
 
 /** Whether a ref is one of the user's Aldo projects rather than code on a git host. */
 export function isAldoProjectRef(ref: string): boolean {
@@ -11,7 +11,7 @@ export function isAldoProjectRef(ref: string): boolean {
 }
 
 /** Whether two refs name the same repository: git hosts take Acme/App for acme/app. */
-export function sameRepo(a: string, b: string): boolean {
+function sameRepo(a: string, b: string): boolean {
   return a.toLowerCase() === b.toLowerCase();
 }
 

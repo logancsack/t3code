@@ -44,7 +44,9 @@ import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import { projectFaviconCache } from "../assets/projectFaviconCache";
 
-import { aldoKeepsEnvironmentCache, aldoThreadDetail, isAldoConnectionId } from "../aldo/cloud";
+import { aldoKeepsEnvironmentCache } from "../aldo/directory";
+import { aldoThreadDetail } from "../aldo/threadApi";
+import { isAldoConnectionId } from "../aldo/api";
 import { withAldoTemplate } from "../aldo/serverConfig.logic";
 
 const DATABASE_NAME = "t3code:connection-runtime";

@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import type { AldoApproval, AldoHome, AldoHomeConversation, AldoHomePullRequest } from "./cloud";
+import {
+  type AldoApproval,
+  type AldoHome,
+  type AldoHomeConversation,
+  type AldoHomePullRequest,
+} from "./homeApi";
 import {
   isSummonShortcut,
   moveSummonSelection,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import type { AldoPolicyView } from "./cloud";
+import { type AldoPolicyView } from "./homeApi";
 import {
   ALDO_SAME_AS_EVERYWHERE,
   ALDO_UNDECIDED,

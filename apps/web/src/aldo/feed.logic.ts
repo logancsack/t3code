@@ -9,18 +9,18 @@
 // nothing is woken.
 // Pure, so it's tested on its own.
 
-import type {
-  AldoHome,
-  AldoHomeAction,
-  AldoHomeConversation,
-  AldoHomePullRequest,
-  AldoHomeTarget,
-} from "./cloud";
+import {
+  type AldoHome,
+  type AldoHomeAction,
+  type AldoHomeConversation,
+  type AldoHomePullRequest,
+  type AldoHomeTarget,
+} from "./homeApi";
 import { putAway } from "./decisions.logic";
 import { sameTarget } from "./home.logic";
 
 /** How far back the conversation shows what happened: as long as the board kept done threads. */
-export const FEED_WINDOW_MS = 2 * 24 * 60 * 60 * 1000;
+const FEED_WINDOW_MS = 2 * 24 * 60 * 60 * 1000;
 
 export type AldoFeedEvent =
   | {

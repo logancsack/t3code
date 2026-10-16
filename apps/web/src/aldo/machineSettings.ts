@@ -7,7 +7,8 @@
 import { useSyncExternalStore } from "react";
 
 import { toastManager } from "../components/ui/toast";
-import { fetchAldoMachineSettings, isAldoCloud, saveAldoMachineSettings } from "./cloud";
+import { fetchAldoMachineSettings, saveAldoMachineSettings } from "./threadApi";
+import { isAldoCloud } from "./api";
 import {
   aldoMachineSettingsOf,
   type AldoMachineSettings,

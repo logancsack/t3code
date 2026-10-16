@@ -14,13 +14,9 @@ import { useSyncExternalStore } from "react";
 
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentPresentations } from "../state/presentation";
-import {
-  aldoMachineIsNew,
-  fetchAldoThreadDetail,
-  isAldoCloud,
-  isAldoEnvironmentId,
-  setAldoThreadDetailSource,
-} from "./cloud";
+import { aldoMachineIsNew } from "./directory";
+import { fetchAldoThreadDetail, setAldoThreadDetailSource } from "./threadApi";
+import { isAldoCloud, isAldoEnvironmentId } from "./api";
 import { readAldoThreadDetail } from "./threadDetails.logic";
 
 /**

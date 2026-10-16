@@ -12,10 +12,10 @@
 
 import {
   aldoSupportsGeneralThreads,
-  isAldoCloud,
   subscribeAldoEnvironments,
   warmAldoMachine,
-} from "./cloud";
+} from "./directory";
+import { isAldoCloud } from "./api";
 import { getAldoPreloadSettings } from "./preloadSettings";
 import {
   aldoWarmAwaitsGeneral,

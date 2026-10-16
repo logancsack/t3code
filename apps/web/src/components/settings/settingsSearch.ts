@@ -1,5 +1,5 @@
 import { isElectron } from "~/env";
-import { isAldoCloud } from "../../aldo/cloud";
+import { isAldoCloud } from "../../aldo/api";
 import { aldoSettingsSearchItem, aldoShowsSettingsSearchItem } from "../../aldo/settings.logic";
 import { isManagedDevPc } from "../../managedDevPc";
 import { isMacPlatform, isWindowsPlatform, normalizeSearchText } from "~/lib/utils";

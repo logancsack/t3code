@@ -20,7 +20,7 @@ import {
   renameAldoAgentInbox,
   type AldoAgentHandleCheck,
   type AldoAgentInboxAddress,
-} from "./cloud";
+} from "./accountApi";
 import {
   agentHandleProblem,
   handleFieldValue,

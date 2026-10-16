@@ -161,9 +161,8 @@ import {
   aldoThreadInKeptRepo,
   subscribeAldoEnvironments,
   displayedThreadBranch,
-  isAldoCloud,
-  isAldoEnvironmentId,
-} from "../aldo/cloud";
+} from "../aldo/directory";
+import { isAldoCloud, isAldoEnvironmentId } from "../aldo/api";
 import { aldoNewThreadPlace, useStartAldoThread } from "../aldo/newThread";
 import { buildThreadActionMenuItems } from "./threadActionMenu.logic";
 import {

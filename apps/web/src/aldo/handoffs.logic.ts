@@ -4,7 +4,7 @@
 // step that gets it past: doing it in the agent's browser, typing a code, or
 // skipping the site.
 
-import type { AldoHandoff, AldoHome } from "./cloud";
+import { type AldoHandoff, type AldoHome } from "./homeApi";
 
 /** Kinds whose card has a field for the code (D2): typed into the page by Aldo, never kept. */
 const CODE_KINDS = new Set(["code"]);
@@ -85,7 +85,7 @@ const SECOND_LEVEL = new Set(["co", "com", "net", "org", "gov", "ac", "edu", "ne
  * ("OpenTable wants to check you're human" on www.opentable.com), else its
  * domain. The same as Aldo's notification says (its siteName).
  */
-export function aldoHandoffSiteName(h: Pick<AldoHandoff, "site" | "reason">): string | null {
+function aldoHandoffSiteName(h: Pick<AldoHandoff, "site" | "reason">): string | null {
   const site = h.site?.trim().toLowerCase();
   if (!site) return null;
   const labels = site.split(".");

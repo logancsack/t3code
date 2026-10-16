@@ -1,6 +1,6 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 
-import { isAldoCloud } from "../aldo/cloud";
+import { isAldoCloud } from "../aldo/api";
 import { SnapShotSettings } from "../components/settings/SnapShotSettings";
 
 function SettingsSnapShotRoute() {

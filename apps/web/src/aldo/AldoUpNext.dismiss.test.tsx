@@ -3,7 +3,7 @@
 import { act, createContext, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
-import type { AldoHome } from "./cloud";
+import { type AldoHome } from "./homeApi";
 
 const backend = vi.hoisted(() => ({
   home: null as AldoHome | null,
@@ -13,7 +13,7 @@ const backend = vi.hoisted(() => ({
   decide: vi.fn(),
   toast: vi.fn(),
 }));
-vi.mock("./cloud", () => ({
+vi.mock("./homeApi", () => ({
   fetchAldoHome: async () => {
     if (backend.readFail) throw new Error("Read failed");
     return structuredClone(backend.home);

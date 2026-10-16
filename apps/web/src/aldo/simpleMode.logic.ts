@@ -2,7 +2,7 @@
 // tested on their own: whether it's on, where its rail shows, which of its
 // places the page is on, and what its Needs-you place lists.
 
-import type { AldoHome, AldoHomeConversation } from "./cloud";
+import { type AldoHome, type AldoHomeConversation } from "./homeApi";
 import { aldoDecisions, putAway, type AldoDecision } from "./decisions.logic";
 import { boardFor } from "./home.logic";
 

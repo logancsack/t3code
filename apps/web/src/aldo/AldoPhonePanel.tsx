@@ -6,7 +6,7 @@ import { SettingsRow, SettingsSection } from "../components/settings/settingsLay
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Switch } from "../components/ui/switch";
-import { aldoPhone, type AldoPhoneSettings } from "./cloud";
+import { aldoPhone, type AldoPhoneSettings } from "./accountApi";
 
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
 

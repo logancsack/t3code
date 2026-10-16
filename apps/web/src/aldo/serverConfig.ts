@@ -11,12 +11,8 @@ import * as Schema from "effect/Schema";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentPresentations } from "../state/presentation";
 import { environmentServerConfigsAtom } from "../state/server";
-import {
-  fetchAldoServerConfig,
-  isAldoCloud,
-  isAldoEnvironmentId,
-  reportAldoServerConfig,
-} from "./cloud";
+import { fetchAldoServerConfig, reportAldoServerConfig } from "./threadApi";
+import { isAldoCloud, isAldoEnvironmentId } from "./api";
 import { settingsAccounts } from "./settingsData";
 import { loadAldoMachineSettings } from "./machineSettings";
 import { providerInstances, providerKinds } from "./serverConfig.logic";

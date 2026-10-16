@@ -14,7 +14,8 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { toastManager } from "../components/ui/toast";
 import { cn } from "~/lib/utils";
-import { AldoApiError, resolveAldoHandoff, type AldoHandoff } from "./cloud";
+import { AldoApiError } from "./api";
+import { resolveAldoHandoff, type AldoHandoff } from "./homeApi";
 import { aldoMorph, aldoMorphSource } from "./morph";
 import {
   aldoHandoffCode,

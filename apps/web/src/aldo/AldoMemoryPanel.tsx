@@ -12,7 +12,8 @@ import { SettingsSection } from "../components/settings/settingsLayout";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Textarea } from "../components/ui/textarea";
-import { AldoApiError, aldoMemory, type AldoMemoryItem } from "./cloud";
+import { AldoApiError } from "./api";
+import { aldoMemory, type AldoMemoryItem } from "./assistantApi";
 
 const messageOf = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause));
 

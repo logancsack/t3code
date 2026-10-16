@@ -2,7 +2,8 @@ import { ExternalLinkIcon } from "lucide-react";
 import { useState, type FormEvent } from "react";
 
 import { AldoBillingSection, useAldoCheckoutReturn } from "../../aldo/AldoBilling";
-import { isAldoCloud, setAldoSpendLimit } from "../../aldo/cloud";
+import { isAldoCloud } from "../../aldo/api";
+import { setAldoSpendLimit } from "../../aldo/accountApi";
 
 import type { AldoWorkspaceUsage, AldoWorkspaceUsageState } from "../../state/aldoWorkspaceUsage";
 import { Button } from "../ui/button";

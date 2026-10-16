@@ -18,7 +18,7 @@ import {
   disconnectAldoApp,
   type AldoApp,
   type AldoAppCatalogEntry,
-} from "./cloud";
+} from "./accountApi";
 import {
   aldoAppResultFilter,
   normalizeAldoAppUrl,

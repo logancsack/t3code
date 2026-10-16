@@ -14,7 +14,7 @@ import { Button } from "../components/ui/button";
 import { Switch } from "../components/ui/switch";
 import { toastManager } from "../components/ui/toast";
 import { playAldoChime, setAldoSound, useAldoSound } from "./chime";
-import { setAldoHeadsUps } from "./cloud";
+import { setAldoHeadsUps } from "./accountApi";
 import {
   aldoNotificationsStatus,
   disableAldoNotifications,
@@ -32,7 +32,7 @@ const messageOf = (cause: unknown) => (cause instanceof Error ? cause.message : 
  */
 const deviceNotifications = createSettingsResource(aldoNotificationsStatus);
 
-export function AldoNotificationSettings() {
+function AldoNotificationSettings() {
   const sound = useAldoSound();
   const status = useSettingsResource(deviceNotifications, true, false).data ?? null;
   const [busy, setBusy] = useState(false);

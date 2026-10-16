@@ -557,7 +557,7 @@ import { AldoThreadLoading } from "../aldo/AldoThreadLoading";
 import { useAldoFirstViewHold } from "../aldo/firstView";
 import { useAldoThreadStart } from "../aldo/threadStart";
 import { describeAldoWakeFailure } from "../aldo/threadStart.logic";
-import { isAldoCloud, isAldoEnvironmentId } from "../aldo/cloud";
+import { isAldoCloud, isAldoEnvironmentId } from "../aldo/api";
 import { useAldoKeptRepo } from "../aldo/keptRepo";
 import { AldoHandoffCard } from "../aldo/AldoHandoffCard";
 import {

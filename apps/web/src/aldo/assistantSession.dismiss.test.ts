@@ -3,13 +3,16 @@ import { afterEach, expect, it, vi } from "vite-plus/test";
 const backend = vi.hoisted(() => ({
   start: vi.fn(async () => ({ sessionId: "test", sdp: "answer" })),
 }));
-vi.mock("./cloud", () => ({
+const aldoApiMock = vi.hoisted(() => ({
   AldoApiError: class extends Error {},
   aldoAssistant: { startLive: backend.start, followups: async () => null },
   getAldoEnvironments: () => [],
   requestAldoDirectoryRefresh: vi.fn(),
   subscribeAldoEnvironments: () => () => {},
 }));
+vi.mock("./api", () => aldoApiMock);
+vi.mock("./assistantApi", () => aldoApiMock);
+vi.mock("./directory", () => aldoApiMock);
 vi.mock("../components/ui/toast", () => ({ toastManager: { add: vi.fn() } }));
 vi.mock("./screen", () => ({ aldoOnScreen: () => null, subscribeAldoOnScreen: () => () => {} }));
 import {

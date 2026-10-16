@@ -5,7 +5,7 @@
 
 import { create } from "zustand";
 
-import type { AldoHomeTarget } from "./cloud";
+import { type AldoHomeTarget } from "./homeApi";
 
 export interface AldoReceipt {
   /** The decision's key: the card it was. */

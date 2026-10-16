@@ -189,7 +189,7 @@ function resultText(value: unknown): string | null {
 }
 
 /** The tool call a step made, as far as its agent recorded it. */
-export function aldoToolCall(entry: Entry): ToolCall | null {
+function aldoToolCall(entry: Entry): ToolCall | null {
   const data = record(entry.toolData);
   const dataTool = text(data?.tool);
   if (dataTool) {

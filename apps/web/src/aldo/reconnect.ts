@@ -15,7 +15,8 @@ import { runAtomCommand } from "@t3tools/client-runtime/state/runtime";
 import { environmentCatalog } from "../connection/catalog";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentPresentations } from "../state/presentation";
-import { getAldoEnvironments, isAldoCloud, subscribeAldoEnvironments } from "./cloud";
+import { getAldoEnvironments, subscribeAldoEnvironments } from "./directory";
+import { isAldoCloud } from "./api";
 import { aldoMachinesToRetry } from "./reconnect.logic";
 
 /** A registered machine's connection phase as presented; "available" is one waiting to be told to try again. */

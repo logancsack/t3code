@@ -6,7 +6,7 @@ import {
 } from "@t3tools/contracts";
 import { useCallback, useMemo } from "react";
 
-import { isAldoCloud } from "../../aldo/cloud";
+import { isAldoCloud } from "../../aldo/api";
 import { keepAldoMachineSettings } from "../../aldo/machineSettings";
 import { withAldoMachineSettings } from "../../aldo/machineSettings.logic";
 import {

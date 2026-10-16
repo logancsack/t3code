@@ -6,7 +6,7 @@
 /** An image's data URL longer than this goes to Aldo first, so the message itself stays small. */
 export const ALDO_INLINE_MAX_CHARS = 32_000;
 /** The most of an image one upload carries (Aldo takes up to 3.5M characters). */
-export const ALDO_PART_CHARS = 3_000_000;
+const ALDO_PART_CHARS = 3_000_000;
 
 /** One of a message's images that goes to Aldo first: where it sits in the attachments, its upload's id, and its data. */
 export interface AldoUpload {

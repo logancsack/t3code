@@ -9,7 +9,7 @@ import {
   disconnectAldoAccount,
   type AldoAccount,
   type AldoGitHostKind,
-} from "./cloud";
+} from "./accountApi";
 
 type Field = {
   key: "token" | "baseUrl" | "email" | "org";

@@ -18,7 +18,12 @@ import {
 } from "../components/ui/sheet";
 import { cn } from "../lib/utils";
 import { ALDO_ACCOUNT_SPECS, AldoAccountButton } from "./AldoAccountsPanel";
-import type { AldoAccount, AldoAccountKind, AldoGitHostKind, AldoHostKind } from "./cloud";
+import {
+  type AldoAccount,
+  type AldoAccountKind,
+  type AldoGitHostKind,
+  type AldoHostKind,
+} from "./accountApi";
 
 export const AGENT_KINDS: ReadonlyArray<AldoAccountKind> = ["claude", "codex", "grok", "muse"];
 

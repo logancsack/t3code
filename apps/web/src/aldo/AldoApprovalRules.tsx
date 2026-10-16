@@ -8,7 +8,7 @@ import { useSettingsResource } from "./settingsResource";
 import { useState } from "react";
 
 import { toastManager } from "../components/ui/toast";
-import { removeAldoApprovalRule, type AldoApprovalRule } from "./cloud";
+import { removeAldoApprovalRule, type AldoApprovalRule } from "./homeApi";
 
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
 

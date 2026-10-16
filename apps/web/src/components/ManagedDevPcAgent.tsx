@@ -89,7 +89,7 @@ const INITIAL_FRAME_STATE: AldoFrameState = {
   pressed: false,
   error: null,
 };
-export const useAldoAgentStore = create<AldoAgentStore>((set, get) => {
+const useAldoAgentStore = create<AldoAgentStore>((set, get) => {
   const deliver = (frame: HTMLIFrameElement | null, command: AldoCommand) => {
     frame?.contentWindow?.postMessage(
       { type: "aldo-agent:command", ...command },
@@ -592,9 +592,4 @@ function AldoAgentShell() {
     </section>,
     document.body,
   );
-}
-
-/** Used by the sidebar to badge threads Aldo started. */
-export function threadStartedByAldo(threadId: ThreadId): boolean {
-  return isAldoThreadId(threadId);
 }

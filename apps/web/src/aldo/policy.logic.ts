@@ -4,7 +4,7 @@
 // time it comes up; one with a default (paying past the plans, long
 // conversations) does that until the user changes it.
 
-import type { AldoPolicy, AldoPolicyPath, AldoPolicyView } from "./cloud";
+import { type AldoPolicy, type AldoPolicyPath, type AldoPolicyView } from "./homeApi";
 
 /** A rule no one has answered: an agent asks. */
 export const ALDO_UNDECIDED = "undecided";

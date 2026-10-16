@@ -16,15 +16,13 @@ import {
   SelectValue,
 } from "../components/ui/select";
 import { toastManager } from "../components/ui/toast";
+import { aldoLinksProjectCode, getAldoEnvironments, subscribeAldoEnvironments } from "./directory";
 import {
-  aldoLinksProjectCode,
-  getAldoEnvironments,
   listAldoProjects,
   listAldoRepositoryDirectory,
   setAldoProjectRepos,
-  subscribeAldoEnvironments,
   type AldoProjectSummary,
-} from "./cloud";
+} from "./workspaceApi";
 import {
   codeChoices,
   isAldoProjectRef,

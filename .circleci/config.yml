@@ -28,9 +28,17 @@ commands:
               | VP_VERSION="$version" bash
             # Vite+ 1.0 installs under ~/.local/share/vite-plus (0.x used ~/.vite-plus).
             echo 'export PATH="$HOME/.local/share/vite-plus/bin:$PATH"' >> "$BASH_ENV"
+      - restore_cache:
+          keys:
+            - pnpm-v1-{{ arch }}-{{ checksum "pnpm-lock.yaml" }}
+            - pnpm-v1-{{ arch }}-
       - run:
-          name: Install dependencies
-          command: vp install
+          name: Install Aldo build and test dependencies
+          command: vp install --frozen-lockfile --prefer-offline --filter 't3...' --filter '@t3tools/web...' --filter @t3tools/monorepo
+      - save_cache:
+          key: pnpm-v1-{{ arch }}-{{ checksum "pnpm-lock.yaml" }}
+          paths:
+            - ~/.local/share/pnpm/store
 
 jobs:
   check:

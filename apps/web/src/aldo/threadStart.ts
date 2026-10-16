@@ -9,12 +9,11 @@ import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentPresentations } from "../state/presentation";
 import {
   getAldoEnvironments,
-  isAldoCloud,
-  isAldoEnvironmentId,
   subscribeAldoEnvironments,
   type AldoEnvironment,
   type AldoStartState,
-} from "./cloud";
+} from "./directory";
+import { isAldoCloud, isAldoEnvironmentId } from "./api";
 import { describeAldoThreadStart, type AldoThreadStartView } from "./threadStart.logic";
 
 function environmentOf(environmentId: string): AldoEnvironment | null {

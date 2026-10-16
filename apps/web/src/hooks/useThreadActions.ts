@@ -44,7 +44,7 @@ import { buildThreadRouteParams, resolveThreadRouteRef } from "../threadRoutes";
 import { formatWorktreePathForDisplay, getOrphanedWorktreePathForThread } from "../worktreeCleanup";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
 import { useClientSettings } from "./useSettings";
-import { isAldoCloud, isAldoEnvironmentId } from "../aldo/cloud";
+import { isAldoCloud, isAldoEnvironmentId } from "../aldo/api";
 import { aldoThreadIsAloneOnMachine } from "../aldo/deleteThread.logic";
 import { deleteAldoThreadWithMachine } from "../aldo/threads";
 import * as ThreadUndo from "./threadUndo";

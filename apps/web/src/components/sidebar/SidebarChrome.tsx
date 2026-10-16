@@ -34,7 +34,7 @@ import { APP_BASE_NAME, APP_IS_ALDO } from "../../branding";
 import { SidebarUpdateArchitectureWarning, SidebarUpdatePill } from "./SidebarUpdatePill";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 import { AldoSidebarLinks } from "../../aldo/AldoSidebarLinks";
-import { isAldoCloud } from "../../aldo/cloud";
+import { isAldoCloud } from "../../aldo/api";
 
 export const SidebarChromeHeader = memo(function SidebarChromeHeader({
   isElectron,
@@ -121,7 +121,7 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
 }
 
 /** The Aldo "Open Frame" mark, drawn in the current text color. */
-export function AldoMark({ className }: { className?: string }) {
+function AldoMark({ className }: { className?: string }) {
   return (
     <svg aria-hidden="true" className={className} viewBox="0 0 42 32">
       <path d="M1 28 13.4 4h8.7L10.6 28H1Z" fill="currentColor" />

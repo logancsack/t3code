@@ -31,17 +31,15 @@ import { runAtomCommand } from "@t3tools/client-runtime/state/runtime";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentPresentations } from "../state/presentation";
 import { toastManager } from "../components/ui/toast";
+import { AldoApiError, isAldoCloud, isAldoEnvironmentId } from "./api";
 import {
-  AldoApiError,
   aldoMachineIsNew,
   aldoStartState,
   getAldoEnvironments,
-  holdAldoTurn,
-  isAldoCloud,
-  isAldoEnvironmentId,
   requestAldoDirectoryRefresh,
   wakeAldoEnvironment,
-} from "./cloud";
+} from "./directory";
+import { holdAldoTurn } from "./threadApi";
 import { describeAldoThreadStart } from "./threadStart.logic";
 import { aldoWakeAgain } from "./reconnect.logic";
 

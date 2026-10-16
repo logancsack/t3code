@@ -20,7 +20,7 @@ import {
   type AldoHome,
   type AldoHomeConversation,
   type AldoHomeTarget,
-} from "./cloud";
+} from "./homeApi";
 import { refreshAldoHome } from "./homeFeed";
 import { modelName, needsYouKind, sameTarget } from "./home.logic";
 import { AldoAvatar } from "./AldoPresence";
@@ -35,7 +35,7 @@ export type AldoPeekTarget =
   | { readonly kind: "approval"; readonly id: string };
 
 /** The conversation a peek shows, from the home read; null when it has left it. */
-export function peekedConversation(
+function peekedConversation(
   home: AldoHome | null,
   peek: AldoPeekTarget | null,
 ): AldoHomeConversation | null {

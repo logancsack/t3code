@@ -56,7 +56,7 @@ import { useIsMobile } from "~/hooks/useMediaQuery";
 import { Button } from "../ui/button";
 import { AldoBrowsingChip } from "~/aldo/AldoBrowsingChip";
 import { AldoPreviewsControl } from "~/aldo/AldoPreviewsControl";
-import { isAldoCloud, isAldoEnvironmentId } from "~/aldo/cloud";
+import { isAldoCloud, isAldoEnvironmentId } from "~/aldo/api";
 import { AldoMoveThreadPicker, AldoThreadPlace, useAldoMovesThreads } from "~/aldo/AldoThreadPlace";
 import { useAldoKeptRepo } from "~/aldo/keptRepo";
 import { draftTitle } from "~/aldo/places.logic";

@@ -24,14 +24,14 @@ import { AldoApprovalRules } from "./AldoApprovalRules";
 import { askAldoAbout, ThreadLink } from "./AldoHomeInbox";
 import {
   cancelAldoDelivery,
-  mergeAldoPullRequest,
   sendAldoDeliveryNow,
   type AldoHome,
   type AldoHomeAction,
   type AldoHomeConversation,
   type AldoHomeDelivery,
   type AldoHomePullRequest,
-} from "./cloud";
+} from "./homeApi";
+import { mergeAldoPullRequest } from "./workspaceApi";
 import {
   actionLabel,
   capacityLines,

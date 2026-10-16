@@ -7,7 +7,7 @@ import { FolderPlusIcon, MessageSquareDashedIcon } from "lucide-react";
 import { useAtomValue } from "@effect/atom-react";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 
-import { isAldoCloud } from "~/aldo/cloud";
+import { isAldoCloud } from "~/aldo/api";
 import { useAldoGeneral, useAldoKeptRepo } from "~/aldo/keptRepo";
 import { aldoProjectForMovedDraft, useAldoGeneralThreads } from "~/aldo/newThread";
 import { openCommandPalette } from "~/commandPaletteBus";

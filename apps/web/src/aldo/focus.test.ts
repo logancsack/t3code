@@ -10,7 +10,7 @@ const sent = vi.hoisted(
 );
 const page = vi.hoisted(() => ({ usedAt: 0 }));
 
-vi.mock("./cloud", () => ({
+const aldoApiMock = vi.hoisted(() => ({
   isAldoCloud: true,
   isAldoEnvironmentId: (id: string) => id.startsWith("aldo-"),
   touchAldoEnvironment: (
@@ -19,6 +19,8 @@ vi.mock("./cloud", () => ({
     options: { keepalive?: boolean } = {},
   ) => sent.push({ environmentId, presence, keepalive: options.keepalive ?? false }),
 }));
+vi.mock("./api", () => aldoApiMock);
+vi.mock("./directory", () => aldoApiMock);
 vi.mock("./preload", () => ({ aldoPageUsedAt: () => page.usedAt }));
 
 import { ALDO_FOCUS_IDLE_MS } from "./focus.logic";

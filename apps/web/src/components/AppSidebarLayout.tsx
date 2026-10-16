@@ -37,7 +37,7 @@ import {
 import ThreadSidebar from "./Sidebar";
 import { AldoProfileButton } from "../aldo/AldoAccountMenu";
 import { AldoSimpleRail, useAldoSimpleRail } from "../aldo/AldoSimpleRail";
-import { isAldoCloud } from "../aldo/cloud";
+import { isAldoCloud } from "../aldo/api";
 import { SidebarChromeHeader } from "./sidebar/SidebarChrome";
 import { MainAppLocationTracker } from "./sidebar/mainAppLocation";
 import { useSidebarStageBackdropVariant } from "./SidebarStageBackdrop";

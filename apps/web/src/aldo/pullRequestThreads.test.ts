@@ -8,7 +8,7 @@ const aldo = vi.hoisted(() => ({
   toasts: [] as Array<{ readonly id?: string; readonly options?: unknown; readonly closed?: true }>,
 }));
 
-vi.mock("./cloud", () => ({ aldoStartsPullRequestThreads: () => aldo.startsThem }));
+vi.mock("./directory", () => ({ aldoStartsPullRequestThreads: () => aldo.startsThem }));
 vi.mock("./threads", () => ({
   startAldoSandbox: (input: unknown) => {
     aldo.started.push(input);

@@ -11,7 +11,7 @@ const directory = vi.hoisted(() => ({
   environments: [] as Array<{ environmentId: string; starts?: Record<string, unknown> }>,
   listeners: new Set<() => void>(),
 }));
-vi.mock("./cloud", () => ({
+const aldoApiMock = vi.hoisted(() => ({
   isAldoCloud: true,
   getAldoEnvironments: () => directory.environments,
   subscribeAldoEnvironments: (listener: () => void) => {
@@ -19,6 +19,8 @@ vi.mock("./cloud", () => ({
     return () => directory.listeners.delete(listener);
   },
 }));
+vi.mock("./api", () => aldoApiMock);
+vi.mock("./directory", () => aldoApiMock);
 
 const { useAldoSidebarOrder } = await import("./sidebarOrder");
 

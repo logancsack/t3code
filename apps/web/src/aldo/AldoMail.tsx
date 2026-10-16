@@ -54,7 +54,7 @@ import {
   type AldoMailMessage,
   type AldoMailSummary,
   type AldoMailThread,
-} from "./cloud";
+} from "./accountApi";
 import {
   ALDO_MAIL_FOLDERS,
   appendMailPage,

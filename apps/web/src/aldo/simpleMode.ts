@@ -6,7 +6,7 @@
 
 import { create } from "zustand";
 
-import { isAldoCloud } from "./cloud";
+import { isAldoCloud } from "./api";
 import { homeShowsConversation, simpleModeFrom, type AldoSimplePlace } from "./simpleMode.logic";
 
 const KEY = "aldo:simple";

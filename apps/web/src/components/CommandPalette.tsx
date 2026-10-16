@@ -213,7 +213,8 @@ import {
   buildSidebarProjectPickerEntries,
   buildSidebarProjectSnapshots,
 } from "../sidebarProjectGrouping";
-import { displayedThreadBranch, isAldoCloud } from "../aldo/cloud";
+import { displayedThreadBranch } from "../aldo/directory";
+import { isAldoCloud } from "../aldo/api";
 import { openAldoRepositoryPicker } from "../aldo/AldoRepositoryPicker";
 import { useAldoStartWithoutProject } from "../aldo/newThread";
 import type { Project } from "../types";

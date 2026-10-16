@@ -36,9 +36,8 @@ import {
   stopAldoFollowThrough,
   type AldoFollowedPullRequest,
   type AldoPreviews,
-  aldoMachineIsNew,
-  aldoOfflineMessage,
-} from "./cloud";
+} from "./workspaceApi";
+import { aldoMachineIsNew, aldoOfflineMessage } from "./directory";
 import {
   aldoPullRequestMergeable,
   aldoPullRequestShortRef,

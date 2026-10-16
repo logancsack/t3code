@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { toastManager } from "../components/ui/toast";
 import { cn } from "~/lib/utils";
-import { dismissAldoChatDecision, type AldoChatDecision } from "./cloud";
+import { dismissAldoChatDecision, type AldoChatDecision } from "./homeApi";
 import { refreshAldoHome, setAldoChatDecisionDismissed } from "./homeFeed";
 import { FOCUS } from "./surface";
 

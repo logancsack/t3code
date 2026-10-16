@@ -22,7 +22,7 @@ import { useEnvironments } from "../state/environments";
 import { APP_DISPLAY_NAME } from "~/branding";
 import { hasCloudPublicConfig } from "~/cloud/publicConfig";
 import { AldoHome } from "~/aldo/AldoHome";
-import { isAldoCloud } from "~/aldo/cloud";
+import { isAldoCloud } from "~/aldo/api";
 
 function ChatIndexRouteView() {
   const { authGateState } = Route.useRouteContext();

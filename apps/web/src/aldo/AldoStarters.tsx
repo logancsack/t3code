@@ -19,7 +19,11 @@ import { useEffect, useState } from "react";
 import { cn } from "~/lib/utils";
 import { openAldoRepositoryPicker } from "./AldoRepositoryPicker";
 import { seedAldoComposer } from "./assistantSession";
-import { aldoIntegrationConnectUrl, fetchAldoIntegrations, type AldoIntegration } from "./cloud";
+import {
+  aldoIntegrationConnectUrl,
+  fetchAldoIntegrations,
+  type AldoIntegration,
+} from "./accountApi";
 import { CHIP, FOCUS } from "./surface";
 
 /** Threads the user has had before the starters fold away. */

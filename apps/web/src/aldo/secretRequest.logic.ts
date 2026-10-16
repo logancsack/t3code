@@ -3,7 +3,7 @@
 // plus `hosts`, `path` or `scope`. The user pastes the value (the agent never
 // sees it); saving tells the thread that asked (Aldo's POST /api/vault).
 
-import type { AldoSecretKind } from "./cloud";
+import { type AldoSecretKind } from "./accountApi";
 
 export interface AldoSecretRequest {
   readonly kind: AldoSecretKind;

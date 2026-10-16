@@ -10,7 +10,8 @@ import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environ
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { useCallback, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
-import { getAldoEnvironments, isAldoCloud, subscribeAldoEnvironments } from "./cloud";
+import { getAldoEnvironments, subscribeAldoEnvironments } from "./directory";
+import { isAldoCloud } from "./api";
 import {
   holdAldoSidebarOrder,
   sortAldoSidebarThreads,

@@ -7,14 +7,14 @@
 // same list, from Aldo's home read. Pure, so it's tested on its own.
 
 import { waitingApprovals } from "./approvals.logic";
-import type {
-  AldoApproval,
-  AldoChatDecision,
-  AldoHome,
-  AldoHomeConversation,
-  AldoHomePending,
-  AldoHomePullRequest,
-} from "./cloud";
+import {
+  type AldoApproval,
+  type AldoChatDecision,
+  type AldoHome,
+  type AldoHomeConversation,
+  type AldoHomePending,
+  type AldoHomePullRequest,
+} from "./homeApi";
 import { boardFor, isPausedMidTurn, needsYouKind, sameTarget } from "./home.logic";
 
 export type AldoDecision =

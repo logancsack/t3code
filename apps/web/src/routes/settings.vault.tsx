@@ -1,7 +1,7 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 
 import { AldoVaultPanel } from "../aldo/AldoVaultPanel";
-import { isAldoCloud } from "../aldo/cloud";
+import { isAldoCloud } from "../aldo/api";
 import { SettingsPageContainer } from "../components/settings/settingsLayout";
 
 function SettingsVaultRoute() {

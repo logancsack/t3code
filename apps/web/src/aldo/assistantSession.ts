@@ -56,16 +56,18 @@ import {
   type AldoStartNews,
   type AldoStartWatch,
 } from "./assistant.logic";
+import { AldoApiError } from "./api";
 import {
-  AldoApiError,
   aldoAssistant,
-  getAldoEnvironments,
-  requestAldoDirectoryRefresh,
-  subscribeAldoEnvironments,
   type AldoChatTurn,
   type AldoFollowupNews,
   type AldoImageUpload,
-} from "./cloud";
+} from "./assistantApi";
+import {
+  getAldoEnvironments,
+  requestAldoDirectoryRefresh,
+  subscribeAldoEnvironments,
+} from "./directory";
 import {
   AldoLiveTranscript,
   cutForLive,

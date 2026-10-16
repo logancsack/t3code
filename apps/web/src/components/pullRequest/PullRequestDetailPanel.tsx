@@ -53,7 +53,7 @@ import {
   type ReactNode,
 } from "react";
 
-import { isAldoCloud } from "~/aldo/cloud";
+import { isAldoCloud } from "~/aldo/api";
 import {
   ALDO_PULL_REQUEST_CHECKOUT,
   aldoOpensThreadOn,

@@ -1,8 +1,8 @@
 import { isRedirect } from "@tanstack/react-router";
 import { describe, expect, it, vi } from "vite-plus/test";
 
-vi.mock("./cloud", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./cloud")>()),
+vi.mock("./api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./api")>()),
   isAldoCloud: true,
 }));
 

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 
 const mode = vi.hoisted(() => ({ cloud: true }));
-vi.mock("../../aldo/cloud", () => ({
+vi.mock("../../aldo/api", () => ({
   get isAldoCloud() {
     return mode.cloud;
   },

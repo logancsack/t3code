@@ -37,7 +37,7 @@ import {
 } from "./mode";
 
 export const demoEnvironmentId = EnvironmentId.make(LANDING_DEMO_ENVIRONMENT_ID);
-export const demoProjectId = ProjectId.make(LANDING_DEMO_PROJECT_ID);
+const demoProjectId = ProjectId.make(LANDING_DEMO_PROJECT_ID);
 export const demoThreadId = ThreadId.make(LANDING_DEMO_THREAD_ID);
 const demoProviderId = ProviderInstanceId.make("codex");
 const STARTED_AT = "2026-07-31T12:00:00.000Z";
@@ -206,7 +206,7 @@ function subscribeShell(): Stream.Stream<OrchestrationShellStreamItem> {
   );
 }
 
-export const demoServerConfig = {
+const demoServerConfig = {
   environment: {
     id: demoEnvironmentId,
     label: "Aldo browser demo",

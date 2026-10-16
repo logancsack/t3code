@@ -26,7 +26,7 @@ export function agentHandleProblem(handle: string): string | null {
 }
 
 /** Most characters a sender name has (Aldo's limit: mail apps cut longer ones short). */
-export const SENDER_NAME_MAX = 64;
+const SENDER_NAME_MAX = 64;
 
 /** A sender name as typed: spaces and line breaks run together, as Aldo keeps it. */
 export function normalizeSenderName(input: string): string {

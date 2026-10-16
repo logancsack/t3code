@@ -34,7 +34,7 @@ import { AldoAvatar, AldoPresence } from "./AldoPresence";
 import { AldoUpNext } from "./AldoUpNext";
 import { settleAldoConversation, unsettleAldoConversation } from "./arrive";
 import { loadAldoConversation, seedAldoComposer, useAldoAssistant } from "./assistantSession";
-import type { AldoHome, AldoHomeTarget } from "./cloud";
+import { type AldoHome, type AldoHomeTarget } from "./homeApi";
 import { aldoWaitingCount } from "./decisions.logic";
 import { feedEvents, withReceipts } from "./feed.logic";
 import type { healthIssues } from "./home.logic";
