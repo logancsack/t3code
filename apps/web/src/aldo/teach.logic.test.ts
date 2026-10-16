@@ -1,11 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import {
-  aldoTeachClock,
-  aldoTeachMessage,
-  parseAldoTeach,
-  parseAldoTeachSteps,
-} from "./teach.logic";
+import { aldoTeachMessage, parseAldoTeach, parseAldoTeachSteps } from "./teach.logic";
 
 describe("parseAldoTeach", () => {
   it("reads how the recording stands, by this browser's clock", () => {
@@ -52,15 +47,6 @@ describe("parseAldoTeachSteps", () => {
   it("is null when the recording was gone", () => {
     expect(parseAldoTeachSteps(null)).toBeNull();
     expect(parseAldoTeachSteps(undefined)).toBeNull();
-  });
-});
-
-describe("aldoTeachClock", () => {
-  it("shows minutes and seconds", () => {
-    expect(aldoTeachClock(0)).toBe("0:00");
-    expect(aldoTeachClock(134_900)).toBe("2:14");
-    expect(aldoTeachClock(600_000)).toBe("10:00");
-    expect(aldoTeachClock(-5)).toBe("0:00");
   });
 });
 

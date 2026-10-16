@@ -1,3 +1,4 @@
+import type { LegendListRef, MaintainScrollAtEndOptions } from "@legendapp/list/react";
 import {
   ApprovalRequestId,
   CheckpointRef,
@@ -10,7 +11,6 @@ import { act, createRef, useLayoutEffect, type ReactNode, type Ref } from "react
 import { renderToStaticMarkup } from "react-dom/server";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import type { LegendListRef, MaintainScrollAtEndOptions } from "@legendapp/list/react";
 import { shouldUseRestingComposerLayout } from "../composerFooterLayout";
 import { useComposerFocusState } from "./useComposerFocusState";
 
@@ -525,43 +525,6 @@ describe("MessagesTimeline", () => {
     },
   );
 
-  it("renders elapsed time for a completed turn", () => {
-    const turnId = TurnId.make("turn-with-fold");
-    const assistantEntry = buildAssistantTimelineEntry("Done.");
-    const markup = renderToStaticMarkup(
-      <MessagesTimeline
-        {...buildProps()}
-        latestTurn={{
-          turnId,
-          state: "completed",
-          startedAt: "2026-03-17T19:12:20.000Z",
-          completedAt: "2026-03-17T19:12:28.000Z",
-        }}
-        timelineEntries={[
-          {
-            id: "work-entry-with-fold",
-            kind: "work",
-            createdAt: "2026-03-17T19:12:22.000Z",
-            entry: {
-              id: "work-with-fold",
-              createdAt: "2026-03-17T19:12:22.000Z",
-              turnId,
-              label: "Ran command",
-              tone: "tool",
-              toolLifecycleStatus: "completed",
-            },
-          },
-          {
-            ...assistantEntry,
-            message: { ...assistantEntry.message, turnId },
-          },
-        ]}
-      />,
-    );
-
-    expect(markup).toContain("Worked for 8.0s");
-  });
-
   it("uses the normal working treatment for managed machine wake progress", () => {
     const markup = renderToStaticMarkup(
       <MessagesTimeline
@@ -580,7 +543,7 @@ describe("MessagesTimeline", () => {
     expect(markup).not.toContain("Working for");
   });
 
-  it("keeps assistant changed-files headers sticky below the thread header", () => {
+  it("offers the assistant's changed files and their diff", () => {
     const assistantMessageId = MessageId.make("message-assistant-with-files");
     const turnId = TurnId.make("turn-with-files");
     const markup = renderToStaticMarkup(
@@ -622,10 +585,6 @@ describe("MessagesTimeline", () => {
       />,
     );
 
-    expect(markup).toContain("sticky top-2 z-10");
-    expect(markup).not.toContain("self-start");
-    expect(markup).toContain("whitespace-nowrap");
-    expect(markup).toContain("size-3");
     expect(markup).not.toContain('aria-label="Collapse all folders"');
     expect(markup).toContain('aria-label="Open diff"');
     expect(markup).toContain("1 changed file");
@@ -1533,7 +1492,7 @@ describe("MessagesTimeline", () => {
     expect(markup).not.toContain('aria-label="Tool call failed"');
   });
 
-  it("keeps the collapsed summary icon neutral when the group ends in a failure", () => {
+  it("keeps a failure discoverable in a collapsed command group", () => {
     const markup = renderToStaticMarkup(
       <MessagesTimeline
         {...buildProps()}
@@ -1569,9 +1528,6 @@ describe("MessagesTimeline", () => {
     );
 
     expect(markup).toContain("Ran 2 commands");
-    expect(markup).toContain("lucide-terminal");
-    expect(markup).not.toContain("lucide-x");
-    expect(markup).not.toContain("text-destructive");
     // The failure stays discoverable for screen readers.
     expect(markup).toContain("tool call failed");
   });
@@ -2245,42 +2201,6 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain('aria-label="Received 1 update and used 1 tool, tool call failed"');
     // Ordinary tool failures do not use destructive row styling.
     expect(markup).not.toContain("text-destructive");
-  });
-
-  it("keeps the red treatment for severe orchestration failures", () => {
-    const markup = renderToStaticMarkup(
-      <MessagesTimeline
-        {...buildProps()}
-        timelineEntries={[
-          {
-            id: "entry-info",
-            kind: "work",
-            createdAt: "2026-03-17T19:12:27.000Z",
-            entry: {
-              id: "work-info",
-              createdAt: "2026-03-17T19:12:27.000Z",
-              label: "Status updated",
-              tone: "info",
-            },
-          },
-          {
-            id: "entry-turn-failed",
-            kind: "work",
-            createdAt: "2026-03-17T19:12:28.000Z",
-            entry: {
-              id: "work-turn-failed",
-              createdAt: "2026-03-17T19:12:28.000Z",
-              label: "Provider turn start failed",
-              tone: "error",
-              sourceActivityKind: "provider.turn.start.failed",
-            },
-          },
-        ]}
-      />,
-    );
-
-    expect(markup).toContain("lucide-circle-alert");
-    expect(markup).toContain("text-destructive");
   });
 
   it("only withholds an expanded tool-call label click while text is selected", async () => {

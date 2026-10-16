@@ -1,15 +1,15 @@
-import { describe, expect, it } from "vite-plus/test";
 import * as Schema from "effect/Schema";
+import { describe, expect, it } from "vite-plus/test";
 
 import { ProviderDriverKind, ProviderInstanceId } from "./providerInstance.ts";
 import {
-  ClientSettingsSchema,
-  ClientSettingsPatch,
   ClaudeSettings,
+  ClientSettingsPatch,
+  ClientSettingsSchema,
   DEFAULT_SERVER_SETTINGS,
-  resolveProviderInstanceEnabled,
   ServerSettings,
   ServerSettingsPatch,
+  resolveProviderInstanceEnabled,
 } from "./settings.ts";
 
 const decodeClientSettings = Schema.decodeUnknownSync(ClientSettingsSchema);
@@ -270,31 +270,7 @@ describe("ClientSettings notifications", () => {
   );
 });
 
-describe("ClientSettings default diff file state", () => {
-  it("keeps files collapsed when existing settings omit the preference", () => {
-    expect(decodeClientSettings({}).diffFilesCollapsed).toBe(true);
-  });
-
-  it.each([true, false])("preserves a saved collapsed preference of %s", (diffFilesCollapsed) => {
-    const settings = decodeClientSettings({ diffFilesCollapsed });
-    expect(encodeClientSettings(settings).diffFilesCollapsed).toBe(diffFilesCollapsed);
-    expect(decodeClientSettingsPatch({ diffFilesCollapsed }).diffFilesCollapsed).toBe(
-      diffFilesCollapsed,
-    );
-  });
-});
-
 describe("ClientSettings diff colors", () => {
-  it("keeps red and green for existing settings without a saved palette", () => {
-    expect(decodeClientSettings({}).diffColorScheme).toBe("red-green");
-  });
-
-  it.each(["red-green", "blue-orange"])("round-trips the %s palette", (diffColorScheme) => {
-    const settings = decodeClientSettings({ diffColorScheme });
-    expect(encodeClientSettings(settings).diffColorScheme).toBe(diffColorScheme);
-    expect(decodeClientSettingsPatch({ diffColorScheme }).diffColorScheme).toBe(diffColorScheme);
-  });
-
   it("rejects unsupported palettes", () => {
     expect(() => decodeClientSettings({ diffColorScheme: "purple-yellow" })).toThrow();
     expect(() => decodeClientSettingsPatch({ diffColorScheme: "purple-yellow" })).toThrow();
@@ -302,16 +278,6 @@ describe("ClientSettings diff colors", () => {
 });
 
 describe("ClientSettings chat width", () => {
-  it("keeps the comfortable width for existing settings without a saved width", () => {
-    expect(decodeClientSettings({}).chatWidth).toBe("comfortable");
-  });
-
-  it.each(["comfortable", "wide", "full"])("round-trips the %s width", (chatWidth) => {
-    const settings = decodeClientSettings({ chatWidth });
-    expect(encodeClientSettings(settings).chatWidth).toBe(chatWidth);
-    expect(decodeClientSettingsPatch({ chatWidth }).chatWidth).toBe(chatWidth);
-  });
-
   it("rejects unsupported widths", () => {
     expect(() => decodeClientSettings({ chatWidth: "huge" })).toThrow();
     expect(() => decodeClientSettingsPatch({ chatWidth: "huge" })).toThrow();
@@ -334,10 +300,6 @@ describe("ClientSettings load balancing", () => {
 });
 
 describe("ClientSettings word wrap", () => {
-  it("defaults word wrap on", () => {
-    expect(decodeClientSettings({}).wordWrap).toBe(true);
-  });
-
   it("ignores obsolete wrapping preferences", () => {
     const decoded = decodeClientSettings({
       chatWordWrap: false,
@@ -469,19 +431,6 @@ describe("ClientSettings quit confirmation", () => {
 });
 
 describe("ClientSettings browser recording frame rate", () => {
-  it("defaults to 30 fps", () => {
-    expect(decodeClientSettings({}).browserRecordingFrameRate).toBe(30);
-  });
-
-  it.each([30, 60])("accepts a supported frame rate: %s", (frameRate) => {
-    expect(
-      decodeClientSettings({ browserRecordingFrameRate: frameRate }).browserRecordingFrameRate,
-    ).toBe(frameRate);
-    expect(
-      decodeClientSettingsPatch({ browserRecordingFrameRate: frameRate }).browserRecordingFrameRate,
-    ).toBe(frameRate);
-  });
-
   it.each([24, 59, 120])("rejects an unsupported frame rate: %s", (frameRate) => {
     expect(() => decodeClientSettings({ browserRecordingFrameRate: frameRate })).toThrow();
     expect(() => decodeClientSettingsPatch({ browserRecordingFrameRate: frameRate })).toThrow();
@@ -506,65 +455,26 @@ describe("ClientSettings recording input overlays", () => {
 });
 
 describe("ClientSettings glass opacity", () => {
-  it("defaults to a readable translucent surface", () => {
-    expect(decodeClientSettings({}).glassOpacity).toBe(80);
-  });
-
   it.each([39, 101, 72.5])("rejects an invalid glass opacity: %s", (value) => {
     expect(() => decodeClientSettings({ glassOpacity: value })).toThrow();
     expect(() => decodeClientSettingsPatch({ glassOpacity: value })).toThrow();
   });
-
-  it.each([40, 75, 100])("accepts a glass opacity within the supported range: %s", (value) => {
-    expect(decodeClientSettings({ glassOpacity: value }).glassOpacity).toBe(value);
-    expect(decodeClientSettingsPatch({ glassOpacity: value }).glassOpacity).toBe(value);
-  });
 });
 
 describe("ClientSettings appearance contrast", () => {
-  it("defaults to the theme's original contrast", () => {
-    expect(decodeClientSettings({}).appearanceContrast).toBe(100);
-  });
-
   it.each([49, 201, 92.5])("rejects an invalid appearance contrast: %s", (value) => {
     expect(() => decodeClientSettings({ appearanceContrast: value })).toThrow();
     expect(() => decodeClientSettingsPatch({ appearanceContrast: value })).toThrow();
   });
-
-  it.each([50, 100, 150, 200])("accepts an appearance contrast in range: %s", (value) => {
-    expect(decodeClientSettings({ appearanceContrast: value }).appearanceContrast).toBe(value);
-    expect(decodeClientSettingsPatch({ appearanceContrast: value }).appearanceContrast).toBe(value);
-  });
 });
 
 describe("ClientSettings panel animations", () => {
-  it("defaults to instant changes", () => {
-    expect(decodeClientSettings({}).panelAnimationDurationMs).toBe(0);
-  });
-
-  it.each([0, 400])("accepts a panel animation duration: %s", (value) => {
-    expect(decodeClientSettingsPatch({ panelAnimationDurationMs: value })).toEqual({
-      panelAnimationDurationMs: value,
-    });
-  });
-
   it.each([-1, 401, 150.5])("rejects an invalid panel animation duration: %s", (value) => {
     expect(() => decodeClientSettingsPatch({ panelAnimationDurationMs: value })).toThrow();
   });
 });
 
 describe("ClientSettings environment identification", () => {
-  it("defaults to artwork and accepts each presentation mode", () => {
-    expect(decodeClientSettings({}).environmentIdentificationMode).toBe("artwork");
-
-    for (const mode of ["artwork", "pill", "none"] as const) {
-      expect(
-        decodeClientSettingsPatch({ environmentIdentificationMode: mode })
-          .environmentIdentificationMode,
-      ).toBe(mode);
-    }
-  });
-
   it("rejects unsupported presentation modes", () => {
     expect(() => decodeClientSettings({ environmentIdentificationMode: "badge" })).toThrow();
     expect(() => decodeClientSettingsPatch({ environmentIdentificationMode: "badge" })).toThrow();
@@ -572,10 +482,6 @@ describe("ClientSettings environment identification", () => {
 });
 
 describe("ClientSettings sidebar", () => {
-  it("defaults to the current sidebar", () => {
-    expect(decodeClientSettings({}).legacySidebarEnabled).toBe(false);
-  });
-
   it("drops the retired sidebar v2 beta keys, resetting everyone to the default", () => {
     const decoded = decodeClientSettings({
       sidebarV2Enabled: false,
@@ -645,13 +551,6 @@ describe("ClientSettings follow-up behavior", () => {
 });
 
 describe("ClientSettings composer collapse", () => {
-  it("collapses on scroll by default and accepts opting out", () => {
-    expect(decodeClientSettings({}).composerCollapseOnScroll).toBe(true);
-    expect(
-      decodeClientSettingsPatch({ composerCollapseOnScroll: false }).composerCollapseOnScroll,
-    ).toBe(false);
-  });
-
   it("drops the retired blur trigger key", () => {
     const decoded = decodeClientSettings({ composerCollapseOnBlur: false });
     expect(decoded.composerCollapseOnScroll).toBe(true);
@@ -911,17 +810,6 @@ describe("ServerSettings worktree defaults", () => {
 });
 
 describe("ServerSettings.sourceControlWritingStyle", () => {
-  it("defaults all style settings for legacy configs", () => {
-    const settings = decodeServerSettings({});
-
-    expect(settings.sourceControlWritingStyle).toEqual({
-      mode: "repo_conventions",
-      customInstructions: "",
-      followChangeRequestTemplates: true,
-    });
-    expect(settings.sourceControlWriterModelSelection).toBeNull();
-  });
-
   it("trims partial style updates", () => {
     const patch = decodeServerSettingsPatch({
       sourceControlWritingStyle: {

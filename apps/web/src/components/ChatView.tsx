@@ -555,7 +555,7 @@ import {
 import { useAldoPreload } from "../aldo/preload";
 import { useAldoFocusReport } from "../aldo/focus";
 import { useAldoStallSignals } from "../aldo/AldoStall";
-import { aldoDesktopOwnsKeyboard } from "../aldo/desktopInput.logic";
+import { aldoDesktopOwnsKeyboard, listenForAppShortcuts } from "../aldo/desktopInput.logic";
 import { useAldoThreadDetailMissing } from "../aldo/threadDetails";
 import { AldoThreadLoading } from "../aldo/AldoThreadLoading";
 import { useAldoFirstViewHold } from "../aldo/firstView";
@@ -7062,8 +7062,6 @@ export default function ChatView(props: ChatViewProps) {
 
   useEffect(() => {
     const handler = (event: globalThis.KeyboardEvent) => {
-      // noVNC handles desktop typing and shortcuts after this capture handler.
-      if (aldoDesktopOwnsKeyboard(event.target)) return;
       if (preventRepeatedTerminalCloseShortcut(event, keybindings)) {
         event.stopPropagation();
         return;
@@ -7306,8 +7304,7 @@ export default function ChatView(props: ChatViewProps) {
       event.stopPropagation();
       void runProjectScript(script);
     };
-    window.addEventListener("keydown", handler, true);
-    return () => window.removeEventListener("keydown", handler, true);
+    return listenForAppShortcuts(handler);
   }, [
     activeProject,
     activeRightPanelSurface,

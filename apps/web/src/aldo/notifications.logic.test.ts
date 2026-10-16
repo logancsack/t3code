@@ -1,11 +1,9 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
-  aldoNotificationsAvailability,
   base64UrlToBytes,
   parseAldoPushKey,
   resolveAldoNotificationsStatus,
-  subscribedWithKey,
 } from "./notifications.logic";
 
 // A P-256 public key as Aldo sends it (65 bytes, base64url).
@@ -26,40 +24,7 @@ describe("parseAldoPushKey", () => {
   });
 });
 
-describe("aldoNotificationsAvailability", () => {
-  const base = { key: KEY, push: true, appleMobile: false, standalone: false };
-
-  it("is available with Aldo's key and a browser with push", () => {
-    expect(aldoNotificationsAvailability(base)).toBe("available");
-  });
-
-  it("isn't offered when Aldo has no key", () => {
-    expect(aldoNotificationsAvailability({ ...base, key: null })).toBe("unsupported");
-  });
-
-  it("tells an iPhone tab to add Aldo to the Home Screen", () => {
-    expect(aldoNotificationsAvailability({ ...base, push: false, appleMobile: true })).toBe(
-      "add-to-home-screen",
-    );
-    expect(
-      aldoNotificationsAvailability({ ...base, push: false, appleMobile: true, standalone: true }),
-    ).toBe("unsupported");
-    expect(aldoNotificationsAvailability({ ...base, push: false })).toBe("unsupported");
-  });
-});
-
-describe("subscribedWithKey", () => {
-  it("matches the key a subscription was made with", () => {
-    expect(subscribedWithKey(base64UrlToBytes(KEY).buffer, KEY)).toBe(true);
-  });
-
-  it("tells a subscription made with another key", () => {
-    const other = base64UrlToBytes(KEY);
-    other[10] = (other[10] ?? 0) ^ 1;
-    expect(subscribedWithKey(other.buffer, KEY)).toBe(false);
-    expect(subscribedWithKey(null, KEY)).toBe(false);
-  });
-
+describe("base64UrlToBytes", () => {
   it("decodes base64url with or without padding", () => {
     expect(base64UrlToBytes(KEY)).toHaveLength(65);
     expect(Array.from(base64UrlToBytes("_-8"))).toEqual([255, 239]);
@@ -143,5 +108,17 @@ describe("resolveAldoNotificationsStatus", () => {
         subscriptionKey: undefined,
       }),
     ).toEqual({ availability: "add-to-home-screen" });
+    for (const appleMobile of [true, false]) {
+      expect(
+        resolveAldoNotificationsStatus({
+          key: KEY,
+          push: false,
+          appleMobile,
+          standalone: true,
+          permission: null,
+          subscriptionKey: undefined,
+        }),
+      ).toEqual({ availability: "unsupported" });
+    }
   });
 });
