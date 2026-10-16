@@ -46,8 +46,8 @@ import { useAldoPreloadSettings } from "./preloadSettings";
 const DWELL_MS = 800;
 /** Leaving and coming back within this keeps the machine. */
 const UNLOAD_AFTER_MS = 90_000;
-/** Aldo puts a machine to sleep 5 minutes after its last activity: two touches fit in that. */
-const TOUCH_INTERVAL_MS = 2 * 60 * 1000;
+/** Leave room for delayed or missed touches before Aldo's two-minute idle timeout. */
+const TOUCH_INTERVAL_MS = 30_000;
 /** A page on screen that hasn't been used for this long no longer keeps its agent up. */
 const UNATTENDED_MS = 30 * 60 * 1000;
 
