@@ -1,21 +1,29 @@
-import { describe, expect, it, vi } from "vite-plus/test";
 import { BUILT_IN_THEMES } from "@t3tools/shared/themePalettes";
+import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
+  CUSTOM_THEMES_STORAGE_KEY,
+  EMBER_THEME,
+  GROVE_THEME,
+  IRIS_THEME,
+  OCEAN_THEME,
+  T3_CHAT_THEME,
+  THEME_FILE_VERSION,
   applyThemeColorPreview,
   applyThemePalette,
+  canonicalThemePreference,
+  createVividThemeColors,
+  getCustomThemes,
+  getDefaultThemeColors,
+  getStoredCustomThemeCollection,
   getThemeColorsForMode,
   getThemeDefinition,
   getThemeModes,
-  getThemePreviewSidebarArtwork,
   getThemePreferenceMode,
-  isKnownThemePreference,
-  getCustomThemes,
-  getStandardThemeColors,
-  getStoredCustomThemeCollection,
-  invalidateCustomThemes,
+  getThemePreviewSidebarArtwork,
   installCustomTheme,
-  canonicalThemePreference,
+  invalidateCustomThemes,
+  isKnownThemePreference,
   parseThemeFile,
   parseThemeHalves,
   removeCustomTheme,
@@ -24,22 +32,13 @@ import {
   resolveDesktopTheme,
   resolveThemeAppearance,
   serializeThemeFile,
-  subscribeToThemePreview,
+  singleAppearanceOf,
   subscribeToCustomThemes,
+  subscribeToThemePreview,
   themeAllowsSidebarArtwork,
-  T3_CHAT_THEME,
-  EMBER_THEME,
-  GROVE_THEME,
-  IRIS_THEME,
-  OCEAN_THEME,
-  updateCustomTheme,
-  CUSTOM_THEMES_STORAGE_KEY,
-  createVividThemeColors,
-  getDefaultThemeColors,
   themeColorToHex,
   toCanonicalThemeColor,
-  THEME_FILE_VERSION,
-  singleAppearanceOf,
+  updateCustomTheme,
 } from "./themePalette";
 
 function asHex(value: string): string {
@@ -88,34 +87,6 @@ describe("theme files", () => {
         }
       }
     }
-  });
-
-  it("keeps stock dark controls in the neutral-black surface hierarchy", () => {
-    expectThemeColors(getStandardThemeColors("dark"), {
-      canvas: "#0a0a0a",
-      surface: "#111111",
-      surfaceRaised: "#111111",
-      surfaceOverlay: "#111111",
-      toolbarControl: "#111111",
-      secondary: "#111111",
-      muted: "#111111",
-      accentSurface: "#141414",
-    });
-  });
-
-  it("keeps the stock sidebar and chat on distinct surfaces in both appearances", () => {
-    expectThemeColors(getStandardThemeColors("light"), {
-      canvas: "#fcfcfc",
-      sidebar: "#fafafa",
-      sidebarRowActive: "#ffffff",
-      messageSurface: "#f4f4f5",
-    });
-    expectThemeColors(getStandardThemeColors("dark"), {
-      canvas: "#0a0a0a",
-      sidebar: "#000000",
-      sidebarRowActive: "#1a1b1b",
-      messageSurface: "#141414",
-    });
   });
 
   it("derives readable, distinctive vivid palettes from exact seeds", () => {

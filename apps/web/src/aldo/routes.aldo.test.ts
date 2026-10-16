@@ -33,7 +33,9 @@ describe("routes Aldo replaces", () => {
 
   it("keeps Connections, where Aldo lists the user's accounts and apps", async () => {
     const { Route } = await import("../routes/settings.connections");
-    expect(await redirectOf(Route)).toBeNull();
+    expect(await redirectOf(Route, { pathname: "/settings/connections" })).toBeNull();
+    const general = await import("../routes/settings.general");
+    expect(await redirectOf(general.Route, { pathname: "/settings/general" })).toBeNull();
   });
 
   it("opens Settings on Agents", async () => {
@@ -52,6 +54,15 @@ describe("routes Aldo replaces", () => {
     expect(
       await redirectOf(Route, { pathname: "/settings/integrations", hash: "aldo-agent-inbox" }),
     ).toBe("/settings/agents#aldo-agent-inbox");
+    expect(
+      await redirectOf(Route, {
+        pathname: "/settings/integrations",
+        hash: "aldo-integration-link",
+      }),
+    ).toBe("/settings/connections#aldo-integration-link");
+    expect(
+      await redirectOf(Route, { pathname: "/settings/integrations/", hash: "aldo-phone" }),
+    ).toBe("/settings/phone");
   });
 
   it("sends the old pages to where they are now", async () => {
@@ -67,6 +78,12 @@ describe("routes Aldo replaces", () => {
     expect(await redirectOf(environments.Route, { pathname: "/settings/environments" })).toBe(
       "/settings/code",
     );
+    expect(
+      await redirectOf(environments.Route, {
+        pathname: "/settings/environments",
+        hash: "aldo-environments",
+      }),
+    ).toBe("/settings/code#aldo-environments");
     const shared = await import("../routes/settings.shared");
     expect(await redirectOf(shared.Route, { pathname: "/settings/shared" })).toBe("/library");
   });

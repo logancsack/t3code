@@ -75,6 +75,12 @@ describe("parseChangeRequestUrl", () => {
       repository: "t3tools/t3code",
       number: 123,
     });
+    expect(
+      parseChangeRequestUrl("https://gitlab.com/team/project/-/merge_requests/42/diffs#note_1"),
+    ).toEqual({ host: "gitlab.com", repository: "team/project", number: 42 });
+    expect(
+      parseChangeRequestUrl("https://bitbucket.org/team/repo/pull-requests/5/commits"),
+    ).toEqual({ host: "bitbucket.org", repository: "team/repo", number: 5 });
     expect(parseChangeRequestUrl("https://github.com/t3tools/t3code/pull/123/")).toEqual({
       host: "github.com",
       repository: "t3tools/t3code",
@@ -89,6 +95,7 @@ describe("parseChangeRequestUrl", () => {
       "https://github.com/t3tools/t3code",
       "https://github.com/t3tools/t3code/pull/abc",
       "https://gitlab.com/t3tools/t3code/-/issues/12",
+      "https://gitlab.com/t3tools/t3code/-/snippets/12",
       "https://blog.example.test/2026/updates/pull/3",
       "javascript:alert(1)//github.com/t3tools/t3code/pull/1",
       "not a url",

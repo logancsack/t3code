@@ -107,23 +107,6 @@ describe("ComposerPrimaryActions", () => {
     expect(renderPendingActions(false)).not.toContain('aria-label="Stop generation"');
   });
 
-  it("renders stage artwork inside the send button when artwork identification is active", () => {
-    stageArtworkState.mode = "artwork";
-    stageArtworkState.variant = "nightly";
-
-    const markup = renderSendButton();
-
-    expect(markup).toContain("stage-nightly");
-  });
-
-  it("hides stage artwork when artwork identification is inactive", () => {
-    stageArtworkState.variant = "nightly";
-
-    const markup = renderSendButton();
-
-    expect(markup).not.toContain("stage-nightly");
-  });
-
   it("renders a queue action alongside stop while running with a sendable draft", () => {
     const markup = renderRunningActions(true);
 

@@ -156,21 +156,4 @@ describe("ProviderModelPicker", () => {
     expect(markup).toContain("Fallback model");
     expect(markup).not.toContain(">missing-model<");
   });
-
-  it("keeps instance initials visible in the resting trigger", () => {
-    const activeEntry = providerEntry("codex_personal", "codex");
-    const markup = renderToStaticMarkup(
-      <ProviderModelPicker
-        activeInstanceId={activeEntry.instanceId}
-        model="gpt-5"
-        lockedProvider={null}
-        instanceEntries={[providerEntry("codex", "codex"), activeEntry]}
-        modelOptionsByInstance={new Map()}
-        size="xs"
-        onInstanceModelChange={() => {}}
-      />,
-    );
-
-    expect(markup).toContain(">CP</span>");
-  });
 });

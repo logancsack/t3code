@@ -1,60 +1,59 @@
+// @vitest-environment jsdom
+
 import { ApprovalRequestId } from "@t3tools/contracts";
-import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vite-plus/test";
+import { act } from "react";
+import { createRoot } from "react-dom/client";
+import { expect, it, vi } from "vite-plus/test";
 
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
 
-describe("ComposerPendingApprovalActions", () => {
-  it("keeps the main decisions visible and secondary decisions in the menu", () => {
-    const markup = renderToStaticMarkup(
-      <ComposerPendingApprovalActions
-        requestId={ApprovalRequestId.make("approval-1")}
-        isResponding={false}
-        onRespondToApproval={async () => undefined}
-      />,
+it("dispatches the provider's approval decisions and blocks them while responding", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const requestId = ApprovalRequestId.make("approval-1");
+  const respond = vi.fn(async () => undefined);
+  const render = async (isResponding: boolean) => {
+    await act(async () =>
+      root.render(
+        <ComposerPendingApprovalActions
+          requestId={requestId}
+          isResponding={isResponding}
+          options={[
+            { decision: "accept", label: "Allow once" },
+            { decision: "decline", label: "Deny" },
+            { decision: "acceptAlways", label: "Always allow Safari" },
+          ]}
+          onRespondToApproval={respond}
+        />,
+      ),
     );
+  };
+  const decision = (label: string) => {
+    const button = [...container.querySelectorAll("button")].find((b) => b.textContent === label);
+    expect(button, label).toBeDefined();
+    return button!;
+  };
+  try {
+    await render(false);
+    expect(container.textContent).not.toContain("Always allow Safari");
+    await act(async () => decision("Allow once").click());
+    expect(respond).toHaveBeenLastCalledWith(requestId, "accept");
+    await act(async () => decision("Deny").click());
+    expect(respond).toHaveBeenLastCalledWith(requestId, "decline");
 
-    expect(markup).toContain(">Decline<");
-    expect(markup).toContain(">Approve<");
-    expect(markup).not.toContain(">Cancel<");
-    expect(markup).not.toContain("Always allow this session");
-  });
-
-  it("keeps secondary provider labels out of the compact action row", () => {
-    const markup = renderToStaticMarkup(
-      <ComposerPendingApprovalActions
-        requestId={ApprovalRequestId.make("approval-safari")}
-        isResponding={false}
-        options={[
-          { decision: "decline", label: "Decline" },
-          { decision: "acceptAlways", label: "Always allow Safari" },
-          { decision: "accept", label: "Approve" },
-        ]}
-        onRespondToApproval={async () => undefined}
-      />,
-    );
-
-    expect(markup).not.toContain("Always allow Safari");
-    expect(markup).toContain(">Approve<");
-    expect(markup).not.toContain("Always allow this session");
-  });
-
-  it("preserves provider labels for the main decisions", () => {
-    const markup = renderToStaticMarkup(
-      <ComposerPendingApprovalActions
-        requestId={ApprovalRequestId.make("approval-1")}
-        isResponding={false}
-        options={[
-          { decision: "accept", label: "Allow once" },
-          { decision: "decline", label: "Deny" },
-        ]}
-        onRespondToApproval={async () => undefined}
-      />,
-    );
-
-    expect(markup).toContain("Allow once");
-    expect(markup).toContain("Deny");
-    expect(markup).not.toContain(">Approve<");
-    expect(markup).not.toContain(">Decline<");
-  });
+    await render(true);
+    await act(async () => {
+      decision("Allow once").click();
+      decision("Deny").click();
+      container.querySelector<HTMLButtonElement>('[aria-label="More approval options"]')!.click();
+    });
+    expect(respond).toHaveBeenCalledTimes(2);
+    expect(document.querySelector('[role="menu"]')).toBeNull();
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
 });

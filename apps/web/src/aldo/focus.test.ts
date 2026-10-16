@@ -21,8 +21,8 @@ vi.mock("./cloud", () => ({
 }));
 vi.mock("./preload", () => ({ aldoPageUsedAt: () => page.usedAt }));
 
-import { ALDO_FOCUS_IDLE_MS } from "./focus.logic";
 import { watchAldoFocus } from "./focus";
+import { ALDO_FOCUS_IDLE_MS } from "./focus.logic";
 
 const A = { environmentId: "aldo-a", thread: "t-a" };
 const B = { environmentId: "aldo-b", thread: "t-b" };
@@ -61,6 +61,17 @@ const said = () =>
 
 describe("watchAldoFocus", () => {
   it("says the conversation is on screen at once, and again within the minute", () => {
+    doc.visibilityState = "hidden";
+    const background = watchAldoFocus(A);
+    vi.advanceTimersByTime(60_000);
+    expect(said()).toEqual([]);
+    background();
+    doc.visibilityState = "visible";
+    focused = false;
+    const unfocused = watchAldoFocus(A);
+    expect(said()).toEqual([]);
+    unfocused();
+    focused = true;
     const stop = watchAldoFocus(A);
     expect(said()).toEqual(["aldo-a:t-a:true"]);
     vi.advanceTimersByTime(30_000);
@@ -131,11 +142,14 @@ describe("watchAldoFocus", () => {
   it("moves with the user to another thread, and stops when they leave", () => {
     const stopA = watchAldoFocus(A);
     stopA();
+    const stopA2 = watchAldoFocus({ environmentId: "aldo-a", thread: "t-a2" });
+    expect(said()).toEqual(["aldo-a:t-a:true", "aldo-a:t-a:false", "aldo-a:t-a2:true"]);
+    stopA2();
     const stopB = watchAldoFocus(B);
-    expect(said()).toEqual(["aldo-a:t-a:true", "aldo-a:t-a:false", "aldo-b:t-b:true"]);
+    expect(said().slice(-2)).toEqual(["aldo-a:t-a2:false", "aldo-b:t-b:true"]);
     stopB();
     expect(said().at(-1)).toBe("aldo-b:t-b:false");
     vi.advanceTimersByTime(120_000);
-    expect(sent).toHaveLength(4);
+    expect(sent).toHaveLength(6);
   });
 });
