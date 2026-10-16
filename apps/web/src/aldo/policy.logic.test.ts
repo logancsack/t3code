@@ -98,14 +98,60 @@ describe("aldoRuleDifferences", () => {
     ]);
     expect(aldoRuleDifferences(view, "mediaRouting")).toEqual([]);
   });
+
+  it("compares with the rule's default where the user hasn't answered", () => {
+    const budgets: AldoPolicyView = {
+      ...view,
+      workspaces: [
+        { repos: ["logancsack/site"], policy: { contextBudget: 300_000 } },
+        { repos: ["logancsack/aldo"], policy: { contextBudget: 500_000 } },
+      ],
+    };
+    expect(aldoRuleDifferences(budgets, "contextBudget")).toEqual([
+      { repos: ["logancsack/aldo"], value: "500000" },
+    ]);
+  });
 });
 
 describe("merge methods", () => {
   it("shows each repository's method, decided ones first", () => {
     expect(aldoMergeMethods(view)).toEqual([
-      { repo: "logancsack/aldo", value: "squash" },
-      { repo: "logancsack/site", value: ALDO_UNDECIDED },
-      { repo: "logancsack/t3code", value: ALDO_UNDECIDED },
+      { repo: "logancsack/aldo", value: "squash", differences: [] },
+      { repo: "logancsack/site", value: ALDO_UNDECIDED, differences: [] },
+      { repo: "logancsack/t3code", value: ALDO_UNDECIDED, differences: [] },
+    ]);
+  });
+
+  it("shows the workspaces that recorded another, under the user's own or where they disagree", () => {
+    const methods: AldoPolicyView = {
+      everywhere: { mergeMethod: { "logancsack/aldo": "squash" } },
+      workspaces: [
+        {
+          repos: ["logancsack/aldo", "logancsack/t3code"],
+          policy: { mergeMethod: { "logancsack/aldo": "merge", "logancsack/t3code": "merge" } },
+        },
+        {
+          repos: ["logancsack/t3code"],
+          policy: { mergeMethod: { "logancsack/t3code": "rebase" } },
+        },
+      ],
+      repos: ["logancsack/aldo", "logancsack/site", "logancsack/t3code"],
+    };
+    expect(aldoMergeMethods(methods)).toEqual([
+      {
+        repo: "logancsack/aldo",
+        value: "squash",
+        differences: [{ repos: ["logancsack/aldo", "logancsack/t3code"], value: "merge" }],
+      },
+      {
+        repo: "logancsack/t3code",
+        value: ALDO_UNDECIDED,
+        differences: [
+          { repos: ["logancsack/aldo", "logancsack/t3code"], value: "merge" },
+          { repos: ["logancsack/t3code"], value: "rebase" },
+        ],
+      },
+      { repo: "logancsack/site", value: ALDO_UNDECIDED, differences: [] },
     ]);
   });
 
@@ -121,11 +167,33 @@ describe("merge methods", () => {
     ]);
     expect(aldoMergeMethodEdits(view, "logancsack/aldo", "fast-forward")).toEqual([]);
   });
+
+  it("sets one for a workspace, or has it follow the user's own", () => {
+    const repos = ["logancsack/aldo", "logancsack/t3code"];
+    expect(aldoMergeMethodEdits(view, "logancsack/aldo", "merge", repos)).toEqual([
+      { repos, set: { mergeMethod: { "logancsack/aldo": "merge" } } },
+    ]);
+    expect(aldoMergeMethodEdits(view, "logancsack/aldo", ALDO_SAME_AS_EVERYWHERE, repos)).toEqual([
+      { repos, clear: [["mergeMethod", "logancsack/aldo"]] },
+    ]);
+  });
 });
 
 describe("aldoMediaDefaults and aldoWorkspaceLabel", () => {
   it("lists the tools the user named, and names a workspace by its repositories", () => {
     expect(aldoMediaDefaults(view)).toEqual([{ task: "video", label: "Video", tool: "Runway" }]);
+    const media: AldoPolicyView = {
+      ...view,
+      workspaces: [
+        { repos: ["logancsack/site"], policy: { mediaDefaults: { video: null, image: "Codex" } } },
+        { repos: ["logancsack/aldo"], policy: { mediaDefaults: { video: "Runway", image: null } } },
+      ],
+    };
+    expect(aldoMediaDefaults(media)).toEqual([
+      { task: "image", label: "Images", tool: "Codex", repos: ["logancsack/site"] },
+      { task: "video", label: "Video", tool: "Runway" },
+      { task: "video", label: "Video", tool: null, repos: ["logancsack/site"] },
+    ]);
     expect(aldoWorkspaceLabel(["logancsack/aldo", "logancsack/t3code"])).toBe("aldo + t3code");
   });
 });

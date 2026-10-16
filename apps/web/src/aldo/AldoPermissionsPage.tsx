@@ -5,7 +5,7 @@
 // answered otherwise under it (AldoPolicy.tsx).
 
 import { CheckCheckIcon, CodeXmlIcon, ImageIcon, ShieldCheckIcon, WalletIcon } from "lucide-react";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 
 import { ProjectDefaultsSettings } from "../components/settings/ProjectDefaultsSettings";
 import {
@@ -29,10 +29,12 @@ import {
 import {
   ALDO_MEDIA_TASKS,
   ALDO_MERGE_METHODS,
+  ALDO_SAME_AS_EVERYWHERE,
   ALDO_UNDECIDED,
   aldoMediaDefaults,
   aldoMergeMethodEdits,
   aldoMergeMethods,
+  aldoWorkspaceLabel,
 } from "./policy.logic";
 
 /** Repositories shown before "Show all": most people work in a few. */
@@ -42,7 +44,7 @@ function MergeMethodRow(props: { readonly policy: AldoPolicyState }) {
   const { view, saving, edit } = props.policy;
   const [all, setAll] = useState(false);
   const row = searchableSetting("aldo-merge-method");
-  const description = "How each repository's pull requests merge.";
+  const description = "How each repository's pull requests merge, in every workspace it's in.";
   if (!view) {
     return (
       <SettingsRow
@@ -67,19 +69,49 @@ function MergeMethodRow(props: { readonly policy: AldoPolicyState }) {
     <SettingsRow {...row} description={description}>
       <AldoPolicySubList>
         {shown.map((method) => (
-          <AldoPolicySubRow
-            key={method.repo}
-            label={method.repo}
-            control={
-              <AldoPolicySelect
-                value={method.value}
-                options={[{ value: ALDO_UNDECIDED, label: "Not decided" }, ...ALDO_MERGE_METHODS]}
-                label={`Merge method for ${method.repo}`}
-                disabled={saving}
-                onChange={(value) => void edit(aldoMergeMethodEdits(view, method.repo, value))}
-              />
-            }
-          />
+          <Fragment key={method.repo}>
+            <AldoPolicySubRow
+              label={method.repo}
+              control={
+                <AldoPolicySelect
+                  value={method.value}
+                  options={[{ value: ALDO_UNDECIDED, label: "Not decided" }, ...ALDO_MERGE_METHODS]}
+                  label={`Merge method for ${method.repo}`}
+                  disabled={saving}
+                  onChange={(value) => void edit(aldoMergeMethodEdits(view, method.repo, value))}
+                />
+              }
+            />
+            {method.differences.length > 0 ? (
+              <AldoPolicySubList heading="Different in">
+                {method.differences.map((difference) => {
+                  const workspace = aldoWorkspaceLabel(difference.repos);
+                  return (
+                    <AldoPolicySubRow
+                      key={difference.repos.join(",")}
+                      label={workspace}
+                      control={
+                        <AldoPolicySelect
+                          value={difference.value}
+                          options={[
+                            { value: ALDO_SAME_AS_EVERYWHERE, label: "Same as everywhere" },
+                            ...ALDO_MERGE_METHODS,
+                          ]}
+                          label={`Merge method for ${method.repo} in ${workspace}`}
+                          disabled={saving}
+                          onChange={(value) =>
+                            void edit(
+                              aldoMergeMethodEdits(view, method.repo, value, difference.repos),
+                            )
+                          }
+                        />
+                      }
+                    />
+                  );
+                })}
+              </AldoPolicySubList>
+            ) : null}
+          </Fragment>
         ))}
         {methods.length > shown.length ? (
           <Button size="xs" variant="ghost" className="self-start" onClick={() => setAll(true)}>
@@ -111,18 +143,19 @@ function MediaDefaultsRow(props: { readonly policy: AldoPolicyState }) {
   const add = async () => {
     const name = tool.trim();
     if (!name) return;
-    await edit([{ set: { mediaDefaults: { [task]: name } } }]);
-    setTool("");
+    if (await edit([{ set: { mediaDefaults: { [task]: name } } }])) setTool("");
   };
   return (
     <SettingsRow id="aldo-media-defaults" title="Your media tools" description={description}>
       <AldoPolicySubList>
         {defaults.map((entry) => (
           <AldoPolicySubRow
-            key={entry.task}
+            key={`${entry.task} ${entry.repos?.join(",") ?? ""}`}
             label={
               <>
-                {entry.label}: <span className="text-muted-foreground">{entry.tool}</span>
+                {entry.label}
+                {entry.repos ? ` in ${aldoWorkspaceLabel(entry.repos)}` : ""}:{" "}
+                <span className="text-muted-foreground">{entry.tool ?? "none"}</span>
               </>
             }
             control={
@@ -130,7 +163,14 @@ function MediaDefaultsRow(props: { readonly policy: AldoPolicyState }) {
                 size="xs"
                 variant="ghost"
                 disabled={saving}
-                onClick={() => void edit([{ clear: [["mediaDefaults", entry.task]] }])}
+                onClick={() =>
+                  void edit([
+                    {
+                      ...(entry.repos ? { repos: entry.repos } : {}),
+                      clear: [["mediaDefaults", entry.task]],
+                    },
+                  ])
+                }
               >
                 Remove
               </Button>
@@ -157,10 +197,11 @@ function MediaDefaultsRow(props: { readonly policy: AldoPolicyState }) {
             value={tool}
             onChange={(event) => setTool(event.target.value)}
             placeholder="Tool, e.g. Runway"
+            maxLength={80}
             aria-label="Tool"
           />
           <Button size="sm" variant="outline" type="submit" disabled={saving || !tool.trim()}>
-            {defaults.some((entry) => entry.task === task) ? "Change" : "Add"}
+            {defaults.some((entry) => entry.task === task && !entry.repos) ? "Change" : "Add"}
           </Button>
         </form>
       </AldoPolicySubList>

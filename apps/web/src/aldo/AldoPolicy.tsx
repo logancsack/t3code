@@ -4,7 +4,7 @@
 // follow the user's own again (policy.logic.ts). An Aldo that doesn't let the
 // user change them here still says how to.
 
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { SettingsRow } from "../components/settings/settingsLayout";
 import {
@@ -45,52 +45,62 @@ export interface AldoPolicyState {
   readonly view: AldoPolicyView | null | undefined;
   readonly saving: boolean;
   readonly error: string | null;
-  /** Makes each change in turn, then shows the rules as they are. */
-  readonly edit: (edits: ReadonlyArray<AldoPolicyEdit>) => Promise<void>;
+  /** Makes each change in turn, showing the rules as each leaves them; false if one failed. */
+  readonly edit: (edits: ReadonlyArray<AldoPolicyEdit>) => Promise<boolean>;
 }
 
 export function useAldoPolicy(): AldoPolicyState {
   const [view, setView] = useState(lastView);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    let current = true;
+  // Each read and change takes a number: an answer shows only if nothing started after it.
+  const latest = useRef(0);
+  const show = useCallback((next: AldoPolicyView | null) => {
+    lastView = next;
+    setView(next);
+    setError(null);
+  }, []);
+  const read = useCallback(() => {
+    const ticket = ++latest.current;
     fetchAldoPolicy().then(
-      (next) => {
-        lastView = next;
-        if (current) {
-          setView(next);
-          setError(null);
-        }
-      },
-      (cause: unknown) => current && setError(messageOf(cause)),
+      (next) => ticket === latest.current && show(next),
+      (cause: unknown) => ticket === latest.current && setError(messageOf(cause)),
     );
+  }, [show]);
+  useEffect(() => {
+    read();
     return () => {
-      current = false;
+      latest.current += 1;
     };
-  }, []);
-  const edit = useCallback(async (edits: ReadonlyArray<AldoPolicyEdit>) => {
-    if (edits.length === 0) return;
-    setSaving(true);
-    try {
-      let next: AldoPolicyView | undefined;
-      for (const change of edits) next = await editAldoPolicy(change);
-      if (next) {
-        lastView = next;
-        setView(next);
+  }, [read]);
+  const edit = useCallback(
+    async (edits: ReadonlyArray<AldoPolicyEdit>) => {
+      if (edits.length === 0) return true;
+      setSaving(true);
+      try {
+        for (const change of edits) {
+          const ticket = ++latest.current;
+          const next = await editAldoPolicy(change);
+          if (ticket === latest.current) show(next);
+        }
+        return true;
+      } catch (cause) {
+        toastManager.add({
+          type: "error",
+          title: "Couldn't change the rule",
+          description: messageOf(cause),
+        });
+        // The changes before it were made: show the rules as they are.
+        read();
+        return false;
+      } finally {
+        setSaving(false);
+        // Home's "How Aldo works for you" says the same rules.
+        void refreshAldoHome();
       }
-      // Home's "How Aldo works for you" says the same rules.
-      void refreshAldoHome();
-    } catch (cause) {
-      toastManager.add({
-        type: "error",
-        title: "Couldn't change the rule",
-        description: messageOf(cause),
-      });
-    } finally {
-      setSaving(false);
-    }
-  }, []);
+    },
+    [read, show],
+  );
   return { view, saving, error, edit };
 }
 

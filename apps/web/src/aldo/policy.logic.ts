@@ -186,13 +186,21 @@ export function aldoWorkspaceLabel(repos: ReadonlyArray<string>): string {
   return repos.map((repo) => repo.split("/").at(-1) ?? repo).join(" + ");
 }
 
-/** Workspaces whose own answer to a rule isn't the user's own, with that answer. */
+export interface AldoPolicyDifference {
+  readonly repos: ReadonlyArray<string>;
+  readonly value: string;
+}
+
+/**
+ * Workspaces whose own answer to a rule isn't what the user's own comes to
+ * (their answer, or the rule's default), with that answer.
+ */
 export function aldoRuleDifferences(
   view: AldoPolicyView,
   rule: AldoPolicyRuleId,
-): ReadonlyArray<{ readonly repos: ReadonlyArray<string>; readonly value: string }> {
+): ReadonlyArray<AldoPolicyDifference> {
   const spec = ALDO_POLICY_RULES[rule];
-  const everywhere = spec.read(view.everywhere);
+  const everywhere = aldoRuleValue(rule, view.everywhere);
   return view.workspaces.flatMap((workspace) => {
     const value = spec.read(workspace.policy);
     return value !== undefined && value !== everywhere ? [{ repos: workspace.repos, value }] : [];
@@ -205,38 +213,55 @@ export const ALDO_MERGE_METHODS: ReadonlyArray<AldoPolicyOption> = [
   { value: "rebase", label: "Rebase" },
 ];
 
-/**
- * Each repository's merge method: the user's own for it, or a workspace's
- * (agents record it with the workspace they're in), decided ones first.
- */
-export function aldoMergeMethods(
-  view: AldoPolicyView,
-): ReadonlyArray<{ readonly repo: string; readonly value: string }> {
-  const rows = view.repos.map((repo) => {
-    const own = view.everywhere.mergeMethod?.[repo];
-    const workspace = view.workspaces.find((w) => w.policy.mergeMethod?.[repo] !== undefined);
-    return { repo, value: own ?? workspace?.policy.mergeMethod?.[repo] ?? ALDO_UNDECIDED };
+export interface AldoMergeMethod {
+  readonly repo: string;
+  /** The user's own for it, or what every workspace that recorded one agrees on, or undecided. */
+  readonly value: string;
+  /** Workspaces that recorded another (agents record it with the workspace they're in). */
+  readonly differences: ReadonlyArray<AldoPolicyDifference>;
+}
+
+/** Each repository's merge method, decided ones first. */
+export function aldoMergeMethods(view: AldoPolicyView): ReadonlyArray<AldoMergeMethod> {
+  const rows = view.repos.map((repo): AldoMergeMethod => {
+    const recorded = view.workspaces.flatMap((w) => {
+      const value = w.policy.mergeMethod?.[repo];
+      return value === undefined ? [] : [{ repos: w.repos, value }];
+    });
+    const agreed =
+      new Set(recorded.map((w) => w.value)).size === 1 ? recorded[0]?.value : undefined;
+    const value = view.everywhere.mergeMethod?.[repo] ?? agreed ?? ALDO_UNDECIDED;
+    return { repo, value, differences: recorded.filter((w) => w.value !== value) };
   });
-  const decided = (row: { value: string }) => (row.value === ALDO_UNDECIDED ? 1 : 0);
+  const decided = (row: AldoMergeMethod) =>
+    row.value === ALDO_UNDECIDED && row.differences.length === 0 ? 1 : 0;
   return rows.toSorted((a, b) => decided(a) - decided(b) || a.repo.localeCompare(b.repo));
 }
 
+const isMergeMethod = (value: string) =>
+  ALDO_MERGE_METHODS.some((option) => option.value === value);
+
 /**
- * The changes choosing a repository's merge method makes: the user's own for
- * it (Aldo drops the workspaces' own), or, undecided, clearing it there and
- * in each workspace that has one.
+ * The changes choosing a repository's merge method makes. It's the
+ * repository's, so the choice is for every workspace it's in: the user's own
+ * for it (Aldo drops the workspaces' own), or, undecided, clearing it there
+ * and in each workspace that has one. A workspace (`repos`) can still have its
+ * own, or follow the user's again.
  */
 export function aldoMergeMethodEdits(
   view: AldoPolicyView,
   repo: string,
   value: string,
+  repos?: ReadonlyArray<string>,
 ): ReadonlyArray<AldoPolicyEdit> {
-  if (value !== ALDO_UNDECIDED) {
-    return ALDO_MERGE_METHODS.some((option) => option.value === value)
-      ? [{ set: { mergeMethod: { [repo]: value } } }]
-      : [];
-  }
   const clear: AldoPolicyPath = ["mergeMethod", repo];
+  if (repos) {
+    if (value === ALDO_SAME_AS_EVERYWHERE) return [{ repos, clear: [clear] }];
+    return isMergeMethod(value) ? [{ repos, set: { mergeMethod: { [repo]: value } } }] : [];
+  }
+  if (value !== ALDO_UNDECIDED) {
+    return isMergeMethod(value) ? [{ set: { mergeMethod: { [repo]: value } } }] : [];
+  }
   return [
     ...(view.everywhere.mergeMethod?.[repo] !== undefined ? [{ clear: [clear] }] : []),
     ...view.workspaces
@@ -257,15 +282,37 @@ export const ALDO_MEDIA_TASKS: ReadonlyArray<AldoPolicyOption> = [
   { value: "3d", label: "3D" },
 ];
 
-/** The tools the user named for kinds of media, in the order the kinds are listed. */
-export function aldoMediaDefaults(
-  view: AldoPolicyView,
-): ReadonlyArray<{ readonly task: string; readonly label: string; readonly tool: string }> {
-  const defaults = view.everywhere.mediaDefaults ?? {};
+export interface AldoMediaDefault {
+  readonly task: string;
+  readonly label: string;
+  /** Null where a workspace has none, over the user's own. */
+  readonly tool: string | null;
+  /** The workspace it's for, or undefined for all the user's workspaces. */
+  readonly repos?: ReadonlyArray<string>;
+}
+
+const isTool = (tool: unknown): tool is string => typeof tool === "string" && tool.trim() !== "";
+
+/**
+ * The tools the user named for kinds of media, in the order the kinds are
+ * listed, each followed by the workspaces that have another (or none).
+ */
+export function aldoMediaDefaults(view: AldoPolicyView): ReadonlyArray<AldoMediaDefault> {
   return ALDO_MEDIA_TASKS.flatMap((task) => {
-    const tool = defaults[task.value];
-    return typeof tool === "string" && tool.trim()
-      ? [{ task: task.value, label: task.label, tool }]
+    const own = view.everywhere.mediaDefaults?.[task.value];
+    const everywhere: AldoMediaDefault[] = isTool(own)
+      ? [{ task: task.value, label: task.label, tool: own }]
       : [];
+    const workspaces = view.workspaces.flatMap((w): AldoMediaDefault[] => {
+      const tool = w.policy.mediaDefaults?.[task.value];
+      if (isTool(tool) && tool !== own) {
+        return [{ task: task.value, label: task.label, tool, repos: w.repos }];
+      }
+      // No tool here only matters over one of the user's own.
+      return tool === null && isTool(own)
+        ? [{ task: task.value, label: task.label, tool: null, repos: w.repos }]
+        : [];
+    });
+    return [...everywhere, ...workspaces];
   });
 }
