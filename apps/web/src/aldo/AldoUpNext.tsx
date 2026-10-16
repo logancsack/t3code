@@ -24,6 +24,7 @@ import {
 } from "react";
 
 import { cn } from "~/lib/utils";
+import { proposedPlanTitle, stripDisplayedPlanMarkdown } from "../proposedPlan";
 import { DismissChatDecision } from "./DismissChatDecision";
 import { ApprovalCard } from "./AldoApprovals";
 import { confirmQuickChoice, DecisionIcon } from "./AldoBrief";
@@ -31,6 +32,7 @@ import { AldoHandoffActions } from "./AldoHandoffCard";
 import { askAldoAbout, PendingForm, ThreadLink } from "./AldoHomeInbox";
 import { AldoOpenContext } from "./AldoLiveCard";
 import { AldoAvatar } from "./AldoPresence";
+import { AgentMarkdown, Quoted } from "./AldoQuoted";
 import { useAldoArrive } from "./arrive";
 import { useAldoBrief } from "./briefFeed";
 import { type AldoHome, type AldoHomeConversation } from "./homeApi";
@@ -301,61 +303,6 @@ function Choice(props: {
   );
 }
 
-/** Lines a quote shows before "Show all" (literal, for Tailwind). */
-const CLAMP = { 4: "max-h-[4lh]", 6: "max-h-[6lh]" } as const;
-
-/**
- * What a card quotes (an email, a plan, a command): a few lines, and the rest
- * a tap away, so what's said yes to can be read in full first.
- */
-function Quoted(props: {
-  readonly lines: keyof typeof CLAMP;
-  readonly className?: string;
-  readonly children: ReactNode;
-}) {
-  const text = useRef<HTMLParagraphElement>(null);
-  const [whole, setWhole] = useState(false);
-  const [long, setLong] = useState(false);
-  useEffect(() => {
-    const element = text.current;
-    if (!element || whole) return;
-    const observer = new ResizeObserver(() =>
-      setLong(element.scrollHeight > element.clientHeight + 1),
-    );
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, [whole]);
-  return (
-    <>
-      <p
-        ref={text}
-        className={cn(
-          "whitespace-pre-wrap",
-          // Cut short, it fades out rather than ending on an ellipsis (a blank line can be the last shown).
-          !whole && ["overflow-hidden", CLAMP[props.lines]],
-          !whole && long && "[mask-image:linear-gradient(to_bottom,black_60%,transparent)]",
-          props.className,
-        )}
-      >
-        {props.children}
-      </p>
-      {long ? (
-        <button
-          type="button"
-          aria-expanded={whole}
-          className={cn(
-            FOCUS,
-            "self-start rounded-sm font-medium text-[13px] text-muted-foreground leading-5 hover:text-foreground",
-          )}
-          onClick={() => setWhole((was) => !was)}
-        >
-          {whole ? "Show less" : "Show all"}
-        </button>
-      ) : null}
-    </>
-  );
-}
-
 /** Own answers being written, by card: one folded away keeps what was typed. */
 const drafts = new Map<string, string>();
 
@@ -515,7 +462,7 @@ function DecisionCard(props: {
             </dl>
           ) : null}
           {a.body ? (
-            <Quoted lines={6} className="text-foreground/85 leading-6">
+            <Quoted lines={6} className="whitespace-pre-wrap text-foreground/85 leading-6">
               {a.body}
             </Quoted>
           ) : null}
@@ -620,7 +567,7 @@ function DecisionCard(props: {
       headline = d.pending.summary;
       body = d.pending.detail ? (
         <div className={cn(INSET, "flex flex-col gap-2")}>
-          <Quoted lines={4} className="font-mono text-[12.5px] leading-5">
+          <Quoted lines={4} className="whitespace-pre-wrap font-mono text-[12.5px] leading-5">
             {d.pending.detail}
           </Quoted>
         </div>
@@ -651,12 +598,14 @@ function DecisionCard(props: {
       headline = d.pending.summary || "It needs you in its browser";
       actions = <HandoffActions requestId={d.pending.requestId} onActed={acted} />;
       break;
-    case "plan":
-      headline = "Has a plan for you to approve";
+    case "plan": {
+      // A plan that opens on its title is headed by it, as in its thread (ProposedPlanCard).
+      const title = /^ {0,3}#{1,6}\s/.test(d.plan.text) ? proposedPlanTitle(d.plan.text) : null;
+      headline = title ?? "Has a plan for you to approve";
       body = (
         <div className={cn(INSET, "flex flex-col gap-2")}>
-          <Quoted lines={6} className="text-[14px] leading-6">
-            {d.plan.text}
+          <Quoted lines={10} className="text-sm leading-6">
+            <AgentMarkdown text={title ? stripDisplayedPlanMarkdown(d.plan.text) : d.plan.text} />
           </Quoted>
         </div>
       );
@@ -681,6 +630,7 @@ function DecisionCard(props: {
         </div>
       );
       break;
+    }
     case "merge": {
       const pr = d.pullRequest;
       const checks = pr.checks;

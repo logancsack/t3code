@@ -37,6 +37,7 @@ let inflight = false;
 let again = false;
 let fetchedAt = 0;
 let dismissalRevision = 0;
+let lastServerBody: string | null = null;
 
 /** Reads the home again; `force: false` follows the directory, no closer than every few seconds. */
 export async function refreshAldoHome(force = true): Promise<void> {
@@ -53,10 +54,18 @@ export async function refreshAldoHome(force = true): Promise<void> {
     // A poll begun before a persisted hide must not put the card back.
     if (revision !== dismissalRevision) again = true;
     else {
-      if (next) noteHiddenPrompts(next);
-      useAldoHomeFeed.setState(
-        next ? { home: next, supported: true, error: null } : { supported: false, error: null },
-      );
+      const body = JSON.stringify(next);
+      const changed = body !== lastServerBody;
+      lastServerBody = body;
+      if (next && changed) noteHiddenPrompts(next);
+      const state = useAldoHomeFeed.getState();
+      if (changed || state.error !== null || state.supported !== Boolean(next)) {
+        useAldoHomeFeed.setState({
+          ...(next && changed ? { home: next } : {}),
+          supported: Boolean(next),
+          error: null,
+        });
+      }
     }
   } catch (cause) {
     useAldoHomeFeed.setState({ error: cause instanceof Error ? cause.message : String(cause) });

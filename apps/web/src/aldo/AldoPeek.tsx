@@ -5,7 +5,7 @@
 // nothing is woken. An approval shows the same way: the card in full.
 
 import { ArrowUpRightIcon, MessageCircleQuestionIcon, XIcon } from "lucide-react";
-import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import { Skeleton } from "../components/ui/skeleton";
 import { cn } from "~/lib/utils";
@@ -24,11 +24,8 @@ import {
 import { refreshAldoHome } from "./homeFeed";
 import { modelName, needsYouKind, sameTarget } from "./home.logic";
 import { AldoAvatar } from "./AldoPresence";
+import { AgentMarkdown, loadChatMarkdown } from "./AldoQuoted";
 import { CHIP, ICON_BUTTON, INSET, SECONDARY } from "./surface";
-
-// The markdown renderer loads with the first peek, not with the app.
-const loadChatMarkdown = () => import("../components/ChatMarkdown");
-const ChatMarkdown = lazy(loadChatMarkdown);
 
 export type AldoPeekTarget =
   | { readonly kind: "thread"; readonly target: AldoHomeTarget }
@@ -267,20 +264,18 @@ function LatestTurns(props: { readonly conversation: AldoHomeConversation }) {
           {c.summary ?? "Aldo has no copy of its turns yet. Open the thread to see it all."}
         </p>
       ) : (
-        <Suspense fallback={<TurnsSkeleton />}>
-          {messages.map((m) => {
-            // Two turns can share a moment, so a second one there is told apart.
-            const at = `${m.role}:${m.createdAt}`;
-            const seen = keys.get(at) ?? 0;
-            keys.set(at, seen + 1);
-            const key = seen ? `${at}:${seen}` : at;
-            return m.role === "user" ? (
-              <UserTurn key={key} text={m.text} />
-            ) : (
-              <ChatMarkdown key={key} text={m.text} cwd={undefined} />
-            );
-          })}
-        </Suspense>
+        messages.map((m) => {
+          // Two turns can share a moment, so a second one there is told apart.
+          const at = `${m.role}:${m.createdAt}`;
+          const seen = keys.get(at) ?? 0;
+          keys.set(at, seen + 1);
+          const key = seen ? `${at}:${seen}` : at;
+          return m.role === "user" ? (
+            <UserTurn key={key} text={m.text} />
+          ) : (
+            <AgentMarkdown key={key} text={m.text} />
+          );
+        })
       )}
     </div>
   );

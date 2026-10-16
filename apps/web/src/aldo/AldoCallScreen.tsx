@@ -28,8 +28,10 @@ import { Input } from "../components/ui/input";
 import { useIsMobile } from "../hooks/useMediaQuery";
 import { cn } from "~/lib/utils";
 import { AldoOrb } from "./AldoAssistant";
+import { ApprovalBody } from "./AldoApprovals";
 import { DecisionIcon } from "./AldoBrief";
 import { PendingForm } from "./AldoHomeInbox";
+import { AgentMarkdown, Quoted } from "./AldoQuoted";
 import { openAldoSummon } from "./AldoSummon";
 import { callDuration, captionParts } from "./assistant.logic";
 import {
@@ -444,14 +446,16 @@ function WalkCard(props: {
         </dl>
       ) : null}
       {d.kind === "aldo-approval" && d.approval.body ? (
-        <p className="line-clamp-3 whitespace-pre-wrap rounded-lg bg-background/60 px-2.5 py-2 text-xs">
-          {d.approval.body}
-        </p>
+        <div className="flex flex-col gap-1 rounded-lg bg-background/60 px-2.5 py-2">
+          <ApprovalBody approval={d.approval} lines={3} className="text-xs" />
+        </div>
       ) : null}
       {d.kind === "plan" ? (
-        <p className="line-clamp-5 whitespace-pre-wrap rounded-lg bg-background/60 px-2.5 py-2 text-xs">
-          {d.plan.text}
-        </p>
+        <div className="flex flex-col gap-1 rounded-lg bg-background/60 px-2.5 py-2">
+          <Quoted lines={6} className="text-xs leading-5">
+            <AgentMarkdown text={d.plan.text} className="text-xs" />
+          </Quoted>
+        </div>
       ) : null}
       {fullForm && d.kind === "question" ? (
         <PendingForm

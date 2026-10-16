@@ -54,8 +54,9 @@ vi.mock("./walkthrough", () => ({
   reconcileAldoWalkthrough: vi.fn(),
 }));
 
-import { AldoUpNext } from "./AldoUpNext";
-import { refreshAldoHome, useAldoHomeFeed } from "./homeFeed";
+let AldoUpNext: typeof import("./AldoUpNext").AldoUpNext;
+let refreshAldoHome: typeof import("./homeFeed").refreshAldoHome;
+let useAldoHomeFeed: typeof import("./homeFeed").useAldoHomeFeed;
 
 let root: Root;
 let container: HTMLDivElement;
@@ -77,6 +78,9 @@ async function mount() {
   });
 }
 beforeEach(async () => {
+  vi.resetModules();
+  ({ AldoUpNext } = await import("./AldoUpNext"));
+  ({ refreshAldoHome, useAldoHomeFeed } = await import("./homeFeed"));
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal(
     "ResizeObserver",
