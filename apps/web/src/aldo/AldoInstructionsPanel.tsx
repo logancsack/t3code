@@ -197,8 +197,8 @@ type Entry = { scope: string; saved: AldoInstructions | null };
 /** Settings → Instructions: what every agent is told, for all projects and for each one. */
 export function AldoInstructionsPanel() {
   const cached = useSettingsResource(settingsInstructions, true, false);
-  const error = cached.error;
   const unsupported = cached.cause instanceof AldoApiError && cached.cause.status === 404;
+  const error = unsupported ? null : cached.error;
   const [added, setAdded] = useState<ReadonlyArray<string>>([]);
   const entries: ReadonlyArray<Entry> | null = cached.data
     ? [

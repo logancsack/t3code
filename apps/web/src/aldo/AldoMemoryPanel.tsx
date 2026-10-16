@@ -205,8 +205,8 @@ function NoteEditor(props: {
 export function AldoMemoryPanel() {
   const cached = useSettingsResource(settingsMemory, true, false);
   const items = cached.data ?? null;
-  const error = cached.error;
   const unsupported = cached.cause instanceof AldoApiError && cached.cause.status === 404;
+  const error = unsupported ? null : cached.error;
   const [adding, setAdding] = useState(false);
   const profile = items?.find((i) => i.kind === "profile") ?? null;
   const notes = items?.filter((i) => i.kind === "note") ?? [];

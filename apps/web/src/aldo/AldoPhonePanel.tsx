@@ -63,7 +63,12 @@ export function AldoPhonePanel() {
           {error ?? cached.error}{" "}
           <button
             className="underline"
-            onClick={() => void settingsPhone.refresh().catch(() => undefined)}
+            onClick={() =>
+              void settingsPhone.refresh().then(
+                () => setError(null),
+                () => undefined,
+              )
+            }
           >
             Refresh
           </button>

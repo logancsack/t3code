@@ -7,20 +7,35 @@ import type { AldoInstructions, AldoMemoryItem } from "./cloud";
 const state = vi.hoisted(() => ({
   instructions: [] as AldoInstructions[],
   memory: [] as AldoMemoryItem[],
+  skills: [],
+  cause: null as Error | null,
   environments: [],
 }));
 vi.mock("./settingsData", () => ({
   settingsInstructions: "instructions",
   settingsMemory: "memory",
+  settingsSkills: "skills",
   settingsRepositories: { load: async () => [] },
 }));
 vi.mock("./settingsResource", () => ({
-  useSettingsResource: (key: "instructions" | "memory") => ({ data: state[key], error: null }),
+  useSettingsResource: (key: "instructions" | "memory" | "skills") => ({
+    data: state.cause ? undefined : state[key],
+    error: state.cause?.message ?? null,
+    cause: state.cause,
+  }),
 }));
 vi.mock("./cloud", () => ({
-  AldoApiError: class extends Error {},
+  AldoApiError: class extends Error {
+    constructor(
+      readonly status: number,
+      message: string,
+    ) {
+      super(message);
+    }
+  },
   aldoInstructions: {},
   aldoMemory: {},
+  aldoSkills: {},
   getAldoEnvironments: () => state.environments,
   subscribeAldoEnvironments: () => () => {},
 }));
@@ -37,12 +52,39 @@ vi.mock("../components/ui/menu", () => ({
 
 import { AldoInstructionsPanel } from "./AldoInstructionsPanel";
 import { AldoMemoryPanel } from "./AldoMemoryPanel";
+import { AldoSkillsPanel } from "./AldoSkillsPanel";
+import { AldoApiError } from "./cloud";
 
 let renderer: ReactTestRenderer;
-beforeEach(() => vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true));
+beforeEach(() => {
+  state.cause = null;
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+});
 afterEach(async () => {
   if (renderer) await act(() => renderer.unmount());
   vi.unstubAllGlobals();
+});
+
+it.each([
+  ["instructions", AldoInstructionsPanel],
+  ["memory", AldoMemoryPanel],
+  ["skills", AldoSkillsPanel],
+] as const)("%s shows compatibility 404s without a duplicate error", async (kind, Panel) => {
+  state.cause = new AldoApiError(404, "Compatibility read failed");
+  await act(() => {
+    renderer = create(<Panel />);
+  });
+  const text = () =>
+    renderer.root
+      .findAllByType("p")
+      .flatMap((p) => p.children.filter((child) => typeof child === "string"))
+      .join(" ");
+  expect(text()).toContain(`doesn't have ${kind} yet`);
+  expect(text()).not.toContain("Compatibility read failed");
+  state.cause = new AldoApiError(503, "Temporary read failure");
+  await act(() => renderer.update(<Panel />));
+  expect(text()).not.toContain(`doesn't have ${kind} yet`);
+  expect(text()).toContain("Temporary read failure");
 });
 
 it.each(["instructions", "memory"] as const)(

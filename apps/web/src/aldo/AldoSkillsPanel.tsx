@@ -236,8 +236,8 @@ export function AldoSkillsPanel() {
   const cached = useSettingsResource(settingsSkills, true, false);
   const skills = cached.data ?? null;
   const setSkills = settingsSkills.set;
-  const error = cached.error;
   const unsupported = cached.cause instanceof AldoApiError && cached.cause.status === 404;
+  const error = unsupported ? null : cached.error;
   const [adding, setAdding] = useState(false);
   // The skills open for editing, by name (several at once keeps each draft).
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
