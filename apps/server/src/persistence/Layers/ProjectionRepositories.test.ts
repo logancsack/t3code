@@ -36,6 +36,31 @@ const projectionRepositoriesLayer = it.layer(
 );
 
 projectionRepositoriesLayer("Projection repositories", (it) => {
+  it.effect(
+    "an accepted plan is not actionable before provider startup and stays accepted after a late upsert",
+    () =>
+      Effect.gen(function* () {
+        const plans = yield* ProjectionThreadProposedPlanRepository;
+        const threadId = ThreadId.make("accepted-plan-thread");
+        const turnId = TurnId.make("accepted-plan-turn");
+        const row = {
+          planId: "accepted-plan",
+          threadId,
+          turnId,
+          planMarkdown: "# Go",
+          implementedAt: null,
+          implementationThreadId: null,
+          createdAt: "2026-10-15T23:00:00.000Z",
+          updatedAt: "2026-10-15T23:00:00.000Z",
+        };
+        yield* plans.upsert({ ...row, approvedAt: row.createdAt });
+        yield* plans.upsert(row);
+        assert.isFalse(yield* plans.hasActionableByThreadId({ threadId, latestTurnId: turnId }));
+        const saved = yield* plans.getByPlanId({ threadId, planId: row.planId });
+        assert.strictEqual(Option.getOrThrow(saved).approvedAt, row.createdAt);
+      }),
+  );
+
   it.effect("selects the latest-turn plan before checking implementation status", () =>
     Effect.gen(function* () {
       const plans = yield* ProjectionThreadProposedPlanRepository;
@@ -236,7 +261,7 @@ projectionRepositoriesLayer("Projection repositories", (it) => {
       const statement = statements[0];
       if (statement === undefined) return yield* Effect.die("Expected a plan status query.");
       assert.deepEqual(yield* statement, [
-        { planId: "plan-metadata-current", implementedAt: null, updatedAt },
+        { planId: "plan-metadata-current", approvedAt: null, implementedAt: null, updatedAt },
       ]);
     }),
   );

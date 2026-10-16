@@ -2580,6 +2580,7 @@ export interface AldoHomeConversation {
   }>;
   readonly pending?: AldoHomePending;
   readonly plan?: { readonly id: string; readonly text: string };
+  readonly approvedPlan?: { readonly id: string; readonly at: string };
   readonly pressure?: AldoMachinePressure | null;
   /** The site its agent is working on in the browser, while it works there (a newer Aldo). */
   readonly browsing?: { readonly site: string; readonly at: string } | null;

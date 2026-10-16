@@ -535,6 +535,11 @@ describe("findLatestProposedPlan", () => {
 });
 
 describe("hasActionableProposedPlan", () => {
+  it("does not offer an accepted plan while its provider is still starting", () => {
+    expect(
+      hasActionableProposedPlan({ approvedAt: "2026-10-15T23:41:42.316Z", implementedAt: null }),
+    ).toBe(false);
+  });
   it("returns true for an unimplemented proposed plan", () => {
     expect(
       hasActionableProposedPlan({
