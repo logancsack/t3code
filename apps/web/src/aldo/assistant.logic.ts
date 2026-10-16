@@ -33,6 +33,8 @@ export interface AldoAssistantAction {
   readonly tool: string;
   readonly label: string;
   readonly failed: boolean;
+  /** Why it failed, as Aldo's backend said: for the console, not the conversation (Aldo says why in words). */
+  readonly detail?: string;
   readonly open?: AldoOpenTarget;
   /** A page it made or opened (a preview, a pull request), in a new tab. */
   readonly href?: string;
@@ -216,6 +218,49 @@ export const REVERSE_LABELS: Record<string, string> = {
   set_heads_ups: "Turned heads-ups off",
 };
 
+/** What Aldo couldn't do, when an action failed. */
+export const FAILED_LABELS: Record<string, string> = {
+  start_thread: "Couldn't start a thread",
+  message_thread: "Couldn't message a thread",
+  answer_thread: "Couldn't answer a thread",
+  approve_plan: "Couldn't approve a plan",
+  interrupt_thread: "Couldn't stop a thread",
+  rename_thread: "Couldn't rename a thread",
+  archive_thread: "Couldn't archive a thread",
+  unarchive_thread: "Couldn't bring a thread back",
+  delete_thread: "Couldn't delete a thread",
+  merge_pull_request: "Couldn't merge a pull request",
+  open_pull_request: "Couldn't open a pull request",
+  stop_following_pull_request: "Couldn't stop following a pull request",
+  run_command: "Couldn't run a command",
+  write_file: "Couldn't edit a file",
+  revert_thread: "Couldn't revert a thread",
+  pin_thread: "Couldn't pin a thread",
+  snooze_thread: "Couldn't snooze a thread",
+  settle_thread: "Couldn't settle a thread",
+  answer_computer_request: "Couldn't answer a computer request",
+  stop_computer: "Couldn't stop a computer",
+  set_machine_size: "Couldn't change a computer's size",
+  send_upcoming_now: "Couldn't send a queued message",
+  cancel_upcoming: "Couldn't cancel a queued message",
+  create_routine: "Couldn't set up a routine",
+  update_routine: "Couldn't change a routine",
+  run_routine: "Couldn't run a routine",
+  delete_routine: "Couldn't remove a routine",
+  open_preview: "Couldn't open a preview",
+  decide_approval: "Couldn't approve it for you",
+  set_heads_ups: "Couldn't turn heads-ups on",
+};
+
+/** What a call that undoes its tool's name couldn't do. */
+export const FAILED_REVERSE_LABELS: Record<string, string> = {
+  pin_thread: "Couldn't unpin a thread",
+  snooze_thread: "Couldn't bring back a snoozed thread",
+  settle_thread: "Couldn't make a thread active again",
+  decide_approval: "Couldn't discard it for you",
+  set_heads_ups: "Couldn't turn heads-ups off",
+};
+
 /** Whether a call undoes what its tool's name says (pin_thread with pinned: false, say). */
 function reverses(call: Pick<AldoFunctionCall, "name" | "arguments">): boolean {
   switch (call.name) {
@@ -238,13 +283,25 @@ function labelFor(call: AldoFunctionCall): string | undefined {
   return (reverses(call) ? REVERSE_LABELS[call.name] : undefined) ?? ACTION_LABELS[call.name];
 }
 
+function failedLabelFor(call: AldoFunctionCall): string {
+  return (
+    (reverses(call) ? FAILED_REVERSE_LABELS[call.name] : undefined) ??
+    FAILED_LABELS[call.name] ??
+    `Couldn't ${call.name.replace(/_/g, " ")}`
+  );
+}
+
 /**
  * The action a tool call makes, for the conversation to show: one per call
- * that changed something (reads and show_thread aren't shown).
+ * that changed something (reads and show_thread aren't shown). One that
+ * failed says what couldn't be done in a few words, with Aldo's own words of
+ * why as its `detail` (Aldo tells the user why itself). One Aldo didn't run
+ * for want of the user's words (`unasked`) isn't shown: Aldo asks them.
  */
 export function actionFor(call: AldoFunctionCall, outcome: unknown): AldoAssistantAction | null {
   const label = labelFor(call);
   if (!label) return null;
+  if ((outcome as { unasked?: unknown } | null)?.unasked === true) return null;
   const error = (outcome as { error?: unknown } | null)?.error;
   const title = typeof call.arguments.title === "string" ? call.arguments.title : null;
   const href = hrefOf(outcome);
@@ -256,8 +313,9 @@ export function actionFor(call: AldoFunctionCall, outcome: unknown): AldoAssista
   return {
     id: call.callId,
     tool: call.name,
-    label: typeof error === "string" ? `Couldn't: ${error}` : title ? `${label}: ${title}` : label,
+    label: typeof error === "string" ? failedLabelFor(call) : title ? `${label}: ${title}` : label,
     failed: typeof error === "string",
+    ...(typeof error === "string" ? { detail: error } : {}),
     ...(open ? { open } : {}),
     ...(href ? { href } : {}),
   };

@@ -442,6 +442,8 @@ function showCall(call: AldoFunctionCall, outcome: unknown): void {
   if (open) openThread?.(open);
   openPreview(outcome);
   const action = actionFor(call, outcome);
+  // Why it failed stays out of the conversation (Aldo says it), but not out of sight.
+  if (action?.detail) console.warn(`Aldo: ${action.label}:`, action.detail);
   if (action) {
     addEntry({ kind: "action", ...action });
     // What it changed shows in the sidebar now (a new thread at once), not on the next refresh.
