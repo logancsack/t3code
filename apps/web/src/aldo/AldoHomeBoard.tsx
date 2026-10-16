@@ -171,6 +171,11 @@ export function ConversationRow(props: {
               {STATE_LABEL[c.state]}
             </Badge>
           ) : null}
+          {c.approvedPlan ? (
+            <Badge variant="outline" size="sm">
+              Plan approved
+            </Badge>
+          ) : null}
           {props.isNew ? <NewBadge /> : null}
         </div>
         <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-muted-foreground text-xs">

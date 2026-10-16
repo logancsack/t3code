@@ -26,6 +26,7 @@ const makeProjectionThreadProposedPlanRepository = Effect.gen(function* () {
         thread_id,
         turn_id,
         plan_markdown,
+        approved_at,
         implemented_at,
         implementation_thread_id,
         created_at,
@@ -36,6 +37,7 @@ const makeProjectionThreadProposedPlanRepository = Effect.gen(function* () {
         ${row.threadId},
         ${row.turnId},
         ${row.planMarkdown},
+        ${row.approvedAt ?? null},
         ${row.implementedAt},
         ${row.implementationThreadId},
         ${row.createdAt},
@@ -46,6 +48,7 @@ const makeProjectionThreadProposedPlanRepository = Effect.gen(function* () {
         thread_id = excluded.thread_id,
         turn_id = excluded.turn_id,
         plan_markdown = excluded.plan_markdown,
+        approved_at = coalesce(projection_thread_proposed_plans.approved_at, excluded.approved_at),
         implemented_at = excluded.implemented_at,
         implementation_thread_id = excluded.implementation_thread_id,
         created_at = excluded.created_at,
@@ -62,6 +65,7 @@ const makeProjectionThreadProposedPlanRepository = Effect.gen(function* () {
         thread_id AS "threadId",
         turn_id AS "turnId",
         plan_markdown AS "planMarkdown",
+        approved_at AS "approvedAt",
         implemented_at AS "implementedAt",
         implementation_thread_id AS "implementationThreadId",
         created_at AS "createdAt",
@@ -80,6 +84,7 @@ const makeProjectionThreadProposedPlanRepository = Effect.gen(function* () {
         thread_id AS "threadId",
         turn_id AS "turnId",
         plan_markdown AS "planMarkdown",
+        approved_at AS "approvedAt",
         implemented_at AS "implementedAt",
         implementation_thread_id AS "implementationThreadId",
         created_at AS "createdAt",
@@ -102,12 +107,14 @@ const makeProjectionThreadProposedPlanRepository = Effect.gen(function* () {
     Request: HasActionableProjectionThreadProposedPlanInput,
     Result: Schema.Struct({
       planId: ProjectionThreadProposedPlan.fields.planId,
+      approvedAt: ProjectionThreadProposedPlan.fields.approvedAt,
       implementedAt: ProjectionThreadProposedPlan.fields.implementedAt,
       updatedAt: ProjectionThreadProposedPlan.fields.updatedAt,
     }),
     execute: ({ threadId, latestTurnId }) => sql`
       SELECT
         plan_id AS "planId",
+        approved_at AS "approvedAt",
         implemented_at AS "implementedAt",
         updated_at AS "updatedAt"
       FROM projection_thread_proposed_plans
@@ -140,7 +147,7 @@ const makeProjectionThreadProposedPlanRepository = Effect.gen(function* () {
           selected = candidate;
         }
       }
-      return selected?.implementedAt === null;
+      return selected?.implementedAt === null && !selected.approvedAt;
     },
     Effect.mapError(
       toPersistenceSqlError("ProjectionThreadProposedPlanRepository.hasActionableByThreadId:query"),
