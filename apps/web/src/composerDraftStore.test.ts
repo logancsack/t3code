@@ -1963,6 +1963,9 @@ describe("composerDraftStore modelSelection", () => {
     try {
       useComposerDraftStore
         .getState()
+        .setPrompt(threadRef, "Ultrathink:\nInvestigate this failure", { effortInjected: true });
+      useComposerDraftStore
+        .getState()
         .setModelSelection(threadRef, modelSelection(CODEX_DRIVER, "gpt-5.4"), {
           explicit: true,
         });
@@ -1974,12 +1977,69 @@ describe("composerDraftStore modelSelection", () => {
       resetComposerDraftStore();
       await useComposerDraftStore.persist.rehydrate();
       expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.modelSelectionExplicit).toBe(true);
+      expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.promptEffortInjected).toBe(true);
       expect(
         draftFor(threadId, TEST_ENVIRONMENT_ID)?.modelSelectionByProvider[CODEX_INSTANCE],
       ).toEqual(modelSelection(CODEX_DRIVER, "gpt-5.4"));
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("returns a manual draft to automatic selection without discarding its prompt", () => {
+    const store = useComposerDraftStore.getState();
+    store.setPrompt(threadRef, "Investigate this failure");
+    store.setModelSelection(threadRef, modelSelection(CODEX_DRIVER, "gpt-5.4"), {
+      explicit: true,
+    });
+
+    store.setModelSelection(threadRef, null);
+
+    const draft = draftFor(threadId, TEST_ENVIRONMENT_ID);
+    expect(draft?.modelSelectionExplicit).toBeUndefined();
+    expect(draft?.prompt).toBe("Investigate this failure");
+  });
+
+  it("tracks trait-generated headers through body edits, and forgets their origin after removal", () => {
+    const store = useComposerDraftStore.getState();
+    store.setPrompt(threadRef, "Ultrathink:\nTask", { effortInjected: true });
+    store.setPrompt(threadRef, "Ultrathink:\nTask with more detail");
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.promptEffortInjected).toBe(true);
+    store.setPrompt(threadRef, "Task with more detail");
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.promptEffortInjected).toBeUndefined();
+    store.setPrompt(threadRef, "Ultrathink:\nLiteral user-authored header");
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.promptEffortInjected).toBeUndefined();
+    store.setPrompt(threadRef, "Ultrathink:\nUltrathink:\nLiteral body header", {
+      effortInjected: true,
+    });
+    store.setPrompt(threadRef, "Ultrathink:\nLiteral body header", { effortInjected: false });
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.promptEffortInjected).toBeUndefined();
+  });
+
+  it.each([CODEX_DRIVER, CLAUDE_AGENT_DRIVER])(
+    "does not mark a literal header as generated on %s",
+    (driver) => {
+      const store = useComposerDraftStore.getState();
+      store.setModelSelection(threadRef, modelSelection(driver, "chosen-model"), {
+        explicit: true,
+      });
+      store.setPrompt(threadRef, "Ultrathink:\nPlease preserve this header");
+      expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.promptEffortInjected).toBeUndefined();
+    },
+  );
+
+  it("restores a generated header after a failed send without carrying its origin into a new prompt", () => {
+    const store = useComposerDraftStore.getState();
+    const prompt = "Ultrathink:\nInvestigate this failure";
+    store.setPrompt(threadRef, prompt, { effortInjected: true });
+    const effortInjected = draftFor(threadId, TEST_ENVIRONMENT_ID)?.promptEffortInjected === true;
+    store.clearComposerContent(threadRef);
+    store.setPrompt(threadRef, "Ultrathink:\nAnother user-authored prompt");
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.promptEffortInjected).not.toBe(true);
+
+    store.clearComposerContent(threadRef);
+    store.setPrompt(threadRef, prompt, { effortInjected });
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.promptEffortInjected).toBe(true);
   });
 
   it("replaces only the targeted provider options on the current model selection", () => {

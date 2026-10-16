@@ -1,3 +1,7 @@
+import { isAldoCloud } from "../../aldo/api";
+import { aldoRoutesModels } from "../../aldo/directory";
+import { useAldoMachineSettings } from "../../aldo/machineSettings";
+import { hasExplicitComposerModelSelection } from "../../lib/chatThreadActions";
 import { DESKTOP_PASTE_AS_TEXT_EVENT } from "../../lib/desktopPasteAsText";
 import { isLocalEnvironmentDisabled } from "../../localEnvironment";
 import { usePrimaryEnvironmentId } from "../../state/environments";
@@ -50,7 +54,12 @@ import {
 } from "@t3tools/client-runtime/text-paste";
 import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
 import { folderDropTarget, resolveDroppedFolderPath } from "./folderDrop";
-import { createModelSelection, normalizeModelSlug } from "@t3tools/shared/model";
+import {
+  createModelSelection,
+  normalizeModelSlug,
+  isClaudePromptEffortPrefixInjection,
+  stripClaudePromptEffortPrefix,
+} from "@t3tools/shared/model";
 import { USAGE_LIMITS_COMMAND } from "@t3tools/shared/usageLimits";
 import {
   memo,
@@ -1637,6 +1646,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // Store subscriptions (prompt / images / terminal contexts)
   // ------------------------------------------------------------------
   const composerDraft = useComposerThreadDraft(composerDraftTarget);
+  const aldoMachineSettings = useAldoMachineSettings();
+  const aldoDefaultModel =
+    isAldoCloud &&
+    aldoRoutesModels() &&
+    routeKind === "draft" &&
+    !hasExplicitComposerModelSelection(composerDraft);
+
   // Live target key, for async flows that must notice a thread switch that
   // happened while they awaited.
   const composerDraftTargetKeyRef = useRef("");
@@ -2017,12 +2033,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     [selectedProviderEntry],
   );
   const compactCommandAvailable = providerSupportsManualCompaction(selectedProviderEntry);
-  const selectedProviderSkills = selectedProviderStatus
-    ? resolveProviderSkillsForCwd(selectedProviderStatus, gitCwd)
-    : [];
-  const selectedProviderSlashCommands = selectedProviderStatus
-    ? resolveProviderSlashCommandsForCwd(selectedProviderStatus, gitCwd)
-    : [];
+  const selectedProviderSkills =
+    !aldoDefaultModel && selectedProviderStatus
+      ? resolveProviderSkillsForCwd(selectedProviderStatus, gitCwd)
+      : [];
+  const selectedProviderSlashCommands =
+    !aldoDefaultModel && selectedProviderStatus
+      ? resolveProviderSlashCommandsForCwd(selectedProviderStatus, gitCwd)
+      : [];
   const refreshProviders = useAtomCommand(serverEnvironment.refreshProviders, {
     reportFailure: false,
   });
@@ -2708,8 +2726,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         scheduleComposerFocus();
         return;
       }
+      const effortInjected = isClaudePromptEffortPrefixInjection(promptRef.current, nextPrompt);
       promptRef.current = nextPrompt;
-      setComposerDraftPrompt(composerDraftTarget, nextPrompt);
+      setComposerDraftPrompt(composerDraftTarget, nextPrompt, { effortInjected });
       const nextCursor = collapseExpandedComposerCursor(nextPrompt, nextPrompt.length);
       setComposerCursor(nextCursor);
       setComposerTrigger(detectComposerTrigger(nextPrompt, nextPrompt.length));
@@ -2749,7 +2768,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     planModeEnabled: settings.planModeEnabled,
     isComposerOwned: true,
   } satisfies Parameters<typeof renderProviderTraitsPicker>[0];
-  const providerTraitsPicker = renderProviderTraitsPicker(providerTraitsPickerInput);
+  // A routed draft has no model or effort yet; inherited traits would claim
+  // a choice that Aldo replaces when the first message is sent.
+  const providerTraitsPicker = aldoDefaultModel
+    ? null
+    : renderProviderTraitsPicker(providerTraitsPickerInput);
   const {
     controlsRef: restingComposerControlsRef,
     attachControls: attachRestingComposerControls,
@@ -5154,6 +5177,34 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       ) : null}
       {renderLeadingControl?.(composerControlsInStrip ? "xs" : "sm")}
       <ProviderModelPicker
+        {...(isAldoCloud && aldoRoutesModels() && routeKind === "draft"
+          ? {
+              automaticOption: {
+                label: aldoMachineSettings?.defaultModelSelection
+                  ? `Use default: ${aldoMachineSettings.defaultModelSelection.model}`
+                  : "Let Aldo decide",
+                selected: aldoDefaultModel,
+                onSelect: () => {
+                  if (!aldoDefaultModel) {
+                    const draft = useComposerDraftStore
+                      .getState()
+                      .getComposerDraft(composerDraftTarget);
+                    setPromptFromTraits(
+                      stripClaudePromptEffortPrefix(promptRef.current, draft?.promptEffortInjected),
+                    );
+                  }
+                  useComposerDraftStore.getState().setModelSelection(composerDraftTarget, null);
+                },
+              },
+            }
+          : {})}
+        {...(aldoDefaultModel
+          ? {
+              triggerLabel: aldoMachineSettings?.defaultModelSelection
+                ? `Default: ${aldoMachineSettings.defaultModelSelection.model}`
+                : "Let Aldo decide",
+            }
+          : {})}
         isComposerOwned
         disabled={providerCatalogPending || isSendBusy}
         {...(routeKind === "draft" && supportsMultipleModels

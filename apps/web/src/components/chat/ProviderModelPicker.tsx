@@ -25,6 +25,7 @@ import {
 } from "./ComposerControl";
 import { useComposerMenuProps } from "./composerEventScope";
 import { shortcutLabelForCommand } from "../../keybindings";
+import { Button } from "../ui/button";
 
 export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   /**
@@ -52,6 +53,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   /** Aggregate settings can show a neutral value without claiming one provider is selected. */
   triggerLabel?: string;
   triggerAriaLabel?: string;
+  automaticOption?: { label: string; selected: boolean; onSelect: () => void };
   onOpenChange?: (open: boolean) => void;
   onOpenProviderSetup?: (instanceId: ProviderInstanceId) => void;
   getModelDisabledReason?: (instanceId: ProviderInstanceId, model: string) => string | null;
@@ -287,34 +289,49 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
         padding="none"
       >
         {isMenuOpen ? (
-          <ModelPickerContent
-            activeInstanceId={activeInstanceId}
-            model={props.model}
-            {...(props.selectedModels !== undefined
-              ? { selectedModels: props.selectedModels }
-              : {})}
-            {...(props.onToggleModel
-              ? {
-                  onToggleModel: (instanceId: ProviderInstanceId, model: string) => {
-                    if (!props.disabled) props.onToggleModel?.(instanceId, model);
-                  },
-                }
-              : {})}
-            lockedProvider={props.lockedProvider}
-            lockedContinuationGroupKey={props.lockedContinuationGroupKey ?? null}
-            instanceEntries={props.instanceEntries}
-            {...(props.keybindings ? { keybindings: props.keybindings } : {})}
-            modelOptionsByInstance={props.modelOptionsByInstance}
-            terminalOpen={props.terminalOpen ?? false}
-            onRequestClose={() => setIsMenuOpen(false)}
-            {...(props.onOpenProviderSetup
-              ? { onOpenProviderSetup: props.onOpenProviderSetup }
-              : {})}
-            {...(props.getModelDisabledReason
-              ? { getModelDisabledReason: props.getModelDisabledReason }
-              : {})}
-            onInstanceModelChange={handleInstanceModelChange}
-          />
+          <>
+            {props.automaticOption ? (
+              <Button
+                variant="ghost"
+                className="w-full"
+                onClick={() => {
+                  props.automaticOption?.onSelect();
+                  setIsMenuOpen(false);
+                }}
+              >
+                {props.automaticOption.selected ? "✓ " : ""}
+                {props.automaticOption.label}
+              </Button>
+            ) : null}
+            <ModelPickerContent
+              activeInstanceId={activeInstanceId}
+              model={props.model}
+              {...(props.selectedModels !== undefined
+                ? { selectedModels: props.selectedModels }
+                : {})}
+              {...(props.onToggleModel
+                ? {
+                    onToggleModel: (instanceId: ProviderInstanceId, model: string) => {
+                      if (!props.disabled) props.onToggleModel?.(instanceId, model);
+                    },
+                  }
+                : {})}
+              lockedProvider={props.lockedProvider}
+              lockedContinuationGroupKey={props.lockedContinuationGroupKey ?? null}
+              instanceEntries={props.instanceEntries}
+              {...(props.keybindings ? { keybindings: props.keybindings } : {})}
+              modelOptionsByInstance={props.modelOptionsByInstance}
+              terminalOpen={props.terminalOpen ?? false}
+              onRequestClose={() => setIsMenuOpen(false)}
+              {...(props.onOpenProviderSetup
+                ? { onOpenProviderSetup: props.onOpenProviderSetup }
+                : {})}
+              {...(props.getModelDisabledReason
+                ? { getModelDisabledReason: props.getModelDisabledReason }
+                : {})}
+              onInstanceModelChange={handleInstanceModelChange}
+            />
+          </>
         ) : null}
         {isMenuOpen && props.selectedModels === undefined ? (
           <ChatGptSharingControl provider={activeEntry?.snapshot ?? null} />

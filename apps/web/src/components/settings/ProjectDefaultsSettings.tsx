@@ -1,7 +1,7 @@
 import {
   DEFAULT_SERVER_SETTINGS,
   type ModelSelection,
-  type ProviderInstanceId,
+  ProviderInstanceId,
   type WorktreeSubmodules,
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
@@ -9,6 +9,7 @@ import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { useNavigate } from "@tanstack/react-router";
 
 import { isAldoCloud } from "../../aldo/api";
+import { aldoRoutesModels } from "../../aldo/directory";
 import { aldoSavesSettings } from "../../aldo/machineSettings.logic";
 import { getCustomModelOptionsByInstance } from "../../modelSelection";
 import {
@@ -74,7 +75,14 @@ export function ProjectDefaultsSettings({
     // Aldo: with no machine connected, a sleeping one's, to choose the user's model from.
     (isAldoCloud ? aldo?.providers : null) ??
     EMPTY_SERVER_PROVIDERS;
-  const selection = resolveDefaultProviderModelSelection(providers, settings.defaultModelSelection);
+  const aldoModel = isAldoCloud && aldoRoutesModels() && aldoPart === "model";
+  const fallbackSelection = resolveDefaultProviderModelSelection(
+    providers,
+    settings.defaultModelSelection,
+  );
+  // An unavailable saved override stays visible until the user replaces or clears it.
+  // Its traits must never edit a different, locally resolved fallback model.
+  const selection = aldoModel ? settings.defaultModelSelection : fallbackSelection;
   const entries = sortProviderInstanceEntries(
     applyProviderInstanceSettings(deriveProviderInstanceEntries(providers), settings),
   );
@@ -85,6 +93,13 @@ export function ProjectDefaultsSettings({
     selection?.model,
   );
   const activeEntry = entries.find((entry) => entry.instanceId === selection?.instanceId);
+  const traitsAvailable =
+    !aldoModel ||
+    (activeEntry?.enabled &&
+      activeEntry.isAvailable &&
+      modelOptions
+        .get(activeEntry.instanceId)
+        ?.some((option) => option.slug === selection?.model && !option.isUnavailable));
   const mixedModel = useScopedSettingsMixed(["defaultModelSelection"]);
   const mixedPermissions = useScopedSettingsMixed(["defaultRuntimeMode"]);
   const PermissionIcon = runtimeModeConfig[settings.defaultRuntimeMode].icon;
@@ -145,6 +160,8 @@ export function ProjectDefaultsSettings({
     updateSettings({ defaultModelSelection: value });
   };
 
+  const automaticModel = aldoModel && settings.defaultModelSelection == null;
+
   const modelRow = (
     <SettingsRow
       serverScoped
@@ -153,16 +170,26 @@ export function ProjectDefaultsSettings({
       id="default-model"
       title="Model"
       description={
-        isProjectScope
-          ? "Model for new threads in this project."
-          : "Default model for new threads. Projects can override it."
+        aldoModel
+          ? automaticModel
+            ? "Aldo chooses the model and reasoning for each task using the room left on your plans."
+            : "Override for every new thread, including requests to Aldo. A model you choose for one thread takes priority."
+          : isAldoCloud
+            ? "Default model for new threads."
+            : isProjectScope
+              ? "Model for new threads in this project."
+              : "Default model for new threads. Projects can override it."
       }
       status={
         modelUnavailable || mixedModel || modelSource === "project"
           ? undefined
           : settings.defaultModelSelection === null
-            ? "Automatic"
-            : undefined
+            ? aldoModel
+              ? "Router"
+              : "Automatic"
+            : aldoModel
+              ? "Override"
+              : undefined
       }
       resetAction={
         settings.defaultModelSelection !== null ? (
@@ -170,15 +197,29 @@ export function ProjectDefaultsSettings({
         ) : null
       }
       control={
-        selection && activeEntry ? (
+        aldoModel || (selection && activeEntry) ? (
           <div className="flex min-w-0 flex-wrap items-center justify-end gap-1.5">
             <ProviderModelPicker
-              activeInstanceId={selection.instanceId}
-              model={selection.model}
+              activeInstanceId={
+                selection?.instanceId ??
+                fallbackSelection?.instanceId ??
+                ProviderInstanceId.make("aldo")
+              }
+              model={selection?.model ?? fallbackSelection?.model ?? ""}
               lockedProvider={null}
               instanceEntries={entries}
               modelOptionsByInstance={modelOptions}
               triggerClassName={SETTINGS_PICKER_TRIGGER_CLASSNAME}
+              {...(aldoModel
+                ? {
+                    automaticOption: {
+                      label: "Let Aldo decide",
+                      selected: automaticModel,
+                      onSelect: () => setModel(null),
+                    },
+                    ...(automaticModel ? { triggerLabel: "Let Aldo decide" } : {}),
+                  }
+                : {})}
               {...(mixedModel ? { triggerLabel: "Mixed" } : {})}
               getModelDisabledReason={modelDisabledReason}
               onOpenProviderSetup={(instanceId) => {
@@ -192,7 +233,7 @@ export function ProjectDefaultsSettings({
                 setModel(createModelSelection(instanceId, model))
               }
             />
-            {!mixedModel ? (
+            {!mixedModel && selection && activeEntry && traitsAvailable && !automaticModel ? (
               <TraitsPicker
                 provider={activeEntry.driverKind}
                 models={activeEntry.models}

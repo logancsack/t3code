@@ -106,6 +106,7 @@ let aldoFeatures: {
   readonly moves: boolean;
   readonly routing: boolean;
   readonly projectRepos: boolean;
+  readonly modelRouting: boolean;
 } = {
   general: false,
   projects: false,
@@ -115,6 +116,7 @@ let aldoFeatures: {
   moves: false,
   routing: false,
   projectRepos: false,
+  modelRouting: false,
 };
 
 /** Whether threads can start without a repository (General), as the directory said. */
@@ -159,6 +161,11 @@ export function aldoRoutesDrafts(): boolean {
  */
 export function aldoLinksProjectCode(): boolean {
   return aldoFeatures.projectRepos;
+}
+
+/** First messages go through Aldo's model router, even on a connected machine. */
+export function aldoRoutesModels(): boolean {
+  return aldoFeatures.modelRouting;
 }
 
 const directoryListeners = new Set<() => void>();
@@ -361,6 +368,7 @@ async function fetchEnvironments(): Promise<ReadonlyArray<AldoEnvironment>> {
       moves?: boolean;
       routing?: boolean;
       projectRepos?: boolean;
+      modelRouting?: boolean;
     };
   }>("/api/environments");
   const nextFeatures = {
@@ -372,6 +380,7 @@ async function fetchEnvironments(): Promise<ReadonlyArray<AldoEnvironment>> {
     moves: features?.moves === true,
     routing: features?.routing === true,
     projectRepos: features?.projectRepos === true,
+    modelRouting: features?.modelRouting === true,
   };
   // A listing that started before a deletion finished can still include its machine.
   const listed = environments.filter((environment) => !hiddenByDeletion(environment.environmentId));
