@@ -29,13 +29,12 @@ import { confirmQuickChoice, DecisionIcon } from "./AldoBrief";
 import { AldoHandoffActions } from "./AldoHandoffCard";
 import { askAldoAbout, PendingForm, ThreadLink } from "./AldoHomeInbox";
 import { AldoOpenContext } from "./AldoLiveCard";
-import { AldoAvatar } from "./AldoPresence";
+import { AldoHalo } from "./AldoHalo";
 import { useAldoArrive } from "./arrive";
 import { useAldoBrief } from "./briefFeed";
 import type { AldoHome, AldoHomeConversation } from "./cloud";
 import { decideAldoOutcome, type AldoChoice } from "./decide";
 import { aldoDecisions, decisionThread, putAway, type AldoDecision } from "./decisions.logic";
-import { pleaseAldo } from "./face";
 import { refreshAldoHome, useAldoHomeFeed } from "./homeFeed";
 import { elapsed, isPausedMidTurn } from "./home.logic";
 import { aldoMorph } from "./morph";
@@ -261,7 +260,7 @@ function Choice(props: {
         <LoaderCircleIcon aria-hidden className="size-4 shrink-0 animate-spin" />
       ) : props.tag ? (
         <span className="flex shrink-0 items-center gap-1.5 text-[12px] text-muted-foreground">
-          <AldoAvatar size={12} />
+          <AldoHalo size={12} />
           {props.tag}
         </span>
       ) : null}
@@ -408,7 +407,6 @@ function DecisionCard(props: {
     const { outcome, said } = await decideAldoOutcome(d, choice, { quiet: true });
     setBusy(null);
     if (outcome === "failed") return;
-    if (outcome === "done") pleaseAldo();
     drafts.delete(d.key);
     // The card becomes the line saying what happened, where it happened.
     const text = outcome === "done" ? receiptText(d, choice, said) : movedOnText(d, said);

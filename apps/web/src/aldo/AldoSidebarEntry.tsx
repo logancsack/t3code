@@ -1,5 +1,5 @@
-// Aldo at the top of the sidebar, on every screen: a row with its face, which
-// sets it apart from the threads below. The face starts a conversation (or
+// Aldo at the top of the sidebar, on every screen: a row with its halo, which
+// sets it apart from the threads below. The halo starts a conversation (or
 // hangs up) right where the user is, and the row opens Aldo's own screen (the
 // home screen's conversation). While a conversation is on, it shows what Aldo
 // is doing or saying, with mute. Only where the server has the assistant.
@@ -11,10 +11,10 @@ import { Button } from "../components/ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { cn } from "~/lib/utils";
 import { ALDO_SHORTCUT_LABEL, useAldoAssistantAvailable } from "./AldoAssistant";
-import { AldoAvatar } from "./AldoPresence";
+import { AldoHalo } from "./AldoHalo";
 import type { AldoAssistantPhase } from "./assistant.logic";
 import { connectAldo, disconnectAldo, setAldoMuted, useAldoAssistant } from "./assistantSession";
-import type { AldoMood } from "./presence.logic";
+import { phaseMood } from "./presence.logic";
 import { isAldoCloud } from "./cloud";
 
 const STATUS: Record<AldoAssistantPhase, string> = {
@@ -25,16 +25,6 @@ const STATUS: Record<AldoAssistantPhase, string> = {
   thinking: "Thinking…",
   speaking: "Speaking",
   error: "Tap to talk again",
-};
-
-const MOOD: Record<AldoAssistantPhase, AldoMood> = {
-  idle: "idle",
-  connecting: "thinking",
-  listening: "listening",
-  hearing: "listening",
-  thinking: "thinking",
-  speaking: "speaking",
-  error: "idle",
 };
 
 export function AldoSidebarEntry() {
@@ -67,7 +57,7 @@ export function AldoSidebarEntry() {
             />
           }
         >
-          <AldoAvatar size={20} mood={replying ? "thinking" : MOOD[phase]} />
+          <AldoHalo size={20} mood={replying ? "thinking" : phaseMood(phase)} />
         </TooltipTrigger>
         <TooltipPopup side="right">
           {live ? "Hang up" : `Talk to Aldo (${ALDO_SHORTCUT_LABEL})`}

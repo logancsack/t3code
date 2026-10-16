@@ -2,7 +2,7 @@
 
 Aldo's sidebar is T3's: your threads by project, as [Organizing threads](./thread-sidebar.md) describes. Aldo adds two things to it.
 
-- **Aldo**, at the top: open its conversation, or tap its face to talk.
+- **Aldo**, at the top: open its conversation, or tap its halo to talk.
 - **Your account**, at the foot: your picture and name. Choose them to see your plan and credits, the settings for your agents, accounts, memory, instructions, vault and appearance, and to manage your sign-in or sign out.
 
 On a phone, the sidebar's button at the top left opens it over the home screen.

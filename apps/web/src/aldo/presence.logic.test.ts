@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { faceMood, presenceLine } from "./presence.logic";
+import { phaseMood, presenceLine } from "./presence.logic";
 
 const idle = { phase: "idle" as const, replying: false, working: [], waiting: 0 };
 
@@ -52,11 +52,12 @@ describe("presenceLine", () => {
   });
 });
 
-describe("faceMood", () => {
-  it("shows what Aldo's at first, then how it reacts to the user", () => {
-    expect(faceMood("thinking", { reading: true, pleased: true })).toBe("thinking");
-    expect(faceMood("working", { reading: true, pleased: true })).toBe("pleased");
-    expect(faceMood("working", { reading: true, pleased: false })).toBe("reading");
-    expect(faceMood("working", { reading: false, pleased: false })).toBe("working");
+describe("phaseMood", () => {
+  it("shows where a conversation with Aldo is", () => {
+    expect(phaseMood("connecting")).toBe("thinking");
+    expect(phaseMood("thinking")).toBe("thinking");
+    expect(phaseMood("hearing")).toBe("listening");
+    expect(phaseMood("speaking")).toBe("speaking");
+    expect(phaseMood("error")).toBe("idle");
   });
 });
