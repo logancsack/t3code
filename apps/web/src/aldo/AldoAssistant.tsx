@@ -36,8 +36,7 @@ import { AldoBriefEntry } from "./AldoBrief";
 import { AldoFeedRun } from "./AldoFeed";
 import { showAldoCall } from "./callView";
 import { AldoThreadCard } from "./AldoLiveCard";
-import { AldoHalo } from "./AldoHalo";
-import { phaseMood } from "./presence.logic";
+import { AldoAvatar } from "./AldoPresence";
 import { ALDO_TALK_LABEL } from "./summon.logic";
 import {
   ACTION_LABELS,
@@ -61,6 +60,7 @@ import {
   type AldoImageUpload,
 } from "./cloud";
 import { useAldoArrive, useAldoArrived } from "./arrive";
+import { blinkAldo, setAldoReading } from "./face";
 import { dedupeLiveCards, interleave, type AldoFeedEvent } from "./feed.logic";
 import { useAldoFirstViewHold } from "./firstView";
 import { CHIP } from "./surface";
@@ -152,27 +152,56 @@ export const ALDO_SHORTCUT_LABEL = ALDO_TALK_LABEL;
 export function AldoOrb(props: {
   readonly size?: "xl" | "lg" | "sm" | "xs";
   readonly className?: string;
-  /** Just Aldo's halo, following who speaks: not a button (the call screen's, AldoCallScreen.tsx). */
+  /** Just the orb, swelling with who speaks: not a button (the call screen's, AldoCallScreen.tsx). */
   readonly display?: boolean;
 }) {
   const phase = useAldoAssistant((s) => s.phase);
+  const levels = useAldoAssistant((s) => s.levels);
   const live = phase !== "idle" && phase !== "error";
+  const level =
+    phase === "speaking"
+      ? levels.aldo
+      : phase === "hearing" || phase === "listening"
+        ? levels.mic
+        : 0;
+  const scale = 1 + Math.min(1, level * 2.5) * (props.display ? 0.14 : 0.28);
   const size = props.size ?? "lg";
   const visuals = (
     <>
-      <AldoHalo
-        size={size === "xl" ? 160 : size === "lg" ? 80 : size === "sm" ? 36 : 24}
-        mood={phaseMood(phase)}
+      {size === "xl" ? (
+        <span
+          aria-hidden
+          className="absolute -inset-8 rounded-full bg-primary/10 transition-transform duration-150 motion-reduce:transition-none"
+          style={{ transform: `scale(${1 + Math.min(1, level * 2.5) * 0.25})` }}
+        />
+      ) : null}
+      <span
+        aria-hidden
         className={cn(
-          "transition-opacity motion-reduce:transition-none",
+          "absolute inset-0 rounded-full bg-gradient-to-br from-primary/90 to-primary/50 shadow-lg shadow-primary/20 transition-transform duration-100 motion-reduce:transition-none",
+          (phase === "thinking" || phase === "connecting") && "animate-pulse",
           !live && !props.display && "opacity-80",
+        )}
+        style={{ transform: `scale(${scale})` }}
+      />
+      <span
+        aria-hidden
+        className={cn(
+          "absolute rounded-full bg-background/25",
+          size === "xl"
+            ? "inset-[30%]"
+            : size === "lg"
+              ? "inset-5"
+              : size === "sm"
+                ? "inset-2"
+                : "inset-1.5",
         )}
       />
       {live || props.display ? null : (
         <MicIcon
           className={cn(
-            "absolute text-white/85",
-            size === "lg" || size === "xl" ? "size-7" : size === "sm" ? "size-3.5" : "size-3",
+            "relative text-primary-foreground",
+            size === "lg" || size === "xl" ? "size-7" : size === "sm" ? "size-4" : "size-3",
           )}
         />
       )}
@@ -223,6 +252,9 @@ export function AldoCaption() {
   return <p className="line-clamp-3 max-w-lg text-center text-foreground/90 text-sm">{said}</p>;
 }
 
+/** How long after the last key Aldo stops looking at what the user writes. */
+const READING_MS = 600;
+
 /** The composer's field grows with what's typed, up to about five lines, then scrolls. */
 const FIELD_MAX_PX = 132;
 
@@ -261,6 +293,21 @@ export function AldoComposer(props: {
   const canAttach = limits !== null && !live;
   // Words left behind aren't a draft: nothing is warmed for them later (warm.ts).
   useEffect(() => () => noteAldoComposerTyping(""), []);
+  // Aldo looks down at what's being written, and back up once the user stops.
+  const reading = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const read = (on: boolean) => {
+    if (reading.current) clearTimeout(reading.current);
+    reading.current = null;
+    setAldoReading(on);
+    if (on) reading.current = setTimeout(() => setAldoReading(false), READING_MS);
+  };
+  useEffect(
+    () => () => {
+      if (reading.current) clearTimeout(reading.current);
+      setAldoReading(false);
+    },
+    [],
+  );
   // The field fits what's in it, as it's typed and as it narrows (a window resized).
   useLayoutEffect(() => {
     const field = input.current;
@@ -347,6 +394,8 @@ export function AldoComposer(props: {
     else send();
     // Sent words aren't a draft: nothing is warmed for them later (warm.ts).
     noteAldoComposerTyping("");
+    read(false);
+    blinkAldo();
   };
   const round =
     "relative flex size-11 shrink-0 items-center justify-center rounded-full outline-none transition-[background-color,opacity,transform] duration-100 focus-visible:ring-2 focus-visible:ring-ring active:scale-95 disabled:opacity-40 motion-reduce:transition-none";
@@ -447,9 +496,11 @@ export function AldoComposer(props: {
             placeholder={live ? "Or type to Aldo…" : "Message Aldo"}
             onChange={(event) => {
               setText(event.target.value);
+              read(event.target.value.length > 0);
               // A machine warm for the thread Aldo may start from this (warm.ts).
               noteAldoComposerTyping(event.target.value);
             }}
+            onBlur={() => read(false)}
             onKeyDown={(event) => {
               // Enter sends where Shift+Enter can make a new line; never mid-composition (an IME's Enter picks a word).
               if (event.key !== "Enter" || event.shiftKey || coarse) return;
@@ -602,6 +653,12 @@ export function AldoConversation(
     const feed = dedupeLiveCards(props.feed ?? [], shown);
     return interleave(entries, feed, (e) => (e.kind === "message" ? e.at : null));
   }, [entries, props.feed, live, since]);
+  // Aldo's reply in: it looks up from it, with a blink.
+  const wasReplying = useRef(replying);
+  useEffect(() => {
+    if (wasReplying.current && !replying) blinkAldo();
+    wasReplying.current = replying;
+  }, [replying]);
   const end = useRef<HTMLDivElement>(null);
   const last = entries.at(-1);
   const sent = last?.kind === "message" && last.role === "user" ? last.at : null;
@@ -649,8 +706,15 @@ export function AldoConversation(
         ];
       })}
       {replying ? (
-        <div className="flex h-7 items-center self-start" role="status" aria-label="Aldo is typing">
-          <AldoHalo size={20} mood="thinking" />
+        <div
+          data-aldo-typing=""
+          className="flex h-7 items-center gap-1 self-start"
+          role="status"
+          aria-label="Aldo is typing"
+        >
+          <span className="size-1.5 rounded-full bg-muted-foreground" />
+          <span className="size-1.5 rounded-full bg-muted-foreground" />
+          <span className="size-1.5 rounded-full bg-muted-foreground" />
         </div>
       ) : null}
       {props.tail}
@@ -696,7 +760,7 @@ function ConversationEntry({
     const line = (
       <div className="flex items-center gap-2.5 self-start text-[14px] text-muted-foreground leading-5">
         <span aria-hidden className="flex size-5 shrink-0 items-center justify-center">
-          <AldoHalo size={14} />
+          <AldoAvatar size={14} />
         </span>
         {entry.href ? (
           <a href={entry.href} target="_blank" rel="noreferrer" className="hover:text-foreground">

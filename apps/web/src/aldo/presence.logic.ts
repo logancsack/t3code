@@ -1,4 +1,4 @@
-// What the line under Aldo's name says at the top of the conversation
+// What Aldo's face says under its name at the top of the conversation
 // (AldoPresence.tsx), the way a messaging app says someone is typing: what
 // Aldo is doing on a call or in writing, else that it couldn't check (the
 // home read failed before anything was read), else how many things need the
@@ -9,17 +9,27 @@ import type { AldoAssistantPhase } from "./assistant.logic";
 import type { AldoHomeConversation } from "./cloud";
 
 /**
- * What Aldo's halo shows (AldoHalo.tsx): at rest (or its agents working, which
- * the line says), thinking, listening or speaking.
+ * How Aldo's eyes move: still, looking about while agents work, up while it
+ * thinks, down while the user writes to it, smiling when something's done.
  */
-export type AldoMood = "idle" | "working" | "thinking" | "listening" | "speaking";
+export type AldoMood =
+  | "idle"
+  | "working"
+  | "thinking"
+  | "listening"
+  | "speaking"
+  | "reading"
+  | "pleased";
 
-/** The halo's mood for where a conversation with Aldo is. */
-export function phaseMood(phase: AldoAssistantPhase): AldoMood {
-  if (phase === "connecting" || phase === "thinking") return "thinking";
-  if (phase === "listening" || phase === "hearing") return "listening";
-  if (phase === "speaking") return "speaking";
-  return "idle";
+/** The face's mood: what Aldo's at on a call or in writing first, then how it's reacting to the user. */
+export function faceMood(
+  mood: AldoMood,
+  face: { readonly reading: boolean; readonly pleased: boolean },
+): AldoMood {
+  if (mood === "listening" || mood === "speaking" || mood === "thinking") return mood;
+  if (face.pleased) return "pleased";
+  if (face.reading) return "reading";
+  return mood;
 }
 
 export function presenceLine(input: {
