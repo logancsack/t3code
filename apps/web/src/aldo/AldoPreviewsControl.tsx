@@ -113,7 +113,7 @@ export function AldoPreviewsControl(props: {
         toastManager.add({
           type: "success",
           title: `Merged ${aldoPullRequestShortRef(pr, pullRequests)}`,
-          description: "Aldo follows its deploy and tells the agent how it went.",
+          description: "CI/deploy results appear here. Failures return to the original thread.",
         }),
       )
       .catch((cause: unknown) =>
@@ -193,17 +193,34 @@ export function AldoPreviewsControl(props: {
               <MenuGroup>
                 <MenuGroupLabel>Pull requests Aldo follows through</MenuGroupLabel>
                 {pullRequests.slice(0, 6).map((pr) => (
-                  <MenuItem
-                    key={`${pr.repo}#${pr.number}`}
-                    onClick={() => window.open(pr.url, "_blank", "noopener")}
-                  >
-                    <span className="min-w-0 flex-1 truncate">
-                      #{pr.number} {pr.title}
-                    </span>
-                    <span className="shrink-0 text-muted-foreground text-xs">
-                      {aldoPullRequestStatusLabel(pr)}
-                    </span>
-                  </MenuItem>
+                  <MenuGroup key={`${pr.repo}#${pr.number}`}>
+                    <MenuItem onClick={() => window.open(pr.url, "_blank", "noopener")}>
+                      <span className="min-w-0 flex-1 truncate">
+                        #{pr.number} {pr.title}
+                      </span>
+                      <span className="shrink-0 text-muted-foreground text-xs">
+                        {aldoPullRequestStatusLabel(pr)}
+                      </span>
+                    </MenuItem>
+                    {pr.mergeChecks?.slice(0, 8).map((check) => (
+                      <MenuItem
+                        key={check.name}
+                        disabled={!check.url || !/^https?:\/\//i.test(check.url)}
+                        onClick={() => {
+                          if (check.url && /^https?:\/\//i.test(check.url))
+                            window.open(check.url, "_blank", "noopener");
+                        }}
+                      >
+                        <span className="min-w-0 flex-1 truncate">{check.name}</span>
+                        <span className="shrink-0 text-muted-foreground text-xs">
+                          {check.state}
+                        </span>
+                      </MenuItem>
+                    ))}
+                    {pr.deploymentReported === false ? (
+                      <MenuGroupLabel>No deployment reported</MenuGroupLabel>
+                    ) : null}
+                  </MenuGroup>
                 ))}
                 {pullRequests
                   .slice(0, 6)

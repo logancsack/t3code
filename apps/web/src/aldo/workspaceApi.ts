@@ -173,6 +173,12 @@ export interface AldoFollowedPullRequest {
   readonly stage?: AldoPullRequestStage;
   readonly checks?: AldoCheckCounts | null;
   readonly deploy?: AldoCheckCounts | null;
+  readonly mergeChecks?: ReadonlyArray<{
+    readonly name: string;
+    readonly state: "pending" | "success" | "failure";
+    readonly url: string | null;
+  }> | null;
+  readonly deploymentReported?: boolean | null;
 }
 
 /** Pull requests Aldo is following through for a thread. */

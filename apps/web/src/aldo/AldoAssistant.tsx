@@ -64,7 +64,6 @@ import { blinkAldo, setAldoReading } from "./face";
 import { dedupeLiveCards, interleave, type AldoFeedEvent } from "./feed.logic";
 import { useAldoFirstViewHold } from "./firstView";
 import { CHIP } from "./surface";
-import { noteAldoComposerTyping } from "./warm";
 import "./presence.css";
 
 const OVERVIEW_EVERY_MS = 20_000;
@@ -291,8 +290,6 @@ export function AldoComposer(props: {
   const live = phase !== "idle" && phase !== "error";
   // Images go in writing: not into a call.
   const canAttach = limits !== null && !live;
-  // Words left behind aren't a draft: nothing is warmed for them later (warm.ts).
-  useEffect(() => () => noteAldoComposerTyping(""), []);
   // Aldo looks down at what's being written, and back up once the user stops.
   const reading = useRef<ReturnType<typeof setTimeout> | null>(null);
   const read = (on: boolean) => {
@@ -392,8 +389,6 @@ export function AldoComposer(props: {
     };
     if (props.onSend) props.onSend(send);
     else send();
-    // Sent words aren't a draft: nothing is warmed for them later (warm.ts).
-    noteAldoComposerTyping("");
     read(false);
     blinkAldo();
   };
@@ -497,8 +492,6 @@ export function AldoComposer(props: {
             onChange={(event) => {
               setText(event.target.value);
               read(event.target.value.length > 0);
-              // A machine warm for the thread Aldo may start from this (warm.ts).
-              noteAldoComposerTyping(event.target.value);
             }}
             onBlur={() => read(false)}
             onKeyDown={(event) => {

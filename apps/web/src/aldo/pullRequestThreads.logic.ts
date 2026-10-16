@@ -9,12 +9,13 @@ export interface AldoPullRequestShown {
   readonly number: number;
   readonly headBranch: string;
   readonly state: string;
+  readonly url: string;
 }
 
 /** The checkout menu's one item in Aldo, in place of T3's worktree and "In this repository". */
 export const ALDO_PULL_REQUEST_CHECKOUT = {
-  label: "In a new thread",
-  detail: "On a computer of its own, on the pull request's branch.",
+  label: "Open PR thread",
+  detail: "Continue in the thread that owns this change.",
 } as const;
 
 /**
@@ -25,7 +26,7 @@ export function aldoOpensPullRequestThread(
   aldoStartsThem: boolean,
   pullRequest: Pick<AldoPullRequestShown, "state"> | null,
 ): boolean {
-  return aldoStartsThem && pullRequest?.state === "open";
+  return aldoStartsThem && pullRequest !== null;
 }
 
 /**
