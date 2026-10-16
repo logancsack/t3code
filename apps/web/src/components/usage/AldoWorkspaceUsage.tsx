@@ -27,9 +27,12 @@ const MANAGE_CAPACITY_HREF = "/_devpc/account/billing";
 export function AldoWorkspaceUsageSection({
   state,
   onChanged,
+  title = "Aldo workspace",
 }: {
   readonly state: AldoWorkspaceUsageState;
   readonly onChanged?: () => void;
+  /** Aldo's Settings → Account names it for what it shows there. */
+  readonly title?: string;
 }) {
   useAldoCheckoutReturn(onChanged);
   if (state.status === "unavailable") return null;
@@ -40,7 +43,7 @@ export function AldoWorkspaceUsageSection({
       <section className="flex flex-col gap-3" aria-labelledby="aldo-workspace-usage-heading">
         <div className="flex items-center justify-between gap-3">
           <h2 id="aldo-workspace-usage-heading" className="text-sm font-medium text-foreground">
-            Aldo workspace
+            {title}
           </h2>
           {isAldoCloud ? (
             usage?.bill ? (

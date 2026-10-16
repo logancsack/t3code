@@ -144,7 +144,10 @@ function ClaimNotice(props: { readonly domain: string | undefined }) {
       title="Your agents don't have an address yet"
       description={`Claim one${props.domain ? ` at @${props.domain}` : ""} for signing up for things, getting codes and links, and writing to people for a task. Their mail shows up here.`}
     >
-      <Button size="sm" onClick={() => void navigate({ to: "/settings/integrations" })}>
+      <Button
+        size="sm"
+        onClick={() => void navigate({ to: "/settings/agents", hash: "aldo-agent-inbox" })}
+      >
         Claim an address
       </Button>
     </Notice>

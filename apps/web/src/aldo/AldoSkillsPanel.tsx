@@ -268,7 +268,7 @@ export function AldoSkillsPanel() {
         ) : null
       }
     >
-      <p className="px-3 text-sm text-muted-foreground sm:px-4">
+      <p className="px-3 py-3 text-sm text-muted-foreground sm:px-4">
         How your agents do a kind of task: the steps, what to do and what to avoid, your feedback.
         Every agent in every thread sees what each skill is for and reads the rest when a task needs
         it. Ask an agent to make one ("make a skill for podcast clips with this feedback") or to add
@@ -276,7 +276,7 @@ export function AldoSkillsPanel() {
         machine next starts or wakes.
       </p>
       {unsupported ? (
-        <p className="px-3 text-sm text-muted-foreground sm:px-4">
+        <p className="px-3 py-3 text-sm text-muted-foreground sm:px-4">
           This Aldo server doesn't have skills yet.
         </p>
       ) : null}

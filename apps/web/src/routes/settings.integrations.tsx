@@ -1,24 +1,18 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
-import { AldoIntegrationsPanel } from "../aldo/AldoIntegrationsPanel";
-import { AldoPhonePanel } from "../aldo/AldoPhonePanel";
 import { isAldoCloud } from "../aldo/cloud";
+import { aldoSettingsRedirect } from "../aldo/settings.logic";
 import { IntegrationsSettingsPanel } from "../components/settings/IntegrationsSettings";
-import { SettingsPageContainer } from "../components/settings/settingsLayout";
-
-function SettingsIntegrationsRoute() {
-  // Aldo's cloud agents use Aldo's browser, not T3's preview: the page lists the accounts they use.
-  if (isAldoCloud) {
-    return (
-      <SettingsPageContainer>
-        <AldoIntegrationsPanel />
-        <AldoPhonePanel />
-      </SettingsPageContainer>
-    );
-  }
-  return <IntegrationsSettingsPanel />;
-}
 
 export const Route = createFileRoute("/settings/integrations")({
-  component: SettingsIntegrationsRoute,
+  beforeLoad: ({ location }) => {
+    // Aldo's accounts and apps are its Connections, with what a sign-in or app sent back here.
+    if (isAldoCloud) {
+      throw redirect({
+        href: aldoSettingsRedirect(location) ?? "/settings/connections",
+        replace: true,
+      });
+    }
+  },
+  component: IntegrationsSettingsPanel,
 });

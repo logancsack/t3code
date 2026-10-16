@@ -105,8 +105,8 @@ export function AldoSetupCard(props: {
       <h2 className="font-medium text-sm">{props.assistant ? "Set up Aldo" : "Welcome to Aldo"}</h2>
       <p className="mt-1 text-muted-foreground text-xs">
         {props.general
-          ? `Connect your ${plans} plan, once${props.assistant ? ", so Aldo can start threads for you" : ""}. GitHub (or another git host in Settings → Git hosts) is for work on code.`
-          : `Connect GitHub (or another git host in Settings → Git hosts) and your ${plans} plan, once${props.assistant ? ", so Aldo can start threads for you" : ""}.`}
+          ? `Connect your ${plans} plan, once${props.assistant ? ", so Aldo can start threads for you" : ""}. GitHub (or another git host in Settings → Connections) is for work on code.`
+          : `Connect GitHub (or another git host in Settings → Connections) and your ${plans} plan, once${props.assistant ? ", so Aldo can start threads for you" : ""}.`}
       </p>
       <ol className="mt-3 space-y-2 text-left">
         {props.sourceHost && props.sourceHost !== "github" ? null : (
@@ -219,7 +219,7 @@ export function AldoSetupLine(props: {
                 />
               </ol>
               <p className="mt-2 text-muted-foreground text-xs">
-                GitLab, Bitbucket and Azure DevOps are in Settings → Git hosts.
+                GitLab, Bitbucket and Azure DevOps are in Settings → Connections.
               </p>
             </section>
           </SheetPanel>

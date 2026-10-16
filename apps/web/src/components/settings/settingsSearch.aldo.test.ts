@@ -40,7 +40,7 @@ describe("Aldo phone settings search", () => {
   it("offers the mounted phone section when the API exists, including before provider setup", () => {
     const items = filterAvailableSettingsSearchItems({ ...availability, hasAldoPhoneApi: true });
     expect(searchSettings("sms", items)).toMatchObject([
-      { id: "aldo-phone", title: "Text and call Aldo", to: "/settings/integrations" },
+      { id: "aldo-phone", title: "Text and call Aldo", to: "/settings/phone" },
     ]);
   });
 
@@ -61,7 +61,7 @@ describe("Aldo Link settings search", () => {
     for (const query of ["link", "wallet", "payments"]) {
       expect(searchSettings(query, items)[0]).toMatchObject({
         id: "aldo-integration-link",
-        to: "/settings/integrations",
+        to: "/settings/connections",
       });
     }
   });
@@ -80,7 +80,7 @@ describe("Aldo agent inbox settings search", () => {
     for (const query of ["agent inbox", "sender name", "email address"]) {
       expect(searchSettings(query, items)[0]).toMatchObject({
         id: "aldo-agent-inbox",
-        to: "/settings/integrations",
+        to: "/settings/agents",
       });
     }
   });
@@ -147,12 +147,35 @@ describe("Aldo hides T3 settings it doesn't show", () => {
     expect(searchSettings("worktree cleanup", items)).toEqual([]);
   });
 
-  it("keeps only the page itself where Aldo's own page replaces T3's", () => {
+  it("leads T3's pages Aldo moved to where they are now", () => {
     const items = filterAvailableSettingsSearchItems(everywhere);
-    expect(ids(items.filter((item) => item.to === "/settings/providers"))).toEqual(["providers"]);
-    expect(ids(items.filter((item) => item.to === "/settings/source-control"))).toEqual([
-      "source-control",
+    const moved = new Set<string>([
+      "/settings/providers",
+      "/settings/integrations",
+      "/settings/source-control",
+      "/settings/shared",
+      "/settings/environments",
     ]);
+    expect(ids(items.filter((item) => moved.has(item.to)))).toEqual([]);
+    expect(items.find((item) => item.id === "providers")).toMatchObject({
+      to: "/settings/agents",
+    });
+    expect(items.find((item) => item.id === "source-control")).toMatchObject({
+      to: "/settings/connections",
+    });
+    expect(items.find((item) => item.id === "default-permissions")).toMatchObject({
+      to: "/settings/permissions",
+      title: "Access",
+    });
+  });
+
+  it("keeps only Aldo's own rows on its Connections page", () => {
+    const items = filterAvailableSettingsSearchItems(everywhere);
+    const connections = items.filter(
+      (item) => item.to === "/settings/connections" && item.id !== "source-control",
+    );
+    expect(connections.length).toBeGreaterThan(0);
+    expect(connections.every((item) => item.id.startsWith("aldo-"))).toBe(true);
   });
 
   it("finds Git hosts by the hosts Aldo supports, not Forgejo or Gitea", () => {
@@ -197,7 +220,7 @@ describe("Aldo's own notifications and hidden shortcuts in settings search", () 
     );
     expect(searchSettings("chime", items)[0]).toMatchObject({
       id: "aldo-notification-sound",
-      to: "/settings/general",
+      to: "/settings/notifications",
     });
     expect(items.some((item) => item.id === "thread-notifications")).toBe(false);
   });

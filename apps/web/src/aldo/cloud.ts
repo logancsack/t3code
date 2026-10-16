@@ -896,7 +896,7 @@ export type AldoSubagentDefault = { readonly model: string; readonly reasoning?:
 export type AldoSubagents = Partial<Record<AldoSubagentProvider, AldoSubagentDefault>>;
 
 /**
- * Each agent's subagent default the user chose (Settings → Providers), or
+ * Each agent's subagent default the user chose (Settings → Agents), or
  * null from an Aldo that doesn't keep them.
  */
 export async function fetchAldoSubagents(): Promise<AldoSubagents | null> {
@@ -1983,7 +1983,7 @@ export interface AldoPrebuiltEnvironment {
   readonly builds: ReadonlyArray<AldoEnvironmentBuild>;
 }
 
-/** Ready-to-go environments (Settings → Environments). */
+/** Ready-to-go environments (Settings → Code). */
 export const aldoPrebuilds = {
   list: async () =>
     (await api<{ environments: AldoPrebuiltEnvironment[] }>("/api/prebuilds")).environments,
@@ -2664,6 +2664,65 @@ export interface AldoPolicy {
   readonly mergeMethod?: Record<string, string>;
   readonly spendThreshold?: number;
   readonly reviews?: "all" | "important";
+  readonly onProviderLimit?: "wait" | "switch";
+  readonly modelRouting?: { readonly paidFallback?: "never" | "authorized" };
+  readonly contextBudget?: number;
+  readonly mediaRouting?: "auto" | "ask";
+  /** A kind of media's tool, in the user's words; null clears the user's own for a workspace. */
+  readonly mediaDefaults?: Readonly<Record<string, string | null>>;
+}
+
+/**
+ * What the user decided agents may do (Settings → Permissions): their own
+ * answers, and each workspace's that are its own (a workspace's answer is
+ * used over theirs), with every repository they've worked in.
+ */
+export interface AldoPolicyView {
+  readonly everywhere: AldoPolicy;
+  readonly workspaces: ReadonlyArray<{
+    readonly repos: ReadonlyArray<string>;
+    readonly policy: AldoPolicy;
+  }>;
+  readonly repos: ReadonlyArray<string>;
+}
+
+/** A rule to clear (["merge"]), or one entry of a rule kept by repository or kind of media. */
+export type AldoPolicyPath = readonly [string] | readonly [string, string];
+
+function isPolicyView(value: unknown): value is AldoPolicyView {
+  const view = value as Partial<AldoPolicyView> | null;
+  return (
+    view !== null &&
+    typeof view === "object" &&
+    typeof view.everywhere === "object" &&
+    view.everywhere !== null &&
+    Array.isArray(view.workspaces) &&
+    Array.isArray(view.repos)
+  );
+}
+
+/** The user's rules for agents, or null from an Aldo that doesn't let them be edited here. */
+export async function fetchAldoPolicy(): Promise<AldoPolicyView | null> {
+  const body = await api<unknown>("/api/policy").catch((error: unknown) => {
+    if (error instanceof AldoApiError && error.status === 404) return null;
+    throw error;
+  });
+  // An older Aldo may answer with the web client's page instead of a 404.
+  return isPolicyView(body) ? body : null;
+}
+
+/**
+ * Changes the user's own rules (no `repos`) or one workspace's: `clear` runs
+ * first, so a rule cleared there is asked again, or follows the user's own.
+ */
+export async function editAldoPolicy(edit: {
+  readonly repos?: ReadonlyArray<string>;
+  readonly set?: AldoPolicy;
+  readonly clear?: ReadonlyArray<AldoPolicyPath>;
+}): Promise<AldoPolicyView> {
+  const body = await api<unknown>("/api/policy", { method: "PATCH", body: JSON.stringify(edit) });
+  if (!isPolicyView(body)) throw new Error("Aldo didn't say what the rules are now.");
+  return body;
 }
 
 // ---------------------------------------------------------------------------

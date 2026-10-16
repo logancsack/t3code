@@ -1,22 +1,14 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 
-import { AldoEnvironmentsPanel } from "../aldo/AldoEnvironmentsPanel";
 import { isAldoCloud } from "../aldo/cloud";
-import { SettingsPageContainer } from "../components/settings/settingsLayout";
+import { aldoSettingsRedirect } from "../aldo/settings.logic";
 
-function SettingsEnvironmentsRoute() {
-  return (
-    <SettingsPageContainer>
-      <AldoEnvironmentsPanel />
-    </SettingsPageContainer>
-  );
-}
-
+// Aldo's ready-to-go environments are on Settings → Code now.
 export const Route = createFileRoute("/settings/environments")({
-  beforeLoad: () => {
-    if (!isAldoCloud) {
-      throw redirect({ to: "/settings/general", replace: true });
+  beforeLoad: ({ location }) => {
+    if (isAldoCloud) {
+      throw redirect({ href: aldoSettingsRedirect(location) ?? "/settings/code", replace: true });
     }
+    throw redirect({ to: "/settings/general", replace: true });
   },
-  component: SettingsEnvironmentsRoute,
 });

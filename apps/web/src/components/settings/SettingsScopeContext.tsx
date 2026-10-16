@@ -118,16 +118,19 @@ export function SettingsScopeProvider({
   onChange,
   children,
   singleEnvironment = false,
+  pathname,
 }: {
   singleEnvironment?: boolean;
   search: SettingsScopeSearch;
   onChange: (next: SettingsScopeSearch) => void;
   children: ReactNode;
+  /** The page shown: Aldo follows a project only on the pages that are a project's. */
+  pathname?: string;
 }) {
   // Aldo: a project or every thread, never one machine.
   const scopeSearch = useMemo(
-    () => (isAldoCloud ? aldoSettingsScopeSearch(search) : search),
-    [search],
+    () => (isAldoCloud ? aldoSettingsScopeSearch(search, pathname) : search),
+    [pathname, search],
   );
   const resolved = useResolvedSettingsScope(scopeSearch, singleEnvironment);
   const value = useMemo(

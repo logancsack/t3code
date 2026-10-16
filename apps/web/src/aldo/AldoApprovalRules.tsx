@@ -1,6 +1,7 @@
 // What the user always allows ("Agents can send email to alex@example.com
 // without asking"): the rules they made with "Always allow" on an approval
-// (AldoApprovals.tsx), under "How Aldo works for you", each with Remove.
+// (AldoApprovals.tsx), each with Remove: under "How Aldo works for you", and
+// on Settings → Permissions.
 
 import { useEffect, useState } from "react";
 
@@ -18,11 +19,11 @@ export function aldoApprovalRulesChanged(): void {
 }
 
 /**
- * What the user always allows, each with Remove; nothing until they've made
- * a rule, or on an Aldo without rules. Read again when the page comes back,
- * so a rule made on another device shows, and when one is made or undone here.
+ * What the user always allows, and Remove for each: null until it's read, or
+ * on an Aldo without rules. Read again when the page comes back, so a rule
+ * made on another device shows, and when one is made or undone here.
  */
-export function AldoApprovalRules() {
+export function useAldoApprovalRules() {
   const [rules, setRules] = useState<ReadonlyArray<AldoApprovalRule> | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
   useEffect(() => {
@@ -41,7 +42,6 @@ export function AldoApprovalRules() {
       reloads.delete(load);
     };
   }, []);
-  if (!rules || rules.length === 0) return null;
   const remove = async (rule: AldoApprovalRule) => {
     setRemoving(rule.id);
     try {
@@ -57,6 +57,13 @@ export function AldoApprovalRules() {
       setRemoving(null);
     }
   };
+  return { rules, removing, remove };
+}
+
+/** The rules, each with Remove, under "How Aldo works for you"; nothing until there's one. */
+export function AldoApprovalRules() {
+  const { rules, removing, remove } = useAldoApprovalRules();
+  if (!rules || rules.length === 0) return null;
   return (
     <div className="mt-2 border-border/50 border-t pt-2">
       <p className="text-muted-foreground text-xs">What you always allow</p>

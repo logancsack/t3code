@@ -13,9 +13,12 @@ import {
 } from "react";
 import {
   ArchiveIcon,
+  BellIcon,
   BlocksIcon,
   BrainIcon,
   BotIcon,
+  CircleUserRoundIcon,
+  CodeXmlIcon,
   createLucideIcon,
   GitBranchIcon,
   GraduationCapIcon,
@@ -31,6 +34,8 @@ import {
   ServerIcon,
   Settings2Icon,
   Share2Icon,
+  ShieldCheckIcon,
+  SmartphoneIcon,
   XIcon,
 } from "lucide-react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
@@ -50,7 +55,8 @@ import {
 import { ManagedDevPcFooterAccount } from "../ManagedDevPcAccount";
 import { isManagedDevPc } from "../../managedDevPc";
 import { isAldoCloud } from "../../aldo/cloud";
-import { ALDO_HIDDEN_SETTINGS_PATHS } from "../../aldo/settings.logic";
+import { AldoSettingsAccountCard, AldoSettingsNav } from "../../aldo/AldoSettingsNav";
+import { ALDO_HIDDEN_SETTINGS_PATHS, ALDO_SETTINGS_PATHS } from "../../aldo/settings.logic";
 import { SidebarUtilityMenu } from "../sidebar/SidebarChrome";
 import { scrollToSettingsTarget } from "./settingsLayout";
 import {
@@ -107,6 +113,12 @@ const SETTINGS_SECTION_ICONS: Readonly<
   "/settings/storage": HardDriveIcon,
   "/settings/connections": Link2Icon,
   "/settings/archived": ArchiveIcon,
+  "/settings/account": CircleUserRoundIcon,
+  "/settings/agents": BotIcon,
+  "/settings/permissions": ShieldCheckIcon,
+  "/settings/notifications": BellIcon,
+  "/settings/phone": SmartphoneIcon,
+  "/settings/code": CodeXmlIcon,
 };
 
 const SETTINGS_NAV_ITEMS: ReadonlyArray<{
@@ -115,16 +127,7 @@ const SETTINGS_NAV_ITEMS: ReadonlyArray<{
   icon: ComponentType<{ className?: string }>;
 }> = (Object.keys(SETTINGS_SECTION_LABELS) as SettingsPath[])
   .filter((to) => to !== "/settings/workspace" || isManagedDevPc)
-  .filter(
-    (to) =>
-      (to !== "/settings/instructions" &&
-        to !== "/settings/skills" &&
-        to !== "/settings/memory" &&
-        to !== "/settings/vault" &&
-        to !== "/settings/shared" &&
-        to !== "/settings/environments") ||
-      isAldoCloud,
-  )
+  .filter((to) => !ALDO_SETTINGS_PATHS.has(to) || isAldoCloud)
   // Aldo connects each thread's cloud agent itself; there's nothing to manage.
   // SnapShots and Storage don't apply to its machines either.
   .filter((to) => !isAldoCloud || !ALDO_HIDDEN_SETTINGS_PATHS.has(to))
@@ -207,6 +210,8 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
       }
       void navigate({
         to,
+        // Aldo: a project's settings are on its own page; its other pages are the account's.
+        ...(isAldoCloud ? { search: { project: undefined } } : {}),
         hash: "",
         replace: true,
         hashScrollIntoView: false,
@@ -231,6 +236,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
       }
       void navigate({
         to: item.to,
+        ...(isAldoCloud ? { search: { project: undefined } } : {}),
         hash: targetId,
         replace: true,
         hashScrollIntoView: false,
@@ -271,6 +277,12 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
       <SidebarContent className="overflow-x-hidden">
         <SidebarGroup>
           <div className="flex flex-col gap-2">
+            {isAldoCloud ? (
+              <AldoSettingsAccountCard
+                active={pathname === "/settings/account"}
+                onOpen={() => handleSectionClick("/settings/account")}
+              />
+            ) : null}
             <div className="flex h-8 items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground">
               <SearchIcon className="size-4 shrink-0 text-sidebar-muted-foreground/80" />
               <SidebarInput
@@ -354,6 +366,8 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                   </SidebarMenuItem>
                 ))}
               </SidebarMenu>
+            ) : isAldoCloud ? (
+              <AldoSettingsNav pathname={pathname} onNavigate={handleSectionClick} />
             ) : (
               <SidebarMenu>
                 {navItems.map((item) => {

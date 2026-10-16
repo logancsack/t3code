@@ -14,6 +14,7 @@ import {
   SettingsScopeProvider,
   useSettingsScope,
 } from "../components/settings/SettingsScopeContext";
+import { isAldoCloud } from "../aldo/cloud";
 import { useEnvironments } from "../state/environments";
 import { SettingsScopeNotice } from "../components/settings/SettingsScopeNotice";
 import { SETTINGS_DEVICE_ONLY_PATHS } from "../components/settings/SettingsScopeSentence";
@@ -153,6 +154,7 @@ function SettingsRouteLayout() {
   return (
     <SettingsScopeProvider
       search={rawSearch}
+      pathname={pathname}
       singleEnvironment={pathname === "/settings/providers"}
       onChange={(next) => {
         // Send every axis so the retain middleware sees an explicit target
@@ -186,7 +188,8 @@ export const Route = createFileRoute("/settings")({
     }
 
     if (location.pathname === "/settings") {
-      throw redirect({ to: "/settings/general", replace: true });
+      // Aldo's settings open on its agents, what people come to change most.
+      throw redirect({ to: isAldoCloud ? "/settings/agents" : "/settings/general", replace: true });
     }
   },
   component: SettingsRouteLayout,

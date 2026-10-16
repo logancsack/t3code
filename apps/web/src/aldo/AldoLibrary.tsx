@@ -1,7 +1,7 @@
 // The Library: what agents made and shared. In a thread that isn't code it's
 // a right-panel tab: the files its turns made, each opening beside the thread,
-// and what it shared by link. Settings → Shared files lists everything the
-// user's agents shared, and so does simple mode's Library
+// and what it shared by link. The Library page (/library, AldoPlaces.tsx)
+// lists everything the user's agents shared, and so does simple mode's Library
 // (AldoSimplePlaces.tsx). A shared one says who can open it, and can be
 // copied, opened, or stopped (its link stops working at once). Grouping and
 // labels are in library.logic.ts.
@@ -17,11 +17,9 @@ import {
   LinkIcon,
   LoaderCircleIcon,
   LockIcon,
-  Share2Icon,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
-import { SettingsSection } from "../components/settings/settingsLayout";
 import { Button } from "../components/ui/button";
 import { ScrollArea } from "../components/ui/scroll-area";
 import { toastManager } from "../components/ui/toast";
@@ -328,7 +326,7 @@ function LibraryGroups(props: {
 function AllSharedLink(props: { readonly label: string }) {
   return (
     <Link
-      to="/settings/shared"
+      to="/library"
       className="inline-flex items-center gap-0.5 px-1 text-muted-foreground text-xs hover:text-foreground"
     >
       {props.label}
@@ -457,20 +455,6 @@ function useThreadOf(): (environmentId: string | undefined) => {
         : null;
     },
     [environments],
-  );
-}
-
-/** Settings → Shared files: what it's for, then everything shared. */
-export function AldoSharedFilesPanel() {
-  return (
-    <SettingsSection title="Shared files" icon={<Share2Icon className="size-4" />}>
-      <p className="px-3 text-muted-foreground text-sm sm:px-4">
-        Pages and files your agents shared by link, newest first. A public link opens for anyone who
-        has it; one only you can open asks for your Aldo sign-in. Stop sharing turns its link off at
-        once and deletes the shared copy; the agent's own file stays where it is.
-      </p>
-      <AldoSharedFiles />
-    </SettingsSection>
   );
 }
 

@@ -71,7 +71,7 @@ export function AldoPhonePanel() {
       title="Text and call Aldo"
       icon={<PhoneIcon className="size-4" />}
     >
-      <p className="px-3 text-sm text-muted-foreground sm:px-4">
+      <p className="px-3 py-3 text-sm text-muted-foreground sm:px-4">
         One number, the same Aldo. Your conversations and agents carry on between the app, texts,
         and calls. Drafts still wait for your tap in Aldo.
       </p>
@@ -84,7 +84,7 @@ export function AldoPhonePanel() {
         </p>
       ) : null}
       {!loaded ? (
-        <p className="px-3 text-sm text-muted-foreground sm:px-4">Loading phone settings…</p>
+        <p className="px-3 py-3 text-sm text-muted-foreground sm:px-4">Loading phone settings…</p>
       ) : null}
       {settings?.prototype ? (
         <p className="mx-3 rounded-lg bg-muted p-3 text-sm sm:mx-4">
