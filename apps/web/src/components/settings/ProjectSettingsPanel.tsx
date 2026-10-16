@@ -515,7 +515,7 @@ function ProjectDetail({
             }
           />
         </SettingsSection>
-        <ProjectDefaultsSettings category="project" />
+        {isAldoCloud ? null : <ProjectDefaultsSettings category="project" />}
         {isAldoCloud ? (
           <AldoProjectCodeSettings environmentId={representative.environmentId} />
         ) : null}

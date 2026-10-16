@@ -3,6 +3,8 @@ import { ProviderInstanceId, type ModelCapabilities } from "@t3tools/contracts";
 
 import {
   applyClaudePromptEffortPrefix,
+  stripClaudePromptEffortPrefix,
+  isClaudePromptEffortPrefixInjection,
   buildExplicitProviderOptionSelectionsFromDescriptors,
   buildProviderOptionSelectionsFromDescriptors,
   createModelCapabilities,
@@ -192,6 +194,32 @@ describe("applyClaudePromptEffortPrefix", () => {
     expect(applyClaudePromptEffortPrefix("/home/theo/app.ts crashed on load", "ultrathink")).toBe(
       "Ultrathink:\n/home/theo/app.ts crashed on load",
     );
+  });
+});
+
+describe("stripClaudePromptEffortPrefix", () => {
+  it.each([
+    ["Ultrathink:\nInvestigate this failure", "Investigate this failure"],
+    ["Ultrathink:\n", ""],
+    ["Ultrathink:\n  Keep this indentation\n\n", "  Keep this indentation\n\n"],
+    ["Explain the word ultrathink", "Explain the word ultrathink"],
+    ["Ultrathink: a heading I wrote", "Ultrathink: a heading I wrote"],
+    ["Quote:\nUltrathink:\nthis failure", "Quote:\nUltrathink:\nthis failure"],
+  ])("removes only the generated leading header from %j", (text, expected) => {
+    expect(stripClaudePromptEffortPrefix(text, true)).toBe(expected);
+  });
+
+  it("preserves even an exact literal header without injection provenance", () => {
+    const literal = "Ultrathink:\nKeep this line as written";
+    expect(stripClaudePromptEffortPrefix(literal)).toBe(literal);
+    expect(isClaudePromptEffortPrefixInjection(literal, literal)).toBe(false);
+    expect(isClaudePromptEffortPrefixInjection(`  ${literal}  `, literal)).toBe(false);
+  });
+
+  it("recognizes headers added by traits for an empty prompt or ordinary prose", () => {
+    expect(isClaudePromptEffortPrefixInjection("", "Ultrathink:\n")).toBe(true);
+    expect(isClaudePromptEffortPrefixInjection("Task", "Ultrathink:\nTask")).toBe(true);
+    expect(isClaudePromptEffortPrefixInjection("Task", "Other text")).toBe(false);
   });
 });
 

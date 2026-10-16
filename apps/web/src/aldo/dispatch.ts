@@ -18,7 +18,10 @@
 // Aldo keeps the command for the machine (threadCommands.ts).
 
 import { setOrchestrationCommandDispatchOverride } from "@t3tools/client-runtime/operations";
-import type { EnvironmentId } from "@t3tools/contracts";
+import { EnvironmentId } from "@t3tools/contracts";
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { useComposerDraftStore } from "../composerDraftStore";
+import { hasExplicitComposerModelSelection } from "../lib/chatThreadActions";
 import * as Option from "effect/Option";
 import { AsyncResult } from "effect/unstable/reactivity";
 
@@ -34,6 +37,7 @@ import { toastManager } from "../components/ui/toast";
 import {
   AldoApiError,
   aldoMachineIsNew,
+  aldoRoutesModels,
   aldoStartState,
   getAldoEnvironments,
   holdAldoTurn,
@@ -227,17 +231,19 @@ async function handToAldo(
   command: { readonly commandId: string },
   files: ReadonlyMap<string, Blob> | null,
   now: boolean,
+  composerWillRestore = true,
 ): Promise<boolean> {
   handing.add(command.commandId);
   try {
     await keepOutgoing(environmentId, command, files);
     const outcome = await holdAldoTurn(environmentId, command, files, now);
-    await dropOutgoing(command.commandId);
+    if (outcome === "held" || composerWillRestore) await dropOutgoing(command.commandId);
     return outcome === "held";
   } catch (cause) {
     // Signed out: it goes once the user signs in again (the page is on its way there).
-    // Anything else goes back in the composer, so it isn't also sent from here later.
-    if (!(cause instanceof AldoApiError && cause.status === 401)) {
+    // A live send restores other failures to its composer. A resumed send
+    // has no composer, so its durable copy must remain for another attempt.
+    if (composerWillRestore && !(cause instanceof AldoApiError && cause.status === 401)) {
       await dropOutgoing(command.commandId);
     }
     throw cause;
@@ -246,7 +252,7 @@ async function handToAldo(
   }
 }
 
-let resuming = false;
+let resuming: Promise<void> | null = null;
 
 /**
  * Hands Aldo the messages a page went away from before Aldo had them (as the
@@ -254,22 +260,42 @@ let resuming = false;
  * their files. They go as held ones do, not at once: the turn they were sent
  * into may be long over.
  */
-async function resumeAldoOutbox(): Promise<void> {
-  if (resuming) return;
-  resuming = true;
-  try {
-    for (const entry of await outgoing()) {
-      if (handing.has(entry.commandId)) continue;
-      const command = entry.command as { readonly commandId: string };
-      if (await handToAldo(entry.environmentId, command, entry.files ?? null, false)) {
-        requestAldoDirectoryRefresh();
-      } else console.warn(`Aldo wouldn't hold message ${entry.commandId}; it wasn't sent.`);
+export function resumeAldoOutbox(): Promise<void> {
+  if (resuming) return resuming;
+  const run = (async () => {
+    try {
+      for (const entry of await outgoing()) {
+        if (handing.has(entry.commandId)) continue;
+        const command = entry.command as { readonly commandId: string };
+        const toastId = `aldo-outbox-${entry.commandId}`;
+        try {
+          // There is no live send to restore the composer after a refusal.
+          // Keep the durable copy until Aldo confirms that it has the message.
+          if (await handToAldo(entry.environmentId, command, entry.files ?? null, false, false)) {
+            toastManager.close(toastId);
+            requestAldoDirectoryRefresh();
+          } else {
+            throw new Error("Aldo could not accept the message.");
+          }
+        } catch (cause) {
+          if (cause instanceof AldoApiError && cause.status === 401) throw cause;
+          toastManager.add({
+            id: toastId,
+            type: "warning",
+            title: "Message not sent",
+            description: `${cause instanceof Error ? cause.message : "Aldo could not accept it."} Your message is saved on this device and will be retried when you return or reconnect.`,
+            timeout: 0,
+          });
+        }
+      }
+    } catch (cause) {
+      console.warn("Couldn't hand Aldo the messages waiting on this device.", cause);
     }
-  } catch (cause) {
-    console.warn("Couldn't hand Aldo the messages waiting on this device.", cause);
-  } finally {
-    resuming = false;
-  }
+  })().finally(() => {
+    resuming = null;
+  });
+  resuming = run;
+  return run;
 }
 
 /** Routes commands for Aldo threads through ensureAldoConnected. */
@@ -292,10 +318,26 @@ export function installAldoCommandDispatch(): void {
     // files however the machine is: Aldo puts them on it, so only Aldo can send it.
     const files = command.type === "thread.turn.start" ? aldoFilesOf(command) : null;
     const connected = isAldoConnected(environmentId);
+    const routed =
+      command.type === "thread.turn.start" &&
+      Boolean(command.bootstrap?.createThread) &&
+      aldoRoutesModels();
+    const heldCommand = routed
+      ? {
+          ...command,
+          aldoModelExplicit: hasExplicitComposerModelSelection(
+            useComposerDraftStore
+              .getState()
+              .getComposerDraft(
+                scopeThreadRef(EnvironmentId.make(environmentId), command.threadId),
+              ),
+          ),
+        }
+      : command;
     const held =
       command.type === "thread.turn.start" &&
-      (files !== null || !connected) &&
-      (await handToAldo(environmentId, command, files, connected));
+      (routed || files !== null || !connected) &&
+      (await handToAldo(environmentId, heldCommand, files, connected));
     if (!held) {
       await ensureAldoConnected(environmentId).catch((cause: unknown) => {
         notifyAldoRefusal(cause);
@@ -305,7 +347,8 @@ export function installAldoCommandDispatch(): void {
     }
     heldThreads.set(environmentId, command.threadId);
     try {
-      if (await connectForHeld(environmentId, command)) return files ? { sequence: 0 } : null;
+      if (await connectForHeld(environmentId, command))
+        return files || routed ? { sequence: 0 } : null;
     } finally {
       heldThreads.delete(environmentId);
     }

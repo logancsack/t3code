@@ -6,7 +6,7 @@ import {
 } from "@t3tools/contracts";
 import { useCallback, useMemo } from "react";
 
-import { isAldoCloud } from "../../aldo/cloud";
+import { aldoRoutesModels, isAldoCloud } from "../../aldo/cloud";
 import { keepAldoMachineSettings } from "../../aldo/machineSettings";
 import { withAldoMachineSettings } from "../../aldo/machineSettings.logic";
 import {
@@ -35,11 +35,13 @@ export function useScopedSettings<T = UnifiedSettings>(
 ): T {
   const { target, aldo } = useSettingsScope();
   const clientSettings = useClientSettings();
+  const modelRouting = isAldoCloud && aldoRoutesModels();
   // Aldo: with no machine connected, the user's values over the defaults.
   const serverSettings = useMemo(
     () =>
-      target?.settings ?? withAldoMachineSettings(DEFAULT_SERVER_SETTINGS, aldo?.settings ?? null),
-    [aldo, target],
+      target?.settings ??
+      withAldoMachineSettings(DEFAULT_SERVER_SETTINGS, aldo?.settings ?? null, modelRouting),
+    [aldo, modelRouting, target],
   );
   const settings = useMemo(
     () => mergeEnvironmentSettings(serverSettings, clientSettings),

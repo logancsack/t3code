@@ -293,7 +293,10 @@ import {
   preventRepeatedTerminalCloseShortcut,
   preventTerminalCloseShortcut,
 } from "../lib/terminalCloseShortcut";
-import { resolveNewDraftStartFromOrigin } from "../lib/chatThreadActions";
+import {
+  hasExplicitComposerModelSelection,
+  resolveNewDraftStartFromOrigin,
+} from "../lib/chatThreadActions";
 import {
   derivePhysicalProjectKey,
   deriveLogicalProjectKeyFromSettings,
@@ -426,6 +429,7 @@ import {
 } from "./chat/draftHeroTransition";
 import {
   MAX_HIDDEN_MOUNTED_TERMINAL_THREADS,
+  formatOutgoingPrompt,
   agentControlledBrowserCloseConfirmation,
   branchMismatchKey,
   buildExpiredTerminalContextToastCopy,
@@ -557,7 +561,7 @@ import { AldoThreadLoading } from "../aldo/AldoThreadLoading";
 import { useAldoFirstViewHold } from "../aldo/firstView";
 import { useAldoThreadStart } from "../aldo/threadStart";
 import { describeAldoWakeFailure } from "../aldo/threadStart.logic";
-import { isAldoCloud, isAldoEnvironmentId } from "../aldo/cloud";
+import { aldoRoutesModels, isAldoCloud, isAldoEnvironmentId } from "../aldo/cloud";
 import { useAldoKeptRepo } from "../aldo/keptRepo";
 import { AldoHandoffCard } from "../aldo/AldoHandoffCard";
 import {
@@ -765,17 +769,6 @@ const draftFanoutStateAtom = Atom.family((_routeKey: string) =>
   }).pipe(Atom.keepAlive),
 );
 
-function formatOutgoingPrompt(params: {
-  provider: ProviderDriverKind;
-  model: string | null;
-  models: ReadonlyArray<ServerProvider["models"][number]>;
-  effort: string | null;
-  text: string;
-}): string {
-  const caps = getProviderModelCapabilities(params.models, params.model, params.provider);
-  const promptEffort = resolvePromptInjectedEffort(caps, params.effort);
-  return applyClaudePromptEffortPrefix(params.text, promptEffort);
-}
 const SCRIPT_TERMINAL_COLS = 120;
 const SCRIPT_TERMINAL_ROWS = 30;
 
@@ -8112,6 +8105,9 @@ export default function ChatView(props: ChatViewProps) {
     const composerTerminalContextsSnapshot = [...sendableComposerTerminalContexts];
     const composerPreviewAnnotationsSnapshot = [...composerPreviewAnnotations];
     const composerReviewCommentsSnapshot: ReviewCommentContext[] = [...composerReviewComments];
+    const promptEffortInjectedForSend =
+      useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)
+        ?.promptEffortInjected === true;
     // Expired terminal excerpts are not sent; their chips leave the text with them.
     const messageTextForSend = composerTerminalContexts
       .filter((context) => !composerTerminalContextsSnapshot.includes(context))
@@ -8143,6 +8139,13 @@ export default function ChatView(props: ChatViewProps) {
       models: ctxSelectedProviderModels,
       effort: ctxSelectedPromptEffort,
       text: messageTextForSend || ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
+      modelMayChange:
+        isAldoCloud &&
+        aldoRoutesModels() &&
+        isLocalDraftThread &&
+        !hasExplicitComposerModelSelection(
+          useComposerDraftStore.getState().getComposerDraft(composerDraftTarget),
+        ),
     });
     if (composerRef.current?.validateProviderInput(outgoingMessageText) === false) {
       return;
@@ -8548,7 +8551,9 @@ export default function ChatView(props: ChatViewProps) {
         const restoreFailedDraft = () => {
           setMultipleModelSelections(failedSelections);
           if (clearedDraft) {
-            setComposerDraftPrompt(composerDraftTarget, messageTextForSend);
+            setComposerDraftPrompt(composerDraftTarget, messageTextForSend, {
+              effortInjected: promptEffortInjectedForSend,
+            });
             addComposerDraftImages(
               composerDraftTarget,
               composerImagesSnapshot.map(cloneComposerImageForRetry),
@@ -8966,7 +8971,9 @@ export default function ChatView(props: ChatViewProps) {
         composerImagesRef.current = retryComposerImages;
         composerFilesRef.current = composerFilesSnapshot;
         composerTerminalContextsRef.current = composerTerminalContextsSnapshot;
-        setComposerDraftPrompt(composerDraftTarget, messageTextForSend);
+        setComposerDraftPrompt(composerDraftTarget, messageTextForSend, {
+          effortInjected: promptEffortInjectedForSend,
+        });
         addComposerDraftImages(composerDraftTarget, retryComposerImages);
         addComposerDraftFiles(composerDraftTarget, composerFilesSnapshot);
         setComposerDraftTerminalContexts(composerDraftTarget, composerTerminalContextsSnapshot);
@@ -9578,12 +9585,14 @@ export default function ChatView(props: ChatViewProps) {
     const nextThreadId = newThreadId();
     const planMarkdown = activeProposedPlan.planMarkdown;
     const implementationPrompt = buildPlanImplementationPrompt(planMarkdown);
+    const routeNewThread = isAldoCloud && aldoRoutesModels();
     const outgoingImplementationPrompt = formatOutgoingPrompt({
       provider: ctxSelectedProvider,
       model: ctxSelectedModel,
       models: ctxSelectedProviderModels,
       effort: ctxSelectedPromptEffort,
       text: implementationPrompt,
+      modelMayChange: routeNewThread,
     });
     if (composerRef.current?.validateProviderInput(outgoingImplementationPrompt) === false) {
       return;
@@ -9598,28 +9607,32 @@ export default function ChatView(props: ChatViewProps) {
       resetLocalDispatch();
     };
 
-    const createResult = await createThread({
-      environmentId,
-      input: {
-        threadId: nextThreadId,
-        projectId: activeProject.id,
-        title: nextThreadTitle,
-        modelSelection: nextThreadModelSelection,
-        runtimeMode: defaultRuntimeMode,
-        interactionMode: "default",
-        branch: activeThreadBranch,
-        worktreePath: activeThread.worktreePath,
-        createdAt,
-      },
-    });
+    const newThread = {
+      projectId: activeProject.id,
+      title: nextThreadTitle,
+      modelSelection: nextThreadModelSelection,
+      runtimeMode: defaultRuntimeMode,
+      interactionMode: "default" as const,
+      branch: activeThreadBranch,
+      worktreePath: activeThread.worktreePath,
+      createdAt,
+    };
+    // Aldo routes an atomic first turn, including starts from an existing plan.
+    const createResult = routeNewThread
+      ? null
+      : await createThread({
+          environmentId,
+          input: { threadId: nextThreadId, ...newThread },
+        });
     let failure: AtomCommandResult<unknown, unknown> | null =
-      createResult._tag === "Failure" ? createResult : null;
+      createResult?._tag === "Failure" ? createResult : null;
 
     if (failure === null) {
       const startResult = await startThreadTurn({
         environmentId,
         input: {
           threadId: nextThreadId,
+          ...(routeNewThread ? { bootstrap: { createThread: newThread } } : {}),
           message: {
             messageId: newMessageId(),
             role: "user",
