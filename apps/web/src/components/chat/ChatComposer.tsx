@@ -56,6 +56,7 @@ import { folderDropTarget, resolveDroppedFolderPath } from "./folderDrop";
 import {
   createModelSelection,
   normalizeModelSlug,
+  isClaudePromptEffortPrefixInjection,
   stripClaudePromptEffortPrefix,
 } from "@t3tools/shared/model";
 import { USAGE_LIMITS_COMMAND } from "@t3tools/shared/usageLimits";
@@ -2031,12 +2032,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     [selectedProviderEntry],
   );
   const compactCommandAvailable = providerSupportsManualCompaction(selectedProviderEntry);
-  const selectedProviderSkills = selectedProviderStatus
-    ? resolveProviderSkillsForCwd(selectedProviderStatus, gitCwd)
-    : [];
-  const selectedProviderSlashCommands = selectedProviderStatus
-    ? resolveProviderSlashCommandsForCwd(selectedProviderStatus, gitCwd)
-    : [];
+  const selectedProviderSkills =
+    !aldoDefaultModel && selectedProviderStatus
+      ? resolveProviderSkillsForCwd(selectedProviderStatus, gitCwd)
+      : [];
+  const selectedProviderSlashCommands =
+    !aldoDefaultModel && selectedProviderStatus
+      ? resolveProviderSlashCommandsForCwd(selectedProviderStatus, gitCwd)
+      : [];
   const refreshProviders = useAtomCommand(serverEnvironment.refreshProviders, {
     reportFailure: false,
   });
@@ -2722,8 +2725,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         scheduleComposerFocus();
         return;
       }
+      const effortInjected = isClaudePromptEffortPrefixInjection(promptRef.current, nextPrompt);
       promptRef.current = nextPrompt;
-      setComposerDraftPrompt(composerDraftTarget, nextPrompt);
+      setComposerDraftPrompt(composerDraftTarget, nextPrompt, { effortInjected });
       const nextCursor = collapseExpandedComposerCursor(nextPrompt, nextPrompt.length);
       setComposerCursor(nextCursor);
       setComposerTrigger(detectComposerTrigger(nextPrompt, nextPrompt.length));
@@ -5181,7 +5185,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 selected: aldoDefaultModel,
                 onSelect: () => {
                   if (!aldoDefaultModel) {
-                    setPromptFromTraits(stripClaudePromptEffortPrefix(promptRef.current));
+                    const draft = useComposerDraftStore
+                      .getState()
+                      .getComposerDraft(composerDraftTarget);
+                    setPromptFromTraits(
+                      stripClaudePromptEffortPrefix(promptRef.current, draft?.promptEffortInjected),
+                    );
                   }
                   useComposerDraftStore.getState().setModelSelection(composerDraftTarget, null);
                 },

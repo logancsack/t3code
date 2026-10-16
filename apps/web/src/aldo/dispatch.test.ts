@@ -9,6 +9,7 @@ import {
   type ClientOrchestrationCommand,
 } from "@t3tools/contracts";
 import { beforeEach, expect, it, vi } from "vite-plus/test";
+import type { AldoOutgoing } from "./outbox";
 
 const host = vi.hoisted(() => ({
   dispatch: null as NonNullable<
@@ -18,6 +19,17 @@ const host = vi.hoisted(() => ({
   explicit: false,
   hold: vi.fn(async () => "held"),
   outgoing: vi.fn(async () => {}),
+  entries: new Map<string, AldoOutgoing>(),
+  toast: vi.fn(),
+  closeToast: vi.fn(),
+  ApiError: class extends Error {
+    constructor(
+      readonly status: number,
+      message: string,
+    ) {
+      super(message);
+    }
+  },
 }));
 vi.mock("@t3tools/client-runtime/operations", () => ({
   setOrchestrationCommandDispatchOverride: (dispatch: typeof host.dispatch) => {
@@ -42,13 +54,30 @@ vi.mock("../rpc/atomRegistry", () => ({
 vi.mock("../state/presentation", () => ({
   environmentPresentations: { presentationAtom: () => null },
 }));
-vi.mock("../components/ui/toast", () => ({ toastManager: { add: vi.fn() } }));
+vi.mock("../components/ui/toast", () => ({
+  toastManager: { add: host.toast, close: host.closeToast },
+}));
 vi.mock("./threadCommands", () => ({ keepAldoCommand: async () => null }));
 vi.mock("./files", () => ({ aldoFilesOf: () => null }));
 vi.mock("./outbox", () => ({
-  outgoing: async () => [],
-  keepOutgoing: host.outgoing,
-  dropOutgoing: async () => {},
+  outgoing: async () => [...host.entries.values()],
+  keepOutgoing: async (
+    environmentId: string,
+    command: { commandId: string },
+    files: ReadonlyMap<string, Blob> | null,
+  ) => {
+    await host.outgoing();
+    host.entries.set(command.commandId, {
+      commandId: command.commandId,
+      environmentId,
+      command,
+      ...(files ? { files } : {}),
+      keptAt: Date.now(),
+    });
+  },
+  dropOutgoing: async (commandId: string) => {
+    host.entries.delete(commandId);
+  },
 }));
 vi.mock("./startingThreads", () => ({
   aldoMachineConnected: vi.fn(),
@@ -59,10 +88,11 @@ vi.mock("./cloud", () => ({
   isAldoEnvironmentId: () => true,
   aldoRoutesModels: () => host.routes,
   holdAldoTurn: host.hold,
-  AldoApiError: class extends Error {},
+  AldoApiError: host.ApiError,
+  requestAldoDirectoryRefresh: vi.fn(),
 }));
 
-import { installAldoCommandDispatch } from "./dispatch";
+import { installAldoCommandDispatch, resumeAldoOutbox } from "./dispatch";
 
 function command(first: boolean): ClientOrchestrationCommand {
   const modelSelection = ModelSelection.make({
@@ -102,14 +132,18 @@ function command(first: boolean): ClientOrchestrationCommand {
   };
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.stubGlobal("window", new EventTarget());
   vi.stubGlobal("document", new EventTarget());
   host.routes = true;
   host.explicit = false;
   host.hold.mockReset().mockResolvedValue("held");
   host.outgoing.mockClear();
+  host.entries.clear();
+  host.toast.mockClear();
+  host.closeToast.mockClear();
   installAldoCommandDispatch();
+  await resumeAldoOutbox();
 });
 
 it.each([false, true])(
@@ -126,11 +160,8 @@ it.each([false, true])(
       null,
       true,
     );
-    expect(host.outgoing).toHaveBeenCalledWith(
-      "aldo-machine",
-      { ...first, aldoModelExplicit: explicit },
-      null,
-    );
+    expect(host.outgoing).toHaveBeenCalledOnce();
+    expect(host.entries.size).toBe(0);
   },
 );
 
@@ -166,4 +197,58 @@ it("surfaces a routing refusal instead of sending the inherited model directly",
   await expect(
     host.dispatch!({ environmentId: "aldo-machine", command: command(true), primary: true }),
   ).rejects.toThrow("out of room");
+  expect(host.entries.size).toBe(0); // The live send restores its composer.
+});
+
+it.each([
+  [402, false],
+  [402, true],
+  [409, false],
+  [409, true],
+] as const)(
+  "retains a resumed routed first prompt after a %s refusal (files=%s), then removes it once accepted",
+  async (status, withFiles) => {
+    const first = { ...command(true), aldoModelExplicit: false };
+    const files = withFiles ? new Map([["file", new Blob(["user attachment"])]]) : null;
+    host.entries.set(first.commandId, {
+      commandId: first.commandId,
+      environmentId: "aldo-machine",
+      command: first,
+      ...(files ? { files } : {}),
+      keptAt: Date.now(),
+    });
+    host.hold.mockRejectedValueOnce(new host.ApiError(status, "No room on this plan"));
+
+    await resumeAldoOutbox();
+
+    expect(host.entries.get(first.commandId)?.command).toEqual(first);
+    expect(host.entries.get(first.commandId)?.files ?? null).toBe(files);
+    expect(host.toast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Message not sent",
+        description: expect.stringContaining("saved on this device"),
+      }),
+    );
+
+    await resumeAldoOutbox();
+    expect(host.entries.size).toBe(0);
+    expect(host.hold).toHaveBeenLastCalledWith("aldo-machine", first, files, false);
+    expect(host.closeToast).toHaveBeenCalledWith(`aldo-outbox-${first.commandId}`);
+  },
+);
+
+it("retains a refused legacy entry too, and continues with the other saved messages", async () => {
+  const first = command(true);
+  const second = { ...first, commandId: CommandId.make("second-command") };
+  for (const next of [first, second])
+    host.entries.set(next.commandId, {
+      commandId: next.commandId,
+      environmentId: "aldo-machine",
+      command: next,
+      keptAt: Date.now(),
+    });
+  host.hold.mockResolvedValueOnce("refused");
+  await resumeAldoOutbox();
+  expect([...host.entries.keys()]).toEqual([first.commandId]);
+  expect(host.hold).toHaveBeenCalledTimes(2);
 });

@@ -231,17 +231,19 @@ async function handToAldo(
   command: { readonly commandId: string },
   files: ReadonlyMap<string, Blob> | null,
   now: boolean,
+  composerWillRestore = true,
 ): Promise<boolean> {
   handing.add(command.commandId);
   try {
     await keepOutgoing(environmentId, command, files);
     const outcome = await holdAldoTurn(environmentId, command, files, now);
-    await dropOutgoing(command.commandId);
+    if (outcome === "held" || composerWillRestore) await dropOutgoing(command.commandId);
     return outcome === "held";
   } catch (cause) {
     // Signed out: it goes once the user signs in again (the page is on its way there).
-    // Anything else goes back in the composer, so it isn't also sent from here later.
-    if (!(cause instanceof AldoApiError && cause.status === 401)) {
+    // A live send restores other failures to its composer. A resumed send
+    // has no composer, so its durable copy must remain for another attempt.
+    if (composerWillRestore && !(cause instanceof AldoApiError && cause.status === 401)) {
       await dropOutgoing(command.commandId);
     }
     throw cause;
@@ -250,7 +252,7 @@ async function handToAldo(
   }
 }
 
-let resuming = false;
+let resuming: Promise<void> | null = null;
 
 /**
  * Hands Aldo the messages a page went away from before Aldo had them (as the
@@ -258,22 +260,42 @@ let resuming = false;
  * their files. They go as held ones do, not at once: the turn they were sent
  * into may be long over.
  */
-async function resumeAldoOutbox(): Promise<void> {
-  if (resuming) return;
-  resuming = true;
-  try {
-    for (const entry of await outgoing()) {
-      if (handing.has(entry.commandId)) continue;
-      const command = entry.command as { readonly commandId: string };
-      if (await handToAldo(entry.environmentId, command, entry.files ?? null, false)) {
-        requestAldoDirectoryRefresh();
-      } else console.warn(`Aldo wouldn't hold message ${entry.commandId}; it wasn't sent.`);
+export function resumeAldoOutbox(): Promise<void> {
+  if (resuming) return resuming;
+  const run = (async () => {
+    try {
+      for (const entry of await outgoing()) {
+        if (handing.has(entry.commandId)) continue;
+        const command = entry.command as { readonly commandId: string };
+        const toastId = `aldo-outbox-${entry.commandId}`;
+        try {
+          // There is no live send to restore the composer after a refusal.
+          // Keep the durable copy until Aldo confirms that it has the message.
+          if (await handToAldo(entry.environmentId, command, entry.files ?? null, false, false)) {
+            toastManager.close(toastId);
+            requestAldoDirectoryRefresh();
+          } else {
+            throw new Error("Aldo could not accept the message.");
+          }
+        } catch (cause) {
+          if (cause instanceof AldoApiError && cause.status === 401) throw cause;
+          toastManager.add({
+            id: toastId,
+            type: "warning",
+            title: "Message not sent",
+            description: `${cause instanceof Error ? cause.message : "Aldo could not accept it."} Your message is saved on this device and will be retried when you return or reconnect.`,
+            timeout: 0,
+          });
+        }
+      }
+    } catch (cause) {
+      console.warn("Couldn't hand Aldo the messages waiting on this device.", cause);
     }
-  } catch (cause) {
-    console.warn("Couldn't hand Aldo the messages waiting on this device.", cause);
-  } finally {
-    resuming = false;
-  }
+  })().finally(() => {
+    resuming = null;
+  });
+  resuming = run;
+  return run;
 }
 
 /** Routes commands for Aldo threads through ensureAldoConnected. */

@@ -5,7 +5,7 @@ import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
 import { createContext, type ReactNode, useContext, useMemo } from "react";
 
-import { isAldoCloud } from "../../aldo/cloud";
+import { aldoRoutesModels, isAldoCloud } from "../../aldo/cloud";
 import { useAldoMachineSettings } from "../../aldo/machineSettings";
 import { aldoSettingsSelection } from "../../aldo/machineSettings.logic";
 import { aldoSettingsScopeSearch } from "../../aldo/settings.logic";
@@ -80,12 +80,14 @@ function useResolvedSettingsScope(rawSearch: SettingsScopeSearch, singleEnvironm
   );
   const projectFiles = useMemberProjectFiles(scope);
   const kept = useAldoMachineSettings();
+  const modelRouting = isAldoCloud && aldoRoutesModels();
   return useMemo(() => {
     // Aldo: the user's values at "All environments" (aldo/machineSettings.logic.ts).
     const selected = aldoSettingsSelection(
       scope.kind,
       selectScopedSettingsEnvironments(scope, availableEnvironments, primaryEnvironmentId),
       isAldoCloud ? kept : null,
+      modelRouting,
     );
     const targets = resolveScopedSettingsTargets(
       scope,
@@ -101,7 +103,16 @@ function useResolvedSettingsScope(rawSearch: SettingsScopeSearch, singleEnvironm
       targets[0] ??
       null;
     return { scope, groups, search, ...selected, targets, target };
-  }, [availableEnvironments, groups, kept, primaryEnvironmentId, projectFiles, scope, search]);
+  }, [
+    availableEnvironments,
+    groups,
+    kept,
+    modelRouting,
+    primaryEnvironmentId,
+    projectFiles,
+    scope,
+    search,
+  ]);
 }
 
 const SettingsScopeContext = createContext<

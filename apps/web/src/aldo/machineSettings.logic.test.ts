@@ -113,9 +113,37 @@ describe("withAldoMachineSettings", () => {
           },
         },
         {},
+        true,
       ).defaultModelSelection,
     ).toBeNull();
   });
+
+  it.each([false, true])(
+    "keeps machine defaults without routing, but clears inherited ones with routing=%s",
+    (modelRouting) => {
+      const model = { instanceId: ProviderInstanceId.make("codex"), model: "machine-default" };
+      const machine = { ...environment("a").serverConfig.settings, defaultModelSelection: model };
+      expect(withAldoMachineSettings(machine, {}, modelRouting).defaultModelSelection).toEqual(
+        modelRouting ? null : model,
+      );
+      const selected = aldoSettingsSelection(
+        "all",
+        selection({
+          ...environment("a"),
+          serverConfig: { ...environment("a").serverConfig, settings: machine },
+        }),
+        {},
+        modelRouting,
+      );
+      expect(selected.environment?.serverConfig.settings.defaultModelSelection).toEqual(
+        modelRouting ? null : model,
+      );
+      expect(
+        withAldoMachineSettings(machine, { defaultModelSelection: model }, modelRouting)
+          .defaultModelSelection,
+      ).toEqual(model);
+    },
+  );
 });
 
 describe("aldoKeepsAll", () => {

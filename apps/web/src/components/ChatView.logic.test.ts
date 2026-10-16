@@ -13,7 +13,10 @@ import {
   type WorktreeSetupSnapshot,
 } from "@t3tools/contracts";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
-import { stripClaudePromptEffortPrefix } from "@t3tools/shared/model";
+import {
+  isClaudePromptEffortPrefixInjection,
+  stripClaudePromptEffortPrefix,
+} from "@t3tools/shared/model";
 import { Atom, AsyncResult } from "effect/unstable/reactivity";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentThreadDetails } from "../state/threads";
@@ -134,7 +137,10 @@ describe("outgoing prompt formatting", () => {
 
   it("removes an injected trait before returning a manual Claude draft to routing", () => {
     const manualPrompt = formatOutgoingPrompt(input);
-    const restoredPrompt = stripClaudePromptEffortPrefix(manualPrompt);
+    const restoredPrompt = stripClaudePromptEffortPrefix(
+      manualPrompt,
+      isClaudePromptEffortPrefixInjection(input.text, manualPrompt),
+    );
     expect(formatOutgoingPrompt({ ...input, text: restoredPrompt, modelMayChange: true })).toBe(
       input.text,
     );
