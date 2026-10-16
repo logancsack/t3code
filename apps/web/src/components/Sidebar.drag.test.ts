@@ -643,6 +643,25 @@ describe("sidebar drag projection", () => {
     expect(byTime.get("w")).toEqual(stationary);
   });
 
+  it("previews a time-ordered pinned drop at its slot, not the pointer's (Aldo)", () => {
+    const items = [
+      pinnedHeader,
+      thread("p1", "pinned"),
+      thread("p2", "pinned"),
+      divider,
+      thread("a", "active"),
+      settledHeader,
+      marker("settled-placeholder"),
+    ];
+    const input = { items, settledOrder: [], settledExpanded: false };
+    // By pointer, the pinned row lands above p1.
+    expect(preview(input, "a", "p1").get("p1")?.y).toBe(83);
+    // By the order, it lands below p2, so neither pinned row moves.
+    const byOrder = preview({ ...input, pinnedOrder: ["p1", "p2", "a"] }, "a", "p1");
+    expect(byOrder.get("p1")).toEqual(stationary);
+    expect(byOrder.get("p2")).toEqual(stationary);
+  });
+
   it("derives missing card geometry from the measured root scale", () => {
     const items = [
       pinnedHeader,
