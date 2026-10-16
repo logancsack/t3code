@@ -1,17 +1,16 @@
-// The pull request panel's Check out, Fix and Resolve conflicts in Aldo. T3
-// checks the pull request out on the machine the panel reads it from, which
-// is another thread's; in Aldo each opens a thread of its own instead, on a
-// machine of its own that Aldo puts on the pull request's branch as it starts
-// (Aldo refuses one from a fork, whose branch isn't in the repository, and
-// one that isn't open). As in T3, a task waits in the new thread's composer
-// to be read over and sent: T3's own send, so its agent gets the same first
-// message, review comments and all.
+// Every action on an owned pull request goes back to its original conversation.
 
-import type { ScopedProjectRef } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  ThreadId,
+  type ScopedThreadRef,
+  type ScopedProjectRef,
+} from "@t3tools/contracts";
 
 import { toastManager } from "../components/ui/toast";
 import type { DraftId } from "../composerDraftStore";
-import { aldoStartsPullRequestThreads } from "./directory";
+import { aldoReusesPullRequestThreads } from "./directory";
+import { api, threadIdForEnvironment } from "./api";
 import {
   aldoOpensPullRequestThread,
   aldoPullRequestThreadOpened,
@@ -25,7 +24,7 @@ export { ALDO_PULL_REQUEST_CHECKOUT } from "./pullRequestThreads.logic";
 export function aldoOpensThreadOn(
   pullRequest: Pick<AldoPullRequestShown, "state"> | null,
 ): boolean {
-  return aldoOpensPullRequestThread(aldoStartsPullRequestThreads(), pullRequest);
+  return aldoOpensPullRequestThread(aldoReusesPullRequestThreads(), pullRequest);
 }
 
 /**
@@ -38,11 +37,12 @@ export async function openAldoPullRequestThread(
   fromEnvironmentId: string,
   pullRequest: AldoPullRequestShown,
   openThread: (projectRef: ScopedProjectRef) => Promise<{ readonly draftId: DraftId } | null>,
-  land: ((draftId: DraftId) => void) | null,
+  land: ((target: DraftId | ScopedThreadRef) => void) | null,
+  reuse: (target: ScopedThreadRef) => Promise<void> | void,
 ): Promise<void> {
   // The panel hides its checkout from an Aldo that would put the thread on a branch of its own;
   // a finding's Fix button is still there.
-  if (!aldoStartsPullRequestThreads()) {
+  if (!aldoReusesPullRequestThreads()) {
     toastManager.add({
       type: "error",
       title: "Aldo can't open a thread on a pull request yet",
@@ -50,19 +50,49 @@ export async function openAldoPullRequestThread(
     });
     return;
   }
-  // Aldo works only on an open one: a finding's Fix is still there on one that's merged or closed.
-  if (pullRequest.state !== "open") {
-    toastManager.add({
+  const toastId = toastManager.add({
+    type: "loading",
+    title: "Opening the pull request's thread...",
+  });
+  try {
+    const result = await api<{ owner: { environmentId: string; threadId: string | null } | null }>(
+      `/api/environments/${encodeURIComponent(threadIdForEnvironment(fromEnvironmentId))}/prs?url=${encodeURIComponent(pullRequest.url)}`,
+    );
+    if (!Object.hasOwn(result, "owner"))
+      throw new Error("Aldo cannot resolve PR ownership yet. Reload once the server has updated.");
+    const { owner } = result;
+    if (owner) {
+      if (!owner.threadId)
+        throw new Error(
+          "The original conversation is unavailable. Restore it in its original thread.",
+        );
+      const target = {
+        environmentId: EnvironmentId.make(owner.environmentId),
+        threadId: ThreadId.make(owner.threadId),
+      };
+      land?.(target);
+      await reuse(target);
+      toastManager.update(toastId, {
+        type: "success",
+        title: "Opened the original thread",
+        description: land
+          ? "The task is in the composer — read it over, then send."
+          : "All work on this change stays here.",
+      });
+      return;
+    }
+    if (pullRequest.state !== "open")
+      throw new Error(
+        `This pull request is ${pullRequest.state} and has no original thread to continue.`,
+      );
+  } catch (error) {
+    toastManager.update(toastId, {
       type: "error",
-      title: `This pull request is ${pullRequest.state}`,
-      description: "A thread works only on an open pull request's branch.",
+      title: "Could not open the PR thread",
+      description: error instanceof Error ? error.message : "Try again.",
     });
     return;
   }
-  const toastId = toastManager.add({
-    type: "loading",
-    title: "Opening a thread on the pull request's branch...",
-  });
   // Loaded here, so the panel (and its upstream tests) don't import Aldo's machines with it.
   // When Aldo doesn't record the thread (a fork's pull request, say), startAldoSandbox says why.
   const { discardAldoSandbox, startAldoSandbox } = await import("./threads");

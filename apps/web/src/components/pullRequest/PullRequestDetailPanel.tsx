@@ -1,3 +1,4 @@
+import { useNavigate } from "@tanstack/react-router";
 import { parseChangeRequestUrl } from "@t3tools/shared/changeRequestUrl";
 import { useAtomValue } from "@effect/atom-react";
 import { usePullRequestStack } from "~/state/usePullRequestStack";
@@ -891,6 +892,7 @@ export function PullRequestDetailPanel({
   const titleDraft = titleScope?.pullRequestKey === pullRequestKey ? titleScope.text : null;
   const [titleSaving, setTitleSaving] = useState(false);
   const newThread = useNewThreadHandler();
+  const navigateToPrThread = useNavigate();
   const { environments } = useEnvironments();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const unavailableGitHubUrl = useMemo(() => {
@@ -1076,10 +1078,10 @@ export function PullRequestDetailPanel({
   };
 
   const attachTarget = composerDraftTarget ?? null;
-  // Aldo: a task lands beside the thread only for its own pull request, whose branch its machine is
-  // on; any other opens a thread on the pull request's branch.
+  // Aldo resolves the PR's owner before choosing a composer; the current
+  // panel may be open on a different machine or conversation.
   const handoffTarget = isAldoCloud && context !== "thread" ? null : attachTarget;
-  const handoffLabels = pullRequestHandoffLabels(handoffTarget !== null);
+  const handoffLabels = pullRequestHandoffLabels(isAldoCloud || handoffTarget !== null);
 
   const writeTaskToComposer = (target: ScopedThreadRef | DraftId, task: ThreadTask) => {
     const store = useComposerDraftStore.getState();
@@ -1146,9 +1148,33 @@ export function PullRequestDetailPanel({
     return session;
   };
 
+  const openAldoPr = async (
+    pr: Parameters<typeof openAldoPullRequestThread>[1],
+    task: ThreadTask | null,
+  ) => {
+    await openAldoPullRequestThread(
+      environmentId,
+      pr,
+      newThread,
+      task === null ? null : (target) => writeTaskToComposer(target, task),
+      async (target) => {
+        await navigateToPrThread({ to: "/$environmentId/$threadId", params: target });
+      },
+    );
+  };
+
   /** A question about the change, which needs a thread and nothing else. */
   const startAsk = async (kind: string, task: ThreadTask) => {
     if (!detail || handoff !== null) return;
+    if (isAldoCloud) {
+      setHandoff(kind);
+      try {
+        await openAldoPr(detail, task);
+      } finally {
+        setHandoff(null);
+      }
+      return;
+    }
     if (attachTarget !== null) {
       writeTaskToComposer(attachTarget, task);
       toastManager.add({
@@ -1197,6 +1223,15 @@ export function PullRequestDetailPanel({
     mode: "worktree" | "local" = "worktree",
   ) => {
     if (!handoffSummary || handoff !== null) return;
+    if (isAldoCloud) {
+      setHandoff(kind);
+      try {
+        await openAldoPr(handoffSummary, task);
+      } finally {
+        setHandoff(null);
+      }
+      return;
+    }
     if (handoffTarget !== null && task !== null) {
       writeTaskToComposer(handoffTarget, task);
       toastManager.add({
@@ -1204,17 +1239,6 @@ export function PullRequestDetailPanel({
         title: "Added to the composer",
         description: "The task is in the composer — read it over, then send.",
       });
-      return;
-    }
-    if (isAldoCloud) {
-      setHandoff(kind);
-      await openAldoPullRequestThread(
-        environmentId,
-        handoffSummary,
-        newThread,
-        task === null ? null : (draftId) => writeTaskToComposer(draftId, task),
-      );
-      setHandoff(null);
       return;
     }
     if (checkoutRoot === null) return;
