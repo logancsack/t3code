@@ -20,6 +20,7 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
+import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 
 import { ServerConfig } from "../../config.ts";
 import { hasRunningPrimeAgentSubagentsForThread } from "../PrimeAgentActivity.ts";
@@ -38,7 +39,6 @@ async function makeMockPrimeWrapper(input: {
   readonly argsLogPath: string;
   readonly exitLogPath: string;
   readonly exitDuringPrompt?: boolean;
-  readonly exitAfterCreateSession?: boolean;
   readonly emitPrimeUpdates?: boolean;
   readonly hangFirstPromptForever?: boolean;
   readonly requestLogPath?: string;
@@ -50,7 +50,6 @@ export T3_ACP_SUPPORTS_LOAD_SESSION=0
 export T3_ACP_EMIT_PRIME_UPDATES=${input.emitPrimeUpdates === false ? "0" : "1"}
 export T3_ACP_EXIT_LOG_PATH=${JSON.stringify(input.exitLogPath)}
 export T3_ACP_EXIT_DURING_PROMPT=${input.exitDuringPrompt ? "1" : "0"}
-export T3_ACP_EXIT_AFTER_CREATE_SESSION=${input.exitAfterCreateSession ? "1" : "0"}
 export T3_ACP_HANG_FIRST_PROMPT_FOREVER=${input.hangFirstPromptForever ? "1" : "0"}
 export T3_ACP_REQUEST_LOG_PATH=${JSON.stringify(input.requestLogPath ?? "")}
 printf '%s\n' '---' "$@" >> ${JSON.stringify(input.argsLogPath)}
@@ -380,8 +379,22 @@ it.layer(testLayer)("PrimeAdapter", (it) => {
         makeMockPrimeWrapper({
           argsLogPath: NodePath.join(tempDirectory, "args.log"),
           exitLogPath: NodePath.join(tempDirectory, "exit.log"),
-          exitAfterCreateSession: true,
         }),
+      );
+      const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+      // Stop the real child at the startup liveness check, then wait for its exit
+      // receipt. A timer in the child can fire after the parent's check under load.
+      const exitingSpawner = ChildProcessSpawner.make((command) =>
+        spawner.spawn(command).pipe(
+          Effect.map((handle) =>
+            ChildProcessSpawner.makeHandle({
+              ...handle,
+              isRunning: handle
+                .kill({ killSignal: "SIGKILL" })
+                .pipe(Effect.andThen(handle.exitCode), Effect.andThen(handle.isRunning)),
+            }),
+          ),
+        ),
       );
       const adapter = yield* makePrimeAdapter(decodePrimeSettings({ binaryPath }), {
         instanceId: primeInstanceId,
@@ -389,7 +402,10 @@ it.layer(testLayer)("PrimeAdapter", (it) => {
           ...process.env,
           PRIME_AGENT_CODING_AGENT_DIR: NodePath.join(tempDirectory, "prime-home"),
         },
-      }).pipe(Effect.orDie);
+      }).pipe(
+        Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, exitingSpawner),
+        Effect.orDie,
+      );
       const events: ProviderRuntimeEvent[] = [];
       const eventFiber = yield* Stream.runForEach(adapter.streamEvents, (event) =>
         Effect.sync(() => events.push(event)),
