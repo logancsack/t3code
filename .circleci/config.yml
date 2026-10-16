@@ -5,6 +5,11 @@ version: 2.1
 # the jobs cover those two, their workspace dependencies (`t3...`), and the
 # mobile presentation code imported by server projection tests. Desktop and
 # mobile apps aren't built here. GitHub Actions is off for this repo.
+#
+# Agents push often and every push runs this, so each job checks only what the
+# change can break: `scope` (scope.sh) reads the diff, and a job with nothing
+# in scope ends at once as passed. The four job names are the statuses branch
+# protection requires and Aldo's client pin waits on, so all four always report.
 
 executors:
   # Vite+ runs tasks on the Node that package.json's engines asks for; the
@@ -12,9 +17,28 @@ executors:
   node:
     docker:
       - image: cimg/node:24.19
-    resource_class: large
+    resource_class: medium
 
 commands:
+  in-scope:
+    description: Ends the job as passed unless one of `flags` (scope.env's SCOPE_ variables) is set.
+    parameters:
+      flags:
+        type: string
+    steps:
+      - attach_workspace:
+          at: /tmp/scope
+      - run:
+          name: Scope
+          command: |
+            cat /tmp/scope/scope.env >> "$BASH_ENV"
+            . /tmp/scope/scope.env
+            for flag in << parameters.flags >>; do
+              [ "${!flag}" = 1 ] && exit 0
+            done
+            echo "Nothing this job checks changed since $SCOPE_BASE."
+            circleci-agent step halt
+
   setup:
     steps:
       # Skips the history's blobs; the repo's .git is several times its tree.
@@ -42,57 +66,111 @@ commands:
             - ~/.local/share/pnpm/store
 
 jobs:
+  scope:
+    docker:
+      - image: cimg/node:24.19
+    resource_class: small
+    steps:
+      - checkout:
+          method: blobless
+      - run:
+          name: What this change can break
+          command: .circleci/scope.sh /tmp/scope
+      - persist_to_workspace:
+          root: /tmp/scope
+          paths:
+            - scope.env
+            - changed
+
   check:
     executor: node
     steps:
+      - in-scope:
+          flags: SCOPE_CHECK
       - setup
       - run:
           name: Format and lint
-          command: vp check
+          # Lint isn't type-aware, so files that didn't change can't start failing.
+          command: |
+            if [ "$SCOPE_FULL" = 1 ]; then exec vp check; fi
+            mapfile -t files < <(while IFS= read -r f; do [ -f "$f" ] && echo "$f"; done < /tmp/scope/changed)
+            [ "${#files[@]}" = 0 ] || vp check --no-error-on-unmatched-pattern "${files[@]}"
       - run:
           name: Typecheck
-          command: vp run --filter 't3...' typecheck
+          # One package and one checker at a time keeps the server's typecheck
+          # (6 GB with tsc's defaults) inside the machine's 4 GB.
+          environment:
+            GOMEMLIMIT: 2500MiB
+          command: |
+            if [ -z "$SCOPE_TYPECHECK" ]; then echo "No package's sources changed."; exit 0; fi
+            vp run --concurrency-limit 1 $SCOPE_TYPECHECK typecheck --checkers 1
 
-  # The server's dependencies include the full web suite; test-server runs the server itself.
+  # The server's dependencies; test-server runs the server itself. Vitest runs
+  # the tests whose imports reach a changed file.
   test:
     executor: node
     steps:
+      - in-scope:
+          flags: SCOPE_TEST
       - setup
       - run:
           name: Test
-          command: vp run --parallel --concurrency-limit 4 --filter 't3^...' test
+          command: |
+            changed=(--changed "$SCOPE_BASE")
+            [ "$SCOPE_FULL" = 0 ] || changed=()
+            vp run --concurrency-limit 1 --filter 't3^...' test "${changed[@]}" --maxWorkers=2
+      - run:
+          name: Server tests that import client code
+          # The server's projection tests import web, mobile and client-runtime
+          # code. When test-server has nothing in scope, those this change reaches run here.
+          command: |
+            if [ "$SCOPE_SERVER" = 1 ]; then echo "test-server runs the whole server suite."; exit 0; fi
+            vp run --filter t3 test --changed "$SCOPE_BASE"
 
   # apps/server sets `fileParallelism: false`, so its files run one at a time.
-  # Sharding spreads them over separate machines instead.
   test-server:
     executor: node
-    parallelism: 3
     steps:
+      - in-scope:
+          flags: SCOPE_SERVER
       - setup
       - run:
           name: Test
-          command: vp run --filter t3 test --shard "$((CIRCLE_NODE_INDEX + 1))/${CIRCLE_NODE_TOTAL}"
+          command: vp run --filter t3 test
 
   build:
     executor: node
     steps:
+      - in-scope:
+          flags: SCOPE_SERVER SCOPE_CLIENT
       - setup
-      - run:
-          name: Build the T3 server, as Aldo's runtime:build does
-          environment:
-            T3CODE_TELEMETRY_ENABLED: "false"
-          command: vp run --filter t3 build
       - run:
           name: Build the Aldo web client, as Aldo's README does
           working_directory: apps/web
           environment:
             VITE_ALDO_CLOUD: "1"
-          command: vp build
+          command: |
+            if [ "$SCOPE_CLIENT" = 0 ]; then echo "Nothing the client's build reads changed."; exit 0; fi
+            vp build
+      - run:
+          name: Build the T3 server, as Aldo's runtime:build does
+          # runtime:build builds @t3tools/web first and bundles it; here the
+          # server's build bundles the Aldo client the step above built.
+          environment:
+            T3CODE_TELEMETRY_ENABLED: "false"
+          command: |
+            if [ "$SCOPE_SERVER" = 0 ]; then echo "Nothing the server's build reads changed."; exit 0; fi
+            vp run --ignore-depends-on --filter t3 build
 
 workflows:
   ci:
     jobs:
-      - check
-      - test
-      - test-server
-      - build
+      - scope
+      - check:
+          requires: [scope]
+      - test:
+          requires: [scope]
+      - test-server:
+          requires: [scope]
+      - build:
+          requires: [scope]
