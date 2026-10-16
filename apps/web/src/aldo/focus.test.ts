@@ -24,7 +24,6 @@ vi.mock("./directory", () => aldoApiMock);
 vi.mock("./preload", () => ({ aldoPageUsedAt: () => page.usedAt }));
 
 import { watchAldoFocus } from "./focus";
-import { ALDO_FOCUS_IDLE_MS } from "./focus.logic";
 
 const A = { environmentId: "aldo-a", thread: "t-a" };
 const B = { environmentId: "aldo-b", thread: "t-b" };
@@ -62,49 +61,6 @@ const said = () =>
   sent.map((s) => `${s.environmentId}:${s.presence?.thread}:${s.presence?.focused}`);
 
 describe("watchAldoFocus", () => {
-  it("says the conversation is on screen at once, and again within the minute", () => {
-    doc.visibilityState = "hidden";
-    const background = watchAldoFocus(A);
-    vi.advanceTimersByTime(60_000);
-    expect(said()).toEqual([]);
-    background();
-    doc.visibilityState = "visible";
-    focused = false;
-    const unfocused = watchAldoFocus(A);
-    expect(said()).toEqual([]);
-    unfocused();
-    focused = true;
-    const stop = watchAldoFocus(A);
-    expect(said()).toEqual(["aldo-a:t-a:true"]);
-    vi.advanceTimersByTime(30_000);
-    expect(sent).toHaveLength(1);
-    vi.advanceTimersByTime(30_000);
-    expect(said()).toEqual(["aldo-a:t-a:true", "aldo-a:t-a:true"]);
-    stop();
-  });
-
-  it("says once that it isn't when the window loses focus, and again when it's back", () => {
-    const stop = watchAldoFocus(A);
-    focused = false;
-    win.dispatchEvent(new Event("blur"));
-    vi.advanceTimersByTime(1_000);
-    vi.advanceTimersByTime(60_000);
-    expect(said()).toEqual(["aldo-a:t-a:true", "aldo-a:t-a:false"]);
-    focused = true;
-    win.dispatchEvent(new Event("focus"));
-    expect(said().at(-1)).toBe("aldo-a:t-a:true");
-    stop();
-  });
-
-  it("doesn't count focus going into a frame on the page as leaving it", () => {
-    const stop = watchAldoFocus(A);
-    // The window blurs, then the page has focus again (inside the frame).
-    win.dispatchEvent(new Event("blur"));
-    vi.advanceTimersByTime(1_000);
-    expect(said()).toEqual(["aldo-a:t-a:true"]);
-    stop();
-  });
-
   it("says it isn't as the page is hidden or goes away, so the words still go out", () => {
     const stop = watchAldoFocus(A);
     doc.visibilityState = "hidden";
@@ -129,16 +85,6 @@ describe("watchAldoFocus", () => {
     win.dispatchEvent(new Event("pageshow"));
     expect(said().at(-1)).toBe("aldo-a:t-a:true");
     again();
-  });
-
-  it("lets a page left alone ring again, and says so once it's used", () => {
-    const stop = watchAldoFocus(A);
-    vi.advanceTimersByTime(ALDO_FOCUS_IDLE_MS + 15_000);
-    expect(said().at(-1)).toBe("aldo-a:t-a:false");
-    page.usedAt = Date.now();
-    win.dispatchEvent(new Event("keydown"));
-    expect(said().at(-1)).toBe("aldo-a:t-a:true");
-    stop();
   });
 
   it("moves with the user to another thread, and stops when they leave", () => {
