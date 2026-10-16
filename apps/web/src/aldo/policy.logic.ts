@@ -166,6 +166,56 @@ export interface AldoPolicyEdit {
   readonly clear?: ReadonlyArray<AldoPolicyPath>;
 }
 
+/** Preview the same clear-then-merge edit the server saves; its answer remains authoritative. */
+export function optimisticPolicyEdit(view: AldoPolicyView, edit: AldoPolicyEdit): AldoPolicyView {
+  const apply = (policy: AldoPolicy): AldoPolicy => {
+    const next: Record<string, unknown> = { ...structuredClone(policy) };
+    for (const [key, child] of edit.clear ?? []) {
+      if (child === undefined) delete next[key];
+      else if (next[key] && typeof next[key] === "object")
+        delete (next[key] as Record<string, unknown>)[child];
+    }
+    for (const [key, value] of Object.entries(edit.set ?? {})) {
+      next[key] =
+        value && typeof value === "object"
+          ? { ...(next[key] as object | undefined), ...value }
+          : value;
+    }
+    return next as AldoPolicy;
+  };
+  if (!edit.repos?.length) {
+    const decided = new Set(Object.keys(edit.set?.mergeMethod ?? {}));
+    return {
+      ...view,
+      everywhere: apply(view.everywhere),
+      workspaces: view.workspaces.map((workspace) => ({
+        ...workspace,
+        policy: {
+          ...workspace.policy,
+          ...(workspace.policy.mergeMethod
+            ? {
+                mergeMethod: Object.fromEntries(
+                  Object.entries(workspace.policy.mergeMethod).filter(
+                    ([repo]) => !decided.has(repo),
+                  ),
+                ),
+              }
+            : {}),
+        },
+      })),
+    };
+  }
+  const key = (repos: ReadonlyArray<string>) => [...repos].sort().join("\n");
+  return {
+    ...view,
+    workspaces: view.workspaces.map((workspace) =>
+      key(workspace.repos) === key(edit.repos!)
+        ? { ...workspace, policy: apply(workspace.policy) }
+        : workspace,
+    ),
+  };
+}
+
 /** The change a choice makes: for all the user's workspaces, or one (`repos`). */
 export function aldoRuleEdit(
   rule: AldoPolicyRuleId,

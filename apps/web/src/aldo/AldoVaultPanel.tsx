@@ -1,3 +1,5 @@
+import { settingsIntegrations, settingsVault } from "./settingsData";
+import { useSettingsResource } from "./settingsResource";
 import { KeyRoundIcon, LockKeyholeIcon, PlusIcon, UploadIcon, VariableIcon } from "lucide-react";
 import {
   useCallback,
@@ -399,7 +401,8 @@ type LoginDraft = {
  * encrypted and never shown again.
  */
 export function AldoVaultPanel() {
-  const [items, setItems] = useState<ReadonlyArray<AldoVaultItem> | null>(null);
+  const cached = useSettingsResource(settingsVault);
+  const items = cached.data ?? null;
   const [error, setError] = useState<string | null>(null);
   const [secret, setSecret] = useState<SecretDraft | null>(null);
   const [login, setLogin] = useState<LoginDraft | null>(null);
@@ -429,17 +432,13 @@ export function AldoVaultPanel() {
   };
 
   const refresh = useCallback(() => {
-    aldoVault
-      .list()
-      .then((next) => {
-        setItems(next);
-        setError(null);
-      })
+    settingsVault
+      .refresh()
+      .then(() => setError(null))
       .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)));
   }, []);
-  useEffect(() => refresh(), [refresh]);
   // Sites never offered may have changed on another device since this page loaded.
-  useEffect(() => void refreshAldoNeverSaveLogins(), []);
+  useEffect(() => void refreshAldoNeverSaveLogins(30_000), []);
 
   const run = async (action: () => Promise<unknown>, done: () => void) => {
     setSaving(true);
@@ -448,6 +447,7 @@ export function AldoVaultPanel() {
       await action();
       done();
       refresh();
+      void settingsIntegrations.refresh().catch(() => undefined);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -519,7 +519,11 @@ export function AldoVaultPanel() {
           password. Agents save what they sign in with here too, and when you sign in in a thread's
           browser, it offers to save the login.
         </p>
-        {error ? <p className="px-3 text-sm text-destructive-foreground sm:px-4">{error}</p> : null}
+        {error || cached.error ? (
+          <p className="px-3 text-sm text-destructive-foreground sm:px-4">
+            {error ?? cached.error}
+          </p>
+        ) : null}
         {notice ? <p className="px-3 text-sm text-success-foreground sm:px-4">{notice}</p> : null}
       </SettingsSection>
 

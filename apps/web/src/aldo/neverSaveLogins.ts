@@ -41,6 +41,7 @@ let current: AldoNeverSaveLogins = { origins: readLocal(), synced: false };
 const NONE: AldoNeverSaveLogins = { origins: new Set(), synced: false };
 let loading: Promise<void> | null = null;
 let loaded = false;
+let loadedAt = 0;
 
 function set(next: AldoNeverSaveLogins): void {
   current = next;
@@ -52,7 +53,8 @@ const olderAldo = (cause: unknown) =>
   cause instanceof AldoApiError && (cause.status === 404 || cause.status === 405);
 
 /** Reads Aldo's list, giving it what this browser kept. */
-export function refreshAldoNeverSaveLogins(): Promise<void> {
+export function refreshAldoNeverSaveLogins(maxAgeMs = 0): Promise<void> {
+  if (Date.now() - loadedAt < maxAgeMs) return Promise.resolve();
   loaded = true;
   loading ??= (async () => {
     try {
@@ -68,6 +70,7 @@ export function refreshAldoNeverSaveLogins(): Promise<void> {
       }
       writeLocal(kept);
       set({ origins: new Set([...origins, ...kept]), synced: true });
+      loadedAt = Date.now();
     } catch (cause) {
       // Otherwise (offline, a hiccup) the list stays as it was until the next read.
       if (olderAldo(cause)) set({ origins: readLocal(), synced: false });

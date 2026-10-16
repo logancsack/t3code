@@ -12,12 +12,12 @@ import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentPresentations } from "../state/presentation";
 import { environmentServerConfigsAtom } from "../state/server";
 import {
-  fetchAldoAccounts,
   fetchAldoServerConfig,
   isAldoCloud,
   isAldoEnvironmentId,
   reportAldoServerConfig,
 } from "./cloud";
+import { settingsAccounts } from "./settingsData";
 import { loadAldoMachineSettings } from "./machineSettings";
 import { providerInstances, providerKinds } from "./serverConfig.logic";
 
@@ -161,7 +161,7 @@ export async function aldoServerConfigsFor(
   const base = await template();
   if (!base) return configs;
   const [accounts, kept] = await Promise.all([
-    fetchAldoAccounts().catch(() => null),
+    settingsAccounts.load().catch(() => null),
     loadAldoMachineSettings(),
   ]);
   const settings = { ...(base.settings as Record<string, unknown> | undefined), ...kept };
