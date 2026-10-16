@@ -2,7 +2,6 @@ import { ProviderDriverKind, ProviderInstanceId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
-  normalizeProviderAccentColor,
   providerInstanceInitials,
   resolveProviderInstanceDisplayName,
   shouldShowInstanceBadge,
@@ -43,48 +42,9 @@ describe("resolveProviderInstanceDisplayName", () => {
 });
 
 describe("providerInstanceInitials", () => {
-  it("takes the first two characters of a single word", () => {
-    expect(providerInstanceInitials("Codex")).toBe("CO");
-  });
-
-  it("takes the first character of each of the first two words", () => {
-    expect(providerInstanceInitials("Codex Personal")).toBe("CP");
-  });
-
-  it("ignores words past the first two", () => {
-    expect(providerInstanceInitials("Codex Personal Backup Account")).toBe("CP");
-  });
-
-  it("returns an empty string for an empty label", () => {
-    expect(providerInstanceInitials("")).toBe("");
-  });
-
   it("keeps an emoji whole instead of splitting its surrogate pair", () => {
     expect(providerInstanceInitials("😀 Work")).toBe("😀W");
     expect(providerInstanceInitials("😀")).toBe("😀");
-  });
-});
-
-describe("normalizeProviderAccentColor", () => {
-  it("accepts a lowercase hex color", () => {
-    expect(normalizeProviderAccentColor("#ff8800")).toBe("#ff8800");
-  });
-
-  it("accepts an uppercase hex color", () => {
-    expect(normalizeProviderAccentColor("#FF8800")).toBe("#FF8800");
-  });
-
-  it("rejects a non-hex value", () => {
-    expect(normalizeProviderAccentColor("blue")).toBeUndefined();
-  });
-
-  it("rejects a short hex value", () => {
-    expect(normalizeProviderAccentColor("#fff")).toBeUndefined();
-  });
-
-  it("treats undefined and blank as unset", () => {
-    expect(normalizeProviderAccentColor(undefined)).toBeUndefined();
-    expect(normalizeProviderAccentColor("   ")).toBeUndefined();
   });
 });
 

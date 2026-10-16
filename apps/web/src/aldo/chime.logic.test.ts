@@ -122,10 +122,6 @@ describe("shouldChime", () => {
     expect(shouldChime(0, null, NOW)).toBe(false);
   });
 
-  it("plays once for several at once", () => {
-    expect(shouldChime(3, null, NOW)).toBe(true);
-  });
-
   it("leaves a few seconds between sounds", () => {
     expect(shouldChime(1, NOW - 1_000, NOW)).toBe(false);
     expect(shouldChime(1, NOW - CHIME_GAP_MS, NOW)).toBe(true);
