@@ -1,5 +1,5 @@
 import * as NodeCrypto from "node:crypto";
-import { inspect } from "node:util";
+import * as NodeUtil from "node:util";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -69,7 +69,7 @@ it.layer(NodeServices.layer)("telemetry identity", (it) => {
       const errorStack = decodeLog?.annotations.errorStack;
       assert.isString(errorStack);
       assert.include(errorStack, "Failed to decode codex telemetry identity");
-      assert.notInclude(inspect(logs, { depth: null }), privateAccessToken);
+      assert.notInclude(NodeUtil.inspect(logs, { depth: null }), privateAccessToken);
     }).pipe(
       Effect.provide(
         Layer.merge(
