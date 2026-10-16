@@ -9,6 +9,7 @@
 import { waitingApprovals } from "./approvals.logic";
 import type {
   AldoApproval,
+  AldoChatDecision,
   AldoHome,
   AldoHomeConversation,
   AldoHomePending,
@@ -264,4 +265,17 @@ export function decisionBrief(decision: AldoDecision): string {
     case "waiting":
       return `The thread "${decision.conversation.title}" (ref ${decision.conversation.ref}) waits on the user: ${decision.conversation.summary ?? "it didn't say why"}.`;
   }
+}
+
+/** Presentation of this pending item in Aldo chat; overview still uses the complete list. */
+export function chatDecisionOf(decision: AldoDecision): AldoChatDecision | undefined {
+  return decision.kind === "aldo-approval"
+    ? decision.approval.chatDecision
+    : decision.kind === "merge"
+      ? decision.pullRequest.chatDecision
+      : decision.conversation.chatDecision;
+}
+
+export function aldoChatDecisions(home: AldoHome, now: number): ReadonlyArray<AldoDecision> {
+  return aldoDecisions(home, now).filter((d) => !chatDecisionOf(d)?.dismissed);
 }

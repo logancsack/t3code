@@ -31,6 +31,7 @@ import { cn } from "~/lib/utils";
 import { callDuration } from "./assistant.logic";
 import { useAldoAssistant } from "./assistantSession";
 import { useAldoArrive } from "./arrive";
+import { useAldoHomeFeed } from "./homeFeed";
 import { useAldoBrief } from "./briefFeed";
 import { aldoBriefAudioUrl, type AldoBrief } from "./cloud";
 import type { AldoChoice } from "./decide";
@@ -232,6 +233,17 @@ function estimate(brief: AldoBrief): number {
 
 /** Listen: Aldo reads the brief aloud, in its voice; the voice stops for a call. */
 function ListenButton(props: { readonly brief: AldoBrief }) {
+  const hidden = useAldoHomeFeed((s) =>
+    [
+      ...(s.home?.conversations ?? []),
+      ...(s.home?.approvals ?? []),
+      ...(s.home?.pullRequests ?? []),
+    ]
+      .filter((item) => item.chatDecision?.dismissed)
+      .map((item) => item.chatDecision!.id)
+      .sort()
+      .join(","),
+  );
   const audio = useRef<HTMLAudioElement | null>(null);
   const [state, setState] = useState<"idle" | "loading" | "playing" | "paused">("idle");
   const [length, setLength] = useState<number | null>(null);
@@ -247,10 +259,17 @@ function ListenButton(props: { readonly brief: AldoBrief }) {
     },
     [],
   );
+  useEffect(() => {
+    audio.current?.pause();
+    audio.current = null;
+    setState("idle");
+    setPosition(0);
+    setLength(null);
+  }, [hidden]);
   const toggle = () => {
     let player = audio.current;
     if (!player) {
-      player = new Audio(aldoBriefAudioUrl(props.brief.day));
+      player = new Audio(`${aldoBriefAudioUrl(props.brief.day)}&v=${Date.now()}`);
       player.preload = "auto";
       player.addEventListener("loadedmetadata", () => {
         if (Number.isFinite(player!.duration)) setLength(player!.duration * 1000);

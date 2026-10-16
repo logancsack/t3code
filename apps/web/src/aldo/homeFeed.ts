@@ -9,7 +9,7 @@
 import { useEffect } from "react";
 import { create } from "zustand";
 
-import { pullAldoConversation, useAldoAssistant } from "./assistantSession";
+import { noteAldoHiddenPrompts, pullAldoConversation, useAldoAssistant } from "./assistantSession";
 import {
   fetchAldoHome,
   requestAldoDirectoryRefresh,
@@ -50,6 +50,7 @@ export async function refreshAldoHome(force = true): Promise<void> {
   fetchedAt = Date.now();
   try {
     const next = await fetchAldoHome();
+    if (next) noteHiddenPrompts(next);
     useAldoHomeFeed.setState(
       next ? { home: next, supported: true, error: null } : { supported: false, error: null },
     );
@@ -124,4 +125,37 @@ export function useAldoHomeRead(): AldoHomeFeed {
     };
   }, []);
   return useAldoHomeFeed();
+}
+
+/** A persisted dismissal takes effect immediately, including when the next read fails. */
+export function setAldoChatDecisionDismissed(id: string, dismissed: boolean): void {
+  const home = useAldoHomeFeed.getState().home;
+  if (!home) return;
+  const update = <
+    T extends { readonly chatDecision?: { readonly id: string; readonly dismissed: boolean } },
+  >(
+    item: T,
+  ): T => (item.chatDecision?.id === id ? { ...item, chatDecision: { id, dismissed } } : item);
+  const next = {
+    ...home,
+    conversations: home.conversations.map(update),
+    approvals: home.approvals?.map(update),
+    pullRequests: home.pullRequests.map(update),
+  };
+  noteHiddenPrompts(next);
+  useAldoHomeFeed.setState({ home: next });
+}
+
+function noteHiddenPrompts(home: AldoHome): void {
+  noteAldoHiddenPrompts([
+    ...home.conversations
+      .filter((c) => c.chatDecision?.dismissed)
+      .map((c) => `${c.title}: ${c.summary ?? c.state}`),
+    ...(home.approvals ?? [])
+      .filter((a) => a.chatDecision?.dismissed)
+      .map((a) => `${a.title}: ${a.summary}`),
+    ...home.pullRequests
+      .filter((pr) => pr.chatDecision?.dismissed)
+      .map((pr) => `Merge #${pr.number}: ${pr.title}`),
+  ]);
 }
