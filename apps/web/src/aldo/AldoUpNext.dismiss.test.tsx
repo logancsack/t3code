@@ -8,12 +8,16 @@ import type { AldoHome } from "./cloud";
 const backend = vi.hoisted(() => ({
   home: null as AldoHome | null,
   fail: false,
+  readFail: false,
   dismiss: vi.fn(),
   decide: vi.fn(),
   toast: vi.fn(),
 }));
 vi.mock("./cloud", () => ({
-  fetchAldoHome: async () => structuredClone(backend.home),
+  fetchAldoHome: async () => {
+    if (backend.readFail) throw new Error("Read failed");
+    return structuredClone(backend.home);
+  },
   dismissAldoChatDecision: async (id: string, dismissed = true) => {
     backend.dismiss(id, dismissed);
     if (backend.fail) throw new Error("Connection lost");
@@ -79,6 +83,7 @@ beforeEach(async () => {
     },
   );
   backend.fail = false;
+  backend.readFail = false;
   backend.dismiss.mockClear();
   backend.decide.mockClear();
   backend.toast.mockClear();
@@ -181,5 +186,13 @@ it("Undo restores a hidden prompt without making a decision", async () => {
   const toast = backend.toast.mock.calls.at(-1)![0] as { actionProps: { onClick: () => void } };
   await act(async () => toast.actionProps.onClick());
   expect(container.querySelectorAll("[data-aldo-decision]")).toHaveLength(2);
+  expect(backend.decide).not.toHaveBeenCalled();
+});
+
+it("hides a saved dismissal even if refreshing the home read fails", async () => {
+  backend.readFail = true;
+  await hide();
+  expect(container.querySelectorAll("[data-aldo-decision]")).toHaveLength(1);
+  expect(backend.home!.conversations[0]!.state).toBe("waiting");
   expect(backend.decide).not.toHaveBeenCalled();
 });

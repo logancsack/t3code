@@ -38,6 +38,7 @@ let inflight = false;
 /** A refresh asked for during a read: the read may predate what asked, so it runs again after. */
 let again = false;
 let fetchedAt = 0;
+let dismissalRevision = 0;
 
 /** Reads the home again; `force: false` follows the directory, no closer than every few seconds. */
 export async function refreshAldoHome(force = true): Promise<void> {
@@ -47,13 +48,18 @@ export async function refreshAldoHome(force = true): Promise<void> {
   }
   if (!force && Date.now() - fetchedAt < FOLLOW_DIRECTORY_MIN_MS) return;
   inflight = true;
+  const revision = dismissalRevision;
   fetchedAt = Date.now();
   try {
     const next = await fetchAldoHome();
-    if (next) noteHiddenPrompts(next);
-    useAldoHomeFeed.setState(
-      next ? { home: next, supported: true, error: null } : { supported: false, error: null },
-    );
+    // A poll begun before a persisted hide must not put the card back.
+    if (revision !== dismissalRevision) again = true;
+    else {
+      if (next) noteHiddenPrompts(next);
+      useAldoHomeFeed.setState(
+        next ? { home: next, supported: true, error: null } : { supported: false, error: null },
+      );
+    }
   } catch (cause) {
     useAldoHomeFeed.setState({ error: cause instanceof Error ? cause.message : String(cause) });
   } finally {
@@ -131,6 +137,7 @@ export function useAldoHomeRead(): AldoHomeFeed {
 export function setAldoChatDecisionDismissed(id: string, dismissed: boolean): void {
   const home = useAldoHomeFeed.getState().home;
   if (!home) return;
+  dismissalRevision += 1;
   const update = <
     T extends { readonly chatDecision?: { readonly id: string; readonly dismissed: boolean } },
   >(
