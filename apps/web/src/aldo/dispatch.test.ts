@@ -145,6 +145,22 @@ it("keeps follow-ups on their existing model and supports a server without model
   expect(host.hold).not.toHaveBeenCalled();
 });
 
+it("routes an implementation thread's bootstrap while preserving its source plan", async () => {
+  const first = {
+    ...command(true),
+    sourceProposedPlan: { threadId: ThreadId.make("source-thread"), planId: "plan" },
+  };
+  expect(
+    await host.dispatch!({ environmentId: "aldo-machine", command: first, primary: true }),
+  ).toEqual({ sequence: 0 });
+  expect(host.hold).toHaveBeenCalledWith(
+    "aldo-machine",
+    { ...first, aldoModelExplicit: false },
+    null,
+    true,
+  );
+});
+
 it("surfaces a routing refusal instead of sending the inherited model directly", async () => {
   host.hold.mockRejectedValue(new Error("That model is out of room"));
   await expect(

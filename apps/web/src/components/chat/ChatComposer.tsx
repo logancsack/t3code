@@ -5168,6 +5168,18 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       ) : null}
       {renderLeadingControl?.(composerControlsInStrip ? "xs" : "sm")}
       <ProviderModelPicker
+        {...(isAldoCloud && aldoRoutesModels() && routeKind === "draft"
+          ? {
+              automaticOption: {
+                label: aldoMachineSettings?.defaultModelSelection
+                  ? `Use default: ${aldoMachineSettings.defaultModelSelection.model}`
+                  : "Let Aldo decide",
+                selected: aldoDefaultModel,
+                onSelect: () =>
+                  useComposerDraftStore.getState().setModelSelection(composerDraftTarget, null),
+              },
+            }
+          : {})}
         {...(aldoDefaultModel
           ? {
               triggerLabel: aldoMachineSettings?.defaultModelSelection

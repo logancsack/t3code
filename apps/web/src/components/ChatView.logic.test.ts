@@ -33,6 +33,7 @@ import {
 } from "../previewMiniPlayerStore";
 import {
   MAX_HIDDEN_MOUNTED_TERMINAL_THREADS,
+  formatOutgoingPrompt,
   agentControlledBrowserCloseConfirmation,
   branchMismatchKey,
   buildExpiredTerminalContextToastCopy,
@@ -92,6 +93,44 @@ import {
   waitForRevertedMessage,
   prepareRevertedMessageAttachments,
 } from "./ChatView.logic";
+
+describe("outgoing prompt formatting", () => {
+  const input = {
+    provider: ProviderDriverKind.make("claudeAgent"),
+    model: "claude-opus-4-6",
+    models: [
+      {
+        slug: "claude-opus-4-6",
+        name: "Claude Opus",
+        isCustom: false,
+        capabilities: {
+          optionDescriptors: [
+            {
+              id: "effort",
+              label: "Reasoning",
+              type: "select" as const,
+              options: [
+                { id: "high", label: "High" },
+                { id: "ultrathink", label: "Ultrathink" },
+              ],
+              promptInjectedValues: ["ultrathink"],
+            },
+          ],
+        },
+      },
+    ],
+    effort: "ultrathink",
+    text: "Implement the proposed plan",
+  };
+
+  it("preserves raw text while Aldo may replace an inherited model and effort", () => {
+    expect(formatOutgoingPrompt({ ...input, modelMayChange: true })).toBe(input.text);
+  });
+
+  it("keeps provider prompt traits for a chosen model or an existing thread", () => {
+    expect(formatOutgoingPrompt(input)).toBe(`Ultrathink:\n${input.text}`);
+  });
+});
 
 describe("agent browser close confirmation", () => {
   const surfaces = [

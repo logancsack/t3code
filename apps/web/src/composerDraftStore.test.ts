@@ -1982,6 +1982,20 @@ describe("composerDraftStore modelSelection", () => {
     }
   });
 
+  it("returns a manual draft to automatic selection without discarding its prompt", () => {
+    const store = useComposerDraftStore.getState();
+    store.setPrompt(threadRef, "Investigate this failure");
+    store.setModelSelection(threadRef, modelSelection(CODEX_DRIVER, "gpt-5.4"), {
+      explicit: true,
+    });
+
+    store.setModelSelection(threadRef, null);
+
+    const draft = draftFor(threadId, TEST_ENVIRONMENT_ID);
+    expect(draft?.modelSelectionExplicit).toBeUndefined();
+    expect(draft?.prompt).toBe("Investigate this failure");
+  });
+
   it("replaces only the targeted provider options on the current model selection", () => {
     const store = useComposerDraftStore.getState();
 

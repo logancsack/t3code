@@ -8,7 +8,7 @@ import { createModelSelection } from "@t3tools/shared/model";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { useNavigate } from "@tanstack/react-router";
 
-import { isAldoCloud } from "../../aldo/cloud";
+import { aldoRoutesModels, isAldoCloud } from "../../aldo/cloud";
 import { aldoSavesSettings } from "../../aldo/machineSettings.logic";
 import { getCustomModelOptionsByInstance } from "../../modelSelection";
 import {
@@ -74,7 +74,14 @@ export function ProjectDefaultsSettings({
     // Aldo: with no machine connected, a sleeping one's, to choose the user's model from.
     (isAldoCloud ? aldo?.providers : null) ??
     EMPTY_SERVER_PROVIDERS;
-  const selection = resolveDefaultProviderModelSelection(providers, settings.defaultModelSelection);
+  const aldoModel = isAldoCloud && aldoRoutesModels() && aldoPart === "model";
+  const fallbackSelection = resolveDefaultProviderModelSelection(
+    providers,
+    settings.defaultModelSelection,
+  );
+  // An unavailable saved override stays visible until the user replaces or clears it.
+  // Its traits must never edit a different, locally resolved fallback model.
+  const selection = aldoModel ? settings.defaultModelSelection : fallbackSelection;
   const entries = sortProviderInstanceEntries(
     applyProviderInstanceSettings(deriveProviderInstanceEntries(providers), settings),
   );
@@ -85,6 +92,13 @@ export function ProjectDefaultsSettings({
     selection?.model,
   );
   const activeEntry = entries.find((entry) => entry.instanceId === selection?.instanceId);
+  const traitsAvailable =
+    !aldoModel ||
+    (activeEntry?.enabled &&
+      activeEntry.isAvailable &&
+      modelOptions
+        .get(activeEntry.instanceId)
+        ?.some((option) => option.slug === selection?.model && !option.isUnavailable));
   const mixedModel = useScopedSettingsMixed(["defaultModelSelection"]);
   const mixedPermissions = useScopedSettingsMixed(["defaultRuntimeMode"]);
   const PermissionIcon = runtimeModeConfig[settings.defaultRuntimeMode].icon;
@@ -145,9 +159,7 @@ export function ProjectDefaultsSettings({
     updateSettings({ defaultModelSelection: value });
   };
 
-  const aldoModel = isAldoCloud && aldoPart === "model";
   const automaticModel = aldoModel && settings.defaultModelSelection == null;
-  const shownSelection = aldoModel ? settings.defaultModelSelection : selection;
 
   const modelRow = (
     <SettingsRow
@@ -161,9 +173,11 @@ export function ProjectDefaultsSettings({
           ? automaticModel
             ? "Aldo chooses the model and reasoning for each task using the room left on your plans."
             : "Override for every new thread, including requests to Aldo. A model you choose for one thread takes priority."
-          : isProjectScope
-            ? "Model for new threads in this project."
-            : "Default model for new threads. Projects can override it."
+          : isAldoCloud
+            ? "Default model for new threads."
+            : isProjectScope
+              ? "Model for new threads in this project."
+              : "Default model for new threads. Projects can override it."
       }
       status={
         modelUnavailable || mixedModel || modelSource === "project"
@@ -186,11 +200,11 @@ export function ProjectDefaultsSettings({
           <div className="flex min-w-0 flex-wrap items-center justify-end gap-1.5">
             <ProviderModelPicker
               activeInstanceId={
-                shownSelection?.instanceId ??
                 selection?.instanceId ??
+                fallbackSelection?.instanceId ??
                 ProviderInstanceId.make("aldo")
               }
-              model={shownSelection?.model ?? selection?.model ?? ""}
+              model={selection?.model ?? fallbackSelection?.model ?? ""}
               lockedProvider={null}
               instanceEntries={entries}
               modelOptionsByInstance={modelOptions}
@@ -218,7 +232,7 @@ export function ProjectDefaultsSettings({
                 setModel(createModelSelection(instanceId, model))
               }
             />
-            {!mixedModel && selection && activeEntry && !automaticModel ? (
+            {!mixedModel && selection && activeEntry && traitsAvailable && !automaticModel ? (
               <TraitsPicker
                 provider={activeEntry.driverKind}
                 models={activeEntry.models}
