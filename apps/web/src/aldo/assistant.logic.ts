@@ -520,7 +520,7 @@ export function callDuration(ms: number): string {
 }
 
 // ---------------------------------------------------------------------------
-// What came back of work handed over (cloud.ts followups)
+// What came back of work handed over (assistantApi.ts followups)
 
 /**
  * A pause to bring news up in on a call (Aldo's phone bridge,

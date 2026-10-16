@@ -1,4 +1,4 @@
-// How Aldo's start of a thread stands, from the directory (cloud.ts), for the
+// How Aldo's start of a thread stands, from the directory (directory.ts), for the
 // thread (AldoThreadLoading.tsx) and the sidebar to show instead of an empty
 // thread "Working". The words are threadStart.logic.ts's.
 

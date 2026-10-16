@@ -1,5 +1,5 @@
 // Routines on the home screen (AldoRoutines.tsx): the new-routine form's
-// choices as the schedule Aldo takes (cloud.ts AldoRoutineSchedule), and how a
+// choices as the schedule Aldo takes (homeApi.ts AldoRoutineSchedule), and how a
 // routine's state reads. Times are the user's own: Aldo keeps the browser's
 // time zone and runs each routine in it.
 

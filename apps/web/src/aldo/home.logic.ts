@@ -1,5 +1,5 @@
 // The pure parts of the home screen (AldoHome.tsx): how Aldo's read of the
-// user's work (cloud.ts AldoHome) sorts into what needs them, what's working,
+// user's work (homeApi.ts AldoHome) sorts into what needs them, what's working,
 // what shipped and what's coming, and the words for each.
 
 import { ACTION_LABELS, REVERSE_LABELS } from "./assistant.logic";

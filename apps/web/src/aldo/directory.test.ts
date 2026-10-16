@@ -3,14 +3,30 @@ import * as Stream from "effect/Stream";
 import { it } from "@effect/vitest";
 import { afterEach, expect, vi } from "vite-plus/test";
 
+const connection = vi.hoisted(() => ({ phase: "available", retry: vi.fn() }));
+vi.mock("@t3tools/client-runtime/state/runtime", () => ({
+  runAtomCommand: (...args: unknown[]) => connection.retry(...args),
+}));
+vi.mock("../connection/catalog", () => ({ environmentCatalog: { retryNow: "retry" } }));
+vi.mock("../rpc/atomRegistry", () => ({
+  appAtomRegistry: {
+    get: () => new Map([["aldo-t", { connection: { phase: connection.phase } }]]),
+  },
+}));
+vi.mock("../state/presentation", () => ({
+  environmentPresentations: { presentationsAtom: "presentations" },
+}));
+
 afterEach(async () => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
   vi.resetModules();
 });
 
 const directory = Effect.gen(function* () {
   vi.useFakeTimers();
+  vi.stubEnv("VITE_ALDO_CLOUD", "1");
   const page = { visibilityState: "visible" };
   vi.stubGlobal("document", page);
   vi.stubGlobal("window", { setTimeout, clearTimeout });
@@ -92,5 +108,35 @@ it.live("notifies subscribers only when directory data or capabilities change", 
     expect(api.getAldoEnvironments()?.[0]?.label).toBe("Renamed");
     expect(api.aldoSupportsProjects()).toBe(true);
     unsubscribe();
+  }),
+);
+
+it.live("retries an unchanged ready machine after a reconnect still reports dormant", () =>
+  Effect.gen(function* () {
+    const { api, page } = yield* directory;
+    const cached = api.getAldoEnvironments();
+    connection.phase = "available";
+    connection.retry.mockReset();
+    connection.retry.mockImplementationOnce(async () => {
+      connection.phase = "available";
+    });
+    connection.retry.mockImplementationOnce(async () => {
+      connection.phase = "connected";
+    });
+    const { installAldoReconnect } = yield* Effect.promise(() => import("./reconnect"));
+    installAldoReconnect();
+    yield* Effect.promise(() => vi.advanceTimersByTimeAsync(16_000));
+    expect(connection.retry).toHaveBeenCalledTimes(1);
+    expect(connection.phase).toBe("available");
+    expect(api.getAldoEnvironments()).toBe(cached);
+    yield* Effect.promise(() => vi.advanceTimersByTimeAsync(16_000));
+    expect(connection.retry).toHaveBeenCalledTimes(2);
+    expect(connection.phase).toBe("connected");
+    yield* Effect.promise(() => vi.advanceTimersByTimeAsync(16_000));
+    expect(connection.retry).toHaveBeenCalledTimes(2);
+    page.visibilityState = "hidden";
+    connection.phase = "available";
+    yield* Effect.promise(() => vi.advanceTimersByTimeAsync(60_000));
+    expect(connection.retry).toHaveBeenCalledTimes(2);
   }),
 );

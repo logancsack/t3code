@@ -2,7 +2,7 @@
 // wrong with the setup, what's working now, pull requests on their way out,
 // what's coming up, what finished since the user last looked, what Aldo did
 // for them, the plan's room and credits, and how Aldo works for them. Each
-// reads from Aldo's one read of the user's work (cloud.ts AldoHome).
+// reads from Aldo's one read of the user's work (homeApi.ts AldoHome).
 
 import { Link } from "@tanstack/react-router";
 import {

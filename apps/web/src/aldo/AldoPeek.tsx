@@ -1,7 +1,7 @@
 // A look at a thread or an approval without leaving Aldo's bar (AldoSummon.tsx),
 // for what needs the user elsewhere. It shows what Aldo's home read has (how
 // the thread stands, what it asks, answered in place, its pull requests) and
-// its latest turns as Aldo keeps them (cloud.ts fetchAldoConversationCopy), so
+// its latest turns as Aldo keeps them (homeApi.ts fetchAldoConversationCopy), so
 // nothing is woken. An approval shows the same way: the card in full.
 
 import { ArrowUpRightIcon, MessageCircleQuestionIcon, XIcon } from "lucide-react";

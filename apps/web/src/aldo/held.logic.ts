@@ -1,5 +1,5 @@
 // How a message for a machine this page isn't connected to goes to Aldo to hold
-// (cloud.ts holdAldoTurn): which of its images go first, in parts a request
+// (threadApi.ts holdAldoTurn): which of its images go first, in parts a request
 // can carry, what the held message says in their place, and what's tried
 // again. Pure, so it's tested on its own.
 

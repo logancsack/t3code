@@ -169,6 +169,7 @@ export function aldoRoutesModels(): boolean {
 }
 
 const directoryListeners = new Set<() => void>();
+const directoryRefreshListeners = new Set<() => void>();
 
 let refreshRequested = true;
 let retryRequested = false;
@@ -215,6 +216,12 @@ export function aldoKeepsEnvironmentCache(environmentId: string): boolean {
 export function subscribeAldoEnvironments(listener: () => void): () => void {
   directoryListeners.add(listener);
   return () => directoryListeners.delete(listener);
+}
+
+/** Every successful read can retry a dormant connection even when its directory entry is unchanged. */
+export function subscribeAldoDirectoryRefresh(listener: () => void): () => void {
+  directoryRefreshListeners.add(listener);
+  return () => directoryRefreshListeners.delete(listener);
 }
 
 export function getAldoEnvironments(): ReadonlyArray<AldoEnvironment> | null {
@@ -391,6 +398,7 @@ async function fetchEnvironments(): Promise<ReadonlyArray<AldoEnvironment>> {
     knownEnvironments = listed;
     for (const listener of directoryListeners) listener();
   }
+  for (const listener of directoryRefreshListeners) listener();
   return knownEnvironments!;
 }
 

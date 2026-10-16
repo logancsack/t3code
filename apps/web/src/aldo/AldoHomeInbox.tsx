@@ -1,6 +1,6 @@
 // What needs the user, answered in place: a question with its choices, an
 // approval, a plan to carry out, or a thread that stopped. Answering goes to
-// Aldo as the user (cloud.ts answerAldoThread, approveAldoPlan), which wakes
+// Aldo as the user (homeApi.ts answerAldoThread, approveAldoPlan), which wakes
 // the thread's machine if it sleeps, so a button can take a little while.
 
 import { Link, useRouter } from "@tanstack/react-router";
