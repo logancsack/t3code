@@ -14,6 +14,7 @@ import { DEV_PROXIED_PATH_PREFIXES } from "@t3tools/shared/devProxy";
 import { loadRepoEnv } from "../../scripts/lib/public-config";
 import { thirdPartyLicensesPlugin } from "../../scripts/lib/third-party-licenses";
 import { tailwindPlugins } from "./vite/tailwind";
+import { showBootError } from "./src/lib/bootError";
 
 const repoEnv = loadRepoEnv();
 Object.assign(process.env, repoEnv);
@@ -209,6 +210,32 @@ function aldoBrandingPlugin(): Plugin {
   };
 }
 
+function aldoBootstrapPlugin(): Plugin {
+  return {
+    name: "aldo:bootstrap",
+    apply: "build",
+    transformIndexHtml: {
+      order: "pre",
+      handler(html) {
+        // A static entry makes $initial include the UI graph. Install its error
+        // handler outside that graph, so a missing or broken module still shows Reload.
+        return html.replace(
+          '<script type="module" src="/src/bootstrap.ts"></script>',
+          `<script>
+            window.addEventListener("error", function(event) {
+              if (!document.getElementById("boot-shell")) return;
+              if (event instanceof ErrorEvent || event.target instanceof HTMLScriptElement) {
+                (${showBootError.toString().replaceAll("T3 Code", "Aldo")})(event.error || new Error("Startup module failed to load"));
+              }
+            }, true);
+          </script>
+          <script type="module" src="/src/aldo/bootstrap.ts"></script>`,
+        );
+      },
+    },
+  };
+}
+
 // Vite rejects requests whose Host header isn't localhost, which blocks sharing
 // a dev server over Tailscale/LAN. Tailnet names are safe to allow wholesale:
 // the DNS is controlled by tailscale, so they can't be rebound by an attacker.
@@ -225,7 +252,7 @@ export default defineConfig(() => {
     base: managedDevPc ? "/_t3/" : "/",
     publicDir: aldoCloud ? "public-aldo" : "public",
     plugins: [
-      ...(aldoCloud ? [aldoBrandingPlugin()] : []),
+      ...(aldoCloud ? [aldoBrandingPlugin(), aldoBootstrapPlugin()] : []),
       devCompressionPlugin(),
       thirdPartyLicensesPlugin({
         bundleName: "web",
