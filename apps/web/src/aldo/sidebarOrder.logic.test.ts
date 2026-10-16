@@ -54,6 +54,7 @@ function thread(id: string, overrides: Partial<AldoSidebarOrderInput> = {}): Ald
     hasPendingApprovals: false,
     hasPendingUserInput: false,
     hasActionableProposedPlan: false,
+    interactionMode: "default",
     ...overrides,
   };
 }
@@ -71,6 +72,9 @@ const finished = (id: string, minute: number, overrides: Partial<AldoSidebarOrde
     session: session("ready", { updatedAt: at(minute) }),
     ...overrides,
   });
+
+/** A plan from a turn that ended at `minute`, in plan mode, to accept. */
+const planned = { hasActionableProposedPlan: true, interactionMode: "plan" } as const;
 
 /** A thread with a turn running since `minute`. */
 const running = (id: string, minute: number, overrides: Partial<AldoSidebarOrderInput> = {}) =>
@@ -103,17 +107,23 @@ describe("aldoSidebarTier", () => {
     expect(aldoSidebarTier(finished("a", 5, { hasPendingUserInput: true }))).toBe("waiting");
     // An approval pauses its turn: the thread waits on the user, not the agent.
     expect(aldoSidebarTier(running("b", 5, { hasPendingApprovals: true }))).toBe("waiting");
-    expect(aldoSidebarTier(finished("c", 5, { hasActionableProposedPlan: true }))).toBe("waiting");
+    expect(aldoSidebarTier(finished("c", 5, planned))).toBe("waiting");
     // A plan prompt outranks background work, as its status pill does.
-    expect(
-      aldoSidebarTier(
-        finished("d", 5, { hasActionableProposedPlan: true, backgroundLiveness: "working" }),
-      ),
-    ).toBe("waiting");
+    expect(aldoSidebarTier(finished("d", 5, { ...planned, backgroundLiveness: "working" }))).toBe(
+      "waiting",
+    );
   });
 
   it("doesn't count a plan while its turn still runs", () => {
-    expect(aldoSidebarTier(running("a", 5, { hasActionableProposedPlan: true }))).toBe("working");
+    expect(aldoSidebarTier(running("a", 5, planned))).toBe("working");
+  });
+
+  it("doesn't count a plan left over once the thread is out of plan mode (no prompt to accept it)", () => {
+    expect(
+      aldoSidebarTier(
+        finished("a", 5, { hasActionableProposedPlan: true, interactionMode: "default" }),
+      ),
+    ).toBe("done");
   });
 
   it("leaves finished, failed and never-run threads in the done tier", () => {
@@ -170,7 +180,7 @@ describe("sortAldoSidebarThreads", () => {
       running("busy", 20),
       finished("asks", 15, { hasPendingUserInput: true }),
       thread("never", { createdAt: at(30), updatedAt: at(30) }),
-      finished("plan", 25, { hasActionableProposedPlan: true }),
+      finished("plan", 25, planned),
     ];
     expect(ids(sortAldoSidebarThreads(threads))).toEqual([
       "busy",
@@ -206,10 +216,29 @@ describe("sortAldoSidebarThreads", () => {
 
   it("puts a thread Aldo holds a message for with the work", () => {
     const threads = [finished("a", 30), finished("held", 5), running("b", 20)];
-    expect(ids(sortAldoSidebarThreads(threads, (candidate) => candidate.id === "held"))).toEqual([
-      "b",
-      "held",
+    const heldFor = (candidate: AldoSidebarOrderInput) =>
+      candidate.id === "held" ? { failed: false, atMs: 0 } : undefined;
+    expect(ids(sortAldoSidebarThreads(threads, heldFor))).toEqual(["b", "held", "a"]);
+  });
+
+  it("orders a held message by when it was sent, which its shell doesn't know yet", () => {
+    // A follow-up to a sleeping machine: its shell still has the turn before.
+    const threads = [running("b", 20), finished("held", 5), running("c", 30)];
+    const heldFor = (candidate: AldoSidebarOrderInput) =>
+      candidate.id === "held" ? { failed: false, atMs: Date.parse(at(40)) } : undefined;
+    expect(ids(sortAldoSidebarThreads(threads, heldFor))).toEqual(["held", "c", "b"]);
+  });
+
+  it("orders a message that couldn't be sent with the finished ones, by when it failed", () => {
+    const threads = [finished("a", 30), finished("failed", 5), finished("b", 20)];
+    const heldFor = (candidate: AldoSidebarOrderInput) =>
+      candidate.id === "failed" ? { failed: true, atMs: Date.parse(at(25)) } : undefined;
+    expect(ids(sortAldoSidebarThreads(threads, heldFor))).toEqual(["a", "failed", "b"]);
+    expect(ids(sortAldoSidebarThreads([...threads, running("c", 1)], heldFor))).toEqual([
+      "c",
       "a",
+      "failed",
+      "b",
     ]);
   });
 

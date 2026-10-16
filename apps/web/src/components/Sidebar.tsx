@@ -2283,7 +2283,14 @@ export default function Sidebar() {
   const sidebarProjectSortOrder = useClientSettings((s) => s.sidebarProjectSortOrder);
   const timestampFormat = useClientSettings((s) => s.timestampFormat);
   const workingShelfEnabled = useClientSettings((s) => s.sidebarWorkingShelfEnabled);
-  const { order: aldoOrder, sort: aldoSort, listProps: aldoListProps } = useAldoSidebarOrder();
+  const [threadSearchQuery, setThreadSearchQuery] = useState("");
+  const isSearchingThreads = threadSearchQuery.trim().length > 0;
+  // Aldo: search results keep their order while a search is open.
+  const {
+    order: aldoOrder,
+    sort: aldoSort,
+    listProps: aldoListProps,
+  } = useAldoSidebarOrder({ hold: isSearchingThreads });
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const {
     settleThread,
@@ -2796,9 +2803,7 @@ export default function Sidebar() {
   ]);
 
   const threadSearchInputRef = useRef<HTMLInputElement>(null);
-  const [threadSearchQuery, setThreadSearchQuery] = useState("");
   const [activeSearchResultIndex, setActiveSearchResultIndex] = useState(0);
-  const isSearchingThreads = threadSearchQuery.trim().length > 0;
   const searchableThreads = useMemo(
     () => [
       ...pinnedThreads,

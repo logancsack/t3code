@@ -6,8 +6,11 @@
 // their shelves and theirs. Every device reads the same thread shells, so
 // they agree. Pure, so it's tested on its own (sidebarOrder.ts applies it).
 
-import { firstValidTimestampMs, resolveSidebarThreadStatus } from "../components/Sidebar.logic";
-import { isLatestTurnSettled } from "../session-logic";
+import {
+  firstValidTimestampMs,
+  resolveSidebarThreadStatus,
+  resolveThreadStatusPill,
+} from "../components/Sidebar.logic";
 import type { SidebarThreadSummary } from "../types";
 
 export type AldoSidebarTier = "working" | "waiting" | "done";
@@ -25,18 +28,24 @@ export type AldoSidebarOrderInput = Pick<
   | "hasPendingApprovals"
   | "hasPendingUserInput"
   | "hasActionableProposedPlan"
+  | "interactionMode"
   | "backgroundLiveness"
 >;
 
-/** A plan from its latest turn, still to accept, once that turn is over. */
+/**
+ * A message Aldo holds for a thread (the directory's `starts`), which its
+ * machine hasn't seen yet: still on its way (starting, queued, retrying), or
+ * `failed`. `atMs` is when it was sent, or when it failed; 0 from an older
+ * Aldo, which doesn't say.
+ */
+export interface AldoHeldMessage {
+  readonly failed: boolean;
+  readonly atMs: number;
+}
+
+/** A plan to accept, as its row says Plan Ready (in plan mode, once its turn is over). */
 function planWaits(thread: AldoSidebarOrderInput): boolean {
-  const status = thread.session?.status;
-  return (
-    thread.hasActionableProposedPlan &&
-    status !== "starting" &&
-    status !== "running" &&
-    isLatestTurnSettled(thread.latestTurn, thread.session)
-  );
+  return resolveThreadStatusPill({ thread })?.label === "Plan Ready";
 }
 
 /**
@@ -90,17 +99,22 @@ function workStartedAtMs(thread: AldoSidebarOrderInput): number {
 /**
  * The threads in sidebar order: by tier, then newest first (working by when
  * its work began, the rest by when it last ended), then by id, so every
- * device breaks ties alike.
+ * device breaks ties alike. A message Aldo holds is newer than its thread's
+ * shell: when it was sent (or failed) counts, if that's later.
  */
 export function sortAldoSidebarThreads<T extends AldoSidebarOrderInput>(
   threads: readonly T[],
-  isHeld: (thread: T) => boolean = () => false,
+  heldFor: (thread: T) => AldoHeldMessage | undefined = () => undefined,
 ): T[] {
   if (threads.length < 2) return [...threads];
   const keys = new Map(
     threads.map((thread) => {
-      const tier = aldoSidebarTier(thread, isHeld(thread));
-      const at = tier === "working" ? workStartedAtMs(thread) : aldoThreadFinishedAtMs(thread);
+      const held = heldFor(thread);
+      const tier = aldoSidebarTier(thread, held !== undefined && !held.failed);
+      const at = Math.max(
+        tier === "working" ? workStartedAtMs(thread) : aldoThreadFinishedAtMs(thread),
+        held?.atMs ?? 0,
+      );
       return [thread, { rank: TIER_RANK[tier], at }] as const;
     }),
   );

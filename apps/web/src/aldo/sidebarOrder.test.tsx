@@ -43,13 +43,18 @@ function finished(id: string, minute: number): AldoSidebarOrderInput {
     hasPendingApprovals: false,
     hasPendingUserInput: false,
     hasActionableProposedPlan: false,
+    interactionMode: "default",
   };
 }
 
 type Hook = ReturnType<typeof useAldoSidebarOrder>;
 
-function Probe(props: { threads: readonly AldoSidebarOrderInput[]; onHook: (hook: Hook) => void }) {
-  const hook = useAldoSidebarOrder();
+function Probe(props: {
+  threads: readonly AldoSidebarOrderInput[];
+  hold?: boolean;
+  onHook: (hook: Hook) => void;
+}) {
+  const hook = useAldoSidebarOrder({ hold: props.hold ?? false });
   const ordered = hook.order("active", props.threads);
   const { onHook } = props;
   useEffect(() => onHook(hook));
@@ -136,5 +141,31 @@ describe("useAldoSidebarOrder", () => {
     ];
     act(() => directory.listeners.forEach((listener) => listener()));
     expect(shownIds()).toEqual(["b", "a"]);
+    // When it failed, as Aldo says, orders it among the finished ones.
+    directory.environments = [
+      { environmentId: ENV, starts: { a: { kind: "message", state: "failed", at: at(30) } } },
+    ];
+    act(() => directory.listeners.forEach((listener) => listener()));
+    expect(shownIds()).toEqual(["a", "b"]);
+  });
+
+  it("keeps rows in place while the sidebar holds them (a search open)", () => {
+    const hold = (threads: readonly AldoSidebarOrderInput[], held: boolean) =>
+      act(() =>
+        root.render(
+          <Probe
+            threads={threads}
+            hold={held}
+            onHook={(next) => {
+              hook = next;
+            }}
+          />,
+        ),
+      );
+    hold([finished("a", 10), finished("b", 20)], false);
+    hold([finished("a", 30), finished("b", 20)], true);
+    expect(shownIds()).toEqual(["b", "a"]);
+    hold([finished("a", 30), finished("b", 20)], false);
+    expect(shownIds()).toEqual(["a", "b"]);
   });
 });

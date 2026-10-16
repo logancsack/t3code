@@ -97,6 +97,8 @@ export interface AldoStartState {
   readonly kind?: "start" | "message";
   readonly state: "starting" | "queued" | "retrying" | "failed";
   readonly detail?: string;
+  /** When it was sent, or when it failed (ISO); an older Aldo leaves it out. */
+  readonly at?: string;
 }
 
 export type AldoMachineSize = "standard" | "2x";

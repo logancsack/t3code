@@ -1,9 +1,10 @@
 // Aldo's sidebar order (sidebarOrder.logic.ts) as the sidebar applies it to
 // its pinned block and its active list. A thread is at work while Aldo holds
 // a message for it (the directory's `starts`: starting, queued or retrying),
-// whatever its shell says yet. While the pointer is over the list, or a press
-// that began there lasts, rows keep their places, so one doesn't move out
-// from under a click or a drag; they move to their new places once it's gone.
+// whatever its shell says yet. While the pointer is over the list, a press
+// that began there lasts, or a search is open, rows keep their places, so one
+// doesn't move out from under a click, a drag or the highlighted result; they
+// move to their new places once it's over.
 
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
@@ -13,26 +14,38 @@ import { getAldoEnvironments, isAldoCloud, subscribeAldoEnvironments } from "./c
 import {
   holdAldoSidebarOrder,
   sortAldoSidebarThreads,
+  type AldoHeldMessage,
   type AldoSidebarOrderInput,
 } from "./sidebarOrder.logic";
 
 const keyOf = (thread: Pick<AldoSidebarOrderInput, "environmentId" | "id">) =>
   scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id));
 
-/** The threads Aldo holds a message for, as one string, so a directory fetch that changes none re-renders nothing. */
-function readHeldKeys(): string {
-  const keys: string[] = [];
+/**
+ * The messages Aldo holds, a line each (thread key, failed, when), as one
+ * string, so a directory fetch that changes none re-renders nothing.
+ */
+function readHeld(): string {
+  const lines: string[] = [];
   for (const environment of getAldoEnvironments() ?? []) {
     for (const [threadId, start] of Object.entries(environment.starts ?? {})) {
-      if (start.state === "failed") continue;
-      keys.push(
-        scopedThreadKey(
-          scopeThreadRef(environment.environmentId as EnvironmentId, threadId as ThreadId),
-        ),
+      const atMs = start.at === undefined ? 0 : Date.parse(start.at) || 0;
+      const key = scopedThreadKey(
+        scopeThreadRef(environment.environmentId as EnvironmentId, threadId as ThreadId),
       );
+      lines.push(`${key}\t${start.state === "failed" ? 1 : 0}\t${atMs}`);
     }
   }
-  return keys.sort().join("\n");
+  return lines.sort().join("\n");
+}
+
+function parseHeld(held: string): Map<string, AldoHeldMessage> {
+  const byKey = new Map<string, AldoHeldMessage>();
+  for (const line of held === "" ? [] : held.split("\n")) {
+    const [key = "", failed, atMs] = line.split("\t");
+    byKey.set(key, { failed: failed === "1", atMs: Number(atMs) || 0 });
+  }
+  return byKey;
 }
 
 const subscribeNever = () => () => undefined;
@@ -40,24 +53,25 @@ const readNone = () => "";
 
 export type AldoSidebarSection = "pinned" | "active";
 
-export function useAldoSidebarOrder() {
-  const heldKeys = useSyncExternalStore(
+/** `hold`: keep rows in place for a reason of the sidebar's own (a search open). */
+export function useAldoSidebarOrder(options: { readonly hold?: boolean } = {}) {
+  const held = useSyncExternalStore(
     isAldoCloud ? subscribeAldoEnvironments : subscribeNever,
-    isAldoCloud ? readHeldKeys : readNone,
+    isAldoCloud ? readHeld : readNone,
     readNone,
   );
   const [hovering, setHovering] = useState(false);
   const [pressed, setPressed] = useState(false);
-  const holding = hovering || pressed;
+  const holding = hovering || pressed || options.hold === true;
   const shown = useRef(new Map<AldoSidebarSection, readonly string[]>());
 
   /** The order alone, as a drop will land in it (a drag's preview). */
   const sort = useCallback(
     <T extends AldoSidebarOrderInput>(threads: readonly T[]): T[] => {
-      const held = new Set(heldKeys === "" ? [] : heldKeys.split("\n"));
-      return sortAldoSidebarThreads(threads, (thread) => held.has(keyOf(thread)));
+      const byKey = parseHeld(held);
+      return sortAldoSidebarThreads(threads, (thread) => byKey.get(keyOf(thread)));
     },
-    [heldKeys],
+    [held],
   );
 
   /** A section's threads in order, rows on screen kept in place while the list is held. */
