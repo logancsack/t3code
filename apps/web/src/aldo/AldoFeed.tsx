@@ -10,7 +10,7 @@ import { useContext, type ReactNode } from "react";
 import { PullRequestGlyph } from "../components/pullRequest/pullRequestIcons";
 import { cn } from "~/lib/utils";
 import { AldoOpenContext, AldoThreadCard } from "./AldoLiveCard";
-import { AldoHalo } from "./AldoHalo";
+import { AldoAvatar } from "./AldoPresence";
 import { useAldoArrive } from "./arrive";
 import { aldoCanMorph } from "./morph";
 import { ACTION_LABELS } from "./assistant.logic";
@@ -137,7 +137,7 @@ function EventLine(props: { readonly event: AldoFeedEvent }) {
       const thread = a.thread;
       const line = (
         <Line
-          icon={<AldoHalo size={14} />}
+          icon={<AldoAvatar size={14} />}
           onClick={thread && open ? (from) => open(thread, from) : undefined}
         >
           {label}

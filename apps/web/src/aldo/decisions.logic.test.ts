@@ -9,6 +9,7 @@ import type {
 } from "./cloud";
 import {
   aldoDecisions,
+  aldoChatDecisions,
   aldoWaitingCount,
   decidesInPlace,
   decisionAsk,
@@ -295,4 +296,68 @@ describe("aldoDecisions", () => {
       ),
     ).toBe(false);
   });
+});
+
+it("keeps a hidden question waiting in overview while removing only its chat card", () => {
+  const hidden = { ...question, chatDecision: { id: "request-one", dismissed: true } };
+  const read = home({ conversations: [hidden] });
+  expect(aldoChatDecisions(read, NOW)).toHaveLength(0);
+  expect(aldoDecisions(read, NOW)).toHaveLength(1);
+  expect(aldoWaitingCount(read, NOW)).toBe(1);
+  expect(hidden.state).toBe("waiting");
+  expect(hidden.pending).toEqual(question.pending);
+  // A fresh read (another device or reload) follows the server's dismissal.
+  expect(aldoChatDecisions(JSON.parse(JSON.stringify(read)), NOW)).toHaveLength(0);
+  const next = {
+    ...question,
+    pending: { ...question.pending!, requestId: "request-two" },
+    chatDecision: { id: "request-two", dismissed: false },
+  };
+  expect(aldoChatDecisions(home({ conversations: [next] }), NOW)).toHaveLength(1);
+});
+
+it("all card kinds support chat dismissal without changing the full decision list", () => {
+  const hidden = { id: "hidden", dismissed: true };
+  const read = home({
+    approvals: [approval("a", { chatDecision: hidden })],
+    conversations: [
+      { ...question, chatDecision: hidden },
+      conversation({
+        ref: "plan",
+        thread: at("plan"),
+        state: "waiting",
+        plan: { id: "p", text: "Plan" },
+        chatDecision: hidden,
+      }),
+      conversation({
+        ref: "permission",
+        thread: at("permission"),
+        state: "waiting",
+        pending: { kind: "approval", requestId: "a", summary: "Allow?", options: [] },
+        chatDecision: hidden,
+      }),
+      conversation({
+        ref: "handoff",
+        thread: at("handoff"),
+        state: "waiting",
+        pending: { kind: "handoff", requestId: "h", summary: "Sign in" },
+        chatDecision: hidden,
+      }),
+      conversation({
+        ref: "computer",
+        thread: at("computer"),
+        state: "waiting",
+        summary: "Needs your computer",
+        chatDecision: hidden,
+      }),
+      conversation({ ref: "failed", thread: at("failed"), state: "failed", chatDecision: hidden }),
+    ],
+    pullRequests: [pullRequest({ thread: at("merge"), chatDecision: hidden })],
+  });
+  expect(aldoDecisions(read, NOW)).toHaveLength(8);
+  expect(aldoChatDecisions(read, NOW)).toHaveLength(0);
+});
+
+it("older servers still show their prompts", () => {
+  expect(aldoChatDecisions(home({ conversations: [question] }), NOW)).toHaveLength(1);
 });

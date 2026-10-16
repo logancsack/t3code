@@ -23,7 +23,7 @@ import {
 } from "./cloud";
 import { refreshAldoHome } from "./homeFeed";
 import { modelName, needsYouKind, sameTarget } from "./home.logic";
-import { AldoHalo } from "./AldoHalo";
+import { AldoAvatar } from "./AldoPresence";
 import { CHIP, ICON_BUTTON, INSET, SECONDARY } from "./surface";
 
 // The markdown renderer loads with the first peek, not with the app.
@@ -307,7 +307,7 @@ function UserTurn(props: { readonly text: string }) {
     <div className="flex max-w-[90%] flex-col items-end gap-1 self-end">
       {fromAldo ? (
         <span className="flex items-center gap-1 text-[12px] text-muted-foreground">
-          <AldoHalo size={12} />
+          <AldoAvatar size={12} />
           From Aldo
         </span>
       ) : null}

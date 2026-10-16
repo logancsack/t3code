@@ -24,17 +24,25 @@ import {
 } from "react";
 
 import { cn } from "~/lib/utils";
+import { DismissChatDecision } from "./DismissChatDecision";
 import { ApprovalCard } from "./AldoApprovals";
 import { confirmQuickChoice, DecisionIcon } from "./AldoBrief";
 import { AldoHandoffActions } from "./AldoHandoffCard";
 import { askAldoAbout, PendingForm, ThreadLink } from "./AldoHomeInbox";
 import { AldoOpenContext } from "./AldoLiveCard";
-import { AldoHalo } from "./AldoHalo";
+import { AldoAvatar } from "./AldoPresence";
 import { useAldoArrive } from "./arrive";
 import { useAldoBrief } from "./briefFeed";
 import type { AldoHome, AldoHomeConversation } from "./cloud";
 import { decideAldoOutcome, type AldoChoice } from "./decide";
-import { aldoDecisions, decisionThread, putAway, type AldoDecision } from "./decisions.logic";
+import {
+  aldoChatDecisions,
+  chatDecisionOf,
+  decisionThread,
+  putAway,
+  type AldoDecision,
+} from "./decisions.logic";
+import { pleaseAldo } from "./face";
 import { refreshAldoHome, useAldoHomeFeed } from "./homeFeed";
 import { elapsed, isPausedMidTurn } from "./home.logic";
 import { aldoMorph } from "./morph";
@@ -53,7 +61,7 @@ export function AldoUpNext(props: { readonly home: AldoHome; readonly now: numbe
   const [all, setAll] = useState(false);
   const decisions = useMemo(() => {
     // One answered here is a line in the conversation now, while the home read catches up.
-    const list = aldoDecisions(props.home, props.now).filter(
+    const list = aldoChatDecisions(props.home, props.now).filter(
       (d) => !receipts.some((r) => r.key === d.key),
     );
     // What can't wait first (a site handed to the user times out), then the
@@ -66,7 +74,10 @@ export function AldoUpNext(props: { readonly home: AldoHome; readonly now: numbe
   }, [props.home, props.now, brief, receipts]);
   // Asleep mid-turn: no decision, but it waits on the user to open it.
   const paused = useMemo(
-    () => props.home.conversations.filter((c) => isPausedMidTurn(c) && !putAway(c, props.now)),
+    () =>
+      props.home.conversations.filter(
+        (c) => isPausedMidTurn(c) && !putAway(c, props.now) && !c.chatDecision?.dismissed,
+      ),
     [props.home, props.now],
   );
   const picks = useMemo(() => {
@@ -94,7 +105,12 @@ export function AldoUpNext(props: { readonly home: AldoHome; readonly now: numbe
     window.addEventListener(SHOW_ALDO_DECISION, onShow);
     return () => window.removeEventListener(SHOW_ALDO_DECISION, onShow);
   }, [decisions]);
-  if (decisions.length === 0 && paused.length === 0) return null;
+  const hidden = [
+    ...props.home.conversations,
+    ...(props.home.approvals ?? []),
+    ...props.home.pullRequests,
+  ].filter((item) => item.chatDecision?.dismissed);
+  if (decisions.length === 0 && paused.length === 0 && hidden.length === 0) return null;
   // The one open is the one the user opened, while it's there; else the first.
   const open = decisions.some((d) => d.key === opened) ? opened : (decisions[0]?.key ?? null);
   const shown = all ? decisions : decisions.slice(0, SHOWN);
@@ -133,6 +149,23 @@ export function AldoUpNext(props: { readonly home: AldoHome; readonly now: numbe
       {paused.map((c) => (
         <PausedLine key={c.ref} conversation={c} now={props.now} />
       ))}
+      {hidden.length > 0 ? (
+        <details className="px-1 text-[12px] text-muted-foreground">
+          <summary className={cn(FOCUS, "cursor-pointer rounded py-2")}>
+            Hidden from chat ({hidden.length})
+          </summary>
+          <p className="py-1">Still waiting in their threads. No answers were sent.</p>
+          {hidden.map((item) => (
+            <div
+              key={item.chatDecision!.id}
+              className="flex items-center justify-between gap-3 py-1"
+            >
+              <span className="min-w-0 truncate">{item.title}</span>
+              <DismissChatDecision decision={item.chatDecision} title={item.title} restore />
+            </div>
+          ))}
+        </details>
+      ) : null}
       {decisions.length > SHOWN ? (
         <button
           type="button"
@@ -260,7 +293,7 @@ function Choice(props: {
         <LoaderCircleIcon aria-hidden className="size-4 shrink-0 animate-spin" />
       ) : props.tag ? (
         <span className="flex shrink-0 items-center gap-1.5 text-[12px] text-muted-foreground">
-          <AldoHalo size={12} />
+          <AldoAvatar size={12} />
           {props.tag}
         </span>
       ) : null}
@@ -407,6 +440,7 @@ function DecisionCard(props: {
     const { outcome, said } = await decideAldoOutcome(d, choice, { quiet: true });
     setBusy(null);
     if (outcome === "failed") return;
+    if (outcome === "done") pleaseAldo();
     drafts.delete(d.key);
     // The card becomes the line saying what happened, where it happened.
     const text = outcome === "done" ? receiptText(d, choice, said) : movedOnText(d, said);
@@ -747,12 +781,12 @@ function CardFrame(props: {
   };
   if (!props.open)
     return (
-      <article {...shared} className={cn(SURFACE, FOCUS, "overflow-hidden")}>
+      <article {...shared} className={cn(SURFACE, FOCUS, "flex items-center overflow-hidden pe-2")}>
         <button
           type="button"
           className={cn(
             FOCUS,
-            "flex min-h-13 w-full items-center gap-3 rounded-[20px] px-4 py-2.5 text-left transition-colors hover:bg-foreground/[0.025]",
+            "flex min-h-13 min-w-0 flex-1 items-center gap-3 rounded-[20px] px-4 py-2.5 text-left transition-colors hover:bg-foreground/[0.025]",
           )}
           aria-expanded={false}
           onClick={props.onOpen}
@@ -770,6 +804,7 @@ function CardFrame(props: {
             strokeWidth={1.75}
           />
         </button>
+        <DismissChatDecision decision={chatDecisionOf(d)} title={props.who} />
       </article>
     );
   return (
@@ -792,8 +827,11 @@ function CardFrame(props: {
               {who}
             </span>
           )}
+          <span className="ml-auto">
+            <DismissChatDecision decision={chatDecisionOf(d)} title={props.who} />
+          </span>
           {thread ? (
-            <span className="-me-1.5 ml-auto">
+            <span className="-me-1.5">
               <ThreadLink target={thread} className={ICON_BUTTON} label="Open the thread">
                 <ArrowUpRightIcon className="size-4" strokeWidth={1.75} />
               </ThreadLink>
@@ -813,12 +851,15 @@ function CardFrame(props: {
 function PausedLine(props: { readonly conversation: AldoHomeConversation; readonly now: number }) {
   const c = props.conversation;
   return (
-    <article className={cn(SURFACE, "overflow-hidden")} data-aldo-paused={c.ref}>
+    <article
+      className={cn(SURFACE, "flex items-center overflow-hidden pe-2")}
+      data-aldo-paused={c.ref}
+    >
       <ThreadLink
         target={c.thread}
         className={cn(
           FOCUS,
-          "flex min-h-13 w-full items-center gap-3 rounded-[20px] px-4 py-2.5 text-left transition-colors hover:bg-foreground/[0.025]",
+          "flex min-h-13 min-w-0 flex-1 items-center gap-3 rounded-[20px] px-4 py-2.5 text-left transition-colors hover:bg-foreground/[0.025]",
         )}
       >
         <MoonIcon aria-hidden className="size-4 shrink-0 text-foreground/55" strokeWidth={1.75} />
@@ -836,6 +877,7 @@ function PausedLine(props: { readonly conversation: AldoHomeConversation; readon
           strokeWidth={1.75}
         />
       </ThreadLink>
+      <DismissChatDecision decision={c.chatDecision} title={c.title} />
     </article>
   );
 }

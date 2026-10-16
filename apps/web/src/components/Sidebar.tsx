@@ -253,6 +253,7 @@ import { SidebarContent, SidebarGroup, useSidebar } from "./ui/sidebar";
 import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
 import { AldoSidebarEntry } from "../aldo/AldoSidebarEntry";
 import { useAldoThreadStart } from "../aldo/threadStart";
+import { useAldoSidebarOrder } from "../aldo/sidebarOrder";
 import { SidebarHeaderIconButton, SidebarThreadHeader } from "./sidebar/SidebarThreadHeader";
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuShortcut, MenuTrigger } from "./ui/menu";
 import { Tooltip, TooltipPopup, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
@@ -1216,11 +1217,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   // mobile Live Activity/widgets (amber approval, indigo input, sky working)
   // so a thread reads the same color everywhere it surfaces.
   // Aldo: a thread it's starting reads like Working (or Failed), with how the
-  // start stands as its label.
+  // start stands as its label; so does one Aldo holds a message for, which
+  // the sidebar lists with the threads at work.
   const aldoStartStatus =
     aldoStart?.tone === "failed"
       ? { label: "Failed", icon: "failed" as const, className: "text-red-700 dark:text-red-300" }
-      : aldoStart !== null && status === "working"
+      : aldoStart !== null
         ? {
             label: aldoStart.label,
             icon: "working" as const,
@@ -2281,6 +2283,14 @@ export default function Sidebar() {
   const sidebarProjectSortOrder = useClientSettings((s) => s.sidebarProjectSortOrder);
   const timestampFormat = useClientSettings((s) => s.timestampFormat);
   const workingShelfEnabled = useClientSettings((s) => s.sidebarWorkingShelfEnabled);
+  const [threadSearchQuery, setThreadSearchQuery] = useState("");
+  const isSearchingThreads = threadSearchQuery.trim().length > 0;
+  // Aldo: search results keep their order while a search is open.
+  const {
+    order: aldoOrder,
+    sort: aldoSort,
+    listProps: aldoListProps,
+  } = useAldoSidebarOrder({ hold: isSearchingThreads });
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const {
     settleThread,
@@ -2737,14 +2747,20 @@ export default function Sidebar() {
     // Server capability only gates DRAGGING — it must not influence the
     // sort, or mixed-version fleets would render different pinned orders on
     // web and mobile from the same data.
-    const sortedPinned = sortPinnedThreadsForSidebar(pinned);
-    const sortedActive = workingShelfEnabled
-      ? sortInboxThreadsByReturn(active, (thread) =>
-          observedInboxReturns.get(
-            scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
-          ),
-        )
-      : sortThreadsForSidebar(active);
+    // Aldo: work first, then what waits on the user, then newest finished
+    // (aldo/sidebarOrder.logic.ts), in both lists.
+    const sortedPinned = isAldoCloud
+      ? aldoOrder("pinned", pinned)
+      : sortPinnedThreadsForSidebar(pinned);
+    const sortedActive = isAldoCloud
+      ? aldoOrder("active", active)
+      : workingShelfEnabled
+        ? sortInboxThreadsByReturn(active, (thread) =>
+            observedInboxReturns.get(
+              scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
+            ),
+          )
+        : sortThreadsForSidebar(active);
     return {
       pinnedThreads:
         optimisticDrop?.section !== "pinned" || optimisticDrop.order === null
@@ -2776,6 +2792,7 @@ export default function Sidebar() {
       snoozeNow: preciseNow,
     };
   }, [
+    aldoOrder,
     nowMinute,
     optimisticDrop,
     scopedProjectKeys,
@@ -2786,9 +2803,7 @@ export default function Sidebar() {
   ]);
 
   const threadSearchInputRef = useRef<HTMLInputElement>(null);
-  const [threadSearchQuery, setThreadSearchQuery] = useState("");
   const [activeSearchResultIndex, setActiveSearchResultIndex] = useState(0);
-  const isSearchingThreads = threadSearchQuery.trim().length > 0;
   const searchableThreads = useMemo(
     () => [
       ...pinnedThreads,
@@ -3440,10 +3455,11 @@ export default function Sidebar() {
     }
     if (optimisticDrop.order === null) {
       // Settle also emits unpin/unsnooze events. Wait for the entire move
-      // before releasing the projected fields and sort timestamps.
+      // before releasing the projected fields and sort timestamps. A pin
+      // into a time-ordered pinned block (Aldo) has no order to wait for.
       if (
         canonicalSection === optimisticDrop.section &&
-        thread.pinnedAt == null &&
+        (optimisticDrop.section === "pinned" || thread.pinnedAt == null) &&
         (!optimisticDrop.clearsSnooze || thread.snoozedUntil == null)
       ) {
         setOptimisticDrop(null);
@@ -3660,20 +3676,36 @@ export default function Sidebar() {
     ]).map(key);
   }, [dragState, settledThreads, threadByKey]);
   // Working beta: the inbox is time-ordered too, so the preview shows the
-  // slot a drop will land in, not the slot under the pointer.
+  // slot a drop will land in, not the slot under the pointer. Aldo orders
+  // the inbox and the pinned block itself, so both preview that way.
   const draggedActiveOrder = useMemo(() => {
     const thread = dragState === null ? undefined : threadByKey.get(dragState.activeKey);
-    if (!workingShelfEnabled || dragState === null || thread === undefined) return undefined;
+    if (!(isAldoCloud || workingShelfEnabled) || dragState === null || thread === undefined)
+      return undefined;
     const key = (candidate: EnvironmentThreadShell) =>
       scopedThreadKey(scopeThreadRef(candidate.environmentId, candidate.id));
-    return sortInboxThreadsByReturn(
-      [
-        ...activeThreads.filter((candidate) => key(candidate) !== dragState.activeKey),
-        applySidebarThreadDrop(thread, "active", dragState.occurredAt),
-      ],
-      (candidate) => observedInboxReturns.get(key(candidate)),
+    const destination = [
+      ...activeThreads.filter((candidate) => key(candidate) !== dragState.activeKey),
+      applySidebarThreadDrop(thread, "active", dragState.occurredAt),
+    ];
+    return (
+      isAldoCloud
+        ? aldoSort(destination)
+        : sortInboxThreadsByReturn(destination, (candidate) =>
+            observedInboxReturns.get(key(candidate)),
+          )
     ).map(key);
-  }, [activeThreads, dragState, threadByKey, workingShelfEnabled]);
+  }, [activeThreads, aldoSort, dragState, threadByKey, workingShelfEnabled]);
+  const draggedPinnedOrder = useMemo(() => {
+    const thread = dragState === null ? undefined : threadByKey.get(dragState.activeKey);
+    if (!isAldoCloud || dragState === null || thread === undefined) return undefined;
+    const key = (candidate: EnvironmentThreadShell) =>
+      scopedThreadKey(scopeThreadRef(candidate.environmentId, candidate.id));
+    return aldoSort([
+      ...pinnedThreads.filter((candidate) => key(candidate) !== dragState.activeKey),
+      applySidebarThreadDrop(thread, "pinned", dragState.occurredAt),
+    ]).map(key);
+  }, [aldoSort, dragState, pinnedThreads, threadByKey]);
   const sidebarSortingStrategy = useMemo(
     () =>
       createSidebarSortingStrategy({
@@ -3681,6 +3713,7 @@ export default function Sidebar() {
         boundaryLabelHeight: SIDEBAR_DRAG_LABEL_HEIGHT,
         settledOrder: draggedSettledOrder,
         ...(draggedActiveOrder === undefined ? {} : { activeOrder: draggedActiveOrder }),
+        ...(draggedPinnedOrder === undefined ? {} : { pinnedOrder: draggedPinnedOrder }),
         settledExpanded: settledShelfExpanded,
         settledVisibleCount,
         routeThreadKey,
@@ -3688,6 +3721,7 @@ export default function Sidebar() {
       }),
     [
       draggedActiveOrder,
+      draggedPinnedOrder,
       draggedSettledOrder,
       routeThreadKey,
       settledShelfExpanded,
@@ -3743,7 +3777,8 @@ export default function Sidebar() {
             activeOrder: activeKeys,
             activeKeysById,
             activeReorderableKeys: activeReorderableThreadKeys,
-            activeTimeOrdered: workingShelfEnabled,
+            activeTimeOrdered: isAldoCloud || workingShelfEnabled,
+            pinnedTimeOrdered: isAldoCloud,
           }).kind !== "none"
         );
       },
@@ -3793,7 +3828,8 @@ export default function Sidebar() {
         activeOrder: activeKeys,
         activeKeysById,
         activeReorderableKeys: activeReorderableThreadKeys,
-        activeTimeOrdered: workingShelfEnabled,
+        activeTimeOrdered: isAldoCloud || workingShelfEnabled,
+        pinnedTimeOrdered: isAldoCloud,
       });
       if (plan.kind === "none") return;
       if (plan.kind === "settle" && settlingThreadKeysRef.current.has(activeKey)) return;
@@ -4909,6 +4945,7 @@ export default function Sidebar() {
                 <SortableContext items={sortableIds} strategy={sidebarSortingStrategy}>
                   <ul
                     ref={attachListMotionRef}
+                    {...(isAldoCloud ? aldoListProps : {})}
                     // VoiceOver treats an exposed list as an interaction boundary,
                     // which hides its rows from ordinary linear navigation. A
                     // presentational list also makes its implicit listitems

@@ -1,7 +1,8 @@
-// Aldo as someone you message: its halo (AldoHalo.tsx, turning while it
-// thinks, following the voice on a call), its name, and a line beside it
-// saying what it's at, like a messaging app's "typing…" (presence.logic.ts).
-// Tapping it opens what's working now and what's coming up, each a tap
+// Aldo as someone you message: its face (the orb, with eyes that blink, look
+// up while it thinks, down while the user writes to it, and smile when
+// something's done), its name, and a line beside it saying what it's at, like
+// a messaging app's "typing…" (presence.logic.ts). It's still but for its
+// eyes. Tapping it opens what's working now and what's coming up, each a tap
 // from its thread: the detail behind the line, not a view of its own; and,
 // under them, the way to what runs under the conversation (routines, what's
 // due, pull requests, usage and rules, AldoUnderTheHood.tsx).
@@ -13,23 +14,106 @@ import {
   RepeatIcon,
   SlidersHorizontalIcon,
 } from "lucide-react";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { Popover, PopoverPopup, PopoverTrigger } from "../components/ui/popover";
 import { cn } from "~/lib/utils";
 import { StateDot, stateSince } from "./AldoLiveCard";
 import { ThreadLink } from "./AldoHomeInbox";
-import { AldoHalo } from "./AldoHalo";
 import { useAldoAssistant } from "./assistantSession";
 import type { AldoHome } from "./cloud";
 import { aldoWaitingCount } from "./decisions.logic";
+import { PLEASED_MS, useAldoFace } from "./face";
 import { boardFor, deliveryLabel, dueIn } from "./home.logic";
 import { setAldoUnderTheHood } from "./simpleMode";
-import { presenceLine } from "./presence.logic";
+import { faceMood, presenceLine, type AldoMood } from "./presence.logic";
 import { useAldoReceipts } from "./receipts";
 import "./presence.css";
 
-/** The top of Aldo's conversation: its halo, name and what it's at, opening what's working and coming up. */
+/** Whether Aldo looks pleased now: for a moment after something's done. */
+function usePleased(): boolean {
+  const pleasedAt = useAldoFace((s) => s.pleasedAt);
+  const [pleased, setPleased] = useState(false);
+  useEffect(() => {
+    if (pleasedAt === 0) return;
+    const left = pleasedAt + PLEASED_MS - Date.now();
+    if (left <= 0) return;
+    const start = setTimeout(() => setPleased(true), 0);
+    const stop = setTimeout(() => setPleased(false), left);
+    return () => {
+      clearTimeout(start);
+      clearTimeout(stop);
+    };
+  }, [pleasedAt]);
+  return pleased;
+}
+
+/**
+ * Aldo's face. `mood` moves its eyes; while it speaks or hears, it swells a
+ * little with the voice. `aware` faces (the top's, the empty page's) also
+ * react to the user. Too small for eyes, it's the orb.
+ */
+export function AldoAvatar(props: {
+  readonly size: number;
+  readonly mood?: AldoMood;
+  readonly aware?: boolean;
+  readonly className?: string;
+}) {
+  const reading = useAldoFace((s) => s.reading);
+  const blinkAt = useAldoFace((s) => s.blinkAt);
+  const pleased = usePleased();
+  const base = props.mood ?? "idle";
+  const mood = props.aware ? faceMood(base, { reading, pleased }) : base;
+  // Only a face that speaks or hears follows the voice: the rest don't render with every level.
+  const level = useAldoAssistant((s) =>
+    mood === "speaking" ? s.levels.aldo : mood === "listening" ? s.levels.mic : 0,
+  );
+  const eyes = props.size >= 20;
+  const eyeWidth = Math.max(3, Math.round(props.size * 0.12));
+  const eyeHeight = Math.max(4, Math.round(props.size * 0.18));
+  return (
+    <span
+      aria-hidden
+      className={cn("relative inline-flex shrink-0 items-center justify-center", props.className)}
+      style={{ width: props.size, height: props.size }}
+      data-aldo-face=""
+    >
+      <span
+        className={cn(
+          "absolute inset-0 rounded-full bg-gradient-to-br from-primary to-primary/60 transition-transform duration-[80ms] ease-linear motion-reduce:transition-none",
+          eyes && "shadow-[0_6px_16px_-6px] shadow-primary/45",
+        )}
+        style={{ transform: `scale(${1 + Math.min(1, level * 2.5) * 0.04})` }}
+      />
+      {eyes ? (
+        <>
+          <span className="absolute inset-[7%] rounded-full bg-gradient-to-b from-white/35 to-transparent to-55%" />
+          <span
+            data-aldo-eyes=""
+            className="relative flex items-center"
+            data-mood={mood}
+            style={{
+              gap: Math.round(props.size * 0.17),
+              marginTop: -Math.round(props.size * 0.04),
+            }}
+          >
+            {[0, 1].map((eye) => (
+              <span
+                // Each blink is new eyes: their one blink plays again.
+                key={`${eye}:${props.aware ? blinkAt : 0}`}
+                data-aldo-eye=""
+                className="block rounded-full bg-white"
+                style={{ width: eyeWidth, height: eyeHeight }}
+              />
+            ))}
+          </span>
+        </>
+      ) : null}
+    </span>
+  );
+}
+
+/** The top of Aldo's conversation: its face, name and what it's at, opening what's working and coming up. */
 export function AldoPresence(props: {
   readonly home: AldoHome | null;
   readonly now: number;
@@ -57,9 +141,9 @@ export function AldoPresence(props: {
   // Once there's a read, there's what runs under the conversation to open.
   const detail = home !== null;
   const thinking = line.mood === "thinking";
-  const presence = (
+  const face = (
     <>
-      <AldoHalo size={32} mood={line.mood} />
+      <AldoAvatar size={32} mood={line.mood} aware />
       <span className="flex min-w-0 flex-col items-start">
         <span className="font-semibold text-[15px] leading-5 tracking-[-0.01em]">Aldo</span>
         <span className="flex max-w-60 items-center gap-1.5 text-[12px] text-muted-foreground leading-[18px] sm:max-w-80">
@@ -78,7 +162,7 @@ export function AldoPresence(props: {
   if (!detail)
     return (
       <div className={layout} data-aldo-presence="">
-        {presence}
+        {face}
       </div>
     );
   return (
@@ -91,7 +175,7 @@ export function AldoPresence(props: {
         aria-label={`Aldo: ${line.text}`}
         data-aldo-presence=""
       >
-        {presence}
+        {face}
       </PopoverTrigger>
       <PopoverPopup width="md" padding="compact" align="center">
         <div className="flex flex-col gap-3 py-1">

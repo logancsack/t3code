@@ -100,8 +100,10 @@ export function createSidebarCollisionDetection(
 export function createSidebarSortingStrategy(input: {
   items: readonly SidebarListItem[];
   settledOrder: readonly string[];
-  /** Time-ordered inbox (Working beta): where the lifted row would land. */
+  /** Time-ordered inbox (Working beta, Aldo): where the lifted row would land. */
   activeOrder?: readonly string[];
+  /** Time-ordered pinned block (Aldo): where the lifted row would land. */
+  pinnedOrder?: readonly string[];
   settledExpanded: boolean;
   settledVisibleCount?: number;
   routeThreadKey?: string | null;
@@ -155,7 +157,7 @@ export function createSidebarSortingStrategy(input: {
     const group = groups[target.section];
     const order =
       target.section === "pinned"
-        ? target.pinnedOrder
+        ? (input.pinnedOrder ?? target.pinnedOrder)
         : target.section === "settled"
           ? input.settledOrder
           : (input.activeOrder ?? target.activeOrder);

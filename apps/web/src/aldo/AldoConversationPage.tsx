@@ -1,11 +1,11 @@
 // The home screen as a conversation with Aldo (AldoHome.tsx), made like a
-// messaging app's chat with a teammate. At the top, Aldo's halo and what it's
+// messaging app's chat with a teammate. At the top, Aldo's face and what it's
 // at (AldoPresence.tsx), which opens what's working and coming up. Then the
 // conversation, with what happened to the user's agents where it happened
 // (feed.logic.ts, AldoFeed.tsx), and at its end what waits on the user, as
 // cards to answer in place (AldoUpNext.tsx), so nothing needs a view of its
 // own. Then the composer. Before anything's been said, the page is Aldo's
-// halo, one question and the composer under it, which glides down to its
+// face, one question and the composer under it, which glides down to its
 // place with the first message (the same composer: what's typed and focus
 // stay). Scrolled up, what arrives waits behind "New from Aldo". A thread
 // tapped anywhere in it opens: the thread itself, where its agent is. Setup,
@@ -30,8 +30,7 @@ import { cn } from "~/lib/utils";
 import { AldoAtAGlance, AldoCaption, AldoComposer, AldoConversation } from "./AldoAssistant";
 import { HealthStrip } from "./AldoHomeBoard";
 import { AldoOpenContext } from "./AldoLiveCard";
-import { AldoHalo } from "./AldoHalo";
-import { AldoPresence } from "./AldoPresence";
+import { AldoAvatar, AldoPresence } from "./AldoPresence";
 import { AldoUpNext } from "./AldoUpNext";
 import { settleAldoConversation, unsettleAldoConversation } from "./arrive";
 import { loadAldoConversation, seedAldoComposer, useAldoAssistant } from "./assistantSession";
@@ -40,6 +39,7 @@ import { aldoWaitingCount } from "./decisions.logic";
 import { feedEvents, withReceipts } from "./feed.logic";
 import type { healthIssues } from "./home.logic";
 import { useAldoReceipts } from "./receipts";
+import { blinkAldo } from "./face";
 import { aldoGlide, aldoMorphSource, morphIntoThread } from "./morph";
 import { refreshAldoHome } from "./homeFeed";
 import { scrollMotion } from "./show";
@@ -110,7 +110,7 @@ export function AldoConversationPage(props: {
   /** Why the home read failed, if it did. */
   readonly error: string | null;
   readonly now: number;
-  /** Simple mode's places, on a phone: over Aldo's halo. */
+  /** Simple mode's places, on a phone: over Aldo's face. */
   readonly tabs: ReactNode;
   /** At the top's end, on a wider screen: what to start. */
   readonly actions: ReactNode;
@@ -131,6 +131,14 @@ export function AldoConversationPage(props: {
   }, []);
   // What's there once the conversation has loaded is just there; what comes after arrives.
   useEffect(() => () => unsettleAldoConversation(), []);
+  useEffect(() => {
+    // The user back at the page: Aldo notices, with a blink.
+    const onVisible = () => {
+      if (document.visibilityState === "visible") blinkAldo();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, []);
 
   // What happened, from where the conversation starts; local actions already show themselves.
   const entries = useAldoAssistant((s) => s.entries);
@@ -231,7 +239,7 @@ export function AldoConversationPage(props: {
                   {props.setup}
                   <HealthStrip issues={props.issues} />
                   <div className="flex flex-col items-center text-center">
-                    <AldoHalo size={48} />
+                    <AldoAvatar size={48} aware />
                     <h1 className="mt-5 font-semibold text-[24px] leading-[30px] tracking-[-0.02em] sm:text-[28px] sm:leading-[34px]">
                       What should we get done?
                     </h1>
