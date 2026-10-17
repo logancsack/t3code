@@ -121,6 +121,22 @@ describe("what finished and shipped", () => {
     ).toBe("Deployed");
   });
 
+  it("says a check that finished after its merge left the feed on a line of its own", () => {
+    const checked = conversation({
+      ref: "m1:check",
+      thread: check,
+      title: "Check: Ship the inbox",
+      stateAt: at(10),
+    });
+    const events = feedEvents(
+      { ...empty, conversations: [checked], pullRequests: [pullRequest({ check })] },
+      { now: NOW, from: at(20) },
+    );
+    expect(events.map((e) => [e.kind, e.key])).toEqual([
+      ["finished", expect.stringContaining("m1:check")],
+    ]);
+  });
+
   it("puts a routine's runs, and what they shipped, under the routine", () => {
     const runs = [
       conversation({

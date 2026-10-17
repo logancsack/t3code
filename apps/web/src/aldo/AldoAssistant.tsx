@@ -791,7 +791,7 @@ function ConversationEntry({
  */
 function AldoReply(props: { readonly text: string }) {
   const arrived = useAldoArrived();
-  const closing = closingThread(props.text, window.location.origin);
+  const closing = closingThread(props.text);
   return (
     <p
       {...(arrived ? { "data-aldo-reply": "" } : {})}

@@ -503,22 +503,26 @@ describe("followups", () => {
 });
 
 describe("closingThread", () => {
-  const origin = "https://aldo.computer";
   it("takes a result's closing thread link off, to open in place", () => {
     expect(
-      closingThread("Inbox triage is done.\n\nThread: https://aldo.computer/aldo-x/t1", origin),
+      closingThread("Inbox triage is done.\n\nThread: https://aldo.computer/aldo-x/t1"),
     ).toEqual({
       text: "Inbox triage is done.",
       thread: { environmentId: "aldo-x", threadId: "t1" },
     });
   });
 
-  it("leaves a link elsewhere, or anywhere but the end, as it is", () => {
-    expect(closingThread("Thread: https://example.com/aldo-x/t1", origin)).toBeNull();
-    expect(closingThread("Thread: https://aldo.computer/s/abc/def/ghi", origin)).toBeNull();
-    expect(
-      closingThread("Thread: https://aldo.computer/aldo-x/t1\nMore after it", origin),
-    ).toBeNull();
+  it("opens it in place from whichever of Aldo's addresses the page is on", () => {
+    expect(closingThread("Done.\nThread: https://aldoagent.com/aldo-x/t1")?.thread).toEqual({
+      environmentId: "aldo-x",
+      threadId: "t1",
+    });
+  });
+
+  it("leaves a link to anything but a thread, or anywhere but the end, as it is", () => {
+    expect(closingThread("Thread: https://example.com/owner/repo")).toBeNull();
+    expect(closingThread("Thread: https://aldo.computer/s/abc/def/ghi")).toBeNull();
+    expect(closingThread("Thread: https://aldo.computer/aldo-x/t1\nMore after it")).toBeNull();
   });
 });
 

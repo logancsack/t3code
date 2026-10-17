@@ -107,20 +107,22 @@ export function withoutImageNotes(text: string): {
 }
 
 /**
- * A reply's closing "Thread: <link>" to a thread on this Aldo (what Aldo
+ * A reply's closing "Thread: <link>" to one of the user's threads (what Aldo
  * writes when work it started comes back, src/lib/assistant/results.ts) split
  * off, for the page to say as a tap into the thread rather than its address.
- * Null when it doesn't end with one.
+ * A thread's environment is its machine's (`aldo-<machine>`), whichever of
+ * Aldo's addresses the link and the page are on. Null when it doesn't end
+ * with one.
  */
 export function closingThread(
   text: string,
-  origin: string,
 ): { readonly text: string; readonly thread: AldoOpenTarget } | null {
   const match = /\n*Thread: (\S+)\s*$/.exec(text);
   if (!match || !URL.canParse(match[1]!)) return null;
   const url = new URL(match[1]!);
   const [environmentId, threadId, ...rest] = url.pathname.split("/").filter(Boolean);
-  if (url.origin !== origin || !environmentId || !threadId || rest.length > 0) return null;
+  const ours = /^https?:$/.test(url.protocol) && environmentId?.startsWith("aldo-");
+  if (!ours || !environmentId || !threadId || rest.length > 0) return null;
   return { text: text.slice(0, match.index).trimEnd(), thread: { environmentId, threadId } };
 }
 

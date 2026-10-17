@@ -106,7 +106,10 @@ export function feedEvents(
   };
   const conversationAt = (thread: AldoHomeTarget | null | undefined) =>
     thread ? home.conversations.find((c) => sameTarget(thread, c.thread)) : undefined;
-  const checks = home.pullRequests.flatMap((pr) => (pr.check ? [pr.check] : []));
+  const merged = home.pullRequests.filter((pr) => pr.status === "merged" && within(pr.mergedAt));
+  // A merge's check is said by its line (a routine's, by its run's): one merged
+  // before the feed leaves its check a line of its own.
+  const checks = merged.flatMap((pr) => (pr.check ? [pr.check] : []));
   const told = (c: AldoHomeConversation, at: string) => {
     const path = `/${c.thread.environmentId}/${c.thread.threadId}`;
     const after = Date.parse(at) - TOLD_SLACK_MS;
@@ -132,8 +135,7 @@ export function feedEvents(
         ...(routine ? { routine } : {}),
       };
     });
-  const shipped: AldoFeedEvent[] = home.pullRequests
-    .filter((pr) => pr.status === "merged" && within(pr.mergedAt))
+  const shipped: AldoFeedEvent[] = merged
     .filter((pr) => !conversationAt(pr.thread)?.routine)
     .map((pr) => {
       const check = conversationAt(pr.check);
