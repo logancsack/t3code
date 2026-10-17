@@ -347,27 +347,9 @@ type DirectorySync = (environments: ReadonlyArray<AldoEnvironment>) => Promise<v
 
 let directorySync: DirectorySync | null = null;
 
-const DIRECTORY_SYNC_WAIT_MS = 5_000;
-
-/**
- * Brings this browser's copies of the machines' threads up to date on every
- * directory fetch (shells.ts). The directory waits for it, up to a few
- * seconds, before it registers machines, so a page opens with every thread.
- */
+/** Refreshes stored threads in the background; registering machines never waits on it. */
 export function setAldoDirectorySync(sync: DirectorySync): void {
   directorySync = sync;
-}
-
-async function syncDirectory(environments: ReadonlyArray<AldoEnvironment>): Promise<void> {
-  if (!directorySync) return;
-  let timer: number | undefined;
-  await Promise.race([
-    directorySync(environments).catch(() => undefined),
-    new Promise<void>((resolve) => {
-      timer = window.setTimeout(resolve, DIRECTORY_SYNC_WAIT_MS);
-    }),
-  ]);
-  window.clearTimeout(timer);
 }
 
 async function fetchEnvironments(): Promise<ReadonlyArray<AldoEnvironment>> {
@@ -447,12 +429,6 @@ function currentRegistrations(environments: ReadonlyArray<AldoEnvironment>) {
 
 let firstRead: Promise<Array<BearerConnectionRegistration> | null> | null = null;
 
-let listMachines: (environmentIds: ReadonlyArray<EnvironmentId>) => void = () => undefined;
-
-const machinesListed = new Promise<ReadonlyArray<EnvironmentId>>((resolve) => {
-  listMachines = resolve;
-});
-
 /**
  * Reads the directory now, as the page loads, rather than when the connection
  * runtime first asks for it once the app has rendered: the first poll takes
@@ -460,14 +436,6 @@ const machinesListed = new Promise<ReadonlyArray<EnvironmentId>>((resolve) => {
  */
 export function startAldoDirectory(): void {
   if (isAldoCloud) firstRead ??= readDirectory();
-}
-
-/**
- * The machines the first directory read registers, once it has (firstView.ts);
- * none when it fails, so a page that can't reach Aldo shows what it has.
- */
-export function aldoMachinesListed(): Promise<ReadonlyArray<EnvironmentId>> {
-  return machinesListed;
 }
 
 async function pollDirectory(): Promise<Array<BearerConnectionRegistration> | null> {
@@ -496,14 +464,12 @@ async function readDirectory(): Promise<Array<BearerConnectionRegistration> | nu
   lastFetchAt = Date.now();
   try {
     const environments = await fetchEnvironments();
-    await syncDirectory(environments);
+    void directorySync?.(environments).catch(() => undefined);
     const registrations = currentRegistrations(environments);
     failedFetches = 0;
     retryAt = 0;
-    listMachines(registrations.map((registration) => registration.target.environmentId));
     return registrations;
   } catch {
-    listMachines([]);
     // Retry soon, backing off while Aldo can't be reached so every open tab doesn't hammer it.
     failedFetches += 1;
     retryAt = Date.now() + Math.min(IDLE_REFRESH_MS, 1000 * 2 ** (failedFetches - 1));

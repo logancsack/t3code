@@ -1,33 +1,23 @@
-// The app's first view appears whole. Opening it showed it in pieces: the
-// sidebar said "No projects yet" until the machines' threads had loaded, the
-// home screen's setup card changed as the accounts and the directory came in,
-// and the account at the foot of the sidebar filled in last. Now the boot
-// splash (index.html's, moved out of React's root so the first render doesn't
-// clear it) stays over the page until the first directory read's machines are
-// in the catalog with their stored threads loaded, the app has rendered, and
-// nothing on screen is still waiting for what it shows (useAldoFirstViewHold);
-// then it fades out. A first view that isn't ready in FIRST_VIEW_MAX_MS shows
-// as it is, once React has rendered it. A boot error shown on the splash stays.
+// Reveal the current route promptly. Its own loading states and cached content
+// can fill in while the directory and other machines refresh in the background.
+// Keep the boot splash only until React renders, with a short allowance for
+// the current view's data. Boot errors keep their reload button on the splash.
 
-import { isEnvironmentShellStateLoaded } from "@t3tools/client-runtime/state/shell";
-import type { EnvironmentId } from "@t3tools/contracts";
 import { useLayoutEffect } from "react";
 
 import { environmentCatalog } from "../connection/catalog";
 import { appAtomRegistry } from "../rpc/atomRegistry";
-import { environmentShell } from "../state/shell";
-import { aldoMachinesListed, startAldoDirectory } from "./directory";
+import { startAldoDirectory } from "./directory";
 import { isAldoCloud } from "./api";
 
-const FIRST_VIEW_MAX_MS = 8_000;
+const FIRST_VIEW_MAX_MS = 500;
 const FADE_MS = 150;
 
 let splash: HTMLElement | null = null;
-let listed: ReadonlyArray<EnvironmentId> | null = null;
 const holds = new Set<object>();
 const unmounts: Array<() => void> = [];
 
-/** Puts the splash over the page and takes it away once the first view is whole. */
+/** Puts the splash over the page and takes it away once the first view can render. */
 export function installAldoFirstView(): void {
   if (!isAldoCloud) return;
   startAldoDirectory();
@@ -43,13 +33,6 @@ export function installAldoFirstView(): void {
   // Starts the connection runtime (the directory's machines, their stored
   // threads) while the route's code loads, rather than once the app renders.
   unmounts.push(appAtomRegistry.mount(environmentCatalog.catalogValueAtom));
-  void aldoMachinesListed().then((environmentIds) => {
-    listed = environmentIds;
-    // Kept loaded while the splash waits on them, as the sidebar keeps them after.
-    for (const environmentId of environmentIds) {
-      unmounts.push(appAtomRegistry.mount(environmentShell.stateValueAtom(environmentId)));
-    }
-  });
   let capped = false;
   window.setTimeout(() => {
     capped = true;
@@ -75,15 +58,7 @@ function rendered(): boolean {
 }
 
 function ready(): boolean {
-  if (listed === null || holds.size > 0 || !rendered()) return false;
-  const catalog = appAtomRegistry.get(environmentCatalog.catalogValueAtom);
-  return listed.every(
-    (environmentId) =>
-      catalog.entries.has(environmentId) &&
-      isEnvironmentShellStateLoaded(
-        appAtomRegistry.get(environmentShell.stateValueAtom(environmentId)),
-      ),
-  );
+  return holds.size === 0 && rendered();
 }
 
 /** Stops waiting on the first view, leaving the splash as it is. */

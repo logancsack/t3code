@@ -950,6 +950,41 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     }),
   );
 
+  // Local content is already available. Refresh a cloud-backed cache separately,
+  // without waiting for a sleeping machine or replacing a newer live stream.
+  if (cache.refreshThread !== undefined) {
+    yield* cache.refreshThread(environmentId, threadId, initialSequence || null).pipe(
+      Effect.flatMap((copy) =>
+        applyLock.withPermits(1)(
+          Effect.gen(function* () {
+            if (Option.isNone(copy)) return;
+            const snapshot = copy.value;
+            const connection = yield* SubscriptionRef.get(supervisor.state);
+            const current = yield* SubscriptionRef.get(state);
+            const sequence = yield* SubscriptionRef.get(lastSequence);
+            if (
+              connection.phase === "connected" ||
+              current.status === "deleted" ||
+              snapshot.thread.id !== threadId ||
+              snapshot.snapshotSequence < sequence ||
+              (snapshot.snapshotSequence === sequence && Option.isSome(current.data))
+            )
+              return;
+            yield* applyItemLocked({ kind: "snapshot", snapshot });
+            yield* SubscriptionRef.update(state, (current) => ({
+              ...current,
+              status: statusWithoutLiveData(current.data),
+              error: Option.none(),
+            }));
+            yield* remember;
+          }),
+        ),
+      ),
+      Effect.ignore,
+      Effect.forkScoped,
+    );
+  }
+
   return state;
 });
 

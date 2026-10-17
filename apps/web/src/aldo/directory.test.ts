@@ -140,3 +140,15 @@ it.live("retries an unchanged ready machine after a reconnect still reports dorm
     expect(connection.retry).toHaveBeenCalledTimes(2);
   }),
 );
+
+it.live("registers machines without waiting for other machines' shell downloads", () =>
+  Effect.gen(function* () {
+    const { api, emissions } = yield* directory;
+    const sync = vi.fn(() => new Promise<void>(() => {}));
+    api.setAldoDirectorySync(sync);
+    api.requestAldoDirectoryRefresh();
+    yield* Effect.promise(() => vi.advanceTimersByTimeAsync(250));
+    expect(sync).toHaveBeenCalledOnce();
+    expect(emissions).toHaveLength(2);
+  }),
+);

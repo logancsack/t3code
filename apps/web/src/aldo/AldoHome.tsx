@@ -204,8 +204,7 @@ export function AldoHome() {
     aldoOffersItsModels,
     () => false,
   );
-  // The first view waits for what decides the setup card and the board
-  // (firstView.ts, which waits for the directory itself).
+  // Give the current view a short chance to load before revealing its own loading states.
   useAldoFirstViewHold(
     assistant === null ||
       (accounts === null && accountsError === null) ||
@@ -292,7 +291,14 @@ export function AldoHome() {
     [lastSeen],
   );
 
-  if (assistant === null) return <SidebarInset className="h-dvh bg-background" />;
+  if (assistant === null)
+    return (
+      <SidebarInset className="h-dvh bg-background">
+        <p role="status" className="m-auto text-sm text-muted-foreground">
+          Loading Aldo…
+        </p>
+      </SidebarInset>
+    );
 
   // Nothing can run yet: the card asks for a subscription (or, on an older Aldo
   // without General threads, a repository too). Once agents can run, one line
