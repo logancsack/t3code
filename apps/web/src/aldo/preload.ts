@@ -15,7 +15,9 @@
 // machine went to sleep mid-turn, so its turn carries on, once the page is in
 // use (not while it's left unattended). A thread on screen
 // keeps its machine up while the page is in use; one left open and untouched
-// for half an hour lets it sleep, and using the page again brings it back.
+// for five minutes lets it sleep (Aldo puts a machine nothing holds to sleep
+// two minutes after the last touch), and using the page again brings it back
+// in seconds.
 
 import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId } from "@t3tools/contracts";
@@ -49,7 +51,7 @@ const UNLOAD_AFTER_MS = 90_000;
 /** Leave room for delayed or missed touches before Aldo's two-minute idle timeout. */
 const TOUCH_INTERVAL_MS = 30_000;
 /** A page on screen that hasn't been used for this long no longer keeps its agent up. */
-const UNATTENDED_MS = 30 * 60 * 1000;
+const UNATTENDED_MS = 5 * 60 * 1000;
 
 /** When the user last used the page: the pointer, a key, a touch, the wheel, or coming back to the tab or window. */
 let lastUsedAt = Date.now();
