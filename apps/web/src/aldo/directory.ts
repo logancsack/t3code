@@ -539,6 +539,9 @@ type ConnectResponse =
  * connections, and the burst took the database's few connection slots for
  * minutes. So only a few asks are out at a time; the rest follow as these
  * finish, in the order the directory lists the threads (most recent first).
+ * The wait counts against the supervisor's 15 s setup budget; a thread that
+ * waits it out leaves the queue and retries after its backoff, into a queue
+ * that has drained. So keep an ask quick, and raise the limit before lengthening it.
  */
 const MAX_CONCURRENT_CONNECTS = 8;
 const connectSlots = Semaphore.makeUnsafe(MAX_CONCURRENT_CONNECTS);
