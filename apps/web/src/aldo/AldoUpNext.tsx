@@ -107,12 +107,8 @@ export function AldoUpNext(props: { readonly home: AldoHome; readonly now: numbe
     window.addEventListener(SHOW_ALDO_DECISION, onShow);
     return () => window.removeEventListener(SHOW_ALDO_DECISION, onShow);
   }, [decisions]);
-  const hidden = [
-    ...props.home.conversations,
-    ...(props.home.approvals ?? []),
-    ...props.home.pullRequests,
-  ].filter((item) => item.chatDecision?.dismissed);
-  if (decisions.length === 0 && paused.length === 0 && hidden.length === 0) return null;
+  // What the user hid is under Aldo's name at the top (AldoHiddenFromChat), not here.
+  if (decisions.length === 0 && paused.length === 0) return null;
   // The one open is the one the user opened, while it's there; else the first.
   const open = decisions.some((d) => d.key === opened) ? opened : (decisions[0]?.key ?? null);
   const shown = all ? decisions : decisions.slice(0, SHOWN);
@@ -151,23 +147,6 @@ export function AldoUpNext(props: { readonly home: AldoHome; readonly now: numbe
       {paused.map((c) => (
         <PausedLine key={c.ref} conversation={c} now={props.now} />
       ))}
-      {hidden.length > 0 ? (
-        <details className="px-1 text-[12px] text-muted-foreground">
-          <summary className={cn(FOCUS, "cursor-pointer rounded py-2")}>
-            Hidden from chat ({hidden.length})
-          </summary>
-          <p className="py-1">Still waiting in their threads. No answers were sent.</p>
-          {hidden.map((item) => (
-            <div
-              key={item.chatDecision!.id}
-              className="flex items-center justify-between gap-3 py-1"
-            >
-              <span className="min-w-0 truncate">{item.title}</span>
-              <DismissChatDecision decision={item.chatDecision} title={item.title} restore />
-            </div>
-          ))}
-        </details>
-      ) : null}
       {decisions.length > SHOWN ? (
         <button
           type="button"
@@ -506,11 +485,16 @@ function DecisionCard(props: {
     case "question": {
       const q = d.pending.questions[0];
       headline = q?.question ?? "It asks you something";
-      body = d.conversation.summary ? (
-        <p className="line-clamp-3 text-[14px] text-muted-foreground leading-6 dark:text-foreground/70">
-          {d.conversation.summary}
-        </p>
-      ) : null;
+      // What it last said, less the question the card already asks.
+      const said = q
+        ? d.conversation.summary?.replace(q.question, "").trim()
+        : d.conversation.summary;
+      body =
+        said && /\w/.test(said) ? (
+          <p className="line-clamp-3 text-[14px] text-muted-foreground leading-6 dark:text-foreground/70">
+            {said}
+          </p>
+        ) : null;
       if (d.pending.questions.length !== 1 || !q || q.multiSelect) {
         actions = <PendingForm conversation={d.conversation} onActed={acted} />;
         break;

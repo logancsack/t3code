@@ -279,3 +279,31 @@ export function chatDecisionOf(decision: AldoDecision): AldoChatDecision | undef
 export function aldoChatDecisions(home: AldoHome, now: number): ReadonlyArray<AldoDecision> {
   return aldoDecisions(home, now).filter((d) => !chatDecisionOf(d)?.dismissed);
 }
+
+/**
+ * What waits on the user that they hid from Aldo's conversation (it still
+ * waits in its thread, and counts in aldoWaitingCount): a line each, to show
+ * again.
+ */
+export function aldoHiddenFromChat(
+  home: AldoHome,
+  now: number,
+): ReadonlyArray<{ readonly title: string; readonly chatDecision: AldoChatDecision }> {
+  const decisions = aldoDecisions(home, now).flatMap((d) => {
+    const chatDecision = chatDecisionOf(d);
+    if (!chatDecision?.dismissed) return [];
+    const title =
+      d.kind === "aldo-approval"
+        ? d.approval.title
+        : d.kind === "merge"
+          ? d.pullRequest.title
+          : d.conversation.title;
+    return [{ title, chatDecision }];
+  });
+  const paused = home.conversations.flatMap((c) =>
+    c.chatDecision?.dismissed && isPausedMidTurn(c) && !putAway(c, now)
+      ? [{ title: c.title, chatDecision: c.chatDecision }]
+      : [],
+  );
+  return [...decisions, ...paused];
+}

@@ -55,11 +55,10 @@ export function presenceLine(input: {
       text: `${input.waiting} need${input.waiting === 1 ? "s" : ""} you · ${input.working.length} working`,
       mood: "working",
     };
-  if (first) {
-    const doing = first.browsing ? `On ${first.browsing.site}` : first.title;
-    const more = input.working.length - 1;
-    return { text: more > 0 ? `${doing} · ${more} more working` : doing, mood: "working" };
-  }
+  // One is what it's doing; more is how many, each in the menu (a title would hide the count).
+  if (input.working.length > 1) return { text: `${input.working.length} working`, mood: "working" };
+  if (first)
+    return { text: first.browsing ? `On ${first.browsing.site}` : first.title, mood: "working" };
   if (input.waiting > 0)
     return {
       text: input.waiting === 1 ? "1 thing needs you" : `${input.waiting} things need you`,

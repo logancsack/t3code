@@ -149,6 +149,14 @@ export function AldoConversationPage(props: {
       ),
     [entries],
   );
+  // What Aldo said: a thread it told the user about needs no line of its own.
+  const told = useMemo(
+    () =>
+      entries.flatMap((e) =>
+        e.kind === "message" && e.role === "assistant" ? [{ text: e.text, at: e.at }] : [],
+      ),
+    [entries],
+  );
   const loaded = useAldoAssistant((s) => s.historyLoaded);
   const firstAt = useAldoAssistant((s) => {
     const first = s.entries.find((e) => e.kind === "message");
@@ -157,8 +165,8 @@ export function AldoConversationPage(props: {
   const said = useAldoAssistant((s) => s.entries.length > 0 || s.replying);
   const receipts = useAldoReceipts((s) => s.receipts);
   const feed = useMemo(
-    () => withReceipts(home ? feedEvents(home, { now, from: firstAt, here }) : [], receipts),
-    [home, now, firstAt, here, receipts],
+    () => withReceipts(home ? feedEvents(home, { now, from: firstAt, here, told }) : [], receipts),
+    [home, now, firstAt, here, told, receipts],
   );
   const waiting = useMemo(() => (home ? aldoWaitingCount(home, now) : 0), [home, now]);
   // Nothing read yet, and the read failed: that's said, not taken for nothing to show.

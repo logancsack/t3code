@@ -107,6 +107,24 @@ export function withoutImageNotes(text: string): {
 }
 
 /**
+ * A reply's closing "Thread: <link>" to a thread on this Aldo (what Aldo
+ * writes when work it started comes back, src/lib/assistant/results.ts) split
+ * off, for the page to say as a tap into the thread rather than its address.
+ * Null when it doesn't end with one.
+ */
+export function closingThread(
+  text: string,
+  origin: string,
+): { readonly text: string; readonly thread: AldoOpenTarget } | null {
+  const match = /\n*Thread: (\S+)\s*$/.exec(text);
+  if (!match || !URL.canParse(match[1]!)) return null;
+  const url = new URL(match[1]!);
+  const [environmentId, threadId, ...rest] = url.pathname.split("/").filter(Boolean);
+  if (url.origin !== origin || !environmentId || !threadId || rest.length > 0) return null;
+  return { text: text.slice(0, match.index).trimEnd(), thread: { environmentId, threadId } };
+}
+
+/**
  * A message of Aldo's in runs of text, its https links apart, for the page to
  * make them links: what a thread made (a shared file, a pull request) and the
  * thread itself, which Aldo passes on when work it handed over comes back.

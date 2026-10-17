@@ -10,6 +10,7 @@ import {
 import {
   aldoDecisions,
   aldoChatDecisions,
+  aldoHiddenFromChat,
   aldoWaitingCount,
   decidesInPlace,
   decisionAsk,
@@ -304,6 +305,11 @@ it("keeps a hidden question waiting in overview while removing only its chat car
   expect(aldoChatDecisions(read, NOW)).toHaveLength(0);
   expect(aldoDecisions(read, NOW)).toHaveLength(1);
   expect(aldoWaitingCount(read, NOW)).toBe(1);
+  // Aldo's conversation lists it under its name, to show again, and doesn't count it.
+  expect(aldoHiddenFromChat(read, NOW)).toEqual([
+    { title: hidden.title, chatDecision: hidden.chatDecision },
+  ]);
+  expect(aldoHiddenFromChat(home({ conversations: [question] }), NOW)).toEqual([]);
   expect(hidden.state).toBe("waiting");
   expect(hidden.pending).toEqual(question.pending);
   // A fresh read (another device or reload) follows the server's dismissal.

@@ -40,6 +40,7 @@ import { AldoAvatar } from "./AldoPresence";
 import { ALDO_TALK_LABEL } from "./summon.logic";
 import {
   ACTION_LABELS,
+  closingThread,
   linkRuns,
   liveCardIndexes,
   withoutImageNotes,
@@ -784,15 +785,19 @@ function ConversationEntry({
   return <AldoReply text={entry.text} />;
 }
 
-/** What Aldo said: its words on the page, no bubble. A reply that arrives fades in whole. */
+/**
+ * What Aldo said: its words on the page, no bubble. A reply that arrives fades
+ * in whole. The thread a result is about is a tap into it, not its address.
+ */
 function AldoReply(props: { readonly text: string }) {
   const arrived = useAldoArrived();
+  const closing = closingThread(props.text, window.location.origin);
   return (
     <p
       {...(arrived ? { "data-aldo-reply": "" } : {})}
       className="max-w-[94%] self-start whitespace-pre-wrap break-words text-[16px] leading-6 sm:text-[15px]"
     >
-      {linkRuns(props.text).map((run) =>
+      {linkRuns(closing?.text ?? props.text).map((run) =>
         run.href ? (
           <a
             key={run.at}
@@ -807,6 +812,16 @@ function AldoReply(props: { readonly text: string }) {
           run.text
         ),
       )}
+      {closing ? (
+        <>
+          {"\n"}
+          {threadLink(
+            closing.thread,
+            "Open the thread",
+            "text-[14px] text-muted-foreground underline decoration-foreground/20 underline-offset-4 hover:text-foreground",
+          )}
+        </>
+      ) : null}
     </p>
   );
 }

@@ -3,6 +3,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip"
 import { toastManager } from "../components/ui/toast";
 import { cn } from "~/lib/utils";
 import { dismissAldoChatDecision, type AldoChatDecision } from "./homeApi";
+import { type aldoHiddenFromChat } from "./decisions.logic";
 import { refreshAldoHome, setAldoChatDecisionDismissed } from "./homeFeed";
 import { FOCUS } from "./surface";
 
@@ -77,5 +78,28 @@ export function DismissChatDecision(props: {
         {props.restore ? "Show in Aldo chat again" : "Hide from Aldo chat without answering"}
       </TooltipPopup>
     </Tooltip>
+  );
+}
+
+/** What the user hid from Aldo's conversation, a line each to show again (under Aldo's name, AldoPresence.tsx). */
+export function AldoHiddenFromChat(props: {
+  readonly items: ReturnType<typeof aldoHiddenFromChat>;
+}) {
+  if (props.items.length === 0) return null;
+  return (
+    <section className="flex flex-col gap-0.5">
+      <h3 className="px-1.5 font-medium text-[12px] text-muted-foreground">
+        Hidden from chat
+        <span className="font-normal"> · still waiting in their threads</span>
+      </h3>
+      <ul className="flex flex-col">
+        {props.items.map((item) => (
+          <li key={item.chatDecision.id} className="flex items-center gap-2 ps-1.5">
+            <span className="min-w-0 flex-1 truncate text-sm">{item.title}</span>
+            <DismissChatDecision decision={item.chatDecision} title={item.title} restore />
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
