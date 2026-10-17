@@ -24,6 +24,7 @@ import { type EnvironmentId } from "@t3tools/contracts";
 import * as Stream from "effect/Stream";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
+import * as Semaphore from "effect/Semaphore";
 import { type PreparedPlatformEnvironment } from "@t3tools/client-runtime/platform";
 import { type AldoProjectHost } from "./accountApi";
 
@@ -532,6 +533,19 @@ type ConnectResponse =
   | { state: "running"; httpBaseUrl: string; wsBaseUrl: string; bearerToken: string }
   | { state: "stopped" };
 
+/**
+ * Opening the app asked Aldo to connect every thread at once (185 requests in
+ * a second), each its own serverless function with its own database
+ * connections, and the burst took the database's few connection slots for
+ * minutes. So only a few asks are out at a time; the rest follow as these
+ * finish, in the order the directory lists the threads (most recent first).
+ * The wait counts against the supervisor's 15 s setup budget; a thread that
+ * waits it out leaves the queue and retries after its backoff, into a queue
+ * that has drained. So keep an ask quick, and raise the limit before lengthening it.
+ */
+const MAX_CONCURRENT_CONNECTS = 8;
+const connectSlots = Semaphore.makeUnsafe(MAX_CONCURRENT_CONNECTS);
+
 /** Gateway used by the connection resolver: connects to running sandboxes only. */
 export const aldoEnvironmentGateway = {
   prepare: (input: {
@@ -558,6 +572,7 @@ export const aldoEnvironmentGateway = {
           detail: cause instanceof Error ? cause.message : "Aldo is unreachable.",
         }),
     }).pipe(
+      connectSlots.withPermits(1),
       Effect.flatMap((response) =>
         response.state === "running"
           ? Effect.succeed(
