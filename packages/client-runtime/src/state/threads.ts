@@ -977,6 +977,9 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
               error: Option.none(),
             }));
             yield* remember;
+            // This one-shot cloud copy may contain an active pending interaction.
+            // Save it once, while live-stream updates keep their settled-only policy.
+            yield* Effect.uninterruptible(persist(snapshot));
           }),
         ),
       ),

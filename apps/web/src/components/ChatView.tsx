@@ -10000,8 +10000,23 @@ export default function ChatView(props: ChatViewProps) {
     pendingSidebarFileDrops,
   ]);
 
-  // Empty state: no active thread
   if (!activeThread) {
+    // A deep link can arrive before either the shell or detail is cached.
+    if (isAldoCloud && routeKind === "server") {
+      return (
+        <AldoThreadLoading
+          start={aldoThreadStart ?? aldoWakeFailure}
+          startedAt={null}
+          label={
+            aldoThreadDetailMissing
+              ? "Waking the cloud agent to load this thread…"
+              : "Loading messages…"
+          }
+          onRetry={aldoThreadStart === null ? aldoWake.retryWake : undefined}
+          bottomInset={0}
+        />
+      );
+    }
     return <NoActiveThreadState />;
   }
 

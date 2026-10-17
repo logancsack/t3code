@@ -95,6 +95,7 @@ const makeHarness = Effect.fn("TestThreadAtoms.makeHarness")(function* (options?
   readonly snapshot?: OrchestrationThreadDetailSnapshot;
   readonly cached?: OrchestrationThreadDetailSnapshot;
   readonly refresh?: Effect.Effect<Option.Option<OrchestrationThreadDetailSnapshot>>;
+  readonly saveThread?: (snapshot: OrchestrationThreadDetailSnapshot) => Effect.Effect<void>;
   readonly connected?: boolean;
   readonly httpNone?: boolean;
   readonly initialLoad?: Effect.Effect<ThreadSnapshotLoadResult>;
@@ -210,7 +211,7 @@ const makeHarness = Effect.fn("TestThreadAtoms.makeHarness")(function* (options?
               return options?.cached ? Option.some(options.cached) : Option.none();
             }),
           ...(options?.refresh ? { refreshThread: () => options.refresh! } : {}),
-          saveThread: () => Effect.void,
+          saveThread: (_environmentId, snapshot) => options?.saveThread?.(snapshot) ?? Effect.void,
           removeThread: () => Effect.void,
           loadServerConfig: () => Effect.succeedNone,
           saveServerConfig: () => Effect.void,
@@ -345,6 +346,49 @@ describe("createEnvironmentThreadStateAtoms", () => {
       expect(Option.getOrThrow(loaded.data).title).toBe("Cached thread");
       unmount();
     }),
+  );
+
+  it.effect.each(["starting", "running"] as const)(
+    "persists an active cloud refresh for a fresh offline reopen (%s)",
+    (status) =>
+      Effect.gen(function* () {
+        const saved = yield* Queue.unbounded<OrchestrationThreadDetailSnapshot>();
+        const active: OrchestrationThreadDetailSnapshot = {
+          ...SNAPSHOT,
+          snapshotSequence: 9,
+          thread: {
+            ...THREAD,
+            title: "Waiting for your input",
+            session: {
+              threadId: THREAD_ID,
+              status,
+              providerName: "codex",
+              runtimeMode: "full-access",
+              activeTurnId: null,
+              lastError: null,
+              updatedAt: THREAD.updatedAt,
+            },
+          },
+        };
+        const h = yield* makeHarness({
+          cached: SNAPSHOT,
+          refresh: Effect.succeedSome(active),
+          saveThread: (snapshot) => Queue.offer(saved, snapshot).pipe(Effect.asVoid),
+        });
+        const unmount = h.registry.mount(h.stateAtom);
+        const disk = yield* Queue.take(saved);
+        expect(disk).toEqual(active);
+        unmount();
+        // A new runtime/registry has no retained in-memory snapshot or cloud source.
+        const reopened = yield* makeHarness({ cached: disk, httpNone: true });
+        const stop = reopened.registry.mount(reopened.stateAtom);
+        const restored = yield* observeState(reopened.registry, reopened.stateAtom, (value) =>
+          Option.isSome(value.data),
+        );
+        expect(Option.getOrThrow(restored.data).title).toBe("Waiting for your input");
+        expect(Option.getOrThrow(restored.data).session?.status).toBe(status);
+        stop();
+      }),
   );
 
   it.effect("a late remote cache refresh cannot replace a newer live thread", () =>

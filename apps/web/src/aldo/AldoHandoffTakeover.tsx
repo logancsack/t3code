@@ -6,7 +6,7 @@
 // and so does "Teach this", which teaches the conversation that asked: it's
 // handed back only once a recording is taught or discarded.
 
-import { useRouterState } from "@tanstack/react-router";
+import { useRouter, useRouterState } from "@tanstack/react-router";
 import { LoaderIcon, XIcon } from "lucide-react";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 
@@ -34,6 +34,7 @@ let fromNotification =
 /** Mounted once: the takeover, when one is open. */
 export function AldoHandoffTakeoverHost() {
   const id = useAldoHandoffTakeover((s) => s.id);
+  const router = useRouter();
   const href = useRouterState({ select: (state) => state.location.href });
   useEffect(() => {
     const handoff =
@@ -41,11 +42,15 @@ export function AldoHandoffTakeoverHost() {
     if (!handoff) return;
     openAldoHandoffTakeover(handoff);
     fromNotification = null;
-    // A reload doesn't open it again.
-    const url = new URL(window.location.href);
+    // Clear the router's location too, so another tap of this URL is a new navigation.
+    const url = new URL(href, window.location.origin);
     url.searchParams.delete("handoff");
-    window.history.replaceState(window.history.state, "", url);
-  }, [href]);
+    void router.navigate({
+      href: url.pathname + url.search + url.hash,
+      replace: true,
+      resetScroll: false,
+    });
+  }, [href, router]);
   return id ? <Takeover key={id} id={id} /> : null;
 }
 
