@@ -5,9 +5,9 @@ Each thread's agent runs on its own computer. A computer that has nothing to do 
 ## When an agent goes to sleep
 
 - **Nothing to do for a few minutes**: the agent finished its turn, or is waiting on your answer, and nobody is looking at its thread.
-- **Its thread is open, but the page hasn't been used for half an hour**: Aldo left open on a screen doesn't keep an agent awake. Moving the pointer, typing, scrolling, or coming back to the tab or window all count as using it.
+- **Its thread is open, but the page hasn't been used for five minutes**: Aldo left open on a screen doesn't keep an agent awake. Moving the pointer, typing, scrolling, or coming back to the tab or window all count as using it.
 
-An agent doesn't sleep while it's working. Work it leaves running in the background after a turn keeps it awake for up to 2 hours.
+An agent doesn't sleep while it's working. Work it leaves running after a turn keeps it awake for up to 2 hours while that work is busy (a build, a render, a download), and for 10 minutes otherwise (a background task that's waiting, or something it's watching). For longer, the agent keeps its computer up on purpose, or sets itself a reminder and lets it sleep in between.
 
 If an agent's computer does go to sleep in the middle of a turn (when your credits run out, say), its thread shows **Paused mid-turn** rather than working. Opening the thread wakes the computer and the turn carries on.
 
