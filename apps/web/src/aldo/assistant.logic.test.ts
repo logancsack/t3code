@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   callDuration,
   captionParts,
+  closingThread,
   actionFor,
   followupAction,
   followupPrompt,
@@ -498,6 +499,30 @@ describe("followups", () => {
     expect(followupsEvery({ following: 2, news: 0 })).toBe(4_000);
     expect(followupsEvery({ following: 0, news: 1 })).toBe(4_000);
     expect(followupsEvery({ following: 0, news: 0 })).toBe(15_000);
+  });
+});
+
+describe("closingThread", () => {
+  it("takes a result's closing thread link off, to open in place", () => {
+    expect(
+      closingThread("Inbox triage is done.\n\nThread: https://aldo.computer/aldo-x/t1"),
+    ).toEqual({
+      text: "Inbox triage is done.",
+      thread: { environmentId: "aldo-x", threadId: "t1" },
+    });
+  });
+
+  it("opens it in place from whichever of Aldo's addresses the page is on", () => {
+    expect(closingThread("Done.\nThread: https://aldoagent.com/aldo-x/t1")?.thread).toEqual({
+      environmentId: "aldo-x",
+      threadId: "t1",
+    });
+  });
+
+  it("leaves a link to anything but a thread, or anywhere but the end, as it is", () => {
+    expect(closingThread("Thread: https://example.com/owner/repo")).toBeNull();
+    expect(closingThread("Thread: https://aldo.computer/s/abc/def/ghi")).toBeNull();
+    expect(closingThread("Thread: https://aldo.computer/aldo-x/t1\nMore after it")).toBeNull();
   });
 });
 

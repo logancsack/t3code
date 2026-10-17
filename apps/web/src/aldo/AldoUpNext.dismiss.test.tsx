@@ -55,6 +55,8 @@ vi.mock("./walkthrough", () => ({
 }));
 
 let AldoUpNext: typeof import("./AldoUpNext").AldoUpNext;
+let AldoHiddenFromChat: typeof import("./DismissChatDecision").AldoHiddenFromChat;
+let aldoHiddenFromChat: typeof import("./decisions.logic").aldoHiddenFromChat;
 let refreshAldoHome: typeof import("./homeFeed").refreshAldoHome;
 let useAldoHomeFeed: typeof import("./homeFeed").useAldoHomeFeed;
 
@@ -67,6 +69,10 @@ function Page() {
     <>
       <p>The rest of Aldo's conversation</p>
       {home ? <AldoUpNext home={home} now={now} /> : null}
+      {/* Under Aldo's name at the top (AldoPresence.tsx). */}
+      <div data-hidden-from-chat="">
+        {home ? <AldoHiddenFromChat items={aldoHiddenFromChat(home, now)} /> : null}
+      </div>
     </>
   );
 }
@@ -80,6 +86,8 @@ async function mount() {
 beforeEach(async () => {
   vi.resetModules();
   ({ AldoUpNext } = await import("./AldoUpNext"));
+  ({ AldoHiddenFromChat } = await import("./DismissChatDecision"));
+  ({ aldoHiddenFromChat } = await import("./decisions.logic"));
   ({ refreshAldoHome, useAldoHomeFeed } = await import("./homeFeed"));
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal(
@@ -208,9 +216,9 @@ it("can restore a persisted hidden prompt after remount without answering", asyn
   await hide();
   await act(async () => root.unmount());
   await mount();
-  const summary = container.querySelector("summary")!;
-  expect(summary.textContent).toContain("Hidden from chat (1)");
-  await act(async () => summary.click());
+  const hidden = container.querySelector("[data-hidden-from-chat]")!;
+  expect(hidden.textContent).toContain("Hidden from chat");
+  expect(hidden.textContent).toContain("Thread 0");
   const show = container.querySelector<HTMLButtonElement>(
     'button[aria-label="Show Thread 0 in Aldo chat again"]',
   )!;

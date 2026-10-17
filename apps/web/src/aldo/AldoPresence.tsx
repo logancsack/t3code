@@ -2,10 +2,11 @@
 // up while it thinks, down while the user writes to it, and smile when
 // something's done), its name, and a line beside it saying what it's at, like
 // a messaging app's "typing…" (presence.logic.ts). It's still but for its
-// eyes. Tapping it opens what's working now and what's coming up, each a tap
-// from its thread: the detail behind the line, not a view of its own; and,
-// under them, the way to what runs under the conversation (routines, what's
-// due, pull requests, usage and rules, AldoUnderTheHood.tsx).
+// eyes. Tapping it opens what's working now, what the user hid from the
+// conversation (to show again) and what's coming up, each a tap from its
+// thread: the detail behind the line, not a view of its own; and, under them,
+// the way to what runs under the conversation (routines, what's due, pull
+// requests, usage and rules, AldoUnderTheHood.tsx).
 
 import {
   CalendarClockIcon,
@@ -22,7 +23,8 @@ import { StateDot, stateSince } from "./AldoLiveCard";
 import { ThreadLink } from "./AldoHomeInbox";
 import { useAldoAssistant } from "./assistantSession";
 import { type AldoHome } from "./homeApi";
-import { aldoWaitingCount } from "./decisions.logic";
+import { AldoHiddenFromChat } from "./DismissChatDecision";
+import { aldoHiddenFromChat, aldoWaitingCount } from "./decisions.logic";
 import { PLEASED_MS, useAldoFace } from "./face";
 import { boardFor, deliveryLabel, dueIn } from "./home.logic";
 import { setAldoUnderTheHood } from "./simpleMode";
@@ -129,11 +131,16 @@ export function AldoPresence(props: {
   );
   // What was just decided here no longer waits, though the home read still has it.
   const receipts = useAldoReceipts((s) => s.receipts);
+  const hidden = useMemo(() => (home ? aldoHiddenFromChat(home, now) : []), [home, now]);
+  // What the conversation shows waiting: what the user hid from it is in the menu.
   const waiting = home
-    ? aldoWaitingCount(
-        home,
-        now,
-        receipts.map((r) => r.key),
+    ? Math.max(
+        0,
+        aldoWaitingCount(
+          home,
+          now,
+          receipts.map((r) => r.key),
+        ) - hidden.length,
       )
     : 0;
   const line = presenceLine({ phase, replying, working, waiting, unread: props.unread === true });
@@ -203,6 +210,7 @@ export function AldoPresence(props: {
               </ul>
             </section>
           ) : null}
+          <AldoHiddenFromChat items={hidden} />
           {coming.length > 0 ? (
             <section className="flex flex-col gap-0.5">
               <h3 className="px-1.5 font-medium text-[12px] text-muted-foreground">Coming up</h3>
@@ -227,7 +235,8 @@ export function AldoPresence(props: {
           ) : null}
           <div
             className={cn(
-              (working.length > 0 || coming.length > 0) && "border-foreground/[0.06] border-t pt-1",
+              (working.length > 0 || hidden.length > 0 || coming.length > 0) &&
+                "border-foreground/[0.06] border-t pt-1",
             )}
           >
             <button

@@ -78,6 +78,8 @@ export interface AldoHomeConversation {
   /** Snoozed until then (only while that's ahead), or settled: put away in the user's list. */
   readonly snoozedUntil?: string;
   readonly settled?: true;
+  /** The routine whose run it is: each run is a conversation of its own (a newer Aldo). */
+  readonly routine?: string;
 }
 
 export interface AldoHomePullRequest {
@@ -100,6 +102,8 @@ export interface AldoHomePullRequest {
   readonly mergesAt: string | null;
   readonly mergedAt: string | null;
   readonly updatedAt: string;
+  /** The conversation checking it's live once it merged (a newer Aldo). */
+  readonly check?: AldoHomeTarget;
 }
 
 export interface AldoHomeDelivery {
