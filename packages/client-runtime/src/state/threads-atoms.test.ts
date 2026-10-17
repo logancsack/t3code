@@ -93,6 +93,9 @@ const CONNECTED_STATE: SupervisorConnectionState = {
 
 const makeHarness = Effect.fn("TestThreadAtoms.makeHarness")(function* (options?: {
   readonly snapshot?: OrchestrationThreadDetailSnapshot;
+  readonly cached?: OrchestrationThreadDetailSnapshot;
+  readonly refresh?: Effect.Effect<Option.Option<OrchestrationThreadDetailSnapshot>>;
+  readonly saveThread?: (snapshot: OrchestrationThreadDetailSnapshot) => Effect.Effect<void>;
   readonly connected?: boolean;
   readonly httpNone?: boolean;
   readonly initialLoad?: Effect.Effect<ThreadSnapshotLoadResult>;
@@ -205,9 +208,10 @@ const makeHarness = Effect.fn("TestThreadAtoms.makeHarness")(function* (options?
           loadThread: () =>
             Effect.sync(() => {
               diskLoads += 1;
-              return Option.none();
+              return options?.cached ? Option.some(options.cached) : Option.none();
             }),
-          saveThread: () => Effect.void,
+          ...(options?.refresh ? { refreshThread: () => options.refresh! } : {}),
+          saveThread: (_environmentId, snapshot) => options?.saveThread?.(snapshot) ?? Effect.void,
           removeThread: () => Effect.void,
           loadServerConfig: () => Effect.succeedNone,
           saveServerConfig: () => Effect.void,
@@ -299,6 +303,119 @@ describe("createEnvironmentThreadStateAtoms", () => {
     vi.useRealTimers();
     vi.restoreAllMocks();
   });
+
+  it.effect("renders cached messages before a remote copy arrives, then refreshes in place", () =>
+    Effect.gen(function* () {
+      const response = yield* Deferred.make<Option.Option<OrchestrationThreadDetailSnapshot>>();
+      const h = yield* makeHarness({ cached: SNAPSHOT, refresh: Deferred.await(response) });
+      const unmount = h.registry.mount(h.stateAtom);
+      const cached = yield* observeState(h.registry, h.stateAtom, (value) =>
+        Option.isSome(value.data),
+      );
+      expect(Option.getOrThrow(cached.data).title).toBe("Cached thread");
+      yield* Deferred.succeed(
+        response,
+        Option.some({
+          ...SNAPSHOT,
+          snapshotSequence: 9,
+          thread: { ...THREAD, title: "Finished while closed" },
+        }),
+      );
+      const updated = yield* observeState(
+        h.registry,
+        h.stateAtom,
+        (value) =>
+          Option.getOrNull(value.data)?.title === "Finished while closed" &&
+          value.status === "cached",
+      );
+      expect(updated.error).toEqual(Option.none());
+      unmount();
+    }),
+  );
+
+  it.effect("opens a remote copy with no local cache, including sequence zero", () =>
+    Effect.gen(function* () {
+      const response = yield* Deferred.make<Option.Option<OrchestrationThreadDetailSnapshot>>();
+      const h = yield* makeHarness({ httpNone: true, refresh: Deferred.await(response) });
+      const unmount = h.registry.mount(h.stateAtom);
+      yield* Queue.take(h.subscriptions);
+      yield* Deferred.succeed(response, Option.some({ ...SNAPSHOT, snapshotSequence: 0 }));
+      const loaded = yield* observeState(h.registry, h.stateAtom, (value) =>
+        Option.isSome(value.data),
+      );
+      expect(Option.getOrThrow(loaded.data).title).toBe("Cached thread");
+      unmount();
+    }),
+  );
+
+  it.effect.each(["starting", "running"] as const)(
+    "persists an active cloud refresh for a fresh offline reopen (%s)",
+    (status) =>
+      Effect.gen(function* () {
+        const saved = yield* Queue.unbounded<OrchestrationThreadDetailSnapshot>();
+        const active: OrchestrationThreadDetailSnapshot = {
+          ...SNAPSHOT,
+          snapshotSequence: 9,
+          thread: {
+            ...THREAD,
+            title: "Waiting for your input",
+            session: {
+              threadId: THREAD_ID,
+              status,
+              providerName: "codex",
+              runtimeMode: "full-access",
+              activeTurnId: null,
+              lastError: null,
+              updatedAt: THREAD.updatedAt,
+            },
+          },
+        };
+        const h = yield* makeHarness({
+          cached: SNAPSHOT,
+          refresh: Effect.succeedSome(active),
+          saveThread: (snapshot) => Queue.offer(saved, snapshot).pipe(Effect.asVoid),
+        });
+        const unmount = h.registry.mount(h.stateAtom);
+        const disk = yield* Queue.take(saved);
+        expect(disk).toEqual(active);
+        unmount();
+        // A new runtime/registry has no retained in-memory snapshot or cloud source.
+        const reopened = yield* makeHarness({ cached: disk, httpNone: true });
+        const stop = reopened.registry.mount(reopened.stateAtom);
+        const restored = yield* observeState(reopened.registry, reopened.stateAtom, (value) =>
+          Option.isSome(value.data),
+        );
+        expect(Option.getOrThrow(restored.data).title).toBe("Waiting for your input");
+        expect(Option.getOrThrow(restored.data).session?.status).toBe(status);
+        stop();
+      }),
+  );
+
+  it.effect("a late remote cache refresh cannot replace a newer live thread", () =>
+    Effect.gen(function* () {
+      const response = yield* Deferred.make<Option.Option<OrchestrationThreadDetailSnapshot>>();
+      const done = yield* Deferred.make<void>();
+      const h = yield* makeHarness({
+        connected: true,
+        cached: SNAPSHOT,
+        snapshot: { ...SNAPSHOT, snapshotSequence: 12, thread: { ...THREAD, title: "Live" } },
+        refresh: Deferred.await(response).pipe(Effect.ensuring(Deferred.succeed(done, undefined))),
+      });
+      const unmount = h.registry.mount(h.stateAtom);
+      const subscription = yield* Queue.take(h.subscriptions);
+      yield* Queue.offer(subscription.events, {
+        kind: "snapshot",
+        snapshot: { ...SNAPSHOT, snapshotSequence: 12, thread: { ...THREAD, title: "Live" } },
+      });
+      yield* Queue.offer(subscription.events, { kind: "synchronized" });
+      yield* observeState(h.registry, h.stateAtom, (value) => value.status === "live");
+      yield* Deferred.succeed(response, Option.some({ ...SNAPSHOT, snapshotSequence: 9 }));
+      yield* Deferred.await(done);
+      yield* Effect.yieldNow;
+      expect(currentThread(h.registry, h.stateAtom).title).toBe("Live");
+      unmount();
+    }),
+  );
 
   it.effect("exposes snapshot loader defects before the RPC subscription starts", () =>
     Effect.gen(function* () {

@@ -710,18 +710,9 @@ export const connectionStorageLayer = Layer.effectContext(
               ? cause
               : persistenceError("load-thread", cause),
           ),
-          // Aldo: a sleeping machine's thread opens from Aldo's copy when it's newer,
-          // or when the cached one can't be read (it's reported as before if Aldo has none).
-          Effect.matchEffect({
-            onSuccess: (cached) => withAldoThreadDetail(database, environmentId, threadId, cached),
-            onFailure: (error) =>
-              withAldoThreadDetail(database, environmentId, threadId, Option.none()).pipe(
-                Effect.flatMap((copy) =>
-                  Option.isSome(copy) ? Effect.succeed(copy) : Effect.fail(error),
-                ),
-              ),
-          }),
         ),
+      refreshThread: (environmentId, threadId, afterSequence) =>
+        refreshAldoThreadDetail(environmentId, threadId, afterSequence),
       saveThread: (environmentId, snapshot) =>
         Effect.gen(function* () {
           const encoded = yield* encodeStoredThreadSnapshot({
@@ -821,49 +812,23 @@ export const connectionStorageLayer = Layer.effectContext(
   }),
 );
 
-/**
- * Aldo: the thread as Aldo's copy has it when that's newer than the cached one
- * (for a machine that isn't connected; aldo/threadDetails.ts), and cached from
- * then on. A copy that doesn't decode, or isn't newer, leaves the cache as it was.
- */
-function withAldoThreadDetail(
-  database: IDBDatabase,
+/** A remote copy refreshes the visible thread after the local cache has rendered. */
+function refreshAldoThreadDetail(
   environmentId: EnvironmentId,
   threadId: ThreadId,
-  cached: Option.Option<OrchestrationThreadDetailSnapshot>,
+  cachedSequence: number | null,
 ) {
-  const cachedSequence = Option.match(cached, {
-    onNone: () => null,
-    onSome: (snapshot) => snapshot.snapshotSequence,
-  });
   return Effect.promise(() => aldoThreadDetail(environmentId, threadId, cachedSequence)).pipe(
     Effect.flatMap((copy) =>
       copy === null
-        ? Effect.succeed(cached)
+        ? Effect.succeedNone
         : decodeThreadDetailSnapshot(copy).pipe(
-            Effect.flatMap((snapshot) =>
-              snapshot.thread.id !== threadId || snapshot.snapshotSequence <= (cachedSequence ?? -1)
-                ? Effect.succeed(cached)
-                : encodeStoredThreadSnapshot({
-                    schemaVersion: 4,
-                    environmentId,
-                    threadId,
-                    snapshot,
-                  }).pipe(
-                    Effect.flatMap((encoded) =>
-                      writeDatabaseValue(
-                        database,
-                        THREAD_STORE_NAME,
-                        threadCacheKey(environmentId, threadId),
-                        encoded,
-                      ),
-                    ),
-                    // Shown even if it couldn't be cached.
-                    Effect.ignore,
-                    Effect.as(Option.some(snapshot)),
-                  ),
+            Effect.map((snapshot) =>
+              snapshot.thread.id === threadId && snapshot.snapshotSequence > (cachedSequence ?? -1)
+                ? Option.some(snapshot)
+                : Option.none(),
             ),
-            Effect.orElseSucceed(() => cached),
+            Effect.orElseSucceed(() => Option.none()),
           ),
     ),
   );

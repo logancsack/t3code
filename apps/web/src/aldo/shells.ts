@@ -4,7 +4,7 @@
 // connecting never wakes a machine, a device that never saw one running would
 // show none of its threads. Aldo keeps each machine's latest shell as its
 // aldod reports it, and the directory says which snapshot sequence that is.
-// On every directory fetch (on page load, before the machines register) the
+// On every directory fetch, in the background while machines register, the
 // shells newer than this browser's copies are copied into its cache, and the
 // sidebar reloads them for machines that aren't connected; a connected
 // machine keeps its own cache current. For a machine Aldo has no shell for

@@ -9,20 +9,20 @@
 // since machines began reporting them) wakes its machine once to load
 // (preload.ts), and the machine then reports it.
 
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { useSyncExternalStore } from "react";
 
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentPresentations } from "../state/presentation";
+import { environmentThreads } from "../state/threads";
 import { aldoMachineIsNew } from "./directory";
 import { fetchAldoThreadDetail, setAldoThreadDetailSource } from "./threadApi";
 import { isAldoCloud, isAldoEnvironmentId } from "./api";
 import { readAldoThreadDetail } from "./threadDetails.logic";
 
 /**
- * How long a thread waits for Aldo's copy before it opens without it: a
- * thread this browser has nothing of waits longer (it only shows "loading"
- * meanwhile) than one it has an older copy of, which shows that instead.
+ * How long the background refresh may wait for Aldo's copy. Local content
+ * renders immediately; a thread with no cached content shows its loading state.
  */
 const FETCH_TIMEOUT_MS = 5_000;
 const CACHED_FETCH_TIMEOUT_MS = 1_500;
@@ -79,6 +79,28 @@ async function newerDetail(
 export function installAldoThreadDetails(): void {
   if (!isAldoCloud) return;
   setAldoThreadDetailSource(newerDetail);
+  // A warm notification tap keeps its existing state. Refresh that copy too,
+  // without clearing its retained messages or waiting for the machine to wake.
+  navigator.serviceWorker?.addEventListener("message", (event: MessageEvent) => {
+    if (
+      !["aldo-push", "aldo-open"].includes(event.data?.type) ||
+      typeof event.data?.url !== "string"
+    )
+      return;
+    const url = new URL(event.data.url, location.origin);
+    const [, environmentId, threadId] = url.pathname.split("/");
+    if (
+      url.origin !== location.origin ||
+      !environmentId ||
+      !threadId ||
+      !isAldoEnvironmentId(environmentId) ||
+      isConnected(environmentId)
+    )
+      return;
+    appAtomRegistry.refresh(
+      environmentThreads.stateAtom(environmentId as EnvironmentId, threadId as ThreadId),
+    );
+  });
 }
 
 function subscribe(listener: () => void): () => void {

@@ -57,7 +57,6 @@ async function renderApp() {
     installAldoMachineSettings();
     installAldoVersionCheck();
     installAldoNotificationsSync();
-    installAldoServiceWorker();
     installAldoShellSync();
     installAldoThreadDetails();
     installAldoReconnect();
@@ -71,6 +70,7 @@ async function renderApp() {
   // Electron loads the app from a file-backed shell, so hash history avoids path resolution issues.
   const history = isElectron || landingDemo ? createHashHistory() : createBrowserHistory();
   const router = getRouter(history);
+  if (!landingDemo) installAldoServiceWorker((href) => router.navigate({ href }));
   installAldoChunkPrefetch(router);
 
   if (isElectron) {
