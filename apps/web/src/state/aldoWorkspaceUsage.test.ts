@@ -52,6 +52,15 @@ describe("isAldoWorkspaceUsage", () => {
     expect(
       isAldoWorkspaceUsage({ ...metered, credits: { ...metered.credits, projected: null } }),
     ).toBe(true);
+    expect(
+      isAldoWorkspaceUsage({
+        ...metered,
+        credits: { ...metered.credits, ai: 30, aiIncluded: 1000, aiRemaining: 970 },
+      }),
+    ).toBe(true);
+    expect(
+      isAldoWorkspaceUsage({ ...metered, credits: { ...metered.credits, aiRemaining: null } }),
+    ).toBe(false);
   });
 
   it("rejects shapes this build cannot render truthfully", () => {

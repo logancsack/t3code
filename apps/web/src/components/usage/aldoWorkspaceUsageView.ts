@@ -59,11 +59,11 @@ function extraUsagePrice(usage?: AldoWorkspaceUsage): string {
 
 /** Aldo cloud: extra usage past the plan is allowed up to the limit set here. */
 function aldoCloudAlertCopy(level: AldoUsageAlertLevel, usage?: AldoWorkspaceUsage): string | null {
-  // Past the limit, a newer gateway keeps agents working one at a time (the economy lane).
+  // Past the limit, a newer gateway keeps agents on the user's own subscriptions working one at a time (the economy lane).
   const economy = usage?.credits?.economyRemaining;
   const economyCopy =
     economy !== undefined && economy > 0
-      ? `Agents keep working one at a time on the economy lane (${formatCredits(economy)} credits left, not billed); GPU and Windows computers wait.`
+      ? `Agents on your own AI subscriptions keep working one at a time on the economy lane (${formatCredits(economy)} credits left, not billed); GPU and Windows computers wait.`
       : null;
   switch (level) {
     case "included_warning":
@@ -105,6 +105,14 @@ export function aldoUsageFacts(usage: AldoWorkspaceUsage): readonly AldoUsageFac
         value: `${usage.plan.name} · ${formatCredits(usage.plan.includedCredits)} included`,
       },
       { label: "Included left", value: formatCredits(usage.credits.includedRemaining) },
+      ...(usage.credits.aiIncluded !== undefined && usage.credits.aiRemaining !== undefined
+        ? [
+            {
+              label: "Aldo's models left",
+              value: `${formatCredits(usage.credits.aiRemaining)} of ${formatCredits(usage.credits.aiIncluded)}`,
+            },
+          ]
+        : []),
       {
         label: isAldoCloud ? "Extra usage left" : "Added capacity left",
         value: formatCredits(usage.credits.overageRemaining),
@@ -185,6 +193,6 @@ export function aldoUsageSentence(usage: AldoWorkspaceUsage): string | null {
     return `${used}; at this pace you'll go about ${roughly(credits.projected - credits.included)} over, within your extra usage limit.`;
   const economy = credits.economyRemaining;
   if (economy !== undefined && economy > 0)
-    return `${used}; at this pace you'll use them up before the month ends, and agents then keep working one at a time on the economy lane.`;
+    return `${used}; at this pace you'll use them up before the month ends, and agents on your own AI subscriptions then keep working one at a time on the economy lane.`;
   return `${used}; at this pace you'll run out before the month ends.`;
 }

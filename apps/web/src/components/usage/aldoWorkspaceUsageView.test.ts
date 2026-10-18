@@ -53,6 +53,17 @@ describe("aldoUsageFacts", () => {
     ]);
   });
 
+  it("shows what's left for Aldo's models, when Aldo reports it", () => {
+    const facts = aldoUsageFacts({
+      ...metered,
+      credits: { ...metered.credits!, ai: 30, aiIncluded: 100, aiRemaining: 70 },
+    });
+    expect(facts[2]).toEqual({ label: "Aldo's models left", value: "70 of 100" });
+    expect(aldoUsageFacts(metered)).not.toContainEqual(
+      expect.objectContaining({ label: "Aldo's models left" }),
+    );
+  });
+
   it("shows the economy lane once the authorized credits are used, when the gateway reports it", () => {
     const economy: AldoWorkspaceUsage = {
       ...metered,
@@ -151,7 +162,7 @@ describe("aldoUsageSentence", () => {
         credits: { ...credits, projected: 400, economyIncluded: 125, economyRemaining: 100 },
       }),
     ).toBe(
-      "You've used 40.3 of 250 credits this month; at this pace you'll use them up before the month ends, and agents then keep working one at a time on the economy lane.",
+      "You've used 40.3 of 250 credits this month; at this pace you'll use them up before the month ends, and agents on your own AI subscriptions then keep working one at a time on the economy lane.",
     );
     expect(aldoUsageSentence({ ...metered, credits: { ...credits, projected: null } })).toBe(
       "You've used 40.3 of 250 credits this month.",

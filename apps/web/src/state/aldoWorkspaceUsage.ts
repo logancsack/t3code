@@ -36,9 +36,13 @@ export interface AldoWorkspaceUsage {
     readonly includedRemaining: number;
     readonly overageRemaining: number;
     readonly projected: number | null;
-    /** Past the authorized credits, agents keep working one at a time on these, not billed (newer gateways only). */
+    /** Past the authorized credits, agents on the user's own subscriptions keep working one at a time on these, not billed (newer gateways only). */
     readonly economyIncluded?: number;
     readonly economyRemaining?: number;
+    /** Of the credits used, Aldo's models'; the most of the plan's they may use, and what's left of it (newer Aldo, where its models are offered). */
+    readonly ai?: number;
+    readonly aiIncluded?: number;
+    readonly aiRemaining?: number;
   } | null;
   readonly bill: {
     readonly estimatedCents: number;
@@ -143,7 +147,10 @@ export function isAldoWorkspaceUsage(value: unknown): value is AldoWorkspaceUsag
       isFiniteNumber(credits.overageRemaining) &&
       isNullableFiniteNumber(credits.projected) &&
       isOptionalFiniteNumber(credits.economyIncluded) &&
-      isOptionalFiniteNumber(credits.economyRemaining)
+      isOptionalFiniteNumber(credits.economyRemaining) &&
+      isOptionalFiniteNumber(credits.ai) &&
+      isOptionalFiniteNumber(credits.aiIncluded) &&
+      isOptionalFiniteNumber(credits.aiRemaining)
     )
   ) {
     return false;
