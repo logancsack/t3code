@@ -3,17 +3,33 @@ import { useState, type FormEvent } from "react";
 
 import { AldoBillingSection, useAldoCheckoutReturn } from "../../aldo/AldoBilling";
 import { isAldoCloud } from "../../aldo/api";
-import { setAldoSpendLimit } from "../../aldo/accountApi";
+import { deleteAldoWindowsDisk, setAldoSpendLimit } from "../../aldo/accountApi";
 
-import type { AldoWorkspaceUsage, AldoWorkspaceUsageState } from "../../state/aldoWorkspaceUsage";
+import type {
+  AldoWindowsDisk,
+  AldoWorkspaceUsage,
+  AldoWorkspaceUsageState,
+} from "../../state/aldoWorkspaceUsage";
+import {
+  AlertDialog,
+  AlertDialogClose,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogPopup,
+  AlertDialogTitle,
+} from "../ui/alert-dialog";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
+import { Spinner } from "../ui/spinner";
+import { toastManager } from "../ui/toast";
 import {
   aldoUsageAlertCopy,
   aldoUsageFacts,
   aldoUsageFootnote,
   aldoUsageMeterFraction,
   aldoUsageUnmeteredCopy,
+  aldoWindowsDiskCopy,
   formatCents,
   formatCredits,
 } from "./aldoWorkspaceUsageView";
@@ -73,6 +89,13 @@ export function AldoWorkspaceUsageSection({
         ) : (
           <AldoWorkspaceUsageSkeleton />
         )}
+        {isAldoCloud && usage?.windowsDisk ? (
+          <WindowsDiskControl
+            disk={usage.windowsDisk}
+            status={state.status}
+            onChanged={onChanged}
+          />
+        ) : null}
       </section>
       {isAldoCloud && usage ? (
         <AldoBillingSection usage={usage} status={state.status} onChanged={onChanged} />
@@ -207,6 +230,80 @@ function SpendLimitControl(props: {
       </Button>
       {error ? <span className="text-xs text-destructive-foreground">{error}</span> : null}
     </form>
+  );
+}
+
+/**
+ * Aldo cloud: a stopped Windows computer's disk, kept (and charged) for next
+ * time, and deleting it, once the summary is current.
+ */
+function WindowsDiskControl(props: {
+  readonly disk: AldoWindowsDisk;
+  readonly status: AldoWorkspaceUsageState["status"];
+  readonly onChanged: (() => void) | undefined;
+}) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const remove = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const message = await deleteAldoWindowsDisk();
+      setOpen(false);
+      toastManager.add({ type: "success", title: "Windows computer's disk", description: message });
+      props.onChanged?.();
+    } catch (cause) {
+      // Running, starting or stopping (409): Aldo says what to do first.
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 border border-border px-3 py-2 text-xs text-foreground">
+      <span>{aldoWindowsDiskCopy(props.disk)}</span>
+      <Button
+        size="xs"
+        variant="outline"
+        disabled={props.status !== "ready" || busy}
+        onClick={() => {
+          setError(null);
+          setOpen(true);
+        }}
+      >
+        Delete
+      </Button>
+      <AlertDialog
+        open={open}
+        onOpenChange={(next) => {
+          if (!next && !busy) setOpen(false);
+        }}
+      >
+        <AlertDialogPopup>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete your Windows computer's disk?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Its files, apps and Office sign-in go; it starts fresh next time.
+            </AlertDialogDescription>
+            {error ? (
+              <p className="text-sm text-destructive-foreground" role="alert">
+                {error}
+              </p>
+            ) : null}
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogClose render={<Button variant="outline" size="sm" />} disabled={busy}>
+              Keep it
+            </AlertDialogClose>
+            <Button size="sm" variant="destructive" disabled={busy} onClick={() => void remove()}>
+              {busy ? <Spinner className="size-3.5" /> : null}
+              Delete disk
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogPopup>
+      </AlertDialog>
+    </div>
   );
 }
 

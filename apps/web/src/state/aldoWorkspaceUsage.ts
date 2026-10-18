@@ -62,6 +62,31 @@ export interface AldoWorkspaceUsage {
   readonly updatedAt: string | null;
   /** Aldo cloud: the plans and what the user can do about theirs (newer Aldo only). */
   readonly billing?: AldoBilling;
+  /** Aldo cloud: what the user's assistant used of this period's allowances; null without a plan (newer Aldo only). */
+  readonly prime?: AldoPrimeUsage | null;
+  /** Aldo cloud: what the user keeps (projects, shared files, recordings), of what the plan keeps (newer Aldo only). */
+  readonly storage?: { readonly usedBytes: number; readonly includedBytes: number };
+  /** Aldo cloud: a stopped Windows computer's disk, kept for next time; null without one (newer Aldo only). */
+  readonly windowsDisk?: AldoWindowsDisk | null;
+}
+
+export interface AldoAllowanceUse {
+  readonly used: number;
+  readonly included: number;
+}
+
+export interface AldoPrimeUsage {
+  readonly deepAsks: AldoAllowanceUse;
+  readonly voiceMinutes: AldoAllowanceUse;
+  readonly texts: AldoAllowanceUse;
+  /** Quick replies have a fair-use amount: what they cost, as a share of it. */
+  readonly quickReplies: { readonly usedPercent: number };
+}
+
+export interface AldoWindowsDisk {
+  readonly creditsPerHour: number;
+  /** When it's deleted (as Aldo says it, "Oct 25") while the plan can't pay for it; null while it can. */
+  readonly deletedOn: string | null;
 }
 
 export type AldoUsageAlertLevel =
@@ -98,6 +123,29 @@ function isNullableFiniteNumber(value: unknown): value is number | null {
 
 function isOptionalFiniteNumber(value: unknown): value is number | undefined {
   return value === undefined || isFiniteNumber(value);
+}
+
+function isAllowanceUse(value: unknown): value is AldoAllowanceUse {
+  return isRecord(value) && isFiniteNumber(value.used) && isFiniteNumber(value.included);
+}
+
+function isPrimeUsage(value: unknown): value is AldoPrimeUsage {
+  return (
+    isRecord(value) &&
+    isAllowanceUse(value.deepAsks) &&
+    isAllowanceUse(value.voiceMinutes) &&
+    isAllowanceUse(value.texts) &&
+    isRecord(value.quickReplies) &&
+    isFiniteNumber(value.quickReplies.usedPercent)
+  );
+}
+
+function isWindowsDisk(value: unknown): value is AldoWindowsDisk {
+  return (
+    isRecord(value) &&
+    isFiniteNumber(value.creditsPerHour) &&
+    (value.deletedOn === null || typeof value.deletedOn === "string")
+  );
 }
 
 /**
@@ -181,6 +229,24 @@ export function isAldoWorkspaceUsage(value: unknown): value is AldoWorkspaceUsag
     return false;
   }
   if (value.billing !== undefined && !isAldoBilling(value.billing)) return false;
+  if (value.prime !== undefined && value.prime !== null && !isPrimeUsage(value.prime)) return false;
+  if (
+    value.storage !== undefined &&
+    !(
+      isRecord(value.storage) &&
+      isFiniteNumber(value.storage.usedBytes) &&
+      isFiniteNumber(value.storage.includedBytes)
+    )
+  ) {
+    return false;
+  }
+  if (
+    value.windowsDisk !== undefined &&
+    value.windowsDisk !== null &&
+    !isWindowsDisk(value.windowsDisk)
+  ) {
+    return false;
+  }
   // A metered summary always carries its plan, period, credits, and bill.
   if (value.metered && (plan === null || period === null || credits === null || bill === null)) {
     return false;

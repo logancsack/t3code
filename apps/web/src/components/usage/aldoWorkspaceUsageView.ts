@@ -19,6 +19,14 @@ export function formatCents(cents: number): string {
   return CENTS.format(cents / 100);
 }
 
+const MB = 1024 ** 2;
+const GB = 1024 ** 3;
+
+/** "1.2 GB", or "340 MB" under a gigabyte (Aldo counts a GB as 1024³ bytes). */
+export function formatBytes(bytes: number): string {
+  return bytes >= GB ? `${CREDITS.format(bytes / GB)} GB` : `${CREDITS.format(bytes / MB)} MB`;
+}
+
 function formatDay(iso: string): string {
   const date = new Date(iso);
   return Number.isFinite(date.getTime()) ? DAY.format(date) : "—";
@@ -131,9 +139,36 @@ export function aldoUsageFacts(usage: AldoWorkspaceUsage): readonly AldoUsageFac
       { label: "Estimated total", value: formatCents(usage.bill.estimatedCents) },
     );
   }
+  const prime = usage.prime;
+  if (prime) {
+    const of = (use: { readonly used: number; readonly included: number }) =>
+      `${formatCredits(use.used)} of ${formatCredits(use.included)}`;
+    facts.push(
+      { label: "Aldo's deep asks", value: of(prime.deepAsks) },
+      { label: "Voice minutes", value: of(prime.voiceMinutes) },
+      { label: "Texts with Aldo", value: of(prime.texts) },
+      { label: "Quick replies", value: `${prime.quickReplies.usedPercent}% of fair use` },
+    );
+  }
+  if (usage.storage) {
+    facts.push({
+      label: "Storage",
+      value: `${formatBytes(usage.storage.usedBytes)} of ${formatBytes(usage.storage.includedBytes)}`,
+    });
+  }
   const hardware = aldoUsageHardwareLabel(usage.machine);
   if (hardware) facts.push({ label: "Hardware", value: hardware });
   return facts;
+}
+
+/** What a stopped Windows computer's kept disk costs, and when it goes if the plan can't pay for it. */
+export function aldoWindowsDiskCopy(disk: NonNullable<AldoWorkspaceUsage["windowsDisk"]>): string {
+  const rate =
+    disk.creditsPerHour === 1 ? "1 credit" : `${formatCredits(disk.creditsPerHour)} credits`;
+  const kept = `Your Windows computer's disk is kept for next time, at ${rate} an hour.`;
+  return disk.deletedOn
+    ? `${kept} Your plan can't pay for it now, so it's deleted on ${disk.deletedOn} unless it has room by then.`
+    : kept;
 }
 
 /** Fraction of authorized credits already used, clamped for a meter. */
