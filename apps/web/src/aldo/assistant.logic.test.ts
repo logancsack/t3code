@@ -23,6 +23,7 @@ import {
   startWatchFor,
   unseenMessages,
   withoutImageNotes,
+  withoutRetriedFailures,
   type AldoStartWatch,
 } from "./assistant.logic";
 
@@ -569,6 +570,37 @@ describe("linkRuns", () => {
     expect(linkRuns("Nothing to open here.")).toEqual([{ text: "Nothing to open here.", at: 0 }]);
     expect(linkRuns("Not javascript:alert(1) or http://localhost:3000")).toEqual([
       { text: "Not javascript:alert(1) or http://localhost:3000", at: 0 },
+    ]);
+  });
+});
+
+describe("withoutRetriedFailures", () => {
+  const user = { kind: "message", role: "user" } as const;
+  const failedStart = { kind: "action", tool: "start_thread", failed: true } as const;
+
+  it("shows only the success when a start that failed was then retried", () => {
+    const entries = [
+      user,
+      failedStart,
+      { kind: "action", tool: "archive_thread", failed: true } as const,
+    ];
+    expect(withoutRetriedFailures(entries, { tool: "start_thread", failed: false })).toEqual([
+      user,
+      entries[2],
+    ]);
+  });
+
+  it("keeps a failure nothing got past, and ones from before the user last spoke", () => {
+    const entries = [failedStart, user, failedStart];
+    expect(withoutRetriedFailures(entries, { tool: "start_thread", failed: true })).toEqual(
+      entries,
+    );
+    expect(withoutRetriedFailures(entries, { tool: "message_thread", failed: false })).toEqual(
+      entries,
+    );
+    expect(withoutRetriedFailures(entries, { tool: "start_thread", failed: false })).toEqual([
+      failedStart,
+      user,
     ]);
   });
 });

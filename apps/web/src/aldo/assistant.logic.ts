@@ -341,6 +341,29 @@ export function actionFor(call: AldoFunctionCall, outcome: unknown): AldoAssista
   };
 }
 
+/**
+ * The entries with the failures of an action's tool dropped, once that tool
+ * has worked since the user last spoke: Aldo got past them, so the
+ * conversation shows only what worked.
+ */
+export function withoutRetriedFailures<
+  T extends {
+    readonly kind: string;
+    readonly role?: string;
+    readonly tool?: string;
+    readonly failed?: boolean;
+  },
+>(
+  entries: ReadonlyArray<T>,
+  worked: Pick<AldoAssistantAction, "tool" | "failed">,
+): ReadonlyArray<T> {
+  if (worked.failed) return entries;
+  const spoke = entries.findLastIndex((e) => e.kind === "message" && e.role === "user");
+  return entries.filter(
+    (e, i) => i < spoke || !(e.kind === "action" && e.failed && e.tool === worked.tool),
+  );
+}
+
 /** A thread this conversation started, followed in the directory until it has started, or couldn't. */
 export interface AldoStartWatch extends AldoOpenTarget {
   readonly title: string;

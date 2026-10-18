@@ -47,6 +47,7 @@ import {
   startNews,
   startWatchFor,
   unseenMessages,
+  withoutRetriedFailures,
   type AldoAssistantAction,
   type AldoAssistantMessage,
   type AldoAssistantPhase,
@@ -445,6 +446,7 @@ function showCall(call: AldoFunctionCall, outcome: unknown): void {
   // Why it failed stays out of the conversation (Aldo says it), but not out of sight.
   if (action?.detail) console.warn(`Aldo: ${action.label}:`, action.detail);
   if (action) {
+    set({ entries: withoutRetriedFailures(get().entries, action) });
     addEntry({ kind: "action", ...action });
     // What it changed shows in the sidebar now (a new thread at once), not on the next refresh.
     if (!action.failed) requestAldoDirectoryRefresh();
