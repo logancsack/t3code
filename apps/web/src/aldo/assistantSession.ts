@@ -113,6 +113,8 @@ const UNSAID = "I couldn't read that one out, so it's on your screen now.";
 const IDLE_MS = 90_000;
 /** How long a GPT-Live call has to start once OpenAI has answered. */
 const START_MS = 20_000;
+/** What a call that ran out of the period's voice minutes ends with. */
+const VOICE_USED_UP = "This month's voice minutes are used up. Type to Aldo until they renew.";
 /** How long hanging up waits for GPT-Live to confirm the call is closed (and billing stopped) before letting go. */
 const CLOSE_WAIT_MS = 3_000;
 /** What one update to the voice takes (500 tokens), with room to spare. */
@@ -242,6 +244,8 @@ let liveTimer: ReturnType<typeof setInterval> | null = null;
 /** The connection a GPT-Live session is being made for: one hung up meanwhile is closed with OpenAI, not just dropped. */
 let startingLive: RTCPeerConnection | null = null;
 let startTimer: ReturnType<typeof setTimeout> | null = null;
+/** Ends the call when the voice minutes Aldo said it had left are used up. */
+let voiceLimitTimer: ReturnType<typeof setTimeout> | null = null;
 
 /** How the conversation opens a thread on the page (the router, from the dock). */
 export function setAldoAssistantNavigator(
@@ -943,6 +947,8 @@ function teardown(graceful = false): void {
   liveTimer = null;
   if (startTimer) clearTimeout(startTimer);
   startTimer = null;
+  if (voiceLimitTimer) clearTimeout(voiceLimitTimer);
+  voiceLimitTimer = null;
   stopWatchingScreen?.();
   stopWatchingScreen = null;
   toldScreen = null;
@@ -1136,6 +1142,7 @@ export async function connectAldo(
     if (voice) {
       live = true;
       sessionId = voice.sessionId;
+      endCallAfter(made, voice.secondsLeft);
       const session = voice.sessionId;
       transcript = new AldoLiveTranscript((turn) => onLiveTurn(turn, session));
       startTimer = setTimeout(() => {
@@ -1153,6 +1160,7 @@ export async function connectAldo(
       const session = await aldoAssistant.startSession();
       if (peer !== made) return;
       sessionId = session.sessionId;
+      endCallAfter(made, session.secondsLeft);
       const answer = await fetch(REALTIME_CALLS_URL, {
         method: "POST",
         body: sdp,
@@ -1172,6 +1180,33 @@ export async function connectAldo(
     set({ phase: "error", error: messageOf(error), unsent: queuedText, connectedAt: null });
     queuedText = null;
   }
+}
+
+/**
+ * Ends the call once the period's voice minutes Aldo said it has left are
+ * used up, saying so. Without `secondsLeft` (an older Aldo) it goes on.
+ */
+function endCallAfter(made: RTCPeerConnection, secondsLeft: number | undefined): void {
+  if (secondsLeft === undefined) return;
+  if (voiceLimitTimer) clearTimeout(voiceLimitTimer);
+  voiceLimitTimer = setTimeout(
+    () => {
+      voiceLimitTimer = null;
+      if (peer !== made) return;
+      teardown(true);
+      queuedText = null;
+      set({
+        phase: "error",
+        error: VOICE_USED_UP,
+        said: "",
+        micOn: false,
+        muted: false,
+        levels: { mic: 0, aldo: 0 },
+        connectedAt: null,
+      });
+    },
+    Math.max(0, secondsLeft) * 1000,
+  );
 }
 
 /**

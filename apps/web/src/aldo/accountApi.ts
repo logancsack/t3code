@@ -551,6 +551,18 @@ export async function cancelAldoPlan(resume: boolean): Promise<void> {
   await api("/api/billing/cancel", { method: "POST", body: JSON.stringify({ resume }) });
 }
 
+/**
+ * Deletes the stopped Windows computer's kept disk: it stops costing credits,
+ * and the computer starts fresh next time. Says what happened; 409 while the
+ * computer runs, starts or stops.
+ */
+export async function deleteAldoWindowsDisk(): Promise<string> {
+  const { message } = await api<{ message?: unknown }>("/api/computers?kind=windows", {
+    method: "DELETE",
+  });
+  return typeof message === "string" ? message : "Deleted.";
+}
+
 /** Stripe's billing portal (payment method, invoices), which comes back to /usage. */
 export async function aldoBillingPortalUrl(): Promise<string> {
   const { url } = await api<{ url: string }>("/api/billing/portal", { method: "POST" });

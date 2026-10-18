@@ -353,7 +353,7 @@ export function AldoBillingSection(props: {
       {view.kind === "choose" ? (
         <p className="text-xs text-muted-foreground">
           Past a plan's credits, extra usage is billed by the credit up to a limit you set. Past
-          that, agents keep going one at a time, unbilled.
+          that, agents on your own AI subscriptions keep going one at a time, unbilled.
         </p>
       ) : null}
       {props.status === "error" ? (

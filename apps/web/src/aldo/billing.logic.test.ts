@@ -116,6 +116,8 @@ describe("isAldoBilling", () => {
     expect(isAldoBilling(null)).toBe(false);
     expect(isAldoBilling({ ...billing, pastDue: "no" })).toBe(false);
     expect(isAldoBilling({ ...billing, plans: [{ ...plus, priceCents: "20" }] })).toBe(false);
+    expect(isAldoBilling({ ...billing, plans: [{ ...plus, aiCredits: 1_000 }] })).toBe(true);
+    expect(isAldoBilling({ ...billing, plans: [{ ...plus, aiCredits: "10" }] })).toBe(false);
     expect(isAldoWorkspaceUsage({ ...onPro, billing: { enabled: true } })).toBe(false);
   });
 });
@@ -227,6 +229,12 @@ describe("plan copy", () => {
       "6 agents at once",
     ]);
     expect(aldoPlanTerms({ ...plus, concurrent: 1 })[2]).toBe("1 agent at once");
+    expect(aldoPlanTerms({ ...pro, aiCredits: 1_500 })).toEqual([
+      "$60 a month",
+      "10,000 credits a month",
+      "6 agents at once",
+      "Up to $15 of them on Aldo's models",
+    ]);
   });
 
   it("says an upgrade starts now and what it charges", () => {

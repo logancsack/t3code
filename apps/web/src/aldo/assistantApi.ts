@@ -12,6 +12,8 @@ export interface AldoVoiceSession {
   readonly key: string;
   readonly expiresAt: number;
   readonly model: string;
+  /** How long the call may go on, the period's voice minutes left (an older Aldo doesn't say: no end). */
+  readonly secondsLeft?: number;
 }
 
 /**
@@ -79,6 +81,13 @@ export interface AldoLiveVoice {
   readonly sessionId: string;
   readonly sdp: string;
   readonly model: string;
+  /** How long the call may go on, the period's voice minutes left (an older Aldo doesn't say: no end). */
+  readonly secondsLeft?: number;
+}
+
+/** A call's `secondsLeft`, when Aldo says it. */
+function secondsLeftOf(value: unknown): { readonly secondsLeft?: number } {
+  return typeof value === "number" && Number.isFinite(value) ? { secondsLeft: value } : {};
 }
 
 /** What Aldo did with a request the voice handed over, and what the voice should say. */
@@ -136,7 +145,12 @@ function followupNewsOf(value: unknown): AldoFollowupNews | null {
 
 export const aldoAssistant = {
   /** A realtime session, for an Aldo from before GPT-Live (startLive returned null). */
-  startSession: () => api<AldoVoiceSession>("/api/assistant/session", { method: "POST" }),
+  startSession: async (): Promise<AldoVoiceSession> => {
+    const { secondsLeft, ...session } = await api<AldoVoiceSession>("/api/assistant/session", {
+      method: "POST",
+    });
+    return { ...session, ...secondsLeftOf(secondsLeft) };
+  },
   /**
    * A call on GPT-Live, made by Aldo from the browser's offer (Aldo's
    * src/lib/assistant/session.ts); null where this Aldo doesn't have it (an
@@ -157,6 +171,7 @@ export const aldoAssistant = {
       sessionId: body.sessionId,
       sdp: body.sdp,
       model: typeof body.model === "string" ? body.model : "",
+      ...secondsLeftOf(body.secondsLeft),
     };
   },
   /**

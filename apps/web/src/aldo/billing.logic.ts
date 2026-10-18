@@ -12,6 +12,8 @@ export interface AldoBillingPlan {
   readonly credits: number;
   /** Agents at once. */
   readonly concurrent: number;
+  /** The most of its credits Aldo's models may use (newer Aldo, where they're offered). */
+  readonly aiCredits?: number;
 }
 
 export interface AldoBilling {
@@ -41,7 +43,8 @@ function isAldoBillingPlan(value: unknown): value is AldoBillingPlan {
     typeof value.name === "string" &&
     isCount(value.priceCents) &&
     isCount(value.credits) &&
-    isCount(value.concurrent)
+    isCount(value.concurrent) &&
+    (value.aiCredits === undefined || isCount(value.aiCredits))
   );
 }
 
@@ -169,12 +172,16 @@ export function onPeriodEnd(iso: string | null): string {
     : "at the end of this period";
 }
 
-/** A plan card's lines: price, credits, agents at once. */
+/** A plan card's lines: price, credits, agents at once, and what Aldo's models may use where they're offered. */
 export function aldoPlanTerms(plan: AldoBillingPlan): readonly string[] {
   return [
     `${formatPlanPrice(plan.priceCents)} a month`,
     `${CREDITS.format(plan.credits)} credits a month`,
     plan.concurrent === 1 ? "1 agent at once" : `${plan.concurrent} agents at once`,
+    // A credit is 1¢, so the amount is in cents.
+    ...(plan.aiCredits
+      ? [`Up to ${formatPlanPrice(plan.aiCredits)} of them on Aldo's models`]
+      : []),
   ];
 }
 
