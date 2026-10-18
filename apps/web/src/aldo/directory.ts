@@ -512,6 +512,35 @@ type ConnectResponse =
 const MAX_CONCURRENT_CONNECTS = 8;
 const connectSlots = Semaphore.makeUnsafe(MAX_CONCURRENT_CONNECTS);
 
+/**
+ * One ask for a thread's address, holding a slot until Aldo answers (or the
+ * request fails), not until the attempt gives up on it: a request the
+ * supervisor timed out on is still using Aldo's database, so a retry or the
+ * next thread in line mustn't start another beside it.
+ */
+const askToConnect = (threadId: string) =>
+  Effect.uninterruptibleMask((restore) =>
+    restore(connectSlots.take(1)).pipe(
+      Effect.flatMap(() => {
+        const request = api<ConnectResponse>(`/api/environments/${threadId}/connect`, {
+          method: "POST",
+        });
+        const release = () => void Effect.runSync(connectSlots.release(1));
+        request.then(release, release);
+        return restore(
+          Effect.tryPromise({
+            try: () => request,
+            catch: (cause) =>
+              new ConnectionTransientError({
+                reason: "remote-unavailable",
+                detail: cause instanceof Error ? cause.message : "Aldo is unreachable.",
+              }),
+          }),
+        );
+      }),
+    ),
+  );
+
 /** Gateway used by the connection resolver: connects to running sandboxes only. */
 export const aldoEnvironmentGateway = {
   prepare: (input: {
@@ -530,15 +559,7 @@ export const aldoEnvironmentGateway = {
         new ConnectionBlockedError({ reason: "dormant", detail: "Its computer is asleep." }),
       );
     }
-    return Effect.tryPromise({
-      try: () => api<ConnectResponse>(`/api/environments/${threadId}/connect`, { method: "POST" }),
-      catch: (cause) =>
-        new ConnectionTransientError({
-          reason: "remote-unavailable",
-          detail: cause instanceof Error ? cause.message : "Aldo is unreachable.",
-        }),
-    }).pipe(
-      connectSlots.withPermits(1),
+    return askToConnect(threadId).pipe(
       Effect.flatMap((response) =>
         response.state === "running"
           ? Effect.succeed(
