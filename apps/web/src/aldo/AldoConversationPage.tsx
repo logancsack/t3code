@@ -65,6 +65,8 @@ function typing(element: HTMLElement | null): boolean {
 
 /** Within this of the end, the user is at the end. */
 const AT_END_PX = 48;
+/** History gets the first view briefly; a stalled read must not hide the rest of Home. */
+const HISTORY_WAIT_MS = 8_000;
 
 /**
  * Keeps the conversation at its end while the user is there, as what's above
@@ -160,12 +162,20 @@ export function AldoConversationPage(props: {
     [entries],
   );
   const loaded = useAldoAssistant((s) => s.historyLoaded);
-  useAldoFirstViewHold(!loaded);
+  const [historySlow, setHistorySlow] = useState(false);
+  useEffect(() => {
+    if (loaded) return;
+    const timer = window.setTimeout(() => setHistorySlow(true), HISTORY_WAIT_MS);
+    return () => window.clearTimeout(timer);
+  }, [loaded]);
   const firstAt = useAldoAssistant((s) => {
     const first = s.entries.find((e) => e.kind === "message");
     return first?.kind === "message" ? first.at : null;
   });
   const said = useAldoAssistant((s) => s.entries.length > 0 || s.replying);
+  // Newly sent words and replies show even while earlier messages are pending.
+  const loading = !loaded && !said && !historySlow;
+  useAldoFirstViewHold(loading);
   const receipts = useAldoReceipts((s) => s.receipts);
   const feed = useMemo(
     () => withReceipts(home ? feedEvents(home, { now, from: firstAt, here, told }) : [], receipts),
@@ -184,7 +194,7 @@ export function AldoConversationPage(props: {
     const frame = requestAnimationFrame(() => settleAldoConversation());
     return () => cancelAnimationFrame(frame);
   }, [loaded, home]);
-  const below = useStickToBottom(scroller, loaded && !fresh);
+  const below = useStickToBottom(scroller, !loading && !fresh);
   const dock = useRef<HTMLDivElement>(null);
   // A thread tapped in the conversation opens: the thread itself, growing out of what was tapped.
   const openThread = useCallback(
@@ -239,14 +249,14 @@ export function AldoConversationPage(props: {
             {fresh ? <div aria-hidden className="min-h-4 flex-[1_1_0]" /> : null}
             <div
               ref={scroller}
-              aria-busy={!loaded}
+              aria-busy={loading}
               className={cn(
                 fresh
                   ? "min-h-0 shrink overflow-y-auto"
                   : "relative min-h-0 flex-1 overflow-y-auto [mask-image:linear-gradient(to_bottom,transparent,black_12px,black_calc(100%-12px),transparent)]",
               )}
             >
-              {!loaded ? (
+              {loading ? (
                 <div
                   role="status"
                   className="grid min-h-full place-content-center text-sm text-muted-foreground"
@@ -274,6 +284,11 @@ export function AldoConversationPage(props: {
                   {unread ? <HomeUnread error={props.error!} /> : null}
                   {props.supported === false ? <AldoAtAGlance /> : null}
                   {conversation}
+                  {!loaded && historySlow ? (
+                    <p role="status" className="text-sm text-muted-foreground">
+                      Earlier messages are taking longer to load. You can keep talking to Aldo.
+                    </p>
+                  ) : null}
                 </div>
               )}
             </div>
