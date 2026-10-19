@@ -11,7 +11,8 @@
 // (files.ts), and only Aldo sends it. The device keeps it until Aldo has it,
 // trying again while Aldo doesn't answer, and after the app is next opened or
 // back on screen if the page went away first (outbox.ts). For a
-// message Aldo holds, this page tries again while what fails passes, and if
+// message Aldo holds, this page follows Aldo's start of the machine rather
+// than waking it too, tries again while what fails passes, and if
 // it stops waiting first, shows Aldo's copy of the machine's threads, which
 // says where the message stands (a start Aldo gave up on, and why). Settling, archiving, pinning, snoozing, renaming or
 // deleting a sleeping machine's thread doesn't wake it: it's done at once, and
@@ -39,18 +40,34 @@ import {
   aldoMachineIsNew,
   aldoRoutesModels,
   aldoStartState,
+  askAldoNext,
   getAldoEnvironments,
+  readAldoDirectory,
   requestAldoDirectoryRefresh,
   wakeAldoEnvironment,
 } from "./directory";
 import { holdAldoTurn } from "./threadApi";
 import { describeAldoThreadStart } from "./threadStart.logic";
-import { aldoWakeAgain } from "./reconnect.logic";
+import { aldoHeldStartStep, aldoWakeAgain } from "./reconnect.logic";
 
 const CONNECT_WAIT_MS = 3 * 60_000;
 /** How long this page asks again for a wake that gets no answer: past the longest first boot (Aldo's wake waits up to 800s). */
 const WAKE_RETRY_MS = 15 * 60_000;
 const NUDGE_EVERY_MS = 8_000;
+/**
+ * How often a page waiting on Aldo's start of a message it holds reads the
+ * directory: every 2 seconds (Aldo's own calls wait as long for one
+ * another's) for the first 20, then half as long again each time, up to every
+ * 10. Each read is a request to Aldo, and tells the machines listed up to
+ * connect (reconnect.ts).
+ */
+const FOLLOW_START_EVERY_MS = 2_000;
+const FOLLOW_START_FAST_MS = 20_000;
+const FOLLOW_START_EVERY_MAX_MS = 10_000;
+/** How long after a read has that machine up the page first nudges its connection itself. */
+const LISTED_UP_NUDGE_MS = 1_000;
+/** How long that page waits for a directory read before it wakes the machine itself, as if the read failed. */
+const FOLLOW_READ_WAIT_MS = 15_000;
 /** How long this page tries again, for a message Aldo holds, while bringing its machine up fails for a passing reason. */
 const HELD_RETRY_MS = 15 * 60_000;
 /** How long it keeps trying past that while Aldo says the message is still on its way (Aldo tries for about half an hour). */
@@ -164,8 +181,61 @@ async function wakeUntilAnswered(environmentId: string): Promise<void> {
   }
 }
 
-/** Creates or wakes a thread's cloud agent and waits until the client is connected to it. */
-export function ensureAldoConnected(environmentId: string): Promise<void> {
+/**
+ * A message Aldo holds for a machine: its T3 thread, since when this page has
+ * followed its start, and whether only Aldo can send it (it has files, or
+ * Aldo picks its model), so this page can't once the machine is up.
+ */
+interface HeldFollow {
+  readonly threadId: string;
+  readonly since: number;
+  readonly onlyAldo: boolean;
+}
+
+/** Whether a directory read made since this call came in FOLLOW_READ_WAIT_MS (false if it failed). */
+function readAldoDirectoryInTime(): Promise<boolean> {
+  return Promise.race([readAldoDirectory(), sleep(FOLLOW_READ_WAIT_MS).then(() => false)]);
+}
+
+/**
+ * Brings the machine up for a message Aldo holds by following Aldo's own
+ * start of it: Aldo's delivery of the message starts the machine, so this
+ * page reads the directory until the machine is up and the message sent
+ * rather than wake it too, which made two calls bring up one machine. It
+ * wakes the machine itself when the directory says Aldo isn't bringing it up
+ * now, or has been for too long (aldoHeldStartStep), or can't be read in
+ * time, or Aldo gave up on a message this page sends itself once it's up.
+ * Throws once Aldo gave up on one only it can send: it didn't go, and there's
+ * nothing to wake the machine for (connectForHeld says why). True once a read
+ * has it up, false once woken.
+ */
+async function followHeldStart(environmentId: string, held: HeldFollow): Promise<boolean> {
+  let every = FOLLOW_START_EVERY_MS;
+  for (;;) {
+    const read = await readAldoDirectoryInTime();
+    const machine = getAldoEnvironments()?.find((entry) => entry.environmentId === environmentId);
+    const now = Date.now();
+    const step = read ? aldoHeldStartStep(machine, held.threadId, now - held.since, now) : "wake";
+    if (step === "up") return true;
+    if (step === "failed" && held.onlyAldo) throw new Error("Aldo gave up on the message.");
+    if (step === "wake" || step === "failed") {
+      await wakeUntilAnswered(environmentId);
+      requestAldoDirectoryRefresh();
+      return false;
+    }
+    await sleep(every);
+    if (Date.now() - held.since >= FOLLOW_START_FAST_MS) {
+      every = Math.min(FOLLOW_START_EVERY_MAX_MS, every * 1.5);
+    }
+  }
+}
+
+/**
+ * Creates or wakes a thread's cloud agent and waits until the client is
+ * connected to it. `held`: a message Aldo holds for it, whose start this page
+ * follows rather than waking the machine itself (followHeldStart).
+ */
+export function ensureAldoConnected(environmentId: string, held?: HeldFollow): Promise<void> {
   if (isAldoConnected(environmentId)) {
     aldoMachineConnected(environmentId);
     return Promise.resolve();
@@ -174,11 +244,19 @@ export function ensureAldoConnected(environmentId: string): Promise<void> {
   if (existing) return existing;
   starting.set(environmentId, aldoMachineIsNew(environmentId) ? "creating" : "reconnecting");
   const run = (async () => {
-    await wakeUntilAnswered(environmentId);
-    requestAldoDirectoryRefresh();
-    // A sleeping machine's connection waits to be told to try again.
+    let listedUp = false;
+    if (held === undefined) {
+      await wakeUntilAnswered(environmentId);
+      requestAldoDirectoryRefresh();
+    } else {
+      listedUp = await followHeldStart(environmentId, held);
+    }
+    // A sleeping machine's connection waits to be told to try again, and asks
+    // Aldo again only when told to (directory.ts): it's up now. The read that
+    // had it up told a waiting one to try again already (reconnect.ts); nudged
+    // at once as well, before that attempt shows, it would be cut off and ask again.
     const deadline = Date.now() + CONNECT_WAIT_MS;
-    let nextNudge = 0;
+    let nextNudge = listedUp ? Date.now() + LISTED_UP_NUDGE_MS : 0;
     let connectedChecks = 0;
     while (Date.now() < deadline) {
       connectedChecks = isAldoConnected(environmentId) ? connectedChecks + 1 : 0;
@@ -188,6 +266,7 @@ export function ensureAldoConnected(environmentId: string): Promise<void> {
       }
       if (Date.now() >= nextNudge && wantsNudge(environmentId)) {
         nextNudge = Date.now() + NUDGE_EVERY_MS;
+        askAldoNext(environmentId);
         void runAtomCommand(
           appAtomRegistry,
           environmentCatalog.retryNow,
@@ -344,9 +423,10 @@ export function installAldoCommandDispatch(): void {
       return null;
     }
     heldThreads.set(environmentId, command.threadId);
+    const onlyAldo = files !== null || routed;
     try {
-      if (await connectForHeld(environmentId, command))
-        return files || routed ? { sequence: 0 } : null;
+      if (await connectForHeld(environmentId, command, onlyAldo))
+        return onlyAldo ? { sequence: 0 } : null;
     } finally {
       heldThreads.delete(environmentId);
     }
@@ -369,17 +449,31 @@ export function installAldoCommandDispatch(): void {
  * this page stops waiting while Aldo still has it: Aldo said no for now (out
  * of credits, the plan's agents all busy), or the time ran out. Throws once
  * Aldo has given up on the message, with why (the message goes back in the
- * composer).
+ * composer), unless this page can send it itself (`onlyAldo` false) and the
+ * machine is up.
  */
 async function connectForHeld(
   environmentId: string,
   command: { readonly threadId: string },
+  onlyAldo: boolean,
 ): Promise<boolean> {
   const deadline = Date.now() + HELD_RETRY_MS;
   const latest = Date.now() + HELD_MAX_MS;
+  const asleep = !isAldoConnected(environmentId);
+  // Followed from here, however often it's tried again: past its time, a try wakes the machine.
+  const follow = { threadId: command.threadId, since: Date.now(), onlyAldo };
   for (let attempt = 0; ; attempt++) {
     try {
-      await ensureAldoConnected(environmentId);
+      await ensureAldoConnected(environmentId, follow);
+      // Up, but Aldo may have given up on one only it can send while the
+      // machine came up (one sent while connected went at once): a read made
+      // now says, and then it didn't go (the catch says why).
+      const failed =
+        onlyAldo &&
+        asleep &&
+        (await readAldoDirectoryInTime()) &&
+        aldoStartState(environmentId, command.threadId)?.state === "failed";
+      if (failed) throw new Error("Aldo gave up on the message.");
       return true;
     } catch (cause) {
       const held = aldoStartState(environmentId, command.threadId);
@@ -404,7 +498,12 @@ async function connectForHeld(
 
 const following = new Set<string>();
 
-/** Connects to a machine Aldo is bringing up for a held message once it's up, after this page stopped waiting. */
+/**
+ * Connects to a machine Aldo is bringing up for a held message once it's up,
+ * after this page stopped waiting. Each nudge follows a fresh directory read,
+ * which its attempt waits for and is answered from (directory.ts), so asking
+ * Aldo only once the directory has the machine up.
+ */
 function followAldoMachine(environmentId: string): void {
   if (following.has(environmentId)) return;
   following.add(environmentId);

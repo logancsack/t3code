@@ -7,7 +7,9 @@
 // showed Aldo's copies, which say nothing of a turn under way, until the page
 // was reloaded. Now every directory fetch (every 15 seconds, and sooner when
 // asked) tells the connections of machines the directory says are up to try
-// again; one that's really asleep is told so again, and waits.
+// again; one that's really asleep is told so again, and waits. Until then a
+// connection's attempts are told "asleep" from the directory, without asking
+// Aldo, so this is how one connects to a machine woken elsewhere.
 
 import type { EnvironmentId } from "@t3tools/contracts";
 import { runAtomCommand } from "@t3tools/client-runtime/state/runtime";
@@ -15,7 +17,11 @@ import { runAtomCommand } from "@t3tools/client-runtime/state/runtime";
 import { environmentCatalog } from "../connection/catalog";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentPresentations } from "../state/presentation";
-import { getAldoEnvironments, subscribeAldoDirectoryRefresh } from "./directory";
+import {
+  aldoToldAsleepFromListing,
+  getAldoEnvironments,
+  subscribeAldoDirectoryRefresh,
+} from "./directory";
 import { isAldoCloud } from "./api";
 import { aldoMachinesToRetry } from "./reconnect.logic";
 
@@ -29,7 +35,11 @@ function phaseOf(environmentId: string): string | undefined {
 export function installAldoReconnect(): void {
   if (!isAldoCloud) return;
   subscribeAldoDirectoryRefresh(() => {
-    for (const environmentId of aldoMachinesToRetry(getAldoEnvironments() ?? [], phaseOf)) {
+    for (const environmentId of aldoMachinesToRetry(
+      getAldoEnvironments() ?? [],
+      phaseOf,
+      aldoToldAsleepFromListing,
+    )) {
       void runAtomCommand(
         appAtomRegistry,
         environmentCatalog.retryNow,
