@@ -16,6 +16,7 @@ import { useNavigate, useRouter } from "@tanstack/react-router";
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -33,10 +34,11 @@ import { AldoOpenContext } from "./AldoLiveCard";
 import { AldoAvatar, AldoPresence } from "./AldoPresence";
 import { AldoUpNext } from "./AldoUpNext";
 import { settleAldoConversation, unsettleAldoConversation } from "./arrive";
-import { loadAldoConversation, seedAldoComposer, useAldoAssistant } from "./assistantSession";
+import { seedAldoComposer, useAldoAssistant } from "./assistantSession";
 import { type AldoHome, type AldoHomeTarget } from "./homeApi";
 import { aldoWaitingCount } from "./decisions.logic";
 import { feedEvents, withReceipts } from "./feed.logic";
+import { useAldoFirstViewHold } from "./firstView";
 import type { healthIssues } from "./home.logic";
 import { useAldoReceipts } from "./receipts";
 import { blinkAldo } from "./face";
@@ -73,9 +75,12 @@ const AT_END_PX = 48;
  */
 function useStickToBottom(ref: RefObject<HTMLDivElement | null>, enabled: boolean): boolean {
   const [below, setBelow] = useState(false);
-  useEffect(() => {
+  useLayoutEffect(() => {
     const element = ref.current;
     if (!element || !enabled) return;
+    // Position cached or newly loaded history before its first paint. The
+    // observer only follows later size changes; installing it after paint flashes the top.
+    element.scrollTop = element.scrollHeight;
     let atEnd = true;
     let size = `${element.scrollHeight}:${element.clientHeight}`;
     let height = element.scrollHeight;
@@ -126,9 +131,6 @@ export function AldoConversationPage(props: {
   const router = useRouter();
   const scroller = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    void loadAldoConversation();
-  }, []);
   // What's there once the conversation has loaded is just there; what comes after arrives.
   useEffect(() => () => unsettleAldoConversation(), []);
   useEffect(() => {
@@ -158,6 +160,7 @@ export function AldoConversationPage(props: {
     [entries],
   );
   const loaded = useAldoAssistant((s) => s.historyLoaded);
+  useAldoFirstViewHold(!loaded);
   const firstAt = useAldoAssistant((s) => {
     const first = s.entries.find((e) => e.kind === "message");
     return first?.kind === "message" ? first.at : null;
@@ -181,7 +184,7 @@ export function AldoConversationPage(props: {
     const frame = requestAnimationFrame(() => settleAldoConversation());
     return () => cancelAnimationFrame(frame);
   }, [loaded, home]);
-  const below = useStickToBottom(scroller, !fresh);
+  const below = useStickToBottom(scroller, loaded && !fresh);
   const dock = useRef<HTMLDivElement>(null);
   // A thread tapped in the conversation opens: the thread itself, growing out of what was tapped.
   const openThread = useCallback(
@@ -236,13 +239,21 @@ export function AldoConversationPage(props: {
             {fresh ? <div aria-hidden className="min-h-4 flex-[1_1_0]" /> : null}
             <div
               ref={scroller}
+              aria-busy={!loaded}
               className={cn(
                 fresh
                   ? "min-h-0 shrink overflow-y-auto"
                   : "relative min-h-0 flex-1 overflow-y-auto [mask-image:linear-gradient(to_bottom,transparent,black_12px,black_calc(100%-12px),transparent)]",
               )}
             >
-              {fresh ? (
+              {!loaded ? (
+                <div
+                  role="status"
+                  className="grid min-h-full place-content-center text-sm text-muted-foreground"
+                >
+                  Loading conversation…
+                </div>
+              ) : fresh ? (
                 <div className={cn(column, "flex flex-col gap-6")}>
                   {props.setup}
                   <HealthStrip issues={props.issues} />
