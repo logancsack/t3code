@@ -149,6 +149,9 @@ jobs:
           working_directory: apps/web
           environment:
             VITE_ALDO_CLOUD: "1"
+            # Without sourcemaps, as Aldo's pin builds each release: with them the
+            # build peaks near 3.4 GB of this machine's 4 and was killed for it.
+            T3CODE_WEB_SOURCEMAP: "0"
           command: |
             if [ "$SCOPE_CLIENT" = 0 ]; then echo "Nothing the client's build reads changed."; exit 0; fi
             vp build
