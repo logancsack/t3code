@@ -677,10 +677,20 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
   // Retrying every dormant one on each activation asked the platform once per
   // sleeping machine and re-presented each of them twice, which re-rendered
   // everything that lists environments hundreds of times per return to the app.
-  const waitForPlatformSignal = Effect.gen(function* () {
+  // While the network is down it shows offline, and asleep again once it's
+  // back, still without asking the platform.
+  const waitForPlatformSignal = Effect.fnUntraced(function* (dormant: SupervisorConnectionState) {
     for (;;) {
       const next = yield* Queue.take(signals);
-      if (next._tag === "NetworkChanged") continue;
+      if (next._tag === "NetworkChanged") {
+        const current = yield* Ref.get(intent);
+        yield* setState(
+          current.network === "offline"
+            ? offlineState(current, dormant.generation, dormant.attempt, dormant.lastFailure)
+            : { ...dormant, desired: current.desired, network: current.network },
+        );
+        continue;
+      }
       if (next._tag === "Wakeup" && ConnectionWakeups.isApplicationActiveWakeup(next.reason)) {
         continue;
       }
@@ -755,7 +765,7 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
       latestFailure = error;
       if (error._tag === "ConnectionBlockedError") {
         const blockedIntent = yield* Ref.get(intent);
-        yield* setState({
+        const blockedState: SupervisorConnectionState = {
           desired: blockedIntent.desired,
           network: blockedIntent.network,
           phase: "blocked",
@@ -764,9 +774,10 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
           generation,
           lastFailure: error,
           retryAt: null,
-        });
+        };
+        yield* setState(blockedState);
         if (error.reason === "dormant") {
-          yield* waitForPlatformSignal;
+          yield* waitForPlatformSignal(blockedState);
           continue;
         }
         const applicationActivated = yield* waitForSignal;

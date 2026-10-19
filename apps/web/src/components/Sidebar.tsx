@@ -3171,6 +3171,18 @@ export default function Sidebar() {
         clearThreadSearch();
         return;
       }
+      if (event.key === "Enter" && isThreadSearchStale) {
+        // The list still shows the previous query's results: open the first
+        // match for what's typed now, as the list will show once it catches up.
+        event.preventDefault();
+        const [result] = searchSidebarThreads(
+          searchableThreads,
+          threadSearchQuery,
+          new Set(threadSearchMatchByKey.keys()),
+        );
+        if (result) selectThreadSearchResult(scopeThreadRef(result.environmentId, result.id));
+        return;
+      }
       if (threadSearchResults.length === 0) return;
       if (event.key === "ArrowDown") {
         event.preventDefault();
@@ -3194,7 +3206,11 @@ export default function Sidebar() {
       activeSearchResultIndex,
       clearThreadSearch,
       isSearchingThreads,
+      isThreadSearchStale,
+      searchableThreads,
       selectThreadSearchResult,
+      threadSearchMatchByKey,
+      threadSearchQuery,
       threadSearchResults,
     ],
   );

@@ -1312,6 +1312,50 @@ describe("EnvironmentRegistry", () => {
     }),
   );
 
+  it.effect("passes over platform environments a refresh reports unchanged", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness([]);
+
+      yield* Effect.gen(function* () {
+        const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+        const first = new PrimaryConnectionRegistration({ target: TARGET });
+        const second = new PrimaryConnectionRegistration({ target: SECOND_TARGET });
+        yield* registry.reconcilePlatform([first, second]);
+        for (const target of [TARGET, SECOND_TARGET]) {
+          yield* awaitConnectionState(
+            registry,
+            target.environmentId,
+            (state) => state.phase === "connected",
+          );
+        }
+        const installed = yield* SubscriptionRef.get(registry.entries);
+
+        yield* registry.reconcilePlatform([first, second]);
+        expect(yield* SubscriptionRef.get(registry.entries)).toBe(installed);
+        expect(yield* Ref.get(harness.sessions)).toHaveLength(2);
+
+        const relabeled = new PrimaryConnectionRegistration({
+          target: new PrimaryConnectionTarget({ ...TARGET, label: "Renamed environment" }),
+        });
+        yield* registry.reconcilePlatform([relabeled, second]);
+        expect(
+          (yield* SubscriptionRef.get(registry.entries)).get(TARGET.environmentId)?.target.label,
+        ).toBe("Renamed environment");
+
+        yield* registry.reconcilePlatform([second]);
+        expect((yield* SubscriptionRef.get(registry.entries)).has(TARGET.environmentId)).toBe(
+          false,
+        );
+        yield* registry.reconcilePlatform([relabeled, second]);
+        yield* awaitConnectionState(
+          registry,
+          TARGET.environmentId,
+          (state) => state.phase === "connected",
+        );
+      }).pipe(Effect.provide(harness.layer), Effect.scoped);
+    }),
+  );
+
   it.effect("gives a primary platform registration precedence over persisted registrations", () =>
     Effect.gen(function* () {
       const shadowedTarget = new RelayConnectionTarget({

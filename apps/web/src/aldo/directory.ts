@@ -414,18 +414,35 @@ function registrationFor(environment: AldoEnvironment): BearerConnectionRegistra
 }
 
 /**
+ * Each machine's registration, the same one while its entry is unchanged, so
+ * the registry passes over machines a refresh didn't change.
+ */
+let keptRegistrations = new Map<string, BearerConnectionRegistration>();
+
+/**
  * The full set of Aldo sandboxes as platform registrations: on start, every
  * 15 seconds while visible, when returning to the tab, and after an explicit refresh. A
  * failed fetch emits nothing, so a network blip never drops environments.
  */
 function currentRegistrations(environments: ReadonlyArray<AldoEnvironment>) {
+  const previous = keptRegistrations;
+  keptRegistrations = new Map();
   return environments
     .filter(
       (environment) =>
         !pendingEnvironmentIds.has(environment.environmentId) &&
         !hiddenByDeletion(environment.environmentId),
     )
-    .map(registrationFor);
+    .map((environment) => {
+      const kept = previous.get(environment.environmentId);
+      const registration =
+        kept?.target.label === environment.label &&
+        kept.target.connectionId === `${CONNECTION_PREFIX}${environment.threadId}`
+          ? kept
+          : registrationFor(environment);
+      keptRegistrations.set(environment.environmentId, registration);
+      return registration;
+    });
 }
 
 let firstRead: Promise<Array<BearerConnectionRegistration> | null> | null = null;

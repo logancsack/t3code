@@ -200,6 +200,18 @@ export const make = Effect.gen(function* () {
   }
 
   const leaseLocks = yield* Ref.make<ReadonlyMap<EnvironmentId, LeaseLock>>(new Map());
+  /**
+   * The registration each platform environment was last installed from, and
+   * the entry it installed: reported again unchanged, it needs nothing, so a
+   * host poll that changes nothing doesn't lock and check every environment.
+   */
+  const installedPlatform = new Map<
+    EnvironmentId,
+    {
+      readonly registration: PlatformConnectionRegistration;
+      readonly entry: ConnectionCatalogEntry;
+    }
+  >();
   const leaseLocksGuard = yield* Semaphore.make(1);
   const started = yield* Ref.make(false);
 
@@ -321,6 +333,17 @@ export const make = Effect.gen(function* () {
   const acquireSupervisor = Effect.fn("EnvironmentRegistry.acquireSupervisor")(function* (
     environmentId: EnvironmentId,
   ) {
+    // A runtime already running its entry needs no lock while nothing else
+    // holds it: every request and stream for an environment comes through
+    // here, often for all of them at once.
+    const running = (yield* SubscriptionRef.get(serviceScopes)).get(environmentId);
+    if (
+      running !== undefined &&
+      running.entry === (yield* SubscriptionRef.get(entries)).get(environmentId) &&
+      !(yield* Ref.get(leaseLocks)).has(environmentId)
+    ) {
+      return running.supervisor;
+    }
     return yield* withLeaseLock(
       environmentId,
       Effect.gen(function* () {
@@ -499,7 +522,7 @@ export const make = Effect.gen(function* () {
     ) {
       const registered = connectionRegistrationCatalogEntry(registration);
       const target = registered.target;
-      yield* withLeaseLock(
+      return yield* withLeaseLock(
         target.environmentId,
         Effect.gen(function* () {
           const previous = (yield* SubscriptionRef.get(entries)).get(target.environmentId);
@@ -528,13 +551,15 @@ export const make = Effect.gen(function* () {
               ),
               Effect.exit,
             );
-            if (Exit.isFailure(revoked)) return;
+            if (Exit.isFailure(revoked)) return false;
           }
-          yield* Ref.update(platformEnvironmentIds, (current) => {
-            const next = new Set(current);
-            next.add(target.environmentId);
-            return next;
-          });
+          if (!(yield* Ref.get(platformEnvironmentIds)).has(target.environmentId)) {
+            yield* Ref.update(platformEnvironmentIds, (current) => {
+              const next = new Set(current);
+              next.add(target.environmentId);
+              return next;
+            });
+          }
 
           // Secondary desktop-local backends (e.g. a parallel WSL backend) live
           // on their own loopback origin, so they authenticate with a bearer
@@ -578,6 +603,7 @@ export const make = Effect.gen(function* () {
             yield* closeServiceScope(target.environmentId);
             batch.push(entry);
           }
+          return true;
         }),
       );
     },
@@ -606,6 +632,7 @@ export const make = Effect.gen(function* () {
             Effect.exit,
           );
           if (Exit.isFailure(revoked)) return;
+          installedPlatform.delete(environmentId);
           yield* Ref.update(platformEnvironmentIds, (current) => {
             const next = new Set(current);
             next.delete(environmentId);
@@ -672,28 +699,62 @@ export const make = Effect.gen(function* () {
     // that reports many at once (one per thread, in Aldo) otherwise changed the
     // catalog, and everything reading it, once per environment, which took
     // seconds for a few hundred.
+    const currentEntries = yield* SubscriptionRef.get(entries);
+    const currentScopes = yield* SubscriptionRef.get(serviceScopes);
+    const persisted = yield* Ref.get(persistedTargetsByEnvironment);
+    const runsUnchanged = (registration: PlatformConnectionRegistration) => {
+      const environmentId = registration.target.environmentId;
+      const installed = installedPlatform.get(environmentId);
+      const entry = currentEntries.get(environmentId);
+      const scope = currentScopes.get(environmentId);
+      return (
+        installed !== undefined &&
+        installed.registration === registration &&
+        entry === installed.entry &&
+        scope !== undefined &&
+        Equal.equals(scope.entry, entry) &&
+        currentPlatformIds.has(environmentId) &&
+        !persisted.has(environmentId)
+      );
+    };
     const batch: Array<ConnectionCatalogEntry> = [];
+    const installed: Array<PlatformConnectionRegistration> = [];
     yield* Effect.forEach(
       platformRegistrations,
-      (registration) => installPlatformRegistration(registration, batch),
+      (registration) =>
+        runsUnchanged(registration)
+          ? Effect.void
+          : installPlatformRegistration(registration, batch).pipe(
+              Effect.map((done) => {
+                if (done) installed.push(registration);
+              }),
+            ),
       { discard: true },
     );
-    if (batch.length === 0) return;
-    yield* SubscriptionRef.update(entries, (current) => {
-      const next = new Map(current);
-      for (const entry of batch) next.set(entry.target.environmentId, entry);
-      return next;
-    });
-    // Each runtime starts as installEntryLocked starts one, unless a stream
-    // following the catalog has started it already.
-    yield* Effect.forEach(
-      batch,
-      (entry) =>
-        acquireSupervisor(entry.target.environmentId).pipe(
-          Effect.catchTag("EnvironmentNotRegisteredError", () => Effect.void),
-        ),
-      { discard: true },
-    );
+    if (batch.length > 0) {
+      yield* SubscriptionRef.update(entries, (current) => {
+        const next = new Map(current);
+        for (const entry of batch) next.set(entry.target.environmentId, entry);
+        return next;
+      });
+      // Each runtime starts as installEntryLocked starts one, unless a stream
+      // following the catalog has started it already.
+      yield* Effect.forEach(
+        batch,
+        (entry) =>
+          acquireSupervisor(entry.target.environmentId).pipe(
+            Effect.catchTag("EnvironmentNotRegisteredError", () => Effect.void),
+          ),
+        { discard: true },
+      );
+    }
+    const installedEntries = yield* SubscriptionRef.get(entries);
+    for (const registration of installed) {
+      const entry = installedEntries.get(registration.target.environmentId);
+      if (entry !== undefined) {
+        installedPlatform.set(registration.target.environmentId, { registration, entry });
+      }
+    }
   });
 
   const remove = Effect.fn("EnvironmentRegistry.remove")(function* (environmentId: EnvironmentId) {

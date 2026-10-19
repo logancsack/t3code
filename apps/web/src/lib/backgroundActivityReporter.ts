@@ -1,4 +1,4 @@
-import { EnvironmentRegistry } from "@t3tools/client-runtime/connection";
+import { EnvironmentRegistry, EnvironmentSupervisor } from "@t3tools/client-runtime/connection";
 import {
   EnvironmentRpcSubscriptionObserver,
   request,
@@ -14,6 +14,7 @@ import * as Clock from "effect/Clock";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Schedule from "effect/Schedule";
 import * as Stream from "effect/Stream";
@@ -201,10 +202,16 @@ export const backgroundActivityReporterLayer = Layer.effectDiscard(
           registry
             .run(
               environmentId,
-              request(
-                WS_METHODS.serverReportClientActivity,
-                createActivityReport(environmentId, lastInteractionAtMs, observedAtMs),
-              ),
+              Effect.gen(function* () {
+                // A machine that isn't connected would refuse the report at once:
+                // most of them, with a machine per thread.
+                const supervisor = yield* EnvironmentSupervisor;
+                if (Option.isNone(yield* SubscriptionRef.get(supervisor.session))) return;
+                yield* request(
+                  WS_METHODS.serverReportClientActivity,
+                  createActivityReport(environmentId, lastInteractionAtMs, observedAtMs),
+                );
+              }),
             )
             .pipe(Effect.ignore),
         { concurrency: "unbounded", discard: true },

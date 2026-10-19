@@ -675,7 +675,12 @@ describe("EnvironmentSupervisor", () => {
         yield* harness.wake("application-active-probe");
         yield* harness.wake("application-active-reconnect");
         yield* harness.setNetworkStatus("offline");
+        yield* awaitState(supervisor.state, (state) => state.phase === "offline");
         yield* harness.setNetworkStatus("online");
+        yield* awaitState(
+          supervisor.state,
+          (state) => state.phase === "blocked" && state.network === "online",
+        );
         for (let tick = 0; tick < 10; tick++) {
           yield* Effect.yieldNow;
         }
