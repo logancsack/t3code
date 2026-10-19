@@ -9,6 +9,7 @@ import {
   CommandId,
   MessageId,
   ModelSelection,
+  ProjectId,
   ProviderInstanceId,
   ThreadId,
   type ClientOrchestrationCommand,
@@ -36,6 +37,8 @@ const host = vi.hoisted(() => ({
   signal: (_environmentId: string, _signal: "retry" | "wakeup" | "closed"): void => undefined,
   /** Aldo taking a message to hold (threadApi.ts). */
   hold: (_command: { readonly threadId: string }): void => undefined,
+  /** The files the next message sends (files.ts), which only Aldo can send it with. */
+  files: null as ReadonlyMap<string, Blob> | null,
   toast: vi.fn(),
 }));
 vi.mock("@t3tools/client-runtime/operations", () => ({
@@ -79,7 +82,7 @@ vi.mock("../composerDraftStore", () => ({
 }));
 vi.mock("../components/ui/toast", () => ({ toastManager: { add: host.toast, close: vi.fn() } }));
 vi.mock("./threadCommands", () => ({ keepAldoCommand: async () => null }));
-vi.mock("./files", () => ({ aldoFilesOf: () => null }));
+vi.mock("./files", () => ({ aldoFilesOf: () => host.files }));
 vi.mock("./outbox", () => ({
   outgoing: async () => [],
   keepOutgoing: async () => undefined,
@@ -107,6 +110,7 @@ afterEach(() => {
   host.retried = [];
   host.signal = () => undefined;
   host.hold = () => undefined;
+  host.files = null;
   host.toast.mockClear();
 });
 
@@ -124,7 +128,7 @@ function stubAldo(machines: Record<string, MachineState>) {
   const states = new Map(Object.entries(machines));
   const starts = new Map<
     string,
-    Record<string, { kind: "message"; state: StartState; at?: string }>
+    Record<string, { kind: "start" | "message"; state: StartState; detail?: string; at?: string }>
   >();
   const asks = new Map<string, number>();
   const gates = new Map<string, { opened: Promise<void>; open: () => void }>();
@@ -140,6 +144,8 @@ function stubAldo(machines: Record<string, MachineState>) {
     offline: false,
     readsFail: false,
     wakeStatus: 200,
+    /** What Aldo says it does (`modelRouting`: it picks a new thread's model). */
+    features: {} as Record<string, boolean>,
     asksFor: (threadId: string) => asks.get(threadId) ?? 0,
     allAsks: () => [...asks.values()].reduce((sum, count) => sum + count, 0),
     asked: () => [...asks.keys()].toSorted(),
@@ -174,6 +180,7 @@ function stubAldo(machines: Record<string, MachineState>) {
           state,
           ...(starts.has(threadId) ? { starts: starts.get(threadId) } : {}),
         })),
+        features: aldo.features,
       });
     }
     const [, threadId = "", action] = /^\/api\/environments\/([^/]+)\/(\w+)$/.exec(path) ?? [];
@@ -618,7 +625,12 @@ describe("the directory answers for sleeping machines", () => {
 });
 
 describe("bringing a machine up from this page", () => {
-  function message(threadId: string): ClientOrchestrationCommand {
+  /** A message to a thread, or its first (`first`), which makes the thread. */
+  function message(threadId: string, first = false): ClientOrchestrationCommand {
+    const modelSelection = ModelSelection.make({
+      instanceId: ProviderInstanceId.make("codex"),
+      model: "gpt",
+    });
     return {
       type: "thread.turn.start",
       commandId: CommandId.make(`command-${threadId}`),
@@ -629,22 +641,45 @@ describe("bringing a machine up from this page", () => {
         text: "Carry on",
         attachments: [],
       },
-      modelSelection: ModelSelection.make({
-        instanceId: ProviderInstanceId.make("codex"),
-        model: "gpt",
-      }),
+      modelSelection,
       runtimeMode: "full-access",
       interactionMode: "default",
+      ...(first
+        ? {
+            bootstrap: {
+              createThread: {
+                projectId: ProjectId.make("project"),
+                title: "Carry on",
+                modelSelection,
+                runtimeMode: "full-access",
+                interactionMode: "default",
+                branch: null,
+                worktreePath: null,
+                createdAt: "2026-10-19T00:00:00.000Z",
+              },
+            },
+          }
+        : {}),
       createdAt: "2026-10-19T00:00:00.000Z",
     };
   }
 
   /** Sends a message to a machine this page isn't connected to: Aldo holds it (dispatch.ts). */
-  const send = (threadId: string) =>
+  const send = (threadId: string, first = false) =>
     host.dispatch!({
       environmentId: `aldo-${threadId}`,
-      command: message(`t-${threadId}`),
+      command: message(`t-${threadId}`, first),
       primary: true,
+    });
+
+  /** Aldo picks new threads' models from here on, as the next directory read says. */
+  const routeModels = (tab: Tab) =>
+    Effect.gen(function* () {
+      tab.aldo.features.modelRouting = true;
+      const read = tab.directory.readAldoDirectory();
+      yield* advance(500);
+      expect(yield* Effect.promise(() => read)).toBe(true);
+      expect(tab.directory.aldoRoutesModels()).toBe(true);
     });
 
   it.live.each(["new", "stopped"] as const)(
@@ -924,6 +959,115 @@ describe("bringing a machine up from this page", () => {
         expect(tab.aldo.wakes).toBe(1);
         expect(tab.aldo.asksFor("s0")).toBe(1);
         expect(yield* Effect.promise(() => sent)).toBeNull();
+      }),
+  );
+
+  it.live.each([
+    { what: "with files", first: false, files: true },
+    { what: "a new thread's first, whose model Aldo picks", first: true, files: false },
+  ])(
+    "a message only Aldo can send ($what) that Aldo gave up on: the page says why, without waking the machine",
+    ({ first, files }) =>
+      Effect.gen(function* () {
+        const tab = yield* page({ s0: "stopped" });
+        if (first) yield* routeModels(tab);
+        if (files) host.files = new Map([["file-1", new Blob(["notes"])]]);
+        host.hold = (command) => {
+          tab.aldo.starts.set("s0", {
+            [command.threadId]: {
+              kind: first ? "start" : "message",
+              state: "failed",
+              detail: "No agent is available.",
+            },
+          });
+        };
+        const sent = send("s0", first).then(
+          () => "sent",
+          (cause: Error) => cause.message,
+        );
+        yield* advance(1_500);
+        expect(yield* Effect.promise(() => sent)).toBe("No agent is available.");
+        expect(tab.aldo.wakes).toBe(0);
+        expect(tab.aldo.allAsks()).toBe(0);
+        expect(phase("s0")).toBe("available");
+      }),
+  );
+
+  it.live(
+    "a message the page can send itself that Aldo gave up on: the page wakes the machine and sends it",
+    () =>
+      Effect.gen(function* () {
+        const tab = yield* page({ s0: "stopped" });
+        host.hold = (command) => {
+          tab.aldo.starts.set("s0", {
+            [command.threadId]: { kind: "message", state: "failed", detail: "It didn't start." },
+          });
+        };
+        const sent = send("s0");
+        yield* advance(1_500);
+        expect(yield* Effect.promise(() => sent)).toBeNull();
+        expect(tab.aldo.wakes).toBe(1);
+        expect(tab.aldo.asksFor("s0")).toBe(1);
+        expect(phase("s0")).toBe("connected");
+      }),
+  );
+
+  it.live(
+    "a message only Aldo can send that Aldo gives up on while the page wakes the machine: the page says why once it's up",
+    () =>
+      Effect.gen(function* () {
+        const tab = yield* page({ s0: "stopped" });
+        host.files = new Map([["file-1", new Blob(["notes"])]]);
+        let threadId = "";
+        host.hold = (command) => {
+          threadId = command.threadId;
+          tab.aldo.starts.set("s0", { [threadId]: { kind: "message", state: "retrying" } });
+        };
+        // The page wakes it, and its first ask waits while Aldo's last try fails.
+        tab.aldo.gate("connect:s0");
+        const sent = send("s0").then(
+          () => "sent",
+          (cause: Error) => cause.message,
+        );
+        yield* advance(1_000);
+        expect(tab.aldo.wakes).toBe(1);
+        expect(tab.aldo.asksFor("s0")).toBe(1);
+        tab.aldo.starts.set("s0", {
+          [threadId]: { kind: "message", state: "failed", detail: "It didn't start." },
+        });
+        tab.directory.requestAldoDirectoryRefresh();
+        yield* advance(500);
+        tab.aldo.open("connect:s0");
+        yield* advance(1_000);
+        expect(yield* Effect.promise(() => sent)).toBe("It didn't start.");
+        expect(phase("s0")).toBe("connected");
+      }),
+  );
+
+  it.live(
+    "a message only Aldo can send to a thread whose last one Aldo gave up on: the page doesn't take that for this one's",
+    () =>
+      Effect.gen(function* () {
+        const tab = yield* page({ s0: "stopped" });
+        tab.aldo.starts.set("s0", {
+          "t-s0": { kind: "message", state: "failed", detail: "It didn't start." },
+        });
+        const listed = tab.directory.readAldoDirectory();
+        yield* advance(500);
+        expect(yield* Effect.promise(() => listed)).toBe(true);
+        expect(tab.directory.aldoStartState("aldo-s0", "t-s0")?.state).toBe("failed");
+
+        // Aldo holds this one in its place, and the directory can't be read from then on.
+        host.files = new Map([["file-1", new Blob(["notes"])]]);
+        host.hold = (command) => {
+          tab.aldo.starts.set("s0", { [command.threadId]: { kind: "message", state: "starting" } });
+          tab.aldo.readsFail = true;
+        };
+        const sent = send("s0");
+        yield* advance(20_000);
+        expect(yield* Effect.promise(() => sent)).toEqual({ sequence: 0 });
+        expect(tab.aldo.wakes).toBe(1);
+        expect(phase("s0")).toBe("connected");
       }),
   );
 });

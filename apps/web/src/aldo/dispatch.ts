@@ -181,10 +181,20 @@ async function wakeUntilAnswered(environmentId: string): Promise<void> {
   }
 }
 
-/** A message Aldo holds for a machine: its T3 thread, and since when this page has followed its start. */
+/**
+ * A message Aldo holds for a machine: its T3 thread, since when this page has
+ * followed its start, and whether only Aldo can send it (it has files, or
+ * Aldo picks its model), so this page can't once the machine is up.
+ */
 interface HeldFollow {
   readonly threadId: string;
   readonly since: number;
+  readonly onlyAldo: boolean;
+}
+
+/** Whether a directory read made since this call came in FOLLOW_READ_WAIT_MS (false if it failed). */
+function readAldoDirectoryInTime(): Promise<boolean> {
+  return Promise.race([readAldoDirectory(), sleep(FOLLOW_READ_WAIT_MS).then(() => false)]);
 }
 
 /**
@@ -194,20 +204,21 @@ interface HeldFollow {
  * rather than wake it too, which made two calls bring up one machine. It
  * wakes the machine itself when the directory says Aldo isn't bringing it up
  * now, or has been for too long (aldoHeldStartStep), or can't be read in
- * time. True once a read has it up, false once woken.
+ * time, or Aldo gave up on a message this page sends itself once it's up.
+ * Throws once Aldo gave up on one only it can send: it didn't go, and there's
+ * nothing to wake the machine for (connectForHeld says why). True once a read
+ * has it up, false once woken.
  */
 async function followHeldStart(environmentId: string, held: HeldFollow): Promise<boolean> {
   let every = FOLLOW_START_EVERY_MS;
   for (;;) {
-    const read = await Promise.race([
-      readAldoDirectory(),
-      sleep(FOLLOW_READ_WAIT_MS).then(() => false),
-    ]);
+    const read = await readAldoDirectoryInTime();
     const machine = getAldoEnvironments()?.find((entry) => entry.environmentId === environmentId);
     const now = Date.now();
     const step = read ? aldoHeldStartStep(machine, held.threadId, now - held.since, now) : "wake";
     if (step === "up") return true;
-    if (step === "wake") {
+    if (step === "failed" && held.onlyAldo) throw new Error("Aldo gave up on the message.");
+    if (step === "wake" || step === "failed") {
       await wakeUntilAnswered(environmentId);
       requestAldoDirectoryRefresh();
       return false;
@@ -412,9 +423,10 @@ export function installAldoCommandDispatch(): void {
       return null;
     }
     heldThreads.set(environmentId, command.threadId);
+    const onlyAldo = files !== null || routed;
     try {
-      if (await connectForHeld(environmentId, command))
-        return files || routed ? { sequence: 0 } : null;
+      if (await connectForHeld(environmentId, command, onlyAldo))
+        return onlyAldo ? { sequence: 0 } : null;
     } finally {
       heldThreads.delete(environmentId);
     }
@@ -437,19 +449,31 @@ export function installAldoCommandDispatch(): void {
  * this page stops waiting while Aldo still has it: Aldo said no for now (out
  * of credits, the plan's agents all busy), or the time ran out. Throws once
  * Aldo has given up on the message, with why (the message goes back in the
- * composer).
+ * composer), unless this page can send it itself (`onlyAldo` false) and the
+ * machine is up.
  */
 async function connectForHeld(
   environmentId: string,
   command: { readonly threadId: string },
+  onlyAldo: boolean,
 ): Promise<boolean> {
   const deadline = Date.now() + HELD_RETRY_MS;
   const latest = Date.now() + HELD_MAX_MS;
+  const asleep = !isAldoConnected(environmentId);
   // Followed from here, however often it's tried again: past its time, a try wakes the machine.
-  const follow = { threadId: command.threadId, since: Date.now() };
+  const follow = { threadId: command.threadId, since: Date.now(), onlyAldo };
   for (let attempt = 0; ; attempt++) {
     try {
       await ensureAldoConnected(environmentId, follow);
+      // Up, but Aldo may have given up on one only it can send while the
+      // machine came up (one sent while connected went at once): a read made
+      // now says, and then it didn't go (the catch says why).
+      const failed =
+        onlyAldo &&
+        asleep &&
+        (await readAldoDirectoryInTime()) &&
+        aldoStartState(environmentId, command.threadId)?.state === "failed";
+      if (failed) throw new Error("Aldo gave up on the message.");
       return true;
     } catch (cause) {
       const held = aldoStartState(environmentId, command.threadId);

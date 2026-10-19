@@ -95,8 +95,14 @@ describe("aldoHeldStartStep", () => {
     ).toBe("wake");
   });
 
+  it("says so once Aldo gave up on the message, up or not", () => {
+    for (const state of ["new", "stopped", "ready"] as const) {
+      expect(step({ state, starts: { t1: { state: "failed", at: ago(5_000) } } })).toBe("failed");
+    }
+  });
+
   it("wakes it when Aldo isn't bringing it up now, or doesn't say and it isn't up", () => {
-    for (const state of ["queued", "retrying", "failed"]) {
+    for (const state of ["queued", "retrying"]) {
       expect(step({ state: "stopped", starts: { t1: { state } } })).toBe("wake");
       expect(step({ state: "ready", starts: { t1: { state } } })).toBe("wake");
     }

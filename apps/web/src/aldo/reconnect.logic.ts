@@ -70,22 +70,25 @@ const HELD_START_TRUSTED_MS = 150_000;
  * then goes over it again), until the page has followed it for
  * HELD_START_TRUSTED_MS or it was sent that long ago. Go on once the machine
  * is up and Aldo has sent the message (it marks the machine up before it has
- * put the user's settings on it, so the page doesn't send it first). Else
- * wake it: the message waits for credits or room (whose refusal the wake
- * shows), a try failed and waits to go again, Aldo gave up on it, or an older
- * Aldo doesn't say and the machine isn't up.
+ * put the user's settings on it, so the page doesn't send it first). Say so
+ * once Aldo gave up on it ("failed"): it didn't go, whether or not the machine
+ * is up, and only the page can send it now, if it can at all. Else wake it:
+ * the message waits for credits or room (whose refusal the wake shows), a try
+ * failed and waits to go again, or an older Aldo doesn't say and the machine
+ * isn't up.
  */
 export function aldoHeldStartStep(
   machine: AldoHeldStartEntry | undefined,
   t3ThreadId: string,
   followedMs: number,
   now: number,
-): "up" | "follow" | "wake" {
+): "up" | "follow" | "wake" | "failed" {
   const start = machine?.starts?.[t3ThreadId];
   if (start?.state === "starting") {
     const sentAt = start.at === undefined ? Number.NaN : Date.parse(start.at);
     const stale = followedMs >= HELD_START_TRUSTED_MS || now - sentAt >= HELD_START_TRUSTED_MS;
     return stale ? "wake" : "follow";
   }
+  if (start?.state === "failed") return "failed";
   return start === undefined && machine?.state === "ready" ? "up" : "wake";
 }
