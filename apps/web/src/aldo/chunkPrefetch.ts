@@ -5,6 +5,7 @@
 // page loaded (its old files are gone) reloads the page into the new version.
 
 import type { AppRouter } from "../router";
+import { loadThreadRouteView } from "../threadRoutes";
 import { isAldoCloud } from "./api";
 
 type RouteId = keyof AppRouter["routesById"];
@@ -56,9 +57,11 @@ async function prefetch(router: AppRouter): Promise<void> {
     const match = router.routesById[id];
     return match ? router.loadRouteChunk(match) : undefined;
   };
-  // Most likely first; a thread or a draft needs the chat layout's chunk too.
+  // Most likely first; a thread or a draft needs the chat layout's chunk and
+  // the thread view, which loads apart from the layout.
   const next: ReadonlyArray<() => unknown> = [
     route("/_chat"),
+    loadThreadRouteView,
     route("/_chat/$environmentId/$threadId"),
     route("/_chat/draft/$draftId"),
     route("/_chat/"),
