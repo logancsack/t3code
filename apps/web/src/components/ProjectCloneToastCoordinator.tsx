@@ -54,7 +54,9 @@ function renderKey(clone: ProjectCloneSnapshot): string {
 function EnvironmentCloneToasts({ environmentId }: { environmentId: EnvironmentId }) {
   const clones = useEnvironmentProjectClones(environmentId);
   const handleNewThread = useNewThreadHandler();
-  const { draftId: routeDraftId } = useParams({ strict: false });
+  // Only the draft id: one of these runs per environment, and the whole
+  // params object re-rendered every one of them on each navigation.
+  const routeDraftId = useParams({ strict: false, select: (params) => params.draftId });
   const cancelClone = useAtomCommand(sourceControlEnvironment.cancelProjectClone, {
     reportFailure: false,
   });

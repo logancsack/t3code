@@ -502,6 +502,43 @@ describe("composerDraftStore syncPersistedAttachments", () => {
     expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.persistedAttachments).toEqual([]);
     expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.nonPersistedImageIds).toEqual([image.id]);
   });
+  it("leaves a draft whose attachments are staged already as it is", async () => {
+    const image = makeImage({ id: "img-staged", previewUrl: "data:image/png;base64,AAAA" });
+    useComposerDraftStore.getState().addImage(threadRef, image);
+    const attachment = {
+      id: image.id,
+      name: image.name,
+      mimeType: image.mimeType,
+      sizeBytes: image.sizeBytes,
+      dataUrl: image.previewUrl,
+    };
+    const threadKey = threadKeyFor(threadId, TEST_ENVIRONMENT_ID);
+    useComposerDraftStore.setState((state) => ({
+      draftsByThreadKey: {
+        ...state.draftsByThreadKey,
+        [threadKey]: {
+          ...state.draftsByThreadKey[threadKey]!,
+          persistedAttachments: [attachment],
+          nonPersistedImageIds: [],
+        },
+      },
+    }));
+    const staged = draftFor(threadId, TEST_ENVIRONMENT_ID);
+
+    await useComposerDraftStore.getState().syncPersistedAttachments(threadRef, [attachment]);
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)).toBe(staged);
+
+    await useComposerDraftStore.getState().syncPersistedAttachments(threadRef, []);
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.persistedAttachments).toEqual([]);
+  });
+  it("leaves a draft with no attachments as it is when they're cleared", () => {
+    useComposerDraftStore.getState().setPrompt(threadRef, "hello");
+    const draft = draftFor(threadId, TEST_ENVIRONMENT_ID);
+    expect(draft).toBeDefined();
+
+    useComposerDraftStore.getState().clearPersistedAttachments(threadRef);
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)).toBe(draft);
+  });
 });
 
 describe("composerDraftStore terminal contexts", () => {
