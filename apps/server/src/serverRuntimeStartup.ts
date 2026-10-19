@@ -136,8 +136,6 @@ interface CommandGate {
   readonly runningCount: Effect.Effect<number>;
   /** Resolves once no admitted command is running. */
   readonly awaitIdle: Effect.Effect<void>;
-  /** Whether commands were let through at all (startup finished). */
-  readonly isReady: Effect.Effect<boolean>;
 }
 
 const settleQueuedCommand = <A, E>(deferred: Deferred.Deferred<A, E>, exit: Exit.Exit<A, E>) =>
@@ -191,7 +189,6 @@ export const makeCommandGate = Effect.gen(function* () {
       Stream.runHead,
       Effect.asVoid,
     ),
-    isReady: Ref.get(commandReadinessState).pipe(Effect.map((state) => state === "ready")),
     awaitCommandReady: Deferred.await(commandReady),
     signalCommandReady: Effect.gen(function* () {
       yield* Ref.set(commandReadinessState, "ready");
@@ -988,23 +985,26 @@ export const make = (options?: StartupOptions) =>
     const commandGate = yield* makeCommandGate;
     const httpListening = yield* Deferred.make<void>();
     const reactorScope = yield* Scope.make("sequential");
-    // The watchdog starts turns of its own (automatic retries), so a stop ends
-    // it before taking stock of the turn starts to wait for.
+    // The watchdog starts turns of its own (automatic retries). Each one runs
+    // as an admitted command, and a stop ends the watchdog first.
     const watchdogScope = yield* Scope.make("sequential");
+    // Set as the orchestration roots are released at activation. Until then
+    // nothing starts a turn: commands wait for startup, and the reactors and
+    // the watchdog are parked.
+    const rootsReleased = yield* Ref.make(false);
     const shutdownDrainMs = serverConfig.shutdownDrainMs ?? 0;
 
     const drainForShutdown = Effect.gen(function* () {
       yield* commandGate.close;
-      // Before startup finished no command got through, and the reactors are
-      // still parked, so there is nothing to wait for.
-      if (shutdownDrainMs <= 0 || !(yield* commandGate.isReady)) return;
+      // A retry the watchdog started carries on as an admitted command.
+      yield* Scope.close(watchdogScope, Exit.void);
+      if (shutdownDrainMs <= 0 || !(yield* Ref.get(rootsReleased))) return;
       const startedAt = yield* Clock.currentTimeMillis;
-      // Nothing else starts a turn once the gate is closed and the watchdog
-      // ended. An admitted command is done once the engine has committed and
-      // published its events, so the reactor's drain through the engine's
-      // latest sequence after that takes in every turn start there will be.
-      const drained = yield* Scope.close(watchdogScope, Exit.void).pipe(
-        Effect.andThen(commandGate.awaitIdle),
+      // Nothing starts a turn once the gate is closed. An admitted command is
+      // done once the engine has committed and published its events, so the
+      // reactor's drain through the engine's latest sequence after that takes
+      // in every turn start there will be.
+      const drained = yield* commandGate.awaitIdle.pipe(
         Effect.andThen(orchestrationReactor.drainTurnStarts),
         Effect.timeoutOption(Duration.millis(shutdownDrainMs)),
       );
@@ -1073,7 +1073,9 @@ export const make = (options?: StartupOptions) =>
         Effect.gen(function* () {
           yield* orchestrationReactor.start().pipe(Scope.provide(reactorScope));
           yield* providerSessionReaper.start().pipe(Scope.provide(reactorScope));
-          yield* turnLivenessWatchdog.start().pipe(Scope.provide(watchdogScope));
+          yield* turnLivenessWatchdog
+            .start({ admitRetry: commandGate.enqueueCommand })
+            .pipe(Scope.provide(watchdogScope));
         }),
       );
 
@@ -1169,6 +1171,7 @@ export const make = (options?: StartupOptions) =>
           },
         }),
       );
+      yield* Ref.set(rootsReleased, true);
       yield* options?.activate ?? Effect.void;
 
       yield* Effect.logDebug("Accepting commands");

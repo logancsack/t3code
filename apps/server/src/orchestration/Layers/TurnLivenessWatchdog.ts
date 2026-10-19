@@ -10,11 +10,13 @@ import * as Schedule from "effect/Schedule";
 import * as Stream from "effect/Stream";
 
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
+import { forkParked } from "../../serverActivation.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import {
   TurnLivenessWatchdog,
   type TurnLivenessWatchdogShape,
+  type TurnLivenessWatchdogStartOptions,
 } from "../Services/TurnLivenessWatchdog.ts";
 import {
   applyRuntimeEvent,
@@ -24,6 +26,8 @@ import {
   type StalledTurn,
   type TurnLiveness,
 } from "../turnLiveness.ts";
+
+type AdmitRetry = NonNullable<TurnLivenessWatchdogStartOptions["admitRetry"]>;
 
 const DEFAULT_MODEL_SILENCE_MS = 10 * 60 * 1000;
 const DEFAULT_RECOVERY_GRACE_MS = 90 * 1000;
@@ -340,7 +344,7 @@ const makeTurnLivenessWatchdog = (options?: TurnLivenessWatchdogLiveOptions) =>
         });
       });
 
-    const sweep = Effect.gen(function* () {
+    const sweep = Effect.fnUntraced(function* (admitRetry: AdmitRetry) {
       const nowMs = yield* Clock.currentTimeMillis;
       yield* observeClock(nowMs);
       const stalled = stalledTurns(entries, nowMs, { modelSilenceMs, recoveryGraceMs });
@@ -358,10 +362,7 @@ const makeTurnLivenessWatchdog = (options?: TurnLivenessWatchdogLiveOptions) =>
 
       for (const [threadId, retryState] of retryStateByThread) {
         if (retryState.scheduled !== null && nowMs >= retryState.scheduled.notBeforeMs) {
-          yield* dispatchScheduledRetry(threadId, retryState).pipe(
-            // A stopping server ends the watchdog before it takes stock of the
-            // turn starts to wait for, so a retry under way finishes first.
-            Effect.uninterruptible,
+          yield* admitRetry(dispatchScheduledRetry(threadId, retryState)).pipe(
             Effect.catchCause((cause) =>
               Effect.logWarning("turn.watchdog.retry-failed", { threadId, cause }),
             ),
@@ -498,7 +499,7 @@ const makeTurnLivenessWatchdog = (options?: TurnLivenessWatchdogLiveOptions) =>
       }),
     );
 
-    const start: TurnLivenessWatchdogShape["start"] = () =>
+    const start: TurnLivenessWatchdogShape["start"] = (startOptions) =>
       Effect.gen(function* () {
         if (!enabled) {
           yield* Effect.logInfo("turn.watchdog.disabled");
@@ -509,9 +510,10 @@ const makeTurnLivenessWatchdog = (options?: TurnLivenessWatchdogLiveOptions) =>
           Effect.catchCause((cause) => Effect.logWarning("turn.watchdog.seed-failed", { cause })),
         );
 
-        yield* Effect.forkScoped(followRuntimeEvents);
-        yield* Effect.forkScoped(
-          sweep.pipe(
+        const admitRetry: AdmitRetry = startOptions?.admitRetry ?? ((effect) => effect);
+        yield* forkParked(followRuntimeEvents);
+        yield* forkParked(
+          sweep(admitRetry).pipe(
             Effect.catchCause((cause) =>
               Effect.logWarning("turn.watchdog.sweep-failed", { cause }),
             ),

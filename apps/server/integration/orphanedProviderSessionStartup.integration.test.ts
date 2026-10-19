@@ -21,7 +21,6 @@ import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
-import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import { HttpServer } from "effect/unstable/http";
@@ -76,7 +75,7 @@ const makePersistedRuntimeLayer = (dbPath: string) => {
 
 const startupDependenciesWith = (
   drainTurnStarts: Effect.Effect<void>,
-  startWatchdog: Effect.Effect<void, never, Scope.Scope> = Effect.void,
+  startWatchdog: TurnLivenessWatchdog.TurnLivenessWatchdogShape["start"] = () => Effect.void,
 ) =>
   Layer.mergeAll(
     Layer.mock(Keybindings.Keybindings)({
@@ -120,7 +119,7 @@ const startupDependenciesWith = (
       }),
     ),
     AnalyticsService.layerTest,
-    Layer.succeed(TurnLivenessWatchdog.TurnLivenessWatchdog, { start: () => startWatchdog }),
+    Layer.succeed(TurnLivenessWatchdog.TurnLivenessWatchdog, { start: startWatchdog }),
     Layer.mock(GitVcsDriver.GitVcsDriver)({}),
     Layer.succeed(ProviderService.ProviderService, {
       startSession: () => Effect.die("unused"),
@@ -510,7 +509,7 @@ const drainingConfig = (shutdownDrainMs: number | undefined) =>
 const startedRuntime = (
   dbPath: string,
   drainTurnStarts: Effect.Effect<void>,
-  startWatchdog?: Effect.Effect<void, never, Scope.Scope>,
+  startWatchdog?: TurnLivenessWatchdog.TurnLivenessWatchdogShape["start"],
 ) =>
   ServerRuntimeStartup.layer.pipe(
     Layer.provideMerge(makePersistedRuntimeLayer(dbPath)),
@@ -520,24 +519,33 @@ const startedRuntime = (
 const notDoneWithin = <A>(fiber: Fiber.Fiber<A>, ms: number) =>
   Fiber.join(fiber).pipe(Effect.timeoutOption(ms), Effect.map(Option.isNone));
 
+/** A watchdog that runs until its scope closes. */
+const runningWatchdog = Effect.gen(function* () {
+  const running = yield* Ref.make(false);
+  const started = yield* Deferred.make<void>();
+  const start: TurnLivenessWatchdog.TurnLivenessWatchdogShape["start"] = () =>
+    Ref.set(running, true).pipe(
+      Effect.andThen(Deferred.succeed(started, undefined)),
+      Effect.andThen(Effect.never),
+      Effect.onInterrupt(() => Ref.set(running, false)),
+      Effect.forkScoped,
+      Effect.asVoid,
+    );
+  return { running, started, start };
+});
+
 it.live("a stop refuses commands, then waits for the ones admitted and their turn starts", () =>
   Effect.gen(function* () {
     const config = yield* ServerConfig.ServerConfig;
     const reactorDrains = yield* Ref.make(0);
     const turnStartsSent = yield* Deferred.make<void>();
-    const watchdogRunning = yield* Ref.make(false);
+    const watchdog = yield* runningWatchdog;
     // The watchdog's automatic retries start turns too, so it has ended by then.
     const drainTurnStarts = Effect.gen(function* () {
-      assert.isFalse(yield* Ref.get(watchdogRunning));
+      assert.isFalse(yield* Ref.get(watchdog.running));
       yield* Ref.update(reactorDrains, (count) => count + 1);
       yield* Deferred.await(turnStartsSent);
     });
-    const startWatchdog = Ref.set(watchdogRunning, true).pipe(
-      Effect.andThen(Effect.never),
-      Effect.onInterrupt(() => Ref.set(watchdogRunning, false)),
-      Effect.forkScoped,
-      Effect.asVoid,
-    );
     yield* Effect.gen(function* () {
       const startup = yield* ServerRuntimeStartup.ServerRuntimeStartup;
       yield* startup.markHttpListening;
@@ -548,11 +556,11 @@ it.live("a stop refuses commands, then waits for the ones admitted and their tur
         .pipe(Effect.forkChild);
       yield* Effect.yieldNow;
 
-      assert.isTrue(yield* Ref.get(watchdogRunning));
+      assert.isTrue(yield* Ref.get(watchdog.running));
 
       const drain = yield* Effect.forkChild(startup.drainForShutdown);
       assert.isTrue(yield* notDoneWithin(drain, 300));
-      assert.isFalse(yield* Ref.get(watchdogRunning));
+      assert.isFalse(yield* Ref.get(watchdog.running));
       const refused = yield* Effect.flip(startup.enqueueCommand(Effect.succeed("late")));
       assert.instanceOf(refused, ServerRuntimeStartup.ServerStoppingError);
       // The reactor's drain runs through the events the admitted commands
@@ -567,8 +575,98 @@ it.live("a stop refuses commands, then waits for the ones admitted and their tur
       // Their turn starts reached their providers.
       yield* Deferred.succeed(turnStartsSent, undefined);
       assert.isFalse(yield* notDoneWithin(drain, 1_000));
-    }).pipe(Effect.provide(startedRuntime(config.dbPath, drainTurnStarts, startWatchdog)));
+    }).pipe(Effect.provide(startedRuntime(config.dbPath, drainTurnStarts, watchdog.start)));
   }).pipe(Effect.provide(drainingConfig(10_000))),
+);
+
+it.live("a stop ends the watchdog but lets the retry it started finish, and waits for it", () =>
+  Effect.gen(function* () {
+    const config = yield* ServerConfig.ServerConfig;
+    const reactorDrains = yield* Ref.make(0);
+    const retryStarted = yield* Deferred.make<void>();
+    const finishRetry = yield* Deferred.make<void>();
+    const retryFinished = yield* Ref.make(false);
+    const watchdog = yield* runningWatchdog;
+    const startWatchdog: TurnLivenessWatchdog.TurnLivenessWatchdogShape["start"] = (options) =>
+      Effect.gen(function* () {
+        yield* watchdog.start(options);
+        yield* Effect.forkScoped(
+          (options?.admitRetry ?? ((effect) => effect))(
+            Deferred.succeed(retryStarted, undefined).pipe(
+              Effect.andThen(Deferred.await(finishRetry)),
+              Effect.andThen(Ref.set(retryFinished, true)),
+            ),
+          ),
+        );
+      });
+    yield* Effect.gen(function* () {
+      const startup = yield* ServerRuntimeStartup.ServerRuntimeStartup;
+      yield* startup.markHttpListening;
+      yield* startup.awaitCommandReady;
+      yield* Deferred.await(retryStarted);
+
+      const drain = yield* Effect.forkChild(startup.drainForShutdown);
+      assert.isTrue(yield* notDoneWithin(drain, 300));
+      assert.isFalse(yield* Ref.get(watchdog.running));
+      assert.strictEqual(yield* Ref.get(reactorDrains), 0);
+
+      yield* Deferred.succeed(finishRetry, undefined);
+      assert.isFalse(yield* notDoneWithin(drain, 1_000));
+      assert.isTrue(yield* Ref.get(retryFinished));
+      assert.strictEqual(yield* Ref.get(reactorDrains), 1);
+    }).pipe(
+      Effect.provide(
+        startedRuntime(
+          config.dbPath,
+          Ref.update(reactorDrains, (count) => count + 1),
+          startWatchdog,
+        ),
+      ),
+    );
+  }).pipe(Effect.provide(drainingConfig(10_000))),
+);
+
+it.live("a stop waits for a retry the watchdog started, for at most shutdownDrainMs", () =>
+  Effect.gen(function* () {
+    const config = yield* ServerConfig.ServerConfig;
+    const reactorDrains = yield* Ref.make(0);
+    const retryStarted = yield* Deferred.make<void>();
+    const finishRetry = yield* Deferred.make<void>();
+    // A retry the stop can't interrupt, as one blocked in a stalled engine
+    // write would be.
+    const startWatchdog: TurnLivenessWatchdog.TurnLivenessWatchdogShape["start"] = (options) =>
+      Effect.forkScoped(
+        (options?.admitRetry ?? ((effect) => effect))(
+          Deferred.succeed(retryStarted, undefined).pipe(
+            Effect.andThen(Deferred.await(finishRetry)),
+            Effect.uninterruptible,
+          ),
+        ),
+      ).pipe(Effect.asVoid);
+    yield* Effect.gen(function* () {
+      const startup = yield* ServerRuntimeStartup.ServerRuntimeStartup;
+      yield* startup.markHttpListening;
+      yield* startup.awaitCommandReady;
+      yield* Deferred.await(retryStarted);
+
+      const startedAt = yield* Clock.currentTimeMillis;
+      yield* startup.drainForShutdown;
+      const waitedMs = (yield* Clock.currentTimeMillis) - startedAt;
+      assert.isTrue(waitedMs >= 250 && waitedMs < 2_000, `${waitedMs}`);
+      // It counted as an admitted command, so the stop was still waiting for
+      // it when its time ran out.
+      assert.strictEqual(yield* Ref.get(reactorDrains), 0);
+      yield* Deferred.succeed(finishRetry, undefined);
+    }).pipe(
+      Effect.provide(
+        startedRuntime(
+          config.dbPath,
+          Ref.update(reactorDrains, (count) => count + 1),
+          startWatchdog,
+        ),
+      ),
+    );
+  }).pipe(Effect.provide(drainingConfig(300))),
 );
 
 it.live.each([
@@ -594,16 +692,19 @@ it.live.each([
     }).pipe(Effect.provide(drainingConfig(shutdownDrainMs))),
 );
 
-it.live("a stop before startup finished waits for nothing", () =>
+it.live("a stop before startup finished ends the watchdog and waits for nothing", () =>
   Effect.gen(function* () {
     const config = yield* ServerConfig.ServerConfig;
+    const watchdog = yield* runningWatchdog;
     yield* Effect.gen(function* () {
       const startup = yield* ServerRuntimeStartup.ServerRuntimeStartup;
       // The server never listens, so it never takes commands.
+      yield* Deferred.await(watchdog.started);
       const startedAt = yield* Clock.currentTimeMillis;
       yield* startup.drainForShutdown;
       const waitedMs = (yield* Clock.currentTimeMillis) - startedAt;
       assert.isTrue(waitedMs < 250, `${waitedMs}`);
-    }).pipe(Effect.provide(startedRuntime(config.dbPath, Effect.never)));
+      assert.isFalse(yield* Ref.get(watchdog.running));
+    }).pipe(Effect.provide(startedRuntime(config.dbPath, Effect.never, watchdog.start)));
   }).pipe(Effect.provide(drainingConfig(10_000))),
 );
