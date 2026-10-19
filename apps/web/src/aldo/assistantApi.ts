@@ -340,6 +340,8 @@ export interface AldoProfile {
   /** Where they manage their sign-in (name, email, password, sessions). */
   readonly manageUrl: string;
   readonly signOutUrl: string;
+  /** The owner's admin pages; null for everyone else, and on an Aldo without them. */
+  readonly adminUrl: string | null;
 }
 
 /** Who's signed in; null where this Aldo can't say (an older one answers with the client's page). */
@@ -353,6 +355,8 @@ export async function fetchAldoProfile(): Promise<AldoProfile | null> {
         imageUrl: typeof body.imageUrl === "string" && body.imageUrl ? body.imageUrl : null,
         manageUrl: typeof body.manageUrl === "string" ? body.manageUrl : "/account",
         signOutUrl: typeof body.signOutUrl === "string" ? body.signOutUrl : "/sign-out",
+        adminUrl:
+          typeof body.adminUrl === "string" && body.adminUrl.startsWith("/") ? body.adminUrl : null,
       }
     : null;
 }
