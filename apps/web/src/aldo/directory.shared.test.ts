@@ -170,3 +170,21 @@ it.live("another tab's read while this one's is under way is left to this one's"
     expect(api.getAldoEnvironments()?.map((entry) => entry.environmentId)).toEqual(["aldo-mine"]);
   }),
 );
+
+it.live("tells Aldo how long the first view took with the next read, once", () =>
+  Effect.gen(function* () {
+    const { api, fetch } = yield* directory;
+    const header = (call: number) =>
+      new Headers((fetch.mock.calls[call] as unknown as [string, RequestInit])[1].headers).get(
+        "x-aldo-first-view",
+      );
+    expect(header(0)).toBeNull();
+    api.noteAldoFirstView(812.4);
+    api.requestAldoDirectoryRefresh();
+    yield* wait(250);
+    expect(header(1)).toBe("812");
+    api.requestAldoDirectoryRefresh();
+    yield* wait(250);
+    expect(header(2)).toBeNull();
+  }),
+);

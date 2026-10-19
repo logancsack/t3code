@@ -375,9 +375,22 @@ interface DirectoryBody {
   };
 }
 
+/** How long this page took to show its first view (firstView.ts), for the next read to tell Aldo, once. */
+let firstViewMs: number | null = null;
+
+/** Notes how long this page took to show its first view: Aldo keeps it to measure how fast the app opens. */
+export function noteAldoFirstView(ms: number): void {
+  firstViewMs = Math.round(ms);
+}
+
 async function fetchEnvironments(): Promise<ReadonlyArray<AldoEnvironment>> {
   const startedAt = Date.now();
-  const body = await api<DirectoryBody>("/api/environments");
+  const firstView = firstViewMs;
+  const body = await api<DirectoryBody>(
+    "/api/environments",
+    firstView === null ? {} : { headers: { "x-aldo-first-view": String(firstView) } },
+  );
+  if (firstViewMs === firstView) firstViewMs = null;
   sharedReads()?.postMessage({ startedAt, body } satisfies SharedRead);
   listingFrom = Math.max(listingFrom, startedAt);
   return takeListing(body);

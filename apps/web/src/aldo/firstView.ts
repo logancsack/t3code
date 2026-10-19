@@ -7,7 +7,7 @@ import { useLayoutEffect } from "react";
 
 import { environmentCatalog } from "../connection/catalog";
 import { appAtomRegistry } from "../rpc/atomRegistry";
-import { startAldoDirectory } from "./directory";
+import { noteAldoFirstView, startAldoDirectory } from "./directory";
 import { isAldoCloud } from "./api";
 
 const FIRST_VIEW_MAX_MS = 500;
@@ -72,6 +72,8 @@ function stop(): HTMLElement | null {
 function reveal(): void {
   const element = stop();
   if (element === null) return;
+  // From the page's start: the next directory read tells Aldo.
+  noteAldoFirstView(performance.now());
   element.style.opacity = "0";
   element.style.pointerEvents = "none";
   window.setTimeout(() => element.remove(), FADE_MS);
