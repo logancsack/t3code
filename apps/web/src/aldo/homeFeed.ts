@@ -4,7 +4,7 @@
 // while something on the page shows it: with the directory, on a push, when
 // the tab comes back, and every so often (a read with nothing new is a 304
 // the browser answers from its cache, from an Aldo that tags it). A tab no one
-// sees doesn't poll.
+// sees doesn't poll, and tabs on screen share their reads (sharedReads).
 
 import { useEffect } from "react";
 import { create } from "zustand";
@@ -16,6 +16,8 @@ import { requestAldoDirectoryRefresh, subscribeAldoEnvironments } from "./direct
 import { reconcileAldoWalkthrough } from "./walkthrough";
 
 const REFRESH_EVERY_MS = 30_000;
+/** How often a page on screen looks whether its read is REFRESH_EVERY_MS old. */
+const LOOK_EVERY_MS = 5_000;
 /** Directory fetches come every 15 seconds; the home read follows them no closer than this. */
 const FOLLOW_DIRECTORY_MIN_MS = 8_000;
 
@@ -35,9 +37,74 @@ export const useAldoHomeFeed = create<AldoHomeFeed>(() => ({
 let inflight = false;
 /** A refresh asked for during a read: the read may predate what asked, so it runs again after. */
 let again = false;
+/** When this page last read the home, or took another tab's read (sharedReads), as its next read's clock. */
 let fetchedAt = 0;
 let dismissalRevision = 0;
 let lastServerBody: string | null = null;
+/**
+ * When the read the home shown comes from began, or a card was last hidden
+ * here: another tab's read begun earlier could put back what changed since.
+ */
+let homeFrom = 0;
+
+// Each tab on screen reads the home every 30 seconds, so windows side by
+// side read it once each. A page shares each read with this browser's other
+// tabs, and one on screen with the home showing takes it as its own: its
+// next read waits a little longer than the reading tab's, so that one goes
+// on reading for all of them while it's seen.
+const SHARED_READS = "aldo-home";
+/** How much later than the reading tab's a tab that took its read reads next. */
+const SHARED_READ_SLACK_MS = 2_000;
+let sharedReadChannel: BroadcastChannel | null | undefined;
+
+/** A tab's read of the home, and when it began. */
+interface SharedRead {
+  readonly startedAt: number;
+  readonly home: AldoHome | null;
+}
+
+function sharedReads(): BroadcastChannel | null {
+  if (sharedReadChannel === undefined) {
+    sharedReadChannel =
+      typeof BroadcastChannel === "undefined" ? null : new BroadcastChannel(SHARED_READS);
+    sharedReadChannel?.addEventListener("message", (event: MessageEvent<unknown>) =>
+      takeSharedRead(event.data as Partial<SharedRead> | null),
+    );
+  }
+  return sharedReadChannel;
+}
+
+function takeSharedRead(read: Partial<SharedRead> | null): void {
+  const startedAt = read?.startedAt;
+  if (watchers === 0 || document.visibilityState === "hidden") return;
+  if (typeof startedAt !== "number" || startedAt <= homeFrom || read?.home === undefined) return;
+  // A read of this page's own under way answers for it. One begun after it
+  // still puts this page's next read back, so tabs that read at the same time
+  // fall out of step, and one goes on reading for both.
+  if (inflight) {
+    if (startedAt > fetchedAt) fetchedAt = Date.now() + SHARED_READ_SLACK_MS;
+    return;
+  }
+  fetchedAt = Date.now() + SHARED_READ_SLACK_MS;
+  homeFrom = startedAt;
+  takeHome(read.home);
+}
+
+/** Shows a read of the home, this page's or another tab's. */
+function takeHome(next: AldoHome | null): void {
+  const body = JSON.stringify(next);
+  const changed = body !== lastServerBody;
+  lastServerBody = body;
+  if (next && changed) noteHiddenPrompts(next);
+  const state = useAldoHomeFeed.getState();
+  if (changed || state.error !== null || state.supported !== Boolean(next)) {
+    useAldoHomeFeed.setState({
+      ...(next && changed ? { home: next } : {}),
+      supported: Boolean(next),
+      error: null,
+    });
+  }
+}
 
 /** Reads the home again; `force: false` follows the directory, no closer than every few seconds. */
 export async function refreshAldoHome(force = true): Promise<void> {
@@ -48,24 +115,16 @@ export async function refreshAldoHome(force = true): Promise<void> {
   if (!force && Date.now() - fetchedAt < FOLLOW_DIRECTORY_MIN_MS) return;
   inflight = true;
   const revision = dismissalRevision;
-  fetchedAt = Date.now();
+  const startedAt = Date.now();
+  fetchedAt = startedAt;
   try {
     const next = await fetchAldoHome();
     // A poll begun before a persisted hide must not put the card back.
     if (revision !== dismissalRevision) again = true;
     else {
-      const body = JSON.stringify(next);
-      const changed = body !== lastServerBody;
-      lastServerBody = body;
-      if (next && changed) noteHiddenPrompts(next);
-      const state = useAldoHomeFeed.getState();
-      if (changed || state.error !== null || state.supported !== Boolean(next)) {
-        useAldoHomeFeed.setState({
-          ...(next && changed ? { home: next } : {}),
-          supported: Boolean(next),
-          error: null,
-        });
-      }
+      sharedReads()?.postMessage({ startedAt, home: next } satisfies SharedRead);
+      homeFrom = Math.max(homeFrom, startedAt);
+      takeHome(next);
     }
   } catch (cause) {
     useAldoHomeFeed.setState({ error: cause instanceof Error ? cause.message : String(cause) });
@@ -83,10 +142,11 @@ function startFeed(): () => void {
   const hidden = () => document.visibilityState === "hidden";
   // With notifications off there's no push: Aldo's heads-ups show on the regular refresh too.
   const timer = window.setInterval(() => {
-    if (hidden()) return;
-    void refreshAldoHome();
-    void pullAldoConversation();
+    if (!hidden()) void pullAldoConversation();
   }, REFRESH_EVERY_MS);
+  const look = window.setInterval(() => {
+    if (!hidden() && Date.now() - fetchedAt >= REFRESH_EVERY_MS) void refreshAldoHome();
+  }, LOOK_EVERY_MS);
   const unsubscribe = subscribeAldoEnvironments(() => {
     if (!hidden()) void refreshAldoHome(false);
   });
@@ -114,6 +174,7 @@ function startFeed(): () => void {
   });
   return () => {
     window.clearInterval(timer);
+    window.clearInterval(look);
     unsubscribe();
     unsubscribeActions();
     document.removeEventListener("visibilitychange", onVisible);
@@ -145,6 +206,7 @@ export function setAldoChatDecisionDismissed(id: string, dismissed: boolean): vo
   const home = useAldoHomeFeed.getState().home;
   if (!home) return;
   dismissalRevision += 1;
+  homeFrom = Date.now();
   const update = <
     T extends { readonly chatDecision?: { readonly id: string; readonly dismissed: boolean } },
   >(
