@@ -153,6 +153,12 @@ jobs:
             if [ "$SCOPE_CLIENT" = 0 ]; then echo "Nothing the client's build reads changed."; exit 0; fi
             vp build
       - run:
+          name: Keep the home screen's JavaScript within its budget
+          working_directory: apps/web
+          command: |
+            if [ "$SCOPE_CLIENT" = 0 ]; then echo "The client wasn't built."; exit 0; fi
+            node scripts/check-first-screen-size.ts
+      - run:
           name: Build the T3 server, as Aldo's runtime:build does
           # runtime:build builds @t3tools/web first and bundles it; here the
           # server's build bundles the Aldo client the step above built.
