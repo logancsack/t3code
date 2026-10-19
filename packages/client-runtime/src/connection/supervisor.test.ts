@@ -651,6 +651,48 @@ describe("EnvironmentSupervisor", () => {
     }).pipe(Effect.provide(TestClock.layer())),
   );
 
+  it.effect(
+    "keeps a dormant connection asleep through activations until the platform retries it",
+    () =>
+      Effect.gen(function* () {
+        const harness = yield* makeHarness({
+          prepare: (attempt) =>
+            attempt === 1
+              ? Effect.fail(
+                  new ConnectionBlockedError({
+                    reason: "dormant",
+                    detail: "Its computer is asleep.",
+                  }),
+                )
+              : Effect.succeed(PREPARED_CONNECTION),
+        });
+        const supervisor = yield* EnvironmentSupervisor.make(TARGET_ENTRY, {
+          initiallyDesired: true,
+        }).pipe(Effect.provide(harness.dependencies));
+
+        yield* awaitState(supervisor.state, (state) => state.phase === "blocked");
+        yield* harness.wake("application-active");
+        yield* harness.wake("application-active-probe");
+        yield* harness.wake("application-active-reconnect");
+        yield* harness.setNetworkStatus("offline");
+        yield* awaitState(supervisor.state, (state) => state.phase === "offline");
+        yield* harness.setNetworkStatus("online");
+        yield* awaitState(
+          supervisor.state,
+          (state) => state.phase === "blocked" && state.network === "online",
+        );
+        for (let tick = 0; tick < 10; tick++) {
+          yield* Effect.yieldNow;
+        }
+        expect(yield* Ref.get(harness.prepareCount)).toBe(1);
+        expect((yield* SubscriptionRef.get(supervisor.state)).phase).toBe("blocked");
+
+        yield* supervisor.retryNow;
+        yield* awaitState(supervisor.state, (state) => state.phase === "connected");
+        expect(yield* Ref.get(harness.prepareCount)).toBe(2);
+      }),
+  );
+
   it.effect("resets retries when activation wakes a blocked connection", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness({

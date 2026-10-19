@@ -3392,6 +3392,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         const stagedAttachmentById = new Map<string, PersistedComposerAttachment>();
         await Promise.all(
           composerImages.map(async (image) => {
+            // An image keeps its id and file, so one persisted already needn't be read again.
+            const alreadyPersisted = existingPersistedById.get(image.id);
+            if (alreadyPersisted) {
+              stagedAttachmentById.set(image.id, alreadyPersisted);
+              return;
+            }
             try {
               const dataUrl = await readFileAsDataUrl(image.file);
               stagedAttachmentById.set(image.id, {

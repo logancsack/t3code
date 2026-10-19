@@ -116,6 +116,17 @@ export function useRetainedValue<T>(key: string | null, value: T | null): T | nu
   return key !== null && retained.current?.key === key ? retained.current.value : null;
 }
 
+// `value` as first seen for the current `key`: a rebuilt list that holds the
+// same rows keeps the previous one's identity, so what reads it (dnd-kit's
+// sortable context, which every row reads) changes only when the rows do.
+export function useKeyedValue<T>(key: string, value: T): T {
+  const kept = React.useRef<{ readonly key: string; readonly value: T } | null>(null);
+  if (kept.current?.key !== key) {
+    kept.current = { key, value };
+  }
+  return kept.current.value;
+}
+
 // Sidebar.motion handles ordinary section changes. Sortable transforms own
 // dragging; replaying their committed DOM order would animate the drop twice.
 export const animateSidebarLayoutChanges: AnimateLayoutChanges = (args) =>

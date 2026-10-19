@@ -2510,7 +2510,17 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         });
       }),
     ).pipe(Effect.asVoid);
-    yield* Effect.forEach(currentAdapters, ([, adapter]) => adapter.stopAll()).pipe(Effect.asVoid);
+    // Together: a Claude instance's stop waits up to shutdownDrainMs for its
+    // CLIs to take the prompts sent to them, and one after another those
+    // waits would add up past what the process stopping the server allows.
+    // Each runs to its end even if another fails, which then fails the stop.
+    const stopExits = yield* Effect.forEach(
+      currentAdapters,
+      ([, adapter]) => Effect.exit(adapter.stopAll()),
+      { concurrency: "unbounded" },
+    );
+    const stopFailure = stopExits.find((exit) => exit._tag === "Failure");
+    if (stopFailure?._tag === "Failure") return yield* Effect.failCause(stopFailure.cause);
     yield* McpSessionRegistry.revokeAllActiveMcpCredentials();
     McpProviderSession.clearAllMcpProviderSessions();
     // Stopped rows stay for their resume cursors, so long-lived installs hold

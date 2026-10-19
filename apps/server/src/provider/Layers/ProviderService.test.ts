@@ -596,7 +596,7 @@ for (const [enabled, completed] of [
   );
 }
 
-it.effect("ProviderServiceLive catches stopAll failures during shutdown", () =>
+it.effect("ProviderServiceLive stops every adapter despite a stopAll failure", () =>
   Effect.gen(function* () {
     const codex = makeFakeCodexAdapter();
     codex.stopAll.mockImplementation(() =>
@@ -608,8 +608,22 @@ it.effect("ProviderServiceLive catches stopAll failures during shutdown", () =>
         }),
       ),
     );
+    // Claude's stop can wait for its CLIs to take their prompts; another
+    // adapter failing meanwhile must not cut it short.
+    const claude = makeFakeCodexAdapter(CLAUDE_AGENT_DRIVER);
+    let claudeStopped = false;
+    claude.stopAll.mockImplementation(() =>
+      Effect.sleep("1 second").pipe(
+        Effect.andThen(
+          Effect.sync(() => {
+            claudeStopped = true;
+          }),
+        ),
+      ),
+    );
     const registry = makeAdapterRegistryMock({
       [CODEX_DRIVER]: codex.adapter,
+      [CLAUDE_AGENT_DRIVER]: claude.adapter,
     });
     const providerAdapterLayer = Layer.succeed(
       ProviderAdapterRegistry.ProviderAdapterRegistry,
@@ -642,10 +656,13 @@ it.effect("ProviderServiceLive catches stopAll failures during shutdown", () =>
     const runtimeServices = yield* Layer.build(providerLayer).pipe(Scope.provide(scope));
 
     yield* ProviderService.ProviderService.pipe(Effect.provide(runtimeServices));
-    const closeExit = yield* Scope.close(scope, Exit.void).pipe(Effect.exit);
+    const closing = yield* Scope.close(scope, Exit.void).pipe(Effect.exit, Effect.forkChild);
+    yield* TestClock.adjust("1 second");
+    const closeExit = yield* Fiber.join(closing);
 
     assert.equal(Exit.isSuccess(closeExit), true);
     assert.equal(codex.stopAll.mock.calls.length, 1);
+    assert.equal(claudeStopped, true);
   }),
 );
 

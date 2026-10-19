@@ -385,7 +385,26 @@ export default defineConfig(() => {
           codeSplitting: {
             // What the first screen loads goes in one chunk rather than a
             // couple hundred small ones; routes and panels split off it.
-            groups: [{ name: "index", tags: ["$initial" as const] }],
+            // In Aldo's build, whose entry imports the whole first screen
+            // (aldoBootstrapPlugin), its libraries get a chunk of their own
+            // whose name (and hash) stays the same across releases that
+            // change only the app's code, so returning devices keep it
+            // cached. Vite's preload helper goes with them: every chunk with
+            // an import() imports it, and a library's chunk then keeps its
+            // name too.
+            groups: [
+              ...(aldoCloud
+                ? [
+                    {
+                      name: "vendor",
+                      test: /[\\/]node_modules[\\/]|^\0vite\/preload-helper/,
+                      tags: ["$initial" as const],
+                      priority: 1,
+                    },
+                  ]
+                : []),
+              { name: "index", tags: ["$initial" as const] },
+            ],
           },
         },
       },

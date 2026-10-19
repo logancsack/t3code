@@ -684,6 +684,8 @@ describe("ProviderCommandReactor", () => {
       runtimeSessions,
       stateDir,
       drain,
+      turnStartsInFlight: reactor.turnStartsInFlight,
+      drainTurnStarts: reactor.drainTurnStarts,
       startReactor,
       runEffect,
       receipts: receiptBus.streamEventsForTest,
@@ -1176,6 +1178,116 @@ describe("ProviderCommandReactor", () => {
       });
       yield* Effect.promise(() => harness.drain());
       expect(harness.compactThread).not.toHaveBeenCalled();
+    }),
+  );
+
+  effectIt.effect(
+    "counts a turn start in flight until its provider has the request, even once it reads as running",
+    () =>
+      Effect.gen(function* () {
+        const threadId = ThreadId.make("thread-1");
+        const sendStarted = yield* Deferred.make<void>();
+        const releaseSend = yield* Deferred.make<void>();
+        const harness = yield* Effect.promise(() =>
+          createHarness({
+            sendTurnEffect: () =>
+              Deferred.succeed(sendStarted, undefined).pipe(
+                Effect.andThen(Deferred.await(releaseSend)),
+                Effect.as({ threadId, turnId: asTurnId("turn-in-flight") }),
+              ),
+          }),
+        );
+        expect(yield* harness.turnStartsInFlight).toBe(0);
+        yield* harness.drainTurnStarts;
+
+        yield* harness.engine.dispatch({
+          type: "thread.turn.start",
+          commandId: CommandId.make("cmd-turn-in-flight"),
+          threadId,
+          message: {
+            messageId: asMessageId("user-message-in-flight"),
+            role: "user",
+            text: "hello",
+            attachments: [],
+          },
+          interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          runtimeMode: "approval-required",
+          createdAt: "2026-01-01T00:00:00.000Z",
+        });
+        // Asked before the reactor took the event, the drain still covers it.
+        const drainedTurnStarts = yield* Effect.forkChild(harness.drainTurnStarts);
+        yield* Deferred.await(sendStarted);
+        yield* Effect.promise(() => harness.drain());
+        expect(yield* harness.turnStartsInFlight).toBe(1);
+
+        // Claude reports its turn started before it reads skills and
+        // attachments and queues the prompt.
+        yield* harness.engine.dispatch({
+          type: "thread.session.set",
+          commandId: CommandId.make("cmd-turn-reads-as-running"),
+          threadId,
+          session: {
+            threadId,
+            status: "running",
+            providerName: "codex",
+            providerInstanceId: ProviderInstanceId.make("codex"),
+            runtimeMode: "approval-required",
+            activeTurnId: asTurnId("turn-in-flight"),
+            lastError: null,
+            updatedAt: "2026-01-01T00:00:01.000Z",
+          },
+          createdAt: "2026-01-01T00:00:01.000Z",
+        });
+        yield* Effect.promise(() => harness.drain());
+        expect(yield* harness.turnStartsInFlight).toBe(1);
+        expect(drainedTurnStarts.pollUnsafe()).toBeUndefined();
+
+        yield* Deferred.succeed(releaseSend, undefined);
+        yield* Fiber.join(drainedTurnStarts);
+        expect(yield* harness.turnStartsInFlight).toBe(0);
+      }),
+  );
+
+  effectIt.effect("leaves no turn start in flight once one is refused or fails", () =>
+    Effect.gen(function* () {
+      const threadId = ThreadId.make("thread-1");
+      const harness = yield* Effect.promise(() =>
+        createHarness({
+          sendTurnEffect: () =>
+            Effect.fail(
+              new ProviderAdapterRequestError({
+                provider: "codex",
+                method: "turn/start",
+                detail: "provider refused the turn",
+              }),
+            ),
+        }),
+      );
+      const dispatchTurn = (id: string, text: string) =>
+        harness.engine.dispatch({
+          type: "thread.turn.start",
+          commandId: CommandId.make(`cmd-${id}`),
+          threadId,
+          message: {
+            messageId: asMessageId(`user-message-${id}`),
+            role: "user",
+            text,
+            attachments: [],
+          },
+          interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          runtimeMode: "approval-required",
+          createdAt: "2026-01-01T00:00:00.000Z",
+        });
+
+      // Compaction needs a conversation, so this first message ends without a turn.
+      yield* dispatchTurn("first-compact", "/compact");
+      yield* Effect.promise(() => harness.drain());
+      expect(yield* harness.turnStartsInFlight).toBe(0);
+
+      yield* dispatchTurn("refused", "hello");
+      yield* Effect.promise(() => waitFor(() => harness.sendTurn.mock.calls.length === 1));
+      yield* harness.drainTurnStarts;
+      expect(yield* harness.turnStartsInFlight).toBe(0);
     }),
   );
 
