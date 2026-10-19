@@ -73,6 +73,8 @@ const directory = Effect.gen(function* () {
 });
 
 const wait = (ms: number) => Effect.promise(() => vi.advanceTimersByTimeAsync(ms));
+/** The page's clock (faked), as the tabs read it. */
+const now = () => Date.now();
 
 it.live("shares each read with the other tabs, with when it began", () =>
   Effect.gen(function* () {
@@ -95,7 +97,7 @@ it.live("a tab on screen takes another's read as its own, and reads only once th
     for (let read = 1; read <= 4; read++) {
       yield* wait(14_000);
       tabs.send({
-        startedAt: Date.now(),
+        startedAt: now(),
         body: { environments: [machine("aldo-a"), machine("aldo-b", `B${read}`)] },
       });
       yield* wait(1_000);
@@ -117,7 +119,7 @@ it.live("a hidden tab takes no one's read, and reads its own once back on screen
     const { api, page, tabs, fetch } = yield* directory;
     page.visibilityState = "hidden";
     yield* wait(250);
-    tabs.send({ startedAt: Date.now(), body: { environments: [machine("aldo-b")] } });
+    tabs.send({ startedAt: now(), body: { environments: [machine("aldo-b")] } });
     expect(api.getAldoEnvironments()?.map((entry) => entry.environmentId)).toEqual(["aldo-a"]);
     page.visibilityState = "visible";
     yield* wait(250);
@@ -128,12 +130,12 @@ it.live("a hidden tab takes no one's read, and reads its own once back on screen
 it.live("a read begun before this tab's own, or before a machine it added, isn't taken", () =>
   Effect.gen(function* () {
     const { api, tabs, fetch } = yield* directory;
-    const [{ startedAt: ours }] = tabs.posted as Array<{ startedAt: number }>;
+    const ours = (tabs.posted[0] as { startedAt: number }).startedAt;
     tabs.send({ startedAt: ours - 1, body: { environments: [] } });
     expect(api.getAldoEnvironments()?.map((entry) => entry.environmentId)).toEqual(["aldo-a"]);
 
     yield* wait(1_000);
-    const begun = Date.now();
+    const begun = now();
     yield* wait(1_000);
     api.releaseAldoEnvironment("aldo-new", machine("aldo-new") as never);
     // Read before the new machine was made: it would take the machine out again.
@@ -145,7 +147,7 @@ it.live("a read begun before this tab's own, or before a machine it added, isn't
     // One begun after it is taken.
     yield* wait(1_000);
     tabs.send({
-      startedAt: Date.now(),
+      startedAt: now(),
       body: { environments: [machine("aldo-new"), machine("aldo-a")] },
     });
     expect(api.getAldoEnvironments()?.map((entry) => entry.environmentId)).toEqual([
@@ -164,7 +166,7 @@ it.live("another tab's read while this one's is under way is left to this one's"
     api.requestAldoDirectoryRefresh();
     yield* wait(250);
     expect(fetch).toHaveBeenCalledTimes(2);
-    tabs.send({ startedAt: Date.now(), body: { environments: [machine("aldo-other")] } });
+    tabs.send({ startedAt: now(), body: { environments: [machine("aldo-other")] } });
     answer(Response.json({ environments: [machine("aldo-mine")] }));
     yield* wait(250);
     expect(api.getAldoEnvironments()?.map((entry) => entry.environmentId)).toEqual(["aldo-mine"]);

@@ -252,6 +252,8 @@ const page = (machines: Record<string, MachineState>) =>
     );
     const { aldo, fetch } = stubAldo(machines);
     vi.stubGlobal("fetch", fetch);
+    // One page: no other tab shares its reads (directory.shared.test.ts).
+    vi.stubGlobal("BroadcastChannel", undefined);
     const directory = yield* Effect.promise(() => import("./directory"));
     const { installAldoReconnect } = yield* Effect.promise(() => import("./reconnect"));
     const dispatch = yield* Effect.promise(() => import("./dispatch"));

@@ -141,7 +141,7 @@ it("a hidden page takes no one's read", async () => {
 });
 
 it("a read begun before this page's own, or before a card was hidden here, isn't taken", async () => {
-  const [{ startedAt: ours }] = tabs().posted as Array<{ startedAt: number }>;
+  const ours = (tabs().posted[0] as { startedAt: number }).startedAt;
   tabs().send({ startedAt: ours - 1, home: home("Older") });
   expect(shown()).toBe("Mine");
 

@@ -40,6 +40,8 @@ const directory = Effect.gen(function* () {
   };
   const fetch = vi.fn(async () => Response.json({ environments: [environment] }));
   vi.stubGlobal("fetch", fetch);
+  // One page: no other tab shares its reads (directory.shared.test.ts).
+  vi.stubGlobal("BroadcastChannel", undefined);
   const api = yield* Effect.promise(() => import("./directory"));
   const emissions: unknown[] = [];
   yield* Stream.runForEach(api.aldoPlatformRegistrations(), (value) =>

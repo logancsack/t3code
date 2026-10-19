@@ -50,6 +50,8 @@ const aldoStub = Effect.gen(function* () {
     return Response.json({ state: "stopped" });
   });
   vi.stubGlobal("fetch", fetch);
+  // One page: no other tab shares its reads (directory.shared.test.ts).
+  vi.stubGlobal("BroadcastChannel", undefined);
 
   const { aldoEnvironmentGateway } = yield* Effect.promise(() => import("./directory"));
   const prepare = (index: number) =>
