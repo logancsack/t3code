@@ -55,7 +55,12 @@ import { AGENT_KINDS, AldoSetupCard, AldoSetupLine } from "./AldoSetup";
 import { AldoSimpleTabs } from "./AldoSimpleRail";
 import { AldoSimpleLibrary, AldoSimpleNeedsYou } from "./AldoSimplePlaces";
 import { AldoStarters, STARTERS_UNTIL_THREADS } from "./AldoStarters";
-import { seedAldoComposer, sendText, useAldoAssistant } from "./assistantSession";
+import {
+  loadAldoConversation,
+  seedAldoComposer,
+  sendText,
+  useAldoAssistant,
+} from "./assistantSession";
 import {
   aldoOffersItsModels,
   aldoSupportsGeneralThreads,
@@ -150,6 +155,11 @@ function inField(target: EventTarget | null): boolean {
  * painted, so the sidebar answers at once: an empty frame, then the page.
  */
 export function AldoHome() {
+  // Start history before the deferred home render and its other account reads.
+  // The session keeps loaded messages when returning from a thread.
+  useEffect(() => {
+    void loadAldoConversation();
+  }, []);
   const ready = useAfterPaint(true, false);
   if (!ready) return <SidebarInset className="h-dvh bg-background" aria-busy />;
   return <AldoHomeContent />;
