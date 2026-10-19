@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { aldoMachinesToRetry, aldoWakeAgain, type AldoReconnectEntry } from "./reconnect.logic";
+import {
+  aldoHeldStartStep,
+  aldoMachinesToRetry,
+  aldoWakeAgain,
+  type AldoReconnectEntry,
+} from "./reconnect.logic";
 
 const machine = (
   environmentId: string,
@@ -35,6 +40,52 @@ describe("aldoMachinesToRetry", () => {
       ["aldo-c", "available"],
     ]);
     expect(aldoMachinesToRetry(environments, (id) => phases.get(id))).toEqual([]);
+  });
+
+  it("retries one still connecting whose attempt was told it's asleep from the directory", () => {
+    const phases = new Map([
+      ["aldo-a", "connecting"],
+      ["aldo-b", "connecting"],
+      ["aldo-c", "connecting"],
+    ]);
+    const toldAsleep = new Set(["aldo-a", "aldo-c"]);
+    const environments = [
+      machine("aldo-a", "ready"),
+      machine("aldo-b", "ready"),
+      machine("aldo-c", "stopped"),
+    ];
+    expect(
+      aldoMachinesToRetry(
+        environments,
+        (id) => phases.get(id),
+        (id) => toldAsleep.has(id),
+      ),
+    ).toEqual(["aldo-a"]);
+  });
+});
+
+describe("aldoHeldStartStep", () => {
+  const starting = { t1: { state: "starting" } };
+
+  it("connects once the directory has the machine up", () => {
+    expect(aldoHeldStartStep({ state: "ready", starts: starting }, "t1")).toBe("up");
+    expect(aldoHeldStartStep({ state: "ready" }, "t1")).toBe("up");
+  });
+
+  it("follows Aldo's start of the held message rather than waking the machine too", () => {
+    expect(aldoHeldStartStep({ state: "stopped", starts: starting }, "t1")).toBe("follow");
+    expect(aldoHeldStartStep({ state: "new", starts: starting }, "t1")).toBe("follow");
+  });
+
+  it("wakes it when Aldo isn't bringing it up now, or doesn't say", () => {
+    for (const state of ["queued", "retrying", "failed"]) {
+      expect(aldoHeldStartStep({ state: "stopped", starts: { t1: { state } } }, "t1")).toBe("wake");
+    }
+    // Another thread's start, none, an older Aldo, or a machine the directory doesn't list.
+    expect(aldoHeldStartStep({ state: "stopped", starts: starting }, "t2")).toBe("wake");
+    expect(aldoHeldStartStep({ state: "stopped", starts: {} }, "t1")).toBe("wake");
+    expect(aldoHeldStartStep({ state: "stopped" }, "t1")).toBe("wake");
+    expect(aldoHeldStartStep(undefined, "t1")).toBe("wake");
   });
 });
 

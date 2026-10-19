@@ -182,6 +182,8 @@ const directoryRefreshListeners = new Set<() => void>();
 let refreshRequested = true;
 let retryRequested = false;
 let wasHidden = false;
+/** Whether the last poll found the device offline: back online, the directory is read at once. */
+let wasOffline = false;
 
 /** Emit the directory as it is now, without fetching (a sandbox was just added to it). */
 let emitRequested = false;
@@ -439,6 +441,31 @@ export function startAldoDirectory(): void {
   if (isAldoCloud) firstRead ??= readDirectory();
 }
 
+function pageHidden(): boolean {
+  return typeof document !== "undefined" && document.visibilityState === "hidden";
+}
+
+function deviceOffline(): boolean {
+  return typeof navigator !== "undefined" && navigator.onLine === false;
+}
+
+/**
+ * Whether the next poll reads the directory: one was asked for, the page is
+ * back on screen or the device back online (as the last poll left them), a
+ * read failed, or the last is 15 seconds old on a visible page. Failed reads
+ * back off, except for the one as the device is back online.
+ */
+function readDue(): boolean {
+  const hidden = pageHidden();
+  const backOnline = wasOffline && !deviceOffline();
+  if (Date.now() < retryAt && !backOnline) return false;
+  return (
+    refreshRequested ||
+    backOnline ||
+    (!hidden && (wasHidden || retryRequested || Date.now() - lastFetchAt > IDLE_REFRESH_MS))
+  );
+}
+
 async function pollDirectory(): Promise<Array<BearerConnectionRegistration> | null> {
   if (firstRead) {
     const read = firstRead;
@@ -449,17 +476,52 @@ async function pollDirectory(): Promise<Array<BearerConnectionRegistration> | nu
     emitRequested = false;
     return currentRegistrations(knownEnvironments);
   }
-  const hidden = typeof document !== "undefined" && document.visibilityState === "hidden";
-  const resumed = wasHidden && !hidden;
-  wasHidden = hidden;
-  const due =
-    refreshRequested ||
-    (!hidden && (resumed || retryRequested || Date.now() - lastFetchAt > IDLE_REFRESH_MS));
-  if (!due || Date.now() < retryAt) return null;
-  return readDirectory();
+  const due = readDue();
+  wasHidden = pageHidden();
+  wasOffline = deviceOffline();
+  return due ? readDirectory() : null;
+}
+
+/** The directory read under way, if any. */
+let reading: Promise<unknown> | null = null;
+
+/** Waiting for the next read to start and end: true if it read the directory. */
+let nextRead: {
+  readonly promise: Promise<boolean>;
+  readonly resolve: (read: boolean) => void;
+} | null = null;
+
+function afterNextRead(): Promise<boolean> {
+  if (!nextRead) {
+    let resolve: (read: boolean) => void = () => undefined;
+    const promise = new Promise<boolean>((settle) => (resolve = settle));
+    nextRead = { promise, resolve };
+  }
+  return nextRead.promise;
+}
+
+/**
+ * Asks for a directory read, and resolves once one that starts after this
+ * call has ended: true if it read the directory, false if Aldo couldn't be
+ * reached. (Reads go with the polls, so a hidden tab's may wait.)
+ */
+export function readAldoDirectory(): Promise<boolean> {
+  refreshRequested = true;
+  return afterNextRead();
 }
 
 async function readDirectory(): Promise<Array<BearerConnectionRegistration> | null> {
+  const waiting = nextRead;
+  nextRead = null;
+  const read = fetchRegistrations();
+  reading = read;
+  const registrations = await read;
+  if (reading === read) reading = null;
+  waiting?.resolve(registrations !== null);
+  return registrations;
+}
+
+async function fetchRegistrations(): Promise<Array<BearerConnectionRegistration> | null> {
   refreshRequested = false;
   retryRequested = false;
   lastFetchAt = Date.now();
@@ -541,6 +603,86 @@ const askToConnect = (threadId: string) =>
     ),
   );
 
+/** Each machine this tab is waking (wakeAldoEnvironment), by its request. */
+const wakes = new Map<string, Promise<void>>();
+
+/**
+ * Machines whose next attempt asks Aldo whatever the directory lists
+ * (askAldoNext), each with when it was asked for: Aldo's answer to an ask
+ * made since then lets it go.
+ */
+const asks = new Map<string, number>();
+let askCount = 0;
+
+/** Machines whose latest attempt was told "asleep" from the directory, without asking Aldo. */
+const toldAsleep = new Set<string>();
+
+/** How long an attempt waits for a directory read under way or due before it goes by the listing it has. */
+const FRESH_LISTING_WAIT = "2 seconds";
+
+/**
+ * Has a machine's next connection attempt ask Aldo, whatever the directory
+ * lists: this tab woke it, or is nudging its connection while bringing it up
+ * (dispatch.ts). Its attempts ask until Aldo answers one.
+ */
+export function askAldoNext(environmentId: string): void {
+  asks.set(environmentId, ++askCount);
+}
+
+/**
+ * Whether a machine's latest attempt was told it's asleep from the directory,
+ * without asking Aldo. Once a newer listing has it up, reconnect.ts retries
+ * it even while that attempt still shows as connecting: one answered from the
+ * listing before, just as the new one arrived, would otherwise wait for the
+ * next refresh.
+ */
+export function aldoToldAsleepFromListing(environmentId: string): boolean {
+  return toldAsleep.has(environmentId);
+}
+
+/**
+ * Whether a machine's connection can be told it's asleep without asking Aldo:
+ * the directory lists it as not running (Aldo's connect says "stopped" for any
+ * machine that isn't), this tab isn't waking it, and nothing asked to check it
+ * (askAldoNext). Asking sent a request per sleeping thread every time the page
+ * came back on screen. A machine woken by anything else (another device, a
+ * reminder, a message Aldo holds) is retried once the directory has it up
+ * (reconnect.ts).
+ */
+function asleepAsListed(environmentId: string): boolean {
+  const state = knownEnvironments?.find((entry) => entry.environmentId === environmentId)?.state;
+  return (
+    state !== undefined &&
+    state !== "ready" &&
+    !wakes.has(environmentId) &&
+    !asks.has(environmentId)
+  );
+}
+
+/**
+ * Waits for the directory read under way, or the one due (the page back on
+ * screen or online, a refresh asked for), before an attempt goes by the
+ * listing, for up to FRESH_LISTING_WAIT. Answered "asleep" from the older
+ * listing just as the new one has the machine up, it would miss reconnect.ts's
+ * retry, which leaves a connection still connecting alone; and a machine the
+ * older listing has up that has gone to sleep since needs no ask. One this tab
+ * is waking, or asked about (askAldoNext), asks at once, as does one the
+ * directory doesn't list.
+ */
+function freshListing(environmentId: string): Effect.Effect<void> {
+  const byListing =
+    knownEnvironments?.some((entry) => entry.environmentId === environmentId) === true &&
+    !wakes.has(environmentId) &&
+    !asks.has(environmentId);
+  const read = byListing ? (reading ?? (readDue() ? afterNextRead() : null)) : null;
+  return read
+    ? Effect.promise(() => read).pipe(Effect.timeoutOption(FRESH_LISTING_WAIT), Effect.asVoid)
+    : Effect.void;
+}
+
+const asleep = () =>
+  new ConnectionBlockedError({ reason: "dormant", detail: "Its computer is asleep." });
+
 /** Gateway used by the connection resolver: connects to running sandboxes only. */
 export const aldoEnvironmentGateway = {
   prepare: (input: {
@@ -554,51 +696,36 @@ export const aldoEnvironmentGateway = {
       return Effect.succeed(Option.none());
     }
     const threadId = input.connectionId.slice(CONNECTION_PREFIX.length);
-    if (asleepAsListed(input.environmentId)) {
-      return Effect.fail(
-        new ConnectionBlockedError({ reason: "dormant", detail: "Its computer is asleep." }),
-      );
-    }
-    return askToConnect(threadId).pipe(
-      Effect.flatMap((response) =>
-        response.state === "running"
-          ? Effect.succeed(
-              Option.some({
-                httpBaseUrl: response.httpBaseUrl,
-                wsBaseUrl: response.wsBaseUrl,
-                bearerToken: response.bearerToken,
-              }),
-            )
-          : Effect.fail(
-              new ConnectionBlockedError({
-                reason: "dormant",
-                detail: "Its computer is asleep.",
-              }),
-            ),
-      ),
+    const environmentId = input.environmentId;
+    return Effect.suspend(() => {
+      toldAsleep.delete(environmentId);
+      return freshListing(environmentId);
+    }).pipe(
+      Effect.flatMap(() => {
+        if (asleepAsListed(environmentId)) {
+          toldAsleep.add(environmentId);
+          return Effect.fail(asleep());
+        }
+        const asked = asks.get(environmentId);
+        return askToConnect(threadId).pipe(
+          Effect.flatMap((response) => {
+            // Aldo answered: from here the directory does, unless it was asked for again meanwhile.
+            if (asks.get(environmentId) === asked) asks.delete(environmentId);
+            return response.state === "running"
+              ? Effect.succeed(
+                  Option.some({
+                    httpBaseUrl: response.httpBaseUrl,
+                    wsBaseUrl: response.wsBaseUrl,
+                    bearerToken: response.bearerToken,
+                  }),
+                )
+              : Effect.fail(asleep());
+          }),
+        );
+      }),
     );
   },
 };
-
-const wakes = new Map<string, Promise<void>>();
-
-/** Machines whose connection has been prepared on this page. */
-const prepared = new Set<string>();
-
-/**
- * Whether a machine's first connection on this page can be told it's asleep
- * without asking Aldo: the directory that registered it a moment ago lists it
- * as not running (Aldo's connect says "stopped" for any machine that isn't),
- * and this tab isn't waking it. Asking sent one request per sleeping thread on
- * every page load. Every later attempt (a wake, a nudge, the directory saying
- * it's up; reconnect.ts) asks Aldo.
- */
-function asleepAsListed(environmentId: string): boolean {
-  if (prepared.has(environmentId)) return false;
-  prepared.add(environmentId);
-  const state = knownEnvironments?.find((entry) => entry.environmentId === environmentId)?.state;
-  return state !== undefined && state !== "ready" && !wakes.has(environmentId);
-}
 
 /** Starts or resumes a thread's sandbox. Concurrent calls share one request. */
 export function wakeAldoEnvironment(environmentId: string): Promise<void> {
@@ -606,7 +733,8 @@ export function wakeAldoEnvironment(environmentId: string): Promise<void> {
   if (existing) return existing;
   const threadId = threadIdForEnvironment(environmentId);
   const wake = api<{ ok: true }>(`/api/environments/${threadId}/wake`, { method: "POST" })
-    .then(() => undefined)
+    // Aldo answers once it's up, before the directory may say so: its next attempt asks.
+    .then(() => askAldoNext(environmentId))
     .finally(() => wakes.delete(environmentId));
   wakes.set(environmentId, wake);
   return wake;
