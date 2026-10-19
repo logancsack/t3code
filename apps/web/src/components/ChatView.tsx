@@ -1653,6 +1653,8 @@ export default function ChatView(props: ChatViewProps) {
       href: location.href,
       key: location.state.assistantCitationActivation ?? location.state.__TSR_key,
     }),
+    // A new object from each location update re-rendered the whole view.
+    structuralSharing: true,
   });
   const citationRequest = useMemo<AssistantCitationRequest | null>(() => {
     const citation = assistantCitationFromLocation(citationLocation.href);

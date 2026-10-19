@@ -72,6 +72,7 @@ import { ICON_BUTTON } from "./surface";
 import { AldoPlacePicker } from "./AldoPlacePicker";
 import { forgetAldoRepositories } from "./places";
 import { startAldoSandbox } from "./threads";
+import { useAfterPaint } from "../hooks/useAfterPaint";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import {
   boardFor,
@@ -144,7 +145,17 @@ function inField(target: EventTarget | null): boolean {
   );
 }
 
+/**
+ * The home screen. Coming home renders it once the click or key that came has
+ * painted, so the sidebar answers at once: an empty frame, then the page.
+ */
 export function AldoHome() {
+  const ready = useAfterPaint(true, false);
+  if (!ready) return <SidebarInset className="h-dvh bg-background" aria-busy />;
+  return <AldoHomeContent />;
+}
+
+function AldoHomeContent() {
   const { accounts, error: accountsError, refresh: refreshAccounts } = useAldoAccounts();
   const assistant = useAldoAssistantAvailable();
   const { home, supported, error } = useAldoHomeRead();

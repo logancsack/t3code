@@ -142,16 +142,31 @@ export function deriveProviderEntriesByEnvironment(
 ): ReadonlyMap<string, ReadonlyMap<string, ProviderInstanceEntry>> {
   const byEnvironment = new Map<string, ReadonlyMap<string, ProviderInstanceEntry>>();
   for (const [environmentId, providers] of providersByEnvironment) {
-    byEnvironment.set(
-      environmentId,
-      new Map(
-        deriveProviderInstanceEntries(providers).map(
-          (entry) => [entry.instanceId as string, entry] as const,
-        ),
-      ),
-    );
+    byEnvironment.set(environmentId, providerEntriesByInstanceId(providers));
   }
   return byEnvironment;
+}
+
+// One lookup per providers array: an environment whose config did not change
+// keeps its map, so what is memoized on it (every sidebar row) stays put when
+// another environment's config does.
+const providerEntriesByProviders = new WeakMap<
+  ReadonlyArray<ServerProvider>,
+  ReadonlyMap<string, ProviderInstanceEntry>
+>();
+
+function providerEntriesByInstanceId(
+  providers: ReadonlyArray<ServerProvider>,
+): ReadonlyMap<string, ProviderInstanceEntry> {
+  const known = providerEntriesByProviders.get(providers);
+  if (known !== undefined) return known;
+  const entries = new Map(
+    deriveProviderInstanceEntries(providers).map(
+      (entry) => [entry.instanceId as string, entry] as const,
+    ),
+  );
+  providerEntriesByProviders.set(providers, entries);
+  return entries;
 }
 
 /**
