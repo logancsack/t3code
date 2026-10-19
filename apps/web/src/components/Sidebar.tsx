@@ -70,6 +70,7 @@ import {
 import {
   memo,
   useCallback,
+  useDeferredValue,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -77,6 +78,7 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  type ComponentProps,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
@@ -198,6 +200,7 @@ import {
   sortLogicalProjectsForSidebar,
   sortPinnedThreadsForSidebar,
   sortThreadsForSidebar,
+  useKeyedValue,
   useRetainedValue,
   useSidebarRowSubscriptionLease,
   useThreadJumpHintVisibility,
@@ -356,6 +359,7 @@ function WorkingDuration(props: { startedAt: string | null }) {
 }
 
 const EMPTY_PROVIDER_ENTRIES: ReadonlyMap<string, ProviderInstanceEntry> = new Map();
+const EMPTY_DRAGGED_ORDER: readonly string[] = [];
 // Collapsed shelves share one empty list so a route change alone does not
 // give the sidebar list a new identity.
 const EMPTY_THREADS: readonly EnvironmentThreadShell[] = [];
@@ -560,14 +564,22 @@ type SortableThreadRowBag = Pick<
   "listeners" | "setNodeRef" | "transform" | "transition" | "isDragging"
 >;
 
-function SortableThreadRow(props: {
-  id: string;
-  disabled: boolean;
-  children: (bag: SortableThreadRowBag) => ReactNode;
+// Memoized on the row's own props, so a sidebar render that changes none of
+// them skips dnd-kit's per-row work: the list holds hundreds of these.
+const SortableThreadRow = memo(function SortableThreadRow({
+  sortableId,
+  sortableDisabled,
+  rowKey,
+  ...row
+}: Omit<ComponentProps<typeof SidebarThreadRow>, "sortable"> & {
+  sortableId: string;
+  sortableDisabled: boolean;
+  /** The row's own key: a card and a slim row fade between each other. */
+  rowKey: string;
 }) {
   const { listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: props.id,
-    disabled: { draggable: props.disabled },
+    id: sortableId,
+    disabled: { draggable: sortableDisabled },
     animateLayoutChanges: animateSidebarLayoutChanges,
   });
   // dnd-kit memoizes each field but not the bag, so the memoized row would
@@ -576,8 +588,8 @@ function SortableThreadRow(props: {
     () => ({ listeners, setNodeRef, transform, transition, isDragging }),
     [listeners, setNodeRef, transform, transition, isDragging],
   );
-  return props.children(bag);
-}
+  return <SidebarThreadRow key={rowKey} {...row} sortable={bag} />;
+});
 
 // Unsent work shares one look: the new-thread draft rows and thread rows
 // with unsent composer text both use this tint and pen so they read alike.
@@ -1074,7 +1086,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   // the user visits the thread.
   wokeAt: string | null;
   isActive: boolean;
-  openPullRequestsInRightPanel: boolean;
+  // Read on click: a boolean flipping on every trip between home and a
+  // thread re-rendered every row.
+  openPullRequestsInRightPanel: () => boolean;
   jumpLabel: string | null;
   currentEnvironmentId: string | null;
   environmentLabel: string | null;
@@ -1473,12 +1487,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     (event: ReactMouseEvent<HTMLElement>) => {
       const url = pr?.url ?? currentLinkedPr?.url;
       if (!url) return;
-      const openedInRightPanel = openPrLink(
-        event,
-        url,
-        openPullRequestsInRightPanel ? threadRef : undefined,
-      );
-      if (openedInRightPanel && openPullRequestsInRightPanel && !props.isActive) {
+      const inRightPanel = openPullRequestsInRightPanel();
+      const openedInRightPanel = openPrLink(event, url, inRightPanel ? threadRef : undefined);
+      if (openedInRightPanel && inRightPanel && !props.isActive) {
         onThreadActivate(threadRef);
       }
     },
@@ -2128,11 +2139,13 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
   resultId: string;
   searchMatch: EnvironmentThreadSearchMatch | null;
   searchQuery: string;
-  onHighlight: () => void;
-  onSelect: () => void;
+  index: number;
+  // Stable across renders, so a keystroke re-renders only the rows it changes.
+  onHighlight: (index: number) => void;
+  onSelect: (threadRef: ScopedThreadRef) => void;
   onFileDropThreads: (threadRef: ScopedThreadRef, files: File[]) => void;
 }) {
-  const { thread } = props;
+  const { index, onHighlight, onSelect, thread } = props;
   const accessibility = resolveSidebarRowAccessibility({
     title: thread.title,
     statusLabel: null,
@@ -2143,6 +2156,8 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
     () => scopeThreadRef(thread.environmentId, thread.id),
     [thread.environmentId, thread.id],
   );
+  const handleHighlight = useCallback(() => onHighlight(index), [index, onHighlight]);
+  const handleSelect = useCallback(() => onSelect(threadRef), [onSelect, threadRef]);
   const { leaseLiveStatus, rowRef } = useSidebarRowSubscriptionLease(
     props.isHighlighted || props.isRouteActive,
   );
@@ -2217,8 +2232,8 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
               aria-selected={props.isHighlighted}
               aria-current={accessibility.current}
               aria-label={accessibility.label}
-              onMouseMove={props.onHighlight}
-              onClick={props.onSelect}
+              onMouseMove={handleHighlight}
+              onClick={handleSelect}
               className={cn(
                 "flex min-h-9 w-full cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-1 text-left text-sm outline-none",
                 props.isHighlighted || props.isRouteActive
@@ -2284,6 +2299,10 @@ export default function Sidebar() {
   const workingShelfEnabled = useClientSettings((s) => s.sidebarWorkingShelfEnabled);
   const [threadSearchQuery, setThreadSearchQuery] = useState("");
   const isSearchingThreads = threadSearchQuery.trim().length > 0;
+  // Results follow the query in a background render, so typing never waits
+  // on hundreds of result rows.
+  const deferredThreadSearchQuery = useDeferredValue(threadSearchQuery);
+  const isThreadSearchStale = deferredThreadSearchQuery !== threadSearchQuery;
   // Aldo: search results keep their order while a search is open.
   const {
     order: aldoOrder,
@@ -2401,6 +2420,7 @@ export default function Sidebar() {
   // the command was in flight, completing it must not yank them away.
   const routeThreadKeyRef = useRef(routeThreadKey);
   routeThreadKeyRef.current = routeThreadKey;
+  const isThreadRouteOpen = useCallback(() => routeThreadKeyRef.current !== null, []);
 
   const environmentLabelById = useMemo(
     () =>
@@ -2831,10 +2851,10 @@ export default function Sidebar() {
     () =>
       searchSidebarThreads(
         searchableThreads,
-        threadSearchQuery,
+        deferredThreadSearchQuery,
         new Set(threadSearchMatchByKey.keys()),
       ),
-    [searchableThreads, threadSearchQuery, threadSearchMatchByKey],
+    [deferredThreadSearchQuery, searchableThreads, threadSearchMatchByKey],
   );
   const threadSearchResultOrderKey = threadSearchResults
     .map((thread) => scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)))
@@ -3134,9 +3154,9 @@ export default function Sidebar() {
     setActiveSearchResultIndex(0);
   }, []);
   const selectThreadSearchResult = useCallback(
-    (thread: EnvironmentThreadShell) => {
+    (threadRef: ScopedThreadRef) => {
       clearThreadSearch();
-      navigateToThread(scopeThreadRef(thread.environmentId, thread.id));
+      navigateToThread(threadRef);
     },
     [clearThreadSearch, navigateToThread],
   );
@@ -3167,7 +3187,7 @@ export default function Sidebar() {
       if (event.key === "Enter") {
         event.preventDefault();
         const result = threadSearchResults[activeSearchResultIndex];
-        if (result) selectThreadSearchResult(result);
+        if (result) selectThreadSearchResult(scopeThreadRef(result.environmentId, result.id));
       }
     },
     [
@@ -3390,13 +3410,13 @@ export default function Sidebar() {
   const cancelThreadDrag = useCallback(() => {
     dragSensorRef.current?.cancel();
   }, []);
-  const dndSensors = useSensors(
-    useSensor(SidebarPointerSensor, {
-      distance: 6,
-      onAttach: attachDragSensor,
-      onFinish: finishThreadDrag,
-    }),
+  // Stable options keep the sensors, and with them dnd-kit's internal
+  // context, from changing on every render: each change re-renders every row.
+  const dndSensorOptions = useMemo(
+    () => ({ distance: 6, onAttach: attachDragSensor, onFinish: finishThreadDrag }),
+    [attachDragSensor, finishThreadDrag],
   );
+  const dndSensors = useSensors(useSensor(SidebarPointerSensor, dndSensorOptions));
   const sectionByThreadKey = useMemo(() => {
     const map = new Map<string, SidebarSection>();
     const add = (list: readonly EnvironmentThreadShell[], section: SidebarSection) => {
@@ -3566,7 +3586,7 @@ export default function Sidebar() {
   );
   // Include every visible row in the measured order. Older servers disable
   // pickup on their rows without changing where those rows render.
-  const sidebarListItems = useMemo((): readonly SidebarListItem[] => {
+  const latestSidebarListItems = useMemo((): readonly SidebarListItem[] => {
     const rowsOf = (
       list: readonly EnvironmentThreadShell[],
       section: SidebarSection,
@@ -3615,6 +3635,19 @@ export default function Sidebar() {
     visibleWorkingThreads,
     workingThreads.length,
   ]);
+  // Every shell event rebuilds the list, but rows only move when the
+  // rendered order or a row's section changes. Keying the list (and the
+  // motion pass) on that keeps ordinary updates from re-rendering every
+  // sortable row, forcing a layout read and animating rows whose position
+  // drifted for other reasons.
+  const sidebarListOrderKey = useMemo(
+    () =>
+      latestSidebarListItems
+        .map((item) => (item.kind === "thread" ? `${item.key}:${item.section}` : item.marker))
+        .join("\0"),
+    [latestSidebarListItems],
+  );
+  const sidebarListItems = useKeyedValue(sidebarListOrderKey, latestSidebarListItems);
   useEffect(() => {
     if (
       dragState !== null &&
@@ -3624,19 +3657,11 @@ export default function Sidebar() {
     }
   }, [cancelThreadDrag, dragState, sidebarListItems]);
   const listMotionPaused = dragState !== null;
-  // Every shell event rebuilds sidebarListItems, but rows only move when the
-  // rendered order or a row's section changes. Keying the motion pass on that
-  // keeps ordinary updates from forcing a layout read and animating rows
-  // whose position drifted for other reasons.
-  const sidebarListOrderKey = useMemo(
-    () =>
-      sidebarListItems
-        .map((item) => (item.kind === "thread" ? `${item.key}:${item.section}` : item.marker))
-        .join("\0"),
-    [sidebarListItems],
-  );
   const sidebarListHasRows = sidebarListItems.length + visibleDraftSessionCount > 0;
   useLayoutEffect(() => {
+    // A hidden list (a search open) has no positions to take: rows glide from
+    // where they were before it once it shows again.
+    if (isSearchingThreads) return;
     // Drag release clears the baseline, so its commit cannot replay the
     // sortable preview; rows glide from their released positions instead.
     // Later thread actions can animate while writes settle.
@@ -3644,6 +3669,7 @@ export default function Sidebar() {
     void sidebarListOrderKey;
     listMotionRef.current?.update(!listMotionPaused && sidebarListHasRows);
   }, [
+    isSearchingThreads,
     listMotionPaused,
     routeDraftIdForRows,
     sidebarListHasRows,
@@ -3666,7 +3692,7 @@ export default function Sidebar() {
   const sortableIds = useMemo(() => sidebarListItems.map(sidebarListItemId), [sidebarListItems]);
   const draggedSettledOrder = useMemo(() => {
     const thread = dragState === null ? undefined : threadByKey.get(dragState.activeKey);
-    if (dragState === null || thread === undefined) return [];
+    if (dragState === null || thread === undefined) return EMPTY_DRAGGED_ORDER;
     const key = (candidate: EnvironmentThreadShell) =>
       scopedThreadKey(scopeThreadRef(candidate.environmentId, candidate.id));
     return sortSettledThreads([
@@ -3705,6 +3731,9 @@ export default function Sidebar() {
       applySidebarThreadDrop(thread, "pinned", dragState.occurredAt),
     ]).map(key);
   }, [aldoSort, dragState, pinnedThreads, threadByKey]);
+  // Only a drag's preview reads the route: tied to the strategy outside one,
+  // every navigation re-rendered every sortable row.
+  const dragRouteThreadKey = dragState === null ? null : routeThreadKey;
   const sidebarSortingStrategy = useMemo(
     () =>
       createSidebarSortingStrategy({
@@ -3715,14 +3744,14 @@ export default function Sidebar() {
         ...(draggedPinnedOrder === undefined ? {} : { pinnedOrder: draggedPinnedOrder }),
         settledExpanded: settledShelfExpanded,
         settledVisibleCount,
-        routeThreadKey,
+        routeThreadKey: dragRouteThreadKey,
         snoozedThreadCount: snoozedThreads.length,
       }),
     [
       draggedActiveOrder,
       draggedPinnedOrder,
+      dragRouteThreadKey,
       draggedSettledOrder,
-      routeThreadKey,
       settledShelfExpanded,
       settledVisibleCount,
       sidebarListItems,
@@ -4903,16 +4932,17 @@ export default function Sidebar() {
                             }),
                           ) ?? null
                         }
-                        searchQuery={threadSearchQuery}
-                        onHighlight={() => setActiveSearchResultIndex(index)}
-                        onSelect={() => selectThreadSearchResult(thread)}
+                        searchQuery={deferredThreadSearchQuery}
+                        index={index}
+                        onHighlight={setActiveSearchResultIndex}
+                        onSelect={selectThreadSearchResult}
                         onFileDropThreads={handleThreadFileDrop}
                       />
                     );
                   })}
                 </ul>
               </TooltipProvider>
-            ) : (
+            ) : isThreadSearchStale ? null : (
               <p
                 role="status"
                 className="px-2 py-6 text-center text-xs text-sidebar-muted-foreground"
@@ -4921,7 +4951,9 @@ export default function Sidebar() {
               </p>
             )
           ) : null}
-          {!isSearchingThreads ? (
+          {/* Hidden, not unmounted, while a search is open: closing the
+              search would otherwise mount every row again at once. */}
+          {
             <TooltipProvider
               key="sidebar-thread-tooltips-150"
               delay={150}
@@ -4944,6 +4976,7 @@ export default function Sidebar() {
                 <SortableContext items={sortableIds} strategy={sidebarSortingStrategy}>
                   <ul
                     ref={attachListMotionRef}
+                    hidden={isSearchingThreads}
                     {...(isAldoCloud ? aldoListProps : {})}
                     // VoiceOver treats an exposed list as an interaction boundary,
                     // which hides its rows from ordinary linear navigation. A
@@ -4956,10 +4989,9 @@ export default function Sidebar() {
                     )}
                   >
                     {(() => {
-                      const renderThreadRowInner = (
+                      const renderThreadRow = (
                         thread: EnvironmentThreadShell,
                         section: SidebarSection,
-                        sortable?: SortableThreadRowBag,
                       ) => {
                         const threadKey = scopedThreadKey(
                           scopeThreadRef(thread.environmentId, thread.id),
@@ -4973,10 +5005,18 @@ export default function Sidebar() {
                           section === "active" || section === "pinned" || section === "working";
                         const rowVariant = isCard ? "card" : "slim";
                         return (
-                          <SidebarThreadRow
+                          <SortableThreadRow
+                            key={threadKey}
+                            sortableId={threadKey}
+                            sortableDisabled={
+                              renamingThreadKey === threadKey ||
+                              section === "working" ||
+                              !draggableThreadKeys.has(threadKey) ||
+                              optimisticDrop !== null
+                            }
                             // Fade between card and compact rows while the outer
                             // sortable wrapper keeps its identity during a drag.
-                            key={`${threadKey}:${rowVariant}`}
+                            rowKey={`${threadKey}:${rowVariant}`}
                             thread={thread}
                             variant={rowVariant}
                             // Snoozed rows wake, settled rows un-settle, and cards settle.
@@ -5000,7 +5040,6 @@ export default function Sidebar() {
                                 .threadPinning === true
                             }
                             isPinned={thread.pinnedAt != null}
-                            sortable={sortable}
                             dropVerb={
                               dragState?.activeKey === threadKey
                                 ? resolveSidebarDropVerb(dragState.activeSection, dragTargetSection)
@@ -5022,7 +5061,7 @@ export default function Sidebar() {
                             // rows resolve to null on their own.
                             wokeAt={threadWokeAt(thread, { now: snoozeNow })}
                             isActive={routeThreadKey === threadKey}
-                            openPullRequestsInRightPanel={routeThreadRef !== null}
+                            openPullRequestsInRightPanel={isThreadRouteOpen}
                             jumpLabel={
                               showThreadJumpHints ? (jumpLabelByKey.get(threadKey) ?? null) : null
                             }
@@ -5066,28 +5105,6 @@ export default function Sidebar() {
                             onAcknowledgeWoke={acknowledgeWoke}
                             onFileDropThreads={handleThreadFileDrop}
                           />
-                        );
-                      };
-                      const renderThreadRow = (
-                        thread: EnvironmentThreadShell,
-                        section: SidebarSection,
-                      ) => {
-                        const threadKey = scopedThreadKey(
-                          scopeThreadRef(thread.environmentId, thread.id),
-                        );
-                        return (
-                          <SortableThreadRow
-                            key={threadKey}
-                            id={threadKey}
-                            disabled={
-                              renamingThreadKey === threadKey ||
-                              section === "working" ||
-                              !draggableThreadKeys.has(threadKey) ||
-                              optimisticDrop !== null
-                            }
-                          >
-                            {(bag) => renderThreadRowInner(thread, section, bag)}
-                          </SortableThreadRow>
                         );
                       };
                       const from = dragState?.activeSection ?? null;
@@ -5243,7 +5260,7 @@ export default function Sidebar() {
                 </SortableContext>
               </DndContext>
             </TooltipProvider>
-          ) : null}
+          }
           {!isSearchingThreads &&
           visibleDraftSessionCount === 0 &&
           pinnedThreads.length +

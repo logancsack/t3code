@@ -1,0 +1,68 @@
+diff --git a/dist/core.cjs.development.js b/dist/core.cjs.development.js
+index d32e86caa11de9c8d9e654552c6e3c7f067d4809..6d6435db2a99331ed257390828e3fc281b9e6539 100644
+--- a/dist/core.cjs.development.js
++++ b/dist/core.cjs.development.js
+@@ -1914,6 +1914,20 @@ function useScrollIntent(_ref2) {
+   }, [disabled, delta, previousDelta]);
+ }
+ 
++// Patched (t3code): the previous transform while its values are unchanged.
++// A new object on every render changed ActiveDraggableContext each time, so
++// React re-walked every bailed-out subtree below the provider for consumers.
++function useStableTransform(transform) {
++  const kept = React.useRef(transform);
++  const previous = kept.current;
++
++  if (previous.x !== transform.x || previous.y !== transform.y || previous.scaleX !== transform.scaleX || previous.scaleY !== transform.scaleY) {
++    kept.current = transform;
++  }
++
++  return kept.current;
++}
++
+ function useCachedNode(draggableNodes, id) {
+   const draggableNode = id != null ? draggableNodes.get(id) : undefined;
+   const node = draggableNode ? draggableNode.node.current : null;
+@@ -2991,7 +3005,7 @@ const DndContext = /*#__PURE__*/React.memo(function DndContext(_ref) {
+   // window scroll delta
+ 
+   const appliedTranslate = usesDragOverlay ? modifiedTranslate : utilities.add(modifiedTranslate, activeNodeScrollDelta);
+-  const transform = adjustScale(appliedTranslate, (_over$rect = over == null ? void 0 : over.rect) != null ? _over$rect : null, activeNodeRect);
++  const transform = useStableTransform(adjustScale(appliedTranslate, (_over$rect = over == null ? void 0 : over.rect) != null ? _over$rect : null, activeNodeRect));
+   const activeSensorRef = React.useRef(null);
+   const instantiateSensor = React.useCallback((event, _ref2) => {
+     let {
+diff --git a/dist/core.esm.js b/dist/core.esm.js
+index 3cc765e96338bfac3d3d8ee540925833513af367..854f99988dd42ad5d4d96c080f0059d5bd2e64ce 100644
+--- a/dist/core.esm.js
++++ b/dist/core.esm.js
+@@ -1913,6 +1913,20 @@ function useScrollIntent(_ref2) {
+   }, [disabled, delta, previousDelta]);
+ }
+ 
++// Patched (t3code): the previous transform while its values are unchanged.
++// A new object on every render changed ActiveDraggableContext each time, so
++// React re-walked every bailed-out subtree below the provider for consumers.
++function useStableTransform(transform) {
++  const kept = useRef(transform);
++  const previous = kept.current;
++
++  if (previous.x !== transform.x || previous.y !== transform.y || previous.scaleX !== transform.scaleX || previous.scaleY !== transform.scaleY) {
++    kept.current = transform;
++  }
++
++  return kept.current;
++}
++
+ function useCachedNode(draggableNodes, id) {
+   const draggableNode = id != null ? draggableNodes.get(id) : undefined;
+   const node = draggableNode ? draggableNode.node.current : null;
+@@ -2994,7 +3008,7 @@ const DndContext = /*#__PURE__*/memo(function DndContext(_ref) {
+   // window scroll delta
+ 
+   const appliedTranslate = usesDragOverlay ? modifiedTranslate : add(modifiedTranslate, activeNodeScrollDelta);
+-  const transform = adjustScale(appliedTranslate, (_over$rect = over == null ? void 0 : over.rect) != null ? _over$rect : null, activeNodeRect);
++  const transform = useStableTransform(adjustScale(appliedTranslate, (_over$rect = over == null ? void 0 : over.rect) != null ? _over$rect : null, activeNodeRect));
+   const activeSensorRef = useRef(null);
+   const instantiateSensor = useCallback((event, _ref2) => {
+     let {

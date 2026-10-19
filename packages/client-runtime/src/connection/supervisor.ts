@@ -671,6 +671,23 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
     ),
   );
 
+  // A dormant environment (an asleep cloud machine) is still asleep when the
+  // app comes back to the foreground or the network changes: only the platform
+  // knows when it's up, and it says so with retryNow (or connect/disconnect).
+  // Retrying every dormant one on each activation asked the platform once per
+  // sleeping machine and re-presented each of them twice, which re-rendered
+  // everything that lists environments hundreds of times per return to the app.
+  const waitForPlatformSignal = Effect.gen(function* () {
+    for (;;) {
+      const next = yield* Queue.take(signals);
+      if (next._tag === "NetworkChanged") continue;
+      if (next._tag === "Wakeup" && ConnectionWakeups.isApplicationActiveWakeup(next.reason)) {
+        continue;
+      }
+      return;
+    }
+  });
+
   const run = Effect.fnUntraced(function* () {
     let failureCount = 0;
     let generation = 0;
@@ -748,6 +765,10 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
           lastFailure: error,
           retryAt: null,
         });
+        if (error.reason === "dormant") {
+          yield* waitForPlatformSignal;
+          continue;
+        }
         const applicationActivated = yield* waitForSignal;
         if (applicationActivated) {
           resetRetryLadder();

@@ -61,9 +61,13 @@ export function useAldoSidebarOrder(options: { readonly hold?: boolean } = {}) {
     isAldoCloud ? readHeld : readNone,
     readNone,
   );
-  const [hovering, setHovering] = useState(false);
-  const [pressed, setPressed] = useState(false);
-  const holding = hovering || pressed || options.hold === true;
+  // The pointer's hold lives in refs: entering, pressing or leaving the list
+  // re-renders nothing (a sidebar render walks every row), unless rows were
+  // kept from moving while it held, when its end bumps `released` to move them.
+  const pointer = useRef({ hovering: false, pressed: false });
+  const kept = useRef(false);
+  const [released, setReleased] = useState(0);
+  const hold = options.hold === true;
   const shown = useRef(new Map<AldoSidebarSection, readonly string[]>());
 
   /** The order alone, as a drop will land in it (a drag's preview). */
@@ -75,36 +79,53 @@ export function useAldoSidebarOrder(options: { readonly hold?: boolean } = {}) {
     [held],
   );
 
-  /** A section's threads in order, rows on screen kept in place while the list is held. */
+  /**
+   * A section's threads in order, rows on screen kept in place while the list
+   * is held. `released` makes a new function for each release, so the sidebar
+   * orders again.
+   */
   const order = useCallback(
     <T extends AldoSidebarOrderInput>(section: AldoSidebarSection, threads: readonly T[]): T[] => {
       const sorted = sort(threads);
       const previous = shown.current.get(section);
+      const holding = hold || pointer.current.hovering || pointer.current.pressed;
       const result = holding && previous ? holdAldoSidebarOrder(previous, sorted, keyOf) : sorted;
+      if (!hold && result.some((thread, index) => thread !== sorted[index])) kept.current = true;
       shown.current.set(section, result.map(keyOf));
       return result;
     },
-    [holding, sort],
+    // oxlint-disable-next-line react/memo-dependencies
+    [hold, released, sort],
   );
 
-  const listProps = useMemo(
-    () => ({
-      onPointerEnter: () => setHovering(true),
-      onPointerLeave: () => setHovering(false),
+  const listProps = useMemo(() => {
+    const settle = () => {
+      if (pointer.current.hovering || pointer.current.pressed || !kept.current) return;
+      kept.current = false;
+      setReleased((count) => count + 1);
+    };
+    return {
+      onPointerEnter: () => {
+        pointer.current.hovering = true;
+      },
+      onPointerLeave: () => {
+        pointer.current.hovering = false;
+        settle();
+      },
       // Held until the press ends, wherever that is: a drag can leave the list.
       onPointerDown: () => {
-        setPressed(true);
+        pointer.current.pressed = true;
         const release = () => {
-          setPressed(false);
+          pointer.current.pressed = false;
           window.removeEventListener("pointerup", release, true);
           window.removeEventListener("pointercancel", release, true);
+          settle();
         };
         window.addEventListener("pointerup", release, true);
         window.addEventListener("pointercancel", release, true);
       },
-    }),
-    [],
-  );
+    };
+  }, []);
 
   return { order, sort, listProps };
 }

@@ -257,6 +257,7 @@ patchedDependencies:
   react-native-nitro-modules@0.35.9: patches/react-native-nitro-modules@0.35.9.patch
   react-native-screens@4.28.0: patches/react-native-screens@4.28.0.patch
   uniwind@1.11.0: patches/uniwind@1.11.0.patch
+  "@dnd-kit/core@6.3.1": patches/@dnd-kit__core@6.3.1.patch
 
 peerDependencyRules:
   allowAny:
