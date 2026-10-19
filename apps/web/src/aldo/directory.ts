@@ -589,7 +589,8 @@ function takeSharedRead(read: Partial<SharedRead> | null): void {
   // A read of this tab's own under way answers for it.
   if (pageHidden() || reading || typeof startedAt !== "number" || startedAt <= listingFrom) return;
   if (!Array.isArray(read?.body?.environments)) return;
-  lastFetchAt = Date.now() + SHARED_READ_SLACK_MS;
+  // Not while this tab has its first view to tell Aldo: its own read, on time, says it.
+  if (firstViewMs === null) lastFetchAt = Date.now() + SHARED_READ_SLACK_MS;
   listingFrom = startedAt;
   failedFetches = 0;
   retryAt = 0;

@@ -190,3 +190,27 @@ it.live("tells Aldo how long the first view took with the next read, once", () =
     expect(header(2)).toBeNull();
   }),
 );
+
+it.live("a tab taking another's reads still makes its own once, to tell its first view", () =>
+  Effect.gen(function* () {
+    const { api, tabs, fetch } = yield* directory;
+    api.noteAldoFirstView(640);
+    for (let read = 1; read <= 2; read++) {
+      yield* wait(10_000);
+      tabs.send({ startedAt: now(), body: { environments: [machine("aldo-a")] } });
+    }
+    // Its own read went on time, with the first view, while it took the other's.
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(
+      new Headers((fetch.mock.calls[1] as unknown as [string, RequestInit])[1].headers).get(
+        "x-aldo-first-view",
+      ),
+    ).toBe("640");
+    // Then it takes them as its own again.
+    for (let read = 1; read <= 3; read++) {
+      yield* wait(14_000);
+      tabs.send({ startedAt: now(), body: { environments: [machine("aldo-a")] } });
+    }
+    expect(fetch).toHaveBeenCalledTimes(2);
+  }),
+);
