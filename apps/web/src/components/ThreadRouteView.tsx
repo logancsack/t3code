@@ -1,7 +1,7 @@
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
-import { useDeferredValue, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
 import ChatView from "./ChatView";
 import { resolveDraftPromotionNavigationTarget, threadHasStarted } from "./ChatView.logic";
@@ -30,6 +30,7 @@ import {
   type ThreadRouteTarget,
 } from "../threadRoutes";
 import { resolveThreadSyncPhase } from "../threadSync";
+import { useAfterPaint } from "../hooks/useAfterPaint";
 
 /**
  * The single chat surface behind both `/draft/$draftId` and
@@ -45,12 +46,12 @@ import { resolveThreadSyncPhase } from "../threadSync";
  * an element only survives a route swap when the same parent renders it.
  */
 export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
-  // Opening a server thread renders it without holding up the click or key
-  // that opened it, so the sidebar answers at once: the thread on screen
-  // stays, inert, until the next one is ready, and one opened from elsewhere
-  // starts from an empty frame. Drafts, and a draft's swap to its thread,
-  // render at once, keeping one ChatView across the swap.
-  const deferredTarget = useDeferredValue<ThreadRouteTarget | null>(target, null);
+  // Opening a server thread renders it once the click or key that opened it
+  // has painted, so the sidebar answers at once: the thread on screen stays,
+  // inert, until the next one is ready, and one opened from elsewhere starts
+  // from an empty frame. Drafts, and a draft's swap to its thread, render at
+  // once, keeping one ChatView across the swap.
+  const deferredTarget = useAfterPaint(target, null, sameThreadRouteTarget);
   const shownTarget =
     target.kind === "server" && deferredTarget?.kind !== "draft" ? deferredTarget : target;
   const stale = shownTarget !== null && !sameThreadRouteTarget(shownTarget, target);

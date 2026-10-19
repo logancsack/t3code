@@ -82,6 +82,67 @@ function useAldoRepositories(
   return repositories;
 }
 
+type PlacesInputs = {
+  readonly machines: ReadonlyArray<AldoEnvironment>;
+  readonly projects: ReturnType<typeof useProjects>;
+  readonly threads: ReturnType<typeof useThreadShells>;
+  readonly primaryEnvironmentId: ReturnType<typeof usePrimaryEnvironmentId>;
+  readonly groupingSettings: ReturnType<typeof selectProjectGroupingSettings>;
+  readonly repositories: ReadonlyArray<SourceControlRepositorySummary> | null;
+};
+
+let lastPlaces: {
+  readonly inputs: PlacesInputs;
+  readonly places: ReadonlyArray<AldoPickedPlace>;
+} | null = null;
+
+/**
+ * The places from what they're made of, made once for the same inputs: a
+ * thread's header has several pickers, and each grouped every project again.
+ */
+function sharedPlaces(inputs: PlacesInputs): ReadonlyArray<AldoPickedPlace> {
+  const last = lastPlaces;
+  if (
+    last &&
+    (Object.keys(inputs) as Array<keyof PlacesInputs>).every(
+      (key) => last.inputs[key] === inputs[key],
+    )
+  ) {
+    return last.places;
+  }
+  const { machines, projects, threads, primaryEnvironmentId, groupingSettings, repositories } =
+    inputs;
+  const groups = buildSidebarProjectSnapshots({
+    projects,
+    settings: groupingSettings,
+    primaryEnvironmentId,
+    resolveEnvironmentLabel: () => null,
+  });
+  const activity = new Map<string, string>();
+  for (const thread of threads) {
+    if (thread.archivedAt !== null) continue;
+    const known = activity.get(thread.environmentId);
+    if (!known || thread.updatedAt > known) activity.set(thread.environmentId, thread.updatedAt);
+  }
+  const places = buildAldoPlaces<ProjectFaviconProject>({
+    machines: machines.map((machine) => ({
+      environmentId: machine.environmentId,
+      repos: (machine.repos ?? [machine.repo]).filter((ref) => ref.length > 0),
+    })),
+    groups: groups.map((group) => ({
+      name: group.displayName,
+      project: group,
+      environmentIds: group.memberProjectRefs.map((ref) => ref.environmentId),
+    })),
+    activity,
+    aldoProjects: (repositories ?? [])
+      .filter((repo) => repo.nameWithOwner.startsWith("aldo:"))
+      .map((repo) => ({ ref: repo.nameWithOwner, name: repo.name })),
+  });
+  lastPlaces = { inputs, places };
+  return places;
+}
+
 /**
  * The user's projects as places (General isn't among them), with Aldo's own
  * from the repository directory once it's in (`withDirectory`).
@@ -96,35 +157,18 @@ export function useAldoPlaces(withDirectory: boolean): {
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const groupingSettings = useClientSettings(selectProjectGroupingSettings);
   const repositories = useAldoRepositories(withDirectory);
-  const places = useMemo(() => {
-    const groups = buildSidebarProjectSnapshots({
-      projects,
-      settings: groupingSettings,
-      primaryEnvironmentId,
-      resolveEnvironmentLabel: () => null,
-    });
-    const activity = new Map<string, string>();
-    for (const thread of threads) {
-      if (thread.archivedAt !== null) continue;
-      const known = activity.get(thread.environmentId);
-      if (!known || thread.updatedAt > known) activity.set(thread.environmentId, thread.updatedAt);
-    }
-    return buildAldoPlaces<ProjectFaviconProject>({
-      machines: machines.map((machine) => ({
-        environmentId: machine.environmentId,
-        repos: (machine.repos ?? [machine.repo]).filter((ref) => ref.length > 0),
-      })),
-      groups: groups.map((group) => ({
-        name: group.displayName,
-        project: group,
-        environmentIds: group.memberProjectRefs.map((ref) => ref.environmentId),
-      })),
-      activity,
-      aldoProjects: (repositories ?? [])
-        .filter((repo) => repo.nameWithOwner.startsWith("aldo:"))
-        .map((repo) => ({ ref: repo.nameWithOwner, name: repo.name })),
-    });
-  }, [groupingSettings, machines, primaryEnvironmentId, projects, repositories, threads]);
+  const places = useMemo(
+    () =>
+      sharedPlaces({
+        machines,
+        projects,
+        threads,
+        primaryEnvironmentId,
+        groupingSettings,
+        repositories,
+      }),
+    [groupingSettings, machines, primaryEnvironmentId, projects, repositories, threads],
+  );
   return { places, repositories };
 }
 
