@@ -79,6 +79,7 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Fiber from "effect/Fiber";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
@@ -267,6 +268,12 @@ interface ClaudeTurnState {
    * steered instead (the queued message continues the same turn).
    */
   readonly synthetic?: boolean;
+  /**
+   * For a synthetic turn opened when the CLI named a steer its turn ended
+   * before taking: that steer, its rollback boundary until the turn's first
+   * assistant message replaces it, as for any synthetic turn.
+   */
+  queuedSteerId?: string | undefined;
   readonly assistantTextBlocks: Map<number, AssistantTextBlockState>;
   readonly assistantTextBlockOrder: Array<AssistantTextBlockState>;
   readonly capturedProposedPlanKeys: Set<string>;
@@ -464,6 +471,19 @@ interface ClaudeSessionContext {
   announcedUsageLimits: { turnId: string; keys: Set<string> } | undefined;
   /** Resolved by completeTurn while Stop waits for Claude to abort the turn. */
   interruptedTurnSettled: Deferred.Deferred<void> | undefined;
+  /**
+   * Prompts sent (a new turn's or a steer) that no frame from the CLI has
+   * named yet, keyed by their uuid. Until one does, the prompt may not be in
+   * the transcript, and stopping the CLI loses it. Resolved when a frame names
+   * it, the CLI completes or cancels it, the session stops, or (a new turn's)
+   * its turn completes; a stopping server waits for them.
+   */
+  readonly unacknowledgedPrompts: Map<string, Deferred.Deferred<void>>;
+  /**
+   * Whether the CLI lists every prompt a request took (`user_message_uuids`),
+   * steers included. Older CLIs name none, or only the turn's own.
+   */
+  promptsNamed: boolean;
   stopped: boolean;
 }
 
@@ -1717,6 +1737,25 @@ function isOverloadedResult(result: SDKResultMessage): boolean {
 }
 
 /**
+ * The prompt uuids a frame answers. Newer CLIs name them on every frame of a
+ * request, from the turn's `system/init` on, and by then the prompt is queued
+ * for the transcript, which the CLI writes even when it is stopped (SIGTERM).
+ * Stopped before that (at `command_lifecycle` "started"), it loses the prompt.
+ */
+function echoedPromptIds(message: SDKMessage): ReadonlyArray<string> {
+  const echoed = message as {
+    readonly user_message_uuid?: unknown;
+    readonly user_message_uuids?: unknown;
+  };
+  return [
+    ...(Array.isArray(echoed.user_message_uuids)
+      ? echoed.user_message_uuids.filter((id): id is string => typeof id === "string")
+      : []),
+    ...(typeof echoed.user_message_uuid === "string" ? [echoed.user_message_uuid] : []),
+  ];
+}
+
+/**
  * True when a result answers a different Claude turn than the active real
  * turn. Claude runs turns of its own between user prompts (a resumed session
  * first reports background tasks the previous process left behind; peer
@@ -1729,10 +1768,7 @@ function isOverloadedResult(result: SDKResultMessage): boolean {
 function isResultForOtherTurn(result: SDKResultMessage, turn: ClaudeTurnState): boolean {
   // A synthetic turn mirrors a Claude-initiated turn, so any result is its own.
   if (turn.synthetic) return false;
-  const echoed = [
-    ...(result.user_message_uuids ?? []),
-    ...(result.user_message_uuid ? [result.user_message_uuid] : []),
-  ];
+  const echoed = echoedPromptIds(result);
   if (echoed.length > 0) return !echoed.includes(turn.turnId);
   return result.origin !== undefined && result.origin.kind !== "human";
 }
@@ -2716,6 +2752,21 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     });
   });
 
+  // Stop waiting for a prompt: the CLI has it, or its turn or session ended.
+  const settlePrompt = (context: ClaudeSessionContext, promptId: string) =>
+    Effect.suspend(() => {
+      const acknowledged = context.unacknowledgedPrompts.get(promptId);
+      if (acknowledged === undefined) return Effect.void;
+      context.unacknowledgedPrompts.delete(promptId);
+      return Deferred.succeed(acknowledged, undefined).pipe(Effect.asVoid);
+    });
+  const settlePrompts = (context: ClaudeSessionContext) =>
+    Effect.forEach(
+      Array.from(context.unacknowledgedPrompts.keys()),
+      (promptId) => settlePrompt(context, promptId),
+      { discard: true },
+    );
+
   const completeTurn = Effect.fn("completeTurn")(function* (
     context: ClaudeSessionContext,
     status: ProviderRuntimeTurnStatus,
@@ -2898,6 +2949,10 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
 
     const updatedAt = yield* nowIso;
     context.turnState = undefined;
+    // Its own prompt, which older CLIs never name. A steer into it is left
+    // waiting: one sent as it ended is still queued, to run as the next turn.
+    // Older CLIs don't list the steers they take, so theirs go with the turn.
+    yield* context.promptsNamed ? settlePrompt(context, turnState.turnId) : settlePrompts(context);
     if (context.interruptedTurnSettled) {
       yield* Deferred.succeed(context.interruptedTurnSettled, undefined);
     }
@@ -3390,6 +3445,67 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     }
   });
 
+  /**
+   * Opens a turn Claude runs without a sendTurn: background agent responses
+   * between user prompts, or a steer its turn ended before taking, which the
+   * CLI runs next. Its rollback boundary is its first assistant message; a
+   * steer's turn holds the steer there until one comes.
+   */
+  const startSyntheticTurn = Effect.fn("startSyntheticTurn")(function* (
+    context: ClaudeSessionContext,
+    start: { readonly assistantMessageId: string } | { readonly queuedSteerId: string },
+  ) {
+    const turnId = TurnId.make(yield* randomUUIDv4);
+    const startedAt = yield* nowIso;
+    context.turnStartMessageIds.push(
+      "assistantMessageId" in start ? start.assistantMessageId : start.queuedSteerId,
+    );
+    context.turnState = {
+      turnId,
+      startedAt,
+      synthetic: true,
+      queuedSteerId: "queuedSteerId" in start ? start.queuedSteerId : undefined,
+      assistantTextBlocks: new Map(),
+      assistantTextBlockOrder: [],
+      capturedProposedPlanKeys: new Set(),
+      latestAssistantUsage: undefined,
+      compactedSinceLatestAssistantUsage: false,
+      hasSubagents: false,
+      nextSyntheticAssistantBlockIndex: -1,
+      authenticationFailureMessage: undefined,
+      rejectedRateLimitTypes: new Set(),
+      latestAssistantRateLimited: false,
+      emittedThinkingText: false,
+      thinkingSnapshotIds: new Set(),
+    };
+    context.session = {
+      ...context.session,
+      status: "running",
+      activeTurnId: turnId,
+      updatedAt: startedAt,
+    };
+    yield* updateResumeCursor(context);
+    const turnStartedStamp = yield* makeEventStamp();
+    yield* offerRuntimeEvent({
+      type: "turn.started",
+      eventId: turnStartedStamp.eventId,
+      provider: PROVIDER,
+      createdAt: turnStartedStamp.createdAt,
+      threadId: context.session.threadId,
+      turnId,
+      payload: {},
+      providerRefs: {
+        ...nativeProviderRefs(context),
+        providerTurnId: turnId,
+      },
+      raw: {
+        source: "claude.sdk.message",
+        method: "claude/synthetic-turn-start",
+        payload: {},
+      },
+    });
+  });
+
   const handleAssistantMessage = Effect.fn("handleAssistantMessage")(function* (
     context: ClaudeSessionContext,
     message: SDKMessage,
@@ -3485,52 +3601,13 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     // Auto-start a synthetic turn for assistant messages that arrive without
     // an active turn (e.g., background agent/subagent responses between user prompts).
     if (!context.turnState) {
-      const turnId = TurnId.make(yield* randomUUIDv4);
-      const startedAt = yield* nowIso;
-      context.turnStartMessageIds.push(message.uuid);
-      context.turnState = {
-        turnId,
-        startedAt,
-        synthetic: true,
-        assistantTextBlocks: new Map(),
-        assistantTextBlockOrder: [],
-        capturedProposedPlanKeys: new Set(),
-        latestAssistantUsage: undefined,
-        compactedSinceLatestAssistantUsage: false,
-        hasSubagents: false,
-        nextSyntheticAssistantBlockIndex: -1,
-        authenticationFailureMessage: undefined,
-        rejectedRateLimitTypes: new Set(),
-        latestAssistantRateLimited: false,
-        emittedThinkingText: false,
-        thinkingSnapshotIds: new Set(),
-      };
-      context.session = {
-        ...context.session,
-        status: "running",
-        activeTurnId: turnId,
-        updatedAt: startedAt,
-      };
-      yield* updateResumeCursor(context);
-      const turnStartedStamp = yield* makeEventStamp();
-      yield* offerRuntimeEvent({
-        type: "turn.started",
-        eventId: turnStartedStamp.eventId,
-        provider: PROVIDER,
-        createdAt: turnStartedStamp.createdAt,
-        threadId: context.session.threadId,
-        turnId,
-        payload: {},
-        providerRefs: {
-          ...nativeProviderRefs(context),
-          providerTurnId: turnId,
-        },
-        raw: {
-          source: "claude.sdk.message",
-          method: "claude/synthetic-turn-start",
-          payload: {},
-        },
-      });
+      yield* startSyntheticTurn(context, { assistantMessageId: message.uuid });
+    } else if (context.turnState.queuedSteerId !== undefined) {
+      const boundary = context.turnStartMessageIds.length - 1;
+      if (context.turnStartMessageIds[boundary] === context.turnState.queuedSteerId) {
+        context.turnStartMessageIds[boundary] = message.uuid;
+      }
+      context.turnState.queuedSteerId = undefined;
     }
 
     const content = message.message?.content;
@@ -4288,9 +4365,32 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     yield* logNativeSdkMessage(context, message);
     yield* ensureThreadId(context, message);
 
-    // Wire-only command bookkeeping has no user-facing T3 lifecycle.
+    // Wire-only command bookkeeping has no user-facing T3 lifecycle. A prompt
+    // the CLI completed or cancelled is no longer one it could lose.
     if (sdkMessageType(message) === "command_lifecycle") {
+      const command = message as { readonly command_uuid?: unknown; readonly state?: unknown };
+      if (
+        typeof command.command_uuid === "string" &&
+        (command.state === "completed" || command.state === "cancelled")
+      ) {
+        yield* settlePrompt(context, command.command_uuid);
+      }
       return;
+    }
+
+    const namedPromptIds = echoedPromptIds(message);
+    const listed = (message as { readonly user_message_uuids?: unknown }).user_message_uuids;
+    if (Array.isArray(listed) && listed.length > 0) context.promptsNamed = true;
+    for (const promptId of namedPromptIds) {
+      if (!context.unacknowledgedPrompts.has(promptId)) continue;
+      // Waiting with no turn under way, it's a steer its turn ended before
+      // taking, which the CLI now runs as a turn of its own. Open that turn
+      // here, not at its first reply, so the thread doesn't read as idle (and
+      // safe to restart) while Claude works on it.
+      if (context.turnState === undefined) {
+        yield* startSyntheticTurn(context, { queuedSteerId: promptId });
+      }
+      yield* settlePrompt(context, promptId);
     }
 
     switch (message.type) {
@@ -4418,6 +4518,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     });
 
     context.stopped = true;
+    yield* settlePrompts(context);
 
     for (const taskId of Array.from(context.liveTaskIds)) {
       if (!context.liveTaskIds.delete(taskId)) {
@@ -5199,6 +5300,8 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         lastThreadStartedId: undefined,
         announcedUsageLimits: undefined,
         interruptedTurnSettled: undefined,
+        unacknowledgedPrompts: new Map(),
+        promptsNamed: false,
         stopped: false,
       };
       yield* Ref.set(contextRef, context);
@@ -5410,13 +5513,17 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
 
     if (steeringTurnState === null) context.turnStartMessageIds.push(turnId);
     yield* updateResumeCursor(context);
+    // Every prompt carries a uuid, so the CLI can name it once it has it: a
+    // new turn's is its turn id (its rollback boundary), a steer's its own.
+    const promptId = steeringTurnState === null ? turnId : yield* randomUUIDv4;
+    context.unacknowledgedPrompts.set(promptId, yield* Deferred.make<void>());
     yield* Queue.offer(context.promptQueue, {
       type: "message",
-      message:
-        steeringTurnState === null
-          ? { ...message, uuid: turnId as NonNullable<SDKUserMessage["uuid"]> }
-          : message,
-    }).pipe(Effect.mapError((cause) => toRequestError(input.threadId, "turn/start", cause)));
+      message: { ...message, uuid: promptId as NonNullable<SDKUserMessage["uuid"]> },
+    }).pipe(
+      Effect.onError(() => settlePrompt(context, promptId)),
+      Effect.mapError((cause) => toRequestError(input.threadId, "turn/start", cause)),
+    );
 
     return {
       threadId: context.session.threadId,
@@ -5714,8 +5821,28 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     }
   });
 
+  // Only a stopping server stops all, once it marked the running turns to
+  // continue. A prompt the CLI hasn't taken yet would be lost from Claude's
+  // history, and its turn continued without it, so wait for those first, up
+  // to `shutdownDrainMs`.
   const stopAll: ClaudeAdapterShape["stopAll"] = () =>
-    stopSessions(Array.from(sessions.values()), true);
+    Effect.gen(function* () {
+      const unacknowledged = Array.from(sessions.values()).flatMap((context) =>
+        Array.from(context.unacknowledgedPrompts.values()),
+      );
+      const drainMs = serverConfig.shutdownDrainMs ?? 0;
+      if (unacknowledged.length > 0 && drainMs > 0) {
+        const taken = yield* Effect.forEach(unacknowledged, Deferred.await, {
+          discard: true,
+        }).pipe(Effect.timeoutOption(drainMs));
+        if (Option.isNone(taken)) {
+          yield* Effect.logWarning("stopping Claude before it took every prompt sent to it", {
+            prompts: unacknowledged.length,
+          });
+        }
+      }
+      yield* stopSessions(Array.from(sessions.values()), true);
+    });
 
   yield* Effect.addFinalizer(() =>
     stopSessions(Array.from(sessions.values()), false).pipe(

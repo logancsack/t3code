@@ -176,6 +176,7 @@ function makeHarness(config?: {
   readonly environment?: ClaudeAdapterLiveOptions["environment"];
   readonly getSessionMessages?: ClaudeAdapterLiveOptions["getSessionMessages"];
   readonly forkSession?: ClaudeAdapterLiveOptions["forkSession"];
+  readonly shutdownDrainMs?: number;
 }) {
   const query = new FakeClaudeQuery();
   const queries = [query];
@@ -222,9 +223,19 @@ function makeHarness(config?: {
       }),
     ).pipe(
       Layer.provideMerge(
-        ServerConfig.layerTest(
-          config?.cwd ?? "/tmp/claude-adapter-test",
-          config?.baseDir ?? "/tmp",
+        Layer.effect(
+          ServerConfig,
+          Effect.map(ServerConfig, (serverConfig) => ({
+            ...serverConfig,
+            shutdownDrainMs: config?.shutdownDrainMs,
+          })),
+        ).pipe(
+          Layer.provide(
+            ServerConfig.layerTest(
+              config?.cwd ?? "/tmp/claude-adapter-test",
+              config?.baseDir ?? "/tmp",
+            ),
+          ),
         ),
       ),
       Layer.provideMerge(ServerSettingsService.layerTest()),
@@ -3668,6 +3679,372 @@ describe("ClaudeAdapterLive", () => {
       Effect.provide(layer),
     );
   });
+
+  it.effect("stopAll waits for the CLI to take a new turn's prompt before closing", () => {
+    const harness = makeHarness({ shutdownDrainMs: 5_000 });
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+      const turn = yield* adapter.sendTurn({
+        threadId: session.threadId,
+        input: "hello",
+        attachments: [],
+      });
+
+      const stopping = yield* adapter.stopAll().pipe(Effect.forkChild);
+      yield* TestClock.adjust("4 seconds");
+      assert.equal(harness.query.closeCalls, 0);
+
+      // The CLI names the prompt on every frame of its request, from the
+      // turn's init on; by then the prompt is queued for the transcript.
+      harness.query.emit({
+        type: "system",
+        subtype: "status",
+        status: "requesting",
+        user_message_uuids: [turn.turnId],
+        session_id: "sdk-session-1",
+        uuid: "status-requesting",
+      } as unknown as SDKMessage);
+      yield* Fiber.join(stopping);
+      assert.equal(harness.query.closeCalls, 1);
+      assert.equal(yield* adapter.hasSession(session.threadId), false);
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("stopAll waits for the CLI to take a steer into the running turn", () => {
+    const harness = makeHarness({ shutdownDrainMs: 5_000 });
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+      const turn = yield* adapter.sendTurn({
+        threadId: session.threadId,
+        input: "run the tests",
+        attachments: [],
+      });
+      harness.query.emit({
+        type: "system",
+        subtype: "status",
+        status: "requesting",
+        user_message_uuids: [turn.turnId],
+        session_id: "sdk-session-1",
+        uuid: "status-requesting-1",
+      } as unknown as SDKMessage);
+      const steer = yield* adapter.sendTurn({
+        threadId: session.threadId,
+        input: "and the lint",
+        attachments: [],
+      });
+      assert.equal(String(steer.turnId), String(turn.turnId));
+      const prompts = yield* Effect.promise(() =>
+        readPromptMessages(harness.getLastCreateQueryInput(), 2),
+      );
+      assert.equal(prompts[0]?.uuid, String(turn.turnId));
+      const steerId = prompts[1]?.uuid;
+      assert.isString(steerId);
+      assert.notEqual(steerId, String(turn.turnId));
+
+      const stopping = yield* adapter.stopAll().pipe(Effect.forkChild);
+      yield* TestClock.adjust("4 seconds");
+      assert.equal(harness.query.closeCalls, 0);
+
+      // The CLI takes a steer in at its next request, which names both.
+      harness.query.emit({
+        type: "system",
+        subtype: "status",
+        status: "requesting",
+        user_message_uuids: [turn.turnId, steerId],
+        session_id: "sdk-session-1",
+        uuid: "status-requesting-2",
+      } as unknown as SDKMessage);
+      yield* Fiber.join(stopping);
+      assert.equal(harness.query.closeCalls, 1);
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect.each([
+    { settledBy: "the next turn naming it", settle: "named" },
+    { settledBy: "the CLI cancelling it", settle: "cancelled" },
+  ] as const)(
+    "stopAll waits for a steer still queued when its turn ended, until $settledBy",
+    ({ settle }) => {
+      const harness = makeHarness({ shutdownDrainMs: 5_000 });
+      return Effect.gen(function* () {
+        const adapter = yield* ClaudeAdapter;
+        const session = yield* adapter.startSession({
+          threadId: THREAD_ID,
+          provider: ProviderDriverKind.make("claudeAgent"),
+          runtimeMode: "full-access",
+        });
+        const turnCompleted = yield* adapter.streamEvents.pipe(
+          Stream.filter((event) => event.type === "turn.completed"),
+          Stream.runHead,
+          Effect.forkChild,
+        );
+        const turn = yield* adapter.sendTurn({
+          threadId: session.threadId,
+          input: "run the tests",
+          attachments: [],
+        });
+        const steer = yield* adapter.sendTurn({
+          threadId: session.threadId,
+          input: "and the lint",
+          attachments: [],
+        });
+        assert.equal(String(steer.turnId), String(turn.turnId));
+        const prompts = yield* Effect.promise(() =>
+          readPromptMessages(harness.getLastCreateQueryInput(), 2),
+        );
+        const steerId = prompts[1]?.uuid;
+        assert.isString(steerId);
+        // The steer came too late for the turn: its result names only the
+        // turn's prompt, and the CLI keeps the steer queued for the next.
+        harness.query.emit({
+          type: "result",
+          subtype: "success",
+          is_error: false,
+          num_turns: 1,
+          user_message_uuids: [turn.turnId],
+          session_id: "sdk-session-1",
+          uuid: "result-1",
+        } as unknown as SDKMessage);
+        yield* Fiber.join(turnCompleted);
+
+        const stopping = yield* adapter.stopAll().pipe(Effect.forkChild);
+        yield* TestClock.adjust("4 seconds");
+        assert.equal(harness.query.closeCalls, 0);
+
+        harness.query.emit(
+          (settle === "named"
+            ? {
+                type: "system",
+                subtype: "status",
+                status: "requesting",
+                user_message_uuids: [steerId],
+                session_id: "sdk-session-1",
+                uuid: "status-requesting-2",
+              }
+            : {
+                type: "command_lifecycle",
+                command_uuid: steerId,
+                state: "cancelled",
+                session_id: "sdk-session-1",
+                uuid: "lifecycle-cancelled",
+              }) as unknown as SDKMessage,
+        );
+        yield* Fiber.join(stopping);
+        assert.equal(harness.query.closeCalls, 1);
+      }).pipe(
+        Effect.provideService(Random.Random, makeDeterministicRandomService()),
+        Effect.provide(harness.layer),
+      );
+    },
+  );
+
+  it.effect("opens the turn the CLI runs for a queued steer as soon as it names the steer", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+      const turnEvents = (count: number) =>
+        adapter.streamEvents.pipe(
+          Stream.filter(
+            (event) => event.type === "turn.started" || event.type === "turn.completed",
+          ),
+          Stream.take(count),
+          Stream.runCollect,
+          Effect.map((events) => Array.from(events, (event) => `${event.type} ${event.turnId}`)),
+          Effect.forkChild({ startImmediately: true }),
+        );
+      const firstEvents = yield* turnEvents(3);
+      const turn = yield* adapter.sendTurn({
+        threadId: session.threadId,
+        input: "run the tests",
+        attachments: [],
+      });
+      yield* adapter.sendTurn({
+        threadId: session.threadId,
+        input: "and the lint",
+        attachments: [],
+      });
+      const prompts = yield* Effect.promise(() =>
+        readPromptMessages(harness.getLastCreateQueryInput(), 2),
+      );
+      const steerId = prompts[1]?.uuid;
+      assert.isString(steerId);
+      harness.query.emit({
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        num_turns: 1,
+        user_message_uuids: [turn.turnId],
+        session_id: "sdk-session-1",
+        uuid: "result-1",
+      } as unknown as SDKMessage);
+
+      // The CLI runs the steer next. The thread reads as working from the
+      // first frame naming it, not from Claude's first reply.
+      harness.query.emit({
+        type: "system",
+        subtype: "status",
+        status: "requesting",
+        user_message_uuids: [steerId],
+        session_id: "sdk-session-1",
+        uuid: "status-requesting-2",
+      } as unknown as SDKMessage);
+      const first = yield* Fiber.join(firstEvents);
+      const steerTurnId = first[2]?.replace("turn.started ", "");
+      assert.deepEqual(first, [
+        `turn.started ${turn.turnId}`,
+        `turn.completed ${turn.turnId}`,
+        `turn.started ${steerTurnId}`,
+      ]);
+      assert.notEqual(steerTurnId, String(turn.turnId));
+      const running = (yield* adapter.listSessions())[0];
+      assert.equal(running?.status, "running");
+      assert.equal(String(running?.activeTurnId), steerTurnId);
+      const boundaries = Effect.map(
+        adapter.listSessions(),
+        (sessions) =>
+          (
+            sessions[0]?.resumeCursor as
+              | { readonly turnStartMessageIds?: ReadonlyArray<string | null> }
+              | undefined
+          )?.turnStartMessageIds,
+      );
+      // Until Claude replies, the steer marks where the turn starts.
+      assert.deepEqual(yield* boundaries, [String(turn.turnId), String(steerId)]);
+
+      const lastEvents = yield* turnEvents(1);
+
+      harness.query.emit({
+        type: "assistant",
+        session_id: "sdk-session-1",
+        uuid: "assistant-steer",
+        parent_tool_use_id: null,
+        message: { id: "assistant-message-steer", content: [{ type: "text", text: "Linted." }] },
+      } as unknown as SDKMessage);
+      harness.query.emit({
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        num_turns: 1,
+        user_message_uuids: [steerId],
+        session_id: "sdk-session-1",
+        uuid: "result-2",
+      } as unknown as SDKMessage);
+      assert.deepEqual(yield* Fiber.join(lastEvents), [`turn.completed ${steerTurnId}`]);
+      // Then its first reply does, as for any synthetic turn.
+      assert.deepEqual(yield* boundaries, [String(turn.turnId), "assistant-steer"]);
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect.each([
+    { shutdownDrainMs: 1_000, waitsMs: 1_000 },
+    { shutdownDrainMs: undefined, waitsMs: 0 },
+  ])(
+    "stopAll waits up to shutdownDrainMs for a prompt the CLI never takes ($shutdownDrainMs)",
+    ({ shutdownDrainMs, waitsMs }) => {
+      const harness = makeHarness(shutdownDrainMs === undefined ? {} : { shutdownDrainMs });
+      return Effect.gen(function* () {
+        const adapter = yield* ClaudeAdapter;
+        const session = yield* adapter.startSession({
+          threadId: THREAD_ID,
+          provider: ProviderDriverKind.make("claudeAgent"),
+          runtimeMode: "full-access",
+        });
+        yield* adapter.sendTurn({
+          threadId: session.threadId,
+          input: "hello",
+          attachments: [],
+        });
+
+        const stopping = yield* adapter.stopAll().pipe(Effect.forkChild);
+        if (waitsMs > 0) {
+          yield* TestClock.adjust(waitsMs - 1);
+          assert.equal(harness.query.closeCalls, 0);
+          yield* TestClock.adjust(1);
+        }
+        yield* Fiber.join(stopping);
+        assert.equal(harness.query.closeCalls, 1);
+      }).pipe(
+        Effect.provideService(Random.Random, makeDeterministicRandomService()),
+        Effect.provide(harness.layer),
+      );
+    },
+  );
+
+  it.effect.each([
+    { cli: "names no prompt", echo: undefined },
+    { cli: "names only the turn's prompt", echo: "user_message_uuid" },
+  ] as const)(
+    "stopAll doesn't wait for the prompts of a turn that ended, when the CLI $cli",
+    ({ echo }) => {
+      const harness = makeHarness({ shutdownDrainMs: 5_000 });
+      return Effect.gen(function* () {
+        const adapter = yield* ClaudeAdapter;
+        const session = yield* adapter.startSession({
+          threadId: THREAD_ID,
+          provider: ProviderDriverKind.make("claudeAgent"),
+          runtimeMode: "full-access",
+        });
+        const turnCompleted = yield* adapter.streamEvents.pipe(
+          Stream.filter((event) => event.type === "turn.completed"),
+          Stream.runHead,
+          Effect.forkChild,
+        );
+        const turn = yield* adapter.sendTurn({
+          threadId: session.threadId,
+          input: "hello",
+          attachments: [],
+        });
+        yield* adapter.sendTurn({
+          threadId: session.threadId,
+          input: "and goodbye",
+          attachments: [],
+        });
+        // An older CLI doesn't list the prompts it took, a steer's included;
+        // the turn's result still ends the turn, and nothing it was sent is
+        // waited for after.
+        harness.query.emit({
+          type: "result",
+          subtype: "success",
+          is_error: false,
+          num_turns: 1,
+          ...(echo === undefined ? {} : { [echo]: turn.turnId }),
+          session_id: "sdk-session-1",
+          uuid: "result-1",
+        } as unknown as SDKMessage);
+        yield* Fiber.join(turnCompleted);
+
+        yield* adapter.stopAll();
+        assert.equal(harness.query.closeCalls, 1);
+      }).pipe(
+        Effect.provideService(Random.Random, makeDeterministicRandomService()),
+        Effect.provide(harness.layer),
+      );
+    },
+  );
 
   it.effect("completes with result usage without querying current context usage", () => {
     const harness = makeHarness();

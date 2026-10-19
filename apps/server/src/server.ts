@@ -1010,8 +1010,18 @@ const makeServerLayer = Layer.unwrap(
       cloudDesiredLinkReconcileLayer,
       HeapSnapshot.layer,
     );
+    // Built after everything else, so stopping starts here: commands are
+    // refused from then on, and the turn starts already admitted reach their
+    // provider while the routes, reactors and providers that carry them still
+    // run, so the provider stop after them marks those turns to continue.
+    const shutdownDrainLayer = Layer.effectDiscard(
+      Effect.flatMap(ServerRuntimeStartup.ServerRuntimeStartup, (startup) =>
+        Effect.addFinalizer(() => startup.drainForShutdown),
+      ),
+    );
 
-    return serverApplicationLayer.pipe(
+    return shutdownDrainLayer.pipe(
+      Layer.provideMerge(serverApplicationLayer),
       Layer.provideMerge(runtimeServicesLive),
       Layer.provide(activationLayer),
       Layer.provideMerge(serverRelayBrokerTracingLayer),
