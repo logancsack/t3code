@@ -115,13 +115,17 @@ type StartState = "starting" | "queued" | "retrying" | "failed";
 
 /**
  * Aldo, stubbed: the directory lists each machine as it is now, with the
- * starts of messages it holds; a connect says whether it's running; a wake
- * brings it up, or is refused with `wakeStatus`. A gated request (`read`,
+ * starts of messages it holds; a connect says whether it's running (the
+ * next `unready` say not, as for a machine whose agent isn't answering yet); a
+ * wake brings it up, or is refused with `wakeStatus`. A gated request (`read`,
  * `connect:<id>`, `wake:<id>`) waits until the test opens it.
  */
 function stubAldo(machines: Record<string, MachineState>) {
   const states = new Map(Object.entries(machines));
-  const starts = new Map<string, Record<string, { kind: "message"; state: StartState }>>();
+  const starts = new Map<
+    string,
+    Record<string, { kind: "message"; state: StartState; at?: string }>
+  >();
   const asks = new Map<string, number>();
   const gates = new Map<string, { opened: Promise<void>; open: () => void }>();
   const passGate = (key: string) => gates.get(key)?.opened;
@@ -129,7 +133,10 @@ function stubAldo(machines: Record<string, MachineState>) {
     states,
     starts,
     reads: 0,
+    /** When each directory read was made. */
+    readTimes: [] as number[],
     wakes: 0,
+    unready: 0,
     offline: false,
     readsFail: false,
     wakeStatus: 200,
@@ -153,6 +160,7 @@ function stubAldo(machines: Record<string, MachineState>) {
     if (aldo.offline) throw new TypeError("Failed to fetch");
     if (path === "/api/environments") {
       aldo.reads += 1;
+      aldo.readTimes.push(Date.now());
       await passGate("read");
       if (aldo.offline) throw new TypeError("Failed to fetch");
       if (aldo.readsFail) return Response.json({ error: "Unavailable" }, { status: 503 });
@@ -172,8 +180,10 @@ function stubAldo(machines: Record<string, MachineState>) {
     if (action === "connect") {
       asks.set(threadId, (asks.get(threadId) ?? 0) + 1);
       await passGate(`connect:${threadId}`);
+      const unready = aldo.unready > 0;
+      if (unready) aldo.unready -= 1;
       return Response.json(
-        states.get(threadId) === "ready"
+        states.get(threadId) === "ready" && !unready
           ? {
               state: "running",
               httpBaseUrl: `https://${threadId}.test`,
@@ -353,7 +363,8 @@ describe("the directory answers for sleeping machines", () => {
   const awayAndBack = (tab: Tab) =>
     Effect.gen(function* () {
       tab.document.visibilityState = "hidden";
-      yield* advance(5_000);
+      // Long enough that the listing it has no longer answers for sleeping machines by itself.
+      yield* advance(2 * 60_000);
       tab.aldo.states.set("s0", "ready");
       tab.aldo.states.set("r2", "stopped");
       yield* tab.signal(RUNNING, "closed");
@@ -570,6 +581,38 @@ describe("the directory answers for sleeping machines", () => {
       expect(tab.aldo.asksFor("s0")).toBe(1);
     }),
   );
+
+  it.live(
+    "while the directory can't be read, a listing over a minute old doesn't answer for sleeping machines: Aldo does",
+    () =>
+      Effect.gen(function* () {
+        const tab = yield* page({ s0: "stopped", s1: "stopped" });
+        tab.aldo.readsFail = true;
+        yield* advance(30_000);
+        // Half a minute old, the listing still answers.
+        yield* tab.signal(["s0", "s1"], "wakeup");
+        yield* advance(2_000);
+        expect(tab.aldo.allAsks()).toBe(0);
+
+        // Woken elsewhere, a minute after the last read: Aldo is asked, and it connects.
+        yield* advance(30_000);
+        tab.aldo.states.set("s0", "ready");
+        yield* tab.signal(["s0", "s1"], "wakeup");
+        yield* advance(2_000);
+        expect(phase("s0")).toBe("connected");
+        expect(phase("s1")).toBe("available");
+        expect(tab.aldo.asksFor("s0")).toBe(1);
+        expect(tab.aldo.asksFor("s1")).toBe(1);
+
+        // Read again, the listing answers for s1 once more.
+        tab.aldo.readsFail = false;
+        yield* advance(16_000);
+        yield* tab.signal(["s1"], "wakeup");
+        yield* advance(2_000);
+        expect(phase("s1")).toBe("available");
+        expect(tab.aldo.asksFor("s1")).toBe(1);
+      }),
+  );
 });
 
 describe("bringing a machine up from this page", () => {
@@ -766,6 +809,119 @@ describe("bringing a machine up from this page", () => {
         expect(phase("s0")).toBe("connected");
         expect(tab.aldo.asksFor("s0")).toBe(1);
         expect(tab.aldo.wakes).toBe(1);
+      }),
+  );
+
+  it.live(
+    "bringing a machine up whose agent doesn't answer at first: the next nudge asks Aldo again, though the directory still has it asleep",
+    () =>
+      Effect.gen(function* () {
+        const tab = yield* page({ m: "stopped" });
+        // No new listing comes meanwhile, and the first ask after the wake finds it not answering yet.
+        tab.aldo.gate("read");
+        tab.aldo.unready = 1;
+        const connecting = tab.dispatch.ensureAldoConnected("aldo-m");
+        yield* advance(1_000);
+        expect(tab.aldo.wakes).toBe(1);
+        expect(tab.aldo.asksFor("m")).toBe(1);
+        expect(phase("m")).toBe("available");
+
+        yield* advance(8_000);
+        expect(tab.aldo.asksFor("m")).toBe(2);
+        expect(phase("m")).toBe("connected");
+        yield* Effect.promise(() => connecting);
+        tab.aldo.open("read");
+      }),
+  );
+
+  it.live(
+    "a message Aldo holds that's up before Aldo has sent it: the page waits for Aldo's delivery, then goes on",
+    () =>
+      Effect.gen(function* () {
+        const tab = yield* page({ s0: "stopped" });
+        // Up at 5 seconds, and Aldo sends the message (its settings on the machine first) at 9.
+        host.hold = (command) => {
+          tab.aldo.starts.set("s0", {
+            [command.threadId]: { kind: "message", state: "starting" },
+          });
+          setTimeout(() => tab.aldo.states.set("s0", "ready"), 5_000);
+          setTimeout(() => tab.aldo.starts.delete("s0"), 9_000);
+        };
+        let sent = false;
+        const sending = send("s0").then((result) => {
+          sent = true;
+          return result;
+        });
+        yield* advance(8_500);
+        expect(sent).toBe(false);
+        expect(tab.aldo.wakes).toBe(0);
+
+        yield* advance(4_000);
+        expect(sent).toBe(true);
+        expect(yield* Effect.promise(() => sending)).toBeNull();
+        expect(tab.aldo.wakes).toBe(0);
+        expect(tab.aldo.asksFor("s0")).toBe(1);
+        expect(phase("s0")).toBe("connected");
+      }),
+  );
+
+  it.live(
+    "a long start Aldo holds: the page reads every 2 seconds, then less often, and wakes the machine after 2.5 minutes",
+    () =>
+      Effect.gen(function* () {
+        const tab = yield* page({ s0: "stopped" });
+        // Aldo's delivery stalls: the message stays on its way.
+        let heldAt = 0;
+        host.hold = (command) => {
+          heldAt = Date.now();
+          tab.aldo.starts.set("s0", {
+            [command.threadId]: {
+              kind: "message",
+              state: "starting",
+              at: new Date(heldAt).toISOString(),
+            },
+          });
+        };
+        const reads = tab.aldo.readTimes.length;
+        const sent = send("s0");
+        yield* advance(145_000);
+        expect(tab.aldo.wakes).toBe(0);
+        const gaps = tab.aldo.readTimes
+          .slice(reads)
+          .map((at, index, all) => at - (all[index - 1] ?? heldAt));
+        // About every 2 seconds for the first 20, then growing to every 10.
+        expect(gaps.slice(1, 9).every((gap) => gap >= 2_000 && gap <= 2_500)).toBe(true);
+        expect(Math.max(...gaps)).toBeLessThanOrEqual(10_500);
+        expect(gaps.slice(-3).every((gap) => gap >= 9_750)).toBe(true);
+        expect(gaps.length).toBeLessThanOrEqual(28);
+
+        yield* advance(10_000);
+        expect(tab.aldo.wakes).toBe(1);
+        expect(yield* Effect.promise(() => sent)).toBeNull();
+        expect(tab.aldo.asksFor("s0")).toBe(1);
+        expect(phase("s0")).toBe("connected");
+      }),
+  );
+
+  it.live(
+    "a message Aldo has had on its way for 2.5 minutes already: the page wakes the machine at once",
+    () =>
+      Effect.gen(function* () {
+        const tab = yield* page({ s0: "stopped" });
+        host.hold = (command) => {
+          tab.aldo.starts.set("s0", {
+            [command.threadId]: {
+              kind: "message",
+              state: "starting",
+              at: new Date(Date.now() - 150_000).toISOString(),
+            },
+          });
+        };
+        const sent = send("s0");
+        yield* advance(1_500);
+        expect(tab.aldo.wakes).toBe(1);
+        expect(tab.aldo.asksFor("s0")).toBe(1);
+        expect(yield* Effect.promise(() => sent)).toBeNull();
       }),
   );
 });

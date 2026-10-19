@@ -47,24 +47,45 @@ export function aldoWakeAgain(status: number | null): boolean {
 /** What of a machine a page waiting on a message Aldo holds for it reads (dispatch.ts). */
 export interface AldoHeldStartEntry {
   readonly state: AldoReconnectEntry["state"];
-  /** Aldo's starts of its threads and the messages it holds for them, by T3 thread id (an older Aldo leaves them out). */
-  readonly starts?: Readonly<Record<string, { readonly state: string }>>;
+  /**
+   * Aldo's starts of its threads and the messages it holds for them, by T3
+   * thread id, with when each was sent (`at`, ISO); an older Aldo leaves them out.
+   */
+  readonly starts?: Readonly<Record<string, { readonly state: string; readonly at?: string }>>;
 }
 
 /**
+ * How long a page trusts Aldo to be bringing a machine up for a held message
+ * before it wakes the machine itself: "starting" only says the message is on
+ * its way with no error, and a delivery whose function died stays claimed for
+ * minutes until a sweep takes it up again. A wake joins a start under way.
+ */
+const HELD_START_TRUSTED_MS = 150_000;
+
+/**
  * What a page waiting on a message Aldo holds does next, from a directory
- * read made since Aldo took it: connect, the machine is up; wait, while
- * Aldo's delivery of the message brings it up ("starting"), rather than wake
- * it too (of two calls bringing one machine up, the one that loses waits out
- * the other's start, then goes over it again); else wake it: the message
- * waits for credits or room (whose refusal the wake shows), a try failed and
- * waits to go again, Aldo gave up on it or holds it no more, or an older Aldo
- * doesn't say.
+ * read made since Aldo took it. Wait while Aldo's delivery of the message is
+ * under way ("starting"), rather than wake the machine too (of two calls
+ * bringing one machine up, the one that loses waits out the other's start,
+ * then goes over it again), until the page has followed it for
+ * HELD_START_TRUSTED_MS or it was sent that long ago. Go on once the machine
+ * is up and Aldo has sent the message (it marks the machine up before it has
+ * put the user's settings on it, so the page doesn't send it first). Else
+ * wake it: the message waits for credits or room (whose refusal the wake
+ * shows), a try failed and waits to go again, Aldo gave up on it, or an older
+ * Aldo doesn't say and the machine isn't up.
  */
 export function aldoHeldStartStep(
   machine: AldoHeldStartEntry | undefined,
   t3ThreadId: string,
+  followedMs: number,
+  now: number,
 ): "up" | "follow" | "wake" {
-  if (machine?.state === "ready") return "up";
-  return machine?.starts?.[t3ThreadId]?.state === "starting" ? "follow" : "wake";
+  const start = machine?.starts?.[t3ThreadId];
+  if (start?.state === "starting") {
+    const sentAt = start.at === undefined ? Number.NaN : Date.parse(start.at);
+    const stale = followedMs >= HELD_START_TRUSTED_MS || now - sentAt >= HELD_START_TRUSTED_MS;
+    return stale ? "wake" : "follow";
+  }
+  return start === undefined && machine?.state === "ready" ? "up" : "wake";
 }

@@ -189,6 +189,8 @@ let wasOffline = false;
 let emitRequested = false;
 
 let lastFetchAt = 0;
+/** When the directory was last read (not just asked for): its listing answers for sleeping machines only while recent (asleepAsListed). */
+let lastReadAt = 0;
 
 const IDLE_REFRESH_MS = 15_000;
 
@@ -388,6 +390,7 @@ async function fetchEnvironments(): Promise<ReadonlyArray<AldoEnvironment>> {
   const changed =
     JSON.stringify([knownEnvironments, aldoFeatures]) !== JSON.stringify([listed, nextFeatures]);
   aldoFeatures = nextFeatures;
+  lastReadAt = Date.now();
   if (changed) {
     knownEnvironments = listed;
     for (const listener of directoryListeners) listener();
@@ -640,20 +643,25 @@ export function aldoToldAsleepFromListing(environmentId: string): boolean {
   return toldAsleep.has(environmentId);
 }
 
+/** How old a listing can be and still answer for sleeping machines. */
+const LISTING_TRUSTED_MS = 60_000;
+
 /**
  * Whether a machine's connection can be told it's asleep without asking Aldo:
- * the directory lists it as not running (Aldo's connect says "stopped" for any
- * machine that isn't), this tab isn't waking it, and nothing asked to check it
- * (askAldoNext). Asking sent a request per sleeping thread every time the page
- * came back on screen. A machine woken by anything else (another device, a
- * reminder, a message Aldo holds) is retried once the directory has it up
- * (reconnect.ts).
+ * the directory, read in the last minute, lists it as not running (Aldo's
+ * connect says "stopped" for any machine that isn't), this tab isn't waking
+ * it, and nothing asked to check it (askAldoNext). Asking sent a request per
+ * sleeping thread every time the page came back on screen. A machine woken by
+ * anything else (another device, a reminder, a message Aldo holds) is retried
+ * once the directory has it up (reconnect.ts); while the directory can't be
+ * read, Aldo is asked again, so such a machine still connects.
  */
 function asleepAsListed(environmentId: string): boolean {
   const state = knownEnvironments?.find((entry) => entry.environmentId === environmentId)?.state;
   return (
     state !== undefined &&
     state !== "ready" &&
+    Date.now() - lastReadAt < LISTING_TRUSTED_MS &&
     !wakes.has(environmentId) &&
     !asks.has(environmentId)
   );

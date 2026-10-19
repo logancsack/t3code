@@ -65,27 +65,46 @@ describe("aldoMachinesToRetry", () => {
 });
 
 describe("aldoHeldStartStep", () => {
-  const starting = { t1: { state: "starting" } };
+  const now = Date.parse("2026-10-19T12:00:00.000Z");
+  const ago = (ms: number) => new Date(now - ms).toISOString();
+  const starting = { t1: { state: "starting", at: ago(5_000) } };
+  const step = (machine: Parameters<typeof aldoHeldStartStep>[0], followedMs = 5_000) =>
+    aldoHeldStartStep(machine, "t1", followedMs, now);
 
-  it("connects once the directory has the machine up", () => {
-    expect(aldoHeldStartStep({ state: "ready", starts: starting }, "t1")).toBe("up");
-    expect(aldoHeldStartStep({ state: "ready" }, "t1")).toBe("up");
+  it("goes on once the machine is up and Aldo has sent the message", () => {
+    expect(step({ state: "ready" })).toBe("up");
+    expect(step({ state: "ready", starts: {} })).toBe("up");
+    expect(step({ state: "ready", starts: { t2: { state: "starting" } } })).toBe("up");
   });
 
-  it("follows Aldo's start of the held message rather than waking the machine too", () => {
-    expect(aldoHeldStartStep({ state: "stopped", starts: starting }, "t1")).toBe("follow");
-    expect(aldoHeldStartStep({ state: "new", starts: starting }, "t1")).toBe("follow");
+  it("follows Aldo's start of the held message rather than waking the machine too, up or not", () => {
+    expect(step({ state: "stopped", starts: starting })).toBe("follow");
+    expect(step({ state: "new", starts: starting })).toBe("follow");
+    // Up before Aldo has put the user's settings on it and sent the message.
+    expect(step({ state: "ready", starts: starting })).toBe("follow");
+    // An older Aldo doesn't say when it was sent.
+    expect(step({ state: "stopped", starts: { t1: { state: "starting" } } })).toBe("follow");
   });
 
-  it("wakes it when Aldo isn't bringing it up now, or doesn't say", () => {
+  it("wakes it once it has followed the start for 2.5 minutes, or the message was sent that long ago", () => {
+    expect(step({ state: "stopped", starts: starting }, 149_000)).toBe("follow");
+    expect(step({ state: "stopped", starts: starting }, 150_000)).toBe("wake");
+    expect(step({ state: "ready", starts: starting }, 150_000)).toBe("wake");
+    expect(
+      step({ state: "stopped", starts: { t1: { state: "starting", at: ago(150_000) } } }),
+    ).toBe("wake");
+  });
+
+  it("wakes it when Aldo isn't bringing it up now, or doesn't say and it isn't up", () => {
     for (const state of ["queued", "retrying", "failed"]) {
-      expect(aldoHeldStartStep({ state: "stopped", starts: { t1: { state } } }, "t1")).toBe("wake");
+      expect(step({ state: "stopped", starts: { t1: { state } } })).toBe("wake");
+      expect(step({ state: "ready", starts: { t1: { state } } })).toBe("wake");
     }
     // Another thread's start, none, an older Aldo, or a machine the directory doesn't list.
-    expect(aldoHeldStartStep({ state: "stopped", starts: starting }, "t2")).toBe("wake");
-    expect(aldoHeldStartStep({ state: "stopped", starts: {} }, "t1")).toBe("wake");
-    expect(aldoHeldStartStep({ state: "stopped" }, "t1")).toBe("wake");
-    expect(aldoHeldStartStep(undefined, "t1")).toBe("wake");
+    expect(step({ state: "stopped", starts: { t2: { state: "starting" } } })).toBe("wake");
+    expect(step({ state: "stopped", starts: {} })).toBe("wake");
+    expect(step({ state: "stopped" })).toBe("wake");
+    expect(step(undefined)).toBe("wake");
   });
 });
 
