@@ -188,6 +188,7 @@ let wasOffline = false;
 /** Emit the directory as it is now, without fetching (a sandbox was just added to it). */
 let emitRequested = false;
 
+/** When this tab last read the directory, or took another tab's read (sharedReads), as its next read's clock. */
 let lastFetchAt = 0;
 /** When the directory was last read (not just asked for): its listing answers for sleeping machines only while recent (asleepAsListed). */
 let lastReadAt = 0;
@@ -357,22 +358,33 @@ export function setAldoDirectorySync(sync: DirectorySync): void {
   directorySync = sync;
 }
 
+/** The directory as Aldo answers it. */
+interface DirectoryBody {
+  readonly environments: AldoEnvironment[];
+  readonly features?: {
+    general?: boolean;
+    projects?: boolean;
+    aldoModels?: boolean;
+    pullRequests?: boolean;
+    prOwnership?: boolean;
+    heldFiles?: boolean;
+    moves?: boolean;
+    routing?: boolean;
+    projectRepos?: boolean;
+    modelRouting?: boolean;
+  };
+}
+
 async function fetchEnvironments(): Promise<ReadonlyArray<AldoEnvironment>> {
-  const { environments, features } = await api<{
-    environments: AldoEnvironment[];
-    features?: {
-      general?: boolean;
-      projects?: boolean;
-      aldoModels?: boolean;
-      pullRequests?: boolean;
-      prOwnership?: boolean;
-      heldFiles?: boolean;
-      moves?: boolean;
-      routing?: boolean;
-      projectRepos?: boolean;
-      modelRouting?: boolean;
-    };
-  }>("/api/environments");
+  const startedAt = Date.now();
+  const body = await api<DirectoryBody>("/api/environments");
+  sharedReads()?.postMessage({ startedAt, body } satisfies SharedRead);
+  listingFrom = Math.max(listingFrom, startedAt);
+  return takeListing(body);
+}
+
+/** Takes a read of the directory, this tab's or another's (takeSharedRead), as what it lists now. */
+function takeListing({ environments, features }: DirectoryBody): ReadonlyArray<AldoEnvironment> {
   const nextFeatures = {
     general: features?.general === true,
     projects: features?.projects === true,
@@ -522,6 +534,56 @@ async function readDirectory(): Promise<Array<BearerConnectionRegistration> | nu
   if (reading === read) reading = null;
   waiting?.resolve(registrations !== null);
   return registrations;
+}
+
+// Each tab on screen reads the directory every 15 seconds, so windows side
+// by side read it once each. A tab shares each read with this browser's other
+// tabs, and one on screen takes it as its own: its next read waits a little
+// longer than the reading tab's, so that one goes on reading for all of them
+// while it's seen. A hidden tab takes none: it reads once it's back on screen,
+// and meanwhile doesn't connect to machines no one is looking at.
+const SHARED_READS = "aldo-directory";
+/** How much later than the reading tab's a tab that took its read reads next. */
+const SHARED_READ_SLACK_MS = 2_000;
+let sharedReadChannel: BroadcastChannel | null | undefined;
+
+/** A tab's read of the directory, and when it began. */
+interface SharedRead {
+  readonly startedAt: number;
+  readonly body: DirectoryBody;
+}
+
+/**
+ * When the read this tab's listing comes from began, or this tab last
+ * changed its listing itself (a machine it added or is deleting): a read
+ * begun earlier, another tab's, could put back what it changed since.
+ */
+let listingFrom = 0;
+
+function sharedReads(): BroadcastChannel | null {
+  if (sharedReadChannel === undefined) {
+    sharedReadChannel =
+      typeof BroadcastChannel === "undefined" ? null : new BroadcastChannel(SHARED_READS);
+    sharedReadChannel?.addEventListener("message", (event: MessageEvent<unknown>) =>
+      takeSharedRead(event.data as Partial<SharedRead> | null),
+    );
+  }
+  return sharedReadChannel;
+}
+
+function takeSharedRead(read: Partial<SharedRead> | null): void {
+  const startedAt = read?.startedAt;
+  // A read of this tab's own under way answers for it.
+  if (pageHidden() || reading || typeof startedAt !== "number" || startedAt <= listingFrom) return;
+  if (!Array.isArray(read?.body?.environments)) return;
+  lastFetchAt = Date.now() + SHARED_READ_SLACK_MS;
+  listingFrom = startedAt;
+  failedFetches = 0;
+  retryAt = 0;
+  retryRequested = false;
+  const environments = takeListing(read.body);
+  void directorySync?.(environments).catch(() => undefined);
+  emitRequested = true;
 }
 
 async function fetchRegistrations(): Promise<Array<BearerConnectionRegistration> | null> {
@@ -768,6 +830,7 @@ export async function deleteAldoEnvironment(environmentId: string): Promise<void
  */
 export async function deleteAldoMachineWithThread(environmentId: string): Promise<void> {
   deletions.set(environmentId, "deleting");
+  listingFrom = Date.now();
   if (knownEnvironments?.some((entry) => entry.environmentId === environmentId)) {
     knownEnvironments = knownEnvironments.filter((entry) => entry.environmentId !== environmentId);
     for (const listener of directoryListeners) listener();
@@ -870,6 +933,7 @@ export function holdAldoEnvironment(environmentId: string): void {
 export function releaseAldoEnvironment(environmentId: string, environment?: AldoEnvironment): void {
   pendingEnvironmentIds.delete(environmentId);
   if (environment && knownEnvironments) {
+    listingFrom = Date.now();
     if (!knownEnvironments.some((entry) => entry.environmentId === environmentId)) {
       knownEnvironments = [environment, ...knownEnvironments];
       for (const listener of directoryListeners) listener();
