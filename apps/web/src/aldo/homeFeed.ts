@@ -76,9 +76,15 @@ function sharedReads(): BroadcastChannel | null {
 
 function takeSharedRead(read: Partial<SharedRead> | null): void {
   const startedAt = read?.startedAt;
-  // A read of this page's own under way answers for it.
-  if (watchers === 0 || document.visibilityState === "hidden" || inflight) return;
+  if (watchers === 0 || document.visibilityState === "hidden") return;
   if (typeof startedAt !== "number" || startedAt <= homeFrom || read?.home === undefined) return;
+  // A read of this page's own under way answers for it. One begun after it
+  // still puts this page's next read back, so tabs that read at the same time
+  // fall out of step, and one goes on reading for both.
+  if (inflight) {
+    if (startedAt > fetchedAt) fetchedAt = Date.now() + SHARED_READ_SLACK_MS;
+    return;
+  }
   fetchedAt = Date.now() + SHARED_READ_SLACK_MS;
   homeFrom = startedAt;
   takeHome(read.home);

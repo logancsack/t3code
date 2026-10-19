@@ -173,6 +173,31 @@ it.live("another tab's read while this one's is under way is left to this one's"
   }),
 );
 
+it.live(
+  "tabs whose reads overlap fall out of step: one begun after this one's puts its next back",
+  () =>
+    Effect.gen(function* () {
+      const { api, tabs, fetch } = yield* directory;
+      let answer!: (response: Response) => void;
+      fetch.mockImplementationOnce(() => new Promise<Response>((resolve) => (answer = resolve)));
+      api.requestAldoDirectoryRefresh();
+      yield* wait(250);
+      expect(fetch).toHaveBeenCalledTimes(2);
+      // The other tab began its read a moment after this one's, and answered first.
+      yield* wait(5);
+      const theirs = now();
+      tabs.send({ startedAt: theirs, body: { environments: [machine("aldo-other")] } });
+      answer(Response.json({ environments: [machine("aldo-mine")] }));
+      yield* wait(250);
+      expect(api.getAldoEnvironments()?.map((entry) => entry.environmentId)).toEqual(["aldo-mine"]);
+      // This tab's next read waits a little past the other tab's next.
+      yield* wait(theirs + 15_500 - now());
+      expect(fetch).toHaveBeenCalledTimes(2);
+      yield* wait(2_000);
+      expect(fetch).toHaveBeenCalledTimes(3);
+    }),
+);
+
 it.live("tells Aldo how long the first view took with the next read, once", () =>
   Effect.gen(function* () {
     const { api, fetch } = yield* directory;

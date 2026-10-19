@@ -157,3 +157,22 @@ it("a read begun before this page's own, or before a card was hidden here, isn't
   tabs().send({ startedAt: Date.now(), home: home("After the hide", true) });
   expect(shown()).toBe("After the hide");
 });
+
+it("pages whose reads overlap fall out of step: one begun after this one's puts its next back", async () => {
+  await wait(30_000);
+  expect(fetchHome).toHaveBeenCalledTimes(2);
+  let answer!: (next: AldoHome) => void;
+  fetchHome.mockImplementationOnce(() => new Promise<AldoHome>((resolve) => (answer = resolve)));
+  await wait(30_000);
+  expect(fetchHome).toHaveBeenCalledTimes(3);
+  // The other tab began its read a moment after this one's, and answered first.
+  await wait(5);
+  tabs().send({ startedAt: Date.now(), home: home("Theirs") });
+  await act(async () => answer(home("Mine again")));
+  expect(shown()).toBe("Mine again");
+  // Not on its own 30 seconds, but the look after.
+  await wait(30_000);
+  expect(fetchHome).toHaveBeenCalledTimes(3);
+  await wait(5_000);
+  expect(fetchHome).toHaveBeenCalledTimes(4);
+});

@@ -586,11 +586,18 @@ function sharedReads(): BroadcastChannel | null {
 
 function takeSharedRead(read: Partial<SharedRead> | null): void {
   const startedAt = read?.startedAt;
-  // A read of this tab's own under way answers for it.
-  if (pageHidden() || reading || typeof startedAt !== "number" || startedAt <= listingFrom) return;
+  if (pageHidden() || typeof startedAt !== "number" || startedAt <= listingFrom) return;
   if (!Array.isArray(read?.body?.environments)) return;
   // Not while this tab has its first view to tell Aldo: its own read, on time, says it.
-  if (firstViewMs === null) lastFetchAt = Date.now() + SHARED_READ_SLACK_MS;
+  const later = firstViewMs === null;
+  // A read of this tab's own under way answers for it. One begun after it
+  // still puts this tab's next read back, so tabs that read at the same time
+  // (a tab just duplicated) fall out of step, and one goes on reading for both.
+  if (reading) {
+    if (later && startedAt > lastFetchAt) lastFetchAt = Date.now() + SHARED_READ_SLACK_MS;
+    return;
+  }
+  if (later) lastFetchAt = Date.now() + SHARED_READ_SLACK_MS;
   listingFrom = startedAt;
   failedFetches = 0;
   retryAt = 0;
