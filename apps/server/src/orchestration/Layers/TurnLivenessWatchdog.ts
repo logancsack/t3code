@@ -359,6 +359,9 @@ const makeTurnLivenessWatchdog = (options?: TurnLivenessWatchdogLiveOptions) =>
       for (const [threadId, retryState] of retryStateByThread) {
         if (retryState.scheduled !== null && nowMs >= retryState.scheduled.notBeforeMs) {
           yield* dispatchScheduledRetry(threadId, retryState).pipe(
+            // A stopping server ends the watchdog before it takes stock of the
+            // turn starts to wait for, so a retry under way finishes first.
+            Effect.uninterruptible,
             Effect.catchCause((cause) =>
               Effect.logWarning("turn.watchdog.retry-failed", { threadId, cause }),
             ),

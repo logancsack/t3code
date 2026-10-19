@@ -57,6 +57,8 @@ describe("OrchestrationReactor", () => {
               return Effect.void;
             },
             drain: Effect.void,
+            turnStartsInFlight: Effect.succeed(0),
+            drainTurnStarts: Effect.void,
           }),
         ),
         Layer.provideMerge(

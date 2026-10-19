@@ -12,12 +12,16 @@ import {
   TurnId,
 } from "@t3tools/contracts";
 import { assert, it } from "@effect/vitest";
+import * as Clock from "effect/Clock";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Ref from "effect/Ref";
+import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import { HttpServer } from "effect/unstable/http";
@@ -70,66 +74,72 @@ const makePersistedRuntimeLayer = (dbPath: string) => {
   return Layer.mergeAll(orchestration, directory);
 };
 
-const startupDependencies = Layer.mergeAll(
-  Layer.mock(Keybindings.Keybindings)({
-    start: Effect.void,
-  }),
-  ServerSettings.layerTest(),
-  Layer.succeed(OrchestrationReactor.OrchestrationReactor, {
-    start: () => Effect.void,
-  }),
-  Layer.succeed(ProviderSessionReaper.ProviderSessionReaper, {
-    start: () => Effect.void,
-  }),
-  ServerLifecycleEvents.layer,
-  Layer.succeed(ServerEnvironment.ServerEnvironment, {
-    getEnvironmentId: Effect.succeed(EnvironmentId.make("environment-startup-orphan")),
-    getDescriptor: Effect.succeed({
-      environmentId: EnvironmentId.make("environment-startup-orphan"),
-      label: "Startup orphan test",
-      version: "test",
-      platform: { os: "linux", arch: "x64" },
-      capabilities: {},
-    } as never),
-  }),
-  Layer.mock(EnvironmentAuth.EnvironmentAuth)({
-    issueStartupPairingUrl: (baseUrl: string) => Effect.succeed(`${baseUrl}/pair`),
-  }),
-  Layer.mock(ExternalLauncher.ExternalLauncher)({
-    launchBrowser: () => Effect.void,
-  }),
-  Layer.succeed(ServiceLauncherClient.ServiceLauncherClient, {
-    managed: false,
-    requestUpdate: () => Effect.die("unused"),
-    prepareTrial: Effect.undefined,
-  }),
-  Layer.succeed(
-    HttpServer.HttpServer,
-    HttpServer.HttpServer.of({
-      address: NetAddress.inetAddressFromIpStringUnsafe("127.0.0.1", 3773),
-      serve: (() => Effect.void) as HttpServer.HttpServer["Service"]["serve"],
+const startupDependenciesWith = (
+  drainTurnStarts: Effect.Effect<void>,
+  startWatchdog: Effect.Effect<void, never, Scope.Scope> = Effect.void,
+) =>
+  Layer.mergeAll(
+    Layer.mock(Keybindings.Keybindings)({
+      start: Effect.void,
     }),
-  ),
-  AnalyticsService.layerTest,
-  Layer.succeed(TurnLivenessWatchdog.TurnLivenessWatchdog, { start: () => Effect.void }),
-  Layer.mock(GitVcsDriver.GitVcsDriver)({}),
-  Layer.succeed(ProviderService.ProviderService, {
-    startSession: () => Effect.die("unused"),
-    sendTurn: () => Effect.die("unused"),
-    compactThread: () => Effect.die("unused"),
-    interruptTurn: () => Effect.die("unused"),
-    respondToRequest: () => Effect.die("unused"),
-    respondToUserInput: () => Effect.die("unused"),
-    stopSession: () => Effect.die("unused"),
-    listSessions: () => Effect.succeed([]),
-    getCapabilities: () => Effect.die("unused"),
-    assertConversationRollbackSupported: () => Effect.die("unused"),
-    getInstanceInfo: () => Effect.die("unused"),
-    rollbackConversation: () => Effect.die("unused"),
-    uploadFeedback: () => Effect.die("unused"),
-    streamEvents: Stream.empty,
-  }),
-);
+    ServerSettings.layerTest(),
+    Layer.succeed(OrchestrationReactor.OrchestrationReactor, {
+      start: () => Effect.void,
+      drainTurnStarts,
+    }),
+    Layer.succeed(ProviderSessionReaper.ProviderSessionReaper, {
+      start: () => Effect.void,
+    }),
+    ServerLifecycleEvents.layer,
+    Layer.succeed(ServerEnvironment.ServerEnvironment, {
+      getEnvironmentId: Effect.succeed(EnvironmentId.make("environment-startup-orphan")),
+      getDescriptor: Effect.succeed({
+        environmentId: EnvironmentId.make("environment-startup-orphan"),
+        label: "Startup orphan test",
+        version: "test",
+        platform: { os: "linux", arch: "x64" },
+        capabilities: {},
+      } as never),
+    }),
+    Layer.mock(EnvironmentAuth.EnvironmentAuth)({
+      issueStartupPairingUrl: (baseUrl: string) => Effect.succeed(`${baseUrl}/pair`),
+    }),
+    Layer.mock(ExternalLauncher.ExternalLauncher)({
+      launchBrowser: () => Effect.void,
+    }),
+    Layer.succeed(ServiceLauncherClient.ServiceLauncherClient, {
+      managed: false,
+      requestUpdate: () => Effect.die("unused"),
+      prepareTrial: Effect.undefined,
+    }),
+    Layer.succeed(
+      HttpServer.HttpServer,
+      HttpServer.HttpServer.of({
+        address: NetAddress.inetAddressFromIpStringUnsafe("127.0.0.1", 3773),
+        serve: (() => Effect.void) as HttpServer.HttpServer["Service"]["serve"],
+      }),
+    ),
+    AnalyticsService.layerTest,
+    Layer.succeed(TurnLivenessWatchdog.TurnLivenessWatchdog, { start: () => startWatchdog }),
+    Layer.mock(GitVcsDriver.GitVcsDriver)({}),
+    Layer.succeed(ProviderService.ProviderService, {
+      startSession: () => Effect.die("unused"),
+      sendTurn: () => Effect.die("unused"),
+      compactThread: () => Effect.die("unused"),
+      interruptTurn: () => Effect.die("unused"),
+      respondToRequest: () => Effect.die("unused"),
+      respondToUserInput: () => Effect.die("unused"),
+      stopSession: () => Effect.die("unused"),
+      listSessions: () => Effect.succeed([]),
+      getCapabilities: () => Effect.die("unused"),
+      assertConversationRollbackSupported: () => Effect.die("unused"),
+      getInstanceInfo: () => Effect.die("unused"),
+      rollbackConversation: () => Effect.die("unused"),
+      uploadFeedback: () => Effect.die("unused"),
+      streamEvents: Stream.empty,
+    }),
+  );
+const startupDependencies = startupDependenciesWith(Effect.void);
 
 it.effect(
   "recovers a persisted starting session before opening the command gate after restart",
@@ -486,4 +496,114 @@ it.effect.each(["opt-in desktop restart", "marked remote update"] as const)(
         ),
       ),
     ),
+);
+
+const drainingConfig = (shutdownDrainMs: number | undefined) =>
+  Layer.effect(
+    ServerConfig.ServerConfig,
+    Effect.map(ServerConfig.ServerConfig, (config) => ({ ...config, shutdownDrainMs })),
+  ).pipe(
+    Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-shutdown-drain-" })),
+    Layer.provideMerge(NodeServices.layer),
+  );
+
+const startedRuntime = (
+  dbPath: string,
+  drainTurnStarts: Effect.Effect<void>,
+  startWatchdog?: Effect.Effect<void, never, Scope.Scope>,
+) =>
+  ServerRuntimeStartup.layer.pipe(
+    Layer.provideMerge(makePersistedRuntimeLayer(dbPath)),
+    Layer.provideMerge(startupDependenciesWith(drainTurnStarts, startWatchdog)),
+  );
+
+const notDoneWithin = <A>(fiber: Fiber.Fiber<A>, ms: number) =>
+  Fiber.join(fiber).pipe(Effect.timeoutOption(ms), Effect.map(Option.isNone));
+
+it.live("a stop refuses commands, then waits for the ones admitted and their turn starts", () =>
+  Effect.gen(function* () {
+    const config = yield* ServerConfig.ServerConfig;
+    const reactorDrains = yield* Ref.make(0);
+    const turnStartsSent = yield* Deferred.make<void>();
+    const watchdogRunning = yield* Ref.make(false);
+    // The watchdog's automatic retries start turns too, so it has ended by then.
+    const drainTurnStarts = Effect.gen(function* () {
+      assert.isFalse(yield* Ref.get(watchdogRunning));
+      yield* Ref.update(reactorDrains, (count) => count + 1);
+      yield* Deferred.await(turnStartsSent);
+    });
+    const startWatchdog = Ref.set(watchdogRunning, true).pipe(
+      Effect.andThen(Effect.never),
+      Effect.onInterrupt(() => Ref.set(watchdogRunning, false)),
+      Effect.forkScoped,
+      Effect.asVoid,
+    );
+    yield* Effect.gen(function* () {
+      const startup = yield* ServerRuntimeStartup.ServerRuntimeStartup;
+      yield* startup.markHttpListening;
+      yield* startup.awaitCommandReady;
+      const finishCommand = yield* Deferred.make<void>();
+      const admitted = yield* startup
+        .enqueueCommand(Deferred.await(finishCommand))
+        .pipe(Effect.forkChild);
+      yield* Effect.yieldNow;
+
+      assert.isTrue(yield* Ref.get(watchdogRunning));
+
+      const drain = yield* Effect.forkChild(startup.drainForShutdown);
+      assert.isTrue(yield* notDoneWithin(drain, 300));
+      assert.isFalse(yield* Ref.get(watchdogRunning));
+      const refused = yield* Effect.flip(startup.enqueueCommand(Effect.succeed("late")));
+      assert.instanceOf(refused, ServerRuntimeStartup.ServerStoppingError);
+      // The reactor's drain runs through the events the admitted commands
+      // commit, so it starts once they are done.
+      assert.strictEqual(yield* Ref.get(reactorDrains), 0);
+
+      yield* Deferred.succeed(finishCommand, undefined);
+      yield* Fiber.join(admitted);
+      assert.isTrue(yield* notDoneWithin(drain, 300));
+      assert.strictEqual(yield* Ref.get(reactorDrains), 1);
+
+      // Their turn starts reached their providers.
+      yield* Deferred.succeed(turnStartsSent, undefined);
+      assert.isFalse(yield* notDoneWithin(drain, 1_000));
+    }).pipe(Effect.provide(startedRuntime(config.dbPath, drainTurnStarts, startWatchdog)));
+  }).pipe(Effect.provide(drainingConfig(10_000))),
+);
+
+it.live.each([
+  { shutdownDrainMs: 300, waits: true },
+  { shutdownDrainMs: undefined, waits: false },
+])(
+  "a stop gives up on a turn start after shutdownDrainMs ($shutdownDrainMs)",
+  ({ shutdownDrainMs, waits }) =>
+    Effect.gen(function* () {
+      const config = yield* ServerConfig.ServerConfig;
+      yield* Effect.gen(function* () {
+        const startup = yield* ServerRuntimeStartup.ServerRuntimeStartup;
+        yield* startup.markHttpListening;
+        yield* startup.awaitCommandReady;
+
+        const startedAt = yield* Clock.currentTimeMillis;
+        yield* startup.drainForShutdown;
+        const waitedMs = (yield* Clock.currentTimeMillis) - startedAt;
+        assert.isTrue(waits ? waitedMs >= 250 && waitedMs < 2_000 : waitedMs < 250, `${waitedMs}`);
+        const refused = yield* Effect.flip(startup.enqueueCommand(Effect.succeed("late")));
+        assert.instanceOf(refused, ServerRuntimeStartup.ServerStoppingError);
+      }).pipe(Effect.provide(startedRuntime(config.dbPath, Effect.never)));
+    }).pipe(Effect.provide(drainingConfig(shutdownDrainMs))),
+);
+
+it.live("a stop before startup finished waits for nothing", () =>
+  Effect.gen(function* () {
+    const config = yield* ServerConfig.ServerConfig;
+    yield* Effect.gen(function* () {
+      const startup = yield* ServerRuntimeStartup.ServerRuntimeStartup;
+      // The server never listens, so it never takes commands.
+      const startedAt = yield* Clock.currentTimeMillis;
+      yield* startup.drainForShutdown;
+      const waitedMs = (yield* Clock.currentTimeMillis) - startedAt;
+      assert.isTrue(waitedMs < 250, `${waitedMs}`);
+    }).pipe(Effect.provide(startedRuntime(config.dbPath, Effect.never)));
+  }).pipe(Effect.provide(drainingConfig(10_000))),
 );

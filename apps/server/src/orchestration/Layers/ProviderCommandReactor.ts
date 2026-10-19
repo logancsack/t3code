@@ -33,6 +33,7 @@ import * as Path from "effect/Path";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
+import * as SubscriptionRef from "effect/SubscriptionRef";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 
 import { resolveThreadWorkspaceCwd } from "../../checkpointing/Utils.ts";
@@ -274,6 +275,18 @@ const make = Effect.gen(function* () {
     }
   >();
   const stoppingThreadIds = new Set<ThreadId>();
+  // Turn starts whose request hasn't reached its provider yet: each counts from the moment its
+  // event arrives until the worker has handled it, and the provider send (or the compaction it
+  // waits behind) that handling forks counts until it returns. A stopping server waits for none.
+  const turnStartsInFlight = yield* SubscriptionRef.make(0);
+  const holdTurnStart = SubscriptionRef.update(turnStartsInFlight, (count) => count + 1);
+  const releaseTurnStart = SubscriptionRef.update(turnStartsInFlight, (count) => count - 1);
+  // Highest event sequence the subscriber has taken, and counted if it was a turn start.
+  // Waiting through the engine's latest sequence covers every turn start committed before it,
+  // however far behind the subscriber runs.
+  const seenSequence = yield* SubscriptionRef.make(0);
+  const noteSeen = (sequence: number) =>
+    SubscriptionRef.update(seenSequence, (seen) => Math.max(seen, sequence));
 
   const appendProviderFailureActivity = (input: {
     readonly threadId: ThreadId;
@@ -1470,6 +1483,7 @@ const make = Effect.gen(function* () {
       const clearCompacting = Effect.sync(
         () => void compactingThreadIds.delete(event.payload.threadId),
       );
+      yield* holdTurnStart;
       yield* Effect.gen(function* () {
         yield* ensureSessionForThread(
           event.payload.threadId,
@@ -1502,6 +1516,8 @@ const make = Effect.gen(function* () {
             ),
           ),
         ),
+        // Through the turns queued behind it, which it re-requests and waits to see sent.
+        Effect.ensuring(releaseTurnStart),
         Effect.forkScoped,
       );
       return;
@@ -1586,8 +1602,13 @@ const make = Effect.gen(function* () {
       );
     // The forked send settles `sent` from here on, so drop the entry the post-processing hook uses.
     if (resumed && event.commandId !== null) resumedTurnStarts.delete(event.commandId);
+    // In flight until the provider has the request, even where its turn already reads as
+    // started: Claude reports that before it reads skills and attachments and queues the
+    // prompt. Providers whose send lasts the whole turn hold a stop for its full drain.
+    yield* holdTurnStart;
     yield* send.pipe(
       Effect.ensuring(resumed ? Deferred.succeed(resumed.sent, undefined) : Effect.void),
+      Effect.ensuring(releaseTurnStart),
       Effect.forkScoped,
     );
   });
@@ -1942,6 +1963,10 @@ const make = Effect.gen(function* () {
           return resumed ? Deferred.succeed(resumed.sent, undefined) : Effect.void;
         }),
       ),
+      // Held since the event arrived (`processEvent`); what it forked holds its own.
+      Effect.ensuring(
+        event.type === "thread.turn-start-requested" ? releaseTurnStart : Effect.void,
+      ),
       Effect.catchCause((cause) => {
         if (Cause.hasInterruptsOnly(cause)) {
           return Effect.interrupt;
@@ -2085,6 +2110,7 @@ const make = Effect.gen(function* () {
         event.type === "thread.session-stop-requested" ||
         event.type === "thread.settled"
       ) {
+        if (event.type === "thread.turn-start-requested") yield* holdTurnStart;
         return yield* worker.enqueue(event);
       }
     });
@@ -2095,7 +2121,14 @@ const make = Effect.gen(function* () {
     // intended to close. Subscribe before returning, even while event handling
     // waits for server activation.
     const domainEvents = yield* orchestrationEngine.subscribeDomainEvents;
-    yield* forkParked(Stream.runForEach(domainEvents, processEvent));
+    // Events that landed before the subscription are not replayed, so start
+    // the watermark at the current head instead of zero.
+    yield* orchestrationEngine.latestSequence.pipe(Effect.flatMap(noteSeen));
+    yield* forkParked(
+      Stream.runForEach(domainEvents, (event) =>
+        processEvent(event).pipe(Effect.andThen(noteSeen(event.sequence))),
+      ),
+    );
 
     const reconcileInterruptedTurnStarts = Effect.fn("reconcileInterruptedTurnStarts")(
       function* () {
@@ -2164,6 +2197,18 @@ const make = Effect.gen(function* () {
     drain: Effect.gen(function* () {
       yield* worker.drain;
       yield* threadTitleRegenerationWorker.drain;
+    }),
+    turnStartsInFlight: SubscriptionRef.get(turnStartsInFlight),
+    drainTurnStarts: Effect.gen(function* () {
+      const through = yield* orchestrationEngine.latestSequence;
+      yield* SubscriptionRef.changes(seenSequence).pipe(
+        Stream.filter((seen) => seen >= through),
+        Stream.runHead,
+      );
+      yield* SubscriptionRef.changes(turnStartsInFlight).pipe(
+        Stream.filter((count) => count === 0),
+        Stream.runHead,
+      );
     }),
   } satisfies ProviderCommandReactorShape;
 });

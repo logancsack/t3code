@@ -21,6 +21,12 @@ export interface OrchestrationReactorShape {
    * finalized on shutdown.
    */
   readonly start: () => Effect.Effect<void, never, Scope.Scope>;
+
+  /**
+   * Resolves once every turn start committed so far has reached its provider
+   * (`ProviderCommandReactor.drainTurnStarts`).
+   */
+  readonly drainTurnStarts: Effect.Effect<void>;
 }
 
 /**

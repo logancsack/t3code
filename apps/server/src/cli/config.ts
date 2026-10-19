@@ -143,6 +143,10 @@ const EnvServerConfig = Config.all({
     Config.map(Option.getOrUndefined),
   ),
   managedDevPc: Config.Boolean("T3CODE_MANAGED_DEVPC").pipe(Config.withDefault(false)),
+  shutdownDrainMs: Config.Int("T3CODE_SHUTDOWN_DRAIN_MS").pipe(
+    Config.option,
+    Config.map(Option.getOrUndefined),
+  ),
   museCodeEnabled: Config.Boolean("T3CODE_MUSE_ENABLED").pipe(
     Config.option,
     Config.map(Option.getOrUndefined),
@@ -462,6 +466,7 @@ export const resolveServerConfig = (
       devAllowedOrigins: env.devAllowedOrigins,
       noBrowser,
       managedDevPc: env.managedDevPc,
+      ...(env.shutdownDrainMs === undefined ? {} : { shutdownDrainMs: env.shutdownDrainMs }),
       museCodeEnabled: env.museCodeEnabled ?? !env.managedDevPc,
       primeAgentSubscriptionOAuthEnabled: env.primeAgentSubscriptionOAuthEnabled,
       managedGatewayToken: env.managedGatewayToken,
