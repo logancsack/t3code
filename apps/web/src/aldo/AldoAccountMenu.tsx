@@ -1,9 +1,10 @@
 // The account menu, from who's signed in at the foot of the sidebar
 // (AppSidebarLayout.tsx) and simple mode's rail: their name and picture from
 // their sign-in, their plan and credits (opening Settings → Account), the way
-// to Settings, the agents' mail and the keyboard shortcuts, the two things
-// people change most (theme, simple mode), and signing out. An Aldo that
-// can't say who's signed in still shows the rest.
+// to Settings, the agents' mail and the keyboard shortcuts (and, for the
+// owner, the admin pages), the two things people change most (theme, simple
+// mode), and signing out. An Aldo that can't say who's signed in still shows
+// the rest.
 
 import { useNavigate } from "@tanstack/react-router";
 import {
@@ -11,6 +12,7 @@ import {
   ChevronsUpDownIcon,
   InboxIcon,
   KeyboardIcon,
+  LayoutDashboardIcon,
   LogOutIcon,
   SettingsIcon,
 } from "lucide-react";
@@ -136,6 +138,7 @@ function AccountMenu(props: {
   };
   const credits = usage?.credits ?? null;
   const share = credits && credits.included > 0 ? Math.min(1, credits.used / credits.included) : 0;
+  const adminUrl = profile?.adminUrl ?? null;
   return (
     <div className="flex flex-col" data-aldo-account="">
       <div className="flex items-center gap-2.5 px-2 pt-1 pb-2.5">
@@ -184,6 +187,13 @@ function AccountMenu(props: {
           label="Keyboard shortcuts"
           onClick={() => go("/settings/keybindings")}
         />
+        {adminUrl ? (
+          <MenuItem
+            icon={LayoutDashboardIcon}
+            label="Admin"
+            onClick={() => window.location.assign(adminUrl)}
+          />
+        ) : null}
       </MenuGroup>
       <MenuGroup>
         <div className="flex items-center justify-between gap-3 px-2 py-1">
