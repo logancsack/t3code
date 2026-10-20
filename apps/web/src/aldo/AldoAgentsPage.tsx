@@ -1,10 +1,11 @@
 // Settings → Agents: what the user's agents run on and how. The AI
-// subscriptions they sign in with, what a new thread starts on (and what
-// happens when a subscription runs out), their subagents, the email address
-// they share, and, folded away, how long a conversation grows and the model
-// that writes thread titles.
+// subscriptions they sign in with (optional where Aldo's own models run
+// them), what a new thread starts on (and what happens when a subscription
+// runs out), their subagents, the email address they share, and, folded
+// away, how long a conversation grows and the model that writes thread titles.
 
 import { BadgeCheckIcon, BotIcon, MailIcon, SlidersHorizontalIcon } from "lucide-react";
+import { useSyncExternalStore } from "react";
 
 import { ProjectDefaultsSettings } from "../components/settings/ProjectDefaultsSettings";
 import { GeneralSettingsPanel } from "../components/settings/SettingsPanels";
@@ -13,9 +14,16 @@ import { AldoAccountsPanel } from "./AldoAccountsPanel";
 import { AldoAgentInboxRows } from "./AldoAgentInbox";
 import { AldoPolicyRuleRow, useAldoPolicy } from "./AldoPolicy";
 import { AldoSubagentsPanel } from "./AldoSubagentsPanel";
+import { aldoOffersItsModels, subscribeAldoEnvironments } from "./directory";
 
 export function AldoAgentsPage() {
   const policy = useAldoPolicy();
+  // Where agents already run without one, a subscription is optional (Home no longer asks for it).
+  const aldoModels = useSyncExternalStore(
+    subscribeAldoEnvironments,
+    aldoOffersItsModels,
+    () => false,
+  );
   return (
     <SettingsPageContainer>
       <AldoAccountsPanel
@@ -23,6 +31,11 @@ export function AldoAgentsPage() {
         title="AI subscriptions"
         icon={<BadgeCheckIcon className="size-4" />}
         kinds={["claude", "codex", "grok", "muse"]}
+        about={
+          aldoModels
+            ? "Optional. Agents run on Aldo's models, included in your plan. Connect a subscription of yours to run them on it instead."
+            : null
+        }
       />
       <SettingsSection
         id="project-defaults"

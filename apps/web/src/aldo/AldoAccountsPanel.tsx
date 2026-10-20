@@ -89,6 +89,8 @@ export function AldoAccountsPanel(props: {
   readonly title: string;
   readonly id?: string;
   readonly icon?: ReactNode;
+  /** A line above the rows: what they're for. */
+  readonly about?: string | null;
 }) {
   const { accounts, error, refresh } = useAldoAccounts();
   return (
@@ -97,6 +99,9 @@ export function AldoAccountsPanel(props: {
       {...(props.id ? { id: props.id } : {})}
       {...(props.icon ? { icon: props.icon } : {})}
     >
+      {props.about ? (
+        <p className="px-3 pt-3 pb-1 text-muted-foreground text-xs sm:px-4">{props.about}</p>
+      ) : null}
       {/* Only what Aldo connects: an older Aldo doesn't list Muse Code, so it waits for the list. */}
       {props.kinds
         .filter((kind) => (accounts ? kind in accounts : kind !== "muse"))

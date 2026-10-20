@@ -72,7 +72,6 @@ function Page({ home = null, error = null }: { home?: AldoHome | null; error?: s
       now={Date.parse("2026-10-19T12:00:00Z")}
       tabs={null}
       actions={null}
-      setup={<div>Set up Aldo</div>}
       welcome={null}
       issues={[]}
       chips={[]}
@@ -126,7 +125,6 @@ it("keeps setup and activity out of the loading viewport, with the composer read
   await act(async () => root.render(<Page />));
   expect(container.textContent).toContain("Loading conversation");
   expect(container.textContent).not.toContain("Setup failed");
-  expect(container.textContent).not.toContain("Set up Aldo");
   expect(container.textContent).not.toContain("Working thread");
   const composer = container.querySelector("textarea")!;
   composer.focus();
@@ -203,7 +201,6 @@ it("reveals home content after eight seconds without pretending history is loade
   await act(async () => vi.advanceTimersByTime(1));
   expect(container.textContent).not.toContain("Loading conversation");
   expect(container.textContent).toContain("Earlier messages are taking longer to load");
-  expect(container.textContent).toContain("Set up Aldo");
   expect(container.textContent).toContain("Setup failed");
   expect(container.textContent).toContain("Activity: action");
   expect(container.textContent).toContain("Working thread");

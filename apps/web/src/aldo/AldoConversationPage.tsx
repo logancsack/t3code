@@ -70,7 +70,7 @@ const HISTORY_WAIT_MS = 8_000;
 
 /**
  * Keeps the conversation at its end while the user is there, as what's above
- * it loads (setup, what's wrong) and as the window narrows it; scrolled up, it
+ * it loads (what's wrong) and as the window narrows it; scrolled up, it
  * stays put, and says when something new arrived below (true until they're
  * back at the end). Not before anything's been said: that page reads from
  * the top.
@@ -121,7 +121,6 @@ export function AldoConversationPage(props: {
   readonly tabs: ReactNode;
   /** At the top's end, on a wider screen: what to start. */
   readonly actions: ReactNode;
-  readonly setup: ReactNode;
   /** Under the empty conversation's welcome: the first run's starters. */
   readonly welcome: ReactNode;
   readonly issues: ReturnType<typeof healthIssues>;
@@ -265,7 +264,6 @@ export function AldoConversationPage(props: {
                 </div>
               ) : fresh ? (
                 <div className={cn(column, "flex flex-col gap-6")}>
-                  {props.setup}
                   <HealthStrip issues={props.issues} />
                   <div className="flex flex-col items-center text-center">
                     <AldoAvatar size={48} aware />
@@ -279,7 +277,6 @@ export function AldoConversationPage(props: {
                 </div>
               ) : (
                 <div className={cn(column, "flex flex-col gap-4 pt-3 pb-6")}>
-                  {props.setup}
                   <HealthStrip issues={props.issues} />
                   {unread ? <HomeUnread error={props.error!} /> : null}
                   {props.supported === false ? <AldoAtAGlance /> : null}
