@@ -18,6 +18,18 @@ const script = JSON.parse(NodeFS.readFileSync(process.env.T3_CODEX_COLLAB_SCRIPT
 const write = (message) => process.stdout.write(`${JSON.stringify(message)}\n`);
 let turnStartCount = 0;
 let activeTurn;
+// The turn running now (held open), which a steer can join. One started
+// meanwhile is queued behind it, as Codex does.
+let openTurnId;
+// `recordTurns` records what turn/start and turn/steer were sent, for tests of
+// which one a message went as.
+const recordTurn = (method, params) => {
+  if (!script.recordTurns) return;
+  NodeFS.appendFileSync(
+    `${process.env.T3_CODEX_COLLAB_SCRIPT}.requests`,
+    `${JSON.stringify({ method, params })}\n`,
+  );
+};
 // Server->client requests the runtime must answer (approval prompts), keyed
 // by the numeric JSON-RPC id this peer allocated for them.
 const openServerRequests = new Map();
@@ -60,6 +72,7 @@ rl.on("line", (line) => {
       `${JSON.stringify({ id, result: message.result, error: message.error })}\n`,
     );
     if (script.completeTurnOnServerResponse && activeTurn) {
+      openTurnId = undefined;
       write({
         jsonrpc: "2.0",
         method: "turn/completed",
@@ -162,14 +175,34 @@ rl.on("line", (line) => {
     write({ id, result: fixture.responses.threadStart });
     return;
   }
+  if (method === "turn/steer") {
+    recordTurn(method, message.params);
+    // As Codex: a steer joins the running turn it names, or is refused.
+    if (
+      script.refuseSteer ||
+      openTurnId === undefined ||
+      message.params?.expectedTurnId !== openTurnId
+    ) {
+      write({ id, error: { code: -32600, message: "no active turn to steer" } });
+      return;
+    }
+    write({ id, result: { turnId: openTurnId } });
+    return;
+  }
   if (method === "turn/start") {
+    recordTurn(method, message.params);
     const turnId = script.turnIds?.[turnStartCount];
     const turn = turnId
       ? { ...fixture.responses.turnStart.turn, id: turnId }
       : fixture.responses.turnStart.turn;
     activeTurn = turn;
     turnStartCount += 1;
-    write({ id, result: { ...fixture.responses.turnStart, turn } });
+    // `queuedTurnStartDelayMs` answers a turn queued behind an open one late,
+    // so another message is sent while it's on its way.
+    const queued = openTurnId !== undefined;
+    const respond = () => write({ id, result: { ...fixture.responses.turnStart, turn } });
+    if (queued && script.queuedTurnStartDelayMs) setTimeout(respond, script.queuedTurnStartDelayMs);
+    else respond();
     const rootThreadId = script.rootThreadId;
     if (script.onlyFirstTurnStarts !== true || turnStartCount === 1) {
       write({
@@ -200,7 +233,10 @@ rl.on("line", (line) => {
       );
       write({ jsonrpc: "2.0", id: requestId, method: request.method, params });
     }
-    if (script.holdTurnOpen !== true) {
+    if (script.holdTurnOpen === true) {
+      openTurnId ??= turn.id;
+    } else {
+      openTurnId = undefined;
       write({
         jsonrpc: "2.0",
         method: "turn/completed",
