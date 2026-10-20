@@ -89,6 +89,8 @@ interface ChatHeaderProps {
   onDeleteProjectScript: (scriptId: string) => Promise<ProjectScriptActionResult>;
   /** Aldo: sends the user's message to a sent thread's agent (moving the thread is one it hands off). */
   onSendAldoMessage?: ((text: string) => Promise<boolean>) | undefined;
+  /** Panel toggles fixed over the header's right edge (the terminal toggle can be hidden). */
+  panelToggleCount?: 1 | 2;
 }
 
 /**
@@ -156,6 +158,7 @@ export const ChatHeader = memo(function ChatHeader({
   onUpdateProjectScript,
   onDeleteProjectScript,
   onSendAldoMessage,
+  panelToggleCount = 2,
 }: ChatHeaderProps) {
   const { active: panelAnimationsActive, durationMs: panelAnimationDurationMs } =
     usePanelAnimationSettings();
@@ -402,7 +405,10 @@ export const ChatHeader = memo(function ChatHeader({
         }
       >
         {activeProject ? <ProjectFavicon project={activeProject} className="size-3.5" /> : null}
-        <span className="max-w-40 truncate text-sm font-medium">{activeProjectName}</span>
+        {/* A phone keeps the title readable: the project shows as its icon. */}
+        <span className="max-w-40 truncate text-sm font-medium max-sm:sr-only">
+          {activeProjectName}
+        </span>
         <ChevronDownIcon aria-hidden="true" className="size-3.5 shrink-0 opacity-70" />
       </MenuTrigger>
       <MenuPopup align="start" className="min-w-52">
@@ -471,7 +477,7 @@ export const ChatHeader = memo(function ChatHeader({
     projectControl = (
       <span className="inline-flex min-w-0 items-center gap-1.5">
         <ProjectFavicon project={activeProject} className="size-3.5" />
-        <span className="max-w-40 truncate text-sm font-medium text-muted-foreground">
+        <span className="max-w-40 truncate text-sm font-medium text-muted-foreground max-sm:sr-only">
           {activeProjectName}
         </span>
       </span>
@@ -567,7 +573,7 @@ export const ChatHeader = memo(function ChatHeader({
                 <ChevronDownIcon
                   aria-hidden
                   data-thread-title-chevron
-                  className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/thread-title:opacity-100 group-focus-visible/thread-title:opacity-100"
+                  className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/thread-title:opacity-100 group-focus-visible/thread-title:opacity-100 max-sm:hidden"
                 />
               </TooltipTrigger>
               <TooltipPopup side="top">{activeThreadTitle}</TooltipPopup>
@@ -594,8 +600,12 @@ export const ChatHeader = memo(function ChatHeader({
           // Reserve two panel toggles (32px, 28px at sm) with their 4px gap and 1px edge inset,
           // plus the same gap the actions keep between themselves (gap-2, gap-3 at @3xl) so the
           // terminal toggle does not sit against the last action. The page header adds 8px more
-          // right padding at sm.
-          rightPanelOpen ? "pr-0" : "pr-19.25 sm:pr-15.25 @3xl/header-actions:pr-16.25",
+          // right padding at sm. Without the terminal toggle only one is reserved.
+          rightPanelOpen
+            ? "pr-0"
+            : panelToggleCount === 1
+              ? "pr-10.25 sm:pr-7.25 @3xl/header-actions:pr-8.25"
+              : "pr-19.25 sm:pr-15.25 @3xl/header-actions:pr-16.25",
           "[[data-panel-animations=true]_&]:motion-safe:transition-[padding-right] [[data-panel-animations=true]_&]:motion-safe:duration-(--panel-animation-duration) [[data-panel-animations=true]_&]:motion-safe:ease-out",
         )}
       >

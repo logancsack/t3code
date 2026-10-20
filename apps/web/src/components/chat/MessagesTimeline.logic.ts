@@ -41,6 +41,7 @@ import {
   type WorktreeSetupSnapshot,
 } from "@t3tools/contracts";
 import { formatWorkspaceRelativePath } from "../../filePathDisplay";
+import type { MaintainScrollAtEndOptions } from "@legendapp/list/react";
 
 const TIMELINE_MINIMAP_ITEM_SPACING = 8;
 export const TIMELINE_MINIMAP_MIN_ITEMS = 2;
@@ -172,6 +173,55 @@ export function resolveTimelineIsAtEnd(state: TimelineEndState | undefined): boo
   // the inset and is true anywhere in the bottom composer-height band, so it is
   // only a fallback here, never a short-circuit.
   return contentLength - scroll - scrollLength <= TIMELINE_FOLLOW_REARM_THRESHOLD_PX;
+}
+
+const TIMELINE_MAINTAIN_SCROLL_AT_END = {
+  animated: false,
+  on: {
+    dataChange: true,
+    // Composer inset changes must not move already-visible messages. New
+    // rows and row growth still keep live-follow pinned through the other
+    // triggers below.
+    footerLayout: false,
+    itemLayout: true,
+    layout: true,
+  },
+} as const satisfies MaintainScrollAtEndOptions;
+// Streamed text lands a paragraph at a time. A smooth scroll to the end
+// turns each landing into a short glide instead of a jump. Thread switches
+// and layout settles keep the instant variant so nothing visibly travels.
+const TIMELINE_MAINTAIN_SCROLL_AT_END_SMOOTH = {
+  ...TIMELINE_MAINTAIN_SCROLL_AT_END,
+  animated: true,
+} as const satisfies MaintainScrollAtEndOptions;
+// On a phone the composer has no resting reservation: it grows on focus, for
+// a multiline draft and for docked cards, with nothing set aside for it. The
+// footer holds the composer inset, so following its layout keeps the last
+// message above the composer while the timeline follows the end.
+const TIMELINE_MAINTAIN_SCROLL_AT_END_WITH_COMPOSER = {
+  ...TIMELINE_MAINTAIN_SCROLL_AT_END,
+  on: { ...TIMELINE_MAINTAIN_SCROLL_AT_END.on, footerLayout: true },
+} as const satisfies MaintainScrollAtEndOptions;
+const TIMELINE_MAINTAIN_SCROLL_AT_END_WITH_COMPOSER_SMOOTH = {
+  ...TIMELINE_MAINTAIN_SCROLL_AT_END_WITH_COMPOSER,
+  animated: true,
+} as const satisfies MaintainScrollAtEndOptions;
+
+/**
+ * Live-follow options for the timeline list. Returns stable objects so the
+ * list sees the same prop between renders.
+ */
+export function resolveTimelineMaintainScrollAtEnd(input: {
+  readonly animated: boolean;
+  /** Follow composer growth (phone widths, where nothing reserves it). */
+  readonly followComposerGrowth: boolean;
+}): MaintainScrollAtEndOptions {
+  if (input.followComposerGrowth) {
+    return input.animated
+      ? TIMELINE_MAINTAIN_SCROLL_AT_END_WITH_COMPOSER_SMOOTH
+      : TIMELINE_MAINTAIN_SCROLL_AT_END_WITH_COMPOSER;
+  }
+  return input.animated ? TIMELINE_MAINTAIN_SCROLL_AT_END_SMOOTH : TIMELINE_MAINTAIN_SCROLL_AT_END;
 }
 
 export function shouldPreserveAssistantLineBreaks(text: string): boolean {

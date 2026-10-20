@@ -1,31 +1,42 @@
 // What only the user can get past, asked in place (handoffs.logic.ts): over
 // the composer of the conversation that asked, a card with the reason, what
-// to do and the one step that gets the agent going again: doing it in the
-// agent's browser (full screen, AldoHandoffTakeover.tsx), typing a code for
-// Aldo to put into the page, or skipping the site. The Browser panel shows a
-// bar while its machine's agent waits on the user. Shown only when Aldo
-// reports handoffs.
+// to do and the one step that gets the agent going again: taking control of
+// the agent's browser (full screen, AldoHandoffTakeover.tsx) or doing it on a
+// phone, typing a code for Aldo to put into the page, or skipping the site.
+// On a computer, "Do it on my phone" shows a QR code for the phone: the
+// conversation with that browser full screen (behind the phone's own Aldo
+// sign-in), or the site's own "continue on your phone" link for a camera
+// step. The Browser panel shows a bar while its machine's agent waits on the
+// user. Shown only when Aldo reports handoffs.
 
-import { HandIcon, LoaderIcon } from "lucide-react";
+import { ExternalLinkIcon, HandIcon, LoaderIcon, SmartphoneIcon } from "lucide-react";
 import { useState, type MouseEvent } from "react";
 import { create } from "zustand";
 
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
+import { QRCodeSvg } from "../components/ui/qr-code";
 import { toastManager } from "../components/ui/toast";
+import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
+import { useMediaQuery } from "../hooks/useMediaQuery";
 import { cn } from "~/lib/utils";
 import { AldoApiError } from "./api";
 import { resolveAldoHandoff, type AldoHandoff } from "./homeApi";
 import { aldoMorph, aldoMorphSource } from "./morph";
 import {
+  aldoHandoffButtons,
   aldoHandoffCode,
-  aldoHandoffElsewhere,
   aldoHandoffEyebrow,
   aldoHandoffFor,
   aldoHandoffHow,
   aldoHandoffOn,
+  aldoHandoffPhoneLink,
+  aldoHandoffSiteLabel,
+  aldoHandoffSiteLink,
+  aldoHandoffSiteName,
   aldoHandoffSkipLabel,
   aldoHandoffWantsCode,
+  type AldoHandoffButton,
 } from "./handoffs.logic";
 import { refreshAldoHome, useAldoHomeFeed, useAldoHomeRead } from "./homeFeed";
 import { PRIMARY, SECONDARY } from "./surface";
@@ -128,9 +139,19 @@ function HandoffCard({ handoff }: { readonly handoff: AldoHandoff }) {
 }
 
 /**
+ * A phone or tablet, in the hand: touch, with no mouse to hover. Its own
+ * browser is where "Do it on my phone" would go, held either way up (a phone
+ * on its side is as wide as a small laptop).
+ */
+export function useAldoOnPhone(): boolean {
+  return useMediaQuery("(pointer: coarse) and (hover: none)");
+}
+
+/**
  * What to do and the buttons to do it: the card's, and the home screen's
  * under a conversation that waits on one (AldoHomeInbox.tsx). `pills` makes
- * them the big round buttons of Aldo's conversation (AldoUpNext.tsx).
+ * them the big round buttons of Aldo's conversation (AldoUpNext.tsx). Which
+ * buttons, and in what order, is aldoHandoffButtons'.
  */
 export function AldoHandoffActions(props: {
   readonly handoff: AldoHandoff;
@@ -140,7 +161,11 @@ export function AldoHandoffActions(props: {
   const { handoff } = props;
   const [busy, setBusy] = useState<"done" | "skip" | "code" | null>(null);
   const [code, setCode] = useState("");
-  const elsewhere = aldoHandoffElsewhere(handoff);
+  const [phoneOpen, setPhoneOpen] = useState(false);
+  const onPhone = useAldoOnPhone();
+  const phoneLink = aldoHandoffPhoneLink(handoff, window.location.origin);
+  const siteLink = aldoHandoffSiteLink(handoff);
+  const buttons = aldoHandoffButtons(handoff, { onPhone, phoneLink: phoneLink !== null });
   const wantsCode = aldoHandoffWantsCode(handoff);
   const answer = async (next: AldoHandoffAnswer) => {
     setBusy(next.decision);
@@ -152,13 +177,59 @@ export function AldoHandoffActions(props: {
     openAldoHandoffTakeover(handoff.id, event.currentTarget);
   const spinner = (decision: typeof busy) =>
     busy === decision ? <LoaderIcon className="size-3.5 animate-spin" /> : null;
-  const skip = (
-    <>
-      {spinner("skip")} {aldoHandoffSkipLabel(handoff)}
-    </>
-  );
-  if (props.pills)
-    // Aldo's conversation (AldoUpNext.tsx): the way out on the left, the way on on the right.
+  const submitCode = () => {
+    const typed = aldoHandoffCode(code);
+    if (typed && busy === null) void answer({ decision: "code", code: typed });
+  };
+  const label = (button: AldoHandoffButton) => {
+    switch (button) {
+      case "take":
+        return <>{props.pills ? null : <HandIcon className="size-3.5" />} Take control</>;
+      case "phone":
+        return (
+          <>{props.pills ? null : <SmartphoneIcon className="size-3.5" />} Do it on my phone</>
+        );
+      case "site":
+        return (
+          <>
+            {aldoHandoffSiteLabel(handoff)} <ExternalLinkIcon className="size-3.5" />
+          </>
+        );
+      case "done":
+        return <>{spinner("done")} I'm done</>;
+      case "browser":
+        return "Open its browser";
+      case "skip":
+        return (
+          <>
+            {spinner("skip")} {aldoHandoffSkipLabel(handoff)}
+          </>
+        );
+    }
+  };
+  /** What a button does (the site's page is a link instead). */
+  const act = (button: AldoHandoffButton, event: MouseEvent<HTMLElement>) => {
+    if (button === "take" || button === "browser") open(event);
+    else if (button === "phone") setPhoneOpen((was) => !was);
+    else if (button === "done") void answer({ decision: "done" });
+    else if (button === "skip") void answer({ decision: "skip" });
+  };
+  const phonePanel =
+    phoneOpen && phoneLink && buttons.includes("phone") ? (
+      <HandoffPhonePanel
+        handoff={handoff}
+        link={phoneLink}
+        busy={busy !== null}
+        doneBusy={busy === "done"}
+        onDone={() => void answer({ decision: "done" })}
+      />
+    ) : null;
+
+  if (props.pills) {
+    // Aldo's conversation (AldoUpNext.tsx): the way out on the left, the way on on the right, the rest quietly under them.
+    const [main] = buttons;
+    const quiet = buttons.filter((button) => button !== main && button !== "skip");
+    const mainClass = main === "browser" ? SECONDARY : PRIMARY;
     return (
       <>
         <p className="text-[14px] text-muted-foreground leading-6 dark:text-foreground/70">
@@ -169,8 +240,7 @@ export function AldoHandoffActions(props: {
             className="flex h-11 items-center gap-1 rounded-full bg-foreground/[0.05] ps-4 pe-1 focus-within:bg-foreground/[0.07]"
             onSubmit={(event) => {
               event.preventDefault();
-              const typed = aldoHandoffCode(code);
-              if (typed && busy === null) void answer({ decision: "code", code: typed });
+              submitCode();
             }}
           >
             <input
@@ -199,40 +269,43 @@ export function AldoHandoffActions(props: {
             disabled={busy !== null}
             onClick={() => void answer({ decision: "skip" })}
           >
-            {skip}
+            {label("skip")}
           </button>
-          {elsewhere && !wantsCode ? (
+          {main === "site" && siteLink ? (
+            <a className={PRIMARY} href={siteLink} target="_blank" rel="noopener noreferrer">
+              {label("site")}
+            </a>
+          ) : main ? (
             <button
               type="button"
-              className={PRIMARY}
+              className={mainClass}
               disabled={busy !== null}
-              onClick={() => void answer({ decision: "done" })}
+              onClick={(event) => act(main, event)}
             >
-              {spinner("done")} I'm done
+              {label(main)}
             </button>
-          ) : (
-            <button
-              type="button"
-              className={wantsCode ? SECONDARY : PRIMARY}
-              disabled={busy !== null}
-              onClick={open}
-            >
-              {wantsCode ? "Open its browser" : "Do it now"}
-            </button>
-          )}
+          ) : null}
         </div>
-        {elsewhere && !wantsCode ? (
-          <button
-            type="button"
-            className="mx-auto -mb-1 rounded-full px-3 py-1 text-muted-foreground text-sm hover:text-foreground"
-            disabled={busy !== null}
-            onClick={open}
-          >
-            Open its browser
-          </button>
+        {quiet.length > 0 ? (
+          <div className="-mb-1 flex flex-wrap justify-center gap-1">
+            {quiet.map((button) => (
+              <button
+                key={button}
+                type="button"
+                className="rounded-full px-3 py-1 text-muted-foreground text-sm hover:text-foreground pointer-coarse:min-h-11"
+                disabled={busy !== null && button !== "phone"}
+                aria-expanded={button === "phone" ? phoneOpen : undefined}
+                onClick={(event) => act(button, event)}
+              >
+                {label(button)}
+              </button>
+            ))}
+          </div>
         ) : null}
+        {phonePanel}
       </>
     );
+  }
   return (
     <>
       <p className="mt-0.5 text-muted-foreground text-sm">{aldoHandoffHow(handoff)}</p>
@@ -241,8 +314,7 @@ export function AldoHandoffActions(props: {
           className="mt-3 flex gap-2"
           onSubmit={(event) => {
             event.preventDefault();
-            const typed = aldoHandoffCode(code);
-            if (typed && busy === null) void answer({ decision: "code", code: typed });
+            submitCode();
           }}
         >
           <Input
@@ -260,40 +332,103 @@ export function AldoHandoffActions(props: {
         </form>
       ) : null}
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        {wantsCode ? (
-          <Button type="button" size="sm" variant="outline" disabled={busy !== null} onClick={open}>
-            Open its browser
-          </Button>
-        ) : elsewhere ? (
-          <>
+        {buttons.map((button, index) => {
+          // The main one first (a code's is its field's); the phone and "I'm done" beside it; the rest quiet.
+          const variant =
+            index === 0 && !wantsCode
+              ? "default"
+              : button === "phone" || button === "done" || (index === 0 && wantsCode)
+                ? "outline"
+                : "ghost";
+          if (button === "site" && siteLink)
+            return (
+              <Button
+                key={button}
+                size="sm"
+                variant={variant}
+                render={<a href={siteLink} target="_blank" rel="noopener noreferrer" />}
+              >
+                {label(button)}
+              </Button>
+            );
+          return (
             <Button
+              key={button}
               type="button"
               size="sm"
-              disabled={busy !== null}
-              onClick={() => void answer({ decision: "done" })}
+              variant={variant}
+              disabled={busy !== null && button !== "phone"}
+              aria-expanded={button === "phone" ? phoneOpen : undefined}
+              onClick={(event) => act(button, event)}
             >
-              {spinner("done")} I'm done
+              {label(button)}
             </Button>
-            <Button type="button" size="sm" variant="ghost" disabled={busy !== null} onClick={open}>
-              Open its browser
-            </Button>
-          </>
-        ) : (
-          <Button type="button" size="sm" disabled={busy !== null} onClick={open}>
-            <HandIcon className="size-3.5" /> Do it now
-          </Button>
-        )}
-        <Button
-          type="button"
-          size="sm"
-          variant="ghost"
-          disabled={busy !== null}
-          onClick={() => void answer({ decision: "skip" })}
-        >
-          {skip}
-        </Button>
+          );
+        })}
       </div>
+      {phonePanel}
     </>
+  );
+}
+
+/**
+ * "Do it on my phone", on a computer: a QR code for the phone's camera and the
+ * link to copy. It opens the site's own page for a camera step, or the
+ * conversation with the agent's browser full screen, which hands it back
+ * there; either way "I'm done" here hands it back too.
+ */
+function HandoffPhonePanel(props: {
+  readonly handoff: AldoHandoff;
+  readonly link: { readonly href: string; readonly onSite: boolean };
+  readonly busy: boolean;
+  readonly doneBusy: boolean;
+  readonly onDone: () => void;
+}) {
+  const { handoff, link } = props;
+  const { copyToClipboard, isCopied } = useCopyToClipboard({
+    onError: () => toastManager.add({ type: "error", title: "Couldn't copy the link" }),
+  });
+  const site = aldoHandoffSiteName(handoff);
+  return (
+    <div className="mt-3 flex items-start gap-3 rounded-lg border border-border bg-background p-3">
+      {/* Dark on white whatever the theme: a camera reads it that way. */}
+      <div className="shrink-0 rounded-md bg-white p-1">
+        <QRCodeSvg
+          value={link.href}
+          size={128}
+          level="M"
+          marginSize={1}
+          title="QR code for your phone"
+        />
+      </div>
+      <div className="min-w-0 flex-1 text-sm">
+        <p className="font-medium text-foreground">Scan it with your phone's camera</p>
+        <p className="mt-0.5 text-muted-foreground">
+          {link.onSite
+            ? `It opens ${site ? `${site}'s` : "the site's"} own page for this step, where your phone's camera works. Hand it back here when you've finished.`
+            : "It opens your agent's browser at this step, full screen, once your phone is signed in to Aldo. Hand it back there or here."}
+        </p>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={props.busy}
+            onClick={props.onDone}
+          >
+            {props.doneBusy ? <LoaderIcon className="size-3.5 animate-spin" /> : null} I'm done
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={() => copyToClipboard(link.href, undefined)}
+          >
+            {isCopied ? "Copied" : "Copy link"}
+          </Button>
+        </div>
+      </div>
+    </div>
   );
 }
 

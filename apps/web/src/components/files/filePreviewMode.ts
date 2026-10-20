@@ -13,11 +13,28 @@ export function shouldShowFileExplorer(input: {
   readonly relativePath: string | null;
   readonly explorerOpen: boolean;
   readonly attachmentOpen: boolean;
+  /**
+   * A phone-width panel has no room for the tree beside a file: the file gets
+   * the whole width, and the breadcrumbs still browse the workspace.
+   */
+  readonly compact?: boolean;
 }): boolean {
   if (input.attachmentOpen || (input.relativePath && isAbsolutePath(input.relativePath))) {
     return false;
   }
-  return input.explorerOpen || input.relativePath === null;
+  if (input.relativePath === null) return true;
+  return input.explorerOpen && input.compact !== true;
+}
+
+/**
+ * Chrome on Android has no built-in PDF viewer, so a PDF frame there stays
+ * blank; the browser says so through `pdfViewerEnabled`. One that predates the
+ * flag gets the frame, as before.
+ */
+export function canShowPdfInFrame(
+  nav: { readonly pdfViewerEnabled?: boolean } | undefined,
+): boolean {
+  return nav?.pdfViewerEnabled !== false;
 }
 
 export function setMarkdownTaskChecked(

@@ -117,6 +117,48 @@ function useStickToBottom(ref: RefObject<HTMLDivElement | null>, enabled: boolea
   return below && enabled;
 }
 
+/**
+ * The empty page splits the room around its question and composer by a fixed
+ * share, a little above the middle, so the first run's starters under it
+ * scrolled (by 6px at 820px tall, half a row at 720) with the space over the
+ * question standing empty. Short of their share, their box takes what they
+ * need instead, the space over the question the rest down to its least, and
+ * it gives way first when the page runs short (the composer grows, the window
+ * shrinks), so the question keeps its place. Decided again a frame after a
+ * change: a size set as the observer reports one is a loop it reports as an
+ * error, which the splash takes for a failed start.
+ */
+function useStartersRoom(enabled: boolean): {
+  readonly above: RefObject<HTMLDivElement | null>;
+  readonly below: RefObject<HTMLDivElement | null>;
+} {
+  const above = useRef<HTMLDivElement>(null);
+  const below = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const spacer = above.current;
+    const box = below.current;
+    const starters = box?.firstElementChild;
+    if (!enabled || !spacer || !box || !starters) return;
+    const fit = () => {
+      box.style.flex = "";
+      if (box.scrollHeight > box.clientHeight) box.style.flex = "0 1000 auto";
+    };
+    fit();
+    let frame = 0;
+    const observer = new ResizeObserver(() => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(fit);
+    });
+    for (const element of [spacer, box, starters]) observer.observe(element);
+    return () => {
+      observer.disconnect();
+      cancelAnimationFrame(frame);
+      box.style.flex = "";
+    };
+  }, [enabled]);
+  return { above, below };
+}
+
 export function AldoConversationPage(props: {
   readonly home: AldoHome | null;
   /** Whether this Aldo has the home read; null until it's known. */
@@ -224,6 +266,9 @@ export function AldoConversationPage(props: {
   }, [loaded, home]);
   const below = useStickToBottom(scroller, !loading && !fresh);
   const dock = useRef<HTMLDivElement>(null);
+  const { above: roomAboveRef, below: startersRef } = useStartersRoom(
+    fresh && Boolean(props.welcome),
+  );
   // A thread tapped in the conversation opens: the thread itself, growing out of what was tapped.
   const openThread = useCallback(
     (target: AldoHomeTarget, from?: HTMLElement | null) => {
@@ -286,7 +331,7 @@ export function AldoConversationPage(props: {
               ) : null}
             </header>
             {/* The empty page centers its question and composer, a little above the middle; then it's the conversation over the composer. */}
-            {fresh ? <div aria-hidden className="min-h-4 flex-[1_1_0]" /> : null}
+            {fresh ? <div ref={roomAboveRef} aria-hidden className="min-h-4 flex-[1_1_0]" /> : null}
             <div
               ref={scroller}
               aria-busy={loading}
@@ -367,7 +412,10 @@ export function AldoConversationPage(props: {
               </div>
             </div>
             {fresh ? (
-              <div className="flex min-h-6 flex-[1.4_1_0] flex-col overflow-y-auto pb-[max(1.5rem,env(safe-area-inset-bottom))]">
+              <div
+                ref={startersRef}
+                className="flex min-h-6 flex-[1.4_1_0] flex-col overflow-y-auto pb-[max(1.5rem,env(safe-area-inset-bottom))]"
+              >
                 {props.welcome ? <div className={cn(column, "pt-4")}>{props.welcome}</div> : null}
               </div>
             ) : null}

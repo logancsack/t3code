@@ -1,10 +1,18 @@
 // Settings → Permissions: what agents may do without asking. Their access in
-// a thread (T3's own row), what they may spend, how they merge and answer
-// reviews, how they pick media tools, and what the user always allows. Each
+// a thread (T3's own row), what they do in the user's name (sign up for sites,
+// publish), what they may spend, how they merge and answer reviews, how they
+// pick media tools, and what the user always allows. Each
 // rule is the user's for all their workspaces, with the workspaces that
 // answered otherwise under it (AldoPolicy.tsx).
 
-import { CheckCheckIcon, CodeXmlIcon, ImageIcon, ShieldCheckIcon, WalletIcon } from "lucide-react";
+import {
+  CheckCheckIcon,
+  CodeXmlIcon,
+  ImageIcon,
+  ShieldCheckIcon,
+  UserRoundCheckIcon,
+  WalletIcon,
+} from "lucide-react";
 import { Fragment, useState } from "react";
 
 import { ProjectDefaultsSettings } from "../components/settings/ProjectDefaultsSettings";
@@ -34,6 +42,7 @@ import {
   aldoMediaDefaults,
   aldoMergeMethodEdits,
   aldoMergeMethods,
+  aldoRuleShown,
   aldoWorkspaceLabel,
 } from "./policy.logic";
 
@@ -209,6 +218,34 @@ function MediaDefaultsRow(props: { readonly policy: AldoPolicyState }) {
   );
 }
 
+/** Accounts and publishing in the user's name: only on an Aldo that says it takes them. */
+function InYourNameSection(props: { readonly policy: AldoPolicyState }) {
+  const { view } = props.policy;
+  const accounts = aldoRuleShown(view, "accounts");
+  const publishing = aldoRuleShown(view, "publishing");
+  if (!accounts && !publishing) return null;
+  return (
+    <SettingsSection title="In your name" icon={<UserRoundCheckIcon className="size-4" />}>
+      {accounts ? (
+        <AldoPolicyRuleRow
+          rule="accounts"
+          setting="aldo-accounts"
+          policy={props.policy}
+          description="Agents sign up for the sites you ask for with your name and email, fill in your profile and save the login to your vault. With “Ask me first”, they ask you before each one; with “Never”, they write you the steps instead."
+        />
+      ) : null}
+      {publishing ? (
+        <AldoPolicyRuleRow
+          rule="publishing"
+          setting="aldo-publishing"
+          policy={props.policy}
+          description="Listings, posts and pages you asked for go live once they’re checked, and each one says where it went. With “Show me first”, you see each one before it goes live."
+        />
+      ) : null}
+    </SettingsSection>
+  );
+}
+
 function AlwaysAllowedSection() {
   const { rules, removing, remove } = useAldoApprovalRules();
   return (
@@ -257,6 +294,7 @@ export function AldoPermissionsPage() {
       {policy.error ? (
         <p className="px-3 text-destructive-foreground text-sm sm:px-4">{policy.error}</p>
       ) : null}
+      <InYourNameSection policy={policy} />
       <SettingsSection title="Money" icon={<WalletIcon className="size-4" />}>
         <AldoPolicyRuleRow
           rule="spendThreshold"

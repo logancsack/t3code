@@ -288,6 +288,46 @@ export function saidAlready(
   );
 }
 
+/**
+ * What the card says while Aldo sends the kept request: back from Checkout
+ * (its session, to confirm the plan by) it's confirming the plan; otherwise a
+ * plan was on already (paid in another tab, or an address with the request
+ * and no Checkout), and the request is just going.
+ */
+export function sendingWords(checkoutSession: string | null): string {
+  return checkoutSession ? "Confirming your plan" : "Sending your request";
+}
+
+/** Aldo's answer when Checkout didn't open, as `api()` throws it (AldoApiError). */
+export interface AldoCheckoutRefusal {
+  readonly status: number;
+  readonly message: string;
+  /** What the answer said: Aldo's words are its `error`. */
+  readonly body?: unknown;
+}
+
+/**
+ * What the picker says when Checkout didn't open (`refusal`, Aldo's answer;
+ * null when there was none: offline, or Aldo unreachable). A refusal (4xx)
+ * is Aldo's own words, written for people (verify your email, no access);
+ * anything else gets the picker's, never the error's text: an Aldo that
+ * failed (500) sends the payment provider's raw message, and a gateway's page
+ * says nothing useful.
+ */
+export function checkoutFailureWords(refusal: AldoCheckoutRefusal | null): string {
+  if (refusal === null) {
+    return "Aldo couldn’t be reached, so Checkout didn’t open and nothing was charged. Your request is saved. Check your connection and try again.";
+  }
+  if (refusal.status >= 400 && refusal.status < 500) {
+    const body = refusal.body;
+    const said = isRecord(body) && typeof body.error === "string" ? body.error.trim() : "";
+    if (said) return said;
+    // Signed out: the page is on its way to sign-in, and says so itself.
+    if (refusal.status === 401) return refusal.message;
+  }
+  return "Aldo couldn’t open Checkout just now, so nothing was charged. Your request is saved. Try again in a moment.";
+}
+
 /** Back from Checkout, Stripe can take a moment to confirm the plan: how long before asking again, or null to stop. */
 export function confirmAgainIn(attempt: number): number | null {
   const waits = [1_500, 2_000, 3_000, 4_000, 5_000, 6_000];

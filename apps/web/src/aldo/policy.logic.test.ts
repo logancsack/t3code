@@ -11,6 +11,7 @@ import {
   aldoRuleEdit,
   aldoRuleLabel,
   aldoRuleOptions,
+  aldoRuleShown,
   aldoRuleValue,
   aldoWorkspaceLabel,
   optimisticPolicyEdit,
@@ -226,5 +227,75 @@ describe("aldoMediaDefaults and aldoWorkspaceLabel", () => {
       { task: "video", label: "Video", tool: null, repos: ["logancsack/site"] },
     ]);
     expect(aldoWorkspaceLabel(["logancsack/aldo", "logancsack/t3code"])).toBe("aldo + t3code");
+  });
+});
+
+describe("accounts and publishing in the user's name", () => {
+  const rules = ["merge", "spendThreshold", "accounts", "publishing"];
+
+  it("shows them only on an Aldo that says it takes them; the others everywhere", () => {
+    expect(aldoRuleShown({ rules }, "accounts")).toBe(true);
+    expect(aldoRuleShown({ rules }, "publishing")).toBe(true);
+    expect(aldoRuleShown({ rules: ["merge", "accounts"] }, "publishing")).toBe(false);
+    // An older Aldo doesn't say which rules it takes, and has none of the newer ones.
+    expect(aldoRuleShown(view, "accounts")).toBe(false);
+    expect(aldoRuleShown(null, "accounts")).toBe(false);
+    expect(aldoRuleShown(undefined, "publishing")).toBe(false);
+    expect(aldoRuleShown({ rules: "accounts" as never }, "accounts")).toBe(false);
+    expect(aldoRuleShown(view, "merge")).toBe(true);
+    expect(aldoRuleShown(null, "spendThreshold")).toBe(true);
+  });
+
+  it("is When I ask until the user says otherwise, with no Not decided", () => {
+    expect(aldoRuleValue("accounts", {})).toBe("when_asked");
+    expect(aldoRuleValue("publishing", {})).toBe("when_asked");
+    expect(aldoRuleValue("accounts", { accounts: "never" })).toBe("never");
+    expect(aldoRuleOptions("accounts", "when_asked")).toEqual([
+      { value: "when_asked", label: "When I ask" },
+      { value: "ask_first", label: "Ask me first" },
+      { value: "never", label: "Never" },
+    ]);
+    expect(aldoRuleOptions("publishing", "show_first")).toEqual([
+      { value: "when_asked", label: "When I ask" },
+      { value: "show_first", label: "Show me first" },
+    ]);
+    expect(aldoRuleOptions("publishing", "when_asked", { workspace: true })[0]?.value).toBe(
+      ALDO_SAME_AS_EVERYWHERE,
+    );
+    expect(aldoRuleLabel("accounts", "ask_first")).toBe("Ask me first");
+  });
+
+  it("saves each choice as the server takes it, and a workspace can follow the user's own again", () => {
+    expect(aldoRuleEdit("accounts", "ask_first")).toEqual({ set: { accounts: "ask_first" } });
+    expect(aldoRuleEdit("accounts", "when_asked")).toEqual({ set: { accounts: "when_asked" } });
+    expect(aldoRuleEdit("publishing", "show_first")).toEqual({ set: { publishing: "show_first" } });
+    expect(aldoRuleEdit("publishing", "never")).toBeNull();
+    expect(aldoRuleEdit("accounts", "sometimes")).toBeNull();
+    expect(aldoRuleEdit("accounts", ALDO_SAME_AS_EVERYWHERE, ["logancsack/site"])).toEqual({
+      repos: ["logancsack/site"],
+      clear: [["accounts"]],
+    });
+  });
+
+  it("lists a workspace that answered otherwise than the user's own or the default", () => {
+    const acting: AldoPolicyView = {
+      ...view,
+      rules,
+      everywhere: { accounts: "ask_first" },
+      workspaces: [
+        { repos: ["logancsack/site"], policy: { accounts: "never", publishing: "when_asked" } },
+        { repos: ["logancsack/aldo"], policy: { accounts: "ask_first", publishing: "show_first" } },
+      ],
+    };
+    expect(aldoRuleDifferences(acting, "accounts")).toEqual([
+      { repos: ["logancsack/site"], value: "never" },
+    ]);
+    expect(aldoRuleDifferences(acting, "publishing")).toEqual([
+      { repos: ["logancsack/aldo"], value: "show_first" },
+    ]);
+    // A change shows at once and keeps which rules Aldo takes.
+    const next = optimisticPolicyEdit(acting, { set: { publishing: "show_first" } });
+    expect(next.everywhere).toEqual({ accounts: "ask_first", publishing: "show_first" });
+    expect(next.rules).toEqual(rules);
   });
 });
