@@ -389,6 +389,8 @@ export interface AldoHome {
   readonly routines?: ReadonlyArray<AldoRoutine>;
   /** What only the user can get past in an agent's browser, open now, newest first (a newer Aldo). */
   readonly handoffs?: ReadonlyArray<AldoHandoff>;
+  /** Plans Aldo proposed before big work, open and lately started (a newer Aldo; read with parseAldoPlans). */
+  readonly plans?: unknown;
   readonly actions: ReadonlyArray<AldoHomeAction>;
   readonly usage: AldoHomeUsage;
   readonly spends: {

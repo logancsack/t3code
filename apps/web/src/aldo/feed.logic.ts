@@ -21,6 +21,7 @@ import {
   type AldoHomeTarget,
 } from "./homeApi";
 import { putAway } from "./decisions.logic";
+import { type AldoPlan } from "./plans.logic";
 import { sameTarget } from "./home.logic";
 
 /** How far back the conversation shows what happened: as long as the board kept done threads. */
@@ -54,6 +55,13 @@ export type AldoFeedEvent =
       readonly live: boolean;
     }
   | {
+      /** A plan Aldo proposed that has started (plans.logic.ts): its card, where it started. */
+      readonly kind: "plan";
+      readonly key: string;
+      readonly at: string;
+      readonly plan: AldoPlan;
+    }
+  | {
       /** A card the user answered this visit (receipts.ts): what was done. */
       readonly kind: "decided";
       readonly key: string;
@@ -65,6 +73,7 @@ export type AldoFeedEvent =
 /** Aldo's actions worth a line in the conversation: what it changed about a thread or a pull request. */
 const SHOWN_ACTIONS = new Set([
   "start_thread",
+  "start_plan",
   "message_thread",
   "answer_thread",
   "approve_plan",
@@ -218,6 +227,29 @@ export function withReceipts(
     thread: r.thread ?? null,
   }));
   return [...events, ...decided].sort((a, b) => a.at.localeCompare(b.at));
+}
+
+/**
+ * Plans that started, where they started: from `from` (the conversation's
+ * start) and within the window, as the rest. Open ones wait at the
+ * conversation's end instead.
+ */
+export function withPlans(
+  events: ReadonlyArray<AldoFeedEvent>,
+  plans: ReadonlyArray<AldoPlan>,
+  options: { readonly now: number; readonly from: string | null },
+): ReadonlyArray<AldoFeedEvent> {
+  const start = Math.max(
+    options.now - FEED_WINDOW_MS,
+    options.from ? Date.parse(options.from) : -Infinity,
+  );
+  const started: AldoFeedEvent[] = plans.flatMap((plan) =>
+    plan.status === "started" && plan.startedAt && Date.parse(plan.startedAt) >= start
+      ? [{ kind: "plan", key: `plan:${plan.id}`, at: plan.startedAt, plan }]
+      : [],
+  );
+  if (started.length === 0) return events;
+  return [...events, ...started].sort((a, b) => a.at.localeCompare(b.at));
 }
 
 type Finished = Extract<AldoFeedEvent, { readonly kind: "finished" }>;
