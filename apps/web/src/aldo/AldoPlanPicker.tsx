@@ -20,18 +20,16 @@ import {
   type AldoPlanPick,
 } from "./assistantSession";
 import {
+  checkoutFailureWords,
   extraUsageLabel,
   extraUsageOffer,
   pickerLines,
+  sendingWords,
   type AldoPickerPlan,
 } from "./planPicker.logic";
 import { formatPlanPrice } from "./billing.logic";
 import { FOCUS, PRIMARY, SECONDARY, SURFACE } from "./surface";
 import { useAldoWorkspaceUsage } from "../state/aldoWorkspaceUsage";
-
-function messageOf(cause: unknown): string {
-  return cause instanceof Error ? cause.message : String(cause);
-}
 
 /** The picker under the request it's for (`pick`, the session's). */
 export function AldoPlanPicker(props: { readonly pick: AldoPlanPick }) {
@@ -106,7 +104,8 @@ function Plans(props: {
         await resumeAldoKept();
         return;
       }
-      setError(messageOf(cause));
+      // In words for people: an Aldo that failed sends the payment provider's own message.
+      setError(checkoutFailureWords(cause instanceof AldoApiError ? cause : null));
     }
   };
 
@@ -206,7 +205,7 @@ function Plans(props: {
   );
 }
 
-/** How the request stands once the plan's paid for: confirming it, on it, or waiting for Stripe. */
+/** How the request stands once a plan's chosen: going (back from Checkout, confirming the plan first), sent, or waiting. */
 function Status(props: { readonly pick: AldoPlanPick }) {
   const { pick } = props;
   const replying = useAldoAssistant((s) => s.replying);
@@ -247,7 +246,7 @@ function Status(props: { readonly pick: AldoPlanPick }) {
       className="flex items-center gap-2 text-[14px] text-muted-foreground leading-5"
     >
       <LoaderCircleIcon aria-hidden className="size-4 shrink-0 animate-spin" strokeWidth={1.75} />
-      Confirming your plan
+      {sendingWords(pick.checkoutSession)}
     </p>
   );
 }
