@@ -126,6 +126,33 @@ describe("CodexSessionRuntime steering", () => {
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 
+  it.live(
+    "messages sent together keep their order: none joins the turn ahead of one queued before it",
+    () =>
+      Effect.gen(function* () {
+        // The plan message's turn/start is answered late, so the next is sent while it's on its way.
+        const runtime = yield* withRuntime({ holdTurnOpen: true, queuedTurnStartDelayMs: 300 });
+        yield* runtime.sendTurn({ input: "keep working" });
+        const [plan, next] = yield* Effect.all(
+          [
+            runtime.sendTurn({ input: "plan it", interactionMode: "plan" }),
+            runtime.sendTurn({ input: "and then this" }),
+          ],
+          { concurrency: "unbounded" },
+        );
+        assert.equal(plan.turnId, SECOND_TURN);
+        assert.equal(next.turnId, THIRD_TURN, "queued behind the plan, not into the running turn");
+        assert.deepEqual(
+          sentTurns().map((sent) => [sent.method, sent.text]),
+          [
+            ["turn/start", "keep working"],
+            ["turn/start", "plan it"],
+            ["turn/start", "and then this"],
+          ],
+        );
+      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
   it.live("one Codex refuses to take goes as a turn of its own", () =>
     Effect.gen(function* () {
       const runtime = yield* withRuntime({ holdTurnOpen: true, refuseSteer: true });

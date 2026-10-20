@@ -30,6 +30,7 @@ import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
+import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import * as CodexClient from "effect-codex-app-server/client";
@@ -1337,6 +1338,12 @@ export const makeCodexSessionRuntime = (
     const startedTurnRef = yield* Ref.make<
       { readonly turnId: TurnId; readonly settings: string } | undefined
     >(undefined);
+    /**
+     * One message at a time decides whether it joins the running turn or
+     * starts one, and sends it: one sent while an earlier one's turn/start is
+     * on its way can't steer the running turn ahead of it.
+     */
+    const sendTurnSemaphore = yield* Semaphore.make(1);
 
     // `~` is not shell-expanded when env vars are set via
     // `child_process.spawn`; `expandHomePath` lets a configured
@@ -2612,89 +2619,91 @@ export const makeCodexSessionRuntime = (
         yield* client.request("thread/compact/start", { threadId: providerThreadId });
       }),
       sendTurn: (input) =>
-        Effect.gen(function* () {
-          const providerThreadId = yield* readProviderThreadId;
-          const normalizedModel = normalizeCodexModelSlug(
-            input.model ?? (yield* Ref.get(sessionRef)).model,
-          );
-          const models = options.models ? yield* options.models : [];
-          const modelName = models.find((model) => model.slug === normalizedModel)?.name;
-          const params = yield* buildTurnStartParams({
-            threadId: providerThreadId,
-            runtimeMode: options.runtimeMode,
-            ...(input.input ? { prompt: input.input } : {}),
-            ...(input.attachments ? { attachments: input.attachments } : {}),
-            ...(normalizedModel ? { model: normalizedModel } : {}),
-            ...(modelName ? { modelName } : {}),
-            ...(input.serviceTier ? { serviceTier: input.serviceTier } : {}),
-            ...(input.effort ? { effort: input.effort } : {}),
-            ...(input.interactionMode ? { interactionMode: input.interactionMode } : {}),
-            // Derived from the session's own credential rather than the
-            // setting, so the prompt describes the tools this turn actually
-            // has even if the setting changed after the session started.
-            browserToolsAvailable: configuredMcpToolAvailability(
-              options.appServerArgs,
-              options.mcpCapabilities,
-            ),
-          });
-          const settings = turnSettingsKey({
-            model: normalizedModel,
-            effort: input.effort,
-            serviceTier: input.serviceTier,
-            interactionMode: input.interactionMode,
-          });
-          const resumeCursor = () =>
-            Ref.get(sessionRef).pipe(
-              Effect.map((session) => {
-                const resumed = currentProviderThreadId(session);
-                return resumed ? { resumeCursor: { threadId: resumed } } : {};
-              }),
+        sendTurnSemaphore.withPermits(1)(
+          Effect.gen(function* () {
+            const providerThreadId = yield* readProviderThreadId;
+            const normalizedModel = normalizeCodexModelSlug(
+              input.model ?? (yield* Ref.get(sessionRef)).model,
             );
-          const steeredTurnId = yield* steerRunningTurn(providerThreadId, params.input, settings);
-          if (steeredTurnId !== undefined) {
+            const models = options.models ? yield* options.models : [];
+            const modelName = models.find((model) => model.slug === normalizedModel)?.name;
+            const params = yield* buildTurnStartParams({
+              threadId: providerThreadId,
+              runtimeMode: options.runtimeMode,
+              ...(input.input ? { prompt: input.input } : {}),
+              ...(input.attachments ? { attachments: input.attachments } : {}),
+              ...(normalizedModel ? { model: normalizedModel } : {}),
+              ...(modelName ? { modelName } : {}),
+              ...(input.serviceTier ? { serviceTier: input.serviceTier } : {}),
+              ...(input.effort ? { effort: input.effort } : {}),
+              ...(input.interactionMode ? { interactionMode: input.interactionMode } : {}),
+              // Derived from the session's own credential rather than the
+              // setting, so the prompt describes the tools this turn actually
+              // has even if the setting changed after the session started.
+              browserToolsAvailable: configuredMcpToolAvailability(
+                options.appServerArgs,
+                options.mcpCapabilities,
+              ),
+            });
+            const settings = turnSettingsKey({
+              model: normalizedModel,
+              effort: input.effort,
+              serviceTier: input.serviceTier,
+              interactionMode: input.interactionMode,
+            });
+            const resumeCursor = () =>
+              Ref.get(sessionRef).pipe(
+                Effect.map((session) => {
+                  const resumed = currentProviderThreadId(session);
+                  return resumed ? { resumeCursor: { threadId: resumed } } : {};
+                }),
+              );
+            const steeredTurnId = yield* steerRunningTurn(providerThreadId, params.input, settings);
+            if (steeredTurnId !== undefined) {
+              return {
+                threadId: options.threadId,
+                turnId: steeredTurnId,
+                ...(yield* resumeCursor()),
+              } satisfies ProviderTurnStartResult;
+            }
+            if (hasConfiguredMcpServer(options.appServerArgs)) {
+              yield* client.request("config/mcpServer/reload", undefined).pipe(
+                Effect.catch((cause) =>
+                  Effect.logWarning("Failed to refresh Codex MCP tool catalog before turn.", {
+                    cause,
+                  }),
+                ),
+              );
+            }
+            yield* Ref.set(lastAdditionalContextRef, params.additionalContext);
+            const rawResponse = yield* client.raw.request("turn/start", params);
+            const response = yield* decodeV2TurnStartResponse(rawResponse).pipe(
+              Effect.mapError((error) =>
+                CodexErrors.CodexAppServerProtocolParseError.fromSchemaError(
+                  "decode-response-payload",
+                  error,
+                  { method: "turn/start" },
+                ),
+              ),
+            );
+            const turnId = TurnId.make(response.turn.id);
+            yield* Ref.set(startedTurnRef, { turnId, settings });
+            yield* updateSession(sessionRef, (session) => ({
+              status: "running",
+              // A turn started while another runs (one with other settings,
+              // or one Codex refused to steer) is queued behind it. The
+              // response contains the queued turn id, but turn/interrupt only
+              // accepts the id that is active now.
+              activeTurnId: session.activeTurnId ?? turnId,
+              ...(normalizedModel ? { model: normalizedModel } : {}),
+            }));
             return {
               threadId: options.threadId,
-              turnId: steeredTurnId,
+              turnId,
               ...(yield* resumeCursor()),
             } satisfies ProviderTurnStartResult;
-          }
-          if (hasConfiguredMcpServer(options.appServerArgs)) {
-            yield* client.request("config/mcpServer/reload", undefined).pipe(
-              Effect.catch((cause) =>
-                Effect.logWarning("Failed to refresh Codex MCP tool catalog before turn.", {
-                  cause,
-                }),
-              ),
-            );
-          }
-          yield* Ref.set(lastAdditionalContextRef, params.additionalContext);
-          const rawResponse = yield* client.raw.request("turn/start", params);
-          const response = yield* decodeV2TurnStartResponse(rawResponse).pipe(
-            Effect.mapError((error) =>
-              CodexErrors.CodexAppServerProtocolParseError.fromSchemaError(
-                "decode-response-payload",
-                error,
-                { method: "turn/start" },
-              ),
-            ),
-          );
-          const turnId = TurnId.make(response.turn.id);
-          yield* Ref.set(startedTurnRef, { turnId, settings });
-          yield* updateSession(sessionRef, (session) => ({
-            status: "running",
-            // A turn started while another runs (one with other settings,
-            // or one Codex refused to steer) is queued behind it. The
-            // response contains the queued turn id, but turn/interrupt only
-            // accepts the id that is active now.
-            activeTurnId: session.activeTurnId ?? turnId,
-            ...(normalizedModel ? { model: normalizedModel } : {}),
-          }));
-          return {
-            threadId: options.threadId,
-            turnId,
-            ...(yield* resumeCursor()),
-          } satisfies ProviderTurnStartResult;
-        }),
+          }),
+        ),
       interruptTurn: (turnId) =>
         Effect.gen(function* () {
           const providerThreadId = yield* readProviderThreadId;
