@@ -7,39 +7,46 @@
 import { getTriggerDisplayModelName, type ModelEsque } from "../components/chat/providerIconUtils";
 
 /** Words model ids spell in lower case, as their makers write them. Others get a capital. */
-const WORDS: Record<string, string> = {
-  claude: "Claude",
-  deepseek: "DeepSeek",
-  gemini: "Gemini",
-  glm: "GLM",
-  gpt: "GPT",
-  grok: "Grok",
-  kimi: "Kimi",
-  llama: "Llama",
-  minimax: "MiniMax",
-  mini: "mini",
-  nano: "nano",
-  oss: "OSS",
-  qwen: "Qwen",
-};
+const WORDS = new Map<string, string>([
+  ["claude", "Claude"],
+  ["deepseek", "DeepSeek"],
+  ["gemini", "Gemini"],
+  ["glm", "GLM"],
+  ["gpt", "GPT"],
+  ["grok", "Grok"],
+  ["kimi", "Kimi"],
+  ["llama", "Llama"],
+  ["minimax", "MiniMax"],
+  ["mini", "mini"],
+  ["nano", "nano"],
+  ["oss", "OSS"],
+  ["qwen", "Qwen"],
+]);
+
+/**
+ * Names whose ids spell a version as separate numbers ("claude-opus-5-5", "claude-3-5-sonnet"):
+ * after one of these, a number and the one after it are one version, "5.5". Elsewhere numbers stay
+ * apart, since they may not be a version ("llama-3-1-70-instruct" has a size in it).
+ */
+const SPLIT_VERSION_AFTER = new Set(["Claude", "Opus", "Sonnet", "Haiku"]);
 
 /**
  * Aldo's own models by the names Aldo gives them (AI_MODELS in aldo's
  * src/lib/ai-models.ts, which its OpenCode reports), by their id under the
  * `aldo` provider: for the moments before a machine has reported them.
  */
-const ALDO_MODELS: Record<string, string> = {
-  "glm-5.3-flash": "GLM 5.3 Flash",
-  "claude-haiku-5.5": "Claude Haiku 5.5",
-  "gpt-6.1-sol": "GPT-6.1 Sol (think harder)",
-};
+const ALDO_MODELS = new Map<string, string>([
+  ["glm-5.3-flash", "GLM 5.3 Flash"],
+  ["claude-haiku-5.5", "Claude Haiku 5.5"],
+  ["gpt-6.1-sol", "GPT-6.1 Sol (think harder)"],
+]);
 
 const SHORT_NUMBER = /^\d{1,2}$/;
 const VERSION = /^\d+(?:\.\d+)*[a-z]?$/i;
 
 function word(token: string): string {
   const lower = token.toLowerCase();
-  const known = WORDS[lower];
+  const known = WORDS.get(lower);
   if (known) return known;
   // OpenAI's reasoning models keep their small o: o3, o4.
   if (/^o\d/.test(lower)) return lower;
@@ -56,7 +63,8 @@ export function modelNameFromId(id: string): string {
   if (!trimmed) return id;
   const segments = trimmed.split("/").filter(Boolean);
   const last = segments.at(-1) ?? trimmed;
-  if (segments.at(-2) === "aldo" && ALDO_MODELS[last]) return ALDO_MODELS[last];
+  const aldoModel = segments.at(-2) === "aldo" ? ALDO_MODELS.get(last) : undefined;
+  if (aldoModel) return aldoModel;
 
   const base = last
     // A provider written before a dot: "openai.gpt-5.6-sol".
@@ -71,11 +79,12 @@ export function modelNameFromId(id: string): string {
     const token = tokens[index]!;
     let version: string | null = null;
     if (SHORT_NUMBER.test(token)) {
-      // "opus-5-5": a version's parts as separate tokens.
       version = token;
-      while (index + 1 < tokens.length && SHORT_NUMBER.test(tokens[index + 1]!)) {
+      // "opus-5-5": a version's two parts as separate tokens, where the name's maker writes it so.
+      const next = tokens[index + 1];
+      if (SPLIT_VERSION_AFTER.has(words.at(-1) ?? "") && next && SHORT_NUMBER.test(next)) {
         index += 1;
-        version += `.${tokens[index]}`;
+        version += `.${next}`;
       }
     } else if (VERSION.test(token)) {
       version = token.toLowerCase();
@@ -155,4 +164,67 @@ export function splitConversationModel(model: string): {
   const slash = model.indexOf("/");
   if (slash <= 0 || slash === model.length - 1) return { instanceId: null, slug: model };
   return { instanceId: model.slice(0, slash), slug: model.slice(slash + 1) };
+}
+
+/** What a machine's server config reports that names models: its providers. */
+export interface ModelNameConfig {
+  readonly providers: ReadonlyArray<ModelNameSource>;
+}
+
+/** Names for Home's conversations, from every machine's reported models (modelNameIndex). */
+export interface ModelNameIndex {
+  /** As modelDisplayName, with `environmentId`'s own machine's providers first. */
+  readonly name: (environmentId: string | null, model: string) => string;
+}
+
+/**
+ * Every machine's reported model names, indexed once, so naming each of Home's rows is a lookup
+ * rather than a scan of every machine's models. Names as modelDisplayName does with the
+ * conversation's own machine first: on its instance (its machine's, then any machine's), then on
+ * any provider that lists it, else read from the id.
+ */
+export function modelNameIndex(
+  configs: Iterable<readonly [string, ModelNameConfig]>,
+): ModelNameIndex {
+  const byEnvironment = new Map<string, ReadonlyArray<ModelNameSource>>();
+  // Per instance, its "default" too; across every provider, the ids and aliases alone.
+  const byInstance = new Map<string, Map<string, string>>();
+  const anywhere = new Map<string, string>();
+  const keep = (names: Map<string, string>, slug: string, model: ModelEsque) => {
+    if (!names.has(slug)) names.set(slug, getTriggerDisplayModelName(model));
+  };
+  for (const [environmentId, config] of configs) {
+    byEnvironment.set(environmentId, config.providers);
+    for (const source of config.providers) {
+      let names = byInstance.get(source.instanceId);
+      if (!names) byInstance.set(source.instanceId, (names = new Map()));
+      const defaultModel = source.models.find((model) => model.isDefault);
+      if (defaultModel) keep(names, "default", defaultModel);
+      // A provider's ids before its aliases, as listedModelName looks.
+      for (const model of source.models) {
+        if (model.slug === "default") continue;
+        keep(names, model.slug, model);
+        keep(anywhere, model.slug, model);
+      }
+      for (const model of source.models) {
+        for (const alias of model.aliases ?? []) {
+          if (alias === "default") continue;
+          keep(names, alias, model);
+          keep(anywhere, alias, model);
+        }
+      }
+    }
+  }
+  return {
+    name: (environmentId, model) => {
+      const { instanceId, slug } = splitConversationModel(model);
+      const own = (environmentId !== null && byEnvironment.get(environmentId)) || [];
+      const onInstance = (source: ModelNameSource) => source.instanceId === instanceId;
+      const named =
+        reportedModelName(own.filter(onInstance), instanceId, slug) ??
+        (instanceId !== null ? byInstance.get(instanceId)?.get(slug) : undefined) ??
+        (slug === "default" ? null : (reportedModelName(own, null, slug) ?? anywhere.get(slug)));
+      return named ?? modelNameFromId(slug);
+    },
+  };
 }

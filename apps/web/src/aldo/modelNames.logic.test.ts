@@ -4,6 +4,7 @@ import {
   listedModelName,
   modelDisplayName,
   modelNameFromId,
+  modelNameIndex,
   reportedModelName,
   splitConversationModel,
   type ModelNameSource,
@@ -36,6 +37,17 @@ describe("modelNameFromId", () => {
     expect(modelNameFromId("aldo/gpt-6.1-sol")).toBe("GPT-6.1 Sol (think harder)");
     // One Aldo adds later still reads as a name.
     expect(modelNameFromId("aldo/kimi-k3")).toBe("Kimi K3");
+  });
+
+  it("joins numbers into a version only where the name's maker splits it so", () => {
+    expect(modelNameFromId("ollama/llama-3-1-70-instruct")).toBe("Llama 3 1 70 Instruct");
+    expect(modelNameFromId("llama-3.1-70b-instruct")).toBe("Llama 3.1 70b Instruct");
+    expect(modelNameFromId("claude-opus-5-5-1")).toBe("Claude Opus 5.5 1");
+  });
+
+  it("reads words that are names on every object as words", () => {
+    expect(modelNameFromId("constructor-model")).toBe("Constructor Model");
+    expect(modelNameFromId("aldo/constructor")).toBe("Constructor");
   });
 
   it("says what a planned thread's default is", () => {
@@ -143,5 +155,39 @@ describe("splitConversationModel", () => {
     });
     expect(splitConversationModel("/x")).toEqual({ instanceId: null, slug: "/x" });
     expect(splitConversationModel("x/")).toEqual({ instanceId: null, slug: "x/" });
+  });
+});
+
+describe("modelNameIndex", () => {
+  const index = modelNameIndex([
+    [
+      "env-other",
+      { providers: [{ instanceId: "mine", models: [{ slug: "shared", name: "From other" }] }] },
+    ],
+    [
+      "env-mine",
+      {
+        providers: [
+          { instanceId: "elsewhere", models: [{ slug: "shared", name: "Own, elsewhere" }] },
+          ...sources,
+        ],
+      },
+    ],
+  ]);
+
+  it("names a conversation's model as modelDisplayName does, its own machine first", () => {
+    expect(index.name("env-mine", "claudeAgent/claude-haiku-5-5")).toBe("Haiku 5.5");
+    expect(index.name("env-mine", "opencode/aldo/glm-5.3-flash")).toBe("GLM 5.3 Flash");
+    expect(index.name("env-mine", "codex/gpt-6.1")).toBe("GPT-6.1 Sol");
+    expect(index.name("env-mine", "claudeAgent/default")).toBe("Claude Opus 5.5");
+    expect(index.name("env-mine", "grok/default")).toBe("Default model");
+    expect(index.name("env-mine", "claudeAgent/claude-opus-6-0")).toBe("Claude Opus 6.0");
+  });
+
+  it("takes the instance's name on any machine before another instance's on its own", () => {
+    expect(index.name("env-mine", "mine/shared")).toBe("From other");
+    expect(index.name("env-mine", "nowhere/shared")).toBe("Own, elsewhere");
+    expect(index.name(null, "nowhere/shared")).toBe("From other");
+    expect(index.name("env-unknown", "claude-opus-5-5")).toBe("Claude Opus 5.5");
   });
 });

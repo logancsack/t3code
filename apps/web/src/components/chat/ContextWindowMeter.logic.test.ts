@@ -26,4 +26,17 @@ describe("resolveContextWindowModelDisplayName", () => {
     );
     expect(resolveContextWindowModelDisplayName(null, options)).toBeNull();
   });
+
+  it("gives the caller the instance's models, to name an alias such as default", () => {
+    const listed = new Map([
+      [claude, [{ slug: "claude-opus-5-5", name: "Claude Opus 5.5", isDefault: true }]],
+    ]);
+    expect(
+      resolveContextWindowModelDisplayName(
+        { instanceId: claude, model: "default" },
+        listed,
+        (model, models) => models.find((candidate) => candidate.isDefault)?.name ?? model,
+      ),
+    ).toBe("Claude Opus 5.5");
+  });
 });

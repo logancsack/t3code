@@ -8,10 +8,9 @@ import { environmentServerConfigsAtom } from "../state/server";
 import { isAldoCloud } from "./api";
 import {
   listedModelName,
-  modelDisplayName,
   modelNameFromId,
-  splitConversationModel,
-  type ModelNameSource,
+  modelNameIndex,
+  type ModelNameIndex,
 } from "./modelNames.logic";
 
 /**
@@ -23,6 +22,9 @@ export function unlistedModelLabel(model: string, models: ReadonlyArray<ModelEsq
   if (!isAldoCloud || !model) return model;
   return listedModelName(models, model) ?? modelNameFromId(model);
 }
+
+// One index per version of the machines' configs, shared by every row of Home.
+const indexes = new WeakMap<object, ModelNameIndex>();
 
 /**
  * The name of the model a conversation runs on ("<instance>/<model>", as
@@ -36,12 +38,8 @@ export function useAldoModelName(
   const configs = useAtomValue(environmentServerConfigsAtom);
   return useMemo(() => {
     if (!model) return null;
-    const { instanceId, slug } = splitConversationModel(model);
-    const own = environmentId
-      ? [...configs].filter(([id]) => id === environmentId).map(([, config]) => config)
-      : [];
-    const others = [...configs].filter(([id]) => id !== environmentId).map(([, config]) => config);
-    const sources: ModelNameSource[] = [...own, ...others].flatMap((config) => config.providers);
-    return modelDisplayName(sources, instanceId, slug);
+    let index = indexes.get(configs);
+    if (!index) indexes.set(configs, (index = modelNameIndex(configs)));
+    return index.name(environmentId, model);
   }, [configs, environmentId, model]);
 }
