@@ -15,15 +15,21 @@ import { AldoAgentInboxRows } from "./AldoAgentInbox";
 import { AldoPolicyRuleRow, useAldoPolicy } from "./AldoPolicy";
 import { AldoSubagentsPanel } from "./AldoSubagentsPanel";
 import { aldoOffersItsModels, subscribeAldoEnvironments } from "./directory";
+import { planRunning } from "./home.logic";
+import { useAldoHomeRead } from "./homeFeed";
 
 export function AldoAgentsPage() {
   const policy = useAldoPolicy();
-  // Where agents already run without one, a subscription is optional (Home no longer asks for it).
+  // Where agents already run without one, a subscription is optional (Home no longer asks for it):
+  // on Aldo's models while the plan is active. Without one, they need a plan or a subscription.
   const aldoModels = useSyncExternalStore(
     subscribeAldoEnvironments,
     aldoOffersItsModels,
     () => false,
   );
+  const { home, supported, error } = useAldoHomeRead();
+  const planKnown = home !== null || supported === false || error !== null;
+  const included = home !== null && planRunning(home.usage);
   return (
     <SettingsPageContainer>
       <AldoAccountsPanel
@@ -32,9 +38,11 @@ export function AldoAgentsPage() {
         icon={<BadgeCheckIcon className="size-4" />}
         kinds={["claude", "codex", "grok", "muse"]}
         about={
-          aldoModels
-            ? "Optional. Agents run on Aldo's models, included in your plan. Connect a subscription of yours to run them on it instead."
-            : null
+          !aldoModels || !planKnown
+            ? null
+            : included
+              ? "Optional. Agents run on Aldo's models, included in your plan. Connect a subscription of yours to run them on it instead."
+              : "Agents run on Aldo's models while your plan is active, or on a subscription of yours connected here."
         }
       />
       <SettingsSection
