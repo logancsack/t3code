@@ -9,6 +9,7 @@
 import { useEffect } from "react";
 import { create } from "zustand";
 
+import { actionsDone } from "./assistant.logic";
 import { noteAldoHiddenPrompts, pullAldoConversation, useAldoAssistant } from "./assistantSession";
 import { fetchAldoHome, type AldoHome } from "./homeApi";
 import { requestAldoDirectoryRefresh, subscribeAldoEnvironments } from "./directory";
@@ -167,10 +168,8 @@ function startFeed(): () => void {
   const worker = "serviceWorker" in navigator ? navigator.serviceWorker : null;
   worker?.addEventListener("message", onMessage);
   // What Aldo just did shows at once.
-  const acted = (entries: ReturnType<typeof useAldoAssistant.getState>["entries"]) =>
-    entries.filter((e) => e.kind === "action").length;
   const unsubscribeActions = useAldoAssistant.subscribe((state, previous) => {
-    if (acted(state.entries) > acted(previous.entries)) void refreshAldoHome();
+    if (actionsDone(state.entries) > actionsDone(previous.entries)) void refreshAldoHome();
     // A reply in: a plan it proposed is a card from the home read.
     else if (previous.replying && !state.replying) void refreshAldoHome();
   });

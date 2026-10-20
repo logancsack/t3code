@@ -35,6 +35,8 @@ export interface AldoAssistantAction {
   readonly failed: boolean;
   /** Why it failed, as Aldo's backend said: for the console, not the conversation (Aldo says why in words). */
   readonly detail?: string;
+  /** Which request a failed call was, so a later try of it replaces this line (`requestOf`). */
+  readonly request?: string;
   readonly open?: AldoOpenTarget;
   /** A page it made or opened (a preview, a pull request), in a new tab. */
   readonly href?: string;
@@ -307,6 +309,19 @@ function reverses(call: Pick<AldoFunctionCall, "name" | "arguments">): boolean {
   }
 }
 
+/**
+ * Which request a call is, for those that can be refused and made again: a
+ * start, for the same words of the user's (`asked`), title and plan. A retry
+ * changes where or how (a ref, a model, `general`), not these; Aldo's chat
+ * counts it so too (runner.ts there). Another tool acts on a target (pin one
+ * thread, then another), so its calls are requests of their own.
+ */
+const RETRIED = new Set(["start_thread", "start_plan"]);
+const requestOf = (call: AldoFunctionCall): string | undefined =>
+  RETRIED.has(call.name)
+    ? JSON.stringify([call.name, call.arguments.asked, call.arguments.title, call.arguments.plan])
+    : undefined;
+
 function labelFor(call: AldoFunctionCall): string | undefined {
   return (reverses(call) ? REVERSE_LABELS[call.name] : undefined) ?? ACTION_LABELS[call.name];
 }
@@ -336,6 +351,7 @@ export function actionFor(call: AldoFunctionCall, outcome: unknown): AldoAssista
   // A plan's thread is named by what started it.
   const titled = call.name === "start_plan" ? resultOf(outcome)?.title : call.arguments.title;
   const title = typeof titled === "string" ? titled : null;
+  const request = requestOf(call);
   const href = hrefOf(outcome);
   // A preview opens the app, not its thread.
   const open =
@@ -348,10 +364,46 @@ export function actionFor(call: AldoFunctionCall, outcome: unknown): AldoAssista
     label: typeof error === "string" ? failedLabelFor(call) : title ? `${label}: ${title}` : label,
     failed: typeof error === "string",
     ...(typeof error === "string" ? { detail: error } : {}),
+    ...(typeof error === "string" && request ? { request } : {}),
     ...(open ? { open } : {}),
     ...(href ? { href } : {}),
   };
 }
+
+/**
+ * The entries without the failed lines of the request `call` tries again
+ * (a start refused, then started with another ref): the last try is how it
+ * came out, and the conversation shows only that. On a call the tools run one
+ * at a time, so the line of the first try is already there. Only this
+ * response's own lines go: those after the user's last words, and from `from`
+ * on (the call screen shows the entries from where the call began). A try
+ * Aldo didn't run for want of the user's words (`unasked`) is no try.
+ */
+export function withoutRetriedFailures<
+  T extends {
+    readonly kind: string;
+    readonly role?: string;
+    readonly failed?: boolean;
+    readonly request?: string;
+  },
+>(entries: ReadonlyArray<T>, call: AldoFunctionCall, outcome: unknown, from = 0): ReadonlyArray<T> {
+  const request = requestOf(call);
+  if (!request || (outcome as { unasked?: unknown } | null)?.unasked === true) return entries;
+  const spoken = entries.findLastIndex((e) => e.kind === "message" && e.role === "user");
+  const start = Math.max(from, spoken + 1);
+  const kept = entries.filter(
+    (e, index) => index < start || !(e.kind === "action" && e.failed && e.request === request),
+  );
+  return kept.length === entries.length ? entries : kept;
+}
+
+/**
+ * What the conversation has done, to see that it grew: a point for each action
+ * and a second for each that worked. A try that worked after a failed one takes
+ * its line's place, which counting lines alone would miss.
+ */
+export const actionsDone = (entries: ReadonlyArray<{ kind: string; failed?: boolean }>): number =>
+  entries.reduce((n, e) => n + (e.kind !== "action" ? 0 : e.failed ? 1 : 2), 0);
 
 /** A thread this conversation started, followed in the directory until it has started, or couldn't. */
 export interface AldoStartWatch extends AldoOpenTarget {

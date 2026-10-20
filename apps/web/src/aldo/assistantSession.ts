@@ -47,6 +47,7 @@ import {
   startNews,
   startWatchFor,
   unseenMessages,
+  withoutRetriedFailures,
   type AldoAssistantAction,
   type AldoAssistantMessage,
   type AldoAssistantPhase,
@@ -756,11 +757,13 @@ function showCall(call: AldoFunctionCall, outcome: unknown): void {
   const action = actionFor(call, outcome);
   // Why it failed stays out of the conversation (Aldo says it), but not out of sight.
   if (action?.detail) console.warn(`Aldo: ${action.label}:`, action.detail);
-  if (action) {
-    addEntry({ kind: "action", ...action });
-    // What it changed shows in the sidebar now (a new thread at once), not on the next refresh.
-    if (!action.failed) requestAldoDirectoryRefresh();
-  }
+  // A call is shown as it comes: a request tried again replaces its failed try, even when the try has nothing to show.
+  const { entries, callFrom } = get();
+  const kept = withoutRetriedFailures(entries, call, outcome, callFrom);
+  if (action) set({ entries: [...kept, { kind: "action", ...action }] });
+  else if (kept !== entries) set({ entries: kept });
+  // What it changed shows in the sidebar now (a new thread at once), not on the next refresh.
+  if (action && !action.failed) requestAldoDirectoryRefresh();
   const watch = startWatchFor(call, outcome, Date.now());
   if (watch) watchStart(watch);
 }

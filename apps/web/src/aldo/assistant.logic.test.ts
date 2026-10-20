@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  actionsDone,
   callDuration,
   captionParts,
   closingThread,
@@ -23,6 +24,8 @@ import {
   startWatchFor,
   unseenMessages,
   withoutImageNotes,
+  withoutRetriedFailures,
+  type AldoFunctionCall,
   type AldoStartWatch,
 } from "./assistant.logic";
 
@@ -595,5 +598,136 @@ describe("linkRuns", () => {
     expect(linkRuns("Not javascript:alert(1) or http://localhost:3000")).toEqual([
       { text: "Not javascript:alert(1) or http://localhost:3000", at: 0 },
     ]);
+  });
+});
+
+describe("withoutRetriedFailures", () => {
+  const thread = { environmentId: "aldo-k3j9x0a1b2", threadId: "t-1" };
+  const start = (callId: string, extra: Record<string, unknown> = {}) => ({
+    callId,
+    name: "start_thread",
+    arguments: { asked: "set up a domain", title: "Resend domain", in: "no_repository", ...extra },
+  });
+  const refused = { error: "Not started: It looks like aldo's…" };
+  const started = { result: { ref: "k3j9x0a1b2", thread } };
+  type Shown = { kind: string; role?: string; failed?: boolean; request?: string; id?: string };
+  const said: Shown = { kind: "message", role: "user" };
+  // What the conversation shows of calls that come one at a time, as a call's do.
+  const shown = (
+    calls: ReadonlyArray<readonly [AldoFunctionCall, unknown]>,
+    before: ReadonlyArray<Shown> = [],
+    from = 0,
+  ) =>
+    calls.reduce<ReadonlyArray<Shown>>((entries, [call, outcome]) => {
+      const kept = withoutRetriedFailures(entries, call, outcome, from);
+      const action = actionFor(call, outcome);
+      return action ? [...kept, { kind: "action", ...action }] : kept;
+    }, before);
+  const ids = (entries: ReadonlyArray<Shown>) => entries.map((e) => [e.id, e.failed]);
+
+  it("shows only the start when a refused start was then made with general", () => {
+    const entries = shown([
+      [start("c1"), refused],
+      [start("c2", { general: true }), started],
+    ]);
+    expect(ids(entries)).toEqual([["c2", false]]);
+  });
+
+  it("shows the last try when every try failed", () => {
+    const entries = shown([
+      [start("c1"), refused],
+      [start("c2", { general: true }), { error: "No room." }],
+    ]);
+    expect(ids(entries)).toEqual([["c2", true]]);
+  });
+
+  it("keeps the failure of a request nothing tried again, and of the other tool", () => {
+    const entries = shown([
+      [start("c1", { asked: "start A", title: "A" }), { error: "Couldn't reach A's repository." }],
+      [start("c2", { asked: "start B", title: "B" }), started],
+      [
+        {
+          callId: "c3",
+          name: "archive_thread",
+          arguments: { asked: "set up a domain", title: "Resend domain" },
+        },
+        started,
+      ],
+    ]);
+    expect(ids(entries)).toEqual([
+      ["c1", true],
+      ["c2", false],
+      ["c3", false],
+    ]);
+  });
+
+  it("isn't replaced by a try Aldo didn't run for want of the user's words", () => {
+    const entries = shown([
+      [start("c1"), refused],
+      [start("c2"), { error: "Not done yet…", unasked: true }],
+    ]);
+    expect(entries.map((e) => e.id)).toEqual(["c1"]);
+  });
+
+  it("leaves the failures of an earlier response: once the user has spoken again it's a new request", () => {
+    const earlier = { kind: "action", ...actionFor(start("old"), refused)! };
+    const entries = shown([[start("c2"), started]], [earlier, said]);
+    expect(entries.map((e) => e.id)).toEqual(["old", undefined, "c2"]);
+  });
+
+  it("leaves a line before where the call began, which the call screen counts from", () => {
+    const earlier = { kind: "action", ...actionFor(start("old"), refused)! };
+    const entries = shown([[start("c2"), started]], [earlier], 1);
+    expect(entries.map((e) => e.id)).toEqual(["old", "c2"]);
+    expect(shown([[start("c2"), started]], [earlier]).map((e) => e.id)).toEqual(["c2"]);
+  });
+
+  it("tells two plans from one request by their ids, and a plan already started still ends a failure", () => {
+    const plan = (callId: string, id: string) => ({
+      callId,
+      name: "start_plan",
+      arguments: { asked: "go ahead", plan: id },
+    });
+    const entries = shown([
+      [plan("p1", "pl_a"), { error: "Couldn't start it." }],
+      [plan("p2", "pl_b"), started],
+    ]);
+    expect(ids(entries)).toEqual([
+      ["p1", true],
+      ["p2", false],
+    ]);
+    const again = shown([
+      [plan("p1", "pl_a"), { error: "Couldn't start it." }],
+      [plan("p2", "pl_a"), { result: { alreadyStarted: true } }],
+    ]);
+    expect(again).toEqual([]);
+  });
+
+  it("calls other tools' calls requests of their own: one thread's failed pin stays when another's works", () => {
+    const pin = (callId: string, thread: string) => ({
+      callId,
+      name: "pin_thread",
+      arguments: { asked: "pin them", thread, pinned: true },
+    });
+    const entries = shown([
+      [pin("n1", "a"), { error: "Not found." }],
+      [pin("n2", "b"), started],
+    ]);
+    expect(ids(entries)).toEqual([
+      ["n1", true],
+      ["n2", false],
+    ]);
+  });
+});
+
+describe("actionsDone", () => {
+  it("grows when a try that worked takes the place of a failed line, which counting lines misses", () => {
+    const failed = [{ kind: "message" }, { kind: "action", failed: true }];
+    const worked = [{ kind: "message" }, { kind: "action", failed: false }];
+    expect(actionsDone(failed)).toBe(1);
+    expect(actionsDone(worked)).toBeGreaterThan(actionsDone(failed));
+    expect(actionsDone([...failed, { kind: "action", failed: true }])).toBeGreaterThan(
+      actionsDone(failed),
+    );
   });
 });
