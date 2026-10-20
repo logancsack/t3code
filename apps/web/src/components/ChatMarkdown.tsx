@@ -1651,6 +1651,7 @@ function ChatMarkdownVideo(props: {
   readonly src: string | null;
   readonly alt: string;
   readonly copyMarkdown: string | undefined;
+  readonly srcFragment?: string | undefined;
   readonly originalUrl?: string | undefined;
   readonly sourceFailed?: boolean | undefined;
   readonly style?: CSSProperties | undefined;
@@ -1667,6 +1668,7 @@ function ChatMarkdownVideo(props: {
         label={props.alt}
         originalUrl={props.originalUrl}
         copyMarkdown={props.copyMarkdown}
+        srcFragment={props.srcFragment}
         actionsSource={props.actionsSource}
         onRetry={props.onRetry}
         // Only inside a message, where a grid can be; a video in a link plays in its tile.
@@ -1793,6 +1795,7 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
         sourceFailed={assetUrl._tag === "Failure" && fallbackSrc === undefined}
         alt={props.alt}
         copyMarkdown={props.copyMarkdown}
+        srcFragment={props.srcFragment}
         originalUrl={props.originalUrl}
         style={props.style}
         mediaIdentity={JSON.stringify([props.environmentId, props.resource, props.srcFragment])}
@@ -3257,6 +3260,8 @@ const CHAT_MARKDOWN_COMPONENTS = {
     }
     const localSrc = node?.properties?.dataLocalSrc;
     const markdownTitle = node?.properties?.dataMarkdownTitle;
+    // A grid's tile for a video link copies as that link (mediaGrid.logic.ts).
+    const linkCopy = node?.properties?.dataMarkdownCopy;
     const standalone = tile || node?.properties?.dataStandalone === true;
     const authoredSrc = typeof localSrc === "string" ? localSrc : src;
     const authoredTitle = typeof markdownTitle === "string" ? markdownTitle : title;
@@ -3265,7 +3270,10 @@ const CHAT_MARKDOWN_COMPONENTS = {
     const classifiedSrc =
       typeof localSrc === "string" ? srcString.replaceAll("\\", "/") : srcString;
     const altText = alt ?? "";
-    const copyMarkdown = markdownImageCopy(altText, srcString, authoredTitle);
+    const copyMarkdown =
+      typeof linkCopy === "string"
+        ? linkCopy
+        : markdownImageCopy(altText, srcString, authoredTitle);
     const { className, style: _style, width, height, ...imageProps } = props;
     const authoredSizeStyle = tile ? ALDO_MEDIA_TILE_STYLE : authoredImageSizeStyle(width, height);
     const imageSource = classifyMarkdownImageSource(classifiedSrc, imageBaseDir ?? cwd);

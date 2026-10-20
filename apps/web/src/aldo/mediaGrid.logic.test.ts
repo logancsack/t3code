@@ -29,11 +29,19 @@ const el = (tagName: string, ...children: MediaGridNode[]): MediaGridNode => ({
 });
 const p = (...children: MediaGridNode[]) => el("p", ...children);
 const br = () => el("br");
-const grid = (...children: MediaGridNode[]): MediaGridNode => ({
+// Tiles a line apart, so a copy of the grid keeps each on a line of its own.
+const grid = (...items: MediaGridNode[]): MediaGridNode => ({
   type: "element",
   tagName: "div",
-  properties: { dataAldoMediaGrid: children.length },
-  children,
+  properties: { dataAldoMediaGrid: items.length },
+  children: items.flatMap((item, index) => (index === 0 ? [item] : [text("\n"), item])),
+});
+// A video link's tile: an image of it that still copies as the link.
+const videoTile = (src: string, alt: string, copy = `[${alt}](${src})`): MediaGridNode => ({
+  type: "element",
+  tagName: "img",
+  properties: { src, alt, dataMarkdownCopy: copy },
+  children: [],
 });
 
 // The shapes below are what react-markdown's parser makes of each message.
@@ -76,7 +84,7 @@ describe("groupAldoMediaRuns", () => {
     expect(groupAldoMediaRuns(tree, "all")).toEqual([
       p(text("Here they are:")),
       text("\n"),
-      grid(img("a.png"), img("/w/reel.mp4", "Logo reel"), img("b.png")),
+      grid(img("a.png"), videoTile("/w/reel.mp4", "Logo reel"), img("b.png")),
       p(text("All checked.")),
     ]);
   });
@@ -98,7 +106,7 @@ describe("groupAldoMediaRuns", () => {
   it("takes a video link in bold, as it plays in place", () => {
     const tree = [p(img("a.png")), text("\n"), p(el("strong", link("/w/clip.mp4", text("clip"))))];
     expect(groupAldoMediaRuns(tree, "all")).toEqual([
-      grid(img("a.png"), img("/w/clip.mp4", "clip")),
+      grid(img("a.png"), videoTile("/w/clip.mp4", "clip")),
     ]);
   });
 
@@ -134,7 +142,12 @@ describe("aldoParagraphMedia", () => {
       {
         type: "element",
         tagName: "img",
-        properties: { src: "C:\\out\\clip.mp4", alt: "clip", dataLocalSrc: "C:\\out\\clip.mp4" },
+        properties: {
+          src: "C:\\out\\clip.mp4",
+          alt: "clip",
+          dataLocalSrc: "C:\\out\\clip.mp4",
+          dataMarkdownCopy: "[clip](C:\\out\\clip.mp4)",
+        },
         children: [],
       },
     ]);
@@ -167,6 +180,34 @@ describe("rehypeAldoMediaGrid", () => {
     };
     rehypeAldoMediaGrid({ videoLinks: "none" })(tree);
     expect(tree.children).toEqual([grid(img("a.png"), img("b.png"))]);
+  });
+
+  it("copies a video link as it was written: its formatting and title", () => {
+    const source = '![a](a.png)\n\n**[clip](/w/clip.mp4 "The cut")**';
+    const at = (start: number, end: number) => ({ start: { offset: start }, end: { offset: end } });
+    const clip = { ...link("/w/clip.mp4", text("clip")), position: at(15, 44) };
+    clip.properties = { href: "/w/clip.mp4", title: "The cut" };
+    const tree: MediaGridNode = {
+      type: "root",
+      children: [p(img("a.png")), text("\n"), p({ ...el("strong", clip), position: at(13, 46) })],
+    };
+    rehypeAldoMediaGrid({ videoLinks: "all" })(tree, { value: source });
+    expect(tree.children).toEqual([
+      grid(img("a.png"), videoTile("/w/clip.mp4", "clip", '**[clip](/w/clip.mp4 "The cut")**')),
+    ]);
+  });
+
+  it("rebuilds the link when it can't find it in the message", () => {
+    const clip = link("/w/my clip.mp4", text("clip"));
+    clip.properties = { href: "/w/my clip.mp4", title: 'The "cut"' };
+    const tree: MediaGridNode = { type: "root", children: [p(img("a.png"), text("\n"), clip)] };
+    rehypeAldoMediaGrid({ videoLinks: "all" })(tree);
+    expect(tree.children).toEqual([
+      grid(
+        img("a.png"),
+        videoTile("/w/my clip.mp4", "clip", '[clip](</w/my clip.mp4> "The \\"cut\\"")'),
+      ),
+    ]);
   });
 });
 

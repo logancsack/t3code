@@ -11,6 +11,8 @@ export interface MediaGridNode {
   value?: string;
   properties?: Record<string, unknown>;
   children?: MediaGridNode[];
+  /** Where it was in the Markdown, which is what a link copies as. */
+  position?: { start?: { offset?: number | undefined }; end?: { offset?: number | undefined } };
 }
 
 /**
@@ -65,14 +67,23 @@ export function isAldoVideoLink(href: string, videoLinks: AldoVideoLinks): boole
   return isVideoFile(path);
 }
 
+/** The Markdown `node` was written as, from the message's `source`; null without its place in it. */
+function authoredMarkdown(node: MediaGridNode, source: string): string | null {
+  const start = node.position?.start?.offset;
+  const end = node.position?.end?.offset;
+  if (start === undefined || end === undefined || end <= start || end > source.length) return null;
+  return source.slice(start, end);
+}
+
 /**
  * What a grid shows for one thing in a paragraph: an image, a linked image (its link kept, so it
  * still opens the page), or a link to a video file, as an image of it (the renderer plays a video
- * by its extension). Null for anything else.
+ * by its extension) that still copies as the link it was written as. Null for anything else.
  */
 export function aldoMediaItem(
   node: MediaGridNode,
   videoLinks: AldoVideoLinks,
+  source = "",
 ): MediaGridNode | null {
   const inner = unwrapEmphasis(node);
   if (inner.type !== "element") return null;
@@ -82,14 +93,20 @@ export function aldoMediaItem(
   if (content.length === 1 && unwrapEmphasis(content[0]!).tagName === "img") return inner;
   const href = inner.properties?.href;
   if (typeof href !== "string" || !isAldoVideoLink(href, videoLinks)) return null;
+  const alt = textOf(inner).trim();
+  const title = inner.properties?.title;
   return {
     type: "element",
     tagName: "img",
     properties: {
       src: href,
-      alt: textOf(inner).trim(),
+      alt,
       // The image renderer reads a drive path from here: `src` may have been reshaped.
       ...(WINDOWS_DRIVE_PATH.test(href) ? { dataLocalSrc: href } : {}),
+      // Copied, it's the link again, not an image.
+      dataMarkdownCopy:
+        authoredMarkdown(node, source) ??
+        `[${alt}](${/[\s()<>]/.test(href) ? `<${href}>` : href}${typeof title === "string" && title ? ` "${title.replaceAll('"', '\\"')}"` : ""})`,
     },
     children: [],
   };
@@ -102,6 +119,7 @@ export function aldoMediaItem(
 export function aldoParagraphMedia(
   node: MediaGridNode,
   videoLinks: AldoVideoLinks,
+  source = "",
 ): MediaGridNode[] | null {
   if (node.type !== "element" || node.tagName !== "p") return null;
   const items: MediaGridNode[] = [];
@@ -115,7 +133,7 @@ export function aldoParagraphMedia(
       onNewLine = true;
       continue;
     }
-    const item = aldoMediaItem(child, videoLinks);
+    const item = aldoMediaItem(child, videoLinks, source);
     if (!item || !onNewLine) return null;
     items.push(item);
     onNewLine = false;
@@ -125,11 +143,13 @@ export function aldoParagraphMedia(
 
 /**
  * A block's children with each run of two or more images or videos made one grid element
- * (`data-aldo-media-grid`, holding the media themselves); the rest, and a lone one, unchanged.
+ * (`data-aldo-media-grid`, holding the media themselves, a line apart so a copy keeps them on
+ * lines of their own); the rest, and a lone one, unchanged. `source` is the message's Markdown.
  */
 export function groupAldoMediaRuns(
   children: ReadonlyArray<MediaGridNode>,
   videoLinks: AldoVideoLinks,
+  source = "",
 ): MediaGridNode[] {
   const out: MediaGridNode[] = [];
   let run: { nodes: MediaGridNode[]; items: MediaGridNode[] } | null = null;
@@ -140,7 +160,9 @@ export function groupAldoMediaRuns(
         type: "element",
         tagName: "div",
         properties: { dataAldoMediaGrid: run.items.length },
-        children: run.items,
+        children: run.items.flatMap((item, index) =>
+          index === 0 ? [item] : [{ type: "text", value: "\n" }, item],
+        ),
       });
     } else {
       out.push(...run.nodes);
@@ -152,7 +174,7 @@ export function groupAldoMediaRuns(
       run.nodes.push(child);
       continue;
     }
-    const items = aldoParagraphMedia(child, videoLinks);
+    const items = aldoParagraphMedia(child, videoLinks, source);
     if (items) {
       run ??= { nodes: [], items: [] };
       run.nodes.push(child);
@@ -168,7 +190,8 @@ export function groupAldoMediaRuns(
 
 /** A rehype step (after sanitizing) that makes a message's runs of images or videos grids. */
 export function rehypeAldoMediaGrid(options: { readonly videoLinks: AldoVideoLinks }) {
-  return (tree: MediaGridNode) => {
-    tree.children = groupAldoMediaRuns(tree.children ?? [], options.videoLinks);
+  return (tree: MediaGridNode, file?: { readonly value?: unknown }) => {
+    const source = typeof file?.value === "string" ? file.value : "";
+    tree.children = groupAldoMediaRuns(tree.children ?? [], options.videoLinks, source);
   };
 }

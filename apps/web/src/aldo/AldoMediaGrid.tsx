@@ -63,21 +63,24 @@ export function AldoMediaGridVideo(props: {
   readonly sourceFailed?: boolean | undefined;
   readonly originalUrl?: string | undefined;
   readonly copyMarkdown?: string | undefined;
+  /** A media fragment (`#t=12`), which the viewer adds to the URL it signs for the file. */
+  readonly srcFragment?: string | undefined;
   readonly actionsSource?: MediaActionSource | undefined;
   readonly onRetry?: (() => Promise<unknown>) | undefined;
   readonly onExpand: ((preview: ExpandedImagePreview) => void) | undefined;
 }) {
   const tile = useRef<HTMLSpanElement | null>(null);
-  const { src, label, originalUrl, actionsSource, onExpand } = props;
+  const { src, label, originalUrl, srcFragment, actionsSource, onExpand } = props;
   const item = useMemo(
     (): ExpandedImageItem => ({
       src,
       name: label || "video",
       type: "video",
       ...(originalUrl ? { originalUrl } : {}),
+      ...(srcFragment ? { srcFragment } : {}),
       ...(actionsSource ? { actionsSource } : {}),
     }),
-    [src, label, originalUrl, actionsSource],
+    [src, label, originalUrl, srcFragment, actionsSource],
   );
   // The viewer gathers a message's media in order from what each one registered.
   const register = useCallback(
