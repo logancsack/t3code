@@ -34,6 +34,7 @@ import { APP_BASE_NAME, APP_IS_ALDO } from "../../branding";
 import { SidebarUpdateArchitectureWarning, SidebarUpdatePill } from "./SidebarUpdatePill";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 import { isAldoCloud } from "../../aldo/api";
+import { useAldoDeveloperTools } from "../../aldo/developerTools";
 
 export const SidebarChromeHeader = memo(function SidebarChromeHeader({
   isElectron,
@@ -167,10 +168,13 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
   });
   const { environments } = useEnvironments();
   // The page reads every connected server, so one of them offering pull requests is enough for
-  // the link to lead somewhere.
-  const pullRequestsSupported = environments.some(
-    (environment) => environment.serverConfig?.environment.capabilities.pullRequests === true,
-  );
+  // the link to lead somewhere. In Aldo, pull requests are a developer tool.
+  const aldoDeveloperTools = useAldoDeveloperTools();
+  const pullRequestsSupported =
+    aldoDeveloperTools &&
+    environments.some(
+      (environment) => environment.serverConfig?.environment.capabilities.pullRequests === true,
+    );
   const closeMobileSidebar = useCallback(() => {
     if (isMobile) {
       setOpenMobile(false);

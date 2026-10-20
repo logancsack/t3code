@@ -15,7 +15,8 @@
 // board, which answers four questions in order: what needs me, what's
 // happening, what got done, what's coming. In simple mode (simpleMode.ts) it
 // shows the rail's place: Aldo's conversation, Needs you or the Library
-// (AldoSimplePlaces.tsx).
+// (AldoSimplePlaces.tsx). A new account's first visit has the welcome first:
+// one optional question, whose answer picks the starters (AldoWelcome.tsx).
 
 import { useNavigate, useRouter } from "@tanstack/react-router";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
@@ -94,6 +95,9 @@ import {
 import { loadAldoBrief } from "./briefFeed";
 import { morphIntoThread } from "./morph";
 import { setAldoUnderTheHood, useAldoSimple, useAldoUnderTheHood } from "./simpleMode";
+import { AldoWelcome } from "./AldoWelcome";
+import { useAldoOnboardingState } from "./onboarding";
+import { aldoWelcomeShows } from "./onboarding.logic";
 import { useIsMobile } from "../hooks/useMediaQuery";
 
 const LAST_SEEN_KEY = "aldo:home:seen";
@@ -161,6 +165,15 @@ export function AldoHome() {
     void loadAldoConversation();
   }, []);
   const ready = useAfterPaint(true, false);
+  // A new account's first visit asks the welcome's question first.
+  const onboarding = useAldoOnboardingState();
+  useAldoFirstViewHold(onboarding === undefined);
+  if (aldoWelcomeShows(onboarding))
+    return (
+      <SidebarInset className="h-dvh bg-background">
+        <AldoWelcome />
+      </SidebarInset>
+    );
   if (!ready) return <SidebarInset className="h-dvh bg-background" aria-busy />;
   return <AldoHomeContent />;
 }

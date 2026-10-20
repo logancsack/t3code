@@ -217,6 +217,7 @@ import { displayedThreadBranch } from "../aldo/directory";
 import { isAldoCloud } from "../aldo/api";
 import { openAldoRepositoryPicker } from "../aldo/AldoRepositoryPicker";
 import { useAldoStartWithoutProject } from "../aldo/newThread";
+import { useAldoDeveloperTools } from "../aldo/developerTools";
 import type { Project } from "../types";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 import { readPullRequestListPreferences } from "~/components/pullRequest/pullRequestListPreferences";
@@ -793,6 +794,7 @@ function OpenCommandPaletteDialog(props: {
   const desktopLocalBootstraps = useDesktopLocalBootstraps();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const availableSettingsSearchItems = useAvailableSettingsSearchItems();
+  const aldoDeveloperTools = useAldoDeveloperTools();
   const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread } =
     useHandleNewThread();
   const projects = useProjects();
@@ -2333,6 +2335,7 @@ function OpenCommandPaletteDialog(props: {
   });
 
   if (
+    aldoDeveloperTools &&
     environments.some(
       (environment) => environment.serverConfig?.environment.capabilities.pullRequests === true,
     )

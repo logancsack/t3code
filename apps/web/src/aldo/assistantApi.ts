@@ -2,6 +2,7 @@
 
 import { type AldoHomeTarget } from "./homeApi";
 import { api, AldoApiError } from "./api";
+import { aldoOnboardingFrom, type AldoInterest, type AldoOnboarding } from "./onboarding.logic";
 import { keptOf, resumedOf, type AldoKept, type AldoResumed } from "./planPicker.logic";
 
 // ---------------------------------------------------------------------------
@@ -384,6 +385,8 @@ export interface AldoProfile {
   readonly signOutUrl: string;
   /** The owner's admin pages; null for everyone else, and on an Aldo without them. */
   readonly adminUrl: string | null;
+  /** The welcome on Home (onboarding.logic.ts); null on an Aldo without it. */
+  readonly onboarding: AldoOnboarding | null;
 }
 
 /** Who's signed in; null where this Aldo can't say (an older one answers with the client's page). */
@@ -402,8 +405,28 @@ export async function fetchAldoProfile(): Promise<AldoProfile | null> {
           typeof body.adminUrl === "string" && /^\/(?![/\\])/.test(body.adminUrl)
             ? body.adminUrl
             : null,
+        onboarding: aldoOnboardingFrom(body),
       }
     : null;
+}
+
+let profileRequest: Promise<AldoProfile | null> | null = null;
+
+/** Who's signed in, asked once per page. */
+export function requestAldoProfile(): Promise<AldoProfile | null> {
+  profileRequest ??= fetchAldoProfile().catch(() => null);
+  return profileRequest;
+}
+
+/** Keeps what they'll hand Aldo first (empty for a skip); the welcome's state as Aldo kept it. */
+export async function saveAldoInterests(
+  interests: ReadonlyArray<AldoInterest>,
+): Promise<AldoOnboarding | null> {
+  const body = await api<unknown>("/api/account", {
+    method: "PATCH",
+    body: JSON.stringify({ interests }),
+  });
+  return aldoOnboardingFrom(body);
 }
 
 /** What Aldo knows about the user: its profile of them and its notes. */
