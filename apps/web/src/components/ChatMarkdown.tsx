@@ -163,7 +163,15 @@ import {
 import { readLocalApi } from "../localApi";
 import { useAssetUrlRefresh, useAssetUrlState } from "../assets/assetUrls";
 import { AldoChatVideo } from "../aldo/AldoChatVideo";
+import {
+  ALDO_MEDIA_TILE_IMAGE_CLASS_NAME,
+  ALDO_MEDIA_TILE_STYLE,
+  AldoMediaGrid,
+  AldoMediaGridVideo,
+  useInAldoMediaGrid,
+} from "../aldo/AldoMediaGrid";
 import { isVideoFile, soleParagraphLink } from "../aldo/chatVideo.logic";
+import { rehypeAldoMediaGrid, type AldoVideoLinks } from "../aldo/mediaGrid.logic";
 import { cn } from "../lib/utils";
 import { useRemoteOpenResolution, type RemoteOpenMode } from "../remoteOpen";
 import { useRightPanelStore } from "../rightPanelStore";
@@ -235,6 +243,8 @@ interface ChatMarkdownProps {
       text nests under the heading that introduces it, such as a chat message's
       author. Rendered tags and their styling are unchanged. */
   headingLevelOffset?: number | undefined;
+  /** Aldo: shows a run of images or videos as a grid (aldo/mediaGrid.logic.ts). */
+  mediaGrid?: boolean | undefined;
 }
 
 export interface ChatMarkdownContextReference {
@@ -518,6 +528,18 @@ const CHAT_MARKDOWN_REHYPE_PLUGINS = [
   rehypePreserveImageSourceMeta,
   [rehypeSanitize, CHAT_MARKDOWN_SANITIZE_SCHEMA],
 ] satisfies NonNullable<ReactMarkdownOptions["rehypePlugins"]>;
+
+const withAldoMediaGrid = (videoLinks: AldoVideoLinks) =>
+  [...CHAT_MARKDOWN_REHYPE_PLUGINS, [rehypeAldoMediaGrid, { videoLinks }]] satisfies NonNullable<
+    ReactMarkdownOptions["rehypePlugins"]
+  >;
+
+/** With Aldo's media grid, by which video links can join one (after sanitizing, so it adds markup). */
+const CHAT_MARKDOWN_REHYPE_PLUGINS_WITH_MEDIA_GRID = {
+  none: withAldoMediaGrid("none"),
+  absolute: withAldoMediaGrid("absolute"),
+  all: withAldoMediaGrid("all"),
+} satisfies Record<AldoVideoLinks, NonNullable<ReactMarkdownOptions["rehypePlugins"]>>;
 
 /** GitHub's own five alert kinds, in its colors: the glyph names the urgency, the title says it. */
 const GITHUB_ALERT_PRESENTATIONS: Record<
@@ -1636,6 +1658,24 @@ function ChatMarkdownVideo(props: {
   readonly actionsSource?: MediaActionSource | undefined;
   readonly onRetry?: (() => Promise<unknown>) | undefined;
 }) {
+  if (useInAldoMediaGrid()) {
+    return (
+      <AldoMediaGridVideo
+        key={props.mediaIdentity ?? props.copyMarkdown ?? props.src}
+        src={props.src}
+        sourceFailed={props.sourceFailed}
+        label={props.alt}
+        originalUrl={props.originalUrl}
+        copyMarkdown={props.copyMarkdown}
+        actionsSource={props.actionsSource}
+        onRetry={props.onRetry}
+        // Only inside a message, where a grid can be; a video in a link plays in its tile.
+        onExpand={
+          use(MarkdownLinkContext) ? undefined : use(ChatMarkdownRendererContext).expandMedia
+        }
+      />
+    );
+  }
   return (
     <MediaVideoPlayer
       key={props.mediaIdentity ?? props.copyMarkdown ?? props.src}
@@ -2835,6 +2875,9 @@ const CHAT_MARKDOWN_COMPONENTS = {
         <CodexArtifactTemplateCard template={artifactTemplate} onUse={onUseArtifactTemplate} />
       );
     }
+    if (node?.properties?.dataAldoMediaGrid !== undefined) {
+      return <AldoMediaGrid>{children}</AldoMediaGrid>;
+    }
     return <div {...props}>{children}</div>;
   },
   p: function MarkdownParagraph({ node, children, ...props }) {
@@ -3201,6 +3244,8 @@ const CHAT_MARKDOWN_COMPONENTS = {
       renderContextReference,
     } = use(ChatMarkdownRendererContext);
     const imageExpand = use(MarkdownLinkContext) ? undefined : expandMedia;
+    // A tile of a grid takes the tile's shape, and always holds its slot.
+    const tile = useInAldoMediaGrid();
     const contextReference = typeof src === "string" ? parseComposerContextHref(src) : null;
     if (contextReference) {
       const label = alt || contextReference.contextId;
@@ -3212,7 +3257,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
     }
     const localSrc = node?.properties?.dataLocalSrc;
     const markdownTitle = node?.properties?.dataMarkdownTitle;
-    const standalone = node?.properties?.dataStandalone === true;
+    const standalone = tile || node?.properties?.dataStandalone === true;
     const authoredSrc = typeof localSrc === "string" ? localSrc : src;
     const authoredTitle = typeof markdownTitle === "string" ? markdownTitle : title;
     const srcString =
@@ -3222,7 +3267,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
     const altText = alt ?? "";
     const copyMarkdown = markdownImageCopy(altText, srcString, authoredTitle);
     const { className, style: _style, width, height, ...imageProps } = props;
-    const authoredSizeStyle = authoredImageSizeStyle(width, height);
+    const authoredSizeStyle = tile ? ALDO_MEDIA_TILE_STYLE : authoredImageSizeStyle(width, height);
     const imageSource = classifyMarkdownImageSource(classifiedSrc, imageBaseDir ?? cwd);
     const kind = mediaKindFromPath(classifiedSrc) ?? "image";
     const directUri = imageSource._tag === "Direct" ? imageSource.uri : null;
@@ -3288,7 +3333,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
           alt={altText}
           copyMarkdown={copyMarkdown}
           standalone={standalone}
-          className={className}
+          className={tile ? cn(className, ALDO_MEDIA_TILE_IMAGE_CLASS_NAME) : className}
           style={authoredSizeStyle}
           imageProps={imageProps}
           actionsSource={actionsSource}
@@ -3312,6 +3357,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
           srcFragment={markdownImageSourceFragment(classifiedSrc)}
           standalone={standalone}
           style={authoredSizeStyle}
+          className={tile ? ALDO_MEDIA_TILE_IMAGE_CLASS_NAME : undefined}
           workspaceRoot={cwd}
           onImageExpand={imageExpand}
         />
@@ -3381,6 +3427,7 @@ function ChatMarkdown({
   lineBreaks = false,
   parseRawHtml = true,
   extraRemarkPlugins = EMPTY_REMARK_PLUGINS,
+  mediaGrid = false,
   ...props
 }: ChatMarkdownProps) {
   const {
@@ -3421,7 +3468,16 @@ function ChatMarkdown({
       <ChatMarkdownRendererContext value={componentState}>
         <ReactMarkdown
           remarkPlugins={remarkPlugins}
-          rehypePlugins={parseRawHtml ? CHAT_MARKDOWN_REHYPE_PLUGINS : undefined}
+          rehypePlugins={
+            !parseRawHtml
+              ? undefined
+              : mediaGrid
+                ? // A video link joins a grid where it would otherwise play in place (MarkdownParagraph).
+                  CHAT_MARKDOWN_REHYPE_PLUGINS_WITH_MEDIA_GRID[
+                    !props.threadRef ? "none" : props.cwd ? "all" : "absolute"
+                  ]
+                : CHAT_MARKDOWN_REHYPE_PLUGINS
+          }
           skipHtml={false}
           components={CHAT_MARKDOWN_COMPONENTS}
           urlTransform={markdownUrlTransform}
