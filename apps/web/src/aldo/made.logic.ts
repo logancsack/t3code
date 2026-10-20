@@ -11,7 +11,8 @@ export type AldoMadeKind =
   | "image"
   | "page"
   | "video"
-  | "audio";
+  | "audio"
+  | "archive";
 
 export interface AldoMadeItem {
   /** Relative to the thread's folder, when it's in it. */
@@ -65,6 +66,7 @@ const KIND_BY_EXTENSION: Record<string, AldoMadeKind> = {
   wav: "audio",
   m4a: "audio",
   ogg: "audio",
+  zip: "archive",
 };
 
 export const ALDO_MADE_KIND_LABEL: Record<AldoMadeKind, string> = {
@@ -76,6 +78,7 @@ export const ALDO_MADE_KIND_LABEL: Record<AldoMadeKind, string> = {
   page: "Page",
   video: "Video",
   audio: "Audio",
+  archive: "Zip",
 };
 
 /** Notes every folder has, not things a turn made for the user. */
