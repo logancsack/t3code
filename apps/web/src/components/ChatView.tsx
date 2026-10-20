@@ -3287,6 +3287,11 @@ export default function ChatView(props: ChatViewProps) {
       null
     );
   }, [activeLatestTurn?.turnId, activePlan]);
+  // Aldo's working line counts the steps of the plan the turn works through.
+  const workingPlanSteps =
+    activePlan && activePlan.turnId === (activeLatestTurn?.turnId ?? null)
+      ? activePlan.steps
+      : null;
   const showPlanFollowUpPrompt = shouldShowPlanFollowUpPrompt({
     pendingUserInputCount: pendingUserInputs.length,
     interactionMode,
@@ -10486,6 +10491,7 @@ export default function ChatView(props: ChatViewProps) {
                 isWorking={!paintOnlyDisplayedTimeline && isWorking}
                 isWakingWorkspace={!paintOnlyDisplayedTimeline && isWakingManagedWorkspace}
                 workingStepLabel={paintOnlyDisplayedTimeline ? null : workingStepLabel}
+                workingPlanSteps={paintOnlyDisplayedTimeline ? null : workingPlanSteps}
                 activeTurnInProgress={
                   !paintOnlyDisplayedTimeline && (isWorking || !latestTurnSettled)
                 }
