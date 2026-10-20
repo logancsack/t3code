@@ -150,10 +150,10 @@ export interface AldoPlanPick {
   /** What the picker offers; null when the plan was on before the page asked (back from Checkout). */
   readonly needs: AldoNeedsPlan | null;
   /**
-   * choose: pick a plan and pay; confirming: back from Checkout, Aldo confirms
-   * the plan and sends the request; on: it went, on `plan`; waiting: it's
-   * still kept (Stripe hasn't confirmed the plan, or Aldo couldn't be reached),
-   * and `note` says why.
+   * choose: pick a plan and pay; confirming: Aldo sends the request (back
+   * from Checkout, confirming the plan first); on: it went, on `plan`;
+   * waiting: it's still kept (Stripe hasn't confirmed the plan, or Aldo
+   * couldn't be reached), and `note` says why.
    */
   readonly stage: "choose" | "confirming" | "on" | "waiting";
   readonly plan: string | null;

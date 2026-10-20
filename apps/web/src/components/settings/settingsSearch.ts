@@ -77,6 +77,8 @@ export interface SettingsSearchItem {
   readonly requiresAldoAgentInbox?: boolean;
   /** Its row renders only on an Aldo that keeps the welcome's answer (aldo/onboarding.ts). */
   readonly requiresAldoOnboarding?: boolean;
+  /** Its row renders only once Aldo says its policy takes this rule (aldo/policy.logic.ts). */
+  readonly requiresAldoPolicyRule?: string;
   readonly environmentOnly?: boolean;
   readonly providerSettingsOnly?: boolean;
   readonly macProviderSettingsOnly?: boolean;
@@ -103,6 +105,8 @@ export interface SettingsSearchAvailability {
   readonly hasAldoPhoneApi?: boolean;
   readonly hasAldoAgentInbox?: boolean;
   readonly hasAldoOnboarding?: boolean;
+  /** The rules Aldo's policy takes, once it's said (Settings → Permissions). */
+  readonly aldoPolicyRules?: ReadonlyArray<string>;
   /** False for an Aldo account without the developer tools (aldo/developerTools.ts): no Code page. */
   readonly aldoDeveloperTools?: boolean;
 }
@@ -817,6 +821,24 @@ export const SETTINGS_SEARCH_ITEMS = [
     aldoCloudOnly: true,
   },
   {
+    id: "aldo-accounts",
+    title: "Accounts in your name",
+    to: "/settings/permissions",
+    searchTerms: [
+      "sign up signup register create account profile listing terms login vault ask me first never",
+    ],
+    aldoCloudOnly: true,
+    requiresAldoPolicyRule: "accounts",
+  },
+  {
+    id: "aldo-publishing",
+    title: "Publishing for you",
+    to: "/settings/permissions",
+    searchTerms: ["publish post listing page go live public show me first"],
+    aldoCloudOnly: true,
+    requiresAldoPolicyRule: "publishing",
+  },
+  {
     id: "aldo-spend-threshold",
     title: "Spend without asking",
     to: "/settings/permissions",
@@ -1305,6 +1327,8 @@ export function filterAvailableSettingsSearchItems(
         (!item.requiresAldoPhone || availability.hasAldoPhoneApi === true) &&
         (!item.requiresAldoAgentInbox || availability.hasAldoAgentInbox === true) &&
         (!item.requiresAldoOnboarding || availability.hasAldoOnboarding === true) &&
+        (!item.requiresAldoPolicyRule ||
+          availability.aldoPolicyRules?.includes(item.requiresAldoPolicyRule) === true) &&
         // Aldo leaves out T3's pages and rows that don't apply to its machines.
         (isAldoCloud ? aldoShowsSettingsSearchItem(item) : !item.aldoCloudOnly),
     )

@@ -2,7 +2,8 @@
 // choices, the user's own for all their workspaces, and where a workspace
 // answered otherwise. An undecided rule is one an agent asks about the first
 // time it comes up; one with a default (paying past the plans, long
-// conversations) does that until the user changes it.
+// conversations, accounts and publishing in their name) does that until the
+// user changes it.
 
 import { type AldoPolicy, type AldoPolicyPath, type AldoPolicyView } from "./homeApi";
 
@@ -18,7 +19,9 @@ export type AldoPolicyRuleId =
   | "paidFallback"
   | "onProviderLimit"
   | "contextBudget"
-  | "mediaRouting";
+  | "mediaRouting"
+  | "accounts"
+  | "publishing";
 
 export interface AldoPolicyOption {
   readonly value: string;
@@ -27,6 +30,8 @@ export interface AldoPolicyOption {
 
 interface RuleSpec {
   readonly clear: AldoPolicyPath;
+  /** The server's name for a rule newer than the policy page: shown only where Aldo says it takes it. */
+  readonly requires?: string;
   /** What the rule does while undecided, for one with a default. */
   readonly fallback?: string;
   readonly options: ReadonlyArray<AldoPolicyOption>;
@@ -117,7 +122,44 @@ const ALDO_POLICY_RULES: Readonly<Record<AldoPolicyRuleId, RuleSpec>> = {
     read: (p) => p.mediaRouting,
     set: (v) => (v === "auto" || v === "ask" ? { mediaRouting: v } : null),
   },
+  accounts: {
+    clear: ["accounts"],
+    requires: "accounts",
+    fallback: "when_asked",
+    options: [
+      { value: "when_asked", label: "When I ask" },
+      { value: "ask_first", label: "Ask me first" },
+      { value: "never", label: "Never" },
+    ],
+    read: (p) => p.accounts,
+    set: (v) => (v === "when_asked" || v === "ask_first" || v === "never" ? { accounts: v } : null),
+  },
+  publishing: {
+    clear: ["publishing"],
+    requires: "publishing",
+    fallback: "when_asked",
+    options: [
+      { value: "when_asked", label: "When I ask" },
+      { value: "show_first", label: "Show me first" },
+    ],
+    read: (p) => p.publishing,
+    set: (v) => (v === "when_asked" || v === "show_first" ? { publishing: v } : null),
+  },
 };
+
+/**
+ * Whether to show a rule: the ones the policy page started with on any Aldo
+ * that has it, a newer one only once Aldo says it takes it (an older Aldo
+ * would refuse the change).
+ */
+export function aldoRuleShown(
+  view: Pick<AldoPolicyView, "rules"> | null | undefined,
+  rule: AldoPolicyRuleId,
+): boolean {
+  const requires = ALDO_POLICY_RULES[rule].requires;
+  if (requires === undefined) return true;
+  return Array.isArray(view?.rules) && view.rules.includes(requires);
+}
 
 /** The user's choice for a rule: theirs, the rule's default, or undecided. */
 export function aldoRuleValue(rule: AldoPolicyRuleId, policy: AldoPolicy): string {
