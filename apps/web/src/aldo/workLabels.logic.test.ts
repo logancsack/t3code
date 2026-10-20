@@ -50,6 +50,13 @@ describe("OpenCode's steps", () => {
     expect(aldoWorkWords.step(open, true)).toBe("Opening fiverr.com");
   });
 
+  it("says what a search tool looked for", () => {
+    const search = openCode("websearch", { query: "fiverr motion graphics pricing" }, "1. …");
+    expect(aldoWorkWords.step(search, false)).toBe(
+      "Searched the web for “fiverr motion graphics pricing”",
+    );
+  });
+
   it("never labels a step with what its tool said back", () => {
     const page = `{"results":[${'{"title":"Motion graphics gig","price":45},'.repeat(20)}]}`;
     expect(aldoWorkWords.step(openCode("gig_lookup", {}, page), false)).toBe("Used gig lookup");

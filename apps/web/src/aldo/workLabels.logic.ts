@@ -795,7 +795,8 @@ function workStep(entry: Entry): AldoStep | null {
       },
     );
   }
-  if (entry.itemType === "web_search") {
+  // Codex's own search, or a search tool (OpenCode's websearch, Claude's WebSearch).
+  if (entry.itemType === "web_search" || /^(websearch|web_search)$/.test(tool)) {
     const query = text(call?.args?.query) ?? (call ? null : text(entry.detail)) ?? null;
     return query
       ? step("search", `Searched the web for “${clip(query, 48)}”`, "Searching the web", {
