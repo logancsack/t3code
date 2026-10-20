@@ -109,6 +109,7 @@ let aldoFeatures: {
   readonly routing: boolean;
   readonly projectRepos: boolean;
   readonly modelRouting: boolean;
+  readonly downloads: boolean;
 } = {
   general: false,
   projects: false,
@@ -120,6 +121,7 @@ let aldoFeatures: {
   routing: false,
   projectRepos: false,
   modelRouting: false,
+  downloads: false,
 };
 
 /** Whether threads can start without a repository (General), as the directory said. */
@@ -174,6 +176,11 @@ export function aldoLinksProjectCode(): boolean {
 /** First messages go through Aldo's model router, even on a connected machine. */
 export function aldoRoutesModels(): boolean {
   return aldoFeatures.modelRouting;
+}
+
+/** Whether Aldo zips a conversation's results for "Download everything" (zipAldoFiles), as the directory said. */
+export function aldoZipsResults(): boolean {
+  return aldoFeatures.downloads;
 }
 
 const directoryListeners = new Set<() => void>();
@@ -372,6 +379,7 @@ interface DirectoryBody {
     routing?: boolean;
     projectRepos?: boolean;
     modelRouting?: boolean;
+    downloads?: boolean;
   };
 }
 
@@ -409,6 +417,7 @@ function takeListing({ environments, features }: DirectoryBody): ReadonlyArray<A
     routing: features?.routing === true,
     projectRepos: features?.projectRepos === true,
     modelRouting: features?.modelRouting === true,
+    downloads: features?.downloads === true,
   };
   // A listing that started before a deletion finished can still include its machine.
   const listed = environments.filter((environment) => !hiddenByDeletion(environment.environmentId));

@@ -47,6 +47,8 @@ import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { cn } from "../lib/utils";
 import { useRightPanelStore } from "../rightPanelStore";
 import { AldoChatVideo } from "./AldoChatVideo";
+import { AldoDownloadEverything } from "./AldoDownloadEverything";
+import { aldoOffersZip, aldoZipFiles } from "./download.logic";
 import { aldoShareAudience, aldoShareIdOf } from "./library.logic";
 import {
   ALDO_MADE_KIND_LABEL,
@@ -1038,6 +1040,7 @@ export const AldoMadeCards = memo(function AldoMadeCards(props: {
     () => aldoResults({ items: made.items, workspaceRoot, shown, shots, listed }),
     [made.items, workspaceRoot, shown, shots, listed],
   );
+  const zip = useMemo(() => aldoZipFiles(made.items, workspaceRoot), [made.items, workspaceRoot]);
   const [showChanges, setShowChanges] = useState(false);
   const { main, gallery, links, documents } = results;
   if (made.items.length === 0 && shots.length === 0) return props.allChanges;
@@ -1058,9 +1061,19 @@ export const AldoMadeCards = memo(function AldoMadeCards(props: {
         {showChanges ? props.allChanges : null}
       </div>
     ) : null;
+  // For more than one file; it shows nothing where Aldo can't make zips.
+  const download =
+    threadRef && aldoOffersZip(zip.files) ? (
+      <AldoDownloadEverything threadRef={threadRef} files={zip.files} links={zip.links} />
+    ) : null;
   // All of it is in the answer already.
   if (!main && gallery.length === 0 && links.length === 0 && documents.length === 0) {
-    return changes ? <div className="mt-3">{changes}</div> : null;
+    return changes || download ? (
+      <div className="mt-3 flex flex-col gap-2 empty:hidden">
+        {download}
+        {changes}
+      </div>
+    ) : null;
   }
   return (
     <section className="mt-3 flex max-w-[48rem] flex-col gap-4" aria-label="What it made">
@@ -1092,6 +1105,7 @@ export const AldoMadeCards = memo(function AldoMadeCards(props: {
       {documents.length > 0 ? (
         <Documents items={documents} threadRef={threadRef} workspaceRoot={workspaceRoot} />
       ) : null}
+      {download ? <div className="-mt-2 empty:hidden">{download}</div> : null}
       {changes ? <div className="-mt-2">{changes}</div> : null}
     </section>
   );

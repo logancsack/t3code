@@ -4,6 +4,7 @@ import { api, threadIdForEnvironment, AldoApiError } from "./api";
 import { type AldoCost, isAldoCost } from "./costs.logic";
 import { type AldoProviderLimits, aldoProviderLimitsOf } from "./providerLimits.logic";
 import { type AldoShareView, parseAldoShares } from "./library.logic";
+import { type AldoZip, type AldoZipFile, aldoZipOf } from "./download.logic";
 import { type SourceControlRepositorySummary } from "@t3tools/contracts";
 import { type AldoHostKind } from "./accountApi";
 import { type AldoPullRequestStage, type AldoCheckCounts } from "./pullRequests.logic";
@@ -82,6 +83,35 @@ export async function fetchAldoShares(): Promise<ReadonlyArray<AldoShareView> | 
   );
   // An older Aldo may answer with the web client's page instead of a 404.
   return parseAldoShares(body?.shares);
+}
+
+/**
+ * "Download everything": a zip of these files made on the thread's computer
+ * (`check`: what it would hold, without making it), named `name` (the
+ * conversation's). A computer asleep isn't woken: it's an AldoApiError 409
+ * whose body says `asleep`, for the caller to ask the user first. Only for
+ * an Aldo whose directory says `downloads` (aldoZipsResults).
+ */
+export async function zipAldoFiles(
+  environmentId: string,
+  files: ReadonlyArray<AldoZipFile>,
+  options: { readonly check: boolean; readonly name?: string | undefined },
+): Promise<AldoZip> {
+  const body = await api<unknown>(
+    `/api/environments/${threadIdForEnvironment(environmentId)}/download`,
+    {
+      method: "POST",
+      cache: "no-store",
+      body: JSON.stringify({
+        files,
+        check: options.check,
+        ...(options.name ? { name: options.name } : {}),
+      }),
+    },
+  );
+  const zip = aldoZipOf(body);
+  if (!zip) throw new AldoApiError(502, "Aldo didn’t say what the zip holds. Try again.");
+  return zip;
 }
 
 /** Stops sharing one: its link stops working at once and Aldo deletes its copy (404 when already gone). */
