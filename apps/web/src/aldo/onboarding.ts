@@ -34,36 +34,53 @@ export function useAldoOnboardingState(): AldoOnboarding | null | undefined {
   return useAldoOnboarding((s) => s.onboarding);
 }
 
-/** What the user told the welcome; null while it isn't known, and for an account never asked. */
-export function useAldoInterests(): ReadonlyArray<AldoInterest> | null {
+/** What the user told the welcome: undefined until the account's read, null for an account never asked. */
+export function useAldoInterests(): ReadonlyArray<AldoInterest> | null | undefined {
   useEffect(loadAldoOnboarding, []);
-  return useAldoOnboarding((s) => s.onboarding?.interests ?? null);
+  return useAldoOnboarding((s) =>
+    s.onboarding === undefined ? undefined : (s.onboarding?.interests ?? null),
+  );
 }
 
-let latest = 0;
+/** What Aldo last kept, while changes are on their way; what a failed one goes back to. */
+let confirmed: AldoOnboarding | null | undefined;
+let pending = 0;
+/** Changes go one at a time, so Aldo keeps them in the order they were made. */
+let queue: Promise<unknown> = Promise.resolve();
 
 /**
  * Keeps what they'll hand Aldo first (empty for a skip), which ends the
- * welcome: shown at once, then as Aldo kept it. Says whether it saved. A
- * failed save keeps the answer for this page (the welcome doesn't come back
- * until the next visit), or with `revert` puts back what was there.
+ * welcome: shown at once, then as Aldo kept it once nothing else is on its
+ * way. Says whether it saved. A failed save keeps the answer for this page
+ * (the welcome doesn't come back until the next visit), or with `revert` puts
+ * back what Aldo last kept.
  */
 export async function saveAldoOnboarding(
   interests: ReadonlyArray<AldoInterest>,
   options: { readonly revert?: boolean } = {},
 ): Promise<boolean> {
   const before = useAldoOnboarding.getState().onboarding;
-  const ticket = ++latest;
-  useAldoOnboarding.setState({
-    onboarding: { onboardedAt: before?.onboardedAt ?? new Date().toISOString(), interests },
-  });
-  try {
-    const saved = await saveAldoInterests(interests);
-    // A later change supersedes this one's answer.
-    if (saved && ticket === latest) useAldoOnboarding.setState({ onboarding: saved });
-    return true;
-  } catch {
-    if (options.revert && ticket === latest) useAldoOnboarding.setState({ onboarding: before });
-    return false;
-  }
+  if (pending === 0) confirmed = before;
+  pending += 1;
+  const shown: AldoOnboarding = {
+    onboardedAt: before?.onboardedAt ?? new Date().toISOString(),
+    interests,
+  };
+  useAldoOnboarding.setState({ onboarding: shown });
+  const save = queue.then(() =>
+    saveAldoInterests(interests).then(
+      (saved) => {
+        confirmed = saved ?? shown;
+        return true;
+      },
+      () => false,
+    ),
+  );
+  queue = save;
+  const saved = await save;
+  pending -= 1;
+  // The last change to settle says what shows: Aldo's answer, or with `revert` what it kept.
+  if (pending === 0 && (saved || options.revert))
+    useAldoOnboarding.setState({ onboarding: confirmed });
+  return saved;
 }

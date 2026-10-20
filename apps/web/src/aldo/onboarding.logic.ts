@@ -67,12 +67,16 @@ export function aldoSimpleByDefault(interests: ReadonlyArray<AldoInterest> | nul
  * Whether the app shows the developer tools: pull requests, Code settings, and
  * the Terminal and Diff in a thread. Always for an account that was never
  * asked (as before the welcome) and for code; otherwise once a git host is
- * connected. While that isn't known yet, they wait.
+ * connected. Undefined while that isn't known yet: they wait, hidden.
  */
 export function aldoDeveloperToolsShown(input: {
-  readonly interests: ReadonlyArray<AldoInterest> | null;
+  /** What they told the welcome; undefined until the account is read. */
+  readonly interests: ReadonlyArray<AldoInterest> | null | undefined;
   /** Whether a git host is connected; null while that isn't known. */
   readonly gitHost: boolean | null;
-}): boolean {
-  return input.interests === null || input.interests.includes("code") || input.gitHost === true;
+}): boolean | undefined {
+  if (input.interests === undefined) return undefined;
+  if (input.interests === null || input.interests.includes("code") || input.gitHost === true)
+    return true;
+  return input.gitHost === null ? undefined : false;
 }

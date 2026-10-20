@@ -58,15 +58,40 @@ describe("changing it in settings", () => {
     });
   });
 
-  it("keeps the latest change when saves finish out of order", async () => {
+  it("sends changes one at a time, so Aldo keeps the latest", async () => {
     useAldoOnboarding.setState({ onboarding: { onboardedAt: at, interests: [] } });
     let first!: (value: unknown) => void;
     save.mockReturnValueOnce(new Promise((resolve) => (first = resolve)));
     save.mockResolvedValueOnce({ onboardedAt: at, interests: ["finance", "media"] });
     const earlier = saveAldoOnboarding(["finance"], { revert: true });
-    await saveAldoOnboarding(["finance", "media"], { revert: true });
+    const later = saveAldoOnboarding(["finance", "media"], { revert: true });
+    await Promise.resolve();
+    expect(save).toHaveBeenCalledTimes(1);
     first({ onboardedAt: at, interests: ["finance"] });
-    await earlier;
+    // Aldo's answer to the first doesn't undo the second while it's on its way.
+    expect(await earlier).toBe(true);
     expect(useAldoOnboarding.getState().onboarding?.interests).toEqual(["finance", "media"]);
+    expect(await later).toBe(true);
+    expect(save.mock.calls).toEqual([[["finance"]], [["finance", "media"]]]);
+    expect(useAldoOnboarding.getState().onboarding?.interests).toEqual(["finance", "media"]);
+  });
+
+  it("goes back to what Aldo last kept when the changes after it fail", async () => {
+    useAldoOnboarding.setState({ onboarding: { onboardedAt: at, interests: ["code"] } });
+    save.mockRejectedValueOnce(new Error("offline"));
+    save.mockRejectedValueOnce(new Error("offline"));
+    const earlier = saveAldoOnboarding(["code", "media"], { revert: true });
+    const later = saveAldoOnboarding(["code", "media", "research"], { revert: true });
+    expect(await earlier).toBe(false);
+    expect(await later).toBe(false);
+    expect(useAldoOnboarding.getState().onboarding?.interests).toEqual(["code"]);
+
+    save.mockResolvedValueOnce({ onboardedAt: at, interests: ["code", "media"] });
+    save.mockRejectedValueOnce(new Error("offline"));
+    const kept = saveAldoOnboarding(["code", "media"], { revert: true });
+    const lost = saveAldoOnboarding(["media"], { revert: true });
+    expect(await kept).toBe(true);
+    expect(await lost).toBe(false);
+    expect(useAldoOnboarding.getState().onboarding?.interests).toEqual(["code", "media"]);
   });
 });

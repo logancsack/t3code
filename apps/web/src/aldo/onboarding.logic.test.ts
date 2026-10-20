@@ -114,7 +114,14 @@ describe("the developer tools", () => {
     expect(aldoDeveloperToolsShown({ interests: ["code"], gitHost: false })).toBe(true);
     expect(aldoDeveloperToolsShown({ interests: ["business"], gitHost: true })).toBe(true);
     expect(aldoDeveloperToolsShown({ interests: ["business"], gitHost: false })).toBe(false);
-    expect(aldoDeveloperToolsShown({ interests: [], gitHost: null })).toBe(false);
+    expect(aldoDeveloperToolsShown({ interests: [], gitHost: false })).toBe(false);
+  });
+
+  it("wait, unknown, until the account and its git hosts are read", () => {
+    expect(aldoDeveloperToolsShown({ interests: undefined, gitHost: null })).toBeUndefined();
+    expect(aldoDeveloperToolsShown({ interests: undefined, gitHost: true })).toBeUndefined();
+    expect(aldoDeveloperToolsShown({ interests: [], gitHost: null })).toBeUndefined();
+    expect(aldoDeveloperToolsShown({ interests: ["code"], gitHost: null })).toBe(true);
   });
 
   const actions = ["Browser", "Files", "Terminal", "Diff", "Agents"].map((label) => ({

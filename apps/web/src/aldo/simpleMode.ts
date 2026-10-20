@@ -9,8 +9,9 @@
 import { create } from "zustand";
 
 import { isAldoCloud } from "./api";
+import { requestAldoProfile } from "./assistantApi";
 import { loadAldoOnboarding, useAldoOnboarding } from "./onboarding";
-import { aldoSimpleByDefault } from "./onboarding.logic";
+import { type AldoInterest, aldoSimpleByDefault } from "./onboarding.logic";
 import { homeShowsConversation, simpleModeFrom, type AldoSimplePlace } from "./simpleMode.logic";
 
 const KEY = "aldo:simple";
@@ -43,18 +44,30 @@ export const useAldoSimple = create<{ readonly on: boolean; readonly place: Aldo
   }),
 );
 
+function keepWelcomeDefault(interests: ReadonlyArray<AldoInterest> | null): void {
+  try {
+    if (aldoSimpleByDefault(interests)) window.localStorage.setItem(WELCOME_KEY, "on");
+    else window.localStorage.removeItem(WELCOME_KEY);
+  } catch {
+    // Private mode: it's read again next visit.
+  }
+  const on = current();
+  if (on !== useAldoSimple.getState().on) useAldoSimple.setState({ on, place: "aldo" });
+}
+
 // The welcome's answer, once it's read or given, decides it until the user does.
 if (isAldoCloud && typeof window !== "undefined") {
   useAldoOnboarding.subscribe(({ onboarding }, previous) => {
-    if (!onboarding || onboarding.interests === previous.onboarding?.interests) return;
-    try {
-      if (aldoSimpleByDefault(onboarding.interests)) window.localStorage.setItem(WELCOME_KEY, "on");
-      else window.localStorage.removeItem(WELCOME_KEY);
-    } catch {
-      // Private mode: it's read again next visit.
+    if (onboarding === undefined || onboarding === previous.onboarding) return;
+    if (onboarding === null) {
+      // An Aldo without the welcome (not an account it couldn't read): nobody's answer applies.
+      void requestAldoProfile().then((profile) => {
+        if (profile && useAldoOnboarding.getState().onboarding === null) keepWelcomeDefault(null);
+      });
+      return;
     }
-    const on = current();
-    if (on !== useAldoSimple.getState().on) useAldoSimple.setState({ on, place: "aldo" });
+    if (onboarding.interests !== previous.onboarding?.interests)
+      keepWelcomeDefault(onboarding.interests);
   });
   // With who's signed in, which the account menu reads anyway.
   loadAldoOnboarding();
