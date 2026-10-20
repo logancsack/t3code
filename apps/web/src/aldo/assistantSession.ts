@@ -77,6 +77,17 @@ import {
   type AldoLiveTurn,
 } from "./liveTranscript.logic";
 import { aldoOnScreen, subscribeAldoOnScreen } from "./screen";
+import {
+  checkoutReturnOf,
+  confirmAgainIn,
+  keptStep,
+  needsPlanOf,
+  saidAlready,
+  withoutCheckoutReturn,
+  type AldoKeptRequest,
+  type AldoNeedsPlan,
+  type AldoResumed,
+} from "./planPicker.logic";
 
 const REALTIME_CALLS_URL = "https://api.openai.com/v1/realtime/calls";
 /** How long a tool call waits for the transcript of what the user just said. */
@@ -126,6 +137,30 @@ export type AldoConversationEntry =
   | ({ readonly kind: "message" } & AldoAssistantMessage)
   | ({ readonly kind: "action" } & AldoAssistantAction);
 
+/**
+ * The plan picker under a request Aldo kept until a plan's chosen
+ * (planPicker.logic.ts; AldoPlanPicker.tsx shows it under `entry`).
+ */
+export interface AldoPlanPick {
+  /** The kept request. */
+  readonly requestId: string;
+  /** The user's message it's under. */
+  readonly entry: AldoConversationEntry;
+  /** What the picker offers; null when the plan was on before the page asked (back from Checkout). */
+  readonly needs: AldoNeedsPlan | null;
+  /**
+   * choose: pick a plan and pay; confirming: back from Checkout, Aldo confirms
+   * the plan and sends the request; on: it went, on `plan`; waiting: it's
+   * still kept (Stripe hasn't confirmed the plan, or Aldo couldn't be reached),
+   * and `note` says why.
+   */
+  readonly stage: "choose" | "confirming" | "on" | "waiting";
+  readonly plan: string | null;
+  readonly note: string | null;
+  /** Checkout's session, back from it: Aldo confirms the plan by it. */
+  readonly checkoutSession: string | null;
+}
+
 interface AldoAssistantState {
   readonly phase: AldoAssistantPhase;
   readonly error: string | null;
@@ -150,6 +185,8 @@ interface AldoAssistantState {
   readonly callFrom: number;
   /** Aldo's voice is off on this device: its words still show. */
   readonly voiceOff: boolean;
+  /** A request kept until a plan's chosen, and the picker under it. */
+  readonly planPick: AldoPlanPick | null;
 }
 
 export const useAldoAssistant = create<AldoAssistantState>(() => ({
@@ -167,6 +204,7 @@ export const useAldoAssistant = create<AldoAssistantState>(() => ({
   connectedAt: null,
   callFrom: 0,
   voiceOff: false,
+  planPick: null,
 }));
 
 const set = (patch: Partial<AldoAssistantState>) => useAldoAssistant.setState(patch);
@@ -309,8 +347,242 @@ export function loadAldoConversation(): Promise<void> {
       // Anything said since the page opened stays after what came before.
       entries: [...fromRecord(messages), ...get().entries],
     });
+    void settleKept().catch(() => {});
   })();
   return loadingHistory;
+}
+
+// ---------------------------------------------------------------------------
+// A request sent before choosing a plan (planPicker.logic.ts)
+
+/** The plan this tab chose in the picker, for "You're on <plan>" back from Checkout when Aldo doesn't name it. */
+const PICKED_PLAN_KEY = "aldo:picked-plan";
+
+/** Notes the plan the user is about to pay for in the picker (AldoPlanPicker.tsx), for the way back. */
+export function noteAldoPickedPlan(name: string): void {
+  try {
+    sessionStorage.setItem(PICKED_PLAN_KEY, name);
+  } catch {
+    // No storage: Aldo names the plan itself.
+  }
+}
+
+function pickedPlan(): string | null {
+  try {
+    const name = sessionStorage.getItem(PICKED_PLAN_KEY);
+    sessionStorage.removeItem(PICKED_PLAN_KEY);
+    return name || null;
+  } catch {
+    return null;
+  }
+}
+
+function keptEntry(request: Pick<AldoKeptRequest, "text" | "at">): AldoConversationEntry {
+  return { kind: "message", role: "user", text: request.text, at: request.at };
+}
+
+/**
+ * Once a page has the conversation: a request Aldo kept shows again with the
+ * picker, or, back from Checkout or with a plan on (a tab closed meanwhile),
+ * goes as the user's message. The way back's address is read once.
+ */
+async function settleKept(): Promise<void> {
+  const returning = checkoutReturnOf(window.location.search);
+  if (returning) {
+    const { pathname, search, hash } = window.location;
+    window.history.replaceState(
+      window.history.state,
+      "",
+      `${pathname}${withoutCheckoutReturn(search)}${hash}`,
+    );
+  }
+  const kept = await aldoAssistant.kept().catch(() => null);
+  const step = keptStep(returning, kept);
+  // This page has one already (sent before Aldo answered).
+  if (step.kind === "nothing" || get().planPick) return;
+  if (step.kind === "pick") {
+    const entry = keptEntry(step.request);
+    addEntry(entry);
+    set({ planPick: pick(step.needs.requestId, entry, step.needs, "choose") });
+    return;
+  }
+  const entry = step.request ? keptEntry(step.request) : null;
+  if (entry) addEntry(entry);
+  await sendKept(step.requestId, entry, step.needs, step.checkoutSession, step.returning);
+}
+
+function pick(
+  requestId: string,
+  entry: AldoConversationEntry,
+  needs: AldoNeedsPlan | null,
+  stage: AldoPlanPick["stage"],
+  more: Partial<Pick<AldoPlanPick, "plan" | "note" | "checkoutSession">> = {},
+): AldoPlanPick {
+  return {
+    requestId,
+    entry,
+    needs,
+    stage,
+    plan: more.plan ?? null,
+    note: more.note ?? null,
+    checkoutSession: more.checkoutSession ?? null,
+  };
+}
+
+/** Sends the kept request again: the picker's "Check again", or once Checkout says the user has a plan already. */
+export async function resumeAldoKept(): Promise<void> {
+  const current = get().planPick;
+  if (!current || current.stage === "confirming" || current.stage === "on") return;
+  await sendKept(current.requestId, current.entry, current.needs, current.checkoutSession, true);
+}
+
+/**
+ * After a turn that went ("What can you do?" goes without a plan): once a plan
+ * is on (chosen elsewhere), the request still kept goes too, as the picker
+ * promised; one that's gone (sent from another tab) leaves the page.
+ */
+async function sendKeptOnceFree(): Promise<void> {
+  const current = get().planPick;
+  if (!current || (current.stage !== "choose" && current.stage !== "waiting")) return;
+  const kept = await aldoAssistant.kept().catch(() => null);
+  if (!kept || get().planPick !== current) return;
+  if (!kept.pending) {
+    await settleGone(current.entry, current.entry.kind === "message" ? current.entry.text : "");
+    return;
+  }
+  if (kept.pending.id === current.requestId && !kept.needsPlan) await resumeAldoKept();
+}
+
+/**
+ * Asks Aldo to send the kept request (`entry`, its message on the page, when
+ * it knows the words), and shows what came of it. Back from Checkout
+ * (`returning`), a plan Stripe hasn't confirmed yet is asked about again for
+ * a little while.
+ */
+async function sendKept(
+  requestId: string,
+  entry: AldoConversationEntry | null,
+  needs: AldoNeedsPlan | null,
+  checkoutSession: string | null,
+  returning: boolean,
+): Promise<void> {
+  if (get().replying) return;
+  set({
+    replying: true,
+    error: null,
+    ...(entry
+      ? { planPick: pick(requestId, entry, needs, "confirming", { checkoutSession }) }
+      : {}),
+  });
+  try {
+    for (let attempt = 0; ; attempt++) {
+      const outcome = await aldoAssistant.resume(requestId, chatSessionId, checkoutSession);
+      const wait = outcome.kind === "needsPlan" && returning ? confirmAgainIn(attempt) : null;
+      if (wait === null) {
+        await showResumed(outcome, requestId, entry, checkoutSession, returning);
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, wait));
+    }
+  } finally {
+    set({ replying: false });
+  }
+}
+
+async function showResumed(
+  outcome: AldoResumed,
+  requestId: string,
+  shown: AldoConversationEntry | null,
+  checkoutSession: string | null,
+  returning: boolean,
+): Promise<void> {
+  const text = shown?.kind === "message" ? shown.text : "";
+  const ensure = (words: string) => {
+    if (shown) return shown;
+    const entry = keptEntry({ text: words, at: new Date().toISOString() });
+    addEntry(entry);
+    return entry;
+  };
+  switch (outcome.kind) {
+    case "sent": {
+      const entry = ensure(outcome.text || text);
+      chatSupported = true;
+      chatSessionId = outcome.turn.sessionId;
+      heard = rememberHeard(heard, outcome.text || text);
+      const plan = outcome.plan ?? pickedPlan();
+      set({ planPick: pick(requestId, entry, get().planPick?.needs ?? null, "on", { plan }) });
+      showCalls(outcome.turn.calls);
+      addEntry({
+        kind: "message",
+        role: "assistant",
+        text: outcome.turn.reply,
+        at: new Date().toISOString(),
+      });
+      return;
+    }
+    case "needsPlan": {
+      const entry = ensure(outcome.needs.text);
+      set({
+        planPick: pick(
+          outcome.needs.requestId,
+          entry,
+          outcome.needs,
+          returning ? "waiting" : "choose",
+          returning
+            ? {
+                checkoutSession,
+                note: "Stripe hasn’t confirmed your plan yet. Your request is saved, and goes as soon as it does.",
+              }
+            : {},
+        ),
+      });
+      return;
+    }
+    case "refused": {
+      // Not kept for what a plan doesn't fix: the words go back to the composer, with why.
+      dropShown(shown);
+      set({ error: outcome.message, ...(text ? { unsent: text } : {}) });
+      return;
+    }
+    case "failed": {
+      // Whether it went: still kept, it waits for another try; else the conversation says.
+      const kept = await aldoAssistant.kept().catch(() => null);
+      if (kept?.pending?.id === requestId && shown) {
+        set({
+          planPick: pick(requestId, shown, get().planPick?.needs ?? null, "waiting", {
+            checkoutSession,
+            note: `${/[.?!]$/.test(outcome.message) ? outcome.message : `${outcome.message}.`} Your request is saved.`,
+          }),
+        });
+        return;
+      }
+      await settleGone(shown, text);
+      if (!saidAlready(messagesIn(get().entries), text)) set({ error: outcome.message });
+      return;
+    }
+    case "gone":
+      await settleGone(shown, text);
+      return;
+  }
+}
+
+function dropShown(shown: AldoConversationEntry | null): void {
+  set({ entries: get().entries.filter((e) => e !== shown), planPick: null });
+}
+
+/**
+ * The request isn't kept any more: sent (another tab), or it was never sent.
+ * What was said comes from Aldo, and words that never went go back to the
+ * composer.
+ */
+async function settleGone(shown: AldoConversationEntry | null, text: string): Promise<void> {
+  dropShown(shown);
+  await pullAldoConversation();
+  if (text && !saidAlready(messagesIn(get().entries), text)) set({ unsent: text });
+}
+
+function messagesIn(entries: ReadonlyArray<AldoConversationEntry>) {
+  return entries.flatMap((e) => (e.kind === "message" ? [e] : []));
 }
 
 /**
@@ -1373,7 +1645,16 @@ async function chatText(words: string, images: ReadonlyArray<AldoImageUpload> = 
       text: turn.reply,
       at: new Date().toISOString(),
     });
+    if (get().planPick) queueMicrotask(() => void sendKeptOnceFree().catch(() => {}));
   } catch (error) {
+    const needs =
+      error instanceof AldoApiError && error.status === 402 ? needsPlanOf(error.body) : null;
+    if (needs) {
+      // Aldo kept it until a plan's chosen: the message stays, with the plan picker under it.
+      chatSupported = true;
+      set({ planPick: pick(needs.requestId, entry, needs, "choose") });
+      return;
+    }
     set({
       entries: get().entries.filter((e) => e !== entry),
       error: messageOf(error),

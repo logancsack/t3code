@@ -24,6 +24,8 @@ export class AldoApiError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    /** What the response said besides `error` (a refusal's plan picker, planPicker.logic.ts). */
+    readonly body?: unknown,
   ) {
     super(message);
   }
@@ -56,7 +58,11 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   }
   const body = (await response.json().catch(() => ({}))) as T & { error?: string };
   if (!response.ok) {
-    throw new AldoApiError(response.status, body.error ?? `Request failed (${response.status})`);
+    throw new AldoApiError(
+      response.status,
+      body.error ?? `Request failed (${response.status})`,
+      body,
+    );
   }
   return body;
 }

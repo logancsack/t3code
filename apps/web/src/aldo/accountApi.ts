@@ -524,11 +524,22 @@ export async function fetchAldoCloudUsage(signal?: AbortSignal): Promise<unknown
   return api<unknown>("/api/usage", { cache: "no-store", ...(signal ? { signal } : {}) });
 }
 
-/** Where to pay for a plan: Stripe Checkout, which comes back to /usage?checkout=done or =canceled. */
-export async function startAldoCheckout(plan: string): Promise<string> {
+/**
+ * Where to pay for a plan: Stripe Checkout, which comes back to /usage?checkout=done or =canceled,
+ * or, started from the plan picker under a kept request (`resume`, its id), to Home, which sends it.
+ * `extraUsage` turns extra usage on for the plan, where Aldo's Checkout offers it (billing.extraUsage).
+ */
+export async function startAldoCheckout(
+  plan: string,
+  options: { readonly resume?: string; readonly extraUsage?: boolean } = {},
+): Promise<string> {
   const { url } = await api<{ url: string }>("/api/billing/checkout", {
     method: "POST",
-    body: JSON.stringify({ plan }),
+    body: JSON.stringify({
+      plan,
+      ...(options.resume ? { resume: options.resume } : {}),
+      ...(options.extraUsage ? { extraUsage: true } : {}),
+    }),
   });
   return url;
 }
