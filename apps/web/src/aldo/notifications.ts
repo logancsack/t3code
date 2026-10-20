@@ -3,31 +3,45 @@
 // /sw.js. Offered only when Aldo reports a key (GET /api/push) and the browser
 // has push; on an iPhone, once Aldo is added to the Home Screen. Each device is
 // turned on by the user, and stays on until turned off here or in the browser.
+// Where Aldo reports it can (`test`), turning them on sends the device a test,
+// and the service worker says when it showed it.
 
+import { randomUUID } from "../lib/utils";
 import { isAldoCloud } from "./api";
 import {
+  ALDO_TEST_LISTEN_MS,
+  ALDO_TEST_TIMEOUT_MS,
+  aldoBrowser,
+  aldoErrorOf,
+  aldoTestReducer,
   base64UrlToBytes,
   parseAldoPushKey,
+  parseAldoPushTest,
   resolveAldoNotificationsStatus,
   subscribedWithKey,
+  type AldoBrowser,
   type AldoNotificationsStatus,
+  type AldoTestEvent,
+  type AldoTestState,
 } from "./notifications.logic";
 
-export type { AldoNotificationsStatus };
+export type { AldoBrowser, AldoNotificationsStatus, AldoTestState };
 
 const WORKER = "/sw.js";
 
-/** Aldo's key, or null if it doesn't report one. Never redirects to sign-in. */
-async function fetchKey(): Promise<string | null> {
+/** Aldo's key (null if it doesn't report one) and whether it sends tests. Never redirects to sign-in. */
+async function fetchInfo(): Promise<{ key: string | null; test: boolean }> {
   try {
     const response = await fetch("/api/push", {
       credentials: "same-origin",
       cache: "no-store",
       headers: { accept: "application/json" },
     });
-    return response.ok ? parseAldoPushKey(await response.json()) : null;
+    if (!response.ok) return { key: null, test: false };
+    const body: unknown = await response.json();
+    return { key: parseAldoPushKey(body), test: parseAldoPushTest(body) };
   } catch {
-    return null;
+    return { key: null, test: false };
   }
 }
 
@@ -35,15 +49,22 @@ function hasPush(): boolean {
   return "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
 }
 
+/** This browser, for the words that say where its settings are. */
+export function currentAldoBrowser(): AldoBrowser {
+  return aldoBrowser({
+    userAgent: navigator.userAgent,
+    platform: navigator.platform,
+    maxTouchPoints: navigator.maxTouchPoints,
+    standalone:
+      window.matchMedia("(display-mode: standalone)").matches ||
+      (navigator as Navigator & { standalone?: boolean }).standalone === true,
+  });
+}
+
 /** An iPhone or iPad (iPadOS reports a Mac with touch), and whether Aldo runs from the Home Screen. */
 function device(): { appleMobile: boolean; standalone: boolean } {
-  const appleMobile =
-    /iPhone|iPad|iPod/.test(navigator.userAgent) ||
-    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-  const standalone =
-    window.matchMedia("(display-mode: standalone)").matches ||
-    (navigator as Navigator & { standalone?: boolean }).standalone === true;
-  return { appleMobile, standalone };
+  const browser = currentAldoBrowser();
+  return { appleMobile: browser.os === "ios", standalone: browser.standalone };
 }
 
 async function currentSubscription(): Promise<PushSubscription | null> {
@@ -63,12 +84,13 @@ async function save(subscription: PushSubscription): Promise<void> {
 
 export async function aldoNotificationsStatus(): Promise<AldoNotificationsStatus> {
   const push = hasPush();
-  const [key, subscription] = await Promise.all([
-    fetchKey(),
+  const [{ key, test }, subscription] = await Promise.all([
+    fetchInfo(),
     push ? currentSubscription().catch(() => null) : null,
   ]);
   return resolveAldoNotificationsStatus({
     key,
+    test,
     push,
     ...device(),
     permission: push ? Notification.permission : null,
@@ -79,12 +101,14 @@ export async function aldoNotificationsStatus(): Promise<AldoNotificationsStatus
 /**
  * Asks for permission (the browser's prompt) first, while the click still
  * counts as the user's, then subscribes this device with Aldo's key and saves
- * it with Aldo. A subscription Aldo couldn't save is undone. False if the user
- * said no.
+ * it with Aldo. A subscription Aldo couldn't save is undone. Returns what the
+ * user answered: "granted" once it's on, "denied" (blocked, now or before),
+ * or "default" (they closed the prompt).
  */
-export async function enableAldoNotifications(key: string | null): Promise<boolean> {
+export async function enableAldoNotifications(key: string | null): Promise<NotificationPermission> {
   if (!hasPush()) throw new Error("Notifications aren't available here.");
-  if ((await Notification.requestPermission()) !== "granted") return false;
+  const permission = await Notification.requestPermission();
+  if (permission !== "granted") return permission;
   if (!key) throw new Error("Aldo can't be reached just now; try again.");
   const registration = await navigator.serviceWorker.register(WORKER);
   await navigator.serviceWorker.ready;
@@ -104,7 +128,90 @@ export async function enableAldoNotifications(key: string | null): Promise<boole
     if (created) await subscription.unsubscribe().catch(() => false);
     throw error;
   }
-  return true;
+  return "granted";
+}
+
+/**
+ * Sends this device a test through Aldo, its push service and the service
+ * worker, and reports each step to `onChange`: sent, then shown (the worker
+ * says so by the test's id; an older worker says only that a push came), or
+ * no word within ALDO_TEST_TIMEOUT_MS. A late arrival still counts until
+ * ALDO_TEST_LISTEN_MS, when whatever's still pending ends. If Aldo says this
+ * device's subscription is gone, it's let go here too, so it reads as off (a
+ * failure that's `gone`). Returns a function that stops listening. Only for an
+ * Aldo that reports `test`.
+ */
+export function testAldoNotifications(onChange: (state: AldoTestState) => void): () => void {
+  // The service worker sends it back once it shows the test.
+  const id = randomUUID();
+  const worker = navigator.serviceWorker;
+  const timers: ReturnType<typeof setTimeout>[] = [];
+  let state: AldoTestState = { phase: "sending" };
+  let stopped = false;
+  const stop = () => {
+    stopped = true;
+    worker.removeEventListener("message", onMessage);
+    for (const timer of timers) clearTimeout(timer);
+  };
+  const update = (event: AldoTestEvent) => {
+    if (stopped) return;
+    const next = aldoTestReducer(state, event);
+    if (next === state) return;
+    state = next;
+    onChange(state);
+    if (state.phase === "arrived" || state.phase === "not-shown") stop();
+  };
+  function onMessage(event: MessageEvent) {
+    const data = event.data as { type?: unknown; id?: unknown; shown?: unknown } | null;
+    if (data?.type === "aldo-test" && data.id === id)
+      update({ type: data.shown === false ? "refused" : "shown" });
+    else if (data?.type === "aldo-push") update({ type: "shown" });
+  }
+  worker.addEventListener("message", onMessage);
+  timers.push(
+    setTimeout(() => {
+      update({ type: "expired" });
+      stop();
+    }, ALDO_TEST_LISTEN_MS),
+  );
+  onChange(state);
+  void (async () => {
+    const subscription = await currentSubscription();
+    if (!subscription) {
+      update({
+        type: "failed",
+        message: "This browser isn’t set up for notifications. Turn them on again.",
+        gone: true,
+      });
+      return;
+    }
+    const response = await fetch("/api/push/test", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        endpoint: subscription.endpoint,
+        id,
+        // Tapping it comes back here.
+        url: location.pathname + location.search + location.hash,
+      }),
+    });
+    if (response.ok) {
+      update({ type: "sent" });
+      timers.push(setTimeout(() => update({ type: "timeout" }), ALDO_TEST_TIMEOUT_MS));
+      return;
+    }
+    const message = aldoErrorOf(await response.json().catch(() => null));
+    if (response.status === 410) await subscription.unsubscribe().catch(() => false);
+    update({
+      type: "failed",
+      message: message ?? "Aldo couldn’t send it just now. Try again.",
+      ...(response.status === 410 ? { gone: true } : {}),
+    });
+  })().catch(() =>
+    update({ type: "failed", message: "Aldo can’t be reached just now. Try again." }),
+  );
+  return stop;
 }
 
 /**
@@ -137,7 +244,7 @@ export function installAldoNotificationsSync(): void {
   void (async () => {
     const subscription = await currentSubscription();
     if (!subscription) return;
-    const key = await fetchKey();
+    const { key } = await fetchInfo();
     if (key && subscribedWithKey(subscription.options.applicationServerKey, key))
       await save(subscription);
   })().catch(() => undefined);

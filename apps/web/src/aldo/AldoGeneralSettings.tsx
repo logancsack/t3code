@@ -1,6 +1,6 @@
 // Settings → General in Aldo: the few settings most people change on top
-// (theme, layout, how quickly agents start), and T3's own rows folded under
-// More settings, which a search for one of them opens.
+// (theme, layout and what they hand Aldo, how quickly agents start), and T3's
+// own rows folded under More settings, which a search for one of them opens.
 
 import { Link } from "@tanstack/react-router";
 import { ChevronRightIcon, PaletteIcon, PanelLeftIcon, ZapIcon } from "lucide-react";
@@ -17,6 +17,8 @@ import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../components
 import { Switch } from "../components/ui/switch";
 import { Toggle, ToggleGroup } from "../components/ui/toggle-group";
 import { useTheme } from "../hooks/useTheme";
+import { AldoInterestChips } from "./AldoInterestChips";
+import { saveAldoOnboarding, useAldoOnboardingState } from "./onboarding";
 import { setAldoPreloadSettings, useAldoPreloadSettings } from "./preloadSettings";
 import { setAldoSimpleMode, useAldoSimpleMode } from "./simpleMode";
 
@@ -54,6 +56,7 @@ const ALDO_GENERAL_BASIC_IDS: ReadonlySet<string> = new Set([
   "aldo-theme",
   "aldo-customize-theme",
   "aldo-simple-mode",
+  "aldo-interests",
   "send-shortcut",
   "aldo-preload",
   "about",
@@ -96,6 +99,7 @@ export function AldoGeneralBasics(props: { readonly sendShortcutRow: ReactNode }
             />
           }
         />
+        <AldoInterestsRow />
         {props.sendShortcutRow}
       </SettingsSection>
       <SettingsSection title="Speed" icon={<ZapIcon className="size-4" />}>
@@ -114,6 +118,30 @@ export function AldoGeneralBasics(props: { readonly sendShortcutRow: ReactNode }
         />
       </SettingsSection>
     </>
+  );
+}
+
+/** What they told the welcome, to change; only on an Aldo that keeps it. */
+function AldoInterestsRow() {
+  const onboarding = useAldoOnboardingState();
+  const [failed, setFailed] = useState(false);
+  if (!onboarding) return null;
+  return (
+    <SettingsRow
+      {...searchableSetting("aldo-interests")}
+      description="Picks the ideas on Home. Code and apps, or a connected git host, adds the developer tools: pull requests, Code settings, the terminal and the diff."
+      {...(failed ? { status: "Couldn’t save that. Try again." } : {})}
+    >
+      <AldoInterestChips
+        label="What you hand Aldo"
+        className="pt-1 pb-2.5"
+        value={onboarding.interests ?? []}
+        onChange={(next) => {
+          setFailed(false);
+          void saveAldoOnboarding(next, { revert: true }).then((saved) => setFailed(!saved));
+        }}
+      />
+    </SettingsRow>
   );
 }
 

@@ -1746,6 +1746,297 @@ describe("deriveMessagesTimelineRows", () => {
     });
   });
 
+  describe("quiet threads (WorkWords.worked)", () => {
+    const quiet = {
+      step: (entry: { label: string }, active: boolean) =>
+        active ? `Doing ${entry.label}` : `Did ${entry.label}`,
+      recap: () => "recap",
+      working: () => null,
+      worked: (entries: ReadonlyArray<unknown>, elapsedMs: number | null, stopped: boolean) =>
+        `${stopped ? "Stopped" : "Worked"} ${elapsedMs === null ? "?" : elapsedMs / 1000}s · ${entries.length}`,
+    };
+    const message = (
+      id: string,
+      role: "user" | "assistant",
+      at: string,
+      turnId: string | null,
+      streaming = false,
+    ) => ({
+      id: `${id}-entry`,
+      kind: "message" as const,
+      createdAt: at,
+      message: {
+        id: id as never,
+        role,
+        text: id,
+        turnId: turnId as never,
+        createdAt: at,
+        updatedAt: at,
+        streaming,
+      },
+    });
+    const work = (
+      id: string,
+      at: string,
+      turnId: string,
+      status: "inProgress" | "completed" = "completed",
+    ) => ({
+      id: `${id}-entry`,
+      kind: "work" as const,
+      createdAt: at,
+      entry: {
+        id,
+        createdAt: at,
+        turnId: turnId as never,
+        label: id,
+        tone: "tool" as const,
+        itemType: "command_execution" as const,
+        toolLifecycleStatus: status,
+      },
+    });
+    const running = (turnId: string) => ({
+      latestTurn: {
+        turnId: turnId as never,
+        state: "running",
+        startedAt: "2026-01-01T00:00:00Z",
+        completedAt: null,
+      } as never,
+      runningTurnId: turnId as never,
+      isWorking: true,
+      activeTurnStartedAt: "2026-01-01T00:00:00Z",
+    });
+    const base = { turnDiffSummaries: [], supportsConversationRollback: false, workWords: quiet };
+    const settledEntries = [
+      message("user-1", "user", "2026-01-01T00:00:00Z", null),
+      work("open-site", "2026-01-01T00:00:05Z", "turn-1"),
+      message("interim", "assistant", "2026-01-01T00:00:08Z", "turn-1"),
+      work("make-sheet", "2026-01-01T00:00:10Z", "turn-1"),
+      message("answer", "assistant", "2026-01-01T00:00:31Z", "turn-1"),
+    ];
+
+    it("folds a settled turn's work into one row that says how long it worked", () => {
+      const rows = deriveMessagesTimelineRows({
+        ...base,
+        timelineEntries: settledEntries,
+        isWorking: false,
+        activeTurnStartedAt: null,
+      });
+      expect(rows.map((row) => row.kind)).toEqual(["message", "work-summary", "message"]);
+      expect(rows[1]).toMatchObject({
+        id: "work-summary:open-site-entry",
+        label: "Worked 31s · 2",
+        expanded: false,
+        logOpen: false,
+        endedAt: "2026-01-01T00:00:31Z",
+      });
+      expect(
+        (rows[1] as Extract<MessagesTimelineRow, { kind: "work-summary" }>).entries.map(
+          (entry) => entry.id,
+        ),
+      ).toEqual(["open-site", "make-sheet"]);
+      expect(rows.some((row) => row.kind === "turn-fold")).toBe(false);
+    });
+
+    it("opens to its groups first, and to the timeline's rows behind the technical log", () => {
+      const opened = deriveMessagesTimelineRows({
+        ...base,
+        timelineEntries: settledEntries,
+        isWorking: false,
+        activeTurnStartedAt: null,
+        expandedWorkGroupIds: new Set(["work-summary:open-site-entry"]),
+      });
+      expect(opened.map((row) => row.kind)).toEqual(["message", "work-summary", "message"]);
+      expect(opened[1]).toMatchObject({ expanded: true, logOpen: false });
+
+      // The log alone, without the row opened, stays shut.
+      const logOnly = deriveMessagesTimelineRows({
+        ...base,
+        timelineEntries: settledEntries,
+        isWorking: false,
+        activeTurnStartedAt: null,
+        expandedWorkGroupIds: new Set(["work-log:open-site-entry"]),
+      });
+      expect(logOnly.map((row) => row.kind)).toEqual(["message", "work-summary", "message"]);
+
+      const log = deriveMessagesTimelineRows({
+        ...base,
+        timelineEntries: settledEntries,
+        isWorking: false,
+        activeTurnStartedAt: null,
+        expandedWorkGroupIds: new Set(["work-summary:open-site-entry", "work-log:open-site-entry"]),
+      });
+      expect(log[1]).toMatchObject({ kind: "work-summary", expanded: true, logOpen: true });
+      // The steps and the interim message come back as they are, not folded again.
+      expect(log.slice(2).map((row) => row.id)).toEqual([
+        "open-site-entry",
+        "interim-entry",
+        "make-sheet-entry",
+        "answer-entry",
+      ]);
+    });
+
+    it("keeps a row opened while the turn streamed open once it settles", () => {
+      const opened = new Set(["work-summary:open-site-entry", "work-log:open-site-entry"]);
+      const live = deriveMessagesTimelineRows({
+        ...base,
+        ...running("turn-1"),
+        timelineEntries: settledEntries.slice(0, 2),
+        expandedWorkGroupIds: opened,
+      });
+      expect(live.find((row) => row.kind === "work-summary")).toMatchObject({
+        id: "work-summary:open-site-entry",
+        expanded: true,
+        logOpen: true,
+      });
+      const settled = deriveMessagesTimelineRows({
+        ...base,
+        timelineEntries: settledEntries,
+        isWorking: false,
+        activeTurnStartedAt: null,
+        expandedWorkGroupIds: opened,
+      });
+      expect(settled.find((row) => row.kind === "work-summary")).toMatchObject({
+        id: "work-summary:open-site-entry",
+        expanded: true,
+        logOpen: true,
+      });
+    });
+
+    it("leaves a refused tool in sight rather than in the fold", () => {
+      const denied = {
+        id: "denied-entry",
+        kind: "work" as const,
+        createdAt: "2026-01-01T00:00:06Z",
+        entry: {
+          id: "denied",
+          createdAt: "2026-01-01T00:00:06Z",
+          turnId: "turn-1" as never,
+          label: "Tool denied",
+          tone: "error" as const,
+          sourceActivityKind: "tool.denied",
+        },
+      };
+      const rows = deriveMessagesTimelineRows({
+        ...base,
+        ...running("turn-1"),
+        timelineEntries: [settledEntries[0]!, settledEntries[1]!, denied],
+      });
+      expect(rows.some((row) => row.id === "denied-entry")).toBe(true);
+      const summary = rows.find((row) => row.kind === "work-summary") as Extract<
+        MessagesTimelineRow,
+        { kind: "work-summary" }
+      >;
+      expect(summary.entries.map((entry) => entry.id)).toEqual(["open-site"]);
+    });
+
+    it("says a stopped turn was stopped", () => {
+      const rows = deriveMessagesTimelineRows({
+        ...base,
+        timelineEntries: settledEntries.slice(0, 4),
+        latestTurn: {
+          turnId: "turn-1" as never,
+          state: "interrupted",
+          startedAt: "2026-01-01T00:00:00Z",
+          completedAt: "2026-01-01T00:00:20Z",
+        } as never,
+        isWorking: false,
+        activeTurnStartedAt: null,
+      });
+      expect(rows.find((row) => row.kind === "work-summary")).toMatchObject({
+        id: "work-summary:open-site-entry",
+        label: "Stopped 20s · 2",
+      });
+    });
+
+    it("keeps one live row for the work under way, in its words, as steps stream in", () => {
+      const first = deriveMessagesTimelineRows({
+        ...base,
+        ...running("turn-2"),
+        timelineEntries: [
+          message("user-1", "user", "2026-01-01T00:00:00Z", null),
+          work("open-site", "2026-01-01T00:00:05Z", "turn-2", "inProgress"),
+        ],
+      });
+      const live = first.filter((row) => row.kind === "work-summary");
+      expect(live).toHaveLength(1);
+      expect(live[0]).toMatchObject({
+        id: "work-summary:open-site-entry",
+        label: "Doing open-site",
+        active: true,
+        endedAt: null,
+      });
+      expect(first.some((row) => row.kind === "work-live" || row.kind === "thinking")).toBe(false);
+
+      const next = deriveMessagesTimelineRows({
+        ...base,
+        ...running("turn-2"),
+        timelineEntries: [
+          message("user-1", "user", "2026-01-01T00:00:00Z", null),
+          work("open-site", "2026-01-01T00:00:05Z", "turn-2"),
+          work("make-sheet", "2026-01-01T00:00:09Z", "turn-2", "inProgress"),
+        ],
+      });
+      const still = next.filter((row) => row.kind === "work-summary");
+      expect(still).toHaveLength(1);
+      expect(still[0]).toMatchObject({
+        id: "work-summary:open-site-entry",
+        label: "Doing make-sheet",
+        active: true,
+      });
+    });
+
+    it("gives the work between messages a row of its own while the turn runs", () => {
+      const rows = deriveMessagesTimelineRows({
+        ...base,
+        ...running("turn-3"),
+        timelineEntries: [
+          message("user-1", "user", "2026-01-01T00:00:00Z", null),
+          work("open-site", "2026-01-01T00:00:05Z", "turn-3"),
+          message("interim", "assistant", "2026-01-01T00:00:12Z", "turn-3"),
+          work("make-sheet", "2026-01-01T00:00:15Z", "turn-3", "inProgress"),
+        ],
+      });
+      const summaries = rows.filter(
+        (row): row is Extract<MessagesTimelineRow, { kind: "work-summary" }> =>
+          row.kind === "work-summary",
+      );
+      expect(summaries.map((row) => [row.id, row.label, row.active])).toEqual([
+        ["work-summary:open-site-entry", "Worked 12s · 1", false],
+        ["work-summary:make-sheet-entry", "Doing make-sheet", true],
+      ]);
+      expect(rows.some((row) => row.kind === "work" || row.kind === "work-live")).toBe(false);
+    });
+
+    it("shows the live rows again once its technical log is open", () => {
+      const rows = deriveMessagesTimelineRows({
+        ...base,
+        ...running("turn-2"),
+        timelineEntries: [
+          message("user-1", "user", "2026-01-01T00:00:00Z", null),
+          work("open-site", "2026-01-01T00:00:05Z", "turn-2", "inProgress"),
+        ],
+        expandedWorkGroupIds: new Set(["work-summary:open-site-entry", "work-log:open-site-entry"]),
+      });
+      expect(rows.find((row) => row.kind === "work-summary")).toMatchObject({
+        logOpen: true,
+        active: false,
+      });
+      expect(rows.some((row) => row.kind === "work-live")).toBe(true);
+    });
+
+    it("leaves code threads' rows as they are", () => {
+      const rows = deriveMessagesTimelineRows({
+        ...base,
+        workWords: { step: quiet.step, recap: quiet.recap, working: quiet.working },
+        timelineEntries: settledEntries,
+        isWorking: false,
+        activeTurnStartedAt: null,
+      });
+      expect(rows.some((row) => row.kind === "work-summary")).toBe(false);
+      expect(rows.find((row) => row.kind === "turn-fold")).toMatchObject({ label: "recap · 31s" });
+    });
+  });
+
   it("folds the first assistant message and settled work before the terminal response", () => {
     const timelineEntries = [
       {

@@ -2,9 +2,11 @@
 // project): what it needs first is the agent's browser and the files it makes,
 // so those lead; the terminal, the diff, the subagents and a device follow
 // under "More". Subagents are "Helpers" there, since "Agents" already means
-// the threads.
+// the threads. Without the developer tools (developerTools.ts), the terminal
+// and the diff aren't offered at all.
 
 const MORE = new Set(["Terminal", "Diff", "Agents", "Device"]);
+const DEVELOPER = new Set(["Terminal", "Diff"]);
 
 const FOR_WORK: Record<string, { label?: string; description: string; shortcut?: string }> = {
   Files: { description: "What the agent made and works with." },
@@ -17,8 +19,13 @@ const FOR_WORK: Record<string, { label?: string; description: string; shortcut?:
 export function aldoSurfacesForWork<
   T extends { readonly label: string; readonly description?: string; readonly shortcut: string },
 >(
-  actions: ReadonlyArray<T>,
+  offered: ReadonlyArray<T>,
+  options: { readonly developer?: boolean } = {},
 ): { readonly first: ReadonlyArray<T>; readonly more: ReadonlyArray<T> } {
+  const actions =
+    options.developer === false
+      ? offered.filter((action) => !DEVELOPER.has(action.label))
+      : offered;
   const relabeled = actions.map((action) => {
     const work = FOR_WORK[action.label];
     if (!work) return action;

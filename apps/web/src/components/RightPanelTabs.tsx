@@ -51,6 +51,7 @@ import { readLocalApi } from "~/localApi";
 import { hasSharedBrowser } from "~/aldo/sharedBrowser";
 import { isAldoCloud } from "~/aldo/api";
 import { aldoSurfacesForWork } from "~/aldo/surfaces";
+import { useAldoDeveloperTools } from "~/aldo/developerTools";
 import { Button } from "~/components/ui/button";
 import { AndroidIcon, AppleIcon } from "~/components/Icons";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
@@ -360,6 +361,7 @@ function RightPanelEmptyState(props: {
 }) {
   // -1 means no highlight: it only appears on hover or arrow use.
   const [highlight, setHighlight] = useState(-1);
+  const developer = useAldoDeveloperTools();
 
   const actions = [
     // On a managed workspace the shared browser stands in for the preview
@@ -486,7 +488,9 @@ function RightPanelEmptyState(props: {
   type SurfaceAction = (typeof actions)[number];
 
   // Aldo: work that isn't code leads with the browser and files, the rest under "More".
-  const arranged = props.offersPullRequests ? null : aldoSurfacesForWork<SurfaceAction>(actions);
+  const arranged = props.offersPullRequests
+    ? null
+    : aldoSurfacesForWork<SurfaceAction>(actions, { developer });
   const ordered: ReadonlyArray<SurfaceAction> = arranged
     ? [...arranged.first, ...arranged.more]
     : actions;
@@ -921,6 +925,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
   const tabListRef = useRef<HTMLDivElement>(null);
   const [renamingDevice, setRenamingDevice] = useState<string | null>(null);
   const [addSurfaceMenuOpen, setAddSurfaceMenuOpen] = useState(false);
+  const developer = useAldoDeveloperTools();
   const [tabScrollState, setTabScrollState] = useState({
     hasOverflow: false,
     canScrollLeft: false,
@@ -1071,7 +1076,9 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
 
   // Aldo: work that isn't code leads with the browser and files, the rest under "More".
   const arrangedAddActions =
-    props.offersPullRequests === false ? aldoSurfacesForWork(addSurfaceActions) : null;
+    props.offersPullRequests === false
+      ? aldoSurfacesForWork(addSurfaceActions, { developer })
+      : null;
   const orderedAddActions = arrangedAddActions
     ? [...arrangedAddActions.first, ...arrangedAddActions.more]
     : addSurfaceActions;

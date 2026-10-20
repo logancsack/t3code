@@ -10,6 +10,8 @@ import { useEnvironmentQuery } from "~/state/query";
 import { usePrimarySessionState } from "~/environments/primary";
 import { fetchAldoAgentInbox, fetchAldoPhone } from "../../aldo/accountApi";
 import { isAldoCloud } from "../../aldo/api";
+import { useAldoDeveloperTools } from "../../aldo/developerTools";
+import { useAldoOnboardingState } from "../../aldo/onboarding";
 import { isWslSettingsRowVisible } from "./ConnectionsSettings.logic";
 import { isProviderSettingsEnvironmentAvailable } from "./ProviderSettingsPanel.logic";
 import type { SettingsScopeSearch } from "./settingsScope";
@@ -52,6 +54,8 @@ export function useAvailableSettingsSearchItems(scopeSearch: SettingsScopeSearch
       window.removeEventListener("online", refresh);
     };
   }, []);
+  const hasAldoOnboarding = Boolean(useAldoOnboardingState());
+  const aldoDeveloperTools = useAldoDeveloperTools();
   const { environments } = useEnvironments();
   const primarySessionState = usePrimarySessionState();
   const localEnvironmentDisabled = isLocalEnvironmentDisabled();
@@ -70,6 +74,8 @@ export function useAvailableSettingsSearchItems(scopeSearch: SettingsScopeSearch
       filterAvailableSettingsSearchItems({
         hasAldoPhoneApi,
         hasAldoAgentInbox,
+        hasAldoOnboarding,
+        aldoDeveloperTools,
         localEnvironmentDisabled,
         hasCloudPublicConfig: hasCloudPublicConfig(),
         hasEnvironment: environments.some((environment) => environment.serverConfig !== null),
@@ -100,6 +106,8 @@ export function useAvailableSettingsSearchItems(scopeSearch: SettingsScopeSearch
     [
       hasAldoPhoneApi,
       hasAldoAgentInbox,
+      hasAldoOnboarding,
+      aldoDeveloperTools,
       canManageLocalBackend,
       desktopWsl.data,
       desktopWsl.error,

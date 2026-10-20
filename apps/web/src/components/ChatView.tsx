@@ -564,6 +564,7 @@ import { describeAldoWakeFailure } from "../aldo/threadStart.logic";
 import { isAldoCloud, isAldoEnvironmentId } from "../aldo/api";
 import { aldoRoutesModels } from "../aldo/directory";
 import { useAldoKeptRepo } from "../aldo/keptRepo";
+import { ALDO_DEVELOPER_COMMANDS, useAldoDeveloperTools } from "../aldo/developerTools";
 import { AldoHandoffCard } from "../aldo/AldoHandoffCard";
 import {
   AldoComposerPlaceChip,
@@ -3977,6 +3978,8 @@ export default function ChatView(props: ChatViewProps) {
   // worth showing (and the strip shows nothing else in the cloud), so its strip
   // only hosts a resting composer's controls.
   const aldoKeptRepo = useAldoKeptRepo(environmentId);
+  // Aldo: the Terminal and the Diff are developer tools (developerTools.ts).
+  const aldoDeveloperTools = useAldoDeveloperTools();
   const composerStripShowsGit = isGitRepo && !aldoKeptRepo;
   // Aldo: an unsent draft has no session yet, which isn't worth saying; work
   // that isn't code gets words for it.
@@ -7101,6 +7104,8 @@ export default function ChatView(props: ChatViewProps) {
         context: shortcutContext,
       });
       if (!command) return;
+      // Leaves the key alone: without the developer tools there's no Terminal or Diff to open.
+      if (!aldoDeveloperTools && ALDO_DEVELOPER_COMMANDS.has(command)) return;
 
       if (command === "thread.copyReference") {
         event.preventDefault();
@@ -7334,6 +7339,7 @@ export default function ChatView(props: ChatViewProps) {
     isServerThread,
     onInterrupt,
     onToggleDiff,
+    aldoDeveloperTools,
     pinThread,
     settleThread,
     supportsPinning,
@@ -10024,6 +10030,7 @@ export default function ChatView(props: ChatViewProps) {
 
   const panelToggleControls = (
     <PanelLayoutControls
+      showTerminalControl={aldoDeveloperTools}
       terminalAvailable={activeProject !== null}
       terminalOpen={terminalUiState.terminalOpen}
       terminalShortcutLabel={shortcutLabelForCommand(keybindings, "terminal.toggle")}

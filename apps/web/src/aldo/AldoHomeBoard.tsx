@@ -41,7 +41,6 @@ import {
   isNewSince,
   isStuck,
   mergeCountdown,
-  modelName,
   policyLines,
   relativeTime,
   repoName,
@@ -52,6 +51,7 @@ import {
   type ShipLane,
   type StageTone,
 } from "./home.logic";
+import { useAldoModelName } from "./modelNames";
 
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
@@ -131,7 +131,7 @@ export function ConversationRow(props: {
   const c = props.conversation;
   const stuck = isStuck(c, props.now);
   const working = c.state === "working";
-  const model = modelName(c.model);
+  const model = useAldoModelName(c.thread.environmentId, c.model);
   return (
     <li
       data-selected={props.selected || undefined}

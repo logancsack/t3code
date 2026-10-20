@@ -1,13 +1,13 @@
 // Steps in plain words, for threads that aren't code (General and the user's
-// Aldo projects): "Opened opentable.com", "Made Subscriptions.xlsx", "Shared
-// “Dinner options”", "Asked you to approve an email". Built from what each
-// agent records about a tool call (Codex: the MCP call's server, tool and
-// arguments; Claude: "tool: {input}"; OpenCode: the tool's name, input and
-// output; Muse: the tool's name and its output), and from the command or files
-// a step ran or changed. A step this doesn't recognize keeps T3's own label,
-// unless that would be what the tool said back. The timeline asks through
-// `aldoWorkWords` (MessagesTimeline.logic.ts `WorkWords`); repository threads
-// keep T3's labels.
+// Aldo projects) and every thread in Simple mode: "Opened opentable.com",
+// "Made Subscriptions.xlsx", "Shared “Dinner options”", "Asked you to approve
+// an email". Built from what each agent records about a tool call (Codex: the
+// MCP call's server, tool and arguments; Claude: "tool: {input}"; OpenCode:
+// the tool's name, input and output; Muse: the tool's name and its output),
+// and from the command or files a step ran or changed. A step this doesn't
+// recognize gets its tool's name in words, never what the tool was asked or
+// said back. The timeline asks through `aldoQuietWork` (workRows.logic.ts,
+// MessagesTimeline.logic.ts `WorkWords`); code threads keep T3's labels.
 
 import { resolveWorkEntryToolPresentation } from "@t3tools/client-runtime/work-log/presentation";
 import type { WorkWords } from "../components/chat/MessagesTimeline.logic";
@@ -50,6 +50,8 @@ export interface AldoStep {
   readonly site?: string;
   /** What it was about, to count and name in a recap: a file's name, a share's title, an app's line. */
   readonly subject?: string;
+  /** It changed something on a site: clicked, typed, filled in, uploaded or signed in. */
+  readonly acts?: boolean;
 }
 
 interface ToolCall {
@@ -217,19 +219,31 @@ function aldoToolCall(entry: Entry): ToolCall | null {
   return null;
 }
 
-/** A file a step shared by link (share_file): its path, title and, where the agent recorded aldod's reply, the link. */
-export function aldoShareOf(
-  entry: Entry,
-): { path: string | null; title: string | null; url: string | null } | null {
+/**
+ * A file a step shared by link (share_file): its path, title and, where the agent recorded
+ * aldod's reply, the link. `public: false` when only the user can open it, as the reply says
+ * or, without one, as the step asked; a link is for anyone with it otherwise.
+ */
+export function aldoShareOf(entry: Entry): {
+  path: string | null;
+  title: string | null;
+  url: string | null;
+  public?: false;
+} | null {
   const call = aldoToolCall(entry);
   if (call?.server !== "aldo" || call.tool !== "share_file") return null;
   if (entry.tone === "error" || entry.toolLifecycleStatus === "failed") return null;
-  // aldod answers 'Shared "<title>": <url> (…)'.
-  const reply = call.output ? /^Shared "([\s\S]*?)": (https:\/\/\S+)/m.exec(call.output) : null;
+  // aldod answers 'Shared "<title>": <url> (anyone with the link can open it)', or "(only the user, …)".
+  const reply = call.output
+    ? /^Shared "([\s\S]*?)": (https:\/\/\S+)(?: \((anyone|only the user))?/m.exec(call.output)
+    : null;
+  const audience = reply?.[3];
+  const onlyTheUser = audience ? audience === "only the user" : call.args?.public === false;
   return {
     path: text(call.args?.path),
     title: text(call.args?.title) ?? text(reply?.[1]),
     url: reply?.[2] ?? null,
+    ...(onlyTheUser ? { public: false as const } : {}),
   };
 }
 
@@ -290,7 +304,11 @@ function step(
   kind: AldoStepKind,
   done: string,
   doing: string,
-  extra: { site?: string | null | undefined; subject?: string | null | undefined } = {},
+  extra: {
+    site?: string | null | undefined;
+    subject?: string | null | undefined;
+    acts?: boolean;
+  } = {},
 ): AldoStep {
   return {
     kind,
@@ -298,6 +316,7 @@ function step(
     doing,
     ...(extra.site ? { site: extra.site } : {}),
     ...(extra.subject ? { subject: extra.subject } : {}),
+    ...(extra.acts ? { acts: true } : {}),
   };
 }
 
@@ -316,20 +335,24 @@ function browserStep(call: ToolCall): AldoStep {
       return step("browse", "Went back a page", "Going back a page", { site });
     case "browser_click":
       return element
-        ? step("browse", `Clicked ${clip(element, 48)}`, `Clicking ${clip(element, 48)}`, { site })
-        : step("browse", "Clicked on the page", "Clicking on the page", { site });
+        ? step("browse", `Clicked ${clip(element, 48)}`, `Clicking ${clip(element, 48)}`, {
+            site,
+            acts: true,
+          })
+        : step("browse", "Clicked on the page", "Clicking on the page", { site, acts: true });
     case "browser_type":
       return element
         ? step("browse", `Typed into ${clip(element, 44)}`, `Typing into ${clip(element, 44)}`, {
             site,
+            acts: true,
           })
-        : step("browse", "Typed on the page", "Typing on the page", { site });
+        : step("browse", "Typed on the page", "Typing on the page", { site, acts: true });
     case "browser_fill_form":
-      return step("browse", "Filled in a form", "Filling in a form", { site });
+      return step("browse", "Filled in a form", "Filling in a form", { site, acts: true });
     case "browser_select_option":
-      return step("browse", "Picked an option", "Picking an option", { site });
+      return step("browse", "Picked an option", "Picking an option", { site, acts: true });
     case "browser_file_upload":
-      return step("browse", "Uploaded a file", "Uploading a file", { site });
+      return step("browse", "Uploaded a file", "Uploading a file", { site, acts: true });
     case "browser_take_screenshot":
       return step("browse", "Took a screenshot", "Taking a screenshot", { site });
     case "browser_snapshot":
@@ -417,9 +440,9 @@ function aldoStep(call: ToolCall): AldoStep {
       );
     }
     case "fill_login":
-      return step("browse", "Signed in with your saved login", "Signing in");
+      return step("browse", "Signed in with your saved login", "Signing in", { acts: true });
     case "fill_payment":
-      return step("browse", "Filled in the card", "Filling in the card");
+      return step("browse", "Filled in the card", "Filling in the card", { acts: true });
     case "preview_link":
       return step("other", "Made a preview link", "Making a preview link");
     case "start_service": {
@@ -598,6 +621,17 @@ function program(command: string): { name: string; rest: string } | null {
   return name ? { name: baseName(name), rest: rest.slice(name.length).trim() } : null;
 }
 
+const MEDIA_FILE = /\.(?:mp4|mov|webm|mkv|m4v|gif|mp3|wav|m4a|aac|ogg|png|jpe?g|webp|avif|svg)$/i;
+
+/** The file a media command writes: its last argument that names one and isn't an input (`-i`), before any pipe or redirect. */
+function mediaOutput(rest: string): string | null {
+  const args = (rest.split(/\s(?:\||&&|;|\d?>)/)[0]!.match(/"[^"]*"|'[^']*'|\S+/g) ?? []).map(
+    (arg) => arg.replace(/^(["'])(.*)\1$/, "$2"),
+  );
+  const file = args.findLast((arg, index) => MEDIA_FILE.test(arg) && args[index - 1] !== "-i");
+  return file ? baseName(file) : null;
+}
+
 function commandStep(command: string): AldoStep {
   // Claude's records lead with the tool: "Bash: ls -la".
   const run = program(command.replace(/^(?:Bash|Shell|Terminal|run_shell_command):\s*/i, ""));
@@ -639,6 +673,18 @@ function commandStep(command: string): AldoStep {
     }
     return ran("Fetched from the web", "Fetching from the web");
   }
+  // ImageMagick's identify only reads an image: its last file is what it looked at.
+  if (name === "identify" || (name === "magick" && /^identify(\s|$)/.test(rest)))
+    return step("read", "Checked an image", "Checking an image");
+  if (name === "ffmpeg" || name === "magick" || name === "convert") {
+    const output = mediaOutput(rest);
+    const what = name === "ffmpeg" ? "a video" : "an image";
+    return output
+      ? step("make", `Made ${output}`, `Making ${output}`, { subject: output })
+      : ran(`Worked on ${what}`, `Working on ${what}`);
+  }
+  if (name === "ffprobe") return step("read", "Checked a video", "Checking a video");
+  if (name === "blender") return step("make", "Rendered in Blender", "Rendering in Blender");
   if (/^python3?(\.\d+)?$/.test(name) || name === "node" || name === "bun" || name === "deno") {
     const script = /^([\w./-]+\.(py|js|mjs|ts))\b/.exec(rest)?.[1];
     return script
@@ -764,7 +810,8 @@ function workStep(entry: Entry): AldoStep | null {
       },
     );
   }
-  if (entry.itemType === "web_search") {
+  // Codex's own search, or a search tool (OpenCode's websearch, Claude's WebSearch).
+  if (entry.itemType === "web_search" || /^(websearch|web_search)$/.test(tool)) {
     const query = text(call?.args?.query) ?? (call ? null : text(entry.detail)) ?? null;
     return query
       ? step("search", `Searched the web for “${clip(query, 48)}”`, "Searching the web", {
@@ -898,14 +945,17 @@ export function aldoWorkingWords(entries: ReadonlyArray<Entry>): string | null {
 }
 
 /**
- * A step this doesn't recognize, where T3's label would be what the tool said
- * back (a page's text, a reply's JSON): the tool's name in words instead.
+ * A step this doesn't recognize: the tool's name in words ("Used gig lookup"),
+ * never T3's label, which would be what the tool was asked or said back (a
+ * page's text, a reply's JSON, a file's path).
  */
 function unknownStep(entry: Entry, active: boolean): string | null {
   // Only a tool's: a warning's or a notice's words are the point of it.
-  if (entry.tone !== "tool" || entry.command || entry.toolLifecycleStatus === "failed") return null;
-  const detail = entry.detail?.trim();
-  if (!detail || (detail.length <= 80 && !detail.includes("\n"))) return null;
+  // Nor one that failed, or was declined or stopped: T3's label says so (as in workStep).
+  const status = entry.toolLifecycleStatus;
+  if (entry.tone !== "tool" || entry.command) return null;
+  if (status === "failed" || status === "declined" || status === "stopped") return null;
+  // T3's own tools have words of their own.
   if (resolveWorkEntryToolPresentation(entry)) return null;
   const name = aldoToolCall(entry)?.tool ?? entry.toolTitle ?? "";
   const words = name.replace(/[_-]+/g, " ").trim().toLowerCase();

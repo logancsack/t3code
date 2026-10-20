@@ -146,7 +146,7 @@ export function aldoShareAudience(share: Pick<AldoShareView, "public">): {
   readonly detail: string;
 } {
   return share.public
-    ? { label: "Public link", detail: "Anyone with the link can open it." }
+    ? { label: "Anyone with the link", detail: "Anyone with the link can open it." }
     : { label: "Only you", detail: "Only you can open it, signed in to Aldo." };
 }
 

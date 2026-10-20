@@ -1,30 +1,77 @@
 // Simple mode: a narrow rail in place of the sidebar with Aldo's conversation,
 // what needs the user and the Library (AldoSimpleRail.tsx), for people who
-// talk to Aldo and never open a thread. Off unless the user turns it on (in
-// Settings → General, or their account), and kept per device. Which place
-// the home screen shows lasts the page; it opens on Aldo.
+// talk to Aldo and never open a thread. The user turns it on or off (in
+// Settings → General, or their account), kept per device; until they do, it
+// follows what they told the welcome (onboarding.ts): on unless that was code,
+// and off for an account that was never asked. Which place the home screen
+// shows lasts the page; it opens on Aldo.
 
 import { create } from "zustand";
 
 import { isAldoCloud } from "./api";
+import { requestAldoProfile } from "./assistantApi";
+import { loadAldoOnboarding, useAldoOnboarding } from "./onboarding";
+import { type AldoInterest, aldoSimpleByDefault } from "./onboarding.logic";
 import { homeShowsConversation, simpleModeFrom, type AldoSimplePlace } from "./simpleMode.logic";
 
 const KEY = "aldo:simple";
+/** What the welcome's answer made it, last time it was read here: so it doesn't flash in on each visit. */
+const WELCOME_KEY = "aldo:simple:welcome";
 
-function stored(): boolean {
+/** Set on this page, where the device can't keep it (private mode). */
+let chosen: boolean | null = null;
+
+function read(key: string): string | null {
   try {
-    return simpleModeFrom(window.localStorage.getItem(KEY));
+    return window.localStorage.getItem(key);
   } catch {
-    return false;
+    return null;
   }
+}
+
+function current(): boolean {
+  const choice = chosen === null ? read(KEY) : chosen ? "on" : "off";
+  const onboarding = useAldoOnboarding.getState().onboarding;
+  // Until the account's read (or where it couldn't be), as it was here last time.
+  if (!onboarding) return simpleModeFrom(choice ?? read(WELCOME_KEY));
+  return simpleModeFrom(choice, onboarding.interests);
 }
 
 export const useAldoSimple = create<{ readonly on: boolean; readonly place: AldoSimplePlace }>(
   () => ({
-    on: isAldoCloud && typeof window !== "undefined" && stored(),
+    on: isAldoCloud && typeof window !== "undefined" && current(),
     place: "aldo",
   }),
 );
+
+function keepWelcomeDefault(interests: ReadonlyArray<AldoInterest> | null): void {
+  try {
+    if (aldoSimpleByDefault(interests)) window.localStorage.setItem(WELCOME_KEY, "on");
+    else window.localStorage.removeItem(WELCOME_KEY);
+  } catch {
+    // Private mode: it's read again next visit.
+  }
+  const on = current();
+  if (on !== useAldoSimple.getState().on) useAldoSimple.setState({ on, place: "aldo" });
+}
+
+// The welcome's answer, once it's read or given, decides it until the user does.
+if (isAldoCloud && typeof window !== "undefined") {
+  useAldoOnboarding.subscribe(({ onboarding }, previous) => {
+    if (onboarding === undefined || onboarding === previous.onboarding) return;
+    if (onboarding === null) {
+      // An Aldo without the welcome (not an account it couldn't read): nobody's answer applies.
+      void requestAldoProfile().then((profile) => {
+        if (profile && useAldoOnboarding.getState().onboarding === null) keepWelcomeDefault(null);
+      });
+      return;
+    }
+    if (onboarding.interests !== previous.onboarding?.interests)
+      keepWelcomeDefault(onboarding.interests);
+  });
+  // With who's signed in, which the account menu reads anyway.
+  loadAldoOnboarding();
+}
 
 export function useAldoSimpleMode(): boolean {
   return useAldoSimple((s) => s.on);
@@ -33,10 +80,11 @@ export function useAldoSimpleMode(): boolean {
 export function setAldoSimpleMode(on: boolean): void {
   useAldoSimple.setState({ on, place: "aldo" });
   try {
-    if (on) window.localStorage.setItem(KEY, "on");
-    else window.localStorage.removeItem(KEY);
+    window.localStorage.setItem(KEY, on ? "on" : "off");
+    chosen = null;
   } catch {
     // Private mode: the choice lasts this page.
+    chosen = on;
   }
 }
 

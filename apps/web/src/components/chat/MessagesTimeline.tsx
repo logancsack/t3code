@@ -1,13 +1,22 @@
 import { isAldoCloud } from "../../aldo/api";
 import { aldoStartingLabel } from "../../aldo/dispatch";
 import { AldoNotifyOffer } from "../../aldo/AldoNotifyOffer";
-import { useAldoKeptRepo } from "../../aldo/keptRepo";
+import { useAldoQuietWork } from "../../aldo/keptRepo";
 import { AldoMadeCards } from "../../aldo/AldoMadeCards";
 import { AldoNextChips } from "../../aldo/AldoNextChips";
+import {
+  ALDO_REQUEST_CARD_CLASS,
+  AldoRequestBrief,
+  AldoRequestHeading,
+} from "../../aldo/AldoRequestCard";
+import { aldoRequestOf } from "../../aldo/request.logic";
 import { AldoStallLine, useAldoStall } from "../../aldo/AldoStall";
 import { splitAldoNext } from "../../aldo/next.logic";
+import { aldoLiveShots } from "../../aldo/results.logic";
 import type { AldoShare } from "../../aldo/made.logic";
-import { aldoSharesByTurn, aldoWorkWords } from "../../aldo/workLabels.logic";
+import { AldoWorkGroups } from "../../aldo/AldoWorkGroups";
+import { aldoSharesByTurn } from "../../aldo/workLabels.logic";
+import { aldoQuietWork } from "../../aldo/workRows.logic";
 import { APP_BASE_NAME } from "../../branding";
 import { ArrowUpIcon, ClockIcon } from "lucide-react";
 import { ReadOnlySourcePreview } from "../files/AttachmentFilePreview";
@@ -777,8 +786,9 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     });
   }, [latestTurn]);
 
-  // Threads on work that isn't software say what their steps did in words.
-  const workWords = useAldoKeptRepo(activeThreadEnvironmentId) ? aldoWorkWords : null;
+  // Threads on work that isn't software, and every thread in Simple mode, say
+  // what their steps did in words and fold the work between messages.
+  const workWords = useAldoQuietWork(activeThreadEnvironmentId) ? aldoQuietWork : null;
   // Kept as one value until a share changes, so rows don't re-render as the agent streams.
   const aldoSharesKey = useMemo(
     () =>
@@ -1775,6 +1785,7 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
                   row.kind === "work" ||
                   row.kind === "work-live" ||
                   row.kind === "work-toggle" ||
+                  row.kind === "work-summary" ||
                   row.kind === "activity-group" ||
                   row.kind === "thinking" ||
                   row.kind === "worktree-setup"
@@ -1804,6 +1815,7 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
       {row.kind === "activity-group" ? <ActivityGroupTimelineRow row={row} /> : null}
       {row.kind === "work-toggle" ? <WorkGroupToggleTimelineRow row={row} /> : null}
       {row.kind === "turn-fold" ? <TurnFoldTimelineRow row={row} /> : null}
+      {row.kind === "work-summary" ? <WorkSummaryTimelineRow row={row} /> : null}
       {row.kind === "context-compaction" ? <ContextCompactionTimelineRow row={row} /> : null}
       {row.kind === "message" && row.message.role === "user" ? <UserTimelineRow row={row} /> : null}
       {row.kind === "message" && row.message.role === "assistant" ? (
@@ -2058,6 +2070,12 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
     (attachment) => !isImageAttachment(attachment) && !isFileAttachment(attachment),
   );
   const resolvedContext = useMemo(() => resolveUserMessageContext(row.message), [row.message]);
+  // A thread Aldo started opens with its brief: shown as the user's request, the brief behind it.
+  const aldoRequest = useMemo(
+    () => (isAldoCloud ? aldoRequestOf(resolvedContext.text) : null),
+    [resolvedContext.text],
+  );
+  const bodyText = aldoRequest?.said ?? resolvedContext.text;
   const previewImages = useMemo(
     () => userImages.filter((image) => image.name.startsWith("preview-annotation-")),
     [userImages],
@@ -2182,8 +2200,18 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
 
   return (
     <div className="group flex flex-col items-end gap-1">
-      <div className="relative max-w-[80%] rounded-2xl bg-message p-3 text-message-foreground">
-        <MessageAuthorHeading>You</MessageAuthorHeading>
+      <div
+        className={
+          aldoRequest
+            ? ALDO_REQUEST_CARD_CLASS
+            : "relative max-w-[80%] rounded-2xl bg-message p-3 text-message-foreground"
+        }
+      >
+        {aldoRequest ? (
+          <AldoRequestHeading from={aldoRequest.from} />
+        ) : (
+          <MessageAuthorHeading>You</MessageAuthorHeading>
+        )}
         {(regularImages.length > 0 || userVideos.length > 0) && (
           <div className="mb-2 grid max-w-[210px] grid-cols-2 gap-2">
             {regularImages.map((image) => (
@@ -2288,12 +2316,21 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
         ) : null}
         <div onCopyCapture={onBodyCopyCapture}>
           <CollapsibleUserMessageBody
-            text={resolvedContext.text}
+            text={bodyText}
             renderContextReference={renderContextReference}
             skills={ctx.skills}
             markdownCwd={ctx.markdownCwd}
           />
         </div>
+        {aldoRequest ? (
+          <AldoRequestBrief>
+            <UserMessageBody
+              text={aldoRequest.brief}
+              skills={ctx.skills}
+              markdownCwd={ctx.markdownCwd}
+            />
+          </AldoRequestBrief>
+        ) : null}
       </div>
       <div className="flex w-full max-w-[80%] items-center justify-end pe-1 text-xs tabular-nums opacity-0 transition-opacity duration-200 pointer-coarse:opacity-100 focus-within:opacity-100 group-hover:opacity-100">
         <div className="flex shrink-0 items-center gap-2">
@@ -2309,16 +2346,13 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
             {typeof revertTurnCount === "number" && (
               <RevertUserMessageButton turnCount={revertTurnCount} messageId={row.message.id} />
             )}
-            {resolvedContext.text && (
+            {bodyText && (
               <MessageCopyButton
                 // Structured paste needs the canonical links to retain their positions.
                 text={
                   contextClipboardFragment
-                    ? resolvedContext.text
-                    : replaceComposerContextReferences(
-                        resolvedContext.text,
-                        (reference) => reference.label,
-                      )
+                    ? bodyText
+                    : replaceComposerContextReferences(bodyText, (reference) => reference.label)
                 }
                 {...(contextClipboardFragment
                   ? {
@@ -2450,6 +2484,51 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
   );
 }
 
+/**
+ * Quiet threads' work between messages: "Worked 6 min · 22 steps", or the step
+ * under way while it's live. It opens to the work's groups, whose technical
+ * log opens the timeline's own rows below it.
+ */
+function WorkSummaryTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "work-summary" }> }) {
+  const ctx = use(TimelineRowCtx);
+  const Icon = row.expanded ? ChevronDownIcon : ChevronRightIcon;
+  const latest = row.entries.at(-1);
+  const thinking = row.active && row.label === "Thinking";
+  return (
+    <div className="group/timeline-row relative">
+      <button
+        type="button"
+        aria-expanded={row.expanded}
+        data-scroll-anchor-ignore
+        onClick={() => ctx.onToggleWorkGroup(row.expandKey, row.id)}
+        className="flex min-h-6 max-w-full cursor-pointer select-none items-center gap-1 rounded-md text-left text-sm leading-relaxed text-muted-foreground tabular-nums transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
+      >
+        {row.active ? (
+          <LiveActivityRow
+            label={row.label}
+            iconName={thinking || !latest ? "brain" : workEntryIconName(latest)}
+            active
+            shimmer={thinking}
+          />
+        ) : (
+          <>
+            <Icon aria-hidden className="size-3.5 shrink-0" />
+            <span className="min-w-0 truncate px-0.5">{row.label}</span>
+          </>
+        )}
+      </button>
+      {row.expanded ? (
+        <AldoWorkGroups
+          entries={row.entries}
+          endedAt={row.endedAt}
+          logOpen={row.logOpen}
+          onToggleLog={() => ctx.onToggleWorkGroup(row.logKey, row.id)}
+        />
+      ) : null}
+    </div>
+  );
+}
+
 const NO_TURN_FILES: TurnDiffSummary["files"] = [];
 const NO_TURN_SHARES: ReadonlyArray<AldoShare> = [];
 
@@ -2474,6 +2553,13 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
   const messageText = aldoNext?.text ?? fullText;
   // The turn's answer, whether its footer is here or below the tools that followed it.
   const isTurnAnswer = row.showAssistantMeta || row.assistantMetaMoved === true;
+  // Not code: what the turn made shows under the answer, and the answer's screenshots of live pages as its cards.
+  const results = ctx.workWords !== null && isTurnAnswer;
+  const live = useMemo(() => (results ? aldoLiveShots(messageText) : null), [results, messageText]);
+  const nextRow =
+    aldoNext && aldoNext.next.length > 0 && isTurnAnswer ? (
+      <AldoNextRow turnId={row.message.turnId ?? null} next={aldoNext.next} />
+    ) : null;
   const changedFiles = (
     <AssistantChangedFilesSection
       turnSummary={row.assistantTurnDiffSummary}
@@ -2495,7 +2581,7 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
           listRef={ctx.listRef}
         >
           <ChatMarkdown
-            text={messageText}
+            text={live?.text ?? messageText}
             cwd={ctx.markdownCwd}
             threadRef={ctx.threadRef ?? undefined}
             isStreaming={Boolean(row.message.streaming)}
@@ -2505,24 +2591,31 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
             onUseArtifactTemplate={ctx.onUseArtifactTemplate}
             onRunShellCommand={ctx.onRunShellCommand}
             onImageExpand={ctx.onImageExpand}
+            mediaGrid={isAldoCloud}
           />
         </AssistantCitationSource>
-        {aldoNext && aldoNext.next.length > 0 && isTurnAnswer ? (
-          <AldoNextRow turnId={row.message.turnId ?? null} next={aldoNext.next} />
-        ) : null}
-        {ctx.workWords && isTurnAnswer ? (
-          <AldoMadeCards
-            files={row.assistantTurnDiffSummary?.files ?? NO_TURN_FILES}
-            shares={
-              (row.message.turnId && ctx.aldoSharesByTurnId.get(row.message.turnId)) ||
-              NO_TURN_SHARES
-            }
-            threadRef={ctx.threadRef}
-            workspaceRoot={ctx.workspaceRoot}
-            allChanges={changedFiles}
-          />
+        {results ? (
+          <>
+            <AldoMadeCards
+              files={row.assistantTurnDiffSummary?.files ?? NO_TURN_FILES}
+              shares={
+                (row.message.turnId && ctx.aldoSharesByTurnId.get(row.message.turnId)) ||
+                NO_TURN_SHARES
+              }
+              threadRef={ctx.threadRef}
+              workspaceRoot={ctx.workspaceRoot}
+              answer={messageText}
+              shots={live?.shots}
+              onImageExpand={ctx.onImageExpand}
+              allChanges={changedFiles}
+            />
+            {nextRow}
+          </>
         ) : (
-          changedFiles
+          <>
+            {nextRow}
+            {changedFiles}
+          </>
         )}
         {row.showAssistantMeta ? (
           <AssistantMessageMeta

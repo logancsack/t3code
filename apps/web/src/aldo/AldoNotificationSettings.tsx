@@ -2,7 +2,7 @@ import { settingsHeadsUps, settingsIntegrations } from "./settingsData";
 import { createSettingsResource, useSettingsResource } from "./settingsResource";
 import { Link } from "@tanstack/react-router";
 import { BellIcon, SparklesIcon } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
   SettingsPageContainer,
@@ -15,11 +15,14 @@ import { Switch } from "../components/ui/switch";
 import { toastManager } from "../components/ui/toast";
 import { playAldoChime, setAldoSound, useAldoSound } from "./chime";
 import { setAldoHeadsUps } from "./accountApi";
+import { AldoNotificationTestNote, useAldoNotificationTest } from "./AldoNotificationTest";
 import {
   aldoNotificationsStatus,
+  currentAldoBrowser,
   disableAldoNotifications,
   enableAldoNotifications,
 } from "./notifications";
+import { aldoAllowHint, aldoTestPending } from "./notifications.logic";
 
 const DESCRIPTION =
   "Get a notification on this device when a thread finishes or needs you, even with Aldo closed.";
@@ -28,7 +31,9 @@ const messageOf = (cause: unknown) => (cause instanceof Error ? cause.message : 
 
 /**
  * Notifications on this device (notifications.ts), shown where they can work,
- * and the optional sound while Aldo is open (chime.ts).
+ * and the optional sound while Aldo is open (chime.ts). Turning them on sends
+ * a test where Aldo can, and "Send a test" sends another; blocked, the row
+ * says where this browser allows them.
  */
 const deviceNotifications = createSettingsResource(aldoNotificationsStatus);
 
@@ -37,8 +42,15 @@ function AldoNotificationSettings() {
   const status = useSettingsResource(deviceNotifications, true, false).data ?? null;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const test = useAldoNotificationTest();
+  const browser = useMemo(() => currentAldoBrowser(), []);
 
   const refresh = useCallback(() => deviceNotifications.refresh(), []);
+  // A test that failed may have found this device's subscription gone (and let it go): read it again.
+  const testFailed = test.state?.phase === "failed";
+  useEffect(() => {
+    if (testFailed) void refresh();
+  }, [testFailed, refresh]);
   // Read again when the user comes back, e.g. from allowing notifications in the browser's settings.
   useEffect(() => {
     const onVisible = () => {
@@ -78,13 +90,18 @@ function AldoNotificationSettings() {
     );
   }
 
+  const canTest = status.availability === "available" && status.test;
   const toggle = async (checked: boolean) => {
     setBusy(true);
     setError(null);
     try {
       const key = status.availability === "available" ? status.key : null;
-      if (checked && !(await enableAldoNotifications(key)))
-        setError("Notifications weren't allowed.");
+      if (checked) {
+        const permission = await enableAldoNotifications(key);
+        if (permission === "granted" && canTest) test.run();
+        if (permission === "default")
+          setError("Notifications weren’t turned on. Try again, and choose Allow.");
+      }
       if (!checked) await disableAldoNotifications();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Something went wrong.");
@@ -94,26 +111,47 @@ function AldoNotificationSettings() {
     }
   };
 
+  const host = window.location.host;
   const description =
     status.availability === "add-to-home-screen"
-      ? `${DESCRIPTION} On an iPhone or iPad, add Aldo to your Home Screen first (Share → Add to Home Screen), then turn this on there.`
+      ? `${DESCRIPTION} ${aldoAllowHint(browser, host)}`
       : status.blocked
-        ? `${DESCRIPTION} This browser blocks notifications from Aldo; allow them in its site settings first.`
+        ? `${DESCRIPTION} This browser blocks notifications from Aldo. ${aldoAllowHint(browser, host)}`
         : (error ?? DESCRIPTION);
+  const on = status.availability === "available" && status.on;
 
   return (
     <SettingsSection title="On this device" icon={<BellIcon className="size-4" />}>
       <SettingsRow
         {...searchableSetting("aldo-notifications")}
         description={description}
+        {...(on && canTest && test.state
+          ? {
+              status: (
+                <AldoNotificationTestNote state={test.state} browser={browser} onAgain={test.run} />
+              ),
+            }
+          : {})}
         control={
           status.availability === "available" ? (
-            <Switch
-              checked={status.on}
-              disabled={busy || status.blocked}
-              onCheckedChange={(checked) => void toggle(checked)}
-              aria-label="Notifications on this device"
-            />
+            <>
+              {on && canTest ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={busy || aldoTestPending(test.state)}
+                  onClick={test.run}
+                >
+                  Send a test
+                </Button>
+              ) : null}
+              <Switch
+                checked={status.on}
+                disabled={busy || status.blocked}
+                onCheckedChange={(checked) => void toggle(checked)}
+                aria-label="Notifications on this device"
+              />
+            </>
           ) : null
         }
       />

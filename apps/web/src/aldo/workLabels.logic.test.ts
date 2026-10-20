@@ -50,6 +50,13 @@ describe("OpenCode's steps", () => {
     expect(aldoWorkWords.step(open, true)).toBe("Opening fiverr.com");
   });
 
+  it("says what a search tool looked for", () => {
+    const search = openCode("websearch", { query: "fiverr motion graphics pricing" }, "1. …");
+    expect(aldoWorkWords.step(search, false)).toBe(
+      "Searched the web for “fiverr motion graphics pricing”",
+    );
+  });
+
   it("never labels a step with what its tool said back", () => {
     const page = `{"results":[${'{"title":"Motion graphics gig","price":45},'.repeat(20)}]}`;
     expect(aldoWorkWords.step(openCode("gig_lookup", {}, page), false)).toBe("Used gig lookup");
@@ -64,13 +71,62 @@ describe("OpenCode's steps", () => {
         false,
       ),
     ).toBeNull();
-    // A short line of its own is a label already, and a failure keeps T3's.
-    expect(aldoWorkWords.step(openCode("gig_lookup", {}, "Found 3 gigs"), false)).toBeNull();
+    // Nor with a short line of its own; a failure keeps T3's label.
+    expect(aldoWorkWords.step(openCode("gig_lookup", {}, "Found 3 gigs"), false)).toBe(
+      "Used gig lookup",
+    );
     expect(
       aldoWorkWords.step(
         openCode("gig_lookup", {}, page, { toolLifecycleStatus: "failed" }),
         false,
       ),
     ).toBeNull();
+    // Nor does one the provider or the user kept from running.
+    for (const status of ["declined", "stopped"] as const) {
+      expect(
+        aldoWorkWords.step(openCode("gig_lookup", {}, "", { toolLifecycleStatus: status }), true),
+      ).toBeNull();
+    }
+  });
+});
+
+describe("commands", () => {
+  const ran = (command: string) =>
+    ({
+      id: "command-1",
+      createdAt: "2026-10-20T08:00:00.000Z",
+      label: "Ran command",
+      tone: "tool",
+      itemType: "command_execution",
+      toolLifecycleStatus: "completed",
+      command,
+    }) as WorkLogEntry;
+
+  it("names the file a video or image command makes", () => {
+    expect(
+      aldoWorkWords.step(
+        ran("cd /w && ffmpeg -y -i frames/%04d.png -c:v libx264 clips/clip-01.mp4 2>&1 | tail"),
+        false,
+      ),
+    ).toBe("Made clip-01.mp4");
+    expect(aldoWorkWords.step(ran(`ffmpeg -i in.mov "Logo reveal.mp4"`), true)).toBe(
+      "Making Logo reveal.mp4",
+    );
+    expect(aldoWorkWords.step(ran("magick in.png -resize 50% thumb.webp"), false)).toBe(
+      "Made thumb.webp",
+    );
+    expect(aldoWorkWords.step(ran("ffmpeg -version"), false)).toBe("Worked on a video");
+    expect(aldoWorkWords.step(ran("ffmpeg -i clip.mp4 -f null -"), false)).toBe(
+      "Worked on a video",
+    );
+    expect(aldoWorkWords.step(ran("ffprobe clip.mp4"), false)).toBe("Checked a video");
+  });
+
+  it("doesn't call reading an image making it", () => {
+    expect(aldoWorkWords.step(ran("magick identify photo.png"), false)).toBe("Checked an image");
+    expect(aldoWorkWords.step(ran("identify -verbose photo.png"), true)).toBe("Checking an image");
+    expect(aldoWorkWords.step(ran("magick photo.png -strip clean.png"), false)).toBe(
+      "Made clean.png",
+    );
   });
 });

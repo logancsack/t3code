@@ -75,6 +75,8 @@ export interface SettingsSearchItem {
   readonly requiresAldoPhone?: boolean;
   /** Its row renders only once Aldo says it has agent inboxes. */
   readonly requiresAldoAgentInbox?: boolean;
+  /** Its row renders only on an Aldo that keeps the welcome's answer (aldo/onboarding.ts). */
+  readonly requiresAldoOnboarding?: boolean;
   readonly environmentOnly?: boolean;
   readonly providerSettingsOnly?: boolean;
   readonly macProviderSettingsOnly?: boolean;
@@ -100,6 +102,9 @@ export interface SettingsSearchAvailability {
   readonly hasThreadAutoSettlement: boolean;
   readonly hasAldoPhoneApi?: boolean;
   readonly hasAldoAgentInbox?: boolean;
+  readonly hasAldoOnboarding?: boolean;
+  /** False for an Aldo account without the developer tools (aldo/developerTools.ts): no Code page. */
+  readonly aldoDeveloperTools?: boolean;
 }
 
 /**
@@ -326,6 +331,16 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/general",
     searchTerms: ["rail sidebar hide threads just aldo needs you library layout full view"],
     aldoCloudOnly: true,
+  },
+  {
+    id: "aldo-interests",
+    title: "What you hand Aldo",
+    to: "/settings/general",
+    searchTerms: [
+      "interests welcome starters ideas home developer tools code pull requests terminal diff",
+    ],
+    aldoCloudOnly: true,
+    requiresAldoOnboarding: true,
   },
   {
     id: "project-grouping",
@@ -1289,10 +1304,15 @@ export function filterAvailableSettingsSearchItems(
         (!item.requiresThreadAutoSettlement || availability.hasThreadAutoSettlement) &&
         (!item.requiresAldoPhone || availability.hasAldoPhoneApi === true) &&
         (!item.requiresAldoAgentInbox || availability.hasAldoAgentInbox === true) &&
+        (!item.requiresAldoOnboarding || availability.hasAldoOnboarding === true) &&
         // Aldo leaves out T3's pages and rows that don't apply to its machines.
         (isAldoCloud ? aldoShowsSettingsSearchItem(item) : !item.aldoCloudOnly),
     )
-    .map((item) => (isAldoCloud ? aldoSettingsSearchItem(item) : item));
+    .map((item) => (isAldoCloud ? aldoSettingsSearchItem(item) : item))
+    .filter(
+      (item) =>
+        !isAldoCloud || availability.aldoDeveloperTools !== false || item.to !== "/settings/code",
+    );
 }
 
 export function searchSettings(
