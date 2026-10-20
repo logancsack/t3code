@@ -1182,6 +1182,18 @@ function currentProviderThreadId(session: ProviderSession): string | undefined {
   return readResumeCursorThreadId(session.resumeCursor);
 }
 
+/** What a turn runs with that a running turn can't change, as a key to compare. */
+function turnSettingsKey(settings: {
+  readonly model: string | undefined;
+  readonly effort: string | undefined;
+  readonly serviceTier: string | undefined;
+  readonly interactionMode: string | undefined;
+}): string {
+  return [settings.model, settings.effort, settings.serviceTier, settings.interactionMode]
+    .map((value) => value ?? "")
+    .join("\n");
+}
+
 function updateSession(
   sessionRef: Ref.Ref<ProviderSession>,
   updates: Partial<ProviderSession> | ((session: ProviderSession) => Partial<ProviderSession>),
@@ -1321,6 +1333,10 @@ export const makeCodexSessionRuntime = (
     /** The `additionalContext` of the latest `turn/start`, restored after compaction. */
     const lastAdditionalContextRef =
       yield* Ref.make<CodexTurnStartParamsWithCollaborationMode["additionalContext"]>(undefined);
+    /** The latest turn this session started, and its settings (turnSettingsKey): the one a message can join. */
+    const startedTurnRef = yield* Ref.make<
+      { readonly turnId: TurnId; readonly settings: string } | undefined
+    >(undefined);
 
     // `~` is not shell-expanded when env vars are set via
     // `child_process.spawn`; `expandHomePath` lets a configured
@@ -2519,6 +2535,54 @@ export const makeCodexSessionRuntime = (
       return providerThreadId;
     });
 
+    /**
+     * A message sent while this session's turn runs joins that turn, which
+     * takes it at its next step, as Codex's own composer steers, rather than
+     * waiting behind it as a turn of its own (so news reaches an agent mid-way
+     * through a long turn). Only into the turn this session started last, so
+     * nothing queued behind it is overtaken, and only with that turn's
+     * settings, which a running turn can't change. Returns the turn it joined,
+     * or undefined when it's to go as a turn of its own: there's none to join,
+     * or Codex refused (that turn ended first).
+     */
+    const steerRunningTurn = (
+      providerThreadId: string,
+      input: CodexTurnStartParamsWithCollaborationMode["input"],
+      settings: string,
+    ) =>
+      Effect.gen(function* () {
+        const session = yield* Ref.get(sessionRef);
+        const started = yield* Ref.get(startedTurnRef);
+        const activeTurnId = session.activeTurnId;
+        if (
+          session.status !== "running" ||
+          activeTurnId === undefined ||
+          started?.turnId !== activeTurnId ||
+          started.settings !== settings
+        ) {
+          return undefined;
+        }
+        return yield* client
+          .request("turn/steer", {
+            threadId: providerThreadId,
+            expectedTurnId: activeTurnId,
+            input,
+          })
+          .pipe(
+            Effect.map((response) => TurnId.make(response.turnId)),
+            // Codex answered (rather than the connection failing), so it didn't take it.
+            Effect.catchIf(
+              (error) =>
+                error._tag === "CodexAppServerRequestError" &&
+                error.operation === "receive-response",
+              (error) =>
+                Effect.logInfo("Codex didn't take a message into its running turn; starting one.", {
+                  error: error.message,
+                }).pipe(Effect.as(undefined)),
+            ),
+          );
+      });
+
     const close = Effect.gen(function* () {
       const alreadyClosed = yield* Ref.getAndSet(closedRef, true);
       if (alreadyClosed) {
@@ -2550,15 +2614,6 @@ export const makeCodexSessionRuntime = (
       sendTurn: (input) =>
         Effect.gen(function* () {
           const providerThreadId = yield* readProviderThreadId;
-          if (hasConfiguredMcpServer(options.appServerArgs)) {
-            yield* client.request("config/mcpServer/reload", undefined).pipe(
-              Effect.catch((cause) =>
-                Effect.logWarning("Failed to refresh Codex MCP tool catalog before turn.", {
-                  cause,
-                }),
-              ),
-            );
-          }
           const normalizedModel = normalizeCodexModelSlug(
             input.model ?? (yield* Ref.get(sessionRef)).model,
           );
@@ -2582,6 +2637,36 @@ export const makeCodexSessionRuntime = (
               options.mcpCapabilities,
             ),
           });
+          const settings = turnSettingsKey({
+            model: normalizedModel,
+            effort: input.effort,
+            serviceTier: input.serviceTier,
+            interactionMode: input.interactionMode,
+          });
+          const resumeCursor = () =>
+            Ref.get(sessionRef).pipe(
+              Effect.map((session) => {
+                const resumed = currentProviderThreadId(session);
+                return resumed ? { resumeCursor: { threadId: resumed } } : {};
+              }),
+            );
+          const steeredTurnId = yield* steerRunningTurn(providerThreadId, params.input, settings);
+          if (steeredTurnId !== undefined) {
+            return {
+              threadId: options.threadId,
+              turnId: steeredTurnId,
+              ...(yield* resumeCursor()),
+            } satisfies ProviderTurnStartResult;
+          }
+          if (hasConfiguredMcpServer(options.appServerArgs)) {
+            yield* client.request("config/mcpServer/reload", undefined).pipe(
+              Effect.catch((cause) =>
+                Effect.logWarning("Failed to refresh Codex MCP tool catalog before turn.", {
+                  cause,
+                }),
+              ),
+            );
+          }
           yield* Ref.set(lastAdditionalContextRef, params.additionalContext);
           const rawResponse = yield* client.raw.request("turn/start", params);
           const response = yield* decodeV2TurnStartResponse(rawResponse).pipe(
@@ -2594,21 +2679,20 @@ export const makeCodexSessionRuntime = (
             ),
           );
           const turnId = TurnId.make(response.turn.id);
+          yield* Ref.set(startedTurnRef, { turnId, settings });
           yield* updateSession(sessionRef, (session) => ({
             status: "running",
-            // Codex accepts follow-ups while the current turn is still
-            // running. The response contains the queued turn id, but
-            // turn/interrupt only accepts the id that is active now.
+            // A turn started while another runs (one with other settings,
+            // or one Codex refused to steer) is queued behind it. The
+            // response contains the queued turn id, but turn/interrupt only
+            // accepts the id that is active now.
             activeTurnId: session.activeTurnId ?? turnId,
             ...(normalizedModel ? { model: normalizedModel } : {}),
           }));
-          const resumedProviderThreadId = currentProviderThreadId(yield* Ref.get(sessionRef));
           return {
             threadId: options.threadId,
             turnId,
-            ...(resumedProviderThreadId
-              ? { resumeCursor: { threadId: resumedProviderThreadId } }
-              : {}),
+            ...(yield* resumeCursor()),
           } satisfies ProviderTurnStartResult;
         }),
       interruptTurn: (turnId) =>

@@ -18,6 +18,17 @@ const script = JSON.parse(NodeFS.readFileSync(process.env.T3_CODEX_COLLAB_SCRIPT
 const write = (message) => process.stdout.write(`${JSON.stringify(message)}\n`);
 let turnStartCount = 0;
 let activeTurn;
+// Whether activeTurn is still running (held open), so a steer can join it.
+let turnOpen = false;
+// `recordTurns` records what turn/start and turn/steer were sent, for tests of
+// which one a message went as.
+const recordTurn = (method, params) => {
+  if (!script.recordTurns) return;
+  NodeFS.appendFileSync(
+    `${process.env.T3_CODEX_COLLAB_SCRIPT}.requests`,
+    `${JSON.stringify({ method, params })}\n`,
+  );
+};
 // Server->client requests the runtime must answer (approval prompts), keyed
 // by the numeric JSON-RPC id this peer allocated for them.
 const openServerRequests = new Map();
@@ -60,6 +71,7 @@ rl.on("line", (line) => {
       `${JSON.stringify({ id, result: message.result, error: message.error })}\n`,
     );
     if (script.completeTurnOnServerResponse && activeTurn) {
+      turnOpen = false;
       write({
         jsonrpc: "2.0",
         method: "turn/completed",
@@ -162,7 +174,18 @@ rl.on("line", (line) => {
     write({ id, result: fixture.responses.threadStart });
     return;
   }
+  if (method === "turn/steer") {
+    recordTurn(method, message.params);
+    // As Codex: a steer joins the running turn it names, or is refused.
+    if (script.refuseSteer || !turnOpen || message.params?.expectedTurnId !== activeTurn?.id) {
+      write({ id, error: { code: -32600, message: "no active turn to steer" } });
+      return;
+    }
+    write({ id, result: { turnId: activeTurn.id } });
+    return;
+  }
   if (method === "turn/start") {
+    recordTurn(method, message.params);
     const turnId = script.turnIds?.[turnStartCount];
     const turn = turnId
       ? { ...fixture.responses.turnStart.turn, id: turnId }
@@ -200,7 +223,8 @@ rl.on("line", (line) => {
       );
       write({ jsonrpc: "2.0", id: requestId, method: request.method, params });
     }
-    if (script.holdTurnOpen !== true) {
+    turnOpen = script.holdTurnOpen === true;
+    if (!turnOpen) {
       write({
         jsonrpc: "2.0",
         method: "turn/completed",

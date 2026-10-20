@@ -8049,7 +8049,7 @@ export default function ChatView(props: ChatViewProps) {
       (queueStillSending ||
         (phase === "running" &&
           // Aldo steers: a queue lives in this tab and is lost with it, while a
-          // message sent now reaches the machine (Codex queues it there).
+          // message sent now reaches the machine.
           ((isAldoCloud ? "steer" : settings.followUpBehavior) === "queue") !==
             (submissionIntent === "alternate")))
     ) {

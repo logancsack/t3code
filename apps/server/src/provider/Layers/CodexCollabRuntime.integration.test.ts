@@ -740,7 +740,8 @@ describe("CodexSessionRuntime collab integration", () => {
 
       yield* runtime.start();
       yield* runtime.sendTurn({ input: "keep working" });
-      yield* runtime.sendTurn({ input: "queued follow-up" });
+      // In plan mode, which the running turn can't switch to: queued behind it rather than joining it.
+      yield* runtime.sendTurn({ input: "queued follow-up", interactionMode: "plan" });
       yield* runtime.interruptTurn();
 
       const interrupts = NodeFS.readFileSync(interruptsPath, "utf8")

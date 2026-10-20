@@ -562,8 +562,9 @@ const make = Effect.gen(function* () {
    * Whether the provider took a turn start request: it started a turn for it
    * (projected as a turn carrying its message), or a turn is running on the
    * thread, which a request sent during it joins. Claude, OpenCode, Cursor,
-   * Grok, Prime and Muse steer the running turn with it, under that turn's id
-   * and with no new turn.started; Codex queues it behind.
+   * Grok, Prime, Muse and Codex steer the running turn with it, under that
+   * turn's id and with no new turn.started; Codex queues one behind instead
+   * when it asks for other settings than the running turn has.
    */
   const isTurnStartTaken = Effect.fnUntraced(function* (threadId: ThreadId, messageId: MessageId) {
     const turns = yield* projectionTurnRepository.listByThreadId({ threadId });
@@ -2044,11 +2045,12 @@ const make = Effect.gen(function* () {
 
           // A request sent during a turn has no turn of its own: the provider
           // took it into that turn (a steer, under its id) or queued it behind
-          // (Codex). The thread is still running, or has moved on since the
-          // request (the turn ended), and turn liveness guards the turn. Any
-          // other request needs settling: the reactor holds a thread it starts
-          // a turn for in "starting" until the provider starts it, and one it
-          // never took (the server stopped first) left the thread as it was.
+          // (Codex, for other settings). The thread is still running, or has
+          // moved on since the request (the turn ended), and turn liveness
+          // guards the turn. Any other request needs settling: the reactor
+          // holds a thread it starts a turn for in "starting" until the
+          // provider starts it, and one it never took (the server stopped
+          // first) left the thread as it was.
           const session = thread.session;
           if (
             session !== null &&
