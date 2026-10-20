@@ -142,8 +142,10 @@ export function AldoConversationPage(props: {
 
   // What's there once the conversation has loaded is just there; what comes after arrives.
   useEffect(() => () => unsettleAldoConversation(), []);
-  // A plan Aldo proposes here is a card (AldoPlanCard.tsx); elsewhere, Aldo says it.
-  useEffect(() => showAldoCards(CARDS), []);
+  // A plan Aldo proposes here is a card (AldoPlanCard.tsx), while Home reads well and has its plans
+  // (an Aldo with them); elsewhere, or while it doesn't, Aldo says the plan in words.
+  const cardsShow = home !== null && props.error === null && home.plans !== undefined;
+  useEffect(() => (cardsShow ? showAldoCards(CARDS) : undefined), [cardsShow]);
   useEffect(() => {
     // The user back at the page: Aldo notices, with a blink.
     const onVisible = () => {

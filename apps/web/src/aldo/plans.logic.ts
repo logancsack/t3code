@@ -219,17 +219,24 @@ export function startedSummary(
   return answers.length > 0 ? `${lead} with: ${answers.join(" · ")}` : lead;
 }
 
+/** How far this browser's clock may be from Aldo's: `from` is the browser's, a plan's times are Aldo's. */
+const CLOCK_SKEW_MS = 5 * 60_000;
+
 /**
  * Plans still waiting on the user, oldest first, for the conversation's end:
- * those proposed since `from` (the conversation's start, as what happened).
+ * those proposed since `from` (the conversation's start, as what happened),
+ * and any still counting down to start on its own, which is never left unseen.
  */
 export function openPlans(
   plans: ReadonlyArray<AldoPlan>,
   from: string | null,
 ): ReadonlyArray<AldoPlan> {
-  const start = from ? Date.parse(from) : -Infinity;
+  const start = from ? Date.parse(from) - CLOCK_SKEW_MS : -Infinity;
   return plans
-    .filter((p) => p.status === "proposed" && Date.parse(p.proposedAt) >= start)
+    .filter(
+      (p) =>
+        p.status === "proposed" && (p.autoStartAt !== null || Date.parse(p.proposedAt) >= start),
+    )
     .toSorted((a, b) => a.proposedAt.localeCompare(b.proposedAt));
 }
 

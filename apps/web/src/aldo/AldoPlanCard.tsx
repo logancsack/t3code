@@ -10,7 +10,7 @@
 // with where it started, with its thread to open (its live card follows).
 
 import { ArrowUpRightIcon, CheckIcon, LoaderCircleIcon, UserRoundIcon } from "lucide-react";
-import { useEffect, useId, useState } from "react";
+import { useCallback, useEffect, useId, useState } from "react";
 
 import { cn } from "~/lib/utils";
 import { ThreadLink } from "./AldoHomeInbox";
@@ -33,17 +33,36 @@ import {
 } from "./plans.logic";
 import { FOCUS, INSET, PRIMARY, SECONDARY, SURFACE } from "./surface";
 
-/** Plans this page told Aldo to hold (they no longer start on its own), so a card mounted again knows. */
-const held = new Set<string>();
+/** Plans this page told Aldo to hold (they no longer start on its own), so a card mounted again knows: whether Aldo heard. */
+const held = new Map<string, Promise<boolean>>();
 /** Plans whose countdown this page reported run out: once each. */
 const due = new Set<string>();
+/** A hold that didn't reach Aldo is asked again after 1, 2 and 4 seconds, well inside the two minutes. */
+const HOLD_TRIES = 4;
 
-function hold(id: string): void {
-  if (held.has(id)) return;
-  held.add(id);
-  // Not held after all: Aldo's minute may start it, which the card then shows.
-  void tapAldoPlan(id, { action: "hold" }).catch(() => held.delete(id));
+function hold(id: string): Promise<boolean> {
+  const asked = held.get(id);
+  if (asked) return asked;
+  const asking = (async () => {
+    for (let tries = 1; ; tries += 1) {
+      try {
+        await tapAldoPlan(id, { action: "hold" });
+        return true;
+      } catch {
+        if (tries >= HOLD_TRIES) break;
+        await new Promise((resolve) => window.setTimeout(resolve, 1000 * 2 ** (tries - 1)));
+      }
+    }
+    // Not held after all: Aldo's minute may still start it, so the card counts down again and says so.
+    held.delete(id);
+    return false;
+  })();
+  held.set(id, asking);
+  return asking;
 }
+
+const UNHELD =
+  "Couldn’t reach Aldo to hold it, so it still starts on its own when its two minutes are up.";
 
 /** What a failed tap says. */
 function failureOf(error: unknown): string {
@@ -67,10 +86,28 @@ export function AldoPlanCard(props: {
   const state = planCardState(plan, { now, busy, held: isHeld });
   const counting = state.kind === "countdown";
 
-  const holdHere = () => {
-    hold(plan.id);
+  const holdHere = useCallback(() => {
     setHeld(true);
-  };
+    setFailure(null);
+    void hold(plan.id).then((heard) => {
+      if (heard) return;
+      setHeld(false);
+      setFailure(UNHELD);
+    });
+  }, [plan.id]);
+
+  // A hold asked for before this card mounted (the page moved it) that Aldo never heard: it counts down again.
+  useEffect(() => {
+    let live = true;
+    void held.get(plan.id)?.then((heard) => {
+      if (!live || heard) return;
+      setHeld(false);
+      setFailure(UNHELD);
+    });
+    return () => {
+      live = false;
+    };
+  }, [plan.id]);
 
   // The countdown, a tick a second while it runs.
   useEffect(() => {
@@ -85,12 +122,11 @@ export function AldoPlanCard(props: {
     const onInput = (event: Event) => {
       const target = event.target as HTMLElement | null;
       if (!target?.closest("[data-aldo-assistant-footer]")) return;
-      hold(plan.id);
-      setHeld(true);
+      holdHere();
     };
     document.addEventListener("input", onInput, true);
     return () => document.removeEventListener("input", onInput, true);
-  }, [counting, plan.id]);
+  }, [counting, holdHere]);
 
   // Its time is up: Aldo starts it on its own if it's still due (its minute would anyway).
   const [tries, setTries] = useState(0);

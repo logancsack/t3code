@@ -260,12 +260,21 @@ describe("openPlans", () => {
     expect(openPlans(plans, null).map((p) => p.id)).toEqual(["old", "new"]);
   });
 
-  it("leaves out those proposed before the conversation starts", () => {
+  it("leaves out those proposed before the conversation starts that wait for a Start", () => {
     const plans = [
-      plan({ id: "new", proposedAt: at(-10) }),
-      plan({ id: "old", proposedAt: at(-600) }),
+      plan({ id: "new", proposedAt: at(-10), autoStartAt: null }),
+      plan({ id: "old", proposedAt: at(-600), autoStartAt: null }),
     ];
     expect(openPlans(plans, at(-60)).map((p) => p.id)).toEqual(["new"]);
+  });
+
+  it("keeps one Aldo proposed for the first message whatever this browser's clock says", () => {
+    // The browser is three minutes ahead of Aldo: the plan reads as older than the message it answers.
+    const waits = plan({ id: "waits", proposedAt: at(-170), autoStartAt: null });
+    expect(openPlans([waits], at(0)).map((p) => p.id)).toEqual(["waits"]);
+    // One counting down to start on its own is never left out.
+    const counts = plan({ id: "counts", proposedAt: at(-3_600), autoStartAt: at(30) });
+    expect(openPlans([counts], at(0)).map((p) => p.id)).toEqual(["counts"]);
   });
 });
 
