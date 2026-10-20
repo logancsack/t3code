@@ -103,6 +103,16 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
       }
     : source;
 
+  // An image the opener had no URL for yet (still being signed, or not in view there): signed here.
+  const unsignedAsset =
+    item && item.type !== "video" && item.src === null ? item.actionsSource?.asset : undefined;
+  const signedImage = useAssetUrlState(
+    unsignedAsset?.environmentId ?? null,
+    unsignedAsset?.resource ?? null,
+  );
+  const imageSrc = item?.src ?? (signedImage._tag === "Success" ? signedImage.url : null);
+  const imageSigning = unsignedAsset !== undefined && signedImage._tag === "Loading";
+
   const navigateImage = useCallback((direction: -1 | 1) => {
     setImageOffset((current) => current + direction);
   }, []);
@@ -254,7 +264,9 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
                   className="h-[min(var(--media-height),40rem)] w-[min(var(--media-width),42rem)] transition-opacity duration-140 ease-out starting:opacity-0 rounded-lg border border-border/70 bg-background p-4 text-xs leading-5 shadow-2xl motion-reduce:transition-none"
                 />
               ) : null
-            ) : item.src === null || failedImageSrc === item.src ? (
+            ) : imageSigning ? (
+              <div aria-busy="true" className={EXPANDED_MEDIA_STATE_CLASS_NAME} />
+            ) : imageSrc === null || failedImageSrc === imageSrc ? (
               <ExpandedMediaFailure>
                 <p>
                   {openOriginalLink
@@ -266,10 +278,10 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
             ) : (
               <ZoomableImage
                 ref={zoomableImageRef}
-                key={`${index}:${item.src}`}
-                src={item.src}
+                key={`${index}:${imageSrc}`}
+                src={imageSrc}
                 name={item.name}
-                onError={() => setFailedImageSrc(item.src)}
+                onError={() => setFailedImageSrc(imageSrc)}
               />
             )}
             <div className="mt-2 flex max-w-[var(--media-width)] items-center justify-center gap-1.5 text-xs text-white/80">
