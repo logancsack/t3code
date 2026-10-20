@@ -7,6 +7,7 @@
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import {
   CheckIcon,
+  FileArchiveIcon,
   FileAudioIcon,
   FileIcon,
   FileSpreadsheetIcon,
@@ -45,6 +46,7 @@ const KIND_ICON: Record<AldoMadeKind, { icon: LucideIcon; tint: string }> = {
   page: { icon: GlobeIcon, tint: "bg-cyan-500/15 text-cyan-500" },
   video: { icon: FileVideoIcon, tint: "bg-fuchsia-500/15 text-fuchsia-500" },
   audio: { icon: FileAudioIcon, tint: "bg-amber-500/15 text-amber-500" },
+  archive: { icon: FileArchiveIcon, tint: "bg-zinc-500/15 text-zinc-500" },
 };
 
 function joinPath(root: string, path: string): string {
