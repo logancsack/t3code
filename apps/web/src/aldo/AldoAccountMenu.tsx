@@ -25,7 +25,7 @@ import { useSidebar } from "../components/ui/sidebar";
 import { Switch } from "../components/ui/switch";
 import { cn } from "~/lib/utils";
 import { AldoThemeToggle } from "./AldoGeneralSettings";
-import { fetchAldoProfile, type AldoProfile } from "./assistantApi";
+import { requestAldoProfile, type AldoProfile } from "./assistantApi";
 import { type AldoHomeUsage } from "./homeApi";
 import { useAldoFirstViewHold } from "./firstView";
 import { useAldoHomeFeed } from "./homeFeed";
@@ -34,7 +34,6 @@ import { setAldoSimpleMode, useAldoSimpleMode } from "./simpleMode";
 // ---------------------------------------------------------------------------
 // Who's signed in, asked once per page.
 
-let profileRequest: Promise<AldoProfile | null> | null = null;
 let knownProfile: AldoProfile | null | undefined = undefined;
 
 /** The signed-in user; undefined until it's known, null where this Aldo can't say. */
@@ -42,8 +41,7 @@ export function useAldoProfile(): AldoProfile | null | undefined {
   const [profile, setProfile] = useState<AldoProfile | null | undefined>(knownProfile);
   useEffect(() => {
     let current = true;
-    profileRequest ??= fetchAldoProfile().catch(() => null);
-    void profileRequest.then((next) => {
+    void requestAldoProfile().then((next) => {
       knownProfile = next;
       if (current) setProfile(next);
     });

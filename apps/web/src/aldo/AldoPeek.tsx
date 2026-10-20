@@ -13,6 +13,7 @@ import { ApprovalCard } from "./AldoApprovals";
 import { PendingForm, ThreadLink } from "./AldoHomeInbox";
 import { pullRequestsOf, PullRequestLine, reposLabel, StateDot, stateSince } from "./AldoLiveCard";
 import { withoutImageNotes } from "./assistant.logic";
+import { aldoRequestLabel, aldoRequestOf } from "./request.logic";
 import { sendText } from "./assistantSession";
 import {
   fetchAldoConversationCopy,
@@ -22,7 +23,8 @@ import {
   type AldoHomeTarget,
 } from "./homeApi";
 import { refreshAldoHome } from "./homeFeed";
-import { modelName, needsYouKind, sameTarget } from "./home.logic";
+import { needsYouKind, sameTarget } from "./home.logic";
+import { useAldoModelName } from "./modelNames";
 import { AldoAvatar } from "./AldoPresence";
 import { AgentMarkdown, loadChatMarkdown } from "./AldoQuoted";
 import { CHIP, ICON_BUTTON, INSET, SECONDARY } from "./surface";
@@ -147,7 +149,7 @@ function ThreadPeek(props: {
 }) {
   const c = props.conversation;
   const kind = needsYouKind(c);
-  const model = modelName(c.model);
+  const model = useAldoModelName(c.thread.environmentId, c.model);
   const pullRequests = pullRequestsOf(props.home, c.thread, props.now);
   const ask = (words: string) => {
     sendText(words);
@@ -294,20 +296,23 @@ function TurnsSkeleton() {
 /** What Aldo writes to a thread ends with this line (fromAldo in Aldo's src/lib/actions.ts); the peek labels it instead. */
 const FROM_ALDO = /\s*_\(Sent by Aldo[^)]*\)_\s*$/;
 
-/** A message the user (or Aldo for them) sent the thread. */
+/** A message the user (or Aldo for them) sent the thread: a thread Aldo started opens with the user's own words (request.logic.ts). */
 function UserTurn(props: { readonly text: string }) {
   const text = withoutImageNotes(props.text).text;
-  const fromAldo = FROM_ALDO.test(text);
+  const request = aldoRequestOf(text);
+  const fromAldo = !request && FROM_ALDO.test(text);
   return (
     <div className="flex max-w-[90%] flex-col items-end gap-1 self-end">
-      {fromAldo ? (
+      {request ? (
+        <span className="text-[12px] text-muted-foreground">{aldoRequestLabel(request.from)}</span>
+      ) : fromAldo ? (
         <span className="flex items-center gap-1 text-[12px] text-muted-foreground">
           <AldoAvatar size={12} />
           From Aldo
         </span>
       ) : null}
       <p className="whitespace-pre-wrap break-words rounded-[18px] bg-message px-3.5 py-2 text-[14px] text-message-foreground leading-5">
-        {fromAldo ? text.replace(FROM_ALDO, "") : text}
+        {request ? request.said : fromAldo ? text.replace(FROM_ALDO, "") : text}
       </p>
     </div>
   );

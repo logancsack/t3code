@@ -7,15 +7,16 @@
 // what matters is in the conversation, and a thread tapped in it opens; what
 // runs under it (routines, what's due, pull requests, usage, rules) is a page
 // that status opens (AldoUnderTheHood.tsx). It comes from Aldo's one read of the account
-// (homeFeed.ts), which never wakes a machine. Until agents can run (on Aldo's
-// models or a subscription of the user's) it asks for setup first; after, one
-// line offers what's missing (AldoSetup.tsx), and the first few threads start
-// from tappable starters (AldoStarters.tsx). An Aldo without the home read
+// (homeFeed.ts), which never wakes a machine. It never asks for setup: an AI
+// subscription of the user's is in Settings → Agents, a git host in Settings →
+// Connections, and the first few threads start from tappable starters
+// (AldoStarters.tsx). An Aldo without the home read
 // shows what Aldo's overview says instead; one without the assistant shows the
 // board, which answers four questions in order: what needs me, what's
 // happening, what got done, what's coming. In simple mode (simpleMode.ts) it
 // shows the rail's place: Aldo's conversation, Needs you or the Library
-// (AldoSimplePlaces.tsx).
+// (AldoSimplePlaces.tsx). A new account's first visit has the welcome first:
+// one optional question, whose answer picks the starters (AldoWelcome.tsx).
 
 import { useNavigate, useRouter } from "@tanstack/react-router";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
@@ -51,7 +52,6 @@ import {
 import { ApprovalsSection } from "./AldoApprovals";
 import { NeedsYouCard } from "./AldoHomeInbox";
 import { RoutinesSection } from "./AldoRoutines";
-import { AGENT_KINDS, AldoSetupCard, AldoSetupLine } from "./AldoSetup";
 import { AldoSimpleTabs } from "./AldoSimpleRail";
 import { AldoSimpleLibrary, AldoSimpleNeedsYou } from "./AldoSimplePlaces";
 import { AldoStarters, STARTERS_UNTIL_THREADS } from "./AldoStarters";
@@ -62,7 +62,6 @@ import {
   useAldoAssistant,
 } from "./assistantSession";
 import {
-  aldoOffersItsModels,
   aldoSupportsGeneralThreads,
   aldoSupportsProjects,
   subscribeAldoEnvironments,
@@ -87,13 +86,15 @@ import {
   healthIssues,
   isNewSince,
   moveSelection,
-  planRunning,
   repoChips,
   repoName,
 } from "./home.logic";
 import { loadAldoBrief } from "./briefFeed";
 import { morphIntoThread } from "./morph";
 import { setAldoUnderTheHood, useAldoSimple, useAldoUnderTheHood } from "./simpleMode";
+import { AldoWelcome } from "./AldoWelcome";
+import { useAldoOnboardingState } from "./onboarding";
+import { aldoWelcomeShows } from "./onboarding.logic";
 import { useIsMobile } from "../hooks/useMediaQuery";
 
 const LAST_SEEN_KEY = "aldo:home:seen";
@@ -161,12 +162,21 @@ export function AldoHome() {
     void loadAldoConversation();
   }, []);
   const ready = useAfterPaint(true, false);
+  // A new account's first visit asks the welcome's question first.
+  const onboarding = useAldoOnboardingState();
+  useAldoFirstViewHold(onboarding === undefined);
+  if (aldoWelcomeShows(onboarding))
+    return (
+      <SidebarInset className="h-dvh bg-background">
+        <AldoWelcome />
+      </SidebarInset>
+    );
   if (!ready) return <SidebarInset className="h-dvh bg-background" aria-busy />;
   return <AldoHomeContent />;
 }
 
 function AldoHomeContent() {
-  const { accounts, error: accountsError, refresh: refreshAccounts } = useAldoAccounts();
+  const { accounts, error: accountsError } = useAldoAccounts();
   const assistant = useAldoAssistantAvailable();
   const { home, supported, error } = useAldoHomeRead();
   const refresh = refreshAldoHome;
@@ -204,9 +214,7 @@ function AldoHomeContent() {
   const boardRef = useRef<HTMLDivElement>(null);
   const conversationEmpty = useAldoAssistant((s) => s.historyLoaded && s.entries.length === 0);
 
-  const sourceHost = HOST_KINDS.find((kind) => accounts?.[kind]?.connected === true);
-  const sourceReady = sourceHost !== undefined;
-  const agentReady = AGENT_KINDS.some((kind) => accounts?.[kind]?.connected === true);
+  const sourceReady = HOST_KINDS.some((kind) => accounts?.[kind]?.connected === true);
   // Threads that aren't in a repository need no git host; an older Aldo's do (the directory says, once listed).
   const general = useSyncExternalStore(
     subscribeAldoEnvironments,
@@ -219,22 +227,13 @@ function AldoHomeContent() {
     aldoSupportsProjects,
     () => false,
   );
-  // Agents run on Aldo's models once the plan is active: a subscription of the user's is an upgrade.
-  const aldoModels = useSyncExternalStore(
-    subscribeAldoEnvironments,
-    aldoOffersItsModels,
-    () => false,
-  );
   // Give the current view a short chance to load before revealing its own loading states.
   useAldoFirstViewHold(
     assistant === null ||
       (accounts === null && accountsError === null) ||
       (home === null && supported === null && error === null),
   );
-  const canRun = agentReady || (aldoModels && home !== null && planRunning(home.usage));
-  // Somewhere to work: a git host, General, or an Aldo project (which needs no git host).
-  const setupDone = canRun && (sourceReady || general || projects);
-  /** The first few threads: starters show, and the setup line until both are connected. */
+  /** The first few threads: starters show. */
   const firstRun = home !== null && home.conversations.length < STARTERS_UNTIL_THREADS;
 
   const repos = useMemo(() => (home ? repoChips(home) : []), [home]);
@@ -321,33 +320,9 @@ function AldoHomeContent() {
       </SidebarInset>
     );
 
-  // Nothing can run yet: the card asks for a subscription (or, on an older Aldo
-  // without General threads, a repository too). Once agents can run, one line
-  // offers what's missing, for the first few threads.
-  const setupLine =
-    accounts && setupDone && (!agentReady || !sourceReady) && firstRun ? (
-      <AldoSetupLine accounts={accounts} sourceReady={sourceReady} onConnected={refreshAccounts} />
-    ) : null;
-  const setupCard =
-    accounts && !setupDone ? (
-      <AldoSetupCard
-        accounts={accounts}
-        sourceHost={sourceHost}
-        general={general}
-        assistant={assistant === true}
-        onConnected={refreshAccounts}
-      />
-    ) : null;
-  const setup = setupCard ?? setupLine;
-  // In Aldo's empty conversation, the starters, with the line under them.
-  const welcome =
-    firstRun && setupCard === null ? (
-      <>
-        <AldoStarters sourceReady={sourceReady} />
-        {setupLine}
-      </>
-    ) : null;
-  const conversationSetup = welcome && conversationEmpty ? setupCard : setup;
+  // In Aldo's empty conversation, the starters. A request that can't run yet
+  // (no plan) is answered in the conversation, not here.
+  const welcome = firstRun ? <AldoStarters sourceReady={sourceReady} /> : null;
   const newMenu = (
     <NewMenu general={general} projects={projects || sourceReady} repositories={sourceReady} />
   );
@@ -389,7 +364,6 @@ function AldoHomeContent() {
         now={now}
         tabs={tabs}
         actions={null}
-        setup={conversationSetup}
         welcome={welcome}
         issues={issues}
         chips={chips}
@@ -414,7 +388,6 @@ function AldoHomeContent() {
             quiet
           />
         }
-        setup={conversationSetup}
         welcome={welcome}
         issues={issues}
         chips={chips}
@@ -443,7 +416,6 @@ function AldoHomeContent() {
               <h1 className="mr-auto font-semibold text-lg">Your threads</h1>
               {newMenu}
             </header>
-            {setup}
             {repos.length > 1 ? (
               <div className="flex flex-wrap gap-1.5">
                 <RepoChip

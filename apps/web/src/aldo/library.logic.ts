@@ -126,9 +126,10 @@ const KIND_BY_TYPE: Record<string, AldoMadeKind> = {
   "text/markdown": "document",
   "application/vnd.openxmlformats-officedocument.presentationml.presentation": "deck",
   "application/vnd.ms-powerpoint": "deck",
+  "application/zip": "archive",
 };
 
-/** What a shared file is, by its type; null for one that's none of the kinds (a zip, data). */
+/** What a shared file is, by its type; null for one that's none of the kinds (data). */
 export function aldoShareKind(contentType: string): AldoMadeKind | null {
   const type = contentType.split(";")[0]!.trim().toLowerCase();
   const known = KIND_BY_TYPE[type];
@@ -145,7 +146,7 @@ export function aldoShareAudience(share: Pick<AldoShareView, "public">): {
   readonly detail: string;
 } {
   return share.public
-    ? { label: "Public link", detail: "Anyone with the link can open it." }
+    ? { label: "Anyone with the link", detail: "Anyone with the link can open it." }
     : { label: "Only you", detail: "Only you can open it, signed in to Aldo." };
 }
 
@@ -289,7 +290,7 @@ export function aldoThreadLibrary(input: {
         key: thing.path ?? (share ? `share:${share.id}` : (thing.url ?? thing.name)),
         name,
         fileName: name !== thing.name ? thing.name : null,
-        kind: thing.kind,
+        kind: (share ? aldoShareKind(share.contentType) : null) ?? thing.kind,
         path: thing.path,
         at: turn.completedAt,
         shared,

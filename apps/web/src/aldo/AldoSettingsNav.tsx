@@ -2,7 +2,8 @@ import { useEffect } from "react";
 import { useRouter } from "@tanstack/react-router";
 import { prefetchSettingsData } from "./settingsData";
 // Aldo's settings nav (SettingsSidebarNav.tsx, in Aldo): the account at its
-// head, then its pages in groups (settings.logic.ts ALDO_SETTINGS_NAV).
+// head, then its pages in groups (settings.logic.ts ALDO_SETTINGS_NAV), Code
+// only with the developer tools (developerTools.ts).
 
 import {
   ArchiveIcon,
@@ -22,8 +23,9 @@ import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "../components/u
 import type { SettingsPath } from "../components/settings/settingsSearch";
 import { cn } from "~/lib/utils";
 import { AldoAvatar, profileName, useAldoProfile } from "./AldoAccountMenu";
+import { useAldoDeveloperTools } from "./developerTools";
 import { useAldoHomeFeed } from "./homeFeed";
-import { ALDO_SETTINGS_NAV, aldoSettingsNavActive } from "./settings.logic";
+import { ALDO_SETTINGS_NAV, aldoSettingsNav, aldoSettingsNavActive } from "./settings.logic";
 
 const ICONS: Partial<Record<SettingsPath, LucideIcon>> = {
   "/settings/agents": BotIcon,
@@ -73,6 +75,7 @@ export function AldoSettingsNav(props: {
   readonly onNavigate: (to: SettingsPath) => void;
 }) {
   const router = useRouter();
+  const nav = aldoSettingsNav({ developer: useAldoDeveloperTools() });
   useEffect(() => {
     const warm = () => {
       prefetchSettingsData();
@@ -92,7 +95,7 @@ export function AldoSettingsNav(props: {
   }, [router]);
   return (
     <nav aria-label="Settings sections" className="flex flex-col gap-3">
-      {ALDO_SETTINGS_NAV.map((group) => (
+      {nav.map((group) => (
         <div key={group.group} className="flex flex-col gap-0.5">
           <p className="px-2 pb-0.5 text-sidebar-muted-foreground/70 text-xs">{group.group}</p>
           <SidebarMenu>
