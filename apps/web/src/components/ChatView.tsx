@@ -1806,6 +1806,12 @@ export default function ChatView(props: ChatViewProps) {
   const [answeredByMessageRequestIds, setAnsweredByMessageRequestIds] = useState<
     ApprovalRequestId[]
   >([]);
+  // Aldo: questions answered from this card, hidden from the tap until the
+  // server closes them (so a card never waits on the round trip), and back
+  // only if the server refuses the answer. The question still stops the agent
+  // meanwhile, so messages stay held back (it isn't taken out of the pending
+  // list). Dropped once the server has closed it.
+  const [sentUserInputRequestIds, setSentUserInputRequestIds] = useState<ApprovalRequestId[]>([]);
 
   useEffect(() => {
     setIsWorkspaceFileDragActive(false);
@@ -3091,6 +3097,17 @@ export default function ChatView(props: ChatViewProps) {
     [threadActivities, activeSessionTurnId],
   );
   const activePendingUserInput = pendingUserInputs[0] ?? null;
+  useEffect(() => {
+    setSentUserInputRequestIds((existing) => {
+      const open = existing.filter((id) =>
+        derivedPendingUserInputs.some((input) => input.requestId === id),
+      );
+      return open.length === existing.length ? existing : open;
+    });
+  }, [derivedPendingUserInputs]);
+  const activePendingSent =
+    activePendingUserInput !== null &&
+    sentUserInputRequestIds.includes(activePendingUserInput.requestId);
   const activePendingRequestKey = JSON.stringify([
     environmentId,
     activeThreadId,
@@ -9175,7 +9192,12 @@ export default function ChatView(props: ChatViewProps) {
   );
 
   const onRespondToUserInput = useCallback(
-    async (requestId: ApprovalRequestId, answers: Record<string, unknown>) => {
+    async (
+      requestId: ApprovalRequestId,
+      answers: Record<string, unknown>,
+      // Already sent as a message (its card is held by the caller).
+      answeredAlready = false,
+    ) => {
       if (!activeThreadId || !activePendingUserInput || activePendingIsResponding) return;
       const responseKey = JSON.stringify([environmentId, activeThreadId, requestId]);
       if (userInputResponsesInFlight.current.has(responseKey)) return;
@@ -9211,6 +9233,11 @@ export default function ChatView(props: ChatViewProps) {
       setRespondingUserInputRequestIds((existing) =>
         existing.includes(requestId) ? existing : [...existing, requestId],
       );
+      if (!answeredAlready) {
+        setSentUserInputRequestIds((existing) =>
+          existing.includes(requestId) ? existing : [...existing, requestId],
+        );
+      }
       const result = await respondToThreadUserInput({
         environmentId,
         input: {
@@ -9222,6 +9249,9 @@ export default function ChatView(props: ChatViewProps) {
             : {}),
         },
       });
+      if (result._tag === "Failure" && !answeredAlready) {
+        setSentUserInputRequestIds((existing) => existing.filter((id) => id !== requestId));
+      }
       if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
         const error = squashAtomCommandFailure(result);
         setThreadError(
@@ -9600,7 +9630,7 @@ export default function ChatView(props: ChatViewProps) {
         setAnsweredByMessageRequestIds((existing) => existing.filter((id) => id !== requestId));
         return;
       }
-      await onRespondToUserInput(requestId, answers);
+      await onRespondToUserInput(requestId, answers, true);
     },
     [interactionMode, onRespondToUserInput, onSubmitPlanFollowUp],
   );
@@ -10686,7 +10716,9 @@ export default function ChatView(props: ChatViewProps) {
                   ) : null}
                   {/* An approval the agent stopped on is answered first; an
                       answer sent past it would start a turn it can't take. */}
-                  {activePendingUserInput && activePendingApproval === null ? (
+                  {activePendingUserInput &&
+                  !activePendingSent &&
+                  activePendingApproval === null ? (
                     <ComposerBanner.Root
                       placement="floating"
                       variant="info"
@@ -10756,7 +10788,9 @@ export default function ChatView(props: ChatViewProps) {
                             }
                             idlePlaceholder={
                               activePendingBlocksMessages
-                                ? "Answer the question above to continue"
+                                ? activePendingSent
+                                  ? "Sending your answer"
+                                  : "Answer the question above to continue"
                                 : aldoComposerPlaceholder
                             }
                             phase={phase}

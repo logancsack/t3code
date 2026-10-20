@@ -1,7 +1,10 @@
 // What needs the user, answered in place: a question with its choices, an
 // approval, a plan to carry out, or a thread that stopped. Answering goes to
 // Aldo as the user (homeApi.ts answerAldoThread, approveAldoPlan), which wakes
-// the thread's machine if it sleeps, so a button can take a little while.
+// the thread's machine if it sleeps, so it can take a while. The card doesn't
+// wait for that: it's gone the moment the answer is sent (homeFeed.ts
+// sendAldoAnswer), and comes back, with the user's choices and why, only if
+// Aldo refuses the answer.
 
 import { Link, useRouter } from "@tanstack/react-router";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
@@ -28,7 +31,7 @@ import {
 } from "./homeApi";
 import { elapsed, NEEDS_YOU_LABEL, needsYouKind, repoName } from "./home.logic";
 import { useAldoModelName } from "./modelNames";
-import { useAldoHomeFeed } from "./homeFeed";
+import { sendAldoAnswer, useAldoHomeFeed } from "./homeFeed";
 import { aldoCanMorph, aldoMorphSource, morphIntoThread } from "./morph";
 
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
@@ -161,6 +164,8 @@ export function NeedsYouCard(props: {
 export function PendingForm(props: {
   readonly conversation: AldoHomeConversation;
   readonly onActed: () => void;
+  /** The answer is being sent: the card goes next (a keyboard on it can be moved on first). */
+  readonly onSending?: () => void;
 }) {
   const c = props.conversation;
   const kind = needsYouKind(c);
@@ -168,18 +173,20 @@ export function PendingForm(props: {
     return (
       <QuestionForm
         key={c.pending.requestId}
-        target={c.thread}
+        conversation={c}
         pending={c.pending}
         onActed={props.onActed}
+        onSending={props.onSending}
       />
     );
   if (kind === "approval" && c.pending?.kind === "approval")
     return (
       <ApprovalForm
         key={c.pending.requestId}
-        target={c.thread}
+        conversation={c}
         pending={c.pending}
         onActed={props.onActed}
+        onSending={props.onSending}
       />
     );
   if (kind === "handoff" && c.pending?.kind === "handoff")
@@ -187,7 +194,15 @@ export function PendingForm(props: {
       <HandoffForm key={c.pending.requestId} id={c.pending.requestId} onActed={props.onActed} />
     );
   if (kind === "plan" && c.plan)
-    return <PlanForm key={c.plan.id} target={c.thread} plan={c.plan} onActed={props.onActed} />;
+    return (
+      <PlanForm
+        key={c.plan.id}
+        conversation={c}
+        plan={c.plan}
+        onActed={props.onActed}
+        onSending={props.onSending}
+      />
+    );
   if (kind === "paused")
     return (
       <div className="flex flex-wrap items-center gap-2 text-muted-foreground text-sm">
@@ -211,15 +226,59 @@ function HandoffForm(props: { readonly id: string; readonly onActed: () => void 
   ) : null;
 }
 
+/**
+ * What a form had when Aldo refused its answer, so the card comes back as it
+ * was (it's gone while the answer is on its way) with why: by what it asked.
+ */
+const returned = new Map<
+  string,
+  {
+    readonly error: string;
+    readonly answers?: Record<string, string | string[]>;
+    readonly other?: string;
+    readonly changes?: string;
+  }
+>();
+
+/**
+ * Sends a form's answer with its card gone from the start (homeFeed.ts). If
+ * Aldo refuses it, what the form had is kept before the card comes back, so
+ * the card that comes back has it and says why; the card may not (a thread
+ * that had moved on), so the reason is also said in a toast.
+ */
+async function sendAnswer<T>(
+  conversation: AldoHomeConversation,
+  key: string,
+  kept: Omit<Parameters<typeof returned.set>[1], "error">,
+  send: () => Promise<T>,
+): Promise<T> {
+  return sendAldoAnswer(conversation, async () => {
+    try {
+      return await send();
+    } catch (cause) {
+      returned.set(key, { ...kept, error: messageOf(cause) });
+      toastManager.add({
+        type: "error",
+        title: movedOn(cause) ? "It had already moved on" : "Couldn't send that",
+        description: messageOf(cause),
+      });
+      throw cause;
+    }
+  });
+}
+
 function QuestionForm(props: {
-  readonly target: AldoHomeTarget;
+  readonly conversation: AldoHomeConversation;
   readonly pending: Extract<AldoHomePending, { kind: "question" }>;
   readonly onActed: () => void;
+  readonly onSending?: (() => void) | undefined;
 }) {
-  const [answers, setAnswers] = useState<Record<string, string | string[]>>({});
-  const [other, setOther] = useState("");
+  const { requestId } = props.pending;
+  const back = returned.get(requestId);
+  const [answers, setAnswers] = useState<Record<string, string | string[]>>(back?.answers ?? {});
+  const [other, setOther] = useState(back?.other ?? "");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(back?.error ?? null);
   const questions = props.pending.questions;
   const single = questions.length === 1;
   const complete = questions.every((q) => {
@@ -229,11 +288,15 @@ function QuestionForm(props: {
   const submit = async (given: Record<string, string | string[]>) => {
     setBusy(true);
     setError(null);
+    returned.delete(requestId);
+    props.onSending?.();
     try {
-      const status = await answerAldoThread(props.target, {
-        requestId: props.pending.requestId,
-        answers: given,
-      });
+      const status = await sendAnswer(
+        props.conversation,
+        requestId,
+        { answers: given, other },
+        () => answerAldoThread(props.conversation.thread, { requestId, answers: given }),
+      );
       toastManager.add({
         type: "success",
         title: status === "answered" ? "Answered" : "Answer sent",
@@ -349,21 +412,24 @@ function QuestionForm(props: {
 }
 
 function ApprovalForm(props: {
-  readonly target: AldoHomeTarget;
+  readonly conversation: AldoHomeConversation;
   readonly pending: Extract<AldoHomePending, { kind: "approval" }>;
   readonly onActed: () => void;
+  readonly onSending?: (() => void) | undefined;
 }) {
+  const { requestId } = props.pending;
   const [busy, setBusy] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(returned.get(requestId)?.error ?? null);
   const [showDetail, setShowDetail] = useState(false);
   const decide = async (decision: string) => {
     setBusy(decision);
     setError(null);
+    returned.delete(requestId);
+    props.onSending?.();
     try {
-      const status = await answerAldoThread(props.target, {
-        requestId: props.pending.requestId,
-        decision,
-      });
+      const status = await sendAnswer(props.conversation, requestId, {}, () =>
+        answerAldoThread(props.conversation.thread, { requestId, decision }),
+      );
       toastManager.add({
         type: "success",
         title: status.startsWith("sent")
@@ -419,19 +485,28 @@ function ApprovalForm(props: {
 }
 
 function PlanForm(props: {
-  readonly target: AldoHomeTarget;
+  readonly conversation: AldoHomeConversation;
   readonly plan: { readonly id: string; readonly text: string };
   readonly onActed: () => void;
+  readonly onSending?: (() => void) | undefined;
 }) {
-  const [changing, setChanging] = useState(false);
-  const [changes, setChanges] = useState("");
+  const back = returned.get(props.plan.id);
+  const [changing, setChanging] = useState(back?.changes !== undefined);
+  const [changes, setChanges] = useState(back?.changes ?? "");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(back?.error ?? null);
   const act = async (withChanges?: string) => {
     setBusy(true);
     setError(null);
+    returned.delete(props.plan.id);
+    props.onSending?.();
     try {
-      await approveAldoPlan(props.target, props.plan.id, withChanges);
+      await sendAnswer(
+        props.conversation,
+        props.plan.id,
+        withChanges !== undefined ? { changes: withChanges } : {},
+        () => approveAldoPlan(props.conversation.thread, props.plan.id, withChanges),
+      );
       toastManager.add({
         type: "success",
         title: withChanges ? "Asked for a revised plan" : "The agent is carrying out the plan",

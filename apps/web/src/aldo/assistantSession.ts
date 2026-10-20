@@ -58,6 +58,7 @@ import {
   type AldoStartWatch,
 } from "./assistant.logic";
 import { AldoApiError } from "./api";
+import { noteAldoAnswered } from "./homeFeed";
 import {
   aldoAssistant,
   type AldoChatTurn,
@@ -745,6 +746,9 @@ function watchStart(watch: AldoStartWatch): void {
   stopWatchingStarts ??= subscribeAldoEnvironments(checkStarts);
 }
 
+/** The tools that answer what a thread waits on. */
+const ANSWERING_TOOLS: ReadonlySet<string> = new Set(["answer_thread", "approve_plan"]);
+
 /**
  * What a tool call did, on the page: the thread it opened or the app it
  * previewed, a line in the conversation, and a thread it started followed
@@ -764,6 +768,9 @@ function showCall(call: AldoFunctionCall, outcome: unknown): void {
   else if (kept !== entries) set({ entries: kept });
   // What it changed shows in the sidebar now (a new thread at once), not on the next refresh.
   if (action && !action.failed) requestAldoDirectoryRefresh();
+  // An answer or approval it sent for the user: the card goes as it does with a tap, without waiting for the thread to report.
+  if (action?.open && !action.failed && ANSWERING_TOOLS.has(action.tool))
+    noteAldoAnswered(action.open);
   const watch = startWatchFor(call, outcome, Date.now());
   if (watch) watchStart(watch);
 }
