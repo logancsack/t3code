@@ -64,13 +64,48 @@ describe("OpenCode's steps", () => {
         false,
       ),
     ).toBeNull();
-    // A short line of its own is a label already, and a failure keeps T3's.
-    expect(aldoWorkWords.step(openCode("gig_lookup", {}, "Found 3 gigs"), false)).toBeNull();
+    // Nor with a short line of its own; a failure keeps T3's label.
+    expect(aldoWorkWords.step(openCode("gig_lookup", {}, "Found 3 gigs"), false)).toBe(
+      "Used gig lookup",
+    );
     expect(
       aldoWorkWords.step(
         openCode("gig_lookup", {}, page, { toolLifecycleStatus: "failed" }),
         false,
       ),
     ).toBeNull();
+  });
+});
+
+describe("commands", () => {
+  const ran = (command: string) =>
+    ({
+      id: "command-1",
+      createdAt: "2026-10-20T08:00:00.000Z",
+      label: "Ran command",
+      tone: "tool",
+      itemType: "command_execution",
+      toolLifecycleStatus: "completed",
+      command,
+    }) as WorkLogEntry;
+
+  it("names the file a video or image command makes", () => {
+    expect(
+      aldoWorkWords.step(
+        ran("cd /w && ffmpeg -y -i frames/%04d.png -c:v libx264 clips/clip-01.mp4 2>&1 | tail"),
+        false,
+      ),
+    ).toBe("Made clip-01.mp4");
+    expect(aldoWorkWords.step(ran(`ffmpeg -i in.mov "Logo reveal.mp4"`), true)).toBe(
+      "Making Logo reveal.mp4",
+    );
+    expect(aldoWorkWords.step(ran("magick in.png -resize 50% thumb.webp"), false)).toBe(
+      "Made thumb.webp",
+    );
+    expect(aldoWorkWords.step(ran("ffmpeg -version"), false)).toBe("Worked on a video");
+    expect(aldoWorkWords.step(ran("ffmpeg -i clip.mp4 -f null -"), false)).toBe(
+      "Worked on a video",
+    );
+    expect(aldoWorkWords.step(ran("ffprobe clip.mp4"), false)).toBe("Checked a video");
   });
 });

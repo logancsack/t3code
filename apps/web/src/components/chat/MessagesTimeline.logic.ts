@@ -24,6 +24,7 @@ import {
   isStreamingMessageTextUpdate,
   workEntryDisplayIndicatesToolFailure,
   workEntryIndicatesToolSuccess,
+  workEntrySignalsSevereFailure,
   workEntryIndicatesToolNeutralStatus,
   workLogEntryHasGeneratedImage,
   workLogEntryIsToolLike,
@@ -403,6 +404,29 @@ export type MessagesTimelineRow =
       expanded: boolean;
     }
   | {
+      /**
+       * The work between two messages, or a settled turn's, as one row
+       * (`WorkWords.worked`): it opens to its groups, and its technical log
+       * (`logKey`) to the rows it stands for, which follow it.
+       */
+      kind: "work-summary";
+      id: string;
+      createdAt: string;
+      turnId: TurnId | null;
+      /** The work it folds, in order. */
+      entries: WorkLogEntry[];
+      /** "Worked 6 min · 22 steps", or the step under way while it's live. */
+      label: string;
+      /** When the work ended, for its last step's time; null while it's live. */
+      endedAt: string | null;
+      /** Its keys in `expandedWorkGroupIds`: opened, and its technical log opened. */
+      expandKey: string;
+      logKey: string;
+      expanded: boolean;
+      logOpen: boolean;
+      active: boolean;
+    }
+  | {
       kind: "context-compaction";
       id: string;
       createdAt: string;
@@ -568,6 +592,9 @@ interface TurnFold {
   createdAt: string;
   hiddenEntryIds: ReadonlySet<string>;
   label: string;
+  /** The work it hides, for `WorkWords.worked`'s row. */
+  entries: WorkLogEntry[];
+  endedAt: string | null;
 }
 
 /**
@@ -660,6 +687,34 @@ export interface WorkWords {
   readonly recap: (entries: ReadonlyArray<WorkLogEntry>) => string | null;
   /** What the turn is doing now, given its steps so far. */
   readonly working: (entries: ReadonlyArray<WorkLogEntry>) => string | null;
+  /**
+   * Where present, the work between messages folds into one row with these
+   * words ("Worked 31 min · 84 steps"), and a settled turn's fold says them
+   * too; the timeline's own rows open behind it, as its technical log.
+   */
+  readonly worked?: (
+    entries: ReadonlyArray<WorkLogEntry>,
+    elapsedMs: number | null,
+    stopped: boolean,
+  ) => string;
+}
+
+/** Work that folds into a `work-summary` row: activity, notices and failures short of the turn's. */
+function isQuietWorkEntry(entry: TimelineEntry): boolean {
+  if (entry.kind !== "work") return isActivityEntry(entry);
+  const work = entry.entry;
+  return (
+    isActivityEntry(entry) ||
+    (work.agentSpawn === undefined &&
+      work.questionAnswer === undefined &&
+      !workLogEntryHasGeneratedImage(work) &&
+      (work.sourceActivityKind === "context-compaction" ||
+        (work.tone === "error" && !workEntrySignalsSevereFailure(work))))
+  );
+}
+
+function workSummaryKeys(anchor: string): { expandKey: string; logKey: string } {
+  return { expandKey: `work-summary:${anchor}`, logKey: `work-log:${anchor}` };
 }
 
 /**
@@ -831,24 +886,26 @@ function deriveTurnFolds(input: {
               lastEntryEnd,
           );
     const duration = elapsedMs !== null ? formatDuration(elapsedMs) : null;
-    const recap = isLatestInterruptedTurn
-      ? null
-      : (input.workWords?.recap(
-          group.entries.flatMap((entry) =>
-            entry.kind === "work" && hiddenEntryIds.has(entry.id) ? [entry.entry] : [],
-          ),
-        ) ?? null);
-    const label = isLatestInterruptedTurn
-      ? duration
-        ? `You stopped after ${duration}`
-        : "You stopped this response"
-      : recap
+    const hiddenWork = group.entries.flatMap((entry) =>
+      entry.kind === "work" && hiddenEntryIds.has(entry.id) ? [entry.entry] : [],
+    );
+    const recap =
+      isLatestInterruptedTurn || input.workWords?.worked
+        ? null
+        : (input.workWords?.recap(hiddenWork) ?? null);
+    const label = input.workWords?.worked
+      ? input.workWords.worked(hiddenWork, elapsedMs, isLatestInterruptedTurn)
+      : isLatestInterruptedTurn
         ? duration
-          ? `${recap} · ${duration}`
-          : recap
-        : duration
-          ? `Worked for ${duration}`
-          : "Worked";
+          ? `You stopped after ${duration}`
+          : "You stopped this response"
+        : recap
+          ? duration
+            ? `${recap} · ${duration}`
+            : recap
+          : duration
+            ? `Worked for ${duration}`
+            : "Worked";
 
     foldsByAnchorEntryId.set(firstHiddenEntry.id, {
       turnId,
@@ -856,6 +913,15 @@ function deriveTurnFolds(input: {
       createdAt: firstHiddenEntry.createdAt,
       hiddenEntryIds,
       label,
+      entries: hiddenWork,
+      // The work ends where the answer starts, unless some of it came after.
+      endedAt:
+        group.terminalEntry &&
+        group.entries.findLastIndex((entry) => hiddenEntryIds.has(entry.id)) < terminalEntryIndex
+          ? group.terminalEntry.createdAt
+          : input.latestTurn?.turnId === turnId && input.latestTurn.completedAt
+            ? input.latestTurn.completedAt
+            : lastEntryEnd,
     });
   }
   return foldsByAnchorEntryId;
@@ -903,6 +969,7 @@ function attachTrailingToolGroupsToAssistant(
       }
       if (
         (candidate.kind === "work-toggle" ||
+          candidate.kind === "work-summary" ||
           (candidate.kind === "activity-group" &&
             candidate.entries.some((entry) => entry.kind === "work"))) &&
         candidate.turnId === turnId
@@ -1056,12 +1123,26 @@ export function deriveMessagesTimelineRows(input: {
     unfoldedTurnIds: activeVisualResponseTurnIds,
     workWords: input.workWords ?? null,
   });
+  // Quiet threads fold work into rows that open to its groups; the
+  // timeline's own rows are their technical log, a second click away.
+  const quiet = input.workWords?.worked !== undefined;
+  const workSummaryOpen = (keys: { expandKey: string; logKey: string }) => {
+    const expanded = input.expandedWorkGroupIds?.has(keys.expandKey) ?? false;
+    return {
+      expanded,
+      logOpen: expanded && (input.expandedWorkGroupIds?.has(keys.logKey) ?? false),
+    };
+  };
   const collapsedEntryIds = new Set<string>();
+  /** Shown as the technical log of a quiet fold, so not folded again. */
+  const technicalEntryIds = new Set<string>();
   for (const fold of foldsByAnchorEntryId.values()) {
-    if (!input.expandedTurnIds?.has(fold.turnId)) {
-      for (const entryId of fold.hiddenEntryIds) {
-        collapsedEntryIds.add(entryId);
-      }
+    const open = quiet
+      ? workSummaryOpen(workSummaryKeys(`turn:${fold.turnId}`)).logOpen
+      : (input.expandedTurnIds?.has(fold.turnId) ?? false);
+    for (const entryId of fold.hiddenEntryIds) {
+      if (!open) collapsedEntryIds.add(entryId);
+      else if (quiet) technicalEntryIds.add(entryId);
     }
   }
 
@@ -1181,6 +1262,103 @@ export function deriveMessagesTimelineRows(input: {
     );
   };
 
+  // Quiet threads: each run of work between messages becomes one row, keyed
+  // by its first entry so it keeps its place while the turn streams. Its
+  // entries show as the timeline's own rows only while its log is open.
+  const workSummaryByStartIndex = new Map<
+    number,
+    Extract<MessagesTimelineRow, { kind: "work-summary" }>
+  >();
+  const summarizedEntryIds = new Set<string>();
+  const worked = input.workWords?.worked;
+  const foldsInto = (entry: TimelineEntry) =>
+    isQuietWorkEntry(entry) &&
+    !collapsedEntryIds.has(entry.id) &&
+    !technicalEntryIds.has(entry.id) &&
+    !foldsByAnchorEntryId.has(entry.id);
+  if (worked) {
+    for (let index = 0; index < input.timelineEntries.length;) {
+      if (!foldsInto(input.timelineEntries[index]!)) {
+        index += 1;
+        continue;
+      }
+      let cursor = index + 1;
+      while (cursor < input.timelineEntries.length && foldsInto(input.timelineEntries[cursor]!)) {
+        cursor += 1;
+      }
+      const run = input.timelineEntries.slice(index, cursor);
+      const first = run[0]!;
+      const last = run.at(-1)!;
+      const work = run.flatMap((entry) => (entry.kind === "work" ? [entry.entry] : []));
+      const lastTurnId = timelineEntryTurnId(last);
+      const keys = workSummaryKeys(first.id);
+      const { expanded, logOpen } = workSummaryOpen(keys);
+      const live =
+        input.isWorking &&
+        cursor === input.timelineEntries.length &&
+        unsettledTurnId !== null &&
+        lastTurnId === unsettledTurnId &&
+        !latestToolFailed &&
+        (latestVisibleToolEntry === undefined || latestToolKeepsActivityLive);
+      let label: string;
+      let endedAt: string | null = null;
+      if (live) {
+        // As the live activity row says it: the step under way, else thinking.
+        const lastThought = run.findLastIndex((entry) => entry.kind === "message");
+        const trailing = omitSupersededLifecycleMarkers(
+          run
+            .slice(lastThought + 1)
+            .flatMap((entry) =>
+              entry.kind === "work" && workEntryIsVisibleInGroup(entry.entry, true)
+                ? [entry.entry]
+                : [],
+            ),
+          (entry) => entry,
+        );
+        const step = trailing.findLast(workEntryIsActiveTurnActivity) ?? trailing.at(-1);
+        label = step ? (input.workWords?.step(step, true) ?? "Working") : "Thinking";
+      } else {
+        // From the message before it (or the first step) to the message after it.
+        const before = input.timelineEntries[index - 1];
+        const after = input.timelineEntries[cursor];
+        const lastEnd = last.kind === "message" ? last.message.updatedAt : last.createdAt;
+        const startedAt =
+          before?.kind === "message" &&
+          (before.message.role === "user" || !before.message.streaming) &&
+          Date.parse(
+            before.message.role === "user" ? before.message.createdAt : before.message.updatedAt,
+          ) < Date.parse(first.createdAt)
+            ? before.message.role === "user"
+              ? before.message.createdAt
+              : before.message.updatedAt
+            : first.createdAt;
+        endedAt =
+          after?.kind === "message" && after.message.role !== "user"
+            ? (maxIsoTimestamp(after.createdAt, lastEnd) ?? lastEnd)
+            : lastEnd;
+        label = worked(work, computeElapsedMs(startedAt, endedAt), false);
+      }
+      workSummaryByStartIndex.set(index, {
+        kind: "work-summary",
+        id: keys.expandKey,
+        createdAt: first.createdAt,
+        turnId: timelineEntryTurnId(first) ?? lastTurnId,
+        entries: work,
+        label,
+        endedAt,
+        ...keys,
+        expanded,
+        logOpen,
+        // An open log has the live row of its own.
+        active: live && !logOpen,
+      });
+      if (!logOpen) {
+        for (const entry of run) summarizedEntryIds.add(entry.id);
+      }
+      index = cursor;
+    }
+  }
+
   let scannedActivityThrough = -1;
   for (let index = 0; index < input.timelineEntries.length; index += 1) {
     const timelineEntry = input.timelineEntries[index];
@@ -1192,12 +1370,35 @@ export function deriveMessagesTimelineRows(input: {
       appendWorkingRow();
     }
 
+    const workSummary = workSummaryByStartIndex.get(index);
+    if (workSummary) {
+      nextRows.push(workSummary);
+      hasActivityRow ||= workSummary.active;
+    }
+    if (summarizedEntryIds.has(timelineEntry.id)) {
+      continue;
+    }
+
     if (timelineEntry.id === activeWorkPlacementEntryId) {
       appendActiveWorkRows();
     }
 
     const anchoredTurnFold = foldsByAnchorEntryId.get(timelineEntry.id);
-    if (anchoredTurnFold) {
+    if (anchoredTurnFold && quiet) {
+      const keys = workSummaryKeys(`turn:${anchoredTurnFold.turnId}`);
+      nextRows.push({
+        kind: "work-summary",
+        id: keys.expandKey,
+        createdAt: anchoredTurnFold.createdAt,
+        turnId: anchoredTurnFold.turnId,
+        entries: anchoredTurnFold.entries,
+        label: anchoredTurnFold.label,
+        endedAt: anchoredTurnFold.endedAt,
+        ...keys,
+        ...workSummaryOpen(keys),
+        active: false,
+      });
+    } else if (anchoredTurnFold) {
       nextRows.push({
         kind: "turn-fold",
         id: `turn-fold:${anchoredTurnFold.turnId}`,
@@ -1780,6 +1981,21 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
     case "turn-fold": {
       const bf = b as typeof a;
       return a.createdAt === bf.createdAt && a.label === bf.label && a.expanded === bf.expanded;
+    }
+
+    case "work-summary": {
+      const bs = b as typeof a;
+      return (
+        a.createdAt === bs.createdAt &&
+        a.turnId === bs.turnId &&
+        a.label === bs.label &&
+        a.endedAt === bs.endedAt &&
+        a.expanded === bs.expanded &&
+        a.logOpen === bs.logOpen &&
+        a.active === bs.active &&
+        a.entries.length === bs.entries.length &&
+        a.entries.every((entry, index) => entry === bs.entries[index])
+      );
     }
 
     case "context-compaction": {
