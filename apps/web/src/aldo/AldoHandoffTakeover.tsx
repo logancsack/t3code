@@ -1,13 +1,16 @@
 // The agent's browser full screen, for what only the user can get past
-// (AldoHandoffCard.tsx): the page, one sentence of what to do, and a large
-// "I'm done" that hands it back. It opens from the card's "Do it now", the
-// Browser panel's "Take over", or a notification's "Do it now", which opens
-// the conversation with `?handoff=<id>`. Touch works as in the Browser panel,
-// and so does "Teach this", which teaches the conversation that asked: it's
-// handed back only once a recording is taught or discarded.
+// (AldoHandoffCard.tsx): the page, what it is and what to do, and a large
+// "I'm done" that hands it back. It opens from the card's "Take control", the
+// Browser panel's "Take over", or the conversation with `?handoff=<id>`: a
+// notification's "Do it now", or the card's "Do it on my phone" on a phone
+// signed in to Aldo. There, a camera step the site offers to finish on a
+// phone leads with the site's own page, where the phone's camera works.
+// Touch works as in the Browser panel, and so does "Teach this", which
+// teaches the conversation that asked: it's handed back only once a
+// recording is taught or discarded.
 
 import { useRouter, useRouterState } from "@tanstack/react-router";
-import { LoaderIcon, XIcon } from "lucide-react";
+import { ExternalLinkIcon, LoaderIcon, XIcon } from "lucide-react";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 
 import { Button } from "../components/ui/button";
@@ -18,10 +21,17 @@ import {
   closeAldoHandoffTakeover,
   openAldoHandoffTakeover,
   useAldoHandoffTakeover,
+  useAldoOnPhone,
 } from "./AldoHandoffCard";
-import { aldoHandoffHow, aldoHandoffParam, aldoHandoffSkipLabel } from "./handoffs.logic";
+import {
+  aldoHandoffHow,
+  aldoHandoffParam,
+  aldoHandoffSiteLabel,
+  aldoHandoffSiteLink,
+  aldoHandoffSkipLabel,
+} from "./handoffs.logic";
 import { useAldoHomeRead } from "./homeFeed";
-import { PRIMARY } from "./surface";
+import { PRIMARY, SECONDARY } from "./surface";
 
 const AldoBrowserPanel = lazy(() =>
   import("./AldoBrowserPanel").then((module) => ({ default: module.AldoBrowserPanel })),
@@ -60,6 +70,9 @@ function Takeover({ id }: { readonly id: string }) {
   const [busy, setBusy] = useState<"done" | "skip" | null>(null);
   const [teaching, setTeaching] = useState(false);
   const answered = useRef(false);
+  // On a phone, a camera step's own page (the site's link) is where its camera works.
+  const onPhone = useAldoOnPhone();
+  const siteLink = handoff && onPhone ? aldoHandoffSiteLink(handoff) : null;
   // Gone from the read: done on another device, skipped, or run out.
   const gone = supported === false || (home !== null && handoff === null);
   useEffect(() => {
@@ -129,10 +142,30 @@ function Takeover({ id }: { readonly id: string }) {
       {handoff ? (
         <footer className="shrink-0 border-t border-border px-4 py-3">
           <div className="mx-auto flex w-full max-w-md flex-col gap-2">
-            <p className="text-center text-[14px] leading-5">{aldoHandoffHow(handoff)}</p>
+            <div className="text-center text-[14px] leading-5">
+              <p className="font-medium">{handoff.reason}</p>
+              <p className="text-muted-foreground">{aldoHandoffHow(handoff)}</p>
+            </div>
+            {siteLink ? (
+              <>
+                <a
+                  className={cn(PRIMARY, "w-full")}
+                  href={siteLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {aldoHandoffSiteLabel(handoff)}
+                  <ExternalLinkIcon aria-hidden className="size-4" />
+                </a>
+                <p className="text-center text-muted-foreground text-xs">
+                  Your phone's camera works there. When you've finished, return here and hand it
+                  back.
+                </p>
+              </>
+            ) : null}
             <button
               type="button"
-              className={cn(PRIMARY, "w-full")}
+              className={cn(siteLink ? SECONDARY : PRIMARY, "w-full")}
               aria-busy={busy === "done" || undefined}
               disabled={busy !== null || teaching}
               onClick={() => void answer({ decision: "done" })}

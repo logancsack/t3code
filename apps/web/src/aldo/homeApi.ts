@@ -446,6 +446,11 @@ export interface AldoHandoff {
   readonly url: string | null;
   /** How long it usually takes, when the agent knew. */
   readonly seconds: number | null;
+  /**
+   * The site's own link to do it on a phone (an ID check or selfie's "continue
+   * on your phone"), when the agent gave one; an older Aldo sends none.
+   */
+  readonly phoneUrl?: string | null;
   readonly thread: AldoHomeTarget;
   readonly threadTitle: string;
   readonly createdAt: string;
