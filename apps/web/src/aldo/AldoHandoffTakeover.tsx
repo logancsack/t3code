@@ -11,7 +11,7 @@
 
 import { useRouter, useRouterState } from "@tanstack/react-router";
 import { ExternalLinkIcon, LoaderIcon, XIcon } from "lucide-react";
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "../components/ui/button";
 import { toastManager } from "../components/ui/toast";
@@ -52,20 +52,34 @@ export function AldoHandoffTakeoverHost() {
     if (!handoff) return;
     openAldoHandoffTakeover(handoff);
     fromNotification = null;
-    // Clear the router's location too, so another tap of this URL is a new navigation.
-    const url = new URL(href, window.location.origin);
+  }, [href]);
+  // The URL keeps `?handoff=` until Aldo has answered the takeover's read, so a
+  // phone that has to sign in first comes back to the step (api.ts sends sign-in
+  // back to this URL). Then it's cleared, so another tap of the same link is a
+  // new navigation; and when the takeover closes before that.
+  const clearParam = useCallback(() => {
+    const url = new URL(router.state.location.href, window.location.origin);
+    if (!url.searchParams.has("handoff")) return;
     url.searchParams.delete("handoff");
     void router.navigate({
       href: url.pathname + url.search + url.hash,
       replace: true,
       resetScroll: false,
     });
-  }, [href, router]);
-  return id ? <Takeover key={id} id={id} /> : null;
+  }, [router]);
+  const shown = useRef<string | null>(null);
+  useEffect(() => {
+    if (shown.current && !id) clearParam();
+    shown.current = id;
+  }, [id, clearParam]);
+  return id ? <Takeover key={id} id={id} onRead={clearParam} /> : null;
 }
 
-function Takeover({ id }: { readonly id: string }) {
+function Takeover({ id, onRead }: { readonly id: string; readonly onRead: () => void }) {
   const { home, supported } = useAldoHomeRead();
+  useEffect(() => {
+    if (home !== null || supported === false) onRead();
+  }, [home, supported, onRead]);
   const handoff = home?.handoffs?.find((h) => h.id === id) ?? null;
   const [busy, setBusy] = useState<"done" | "skip" | null>(null);
   const [teaching, setTeaching] = useState(false);

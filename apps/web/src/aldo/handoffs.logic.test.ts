@@ -15,6 +15,7 @@ import {
   aldoHandoffPhoneLink,
   aldoHandoffSiteLabel,
   aldoHandoffSiteLink,
+  aldoOnSameSite,
   aldoHandoffSkipLabel,
   aldoHandoffWantsCode,
 } from "./handoffs.logic";
@@ -136,8 +137,21 @@ describe("handoffs", () => {
     expect(aldoHandoffSiteLink(idCheck("javascript:alert(1)"))).toBeNull();
     expect(aldoHandoffSiteLink(idCheck(`https://fiverr.com/?s=${"x".repeat(1000)}`))).toBeNull();
     expect(aldoHandoffSiteLink({ site: null, phoneUrl: link })).toBeNull();
+    // Short as written, but long once its address is encoded: its QR code wouldn't fit.
+    expect(aldoHandoffSiteLink(idCheck(`https://fiverr.com/?s=${"😀".repeat(480)}`))).toBeNull();
     expect(aldoHandoffSiteLabel(idCheck(link))).toBe("Open on Fiverr");
     expect(aldoHandoffSiteLabel(handoff({ site: null }))).toBe("Open the site's page");
+  });
+
+  it("takes a host on the step's site, or one above or under it, never a neighbour on a shared suffix", () => {
+    expect(aldoOnSameSite("fiverr.com", "www.fiverr.com")).toBe(true);
+    expect(aldoOnSameSite("verify.fiverr.com", "www.fiverr.com")).toBe(true);
+    expect(aldoOnSameSite("google.com", "accounts.google.com")).toBe(true);
+    expect(aldoOnSameSite("evil.github.io", "alice.github.io")).toBe(false);
+    expect(aldoOnSameSite("evil.co.uk", "bbc.co.uk")).toBe(false);
+    expect(aldoOnSameSite("myaccount.google.com", "accounts.google.com")).toBe(false);
+    expect(aldoOnSameSite("fiverr.com.evil.example", "fiverr.com")).toBe(false);
+    expect(aldoOnSameSite("com", "fiverr.com")).toBe(false);
   });
 
   it("sends a phone to the site's own page for a camera step, else to the agent's browser in Aldo", () => {

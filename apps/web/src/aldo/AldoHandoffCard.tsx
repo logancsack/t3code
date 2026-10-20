@@ -138,9 +138,13 @@ function HandoffCard({ handoff }: { readonly handoff: AldoHandoff }) {
   );
 }
 
-/** A phone, in the hand: narrow and touch. Its own browser is where "Do it on my phone" would go. */
+/**
+ * A phone or tablet, in the hand: touch, with no mouse to hover. Its own
+ * browser is where "Do it on my phone" would go, held either way up (a phone
+ * on its side is as wide as a small laptop).
+ */
 export function useAldoOnPhone(): boolean {
-  return useMediaQuery({ max: "md", pointer: "coarse" });
+  return useMediaQuery("(pointer: coarse) and (hover: none)");
 }
 
 /**

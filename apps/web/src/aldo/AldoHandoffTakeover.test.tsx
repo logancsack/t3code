@@ -12,6 +12,9 @@ import { afterEach, expect, it, vi } from "vite-plus/test";
 
 const read = vi.hoisted(() => ({
   handoff: {} as Record<string, unknown>,
+  /** Aldo hasn't answered the read yet (a phone signed out gets sign-in instead). */
+  pending: false,
+  listeners: new Set<() => void>(),
 }));
 const signIn = {
   id: "h_test",
@@ -21,9 +24,19 @@ const signIn = {
   how: "Sign in to continue.",
   thread: { environmentId: "aldo-machine", threadId: "thread" },
 };
-vi.mock("./homeFeed", () => ({
-  useAldoHomeRead: () => ({ home: { handoffs: [read.handoff] }, supported: true }),
-}));
+vi.mock("./homeFeed", async () => {
+  const { useSyncExternalStore } = await import("react");
+  const subscribe = (listener: () => void) => {
+    read.listeners.add(listener);
+    return () => read.listeners.delete(listener);
+  };
+  return {
+    useAldoHomeRead: () =>
+      useSyncExternalStore(subscribe, () => read.pending)
+        ? { home: null, supported: undefined }
+        : { home: { handoffs: [read.handoff] }, supported: true },
+  };
+});
 vi.mock("./morph", () => ({
   aldoMorph: (update: () => void) => update(),
   aldoMorphSource: () => null,
@@ -40,6 +53,7 @@ afterEach(async () => {
     root?.unmount();
   });
   root = undefined;
+  read.pending = false;
   document.body.innerHTML = "";
   vi.unstubAllGlobals();
 });
@@ -83,6 +97,33 @@ it("reopens the same notification after closing its takeover, preserving other U
   await tap();
   expect(container.querySelector('[role="dialog"]')).not.toBeNull();
   expect(router.state.location.searchStr).toBe("?keep=yes");
+});
+
+it("keeps the link's handoff in the address until Aldo answers, so signing in first comes back to it", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  screen(true);
+  read.handoff = signIn;
+  read.pending = true;
+  const router = createRouter({
+    routeTree: createRootRoute({ component: AldoHandoffTakeoverHost }),
+    history: createMemoryHistory({ initialEntries: ["/aldo-machine/thread?handoff=h_test"] }),
+    defaultPendingMinMs: 0,
+  });
+  await router.load();
+  const container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+  await act(() => root!.render(<RouterProvider router={router} />));
+  expect(container.querySelector('[role="dialog"]')).not.toBeNull();
+  expect(router.state.location.searchStr).toBe("?handoff=h_test");
+
+  // Aldo answered: the address is the conversation's own again.
+  await act(() => {
+    read.pending = false;
+    for (const listener of read.listeners) listener();
+  });
+  expect(router.state.location.searchStr).toBe("");
+  expect(container.querySelector('[role="dialog"]')).not.toBeNull();
 });
 
 async function openAt(href: string) {

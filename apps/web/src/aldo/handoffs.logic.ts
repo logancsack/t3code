@@ -138,18 +138,42 @@ export function aldoHandoffParam(search: string): string | null {
 const PHONE_URL_CHARS = 1000;
 
 /**
+ * Whether a link's host is on the step's site: the same host (with or without
+ * "www."), or one under the other, as verify.fiverr.com is under
+ * www.fiverr.com's fiverr.com. Never two hosts that only share a suffix:
+ * alice.github.io and evil.github.io belong to different people.
+ */
+export function aldoOnSameSite(host: string, site: string): boolean {
+  const bare = (name: string) =>
+    name
+      .toLowerCase()
+      .replace(/\.$/, "")
+      .replace(/^www\./, "");
+  const [a, b] = [bare(host), bare(site)];
+  const under = (child: string, parent: string) =>
+    parent.includes(".") && child.endsWith(`.${parent}`);
+  return a.length > 0 && (a === b || under(a, b) || under(b, a));
+}
+
+/**
  * The site's own link for doing it on a phone (an ID check or selfie's
  * "continue on your phone"), when Aldo sent one: https, on the site the step
- * is on. Null otherwise, and from an older Aldo.
+ * is on, and short enough as sent for its QR code to scan off a screen. Null
+ * otherwise, and from an older Aldo.
  */
 export function aldoHandoffSiteLink(h: Pick<AldoHandoff, "phoneUrl" | "site">): string | null {
   const site = h.site?.trim().toLowerCase();
-  if (!h.phoneUrl || !site || h.phoneUrl.length > PHONE_URL_CHARS) return null;
+  if (!h.phoneUrl || !site) return null;
   try {
     const url = new URL(h.phoneUrl);
-    const host = url.hostname;
-    const onSite = host === site || domainLabels(host).join(".") === domainLabels(site).join(".");
-    return url.protocol === "https:" && !url.username && !url.password && onSite ? url.href : null;
+    const fits = url.href.length <= PHONE_URL_CHARS;
+    return fits &&
+      url.protocol === "https:" &&
+      !url.username &&
+      !url.password &&
+      aldoOnSameSite(url.hostname, site)
+      ? url.href
+      : null;
   } catch {
     return null;
   }
