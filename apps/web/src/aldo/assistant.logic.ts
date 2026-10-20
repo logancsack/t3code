@@ -196,8 +196,15 @@ function threadOf(outcome: unknown): AldoOpenTarget | null {
   return { environmentId: thread.environmentId, threadId: thread.threadId };
 }
 
+/** What a call returned, when it worked. */
+function resultOf(outcome: unknown): Record<string, unknown> | null {
+  const result = (outcome as { result?: unknown } | null)?.result;
+  return result && typeof result === "object" ? (result as Record<string, unknown>) : null;
+}
+
 export const ACTION_LABELS: Record<string, string> = {
   start_thread: "Started a thread",
+  start_plan: "Started a thread",
   message_thread: "Messaged a thread",
   answer_thread: "Answered a thread",
   approve_plan: "Approved a plan",
@@ -241,6 +248,7 @@ export const REVERSE_LABELS: Record<string, string> = {
 /** What Aldo couldn't do, when an action failed. */
 export const FAILED_LABELS: Record<string, string> = {
   start_thread: "Couldn't start a thread",
+  start_plan: "Couldn't start the plan",
   message_thread: "Couldn't message a thread",
   answer_thread: "Couldn't answer a thread",
   approve_plan: "Couldn't approve a plan",
@@ -322,8 +330,12 @@ export function actionFor(call: AldoFunctionCall, outcome: unknown): AldoAssista
   const label = labelFor(call);
   if (!label) return null;
   if ((outcome as { unasked?: unknown } | null)?.unasked === true) return null;
+  // A plan that had started already: its card says so.
+  if (call.name === "start_plan" && resultOf(outcome)?.alreadyStarted === true) return null;
   const error = (outcome as { error?: unknown } | null)?.error;
-  const title = typeof call.arguments.title === "string" ? call.arguments.title : null;
+  // A plan's thread is named by what started it.
+  const titled = call.name === "start_plan" ? resultOf(outcome)?.title : call.arguments.title;
+  const title = typeof titled === "string" ? titled : null;
   const href = hrefOf(outcome);
   // A preview opens the app, not its thread.
   const open =
@@ -352,13 +364,14 @@ export interface AldoStartWatch extends AldoOpenTarget {
 /** Long enough for a start to wait for room; after that the user hears of it from Aldo's overview. */
 const START_WATCH_MS = 30 * 60_000;
 
-/** The thread a start_thread call started, to follow. */
+/** The thread a start_thread (or start_plan) call started, to follow. */
 export function startWatchFor(
   call: AldoFunctionCall,
   outcome: unknown,
   now: number,
 ): AldoStartWatch | null {
-  if (call.name !== "start_thread") return null;
+  if (call.name !== "start_thread" && call.name !== "start_plan") return null;
+  if (resultOf(outcome)?.alreadyStarted === true) return null;
   const thread = threadOf(outcome);
   if (!thread) return null;
   const title = (outcome as { result?: { title?: unknown } }).result?.title;
@@ -481,6 +494,7 @@ export function screenNote(onScreen: AldoOnScreen | null): string {
 /** The actions about a thread's work, which show it live: not those that only rename, file or drop it. */
 const LIVE_CARD_TOOLS = new Set([
   "start_thread",
+  "start_plan",
   "message_thread",
   "answer_thread",
   "approve_plan",

@@ -165,6 +165,24 @@ describe("actionFor", () => {
     };
     expect(actionFor(snooze, { result: { thread } })?.label).toBe("Snoozed a thread");
   });
+
+  it("shows a plan started as the thread it started, by its title, once", () => {
+    const call = { callId: "c11", name: "start_plan", arguments: { plan: "pl_1" } };
+    expect(actionFor(call, { result: { title: "Launch videos", thread, plan: "pl_1" } })).toEqual({
+      id: "c11",
+      tool: "start_plan",
+      label: "Started a thread: Launch videos",
+      failed: false,
+      open: thread,
+    });
+    // Started already (a tap, or on its own): its card says so.
+    expect(
+      actionFor(call, { result: { alreadyStarted: true, title: "Launch videos", thread } }),
+    ).toBeNull();
+    expect(actionFor(call, { error: "No plan is waiting to start." })?.label).toBe(
+      "Couldn't start the plan",
+    );
+  });
 });
 
 describe("withoutImageNotes", () => {
@@ -237,6 +255,13 @@ describe("startWatchFor", () => {
       since: 1000,
       told: [],
     });
+  });
+
+  it("follows the thread a plan started, not one it found started already", () => {
+    const call = { callId: "c2", name: "start_plan", arguments: { plan: "pl_1" } };
+    expect(startWatchFor(call, started, 1000)?.threadId).toBe("t-1");
+    const again = { result: { ...started.result, alreadyStarted: true } };
+    expect(startWatchFor(call, again, 1000)).toBeNull();
   });
 
   it("follows nothing for other tools, or a start that was refused", () => {

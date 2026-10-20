@@ -3,13 +3,14 @@
 // at (AldoPresence.tsx), which opens what's working and coming up. Then the
 // conversation, with what happened to the user's agents where it happened
 // (feed.logic.ts, AldoFeed.tsx), and at its end what waits on the user, as
-// cards to answer in place (AldoUpNext.tsx), so nothing needs a view of its
-// own. Then the composer. Before anything's been said, the page is Aldo's
-// face, one question and the composer under it, which glides down to its
-// place with the first message (the same composer: what's typed and focus
-// stay). Scrolled up, what arrives waits behind "New from Aldo". A thread
-// tapped anywhere in it opens: the thread itself, where its agent is. Setup,
-// and what's wrong with it, come first.
+// cards to answer in place (a plan to start, AldoPlanCard.tsx; the rest,
+// AldoUpNext.tsx), so nothing needs a view of its own. Then the composer.
+// Before anything's been said, the page is Aldo's face, one question and the
+// composer under it, which glides down to its place with the first message
+// (the same composer: what's typed and focus stay). Scrolled up, what arrives
+// waits behind "New from Aldo". A thread tapped anywhere in it opens: the
+// thread itself, where its agent is. Setup, and what's wrong with it, come
+// first.
 
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { useNavigate, useRouter } from "@tanstack/react-router";
@@ -34,10 +35,13 @@ import { AldoOpenContext } from "./AldoLiveCard";
 import { AldoAvatar, AldoPresence } from "./AldoPresence";
 import { AldoUpNext } from "./AldoUpNext";
 import { settleAldoConversation, unsettleAldoConversation } from "./arrive";
+import { showAldoCards } from "./assistantApi";
 import { seedAldoComposer, useAldoAssistant } from "./assistantSession";
 import { type AldoHome, type AldoHomeTarget } from "./homeApi";
 import { aldoWaitingCount } from "./decisions.logic";
-import { feedEvents, withReceipts } from "./feed.logic";
+import { feedEvents, withPlans, withReceipts } from "./feed.logic";
+import { AldoPlanCard } from "./AldoPlanCard";
+import { openPlans, parseAldoPlans } from "./plans.logic";
 import { useAldoFirstViewHold } from "./firstView";
 import type { healthIssues } from "./home.logic";
 import { useAldoReceipts } from "./receipts";
@@ -62,6 +66,9 @@ function typing(element: HTMLElement | null): boolean {
     (element.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(element.tagName))
   );
 }
+
+/** The cards this page shows for what Aldo would otherwise say in words. */
+const CARDS: ReadonlyArray<string> = ["plan"];
 
 /** Within this of the end, the user is at the end. */
 const AT_END_PX = 48;
@@ -135,6 +142,8 @@ export function AldoConversationPage(props: {
 
   // What's there once the conversation has loaded is just there; what comes after arrives.
   useEffect(() => () => unsettleAldoConversation(), []);
+  // A plan Aldo proposes here is a card (AldoPlanCard.tsx); elsewhere, Aldo says it.
+  useEffect(() => showAldoCards(CARDS), []);
   useEffect(() => {
     // The user back at the page: Aldo notices, with a blink.
     const onVisible = () => {
@@ -177,17 +186,35 @@ export function AldoConversationPage(props: {
   const loading = !loaded && !said && !historySlow;
   useAldoFirstViewHold(loading);
   const receipts = useAldoReceipts((s) => s.receipts);
+  // Aldo's plans (a newer Aldo's): one that started where it started, the open ones at the end.
+  const plans = useMemo(() => parseAldoPlans(home?.plans), [home]);
   const feed = useMemo(
-    () => withReceipts(home ? feedEvents(home, { now, from: firstAt, here, told }) : [], receipts),
-    [home, now, firstAt, here, told, receipts],
+    () =>
+      withReceipts(
+        home
+          ? withPlans(feedEvents(home, { now, from: firstAt, here, told }), plans, {
+              now,
+              from: firstAt,
+            })
+          : [],
+        receipts,
+      ),
+    [home, now, firstAt, here, told, receipts, plans],
   );
+  const proposed = useMemo(() => openPlans(plans, firstAt), [plans, firstAt]);
   const waiting = useMemo(() => (home ? aldoWaitingCount(home, now) : 0), [home, now]);
   // Nothing read yet, and the read failed: that's said, not taken for nothing to show.
   const unread = home === null && props.error !== null;
   // Nothing said, nothing happened and nothing waiting: the page is one question.
   // An older Aldo without the home read shows its overview, which the empty page has no room for.
   const fresh =
-    loaded && !said && feed.length === 0 && waiting === 0 && !unread && props.supported !== false;
+    loaded &&
+    !said &&
+    feed.length === 0 &&
+    waiting === 0 &&
+    proposed.length === 0 &&
+    !unread &&
+    props.supported !== false;
   useEffect(() => {
     if (!loaded || !home) return;
     // Past the first paint of what was there: from now on, what appears arrives.
@@ -225,7 +252,19 @@ export function AldoConversationPage(props: {
   }, []);
 
   const conversation = (
-    <AldoConversation feed={feed} tail={home ? <AldoUpNext home={home} now={now} /> : null} />
+    <AldoConversation
+      feed={feed}
+      tail={
+        home ? (
+          <>
+            {proposed.map((plan) => (
+              <AldoPlanCard key={plan.id} plan={plan} />
+            ))}
+            <AldoUpNext home={home} now={now} />
+          </>
+        ) : null
+      }
+    />
   );
   const column = "mx-auto w-full max-w-[640px] px-4 sm:px-6";
   // The empty page's few things to say (the first run's starters say them instead);

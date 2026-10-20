@@ -171,6 +171,8 @@ function startFeed(): () => void {
     entries.filter((e) => e.kind === "action").length;
   const unsubscribeActions = useAldoAssistant.subscribe((state, previous) => {
     if (acted(state.entries) > acted(previous.entries)) void refreshAldoHome();
+    // A reply in: a plan it proposed is a card from the home read.
+    else if (previous.replying && !state.replying) void refreshAldoHome();
   });
   return () => {
     window.clearInterval(timer);

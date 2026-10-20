@@ -143,6 +143,21 @@ function followupNewsOf(value: unknown): AldoFollowupNews | null {
   };
 }
 
+/** The cards the page on screen shows in Aldo's conversation (AldoConversationPage.tsx: a plan). */
+let shownCards: ReadonlyArray<string> = [];
+
+/**
+ * Tells Aldo, with each written turn, which cards the page on screen shows:
+ * what it would show as one is said in words where none is (the summon bar's
+ * answer, say). Returns what puts it back.
+ */
+export function showAldoCards(cards: ReadonlyArray<string>): () => void {
+  shownCards = cards;
+  return () => {
+    if (shownCards === cards) shownCards = [];
+  };
+}
+
 export const aldoAssistant = {
   /** A realtime session, for an Aldo from before GPT-Live (startLive returned null). */
   startSession: async (): Promise<AldoVoiceSession> => {
@@ -225,6 +240,8 @@ export const aldoAssistant = {
         text,
         ...(images.length > 0 ? { images } : {}),
         ...(viewing ? { viewing } : {}),
+        // What the page shows as cards, which Aldo would otherwise say in words (an older Aldo ignores it).
+        ...(shownCards.length > 0 ? { cards: shownCards } : {}),
       }),
     });
     if (typeof body.reply !== "string" || typeof body.sessionId !== "string") return null;

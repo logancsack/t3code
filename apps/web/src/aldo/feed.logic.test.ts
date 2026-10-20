@@ -6,7 +6,8 @@ import {
   type AldoHomePullRequest,
 } from "./homeApi";
 import { liveCardIndexes } from "./assistant.logic";
-import { dedupeLiveCards, digestOf, feedEvents, shippedStatus } from "./feed.logic";
+import { dedupeLiveCards, digestOf, feedEvents, shippedStatus, withPlans } from "./feed.logic";
+import { parseAldoPlan, type AldoPlan } from "./plans.logic";
 
 const NOW = Date.parse("2026-10-15T12:00:00Z");
 const at = (minutesAgo: number) => new Date(NOW - minutesAgo * 60_000).toISOString();
@@ -263,5 +264,38 @@ describe("conversation thread cards", () => {
         { ...target, environmentId: "aldo-other" },
       ]),
     ).toMatchObject([{ live: true }]);
+  });
+});
+
+describe("plans", () => {
+  const plan = (overrides: Record<string, unknown>): AldoPlan =>
+    parseAldoPlan({
+      id: "plan-1",
+      goal: "Launch videos",
+      steps: ["Gather the brand kit", "Cut the videos"],
+      cost: "It costs nothing.",
+      minutes: 30,
+      status: "started",
+      proposedAt: at(20),
+      startedAt: at(18),
+      startedBy: "user",
+      thread: target,
+      ...overrides,
+    })!;
+
+  it("puts a plan that started where it started, among the rest", () => {
+    const events = withPlans(
+      feedEvents({ ...empty, actions: [action({ tool: "start_plan", at: at(17) })] }, quiet),
+      [plan({})],
+      quiet,
+    );
+    expect(events.map((e) => e.kind)).toEqual(["plan", "action"]);
+    expect(events[0]).toMatchObject({ key: "plan:plan-1", at: at(18) });
+  });
+
+  it("leaves open plans for the conversation's end, and what started before it began", () => {
+    const open = plan({ id: "open", status: "proposed", startedAt: null });
+    const before = plan({ id: "before", startedAt: at(90) });
+    expect(withPlans([], [open, before], { now: NOW, from: at(60) })).toEqual([]);
   });
 });
