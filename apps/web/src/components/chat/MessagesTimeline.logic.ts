@@ -591,6 +591,11 @@ interface TurnFold {
   anchorEntryId: string;
   createdAt: string;
   hiddenEntryIds: ReadonlySet<string>;
+  /**
+   * What a quiet thread's row for it is keyed by: its first run's first entry,
+   * as the row was keyed while the turn streamed, so what was open stays open.
+   */
+  summaryAnchor: string;
   label: string;
   /** The work it hides, for `WorkWords.worked`'s row. */
   entries: WorkLogEntry[];
@@ -709,7 +714,10 @@ function isQuietWorkEntry(entry: TimelineEntry): boolean {
       work.questionAnswer === undefined &&
       !workLogEntryHasGeneratedImage(work) &&
       (work.sourceActivityKind === "context-compaction" ||
-        (work.tone === "error" && !workEntrySignalsSevereFailure(work))))
+        // A tool the provider or the user refused stays in sight, as failures do.
+        (work.tone === "error" &&
+          work.sourceActivityKind !== "tool.denied" &&
+          !workEntrySignalsSevereFailure(work))))
   );
 }
 
@@ -912,6 +920,9 @@ function deriveTurnFolds(input: {
       anchorEntryId: firstHiddenEntry.id,
       createdAt: firstHiddenEntry.createdAt,
       hiddenEntryIds,
+      summaryAnchor:
+        group.entries.find((entry) => hiddenEntryIds.has(entry.id) && isQuietWorkEntry(entry))
+          ?.id ?? `turn:${turnId}`,
       label,
       entries: hiddenWork,
       // The work ends where the answer starts, unless some of it came after.
@@ -1138,7 +1149,7 @@ export function deriveMessagesTimelineRows(input: {
   const technicalEntryIds = new Set<string>();
   for (const fold of foldsByAnchorEntryId.values()) {
     const open = quiet
-      ? workSummaryOpen(workSummaryKeys(`turn:${fold.turnId}`)).logOpen
+      ? workSummaryOpen(workSummaryKeys(fold.summaryAnchor)).logOpen
       : (input.expandedTurnIds?.has(fold.turnId) ?? false);
     for (const entryId of fold.hiddenEntryIds) {
       if (!open) collapsedEntryIds.add(entryId);
@@ -1385,7 +1396,7 @@ export function deriveMessagesTimelineRows(input: {
 
     const anchoredTurnFold = foldsByAnchorEntryId.get(timelineEntry.id);
     if (anchoredTurnFold && quiet) {
-      const keys = workSummaryKeys(`turn:${anchoredTurnFold.turnId}`);
+      const keys = workSummaryKeys(anchoredTurnFold.summaryAnchor);
       nextRows.push({
         kind: "work-summary",
         id: keys.expandKey,

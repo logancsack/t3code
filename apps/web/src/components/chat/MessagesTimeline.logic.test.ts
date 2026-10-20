@@ -1823,7 +1823,7 @@ describe("deriveMessagesTimelineRows", () => {
       });
       expect(rows.map((row) => row.kind)).toEqual(["message", "work-summary", "message"]);
       expect(rows[1]).toMatchObject({
-        id: "work-summary:turn:turn-1",
+        id: "work-summary:open-site-entry",
         label: "Worked 31s · 2",
         expanded: false,
         logOpen: false,
@@ -1843,7 +1843,7 @@ describe("deriveMessagesTimelineRows", () => {
         timelineEntries: settledEntries,
         isWorking: false,
         activeTurnStartedAt: null,
-        expandedWorkGroupIds: new Set(["work-summary:turn:turn-1"]),
+        expandedWorkGroupIds: new Set(["work-summary:open-site-entry"]),
       });
       expect(opened.map((row) => row.kind)).toEqual(["message", "work-summary", "message"]);
       expect(opened[1]).toMatchObject({ expanded: true, logOpen: false });
@@ -1854,7 +1854,7 @@ describe("deriveMessagesTimelineRows", () => {
         timelineEntries: settledEntries,
         isWorking: false,
         activeTurnStartedAt: null,
-        expandedWorkGroupIds: new Set(["work-log:turn:turn-1"]),
+        expandedWorkGroupIds: new Set(["work-log:open-site-entry"]),
       });
       expect(logOnly.map((row) => row.kind)).toEqual(["message", "work-summary", "message"]);
 
@@ -1863,7 +1863,7 @@ describe("deriveMessagesTimelineRows", () => {
         timelineEntries: settledEntries,
         isWorking: false,
         activeTurnStartedAt: null,
-        expandedWorkGroupIds: new Set(["work-summary:turn:turn-1", "work-log:turn:turn-1"]),
+        expandedWorkGroupIds: new Set(["work-summary:open-site-entry", "work-log:open-site-entry"]),
       });
       expect(log[1]).toMatchObject({ kind: "work-summary", expanded: true, logOpen: true });
       // The steps and the interim message come back as they are, not folded again.
@@ -1873,6 +1873,60 @@ describe("deriveMessagesTimelineRows", () => {
         "make-sheet-entry",
         "answer-entry",
       ]);
+    });
+
+    it("keeps a row opened while the turn streamed open once it settles", () => {
+      const opened = new Set(["work-summary:open-site-entry", "work-log:open-site-entry"]);
+      const live = deriveMessagesTimelineRows({
+        ...base,
+        ...running("turn-1"),
+        timelineEntries: settledEntries.slice(0, 2),
+        expandedWorkGroupIds: opened,
+      });
+      expect(live.find((row) => row.kind === "work-summary")).toMatchObject({
+        id: "work-summary:open-site-entry",
+        expanded: true,
+        logOpen: true,
+      });
+      const settled = deriveMessagesTimelineRows({
+        ...base,
+        timelineEntries: settledEntries,
+        isWorking: false,
+        activeTurnStartedAt: null,
+        expandedWorkGroupIds: opened,
+      });
+      expect(settled.find((row) => row.kind === "work-summary")).toMatchObject({
+        id: "work-summary:open-site-entry",
+        expanded: true,
+        logOpen: true,
+      });
+    });
+
+    it("leaves a refused tool in sight rather than in the fold", () => {
+      const denied = {
+        id: "denied-entry",
+        kind: "work" as const,
+        createdAt: "2026-01-01T00:00:06Z",
+        entry: {
+          id: "denied",
+          createdAt: "2026-01-01T00:00:06Z",
+          turnId: "turn-1" as never,
+          label: "Tool denied",
+          tone: "error" as const,
+          sourceActivityKind: "tool.denied",
+        },
+      };
+      const rows = deriveMessagesTimelineRows({
+        ...base,
+        ...running("turn-1"),
+        timelineEntries: [settledEntries[0]!, settledEntries[1]!, denied],
+      });
+      expect(rows.some((row) => row.id === "denied-entry")).toBe(true);
+      const summary = rows.find((row) => row.kind === "work-summary") as Extract<
+        MessagesTimelineRow,
+        { kind: "work-summary" }
+      >;
+      expect(summary.entries.map((entry) => entry.id)).toEqual(["open-site"]);
     });
 
     it("says a stopped turn was stopped", () => {
@@ -1889,7 +1943,7 @@ describe("deriveMessagesTimelineRows", () => {
         activeTurnStartedAt: null,
       });
       expect(rows.find((row) => row.kind === "work-summary")).toMatchObject({
-        id: "work-summary:turn:turn-1",
+        id: "work-summary:open-site-entry",
         label: "Stopped 20s · 2",
       });
     });

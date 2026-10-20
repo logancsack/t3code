@@ -81,6 +81,12 @@ describe("OpenCode's steps", () => {
         false,
       ),
     ).toBeNull();
+    // Nor does one the provider or the user kept from running.
+    for (const status of ["declined", "stopped"] as const) {
+      expect(
+        aldoWorkWords.step(openCode("gig_lookup", {}, "", { toolLifecycleStatus: status }), true),
+      ).toBeNull();
+    }
   });
 });
 
@@ -114,5 +120,13 @@ describe("commands", () => {
       "Worked on a video",
     );
     expect(aldoWorkWords.step(ran("ffprobe clip.mp4"), false)).toBe("Checked a video");
+  });
+
+  it("doesn't call reading an image making it", () => {
+    expect(aldoWorkWords.step(ran("magick identify photo.png"), false)).toBe("Checked an image");
+    expect(aldoWorkWords.step(ran("identify -verbose photo.png"), true)).toBe("Checking an image");
+    expect(aldoWorkWords.step(ran("magick photo.png -strip clean.png"), false)).toBe(
+      "Made clean.png",
+    );
   });
 });

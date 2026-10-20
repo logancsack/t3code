@@ -661,6 +661,9 @@ function commandStep(command: string): AldoStep {
     }
     return ran("Fetched from the web", "Fetching from the web");
   }
+  // ImageMagick's identify only reads an image: its last file is what it looked at.
+  if (name === "identify" || (name === "magick" && /^identify(\s|$)/.test(rest)))
+    return step("read", "Checked an image", "Checking an image");
   if (name === "ffmpeg" || name === "magick" || name === "convert") {
     const output = mediaOutput(rest);
     const what = name === "ffmpeg" ? "a video" : "an image";
@@ -936,7 +939,10 @@ export function aldoWorkingWords(entries: ReadonlyArray<Entry>): string | null {
  */
 function unknownStep(entry: Entry, active: boolean): string | null {
   // Only a tool's: a warning's or a notice's words are the point of it.
-  if (entry.tone !== "tool" || entry.command || entry.toolLifecycleStatus === "failed") return null;
+  // Nor one that failed, or was declined or stopped: T3's label says so (as in workStep).
+  const status = entry.toolLifecycleStatus;
+  if (entry.tone !== "tool" || entry.command) return null;
+  if (status === "failed" || status === "declined" || status === "stopped") return null;
   // T3's own tools have words of their own.
   if (resolveWorkEntryToolPresentation(entry)) return null;
   const name = aldoToolCall(entry)?.tool ?? entry.toolTitle ?? "";
