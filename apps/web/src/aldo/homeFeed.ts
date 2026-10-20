@@ -142,6 +142,17 @@ function saveHolds(): void {
   }
 }
 
+// Another tab on this device answered: its accepted holds are this tab's too
+// (the ones still on their way there aren't saved, and aren't taken from here).
+if (typeof window !== "undefined") {
+  window.addEventListener("storage", (event) => {
+    if (event.key !== null && event.key !== HOLDS_KEY) return;
+    const mine = Object.entries(holds).filter(([, hold]) => hold.until === undefined);
+    holds = { ...loadHolds(), ...Object.fromEntries(mine) };
+    publish();
+  });
+}
+
 /** A read of the home as the page shows it: less what the user has answered since. */
 function shown(home: AldoHome): AldoHome {
   const applied = withHolds(home, holds, Date.now());
@@ -178,14 +189,26 @@ function takeHome(next: AldoHome | null): void {
   }
 }
 
-/** Reads the home again; `force: false` follows the directory, no closer than every few seconds. */
-export async function refreshAldoHome(force = true): Promise<void> {
+/** The read in progress, with the one that follows it if another was asked for meanwhile. */
+let reading: Promise<void> = Promise.resolve();
+
+/**
+ * Reads the home again; `force: false` follows the directory, no closer than
+ * every few seconds. Done once the read in progress, and any asked for while
+ * it ran, has been taken.
+ */
+export function refreshAldoHome(force = true): Promise<void> {
   if (inflight) {
     if (force) again = true;
-    return;
+    return reading;
   }
-  if (!force && Date.now() - fetchedAt < FOLLOW_DIRECTORY_MIN_MS) return;
+  if (!force && Date.now() - fetchedAt < FOLLOW_DIRECTORY_MIN_MS) return Promise.resolve();
   inflight = true;
+  reading = readHome();
+  return reading;
+}
+
+async function readHome(): Promise<void> {
   const revision = dismissalRevision;
   const startedAt = Date.now();
   fetchedAt = startedAt;
@@ -298,26 +321,30 @@ export function setAldoChatDecisionDismissed(id: string, dismissed: boolean): vo
 /**
  * The user sent an answer to what a conversation waits on: its card goes now,
  * and the conversation shows as carrying on, however long Aldo's read takes to
- * say so (its machine may have to wake to take the answer).
+ * say so (its machine may have to wake to take the answer). Gives what was
+ * answered, which keepAldoAnswer and releaseAldoAnswer need so a late result
+ * can't touch the hold of a question asked since; null if it waits on nothing
+ * to answer.
  */
-export function holdAldoAnswer(c: AldoHomeConversation): void {
+export function holdAldoAnswer(c: AldoHomeConversation): string | null {
   const ask = askOf(c);
-  if (ask === null) return;
+  if (ask === null) return null;
   holds = { ...holds, [c.ref]: { ask, at: new Date().toISOString() } };
   publish();
+  return ask;
 }
 
 /** Aldo has the answer: it stays held until a read has caught up (a few minutes at most), across a reload. */
-export function keepAldoAnswer(c: AldoHomeConversation): void {
+export function keepAldoAnswer(c: AldoHomeConversation, ask: string): void {
   const hold = holds[c.ref];
-  if (!hold) return;
+  if (hold?.ask !== ask) return;
   holds = { ...holds, [c.ref]: { ...hold, until: Date.now() + HOLD_MS } };
   saveHolds();
 }
 
 /** The answer wasn't taken: the card is back, as Aldo's read has it. */
-export function releaseAldoAnswer(c: AldoHomeConversation): void {
-  if (!holds[c.ref]) return;
+export function releaseAldoAnswer(c: AldoHomeConversation, ask: string): void {
+  if (holds[c.ref]?.ask !== ask) return;
   const { [c.ref]: _released, ...rest } = holds;
   holds = rest;
   saveHolds();
@@ -335,14 +362,14 @@ export async function sendAldoAnswer<T>(
   c: AldoHomeConversation,
   send: () => Promise<T>,
 ): Promise<T> {
-  holdAldoAnswer(c);
+  const ask = holdAldoAnswer(c);
   try {
     const sent = await send();
-    keepAldoAnswer(c);
+    if (ask !== null) keepAldoAnswer(c, ask);
     return sent;
   } catch (cause) {
     if (cause instanceof AldoApiError && cause.status === 409) await refreshAldoHome();
-    releaseAldoAnswer(c);
+    if (ask !== null) releaseAldoAnswer(c, ask);
     throw cause;
   }
 }
@@ -353,8 +380,8 @@ export function noteAldoAnswered(target: AldoHomeTarget): void {
     .getState()
     .home?.conversations.find((candidate) => sameTarget(target, candidate.thread));
   if (!c) return;
-  holdAldoAnswer(c);
-  keepAldoAnswer(c);
+  const ask = holdAldoAnswer(c);
+  if (ask !== null) keepAldoAnswer(c, ask);
 }
 
 function noteHiddenPrompts(home: AldoHome): void {

@@ -275,3 +275,53 @@ it("an answer the assistant sent for the user takes its card away the same way",
   await feed.refreshAldoHome();
   expect(shownConversation(feed)).toMatchObject({ state: "starting" });
 });
+
+const working = (): AldoHome => ({
+  ...home(),
+  conversations: home().conversations.map((c) => ({ ...c, state: "working" })),
+});
+
+it("a refusal saying the thread moved on waits for the read in flight, and the one queued behind it", async () => {
+  const feed = await import("./homeFeed");
+  const { AldoApiError } = await import("./api");
+  fetchHome.mockImplementation(async () => asking());
+  await feed.refreshAldoHome();
+  // A poll is on its way when the refusal comes back; it will still say the thread asks.
+  let finish!: (read: AldoHome) => void;
+  fetchHome.mockImplementationOnce(() => new Promise<AldoHome>((resolve) => (finish = resolve)));
+  void feed.refreshAldoHome();
+  fetchHome.mockImplementation(async () => working());
+  const sending = feed.sendAldoAnswer(shownConversation(feed), async () => {
+    throw new AldoApiError(409, "That question has already been answered.");
+  });
+  const seen: Array<string | undefined> = [];
+  const stop = feed.useAldoHomeFeed.subscribe(() =>
+    seen.push(shownConversation(feed).pending?.kind),
+  );
+  await Promise.resolve();
+  finish(asking());
+  await expect(sending).rejects.toThrow("already been answered");
+  stop();
+  expect(seen.every((kind) => kind === undefined)).toBe(true);
+  expect(shownConversation(feed).state).toBe("working");
+});
+
+it("a late result for an earlier question cannot keep or release the hold of the one asked since", async () => {
+  const feed = await import("./homeFeed");
+  fetchHome.mockImplementation(async () => asking("r1"));
+  await feed.refreshAldoHome();
+  let refuseFirst!: (cause: Error) => void;
+  const first = feed.sendAldoAnswer(
+    shownConversation(feed),
+    () => new Promise<string>((_, reject) => (refuseFirst = reject)),
+  );
+  // The thread asks something else, and the user answers that too.
+  fetchHome.mockImplementation(async () => asking("r2"));
+  await feed.refreshAldoHome();
+  expect(shownConversation(feed).pending).toMatchObject({ requestId: "r2" });
+  void feed.sendAldoAnswer(shownConversation(feed), () => new Promise<string>(() => {}));
+  expect(shownConversation(feed).pending).toBeUndefined();
+  refuseFirst(new Error("late"));
+  await expect(first).rejects.toThrow("late");
+  expect(shownConversation(feed).pending).toBeUndefined();
+});
