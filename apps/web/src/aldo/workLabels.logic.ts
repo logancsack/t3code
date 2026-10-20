@@ -2,12 +2,14 @@
 // Aldo projects): "Opened opentable.com", "Made Subscriptions.xlsx", "Shared
 // “Dinner options”", "Asked you to approve an email". Built from what each
 // agent records about a tool call (Codex: the MCP call's server, tool and
-// arguments; Claude: "tool: {input}"; OpenCode and Muse: the tool's name and
-// its output), and from the command or files a step ran or changed. A step
-// this doesn't recognize keeps T3's own label. The timeline asks through
+// arguments; Claude: "tool: {input}"; OpenCode: the tool's name, input and
+// output; Muse: the tool's name and its output), and from the command or files
+// a step ran or changed. A step this doesn't recognize keeps T3's own label,
+// unless that would be what the tool said back. The timeline asks through
 // `aldoWorkWords` (MessagesTimeline.logic.ts `WorkWords`); repository threads
 // keep T3's labels.
 
+import { resolveWorkEntryToolPresentation } from "@t3tools/client-runtime/work-log/presentation";
 import type { WorkWords } from "../components/chat/MessagesTimeline.logic";
 import type { WorkLogEntry } from "../session-logic";
 
@@ -194,9 +196,11 @@ function aldoToolCall(entry: Entry): ToolCall | null {
   const dataTool = text(data?.tool);
   if (dataTool) {
     const { server, tool } = splitName(dataTool, text(data?.server));
-    const raw = data?.arguments;
+    // OpenCode keeps them in its state.
+    const state = record(data?.state);
+    const raw = data?.arguments ?? state?.input;
     const args = typeof raw === "string" ? parseArgs(raw) : record(raw);
-    return { server, tool, args, output: resultText(data?.result) };
+    return { server, tool, args, output: resultText(data?.result) ?? text(state?.output) };
   }
   const detail = entry.detail?.trim() ?? "";
   const named = /^([A-Za-z][\w.-]*(?:__[\w-]+)*)\s*:\s*(\{[\s\S]*)$/.exec(detail);
@@ -239,7 +243,7 @@ export function aldoSharesByTurn(
     // Cheaply past every step that isn't one.
     const tool = record(entry.toolData)?.tool;
     if (
-      tool !== "share_file" &&
+      !(typeof tool === "string" && tool.endsWith("share_file")) &&
       !entry.detail?.includes("share_file") &&
       !entry.toolTitle?.includes("share_file")
     )
@@ -893,10 +897,27 @@ export function aldoWorkingWords(entries: ReadonlyArray<Entry>): string | null {
   return latest.doing;
 }
 
+/**
+ * A step this doesn't recognize, where T3's label would be what the tool said
+ * back (a page's text, a reply's JSON): the tool's name in words instead.
+ */
+function unknownStep(entry: Entry, active: boolean): string | null {
+  // Only a tool's: a warning's or a notice's words are the point of it.
+  if (entry.tone !== "tool" || entry.command || entry.toolLifecycleStatus === "failed") return null;
+  const detail = entry.detail?.trim();
+  if (!detail || (detail.length <= 80 && !detail.includes("\n"))) return null;
+  if (resolveWorkEntryToolPresentation(entry)) return null;
+  const name = aldoToolCall(entry)?.tool ?? entry.toolTitle ?? "";
+  const words = name.replace(/[_-]+/g, " ").trim().toLowerCase();
+  if (!words || words.length > 40 || /[^a-z0-9 ]/.test(words))
+    return active ? "Working" : "Worked on it";
+  return active ? `Using ${words}` : `Used ${words}`;
+}
+
 export const aldoWorkWords: WorkWords = {
   step: (entry, active) => {
     const found = aldoWorkStep(entry);
-    return found ? (active ? found.doing : found.done) : null;
+    return found ? (active ? found.doing : found.done) : unknownStep(entry, active);
   },
   recap: aldoWorkRecap,
   working: aldoWorkingWords,

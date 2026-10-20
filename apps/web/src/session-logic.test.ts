@@ -1144,6 +1144,27 @@ describe("deriveWorkLogEntries", () => {
     },
   );
 
+  it("keeps OpenCode's tool name and state, whatever kind of tool it is", () => {
+    const data = {
+      tool: "aldo_share_file",
+      state: {
+        status: "completed",
+        input: { path: "/vercel/work/general/plan.md", title: "Launch plan" },
+        output: 'Shared "Launch plan": https://aldo.computer/s/abc (anyone with the link)',
+      },
+    };
+    const [entry] = deriveWorkLogEntries([
+      makeActivity({
+        kind: "tool.completed",
+        summary: "aldo_share_file",
+        payload: { itemType: "dynamic_tool_call", status: "completed", data },
+      }),
+    ]);
+    expect(entry?.toolData).toBe(data);
+    // Not a T3 tool: its own label stays.
+    expect(resolveWorkEntryToolPresentation(entry!)).toBeNull();
+  });
+
   it("keeps MCP payloads while collapsing lifecycle updates", () => {
     const item = {
       type: "mcpToolCall",

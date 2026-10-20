@@ -814,12 +814,19 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   if (toolPresentation.toolSource) {
     entry.toolSource = toolPresentation.toolSource;
   }
-  if (itemType === "mcp_tool_call") {
-    const data = asRecord(payload?.data);
-    const toolData = typeof data?.toolName === "string" ? (data.item ?? data) : data?.item;
-    if (toolData !== undefined) {
-      entry.toolData = toolData;
-    }
+  const data = asRecord(payload?.data);
+  const mcpData =
+    itemType === "mcp_tool_call"
+      ? typeof data?.toolName === "string"
+        ? (data.item ?? data)
+        : data?.item
+      : undefined;
+  // OpenCode names its tool and keeps its state (input and output), whatever kind of tool it is.
+  const toolData =
+    mcpData ??
+    (typeof data?.tool === "string" && asRecord(asRecord(data.state)?.input) ? data : undefined);
+  if (toolData !== undefined) {
+    entry.toolData = toolData;
   }
   if (activity.kind === "tool.completed") {
     const generatedImage = extractGeneratedImage(payload);
