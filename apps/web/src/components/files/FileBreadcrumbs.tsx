@@ -94,7 +94,7 @@ function BreadcrumbMenuContent(props: {
   const children = useMemo(
     () =>
       fileBreadcrumbChildren(entries, props.directoryPath).filter(
-        (child) => !hideAgentFiles || !isAgentFilePath(child.label),
+        (child) => !hideAgentFiles || !isAgentFilePath(child.path),
       ),
     [entries, hideAgentFiles, props.directoryPath],
   );
