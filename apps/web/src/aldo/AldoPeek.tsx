@@ -22,7 +22,8 @@ import {
   type AldoHomeTarget,
 } from "./homeApi";
 import { refreshAldoHome } from "./homeFeed";
-import { modelName, needsYouKind, sameTarget } from "./home.logic";
+import { needsYouKind, sameTarget } from "./home.logic";
+import { useAldoModelName } from "./modelNames";
 import { AldoAvatar } from "./AldoPresence";
 import { AgentMarkdown, loadChatMarkdown } from "./AldoQuoted";
 import { CHIP, ICON_BUTTON, INSET, SECONDARY } from "./surface";
@@ -147,7 +148,7 @@ function ThreadPeek(props: {
 }) {
   const c = props.conversation;
   const kind = needsYouKind(c);
-  const model = modelName(c.model);
+  const model = useAldoModelName(c.thread.environmentId, c.model);
   const pullRequests = pullRequestsOf(props.home, c.thread, props.now);
   const ask = (words: string) => {
     sendText(words);

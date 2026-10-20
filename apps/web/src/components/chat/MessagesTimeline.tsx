@@ -1,13 +1,15 @@
 import { isAldoCloud } from "../../aldo/api";
 import { aldoStartingLabel } from "../../aldo/dispatch";
 import { AldoNotifyOffer } from "../../aldo/AldoNotifyOffer";
-import { useAldoKeptRepo } from "../../aldo/keptRepo";
+import { useAldoQuietWork } from "../../aldo/keptRepo";
 import { AldoMadeCards } from "../../aldo/AldoMadeCards";
 import { AldoNextChips } from "../../aldo/AldoNextChips";
 import { AldoStallLine, useAldoStall } from "../../aldo/AldoStall";
 import { splitAldoNext } from "../../aldo/next.logic";
 import type { AldoShare } from "../../aldo/made.logic";
-import { aldoSharesByTurn, aldoWorkWords } from "../../aldo/workLabels.logic";
+import { AldoWorkGroups } from "../../aldo/AldoWorkGroups";
+import { aldoSharesByTurn } from "../../aldo/workLabels.logic";
+import { aldoQuietWork } from "../../aldo/workRows.logic";
 import { APP_BASE_NAME } from "../../branding";
 import { ArrowUpIcon, ClockIcon } from "lucide-react";
 import { ReadOnlySourcePreview } from "../files/AttachmentFilePreview";
@@ -777,8 +779,9 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     });
   }, [latestTurn]);
 
-  // Threads on work that isn't software say what their steps did in words.
-  const workWords = useAldoKeptRepo(activeThreadEnvironmentId) ? aldoWorkWords : null;
+  // Threads on work that isn't software, and every thread in Simple mode, say
+  // what their steps did in words and fold the work between messages.
+  const workWords = useAldoQuietWork(activeThreadEnvironmentId) ? aldoQuietWork : null;
   // Kept as one value until a share changes, so rows don't re-render as the agent streams.
   const aldoSharesKey = useMemo(
     () =>
@@ -1775,6 +1778,7 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
                   row.kind === "work" ||
                   row.kind === "work-live" ||
                   row.kind === "work-toggle" ||
+                  row.kind === "work-summary" ||
                   row.kind === "activity-group" ||
                   row.kind === "thinking" ||
                   row.kind === "worktree-setup"
@@ -1804,6 +1808,7 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
       {row.kind === "activity-group" ? <ActivityGroupTimelineRow row={row} /> : null}
       {row.kind === "work-toggle" ? <WorkGroupToggleTimelineRow row={row} /> : null}
       {row.kind === "turn-fold" ? <TurnFoldTimelineRow row={row} /> : null}
+      {row.kind === "work-summary" ? <WorkSummaryTimelineRow row={row} /> : null}
       {row.kind === "context-compaction" ? <ContextCompactionTimelineRow row={row} /> : null}
       {row.kind === "message" && row.message.role === "user" ? <UserTimelineRow row={row} /> : null}
       {row.kind === "message" && row.message.role === "assistant" ? (
@@ -2450,6 +2455,51 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
   );
 }
 
+/**
+ * Quiet threads' work between messages: "Worked 6 min · 22 steps", or the step
+ * under way while it's live. It opens to the work's groups, whose technical
+ * log opens the timeline's own rows below it.
+ */
+function WorkSummaryTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "work-summary" }> }) {
+  const ctx = use(TimelineRowCtx);
+  const Icon = row.expanded ? ChevronDownIcon : ChevronRightIcon;
+  const latest = row.entries.at(-1);
+  const thinking = row.active && row.label === "Thinking";
+  return (
+    <div className="group/timeline-row relative">
+      <button
+        type="button"
+        aria-expanded={row.expanded}
+        data-scroll-anchor-ignore
+        onClick={() => ctx.onToggleWorkGroup(row.expandKey, row.id)}
+        className="flex min-h-6 max-w-full cursor-pointer select-none items-center gap-1 rounded-md text-left text-sm leading-relaxed text-muted-foreground tabular-nums transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
+      >
+        {row.active ? (
+          <LiveActivityRow
+            label={row.label}
+            iconName={thinking || !latest ? "brain" : workEntryIconName(latest)}
+            active
+            shimmer={thinking}
+          />
+        ) : (
+          <>
+            <Icon aria-hidden className="size-3.5 shrink-0" />
+            <span className="min-w-0 truncate px-0.5">{row.label}</span>
+          </>
+        )}
+      </button>
+      {row.expanded ? (
+        <AldoWorkGroups
+          entries={row.entries}
+          endedAt={row.endedAt}
+          logOpen={row.logOpen}
+          onToggleLog={() => ctx.onToggleWorkGroup(row.logKey, row.id)}
+        />
+      ) : null}
+    </div>
+  );
+}
+
 const NO_TURN_FILES: TurnDiffSummary["files"] = [];
 const NO_TURN_SHARES: ReadonlyArray<AldoShare> = [];
 
@@ -2505,6 +2555,7 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
             onUseArtifactTemplate={ctx.onUseArtifactTemplate}
             onRunShellCommand={ctx.onRunShellCommand}
             onImageExpand={ctx.onImageExpand}
+            mediaGrid={isAldoCloud}
           />
         </AssistantCitationSource>
         {aldoNext && aldoNext.next.length > 0 && isTurnAnswer ? (

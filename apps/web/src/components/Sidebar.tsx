@@ -235,6 +235,7 @@ import { ThreadSearchMatchExcerpt } from "./ThreadSearchMatch";
 import { makeWorkspaceFileDropHandlers } from "./chat/workspaceFileDrop";
 import { ProviderInstanceIcon } from "./chat/ProviderInstanceIcon";
 import { getTriggerDisplayModelLabel } from "./chat/providerIconUtils";
+import { unlistedModelLabel } from "../aldo/modelNames";
 import {
   deriveProviderEntriesByEnvironment,
   shouldShowInstanceBadge,
@@ -1314,7 +1315,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   );
   const modelLabel = selectedModel
     ? getTriggerDisplayModelLabel(selectedModel)
-    : thread.modelSelection.model;
+    : unlistedModelLabel(thread.modelSelection.model, providerEntry?.models);
 
   // The local environment is "this machine" and needs no marker; every other
   // one gets its machine glyph. With no local environment (the hosted app)
@@ -2194,7 +2195,7 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
   );
   const modelLabel = selectedModel
     ? getTriggerDisplayModelLabel(selectedModel)
-    : thread.modelSelection.model;
+    : unlistedModelLabel(thread.modelSelection.model, providerEntry?.models);
   const runningTerminalIds = useThreadRunningTerminalIds({
     environmentId: thread.environmentId,
     threadId: thread.id,

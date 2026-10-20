@@ -5,6 +5,7 @@
 import { type AldoHome, type AldoHomeConversation } from "./homeApi";
 import { aldoDecisions, putAway, type AldoDecision } from "./decisions.logic";
 import { boardFor } from "./home.logic";
+import { aldoSimpleByDefault, type AldoInterest } from "./onboarding.logic";
 
 /** The three places on simple mode's rail, each a view of the home screen. */
 export type AldoSimplePlace = "aldo" | "needs" | "library";
@@ -18,9 +19,18 @@ export const ALDO_SIMPLE_PLACES: ReadonlyArray<{
   { place: "library", label: "Library" },
 ];
 
-/** Kept per device as "on"; anything else (nothing kept, private mode) is off. */
-export function simpleModeFrom(stored: string | null | undefined): boolean {
-  return stored === "on";
+/**
+ * Kept per device as "on" or "off" once the user sets it. Until they have
+ * (nothing kept, or private mode), it follows the welcome's answer: on for
+ * one without code, off for code and for an account that was never asked.
+ */
+export function simpleModeFrom(
+  stored: string | null | undefined,
+  interests: ReadonlyArray<AldoInterest> | null = null,
+): boolean {
+  if (stored === "on") return true;
+  if (stored === "off") return false;
+  return aldoSimpleByDefault(interests);
 }
 
 /**

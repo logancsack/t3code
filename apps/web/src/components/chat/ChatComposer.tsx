@@ -1,6 +1,8 @@
 import { isAldoCloud } from "../../aldo/api";
 import { aldoRoutesModels } from "../../aldo/directory";
 import { useAldoMachineSettings } from "../../aldo/machineSettings";
+import { unlistedModelLabel } from "../../aldo/modelNames";
+import { modelDisplayName } from "../../aldo/modelNames.logic";
 import { hasExplicitComposerModelSelection } from "../../lib/chatThreadActions";
 import { DESKTOP_PASTE_AS_TEXT_EVENT } from "../../lib/desktopPasteAsText";
 import { isLocalEnvironmentDisabled } from "../../localEnvironment";
@@ -2173,7 +2175,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // Context window
   // ------------------------------------------------------------------
   const activeThreadModelDisplayName = useMemo(
-    () => resolveContextWindowModelDisplayName(activeThreadModelSelection, modelOptionsByInstance),
+    () =>
+      resolveContextWindowModelDisplayName(
+        activeThreadModelSelection,
+        modelOptionsByInstance,
+        unlistedModelLabel,
+      ),
     [activeThreadModelSelection, modelOptionsByInstance],
   );
   const reserveContextWindowMeter = shouldReserveContextWindowMeter({
@@ -5153,6 +5160,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const hiddenRestingBlockIds = restingBlockDefs
     .slice(restingBlockDefs.length - restingHiddenBlockCount)
     .map((def) => def.id);
+  const aldoDefaultSelection = aldoMachineSettings?.defaultModelSelection;
+  const aldoDefaultModelName = aldoDefaultSelection
+    ? modelDisplayName(
+        providerInstanceEntries,
+        aldoDefaultSelection.instanceId,
+        aldoDefaultSelection.model,
+      )
+    : null;
   const composerControls = showProviderUnavailable ? (
     <ComposerControl
       type="button"
@@ -5186,8 +5201,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         {...(isAldoCloud && aldoRoutesModels() && routeKind === "draft"
           ? {
               automaticOption: {
-                label: aldoMachineSettings?.defaultModelSelection
-                  ? `Use default: ${aldoMachineSettings.defaultModelSelection.model}`
+                label: aldoDefaultModelName
+                  ? `Use default: ${aldoDefaultModelName}`
                   : "Let Aldo decide",
                 selected: aldoDefaultModel,
                 onSelect: () => {
@@ -5206,8 +5221,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           : {})}
         {...(aldoDefaultModel
           ? {
-              triggerLabel: aldoMachineSettings?.defaultModelSelection
-                ? `Default: ${aldoMachineSettings.defaultModelSelection.model}`
+              triggerLabel: aldoDefaultModelName
+                ? `Default: ${aldoDefaultModelName}`
                 : "Let Aldo decide",
             }
           : {})}

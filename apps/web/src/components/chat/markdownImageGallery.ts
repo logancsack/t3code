@@ -7,7 +7,10 @@ import { resolveProtocolRelativeMediaUrl } from "../media/mediaContent";
 // Weak keys retain resolved media actions only while the rendered image is reachable.
 export const markdownImageItems = new WeakMap<Element, ExpandedImageItem>();
 
-/** Collect in document order only when opened, including PR sections separated by videos. */
+/**
+ * Collect in document order only when opened, including PR sections separated by videos. A
+ * video tile of a grid (aldo/AldoMediaGrid.tsx) registers itself to join them.
+ */
 export function markdownImageGallery(
   element: Element,
   selected: ExpandedImageItem,
@@ -15,7 +18,7 @@ export function markdownImageGallery(
   const scope = element.closest("[data-image-gallery]") ?? element.closest(".chat-markdown");
   const images: ExpandedImageItem[] = [];
   let index = -1;
-  for (const image of scope?.querySelectorAll("img") ?? []) {
+  for (const image of scope?.querySelectorAll("img, [data-markdown-gallery-video]") ?? []) {
     const registered = markdownImageItems.get(image);
     if (!registered) continue;
     const link = image.closest("a");

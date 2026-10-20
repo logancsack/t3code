@@ -349,7 +349,8 @@ interface OpenCodeSessionContext {
   readonly requestRelationRetries: Map<string, OpenCodeRequestRelationRetry>;
   readonly pendingPermissions: Map<string, PermissionRequest>;
   readonly pendingQuestions: Map<string, QuestionRequest>;
-  readonly messageRoleById: Map<string, "user" | "assistant">;
+  // A compaction's summary is an assistant message kept out of the timeline ("summary"), where it would read as the reply.
+  readonly messageRoleById: Map<string, "user" | "assistant" | "summary">;
   // OpenCode permits edits to completed parts. Keep text for snapshot comparison
   // until native removal or session teardown, but do not retain other part payloads.
   readonly textPartsByMessageId: Map<string, Map<string, OpenCodeTextPartState>>;
@@ -679,7 +680,7 @@ const isoFromEpochMs = (value: number) =>
 function messageRoleForPart(
   context: OpenCodeSessionContext,
   part: Pick<Part, "messageID" | "type">,
-): "assistant" | "user" | undefined {
+): "assistant" | "user" | "summary" | undefined {
   const known = context.messageRoleById.get(part.messageID);
   if (known) {
     return known;
@@ -2347,7 +2348,10 @@ export function makeOpenCodeAdapter(
               }
             }
           }
-          context.messageRoleById.set(event.properties.info.id, event.properties.info.role);
+          const info = event.properties.info;
+          const summary =
+            info.role === "assistant" && (info.summary === true || info.agent === "compaction");
+          context.messageRoleById.set(info.id, summary ? "summary" : info.role);
           if (event.properties.info.role === "user") {
             context.textPartsByMessageId.delete(event.properties.info.id);
           }
@@ -2383,9 +2387,9 @@ export function makeOpenCodeAdapter(
                 usage.unresolvedStepsByMessageId.delete(event.properties.info.id);
               }
             }
-            for (const part of context.textPartsByMessageId
-              .get(event.properties.info.id)
-              ?.values() ?? []) {
+            // Text that came before the message said it's a summary stays out too.
+            const retained = summary ? undefined : context.textPartsByMessageId.get(info.id);
+            for (const part of retained?.values() ?? []) {
               yield* emitAssistantTextDelta(context, part, turnId, event);
             }
           }

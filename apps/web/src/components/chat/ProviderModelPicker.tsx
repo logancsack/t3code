@@ -26,6 +26,7 @@ import {
 import { useComposerMenuProps } from "./composerEventScope";
 import { shortcutLabelForCommand } from "../../keybindings";
 import { Button } from "../ui/button";
+import { unlistedModelLabel } from "../../aldo/modelNames";
 
 export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   /**
@@ -89,7 +90,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
     ? getTriggerDisplayModelName(selectedModel)
     : props.model === ANTIGRAVITY_DEFAULT_MODEL
       ? "Choose model"
-      : props.model || "Choose model";
+      : unlistedModelLabel(props.model, selectedInstanceOptions) || "Choose model";
   const triggerLabel = selectedModel
     ? `${getTriggerDisplayModelLabel(selectedModel)}${selectedModel.isUnavailable ? " (Unavailable)" : ""}`
     : triggerTitle;
@@ -174,7 +175,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
       entry,
       label: model
         ? `${getTriggerDisplayModelName(model)}${model.isUnavailable ? " (Unavailable)" : ""}`
-        : selection.model,
+        : unlistedModelLabel(selection.model),
     };
   });
   const multipleLabel = selectedEntries

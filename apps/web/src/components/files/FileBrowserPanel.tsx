@@ -9,8 +9,10 @@ import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
 import { ChevronsDownUpIcon, ChevronsUpDownIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { isAgentFilePath, withoutAgentFiles } from "~/aldo/agentFiles.logic";
 import { AldoFilesEmpty } from "~/aldo/AldoEmptyStates";
 import { isAldoCloud } from "~/aldo/api";
+import { useAldoKeptRepo } from "~/aldo/keptRepo";
 import { Button } from "~/components/ui/button";
 import { InputGroup, InputGroupInput } from "~/components/ui/input-group";
 import { toastManager } from "~/components/ui/toast";
@@ -110,7 +112,7 @@ export default function FileBrowserPanel({
   const composerRef = useComposerHandleContext();
   const fileContextMenu = useFileContextMenu(environmentId);
   const {
-    entries: directoryEntries,
+    entries: listedEntries,
     load,
     refresh,
     ready,
@@ -120,10 +122,21 @@ export default function FileBrowserPanel({
   const [query, setQuery] = useState("");
   const [expandAll, setExpandAll] = useState(false);
   const pathSearch = useProjectPathSearch({ environmentId, cwd, query: query.slice(0, 256) }, 200);
+  // Aldo: a thread without a repository lists the user's files, not the agent's own
+  // (dotfiles, AGENTS.md, tool folders); one opened by name still opens.
+  const hideAgentFiles = useAldoKeptRepo(environmentId);
+  const directoryEntries = useMemo(
+    () => (hideAgentFiles ? withoutAgentFiles(listedEntries) : listedEntries),
+    [hideAgentFiles, listedEntries],
+  );
+  const searchEntries = useMemo(
+    () => (hideAgentFiles ? withoutAgentFiles(pathSearch.entries) : pathSearch.entries),
+    [hideAgentFiles, pathSearch.entries],
+  );
   const entries = useMemo(() => {
     const result = new Map(directoryEntries.map((entry) => [entry.path, entry]));
     if (query.trim() && !pathSearch.isPending) {
-      for (const entry of pathSearch.entries) {
+      for (const entry of searchEntries) {
         if (!result.has(entry.path)) result.set(entry.path, entry);
         const segments = entry.path.split("/");
         for (let index = 1; index < segments.length; index++) {
@@ -133,7 +146,7 @@ export default function FileBrowserPanel({
       }
     }
     return [...result.values()];
-  }, [directoryEntries, pathSearch.entries, pathSearch.isPending, query]);
+  }, [directoryEntries, searchEntries, pathSearch.isPending, query]);
   const entryKinds = useMemo(
     () => new Map(entries.map((entry) => [entry.path, entry.kind] as const)),
     [entries],
@@ -341,13 +354,16 @@ export default function FileBrowserPanel({
     void (async () => {
       const segments = selectedPath.split("/");
       for (let index = 0; index < segments.length && !controller.signal.aborted; index++) {
-        await load(segments.slice(0, index).join("/"));
+        const directory = segments.slice(0, index).join("/");
+        // Aldo: a folder the tree hides isn't read for a file opened inside it.
+        if (hideAgentFiles && directory && isAgentFilePath(directory)) break;
+        await load(directory);
       }
     })();
     return () => {
       controller.abort();
     };
-  }, [load, selectedPath]);
+  }, [hideAgentFiles, load, selectedPath]);
   const handleSearchValueChange = (value: string) => {
     setQuery(value);
     if (value.trim().length === 0) {
