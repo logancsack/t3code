@@ -105,6 +105,28 @@ describe("shouldShowFileExplorer", () => {
       }),
     ).toBe(false);
   });
+
+  it("gives a file the whole width of a phone-width panel", () => {
+    expect(
+      shouldShowFileExplorer({
+        relativePath: "docs/report.pdf",
+        explorerOpen: true,
+        attachmentOpen: false,
+        compact: true,
+      }),
+    ).toBe(false);
+  });
+
+  it("still shows the tree on a phone when no file is open", () => {
+    expect(
+      shouldShowFileExplorer({
+        relativePath: null,
+        explorerOpen: false,
+        attachmentOpen: false,
+        compact: true,
+      }),
+    ).toBe(true);
+  });
 });
 
 describe("setMarkdownTaskChecked", () => {

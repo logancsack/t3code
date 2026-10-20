@@ -13,11 +13,17 @@ export function shouldShowFileExplorer(input: {
   readonly relativePath: string | null;
   readonly explorerOpen: boolean;
   readonly attachmentOpen: boolean;
+  /**
+   * A phone-width panel has no room for the tree beside a file: the file gets
+   * the whole width, and the breadcrumbs still browse the workspace.
+   */
+  readonly compact?: boolean;
 }): boolean {
   if (input.attachmentOpen || (input.relativePath && isAbsolutePath(input.relativePath))) {
     return false;
   }
-  return input.explorerOpen || input.relativePath === null;
+  if (input.relativePath === null) return true;
+  return input.explorerOpen && input.compact !== true;
 }
 
 export function setMarkdownTaskChecked(
