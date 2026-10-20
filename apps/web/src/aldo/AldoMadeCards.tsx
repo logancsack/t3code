@@ -674,6 +674,7 @@ function Gallery(props: {
   readonly sources: ReadonlyArray<string | null>;
   readonly threadRef: ScopedThreadRef | null;
   readonly onExpand: ((preview: ExpandedImagePreview) => void) | undefined;
+  readonly onShowAll?: () => void;
 }) {
   const [showAll, setShowAll] = useState(false);
   const { items, sources, threadRef } = props;
@@ -738,32 +739,54 @@ function Gallery(props: {
           ))}
         </ul>
       </div>
-      <MoreButton hidden={items.length - shown.length} onClick={() => setShowAll(true)} />
+      <MoreButton
+        hidden={items.length - shown.length}
+        onClick={() => {
+          setShowAll(true);
+          props.onShowAll?.();
+        }}
+      />
     </section>
   );
 }
 
-/** The gallery's files through the thread's machine, all signed in one request. */
+/**
+ * The gallery's files through the thread's machine, the tiles in view signed
+ * in one request (the rest once "more" shows them; the viewer signs one it
+ * opens that isn't yet).
+ */
 function GalleryFromThread(props: {
   readonly items: ReadonlyArray<AldoResultItem>;
   readonly threadRef: ScopedThreadRef;
   readonly onExpand: ((preview: ExpandedImagePreview) => void) | undefined;
 }) {
   const { items, threadRef } = props;
+  const [showAll, setShowAll] = useState(false);
+  const inView = showAll ? items.length : SHOWN.gallery;
   const resources = useMemo(
     () =>
-      items.flatMap((item) =>
-        item.absolutePath ? [mediaResource(threadRef, item.absolutePath)] : [],
-      ),
-    [items, threadRef],
+      items
+        .slice(0, inView)
+        .flatMap((item) =>
+          item.absolutePath ? [mediaResource(threadRef, item.absolutePath)] : [],
+        ),
+    [items, inView, threadRef],
   );
   const signed = useAssetUrls(threadRef.environmentId, resources);
   const sources = useMemo(() => {
     let next = 0;
-    return items.map((item) => (item.absolutePath ? (signed[next++] ?? null) : item.url));
-  }, [items, signed]);
+    return items.map((item, index) =>
+      item.absolutePath ? (index < inView ? (signed[next++] ?? null) : null) : item.url,
+    );
+  }, [items, inView, signed]);
   return (
-    <Gallery items={items} sources={sources} threadRef={threadRef} onExpand={props.onExpand} />
+    <Gallery
+      items={items}
+      sources={sources}
+      threadRef={threadRef}
+      onExpand={props.onExpand}
+      onShowAll={() => setShowAll(true)}
+    />
   );
 }
 

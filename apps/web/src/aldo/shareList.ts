@@ -1,7 +1,8 @@
 // Aldo's list of shares (GET /api/shares), read once for every results block
 // in view (AldoMadeCards), so each can say who can open what it shows. Read
 // when a block first needs it, again when a block names a share the list
-// doesn't have yet (one just made), and when the window comes back into focus.
+// doesn't have yet (one just made), when the window comes back into focus, and
+// on its own a while after a read that failed.
 // A share still missing after a read that began once it was asked about had
 // its sharing stopped. The Library keeps its own read (AldoLibrary.tsx).
 
@@ -15,8 +16,9 @@ import { fetchAldoShares } from "./workspaceApi";
 const MOST_LISTED = 200;
 /** Focus reads it again at most this often. */
 const FOCUS_MS = 30_000;
-/** After a read that failed, another waits this long. */
+/** After a read that failed, another waits this long, twice as long after each one more, up to five minutes. */
 const RETRY_MS = 10_000;
+const MOST_RETRY_MS = 5 * 60_000;
 
 interface State {
   /** Undefined until read; null from an Aldo that doesn't list shares, or while it can't be read. */
@@ -29,6 +31,8 @@ interface State {
 
 let state: State = { shares: undefined, full: false, settled: new Set(), at: 0 };
 let reading = false;
+let failures = 0;
+let retry: ReturnType<typeof setTimeout> | null = null;
 const asked = new Set<string>();
 const listeners = new Set<() => void>();
 
@@ -48,9 +52,19 @@ function read() {
       state = { shares: byId, full: (shares?.length ?? 0) >= MOST_LISTED, settled, at: Date.now() };
       // Asked about while this read was on its way, and not in it: look once more.
       again = byId !== null && [...asked].some((id) => !settled.has(id) && !byId.has(id));
+      failures = 0;
     })
     .catch(() => {
       state = { ...state, at: Date.now() };
+      // Tried again on its own while a block is in view; focus or a new share doesn't have to come first.
+      failures += 1;
+      retry ??= setTimeout(
+        () => {
+          retry = null;
+          if (listeners.size > 0) read();
+        },
+        Math.min(RETRY_MS * 2 ** (failures - 1), MOST_RETRY_MS),
+      );
     })
     .finally(() => {
       reading = false;

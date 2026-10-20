@@ -200,6 +200,8 @@ export interface AldoResultItem {
   readonly absolutePath: string | null;
   /** Its share's link, while that works. */
   readonly url: string | null;
+  /** Its share's id, kept after its sharing stopped: a screenshot linked to it is still its. */
+  readonly shareId: string | null;
   /** Who can open it; null where nothing says. */
   readonly audience: AldoAudience | null;
 }
@@ -276,6 +278,7 @@ function resultItem(
     path: item.path,
     absolutePath: absolutePathOf(item, workspaceRoot),
     url: gone ? null : (item.url ?? null),
+    shareId: id,
     audience,
   };
 }
@@ -314,9 +317,10 @@ export function aldoResults(input: {
   const looseShots: AldoLiveShot[] = [];
   for (const shot of input.shots) {
     const id = aldoShareIdOf(shot.url);
-    const page = id ? items.find((item) => item.url && aldoShareIdOf(item.url) === id) : undefined;
+    const page = id ? items.find((item) => item.shareId === id) : undefined;
     if (page && !shotOf.has(page.key)) shotOf.set(page.key, shot);
-    else looseShots.push(shot);
+    // A link whose sharing was stopped isn't offered.
+    else if (!id || input.listed(id) !== "gone") looseShots.push(shot);
   }
   // The answer's own video, playing in it, is the main thing when there's one.
   const main = input.shown.plays

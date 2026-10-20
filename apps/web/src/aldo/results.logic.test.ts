@@ -241,6 +241,26 @@ describe("who can open it", () => {
     const plan = laid.documents[0];
     expect([plan?.name, plan?.audience, plan?.url]).toEqual(["plan.md", "private", null]);
   });
+
+  it("keeps a stopped page's screenshot on it, and offers no stopped link", () => {
+    const answer = [
+      "Here it is.",
+      "",
+      "[![Old page](shots/old.png)](https://aldo.computer/s/gone1)",
+      "",
+      "[![Another](shots/other.png)](https://aldo.computer/s/gone3)",
+    ].join("\n");
+    const shares: AldoShare[] = [
+      { path: null, title: "Old page", url: "https://aldo.computer/s/gone1" },
+    ];
+    const laid = results({ shares, answer, listed: () => "gone" });
+    const links = [laid.main, ...laid.links.map((link) => link.item)].filter(Boolean);
+    expect(links.map((item) => [item?.name, item?.url, item?.audience])).toEqual([
+      ["Old page", null, "stopped"],
+    ]);
+    expect(laid.links.some((link) => link.url !== null)).toBe(false);
+    expect(laid.mainImage ?? laid.links[0]?.image).toBe("shots/old.png");
+  });
 });
 
 describe("aldoShareOf", () => {
