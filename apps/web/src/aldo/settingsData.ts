@@ -7,6 +7,7 @@ import {
   fetchAldoApps,
   fetchAldoHeadsUps,
   fetchAldoIntegrations,
+  fetchAldoMomentEmails,
   fetchAldoPhone,
   listAldoRepositories,
 } from "./accountApi";
@@ -29,6 +30,7 @@ export const settingsMemory = createSettingsResource(aldoMemory.list);
 export const settingsSkills = createSettingsResource(aldoSkills.list);
 export const settingsApprovalRules = createSettingsResource(fetchAldoApprovalRules);
 export const settingsHeadsUps = createSettingsResource(fetchAldoHeadsUps);
+export const settingsMomentEmails = createSettingsResource(fetchAldoMomentEmails);
 export const settingsPrebuilds = createSettingsResource(aldoPrebuilds.list);
 export const settingsRepositories = createSettingsResource(listAldoRepositories);
 
@@ -48,6 +50,7 @@ export function prefetchSettingsData() {
     settingsSkills,
     settingsApprovalRules,
     settingsHeadsUps,
+    settingsMomentEmails,
     settingsPrebuilds,
   ]) {
     void resource.load().catch(() => undefined);

@@ -1,8 +1,8 @@
-import { settingsHeadsUps, settingsIntegrations } from "./settingsData";
+import { settingsHeadsUps, settingsIntegrations, settingsMomentEmails } from "./settingsData";
 import { createSettingsResource, useSettingsResource } from "./settingsResource";
 import { Link } from "@tanstack/react-router";
-import { BellIcon, SparklesIcon } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { BellIcon, MailIcon, SparklesIcon } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import {
   SettingsPageContainer,
@@ -14,7 +14,7 @@ import { Button } from "../components/ui/button";
 import { Switch } from "../components/ui/switch";
 import { toastManager } from "../components/ui/toast";
 import { playAldoChime, setAldoSound, useAldoSound } from "./chime";
-import { setAldoHeadsUps } from "./accountApi";
+import { setAldoHeadsUps, setAldoMomentEmails } from "./accountApi";
 import { AldoNotificationTestNote, useAldoNotificationTest } from "./AldoNotificationTest";
 import {
   aldoNotificationsStatus,
@@ -23,6 +23,12 @@ import {
   enableAldoNotifications,
 } from "./notifications";
 import { aldoAllowHint, aldoTestPending } from "./notifications.logic";
+import {
+  ALDO_MOMENT_EMAIL_ROWS,
+  momentEmailsIntro,
+  withMomentEmail,
+  type AldoMomentEmailKind,
+} from "./momentEmails.logic";
 
 const DESCRIPTION =
   "Get a notification on this device when a thread finishes or needs you, even with Aldo closed.";
@@ -241,6 +247,88 @@ function HeadsUpsRow(props: { readonly connected: boolean | null }) {
   );
 }
 
+/**
+ * The emails Aldo sends when a thread is done, needs the user or stops while
+ * they're away, a switch for each kind. Shown once Aldo says it sends them: an
+ * Aldo without them answers 404, and the section stays hidden.
+ */
+function MomentEmailsSection() {
+  const cached = useSettingsResource(settingsMomentEmails);
+  const settings = cached.data;
+  const [saving, setSaving] = useState<ReadonlySet<AldoMomentEmailKind>>(new Set());
+  if (settings === null || (settings === undefined && !cached.error)) return null;
+  const section = (children: ReactNode) => (
+    <SettingsSection title="By email" icon={<MailIcon className="size-4" />}>
+      {children}
+    </SettingsSection>
+  );
+  if (!settings) {
+    return section(
+      <SettingsRow
+        id="aldo-moment-emails"
+        title="Emails when you’re away"
+        description={`Couldn’t read which ones you get: ${cached.error}`}
+        control={
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => void settingsMomentEmails.refresh().catch(() => undefined)}
+          >
+            Try again
+          </Button>
+        }
+      />,
+    );
+  }
+  const change = (kind: AldoMomentEmailKind, on: boolean) => {
+    setSaving((before) => new Set(before).add(kind));
+    settingsMomentEmails
+      .mutate(
+        (before) => (before ? withMomentEmail(before, kind, on) : before),
+        () => setAldoMomentEmails(kind, on),
+      )
+      .catch((cause: unknown) =>
+        toastManager.add({
+          type: "error",
+          title: "Couldn’t change that",
+          description: messageOf(cause),
+        }),
+      )
+      .finally(() =>
+        setSaving((before) => {
+          const after = new Set(before);
+          after.delete(kind);
+          return after;
+        }),
+      );
+  };
+  return section(
+    <>
+      <SettingsRow
+        id="aldo-moment-emails"
+        title="Emails when you’re away"
+        description={momentEmailsIntro(settings.to)}
+      />
+      {ALDO_MOMENT_EMAIL_ROWS.map((row) => (
+        <SettingsRow
+          key={row.kind}
+          id={`aldo-moment-emails-${row.kind}`}
+          title={row.title}
+          description={row.description}
+          control={
+            <Switch
+              checked={settings[row.kind]}
+              disabled={saving.has(row.kind)}
+              onCheckedChange={(checked) => change(row.kind, checked)}
+              aria-label={`Email ${row.title.toLowerCase()}`}
+            />
+          }
+        />
+      ))}
+    </>,
+  );
+}
+
 /** Whether an account with mail or a calendar is connected: null until it's read. */
 function useMailConnected(): boolean | null {
   const { data } = useSettingsResource(settingsIntegrations);
@@ -255,12 +343,13 @@ function useMailConnected(): boolean | null {
       );
 }
 
-/** Settings → Notifications: what reaches the user, on this device and from Aldo. */
+/** Settings → Notifications: what reaches the user, on this device, by email and from Aldo. */
 export function AldoNotificationsPage() {
   const connected = useMailConnected();
   return (
     <SettingsPageContainer>
       <AldoNotificationSettings />
+      <MomentEmailsSection />
       <SettingsSection title="From Aldo" icon={<SparklesIcon className="size-4" />}>
         <HeadsUpsRow connected={connected} />
       </SettingsSection>

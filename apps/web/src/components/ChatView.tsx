@@ -254,6 +254,7 @@ import {
   Minimize2Icon,
   PaperclipIcon,
   WifiOffIcon,
+  XIcon,
 } from "lucide-react";
 import { cn, randomHex, randomUUID } from "~/lib/utils";
 import { stackedThreadToast, toastManager } from "./ui/toast";
@@ -10413,6 +10414,7 @@ export default function ChatView(props: ChatViewProps) {
             onUpdateProjectScript={updateProjectScript}
             onDeleteProjectScript={deleteProjectScript}
             onSendAldoMessage={isAldoCloud && isServerThread ? onSendAldoMove : undefined}
+            panelToggleCount={aldoDeveloperTools ? 2 : 1}
           />
         </WorkspacePageHeader>
 
@@ -11066,9 +11068,20 @@ export default function ChatView(props: ChatViewProps) {
             // right inset plus mr-px), so the cluster does not creep when
             // the sheet opens.
             layoutControls={
-              rightPanelOpen ? (
+              !rightPanelOpen ? null : isMobileViewport ? (
+                // Full screen on a phone, so the way back is a plain close.
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  className="mr-px"
+                  aria-label="Close panel"
+                  onClick={closePreviewPanel}
+                >
+                  <XIcon className="size-4" />
+                </Button>
+              ) : (
                 <div className="mr-px flex items-center">{panelToggleControls}</div>
-              ) : null
+              )
             }
             surfaces={renderedRightPanelSurfaces}
             environmentId={activeThreadRef.environmentId}

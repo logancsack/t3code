@@ -167,6 +167,10 @@ export interface AldoPolicy {
   readonly mediaRouting?: "auto" | "ask";
   /** A kind of media's tool, in the user's words; null clears the user's own for a workspace. */
   readonly mediaDefaults?: Readonly<Record<string, string | null>>;
+  /** Accounts in your name: sign up when asked (the default), ask first, or never and write the steps. */
+  readonly accounts?: "when_asked" | "ask_first" | "never";
+  /** Publishing for you: publish when asked (the default), or show each one first. */
+  readonly publishing?: "when_asked" | "show_first";
 }
 
 /**
@@ -181,6 +185,8 @@ export interface AldoPolicyView {
     readonly policy: AldoPolicy;
   }>;
   readonly repos: ReadonlyArray<string>;
+  /** The rules this Aldo takes (its policy's keys); an older one doesn't say, and has none of the newer rules. */
+  readonly rules?: ReadonlyArray<string>;
 }
 
 /** A rule to clear (["merge"]), or one entry of a rule kept by repository or kind of media. */
@@ -198,6 +204,12 @@ function isPolicyView(value: unknown): value is AldoPolicyView {
   );
 }
 
+/** Which rules Aldo takes is said only by a list of their names; anything else says nothing. */
+function withRules(view: AldoPolicyView): AldoPolicyView {
+  const { rules, ...rest } = view;
+  return Array.isArray(rules) && rules.every((rule) => typeof rule === "string") ? view : rest;
+}
+
 /** The user's rules for agents, or null from an Aldo that doesn't let them be edited here. */
 export async function fetchAldoPolicy(): Promise<AldoPolicyView | null> {
   const body = await api<unknown>("/api/policy").catch((error: unknown) => {
@@ -205,7 +217,7 @@ export async function fetchAldoPolicy(): Promise<AldoPolicyView | null> {
     throw error;
   });
   // An older Aldo may answer with the web client's page instead of a 404.
-  return isPolicyView(body) ? body : null;
+  return isPolicyView(body) ? withRules(body) : null;
 }
 
 /**
@@ -219,7 +231,7 @@ export async function editAldoPolicy(edit: {
 }): Promise<AldoPolicyView> {
   const body = await api<unknown>("/api/policy", { method: "PATCH", body: JSON.stringify(edit) });
   if (!isPolicyView(body)) throw new Error("Aldo didn't say what the rules are now.");
-  return body;
+  return withRules(body);
 }
 
 // ---------------------------------------------------------------------------
@@ -446,6 +458,11 @@ export interface AldoHandoff {
   readonly url: string | null;
   /** How long it usually takes, when the agent knew. */
   readonly seconds: number | null;
+  /**
+   * The site's own link to do it on a phone (an ID check or selfie's "continue
+   * on your phone"), when the agent gave one; an older Aldo sends none.
+   */
+  readonly phoneUrl?: string | null;
   readonly thread: AldoHomeTarget;
   readonly threadTitle: string;
   readonly createdAt: string;

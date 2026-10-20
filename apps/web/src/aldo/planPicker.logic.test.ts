@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  checkoutFailureWords,
   checkoutReturnOf,
   confirmAgainIn,
   extraUsageLabel,
@@ -11,6 +12,7 @@ import {
   pickerLines,
   resumedOf,
   saidAlready,
+  sendingWords,
   withoutCheckoutReturn,
   type AldoKept,
 } from "./planPicker.logic";
@@ -292,5 +294,67 @@ describe("what the picker shows", () => {
     expect(extraUsageOffer({ extraUsage: { limitCents: 0 } })).toBeNull();
     expect(extraUsageOffer({ extraUsage: true })).toBeNull();
     expect(extraUsageLabel(2000).hint).toContain("billed up to $20 a month");
+  });
+});
+
+describe("sendingWords", () => {
+  const kept: AldoKept = {
+    pending: { id: "pr_abc123def456", text: "Make a deck", at: "2026-10-20T10:00:00Z", images: 0 },
+    needsPlan: null,
+  };
+  const wordsOn = (search: string) => {
+    const step = keptStep(checkoutReturnOf(search), kept);
+    return step.kind === "resume" ? sendingWords(step.checkoutSession) : null;
+  };
+
+  it("confirms the plan only back from Checkout", () => {
+    expect(wordsOn("?resume=pr_abc123def456&session_id=cs_test_a1")).toBe("Confirming your plan");
+  });
+
+  it("says the request is going when no Checkout came back (a plan on already)", () => {
+    expect(wordsOn("?resume=pr_abc123def456")).toBe("Sending your request");
+    expect(wordsOn("?resume=pr_abc123def456&session_id=nope")).toBe("Sending your request");
+    expect(wordsOn("")).toBe("Sending your request");
+  });
+});
+
+describe("checkoutFailureWords", () => {
+  const failed =
+    "Aldo couldn’t open Checkout just now, so nothing was charged. Your request is saved. Try again in a moment.";
+
+  it("keeps a payment provider's raw error out, from an Aldo that failed", () => {
+    const stripe = "No such price: 'price_1Q2w3E4r5T6y'";
+    expect(checkoutFailureWords({ status: 500, message: stripe, body: { error: stripe } })).toBe(
+      failed,
+    );
+    // A gateway's page: no words from Aldo at all.
+    expect(checkoutFailureWords({ status: 504, message: "Request failed (504)", body: {} })).toBe(
+      failed,
+    );
+    // A newer Aldo says its failure in words for people too, but the picker's say the request is saved.
+    const said =
+      "Aldo couldn’t open Checkout just now, so nothing was charged. Try again in a moment.";
+    expect(checkoutFailureWords({ status: 502, message: said, body: { error: said } })).toBe(
+      failed,
+    );
+  });
+
+  it("says Aldo's own words for a refusal", () => {
+    const verify = "Verify your email address to continue.";
+    expect(checkoutFailureWords({ status: 403, message: verify, body: { error: verify } })).toBe(
+      verify,
+    );
+    expect(
+      checkoutFailureWords({ status: 403, message: "Request failed (403)", body: { error: " " } }),
+    ).toBe(failed);
+    expect(
+      checkoutFailureWords({ status: 401, message: "Your Aldo session ended. Sign in again." }),
+    ).toBe("Your Aldo session ended. Sign in again.");
+  });
+
+  it("says when Aldo couldn't be reached", () => {
+    expect(checkoutFailureWords(null)).toBe(
+      "Aldo couldn’t be reached, so Checkout didn’t open and nothing was charged. Your request is saved. Check your connection and try again.",
+    );
   });
 });

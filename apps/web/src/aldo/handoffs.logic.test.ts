@@ -2,7 +2,9 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { type AldoHandoff } from "./homeApi";
 import {
+  aldoHandoffButtons,
   aldoHandoffCode,
+  aldoHandoffConversationPath,
   aldoHandoffDuration,
   aldoHandoffElsewhere,
   aldoHandoffEyebrow,
@@ -10,6 +12,10 @@ import {
   aldoHandoffHow,
   aldoHandoffOn,
   aldoHandoffParam,
+  aldoHandoffPhoneLink,
+  aldoHandoffSiteLabel,
+  aldoHandoffSiteLink,
+  aldoOnSameSite,
   aldoHandoffSkipLabel,
   aldoHandoffWantsCode,
 } from "./handoffs.logic";
@@ -108,5 +114,102 @@ describe("handoffs", () => {
     expect(aldoHandoffParam("?handoff=ho_1")).toBe("ho_1");
     expect(aldoHandoffParam("?other=1")).toBeNull();
     expect(aldoHandoffParam("")).toBeNull();
+  });
+
+  it("offers the site's own phone link only when it's https on the step's site", () => {
+    const link = "https://verify.fiverr.com/continue?session=7f3a&step=selfie";
+    const idCheck = (phoneUrl: string | null | undefined) =>
+      handoff({
+        kind: "identity",
+        site: "fiverr.com",
+        reason: "Fiverr needs an ID check",
+        ...(phoneUrl === undefined ? {} : { phoneUrl }),
+      });
+    expect(aldoHandoffSiteLink(idCheck(link))).toBe(link);
+    expect(aldoHandoffSiteLink(idCheck("https://fiverr.com/m/1"))).toBe("https://fiverr.com/m/1");
+    // An older Aldo sends none.
+    expect(aldoHandoffSiteLink(idCheck(undefined))).toBeNull();
+    expect(aldoHandoffSiteLink(idCheck(null))).toBeNull();
+    expect(aldoHandoffSiteLink(idCheck("http://verify.fiverr.com/continue"))).toBeNull();
+    expect(aldoHandoffSiteLink(idCheck("https://evil.example/continue"))).toBeNull();
+    expect(aldoHandoffSiteLink(idCheck("https://fiverr.com.evil.example/continue"))).toBeNull();
+    expect(aldoHandoffSiteLink(idCheck("https://a:b@verify.fiverr.com/continue"))).toBeNull();
+    expect(aldoHandoffSiteLink(idCheck("javascript:alert(1)"))).toBeNull();
+    expect(aldoHandoffSiteLink(idCheck(`https://fiverr.com/?s=${"x".repeat(1000)}`))).toBeNull();
+    expect(aldoHandoffSiteLink({ site: null, phoneUrl: link })).toBeNull();
+    // Short as written, but long once its address is encoded: its QR code wouldn't fit.
+    expect(aldoHandoffSiteLink(idCheck(`https://fiverr.com/?s=${"😀".repeat(480)}`))).toBeNull();
+    expect(aldoHandoffSiteLabel(idCheck(link))).toBe("Open on Fiverr");
+    expect(aldoHandoffSiteLabel(handoff({ site: null }))).toBe("Open the site's page");
+  });
+
+  it("takes a host on the step's site, or one above or under it, never a neighbour on a shared suffix", () => {
+    expect(aldoOnSameSite("fiverr.com", "www.fiverr.com")).toBe(true);
+    expect(aldoOnSameSite("verify.fiverr.com", "www.fiverr.com")).toBe(true);
+    expect(aldoOnSameSite("google.com", "accounts.google.com")).toBe(true);
+    expect(aldoOnSameSite("evil.github.io", "alice.github.io")).toBe(false);
+    expect(aldoOnSameSite("evil.co.uk", "bbc.co.uk")).toBe(false);
+    expect(aldoOnSameSite("myaccount.google.com", "accounts.google.com")).toBe(false);
+    expect(aldoOnSameSite("fiverr.com.evil.example", "fiverr.com")).toBe(false);
+    expect(aldoOnSameSite("com", "fiverr.com")).toBe(false);
+  });
+
+  it("sends a phone to the site's own page for a camera step, else to the agent's browser in Aldo", () => {
+    const id = handoff({ id: "ho_9", thread: { environmentId: "aldo-t1", threadId: "c-1" } });
+    expect(aldoHandoffConversationPath(id)).toBe("/aldo-t1/c-1?handoff=ho_9");
+    expect(aldoHandoffPhoneLink(id, "https://aldo.computer")).toEqual({
+      href: "https://aldo.computer/aldo-t1/c-1?handoff=ho_9",
+      onSite: false,
+    });
+    const camera = handoff({
+      kind: "identity",
+      site: "fiverr.com",
+      phoneUrl: "https://www.fiverr.com/verify/phone?t=1",
+    });
+    expect(aldoHandoffPhoneLink(camera, "https://aldo.computer")).toEqual({
+      href: "https://www.fiverr.com/verify/phone?t=1",
+      onSite: true,
+    });
+    // A page that isn't on the web has no address a phone could open.
+    expect(aldoHandoffPhoneLink(id, "file://")).toBeNull();
+    expect(aldoHandoffPhoneLink(id, "null")).toBeNull();
+  });
+
+  it("puts Take control first, with Do it on my phone beside it on a computer", () => {
+    const computer = { onPhone: false, phoneLink: true };
+    const phone = { onPhone: true, phoneLink: true };
+    expect(aldoHandoffButtons(handoff(), computer)).toEqual(["take", "phone", "skip"]);
+    expect(aldoHandoffButtons(handoff({ kind: "identity" }), computer)).toEqual([
+      "take",
+      "phone",
+      "skip",
+    ]);
+    // Without an address a phone can open, there's no phone button.
+    expect(aldoHandoffButtons(handoff(), { onPhone: false, phoneLink: false })).toEqual([
+      "take",
+      "skip",
+    ]);
+    // On the phone already, its own browser is the way.
+    expect(aldoHandoffButtons(handoff({ kind: "payout" }), phone)).toEqual(["take", "skip"]);
+    // A camera step on a phone leads with the site's own page, then hands back.
+    const camera = handoff({
+      kind: "identity",
+      site: "fiverr.com",
+      phoneUrl: "https://verify.fiverr.com/continue",
+    });
+    expect(aldoHandoffButtons(camera, phone)).toEqual(["site", "done", "take", "skip"]);
+    expect(aldoHandoffButtons(camera, computer)).toEqual(["take", "phone", "skip"]);
+    // A code is typed into the card; what's done on another device leads with I'm done.
+    expect(aldoHandoffButtons(handoff({ kind: "code" }), computer)).toEqual(["browser", "skip"]);
+    expect(aldoHandoffButtons(handoff({ kind: "number_match" }), computer)).toEqual([
+      "done",
+      "browser",
+      "skip",
+    ]);
+    expect(aldoHandoffButtons(handoff({ kind: "approve_on_device" }), phone)).toEqual([
+      "done",
+      "browser",
+      "skip",
+    ]);
   });
 });

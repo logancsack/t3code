@@ -12,6 +12,8 @@ import { fetchAldoAgentInbox, fetchAldoPhone } from "../../aldo/accountApi";
 import { isAldoCloud } from "../../aldo/api";
 import { useAldoDeveloperTools } from "../../aldo/developerTools";
 import { useAldoOnboardingState } from "../../aldo/onboarding";
+import { settingsPolicy } from "../../aldo/settingsData";
+import { useSettingsResource } from "../../aldo/settingsResource";
 import { isWslSettingsRowVisible } from "./ConnectionsSettings.logic";
 import { isProviderSettingsEnvironmentAvailable } from "./ProviderSettingsPanel.logic";
 import type { SettingsScopeSearch } from "./settingsScope";
@@ -55,6 +57,9 @@ export function useAvailableSettingsSearchItems(scopeSearch: SettingsScopeSearch
     };
   }, []);
   const hasAldoOnboarding = Boolean(useAldoOnboardingState());
+  // Permissions' newer rules are found only once Aldo says it takes them.
+  const aldoPolicy = useSettingsResource(settingsPolicy, isAldoCloud, false).data;
+  const aldoPolicyRules = aldoPolicy?.rules;
   const aldoDeveloperTools = useAldoDeveloperTools();
   const { environments } = useEnvironments();
   const primarySessionState = usePrimarySessionState();
@@ -75,6 +80,7 @@ export function useAvailableSettingsSearchItems(scopeSearch: SettingsScopeSearch
         hasAldoPhoneApi,
         hasAldoAgentInbox,
         hasAldoOnboarding,
+        ...(aldoPolicyRules ? { aldoPolicyRules } : {}),
         aldoDeveloperTools,
         localEnvironmentDisabled,
         hasCloudPublicConfig: hasCloudPublicConfig(),
@@ -107,6 +113,7 @@ export function useAvailableSettingsSearchItems(scopeSearch: SettingsScopeSearch
       hasAldoPhoneApi,
       hasAldoAgentInbox,
       hasAldoOnboarding,
+      aldoPolicyRules,
       aldoDeveloperTools,
       canManageLocalBackend,
       desktopWsl.data,

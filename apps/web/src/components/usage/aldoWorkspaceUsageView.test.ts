@@ -5,9 +5,11 @@ import {
   aldoUsageAlertCopy,
   aldoUsageFacts,
   aldoUsageFootnote,
+  aldoUsageMeter,
   aldoUsageMeterFraction,
   aldoUsageSentence,
   aldoUsageUnmeteredCopy,
+  aldoUsageUsedLine,
   aldoWindowsDiskCopy,
   formatBytes,
 } from "./aldoWorkspaceUsageView";
@@ -139,6 +141,79 @@ describe("aldoUsageMeterFraction", () => {
     expect(aldoUsageMeterFraction({ ...metered.credits!, used: 400 })).toBe(1);
     expect(aldoUsageMeterFraction({ ...metered.credits!, used: 0, authorized: 0 })).toBe(0);
     expect(aldoUsageMeterFraction({ ...metered.credits!, used: 3, authorized: 0 })).toBe(1);
+  });
+});
+
+describe("aldoUsageUsedLine and aldoUsageMeter", () => {
+  // Aldo cloud: "credits left" is the plan's own; extra usage (here 50 credits' worth) is apart.
+  const cloud = {
+    ...metered.credits!,
+    remaining: 209.75,
+    includedRemaining: 209.75,
+  };
+
+  it("says what of the plan's credits is used, adding up with what's left", () => {
+    expect(aldoUsageUsedLine(cloud, true)).toBe("40.3 of your plan’s 250 credits used this month");
+    expect(aldoUsageMeter(cloud, true)).toEqual({
+      label: "Your plan’s credits used this month",
+      value: 40.25,
+      max: 250,
+      fraction: 40.25 / 250,
+      valueText: "40.3 of your plan’s 250 credits used this month",
+    });
+  });
+
+  it("counts the plan's from what's left of the plan's own, not of everything left", () => {
+    // A total "remaining" that counts extra usage left too (an older gateway's).
+    const total = { ...cloud, remaining: 259.75 };
+    expect(aldoUsageUsedLine(total, true)).toBe("40.3 of your plan’s 250 credits used this month");
+    expect(aldoUsageMeter(total, true)).toMatchObject({ value: 40.25, max: 250 });
+  });
+
+  it("says when the plan's credits are used up, and what extra usage added", () => {
+    const past = { ...cloud, used: 270, remaining: 0, includedRemaining: 0, overageRemaining: 30 };
+    expect(aldoUsageUsedLine(past, true)).toBe(
+      "All 250 of your plan’s credits used this month, and 20 more on extra usage",
+    );
+    expect(aldoUsageMeter(past, true)).toMatchObject({ value: 250, max: 250, fraction: 1 });
+    // Extra usage off: its limit is none, so nothing more is said.
+    const off = { ...past, used: 250, authorized: 250, overageRemaining: 0 };
+    expect(aldoUsageUsedLine(off, true)).toBe("All 250 of your plan’s credits used this month");
+    // Extra an upgrade banked counts as extra while the plan's credits last.
+    expect(aldoUsageUsedLine({ ...cloud, overageRemaining: 40 }, true)).toBe(
+      "40.3 of your plan’s 250 credits used this month, and 10 more on extra usage",
+    );
+    expect(aldoUsageUsedLine({ ...off, included: 0, authorized: 0, used: 0 }, true)).toBe(
+      "Your plan has no credits this month",
+    );
+    expect(
+      aldoUsageUsedLine({ ...past, included: 0, authorized: 50, overageRemaining: 30 }, true),
+    ).toBe("Your plan has no credits this month; 20 used on extra usage");
+    // Nothing to use reads as full, one of one, in words: never a range of zero to zero.
+    expect(aldoUsageMeter({ ...off, included: 0, authorized: 0, used: 0 }, true)).toEqual({
+      label: "Your plan’s credits used this month",
+      value: 1,
+      max: 1,
+      fraction: 1,
+      valueText: "Your plan has no credits this month",
+    });
+    expect(aldoUsageMeter({ ...off, included: 0, authorized: 0, used: 0 }, false)).toMatchObject({
+      value: 0,
+      max: 1,
+      fraction: 0,
+      valueText: "0 of 0 used this cycle",
+    });
+  });
+
+  it("keeps a managed workspace's count of all it authorized", () => {
+    expect(aldoUsageUsedLine(metered.credits!, false)).toBe("40.3 of 300 used this cycle");
+    expect(aldoUsageMeter(metered.credits!, false)).toEqual({
+      label: "Credits used this cycle",
+      value: 40.25,
+      max: 300,
+      fraction: 40.25 / 300,
+      valueText: "40.3 of 300 used this cycle",
+    });
   });
 });
 

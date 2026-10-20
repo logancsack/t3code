@@ -114,7 +114,12 @@ export function AldoDocumentReader(props: {
         if (!open) props.onClose();
       }}
     >
-      <SheetPopup side="right" showCloseButton={false} className="w-full max-w-2xl">
+      {/* Full width on a phone, clear of the notch and the home indicator. */}
+      <SheetPopup
+        side="right"
+        showCloseButton={false}
+        className="w-full max-w-2xl pt-safe pb-safe max-sm:border-s-0"
+      >
         <div className="flex items-center gap-2 border-border/60 border-b px-4 py-2.5">
           <FileTextIcon className="size-4 shrink-0 text-muted-foreground" />
           <SheetTitle className="min-w-0 truncate font-semibold text-base">{title}</SheetTitle>
