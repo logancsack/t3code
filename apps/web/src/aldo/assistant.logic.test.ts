@@ -23,6 +23,8 @@ import {
   startWatchFor,
   unseenMessages,
   withoutImageNotes,
+  withoutRetriedFailures,
+  type AldoFunctionCall,
   type AldoStartWatch,
 } from "./assistant.logic";
 
@@ -595,5 +597,71 @@ describe("linkRuns", () => {
     expect(linkRuns("Not javascript:alert(1) or http://localhost:3000")).toEqual([
       { text: "Not javascript:alert(1) or http://localhost:3000", at: 0 },
     ]);
+  });
+});
+
+describe("withoutRetriedFailures", () => {
+  const thread = { environmentId: "aldo-k3j9x0a1b2", threadId: "t-1" };
+  const start = (callId: string, extra: Record<string, unknown> = {}) => ({
+    callId,
+    name: "start_thread",
+    arguments: { asked: "set up a domain", title: "Resend domain", in: "no_repository", ...extra },
+  });
+  const refused = { error: "Not started: It looks like aldo's…" };
+  const started = { result: { ref: "k3j9x0a1b2", thread } };
+  // What the conversation shows of calls that come one at a time, as a call's do.
+  const shown = (calls: ReadonlyArray<readonly [AldoFunctionCall, unknown]>) =>
+    calls.reduce<ReadonlyArray<{ kind: string; failed?: boolean; request?: string; id?: string }>>(
+      (entries, [call, outcome]) => {
+        const action = actionFor(call, outcome);
+        return action
+          ? [...withoutRetriedFailures(entries, call), { kind: "action", ...action }]
+          : entries;
+      },
+      [],
+    );
+
+  it("shows only the start when a refused start was then made with general", () => {
+    const entries = shown([
+      [start("c1"), refused],
+      [start("c2", { general: true }), started],
+    ]);
+    expect(entries.map((e) => [e.id, e.failed])).toEqual([["c2", false]]);
+  });
+
+  it("shows the last try when every try failed", () => {
+    const entries = shown([
+      [start("c1"), refused],
+      [start("c2", { general: true }), { error: "No room." }],
+    ]);
+    expect(entries.map((e) => [e.id, e.failed])).toEqual([["c2", true]]);
+  });
+
+  it("keeps the failure of a request nothing tried again, and of the other tool", () => {
+    const entries = shown([
+      [start("c1", { asked: "start A", title: "A" }), { error: "Couldn't reach A's repository." }],
+      [start("c2", { asked: "start B", title: "B" }), started],
+      [
+        {
+          callId: "c3",
+          name: "archive_thread",
+          arguments: { asked: "set up a domain", title: "Resend domain" },
+        },
+        started,
+      ],
+    ]);
+    expect(entries.map((e) => [e.id, e.failed])).toEqual([
+      ["c1", true],
+      ["c2", false],
+      ["c3", false],
+    ]);
+  });
+
+  it("isn't replaced by a try Aldo didn't run for want of the user's words", () => {
+    const entries = shown([
+      [start("c1"), refused],
+      [start("c2"), { error: "Not done yet…", unasked: true }],
+    ]);
+    expect(entries.map((e) => e.id)).toEqual(["c1"]);
   });
 });

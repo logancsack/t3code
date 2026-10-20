@@ -35,6 +35,8 @@ export interface AldoAssistantAction {
   readonly failed: boolean;
   /** Why it failed, as Aldo's backend said: for the console, not the conversation (Aldo says why in words). */
   readonly detail?: string;
+  /** Which request a failed call was, so a later try of it replaces this line (`requestOf`). */
+  readonly request?: string;
   readonly open?: AldoOpenTarget;
   /** A page it made or opened (a preview, a pull request), in a new tab. */
   readonly href?: string;
@@ -307,6 +309,14 @@ function reverses(call: Pick<AldoFunctionCall, "name" | "arguments">): boolean {
   }
 }
 
+/**
+ * Which request a call is: the same tool for the same words of the user's
+ * (`asked`) and the same title. A retry changes where or how (a ref, a model,
+ * `general`), not these; Aldo's chat counts it so too (runner.ts there).
+ */
+const requestOf = (call: AldoFunctionCall): string =>
+  JSON.stringify([call.name, call.arguments.asked, call.arguments.title]);
+
 function labelFor(call: AldoFunctionCall): string | undefined {
   return (reverses(call) ? REVERSE_LABELS[call.name] : undefined) ?? ACTION_LABELS[call.name];
 }
@@ -347,10 +357,23 @@ export function actionFor(call: AldoFunctionCall, outcome: unknown): AldoAssista
     tool: call.name,
     label: typeof error === "string" ? failedLabelFor(call) : title ? `${label}: ${title}` : label,
     failed: typeof error === "string",
-    ...(typeof error === "string" ? { detail: error } : {}),
+    ...(typeof error === "string" ? { detail: error, request: requestOf(call) } : {}),
     ...(open ? { open } : {}),
     ...(href ? { href } : {}),
   };
+}
+
+/**
+ * The entries without the failed lines of the request `call` tries again
+ * (a start refused, then started with another ref): the last try is how it
+ * came out, and the conversation shows only that. On a call the tools run one
+ * at a time, so the line of the first try is already there.
+ */
+export function withoutRetriedFailures<
+  T extends { readonly kind: string; readonly failed?: boolean; readonly request?: string },
+>(entries: ReadonlyArray<T>, call: AldoFunctionCall): ReadonlyArray<T> {
+  const request = requestOf(call);
+  return entries.filter((e) => !(e.kind === "action" && e.failed && e.request === request));
 }
 
 /** A thread this conversation started, followed in the directory until it has started, or couldn't. */
