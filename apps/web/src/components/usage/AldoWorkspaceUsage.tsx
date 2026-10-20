@@ -29,7 +29,6 @@ import {
   aldoUsageFootnote,
   aldoUsageMeter,
   aldoUsageUnmeteredCopy,
-  aldoUsageUsedLine,
   aldoWindowsDiskCopy,
   formatCents,
   formatCredits,
@@ -131,9 +130,7 @@ function AldoWorkspaceUsageBody({
               {formatCredits(usage.credits.remaining)}{" "}
               <span className="text-sm font-normal text-muted-foreground">credits left</span>
             </span>
-            <span className="text-xs text-muted-foreground tabular-nums">
-              {aldoUsageUsedLine(usage.credits)}
-            </span>
+            <span className="text-xs text-muted-foreground tabular-nums">{meter.valueText}</span>
           </div>
           <div
             className="h-1 overflow-hidden rounded-full bg-border"
@@ -142,6 +139,7 @@ function AldoWorkspaceUsageBody({
             aria-valuemin={0}
             aria-valuemax={meter.max}
             aria-valuenow={meter.value}
+            aria-valuetext={meter.valueText}
           >
             <div
               className="h-full rounded-full bg-foreground/55"

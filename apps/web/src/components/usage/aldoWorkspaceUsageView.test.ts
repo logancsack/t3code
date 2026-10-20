@@ -159,7 +159,15 @@ describe("aldoUsageUsedLine and aldoUsageMeter", () => {
       value: 40.25,
       max: 250,
       fraction: 40.25 / 250,
+      valueText: "40.3 of your plan’s 250 credits used this month",
     });
+  });
+
+  it("counts the plan's from what's left of the plan's own, not of everything left", () => {
+    // A total "remaining" that counts extra usage left too (an older gateway's).
+    const total = { ...cloud, remaining: 259.75 };
+    expect(aldoUsageUsedLine(total, true)).toBe("40.3 of your plan’s 250 credits used this month");
+    expect(aldoUsageMeter(total, true)).toMatchObject({ value: 40.25, max: 250 });
   });
 
   it("says when the plan's credits are used up, and what extra usage added", () => {
@@ -181,7 +189,20 @@ describe("aldoUsageUsedLine and aldoUsageMeter", () => {
     expect(
       aldoUsageUsedLine({ ...past, included: 0, authorized: 50, overageRemaining: 30 }, true),
     ).toBe("Your plan has no credits this month; 20 used on extra usage");
-    expect(aldoUsageMeter({ ...off, included: 0, authorized: 0 }, true).fraction).toBe(1);
+    // Nothing to use reads as full, one of one, in words: never a range of zero to zero.
+    expect(aldoUsageMeter({ ...off, included: 0, authorized: 0, used: 0 }, true)).toEqual({
+      label: "Your plan’s credits used this month",
+      value: 1,
+      max: 1,
+      fraction: 1,
+      valueText: "Your plan has no credits this month",
+    });
+    expect(aldoUsageMeter({ ...off, included: 0, authorized: 0, used: 0 }, false)).toMatchObject({
+      value: 0,
+      max: 1,
+      fraction: 0,
+      valueText: "0 of 0 used this cycle",
+    });
   });
 
   it("keeps a managed workspace's count of all it authorized", () => {
@@ -191,6 +212,7 @@ describe("aldoUsageUsedLine and aldoUsageMeter", () => {
       value: 40.25,
       max: 300,
       fraction: 40.25 / 300,
+      valueText: "40.3 of 300 used this cycle",
     });
   });
 });

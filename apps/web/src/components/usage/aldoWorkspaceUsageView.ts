@@ -182,14 +182,14 @@ export function aldoUsageMeterFraction(
 type AldoUsageCredits = NonNullable<AldoWorkspaceUsage["credits"]>;
 
 /**
- * Aldo cloud's "credits left" is the plan's own (`remaining`), with extra
- * usage apart: what of the plan's is used, so the two add up to what it
- * includes, and what extra usage has added past them (its limit's credits,
- * `authorized` less the plan's, less what's left of it).
+ * What of the plan's own credits is used, from what's left of them
+ * (`includedRemaining`; `remaining` can count extra usage's too), so the two
+ * add up to what it includes, and what extra usage has added past them (its
+ * limit's credits, `authorized` less the plan's, less what's left of it).
  */
 function planCreditsUse(credits: AldoUsageCredits) {
   const included = Math.max(0, credits.included);
-  const left = Math.min(included, Math.max(0, credits.remaining));
+  const left = Math.min(included, Math.max(0, credits.includedRemaining));
   const extraLimit = Math.max(0, credits.authorized - credits.included);
   return {
     included,
@@ -223,7 +223,12 @@ export function aldoUsageUsedLine(credits: AldoUsageCredits, cloud = isAldoCloud
     : `${line}; ${extra} used on extra usage`;
 }
 
-/** The meter under it: what of the plan's credits is used (Aldo cloud), or of all authorized. */
+/**
+ * The meter under it: what of the plan's credits is used (Aldo cloud), or of
+ * all authorized, with the line above as its words. With nothing to use
+ * (none included or authorized), it reads as one of one: full, as "0 credits
+ * left" says, never a range of zero to zero.
+ */
 export function aldoUsageMeter(
   credits: AldoUsageCredits,
   cloud = isAldoCloud,
@@ -232,23 +237,31 @@ export function aldoUsageMeter(
   readonly value: number;
   readonly max: number;
   readonly fraction: number;
+  readonly valueText: string;
 } {
+  const valueText = aldoUsageUsedLine(credits, cloud);
   if (!cloud) {
-    return {
-      label: "Credits used this cycle",
-      value: Math.min(credits.used, credits.authorized),
-      max: credits.authorized,
-      fraction: aldoUsageMeterFraction(credits),
-    };
+    const fraction = aldoUsageMeterFraction(credits);
+    return credits.authorized > 0
+      ? {
+          label: "Credits used this cycle",
+          value: Math.min(credits.used, credits.authorized),
+          max: credits.authorized,
+          fraction,
+          valueText,
+        }
+      : { label: "Credits used this cycle", value: fraction, max: 1, fraction, valueText };
   }
   const plan = planCreditsUse(credits);
-  return {
-    label: "Your plan’s credits used this month",
-    value: plan.used,
-    max: plan.included,
-    // A plan with no credits this month has none left: a full meter, as "0 credits left" says.
-    fraction: plan.included > 0 ? plan.used / plan.included : 1,
-  };
+  return plan.included > 0
+    ? {
+        label: "Your plan’s credits used this month",
+        value: plan.used,
+        max: plan.included,
+        fraction: plan.used / plan.included,
+        valueText,
+      }
+    : { label: "Your plan’s credits used this month", value: 1, max: 1, fraction: 1, valueText };
 }
 
 /** "Updated Sep 3, 10:00 AM · Resets Sep 15", dropping whichever half is unknown. */
