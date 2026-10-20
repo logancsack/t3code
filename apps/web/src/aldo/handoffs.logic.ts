@@ -59,6 +59,10 @@ export function aldoHandoffHow(h: Pick<AldoHandoff, "kind" | "how" | "site">): s
       return `Tap the number ${where} shows on your other device, then hand it back.`;
     case "approve_on_device":
       return "Approve the sign-in on your other device, then hand it back.";
+    case "identity":
+      return `Confirm who you are on ${where} (an ID or a selfie), then hand it back.`;
+    case "payout":
+      return `Add your payout, bank or tax details on ${where}, then hand it back.`;
     default:
       return `Do what ${where} asks, then hand it back.`;
   }
