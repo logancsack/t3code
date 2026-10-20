@@ -19,6 +19,11 @@ export interface MediaGridNode {
  */
 export type AldoVideoLinks = "none" | "absolute" | "all";
 
+/** Columns for a grid of `count` tiles where it's wide: four as two rows of two, not three and one left over. */
+export function aldoMediaGridColumns(count: number): 2 | 3 {
+  return count === 2 || count === 4 ? 2 : 3;
+}
+
 const isBlank = (node: MediaGridNode) => node.type === "text" && !node.value?.trim();
 
 const significant = (nodes: ReadonlyArray<MediaGridNode> | undefined) =>

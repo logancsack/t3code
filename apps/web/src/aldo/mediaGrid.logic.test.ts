@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  aldoMediaGridColumns,
   aldoParagraphMedia,
   groupAldoMediaRuns,
   isAldoVideoLink,
@@ -166,5 +167,16 @@ describe("rehypeAldoMediaGrid", () => {
     };
     rehypeAldoMediaGrid({ videoLinks: "none" })(tree);
     expect(tree.children).toEqual([grid(img("a.png"), img("b.png"))]);
+  });
+});
+
+describe("aldoMediaGridColumns", () => {
+  it("lays four out as two rows of two, and two side by side", () => {
+    expect(aldoMediaGridColumns(2)).toBe(2);
+    expect(aldoMediaGridColumns(4)).toBe(2);
+  });
+
+  it("uses three columns for the rest", () => {
+    expect([3, 5, 6, 9].map(aldoMediaGridColumns)).toEqual([3, 3, 3, 3]);
   });
 });
