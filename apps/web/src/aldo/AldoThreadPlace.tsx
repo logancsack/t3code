@@ -53,7 +53,8 @@ export function AldoThreadPlace(props: {
   const mark = (
     <>
       <AldoPlaceTile place={place} className="size-3.5" />
-      <span className="max-w-40 truncate font-medium text-sm">{place.name}</span>
+      {/* A phone keeps the thread title readable: the place shows as its tile. */}
+      <span className="max-w-40 truncate font-medium text-sm max-sm:sr-only">{place.name}</span>
     </>
   );
   if (!send || !moves) {

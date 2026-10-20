@@ -27,6 +27,7 @@ import {
   liveWorkEntryLabel,
   normalizeCompactToolLabel,
   resolveAssistantMessageCopyState,
+  resolveTimelineMaintainScrollAtEnd,
   resolveWorkGroupScrollIndex,
   shouldFollowWorkGroupAppend,
   shouldPreserveAssistantLineBreaks,
@@ -4428,5 +4429,48 @@ describe("computeStableMessagesTimelineRows", () => {
 
     expect(reordered).not.toBe(initial);
     expect(reordered.result).toEqual([initial.result[1], initial.result[0]]);
+  });
+});
+
+describe("resolveTimelineMaintainScrollAtEnd", () => {
+  it("leaves composer inset changes alone on wide screens", () => {
+    const options = resolveTimelineMaintainScrollAtEnd({
+      animated: false,
+      followComposerGrowth: false,
+    });
+    expect(options).toEqual({
+      animated: false,
+      on: { dataChange: true, footerLayout: false, itemLayout: true, layout: true },
+    });
+  });
+
+  it("follows composer growth on a phone so the last message stays clear", () => {
+    const options = resolveTimelineMaintainScrollAtEnd({
+      animated: false,
+      followComposerGrowth: true,
+    });
+    expect(options).toEqual({
+      animated: false,
+      on: { dataChange: true, footerLayout: true, itemLayout: true, layout: true },
+    });
+  });
+
+  it("keeps the smooth variant for streaming in both modes", () => {
+    expect(
+      resolveTimelineMaintainScrollAtEnd({ animated: true, followComposerGrowth: false }),
+    ).toMatchObject({ animated: true, on: { footerLayout: false } });
+    expect(
+      resolveTimelineMaintainScrollAtEnd({ animated: true, followComposerGrowth: true }),
+    ).toMatchObject({ animated: true, on: { footerLayout: true } });
+  });
+
+  it("returns the same object for the same input so the list prop stays stable", () => {
+    for (const animated of [false, true]) {
+      for (const followComposerGrowth of [false, true]) {
+        expect(resolveTimelineMaintainScrollAtEnd({ animated, followComposerGrowth })).toBe(
+          resolveTimelineMaintainScrollAtEnd({ animated, followComposerGrowth }),
+        );
+      }
+    }
   });
 });
