@@ -354,11 +354,11 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
             ) : legacySidebarEnabled ? (
               <LegacyThreadSidebar />
             ) : (
-              <>
-                <ThreadSidebar />
-                {isAldoCloud ? <AldoProfileButton className="mx-2 mb-2 w-auto" /> : null}
-              </>
+              <ThreadSidebar />
             )}
+            {isAldoCloud && !isOnSettings ? (
+              <AldoProfileButton className="mx-2 mb-2 w-auto" />
+            ) : null}
             <SidebarRail onDoubleClick={resetSidebarWidth} />
           </Sidebar>
           {children}
