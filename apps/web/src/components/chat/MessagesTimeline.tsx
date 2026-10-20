@@ -4,6 +4,12 @@ import { AldoNotifyOffer } from "../../aldo/AldoNotifyOffer";
 import { useAldoKeptRepo } from "../../aldo/keptRepo";
 import { AldoMadeCards } from "../../aldo/AldoMadeCards";
 import { AldoNextChips } from "../../aldo/AldoNextChips";
+import {
+  ALDO_REQUEST_CARD_CLASS,
+  AldoRequestBrief,
+  AldoRequestHeading,
+} from "../../aldo/AldoRequestCard";
+import { aldoRequestOf } from "../../aldo/request.logic";
 import { AldoStallLine, useAldoStall } from "../../aldo/AldoStall";
 import { splitAldoNext } from "../../aldo/next.logic";
 import type { AldoShare } from "../../aldo/made.logic";
@@ -2058,6 +2064,12 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
     (attachment) => !isImageAttachment(attachment) && !isFileAttachment(attachment),
   );
   const resolvedContext = useMemo(() => resolveUserMessageContext(row.message), [row.message]);
+  // A thread Aldo started opens with its brief: shown as the user's request, the brief behind it.
+  const aldoRequest = useMemo(
+    () => (isAldoCloud ? aldoRequestOf(resolvedContext.text) : null),
+    [resolvedContext.text],
+  );
+  const bodyText = aldoRequest?.said ?? resolvedContext.text;
   const previewImages = useMemo(
     () => userImages.filter((image) => image.name.startsWith("preview-annotation-")),
     [userImages],
@@ -2182,8 +2194,18 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
 
   return (
     <div className="group flex flex-col items-end gap-1">
-      <div className="relative max-w-[80%] rounded-2xl bg-message p-3 text-message-foreground">
-        <MessageAuthorHeading>You</MessageAuthorHeading>
+      <div
+        className={
+          aldoRequest
+            ? ALDO_REQUEST_CARD_CLASS
+            : "relative max-w-[80%] rounded-2xl bg-message p-3 text-message-foreground"
+        }
+      >
+        {aldoRequest ? (
+          <AldoRequestHeading from={aldoRequest.from} />
+        ) : (
+          <MessageAuthorHeading>You</MessageAuthorHeading>
+        )}
         {(regularImages.length > 0 || userVideos.length > 0) && (
           <div className="mb-2 grid max-w-[210px] grid-cols-2 gap-2">
             {regularImages.map((image) => (
@@ -2288,12 +2310,21 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
         ) : null}
         <div onCopyCapture={onBodyCopyCapture}>
           <CollapsibleUserMessageBody
-            text={resolvedContext.text}
+            text={bodyText}
             renderContextReference={renderContextReference}
             skills={ctx.skills}
             markdownCwd={ctx.markdownCwd}
           />
         </div>
+        {aldoRequest ? (
+          <AldoRequestBrief>
+            <UserMessageBody
+              text={aldoRequest.brief}
+              skills={ctx.skills}
+              markdownCwd={ctx.markdownCwd}
+            />
+          </AldoRequestBrief>
+        ) : null}
       </div>
       <div className="flex w-full max-w-[80%] items-center justify-end pe-1 text-xs tabular-nums opacity-0 transition-opacity duration-200 pointer-coarse:opacity-100 focus-within:opacity-100 group-hover:opacity-100">
         <div className="flex shrink-0 items-center gap-2">
@@ -2309,16 +2340,13 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
             {typeof revertTurnCount === "number" && (
               <RevertUserMessageButton turnCount={revertTurnCount} messageId={row.message.id} />
             )}
-            {resolvedContext.text && (
+            {bodyText && (
               <MessageCopyButton
                 // Structured paste needs the canonical links to retain their positions.
                 text={
                   contextClipboardFragment
-                    ? resolvedContext.text
-                    : replaceComposerContextReferences(
-                        resolvedContext.text,
-                        (reference) => reference.label,
-                      )
+                    ? bodyText
+                    : replaceComposerContextReferences(bodyText, (reference) => reference.label)
                 }
                 {...(contextClipboardFragment
                   ? {
