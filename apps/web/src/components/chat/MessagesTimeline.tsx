@@ -5,6 +5,8 @@ import { useAldoKeptRepo } from "../../aldo/keptRepo";
 import { AldoMadeCards } from "../../aldo/AldoMadeCards";
 import { AldoNextChips } from "../../aldo/AldoNextChips";
 import { AldoStallLine, useAldoStall } from "../../aldo/AldoStall";
+import { AldoProgressLine } from "../../aldo/AldoProgressLine";
+import type { AldoPlanStep } from "../../aldo/progress.logic";
 import { splitAldoNext } from "../../aldo/next.logic";
 import type { AldoShare } from "../../aldo/made.logic";
 import { aldoSharesByTurn, aldoWorkWords } from "../../aldo/workLabels.logic";
@@ -328,6 +330,7 @@ interface TimelineRowActivityState {
   isWorking: boolean;
   isPreparingWorktree: boolean;
   workingStepLabel: string | null;
+  workingPlanSteps: ReadonlyArray<AldoPlanStep> | null;
   isCompacting: boolean;
   isRevertingCheckpoint: boolean;
   latestTurnId: TurnId | null;
@@ -428,6 +431,8 @@ interface MessagesTimelineProps {
   isWorking: boolean;
   isWakingWorkspace?: boolean;
   workingStepLabel?: string | null;
+  /** The plan the running turn works through, for Aldo's progress line. */
+  workingPlanSteps?: ReadonlyArray<AldoPlanStep> | null;
   activeTurnInProgress?: boolean;
   isPreparingWorktree?: boolean;
   isCompacting?: boolean;
@@ -510,6 +515,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   isWorking,
   isWakingWorkspace = false,
   workingStepLabel = null,
+  workingPlanSteps = null,
   activeTurnInProgress = false,
   worktreeSetup = null,
   onCancelWorktreeSetup,
@@ -1291,6 +1297,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       isWorking,
       isPreparingWorktree,
       workingStepLabel,
+      workingPlanSteps,
       isCompacting,
       isRevertingCheckpoint,
       latestTurnId: latestTurn?.turnId ?? null,
@@ -1306,6 +1313,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       isWorking,
       isPreparingWorktree,
       workingStepLabel,
+      workingPlanSteps,
       // Deliberately the fields `deriveUnsettledTurnId` reads, not the object:
       // its identity changes on every thread-shell patch.
       latestTurn?.turnId,
@@ -2643,8 +2651,13 @@ function ProposedPlanTimelineRow({
 }
 
 function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "working" }> }) {
-  const { isCompacting, isPreparingWorktree, workingStepLabel, backgroundWorktreeSetup } =
-    use(TimelineRowActivityCtx);
+  const {
+    isCompacting,
+    isPreparingWorktree,
+    workingStepLabel,
+    workingPlanSteps,
+    backgroundWorktreeSetup,
+  } = use(TimelineRowActivityCtx);
   const { activeThreadEnvironmentId, routeThreadKey, workWords } = use(TimelineRowCtx);
   // Say what the turn is actually waiting on. A tool the agent launched (a
   // build, a test run) is legitimately unbounded, so it gets its own label
@@ -2661,6 +2674,14 @@ function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "workin
   // One span for every label so the setup-to-working handoff swaps text in
   // place instead of remounting the row.
   const shimmer = !aldoStall && !waking && (isPreparingWorktree || isCompacting);
+  // Aldo: threads that aren't code say where the turn is in one line, in words.
+  const aldoProgress =
+    workWords !== null &&
+    row.status === "working" &&
+    row.createdAt !== null &&
+    !aldoStall &&
+    !isPreparingWorktree &&
+    !isCompacting;
   const label = aldoStall ? (
     <AldoStallLine stall={aldoStall} />
   ) : row.status === "waking" && row.createdAt ? (
@@ -2674,6 +2695,8 @@ function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "workin
     "Setting up worktree…"
   ) : isCompacting ? (
     <CompactingLabel />
+  ) : aldoProgress && row.createdAt ? (
+    <AldoProgressLine plan={workingPlanSteps} words={row.words ?? null} startedAt={row.createdAt} />
   ) : row.words && row.createdAt ? (
     <>
       {row.words} · <WorkingTimer createdAt={row.createdAt} />
@@ -2700,7 +2723,7 @@ function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "workin
           {label}
           {shimmer ? <ActivityShimmerOverlay>{label}</ActivityShimmerOverlay> : null}
         </span>
-        {workingStepLabel && !aldoStall ? (
+        {workingStepLabel && !aldoStall && !aldoProgress ? (
           <span className="min-w-0 truncate text-muted-foreground/55">· {workingStepLabel}</span>
         ) : null}
         {backgroundWorktreeSetup ? (
