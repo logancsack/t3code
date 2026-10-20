@@ -23,12 +23,18 @@ export interface AldoMadeItem {
   readonly sharedAs?: string;
   /** Its share's link, where the agent's record of sharing it says. */
   readonly url?: string;
+  /** False when only the user can open its link; anyone with it can otherwise. */
+  readonly public?: false;
+  /** The path it was shared from, when that's outside the thread's folder. */
+  readonly sourcePath?: string;
 }
 
 export interface AldoShare {
   readonly path: string | null;
   readonly title: string | null;
   readonly url: string | null;
+  /** False when only the user can open its link (share_file's `public: false`); anyone with it can otherwise. */
+  readonly public?: false;
 }
 
 const KIND_BY_EXTENSION: Record<string, AldoMadeKind> = {
@@ -158,6 +164,8 @@ export function aldoTurnMade(input: {
       kind: aldoMadeKind(share.path ?? share.title ?? "") ?? "page",
       ...(share.title ? { sharedAs: share.title } : {}),
       ...(share.url ? { url: share.url } : {}),
+      ...(share.public === false ? { public: false as const } : {}),
+      ...(share.path && path === null ? { sourcePath: share.path } : {}),
     });
   }
   let others = 0;

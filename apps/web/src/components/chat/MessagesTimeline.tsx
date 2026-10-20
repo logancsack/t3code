@@ -6,6 +6,7 @@ import { AldoMadeCards } from "../../aldo/AldoMadeCards";
 import { AldoNextChips } from "../../aldo/AldoNextChips";
 import { AldoStallLine, useAldoStall } from "../../aldo/AldoStall";
 import { splitAldoNext } from "../../aldo/next.logic";
+import { aldoLiveShots } from "../../aldo/results.logic";
 import type { AldoShare } from "../../aldo/made.logic";
 import { aldoSharesByTurn, aldoWorkWords } from "../../aldo/workLabels.logic";
 import { APP_BASE_NAME } from "../../branding";
@@ -2474,6 +2475,13 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
   const messageText = aldoNext?.text ?? fullText;
   // The turn's answer, whether its footer is here or below the tools that followed it.
   const isTurnAnswer = row.showAssistantMeta || row.assistantMetaMoved === true;
+  // Not code: what the turn made shows under the answer, and the answer's screenshots of live pages as its cards.
+  const results = ctx.workWords !== null && isTurnAnswer;
+  const live = useMemo(() => (results ? aldoLiveShots(messageText) : null), [results, messageText]);
+  const nextRow =
+    aldoNext && aldoNext.next.length > 0 && isTurnAnswer ? (
+      <AldoNextRow turnId={row.message.turnId ?? null} next={aldoNext.next} />
+    ) : null;
   const changedFiles = (
     <AssistantChangedFilesSection
       turnSummary={row.assistantTurnDiffSummary}
@@ -2495,7 +2503,7 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
           listRef={ctx.listRef}
         >
           <ChatMarkdown
-            text={messageText}
+            text={live?.text ?? messageText}
             cwd={ctx.markdownCwd}
             threadRef={ctx.threadRef ?? undefined}
             isStreaming={Boolean(row.message.streaming)}
@@ -2507,22 +2515,28 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
             onImageExpand={ctx.onImageExpand}
           />
         </AssistantCitationSource>
-        {aldoNext && aldoNext.next.length > 0 && isTurnAnswer ? (
-          <AldoNextRow turnId={row.message.turnId ?? null} next={aldoNext.next} />
-        ) : null}
-        {ctx.workWords && isTurnAnswer ? (
-          <AldoMadeCards
-            files={row.assistantTurnDiffSummary?.files ?? NO_TURN_FILES}
-            shares={
-              (row.message.turnId && ctx.aldoSharesByTurnId.get(row.message.turnId)) ||
-              NO_TURN_SHARES
-            }
-            threadRef={ctx.threadRef}
-            workspaceRoot={ctx.workspaceRoot}
-            allChanges={changedFiles}
-          />
+        {results ? (
+          <>
+            <AldoMadeCards
+              files={row.assistantTurnDiffSummary?.files ?? NO_TURN_FILES}
+              shares={
+                (row.message.turnId && ctx.aldoSharesByTurnId.get(row.message.turnId)) ||
+                NO_TURN_SHARES
+              }
+              threadRef={ctx.threadRef}
+              workspaceRoot={ctx.workspaceRoot}
+              answer={messageText}
+              shots={live?.shots}
+              onImageExpand={ctx.onImageExpand}
+              allChanges={changedFiles}
+            />
+            {nextRow}
+          </>
         ) : (
-          changedFiles
+          <>
+            {nextRow}
+            {changedFiles}
+          </>
         )}
         {row.showAssistantMeta ? (
           <AssistantMessageMeta

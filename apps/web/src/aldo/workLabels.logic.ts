@@ -213,19 +213,31 @@ function aldoToolCall(entry: Entry): ToolCall | null {
   return null;
 }
 
-/** A file a step shared by link (share_file): its path, title and, where the agent recorded aldod's reply, the link. */
-export function aldoShareOf(
-  entry: Entry,
-): { path: string | null; title: string | null; url: string | null } | null {
+/**
+ * A file a step shared by link (share_file): its path, title and, where the agent recorded
+ * aldod's reply, the link. `public: false` when only the user can open it, as the reply says
+ * or, without one, as the step asked; a link is for anyone with it otherwise.
+ */
+export function aldoShareOf(entry: Entry): {
+  path: string | null;
+  title: string | null;
+  url: string | null;
+  public?: false;
+} | null {
   const call = aldoToolCall(entry);
   if (call?.server !== "aldo" || call.tool !== "share_file") return null;
   if (entry.tone === "error" || entry.toolLifecycleStatus === "failed") return null;
-  // aldod answers 'Shared "<title>": <url> (…)'.
-  const reply = call.output ? /^Shared "([\s\S]*?)": (https:\/\/\S+)/m.exec(call.output) : null;
+  // aldod answers 'Shared "<title>": <url> (anyone with the link can open it)', or "(only the user, …)".
+  const reply = call.output
+    ? /^Shared "([\s\S]*?)": (https:\/\/\S+)(?: \((anyone|only the user))?/m.exec(call.output)
+    : null;
+  const audience = reply?.[3];
+  const onlyTheUser = audience ? audience === "only the user" : call.args?.public === false;
   return {
     path: text(call.args?.path),
     title: text(call.args?.title) ?? text(reply?.[1]),
     url: reply?.[2] ?? null,
+    ...(onlyTheUser ? { public: false as const } : {}),
   };
 }
 
