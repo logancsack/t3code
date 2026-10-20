@@ -240,8 +240,14 @@ export const aldoAssistant = {
     };
   },
   /** The request Aldo keeps from before a plan was chosen; null where it doesn't keep them (an older Aldo) or couldn't say. */
+  /** Null where Aldo keeps none (an older one); throws when it can't be reached, so the page can ask again. */
   kept: async (): Promise<AldoKept | null> =>
-    keptOf(await api<unknown>("/api/assistant/pending").catch(() => null)),
+    keptOf(
+      await api<unknown>("/api/assistant/pending").catch((error: unknown) => {
+        if (error instanceof AldoApiError && error.status === 404) return null;
+        throw error;
+      }),
+    ),
   /**
    * Sends the request Aldo kept (`requestId`) as the user's message, once a
    * plan lets it go; back from Checkout, `checkoutSession` lets Aldo confirm

@@ -244,3 +244,96 @@ it("sends the kept request after a turn that went once a plan's on (chosen elsew
   await vi.waitFor(() => expect(useAldoAssistant.getState().planPick?.stage).toBe("on"));
   expect(backend.resume).toHaveBeenCalledTimes(1);
 });
+
+it("shows one message for a second request sent before a plan, as Aldo keeps them together", async () => {
+  const { loadAldoConversation, sendText, useAldoAssistant } = await page();
+  backend.kept.mockResolvedValue({ pending, needsPlan });
+  await loadAldoConversation();
+  await vi.waitFor(() => expect(useAldoAssistant.getState().planPick?.stage).toBe("choose"));
+  const joined = {
+    ...needsPlan,
+    requestId: "pr_zzz999yyy888",
+    text: "Make a deck from my notes\n\nAnd a one-page summary",
+  };
+  backend.chat.mockRejectedValue(
+    new aldoApiMock.AldoApiError(402, REFUSAL, { error: REFUSAL, needsPlan: joined }),
+  );
+  sendText("And a one-page summary");
+  await vi.waitFor(() =>
+    expect(useAldoAssistant.getState().planPick?.requestId).toBe("pr_zzz999yyy888"),
+  );
+  const state = useAldoAssistant.getState();
+  expect(said(state)).toEqual(["user: Make a deck from my notes\n\nAnd a one-page summary"]);
+  expect(state.planPick?.entry).toBe(state.entries[0]);
+});
+
+it("drops the earlier request from the page when Aldo keeps only the new one", async () => {
+  const { loadAldoConversation, sendText, useAldoAssistant } = await page();
+  backend.kept.mockResolvedValue({ pending, needsPlan });
+  await loadAldoConversation();
+  await vi.waitFor(() => expect(useAldoAssistant.getState().planPick?.stage).toBe("choose"));
+  const replaced = { ...needsPlan, requestId: "pr_zzz999yyy888", text: "Price my services" };
+  backend.chat.mockRejectedValue(
+    new aldoApiMock.AldoApiError(402, REFUSAL, { error: REFUSAL, needsPlan: replaced }),
+  );
+  sendText("Price my services");
+  await vi.waitFor(() =>
+    expect(useAldoAssistant.getState().planPick?.requestId).toBe("pr_zzz999yyy888"),
+  );
+  expect(said(useAldoAssistant.getState())).toEqual(["user: Price my services"]);
+});
+
+it("gives the images back with the words when a kept request is refused", async () => {
+  const { loadAldoConversation, sendText, useAldoAssistant } = await page();
+  await loadAldoConversation();
+  const image = { name: "notes.png", dataUrl: "data:image/png;base64,AAAA" };
+  backend.chat.mockRejectedValueOnce(
+    new aldoApiMock.AldoApiError(402, REFUSAL, { error: REFUSAL, needsPlan }),
+  );
+  sendText("Make a deck from my notes", [image]);
+  await vi.waitFor(() => expect(useAldoAssistant.getState().planPick?.stage).toBe("choose"));
+  // A plan's chosen elsewhere, but the request is refused for what a plan doesn't fix.
+  backend.kept.mockResolvedValue({ pending: { ...pending, images: 1 }, needsPlan: null });
+  backend.chat.mockResolvedValue({ sessionId: "as_1", reply: "Hello.", calls: [] });
+  backend.resume.mockResolvedValue({
+    kind: "refused",
+    message: "Your last payment didn’t go through.",
+  });
+  sendText("Hi");
+  await vi.waitFor(() =>
+    expect(useAldoAssistant.getState().error).toBe("Your last payment didn’t go through."),
+  );
+  const state = useAldoAssistant.getState();
+  expect(state.unsent).toBe("Make a deck from my notes");
+  expect(state.unsentImages).toEqual([image]);
+});
+
+it("sends a kept request found while a reply is on its way once that reply is in", async () => {
+  let history!: (messages: unknown[]) => void;
+  backend.history.mockReturnValueOnce(new Promise((resolve) => (history = resolve)));
+  let reply!: (turn: unknown) => void;
+  backend.chat.mockReturnValueOnce(new Promise((resolve) => (reply = resolve)));
+  backend.kept.mockResolvedValue({ pending, needsPlan: null });
+  backend.resume.mockResolvedValue(sent);
+  const { loadAldoConversation, sendText, useAldoAssistant } = await page();
+  const loading = loadAldoConversation();
+  sendText("Hi");
+  history([]);
+  await loading;
+  await vi.waitFor(() => expect(useAldoAssistant.getState().planPick?.stage).toBe("waiting"));
+  expect(backend.resume).not.toHaveBeenCalled();
+  reply({ sessionId: "as_1", reply: "Hello.", calls: [] });
+  await vi.waitFor(() => expect(useAldoAssistant.getState().planPick?.stage).toBe("on"));
+  expect(backend.resume).toHaveBeenCalledTimes(1);
+});
+
+it("asks again what Aldo keeps when it can't be reached on load", async () => {
+  vi.useFakeTimers();
+  backend.kept.mockRejectedValueOnce(new Error("Failed to fetch"));
+  backend.kept.mockResolvedValue({ pending, needsPlan });
+  const { loadAldoConversation, useAldoAssistant } = await page();
+  await loadAldoConversation();
+  await vi.advanceTimersByTimeAsync(2_000);
+  expect(backend.kept).toHaveBeenCalledTimes(2);
+  expect(useAldoAssistant.getState().planPick?.stage).toBe("choose");
+});

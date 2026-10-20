@@ -175,9 +175,11 @@ export type AldoKeptStep =
  * Aldo keeps (`kept`, null when it couldn't say).
  */
 export function keptStep(
-  returning: AldoCheckoutReturn | null,
+  checkoutReturn: AldoCheckoutReturn | null,
   kept: AldoKept | null,
 ): AldoKeptStep {
+  // Only a paid Checkout comes back with its session: one without (canceled, or an address typed in) shows the picker again.
+  const returning = checkoutReturn?.checkoutSession ? checkoutReturn : null;
   const pending = kept?.pending ?? null;
   if (!pending) {
     // Aldo couldn't say: the way back still asks, and Aldo answers whether there's one to send.

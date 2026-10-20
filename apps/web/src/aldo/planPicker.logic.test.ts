@@ -175,6 +175,16 @@ describe("keptStep", () => {
     expect(step.kind === "resume" && step.requestId).toBe("pr_zzz999yyy888");
   });
 
+  it("shows the picker again back from a Checkout that wasn't paid (no session)", () => {
+    const canceled = { requestId: "pr_abc123def456", checkoutSession: null };
+    expect(keptStep(canceled, { pending: request, needsPlan: needs })).toEqual({
+      kind: "pick",
+      request,
+      needs,
+    });
+    expect(keptStep(canceled, null)).toEqual({ kind: "nothing" });
+  });
+
   it("still asks back from Checkout when Aldo couldn't say what it keeps", () => {
     expect(keptStep(returning, null)).toEqual({
       kind: "resume",

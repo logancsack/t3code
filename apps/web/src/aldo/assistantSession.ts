@@ -84,6 +84,7 @@ import {
   needsPlanOf,
   saidAlready,
   withoutCheckoutReturn,
+  type AldoKept,
   type AldoKeptRequest,
   type AldoNeedsPlan,
   type AldoResumed,
@@ -396,7 +397,7 @@ async function settleKept(): Promise<void> {
       `${pathname}${withoutCheckoutReturn(search)}${hash}`,
     );
   }
-  const kept = await aldoAssistant.kept().catch(() => null);
+  const kept = await keptOnLoad();
   const step = keptStep(returning, kept);
   // This page has one already (sent before Aldo answered).
   if (step.kind === "nothing" || get().planPick) return;
@@ -410,6 +411,22 @@ async function settleKept(): Promise<void> {
   if (entry) addEntry(entry);
   await sendKept(step.requestId, entry, step.needs, step.checkoutSession, step.returning);
 }
+
+/** What Aldo keeps, asked again for a little while if it can't be reached (null: it couldn't say). */
+async function keptOnLoad(): Promise<AldoKept | null> {
+  for (const wait of [0, 2_000, 5_000]) {
+    if (wait) await new Promise((resolve) => setTimeout(resolve, wait));
+    try {
+      return await aldoAssistant.kept();
+    } catch {
+      // Offline or a server error: ask again.
+    }
+  }
+  return null;
+}
+
+/** The images a message on this page went with, to give back with its words if it's refused. */
+const sentImages = new WeakMap<AldoConversationEntry, ReadonlyArray<AldoImageUpload>>();
 
 function pick(
   requestId: string,
@@ -450,7 +467,10 @@ async function sendKeptOnceFree(): Promise<void> {
     await settleGone(current.entry, current.entry.kind === "message" ? current.entry.text : "");
     return;
   }
-  if (kept.pending.id === current.requestId && !kept.needsPlan) await resumeAldoKept();
+  // Back from Checkout (a session to confirm the plan by), it asks too.
+  if (kept.pending.id === current.requestId && (!kept.needsPlan || current.checkoutSession)) {
+    await resumeAldoKept();
+  }
 }
 
 /**
@@ -466,7 +486,18 @@ async function sendKept(
   checkoutSession: string | null,
   returning: boolean,
 ): Promise<void> {
-  if (get().replying) return;
+  if (get().replying) {
+    // Another reply is on its way: the request waits under its picker, and goes once that's in (sendKeptOnceFree).
+    if (entry) {
+      set({
+        planPick: pick(requestId, entry, needs, "waiting", {
+          checkoutSession,
+          note: "Your request is saved, and goes as soon as Aldo has answered.",
+        }),
+      });
+    }
+    return;
+  }
   set({
     replying: true,
     error: null,
@@ -540,8 +571,13 @@ async function showResumed(
     }
     case "refused": {
       // Not kept for what a plan doesn't fix: the words go back to the composer, with why.
+      const images = shown ? sentImages.get(shown) : undefined;
       dropShown(shown);
-      set({ error: outcome.message, ...(text ? { unsent: text } : {}) });
+      set({
+        error: outcome.message,
+        ...(text ? { unsent: text } : {}),
+        ...(images && images.length > 0 ? { unsentImages: images } : {}),
+      });
       return;
     }
     case "failed": {
@@ -1616,6 +1652,7 @@ async function chatText(words: string, images: ReadonlyArray<AldoImageUpload> = 
     ...(images.length > 0 ? { images: images.map((image) => image.dataUrl) } : {}),
   };
   addEntry(entry);
+  if (images.length > 0) sentImages.set(entry, images);
   set({ replying: true, error: null });
   try {
     const onScreen = aldoOnScreen();
@@ -1652,6 +1689,34 @@ async function chatText(words: string, images: ReadonlyArray<AldoImageUpload> = 
     if (needs) {
       // Aldo kept it until a plan's chosen: the message stays, with the plan picker under it.
       chatSupported = true;
+      const earlier = get().planPick?.entry;
+      if (earlier && earlier !== entry && earlier.kind === "message") {
+        // Aldo keeps one request: this one joins the one kept before (or, too long for that, takes its
+        // place), so one message shows what it keeps, with the images that go with it.
+        const joined = needs.text.trim() !== words.trim();
+        const shownImages =
+          images.length > 0
+            ? images.map((image) => image.dataUrl)
+            : joined
+              ? earlier.images
+              : undefined;
+        const kept: AldoConversationEntry = {
+          kind: "message",
+          role: "user",
+          text: needs.text || words,
+          at: entry.at,
+          ...(shownImages ? { images: shownImages } : {}),
+        };
+        const uploads = images.length > 0 ? images : joined ? sentImages.get(earlier) : undefined;
+        if (uploads) sentImages.set(kept, uploads);
+        set({
+          entries: get()
+            .entries.filter((e) => e !== earlier)
+            .map((e) => (e === entry ? kept : e)),
+          planPick: pick(needs.requestId, kept, needs, "choose"),
+        });
+        return;
+      }
       set({ planPick: pick(needs.requestId, entry, needs, "choose") });
       return;
     }
