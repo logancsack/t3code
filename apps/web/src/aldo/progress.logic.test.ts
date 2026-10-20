@@ -46,6 +46,7 @@ describe("aldoStepUnderWay", () => {
     expect(aldoStepUnderWay("Research what sells on Fiverr, and at what price")).toBe(
       "Researching what sells on Fiverr, and at what price",
     );
+    expect(aldoStepUnderWay("Suggest three packages")).toBe("Suggesting three packages");
   });
 
   it("leaves a step that doesn't start with an order as written", () => {
