@@ -83,7 +83,7 @@ function mediaKey(destination: string, workspaceRoot: string | undefined): strin
 /** What a made thing is known by: its file (in the folder, or where it was shared from) and its link. */
 function itemKeys(item: AldoMadeItem, workspaceRoot: string | undefined): string[] {
   const keys: string[] = [];
-  const absolute = absolutePathOf(item, workspaceRoot);
+  const absolute = aldoItemPath(item, workspaceRoot);
   if (absolute) keys.push(`file:${absolute}`);
   if (item.url) {
     const id = aldoShareIdOf(item.url);
@@ -180,7 +180,8 @@ export type AldoAudience = "public" | "private" | "stopped";
  */
 export type AldoListedShare = (id: string) => AldoShareView | "gone" | null;
 
-function absolutePathOf(item: AldoMadeItem, workspaceRoot: string | undefined): string | null {
+/** Where a made thing is on the thread's computer, when that's known. */
+export function aldoItemPath(item: AldoMadeItem, workspaceRoot: string | undefined): string | null {
   if (item.path && workspaceRoot) return `${workspaceRoot.replace(/\/+$/, "")}/${item.path}`;
   return item.sourcePath?.startsWith("/") ? item.sourcePath : null;
 }
@@ -276,7 +277,7 @@ function resultItem(
     // A share's type says what it is better than a title does.
     kind: (known ? aldoShareKind(known.contentType) : null) ?? item.kind,
     path: item.path,
-    absolutePath: absolutePathOf(item, workspaceRoot),
+    absolutePath: aldoItemPath(item, workspaceRoot),
     url: gone ? null : (item.url ?? null),
     shareId: id,
     audience,
