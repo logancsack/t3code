@@ -68,7 +68,10 @@ function ThreadQueueSender({ threadKey }: { threadKey: string }) {
       latestUserMessageId,
       session: thread?.session ?? null,
       hasPendingApproval: pendingRequests.approvals.length > 0,
-      hasPendingUserInput: pendingRequests.userInputs.length > 0,
+      // An async question asked before this message doesn't acknowledge it.
+      hasPendingUserInput: pendingRequests.userInputs.some((input) =>
+        pendingUserInputBlocksMessages(input, thread?.latestTurn ?? null),
+      ),
       latestTurnStartFailureId: latestTurnStartFailureId(thread ?? undefined, latestUserMessageId),
       threadError: null,
     });

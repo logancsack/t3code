@@ -10,7 +10,7 @@ import { CheckIcon, MessageCircleQuestionIcon } from "lucide-react";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
-import { Input } from "../ui/input";
+import { Textarea } from "../ui/textarea";
 import { cn } from "~/lib/utils";
 import { ComposerBanner } from "./ComposerBanner";
 
@@ -318,7 +318,10 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
             </div>
             {activeQuestion.allowCustomAnswer !== false ? (
               <div className="mt-2">
-                <Input
+                {/* One line, as tall as a text field, growing when Shift+Enter adds more. */}
+                <Textarea
+                  rows={1}
+                  className="[&_textarea]:min-h-8.5 sm:[&_textarea]:min-h-7.5"
                   aria-label="Your own answer"
                   placeholder="Or type your own answer"
                   value={progress.customAnswer}

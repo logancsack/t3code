@@ -274,6 +274,24 @@ export function pendingUserInputBlocksMessages(
 }
 
 /**
+ * The questions a thread shows, those that stop the agent first, so the first
+ * is the one to answer and says whether any holds messages back. Order within
+ * each group is kept.
+ */
+export function blockingPendingUserInputsFirst<
+  T extends Pick<PendingUserInput, "turnId" | "createdAt" | "dismissible">,
+>(
+  inputs: readonly T[],
+  latestTurn: Pick<OrchestrationLatestTurn, "turnId" | "state" | "requestedAt"> | null,
+): T[] {
+  return inputs.toSorted(
+    (a, b) =>
+      Number(pendingUserInputBlocksMessages(b, latestTurn)) -
+      Number(pendingUserInputBlocksMessages(a, latestTurn)),
+  );
+}
+
+/**
  * Drops the refusal a question gets once its answer has gone out as a message
  * instead (see hasPendingUserInputOutlivedTurn): the message, sent between the
  * question and the refusal, has a "Header: answer" line for each of its

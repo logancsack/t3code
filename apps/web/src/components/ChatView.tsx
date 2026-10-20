@@ -138,6 +138,7 @@ import {
   deriveWorkLogEntries,
   hasActionableProposedPlan,
   isLatestTurnSettled,
+  blockingPendingUserInputsFirst,
   pendingUserInputBlocksMessages,
   selectHandoffImageResources,
   withoutRefusalsAnsweredByMessage,
@@ -154,6 +155,7 @@ import {
 } from "./chat/timelineScrollAnchoring";
 import {
   buildPendingUserInputAnswers,
+  carryDisplacedCustomAnswerIntoPrompt,
   derivePendingUserInputCarryOn,
   derivePendingUserInputProgress,
   formatPendingUserInputAnswersAsMessage,
@@ -3057,12 +3059,17 @@ export default function ChatView(props: ChatViewProps) {
     () => derivePendingRequests(threadActivities),
     [threadActivities],
   );
+  // A question that stops the agent comes before async ones, so the card asks
+  // it first and the composer holds messages back while any question blocks.
   const pendingUserInputs = useMemo(
     () =>
-      derivedPendingUserInputs.filter(
-        (input) => !answeredByMessageRequestIds.includes(input.requestId),
+      blockingPendingUserInputsFirst(
+        derivedPendingUserInputs.filter(
+          (input) => !answeredByMessageRequestIds.includes(input.requestId),
+        ),
+        activeLatestTurn,
       ),
-    [answeredByMessageRequestIds, derivedPendingUserInputs],
+    [activeLatestTurn, answeredByMessageRequestIds, derivedPendingUserInputs],
   );
   // Aldo: a message's attachments go to Aldo with it, not to the thread's
   // cloud agent (aldo/files.ts). On an Aldo that doesn't keep files they
@@ -3234,6 +3241,7 @@ export default function ChatView(props: ChatViewProps) {
   const activePendingShownAt = pendingShownAtByRequestKey[activePendingRequestKey];
   const activePendingCanCarryOn =
     isAldoCloud &&
+    pendingApprovals.length === 0 &&
     activePendingUserInput !== null &&
     activePendingBlocksMessages &&
     !activePendingAnswerStarted &&
@@ -3405,7 +3413,10 @@ export default function ChatView(props: ChatViewProps) {
     activeLatestTurn,
     phase,
     activePendingApproval: activePendingApproval?.requestId ?? null,
-    activePendingUserInput: activePendingUserInput?.requestId ?? null,
+    // An async question asked before this message doesn't acknowledge it.
+    activePendingUserInput: activePendingBlocksMessages
+      ? (activePendingUserInput?.requestId ?? null)
+      : null,
     threadError,
     wakingManagedWorkspace:
       (isManagedDevPc &&
@@ -9287,6 +9298,17 @@ export default function ChatView(props: ChatViewProps) {
       if (!activePendingUserInput) {
         return;
       }
+      // The option replaces the custom answer. Anything typed there is the
+      // user's text, so it goes to the thread draft instead of vanishing.
+      const displacedAnswer =
+        pendingUserInputAnswersByRequestId[activePendingRequestKey]?.[questionId]?.customAnswer;
+      const currentPrompt =
+        useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.prompt ?? "";
+      const nextPrompt = carryDisplacedCustomAnswerIntoPrompt(currentPrompt, displacedAnswer);
+      if (nextPrompt !== currentPrompt) {
+        promptRef.current = nextPrompt;
+        setComposerDraftPrompt(composerDraftTarget, nextPrompt);
+      }
       setPendingUserInputAnswersByRequestId((existing) => {
         const question =
           (activePendingProgress?.activeQuestion?.id === questionId
@@ -9310,7 +9332,14 @@ export default function ChatView(props: ChatViewProps) {
         };
       });
     },
-    [activePendingProgress?.activeQuestion, activePendingUserInput, activePendingRequestKey],
+    [
+      activePendingProgress?.activeQuestion,
+      activePendingUserInput,
+      activePendingRequestKey,
+      composerDraftTarget,
+      pendingUserInputAnswersByRequestId,
+      setComposerDraftPrompt,
+    ],
   );
 
   const onChangeActivePendingUserInputCustomAnswer = useCallback(
@@ -9535,7 +9564,7 @@ export default function ChatView(props: ChatViewProps) {
     threadKey: isServerThread ? routeThreadKey : null,
     activities: threadActivities,
     messages: timelineMessages,
-    waitingOnYou: pendingApprovals.length > 0 || pendingUserInputs.length > 0,
+    waitingOnYou: pendingApprovals.length > 0 || activePendingBlocksMessages,
     target: isServerThread ? (activeThreadRef ?? null) : null,
     send: onSendFollowUp,
     stop: onInterrupt,
@@ -10640,7 +10669,9 @@ export default function ChatView(props: ChatViewProps) {
                       threadId={activeThreadRef.threadId}
                     />
                   ) : null}
-                  {activePendingUserInput ? (
+                  {/* An approval the agent stopped on is answered first; an
+                      answer sent past it would start a turn it can't take. */}
+                  {activePendingUserInput && activePendingApproval === null ? (
                     <ComposerBanner.Root
                       placement="floating"
                       variant="info"
