@@ -11,6 +11,8 @@ const aldo = vi.hoisted(() => ({
   woken: 0,
   asks: [] as { check: boolean; name?: string | undefined }[],
   answer: null as unknown,
+  /** How many files a size check says go in; else all of them. */
+  checkFiles: null as number | null,
 }));
 vi.mock("./directory", () => ({
   aldoZipsResults: () => aldo.zips,
@@ -42,7 +44,7 @@ vi.mock("./workspaceApi", async () => {
       if (options.check)
         return {
           bytes: 57 * 1024 * 1024,
-          files: files.length,
+          files: aldo.checkFiles ?? files.length,
           left: [],
           url: null,
           name: null,
@@ -68,7 +70,14 @@ let root: Root;
 const clicked: string[] = [];
 
 beforeEach(() => {
-  Object.assign(aldo, { zips: true, asleep: false, woken: 0, asks: [], answer: null });
+  Object.assign(aldo, {
+    zips: true,
+    asleep: false,
+    woken: 0,
+    asks: [],
+    answer: null,
+    checkFiles: null,
+  });
   // Each test its own files, so no size is known from another.
   files = files.map((file) => ({ ...file, path: `${file.path}.${Math.random()}` }));
   host = document.createElement("div");
@@ -86,12 +95,21 @@ afterEach(() => {
   act(() => root.unmount());
   host.remove();
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 
-const render = () =>
+const render = (shown = files) =>
   act(async () =>
-    root.render(<AldoDownloadEverything threadRef={ref} files={files} links={["Launch page"]} />),
+    root.render(<AldoDownloadEverything threadRef={ref} files={shown} links={["Launch page"]} />),
   );
+const made = (url: string) => ({
+  bytes: 1000,
+  files: 2,
+  left: [],
+  url,
+  name: "Quarterly report.zip",
+  expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+});
 const button = (text: string) =>
   [...host.querySelectorAll("button")].find((element) => element.textContent?.includes(text));
 
@@ -165,4 +183,45 @@ it("says a refusal in Aldo's words, offering to try again only where that can he
   expect(host.textContent).toContain("gone.pdf isn’t in it: it’s no longer on its computer.");
   expect(button("Try again")).toBeUndefined();
   expect(clicked).toEqual([]);
+});
+
+it("starts again for a later turn's files: the last zip's link goes, and one still being made comes to nothing", async () => {
+  aldo.answer = made("https://sb-1-3780.sail.box/downloads/first?token=t");
+  await render();
+  await act(async () => button("Download everything")!.click());
+  expect(host.querySelector("a")?.textContent).toBe("Download it again");
+  const later = [
+    ...files,
+    { path: `/vercel/work/general/notes.md.${Math.random()}`, name: "notes.md" },
+  ];
+  await render(later);
+  expect(host.querySelector("a")).toBeNull();
+  expect(button("Download everything")).toBeDefined();
+
+  // Asked for, then the files change before it's made.
+  let release: (zip: unknown) => void = () => {};
+  aldo.answer = new Promise((resolve) => (release = resolve));
+  await act(async () => button("Download everything")!.click());
+  expect(host.textContent).toContain("Making the zip…");
+  await render([
+    ...later,
+    { path: `/vercel/work/general/more.md.${Math.random()}`, name: "more.md" },
+  ]);
+  await act(async () => release(made("https://sb-1-3780.sail.box/downloads/stale?token=t")));
+  expect(clicked).toEqual(["https://sb-1-3780.sail.box/downloads/first?token=t"]);
+  expect(host.querySelector("a")).toBeNull();
+  expect(host.textContent).not.toContain("Making the zip");
+});
+
+it("a size stops being shown after five minutes, and one of nothing shows the action again", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+  aldo.checkFiles = 0;
+  await render();
+  expect(host.textContent).toBe("");
+  aldo.checkFiles = null;
+  await act(async () => {
+    vi.advanceTimersByTime(5 * 60_000);
+  });
+  expect(aldo.asks).toEqual([{ check: true }, { check: true }]);
+  expect(host.textContent).toContain("Download everything (zip, 57 MB)");
 });

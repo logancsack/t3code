@@ -6,7 +6,7 @@
 
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import { DownloadIcon } from "lucide-react";
-import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { Button } from "../components/ui/button";
 import { Spinner } from "../components/ui/spinner";
@@ -42,6 +42,8 @@ const RETRY_MS = 60_000;
 const sizes = new Map<string, KnownSize>();
 const askedAt = new Map<string, number>();
 const sizeListeners = new Set<() => void>();
+/** When each size stops being shown, the action hears so: it asks again, and one of nothing shows again. */
+const expiries = new Map<string, ReturnType<typeof setTimeout>>();
 let checking: Promise<void> = Promise.resolve();
 
 function knownSize(key: string): KnownSize | null {
@@ -49,9 +51,22 @@ function knownSize(key: string): KnownSize | null {
   return size && Date.now() - size.at < SIZE_MS ? size : null;
 }
 
+function tellSizes(): void {
+  for (const listener of sizeListeners) listener();
+}
+
 function noteSize(key: string, bytes: number, files: number): void {
   sizes.set(key, { bytes, files, at: Date.now() });
-  for (const listener of sizeListeners) listener();
+  clearTimeout(expiries.get(key));
+  expiries.set(
+    key,
+    setTimeout(() => {
+      expiries.delete(key);
+      sizes.delete(key);
+      tellSizes();
+    }, SIZE_MS),
+  );
+  tellSizes();
 }
 
 /** Asks the computer what the zip would come to, one block at a time, so a long conversation doesn't ask all at once. */
@@ -101,12 +116,19 @@ function startDownload(url: string): void {
   anchor.click();
 }
 
-export function AldoDownloadEverything(props: {
+type DownloadProps = {
   readonly threadRef: ScopedThreadRef;
   readonly files: ReadonlyArray<AldoZipFile>;
   /** The results that are only a link, with no file on the computer. */
   readonly links: ReadonlyArray<string>;
-}) {
+};
+
+/** The action for this set of files: another set (a later turn's files) starts it again, so nothing of the last one's zip stays. */
+export function AldoDownloadEverything(props: DownloadProps) {
+  return <DownloadAction key={aldoZipKey(props.threadRef.environmentId, props.files)} {...props} />;
+}
+
+function DownloadAction(props: DownloadProps) {
   const { threadRef, files, links } = props;
   const environmentId = threadRef.environmentId;
   const offered = useSyncExternalStore(subscribeAldoEnvironments, aldoZipsResults);
@@ -117,6 +139,14 @@ export function AldoDownloadEverything(props: {
   const key = aldoZipKey(environmentId, files);
   const size = useSyncExternalStore(subscribeSizes, () => knownSize(key));
   const [phase, setPhase] = useState<Phase>({ tag: "idle" });
+  // A zip asked for before the files changed comes back to nothing: this action is for the new ones.
+  const live = useRef(true);
+  useEffect(() => {
+    live.current = true;
+    return () => {
+      live.current = false;
+    };
+  }, []);
   const [visible, setVisible] = useState(() => typeof IntersectionObserver === "undefined");
   const shown =
     offered && isAldoEnvironmentId(environmentId) && aldoOffersZip(files) && size?.files !== 0;
@@ -130,9 +160,10 @@ export function AldoDownloadEverything(props: {
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
+  const sized = size !== null;
   useEffect(() => {
-    if (shown && visible && !asleep) askSize(environmentId, files);
-  }, [shown, visible, asleep, environmentId, files]);
+    if (shown && visible && !asleep && !sized) askSize(environmentId, files);
+  }, [shown, visible, asleep, sized, environmentId, files]);
 
   // A made zip's link works until it expires; then the action makes a new one.
   const expiresAt = phase.tag === "made" ? phase.zip.expiresAt : null;
@@ -149,6 +180,7 @@ export function AldoDownloadEverything(props: {
     setPhase({ tag: "making" });
     try {
       const zip = await zipAldoFiles(environmentId, files, { check: false, name: title });
+      if (!live.current) return;
       if (!zip.url) {
         setPhase({ tag: "failed", message: "Nothing could go in the zip.", retry: false, zip });
         return;
@@ -157,6 +189,7 @@ export function AldoDownloadEverything(props: {
       setPhase({ tag: "made", zip });
       startDownload(zip.url);
     } catch (error) {
+      if (!live.current) return;
       const body = error instanceof AldoApiError ? (error.body as { asleep?: unknown }) : null;
       if (body?.asleep === true) {
         setPhase({ tag: "asleep", message: error instanceof Error ? error.message : ASLEEP });
@@ -179,6 +212,7 @@ export function AldoDownloadEverything(props: {
     try {
       await wakeAldoEnvironment(environmentId);
     } catch {
+      if (!live.current) return;
       setPhase({
         tag: "failed",
         message: "Its computer didn’t wake. Try again in a minute.",
@@ -186,7 +220,7 @@ export function AldoDownloadEverything(props: {
       });
       return;
     }
-    await make();
+    if (live.current) await make();
   };
 
   const start = () => {
