@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { aldoRequestLabel, aldoRequestOf } from "./request.logic";
+import { aldoRecalledPrompt, aldoRequestLabel, aldoRequestOf } from "./request.logic";
 
 const SIGNATURE = "_(Sent by Aldo, the user's assistant, for them.)_";
 const HEADER =
@@ -61,6 +61,17 @@ describe("aldoRequestOf", () => {
       aldoRequestOf(fromAldo(BRIEF, "> hi", HEADER.replace("on Home", "on a call"))),
     ).toBeNull();
     expect(aldoRequestOf(`\n\n${HEADER}\n\n> ${REQUEST}\n\n${SIGNATURE}`)).toBeNull();
+  });
+});
+
+describe("aldoRecalledPrompt", () => {
+  it("brings back the user's words, and nothing else Aldo wrote", () => {
+    expect(aldoRecalledPrompt(fromAldo(BRIEF, `> ${REQUEST}`))).toBe(REQUEST);
+    expect(aldoRecalledPrompt(`${BRIEF}\n\n${SIGNATURE}`)).toBe("");
+    expect(aldoRecalledPrompt(`${BRIEF}\r\n\r\n${SIGNATURE}\n`)).toBe("");
+    // What the user typed is theirs, as it is.
+    expect(aldoRecalledPrompt(REQUEST)).toBeNull();
+    expect(aldoRecalledPrompt(`Quoting Aldo: ${SIGNATURE} and more`)).toBeNull();
   });
 });
 

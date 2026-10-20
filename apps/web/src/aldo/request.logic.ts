@@ -41,6 +41,16 @@ export function aldoRequestOf(text: string): AldoRequest | null {
   return { said, from: last[1] === "by text" ? "text" : "home", brief };
 }
 
+/**
+ * What recalling a message Aldo sent puts back in the composer (the up arrow,
+ * Edit from here): the user's own words when it carries them, and nothing of
+ * what Aldo wrote; null for a message Aldo didn't sign.
+ */
+export function aldoRecalledPrompt(text: string): string | null {
+  if (!text.replace(/\r\n/g, "\n").trimEnd().endsWith(`\n\n${SIGNATURE}`)) return null;
+  return aldoRequestOf(text)?.said ?? "";
+}
+
 /** The card's heading. */
 export function aldoRequestLabel(from: AldoRequestFrom): string {
   return from === "text" ? "Your request, by text" : "Your request, from Home";
