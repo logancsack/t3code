@@ -179,6 +179,78 @@ export function aldoUsageMeterFraction(
   return Math.min(1, Math.max(0, credits.used / credits.authorized));
 }
 
+type AldoUsageCredits = NonNullable<AldoWorkspaceUsage["credits"]>;
+
+/**
+ * Aldo cloud's "credits left" is the plan's own (`remaining`), with extra
+ * usage apart: what of the plan's is used, so the two add up to what it
+ * includes, and what extra usage has added past them (its limit's credits,
+ * `authorized` less the plan's, less what's left of it).
+ */
+function planCreditsUse(credits: AldoUsageCredits) {
+  const included = Math.max(0, credits.included);
+  const left = Math.min(included, Math.max(0, credits.remaining));
+  const extraLimit = Math.max(0, credits.authorized - credits.included);
+  return {
+    included,
+    left,
+    used: included - left,
+    extraUsed: Math.max(0, extraLimit - Math.max(0, credits.overageRemaining)),
+  };
+}
+
+/**
+ * The line beside "credits left", in words. Aldo cloud: "412 of your plan’s
+ * 2,000 credits used this month", then any extra usage ("and 120 more on extra
+ * usage"). A managed workspace's gateway counts what's left of all it
+ * authorized, so it says that.
+ */
+export function aldoUsageUsedLine(credits: AldoUsageCredits, cloud = isAldoCloud): string {
+  if (!cloud) {
+    return `${formatCredits(credits.used)} of ${formatCredits(credits.authorized)} used this cycle`;
+  }
+  const plan = planCreditsUse(credits);
+  const line =
+    plan.included <= 0
+      ? "Your plan has no credits this month"
+      : plan.left <= 0
+        ? `All ${formatCredits(plan.included)} of your plan’s credits used this month`
+        : `${formatCredits(plan.used)} of your plan’s ${formatCredits(plan.included)} credits used this month`;
+  const extra = formatCredits(plan.extraUsed);
+  if (extra === "0") return line;
+  return plan.included > 0
+    ? `${line}, and ${extra} more on extra usage`
+    : `${line}; ${extra} used on extra usage`;
+}
+
+/** The meter under it: what of the plan's credits is used (Aldo cloud), or of all authorized. */
+export function aldoUsageMeter(
+  credits: AldoUsageCredits,
+  cloud = isAldoCloud,
+): {
+  readonly label: string;
+  readonly value: number;
+  readonly max: number;
+  readonly fraction: number;
+} {
+  if (!cloud) {
+    return {
+      label: "Credits used this cycle",
+      value: Math.min(credits.used, credits.authorized),
+      max: credits.authorized,
+      fraction: aldoUsageMeterFraction(credits),
+    };
+  }
+  const plan = planCreditsUse(credits);
+  return {
+    label: "Your plan’s credits used this month",
+    value: plan.used,
+    max: plan.included,
+    // A plan with no credits this month has none left: a full meter, as "0 credits left" says.
+    fraction: plan.included > 0 ? plan.used / plan.included : 1,
+  };
+}
+
 /** "Updated Sep 3, 10:00 AM · Resets Sep 15", dropping whichever half is unknown. */
 export function aldoUsageFootnote(usage: AldoWorkspaceUsage): string | null {
   const parts: string[] = [];

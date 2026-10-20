@@ -27,8 +27,9 @@ import {
   aldoUsageAlertCopy,
   aldoUsageFacts,
   aldoUsageFootnote,
-  aldoUsageMeterFraction,
+  aldoUsageMeter,
   aldoUsageUnmeteredCopy,
+  aldoUsageUsedLine,
   aldoWindowsDiskCopy,
   formatCents,
   formatCredits,
@@ -114,6 +115,7 @@ function AldoWorkspaceUsageBody({
   const alert = aldoUsageAlertCopy(usage.alert, usage);
   const facts = aldoUsageFacts(usage);
   const footnote = aldoUsageFootnote(usage);
+  const meter = usage.credits ? aldoUsageMeter(usage.credits) : null;
 
   return (
     <div className={stale ? "flex flex-col gap-3 opacity-64" : "flex flex-col gap-3"}>
@@ -122,7 +124,7 @@ function AldoWorkspaceUsageBody({
           {alert}
         </p>
       ) : null}
-      {usage.credits ? (
+      {usage.credits && meter ? (
         <div className="flex flex-col gap-2">
           <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
             <span className="text-2xl font-semibold text-foreground tabular-nums">
@@ -130,21 +132,20 @@ function AldoWorkspaceUsageBody({
               <span className="text-sm font-normal text-muted-foreground">credits left</span>
             </span>
             <span className="text-xs text-muted-foreground tabular-nums">
-              {formatCredits(usage.credits.used)} of {formatCredits(usage.credits.authorized)} used
-              this cycle
+              {aldoUsageUsedLine(usage.credits)}
             </span>
           </div>
           <div
             className="h-1 overflow-hidden rounded-full bg-border"
             role="meter"
-            aria-label="Credits used this cycle"
+            aria-label={meter.label}
             aria-valuemin={0}
-            aria-valuemax={usage.credits.authorized}
-            aria-valuenow={Math.min(usage.credits.used, usage.credits.authorized)}
+            aria-valuemax={meter.max}
+            aria-valuenow={meter.value}
           >
             <div
               className="h-full rounded-full bg-foreground/55"
-              style={{ width: `${(aldoUsageMeterFraction(usage.credits) * 100).toFixed(1)}%` }}
+              style={{ width: `${(meter.fraction * 100).toFixed(1)}%` }}
             />
           </div>
         </div>
