@@ -431,12 +431,12 @@ export interface AldoHome {
 // ---------------------------------------------------------------------------
 // Handoffs: an agent in its browser met what only the user can get past (a
 // captcha, a sign-in, a code sent to them, a number to match, a tap on
-// another device) and asked them. They do it in its browser and hand it back,
+// another device, an ID check, payout details) and asked them. They do it in its browser and hand it back,
 // type the code for Aldo to put in the page, or skip it.
 
 export interface AldoHandoff {
   readonly id: string;
-  /** captcha, sign_in, code, number_match, approve_on_device, other; maybe more later. */
+  /** captcha, sign_in, code, number_match, approve_on_device, identity, payout, other; maybe more later. */
   readonly kind: string;
   /** Why, as the agent put it ("OpenTable wants to check you're human"). */
   readonly reason: string;

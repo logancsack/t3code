@@ -60,6 +60,12 @@ describe("handoffs", () => {
     expect(aldoHandoffHow(handoff({ kind: "something_new", site: null }))).toBe(
       "Do what the page asks, then hand it back.",
     );
+    expect(aldoHandoffHow(handoff({ kind: "identity", site: "fiverr.com" }))).toBe(
+      "Confirm who you are on fiverr.com (an ID or a selfie), then hand it back.",
+    );
+    expect(aldoHandoffHow(handoff({ kind: "payout", site: "fiverr.com" }))).toBe(
+      "Add your payout, bank or tax details on fiverr.com, then hand it back.",
+    );
   });
 
   it("leads with I'm done for what's done on another device", () => {

@@ -2,6 +2,7 @@
 
 import { type AldoHomeTarget } from "./homeApi";
 import { api, AldoApiError } from "./api";
+import { keptOf, resumedOf, type AldoKept, type AldoResumed } from "./planPicker.logic";
 
 // ---------------------------------------------------------------------------
 // Aldo, the assistant
@@ -226,6 +227,9 @@ export const aldoAssistant = {
    * null where this Aldo can't chat in writing (an older one answers a path
    * it doesn't know with the web client's own page). `viewing` is the thread
    * on screen, which Aldo names for "this one" (an older Aldo ignores it).
+   * The page shows a plan picker (`planPicker`): refused for want of a plan,
+   * Aldo keeps the request and its 402 carries the picker's (needsPlanOf on
+   * the error's body); an older Aldo ignores it.
    */
   chat: async (
     sessionId: string | null,
@@ -240,6 +244,7 @@ export const aldoAssistant = {
         text,
         ...(images.length > 0 ? { images } : {}),
         ...(viewing ? { viewing } : {}),
+        planPicker: true,
         // What the page shows as cards, which Aldo would otherwise say in words (an older Aldo ignores it).
         ...(shownCards.length > 0 ? { cards: shownCards } : {}),
       }),
@@ -251,6 +256,43 @@ export const aldoAssistant = {
       calls: Array.isArray(body.calls) ? body.calls : [],
     };
   },
+  /** The request Aldo keeps from before a plan was chosen; null where it doesn't keep them (an older Aldo) or couldn't say. */
+  /** Null where Aldo keeps none (an older one); throws when it can't be reached, so the page can ask again. */
+  kept: async (): Promise<AldoKept | null> =>
+    keptOf(
+      await api<unknown>("/api/assistant/pending").catch((error: unknown) => {
+        if (error instanceof AldoApiError && error.status === 404) return null;
+        throw error;
+      }),
+    ),
+  /**
+   * Sends the request Aldo kept (`requestId`) as the user's message, once a
+   * plan lets it go; back from Checkout, `checkoutSession` lets Aldo confirm
+   * the plan at once. Never throws: what came of it is the answer.
+   */
+  resume: async (
+    requestId: string,
+    sessionId: string | null,
+    checkoutSession: string | null,
+  ): Promise<AldoResumed> =>
+    resumedOf(
+      await api<unknown>("/api/assistant/chat", {
+        method: "POST",
+        body: JSON.stringify({
+          resume: requestId,
+          ...(sessionId ? { sessionId } : {}),
+          ...(checkoutSession ? { checkoutSession } : {}),
+        }),
+      }).then(
+        (body) => ({ ok: true as const, body }),
+        (error: unknown) => ({
+          ok: false as const,
+          status: error instanceof AldoApiError ? error.status : 0,
+          message: error instanceof Error ? error.message : String(error),
+          body: error instanceof AldoApiError ? error.body : undefined,
+        }),
+      ),
+    ),
   /**
    * What the conversation (`sessionId`) has to tell the user unprompted;
    * null where this Aldo doesn't have it (an older one answers a path it
