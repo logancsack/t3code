@@ -252,7 +252,7 @@ export function decisionBrief(decision: AldoDecision): string {
     }
     case "handoff": {
       const c = decision.conversation;
-      return `The thread "${c.title}" (ref ${c.ref}) needs the user in its browser: ${decision.pending.summary || "something only they can get past"}. They do it on their screen, from the card's "Do it now", which opens the agent's browser; or skip it there.`;
+      return `The thread "${c.title}" (ref ${c.ref}) needs the user in its browser: ${decision.pending.summary || "something only they can get past"}. They do it from the card, which offers the way in for this step (the agent's browser, a box for a code, or the site on their phone); or skip it there.`;
     }
     case "plan":
       return `The thread "${decision.conversation.title}" (ref ${decision.conversation.ref}) has a plan to approve: ${decision.plan.text.slice(0, 600)}. The user can approve it, or ask for changes.`;
