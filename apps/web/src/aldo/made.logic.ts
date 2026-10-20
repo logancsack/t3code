@@ -154,7 +154,8 @@ export function aldoTurnMade(input: {
     items.push({
       path,
       name,
-      kind: (share.path ? aldoMadeKind(share.path) : null) ?? "page",
+      // A provider that records only the reply leaves its title to go by.
+      kind: aldoMadeKind(share.path ?? share.title ?? "") ?? "page",
       ...(share.title ? { sharedAs: share.title } : {}),
       ...(share.url ? { url: share.url } : {}),
     });

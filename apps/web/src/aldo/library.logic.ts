@@ -290,7 +290,7 @@ export function aldoThreadLibrary(input: {
         key: thing.path ?? (share ? `share:${share.id}` : (thing.url ?? thing.name)),
         name,
         fileName: name !== thing.name ? thing.name : null,
-        kind: thing.kind,
+        kind: (share ? aldoShareKind(share.contentType) : null) ?? thing.kind,
         path: thing.path,
         at: turn.completedAt,
         shared,
