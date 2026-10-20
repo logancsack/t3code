@@ -1821,6 +1821,10 @@ export default function ChatView(props: ChatViewProps) {
   // Aldo: questions that have carried on with their recommended answers, so
   // each does once, even if the answer doesn't go through.
   const [carriedOnRequestKeys, setCarriedOnRequestKeys] = useState<string[]>([]);
+  // Aldo: when this page first showed each question, so one found late still waits its full time.
+  const [pendingShownAtByRequestKey, setPendingShownAtByRequestKey] = useState<
+    Record<string, number>
+  >({});
   const shouldUseRightPanelSheet = useMediaQuery(RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY);
   const isMobileViewport = useMediaQuery("max-sm");
   const [terminalFocusRequestId, setTerminalFocusRequestId] = useState(0);
@@ -3227,21 +3231,27 @@ export default function ChatView(props: ChatViewProps) {
   const activePendingAnswerStarted =
     pendingUserInputAnswersByRequestId[activePendingRequestKey] !== undefined;
   const activePendingCarriedOn = carriedOnRequestKeys.includes(activePendingRequestKey);
+  const activePendingShownAt = pendingShownAtByRequestKey[activePendingRequestKey];
+  const activePendingCanCarryOn =
+    isAldoCloud &&
+    activePendingUserInput !== null &&
+    activePendingBlocksMessages &&
+    !activePendingAnswerStarted &&
+    !activePendingCarriedOn;
+  useEffect(() => {
+    if (!activePendingCanCarryOn || activePendingShownAt !== undefined) return;
+    setPendingShownAtByRequestKey((existing) =>
+      existing[activePendingRequestKey] !== undefined
+        ? existing
+        : { ...existing, [activePendingRequestKey]: Date.now() },
+    );
+  }, [activePendingCanCarryOn, activePendingRequestKey, activePendingShownAt]);
   const activePendingCarryOn = useMemo(
     () =>
-      isAldoCloud &&
-      activePendingUserInput &&
-      activePendingBlocksMessages &&
-      !activePendingAnswerStarted &&
-      !activePendingCarriedOn
-        ? derivePendingUserInputCarryOn(activePendingUserInput)
+      activePendingCanCarryOn && activePendingUserInput && activePendingShownAt !== undefined
+        ? derivePendingUserInputCarryOn(activePendingUserInput, activePendingShownAt)
         : null,
-    [
-      activePendingAnswerStarted,
-      activePendingBlocksMessages,
-      activePendingCarriedOn,
-      activePendingUserInput,
-    ],
+    [activePendingCanCarryOn, activePendingShownAt, activePendingUserInput],
   );
   const activeProposedPlan = useMemo(() => {
     if (!latestTurnSettled) {

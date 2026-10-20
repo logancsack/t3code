@@ -211,12 +211,17 @@ export interface PendingUserInputCarryOn {
 /**
  * The answers a question carries on with when nobody answers it: the options
  * its provider recommends. Null unless every question has one, so a question
- * without a default always waits for the user.
+ * without a default always waits for the user. It waits the full delay from
+ * when it was asked, or from `shownAt` (when this page first showed it) if
+ * that's later, so someone who opens the thread late has time to read it.
  */
-export function derivePendingUserInputCarryOn(input: {
-  questions: ReadonlyArray<UserInputQuestion>;
-  createdAt: string;
-}): PendingUserInputCarryOn | null {
+export function derivePendingUserInputCarryOn(
+  input: {
+    questions: ReadonlyArray<UserInputQuestion>;
+    createdAt: string;
+  },
+  shownAt?: number,
+): PendingUserInputCarryOn | null {
   const askedAt = Date.parse(input.createdAt);
   if (!Number.isFinite(askedAt) || input.questions.length === 0) return null;
   const answers: Record<string, string | string[]> = {};
@@ -232,7 +237,8 @@ export function derivePendingUserInputCarryOn(input: {
     answers[question.id] = question.multiSelect ? values : first;
     labels.push(picked.map((option) => describePendingUserInputOption(option).label).join(", "));
   }
-  return { answers, labels, at: askedAt + PENDING_USER_INPUT_CARRY_ON_DELAY_MS };
+  const from = shownAt !== undefined && shownAt > askedAt ? shownAt : askedAt;
+  return { answers, labels, at: from + PENDING_USER_INPUT_CARRY_ON_DELAY_MS };
 }
 
 /** What the card says about carrying on, given the time it carries on at. */

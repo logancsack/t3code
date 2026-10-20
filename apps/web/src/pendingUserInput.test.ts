@@ -390,6 +390,22 @@ describe("derivePendingUserInputCarryOn", () => {
     expect(PENDING_USER_INPUT_CARRY_ON_DELAY_MS).toBe(10 * 60 * 1000);
   });
 
+  it("waits the full time from when the page first showed it, if that's later", () => {
+    const shownAt = Date.parse(askedAt) + 60 * 60 * 1000;
+    expect(
+      derivePendingUserInputCarryOn(
+        { questions: [recommendedQuestion], createdAt: askedAt },
+        shownAt,
+      )?.at,
+    ).toBe(shownAt + PENDING_USER_INPUT_CARRY_ON_DELAY_MS);
+    expect(
+      derivePendingUserInputCarryOn(
+        { questions: [recommendedQuestion], createdAt: askedAt },
+        Date.parse(askedAt) - 1000,
+      )?.at,
+    ).toBe(Date.parse(askedAt) + PENDING_USER_INPUT_CARRY_ON_DELAY_MS);
+  });
+
   it("answers with an option's value when it has one", () => {
     expect(
       derivePendingUserInputCarryOn({
