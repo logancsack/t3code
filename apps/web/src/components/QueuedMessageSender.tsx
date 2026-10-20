@@ -10,7 +10,7 @@ import {
   useQueuedMessageStore,
   useQueuedMessages,
 } from "../queuedMessageStore";
-import { derivePhase } from "../session-logic";
+import { derivePhase, pendingUserInputBlocksMessages } from "../session-logic";
 import { useServerConfigs, useThread, useThreadStatus } from "../state/entities";
 import { useEnvironment } from "../state/environments";
 import { hasServerAcknowledgedLocalDispatch, latestTurnStartFailureId } from "./ChatView.logic";
@@ -75,7 +75,7 @@ function ThreadQueueSender({ threadKey }: { threadKey: string }) {
 
   // Approvals and questions block the agent; a steer landing on top of them
   // would answer nothing and confuse the turn, so the queue holds until the
-  // user resolves them.
+  // user resolves them. An async question, or one whose turn is over, doesn't.
   const blocked =
     threadRef === null ||
     thread === null ||
@@ -86,7 +86,9 @@ function ThreadQueueSender({ threadKey }: { threadKey: string }) {
     sending ||
     waitingForServer ||
     pendingRequests.approvals.length > 0 ||
-    pendingRequests.userInputs.length > 0;
+    pendingRequests.userInputs.some((input) =>
+      pendingUserInputBlocksMessages(input, thread.latestTurn ?? null),
+    );
   const due =
     next !== undefined &&
     !blocked &&

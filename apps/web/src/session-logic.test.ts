@@ -22,6 +22,7 @@ import {
   hasActionableProposedPlan,
   hasPendingUserInputOutlivedTurn,
   isLatestTurnSettled,
+  pendingUserInputBlocksMessages,
   selectHandoffImageResources,
   selectMessageImageResources,
   withoutRefusalsAnsweredByMessage,
@@ -132,6 +133,45 @@ describe("hasPendingUserInputOutlivedTurn", () => {
       ),
     ).toBe(false);
     expect(hasPendingUserInputOutlivedTurn(input, null)).toBe(false);
+  });
+});
+
+describe("pendingUserInputBlocksMessages", () => {
+  const native = {
+    turnId: TurnId.make("turn-1"),
+    createdAt: "2026-02-23T00:00:05.000Z",
+    dismissible: false,
+  };
+  const running = {
+    turnId: TurnId.make("turn-1"),
+    state: "running" as const,
+    requestedAt: "2026-02-23T00:00:00.000Z",
+  };
+
+  it("holds messages while the agent waits on its question", () => {
+    expect(pendingUserInputBlocksMessages(native, running)).toBe(true);
+    // Until this client knows the turn, the question is still live.
+    expect(pendingUserInputBlocksMessages(native, null)).toBe(true);
+    expect(
+      pendingUserInputBlocksMessages({ createdAt: native.createdAt, dismissible: false }, running),
+    ).toBe(true);
+  });
+
+  it("lets messages through beside an async question", () => {
+    expect(pendingUserInputBlocksMessages({ ...native, dismissible: true }, running)).toBe(false);
+  });
+
+  it("lets messages through once the question's turn is over", () => {
+    expect(pendingUserInputBlocksMessages(native, { ...running, state: "interrupted" })).toBe(
+      false,
+    );
+    expect(
+      pendingUserInputBlocksMessages(native, {
+        turnId: TurnId.make("turn-2"),
+        state: "running",
+        requestedAt: "2026-02-23T00:00:09.000Z",
+      }),
+    ).toBe(false);
   });
 });
 

@@ -262,6 +262,18 @@ export function hasPendingUserInputOutlivedTurn(
 }
 
 /**
+ * Whether the agent is stopped on a question, so a message can't reach it
+ * until the question is answered. An async question doesn't stop it (its
+ * answer goes as a message anyway), and nothing waits on one whose turn is over.
+ */
+export function pendingUserInputBlocksMessages(
+  input: Pick<PendingUserInput, "turnId" | "createdAt" | "dismissible">,
+  latestTurn: Pick<OrchestrationLatestTurn, "turnId" | "state" | "requestedAt"> | null,
+): boolean {
+  return !input.dismissible && !hasPendingUserInputOutlivedTurn(input, latestTurn);
+}
+
+/**
  * Drops the refusal a question gets once its answer has gone out as a message
  * instead (see hasPendingUserInputOutlivedTurn): the message, sent between the
  * question and the refusal, has a "Header: answer" line for each of its

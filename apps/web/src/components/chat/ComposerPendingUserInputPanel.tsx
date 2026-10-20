@@ -3,10 +3,14 @@ import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { type PendingUserInput } from "../../session-logic";
 import {
   derivePendingUserInputProgress,
+  describePendingUserInputOption,
   type PendingUserInputDraftAnswer,
 } from "../../pendingUserInput";
-import { CheckIcon } from "lucide-react";
+import { CheckIcon, MessageCircleQuestionIcon } from "lucide-react";
+import { Badge } from "../ui/badge";
+import { Button } from "../ui/button";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
+import { Input } from "../ui/input";
 import { cn } from "~/lib/utils";
 import { ComposerBanner } from "./ComposerBanner";
 
@@ -15,18 +19,30 @@ interface PendingUserInputPanelProps {
   respondingRequestIds: ApprovalRequestId[];
   answers: Record<string, PendingUserInputDraftAnswer>;
   questionIndex: number;
+  /** A line under the answer, such as when the question carries on without one. */
+  note: string | null;
   onToggleOption: (questionId: string, optionValue: string) => void;
+  onChangeCustomAnswer: (questionId: string, value: string) => void;
   onAdvance: () => void;
+  onPrevious: () => void;
   onDismiss: (requestId: ApprovalRequestId) => void;
 }
 
+/**
+ * A provider's question, on a card of its own above the composer: its
+ * options, a field for an answer in the user's own words, and the buttons to
+ * send it. The composer never answers it; it always writes a message.
+ */
 export const ComposerPendingUserInputPanel = memo(function ComposerPendingUserInputPanel({
   pendingUserInputs,
   respondingRequestIds,
   answers,
   questionIndex,
+  note,
   onToggleOption,
+  onChangeCustomAnswer,
   onAdvance,
+  onPrevious,
   onDismiss,
 }: PendingUserInputPanelProps) {
   if (pendingUserInputs.length === 0) return null;
@@ -40,8 +56,11 @@ export const ComposerPendingUserInputPanel = memo(function ComposerPendingUserIn
       isResponding={respondingRequestIds.includes(activePrompt.requestId)}
       answers={answers}
       questionIndex={questionIndex}
+      note={note}
       onToggleOption={onToggleOption}
+      onChangeCustomAnswer={onChangeCustomAnswer}
       onAdvance={onAdvance}
+      onPrevious={onPrevious}
       onDismiss={onDismiss}
     />
   );
@@ -52,17 +71,15 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
   isResponding,
   answers,
   questionIndex,
+  note,
   onToggleOption,
+  onChangeCustomAnswer,
   onAdvance,
+  onPrevious,
   onDismiss,
-}: {
+}: Omit<PendingUserInputPanelProps, "pendingUserInputs" | "respondingRequestIds"> & {
   prompt: PendingUserInput;
   isResponding: boolean;
-  answers: Record<string, PendingUserInputDraftAnswer>;
-  questionIndex: number;
-  onToggleOption: (questionId: string, optionValue: string) => void;
-  onAdvance: () => void;
-  onDismiss: (requestId: ApprovalRequestId) => void;
 }) {
   const progress = derivePendingUserInputProgress(prompt.questions, answers, questionIndex);
   const activeQuestion = progress.activeQuestion;
@@ -76,8 +93,7 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
   // the thread the user is trying to read. Scoped to a single question: the card
   // is keyed by request id so the next prompt starts expanded, and storing the
   // collapsed question's id (rather than a bare flag) reopens the card when the
-  // prompt advances to its next question, which can happen without a click —
-  // sending from the composer advances the active question.
+  // prompt advances to its next question.
   const [collapsedQuestionId, setCollapsedQuestionId] = useState<string | null>(null);
   const isCollapsed = collapsedQuestionId !== null && collapsedQuestionId === activeQuestion?.id;
 
@@ -185,7 +201,9 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
         }
         data-pending-user-input-toggle={isCollapsed ? "collapsed" : "expanded"}
       >
-        <ComposerBanner.Icon />
+        <ComposerBanner.Icon>
+          <MessageCircleQuestionIcon />
+        </ComposerBanner.Icon>
         <ComposerBanner.Content>
           <span className="shrink-0 font-medium text-muted-foreground">
             {activeQuestion.header}
@@ -252,11 +270,21 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
                   isResponding && "opacity-50 cursor-not-allowed",
                   !isResponding && "cursor-pointer",
                 );
+                const { label, recommended } = describePendingUserInputOption(option);
                 const content = (
                   <>
                     <div className="min-w-0 flex-1 flex flex-col gap-0.5">
-                      <span className="text-sm font-medium">{option.label}</span>
-                      {option.description && option.description !== option.label ? (
+                      <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                        <span className="text-sm font-medium">{label}</span>
+                        {recommended ? (
+                          <Badge size="sm" variant="info">
+                            Recommended
+                          </Badge>
+                        ) : null}
+                      </span>
+                      {option.description &&
+                      option.description !== option.label &&
+                      option.description !== label ? (
                         <span className="text-secondary-label text-2xs">{option.description}</span>
                       ) : null}
                     </div>
@@ -288,8 +316,57 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
                 );
               })}
             </div>
+            {activeQuestion.allowCustomAnswer !== false ? (
+              <div className="mt-2">
+                <Input
+                  aria-label="Your own answer"
+                  placeholder="Or type your own answer"
+                  value={progress.customAnswer}
+                  disabled={isResponding}
+                  onChange={(event) => onChangeCustomAnswer(activeQuestion.id, event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) {
+                      return;
+                    }
+                    event.preventDefault();
+                    if (progress.canAdvance) onAdvance();
+                  }}
+                />
+              </div>
+            ) : null}
           </ComposerBanner.Body>
         </ComposerBanner.Scroll>
+        <ComposerBanner.Body className="flex flex-wrap items-center justify-end gap-2 pt-2 pb-1">
+          {note ? (
+            <p
+              className="me-auto min-w-0 text-secondary-label text-xs"
+              data-pending-user-input-note
+            >
+              {note}
+            </p>
+          ) : null}
+          {progress.questionIndex > 0 ? (
+            <Button size="xs" variant="outline" disabled={isResponding} onClick={onPrevious}>
+              Previous
+            </Button>
+          ) : null}
+          <Button
+            size="xs"
+            disabled={
+              isResponding ||
+              (progress.isLastQuestion ? !progress.isComplete : !progress.canAdvance)
+            }
+            onClick={onAdvance}
+          >
+            {isResponding
+              ? "Submitting..."
+              : !progress.isLastQuestion
+                ? "Next question"
+                : prompt.questions.length > 1
+                  ? "Submit answers"
+                  : "Submit answer"}
+          </Button>
+        </ComposerBanner.Body>
       </CollapsiblePanel>
     </Collapsible>
   );

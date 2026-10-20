@@ -1,4 +1,4 @@
-import type { UserInputQuestion } from "@t3tools/contracts";
+import type { UserInputQuestion, UserInputQuestionOption } from "@t3tools/contracts";
 
 export interface PendingUserInputDraftAnswer {
   selectedOptionValues?: string[];
@@ -80,28 +80,6 @@ export function setPendingUserInputCustomAnswer(
     customAnswer,
     ...(selectedOptionValues && selectedOptionValues.length > 0 ? { selectedOptionValues } : {}),
   };
-}
-
-const DISPLACED_ANSWER_SEPARATOR = "\n\n";
-
-/**
- * Selecting an option replaces the custom answer, because a non-empty custom
- * answer outranks selected options in `resolvePendingUserInputAnswer`. Text the
- * user typed into the answer field must not vanish on that click: it moves back
- * into the thread draft, after whatever was already waiting there.
- */
-export function carryDisplacedCustomAnswerIntoPrompt(
-  prompt: string,
-  customAnswer: string | undefined,
-): string {
-  const displaced = customAnswer?.trim() ?? "";
-  if (displaced.length === 0) {
-    return prompt;
-  }
-  if (prompt.trim().length === 0) {
-    return displaced;
-  }
-  return `${prompt.trimEnd()}${DISPLACED_ANSWER_SEPARATOR}${displaced}`;
 }
 
 export function togglePendingUserInputOptionSelection(
@@ -201,4 +179,67 @@ export function derivePendingUserInputProgress(
     isComplete: buildPendingUserInputAnswers(questions, draftAnswers) !== null,
     canAdvance: resolvedAnswer !== null,
   };
+}
+
+// Codex, Claude and OpenCode tell their models to mark the option they
+// recommend by ending its label with "(Recommended)".
+const RECOMMENDED_LABEL_SUFFIX = /\s*\(recommended\)\s*$/i;
+
+/** An option's label as shown, without the provider's "(Recommended)" mark. */
+export function describePendingUserInputOption(option: UserInputQuestionOption): {
+  label: string;
+  recommended: boolean;
+} {
+  const label = option.label.replace(RECOMMENDED_LABEL_SUFFIX, "");
+  return label.length > 0 && label !== option.label
+    ? { label, recommended: true }
+    : { label: option.label, recommended: false };
+}
+
+/** How long a question the provider gave a recommended answer waits for one. */
+export const PENDING_USER_INPUT_CARRY_ON_DELAY_MS = 10 * 60 * 1000;
+
+export interface PendingUserInputCarryOn {
+  /** The recommended answer to each question, as the provider expects it. */
+  answers: Record<string, string | string[]>;
+  /** Each answer as the card names it. */
+  labels: string[];
+  /** When it carries on with them, in epoch milliseconds. */
+  at: number;
+}
+
+/**
+ * The answers a question carries on with when nobody answers it: the options
+ * its provider recommends. Null unless every question has one, so a question
+ * without a default always waits for the user.
+ */
+export function derivePendingUserInputCarryOn(input: {
+  questions: ReadonlyArray<UserInputQuestion>;
+  createdAt: string;
+}): PendingUserInputCarryOn | null {
+  const askedAt = Date.parse(input.createdAt);
+  if (!Number.isFinite(askedAt) || input.questions.length === 0) return null;
+  const answers: Record<string, string | string[]> = {};
+  const labels: string[] = [];
+  for (const question of input.questions) {
+    const recommended = question.options.filter(
+      (option) => describePendingUserInputOption(option).recommended,
+    );
+    const picked = question.multiSelect ? recommended : recommended.slice(0, 1);
+    const values = picked.map((option) => option.value ?? option.label);
+    const [first] = values;
+    if (first === undefined) return null;
+    answers[question.id] = question.multiSelect ? values : first;
+    labels.push(picked.map((option) => describePendingUserInputOption(option).label).join(", "));
+  }
+  return { answers, labels, at: askedAt + PENDING_USER_INPUT_CARRY_ON_DELAY_MS };
+}
+
+/** What the card says about carrying on, given the time it carries on at. */
+export function formatPendingUserInputCarryOn(
+  carryOn: Pick<PendingUserInputCarryOn, "labels">,
+  time: string,
+): string {
+  const answer = carryOn.labels.length === 1 ? `“${carryOn.labels[0]}”` : "the recommended answers";
+  return `Carries on with ${answer} at ${time} if you don’t answer.`;
 }
