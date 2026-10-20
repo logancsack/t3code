@@ -328,6 +328,15 @@ export const SETTINGS_SEARCH_ITEMS = [
     aldoCloudOnly: true,
   },
   {
+    id: "aldo-interests",
+    title: "What you hand Aldo",
+    to: "/settings/general",
+    searchTerms: [
+      "interests welcome starters ideas home developer tools code pull requests terminal diff",
+    ],
+    aldoCloudOnly: true,
+  },
+  {
     id: "project-grouping",
     title: "Project grouping",
     to: "/settings/general",

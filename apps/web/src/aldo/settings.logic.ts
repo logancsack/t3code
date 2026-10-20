@@ -73,6 +73,17 @@ export const ALDO_SETTINGS_NAV: ReadonlyArray<{
   },
 ];
 
+/** The nav for this account: Code only with the developer tools (developerTools.ts). */
+export function aldoSettingsNav(options: {
+  readonly developer: boolean;
+}): typeof ALDO_SETTINGS_NAV {
+  if (options.developer) return ALDO_SETTINGS_NAV;
+  return ALDO_SETTINGS_NAV.map((group) => ({
+    ...group,
+    items: group.items.filter((item) => item.to !== "/settings/code"),
+  }));
+}
+
 /** Whether a nav entry is the page shown, or one it opens onto. */
 export function aldoSettingsNavActive(
   item: { readonly to: string; readonly also?: ReadonlyArray<string> },
