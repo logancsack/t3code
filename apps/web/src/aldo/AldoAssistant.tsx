@@ -64,6 +64,7 @@ import { useAldoArrive, useAldoArrived } from "./arrive";
 import { blinkAldo, setAldoReading } from "./face";
 import { dedupeLiveCards, interleave, type AldoFeedEvent } from "./feed.logic";
 import { useAldoFirstViewHold } from "./firstView";
+import { AldoPlanPicker } from "./AldoPlanPicker";
 import { CHIP } from "./surface";
 import "./presence.css";
 
@@ -637,6 +638,7 @@ export function AldoConversation(
   const loaded = useAldoAssistant((s) => s.historyLoaded);
   useAldoFirstViewHold(!loaded);
   const replying = useAldoAssistant((s) => s.replying);
+  const planPick = useAldoAssistant((s) => s.planPick);
   const since = props.since ?? 0;
   const live = useMemo(() => liveCardIndexes(all), [all]);
   const entries = since > 0 ? all.slice(since) : all;
@@ -665,7 +667,7 @@ export function AldoConversation(
   const follows = props.feed === undefined;
   useEffect(() => {
     if (follows) end.current?.scrollIntoView({ block: "end" });
-  }, [follows, entries.length, replying]);
+  }, [follows, entries.length, replying, planPick?.stage]);
   let day: string | null = null;
   return (
     <div className="flex flex-col gap-6">
@@ -697,6 +699,10 @@ export function AldoConversation(
             entry={entry}
             live={live.has(since + index)}
           />,
+          // A request kept until a plan's chosen: the plan picker under it.
+          planPick?.entry === entry ? (
+            <AldoPlanPicker key={`plan-${planPick.requestId}`} pick={planPick} />
+          ) : null,
         ];
       })}
       {replying ? (

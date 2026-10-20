@@ -26,6 +26,8 @@ export interface AldoBilling {
   /** The last payment didn't go through. */
   readonly pastDue: boolean;
   readonly plans: readonly AldoBillingPlan[];
+  /** Checkout offers extra usage as a choice, off unless chosen, then at this limit (newer Aldo; read with extraUsageOffer). */
+  readonly extraUsage?: unknown;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
