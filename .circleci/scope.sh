@@ -45,13 +45,17 @@ while IFS= read -r file; do
     package.json | pnpm-lock.yaml | pnpm-workspace.yaml | .npmrc | vite.config.ts | tsconfig*.json | \
       patches/* | .circleci/* | oxlint-plugin-t3code/* | */package.json)
       full=1 ;;
-    apps/web/src/*.ts | apps/web/src/*.tsx)
+    # Tests aren't in the client's bundle.
+    apps/web/src/*.test.ts | apps/web/src/*.test.tsx)
       test=1 packages+=(apps/web) ;;
-    # Styles, assets, HTML, Vite's config and the license list reach the client's build.
+    # Anything else the web app or client-runtime holds can reach the client, and an
+    # import can grow the home screen's first download, which the build is held to
+    # (apps/web/scripts/check-first-screen-size.ts). When only styles and assets
+    # built it, a source change over the budget was found when Aldo pinned the client.
     apps/web/* | third-party-licenses.config.json)
       test=1 client=1 packages+=(apps/web) ;;
     packages/client-runtime/*)
-      test=1 packages+=(packages/client-runtime apps/web) ;;
+      test=1 client=1 packages+=(packages/client-runtime apps/web) ;;
     packages/contracts/* | packages/shared/*)
       test=1 server=1 packages+=(all) ;;
     packages/*)
@@ -64,14 +68,6 @@ while IFS= read -r file; do
       test=1 ;;
   esac
 done <<<"$changed"
-
-# Source that newly imports a stylesheet, an asset or a Vite-only module is
-# checked by building the client too.
-if [ "$client" = 0 ] && [ "$test" = 1 ] &&
-  git diff -U0 "$base" HEAD -- 'apps/web/src/*.ts' 'apps/web/src/*.tsx' |
-  grep -Eq '^\+.*(import\.meta\.(glob|env)|\.(css|svg|png|jpe?g|gif|webp|avif|ico|woff2?|ttf|json|wasm)(\?[a-z]+)?["'\'']|\?(url|raw|inline|worker)["'\''])'; then
-  client=1
-fi
 
 if [ "$full" = 1 ] || [[ " ${packages[*]-} " == *" all "* ]]; then
   typecheck="--filter t3..."

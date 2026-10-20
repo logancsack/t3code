@@ -30,7 +30,7 @@ import {
   UnlinkIcon,
   type LucideIcon,
 } from "lucide-react";
-import { memo, useMemo, useRef, useState, type ReactNode } from "react";
+import { lazy, memo, Suspense, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { useAssetUrlState, useAssetUrls } from "../assets/assetUrls";
 import type {
@@ -47,7 +47,6 @@ import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { cn } from "../lib/utils";
 import { useRightPanelStore } from "../rightPanelStore";
 import { AldoChatVideo } from "./AldoChatVideo";
-import { AldoDocumentReader } from "./AldoDocumentReader";
 import { aldoShareAudience, aldoShareIdOf } from "./library.logic";
 import {
   ALDO_MADE_KIND_LABEL,
@@ -67,6 +66,12 @@ import {
 } from "./results.logic";
 import { useAldoShareList } from "./shareList";
 import { promptWith } from "./summon.logic";
+
+// The reader brings the chat's Markdown (~250 kB, gzipped) with it, which the
+// home screen's Library would otherwise download before a document is opened.
+const AldoDocumentReader = lazy(() =>
+  import("./AldoDocumentReader").then((module) => ({ default: module.AldoDocumentReader })),
+);
 
 /** Shown in each section before "N more". */
 const SHOWN = { gallery: 8, links: 6, documents: 6 } as const;
@@ -974,13 +979,15 @@ function Documents(props: {
       </ul>
       <MoreButton hidden={props.items.length - shown.length} onClick={() => setShowAll(true)} />
       {reading && props.threadRef && props.workspaceRoot ? (
-        <AldoDocumentReader
-          item={reading}
-          threadRef={props.threadRef}
-          workspaceRoot={props.workspaceRoot}
-          audience={<ItemAudience item={reading} threadRef={props.threadRef} />}
-          onClose={() => setReading(null)}
-        />
+        <Suspense fallback={null}>
+          <AldoDocumentReader
+            item={reading}
+            threadRef={props.threadRef}
+            workspaceRoot={props.workspaceRoot}
+            audience={<ItemAudience item={reading} threadRef={props.threadRef} />}
+            onClose={() => setReading(null)}
+          />
+        </Suspense>
       ) : null}
     </section>
   );
