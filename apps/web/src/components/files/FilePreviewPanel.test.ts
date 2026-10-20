@@ -6,6 +6,7 @@ import {
   remapFileCommentAnnotations,
 } from "./fileCommentAnnotations";
 import {
+  canShowPdfInFrame,
   isMarkdownPreviewFile,
   resolveFilePreviewPath,
   setMarkdownTaskChecked,
@@ -126,6 +127,18 @@ describe("shouldShowFileExplorer", () => {
         compact: true,
       }),
     ).toBe(true);
+  });
+});
+
+describe("canShowPdfInFrame", () => {
+  it("falls back where the browser has no PDF viewer (Chrome on Android)", () => {
+    expect(canShowPdfInFrame({ pdfViewerEnabled: false })).toBe(false);
+  });
+
+  it("keeps the frame where the browser has a viewer or predates the flag", () => {
+    expect(canShowPdfInFrame({ pdfViewerEnabled: true })).toBe(true);
+    expect(canShowPdfInFrame({})).toBe(true);
+    expect(canShowPdfInFrame(undefined)).toBe(true);
   });
 });
 

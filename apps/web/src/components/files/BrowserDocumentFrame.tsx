@@ -1,3 +1,8 @@
+import { ExternalLinkIcon } from "lucide-react";
+
+import { Button } from "../ui/button";
+import { canShowPdfInFrame } from "./filePreviewMode";
+
 /**
  * Chromium's viewer opens with its own toolbar, a thumbnail rail and a small
  * zoom. The panel header is the only chrome we want, so ask for the page
@@ -20,6 +25,21 @@ export function BrowserDocumentFrame(props: {
   readonly pdf: boolean;
 }) {
   const className = "min-h-0 flex-1 border-0 bg-white";
+  if (props.pdf && !canShowPdfInFrame(typeof navigator === "undefined" ? undefined : navigator)) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
+        <p className="text-muted-foreground text-sm">This browser can’t show the PDF here.</p>
+        <Button
+          variant="outline"
+          size="sm"
+          render={<a href={props.src} target="_blank" rel="noopener noreferrer" />}
+        >
+          <ExternalLinkIcon />
+          Open the PDF
+        </Button>
+      </div>
+    );
+  }
   return props.pdf ? (
     // oxlint-disable-next-line react/iframe-missing-sandbox
     <iframe

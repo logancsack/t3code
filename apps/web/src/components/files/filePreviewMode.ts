@@ -26,6 +26,17 @@ export function shouldShowFileExplorer(input: {
   return input.explorerOpen && input.compact !== true;
 }
 
+/**
+ * Chrome on Android has no built-in PDF viewer, so a PDF frame there stays
+ * blank; the browser says so through `pdfViewerEnabled`. One that predates the
+ * flag gets the frame, as before.
+ */
+export function canShowPdfInFrame(
+  nav: { readonly pdfViewerEnabled?: boolean } | undefined,
+): boolean {
+  return nav?.pdfViewerEnabled !== false;
+}
+
 export function setMarkdownTaskChecked(
   markdown: string,
   markerOffset: number,
