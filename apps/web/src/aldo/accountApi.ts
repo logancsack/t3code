@@ -6,6 +6,11 @@ import {
   type AuthConnectorSession,
 } from "@t3tools/contracts";
 import { api, AldoApiError } from "./api";
+import {
+  parseAldoMomentEmails,
+  type AldoMomentEmailKind,
+  type AldoMomentEmails,
+} from "./momentEmails.logic";
 
 export type AldoAccountKind = "github" | "claude" | "codex" | "grok" | "muse";
 
@@ -748,5 +753,30 @@ export async function setAldoHeadsUps(on: boolean): Promise<AldoHeadsUps> {
     }),
   );
   if (!saved) throw new Error("This Aldo doesn't have heads-ups.");
+  return saved;
+}
+
+/** Null where this Aldo doesn't send these emails (src/aldo/momentEmails.logic.ts). */
+export async function fetchAldoMomentEmails(): Promise<AldoMomentEmails | null> {
+  try {
+    return parseAldoMomentEmails(await api<unknown>("/api/notifications/email"));
+  } catch (cause) {
+    if (cause instanceof AldoApiError && cause.status === 404) return null;
+    throw cause;
+  }
+}
+
+/** Turns one kind on or off; the others stay as they are. */
+export async function setAldoMomentEmails(
+  kind: AldoMomentEmailKind,
+  on: boolean,
+): Promise<AldoMomentEmails> {
+  const saved = parseAldoMomentEmails(
+    await api<unknown>("/api/notifications/email", {
+      method: "PUT",
+      body: JSON.stringify({ [kind]: on }),
+    }),
+  );
+  if (!saved) throw new Error("This Aldo doesn't send these emails.");
   return saved;
 }
