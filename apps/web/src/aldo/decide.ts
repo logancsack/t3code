@@ -1,8 +1,10 @@
 // Making a decision in a tap (decisions.logic.ts), from the brief's "Top of
 // mind", the phone's Agents tab or going through them with Aldo: the page acts
 // as the user would on the board, through the same routes, says how it went,
-// and gives back what was chosen in words (for Aldo, on a call). The home
-// read is refreshed after, so the decision leaves the page.
+// and gives back what was chosen in words (for Aldo, on a call). A thread's
+// question, approval or plan leaves the page the moment it's sent (homeFeed.ts
+// sendAldoAnswer) and comes back only if Aldo refuses the answer; the rest
+// leave with the home read refreshed after.
 
 import { toastManager } from "../components/ui/toast";
 import { toastAldoRule } from "./AldoApprovals";
@@ -10,7 +12,7 @@ import { AldoApiError } from "./api";
 import { answerAldoThread, approveAldoPlan, decideAldoApproval, fetchAldoHome } from "./homeApi";
 import { mergeAldoPullRequest } from "./workspaceApi";
 import { decisionOpen, type AldoDecision } from "./decisions.logic";
-import { refreshAldoHome } from "./homeFeed";
+import { refreshAldoHome, sendAldoAnswer } from "./homeFeed";
 
 export type AldoChoice =
   /** A question's answer: a choice per question, or the user's own words. */
@@ -119,24 +121,30 @@ export async function decideAldoOutcome(
       return done(`Merged ${pr.repo}#${pr.number}`);
     }
     if (choice.kind === "plan" && decision.kind === "plan") {
-      await approveAldoPlan(decision.conversation.thread, decision.plan.id, choice.changes);
+      await sendAldoAnswer(decision.conversation, () =>
+        approveAldoPlan(decision.conversation.thread, decision.plan.id, choice.changes),
+      );
       return done(
         choice.changes ? "Asked for a revised plan" : "The agent is carrying out the plan",
       );
     }
     if (choice.kind === "answer" && decision.kind === "question") {
-      await answerAldoThread(decision.conversation.thread, {
-        requestId: decision.pending.requestId,
-        ...(choice.answers ? { answers: choice.answers } : {}),
-        ...(choice.text ? { text: choice.text } : {}),
-      });
+      await sendAldoAnswer(decision.conversation, () =>
+        answerAldoThread(decision.conversation.thread, {
+          requestId: decision.pending.requestId,
+          ...(choice.answers ? { answers: choice.answers } : {}),
+          ...(choice.text ? { text: choice.text } : {}),
+        }),
+      );
       return done("Answered");
     }
     if (choice.kind === "decision" && decision.kind === "approval") {
-      await answerAldoThread(decision.conversation.thread, {
-        requestId: decision.pending.requestId,
-        decision: choice.decision,
-      });
+      await sendAldoAnswer(decision.conversation, () =>
+        answerAldoThread(decision.conversation.thread, {
+          requestId: decision.pending.requestId,
+          decision: choice.decision,
+        }),
+      );
       return done("Decision sent");
     }
     return { outcome: "failed", said: null };

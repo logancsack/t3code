@@ -25,3 +25,8 @@ export function addAldoReceipt(receipt: AldoReceipt): void {
     receipts: [...s.receipts.filter((r) => r.key !== receipt.key), receipt],
   }));
 }
+
+/** The card it was is back (the answer wasn't taken). */
+export function removeAldoReceipt(key: string): void {
+  useAldoReceipts.setState((s) => ({ receipts: s.receipts.filter((r) => r.key !== key) }));
+}

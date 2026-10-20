@@ -494,6 +494,16 @@ export async function fetchAldoHome(): Promise<AldoHome | null> {
 }
 
 /**
+ * A POST that outlives the page: an answer's card is gone the moment it's
+ * sent, so leaving or closing the app mustn't cancel it (the browser finishes
+ * it, if it fits what it lets one carry).
+ */
+const postedKept = (body: unknown): RequestInit => {
+  const json = JSON.stringify(body);
+  return { method: "POST", body: json, keepalive: json.length < 20_000 };
+};
+
+/**
  * Answers the question or approval a conversation is waiting on, as the
  * user. `requestId` is the one the page showed: Aldo refuses (409) if the
  * thread has moved on to another. Says what happened.
@@ -509,10 +519,7 @@ export async function answerAldoThread(
 ): Promise<string> {
   const { status } = await api<{ status: string }>(
     `/api/environments/${threadIdForEnvironment(target.environmentId)}/actions`,
-    {
-      method: "POST",
-      body: JSON.stringify({ action: "answer", t3ThreadId: target.threadId, ...answer }),
-    },
+    postedKept({ action: "answer", t3ThreadId: target.threadId, ...answer }),
   );
   return status;
 }
@@ -530,15 +537,7 @@ export async function approveAldoPlan(
 ): Promise<string> {
   const { status } = await api<{ status: string }>(
     `/api/environments/${threadIdForEnvironment(target.environmentId)}/actions`,
-    {
-      method: "POST",
-      body: JSON.stringify({
-        action: "approve_plan",
-        t3ThreadId: target.threadId,
-        planId,
-        changes,
-      }),
-    },
+    postedKept({ action: "approve_plan", t3ThreadId: target.threadId, planId, changes }),
   );
   return status;
 }

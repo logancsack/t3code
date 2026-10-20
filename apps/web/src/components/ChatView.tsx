@@ -1801,11 +1801,11 @@ export default function ChatView(props: ChatViewProps) {
   const [respondingUserInputRequestIds, setRespondingUserInputRequestIds] = useState<
     ApprovalRequestId[]
   >([]);
-  // Questions answered with a new message after their turn ended, hidden
-  // until the server closes them.
-  const [answeredByMessageRequestIds, setAnsweredByMessageRequestIds] = useState<
-    ApprovalRequestId[]
-  >([]);
+  // Questions and approvals the user has answered, hidden from the moment
+  // it's sent until the server closes them (so a card never waits on the
+  // round trip), and back only if the server refuses the answer. A question
+  // answered with a new message after its turn ended is held the same way.
+  const [answeredRequestIds, setAnsweredRequestIds] = useState<ApprovalRequestId[]>([]);
 
   useEffect(() => {
     setIsWorkspaceFileDragActive(false);
@@ -3057,21 +3057,23 @@ export default function ChatView(props: ChatViewProps) {
       }),
     [agentSessionLive, threadActivities],
   );
-  const { approvals: pendingApprovals, userInputs: derivedPendingUserInputs } = useMemo(
+  const { approvals: derivedPendingApprovals, userInputs: derivedPendingUserInputs } = useMemo(
     () => derivePendingRequests(threadActivities),
     [threadActivities],
+  );
+  const pendingApprovals = useMemo(
+    () => derivedPendingApprovals.filter((a) => !answeredRequestIds.includes(a.requestId)),
+    [answeredRequestIds, derivedPendingApprovals],
   );
   // A question that stops the agent comes before async ones, so the card asks
   // it first and the composer holds messages back while any question blocks.
   const pendingUserInputs = useMemo(
     () =>
       blockingPendingUserInputsFirst(
-        derivedPendingUserInputs.filter(
-          (input) => !answeredByMessageRequestIds.includes(input.requestId),
-        ),
+        derivedPendingUserInputs.filter((input) => !answeredRequestIds.includes(input.requestId)),
         activeLatestTurn,
       ),
-    [activeLatestTurn, answeredByMessageRequestIds, derivedPendingUserInputs],
+    [activeLatestTurn, answeredRequestIds, derivedPendingUserInputs],
   );
   // Aldo: a message's attachments go to Aldo with it, not to the thread's
   // cloud agent (aldo/files.ts). On an Aldo that doesn't keep files they
@@ -9153,6 +9155,9 @@ export default function ChatView(props: ChatViewProps) {
       setRespondingRequestIds((existing) =>
         existing.includes(requestId) ? existing : [...existing, requestId],
       );
+      setAnsweredRequestIds((existing) =>
+        existing.includes(requestId) ? existing : [...existing, requestId],
+      );
       const result = await respondToThreadApproval({
         environmentId,
         input: {
@@ -9161,6 +9166,9 @@ export default function ChatView(props: ChatViewProps) {
           decision,
         },
       });
+      if (result._tag === "Failure") {
+        setAnsweredRequestIds((existing) => existing.filter((id) => id !== requestId));
+      }
       if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
         const error = squashAtomCommandFailure(result);
         setThreadError(
@@ -9175,7 +9183,12 @@ export default function ChatView(props: ChatViewProps) {
   );
 
   const onRespondToUserInput = useCallback(
-    async (requestId: ApprovalRequestId, answers: Record<string, unknown>) => {
+    async (
+      requestId: ApprovalRequestId,
+      answers: Record<string, unknown>,
+      // Already sent as a message (its card is held by the caller).
+      answeredAlready = false,
+    ) => {
       if (!activeThreadId || !activePendingUserInput || activePendingIsResponding) return;
       const responseKey = JSON.stringify([environmentId, activeThreadId, requestId]);
       if (userInputResponsesInFlight.current.has(responseKey)) return;
@@ -9211,6 +9224,11 @@ export default function ChatView(props: ChatViewProps) {
       setRespondingUserInputRequestIds((existing) =>
         existing.includes(requestId) ? existing : [...existing, requestId],
       );
+      if (!answeredAlready) {
+        setAnsweredRequestIds((existing) =>
+          existing.includes(requestId) ? existing : [...existing, requestId],
+        );
+      }
       const result = await respondToThreadUserInput({
         environmentId,
         input: {
@@ -9222,6 +9240,9 @@ export default function ChatView(props: ChatViewProps) {
             : {}),
         },
       });
+      if (result._tag === "Failure" && !answeredAlready) {
+        setAnsweredRequestIds((existing) => existing.filter((id) => id !== requestId));
+      }
       if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
         const error = squashAtomCommandFailure(result);
         setThreadError(
@@ -9588,7 +9609,7 @@ export default function ChatView(props: ChatViewProps) {
   const onAnswerOutlivedPendingUserInput = useCallback(
     async (request: PendingUserInput, answers: Record<string, string | string[]>) => {
       const { requestId } = request;
-      setAnsweredByMessageRequestIds((existing) =>
+      setAnsweredRequestIds((existing) =>
         existing.includes(requestId) ? existing : [...existing, requestId],
       );
       const sent = await onSubmitPlanFollowUp({
@@ -9597,10 +9618,10 @@ export default function ChatView(props: ChatViewProps) {
         linkProposedPlan: false,
       });
       if (!sent) {
-        setAnsweredByMessageRequestIds((existing) => existing.filter((id) => id !== requestId));
+        setAnsweredRequestIds((existing) => existing.filter((id) => id !== requestId));
         return;
       }
-      await onRespondToUserInput(requestId, answers);
+      await onRespondToUserInput(requestId, answers, true);
     },
     [interactionMode, onRespondToUserInput, onSubmitPlanFollowUp],
   );

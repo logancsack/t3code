@@ -4,14 +4,24 @@
 // while something on the page shows it: with the directory, on a push, when
 // the tab comes back, and every so often (a read with nothing new is a 304
 // the browser answers from its cache, from an Aldo that tags it). A tab no one
-// sees doesn't poll, and tabs on screen share their reads (sharedReads).
+// sees doesn't poll, and tabs on screen share their reads (sharedReads). What
+// the user answers from here is held out of what's shown until a read says the
+// thread has moved on (answered.logic.ts), so a card goes the moment it's sent.
 
 import { useEffect } from "react";
 import { create } from "zustand";
 
+import { AldoApiError } from "./api";
+import { askOf, HOLD_MS, withHolds, type AldoHolds } from "./answered.logic";
 import { actionsDone } from "./assistant.logic";
 import { noteAldoHiddenPrompts, pullAldoConversation, useAldoAssistant } from "./assistantSession";
-import { fetchAldoHome, type AldoHome } from "./homeApi";
+import { sameTarget } from "./home.logic";
+import {
+  fetchAldoHome,
+  type AldoHome,
+  type AldoHomeConversation,
+  type AldoHomeTarget,
+} from "./homeApi";
 import { requestAldoDirectoryRefresh, subscribeAldoEnvironments } from "./directory";
 
 import { reconcileAldoWalkthrough } from "./walkthrough";
@@ -42,6 +52,18 @@ let again = false;
 let fetchedAt = 0;
 let dismissalRevision = 0;
 let lastServerBody: string | null = null;
+/**
+ * Aldo's latest read, with what was done here since (a dismissal): what the
+ * answers sent from here are held out of, to give the home shown.
+ */
+let serverHome: AldoHome | null = null;
+const HOLDS_KEY = "aldo-answered";
+/**
+ * Answers sent from here that Aldo's read may still show unanswered, by
+ * conversation. Ones Aldo has taken are kept across a reload (an answer whose
+ * request hadn't reached Aldo when the page went isn't: its card is back).
+ */
+let holds: AldoHolds = loadHolds();
 /**
  * When the read the home shown comes from began, or a card was last hidden
  * here: another tab's read begun earlier could put back what changed since.
@@ -91,16 +113,65 @@ function takeSharedRead(read: Partial<SharedRead> | null): void {
   takeHome(read.home);
 }
 
+function loadHolds(): AldoHolds {
+  try {
+    const stored = JSON.parse(localStorage.getItem(HOLDS_KEY) ?? "{}") as AldoHolds;
+    const now = Date.now();
+    return Object.fromEntries(
+      Object.entries(stored).filter(
+        ([, hold]) =>
+          typeof hold?.ask === "string" &&
+          typeof hold.at === "string" &&
+          typeof hold.until === "number" &&
+          hold.until > now,
+      ),
+    );
+  } catch {
+    return {};
+  }
+}
+
+function saveHolds(): void {
+  try {
+    const taken = Object.entries(holds).filter(([, hold]) => hold.until !== undefined);
+    if (taken.length > 0)
+      localStorage.setItem(HOLDS_KEY, JSON.stringify(Object.fromEntries(taken)));
+    else localStorage.removeItem(HOLDS_KEY);
+  } catch {
+    // No storage: the holds last as long as this page.
+  }
+}
+
+/** A read of the home as the page shows it: less what the user has answered since. */
+function shown(home: AldoHome): AldoHome {
+  const applied = withHolds(home, holds, Date.now());
+  if (applied.holds !== holds) {
+    holds = applied.holds;
+    saveHolds();
+  }
+  return applied.home;
+}
+
+/** Shows the home again after a hold came or went. */
+function publish(): void {
+  if (serverHome) useAldoHomeFeed.setState({ home: shown(serverHome) });
+}
+
 /** Shows a read of the home, this page's or another tab's. */
 function takeHome(next: AldoHome | null): void {
   const body = JSON.stringify(next);
   const changed = body !== lastServerBody;
   lastServerBody = body;
-  if (next && changed) noteHiddenPrompts(next);
+  if (next && changed) {
+    serverHome = next;
+    noteHiddenPrompts(next);
+  }
   const state = useAldoHomeFeed.getState();
-  if (changed || state.error !== null || state.supported !== Boolean(next)) {
+  // While an answer is held, each read is looked over again: it may be the one that has caught up.
+  const holding = Object.keys(holds).length > 0;
+  if (changed || holding || state.error !== null || state.supported !== Boolean(next)) {
     useAldoHomeFeed.setState({
-      ...(next && changed ? { home: next } : {}),
+      ...(next && serverHome && (changed || holding) ? { home: shown(serverHome) } : {}),
       supported: Boolean(next),
       error: null,
     });
@@ -204,7 +275,7 @@ export function useAldoHomeRead(): AldoHomeFeed {
 
 /** A persisted dismissal takes effect immediately, including when the next read fails. */
 export function setAldoChatDecisionDismissed(id: string, dismissed: boolean): void {
-  const home = useAldoHomeFeed.getState().home;
+  const home = serverHome;
   if (!home) return;
   dismissalRevision += 1;
   homeFrom = Date.now();
@@ -220,7 +291,70 @@ export function setAldoChatDecisionDismissed(id: string, dismissed: boolean): vo
     pullRequests: home.pullRequests.map(update),
   };
   noteHiddenPrompts(next);
-  useAldoHomeFeed.setState({ home: next });
+  serverHome = next;
+  publish();
+}
+
+/**
+ * The user sent an answer to what a conversation waits on: its card goes now,
+ * and the conversation shows as carrying on, however long Aldo's read takes to
+ * say so (its machine may have to wake to take the answer).
+ */
+export function holdAldoAnswer(c: AldoHomeConversation): void {
+  const ask = askOf(c);
+  if (ask === null) return;
+  holds = { ...holds, [c.ref]: { ask, at: new Date().toISOString() } };
+  publish();
+}
+
+/** Aldo has the answer: it stays held until a read has caught up (a few minutes at most), across a reload. */
+export function keepAldoAnswer(c: AldoHomeConversation): void {
+  const hold = holds[c.ref];
+  if (!hold) return;
+  holds = { ...holds, [c.ref]: { ...hold, until: Date.now() + HOLD_MS } };
+  saveHolds();
+}
+
+/** The answer wasn't taken: the card is back, as Aldo's read has it. */
+export function releaseAldoAnswer(c: AldoHomeConversation): void {
+  if (!holds[c.ref]) return;
+  const { [c.ref]: _released, ...rest } = holds;
+  holds = rest;
+  saveHolds();
+  publish();
+}
+
+/**
+ * Sends an answer (`send`, to Aldo) to what a conversation waits on, with its
+ * card gone from the first moment. It comes back only if Aldo refuses the
+ * answer, saying why (the error's message); one that's only slow stays gone.
+ * A refusal that says the thread has moved on (409) waits for the next read, so
+ * a card that was answered elsewhere doesn't come back for a moment.
+ */
+export async function sendAldoAnswer<T>(
+  c: AldoHomeConversation,
+  send: () => Promise<T>,
+): Promise<T> {
+  holdAldoAnswer(c);
+  try {
+    const sent = await send();
+    keepAldoAnswer(c);
+    return sent;
+  } catch (cause) {
+    if (cause instanceof AldoApiError && cause.status === 409) await refreshAldoHome();
+    releaseAldoAnswer(c);
+    throw cause;
+  }
+}
+
+/** An answer the assistant sent for the user (its tool call, taken by Aldo): the card goes the same way. */
+export function noteAldoAnswered(target: AldoHomeTarget): void {
+  const c = useAldoHomeFeed
+    .getState()
+    .home?.conversations.find((candidate) => sameTarget(target, candidate.thread));
+  if (!c) return;
+  holdAldoAnswer(c);
+  keepAldoAnswer(c);
 }
 
 function noteHiddenPrompts(home: AldoHome): void {

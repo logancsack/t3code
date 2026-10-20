@@ -36,7 +36,7 @@ import { AgentMarkdown, Quoted } from "./AldoQuoted";
 import { useAldoArrive } from "./arrive";
 import { useAldoBrief } from "./briefFeed";
 import { type AldoHome, type AldoHomeConversation } from "./homeApi";
-import { decideAldoOutcome, type AldoChoice } from "./decide";
+import { decideAldoOutcome, type AldoChoice, type AldoDecidedResult } from "./decide";
 import {
   aldoChatDecisions,
   chatDecisionOf,
@@ -48,7 +48,7 @@ import { pleaseAldo } from "./face";
 import { refreshAldoHome, useAldoHomeFeed } from "./homeFeed";
 import { elapsed, isPausedMidTurn } from "./home.logic";
 import { aldoMorph } from "./morph";
-import { addAldoReceipt, useAldoReceipts } from "./receipts";
+import { addAldoReceipt, removeAldoReceipt, useAldoReceipts } from "./receipts";
 import { movedOnText, receiptText } from "./receipts.logic";
 import { FOCUS, ICON_BUTTON, INSET, PRIMARY, SECONDARY, SURFACE } from "./surface";
 import { scrollMotion, SHOW_ALDO_DECISION } from "./show";
@@ -359,34 +359,63 @@ function DecisionCard(props: {
   const d = props.decision;
   const [busy, setBusy] = useState<string | null>(null);
   const card = useRef<HTMLElement>(null);
+  // Where a keyboard on the card goes once it's answered; worked out before the card goes.
+  const keyboardTo = useRef<HTMLElement | null>(null);
   const decide = async (key: string, choice: AldoChoice) => {
     // What it sends is on screen here, so its button is the yes; a draft deleted, or a merge, is asked.
     if (!(await confirmQuickChoice(d, choice, { seen: true }))) return;
     setBusy(key);
-    const { outcome, said } = await decideAldoOutcome(d, choice, { quiet: true });
+    const receipt = (text: string) =>
+      addAldoReceipt({
+        key: d.key,
+        at: new Date().toISOString(),
+        text,
+        thread: decisionThread(d),
+      });
+    const lineOf = () =>
+      document.querySelector<HTMLElement>(`[data-aldo-receipt="${CSS.escape(d.key)}"]`);
+    // A thread's answer is settled the moment it's tapped: the card becomes
+    // the line saying what was done, however long its computer takes to wake
+    // and take it. The line goes, and the card is back, only if Aldo refuses it.
+    const settles = d.kind === "question" || d.kind === "approval" || d.kind === "plan";
+    keyboardTo.current = focusAfter(card.current);
+    const decided = settles
+      ? new Promise<AldoDecidedResult>((resolve) =>
+          aldoMorph(
+            () => {
+              receipt(receiptText(d, choice));
+              resolve(decideAldoOutcome(d, choice, { quiet: true }));
+            },
+            card.current,
+            lineOf,
+          ),
+        )
+      : decideAldoOutcome(d, choice, { quiet: true });
+    if (settles) keyboardTo.current?.focus({ preventScroll: true });
+    const { outcome, said } = await decided;
     setBusy(null);
-    if (outcome === "failed") return;
+    if (outcome === "failed") {
+      if (settles) {
+        removeAldoReceipt(d.key);
+        if (keyboardTo.current) focusCardSoon(d.key);
+      }
+      return;
+    }
     if (outcome === "done") pleaseAldo();
     drafts.delete(d.key);
+    if (settles) {
+      // Done as the line already says; one that had moved on says that instead.
+      if (outcome === "moved-on") receipt(movedOnText(d, said));
+      return;
+    }
     // The card becomes the line saying what happened, where it happened.
     const text = outcome === "done" ? receiptText(d, choice, said) : movedOnText(d, said);
-    const next = focusAfter(card.current);
-    aldoMorph(
-      () =>
-        addAldoReceipt({
-          key: d.key,
-          at: new Date().toISOString(),
-          text,
-          thread: decisionThread(d),
-        }),
-      card.current,
-      () => document.querySelector<HTMLElement>(`[data-aldo-receipt="${CSS.escape(d.key)}"]`),
-    );
-    next?.focus({ preventScroll: true });
+    aldoMorph(() => receipt(text), card.current, lineOf);
+    keyboardTo.current?.focus({ preventScroll: true });
   };
-  // Its own form acted (a longer question, a handoff, a step with terms): the next read takes the card away.
+  // Its own form sent its answer (a longer question, a handoff, a step with terms): the card goes with it.
   const acted = () => {
-    const next = focusAfter(card.current);
+    const next = keyboardTo.current ?? focusAfter(card.current);
     void refreshAldoHome().then(() => {
       const lost = !document.activeElement || document.activeElement === document.body;
       if (next?.isConnected && lost) next.focus({ preventScroll: true });
@@ -496,7 +525,15 @@ function DecisionCard(props: {
           </p>
         ) : null;
       if (d.pending.questions.length !== 1 || !q || q.multiSelect) {
-        actions = <PendingForm conversation={d.conversation} onActed={acted} />;
+        actions = (
+          <PendingForm
+            conversation={d.conversation}
+            onActed={acted}
+            onSending={() => {
+              keyboardTo.current = focusAfter(card.current);
+            }}
+          />
+        );
         break;
       }
       const pick = props.pick && q.options.some((o) => o.label === props.pick!.label);
