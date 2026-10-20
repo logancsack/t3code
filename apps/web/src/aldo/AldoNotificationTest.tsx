@@ -7,17 +7,27 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { testAldoNotifications, type AldoBrowser, type AldoTestState } from "./notifications";
 import { aldoNotSeenHint, aldoTestMessage, aldoTestPending } from "./notifications.logic";
 
-/** Runs a test (again replaces the last), and stops listening when the component goes. */
-export function useAldoNotificationTest(): {
+/**
+ * Runs a test (again replaces the last), and stops listening when the component goes. `onGone`
+ * hears when the test found this browser's subscription gone, so notifications are off here.
+ */
+export function useAldoNotificationTest(onGone?: () => void): {
   readonly state: AldoTestState | null;
   readonly run: () => void;
 } {
   const [state, setState] = useState<AldoTestState | null>(null);
   const stop = useRef<(() => void) | null>(null);
+  const gone = useRef(onGone);
+  useEffect(() => {
+    gone.current = onGone;
+  });
   useEffect(() => () => stop.current?.(), []);
   const run = useCallback(() => {
     stop.current?.();
-    stop.current = testAldoNotifications(setState);
+    stop.current = testAldoNotifications((next) => {
+      setState(next);
+      if (next.phase === "failed" && next.gone) gone.current?.();
+    });
   }, []);
   return { state, run };
 }

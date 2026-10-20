@@ -216,19 +216,23 @@ export type AldoTestState =
   | { readonly phase: "not-shown" }
   /** No word within ALDO_TEST_TIMEOUT_MS. */
   | { readonly phase: "not-seen" }
-  | { readonly phase: "failed"; readonly message: string };
+  /** `gone`: this browser's subscription is gone (and let go), so notifications are off here. */
+  | { readonly phase: "failed"; readonly message: string; readonly gone?: boolean };
 
 export type AldoTestEvent =
   | { readonly type: "sent" }
   | { readonly type: "shown" }
   | { readonly type: "refused" }
   | { readonly type: "timeout" }
-  | { readonly type: "failed"; readonly message: string };
+  /** Stopped listening (ALDO_TEST_LISTEN_MS): whatever's still pending ends. */
+  | { readonly type: "expired" }
+  | { readonly type: "failed"; readonly message: string; readonly gone?: boolean };
 
 /**
  * The next state of a test. What the device said wins: shown, even after the
  * timeout or a request that failed on the way back, is arrived, and nothing
- * changes it after. The timeout counts only once Aldo has sent it.
+ * changes it after. The timeout counts only once Aldo has sent it. Expired,
+ * nothing is pending: one Aldo never answered failed, one it sent wasn't seen.
  */
 export function aldoTestReducer(state: AldoTestState, event: AldoTestEvent): AldoTestState {
   if (state.phase === "arrived" || state.phase === "not-shown") return state;
@@ -241,8 +245,14 @@ export function aldoTestReducer(state: AldoTestState, event: AldoTestEvent): Ald
       return state.phase === "sending" ? { phase: "waiting" } : state;
     case "timeout":
       return state.phase === "waiting" ? { phase: "not-seen" } : state;
+    case "expired":
+      if (state.phase === "sending")
+        return { phase: "failed", message: "Aldo didn’t answer. Try again." };
+      return state.phase === "waiting" ? { phase: "not-seen" } : state;
     case "failed":
-      return state.phase === "sending" ? { phase: "failed", message: event.message } : state;
+      return state.phase === "sending"
+        ? { phase: "failed", message: event.message, ...(event.gone ? { gone: true } : {}) }
+        : state;
   }
 }
 
@@ -273,7 +283,8 @@ export function aldoTestMessage(
     case "not-seen":
       return { text: `Sent a test. Didn’t see it? ${aldoNotSeenHint(browser)}`, again: true };
     case "failed":
-      return { text: `The test didn’t go: ${state.message}`, again: true };
+      // Gone, another can't go until notifications are on again.
+      return { text: `The test didn’t go: ${state.message}`, again: !state.gone };
   }
 }
 

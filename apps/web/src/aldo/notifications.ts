@@ -136,9 +136,10 @@ export async function enableAldoNotifications(key: string | null): Promise<Notif
  * worker, and reports each step to `onChange`: sent, then shown (the worker
  * says so by the test's id; an older worker says only that a push came), or
  * no word within ALDO_TEST_TIMEOUT_MS. A late arrival still counts until
- * ALDO_TEST_LISTEN_MS. If Aldo says this device's subscription is gone, it's
- * let go here too, so it reads as off. Returns a function that stops
- * listening. Only for an Aldo that reports `test`.
+ * ALDO_TEST_LISTEN_MS, when whatever's still pending ends. If Aldo says this
+ * device's subscription is gone, it's let go here too, so it reads as off (a
+ * failure that's `gone`). Returns a function that stops listening. Only for an
+ * Aldo that reports `test`.
  */
 export function testAldoNotifications(onChange: (state: AldoTestState) => void): () => void {
   // The service worker sends it back once it shows the test.
@@ -167,7 +168,12 @@ export function testAldoNotifications(onChange: (state: AldoTestState) => void):
     else if (data?.type === "aldo-push") update({ type: "shown" });
   }
   worker.addEventListener("message", onMessage);
-  timers.push(setTimeout(stop, ALDO_TEST_LISTEN_MS));
+  timers.push(
+    setTimeout(() => {
+      update({ type: "expired" });
+      stop();
+    }, ALDO_TEST_LISTEN_MS),
+  );
   onChange(state);
   void (async () => {
     const subscription = await currentSubscription();
@@ -175,6 +181,7 @@ export function testAldoNotifications(onChange: (state: AldoTestState) => void):
       update({
         type: "failed",
         message: "This browser isn’t set up for notifications. Turn them on again.",
+        gone: true,
       });
       return;
     }
@@ -196,7 +203,11 @@ export function testAldoNotifications(onChange: (state: AldoTestState) => void):
     }
     const message = aldoErrorOf(await response.json().catch(() => null));
     if (response.status === 410) await subscription.unsubscribe().catch(() => false);
-    update({ type: "failed", message: message ?? "Aldo couldn’t send it just now. Try again." });
+    update({
+      type: "failed",
+      message: message ?? "Aldo couldn’t send it just now. Try again.",
+      ...(response.status === 410 ? { gone: true } : {}),
+    });
   })().catch(() =>
     update({ type: "failed", message: "Aldo can’t be reached just now. Try again." }),
   );

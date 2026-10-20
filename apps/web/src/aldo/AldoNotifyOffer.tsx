@@ -3,8 +3,8 @@
 // banner on the home screen. "Notify me" asks the browser, then (where Aldo
 // sends tests) sends one and says whether it arrived; a browser that blocks
 // them gets where to allow them, in its own settings. Answered once (turned
-// on, or "Not now"), it doesn't ask again on this device; Settings keeps the
-// switch and the test.
+// on, or "Not now"), it doesn't ask again on this device, unless a test finds
+// them gone; Settings keeps the switch and the test.
 
 import { BellRingIcon, CircleCheckIcon, XIcon } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
@@ -39,6 +39,14 @@ function answer(): void {
   }
 }
 
+function unanswer(): void {
+  try {
+    window.localStorage.removeItem(ANSWERED_KEY);
+  } catch {
+    // Private mode: nothing was kept.
+  }
+}
+
 const LINK = "font-medium text-foreground underline-offset-2 hover:underline disabled:opacity-50";
 
 /**
@@ -51,7 +59,13 @@ export function AldoNotifyOffer() {
   const [status, setStatus] = useState<AldoNotificationsStatus | null>(null);
   const [hidden, setHidden] = useState(answered);
   const [asked, setAsked] = useState<Asked | null>(null);
-  const test = useAldoNotificationTest();
+  // The test found this browser's subscription gone: notifications are off here again, so offer
+  // them again, in this thread and the next.
+  const test = useAldoNotificationTest(() => {
+    unanswer();
+    setAsked(null);
+    void aldoNotificationsStatus().then(setStatus);
+  });
   const browser = useMemo(() => currentAldoBrowser(), []);
   useEffect(() => {
     if (hidden) return;

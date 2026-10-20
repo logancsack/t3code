@@ -234,6 +234,27 @@ describe("a test", () => {
     });
   });
 
+  it("ends whatever's pending once it stops listening", () => {
+    expect(run({ type: "expired" })).toEqual({
+      phase: "failed",
+      message: "Aldo didn’t answer. Try again.",
+    });
+    expect(run({ type: "sent" }, { type: "expired" })).toEqual({ phase: "not-seen" });
+    expect(run({ type: "sent" }, { type: "shown" }, { type: "expired" })).toEqual({
+      phase: "arrived",
+    });
+    expect(aldoTestPending(run({ type: "expired" }))).toBe(false);
+  });
+
+  it("says when the device's notifications are gone, and offers no other test then", () => {
+    const gone = run({ type: "failed", message: "Turn them on again.", gone: true });
+    expect(gone).toEqual({ phase: "failed", message: "Turn them on again.", gone: true });
+    expect(aldoTestMessage(gone, browser(UA.chromeMac))).toEqual({
+      text: "The test didn’t go: Turn them on again.",
+      again: false,
+    });
+  });
+
   it("is pending until there's an answer", () => {
     expect(aldoTestPending({ phase: "sending" })).toBe(true);
     expect(aldoTestPending({ phase: "waiting" })).toBe(true);

@@ -103,6 +103,18 @@ it("stops listening after two minutes", async () => {
   expect(test.states.at(-1)?.phase).toBe("not-seen");
 });
 
+it("ends a test Aldo never answered once it stops listening, so another can go", async () => {
+  vi.stubGlobal("fetch", () => new Promise<Response>(() => undefined));
+  const test = await start();
+  expect(test.states.at(-1)?.phase).toBe("sending");
+  await vi.advanceTimersByTimeAsync(120_000);
+  expect(test.states.at(-1)).toEqual({
+    phase: "failed",
+    message: "Aldo didn’t answer. Try again.",
+  });
+  expect(listeners).toHaveLength(0);
+});
+
 it("takes an older worker's word that a push came", async () => {
   const test = await start();
   test.worker({ type: "aldo-push", url: "/aldo-t1/c1" });
@@ -135,7 +147,11 @@ it("says why Aldo didn't send it, and lets go of a subscription Aldo says is gon
       { status: 410 },
     );
   const gone = await start();
-  expect(gone.states.at(-1)?.phase).toBe("failed");
+  expect(gone.states.at(-1)).toEqual({
+    phase: "failed",
+    message: "This browser’s notifications had expired. Turn them on again.",
+    gone: true,
+  });
   expect(unsubscribed).toBe(1);
 });
 

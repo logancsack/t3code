@@ -99,6 +99,23 @@ it("says where to look when the test doesn't come, and sends another", async () 
   expect(device.tests).toBe(2);
 });
 
+it("offers them again, here and in later threads, when the test finds them gone", async () => {
+  await render();
+  await act(() => button("Notify me").click());
+  expect(window.localStorage.getItem("aldo:notify-offer")).not.toBeNull();
+  // Aldo said this browser's subscription had expired, and it was let go.
+  device.status = available();
+  await report({
+    phase: "failed",
+    message: "This browser’s notifications had expired. Turn them on again.",
+    gone: true,
+  });
+  expect(text()).toBe("Get a notification on this computer when it’s done or needs you? Notify me");
+  expect(window.localStorage.getItem("aldo:notify-offer")).toBeNull();
+  await act(() => button("Notify me").click());
+  expect(device.tests).toBe(2);
+});
+
 it("says they're on, without a test, where Aldo doesn't send one", async () => {
   device.status = available({ test: false });
   await render();
