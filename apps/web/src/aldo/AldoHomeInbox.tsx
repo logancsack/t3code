@@ -26,7 +26,8 @@ import {
   type AldoHomePending,
   type AldoHomeTarget,
 } from "./homeApi";
-import { elapsed, modelName, NEEDS_YOU_LABEL, needsYouKind, repoName } from "./home.logic";
+import { elapsed, NEEDS_YOU_LABEL, needsYouKind, repoName } from "./home.logic";
+import { useAldoModelName } from "./modelNames";
 import { useAldoHomeFeed } from "./homeFeed";
 import { aldoCanMorph, aldoMorphSource, morphIntoThread } from "./morph";
 
@@ -88,7 +89,7 @@ export function NeedsYouCard(props: {
 }) {
   const c = props.conversation;
   const kind = needsYouKind(c) ?? "waiting";
-  const model = modelName(c.model);
+  const model = useAldoModelName(c.thread.environmentId, c.model);
   return (
     <li
       data-selected={props.selected || undefined}

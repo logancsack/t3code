@@ -82,9 +82,11 @@ export function shouldOfferResumeCompaction(input: {
   );
 }
 
+/** `unlisted` names a model the instance doesn't list; the id itself by default. */
 export function resolveContextWindowModelDisplayName(
   selection: ModelSelection | null | undefined,
   modelOptionsByInstance: ReadonlyMap<ProviderInstanceId, ReadonlyArray<ModelEsque>>,
+  unlisted: (model: string) => string = (model) => model,
 ): string | null {
   if (!selection) {
     return null;
@@ -94,7 +96,7 @@ export function resolveContextWindowModelDisplayName(
     .get(selection.instanceId)
     ?.find((model) => model.slug === selection.model);
 
-  return selectedModel ? getTriggerDisplayModelName(selectedModel) : selection.model;
+  return selectedModel ? getTriggerDisplayModelName(selectedModel) : unlisted(selection.model);
 }
 
 export function formatContextWindowCompactionMessage(

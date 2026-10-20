@@ -289,13 +289,6 @@ export function filterHome(home: AldoHome, repo: string | null): AldoHome {
   };
 }
 
-/** The model a conversation runs on, short: "claude/claude-opus-4-1" reads as "claude-opus-4-1". */
-export function modelName(model: string | undefined): string | null {
-  if (!model) return null;
-  const [, name] = model.split("/", 2);
-  return name || model;
-}
-
 /** Where the selection goes on j, k, Home or End; null when the key isn't one of those. */
 export function moveSelection(current: number | null, length: number, key: string): number | null {
   if (length === 0) return null;
