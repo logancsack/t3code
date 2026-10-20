@@ -12,6 +12,12 @@ import { isAldoCloud } from "./api";
 
 const FIRST_VIEW_MAX_MS = 500;
 const FADE_MS = 150;
+/**
+ * The logo leaves first, on the splash's own background, then the splash
+ * fades: faded together, what the page shows where the logo sat (Home's
+ * "Loading Aldo…", in the middle too) showed through it.
+ */
+const LOGO_FADE_MS = 100;
 
 let splash: HTMLElement | null = null;
 const holds = new Set<object>();
@@ -29,6 +35,8 @@ export function installAldoFirstView(): void {
     zIndex: "2147483647",
     transition: `opacity ${FADE_MS}ms ease-out`,
   });
+  const logo = splash.querySelector<HTMLElement>("#boot-shell-card");
+  if (logo) logo.style.transition = `opacity ${LOGO_FADE_MS}ms ease-out`;
   document.body.append(splash);
   // Starts the connection runtime (the directory's machines, their stored
   // threads) while the route's code loads, rather than once the app renders.
@@ -74,9 +82,14 @@ function reveal(): void {
   if (element === null) return;
   // From the page's start: the next directory read tells Aldo.
   noteAldoFirstView(performance.now());
-  element.style.opacity = "0";
   element.style.pointerEvents = "none";
-  window.setTimeout(() => element.remove(), FADE_MS);
+  const logo = element.querySelector<HTMLElement>("#boot-shell-card");
+  if (logo) {
+    logo.style.opacity = "0";
+    element.style.transitionDelay = `${LOGO_FADE_MS}ms`;
+  }
+  element.style.opacity = "0";
+  window.setTimeout(() => element.remove(), (logo ? LOGO_FADE_MS : 0) + FADE_MS);
 }
 
 /**
