@@ -97,6 +97,18 @@ describe("recallableComposerPrompt", () => {
     expect(recallableComposerPrompt(ATTACHMENT_ONLY_BOOTSTRAP_PROMPT)).toBe("");
     expect(recallableComposerPrompt(buildPlanImplementationPrompt("# Plan\n1. do it"))).toBe("");
   });
+
+  it("brings back only the user's own words from what Aldo sent for them", () => {
+    const signature = "_(Sent by Aldo, the user's assistant, for them.)_";
+    const header =
+      "The user's request to Aldo on Home, in their own words (for context: the brief above is the task):";
+    expect(
+      recallableComposerPrompt(
+        `Brief for the agent.\n\n${header}\n\n> Book a table.\n\n${signature}`,
+      ),
+    ).toBe("Book a table.");
+    expect(recallableComposerPrompt(`Brief for the agent.\n\n${signature}`)).toBe("");
+  });
 });
 
 describe("buildComposerPromptHistoryEntries", () => {
