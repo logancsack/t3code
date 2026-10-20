@@ -32,7 +32,8 @@ export function AldoBrowsingChip(props: {
         handoff ? openAldoHandoffTakeover(handoff.id, event.currentTarget) : props.onOpenBrowser()
       }
       className={cn(
-        "inline-flex min-w-0 max-w-44 shrink items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        // A phone gives the thread title the room: the chip keeps just the site.
+        "inline-flex min-w-0 max-w-44 shrink items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring max-sm:max-w-28",
         handoff
           ? "border-warning/40 bg-warning/8 text-foreground hover:bg-warning/15"
           : "border-border bg-muted/40 text-muted-foreground hover:bg-accent hover:text-foreground",
@@ -43,7 +44,10 @@ export function AldoBrowsingChip(props: {
         aria-hidden
         className={cn("size-1.5 shrink-0 rounded-full", handoff ? "bg-warning" : "bg-primary")}
       />
-      <span className="truncate">On {site}</span>
+      <span className="truncate">
+        <span className="max-sm:hidden">On </span>
+        {site}
+      </span>
     </button>
   );
 }

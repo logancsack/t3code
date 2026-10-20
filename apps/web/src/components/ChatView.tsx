@@ -10413,6 +10413,7 @@ export default function ChatView(props: ChatViewProps) {
             onUpdateProjectScript={updateProjectScript}
             onDeleteProjectScript={deleteProjectScript}
             onSendAldoMessage={isAldoCloud && isServerThread ? onSendAldoMove : undefined}
+            panelToggleCount={aldoDeveloperTools ? 2 : 1}
           />
         </WorkspacePageHeader>
 
