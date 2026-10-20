@@ -1,6 +1,6 @@
-// Aldo's own pages, linked from above the account in the sidebar
-// (AldoSidebarLinks.tsx): the Library, what the user's agents shared, and the
-// routines, what runs on its own. Each is a page like Usage, with its title in
+// Aldo's own pages, linked from the account menu (AldoAccountMenu.tsx):
+// the Library, what the user's agents shared, and the routines, what runs on
+// its own. Each is a page like Usage, with its title in
 // the top bar; Escape goes back.
 
 import { useEffect, useState, type ReactNode } from "react";

@@ -33,7 +33,6 @@ import { ManagedDevPcFooterAccount } from "../ManagedDevPcAccount";
 import { APP_BASE_NAME, APP_IS_ALDO } from "../../branding";
 import { SidebarUpdateArchitectureWarning, SidebarUpdatePill } from "./SidebarUpdatePill";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
-import { AldoSidebarLinks } from "../../aldo/AldoSidebarLinks";
 import { isAldoCloud } from "../../aldo/api";
 
 export const SidebarChromeHeader = memo(function SidebarChromeHeader({
@@ -201,11 +200,9 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
     void navigateToMainApp();
   }, [closeMobileSidebar, navigateToMainApp]);
 
-  // Aldo's places, by name; Settings and Usage are in its account menu.
+  // Aldo's navigation lives in its account menu.
   if (isAldoCloud && !isOnSettings) {
-    return (
-      <AldoSidebarLinks pullRequests={pullRequestsSupported} onNavigate={closeMobileSidebar} />
-    );
+    return null;
   }
 
   return (

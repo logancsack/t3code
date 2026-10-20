@@ -1,10 +1,10 @@
 // The account menu, from who's signed in at the foot of the sidebar
 // (AppSidebarLayout.tsx) and simple mode's rail: their name and picture from
 // their sign-in, their plan and credits (opening Settings → Account), the way
-// to Settings, the agents' mail and the keyboard shortcuts (and, for the
-// owner, the admin pages), the two things people change most (theme, simple
-// mode), and signing out. An Aldo that can't say who's signed in still shows
-// the rest.
+// to Library, Routines, Settings, the agents' mail and the keyboard shortcuts
+// (and, for the owner, the admin pages), the two things people change most
+// (theme, simple mode), and signing out. An Aldo that can't say who's signed
+// in still shows the rest.
 
 import { useNavigate } from "@tanstack/react-router";
 import {
@@ -13,12 +13,15 @@ import {
   InboxIcon,
   KeyboardIcon,
   LayoutDashboardIcon,
+  LibraryBigIcon,
   LogOutIcon,
+  RepeatIcon,
   SettingsIcon,
 } from "lucide-react";
 import { useEffect, useState, type ComponentType, type ReactNode } from "react";
 
 import { Popover, PopoverPopup, PopoverTrigger } from "../components/ui/popover";
+import { useSidebar } from "../components/ui/sidebar";
 import { Switch } from "../components/ui/switch";
 import { cn } from "~/lib/utils";
 import { AldoThemeToggle } from "./AldoGeneralSettings";
@@ -130,10 +133,12 @@ function AccountMenu(props: {
   readonly onClose: () => void;
 }) {
   const navigate = useNavigate();
+  const { isMobile, setOpenMobile } = useSidebar();
   const simple = useAldoSimpleMode();
   const { profile, usage } = props;
   const go = (to: string) => {
     props.onClose();
+    if (isMobile) setOpenMobile(false);
     void navigate({ to });
   };
   const credits = usage?.credits ?? null;
@@ -180,6 +185,8 @@ function AccountMenu(props: {
         )}
       </button>
       <MenuGroup>
+        <MenuItem icon={LibraryBigIcon} label="Library" onClick={() => go("/library")} />
+        <MenuItem icon={RepeatIcon} label="Routines" onClick={() => go("/routines")} />
         <MenuItem icon={SettingsIcon} label="Settings" onClick={() => go("/settings/agents")} />
         <MenuItem icon={InboxIcon} label="Your agents' mail" onClick={() => go("/mail")} />
         <MenuItem
