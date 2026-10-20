@@ -1,8 +1,9 @@
 // The working row's line in threads that aren't code (progress.logic.ts):
 // "Step 5 of 6 · Setting up your seller account · 18 min". The time ticks on
-// its own, so the row doesn't re-render each second.
+// its own text node, as MessagesTimeline's WorkingTimer does, so nothing
+// re-renders each second.
 
-import { memo, useEffect, useState } from "react";
+import { memo, useEffect, useRef } from "react";
 
 import { aldoElapsedWords, aldoProgressHead, type AldoPlanStep } from "./progress.logic";
 
@@ -12,14 +13,20 @@ function elapsedSince(startedAt: string): string {
 }
 
 const AldoElapsed = memo(function AldoElapsed({ startedAt }: { startedAt: string }) {
-  const [text, setText] = useState(() => elapsedSince(startedAt));
+  const textRef = useRef<HTMLSpanElement>(null);
   useEffect(() => {
-    const update = () => setText(elapsedSince(startedAt));
+    const update = () => {
+      if (textRef.current) textRef.current.textContent = elapsedSince(startedAt);
+    };
     update();
     const id = setInterval(update, 1000);
     return () => clearInterval(id);
   }, [startedAt]);
-  return <span className="tabular-nums">{text}</span>;
+  return (
+    <span ref={textRef} className="tabular-nums">
+      {elapsedSince(startedAt)}
+    </span>
+  );
 });
 
 export const AldoProgressLine = memo(function AldoProgressLine(props: {

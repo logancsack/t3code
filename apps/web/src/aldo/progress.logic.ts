@@ -94,45 +94,116 @@ const UNDER_WAY: Record<string, string> = {
   write: "writing",
 };
 
-/** A second order in the step ("and publish the gigs"), not a noun that ends it ("delivery and price"). */
-const AFTER_AND = /(\b(?:and|then)\s+)([A-Za-z]+)(?=\s+\S)/g;
+/**
+ * A second order in the step: a verb after "and" or "then" that takes what an
+ * order does ("and publish the gigs", "then send it"). One followed by anything
+ * else is as likely a noun ("upload and download speeds", "price ranges"), and
+ * one that ends the step is one ("delivery and price").
+ */
+const AFTER_AND = /(\b(?:and|then)\s+)([A-Za-z]+)(?=\s+(\S+))/g;
 
-/** Verbs that, after "and", are as often nouns ("logos and design briefs"). */
-const NOUN_TOO = new Set([
-  "design",
-  "draft",
-  "export",
-  "research",
-  "review",
-  "search",
-  "share",
-  "test",
-  "update",
+/** Words an order's object starts with: "the gigs", "them", "up the account", "what sells". */
+const OBJECT_START = new Set([
+  "a",
+  "all",
+  "an",
+  "any",
+  "anything",
+  "back",
+  "both",
+  "each",
+  "every",
+  "everything",
+  "her",
+  "him",
+  "his",
+  "how",
+  "it",
+  "its",
+  "me",
+  "my",
+  "off",
+  "our",
+  "out",
+  "some",
+  "something",
+  "that",
+  "the",
+  "their",
+  "them",
+  "these",
+  "this",
+  "those",
+  "up",
+  "us",
+  "what",
+  "whether",
+  "which",
+  "you",
+  "your",
 ]);
 
-function underWay(word: string, afterAnd = false): string | null {
-  if (afterAnd && NOUN_TOO.has(word.toLowerCase())) return null;
+function startsObject(word: string): boolean {
+  return OBJECT_START.has(word.toLowerCase().replace(/[^a-z]+$/, "")) || /^[\d“"‘']/.test(word);
+}
+
+function underWay(word: string): string | null {
   const found = UNDER_WAY[word.toLowerCase()];
   if (!found) return null;
   return word[0] === word[0]!.toUpperCase() ? found[0]!.toUpperCase() + found.slice(1) : found;
 }
 
-/** A plan step as what's under way: "Set up your seller account and publish the gigs" becomes "Setting up your seller account and publishing the gigs". */
-export function aldoStepUnderWay(step: string): string {
-  const text = step
-    .replace(/[`*_]+/g, "")
+/**
+ * Markdown's marks around words (**all**, *new*, _draft_), not the same
+ * characters inside names: Q4_report.xlsx, __init__.py and *.png stay whole.
+ */
+const EMPHASIS =
+  /(^|[\s("'“‘])(\*\*|__|\*|_)(?=[^\s*_])(.+?)(?<=[^\s*_])\2(?=$|[\s)"'”’]|[.,;:!?](?!\w))/g;
+
+/** The step's text without Markdown: a code span keeps what's inside it, untouched. */
+function plainStep(step: string): string {
+  return step
+    .split(/(`[^`]+`)/)
+    .map((part, index) => (index % 2 === 1 ? part.slice(1, -1) : part.replace(EMPHASIS, "$1$3")))
+    .join("")
     .replace(/\s+/g, " ")
     .trim()
     .replace(/[.;:]+$/, "");
+}
+
+/** Programs that make a step a command line rather than words: "Run npm test". */
+const PROGRAMS =
+  /^(?:apt|apt-get|bash|brew|bun|bunx|cargo|cat|cd|chmod|cp|curl|deno|docker|ffmpeg|find|gh|git|go|grep|jest|kubectl|ls|make|mkdir|mv|node|npm|npx|pip3?|pnpm|pytest|python3?|rg|rm|rsync|scp|sed|sh|ssh|sudo|tar|tsc|unzip|uv|vercel|vitest|vp|wget|yarn|zsh)$/;
+
+/**
+ * A step that is a command line ("Run npm test", "Running `pnpm build`",
+ * "Install it with `pip install pandas`"): the line says what's under way in
+ * plain words instead.
+ */
+function commandShaped(step: string): boolean {
+  const runs = (text: string) =>
+    PROGRAMS.test(/^[\w./+-]+/.exec(text.trim())?.[0].split("/").pop() ?? "");
+  // A code span with a program and what it's given; `git` alone is a name.
+  const codes = [...step.matchAll(/`([^`]+)`/g)].map((code) => code[1]!.trim());
+  if (codes.some((code) => /\s/.test(code) && runs(code))) return true;
+  const ran = /^(?:run|running|execute|executing)\s+(\S+)/i.exec(plainStep(step));
+  return (ran !== null && runs(ran[1]!)) || /&&|\|\||\s\|\s|(?:^|\s)--[a-z][\w-]*/.test(step);
+}
+
+/** A plan step as what's under way: "Set up your seller account and publish the gigs" becomes "Setting up your seller account and publishing the gigs". */
+export function aldoStepUnderWay(step: string): string {
+  const text = plainStep(step);
   const first = /^([A-Za-z]+)\b/.exec(text)?.[1];
   const head = first ? underWay(first) : null;
   if (!first || !head) return text;
   return (
     head +
-    text.slice(first.length).replace(AFTER_AND, (match, joint: string, word: string) => {
-      const verb = underWay(word, true);
-      return verb ? `${joint}${verb}` : match;
-    })
+    text
+      .slice(first.length)
+      .replace(AFTER_AND, (match, joint: string, word: string, next: string) => {
+        const verb = startsObject(next) ? underWay(word) : null;
+        return verb ? `${joint}${verb}` : match;
+      })
   );
 }
 
@@ -152,7 +223,9 @@ export function aldoProgressHead(
   words: string | null,
 ): string {
   const index = plan ? currentStep(plan) : -1;
-  const step = index >= 0 ? aldoStepUnderWay(plan![index]!.step) : "";
+  const raw = index >= 0 ? plan![index]!.step : "";
+  // A step that is a command says, like a turn without a plan, what's under way in words.
+  const step = !raw ? "" : commandShaped(raw) ? (words ?? "Working") : aldoStepUnderWay(raw);
   if (step && plan!.length > 1) return `Step ${index + 1} of ${plan!.length} · ${step}`;
   if (step) return step;
   return words ?? "Working";

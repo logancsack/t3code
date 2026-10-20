@@ -57,11 +57,40 @@ describe("aldoStepUnderWay", () => {
     expect(aldoStepUnderWay("Collect logos and design briefs")).toBe(
       "Collecting logos and design briefs",
     );
+    expect(aldoStepUnderWay("Compare upload and download speeds")).toBe(
+      "Comparing upload and download speeds",
+    );
+    expect(aldoStepUnderWay("Gather prices and price ranges")).toBe(
+      "Gathering prices and price ranges",
+    );
+  });
+
+  it("says a second order once it takes something", () => {
+    expect(aldoStepUnderWay("Review the copy and share the draft")).toBe(
+      "Reviewing the copy and sharing the draft",
+    );
+    expect(aldoStepUnderWay("Draft the email, then send it.")).toBe(
+      "Drafting the email, then sending it",
+    );
+    expect(aldoStepUnderWay("Pick offers and price 3 of them")).toBe(
+      "Picking offers and pricing 3 of them",
+    );
   });
 
   it("drops the marks and the full stop", () => {
     expect(aldoStepUnderWay("  Write `listings.md`  for **all** gigs. ")).toBe(
       "Writing listings.md for all gigs",
+    );
+    expect(aldoStepUnderWay("Make the _first_ cut")).toBe("Making the first cut");
+  });
+
+  it("keeps the same characters inside names", () => {
+    expect(aldoStepUnderWay("Upload Q4_report.xlsx")).toBe("Uploading Q4_report.xlsx");
+    expect(aldoStepUnderWay("Upload `Q4_report.xlsx` and `*.png`")).toBe(
+      "Uploading Q4_report.xlsx and *.png",
+    );
+    expect(aldoStepUnderWay("Edit __init__.py and the *.png files")).toBe(
+      "Editing __init__.py and the *.png files",
     );
   });
 });
@@ -88,6 +117,21 @@ describe("aldoProgressHead and aldoProgressLine", () => {
       "Working on fiverr.com · 3 min",
     );
     expect(aldoProgressLine([], null, 20_000)).toBe("Working · 20 sec");
+  });
+
+  it("says a step that is a command in words", () => {
+    const words = "Running a command";
+    expect(aldoProgressHead(plan(1, ["Gather the brief", "Run npm test"]), words)).toBe(
+      "Step 2 of 2 · Running a command",
+    );
+    expect(aldoProgressHead(plan(0, ["Running `pnpm build`"]), null)).toBe("Working");
+    expect(aldoProgressHead(plan(0, ["Install it with `pip install pandas`"]), words)).toBe(words);
+    expect(aldoProgressHead(plan(0, ["Build the site && deploy it"]), words)).toBe(words);
+    // Words that only name a program, or run something that isn't one, stay.
+    expect(aldoProgressHead(plan(0, ["Install `git`"]), words)).toBe("Installing git");
+    expect(aldoProgressHead(plan(0, ["Run the numbers again"]), words)).toBe(
+      "Running the numbers again",
+    );
   });
 
   it("doesn't count a plan of one step", () => {
