@@ -9,9 +9,14 @@ import { WORKING_STATES, dueIn, elapsed, isStuck, needsYouKind, relativeTime } f
 
 export type WorkstreamState = "needs" | "working" | "done" | "later";
 
-/** Its state, or null when it has none worth a glyph (nothing sent yet). */
+/**
+ * Its state, or null when it has none worth a glyph (nothing sent yet). A
+ * question, approval or handoff it raises while snoozed needs the user all
+ * the same, as the board has it.
+ */
 export function workstreamState(c: AldoHomeConversation, now: number): WorkstreamState | null {
-  if (c.settled || (c.snoozedUntil && Date.parse(c.snoozedUntil) > now)) return "later";
+  if (c.settled || (c.snoozedUntil && Date.parse(c.snoozedUntil) > now && !c.pending))
+    return "later";
   if (needsYouKind(c) || isStuck(c, now)) return "needs";
   if (WORKING_STATES.has(c.state)) return "working";
   if (c.state === "done") return "done";
@@ -26,7 +31,11 @@ export const WORKSTREAM_WORDS: Record<WorkstreamState, string> = {
   later: "Put off",
 };
 
-/** A word on where it stands, after its title: "waiting 12 min", "for 4 min", "finished 1 h ago", "back in 2 h". */
+/**
+ * A word on where it stands, after its title: "waiting 12 min", "for 4 min",
+ * "finished 1 h ago", "back in 2 h". Since its state was reported: a rename
+ * or a pin moves `at`, not this.
+ */
 export function workstreamMeta(
   c: AldoHomeConversation,
   state: WorkstreamState,
@@ -36,7 +45,8 @@ export function workstreamMeta(
     return c.snoozedUntil && Date.parse(c.snoozedUntil) > now
       ? `back ${dueIn(c.snoozedUntil, now)}`
       : "put away";
-  if (state === "needs") return `waiting ${elapsed(c.at, now)}`;
-  if (state === "done") return `finished ${relativeTime(c.at, now)}`;
-  return `for ${elapsed(c.at, now)}`;
+  const since = c.stateAt ?? c.at;
+  if (state === "needs") return `waiting ${elapsed(since, now)}`;
+  if (state === "done") return `finished ${relativeTime(since, now)}`;
+  return `for ${elapsed(since, now)}`;
 }

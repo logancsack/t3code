@@ -45,6 +45,13 @@ describe("workstreamState", () => {
       "needs",
     );
   });
+
+  it("needs the user when a snoozed thread asks something new", () => {
+    const pending = { kind: "approval", requestId: "r1", summary: "Run it?", options: [] } as const;
+    expect(
+      workstreamState(conversation({ state: "waiting", snoozedUntil: ahead(60), pending }), NOW),
+    ).toBe("needs");
+  });
 });
 
 describe("workstreamMeta", () => {
@@ -56,5 +63,11 @@ describe("workstreamMeta", () => {
       "back in 2 h",
     );
     expect(workstreamMeta(conversation({ settled: true }), "later", NOW)).toBe("put away");
+  });
+
+  it("counts from when its state was reported, not a rename or a pin", () => {
+    expect(workstreamMeta(conversation({ at: ago(1), stateAt: ago(30) }), "working", NOW)).toBe(
+      "for 30 min",
+    );
   });
 });

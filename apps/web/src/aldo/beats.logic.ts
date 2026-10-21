@@ -11,25 +11,32 @@ export const BEAT_MS = 400;
 const BEAT_MIN_MS = 160;
 
 const LIST_ITEM = /^\s*(?:[-*•]|\d+[.)])\s/;
+/** A line that opens or closes a code block, with backticks or tildes. */
+const FENCE = /^ {0,3}(`{3,}|~{3,})/;
 
 /** The reply's paragraphs, grouped into its bubbles. */
 export function splitBeats(text: string): ReadonlyArray<string> {
   const trimmed = text.trim();
   if (!trimmed) return [];
   const paragraphs: string[] = [];
-  let fence = false;
+  // The open code block's fence character, if one's open: only the same one closes it.
+  let fence: string | null = null;
   for (const block of trimmed.split(/\n{2,}/)) {
     const previous = paragraphs.at(-1);
-    // Inside a ``` block, a blank line is the block's own: it stays whole.
-    const opens = (block.match(/```/g)?.length ?? 0) % 2 === 1;
+    // Inside a code block, a blank line is the block's own: it stays whole.
     const joins =
       previous !== undefined &&
-      (fence ||
+      (fence !== null ||
         (LIST_ITEM.test(block) &&
           (previous.trimEnd().endsWith(":") || LIST_ITEM.test(lastLine(previous)))));
     if (joins) paragraphs[paragraphs.length - 1] = `${previous}\n\n${block}`;
     else paragraphs.push(block);
-    if (opens) fence = !fence;
+    for (const line of block.split("\n")) {
+      const marker = FENCE.exec(line)?.[1]?.[0];
+      if (marker === undefined) continue;
+      if (fence === null) fence = marker;
+      else if (marker === fence) fence = null;
+    }
   }
   if (paragraphs.length <= MAX_BEATS) return paragraphs;
   return [...paragraphs.slice(0, MAX_BEATS - 1), paragraphs.slice(MAX_BEATS - 1).join("\n\n")];

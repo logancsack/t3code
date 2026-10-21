@@ -42,6 +42,15 @@ describe("splitBeats", () => {
     ]);
   });
 
+  it("keeps a tilde-fenced block whole too, and a backtick line inside it doesn't close it", () => {
+    const code = "~~~\nconst a = 1;\n\n```\n\nconst b = 2;\n~~~";
+    expect(splitBeats(`Here it is.\n\n${code}\n\nRun it once.`)).toEqual([
+      "Here it is.",
+      code,
+      "Run it once.",
+    ]);
+  });
+
   it("runs anything past the last beat into the last bubble", () => {
     const beats = splitBeats("One.\n\nTwo.\n\nThree.\n\nFour.\n\nFive.\n\nSix.");
     expect(beats).toHaveLength(MAX_BEATS);
