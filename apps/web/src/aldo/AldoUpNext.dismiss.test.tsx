@@ -18,13 +18,22 @@ vi.mock("./homeApi", () => ({
     if (backend.readFail) throw new Error("Read failed");
     return structuredClone(backend.home);
   },
-  dismissAldoChatDecision: async (id: string, dismissed = true) => {
-    backend.dismiss(id, dismissed);
+  dismissAldoChatDecision: async (id: string, dismissed = true, until?: Date) => {
+    if (until) backend.dismiss(id, dismissed, until);
+    else backend.dismiss(id, dismissed);
     if (backend.fail) throw new Error("Connection lost");
     backend.home = {
       ...backend.home!,
       conversations: backend.home!.conversations.map((c) =>
-        c.chatDecision?.id === id ? { ...c, chatDecision: { id, dismissed } } : c,
+        c.chatDecision?.id === id
+          ? {
+              ...c,
+              chatDecision:
+                c.chatDecision.until === undefined
+                  ? { id, dismissed }
+                  : { id, dismissed, until: dismissed && until ? until.toISOString() : null },
+            }
+          : c,
       ),
     };
   },
@@ -71,7 +80,7 @@ function Page() {
       {home ? <AldoUpNext home={home} now={now} /> : null}
       {/* Under Aldo's name at the top (AldoPresence.tsx). */}
       <div data-hidden-from-chat="">
-        {home ? <AldoHiddenFromChat items={aldoHiddenFromChat(home, now)} /> : null}
+        {home ? <AldoHiddenFromChat items={aldoHiddenFromChat(home, now)} now={now} /> : null}
       </div>
     </>
   );
@@ -225,5 +234,42 @@ it("can restore a persisted hidden prompt after remount without answering", asyn
   await act(async () => show.click());
   expect(container.querySelectorAll("[data-aldo-decision]")).toHaveLength(2);
   expect(backend.dismiss).toHaveBeenLastCalledWith("item-0", false);
+  expect(backend.decide).not.toHaveBeenCalled();
+});
+
+it("with an Aldo that can put things off, Not now brings it back at a time, and says when", async () => {
+  backend.home = {
+    ...backend.home!,
+    conversations: backend.home!.conversations.map((c) => ({
+      ...c,
+      chatDecision: { ...c.chatDecision!, until: null },
+    })),
+  };
+  await act(async () => root.unmount());
+  await mount();
+  const trigger = container.querySelector<HTMLButtonElement>(
+    'button[aria-label="Not now: Thread 0"]',
+  )!;
+  await act(async () => {
+    trigger.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0 }));
+    trigger.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
+    trigger.click();
+  });
+  const items = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')];
+  expect(items.map((item) => item.textContent)).toContain("Hide without a reminder");
+  const morning = items.find((item) => /morning/.test(item.textContent ?? ""))!;
+  await act(async () => morning.click());
+  const [, dismissed, until] = backend.dismiss.mock.lastCall as [string, boolean, Date];
+  expect(dismissed).toBe(true);
+  expect(until.getHours()).toBe(8);
+  expect(until.getTime()).toBeGreaterThan(now);
+  expect(container.querySelectorAll("[data-aldo-decision]")).toHaveLength(1);
+  const putOff = container.querySelector("[data-hidden-from-chat]")!;
+  expect(putOff.textContent).toContain("Put off");
+  expect(putOff.textContent).toContain("Thread 0");
+  expect(putOff.textContent).toMatch(/Back (tomorrow )?at 8:00 AM/);
+  expect(backend.toast).toHaveBeenCalledWith(
+    expect.objectContaining({ title: expect.stringMatching(/^Back /) }),
+  );
   expect(backend.decide).not.toHaveBeenCalled();
 });

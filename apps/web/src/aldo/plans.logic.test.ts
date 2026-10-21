@@ -257,7 +257,7 @@ describe("openPlans", () => {
       plan({ id: "started", status: "started" }),
       plan({ id: "old", proposedAt: at(-600) }),
     ];
-    expect(openPlans(plans, null).map((p) => p.id)).toEqual(["old", "new"]);
+    expect(openPlans(plans, null, NOW).map((p) => p.id)).toEqual(["old", "new"]);
   });
 
   it("leaves out those proposed before the conversation starts that wait for a Start", () => {
@@ -265,16 +265,47 @@ describe("openPlans", () => {
       plan({ id: "new", proposedAt: at(-10), autoStartAt: null }),
       plan({ id: "old", proposedAt: at(-600), autoStartAt: null }),
     ];
-    expect(openPlans(plans, at(-60)).map((p) => p.id)).toEqual(["new"]);
+    expect(openPlans(plans, at(-60), NOW).map((p) => p.id)).toEqual(["new"]);
   });
 
   it("keeps one Aldo proposed for the first message whatever this browser's clock says", () => {
     // The browser is three minutes ahead of Aldo: the plan reads as older than the message it answers.
     const waits = plan({ id: "waits", proposedAt: at(-170), autoStartAt: null });
-    expect(openPlans([waits], at(0)).map((p) => p.id)).toEqual(["waits"]);
+    expect(openPlans([waits], at(0), NOW).map((p) => p.id)).toEqual(["waits"]);
     // One counting down to start on its own is never left out.
     const counts = plan({ id: "counts", proposedAt: at(-3_600), autoStartAt: at(30) });
-    expect(openPlans([counts], at(0)).map((p) => p.id)).toEqual(["counts"]);
+    expect(openPlans([counts], at(0), NOW).map((p) => p.id)).toEqual(["counts"]);
+  });
+
+  it("leaves one put off out until it's back, then keeps it, however long ago it was proposed", () => {
+    const putOff = plan({
+      id: "later",
+      proposedAt: at(-86_400),
+      autoStartAt: null,
+      deferredUntil: at(600),
+    });
+    expect(openPlans([putOff], at(0), NOW)).toEqual([]);
+    const back = plan({
+      id: "back",
+      proposedAt: at(-86_400),
+      autoStartAt: null,
+      deferredUntil: at(-60),
+    });
+    expect(openPlans([back], at(0), NOW).map((p) => p.id)).toEqual(["back"]);
+    expect(planCardState(back, { now: NOW })).toEqual({
+      kind: "waiting",
+      why: "You put it off, so it waits for your Start.",
+    });
+    // Brought back early, Aldo says so: it's back at once, whatever this browser's clock says.
+    const early = plan({
+      id: "early",
+      proposedAt: at(-86_400),
+      autoStartAt: null,
+      deferredUntil: null,
+      back: true,
+    });
+    expect(openPlans([early], at(0), NOW).map((p) => p.id)).toEqual(["early"]);
+    expect(parseAldoPlans([{ ...early, back: true }])[0]?.back).toBe(true);
   });
 });
 

@@ -42,6 +42,13 @@ export type AldoHomePending =
 export interface AldoChatDecision {
   readonly id: string;
   readonly dismissed: boolean;
+  /**
+   * When one the user put off ("Not now") comes back, while it's put off;
+   * null otherwise. Absent from an Aldo that can't put things off.
+   */
+  readonly until?: string | null;
+  /** It's back from being put off. */
+  readonly back?: boolean;
 }
 
 export interface AldoHomeConversation {
@@ -588,10 +595,14 @@ export async function cancelAldoDelivery(id: string): Promise<void> {
   await api(`/api/deliveries/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
-/** Hides or restores only the home-chat prompt; the thread keeps waiting. */
-export async function dismissAldoChatDecision(id: string, dismissed = true): Promise<void> {
+/** Hides or restores only the home-chat prompt; the thread keeps waiting. With `until`, puts it off until then ("Not now"). */
+export async function dismissAldoChatDecision(
+  id: string,
+  dismissed = true,
+  until?: Date,
+): Promise<void> {
   await api("/api/assistant/decisions/dismiss", {
     method: "POST",
-    body: JSON.stringify({ id, dismissed }),
+    body: JSON.stringify({ id, dismissed, ...(until ? { until: until.toISOString() } : {}) }),
   });
 }

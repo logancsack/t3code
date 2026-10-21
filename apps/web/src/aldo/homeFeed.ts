@@ -26,6 +26,7 @@ import {
   decideAldoApproval,
   fetchAldoHome,
   type AldoApproval,
+  type AldoChatDecision,
   type AldoHome,
   type AldoHomeConversation,
   type AldoHomeTarget,
@@ -314,16 +315,25 @@ export function useAldoHomeRead(enabled = true): AldoHomeFeed {
 }
 
 /** A persisted dismissal takes effect immediately, including when the next read fails. */
-export function setAldoChatDecisionDismissed(id: string, dismissed: boolean): void {
+export function setAldoChatDecisionDismissed(id: string, dismissed: boolean, until?: Date): void {
   const home = serverHome;
   if (!home) return;
   dismissalRevision += 1;
   homeFrom = Date.now();
-  const update = <
-    T extends { readonly chatDecision?: { readonly id: string; readonly dismissed: boolean } },
-  >(
-    item: T,
-  ): T => (item.chatDecision?.id === id ? { ...item, chatDecision: { id, dismissed } } : item);
+  const update = <T extends { readonly chatDecision?: AldoChatDecision }>(item: T): T =>
+    item.chatDecision?.id === id
+      ? {
+          ...item,
+          chatDecision: {
+            ...item.chatDecision,
+            dismissed,
+            // Put off until then, or not (shown again, or hidden for good), as Aldo's next read will say.
+            ...(item.chatDecision.until !== undefined
+              ? { until: dismissed && until ? until.toISOString() : null }
+              : {}),
+          },
+        }
+      : item;
   const next = {
     ...home,
     conversations: home.conversations.map(update),

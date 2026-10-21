@@ -8,8 +8,12 @@ import { parseAldoPlan, type AldoPlan } from "./plans.logic";
 export type AldoPlanTap =
   /** Start, with the answers on the card: it starts once, however often it's tapped. */
   | { readonly action: "start"; readonly answers: Readonly<Record<string, string>> }
-  /** The user is changing it (an answer, or "Change the plan"): it no longer starts on its own. */
-  | { readonly action: "hold" }
+  /**
+   * The user is changing it (an answer, or "Change the plan"): it no longer
+   * starts on its own. With `until`, "Not now": put off until then (an ISO
+   * time), or back now (null).
+   */
+  | { readonly action: "hold"; readonly until?: string | null }
   /** The countdown ran out: it starts on its own if it's still due (Aldo's minute does it otherwise). */
   | { readonly action: "auto" };
 

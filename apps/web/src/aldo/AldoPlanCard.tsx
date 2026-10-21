@@ -6,18 +6,23 @@
 // minutes after, unless the user says a word, changes an answer or starts
 // writing; the card counts it down. "Change the plan" goes to the composer:
 // what the user writes next revises it, and the new card replaces this one.
+// "Not now" puts it off until a time (AldoNotNow.tsx): it leaves the
+// conversation until then, comes back once, and never starts on its own.
 // Open, it waits at the conversation's end; started, it says what it started
 // with where it started, with its thread to open (its live card follows).
 
 import { ArrowUpRightIcon, CheckIcon, LoaderCircleIcon, UserRoundIcon } from "lucide-react";
 import { useCallback, useEffect, useId, useState } from "react";
 
+import { toastManager } from "../components/ui/toast";
 import { cn } from "~/lib/utils";
 import { ThreadLink } from "./AldoHomeInbox";
+import { NotNowMenu } from "./AldoNotNow";
 import { AldoAvatar } from "./AldoPresence";
 import { useAldoArrive } from "./arrive";
 import { pullAldoConversation, seedAldoComposer } from "./assistantSession";
 import { refreshAldoHome } from "./homeFeed";
+import { backWhen } from "./notNow.logic";
 import { tapAldoPlan } from "./planApi";
 import {
   changedFromRecommended,
@@ -168,6 +173,37 @@ export function AldoPlanCard(props: {
     }
   };
 
+  // Put off until then: it doesn't start on its own, and the conversation shows it again when it's back.
+  const putOff = async (until: Date) => {
+    setBusy(true);
+    setFailure(null);
+    try {
+      await tapAldoPlan(plan.id, { action: "hold", until: until.toISOString() });
+      held.set(plan.id, Promise.resolve(true));
+      setHeld(true);
+      const toast = toastManager.add({
+        type: "info",
+        title: `Back ${backWhen(until, new Date())}`,
+        description: "It won’t start on its own.",
+        actionProps: {
+          children: "Undo",
+          onClick: () => {
+            toastManager.close(toast);
+            void tapAldoPlan(plan.id, { action: "hold", until: null }).then(
+              () => refreshAldoHome(),
+              () => toastManager.add({ type: "error", title: "Couldn't bring the plan back" }),
+            );
+          },
+        },
+      });
+      await refreshAldoHome();
+    } catch (error) {
+      setFailure(error instanceof Error ? error.message : "Couldn’t put it off. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const pick = (question: AldoPlanQuestion, option: string) => {
     const next = { ...picked, [question.id]: option };
     setPicked(next);
@@ -262,7 +298,20 @@ export function AldoPlanCard(props: {
             >
               {note}
             </p>
-            <div className="flex flex-wrap justify-end gap-2">
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {plan.deferredUntil !== undefined ? (
+                <NotNowMenu
+                  label={`Not now: ${plan.goal}`}
+                  busy={busy}
+                  className={cn(
+                    FOCUS,
+                    "h-10 rounded-full px-3 text-[13px] text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground disabled:opacity-50 pointer-coarse:h-11 data-popup-open:bg-foreground/[0.05] data-popup-open:text-foreground",
+                  )}
+                  onPutOff={(until) => void putOff(until)}
+                >
+                  Not now
+                </NotNowMenu>
+              ) : null}
               <button
                 type="button"
                 className={cn(SECONDARY, "h-10 px-4 pointer-coarse:h-11")}
