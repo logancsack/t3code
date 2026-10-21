@@ -1,14 +1,15 @@
 /*
- * Aldo's typeface: Geist for the interface and Geist Mono for code, the faces
- * of Aldo's site, so the app reads the same on every device. Aldo's build
- * imports this from its entry (aldo/bootstrap.ts); other builds keep the
- * platform's faces in index.css.
+ * Aldo's typeface: Geist for the interface and Geist Mono for code and the
+ * numbers in tables, the faces of Aldo's site, so the app reads the same on
+ * every device. Aldo's build imports this from its entry (aldo/bootstrap.ts);
+ * other builds keep the platform's faces in index.css.
  *
  * Cost: variable fonts (every weight in one file), split by script, so a page
  * downloads only what its text uses: in English, Geist's Latin file (29 KB,
  * preloaded with the page by vite.config.ts's aldoFontPreloadPlugin) and Geist
- * Mono's (23 KB) once code shows. They're content-named files under /assets/,
- * cached for good and kept on the device by Aldo's service worker.
+ * Mono's (23 KB) once code or a table's numbers show. They're content-named
+ * files under /assets/, cached for good and kept on the device by Aldo's
+ * service worker.
  *
  * Until a file arrives, text shows in a local face sized to Geist's metrics
  * (next/font's numbers for Arial; a 0.6em monospace for code), so nothing
@@ -22,6 +23,12 @@
   --font-mono:
     "Geist Mono", "Geist Mono Fallback", "SF Mono", "SFMono-Regular", Menlo, Consolas,
     "Liberation Mono", monospace;
+}
+
+/* Numbers in tables, in the cells a table marks (aldo/tableNumbers.logic.ts),
+   so digits line up down a column. */
+td[data-numeric] {
+  font-family: var(--font-mono);
 }
 
 @font-face {

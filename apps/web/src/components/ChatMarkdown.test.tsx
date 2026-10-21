@@ -329,3 +329,25 @@ describe("ChatMarkdown Windows file links", () => {
     expect(html).not.toContain("chat-markdown-file-link");
   });
 });
+
+describe("ChatMarkdown tables", () => {
+  it("marks the cells that hold only a number, for Aldo's monospaced figures", () => {
+    const html = renderToStaticMarkup(
+      <ChatMarkdown
+        cwd={undefined}
+        text={[
+          "| Deal | Stage | Amount | Change |",
+          "| --- | --- | ---: | ---: |",
+          "| Acme | Commit | **$1,200,000** | +12% |",
+          "| Globex | 14 calls | — | -3.4% |",
+        ].join("\n")}
+      />,
+    );
+
+    const numeric = [...html.matchAll(/<td[^>]*data-numeric="true"[^>]*>(.*?)<\/td>/g)].map(
+      (match) => match[1]?.replace(/<[^>]+>/g, ""),
+    );
+    expect(numeric).toEqual(["$1,200,000", "+12%", "-3.4%"]);
+    expect(html).not.toMatch(/<th[^>]*data-numeric/);
+  });
+});

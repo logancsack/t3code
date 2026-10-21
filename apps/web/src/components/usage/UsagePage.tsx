@@ -739,17 +739,26 @@ export function UsagePage() {
                                   {model.model}
                                 </span>
                               </td>
-                              <td className="py-2 text-right text-foreground tabular-nums">
+                              <td
+                                data-numeric={!isModelCostUnknown(model) || undefined}
+                                className="py-2 text-right text-foreground tabular-nums"
+                              >
                                 {isModelCostUnknown(model) ? (
                                   <span className="text-muted-foreground">Unpriced</span>
                                 ) : (
                                   formatUsd(model.costUsd)
                                 )}
                               </td>
-                              <td className="py-2 text-right text-muted-foreground tabular-nums">
+                              <td
+                                data-numeric={!isModelCostUnknown(model) || undefined}
+                                className="py-2 text-right text-muted-foreground tabular-nums"
+                              >
                                 {isModelCostUnknown(model) ? "—" : formatPercent(model.costShare)}
                               </td>
-                              <td className="py-2 text-right text-muted-foreground tabular-nums">
+                              <td
+                                data-numeric
+                                className="py-2 text-right text-muted-foreground tabular-nums"
+                              >
                                 {formatTokens(model.totalTokens)}
                               </td>
                             </tr>
@@ -803,15 +812,22 @@ export function UsagePage() {
                               {activeProviders.map((provider) => (
                                 <td
                                   key={provider}
+                                  data-numeric
                                   className="py-2 text-right text-muted-foreground tabular-nums"
                                 >
                                   {formatUsd(period.byProvider.get(provider)?.costUsd ?? 0)}
                                 </td>
                               ))}
-                              <td className="py-2 text-right text-foreground tabular-nums">
+                              <td
+                                data-numeric
+                                className="py-2 text-right text-foreground tabular-nums"
+                              >
                                 {formatUsd(period.costUsd)}
                               </td>
-                              <td className="py-2 text-right text-muted-foreground tabular-nums">
+                              <td
+                                data-numeric
+                                className="py-2 text-right text-muted-foreground tabular-nums"
+                              >
                                 {formatTokens(period.totalTokens)}
                               </td>
                             </tr>
