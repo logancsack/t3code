@@ -6,9 +6,12 @@
 // user changes it.
 
 import { type AldoPolicy, type AldoPolicyPath, type AldoPolicyView } from "./homeApi";
+import { repoShortName } from "./places.logic";
 
 /** A rule no one has answered: an agent asks. */
 export const ALDO_UNDECIDED = "undecided";
+/** What a picker calls a rule no one has answered: what happens then. */
+export const ALDO_UNDECIDED_LABEL = "Ask me the first time";
 /** A workspace's choice that follows the user's own. */
 export const ALDO_SAME_AS_EVERYWHERE = "everywhere";
 
@@ -34,6 +37,8 @@ interface RuleSpec {
   readonly requires?: string;
   /** What the rule does while undecided, for one with a default. */
   readonly fallback?: string;
+  /** Its picker's word for undecided, where "Ask me the first time" isn't what happens. */
+  readonly undecided?: string;
   readonly options: ReadonlyArray<AldoPolicyOption>;
   /** A value of the user's that isn't one of the options (an amount an agent recorded). */
   readonly label?: (value: string) => string;
@@ -60,8 +65,8 @@ const ALDO_POLICY_RULES: Readonly<Record<AldoPolicyRuleId, RuleSpec>> = {
   reviews: {
     clear: ["reviews"],
     options: [
-      { value: "important", label: "Fix what matters" },
-      { value: "all", label: "Fix everything" },
+      { value: "important", label: "Fix what matters, answer the rest" },
+      { value: "all", label: "Fix every one" },
     ],
     read: (p) => p.reviews,
     set: (v) => (v === "all" || v === "important" ? { reviews: v } : null),
@@ -84,7 +89,7 @@ const ALDO_POLICY_RULES: Readonly<Record<AldoPolicyRuleId, RuleSpec>> = {
     fallback: "never",
     options: [
       { value: "never", label: "Never" },
-      { value: "authorized", label: "Allowed" },
+      { value: "authorized", label: "Yes" },
     ],
     read: (p) => p.modelRouting?.paidFallback,
     set: (v) =>
@@ -92,8 +97,10 @@ const ALDO_POLICY_RULES: Readonly<Record<AldoPolicyRuleId, RuleSpec>> = {
   },
   onProviderLimit: {
     clear: ["onProviderLimit"],
+    // The thread waits, and asks whoever opens it.
+    undecided: "Ask me",
     options: [
-      { value: "switch", label: "Switch models" },
+      { value: "switch", label: "Switch to another model" },
       { value: "wait", label: "Wait for the reset" },
     ],
     read: (p) => p.onProviderLimit,
@@ -102,10 +109,13 @@ const ALDO_POLICY_RULES: Readonly<Record<AldoPolicyRuleId, RuleSpec>> = {
   contextBudget: {
     clear: ["contextBudget"],
     fallback: "300000",
-    options: [100_000, 200_000, 300_000, 500_000, 1_000_000].map((n) => ({
-      value: String(n),
-      label: n === 300_000 ? `${tokens(String(n))} (default)` : tokens(String(n)),
-    })),
+    options: [
+      { value: "100000", label: "Short" },
+      { value: "200000", label: "Medium" },
+      { value: "300000", label: "Standard (default)" },
+      { value: "500000", label: "Long" },
+      { value: "1000000", label: "Longest" },
+    ],
     label: tokens,
     read: (p) => (p.contextBudget === undefined ? undefined : String(p.contextBudget)),
     set: (v) => {
@@ -181,7 +191,7 @@ export function aldoRuleOptions(
   const first: AldoPolicyOption[] = options.workspace
     ? [{ value: ALDO_SAME_AS_EVERYWHERE, label: "Same as everywhere" }]
     : spec.fallback === undefined
-      ? [{ value: ALDO_UNDECIDED, label: "Not decided" }]
+      ? [{ value: ALDO_UNDECIDED, label: spec.undecided ?? ALDO_UNDECIDED_LABEL }]
       : [];
   const known = spec.options.some((option) => option.value === current);
   const recorded =
@@ -273,9 +283,15 @@ export function aldoRuleEdit(
   return set ? { ...where, set } : null;
 }
 
-/** A workspace by its repositories' short names: "aldo + t3code". */
-export function aldoWorkspaceLabel(repos: ReadonlyArray<string>): string {
-  return repos.map((repo) => repo.split("/").at(-1) ?? repo).join(" + ");
+/**
+ * A workspace by its repositories' short names, "aldo + t3code", where its
+ * project's name (`names`, as the sidebar shows it) isn't known.
+ */
+export function aldoWorkspaceLabel(
+  repos: ReadonlyArray<string>,
+  names?: ReadonlyMap<string, string>,
+): string {
+  return names?.get(repos.join(",")) ?? repos.map((repo) => repoShortName(repo)).join(" + ");
 }
 
 export interface AldoPolicyDifference {

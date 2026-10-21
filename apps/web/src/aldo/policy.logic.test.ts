@@ -82,7 +82,7 @@ describe("aldoRuleOptions", () => {
   it("offers undecided only for a rule without a default, and following the user's own for a workspace", () => {
     expect(aldoRuleOptions("merge", "auto")[0]).toEqual({
       value: ALDO_UNDECIDED,
-      label: "Not decided",
+      label: "Ask me the first time",
     });
     expect(aldoRuleOptions("paidFallback", "never").map((o) => o.value)).toEqual([
       "never",
@@ -99,7 +99,7 @@ describe("aldoRuleOptions", () => {
     expect(aldoRuleLabel("spendThreshold", "37")).toBe("Up to $37");
     expect(aldoRuleLabel("spendThreshold", "0")).toBe("Always ask");
     expect(aldoRuleLabel("contextBudget", "250000")).toBe("250k tokens");
-    expect(aldoRuleLabel("contextBudget", "1000000")).toBe("1M tokens");
+    expect(aldoRuleLabel("contextBudget", "1000000")).toBe("Longest");
     expect(aldoRuleLabel("merge", ALDO_SAME_AS_EVERYWHERE)).toBe("Same as everywhere");
   });
 });
@@ -227,6 +227,12 @@ describe("aldoMediaDefaults and aldoWorkspaceLabel", () => {
       { task: "video", label: "Video", tool: null, repos: ["logancsack/site"] },
     ]);
     expect(aldoWorkspaceLabel(["logancsack/aldo", "logancsack/t3code"])).toBe("aldo + t3code");
+    expect(aldoWorkspaceLabel(["aldo:fiverr-motion-graphics"])).toBe("fiverr-motion-graphics");
+    // Its project's name, as the sidebar shows it, where it's known.
+    const names = new Map([["aldo:fiverr-motion-graphics", "Fiverr Motion Graphics"]]);
+    expect(aldoWorkspaceLabel(["aldo:fiverr-motion-graphics"], names)).toBe(
+      "Fiverr Motion Graphics",
+    );
   });
 });
 
@@ -246,7 +252,7 @@ describe("accounts and publishing in the user's name", () => {
     expect(aldoRuleShown(null, "spendThreshold")).toBe(true);
   });
 
-  it("is When I ask until the user says otherwise, with no Not decided", () => {
+  it("is When I ask until the user says otherwise, with no undecided choice", () => {
     expect(aldoRuleValue("accounts", {})).toBe("when_asked");
     expect(aldoRuleValue("publishing", {})).toBe("when_asked");
     expect(aldoRuleValue("accounts", { accounts: "never" })).toBe("never");

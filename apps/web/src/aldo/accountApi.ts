@@ -469,6 +469,8 @@ export interface AldoApp {
   /** connected; connecting (a sign-in under way, or never finished); failed (the app stopped accepting it). */
   readonly status: "connected" | "connecting" | "failed";
   readonly error: string | null;
+  /** When its status last changed (ISO); an older Aldo doesn't say. */
+  readonly changedAt?: string;
 }
 
 export interface AldoAppCatalogEntry {

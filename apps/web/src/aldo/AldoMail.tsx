@@ -146,7 +146,7 @@ function ClaimNotice(props: { readonly domain: string | undefined }) {
     >
       <Button
         size="sm"
-        onClick={() => void navigate({ to: "/settings/agents", hash: "aldo-agent-inbox" })}
+        onClick={() => void navigate({ to: "/settings/connections", hash: "aldo-agent-inbox" })}
       >
         Claim an address
       </Button>

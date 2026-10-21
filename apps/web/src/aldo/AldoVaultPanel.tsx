@@ -1,6 +1,13 @@
 import { settingsIntegrations, settingsVault } from "./settingsData";
 import { useSettingsResource } from "./settingsResource";
-import { KeyRoundIcon, LockKeyholeIcon, PlusIcon, UploadIcon, VariableIcon } from "lucide-react";
+import {
+  GlobeIcon,
+  KeyRoundIcon,
+  LockKeyholeIcon,
+  PlusIcon,
+  UploadIcon,
+  VariableIcon,
+} from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -8,6 +15,7 @@ import {
   useState,
   useSyncExternalStore,
   type FormEvent,
+  type ReactNode,
 } from "react";
 
 import { SettingsRow, SettingsSection } from "../components/settings/settingsLayout";
@@ -22,6 +30,7 @@ import {
 } from "../components/ui/select";
 import { Textarea } from "../components/ui/textarea";
 import { aldoVault, type AldoSecretKind, type AldoVaultItem } from "./accountApi";
+import { AldoBrandTile, AldoIconTile, aldoBrandForVaultItem } from "./AldoBrandTile";
 import { getAldoEnvironments, subscribeAldoEnvironments } from "./directory";
 import {
   offerSavingLoginsFor,
@@ -105,6 +114,16 @@ const PRESETS: ReadonlyArray<{
     template: "Bearer {value}",
   },
 ];
+
+/** A key's or login's tile: the logo of the service it's for, or an icon where that isn't known. */
+function VaultTile(props: { readonly item: AldoVaultItem; readonly fallback: ReactNode }) {
+  const brand = aldoBrandForVaultItem(props.item);
+  return brand ? (
+    <AldoBrandTile id={brand} name={props.item.name} />
+  ) : (
+    <AldoIconTile icon={props.fallback} />
+  );
+}
 
 function deliveryLabel(item: AldoVaultItem): string {
   if (item.kind === "request") return `Injected into requests to ${(item.hosts ?? []).join(", ")}`;
@@ -616,6 +635,7 @@ export function AldoVaultPanel() {
         {secrets.map((item) => (
           <SettingsRow
             key={item.id}
+            leading={<VaultTile item={item} fallback={<KeyRoundIcon />} />}
             title={<span className="font-mono text-sm">{item.name}</span>}
             description={`${deliveryLabel(item)} · ${scopeLabel(item.scope)} · updated ${ago(item.updated_at)}${savedBy(item)}`}
             control={
@@ -725,6 +745,7 @@ export function AldoVaultPanel() {
         {logins.map((item) => (
           <SettingsRow
             key={item.id}
+            leading={<VaultTile item={item} fallback={<GlobeIcon />} />}
             title={item.name}
             description={`${item.origin}${item.username ? ` · ${item.username}` : ""} · ${scopeLabel(item.scope)} · used ${ago(item.last_used_at)}${savedBy(item)}`}
             control={

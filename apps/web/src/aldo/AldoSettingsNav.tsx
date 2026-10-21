@@ -3,7 +3,8 @@ import { useRouter } from "@tanstack/react-router";
 import { prefetchSettingsData } from "./settingsData";
 // Aldo's settings nav (SettingsSidebarNav.tsx, in Aldo): the account at its
 // head, then its pages in groups (settings.logic.ts ALDO_SETTINGS_NAV), Code
-// only with the developer tools (developerTools.ts).
+// only with the developer tools (developerTools.ts). A connection that stopped
+// working puts a dot on Connections.
 
 import {
   ArchiveIcon,
@@ -11,6 +12,7 @@ import {
   BotIcon,
   CodeXmlIcon,
   KeyRoundIcon,
+  PaletteIcon,
   PlugIcon,
   ShieldCheckIcon,
   SlidersHorizontalIcon,
@@ -26,13 +28,17 @@ import { AldoAvatar, profileName, useAldoProfile } from "./AldoAccountMenu";
 import { useAldoDeveloperTools } from "./developerTools";
 import { useAldoHomeFeed } from "./homeFeed";
 import { ALDO_SETTINGS_NAV, aldoSettingsNav, aldoSettingsNavActive } from "./settings.logic";
+import { settingsAccounts, settingsApps, settingsIntegrations } from "./settingsData";
+import { aldoAccountSummary, aldoConnectionsSummary } from "./settingsHome.logic";
+import { useSettingsResource } from "./settingsResource";
 
-const ICONS: Partial<Record<SettingsPath, LucideIcon>> = {
+export const ALDO_SETTINGS_ICONS: Partial<Record<SettingsPath, LucideIcon>> = {
   "/settings/agents": BotIcon,
   "/settings/permissions": ShieldCheckIcon,
   "/settings/instructions": SparklesIcon,
   "/settings/connections": PlugIcon,
   "/settings/vault": KeyRoundIcon,
+  "/settings/appearance": PaletteIcon,
   "/settings/general": SlidersHorizontalIcon,
   "/settings/notifications": BellIcon,
   "/settings/phone": SmartphoneIcon,
@@ -40,13 +46,21 @@ const ICONS: Partial<Record<SettingsPath, LucideIcon>> = {
   "/settings/archived": ArchiveIcon,
 };
 
-/** Who's signed in, at the head of the nav: their account page. */
+/** How the connections stand, for the nav's and the phone list's line on them. */
+export function useAldoConnectionsSummary() {
+  const accounts = useSettingsResource(settingsAccounts).data;
+  const integrations = useSettingsResource(settingsIntegrations).data;
+  const apps = useSettingsResource(settingsApps).data;
+  return aldoConnectionsSummary({ accounts, integrations, apps });
+}
+
+/** Who's signed in, at the head of the nav: their account page, with its plan and credits. */
 export function AldoSettingsAccountCard(props: {
   readonly active: boolean;
   readonly onOpen: () => void;
 }) {
   const profile = useAldoProfile();
-  const plan = useAldoHomeFeed((s) => s.home?.usage?.plan?.name ?? null);
+  const summary = useAldoHomeFeed((s) => aldoAccountSummary(s.home?.usage));
   return (
     <button
       type="button"
@@ -63,7 +77,7 @@ export function AldoSettingsAccountCard(props: {
           {profileName(profile)}
         </span>
         <span className="truncate text-[11px] text-sidebar-muted-foreground">
-          {plan ? `Account · ${plan}` : "Account and plan"}
+          {summary ?? "Account and plan"}
         </span>
       </span>
     </button>
@@ -76,6 +90,7 @@ export function AldoSettingsNav(props: {
 }) {
   const router = useRouter();
   const nav = aldoSettingsNav({ developer: useAldoDeveloperTools() });
+  const connections = useAldoConnectionsSummary();
   useEffect(() => {
     const warm = () => {
       prefetchSettingsData();
@@ -100,7 +115,11 @@ export function AldoSettingsNav(props: {
           <p className="px-2 pb-0.5 text-sidebar-muted-foreground/70 text-xs">{group.group}</p>
           <SidebarMenu>
             {group.items.map((item) => {
-              const Icon = ICONS[item.to] ?? SlidersHorizontalIcon;
+              const Icon = ALDO_SETTINGS_ICONS[item.to] ?? SlidersHorizontalIcon;
+              const attention =
+                item.to === "/settings/connections" && connections?.broken
+                  ? connections.text
+                  : null;
               return (
                 <SidebarMenuItem key={item.to}>
                   <SidebarMenuButton
@@ -118,7 +137,14 @@ export function AldoSettingsNav(props: {
                     onClick={() => props.onNavigate(item.to)}
                   >
                     <Icon />
-                    <span className="truncate">{item.label}</span>
+                    <span className="flex-1 truncate">{item.label}</span>
+                    {attention ? (
+                      <span
+                        role="img"
+                        aria-label={attention}
+                        className="size-1.5 shrink-0 rounded-full bg-warning"
+                      />
+                    ) : null}
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               );

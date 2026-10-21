@@ -9,6 +9,7 @@ import {
   SettingsPageContainer,
   SettingsRow,
   SettingsSection,
+  scrollToSettingsTarget,
 } from "../components/settings/settingsLayout";
 import { searchableSetting } from "../components/settings/settingsSearch";
 import { Button } from "../components/ui/button";
@@ -16,6 +17,8 @@ import { AldoWorkspaceUsageSection } from "../components/usage/AldoWorkspaceUsag
 import { useAldoWorkspaceUsage } from "../state/aldoWorkspaceUsage";
 import { AldoAvatar, profileName, useAldoProfile } from "./AldoAccountMenu";
 import { AldoProviderLimitsSection, useAldoProviderLimits } from "./AldoProviderLimits";
+import { AldoPlanEndedBanner } from "./AldoSettingsHome";
+import { aldoEndedPlan } from "./settingsHome.logic";
 
 export function AldoAccountPage() {
   const profile = useAldoProfile();
@@ -27,8 +30,17 @@ export function AldoAccountPage() {
       <ChevronRightIcon className="size-3.5" aria-hidden />
     </Button>
   ) : null;
+  const ended = aldoEndedPlan(
+    workspace.state.status === "unavailable" ? null : workspace.state.usage,
+  );
   return (
     <SettingsPageContainer>
+      {ended ? (
+        <AldoPlanEndedBanner
+          plan={ended}
+          onChoose={() => scrollToSettingsTarget("aldo-plan-heading", { highlight: false })}
+        />
+      ) : null}
       <SettingsSection id="aldo-account" title="Profile" icon={<UserIcon className="size-4" />}>
         <div className="flex items-center gap-3 px-3 py-3 sm:px-4">
           <AldoAvatar profile={profile} className="size-10" />

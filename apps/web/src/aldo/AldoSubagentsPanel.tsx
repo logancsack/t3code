@@ -14,6 +14,7 @@ import {
   SelectValue,
 } from "../components/ui/select";
 import { useClientSettings } from "../hooks/useSettings";
+import { AldoBrandTile } from "./AldoBrandTile";
 import {
   saveAldoSubagents,
   type AldoSubagentDefault,
@@ -38,6 +39,7 @@ const hiddenModels = (settings: ClientSettings): HiddenModels => settings.provid
 const message = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause));
 
 function SubagentRow(props: {
+  readonly id?: string;
   readonly agent: SubagentAgent;
   readonly providers: ReadonlyArray<Record<string, unknown>>;
   readonly hidden: HiddenModels;
@@ -51,7 +53,9 @@ function SubagentRow(props: {
   const effort = efforts.find((candidate) => candidate.id === saved?.reasoning);
   return (
     <SettingsRow
-      title={agent.title}
+      {...(props.id ? { id: props.id } : {})}
+      leading={<AldoBrandTile id={agent.kind} name={agent.title} size="sm" />}
+      title={`${agent.title}’s helpers`}
       description={
         models.length > 0
           ? agent.description
@@ -69,12 +73,12 @@ function SubagentRow(props: {
           >
             <SelectTrigger
               className="h-8 min-w-44 text-xs"
-              aria-label={`${agent.title} subagents' model`}
+              aria-label={`${agent.title}’s helpers’ model`}
             >
-              <SelectValue>{model ? model.name : "Same as the main agent"}</SelectValue>
+              <SelectValue>{model ? model.name : "Same as the thread"}</SelectValue>
             </SelectTrigger>
             <SelectPopup align="end" alignItemWithTrigger={false}>
-              <SelectItem value={SAME_AS_MAIN}>Same as the main agent</SelectItem>
+              <SelectItem value={SAME_AS_MAIN}>Same as the thread</SelectItem>
               {models.map((candidate) => (
                 <SelectItem key={candidate.slug} value={candidate.slug}>
                   {candidate.name}
@@ -95,7 +99,7 @@ function SubagentRow(props: {
             >
               <SelectTrigger
                 className="h-8 min-w-32 text-xs"
-                aria-label={`${agent.title} subagents' reasoning`}
+                aria-label={`${agent.title}’s helpers’ reasoning`}
               >
                 <SelectValue>{effort ? effort.label : "Model's default"}</SelectValue>
               </SelectTrigger>
@@ -116,12 +120,12 @@ function SubagentRow(props: {
 }
 
 /**
- * Settings → Agents: what each agent's subagents run on when it doesn't
- * pick a model (by default, the main agent's). Aldo writes it into each
- * machine's Claude Code and Codex config. Hidden with an Aldo that doesn't
- * keep it.
+ * Settings → Models: what each agent's subagents (its helpers) run on when it
+ * doesn't pick a model (by default, the main agent's). Aldo writes it into
+ * each machine's Claude Code and Codex config. Hidden with an Aldo that
+ * doesn't keep it. `bare`, its rows alone, for a section of the page's.
  */
-export function AldoSubagentsPanel() {
+export function AldoSubagentsPanel(props: { readonly bare?: boolean } = {}) {
   const cached = useSettingsResource(settingsSubagents);
   const saved = cached.data ?? null;
   const loadError = cached.error;
@@ -143,21 +147,26 @@ export function AldoSubagentsPanel() {
 
   if (!saved) {
     if (!loadError) return null;
+    const failed = (
+      <SettingsRow
+        {...(props.bare ? { id: "aldo-subagents" } : {})}
+        title="Couldn't load what helpers run on"
+        description={loadError}
+        control={
+          <Button size="sm" variant="outline" onClick={load}>
+            Try again
+          </Button>
+        }
+      />
+    );
+    if (props.bare) return failed;
     return (
       <SettingsSection
         id="aldo-subagents"
-        title="Subagents"
+        title="Helper models"
         icon={<NetworkIcon className="size-4" />}
       >
-        <SettingsRow
-          title="Couldn't load what subagents run on"
-          description={loadError}
-          control={
-            <Button size="sm" variant="outline" onClick={load}>
-              Try again
-            </Button>
-          }
-        />
+        {failed}
       </SettingsSection>
     );
   }
@@ -172,15 +181,12 @@ export function AldoSubagentsPanel() {
       .catch((cause: unknown) => setError(message(cause)));
   };
 
-  return (
-    <SettingsSection
-      id="aldo-subagents"
-      title="Subagents"
-      icon={<NetworkIcon className="size-4" />}
-    >
-      {SUBAGENT_AGENTS.map((agent) => (
+  const rows = (
+    <>
+      {SUBAGENT_AGENTS.map((agent, index) => (
         <SubagentRow
           key={agent.kind}
+          {...(props.bare && index === 0 ? { id: "aldo-subagents" } : {})}
           agent={agent}
           providers={providers}
           hidden={hidden}
@@ -188,11 +194,31 @@ export function AldoSubagentsPanel() {
           onChange={(value) => change(agent.kind, value)}
         />
       ))}
-      <p className="px-4 py-3 text-muted-foreground text-xs">
-        A model you ask an agent to give a subagent still wins. Changes reach new conversations
-        within 10 minutes.
-      </p>
       {error ? <p className="px-4 pb-3 text-destructive-foreground text-sm">{error}</p> : null}
+    </>
+  );
+  const note = (
+    <p className="px-3 py-3 text-muted-foreground text-xs sm:px-4">
+      A model you ask an agent to give a helper still wins. Changes reach new conversations within
+      10 minutes.
+    </p>
+  );
+  if (props.bare) {
+    return (
+      <>
+        {rows}
+        {note}
+      </>
+    );
+  }
+  return (
+    <SettingsSection
+      id="aldo-subagents"
+      title="Helper models"
+      icon={<NetworkIcon className="size-4" />}
+    >
+      {rows}
+      {note}
     </SettingsSection>
   );
 }

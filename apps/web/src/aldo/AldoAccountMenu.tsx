@@ -185,7 +185,7 @@ function AccountMenu(props: {
       <MenuGroup>
         <MenuItem icon={LibraryBigIcon} label="Library" onClick={() => go("/library")} />
         <MenuItem icon={RepeatIcon} label="Routines" onClick={() => go("/routines")} />
-        <MenuItem icon={SettingsIcon} label="Settings" onClick={() => go("/settings/agents")} />
+        <MenuItem icon={SettingsIcon} label="Settings" onClick={() => go("/settings")} />
         <MenuItem icon={InboxIcon} label="Your agents' mail" onClick={() => go("/mail")} />
         <MenuItem
           icon={KeyboardIcon}

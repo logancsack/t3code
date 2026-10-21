@@ -28,7 +28,7 @@ function projectLabel(ref: string): string {
 
 const PLACEHOLDERS = {
   every:
-    "How you like agents to work everywhere, e.g.\n- Keep answers short.\n- Use pnpm, never npm.\n- Write commit messages in the imperative mood.",
+    "How you like agents to work everywhere, e.g.\n- Keep answers short.\n- Write in British English.\n- Use pnpm, never npm.",
   project:
     "What agents should know about this project, e.g.\n- Run pnpm test before opening a pull request.\n- Reuse the components in packages/ui.",
 };

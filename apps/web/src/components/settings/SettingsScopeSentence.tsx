@@ -41,6 +41,9 @@ export const SETTINGS_DEVICE_ONLY_PATHS: ReadonlySet<string> = new Set([
   "/settings/workspace",
   ...(isAldoCloud
     ? [
+        // A phone's list of the pages (AldoSettingsHome).
+        "/settings",
+        "/settings/",
         "/settings/general",
         "/settings/account",
         "/settings/agents",

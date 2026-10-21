@@ -19,6 +19,7 @@ import {
   usePrimarySettingsAvailable,
 } from "../../hooks/useSettings";
 import { isAldoCloud } from "../../aldo/api";
+import { AldoSettingsPageHeader } from "../../aldo/AldoSettingsShell";
 import { aldoSavesSettings } from "../../aldo/machineSettings.logic";
 import { cn } from "../../lib/utils";
 import { WorkspacePageContainer, type WorkspacePageWidth } from "../WorkspacePageContainer";
@@ -105,6 +106,12 @@ function scrollAndFocusSettingsTarget(target: HTMLElement, highlight = true): vo
     once: true,
   });
 }
+
+/**
+ * Called once a page restores this device's defaults, so the settings frame
+ * remounts the page with the restored values.
+ */
+export const SettingsRestoredContext = createContext<() => void>(() => {});
 
 /** The row id a settings-search jump is currently trying to reach, if any. */
 export function useSettingsSearchTargetId(): string | null {
@@ -204,8 +211,14 @@ export function SettingsSection({
           className="flex min-h-7 items-start justify-between gap-4 px-3 sm:px-4"
         >
           <div className="min-w-0">
-            <h2 className="flex min-h-7 items-center gap-2 text-sm font-normal text-foreground/70">
-              {icon}
+            {/* Aldo: a heading that reads as one, without an icon beside every title. */}
+            <h2
+              className={cn(
+                "flex min-h-7 items-center gap-2 text-sm",
+                isAldoCloud ? "font-medium text-foreground" : "font-normal text-foreground/70",
+              )}
+            >
+              {isAldoCloud ? null : icon}
               {title}
             </h2>
           </div>
@@ -256,6 +269,9 @@ export function SettingsUnavailableGroup({
  */
 export function SettingsRow({
   title,
+  leading,
+  badge,
+  inline = false,
   description,
   status,
   resetAction,
@@ -269,6 +285,12 @@ export function SettingsRow({
   ...rowProps
 }: Omit<ComponentPropsWithoutRef<"div">, "title"> & {
   title: ReactNode;
+  /** Before the title: a brand's logo (Aldo's Models and Connections). */
+  leading?: ReactNode;
+  /** Beside the title: a label such as "Included in Plus". */
+  badge?: ReactNode;
+  /** Keep a small control (Connect, Manage) beside the text on a phone too. */
+  inline?: boolean;
   description?: ReactNode;
   status?: ReactNode;
   resetAction?: ReactNode;
@@ -436,30 +458,45 @@ export function SettingsRow({
         className,
       )}
     >
-      <div className="flex flex-col gap-3 @min-[32rem]/settings-row:grid @min-[32rem]/settings-row:grid-cols-[minmax(0,1fr)_minmax(10rem,auto)] @min-[32rem]/settings-row:items-center @min-[32rem]/settings-row:gap-8">
-        <div className="min-w-0 flex-1 space-y-1">
-          <div className="flex min-h-5 items-center gap-1.5">
-            <h3 className="text-sm font-medium text-foreground">{title}</h3>
-            {renderedInheritance ? (
+      <div
+        className={
+          inline
+            ? "flex items-center gap-3 @min-[32rem]/settings-row:gap-8"
+            : "flex flex-col gap-3 @min-[32rem]/settings-row:grid @min-[32rem]/settings-row:grid-cols-[minmax(0,1fr)_minmax(10rem,auto)] @min-[32rem]/settings-row:items-center @min-[32rem]/settings-row:gap-8"
+        }
+      >
+        <div className="flex min-w-0 flex-1 items-start gap-3">
+          {leading ? <div className="shrink-0 pt-0.5">{leading}</div> : null}
+          <div className="min-w-0 flex-1 space-y-1">
+            <div className="flex min-h-5 flex-wrap items-center gap-1.5">
+              <h3 className="text-sm font-medium text-foreground">{title}</h3>
+              {badge}
+              {renderedInheritance ? (
+                <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center">
+                  {renderedInheritance}
+                </span>
+              ) : null}
               <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center">
-                {renderedInheritance}
+                {renderedReset}
               </span>
+            </div>
+            {description ? (
+              <p className="max-w-xl text-xs leading-normal text-muted-foreground">{description}</p>
             ) : null}
-            <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center">
-              {renderedReset}
-            </span>
+            {renderedStatus ? (
+              <div className="pt-0.5 text-xs text-muted-foreground">{renderedStatus}</div>
+            ) : null}
           </div>
-          {description ? (
-            <p className="max-w-xl text-xs leading-normal text-muted-foreground/80">
-              {description}
-            </p>
-          ) : null}
-          {renderedStatus ? (
-            <div className="pt-0.5 text-xs text-muted-foreground">{renderedStatus}</div>
-          ) : null}
         </div>
         {renderedControl ? (
-          <div className="flex w-full min-w-0 shrink-0 items-center gap-2 @min-[32rem]/settings-row:w-auto @min-[32rem]/settings-row:justify-end">
+          <div
+            className={cn(
+              "flex min-w-0 shrink-0 items-center gap-2",
+              inline
+                ? "justify-end"
+                : "w-full @min-[32rem]/settings-row:w-auto @min-[32rem]/settings-row:justify-end",
+            )}
+          >
             {renderedControl}
           </div>
         ) : null}
@@ -520,6 +557,7 @@ export function SettingsPageContainer({
 }) {
   const navigate = useNavigate();
   const hash = useLocation({ select: (location) => location.hash });
+  const pathname = useLocation({ select: (location) => location.pathname });
   const highlightTarget = useLocation({
     select: (location) => location.state.settingsTargetHighlight !== false,
   });
@@ -545,6 +583,7 @@ export function SettingsPageContainer({
         data-settings-page-scroll
       >
         <WorkspacePageContainer width={width} className={cn("gap-8", className)}>
+          {isAldoCloud ? <AldoSettingsPageHeader pathname={pathname} /> : null}
           <SettingsScopeSentence />
           {children}
         </WorkspacePageContainer>

@@ -477,7 +477,8 @@ export function AuthConnectorDialog(props: {
         disabled={!ACCOUNT_SCOPED && !environmentId}
         onClick={() => handleOpenChange(true)}
       >
-        <PlugIcon className="size-3.5" />
+        {/* Aldo's Connect buttons are words alone, beside the service's logo. */}
+        {isAldoCloud ? null : <PlugIcon className="size-3.5" />}
         {triggerLabel ?? (isAuthenticated ? "Reconnect" : "Connect")}
       </Button>
 
