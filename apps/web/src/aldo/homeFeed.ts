@@ -40,7 +40,7 @@ const LOOK_EVERY_MS = 5_000;
 /** Directory fetches come every 15 seconds; the home read follows them no closer than this. */
 const FOLLOW_DIRECTORY_MIN_MS = 8_000;
 
-interface AldoHomeFeed {
+export interface AldoHomeFeed {
   readonly home: AldoHome | null;
   /** Whether this Aldo has the home read; null until it's known. */
   readonly supported: boolean | null;

@@ -2,7 +2,7 @@
 // the Esc that already leaves), each page's name and what it's for at its top,
 // and on a phone a bar with "Settings" back to the list and Done back to the
 // threads (AldoSettingsHome is the list).
-import { useNavigate } from "@tanstack/react-router";
+import { useLocation, useNavigate } from "@tanstack/react-router";
 import { ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
@@ -17,20 +17,37 @@ import {
   useSidebar,
 } from "../components/ui/sidebar";
 import { useNavigateToMainApp } from "../components/sidebar/mainAppLocation";
+import { isElectron } from "../env";
+import { cn } from "../lib/utils";
 import { isAldoCloud } from "./api";
 import { aldoSettingsPage } from "./settings.logic";
+
+declare module "@tanstack/react-router" {
+  interface HistoryState {
+    /** Opened from the phone's list of settings, which is the entry before it. */
+    aldoFromSettingsList?: boolean;
+  }
+}
 
 /** Aldo on a phone opens Settings on its list of pages, as a phone's own settings do. */
 export function aldoSettingsOpensOnList(): boolean {
   return isAldoCloud && window.matchMedia("(max-width: 767px)").matches;
 }
 
-/** The nav's first row: back to the thread you came from. */
+/**
+ * The nav's first row: back to the thread you came from. In the desktop app
+ * it's the titlebar too, so it drags the window and clears macOS's controls.
+ */
 export function AldoSettingsBackBar() {
   const navigateToMainApp = useNavigateToMainApp();
   const { isMobile, setOpenMobile } = useSidebar();
   return (
-    <div className="flex h-[var(--workspace-topbar-height)] shrink-0 items-center px-2">
+    <div
+      className={cn(
+        "flex h-[var(--workspace-topbar-height)] shrink-0 items-center px-2",
+        isElectron && "drag-region md:ps-[var(--workspace-controls-left)]",
+      )}
+    >
       <SidebarMenu>
         <SidebarMenuItem>
           <SidebarMenuButton
@@ -59,6 +76,7 @@ export function AldoSettingsBackBar() {
 export function AldoSettingsPhoneBar(props: { readonly pathname: string }) {
   const navigate = useNavigate();
   const navigateToMainApp = useNavigateToMainApp();
+  const fromList = useLocation({ select: (location) => location.state.aldoFromSettingsList });
   const root = props.pathname.replace(/\/+$/, "") === "/settings";
   const title = root ? null : (aldoSettingsPage(props.pathname)?.title ?? "Settings");
   return (
@@ -69,9 +87,11 @@ export function AldoSettingsPhoneBar(props: { readonly pathname: string }) {
             variant="ghost"
             size="sm"
             className="-ms-2 gap-0.5 px-1.5 text-primary"
-            onClick={() =>
-              void navigate({ to: "/settings", search: { project: undefined }, hash: "" })
-            }
+            onClick={() => {
+              // Back to the list underneath, so the browser's Back doesn't reopen this page.
+              if (fromList === true) window.history.back();
+              else void navigate({ to: "/settings", search: { project: undefined }, hash: "" });
+            }}
           >
             <ChevronLeftIcon className="size-5 text-primary" />
             Settings

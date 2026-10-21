@@ -45,15 +45,20 @@ const usage = (overrides: Partial<AldoHomeUsage>): AldoHomeUsage => ({
 });
 
 describe("aldoModelsSummary", () => {
-  it("says nothing before the accounts load", () => {
-    expect(aldoModelsSummary(undefined)).toBeNull();
+  it("says nothing before the accounts or the plan load", () => {
+    expect(aldoModelsSummary(undefined, true)).toBeNull();
+    expect(aldoModelsSummary({ github: account(true) }, undefined)).toBeNull();
   });
 
   it("names the subscriptions that run agents, or Aldo's own models", () => {
-    expect(aldoModelsSummary({ github: account(true) })).toBe("Aldo’s models");
-    expect(aldoModelsSummary({ claude: account(true), codex: account(true) })).toBe(
+    expect(aldoModelsSummary({ github: account(true) }, true)).toBe("Aldo’s models");
+    expect(aldoModelsSummary({ claude: account(true), codex: account(true) }, undefined)).toBe(
       "Claude and ChatGPT",
     );
+  });
+
+  it("doesn't offer Aldo's models where they don't run agents", () => {
+    expect(aldoModelsSummary({ github: account(true) }, false)).toBe("None connected");
   });
 });
 
@@ -96,6 +101,16 @@ describe("aldoConnectionsSummary", () => {
     ).toEqual({ text: "Linear stopped working", broken: true });
   });
 
+  it("leaves out an app whose sign-in isn't finished", () => {
+    expect(
+      aldoConnectionsSummary({
+        accounts: {},
+        integrations: null,
+        apps: { apps: [app("Notion", "connecting"), app("Linear")] },
+      }),
+    ).toEqual({ text: "1 connected", broken: false });
+  });
+
   it("says none yet only once everything answered", () => {
     expect(aldoConnectionsSummary({ accounts: {}, integrations: null, apps: null })).toEqual({
       text: "None yet",
@@ -119,6 +134,9 @@ describe("aldoPhoneSummary", () => {
   it("shows the verified number, and nothing on an Aldo without phones", () => {
     expect(aldoPhoneSummary(null)).toBeNull();
     expect(aldoPhoneSummary({ available: false } as never)).toBeNull();
+    expect(
+      aldoPhoneSummary({ available: false, verified: true, phone: "+1 415 555 0100" } as never),
+    ).toBe("+1 415 555 0100");
     expect(aldoPhoneSummary({ available: true, verified: false, phone: null } as never)).toBe(
       "Not set up",
     );

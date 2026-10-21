@@ -39,13 +39,22 @@ function listed(names: ReadonlyArray<string>): string {
   return `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
 }
 
-/** Models: the subscriptions of theirs that run agents, or Aldo's own models. */
-export function aldoModelsSummary(accounts: Accounts | undefined): string | null {
+/**
+ * Models: the subscriptions of theirs that run agents, or else Aldo's own
+ * models where this Aldo runs agents on them (`ownModels`, undefined until
+ * the plan is known).
+ */
+export function aldoModelsSummary(
+  accounts: Accounts | undefined,
+  ownModels: boolean | undefined,
+): string | null {
   if (!accounts) return null;
   const connected = SUBSCRIPTIONS.filter(([kind]) => accounts[kind]?.connected).map(
     ([, name]) => name,
   );
-  return connected.length > 0 ? listed(connected) : "Aldo’s models";
+  if (connected.length > 0) return listed(connected);
+  if (ownModels === undefined) return null;
+  return ownModels ? "Aldo’s models" : "None connected";
 }
 
 /**
@@ -71,6 +80,8 @@ export function aldoConnectionsSummary(input: {
     if (integration.error !== null) broken.push(integration.name);
   }
   for (const app of input.apps?.apps ?? []) {
+    // A sign-in under way, or never finished, isn't one agents can use yet.
+    if (app.status === "connecting") continue;
     connected.push(app.title);
     if (app.status === "failed") broken.push(app.title);
   }
@@ -99,10 +110,14 @@ export function aldoMemorySummary(items: ReadonlyArray<AldoMemoryItem> | undefin
   return items.length === 0 ? "Nothing yet" : count(items.length, "memory", "memories");
 }
 
-/** Phone: the number they call and text from, once it's verified. */
+/**
+ * Phone: the number they call and text from, once it's verified (kept while
+ * phones are unavailable, as the Phone page keeps it).
+ */
 export function aldoPhoneSummary(phone: AldoPhoneSettings | null | undefined): string | null {
-  if (!phone?.available) return null;
-  return phone.verified && phone.phone ? phone.phone : "Not set up";
+  if (!phone) return null;
+  if (phone.verified && phone.phone) return phone.phone;
+  return phone.available ? "Not set up" : null;
 }
 
 /** Appearance: light, dark or the device's, and which layout. */

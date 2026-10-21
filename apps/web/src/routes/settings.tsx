@@ -128,12 +128,17 @@ function SettingsContentLayout() {
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none isolate">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-background text-foreground">
-        {/* Aldo's pages say their own name at their top; a phone's bar has the way back. */}
+        {/* Aldo's pages say their own name at their top; a phone's bar has the way back.
+            In the desktop app an empty titlebar still drags the window. */}
         {isAldoCloud && isMobile ? (
           <WorkspacePageHeader className="border-border/60 border-b">
             <AldoSettingsPhoneBar pathname={location.pathname} />
           </WorkspacePageHeader>
-        ) : isAldoCloud ? null : (
+        ) : isAldoCloud ? (
+          isElectron ? (
+            <WorkspacePageHeader electron />
+          ) : null
+        ) : (
           <WorkspacePageHeader electron={isElectron}>
             <div className="flex w-full items-center gap-3">
               <SettingsBreadcrumb pathname={location.pathname} />

@@ -382,6 +382,12 @@ const KINDS: ReadonlyArray<{
   },
 ];
 
+/** The groups a search result leads to, by their anchor. */
+const GROUP_ANCHORS: ReadonlyArray<readonly [ConnectionKind, string]> = [
+  ["apps", "aldo-apps"],
+  ["media", "aldo-generators"],
+];
+
 /** Where a search result on this page leads: its group, with the catalog unfiltered. */
 const SEARCH_TARGET_KINDS: Readonly<Record<string, ConnectionKind | "all">> = {
   "aldo-apps": "apps",
@@ -592,18 +598,20 @@ export function AldoConnectionsPage() {
     .toSorted((a, b) => Number(Boolean(b.broken)) - Number(Boolean(a.broken)));
   const catalog = connections.filter((connection) => !connection.connected);
   const searching = query.trim() !== "";
+  // Only the kinds left to connect get a filter; one whose last was just connected shows all.
+  const kinds = KINDS.filter((group) =>
+    catalog.some((connection) => connection.kind === group.value),
+  );
+  const shownKind = kinds.some((group) => group.value === kind) ? kind : "all";
   const offered = catalog.filter(
     (connection) =>
-      (searching || kind === "all" || connection.kind === kind) && matches(connection, query),
+      (searching || shownKind === "all" || connection.kind === shownKind) &&
+      matches(connection, query),
   );
   const groups = KINDS.flatMap((group) => {
     const tiles = offered.filter((connection) => connection.kind === group.value);
     return tiles.length > 0 ? [{ ...group, tiles }] : [];
   });
-  // Only the kinds this Aldo offers get a filter.
-  const kinds = KINDS.filter((group) =>
-    catalog.some((connection) => connection.kind === group.value),
-  );
   const errors = [accounts.error, integrations.error, apps.error].filter(Boolean);
   const takesAddresses = Boolean(apps.data);
 
@@ -632,7 +640,13 @@ export function AldoConnectionsPage() {
       <SettingsSection title="Your agents’ email" icon={<MailIcon className="size-4" />}>
         <AldoAgentInboxRows />
       </SettingsSection>
-      <section id="aldo-add-connection" className="space-y-3">
+      <section id="aldo-add-connection" className="relative space-y-3">
+        {/* A search for a group that's all connected still lands here, by its anchor. */}
+        {GROUP_ANCHORS.filter(([value]) => !groups.some((group) => group.value === value)).map(
+          ([, anchor]) => (
+            <span key={anchor} id={anchor} aria-hidden="true" className="absolute top-0" />
+          ),
+        )}
         <div className="flex flex-col gap-3 px-3 sm:px-4">
           <h2 className="flex min-h-7 items-center font-medium text-foreground text-sm">
             Add a connection
@@ -651,20 +665,14 @@ export function AldoConnectionsPage() {
                   onChange={(event) => setQuery(event.target.value)}
                 />
               </InputGroup>
-              {searching ? null : <KindFilter value={kind} kinds={kinds} onChange={setKind} />}
+              {searching ? null : <KindFilter value={shownKind} kinds={kinds} onChange={setKind} />}
             </>
           ) : null}
         </div>
         {groups.map((group) => (
           <div
             key={group.value}
-            id={
-              group.value === "apps"
-                ? "aldo-apps"
-                : group.value === "media"
-                  ? "aldo-generators"
-                  : undefined
-            }
+            id={GROUP_ANCHORS.find(([value]) => value === group.value)?.[1]}
             className="space-y-1.5"
           >
             <p className="px-3 text-xs sm:px-4">

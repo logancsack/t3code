@@ -5,7 +5,7 @@
 
 import { useNavigate } from "@tanstack/react-router";
 import { ChevronRightIcon, SearchIcon } from "lucide-react";
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 
 import { SettingsGroup } from "../components/settings/SettingsGroup";
 import { SettingsPageContainer } from "../components/settings/settingsLayout";
@@ -19,7 +19,9 @@ import { AldoAvatar, profileName, useAldoProfile } from "./AldoAccountMenu";
 import { AldoIconTile } from "./AldoBrandTile";
 import { ALDO_SETTINGS_ICONS, useAldoConnectionsSummary } from "./AldoSettingsNav";
 import { useAldoDeveloperTools } from "./developerTools";
-import { useAldoHomeRead } from "./homeFeed";
+import { aldoOffersItsModels, subscribeAldoEnvironments } from "./directory";
+import { planRunning } from "./home.logic";
+import { useAldoHomeRead, type AldoHomeFeed } from "./homeFeed";
 import { aldoSettingsNav, aldoSettingsPage } from "./settings.logic";
 import { settingsAccounts, settingsMemory, settingsPhone, settingsVault } from "./settingsData";
 import {
@@ -54,9 +56,22 @@ export function AldoPlanEndedBanner(props: {
   );
 }
 
-function useSummaries(): Partial<
-  Record<SettingsPath, { readonly text: string; readonly attention?: boolean }>
-> {
+/**
+ * Whether agents run on Aldo's own models without a subscription: where this
+ * Aldo offers them and the plan runs (Models shows them so). Undefined until
+ * the plan is known.
+ */
+function useOwnModels(feed: AldoHomeFeed): boolean | undefined {
+  const offered = useSyncExternalStore(subscribeAldoEnvironments, aldoOffersItsModels, () => false);
+  if (!offered) return false;
+  if (feed.home) return planRunning(feed.home.usage);
+  return feed.supported === false || feed.error !== null ? true : undefined;
+}
+
+function useSummaries(
+  feed: AldoHomeFeed,
+): Partial<Record<SettingsPath, { readonly text: string; readonly attention?: boolean }>> {
+  const ownModels = useOwnModels(feed);
   const accounts = useSettingsResource(settingsAccounts).data;
   const vault = useSettingsResource(settingsVault).data;
   const memory = useSettingsResource(settingsMemory).data;
@@ -65,7 +80,7 @@ function useSummaries(): Partial<
   const simple = useAldoSimpleMode();
   const connections = useAldoConnectionsSummary();
   const entries: Array<[SettingsPath, string | null, boolean?]> = [
-    ["/settings/agents", aldoModelsSummary(accounts)],
+    ["/settings/agents", aldoModelsSummary(accounts, ownModels)],
     ["/settings/instructions", aldoMemorySummary(memory)],
     ["/settings/connections", connections?.text ?? null, connections?.broken === true],
     ["/settings/vault", aldoVaultSummary(vault)],
@@ -120,9 +135,10 @@ function ListRow(props: {
 export function AldoSettingsHome() {
   const navigate = useNavigate();
   const profile = useAldoProfile();
-  const usage = useAldoHomeRead().home?.usage ?? null;
+  const feed = useAldoHomeRead();
+  const usage = feed.home?.usage ?? null;
   const nav = aldoSettingsNav({ developer: useAldoDeveloperTools() });
-  const summaries = useSummaries();
+  const summaries = useSummaries(feed);
   const [query, setQuery] = useState("");
   const searchable = useAvailableSettingsSearchItems();
   const results = useMemo(() => searchSettings(query, searchable), [query, searchable]);
@@ -134,7 +150,8 @@ export function AldoSettingsHome() {
       to,
       search: { project: undefined },
       hash,
-      ...(hash ? { hashScrollIntoView: false, state: { settingsTargetHighlight: true } } : {}),
+      state: { aldoFromSettingsList: true, ...(hash ? { settingsTargetHighlight: true } : {}) },
+      ...(hash ? { hashScrollIntoView: false } : {}),
     });
 
   return (
