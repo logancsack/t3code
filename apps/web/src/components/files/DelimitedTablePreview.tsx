@@ -2,6 +2,7 @@
 import { parseDelimitedPreview } from "@t3tools/shared/delimitedPreview";
 import { useMemo } from "react";
 
+import { isNumberCell } from "../../aldo/tableNumbers.logic";
 import { FileSurfaceNotice } from "./fileSurfaceChrome";
 
 /** A bounded, readable table for CSV and TSV text; the source view keeps every byte. */
@@ -48,6 +49,7 @@ export function DelimitedTablePreview(props: {
                 {row.map((cell, columnIndex) => (
                   <td
                     key={columnIndex}
+                    data-numeric={isNumberCell(cell) || undefined}
                     className="max-w-80 border-b border-border/60 px-3 py-1.5 align-top whitespace-pre-wrap break-words tabular-nums"
                   >
                     {cell}

@@ -172,6 +172,7 @@ import {
 } from "../aldo/AldoMediaGrid";
 import { isVideoFile, soleParagraphLink } from "../aldo/chatVideo.logic";
 import { rehypeAldoMediaGrid, type AldoVideoLinks } from "../aldo/mediaGrid.logic";
+import { isNumberCell } from "../aldo/tableNumbers.logic";
 import { cn } from "../lib/utils";
 import { useRemoteOpenResolution, type RemoteOpenMode } from "../remoteOpen";
 import { useRightPanelStore } from "../rightPanelStore";
@@ -3375,6 +3376,9 @@ const CHAT_MARKDOWN_COMPONENTS = {
   },
   table: function MarkdownTableRenderer({ node: _node, ...props }) {
     return <MarkdownTable {...props} />;
+  },
+  td: function MarkdownTableCell({ node, ...props }) {
+    return <td data-numeric={isNumberCell(hastPlainTextDeep(node)) || undefined} {...props} />;
   },
   details: function MarkdownDetailsRenderer({ node: _node, children, open: detailsOpen }) {
     return <MarkdownDetails open={detailsOpen}>{children}</MarkdownDetails>;
