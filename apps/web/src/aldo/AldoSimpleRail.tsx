@@ -239,47 +239,52 @@ function PhoneSheet() {
   );
 }
 
-/** On a phone's home screen: the three places as tabs, with how many wait on the user. */
+/**
+ * On a phone's home screen: the three places as tabs at the foot of the page,
+ * in reach of a thumb, with how many wait on the user. The count keeps its
+ * room while there's none, so nothing moves as it comes and goes. Out of the
+ * way while the keyboard is up (presence.css).
+ */
 export function AldoSimpleTabs() {
   const place = useAldoSimple((s) => s.place);
   const waiting = useAldoAttentionCount();
   return (
-    // On a narrow phone, three tabs reach the sidebar's button at the top left:
-    // they move right of it and tighten.
-    <div className="flex w-full justify-center ps-7 min-[375px]:ps-0">
-      <div
-        className="flex items-center gap-0.5 rounded-full bg-muted p-0.5"
-        role="group"
-        aria-label="View"
-      >
-        {ALDO_SIMPLE_PLACES.map((option) => (
-          <button
-            key={option.place}
-            type="button"
-            aria-pressed={place === option.place}
-            className={cn(
-              "flex h-8 items-center gap-1.5 rounded-full px-2 font-medium text-[13px] transition-colors min-[360px]:px-3 min-[360px]:text-sm",
-              place === option.place
-                ? "bg-background text-foreground shadow-xs/5"
-                : "text-muted-foreground hover:text-foreground",
-            )}
-            onClick={() => setAldoSimplePlace(option.place)}
-          >
-            {option.place === "aldo" ? (
-              <span
-                aria-hidden
-                className="size-3.5 rounded-full bg-gradient-to-br from-primary/90 to-primary/50"
-              />
-            ) : null}
-            {option.label}
-            {option.place === "needs" && waiting > 0 ? (
-              <span className="rounded-full bg-warning/15 px-1.5 font-semibold text-[11px] text-warning-foreground">
-                {waiting}
-              </span>
-            ) : null}
-          </button>
-        ))}
+    <nav data-aldo-tabs="" aria-label="Aldo" className="flex justify-center px-3">
+      <div className="flex items-center gap-0.5 rounded-full border border-foreground/[0.07] bg-card p-1 shadow-[0_8px_20px_-14px_rgb(0_0_0/0.35)] dark:border-white/[0.08] dark:bg-popover">
+        {ALDO_SIMPLE_PLACES.map((option) => {
+          const current = place === option.place;
+          const count = option.place === "needs" ? waiting : 0;
+          return (
+            <button
+              key={option.place}
+              type="button"
+              aria-current={current ? "page" : undefined}
+              aria-label={placeLabel(option.label, count)}
+              className={cn(
+                "flex h-10 items-center gap-1.5 rounded-full px-2.5 font-medium text-[13px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:h-11 min-[360px]:px-3.5 min-[360px]:text-[14px]",
+                current
+                  ? "bg-foreground/[0.06] text-foreground dark:bg-white/[0.08]"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+              onClick={() => setAldoSimplePlace(option.place)}
+            >
+              <PlaceIcon place={option.place} />
+              {option.label}
+              {option.place === "needs" ? (
+                <span
+                  aria-hidden
+                  className={cn(
+                    "min-w-4.5 rounded-full bg-warning px-1 text-center font-semibold text-[11px] text-neutral-950 tabular-nums leading-4.5",
+                    count === 0 && "invisible",
+                  )}
+                >
+                  {count > 99 ? "99+" : count}
+                </span>
+              ) : null}
+            </button>
+          );
+        })}
       </div>
-    </div>
+    </nav>
   );
 }

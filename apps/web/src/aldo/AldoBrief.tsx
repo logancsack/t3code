@@ -218,7 +218,7 @@ function BriefCard(props: { readonly brief: AldoBrief }) {
       <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
         <SunIcon aria-hidden className="size-3.5" strokeWidth={1.75} />
         <span className="tabular-nums">
-          {brief.title}'s brief · {timeOf(brief.at)}
+          {brief.title} · {timeOf(brief.at)}
         </span>
         <ListenButton key={hidden} brief={brief} revision={hidden} />
       </div>

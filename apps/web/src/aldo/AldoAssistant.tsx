@@ -14,14 +14,27 @@ import {
   ArrowUpIcon,
   ArrowUpRightIcon,
   AudioLinesIcon,
+  ChevronRightIcon,
+  CircleCheckIcon,
+  ClockIcon,
+  HandIcon,
   ImageIcon,
+  LoaderCircleIcon,
   MicIcon,
   MicOffIcon,
   PhoneOffIcon,
   PlusIcon,
   XIcon,
 } from "lucide-react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { cn } from "~/lib/utils";
@@ -35,7 +48,7 @@ import { useThreadShells } from "../state/entities";
 import { AldoBriefEntry } from "./AldoBrief";
 import { AldoFeedRun } from "./AldoFeed";
 import { showAldoCall } from "./callView";
-import { AldoThreadCard } from "./AldoLiveCard";
+import { AldoOpenContext, AldoThreadCard } from "./AldoLiveCard";
 import { AldoAvatar } from "./AldoPresence";
 import { ALDO_TALK_LABEL } from "./summon.logic";
 import {
@@ -61,6 +74,15 @@ import {
   type AldoImageUpload,
 } from "./assistantApi";
 import { useAldoArrive, useAldoArrived } from "./arrive";
+import { beatDelay, splitBeats } from "./beats.logic";
+import { sameTarget } from "./home.logic";
+import { useAldoHomeFeed } from "./homeFeed";
+import {
+  WORKSTREAM_WORDS,
+  workstreamMeta,
+  workstreamState,
+  type WorkstreamState,
+} from "./workstream.logic";
 import { blinkAldo, setAldoReading } from "./face";
 import { dedupeLiveCards, interleave, type AldoFeedEvent } from "./feed.logic";
 import { useAldoFirstViewHold } from "./firstView";
@@ -698,6 +720,7 @@ export function AldoConversation(
             key={entry.kind === "action" ? entry.id : `${entry.at}-${since + index}`}
             entry={entry}
             live={live.has(since + index)}
+            beats={props.feed !== undefined}
           />,
           // A request kept until a plan's chosen: the plan picker under it.
           planPick?.entry === entry ? (
@@ -705,18 +728,7 @@ export function AldoConversation(
           ) : null,
         ];
       })}
-      {replying ? (
-        <div
-          data-aldo-typing=""
-          className="flex h-7 items-center gap-1 self-start"
-          role="status"
-          aria-label="Aldo is typing"
-        >
-          <span className="size-1.5 rounded-full bg-muted-foreground" />
-          <span className="size-1.5 rounded-full bg-muted-foreground" />
-          <span className="size-1.5 rounded-full bg-muted-foreground" />
-        </div>
-      ) : null}
+      {replying ? <TypingDots /> : null}
       {props.tail}
       <div ref={end} />
     </div>
@@ -741,9 +753,12 @@ function dayLabel(iso: string): string {
 function ConversationEntry({
   entry,
   live,
+  beats,
 }: {
   readonly entry: AldoConversationEntry;
   readonly live: boolean;
+  /** Replies that arrive come in beats: on the home screen's page, not the bar, which shows the end at once. */
+  readonly beats?: boolean;
 }) {
   if (entry.kind === "action") {
     const label = (
@@ -788,47 +803,150 @@ function ConversationEntry({
   }
   if (entry.role === "user") return <UserMessage entry={entry} />;
   if (entry.source === "brief") return <AldoBriefEntry text={entry.text} at={entry.at} />;
-  return <AldoReply text={entry.text} />;
+  return <AldoReply text={entry.text} beats={beats === true} />;
 }
 
 /**
- * What Aldo said: its words on the page, no bubble. A reply that arrives fades
- * in whole. The thread a result is about is a tap into it, not its address.
+ * What Aldo said, in bubbles: a paragraph each, a beat apart with the dots
+ * between when it's just arrived on the page (`beats`; beats.logic.ts), all at
+ * once from history, in the bar and under reduced motion. A result about a
+ * thread carries that thread's name and where it stands over its words, a tap
+ * into it, rather than its address.
  */
-function AldoReply(props: { readonly text: string }) {
+function AldoReply(props: { readonly text: string; readonly beats?: boolean }) {
   const arrived = useAldoArrived();
+  const still = useMediaQuery("(prefers-reduced-motion: reduce)");
   const closing = closingThread(props.text);
+  const beats = useMemo(() => splitBeats(closing?.text ?? props.text), [closing?.text, props.text]);
+  const [shown, setShown] = useState(() =>
+    props.beats && arrived && !still ? 1 : Number.POSITIVE_INFINITY,
+  );
+  useEffect(() => {
+    if (shown >= beats.length) return;
+    const timer = window.setTimeout(() => setShown((n) => n + 1), beatDelay(beats[shown]!));
+    return () => window.clearTimeout(timer);
+  }, [shown, beats]);
+  const labeled = closing ? <WorkstreamLabel target={closing.thread} /> : null;
+  const visible = beats.slice(0, shown);
   return (
-    <p
-      {...(arrived ? { "data-aldo-reply": "" } : {})}
-      className="max-w-[94%] self-start whitespace-pre-wrap break-words text-[16px] leading-6 sm:text-[15px]"
-    >
-      {linkRuns(closing?.text ?? props.text).map((run) =>
-        run.href ? (
-          <a
-            key={run.at}
-            href={run.href}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="underline decoration-foreground/25 underline-offset-4 transition-colors hover:decoration-foreground"
+    <div className="flex max-w-[88%] flex-col items-start gap-1 self-start sm:max-w-[80%]">
+      {labeled}
+      {visible.map((beat, index) => {
+        const last = index === beats.length - 1;
+        return (
+          <p
+            // oxlint-disable-next-line react/no-array-index-key -- A reply's beats only ever add on, and two may read the same.
+            key={index}
+            {...(arrived ? { "data-aldo-reply": "" } : {})}
+            className={cn(
+              "whitespace-pre-wrap break-words rounded-[20px] border border-foreground/[0.07] bg-card px-4 py-2 text-[16px] leading-6 sm:text-[15px] dark:border-white/[0.08] dark:bg-white/[0.045]",
+              last && "rounded-bl-[8px]",
+            )}
           >
-            {run.text}
-          </a>
-        ) : (
-          run.text
-        ),
-      )}
-      {closing ? (
-        <>
-          {"\n"}
-          {threadLink(
-            closing.thread,
-            "Open the thread",
-            "text-[14px] text-muted-foreground underline decoration-foreground/20 underline-offset-4 hover:text-foreground",
-          )}
-        </>
+            {linkRuns(beat).map((run) =>
+              run.href ? (
+                <a
+                  key={run.at}
+                  href={run.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline decoration-foreground/25 underline-offset-4 transition-colors hover:decoration-foreground"
+                >
+                  {run.text}
+                </a>
+              ) : (
+                run.text
+              ),
+            )}
+            {last && closing && !labeled ? (
+              <>
+                {"\n"}
+                {threadLink(
+                  closing.thread,
+                  "Open the thread",
+                  "text-[14px] text-muted-foreground underline decoration-foreground/20 underline-offset-4 hover:text-foreground",
+                )}
+              </>
+            ) : null}
+          </p>
+        );
+      })}
+      {shown < beats.length ? <TypingDots quiet /> : null}
+    </div>
+  );
+}
+
+const WORKSTREAM_GLYPH: Record<WorkstreamState, ReactNode> = {
+  needs: <HandIcon className="size-3.5 text-warning-foreground" strokeWidth={2} />,
+  working: (
+    <LoaderCircleIcon className="size-3.5 text-primary motion-safe:animate-spin" strokeWidth={2} />
+  ),
+  done: <CircleCheckIcon className="size-3.5 text-success-foreground" strokeWidth={2} />,
+  later: <ClockIcon className="size-3.5 text-muted-foreground" strokeWidth={2} />,
+};
+
+/**
+ * The thread a reply is about, over it: its glyph (a hand when it needs the
+ * user, a spinner while it works, a check once it's done, a clock while it's
+ * put off), its name and how long, from the home screen's read. A tap opens
+ * it. Nothing when the read doesn't have it (an older Aldo, a thread since
+ * deleted): the reply then ends with a link to it, as before.
+ */
+function WorkstreamLabel(props: { readonly target: AldoOpenTarget }) {
+  const conversation = useAldoHomeFeed((s) =>
+    s.home?.conversations.find((c) => sameTarget(c.thread, props.target)),
+  );
+  const open = useContext(AldoOpenContext);
+  if (!conversation) return null;
+  const now = Date.now();
+  const state = workstreamState(conversation, now);
+  const body = (
+    <>
+      {state ? (
+        <span aria-hidden className="flex size-4 shrink-0 items-center justify-center">
+          {WORKSTREAM_GLYPH[state]}
+        </span>
       ) : null}
-    </p>
+      {state ? <span className="sr-only">{WORKSTREAM_WORDS[state]}: </span> : null}
+      <span className="min-w-0 truncate font-medium text-foreground">{conversation.title}</span>
+      {state ? (
+        <span className="shrink-0 whitespace-nowrap">
+          {"· "}
+          {workstreamMeta(conversation, state, now)}
+        </span>
+      ) : null}
+      <ChevronRightIcon aria-hidden className="size-3.5 shrink-0 opacity-60" strokeWidth={2} />
+    </>
+  );
+  const className =
+    "-ms-1.5 mt-1 inline-flex min-h-7 max-w-full items-center gap-1.5 rounded-full px-1.5 text-[13px] text-muted-foreground leading-4 transition-colors hover:bg-foreground/[0.05] focus-visible:outline-2 focus-visible:outline-ring pointer-coarse:min-h-11";
+  return open ? (
+    <button
+      type="button"
+      className={className}
+      onClick={(event) => open(conversation.thread, event.currentTarget)}
+    >
+      {body}
+    </button>
+  ) : (
+    threadLink(conversation.thread, body, className)
+  );
+}
+
+/** Aldo typing: three dots in a bubble of its own. `quiet` between a reply's beats, which the reply itself is there for. */
+function TypingDots(props: { readonly quiet?: boolean }) {
+  return (
+    <div
+      data-aldo-typing=""
+      className="flex h-10 items-center gap-1 self-start rounded-[20px] rounded-bl-[8px] border border-foreground/[0.07] bg-card px-4 dark:border-white/[0.08] dark:bg-white/[0.045]"
+      {...(props.quiet
+        ? { "aria-hidden": true }
+        : { role: "status", "aria-label": "Aldo is typing" })}
+    >
+      <span className="size-1.5 rounded-full bg-muted-foreground" />
+      <span className="size-1.5 rounded-full bg-muted-foreground" />
+      <span className="size-1.5 rounded-full bg-muted-foreground" />
+    </div>
   );
 }
 
@@ -868,7 +986,7 @@ function UserMessage({
         </div>
       ) : null}
       {text ? (
-        <p className="whitespace-pre-wrap break-words rounded-[20px] bg-message px-4 py-2 text-[16px] text-message-foreground leading-6 sm:text-[15px]">
+        <p className="whitespace-pre-wrap break-words rounded-[20px] rounded-br-[8px] bg-message px-4 py-2 text-[16px] text-message-foreground leading-6 sm:text-[15px]">
           {text}
         </p>
       ) : null}

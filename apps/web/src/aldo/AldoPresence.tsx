@@ -1,8 +1,8 @@
-// Aldo as someone you message: its face (the orb, with eyes that blink, look
-// up while it thinks, down while the user writes to it, and smile when
-// something's done), its name, and a line beside it saying what it's at, like
-// a messaging app's "typing…" (presence.logic.ts). It's still but for its
-// eyes. Tapping it opens what's working now, what the user hid from the
+// Aldo as someone you message: its face in the middle of the top (the orb,
+// with eyes that blink, look up while it thinks, down while the user writes
+// to it, about while its agents work, and smile when something's done), and
+// a line under it saying what it's at, like a messaging app's "typing…"
+// (presence.logic.ts). It's still but for its eyes. Tapping it opens what's working now, what the user hid from the
 // conversation (to show again) and what's coming up, each a tap from its
 // thread: the detail behind the line, not a view of its own; and, under them,
 // the way to what runs under the conversation (routines, what's due, pull
@@ -150,22 +150,20 @@ export function AldoPresence(props: {
   const thinking = line.mood === "thinking";
   const face = (
     <>
-      <AldoAvatar size={32} mood={line.mood} aware />
-      <span className="flex min-w-0 flex-col items-start">
-        <span className="font-semibold text-[15px] leading-5 tracking-[-0.01em]">Aldo</span>
-        <span className="flex max-w-60 items-center gap-1.5 text-[12px] text-muted-foreground leading-[18px] sm:max-w-80">
-          {waiting > 0 && !thinking ? (
-            <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-warning" />
-          ) : null}
-          <span className="truncate">{line.text}</span>
-          {detail ? (
-            <ChevronDownIcon aria-hidden className="size-3 shrink-0 opacity-60" strokeWidth={2} />
-          ) : null}
-        </span>
+      <AldoAvatar size={40} mood={line.mood} aware />
+      <span className="sr-only">Aldo: </span>
+      <span className="flex max-w-64 items-center gap-1.5 text-[13px] text-muted-foreground leading-[18px] sm:max-w-80">
+        {waiting > 0 && !thinking ? (
+          <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-warning" />
+        ) : null}
+        <span className="truncate">{line.text}</span>
+        {detail ? (
+          <ChevronDownIcon aria-hidden className="size-3 shrink-0 opacity-60" strokeWidth={2} />
+        ) : null}
       </span>
     </>
   );
-  const layout = "flex items-center gap-2.5 rounded-2xl py-1 ps-1 pe-3 text-left outline-none";
+  const layout = "flex flex-col items-center gap-1 rounded-2xl px-3 py-1 outline-none";
   if (!detail)
     return (
       <div className={layout} data-aldo-presence="">
