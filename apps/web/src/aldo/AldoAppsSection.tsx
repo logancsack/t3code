@@ -10,6 +10,9 @@ import { CheckCircle2Icon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { SettingsRow } from "../components/settings/settingsLayout";
+import { AldoBrandTile } from "./AldoBrandTile";
+import { AldoBrokenStatus } from "./AldoConnectionStatus";
+import { AldoConnectionTile } from "./AldoConnectionTile";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { toastManager } from "../components/ui/toast";
@@ -67,11 +70,12 @@ export function AldoAppRow(props: { readonly app: AldoApp; readonly onChanged: (
   return (
     <SettingsRow
       id={`aldo-app-${app.id}`}
+      leading={<AldoBrandTile id={app.name} name={app.title} />}
       title={app.title}
       description={new URL(app.url).host}
       status={
         app.status === "failed" ? (
-          <span className="text-destructive-foreground">{app.error}</span>
+          <AldoBrokenStatus since={app.changedAt}>{app.error}</AldoBrokenStatus>
         ) : app.status === "connected" ? (
           <span className="inline-flex items-center gap-1 text-success-foreground">
             <CheckCircle2Icon className="size-3.5" />
@@ -89,7 +93,7 @@ export function AldoAppRow(props: { readonly app: AldoApp; readonly onChanged: (
               disabled={busy}
               onClick={() => signIn(aldoAppConnectUrl({ url: app.url }))}
             >
-              Connect again
+              {app.status === "failed" ? "Reconnect" : "Connect again"}
             </Button>
           ) : null}
           {confirming ? (
@@ -112,15 +116,17 @@ export function AldoAppRow(props: { readonly app: AldoApp; readonly onChanged: (
   );
 }
 
-export function AldoAppCatalogRow(props: { readonly entry: AldoAppCatalogEntry }) {
+/** An app in the catalog, as a tile, with its Connect. */
+export function AldoAppCatalogTile(props: { readonly entry: AldoAppCatalogEntry }) {
   const { entry } = props;
   return (
-    <SettingsRow
-      title={entry.title}
-      description={entry.about}
+    <AldoConnectionTile
+      brand={entry.name}
+      name={entry.title}
+      what={entry.about}
       control={
         <Button
-          size="sm"
+          size="compact"
           variant="outline"
           onClick={() => signIn(aldoAppConnectUrl({ app: entry.name }))}
         >
@@ -186,34 +192,43 @@ export function useAldoApps() {
   return { data, error, refresh };
 }
 
-/** Any app with a remote MCP server, by its address. */
-export function AldoAnotherAppRow() {
+/**
+ * Any app with a remote MCP server, by its address: offered where the catalog
+ * has no app by the name searched for (`searched`), or asked for under it.
+ */
+export function AldoConnectorAddress(props: { readonly searched?: string }) {
   const [typed, setTyped] = useState("");
   const url = normalizeAldoAppUrl(typed);
+  const searched = props.searched?.trim();
   return (
-    <SettingsRow
-      id="aldo-another-app"
-      title="Another app"
-      description="Any app with a remote MCP server, by its address."
-      control={
-        <form
-          className="flex gap-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (url) signIn(aldoAppConnectUrl({ url }));
-          }}
-        >
-          <Input
-            aria-label="MCP server address"
-            placeholder="https://mcp.example.com/mcp"
-            value={typed}
-            onChange={(event) => setTyped(event.target.value)}
-          />
-          <Button size="sm" type="submit" disabled={!url}>
-            Connect
-          </Button>
-        </form>
-      }
-    />
+    <div id="aldo-another-app" className="space-y-3 px-3 py-4 sm:px-4">
+      <div className="space-y-1">
+        <p className="text-foreground text-sm">
+          {searched ? `No app called “${searched}” here yet.` : "Add an app by its address"}
+        </p>
+        <p className="text-muted-foreground text-xs">
+          {searched
+            ? "If it gives you a connector address (an MCP server’s, often ending in /mcp), paste it here and your agents can use it."
+            : "Any app with a connector address (an MCP server’s, often ending in /mcp)."}
+        </p>
+      </div>
+      <form
+        className="flex gap-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (url) signIn(aldoAppConnectUrl({ url }));
+        }}
+      >
+        <Input
+          aria-label="Connector address"
+          placeholder="https://mcp.example.com/mcp"
+          value={typed}
+          onChange={(event) => setTyped(event.target.value)}
+        />
+        <Button size="sm" type="submit" disabled={!url}>
+          Connect
+        </Button>
+      </form>
+    </div>
   );
 }

@@ -1,14 +1,15 @@
 import { settingsInbox } from "./settingsData";
 import { useSettingsResource } from "./settingsResource";
-// Settings → Agents → Your agents' email: the address agents share (their
+// Settings → Connections → Your agents' email: the address agents share (their
 // agent inbox), claimed once with a handle the user picks, and the name its
 // mail goes out under, which the user changes as they like.
 
 import { useNavigate } from "@tanstack/react-router";
-import { CheckCircle2Icon, CopyIcon, InboxIcon, LoaderIcon } from "lucide-react";
+import { CheckCircle2Icon, CopyIcon, InboxIcon, LoaderIcon, MailIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { SettingsRow } from "../components/settings/settingsLayout";
+import { AldoIconTile } from "./AldoBrandTile";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "../components/ui/input-group";
@@ -119,6 +120,7 @@ function ClaimAgentAddress(props: {
   return (
     <SettingsRow
       id="aldo-agent-inbox"
+      leading={<AldoIconTile icon={<MailIcon />} />}
       title="Agent inbox"
       description={AGENT_INBOX_DESCRIPTION}
       status={
@@ -266,6 +268,7 @@ export function AldoAgentInboxRows() {
     return (
       <SettingsRow
         id="aldo-agent-inbox"
+        leading={<AldoIconTile icon={<MailIcon />} />}
         title="Agent inbox"
         description={AGENT_INBOX_DESCRIPTION}
         status={
@@ -314,6 +317,7 @@ export function AldoAgentInboxRows() {
     <>
       <SettingsRow
         id="aldo-agent-inbox"
+        leading={<AldoIconTile icon={<MailIcon />} />}
         title="Agent inbox"
         description={AGENT_INBOX_DESCRIPTION}
         status={

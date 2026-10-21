@@ -28,7 +28,8 @@ export const ALDO_SETTINGS_PATHS: ReadonlySet<string> = new Set([
 /**
  * Aldo's nav, in groups: its account heads it (from its own card), and each
  * entry stays lit on the pages it opens onto (Personalization's tabs,
- * General's appearance, shortcuts and licenses).
+ * General's shortcuts and licenses). Archived threads are threads, so the
+ * thread list leads to them, not this nav.
  */
 export const ALDO_SETTINGS_NAV: ReadonlyArray<{
   readonly group: string;
@@ -41,7 +42,7 @@ export const ALDO_SETTINGS_NAV: ReadonlyArray<{
   {
     group: "Agents",
     items: [
-      { to: "/settings/agents", label: "Agents" },
+      { to: "/settings/agents", label: "Models" },
       { to: "/settings/permissions", label: "Permissions" },
       {
         to: "/settings/instructions",
@@ -51,7 +52,7 @@ export const ALDO_SETTINGS_NAV: ReadonlyArray<{
     ],
   },
   {
-    group: "Accounts & keys",
+    group: "Accounts",
     items: [
       { to: "/settings/connections", label: "Connections" },
       { to: "/settings/vault", label: "Vault" },
@@ -60,18 +61,96 @@ export const ALDO_SETTINGS_NAV: ReadonlyArray<{
   {
     group: "App",
     items: [
+      { to: "/settings/appearance", label: "Appearance" },
+      { to: "/settings/notifications", label: "Notifications" },
+      { to: "/settings/phone", label: "Phone" },
       {
         to: "/settings/general",
         label: "General",
-        also: ["/settings/appearance", "/settings/keybindings", "/settings/open-source-licenses"],
+        also: ["/settings/keybindings", "/settings/open-source-licenses"],
       },
-      { to: "/settings/notifications", label: "Notifications" },
-      { to: "/settings/phone", label: "Phone" },
       { to: "/settings/code", label: "Code" },
-      { to: "/settings/archived", label: "Archive" },
     ],
   },
 ];
+
+const PERSONALIZATION = {
+  title: "Personalization",
+  intro: "What your agents know about you and how you like things done, in every new thread.",
+} as const;
+
+/**
+ * Each page's name and one line on what it's for, at its top (and in the
+ * phone's bar). Pages that aren't in the nav have one too, so none opens on a
+ * bare section.
+ */
+export const ALDO_SETTINGS_PAGES: Readonly<
+  Record<string, { readonly title: string; readonly intro: string }>
+> = {
+  "/settings/account": {
+    title: "Account",
+    intro: "Your plan, your credits and how you sign in.",
+  },
+  "/settings/agents": {
+    title: "Models",
+    intro:
+      "Which AI runs your agents. Aldo's own models come with your plan, and a Claude or ChatGPT plan you already pay for can run them too.",
+  },
+  "/settings/permissions": {
+    title: "Permissions",
+    intro:
+      "What agents may do without asking you first. Paying, booking and cancelling always wait for your yes.",
+  },
+  "/settings/instructions": PERSONALIZATION,
+  "/settings/memory": PERSONALIZATION,
+  "/settings/skills": PERSONALIZATION,
+  "/settings/connections": {
+    title: "Connections",
+    intro:
+      "Accounts and apps your agents can use for you. To use a Claude or ChatGPT plan, connect it in Models.",
+  },
+  "/settings/vault": {
+    title: "Vault",
+    intro:
+      "Keys and logins your agents use without seeing them. Values can't be read back here once they're saved.",
+  },
+  "/settings/appearance": {
+    title: "Appearance",
+    intro: "How Aldo looks on this device.",
+  },
+  "/settings/notifications": {
+    title: "Notifications",
+    intro: "When Aldo lets you know about your threads, and where.",
+  },
+  "/settings/phone": {
+    title: "Phone",
+    intro: "Call or text Aldo from your phone number.",
+  },
+  "/settings/general": {
+    title: "General",
+    intro: "How threads, the composer and Home work for you.",
+  },
+  "/settings/code": {
+    title: "Code",
+    intro: "For work on code: environments, diffs and pull requests.",
+  },
+  "/settings/keybindings": {
+    title: "Keyboard shortcuts",
+    intro: "Every shortcut, and the keys for each. Click one to change it.",
+  },
+  "/settings/open-source-licenses": {
+    title: "Licenses",
+    intro: "The open source software Aldo is built with, and its licenses.",
+  },
+  "/settings/archived": {
+    title: "Archived threads",
+    intro: "Threads you archived, with their files. Restore one to put it back in your list.",
+  },
+  "/settings/projects": {
+    title: "Project settings",
+    intro: "Settings for this project's threads. Anything left alone follows your own.",
+  },
+};
 
 /** The nav for this account: Code only with the developer tools (developerTools.ts). */
 export function aldoSettingsNav(options: {
@@ -82,6 +161,13 @@ export function aldoSettingsNav(options: {
     ...group,
     items: group.items.filter((item) => item.to !== "/settings/code"),
   }));
+}
+
+/** A page's name and intro, or null for one that has none (a page T3 alone shows). */
+export function aldoSettingsPage(
+  pathname: string,
+): { readonly title: string; readonly intro: string } | null {
+  return ALDO_SETTINGS_PAGES[pathname.replace(/\/+$/, "")] ?? null;
 }
 
 /** Whether a nav entry is the page shown, or one it opens onto. */
@@ -107,8 +193,8 @@ export function aldoSettingsRedirect(location: {
   const tail = `${searchStr}${hash ? `#${hash}` : ""}`;
   switch (pathname.replace(/\/+$/, "")) {
     case "/settings/integrations":
-      // The agents' email moved to Agents; everything else here is a connection now.
-      if (hash === "aldo-agent-inbox") return `/settings/agents${searchStr}#aldo-agent-inbox`;
+      // The agents' email is a connection now, like everything else here.
+      if (hash === "aldo-agent-inbox") return `/settings/connections${searchStr}#aldo-agent-inbox`;
       if (hash === "aldo-phone") return `/settings/phone${searchStr}`;
       return `/settings/connections${tail}`;
     case "/settings/providers":
@@ -176,16 +262,15 @@ const ALDO_MOVED_SETTINGS_ROWS: ReadonlyMap<
 > = new Map([
   ["project-defaults", { to: "/settings/agents" }],
   ["default-model", { to: "/settings/agents" }],
-  ["text-generation-model", { to: "/settings/agents" }],
+  ["text-generation-model", { to: "/settings/agents", title: "Thread titles" }],
   ["providers", { to: "/settings/agents", targetId: "aldo-subscriptions" }],
-  ["default-permissions", { to: "/settings/permissions", title: "Access" }],
+  ["default-permissions", { to: "/settings/permissions", title: "What agents can run" }],
   ["skills-in-slash-menu", { to: "/settings/skills" }],
   ["hide-whitespace-changes", { to: "/settings/code" }],
   ["default-diff-file-state", { to: "/settings/code" }],
   ["diff-layout", { to: "/settings/code" }],
   ["proactive-panels", { to: "/settings/code" }],
   ["source-control", { to: "/settings/connections", targetId: "aldo-connections" }],
-  ["color-scheme", { to: "/settings/general", targetId: "aldo-theme" }],
 ]);
 
 /** Shortcuts to views Aldo leaves out: Usage's Limits tab. */

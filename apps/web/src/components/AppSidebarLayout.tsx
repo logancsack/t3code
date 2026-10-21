@@ -36,6 +36,7 @@ import {
 } from "../panelAnimations";
 import ThreadSidebar from "./Sidebar";
 import { AldoProfileButton } from "../aldo/AldoAccountMenu";
+import { AldoSettingsBackBar } from "../aldo/AldoSettingsShell";
 import { AldoSimpleRail, useAldoSimpleRail } from "../aldo/AldoSimpleRail";
 import { isAldoCloud } from "../aldo/api";
 import { SidebarChromeHeader } from "./sidebar/SidebarChrome";
@@ -230,6 +231,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
   const routePanelAnimationsActive = panelAnimationsActive && !panelAnimationsSuppressed;
   const isOnSettings = pathname === "/settings" || pathname.startsWith("/settings/");
   const aldoSimpleRail = useAldoSimpleRail(isOnSettings);
+  const aldoSettings = isAldoCloud && isOnSettings;
   const isMacosDesktop = isElectron && isMacPlatform(navigator.platform);
   const [sidebarWidth, setSidebarWidth] = useState(readInitialThreadSidebarWidth);
   // Subscribed rather than read once: the clamp must track live window size,
@@ -327,6 +329,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
           className="h-dvh! min-h-0!"
           data-panel-animations={routePanelAnimationsActive ? "true" : "false"}
           defaultOpen
+          {...(aldoSettings ? { open: true } : {})}
           style={sidebarProviderStyle}
         >
           <ProjectProjectionRetention />
@@ -348,7 +351,12 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
           >
             {isOnSettings ? (
               <>
-                <SidebarChromeHeader isElectron={isElectron} />
+                {/* Aldo: the way back to threads heads its settings nav. */}
+                {isAldoCloud ? (
+                  <AldoSettingsBackBar />
+                ) : (
+                  <SidebarChromeHeader isElectron={isElectron} />
+                )}
                 <SettingsSidebarNav pathname={pathname} />
               </>
             ) : legacySidebarEnabled ? (
@@ -362,7 +370,8 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
             <SidebarRail onDoubleClick={resetSidebarWidth} />
           </Sidebar>
           {children}
-          <SidebarControl />
+          {/* Aldo's settings nav stays open, with Back to threads at its head and Done on a phone. */}
+          {aldoSettings ? null : <SidebarControl />}
           <NavigationHistoryShortcuts />
           <MainAppLocationTracker />
         </SidebarProvider>

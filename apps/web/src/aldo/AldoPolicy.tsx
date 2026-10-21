@@ -4,7 +4,7 @@
 // follow the user's own again (policy.logic.ts). An Aldo that doesn't let the
 // user change them here still says how to.
 
-import { useCallback, useState, type ReactNode } from "react";
+import { useCallback, useMemo, useState, type ReactNode } from "react";
 
 import { settingsPolicy } from "./settingsData";
 import { useSettingsResource } from "./settingsResource";
@@ -24,6 +24,8 @@ import {
 import { toastManager } from "../components/ui/toast";
 import { editAldoPolicy, type AldoPolicyView } from "./homeApi";
 import { refreshAldoHome } from "./homeFeed";
+import { useAldoPlaces } from "./places";
+import { placeKey } from "./places.logic";
 import {
   aldoRuleDifferences,
   aldoRuleEdit,
@@ -79,6 +81,18 @@ export function useAldoPolicy(): AldoPolicyState {
     }
   }, []);
   return { view, saving, error, edit };
+}
+
+/**
+ * Each project's name by its repositories (placeKey), as the sidebar names it,
+ * for "Different in"; Aldo projects with no machine yet once `directory` reads them.
+ */
+export function useAldoWorkspaceNames(directory: boolean): ReadonlyMap<string, string> {
+  const { places } = useAldoPlaces(directory);
+  return useMemo(
+    () => new Map(places.map((place) => [placeKey(place.repos), place.name] as const)),
+    [places],
+  );
 }
 
 export function AldoPolicySelect(props: {
@@ -154,13 +168,14 @@ export function AldoPolicyRuleRow(props: {
 }) {
   const { view, saving, edit } = props.policy;
   const row = searchableSetting(props.setting);
+  const differences = view ? aldoRuleDifferences(view, props.rule) : [];
+  const names = useAldoWorkspaceNames(differences.length > 0);
   if (view === null) {
     return (
       <SettingsRow {...row} description={props.description} status={ALDO_POLICY_ASK_AN_AGENT} />
     );
   }
   const value = view ? aldoRuleValue(props.rule, view.everywhere) : "";
-  const differences = view ? aldoRuleDifferences(view, props.rule) : [];
   const change = (next: string, repos?: ReadonlyArray<string>) => {
     const change = aldoRuleEdit(props.rule, next, repos);
     if (change) void edit([change]);
@@ -185,12 +200,12 @@ export function AldoPolicyRuleRow(props: {
           {differences.map((difference) => (
             <AldoPolicySubRow
               key={difference.repos.join(",")}
-              label={aldoWorkspaceLabel(difference.repos)}
+              label={aldoWorkspaceLabel(difference.repos, names)}
               control={
                 <AldoPolicySelect
                   value={difference.value}
                   options={aldoRuleOptions(props.rule, difference.value, { workspace: true })}
-                  label={`${row.title} in ${aldoWorkspaceLabel(difference.repos)}`}
+                  label={`${row.title} in ${aldoWorkspaceLabel(difference.repos, names)}`}
                   disabled={saving}
                   onChange={(next) => change(next, difference.repos)}
                 />

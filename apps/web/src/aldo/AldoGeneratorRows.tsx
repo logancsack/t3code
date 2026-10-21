@@ -8,6 +8,8 @@ import { CheckCircle2Icon, ExternalLinkIcon } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 
 import { SettingsRow } from "../components/settings/settingsLayout";
+import { AldoBrandTile } from "./AldoBrandTile";
+import { AldoConnectionTile } from "./AldoConnectionTile";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { toastManager } from "../components/ui/toast";
@@ -22,10 +24,26 @@ const messageOf = (cause: unknown) => (cause instanceof Error ? cause.message : 
 
 const ONE_KEY: ReadonlyArray<AldoIntegrationKeyField> = [{ name: "key", label: "API key" }];
 
-/** A generator, with its key form. */
+/** A catalog tile's line for the generators this client knows; others use Aldo's description. */
+const SHORT: Readonly<Record<string, string>> = {
+  runway: "Make and edit video and images",
+  higgsfield: "Images and video with camera moves",
+  luma: "Make and edit images and video",
+  fal: "A catalog of media models",
+  replicate: "Image, video and audio models",
+  elevenlabs: "Speech, sound effects and music",
+};
+
+/** What a generator's catalog tile says about it. */
+export function aldoGeneratorWhat(integration: AldoIntegration): string {
+  return SHORT[integration.provider] ?? integration.description ?? "";
+}
+
+/** A generator, with its key form; `tile`, in the catalog. */
 export function AldoGeneratorRow(props: {
   readonly integration: AldoIntegration;
   readonly onChanged: () => void;
+  readonly tile?: boolean;
 }) {
   const { integration } = props;
   const fields = integration.fields?.length ? integration.fields : ONE_KEY;
@@ -84,100 +102,115 @@ export function AldoGeneratorRow(props: {
       });
   };
 
+  const status = !integration.available ? (
+    `${integration.name} isn't available on this Aldo yet.`
+  ) : integration.connected && integration.error ? (
+    <span className="text-destructive-foreground">{integration.error}</span>
+  ) : integration.connected ? (
+    <span className="inline-flex items-center gap-1 text-success-foreground">
+      <CheckCircle2Icon className="size-3.5" />
+      Connected
+    </span>
+  ) : null;
+  const control = (
+    <div className="flex flex-wrap gap-2 sm:flex-col sm:items-stretch">
+      {confirming && integration.connected ? (
+        <>
+          <Button size="sm" variant="ghost" onClick={() => setConfirming(false)}>
+            Keep
+          </Button>
+          <Button size="sm" variant="destructive" disabled={busy} onClick={disconnect}>
+            Disconnect
+          </Button>
+        </>
+      ) : (
+        <>
+          <Button
+            size={props.tile ? "compact" : "sm"}
+            variant={integration.connected ? "ghost" : "outline"}
+            disabled={busy || !integration.available}
+            onClick={() => (open ? close() : setOpen(true))}
+          >
+            {open ? "Cancel" : integration.connected ? "Replace key" : "Connect"}
+          </Button>
+          {integration.connected && !open ? (
+            <Button size="sm" variant="ghost" onClick={() => setConfirming(true)}>
+              Disconnect
+            </Button>
+          ) : null}
+        </>
+      )}
+    </div>
+  );
+  const form =
+    open && integration.available ? (
+      <form
+        onSubmit={submit}
+        className="mb-3 space-y-3 rounded-xl border border-border p-3"
+        autoComplete="off"
+      >
+        <p className="text-muted-foreground text-xs">
+          Aldo keeps it in your vault: agents use it without ever seeing it, and what they make is
+          billed to your {integration.name} account.
+          {integration.keyUrl ? (
+            <>
+              {" "}
+              <a
+                className="inline-flex items-center gap-0.5 text-foreground underline underline-offset-2"
+                href={integration.keyUrl}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Get a key <ExternalLinkIcon className="size-3" />
+              </a>
+            </>
+          ) : null}
+        </p>
+        <div className={fields.length > 1 ? "grid gap-2 sm:grid-cols-2" : "grid gap-2"}>
+          {fields.map((field) => (
+            <label key={field.name} className="flex flex-col gap-1 text-xs">
+              <span className="text-muted-foreground">{field.label}</span>
+              <Input
+                type="password"
+                placeholder={field.placeholder}
+                autoComplete="off"
+                value={values[field.name] ?? ""}
+                onChange={(e) => setValues({ ...values, [field.name]: e.currentTarget.value })}
+              />
+            </label>
+          ))}
+        </div>
+        {error ? <p className="text-destructive-foreground text-xs">{error}</p> : null}
+        <div className="flex justify-end">
+          <Button type="submit" size="sm" disabled={busy || !complete}>
+            {busy ? "Connecting…" : "Connect"}
+          </Button>
+        </div>
+      </form>
+    ) : null;
+
+  if (props.tile) {
+    return (
+      <AldoConnectionTile
+        brand={integration.provider}
+        name={integration.name}
+        what={aldoGeneratorWhat(integration)}
+        status={status}
+        control={control}
+      >
+        {form}
+      </AldoConnectionTile>
+    );
+  }
   return (
     <SettingsRow
+      leading={<AldoBrandTile id={integration.provider} name={integration.name} />}
       title={integration.name}
       description={integration.description}
-      status={
-        !integration.available ? (
-          `${integration.name} isn't available on this Aldo yet.`
-        ) : integration.connected && integration.error ? (
-          <span className="text-destructive-foreground">{integration.error}</span>
-        ) : integration.connected ? (
-          <span className="inline-flex items-center gap-1 text-success-foreground">
-            <CheckCircle2Icon className="size-3.5" />
-            Connected
-          </span>
-        ) : (
-          "Not connected"
-        )
-      }
-      control={
-        <div className="flex flex-wrap gap-2 sm:flex-col sm:items-stretch">
-          {confirming && integration.connected ? (
-            <>
-              <Button size="sm" variant="ghost" onClick={() => setConfirming(false)}>
-                Keep
-              </Button>
-              <Button size="sm" variant="destructive" disabled={busy} onClick={disconnect}>
-                Disconnect
-              </Button>
-            </>
-          ) : (
-            <>
-              <Button
-                size="sm"
-                variant={integration.connected ? "ghost" : "outline"}
-                disabled={busy || !integration.available}
-                onClick={() => (open ? close() : setOpen(true))}
-              >
-                {open ? "Cancel" : integration.connected ? "Replace key" : "Connect"}
-              </Button>
-              {integration.connected && !open ? (
-                <Button size="sm" variant="ghost" onClick={() => setConfirming(true)}>
-                  Disconnect
-                </Button>
-              ) : null}
-            </>
-          )}
-        </div>
-      }
+      status={status}
+      control={control}
     >
-      {open && integration.available ? (
-        <form
-          onSubmit={submit}
-          className="mb-3 space-y-3 rounded-xl border border-border p-3"
-          autoComplete="off"
-        >
-          <p className="text-muted-foreground text-xs">
-            Aldo keeps it in your vault: agents use it without ever seeing it, and what they make is
-            billed to your {integration.name} account.
-            {integration.keyUrl ? (
-              <>
-                {" "}
-                <a
-                  className="inline-flex items-center gap-0.5 text-foreground underline underline-offset-2"
-                  href={integration.keyUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Get a key <ExternalLinkIcon className="size-3" />
-                </a>
-              </>
-            ) : null}
-          </p>
-          <div className={fields.length > 1 ? "grid gap-2 sm:grid-cols-2" : "grid gap-2"}>
-            {fields.map((field) => (
-              <label key={field.name} className="flex flex-col gap-1 text-xs">
-                <span className="text-muted-foreground">{field.label}</span>
-                <Input
-                  type="password"
-                  placeholder={field.placeholder}
-                  autoComplete="off"
-                  value={values[field.name] ?? ""}
-                  onChange={(e) => setValues({ ...values, [field.name]: e.currentTarget.value })}
-                />
-              </label>
-            ))}
-          </div>
-          {error ? <p className="text-destructive-foreground text-xs">{error}</p> : null}
-          <div className="flex justify-end">
-            <Button type="submit" size="sm" disabled={busy || !complete}>
-              {busy ? "Connecting…" : "Connect"}
-            </Button>
-          </div>
-        </form>
-      ) : null}
+      {form}
     </SettingsRow>
   );
 }

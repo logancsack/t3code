@@ -48,6 +48,7 @@ import type { TimestampFormat } from "@t3tools/contracts/settings";
 import {
   AlarmClockIcon,
   AlarmClockOffIcon,
+  ArchiveIcon,
   CheckIcon,
   ChevronDownIcon,
   CircleAlertIcon,
@@ -85,7 +86,7 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
-import { useParams, useRouter } from "@tanstack/react-router";
+import { Link, useParams, useRouter } from "@tanstack/react-router";
 
 import { useRightPanelStore } from "../rightPanelStore";
 import {
@@ -5339,6 +5340,16 @@ export default function Sidebar() {
                 "No threads yet"
               )}
             </div>
+          ) : null}
+          {/* Aldo: archived threads are threads, so the list ends with the way to them. */}
+          {isAldoCloud && !isSearchingThreads ? (
+            <Link
+              to="/settings/archived"
+              className="mt-1 flex h-8 items-center gap-2.5 rounded-md px-2.5 text-xs text-sidebar-muted-foreground/70 outline-none hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <ArchiveIcon aria-hidden className="size-3.5 shrink-0" />
+              Archived threads
+            </Link>
           ) : null}
         </SidebarGroup>
       </SidebarContent>

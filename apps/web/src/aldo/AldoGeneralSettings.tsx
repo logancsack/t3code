@@ -1,23 +1,20 @@
 // Settings → General in Aldo: the few settings most people change on top
-// (theme, layout and what they hand Aldo, how quickly agents start), and T3's
-// own rows folded under More settings, which a search for one of them opens.
+// (how quickly agents start, how the composer sends, what they hand Aldo),
+// and T3's own rows folded under More settings, which a search for one of
+// them opens. Theme and layout are Appearance's.
 
 import { Link } from "@tanstack/react-router";
-import { ChevronRightIcon, PaletteIcon, PanelLeftIcon, ZapIcon } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { HomeIcon, SendIcon, ZapIcon } from "lucide-react";
+import { useState, type ReactNode } from "react";
 
-import {
-  SettingsRow,
-  SettingsSection,
-  useSettingsSearchTargetId,
-} from "../components/settings/settingsLayout";
+import { SettingsRow, SettingsSection } from "../components/settings/settingsLayout";
 import { searchableSetting } from "../components/settings/settingsSearch";
 import { Button } from "../components/ui/button";
-import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../components/ui/collapsible";
 import { Switch } from "../components/ui/switch";
 import { Toggle, ToggleGroup } from "../components/ui/toggle-group";
 import { useTheme } from "../hooks/useTheme";
 import { AldoInterestChips } from "./AldoInterestChips";
+import { AldoSettingsFold } from "./AldoSettingsShell";
 import { saveAldoOnboarding, useAldoOnboardingState } from "./onboarding";
 import { setAldoPreloadSettings, useAldoPreloadSettings } from "./preloadSettings";
 import { setAldoSimpleMode, useAldoSimpleMode } from "./simpleMode";
@@ -28,7 +25,7 @@ const ALDO_THEME_MODES = [
   { value: "system", label: "System" },
 ] as const;
 
-/** Light, dark, or the device's: the same control in General and the account menu. */
+/** Light, dark, or the device's, for the account menu. */
 export function AldoThemeToggle(props: { readonly className?: string }) {
   const { appearanceMode, setAppearanceMode } = useTheme();
   return (
@@ -53,59 +50,23 @@ export function AldoThemeToggle(props: { readonly className?: string }) {
 
 /** General's rows above More settings: a search for one of them leaves it folded. */
 const ALDO_GENERAL_BASIC_IDS: ReadonlySet<string> = new Set([
-  "aldo-theme",
-  "aldo-customize-theme",
-  "aldo-simple-mode",
-  "aldo-interests",
-  "send-shortcut",
   "aldo-preload",
+  "send-shortcut",
+  "aldo-interests",
   "about",
   "open-source-licenses",
   "aldo-keyboard-shortcuts",
 ]);
 
 export function AldoGeneralBasics(props: { readonly sendShortcutRow: ReactNode }) {
-  const simple = useAldoSimpleMode();
   const preload = useAldoPreloadSettings();
   return (
     <>
-      <SettingsSection title="Appearance" icon={<PaletteIcon className="size-4" />}>
-        <SettingsRow
-          id="aldo-theme"
-          title="Theme"
-          description="Light, dark, or whichever this device uses."
-          control={<AldoThemeToggle />}
-        />
-        <SettingsRow
-          id="aldo-customize-theme"
-          title="Themes and fonts"
-          description="Pick a theme or make your own, and choose fonts."
-          control={
-            <Button render={<Link to="/settings/appearance" />} size="sm" variant="outline">
-              Customize
-            </Button>
-          }
-        />
-      </SettingsSection>
-      <SettingsSection title="Layout" icon={<PanelLeftIcon className="size-4" />}>
-        <SettingsRow
-          {...searchableSetting("aldo-simple-mode")}
-          description="A narrow rail in place of the sidebar, with just Aldo, what needs you, and your Library. Only on this device."
-          control={
-            <Switch
-              checked={simple}
-              onCheckedChange={(checked) => setAldoSimpleMode(checked)}
-              aria-label="Simple mode"
-            />
-          }
-        />
-        <AldoInterestsRow />
-        {props.sendShortcutRow}
-      </SettingsSection>
-      <SettingsSection title="Speed" icon={<ZapIcon className="size-4" />}>
+      <SettingsSection title="Threads" icon={<ZapIcon className="size-4" />}>
         <SettingsRow
           {...searchableSetting("aldo-preload")}
-          description="Start a new thread's computer as soon as the thread opens, and wake a thread's when you open it, so replies start without waiting. One you don't use goes back to sleep."
+          description="Start a thread’s computer when you open the thread, so replies start without waiting. One you don’t use goes back to sleep."
+          inline
           control={
             <Switch
               checked={preload.newThreads && preload.openedThreads}
@@ -117,62 +78,79 @@ export function AldoGeneralBasics(props: { readonly sendShortcutRow: ReactNode }
           }
         />
       </SettingsSection>
+      <SettingsSection title="Composer" icon={<SendIcon className="size-4" />}>
+        {props.sendShortcutRow}
+      </SettingsSection>
+      <AldoInterestsSection />
     </>
   );
 }
 
+/** Settings → Appearance's Layout in Aldo: the simple rail or every thread. */
+export function AldoLayoutRow() {
+  const simple = useAldoSimpleMode();
+  return (
+    <SettingsRow
+      {...searchableSetting("aldo-simple-mode")}
+      description="Simple shows Aldo, what needs you and your Library. Full adds every thread and the developer tools."
+      control={
+        <ToggleGroup
+          aria-label="Layout"
+          variant="segmented"
+          value={[simple ? "simple" : "full"]}
+          onValueChange={(next) => {
+            if (next[0] === "simple" || next[0] === "full") setAldoSimpleMode(next[0] === "simple");
+          }}
+        >
+          <Toggle value="simple">Simple</Toggle>
+          <Toggle value="full">Full</Toggle>
+        </ToggleGroup>
+      }
+    />
+  );
+}
+
 /** What they told the welcome, to change; only on an Aldo that keeps it. */
-function AldoInterestsRow() {
+function AldoInterestsSection() {
   const onboarding = useAldoOnboardingState();
   const [failed, setFailed] = useState(false);
   if (!onboarding) return null;
   return (
-    <SettingsRow
-      {...searchableSetting("aldo-interests")}
-      description="Picks the ideas on Home. Code and apps, or a connected git host, adds the developer tools: pull requests, Code settings, the terminal and the diff."
-      {...(failed ? { status: "Couldn’t save that. Try again." } : {})}
-    >
-      <AldoInterestChips
-        label="What you hand Aldo"
-        className="pt-1 pb-2.5"
-        value={onboarding.interests ?? []}
-        onChange={(next) => {
-          setFailed(false);
-          void saveAldoOnboarding(next, { revert: true }).then((saved) => setFailed(!saved));
-        }}
-      />
-    </SettingsRow>
+    <SettingsSection title="Home" icon={<HomeIcon className="size-4" />}>
+      <SettingsRow
+        {...searchableSetting("aldo-interests")}
+        description="Picks the ideas on Home. Code and apps, or a connected git host, adds the developer tools: pull requests, Code settings, the terminal and the diff."
+        {...(failed ? { status: "Couldn’t save that. Try again." } : {})}
+      >
+        <AldoInterestChips
+          label="What you hand Aldo"
+          className="pt-1 pb-2.5"
+          value={onboarding.interests ?? []}
+          onChange={(next) => {
+            setFailed(false);
+            void saveAldoOnboarding(next, { revert: true }).then((saved) => setFailed(!saved));
+          }}
+        />
+      </SettingsRow>
+    </SettingsSection>
   );
 }
 
 /** The rest of General, folded: it opens for a search that leads into it. */
 export function AldoGeneralMore(props: { readonly children: ReactNode }) {
-  const [open, setOpen] = useState(false);
-  const targetId = useSettingsSearchTargetId();
-  // Unfold once per search jump, so the user can fold it again while the target is still set.
-  const openedFor = useRef<string | null>(null);
-  useEffect(() => {
-    if (targetId === null) {
-      openedFor.current = null;
-      return;
-    }
-    if (ALDO_GENERAL_BASIC_IDS.has(targetId) || openedFor.current === targetId) return;
-    openedFor.current = targetId;
-    setOpen(true);
-  }, [targetId]);
   return (
-    <Collapsible open={open} onOpenChange={setOpen}>
-      <CollapsibleTrigger className="group flex min-h-8 w-full items-center gap-2 px-3 sm:px-4">
-        <h2 className="text-sm font-normal text-foreground/70 transition-colors group-hover:text-foreground">
-          More settings
-        </h2>
-        <ChevronRightIcon className="size-4 text-muted-foreground transition-transform duration-200 group-data-panel-open:rotate-90" />
-      </CollapsibleTrigger>
-      <CollapsiblePanel>
-        <div className="flex flex-col gap-8 pt-6">{props.children}</div>
-      </CollapsiblePanel>
-    </Collapsible>
+    <AldoSettingsFold
+      title="More settings"
+      hint="The thread list, how replies show, confirmations"
+      opensFor={opensGeneralMore}
+    >
+      {props.children}
+    </AldoSettingsFold>
   );
+}
+
+function opensGeneralMore(targetId: string): boolean {
+  return !ALDO_GENERAL_BASIC_IDS.has(targetId);
 }
 
 /** General's footer row in Aldo: its shortcuts, which have no entry of their own in the nav. */

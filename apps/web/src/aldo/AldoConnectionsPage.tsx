@@ -1,14 +1,17 @@
 // Settings → Connections: the accounts and apps the user connects for their
-// agents to use as them. What's connected comes first, with whatever needs
-// connecting again called out at the top; below it, what can be added, by
-// kind: code hosts, Google and Microsoft (mail, calendar, contacts and files),
-// the user's Link wallet (agents pay from it with the user's approval each
-// time), apps with a remote MCP server (AldoAppsSection.tsx), and the image,
-// video and audio generators agents use with the user's own API keys
-// (AldoGeneratorRows.tsx). Connecting signs in with the provider in a popup;
-// how the sign-in reports back to this tab is in integrations.logic.ts.
+// agents to use as them. What's connected comes first, one that stopped
+// working first among them, saying so on its row; then the agents' own email;
+// then what can be added, searchable, in two columns by kind: Google and
+// Microsoft (mail, calendar, contacts and files), code hosts, payments (the
+// user's Link wallet, which agents pay from with the user's approval each
+// time, and Stripe and PayPal), apps with a remote MCP server
+// (AldoAppsSection.tsx), and the image, video and audio generators agents use
+// with the user's own API keys (AldoGeneratorRows.tsx). An app the catalog
+// doesn't have connects by its address. Connecting signs in with the provider
+// in a popup; how the sign-in reports back to this tab is in
+// integrations.logic.ts.
 
-import { CheckCircle2Icon, PlusIcon, TriangleAlertIcon } from "lucide-react";
+import { CheckCircle2Icon, MailIcon, SearchIcon } from "lucide-react";
 import { Fragment, useCallback, useEffect, useState, type ReactNode } from "react";
 
 import {
@@ -17,8 +20,10 @@ import {
   SettingsSection,
   useSettingsSearchTargetId,
 } from "../components/settings/settingsLayout";
-import { Alert, AlertDescription, AlertTitle } from "../components/ui/alert";
+import { SettingsGroup } from "../components/settings/SettingsGroup";
 import { Button } from "../components/ui/button";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "../components/ui/input-group";
+import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../components/ui/menu";
 import { toastManager } from "../components/ui/toast";
 import { cn } from "~/lib/utils";
 import {
@@ -29,9 +34,18 @@ import {
 } from "./accountApi";
 import { settingsIntegrations, settingsVault } from "./settingsData";
 import { useSettingsResource } from "./settingsResource";
-import { AldoAccountRow, useAldoAccounts } from "./AldoAccountsPanel";
-import { AldoAnotherAppRow, AldoAppCatalogRow, AldoAppRow, useAldoApps } from "./AldoAppsSection";
-import { AldoGeneratorRow } from "./AldoGeneratorRows";
+import { AldoAccountButton, AldoAccountRow, useAldoAccounts } from "./AldoAccountsPanel";
+import { AldoAgentInboxRows } from "./AldoAgentInbox";
+import {
+  AldoAppCatalogTile,
+  AldoAppRow,
+  AldoConnectorAddress,
+  useAldoApps,
+} from "./AldoAppsSection";
+import { AldoBrandTile } from "./AldoBrandTile";
+import { AldoBrokenStatus } from "./AldoConnectionStatus";
+import { AldoConnectionGrid, AldoConnectionTile } from "./AldoConnectionTile";
+import { AldoGeneratorRow, aldoGeneratorWhat } from "./AldoGeneratorRows";
 import { ALDO_GIT_HOST_KINDS, AldoGitHostRow } from "./AldoGitHostsPanel";
 import {
   ALDO_INTEGRATIONS_CHANNEL,
@@ -51,6 +65,8 @@ const INTEGRATIONS: Record<
   {
     readonly name: string;
     readonly description: string;
+    /** Its catalog tile's line. */
+    readonly what: string;
     /** The first is the main way to connect; a provider without account types has one. */
     readonly accounts: ReadonlyArray<{
       readonly type?: AldoIntegrationAccountType;
@@ -62,12 +78,14 @@ const INTEGRATIONS: Record<
     name: "Google",
     description:
       "Lets your agents read your Gmail and draft replies, see and add to your calendar, look up contacts, and open and save your Drive files, Docs and Sheets.",
+    what: "Gmail, Calendar, Drive and Contacts",
     accounts: [{ label: "Connect Google account" }],
   },
   microsoft: {
     name: "Microsoft",
     description:
       "Lets your agents read your Outlook mail and draft replies, see and add to your calendar, look up contacts, and open and save your OneDrive and SharePoint files and the Excel workbooks there.",
+    what: "Outlook, Calendar, OneDrive and Excel",
     accounts: [
       { type: "work", label: "Connect work or school account" },
       { type: "personal", label: "Connect personal account" },
@@ -77,6 +95,7 @@ const INTEGRATIONS: Record<
     name: "Link",
     description:
       "Lets your agents pay from your Link wallet. Each purchase waits for your approval in Link, and the card it gives works once, for that amount, at that store.",
+    what: "One-time cards you approve each time",
     accounts: [{ label: "Connect Link" }],
   },
 };
@@ -100,6 +119,58 @@ function toastFailure(result: AldoIntegrationResult) {
     title: `Couldn't connect ${INTEGRATIONS[result.provider]?.name ?? "the account"}`,
     description: result.message ?? "The sign-in didn't finish. Try again.",
   });
+}
+
+/** One way to connect, in a tile's Connect menu: the kind of account, without "Connect". */
+const MENU_LABEL: Record<AldoIntegrationAccountType, string> = {
+  work: "Work or school account",
+  personal: "Personal account",
+};
+
+/** Google, Microsoft or Link, not connected, in the catalog. */
+function IntegrationTile(props: { readonly integration: AldoIntegration }) {
+  const { integration } = props;
+  const spec = INTEGRATIONS[integration.provider];
+  if (!spec) return null;
+  const disabled = !integration.available;
+  const [first] = spec.accounts;
+  return (
+    <AldoConnectionTile
+      id={`aldo-integration-${integration.provider}`}
+      brand={integration.provider}
+      name={spec.name}
+      what={spec.what}
+      {...(disabled ? { status: "Sign-in isn’t set up on this Aldo yet." } : {})}
+      control={
+        spec.accounts.length > 1 ? (
+          <Menu>
+            <MenuTrigger disabled={disabled} render={<Button size="compact" variant="outline" />}>
+              Connect
+            </MenuTrigger>
+            <MenuPopup align="end">
+              {spec.accounts.map((account) => (
+                <MenuItem
+                  key={account.type ?? account.label}
+                  onClick={() => connect(integration.provider, account.type)}
+                >
+                  {account.type ? MENU_LABEL[account.type] : account.label}
+                </MenuItem>
+              ))}
+            </MenuPopup>
+          </Menu>
+        ) : (
+          <Button
+            size="compact"
+            variant="outline"
+            disabled={disabled}
+            onClick={() => connect(integration.provider, first?.type)}
+          >
+            Connect
+          </Button>
+        )
+      }
+    />
+  );
 }
 
 function IntegrationRow(props: {
@@ -142,13 +213,14 @@ function IntegrationRow(props: {
   return (
     <SettingsRow
       id={`aldo-integration-${integration.provider}`}
+      leading={<AldoBrandTile id={integration.provider} name={spec.name} />}
       title={spec.name}
       description={spec.description}
       status={
         !integration.available ? (
           `${spec.name} sign-in isn't set up on this Aldo yet.`
         ) : broken ? (
-          <span className="text-destructive-foreground">{integration.error}</span>
+          <AldoBrokenStatus>{integration.error}</AldoBrokenStatus>
         ) : integration.connected ? (
           <span className="flex flex-col gap-0.5">
             <span className="inline-flex items-center gap-1 text-success-foreground">
@@ -191,7 +263,7 @@ function IntegrationRow(props: {
                   disabled={!integration.available || confirming || busy}
                   onClick={() => connect(integration.provider, account.type)}
                 >
-                  {reconnect.length === 1 ? "Connect again" : account.label}
+                  {reconnect.length > 1 ? account.label : broken ? "Reconnect" : "Connect again"}
                 </Button>
               ))}
           {/* A broken sign-in can be connected again or removed. */}
@@ -275,50 +347,53 @@ function useAldoIntegrations() {
   return { integrations, unsupported, error, refresh };
 }
 
-type ConnectionKind = "code" | "mail" | "payments" | "apps" | "media";
+type ConnectionKind = "mail" | "code" | "payments" | "apps" | "media";
 
+/** The catalog's groups, in order, with a line on what agents do with each. */
 const KINDS: ReadonlyArray<{
-  readonly value: ConnectionKind | "all";
+  readonly value: ConnectionKind;
   readonly label: string;
-  readonly about?: string;
+  readonly about: string;
 }> = [
-  { value: "all", label: "All" },
+  {
+    value: "mail",
+    label: "Mail and calendar",
+    about: "Agents draft rather than send unless you say so.",
+  },
   {
     value: "code",
     label: "Code",
-    about:
-      "Where your repositories are: agents clone them, open pull requests and follow them through.",
-  },
-  {
-    value: "mail",
-    label: "Mail & calendar",
-    about:
-      "Your mail, calendar, contacts and files. Agents draft rather than send unless you say so.",
+    about: "Agents clone your repositories and follow pull requests through.",
   },
   {
     value: "payments",
     label: "Payments",
-    about: "A wallet agents pay from, with your approval each time.",
+    about: "Agents pay from Link with your approval each time.",
   },
   {
     value: "apps",
-    label: "Apps",
-    about:
-      "Apps every agent can use as you. You sign in to each one; Aldo keeps the sign-in, and no agent ever sees it. Zapier reaches thousands more.",
+    label: "Work apps",
+    about: "Aldo keeps each sign-in, and no agent ever sees it.",
   },
   {
     value: "media",
-    label: "Image, video & audio",
-    about:
-      "Generators your agents use with your own API key, for images, video, voices and music. What they make is billed to your account with each one.",
+    label: "Images, video and audio",
+    about: "With your own API key: what agents make is billed to you there.",
   },
 ];
 
-/** Where a search result on this page leads: its kind's list. */
+/** The groups a search result leads to, by their anchor. */
+const GROUP_ANCHORS: ReadonlyArray<readonly [ConnectionKind, string]> = [
+  ["apps", "aldo-apps"],
+  ["media", "aldo-generators"],
+];
+
+/** Where a search result on this page leads: its group, with the catalog unfiltered. */
 const SEARCH_TARGET_KINDS: Readonly<Record<string, ConnectionKind | "all">> = {
   "aldo-apps": "apps",
   "aldo-generators": "media",
   "aldo-connections": "all",
+  "aldo-another-app": "all",
 };
 
 const INTEGRATION_KINDS: Readonly<Record<string, ConnectionKind>> = {
@@ -327,22 +402,31 @@ const INTEGRATION_KINDS: Readonly<Record<string, ConnectionKind>> = {
   link: "payments",
 };
 
+/** Apps in the catalog that are payments, with Link. */
+const PAYMENT_APPS: ReadonlySet<string> = new Set(["stripe", "paypal"]);
+
 interface Connection {
   readonly key: string;
   readonly kind: ConnectionKind;
   readonly connected: boolean;
-  /** Its name, when it needs connecting again. */
+  /** Its name, when it stopped working. */
   readonly broken?: string;
-  readonly row: ReactNode;
+  /** What a search matches. */
+  readonly name: string;
+  readonly what: string;
+  /** Its row, connected; its tile in the catalog, not. */
+  readonly view: ReactNode;
 }
 
 function KindFilter(props: {
   readonly value: ConnectionKind | "all";
+  readonly kinds: ReadonlyArray<(typeof KINDS)[number]>;
   readonly onChange: (value: ConnectionKind | "all") => void;
 }) {
+  const options = [{ value: "all" as const, label: "All" }, ...props.kinds];
   return (
     <div role="radiogroup" aria-label="Kind of connection" className="flex flex-wrap gap-1.5">
-      {KINDS.map((kind) => (
+      {options.map((kind) => (
         <button
           key={kind.value}
           type="button"
@@ -351,8 +435,8 @@ function KindFilter(props: {
           className={cn(
             "h-7 rounded-full border px-3 text-xs transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
             props.value === kind.value
-              ? "border-foreground/20 bg-foreground text-background"
-              : "border-border/70 text-muted-foreground hover:bg-accent hover:text-foreground",
+              ? "border-primary/40 bg-primary/8 text-foreground"
+              : "border-border bg-background text-muted-foreground hover:text-foreground",
           )}
           onClick={() => props.onChange(kind.value)}
         >
@@ -363,33 +447,66 @@ function KindFilter(props: {
   );
 }
 
-const joinNames = (names: ReadonlyArray<string>) =>
-  names.length <= 1
-    ? (names[0] ?? "")
-    : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+const folded = (text: string) =>
+  text
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+
+/** Whether a connection is one a search is for: every word in its name, line or group. */
+function matches(connection: Connection, query: string): boolean {
+  const words = folded(query).split(/\s+/).filter(Boolean);
+  if (words.length === 0) return true;
+  const kind = KINDS.find((entry) => entry.value === connection.kind)?.label ?? "";
+  const text = folded(`${connection.name} ${connection.what} ${kind}`);
+  return words.every((word) => text.includes(word));
+}
 
 export function AldoConnectionsPage() {
   const accounts = useAldoAccounts();
   const integrations = useAldoIntegrations();
   const apps = useAldoApps();
   const [kind, setKind] = useState<ConnectionKind | "all">("all");
+  const [query, setQuery] = useState("");
+  const [byAddress, setByAddress] = useState(false);
 
-  // A search for apps or generators opens their list, where its row is.
+  // A search for apps or generators shows their group, where its row is.
   const targetId = useSettingsSearchTargetId();
   useEffect(() => {
     const target = targetId ? SEARCH_TARGET_KINDS[targetId] : undefined;
-    if (target) setKind(target);
-    else if (targetId?.startsWith("aldo-integration-")) setKind("all");
+    if (!target && !targetId?.startsWith("aldo-integration-")) return;
+    setQuery("");
+    setKind(target ?? "all");
+    if (targetId === "aldo-another-app") setByAddress(true);
   }, [targetId]);
 
   const connections: Connection[] = [];
   const github = accounts.accounts?.github;
   if (accounts.accounts) {
+    const connected = github?.connected === true;
     connections.push({
       key: "github",
       kind: "code",
-      connected: github?.connected === true,
-      row: <AldoAccountRow kind="github" account={github} onChanged={accounts.refresh} />,
+      connected,
+      name: "GitHub",
+      what: "Clone, push and open pull requests",
+      view: connected ? (
+        <AldoAccountRow kind="github" account={github} onChanged={accounts.refresh} />
+      ) : (
+        <AldoConnectionTile
+          brand="github"
+          name="GitHub"
+          what="Clone, push and open pull requests"
+          control={
+            <AldoAccountButton
+              kind="github"
+              account={github}
+              onConnected={accounts.refresh}
+              triggerLabel="Connect"
+            />
+          }
+        />
+      ),
     });
     for (const host of ALDO_GIT_HOST_KINDS) {
       const account = accounts.accounts[host];
@@ -398,7 +515,16 @@ export function AldoConnectionsPage() {
         key: host,
         kind: "code",
         connected: account.connected,
-        row: <AldoGitHostRow kind={host} account={account} onChanged={accounts.refresh} />,
+        name: host === "azure" ? "Azure DevOps" : host === "gitlab" ? "GitLab" : "Bitbucket",
+        what: "",
+        view: (
+          <AldoGitHostRow
+            kind={host}
+            account={account}
+            onChanged={accounts.refresh}
+            tile={!account.connected}
+          />
+        ),
       });
     }
   }
@@ -408,7 +534,16 @@ export function AldoConnectionsPage() {
         key: integration.provider,
         kind: "media",
         connected: integration.connected,
-        row: <AldoGeneratorRow integration={integration} onChanged={integrations.refresh} />,
+        ...(integration.connected && integration.error ? { broken: integration.name } : {}),
+        name: integration.name,
+        what: aldoGeneratorWhat(integration),
+        view: (
+          <AldoGeneratorRow
+            integration={integration}
+            onChanged={integrations.refresh}
+            tile={!integration.connected}
+          />
+        ),
       });
       continue;
     }
@@ -420,25 +555,35 @@ export function AldoConnectionsPage() {
       kind: integrationKind,
       connected: integration.connected,
       ...(integration.connected && integration.error !== null ? { broken: spec.name } : {}),
-      row: <IntegrationRow integration={integration} onChanged={integrations.refresh} />,
+      name: spec.name,
+      what: spec.what,
+      view: integration.connected ? (
+        <IntegrationRow integration={integration} onChanged={integrations.refresh} />
+      ) : (
+        <IntegrationTile integration={integration} />
+      ),
     });
   }
   for (const app of apps.data?.apps ?? []) {
     connections.push({
       key: `app:${app.id}`,
-      kind: "apps",
+      kind: PAYMENT_APPS.has(app.name) ? "payments" : "apps",
       connected: true,
       ...(app.status === "failed" ? { broken: app.title } : {}),
-      row: <AldoAppRow app={app} onChanged={apps.refresh} />,
+      name: app.title,
+      what: "",
+      view: <AldoAppRow app={app} onChanged={apps.refresh} />,
     });
   }
   for (const entry of apps.data?.catalog ?? []) {
     if (entry.connected) continue;
     connections.push({
       key: `catalog:${entry.name}`,
-      kind: "apps",
+      kind: PAYMENT_APPS.has(entry.name) ? "payments" : "apps",
       connected: false,
-      row: <AldoAppCatalogRow entry={entry} />,
+      name: entry.title,
+      what: entry.about,
+      view: <AldoAppCatalogTile entry={entry} />,
     });
   }
 
@@ -447,30 +592,31 @@ export function AldoConnectionsPage() {
     !accounts.error &&
     integrations.integrations === null &&
     !integrations.unsupported;
+  // One that stopped working comes first, and says so on its row.
   const connected = connections
     .filter((connection) => connection.connected)
     .toSorted((a, b) => Number(Boolean(b.broken)) - Number(Boolean(a.broken)));
-  const broken = connected.flatMap((connection) => (connection.broken ? [connection.broken] : []));
-  const offered = connections.filter(
-    (connection) => !connection.connected && (kind === "all" || connection.kind === kind),
+  const catalog = connections.filter((connection) => !connection.connected);
+  const searching = query.trim() !== "";
+  // Only the kinds left to connect get a filter; one whose last was just connected shows all.
+  const kinds = KINDS.filter((group) =>
+    catalog.some((connection) => connection.kind === group.value),
   );
-  const about = KINDS.find((entry) => entry.value === kind)?.about;
+  const shownKind = kinds.some((group) => group.value === kind) ? kind : "all";
+  const offered = catalog.filter(
+    (connection) =>
+      (searching || shownKind === "all" || connection.kind === shownKind) &&
+      matches(connection, query),
+  );
+  const groups = KINDS.flatMap((group) => {
+    const tiles = offered.filter((connection) => connection.kind === group.value);
+    return tiles.length > 0 ? [{ ...group, tiles }] : [];
+  });
   const errors = [accounts.error, integrations.error, apps.error].filter(Boolean);
+  const takesAddresses = Boolean(apps.data);
 
   return (
     <SettingsPageContainer>
-      {broken.length > 0 ? (
-        <Alert variant="warning">
-          <TriangleAlertIcon />
-          <AlertTitle>
-            {joinNames(broken)} {broken.length === 1 ? "needs" : "need"} connecting again
-          </AlertTitle>
-          <AlertDescription>
-            Your agents can't use {broken.length === 1 ? "it" : "them"} until you do: Connect again,
-            below.
-          </AlertDescription>
-        </Alert>
-      ) : null}
       <SettingsSection
         id="aldo-connections"
         title="Connected"
@@ -485,41 +631,102 @@ export function AldoConnectionsPage() {
           <p className="px-3 py-3 text-muted-foreground text-sm sm:px-4">Loading…</p>
         ) : connected.length === 0 ? (
           <p className="px-3 py-3 text-muted-foreground text-sm sm:px-4">
-            Nothing yet. Connect an account below, and your agents can use it as you. Disconnect one
-            and they can't anymore.
+            Nothing yet. Connect an account below, and your agents can use it as you.
           </p>
         ) : (
-          connected.map((connection) => <Fragment key={connection.key}>{connection.row}</Fragment>)
+          connected.map((connection) => <Fragment key={connection.key}>{connection.view}</Fragment>)
         )}
       </SettingsSection>
-      <SettingsSection
-        id="aldo-add-connection"
-        title="Add a connection"
-        icon={<PlusIcon className="size-4" />}
-      >
-        <div className="flex flex-col gap-2 px-3 py-3 sm:px-4">
-          <KindFilter value={kind} onChange={setKind} />
-          {about ? (
-            <p
-              id={kind === "apps" ? "aldo-apps" : kind === "media" ? "aldo-generators" : undefined}
-              className="text-muted-foreground text-xs"
-            >
-              {about}
-            </p>
+      <SettingsSection title="Your agents’ email" icon={<MailIcon className="size-4" />}>
+        <AldoAgentInboxRows />
+      </SettingsSection>
+      <section id="aldo-add-connection" className="relative space-y-3">
+        {/* A search for a group that's all connected still lands here, by its anchor. */}
+        {GROUP_ANCHORS.filter(([value]) => !groups.some((group) => group.value === value)).map(
+          ([, anchor]) => (
+            <span key={anchor} id={anchor} aria-hidden="true" className="absolute top-0" />
+          ),
+        )}
+        <div className="flex flex-col gap-3 px-3 sm:px-4">
+          <h2 className="flex min-h-7 items-center font-medium text-foreground text-sm">
+            Add a connection
+          </h2>
+          {catalog.length > 0 ? (
+            <>
+              <InputGroup>
+                <InputGroupAddon>
+                  <SearchIcon aria-hidden="true" />
+                </InputGroupAddon>
+                <InputGroupInput
+                  type="search"
+                  aria-label="Search connections"
+                  placeholder={`Search ${catalog.length} apps and accounts`}
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                />
+              </InputGroup>
+              {searching ? null : <KindFilter value={shownKind} kinds={kinds} onChange={setKind} />}
+            </>
           ) : null}
         </div>
-        {offered.map((connection) => (
-          <Fragment key={connection.key}>{connection.row}</Fragment>
+        {groups.map((group) => (
+          <div
+            key={group.value}
+            id={GROUP_ANCHORS.find(([value]) => value === group.value)?.[1]}
+            className="space-y-1.5"
+          >
+            <p className="px-3 text-xs sm:px-4">
+              <span className="font-medium text-foreground">{group.label}</span>{" "}
+              <span className="text-muted-foreground">{group.about}</span>
+            </p>
+            <AldoConnectionGrid>
+              {group.tiles.map((connection) => (
+                <Fragment key={connection.key}>{connection.view}</Fragment>
+              ))}
+            </AldoConnectionGrid>
+          </div>
         ))}
-        {apps.data && (kind === "all" || kind === "apps") ? <AldoAnotherAppRow /> : null}
-        {!loading && offered.length === 0 && !(apps.data && kind === "apps") ? (
-          <p className="px-3 py-3 text-muted-foreground text-sm sm:px-4">
-            {kind === "media" && integrations.unsupported
-              ? "Media generators aren't available on this Aldo server."
-              : "Everything here is connected."}
+        {searching && groups.length === 0 ? (
+          takesAddresses ? (
+            <SettingsGroup>
+              <AldoConnectorAddress searched={query} />
+            </SettingsGroup>
+          ) : (
+            <p className="px-3 text-muted-foreground text-sm sm:px-4">
+              Nothing here is called “{query.trim()}”.
+            </p>
+          )
+        ) : null}
+        {!loading && !searching && catalog.length === 0 ? (
+          <p className="px-3 text-muted-foreground text-sm sm:px-4">
+            Everything here is connected.
           </p>
         ) : null}
-      </SettingsSection>
+        {!loading && !searching && kind === "media" && integrations.unsupported ? (
+          <p className="px-3 text-muted-foreground text-sm sm:px-4">
+            Media generators aren’t available on this Aldo server.
+          </p>
+        ) : null}
+        {takesAddresses && !searching ? (
+          byAddress ? (
+            <SettingsGroup>
+              <AldoConnectorAddress />
+            </SettingsGroup>
+          ) : (
+            <p className="px-3 text-muted-foreground text-xs sm:px-4">
+              Don’t see your app? Search for it, or{" "}
+              <button
+                type="button"
+                className="rounded-sm text-foreground underline underline-offset-4 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onClick={() => setByAddress(true)}
+              >
+                add it by its address
+              </button>
+              .
+            </p>
+          )
+        ) : null}
+      </section>
     </SettingsPageContainer>
   );
 }

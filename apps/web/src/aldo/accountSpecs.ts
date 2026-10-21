@@ -29,8 +29,8 @@ export const ALDO_ACCOUNT_SPECS: Record<AldoAccountKind, AccountSpec> = {
   },
   claude: {
     kind: "claude",
-    title: "Claude Code",
-    description: "Runs Claude Code on your Claude Pro or Max subscription.",
+    title: "Claude",
+    description: "Your Claude Pro or Max plan, through Claude Code.",
     serviceName: "Claude",
     method: {
       method: "account",
@@ -43,8 +43,8 @@ export const ALDO_ACCOUNT_SPECS: Record<AldoAccountKind, AccountSpec> = {
   },
   codex: {
     kind: "codex",
-    title: "Codex",
-    description: "Runs Codex on your ChatGPT Plus or Pro subscription.",
+    title: "ChatGPT",
+    description: "Your ChatGPT Plus or Pro plan, through Codex.",
     serviceName: "Codex",
     method: {
       method: "account",
@@ -57,8 +57,8 @@ export const ALDO_ACCOUNT_SPECS: Record<AldoAccountKind, AccountSpec> = {
   },
   grok: {
     kind: "grok",
-    title: "Grok Build",
-    description: "Runs Grok Build on your SuperGrok or X Premium+ subscription.",
+    title: "Grok",
+    description: "Your SuperGrok or X Premium+ plan, through Grok Build.",
     serviceName: "Grok",
     method: {
       method: "account",
@@ -73,7 +73,7 @@ export const ALDO_ACCOUNT_SPECS: Record<AldoAccountKind, AccountSpec> = {
     kind: "muse",
     title: "Muse Code",
     description:
-      "Runs Muse Code on your Muse Code plan from Meta, in its Contributor mode: more usage, and Meta may train on what the agent sees.",
+      "Your Muse Code plan from Meta. Its Contributor mode gives more usage, and Meta may train on what the agent sees.",
     serviceName: "Muse Code",
     method: {
       method: "account",

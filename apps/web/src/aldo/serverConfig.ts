@@ -176,7 +176,7 @@ export async function aldoServerConfigsFor(
       ...provider,
       status: "error",
       auth: { status: "unauthenticated" },
-      message: "Not signed in. Connect it in Settings → Agents.",
+      message: "Not signed in. Connect it in Settings → Models.",
     };
   });
   for (const environmentId of environmentIds) {

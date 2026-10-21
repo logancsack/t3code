@@ -5,6 +5,7 @@ import { AuthConnectorDialog } from "../components/settings/AuthConnectorDialog"
 import { SettingsRow, SettingsSection } from "../components/settings/settingsLayout";
 import { Button } from "../components/ui/button";
 import { disconnectAldoAccount, type AldoAccount, type AldoAccountKind } from "./accountApi";
+import { AldoBrandTile } from "./AldoBrandTile";
 import { settingsAccounts, settingsRepositories } from "./settingsData";
 import { useSettingsResource } from "./settingsResource";
 import { ALDO_ACCOUNT_SPECS } from "./accountSpecs";
@@ -41,7 +42,8 @@ export function AldoAccountButton(props: {
 
 function accountStatus(account: AldoAccount | undefined) {
   if (!account) return "Checking…";
-  if (!account.connected) return "Not connected";
+  // Its Connect button says it.
+  if (!account.connected) return null;
   return (
     <span className="inline-flex items-center gap-1 text-success-foreground">
       <CheckCircle2Icon className="size-3.5" />
@@ -62,9 +64,11 @@ export function AldoAccountRow(props: {
   return (
     <SettingsRow
       id={`aldo-account-${props.kind}`}
+      leading={<AldoBrandTile id={props.kind} name={spec.title} />}
       title={spec.title}
       description={spec.description}
       status={accountStatus(account)}
+      inline
       control={
         <>
           {account?.connected ? (
@@ -91,6 +95,8 @@ export function AldoAccountsPanel(props: {
   readonly icon?: ReactNode;
   /** A line above the rows: what they're for. */
   readonly about?: string | null;
+  /** Rows before the accounts' (Aldo's own models). */
+  readonly before?: ReactNode;
 }) {
   const { accounts, error, refresh } = useAldoAccounts();
   return (
@@ -102,6 +108,7 @@ export function AldoAccountsPanel(props: {
       {props.about ? (
         <p className="px-3 pt-3 pb-1 text-muted-foreground text-xs sm:px-4">{props.about}</p>
       ) : null}
+      {props.before}
       {/* Only what Aldo connects: an older Aldo doesn't list Muse Code, so it waits for the list. */}
       {props.kinds
         .filter((kind) => (accounts ? kind in accounts : kind !== "muse"))

@@ -1,22 +1,36 @@
-// Settings → Agents: what the user's agents run on and how. The AI
-// subscriptions they sign in with (optional where Aldo's own models run
-// them), what a new thread starts on (and what happens when a subscription
-// runs out), their subagents, the email address they share, and, folded
-// away, how long a conversation grows and the model that writes thread titles.
+// Settings → Models: what the user's agents run on. Aldo's own models (where
+// its plan includes them) and the AI subscriptions they sign in with, what a
+// new thread starts on (and what happens when a subscription runs out), and,
+// folded away, how long a conversation grows, the model that writes thread
+// titles and the helpers' models.
 
-import { BadgeCheckIcon, BotIcon, MailIcon, SlidersHorizontalIcon } from "lucide-react";
+import { BadgeCheckIcon, BotIcon } from "lucide-react";
 import { useSyncExternalStore } from "react";
 
 import { ProjectDefaultsSettings } from "../components/settings/ProjectDefaultsSettings";
 import { GeneralSettingsPanel } from "../components/settings/SettingsPanels";
-import { SettingsPageContainer, SettingsSection } from "../components/settings/settingsLayout";
+import {
+  SettingsPageContainer,
+  SettingsRow,
+  SettingsSection,
+} from "../components/settings/settingsLayout";
+import { Badge } from "../components/ui/badge";
 import { AldoAccountsPanel } from "./AldoAccountsPanel";
-import { AldoAgentInboxRows } from "./AldoAgentInbox";
+import { AldoBrandTile } from "./AldoBrandTile";
 import { AldoPolicyRuleRow, useAldoPolicy } from "./AldoPolicy";
+import { AldoSettingsFold } from "./AldoSettingsShell";
 import { AldoSubagentsPanel } from "./AldoSubagentsPanel";
 import { aldoOffersItsModels, subscribeAldoEnvironments } from "./directory";
 import { planRunning } from "./home.logic";
 import { useAldoHomeRead } from "./homeFeed";
+
+/** The rows under Advanced: a search for one unfolds it. */
+const ADVANCED_IDS: ReadonlySet<string> = new Set([
+  "aldo-subagents",
+  "aldo-context-budget",
+  "text-generation-model",
+]);
+const opensAdvanced = (targetId: string) => ADVANCED_IDS.has(targetId);
 
 export function AldoAgentsPage() {
   const policy = useAldoPolicy();
@@ -30,19 +44,32 @@ export function AldoAgentsPage() {
   const { home, supported, error } = useAldoHomeRead();
   const planKnown = home !== null || supported === false || error !== null;
   const included = home !== null && planRunning(home.usage);
+  const planName = home?.usage.plan?.name ?? null;
   return (
     <SettingsPageContainer>
       <AldoAccountsPanel
         id="aldo-subscriptions"
-        title="AI subscriptions"
+        title="Subscriptions"
         icon={<BadgeCheckIcon className="size-4" />}
         kinds={["claude", "codex", "grok", "muse"]}
-        about={
-          !aldoModels || !planKnown
-            ? null
-            : included
-              ? "Optional. Agents run on Aldo's models, included in your plan. Connect a subscription of yours to run them on it instead."
-              : "Agents run on Aldo's models while your plan is active, or on a subscription of yours connected here."
+        before={
+          aldoModels && planKnown ? (
+            <SettingsRow
+              id="aldo-models"
+              leading={<AldoBrandTile id="aldo" name="Aldo" />}
+              title="Aldo’s models"
+              badge={
+                included ? (
+                  <Badge variant="info">{planName ? `Included in ${planName}` : "Included"}</Badge>
+                ) : null
+              }
+              description={
+                included
+                  ? "Agents run on them unless you connect a subscription of yours below."
+                  : "Agents run on them while your plan is active, or on a subscription of yours below."
+              }
+            />
+          ) : null
         }
       />
       <SettingsSection
@@ -55,22 +82,25 @@ export function AldoAgentsPage() {
           rule="onProviderLimit"
           setting="aldo-provider-limit"
           policy={policy}
-          description="When an agent's subscription hits its limit mid-task: carry on at once on another of its models with room, or wait for the limit to reset. Not decided, the thread waits for you."
+          description="Ask me: the thread waits and tells you. Switch: it carries on at once on another model with room. Wait: it picks up when the limit resets."
         />
       </SettingsSection>
-      <AldoSubagentsPanel />
-      <SettingsSection title="Your agents' email" icon={<MailIcon className="size-4" />}>
-        <AldoAgentInboxRows />
-      </SettingsSection>
-      <SettingsSection title="Advanced" icon={<SlidersHorizontalIcon className="size-4" />}>
-        <AldoPolicyRuleRow
-          rule="contextBudget"
-          setting="aldo-context-budget"
-          policy={policy}
-          description="How long a conversation grows before its agent compacts it, keeping the goal, decisions and open work. Longer keeps more in view, and uses more of your limits each turn."
-        />
-        <GeneralSettingsPanel aldoPart="text-generation" />
-      </SettingsSection>
+      <AldoSettingsFold
+        title="Advanced"
+        hint="Conversation length, thread titles, helper models"
+        opensFor={opensAdvanced}
+      >
+        <SettingsSection title="Advanced" hideTitle>
+          <AldoPolicyRuleRow
+            rule="contextBudget"
+            setting="aldo-context-budget"
+            policy={policy}
+            description="How much a thread keeps in full before its agent summarizes the oldest part, keeping the goal, decisions and open work. Longer keeps more detail, and uses more of your plan each turn."
+          />
+          <GeneralSettingsPanel aldoPart="text-generation" />
+          <AldoSubagentsPanel bare />
+        </SettingsSection>
+      </AldoSettingsFold>
     </SettingsPageContainer>
   );
 }
