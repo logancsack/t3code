@@ -4,7 +4,9 @@
 
 Agents work in your mail and calendar carefully: they draft rather than send. When an agent has an email ready, or an event for your calendar, it puts it in front of you to approve with one tap, and Aldo does the rest. Before an agent spends your money or commits you to something (buying, booking or reserving with a fee, cancelling, submitting an application, claim or form, or calling someone for you), it asks you the same way and waits for your yes. Asked only to find or check something, it stops there.
 
-Approvals show at the top of the home screen under **Approve**, and on your devices as a notification:
+Approvals show at the top of the home screen under **Approve**, in the thread of the agent that asked (right where it asked, with the same details and buttons), and on your devices as a notification. It's one approval: decide it in either place and the other shows what you decided, and the agent is told once. While one waits, the thread shows as waiting on you.
+
+The kinds:
 
 - **An email** an agent drafted in your Gmail or Outlook shows exactly what would go: who it's to (with any Cc and Bcc), what's attached, and its text. **Send** sends the draft as it is; **Discard** deletes it from your drafts.
 - **An event** shows when it is, who it invites, and where. **Add** (or **Add and invite**) puts it on your calendar and sends the invitations; **Discard** drops it.

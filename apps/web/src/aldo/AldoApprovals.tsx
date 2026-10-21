@@ -119,7 +119,7 @@ export function useAldoThreadAwaitsApproval(environmentId: string, threadId: str
 
 /** One of a thread's approvals where it was asked: the card while it waits, a line once it's decided. */
 export function AldoThreadApproval(props: { readonly approval: AldoApproval }) {
-  const now = Date.parse(useNowMinute());
+  const now = Date.parse(`${useNowMinute()}:00Z`);
   const a = props.approval;
   return (
     <ul className="flex flex-col">
