@@ -32,6 +32,7 @@ import {
   type TimelineEntry,
   type WorkLogEntry,
 } from "../../session-logic";
+import type { AldoApproval } from "../../aldo/homeApi";
 import { type ChatMessage, type ProposedPlan, type TurnDiffSummary } from "../../types";
 import type { QueuedComposerMessage } from "../../queuedMessageStore";
 import {
@@ -509,6 +510,12 @@ export type MessagesTimelineRow =
       id: string;
       createdAt: string;
       proposedPlan: ProposedPlan;
+    }
+  | {
+      kind: "aldo-approval";
+      id: string;
+      createdAt: string;
+      approval: AldoApproval;
     }
   | {
       kind: "working";
@@ -1722,6 +1729,16 @@ export function deriveMessagesTimelineRows(input: {
       continue;
     }
 
+    if (timelineEntry.kind === "aldo-approval") {
+      nextRows.push({
+        kind: "aldo-approval",
+        id: timelineEntry.id,
+        createdAt: timelineEntry.createdAt,
+        approval: timelineEntry.approval,
+      });
+      continue;
+    }
+
     const assistantResponseStillInProgress =
       timelineEntry.message.role === "assistant" &&
       timelineEntry.message.turnId !== null &&
@@ -2066,6 +2083,9 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
 
     case "proposed-plan":
       return a.proposedPlan === (b as typeof a).proposedPlan;
+
+    case "aldo-approval":
+      return a.approval === (b as typeof a).approval;
 
     case "queued-message": {
       const bq = b as typeof a;

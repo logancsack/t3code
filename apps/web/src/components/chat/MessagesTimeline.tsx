@@ -1,6 +1,7 @@
 import { isAldoCloud } from "../../aldo/api";
 import { aldoStartingLabel } from "../../aldo/dispatch";
 import { AldoNotifyOffer } from "../../aldo/AldoNotifyOffer";
+import { AldoThreadApproval } from "../../aldo/AldoApprovals";
 import { useAldoQuietWork } from "../../aldo/keptRepo";
 import { AldoMadeCards } from "../../aldo/AldoMadeCards";
 import { AldoNextChips } from "../../aldo/AldoNextChips";
@@ -1814,6 +1815,7 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
       ) : null}
       {row.kind === "assistant-meta" ? <AssistantMetaTimelineRow row={row} /> : null}
       {row.kind === "proposed-plan" ? <ProposedPlanTimelineRow row={row} /> : null}
+      {row.kind === "aldo-approval" ? <AldoApprovalTimelineRow row={row} /> : null}
       {row.kind === "working" ? <WorkingTimelineRow row={row} /> : null}
       {row.kind === "thinking" ? <ThinkingTimelineRow /> : null}
       {row.kind === "worktree-setup" ? <WorktreeSetupTimelineRow row={row} /> : null}
@@ -2701,6 +2703,19 @@ function AssistantCopyButton({
   }
 
   return <MessageCopyButton text={assistantCopyState.text ?? ""} variant="ghost" />;
+}
+
+/** Aldo: an approval the agent asked for, where it asked, decided here or on Home as one item. */
+function AldoApprovalTimelineRow({
+  row,
+}: {
+  row: Extract<TimelineRow, { kind: "aldo-approval" }>;
+}) {
+  return (
+    <div className="min-w-0 px-1 py-0.5">
+      <AldoThreadApproval approval={row.approval} />
+    </div>
+  );
 }
 
 function ProposedPlanTimelineRow({

@@ -13,11 +13,19 @@ import { create } from "zustand";
 
 import { AldoApiError } from "./api";
 import { askOf, HOLD_MS, withHolds, type AldoHolds } from "./answered.logic";
+import {
+  APPROVAL_HOLD_MS,
+  heldStatus,
+  withApprovalHolds,
+  type ApprovalHolds,
+} from "./approvals.logic";
 import { actionsDone } from "./assistant.logic";
 import { noteAldoHiddenPrompts, pullAldoConversation, useAldoAssistant } from "./assistantSession";
 import { sameTarget } from "./home.logic";
 import {
+  decideAldoApproval,
   fetchAldoHome,
+  type AldoApproval,
   type AldoHome,
   type AldoHomeConversation,
   type AldoHomeTarget,
@@ -64,6 +72,12 @@ const HOLDS_KEY = "aldo-answered";
  * request hadn't reached Aldo when the page went isn't: its card is back).
  */
 let holds: AldoHolds = loadHolds();
+/**
+ * Approvals decided from here that Aldo's read may still show waiting, by id:
+ * the card goes the moment it's tapped, wherever it is shown (Home, the thread
+ * that asked), and returns only if Aldo refuses the decision.
+ */
+let approvalHolds: ApprovalHolds = {};
 /**
  * When the read the home shown comes from began, or a card was last hidden
  * here: another tab's read begun earlier could put back what changed since.
@@ -160,7 +174,9 @@ function shown(home: AldoHome): AldoHome {
     holds = applied.holds;
     saveHolds();
   }
-  return applied.home;
+  const approved = withApprovalHolds(applied.home, approvalHolds, Date.now());
+  approvalHolds = approved.holds;
+  return approved.home;
 }
 
 /** Shows the home again after a hold came or went. */
@@ -179,7 +195,7 @@ function takeHome(next: AldoHome | null): void {
   }
   const state = useAldoHomeFeed.getState();
   // While an answer is held, each read is looked over again: it may be the one that has caught up.
-  const holding = Object.keys(holds).length > 0;
+  const holding = Object.keys(holds).length + Object.keys(approvalHolds).length > 0;
   if (changed || holding || state.error !== null || state.supported !== Boolean(next)) {
     useAldoHomeFeed.setState({
       ...(next && serverHome && (changed || holding) ? { home: shown(serverHome) } : {}),
@@ -280,9 +296,10 @@ function startFeed(): () => void {
 let watchers = 0;
 let stopFeed: (() => void) | null = null;
 
-/** The home read, kept fresh while the calling component is mounted (any number share one feed). */
-export function useAldoHomeRead(): AldoHomeFeed {
+/** The home read, kept fresh while the calling component is mounted (any number share one feed); `enabled: false` only reads what's there. */
+export function useAldoHomeRead(enabled = true): AldoHomeFeed {
   useEffect(() => {
+    if (!enabled) return;
     watchers += 1;
     if (watchers === 1) stopFeed = startFeed();
     return () => {
@@ -292,7 +309,7 @@ export function useAldoHomeRead(): AldoHomeFeed {
         stopFeed = null;
       }
     };
-  }, []);
+  }, [enabled]);
   return useAldoHomeFeed();
 }
 
@@ -370,6 +387,45 @@ export async function sendAldoAnswer<T>(
   } catch (cause) {
     if (cause instanceof AldoApiError && cause.status === 409) await refreshAldoHome();
     if (ask !== null) releaseAldoAnswer(c, ask);
+    throw cause;
+  }
+}
+
+/**
+ * The user's decision on an approval, from wherever it's shown: it's decided
+ * on every card at once, Aldo takes it after (it's claimed there, so a second
+ * tap elsewhere is told how the first went and nothing is done twice), and
+ * the card returns, as Aldo's read has it, only if Aldo refuses.
+ */
+export async function sendAldoApproval(
+  approval: Pick<AldoApproval, "id" | "kind">,
+  decision: "approve" | "discard" | "always",
+): ReturnType<typeof decideAldoApproval> {
+  const at = new Date().toISOString();
+  approvalHolds = {
+    ...approvalHolds,
+    [approval.id]: { status: heldStatus(approval, decision), result: null, at },
+  };
+  publish();
+  try {
+    const sent = await decideAldoApproval(approval.id, decision);
+    // As Aldo says it stands (decided elsewhere first, say), until a read has it too.
+    approvalHolds = {
+      ...approvalHolds,
+      [approval.id]: {
+        status: sent.approval.status,
+        result: sent.approval.result,
+        at,
+        until: Date.now() + APPROVAL_HOLD_MS,
+      },
+    };
+    publish();
+    return sent;
+  } catch (cause) {
+    const { [approval.id]: _released, ...rest } = approvalHolds;
+    approvalHolds = rest;
+    publish();
+    void refreshAldoHome();
     throw cause;
   }
 }

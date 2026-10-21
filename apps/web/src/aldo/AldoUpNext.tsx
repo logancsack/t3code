@@ -377,7 +377,11 @@ function DecisionCard(props: {
     // A thread's answer is settled the moment it's tapped: the card becomes
     // the line saying what was done, however long its computer takes to wake
     // and take it. The line goes, and the card is back, only if Aldo refuses it.
-    const settles = d.kind === "question" || d.kind === "approval" || d.kind === "plan";
+    const settles =
+      d.kind === "question" ||
+      d.kind === "approval" ||
+      d.kind === "plan" ||
+      d.kind === "aldo-approval";
     keyboardTo.current = focusAfter(card.current);
     const decided = settles
       ? new Promise<AldoDecidedResult>((resolve) =>
@@ -404,8 +408,10 @@ function DecisionCard(props: {
     if (outcome === "done") pleaseAldo();
     drafts.delete(d.key);
     if (settles) {
-      // Done as the line already says; one that had moved on says that instead.
+      // Done as the line already says (Aldo's own approvals add what it did: a draft it couldn't delete);
+      // one that had moved on says that instead.
       if (outcome === "moved-on") receipt(movedOnText(d, said));
+      else if (d.kind === "aldo-approval" && said) receipt(receiptText(d, choice, said));
       return;
     }
     // The card becomes the line saying what happened, where it happened.
