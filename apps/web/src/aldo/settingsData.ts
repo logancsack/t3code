@@ -5,6 +5,7 @@ import {
   fetchAldoAccounts,
   fetchAldoAgentInbox,
   fetchAldoApps,
+  fetchAldoBriefSettings,
   fetchAldoHeadsUps,
   fetchAldoIntegrations,
   fetchAldoMomentEmails,
@@ -30,6 +31,7 @@ export const settingsMemory = createSettingsResource(aldoMemory.list);
 export const settingsSkills = createSettingsResource(aldoSkills.list);
 export const settingsApprovalRules = createSettingsResource(fetchAldoApprovalRules);
 export const settingsHeadsUps = createSettingsResource(fetchAldoHeadsUps);
+export const settingsBrief = createSettingsResource(fetchAldoBriefSettings);
 export const settingsMomentEmails = createSettingsResource(fetchAldoMomentEmails);
 export const settingsPrebuilds = createSettingsResource(aldoPrebuilds.list);
 export const settingsRepositories = createSettingsResource(listAldoRepositories);
@@ -50,6 +52,7 @@ export function prefetchSettingsData() {
     settingsSkills,
     settingsApprovalRules,
     settingsHeadsUps,
+    settingsBrief,
     settingsMomentEmails,
     settingsPrebuilds,
   ]) {

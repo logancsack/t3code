@@ -1,4 +1,9 @@
-import { settingsHeadsUps, settingsIntegrations, settingsMomentEmails } from "./settingsData";
+import {
+  settingsBrief,
+  settingsHeadsUps,
+  settingsIntegrations,
+  settingsMomentEmails,
+} from "./settingsData";
 import { createSettingsResource, useSettingsResource } from "./settingsResource";
 import { Link } from "@tanstack/react-router";
 import { BellIcon, MailIcon, SparklesIcon } from "lucide-react";
@@ -14,7 +19,9 @@ import { Button } from "../components/ui/button";
 import { Switch } from "../components/ui/switch";
 import { toastManager } from "../components/ui/toast";
 import { playAldoChime, setAldoSound, useAldoSound } from "./chime";
-import { setAldoHeadsUps, setAldoMomentEmails } from "./accountApi";
+import { setAldoBriefSettings, setAldoHeadsUps, setAldoMomentEmails } from "./accountApi";
+import { AldoPolicySelect } from "./AldoPolicy";
+import { BRIEF_OFF, briefTimeOptions } from "./briefSettings.logic";
 import { AldoNotificationTestNote, useAldoNotificationTest } from "./AldoNotificationTest";
 import {
   aldoNotificationsStatus,
@@ -248,6 +255,73 @@ function HeadsUpsRow(props: { readonly connected: boolean | null }) {
 }
 
 /**
+ * The brief on the user's devices each day, at the time they choose, or off.
+ * Hidden on an Aldo that doesn't send it (it answers 404).
+ */
+function BriefRow() {
+  const cached = useSettingsResource(settingsBrief);
+  const brief = cached.data;
+  const [saving, setSaving] = useState(false);
+  if (brief === null) return null;
+  const description =
+    "Each day at this time, Aldo sends your brief to the devices you turned notifications on for: what needs you, what it's watching and what can wait. If you've opened Aldo by then, it doesn't.";
+  if (!brief) {
+    return (
+      <SettingsRow
+        {...searchableSetting("aldo-brief")}
+        description={cached.error ? `Couldn't read when it comes: ${cached.error}` : description}
+        {...(cached.error
+          ? {
+              control: (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void settingsBrief.refresh().catch(() => undefined)}
+                >
+                  Try again
+                </Button>
+              ),
+            }
+          : { status: "Checking…" })}
+      />
+    );
+  }
+  const change = (value: string) => {
+    const next = value === BRIEF_OFF ? { push: false } : { minute: Number(value), push: true };
+    setSaving(true);
+    settingsBrief
+      .mutate(
+        (before) => (before ? { ...before, ...next } : before),
+        () => setAldoBriefSettings(next),
+      )
+      .catch((cause: unknown) =>
+        toastManager.add({
+          type: "error",
+          title: "Couldn't change that",
+          description: messageOf(cause),
+        }),
+      )
+      .finally(() => setSaving(false));
+  };
+  return (
+    <SettingsRow
+      {...searchableSetting("aldo-brief")}
+      description={description}
+      control={
+        <AldoPolicySelect
+          value={brief.push ? String(brief.minute) : BRIEF_OFF}
+          options={briefTimeOptions(brief.minute)}
+          label="When your brief comes"
+          disabled={saving}
+          className="w-full sm:w-36"
+          onChange={change}
+        />
+      }
+    />
+  );
+}
+
+/**
  * The emails Aldo sends when a thread is done, needs the user or stops while
  * they're away, a switch for each kind. Shown once Aldo says it sends them: an
  * Aldo without them answers 404, and the section stays hidden.
@@ -351,6 +425,7 @@ export function AldoNotificationsPage() {
       <AldoNotificationSettings />
       <MomentEmailsSection />
       <SettingsSection title="From Aldo" icon={<SparklesIcon className="size-4" />}>
+        <BriefRow />
         <HeadsUpsRow connected={connected} />
       </SettingsSection>
     </SettingsPageContainer>
