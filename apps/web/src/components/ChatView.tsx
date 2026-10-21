@@ -574,6 +574,8 @@ import { aldoRoutesModels } from "../aldo/directory";
 import { useAldoKeptRepo } from "../aldo/keptRepo";
 import { ALDO_DEVELOPER_COMMANDS, useAldoDeveloperTools } from "../aldo/developerTools";
 import { AldoHandoffCard } from "../aldo/AldoHandoffCard";
+import { useAldoThreadApprovals } from "../aldo/AldoApprovals";
+import { withThreadApprovals } from "../aldo/approvals.logic";
 import {
   AldoComposerPlaceChip,
   AldoDraftWhereCard,
@@ -3798,6 +3800,19 @@ export default function ChatView(props: ChatViewProps) {
     activeThreadKey,
   );
   const displayedThreadRef = parseScopedThreadKey(displayedTimelineKey);
+  // Aldo: the approvals this thread's agent asked, in its timeline where it asked.
+  const aldoApprovals = useAldoThreadApprovals(
+    activeThreadRef?.environmentId ?? null,
+    activeThreadRef?.threadId ?? null,
+    isAldoCloud,
+  );
+  const aldoTimelineEntries = useMemo(
+    () =>
+      paintOnlyDisplayedTimeline
+        ? displayedTimeline.entries
+        : withThreadApprovals(displayedTimeline.entries, aldoApprovals),
+    [paintOnlyDisplayedTimeline, displayedTimeline.entries, aldoApprovals],
+  );
   // Live stages of a bootstrap worktree setup. A worktree send creates the
   // server thread under the route's thread id before anything else, so the
   // stream is keyed by that id alone: no owner bookkeeping, and a remount,
@@ -10536,7 +10551,7 @@ export default function ChatView(props: ChatViewProps) {
                 {...(draftId ? { onWorktreeSetupWorkLocally } : {})}
                 {...(onOpenWorktreeSetupTerminal ? { onOpenWorktreeSetupTerminal } : {})}
                 listRef={legendListRef}
-                timelineEntries={displayedTimeline.entries}
+                timelineEntries={aldoTimelineEntries}
                 latestTurn={paintOnlyDisplayedTimeline ? null : activeLatestTurn}
                 runningTurnId={paintOnlyDisplayedTimeline ? null : activeRunningTurnId}
                 turnDiffSummaries={

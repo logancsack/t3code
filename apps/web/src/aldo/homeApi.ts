@@ -315,7 +315,13 @@ export async function runAldoRoutine(id: string): Promise<string> {
 // agent takes itself once they say yes (`confirm`: paying, booking,
 // cancelling, submitting, calling), with where, the total and the terms.
 
-export type AldoApprovalStatus = "pending" | "sending" | "approved" | "discarded" | "expired";
+export type AldoApprovalStatus =
+  | "pending"
+  | "sending"
+  | "approved"
+  | "discarded"
+  | "expired"
+  | "withdrawn";
 
 export interface AldoApproval {
   readonly chatDecision?: AldoChatDecision;

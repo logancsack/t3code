@@ -9,9 +9,10 @@
 // or the list under "How Aldo works for you" (AldoHomeBoard.tsx).
 
 import { CalendarPlusIcon, CircleCheckBigIcon, MailIcon, SparklesIcon } from "lucide-react";
-import { useState } from "react";
+import { useMemo } from "react";
 
 import { Badge } from "../components/ui/badge";
+import { useNowMinute } from "../hooks/useNowMinute";
 import { Button } from "../components/ui/button";
 import { toastManager } from "../components/ui/toast";
 import { requestConfirmDialog } from "../confirmDialog";
@@ -21,12 +22,15 @@ import { Section } from "./AldoHomeBoard";
 import { ThreadLink } from "./AldoHomeInbox";
 import { AgentMarkdown, Quoted } from "./AldoQuoted";
 import { AldoApiError } from "./api";
-import { decideAldoApproval, removeAldoApprovalRule, type AldoApproval } from "./homeApi";
+import { removeAldoApprovalRule, type AldoApproval } from "./homeApi";
+import { refreshAldoHome, sendAldoApproval, useAldoHomeFeed, useAldoHomeRead } from "./homeFeed";
 import {
   APPROVAL_KIND_LABEL,
   approvalOutcome,
   approvalQuestion,
   decidedLately,
+  threadApprovals,
+  threadAwaitsApproval,
   waitingApprovals,
 } from "./approvals.logic";
 import { relativeTime } from "./home.logic";
@@ -60,20 +64,7 @@ export function ApprovalsSection(props: {
       {decided.length > 0 ? (
         <ul className="rounded-xl border border-border/60 bg-card/30 p-1.5">
           {decided.map((a) => (
-            <li key={a.id} className="flex items-start gap-2.5 rounded-lg px-2 py-1.5">
-              <Badge variant={a.status === "approved" ? "success" : "outline"} size="sm">
-                {approvalOutcome(a)}
-              </Badge>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm">{a.title}</p>
-                {a.result ? (
-                  <p className="line-clamp-2 text-muted-foreground text-xs">{a.result}</p>
-                ) : null}
-              </div>
-              <span className="shrink-0 text-muted-foreground text-xs">
-                {a.decidedAt ? relativeTime(a.decidedAt, props.now) : null}
-              </span>
-            </li>
+            <DecidedApproval key={a.id} approval={a} now={props.now} />
           ))}
         </ul>
       ) : null}
@@ -81,7 +72,66 @@ export function ApprovalsSection(props: {
   );
 }
 
-/** What was done, and the rule it saved, with Undo for the rule (what was done stays done). */
+/** An approval that isn't waiting any more: how it went, in a line. */
+export function DecidedApproval(props: { readonly approval: AldoApproval; readonly now: number }) {
+  const a = props.approval;
+  return (
+    <li className="flex list-none items-start gap-2.5 rounded-lg px-2 py-1.5">
+      <Badge variant={a.status === "approved" ? "success" : "outline"} size="sm">
+        {approvalOutcome(a)}
+      </Badge>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm">{a.title}</p>
+        {a.result ? <p className="line-clamp-2 text-muted-foreground text-xs">{a.result}</p> : null}
+      </div>
+      <span className="shrink-0 text-muted-foreground text-xs">
+        {a.decidedAt ? relativeTime(a.decidedAt, props.now) : null}
+      </span>
+    </li>
+  );
+}
+
+/**
+ * The approvals a thread's agent asked, for its timeline (session-logic.ts):
+ * the same ones as on Home, from the same read.
+ */
+export function useAldoThreadApprovals(
+  environmentId: string | null,
+  threadId: string | null,
+  enabled: boolean,
+): ReadonlyArray<AldoApproval> {
+  const { home } = useAldoHomeRead(enabled);
+  return useMemo(
+    () =>
+      environmentId && threadId
+        ? threadApprovals(home?.approvals, { environmentId, threadId })
+        : [],
+    [home?.approvals, environmentId, threadId],
+  );
+}
+
+/** Whether an approval waits on the user in this thread (the sidebar's row says so); reads what's there. */
+export function useAldoThreadAwaitsApproval(environmentId: string, threadId: string): boolean {
+  return useAldoHomeFeed((feed) =>
+    threadAwaitsApproval(feed.home?.approvals, { environmentId, threadId }),
+  );
+}
+
+/** One of a thread's approvals where it was asked: the card while it waits, a line once it's decided. */
+export function AldoThreadApproval(props: { readonly approval: AldoApproval }) {
+  const now = Date.parse(`${useNowMinute()}:00Z`);
+  const a = props.approval;
+  return (
+    <ul className="flex flex-col">
+      {a.status === "pending" ? (
+        <ApprovalCard approval={a} now={now} inThread onActed={() => void refreshAldoHome()} />
+      ) : (
+        <DecidedApproval approval={a} now={now} />
+      )}
+    </ul>
+  );
+}
+
 /** What a decision that became a rule says, with Undo. */
 export function toastAldoRule(
   message: string,
@@ -114,14 +164,18 @@ export function toastAldoRule(
   });
 }
 
-/** One approval in full, with its buttons (an item of a list). */
+/**
+ * One approval in full, with its buttons (an item of a list). It's decided on
+ * every card showing it at the tap (homeFeed.ts sendAldoApproval); in the thread
+ * that asked (`inThread`) it doesn't link to that thread.
+ */
 export function ApprovalCard(props: {
   readonly approval: AldoApproval;
   readonly now: number;
   readonly onActed: () => void;
+  readonly inThread?: boolean;
 }) {
   const a = props.approval;
-  const [busy, setBusy] = useState<"approve" | "discard" | "always" | null>(null);
   const Icon = KIND_ICON[a.kind];
   const sending = a.status === "sending";
   const decide = async (decision: "approve" | "discard" | "always") => {
@@ -138,9 +192,8 @@ export function ApprovalCard(props: {
       ) ?? Promise.resolve(true));
       if (!confirmed) return;
     }
-    setBusy(decision);
     try {
-      const { message, rule } = await decideAldoApproval(a.id, decision);
+      const { message, rule } = await sendAldoApproval(a, decision);
       if (rule) toastAldoRule(message, rule);
       else toastManager.add({ type: "success", title: message });
     } catch (cause) {
@@ -152,7 +205,6 @@ export function ApprovalCard(props: {
         description: messageOf(cause),
       });
     } finally {
-      setBusy(null);
       props.onActed();
     }
   };
@@ -165,11 +217,11 @@ export function ApprovalCard(props: {
             <Badge variant="warning" size="sm">
               {APPROVAL_KIND_LABEL[a.kind]}
             </Badge>
-            {a.thread ? (
+            {a.thread && !props.inThread ? (
               <ThreadLink target={a.thread} className="min-w-0 truncate hover:text-foreground">
                 {a.kind === "start" ? "Started" : "From"} {a.threadTitle ?? "its thread"}
               </ThreadLink>
-            ) : a.kind === "start" ? (
+            ) : a.kind === "start" && !a.thread ? (
               <span>From Aldo</span>
             ) : null}
             <span>· {relativeTime(a.createdAt, props.now)}</span>
@@ -196,30 +248,26 @@ export function ApprovalCard(props: {
             <p className="mt-2 text-destructive-foreground text-xs">{a.result}</p>
           ) : null}
           <div className="mt-3 flex flex-wrap gap-2">
-            <Button
-              size="sm"
-              disabled={busy !== null || sending}
-              onClick={() => void decide("approve")}
-            >
-              {busy === "approve" || sending ? "Working…" : a.approveLabel}
+            <Button size="sm" disabled={sending} onClick={() => void decide("approve")}>
+              {sending ? "Working…" : a.approveLabel}
             </Button>
             <Button
               size="sm"
               variant="outline"
-              disabled={busy !== null || sending}
+              disabled={sending}
               onClick={() => void decide("discard")}
             >
-              {busy === "discard" ? "Working…" : a.discardLabel}
+              {a.discardLabel}
             </Button>
             {a.always ? (
               <Button
                 size="sm"
                 variant="ghost"
-                disabled={busy !== null || sending}
+                disabled={sending}
                 onClick={() => void decide("always")}
                 aria-label={`${a.approveLabel}, and always allow: ${a.always}`}
               >
-                {busy === "always" ? "Working…" : "Always allow…"}
+                Always allow…
               </Button>
             ) : null}
           </div>

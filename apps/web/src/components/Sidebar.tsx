@@ -167,6 +167,7 @@ import {
   displayedThreadBranch,
 } from "../aldo/directory";
 import { isAldoCloud, isAldoEnvironmentId } from "../aldo/api";
+import { useAldoThreadAwaitsApproval } from "../aldo/AldoApprovals";
 import { aldoNewThreadPlace, useStartAldoThread } from "../aldo/newThread";
 import { buildThreadActionMenuItems } from "./threadActionMenu.logic";
 import {
@@ -1203,7 +1204,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   // Same semantics as the legacy sidebar (never-visited counts as read):
   // switching sidebars must not light up every historical thread as unread.
   const isUnread = hasUnseenCompletion({ ...thread, lastVisitedAt });
-  const status = resolveSidebarThreadStatus(thread);
+  // Aldo: an approval its agent asked waits on the user like one the agent stopped on.
+  const aldoAsks = useAldoThreadAwaitsApproval(thread.environmentId, thread.id);
+  const status = resolveSidebarThreadStatus(
+    aldoAsks && !thread.hasPendingApprovals ? { ...thread, hasPendingApprovals: true } : thread,
+  );
   // Aldo: a thread it's starting has no turn yet; it says how the start stands.
   const aldoStart = useAldoThreadStart(thread.environmentId, thread.id);
   // A woken thread reappears at its original position (the sort is

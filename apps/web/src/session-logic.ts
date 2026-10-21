@@ -50,6 +50,7 @@ import {
   type ThreadSession,
   type TurnDiffSummary,
 } from "./types";
+import type { AldoApproval } from "./aldo/homeApi";
 
 export type { PendingApproval, PendingUserInput } from "@t3tools/client-runtime/pending-requests";
 
@@ -166,6 +167,13 @@ export type TimelineEntry =
       kind: "work";
       createdAt: string;
       entry: WorkLogEntry;
+    }
+  | {
+      /** Aldo: an approval the agent asked the user for, at the point it asked (aldo/approvals.logic.ts). */
+      id: string;
+      kind: "aldo-approval";
+      createdAt: string;
+      approval: AldoApproval;
     };
 
 export interface TimelineEntriesProjection {
@@ -1475,6 +1483,8 @@ function timelineEntrySourceOrder(entry: TimelineEntry): number {
       return 1;
     case "work":
       return 2;
+    case "aldo-approval":
+      return 3;
   }
 }
 

@@ -3,16 +3,17 @@
 // as the user would on the board, through the same routes, says how it went,
 // and gives back what was chosen in words (for Aldo, on a call). A thread's
 // question, approval or plan leaves the page the moment it's sent (homeFeed.ts
-// sendAldoAnswer) and comes back only if Aldo refuses the answer; the rest
+// sendAldoAnswer; Aldo's own approvals, sendAldoApproval) and comes back only
+// if Aldo refuses the answer; the rest
 // leave with the home read refreshed after.
 
 import { toastManager } from "../components/ui/toast";
 import { toastAldoRule } from "./AldoApprovals";
 import { AldoApiError } from "./api";
-import { answerAldoThread, approveAldoPlan, decideAldoApproval, fetchAldoHome } from "./homeApi";
+import { answerAldoThread, approveAldoPlan, fetchAldoHome } from "./homeApi";
 import { mergeAldoPullRequest } from "./workspaceApi";
 import { decisionOpen, type AldoDecision } from "./decisions.logic";
-import { refreshAldoHome, sendAldoAnswer } from "./homeFeed";
+import { refreshAldoHome, sendAldoAnswer, sendAldoApproval } from "./homeFeed";
 
 export type AldoChoice =
   /** A question's answer: a choice per question, or the user's own words. */
@@ -105,8 +106,8 @@ export async function decideAldoOutcome(
   };
   try {
     if (choice.kind === "aldo" && decision.kind === "aldo-approval") {
-      const { approval, message, rule } = await decideAldoApproval(
-        decision.approval.id,
+      const { approval, message, rule } = await sendAldoApproval(
+        decision.approval,
         choice.decision,
       );
       // A rule it became can be undone from its toast, however quiet the card is.

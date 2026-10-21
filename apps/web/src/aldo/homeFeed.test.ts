@@ -2,7 +2,8 @@ import { afterEach, expect, it, vi } from "vite-plus/test";
 import type { AldoHome } from "./homeApi";
 
 const fetchHome = vi.hoisted(() => vi.fn());
-vi.mock("./homeApi", () => ({ fetchAldoHome: fetchHome }));
+const decide = vi.hoisted(() => vi.fn());
+vi.mock("./homeApi", () => ({ fetchAldoHome: fetchHome, decideAldoApproval: decide }));
 vi.mock("./assistantSession", () => ({
   noteAldoHiddenPrompts: vi.fn(),
   pullAldoConversation: vi.fn(),
@@ -324,4 +325,48 @@ it("a late result for an earlier question cannot keep or release the hold of the
   refuseFirst(new Error("late"));
   await expect(first).rejects.toThrow("late");
   expect(shownConversation(feed).pending).toBeUndefined();
+});
+
+const approvalOf = (status: string, result: string | null = null) => ({
+  id: "ap_1",
+  kind: "confirm",
+  title: "Submit",
+  summary: "",
+  fields: [],
+  body: "",
+  approveLabel: "Submit",
+  discardLabel: "Don't",
+  status,
+  result,
+  failed: false,
+  thread: { environmentId: "aldo-t", threadId: "c" },
+  threadTitle: "Work",
+  createdAt: "2026-10-21T10:00:00Z",
+  decidedAt: null,
+});
+
+it("an approval decided from one place is decided in every place at the tap, and comes back only if Aldo refuses", async () => {
+  const feed = await import("./homeFeed");
+  fetchHome.mockImplementation(async () => ({ ...home(), approvals: [approvalOf("pending")] }));
+  await feed.refreshAldoHome();
+  const status = () => feed.useAldoHomeFeed.getState().home?.approvals?.[0]?.status;
+  expect(status()).toBe("pending");
+
+  let answer: (value: unknown) => void = () => {};
+  decide.mockImplementationOnce(() => new Promise((resolve) => (answer = resolve)));
+  const sent = feed.sendAldoApproval({ id: "ap_1", kind: "confirm" }, "approve");
+  expect(status()).toBe("approved");
+  // A read that still has it waiting (Aldo's machine is slow) doesn't bring the card back.
+  await feed.refreshAldoHome();
+  expect(status()).toBe("approved");
+  answer({ approval: approvalOf("approved", "Approved: the agent goes ahead."), message: "ok" });
+  await sent;
+  await feed.refreshAldoHome();
+  expect(status()).toBe("approved");
+
+  // Refused: the card is back.
+  decide.mockRejectedValueOnce(new Error("Aldo is doing that right now."));
+  const refused = feed.sendAldoApproval({ id: "ap_1", kind: "email" }, "discard");
+  await expect(refused).rejects.toThrow("right now");
+  expect(status()).toBe("pending");
 });
