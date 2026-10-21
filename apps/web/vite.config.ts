@@ -236,6 +236,39 @@ function aldoBootstrapPlugin(): Plugin {
   };
 }
 
+// Aldo's interface font (src/aldo/fonts.css) starts downloading with the page,
+// beside its scripts, rather than once the app first draws text. Only its Latin
+// file, every weight in one; other scripts and italics load as text needs them.
+function aldoFontPreloadPlugin(): Plugin {
+  let base = "/";
+  return {
+    name: "aldo:font-preload",
+    apply: "build",
+    configResolved(config) {
+      base = config.base;
+    },
+    transformIndexHtml: {
+      order: "post",
+      handler(html, context) {
+        const font = Object.values(context.bundle ?? {}).find(
+          (output) =>
+            output.type === "asset" &&
+            /(^|\/)geist-latin-wght-normal-[^/]+\.woff2$/.test(output.fileName),
+        );
+        if (!font)
+          throw new Error("aldo:font-preload: the build has no Geist Latin file to preload.");
+        const charset = '<meta charset="UTF-8" />';
+        if (!html.includes(charset))
+          throw new Error("aldo:font-preload: index.html has no charset.");
+        return html.replace(
+          charset,
+          `${charset}\n    <link rel="preload" href="${base}${font.fileName}" as="font" type="font/woff2" crossorigin />`,
+        );
+      },
+    },
+  };
+}
+
 // Vite rejects requests whose Host header isn't localhost, which blocks sharing
 // a dev server over Tailscale/LAN. Tailnet names are safe to allow wholesale:
 // the DNS is controlled by tailscale, so they can't be rebound by an attacker.
@@ -252,7 +285,7 @@ export default defineConfig(() => {
     base: managedDevPc ? "/_t3/" : "/",
     publicDir: aldoCloud ? "public-aldo" : "public",
     plugins: [
-      ...(aldoCloud ? [aldoBrandingPlugin(), aldoBootstrapPlugin()] : []),
+      ...(aldoCloud ? [aldoBrandingPlugin(), aldoBootstrapPlugin(), aldoFontPreloadPlugin()] : []),
       devCompressionPlugin(),
       thirdPartyLicensesPlugin({
         bundleName: "web",

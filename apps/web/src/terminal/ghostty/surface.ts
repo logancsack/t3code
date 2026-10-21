@@ -30,9 +30,12 @@ const TERMINAL_GLYPH_FALLBACKS =
   '"CaskaydiaCove Nerd Font", "PowerlineSymbols", monospace';
 // The platform's own monospace faces; concrete names only, because an
 // unknown keyword (like ui-monospace) makes canvas font shorthand parsing
-// reject the whole string.
+// reject the whole string. Aldo's build puts its Geist Mono first
+// (aldo/fonts.css); loadTerminalFontFamily loads it before measuring.
 export const DEFAULT_TERMINAL_FONT_FAMILY =
-  '"SF Mono", "SFMono-Regular", Menlo, Consolas, "Liberation Mono", ' + TERMINAL_GLYPH_FALLBACKS;
+  (import.meta.env.VITE_ALDO_CLOUD === "1" ? '"Geist Mono", ' : "") +
+  '"SF Mono", "SFMono-Regular", Menlo, Consolas, "Liberation Mono", ' +
+  TERMINAL_GLYPH_FALLBACKS;
 const CONTENT_PADDING = 4;
 const MIN_SCROLLBAR_THUMB_HEIGHT = 18;
 /** Half a blink cycle: the visible and hidden phases are equally long. */
