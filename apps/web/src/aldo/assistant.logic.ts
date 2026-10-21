@@ -25,6 +25,8 @@ export interface AldoAssistantMessage {
   readonly images?: ReadonlyArray<string>;
   /** What said it, when it wasn't the conversation itself: Aldo's brief for the day (AldoBrief.tsx shows it as one). */
   readonly source?: "brief";
+  /** The id the page gave a message it sent (written to Aldo), which Aldo keeps it by. */
+  readonly clientId?: string;
 }
 
 /** Something Aldo did in this conversation, shown under what was said. */

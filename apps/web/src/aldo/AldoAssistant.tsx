@@ -285,7 +285,6 @@ export function AldoComposer(props: {
   const phase = useAldoAssistant((s) => s.phase);
   const unsent = useAldoAssistant((s) => s.unsent);
   const unsentImages = useAldoAssistant((s) => s.unsentImages);
-  const replying = useAldoAssistant((s) => s.replying);
   const input = useRef<HTMLTextAreaElement>(null);
   const picker = useRef<HTMLInputElement>(null);
   const limits = useAldoImageLimits();
@@ -376,10 +375,8 @@ export function AldoComposer(props: {
     requestAnimationFrame(() => field?.setSelectionRange(field.value.length, field.value.length));
   }, [unsent]);
   const sendable = text.trim().length > 0 || (canAttach && images.length > 0);
-  // One turn at a time: while Aldo replies the user can write the next, not send it.
-  const held = replying && !live;
   const submit = () => {
-    if (preparing > 0 || held) return;
+    if (preparing > 0) return;
     // During a call images don't go: they stay for after it.
     const sending = canAttach ? images : [];
     if (!text.trim() && sending.length === 0) return;
@@ -557,8 +554,8 @@ export function AldoComposer(props: {
                 render={
                   <button
                     type={sendable ? "submit" : "button"}
-                    aria-label={sendable ? (held ? "Aldo is replying" : "Send") : "Talk to Aldo"}
-                    disabled={sendable && (preparing > 0 || held)}
+                    aria-label={sendable ? "Send" : "Talk to Aldo"}
+                    disabled={sendable && preparing > 0}
                     className={cn(round, "bg-foreground text-background hover:bg-foreground/88")}
                     onClick={sendable ? undefined : () => void connectAldo()}
                   />
@@ -582,11 +579,7 @@ export function AldoComposer(props: {
                 />
               </TooltipTrigger>
               <TooltipPopup side="top">
-                {sendable
-                  ? held
-                    ? "Aldo is replying: send once it's done"
-                    : "Send"
-                  : `Talk to Aldo (${ALDO_SHORTCUT_LABEL})`}
+                {sendable ? "Send" : `Talk to Aldo (${ALDO_SHORTCUT_LABEL})`}
               </TooltipPopup>
             </Tooltip>
           )}
