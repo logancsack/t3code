@@ -91,6 +91,11 @@ function aldoCloudAlertCopy(level: AldoUsageAlertLevel, usage?: AldoWorkspaceUsa
   }
 }
 
+/** The plan ended (canceled): nothing of it renews, resets or bills. */
+export function aldoPlanEnded(usage: AldoWorkspaceUsage): boolean {
+  return usage.period?.status === "canceled";
+}
+
 export interface AldoUsageFact {
   readonly label: string;
   readonly value: string;
@@ -106,7 +111,10 @@ function aldoUsageHardwareLabel(machine: AldoWorkspaceUsage["machine"]): string 
 /** The metric row under the credit meter, in display order. */
 export function aldoUsageFacts(usage: AldoWorkspaceUsage): readonly AldoUsageFact[] {
   const facts: AldoUsageFact[] = [];
-  if (usage.plan && usage.credits && usage.bill) {
+  if (usage.plan && aldoPlanEnded(usage)) {
+    // What's left of an ended plan can't be used, and it doesn't renew.
+    facts.push({ label: "Plan", value: `${usage.plan.name} · ended` });
+  } else if (usage.plan && usage.credits && usage.bill) {
     facts.push(
       {
         label: "Plan",
@@ -268,7 +276,7 @@ export function aldoUsageMeter(
 export function aldoUsageFootnote(usage: AldoWorkspaceUsage): string | null {
   const parts: string[] = [];
   if (usage.updatedAt) parts.push(`Updated ${formatDayTime(usage.updatedAt)}`);
-  if (usage.period) {
+  if (usage.period && !aldoPlanEnded(usage)) {
     parts.push(
       usage.period.cancelAtPeriodEnd
         ? `Ends ${formatDay(usage.period.end)}`
@@ -278,9 +286,14 @@ export function aldoUsageFootnote(usage: AldoWorkspaceUsage): string | null {
   return parts.length > 0 ? parts.join(" · ") : null;
 }
 
-/** Why there are no credit numbers to show, when there are none. */
+/** Why there are no credit numbers to show, when there are none (or only an ended plan's). */
 export function aldoUsageUnmeteredCopy(usage: AldoWorkspaceUsage): string {
   if (isAldoCloud) {
+    if (aldoPlanEnded(usage)) {
+      return usage.credits
+        ? `You used ${formatCredits(usage.credits.used)} of ${formatCredits(usage.credits.included)} credits before your plan ended.`
+        : "Your plan has ended.";
+    }
     if (usage.configured) return "Your account is complimentary, so compute isn't metered.";
     return usage.billing?.enabled
       ? "You don't have a plan yet, so agents can't start. Choose one below."
@@ -305,6 +318,8 @@ function roughly(credits: number): string {
 export function aldoUsageSentence(usage: AldoWorkspaceUsage): string | null {
   const credits = usage.credits;
   if (!credits) return null;
+  // An ended plan has no pace to project: its card and the plans below say it ended.
+  if (aldoPlanEnded(usage)) return null;
   const used = `You've used ${formatCredits(credits.used)} of ${formatCredits(credits.included)} credits this month`;
   if (credits.projected === null) return `${used}.`;
   if (credits.projected <= credits.included)

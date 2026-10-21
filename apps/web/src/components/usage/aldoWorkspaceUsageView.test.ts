@@ -2,6 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import type { AldoWorkspaceUsage } from "../../state/aldoWorkspaceUsage";
 import {
+  aldoPlanEnded,
   aldoUsageAlertCopy,
   aldoUsageFacts,
   aldoUsageFootnote,
@@ -132,6 +133,24 @@ describe("aldoUsageFacts", () => {
         (fact) => fact.label === "Projected at renewal",
       )?.value,
     ).toBe("—");
+  });
+});
+
+describe("an ended plan", () => {
+  const ended: AldoWorkspaceUsage = {
+    ...metered,
+    period: { ...metered.period!, status: "canceled" },
+  };
+
+  it("shows that it ended, with no credits left, projection, bill or renewal", () => {
+    expect(aldoPlanEnded(ended)).toBe(true);
+    expect(aldoPlanEnded(metered)).toBe(false);
+    expect(aldoUsageFacts(ended)).toEqual([
+      { label: "Plan", value: "Pro · ended" },
+      { label: "Hardware", value: "Full Power · 2 credits/hour" },
+    ]);
+    expect(aldoUsageSentence(ended)).toBeNull();
+    expect(aldoUsageFootnote(ended)).toMatch(/^Updated Sep 3, [^·]*$/);
   });
 });
 
