@@ -77,6 +77,7 @@ import { useAldoArrive, useAldoArrived } from "./arrive";
 import { beatDelay, splitBeats } from "./beats.logic";
 import { sameTarget } from "./home.logic";
 import { useAldoHomeFeed } from "./homeFeed";
+import type { AldoHomeConversation } from "./homeApi";
 import {
   WORKSTREAM_WORDS,
   workstreamMeta,
@@ -817,7 +818,14 @@ function AldoReply(props: { readonly text: string; readonly beats?: boolean }) {
   const arrived = useAldoArrived();
   const still = useMediaQuery("(prefers-reduced-motion: reduce)");
   const closing = closingThread(props.text);
-  const beats = useMemo(() => splitBeats(closing?.text ?? props.text), [closing?.text, props.text]);
+  // The thread it's about, as the home screen reads it: none for an older Aldo or a thread since deleted.
+  const about = useAldoHomeFeed((s) =>
+    closing ? s.home?.conversations.find((c) => sameTarget(c.thread, closing.thread)) : undefined,
+  );
+  const said = useMemo(() => splitBeats(closing?.text ?? props.text), [closing?.text, props.text]);
+  // Nothing but the thread's link, and nothing known about it: the link alone.
+  const linkOnly = said.length === 0 && closing !== null && !about;
+  const beats = useMemo(() => (linkOnly ? [""] : said), [linkOnly, said]);
   const [shown, setShown] = useState(() =>
     props.beats && arrived && !still ? 1 : Number.POSITIVE_INFINITY,
   );
@@ -826,11 +834,10 @@ function AldoReply(props: { readonly text: string; readonly beats?: boolean }) {
     const timer = window.setTimeout(() => setShown((n) => n + 1), beatDelay(beats[shown]!));
     return () => window.clearTimeout(timer);
   }, [shown, beats]);
-  const labeled = closing ? <WorkstreamLabel target={closing.thread} /> : null;
   const visible = beats.slice(0, shown);
   return (
     <div className="flex max-w-[88%] flex-col items-start gap-1 self-start sm:max-w-[80%]">
-      {labeled}
+      {about ? <WorkstreamLabel conversation={about} /> : null}
       {visible.map((beat, index) => {
         const last = index === beats.length - 1;
         return (
@@ -858,9 +865,9 @@ function AldoReply(props: { readonly text: string; readonly beats?: boolean }) {
                 run.text
               ),
             )}
-            {last && closing && !labeled ? (
+            {last && closing && !about ? (
               <>
-                {"\n"}
+                {beat ? "\n" : null}
                 {threadLink(
                   closing.thread,
                   "Open the thread",
@@ -889,15 +896,11 @@ const WORKSTREAM_GLYPH: Record<WorkstreamState, ReactNode> = {
  * The thread a reply is about, over it: its glyph (a hand when it needs the
  * user, a spinner while it works, a check once it's done, a clock while it's
  * put off), its name and how long, from the home screen's read. A tap opens
- * it. Nothing when the read doesn't have it (an older Aldo, a thread since
- * deleted): the reply then ends with a link to it, as before.
+ * it. When the read doesn't have it, the reply ends with a link to it instead.
  */
-function WorkstreamLabel(props: { readonly target: AldoOpenTarget }) {
-  const conversation = useAldoHomeFeed((s) =>
-    s.home?.conversations.find((c) => sameTarget(c.thread, props.target)),
-  );
+function WorkstreamLabel(props: { readonly conversation: AldoHomeConversation }) {
+  const { conversation } = props;
   const open = useContext(AldoOpenContext);
-  if (!conversation) return null;
   const now = Date.now();
   const state = workstreamState(conversation, now);
   const body = (
