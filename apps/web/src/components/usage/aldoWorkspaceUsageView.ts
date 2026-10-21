@@ -288,12 +288,16 @@ export function aldoUsageFootnote(usage: AldoWorkspaceUsage): string | null {
 
 /** Why there are no credit numbers to show, when there are none (or only an ended plan's). */
 export function aldoUsageUnmeteredCopy(usage: AldoWorkspaceUsage): string {
+  if (aldoPlanEnded(usage)) {
+    if (!usage.credits) return "Your plan has ended.";
+    // Of the plan's own credits, with extra usage apart, so it never reads as more than the plan had.
+    const plan = planCreditsUse(usage.credits);
+    const extra = formatCredits(plan.extraUsed);
+    return `You used ${formatCredits(plan.used)} of your plan’s ${formatCredits(plan.included)} credits before it ended${
+      extra === "0" ? "" : `, and ${extra} more on extra usage`
+    }.`;
+  }
   if (isAldoCloud) {
-    if (aldoPlanEnded(usage)) {
-      return usage.credits
-        ? `You used ${formatCredits(usage.credits.used)} of ${formatCredits(usage.credits.included)} credits before your plan ended.`
-        : "Your plan has ended.";
-    }
     if (usage.configured) return "Your account is complimentary, so compute isn't metered.";
     return usage.billing?.enabled
       ? "You don't have a plan yet, so agents can't start. Choose one below."

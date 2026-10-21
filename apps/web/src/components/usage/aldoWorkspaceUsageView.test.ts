@@ -152,6 +152,19 @@ describe("an ended plan", () => {
     expect(aldoUsageSentence(ended)).toBeNull();
     expect(aldoUsageFootnote(ended)).toMatch(/^Updated Sep 3, [^·]*$/);
   });
+
+  it("says what it used of the plan's own credits, with extra usage apart", () => {
+    expect(aldoUsageUnmeteredCopy(ended)).toBe(
+      "You used 40.3 of your plan’s 250 credits before it ended.",
+    );
+    expect(
+      aldoUsageUnmeteredCopy({
+        ...ended,
+        credits: { ...ended.credits!, used: 270, includedRemaining: 0, overageRemaining: 30 },
+      }),
+    ).toBe("You used 250 of your plan’s 250 credits before it ended, and 20 more on extra usage.");
+    expect(aldoUsageUnmeteredCopy({ ...ended, credits: null })).toBe("Your plan has ended.");
+  });
 });
 
 describe("aldoUsageMeterFraction", () => {
