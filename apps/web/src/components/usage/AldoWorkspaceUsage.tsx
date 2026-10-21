@@ -24,6 +24,7 @@ import { Input } from "../ui/input";
 import { Spinner } from "../ui/spinner";
 import { toastManager } from "../ui/toast";
 import {
+  aldoPlanEnded,
   aldoUsageAlertCopy,
   aldoUsageFacts,
   aldoUsageFootnote,
@@ -63,7 +64,7 @@ export function AldoWorkspaceUsageSection({
             {title}
           </h2>
           {isAldoCloud ? (
-            usage?.bill ? (
+            usage?.bill && !aldoPlanEnded(usage) ? (
               <SpendLimitControl
                 spendLimitCents={usage.bill.spendLimitCents}
                 onChanged={onChanged}
@@ -111,10 +112,12 @@ function AldoWorkspaceUsageBody({
   readonly usage: AldoWorkspaceUsage;
   readonly stale: boolean;
 }) {
-  const alert = aldoUsageAlertCopy(usage.alert, usage);
+  // An ended plan's credits can't be used: no warnings or meter, just what it used.
+  const ended = aldoPlanEnded(usage);
+  const alert = ended ? null : aldoUsageAlertCopy(usage.alert, usage);
   const facts = aldoUsageFacts(usage);
   const footnote = aldoUsageFootnote(usage);
-  const meter = usage.credits ? aldoUsageMeter(usage.credits) : null;
+  const meter = usage.credits && !ended ? aldoUsageMeter(usage.credits) : null;
 
   return (
     <div className={stale ? "flex flex-col gap-3 opacity-64" : "flex flex-col gap-3"}>

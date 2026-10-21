@@ -2,6 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import type { AldoWorkspaceUsage } from "../../state/aldoWorkspaceUsage";
 import {
+  aldoPlanEnded,
   aldoUsageAlertCopy,
   aldoUsageFacts,
   aldoUsageFootnote,
@@ -132,6 +133,37 @@ describe("aldoUsageFacts", () => {
         (fact) => fact.label === "Projected at renewal",
       )?.value,
     ).toBe("—");
+  });
+});
+
+describe("an ended plan", () => {
+  const ended: AldoWorkspaceUsage = {
+    ...metered,
+    period: { ...metered.period!, status: "canceled" },
+  };
+
+  it("shows that it ended, with no credits left, projection, bill or renewal", () => {
+    expect(aldoPlanEnded(ended)).toBe(true);
+    expect(aldoPlanEnded(metered)).toBe(false);
+    expect(aldoUsageFacts(ended)).toEqual([
+      { label: "Plan", value: "Pro · ended" },
+      { label: "Hardware", value: "Full Power · 2 credits/hour" },
+    ]);
+    expect(aldoUsageSentence(ended)).toBeNull();
+    expect(aldoUsageFootnote(ended)).toMatch(/^Updated Sep 3, [^·]*$/);
+  });
+
+  it("says what it used of the plan's own credits, with extra usage apart", () => {
+    expect(aldoUsageUnmeteredCopy(ended)).toBe(
+      "You used 40.3 of your plan’s 250 credits before it ended.",
+    );
+    expect(
+      aldoUsageUnmeteredCopy({
+        ...ended,
+        credits: { ...ended.credits!, used: 270, includedRemaining: 0, overageRemaining: 30 },
+      }),
+    ).toBe("You used 250 of your plan’s 250 credits before it ended, and 20 more on extra usage.");
+    expect(aldoUsageUnmeteredCopy({ ...ended, credits: null })).toBe("Your plan has ended.");
   });
 });
 

@@ -8,6 +8,7 @@ import {
   aldoEndedPlan,
   aldoModelsSummary,
   aldoPhoneSummary,
+  aldoPlanLabel,
   aldoVaultSummary,
 } from "./settingsHome.logic";
 
@@ -160,6 +161,14 @@ describe("aldoAccountSummary", () => {
     expect(aldoAccountSummary(usage({ period: { status: "past_due", start: "", end: "" } }))).toBe(
       "Plus, payment failed",
     );
+  });
+
+  it("names the plan in the account menu, and says when it ended", () => {
+    expect(aldoPlanLabel(usage({}))).toBe("Plus");
+    expect(aldoPlanLabel(usage({ period: { status: "canceled", start: "", end: "" } }))).toBe(
+      "Plus, plan ended",
+    );
+    expect(aldoPlanLabel(null)).toBeNull();
   });
 
   it("says nothing without a plan", () => {

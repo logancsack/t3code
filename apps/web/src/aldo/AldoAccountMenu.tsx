@@ -29,6 +29,7 @@ import { requestAldoProfile, type AldoProfile } from "./assistantApi";
 import { type AldoHomeUsage } from "./homeApi";
 import { useAldoFirstViewHold } from "./firstView";
 import { useAldoHomeFeed } from "./homeFeed";
+import { aldoPlanLabel } from "./settingsHome.logic";
 import { setAldoSimpleMode, useAldoSimpleMode } from "./simpleMode";
 
 // ---------------------------------------------------------------------------
@@ -139,7 +140,8 @@ function AccountMenu(props: {
     if (isMobile) setOpenMobile(false);
     void navigate({ to });
   };
-  const credits = usage?.credits ?? null;
+  // An ended plan's credits are spent history: the card offers a plan instead.
+  const credits = usage?.period?.status === "canceled" ? null : (usage?.credits ?? null);
   const share = credits && credits.included > 0 ? Math.min(1, credits.used / credits.included) : 0;
   const adminUrl = profile?.adminUrl ?? null;
   return (
@@ -159,7 +161,7 @@ function AccountMenu(props: {
         onClick={() => go("/settings/account")}
       >
         <span className="flex items-center gap-2 text-sm">
-          <span className="font-medium">{usage?.plan?.name ?? "Plan"}</span>
+          <span className="font-medium">{aldoPlanLabel(usage) ?? "Plan"}</span>
           <span className="ms-auto inline-flex items-center gap-0.5 text-muted-foreground text-xs">
             Plan and billing
             <ChevronRightIcon className="size-3.5" />
@@ -274,7 +276,7 @@ export function AldoProfileButton(props: {
           {profileName(profile)}
         </span>
         <span className="truncate text-[11px] text-sidebar-muted-foreground">
-          {usage?.plan?.name ?? (profile?.name ? profile.email : "Account and settings")}
+          {aldoPlanLabel(usage) ?? (profile?.name ? profile.email : "Account and settings")}
         </span>
       </span>
       <ChevronsUpDownIcon className="size-3.5 shrink-0 text-sidebar-muted-foreground/70" />

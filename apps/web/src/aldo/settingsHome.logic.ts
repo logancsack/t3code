@@ -126,15 +126,21 @@ export function aldoAppearanceSummary(mode: string, simple: boolean): string {
   return `${theme}, ${simple ? "simple" : "full"}`;
 }
 
-/** The account's line: its plan with what's left, or that the plan ended. */
-export function aldoAccountSummary(usage: AldoHomeUsage | null | undefined): string | null {
+/** The plan's name, or that it ended or its payment failed: the account menu's line. */
+export function aldoPlanLabel(usage: AldoHomeUsage | null | undefined): string | null {
   const plan = usage?.plan?.name;
   if (!usage || !plan) return null;
   const status = usage.period?.status;
   if (status === "canceled") return `${plan}, plan ended`;
   if (status === "past_due") return `${plan}, payment failed`;
-  if (!usage.metered || !usage.credits) return plan;
-  return `${plan}, ${usage.credits.remaining.toLocaleString("en-US")} credits left`;
+  return plan;
+}
+
+/** The account's line: its plan with what's left, or that the plan ended. */
+export function aldoAccountSummary(usage: AldoHomeUsage | null | undefined): string | null {
+  const label = aldoPlanLabel(usage);
+  if (!usage || label !== usage.plan?.name || !usage.metered || !usage.credits) return label;
+  return `${label}, ${usage.credits.remaining.toLocaleString("en-US")} credits left`;
 }
 
 /** The plan's name when it has ended, for the banner that says so; null otherwise. */
