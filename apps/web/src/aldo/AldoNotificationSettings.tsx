@@ -17,11 +17,27 @@ import {
 import { searchableSetting } from "../components/settings/settingsSearch";
 import { Button } from "../components/ui/button";
 import { Switch } from "../components/ui/switch";
+import { Textarea } from "../components/ui/textarea";
 import { toastManager } from "../components/ui/toast";
 import { playAldoChime, setAldoSound, useAldoSound } from "./chime";
-import { setAldoBriefSettings, setAldoHeadsUps, setAldoMomentEmails } from "./accountApi";
-import { AldoPolicySelect } from "./AldoPolicy";
+import {
+  setAldoBriefSettings,
+  setAldoHeadsUps,
+  setAldoMomentEmails,
+  type AldoHeadsUps,
+  type AldoHeadsUpsChange,
+  type AldoHeadsUpsTuning,
+} from "./accountApi";
+import { AldoPolicySelect, AldoPolicySubList, AldoPolicySubRow } from "./AldoPolicy";
 import { BRIEF_OFF, briefTimeOptions } from "./briefSettings.logic";
+import {
+  HEADS_UP_TOPIC_CHARS,
+  appsEveryOptions,
+  appsNote,
+  quietHoursNote,
+  quietTimeOptions,
+  topicsChange,
+} from "./headsUps.logic";
 import { AldoNotificationTestNote, useAldoNotificationTest } from "./AldoNotificationTest";
 import {
   aldoNotificationsStatus,
@@ -175,7 +191,9 @@ function AldoNotificationSettings() {
 
 /**
  * Aldo's heads-ups, on or off, once Aldo has them: they need an account with
- * mail or a calendar, so without one the row says to connect one.
+ * mail or a calendar, or another app it can read, so without one the row says
+ * to connect one. On an Aldo that lets them be tuned, under the switch: quiet
+ * hours, how often it reads the other apps, and what to hear about or not.
  */
 function HeadsUpsRow(props: { readonly connected: boolean | null }) {
   const cached = useSettingsResource(settingsHeadsUps);
@@ -198,8 +216,9 @@ function HeadsUpsRow(props: { readonly connected: boolean | null }) {
       />
     );
   }
-  const description =
-    "Every half hour of your day, Aldo looks at your new mail and coming events and tells you what's worth knowing (here and on your phone), sometimes with a thread to start for it. Most looks say nothing.";
+  const description = headsUps?.tuning
+    ? "Every half hour outside your quiet hours, Aldo looks at your new mail and coming events and tells you what's worth knowing (here and on your phone), sometimes with a thread to start for it. Your other apps it reads every few hours. Most looks say nothing."
+    : "Every half hour of your day, Aldo looks at your new mail and coming events and tells you what's worth knowing (here and on your phone), sometimes with a thread to start for it. Most looks say nothing.";
   if (!headsUps) {
     return (
       <SettingsRow
@@ -209,33 +228,41 @@ function HeadsUpsRow(props: { readonly connected: boolean | null }) {
       />
     );
   }
-  const change = (on: boolean) => {
+  const change = (next: AldoHeadsUpsChange) => {
     setSaving(true);
-    settingsHeadsUps
+    return settingsHeadsUps
       .mutate(
-        (before) => (before ? { ...before, on } : before),
-        () => setAldoHeadsUps(on),
+        (before) => (before ? withHeadsUpsChange(before, next) : before),
+        () => setAldoHeadsUps(next),
       )
-      .catch((cause: unknown) =>
-        toastManager.add({
-          type: "error",
-          title: "Couldn't change that",
-          description: messageOf(cause),
-        }),
+      .then(
+        () => true,
+        (cause: unknown) => {
+          toastManager.add({
+            type: "error",
+            title: "Couldn't change that",
+            description: messageOf(cause),
+          });
+          return false;
+        },
       )
       .finally(() => setSaving(false));
   };
+  // With nothing to read, there's nothing to tell: mail, a calendar, or another app.
+  const nothingToRead = props.connected === false && (headsUps.tuning?.apps.length ?? 0) === 0;
   return (
     <SettingsRow
       {...searchableSetting("aldo-heads-ups")}
       description={description}
-      {...(props.connected === false
+      {...(nothingToRead
         ? {
             status: (
               <>
-                They need your mail or calendar:{" "}
+                {headsUps.tuning
+                  ? "They need your mail, calendar or another app: "
+                  : "They need your mail or calendar: "}
                 <Link to="/settings/connections" className="underline underline-offset-2">
-                  connect Google or Microsoft
+                  {headsUps.tuning ? "connect one" : "connect Google or Microsoft"}
                 </Link>
                 .
               </>
@@ -245,12 +272,135 @@ function HeadsUpsRow(props: { readonly connected: boolean | null }) {
       control={
         <Switch
           checked={headsUps.on}
-          disabled={saving || props.connected === false}
-          onCheckedChange={change}
+          disabled={saving || nothingToRead}
+          onCheckedChange={(on) => void change({ on })}
           aria-label="Heads-ups from Aldo"
         />
       }
-    />
+    >
+      {headsUps.on && headsUps.tuning && !nothingToRead ? (
+        <HeadsUpsTuning tuning={headsUps.tuning} saving={saving} change={change} />
+      ) : null}
+    </SettingsRow>
+  );
+}
+
+/** The heads-ups with a change applied, as Aldo will answer once it's saved. */
+function withHeadsUpsChange(before: AldoHeadsUps, change: AldoHeadsUpsChange): AldoHeadsUps {
+  const { on, ...tuning } = change;
+  return {
+    ...before,
+    ...(on === undefined ? {} : { on }),
+    tuning: before.tuning ? { ...before.tuning, ...tuning } : null,
+  };
+}
+
+/**
+ * Under the switch: quiet hours, how often Aldo reads the other apps, and
+ * what the user wants to hear about or not, saved together when they're done.
+ */
+function HeadsUpsTuning(props: {
+  readonly tuning: AldoHeadsUpsTuning;
+  readonly saving: boolean;
+  readonly change: (change: AldoHeadsUpsChange) => Promise<boolean>;
+}) {
+  const { tuning, saving, change } = props;
+  // What they're typing; null shows what's saved (and follows it).
+  const [draft, setDraft] = useState<{ tell: string; skip: string } | null>(null);
+  const topics = draft ?? { tell: tuning.tell, skip: tuning.skip };
+  const topicChange = draft ? topicsChange(tuning, draft) : {};
+  const edited = Object.keys(topicChange).length > 0;
+  const quietNote = quietHoursNote(tuning);
+  const apps = appsNote(tuning);
+  const saveTopics = () => {
+    void change(topicChange).then((saved) => {
+      if (saved) setDraft(null);
+    });
+  };
+  return (
+    <AldoPolicySubList>
+      <AldoPolicySubRow
+        label="Quiet hours"
+        control={
+          <div className="grid w-full grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 sm:flex sm:w-auto">
+            <AldoPolicySelect
+              value={String(tuning.quietStart)}
+              options={quietTimeOptions(tuning.quietStart)}
+              label="Quiet from"
+              disabled={saving}
+              className="w-full sm:w-28"
+              onChange={(value) => void change({ quietStart: Number(value) })}
+            />
+            <span className="text-muted-foreground text-xs">to</span>
+            <AldoPolicySelect
+              value={String(tuning.quietEnd)}
+              options={quietTimeOptions(tuning.quietEnd)}
+              label="Quiet until"
+              disabled={saving}
+              className="w-full sm:w-28"
+              onChange={(value) => void change({ quietEnd: Number(value) })}
+            />
+          </div>
+        }
+      />
+      {quietNote ? <p className="text-muted-foreground text-xs">{quietNote}</p> : null}
+      <AldoPolicySubRow
+        label="Other apps"
+        control={
+          <AldoPolicySelect
+            value={String(tuning.appsEvery)}
+            options={appsEveryOptions(tuning.appsEvery)}
+            label="How often Aldo reads your other apps"
+            disabled={saving || tuning.apps.length === 0}
+            className="w-36"
+            onChange={(value) => void change({ appsEvery: Number(value) })}
+          />
+        }
+      />
+      <p className="text-muted-foreground text-xs">
+        {apps ?? (
+          <>
+            None connected yet.{" "}
+            <Link to="/settings/connections" className="underline underline-offset-2">
+              Connect an app
+            </Link>{" "}
+            and Aldo reads what's new in it.
+          </>
+        )}
+      </p>
+      <label className="block space-y-1 pt-1">
+        <span className="text-sm">Tell me about</span>
+        <Textarea
+          size="sm"
+          className="text-sm"
+          placeholder="Anything from my landlord, flight changes"
+          maxLength={HEADS_UP_TOPIC_CHARS}
+          value={topics.tell}
+          onChange={(e) => setDraft({ ...topics, tell: e.currentTarget.value })}
+        />
+      </label>
+      <label className="block space-y-1">
+        <span className="text-sm">Don't tell me about</span>
+        <Textarea
+          size="sm"
+          className="text-sm"
+          placeholder="Newsletters, package tracking"
+          maxLength={HEADS_UP_TOPIC_CHARS}
+          value={topics.skip}
+          onChange={(e) => setDraft({ ...topics, skip: e.currentTarget.value })}
+        />
+      </label>
+      {edited ? (
+        <div className="flex justify-end gap-2 pb-1">
+          <Button size="sm" variant="ghost" disabled={saving} onClick={() => setDraft(null)}>
+            Cancel
+          </Button>
+          <Button size="sm" disabled={saving} onClick={saveTopics}>
+            Save
+          </Button>
+        </div>
+      ) : null}
+    </AldoPolicySubList>
   );
 }
 

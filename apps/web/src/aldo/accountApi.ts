@@ -728,30 +728,77 @@ export const aldoVault = {
 export interface AldoHeadsUps {
   readonly on: boolean;
   readonly lookedAt: string | null;
+  /** How they're tuned; null on an Aldo that only turns them on or off. */
+  readonly tuning: AldoHeadsUpsTuning | null;
+}
+
+/** Quiet hours, other apps and topics, as the user set them. */
+export interface AldoHeadsUpsTuning {
+  /** Minutes after their midnight, where they are: quiet from this... */
+  readonly quietStart: number;
+  /** ...until this. The same two, never quiet. */
+  readonly quietEnd: number;
+  /** Hours between reads of their other apps; 0, never. */
+  readonly appsEvery: number;
+  /** What they asked to hear about, and not, in their words. */
+  readonly tell: string;
+  readonly skip: string;
+  /** The connected apps Aldo can read. */
+  readonly apps: ReadonlyArray<string>;
+}
+
+/** What to change: any of them. */
+export type AldoHeadsUpsChange = Partial<{ on: boolean } & Omit<AldoHeadsUpsTuning, "apps">>;
+
+type HeadsUpsBody = Partial<
+  { on: unknown; lookedAt: unknown } & Record<keyof AldoHeadsUpsTuning, unknown>
+>;
+
+function tuningOf(body: HeadsUpsBody): AldoHeadsUpsTuning | null {
+  const { quietStart, quietEnd, appsEvery, tell, skip, apps } = body;
+  return typeof quietStart === "number" &&
+    typeof quietEnd === "number" &&
+    typeof appsEvery === "number" &&
+    typeof tell === "string" &&
+    typeof skip === "string" &&
+    Array.isArray(apps)
+    ? {
+        quietStart,
+        quietEnd,
+        appsEvery,
+        tell,
+        skip,
+        apps: apps.filter((a): a is string => typeof a === "string"),
+      }
+    : null;
 }
 
 /** Heads-ups as Aldo answered, or null for an answer that isn't (an older Aldo's page for a path it doesn't have). */
-function headsUpsOf(body: Partial<AldoHeadsUps> | null): AldoHeadsUps | null {
+function headsUpsOf(body: HeadsUpsBody | null): AldoHeadsUps | null {
   return typeof body?.on === "boolean"
-    ? { on: body.on, lookedAt: typeof body.lookedAt === "string" ? body.lookedAt : null }
+    ? {
+        on: body.on,
+        lookedAt: typeof body.lookedAt === "string" ? body.lookedAt : null,
+        tuning: tuningOf(body),
+      }
     : null;
 }
 
 /** Null where this Aldo has no heads-ups. */
 export async function fetchAldoHeadsUps(): Promise<AldoHeadsUps | null> {
   try {
-    return headsUpsOf(await api<Partial<AldoHeadsUps>>("/api/assistant/heads-ups"));
+    return headsUpsOf(await api<HeadsUpsBody>("/api/assistant/heads-ups"));
   } catch (cause) {
     if (cause instanceof AldoApiError && cause.status === 404) return null;
     throw cause;
   }
 }
 
-export async function setAldoHeadsUps(on: boolean): Promise<AldoHeadsUps> {
+export async function setAldoHeadsUps(change: AldoHeadsUpsChange): Promise<AldoHeadsUps> {
   const saved = headsUpsOf(
-    await api<Partial<AldoHeadsUps>>("/api/assistant/heads-ups", {
+    await api<HeadsUpsBody>("/api/assistant/heads-ups", {
       method: "PUT",
-      body: JSON.stringify({ on }),
+      body: JSON.stringify(change),
     }),
   );
   if (!saved) throw new Error("This Aldo doesn't have heads-ups.");
