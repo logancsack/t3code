@@ -16,6 +16,7 @@ import {
   CircleCheckBigIcon,
   CircleAlertIcon,
   ClipboardListIcon,
+  CreditCardIcon,
   HandIcon,
   HourglassIcon,
   LoaderCircleIcon,
@@ -55,30 +56,32 @@ export function DecisionIcon(props: {
 }) {
   const d = props.decision;
   const [Icon, tone] =
-    d.kind === "aldo-approval"
-      ? [
-          d.approval.kind === "email"
-            ? MailIcon
-            : d.approval.kind === "event"
-              ? CalendarPlusIcon
-              : d.approval.kind === "confirm"
-                ? CircleCheckBigIcon
-                : SparklesIcon,
-          "bg-warning/12 text-warning-foreground",
-        ]
-      : d.kind === "question"
-        ? [MessageCircleQuestionIcon, "bg-primary/10 text-primary"]
-        : d.kind === "approval"
-          ? [ShieldQuestionIcon, "bg-warning/12 text-warning-foreground"]
-          : d.kind === "handoff"
-            ? [HandIcon, "bg-warning/12 text-warning-foreground"]
-            : d.kind === "plan"
-              ? [ClipboardListIcon, "bg-primary/10 text-primary"]
-              : d.kind === "merge"
-                ? [PullRequestGlyph.merged, "bg-success/12 text-success-foreground"]
-                : d.kind === "failed"
-                  ? [CircleAlertIcon, "bg-destructive/10 text-destructive-foreground"]
-                  : [HourglassIcon, "bg-warning/12 text-warning-foreground"];
+    d.kind === "payment"
+      ? [CreditCardIcon, "bg-warning/12 text-warning-foreground"]
+      : d.kind === "aldo-approval"
+        ? [
+            d.approval.kind === "email"
+              ? MailIcon
+              : d.approval.kind === "event"
+                ? CalendarPlusIcon
+                : d.approval.kind === "confirm"
+                  ? CircleCheckBigIcon
+                  : SparklesIcon,
+            "bg-warning/12 text-warning-foreground",
+          ]
+        : d.kind === "question"
+          ? [MessageCircleQuestionIcon, "bg-primary/10 text-primary"]
+          : d.kind === "approval"
+            ? [ShieldQuestionIcon, "bg-warning/12 text-warning-foreground"]
+            : d.kind === "handoff"
+              ? [HandIcon, "bg-warning/12 text-warning-foreground"]
+              : d.kind === "plan"
+                ? [ClipboardListIcon, "bg-primary/10 text-primary"]
+                : d.kind === "merge"
+                  ? [PullRequestGlyph.merged, "bg-success/12 text-success-foreground"]
+                  : d.kind === "failed"
+                    ? [CircleAlertIcon, "bg-destructive/10 text-destructive-foreground"]
+                    : [HourglassIcon, "bg-warning/12 text-warning-foreground"];
   if (props.plain)
     return (
       <Icon

@@ -13,6 +13,7 @@ import { useContext, useState, type ReactNode } from "react";
 import { PullRequestGlyph } from "../components/pullRequest/pullRequestIcons";
 import { cn } from "~/lib/utils";
 import { AldoOpenContext, AldoThreadCard } from "./AldoLiveCard";
+import { AldoPaymentLine } from "./AldoPaymentCard";
 import { AldoPlanCard } from "./AldoPlanCard";
 import { AldoAvatar } from "./AldoPresence";
 import { useAldoArrive } from "./arrive";
@@ -259,6 +260,8 @@ function EventLine(props: {
     case "plan":
       // It was at the conversation's end until it started: it stays, without arriving again.
       return <AldoPlanCard plan={event.plan} still />;
+    case "payment":
+      return <AldoPaymentLine payment={event.payment} />;
     case "decided": {
       // What was decided opens the thread it was decided for.
       const thread = event.thread;

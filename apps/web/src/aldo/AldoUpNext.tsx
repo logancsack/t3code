@@ -34,6 +34,7 @@ import { confirmQuickChoice, DecisionIcon } from "./AldoBrief";
 import { AldoHandoffActions } from "./AldoHandoffCard";
 import { askAldoAbout, PendingForm, ThreadLink } from "./AldoHomeInbox";
 import { AldoOpenContext } from "./AldoLiveCard";
+import { ApproveInLink, PaymentDetails } from "./AldoPaymentCard";
 import { AldoAvatar } from "./AldoPresence";
 import { AgentMarkdown, Quoted } from "./AldoQuoted";
 import { useAldoArrive } from "./arrive";
@@ -57,6 +58,7 @@ import { FOCUS, ICON_BUTTON, INSET, PRIMARY, SECONDARY, SURFACE } from "./surfac
 import { scrollMotion, SHOW_ALDO_DECISION } from "./show";
 import { startAldoWalkthrough } from "./walkthrough";
 import { inWords } from "./needsYou.logic";
+import { paymentWords } from "./payments.logic";
 
 /** Cards shown before the rest unfold. */
 const SHOWN = 3;
@@ -481,15 +483,19 @@ function DecisionCard(props: {
   const who =
     d.kind === "aldo-approval"
       ? (d.approval.threadTitle ?? "Aldo")
-      : d.kind === "merge"
-        ? d.pullRequest.repo.split("/").at(-1)
-        : d.conversation.title;
+      : d.kind === "payment"
+        ? (d.payment.threadTitle ?? "Link")
+        : d.kind === "merge"
+          ? d.pullRequest.repo.split("/").at(-1)
+          : d.conversation.title;
   const since =
     d.kind === "aldo-approval"
       ? d.approval.createdAt
-      : d.kind === "merge"
-        ? (d.pullRequest.greenSince ?? d.pullRequest.updatedAt)
-        : (d.conversation.stateAt ?? d.conversation.at);
+      : d.kind === "payment"
+        ? d.payment.createdAt
+        : d.kind === "merge"
+          ? (d.pullRequest.greenSince ?? d.pullRequest.updatedAt)
+          : (d.conversation.stateAt ?? d.conversation.at);
   const frame = {
     decision: d,
     who: who ?? "",
@@ -569,6 +575,12 @@ function DecisionCard(props: {
       );
       break;
     }
+    case "payment":
+      // Only the user decides it, in Link: the card shows what Link will, and opens it.
+      headline = paymentWords(d.payment, props.now).headline;
+      body = <PaymentDetails payment={d.payment} />;
+      actions = <ApproveInLink payment={d.payment} now={props.now} />;
+      break;
     case "question": {
       const q = d.pending.questions[0];
       headline = q?.question ?? "It asks you something";

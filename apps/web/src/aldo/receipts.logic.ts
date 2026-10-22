@@ -63,6 +63,8 @@ export function movedOnText(decision: AldoDecision, said: string | null = null):
       ? `#${decision.pullRequest.number} ${decision.pullRequest.title}`
       : decision.kind === "aldo-approval"
         ? `“${decision.approval.title}”`
-        : decision.conversation.title;
+        : decision.kind === "payment"
+          ? `${decision.payment.total} at ${decision.payment.merchant}`
+          : decision.conversation.title;
   return said ? `${what}: ${said}` : `${what} had already moved on`;
 }
