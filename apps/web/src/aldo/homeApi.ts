@@ -410,6 +410,44 @@ export async function removeAldoApprovalRule(id: string): Promise<void> {
   await api(`/api/approval-rules/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
+// ---------------------------------------------------------------------------
+// Payments: an agent at a checkout asked to pay from the user's Link wallet.
+// The user approves or declines it in Link (Aldo can't); approved, the agent
+// types its one-time card into the checkout. Never the card here: only its
+// last four digits.
+
+export interface AldoPayment {
+  readonly id: string;
+  readonly merchant: string;
+  /** The merchant's site, where the card works. */
+  readonly site: string;
+  /** "$35.00". */
+  readonly total: string;
+  readonly items: ReadonlyArray<{
+    readonly name: string;
+    readonly quantity: number | null;
+    readonly price: string | null;
+  }>;
+  /** What the agent told Link it's buying, from whom and why. */
+  readonly context: string;
+  /**
+   * Link's status: created, pending_approval, requires_action, approved,
+   * submitted, succeeded, failed, denied, expired, canceled; or Aldo's own
+   * disconnected; maybe more later.
+   */
+  readonly status: string;
+  /** Link's page to approve or decline it, while it waits on the user. */
+  readonly approvalUrl: string | null;
+  /** When Link stops waiting for them, while it does. */
+  readonly expiresAt: string | null;
+  readonly cardLast4: string | null;
+  readonly test: boolean;
+  readonly thread: AldoHomeTarget | null;
+  readonly threadTitle: string | null;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
 export interface AldoHome {
   readonly at: string;
   readonly conversations: ReadonlyArray<AldoHomeConversation>;
@@ -421,6 +459,8 @@ export interface AldoHome {
   readonly routines?: ReadonlyArray<AldoRoutine>;
   /** What only the user can get past in an agent's browser, open now, newest first (a newer Aldo). */
   readonly handoffs?: ReadonlyArray<AldoHandoff>;
+  /** Payments agents asked for from the user's Link wallet in the last day, newest first (a newer Aldo). */
+  readonly payments?: ReadonlyArray<AldoPayment>;
   /** Plans Aldo proposed before big work, open and lately started (a newer Aldo; read with parseAldoPlans). */
   readonly plans?: unknown;
   readonly actions: ReadonlyArray<AldoHomeAction>;

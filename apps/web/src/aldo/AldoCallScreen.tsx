@@ -450,6 +450,16 @@ function WalkCard(props: {
           <ApprovalBody approval={d.approval} lines={3} className="text-xs" />
         </div>
       ) : null}
+      {/* Only the user approves a payment, in Link: the call can open it, never decide it. */}
+      {d.kind === "payment" && d.payment.approvalUrl ? (
+        <Button
+          size="lg"
+          className="h-11"
+          render={<a href={d.payment.approvalUrl} target="_blank" rel="noopener noreferrer" />}
+        >
+          {d.payment.status === "requires_action" ? "Open Link" : "Approve in Link"}
+        </Button>
+      ) : null}
       {d.kind === "plan" ? (
         <div className="flex flex-col gap-1 rounded-lg bg-background/60 px-2.5 py-2">
           <Quoted lines={6} className="text-xs leading-5">

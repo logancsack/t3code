@@ -257,6 +257,15 @@ export function AldoConversationPage(props: {
       .filter((d) => !receipts.some((r) => r.key === d.key))
       .map((d) => placeableOf(d, raised));
   }, [home, now, brief, receipts]);
+  // A payment that went on stays where its card was while it waited on the user.
+  const decided = useMemo(() => {
+    const raised = brief ? briefRaised(brief) : null;
+    return feed.flatMap((e) =>
+      e.kind === "payment"
+        ? [placeableOf({ kind: "payment", key: e.key, payment: e.payment }, raised)]
+        : [],
+    );
+  }, [feed, brief]);
   const pausedCount = useMemo(() => (home ? pausedInChat(home, now).length : 0), [home, now]);
   const renderDecisions = useCallback(
     (keys: ReadonlyArray<string> | null, placedAt: ReadonlyMap<string, string>) =>
@@ -328,6 +337,7 @@ export function AldoConversationPage(props: {
         ) : null
       }
       decisions={decisions}
+      decided={decided}
       renderDecisions={renderDecisions}
     />
   );

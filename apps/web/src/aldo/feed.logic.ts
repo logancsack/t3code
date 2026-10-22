@@ -1,6 +1,7 @@
 // What happened to the user's agents, in Aldo's conversation where it
 // happened (AldoConversationPage.tsx): threads that finished, pull requests
-// that shipped, and what Aldo did, but for what this page shows itself (what
+// that shipped, payments that went on from waiting on the user (approved,
+// paid, declined), and what Aldo did, but for what this page shows itself (what
 // it did here is in the conversation already; what it did
 // from another device is only here). What waits on the user isn't
 // here: it's the live "Up next" at the conversation's end, so it never sits
@@ -19,8 +20,10 @@ import {
   type AldoHomeConversation,
   type AldoHomePullRequest,
   type AldoHomeTarget,
+  type AldoPayment,
 } from "./homeApi";
-import { putAway } from "./decisions.logic";
+import { placeDecisions, putAway, type AldoPlaceable } from "./decisions.logic";
+import { settledPayments } from "./payments.logic";
 import { type AldoPlan } from "./plans.logic";
 import { sameTarget } from "./home.logic";
 
@@ -53,6 +56,13 @@ export type AldoFeedEvent =
       readonly action: AldoHomeAction;
       /** The newest action on a thread that's still going: shown as the thread, live. */
       readonly live: boolean;
+    }
+  | {
+      /** A payment that went on from waiting on the user (payments.logic.ts): how it stands, where it came up. */
+      readonly kind: "payment";
+      readonly key: string;
+      readonly at: string;
+      readonly payment: AldoPayment;
     }
   | {
       /** A plan Aldo proposed that has started (plans.logic.ts): its card, where it started. */
@@ -96,7 +106,7 @@ export interface AldoShownAction {
  * (src/lib/assistant/results.ts).
  */
 export function feedEvents(
-  home: Pick<AldoHome, "conversations" | "pullRequests" | "actions" | "routines">,
+  home: Pick<AldoHome, "conversations" | "pullRequests" | "actions" | "routines" | "payments">,
   options: {
     readonly now: number;
     readonly from: string | null;
@@ -185,7 +195,14 @@ export function feedEvents(
       going(a.thread) &&
       !shown.slice(index + 1).some((later) => a.thread && sameTarget(later.thread, a.thread)),
   }));
-  return [...finished, ...shipped, ...actions].sort((a, b) => a.at.localeCompare(b.at));
+  // Where it came up, where its card was while it waited; one asked before the conversation, when it last changed.
+  const payments: AldoFeedEvent[] = settledPayments(home, options.now).flatMap((p) => {
+    const at = within(p.createdAt) ? p.createdAt : within(p.updatedAt) ? p.updatedAt : null;
+    return at ? [{ kind: "payment", key: `payment:${p.id}`, at, payment: p }] : [];
+  });
+  return [...finished, ...shipped, ...actions, ...payments].sort((a, b) =>
+    a.at.localeCompare(b.at),
+  );
 }
 
 /** One live card per thread across the saved feed and local tool results. */
@@ -343,4 +360,39 @@ export function interleave<E>(
   });
   flush(null);
   return items;
+}
+
+/** Where each item is, as placeDecisions reads them: its time (none for what belongs to the line before it) and whether it's Aldo's reply. */
+export type AldoTimelineSlot = { readonly at: string | null; readonly reply: boolean };
+
+export function timelineSlots<E>(
+  items: ReadonlyArray<AldoTimelineItem<E>>,
+  slotOf: (entry: E) => AldoTimelineSlot,
+): ReadonlyArray<AldoTimelineSlot> {
+  return items.map((item) =>
+    item.kind === "events" ? { at: item.events[0]!.at, reply: false } : slotOf(item.entry),
+  );
+}
+
+/**
+ * The conversation in order (interleave), with the events that were cards
+ * waiting on the user (`decided`, each as it was placed as a decision: a
+ * payment that went on) where the card was, among the rest, so it changes in
+ * place rather than jumping to when it came up.
+ */
+export function interleaveInPlace<E>(
+  entries: ReadonlyArray<E>,
+  events: ReadonlyArray<AldoFeedEvent>,
+  slotOf: (entry: E) => AldoTimelineSlot,
+  decided: ReadonlyArray<AldoPlaceable>,
+): ReadonlyArray<AldoTimelineItem<E>> {
+  const timeOf = (entry: E) => slotOf(entry).at;
+  const keys = new Set(decided.map((d) => d.key));
+  const rest = events.filter((e) => !keys.has(e.key));
+  if (rest.length === events.length) return interleave(entries, events, timeOf);
+  const { at } = placeDecisions(timelineSlots(interleave(entries, rest, timeOf), slotOf), decided);
+  const moved = events
+    .map((e) => (at.has(e.key) ? { ...e, at: at.get(e.key)! } : e))
+    .toSorted((a, b) => a.at.localeCompare(b.at));
+  return interleave(entries, moved, timeOf);
 }

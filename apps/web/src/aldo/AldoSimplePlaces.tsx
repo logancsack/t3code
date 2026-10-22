@@ -17,6 +17,7 @@ import { confirmQuickChoice, DecisionIcon, quickChoice } from "./AldoBrief";
 import { HealthStrip, Section } from "./AldoHomeBoard";
 import { NeedsYouCard, ThreadLink } from "./AldoHomeInbox";
 import { AldoSharedFiles } from "./AldoLibrary";
+import { AldoPaymentWaiting } from "./AldoPaymentCard";
 import { waitingApprovals } from "./approvals.logic";
 import { seedAldoComposer, useAldoAssistant } from "./assistantSession";
 import { type AldoHome } from "./homeApi";
@@ -127,6 +128,7 @@ export function AldoSimpleNeedsYou(props: {
   const refresh = () => void refreshAldoHome();
   const nothing =
     list !== null &&
+    list.payments.length === 0 &&
     list.conversations.length === 0 &&
     list.merges.length === 0 &&
     waitingApprovals(home?.approvals).length === 0;
@@ -166,6 +168,15 @@ export function AldoSimpleNeedsYou(props: {
           <Skeleton className="h-24 w-full rounded-xl" />
           <Skeleton className="h-24 w-full rounded-xl" />
         </div>
+      ) : null}
+      {list && list.payments.length > 0 ? (
+        <Section title="Payments" count={list.payments.length}>
+          <ul className="flex flex-col gap-2">
+            {list.payments.map((p) => (
+              <AldoPaymentWaiting key={p.id} payment={p} now={now} />
+            ))}
+          </ul>
+        </Section>
       ) : null}
       {home?.approvals ? (
         <ApprovalsSection approvals={home.approvals} now={now} onActed={refresh} />
