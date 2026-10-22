@@ -361,7 +361,8 @@ const TURN_MS = 5 * 60_000;
  * Where each decision sits in Aldo's conversation: under what was said or
  * happened last before it came up, so the conversation reads in order, or
  * under Aldo's reply when it came up in the turn that reply ends (a draft Aldo
- * made as it answered). `items`
+ * made as it answered, after the user's message and within minutes of the
+ * reply). `items`
  * are the conversation's, each with its time (none for what belongs to the
  * line before it, as what Aldo did does to its reply) and whether it's Aldo's
  * reply. `before`: by index, the decisions to put before the item there. What
@@ -397,7 +398,12 @@ export function placeDecisions(
     const reply = items.findIndex(
       (item, i) => item.reply && times[i] !== null && times[i]! >= time,
     );
-    if (decision.afterReply || (reply >= 0 && times[reply]! - time <= TURN_MS)) {
+    // Its turn began with what came last before the reply (the user's message, say): one before that wasn't raised in it.
+    let start = reply - 1;
+    while (start >= 0 && (times[start] === null || items[start]!.reply)) start -= 1;
+    const inTurn =
+      reply >= 0 && times[reply]! - time <= TURN_MS && (start < 0 || times[start]! <= time);
+    if (decision.afterReply || inTurn) {
       if (reply < 0) continue;
       index = next(reply + 1);
       when = new Date(times[reply]! + 1).toISOString();

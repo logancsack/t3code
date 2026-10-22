@@ -306,10 +306,23 @@ export function ApprovalBody(props: {
   );
 }
 
+/** The last few drafts' rewrites: a card's text and its note share one, and a long draft's takes a while. */
+const rewrites = new Map<string, ReturnType<typeof wordDiff>>();
+
 /** What Aldo rewrote, against what it said before (an Aldo that rewrites drafts). */
 function useRewrite(a: AldoApproval) {
   const before = a.previous?.body;
-  return useMemo(() => (before === undefined ? null : wordDiff(before, a.body)), [before, a.body]);
+  return useMemo(() => {
+    if (before === undefined) return null;
+    const key = `${before}\u0000${a.body}`;
+    let runs = rewrites.get(key);
+    if (!runs) {
+      runs = wordDiff(before, a.body);
+      if (rewrites.size >= 8) rewrites.delete(rewrites.keys().next().value!);
+      rewrites.set(key, runs);
+    }
+    return runs;
+  }, [before, a.body]);
 }
 
 /** An email's or an event's text as it goes out: one Aldo rewrote, the words it put in underlined. */
@@ -332,16 +345,28 @@ export function ApprovalText(props: { readonly approval: AldoApproval }) {
   );
 }
 
-/** Under a text Aldo rewrote: that it did, so the underlines read as what's new. */
+/** Under a text Aldo rewrote: that it did, so the underlines read as what's new, and what the subject was if it changed. */
 export function RewriteNote(props: {
   readonly approval: AldoApproval;
   readonly className?: string;
 }) {
-  const runs = useRewrite(props.approval);
-  if (!runs) return null;
+  const a = props.approval;
+  const runs = useRewrite(a);
+  if (!runs || !a.previous) return null;
+  const name = a.kind === "email" ? "subject" : "title";
+  const retitled = a.previous.title !== a.title;
+  let words =
+    addedWords(runs) > 0
+      ? "Aldo rewrote it. The new words in the text are underlined."
+      : "Aldo rewrote it.";
+  if (retitled)
+    words =
+      a.previous.body === a.body
+        ? `Aldo changed the ${name} from “${a.previous.title}”.`
+        : `${words} The ${name} was “${a.previous.title}”.`;
   return (
     <p className={cn("text-[12px] text-muted-foreground leading-[18px]", props.className)}>
-      {addedWords(runs) > 0 ? "Aldo rewrote it. The new words are underlined." : "Aldo rewrote it."}
+      {words}
     </p>
   );
 }

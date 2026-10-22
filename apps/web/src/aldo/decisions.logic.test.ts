@@ -404,6 +404,18 @@ describe("placeDecisions", () => {
     expect(placed.at.get("draft")).toBe(new Date(Date.parse(t(2)) + 1).toISOString());
   });
 
+  it("keeps what came up before the user's message over it, however soon the reply came", () => {
+    const turn = [
+      { at: t(1), reply: false },
+      { at: t(2), reply: true },
+      { at: t(3, 30), reply: false },
+      { at: t(4), reply: true },
+    ];
+    const placed = placeDecisions(turn, [{ key: "unrelated", at: t(3) }]);
+    expect([...placed.before]).toEqual([[2, ["unrelated"]]]);
+    expect(placed.at.get("unrelated")).toBe(t(3));
+  });
+
   it("leaves what came up after everything, or before it all, for the end", () => {
     const placed = placeDecisions(items, [
       { key: "late", at: t(21) },

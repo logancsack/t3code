@@ -9,6 +9,7 @@ import { useEffect, useState, type RefObject } from "react";
 import { cn } from "~/lib/utils";
 import { revealAldoCard } from "./AldoUpNext";
 import { nearestOutOfView, needsYouWords } from "./needsYou.logic";
+import { showAldoDecisionKey } from "./show";
 
 /** What's in the conversation that waits on the user: a card, or a thread paused mid-turn. */
 const WAITING = "[data-aldo-decision], [data-aldo-paused]";
@@ -76,9 +77,13 @@ export function NeedsYouPill(props: {
         const box = scroller.current;
         if (!box) return;
         const card = nearestOutOfView(cardsIn(box));
-        // None drawn out of view: the rest are folded at the end, under "more".
-        if (card) revealAldoCard(card);
-        else box.scrollTo({ top: box.scrollHeight });
+        if (card) {
+          revealAldoCard(card);
+          return;
+        }
+        // None drawn out of view: the rest are folded under a group's "more", wherever it sits.
+        const folded = box.querySelector<HTMLElement>("[data-aldo-folded]")?.dataset.aldoFolded;
+        if (!folded || !showAldoDecisionKey(folded)) box.scrollTo({ top: box.scrollHeight });
       }}
     >
       <span aria-hidden className="size-2 shrink-0 rounded-full bg-warning" />

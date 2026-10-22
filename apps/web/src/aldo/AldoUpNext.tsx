@@ -195,6 +195,8 @@ export function AldoUpNext(props: {
             FOCUS,
             "mx-auto flex items-center gap-1 rounded-full px-3 py-1.5 text-[13px] text-muted-foreground hover:bg-foreground/[0.05] hover:text-foreground",
           )}
+          // The first folded away, for the Needs you pill to show (NeedsYouPill.tsx).
+          data-aldo-folded={all ? undefined : decisions[SHOWN]!.key}
           onClick={() => setAll((v) => !v)}
         >
           {all ? "Show fewer" : `${decisions.length - SHOWN} more`}
