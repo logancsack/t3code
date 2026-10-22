@@ -6,7 +6,7 @@
 // on its own.
 
 import type { AldoBriefGroupItem, AldoBriefGroups } from "./assistantApi";
-import { aldoDecisions } from "./decisions.logic";
+import { aldoDecisions, chatDecisionOf } from "./decisions.logic";
 import { dueIn, sameTarget } from "./home.logic";
 import type { AldoHome } from "./homeApi";
 import { workstreamState, type WorkstreamState } from "./workstream.logic";
@@ -25,13 +25,22 @@ export const BRIEF_GROUPS: ReadonlyArray<{
   { key: "fyi", label: "Good to know", state: "done" },
 ];
 
-/** The keys of what waits on the user now (null until the home screen's read is in). */
-export function liveDecisionKeys(home: AldoHome | null, now: number): ReadonlySet<string> | null {
-  return home ? new Set(aldoDecisions(home, now).map((d) => d.key)) : null;
+/**
+ * What waits on the user now, by key, and whether they hid it from chat or put
+ * it off, so it has no card there (null until the home screen's read is in).
+ */
+export function liveDecisionKeys(
+  home: AldoHome | null,
+  now: number,
+): ReadonlyMap<string, boolean> | null {
+  return home
+    ? new Map(aldoDecisions(home, now).map((d) => [d.key, Boolean(chatDecisionOf(d)?.dismissed)]))
+    : null;
 }
 
 /**
- * Where an item stands now. A decision still waiting needs the user; one
+ * Where an item stands now. A decision still waiting needs the user, or is
+ * put off while they've put it off or hidden it (it has no card to show); one
  * decided is where its thread is now (working on the answer, say), or done,
  * as it is once its thread asks something else. Anything else is where its
  * thread is now, or as it was written when the page doesn't have its thread.
@@ -40,11 +49,12 @@ export function briefItemState(
   item: AldoBriefGroupItem,
   written: WorkstreamState,
   home: AldoHome | null,
-  decisions: ReadonlySet<string> | null,
+  decisions: ReadonlyMap<string, boolean> | null,
   now: number,
 ): WorkstreamState {
   if (!home || !decisions) return written;
-  if (item.key !== undefined && decisions.has(item.key)) return "needs";
+  const hidden = item.key !== undefined ? decisions.get(item.key) : undefined;
+  if (hidden !== undefined) return hidden ? "later" : "needs";
   const thread = item.thread;
   const conversation = thread
     ? home.conversations.find((c) => sameTarget(c.thread, thread))

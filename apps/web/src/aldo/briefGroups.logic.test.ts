@@ -82,6 +82,15 @@ describe("briefItemState", () => {
     expect(briefItemState(needs, "needs", h, liveDecisionKeys(h, NOW), NOW)).toBe("needs");
   });
 
+  it("is put off while they've put its card off or hidden it", () => {
+    const putOff = home([
+      { ...asking, chatDecision: { id: "d1", dismissed: true, until: ahead(60) } },
+    ]);
+    expect(briefItemState(needs, "needs", putOff, liveDecisionKeys(putOff, NOW), NOW)).toBe(
+      "later",
+    );
+  });
+
   it("follows its thread once decided, or shows done", () => {
     const answered = home([conversation({ state: "working", at: ago(1) })]);
     expect(briefItemState(needs, "needs", answered, liveDecisionKeys(answered, NOW), NOW)).toBe(
