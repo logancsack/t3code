@@ -31,9 +31,12 @@ describe("workstreamState", () => {
     expect(workstreamState(conversation({ state: "new" }), NOW)).toBeNull();
   });
 
-  it("needs the user once it's paused mid-turn or stuck", () => {
+  it("needs the user once it's paused mid-turn; with no word for an hour it's still working", () => {
     expect(workstreamState(conversation({ machine: "asleep" }), NOW)).toBe("needs");
-    expect(workstreamState(conversation({ at: ago(90) }), NOW)).toBe("needs");
+    expect(workstreamState(conversation({ at: ago(90) }), NOW)).toBe("working");
+    expect(workstreamMeta(conversation({ at: ago(90) }), "working", NOW)).toBe(
+      "no word for 1 h 30 min",
+    );
   });
 
   it("is put off while snoozed or settled, whatever it's doing", () => {

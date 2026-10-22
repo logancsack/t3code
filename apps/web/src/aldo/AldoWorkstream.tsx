@@ -1,12 +1,13 @@
 // A thread as Aldo mentions it, wherever it does (a reply's label in
 // AldoAssistant.tsx, the brief's groups in AldoBrief.tsx): the glyph for where
-// it stands (a hand when it needs the user, a spinner while it works, a check
-// once it's done, a clock while it's put off), and a tap that opens it, in
-// place where the page can (AldoOpenContext), else by its link.
+// it stands (a hand when it needs the user, a dot in a ring while it works,
+// still, since work runs for hours; a check once it's done, a clock while
+// it's put off), and a tap that opens it, in place where the page can
+// (AldoOpenContext), else by its link.
 
 import { Link, useNavigate } from "@tanstack/react-router";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import { CircleCheckIcon, ClockIcon, HandIcon, LoaderCircleIcon } from "lucide-react";
+import { CircleCheckIcon, CircleDotIcon, ClockIcon, HandIcon } from "lucide-react";
 import { useContext, type ReactNode } from "react";
 
 import { cn } from "~/lib/utils";
@@ -22,12 +23,7 @@ export function WorkstreamGlyph(props: {
   if (props.state === "needs")
     return <HandIcon className={cn(className, "text-warning-foreground")} strokeWidth={2} />;
   if (props.state === "working")
-    return (
-      <LoaderCircleIcon
-        className={cn(className, "text-primary motion-safe:animate-spin")}
-        strokeWidth={2}
-      />
-    );
+    return <CircleDotIcon className={cn(className, "text-primary")} strokeWidth={2} />;
   if (props.state === "done")
     return <CircleCheckIcon className={cn(className, "text-success-foreground")} strokeWidth={2} />;
   return <ClockIcon className={cn(className, "text-muted-foreground")} strokeWidth={2} />;

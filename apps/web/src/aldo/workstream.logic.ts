@@ -1,8 +1,9 @@
 // Where a thread Aldo talks about stands, in the four states its label shows
 // over Aldo's words (AldoAssistant.tsx WorkstreamLabel): it needs the user (a
-// hand), it's working (a spinner), it's done (a check) or it's put off (a
-// clock). The same reading as the board's (home.logic.ts), so a label and the
-// Needs you count never disagree.
+// hand), it's working (a dot in a ring), it's done (a check) or it's put off
+// (a clock). The same reading as the board's (home.logic.ts), so a label and
+// the Needs you count never disagree: work with no word for an hour is still
+// working there, and says so.
 
 import type { AldoHomeConversation } from "./homeApi";
 import { WORKING_STATES, dueIn, elapsed, isStuck, needsYouKind, relativeTime } from "./home.logic";
@@ -17,7 +18,7 @@ export type WorkstreamState = "needs" | "working" | "done" | "later";
 export function workstreamState(c: AldoHomeConversation, now: number): WorkstreamState | null {
   if (c.settled || (c.snoozedUntil && Date.parse(c.snoozedUntil) > now && !c.pending))
     return "later";
-  if (needsYouKind(c) || isStuck(c, now)) return "needs";
+  if (needsYouKind(c)) return "needs";
   if (WORKING_STATES.has(c.state)) return "working";
   if (c.state === "done") return "done";
   return null;
@@ -33,8 +34,8 @@ export const WORKSTREAM_WORDS: Record<WorkstreamState, string> = {
 
 /**
  * A word on where it stands, after its title: "waiting 12 min", "for 4 min",
- * "finished 1 h ago", "back in 2 h". Since its state was reported: a rename
- * or a pin moves `at`, not this.
+ * "no word for 2 h", "finished 1 h ago", "back in 2 h". Since its state was
+ * reported: a rename or a pin moves `at`, not this.
  */
 export function workstreamMeta(
   c: AldoHomeConversation,
@@ -48,5 +49,5 @@ export function workstreamMeta(
   const since = c.stateAt ?? c.at;
   if (state === "needs") return `waiting ${elapsed(since, now)}`;
   if (state === "done") return `finished ${relativeTime(since, now)}`;
-  return `for ${elapsed(since, now)}`;
+  return isStuck(c, now) ? `no word for ${elapsed(since, now)}` : `for ${elapsed(since, now)}`;
 }
