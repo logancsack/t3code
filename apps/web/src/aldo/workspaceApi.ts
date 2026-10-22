@@ -71,7 +71,7 @@ export async function fetchAldoProviderLimits(
 }
 
 /**
- * The pages and files the user's agents shared by link, newest first (the
+ * The pages and files the user's agents shared by link, pinned ones first, then newest (the
  * Library); null from an Aldo that doesn't list them.
  */
 export async function fetchAldoShares(): Promise<ReadonlyArray<AldoShareView> | null> {
@@ -117,6 +117,17 @@ export async function zipAldoFiles(
 /** Stops sharing one: its link stops working at once and Aldo deletes its copy (404 when already gone). */
 export async function stopAldoShare(id: string): Promise<void> {
   await api(`/api/shares/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+/** Pins one first in the Library, or unpins it; says how it stands now. */
+export async function pinAldoShare(id: string, pinned: boolean): Promise<AldoShareView> {
+  const body = await api<unknown>(`/api/shares/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ pinned }),
+  });
+  const share = parseAldoShares([body])?.[0];
+  if (!share || share.pinned === undefined) throw new Error("This Aldo can't pin shares yet.");
+  return share;
 }
 
 /** The owner-only link to a port in a thread's sandbox (wakes it when opened). */

@@ -251,8 +251,8 @@ export function AldoSimpleLibrary(props: { readonly tabs: ReactNode }) {
   return (
     <PlacePage title="Library" tabs={props.tabs}>
       <p className="text-muted-foreground text-sm">
-        Pages and files your agents shared by link, newest first. Open one, copy its link, or stop
-        sharing it.
+        Pages and files your agents shared by link, newest first, with any you pin above them. Open
+        one, copy its link, or stop sharing it.
       </p>
       {/* The list lines up with the page; it's inset for settings. */}
       <div className="-mx-3 flex flex-col gap-2 sm:-mx-4">
