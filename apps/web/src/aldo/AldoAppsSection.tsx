@@ -1,4 +1,4 @@
-import { settingsApps } from "./settingsData";
+import { settingsApps, settingsHeadsUps } from "./settingsData";
 import { useSettingsResource } from "./settingsResource";
 // Settings → Connections' apps: any app with a remote MCP server, connected
 // for every agent (Notion, Linear, Zapier and through it thousands more, or
@@ -144,8 +144,10 @@ export function AldoAppCatalogTile(props: { readonly entry: AldoAppCatalogEntry 
  */
 export function useAldoApps() {
   const { data, error } = useSettingsResource(settingsApps, true, false);
+  // Heads-ups read the apps too (AldoNotificationSettings.tsx): read again with them.
   const refresh = useCallback(() => {
     void settingsApps.refresh().catch(() => undefined);
+    void settingsHeadsUps.refresh().catch(() => undefined);
   }, []);
 
   useEffect(() => {

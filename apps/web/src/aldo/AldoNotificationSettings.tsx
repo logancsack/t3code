@@ -312,9 +312,11 @@ function HeadsUpsTuning(props: {
   const edited = Object.keys(topicChange).length > 0;
   const quietNote = quietHoursNote(tuning);
   const apps = appsNote(tuning);
+  // Saved, it shows what's saved, unless they typed more meanwhile.
   const saveTopics = () => {
+    const sent = draft;
     void change(topicChange).then((saved) => {
-      if (saved) setDraft(null);
+      if (saved) setDraft((current) => (current === sent ? null : current));
     });
   };
   return (
