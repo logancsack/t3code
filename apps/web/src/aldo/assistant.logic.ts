@@ -235,6 +235,7 @@ export const ACTION_LABELS: Record<string, string> = {
   run_routine: "Ran a routine",
   delete_routine: "Removed a routine",
   decide_approval: "Approved for you",
+  revise_draft: "Rewrote a draft",
   set_heads_ups: "Turned heads-ups on",
   set_brief: "Changed when your brief comes",
 };
@@ -281,6 +282,7 @@ export const FAILED_LABELS: Record<string, string> = {
   delete_routine: "Couldn't remove a routine",
   open_preview: "Couldn't open a preview",
   decide_approval: "Couldn't approve it for you",
+  revise_draft: "Couldn't rewrite the draft",
   set_heads_ups: "Couldn't turn heads-ups on",
   set_brief: "Couldn't change when your brief comes",
 };

@@ -20,7 +20,15 @@ import {
   PlusIcon,
   XIcon,
 } from "lucide-react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  Fragment,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { cn } from "~/lib/utils";
@@ -68,6 +76,7 @@ import type { AldoHomeConversation } from "./homeApi";
 import { WORKSTREAM_WORDS, workstreamMeta, workstreamState } from "./workstream.logic";
 import { blinkAldo, setAldoReading } from "./face";
 import { dedupeLiveCards, interleave, type AldoFeedEvent } from "./feed.logic";
+import { placeDecisions, type AldoPlaceable } from "./decisions.logic";
 import { useAldoFirstViewHold } from "./firstView";
 import { AldoPlanPicker } from "./AldoPlanPicker";
 import { CHIP } from "./surface";
@@ -615,13 +624,21 @@ export function AldoComposer(props: {
  * what followed its question), the newest action about each thread as a live
  * card. On the home screen it's a messaging thread: days marked, what happened
  * to the user's agents put where it happened (`feed`, AldoFeed.tsx), and what
- * waits on them at its end (`tail`, AldoUpNext.tsx).
+ * waits on them under what was said when it came up, or at its end once
+ * nothing's been said since (`decisions`, drawn by `renderDecisions`:
+ * AldoUpNext.tsx), after the `tail`.
  */
 export function AldoConversation(
   props: {
     readonly since?: number;
     readonly feed?: ReadonlyArray<AldoFeedEvent>;
     readonly tail?: ReactNode;
+    readonly decisions?: ReadonlyArray<AldoPlaceable>;
+    /** A group of cards: `keys` for one placed in the conversation, null for the end's (what wasn't placed, by `placedAt`). */
+    readonly renderDecisions?: (
+      keys: ReadonlyArray<string> | null,
+      placedAt: ReadonlyMap<string, string>,
+    ) => ReactNode;
   } = {},
 ) {
   const all = useAldoAssistant((s) => s.entries);
@@ -639,6 +656,22 @@ export function AldoConversation(
     const feed = dedupeLiveCards(props.feed ?? [], shown);
     return interleave(entries, feed, (e) => (e.kind === "message" ? e.at : null));
   }, [entries, props.feed, live, since]);
+  // What Aldo did belongs to its reply: no time of its own.
+  const placement = useMemo(
+    () =>
+      placeDecisions(
+        items.map((item) =>
+          item.kind === "events"
+            ? { at: item.events[0]!.at, reply: false }
+            : item.entry.kind === "message"
+              ? { at: item.entry.at, reply: item.entry.role === "assistant" }
+              : { at: null, reply: false },
+        ),
+        props.decisions ?? [],
+      ),
+    [items, props.decisions],
+  );
+  const { renderDecisions } = props;
   // Aldo's reply in: it looks up from it, with a blink.
   const wasReplying = useRef(replying);
   useEffect(() => {
@@ -661,7 +694,12 @@ export function AldoConversation(
   let day: string | null = null;
   return (
     <div className="flex flex-col gap-6">
-      {items.map((item) => {
+      {items.map((item, position) => {
+        const placed = placement.before.get(position);
+        const cards =
+          placed && renderDecisions ? (
+            <Fragment key={`needs-${placed[0]}`}>{renderDecisions(placed, placement.at)}</Fragment>
+          ) : null;
         const at =
           item.kind === "entry"
             ? item.entry.kind === "message"
@@ -680,9 +718,10 @@ export function AldoConversation(
           ) : null;
         if (label) day = label;
         if (item.kind === "events")
-          return [marker, <AldoFeedRun key={item.key} events={item.events} />];
+          return [cards, marker, <AldoFeedRun key={item.key} events={item.events} />];
         const { entry, index } = item;
         return [
+          cards,
           marker,
           <ConversationEntry
             key={entry.kind === "action" ? entry.id : `${entry.at}-${since + index}`}
@@ -698,6 +737,7 @@ export function AldoConversation(
       })}
       {replying ? <TypingDots /> : null}
       {props.tail}
+      {renderDecisions?.(null, placement.at)}
       <div ref={end} />
     </div>
   );

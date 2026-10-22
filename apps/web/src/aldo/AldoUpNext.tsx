@@ -1,15 +1,18 @@
-// What waits on the user, at the end of Aldo's conversation (AldoConversationPage.tsx),
-// so it's the first thing above the composer and never sits buried in what was
-// said: each decision (decisions.logic.ts) as a card that's decided right
-// there. The first is open, with big buttons for the choices (Aldo's pick
-// first, from the brief, with why), a tap on what asks (or ↗) to open its
-// thread; the next two are a line each that opens in place, and the rest
-// unfold. Decided, a card turns into the line saying what happened
-// (receipts.ts) and leaves with the next read of the home screen. A thread
+// What waits on the user, in Aldo's conversation (AldoConversationPage.tsx):
+// each decision (decisions.logic.ts) as a card that's decided right there,
+// under what was said when it came up (placeDecisions), and what came up
+// after the last thing said at the end, first above the composer. On a wide
+// screen, the count of those out of view waits above the composer
+// (NeedsYouPill.tsx); on a phone, on the Needs you tab. In each group the
+// first is open, with big buttons for the choices (Aldo's pick first, from
+// the brief, with why), a tap on what asks (or ↗) to open its thread; the
+// next two are a line each that opens in place, and the rest unfold.
+// Decided, a card turns into the line saying what happened (receipts.ts),
+// where it was, and leaves with the next read of the home screen. A thread
 // paused mid-turn waits on the user too, though only opening it carries it
-// on: it's a line that opens it. On a
-// keyboard, j and k move between cards and Enter unfolds one, then opens its
-// thread: nothing is decided without a button.
+// on: it's a line at the end that opens it. On a keyboard, j and k move
+// between cards and Enter unfolds one, then opens its thread: nothing is
+// decided without a button.
 
 import { ArrowUpRightIcon, ChevronDownIcon, LoaderCircleIcon, MoonIcon } from "lucide-react";
 import {
@@ -26,7 +29,7 @@ import {
 import { cn } from "~/lib/utils";
 import { proposedPlanTitle, stripDisplayedPlanMarkdown } from "../proposedPlan";
 import { DismissChatDecision } from "./DismissChatDecision";
-import { ApprovalCard } from "./AldoApprovals";
+import { ApprovalCard, ApprovalText, RewriteNote } from "./AldoApprovals";
 import { confirmQuickChoice, DecisionIcon } from "./AldoBrief";
 import { AldoHandoffActions } from "./AldoHandoffCard";
 import { askAldoAbout, PendingForm, ThreadLink } from "./AldoHomeInbox";
@@ -41,27 +44,40 @@ import {
   aldoChatDecisions,
   chatDecisionOf,
   decisionThread,
-  putAway,
+  pausedInChat,
   type AldoDecision,
 } from "./decisions.logic";
 import { pleaseAldo } from "./face";
 import { refreshAldoHome, useAldoHomeFeed } from "./homeFeed";
-import { elapsed, isPausedMidTurn } from "./home.logic";
+import { elapsed } from "./home.logic";
 import { aldoMorph } from "./morph";
 import { addAldoReceipt, removeAldoReceipt, useAldoReceipts } from "./receipts";
 import { movedOnText, receiptText } from "./receipts.logic";
 import { FOCUS, ICON_BUTTON, INSET, PRIMARY, SECONDARY, SURFACE } from "./surface";
 import { scrollMotion, SHOW_ALDO_DECISION } from "./show";
 import { startAldoWalkthrough } from "./walkthrough";
+import { inWords } from "./needsYou.logic";
 
 /** Cards shown before the rest unfold. */
 const SHOWN = 3;
 
-export function AldoUpNext(props: { readonly home: AldoHome; readonly now: number }) {
+export function AldoUpNext(props: {
+  readonly home: AldoHome;
+  readonly now: number;
+  /**
+   * The cards placed together under something said (their keys); left out,
+   * the conversation's end: what wasn't placed (`placedAt`), with the threads
+   * paused mid-turn and the way to go through them all with Aldo.
+   */
+  readonly only?: ReadonlyArray<string> | null;
+  /** When, in the conversation, each placed card is: what it becomes once decided stays there. */
+  readonly placedAt?: ReadonlyMap<string, string>;
+}) {
+  const end = props.only === undefined || props.only === null;
   const brief = useAldoBrief((s) => s.brief);
   const receipts = useAldoReceipts((s) => s.receipts);
   const [all, setAll] = useState(false);
-  const decisions = useMemo(() => {
+  const everything = useMemo(() => {
     // One answered here is a line in the conversation now, while the home read catches up.
     const list = aldoChatDecisions(props.home, props.now).filter(
       (d) => !receipts.some((r) => r.key === d.key),
@@ -74,13 +90,18 @@ export function AldoUpNext(props: { readonly home: AldoHome; readonly now: numbe
     );
     return [...urgent, ...first, ...list.filter((d) => !urgent.includes(d) && !first.includes(d))];
   }, [props.home, props.now, brief, receipts]);
-  // Asleep mid-turn: no decision, but it waits on the user to open it.
-  const paused = useMemo(
+  const { only, placedAt } = props;
+  const decisions = useMemo(
     () =>
-      props.home.conversations.filter(
-        (c) => isPausedMidTurn(c) && !putAway(c, props.now) && !c.chatDecision?.dismissed,
-      ),
-    [props.home, props.now],
+      end
+        ? everything.filter((d) => !placedAt?.has(d.key))
+        : everything.filter((d) => only!.includes(d.key)),
+    [everything, end, only, placedAt],
+  );
+  // Asleep mid-turn: no decision, but it waits on the user to open it, at the end.
+  const paused = useMemo(
+    () => (end ? pausedInChat(props.home, props.now) : []),
+    [end, props.home, props.now],
   );
   const picks = useMemo(() => {
     const out: Record<string, { readonly label: string; readonly reason: string | null }> = {};
@@ -89,7 +110,8 @@ export function AldoUpNext(props: { readonly home: AldoHome; readonly now: numbe
     return out;
   }, [brief]);
   const [opened, setOpened] = useState<string | null>(null);
-  useCardKeys();
+  // One set of keys for every card on the page, wherever it sits.
+  useCardKeys(end);
   useEffect(() => {
     // A live card's "Needs you" (its thread) or a line in the brief (its key): unfold to its card, open it, and bring it into view.
     const onShow = (event: Event) => {
@@ -108,35 +130,53 @@ export function AldoUpNext(props: { readonly home: AldoHome; readonly now: numbe
     window.addEventListener(SHOW_ALDO_DECISION, onShow);
     return () => window.removeEventListener(SHOW_ALDO_DECISION, onShow);
   }, [decisions]);
+  const suggestions = Object.fromEntries(Object.entries(picks).map(([k, p]) => [k, p.label]));
   // What the user hid is under Aldo's name at the top (AldoHiddenFromChat), not here.
-  if (decisions.length === 0 && paused.length === 0) return null;
+  if (decisions.length === 0 && paused.length === 0)
+    // Each under what was said when it came up: the way through them all stays at the end.
+    return end && everything.length > 1 ? (
+      <div className="flex justify-center">
+        <button
+          type="button"
+          className={cn(
+            FOCUS,
+            "rounded-full px-3 py-1.5 text-[13px] text-muted-foreground hover:bg-foreground/[0.05] hover:text-foreground",
+          )}
+          onClick={() => startAldoWalkthrough(everything, suggestions)}
+        >
+          Go through the {inWords(everything.length)} that need you with Aldo
+        </button>
+      </div>
+    ) : null;
   // The one open is the one the user opened, while it's there; else the first.
   const open = decisions.some((d) => d.key === opened) ? opened : (decisions[0]?.key ?? null);
   const shown = all ? decisions : decisions.slice(0, SHOWN);
-  const suggestions = Object.fromEntries(Object.entries(picks).map(([k, p]) => [k, p.label]));
   return (
     <section aria-label="Needs you" className="flex flex-col gap-2" data-aldo-up-next="">
-      <div className="flex items-center justify-between px-1 pb-0.5 text-[12px] leading-[18px]">
-        <h3 className="font-medium text-muted-foreground">Needs you</h3>
-        {decisions.length > 1 ? (
-          <button
-            type="button"
-            className={cn(
-              FOCUS,
-              "-me-1 rounded-full px-1 font-medium text-foreground/75 hover:text-foreground",
-            )}
-            onClick={() => startAldoWalkthrough(decisions, suggestions)}
-          >
-            Go through them with Aldo
-          </button>
-        ) : null}
-      </div>
+      {end ? (
+        <div className="flex items-center justify-between px-1 pb-0.5 text-[12px] leading-[18px]">
+          <h3 className="font-medium text-muted-foreground">Needs you</h3>
+          {everything.length > 1 ? (
+            <button
+              type="button"
+              className={cn(
+                FOCUS,
+                "-me-1 rounded-full px-1 font-medium text-foreground/75 hover:text-foreground",
+              )}
+              onClick={() => startAldoWalkthrough(everything, suggestions)}
+            >
+              Go through them with Aldo
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       {shown.map((d) => (
         <DecisionCard
           key={d.key}
           decision={d}
           now={props.now}
           pick={picks[d.key] ?? null}
+          receiptAt={placedAt?.get(d.key)}
           open={d.key === open}
           onOpen={() => {
             // The line tapped becomes the card, and focus goes with it.
@@ -176,10 +216,6 @@ function typing(target: EventTarget | null): boolean {
   );
 }
 
-/**
- * After the cards next render: the card for `key` focused, without a jump;
- * with `reveal`, brought into view with a glance drawn to it.
- */
 /** Where a keyboard on a card goes once it's answered: the card after (or before), or the composer once none's left. */
 function focusAfter(card: HTMLElement | null): HTMLElement | null {
   if (!card?.contains(document.activeElement)) return null;
@@ -192,19 +228,28 @@ function focusAfter(card: HTMLElement | null): HTMLElement | null {
   );
 }
 
+/**
+ * After the cards next render: the card for `key` focused, without a jump;
+ * with `reveal`, brought into view with a glance drawn to it.
+ */
 function focusCardSoon(key: string, reveal = false): void {
   requestAnimationFrame(() =>
     requestAnimationFrame(() => {
       const card = document.querySelector<HTMLElement>(`[data-aldo-decision="${CSS.escape(key)}"]`);
       if (!card) return;
-      card.focus({ preventScroll: true });
-      if (!reveal) return;
-      card.scrollIntoView({ behavior: scrollMotion(), block: "center" });
-      card.removeAttribute("data-aldo-attention");
-      requestAnimationFrame(() => card.setAttribute("data-aldo-attention", ""));
-      setTimeout(() => card.removeAttribute("data-aldo-attention"), 1_400);
+      if (reveal) revealAldoCard(card);
+      else card.focus({ preventScroll: true });
     }),
   );
+}
+
+/** A card brought into view and focused, with a glance drawn to it. */
+export function revealAldoCard(card: HTMLElement): void {
+  card.focus({ preventScroll: true });
+  card.scrollIntoView({ behavior: scrollMotion(), block: "center" });
+  card.removeAttribute("data-aldo-attention");
+  requestAnimationFrame(() => card.setAttribute("data-aldo-attention", ""));
+  setTimeout(() => card.removeAttribute("data-aldo-attention"), 1_400);
 }
 
 /**
@@ -212,8 +257,9 @@ function focusCardSoon(key: string, reveal = false): void {
  * nothing focused, or a card. Not from a field or anything over the page (a
  * dialog, a call going through them).
  */
-function useCardKeys(): void {
+function useCardKeys(enabled: boolean): void {
   useEffect(() => {
+    if (!enabled) return;
     const onKey = (event: globalThis.KeyboardEvent) => {
       if (event.metaKey || event.ctrlKey || event.altKey || typing(event.target)) return;
       if (event.key !== "j" && event.key !== "k") return;
@@ -240,7 +286,7 @@ function useCardKeys(): void {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [enabled]);
 }
 
 /** A choice as a big button, the way a phone asks: the one to take filled, the rest quiet. */
@@ -353,6 +399,8 @@ function DecisionCard(props: {
   readonly decision: AldoDecision;
   readonly now: number;
   readonly pick: { readonly label: string; readonly reason: string | null } | null;
+  /** Where the line it becomes once decided goes, in time: where it sits, when it's placed under something said. */
+  readonly receiptAt?: string | undefined;
   /** Shown in full; otherwise a line that opens it. */
   readonly open: boolean;
   readonly onOpen: () => void;
@@ -369,7 +417,7 @@ function DecisionCard(props: {
     const receipt = (text: string) =>
       addAldoReceipt({
         key: d.key,
-        at: new Date().toISOString(),
+        at: props.receiptAt ?? new Date().toISOString(),
         text,
         thread: decisionThread(d),
       });
@@ -478,9 +526,10 @@ function DecisionCard(props: {
           ) : null}
           {a.body ? (
             <Quoted lines={6} className="whitespace-pre-wrap text-foreground/85 leading-6">
-              {a.body}
+              <ApprovalText approval={a} />
             </Quoted>
           ) : null}
+          <RewriteNote approval={a} />
         </div>
       );
       actions = (

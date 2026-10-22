@@ -38,7 +38,10 @@ import { settleAldoConversation, unsettleAldoConversation } from "./arrive";
 import { showAldoCards } from "./assistantApi";
 import { seedAldoComposer, useAldoAssistant } from "./assistantSession";
 import { type AldoHome, type AldoHomeTarget } from "./homeApi";
-import { aldoWaitingCount } from "./decisions.logic";
+import { aldoChatDecisions, aldoWaitingCount, pausedInChat, placeableOf } from "./decisions.logic";
+import { briefRaised } from "./briefGroups.logic";
+import { useAldoBrief } from "./briefFeed";
+import { NeedsYouPill } from "./NeedsYouPill";
 import { feedEvents, withPlans, withReceipts } from "./feed.logic";
 import { AldoPlanCard } from "./AldoPlanCard";
 import { openPlans, parseAldoPlans } from "./plans.logic";
@@ -245,6 +248,21 @@ export function AldoConversationPage(props: {
     [home, now, firstAt, here, told, receipts, plans],
   );
   const proposed = useMemo(() => openPlans(plans, firstAt, now), [plans, firstAt, now]);
+  // What waits on the user, placed where it came up (AldoUpNext.tsx); one answered here is a line now.
+  const brief = useAldoBrief((s) => s.brief);
+  const decisions = useMemo(() => {
+    if (!home) return [];
+    const raised = brief ? briefRaised(brief) : null;
+    return aldoChatDecisions(home, now)
+      .filter((d) => !receipts.some((r) => r.key === d.key))
+      .map((d) => placeableOf(d, raised));
+  }, [home, now, brief, receipts]);
+  const pausedCount = useMemo(() => (home ? pausedInChat(home, now).length : 0), [home, now]);
+  const renderDecisions = useCallback(
+    (keys: ReadonlyArray<string> | null, placedAt: ReadonlyMap<string, string>) =>
+      home ? <AldoUpNext home={home} now={now} only={keys} placedAt={placedAt} /> : null,
+    [home, now],
+  );
   const waiting = useMemo(() => (home ? aldoWaitingCount(home, now) : 0), [home, now]);
   // Nothing read yet, and the read failed: that's said, not taken for nothing to show.
   const unread = home === null && props.error !== null;
@@ -306,10 +324,11 @@ export function AldoConversationPage(props: {
             {proposed.map((plan) => (
               <AldoPlanCard key={plan.id} plan={plan} />
             ))}
-            <AldoUpNext home={home} now={now} />
           </>
         ) : null
       }
+      decisions={decisions}
+      renderDecisions={renderDecisions}
     />
   );
   const column = "mx-auto w-full max-w-[640px] px-4 sm:px-6";
@@ -321,7 +340,7 @@ export function AldoConversationPage(props: {
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground">
       <AldoOpenContext.Provider value={openThread}>
         <div className="flex h-full min-h-0 min-w-0">
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <div className="group/page flex min-h-0 min-w-0 flex-1 flex-col">
             {/* Centered, clear of the sidebar's button, which floats at the top left on a phone. */}
             <header className="relative flex min-h-14 shrink-0 flex-col items-center justify-center px-4 pt-2 pb-1 sm:px-6">
               {fresh ? null : <AldoPresence home={home} now={now} unread={unread} />}
@@ -361,7 +380,13 @@ export function AldoConversationPage(props: {
                   </div>
                 </div>
               ) : (
-                <div className={cn(column, "flex flex-col gap-4 pt-3 pb-6")}>
+                <div
+                  className={cn(
+                    column,
+                    // Room at the end for the pill over it, so the last card isn't under it.
+                    "flex flex-col gap-4 pt-3 pb-6 group-has-[[data-aldo-needs-you]]/page:pb-16",
+                  )}
+                >
                   <HealthStrip issues={props.issues} />
                   {unread ? <HomeUnread error={props.error!} /> : null}
                   {props.supported === false ? <AldoAtAGlance /> : null}
@@ -376,22 +401,29 @@ export function AldoConversationPage(props: {
             </div>
             {/* The same composer, empty page or not, so what's typed and focus stay as it glides into place. */}
             <div className="relative shrink-0" data-aldo-assistant-footer="">
-              {below ? (
-                <button
-                  type="button"
-                  data-aldo-arrive=""
-                  className="absolute -top-11 left-1/2 z-10 flex h-8 -translate-x-1/2 items-center gap-1.5 rounded-full border border-foreground/[0.10] bg-popover ps-2.5 pe-3 font-medium text-[13px] shadow-composer outline-none focus-visible:ring-2 focus-visible:ring-ring dark:shadow-composer-dark"
-                  onClick={() =>
-                    scroller.current?.scrollTo({
-                      top: scroller.current.scrollHeight,
-                      behavior: scrollMotion(),
-                    })
-                  }
-                >
-                  <ArrowDownIcon aria-hidden className="size-3.5" strokeWidth={2} />
-                  New from Aldo
-                </button>
-              ) : null}
+              {/* Over the conversation's end: what's new below, and on a wide screen, how many wait on the user out of view. */}
+              <div className="pointer-events-none absolute inset-x-0 -top-11 z-10 flex justify-center gap-2 px-4 *:pointer-events-auto">
+                {below ? (
+                  <button
+                    type="button"
+                    data-aldo-arrive=""
+                    className="flex h-8 items-center gap-1.5 rounded-full border border-foreground/[0.10] bg-popover ps-2.5 pe-3 font-medium text-[13px] shadow-composer outline-none focus-visible:ring-2 focus-visible:ring-ring dark:shadow-composer-dark"
+                    onClick={() =>
+                      scroller.current?.scrollTo({
+                        top: scroller.current.scrollHeight,
+                        behavior: scrollMotion(),
+                      })
+                    }
+                  >
+                    <ArrowDownIcon aria-hidden className="size-3.5" strokeWidth={2} />
+                    New from Aldo
+                  </button>
+                ) : null}
+                {/* A phone has its Needs you tab. */}
+                {props.tabs || fresh || loading ? null : (
+                  <NeedsYouPill scroller={scroller} total={decisions.length + pausedCount} />
+                )}
+              </div>
               <div
                 ref={dock}
                 className={cn(

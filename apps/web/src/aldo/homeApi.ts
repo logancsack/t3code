@@ -342,6 +342,13 @@ export interface AldoApproval {
   readonly fields: ReadonlyArray<{ readonly label: string; readonly value: string }>;
   /** The email's text, the event's description, or what the thread would be asked. */
   readonly body: string;
+  /**
+   * An email Aldo rewrote for the user while it waits (an Aldo that rewrites
+   * drafts): what it said before, and when it was rewritten. What's new is
+   * underlined (diff.logic.ts), and its card sits under the reply that said so.
+   */
+  readonly previous?: { readonly title: string; readonly body: string };
+  readonly revisedAt?: string;
   readonly approveLabel: string;
   readonly discardLabel: string;
   readonly status: AldoApprovalStatus;

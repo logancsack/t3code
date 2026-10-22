@@ -17,6 +17,8 @@ import {
   decisionBrief,
   decisionOpen,
   decisionTitle,
+  placeDecisions,
+  placeableOf,
 } from "./decisions.logic";
 
 const NOW = Date.parse("2026-10-01T12:00:00Z");
@@ -366,4 +368,93 @@ it("all card kinds support chat dismissal without changing the full decision lis
 
 it("older servers still show their prompts", () => {
   expect(aldoChatDecisions(home({ conversations: [question] }), NOW)).toHaveLength(1);
+});
+
+describe("placeDecisions", () => {
+  const t = (minute: number, seconds = 0) =>
+    new Date(Date.UTC(2026, 9, 21, 15, minute, seconds)).toISOString();
+  // You (1), Aldo (2), what Aldo did (no time), what happened (5), you (10), Aldo (20).
+  const items = [
+    { at: t(1), reply: false },
+    { at: t(2), reply: true },
+    { at: null, reply: false },
+    { at: t(5), reply: false },
+    { at: t(10), reply: false },
+    { at: t(20), reply: true },
+  ];
+
+  it("puts each under what came last before it, never between a reply and what it did", () => {
+    const placed = placeDecisions(items, [
+      { key: "a", at: t(3) },
+      { key: "b", at: t(4) },
+      { key: "c", at: t(7) },
+    ]);
+    expect([...placed.before]).toEqual([
+      [3, ["a", "b"]],
+      [4, ["c"]],
+    ]);
+    // Decided, its line stays where the card was.
+    expect(placed.at.get("a")).toBe(t(3));
+  });
+
+  it("puts what came up in Aldo's turn under its reply, not over it", () => {
+    // Drafted at 1:30, while Aldo answered the user; its reply came at 2.
+    const placed = placeDecisions(items, [{ key: "draft", at: t(1, 30) }]);
+    expect([...placed.before]).toEqual([[3, ["draft"]]]);
+    expect(placed.at.get("draft")).toBe(new Date(Date.parse(t(2)) + 1).toISOString());
+  });
+
+  it("leaves what came up after everything, or before it all, for the end", () => {
+    const placed = placeDecisions(items, [
+      { key: "late", at: t(21) },
+      { key: "old", at: t(0) },
+      { key: "same", at: t(20) },
+      // Just before Aldo's last reply: under it, so at the end.
+      { key: "turn", at: t(19) },
+    ]);
+    expect(placed.before.size).toBe(0);
+    expect(placeDecisions([], [{ key: "a", at: t(3) }]).before.size).toBe(0);
+  });
+
+  it("puts a draft Aldo rewrote under the reply that said so", () => {
+    // Rewritten at 10:30, Aldo's reply at 20: the end, under it.
+    expect(placeDecisions(items, [{ key: "d", at: t(10, 30), afterReply: true }]).before.size).toBe(
+      0,
+    );
+    // Rewritten at 1:30, under the reply at 2, after what it did.
+    const placed = placeDecisions(items, [{ key: "d", at: t(1, 30), afterReply: true }]);
+    expect([...placed.before]).toEqual([[3, ["d"]]]);
+    expect(placed.at.get("d")).toBe(new Date(Date.parse(t(2)) + 1).toISOString());
+  });
+});
+
+describe("decisionAt", () => {
+  it("is when it came up: an approval's ask, or its rewrite", () => {
+    const read = home({
+      approvals: [
+        approval("ap1", { createdAt: "2026-10-21T15:00:00.000Z" }),
+        approval("ap2", {
+          createdAt: "2026-10-21T15:00:00.000Z",
+          revisedAt: "2026-10-21T15:20:00.000Z",
+          previous: { title: "x", body: "y" },
+        }),
+      ],
+    });
+    const [first, second] = aldoDecisions(read, NOW);
+    expect(placeableOf(first!)).toEqual({ key: "aldo:ap1", at: "2026-10-21T15:00:00.000Z" });
+    expect(placeableOf(second!)).toEqual({
+      key: "aldo:ap2",
+      at: "2026-10-21T15:20:00.000Z",
+      afterReply: true,
+    });
+    // What the brief brought up goes under it; a rewrite still goes under its reply.
+    const brief = { at: "2026-10-21T16:00:00.000Z", keys: new Set(["aldo:ap1", "aldo:ap2"]) };
+    expect(placeableOf(first!, brief)).toEqual({ key: "aldo:ap1", at: brief.at, afterReply: true });
+    expect(placeableOf(second!, brief)).toEqual({
+      key: "aldo:ap2",
+      at: "2026-10-21T15:20:00.000Z",
+      afterReply: true,
+    });
+    expect(placeableOf(first!, null)).toEqual({ key: "aldo:ap1", at: "2026-10-21T15:00:00.000Z" });
+  });
 });
