@@ -898,7 +898,9 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "aldo-heads-ups",
     title: "Heads-ups from Aldo",
     to: "/settings/notifications",
-    searchTerms: ["mail calendar events half hour what's worth knowing"],
+    searchTerms: [
+      "mail calendar events half hour what's worth knowing quiet hours night other apps tell me about don't tell me",
+    ],
     aldoCloudOnly: true,
   },
   {
