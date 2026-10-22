@@ -205,6 +205,8 @@ export interface AldoResultItem {
   readonly shareId: string | null;
   /** Who can open it; null where nothing says. */
   readonly audience: AldoAudience | null;
+  /** Its share as Aldo lists it, when it does. */
+  readonly share?: AldoShareView;
 }
 
 /** A live page: a page the turn made or shared, or one the answer linked a screenshot to. */
@@ -281,6 +283,7 @@ function resultItem(
     url: gone ? null : (item.url ?? null),
     shareId: id,
     audience,
+    ...(known ? { share: known } : {}),
   };
 }
 

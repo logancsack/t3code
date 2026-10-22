@@ -49,7 +49,7 @@ export function AldoLibraryPage() {
   return (
     <AldoPlacePage
       title="Library"
-      about="Pages and files your agents shared by link, newest first. A public link opens for anyone who has it; one only you can open asks for your Aldo sign-in. Stop sharing turns its link off at once."
+      about="Pages and files your agents shared by link, newest first, with any you pin above them. A public link opens for anyone who has it; one only you can open asks for your Aldo sign-in. Stop sharing turns its link off at once."
     >
       {/* The list's rows are inset for settings; here they line up with the page. */}
       <div className="-mx-3 flex flex-col gap-2 sm:-mx-4">

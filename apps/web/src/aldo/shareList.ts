@@ -10,6 +10,7 @@ import { useCallback, useEffect, useSyncExternalStore } from "react";
 
 import type { AldoListedShare } from "./results.logic";
 import type { AldoShareView } from "./library.logic";
+import { onAldoShareChanged } from "./shareViewer";
 import { fetchAldoShares } from "./workspaceApi";
 
 /** Aldo lists this many at most: one missing from a full list may just be older. */
@@ -72,6 +73,13 @@ function read() {
       if (again) read();
     });
 }
+
+// One the viewer pinned or unpinned stands as Aldo answered.
+onAldoShareChanged((share) => {
+  if (!state.shares?.has(share.id)) return;
+  state = { ...state, shares: new Map(state.shares).set(share.id, share) };
+  for (const listener of listeners) listener();
+});
 
 /** Who can open the shares `ids` name, as Aldo lists them (null until known, in an older Aldo too). */
 export function useAldoShareList(ids: ReadonlyArray<string>): AldoListedShare {
