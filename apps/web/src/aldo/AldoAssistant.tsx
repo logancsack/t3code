@@ -75,7 +75,13 @@ import { useAldoHomeFeed } from "./homeFeed";
 import type { AldoHomeConversation } from "./homeApi";
 import { WORKSTREAM_WORDS, workstreamMeta, workstreamState } from "./workstream.logic";
 import { blinkAldo, setAldoReading } from "./face";
-import { dedupeLiveCards, interleave, type AldoFeedEvent } from "./feed.logic";
+import {
+  dedupeLiveCards,
+  interleaveInPlace,
+  timelineSlots,
+  type AldoFeedEvent,
+  type AldoTimelineSlot,
+} from "./feed.logic";
 import { placeDecisions, type AldoPlaceable } from "./decisions.logic";
 import { useAldoFirstViewHold } from "./firstView";
 import { AldoPlanPicker } from "./AldoPlanPicker";
@@ -619,6 +625,12 @@ export function AldoComposer(props: {
   );
 }
 
+/** Where an entry is in the conversation: what Aldo did belongs to its reply, with no time of its own. */
+const slotOf = (entry: AldoConversationEntry): AldoTimelineSlot =>
+  entry.kind === "message"
+    ? { at: entry.at, reply: entry.role === "assistant" }
+    : { at: null, reply: false };
+
 /**
  * The conversation: from the start, or `since` an entry (the summon bar shows
  * what followed its question), the newest action about each thread as a live
@@ -634,6 +646,11 @@ export function AldoConversation(
     readonly feed?: ReadonlyArray<AldoFeedEvent>;
     readonly tail?: ReactNode;
     readonly decisions?: ReadonlyArray<AldoPlaceable>;
+    /**
+     * Events in `feed` that were cards waiting on the user (a payment that went
+     * on), each as it was placed as a decision: it stays where its card was.
+     */
+    readonly decided?: ReadonlyArray<AldoPlaceable>;
     /** A group of cards: `keys` for one placed in the conversation, null for the end's (what wasn't placed, by `placedAt`). */
     readonly renderDecisions?: (
       keys: ReadonlyArray<string> | null,
@@ -654,21 +671,10 @@ export function AldoConversation(
       entry.kind === "action" && entry.open && live.has(since + index) ? [entry.open] : [],
     );
     const feed = dedupeLiveCards(props.feed ?? [], shown);
-    return interleave(entries, feed, (e) => (e.kind === "message" ? e.at : null));
-  }, [entries, props.feed, live, since]);
-  // What Aldo did belongs to its reply: no time of its own.
+    return interleaveInPlace(entries, feed, slotOf, props.decided ?? []);
+  }, [entries, props.feed, props.decided, live, since]);
   const placement = useMemo(
-    () =>
-      placeDecisions(
-        items.map((item) =>
-          item.kind === "events"
-            ? { at: item.events[0]!.at, reply: false }
-            : item.entry.kind === "message"
-              ? { at: item.entry.at, reply: item.entry.role === "assistant" }
-              : { at: null, reply: false },
-        ),
-        props.decisions ?? [],
-      ),
+    () => placeDecisions(timelineSlots(items, slotOf), props.decisions ?? []),
     [items, props.decisions],
   );
   const { renderDecisions } = props;

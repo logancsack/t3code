@@ -22,7 +22,7 @@ import {
   type AldoHomeTarget,
   type AldoPayment,
 } from "./homeApi";
-import { putAway } from "./decisions.logic";
+import { placeDecisions, putAway, type AldoPlaceable } from "./decisions.logic";
 import { settledPayments } from "./payments.logic";
 import { type AldoPlan } from "./plans.logic";
 import { sameTarget } from "./home.logic";
@@ -360,4 +360,39 @@ export function interleave<E>(
   });
   flush(null);
   return items;
+}
+
+/** Where each item is, as placeDecisions reads them: its time (none for what belongs to the line before it) and whether it's Aldo's reply. */
+export type AldoTimelineSlot = { readonly at: string | null; readonly reply: boolean };
+
+export function timelineSlots<E>(
+  items: ReadonlyArray<AldoTimelineItem<E>>,
+  slotOf: (entry: E) => AldoTimelineSlot,
+): ReadonlyArray<AldoTimelineSlot> {
+  return items.map((item) =>
+    item.kind === "events" ? { at: item.events[0]!.at, reply: false } : slotOf(item.entry),
+  );
+}
+
+/**
+ * The conversation in order (interleave), with the events that were cards
+ * waiting on the user (`decided`, each as it was placed as a decision: a
+ * payment that went on) where the card was, among the rest, so it changes in
+ * place rather than jumping to when it came up.
+ */
+export function interleaveInPlace<E>(
+  entries: ReadonlyArray<E>,
+  events: ReadonlyArray<AldoFeedEvent>,
+  slotOf: (entry: E) => AldoTimelineSlot,
+  decided: ReadonlyArray<AldoPlaceable>,
+): ReadonlyArray<AldoTimelineItem<E>> {
+  const timeOf = (entry: E) => slotOf(entry).at;
+  const keys = new Set(decided.map((d) => d.key));
+  const rest = events.filter((e) => !keys.has(e.key));
+  if (rest.length === events.length) return interleave(entries, events, timeOf);
+  const { at } = placeDecisions(timelineSlots(interleave(entries, rest, timeOf), slotOf), decided);
+  const moved = events
+    .map((e) => (at.has(e.key) ? { ...e, at: at.get(e.key)! } : e))
+    .toSorted((a, b) => a.at.localeCompare(b.at));
+  return interleave(entries, moved, timeOf);
 }

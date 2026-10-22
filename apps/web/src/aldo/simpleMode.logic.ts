@@ -2,9 +2,10 @@
 // tested on their own: whether it's on, where its rail shows, which of its
 // places the page is on, and what its Needs-you place lists.
 
-import { type AldoHome, type AldoHomeConversation } from "./homeApi";
+import { type AldoHome, type AldoHomeConversation, type AldoPayment } from "./homeApi";
 import { aldoDecisions, putAway, type AldoDecision } from "./decisions.logic";
 import { boardFor } from "./home.logic";
+import { waitingPayments } from "./payments.logic";
 import { aldoSimpleByDefault, type AldoInterest } from "./onboarding.logic";
 
 /** The three places on simple mode's rail, each a view of the home screen. */
@@ -65,6 +66,8 @@ export function homeShowsConversation(input: {
 }
 
 export interface AldoSimpleNeedsYou {
+  /** Payments waiting on the user's approval in Link, the one that stops waiting soonest first. */
+  readonly payments: ReadonlyArray<AldoPayment>;
   /** Threads waiting on the user, waited longest first, without the ones they put away. */
   readonly conversations: ReadonlyArray<AldoHomeConversation>;
   /** Pull requests ready to merge that no thread above already asks about. */
@@ -72,13 +75,15 @@ export interface AldoSimpleNeedsYou {
 }
 
 /**
- * What the Needs-you place lists under Aldo's approvals: what the home
- * screen's board lists as needing the user, less what they put away, and the
- * pull requests ready to merge. Together with the waiting approvals that's
- * what aldoWaitingCount counts, so the rail's number matches the list.
+ * What the Needs-you place lists with Aldo's approvals: payments waiting on
+ * the user in Link, what the home screen's board lists as needing the user,
+ * less what they put away, and the pull requests ready to merge. Together
+ * with the waiting approvals that's what aldoWaitingCount counts, so the
+ * rail's number matches the list.
  */
 export function simpleNeedsYou(home: AldoHome, now: number): AldoSimpleNeedsYou {
   return {
+    payments: waitingPayments(home, now),
     conversations: boardFor(home.conversations, now).needsYou.filter((c) => !putAway(c, now)),
     merges: aldoDecisions(home, now).filter(
       (d): d is Extract<AldoDecision, { kind: "merge" }> => d.kind === "merge",

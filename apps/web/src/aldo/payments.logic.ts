@@ -66,11 +66,18 @@ export function paymentWords(payment: AldoPayment, now: number): AldoPaymentWord
         tone: "stopped",
       };
     case "requires_action":
-      return {
-        headline: `Link needs you before paying ${what}`,
-        line: "Open Link to see what it needs. The agent carries on once it can.",
-        tone: "waiting",
-      };
+      // Without Link's page there's nothing to open here: the agent says what Link needs.
+      return payment.approvalUrl
+        ? {
+            headline: `Link needs you before paying ${what}`,
+            line: "Open Link to see what it needs. The agent carries on once it can.",
+            tone: "waiting",
+          }
+        : {
+            headline: `Link needs something before paying ${what}`,
+            line: "The agent tells you in the conversation what it is.",
+            tone: "going",
+          };
     case "approved":
       return {
         headline: `Approved: ${what}`,

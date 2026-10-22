@@ -4,7 +4,8 @@
 // shows it, and "Approve in Link", which opens Link's own page, where they
 // approve or decline it; Aldo never can. Once it goes on, it's a card where it
 // came up (AldoFeed.tsx) saying how it stands, from approved to paid, and
-// what's next. Never the card itself: only its last four digits.
+// what's next; in simple mode's Needs you, the same card waiting
+// (AldoPaymentWaiting). Never the card itself: only its last four digits.
 
 import { ArrowUpRightIcon, CheckIcon, CreditCardIcon, XIcon } from "lucide-react";
 import { useState } from "react";
@@ -85,6 +86,47 @@ export function ApproveInLink(props: { readonly payment: AldoPayment; readonly n
         <ArrowUpRightIcon aria-hidden className="-me-1 size-4" strokeWidth={1.75} />
       </a>
     </div>
+  );
+}
+
+/** A payment waiting on the user, as simple mode's Needs you lists it: what it's for, and Link's page for it. */
+export function AldoPaymentWaiting(props: { readonly payment: AldoPayment; readonly now: number }) {
+  const p = props.payment;
+  const words = paymentWords(p, props.now);
+  return (
+    <li>
+      <article
+        aria-label={words.headline}
+        data-aldo-payment={p.id}
+        className={cn(SURFACE, "flex flex-col gap-3 p-4")}
+      >
+        <div className="flex items-start gap-3">
+          <span
+            aria-hidden
+            className="flex size-7 shrink-0 items-center justify-center rounded-full bg-foreground/[0.06] text-foreground/60"
+          >
+            <CreditCardIcon className="size-3.5" strokeWidth={1.75} />
+          </span>
+          <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <p className="font-medium text-[14px] leading-5 tabular-nums">{words.headline}</p>
+            {p.thread ? (
+              <ThreadLink
+                target={p.thread}
+                className={cn(
+                  FOCUS,
+                  "flex items-center gap-1 self-start rounded-md text-[13px] text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {p.threadTitle ?? "Open the conversation"}
+                <ArrowUpRightIcon aria-hidden className="size-3.5" strokeWidth={1.75} />
+              </ThreadLink>
+            ) : null}
+          </div>
+        </div>
+        <PaymentDetails payment={p} />
+        <ApproveInLink payment={p} now={props.now} />
+      </article>
+    </li>
   );
 }
 

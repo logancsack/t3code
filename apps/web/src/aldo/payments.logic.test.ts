@@ -11,8 +11,9 @@ import {
   decisionThread,
   decisionTitle,
 } from "./decisions.logic";
-import { feedEvents } from "./feed.logic";
+import { feedEvents, interleaveInPlace } from "./feed.logic";
 import { paymentWaits, paymentWords, settledPayments, waitingPayments } from "./payments.logic";
+import { simpleNeedsYou } from "./simpleMode.logic";
 
 const NOW = Date.parse("2026-10-22T15:00:00Z");
 const ago = (minutes: number) => new Date(NOW - minutes * 60_000).toISOString();
@@ -166,6 +167,12 @@ describe("what a payment says as it stands", () => {
     expect(says({ status: "failed" }).line).toMatch(/^Nothing was paid\./);
     expect(says({ status: "canceled" }).tone).toBe("stopped");
     expect(says({ status: "disconnected" }).line).toContain("Connect Link again");
+    // Link needs something, with no page of its to open: not waiting here, and nothing to open.
+    expect(says({ status: "requires_action", approvalUrl: null })).toEqual({
+      headline: "Link needs something before paying $35.00 at Stripe Press",
+      line: "The agent tells you in the conversation what it is.",
+      tone: "going",
+    });
     // A status Link adds later reads as under way, not as an error.
     expect(says({ status: "something_new" }).tone).toBe("going");
     for (const status of ["pending_approval", "requires_action", "approved", "succeeded", "failed"])
@@ -192,5 +199,48 @@ describe("payments in the conversation", () => {
     expect(feedEvents(h, { now: NOW, from: ago(35) }).map((e) => e.at)).toEqual([ago(30)]);
     // Before it all: not in it.
     expect(feedEvents(h, { now: NOW, from: ago(20) })).toEqual([]);
+  });
+
+  it("one that went on stays where its card was, under the reply of the turn it came up in", () => {
+    const paid = payment("paid", {
+      status: "succeeded",
+      approvalUrl: null,
+      expiresAt: null,
+      createdAt: ago(40),
+      updatedAt: ago(30),
+    });
+    type Said = { readonly at: string; readonly reply: boolean };
+    const said: ReadonlyArray<Said> = [
+      { at: ago(42), reply: false },
+      { at: ago(39), reply: true },
+      { at: ago(20), reply: false },
+    ];
+    const slot = (s: Said) => s;
+    const events = feedEvents(home([paid]), { now: NOW, from: null });
+    const where = (decided: Parameters<typeof interleaveInPlace>[3]) =>
+      interleaveInPlace(said, events, slot, decided).map((item) =>
+        item.kind === "events" ? "paid" : item.entry.at,
+      );
+    // When it came up, it'd be before the reply...
+    expect(where([])).toEqual([ago(42), "paid", ago(39), ago(20)]);
+    // ...but its card was under it, so it stays there.
+    expect(where([{ key: "payment:paid", at: paid.createdAt }])).toEqual([
+      ago(42),
+      ago(39),
+      "paid",
+      ago(20),
+    ]);
+  });
+});
+
+describe("payments in simple mode's Needs you", () => {
+  it("lists the ones waiting, soonest first, and counts them", () => {
+    const soon = payment("soon", { expiresAt: ago(-5) });
+    const later = payment("later", { expiresAt: ago(-25) });
+    const paid = payment("paid", { status: "succeeded", approvalUrl: null, expiresAt: null });
+    const h = home([later, paid, soon]);
+    expect(simpleNeedsYou(h, NOW).payments.map((p) => p.id)).toEqual(["soon", "later"]);
+    expect(aldoWaitingCount(h, NOW)).toBe(2);
+    expect(simpleNeedsYou(home(), NOW).payments).toEqual([]);
   });
 });

@@ -84,9 +84,13 @@ export function AldoUpNext(props: {
     const list = aldoChatDecisions(props.home, props.now).filter(
       (d) => !receipts.some((r) => r.key === d.key),
     );
-    // What can't wait first (a site handed to the user times out), then the
-    // brief's order: what Aldo said matters most today.
-    const urgent: ReadonlyArray<AldoDecision> = list.filter((d) => d.kind === "handoff");
+    // What can't wait first (a payment Link stops waiting for, soonest first;
+    // a site handed to the user times out), then the brief's order: what Aldo
+    // said matters most today.
+    const urgent: ReadonlyArray<AldoDecision> = [
+      ...list.filter((d) => d.kind === "payment"),
+      ...list.filter((d) => d.kind === "handoff"),
+    ];
     const first = (brief?.top ?? []).flatMap((item) =>
       list.filter((d) => d.key === item.key && !urgent.includes(d)),
     );
