@@ -49,7 +49,12 @@ import { useRightPanelStore } from "../rightPanelStore";
 import { AldoChatVideo } from "./AldoChatVideo";
 import { AldoDownloadEverything } from "./AldoDownloadEverything";
 import { aldoOffersZip, aldoZipFiles } from "./download.logic";
-import { aldoShareAudience, aldoShareIdOf } from "./library.logic";
+import {
+  aldoShareAudience,
+  aldoShareIdOf,
+  aldoShareUpdated,
+  aldoShareViewable,
+} from "./library.logic";
 import {
   ALDO_MADE_KIND_LABEL,
   aldoTurnMade,
@@ -67,6 +72,7 @@ import {
   type AldoResultLink,
 } from "./results.logic";
 import { useAldoShareList } from "./shareList";
+import { openAldoShare } from "./shareViewer";
 import { promptWith } from "./summon.logic";
 
 // The reader brings the chat's Markdown (~250 kB, gzipped) with it, which the
@@ -400,10 +406,38 @@ function useAnswerImage(
   return resource && asset._tag === "Success" ? asset.url : null;
 }
 
+/** What a share is, by its kind, where Aldo's list doesn't say: enough to know it opens in Aldo. */
+const TYPE_OF_KIND: Partial<Record<AldoMadeKind, string>> = {
+  page: "text/html",
+  pdf: "application/pdf",
+  image: "image/png",
+  video: "video/mp4",
+  audio: "audio/mpeg",
+};
+
+/** A share Aldo serves, of a kind its viewer shows. */
+function opensInAldo(item: AldoResultItem): boolean {
+  const contentType = item.share?.contentType ?? TYPE_OF_KIND[item.kind];
+  return Boolean(item.url && item.shareId && contentType && aldoShareViewable(contentType));
+}
+
+/** Beside the thread when it's a file there; a share Aldo serves, in its viewer; the rest at its link. */
 function openItem(threadRef: ScopedThreadRef | null, item: AldoResultItem) {
   if (item.path && threadRef) {
     useRightPanelStore.getState().openFile(threadRef, item.path);
-  } else if (item.url) {
+    return;
+  }
+  if (!item.url) return;
+  const contentType = item.share?.contentType ?? TYPE_OF_KIND[item.kind];
+  if (item.shareId && contentType && opensInAldo(item)) {
+    openAldoShare({
+      id: item.shareId,
+      url: item.url,
+      title: item.name,
+      contentType,
+      share: item.share ?? null,
+    });
+  } else {
     window.open(item.url, "_blank", "noopener,noreferrer");
   }
 }
@@ -563,7 +597,12 @@ function MainPage(props: {
         <ItemCaption
           item={item}
           threadRef={threadRef}
-          detail={item.url ? aldoAddress(item.url) : item.fileName}
+          detail={[
+            item.url ? aldoAddress(item.url) : item.fileName,
+            item.share ? aldoShareUpdated(item.share, new Date()) : null,
+          ]
+            .filter(Boolean)
+            .join(" · ")}
         />
       </figcaption>
     </figure>
@@ -850,9 +889,11 @@ function LinkCard(props: {
   );
   const cardClass =
     "flex w-full min-w-0 overflow-hidden text-left hover:bg-accent/40 disabled:cursor-default @md:flex-col";
+  // A share Aldo serves opens in its viewer; any other link, at its address.
+  const inAldo = Boolean(link.url) && item !== null && opensInAldo(item);
   return (
     <li className="flex min-w-0 flex-col overflow-hidden rounded-lg border border-border/60 bg-card/30">
-      {link.url ? (
+      {link.url && !inAldo ? (
         <a href={link.url} target="_blank" rel="noopener noreferrer" className={cardClass}>
           {body}
         </a>
@@ -861,7 +902,7 @@ function LinkCard(props: {
           type="button"
           className={cardClass}
           onClick={() => item && openItem(threadRef, item)}
-          disabled={!item?.path || !threadRef}
+          disabled={!inAldo && (!item?.path || !threadRef)}
         >
           {body}
         </button>
