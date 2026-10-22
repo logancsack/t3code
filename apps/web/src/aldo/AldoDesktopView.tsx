@@ -1,12 +1,11 @@
 import type RFB from "@novnc/novnc";
-import { LoaderIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { Button } from "../components/ui/button";
+import { AldoScreenState } from "./AldoBrowserChrome";
 import { cn } from "../lib/utils";
 import { AldoApiError } from "./api";
 import { aldoBrowserConnection } from "./workspaceApi";
-import { aldoOfflineMessage } from "./directory";
 import { aldoDesktopScreenUrl, type AldoDesktopScreen } from "./computer.logic";
 import { aldoCanDecodeH264, AldoVideoPlayer } from "./liveVideo";
 import { ALDO_FRAME_VIDEO, aldoDesktopVideoHello, aldoDesktopVideoUrls } from "./liveVideo.logic";
@@ -32,9 +31,12 @@ type Status = "connecting" | "live" | "asleep" | "error";
 export function AldoDesktopView({
   environmentId,
   screen = "machine",
+  onUse,
 }: {
   environmentId: string;
   screen?: AldoDesktopScreen;
+  /** The user clicked, typed or scrolled on the screen: agents wait a moment after. */
+  onUse?: (() => void) | undefined;
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -238,6 +240,10 @@ export function AldoDesktopView({
       ref={rootRef}
       data-aldo-desktop=""
       className="relative min-h-0 flex-1 overflow-hidden bg-muted/30"
+      // Ahead of noVNC's own listeners, which take the events.
+      onPointerDownCapture={onUse}
+      onKeyDownCapture={onUse}
+      onWheelCapture={onUse}
     >
       {/* The video, under noVNC's screen (which stays empty over it). */}
       <canvas
@@ -253,20 +259,7 @@ export function AldoDesktopView({
         className={cn("relative size-full", status !== "live" && "opacity-40")}
       />
       {status !== "live" ? (
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-6 text-center text-sm text-muted-foreground">
-          {status === "asleep" ? (
-            aldoOfflineMessage(environmentId)
-          ) : status === "error" ? (
-            <span className="max-w-sm">
-              Couldn't reach {what}
-              {error ? `: ${error}` : ""}. Retrying…
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-2">
-              <LoaderIcon className="size-4 animate-spin" /> Connecting to {what}…
-            </span>
-          )}
-        </div>
+        <AldoScreenState status={status} environmentId={environmentId} what={what} error={error} />
       ) : null}
     </div>
   );
