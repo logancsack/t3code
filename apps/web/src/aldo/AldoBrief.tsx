@@ -1,13 +1,18 @@
 // Aldo's brief for the day, in the conversation where Aldo said it
 // (AldoConversation shows a message from the day's brief this way, briefFeed.ts
-// reads it): what Aldo said, as its other words are, with Listen to hear it and
-// the rest of today's calendar. What to decide is at the conversation's end
-// (AldoUpNext.tsx), in the brief's order, with Aldo's picks and the way to go
-// through it all on a call. An earlier day's brief is just what was said.
+// reads it): its first line ("Morning, Sam. 2 of your 5 things need you
+// today."), what Aldo said, with Listen to hear it, what it's about in groups
+// (what needs the user, what Aldo's watching, what can wait, what's good to
+// know), each line on its thread as it stands now (briefGroups.logic.ts), and
+// the rest of today's calendar. A tap on what needs the user opens its card at
+// the conversation's end (AldoUpNext.tsx), where it's decided, with Aldo's
+// picks and the way to go through it all on a call; any other opens its
+// thread. An earlier day's brief is just what was said.
 
 import {
   CalendarIcon,
   CalendarPlusIcon,
+  ChevronRightIcon,
   CircleCheckBigIcon,
   CircleAlertIcon,
   ClipboardListIcon,
@@ -33,7 +38,11 @@ import { useAldoAssistant } from "./assistantSession";
 import { useAldoArrive } from "./arrive";
 import { useAldoHomeFeed } from "./homeFeed";
 import { useAldoBrief } from "./briefFeed";
-import { aldoBriefAudioUrl, type AldoBrief } from "./assistantApi";
+import { aldoBriefAudioUrl, type AldoBrief, type AldoBriefGroupItem } from "./assistantApi";
+import { OpenThread, WorkstreamGlyph } from "./AldoWorkstream";
+import { BRIEF_GROUPS, briefItemNote, briefItemState, liveDecisionKeys } from "./briefGroups.logic";
+import { showAldoDecisionKey } from "./show";
+import { WORKSTREAM_WORDS, type WorkstreamState } from "./workstream.logic";
 import type { AldoChoice } from "./decide";
 import type { AldoDecision } from "./decisions.logic";
 
@@ -206,6 +215,32 @@ function BriefCard(props: { readonly brief: AldoBrief }) {
   );
 
   const arrive = useAldoArrive();
+  const groups = brief.headline && brief.groups ? brief.groups : null;
+  if (groups)
+    return (
+      <section
+        aria-label={brief.title}
+        {...arrive}
+        className="flex w-full max-w-[min(94%,34rem)] flex-col gap-3 self-start rounded-[20px] rounded-bl-[8px] border border-foreground/[0.07] bg-card px-4 pt-3 pb-3.5 dark:border-white/[0.08] dark:bg-white/[0.045]"
+        data-aldo-brief=""
+      >
+        <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
+          <SunIcon aria-hidden className="size-3.5" strokeWidth={1.75} />
+          <span className="min-w-0 truncate tabular-nums">
+            {brief.title} · {timeOf(brief.at)}
+          </span>
+          <ListenButton key={hidden} brief={brief} revision={hidden} />
+        </div>
+        <div className="flex flex-col gap-1">
+          <p className="text-balance font-semibold text-[17px] leading-6">{brief.headline}</p>
+          <p className="whitespace-pre-wrap text-[14.5px] text-foreground/80 leading-6">
+            {brief.text}
+          </p>
+        </div>
+        <BriefGroups brief={brief} groups={groups} />
+        <BriefAhead brief={brief} />
+      </section>
+    );
   // What it says to decide is at the conversation's end, live (AldoUpNext.tsx),
   // with the way to go through it all with Aldo; it's not repeated here.
   return (
@@ -223,18 +258,144 @@ function BriefCard(props: { readonly brief: AldoBrief }) {
         <ListenButton key={hidden} brief={brief} revision={hidden} />
       </div>
       <p className="whitespace-pre-wrap text-[15px] leading-7">{brief.text}</p>
-      {brief.ahead.length > 0 ? (
-        <p className="flex items-start gap-2 text-[13.5px] text-muted-foreground leading-5">
-          <CalendarIcon aria-hidden className="mt-0.5 size-3.5 shrink-0" strokeWidth={1.75} />
-          <span className="tabular-nums">
-            {brief.ahead
-              .map((e) => `${e.title} ${e.allDay ? "(all day)" : timeOf(e.start)}`)
-              .join(" · ")}
-          </span>
-        </p>
-      ) : null}
+      <BriefAhead brief={brief} />
     </section>
   );
+}
+
+/** The rest of today's calendar, in a line. */
+function BriefAhead(props: { readonly brief: AldoBrief }) {
+  const { brief } = props;
+  return brief.ahead.length > 0 ? (
+    <p className="flex items-start gap-2 text-[13.5px] text-muted-foreground leading-5">
+      <CalendarIcon aria-hidden className="mt-0.5 size-3.5 shrink-0" strokeWidth={1.75} />
+      <span className="tabular-nums">
+        {brief.ahead
+          .map((e) => `${e.title} ${e.allDay ? "(all day)" : timeOf(e.start)}`)
+          .join(" · ")}
+      </span>
+    </p>
+  ) : null;
+}
+
+/** What the brief is about, in its groups: only those with something in them. */
+function BriefGroups(props: {
+  readonly brief: AldoBrief;
+  readonly groups: NonNullable<AldoBrief["groups"]>;
+}) {
+  const home = useAldoHomeFeed((s) => s.home ?? null);
+  const now = Date.now();
+  const decisions = liveDecisionKeys(home, now);
+  return (
+    <div className="flex flex-col gap-2.5">
+      {BRIEF_GROUPS.map((group) => {
+        const items = props.groups[group.key];
+        if (items.length === 0) return null;
+        return (
+          <section key={group.key} aria-label={group.label} className="flex flex-col gap-0.5">
+            <h3 className="font-medium text-[12px] text-muted-foreground leading-5">
+              {group.label}
+            </h3>
+            <ul className="-mx-2 flex flex-col">
+              {items.map((item, index) => (
+                // oxlint-disable-next-line react/no-array-index-key -- A brief's items never change once it's made; two may share a thread.
+                <li key={`${item.key ?? item.thread?.threadId ?? "item"}:${index}`}>
+                  <BriefLine
+                    item={item}
+                    written={group.state}
+                    state={briefItemState(item, group.state, home, decisions, now)}
+                    now={now}
+                  />
+                </li>
+              ))}
+            </ul>
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
+/** One line of the brief: its glyph, its thread's name and a line on it; a tap takes the user to it. */
+function BriefLine(props: {
+  readonly item: AldoBriefGroupItem;
+  readonly written: WorkstreamState;
+  readonly state: WorkstreamState;
+  readonly now: number;
+}) {
+  const { item, state } = props;
+  const note = briefItemNote(item, props.written, state, props.now);
+  const settled = state === "done" && props.written === "needs";
+  // What's changed since it was written leads (it's what's news); why it matters and when it's back follow
+  // its line, whose own full stop goes before a "·".
+  const lead = state !== props.written ? note : null;
+  const more = [item.why, lead ? null : note].filter((part): part is string => Boolean(part));
+  const line = [
+    ...(lead ? [lead.charAt(0).toUpperCase() + lead.slice(1)] : []),
+    more.length > 0 ? item.text.replace(/\.$/, "") : item.text,
+    ...more,
+  ].join(" · ");
+  const body = (
+    <>
+      <span aria-hidden className="mt-0.5 flex size-4 shrink-0 items-center justify-center">
+        <WorkstreamGlyph state={state} />
+      </span>
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span
+          className={cn(
+            "truncate font-medium text-[14px] leading-5",
+            settled && "text-muted-foreground",
+          )}
+        >
+          <span className="sr-only">{WORKSTREAM_WORDS[state]}: </span>
+          {item.workstream}
+        </span>
+        <span className="line-clamp-2 text-[13px] text-muted-foreground leading-[18px]">
+          {line}
+        </span>
+      </span>
+      {item.thread ? (
+        <ChevronRightIcon
+          aria-hidden
+          className="mt-0.5 size-3.5 shrink-0 text-muted-foreground opacity-60"
+          strokeWidth={2}
+        />
+      ) : null}
+    </>
+  );
+  const className =
+    "flex w-full items-start gap-2.5 rounded-xl px-2 py-1.5 text-start pointer-coarse:py-2.5";
+  const key = item.key;
+  // What still needs them opens its card at the conversation's end, where it's decided.
+  const showCard =
+    key !== undefined && state === "needs" ? () => showAldoDecisionKey(key) : undefined;
+  if (item.thread)
+    return (
+      <OpenThread
+        target={item.thread}
+        className={cn(
+          className,
+          "transition-colors hover:bg-foreground/[0.05] focus-visible:outline-2 focus-visible:outline-ring",
+        )}
+        {...(showCard ? { onOpen: showCard } : {})}
+      >
+        {body}
+      </OpenThread>
+    );
+  if (showCard)
+    return (
+      <button
+        type="button"
+        className={cn(
+          className,
+          "transition-colors hover:bg-foreground/[0.05] focus-visible:outline-2 focus-visible:outline-ring",
+        )}
+        onClick={showCard}
+      >
+        {body}
+      </button>
+    );
+  return <div className={className}>{body}</div>;
 }
 
 /** About how long the brief takes to say, before the audio says exactly. */

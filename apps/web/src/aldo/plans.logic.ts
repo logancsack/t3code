@@ -40,6 +40,13 @@ export interface AldoPlan {
   readonly title: string | null;
   /** Why its last start didn't go, while it's open. */
   readonly error: string | null;
+  /**
+   * While the user has it put off ("Not now"), when it's back; null otherwise.
+   * Absent from an Aldo that can't put plans off.
+   */
+  readonly deferredUntil?: string | null;
+  /** Put off, and back now: it waits for the user's Start. */
+  readonly back?: boolean;
 }
 
 const isText = (value: unknown): value is string => typeof value === "string";
@@ -104,7 +111,30 @@ export function parseAldoPlan(value: unknown): AldoPlan | null {
     thread: targetOf(p.thread),
     title: textOrNull(p.title),
     error: textOrNull(p.error),
+    ...(p.deferredUntil === undefined ? {} : { deferredUntil: timeOrNull(p.deferredUntil) }),
+    ...(p.back === true ? { back: true } : {}),
   };
+}
+
+/** Whether a plan is put off now: hidden from the conversation until it's back. */
+export function planPutOff(plan: Pick<AldoPlan, "status" | "deferredUntil">, now: number): boolean {
+  return (
+    plan.status === "proposed" &&
+    Boolean(plan.deferredUntil) &&
+    Date.parse(plan.deferredUntil!) > now
+  );
+}
+
+/** Whether a plan is back from being put off: it waits for the user's Start, never starting on its own. */
+export function planBack(
+  plan: Pick<AldoPlan, "status" | "deferredUntil" | "back">,
+  now: number,
+): boolean {
+  if (plan.status !== "proposed") return false;
+  // Aldo says so (brought back early, or its time came), or its time came since the read.
+  return (
+    plan.back === true || (Boolean(plan.deferredUntil) && Date.parse(plan.deferredUntil!) <= now)
+  );
 }
 
 /** Home's plans, newest first; none from an older Aldo. */
@@ -183,6 +213,8 @@ export function planCardState(
   if (plan.error) return { kind: "waiting", why: plan.error };
   if (plan.costsMoney)
     return { kind: "waiting", why: "It costs money, so it waits for your Start." };
+  if (planBack(plan, options.now))
+    return { kind: "waiting", why: "You put it off, so it waits for your Start." };
   const at = plan.autoStartAt ? Date.parse(plan.autoStartAt) : null;
   if (at === null || options.held) return { kind: "waiting", why: "It waits for your Start." };
   if (at <= options.now) return { kind: "due" };
@@ -225,17 +257,21 @@ const CLOCK_SKEW_MS = 5 * 60_000;
 /**
  * Plans still waiting on the user, oldest first, for the conversation's end:
  * those proposed since `from` (the conversation's start, as what happened),
- * and any still counting down to start on its own, which is never left unseen.
+ * any still counting down to start on its own, which is never left unseen,
+ * and any back from being put off. One put off is away until it's back.
  */
 export function openPlans(
   plans: ReadonlyArray<AldoPlan>,
   from: string | null,
+  now: number,
 ): ReadonlyArray<AldoPlan> {
   const start = from ? Date.parse(from) - CLOCK_SKEW_MS : -Infinity;
   return plans
     .filter(
       (p) =>
-        p.status === "proposed" && (p.autoStartAt !== null || Date.parse(p.proposedAt) >= start),
+        p.status === "proposed" &&
+        !planPutOff(p, now) &&
+        (p.autoStartAt !== null || Date.parse(p.proposedAt) >= start || planBack(p, now)),
     )
     .toSorted((a, b) => a.proposedAt.localeCompare(b.proposedAt));
 }

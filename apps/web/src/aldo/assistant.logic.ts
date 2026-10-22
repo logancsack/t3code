@@ -236,6 +236,7 @@ export const ACTION_LABELS: Record<string, string> = {
   delete_routine: "Removed a routine",
   decide_approval: "Approved for you",
   set_heads_ups: "Turned heads-ups on",
+  set_brief: "Changed when your brief comes",
 };
 
 /** The labels for calls that undo what their tool's name says: unpinning, unsnoozing, unsettling. */
@@ -245,6 +246,7 @@ export const REVERSE_LABELS: Record<string, string> = {
   settle_thread: "Made a thread active again",
   decide_approval: "Discarded for you",
   set_heads_ups: "Turned heads-ups off",
+  set_brief: "Stopped your brief coming to your phone",
 };
 
 /** What Aldo couldn't do, when an action failed. */
@@ -280,6 +282,7 @@ export const FAILED_LABELS: Record<string, string> = {
   open_preview: "Couldn't open a preview",
   decide_approval: "Couldn't approve it for you",
   set_heads_ups: "Couldn't turn heads-ups on",
+  set_brief: "Couldn't change when your brief comes",
 };
 
 /** What a call that undoes its tool's name couldn't do. */
@@ -289,6 +292,7 @@ export const FAILED_REVERSE_LABELS: Record<string, string> = {
   settle_thread: "Couldn't make a thread active again",
   decide_approval: "Couldn't discard it for you",
   set_heads_ups: "Couldn't turn heads-ups off",
+  set_brief: "Couldn't stop your brief coming",
 };
 
 /** Whether a call undoes what its tool's name says (pin_thread with pinned: false, say). */
@@ -304,6 +308,8 @@ function reverses(call: Pick<AldoFunctionCall, "name" | "arguments">): boolean {
       return call.arguments.decision === "discard";
     case "set_heads_ups":
       return call.arguments.on === false;
+    case "set_brief":
+      return call.arguments.push === false;
     default:
       return false;
   }

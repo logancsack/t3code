@@ -888,6 +888,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     aldoCloudOnly: true,
   },
   {
+    id: "aldo-brief",
+    title: "Daily brief",
+    to: "/settings/notifications",
+    searchTerms: ["morning brief time push notification what needs you today off"],
+    aldoCloudOnly: true,
+  },
+  {
     id: "aldo-heads-ups",
     title: "Heads-ups from Aldo",
     to: "/settings/notifications",

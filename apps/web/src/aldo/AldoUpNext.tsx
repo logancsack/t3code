@@ -91,12 +91,13 @@ export function AldoUpNext(props: { readonly home: AldoHome; readonly now: numbe
   const [opened, setOpened] = useState<string | null>(null);
   useCardKeys();
   useEffect(() => {
-    // A live card's "Needs you": unfold to its card, open it, and bring it into view.
+    // A live card's "Needs you" (its thread) or a line in the brief (its key): unfold to its card, open it, and bring it into view.
     const onShow = (event: Event) => {
-      const thread = (event as CustomEvent<string>).detail;
+      const detail = (event as CustomEvent<string>).detail;
       const at = decisions.findIndex((d) => {
+        if (d.key === detail) return true;
         const t = decisionThread(d);
-        return t !== null && `${t.environmentId}:${t.threadId}` === thread;
+        return t !== null && `${t.environmentId}:${t.threadId}` === detail;
       });
       if (at < 0) return;
       event.preventDefault();

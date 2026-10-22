@@ -28,6 +28,7 @@ import { aldoHiddenFromChat, aldoWaitingCount } from "./decisions.logic";
 import { PLEASED_MS, useAldoFace } from "./face";
 import { boardFor, deliveryLabel, dueIn } from "./home.logic";
 import { setAldoUnderTheHood } from "./simpleMode";
+import { parseAldoPlans, planPutOff } from "./plans.logic";
 import { faceMood, presenceLine, type AldoMood } from "./presence.logic";
 import { useAldoReceipts } from "./receipts";
 import "./presence.css";
@@ -132,6 +133,7 @@ export function AldoPresence(props: {
   // What was just decided here no longer waits, though the home read still has it.
   const receipts = useAldoReceipts((s) => s.receipts);
   const hidden = useMemo(() => (home ? aldoHiddenFromChat(home, now) : []), [home, now]);
+  const plans = useMemo(() => parseAldoPlans(home?.plans), [home?.plans]);
   // What the conversation shows waiting: what the user hid from it is in the menu.
   const waiting = home
     ? Math.max(
@@ -208,7 +210,7 @@ export function AldoPresence(props: {
               </ul>
             </section>
           ) : null}
-          <AldoHiddenFromChat items={hidden} />
+          <AldoHiddenFromChat items={hidden} plans={plans} now={now} />
           {coming.length > 0 ? (
             <section className="flex flex-col gap-0.5">
               <h3 className="px-1.5 font-medium text-[12px] text-muted-foreground">Coming up</h3>
@@ -233,7 +235,10 @@ export function AldoPresence(props: {
           ) : null}
           <div
             className={cn(
-              (working.length > 0 || hidden.length > 0 || coming.length > 0) &&
+              (working.length > 0 ||
+                hidden.length > 0 ||
+                plans.some((plan) => planPutOff(plan, now)) ||
+                coming.length > 0) &&
                 "border-foreground/[0.06] border-t pt-1",
             )}
           >

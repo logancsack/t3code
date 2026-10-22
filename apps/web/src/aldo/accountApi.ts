@@ -758,6 +758,50 @@ export async function setAldoHeadsUps(on: boolean): Promise<AldoHeadsUps> {
   return saved;
 }
 
+/** When the brief comes to the user's devices each day, and whether it does. */
+export interface AldoBriefSettings {
+  /** Minutes after their midnight, where they are. */
+  readonly minute: number;
+  readonly push: boolean;
+  /** When it's next due; null when it won't come (off, or until they next open Aldo). */
+  readonly nextAt: string | null;
+}
+
+/** The brief's settings as Aldo answered, or null for an answer that isn't. */
+function briefSettingsOf(body: Partial<AldoBriefSettings> | null): AldoBriefSettings | null {
+  return typeof body?.minute === "number" && typeof body.push === "boolean"
+    ? {
+        minute: body.minute,
+        push: body.push,
+        nextAt: typeof body.nextAt === "string" ? body.nextAt : null,
+      }
+    : null;
+}
+
+/** Null where this Aldo doesn't send the brief. */
+export async function fetchAldoBriefSettings(): Promise<AldoBriefSettings | null> {
+  try {
+    return briefSettingsOf(await api<Partial<AldoBriefSettings>>("/api/assistant/brief/settings"));
+  } catch (cause) {
+    if (cause instanceof AldoApiError && cause.status === 404) return null;
+    throw cause;
+  }
+}
+
+export async function setAldoBriefSettings(change: {
+  readonly minute?: number;
+  readonly push?: boolean;
+}): Promise<AldoBriefSettings> {
+  const saved = briefSettingsOf(
+    await api<Partial<AldoBriefSettings>>("/api/assistant/brief/settings", {
+      method: "PUT",
+      body: JSON.stringify(change),
+    }),
+  );
+  if (!saved) throw new Error("This Aldo doesn't send the brief.");
+  return saved;
+}
+
 /** Null where this Aldo doesn't send these emails (src/aldo/momentEmails.logic.ts). */
 export async function fetchAldoMomentEmails(): Promise<AldoMomentEmails | null> {
   try {

@@ -244,7 +244,7 @@ export function AldoConversationPage(props: {
       ),
     [home, now, firstAt, here, told, receipts, plans],
   );
-  const proposed = useMemo(() => openPlans(plans, firstAt), [plans, firstAt]);
+  const proposed = useMemo(() => openPlans(plans, firstAt, now), [plans, firstAt, now]);
   const waiting = useMemo(() => (home ? aldoWaitingCount(home, now) : 0), [home, now]);
   // Nothing read yet, and the read failed: that's said, not taken for nothing to show.
   const unread = home === null && props.error !== null;

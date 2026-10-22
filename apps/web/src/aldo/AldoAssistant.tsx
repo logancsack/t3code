@@ -8,33 +8,19 @@
 // read the way Aldo reads it (its overview): the board for an Aldo without
 // the home screen's read.
 
-import { Link } from "@tanstack/react-router";
-import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import {
   ArrowUpIcon,
   ArrowUpRightIcon,
   AudioLinesIcon,
   ChevronRightIcon,
-  CircleCheckIcon,
-  ClockIcon,
-  HandIcon,
   ImageIcon,
-  LoaderCircleIcon,
   MicIcon,
   MicOffIcon,
   PhoneOffIcon,
   PlusIcon,
   XIcon,
 } from "lucide-react";
-import {
-  useContext,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { cn } from "~/lib/utils";
@@ -46,9 +32,10 @@ import {
 import { useIsMobile, useMediaQuery } from "../hooks/useMediaQuery";
 import { useThreadShells } from "../state/entities";
 import { AldoBriefEntry } from "./AldoBrief";
+import { OpenThread, threadLink, WorkstreamGlyph } from "./AldoWorkstream";
 import { AldoFeedRun } from "./AldoFeed";
 import { showAldoCall } from "./callView";
-import { AldoOpenContext, AldoThreadCard } from "./AldoLiveCard";
+import { AldoThreadCard } from "./AldoLiveCard";
 import { AldoAvatar } from "./AldoPresence";
 import { ALDO_TALK_LABEL } from "./summon.logic";
 import {
@@ -78,12 +65,7 @@ import { beatDelay, splitBeats } from "./beats.logic";
 import { sameTarget } from "./home.logic";
 import { useAldoHomeFeed } from "./homeFeed";
 import type { AldoHomeConversation } from "./homeApi";
-import {
-  WORKSTREAM_WORDS,
-  workstreamMeta,
-  workstreamState,
-  type WorkstreamState,
-} from "./workstream.logic";
+import { WORKSTREAM_WORDS, workstreamMeta, workstreamState } from "./workstream.logic";
 import { blinkAldo, setAldoReading } from "./face";
 import { dedupeLiveCards, interleave, type AldoFeedEvent } from "./feed.logic";
 import { useAldoFirstViewHold } from "./firstView";
@@ -628,21 +610,6 @@ export function AldoComposer(props: {
   );
 }
 
-function threadLink(target: AldoOpenTarget, children: ReactNode, className?: string) {
-  return (
-    <Link
-      to="/$environmentId/$threadId"
-      params={{
-        environmentId: target.environmentId as EnvironmentId,
-        threadId: target.threadId as ThreadId,
-      }}
-      className={className}
-    >
-      {children}
-    </Link>
-  );
-}
-
 /**
  * The conversation: from the start, or `since` an entry (the summon bar shows
  * what followed its question), the newest action about each thread as a live
@@ -883,15 +850,6 @@ function AldoReply(props: { readonly text: string; readonly beats?: boolean }) {
   );
 }
 
-const WORKSTREAM_GLYPH: Record<WorkstreamState, ReactNode> = {
-  needs: <HandIcon className="size-3.5 text-warning-foreground" strokeWidth={2} />,
-  working: (
-    <LoaderCircleIcon className="size-3.5 text-primary motion-safe:animate-spin" strokeWidth={2} />
-  ),
-  done: <CircleCheckIcon className="size-3.5 text-success-foreground" strokeWidth={2} />,
-  later: <ClockIcon className="size-3.5 text-muted-foreground" strokeWidth={2} />,
-};
-
 /**
  * The thread a reply is about, over it: its glyph (a hand when it needs the
  * user, a spinner while it works, a check once it's done, a clock while it's
@@ -900,14 +858,13 @@ const WORKSTREAM_GLYPH: Record<WorkstreamState, ReactNode> = {
  */
 function WorkstreamLabel(props: { readonly conversation: AldoHomeConversation }) {
   const { conversation } = props;
-  const open = useContext(AldoOpenContext);
   const now = Date.now();
   const state = workstreamState(conversation, now);
   const body = (
     <>
       {state ? (
         <span aria-hidden className="flex size-4 shrink-0 items-center justify-center">
-          {WORKSTREAM_GLYPH[state]}
+          <WorkstreamGlyph state={state} />
         </span>
       ) : null}
       {state ? <span className="sr-only">{WORKSTREAM_WORDS[state]}: </span> : null}
@@ -923,16 +880,10 @@ function WorkstreamLabel(props: { readonly conversation: AldoHomeConversation })
   );
   const className =
     "-ms-1.5 mt-1 inline-flex min-h-7 max-w-full items-center gap-1.5 rounded-full px-1.5 text-[13px] text-muted-foreground leading-4 transition-colors hover:bg-foreground/[0.05] focus-visible:outline-2 focus-visible:outline-ring pointer-coarse:min-h-11";
-  return open ? (
-    <button
-      type="button"
-      className={className}
-      onClick={(event) => open(conversation.thread, event.currentTarget)}
-    >
+  return (
+    <OpenThread target={conversation.thread} className={className}>
       {body}
-    </button>
-  ) : (
-    threadLink(conversation.thread, body, className)
+    </OpenThread>
   );
 }
 

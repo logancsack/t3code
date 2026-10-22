@@ -354,7 +354,30 @@ export interface AldoBriefItem {
   readonly reason: string | null;
 }
 
-/** Aldo's brief for the day: the first time the user opens Aldo each day. */
+/**
+ * One item in the brief's groups: the thread it's about (null for an
+ * approval of no thread's), what that's called and a line on it. `key` is a
+ * decision's (decisions.logic.ts), so it shows as decided once it is; `why`
+ * Aldo's few words on why it matters now; `until` when what can wait is back.
+ */
+export interface AldoBriefGroupItem {
+  readonly key?: string;
+  readonly thread: { readonly environmentId: string; readonly threadId: string } | null;
+  readonly workstream: string;
+  readonly text: string;
+  readonly why?: string;
+  readonly until?: string;
+}
+
+/** What the brief is about: what needs the user, what Aldo's watching, what can wait, and what's good to know. */
+export interface AldoBriefGroups {
+  readonly needs: ReadonlyArray<AldoBriefGroupItem>;
+  readonly watching: ReadonlyArray<AldoBriefGroupItem>;
+  readonly later: ReadonlyArray<AldoBriefGroupItem>;
+  readonly fyi: ReadonlyArray<AldoBriefGroupItem>;
+}
+
+/** Aldo's brief for the day: the first time the user opens Aldo each day, or at the time they chose. */
 export interface AldoBrief {
   readonly day: string;
   /** When it was made: when it was said in the conversation. */
@@ -368,6 +391,10 @@ export interface AldoBrief {
     readonly start: string;
     readonly allDay: boolean;
   }>;
+  /** Its first line, "Morning, Sam. 2 of your 5 things need you today." (an older Aldo leaves it out). */
+  readonly headline?: string;
+  /** What it's about, by group (an older Aldo leaves them out). */
+  readonly groups?: AldoBriefGroups;
 }
 
 /**
