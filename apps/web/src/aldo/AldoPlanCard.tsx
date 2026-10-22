@@ -196,7 +196,8 @@ export function AldoPlanCard(props: {
           },
         },
       });
-      await refreshAldoHome();
+      // Put off already: a read that fails now only leaves the page a moment behind.
+      await refreshAldoHome().catch(() => undefined);
     } catch (error) {
       setFailure(error instanceof Error ? error.message : "Couldn’t put it off. Try again.");
     } finally {

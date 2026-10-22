@@ -35,7 +35,8 @@ export function DismissChatDecision(props: {
     try {
       await dismissAldoChatDecision(decision.id, true, until);
       setAldoChatDecisionDismissed(decision.id, true, until);
-      await refreshAldoHome();
+      // Put off already: a read that fails now only leaves the page a moment behind.
+      await refreshAldoHome().catch(() => undefined);
       const toast = toastManager.add({
         type: "info",
         title: `Back ${backWhen(until, new Date())}`,
@@ -69,7 +70,7 @@ export function DismissChatDecision(props: {
     try {
       await dismissAldoChatDecision(decision.id, !props.restore);
       setAldoChatDecisionDismissed(decision.id, !props.restore);
-      await refreshAldoHome();
+      await refreshAldoHome().catch(() => undefined);
       const toast = toastManager.add({
         type: "info",
         title: props.restore ? "Shown in Aldo chat" : "Hidden from Aldo chat",
@@ -232,13 +233,14 @@ function ShowPlanNow(props: { readonly plan: AldoPlan }) {
       onClick={() => {
         setBusy(true);
         void tapAldoPlan(props.plan.id, { action: "hold", until: null })
-          .then(() => refreshAldoHome())
-          .catch((cause: unknown) =>
-            toastManager.add({
-              type: "error",
-              title: "Couldn't bring the plan back",
-              description: cause instanceof Error ? cause.message : String(cause),
-            }),
+          .then(
+            () => refreshAldoHome().catch(() => undefined),
+            (cause: unknown) =>
+              toastManager.add({
+                type: "error",
+                title: "Couldn't bring the plan back",
+                description: cause instanceof Error ? cause.message : String(cause),
+              }),
           )
           .finally(() => setBusy(false));
       }}

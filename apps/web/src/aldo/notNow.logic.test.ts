@@ -57,4 +57,11 @@ describe("pickedTime", () => {
       error: "Pick a time within 30 days.",
     });
   });
+
+  it("refuses a time that doesn't happen, rather than come back at another", () => {
+    // As 2:30 the night the clocks go forward would: the date moves it on, and the field still says 2:30.
+    expect(pickedTime("2026-11-31T10:00", at(15, 0))).toEqual({
+      error: "That time doesn't happen here. Pick another.",
+    });
+  });
 });

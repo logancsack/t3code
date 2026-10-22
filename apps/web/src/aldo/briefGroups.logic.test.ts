@@ -82,6 +82,15 @@ describe("briefItemState", () => {
     expect(briefItemState(needs, "needs", h, liveDecisionKeys(h, NOW), NOW)).toBe("needs");
   });
 
+  it("is put off while they've put its card off or hidden it", () => {
+    const putOff = home([
+      { ...asking, chatDecision: { id: "d1", dismissed: true, until: ahead(60) } },
+    ]);
+    expect(briefItemState(needs, "needs", putOff, liveDecisionKeys(putOff, NOW), NOW)).toBe(
+      "later",
+    );
+  });
+
   it("follows its thread once decided, or shows done", () => {
     const answered = home([conversation({ state: "working", at: ago(1) })]);
     expect(briefItemState(needs, "needs", answered, liveDecisionKeys(answered, NOW), NOW)).toBe(
@@ -89,6 +98,9 @@ describe("briefItemState", () => {
     );
     const gone = home([]);
     expect(briefItemState(needs, "needs", gone, liveDecisionKeys(gone, NOW), NOW)).toBe("done");
+    // Its thread asks something else now: that's another decision, and this one's done.
+    const next = home([conversation({ state: "waiting", at: ago(1) })]);
+    expect(briefItemState(needs, "needs", next, liveDecisionKeys(next, NOW), NOW)).toBe("done");
   });
 
   it("reads what Aldo's watching from its thread now", () => {

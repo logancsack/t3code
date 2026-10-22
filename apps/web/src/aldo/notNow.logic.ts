@@ -117,6 +117,9 @@ export function pickedTime(
     number,
   ];
   const until = new Date(year, month - 1, day, hour, minute);
+  // A time the clocks skip (2:30 the night they go forward) would come back an hour off.
+  if (Number.isNaN(until.getTime()) || fieldTime(until) !== value)
+    return { error: "That time doesn't happen here. Pick another." };
   if (until.getTime() < now.getTime() + 60_000) return { error: "Pick a time later than now." };
   if (until.getTime() > now.getTime() + NOT_NOW_MAX_DAYS * DAY_MS)
     return { error: `Pick a time within ${NOT_NOW_MAX_DAYS} days.` };
