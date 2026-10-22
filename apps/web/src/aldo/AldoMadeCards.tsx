@@ -415,6 +415,12 @@ const TYPE_OF_KIND: Partial<Record<AldoMadeKind, string>> = {
   audio: "audio/mpeg",
 };
 
+/** A share Aldo serves, of a kind its viewer shows. */
+function opensInAldo(item: AldoResultItem): boolean {
+  const contentType = item.share?.contentType ?? TYPE_OF_KIND[item.kind];
+  return Boolean(item.url && item.shareId && contentType && aldoShareViewable(contentType));
+}
+
 /** Beside the thread when it's a file there; a share Aldo serves, in its viewer; the rest at its link. */
 function openItem(threadRef: ScopedThreadRef | null, item: AldoResultItem) {
   if (item.path && threadRef) {
@@ -423,7 +429,7 @@ function openItem(threadRef: ScopedThreadRef | null, item: AldoResultItem) {
   }
   if (!item.url) return;
   const contentType = item.share?.contentType ?? TYPE_OF_KIND[item.kind];
-  if (item.shareId && contentType && aldoShareViewable(contentType)) {
+  if (item.shareId && contentType && opensInAldo(item)) {
     openAldoShare({
       id: item.shareId,
       url: item.url,
@@ -883,9 +889,11 @@ function LinkCard(props: {
   );
   const cardClass =
     "flex w-full min-w-0 overflow-hidden text-left hover:bg-accent/40 disabled:cursor-default @md:flex-col";
+  // A share Aldo serves opens in its viewer; any other link, at its address.
+  const inAldo = Boolean(link.url) && item !== null && opensInAldo(item);
   return (
     <li className="flex min-w-0 flex-col overflow-hidden rounded-lg border border-border/60 bg-card/30">
-      {link.url ? (
+      {link.url && !inAldo ? (
         <a href={link.url} target="_blank" rel="noopener noreferrer" className={cardClass}>
           {body}
         </a>
@@ -894,7 +902,7 @@ function LinkCard(props: {
           type="button"
           className={cardClass}
           onClick={() => item && openItem(threadRef, item)}
-          disabled={!item?.path || !threadRef}
+          disabled={!inAldo && (!item?.path || !threadRef)}
         >
           {body}
         </button>

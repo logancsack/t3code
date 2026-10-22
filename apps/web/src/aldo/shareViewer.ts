@@ -39,12 +39,19 @@ export function closeAldoShare(): void {
   set(null);
 }
 
+/** The share open now, if one. */
+export function aldoOpenShareNow(): AldoOpenShare | null {
+  return open;
+}
+
 export function useAldoOpenShare(): AldoOpenShare | null {
-  return useSyncExternalStore(
-    subscribe,
-    () => open,
-    () => null,
-  );
+  return useSyncExternalStore(subscribe, aldoOpenShareNow, () => null);
+}
+
+/** Aldo's list of shares, read: the one open takes what it says of it (opened before the list came, it had none). */
+export function aldoSharesRead(shares: ReadonlyMap<string, AldoShareView>): void {
+  const listed = open?.id ? shares.get(open.id) : undefined;
+  if (open && listed && listed !== open.share) set({ ...open, title: listed.title, share: listed });
 }
 
 /** A share as Aldo now says it stands, after the viewer changed it. */

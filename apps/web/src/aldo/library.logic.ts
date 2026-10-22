@@ -333,13 +333,15 @@ export function aldoThreadLibrary(input: {
       if (!shared && thing.path === null) continue;
       if (share) claimed.add(share.id);
       const name = shared ? (share?.title ?? thing.sharedAs ?? thing.name) : thing.name;
+      // A page that stays current is as new as its last update.
+      const updated = share?.updatedAt ?? null;
       const item: AldoLibraryItem = {
         key: thing.path ?? (share ? `share:${share.id}` : (thing.url ?? thing.name)),
         name,
         fileName: name !== thing.name ? thing.name : null,
         kind: (share ? aldoShareKind(share.contentType) : null) ?? thing.kind,
         path: thing.path,
-        at: turn.completedAt,
+        at: updated && timeOf(updated) > timeOf(turn.completedAt) ? updated : turn.completedAt,
         shared,
         share,
         url: input.shares === null ? (thing.url ?? null) : null,
@@ -353,7 +355,7 @@ export function aldoThreadLibrary(input: {
       // A file a later turn changed again keeps that time, and the share an earlier turn made.
       const later = items[index]!;
       if (!later.shared && item.shared) {
-        items[index] = { ...item, at: later.at };
+        items[index] = { ...item, at: timeOf(item.at) > timeOf(later.at) ? item.at : later.at };
       }
     }
   });

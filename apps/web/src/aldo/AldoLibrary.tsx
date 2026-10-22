@@ -70,11 +70,14 @@ function useAldoShares(key: string) {
   const [error, setError] = useState<string | null>(null);
   // Only the latest read's answer shows.
   const latest = useRef(0);
+  // Whether a read has answered yet.
+  const read = useRef(false);
   const refresh = useCallback(() => {
     const request = ++latest.current;
     fetchAldoShares()
       .then((next) => {
         if (request !== latest.current) return;
+        read.current = true;
         setShares(next);
         setError(null);
       })
@@ -98,6 +101,11 @@ function useAldoShares(key: string) {
   useEffect(
     () =>
       onAldoShareChanged((changed) => {
+        // Nothing read yet, and the read on its way may predate the change: read again.
+        if (!read.current) {
+          refresh();
+          return;
+        }
         latest.current += 1;
         setShares((current) =>
           current
@@ -105,7 +113,7 @@ function useAldoShares(key: string) {
             : current,
         );
       }),
-    [],
+    [refresh],
   );
   return { shares, error, refresh, removed };
 }

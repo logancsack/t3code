@@ -7,6 +7,7 @@
 import { ExternalLinkIcon, FileIcon, GlobeIcon, PinIcon, PinOffIcon, XIcon } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
+import { canShowPdfInFrame } from "../components/files/filePreviewMode";
 import { Button } from "../components/ui/button";
 import { Sheet, SheetPopup, SheetTitle } from "../components/ui/sheet";
 import { Spinner } from "../components/ui/spinner";
@@ -65,8 +66,12 @@ function AldoShareViewer(props: { readonly open: AldoOpenShare }) {
   const { open } = props;
   const listed = open.share;
   const type = open.contentType.split(";")[0]!.trim().toLowerCase();
-  // A player shows itself at once.
-  const [loaded, setLoaded] = useState(type.startsWith("audio/"));
+  // Chrome on Android has no PDF viewer for a frame: the PDF opens in a new tab instead.
+  const pdfOutside =
+    type === "application/pdf" &&
+    !canShowPdfInFrame(typeof navigator === "undefined" ? undefined : navigator);
+  // A player shows itself at once, as does what's said in place of a PDF.
+  const [loaded, setLoaded] = useState(type.startsWith("audio/") || pdfOutside);
   const [pinning, setPinning] = useState(false);
   // What /s/ serves as a page (Markdown too, as one to read): sandboxed here as well.
   const page = type === "text/html" || type === "image/svg+xml" || type === "text/markdown";
@@ -150,6 +155,18 @@ function AldoShareViewer(props: { readonly open: AldoOpenShare }) {
           ) : type.startsWith("audio/") ? (
             <div className="flex size-full items-center justify-center p-6">
               <audio src={open.url} controls className="w-full max-w-md" />
+            </div>
+          ) : pdfOutside ? (
+            <div className="flex size-full flex-col items-center justify-center gap-3 px-6 text-center">
+              <p className="text-muted-foreground text-sm">This browser can’t show the PDF here.</p>
+              <Button
+                variant="outline"
+                size="sm"
+                render={<a href={open.url} target="_blank" rel="noopener noreferrer" />}
+              >
+                <ExternalLinkIcon />
+                Open the PDF
+              </Button>
             </div>
           ) : (
             // A PDF doesn't show in a sandboxed frame; it, text and data run nothing.

@@ -5,8 +5,11 @@ import {
   aldoShareItem,
   aldoShareUpdated,
   aldoShareViewable,
+  aldoThreadLibrary,
   parseAldoShares,
+  type AldoShareView,
 } from "./library.logic";
+import { aldoOpenShareNow, aldoSharesRead, closeAldoShare, openAldoShare } from "./shareViewer";
 
 const listed = {
   id: "abc",
@@ -109,5 +112,54 @@ describe("the Library's order", () => {
       ["Pinned", ["Old"]],
       ["Today", ["Live", "New"]],
     ]);
+  });
+});
+
+describe("a page that stays current in a thread's Library", () => {
+  it("is as new as its last update, not the turn that made it", () => {
+    const page: AldoShareView = {
+      ...listed,
+      createdAt: "2026-09-01T08:00:00.000Z",
+      updatedAt: "2026-10-22T07:42:00.000Z",
+      live: true,
+      environmentId: "env-1",
+    };
+    const library = aldoThreadLibrary({
+      turns: [{ turnId: "turn-1", completedAt: "2026-09-01T08:01:00.000Z", files: [] }],
+      sharesByTurn: new Map([["turn-1", [{ path: null, title: page.title, url: page.url }]]]),
+      workspaceRoot: "/vercel/work/general",
+      shares: [page],
+      environmentId: "env-1",
+    });
+    expect(library.items.map((item) => item.at)).toEqual(["2026-10-22T07:42:00.000Z"]);
+  });
+});
+
+describe("the share open in the viewer", () => {
+  it("takes what Aldo's list says of it once the list is read", () => {
+    openAldoShare({
+      id: "abc",
+      url: listed.url,
+      title: "Old title",
+      contentType: "text/html",
+      share: null,
+    });
+    const [read] = parseAldoShares([
+      {
+        ...listed,
+        title: "Morning dashboard",
+        pinned: true,
+        updatedAt: "2026-10-22T07:42:00.000Z",
+      },
+    ])!;
+    // Another share in the list: as it was.
+    aldoSharesRead(new Map([["other", { ...read!, id: "other" }]]));
+    expect(aldoOpenShareNow()).toMatchObject({ title: "Old title", share: null });
+    aldoSharesRead(new Map([["abc", read!]]));
+    expect(aldoOpenShareNow()).toMatchObject({ title: "Morning dashboard", share: read });
+    closeAldoShare();
+    // Nothing open: nothing to follow.
+    aldoSharesRead(new Map([["abc", read!]]));
+    expect(aldoOpenShareNow()).toBeNull();
   });
 });

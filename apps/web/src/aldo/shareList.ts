@@ -10,7 +10,7 @@ import { useCallback, useEffect, useSyncExternalStore } from "react";
 
 import type { AldoListedShare } from "./results.logic";
 import type { AldoShareView } from "./library.logic";
-import { onAldoShareChanged } from "./shareViewer";
+import { aldoSharesRead, onAldoShareChanged } from "./shareViewer";
 import { fetchAldoShares } from "./workspaceApi";
 
 /** Aldo lists this many at most: one missing from a full list may just be older. */
@@ -51,6 +51,7 @@ function read() {
     .then((shares) => {
       const byId = shares ? new Map(shares.map((share) => [share.id, share])) : null;
       state = { shares: byId, full: (shares?.length ?? 0) >= MOST_LISTED, settled, at: Date.now() };
+      if (byId) aldoSharesRead(byId);
       // Asked about while this read was on its way, and not in it: look once more.
       again = byId !== null && [...asked].some((id) => !settled.has(id) && !byId.has(id));
       failures = 0;
