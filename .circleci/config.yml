@@ -48,8 +48,16 @@ commands:
           name: Install Vite+
           command: |
             version=$(sed -n 's/^  vite-plus: //p' pnpm-workspace.yaml)
-            curl -fsSL "https://raw.githubusercontent.com/voidzero-dev/vite-plus/v${version}/packages/cli/install.sh" \
-              | VP_VERSION="$version" bash
+            # The installer reads the npm registry and takes an error page (a 502
+            # while npm is degraded) for metadata it can't parse: try again for
+            # a few minutes, since such outages are often partial.
+            for attempt in 1 2 3 4; do
+              curl -fsSL "https://raw.githubusercontent.com/voidzero-dev/vite-plus/v${version}/packages/cli/install.sh" \
+                | VP_VERSION="$version" bash && break
+              [ "$attempt" = 4 ] && exit 1
+              echo "Installing Vite+ failed (try $attempt of 4); trying again in $((attempt * 30))s."
+              sleep $((attempt * 30))
+            done
             # Vite+ 1.0 installs under ~/.local/share/vite-plus (0.x used ~/.vite-plus).
             echo 'export PATH="$HOME/.local/share/vite-plus/bin:$PATH"' >> "$BASH_ENV"
       - restore_cache:
