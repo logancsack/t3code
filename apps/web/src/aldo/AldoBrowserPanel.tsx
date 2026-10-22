@@ -788,13 +788,13 @@ export function AldoBrowserPanel({
     using: now - usedAt < USE_HOLD_MS,
   });
   const onWindows = view === "desktop" && screen === "windows";
-  // Once there's a page to share (or the desktop; a handoff before either: the machine is up for
-  // it). Agents don't use the Windows computer; full screen, only what changes there (a
-  // recording, control taken).
-  const showStatus =
-    (pictured || view === "desktop" || state === "handoff") &&
-    !onWindows &&
-    (!inTakeover || state === "recording" || state === "yours");
+  // What the user has to act on (Stop, I'm done, Hand back) shows wherever they are, picture
+  // or not. Who's browsing, once there's a page to share or the desktop; agents don't use the
+  // Windows computer. Full screen, the takeover says the rest itself.
+  const actionable = state === "recording" || state === "handoff" || state === "yours";
+  const showStatus = inTakeover
+    ? state === "recording" || state === "yours"
+    : actionable || ((pictured || view === "desktop") && !onWindows);
   const blank =
     view === "browser" && status === "live" && pictured && !dialog && aldoBlankPage(shownUrl);
 
@@ -962,7 +962,11 @@ export function AldoBrowserPanel({
       ) : null}
 
       {view === "desktop" ? (
-        <AldoDesktopView environmentId={environmentId} screen={screen} />
+        <AldoDesktopView
+          environmentId={environmentId}
+          screen={screen}
+          onUse={screen === "machine" ? noteUse : undefined}
+        />
       ) : null}
       <div
         ref={stageRef}

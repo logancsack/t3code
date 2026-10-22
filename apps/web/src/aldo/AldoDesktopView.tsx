@@ -31,9 +31,12 @@ type Status = "connecting" | "live" | "asleep" | "error";
 export function AldoDesktopView({
   environmentId,
   screen = "machine",
+  onUse,
 }: {
   environmentId: string;
   screen?: AldoDesktopScreen;
+  /** The user clicked, typed or scrolled on the screen: agents wait a moment after. */
+  onUse?: (() => void) | undefined;
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -237,6 +240,10 @@ export function AldoDesktopView({
       ref={rootRef}
       data-aldo-desktop=""
       className="relative min-h-0 flex-1 overflow-hidden bg-muted/30"
+      // Ahead of noVNC's own listeners, which take the events.
+      onPointerDownCapture={onUse}
+      onKeyDownCapture={onUse}
+      onWheelCapture={onUse}
     >
       {/* The video, under noVNC's screen (which stays empty over it). */}
       <canvas

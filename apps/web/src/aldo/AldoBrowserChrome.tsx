@@ -41,6 +41,9 @@ export type AldoBrowserTab = { id: string; url: string; title: string };
 /** The status line's buttons: the line's own size of text. */
 const LINE_BUTTON = "gap-1.5 px-2.5 sm:text-[13px]";
 
+/** How often a blank tab reads the thread's previews again. */
+const PREVIEWS_EVERY_MS = 15_000;
+
 /** A tab's site icon, the page's own where there is one, else a globe; a spinner while it loads. */
 function TabIcon(props: { url: string; loading: boolean }) {
   const src = faviconUrlForOrigin(props.url, 32);
@@ -267,7 +270,7 @@ export function AldoBrowserStatus(props: {
       tone = "bg-destructive/[0.06] dark:bg-destructive/[0.1]";
       indicator = (
         <span className="relative flex size-2.5 items-center justify-center" aria-hidden>
-          <span className="absolute inset-0 animate-ping rounded-full bg-destructive/50 motion-reduce:hidden" />
+          <span className="absolute inset-0 animate-status-ping rounded-full bg-destructive/50 motion-reduce:hidden" />
           <span className="size-2 rounded-full bg-destructive" />
         </span>
       );
@@ -362,7 +365,7 @@ export function AldoBrowserStatus(props: {
     case "agent":
       indicator = (
         <span className="relative flex size-2.5 items-center justify-center" aria-hidden>
-          <span className="absolute inset-0 animate-ping rounded-full bg-primary/40 motion-reduce:hidden" />
+          <span className="absolute inset-0 animate-status-ping rounded-full bg-primary/40 motion-reduce:hidden" />
           <span className="size-2 rounded-full bg-primary" />
         </span>
       );
@@ -490,13 +493,22 @@ export function AldoBrowserStart(props: {
   onOpen: (address: string) => void;
 }) {
   const [ports, setPorts] = useState<AldoPreviews["ports"]>([]);
+  // Read again every so often while it's on screen: the agent starts and stops its servers.
   useEffect(() => {
     let current = true;
-    fetchAldoPreviews(props.environmentId)
-      .then((previews) => current && setPorts(previews.ports))
-      .catch(() => {});
+    const read = () => {
+      if (document.visibilityState === "hidden") return;
+      fetchAldoPreviews(props.environmentId)
+        .then((previews) => current && setPorts(previews.ports))
+        .catch(() => {});
+    };
+    read();
+    const timer = setInterval(read, PREVIEWS_EVERY_MS);
+    document.addEventListener("visibilitychange", read);
     return () => {
       current = false;
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", read);
     };
   }, [props.environmentId]);
   return (
