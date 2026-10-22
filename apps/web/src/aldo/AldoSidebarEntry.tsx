@@ -1,13 +1,15 @@
-// Aldo at the top of the sidebar, on every screen: a row with its face, which
-// sets it apart from the threads below. The face starts a conversation (or
+// Aldo as the first row of the sidebar's list, above pinned threads and every
+// sort, search and filter: tinted, with its face for the repo's icon, so it
+// reads as the assistant and not a thread. The face starts a conversation (or
 // hangs up) right where the user is, and the row opens Aldo's own screen (the
 // home screen's conversation). While a conversation is on, it shows what Aldo
 // is doing or saying, with mute. Only where the server has the assistant.
 
-import { Link } from "@tanstack/react-router";
+import { Link, useRouterState } from "@tanstack/react-router";
 import { MicIcon, MicOffIcon } from "lucide-react";
 
 import { Button } from "../components/ui/button";
+import { useSidebar } from "../components/ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { cn } from "~/lib/utils";
 import { ALDO_SHORTCUT_LABEL, useAldoAssistantAvailable } from "./AldoAssistant";
@@ -18,7 +20,7 @@ import type { AldoMood } from "./presence.logic";
 import { isAldoCloud } from "./api";
 
 const STATUS: Record<AldoAssistantPhase, string> = {
-  idle: `Talk or type · ${ALDO_SHORTCUT_LABEL}`,
+  idle: "Your assistant",
   connecting: "Connecting…",
   listening: "Listening",
   hearing: "Listening",
@@ -44,6 +46,8 @@ export function AldoSidebarEntry() {
   const muted = useAldoAssistant((s) => s.muted);
   const micOn = useAldoAssistant((s) => s.micOn);
   const replying = useAldoAssistant((s) => s.replying);
+  const { isMobile } = useSidebar();
+  const onAldo = useRouterState({ select: (state) => state.location.pathname === "/" });
   if (!isAldoCloud || !available) return null;
   const live = phase !== "idle" && phase !== "error";
   const status =
@@ -55,7 +59,12 @@ export function AldoSidebarEntry() {
           ? "Thinking…"
           : STATUS[phase];
   return (
-    <div className="mb-1 flex h-9 items-center gap-1.5 rounded-lg ps-1 pe-1 text-sm transition-colors hover:bg-sidebar-row-hover">
+    <div
+      className={cn(
+        "mb-1 flex h-12 items-center gap-2.5 rounded-md bg-primary/[0.05] px-2.5 text-sm ring-1 ring-primary/10 ring-inset transition-colors hover:bg-primary/[0.09]",
+        onAldo && "bg-primary/[0.09] ring-primary/20",
+      )}
+    >
       <Tooltip>
         <TooltipTrigger
           render={
@@ -67,7 +76,7 @@ export function AldoSidebarEntry() {
             />
           }
         >
-          <AldoAvatar size={20} mood={replying ? "thinking" : MOOD[phase]} />
+          <AldoAvatar size={24} mood={replying ? "thinking" : MOOD[phase]} />
         </TooltipTrigger>
         <TooltipPopup side="right">
           {live ? "Hang up" : `Talk to Aldo (${ALDO_SHORTCUT_LABEL})`}
@@ -75,17 +84,25 @@ export function AldoSidebarEntry() {
       </Tooltip>
       <Link
         to="/"
-        className="flex min-w-0 flex-1 items-center gap-2 pe-2 leading-tight"
+        className="flex min-w-0 flex-1 flex-col leading-tight outline-none focus-visible:ring-2 focus-visible:ring-ring"
         aria-label="Open Aldo"
+        aria-current={onAldo ? "page" : undefined}
       >
-        <span className="font-semibold text-sidebar-foreground">Aldo</span>
+        <span className="flex items-baseline gap-2">
+          <span className="font-semibold text-sidebar-foreground">Aldo</span>
+          {isMobile || live ? null : (
+            <span className="ms-auto text-[11px] text-sidebar-muted-foreground">
+              {ALDO_SHORTCUT_LABEL}
+            </span>
+          )}
+        </span>
         <span
           className={cn(
-            "ms-auto min-w-0 truncate text-[12px] text-sidebar-muted-foreground",
+            "mt-0.5 min-w-0 truncate text-xs text-secondary-label",
             live && "text-sidebar-foreground/80",
           )}
         >
-          {phase === "idle" && !replying ? ALDO_SHORTCUT_LABEL : status}
+          {status}
         </span>
       </Link>
       {live && micOn ? (

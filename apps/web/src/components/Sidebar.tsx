@@ -4893,7 +4893,6 @@ export default function Sidebar() {
           // Lifted above the stage backdrop, whose fade bleeds below the
           // header and would otherwise paint across the search row's outline.
           <SidebarGroup className="z-[1]">
-            {isAldoCloud ? <AldoSidebarEntry /> : null}
             <SidebarThreadHeader
               searchFieldRef={headerSearchRef}
               hasProjects={projectGroups.length > 0}
@@ -4931,6 +4930,8 @@ export default function Sidebar() {
         }
       >
         <SidebarGroup className="flex-1" role="presentation">
+          {/* Aldo: the assistant is the list's first row, whatever its order or search. */}
+          {isAldoCloud ? <AldoSidebarEntry /> : null}
           {isSearchingThreads ? (
             threadSearchResults.length > 0 ? (
               <TooltipProvider
