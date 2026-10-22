@@ -9,7 +9,7 @@
 // or the list under "How Aldo works for you" (AldoHomeBoard.tsx).
 
 import { CalendarPlusIcon, CircleCheckBigIcon, MailIcon, SparklesIcon } from "lucide-react";
-import { useMemo } from "react";
+import { Fragment, useMemo } from "react";
 
 import { Badge } from "../components/ui/badge";
 import { useNowMinute } from "../hooks/useNowMinute";
@@ -34,6 +34,7 @@ import {
   waitingApprovals,
 } from "./approvals.logic";
 import { relativeTime } from "./home.logic";
+import { addedWords, wordDiff } from "./diff.logic";
 
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
@@ -289,8 +290,83 @@ export function ApprovalBody(props: {
   const a = props.approval;
   const written = a.kind === "start" || a.kind === "confirm";
   return (
-    <Quoted lines={props.lines} className={cn(!written && "whitespace-pre-wrap", props.className)}>
-      {written ? <AgentMarkdown text={a.body} className={props.className} /> : a.body}
-    </Quoted>
+    <>
+      <Quoted
+        lines={props.lines}
+        className={cn(!written && "whitespace-pre-wrap", props.className)}
+      >
+        {written ? (
+          <AgentMarkdown text={a.body} className={props.className} />
+        ) : (
+          <ApprovalText approval={a} />
+        )}
+      </Quoted>
+      <RewriteNote approval={a} />
+    </>
+  );
+}
+
+/** The last few drafts' rewrites: a card's text and its note share one, and a long draft's takes a while. */
+const rewrites = new Map<string, ReturnType<typeof wordDiff>>();
+
+/** What Aldo rewrote, against what it said before (an Aldo that rewrites drafts). */
+function useRewrite(a: AldoApproval) {
+  const before = a.previous?.body;
+  return useMemo(() => {
+    if (before === undefined) return null;
+    const key = `${before}\u0000${a.body}`;
+    let runs = rewrites.get(key);
+    if (!runs) {
+      runs = wordDiff(before, a.body);
+      if (rewrites.size >= 8) rewrites.delete(rewrites.keys().next().value!);
+      rewrites.set(key, runs);
+    }
+    return runs;
+  }, [before, a.body]);
+}
+
+/** An email's or an event's text as it goes out: one Aldo rewrote, the words it put in underlined. */
+export function ApprovalText(props: { readonly approval: AldoApproval }) {
+  const runs = useRewrite(props.approval);
+  if (!runs) return <>{props.approval.body}</>;
+  return runs.map((run, i) =>
+    run.added ? (
+      <ins
+        // oxlint-disable-next-line react/no-array-index-key -- runs have no identity but their place
+        key={i}
+        className="text-inherit underline decoration-primary decoration-[1.5px] underline-offset-[3px]"
+      >
+        {run.text}
+      </ins>
+    ) : (
+      // oxlint-disable-next-line react/no-array-index-key -- runs have no identity but their place
+      <Fragment key={i}>{run.text}</Fragment>
+    ),
+  );
+}
+
+/** Under a text Aldo rewrote: that it did, so the underlines read as what's new, and what the subject was if it changed. */
+export function RewriteNote(props: {
+  readonly approval: AldoApproval;
+  readonly className?: string;
+}) {
+  const a = props.approval;
+  const runs = useRewrite(a);
+  if (!runs || !a.previous) return null;
+  const name = a.kind === "email" ? "subject" : "title";
+  const retitled = a.previous.title !== a.title;
+  let words =
+    addedWords(runs) > 0
+      ? "Aldo rewrote it. The new words in the text are underlined."
+      : "Aldo rewrote it.";
+  if (retitled)
+    words =
+      a.previous.body === a.body
+        ? `Aldo changed the ${name} from “${a.previous.title}”.`
+        : `${words} The ${name} was “${a.previous.title}”.`;
+  return (
+    <p className={cn("text-[12px] text-muted-foreground leading-[18px]", props.className)}>
+      {words}
+    </p>
   );
 }

@@ -25,7 +25,15 @@ vi.mock("./AldoAssistant", () => ({
   AldoAtAGlance: () => null,
   AldoCaption: () => null,
   AldoComposer: () => <textarea aria-label="Message Aldo" />,
-  AldoConversation: ({ feed, tail }: { feed: ReadonlyArray<AldoFeedEvent>; tail?: ReactNode }) => {
+  AldoConversation: ({
+    feed,
+    tail,
+    renderDecisions,
+  }: {
+    feed: ReadonlyArray<AldoFeedEvent>;
+    tail?: ReactNode;
+    renderDecisions?: (keys: null, placedAt: ReadonlyMap<string, string>) => ReactNode;
+  }) => {
     const entries = useAldoAssistant((s) => s.entries);
     return (
       <div>
@@ -36,6 +44,7 @@ vi.mock("./AldoAssistant", () => ({
           <p key={e.kind === "message" ? e.at : e.id}>{e.kind === "message" ? e.text : e.label}</p>
         ))}
         {tail}
+        {renderDecisions?.(null, new Map())}
       </div>
     );
   },

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import type { AldoBriefGroupItem } from "./assistantApi";
-import { briefItemNote, briefItemState, liveDecisionKeys } from "./briefGroups.logic";
+import { briefItemNote, briefItemState, briefRaised, liveDecisionKeys } from "./briefGroups.logic";
 import type { AldoHome, AldoHomeConversation } from "./homeApi";
 
 const NOW = Date.parse("2026-10-21T14:00:00Z");
@@ -128,5 +128,29 @@ describe("briefItemNote", () => {
     expect(briefItemNote(needs, "needs", "needs", NOW)).toBeNull();
     expect(briefItemNote(needs, "needs", "done", NOW)).toBe("done");
     expect(briefItemNote(needs, "needs", "working", NOW)).toBe("working on it");
+  });
+});
+
+describe("briefRaised", () => {
+  it("is what the brief put to the user: its top and what it said needs them", () => {
+    const raised = briefRaised({
+      day: "2026-10-21",
+      at: "2026-10-21T14:00:00.000Z",
+      title: "Brief",
+      text: "",
+      top: [{ key: "a", why: null, suggestion: null, reason: null }],
+      ahead: [],
+      groups: {
+        needs: [
+          { key: "b", thread: null, workstream: "Site", text: "Merge it" },
+          { thread: null, workstream: "Site", text: "No key" },
+        ],
+        watching: [{ key: "c", thread: null, workstream: "Site", text: "Tests" }],
+        later: [],
+        fyi: [],
+      },
+    });
+    expect(raised.at).toBe("2026-10-21T14:00:00.000Z");
+    expect([...raised.keys].sort()).toEqual(["a", "b"]);
   });
 });

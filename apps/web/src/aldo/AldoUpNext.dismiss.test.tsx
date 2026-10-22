@@ -273,3 +273,58 @@ it("with an Aldo that can put things off, Not now brings it back at a time, and 
   );
   expect(backend.decide).not.toHaveBeenCalled();
 });
+
+it("shows a placed group's cards where they were placed, and the rest at the end", async () => {
+  const { aldoChatDecisions } = await import("./decisions.logic");
+  const home = useAldoHomeFeed.getState().home!;
+  const [first, second] = aldoChatDecisions(home, now).map((d) => d.key);
+  const placedAt = new Map([[first!, new Date(now - 60_000).toISOString()]]);
+  await act(async () =>
+    root.render(
+      <>
+        <div data-placed="">
+          <AldoUpNext home={home} now={now} only={[first!]} placedAt={placedAt} />
+        </div>
+        <p>Said since</p>
+        <div data-end="">
+          <AldoUpNext home={home} now={now} placedAt={placedAt} />
+        </div>
+      </>,
+    ),
+  );
+  const placed = container.querySelector("[data-placed]")!;
+  const end = container.querySelector("[data-end]")!;
+  expect(
+    [...placed.querySelectorAll("[data-aldo-decision]")].map((c) =>
+      c.getAttribute("data-aldo-decision"),
+    ),
+  ).toEqual([first]);
+  expect(
+    [...end.querySelectorAll("[data-aldo-decision]")].map((c) =>
+      c.getAttribute("data-aldo-decision"),
+    ),
+  ).toEqual([second]);
+  // The heading, and going through them with Aldo, are the end's alone; both are open, each first in its group.
+  expect(placed.querySelector("h3")).toBeNull();
+  expect(end.querySelector("h3")?.textContent).toBe("Needs you");
+  expect(end.textContent).toContain("Go through them with Aldo");
+  expect(placed.textContent).toContain("Approve the plan");
+  expect(end.textContent).toContain("Which colour?");
+});
+
+it("keeps the way through them all at the end once each is placed above", async () => {
+  const { aldoChatDecisions } = await import("./decisions.logic");
+  const home = useAldoHomeFeed.getState().home!;
+  const keys = aldoChatDecisions(home, now).map((d) => d.key);
+  const placedAt = new Map(keys.map((key) => [key, new Date(now - 60_000).toISOString()]));
+  await act(async () =>
+    root.render(
+      <div data-end="">
+        <AldoUpNext home={home} now={now} placedAt={placedAt} />
+      </div>,
+    ),
+  );
+  const end = container.querySelector("[data-end]")!;
+  expect(end.querySelectorAll("[data-aldo-decision]")).toHaveLength(0);
+  expect(end.textContent).toBe("Go through the two that need you with Aldo");
+});

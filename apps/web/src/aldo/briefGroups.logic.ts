@@ -5,7 +5,7 @@
 // on), so the brief never asks again for what's settled. Pure, so it's tested
 // on its own.
 
-import type { AldoBriefGroupItem, AldoBriefGroups } from "./assistantApi";
+import type { AldoBrief, AldoBriefGroupItem, AldoBriefGroups } from "./assistantApi";
 import { aldoDecisions, chatDecisionOf } from "./decisions.logic";
 import { dueIn, sameTarget } from "./home.logic";
 import type { AldoHome } from "./homeApi";
@@ -24,6 +24,16 @@ export const BRIEF_GROUPS: ReadonlyArray<{
   { key: "later", label: "Can wait", state: "later" },
   { key: "fyi", label: "Good to know", state: "done" },
 ];
+
+/** What the brief brought up for the user to decide: its top items and what it said needs them. */
+export function briefRaised(brief: AldoBrief): {
+  readonly at: string;
+  readonly keys: ReadonlySet<string>;
+} {
+  const keys = new Set(brief.top.map((item) => item.key));
+  for (const item of brief.groups?.needs ?? []) if (item.key !== undefined) keys.add(item.key);
+  return { at: brief.at, keys };
+}
 
 /**
  * What waits on the user now, by key, and whether they hid it from chat or put
