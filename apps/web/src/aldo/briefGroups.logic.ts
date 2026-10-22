@@ -32,9 +32,9 @@ export function liveDecisionKeys(home: AldoHome | null, now: number): ReadonlySe
 
 /**
  * Where an item stands now. A decision still waiting needs the user; one
- * decided is where its thread is now (working on the answer, say), or done.
- * Anything else is where its thread is now, or as it was written when the
- * page doesn't have its thread.
+ * decided is where its thread is now (working on the answer, say), or done,
+ * as it is once its thread asks something else. Anything else is where its
+ * thread is now, or as it was written when the page doesn't have its thread.
  */
 export function briefItemState(
   item: AldoBriefGroupItem,
@@ -50,7 +50,8 @@ export function briefItemState(
     ? home.conversations.find((c) => sameTarget(c.thread, thread))
     : undefined;
   const live = conversation ? workstreamState(conversation, now) : null;
-  return live ?? (item.key !== undefined ? "done" : written);
+  if (item.key !== undefined) return live === null || live === "needs" ? "done" : live;
+  return live ?? written;
 }
 
 /** A word after its line when it's moved on since the brief was written, or when what can wait is back. */

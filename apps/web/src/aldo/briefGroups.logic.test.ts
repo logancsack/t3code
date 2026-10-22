@@ -89,6 +89,9 @@ describe("briefItemState", () => {
     );
     const gone = home([]);
     expect(briefItemState(needs, "needs", gone, liveDecisionKeys(gone, NOW), NOW)).toBe("done");
+    // Its thread asks something else now: that's another decision, and this one's done.
+    const next = home([conversation({ state: "waiting", at: ago(1) })]);
+    expect(briefItemState(needs, "needs", next, liveDecisionKeys(next, NOW), NOW)).toBe("done");
   });
 
   it("reads what Aldo's watching from its thread now", () => {
