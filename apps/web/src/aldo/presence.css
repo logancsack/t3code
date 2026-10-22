@@ -1,11 +1,11 @@
 /* Aldo's face (AldoPresence.tsx) and the conversation's small motions: eyes
    that blink once when something passes between the user and Aldo (face.ts),
    look up while Aldo thinks, down while the user writes and smile when
-   something's done, and glance about now and then while its agents work; the
-   dots while it types, a reply settling in a bubble at a time, and what
-   arrives after the page has. Nothing else loops: the dots only while Aldo
-   types, the glance only while something works, and both only move, so
-   nothing repaints. All still for reduced motion. */
+   something's done, and glance about once as its agents start work; the dots
+   while it types, a reply settling in a bubble at a time, and what arrives
+   after the page has. Only the dots loop, and only while Aldo types: work
+   runs for hours, so nothing moves the whole time it does. All still for
+   reduced motion. */
 
 @keyframes aldo-blink {
   0%,
@@ -50,19 +50,18 @@
   }
 }
 
-/* Mostly still: a look to one side, the other, and back, every few seconds. */
+/* A look to one side, the other, and back. */
 @keyframes aldo-glance {
   0%,
-  58%,
   100% {
     translate: 0 0;
   }
-  64%,
-  72% {
+  15%,
+  35% {
     translate: -16% 4%;
   }
-  80%,
-  88% {
+  55%,
+  75% {
     translate: 14% 4%;
   }
 }
@@ -87,8 +86,9 @@
   transition: translate 160ms cubic-bezier(0.2, 0, 0, 1);
 }
 
+/* Once, as work starts: the mood changing to working plays it. */
 [data-aldo-eyes][data-mood="working"] {
-  animation: aldo-glance 4.8s ease-in-out infinite;
+  animation: aldo-glance 2s ease-in-out;
 }
 
 [data-aldo-eyes][data-mood="thinking"] {
