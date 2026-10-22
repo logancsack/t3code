@@ -1,12 +1,11 @@
 import type RFB from "@novnc/novnc";
-import { LoaderIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { Button } from "../components/ui/button";
+import { AldoScreenState } from "./AldoBrowserChrome";
 import { cn } from "../lib/utils";
 import { AldoApiError } from "./api";
 import { aldoBrowserConnection } from "./workspaceApi";
-import { aldoOfflineMessage } from "./directory";
 import { aldoDesktopScreenUrl, type AldoDesktopScreen } from "./computer.logic";
 import { aldoCanDecodeH264, AldoVideoPlayer } from "./liveVideo";
 import { ALDO_FRAME_VIDEO, aldoDesktopVideoHello, aldoDesktopVideoUrls } from "./liveVideo.logic";
@@ -253,20 +252,7 @@ export function AldoDesktopView({
         className={cn("relative size-full", status !== "live" && "opacity-40")}
       />
       {status !== "live" ? (
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-6 text-center text-sm text-muted-foreground">
-          {status === "asleep" ? (
-            aldoOfflineMessage(environmentId)
-          ) : status === "error" ? (
-            <span className="max-w-sm">
-              Couldn't reach {what}
-              {error ? `: ${error}` : ""}. Retrying…
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-2">
-              <LoaderIcon className="size-4 animate-spin" /> Connecting to {what}…
-            </span>
-          )}
-        </div>
+        <AldoScreenState status={status} environmentId={environmentId} what={what} error={error} />
       ) : null}
     </div>
   );

@@ -6,8 +6,8 @@
 // On a computer, "Do it on my phone" shows a QR code for the phone: the
 // conversation with that browser full screen (behind the phone's own Aldo
 // sign-in), or the site's own "continue on your phone" link for a camera
-// step. The Browser panel shows a bar while its machine's agent waits on the
-// user. Shown only when Aldo reports handoffs.
+// step. The Browser panel's status line says so while its machine's agent
+// waits on the user (AldoBrowserChrome.tsx). Shown only when Aldo reports handoffs.
 
 import { ExternalLinkIcon, HandIcon, LoaderIcon, SmartphoneIcon } from "lucide-react";
 import { useState, type MouseEvent } from "react";
@@ -29,7 +29,6 @@ import {
   aldoHandoffEyebrow,
   aldoHandoffFor,
   aldoHandoffHow,
-  aldoHandoffOn,
   aldoHandoffPhoneLink,
   aldoHandoffSiteLabel,
   aldoHandoffSiteLink,
@@ -38,7 +37,7 @@ import {
   aldoHandoffWantsCode,
   type AldoHandoffButton,
 } from "./handoffs.logic";
-import { refreshAldoHome, useAldoHomeFeed, useAldoHomeRead } from "./homeFeed";
+import { refreshAldoHome, useAldoHomeRead } from "./homeFeed";
 import { PRIMARY, SECONDARY } from "./surface";
 
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
@@ -428,53 +427,6 @@ function HandoffPhonePanel(props: {
           </Button>
         </div>
       </div>
-    </div>
-  );
-}
-
-/**
- * Over the Browser panel's page while its machine's agent waits on the user
- * there: take it over full screen, or say it's done after doing it here (not
- * while a recording holds the browser: that's finished first).
- * Reads the home the page already has; it doesn't keep it fresh itself.
- */
-export function AldoHandoffBar(props: {
-  readonly environmentId: string;
-  /** A recording is under way or waiting to be taught (AldoTeach.tsx). */
-  readonly teaching?: boolean;
-}) {
-  const home = useAldoHomeFeed((s) => s.home);
-  const handoff = aldoHandoffOn(home, props.environmentId);
-  const [busy, setBusy] = useState(false);
-  if (!handoff) return null;
-  return (
-    <div className="flex shrink-0 items-center gap-2 border-b border-warning/40 bg-warning/8 px-3 py-1.5 text-xs">
-      <HandIcon className="size-3.5 shrink-0 text-warning" />
-      <span className="min-w-0 flex-1 truncate">
-        {props.teaching
-          ? "Finish the recording to hand it back"
-          : "Your agent is waiting for you here"}
-      </span>
-      <Button
-        type="button"
-        size="compact"
-        variant="ghost"
-        disabled={busy || props.teaching}
-        onClick={() => {
-          setBusy(true);
-          void answerAldoHandoff(handoff, { decision: "done" }).then(() => setBusy(false));
-        }}
-      >
-        I'm done
-      </Button>
-      <Button
-        type="button"
-        size="compact"
-        disabled={busy}
-        onClick={(event) => openAldoHandoffTakeover(handoff.id, event.currentTarget)}
-      >
-        Take over
-      </Button>
     </div>
   );
 }

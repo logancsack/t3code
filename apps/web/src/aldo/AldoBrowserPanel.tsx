@@ -1,16 +1,9 @@
 import {
   ArrowLeftIcon,
   ArrowRightIcon,
-  BotIcon,
-  ChevronDownIcon,
   EllipsisIcon,
   ExternalLinkIcon,
-  GlobeIcon,
   GraduationCapIcon,
-  HandIcon,
-  LoaderIcon,
-  MonitorIcon,
-  PlusIcon,
   RotateCwIcon,
   XIcon,
 } from "lucide-react";
@@ -24,6 +17,7 @@ import {
   type FormEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
+  type ReactNode,
 } from "react";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
@@ -40,17 +34,29 @@ import {
   MenuSeparator,
   MenuTrigger,
 } from "../components/ui/menu";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { toastManager } from "../components/ui/toast";
 import { cn } from "../lib/utils";
 import { useAldoBrowserRequests } from "./browserStore";
 import { stopAldoThreadComputer, useAldoComputer } from "./AldoComputer";
 import { AldoDesktopScreenSwitch, AldoDesktopView } from "./AldoDesktopView";
-import { AldoHandoffBar, useAldoHandoffTakeover } from "./AldoHandoffCard";
+import {
+  AldoAddressBar,
+  AldoBrowserStart,
+  AldoBrowserStatus,
+  AldoBrowserTabs,
+  AldoBrowserViewSwitch,
+  AldoScreenState,
+} from "./AldoBrowserChrome";
+import { useAldoHandoffTakeover } from "./AldoHandoffCard";
 import { AldoLoginOfferCard } from "./AldoLoginOfferCard";
-import { AldoTeachBar, AldoTeachForm } from "./AldoTeach";
+import { AldoTeachForm } from "./AldoTeach";
+import { aldoBlankPage, aldoBrowserState, aldoDialogFrom } from "./browserChrome.logic";
+import { aldoHandoffOn } from "./handoffs.logic";
+import { useAldoHomeFeed } from "./homeFeed";
 import { AldoApiError } from "./api";
 import { aldoBrowserConnection, aldoPreviewUrl } from "./workspaceApi";
-import { aldoOfflineMessage, getAldoEnvironments, subscribeAldoEnvironments } from "./directory";
+import { getAldoEnvironments, subscribeAldoEnvironments } from "./directory";
 import { aldoDesktopScreen, type AldoDesktopScreen } from "./computer.logic";
 import { aldoCanDecodeH264, AldoVideoPlayer } from "./liveVideo";
 import { ALDO_FRAME_VIDEO } from "./liveVideo.logic";
@@ -84,7 +90,11 @@ type FrameMeta = { deviceWidth: number; deviceHeight: number };
 type Status = "connecting" | "live" | "asleep" | "error";
 
 const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
-const AGENT_ACTIVE_MS = 4000;
+// How long the agent counts as browsing after its last step: long enough to
+// span the pause while it thinks, so the line under the address holds still.
+const AGENT_ACTIVE_MS = 15_000;
+// How long agents wait after the user's last click or key (the machine's INPUT_HOLD_MS).
+const USE_HOLD_MS = 10_000;
 
 function modifiers(e: { altKey: boolean; ctrlKey: boolean; metaKey: boolean; shiftKey: boolean }) {
   let bits = (e.altKey ? 1 : 0) | (e.ctrlKey ? 2 : 0) | (e.metaKey ? 4 : 0) | (e.shiftKey ? 8 : 0);
@@ -162,9 +172,12 @@ export function AldoBrowserPanel({
   const teachThread = threadId ?? (route.environmentId === environmentId ? route.threadId : null);
   // The conversation a recording started from: its lesson goes there, wherever the user went since.
   const [teachFrom, setTeachFrom] = useState<string | null>(null);
-  const [address, setAddress] = useState("");
-  const [editingAddress, setEditingAddress] = useState(false);
   const [now, setNow] = useState(() => Date.now());
+  // When the user last clicked or typed in the page here: agents wait a moment after.
+  const [usedAt, setUsedAt] = useState(0);
+  const usedAtRef = useRef(0);
+  // Connects again now, rather than when the backoff says.
+  const retryNow = useRef<() => void>(() => {});
   const [focused, setFocused] = useState(false);
   // Nothing streams while nobody can see it: the Desktop view is up, or the page is hidden.
   const pageVisible = useAldoPageVisible();
@@ -265,6 +278,8 @@ export function AldoBrowserPanel({
         .finally(acknowledge);
     };
 
+    // Between asking for the connection and opening its socket: Try now waits for it.
+    let connecting = false;
     const schedule = (delay: number) => {
       if (disposed) return;
       retry = setTimeout(connect, delay);
@@ -272,11 +287,13 @@ export function AldoBrowserPanel({
 
     const connect = async () => {
       if (disposed) return;
+      connecting = true;
       setStatus((current) => (current === "live" ? "connecting" : current));
       let url: string;
       try {
         url = (await aldoBrowserConnection(environmentId)).url;
       } catch (cause) {
+        connecting = false;
         if (cause instanceof AldoApiError && cause.status === 409) {
           setStatus("asleep");
           schedule(3000);
@@ -289,6 +306,7 @@ export function AldoBrowserPanel({
       }
       // The page as H.264 video where this browser decodes it (a newer machine sends it).
       const video = await aldoCanDecodeH264();
+      connecting = false;
       if (disposed) return;
       const socket = new WebSocket(
         aldoLiveViewUrl(url, { ...viewportSize(), paused: pausedRef.current, video }),
@@ -400,6 +418,13 @@ export function AldoBrowserPanel({
       };
     };
 
+    retryNow.current = () => {
+      if (disposed || connecting || socketRef.current) return;
+      if (retry) clearTimeout(retry);
+      attempt = 0;
+      setStatus((current) => (current === "error" ? "connecting" : current));
+      void connect();
+    };
     void connect();
     return () => {
       disposed = true;
@@ -431,12 +456,24 @@ export function AldoBrowserPanel({
     };
   }, [sendViewport]);
 
-  // "Agent is using the browser" fades after a few seconds without agent input.
+  // "Your agent is browsing" and "You're using the page" last a few seconds after the last step.
   useEffect(() => {
-    if (Date.now() - control.agentActiveAt > AGENT_ACTIVE_MS) return;
-    const timer = setInterval(() => setNow(Date.now()), 1000);
+    const until = Math.max(control.agentActiveAt + AGENT_ACTIVE_MS, usedAt + USE_HOLD_MS);
+    if (Date.now() > until) return;
+    const timer = setInterval(() => {
+      setNow(Date.now());
+      if (Date.now() > until) clearInterval(timer);
+    }, 1000);
     return () => clearInterval(timer);
-  }, [control.agentActiveAt]);
+  }, [control.agentActiveAt, usedAt]);
+
+  /** The user used the page: agents wait a moment, and the line under the address says so. */
+  const noteUse = () => {
+    const at = Date.now();
+    if (at - usedAtRef.current < 1000) return;
+    usedAtRef.current = at;
+    setUsedAt(at);
+  };
 
   // Open requests from the Previews menu.
   const request = useAldoBrowserRequests((state) => state.request);
@@ -447,11 +484,6 @@ export function AldoBrowserPanel({
   }, [environmentId, request, send, status]);
 
   const shownUrl = tabs.find((tab) => tab.id === activeTab)?.url ?? nav.url;
-  useEffect(() => {
-    if (!editingAddress) {
-      setAddress(shownUrl === "about:blank" || shownUrl.startsWith("chrome://") ? "" : shownUrl);
-    }
-  }, [shownUrl, editingAddress]);
 
   /** Where a pointer event lands on the page, in CSS pixels. */
   const pagePoint = (clientX: number, clientY: number) => {
@@ -490,6 +522,7 @@ export function AldoBrowserPanel({
     const point = pagePoint(e.clientX, e.clientY);
     if (!point) return;
     e.preventDefault();
+    noteUse();
     e.currentTarget.setPointerCapture(e.pointerId);
     if (e.pointerType === "touch" && !phone) {
       touchRef.current = { x: point.x, y: point.y, lastY: e.clientY, scrolled: false };
@@ -556,6 +589,7 @@ export function AldoBrowserPanel({
       const point = pagePoint(e.clientX, e.clientY);
       if (!point) return;
       e.preventDefault();
+      noteUse();
       const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? canvas.clientHeight : 1;
       send({
         type: "wheel",
@@ -567,7 +601,7 @@ export function AldoBrowserPanel({
     };
     canvas.addEventListener("wheel", onWheel, { passive: false });
     return () => canvas.removeEventListener("wheel", onWheel);
-    // pagePoint reads refs only.
+    // pagePoint and noteUse read refs only.
   }, [send]);
 
   // Keyboard input goes through a hidden textarea: real keys are sent as key
@@ -575,6 +609,7 @@ export function AldoBrowserPanel({
   // (phone keyboards, IME composition, paste, dictation) is inserted as text.
   const onKey = (e: ReactKeyboardEvent<HTMLTextAreaElement>, event: "down" | "up") => {
     if (e.nativeEvent.isComposing || e.key === "Process" || e.key === "Unidentified") return;
+    if (event === "down") noteUse();
     // Let the browser fire `paste` so the user's own clipboard is what's pasted.
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "v") return;
     e.preventDefault();
@@ -621,11 +656,8 @@ export function AldoBrowserPanel({
 
   const focusKeyboard = () => keyboardRef.current?.focus({ preventScroll: true });
 
-  const submitAddress = (e: FormEvent) => {
-    e.preventDefault();
-    if (!address.trim()) return;
-    send({ type: "navigate", url: address.trim() });
-    setEditingAddress(false);
+  const navigate = (address: string) => {
+    send({ type: "navigate", url: address });
     focusKeyboard();
   };
 
@@ -739,250 +771,169 @@ export function AldoBrowserPanel({
     send({ type: "teach", action: "discard" });
   };
 
-  const active = tabs.find((tab) => tab.id === activeTab) ?? null;
   const agentActive = now - control.agentActiveAt < AGENT_ACTIVE_MS && !control.human;
   const port = localPort(shownUrl);
   const openExternally = () => {
     const target = port ? aldoPreviewUrl(environmentId, port) : shownUrl;
     if (target) window.open(target, "_blank", "noopener");
   };
+  // An agent waiting on the user here; full screen, the takeover says what to do itself.
+  const home = useAldoHomeFeed((s) => s.home);
+  const handoff = inTakeover ? null : aldoHandoffOn(home, environmentId);
+  const state = aldoBrowserState({
+    recording: teach?.state === "recording",
+    handoff: handoff !== null,
+    explicit: control.explicit,
+    agentActive,
+    using: now - usedAt < USE_HOLD_MS,
+  });
+  const onWindows = view === "desktop" && screen === "windows";
+  // Once there's a page to share (or the desktop; a handoff before either: the machine is up for
+  // it). Agents don't use the Windows computer; full screen, only what changes there (a
+  // recording, control taken).
+  const showStatus =
+    (pictured || view === "desktop" || state === "handoff") &&
+    !onWindows &&
+    (!inTakeover || state === "recording" || state === "yours");
+  const blank =
+    view === "browser" && status === "live" && pictured && !dialog && aldoBlankPage(shownUrl);
 
   return (
     <div className="@container flex min-h-0 flex-1 flex-col bg-background">
-      <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-border px-1.5 py-1">
-        <div
-          className="flex shrink-0 items-center rounded-md bg-muted/60 p-0.5"
-          role="tablist"
-          aria-label="View"
+      {view === "browser" ? (
+        <AldoBrowserTabs
+          tabs={tabs}
+          active={activeTab}
+          loading={nav.loading}
+          onActivate={(tabId) => send({ type: "activate", tabId })}
+          onClose={(tabId) => send({ type: "closeTab", tabId })}
+          onNew={() => send({ type: "newTab" })}
+          connected={connected}
         >
-          {(
-            [
-              ["browser", GlobeIcon, "Browser"],
-              ["desktop", MonitorIcon, "Desktop"],
-            ] as const
-          ).map(([value, Icon, label]) => (
-            <button
-              key={value}
-              type="button"
-              role="tab"
-              aria-selected={view === value}
-              aria-label={label}
-              onClick={() => setView(value)}
-              className={cn(
-                "inline-flex h-6 items-center gap-1 rounded px-1.5 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                view === value
-                  ? "bg-background text-foreground shadow-xs"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              <Icon className="size-3.5" />
-              <span className="hidden @lg:inline">{label}</span>
-            </button>
-          ))}
-        </div>
-        {view === "desktop" && windowsRunning ? (
-          <AldoDesktopScreenSwitch
-            screen={screen}
-            onChange={setChosenScreen}
-            stopping={stoppingComputer}
-            onStop={() =>
-              void stopAldoThreadComputer(environmentId, "windows").then((stopped) => {
-                if (stopped) setChosenScreen("machine");
-              })
-            }
-          />
-        ) : null}
-        {view === "desktop" ? (
+          <AldoBrowserViewSwitch view={view} onChange={setView} />
+        </AldoBrowserTabs>
+      ) : (
+        <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border/60 bg-muted/60 px-1.5 dark:bg-white/[0.03]">
+          {windowsRunning ? (
+            <AldoDesktopScreenSwitch
+              screen={screen}
+              onChange={setChosenScreen}
+              stopping={stoppingComputer}
+              onStop={() =>
+                void stopAldoThreadComputer(environmentId, "windows").then((stopped) => {
+                  if (stopped) setChosenScreen("machine");
+                })
+              }
+            />
+          ) : null}
           <span className="min-w-0 flex-1 truncate px-1 text-xs text-muted-foreground">
             {screen === "windows"
               ? "Your Windows computer, with desktop Office. Sign in to Office here once."
               : "The agent's whole desktop: Chrome, desktop apps and the taskbar."}
           </span>
-        ) : null}
-        <div className={cn("contents", view === "desktop" && "hidden")}>
+          <AldoBrowserViewSwitch view={view} onChange={setView} />
+        </div>
+      )}
+
+      {view === "browser" ? (
+        <div className="relative flex h-10 shrink-0 items-center gap-1 border-b border-border/60 bg-background px-1.5 pointer-coarse:h-12">
+          <div className="flex shrink-0 items-center gap-0.5" role="group" aria-label="Navigation">
+            <NavButton
+              label="Back"
+              disabled={!nav.canGoBack}
+              onClick={() => send({ type: "back" })}
+            >
+              <ArrowLeftIcon />
+            </NavButton>
+            <NavButton
+              label="Forward"
+              disabled={!nav.canGoForward}
+              onClick={() => send({ type: "forward" })}
+            >
+              <ArrowRightIcon />
+            </NavButton>
+            <NavButton
+              label={nav.loading ? "Stop loading" : "Reload"}
+              onClick={() => send({ type: nav.loading ? "stop" : "reload" })}
+            >
+              {nav.loading ? <XIcon /> : <RotateCwIcon />}
+            </NavButton>
+          </div>
+          <AldoAddressBar url={shownUrl} onSubmit={navigate} />
+          {inTakeover && canTeach ? (
+            <Button type="button" size="compact" variant="outline" onClick={startTeaching}>
+              <GraduationCapIcon /> Teach this
+            </Button>
+          ) : null}
           <Menu>
             <MenuTrigger
-              aria-label="Browser tabs"
-              className="inline-flex h-7 max-w-36 min-w-0 shrink-0 items-center gap-1 rounded-md px-1.5 text-xs text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+              render={<Button type="button" variant="ghost" size="icon-xs" aria-label="More" />}
             >
-              <GlobeIcon className="size-3.5 shrink-0" />
-              <span className="truncate">{active?.title || "New tab"}</span>
-              {tabs.length > 1 ? (
-                <span className="shrink-0 tabular-nums opacity-70">{tabs.length}</span>
-              ) : null}
-              <ChevronDownIcon className="size-3 shrink-0 opacity-70" />
+              <EllipsisIcon />
             </MenuTrigger>
-            <MenuPopup align="start" className="max-w-80 min-w-56">
-              {tabs.map((tab) => (
-                <MenuItem key={tab.id} onClick={() => send({ type: "activate", tabId: tab.id })}>
-                  <span
-                    className={cn("min-w-0 flex-1 truncate", tab.id === activeTab && "font-medium")}
-                  >
-                    {tab.title || tab.url || "New tab"}
-                  </span>
-                </MenuItem>
-              ))}
-              <MenuSeparator />
-              <MenuItem onClick={() => send({ type: "newTab" })}>
-                <PlusIcon className="size-3.5" /> New tab
+            <MenuPopup align="end" className="min-w-64">
+              <MenuItem
+                onClick={openExternally}
+                disabled={!shownUrl || aldoBlankPage(shownUrl) || shownUrl.startsWith("chrome://")}
+              >
+                <ExternalLinkIcon className="size-3.5" />
+                {port ? "Open this preview in a new tab" : "Open in a new tab"}
               </MenuItem>
-              {active ? (
-                <MenuItem onClick={() => send({ type: "closeTab", tabId: active.id })}>
-                  <XIcon className="size-3.5" /> Close this tab
-                </MenuItem>
+              <MenuSeparator />
+              <MenuCheckboxItem
+                checked={phone}
+                onCheckedChange={(checked) =>
+                  send({ type: "device", mode: checked ? "phone" : "desktop" })
+                }
+              >
+                <MenuLines label="Phone view" hint="The page at a phone's size, with touch" />
+              </MenuCheckboxItem>
+              <MenuCheckboxItem
+                checked={follow}
+                onCheckedChange={(checked) => send({ type: "follow", enabled: checked })}
+              >
+                <MenuLines label="Follow the agent's tab" hint="Show whichever tab it's using" />
+              </MenuCheckboxItem>
+              {canTeach && !inTakeover ? (
+                <>
+                  <MenuSeparator />
+                  <MenuItem onClick={startTeaching}>
+                    <GraduationCapIcon className="size-3.5" />
+                    <MenuLines
+                      label="Teach this"
+                      hint="Do a task while it records, for your agent to learn"
+                    />
+                  </MenuItem>
+                </>
               ) : null}
             </MenuPopup>
           </Menu>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-xs"
-            aria-label="Back"
-            disabled={!nav.canGoBack}
-            onClick={() => send({ type: "back" })}
-          >
-            <ArrowLeftIcon />
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-xs"
-            aria-label="Forward"
-            disabled={!nav.canGoForward}
-            onClick={() => send({ type: "forward" })}
-          >
-            <ArrowRightIcon />
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-xs"
-            aria-label={nav.loading ? "Stop loading" : "Reload"}
-            onClick={() => send({ type: nav.loading ? "stop" : "reload" })}
-          >
-            {nav.loading ? <XIcon /> : <RotateCwIcon />}
-          </Button>
-          <form
-            className="order-last min-w-0 basis-full @md:order-none @md:flex-1 @md:basis-auto"
-            onSubmit={submitAddress}
-          >
-            <Input
-              size="compact"
-              aria-label="Address"
-              placeholder="Search or enter an address, e.g. localhost:3000"
-              value={address}
-              onFocus={(e) => {
-                setEditingAddress(true);
-                e.currentTarget.select();
-              }}
-              onBlur={() => setEditingAddress(false)}
-              onChange={(e) => setAddress(e.currentTarget.value)}
-              className="text-xs"
-            />
-          </form>
+          <div
+            aria-hidden
+            data-loading={nav.loading}
+            className="preview-loading-progress pointer-events-none absolute bottom-0 left-0 z-10 h-0.5 w-full origin-left rounded-r-full bg-primary"
+          />
         </div>
-        {inTakeover && canTeach ? (
-          <Button type="button" size="xs" variant="outline" onClick={startTeaching}>
-            <GraduationCapIcon /> Teach this
-          </Button>
-        ) : null}
-        <Button
-          type="button"
-          variant={control.explicit ? "default" : "ghost"}
-          size="icon-xs"
-          aria-label={
-            control.explicit ? "Hand control back to the agent" : "Take control (agents wait)"
-          }
-          onClick={() => send({ type: "control", take: !control.explicit })}
-        >
-          <HandIcon />
-        </Button>
-        <Menu>
-          <MenuTrigger
-            aria-label="More browser actions"
-            className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring sm:size-6"
-          >
-            <EllipsisIcon className="size-3.5" />
-          </MenuTrigger>
-          <MenuPopup align="end" className="min-w-56">
-            <MenuItem
-              onClick={openExternally}
-              disabled={!shownUrl || shownUrl.startsWith("chrome://")}
-            >
-              <ExternalLinkIcon className="size-3.5" />
-              {port ? "Open this preview in a new tab" : "Open in a new tab"}
-            </MenuItem>
-            <MenuCheckboxItem
-              checked={phone}
-              onCheckedChange={(checked) =>
-                send({ type: "device", mode: checked ? "phone" : "desktop" })
-              }
-            >
-              Phone view
-            </MenuCheckboxItem>
-            <MenuCheckboxItem
-              checked={follow}
-              onCheckedChange={(checked) => send({ type: "follow", enabled: checked })}
-            >
-              Follow the agent's tab
-            </MenuCheckboxItem>
-            {canTeach ? (
-              <>
-                <MenuSeparator />
-                <MenuItem onClick={startTeaching}>
-                  <GraduationCapIcon className="size-3.5" />
-                  Teach this
-                </MenuItem>
-              </>
-            ) : null}
-          </MenuPopup>
-        </Menu>
-      </div>
+      ) : null}
 
-      {inTakeover ? null : <AldoHandoffBar environmentId={environmentId} teaching={teaching} />}
-
-      {teach?.state === "recording" ? (
-        <AldoTeachBar
+      {showStatus ? (
+        <AldoBrowserStatus
+          state={state}
+          surface={view}
           teach={teach}
+          handoff={handoff}
+          teaching={teaching}
           connected={connected}
-          onStop={() => send({ type: "teach", action: "stop" })}
+          onTake={() => send({ type: "control", take: true })}
+          onHandBack={() => send({ type: "control", take: false })}
+          onStopRecording={() => send({ type: "teach", action: "stop" })}
         />
-      ) : control.explicit ? (
-        <div className="flex shrink-0 items-center gap-2 border-b border-border bg-primary/8 px-3 py-1.5 text-xs">
-          <HandIcon className="size-3.5 shrink-0 text-primary" />
-          <span className="min-w-0 flex-1">
-            You have control. Agents wait until you hand it back.
-          </span>
-          <Button
-            type="button"
-            size="compact"
-            variant="outline"
-            onClick={() => send({ type: "control", take: false })}
-          >
-            Hand back
-          </Button>
-        </div>
-      ) : agentActive && !(view === "desktop" && screen === "windows") ? (
-        <div className="flex shrink-0 items-center gap-2 border-b border-border bg-muted/50 px-3 py-1.5 text-xs text-muted-foreground">
-          <BotIcon className="size-3.5 shrink-0" />
-          <span className="min-w-0 flex-1">
-            The agent is using the {view === "desktop" ? "desktop" : "browser"}.
-          </span>
-          <Button
-            type="button"
-            size="compact"
-            variant="ghost"
-            onClick={() => send({ type: "control", take: true })}
-          >
-            Take control
-          </Button>
-        </div>
       ) : null}
 
       {teach?.state === "recorded" ? (
         // Over the top of the page, until it's taught or discarded (on any device).
         <div className="relative z-20 h-0 shrink-0">
-          <div className="absolute top-2 left-1/2 w-[min(26rem,calc(100%-1rem))] -translate-x-1/2">
+          <div className="absolute top-3 left-1/2 w-[min(26rem,calc(100%-1.5rem))] -translate-x-1/2">
             <AldoTeachForm
               teach={teach}
               connected={connected}
@@ -994,7 +945,7 @@ export function AldoBrowserPanel({
       ) : loginOffer ? (
         // Over the top corner of the page or the desktop, which stay usable around it.
         <div className="relative z-20 h-0 shrink-0">
-          <div className="absolute top-2 right-2 w-[min(22rem,calc(100%-1rem))]">
+          <div className="absolute top-3 right-3 w-[min(22rem,calc(100%-1.5rem))]">
             <AldoLoginOfferCard
               key={loginOffer.id}
               offer={loginOffer}
@@ -1016,7 +967,7 @@ export function AldoBrowserPanel({
       <div
         ref={stageRef}
         className={cn(
-          "relative min-h-0 flex-1 overflow-hidden bg-muted/30",
+          "relative min-h-0 flex-1 overflow-hidden bg-muted/50 dark:bg-black/25",
           view === "desktop" && "hidden",
         )}
       >
@@ -1024,9 +975,12 @@ export function AldoBrowserPanel({
           ref={canvasRef}
           aria-label="Shared browser. Click to interact."
           className={cn(
-            "size-full touch-none object-contain outline-none",
+            // The page at the top, as a browser shows one, as big as fits (never past its own
+            // size, which is the panel's: aldoLiveViewSize), centered across when it's narrower.
+            "absolute inset-x-0 top-0 mx-auto block max-h-full max-w-full touch-none bg-background shadow-[0_1px_0_0_var(--color-border),0_8px_24px_-12px_rgb(0_0_0/0.18)] outline-none transition-opacity",
             status !== "live" && "opacity-40",
-            focused && "ring-2 ring-ring/40 ring-inset",
+            !pictured && "invisible",
+            focused && "outline-2 -outline-offset-2 outline-ring/50",
           )}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
@@ -1052,25 +1006,27 @@ export function AldoBrowserPanel({
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
         />
+        {blank ? <AldoBrowserStart environmentId={environmentId} onOpen={navigate} /> : null}
         {status !== "live" || !pictured ? (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-6 text-center text-sm text-muted-foreground">
-            {status === "asleep" ? (
-              aldoOfflineMessage(environmentId)
-            ) : status === "error" || (status === "live" && error) ? (
-              <span className="max-w-sm">
-                Couldn't reach the browser{error ? `: ${error.replace(/\.+$/, "")}` : ""}. Retrying…
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-2">
-                <LoaderIcon className="size-4 animate-spin" />{" "}
-                {status === "live" ? "Starting the browser…" : "Connecting to the browser…"}
-              </span>
-            )}
-          </div>
+          <AldoScreenState
+            status={
+              status === "error" || (status === "live" && error)
+                ? "error"
+                : status === "live"
+                  ? "starting"
+                  : status
+            }
+            environmentId={environmentId}
+            what="the browser"
+            error={error}
+            over={pictured}
+            onRetry={() => retryNow.current()}
+          />
         ) : null}
         {dialog ? (
           <DialogPrompt
             dialog={dialog}
+            from={aldoDialogFrom(shownUrl)}
             onAnswer={(accept, promptText) => send({ type: "dialog", accept, promptText })}
           />
         ) : null}
@@ -1079,38 +1035,82 @@ export function AldoBrowserPanel({
   );
 }
 
+/** Back, Forward and Reload: an icon, named in a tooltip. */
+function NavButton(props: {
+  label: string;
+  disabled?: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            aria-label={props.label}
+            disabled={props.disabled}
+            onClick={props.onClick}
+          />
+        }
+      >
+        {props.children}
+      </TooltipTrigger>
+      <TooltipPopup>{props.label}</TooltipPopup>
+    </Tooltip>
+  );
+}
+
+/** A menu item's name and, under it, what it does. */
+function MenuLines(props: { label: string; hint: string }) {
+  return (
+    <span className="flex min-w-0 flex-col py-0.5">
+      <span>{props.label}</span>
+      <span className="text-muted-foreground text-xs">{props.hint}</span>
+    </span>
+  );
+}
+
+/** A page's alert, confirm or prompt, as Chrome asks it: "airbnb.com says". */
 function DialogPrompt(props: {
   dialog: Dialog;
+  from: string;
   onAnswer: (accept: boolean, promptText?: string) => void;
 }) {
   const [text, setText] = useState(props.dialog.defaultPrompt ?? "");
   const cancellable = props.dialog.type !== "alert";
   return (
-    <div className="absolute inset-0 flex items-start justify-center bg-black/20 p-6">
+    <div className="absolute inset-0 z-10 flex items-start justify-center bg-black/25 p-4 pt-[min(12%,5rem)] dark:bg-black/45">
       <form
-        className="w-full max-w-sm space-y-3 rounded-xl border border-border bg-popover p-4 text-sm shadow-lg"
+        role="alertdialog"
+        aria-label={props.from}
+        className="w-full max-w-sm rounded-2xl border border-border/70 bg-popover p-4 text-popover-foreground shadow-xl"
         onSubmit={(e) => {
           e.preventDefault();
           props.onAnswer(true, text);
         }}
       >
-        <p className="text-xs text-muted-foreground">This page says</p>
-        <p className="whitespace-pre-wrap break-words">{props.dialog.message}</p>
+        <p className="font-medium text-[13px] text-foreground">{props.from}</p>
+        <p className="mt-1.5 whitespace-pre-wrap break-words text-sm leading-5 text-foreground/80">
+          {props.dialog.message}
+        </p>
         {props.dialog.type === "prompt" ? (
-          <Input autoFocus value={text} onChange={(e) => setText(e.currentTarget.value)} />
+          <Input
+            className="mt-3"
+            autoFocus
+            value={text}
+            onChange={(e) => setText(e.currentTarget.value)}
+          />
         ) : null}
-        <div className="flex justify-end gap-2">
+        <div className="mt-4 flex justify-end gap-2">
           {cancellable ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="compact"
-              onClick={() => props.onAnswer(false)}
-            >
+            <Button type="button" variant="outline" size="sm" onClick={() => props.onAnswer(false)}>
               Cancel
             </Button>
           ) : null}
-          <Button type="submit" size="compact" autoFocus={props.dialog.type !== "prompt"}>
+          <Button type="submit" size="sm" autoFocus={props.dialog.type !== "prompt"}>
             OK
           </Button>
         </div>
