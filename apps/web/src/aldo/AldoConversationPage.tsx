@@ -166,7 +166,7 @@ export function AldoConversationPage(props: {
   /** Why the home read failed, if it did. */
   readonly error: string | null;
   readonly now: number;
-  /** Simple mode's places, on a phone: over Aldo's face. */
+  /** Simple mode's places, on a phone: at the foot, under the composer. */
   readonly tabs: ReactNode;
   /** At the top's end, on a wider screen: what to start. */
   readonly actions: ReactNode;
@@ -323,8 +323,7 @@ export function AldoConversationPage(props: {
         <div className="flex h-full min-h-0 min-w-0">
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             {/* Centered, clear of the sidebar's button, which floats at the top left on a phone. */}
-            <header className="relative flex min-h-14 shrink-0 flex-col items-center justify-center gap-2 px-4 pt-2 pb-1.5 sm:px-6">
-              {props.tabs}
+            <header className="relative flex min-h-14 shrink-0 flex-col items-center justify-center px-4 pt-2 pb-1 sm:px-6">
               {fresh ? null : <AldoPresence home={home} now={now} unread={unread} />}
               {props.actions ? (
                 <div className="absolute end-3 top-2.5 hidden sm:block">{props.actions}</div>
@@ -398,7 +397,11 @@ export function AldoConversationPage(props: {
                 className={cn(
                   column,
                   "flex flex-col items-center gap-2",
-                  fresh ? "pt-6" : "pt-1 pb-[max(0.75rem,env(safe-area-inset-bottom))]",
+                  fresh
+                    ? "pt-6"
+                    : props.tabs
+                      ? "pt-1"
+                      : "pt-1 pb-[max(0.75rem,env(safe-area-inset-bottom))]",
                 )}
               >
                 <AldoCaption />
@@ -414,9 +417,17 @@ export function AldoConversationPage(props: {
             {fresh ? (
               <div
                 ref={startersRef}
-                className="flex min-h-6 flex-[1.4_1_0] flex-col overflow-y-auto pb-[max(1.5rem,env(safe-area-inset-bottom))]"
+                className={cn(
+                  "flex min-h-6 flex-[1.4_1_0] flex-col overflow-y-auto",
+                  props.tabs ? "pb-3" : "pb-[max(1.5rem,env(safe-area-inset-bottom))]",
+                )}
               >
                 {props.welcome ? <div className={cn(column, "pt-4")}>{props.welcome}</div> : null}
+              </div>
+            ) : null}
+            {props.tabs ? (
+              <div className="shrink-0 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+                {props.tabs}
               </div>
             ) : null}
           </div>

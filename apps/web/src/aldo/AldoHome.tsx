@@ -340,7 +340,7 @@ function AldoHomeContent() {
     );
 
   if (simplePlace !== null) {
-    // On a phone the places are tabs at the top; on a wider screen they're on the rail.
+    // On a phone the places are tabs at the foot; on a wider screen they're on the rail.
     const tabs = mobile ? <AldoSimpleTabs /> : null;
     if (simplePlace === "needs") {
       return (

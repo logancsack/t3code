@@ -68,7 +68,7 @@ function useAskingGoesToAldo(): void {
 function PlacePage(props: {
   readonly title: string;
   readonly count?: number;
-  /** On a phone, the places as tabs; the title is then for screen readers. */
+  /** On a phone, the places as tabs, at the foot. */
   readonly tabs: ReactNode;
   readonly action?: ReactNode;
   readonly children: ReactNode;
@@ -77,10 +77,15 @@ function PlacePage(props: {
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground">
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-4 pt-3 pb-[max(2rem,env(safe-area-inset-bottom))] sm:px-5 sm:pt-6">
-          {props.tabs ? <div className="flex justify-center">{props.tabs}</div> : null}
+        <div
+          className={cn(
+            "mx-auto flex w-full max-w-2xl flex-col gap-5 px-4 pt-3 sm:px-5 sm:pt-6",
+            props.tabs ? "pb-6" : "pb-[max(2rem,env(safe-area-inset-bottom))]",
+          )}
+        >
           <header className="flex min-h-8 flex-wrap items-center gap-2">
-            <h1 className={cn("font-semibold text-lg", props.tabs && "sr-only")}>
+            {/* Clear of the sidebar's button, which floats at the top left on a phone; what to do is on a row of its own under it. */}
+            <h1 className={cn("font-semibold text-lg", props.tabs && "ps-11 leading-10")}>
               {props.title}
               {props.count ? (
                 <span className="ms-2 font-normal text-muted-foreground text-sm">
@@ -88,11 +93,18 @@ function PlacePage(props: {
                 </span>
               ) : null}
             </h1>
-            {props.action ? <span className="ms-auto">{props.action}</span> : null}
+            {props.action ? (
+              <span className={props.tabs ? "w-full" : "ms-auto"}>{props.action}</span>
+            ) : null}
           </header>
           {props.children}
         </div>
       </div>
+      {props.tabs ? (
+        <div className="shrink-0 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+          {props.tabs}
+        </div>
+      ) : null}
     </SidebarInset>
   );
 }

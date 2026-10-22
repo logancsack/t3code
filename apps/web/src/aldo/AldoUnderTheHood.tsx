@@ -31,7 +31,7 @@ export function AldoUnderTheHood(props: {
   readonly repos: ReadonlyArray<string>;
   readonly now: number;
   readonly lastSeen: string | null;
-  /** Simple mode's places, on a phone. */
+  /** Simple mode's places, on a phone: at the foot. */
   readonly tabs: ReactNode;
 }) {
   const { home, now } = props;
@@ -50,7 +50,6 @@ export function AldoUnderTheHood(props: {
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground">
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-4 pt-14 pb-8 sm:px-5 sm:pt-6">
-          {props.tabs}
           <header className="-ms-1.5 flex items-center gap-1.5">
             <button
               type="button"
@@ -90,6 +89,11 @@ export function AldoUnderTheHood(props: {
           )}
         </div>
       </div>
+      {props.tabs ? (
+        <div className="shrink-0 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+          {props.tabs}
+        </div>
+      ) : null}
     </SidebarInset>
   );
 }
