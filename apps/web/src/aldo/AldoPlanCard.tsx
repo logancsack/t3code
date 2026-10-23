@@ -76,7 +76,7 @@ function failureOf(error: unknown): string {
 
 export function AldoPlanCard(props: {
   readonly plan: AldoPlan;
-  /** Shown where it was already (an open card that started moves up among what happened): it doesn't arrive again. */
+  /** A card already started does not arrive again. */
   readonly still?: boolean;
 }) {
   const [latest, setLatest] = useState<AldoPlan | null>(null);

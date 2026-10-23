@@ -1,16 +1,14 @@
 // What waits on the user, in Aldo's conversation (AldoConversationPage.tsx):
 // each decision (decisions.logic.ts) as a card that's decided right there,
-// under what was said when it came up (placeDecisions), and what came up
-// after the last thing said at the end, first above the composer. On a wide
+// at its creation time among messages and activity. On a wide
 // screen, the count of those out of view waits above the composer
 // (NeedsYouPill.tsx); on a phone, on the Needs you tab. In each group the
 // first is open, with big buttons for the choices (Aldo's pick first, from
 // the brief, with why), a tap on what asks (or ↗) to open its thread; the
 // next two are a line each that opens in place, and the rest unfold.
 // Decided, a card turns into the line saying what happened (receipts.ts),
-// where it was, and leaves with the next read of the home screen. A thread
-// paused mid-turn waits on the user too, though only opening it carries it
-// on: it's a line at the end that opens it. On a keyboard, j and k move
+// where it was. Saved approval outcomes remain there after reloading. A
+// thread paused mid-turn is a line at its state time that opens it. On a keyboard, j and k move
 // between cards and Enter unfolds one, then opens its thread: nothing is
 // decided without a button.
 
@@ -29,7 +27,7 @@ import {
 import { cn } from "~/lib/utils";
 import { proposedPlanTitle, stripDisplayedPlanMarkdown } from "../proposedPlan";
 import { DismissChatDecision } from "./DismissChatDecision";
-import { ApprovalCard, ApprovalText, RewriteNote } from "./AldoApprovals";
+import { ApprovalCard, ApprovalText, DecidedApproval, RewriteNote } from "./AldoApprovals";
 import { confirmQuickChoice, DecisionIcon } from "./AldoBrief";
 import { AldoHandoffActions } from "./AldoHandoffCard";
 import { askAldoAbout, PendingForm, ThreadLink } from "./AldoHomeInbox";
@@ -81,9 +79,20 @@ export function AldoUpNext(props: {
   const [all, setAll] = useState(false);
   const everything = useMemo(() => {
     // One answered here is a line in the conversation now, while the home read catches up.
-    const list = aldoChatDecisions(props.home, props.now).filter(
-      (d) => !receipts.some((r) => r.key === d.key),
-    );
+    const list: ReadonlyArray<AldoDecision> = [
+      ...aldoChatDecisions(props.home, props.now).filter(
+        (d) => !receipts.some((r) => r.key === d.key),
+      ),
+      ...(props.home.approvals ?? [])
+        .filter(
+          (a) => a.status !== "pending" && a.status !== "withdrawn" && !a.chatDecision?.dismissed,
+        )
+        .map((approval) => ({
+          kind: "aldo-approval" as const,
+          key: `aldo:${approval.id}`,
+          approval,
+        })),
+    ];
     // What can't wait first (a payment Link stops waiting for, soonest first;
     // a site handed to the user times out), then the brief's order: what Aldo
     // said matters most today.
@@ -96,6 +105,9 @@ export function AldoUpNext(props: {
     );
     return [...urgent, ...first, ...list.filter((d) => !urgent.includes(d) && !first.includes(d))];
   }, [props.home, props.now, brief, receipts]);
+  const waiting = everything.filter(
+    (d) => d.kind !== "aldo-approval" || d.approval.status === "pending",
+  );
   const { only, placedAt } = props;
   const decisions = useMemo(
     () =>
@@ -104,10 +116,13 @@ export function AldoUpNext(props: {
         : everything.filter((d) => only!.includes(d.key)),
     [everything, end, only, placedAt],
   );
-  // Asleep mid-turn: no decision, but it waits on the user to open it, at the end.
+  // Paused threads use the same timeline positions as the cards.
   const paused = useMemo(
-    () => (end ? pausedInChat(props.home, props.now) : []),
-    [end, props.home, props.now],
+    () =>
+      pausedInChat(props.home, props.now).filter((c) =>
+        end ? !placedAt?.has(`paused:${c.ref}`) : only!.includes(`paused:${c.ref}`),
+      ),
+    [end, props.home, props.now, only, placedAt],
   );
   const picks = useMemo(() => {
     const out: Record<string, { readonly label: string; readonly reason: string | null }> = {};
@@ -140,7 +155,7 @@ export function AldoUpNext(props: {
   // What the user hid is under Aldo's name at the top (AldoHiddenFromChat), not here.
   if (decisions.length === 0 && paused.length === 0)
     // Each under what was said when it came up: the way through them all stays at the end.
-    return end && everything.length > 1 ? (
+    return end && waiting.length > 1 ? (
       <div className="flex justify-center">
         <button
           type="button"
@@ -148,9 +163,9 @@ export function AldoUpNext(props: {
             FOCUS,
             "rounded-full px-3 py-1.5 text-[13px] text-muted-foreground hover:bg-foreground/[0.05] hover:text-foreground",
           )}
-          onClick={() => startAldoWalkthrough(everything, suggestions)}
+          onClick={() => startAldoWalkthrough(waiting, suggestions)}
         >
-          Go through the {inWords(everything.length)} that need you with Aldo
+          Go through the {inWords(waiting.length)} that need you with Aldo
         </button>
       </div>
     ) : null;
@@ -162,14 +177,14 @@ export function AldoUpNext(props: {
       {end ? (
         <div className="flex items-center justify-between px-1 pb-0.5 text-[12px] leading-[18px]">
           <h3 className="font-medium text-muted-foreground">Needs you</h3>
-          {everything.length > 1 ? (
+          {waiting.length > 1 ? (
             <button
               type="button"
               className={cn(
                 FOCUS,
                 "-me-1 rounded-full px-1 font-medium text-foreground/75 hover:text-foreground",
               )}
-              onClick={() => startAldoWalkthrough(everything, suggestions)}
+              onClick={() => startAldoWalkthrough(waiting, suggestions)}
             >
               Go through them with Aldo
             </button>
@@ -515,6 +530,12 @@ function DecisionCard(props: {
   switch (d.kind) {
     case "aldo-approval": {
       const a = d.approval;
+      if (a.status !== "pending")
+        return (
+          <ul>
+            <DecidedApproval approval={a} now={props.now} />
+          </ul>
+        );
       if (a.kind === "confirm" || a.kind === "start") {
         // A step with a total and terms, or a thread to start, is said yes to in its own card, in full.
         return (

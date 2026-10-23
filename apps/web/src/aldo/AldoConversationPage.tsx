@@ -2,7 +2,7 @@
 // messaging app's chat with a teammate. At the top, Aldo's face and what it's
 // at (AldoPresence.tsx), which opens what's working and coming up. Then the
 // conversation, with what happened to the user's agents where it happened
-// (feed.logic.ts, AldoFeed.tsx), and at its end what waits on the user, as
+// (feed.logic.ts, AldoFeed.tsx), and what waits on the user where it came up, as
 // cards to answer in place (a plan to start, AldoPlanCard.tsx; the rest,
 // AldoUpNext.tsx), so nothing needs a view of its own. Then the composer.
 // Before anything's been said, the page is Aldo's face, one question and the
@@ -38,13 +38,10 @@ import { settleAldoConversation, unsettleAldoConversation } from "./arrive";
 import { showAldoCards } from "./assistantApi";
 import { seedAldoComposer, useAldoAssistant } from "./assistantSession";
 import { type AldoHome, type AldoHomeTarget } from "./homeApi";
-import { aldoChatDecisions, aldoWaitingCount, pausedInChat, placeableOf } from "./decisions.logic";
-import { briefRaised } from "./briefGroups.logic";
-import { useAldoBrief } from "./briefFeed";
+import { aldoChatDecisions, aldoWaitingCount, decisionAt, pausedInChat } from "./decisions.logic";
 import { NeedsYouPill } from "./NeedsYouPill";
 import { feedEvents, withPlans, withReceipts } from "./feed.logic";
-import { AldoPlanCard } from "./AldoPlanCard";
-import { openPlans, parseAldoPlans } from "./plans.logic";
+import { parseAldoPlans } from "./plans.logic";
 import { useAldoFirstViewHold } from "./firstView";
 import type { healthIssues } from "./home.logic";
 import { useAldoReceipts } from "./receipts";
@@ -232,7 +229,7 @@ export function AldoConversationPage(props: {
   const loading = !loaded && !said && !historySlow;
   useAldoFirstViewHold(loading);
   const receipts = useAldoReceipts((s) => s.receipts);
-  // Aldo's plans (a newer Aldo's): one that started where it started, the open ones at the end.
+  // Plans keep their proposal time through Start and subsequent reads.
   const plans = useMemo(() => parseAldoPlans(home?.plans), [home]);
   const feed = useMemo(
     () =>
@@ -243,29 +240,28 @@ export function AldoConversationPage(props: {
               from: firstAt,
             })
           : [],
-        receipts,
+        receipts.filter(
+          (r) => !home?.approvals?.some((a) => `aldo:${a.id}` === r.key && a.status !== "pending"),
+        ),
       ),
     [home, now, firstAt, here, told, receipts, plans],
   );
-  const proposed = useMemo(() => openPlans(plans, firstAt, now), [plans, firstAt, now]);
-  // What waits on the user, placed where it came up (AldoUpNext.tsx); one answered here is a line now.
-  const brief = useAldoBrief((s) => s.brief);
+  // Every interactive card uses its creation time, including decided approvals
+  // supplied by persisted history. Local receipts replace pending cards in place.
   const decisions = useMemo(() => {
     if (!home) return [];
-    const raised = brief ? briefRaised(brief) : null;
-    return aldoChatDecisions(home, now)
-      .filter((d) => !receipts.some((r) => r.key === d.key))
-      .map((d) => placeableOf(d, raised));
-  }, [home, now, brief, receipts]);
-  // A payment that went on stays where its card was while it waited on the user.
-  const decided = useMemo(() => {
-    const raised = brief ? briefRaised(brief) : null;
-    return feed.flatMap((e) =>
-      e.kind === "payment"
-        ? [placeableOf({ kind: "payment", key: e.key, payment: e.payment }, raised)]
-        : [],
-    );
-  }, [feed, brief]);
+    return [
+      ...aldoChatDecisions(home, now)
+        .filter((d) => !receipts.some((r) => r.key === d.key))
+        .map((d) => ({ key: d.key, at: decisionAt(d) })),
+      ...(home.approvals ?? [])
+        .filter(
+          (a) => a.status !== "pending" && a.status !== "withdrawn" && !a.chatDecision?.dismissed,
+        )
+        .map((a) => ({ key: `aldo:${a.id}`, at: a.createdAt })),
+      ...pausedInChat(home, now).map((c) => ({ key: `paused:${c.ref}`, at: c.stateAt ?? c.at })),
+    ];
+  }, [home, now, receipts]);
   const pausedCount = useMemo(() => (home ? pausedInChat(home, now).length : 0), [home, now]);
   const renderDecisions = useCallback(
     (keys: ReadonlyArray<string> | null, placedAt: ReadonlyMap<string, string>) =>
@@ -281,8 +277,8 @@ export function AldoConversationPage(props: {
     loaded &&
     !said &&
     feed.length === 0 &&
+    decisions.length === 0 &&
     waiting === 0 &&
-    proposed.length === 0 &&
     !unread &&
     props.supported !== false;
   useEffect(() => {
@@ -325,21 +321,7 @@ export function AldoConversationPage(props: {
   }, []);
 
   const conversation = (
-    <AldoConversation
-      feed={feed}
-      tail={
-        home ? (
-          <>
-            {proposed.map((plan) => (
-              <AldoPlanCard key={plan.id} plan={plan} />
-            ))}
-          </>
-        ) : null
-      }
-      decisions={decisions}
-      decided={decided}
-      renderDecisions={renderDecisions}
-    />
+    <AldoConversation feed={feed} decisions={decisions} renderDecisions={renderDecisions} />
   );
   const column = "mx-auto w-full max-w-[640px] px-4 sm:px-6";
   // The empty page's few things to say (the first run's starters say them instead);

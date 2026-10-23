@@ -331,14 +331,13 @@ export function pausedInChat(home: AldoHome, now: number): ReadonlyArray<AldoHom
 }
 
 /**
- * When a decision came up: an Aldo approval when it was asked for (or Aldo
- * last rewrote it), a pull request when it went green, a thread's when it
- * got to where it waits.
+ * When a decision came up: an Aldo approval when it was asked for, a pull
+ * request when it went green, a thread when it got to where it waits.
  */
 export function decisionAt(decision: AldoDecision): string {
   switch (decision.kind) {
     case "aldo-approval":
-      return decision.approval.revisedAt ?? decision.approval.createdAt;
+      return decision.approval.createdAt;
     case "payment":
       return decision.payment.createdAt;
     case "merge":
@@ -348,86 +347,8 @@ export function decisionAt(decision: AldoDecision): string {
   }
 }
 
-/** A decision as the conversation places it: by when it came up. */
+/** A card's stable position in the conversation. */
 export interface AldoPlaceable {
   readonly key: string;
   readonly at: string;
-  /** Under Aldo's first reply at or after `at`: a draft it rewrote, under the reply saying so. */
-  readonly afterReply?: boolean;
-}
-
-/**
- * Where a decision goes: by when it came up, or under what raised it. A draft
- * Aldo rewrote goes under the reply saying so; one the day's brief brought up
- * (`brief`, its keys) under the brief, which went through them.
- */
-export function placeableOf(
-  decision: AldoDecision,
-  brief?: { readonly at: string; readonly keys: ReadonlySet<string> } | null,
-): AldoPlaceable {
-  if (decision.kind === "aldo-approval" && decision.approval.revisedAt !== undefined)
-    return { key: decision.key, at: decision.approval.revisedAt, afterReply: true };
-  if (brief?.keys.has(decision.key)) return { key: decision.key, at: brief.at, afterReply: true };
-  return { key: decision.key, at: decisionAt(decision) };
-}
-
-/** Aldo's turn, at its longest: what came up this long before a reply came up in it, so it goes under it. */
-const TURN_MS = 5 * 60_000;
-
-/**
- * Where each decision sits in Aldo's conversation: under what was said or
- * happened last before it came up, so the conversation reads in order, or
- * under Aldo's reply when it came up in the turn that reply ends (a draft Aldo
- * made as it answered, after the user's message and within minutes of the
- * reply). `items`
- * are the conversation's, each with its time (none for what belongs to the
- * line before it, as what Aldo did does to its reply) and whether it's Aldo's
- * reply. `before`: by index, the decisions to put before the item there. What
- * came up after all of it, or before it all (older than the conversation),
- * isn't placed: it waits at the end, as before. `at`: when, in the
- * conversation, each placed one is, so the line it becomes once it's decided
- * stays where it was.
- */
-export function placeDecisions(
-  items: ReadonlyArray<{ readonly at: string | null; readonly reply: boolean }>,
-  decisions: ReadonlyArray<AldoPlaceable>,
-): {
-  readonly before: ReadonlyMap<number, ReadonlyArray<string>>;
-  readonly at: ReadonlyMap<string, string>;
-} {
-  const before = new Map<number, string[]>();
-  const at = new Map<string, string>();
-  const times = items.map((item) => (item.at ? Date.parse(item.at) : null));
-  const first = times.findIndex((time) => time !== null && !Number.isNaN(time));
-  /** The first item from `from` with a time (after `after`, if given), or -1. */
-  const next = (from: number, after = -Infinity) => {
-    for (let index = from; index < items.length; index += 1) {
-      const time = times[index];
-      if (time !== null && time !== undefined && time > after) return index;
-    }
-    return -1;
-  };
-  for (const decision of decisions) {
-    const time = Date.parse(decision.at);
-    if (Number.isNaN(time) || first < 0 || time < times[first]!) continue;
-    let index: number;
-    let when = decision.at;
-    const reply = items.findIndex(
-      (item, i) => item.reply && times[i] !== null && times[i]! >= time,
-    );
-    // Its turn began with what came last before the reply (the user's message, say): one before that wasn't raised in it.
-    let start = reply - 1;
-    while (start >= 0 && (times[start] === null || items[start]!.reply)) start -= 1;
-    const inTurn =
-      reply >= 0 && times[reply]! - time <= TURN_MS && (start < 0 || times[start]! <= time);
-    if (decision.afterReply || inTurn) {
-      if (reply < 0) continue;
-      index = next(reply + 1);
-      when = new Date(times[reply]! + 1).toISOString();
-    } else index = next(first, time);
-    if (index < 0) continue;
-    before.set(index, [...(before.get(index) ?? []), decision.key]);
-    at.set(decision.key, when);
-  }
-  return { before, at };
 }

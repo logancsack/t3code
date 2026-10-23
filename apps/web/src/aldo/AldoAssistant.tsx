@@ -75,14 +75,8 @@ import { useAldoHomeFeed } from "./homeFeed";
 import type { AldoHomeConversation } from "./homeApi";
 import { WORKSTREAM_WORDS, workstreamMeta, workstreamState } from "./workstream.logic";
 import { blinkAldo, setAldoReading } from "./face";
-import {
-  dedupeLiveCards,
-  interleaveInPlace,
-  timelineSlots,
-  type AldoFeedEvent,
-  type AldoTimelineSlot,
-} from "./feed.logic";
-import { placeDecisions, type AldoPlaceable } from "./decisions.logic";
+import { dedupeLiveCards, interleave, type AldoFeedEvent } from "./feed.logic";
+import { type AldoPlaceable } from "./decisions.logic";
 import { useAldoFirstViewHold } from "./firstView";
 import { AldoPlanPicker } from "./AldoPlanPicker";
 import { CHIP } from "./surface";
@@ -625,33 +619,20 @@ export function AldoComposer(props: {
   );
 }
 
-/** Where an entry is in the conversation: what Aldo did belongs to its reply, with no time of its own. */
-const slotOf = (entry: AldoConversationEntry): AldoTimelineSlot =>
-  entry.kind === "message"
-    ? { at: entry.at, reply: entry.role === "assistant" }
-    : { at: null, reply: false };
-
 /**
  * The conversation: from the start, or `since` an entry (the summon bar shows
  * what followed its question), the newest action about each thread as a live
  * card. On the home screen it's a messaging thread: days marked, what happened
  * to the user's agents put where it happened (`feed`, AldoFeed.tsx), and what
- * waits on them under what was said when it came up, or at its end once
- * nothing's been said since (`decisions`, drawn by `renderDecisions`:
- * AldoUpNext.tsx), after the `tail`.
+ * waits on them at its creation time (`decisions`, drawn by
+ * `renderDecisions`: AldoUpNext.tsx).
  */
 export function AldoConversation(
   props: {
     readonly since?: number;
     readonly feed?: ReadonlyArray<AldoFeedEvent>;
-    readonly tail?: ReactNode;
     readonly decisions?: ReadonlyArray<AldoPlaceable>;
-    /**
-     * Events in `feed` that were cards waiting on the user (a payment that went
-     * on), each as it was placed as a decision: it stays where its card was.
-     */
-    readonly decided?: ReadonlyArray<AldoPlaceable>;
-    /** A group of cards: `keys` for one placed in the conversation, null for the end's (what wasn't placed, by `placedAt`). */
+    /** Cards in the timeline, or null for the conversation's walkthrough control. */
     readonly renderDecisions?: (
       keys: ReadonlyArray<string> | null,
       placedAt: ReadonlyMap<string, string>,
@@ -671,11 +652,16 @@ export function AldoConversation(
       entry.kind === "action" && entry.open && live.has(since + index) ? [entry.open] : [],
     );
     const feed = dedupeLiveCards(props.feed ?? [], shown);
-    return interleaveInPlace(entries, feed, slotOf, props.decided ?? []);
-  }, [entries, props.feed, props.decided, live, since]);
-  const placement = useMemo(
-    () => placeDecisions(timelineSlots(items, slotOf), props.decisions ?? []),
-    [items, props.decisions],
+    return interleave(
+      entries,
+      feed,
+      (entry) => (entry.kind === "message" ? entry.at : null),
+      props.decisions,
+    );
+  }, [entries, props.feed, props.decisions, live, since]);
+  const placedAt = useMemo(
+    () => new Map((props.decisions ?? []).map((card) => [card.key, card.at])),
+    [props.decisions],
   );
   const { renderDecisions } = props;
   // Aldo's reply in: it looks up from it, with a blink.
@@ -700,18 +686,15 @@ export function AldoConversation(
   let day: string | null = null;
   return (
     <div className="flex flex-col gap-6">
-      {items.map((item, position) => {
-        const placed = placement.before.get(position);
-        const cards =
-          placed && renderDecisions ? (
-            <Fragment key={`needs-${placed[0]}`}>{renderDecisions(placed, placement.at)}</Fragment>
-          ) : null;
+      {items.map((item) => {
         const at =
           item.kind === "entry"
             ? item.entry.kind === "message"
               ? item.entry.at
               : null
-            : item.events[0]!.at;
+            : item.kind === "card"
+              ? item.at
+              : item.events[0]!.at;
         const label = props.feed && at ? dayLabel(at) : null;
         const marker =
           label && label !== day ? (
@@ -723,11 +706,15 @@ export function AldoConversation(
             </p>
           ) : null;
         if (label) day = label;
+        if (item.kind === "card")
+          return [
+            marker,
+            <Fragment key={item.key}>{renderDecisions?.([item.key], placedAt)}</Fragment>,
+          ];
         if (item.kind === "events")
-          return [cards, marker, <AldoFeedRun key={item.key} events={item.events} />];
+          return [marker, <AldoFeedRun key={item.key} events={item.events} />];
         const { entry, index } = item;
         return [
-          cards,
           marker,
           <ConversationEntry
             key={entry.kind === "action" ? entry.id : `${entry.at}-${since + index}`}
@@ -742,8 +729,7 @@ export function AldoConversation(
         ];
       })}
       {replying ? <TypingDots /> : null}
-      {props.tail}
-      {renderDecisions?.(null, placement.at)}
+      {renderDecisions?.(null, placedAt)}
       <div ref={end} />
     </div>
   );
