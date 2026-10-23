@@ -364,9 +364,10 @@ export function AldoConversationPage(props: {
               ref={scroller}
               aria-busy={loading}
               className={cn(
+                // Never sideways: what's too wide for the column wraps or scrolls inside its own box.
                 fresh
-                  ? "min-h-0 shrink overflow-y-auto"
-                  : "relative min-h-0 flex-1 overflow-y-auto [mask-image:linear-gradient(to_bottom,transparent,black_12px,black_calc(100%-12px),transparent)]",
+                  ? "min-h-0 shrink overflow-x-hidden overflow-y-auto"
+                  : "relative min-h-0 flex-1 overflow-x-hidden overflow-y-auto [mask-image:linear-gradient(to_bottom,transparent,black_12px,black_calc(100%-12px),transparent)]",
               )}
             >
               {loading ? (
@@ -393,6 +394,8 @@ export function AldoConversationPage(props: {
                 <div
                   className={cn(
                     column,
+                    // Words with no break in them (a link, a path, a token) wrap at the column's edge.
+                    "min-w-0 wrap-anywhere",
                     // Room at the end for the pill over it, so the last card isn't under it.
                     "flex flex-col gap-4 pt-3 pb-6 group-has-[[data-aldo-needs-you]]/page:pb-16",
                   )}
