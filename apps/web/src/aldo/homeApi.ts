@@ -345,7 +345,7 @@ export interface AldoApproval {
   /**
    * An email Aldo rewrote for the user while it waits (an Aldo that rewrites
    * drafts): what it said before, and when it was rewritten. What's new is
-   * underlined (diff.logic.ts), and its card sits under the reply that said so.
+   * underlined (diff.logic.ts), while its card keeps its original place in the conversation.
    */
   readonly previous?: { readonly title: string; readonly body: string };
   readonly revisedAt?: string;

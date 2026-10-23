@@ -3,9 +3,8 @@
 // that shipped, payments that went on from waiting on the user (approved,
 // paid, declined), and what Aldo did, but for what this page shows itself (what
 // it did here is in the conversation already; what it did
-// from another device is only here). What waits on the user isn't
-// here: it's the live "Up next" at the conversation's end, so it never sits
-// buried in what was said. The newest of what Aldo did to a thread that's
+// from another device is only here). Cards waiting on the user are
+// interleaved at their creation time too. The newest action on a thread that's
 // still going shows it live, as a card. All from Aldo's home read, so
 // nothing is woken.
 // What finished and shipped is quiet: a pull request's check after it merged
@@ -22,9 +21,9 @@ import {
   type AldoHomeTarget,
   type AldoPayment,
 } from "./homeApi";
-import { placeDecisions, putAway, type AldoPlaceable } from "./decisions.logic";
+import { putAway, type AldoPlaceable } from "./decisions.logic";
 import { settledPayments } from "./payments.logic";
-import { type AldoPlan } from "./plans.logic";
+import { openPlans, type AldoPlan } from "./plans.logic";
 import { sameTarget } from "./home.logic";
 
 /** How far back the conversation shows what happened: as long as the board kept done threads. */
@@ -65,7 +64,7 @@ export type AldoFeedEvent =
       readonly payment: AldoPayment;
     }
   | {
-      /** A plan Aldo proposed that has started (plans.logic.ts): its card, where it started. */
+      /** A plan Aldo proposed (plans.logic.ts): its card, where it was proposed. */
       readonly kind: "plan";
       readonly key: string;
       readonly at: string;
@@ -195,9 +194,9 @@ export function feedEvents(
       going(a.thread) &&
       !shown.slice(index + 1).some((later) => a.thread && sameTarget(later.thread, a.thread)),
   }));
-  // Where it came up, where its card was while it waited; one asked before the conversation, when it last changed.
+  // Recently settled payments keep the creation time their pending cards used.
   const payments: AldoFeedEvent[] = settledPayments(home, options.now).flatMap((p) => {
-    const at = within(p.createdAt) ? p.createdAt : within(p.updatedAt) ? p.updatedAt : null;
+    const at = within(p.createdAt) || within(p.updatedAt) ? p.createdAt : null;
     return at ? [{ kind: "payment", key: `payment:${p.id}`, at, payment: p }] : [];
   });
   return [...finished, ...shipped, ...actions, ...payments].sort((a, b) =>
@@ -247,9 +246,8 @@ export function withReceipts(
 }
 
 /**
- * Plans that started, where they started: from `from` (the conversation's
- * start) and within the window, as the rest. Open ones wait at the
- * conversation's end instead.
+ * Open and recently started plans, always where they were proposed. Starting
+ * changes the card in place; it does not give it a new time.
  */
 export function withPlans(
   events: ReadonlyArray<AldoFeedEvent>,
@@ -260,13 +258,15 @@ export function withPlans(
     options.now - FEED_WINDOW_MS,
     options.from ? Date.parse(options.from) : -Infinity,
   );
-  const started: AldoFeedEvent[] = plans.flatMap((plan) =>
-    plan.status === "started" && plan.startedAt && Date.parse(plan.startedAt) >= start
-      ? [{ kind: "plan", key: `plan:${plan.id}`, at: plan.startedAt, plan }]
+  const open = new Set(openPlans(plans, options.from, options.now).map((p) => p.id));
+  const shown: AldoFeedEvent[] = plans.flatMap((plan) =>
+    open.has(plan.id) ||
+    (plan.status === "started" && plan.startedAt && Date.parse(plan.startedAt) >= start)
+      ? [{ kind: "plan", key: `plan:${plan.id}`, at: plan.proposedAt, plan }]
       : [],
   );
-  if (started.length === 0) return events;
-  return [...events, ...started].sort((a, b) => a.at.localeCompare(b.at));
+  if (shown.length === 0) return events;
+  return [...events, ...shown].sort((a, b) => a.at.localeCompare(b.at));
 }
 
 type Finished = Extract<AldoFeedEvent, { readonly kind: "finished" }>;
@@ -325,6 +325,7 @@ export function shippedStatus(event: Shipped): string {
 
 export type AldoTimelineItem<E> =
   | { readonly kind: "entry"; readonly entry: E; readonly index: number }
+  | { readonly kind: "card"; readonly key: string; readonly at: string }
   | {
       readonly kind: "events";
       readonly key: string;
@@ -341,17 +342,29 @@ export function interleave<E>(
   entries: ReadonlyArray<E>,
   events: ReadonlyArray<AldoFeedEvent>,
   timeOf: (entry: E) => string | null,
+  cards: ReadonlyArray<AldoPlaceable> = [],
 ): ReadonlyArray<AldoTimelineItem<E>> {
   const items: AldoTimelineItem<E>[] = [];
+  const timed = [
+    ...events.map((event) => ({ kind: "event" as const, at: event.at, key: event.key, event })),
+    ...cards.map((card) => ({ kind: "card" as const, ...card })),
+  ].toSorted((a, b) => Date.parse(a.at) - Date.parse(b.at) || a.key.localeCompare(b.key));
   let next = 0;
   const flush = (before: string | null) => {
-    const run: AldoFeedEvent[] = [];
-    for (; next < events.length; next += 1) {
-      const event = events[next]!;
-      if (before !== null && event.at >= before) break;
-      run.push(event);
+    let run: AldoFeedEvent[] = [];
+    const flushRun = () => {
+      if (run.length > 0) items.push({ kind: "events", key: run[0]!.key, events: run });
+      run = [];
+    };
+    for (; next < timed.length; next += 1) {
+      const item = timed[next]!;
+      if (before !== null && Date.parse(item.at) >= Date.parse(before)) break;
+      if (item.kind === "card") {
+        flushRun();
+        items.push(item);
+      } else run.push(item.event);
     }
-    if (run.length > 0) items.push({ kind: "events", key: run[0]!.key, events: run });
+    flushRun();
   };
   entries.forEach((entry, index) => {
     const at = timeOf(entry);
@@ -360,39 +373,4 @@ export function interleave<E>(
   });
   flush(null);
   return items;
-}
-
-/** Where each item is, as placeDecisions reads them: its time (none for what belongs to the line before it) and whether it's Aldo's reply. */
-export type AldoTimelineSlot = { readonly at: string | null; readonly reply: boolean };
-
-export function timelineSlots<E>(
-  items: ReadonlyArray<AldoTimelineItem<E>>,
-  slotOf: (entry: E) => AldoTimelineSlot,
-): ReadonlyArray<AldoTimelineSlot> {
-  return items.map((item) =>
-    item.kind === "events" ? { at: item.events[0]!.at, reply: false } : slotOf(item.entry),
-  );
-}
-
-/**
- * The conversation in order (interleave), with the events that were cards
- * waiting on the user (`decided`, each as it was placed as a decision: a
- * payment that went on) where the card was, among the rest, so it changes in
- * place rather than jumping to when it came up.
- */
-export function interleaveInPlace<E>(
-  entries: ReadonlyArray<E>,
-  events: ReadonlyArray<AldoFeedEvent>,
-  slotOf: (entry: E) => AldoTimelineSlot,
-  decided: ReadonlyArray<AldoPlaceable>,
-): ReadonlyArray<AldoTimelineItem<E>> {
-  const timeOf = (entry: E) => slotOf(entry).at;
-  const keys = new Set(decided.map((d) => d.key));
-  const rest = events.filter((e) => !keys.has(e.key));
-  if (rest.length === events.length) return interleave(entries, events, timeOf);
-  const { at } = placeDecisions(timelineSlots(interleave(entries, rest, timeOf), slotOf), decided);
-  const moved = events
-    .map((e) => (at.has(e.key) ? { ...e, at: at.get(e.key)! } : e))
-    .toSorted((a, b) => a.at.localeCompare(b.at));
-  return interleave(entries, moved, timeOf);
 }

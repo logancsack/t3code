@@ -4,8 +4,8 @@
 // line ("3 shipped · 2 finished"), which opens to a line each, grouped (each
 // a tap from its thread or pull request); just one is its line. What Aldo did
 // (a thread it started that's still going as its live card), and what the
-// user decided from a card this visit, are a line each; a plan that started
-// is its card (AldoPlanCard.tsx), saying what it started with.
+// user decided from a card this visit, are a line each; a plan stays its
+// card (AldoPlanCard.tsx), including what it started with.
 
 import { CheckIcon, ChevronDownIcon, LayersIcon, RepeatIcon } from "lucide-react";
 import { useContext, useState, type ReactNode } from "react";
@@ -258,8 +258,7 @@ function EventLine(props: {
   const { event } = props;
   switch (event.kind) {
     case "plan":
-      // It was at the conversation's end until it started: it stays, without arriving again.
-      return <AldoPlanCard plan={event.plan} still />;
+      return <AldoPlanCard plan={event.plan} still={event.plan.status === "started"} />;
     case "payment":
       return <AldoPaymentLine payment={event.payment} />;
     case "decided": {

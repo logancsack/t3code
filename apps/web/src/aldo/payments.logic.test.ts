@@ -11,7 +11,7 @@ import {
   decisionThread,
   decisionTitle,
 } from "./decisions.logic";
-import { feedEvents, interleaveInPlace } from "./feed.logic";
+import { feedEvents, interleave } from "./feed.logic";
 import { paymentWaits, paymentWords, settledPayments, waitingPayments } from "./payments.logic";
 import { simpleNeedsYou } from "./simpleMode.logic";
 
@@ -195,13 +195,13 @@ describe("payments in the conversation", () => {
     expect(feedEvents(h, { now: NOW, from: null })).toEqual([
       { kind: "payment", key: "payment:paid", at: ago(40), payment: paid },
     ]);
-    // Asked before the conversation began: where it last changed.
-    expect(feedEvents(h, { now: NOW, from: ago(35) }).map((e) => e.at)).toEqual([ago(30)]);
+    // Asked before the loaded messages: it still keeps its original place.
+    expect(feedEvents(h, { now: NOW, from: ago(35) }).map((e) => e.at)).toEqual([ago(40)]);
     // Before it all: not in it.
     expect(feedEvents(h, { now: NOW, from: ago(20) })).toEqual([]);
   });
 
-  it("one that went on stays where its card was, under the reply of the turn it came up in", () => {
+  it("keeps a settled payment at its creation time, before later replies", () => {
     const paid = payment("paid", {
       status: "succeeded",
       approvalUrl: null,
@@ -209,27 +209,12 @@ describe("payments in the conversation", () => {
       createdAt: ago(40),
       updatedAt: ago(30),
     });
-    type Said = { readonly at: string; readonly reply: boolean };
-    const said: ReadonlyArray<Said> = [
-      { at: ago(42), reply: false },
-      { at: ago(39), reply: true },
-      { at: ago(20), reply: false },
-    ];
-    const slot = (s: Said) => s;
+    const said = [{ at: ago(42) }, { at: ago(39) }, { at: ago(20) }];
     const events = feedEvents(home([paid]), { now: NOW, from: null });
-    const where = (decided: Parameters<typeof interleaveInPlace>[3]) =>
-      interleaveInPlace(said, events, slot, decided).map((item) =>
-        item.kind === "events" ? "paid" : item.entry.at,
-      );
-    // When it came up, it'd be before the reply...
-    expect(where([])).toEqual([ago(42), "paid", ago(39), ago(20)]);
-    // ...but its card was under it, so it stays there.
-    expect(where([{ key: "payment:paid", at: paid.createdAt }])).toEqual([
-      ago(42),
-      ago(39),
-      "paid",
-      ago(20),
-    ]);
+    const where = interleave(said, events, (s) => s.at).map((item) =>
+      item.kind === "entry" ? item.entry.at : item.key,
+    );
+    expect(where).toEqual([ago(42), "payment:paid", ago(39), ago(20)]);
   });
 });
 

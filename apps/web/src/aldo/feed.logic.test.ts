@@ -6,7 +6,14 @@ import {
   type AldoHomePullRequest,
 } from "./homeApi";
 import { liveCardIndexes } from "./assistant.logic";
-import { dedupeLiveCards, digestOf, feedEvents, shippedStatus, withPlans } from "./feed.logic";
+import {
+  dedupeLiveCards,
+  digestOf,
+  feedEvents,
+  interleave,
+  shippedStatus,
+  withPlans,
+} from "./feed.logic";
 import { parseAldoPlan, type AldoPlan } from "./plans.logic";
 
 const NOW = Date.parse("2026-10-15T12:00:00Z");
@@ -283,19 +290,51 @@ describe("plans", () => {
       ...overrides,
     })!;
 
-  it("puts a plan that started where it started, among the rest", () => {
+  it("keeps a started plan where it was proposed, among the rest", () => {
     const events = withPlans(
       feedEvents({ ...empty, actions: [action({ tool: "start_plan", at: at(17) })] }, quiet),
       [plan({})],
       quiet,
     );
     expect(events.map((e) => e.kind)).toEqual(["plan", "action"]);
-    expect(events[0]).toMatchObject({ key: "plan:plan-1", at: at(18) });
+    expect(events[0]).toMatchObject({ key: "plan:plan-1", at: at(20) });
   });
 
-  it("leaves open plans for the conversation's end, and what started before it began", () => {
+  it("includes open plans in the timeline and leaves out plans started before it began", () => {
     const open = plan({ id: "open", status: "proposed", startedAt: null });
     const before = plan({ id: "before", startedAt: at(90) });
-    expect(withPlans([], [open, before], { now: NOW, from: at(60) })).toEqual([]);
+    expect(withPlans([], [open, before], { now: NOW, from: at(60) })).toEqual([
+      { kind: "plan", key: "plan:open", at: open.proposedAt, plan: open },
+    ]);
+  });
+});
+
+describe("interleave", () => {
+  it("orders cards with messages and splits activity runs at each card", () => {
+    const messages = [{ at: at(50) }, { at: at(10) }];
+    const events = feedEvents(
+      {
+        ...empty,
+        actions: [action({ id: "first", at: at(40) }), action({ id: "second", at: at(20) })],
+      },
+      quiet,
+    );
+    const items = interleave(messages, events, (m) => m.at, [
+      { key: "latest", at: at(5) },
+      { key: "middle", at: at(30) },
+      { key: "oldest", at: at(60) },
+    ]);
+    expect(items.map((item) => (item.kind === "entry" ? item.entry.at : item.key))).toEqual([
+      "oldest",
+      at(50),
+      "action:first",
+      "middle",
+      "action:second",
+      at(10),
+      "latest",
+    ]);
+    expect(interleave([], [], () => null, [{ key: "only", at: at(1) }])).toEqual([
+      { kind: "card", key: "only", at: at(1) },
+    ]);
   });
 });
