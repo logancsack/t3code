@@ -386,3 +386,36 @@ describe("decisionAt", () => {
     expect(decisionAt(draft!)).toBe("2026-10-21T15:00:00.000Z");
   });
 });
+
+it("places a browser handoff when it was created, rather than its thread's earlier state", () => {
+  const read = home({
+    conversations: [
+      conversation({
+        ref: "handoff",
+        thread: at("handoff"),
+        state: "waiting",
+        stateAt: ago(30),
+        at: ago(30),
+        pending: { kind: "handoff", requestId: "handoff-1", summary: "Sign in" },
+      }),
+    ],
+    handoffs: [
+      {
+        id: "handoff-1",
+        kind: "sign_in",
+        reason: "Sign in",
+        how: null,
+        site: "example.com",
+        url: null,
+        seconds: null,
+        thread: at("handoff"),
+        threadTitle: "Sign in",
+        createdAt: ago(10),
+        expiresAt: ago(-10),
+      },
+    ],
+  });
+  const decision = aldoDecisions(read, NOW).find((d) => d.kind === "handoff")!;
+  expect(decisionAt(decision, read)).toBe(ago(10));
+  expect(decisionAt(decision)).toBe(ago(30));
+});

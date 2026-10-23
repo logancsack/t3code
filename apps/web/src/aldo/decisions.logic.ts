@@ -334,12 +334,18 @@ export function pausedInChat(home: AldoHome, now: number): ReadonlyArray<AldoHom
  * When a decision came up: an Aldo approval when it was asked for, a pull
  * request when it went green, a thread when it got to where it waits.
  */
-export function decisionAt(decision: AldoDecision): string {
+export function decisionAt(decision: AldoDecision, home?: Pick<AldoHome, "handoffs">): string {
   switch (decision.kind) {
     case "aldo-approval":
       return decision.approval.createdAt;
     case "payment":
       return decision.payment.createdAt;
+    case "handoff":
+      return (
+        home?.handoffs?.find((h) => h.id === decision.pending.requestId)?.createdAt ??
+        decision.conversation.stateAt ??
+        decision.conversation.at
+      );
     case "merge":
       return decision.pullRequest.greenSince ?? decision.pullRequest.updatedAt;
     default:

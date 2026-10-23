@@ -253,7 +253,7 @@ export function AldoConversationPage(props: {
     return [
       ...aldoChatDecisions(home, now)
         .filter((d) => !receipts.some((r) => r.key === d.key))
-        .map((d) => ({ key: d.key, at: decisionAt(d) })),
+        .map((d) => ({ key: d.key, at: decisionAt(d, home) })),
       ...(home.approvals ?? [])
         .filter(
           (a) => a.status !== "pending" && a.status !== "withdrawn" && !a.chatDecision?.dismissed,
