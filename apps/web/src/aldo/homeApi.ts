@@ -78,6 +78,14 @@ export interface AldoHomeConversation {
   }>;
   readonly pending?: AldoHomePending;
   readonly plan?: { readonly id: string; readonly text: string };
+  /** Computers requested by this conversation (older Aldo reads may omit the request time). */
+  readonly computers?: ReadonlyArray<{
+    readonly computer: string;
+    readonly status: string;
+    readonly why?: string;
+    readonly askedAt?: string;
+    readonly creditsPerHour: number;
+  }>;
   readonly approvedPlan?: { readonly id: string; readonly at: string };
   readonly pressure?: AldoMachinePressure | null;
   /** The site its agent is working on in the browser, while it works there (a newer Aldo). */

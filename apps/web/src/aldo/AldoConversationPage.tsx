@@ -39,6 +39,8 @@ import { showAldoCards } from "./assistantApi";
 import { seedAldoComposer, useAldoAssistant } from "./assistantSession";
 import { type AldoHome, type AldoHomeTarget } from "./homeApi";
 import { aldoChatDecisions, aldoWaitingCount, decisionAt, pausedInChat } from "./decisions.logic";
+import { AldoComputerRequest } from "./AldoComputerRequest";
+import { pendingNeedsYou, computerRequests } from "./needsYou.logic";
 import { NeedsYouPill } from "./NeedsYouPill";
 import { feedEvents, withPlans, withReceipts } from "./feed.logic";
 import { parseAldoPlans } from "./plans.logic";
@@ -237,7 +239,8 @@ export function AldoConversationPage(props: {
         home
           ? withPlans(feedEvents(home, { now, from: firstAt, here, told }), plans, {
               now,
-              from: firstAt,
+              // Pending plans remain reachable even before the loaded message window.
+              from: null,
             })
           : [],
         receipts.filter(
@@ -252,21 +255,55 @@ export function AldoConversationPage(props: {
     if (!home) return [];
     return [
       ...aldoChatDecisions(home, now)
-        .filter((d) => !receipts.some((r) => r.key === d.key))
+        .filter(
+          (d) =>
+            !receipts.some((r) => r.key === d.key) &&
+            !(d.kind === "waiting" && d.conversation.computers?.some((c) => c.status === "asked")),
+        )
         .map((d) => ({ key: d.key, at: decisionAt(d, home) })),
       ...(home.approvals ?? [])
         .filter(
           (a) => a.status !== "pending" && a.status !== "withdrawn" && !a.chatDecision?.dismissed,
         )
         .map((a) => ({ key: `aldo:${a.id}`, at: a.createdAt })),
-      ...pausedInChat(home, now).map((c) => ({ key: `paused:${c.ref}`, at: c.stateAt ?? c.at })),
+      ...pausedInChat(home, now)
+        .filter((c) => !c.computers?.some((computer) => computer.status === "asked"))
+        .map((c) => ({ key: `paused:${c.ref}`, at: c.stateAt ?? c.at })),
     ];
   }, [home, now, receipts]);
-  const pausedCount = useMemo(() => (home ? pausedInChat(home, now).length : 0), [home, now]);
+  const pending = useMemo(
+    () =>
+      home
+        ? pendingNeedsYou(
+            home,
+            now,
+            receipts.map((r) => r.key),
+          )
+        : [],
+    [home, now, receipts],
+  );
+  const computers = useMemo(
+    () =>
+      home ? computerRequests(home).filter((c) => pending.some((item) => item.key === c.key)) : [],
+    [home, pending],
+  );
+  const placed = useMemo(
+    () => [...decisions, ...computers.map(({ key, at }) => ({ key, at }))],
+    [decisions, computers],
+  );
   const renderDecisions = useCallback(
     (keys: ReadonlyArray<string> | null, placedAt: ReadonlyMap<string, string>) =>
-      home ? <AldoUpNext home={home} now={now} only={keys} placedAt={placedAt} /> : null,
-    [home, now],
+      home ? (
+        <>
+          <AldoUpNext home={home} now={now} only={keys} placedAt={placedAt} />
+          {computers
+            .filter((c) => keys?.includes(c.key))
+            .map((request) => (
+              <AldoComputerRequest key={request.key} request={request} />
+            ))}
+        </>
+      ) : null,
+    [home, now, computers],
   );
   const waiting = useMemo(() => (home ? aldoWaitingCount(home, now) : 0), [home, now]);
   // Nothing read yet, and the read failed: that's said, not taken for nothing to show.
@@ -277,7 +314,7 @@ export function AldoConversationPage(props: {
     loaded &&
     !said &&
     feed.length === 0 &&
-    decisions.length === 0 &&
+    placed.length === 0 &&
     waiting === 0 &&
     !unread &&
     props.supported !== false;
@@ -321,7 +358,7 @@ export function AldoConversationPage(props: {
   }, []);
 
   const conversation = (
-    <AldoConversation feed={feed} decisions={decisions} renderDecisions={renderDecisions} />
+    <AldoConversation feed={feed} decisions={placed} renderDecisions={renderDecisions} />
   );
   const column = "mx-auto w-full max-w-[640px] px-4 sm:px-6";
   // The empty page's few things to say (the first run's starters say them instead);
@@ -393,8 +430,8 @@ export function AldoConversationPage(props: {
             </div>
             {/* The same composer, empty page or not, so what's typed and focus stay as it glides into place. */}
             <div className="relative shrink-0" data-aldo-assistant-footer="">
-              {/* Over the conversation's end: what's new below, and on a wide screen, how many wait on the user out of view. */}
-              <div className="pointer-events-none absolute inset-x-0 -top-11 z-10 flex justify-center gap-2 px-4 *:pointer-events-auto">
+              {/* Over the conversation's end: what's new below and what waits on the user. */}
+              <div className="pointer-events-none absolute inset-x-0 -top-14 z-10 flex justify-center gap-2 px-4 *:pointer-events-auto">
                 {below ? (
                   <button
                     type="button"
@@ -411,10 +448,7 @@ export function AldoConversationPage(props: {
                     New from Aldo
                   </button>
                 ) : null}
-                {/* A phone has its Needs you tab. */}
-                {props.tabs || fresh || loading ? null : (
-                  <NeedsYouPill scroller={scroller} total={decisions.length + pausedCount} />
-                )}
+                {fresh || loading ? null : <NeedsYouPill scroller={scroller} items={pending} />}
               </div>
               <div
                 ref={dock}
