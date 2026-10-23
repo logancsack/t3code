@@ -176,6 +176,23 @@ it("follows resizing at the end and preserves the position after the user scroll
   expect(container.textContent).toContain("New from Aldo");
 });
 
+it("never scrolls sideways: the scroller clips, and the column wraps what has no break in it", async () => {
+  history();
+  await act(async () => root.render(<Page />));
+  const scroller = container.querySelector<HTMLDivElement>(".overflow-y-auto")!;
+  expect(scroller.classList).toContain("overflow-x-hidden");
+  const column = scroller.firstElementChild!;
+  expect(column.classList).toContain("min-w-0");
+  expect(column.classList).toContain("wrap-anywhere");
+
+  // The empty page's scroller too.
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  useAldoAssistant.setState({ entries: [], historyLoaded: true });
+  await act(async () => root.render(<Page />));
+  expect(container.querySelector(".overflow-y-auto")!.classList).toContain("overflow-x-hidden");
+});
+
 it("still opens an empty conversation at the welcome", async () => {
   useAldoAssistant.setState({ historyLoaded: true });
   await act(async () => root.render(<Page />));
