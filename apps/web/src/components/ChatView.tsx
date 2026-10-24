@@ -10172,7 +10172,9 @@ export default function ChatView(props: ChatViewProps) {
       className={cn(
         // Keep one viewport anchor inside the header's no-drag region. The
         // header can shrink behind the right panel without moving the controls.
-        "pointer-events-none fixed top-[var(--workspace-controls-top)] right-[var(--workspace-controls-right)] z-50 mr-px flex h-[var(--workspace-topbar-height)] items-center gap-1 [-webkit-app-region:no-drag]",
+        // Under the sheet layer (z-45 < --z-sheet), like the sidebar toggle, so a
+        // sheet covers them instead of having them drawn over its corner.
+        "pointer-events-none fixed top-[var(--workspace-controls-top)] right-[var(--workspace-controls-right)] z-45 mr-px flex h-[var(--workspace-topbar-height)] items-center gap-1 [-webkit-app-region:no-drag]",
       )}
       data-workspace-titlebar-controls
     >
