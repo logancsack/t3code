@@ -352,6 +352,41 @@ async function click(element: HTMLElement) {
   await act(async () => element.click());
   await frames();
 }
+it("shows no chip when everything was decided, hid, started, is counting down or is put off", async () => {
+  const decided = ["one", "two", "three", "four", "five"].map((id) => ({
+    ...approval(),
+    id,
+    status: "approved" as const,
+    decidedAt: at(4),
+  }));
+  const hidden = { ...approval(), id: "hidden", chatDecision: { id: "hidden", dismissed: true } };
+  const read = home({
+    approvals: [...decided, hidden],
+    plans: [
+      { ...plan, id: "started", status: "started", startedAt: at(6), startedBy: "user" },
+      { ...plan, id: "countdown", autoStartAt: at(25) },
+      { ...plan, id: "later", deferredUntil: at(59) },
+      { ...plan, id: "failed", error: "There's no Claude provider." },
+    ],
+    conversations: [
+      {
+        ref: "snoozed",
+        thread: { environmentId: "aldo-thread", threadId: "snoozed" },
+        title: "Snoozed",
+        repos: [],
+        branch: "",
+        at: at(1),
+        state: "waiting",
+        machine: "running",
+        snoozedUntil: at(59),
+      },
+    ],
+  } as unknown as Partial<AldoHome>);
+  // The countdown's clock is the browser's, not the test's: its card asks the server to start it.
+  backend.tap.mockResolvedValue(null);
+  await act(async () => root.render(<Page home={read} />));
+  expect(pill()).toBeNull();
+});
 it("jumps to a single older plan in a partial timeline, including on a phone with tabs", async () => {
   message("A recent message", 15);
   await act(async () =>

@@ -7,7 +7,7 @@ import {
   putAway,
 } from "./decisions.logic";
 import type { AldoHome, AldoHomeConversation } from "./homeApi";
-import { parseAldoPlans, planPutOff } from "./plans.logic";
+import { parseAldoPlans, planCardState, planPutOff } from "./plans.logic";
 import { aldoComputerName } from "./computer.logic";
 
 const WORDS = ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine"];
@@ -55,7 +55,13 @@ export function computerRequests(home: AldoHome): ReadonlyArray<ComputerRequest>
   );
 }
 
-/** Answered cards, dismissed cards and deferred plans never inflate the count. */
+/**
+ * What waits on the user now, for the chip, its list and the header: the
+ * decisions and paused threads they haven't hidden or put off, computer
+ * requests, and plans waiting for their Start. Decided approvals kept for the
+ * conversation's history, `answered` keys the read hasn't caught up with, and
+ * plans that start on their own, have started or couldn't start don't wait.
+ */
 export function pendingNeedsYou(
   home: AldoHome,
   now: number,
@@ -92,7 +98,7 @@ export function pendingNeedsYou(
       selector: `[data-aldo-decision=${JSON.stringify(d.key)}]`,
     }));
   const plans = parseAldoPlans(home.plans)
-    .filter((p) => p.status === "proposed" && !planPutOff(p, now))
+    .filter((p) => !p.error && !planPutOff(p, now) && planCardState(p, { now }).kind === "waiting")
     .map((p) => ({
       key: `home-plan:${p.id}`,
       title: p.goal,

@@ -24,9 +24,10 @@ import { ThreadLink } from "./AldoHomeInbox";
 import { useAldoAssistant } from "./assistantSession";
 import { type AldoHome } from "./homeApi";
 import { AldoHiddenFromChat } from "./DismissChatDecision";
-import { aldoHiddenFromChat, aldoWaitingCount } from "./decisions.logic";
+import { aldoHiddenFromChat } from "./decisions.logic";
 import { PLEASED_MS, useAldoFace } from "./face";
 import { boardFor, deliveryLabel, dueIn } from "./home.logic";
+import { pendingNeedsYou } from "./needsYou.logic";
 import { setAldoUnderTheHood } from "./simpleMode";
 import { parseAldoPlans, planPutOff } from "./plans.logic";
 import { faceMood, presenceLine, type AldoMood } from "./presence.logic";
@@ -134,17 +135,18 @@ export function AldoPresence(props: {
   const receipts = useAldoReceipts((s) => s.receipts);
   const hidden = useMemo(() => (home ? aldoHiddenFromChat(home, now) : []), [home, now]);
   const plans = useMemo(() => parseAldoPlans(home?.plans), [home?.plans]);
-  // What the conversation shows waiting: what the user hid from it is in the menu.
-  const waiting = home
-    ? Math.max(
-        0,
-        aldoWaitingCount(
-          home,
-          now,
-          receipts.map((r) => r.key),
-        ) - hidden.length,
-      )
-    : 0;
+  // What waits on the user, as the chip above the composer counts it: what they hid is in the menu.
+  const waiting = useMemo(
+    () =>
+      home
+        ? pendingNeedsYou(
+            home,
+            now,
+            receipts.map((r) => r.key),
+          ).length
+        : 0,
+    [home, now, receipts],
+  );
   const line = presenceLine({ phase, replying, working, waiting, unread: props.unread === true });
   const coming = useMemo(() => (home ? comingUp(home, now) : []), [home, now]);
   // Once there's a read, there's what runs under the conversation to open.

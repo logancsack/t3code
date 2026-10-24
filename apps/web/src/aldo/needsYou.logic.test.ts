@@ -1,4 +1,4 @@
-import { expect, it } from "vite-plus/test";
+import { describe, expect, it } from "vite-plus/test";
 import { inWords, needsYouWords, pendingNeedsYou } from "./needsYou.logic";
 import type { AldoHome, AldoHomeConversation, AldoApproval } from "./homeApi";
 const at = "2026-10-23T12:00:00.000Z";
@@ -16,7 +16,7 @@ const conversation = (overrides: Partial<AldoHomeConversation> = {}): AldoHomeCo
   machine: "running",
   ...overrides,
 });
-const home = (overrides: Partial<AldoHome> = {}) =>
+const home = (overrides: Record<string, unknown> = {}) =>
   ({ conversations: [], pullRequests: [], actions: [], ...overrides }) as unknown as AldoHome;
 it("says the total pending count, using words to nine", () => {
   expect(needsYouWords(0)).toBeNull();
@@ -41,7 +41,66 @@ it("counts a paused thread once and leaves hidden decisions out", () => {
   });
   expect(pendingNeedsYou(read, now).map((i) => i.key)).toEqual(["paused:thread"]);
 });
-it("includes older proposed plans, excluding started and deferred plans", () => {
+it("never counts the approvals already decided in the last day", () => {
+  const read = home({
+    approvals: ["a", "b", "c", "d", "e"].map((id) => approval(id, "approved")),
+  });
+  expect(pendingNeedsYou(read, now)).toEqual([]);
+});
+it("leaves out what the user hid, in the conversation and from it", () => {
+  const hidden = { id: "hidden", dismissed: true };
+  const pullRequest = {
+    repo: "aldo/aldo",
+    number: 7,
+    title: "Fix it",
+    status: "watching",
+    stage: "green",
+    mergesAt: null,
+    thread: null,
+    greenSince: at,
+    updatedAt: at,
+  };
+  const read = home({
+    approvals: [approval("shown"), { ...approval("hidden"), chatDecision: hidden }],
+    conversations: [
+      conversation({ ref: "q", state: "failed", chatDecision: hidden }),
+      conversation({ ref: "w", chatDecision: hidden }),
+    ],
+    pullRequests: [
+      { ...pullRequest, chatDecision: hidden },
+      { ...pullRequest, number: 8 },
+    ],
+  });
+  expect(pendingNeedsYou(read, now).map((i) => i.key)).toEqual(["aldo:shown", "merge:aldo/aldo#8"]);
+});
+it("leaves out settled threads and threads snoozed until later, until their time comes", () => {
+  const later = "2026-10-23T18:00:00.000Z";
+  const read = home({
+    conversations: [
+      conversation({ ref: "settled", settled: true }),
+      conversation({ ref: "snoozed", snoozedUntil: later }),
+      conversation({ ref: "failed", state: "failed", snoozedUntil: later }),
+      conversation({ ref: "done", state: "done" }),
+    ],
+  });
+  expect(pendingNeedsYou(read, now)).toEqual([]);
+  expect(pendingNeedsYou(read, Date.parse(later) + 1).map((i) => i.key)).toEqual([
+    `waiting:snoozed:${at}`,
+    `failed:failed:${at}`,
+  ]);
+});
+it("counts a snoozed thread that asks something", () => {
+  const read = home({
+    conversations: [
+      conversation({
+        snoozedUntil: "2026-10-23T18:00:00.000Z",
+        pending: { kind: "question", requestId: "scope", questions: [] },
+      }),
+    ],
+  });
+  expect(pendingNeedsYou(read, now).map((i) => i.kind)).toEqual(["Question"]);
+});
+describe("plans", () => {
   const plan = {
     id: "old",
     status: "proposed",
@@ -51,16 +110,38 @@ it("includes older proposed plans, excluding started and deferred plans", () => 
     steps: [],
     proposedAt: "2026-10-01T12:00:00Z",
   };
-  const read = home({
-    plans: [
-      plan,
-      { ...plan, id: "started", status: "started" },
-      { ...plan, id: "later", deferredUntil: "2026-10-24T12:00:00Z" },
-    ],
+  const keys = (...plans: object[]) => pendingNeedsYou(home({ plans }), now).map((i) => i.key);
+  it("counts one waiting for the user's Start, even from days ago", () => {
+    expect(pendingNeedsYou(home({ plans: [plan] }), now).map((i) => [i.key, i.kind, i.at])).toEqual(
+      [["home-plan:old", "Plan", plan.proposedAt]],
+    );
+    expect(keys({ ...plan, costsMoney: true, autoStartAt: "2026-10-23T12:05:00Z" })).toEqual([
+      "home-plan:old",
+    ]);
   });
-  expect(pendingNeedsYou(read, now).map((i) => [i.key, i.kind, i.at])).toEqual([
-    ["home-plan:old", "Plan", plan.proposedAt],
-  ]);
+  it("leaves out started plans, plans put off until later and plans whose Start failed", () => {
+    expect(
+      keys(
+        { ...plan, id: "started", status: "started", startedAt: at },
+        { ...plan, id: "later", deferredUntil: "2026-10-24T12:00:00Z" },
+        { ...plan, id: "failed", error: "There's no Claude provider." },
+      ),
+    ).toEqual([]);
+  });
+  it("counts a plan again when its time away comes", () => {
+    const put = { ...plan, deferredUntil: "2026-10-23T12:30:00Z" };
+    expect(keys(put)).toEqual([]);
+    expect(
+      pendingNeedsYou(home({ plans: [put] }), Date.parse(put.deferredUntil)).map((i) => i.key),
+    ).toEqual(["home-plan:old"]);
+    expect(keys({ ...plan, deferredUntil: "2026-10-23T11:00:00Z", back: true })).toEqual([
+      "home-plan:old",
+    ]);
+  });
+  it("leaves out a plan that starts on its own", () => {
+    expect(keys({ ...plan, autoStartAt: "2026-10-23T12:02:00Z" })).toEqual([]);
+    expect(keys({ ...plan, autoStartAt: "2026-10-23T11:59:00Z" })).toEqual([]);
+  });
 });
 it("lists each computer request with its arrival time without duplicating its waiting thread", () => {
   const computer = {
@@ -98,4 +179,15 @@ it("keeps simultaneous questions and computer requests separate", () => {
     "Question",
     "Computer request",
   ]);
+});
+it("leaves out a computer request on a thread that is put away or hidden", () => {
+  const computers = [{ computer: "gpu", status: "asked", creditsPerHour: 310 }];
+  const read = home({
+    conversations: [
+      conversation({ ref: "settled", computers, settled: true }),
+      conversation({ ref: "snoozed", computers, snoozedUntil: "2026-10-23T18:00:00.000Z" }),
+      conversation({ ref: "hidden", computers, chatDecision: { id: "hidden", dismissed: true } }),
+    ],
+  });
+  expect(pendingNeedsYou(read, now)).toEqual([]);
 });
