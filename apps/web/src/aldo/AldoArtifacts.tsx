@@ -72,6 +72,8 @@ const TYPE_WORD: Partial<Record<AldoMadeKind, string>> = {
   page: "Page",
   archive: "Archive",
   audio: "Audio",
+  image: "Picture",
+  video: "Video",
 };
 
 const shareIdOf = (url: string) => /^\/s\/([A-Za-z0-9_-]+)$/.exec(url)?.[1] ?? null;
@@ -128,18 +130,27 @@ export default function AldoArtifacts(props: { readonly artifacts: ReadonlyArray
   );
 }
 
-/** What's said in place of a file that's gone: unshared, or its thread deleted. */
-function Gone(props: { readonly title: string }) {
+/**
+ * What's said in place of a file that won't load: unshared, its thread
+ * deleted, or Aldo out of reach for a moment. A file never waits on its
+ * thread's machine, so it doesn't say that.
+ */
+function Unavailable(props: { readonly file: AldoFileArtifact; readonly onRetry: () => void }) {
+  const kind = aldoShareKind(props.file.contentType);
   return (
-    <div
-      role="status"
-      className={cn(
-        SURFACE,
-        "flex min-w-0 items-center gap-3 px-4 py-3 text-[14px] text-muted-foreground",
-      )}
-    >
-      <FileXIcon aria-hidden className="size-4 shrink-0" />
-      <span className="min-w-0 truncate">No longer shared · {props.title}</span>
+    <div role="status" className={cn(SURFACE, "flex min-w-0 items-center gap-3 p-3")}>
+      <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-foreground/[0.05] text-muted-foreground dark:bg-white/[0.06]">
+        <FileXIcon aria-hidden className="size-5" strokeWidth={1.75} />
+      </span>
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="truncate text-[15px] text-foreground">{props.file.title}</span>
+        <span className="truncate text-[13px] text-muted-foreground">
+          {[kind ? TYPE_WORD[kind] : null, "Unavailable right now"].filter(Boolean).join(" · ")}
+        </span>
+      </span>
+      <Button size="sm" variant="outline" onClick={props.onRetry}>
+        Retry
+      </Button>
     </div>
   );
 }
@@ -149,7 +160,7 @@ function Picture(props: { readonly file: AldoFileArtifact; readonly square?: boo
   const { file } = props;
   const [ratio, setRatio] = useState<number | null>(null);
   const [failed, setFailed] = useState(false);
-  if (failed) return <Gone title={file.title} />;
+  if (failed) return <Unavailable file={file} onRetry={() => setFailed(false)} />;
   const shape = props.square ? 1 : Math.min(2.4, Math.max(0.5, ratio ?? 4 / 3));
   const size: CSSProperties = props.square
     ? { aspectRatio: "1" }
@@ -209,15 +220,26 @@ function File(props: { readonly file: AldoFileArtifact }) {
   const shape = fileShape(file.contentType);
   if (shape === "video") return <Video file={file} />;
   if (shape === "page") return <Page file={file} />;
-  if (shape === "audio") {
-    return (
-      <div className={cn(SURFACE, "flex min-w-0 flex-col gap-2 p-3")}>
-        <Caption file={file} />
-        <audio src={inlineSrc(file)} controls preload="metadata" className="w-full min-w-0" />
-      </div>
-    );
-  }
+  if (shape === "audio") return <Audio file={file} />;
   return <Tile file={file} />;
+}
+
+function Audio(props: { readonly file: AldoFileArtifact }) {
+  const { file } = props;
+  const [failed, setFailed] = useState(false);
+  if (failed) return <Unavailable file={file} onRetry={() => setFailed(false)} />;
+  return (
+    <div className={cn(SURFACE, "flex min-w-0 flex-col gap-2 p-3")}>
+      <Caption file={file} />
+      <audio
+        src={inlineSrc(file)}
+        controls
+        preload="metadata"
+        className="w-full min-w-0"
+        onError={() => setFailed(true)}
+      />
+    </div>
+  );
 }
 
 /** A recording, played in place at its own shape. */
