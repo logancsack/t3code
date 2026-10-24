@@ -11,6 +11,7 @@ import { refreshAldoHome } from "./homeFeed";
 import { needsYouWords, type NeedsYouItem } from "./needsYou.logic";
 import { showAldoDecisionKey } from "./show";
 import { FOCUS } from "./surface";
+import { COMPOSER_ACTION } from "./HomeComposerActions";
 
 export function NeedsYouPill(props: {
   readonly scroller: RefObject<HTMLElement | null>;
@@ -86,25 +87,23 @@ export function NeedsYouPill(props: {
         aria-haspopup={items.length > 1 ? "dialog" : undefined}
         aria-expanded={items.length > 1 ? open : undefined}
         aria-busy={busy}
-        className={cn(
-          FOCUS,
-          "flex min-h-11 max-w-full items-center gap-2 rounded-full border border-foreground/[0.10] bg-popover ps-3 pe-3.5 font-medium text-[13px] shadow-composer transition-colors hover:bg-muted active:bg-muted active:scale-[0.98] dark:shadow-composer-dark",
-          props.className,
-        )}
+        className={cn(COMPOSER_ACTION, props.className)}
         onClick={() => {
           if (items.length === 1) void jump(items[0]!);
           else setOpen(true);
         }}
       >
-        {busy ? (
-          <LoaderCircleIcon
-            aria-hidden
-            className="size-3.5 animate-spin motion-reduce:animate-none"
-          />
-        ) : (
-          <span aria-hidden className="size-2 shrink-0 rounded-full bg-warning" />
-        )}
-        {words}
+        <span aria-hidden className="flex size-4 shrink-0 items-center justify-center">
+          {busy ? (
+            <LoaderCircleIcon
+              aria-hidden
+              className="size-4 animate-spin motion-reduce:animate-none"
+            />
+          ) : (
+            <span aria-hidden className="size-2 shrink-0 rounded-full bg-warning" />
+          )}
+        </span>
+        <span className="min-w-0 wrap-anywhere">{words}</span>
       </button>
       <DialogPopup
         showCloseButton={false}

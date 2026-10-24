@@ -7,7 +7,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { AldoConversationPage } from "./AldoConversationPage";
 import { useAldoAssistant } from "./assistantSession";
 import type { AldoFeedEvent } from "./feed.logic";
-import type { AldoHome } from "./homeApi";
+import type { AldoApproval, AldoHome } from "./homeApi";
 
 vi.mock("@tanstack/react-router", () => ({ useNavigate: vi.fn, useRouter: vi.fn }));
 vi.mock("../components/ui/sidebar", () => ({
@@ -101,6 +101,11 @@ function history() {
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.stubGlobal("matchMedia", () => ({
+    matches: true,
+    addEventListener() {},
+    removeEventListener() {},
+  }));
   vi.stubGlobal(
     "ResizeObserver",
     class {
@@ -174,6 +179,59 @@ it("follows resizing at the end and preserves the position after the user scroll
   await act(async () => resized());
   expect(scroller.scrollTop).toBe(300);
   expect(container.textContent).toContain("New from Aldo");
+});
+
+it("keeps the draft and reading position as pending actions change beside the latest action", async () => {
+  history();
+  const home = {
+    conversations: [],
+    pullRequests: [],
+    actions: [],
+    approvals: [],
+  } as unknown as AldoHome;
+  await act(async () => root.render(<Page home={home} />));
+  const composer = container.querySelector("textarea")!;
+  composer.value = "Keep this draft";
+  composer.focus();
+  const scroller = container.querySelector<HTMLDivElement>(".overflow-y-auto")!;
+  scroller.scrollTop = 300;
+  scroller.dispatchEvent(new Event("scroll"));
+  vi.spyOn(Element.prototype, "scrollHeight", "get").mockReturnValue(2200);
+  await act(async () => resized());
+
+  const approval: AldoApproval = {
+    id: "review",
+    kind: "confirm",
+    status: "pending",
+    title: "Review the proposal",
+    createdAt: "2026-10-19T12:00:00Z",
+    provider: null,
+    summary: "Ready for review",
+    fields: [],
+    body: "The phone layout is ready",
+    approveLabel: "Approve",
+    discardLabel: "Discard",
+    result: null,
+    failed: false,
+    thread: null,
+    threadTitle: null,
+    decidedAt: null,
+  };
+  await act(async () => root.render(<Page home={{ ...home, approvals: [approval] }} />));
+  expect(container.querySelector("[data-aldo-needs-you]")?.textContent).toBe("One needs you");
+  await act(async () => root.render(<Page home={home} />));
+  expect(container.querySelector("[data-aldo-needs-you]")).toBeNull();
+  expect(scroller.scrollTop).toBe(300);
+  expect(container.querySelector("textarea")).toBe(composer);
+  expect(composer.value).toBe("Keep this draft");
+  expect(document.activeElement).toBe(composer);
+
+  scroller.scrollTo = vi.fn();
+  const latest = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "New from Aldo",
+  )!;
+  await act(async () => latest.click());
+  expect(scroller.scrollTo).toHaveBeenCalledWith({ top: 2200, behavior: "auto" });
 });
 
 it("never scrolls sideways: the scroller clips, and the column wraps what has no break in it", async () => {
