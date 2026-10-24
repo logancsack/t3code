@@ -1,5 +1,6 @@
 // Assistant conversation, voice, brief and memory APIs.
 
+import type { AldoAssistantMessage } from "./assistant.logic";
 import { type AldoHomeTarget } from "./homeApi";
 import { api, AldoApiError } from "./api";
 import { aldoOnboardingFrom, type AldoInterest, type AldoOnboarding } from "./onboarding.logic";
@@ -70,6 +71,8 @@ export interface AldoImageUpload {
 export interface AldoChatTurn {
   readonly sessionId: string;
   readonly reply: string;
+  /** Aldo has the message and is answering it with the turn in progress (or did): the reply comes in the conversation. */
+  readonly queued?: boolean;
   readonly calls: ReadonlyArray<{
     readonly callId: string;
     readonly name: string;
@@ -237,12 +240,15 @@ export const aldoAssistant = {
     text: string,
     images: ReadonlyArray<AldoImageUpload> = [],
     viewing: AldoHomeTarget | null = null,
+    /** The page's own id for the message: sent again, Aldo keeps it once (an older Aldo ignores it). */
+    messageId: string | null = null,
   ): Promise<AldoChatTurn | null> => {
     const body = await api<Partial<AldoChatTurn>>("/api/assistant/chat", {
       method: "POST",
       body: JSON.stringify({
         sessionId,
         text,
+        ...(messageId ? { messageId } : {}),
         ...(images.length > 0 ? { images } : {}),
         ...(viewing ? { viewing } : {}),
         planPicker: true,
@@ -255,6 +261,7 @@ export const aldoAssistant = {
       sessionId: body.sessionId,
       reply: body.reply,
       calls: Array.isArray(body.calls) ? body.calls : [],
+      ...(body.queued === true ? { queued: true } : {}),
     };
   },
   /** The request Aldo keeps from before a plan was chosen; null where it doesn't keep them (an older Aldo) or couldn't say. */
@@ -334,13 +341,18 @@ export const aldoAssistant = {
     }),
   record: (sessionId: string, items: ReadonlyArray<{ role: "user" | "assistant"; text: string }>) =>
     api("/api/assistant/history", { method: "POST", body: JSON.stringify({ sessionId, items }) }),
-  history: async (limit = 50) =>
-    (
-      await api<{
-        messages: Array<{ role: "user" | "assistant"; text: string; at: string; source?: "brief" }>;
-      }>(`/api/assistant/history?limit=${limit}`)
-    ).messages,
+  history: async (limit = 50) => (await aldoAssistantConversation(limit)).messages,
+  /** The latest of the conversation, and whether Aldo is answering a written message now (an older Aldo doesn't say). */
+  conversation: (limit = 50) => aldoAssistantConversation(limit),
 };
+
+async function aldoAssistantConversation(limit: number) {
+  const body = await api<{
+    messages: Array<AldoAssistantMessage>;
+    replying?: boolean;
+  }>(`/api/assistant/history?limit=${limit}`);
+  return { messages: body.messages, replying: body.replying === true };
+}
 
 /** One of the brief's things to decide first; `key` is its decision's (decisions.logic.ts). */
 export interface AldoBriefItem {
