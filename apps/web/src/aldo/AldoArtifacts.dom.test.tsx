@@ -128,6 +128,25 @@ it("draws a chart from its data, a few bars in place and all of them full screen
   expect(sheet.textContent).toContain("Day 12");
 });
 
+it("draws a loss leftward from zero, as long as it is", async () => {
+  const net: AldoArtifact = {
+    kind: "chart",
+    title: "Net",
+    type: "bar",
+    labels: ["Mon", "Tue", "Wed"],
+    series: [{ name: "Net", values: [-10, -100, 50] }],
+  };
+  await act(async () => root.render(<AldoArtifacts artifacts={[net]} />));
+  const bars = [...container.querySelectorAll<HTMLElement>('[role="img"] .rounded-full')].map(
+    (bar) => [parseFloat(bar.style.left), parseFloat(bar.style.width)],
+  );
+  // On a scale from -100 to 50, zero sits two thirds of the way along.
+  expect(bars[0]![0]).toBeCloseTo(60);
+  expect(bars[0]![1]).toBeCloseTo(6.67, 1);
+  expect(bars[1]).toEqual([0, expect.closeTo(66.67, 1)]);
+  expect(bars[2]).toEqual([expect.closeTo(66.67, 1), expect.closeTo(33.33, 1)]);
+});
+
 it("closes a chart's sheet for good: closing it doesn't open it again", async () => {
   await render();
   const open = () =>

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   artifactsField,
   artifactsOf,
+  chartScale,
   chartTable,
   csvOf,
   downloadHref,
@@ -131,6 +132,11 @@ it("writes figures as Aldo does, on a scale that ends on a round number", () => 
   expect(niceMax([0.18])).toBe(0.2);
   expect(niceMax([230])).toBe(250);
   expect(niceMax([])).toBe(1);
+  // Below zero, the scale reaches past it: a loss isn't drawn as nothing.
+  expect(chartScale([3, 7.2])).toEqual({ top: 10, bottom: 0 });
+  expect(chartScale([-10, 40])).toEqual({ top: 50, bottom: -10 });
+  expect(chartScale([-10, -100, 0])).toEqual({ top: 0, bottom: -100 });
+  expect(chartScale([0])).toEqual({ top: 1, bottom: 0 });
 });
 
 it("gives a chart's data as a table, and a table as CSV a spreadsheet won't run", () => {
@@ -149,6 +155,27 @@ it("gives a chart's data as a table, and a table as CSV a spreadsheet won't run"
     rows: [
       ["Mon", "$4"],
       ["Tue", "$6"],
+    ],
+  });
+  // Saved, each figure as it was sent, however small.
+  expect(
+    chartTable(
+      {
+        kind: "chart",
+        title: "Error rate",
+        type: "bar",
+        labels: ["Mon", "Tue"],
+        series: [{ name: "Rate", values: [0.001, -0.0049] }],
+        unit: "%",
+      },
+      true,
+    ),
+  ).toEqual({
+    title: "Error rate",
+    columns: ["", "Rate (%)"],
+    rows: [
+      ["Mon", "0.001"],
+      ["Tue", "-0.0049"],
     ],
   });
   expect(

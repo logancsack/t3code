@@ -27,6 +27,7 @@ import { Button } from "../components/ui/button";
 import { Sheet, SheetPopup, SheetTitle } from "../components/ui/sheet";
 import { cn } from "../lib/utils";
 import {
+  chartScale,
   chartTable,
   csvOf,
   downloadHref,
@@ -34,7 +35,6 @@ import {
   fileShape,
   formatValue,
   inlineSrc,
-  niceMax,
   type AldoArtifact,
   type AldoChartArtifact,
   type AldoFileArtifact,
@@ -427,6 +427,8 @@ function DataSheet(props: {
 function FullTable(
   props: Omit<AldoTableArtifact, "kind"> & { readonly chart?: AldoChartArtifact },
 ) {
+  // A chart's saves its figures as they were sent, not as written here.
+  const data = props.chart ? chartTable(props.chart, true) : props;
   return (
     <div className="flex flex-col gap-3 p-4">
       {props.chart ? <ChartBody chart={props.chart} all /> : null}
@@ -437,7 +439,7 @@ function FullTable(
           onClick={() =>
             saveText(
               fileNameOf(props.title ?? "", "csv"),
-              csvOf(props.columns, props.rows),
+              csvOf(data.columns, data.rows),
               "text/csv",
             )
           }
@@ -446,7 +448,7 @@ function FullTable(
           Download CSV
         </Button>
       </div>
-      <div className="overflow-auto rounded-xl border border-border/60">
+      <div className="max-h-[calc(100dvh-9rem)] overflow-auto rounded-xl border border-border/60">
         <table className="min-w-full border-separate border-spacing-0 text-[14px]">
           <thead>
             <tr>
@@ -601,7 +603,8 @@ function ChartBody(props: {
  */
 function Bars(props: { readonly chart: AldoChartArtifact; readonly all?: boolean | undefined }) {
   const { chart } = props;
-  const top = niceMax(chart.series.flatMap((s) => s.values));
+  const { top, bottom } = chartScale(chart.series.flatMap((s) => s.values));
+  const at = (value: number) => ((value - bottom) / (top - bottom)) * 100;
   const labels = props.all ? chart.labels : chart.labels.slice(0, PREVIEW.bars);
   // Every row's bar starts and ends at the same place, so bars compare: the labels' column fits
   // the longest (up to 40%), and the values' the widest.
@@ -627,10 +630,12 @@ function Bars(props: { readonly chart: AldoChartArtifact; readonly all?: boolean
                 <span key={j} className="flex min-w-0 items-center gap-2">
                   <span className="relative h-2.5 min-w-0 flex-1">
                     <span
-                      className="absolute inset-y-0 left-0 rounded-full"
+                      className="absolute inset-y-0 rounded-full"
                       style={{
-                        width: `${Math.max(0, Math.min(100, (value / top) * 100))}%`,
-                        minWidth: value > 0 ? 3 : 0,
+                        // From zero, rightward or (below it) leftward.
+                        left: `${Math.min(at(0), at(value))}%`,
+                        width: `${Math.abs(at(value) - at(0))}%`,
+                        minWidth: value !== 0 ? 3 : 0,
                         background: SERIES[j],
                       }}
                     />
@@ -659,8 +664,7 @@ function Bars(props: { readonly chart: AldoChartArtifact; readonly all?: boolean
 function Line(props: { readonly chart: AldoChartArtifact }) {
   const { chart } = props;
   const values = chart.series.flatMap((s) => s.values);
-  const top = niceMax(values);
-  const bottom = Math.min(0, ...values) < 0 ? -niceMax(values.map((v) => -v)) : 0;
+  const { top, bottom } = chartScale(values);
   const n = chart.labels.length;
   const x = (i: number) => (n === 1 ? 50 : (i / (n - 1)) * 100);
   const y = (v: number) => ((top - v) / (top - bottom)) * 100;

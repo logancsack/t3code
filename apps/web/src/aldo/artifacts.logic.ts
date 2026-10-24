@@ -207,14 +207,30 @@ export function niceMax(values: ReadonlyArray<number>): number {
   return [1, 2, 2.5, 5, 10].map((step) => step * power).find((top) => top >= max)!;
 }
 
-/** A chart's data as a table: its labels, then a column for each series. */
-export function chartTable(chart: AldoChartArtifact): Omit<AldoTableArtifact, "kind"> {
+/** A chart's scale: round numbers at or past its values, from zero or below it to zero or above it. */
+export function chartScale(values: ReadonlyArray<number>): { top: number; bottom: number } {
+  const below = Math.min(0, ...values) < 0;
+  return {
+    top: below && Math.max(0, ...values) === 0 ? 0 : niceMax(values),
+    bottom: below ? -niceMax(values.map((v) => -v)) : 0,
+  };
+}
+
+/**
+ * A chart's data as a table: its labels, then a column for each series. As
+ * the page writes the figures, or `raw`, for a spreadsheet: each as Aldo sent
+ * it, its unit in the column's name.
+ */
+export function chartTable(chart: AldoChartArtifact, raw = false): Omit<AldoTableArtifact, "kind"> {
+  const unit = raw && chart.unit ? ` (${chart.unit})` : "";
   return {
     title: chart.title,
-    columns: ["", ...chart.series.map((s) => s.name || "Value")],
+    columns: ["", ...chart.series.map((s) => `${s.name || "Value"}${unit}`)],
     rows: chart.labels.map((label, i) => [
       label,
-      ...chart.series.map((s) => formatValue(s.values[i]!, chart.unit)),
+      ...chart.series.map((s) =>
+        raw ? String(s.values[i]) : formatValue(s.values[i]!, chart.unit),
+      ),
     ]),
   };
 }
@@ -228,7 +244,8 @@ export function csvOf(
   rows: ReadonlyArray<ReadonlyArray<string>>,
 ): string {
   const cell = (value: string) => {
-    const safe = /^[=+\-@\t\r]/.test(value) && !/^-?\d[\d,.]*$/.test(value) ? `'${value}` : value;
+    const safe =
+      /^[=+\-@\t\r]/.test(value) && !/^-?\d[\d,.]*(e[+-]?\d+)?$/.test(value) ? `'${value}` : value;
     return /[",\n\r]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
   };
   return [columns, ...rows].map((row) => row.map(cell).join(",")).join("\r\n") + "\r\n";
