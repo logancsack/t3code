@@ -233,9 +233,12 @@ export function aldoShareOf(entry: Entry): {
   const call = aldoToolCall(entry);
   if (call?.server !== "aldo" || call.tool !== "share_file") return null;
   if (entry.tone === "error" || entry.toolLifecycleStatus === "failed") return null;
-  // aldod answers 'Shared "<title>": <url> (anyone with the link can open it)', or "(only the user, …)".
+  // aldod answers 'Shared "<title>": <url> (anyone with the link can open it)', or "(only the user, …)";
+  // an older one said 'Updated "<title>" in place: <url> (…)' of a page shared again.
   const reply = call.output
-    ? /^Shared "([\s\S]*?)": (https:\/\/\S+)(?: \((anyone|only the user))?/m.exec(call.output)
+    ? /^(?:Shared|Updated) "([\s\S]*?)"(?: in place)?: (https:\/\/\S+)(?: \((anyone|only the user))?/m.exec(
+        call.output,
+      )
     : null;
   const audience = reply?.[3];
   const onlyTheUser = audience ? audience === "only the user" : call.args?.public === false;

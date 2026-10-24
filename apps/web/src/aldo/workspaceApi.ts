@@ -75,14 +75,23 @@ export async function fetchAldoProviderLimits(
  * Library); null from an Aldo that doesn't list them.
  */
 export async function fetchAldoShares(): Promise<ReadonlyArray<AldoShareView> | null> {
-  const body = await api<{ shares?: unknown }>("/api/shares", { cache: "no-store" }).catch(
-    (error: unknown) => {
-      if (error instanceof AldoApiError && error.status === 404) return null;
-      throw error;
-    },
-  );
+  const body = await api<{ shares?: unknown; audienceChangeable?: unknown }>("/api/shares", {
+    cache: "no-store",
+  }).catch((error: unknown) => {
+    if (error instanceof AldoApiError && error.status === 404) return null;
+    throw error;
+  });
   // An older Aldo may answer with the web client's page instead of a 404.
-  return parseAldoShares(body?.shares);
+  const shares = parseAldoShares(body?.shares);
+  if (shares) audienceChangeable = body?.audienceChangeable === true;
+  return shares;
+}
+
+let audienceChangeable = false;
+
+/** Whether the user can change who opens a share here, as Aldo's list says (an older one leaves it out: they can't). */
+export function aldoShareAudienceChangeable(): boolean {
+  return audienceChangeable;
 }
 
 /**
@@ -127,6 +136,18 @@ export async function pinAldoShare(id: string, pinned: boolean): Promise<AldoSha
   });
   const share = parseAldoShares([body])?.[0];
   if (!share || share.pinned === undefined) throw new Error("This Aldo can't pin shares yet.");
+  return share;
+}
+
+/** Lets anyone with its link open it, or only the user, signed in, from now on; says how it stands now. */
+export async function setAldoShareAudience(id: string, isPublic: boolean): Promise<AldoShareView> {
+  const body = await api<unknown>(`/api/shares/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ public: isPublic }),
+  });
+  const share = parseAldoShares([body])?.[0];
+  if (!share || share.public !== isPublic)
+    throw new Error("Aldo didn’t change who can open it. Try again.");
   return share;
 }
 

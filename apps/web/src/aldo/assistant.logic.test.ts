@@ -13,6 +13,7 @@ import {
   NEWS_GAP_MS,
   aldoRefFor,
   functionCallsIn,
+  linkedShareIds,
   linkRuns,
   liveCardIndexes,
   openTargetOf,
@@ -598,6 +599,19 @@ describe("linkRuns", () => {
     expect(linkRuns("Not javascript:alert(1) or http://localhost:3000")).toEqual([
       { text: "Not javascript:alert(1) or http://localhost:3000", at: 0 },
     ]);
+  });
+});
+
+describe("linkedShareIds", () => {
+  it("names each share a message links to once, in order, and nothing else", () => {
+    expect(
+      linkedShareIds(
+        "Q4 forecast: https://aldo.computer/s/f1. Memo: **https://aldo.computer/s/m2**\n" +
+          "Again: https://aldo.computer/s/f1, the PR: https://github.com/o/r/pull/1, " +
+          "the thread: https://aldo.computer/aldo-x/t",
+      ),
+    ).toEqual(["f1", "m2"]);
+    expect(linkedShareIds("Nothing linked.")).toEqual([]);
   });
 });
 
