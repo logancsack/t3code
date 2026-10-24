@@ -1482,6 +1482,29 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
               updatedAt: command.createdAt,
             },
           };
+      // Approving a plan leaves plan mode in the same command, so the implementation turn never
+      // starts in it, whatever mode the thread was left in. Other turns run in the thread's mode.
+      const turnInteractionMode =
+        sourceProposedPlan !== undefined ? command.interactionMode : targetThread.interactionMode;
+      const interactionModeEvents: Array<Omit<OrchestrationEvent, "sequence">> =
+        turnInteractionMode === targetThread.interactionMode
+          ? []
+          : [
+              {
+                ...(yield* withEventBase({
+                  aggregateKind: "thread",
+                  aggregateId: command.threadId,
+                  occurredAt: command.createdAt,
+                  commandId: command.commandId,
+                })),
+                type: "thread.interaction-mode-set",
+                payload: {
+                  threadId: command.threadId,
+                  interactionMode: turnInteractionMode,
+                  updatedAt: command.createdAt,
+                },
+              },
+            ];
       const turnStartRequestedEvent: Omit<OrchestrationEvent, "sequence"> = {
         ...(yield* withEventBase({
           aggregateKind: "thread",
@@ -1499,7 +1522,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
             : {}),
           ...(command.titleSeed !== undefined ? { titleSeed: command.titleSeed } : {}),
           runtimeMode: targetThread.runtimeMode,
-          interactionMode: targetThread.interactionMode,
+          interactionMode: turnInteractionMode,
           ...(sourceProposedPlan !== undefined ? { sourceProposedPlan } : {}),
           createdAt: command.createdAt,
         },
@@ -1545,6 +1568,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       return [
         ...approvalEvents,
         ...lifecycleResetEvents,
+        ...interactionModeEvents,
         ...(userMessageEvent ? [userMessageEvent] : []),
         turnStartRequestedEvent,
       ];
