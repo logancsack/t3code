@@ -131,9 +131,7 @@ function SettingsContentLayout() {
         {/* Aldo's pages say their own name at their top; a phone's bar has the way back.
             In the desktop app an empty titlebar still drags the window. */}
         {isAldoCloud && isMobile ? (
-          <WorkspacePageHeader className="border-border/60 border-b">
-            <AldoSettingsPhoneBar pathname={location.pathname} />
-          </WorkspacePageHeader>
+          <AldoSettingsPhoneBar pathname={location.pathname} />
         ) : isAldoCloud ? (
           isElectron ? (
             <WorkspacePageHeader electron />

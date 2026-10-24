@@ -80,36 +80,38 @@ export function AldoSettingsPhoneBar(props: { readonly pathname: string }) {
   const root = props.pathname.replace(/\/+$/, "") === "/settings";
   const title = root ? null : (aldoSettingsPage(props.pathname)?.title ?? "Settings");
   return (
-    <div className="grid w-full grid-cols-[1fr_auto_1fr] items-center gap-2">
+    <header className="grid h-[var(--workspace-topbar-height)] min-w-0 shrink-0 grid-cols-[6rem_minmax(0,1fr)_6rem] items-center gap-2 border-border/60 border-b pl-(--workspace-gutter-start) pr-(--workspace-gutter-end)">
       <div className="flex min-w-0">
         {root ? null : (
           <Button
             variant="ghost"
             size="sm"
-            className="-ms-2 gap-0.5 px-1.5 text-primary"
+            className="h-12 min-w-12 gap-0.5 px-2 text-sm sm:h-12"
             onClick={() => {
               // Back to the list underneath, so the browser's Back doesn't reopen this page.
               if (fromList === true) window.history.back();
               else void navigate({ to: "/settings", search: { project: undefined }, hash: "" });
             }}
           >
-            <ChevronLeftIcon className="size-5 text-primary" />
+            <ChevronLeftIcon className="size-4" />
             Settings
           </Button>
         )}
       </div>
-      <h1 className="truncate text-center font-medium text-foreground text-sm">{title}</h1>
+      <h1 className="min-w-0 truncate text-center font-semibold text-foreground text-sm">
+        {title}
+      </h1>
       <div className="flex justify-end">
         <Button
           variant="ghost"
           size="sm"
-          className="-me-2 px-3 font-semibold text-primary"
+          className="h-12 min-w-12 px-2 text-sm sm:h-12"
           onClick={() => void navigateToMainApp()}
         >
           Done
         </Button>
       </div>
-    </div>
+    </header>
   );
 }
 
