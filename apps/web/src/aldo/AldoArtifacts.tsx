@@ -72,6 +72,8 @@ const TYPE_WORD: Partial<Record<AldoMadeKind, string>> = {
   page: "Page",
   archive: "Archive",
   audio: "Audio",
+  image: "Picture",
+  video: "Video",
 };
 
 const shareIdOf = (url: string) => /^\/s\/([A-Za-z0-9_-]+)$/.exec(url)?.[1] ?? null;
@@ -128,18 +130,24 @@ export default function AldoArtifacts(props: { readonly artifacts: ReadonlyArray
   );
 }
 
-/** What's said in place of a file that's gone: unshared, or its thread deleted. */
-function Gone(props: { readonly title: string }) {
+/**
+ * What's said in place of a file that won't load: unshared, its thread
+ * deleted, or Aldo out of reach for a moment. A file never waits on its
+ * thread's machine, so it doesn't say that.
+ */
+function Unavailable(props: { readonly file: AldoFileArtifact }) {
+  const kind = aldoShareKind(props.file.contentType);
   return (
-    <div
-      role="status"
-      className={cn(
-        SURFACE,
-        "flex min-w-0 items-center gap-3 px-4 py-3 text-[14px] text-muted-foreground",
-      )}
-    >
-      <FileXIcon aria-hidden className="size-4 shrink-0" />
-      <span className="min-w-0 truncate">No longer shared · {props.title}</span>
+    <div role="status" className={cn(SURFACE, "flex min-w-0 items-center gap-3 p-3")}>
+      <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-foreground/[0.05] text-muted-foreground dark:bg-white/[0.06]">
+        <FileXIcon aria-hidden className="size-5" strokeWidth={1.75} />
+      </span>
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="truncate text-[15px] text-foreground">{props.file.title}</span>
+        <span className="truncate text-[13px] text-muted-foreground">
+          {[kind ? TYPE_WORD[kind] : null, "Unavailable right now"].filter(Boolean).join(" · ")}
+        </span>
+      </span>
     </div>
   );
 }
@@ -149,7 +157,7 @@ function Picture(props: { readonly file: AldoFileArtifact; readonly square?: boo
   const { file } = props;
   const [ratio, setRatio] = useState<number | null>(null);
   const [failed, setFailed] = useState(false);
-  if (failed) return <Gone title={file.title} />;
+  if (failed) return <Unavailable file={file} />;
   const shape = props.square ? 1 : Math.min(2.4, Math.max(0.5, ratio ?? 4 / 3));
   const size: CSSProperties = props.square
     ? { aspectRatio: "1" }
@@ -209,23 +217,35 @@ function File(props: { readonly file: AldoFileArtifact }) {
   const shape = fileShape(file.contentType);
   if (shape === "video") return <Video file={file} />;
   if (shape === "page") return <Page file={file} />;
-  if (shape === "audio") {
-    return (
-      <div className={cn(SURFACE, "flex min-w-0 flex-col gap-2 p-3")}>
-        <Caption file={file} />
-        <audio src={inlineSrc(file)} controls preload="metadata" className="w-full min-w-0" />
-      </div>
-    );
-  }
+  if (shape === "audio") return <Audio file={file} />;
   return <Tile file={file} />;
+}
+
+function Audio(props: { readonly file: AldoFileArtifact }) {
+  const { file } = props;
+  const [failed, setFailed] = useState(false);
+  if (failed) return <Unavailable file={file} />;
+  return (
+    <div className={cn(SURFACE, "flex min-w-0 flex-col gap-2 p-3")}>
+      <Caption file={file} />
+      <audio
+        src={inlineSrc(file)}
+        controls
+        preload="metadata"
+        className="w-full min-w-0"
+        onError={() => setFailed(true)}
+      />
+    </div>
+  );
 }
 
 /** A recording, played in place at its own shape. */
 function Video(props: { readonly file: AldoFileArtifact }) {
   const { file } = props;
   const [ratio, setRatio] = useState(16 / 9);
+  const [failed, setFailed] = useState(false);
   const figure = useRef<HTMLElement>(null);
-  // The player owns its <video>, and loadedmetadata doesn't bubble: catch it on the way down.
+  // The player owns its <video>, and loadedmetadata and error don't bubble: catch them on the way down.
   useEffect(() => {
     const element = figure.current;
     if (!element) return;
@@ -233,10 +253,18 @@ function Video(props: { readonly file: AldoFileArtifact }) {
       const found = event.target instanceof HTMLVideoElement && videoAspectRatio(event.target);
       if (found) setRatio(found);
     };
+    const fail = (event: Event) => {
+      if (event.target instanceof HTMLVideoElement) setFailed(true);
+    };
     element.addEventListener("loadedmetadata", measure, true);
-    return () => element.removeEventListener("loadedmetadata", measure, true);
+    element.addEventListener("error", fail, true);
+    return () => {
+      element.removeEventListener("loadedmetadata", measure, true);
+      element.removeEventListener("error", fail, true);
+    };
   }, []);
   const width = chatVideoWidth(ratio);
+  if (failed) return <Unavailable file={file} />;
   return (
     <figure ref={figure} className="flex min-w-0 max-w-full flex-col gap-1">
       <MediaVideoPlayer

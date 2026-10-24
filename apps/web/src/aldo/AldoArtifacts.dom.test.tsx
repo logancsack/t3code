@@ -90,7 +90,7 @@ it("runs a page only sandboxed, as a picture of itself that takes no taps", asyn
   ]);
 });
 
-it("shows a picture from the page's origin and opens it whole on a tap; one that's gone says so", async () => {
+it("shows a picture from the page's origin and opens it whole on a tap; one that won't load says so", async () => {
   await render();
   const image = container.querySelector("img")!;
   expect(image.getAttribute("src")).toBe(`${SHARE}?in=chat`);
@@ -99,7 +99,30 @@ it("shows a picture from the page's origin and opens it whole on a tap; one that
   expect(opened).toHaveLength(1);
   await act(async () => image.dispatchEvent(new Event("error")));
   expect(container.querySelector("img")).toBeNull();
-  expect(container.textContent).toContain("No longer shared · Cat");
+  expect(container.textContent).toContain("Cat");
+  expect(container.textContent).toContain("Picture · Unavailable right now");
+});
+
+it("says so, in the same tile, for a recording or a sound that won't load, without scrolling sideways", async () => {
+  const sound: AldoArtifact = {
+    kind: "file",
+    url: "/s/soundsoundsound9999",
+    title: "Voice note",
+    contentType: "audio/mpeg",
+  };
+  await act(async () => root.render(<AldoArtifacts artifacts={[ARTIFACTS[1]!, sound]} />));
+  await act(async () => container.querySelector("video")!.dispatchEvent(new Event("error")));
+  await act(async () => container.querySelector("audio")!.dispatchEvent(new Event("error")));
+  expect(container.querySelector("video")).toBeNull();
+  expect(container.querySelector("audio")).toBeNull();
+  const notes = [...container.querySelectorAll('[role="status"]')];
+  expect(notes.map((n) => n.textContent)).toEqual([
+    "Checkout fixVideo · Unavailable right now",
+    "Voice noteAudio · Unavailable right now",
+  ]);
+  for (const note of notes) expect(note.classList).toContain("min-w-0");
+  // A file doesn't wait on its thread's machine, so it doesn't say that.
+  expect(container.textContent).not.toMatch(/machine/i);
 });
 
 it("plays a recording in place, with a way to save it", async () => {
