@@ -6,14 +6,17 @@
 // on with the answer (homeFeed.ts keeps these and applies them to every read).
 // Pure, so it's tested on its own.
 
+import { isPausedMidTurn } from "./home.logic";
 import type { AldoHome, AldoHomeConversation } from "./homeApi";
 
 /**
  * What a conversation waits on the user to answer: the question or approval it
- * asks (its request) or the plan it proposes. Null when it waits on nothing of
- * the kind (a handoff is answered in its own card).
+ * asks (its request) or the plan it proposes; a thread paused mid-turn, the
+ * Continue that carries it on (named by when it paused). Null when it waits on
+ * nothing of the kind (a handoff is answered in its own card).
  */
 export function askOf(c: AldoHomeConversation): string | null {
+  if (isPausedMidTurn(c)) return `paused:${c.stateAt ?? c.at}`;
   if (c.state !== "waiting") return null;
   if (c.pending) return c.pending.kind === "handoff" ? null : c.pending.requestId;
   return c.plan?.id ?? null;

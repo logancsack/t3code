@@ -32,7 +32,27 @@ it("names what a conversation waits on to be answered", () => {
   expect(askOf(conversation({ pending: { kind: "handoff", requestId: "h", summary: "" } }))).toBe(
     null,
   );
-  expect(askOf(conversation({ state: "working" }))).toBe(null);
+  expect(askOf(conversation({ state: "working", machine: "running" }))).toBe(null);
+});
+
+it("names the Continue that carries a paused conversation on, held out until the read has caught up", () => {
+  const paused = conversation({
+    state: "paused",
+    pending: undefined,
+    stateAt: "2026-10-15T18:27:53Z",
+  });
+  expect(askOf(paused)).toBe("paused:2026-10-15T18:27:53Z");
+  // Its computer asleep with a turn open reads as paused to an older Aldo too.
+  expect(askOf(conversation({ state: "working", pending: undefined, machine: "asleep" }))).toMatch(
+    /^paused:/,
+  );
+  const ask = askOf(paused)!;
+  const now = Date.parse(hold.at);
+  const held = withHolds(homeOf(paused), { t: { ask, at: hold.at } }, now);
+  expect(held.home.conversations[0]).toMatchObject({ state: "starting", at: hold.at });
+  // Aldo's read says it's working again: the hold is spent.
+  const moved = conversation({ state: "working", pending: undefined, machine: "running" });
+  expect(withHolds(homeOf(moved), { t: { ask, at: hold.at } }, now).holds).toEqual({});
 });
 
 it("shows an answered conversation as carrying on, whether or not its computer is up", () => {

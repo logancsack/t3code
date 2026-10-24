@@ -7,7 +7,7 @@
 // next two are a line each that opens in place, and the rest unfold.
 // Decided, a card turns into the line saying what happened (receipts.ts),
 // where it was. Saved approval outcomes remain there after reloading. A
-// thread paused mid-turn is a line at its state time that opens it. On a keyboard, j and k move
+// thread paused mid-turn is a card at its state time with Continue. On a keyboard, j and k move
 // between cards and Enter unfolds one, then opens its thread: nothing is
 // decided without a button.
 
@@ -30,6 +30,7 @@ import { ApprovalCard, ApprovalText, DecidedApproval, RewriteNote } from "./Aldo
 import { confirmQuickChoice, DecisionIcon } from "./AldoBrief";
 import { AldoHandoffActions } from "./AldoHandoffCard";
 import { askAldoAbout, PendingForm, ThreadLink } from "./AldoHomeInbox";
+import { ContinueButton } from "./AldoContinue";
 import { AldoOpenContext } from "./AldoLiveCard";
 import { ApproveInLink, PaymentDetails } from "./AldoPaymentCard";
 import { AldoAvatar } from "./AldoPresence";
@@ -53,6 +54,7 @@ import { addAldoReceipt, removeAldoReceipt, useAldoReceipts } from "./receipts";
 import { movedOnText, receiptText } from "./receipts.logic";
 import { FOCUS, ICON_BUTTON, INSET, PRIMARY, SECONDARY, SURFACE } from "./surface";
 import { scrollMotion, SHOW_ALDO_DECISION } from "./show";
+import { stalledOf, threadCardOf } from "./threadCard.logic";
 import { startAldoWalkthrough } from "./walkthrough";
 import { inWords } from "./needsYou.logic";
 import { paymentWords } from "./payments.logic";
@@ -210,7 +212,7 @@ export function AldoUpNext(props: {
         />
       ))}
       {paused.map((c) => (
-        <PausedLine key={c.ref} conversation={c} now={props.now} />
+        <PausedCard key={c.ref} home={props.home} conversation={c} now={props.now} />
       ))}
       {decisions.length > SHOWN ? (
         <button
@@ -917,37 +919,47 @@ function CardFrame(props: {
   );
 }
 
-/** A thread whose computer went to sleep mid-turn: a line that opens it, which carries it on. */
-function PausedLine(props: { readonly conversation: AldoHomeConversation; readonly now: number }) {
+/**
+ * A thread whose computer went to sleep mid-turn, as a card at its state time:
+ * what happened and when, that only a tap is asked of the user, and Continue.
+ */
+function PausedCard(props: {
+  readonly home: AldoHome;
+  readonly conversation: AldoHomeConversation;
+  readonly now: number;
+}) {
   const c = props.conversation;
+  const view = threadCardOf(props.home, c, props.now);
+  const stalled = stalledOf(props.home, c, props.now);
+  const arrive = useAldoArrive();
   return (
     <article
-      className={cn(SURFACE, "flex items-center overflow-hidden pe-2")}
+      {...arrive}
+      className={cn(SURFACE, "border-warning/40 bg-warning-surface flex w-full flex-col gap-2 p-4")}
       data-aldo-paused={c.ref}
+      aria-label={`${view.status}: ${c.title}`}
     >
-      <ThreadLink
-        target={c.thread}
-        className={cn(
-          FOCUS,
-          "flex min-h-13 min-w-0 flex-1 items-center gap-3 rounded-[20px] px-4 py-2.5 text-left transition-colors hover:bg-foreground/[0.025]",
-        )}
-      >
-        <MoonIcon aria-hidden className="size-4 shrink-0 text-foreground/55" strokeWidth={1.75} />
-        <span className="min-w-0 flex-1 truncate font-medium text-[14px] leading-5">
-          Paused mid-turn: open it to carry on
-        </span>
-        <span className="flex min-w-0 max-w-[40%] shrink-0 items-center gap-1.5 text-[12px] text-muted-foreground max-sm:hidden">
-          <span className="truncate">{c.title}</span>
-          <span aria-hidden>·</span>
-          <span className="shrink-0 tabular-nums">{elapsed(c.stateAt ?? c.at, props.now)}</span>
-        </span>
-        <ArrowUpRightIcon
+      <div className="-my-1 flex min-h-8 items-center gap-2 text-[12px] leading-[18px]">
+        <MoonIcon
           aria-hidden
-          className="size-4 shrink-0 text-muted-foreground"
+          className="size-4 shrink-0 text-warning-foreground"
           strokeWidth={1.75}
         />
-      </ThreadLink>
-      <DismissChatDecision decision={c.chatDecision} title={c.title} />
+        <span className="min-w-0 flex-1 font-semibold text-warning-foreground">{view.status}</span>
+        <DismissChatDecision decision={c.chatDecision} title={c.title} />
+        <span className="-me-1.5">
+          <ThreadLink target={c.thread} className={ICON_BUTTON} label="Open the thread">
+            <ArrowUpRightIcon className="size-4" strokeWidth={1.75} />
+          </ThreadLink>
+        </span>
+      </div>
+      <h4 className="line-clamp-2 break-words font-semibold text-[16px] leading-[22px] tracking-[-0.01em]">
+        {c.title}
+      </h4>
+      <p className="text-[14px] text-muted-foreground leading-5 dark:text-foreground/70">
+        {view.body}
+      </p>
+      <ContinueButton conversation={c} blocked={stalled?.blocked} />
     </article>
   );
 }

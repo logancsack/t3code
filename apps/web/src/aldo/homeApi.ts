@@ -610,6 +610,19 @@ export async function approveAldoPlan(
   return status;
 }
 
+/**
+ * Carries on a thread that paused or stalled: its computer wakes and its agent
+ * picks up where it stopped (or gets the message of the user's it was holding).
+ * Refused (409) if the thread isn't paused, as Aldo reads it now.
+ */
+export async function continueAldoThread(target: AldoHomeTarget): Promise<string> {
+  const { status } = await api<{ status: string }>(
+    `/api/environments/${threadIdForEnvironment(target.environmentId)}/actions`,
+    postedKept({ action: "continue", t3ThreadId: target.threadId }),
+  );
+  return status;
+}
+
 /** A thread's latest turns as Aldo keeps them (its last three: the messages, and what it waits on). */
 export interface AldoConversationCopy {
   readonly state: string;
