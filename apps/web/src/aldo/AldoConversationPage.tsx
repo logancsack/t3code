@@ -42,6 +42,7 @@ import { aldoChatDecisions, aldoWaitingCount, decisionAt, pausedInChat } from ".
 import { AldoComputerRequest } from "./AldoComputerRequest";
 import { pendingNeedsYou, computerRequests } from "./needsYou.logic";
 import { NeedsYouPill } from "./NeedsYouPill";
+import { COMPOSER_ACTION, HomeComposerActions } from "./HomeComposerActions";
 import { feedEvents, withPlans, withReceipts } from "./feed.logic";
 import { parseAldoPlans } from "./plans.logic";
 import { useAldoFirstViewHold } from "./firstView";
@@ -415,8 +416,7 @@ export function AldoConversationPage(props: {
                     column,
                     // Words with no break in them (a link, a path, a token) wrap at the column's edge.
                     "min-w-0 wrap-anywhere",
-                    // Room at the end for the pill over it, so the last card isn't under it.
-                    "flex flex-col gap-4 pt-3 pb-6 group-has-[[data-aldo-needs-you]]/page:pb-16",
+                    "flex flex-col gap-4 pt-3 pb-6",
                   )}
                 >
                   <HealthStrip issues={props.issues} />
@@ -433,25 +433,32 @@ export function AldoConversationPage(props: {
             </div>
             {/* The same composer, empty page or not, so what's typed and focus stay as it glides into place. */}
             <div className="relative shrink-0" data-aldo-assistant-footer="">
-              {/* Over the conversation's end: what's new below and what waits on the user. */}
-              <div className="pointer-events-none absolute inset-x-0 -top-14 z-10 flex justify-center gap-2 px-4 *:pointer-events-auto">
-                {below ? (
-                  <button
-                    type="button"
-                    data-aldo-arrive=""
-                    className="flex h-8 items-center gap-1.5 rounded-full border border-foreground/[0.10] bg-popover ps-2.5 pe-3 font-medium text-[13px] shadow-composer outline-none focus-visible:ring-2 focus-visible:ring-ring dark:shadow-composer-dark"
-                    onClick={() =>
-                      scroller.current?.scrollTo({
-                        top: scroller.current.scrollHeight,
-                        behavior: scrollMotion(),
-                      })
-                    }
-                  >
-                    <ArrowDownIcon aria-hidden className="size-3.5" strokeWidth={2} />
-                    New from Aldo
-                  </button>
-                ) : null}
-                {fresh || loading ? null : <NeedsYouPill scroller={scroller} items={pending} />}
+              {/* The actions have their own room, clear of messages, captions and the input. */}
+              <div className={column}>
+                <HomeComposerActions active={below || (!fresh && !loading && pending.length > 0)}>
+                  {fresh || loading ? null : <NeedsYouPill scroller={scroller} items={pending} />}
+                  {below ? (
+                    <button
+                      type="button"
+                      className={COMPOSER_ACTION}
+                      onClick={() =>
+                        scroller.current?.scrollTo({
+                          top: scroller.current.scrollHeight,
+                          behavior: scrollMotion(),
+                        })
+                      }
+                    >
+                      {!fresh && !loading && pending.length > 0 ? (
+                        <span
+                          aria-hidden
+                          className="absolute inset-y-3.5 start-0 w-px bg-foreground/[0.10]"
+                        />
+                      ) : null}
+                      <ArrowDownIcon aria-hidden className="size-4 shrink-0" strokeWidth={2} />
+                      <span className="min-w-0 wrap-anywhere">New from Aldo</span>
+                    </button>
+                  ) : null}
+                </HomeComposerActions>
               </div>
               <div
                 ref={dock}
