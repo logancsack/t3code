@@ -114,7 +114,8 @@ it("plays a recording in place, with a way to save it", async () => {
 it("draws a chart from its data, a few bars in place and all of them full screen with the data to save", async () => {
   await render();
   const chart = container.querySelector('[role="img"][aria-label="Machine hours"]')!;
-  expect(chart.children).toHaveLength(8);
+  expect(chart.textContent).toContain("Day 8");
+  expect(chart.textContent).not.toContain("Day 9");
   expect(chart.textContent).toContain("7 h");
   expect(container.textContent).toContain("All 12 in full screen");
   await act(async () => {

@@ -20,7 +20,7 @@ import {
   XIcon,
   type LucideIcon,
 } from "lucide-react";
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { Fragment, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
 import { MediaVideoPlayer } from "../components/media/MediaVideoPlayer";
 import { Button } from "../components/ui/button";
@@ -280,6 +280,8 @@ function Page(props: { readonly file: AldoFileArtifact }) {
           tabIndex={-1}
           aria-hidden
           sandbox="allow-scripts"
+          // It takes no taps, so it shows no scrollbar either.
+          scrolling="no"
           referrerPolicy="no-referrer"
           className="pointer-events-none absolute inset-0 size-full border-0 bg-white"
         />
@@ -333,11 +335,25 @@ function Tile(props: { readonly file: AldoFileArtifact }) {
 /** A chart or table's card: its title and a way to open it whole; a tap anywhere opens it too. */
 function DataCard(props: {
   readonly title: string;
+  readonly kind: "chart" | "table";
   readonly footer?: string | null;
   readonly sheet: ReactNode;
   readonly children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
+  const expand = (
+    <button
+      type="button"
+      aria-label={`Open ${props.title || `the ${props.kind}`} full screen`}
+      className={cn(ICON_BUTTON, "-my-1.5 -me-1.5")}
+      onClick={(event) => {
+        event.stopPropagation();
+        setOpen(true);
+      }}
+    >
+      <Maximize2Icon className="size-4" />
+    </button>
+  );
   // The sheet is the card's sibling: a tap in it (its backdrop too) never reaches the card to open it again.
   return (
     <>
@@ -345,27 +361,28 @@ function DataCard(props: {
         className={cn(SURFACE, "flex w-full min-w-0 max-w-full cursor-pointer flex-col gap-3 p-4")}
         onClick={() => setOpen(true)}
       >
-        <header className="-me-1.5 -mt-1 flex min-w-0 items-center gap-2">
-          <h3 className="min-w-0 flex-1 truncate font-medium text-[15px] text-foreground">
-            {props.title}
-          </h3>
-          <button
-            type="button"
-            aria-label={`Open ${props.title || "it"} full screen`}
-            className={ICON_BUTTON}
-            onClick={(event) => {
-              event.stopPropagation();
-              setOpen(true);
-            }}
-          >
-            <Maximize2Icon className="size-4" />
-          </button>
-        </header>
+        {props.title ? (
+          <header className="flex min-w-0 items-center gap-2">
+            <h3 className="min-w-0 flex-1 truncate font-medium text-[15px] text-foreground">
+              {props.title}
+            </h3>
+            {expand}
+          </header>
+        ) : null}
         {props.children}
-        {props.footer ? <p className="text-[13px] text-muted-foreground">{props.footer}</p> : null}
+        {/* Untitled, its way to open it whole goes under it, by what's left out. */}
+        {props.footer || !props.title ? (
+          <footer className="flex min-w-0 items-center gap-2 text-[13px] text-muted-foreground">
+            <p className="min-w-0 flex-1 truncate">{props.footer}</p>
+            {props.title ? null : expand}
+          </footer>
+        ) : null}
       </section>
       {open ? (
-        <DataSheet title={props.title} onClose={() => setOpen(false)}>
+        <DataSheet
+          title={props.title || (props.kind === "chart" ? "Chart" : "Table")}
+          onClose={() => setOpen(false)}
+        >
           {props.sheet}
         </DataSheet>
       ) : null}
@@ -391,7 +408,8 @@ function DataSheet(props: {
         showCloseButton={false}
         className="w-full max-w-3xl pt-safe pb-safe max-sm:border-s-0"
       >
-        <div className="flex items-center gap-2 border-border/60 border-b px-4 py-2">
+        {/* On a phone the sidebar's toggle floats over the sheet's corner: its title starts past it. */}
+        <div className="flex items-center gap-2 border-border/60 border-b px-4 py-2 max-sm:ps-14">
           <SheetTitle className="min-w-0 flex-1 truncate font-semibold text-base">
             {props.title}
           </SheetTitle>
@@ -483,7 +501,7 @@ function Table(props: { readonly table: AldoTableArtifact }) {
       ? `All ${table.columns.length} columns · ${table.rows.length} ${table.rows.length === 1 ? "row" : "rows"}`
       : null;
   return (
-    <DataCard title={table.title ?? "Table"} footer={more} sheet={<FullTable {...table} />}>
+    <DataCard title={table.title ?? ""} kind="table" footer={more} sheet={<FullTable {...table} />}>
       <table className="w-full min-w-0 table-fixed border-collapse text-[14px]">
         <thead>
           <tr>
@@ -492,7 +510,11 @@ function Table(props: { readonly table: AldoTableArtifact }) {
                 // oxlint-disable-next-line react/no-array-index-key -- Columns are fixed once said, and may repeat.
                 key={i}
                 scope="col"
-                className="truncate border-border/60 border-b pe-3 pb-1.5 text-left font-medium text-[13px] text-muted-foreground last:pe-0"
+                className={cn(
+                  "truncate border-border/60 border-b pe-3 pb-1.5 text-left font-medium text-[13px] text-muted-foreground last:pe-0",
+                  // What each row is about gets the room; the figures after it are short.
+                  i === 0 && columns.length > 2 && "w-[38%]",
+                )}
               >
                 {column}
               </th>
@@ -529,7 +551,8 @@ function Chart(props: { readonly chart: AldoChartArtifact }) {
       : null;
   return (
     <DataCard
-      title={chart.title || "Chart"}
+      title={chart.title}
+      kind="chart"
       footer={more}
       sheet={<FullTable {...chartTable(chart)} chart={chart} />}
     >
@@ -580,14 +603,21 @@ function Bars(props: { readonly chart: AldoChartArtifact; readonly all?: boolean
   const { chart } = props;
   const top = niceMax(chart.series.flatMap((s) => s.values));
   const labels = props.all ? chart.labels : chart.labels.slice(0, PREVIEW.bars);
+  // Every row's bar starts and ends at the same place, so bars compare: the labels' column fits
+  // the longest (up to 40%), and the values' the widest.
+  const shown = labels.map((_, i) =>
+    chart.series.map((s) => formatValue(s.values[i] ?? 0, chart.unit)),
+  );
+  const widest = Math.max(...shown.flat().map((text) => text.length));
   return (
-    <div role="img" aria-label={chart.title} className="flex min-w-0 flex-col gap-2.5">
+    <div
+      role="img"
+      aria-label={chart.title}
+      className="grid min-w-0 grid-cols-[fit-content(40%)_minmax(0,1fr)] items-center gap-x-3 gap-y-2.5 text-[13px]"
+    >
       {labels.map((label, i) => (
-        <div
-          // oxlint-disable-next-line react/no-array-index-key -- Labels are fixed once said, and may repeat.
-          key={i}
-          className="grid min-w-0 grid-cols-[minmax(0,6.5rem)_minmax(0,1fr)] items-center gap-3 text-[13px] sm:grid-cols-[minmax(0,9rem)_minmax(0,1fr)]"
-        >
+        // oxlint-disable-next-line react/no-array-index-key -- Labels are fixed once said, and may repeat.
+        <Fragment key={i}>
           <span className="truncate text-muted-foreground">{label}</span>
           <span className="flex min-w-0 flex-col gap-1">
             {chart.series.map((s, j) => {
@@ -605,14 +635,17 @@ function Bars(props: { readonly chart: AldoChartArtifact; readonly all?: boolean
                       }}
                     />
                   </span>
-                  <span className="w-[4.5rem] shrink-0 text-right text-foreground tabular-nums">
-                    {formatValue(value, chart.unit)}
+                  <span
+                    className="max-w-[45%] shrink-0 truncate text-right text-foreground tabular-nums"
+                    style={{ width: `${widest + 0.5}ch` }}
+                  >
+                    {shown[i]![j]}
                   </span>
                 </span>
               );
             })}
           </span>
-        </div>
+        </Fragment>
       ))}
     </div>
   );

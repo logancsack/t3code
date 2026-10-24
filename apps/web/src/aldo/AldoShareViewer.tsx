@@ -122,7 +122,8 @@ function AldoShareViewer(props: { readonly open: AldoOpenShare }) {
         showCloseButton={false}
         className="w-full max-w-3xl pt-safe pb-safe max-sm:border-s-0"
       >
-        <div className="flex items-center gap-2 border-border/60 border-b px-4 py-2">
+        {/* On a phone the sidebar's toggle floats over the sheet's corner: its title starts past it. */}
+        <div className="flex items-center gap-2 border-border/60 border-b px-4 py-2 max-sm:ps-14">
           <Icon className="size-4 shrink-0 text-muted-foreground" />
           <div className="min-w-0">
             <SheetTitle className="truncate font-semibold text-base">{open.title}</SheetTitle>
