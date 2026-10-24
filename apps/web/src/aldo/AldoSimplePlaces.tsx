@@ -1,3 +1,4 @@
+import { AldoFrame } from "./AldoFrame";
 // Simple mode's places besides Aldo's conversation (AldoHome.tsx shows them,
 // AldoSimpleRail.tsx goes to them). Needs you is what waits on the user, each
 // answered in place as on the board: Aldo's approvals, then threads, then pull
@@ -145,10 +146,7 @@ export function AldoSimpleNeedsYou(props: {
             className="rounded-full"
             onClick={() => startAldoWalkthrough(decisions)}
           >
-            <span
-              aria-hidden
-              className="size-2.5 rounded-full bg-gradient-to-br from-primary/90 to-primary/50"
-            />
+            <AldoFrame size={12} />
             Go through them with Aldo
           </Button>
         ) : null

@@ -17,15 +17,7 @@ import {
 import { cn } from "../lib/utils";
 import { BRAND_MARKS, CANVA_WORDMARK, type BrandMark } from "./brandMarks";
 
-/** The Aldo "Open Frame" mark (SidebarChrome's), for Aldo's own models. */
-function AldoMark({ className }: { className?: string }) {
-  return (
-    <svg aria-hidden="true" className={className} viewBox="0 0 42 32">
-      <path d="M1 28 13.4 4h8.7L10.6 28H1Z" fill="currentColor" />
-      <path d="M23.9 4h8.7L41 28h-9.6L23.9 4Z" fill="currentColor" />
-    </svg>
-  );
-}
+import { AldoMark } from "./AldoMark";
 
 function MicrosoftMark({ className }: { className?: string }) {
   return (

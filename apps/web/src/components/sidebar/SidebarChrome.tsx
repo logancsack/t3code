@@ -1,3 +1,4 @@
+import { AldoMark } from "../../aldo/AldoMark";
 import { ManagedDevPcConnections } from "../ManagedDevPcConnections";
 import { ManagedDevPcAgent } from "../ManagedDevPcAgent";
 import { ArrowLeftIcon, ChartNoAxesColumnIcon, SettingsIcon } from "lucide-react";
@@ -121,14 +122,6 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
 }
 
 /** The Aldo "Open Frame" mark, drawn in the current text color. */
-function AldoMark({ className }: { className?: string }) {
-  return (
-    <svg aria-hidden="true" className={className} viewBox="0 0 42 32">
-      <path d="M1 28 13.4 4h8.7L10.6 28H1Z" fill="currentColor" />
-      <path d="M23.9 4h8.7L41 28h-9.6L23.9 4Z" fill="currentColor" />
-    </svg>
-  );
-}
 
 function SidebarUtilityItem({
   icon,

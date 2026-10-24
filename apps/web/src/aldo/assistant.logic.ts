@@ -7,7 +7,7 @@
 import { type AldoFollowupNews } from "./assistantApi";
 import { type AldoStartState, type AldoThreadAttention } from "./directory";
 
-/** Where the conversation is, as the orb shows it. */
+/** Where the conversation is, as the mark shows it. */
 export type AldoAssistantPhase =
   | "idle"
   | "connecting"

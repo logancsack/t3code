@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+vi.mock("./AldoFrame", () => ({ AldoFrame: () => null }));
 
 import { act, createContext, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -36,13 +37,17 @@ vi.mock("./AldoAssistant", async (original) => ({
 }));
 vi.mock("./AldoHomeBoard", () => ({ HealthStrip: () => null }));
 vi.mock("./AldoLiveCard", () => ({ AldoOpenContext: createContext(null) }));
-vi.mock("./AldoPresence", () => ({ AldoPresence: () => null, AldoAvatar: () => null }));
+vi.mock("./AldoPresence", () => ({ AldoPresence: () => null }));
 vi.mock("./AldoHomeInbox", () => ({
   ThreadLink: ({ children }: { children: ReactNode }) => <span>{children}</span>,
   PendingForm: () => null,
 }));
 vi.mock("./AldoBrief", () => ({ DecisionIcon: () => null, confirmQuickChoice: async () => true }));
-vi.mock("./face", () => ({ blinkAldo: vi.fn(), pleaseAldo: vi.fn(), setAldoReading: vi.fn() }));
+vi.mock("./presenceReactions", () => ({
+  acknowledgeAldo: vi.fn(),
+  completeAldo: vi.fn(),
+  setAldoReading: vi.fn(),
+}));
 vi.mock("./morph", () => ({
   aldoGlide: vi.fn(),
   aldoMorphSource: vi.fn(),

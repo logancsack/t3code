@@ -1051,7 +1051,7 @@ function sent(call: AldoLiveTranscript): void {
   sentFrom = call.heardUntil("assistant");
 }
 
-/** The orb follows who's speaking; a call nobody's used for a while is hung up. */
+/** The mark follows who's speaking; a call nobody's used for a while is hung up. */
 function tickLive(): void {
   if (!transcript || !liveStarted) return;
   transcript.settle();
