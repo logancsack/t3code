@@ -172,7 +172,7 @@ function PullRequestRow(props: { readonly pullRequest: AldoHomePullRequest }) {
 }
 
 const DOT = {
-  working: "animate-pulse bg-primary",
+  working: "bg-primary",
   quiet: "bg-muted-foreground/50",
   done: "bg-success",
   attention: "bg-warning",

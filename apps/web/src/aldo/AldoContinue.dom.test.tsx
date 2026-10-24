@@ -9,7 +9,9 @@ import type { AldoHomeConversation } from "./homeApi";
 const backend = vi.hoisted(() => ({
   continue: vi.fn(),
   held: vi.fn(),
+  toast: vi.fn(),
 }));
+vi.mock("../components/ui/toast", () => ({ toastManager: { add: backend.toast } }));
 vi.mock("@tanstack/react-router", () => ({
   Link: ({ to, children, className }: { to: string; children: ReactNode; className?: string }) => (
     <a href={to} className={className}>
@@ -42,6 +44,7 @@ beforeEach(async () => {
   root = createRoot(container);
   backend.continue.mockReset();
   backend.held.mockReset();
+  backend.toast.mockReset();
 });
 afterEach(() => {
   act(() => root.unmount());
@@ -64,11 +67,13 @@ it("answers the tap at once, holds the conversation as carrying on, and says it 
   expect(button.disabled).toBe(true);
 });
 
-it("gives the button back with the reason when it couldn't carry on", async () => {
+it("gives the button back and says why in a toast when it couldn't carry on", async () => {
   backend.continue.mockRejectedValue(new Error("That thread isn't paused."));
   await act(async () => root.render(<ContinueButton conversation={conversation} />));
   await act(async () => container.querySelector("button")!.click());
-  expect(container.querySelector("[role=alert]")?.textContent).toBe("That thread isn't paused.");
+  expect(backend.toast).toHaveBeenCalledWith(
+    expect.objectContaining({ type: "error", description: "That thread isn't paused." }),
+  );
   expect(container.querySelector("button")!.disabled).toBe(false);
   expect(container.querySelector("button")!.textContent).toBe("Continue");
 });
