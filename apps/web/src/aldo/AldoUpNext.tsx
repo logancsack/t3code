@@ -1,8 +1,7 @@
 // What waits on the user, in Aldo's conversation (AldoConversationPage.tsx):
 // each decision (decisions.logic.ts) as a card that's decided right there,
-// at its creation time among messages and activity. On a wide
-// screen, the count of those out of view waits above the composer
-// (NeedsYouPill.tsx); on a phone, on the Needs you tab. In each group the
+// at its creation time among messages and activity. The pending count
+// waits above the composer (NeedsYouPill.tsx). In each group the
 // first is open, with big buttons for the choices (Aldo's pick first, from
 // the brief, with why), a tap on what asks (or ↗) to open its thread; the
 // next two are a line each that opens in place, and the rest unfold.
@@ -81,7 +80,9 @@ export function AldoUpNext(props: {
     // One answered here is a line in the conversation now, while the home read catches up.
     const list: ReadonlyArray<AldoDecision> = [
       ...aldoChatDecisions(props.home, props.now).filter(
-        (d) => !receipts.some((r) => r.key === d.key),
+        (d) =>
+          !receipts.some((r) => r.key === d.key) &&
+          !(d.kind === "waiting" && d.conversation.computers?.some((c) => c.status === "asked")),
       ),
       ...(props.home.approvals ?? [])
         .filter(
@@ -119,8 +120,10 @@ export function AldoUpNext(props: {
   // Paused threads use the same timeline positions as the cards.
   const paused = useMemo(
     () =>
-      pausedInChat(props.home, props.now).filter((c) =>
-        end ? !placedAt?.has(`paused:${c.ref}`) : only!.includes(`paused:${c.ref}`),
+      pausedInChat(props.home, props.now).filter(
+        (c) =>
+          !c.computers?.some((computer) => computer.status === "asked") &&
+          (end ? !placedAt?.has(`paused:${c.ref}`) : only!.includes(`paused:${c.ref}`)),
       ),
     [end, props.home, props.now, only, placedAt],
   );
@@ -268,8 +271,9 @@ function focusCardSoon(key: string, reveal = false): void {
 
 /** A card brought into view and focused, with a glance drawn to it. */
 export function revealAldoCard(card: HTMLElement): void {
+  if (!card.hasAttribute("tabindex")) card.tabIndex = -1;
   card.focus({ preventScroll: true });
-  card.scrollIntoView({ behavior: scrollMotion(), block: "center" });
+  card.scrollIntoView({ behavior: scrollMotion(), block: "center", inline: "nearest" });
   card.removeAttribute("data-aldo-attention");
   requestAnimationFrame(() => card.setAttribute("data-aldo-attention", ""));
   setTimeout(() => card.removeAttribute("data-aldo-attention"), 1_400);
