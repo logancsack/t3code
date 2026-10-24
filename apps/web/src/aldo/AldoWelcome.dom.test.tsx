@@ -9,7 +9,7 @@ vi.mock("./onboarding", () => ({ saveAldoOnboarding: save }));
 vi.mock("./AldoAccountMenu", () => ({
   useAldoProfile: () => ({ id: "user_1", email: "maya@example.com", name: "Maya Ortiz" }),
 }));
-vi.mock("./AldoPresence", () => ({ AldoAvatar: () => null }));
+vi.mock("./AldoFrame", () => ({ AldoFrame: () => null }));
 
 const { AldoWelcome } = await import("./AldoWelcome");
 

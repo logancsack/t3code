@@ -17,13 +17,13 @@ vi.mock("./screen", () => ({ aldoOnScreen: () => null, subscribeAldoOnScreen: ()
 vi.mock("../components/ui/toast", () => ({ toastManager: { add: vi.fn() } }));
 vi.mock("./AldoBrief", () => ({ AldoBriefEntry: () => null }));
 vi.mock("./AldoLiveCard", () => ({ AldoThreadCard: () => null }));
-vi.mock("./AldoPresence", () => ({ AldoAvatar: () => null }));
+vi.mock("./AldoFrame", () => ({ AldoFrame: () => null }));
 vi.mock("./AldoPlanPicker", () => ({ AldoPlanPicker: () => null }));
 vi.mock("./homeFeed", () => ({
   noteAldoAnswered: vi.fn(),
   useAldoHomeFeed: (select: (state: { home: null }) => unknown) => select({ home: null }),
 }));
-vi.mock("./face", () => ({ blinkAldo: vi.fn(), setAldoReading: vi.fn() }));
+vi.mock("./presenceReactions", () => ({ acknowledgeAldo: vi.fn(), setAldoReading: vi.fn() }));
 vi.mock("./firstView", () => ({ useAldoFirstViewHold: vi.fn() }));
 vi.mock("./arrive", () => ({ useAldoArrive: () => ({}), useAldoArrived: () => true }));
 

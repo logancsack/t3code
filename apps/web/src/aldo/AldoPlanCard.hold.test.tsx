@@ -16,7 +16,7 @@ vi.mock("./planApi", () => ({
   },
 }));
 vi.mock("./AldoHomeInbox", () => ({ ThreadLink: () => null }));
-vi.mock("./AldoPresence", () => ({ AldoAvatar: () => null }));
+vi.mock("./AldoFrame", () => ({ AldoFrame: () => null }));
 vi.mock("./assistantSession", () => ({
   pullAldoConversation: vi.fn(),
   seedAldoComposer: vi.fn(),

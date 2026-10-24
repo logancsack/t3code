@@ -15,7 +15,7 @@ import { cn } from "~/lib/utils";
 import { AldoOpenContext, AldoThreadCard } from "./AldoLiveCard";
 import { AldoPaymentLine } from "./AldoPaymentCard";
 import { AldoPlanCard } from "./AldoPlanCard";
-import { AldoAvatar } from "./AldoPresence";
+import { AldoFrame } from "./AldoFrame";
 import { useAldoArrive } from "./arrive";
 import { aldoCanMorph } from "./morph";
 import { ACTION_LABELS } from "./assistant.logic";
@@ -284,7 +284,7 @@ function EventLine(props: {
       const thread = a.thread;
       const line = (
         <Line
-          icon={<AldoAvatar size={14} />}
+          icon={<AldoFrame size={14} />}
           onClick={thread && open ? (from) => open(thread, from) : undefined}
         >
           {label}

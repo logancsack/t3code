@@ -32,7 +32,7 @@ import { AldoHandoffActions } from "./AldoHandoffCard";
 import { askAldoAbout, PendingForm, ThreadLink } from "./AldoHomeInbox";
 import { AldoOpenContext } from "./AldoLiveCard";
 import { ApproveInLink, PaymentDetails } from "./AldoPaymentCard";
-import { AldoAvatar } from "./AldoPresence";
+import { AldoFrame } from "./AldoFrame";
 import { AgentMarkdown, Quoted } from "./AldoQuoted";
 import { useAldoArrive } from "./arrive";
 import { useAldoBrief } from "./briefFeed";
@@ -45,7 +45,7 @@ import {
   pausedInChat,
   type AldoDecision,
 } from "./decisions.logic";
-import { pleaseAldo } from "./face";
+import { completeAldo } from "./presenceReactions";
 import { refreshAldoHome, useAldoHomeFeed } from "./homeFeed";
 import { elapsed } from "./home.logic";
 import { aldoMorph } from "./morph";
@@ -348,7 +348,7 @@ function Choice(props: {
         <LoaderCircleIcon aria-hidden className="size-4 shrink-0 animate-spin" />
       ) : props.tag ? (
         <span className="flex shrink-0 items-center gap-1.5 text-[12px] text-muted-foreground">
-          <AldoAvatar size={12} />
+          <AldoFrame size={12} />
           {props.tag}
         </span>
       ) : null}
@@ -481,7 +481,7 @@ function DecisionCard(props: {
       }
       return;
     }
-    if (outcome === "done") pleaseAldo();
+    if (outcome === "done") completeAldo();
     drafts.delete(d.key);
     if (settles) {
       // Done as the line already says (Aldo's own approvals add what it did: a draft it couldn't delete);

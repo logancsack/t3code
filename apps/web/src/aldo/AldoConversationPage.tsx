@@ -1,11 +1,11 @@
 // The home screen as a conversation with Aldo (AldoHome.tsx), made like a
-// messaging app's chat with a teammate. At the top, Aldo's face and what it's
+// messaging app's chat with a teammate. At the top, Aldo’s mark and what it's
 // at (AldoPresence.tsx), which opens what's working and coming up. Then the
 // conversation, with what happened to the user's agents where it happened
 // (feed.logic.ts, AldoFeed.tsx), and what waits on the user where it came up, as
 // cards to answer in place (a plan to start, AldoPlanCard.tsx; the rest,
 // AldoUpNext.tsx), so nothing needs a view of its own. Then the composer.
-// Before anything's been said, the page is Aldo's face, one question and the
+// Before anything's been said, the page is Aldo’s mark, one question and the
 // composer under it, which glides down to its place with the first message
 // (the same composer: what's typed and focus stay). Scrolled up, what arrives
 // waits behind "New from Aldo". A thread tapped anywhere in it opens: the
@@ -32,7 +32,8 @@ import { cn } from "~/lib/utils";
 import { AldoAtAGlance, AldoCaption, AldoComposer, AldoConversation } from "./AldoAssistant";
 import { HealthStrip } from "./AldoHomeBoard";
 import { AldoOpenContext } from "./AldoLiveCard";
-import { AldoAvatar, AldoPresence } from "./AldoPresence";
+import { AldoPresence } from "./AldoPresence";
+import { AldoFrame } from "./AldoFrame";
 import { AldoUpNext } from "./AldoUpNext";
 import { settleAldoConversation, unsettleAldoConversation } from "./arrive";
 import { showAldoCards } from "./assistantApi";
@@ -48,7 +49,7 @@ import { parseAldoPlans } from "./plans.logic";
 import { useAldoFirstViewHold } from "./firstView";
 import type { healthIssues } from "./home.logic";
 import { useAldoReceipts } from "./receipts";
-import { blinkAldo } from "./face";
+import { acknowledgeAldo } from "./presenceReactions";
 import { aldoGlide, aldoMorphSource, morphIntoThread } from "./morph";
 import { refreshAldoHome } from "./homeFeed";
 import { scrollMotion } from "./show";
@@ -191,9 +192,9 @@ export function AldoConversationPage(props: {
   const cardsShow = home !== null && props.error === null && home.plans !== undefined;
   useEffect(() => (cardsShow ? showAldoCards(CARDS) : undefined), [cardsShow]);
   useEffect(() => {
-    // The user back at the page: Aldo notices, with a blink.
+    // Acknowledge the user returning to Home.
     const onVisible = () => {
-      if (document.visibilityState === "visible") blinkAldo();
+      if (document.visibilityState === "visible") acknowledgeAldo();
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
@@ -401,7 +402,7 @@ export function AldoConversationPage(props: {
                 <div className={cn(column, "flex flex-col gap-6")}>
                   <HealthStrip issues={props.issues} />
                   <div className="flex flex-col items-center text-center">
-                    <AldoAvatar size={48} aware />
+                    <AldoFrame size={48} aware />
                     <h1 className="mt-5 font-semibold text-[24px] leading-[30px] tracking-[-0.02em] sm:text-[28px] sm:leading-[34px]">
                       What should we get done?
                     </h1>

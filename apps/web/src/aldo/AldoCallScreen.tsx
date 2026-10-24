@@ -1,4 +1,4 @@
-// A call with Aldo on a phone, full screen: the orb, what Aldo is saying (its
+// A call with Aldo on a phone, full screen: the mark, what Aldo is saying (its
 // last sentence lighter, as it trails off or is still coming), what it did on
 // this call, and mute, type and end. Folded away (the chevron) the call goes
 // on: the page's composer has mute and hang up, and its mic button (or the
@@ -27,7 +27,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { useIsMobile } from "../hooks/useMediaQuery";
 import { cn } from "~/lib/utils";
-import { AldoOrb } from "./AldoAssistant";
+import { AldoVoiceMark } from "./AldoAssistant";
 import { ApprovalBody } from "./AldoApprovals";
 import { DecisionIcon } from "./AldoBrief";
 import { PendingForm } from "./AldoHomeInbox";
@@ -240,7 +240,7 @@ function CallScreen(props: { readonly mobile: boolean }) {
             walk.active ? "pt-3 pb-3" : "flex-1 pt-10 pb-6",
           )}
         >
-          <AldoOrb size={walk.active ? "lg" : "xl"} display />
+          <AldoVoiceMark size={walk.active ? "lg" : "xl"} display />
         </div>
         <p
           className={cn(

@@ -1,9 +1,4 @@
-// Aldo as the first row of the sidebar's list, above pinned threads and every
-// sort, search and filter: tinted, with its face for the repo's icon, so it
-// reads as the assistant and not a thread. The face starts a conversation (or
-// hangs up) right where the user is, and the row opens Aldo's own screen (the
-// home screen's conversation). While a conversation is on, it shows what Aldo
-// is doing or saying, with mute. Only where the server has the assistant.
+// Aldo’s sidebar entry opens Home; its mark starts or ends a voice call.
 
 import { Link, useRouterState } from "@tanstack/react-router";
 import { MicIcon, MicOffIcon } from "lucide-react";
@@ -13,10 +8,10 @@ import { useSidebar } from "../components/ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { cn } from "~/lib/utils";
 import { ALDO_SHORTCUT_LABEL, useAldoAssistantAvailable } from "./AldoAssistant";
-import { AldoAvatar } from "./AldoPresence";
+import { AldoFrame } from "./AldoFrame";
 import type { AldoAssistantPhase } from "./assistant.logic";
 import { connectAldo, disconnectAldo, setAldoMuted, useAldoAssistant } from "./assistantSession";
-import type { AldoMood } from "./presence.logic";
+import { voicePresenceState } from "./presence.logic";
 import { isAldoCloud } from "./api";
 
 const STATUS: Record<AldoAssistantPhase, string> = {
@@ -27,16 +22,6 @@ const STATUS: Record<AldoAssistantPhase, string> = {
   thinking: "Thinking…",
   speaking: "Speaking",
   error: "Tap to talk again",
-};
-
-const MOOD: Record<AldoAssistantPhase, AldoMood> = {
-  idle: "idle",
-  connecting: "thinking",
-  listening: "listening",
-  hearing: "listening",
-  thinking: "thinking",
-  speaking: "speaking",
-  error: "idle",
 };
 
 export function AldoSidebarEntry() {
@@ -76,7 +61,7 @@ export function AldoSidebarEntry() {
             />
           }
         >
-          <AldoAvatar size={24} mood={replying ? "thinking" : MOOD[phase]} />
+          <AldoFrame size={24} state={replying ? "thinking" : voicePresenceState(phase)} />
         </TooltipTrigger>
         <TooltipPopup side="right">
           {live ? "Hang up" : `Talk to Aldo (${ALDO_SHORTCUT_LABEL})`}

@@ -10,7 +10,7 @@ import { useEffect, useRef, useState } from "react";
 import { cn } from "~/lib/utils";
 import { useAldoProfile } from "./AldoAccountMenu";
 import { AldoInterestChips } from "./AldoInterestChips";
-import { AldoAvatar } from "./AldoPresence";
+import { AldoFrame } from "./AldoFrame";
 import { saveAldoOnboarding } from "./onboarding";
 import { aldoFirstName, type AldoInterest } from "./onboarding.logic";
 import { FOCUS, PRIMARY } from "./surface";
@@ -36,7 +36,7 @@ export function AldoWelcome() {
     >
       <div className="flex min-h-full items-center justify-center px-6 py-12">
         <div className="flex w-full max-w-[560px] flex-col items-center text-center">
-          <AldoAvatar size={56} aware />
+          <AldoFrame size={56} aware />
           <h1
             id="aldo-welcome-title"
             className="mt-6 mb-2 font-semibold text-[28px] text-foreground leading-tight tracking-[-0.025em] sm:text-[30px]"

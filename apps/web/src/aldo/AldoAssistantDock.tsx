@@ -14,7 +14,7 @@ import { lazy, Suspense, useEffect } from "react";
 
 import { Button } from "../components/ui/button";
 import { useIsMobile } from "../hooks/useMediaQuery";
-import { AldoOrb, useAldoAssistantAvailable } from "./AldoAssistant";
+import { AldoVoiceMark, useAldoAssistantAvailable } from "./AldoAssistant";
 import { showAldoCall, useAldoCallView } from "./callView";
 import { openAldoSummon } from "./AldoSummon";
 import {
@@ -96,7 +96,7 @@ export function AldoAssistantDock() {
           className="pointer-events-auto flex w-full max-w-md items-center gap-2 rounded-full border border-border/70 bg-popover/95 py-1.5 pr-1.5 pl-1.5 shadow-lg backdrop-blur"
           data-aldo-dock="capsule"
         >
-          <AldoOrb size="sm" />
+          <AldoVoiceMark size="sm" />
           {mobile ? (
             <button
               type="button"

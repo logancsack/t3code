@@ -1,4 +1,4 @@
-// Talking to Aldo: the orb to talk, the composer to type (with a few things to
+// Talking to Aldo: the mark to talk, the composer to type (with a few things to
 // say when it's empty), and the conversation: what was said, and what Aldo
 // did, the newest action about each thread as a live card (AldoLiveCard.tsx).
 // The home screen lays them out as a page (AldoConversationPage.tsx); the
@@ -44,7 +44,7 @@ import { OpenThread, threadLink, WorkstreamGlyph } from "./AldoWorkstream";
 import { AldoFeedRun } from "./AldoFeed";
 import { showAldoCall } from "./callView";
 import { AldoThreadCard } from "./AldoLiveCard";
-import { AldoAvatar } from "./AldoPresence";
+import { AldoFrame } from "./AldoFrame";
 import { ALDO_TALK_LABEL } from "./summon.logic";
 import {
   ACTION_LABELS,
@@ -75,7 +75,8 @@ import { sameTarget } from "./home.logic";
 import { useAldoHomeFeed } from "./homeFeed";
 import type { AldoHomeConversation } from "./homeApi";
 import { WORKSTREAM_WORDS, workstreamMeta, workstreamState } from "./workstream.logic";
-import { blinkAldo, setAldoReading } from "./face";
+import { voicePresenceState } from "./presence.logic";
+import { acknowledgeAldo, setAldoReading } from "./presenceReactions";
 import { dedupeLiveCards, interleave, type AldoFeedEvent } from "./feed.logic";
 import { type AldoPlaceable } from "./decisions.logic";
 import { useAldoFirstViewHold } from "./firstView";
@@ -85,7 +86,7 @@ import "./presence.css";
 
 const OVERVIEW_EVERY_MS = 20_000;
 
-/** The orb: tap to talk or hang up; it swells with whoever is speaking. */
+/** The mark: tap to talk or hang up; its light follows whoever is speaking. */
 let assistantInfo: ReturnType<typeof aldoAssistantInfo> | null = null;
 let assistantAvailable: boolean | null = null;
 
@@ -165,66 +166,19 @@ async function imageUpload(
 /** How to talk to Aldo from anywhere (AldoAssistantDock listens for it). */
 export const ALDO_SHORTCUT_LABEL = ALDO_TALK_LABEL;
 
-export function AldoOrb(props: {
+export function AldoVoiceMark(props: {
   readonly size?: "xl" | "lg" | "sm" | "xs";
   readonly className?: string;
-  /** Just the orb, swelling with who speaks: not a button (the call screen's, AldoCallScreen.tsx). */
+  /** The audio-reactive mark: not a button (the call screen's, AldoCallScreen.tsx). */
   readonly display?: boolean;
 }) {
   const phase = useAldoAssistant((s) => s.phase);
-  const levels = useAldoAssistant((s) => s.levels);
   const live = phase !== "idle" && phase !== "error";
-  const level =
-    phase === "speaking"
-      ? levels.aldo
-      : phase === "hearing" || phase === "listening"
-        ? levels.mic
-        : 0;
-  const scale = 1 + Math.min(1, level * 2.5) * (props.display ? 0.14 : 0.28);
   const size = props.size ?? "lg";
-  const visuals = (
-    <>
-      {size === "xl" ? (
-        <span
-          aria-hidden
-          className="absolute -inset-8 rounded-full bg-primary/10 transition-transform duration-150 motion-reduce:transition-none"
-          style={{ transform: `scale(${1 + Math.min(1, level * 2.5) * 0.25})` }}
-        />
-      ) : null}
-      <span
-        aria-hidden
-        className={cn(
-          "absolute inset-0 rounded-full bg-gradient-to-br from-primary/90 to-primary/50 shadow-lg shadow-primary/20 transition-transform duration-100 motion-reduce:transition-none",
-          (phase === "thinking" || phase === "connecting") && "animate-pulse",
-          !live && !props.display && "opacity-80",
-        )}
-        style={{ transform: `scale(${scale})` }}
-      />
-      <span
-        aria-hidden
-        className={cn(
-          "absolute rounded-full bg-background/25",
-          size === "xl"
-            ? "inset-[30%]"
-            : size === "lg"
-              ? "inset-5"
-              : size === "sm"
-                ? "inset-2"
-                : "inset-1.5",
-        )}
-      />
-      {live || props.display ? null : (
-        <MicIcon
-          className={cn(
-            "relative text-primary-foreground",
-            size === "lg" || size === "xl" ? "size-7" : size === "sm" ? "size-4" : "size-3",
-          )}
-        />
-      )}
-    </>
-  );
+  const pixels = { xl: 160, lg: 80, sm: 36, xs: 24 }[size];
+  const visuals = <AldoFrame size={pixels} state={voicePresenceState(phase)} />;
   const box = cn(
-    "relative flex shrink-0 items-center justify-center rounded-full",
+    "relative flex shrink-0 items-center justify-center rounded-lg",
     size === "xl" ? "size-40" : size === "lg" ? "size-20" : size === "sm" ? "size-9" : "size-6",
     props.className,
   );
@@ -306,7 +260,7 @@ export function AldoComposer(props: {
   const live = phase !== "idle" && phase !== "error";
   // Images go in writing: not into a call.
   const canAttach = limits !== null && !live;
-  // Aldo looks down at what's being written, and back up once the user stops.
+  // Briefly emphasize the mark while the user types.
   const reading = useRef<ReturnType<typeof setTimeout> | null>(null);
   const read = (on: boolean) => {
     if (reading.current) clearTimeout(reading.current);
@@ -404,7 +358,7 @@ export function AldoComposer(props: {
     if (props.onSend) props.onSend(send);
     else send();
     read(false);
-    blinkAldo();
+    acknowledgeAldo();
   };
   const round =
     "relative flex size-11 shrink-0 items-center justify-center rounded-full outline-none transition-[background-color,opacity,transform] duration-100 focus-visible:ring-2 focus-visible:ring-ring active:scale-95 disabled:opacity-40 motion-reduce:transition-none";
@@ -663,10 +617,10 @@ export function AldoConversation(
     [props.decisions],
   );
   const { renderDecisions } = props;
-  // Aldo's reply in: it looks up from it, with a blink.
+  // Acknowledge the completed reply.
   const wasReplying = useRef(replying);
   useEffect(() => {
-    if (wasReplying.current && !replying) blinkAldo();
+    if (wasReplying.current && !replying) acknowledgeAldo();
     wasReplying.current = replying;
   }, [replying]);
   const end = useRef<HTMLDivElement>(null);
@@ -774,7 +728,7 @@ function ConversationEntry({
     const line = (
       <div className="flex items-center gap-2.5 self-start text-[14px] text-muted-foreground leading-5">
         <span aria-hidden className="flex size-5 shrink-0 items-center justify-center">
-          <AldoAvatar size={14} />
+          <AldoFrame size={14} />
         </span>
         {entry.href ? (
           <a href={entry.href} target="_blank" rel="noreferrer" className="hover:text-foreground">

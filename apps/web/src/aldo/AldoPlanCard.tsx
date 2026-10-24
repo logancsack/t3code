@@ -18,7 +18,7 @@ import { toastManager } from "../components/ui/toast";
 import { cn } from "~/lib/utils";
 import { ThreadLink } from "./AldoHomeInbox";
 import { NotNowMenu } from "./AldoNotNow";
-import { AldoAvatar } from "./AldoPresence";
+import { AldoFrame } from "./AldoFrame";
 import { useAldoArrive } from "./arrive";
 import { pullAldoConversation, seedAldoComposer } from "./assistantSession";
 import { refreshAldoHome } from "./homeFeed";
@@ -235,7 +235,7 @@ export function AldoPlanCard(props: {
     >
       <header className="flex flex-col gap-1.5">
         <p className="flex items-center gap-1.5 text-[12px] text-muted-foreground leading-[18px]">
-          <AldoAvatar size={12} />
+          <AldoFrame size={12} />
           Here’s the plan
         </p>
         <h4 className="text-balance font-semibold text-[16px] leading-[22px] tracking-[-0.01em]">
