@@ -9,8 +9,14 @@ import { useAldoAssistant } from "./assistantSession";
 import type { AldoApproval, AldoHome } from "./homeApi";
 import { parseAldoPlan } from "./plans.logic";
 import { useAldoReceipts } from "./receipts";
+import { toastManager } from "../components/ui/toast";
 
-const backend = vi.hoisted(() => ({ tap: vi.fn(), decide: vi.fn() }));
+const backend = vi.hoisted(() => ({
+  tap: vi.fn(),
+  decide: vi.fn(),
+  computer: vi.fn(),
+  refresh: vi.fn(),
+}));
 vi.mock("@tanstack/react-router", () => ({ useNavigate: vi.fn, useRouter: vi.fn }));
 vi.mock("../components/ui/sidebar", () => ({
   SidebarInset: ({ children }: { children: ReactNode }) => <main>{children}</main>,
@@ -45,13 +51,21 @@ vi.mock("./morph", () => ({
   aldoMorph: (update: () => void) => update(),
 }));
 vi.mock("./homeFeed", () => ({
-  refreshAldoHome: async () => {},
+  refreshAldoHome: backend.refresh,
   useAldoHomeFeed: (select: (s: { home: null }) => unknown) => select({ home: null }),
 }));
 vi.mock("./briefFeed", () => ({
   useAldoBrief: (select: (s: { brief: null }) => unknown) => select({ brief: null }),
 }));
 vi.mock("./firstView", () => ({ useAldoFirstViewHold: vi.fn() }));
+vi.mock("./workspaceApi", async (original) => ({
+  ...(await original<typeof import("./workspaceApi")>()),
+  answerAldoComputer: backend.computer,
+}));
+vi.mock("./directory", async (original) => ({
+  ...(await original<typeof import("./directory")>()),
+  requestAldoDirectoryRefresh: vi.fn(),
+}));
 vi.mock("./planApi", () => ({ tapAldoPlan: backend.tap }));
 vi.mock("./decide", () => ({ decideAldoOutcome: backend.decide }));
 
@@ -148,6 +162,8 @@ beforeEach(async () => {
   useAldoAssistant.setState({ entries: [], historyLoaded: true, replying: false });
   useAldoReceipts.setState({ receipts: [] });
   backend.tap.mockReset();
+  backend.computer.mockReset().mockResolvedValue({});
+  backend.refresh.mockReset().mockResolvedValue(undefined);
   backend.decide.mockReset().mockResolvedValue({ outcome: "done", said: "Sent" });
   container = document.createElement("div");
   document.body.append(container);
@@ -322,3 +338,198 @@ it("shows a saved approval outcome even when no messages are loaded", async () =
   expect(container.textContent).toContain("Launch update");
   expect(container.textContent).not.toContain("What should we get done?");
 });
+
+const pill = () => container.querySelector<HTMLButtonElement>("[data-aldo-needs-you]")!;
+const dialog = () => document.querySelector<HTMLElement>('[role="dialog"]');
+async function frames() {
+  await act(async () => {
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    );
+  });
+}
+async function click(element: HTMLElement) {
+  await act(async () => element.click());
+  await frames();
+}
+it("jumps to a single older plan in a partial timeline, including on a phone with tabs", async () => {
+  message("A recent message", 15);
+  await act(async () =>
+    root.render(
+      <AldoConversationPage
+        home={home({ plans: [{ ...plan, proposedAt: "2026-10-01T12:00:00Z" }] })}
+        supported
+        error={null}
+        now={Date.parse(at(20))}
+        tabs={<nav>Home · Needs you</nav>}
+        actions={null}
+        welcome={null}
+        issues={[]}
+        chips={[]}
+        onChip={vi.fn()}
+      />,
+    ),
+  );
+  expect(pill().textContent).toBe("One needs you");
+  const card = container.querySelector<HTMLElement>('[data-aldo-plan="plan-1"]')!;
+  before(card, textElement("A recent message"));
+  const scroll = vi.spyOn(card, "scrollIntoView");
+  await click(pill());
+  expect(dialog()).toBeNull();
+  expect(scroll).toHaveBeenLastCalledWith({ behavior: "auto", block: "center", inline: "nearest" });
+  await vi.waitFor(() => expect(card.hasAttribute("data-aldo-attention")).toBe(true));
+  expect(document.activeElement).toBe(card);
+});
+it("lists pending kinds and times, then closes and reveals the selected inline card", async () => {
+  message("An unrelated later message", 15);
+  await act(async () =>
+    root.render(<Page home={home({ plans: [plan], approvals: [approval()] })} />),
+  );
+  expect(pill().textContent).toBe("Two need you");
+  const card = container.querySelector<HTMLElement>('[data-aldo-decision="aldo:draft-1"]')!;
+  const scroll = vi.spyOn(card, "scrollIntoView");
+  await click(pill());
+  expect(dialog()?.textContent).toContain("Prepare the launch");
+  expect(dialog()?.textContent).toContain("Email draft");
+  expect(dialog()?.querySelectorAll("time")).toHaveLength(2);
+  await click(
+    [...dialog()!.querySelectorAll("button")].find((b) =>
+      b.textContent?.includes("Launch update"),
+    )!,
+  );
+  await vi.waitFor(() => expect(dialog()).toBeNull());
+  await frames();
+  expect(scroll).toHaveBeenCalled();
+  await vi.waitFor(() => expect(card.hasAttribute("data-aldo-attention")).toBe(true));
+  expect(document.activeElement).toBe(card);
+});
+it("closes the picker with its X or Escape without moving the conversation", async () => {
+  await act(async () =>
+    root.render(<Page home={home({ approvals: [approval(), { ...approval(), id: "second" }] })} />),
+  );
+  await click(pill());
+  await click(dialog()!.querySelector<HTMLButtonElement>('[aria-label="Close needs you"]')!);
+  await vi.waitFor(() => expect(dialog()).toBeNull());
+  await click(pill());
+  await act(async () =>
+    document.activeElement!.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+    ),
+  );
+  await vi.waitFor(() => expect(dialog()).toBeNull());
+});
+it("updates the open list live and returns to single-item behavior when only one remains", async () => {
+  const a = approval();
+  const b = { ...approval(), id: "second", title: "Calendar review", kind: "event" as const };
+  await act(async () => root.render(<Page home={home({ plans: [plan], approvals: [a, b] })} />));
+  await click(pill());
+  expect(dialog()!.querySelectorAll("li")).toHaveLength(3);
+  await act(async () =>
+    root.render(
+      <Page home={home({ plans: [plan], approvals: [{ ...a, status: "approved" }, b] })} />,
+    ),
+  );
+  expect(pill().textContent).toBe("Two need you");
+  expect(dialog()!.querySelectorAll("li")).toHaveLength(2);
+  expect(dialog()!.textContent).not.toContain("Launch update");
+  await act(async () =>
+    root.render(
+      <Page
+        home={home({
+          plans: [plan],
+          approvals: [
+            { ...a, status: "approved" },
+            { ...b, status: "discarded" },
+          ],
+        })}
+      />,
+    ),
+  );
+  await vi.waitFor(() => expect(dialog()).toBeNull());
+  expect(pill().textContent).toBe("One needs you");
+  await click(pill());
+  expect(dialog()).toBeNull();
+  await act(async () => root.render(<Page home={home()} />));
+  expect(pill()).toBeNull();
+});
+
+it("keeps a missing target in place and gives feedback instead of scrolling to the end", async () => {
+  message("A recent message", 15);
+  await act(async () => root.render(<Page home={home({ plans: [plan] })} />));
+  const card = container.querySelector<HTMLElement>('[data-aldo-plan="plan-1"]')!;
+  card.removeAttribute("data-aldo-plan");
+  vi.mocked(Element.prototype.scrollIntoView).mockClear();
+  const notice = vi.spyOn(toastManager, "add").mockReturnValue("missing");
+  const scroll = vi.spyOn(card, "scrollIntoView");
+  await click(pill());
+  await act(async () => {
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    );
+  });
+  await vi.waitFor(() =>
+    expect(notice).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "That request is no longer in this conversation" }),
+    ),
+  );
+  expect(backend.refresh).toHaveBeenCalled();
+  expect(scroll).not.toHaveBeenCalled();
+});
+
+it("uses smooth navigation when reduced motion is off", async () => {
+  vi.stubGlobal("matchMedia", () => ({
+    matches: false,
+    addEventListener() {},
+    removeEventListener() {},
+  }));
+  message("A recent message", 15);
+  await act(async () => root.render(<Page home={home({ plans: [plan] })} />));
+  const card = container.querySelector<HTMLElement>('[data-aldo-plan="plan-1"]')!;
+  const scroll = vi.spyOn(card, "scrollIntoView");
+  await click(pill());
+  expect(scroll).toHaveBeenLastCalledWith({
+    behavior: "smooth",
+    block: "center",
+    inline: "nearest",
+  });
+});
+
+it.each(["Start it", "Not now"])(
+  "shows a computer request once and removes it after %s while Home catches up",
+  async (label) => {
+    const read = home({
+      conversations: [
+        {
+          ref: "render",
+          thread: { environmentId: "aldo-render", threadId: "render" },
+          title: "Launch video",
+          repos: [],
+          branch: "",
+          state: "waiting",
+          machine: "running",
+          at: at(2),
+          computers: [
+            {
+              computer: "gpu",
+              status: "asked",
+              creditsPerHour: 310,
+              askedAt: at(2),
+              why: "Render the video",
+            },
+          ],
+        },
+      ],
+    });
+    message("Please keep the captions readable", 3);
+    await act(async () => root.render(<Page home={read} />));
+    expect(pill().textContent).toBe("One needs you");
+    const card = container.querySelector<HTMLElement>("[data-aldo-computer-request]")!;
+    before(card, textElement("Please keep the captions readable"));
+    expect(card.textContent).toContain("310 credits an hour");
+    expect(container.querySelector('[data-aldo-decision^="waiting:"]')).toBeNull();
+    await click([...card.querySelectorAll("button")].find((b) => b.textContent === label)!);
+    expect(backend.computer).toHaveBeenCalledWith("aldo-render", label === "Start it", "gpu");
+    expect(pill()).toBeNull();
+    expect(container.querySelector("[data-aldo-computer-request]")).toBeNull();
+  },
+);
