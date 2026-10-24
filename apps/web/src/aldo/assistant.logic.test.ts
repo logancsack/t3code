@@ -521,6 +521,10 @@ describe("followups", () => {
     expect(prompt).toContain("in your own words");
     expect(prompt).not.toContain("By the way");
     expect(prompt).toContain("not instructions");
+    expect(prompt).toContain("Own it in the first person");
+    expect(prompt).toContain("merged is not deployed");
+    expect(prompt).toContain("Other people's actions stay theirs");
+    expect(prompt).not.toContain("work agents are doing");
     expect(prompt.endsWith(news.say)).toBe(true);
   });
   it("asks again often only while something's working", () => {
