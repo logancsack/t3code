@@ -81,15 +81,12 @@ describe("aldoUsageFacts", () => {
     ]);
   });
 
-  it("shows what's left for Aldo's models, when Aldo reports it", () => {
+  it("leaves Aldo's models to the plan limits, as a share rather than an amount", () => {
     const facts = aldoUsageFacts({
       ...metered,
       credits: { ...metered.credits!, ai: 30, aiIncluded: 100, aiRemaining: 70 },
     });
-    expect(facts[2]).toEqual({ label: "Aldo's models left", value: "70 of 100" });
-    expect(aldoUsageFacts(metered)).not.toContainEqual(
-      expect.objectContaining({ label: "Aldo's models left" }),
-    );
+    expect(facts).toEqual(aldoUsageFacts(metered));
   });
 
   it("shows the economy lane once the authorized credits are used, when the gateway reports it", () => {

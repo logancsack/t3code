@@ -121,14 +121,6 @@ export function aldoUsageFacts(usage: AldoWorkspaceUsage): readonly AldoUsageFac
         value: `${usage.plan.name} · ${formatCredits(usage.plan.includedCredits)} included`,
       },
       { label: "Included left", value: formatCredits(usage.credits.includedRemaining) },
-      ...(usage.credits.aiIncluded !== undefined && usage.credits.aiRemaining !== undefined
-        ? [
-            {
-              label: "Aldo's models left",
-              value: `${formatCredits(usage.credits.aiRemaining)} of ${formatCredits(usage.credits.aiIncluded)}`,
-            },
-          ]
-        : []),
       {
         label: isAldoCloud ? "Extra usage left" : "Added capacity left",
         value: formatCredits(usage.credits.overageRemaining),
