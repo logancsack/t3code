@@ -1,5 +1,6 @@
 // Assistant conversation, voice, brief and memory APIs.
 
+import { artifactsField, type AldoArtifact } from "./artifacts.logic";
 import { type AldoHomeTarget } from "./homeApi";
 import { api, AldoApiError } from "./api";
 import { aldoOnboardingFrom, type AldoInterest, type AldoOnboarding } from "./onboarding.logic";
@@ -70,6 +71,8 @@ export interface AldoImageUpload {
 export interface AldoChatTurn {
   readonly sessionId: string;
   readonly reply: string;
+  /** What the reply shows under it (artifacts.logic.ts). */
+  readonly artifacts?: ReadonlyArray<AldoArtifact>;
   readonly calls: ReadonlyArray<{
     readonly callId: string;
     readonly name: string;
@@ -160,6 +163,9 @@ export function showAldoCards(cards: ReadonlyArray<string>): () => void {
   };
 }
 
+/** The cards a written turn says the page shows: the page's, and what any reply shows under it (AldoArtifacts.tsx). */
+const cardsShown = () => [...new Set([...shownCards, "artifacts"])];
+
 export const aldoAssistant = {
   /** A realtime session, for an Aldo from before GPT-Live (startLive returned null). */
   startSession: async (): Promise<AldoVoiceSession> => {
@@ -247,7 +253,7 @@ export const aldoAssistant = {
         ...(viewing ? { viewing } : {}),
         planPicker: true,
         // What the page shows as cards, which Aldo would otherwise say in words (an older Aldo ignores it).
-        ...(shownCards.length > 0 ? { cards: shownCards } : {}),
+        cards: cardsShown(),
       }),
     });
     if (typeof body.reply !== "string" || typeof body.sessionId !== "string") return null;
@@ -255,6 +261,7 @@ export const aldoAssistant = {
       sessionId: body.sessionId,
       reply: body.reply,
       calls: Array.isArray(body.calls) ? body.calls : [],
+      ...artifactsField(body.artifacts),
     };
   },
   /** The request Aldo keeps from before a plan was chosen; null where it doesn't keep them (an older Aldo) or couldn't say. */
@@ -283,6 +290,7 @@ export const aldoAssistant = {
           resume: requestId,
           ...(sessionId ? { sessionId } : {}),
           ...(checkoutSession ? { checkoutSession } : {}),
+          cards: cardsShown(),
         }),
       }).then(
         (body) => ({ ok: true as const, body }),
@@ -337,9 +345,15 @@ export const aldoAssistant = {
   history: async (limit = 50) =>
     (
       await api<{
-        messages: Array<{ role: "user" | "assistant"; text: string; at: string; source?: "brief" }>;
+        messages: Array<{
+          role: "user" | "assistant";
+          text: string;
+          at: string;
+          source?: "brief";
+          artifacts?: unknown;
+        }>;
       }>(`/api/assistant/history?limit=${limit}`)
-    ).messages,
+    ).messages.map(({ artifacts, ...m }) => ({ ...m, ...artifactsField(artifacts) })),
 };
 
 /** One of the brief's things to decide first; `key` is its decision's (decisions.logic.ts). */

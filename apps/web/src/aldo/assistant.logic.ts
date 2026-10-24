@@ -4,6 +4,7 @@
 // user hears of a thread Aldo started that couldn't start at once, and when a
 // call brings up what came back of work it handed over.
 
+import type { AldoArtifact } from "./artifacts.logic";
 import { type AldoFollowupNews } from "./assistantApi";
 import { type AldoStartState, type AldoThreadAttention } from "./directory";
 
@@ -25,6 +26,8 @@ export interface AldoAssistantMessage {
   readonly images?: ReadonlyArray<string>;
   /** What said it, when it wasn't the conversation itself: Aldo's brief for the day (AldoBrief.tsx shows it as one). */
   readonly source?: "brief";
+  /** What an Aldo's message shows under its words (AldoArtifacts.tsx). */
+  readonly artifacts?: ReadonlyArray<AldoArtifact>;
 }
 
 /** Something Aldo did in this conversation, shown under what was said. */

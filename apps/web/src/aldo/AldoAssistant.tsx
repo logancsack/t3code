@@ -22,6 +22,8 @@ import {
 } from "lucide-react";
 import {
   Fragment,
+  lazy,
+  Suspense,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -79,6 +81,7 @@ import { voicePresenceState } from "./presence.logic";
 import { acknowledgeAldo, setAldoReading } from "./presenceReactions";
 import { dedupeLiveCards, interleave, type AldoFeedEvent } from "./feed.logic";
 import { type AldoPlaceable } from "./decisions.logic";
+import { withoutShownLinks, type AldoArtifact } from "./artifacts.logic";
 import { useAldoFirstViewHold } from "./firstView";
 import { AldoPlanPicker } from "./AldoPlanPicker";
 import { CHIP } from "./surface";
@@ -756,25 +759,35 @@ function ConversationEntry({
   }
   if (entry.role === "user") return <UserMessage entry={entry} />;
   if (entry.source === "brief") return <AldoBriefEntry text={entry.text} at={entry.at} />;
-  return <AldoReply text={entry.text} beats={beats === true} />;
+  return <AldoReply text={entry.text} beats={beats === true} artifacts={entry.artifacts} />;
 }
+
+/** What a reply shows under its words: loaded once one does, off the first screen. */
+const AldoArtifacts = lazy(() => import("./AldoArtifacts"));
 
 /**
  * What Aldo said, in bubbles: a paragraph each, a beat apart with the dots
  * between when it's just arrived on the page (`beats`; beats.logic.ts), all at
  * once from history, in the bar and under reduced motion. A result about a
  * thread carries that thread's name and where it stands over its words, a tap
- * into it, rather than its address.
+ * into it, rather than its address. What it shows (`artifacts`) follows its
+ * words, the width of the conversation, without the lines that only link to it.
  */
-function AldoReply(props: { readonly text: string; readonly beats?: boolean }) {
+function AldoReply(props: {
+  readonly text: string;
+  readonly beats?: boolean;
+  readonly artifacts?: ReadonlyArray<AldoArtifact> | undefined;
+}) {
   const arrived = useAldoArrived();
   const still = useMediaQuery("(prefers-reduced-motion: reduce)");
+  const artifacts = props.artifacts ?? [];
   const closing = closingThread(props.text);
   // The thread it's about, as the home screen reads it: none for an older Aldo or a thread since deleted.
   const about = useAldoHomeFeed((s) =>
     closing ? s.home?.conversations.find((c) => sameTarget(c.thread, closing.thread)) : undefined,
   );
-  const said = useMemo(() => splitBeats(closing?.text ?? props.text), [closing?.text, props.text]);
+  const text = withoutShownLinks(closing?.text ?? props.text, artifacts);
+  const said = useMemo(() => splitBeats(text), [text]);
   // Nothing but the thread's link, and nothing known about it: the link alone.
   const linkOnly = said.length === 0 && closing !== null && !about;
   const beats = useMemo(() => (linkOnly ? [""] : said), [linkOnly, said]);
@@ -787,7 +800,7 @@ function AldoReply(props: { readonly text: string; readonly beats?: boolean }) {
     return () => window.clearTimeout(timer);
   }, [shown, beats]);
   const visible = beats.slice(0, shown);
-  return (
+  const words = (
     <div className="flex max-w-[88%] flex-col items-start gap-1 self-start sm:max-w-[80%]">
       {about ? <WorkstreamLabel conversation={about} /> : null}
       {visible.map((beat, index) => {
@@ -831,6 +844,17 @@ function AldoReply(props: { readonly text: string; readonly beats?: boolean }) {
         );
       })}
       {shown < beats.length ? <TypingDots quiet /> : null}
+    </div>
+  );
+  if (artifacts.length === 0) return words;
+  return (
+    <div className="flex w-full min-w-0 flex-col gap-2">
+      {words}
+      {shown >= beats.length ? (
+        <Suspense fallback={null}>
+          <AldoArtifacts artifacts={artifacts} />
+        </Suspense>
+      ) : null}
     </div>
   );
 }

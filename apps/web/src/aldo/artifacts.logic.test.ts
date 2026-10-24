@@ -1,0 +1,190 @@
+import { describe, expect, it } from "vite-plus/test";
+
+import {
+  artifactsField,
+  artifactsOf,
+  chartScale,
+  chartTable,
+  csvOf,
+  downloadHref,
+  fileShape,
+  formatValue,
+  inlineSrc,
+  niceMax,
+  withoutShownLinks,
+  type AldoFileArtifact,
+} from "./artifacts.logic";
+
+const SHARE = "/s/abcdefghijklmnop1234";
+const DEMO = "https://store-1.public.blob.vercel-storage.com/artifacts/thread_1/2048-x7.mp4";
+const file = (url: string, contentType = "image/png"): AldoFileArtifact => ({
+  kind: "file",
+  url,
+  title: "Cat",
+  contentType,
+});
+
+describe("artifactsOf", () => {
+  it("keeps what Aldo sends: a share, a thread's recording, a chart and a table", () => {
+    const chart = {
+      kind: "chart",
+      title: "Hours",
+      type: "bar",
+      labels: ["Mon", "Tue"],
+      series: [{ name: "Machines", values: [1.5, 3, 9] }],
+      unit: "h",
+    };
+    const table = { kind: "table", columns: ["Name", "Cost"], rows: [["Fix", "$4"], ["Docs"]] };
+    expect(artifactsOf([file(SHARE), file(DEMO, "video/mp4"), chart, table])).toEqual([
+      file(SHARE),
+      file(DEMO, "video/mp4"),
+      { ...chart, series: [{ name: "Machines", values: [1.5, 3] }] },
+      {
+        kind: "table",
+        columns: ["Name", "Cost"],
+        rows: [
+          ["Fix", "$4"],
+          ["Docs", ""],
+        ],
+      },
+    ]);
+  });
+
+  it("leaves out what it can't show safely: another site's address, a script, a broken shape", () => {
+    expect(
+      artifactsOf([
+        file("https://tracker.example/pixel.png"),
+        file("javascript:alert(1)"),
+        file("/s/short"),
+        file(`${DEMO}?x=1`),
+        { kind: "chart", type: "pie", labels: ["a"], series: [{ name: "", values: [1] }] },
+        { kind: "chart", type: "line", labels: ["a", "b"], series: [{ name: "", values: [1] }] },
+        { kind: "table", columns: [], rows: [["a"]] },
+        { kind: "html", html: "<script>" },
+        null,
+        "file",
+      ]),
+    ).toEqual([]);
+    expect(artifactsOf("nope")).toEqual([]);
+    expect(artifactsField(undefined)).toEqual({});
+  });
+
+  it("shows six at most", () => {
+    expect(artifactsOf(Array.from({ length: 9 }, () => file(SHARE)))).toHaveLength(6);
+  });
+});
+
+it("loads a share from the page's origin, marked as shown in the chat; a recording from where it is", () => {
+  expect(inlineSrc(file(SHARE))).toBe(`${SHARE}?in=chat`);
+  expect(inlineSrc(file(DEMO))).toBe(DEMO);
+});
+
+it("saves a share as it is, Markdown as the file, and a Blob file as an attachment", () => {
+  const origin = "https://aldo.example";
+  expect(downloadHref(SHARE, origin, "image/png")).toBe(SHARE);
+  expect(downloadHref(SHARE, origin, "text/markdown")).toBe(`${SHARE}?raw=1`);
+  expect(downloadHref(DEMO, origin)).toBe(`${DEMO}?download=1`);
+  expect(downloadHref("https://elsewhere.example/a.png", origin)).toBe(
+    "https://elsewhere.example/a.png",
+  );
+});
+
+it("shows a picture, a recording, a sound and a page in place, and anything else as a tile", () => {
+  expect(fileShape("image/svg+xml")).toBe("image");
+  expect(fileShape("video/mp4")).toBe("video");
+  expect(fileShape("audio/mpeg")).toBe("audio");
+  expect(fileShape("text/html; charset=utf-8")).toBe("page");
+  expect(fileShape("text/markdown")).toBe("page");
+  expect(fileShape("application/pdf")).toBe("tile");
+  expect(fileShape("video/webm")).toBe("tile");
+});
+
+it("drops the lines that only link to what's shown, and keeps every other word", () => {
+  const text = [
+    "Fixed the checkout and recorded it.",
+    "",
+    "Shared link: https://aldo.example/s/abcdefghijklmnop1234",
+    `Recording: ${DEMO}`,
+    "Pull request: https://github.com/acme/shop/pull/7",
+    "Thread: https://aldo.example/aldo-1/t1",
+  ].join("\n");
+  expect(withoutShownLinks(text, [file(SHARE), file(DEMO, "video/mp4")])).toBe(
+    [
+      "Fixed the checkout and recorded it.",
+      "",
+      "Pull request: https://github.com/acme/shop/pull/7",
+      "Thread: https://aldo.example/aldo-1/t1",
+    ].join("\n"),
+  );
+  // Nothing shown, nothing dropped; a link inside a sentence stays.
+  expect(withoutShownLinks(text, [])).toBe(text);
+  const sentence = "See https://aldo.example/s/abcdefghijklmnop1234 for it";
+  expect(withoutShownLinks(sentence, [file(SHARE)])).toBe(sentence);
+});
+
+it("writes figures as Aldo does, on a scale that ends on a round number", () => {
+  expect(formatValue(12, "$")).toBe("$12");
+  expect(formatValue(-3.5, "$")).toBe("-$3.5");
+  expect(formatValue(8, "%")).toBe("8%");
+  expect(formatValue(40, "mm")).toBe("40 mm");
+  expect(formatValue(1234.567)).toBe("1,234.57");
+  expect(niceMax([3, 7.2])).toBe(10);
+  expect(niceMax([0.18])).toBe(0.2);
+  expect(niceMax([230])).toBe(250);
+  expect(niceMax([])).toBe(1);
+  // Below zero, the scale reaches past it: a loss isn't drawn as nothing.
+  expect(chartScale([3, 7.2])).toEqual({ top: 10, bottom: 0 });
+  expect(chartScale([-10, 40])).toEqual({ top: 50, bottom: -10 });
+  expect(chartScale([-10, -100, 0])).toEqual({ top: 0, bottom: -100 });
+  expect(chartScale([0])).toEqual({ top: 1, bottom: 0 });
+});
+
+it("gives a chart's data as a table, and a table as CSV a spreadsheet won't run", () => {
+  expect(
+    chartTable({
+      kind: "chart",
+      title: "Spend",
+      type: "line",
+      labels: ["Mon", "Tue"],
+      series: [{ name: "", values: [4, 6] }],
+      unit: "$",
+    }),
+  ).toEqual({
+    title: "Spend",
+    columns: ["", "Value"],
+    rows: [
+      ["Mon", "$4"],
+      ["Tue", "$6"],
+    ],
+  });
+  // Saved, each figure as it was sent, however small.
+  expect(
+    chartTable(
+      {
+        kind: "chart",
+        title: "Error rate",
+        type: "bar",
+        labels: ["Mon", "Tue"],
+        series: [{ name: "Rate", values: [0.001, -0.0049] }],
+        unit: "%",
+      },
+      true,
+    ),
+  ).toEqual({
+    title: "Error rate",
+    columns: ["", "Rate (%)"],
+    rows: [
+      ["Mon", "0.001"],
+      ["Tue", "-0.0049"],
+    ],
+  });
+  expect(
+    csvOf(
+      ["Name", "Note"],
+      [
+        ["=HYPERLINK(1)", 'say "hi", then'],
+        ["-12.5", "+1 more"],
+      ],
+    ),
+  ).toBe('Name,Note\r\n\'=HYPERLINK(1),"say ""hi"", then"\r\n-12.5,\'+1 more\r\n');
+});
