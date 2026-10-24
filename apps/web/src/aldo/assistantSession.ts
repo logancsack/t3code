@@ -557,6 +557,7 @@ async function showResumed(
         role: "assistant",
         text: outcome.turn.reply,
         at: new Date().toISOString(),
+        ...(outcome.turn.artifacts ? { artifacts: outcome.turn.artifacts } : {}),
       });
       return;
     }
@@ -1741,6 +1742,7 @@ async function answerChat({ entry, words, images, viewing }: WrittenMessage): Pr
       role: "assistant",
       text: turn.reply,
       at: new Date().toISOString(),
+      ...(turn.artifacts ? { artifacts: turn.artifacts } : {}),
     });
     return true;
   } catch (error) {

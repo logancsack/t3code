@@ -4,7 +4,15 @@
 // says when that was, and can be pinned first in the Library. A page runs
 // sandboxed, as its link serves it; "Open in a new tab" leaves Aldo for it.
 
-import { ExternalLinkIcon, FileIcon, GlobeIcon, PinIcon, PinOffIcon, XIcon } from "lucide-react";
+import {
+  DownloadIcon,
+  ExternalLinkIcon,
+  FileIcon,
+  GlobeIcon,
+  PinIcon,
+  PinOffIcon,
+  XIcon,
+} from "lucide-react";
 import { useState, type ReactNode } from "react";
 
 import { canShowPdfInFrame } from "../components/files/filePreviewMode";
@@ -13,6 +21,7 @@ import { Sheet, SheetPopup, SheetTitle } from "../components/ui/sheet";
 import { Spinner } from "../components/ui/spinner";
 import { toastManager } from "../components/ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
+import { downloadHref } from "./artifacts.logic";
 import { aldoShareUpdated } from "./library.logic";
 import {
   aldoShareChanged,
@@ -35,6 +44,8 @@ function IconButton(props: {
   readonly children: ReactNode;
   readonly onClick?: () => void;
   readonly href?: string;
+  /** Saves what `href` goes to, named so, rather than opening it. */
+  readonly download?: string;
   readonly disabled?: boolean;
   readonly pressed?: boolean;
 }) {
@@ -50,7 +61,14 @@ function IconButton(props: {
             {...(props.disabled ? { disabled: true } : {})}
             {...(props.onClick ? { onClick: props.onClick } : {})}
             {...(props.href
-              ? { render: <a href={props.href} target="_blank" rel="noopener noreferrer" /> }
+              ? {
+                  render:
+                    props.download === undefined ? (
+                      <a href={props.href} target="_blank" rel="noopener noreferrer" />
+                    ) : (
+                      <a href={props.href} download={props.download} />
+                    ),
+                }
               : {})}
           />
         }
@@ -121,6 +139,14 @@ function AldoShareViewer(props: { readonly open: AldoOpenShare }) {
                 {listed.pinned ? <PinOffIcon /> : <PinIcon />}
               </IconButton>
             ) : null}
+            <IconButton
+              label="Download"
+              href={downloadHref(open.url, window.location.origin, type)}
+              // Named as /s/ names it, with its type's extension.
+              download=""
+            >
+              <DownloadIcon />
+            </IconButton>
             <IconButton label="Open in a new tab" href={open.url}>
               <ExternalLinkIcon />
             </IconButton>
