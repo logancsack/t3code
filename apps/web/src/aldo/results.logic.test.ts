@@ -287,6 +287,21 @@ describe("aldoShareOf", () => {
     ).toEqual({ path: "/a.pdf", title: "A", url: "https://aldo.computer/s/a1" });
   });
 
+  it("reads a page shared again, as aldod says it now and as it said it before", () => {
+    expect(
+      step(
+        { path: "/q4.html" },
+        'Shared "Q4": https://aldo.computer/s/q4 (only the user, signed in, can open it), updated in place: the same link shows the new version.',
+      ),
+    ).toEqual({ path: "/q4.html", title: "Q4", url: "https://aldo.computer/s/q4", public: false });
+    expect(
+      step(
+        { path: "/q4.html" },
+        'Updated "Q4" in place: https://aldo.computer/s/q4 (only the user, signed in, can open it). The same link shows the new version.',
+      ),
+    ).toEqual({ path: "/q4.html", title: "Q4", url: "https://aldo.computer/s/q4", public: false });
+  });
+
   it("goes by what the step asked for without a reply", () => {
     expect(step({ path: "/a.pdf" }, null)).toEqual({ path: "/a.pdf", title: null, url: null });
     expect(step({ path: "/a.pdf", public: false }, null)?.public).toBe(false);

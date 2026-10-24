@@ -21,7 +21,7 @@ import {
   LockIcon,
   PinIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "../components/ui/button";
 import { ScrollArea } from "../components/ui/scroll-area";
@@ -35,7 +35,7 @@ import { AldoMadeThumb, aldoAskToShare } from "./AldoMadeCards";
 import { AldoApiError } from "./api";
 import { fetchAldoShares, pinAldoShare, stopAldoShare } from "./workspaceApi";
 import { aldoShareChanged, onAldoShareChanged, openAldoShare } from "./shareViewer";
-import { getAldoEnvironments, subscribeAldoEnvironments } from "./directory";
+import { useAldoThreadOf } from "./threadOf";
 import {
   aldoLibraryGroups,
   aldoShareAudience,
@@ -495,39 +495,10 @@ export function AldoLibraryPanel(props: {
   );
 }
 
-/** A thread's place in the directory, by its computer, to link to it. */
-function useThreadOf(): (environmentId: string | undefined) => {
-  readonly label: string;
-  readonly threadRef: ScopedThreadRef;
-} | null {
-  const environments = useSyncExternalStore(
-    subscribeAldoEnvironments,
-    getAldoEnvironments,
-    () => null,
-  );
-  return useCallback(
-    (environmentId) => {
-      const environment = environmentId
-        ? environments?.find((entry) => entry.environmentId === environmentId)
-        : undefined;
-      return environment
-        ? {
-            label: environment.label,
-            threadRef: {
-              environmentId: environment.environmentId as EnvironmentId,
-              threadId: environment.threadId as ThreadId,
-            },
-          }
-        : null;
-    },
-    [environments],
-  );
-}
-
 /** Everything the user's agents shared, by when, and where from where Aldo says. */
 export function AldoSharedFiles() {
   const { shares, error, removed } = useAldoShares("");
-  const threadOf = useThreadOf();
+  const threadOf = useAldoThreadOf();
   const [project, setProject] = useState<string | null>(null);
   const projects = useMemo(() => {
     const byKey = new Map<string, string>();

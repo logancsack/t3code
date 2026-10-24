@@ -3,22 +3,18 @@
 // (a video that plays, or a page with its preview), then a gallery of images
 // and clips (hover plays a clip; a tap opens the full-screen viewer), live
 // links as cards with their address, and documents as rows that open a reader
-// with Copy on each part. Each says who can open it, and Share… says how to
-// change that: Aldo can't change a share's audience, so it asks the agent for
-// a link anyone can open, and the Library stops one. What the answer already
-// shows in place isn't repeated. The turn's full list of changes, the one
-// code threads show, stays behind "All changes".
+// with Copy on each part. Each says who can open it, and Share… changes that
+// (an older Aldo, which can't, asks the agent for a link anyone can open);
+// the Library stops one. What the answer already shows in place isn't
+// repeated. The turn's full list of changes, the one code threads show, stays
+// behind "All changes".
 
 import { resolveMediaSource } from "@t3tools/client-runtime/media-source";
 import type { AssetResource, ScopedThreadRef } from "@t3tools/contracts";
 import {
   ChevronRightIcon,
   ExternalLinkIcon,
-  FileArchiveIcon,
-  FileAudioIcon,
   FileIcon,
-  FileSpreadsheetIcon,
-  FileTextIcon,
   FileVideoIcon,
   GlobeIcon,
   ImageIcon,
@@ -26,7 +22,6 @@ import {
   LinkIcon,
   LockIcon,
   PlayIcon,
-  PresentationIcon,
   UnlinkIcon,
   type LucideIcon,
 } from "lucide-react";
@@ -42,18 +37,21 @@ import { MediaVideoPlayer } from "../components/media/MediaVideoPlayer";
 import { Button } from "../components/ui/button";
 import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../components/ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
-import { readComposerThreadPrompt, useComposerDraftStore } from "../composerDraftStore";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { cn } from "../lib/utils";
 import { useRightPanelStore } from "../rightPanelStore";
 import { AldoChatVideo } from "./AldoChatVideo";
 import { AldoDownloadEverything } from "./AldoDownloadEverything";
+import { AldoShareAccess } from "./AldoShareAccess";
+import { aldoAskAgent } from "./askAgent";
 import { aldoOffersZip, aldoZipFiles } from "./download.logic";
+import { ALDO_KIND_ICON } from "./kindIcon";
 import {
   aldoShareAudience,
   aldoShareIdOf,
   aldoShareUpdated,
   aldoShareViewable,
+  type AldoShareView,
 } from "./library.logic";
 import {
   ALDO_MADE_KIND_LABEL,
@@ -73,7 +71,7 @@ import {
 } from "./results.logic";
 import { useAldoShareList } from "./shareList";
 import { openAldoShare } from "./shareViewer";
-import { promptWith } from "./summon.logic";
+import { aldoShareAudienceChangeable } from "./workspaceApi";
 
 // The reader brings the chat's Markdown (~250 kB, gzipped) with it, which the
 // home screen's Library would otherwise download before a document is opened.
@@ -83,18 +81,6 @@ const AldoDocumentReader = lazy(() =>
 
 /** Shown in each section before "N more". */
 const SHOWN = { gallery: 8, links: 6, documents: 6 } as const;
-
-const KIND_ICON: Record<AldoMadeKind, { icon: LucideIcon; tint: string }> = {
-  sheet: { icon: FileSpreadsheetIcon, tint: "bg-emerald-500/15 text-emerald-500" },
-  document: { icon: FileTextIcon, tint: "bg-sky-500/15 text-sky-500" },
-  deck: { icon: PresentationIcon, tint: "bg-orange-500/15 text-orange-500" },
-  pdf: { icon: FileTextIcon, tint: "bg-rose-500/15 text-rose-500" },
-  image: { icon: ImageIcon, tint: "bg-violet-500/15 text-violet-500" },
-  page: { icon: GlobeIcon, tint: "bg-cyan-500/15 text-cyan-500" },
-  video: { icon: FileVideoIcon, tint: "bg-fuchsia-500/15 text-fuchsia-500" },
-  audio: { icon: FileAudioIcon, tint: "bg-amber-500/15 text-amber-500" },
-  archive: { icon: FileArchiveIcon, tint: "bg-zinc-500/15 text-zinc-500" },
-};
 
 function joinPath(root: string, path: string): string {
   return `${root.replace(/\/+$/, "")}/${path}`;
@@ -133,7 +119,7 @@ export function AldoMadeThumb(props: {
   readonly threadRef: ScopedThreadRef | null;
   readonly workspaceRoot: string | undefined;
 }) {
-  const { icon: Icon, tint } = (props.kind && KIND_ICON[props.kind]) || {
+  const { icon: Icon, tint } = (props.kind && ALDO_KIND_ICON[props.kind]) || {
     icon: FileIcon,
     tint: "bg-muted text-muted-foreground",
   };
@@ -150,17 +136,6 @@ export function AldoMadeThumb(props: {
     />
   ) : (
     iconBox
-  );
-}
-
-/** Puts a sentence for the agent in the composer, to send. */
-function aldoAskAgent(threadRef: ScopedThreadRef, sentence: string) {
-  useComposerDraftStore
-    .getState()
-    .setPrompt(threadRef, promptWith(readComposerThreadPrompt(threadRef), sentence));
-  window.setTimeout(
-    () => document.querySelector<HTMLElement>('[data-testid="composer-editor"]')?.focus(),
-    50,
   );
 }
 
@@ -213,9 +188,9 @@ function AudienceChip(props: { readonly audience: AldoAudience; readonly detail:
 }
 
 /**
- * Who can open it, and how to change that: copy or open its link, ask the
- * agent for a link anyone can open, or stop a link in the Library (Aldo can't
- * change who can open a link it made).
+ * Who can open it, and how to change that: for one share, choose (an older
+ * Aldo, which can't change it, asks the agent for a link anyone can open);
+ * copy or open its link, or stop a link in the Library.
  */
 function ShareMenu(props: {
   readonly threadRef: ScopedThreadRef | null;
@@ -225,6 +200,8 @@ function ShareMenu(props: {
   readonly detail: string;
   /** Its link, to copy and open: one thing's, while it works. */
   readonly url: string | null;
+  /** Its share as Aldo lists it: one thing's. */
+  readonly share?: AldoShareView | undefined;
   /** Whether a link was made for it (or one of them), so the Library has it. */
   readonly shared: boolean;
   /** Several things, as a gallery's. */
@@ -233,8 +210,9 @@ function ShareMenu(props: {
   const [open, setOpen] = useState(false);
   const { copyToClipboard, isCopied } = useCopyToClipboard();
   const { threadRef, audience, url } = props;
-  const askable = threadRef !== null && audience !== "public";
-  if (!url && !askable) return null;
+  const share = props.share && aldoShareAudienceChangeable() ? props.share : null;
+  const askable = !share && threadRef !== null && audience !== "public";
+  if (!url && !askable && !share) return null;
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
@@ -250,41 +228,56 @@ function ShareMenu(props: {
       </PopoverTrigger>
       <PopoverPopup width="md" align="start">
         <div className="flex flex-col gap-3">
-          <div className="flex flex-col gap-1">
-            <PopoverTitle>{props.plural ? "Who can open them" : "Who can open it"}</PopoverTitle>
-            <p className="text-muted-foreground text-sm">{props.detail}</p>
-          </div>
-          <div className="flex flex-wrap gap-1.5">
-            {url ? (
-              <>
-                <Button size="xs" variant="outline" onClick={() => copyToClipboard(url, undefined)}>
-                  <LinkIcon />
-                  {isCopied ? "Copied" : "Copy link"}
-                </Button>
-                <Button
-                  size="xs"
-                  variant="ghost"
-                  render={<a href={url} target="_blank" rel="noopener noreferrer" />}
-                >
-                  <ExternalLinkIcon />
-                  Open
-                </Button>
-              </>
-            ) : null}
-            {askable ? (
-              <Button
-                size="xs"
-                variant={url ? "ghost" : "outline"}
-                onClick={() => {
-                  setOpen(false);
-                  aldoAskAgent(threadRef, `Share ${props.name} with a link anyone can open.`);
-                }}
-              >
-                <GlobeIcon />
-                Share with a link
-              </Button>
-            ) : null}
-          </div>
+          {share ? (
+            <>
+              <PopoverTitle>Who can open it</PopoverTitle>
+              <AldoShareAccess share={share} />
+            </>
+          ) : (
+            <>
+              <div className="flex flex-col gap-1">
+                <PopoverTitle>
+                  {props.plural ? "Who can open them" : "Who can open it"}
+                </PopoverTitle>
+                <p className="text-muted-foreground text-sm">{props.detail}</p>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {url ? (
+                  <>
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      onClick={() => copyToClipboard(url, undefined)}
+                    >
+                      <LinkIcon />
+                      {isCopied ? "Copied" : "Copy link"}
+                    </Button>
+                    <Button
+                      size="xs"
+                      variant="ghost"
+                      render={<a href={url} target="_blank" rel="noopener noreferrer" />}
+                    >
+                      <ExternalLinkIcon />
+                      Open
+                    </Button>
+                  </>
+                ) : null}
+                {askable ? (
+                  <Button
+                    size="xs"
+                    variant={url ? "ghost" : "outline"}
+                    onClick={() => {
+                      setOpen(false);
+                      aldoAskAgent(threadRef, `Share ${props.name} with a link anyone can open.`);
+                    }}
+                  >
+                    <GlobeIcon />
+                    Share with a link
+                  </Button>
+                ) : null}
+              </div>
+            </>
+          )}
           {askable ? (
             <p className="text-muted-foreground text-xs">
               The ask goes in the message box, for you to send.
@@ -326,6 +319,7 @@ function ItemAudience(props: {
         audience={item.audience}
         detail={detail}
         url={item.url}
+        share={item.share}
         shared={item.url !== null}
       />
     </span>

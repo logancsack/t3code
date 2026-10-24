@@ -49,6 +49,7 @@ import { ALDO_TALK_LABEL } from "./summon.logic";
 import {
   ACTION_LABELS,
   closingThread,
+  linkedShareIds,
   linkRuns,
   liveCardIndexes,
   withoutImageNotes,
@@ -79,6 +80,9 @@ import { dedupeLiveCards, interleave, type AldoFeedEvent } from "./feed.logic";
 import { type AldoPlaceable } from "./decisions.logic";
 import { useAldoFirstViewHold } from "./firstView";
 import { AldoPlanPicker } from "./AldoPlanPicker";
+import { AldoShareCard, openAldoShareInAldo } from "./AldoShareCard";
+import { aldoShareIdOf } from "./library.logic";
+import { useAldoShareList } from "./shareList";
 import { CHIP } from "./surface";
 import "./presence.css";
 
@@ -811,7 +815,8 @@ function ConversationEntry({
  * between when it's just arrived on the page (`beats`; beats.logic.ts), all at
  * once from history, in the bar and under reduced motion. A result about a
  * thread carries that thread's name and where it stands over its words, a tap
- * into it, rather than its address.
+ * into it, rather than its address. A page or file of the user's it links to
+ * opens in Aldo's viewer, with a card under the reply (AldoShareCard.tsx).
  */
 function AldoReply(props: { readonly text: string; readonly beats?: boolean }) {
   const arrived = useAldoArrived();
@@ -822,6 +827,14 @@ function AldoReply(props: { readonly text: string; readonly beats?: boolean }) {
     closing ? s.home?.conversations.find((c) => sameTarget(c.thread, closing.thread)) : undefined,
   );
   const said = useMemo(() => splitBeats(closing?.text ?? props.text), [closing?.text, props.text]);
+  // The user's own shares it links to: they open in Aldo, with a card each under the reply.
+  const shareIds = useMemo(() => linkedShareIds(props.text), [props.text]);
+  const listed = useAldoShareList(shareIds);
+  const shareOf = (id: string | null) => {
+    const share = id ? listed(id) : null;
+    return share && share !== "gone" ? share : null;
+  };
+  const shares = shareIds.flatMap((id) => shareOf(id) ?? []);
   // Nothing but the thread's link, and nothing known about it: the link alone.
   const linkOnly = said.length === 0 && closing !== null && !about;
   const beats = useMemo(() => (linkOnly ? [""] : said), [linkOnly, said]);
@@ -857,6 +870,14 @@ function AldoReply(props: { readonly text: string; readonly beats?: boolean }) {
                   target="_blank"
                   rel="noopener noreferrer"
                   className="underline decoration-foreground/25 underline-offset-4 transition-colors hover:decoration-foreground"
+                  onClick={(event) => {
+                    // A new tab or window when asked for one (a modifier, the middle button).
+                    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey) {
+                      return;
+                    }
+                    const share = shareOf(aldoShareIdOf(run.href!));
+                    if (share && openAldoShareInAldo(share)) event.preventDefault();
+                  }}
                 >
                   {run.text}
                 </a>
@@ -877,7 +898,11 @@ function AldoReply(props: { readonly text: string; readonly beats?: boolean }) {
           </p>
         );
       })}
-      {shown < beats.length ? <TypingDots quiet /> : null}
+      {shown < beats.length ? (
+        <TypingDots quiet />
+      ) : (
+        shares.map((share) => <AldoShareCard key={share.id} share={share} />)
+      )}
     </div>
   );
 }

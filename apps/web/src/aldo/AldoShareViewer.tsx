@@ -1,18 +1,34 @@
 // A shared page or file opened in Aldo itself (shareViewer.ts): beside the
 // conversation on a wide screen, the whole screen on a phone. It's the share's
 // own link (/s/<id>), so a page that stays current shows its latest version,
-// says when that was, and can be pinned first in the Library. A page runs
-// sandboxed, as its link serves it; "Open in a new tab" leaves Aldo for it.
+// says when that was, and can be pinned first in the Library. Share says who
+// can open it and changes that, with its link to copy or open in the browser
+// (an older Aldo, which can't change it, has "Open in a new tab" instead). Ask
+// for a change goes to the thread that made it, with a message about it
+// started. A page runs sandboxed, as its link serves it.
 
-import { ExternalLinkIcon, FileIcon, GlobeIcon, PinIcon, PinOffIcon, XIcon } from "lucide-react";
+import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { useNavigate } from "@tanstack/react-router";
+import {
+  ExternalLinkIcon,
+  FileIcon,
+  GlobeIcon,
+  MessageSquareTextIcon,
+  PinIcon,
+  PinOffIcon,
+  XIcon,
+} from "lucide-react";
 import { useState, type ReactNode } from "react";
 
 import { canShowPdfInFrame } from "../components/files/filePreviewMode";
 import { Button } from "../components/ui/button";
+import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../components/ui/popover";
 import { Sheet, SheetPopup, SheetTitle } from "../components/ui/sheet";
 import { Spinner } from "../components/ui/spinner";
 import { toastManager } from "../components/ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
+import { AldoShareAccess } from "./AldoShareAccess";
+import { aldoAskAgent } from "./askAgent";
 import { aldoShareUpdated } from "./library.logic";
 import {
   aldoShareChanged,
@@ -20,7 +36,8 @@ import {
   useAldoOpenShare,
   type AldoOpenShare,
 } from "./shareViewer";
-import { pinAldoShare } from "./workspaceApi";
+import { useAldoThreadOf } from "./threadOf";
+import { aldoShareAudienceChangeable, pinAldoShare } from "./workspaceApi";
 
 const messageOf = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause));
 
@@ -90,6 +107,23 @@ function AldoShareViewer(props: { readonly open: AldoOpenShare }) {
       )
       .finally(() => setPinning(false));
   };
+  const navigate = useNavigate();
+  const thread = useAldoThreadOf()(listed?.environmentId);
+  const askForChange = () => {
+    if (!thread) return;
+    const { environmentId, threadId } = thread.threadRef;
+    closeAldoShare();
+    void navigate({
+      to: "/$environmentId/$threadId",
+      params: { environmentId: environmentId as EnvironmentId, threadId: threadId as ThreadId },
+    });
+    aldoAskAgent(
+      thread.threadRef,
+      type === "text/html" || type === "text/markdown"
+        ? `About the page "${open.title}": `
+        : `About "${open.title}": `,
+    );
+  };
   const Icon = page ? GlobeIcon : FileIcon;
   return (
     <Sheet
@@ -121,9 +155,23 @@ function AldoShareViewer(props: { readonly open: AldoOpenShare }) {
                 {listed.pinned ? <PinOffIcon /> : <PinIcon />}
               </IconButton>
             ) : null}
-            <IconButton label="Open in a new tab" href={open.url}>
-              <ExternalLinkIcon />
-            </IconButton>
+            {open.id && listed && aldoShareAudienceChangeable() ? (
+              <Popover>
+                <PopoverTrigger render={<Button size="sm" variant="outline" />}>
+                  Share
+                </PopoverTrigger>
+                <PopoverPopup width="md" align="end">
+                  <div className="flex flex-col gap-3">
+                    <PopoverTitle>Who can open it</PopoverTitle>
+                    <AldoShareAccess share={listed} />
+                  </div>
+                </PopoverPopup>
+              </Popover>
+            ) : (
+              <IconButton label="Open in a new tab" href={open.url}>
+                <ExternalLinkIcon />
+              </IconButton>
+            )}
             <IconButton label="Close" onClick={closeAldoShare}>
               <XIcon />
             </IconButton>
@@ -186,6 +234,15 @@ function AldoShareViewer(props: { readonly open: AldoOpenShare }) {
             />
           )}
         </div>
+        {thread ? (
+          <div className="flex min-w-0 items-center gap-3 border-border/60 border-t px-4 py-2">
+            <Button size="sm" variant="outline" className="shrink-0" onClick={askForChange}>
+              <MessageSquareTextIcon />
+              Ask for a change
+            </Button>
+            <span className="min-w-0 truncate text-muted-foreground text-xs">{thread.label}</span>
+          </div>
+        ) : null}
       </SheetPopup>
     </Sheet>
   );

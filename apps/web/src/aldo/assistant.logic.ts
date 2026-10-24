@@ -6,6 +6,7 @@
 
 import { type AldoFollowupNews } from "./assistantApi";
 import { type AldoStartState, type AldoThreadAttention } from "./directory";
+import { aldoShareIdOf } from "./library.logic";
 
 /** Where the conversation is, as the orb shows it. */
 export type AldoAssistantPhase =
@@ -147,6 +148,12 @@ export function linkRuns(
   }
   if (last < text.length) runs.push({ text: text.slice(last), at: last });
   return runs;
+}
+
+/** The shares a message links to (`…/s/<id>`), by id, each once, in order. */
+export function linkedShareIds(text: string): string[] {
+  const ids = linkRuns(text).flatMap((run) => (run.href ? (aldoShareIdOf(run.href) ?? []) : []));
+  return [...new Set(ids)];
 }
 
 /**
