@@ -133,9 +133,11 @@ function SidebarControl() {
   return (
     // The right-side layout controls carry mr-px (border compensation inside
     // the panel), so the trigger mirrors it: both clusters sit one extra pixel
-    // off their edge and the titlebar reads symmetric.
+    // off their edge and the titlebar reads symmetric. It sits under the sheet
+    // layer (z-45 < --z-sheet) so a sheet covers it rather than drawing its own
+    // top-left content beneath it; the sidebar's sheet carries its own trigger.
     <div
-      className="pointer-events-none fixed left-[var(--workspace-controls-left)] top-[var(--workspace-controls-top)] z-50 ml-px flex h-[var(--workspace-topbar-height)] items-center"
+      className="pointer-events-none fixed left-[var(--workspace-controls-left)] top-[var(--workspace-controls-top)] z-45 ml-px flex h-[var(--workspace-topbar-height)] items-center"
       data-sidebar-control=""
     >
       <Tooltip>
