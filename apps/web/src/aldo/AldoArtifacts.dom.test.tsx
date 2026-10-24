@@ -103,26 +103,23 @@ it("shows a picture from the page's origin and opens it whole on a tap; one that
   expect(container.textContent).toContain("Picture · Unavailable right now");
 });
 
-it("says so, in the same tile, for a recording or a sound that won't load, without scrolling sideways", async () => {
+it("says so, in a tile with a retry, for a sound that won't load, without scrolling sideways", async () => {
   const sound: AldoArtifact = {
     kind: "file",
     url: "/s/soundsoundsound9999",
     title: "Voice note",
     contentType: "audio/mpeg",
   };
-  await act(async () => root.render(<AldoArtifacts artifacts={[ARTIFACTS[1]!, sound]} />));
-  await act(async () => container.querySelector("video")!.dispatchEvent(new Event("error")));
+  await act(async () => root.render(<AldoArtifacts artifacts={[sound]} />));
   await act(async () => container.querySelector("audio")!.dispatchEvent(new Event("error")));
-  expect(container.querySelector("video")).toBeNull();
   expect(container.querySelector("audio")).toBeNull();
-  const notes = [...container.querySelectorAll('[role="status"]')];
-  expect(notes.map((n) => n.textContent)).toEqual([
-    "Checkout fixVideo · Unavailable right now",
-    "Voice noteAudio · Unavailable right now",
-  ]);
-  for (const note of notes) expect(note.classList).toContain("min-w-0");
+  const note = container.querySelector('[role="status"]')!;
+  expect(note.textContent).toBe("Voice noteAudio · Unavailable right nowRetry");
+  expect(note.classList).toContain("min-w-0");
   // A file doesn't wait on its thread's machine, so it doesn't say that.
   expect(container.textContent).not.toMatch(/machine/i);
+  await act(async () => note.querySelector("button")!.click());
+  expect(container.querySelector("audio")).not.toBeNull();
 });
 
 it("plays a recording in place, with a way to save it", async () => {
