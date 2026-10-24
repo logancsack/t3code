@@ -182,6 +182,10 @@ interface AldoAssistantState {
   readonly unsentImages: ReadonlyArray<AldoImageUpload> | null;
   /** A written reply is on its way (typed without a call on). */
   readonly replying: boolean;
+  /** Typed follow-ups, in send order, waiting for the current written turn. */
+  readonly queuedMessages: ReadonlyArray<AldoConversationEntry>;
+  /** A failed send holds later messages behind it until the user retries. */
+  readonly failedMessage: { readonly entry: AldoConversationEntry; readonly error: string } | null;
   /** When the call connected (ms), for how long it's been on; null without one. */
   readonly connectedAt: number | null;
   /** Where the call's own entries start in `entries`: what was said and done on it. */
@@ -204,6 +208,8 @@ export const useAldoAssistant = create<AldoAssistantState>(() => ({
   unsent: null,
   unsentImages: null,
   replying: false,
+  queuedMessages: [],
+  failedMessage: null,
   connectedAt: null,
   callFrom: 0,
   voiceOff: false,
@@ -519,6 +525,7 @@ async function sendKept(
     }
   } finally {
     set({ replying: false });
+    void drainChat();
   }
 }
 
@@ -1617,7 +1624,7 @@ export function sendText(text: string, images: ReadonlyArray<AldoImageUpload> = 
   if (!words) return;
   if (aldoAssistantLive()) {
     if (channel?.readyState !== "open" || (live && !liveStarted)) {
-      queuedText = words;
+      queuedText = [queuedText, words].filter(Boolean).join("\n\n");
       return;
     }
     heard = rememberHeard(heard, words);
@@ -1646,13 +1653,17 @@ export function seedAldoComposer(text: string): void {
   set({ unsent: text });
 }
 
-/** A written turn: the words (and images) go to Aldo, and its reply comes back with what it did. */
-async function chatText(words: string, images: ReadonlyArray<AldoImageUpload> = []): Promise<void> {
-  if (get().replying) {
-    // One turn at a time; the words come back to the composer.
-    set({ unsent: words, ...(images.length > 0 ? { unsentImages: images } : {}) });
-    return;
-  }
+type WrittenMessage = {
+  entry: Extract<AldoConversationEntry, { kind: "message" }>;
+  words: string;
+  images: ReadonlyArray<AldoImageUpload>;
+  viewing: { environmentId: string; threadId: string } | null;
+};
+const chatQueue: WrittenMessage[] = [];
+let sendingChat: WrittenMessage | null = null;
+
+/** Every tap shows its message now; one written request at a time keeps the session and replies in order. */
+function chatText(words: string, images: ReadonlyArray<AldoImageUpload> = []): void {
   heard = rememberHeard(heard, words);
   const entry: AldoConversationEntry = {
     kind: "message",
@@ -1663,12 +1674,51 @@ async function chatText(words: string, images: ReadonlyArray<AldoImageUpload> = 
   };
   addEntry(entry);
   if (images.length > 0) sentImages.set(entry, images);
-  set({ replying: true, error: null });
+  const onScreen = aldoOnScreen();
+  const viewing = onScreen
+    ? { environmentId: onScreen.environmentId, threadId: onScreen.threadId }
+    : null;
+  chatQueue.push({ entry, words, images, viewing });
+  set({
+    queuedMessages: chatQueue
+      .filter((message) => message !== sendingChat)
+      .map((message) => message.entry),
+  });
+  void drainChat();
+}
+
+/** Retry the failed head; later sends never overtake it. */
+export function retryAldoMessage(): void {
+  if (!get().failedMessage) return;
+  set({ failedMessage: null });
+  void drainChat();
+}
+
+async function drainChat(): Promise<void> {
+  if (get().replying || get().failedMessage) return;
+  const message = chatQueue[0];
+  if (!message) return;
+  sendingChat = message;
+  set({ replying: true, error: null, queuedMessages: chatQueue.slice(1).map((m) => m.entry) });
+  let answered = false;
   try {
-    const onScreen = aldoOnScreen();
-    const viewing = onScreen
-      ? { environmentId: onScreen.environmentId, threadId: onScreen.threadId }
-      : null;
+    answered = await answerChat(message);
+    chatQueue.shift();
+  } catch {
+    // answerChat keeps the failed message on screen, ahead of the rest.
+  } finally {
+    sendingChat = null;
+    set({ replying: false, queuedMessages: chatQueue.map((m) => m.entry) });
+    if (!get().failedMessage) {
+      if (chatQueue.length > 0) void drainChat();
+      else if (answered && get().planPick) void sendKeptOnceFree().catch(() => {});
+    }
+  }
+}
+
+/** The request starts only after the previous reply set chatSessionId, so it sees the full conversation. */
+async function answerChat({ entry, words, images, viewing }: WrittenMessage): Promise<boolean> {
+  try {
     const turn = await aldoAssistant
       .chat(chatSessionId, words, images, viewing)
       .catch((error: unknown) => {
@@ -1679,9 +1729,9 @@ async function chatText(words: string, images: ReadonlyArray<AldoImageUpload> = 
       // An older Aldo: the words go into a call instead, which shows them itself.
       chatSupported = false;
       set({ entries: get().entries.filter((e) => e !== entry) });
-      queuedText = words;
-      void connectAldo({ mic: false });
-      return;
+      queuedText = [queuedText, words].filter(Boolean).join("\n\n");
+      if (!aldoAssistantLive()) void connectAldo({ mic: false });
+      return false;
     }
     chatSupported = true;
     chatSessionId = turn.sessionId;
@@ -1692,7 +1742,7 @@ async function chatText(words: string, images: ReadonlyArray<AldoImageUpload> = 
       text: turn.reply,
       at: new Date().toISOString(),
     });
-    if (get().planPick) queueMicrotask(() => void sendKeptOnceFree().catch(() => {}));
+    return true;
   } catch (error) {
     const needs =
       error instanceof AldoApiError && error.status === 402 ? needsPlanOf(error.body) : null;
@@ -1725,19 +1775,14 @@ async function chatText(words: string, images: ReadonlyArray<AldoImageUpload> = 
             .map((e) => (e === entry ? kept : e)),
           planPick: pick(needs.requestId, kept, needs, "choose"),
         });
-        return;
+        return false;
       }
       set({ planPick: pick(needs.requestId, entry, needs, "choose") });
-      return;
+      return false;
     }
-    set({
-      entries: get().entries.filter((e) => e !== entry),
-      error: messageOf(error),
-      unsent: words,
-      ...(images.length > 0 ? { unsentImages: images } : {}),
-    });
-  } finally {
-    set({ replying: false });
+    // Keep every message in place. Pausing here preserves order even when more arrive during a failure.
+    set({ failedMessage: { entry, error: messageOf(error) } });
+    throw error;
   }
 }
 

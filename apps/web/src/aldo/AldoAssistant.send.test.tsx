@@ -1,0 +1,121 @@
+// @vitest-environment jsdom
+import { act } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
+
+const backend = vi.hoisted(() => ({ chat: vi.fn() }));
+vi.mock("./assistantApi", () => ({
+  aldoAssistant: { chat: backend.chat },
+  aldoAssistantInfo: async () => ({ available: true, images: null }),
+}));
+vi.mock("./directory", () => ({
+  getAldoEnvironments: () => [],
+  requestAldoDirectoryRefresh: vi.fn(),
+  subscribeAldoEnvironments: () => () => {},
+}));
+vi.mock("./screen", () => ({ aldoOnScreen: () => null, subscribeAldoOnScreen: () => () => {} }));
+vi.mock("../components/ui/toast", () => ({ toastManager: { add: vi.fn() } }));
+vi.mock("./AldoBrief", () => ({ AldoBriefEntry: () => null }));
+vi.mock("./AldoLiveCard", () => ({ AldoThreadCard: () => null }));
+vi.mock("./AldoPresence", () => ({ AldoAvatar: () => null }));
+vi.mock("./AldoPlanPicker", () => ({ AldoPlanPicker: () => null }));
+vi.mock("./homeFeed", () => ({
+  noteAldoAnswered: vi.fn(),
+  useAldoHomeFeed: (select: (state: { home: null }) => unknown) => select({ home: null }),
+}));
+vi.mock("./face", () => ({ blinkAldo: vi.fn(), setAldoReading: vi.fn() }));
+vi.mock("./firstView", () => ({ useAldoFirstViewHold: vi.fn() }));
+vi.mock("./arrive", () => ({ useAldoArrive: () => ({}), useAldoArrived: () => true }));
+
+import { AldoComposer, AldoConversation } from "./AldoAssistant";
+import { useAldoAssistant } from "./assistantSession";
+
+let root: Root;
+let container: HTMLDivElement;
+beforeEach(() => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      disconnect() {}
+    },
+  );
+  vi.stubGlobal("matchMedia", () => ({
+    matches: false,
+    addEventListener() {},
+    removeEventListener() {},
+  }));
+  Element.prototype.scrollIntoView = vi.fn();
+  useAldoAssistant.setState({ entries: [], historyLoaded: true });
+  container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+});
+afterEach(async () => {
+  await act(async () => root.unmount());
+  container.remove();
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
+
+async function type(text: string) {
+  await act(async () => {
+    const input = container.querySelector("textarea")!;
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(input, text);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+async function send(text: string) {
+  await type(text);
+  const button = container.querySelector<HTMLButtonElement>('button[aria-label="Send"]')!;
+  expect(button.disabled).toBe(false);
+  await act(async () => button.click());
+  expect(container.querySelector("textarea")!.value).toBe("");
+}
+
+it("keeps Send enabled for three taps, shows queued messages, and accepts another send during reply beats", async () => {
+  type Turn = { sessionId: string; reply: string; calls: [] };
+  const completions: ((turn: Turn) => void)[] = [];
+  backend.chat.mockImplementation(() => new Promise<Turn>((resolve) => completions.push(resolve)));
+  await act(async () =>
+    root.render(
+      <>
+        <AldoConversation feed={[]} />
+        <AldoComposer chips={[]} onChip={vi.fn()} />
+      </>,
+    ),
+  );
+  await send("Plan dinner");
+  await send("For four people");
+  await send("Make it vegetarian");
+  expect(container.textContent).toContain("Plan dinner");
+  expect(container.textContent).toContain("For four people");
+  expect(container.textContent).toContain("Make it vegetarian");
+  expect(
+    [...container.querySelectorAll('[role="status"]')].filter((e) => e.textContent === "Queued"),
+  ).toHaveLength(2);
+  expect(backend.chat).toHaveBeenCalledTimes(1);
+  await act(async () =>
+    completions[0]!({
+      sessionId: "as_dom",
+      reply: "First paragraph.\n\nAnother paragraph still arriving.",
+      calls: [],
+    }),
+  );
+  expect(container.textContent).toContain("First paragraph.");
+  expect(container.textContent).not.toContain("Another paragraph still arriving.");
+  await send("Include a shopping list");
+  expect(backend.chat).toHaveBeenCalledTimes(2);
+  for (let i = 1; i < 4; i++) {
+    await act(async () => completions[i]!({ sessionId: "as_dom", reply: `Reply ${i}`, calls: [] }));
+  }
+  expect(backend.chat.mock.calls.map((call) => call[1])).toEqual([
+    "Plan dinner",
+    "For four people",
+    "Make it vegetarian",
+    "Include a shopping list",
+  ]);
+  expect(useAldoAssistant.getState().replying).toBe(false);
+  expect(container.textContent).not.toContain("Queued");
+});

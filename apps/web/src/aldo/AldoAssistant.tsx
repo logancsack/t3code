@@ -58,6 +58,7 @@ import {
   connectAldo,
   disconnectAldo,
   sendText,
+  retryAldoMessage,
   setAldoMuted,
   useAldoAssistant,
   type AldoConversationEntry,
@@ -299,7 +300,6 @@ export function AldoComposer(props: {
   const phase = useAldoAssistant((s) => s.phase);
   const unsent = useAldoAssistant((s) => s.unsent);
   const unsentImages = useAldoAssistant((s) => s.unsentImages);
-  const replying = useAldoAssistant((s) => s.replying);
   const input = useRef<HTMLTextAreaElement>(null);
   const picker = useRef<HTMLInputElement>(null);
   const limits = useAldoImageLimits();
@@ -390,10 +390,8 @@ export function AldoComposer(props: {
     requestAnimationFrame(() => field?.setSelectionRange(field.value.length, field.value.length));
   }, [unsent]);
   const sendable = text.trim().length > 0 || (canAttach && images.length > 0);
-  // One turn at a time: while Aldo replies the user can write the next, not send it.
-  const held = replying && !live;
   const submit = () => {
-    if (preparing > 0 || held) return;
+    if (preparing > 0) return;
     // During a call images don't go: they stay for after it.
     const sending = canAttach ? images : [];
     if (!text.trim() && sending.length === 0) return;
@@ -571,8 +569,13 @@ export function AldoComposer(props: {
                 render={
                   <button
                     type={sendable ? "submit" : "button"}
-                    aria-label={sendable ? (held ? "Aldo is replying" : "Send") : "Talk to Aldo"}
-                    disabled={sendable && (preparing > 0 || held)}
+                    aria-label={sendable ? "Send" : "Talk to Aldo"}
+                    disabled={sendable && preparing > 0}
+                    // Keep the keyboard and composer in place as the user sends follow-ups on a phone.
+                    onPointerDown={(event) => {
+                      if (sendable && document.activeElement === input.current)
+                        event.preventDefault();
+                    }}
                     className={cn(round, "bg-foreground text-background hover:bg-foreground/88")}
                     onClick={sendable ? undefined : () => void connectAldo()}
                   />
@@ -596,11 +599,7 @@ export function AldoComposer(props: {
                 />
               </TooltipTrigger>
               <TooltipPopup side="top">
-                {sendable
-                  ? held
-                    ? "Aldo is replying: send once it's done"
-                    : "Send"
-                  : `Talk to Aldo (${ALDO_SHORTCUT_LABEL})`}
+                {sendable ? "Send" : `Talk to Aldo (${ALDO_SHORTCUT_LABEL})`}
               </TooltipPopup>
             </Tooltip>
           )}
@@ -943,9 +942,13 @@ function UserMessage({
   readonly entry: Extract<AldoConversationEntry, { kind: "message" }>;
 }) {
   const { text, images: named } = withoutImageNotes(entry.text);
+  const queued = useAldoAssistant((s) => s.queuedMessages?.includes(entry) ?? false);
+  const failed = useAldoAssistant((s) =>
+    s.failedMessage?.entry === entry ? s.failedMessage.error : null,
+  );
   const arrive = useAldoArrive();
   return (
-    <div {...arrive} className="flex max-w-[80%] flex-col items-end gap-1.5 self-end">
+    <div {...arrive} className="flex min-w-0 max-w-[80%] flex-col items-end gap-1.5 self-end">
       {entry.images && entry.images.length > 0 ? (
         <div className="flex flex-wrap justify-end gap-1.5">
           {entry.images.map((src) => (
@@ -972,9 +975,28 @@ function UserMessage({
         </div>
       ) : null}
       {text ? (
-        <p className="whitespace-pre-wrap wrap-anywhere rounded-[20px] rounded-br-[8px] bg-message px-4 py-2 text-[16px] text-message-foreground leading-6 sm:text-[15px]">
+        <p className="max-w-full whitespace-pre-wrap wrap-anywhere rounded-[20px] rounded-br-[8px] bg-message px-4 py-2 text-[16px] text-message-foreground leading-6 sm:text-[15px]">
           {text}
         </p>
+      ) : null}
+      {failed ? (
+        <div
+          role="status"
+          className="max-w-full wrap-anywhere text-right text-[12px] text-muted-foreground"
+        >
+          {failed}{" "}
+          <button
+            type="button"
+            className="min-h-11 underline underline-offset-2"
+            onClick={retryAldoMessage}
+          >
+            Try again
+          </button>
+        </div>
+      ) : queued ? (
+        <span role="status" className="max-w-full text-[12px] text-muted-foreground">
+          Queued
+        </span>
       ) : null}
     </div>
   );
