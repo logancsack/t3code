@@ -1237,16 +1237,28 @@ function finishCall(session: string | null, began: number | null): void {
   if (callOpen === session) callOpen = null;
   const seconds = began === null ? 0 : Math.round((Date.now() - began) / 1000);
   const entries = get().entries;
+  // A call where the user said nothing has no card (Aldo shows none): it only gets its end told.
+  const spoke = entries.some(
+    (e) => e.kind === "message" && e.call === session && e.role === "user",
+  );
   set({
-    entries: entries.map((e) =>
-      isCallEntry(e) && e.id === session
-        ? { ...e, state: "summarizing" as const, seconds, links: callLinksFrom(entries, session) }
-        : e,
-    ),
+    entries: spoke
+      ? entries.map((e) =>
+          isCallEntry(e) && e.id === session
+            ? {
+                ...e,
+                state: "summarizing" as const,
+                seconds,
+                links: callLinksFrom(entries, session),
+              }
+            : e,
+        )
+      : entries.filter((e) => !(isCallEntry(e) && e.id === session)),
   });
   void (async () => {
     await Promise.allSettled(recording);
     await aldoAssistant.record(session, [], true);
+    if (!spoke) return;
     for (let tries = 0; tries < SUMMARY_TRIES; tries += 1) {
       await new Promise((resolve) => setTimeout(resolve, SUMMARY_EVERY_MS));
       await pullAldoConversation();
