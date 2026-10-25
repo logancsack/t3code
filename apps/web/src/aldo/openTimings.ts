@@ -18,6 +18,11 @@ const EVENT_THRESHOLD_MS = 40;
 export function installAldoOpenTimings(): void {
   if (!isAldoCloud || typeof PerformanceObserver === "undefined") return;
   if (document.visibilityState !== "visible") return;
+  // A browser that can't see long tasks or interactions (Safari) says
+  // nothing: its zeros would read as an open that never froze.
+  const supported = PerformanceObserver.supportedEntryTypes ?? [];
+  if (!supported.includes("longtask") || !supported.includes("event")) return;
+  let measured = true;
   let busy = 0;
   let longest = 0;
   let input = 0;
@@ -40,7 +45,7 @@ export function installAldoOpenTimings(): void {
         observer.disconnect();
       });
     } catch {
-      // A browser without this entry type says nothing of it.
+      measured = false;
     }
   };
   observe({ type: "longtask", buffered: true }, (entry) => {
@@ -56,8 +61,9 @@ export function installAldoOpenTimings(): void {
   document.addEventListener("visibilitychange", onVisibility);
   const stopSidebar = appAtomRegistry.subscribe(
     allEnvironmentShellsBootstrappedAtom,
+    // Before the directory answers, no machines are listed, so none are missing.
     (ready) => {
-      if (ready && sidebar === null) sidebar = performance.now();
+      if (ready && sidebar === null && getAldoEnvironments() !== null) sidebar = performance.now();
     },
     { immediate: true },
   );
@@ -66,7 +72,7 @@ export function installAldoOpenTimings(): void {
       for (const stop of observers) stop();
       document.removeEventListener("visibilitychange", onVisibility);
       stopSidebar();
-      if (hidden) return;
+      if (hidden || !measured) return;
       const fields = {
         busy,
         longest,
