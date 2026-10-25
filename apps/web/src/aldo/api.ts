@@ -40,23 +40,53 @@ function timeZone(): string {
   }
 }
 
-export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+/**
+ * How long a read the app keeps polling (the directory, Home) waits for Aldo to
+ * begin its answer. Aldo begins within 3 s even cold, so this cuts only a
+ * request on a connection that died (a phone back from sleep, a network that
+ * changed), which the browser can leave waiting for minutes while every later
+ * read waits behind it. The answer itself takes as long as it takes, so a slow
+ * network still gets it.
+ */
+export const ALDO_READ_ANSWERS_WITHIN_MS = 10_000;
+
+export async function api<T>(
+  path: string,
+  { answersWithin, ...init }: RequestInit & { readonly answersWithin?: number } = {},
+): Promise<T> {
   const zone = timeZone();
-  const response = await fetch(path, {
-    ...init,
-    credentials: "same-origin",
-    headers: {
-      "content-type": "application/json",
-      ...(zone ? { "x-time-zone": zone } : {}),
-      ...init.headers,
-    },
-  });
+  const cut = answersWithin === undefined ? null : new AbortController();
+  const timer = cut ? setTimeout(() => cut.abort(), answersWithin) : undefined;
+  let response: Response;
+  try {
+    response = await fetch(path, {
+      ...init,
+      ...(cut
+        ? { signal: init.signal ? AbortSignal.any([init.signal, cut.signal]) : cut.signal }
+        : {}),
+      credentials: "same-origin",
+      headers: {
+        "content-type": "application/json",
+        ...(zone ? { "x-time-zone": zone } : {}),
+        ...init.headers,
+      },
+    });
+  } catch (cause) {
+    // Unanswered, it failed as one that couldn't reach Aldo does: each caller already copes with those.
+    throw cut?.signal.aborted && !init.signal?.aborted
+      ? new TypeError("Aldo didn't answer in time.")
+      : cause;
+  } finally {
+    clearTimeout(timer);
+  }
   if (response.status === 401) {
     // The Aldo session ended; send the user back through sign-in.
     window.location.assign(`/sign-in?redirect_url=${encodeURIComponent(window.location.href)}`);
     throw new AldoApiError(401, "Your Aldo session ended. Sign in again.");
   }
-  const body = (await response.json().catch(() => ({}))) as T & { error?: string };
+  // An answer cut off midway fails like one that never came, rather than reading as an empty one.
+  const text = await response.text();
+  const body = (parsed(text) ?? {}) as T & { error?: string };
   if (!response.ok) {
     throw new AldoApiError(
       response.status,
@@ -65,4 +95,12 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     );
   }
   return body;
+}
+
+function parsed(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
 }

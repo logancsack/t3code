@@ -470,3 +470,19 @@ it("signing out, or an Aldo without the read, leaves nothing kept, and the copy 
     vi.unstubAllGlobals();
   }
 });
+
+it("a read that never reached Aldo goes again at the next look; one Aldo refused waits its turn", async () => {
+  const feed = await import("./homeFeed");
+  const { AldoApiError } = await import("./api");
+  fetchHome.mockRejectedValueOnce(new AldoApiError(503, "Unavailable"));
+  await feed.refreshAldoHome();
+  await feed.refreshAldoHome(false);
+  expect(fetchHome).toHaveBeenCalledTimes(1);
+
+  fetchHome.mockRejectedValueOnce(new TypeError("Aldo didn't answer in time."));
+  await feed.refreshAldoHome();
+  fetchHome.mockResolvedValueOnce(home());
+  await feed.refreshAldoHome(false);
+  expect(fetchHome).toHaveBeenCalledTimes(3);
+  expect(feed.useAldoHomeFeed.getState()).toMatchObject({ home: home(), error: null });
+});

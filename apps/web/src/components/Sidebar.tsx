@@ -164,10 +164,12 @@ import { AldoThreadBadge, isAldoThreadId } from "./ManagedDevPcAgent";
 import {
   aldoSupportsGeneralThreads,
   aldoThreadInKeptRepo,
+  getAldoEnvironments,
   subscribeAldoEnvironments,
   displayedThreadBranch,
 } from "../aldo/directory";
 import { isAldoCloud, isAldoEnvironmentId } from "../aldo/api";
+import { aldoThreadsSynced, subscribeAldoThreadsSynced } from "../aldo/shells";
 import { useAldoThreadAwaitsApproval } from "../aldo/AldoApprovals";
 import { aldoNewThreadPlace, useStartAldoThread } from "../aldo/newThread";
 import { buildThreadActionMenuItems } from "./threadActionMenu.logic";
@@ -246,6 +248,7 @@ import {
 import { useThreadRunningTerminalIds } from "../state/terminalSessions";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { Button, InlineButton } from "./ui/button";
+import { Skeleton } from "./ui/skeleton";
 import {
   Combobox,
   ComboboxEmpty,
@@ -331,6 +334,26 @@ function threadTimeLabel(thread: SidebarThreadSummary): string {
 function settledTimeLabel(thread: SidebarThreadSummary): string {
   const timestamp = resolveSettledThreadTimestamp(thread);
   return timestamp === null ? "" : compactSidebarTimeLabel(formatRelativeTimeLabel(timestamp));
+}
+
+/** Thread cards' shape while the list loads: where each card's place and title go. */
+function SidebarThreadsSkeleton() {
+  return (
+    <ul role="status" aria-label="Loading threads">
+      <SidebarThreadSkeleton title={<Skeleton className="h-3 w-4/5" />} />
+      <SidebarThreadSkeleton title={<Skeleton className="h-3 w-3/5" />} />
+      <SidebarThreadSkeleton title={<Skeleton className="h-3 w-2/3" />} />
+    </ul>
+  );
+}
+
+function SidebarThreadSkeleton(props: { title: ReactNode }) {
+  return (
+    <li className="flex h-[4.875rem] flex-col justify-center gap-3 px-2.5">
+      <Skeleton className="h-2.5 w-2/5" />
+      {props.title}
+    </li>
+  );
 }
 
 // Floats at the row's right edge, vertically centered, while the jump
@@ -2880,8 +2903,14 @@ export default function Sidebar() {
       // or descriptor not loaded yet) never classify as settled: the user
       // could neither un-settle nor pin them, so auto-settling them would
       // strand rows in a tail with no working affordances.
-      const supportsSettlement = capabilities?.threadSettlement === true;
-      const supportsSnooze = capabilities?.threadSnooze === true;
+      // Aldo: every machine runs a server that has both, so a thread keeps
+      // its shelf while its machine's config loads. Otherwise a fresh load
+      // rendered every settled thread in the inbox (hundreds of rows), then
+      // moved them as each config came in.
+      const supportsSettlement =
+        capabilities === undefined ? isAldoCloud : capabilities.threadSettlement === true;
+      const supportsSnooze =
+        capabilities === undefined ? isAldoCloud : capabilities.threadSnooze === true;
       const threadKey = scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id));
       if (capabilities?.threadActiveReorder === true) activeReorderable.add(threadKey);
       // Older servers retain their existing drag actions. Active placement
@@ -4839,6 +4868,22 @@ export default function Sidebar() {
     () => isAldoCloud && aldoSupportsGeneralThreads(),
     () => false,
   );
+  // Aldo: no rows yet while its directory hasn't listed the threads, or before
+  // this page has brought its copies of them up to date, is loading, not "No threads yet".
+  const aldoListed = useSyncExternalStore(
+    subscribeAldoEnvironments,
+    () => {
+      const listed = getAldoEnvironments();
+      return listed === null ? null : listed.length > 0;
+    },
+    () => null,
+  );
+  const threadsSynced = useSyncExternalStore(
+    subscribeAldoThreadsSynced,
+    aldoThreadsSynced,
+    () => false,
+  );
+  const threadsLoading = isAldoCloud && (aldoListed === null || (aldoListed && !threadsSynced));
   const handleNewThreadClick = useCallback(
     (event?: ReactMouseEvent) => {
       // Aldo: a draft at once, in the project of the thread on screen, else
@@ -5322,25 +5367,29 @@ export default function Sidebar() {
             snoozedThreads.length +
             settledThreads.length ===
             0 ? (
-            <div className="flex flex-col items-center gap-2 px-2 py-6 text-center text-xs text-muted-foreground/60">
-              {projects.length === 0 ? (
-                <>
-                  <span>No projects yet</span>
-                  <button
-                    type="button"
-                    onClick={openAddProjectCommandPalette}
-                    className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-sidebar-border px-2.5 py-1 text-2xs font-medium text-sidebar-muted-foreground transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
-                  >
-                    <PlusIcon className="-mx-0.5 size-3" />
-                    Add project
-                  </button>
-                </>
-              ) : scopedProjectGroup ? (
-                `No threads in ${scopedProjectGroup.displayName} yet`
-              ) : (
-                "No threads yet"
-              )}
-            </div>
+            threadsLoading ? (
+              <SidebarThreadsSkeleton />
+            ) : (
+              <div className="flex flex-col items-center gap-2 px-2 py-6 text-center text-xs text-muted-foreground/60">
+                {projects.length === 0 ? (
+                  <>
+                    <span>No projects yet</span>
+                    <button
+                      type="button"
+                      onClick={openAddProjectCommandPalette}
+                      className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-sidebar-border px-2.5 py-1 text-2xs font-medium text-sidebar-muted-foreground transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
+                    >
+                      <PlusIcon className="-mx-0.5 size-3" />
+                      Add project
+                    </button>
+                  </>
+                ) : scopedProjectGroup ? (
+                  `No threads in ${scopedProjectGroup.displayName} yet`
+                ) : (
+                  "No threads yet"
+                )}
+              </div>
+            )
           ) : null}
           {/* Aldo: archived threads are threads, so the list ends with the way to them. */}
           {isAldoCloud && !isSearchingThreads ? (

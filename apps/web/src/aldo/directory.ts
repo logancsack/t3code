@@ -8,6 +8,7 @@ import {
   api,
   CONNECTION_PREFIX,
   AldoApiError,
+  ALDO_READ_ANSWERS_WITHIN_MS,
 } from "./api";
 import { aldoMachineStart } from "./threadStart.logic";
 import { getAldoPreloadSettings } from "./preloadSettings";
@@ -27,6 +28,7 @@ import * as Option from "effect/Option";
 import * as Semaphore from "effect/Semaphore";
 import { type PreparedPlatformEnvironment } from "@t3tools/client-runtime/platform";
 import { type AldoProjectHost } from "./accountApi";
+import { aldoWho } from "./who";
 
 export interface AldoEnvironment {
   readonly environmentId: string;
@@ -431,7 +433,10 @@ async function fetchEnvironments(): Promise<ReadonlyArray<AldoEnvironment>> {
   const headers: Record<string, string> = {};
   if (firstView !== null) headers["x-aldo-first-view"] = String(firstView);
   if (open !== null) headers["x-aldo-open"] = open;
-  const body = await api<DirectoryBody>("/api/environments", { headers });
+  const body = await api<DirectoryBody>("/api/environments", {
+    headers,
+    answersWithin: ALDO_READ_ANSWERS_WITHIN_MS,
+  });
   if (firstViewMs === firstView) firstViewMs = null;
   if (openTimings === open) openTimings = null;
   sharedReads()?.postMessage({ startedAt, body } satisfies SharedRead);
@@ -439,8 +444,14 @@ async function fetchEnvironments(): Promise<ReadonlyArray<AldoEnvironment>> {
   return takeListing(body);
 }
 
-/** Takes a read of the directory, this tab's or another's (takeSharedRead), as what it lists now. */
-function takeListing({ environments, features }: DirectoryBody): ReadonlyArray<AldoEnvironment> {
+/**
+ * Takes a read of the directory, this tab's or another's (takeSharedRead), as
+ * what it lists now; or (`kept`) the copy this device kept of the last one.
+ */
+function takeListing(
+  { environments, features }: DirectoryBody,
+  kept = false,
+): ReadonlyArray<AldoEnvironment> {
   const nextFeatures = {
     general: features?.general === true,
     projects: features?.projects === true,
@@ -456,16 +467,57 @@ function takeListing({ environments, features }: DirectoryBody): ReadonlyArray<A
   };
   // A listing that started before a deletion finished can still include its machine.
   const listed = environments.filter((environment) => !hiddenByDeletion(environment.environmentId));
-  const changed =
-    JSON.stringify([knownEnvironments, aldoFeatures]) !== JSON.stringify([listed, nextFeatures]);
+  const listing = JSON.stringify([listed, nextFeatures]);
+  const changed = JSON.stringify([knownEnvironments, aldoFeatures]) !== listing;
   aldoFeatures = nextFeatures;
-  lastReadAt = Date.now();
   if (changed) {
     knownEnvironments = listed;
+    if (!kept) keepListing(listing);
     for (const listener of directoryListeners) listener();
   }
+  if (kept) return listed;
+  lastReadAt = Date.now();
   for (const listener of directoryRefreshListeners) listener();
   return knownEnvironments!;
+}
+
+// The last listing is kept on the device for whoever is signed in (who.ts),
+// and draws the sidebar as the page opens, until Aldo's read answers. It isn't
+// a read: no machine is told it's asleep from it (asleepAsListed), and an
+// attempt to connect waits for the read under way (freshListing).
+const KEPT_KEY = "aldo-directory-copy";
+/** How long a kept listing can go unchanged and still draw the sidebar at an open. */
+const KEPT_FOR_MS = 7 * 24 * 60 * 60_000;
+
+/** Keeps a listing (its JSON: environments and features) for the next open; null, or no one known, keeps none. */
+function keepListing(listing: string | null): void {
+  const who = listing ? aldoWho() : null;
+  try {
+    if (listing && who) {
+      localStorage.setItem(KEPT_KEY, `{"who":"${who}","at":${Date.now()},"listing":${listing}}`);
+    } else localStorage.removeItem(KEPT_KEY);
+  } catch {
+    // No storage, or too little: the next open waits for its read.
+  }
+}
+
+function keptListing(): DirectoryBody | null {
+  const who = aldoWho();
+  if (!who) return null;
+  try {
+    const kept = JSON.parse(localStorage.getItem(KEPT_KEY) ?? "null") as {
+      readonly who?: unknown;
+      readonly at?: unknown;
+      readonly listing?: readonly [AldoEnvironment[], DirectoryBody["features"]];
+    } | null;
+    if (kept?.who !== who || typeof kept.at !== "number" || Date.now() - kept.at > KEPT_FOR_MS) {
+      return null;
+    }
+    const [environments, features] = kept.listing ?? [];
+    return Array.isArray(environments) ? { environments, ...(features ? { features } : {}) } : null;
+  } catch {
+    return null;
+  }
 }
 
 function registrationFor(environment: AldoEnvironment): BearerConnectionRegistration {
@@ -527,7 +579,13 @@ let firstRead: Promise<Array<BearerConnectionRegistration> | null> | null = null
  * this read.
  */
 export function startAldoDirectory(): void {
-  if (isAldoCloud) firstRead ??= readDirectory();
+  if (!isAldoCloud) return;
+  firstRead ??= readDirectory();
+  const kept = knownEnvironments === null ? keptListing() : null;
+  if (kept) {
+    takeListing(kept, true);
+    emitRequested = true;
+  }
 }
 
 function pageHidden(): boolean {
@@ -556,14 +614,15 @@ function readDue(): boolean {
 }
 
 async function pollDirectory(): Promise<Array<BearerConnectionRegistration> | null> {
+  // First, as the page opens, the machines the kept listing has; then the first read's.
+  if (emitRequested && knownEnvironments) {
+    emitRequested = false;
+    return currentRegistrations(knownEnvironments);
+  }
   if (firstRead) {
     const read = firstRead;
     firstRead = null;
     return read;
-  }
-  if (emitRequested && knownEnvironments) {
-    emitRequested = false;
-    return currentRegistrations(knownEnvironments);
   }
   const due = readDue();
   wasHidden = pageHidden();
@@ -679,7 +738,9 @@ async function fetchRegistrations(): Promise<Array<BearerConnectionRegistration>
     failedFetches = 0;
     retryAt = 0;
     return registrations;
-  } catch {
+  } catch (cause) {
+    // Signed out (api.ts sends them to sign in): no listing of theirs is kept for the next open.
+    if (cause instanceof AldoApiError && cause.status === 401) keepListing(null);
     // Retry soon, backing off while Aldo can't be reached so every open tab doesn't hammer it.
     failedFetches += 1;
     retryAt = Date.now() + Math.min(IDLE_REFRESH_MS, 1000 * 2 ** (failedFetches - 1));
