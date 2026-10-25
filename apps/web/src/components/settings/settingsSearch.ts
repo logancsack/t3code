@@ -888,6 +888,15 @@ export const SETTINGS_SEARCH_ITEMS = [
     aldoCloudOnly: true,
   },
   {
+    id: "aldo-quiet-hours",
+    title: "Quiet hours",
+    to: "/settings/notifications",
+    searchTerms: [
+      "night sleep do not disturb mute hold wait heads-ups finished threads push start end time",
+    ],
+    aldoCloudOnly: true,
+  },
+  {
     id: "aldo-brief",
     title: "Daily brief",
     to: "/settings/notifications",
@@ -899,7 +908,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Heads-ups from Aldo",
     to: "/settings/notifications",
     searchTerms: [
-      "mail calendar events half hour what's worth knowing quiet hours night other apps tell me about don't tell me",
+      "mail calendar events half hour what's worth knowing other apps tell me about don't tell me",
     ],
     aldoCloudOnly: true,
   },

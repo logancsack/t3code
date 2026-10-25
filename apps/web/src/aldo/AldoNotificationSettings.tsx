@@ -34,7 +34,8 @@ import {
   HEADS_UP_TOPIC_CHARS,
   appsEveryOptions,
   appsNote,
-  quietHoursNote,
+  quietHoursChange,
+  quietHoursOn,
   quietTimeOptions,
   topicsChange,
 } from "./headsUps.logic";
@@ -189,17 +190,103 @@ function AldoNotificationSettings() {
   );
 }
 
+/** Saves a change to the heads-ups and quiet hours, showing it at once; says whether it was kept. */
+function useHeadsUpsChange() {
+  const [saving, setSaving] = useState(false);
+  const change = (next: AldoHeadsUpsChange) => {
+    setSaving(true);
+    return settingsHeadsUps
+      .mutate(
+        (before) => (before ? withHeadsUpsChange(before, next) : before),
+        () => setAldoHeadsUps(next),
+      )
+      .then(
+        () => true,
+        (cause: unknown) => {
+          toastManager.add({
+            type: "error",
+            title: "Couldn't change that",
+            description: messageOf(cause),
+          });
+          return false;
+        },
+      )
+      .finally(() => setSaving(false));
+  };
+  return { saving, change };
+}
+
+/**
+ * Quiet hours, off until the user turns them on, then from a time until a
+ * time where they are: Aldo holds heads-ups, finished threads and agents' news
+ * until they end, and still sounds whatever needs the user. Hidden on an
+ * Aldo that doesn't let them be set.
+ */
+function QuietHoursRow() {
+  const tuning = useSettingsResource(settingsHeadsUps).data?.tuning;
+  const { saving, change } = useHeadsUpsChange();
+  const zone = useMemo(() => new Intl.DateTimeFormat().resolvedOptions().timeZone, []);
+  if (!tuning) return null;
+  const on = quietHoursOn(tuning);
+  return (
+    <SettingsRow
+      {...searchableSetting("aldo-quiet-hours")}
+      description="Aldo holds heads-ups, finished threads and news from agents until quiet hours end. Anything that needs you, like a question, an approval or a sign-in, still comes through."
+      control={
+        <Switch
+          checked={on}
+          disabled={saving}
+          onCheckedChange={(checked) => void change(quietHoursChange(checked))}
+          aria-label="Quiet hours"
+        />
+      }
+    >
+      {on ? (
+        <AldoPolicySubList>
+          <AldoPolicySubRow
+            label="From"
+            control={
+              <AldoPolicySelect
+                value={String(tuning.quietStart)}
+                options={quietTimeOptions(tuning.quietStart, tuning.quietEnd)}
+                label="Quiet hours start"
+                disabled={saving}
+                className="w-32"
+                onChange={(value) => void change({ quietStart: Number(value) })}
+              />
+            }
+          />
+          <AldoPolicySubRow
+            label="Until"
+            control={
+              <AldoPolicySelect
+                value={String(tuning.quietEnd)}
+                options={quietTimeOptions(tuning.quietEnd, tuning.quietStart)}
+                label="Quiet hours end"
+                disabled={saving}
+                className="w-32"
+                onChange={(value) => void change({ quietEnd: Number(value) })}
+              />
+            }
+          />
+          <p className="text-muted-foreground text-xs">Times are where you are now ({zone}).</p>
+        </AldoPolicySubList>
+      ) : null}
+    </SettingsRow>
+  );
+}
+
 /**
  * Aldo's heads-ups, on or off, once Aldo has them: they need an account with
  * mail or a calendar, or another app it can read, so without one the row says
- * to connect one. On an Aldo that lets them be tuned, under the switch: quiet
- * hours, how often it reads the other apps, and what to hear about or not.
+ * to connect one. On an Aldo that lets them be tuned, under the switch: how
+ * often it reads the other apps, and what to hear about or not.
  */
 function HeadsUpsRow(props: { readonly connected: boolean | null }) {
   const cached = useSettingsResource(settingsHeadsUps);
   const headsUps = cached.data;
   const error = cached.error;
-  const [saving, setSaving] = useState(false);
+  const { saving, change } = useHeadsUpsChange();
   const load = () => {
     void settingsHeadsUps.refresh().catch(() => undefined);
   };
@@ -228,26 +315,6 @@ function HeadsUpsRow(props: { readonly connected: boolean | null }) {
       />
     );
   }
-  const change = (next: AldoHeadsUpsChange) => {
-    setSaving(true);
-    return settingsHeadsUps
-      .mutate(
-        (before) => (before ? withHeadsUpsChange(before, next) : before),
-        () => setAldoHeadsUps(next),
-      )
-      .then(
-        () => true,
-        (cause: unknown) => {
-          toastManager.add({
-            type: "error",
-            title: "Couldn't change that",
-            description: messageOf(cause),
-          });
-          return false;
-        },
-      )
-      .finally(() => setSaving(false));
-  };
   // With nothing to read, there's nothing to tell: mail, a calendar, or another app.
   const nothingToRead = props.connected === false && (headsUps.tuning?.apps.length ?? 0) === 0;
   return (
@@ -296,8 +363,8 @@ function withHeadsUpsChange(before: AldoHeadsUps, change: AldoHeadsUpsChange): A
 }
 
 /**
- * Under the switch: quiet hours, how often Aldo reads the other apps, and
- * what the user wants to hear about or not, saved together when they're done.
+ * Under the switch: how often Aldo reads the other apps, and what the user
+ * wants to hear about or not, saved together when they're done.
  */
 function HeadsUpsTuning(props: {
   readonly tuning: AldoHeadsUpsTuning;
@@ -310,7 +377,6 @@ function HeadsUpsTuning(props: {
   const topics = draft ?? { tell: tuning.tell, skip: tuning.skip };
   const topicChange = draft ? topicsChange(tuning, draft) : {};
   const edited = Object.keys(topicChange).length > 0;
-  const quietNote = quietHoursNote(tuning);
   const apps = appsNote(tuning);
   // Saved, it shows what's saved, unless they typed more meanwhile.
   const saveTopics = () => {
@@ -321,31 +387,6 @@ function HeadsUpsTuning(props: {
   };
   return (
     <AldoPolicySubList>
-      <AldoPolicySubRow
-        label="Quiet hours"
-        control={
-          <div className="grid w-full grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 sm:flex sm:w-auto">
-            <AldoPolicySelect
-              value={String(tuning.quietStart)}
-              options={quietTimeOptions(tuning.quietStart)}
-              label="Quiet from"
-              disabled={saving}
-              className="w-full sm:w-28"
-              onChange={(value) => void change({ quietStart: Number(value) })}
-            />
-            <span className="text-muted-foreground text-xs">to</span>
-            <AldoPolicySelect
-              value={String(tuning.quietEnd)}
-              options={quietTimeOptions(tuning.quietEnd)}
-              label="Quiet until"
-              disabled={saving}
-              className="w-full sm:w-28"
-              onChange={(value) => void change({ quietEnd: Number(value) })}
-            />
-          </div>
-        }
-      />
-      {quietNote ? <p className="text-muted-foreground text-xs">{quietNote}</p> : null}
       <AldoPolicySubRow
         label="Other apps"
         control={
@@ -577,6 +618,7 @@ export function AldoNotificationsPage() {
       <AldoNotificationSettings />
       <MomentEmailsSection />
       <SettingsSection title="From Aldo" icon={<SparklesIcon className="size-4" />}>
+        <QuietHoursRow />
         <BriefRow />
         <HeadsUpsRow connected={connected} />
       </SettingsSection>

@@ -1,6 +1,7 @@
-// Heads-ups in settings (AldoNotificationSettings.tsx HeadsUpsRow): quiet
-// hours, how often Aldo reads the user's other apps, and what they want to
-// hear about or not. Pure, so it's tested on its own.
+// Heads-ups and quiet hours in settings (AldoNotificationSettings.tsx
+// QuietHoursRow, HeadsUpsRow): quiet hours, how often Aldo reads the user's
+// other apps, and what they want to hear about or not. Pure, so it's tested
+// on its own.
 
 import type { AldoHeadsUpsTuning } from "./accountApi";
 import { briefTimeLabel } from "./briefSettings.logic";
@@ -12,12 +13,24 @@ export const HEADS_UP_TOPIC_CHARS = 500;
 /** Every half hour of the day. */
 const QUIET_CHOICES = Array.from({ length: 48 }, (_, i) => i * 30);
 
-/** The quiet hours' choices, every half hour, with the one set now among them. */
-export function quietTimeOptions(minute: number): ReadonlyArray<AldoPolicyOption> {
+/** The quiet hours' choices, every half hour, with the one set now among them; not the other end's, which would turn them off. */
+export function quietTimeOptions(minute: number, other: number): ReadonlyArray<AldoPolicyOption> {
   const minutes = QUIET_CHOICES.includes(minute)
     ? QUIET_CHOICES
     : [...QUIET_CHOICES, minute].sort((a, b) => a - b);
-  return minutes.map((m) => ({ value: String(m), label: briefTimeLabel(m) }));
+  return minutes
+    .filter((m) => m !== other)
+    .map((m) => ({ value: String(m), label: briefTimeLabel(m) }));
+}
+
+/** Quiet hours are on when they start and end at different times; the same time, Aldo's way of saying off. */
+export function quietHoursOn(tuning: Pick<AldoHeadsUpsTuning, "quietStart" | "quietEnd">): boolean {
+  return tuning.quietStart !== tuning.quietEnd;
+}
+
+/** What turning quiet hours on or off sends: 9 PM until 7 AM, or the same time twice. */
+export function quietHoursChange(on: boolean): Pick<AldoHeadsUpsTuning, "quietStart" | "quietEnd"> {
+  return on ? { quietStart: 21 * 60, quietEnd: 7 * 60 } : { quietStart: 0, quietEnd: 0 };
 }
 
 const APPS_EVERY_CHOICES = [2, 4, 8];
@@ -48,11 +61,6 @@ export function appsNote(tuning: AldoHeadsUpsTuning): string | null {
   return tuning.appsEvery === 0
     ? `Aldo won't read ${names}.`
     : `Aldo reads only what's new in ${names}.`;
-}
-
-/** Said beside quiet hours that start and end at the same time. */
-export function quietHoursNote(tuning: AldoHeadsUpsTuning): string | null {
-  return tuning.quietStart === tuning.quietEnd ? "The same time: never quiet." : null;
 }
 
 /** A topic as Aldo keeps it: spaces collapsed, trimmed. */
