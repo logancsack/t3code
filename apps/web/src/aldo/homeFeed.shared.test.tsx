@@ -20,7 +20,9 @@ vi.mock("./directory", () => ({
   subscribeAldoEnvironments: () => () => undefined,
 }));
 vi.mock("./walkthrough", () => ({ reconcileAldoWalkthrough: vi.fn() }));
-vi.mock("./pageUse", () => ({ aldoPageInUseNow: () => true }));
+/** Whether this page is the one in use (focused, and used lately). */
+const page = vi.hoisted(() => ({ inUse: false }));
+vi.mock("./pageUse", () => ({ aldoPageInUseNow: () => page.inUse }));
 
 /** This browser's other tabs, as the page's channel sees them: what it posted, and a way to send it theirs. */
 class OtherTabs {
@@ -86,6 +88,7 @@ beforeEach(async () => {
   vi.stubGlobal("BroadcastChannel", OtherTabs);
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   visibility = "visible";
+  page.inUse = false;
   Object.defineProperty(document, "visibilityState", { configurable: true, get: () => visibility });
   fetchHome.mockImplementation(async () => home("Mine"));
   feed = await import("./homeFeed");
@@ -133,6 +136,18 @@ it("a page on screen takes another tab's read as its own, and reads only once th
   await wait(5_000);
   expect(fetchHome).toHaveBeenCalledTimes(2);
   expect(shown()).toBe("Mine");
+});
+
+it("the page in use takes another tab's reads and still reads for itself, saying it's in use", async () => {
+  page.inUse = true;
+  for (let read = 1; read <= 2; read++) {
+    await wait(15_000);
+    tabs().send({ startedAt: Date.now(), home: home(`Theirs ${read}`) });
+    expect(shown()).toBe(`Theirs ${read}`);
+    await wait(15_000);
+    expect(fetchHome).toHaveBeenCalledTimes(read + 1);
+    expect(fetchHome).toHaveBeenLastCalledWith({ active: true });
+  }
 });
 
 it("a hidden page takes no one's read", async () => {

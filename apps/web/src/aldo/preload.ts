@@ -42,7 +42,7 @@ import {
   isAldoRefusal,
   notifyAldoRefusal,
 } from "./dispatch";
-import { aldoPageUsedAt, noteAldoPageUse } from "./pageUse";
+import { aldoPageUsedAt, onAldoPageUse } from "./pageUse";
 import { useAldoPreloadSettings } from "./preloadSettings";
 
 /** A thread passed over on the way elsewhere shouldn't start anything. */
@@ -57,25 +57,15 @@ const UNATTENDED_MS = 5 * 60 * 1000;
 /** Run when the page is used after a pause: the agent on screen may need a touch, or waking. */
 const resumeListeners = new Set<() => void>();
 
-/** The page was used: the pointer, a key, a touch, the wheel, or coming back to the tab or window (pageUse.ts keeps when). */
-function noteUse(): void {
-  const paused = Date.now() - aldoPageUsedAt() > TOUCH_INTERVAL_MS;
-  noteAldoPageUse();
-  // After DWELL_MS, as when opening a thread: a click that leaves this thread
-  // for another has unmounted it (and its listeners) by then, so it isn't woken.
-  if (paused) {
+// The page was used (pageUse.ts hears each use): after a pause, what it let sleep may need waking.
+// After DWELL_MS, as when opening a thread: a click that leaves this thread
+// for another has unmounted it (and its listeners) by then, so it isn't woken.
+if (isAldoCloud && typeof window !== "undefined") {
+  onAldoPageUse((before) => {
+    if (Date.now() - before <= TOUCH_INTERVAL_MS) return;
     window.setTimeout(() => {
       for (const listener of resumeListeners) listener();
     }, DWELL_MS);
-  }
-}
-
-if (isAldoCloud && typeof window !== "undefined") {
-  for (const type of ["pointerdown", "pointermove", "keydown", "wheel", "touchstart", "focus"]) {
-    window.addEventListener(type, noteUse, { capture: true, passive: true });
-  }
-  document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") noteUse();
   });
 }
 
