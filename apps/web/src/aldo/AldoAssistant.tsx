@@ -53,6 +53,7 @@ import {
   closingThread,
   linkRuns,
   liveCardIndexes,
+  onCall,
   withoutImageNotes,
   type AldoOpenTarget,
 } from "./assistant.logic";
@@ -83,6 +84,7 @@ import { dedupeLiveCards, interleave, type AldoFeedEvent } from "./feed.logic";
 import { type AldoPlaceable } from "./decisions.logic";
 import { withoutShownLinks, type AldoArtifact } from "./artifacts.logic";
 import { useAldoFirstViewHold } from "./firstView";
+import { AldoCallCard } from "./AldoCallCard";
 import { AldoPlanPicker } from "./AldoPlanPicker";
 import { CHIP } from "./surface";
 import "./presence.css";
@@ -607,16 +609,19 @@ export function AldoConversation(
   const entries = since > 0 ? all.slice(since) : all;
   const items = useMemo(() => {
     const shown = entries.flatMap((entry, index) =>
-      entry.kind === "action" && entry.open && live.has(since + index) ? [entry.open] : [],
+      entry.kind === "action" && entry.open && !entry.call && live.has(since + index)
+        ? [entry.open]
+        : [],
     );
     const feed = dedupeLiveCards(props.feed ?? [], shown);
     return interleave(
       entries,
       feed,
-      (entry) => (entry.kind === "message" ? entry.at : null),
+      (entry) => (onCall(entry) ? null : entry.kind === "action" ? null : entry.at),
       props.decisions,
-    );
+    ).filter((item) => item.kind !== "entry" || !onCall(item.entry));
   }, [entries, props.feed, props.decisions, live, since]);
+  const shownCount = items.length;
   const placedAt = useMemo(
     () => new Map((props.decisions ?? []).map((card) => [card.key, card.at])),
     [props.decisions],
@@ -640,16 +645,16 @@ export function AldoConversation(
   const follows = props.feed === undefined;
   useEffect(() => {
     if (follows) end.current?.scrollIntoView({ block: "end" });
-  }, [follows, entries.length, replying, planPick?.stage]);
+  }, [follows, shownCount, replying, planPick?.stage]);
   let day: string | null = null;
   return (
     <div className="flex flex-col gap-6">
       {items.map((item) => {
         const at =
           item.kind === "entry"
-            ? item.entry.kind === "message"
-              ? item.entry.at
-              : null
+            ? item.entry.kind === "action"
+              ? null
+              : item.entry.at
             : item.kind === "card"
               ? item.at
               : item.events[0]!.at;
@@ -675,7 +680,13 @@ export function AldoConversation(
         return [
           marker,
           <ConversationEntry
-            key={entry.kind === "action" ? entry.id : `${entry.at}-${since + index}`}
+            key={
+              entry.kind === "action"
+                ? entry.id
+                : entry.kind === "call"
+                  ? `call-${entry.id}`
+                  : `${entry.at}-${since + index}`
+            }
             entry={entry}
             live={live.has(since + index)}
             beats={props.feed !== undefined}
@@ -759,6 +770,7 @@ function ConversationEntry({
       line
     );
   }
+  if (entry.kind === "call") return <AldoCallCard call={entry} />;
   if (entry.role === "user") return <UserMessage entry={entry} />;
   if (entry.source === "brief") return <AldoBriefEntry text={entry.text} at={entry.at} />;
   return <AldoReply text={entry.text} beats={beats === true} artifacts={entry.artifacts} />;

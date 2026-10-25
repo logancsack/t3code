@@ -42,7 +42,9 @@ vi.mock("./AldoAssistant", () => ({
           <p key={event.key}>Activity: {event.kind}</p>
         ))}
         {entries.map((e) => (
-          <p key={e.kind === "message" ? e.at : e.id}>{e.kind === "message" ? e.text : e.label}</p>
+          <p key={e.kind === "message" ? e.at : e.id}>
+            {e.kind === "message" ? e.text : e.kind === "action" ? e.label : "Call"}
+          </p>
         ))}
         {tail}
         {renderDecisions?.(null, new Map())}

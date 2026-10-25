@@ -33,6 +33,7 @@ import { create } from "zustand";
 import { toastManager } from "../components/ui/toast";
 import {
   actionFor,
+  callLinksFrom,
   followupAction,
   followupPrompt,
   followupsEvery,
@@ -46,7 +47,9 @@ import {
   screenNote,
   startNews,
   startWatchFor,
+  isCallEntry,
   unseenMessages,
+  withCalls,
   withoutRetriedFailures,
   type AldoAssistantAction,
   type AldoAssistantMessage,
@@ -56,11 +59,13 @@ import {
   type AldoOpenTarget,
   type AldoStartNews,
   type AldoStartWatch,
+  type AldoCallEntry,
 } from "./assistant.logic";
 import { AldoApiError } from "./api";
 import { noteAldoAnswered } from "./homeFeed";
 import {
   aldoAssistant,
+  type AldoHistory,
   requestAldoProfile,
   type AldoChatTurn,
   type AldoFollowupNews,
@@ -140,7 +145,8 @@ const SPEAKING_LEVEL = 0.01;
 
 export type AldoConversationEntry =
   | ({ readonly kind: "message" } & AldoAssistantMessage)
-  | ({ readonly kind: "action" } & AldoAssistantAction);
+  | ({ readonly kind: "action" } & AldoAssistantAction)
+  | AldoCallEntry;
 
 /**
  * The plan picker under a request Aldo kept until a plan's chosen
@@ -324,15 +330,36 @@ export function aldoAssistantLive(): boolean {
 }
 
 function addEntry(entry: AldoConversationEntry): void {
-  set({ entries: [...get().entries, entry] });
+  // What the call does is on its card.
+  set({
+    entries: [
+      ...get().entries,
+      entry.kind === "action" && callOpen ? { ...entry, call: callOpen } : entry,
+    ],
+  });
 }
 
-/** What was said shows, and Aldo keeps it in the conversation's session (`session`: a call's, even as it closes). */
-function say(role: "user" | "assistant", text: string, session: string | null = sessionId): void {
+/**
+ * What was said on the call shows on the call screen, and Aldo keeps it in the call's session (`session`, even as it
+ * closes): on Home it's the call card's transcript, not a message. `turn` is false for news the call never said,
+ * which is a message of its own.
+ */
+function say(
+  role: "user" | "assistant",
+  text: string,
+  session: string | null = sessionId,
+  turn = true,
+): void {
   const words = text.trim();
   if (!words) return;
-  addEntry({ kind: "message", role, text: words, at: new Date().toISOString() });
-  if (session) void aldoAssistant.record(session, [{ role, text: words }]).catch(() => {});
+  const call = turn && callCards === true && session ? { call: session } : {};
+  addEntry({ kind: "message", role, text: words, at: new Date().toISOString(), ...call });
+  if (!session) return;
+  const kept = aldoAssistant
+    .record(session, [{ role, text: words, ...(turn ? {} : { call: false as const }) }])
+    .catch(() => {});
+  recording.add(kept);
+  void kept.finally(() => recording.delete(kept));
 }
 
 function send(event: Record<string, unknown>): void {
@@ -341,14 +368,28 @@ function send(event: Record<string, unknown>): void {
 
 /** The newest message read from Aldo, so a later read adds only what came after it. */
 let historyUntil: string | null = null;
+/**
+ * Whether this Aldo shows a call as one card (null until the conversation is read). An older one keeps every
+ * turn as a message, so a call's lines show as they always did.
+ */
+let callCards: boolean | null = null;
+/** The call on now (its session), whose lines and actions the conversation leaves to its card. */
+let callOpen: string | null = null;
+/** What the call has said to Aldo that isn't through yet: its end waits for the last words. */
+const recording = new Set<Promise<unknown>>();
 /** Messages that came from Aldo's record, or were found in it: the rest were said on this page and not read back yet. */
 const recorded = new WeakSet<AldoConversationEntry>();
 
-function fromRecord(messages: ReadonlyArray<AldoAssistantMessage>): AldoConversationEntry[] {
-  const entries = messages.map((m) => ({ kind: "message" as const, ...m }));
+function fromRecord(items: AldoHistory): AldoConversationEntry[] {
+  const entries = items.map((item): AldoConversationEntry =>
+    "kind" in item ? item : { kind: "message", ...item },
+  );
   for (const entry of entries) recorded.add(entry);
   return entries;
 }
+
+/** The messages among what Aldo kept (its calls are cards). */
+const messagesOf = (items: AldoHistory) => items.flatMap((item) => ("kind" in item ? [] : [item]));
 
 /** The conversation so far, from Aldo (once per page). */
 let loadingHistory: Promise<void> | null = null;
@@ -357,12 +398,14 @@ export function loadAldoConversation(): Promise<void> {
   if (get().historyLoaded) return Promise.resolve();
   // One load at a time, or two on the page at once would each add what was said.
   loadingHistory ??= (async () => {
-    const messages = await aldoAssistant.history().catch(() => []);
+    const items = await aldoAssistant.history().catch(() => null);
+    const messages = messagesOf(items ?? []);
+    callCards = items ? items.calls === true : null;
     historyUntil = messages.at(-1)?.at ?? historyUntil;
     set({
       historyLoaded: true,
       // Anything said since the page opened stays after what came before.
-      entries: [...fromRecord(messages), ...get().entries],
+      entries: [...fromRecord(items ?? []), ...get().entries],
     });
     void settleKept().catch(() => {});
     void resendKept(messages);
@@ -648,13 +691,21 @@ function messagesIn(entries: ReadonlyArray<AldoConversationEntry>) {
  */
 export async function pullAldoConversation(): Promise<void> {
   if (!get().historyLoaded) return;
-  const messages = await aldoAssistant.history(20).catch(() => null);
-  if (!messages?.length) return;
-  const said = get().entries.flatMap((e) => (e.kind === "message" && !recorded.has(e) ? [e] : []));
+  const history = await aldoAssistant.history(20).catch(() => null);
+  if (!history?.length) return;
+  const messages = messagesOf(history);
+  callCards = history.calls === true;
+  // What was said on this page's calls isn't read back (Aldo keeps it as a card's transcript).
+  const said = get().entries.flatMap((e) =>
+    e.kind === "message" && !recorded.has(e) && !e.call ? [e] : [],
+  );
   const { fresh, matched } = unseenMessages(said, messages, historyUntil);
+  const calls = history.flatMap((item) => ("kind" in item ? [item] : []));
+  const entries = withCalls(get().entries, calls, historyUntil);
   historyUntil = messages.at(-1)?.at ?? historyUntil;
   for (const entry of matched) recorded.add(entry);
-  if (fresh.length > 0) set({ entries: [...get().entries, ...fromRecord(fresh)] });
+  if (fresh.length > 0 || entries !== get().entries)
+    set({ entries: [...entries, ...fromRecord(fresh)] });
 }
 
 async function transcriptsSettled(): Promise<void> {
@@ -955,6 +1006,7 @@ function onLiveStarted(): void {
   if (startTimer) clearTimeout(startTimer);
   startTimer = null;
   lastSpokeAt = Date.now();
+  openCall();
   set({
     phase: "listening",
     micOn: microphone !== null,
@@ -1048,7 +1100,7 @@ function tellFollowupAtPause(): void {
 
 /** Claimed news the call ended before saying: it shows in the conversation, since no other call will tell it. */
 function keepUnsaid(news: AldoFollowupNews, line: string, session: string): void {
-  say("assistant", line, session);
+  say("assistant", line, session, false);
   addEntry({ kind: "action", ...followupAction(news) });
 }
 
@@ -1096,6 +1148,56 @@ function tickLive(): void {
     });
     disconnectAldo();
   }
+}
+
+/**
+ * The call has started: it's one card in the conversation, where it began, while its lines and
+ * actions stay on the call screen (an Aldo that doesn't draw calls shows them as before).
+ */
+function openCall(): void {
+  if (callCards !== true || !sessionId) return;
+  callOpen = sessionId;
+  addEntry({
+    kind: "call",
+    id: sessionId,
+    at: new Date().toISOString(),
+    state: "live",
+    seconds: 0,
+    summary: null,
+    links: [],
+  });
+}
+
+/** How long Aldo gets to write a call's summary before the page leaves it to the next read. */
+const SUMMARY_TRIES = 24;
+const SUMMARY_EVERY_MS = 2_500;
+
+/**
+ * The call hung up (`session`, begun at `began`): its card says it's being summarized, with what the call
+ * started; once its last words are through, Aldo is told it ended, and the page reads back its summary.
+ */
+function finishCall(session: string | null, began: number | null): void {
+  if (!session || callOpen !== session) return;
+  callOpen = null;
+  const seconds = began === null ? 0 : Math.round((Date.now() - began) / 1000);
+  const entries = get().entries;
+  set({
+    entries: entries.map((e) =>
+      isCallEntry(e) && e.id === session
+        ? { ...e, state: "summarizing" as const, seconds, links: callLinksFrom(entries, session) }
+        : e,
+    ),
+  });
+  void (async () => {
+    await Promise.allSettled(recording);
+    await aldoAssistant.record(session, [], true);
+    for (let tries = 0; tries < SUMMARY_TRIES; tries += 1) {
+      await new Promise((resolve) => setTimeout(resolve, SUMMARY_EVERY_MS));
+      await pullAldoConversation();
+      const card = get().entries.find((e) => isCallEntry(e) && e.id === session);
+      if (card?.kind !== "call" || card.state === "done") return;
+    }
+  })().catch(() => {});
 }
 
 /** A turn of the call (`session`) ended: it shows, and Aldo keeps it. */
@@ -1300,11 +1402,20 @@ function teardown(graceful = false): void {
   stopWatchingScreen?.();
   stopWatchingScreen = null;
   toldScreen = null;
-  const closing = { channel, peer, microphone, transcript, live: live && liveStarted };
+  const closing = {
+    channel,
+    peer,
+    microphone,
+    transcript,
+    live: live && liveStarted,
+    session: sessionId,
+    began: get().connectedAt,
+  };
   transcript = null;
   // What was said up to the end is kept: the last words still on their way too, when the call closes with OpenAI.
   const release = () => {
     closing.transcript?.flush();
+    finishCall(closing.session, closing.began);
     // A connection a session is still being made for is closed once it's made (connectAldo).
     if (closing.peer && closing.peer === startingLive) return;
     closing.channel?.close();
@@ -1446,6 +1557,7 @@ export async function connectAldo(
     events.addEventListener("open", () => {
       // A GPT-Live call starts on its own event (session.started).
       if (channel !== events || live) return;
+      openCall();
       set({
         phase: "listening",
         micOn: microphone !== null,
