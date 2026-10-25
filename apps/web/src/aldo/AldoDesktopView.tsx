@@ -6,6 +6,7 @@ import { AldoScreenState } from "./AldoBrowserChrome";
 import { cn } from "../lib/utils";
 import { AldoApiError } from "./api";
 import { aldoBrowserConnection } from "./workspaceApi";
+import { aldoMachineIsAsleep, whenAldoMachineUp } from "./directory";
 import { aldoDesktopScreenUrl, type AldoDesktopScreen } from "./computer.logic";
 import { aldoCanDecodeH264, AldoVideoPlayer } from "./liveVideo";
 import { ALDO_FRAME_VIDEO, aldoDesktopVideoHello, aldoDesktopVideoUrls } from "./liveVideo.logic";
@@ -55,6 +56,7 @@ export function AldoDesktopView({
     // This effect's own video socket: a later effect's goes in videoRef too, and isn't this one's to close.
     let videoSocket: WebSocket | null = null;
     let retry: ReturnType<typeof setTimeout> | null = null;
+    let stopWaiting: (() => void) | null = null;
     let attempt = 0;
     // Video until the machine says it has none (an older one, or it can't now): VNC alone from then on.
     let vncOnly = screen !== "machine";
@@ -173,7 +175,12 @@ export function AldoDesktopView({
         hangUp();
         if (cause instanceof AldoApiError && cause.status === 409) {
           setStatus("asleep");
-          schedule(3000);
+          // Listed asleep: again once the directory has it up. Otherwise it's coming up.
+          if (aldoMachineIsAsleep(environmentId) && !disposed) {
+            stopWaiting = whenAldoMachineUp(environmentId, () => void connect());
+          } else {
+            schedule(3000);
+          }
         } else {
           // Includes noVNC failing to download (a deploy in progress, a network blip).
           setStatus("error");
@@ -209,6 +216,7 @@ export function AldoDesktopView({
     return () => {
       disposed = true;
       if (retry) clearTimeout(retry);
+      stopWaiting?.();
       hangUp();
     };
   }, [environmentId, screen, pageVisible]);

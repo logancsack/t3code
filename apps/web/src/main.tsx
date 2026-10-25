@@ -23,6 +23,7 @@ import { installAldoNotificationsSync } from "./aldo/notifications";
 import { installAldoServiceWorker } from "./aldo/serviceWorker";
 import { installAldoReconnect } from "./aldo/reconnect";
 import { installAldoFirstView } from "./aldo/firstView";
+import { installAldoOpenTimings } from "./aldo/openTimings";
 import { installAldoChunkPrefetch } from "./aldo/chunkPrefetch";
 import { installAldoShellSync } from "./aldo/shells";
 import { installAldoThreadDetails } from "./aldo/threadDetails";
@@ -61,6 +62,7 @@ async function renderApp() {
     installAldoThreadDetails();
     installAldoReconnect();
     installAldoFirstView();
+    installAldoOpenTimings();
     await prepareManagedDevPc();
   } else {
     initializeLandingDemoClientSettings();

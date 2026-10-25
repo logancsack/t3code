@@ -182,3 +182,48 @@ it("closes a chart's sheet for good: closing it doesn't open it again", async ()
   });
   expect(document.body.querySelector('[role="dialog"]')).toBeNull();
 });
+
+it("draws a pie with each slice's share written beside it, and its data full screen", async () => {
+  const holders: AldoArtifact = {
+    kind: "chart",
+    title: "Largest holders",
+    type: "pie",
+    labels: ["Berkshire", "Vanguard", "BlackRock"],
+    series: [{ name: "Stake", values: [45, 8, 7] }],
+    unit: "%",
+  };
+  await act(async () => root.render(<AldoArtifacts artifacts={[holders]} />));
+  const pie = container.querySelector('[role="img"][aria-label="Largest holders"]')!;
+  expect(pie.querySelectorAll("path")).toHaveLength(3);
+  expect(pie.textContent).toContain("Berkshire");
+  expect(pie.textContent).toContain("75%");
+  await act(async () => {
+    container
+      .querySelector<HTMLButtonElement>('button[aria-label="Open Largest holders full screen"]')!
+      .click();
+  });
+  expect(document.body.querySelector('[role="dialog"]')!.textContent).toContain("Share");
+});
+
+it("draws stacked columns as one column a label, and writes the latest label's figures over them", async () => {
+  const revenue: AldoArtifact = {
+    kind: "chart",
+    title: "Revenue",
+    type: "column",
+    stacked: true,
+    labels: ["Q1", "Q2", "Q3"],
+    series: [
+      { name: "US", values: [3, 4, 5] },
+      { name: "EU", values: [1, 2, 0] },
+    ],
+    unit: "$",
+  };
+  await act(async () => root.render(<AldoArtifacts artifacts={[revenue]} />));
+  const chart = container.querySelector('svg[role="img"][aria-label="Revenue"]')!;
+  // A segment for each value but the one that's nothing.
+  expect(chart.querySelectorAll("path")).toHaveLength(5);
+  const figures = chart.closest("section")!.querySelector("p")!.textContent;
+  expect(figures).toContain("Q3");
+  expect(figures).toContain("US$5");
+  expect(figures).toContain("EU$0");
+});

@@ -7,6 +7,8 @@
 // sees doesn't poll, and tabs on screen share their reads (sharedReads). What
 // the user answers from here is held out of what's shown until a read says the
 // thread has moved on (answered.logic.ts), so a card goes the moment it's sent.
+// The last read is kept on the device for whoever is signed in (who.ts), and
+// shown at the next open until this page's first read answers.
 
 import { useEffect } from "react";
 import { create } from "zustand";
@@ -35,24 +37,31 @@ import { requestAldoDirectoryRefresh, subscribeAldoEnvironments } from "./direct
 import { aldoPageInUseNow } from "./pageUse";
 
 import { reconcileAldoWalkthrough } from "./walkthrough";
+import { aldoWho } from "./who";
 
 const REFRESH_EVERY_MS = 30_000;
 /** How often a page on screen looks whether its read is REFRESH_EVERY_MS old. */
 const LOOK_EVERY_MS = 5_000;
 /** Directory fetches come every 15 seconds; the home read follows them no closer than this. */
 const FOLLOW_DIRECTORY_MIN_MS = 8_000;
+const SAVED_KEY = "aldo-home-copy";
+/** How old a kept copy of the last read can be and still show at an open. */
+const SAVED_FOR_MS = 24 * 60 * 60_000;
 
 export interface AldoHomeFeed {
   readonly home: AldoHome | null;
   /** Whether this Aldo has the home read; null until it's known. */
   readonly supported: boolean | null;
   readonly error: string | null;
+  /** Whether `home` is the copy this device kept of the last read, not yet this page's own. */
+  readonly saved: boolean;
 }
 
 export const useAldoHomeFeed = create<AldoHomeFeed>(() => ({
   home: null,
   supported: null,
   error: null,
+  saved: false,
 }));
 
 let inflight = false;
@@ -85,6 +94,57 @@ let approvalHolds: ApprovalHolds = {};
  * here: another tab's read begun earlier could put back what changed since.
  */
 let homeFrom = 0;
+
+/** A copy of the last read, as it was kept: by whom, and when. */
+interface SavedHome {
+  readonly who: string;
+  readonly at: number;
+  readonly home: AldoHome;
+}
+
+function loadSavedHome(): AldoHome | null {
+  const who = aldoWho();
+  if (!who) return null;
+  try {
+    const saved = JSON.parse(
+      localStorage.getItem(SAVED_KEY) ?? "null",
+    ) as Partial<SavedHome> | null;
+    if (
+      saved?.who !== who ||
+      typeof saved.at !== "number" ||
+      Date.now() - saved.at > SAVED_FOR_MS
+    ) {
+      return null;
+    }
+    return Array.isArray(saved.home?.conversations) ? saved.home : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Keeps a read (its JSON, as it came) for the next open, for whoever is
+ * signed in; none, or no one known, leaves no copy.
+ */
+function saveHome(body: string | null): void {
+  const who = body ? aldoWho() : null;
+  try {
+    // A SavedHome, written around the read's own JSON rather than serializing it again.
+    if (body && who)
+      localStorage.setItem(SAVED_KEY, `{"who":"${who}","at":${Date.now()},"home":${body}}`);
+    else localStorage.removeItem(SAVED_KEY);
+  } catch {
+    // No storage, or too little: the next open waits for its read.
+  }
+}
+
+// What Home last showed here, at once, as it was left (with what was answered
+// since held out), until this page's first read answers.
+const savedHome = loadSavedHome();
+if (savedHome) {
+  serverHome = savedHome;
+  useAldoHomeFeed.setState({ home: shown(savedHome), supported: true, saved: true });
+}
 
 // Each tab on screen reads the home every 30 seconds, so windows side by
 // side read it once each. A page shares each read with this browser's other
@@ -196,18 +256,30 @@ function takeHome(next: AldoHome | null): void {
   const body = JSON.stringify(next);
   const changed = body !== lastServerBody;
   lastServerBody = body;
+  const state = useAldoHomeFeed.getState();
+  if (changed) saveHome(next ? body : null);
   if (next && changed) {
     serverHome = next;
     noteHiddenPrompts(next);
   }
-  const state = useAldoHomeFeed.getState();
+  // An Aldo without the read (rolled back) shows no copy of an earlier one.
+  const unsaved = state.saved && !next;
+  if (unsaved) serverHome = null;
   // While an answer is held, each read is looked over again: it may be the one that has caught up.
   const holding = Object.keys(holds).length + Object.keys(approvalHolds).length > 0;
-  if (changed || holding || state.error !== null || state.supported !== Boolean(next)) {
+  if (
+    changed ||
+    holding ||
+    state.saved ||
+    state.error !== null ||
+    state.supported !== Boolean(next)
+  ) {
     useAldoHomeFeed.setState({
       ...(next && serverHome && (changed || holding) ? { home: shown(serverHome) } : {}),
+      ...(unsaved ? { home: null } : {}),
       supported: Boolean(next),
       error: null,
+      saved: false,
     });
   }
 }
@@ -245,6 +317,12 @@ async function readHome(): Promise<void> {
       takeHome(next);
     }
   } catch (cause) {
+    // Signed out (api.ts sends them to sign in): nothing of theirs is kept for the next open,
+    // unless a read after this one is theirs again.
+    if (cause instanceof AldoApiError && cause.status === 401) {
+      saveHome(null);
+      lastServerBody = null;
+    }
     useAldoHomeFeed.setState({ error: cause instanceof Error ? cause.message : String(cause) });
   } finally {
     inflight = false;
