@@ -42,6 +42,7 @@ import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
+import { Atom } from "effect/unstable/reactivity";
 import { projectFaviconCache } from "../assets/projectFaviconCache";
 
 import { aldoKeepsEnvironmentCache } from "../aldo/directory";
@@ -215,15 +216,58 @@ const openDatabase = Effect.fn("web.connectionStorage.openDatabase")(function* (
   });
 });
 
+interface QueuedRead {
+  readonly key: IDBValidKey;
+  readonly resume: (result: Effect.Effect<unknown, ConnectionTransientError>) => void;
+}
+
+/** Reads waiting for the next microtask, by database and store. */
+const queuedReads = new Map<IDBDatabase, Map<string, Array<QueuedRead>>>();
+
+function runQueuedReads(database: IDBDatabase): void {
+  const stores = queuedReads.get(database);
+  queuedReads.delete(database);
+  for (const [storeName, reads] of stores ?? []) {
+    const fail = (cause: unknown) => {
+      for (const read of reads) read.resume(Effect.fail(catalogError("read", cause)));
+    };
+    try {
+      const transaction = database.transaction(storeName, "readonly");
+      const store = transaction.objectStore(storeName);
+      const requests = reads.map((read) => store.get(read.key));
+      transaction.addEventListener("complete", () => {
+        Atom.batch(() => {
+          for (const [index, read] of reads.entries()) {
+            read.resume(Effect.succeed(requests[index]!.result));
+          }
+        });
+      });
+      transaction.addEventListener("abort", () =>
+        fail(transaction.error ?? "Unknown IndexedDB read error"),
+      );
+    } catch (cause) {
+      fail(cause);
+    }
+  }
+}
+
+/**
+ * Reads asked for together share a transaction and are answered at once, in
+ * one atom batch. Every environment's first load reads its shell and models:
+ * in a transaction each, the answers came one by one, and with hundreds of
+ * environments each one rebuilt everything that lists them.
+ */
 function readDatabaseValue(database: IDBDatabase, storeName: string, key: IDBValidKey) {
   return Effect.callback<unknown, ConnectionTransientError>((resume) => {
-    const request = database.transaction(storeName, "readonly").objectStore(storeName).get(key);
-    request.addEventListener("error", () => {
-      resume(Effect.fail(catalogError("read", request.error ?? "Unknown IndexedDB read error")));
-    });
-    request.addEventListener("success", () => {
-      resume(Effect.succeed(request.result));
-    });
+    let stores = queuedReads.get(database);
+    if (stores === undefined) {
+      stores = new Map();
+      queuedReads.set(database, stores);
+      queueMicrotask(() => runQueuedReads(database));
+    }
+    const reads = stores.get(storeName);
+    if (reads === undefined) stores.set(storeName, [{ key, resume }]);
+    else reads.push({ key, resume });
   }).pipe(Effect.withSpan("web.connectionStorage.readDatabaseValue"));
 }
 
