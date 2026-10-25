@@ -98,6 +98,22 @@ describe("withAldoTemplate", () => {
     });
   });
 
+  it("takes the template's providers already read, as Aldo checks many copies against one", () => {
+    const merged = withAldoTemplate(
+      stored(["codex"], own),
+      { providers: JSON.parse(stored(["codex", "muse"], {})).config.providers },
+      {},
+    );
+    expect(JSON.parse(merged!).config).toEqual({ ...config("codex", "muse"), settings: own });
+    expect(
+      withAldoTemplate(
+        stored(["codex"], own),
+        { providers: JSON.parse(stored(["codex"], {})).config.providers },
+        {},
+      ),
+    ).toBeNull();
+  });
+
   it("leaves a cached config that already has them, or can't be read", () => {
     expect(
       withAldoTemplate(stored(["codex"], own), stored(["codex"], {}), {

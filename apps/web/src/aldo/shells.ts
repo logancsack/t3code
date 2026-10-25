@@ -17,6 +17,7 @@
 
 import type { EnvironmentPresentation } from "@t3tools/client-runtime/connection";
 import type { EnvironmentId } from "@t3tools/contracts";
+import * as Atom from "effect/unstable/reactivity/Atom";
 
 import {
   readCachedShells,
@@ -30,8 +31,13 @@ import { environmentShell } from "../state/shell";
 import { fetchAldoShells, offerAldoShell } from "./threadApi";
 import { isAldoCloud } from "./api";
 import { setAldoDirectorySync, type AldoEnvironment } from "./directory";
-import { getAldoMachineSettings, subscribeAldoMachineSettings } from "./machineSettings";
-import { aldoServerConfigsFor, aldoTemplateProviders } from "./serverConfig";
+import {
+  getAldoMachineSettings,
+  loadAldoMachineSettings,
+  subscribeAldoMachineSettings,
+} from "./machineSettings";
+import { aldoServerConfigTemplate } from "./serverConfig";
+import { providerInstances } from "./serverConfig.logic";
 import { aldoShellCandidates, planAldoShellSync } from "./shells.logic";
 import { aldoShowsStartingThread, clearLeftoverAldoThreads } from "./startingThreads";
 
@@ -42,8 +48,15 @@ const BATCH = 100;
 const known = new Map<string, number>();
 /** Machines Aldo had no shell for whose cache this tab has looked at for a copy to offer. */
 const offerChecked = new Set<string>();
-/** Machines whose cache this tab has looked at for models, with the providers the newest config listed then (and the user's settings). */
-const modelsChecked = new Map<string, string>();
+/**
+ * Machines whose cache this browser has looked at for models, with the
+ * providers the newest config listed then (and the user's settings), kept
+ * between visits (MODELS_CHECKED_KEY): reading a few hundred cached configs
+ * on every open, to find nothing to change, held the page for seconds.
+ */
+const MODELS_CHECKED_KEY = "aldo:models-checked";
+let checkedTemplate: string | null = null;
+const modelsChecked = readModelsChecked();
 /** The directory as last fetched: a change to the user's settings reaches its sleeping machines' caches at once. */
 let directory: ReadonlyArray<AldoEnvironment> = [];
 
@@ -93,52 +106,89 @@ async function download(environments: ReadonlyArray<AldoEnvironment>): Promise<S
   return new Set(Object.keys(shells));
 }
 
+function readModelsChecked(): Map<string, string> {
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(MODELS_CHECKED_KEY) ?? "null") as {
+      template?: unknown;
+      ids?: unknown;
+    } | null;
+    const template = stored?.template;
+    if (typeof template !== "string" || !Array.isArray(stored?.ids)) return new Map();
+    checkedTemplate = template;
+    return new Map(
+      stored.ids.filter((id): id is string => typeof id === "string").map((id) => [id, template]),
+    );
+  } catch {
+    return new Map();
+  }
+}
+
+/** Keeps the machines checked against the newest template for the next visit (the others are checked again then). */
+function keepModelsChecked(): void {
+  if (checkedTemplate === null) return;
+  const ids = [...modelsChecked].filter(([, template]) => template === checkedTemplate);
+  try {
+    window.localStorage.setItem(
+      MODELS_CHECKED_KEY,
+      JSON.stringify({ template: checkedTemplate, ids: ids.map(([id]) => id) }),
+    );
+  } catch {
+    // Checked again next visit.
+  }
+}
+
 /**
  * Models for the machines that aren't connected and have none cached, or a
  * cached copy that lacks a provider the newest config lists or the user's
- * settings Aldo keeps: once each per tab, and again when the newest config
- * lists other providers, the user changes a setting, or after the machine was
- * connected (its own config replaced the cache then). One that didn't get them
- * (no cloud agent has reported any yet, or Aldo couldn't be reached) is tried
- * again on the next directory fetch.
+ * settings Aldo keeps: once each, and again when the newest config lists
+ * other providers, the user changes a setting, or after the machine was
+ * connected (its own config replaced the cache then). One that didn't get
+ * them (no cloud agent has reported any yet, or Aldo couldn't be reached) is
+ * tried again on the next directory fetch. One at a time, each after the one
+ * before, so none checks what another is checking.
  */
-async function seedModels(environments: ReadonlyArray<AldoEnvironment>): Promise<void> {
-  const settings = getAldoMachineSettings() ?? {};
-  const template = `${aldoTemplateProviders()} ${JSON.stringify(settings)}`;
+let seeding: Promise<void> = Promise.resolve();
+
+function seedModels(environments: ReadonlyArray<AldoEnvironment>): Promise<void> {
+  seeding = seeding.then(() => seedModelsNow(environments).catch(() => undefined));
+  return seeding;
+}
+
+async function seedModelsNow(environments: ReadonlyArray<AldoEnvironment>): Promise<void> {
   // A connected machine writes its own config over the cache: checked again once it isn't.
+  let forgot = false;
   for (const environment of environments) {
-    if (isLive(environment.environmentId)) modelsChecked.delete(environment.environmentId);
+    if (isLive(environment.environmentId) && modelsChecked.delete(environment.environmentId)) {
+      forgot = true;
+    }
   }
+  if (forgot) keepModelsChecked();
+  if (environments.every((environment) => isLive(environment.environmentId))) return;
+  // With the user's settings: checking without them, then again once they're in, checks every machine twice.
+  await loadAldoMachineSettings();
+  const config = await aldoServerConfigTemplate();
+  if (!config) return;
+  const settings = getAldoMachineSettings() ?? {};
+  const template = `${providerInstances(config).join(",")} ${JSON.stringify(settings)}`;
   const ids = environments
-    .map((environment) => environment.environmentId)
+    .map((environment) => environment.environmentId as EnvironmentId)
     .filter(
       (environmentId) => modelsChecked.get(environmentId) !== template && !isLive(environmentId),
     );
   if (ids.length === 0) return;
-  // Held while in flight, so a fetch that comes meanwhile doesn't do them again.
-  for (const environmentId of ids) modelsChecked.set(environmentId, template);
-  let done = new Set<string>();
-  try {
-    const configs = await aldoServerConfigsFor(ids);
-    if (configs.size === 0) return;
-    const { written, kept } = await seedMissingServerConfigs(
-      new Map(
-        [...configs].map(([environmentId, config]) => [environmentId as EnvironmentId, config]),
-      ),
-      settings,
-    );
-    done = new Set([...written, ...kept]);
-    // Already registered: its config reloads from the cache.
+  const { written, kept } = await seedMissingServerConfigs(config, ids, settings);
+  for (const environmentId of [...written, ...kept]) modelsChecked.set(environmentId, template);
+  checkedTemplate = template;
+  keepModelsChecked();
+  // Already registered: its config reloads from the cache, all of them at once.
+  Atom.batch(() => {
     for (const environmentId of written) {
       const phase = phaseOf(environmentId);
       if (phase !== undefined && !isLivePhase(phase)) {
         appAtomRegistry.refresh(serverEnvironment.configProjection({ environmentId, input: {} }));
       }
     }
-  } finally {
-    for (const environmentId of ids)
-      if (!done.has(environmentId)) modelsChecked.delete(environmentId);
-  }
+  });
 }
 
 async function sync(environments: ReadonlyArray<AldoEnvironment>): Promise<void> {
@@ -177,11 +227,11 @@ let running: Promise<void> | null = null;
 /** Brings this browser's copies of the machines' threads up to date on every directory fetch. */
 export function installAldoShellSync(): void {
   if (!isAldoCloud) return;
-  subscribeAldoMachineSettings(() => void seedModels(directory).catch(() => undefined));
+  subscribeAldoMachineSettings(() => void seedModels(directory));
   setAldoDirectorySync((environments) => {
     directory = environments;
     // Not waited for: a machine that registers first reloads its models once they're in.
-    void seedModels(environments).catch(() => undefined);
+    void seedModels(environments);
     // One at a time: a fetch that comes while one runs (slow Aldo) waits for it.
     running ??= sync(environments).finally(() => {
       running = null;
