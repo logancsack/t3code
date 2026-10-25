@@ -219,7 +219,8 @@ function useHeadsUpsChange() {
 /**
  * Quiet hours, off until the user turns them on, then from a time until a
  * time where they are: Aldo holds heads-ups, finished threads and agents' news
- * until they end, and still sounds whatever needs the user. Hidden on an
+ * until they end, and still sounds whatever needs the user. Off is the same
+ * time at both ends, which is how Aldo keeps it (quietHoursOn). Hidden on an
  * Aldo that doesn't let them be set.
  */
 function QuietHoursRow() {

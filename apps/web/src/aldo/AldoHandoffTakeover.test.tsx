@@ -14,6 +14,8 @@ const read = vi.hoisted(() => ({
   handoff: {} as Record<string, unknown>,
   /** Aldo hasn't answered the read yet (a phone signed out gets sign-in instead). */
   pending: false,
+  /** What shows is the copy the device kept of an earlier read, from before the step. */
+  saved: false,
   listeners: new Set<() => void>(),
 }));
 const signIn = {
@@ -31,10 +33,14 @@ vi.mock("./homeFeed", async () => {
     return () => read.listeners.delete(listener);
   };
   return {
-    useAldoHomeRead: () =>
-      useSyncExternalStore(subscribe, () => read.pending)
-        ? { home: null, supported: undefined }
-        : { home: { handoffs: [read.handoff] }, supported: true },
+    useAldoHomeRead: () => {
+      const state = useSyncExternalStore(subscribe, () =>
+        read.pending ? "pending" : read.saved ? "saved" : "read",
+      );
+      if (state === "pending") return { home: null, supported: undefined };
+      if (state === "saved") return { home: { handoffs: [] }, supported: true, saved: true };
+      return { home: { handoffs: [read.handoff] }, supported: true, saved: false };
+    },
   };
 });
 vi.mock("./morph", () => ({
@@ -54,6 +60,7 @@ afterEach(async () => {
   });
   root = undefined;
   read.pending = false;
+  read.saved = false;
   document.body.innerHTML = "";
   vi.unstubAllGlobals();
 });
@@ -124,6 +131,21 @@ it("keeps the link's handoff in the address until Aldo answers, so signing in fi
   });
   expect(router.state.location.searchStr).toBe("");
   expect(container.querySelector('[role="dialog"]')).not.toBeNull();
+});
+
+it("a step newer than the copy the device kept waits for Aldo's own read, rather than closing as gone", async () => {
+  screen(true);
+  read.handoff = signIn;
+  read.saved = true;
+  const container = await openAt("/aldo-machine/thread?handoff=h_test");
+  expect(container.querySelector('[role="dialog"]')).not.toBeNull();
+  await act(() => {
+    read.saved = false;
+    for (const listener of read.listeners) listener();
+  });
+  expect(container.querySelector('[role="dialog"]')?.textContent).toContain(
+    "GitHub wants you to sign in",
+  );
 });
 
 async function openAt(href: string) {
