@@ -2,13 +2,16 @@
 // conversation on a wide screen, the whole screen on a phone. It's the share's
 // own link (/s/<id>), so a page that stays current shows its latest version,
 // says when that was, and can be pinned first in the Library. A page runs
-// sandboxed, as its link serves it; "Open in a new tab" leaves Aldo for it.
+// sandboxed, as its link serves it; "Open in a new tab" leaves Aldo for it,
+// and "Copy link" takes its link to send.
 
 import {
+  CheckIcon,
   DownloadIcon,
   ExternalLinkIcon,
   FileIcon,
   GlobeIcon,
+  LinkIcon,
   PinIcon,
   PinOffIcon,
   XIcon,
@@ -21,6 +24,7 @@ import { Sheet, SheetPopup, SheetTitle } from "../components/ui/sheet";
 import { Spinner } from "../components/ui/spinner";
 import { toastManager } from "../components/ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
+import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { downloadHref } from "./artifacts.logic";
 import { aldoShareUpdated } from "./library.logic";
 import {
@@ -91,6 +95,7 @@ function AldoShareViewer(props: { readonly open: AldoOpenShare }) {
   // A player shows itself at once, as does what's said in place of a PDF.
   const [loaded, setLoaded] = useState(type.startsWith("audio/") || pdfOutside);
   const [pinning, setPinning] = useState(false);
+  const { copyToClipboard, isCopied } = useCopyToClipboard();
   // What /s/ serves as a page (Markdown too, as one to read): sandboxed here as well.
   const page = type === "text/html" || type === "image/svg+xml" || type === "text/markdown";
   const updated = listed ? aldoShareUpdated(listed, new Date()) : null;
@@ -140,6 +145,12 @@ function AldoShareViewer(props: { readonly open: AldoOpenShare }) {
                 {listed.pinned ? <PinOffIcon /> : <PinIcon />}
               </IconButton>
             ) : null}
+            <IconButton
+              label={isCopied ? "Copied" : "Copy link"}
+              onClick={() => copyToClipboard(new URL(open.url, window.location.origin).href)}
+            >
+              {isCopied ? <CheckIcon /> : <LinkIcon />}
+            </IconButton>
             <IconButton
               label="Download"
               href={downloadHref(open.url, window.location.origin, type)}
