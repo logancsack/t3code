@@ -32,7 +32,9 @@ import { useAldoAssistant } from "./assistantSession";
 
 let root: Root;
 let container: HTMLDivElement;
+let touch = false;
 beforeEach(() => {
+  touch = false;
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal(
     "ResizeObserver",
@@ -41,8 +43,8 @@ beforeEach(() => {
       disconnect() {}
     },
   );
-  vi.stubGlobal("matchMedia", () => ({
-    matches: false,
+  vi.stubGlobal("matchMedia", (query: string) => ({
+    matches: touch && query === "(pointer: coarse)",
     addEventListener() {},
     removeEventListener() {},
   }));
@@ -119,3 +121,19 @@ it("keeps Send enabled for three taps, shows queued messages, and accepts anothe
   expect(useAldoAssistant.getState().replying).toBe(false);
   expect(container.textContent).not.toContain("Queued");
 });
+
+it.each([
+  ["touch", true, false],
+  ["mouse", false, true],
+])(
+  "with %s input, focus stays in the field after sending: %s",
+  async (_input, isTouch, keepsFocus) => {
+    touch = isTouch;
+    backend.chat.mockImplementation(() => new Promise(() => {}));
+    await act(async () => root.render(<AldoComposer chips={[]} onChip={vi.fn()} />));
+    const field = container.querySelector("textarea")!;
+    field.focus();
+    await send("Hello");
+    expect(document.activeElement === field).toBe(keepsFocus);
+  },
+);

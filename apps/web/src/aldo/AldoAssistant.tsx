@@ -360,6 +360,8 @@ export function AldoComposer(props: {
     };
     if (props.onSend) props.onSend(send);
     else send();
+    // A touch screen's keyboard would otherwise cover the reply.
+    if (coarse) input.current?.blur();
     read(false);
     acknowledgeAldo();
   };
