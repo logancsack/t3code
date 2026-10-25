@@ -56,7 +56,12 @@ import { aldoHandoffOn } from "./handoffs.logic";
 import { useAldoHomeFeed } from "./homeFeed";
 import { AldoApiError } from "./api";
 import { aldoBrowserConnection, aldoPreviewUrl } from "./workspaceApi";
-import { getAldoEnvironments, subscribeAldoEnvironments } from "./directory";
+import {
+  aldoMachineIsAsleep,
+  getAldoEnvironments,
+  subscribeAldoEnvironments,
+  whenAldoMachineUp,
+} from "./directory";
 import { aldoDesktopScreen, type AldoDesktopScreen } from "./computer.logic";
 import { aldoCanDecodeH264, AldoVideoPlayer } from "./liveVideo";
 import { ALDO_FRAME_VIDEO } from "./liveVideo.logic";
@@ -217,6 +222,7 @@ export function AldoBrowserPanel({
   useEffect(() => {
     let disposed = false;
     let retry: ReturnType<typeof setTimeout> | null = null;
+    let stopWaiting: (() => void) | null = null;
     let attempt = 0;
 
     /** Draws a frame unless a newer one has arrived meanwhile. */
@@ -296,7 +302,12 @@ export function AldoBrowserPanel({
         connecting = false;
         if (cause instanceof AldoApiError && cause.status === 409) {
           setStatus("asleep");
-          schedule(3000);
+          // Listed asleep: again once the directory has it up. Otherwise it's coming up.
+          if (aldoMachineIsAsleep(environmentId) && !disposed) {
+            stopWaiting = whenAldoMachineUp(environmentId, () => void connect());
+          } else {
+            schedule(3000);
+          }
         } else {
           setStatus("error");
           setError(cause instanceof Error ? cause.message : String(cause));
@@ -421,6 +432,7 @@ export function AldoBrowserPanel({
     retryNow.current = () => {
       if (disposed || connecting || socketRef.current) return;
       if (retry) clearTimeout(retry);
+      stopWaiting?.();
       attempt = 0;
       setStatus((current) => (current === "error" ? "connecting" : current));
       void connect();
@@ -429,6 +441,7 @@ export function AldoBrowserPanel({
     return () => {
       disposed = true;
       if (retry) clearTimeout(retry);
+      stopWaiting?.();
       socketRef.current?.close();
       socketRef.current = null;
       setConnected(false);

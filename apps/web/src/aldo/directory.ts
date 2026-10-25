@@ -321,6 +321,32 @@ export function aldoMachineIsAsleep(environmentId: string): boolean {
   return state === "stopped" || state === "failed";
 }
 
+/** How long what waits for a sleeping machine waits before asking it anyway (whenAldoMachineUp). */
+const MACHINE_UP_FALLBACK_MS = 30_000;
+
+/**
+ * Calls `then` once the directory no longer lists this machine asleep
+ * (aldoMachineIsAsleep), or in a while if it still does. What waits for a
+ * sleeping machine (its browser, its desktop) waits for that rather than
+ * asking it every few seconds: a panel left open on one asked for hours.
+ * Returns a function that stops waiting.
+ */
+export function whenAldoMachineUp(environmentId: string, then: () => void): () => void {
+  const stop = () => {
+    clearTimeout(timer);
+    unsubscribe();
+  };
+  const done = () => {
+    stop();
+    then();
+  };
+  const timer = setTimeout(done, MACHINE_UP_FALLBACK_MS);
+  const unsubscribe = subscribeAldoEnvironments(() => {
+    if (!aldoMachineIsAsleep(environmentId)) done();
+  });
+  return stop;
+}
+
 /**
  * Whether Aldo is starting a thread on this machine (it brings the machine up
  * itself), or couldn't start the thread on screen (`threadId`; with none,
