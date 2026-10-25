@@ -13,13 +13,59 @@ export interface AldoFileArtifact {
   readonly bytes?: number;
 }
 
+/** What a chart is: bars across (names, many items), columns, lines and areas over time, parts of a whole, two measures per item, or columns and lines together. */
+export type AldoChartType =
+  | "bar"
+  | "column"
+  | "line"
+  | "area"
+  | "pie"
+  | "donut"
+  | "scatter"
+  | "combo";
+
+export const CHART_TYPES: ReadonlyArray<AldoChartType> = [
+  "bar",
+  "column",
+  "line",
+  "area",
+  "pie",
+  "donut",
+  "scatter",
+  "combo",
+];
+
+/** A scatter chart's point: its two measures, and what it is. */
+export interface AldoChartPoint {
+  readonly x: number;
+  readonly y: number;
+  readonly label?: string;
+}
+
+export interface AldoChartSeries {
+  readonly name: string;
+  /** A value for each label; none in a scatter chart. */
+  readonly values: ReadonlyArray<number>;
+  /** A scatter chart's points. */
+  readonly points?: ReadonlyArray<AldoChartPoint>;
+  /** In a combo chart, how this series is drawn. */
+  readonly mark?: "column" | "line";
+}
+
 export interface AldoChartArtifact {
   readonly kind: "chart";
   readonly title: string;
-  readonly type: "bar" | "line";
+  readonly type: AldoChartType;
+  /** What each value is of; none in a scatter chart. */
   readonly labels: ReadonlyArray<string>;
-  readonly series: ReadonlyArray<{ readonly name: string; readonly values: ReadonlyArray<number> }>;
+  readonly series: ReadonlyArray<AldoChartSeries>;
   readonly unit?: string;
+  /** Bars, columns or areas stacked into totals. */
+  readonly stacked?: boolean;
+  /** A scatter chart's axes: what each measures, and the horizontal one's unit. */
+  readonly xAxis?: string;
+  readonly yAxis?: string;
+  readonly xUnit?: string;
 }
 
 export interface AldoTableArtifact {
@@ -49,30 +95,7 @@ function artifactOf(value: unknown): AldoArtifact | null {
     const bytes = typeof a.bytes === "number" && a.bytes > 0 ? { bytes: a.bytes } : {};
     return { kind: "file", url: a.url, title: a.title, contentType: a.contentType, ...bytes };
   }
-  if (a.kind === "chart") {
-    const labels = texts(a.labels, 40);
-    const series = Array.isArray(a.series)
-      ? a.series.slice(0, 3).flatMap((s: unknown) => {
-          const { name, values } = (s ?? {}) as Record<string, unknown>;
-          return isText(name) &&
-            Array.isArray(values) &&
-            values.length >= (labels?.length ?? 0) &&
-            values.every((v) => typeof v === "number" && Number.isFinite(v))
-            ? [{ name, values: (values as number[]).slice(0, labels?.length ?? 0) }]
-            : [];
-        })
-      : [];
-    if ((a.type !== "bar" && a.type !== "line") || !labels?.length || series.length === 0)
-      return null;
-    return {
-      kind: "chart",
-      title: isText(a.title) ? a.title : "",
-      type: a.type,
-      labels,
-      series,
-      ...(isText(a.unit) && a.unit ? { unit: a.unit } : {}),
-    };
-  }
+  if (a.kind === "chart") return chartOf(a);
   if (a.kind === "table") {
     const columns = texts(a.columns, 8);
     if (!columns?.length || !Array.isArray(a.rows)) return null;
@@ -89,6 +112,68 @@ function artifactOf(value: unknown): AldoArtifact | null {
     };
   }
   return null;
+}
+
+const MAX_SERIES = 6;
+const MAX_LABELS = 40;
+const MAX_POINTS = 200;
+const isNumber = (value: unknown): value is number =>
+  typeof value === "number" && Number.isFinite(value);
+const optionalText = (key: string, value: unknown) =>
+  isText(value) && value ? { [key]: value } : {};
+
+function pointsOf(value: unknown): AldoChartPoint[] {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, MAX_POINTS).flatMap((p: unknown) => {
+    const { x, y, label } = (p ?? {}) as Record<string, unknown>;
+    return isNumber(x) && isNumber(y) ? [{ x, y, ...optionalText("label", label) }] : [];
+  });
+}
+
+/** A chart as this page draws it: a type it knows, and a value for each label (a point, in a scatter chart). */
+function chartOf(a: Record<string, unknown>): AldoChartArtifact | null {
+  const type = CHART_TYPES.find((t) => t === a.type);
+  if (!type || !Array.isArray(a.series)) return null;
+  const labels = type === "scatter" ? [] : texts(a.labels, MAX_LABELS);
+  if (!labels || (type !== "scatter" && labels.length === 0)) return null;
+  const series = a.series.slice(0, MAX_SERIES).flatMap((s: unknown): AldoChartSeries[] => {
+    const { name, values, points, mark } = (s ?? {}) as Record<string, unknown>;
+    if (!isText(name)) return [];
+    if (type === "scatter") {
+      const kept = pointsOf(points);
+      return kept.length ? [{ name, values: [], points: kept }] : [];
+    }
+    if (!Array.isArray(values) || values.length < labels.length || !values.every(isNumber))
+      return [];
+    const kept = (values as number[]).slice(0, labels.length);
+    // A part of a whole is never less than nothing, and the whole is something.
+    if (
+      (type === "pie" || type === "donut") &&
+      (kept.some((v) => v < 0) || !kept.some((v) => v > 0))
+    )
+      return [];
+    return [{ name, values: kept, ...(type === "combo" && mark === "line" ? { mark } : {}) }];
+  });
+  // A pie is one series.
+  const drawn = type === "pie" || type === "donut" ? series.slice(0, 1) : series;
+  if (drawn.length === 0) return null;
+  const stacks = type === "bar" || type === "column" || type === "area";
+  return {
+    kind: "chart",
+    title: isText(a.title) ? a.title : "",
+    type,
+    labels,
+    series: drawn,
+    ...optionalText("unit", a.unit),
+    ...(stacks && a.stacked === true && drawn.length > 1 ? { stacked: true } : {}),
+    ...(type === "scatter"
+      ? {
+          ...optionalText("xAxis", a.xAxis),
+          ...optionalText("yAxis", a.yAxis),
+          ...optionalText("xUnit", a.xUnit),
+        }
+      : {}),
+  };
 }
 
 /** A message's artifacts as Aldo sent them, those this page can show; none for anything else. */
@@ -190,9 +275,12 @@ export function withoutShownLinks(text: string, artifacts: ReadonlyArray<AldoArt
     .trimEnd();
 }
 
-/** A figure as the page shows it: "$12", "40%", "3.5 h". */
-export function formatValue(value: number, unit?: string): string {
-  const number = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(value);
+/** A figure as the page shows it: "$12", "40%", "3.5 h"; `compact` for a scale's ticks ("$1.2K"). */
+export function formatValue(value: number, unit?: string, compact = false): string {
+  const number = new Intl.NumberFormat(undefined, {
+    maximumFractionDigits: compact ? 1 : 2,
+    ...(compact ? { notation: "compact" as const } : {}),
+  }).format(value);
   if (!unit) return number;
   if (/^[$€£¥]$/.test(unit)) return value < 0 ? `-${unit}${number.slice(1)}` : `${unit}${number}`;
   if (unit === "%") return `${number}%`;
@@ -217,20 +305,52 @@ export function chartScale(values: ReadonlyArray<number>): { top: number; bottom
 }
 
 /**
- * A chart's data as a table: its labels, then a column for each series. As
+ * A chart's data as a table: its labels, then a column for each series (a
+ * pie's share of the whole after its values), or a scatter chart's points. As
  * the page writes the figures, or `raw`, for a spreadsheet: each as Aldo sent
  * it, its unit in the column's name.
  */
 export function chartTable(chart: AldoChartArtifact, raw = false): Omit<AldoTableArtifact, "kind"> {
-  const unit = raw && chart.unit ? ` (${chart.unit})` : "";
+  const named = (name: string, unit?: string) => (raw && unit ? `${name} (${unit})` : name);
+  const figure = (value: number, unit?: string) => (raw ? String(value) : formatValue(value, unit));
+  if (chart.type === "scatter") {
+    const several = chart.series.length > 1;
+    const labelled = chart.series.some((s) => s.points?.some((p) => p.label));
+    return {
+      title: chart.title,
+      columns: [
+        ...(several ? ["Series"] : []),
+        ...(labelled ? [""] : []),
+        named(chart.xAxis || "x", chart.xUnit),
+        named(chart.yAxis || "y", chart.unit),
+      ],
+      rows: chart.series.flatMap((s) =>
+        (s.points ?? []).map((p) => [
+          ...(several ? [s.name] : []),
+          ...(labelled ? [p.label ?? ""] : []),
+          figure(p.x, chart.xUnit),
+          figure(p.y, chart.unit),
+        ]),
+      ),
+    };
+  }
+  const pie = chart.type === "pie" || chart.type === "donut";
+  const total = pie ? chart.series[0]!.values.reduce((sum, v) => sum + v, 0) : 0;
+  const share = (value: number) => {
+    const percent = total ? (value / total) * 100 : 0;
+    return raw ? String(Math.round(percent * 100) / 100) : `${formatValue(percent)}%`;
+  };
   return {
     title: chart.title,
-    columns: ["", ...chart.series.map((s) => `${s.name || "Value"}${unit}`)],
+    columns: [
+      "",
+      ...chart.series.map((s) => named(s.name || "Value", chart.unit)),
+      ...(pie ? [named("Share", "%")] : []),
+    ],
     rows: chart.labels.map((label, i) => [
       label,
-      ...chart.series.map((s) =>
-        raw ? String(s.values[i]) : formatValue(s.values[i]!, chart.unit),
-      ),
+      ...chart.series.map((s) => figure(s.values[i]!, chart.unit)),
+      ...(pie ? [share(chart.series[0]!.values[i]!)] : []),
     ]),
   };
 }

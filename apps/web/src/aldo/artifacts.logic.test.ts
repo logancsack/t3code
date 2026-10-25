@@ -57,7 +57,9 @@ describe("artifactsOf", () => {
         file("javascript:alert(1)"),
         file("/s/short"),
         file(`${DEMO}?x=1`),
-        { kind: "chart", type: "pie", labels: ["a"], series: [{ name: "", values: [1] }] },
+        { kind: "chart", type: "radar", labels: ["a"], series: [{ name: "", values: [1] }] },
+        { kind: "chart", type: "pie", labels: ["a", "b"], series: [{ name: "", values: [1, -1] }] },
+        { kind: "chart", type: "scatter", series: [{ name: "", points: [{ x: "1", y: 2 }] }] },
         { kind: "chart", type: "line", labels: ["a", "b"], series: [{ name: "", values: [1] }] },
         { kind: "table", columns: [], rows: [["a"]] },
         { kind: "html", html: "<script>" },
@@ -67,6 +69,75 @@ describe("artifactsOf", () => {
     ).toEqual([]);
     expect(artifactsOf("nope")).toEqual([]);
     expect(artifactsField(undefined)).toEqual({});
+  });
+
+  it("keeps every type of chart: stacked, a combo's lines, a pie's one series, a scatter chart's points", () => {
+    const values = (n: number) => ({ name: `S${n}`, values: [n, n + 1] });
+    expect(
+      artifactsOf([
+        {
+          kind: "chart",
+          type: "column",
+          labels: ["Q1", "Q2"],
+          series: [values(1), values(2)],
+          stacked: true,
+        },
+        { kind: "chart", type: "line", labels: ["Q1", "Q2"], series: [values(1)], stacked: true },
+        {
+          kind: "chart",
+          type: "combo",
+          labels: ["Q1", "Q2"],
+          series: [values(1), { ...values(2), mark: "line" }, { ...values(3), mark: "area" }],
+        },
+        { kind: "chart", type: "donut", labels: ["A", "B"], series: [values(1), values(2)] },
+        {
+          kind: "chart",
+          type: "scatter",
+          labels: ["ignored"],
+          series: [
+            {
+              name: "Cos",
+              points: [
+                { x: 1, y: 2, label: "Acme" },
+                { x: Infinity, y: 1 },
+              ],
+            },
+          ],
+          xAxis: "Growth",
+          xUnit: "%",
+          yAxis: "P/E",
+        },
+      ]),
+    ).toEqual([
+      {
+        kind: "chart",
+        title: "",
+        type: "column",
+        labels: ["Q1", "Q2"],
+        series: [values(1), values(2)],
+        stacked: true,
+      },
+      // A line doesn't stack, nor does one series.
+      { kind: "chart", title: "", type: "line", labels: ["Q1", "Q2"], series: [values(1)] },
+      {
+        kind: "chart",
+        title: "",
+        type: "combo",
+        labels: ["Q1", "Q2"],
+        series: [values(1), { ...values(2), mark: "line" }, values(3)],
+      },
+      { kind: "chart", title: "", type: "donut", labels: ["A", "B"], series: [values(1)] },
+      {
+        kind: "chart",
+        title: "",
+        type: "scatter",
+        labels: [],
+        series: [{ name: "Cos", values: [], points: [{ x: 1, y: 2, label: "Acme" }] }],
+        xAxis: "Growth",
+        yAxis: "P/E",
+        xUnit: "%",
+      },
+    ]);
   });
 
   it("shows six at most", () => {
@@ -137,6 +208,58 @@ it("writes figures as Aldo does, on a scale that ends on a round number", () => 
   expect(chartScale([-10, 40])).toEqual({ top: 50, bottom: -10 });
   expect(chartScale([-10, -100, 0])).toEqual({ top: 0, bottom: -100 });
   expect(chartScale([0])).toEqual({ top: 1, bottom: 0 });
+});
+
+it("writes a scale's ticks short", () => {
+  expect(formatValue(1500, "$", true)).toBe("$1.5K");
+  expect(formatValue(2_000_000, undefined, true)).toBe("2M");
+});
+
+it("gives a pie's shares and a scatter chart's points as a table", () => {
+  const pie = {
+    kind: "chart" as const,
+    title: "Holders",
+    type: "pie" as const,
+    labels: ["Berkshire", "Others"],
+    series: [{ name: "Stake", values: [45, 55] }],
+    unit: "%",
+  };
+  expect(chartTable(pie)).toEqual({
+    title: "Holders",
+    columns: ["", "Stake", "Share"],
+    rows: [
+      ["Berkshire", "45%", "45%"],
+      ["Others", "55%", "55%"],
+    ],
+  });
+  expect(chartTable(pie, true).columns).toEqual(["", "Stake (%)", "Share (%)"]);
+  expect(
+    chartTable({
+      kind: "chart",
+      title: "Value",
+      type: "scatter",
+      labels: [],
+      series: [
+        {
+          name: "Cos",
+          values: [],
+          points: [
+            { x: 12, y: 30, label: "Acme" },
+            { x: 4, y: 9 },
+          ],
+        },
+      ],
+      xAxis: "Growth",
+      xUnit: "%",
+    }),
+  ).toEqual({
+    title: "Value",
+    columns: ["", "Growth", "y"],
+    rows: [
+      ["Acme", "12%", "30"],
+      ["", "4%", "9"],
+    ],
+  });
 });
 
 it("gives a chart's data as a table, and a table as CSV a spreadsheet won't run", () => {
