@@ -739,6 +739,8 @@ const FRESH_LISTING_WAIT = "2 seconds";
  */
 export function askAldoNext(environmentId: string): void {
   asks.set(environmentId, ++askCount);
+  // No longer asleep to the registry, if it was (aldoAsleepEnvironments).
+  emitRequested = true;
 }
 
 /**
@@ -774,6 +776,26 @@ function asleepAsListed(environmentId: string): boolean {
     !wakes.has(environmentId) &&
     !asks.has(environmentId)
   );
+}
+
+/**
+ * The machines the directory lists as not running that this tab isn't waking
+ * or asking about (askAldoNext), for the registry: a sleeping machine runs
+ * nothing in this tab (no connection, no streams) until something needs it,
+ * and shows its cached threads and models meanwhile. Each machine ran its own
+ * connection and streams, which took seconds to start for a few hundred.
+ * Unlike asleepAsListed, an old listing still counts: a hidden tab's machines
+ * stay asleep until it reads the directory again.
+ */
+export function aldoAsleepEnvironments(): ReadonlySet<EnvironmentId> {
+  const asleep = new Set<EnvironmentId>();
+  for (const environment of knownEnvironments ?? []) {
+    const environmentId = environment.environmentId;
+    if (environment.state !== "ready" && !wakes.has(environmentId) && !asks.has(environmentId)) {
+      asleep.add(environmentId as EnvironmentId);
+    }
+  }
+  return asleep;
 }
 
 /**
@@ -854,6 +876,7 @@ export function wakeAldoEnvironment(environmentId: string): Promise<void> {
     .then(() => askAldoNext(environmentId))
     .finally(() => wakes.delete(environmentId));
   wakes.set(environmentId, wake);
+  emitRequested = true;
   return wake;
 }
 

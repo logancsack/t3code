@@ -7,7 +7,7 @@ import { AsyncResult, Atom } from "effect/unstable/reactivity";
 
 import * as EnvironmentRegistry from "../connection/registry.ts";
 import type { ConnectionCatalogEntry } from "../connection/catalog.ts";
-import { AVAILABLE_CONNECTION_STATE } from "../connection/model.ts";
+import { AVAILABLE_CONNECTION_STATE, DORMANT_CONNECTION_STATE } from "../connection/model.ts";
 import * as EnvironmentSupervisor from "../connection/supervisor.ts";
 import {
   GitHubRoutingPermissions,
@@ -118,6 +118,7 @@ export function createEnvironmentCatalogAtoms<R, E>(
             Effect.map((supervisor) => SubscriptionRef.changes(supervisor.state)),
           ),
         ),
+        Stream.succeed(DORMANT_CONNECTION_STATE),
       ),
       { initialValue: AVAILABLE_CONNECTION_STATE },
     ),

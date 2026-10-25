@@ -70,7 +70,11 @@ import {
 import { connectionStorageLayer } from "./storage";
 import { LANDING_DEMO_ENVIRONMENT_ID, isLandingDemo } from "../landingDemo/mode";
 import { clientPresentationMetadata } from "./clientMetadata";
-import { aldoEnvironmentGateway, aldoPlatformRegistrations } from "../aldo/directory";
+import {
+  aldoAsleepEnvironments,
+  aldoEnvironmentGateway,
+  aldoPlatformRegistrations,
+} from "../aldo/directory";
 import { isAldoCloud } from "../aldo/api";
 
 let nextObservedRpcRequestId = 0;
@@ -525,6 +529,7 @@ const platformConnectionSourceLayer = Layer.effect(
     if (isAldoCloud) {
       return PlatformConnectionSource.of({
         registrations: aldoPlatformRegistrations(),
+        asleep: Effect.sync(aldoAsleepEnvironments),
       });
     }
     if (isHostedStaticApp() || isLocalEnvironmentDisabled()) {

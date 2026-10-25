@@ -363,11 +363,10 @@ export interface ServerConfigSubscriptionOptions {
   readonly usageLimitsCommand?: boolean;
 }
 
-export const makeEnvironmentServerConfigState = Effect.fn("EnvironmentServerConfigState.make")(
-  function* (subscription: ServerConfigSubscriptionOptions) {
-    const supervisor = yield* EnvironmentSupervisor;
+/** An environment's cached server config, as the projection that shows it until it's live. */
+const cachedServerConfigProjection = Effect.fn("EnvironmentServerConfigState.loadCached")(
+  function* (environmentId: EnvironmentId) {
     const cache = yield* EnvironmentCacheStore;
-    const environmentId = supervisor.target.environmentId;
     const cachedConfig = yield* cache.loadServerConfig(environmentId).pipe(
       Effect.catch((error) =>
         Effect.logWarning("Could not load cached server configuration.").pipe(
@@ -379,14 +378,23 @@ export const makeEnvironmentServerConfigState = Effect.fn("EnvironmentServerConf
         ),
       ),
     );
+    // Stripped on load as well as on save: a cache written by an earlier
+    // build can still carry published themes.
+    return Option.map(cachedConfig, (cached): ServerConfigProjection => ({
+      config: withoutEnvironmentThemes(cached),
+      latestEvent: cachedConfigSnapshotEvent(withoutEnvironmentThemes(cached)),
+      source: "cache" as const,
+    }));
+  },
+);
+
+export const makeEnvironmentServerConfigState = Effect.fn("EnvironmentServerConfigState.make")(
+  function* (subscription: ServerConfigSubscriptionOptions) {
+    const supervisor = yield* EnvironmentSupervisor;
+    const cache = yield* EnvironmentCacheStore;
+    const environmentId = supervisor.target.environmentId;
     const state = yield* SubscriptionRef.make<Option.Option<ServerConfigProjection>>(
-      // Stripped on load as well as on save: a cache written by an earlier
-      // build can still carry published themes.
-      Option.map(cachedConfig, (cached) => ({
-        config: withoutEnvironmentThemes(cached),
-        latestEvent: cachedConfigSnapshotEvent(withoutEnvironmentThemes(cached)),
-        source: "cache" as const,
-      })),
+      yield* cachedServerConfigProjection(environmentId),
     );
     const persistence = yield* Queue.sliding<ServerConfig>(1);
     const pendingPersistence = yield* Ref.make<Option.Option<ServerConfig>>(Option.none());
@@ -463,22 +471,23 @@ function serverConfigStateChanges(
   environmentId: EnvironmentId,
   subscription: ServerConfigSubscriptionOptions,
 ) {
+  const present = <E, R>(projections: Stream.Stream<Option.Option<ServerConfigProjection>, E, R>) =>
+    projections.pipe(
+      Stream.filterMap((projection) =>
+        Option.match(projection, {
+          onNone: () => Result.failVoid,
+          onSome: (value) => Result.succeed(value),
+        }),
+      ),
+    );
   return followStreamInEnvironment(
     environmentId,
     Stream.unwrap(
       makeEnvironmentServerConfigState(subscription).pipe(
-        Effect.map((state) =>
-          SubscriptionRef.changes(state).pipe(
-            Stream.filterMap((projection) =>
-              Option.match(projection, {
-                onNone: () => Result.failVoid,
-                onSome: (value) => Result.succeed(value),
-              }),
-            ),
-          ),
-        ),
+        Effect.map((state) => SubscriptionRef.changes(state).pipe(present)),
       ),
     ),
+    Stream.fromEffect(cachedServerConfigProjection(environmentId)).pipe(present),
   );
 }
 

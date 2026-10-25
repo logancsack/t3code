@@ -177,3 +177,16 @@ export const AVAILABLE_CONNECTION_STATE: SupervisorConnectionState = Object.free
   lastFailure: null,
   retryAt: null,
 });
+
+/**
+ * A dormant environment's state (EnvironmentRegistry's dormant environments):
+ * as an asleep one's supervisor shows after its first attempt.
+ */
+export const DORMANT_CONNECTION_STATE: SupervisorConnectionState = Object.freeze({
+  ...AVAILABLE_CONNECTION_STATE,
+  phase: "blocked",
+  lastFailure: new ConnectionBlockedError({
+    reason: "dormant",
+    detail: "The environment is asleep.",
+  }),
+});
