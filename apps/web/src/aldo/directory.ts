@@ -319,6 +319,32 @@ export function aldoMachineIsAsleep(environmentId: string): boolean {
   return state === "stopped" || state === "failed";
 }
 
+/** How long what waits for a sleeping machine waits before asking it anyway (whenAldoMachineUp). */
+const MACHINE_UP_FALLBACK_MS = 30_000;
+
+/**
+ * Calls `then` once the directory no longer lists this machine asleep
+ * (aldoMachineIsAsleep), or in a while if it still does. What waits for a
+ * sleeping machine (its browser, its desktop) waits for that rather than
+ * asking it every few seconds: a panel left open on one asked for hours.
+ * Returns a function that stops waiting.
+ */
+export function whenAldoMachineUp(environmentId: string, then: () => void): () => void {
+  const stop = () => {
+    clearTimeout(timer);
+    unsubscribe();
+  };
+  const done = () => {
+    stop();
+    then();
+  };
+  const timer = setTimeout(done, MACHINE_UP_FALLBACK_MS);
+  const unsubscribe = subscribeAldoEnvironments(() => {
+    if (!aldoMachineIsAsleep(environmentId)) done();
+  });
+  return stop;
+}
+
 /**
  * Whether Aldo is starting a thread on this machine (it brings the machine up
  * itself), or couldn't start the thread on screen (`threadId`; with none,
@@ -385,20 +411,29 @@ interface DirectoryBody {
 
 /** How long this page took to show its first view (firstView.ts), for the next read to tell Aldo, once. */
 let firstViewMs: number | null = null;
+/** How its open felt after that (openTimings.ts), for the next read to tell Aldo, once. */
+let openTimings: string | null = null;
 
 /** Notes how long this page took to show its first view: Aldo keeps it to measure how fast the app opens. */
 export function noteAldoFirstView(ms: number): void {
   firstViewMs = Math.round(ms);
 }
 
+/** Notes how this page's open felt (openTimings.ts): Aldo keeps it next to its first view. */
+export function noteAldoOpen(timings: string): void {
+  openTimings = timings;
+}
+
 async function fetchEnvironments(): Promise<ReadonlyArray<AldoEnvironment>> {
   const startedAt = Date.now();
   const firstView = firstViewMs;
-  const body = await api<DirectoryBody>(
-    "/api/environments",
-    firstView === null ? {} : { headers: { "x-aldo-first-view": String(firstView) } },
-  );
+  const open = openTimings;
+  const headers: Record<string, string> = {};
+  if (firstView !== null) headers["x-aldo-first-view"] = String(firstView);
+  if (open !== null) headers["x-aldo-open"] = open;
+  const body = await api<DirectoryBody>("/api/environments", { headers });
   if (firstViewMs === firstView) firstViewMs = null;
+  if (openTimings === open) openTimings = null;
   sharedReads()?.postMessage({ startedAt, body } satisfies SharedRead);
   listingFrom = Math.max(listingFrom, startedAt);
   return takeListing(body);
@@ -614,8 +649,8 @@ function takeSharedRead(read: Partial<SharedRead> | null): void {
   const startedAt = read?.startedAt;
   if (pageHidden() || typeof startedAt !== "number" || startedAt <= listingFrom) return;
   if (!Array.isArray(read?.body?.environments)) return;
-  // Not while this tab has its first view to tell Aldo: its own read, on time, says it.
-  const later = firstViewMs === null;
+  // Not while this tab has its first view (or how its open felt) to tell Aldo: its own read, on time, says it.
+  const later = firstViewMs === null && openTimings === null;
   // A read of this tab's own under way answers for it. One begun after it
   // still puts this tab's next read back, so tabs that read at the same time
   // (a tab just duplicated) fall out of step, and one goes on reading for both.

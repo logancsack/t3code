@@ -11,8 +11,11 @@ import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 import * as NodeZlib from "node:zlib";
 
-/** About 10% over what the home screen downloaded when this was set: 1,120 kB on 2026-10-19. */
-const BUDGET_BYTES = 1_230_000;
+/**
+ * About 4% over what the home screen downloaded when this was set: 1,155 kB on
+ * 2026-10-25, once T3 Connect's Clerk and the snooze date picker loaded when used.
+ */
+const BUDGET_BYTES = 1_200_000;
 
 /** The home route's own chunks: the chat layout and its index route. */
 const HOME_ROUTE_CHUNKS = [

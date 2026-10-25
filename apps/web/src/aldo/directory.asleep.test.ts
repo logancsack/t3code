@@ -455,6 +455,27 @@ describe("the directory answers for sleeping machines", () => {
   );
 
   it.live(
+    "what waits for a sleeping machine goes on once the listing has it up, or in a while",
+    () =>
+      Effect.gen(function* () {
+        const tab = yield* page({ s0: "stopped", s1: "stopped" });
+        const went: string[] = [];
+        tab.directory.whenAldoMachineUp("aldo-s0", () => went.push("s0"));
+        tab.directory.whenAldoMachineUp("aldo-s1", () => went.push("s1"));
+        const stop = tab.directory.whenAldoMachineUp("aldo-s1", () => went.push("s1, stopped"));
+        stop();
+
+        tab.aldo.states.set("s0", "ready");
+        tab.directory.requestAldoDirectoryRefresh();
+        yield* advance(250);
+        expect(went).toEqual(["s0"]);
+
+        yield* advance(30_000);
+        expect(went).toEqual(["s0", "s1"]);
+      }),
+  );
+
+  it.live(
     "the listing turning to ready just as an attempt is told it's asleep still connects it",
     () =>
       Effect.gen(function* () {
