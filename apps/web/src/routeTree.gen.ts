@@ -31,9 +31,11 @@ import { Route as SettingsProvidersRouteImport } from './routes/settings.provide
 import { Route as SettingsProjectsRouteImport } from './routes/settings.projects'
 import { Route as SettingsPhoneRouteImport } from './routes/settings.phone'
 import { Route as SettingsPermissionsRouteImport } from './routes/settings.permissions'
+import { Route as SettingsOrganizationRouteImport } from './routes/settings.organization'
 import { Route as SettingsOpenSourceLicensesRouteImport } from './routes/settings.open-source-licenses'
 import { Route as SettingsNotificationsRouteImport } from './routes/settings.notifications'
 import { Route as SettingsMemoryRouteImport } from './routes/settings.memory'
+import { Route as SettingsMembersRouteImport } from './routes/settings.members'
 import { Route as SettingsKeybindingsRouteImport } from './routes/settings.keybindings'
 import { Route as SettingsIntegrationsRouteImport } from './routes/settings.integrations'
 import { Route as SettingsInstructionsRouteImport } from './routes/settings.instructions'
@@ -160,6 +162,11 @@ const SettingsPermissionsRoute = SettingsPermissionsRouteImport.update({
   path: '/permissions',
   getParentRoute: () => SettingsRoute,
 } as any)
+const SettingsOrganizationRoute = SettingsOrganizationRouteImport.update({
+  id: '/organization',
+  path: '/organization',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const SettingsOpenSourceLicensesRoute =
   SettingsOpenSourceLicensesRouteImport.update({
     id: '/open-source-licenses',
@@ -174,6 +181,11 @@ const SettingsNotificationsRoute = SettingsNotificationsRouteImport.update({
 const SettingsMemoryRoute = SettingsMemoryRouteImport.update({
   id: '/memory',
   path: '/memory',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsMembersRoute = SettingsMembersRouteImport.update({
+  id: '/members',
+  path: '/members',
   getParentRoute: () => SettingsRoute,
 } as any)
 const SettingsKeybindingsRoute = SettingsKeybindingsRouteImport.update({
@@ -282,9 +294,11 @@ export interface FileRoutesByFullPath {
   '/settings/instructions': typeof SettingsInstructionsRoute
   '/settings/integrations': typeof SettingsIntegrationsRoute
   '/settings/keybindings': typeof SettingsKeybindingsRoute
+  '/settings/members': typeof SettingsMembersRoute
   '/settings/memory': typeof SettingsMemoryRoute
   '/settings/notifications': typeof SettingsNotificationsRoute
   '/settings/open-source-licenses': typeof SettingsOpenSourceLicensesRoute
+  '/settings/organization': typeof SettingsOrganizationRoute
   '/settings/permissions': typeof SettingsPermissionsRoute
   '/settings/phone': typeof SettingsPhoneRoute
   '/settings/projects': typeof SettingsProjectsRoute
@@ -322,9 +336,11 @@ export interface FileRoutesByTo {
   '/settings/instructions': typeof SettingsInstructionsRoute
   '/settings/integrations': typeof SettingsIntegrationsRoute
   '/settings/keybindings': typeof SettingsKeybindingsRoute
+  '/settings/members': typeof SettingsMembersRoute
   '/settings/memory': typeof SettingsMemoryRoute
   '/settings/notifications': typeof SettingsNotificationsRoute
   '/settings/open-source-licenses': typeof SettingsOpenSourceLicensesRoute
+  '/settings/organization': typeof SettingsOrganizationRoute
   '/settings/permissions': typeof SettingsPermissionsRoute
   '/settings/phone': typeof SettingsPhoneRoute
   '/settings/projects': typeof SettingsProjectsRoute
@@ -366,9 +382,11 @@ export interface FileRoutesById {
   '/settings/instructions': typeof SettingsInstructionsRoute
   '/settings/integrations': typeof SettingsIntegrationsRoute
   '/settings/keybindings': typeof SettingsKeybindingsRoute
+  '/settings/members': typeof SettingsMembersRoute
   '/settings/memory': typeof SettingsMemoryRoute
   '/settings/notifications': typeof SettingsNotificationsRoute
   '/settings/open-source-licenses': typeof SettingsOpenSourceLicensesRoute
+  '/settings/organization': typeof SettingsOrganizationRoute
   '/settings/permissions': typeof SettingsPermissionsRoute
   '/settings/phone': typeof SettingsPhoneRoute
   '/settings/projects': typeof SettingsProjectsRoute
@@ -411,9 +429,11 @@ export interface FileRouteTypes {
     | '/settings/instructions'
     | '/settings/integrations'
     | '/settings/keybindings'
+    | '/settings/members'
     | '/settings/memory'
     | '/settings/notifications'
     | '/settings/open-source-licenses'
+    | '/settings/organization'
     | '/settings/permissions'
     | '/settings/phone'
     | '/settings/projects'
@@ -451,9 +471,11 @@ export interface FileRouteTypes {
     | '/settings/instructions'
     | '/settings/integrations'
     | '/settings/keybindings'
+    | '/settings/members'
     | '/settings/memory'
     | '/settings/notifications'
     | '/settings/open-source-licenses'
+    | '/settings/organization'
     | '/settings/permissions'
     | '/settings/phone'
     | '/settings/projects'
@@ -494,9 +516,11 @@ export interface FileRouteTypes {
     | '/settings/instructions'
     | '/settings/integrations'
     | '/settings/keybindings'
+    | '/settings/members'
     | '/settings/memory'
     | '/settings/notifications'
     | '/settings/open-source-licenses'
+    | '/settings/organization'
     | '/settings/permissions'
     | '/settings/phone'
     | '/settings/projects'
@@ -683,6 +707,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsPermissionsRouteImport
       parentRoute: typeof SettingsRoute
     }
+    '/settings/organization': {
+      id: '/settings/organization'
+      path: '/organization'
+      fullPath: '/settings/organization'
+      preLoaderRoute: typeof SettingsOrganizationRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/settings/open-source-licenses': {
       id: '/settings/open-source-licenses'
       path: '/open-source-licenses'
@@ -702,6 +733,13 @@ declare module '@tanstack/react-router' {
       path: '/memory'
       fullPath: '/settings/memory'
       preLoaderRoute: typeof SettingsMemoryRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/members': {
+      id: '/settings/members'
+      path: '/members'
+      fullPath: '/settings/members'
+      preLoaderRoute: typeof SettingsMembersRouteImport
       parentRoute: typeof SettingsRoute
     }
     '/settings/keybindings': {
@@ -848,9 +886,11 @@ interface SettingsRouteChildren {
   SettingsInstructionsRoute: typeof SettingsInstructionsRoute
   SettingsIntegrationsRoute: typeof SettingsIntegrationsRoute
   SettingsKeybindingsRoute: typeof SettingsKeybindingsRoute
+  SettingsMembersRoute: typeof SettingsMembersRoute
   SettingsMemoryRoute: typeof SettingsMemoryRoute
   SettingsNotificationsRoute: typeof SettingsNotificationsRoute
   SettingsOpenSourceLicensesRoute: typeof SettingsOpenSourceLicensesRoute
+  SettingsOrganizationRoute: typeof SettingsOrganizationRoute
   SettingsPermissionsRoute: typeof SettingsPermissionsRoute
   SettingsPhoneRoute: typeof SettingsPhoneRoute
   SettingsProjectsRoute: typeof SettingsProjectsRoute
@@ -878,9 +918,11 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsInstructionsRoute: SettingsInstructionsRoute,
   SettingsIntegrationsRoute: SettingsIntegrationsRoute,
   SettingsKeybindingsRoute: SettingsKeybindingsRoute,
+  SettingsMembersRoute: SettingsMembersRoute,
   SettingsMemoryRoute: SettingsMemoryRoute,
   SettingsNotificationsRoute: SettingsNotificationsRoute,
   SettingsOpenSourceLicensesRoute: SettingsOpenSourceLicensesRoute,
+  SettingsOrganizationRoute: SettingsOrganizationRoute,
   SettingsPermissionsRoute: SettingsPermissionsRoute,
   SettingsPhoneRoute: SettingsPhoneRoute,
   SettingsProjectsRoute: SettingsProjectsRoute,

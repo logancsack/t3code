@@ -35,6 +35,8 @@ export type SettingsPath =
   | "/settings/archived"
   // Aldo's own pages (aldo/settings.logic.ts).
   | "/settings/account"
+  | "/settings/organization"
+  | "/settings/members"
   | "/settings/agents"
   | "/settings/permissions"
   | "/settings/notifications"
@@ -73,6 +75,8 @@ export interface SettingsSearchItem {
   /** Only in Aldo cloud mode, whose page at this path differs from T3's. */
   readonly aldoCloudOnly?: boolean;
   readonly requiresAldoPhone?: boolean;
+  /** Its page shows only for someone in an organization (aldo/organization.logic.ts). */
+  readonly requiresAldoOrganization?: boolean;
   /** Its row renders only once Aldo says it has agent inboxes. */
   readonly requiresAldoAgentInbox?: boolean;
   /** Its row renders only on an Aldo that keeps the welcome's answer (aldo/onboarding.ts). */
@@ -103,6 +107,7 @@ export interface SettingsSearchAvailability {
   readonly isWslSettingsRowVisible: boolean;
   readonly hasThreadAutoSettlement: boolean;
   readonly hasAldoPhoneApi?: boolean;
+  readonly hasAldoOrganization?: boolean;
   readonly hasAldoAgentInbox?: boolean;
   readonly hasAldoOnboarding?: boolean;
   /** The rules Aldo's policy takes, once it's said (Settings → Permissions). */
@@ -137,6 +142,8 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/connections": isManagedDevPc ? "Server connections" : "Connections",
   "/settings/archived": "Archive",
   "/settings/account": "Account",
+  "/settings/organization": "Organization",
+  "/settings/members": "Members",
   "/settings/agents": "Models",
   "/settings/permissions": "Permissions",
   "/settings/notifications": "Notifications",
@@ -683,6 +690,24 @@ export const SETTINGS_SEARCH_ITEMS = [
     requiresAldoAgentInbox: true,
   },
   {
+    id: "aldo-organization",
+    title: "Organization",
+    to: "/settings/organization",
+    searchTerms: ["organization org company name rename seats owners leave delete"],
+    aldoCloudOnly: true,
+    requiresAldoOrganization: true,
+  },
+  {
+    id: "aldo-members",
+    title: "Members",
+    to: "/settings/members",
+    searchTerms: [
+      "members people team invite invites roles owner admin member remove step down resend revoke link",
+    ],
+    aldoCloudOnly: true,
+    requiresAldoOrganization: true,
+  },
+  {
     id: "aldo-phone",
     title: "Text and call Aldo",
     to: "/settings/phone",
@@ -1216,6 +1241,8 @@ const SETTINGS_CATEGORY_SCOPES: Readonly<Record<SettingsPath, SettingsSearchScop
   "/settings/connections": "connections",
   "/settings/archived": "project-defaults",
   "/settings/account": null,
+  "/settings/organization": null,
+  "/settings/members": null,
   "/settings/agents": null,
   "/settings/permissions": null,
   "/settings/notifications": null,
@@ -1343,6 +1370,7 @@ export function filterAvailableSettingsSearchItems(
         (!item.wslAvailableOnly || availability.isWslSettingsRowVisible) &&
         (!item.requiresThreadAutoSettlement || availability.hasThreadAutoSettlement) &&
         (!item.requiresAldoPhone || availability.hasAldoPhoneApi === true) &&
+        (!item.requiresAldoOrganization || availability.hasAldoOrganization === true) &&
         (!item.requiresAldoAgentInbox || availability.hasAldoAgentInbox === true) &&
         (!item.requiresAldoOnboarding || availability.hasAldoOnboarding === true) &&
         (!item.requiresAldoPolicyRule ||

@@ -10,6 +10,9 @@ vi.mock("./AldoAccountMenu", () => ({
   useAldoProfile: () => ({ id: "user_1", email: "maya@example.com", name: "Maya Ortiz" }),
 }));
 vi.mock("./AldoFrame", () => ({ AldoFrame: () => null }));
+const org = vi.hoisted(() => ({ data: null as { name: string } | null }));
+vi.mock("./settingsData", () => ({ settingsOrg: {} }));
+vi.mock("./settingsResource", () => ({ useSettingsResource: () => org }));
 
 const { AldoWelcome } = await import("./AldoWelcome");
 
@@ -19,6 +22,7 @@ let container: HTMLDivElement;
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   save.mockClear();
+  org.data = null;
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -39,6 +43,15 @@ describe("the welcome", () => {
     expect(container.querySelector("h1")?.textContent).toBe("Welcome to Aldo, Maya.");
     expect(container.textContent).toContain("What will you hand it first? Pick any.");
     expect(container.querySelector("[role=dialog]")).not.toBeNull();
+    expect(container.textContent).not.toContain("You’re in");
+  });
+
+  it("tells someone who came in on an organization's invite that they're in it", async () => {
+    org.data = { name: "Linden Partners" };
+    await act(async () => root.render(<AldoWelcome />));
+    expect(container.querySelector("#aldo-welcome-lead")?.textContent).toMatch(
+      /^You’re in Linden Partners\. Hand it real work/,
+    );
   });
 
   it("keeps what they picked, in the welcome's order", async () => {

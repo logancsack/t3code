@@ -3,7 +3,8 @@
 // first, whose answer picks Home's starters, simple mode and whether the
 // developer tools show. Continue or Skip ends it for good; it never comes
 // back once Aldo has kept the answer. Its chips (AldoInterestChips.tsx) change
-// the answer in Settings → General too.
+// the answer in Settings → General too. Someone who came in on an
+// organization's invite is told they're in it.
 
 import { useEffect, useRef, useState } from "react";
 
@@ -13,12 +14,15 @@ import { AldoInterestChips } from "./AldoInterestChips";
 import { AldoFrame } from "./AldoFrame";
 import { saveAldoOnboarding } from "./onboarding";
 import { aldoFirstName, type AldoInterest } from "./onboarding.logic";
+import { settingsOrg } from "./settingsData";
+import { useSettingsResource } from "./settingsResource";
 import { FOCUS, PRIMARY } from "./surface";
 
 /** The welcome, over the whole page until it's answered or skipped. */
 export function AldoWelcome() {
   const profile = useAldoProfile();
   const first = aldoFirstName(profile?.name ?? null);
+  const org = useSettingsResource(settingsOrg, true, false).data;
   const [picked, setPicked] = useState<ReadonlyArray<AldoInterest>>([]);
   const dialog = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -47,6 +51,11 @@ export function AldoWelcome() {
             id="aldo-welcome-lead"
             className="mb-8 max-w-[470px] text-[15px] text-muted-foreground leading-6"
           >
+            {org ? (
+              <>
+                You’re in <span className="font-medium text-foreground">{org.name}</span>.{" "}
+              </>
+            ) : null}
             Hand it real work: research, decks, spreadsheets, videos, sites. It works on a computer
             of its own and keeps you posted.
           </p>
