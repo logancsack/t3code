@@ -15,6 +15,8 @@ const KEEP_MS = 7 * 24 * 60 * 60 * 1000;
 
 export interface AldoHomeMessage {
   readonly id: string;
+  /** The account that sent it: another account on the device never sends it. */
+  readonly userId: string | null;
   readonly sessionId: string;
   readonly text: string;
   readonly images: ReadonlyArray<AldoImageUpload>;

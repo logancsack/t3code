@@ -11,6 +11,7 @@ vi.mock("./homeOutbox", () => ({
 }));
 vi.mock("./assistantApi", () => ({
   aldoAssistant: { send: backend.send, turn: backend.turn },
+  requestAldoProfile: async () => ({ id: "u1" }),
   aldoAssistantInfo: async () => ({ available: true, images: null }),
 }));
 vi.mock("./directory", () => ({
@@ -133,7 +134,7 @@ it("keeps Send enabled for three taps, sends each at once, and accepts another s
 it("says a message isn't sent yet when Aldo can't be reached, and sends it on Try again", async () => {
   vi.useFakeTimers();
   backend.send.mockRejectedValue(new TypeError("Failed to fetch"));
-  backend.turn.mockResolvedValue({ sessionId: "as_dom000000000", reply: "Hello.", calls: [] });
+  backend.turn.mockResolvedValue("unknown");
   await act(async () =>
     root.render(
       <>
@@ -150,6 +151,7 @@ it("says a message isn't sent yet when Aldo can't be reached, and sends it on Tr
   // The browser's own words never show.
   expect(container.textContent).not.toContain("Failed to fetch");
   backend.send.mockResolvedValue(taken);
+  backend.turn.mockResolvedValue({ sessionId: "as_dom000000000", reply: "Hello.", calls: [] });
   const retry = [...container.querySelectorAll("button")].find(
     (b) => b.textContent === "Try again",
   )!;

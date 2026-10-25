@@ -84,6 +84,7 @@ export interface AldoChatTurn {
 /** How long a written message waits to be taken in, and its answer to be asked for (which Aldo holds for 8 s), before the connection is taken as dead. */
 const ALDO_SEND_ANSWERS_WITHIN_MS = 20_000;
 const ALDO_TURN_ANSWERS_WITHIN_MS = 20_000;
+const ALDO_LEGACY_SEND_ANSWERS_WITHIN_MS = 90_000;
 
 /** What Aldo says to a message sent by id: it has it, or (an older Aldo) the whole turn. */
 export type AldoSent =
@@ -270,11 +271,13 @@ export const aldoAssistant = {
     text: string,
     images: ReadonlyArray<AldoImageUpload> = [],
     viewing: AldoHomeTarget | null = null,
+    takesIds = false,
   ): Promise<AldoSent | null> => {
     const body = await api<Partial<AldoChatTurn> & { accepted?: boolean }>("/api/assistant/chat", {
       method: "POST",
       // Taking a message in is quick: one that isn't answered is on a connection that died, and is sent again.
-      answersWithin: ALDO_SEND_ANSWERS_WITHIN_MS,
+      // An older Aldo answers when the turn is done, and is not to be cut off (`takesIds`: this one is known to take ids).
+      answersWithin: takesIds ? ALDO_SEND_ANSWERS_WITHIN_MS : ALDO_LEGACY_SEND_ANSWERS_WITHIN_MS,
       body: JSON.stringify({
         id,
         sessionId,

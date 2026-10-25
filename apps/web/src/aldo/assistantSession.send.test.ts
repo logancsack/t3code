@@ -27,6 +27,7 @@ const aldoApiMock = vi.hoisted(() => ({
     resume: vi.fn(),
     followups: async () => null,
   },
+  requestAldoProfile: async () => ({ id: "u1" }),
   getAldoEnvironments: () => [],
   requestAldoDirectoryRefresh: vi.fn(),
   subscribeAldoEnvironments: () => () => {},
@@ -134,12 +135,14 @@ it("sends a message again with its id when the connection breaks, without showin
   const { sendText, useAldoAssistant } = await page();
   // The request failed on the phone's network, though Aldo may have the message.
   backend.send.mockRejectedValueOnce(offline()).mockResolvedValue(taken);
-  backend.turn.mockResolvedValue(reply("Hello."));
+  // Not yet known to take ids, Aldo is asked whether it has the message before it's sent again.
+  backend.turn.mockResolvedValueOnce("unknown").mockResolvedValue(reply("Hello."));
   sendText("Hi");
   await vi.advanceTimersByTimeAsync(0);
   expect(backend.send).toHaveBeenCalledTimes(1);
   expect(useAldoAssistant.getState().undelivered).toEqual([]);
   await vi.advanceTimersByTimeAsync(1_000);
+  expect(backend.turn).toHaveBeenCalledWith(backend.send.mock.calls[0]?.[0]);
   expect(backend.send).toHaveBeenCalledTimes(2);
   expect(backend.send.mock.calls[1]?.[0]).toBe(backend.send.mock.calls[0]?.[0]);
   const state = useAldoAssistant.getState();
@@ -170,7 +173,7 @@ it("says it's sending when Aldo hasn't taken a message in a few seconds, and why
   vi.useFakeTimers();
   const { sendText, retryAldoMessage, useAldoAssistant } = await page();
   backend.send.mockRejectedValue(offline());
-  backend.turn.mockResolvedValue(reply("Hello."));
+  backend.turn.mockResolvedValue("unknown");
   sendText("Hi");
   const entry = useAldoAssistant.getState().entries[0]!;
   await vi.advanceTimersByTimeAsync(2_900);
@@ -184,6 +187,7 @@ it("says it's sending when Aldo hasn't taken a message in a few seconds, and why
   ]);
   // Still trying, and a tap on "Try again" is the next try now.
   backend.send.mockResolvedValue(taken);
+  backend.turn.mockResolvedValue(reply("Hello."));
   retryAldoMessage(entry);
   await vi.advanceTimersByTimeAsync(0);
   const state = useAldoAssistant.getState();
@@ -195,7 +199,7 @@ it("tries again as soon as the connection is back", async () => {
   vi.useFakeTimers();
   const { sendText, useAldoAssistant } = await page();
   backend.send.mockRejectedValueOnce(offline()).mockResolvedValue(taken);
-  backend.turn.mockResolvedValue(reply("Hello."));
+  backend.turn.mockResolvedValueOnce("unknown").mockResolvedValue(reply("Hello."));
   sendText("Hi");
   await vi.advanceTimersByTimeAsync(0);
   expect(backend.send).toHaveBeenCalledTimes(1);
@@ -233,6 +237,7 @@ it("keeps a message on the device until Aldo has it, and sends it when the app i
 it("doesn't send a message kept on the device that Aldo has already taken in", async () => {
   outbox.set("m_kept000001", {
     id: "m_kept000001",
+    userId: "u1",
     sessionId: "as_page0000001",
     text: "Already there",
     images: [],
@@ -337,4 +342,92 @@ it("keeps a message on the device when the session has ended, for after sign-in"
   await vi.waitFor(() => expect(useAldoAssistant.getState().replying).toBe(false));
   expect(outbox.size).toBe(1);
   expect(useAldoAssistant.getState().undelivered).toEqual([]);
+});
+
+it("asks an older Aldo whether it has a message before sending it again, and leaves the choice to the user", async () => {
+  vi.useFakeTimers();
+  const { sendText, retryAldoMessage, useAldoAssistant } = await page();
+  backend.send.mockRejectedValueOnce(offline()).mockResolvedValue(taken);
+  // An older Aldo knows no answer to ask for.
+  backend.turn.mockRejectedValueOnce(new aldoApiMock.AldoApiError(405, "Request failed (405)"));
+  sendText("Hi");
+  await vi.advanceTimersByTimeAsync(1_000);
+  expect(backend.send).toHaveBeenCalledTimes(1);
+  const [trouble] = useAldoAssistant.getState().undelivered;
+  expect(trouble?.error).toContain("may not have");
+  backend.turn.mockResolvedValue(reply("Hello."));
+  retryAldoMessage(trouble!.entry);
+  await vi.advanceTimersByTimeAsync(0);
+  expect(backend.send).toHaveBeenCalledTimes(2);
+  expect(said(useAldoAssistant.getState())).toEqual(["user: Hi", "assistant: Hello."]);
+});
+
+it("doesn't ask again whether Aldo has a message once Aldo has shown it takes ids", async () => {
+  vi.useFakeTimers();
+  const { sendText } = await page();
+  backend.send
+    .mockResolvedValueOnce(taken)
+    .mockRejectedValueOnce(offline())
+    .mockResolvedValue(taken);
+  backend.turn.mockReturnValue(new Promise(() => {}));
+  sendText("First");
+  await vi.advanceTimersByTimeAsync(0);
+  sendText("Second");
+  await vi.advanceTimersByTimeAsync(1_000);
+  const second = backend.send.mock.calls[1]?.[0];
+  expect(backend.send).toHaveBeenCalledTimes(3);
+  // Its first ask for an answer comes after it was taken in, not before it was sent again.
+  const asks = backend.turn.mock.calls.flatMap((call, i) =>
+    call[0] === second ? [backend.turn.mock.invocationCallOrder[i]!] : [],
+  );
+  expect(asks).toHaveLength(1);
+  expect(asks[0]).toBeGreaterThan(backend.send.mock.invocationCallOrder[2]!);
+});
+
+it("shows each of two answers with the same words, though one was read from Aldo's record first", async () => {
+  const { loadAldoConversation, pullAldoConversation, sendText, useAldoAssistant } = await page();
+  await loadAldoConversation();
+  const answers = new Map<string, ReturnType<typeof deferred<unknown>>>();
+  backend.send.mockResolvedValue(taken);
+  backend.turn.mockImplementation((id: string) => {
+    const answer = deferred<unknown>();
+    answers.set(id, answer);
+    return answer.promise;
+  });
+  sendText("One");
+  sendText("Two");
+  await vi.waitFor(() => expect(answers.size).toBe(2));
+  backend.history.mockResolvedValue([
+    { role: "user", text: "One", at: "2026-10-25T18:00:00.000Z" },
+    { role: "user", text: "Two", at: "2026-10-25T18:00:01.000Z" },
+    { role: "assistant", text: "Done.", at: "2026-10-25T18:00:05.000Z" },
+  ]);
+  await pullAldoConversation();
+  for (const [, answer] of answers) answer.resolve(reply("Done."));
+  await vi.waitFor(() => expect(useAldoAssistant.getState().replying).toBe(false));
+  expect(said(useAldoAssistant.getState())).toEqual([
+    "user: One",
+    "user: Two",
+    "assistant: Done.",
+    "assistant: Done.",
+  ]);
+});
+
+it("doesn't take an older answer with the same words for the new one", async () => {
+  backend.history.mockResolvedValue([
+    { role: "user", text: "Ready?", at: "2026-10-24T18:00:00.000Z" },
+    { role: "assistant", text: "Done.", at: "2026-10-24T18:00:05.000Z" },
+  ]);
+  const { loadAldoConversation, sendText, useAldoAssistant } = await page();
+  await loadAldoConversation();
+  backend.send.mockResolvedValue(taken);
+  backend.turn.mockResolvedValue(reply("Done."));
+  sendText("Hi");
+  await vi.waitFor(() => expect(useAldoAssistant.getState().replying).toBe(false));
+  expect(said(useAldoAssistant.getState())).toEqual([
+    "user: Ready?",
+    "assistant: Done.",
+    "user: Hi",
+    "assistant: Done.",
+  ]);
 });

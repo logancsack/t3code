@@ -61,6 +61,7 @@ import { AldoApiError } from "./api";
 import { noteAldoAnswered } from "./homeFeed";
 import {
   aldoAssistant,
+  requestAldoProfile,
   type AldoChatTurn,
   type AldoFollowupNews,
   type AldoImageUpload,
@@ -1680,7 +1681,11 @@ type Written = {
   words: string;
   images: ReadonlyArray<AldoImageUpload>;
   viewing: { environmentId: string; threadId: string } | null;
+  /** Its copy on the device, once written (the copy is dropped after it). */
+  kept?: Promise<void>;
 };
+/** Whether Aldo has shown it takes a message by its id: then sending one again is harmless, which an older Aldo isn't. */
+let idempotent = false;
 /** The messages this page hasn't had through, by the entry that shows each (a failed one waits here for "Try again"). */
 const written = new Map<AldoConversationEntry, Written>();
 /** Those being sent or waiting for Aldo's answer. */
@@ -1775,11 +1780,12 @@ function addWritten(sent: Omit<Written, "entry"> & { at: string }): void {
   void deliver(message);
 }
 
-/** Messages kept on the device that Aldo doesn't have (the app closed before it did): sent now. */
+/** Messages kept on the device (by this account) that Aldo doesn't have (the app closed before it did): sent now. */
 async function resendKept(known: ReadonlyArray<AldoAssistantMessage>): Promise<void> {
+  const me = (await requestAldoProfile())?.id ?? null;
   const here = new Set([...written.values()].map((m) => m.id));
   for (const kept of await homeMessages()) {
-    if (here.has(kept.id)) continue;
+    if (kept.userId !== me || here.has(kept.id)) continue;
     // Aldo has it (the app closed as it was taken in): its answer comes with the conversation.
     if (known.some((m) => m.clientId === kept.id)) {
       void dropHomeMessage(kept.id);
@@ -1805,67 +1811,91 @@ export function retryAldoMessage(entry: AldoConversationEntry): void {
   else void deliver(message);
 }
 
+/** Drops the device's copy of a message, once it has been written. */
+function forget(message: Written): void {
+  void (message.kept ?? Promise.resolve()).then(() => dropHomeMessage(message.id));
+}
+
 /**
  * Gets a message to Aldo and its answer back, for as long as it takes: what
  * fails with the connection (or Aldo not answering) is tried again, since
  * sending a message again is harmless; what Aldo answers with a refusal is
- * the end of it.
+ * the end of it. An Aldo not known to take a message by its id (an older one
+ * runs it again) is asked whether it has the message before it's sent again.
  */
 async function deliver(message: Written): Promise<void> {
   watchConnection();
   delivering.add(message);
   syncReplying();
-  void keepHomeMessage({
-    id: message.id,
-    sessionId: message.sessionId,
-    text: message.words,
-    images: message.images,
-    viewing: message.viewing,
-    at: message.entry.at,
-  });
+  // Under this account's id, so another account on the device never sends it.
+  message.kept = requestAldoProfile().then((profile) =>
+    keepHomeMessage({
+      id: message.id,
+      userId: profile?.id ?? null,
+      sessionId: message.sessionId,
+      text: message.words,
+      images: message.images,
+      viewing: message.viewing,
+      at: message.entry.at,
+    }),
+  );
   const slow = setTimeout(() => trouble(message, null), SLOW_SEND_MS);
   let taken = false;
   let answered = false;
   try {
     for (let failures = 0; ;) {
+      let sending = false;
       try {
-        let turn: AldoChatTurn | null = null;
-        if (!taken) {
+        // What Aldo says of the message: its turn, "pending" while it works, "unknown" if it hasn't it.
+        let state: AldoChatTurn | "pending" | "unknown" = "unknown";
+        if (taken || (failures > 0 && !idempotent)) {
+          state = await aldoAssistant.turn(message.id);
+          idempotent = true;
+        }
+        if (state === "unknown") {
+          if (taken) {
+            taken = false;
+            failures++;
+            await pause(failures);
+          }
+          sending = true;
           const sent = await aldoAssistant.send(
             message.id,
             message.sessionId,
             message.words,
             message.images,
             message.viewing,
+            idempotent,
           );
+          sending = false;
           if (!sent) return olderAldo(message);
+          if (sent.kind === "taken") idempotent = true;
+          chatSessionId = sent.kind === "taken" ? sent.sessionId : sent.turn.sessionId;
+          state = sent.kind === "taken" ? "pending" : sent.turn;
+        }
+        if (!taken) {
           taken = true;
           clearTimeout(slow);
           trouble(message, undefined);
-          void dropHomeMessage(message.id);
-          chatSessionId = sent.kind === "taken" ? sent.sessionId : sent.turn.sessionId;
-          turn = sent.kind === "answered" ? sent.turn : null;
+          forget(message);
         }
-        if (!turn) {
-          const next = await aldoAssistant.turn(message.id);
-          if (next === "unknown") taken = false;
-          else if (next !== "pending") turn = next;
-          else {
-            failures = 0;
-            continue;
-          }
+        if (state === "pending") {
+          failures = 0;
+          continue;
         }
-        if (turn) {
-          answered = true;
-          written.delete(message.entry);
-          showAnswer(message, turn);
-          return;
-        }
+        answered = true;
+        written.delete(message.entry);
+        showAnswer(message, state);
+        return;
       } catch (error) {
-        // The session ended and the page is on its way to sign-in: the message stays on the device for after.
-        if (error instanceof AldoApiError && error.status === 401) return;
-        if (error instanceof AldoApiError && (taken ? failedTurn(error) : error.status < 500)) {
-          return refused(message, error, taken);
+        if (error instanceof AldoApiError) {
+          // The session ended and the page is on its way to sign-in: the message stays on the device for after.
+          if (error.status === 401) return;
+          // An older Aldo can't say whether it has the message, and sending it again could run it twice.
+          if (!taken && !sending && error.status === 405) return unsure(message);
+          if (taken ? failedTurn(error) : sending && error.status < 500) {
+            return refused(message, error, taken);
+          }
         }
       }
       failures++;
@@ -1887,24 +1917,38 @@ async function deliver(message: Written): Promise<void> {
 function olderAldo(message: Written): void {
   chatSupported = false;
   written.delete(message.entry);
-  void dropHomeMessage(message.id);
+  forget(message);
   set({ entries: get().entries.filter((e) => e !== message.entry) });
   queuedText = [queuedText, message.words].filter(Boolean).join("\n\n");
   if (!aldoAssistantLive()) void connectAldo({ mic: false });
 }
 
+/** The page doesn't know whether an older Aldo has the message: the user decides whether to send it again. */
+function unsure(message: Written): void {
+  trouble(message, "Couldn't reach Aldo. It may not have this message.");
+}
+
+/** Recorded answers (read from Aldo's record) that a turn's own answer has been matched with. */
+const matchedAnswers = new WeakSet<AldoConversationEntry>();
+
 function showAnswer(message: Written, turn: AldoChatTurn): void {
   chatSupported = true;
   chatSessionId = turn.sessionId;
   showCalls(turn.calls);
-  // The home screen's refresh may have read the answer from Aldo's record already.
-  const after = get().entries.slice(get().entries.indexOf(message.entry) + 1);
-  if (
-    after.some(
+  // The home screen's refresh may have read this answer from Aldo's record already.
+  const { entries } = get();
+  const twin = entries
+    .slice(entries.indexOf(message.entry) + 1)
+    .find(
       (e) =>
-        e.kind === "message" && recorded.has(e) && e.role === "assistant" && e.text === turn.reply,
-    )
-  ) {
+        e.kind === "message" &&
+        e.role === "assistant" &&
+        recorded.has(e) &&
+        !matchedAnswers.has(e) &&
+        e.text === turn.reply,
+    );
+  if (twin) {
+    matchedAnswers.add(twin);
     return;
   }
   addEntry({
@@ -1918,7 +1962,7 @@ function showAnswer(message: Written, turn: AldoChatTurn): void {
 
 /** Aldo answered the message with a refusal, or couldn't answer it: the end of trying. */
 function refused(message: Written, error: AldoApiError, taken: boolean): void {
-  void dropHomeMessage(message.id);
+  forget(message);
   const needs = !taken && error.status === 402 ? needsPlanOf(error.body) : null;
   if (!needs) {
     // Aldo has taken in a message it couldn't answer: trying again is a new message to it.

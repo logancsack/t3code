@@ -26,6 +26,7 @@ const aldoApiMock = vi.hoisted(() => ({
     resume: backend.resume,
     followups: async () => null,
   },
+  requestAldoProfile: async () => ({ id: "u1" }),
   getAldoEnvironments: () => [],
   requestAldoDirectoryRefresh: vi.fn(),
   subscribeAldoEnvironments: () => () => {},
