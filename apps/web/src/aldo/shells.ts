@@ -173,7 +173,8 @@ async function seedModelsNow(environments: ReadonlyArray<AldoEnvironment>): Prom
   const config = await aldoServerConfigTemplate();
   if (!config) return;
   const settings = getAldoMachineSettings() ?? {};
-  const template = `${providerInstances(config).join(",")} ${JSON.stringify(settings)}`;
+  // v2: the machines an earlier build gave a copy each now share one (seedMissingServerConfigs).
+  const template = `v2 ${providerInstances(config).join(",")} ${JSON.stringify(settings)}`;
   const ids = environments
     .map((environment) => environment.environmentId as EnvironmentId)
     .filter(

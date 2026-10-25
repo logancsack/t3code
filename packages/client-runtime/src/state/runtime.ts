@@ -7,7 +7,12 @@ import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import { AsyncResult, Atom, AtomRegistry } from "effect/unstable/reactivity";
 
-import type { ConnectionAttemptError } from "../connection/model.ts";
+import {
+  DORMANT_CONNECTION_STATE,
+  type ConnectionAttemptError,
+  type SupervisorConnectionState,
+} from "../connection/model.ts";
+import type { RpcSession } from "../rpc/session.ts";
 import { EnvironmentNotRegisteredError, EnvironmentRegistry } from "../connection/registry.ts";
 import {
   type EnvironmentRpcInput,
@@ -474,13 +479,15 @@ export function runStreamInEnvironment<A, E, R>(
   );
 }
 
-export function followStreamInEnvironment<A, E, R>(
+/** `stream` in the environment while it's registered, and `whileDormant` while it's dormant (EnvironmentRegistry.followStream). */
+export function followStreamInEnvironment<A, E, R, E2 = never, R2 = never>(
   environmentId: EnvironmentIdType,
   stream: Stream.Stream<A, E, R>,
-): Stream.Stream<A, E, EnvironmentRegistry | Exclude<R, EnvironmentSupervisor>> {
+  whileDormant?: Stream.Stream<A, E2, R2>,
+): Stream.Stream<A, E | E2, EnvironmentRegistry | Exclude<R, EnvironmentSupervisor> | R2> {
   return Stream.unwrap(
     EnvironmentRegistry.pipe(
-      Effect.map((registry) => registry.followStream(environmentId, stream)),
+      Effect.map((registry) => registry.followStream(environmentId, stream, whileDormant)),
     ),
   );
 }
@@ -510,6 +517,10 @@ export function createEnvironmentQueryAtomFamily<R, ER, Input, A, E>(
             ),
           ),
         ),
+        Stream.succeed<[SupervisorConnectionState, Option.Option<RpcSession>]>([
+          DORMANT_CONNECTION_STATE,
+          Option.none(),
+        ]),
       ),
       { initialValue: null },
     ),
@@ -581,7 +592,14 @@ export function createEnvironmentSubscriptionAtomFamily<R, ER, Input, A, E>(
   const family = Atom.family((key: string) => {
     const target = parseEnvironmentRpcKey<Input>(key);
     return runtime
-      .atom(followStreamInEnvironment(target.environmentId, options.subscribe(target.input)))
+      .atom(
+        // A dormant environment has nothing to send: it waits, without being started.
+        followStreamInEnvironment(
+          target.environmentId,
+          options.subscribe(target.input),
+          Stream.empty,
+        ),
+      )
       .pipe(
         Atom.setIdleTTL(options.idleTtlMs ?? 5 * 60_000),
         Atom.withLabel(

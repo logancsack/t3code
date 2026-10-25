@@ -71,8 +71,13 @@ const connectionStartupLayer = Layer.effectDiscard(
     const platformSource = yield* PlatformConnectionSource.PlatformConnectionSource;
     yield* watchDiscoveredCompatibility().pipe(Effect.forkScoped);
     yield* registry.start;
+    const asleep = platformSource.asleep;
     yield* platformSource.registrations.pipe(
-      Stream.runForEach(registry.reconcilePlatform),
+      Stream.runForEach((registrations) =>
+        asleep === undefined
+          ? registry.reconcilePlatform(registrations)
+          : asleep.pipe(Effect.flatMap((ids) => registry.reconcilePlatform(registrations, ids))),
+      ),
       Effect.forkScoped,
     );
   }).pipe(Effect.withSpan("clientRuntime.connection.application.start")),
