@@ -102,6 +102,41 @@ const decodeConnectionCatalogDocument = Schema.decodeUnknownEffect(ConnectionCat
  * landed one at a time, and the sidebar rendered again for each.
  */
 const shellsRead = new Map<EnvironmentId, string>();
+/**
+ * Aldo: stored server configs as decoded, by their text with the
+ * environment's id taken out (serverConfigText). A sleeping machine's config
+ * is a copy of one template, renamed (aldo/serverConfig.ts), so a few hundred
+ * machines decode one; decoding each copy held the page for seconds.
+ */
+const decodedServerConfigs = new Map<string, ServerConfig>();
+const DECODED_SERVER_CONFIGS = 8;
+
+/**
+ * A stored config's text without its environment's id, or null if the id
+ * appears other than as its two `environmentId`s (then it isn't shared).
+ */
+function serverConfigText(raw: string, environmentId: EnvironmentId): string | null {
+  const id = JSON.stringify(environmentId);
+  const parts = raw.split(id);
+  return parts.length === 3 ? parts.join("\u0000") : null;
+}
+
+function sharedServerConfig(raw: string, environmentId: EnvironmentId): ServerConfig | null {
+  const text = serverConfigText(raw, environmentId);
+  const config = text === null ? undefined : decodedServerConfigs.get(text);
+  return config ? { ...config, environment: { ...config.environment, environmentId } } : null;
+}
+
+function rememberServerConfig(raw: string, environmentId: EnvironmentId, config: ServerConfig) {
+  const text = serverConfigText(raw, environmentId);
+  if (text === null) return;
+  decodedServerConfigs.delete(text);
+  decodedServerConfigs.set(text, config);
+  for (const oldest of decodedServerConfigs.keys()) {
+    if (decodedServerConfigs.size <= DECODED_SERVER_CONFIGS) break;
+    decodedServerConfigs.delete(oldest);
+  }
+}
 const encodeConnectionCatalogDocument = Schema.encodeEffect(ConnectionCatalogDocumentJson);
 const decodeStoredShellSnapshot = Schema.decodeUnknownEffect(StoredShellSnapshotJson);
 const decodeStoredThreadSnapshot = Schema.decodeUnknownEffect(StoredThreadSnapshotJson);
@@ -658,11 +693,15 @@ export const connectionStorageLayer = Layer.effectContext(
             if (typeof raw !== "string") {
               return Effect.succeedNone;
             }
+            const shared = sharedServerConfig(raw, environmentId);
+            if (shared) return Effect.succeedSome(shared);
             return decodeStoredServerConfig(raw).pipe(
               Effect.mapError((cause) => persistenceError("load-server-config", cause)),
-              Effect.map((stored) =>
-                stored.environmentId === environmentId ? Option.some(stored.config) : Option.none(),
-              ),
+              Effect.map((stored) => {
+                if (stored.environmentId !== environmentId) return Option.none();
+                rememberServerConfig(raw, environmentId, stored.config);
+                return Option.some(stored.config);
+              }),
             );
           }),
           Effect.mapError((cause) =>
@@ -916,18 +955,35 @@ export function seedEnvironmentCache(input: {
   );
 }
 
+const encodeServerConfig = Schema.encodeEffect(ServerConfig);
+
+/** A server config stored for an environment, as encodeStoredServerConfig writes it, from its encoded form. */
+function storedServerConfigOf(
+  config: { readonly environment: object },
+  environmentId: EnvironmentId,
+): string {
+  return JSON.stringify({
+    schemaVersion: 1,
+    environmentId,
+    config: { ...config, environment: { ...config.environment, environmentId } },
+  });
+}
+
 /**
- * Aldo: writes the server config given for each environment that has none
- * cached (a sleeping machine this browser never connected to), so its threads
- * open with models to send with; a cached one, from the machine itself, is
- * kept, with the providers the given one lists that it lacks added (its T3
- * started before they shipped, and gets them when it starts again), and the
- * user's `settings` that Aldo keeps over its own (it gets those as it wakes).
+ * Aldo: writes the server config given (`template`, renamed for each
+ * environment) for each environment that has none cached (a sleeping machine
+ * this browser never connected to), so its threads open with models to send
+ * with; a cached one, from the machine itself, is kept, with the providers
+ * the given one lists that it lacks added (its T3 started before they
+ * shipped, and gets them when it starts again), and the user's `settings`
+ * that Aldo keeps over its own (it gets those as it wakes). The template is
+ * decoded once: a few hundred machines' copies differ only in their id.
  * Checked and written in one transaction. Returns the environments written,
  * and the ones whose cached config was kept as it was.
  */
 export function seedMissingServerConfigs(
-  configs: ReadonlyMap<EnvironmentId, unknown>,
+  template: unknown,
+  environmentIds: ReadonlyArray<EnvironmentId>,
   settings: Readonly<Record<string, unknown>> = {},
 ): Promise<{ readonly written: EnvironmentId[]; readonly kept: EnvironmentId[] }> {
   return Effect.runPromise(
@@ -935,17 +991,12 @@ export function seedMissingServerConfigs(
       openDatabase(),
       (database) =>
         Effect.gen(function* () {
-          const encoded = new Map<EnvironmentId, string>();
-          for (const [environmentId, raw] of configs) {
-            const config = yield* decodeServerConfig(raw).pipe(Effect.option);
-            if (Option.isNone(config)) continue;
-            const stored = yield* encodeStoredServerConfig({
-              schemaVersion: 1,
-              environmentId,
-              config: config.value,
-            }).pipe(Effect.option);
-            if (Option.isSome(stored)) encoded.set(environmentId, stored.value);
-          }
+          const none = { written: [], kept: [] };
+          const config = yield* decodeServerConfig(template).pipe(Effect.option);
+          if (Option.isNone(config)) return none;
+          const encoded = yield* encodeServerConfig(config.value).pipe(Effect.option);
+          if (Option.isNone(encoded)) return none;
+          const offered = { providers: encoded.value.providers };
           return yield* Effect.callback<
             { written: EnvironmentId[]; kept: EnvironmentId[] },
             ConnectionTransientError
@@ -964,13 +1015,13 @@ export function seedMissingServerConfigs(
               resume(Effect.succeed({ written, kept }));
             });
             const store = transaction.objectStore(SERVER_CONFIG_STORE_NAME);
-            for (const [environmentId, value] of encoded) {
+            for (const environmentId of environmentIds) {
               const request = store.get(environmentId);
               request.addEventListener("success", () => {
                 const next =
                   request.result === undefined
-                    ? value
-                    : withAldoTemplate(request.result, value, settings);
+                    ? storedServerConfigOf(encoded.value, environmentId)
+                    : withAldoTemplate(request.result, offered, settings);
                 if (next === null) {
                   kept.push(environmentId);
                   return;
