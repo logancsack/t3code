@@ -573,3 +573,42 @@ it.each(["Start it", "Not now"])(
     expect(container.querySelector("[data-aldo-computer-request]")).toBeNull();
   },
 );
+
+it("shows a call as its card where it began, and keeps its lines and actions off the conversation", async () => {
+  message("Morning", 1);
+  await act(async () => {
+    useAldoAssistant.setState((s) => ({
+      entries: [
+        ...s.entries,
+        {
+          kind: "call",
+          id: "as_1",
+          at: at(2),
+          state: "summarizing",
+          seconds: 190,
+          summary: null,
+          links: [],
+        },
+        { kind: "message", role: "user", text: "Move the dentist", at: at(2), call: "as_1" },
+        { kind: "message", role: "assistant", text: "Checking.", at: at(3), call: "as_1" },
+        {
+          kind: "action",
+          id: "a1",
+          tool: "start_thread",
+          label: "Started a thread",
+          failed: false,
+          call: "as_1",
+        },
+      ],
+    }));
+  });
+  message("Thanks, and remind me Wednesday", 9);
+  await act(async () => root.render(<Page home={home()} />));
+  const card = container.querySelector('[data-aldo-call="as_1"]')!;
+  expect(card.textContent).toContain("Summarizing…");
+  expect(container.textContent).not.toContain("Move the dentist");
+  expect(container.textContent).not.toContain("Checking.");
+  expect(container.textContent).not.toContain("Started a thread");
+  before(textElement("Morning"), card);
+  before(card, textElement("Thanks, and remind me Wednesday"));
+});

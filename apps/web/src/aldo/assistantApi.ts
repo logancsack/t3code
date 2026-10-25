@@ -4,6 +4,7 @@ import { voiceReferencesOf, type AldoVoiceReference } from "./voiceReferences";
 import { artifactsField, type AldoArtifact } from "./artifacts.logic";
 import { type AldoHomeTarget } from "./homeApi";
 import { api, AldoApiError } from "./api";
+import type { AldoAssistantMessage, AldoCall, AldoCallEntry } from "./assistant.logic";
 import { aldoOnboardingFrom, type AldoInterest, type AldoOnboarding } from "./onboarding.logic";
 import { keptOf, resumedOf, type AldoKept, type AldoResumed } from "./planPicker.logic";
 
@@ -190,6 +191,18 @@ export function showAldoCards(cards: ReadonlyArray<string>): () => void {
  * (AldoChart.tsx: "charts"; an older page draws bars and lines alone).
  */
 const cardsShown = () => [...new Set([...shownCards, "artifacts", "charts"])];
+
+/**
+ * The conversation as Aldo keeps it (`history`): messages, and with an Aldo that draws calls as cards
+ * (`calls`) each voice call as one `call` item where it began.
+ */
+export type AldoHistory = ReadonlyArray<AldoAssistantMessage | AldoCallEntry> & {
+  readonly calls?: boolean;
+};
+
+function withArtifacts<T extends { artifacts?: unknown }>({ artifacts, ...rest }: T) {
+  return { ...rest, ...artifactsField(artifacts) };
+}
 
 export const aldoAssistant = {
   /** A realtime session, for an Aldo from before GPT-Live (startLive returned null). */
@@ -408,21 +421,54 @@ export const aldoAssistant = {
       method: "POST",
       body: JSON.stringify({ arguments: args, sessionId, heard, cards: ["references"] }),
     }),
-  record: (sessionId: string, items: ReadonlyArray<{ role: "user" | "assistant"; text: string }>) =>
-    api("/api/assistant/history", { method: "POST", body: JSON.stringify({ sessionId, items }) }),
-  history: async (limit = 50) =>
+  /**
+   * Adds what was said in a session. `ended` says the call hung up, its last words in:
+   * Aldo writes its summary then. `call: false` is a line that isn't a turn of the call (news it never said).
+   */
+  record: (
+    sessionId: string,
+    items: ReadonlyArray<{ role: "user" | "assistant"; text: string; call?: false }>,
+    ended = false,
+  ) =>
+    api("/api/assistant/history", {
+      method: "POST",
+      body: JSON.stringify({ sessionId, items, ...(ended ? { ended } : {}) }),
+    }),
+  /**
+   * The conversation, oldest first. An Aldo that draws calls as cards (`calls`) returns each voice call as one
+   * `call` item where it began, not its turns; an older one returns every turn, and says so.
+   */
+  history: async (limit = 50): Promise<AldoHistory> => {
+    const body = await api<{
+      messages: Array<
+        | {
+            role: "user" | "assistant";
+            text: string;
+            at: string;
+            source?: "brief";
+            artifacts?: unknown;
+            clientId?: string;
+          }
+        | { call: Omit<AldoCall, "at">; at: string }
+      >;
+      calls?: boolean;
+    }>(`/api/assistant/history?limit=${limit}&calls=1`);
+    return Object.assign(
+      body.messages.map((m) =>
+        "call" in m
+          ? ({ kind: "call", ...m.call, at: m.at } satisfies AldoCallEntry)
+          : withArtifacts(m),
+      ),
+      { calls: body.calls === true },
+    );
+  },
+  /** What was said on a call (its card opens it), oldest first. */
+  callTranscript: async (id: string) =>
     (
-      await api<{
-        messages: Array<{
-          role: "user" | "assistant";
-          text: string;
-          at: string;
-          source?: "brief";
-          artifacts?: unknown;
-          clientId?: string;
-        }>;
-      }>(`/api/assistant/history?limit=${limit}`)
-    ).messages.map(({ artifacts, ...m }) => ({ ...m, ...artifactsField(artifacts) })),
+      await api<{ turns: Array<{ role: "user" | "assistant"; text: string; at: string }> }>(
+        `/api/assistant/calls/${encodeURIComponent(id)}`,
+      )
+    ).turns,
 };
 
 /** One of the brief's things to decide first; `key` is its decision's (decisions.logic.ts). */

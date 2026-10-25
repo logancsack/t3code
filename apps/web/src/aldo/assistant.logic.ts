@@ -30,6 +30,8 @@ export interface AldoAssistantMessage {
   readonly artifacts?: ReadonlyArray<AldoArtifact>;
   /** The id the page gave a written message of the user's, which Aldo keeps with it (an older Aldo doesn't). */
   readonly clientId?: string;
+  /** The call (its session) this was said on: it's the call card's transcript, not a message of the conversation. */
+  readonly call?: string;
 }
 
 /** Something Aldo did in this conversation, shown under what was said. */
@@ -45,6 +47,34 @@ export interface AldoAssistantAction {
   readonly open?: AldoOpenTarget;
   /** A page it made or opened (a preview, a pull request), in a new tab. */
   readonly href?: string;
+  /** The call (its session) it was done on: the call card links to it, the conversation doesn't repeat it. */
+  readonly call?: string;
+}
+
+/** What a call started or made, as its card links to it. */
+export type AldoCallLink =
+  | {
+      readonly kind: "thread";
+      readonly title: string;
+      readonly environmentId: string;
+      readonly threadId: string;
+    }
+  | { readonly kind: "page"; readonly title: string; readonly url: string };
+
+/**
+ * A voice call, as one card in the conversation where it began: `live` while it
+ * goes on, `summarizing` once it's over until Aldo has written what was
+ * discussed and decided, then `done`.
+ */
+export interface AldoCall {
+  /** The call's session. */
+  readonly id: string;
+  /** When it began. */
+  readonly at: string;
+  readonly state: "live" | "summarizing" | "done";
+  readonly seconds: number;
+  readonly summary: string | null;
+  readonly links: ReadonlyArray<AldoCallLink>;
 }
 
 export interface AldoOpenTarget {
@@ -752,4 +782,96 @@ export function followupsEvery(read: {
   readonly news: number;
 }): number {
   return read.following > 0 || read.news > 0 ? 4_000 : 15_000;
+}
+
+// ---------------------------------------------------------------------------
+// A call in the conversation: one card (AldoCallCard.tsx), its turns kept apart
+
+const MAX_CALL_LINKS = 6;
+
+/** How long a call ran, in words: "under a minute", "6 min", "1 hr 5 min". */
+export function callLength(seconds: number): string {
+  const minutes = Math.round(seconds / 60);
+  if (seconds < 60) return "under a minute";
+  if (minutes < 60) return `${minutes} min`;
+  return minutes % 60 === 0
+    ? `${minutes / 60} hr`
+    : `${Math.floor(minutes / 60)} hr ${minutes % 60} min`;
+}
+
+/**
+ * What a call did on this page, as its card links to it: the threads it
+ * started or opened and the pages it made (a result's words and a thread's
+ * card stay where they are), once each, newest wins.
+ */
+export function callLinksFrom(
+  entries: ReadonlyArray<{
+    readonly kind: string;
+    readonly call?: string | undefined;
+    readonly label?: string | undefined;
+    readonly failed?: boolean | undefined;
+    readonly open?: AldoOpenTarget | undefined;
+    readonly href?: string | undefined;
+  }>,
+  call: string,
+): ReadonlyArray<AldoCallLink> {
+  const links = new Map<string, AldoCallLink>();
+  for (const entry of entries) {
+    if (entry.kind !== "action" || entry.call !== call || entry.failed || !entry.label) continue;
+    // "Started a thread: Move the dentist" is named by what follows the colon.
+    const title = entry.label.includes(": ")
+      ? entry.label.slice(entry.label.indexOf(": ") + 2)
+      : entry.label;
+    if (entry.open?.threadId)
+      links.set(`${entry.open.environmentId}\n${entry.open.threadId}`, {
+        kind: "thread",
+        title,
+        environmentId: entry.open.environmentId,
+        threadId: entry.open.threadId,
+      });
+    else if (entry.href) links.set(entry.href, { kind: "page", title, url: entry.href });
+  }
+  return [...links.values()].slice(0, MAX_CALL_LINKS);
+}
+
+/** A call as an entry of the conversation. */
+export type AldoCallEntry = { readonly kind: "call" } & AldoCall;
+
+/** A line or action of a call (kept for its screen and its card), which the conversation doesn't show as its own. */
+export const onCall = (entry: {
+  readonly kind: string;
+  readonly call?: string | undefined;
+}): boolean => entry.kind !== "call" && entry.call !== undefined;
+
+export const isCallEntry = (entry: { readonly kind: string }): entry is AldoCallEntry =>
+  entry.kind === "call";
+
+/**
+ * The conversation with Aldo's read of its calls in it: a card it has that the
+ * page has too is replaced (it moved on: summarized, linked), one the page
+ * hasn't, made after `after` (on another device, or by phone), is added at
+ * the end. Nothing else changes, and `entries` itself comes back when nothing
+ * did.
+ */
+export function withCalls<E extends { readonly kind: string }>(
+  entries: ReadonlyArray<E | AldoCallEntry>,
+  fetched: ReadonlyArray<AldoCallEntry>,
+  after: string | null,
+): ReadonlyArray<E | AldoCallEntry> {
+  let changed = false;
+  const have = new Set<string>();
+  const next = entries.map((entry) => {
+    if (!isCallEntry(entry)) return entry;
+    have.add(entry.id);
+    const update = fetched.find((c) => c.id === entry.id);
+    if (!update || JSON.stringify(update) === JSON.stringify(entry)) return entry;
+    changed = true;
+    return update;
+  });
+  for (const call of fetched) {
+    if (have.has(call.id) || (after !== null && call.at <= after)) continue;
+    changed = true;
+    next.push(call);
+  }
+  return changed ? next : entries;
 }
