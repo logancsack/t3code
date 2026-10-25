@@ -28,6 +28,12 @@
 // for them while the call is on, and the voice brings each up unprompted at
 // a pause, once (an Aldo that has them tells of a start itself, too).
 
+import {
+  voiceReferencesOf,
+  mergeVoiceReferences,
+  type AldoVoiceReference,
+} from "./voiceReferences";
+import { minimizeAldoCall } from "./callView";
 import { create } from "zustand";
 
 import { toastManager } from "../components/ui/toast";
@@ -167,6 +173,7 @@ export interface AldoPlanPick {
 }
 
 interface AldoAssistantState {
+  readonly references: ReadonlyArray<AldoVoiceReference>;
   readonly phase: AldoAssistantPhase;
   readonly error: string | null;
   /** The microphone is on for this conversation (off: typed only, or the user muted it). */
@@ -204,6 +211,7 @@ interface AldoAssistantState {
 }
 
 export const useAldoAssistant = create<AldoAssistantState>(() => ({
+  references: [],
   phase: "idle",
   error: null,
   micOn: false,
@@ -236,6 +244,11 @@ const transcribing = new Set<string>();
 let levelsTimer: ReturnType<typeof setInterval> | null = null;
 /** Typed before the conversation was connected: sent once it is, instead of the greeting. */
 let queuedText: string | null = null;
+export function openAldoVoiceThread(target: AldoOpenTarget): void {
+  minimizeAldoCall();
+  openThread?.(target);
+}
+
 let openThread: ((target: AldoOpenTarget) => void) | null = null;
 /** The written conversation's session with Aldo, continued turn after turn. */
 let chatSessionId: string | null = null;
@@ -785,8 +798,30 @@ const ANSWERING_TOOLS: ReadonlySet<string> = new Set(["answer_thread", "approve_
  * until it's under way.
  */
 function showCall(call: AldoFunctionCall, outcome: unknown): void {
+  if (aldoAssistantLive())
+    set({
+      references: mergeVoiceReferences(
+        get().references,
+        voiceReferencesOf((outcome as { references?: unknown } | null)?.references),
+      ),
+    });
   const open = openTargetOf(outcome);
-  if (open) openThread?.(open);
+  if (
+    open &&
+    aldoAssistantLive() &&
+    !get().references.some(
+      (r) =>
+        r.kind === "thread" &&
+        r.target.environmentId === open.environmentId &&
+        r.target.threadId === open.threadId,
+    )
+  ) {
+    set({
+      references: mergeVoiceReferences(get().references, [
+        { kind: "thread", title: "Open thread", target: open },
+      ]),
+    });
+  } else if (open && !aldoAssistantLive()) openThread?.(open);
   openPreview(outcome);
   const action = actionFor(call, outcome);
   // Why it failed stays out of the conversation (Aldo says it), but not out of sight.
@@ -1024,6 +1059,11 @@ function tellFollowupAtPause(): void {
     const { news, line } = claimed;
     claimed = null;
     appendLive("session.instructions.append", followupPrompt(line), null, line);
+    set({
+      references: mergeVoiceReferences(get().references, [
+        { kind: "thread", title: news.title, target: news.thread },
+      ]),
+    });
     addEntry({ kind: "action", ...followupAction(news) });
     sent(call);
     newsSaidAt = Date.now();
@@ -1035,8 +1075,11 @@ function tellFollowupAtPause(): void {
   tellingFollowup = true;
   void aldoAssistant
     .claimFollowup(session, next.id, next.outcome)
-    .then((line) => {
+    .then(async (line) => {
       if (!line) return;
+      const references = await aldoAssistant.references(session, line, next.thread).catch(() => []);
+      if (sessionId === session)
+        set({ references: mergeVoiceReferences(get().references, references) });
       if (transcript === call) claimed = { news: next, line, session };
       else keepUnsaid(next, line, session);
     })
@@ -1102,7 +1145,16 @@ function tickLive(): void {
 function onLiveTurn(turn: AldoLiveTurn, session: string): void {
   say(turn.role, turn.text, session);
   if (turn.role === "user") heard = rememberHeard(heard, turn.text);
-  else set({ said: "" });
+  else {
+    set({ said: "" });
+    void aldoAssistant
+      .references(session, turn.text)
+      .then((references) => {
+        if (sessionId === session)
+          set({ references: mergeVoiceReferences(get().references, references) });
+      })
+      .catch(() => {});
+  }
 }
 
 /** What Aldo did with what was handed over shows on the page; what the voice should say comes back. */
@@ -1119,7 +1171,9 @@ async function delegateToAldo(
     : null;
   try {
     const result = await aldoAssistant.delegate(session, turns, typed, viewing, signal, stopped);
+    if (signal.aborted || sessionId !== session) return "";
     showCalls(result.calls);
+    set({ references: mergeVoiceReferences(get().references, result.references ?? []) });
     return result.say || "Done.";
   } catch (error) {
     return `That didn't go through (${messageOf(error)}). Tell the user it didn't happen, in a few words.`;
@@ -1391,6 +1445,7 @@ export async function connectAldo(
   liveOpening = options.opening;
   set({
     phase: "connecting",
+    references: [],
     error: null,
     said: "",
     muted: false,

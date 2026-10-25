@@ -1,5 +1,6 @@
 // Assistant conversation, voice, brief and memory APIs.
 
+import { voiceReferencesOf, type AldoVoiceReference } from "./voiceReferences";
 import { artifactsField, type AldoArtifact } from "./artifacts.logic";
 import { type AldoHomeTarget } from "./homeApi";
 import { api, AldoApiError } from "./api";
@@ -116,6 +117,7 @@ function secondsLeftOf(value: unknown): { readonly secondsLeft?: number } {
 
 /** What Aldo did with a request the voice handed over, and what the voice should say. */
 export interface AldoDelegated {
+  readonly references?: ReadonlyArray<AldoVoiceReference>;
   readonly say: string;
   readonly calls: AldoChatTurn["calls"];
 }
@@ -225,6 +227,17 @@ export const aldoAssistant = {
    * the call's transcript so far, what the user typed on it if that's what
    * this is, and the thread on screen.
    */
+  references: async (
+    sessionId: string,
+    text: string,
+    thread?: AldoHomeTarget,
+  ): Promise<AldoVoiceReference[]> => {
+    const body = await api<{ references?: unknown }>("/api/assistant/references", {
+      method: "POST",
+      body: JSON.stringify({ sessionId, text, ...(thread ? { thread } : {}) }),
+    });
+    return voiceReferencesOf(body.references);
+  },
   delegate: async (
     sessionId: string,
     transcript: ReadonlyArray<{ role: "user" | "assistant"; text: string }>,
@@ -242,12 +255,14 @@ export const aldoAssistant = {
         ...(stopped ? { stopped } : {}),
         sessionId,
         followups: true,
+        cards: ["references"],
         transcript,
         ...(typed ? { typed } : {}),
         ...(viewing ? { viewing } : {}),
       }),
     });
     return {
+      references: voiceReferencesOf(body.references),
       say: typeof body.say === "string" ? body.say : "",
       calls: Array.isArray(body.calls) ? body.calls : [],
     };
@@ -391,7 +406,7 @@ export const aldoAssistant = {
   ) =>
     api<{ result?: unknown; error?: string }>(`/api/assistant/tools/${encodeURIComponent(name)}`, {
       method: "POST",
-      body: JSON.stringify({ arguments: args, sessionId, heard }),
+      body: JSON.stringify({ arguments: args, sessionId, heard, cards: ["references"] }),
     }),
   record: (sessionId: string, items: ReadonlyArray<{ role: "user" | "assistant"; text: string }>) =>
     api("/api/assistant/history", { method: "POST", body: JSON.stringify({ sessionId, items }) }),

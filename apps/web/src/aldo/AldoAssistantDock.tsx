@@ -15,6 +15,7 @@ import { lazy, Suspense, useEffect } from "react";
 import { Button } from "../components/ui/button";
 import { useIsMobile } from "../hooks/useMediaQuery";
 import { AldoVoiceMark, useAldoAssistantAvailable } from "./AldoAssistant";
+import { AldoCallArtifact, AldoCallReferences, closeAldoCallArtifact } from "./AldoCallReferences";
 import { showAldoCall, useAldoCallView } from "./callView";
 import { openAldoSummon } from "./AldoSummon";
 import {
@@ -55,7 +56,10 @@ export function AldoAssistantDock() {
 
   // Each call opens the call screen again; one that ends (or fails) ends going through decisions.
   useEffect(() => {
-    if (phase === "connecting") showAldoCall();
+    if (phase === "connecting") {
+      closeAldoCallArtifact();
+      showAldoCall();
+    }
     if (!live) stopAldoWalkthrough();
   }, [phase, live]);
 
@@ -85,63 +89,85 @@ export function AldoAssistantDock() {
     return () => window.removeEventListener("keydown", onKey);
   }, [available]);
 
-  if (!isAldoCloud || !live) return null;
-  // On a phone the call screen covers the page until it's folded away.
-  if ((pathname === "/" && !elsewhere) || (mobile && !minimized)) return <AldoCallScreen />;
+  if (!isAldoCloud) return null;
+  if (!live) return <AldoCallArtifact />;
+  const showBar = (pathname !== "/" || elsewhere || minimized) && (!mobile || minimized);
   return (
     <>
       <AldoCallScreen />
-      <div className="pointer-events-none fixed inset-x-0 bottom-[max(1rem,env(safe-area-inset-bottom))] z-50 flex flex-col items-center gap-2 px-4">
-        <div
-          className="pointer-events-auto flex w-full max-w-md items-center gap-2 rounded-full border border-border/70 bg-popover/95 py-1.5 pr-1.5 pl-1.5 shadow-lg backdrop-blur"
-          data-aldo-dock="capsule"
-        >
-          <AldoVoiceMark size="sm" />
-          {mobile ? (
-            <button
-              type="button"
-              className="min-w-0 flex-1 truncate px-1 text-left text-sm"
-              onClick={showAldoCall}
-            >
-              {said ||
-                (phase === "thinking"
-                  ? "Aldo is thinking…"
-                  : muted
-                    ? "Muted"
-                    : "Aldo is listening")}
-            </button>
-          ) : (
-            <Link
-              to="/"
-              className="min-w-0 flex-1 truncate px-1 text-sm"
-              onClick={showAldoConversation}
-            >
-              {said ||
-                (phase === "thinking"
-                  ? "Aldo is thinking…"
-                  : muted
-                    ? "Muted"
-                    : "Aldo is listening")}
-            </Link>
-          )}
-          <Button variant="ghost" size="icon-sm" aria-label="Type to Aldo" onClick={openAldoSummon}>
-            <KeyboardIcon />
-          </Button>
-          {micOn ? (
+      <AldoCallArtifact />
+      {!mobile ? (
+        <div className="fixed right-4 bottom-24 z-40 max-h-[50dvh] w-80 overflow-y-auto">
+          <AldoCallReferences />
+        </div>
+      ) : null}
+      {showBar ? (
+        <div className="pointer-events-none fixed inset-x-0 bottom-[max(1rem,env(safe-area-inset-bottom))] z-50 flex flex-col items-center gap-2 px-4">
+          <div
+            className="pointer-events-auto flex w-full max-w-md items-center gap-2 rounded-full border border-border/70 bg-popover/95 py-1.5 pr-1.5 pl-1.5 shadow-lg backdrop-blur"
+            data-aldo-dock="capsule"
+          >
+            <AldoVoiceMark size="sm" />
+            {mobile ? (
+              <button
+                type="button"
+                className="min-h-12 min-w-0 flex-1 truncate px-1 text-left text-sm"
+                aria-label="Return to call with Aldo"
+                onClick={() => {
+                  closeAldoCallArtifact();
+                  showAldoCall();
+                }}
+              >
+                <span className="block text-xs text-muted-foreground">Return to call</span>
+                {said ||
+                  (phase === "thinking"
+                    ? "Aldo is thinking…"
+                    : muted
+                      ? "Muted"
+                      : "Aldo is listening")}
+              </button>
+            ) : (
+              <Link
+                to="/"
+                className="min-w-0 flex-1 truncate px-1 text-sm"
+                onClick={() => {
+                  closeAldoCallArtifact();
+                  showAldoCall();
+                  showAldoConversation();
+                }}
+              >
+                {said ||
+                  (phase === "thinking"
+                    ? "Aldo is thinking…"
+                    : muted
+                      ? "Muted"
+                      : "Aldo is listening")}
+              </Link>
+            )}
             <Button
               variant="ghost"
               size="icon-sm"
-              aria-label={muted ? "Unmute" : "Mute"}
-              onClick={() => setAldoMuted(!muted)}
+              aria-label="Type to Aldo"
+              onClick={openAldoSummon}
             >
-              {muted ? <MicOffIcon /> : <MicIcon />}
+              <KeyboardIcon />
             </Button>
-          ) : null}
-          <Button variant="ghost" size="icon-sm" aria-label="Hang up" onClick={disconnectAldo}>
-            <PhoneOffIcon />
-          </Button>
+            {micOn ? (
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label={muted ? "Unmute" : "Mute"}
+                onClick={() => setAldoMuted(!muted)}
+              >
+                {muted ? <MicOffIcon /> : <MicIcon />}
+              </Button>
+            ) : null}
+            <Button variant="ghost" size="icon-sm" aria-label="Hang up" onClick={disconnectAldo}>
+              <PhoneOffIcon />
+            </Button>
+          </div>
         </div>
-      </div>
+      ) : null}
     </>
   );
 }

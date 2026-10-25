@@ -20,6 +20,8 @@ import { useState, type ReactNode } from "react";
 
 import { canShowPdfInFrame } from "../components/files/filePreviewMode";
 import { Button } from "../components/ui/button";
+import { cn } from "../lib/utils";
+import { useAldoAssistant } from "./assistantSession";
 import { Sheet, SheetPopup, SheetTitle } from "../components/ui/sheet";
 import { Spinner } from "../components/ui/spinner";
 import { toastManager } from "../components/ui/toast";
@@ -113,9 +115,11 @@ function AldoShareViewer(props: { readonly open: AldoOpenShare }) {
       )
       .finally(() => setPinning(false));
   };
+  const liveCall = useAldoAssistant((s) => s.phase !== "idle" && s.phase !== "error");
   const Icon = page ? GlobeIcon : FileIcon;
   return (
     <Sheet
+      modal={!liveCall}
       open
       onOpenChange={(next) => {
         if (!next) closeAldoShare();
@@ -125,7 +129,7 @@ function AldoShareViewer(props: { readonly open: AldoOpenShare }) {
       <SheetPopup
         side="right"
         showCloseButton={false}
-        className="w-full max-w-3xl pt-safe pb-safe max-sm:border-s-0"
+        className={cn("w-full max-w-3xl pt-safe pb-safe max-sm:border-s-0", liveCall && "pb-24")}
       >
         {/* On a phone the sidebar's toggle floats over the sheet's corner: its title starts past it. */}
         <div className="flex items-center gap-2 border-border/60 border-b px-4 py-2 max-sm:ps-14">
