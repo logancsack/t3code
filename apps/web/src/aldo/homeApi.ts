@@ -556,8 +556,17 @@ export async function resolveAldoHandoff(
 }
 
 /** The home screen's read; null where this Aldo doesn't have it (an older one answers with the web client's own page). */
-export async function fetchAldoHome(): Promise<AldoHome | null> {
-  const body = await api<Partial<AldoHome>>("/api/home");
+/**
+ * Aldo's read of the user's work. `active`: the page is in use (focus.ts), so
+ * Aldo knows they're in it and holds back what they'd see here from their phone.
+ */
+export async function fetchAldoHome(
+  options: { readonly active?: boolean } = {},
+): Promise<AldoHome | null> {
+  const body = await api<Partial<AldoHome>>(
+    "/api/home",
+    options.active ? { headers: { "x-aldo-active": "1" } } : {},
+  );
   return Array.isArray(body.conversations) ? (body as AldoHome) : null;
 }
 

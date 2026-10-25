@@ -32,6 +32,7 @@ import {
   type AldoHomeTarget,
 } from "./homeApi";
 import { requestAldoDirectoryRefresh, subscribeAldoEnvironments } from "./directory";
+import { aldoPageInUseNow } from "./pageUse";
 
 import { reconcileAldoWalkthrough } from "./walkthrough";
 
@@ -230,7 +231,7 @@ async function readHome(): Promise<void> {
   const startedAt = Date.now();
   fetchedAt = startedAt;
   try {
-    const next = await fetchAldoHome();
+    const next = await fetchAldoHome({ active: aldoPageInUseNow() });
     // A poll begun before a persisted hide must not put the card back.
     if (revision !== dismissalRevision) again = true;
     else {

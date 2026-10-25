@@ -20,6 +20,7 @@ vi.mock("./directory", () => ({
   subscribeAldoEnvironments: () => () => undefined,
 }));
 vi.mock("./walkthrough", () => ({ reconcileAldoWalkthrough: vi.fn() }));
+vi.mock("./pageUse", () => ({ aldoPageInUseNow: () => true }));
 
 /** This browser's other tabs, as the page's channel sees them: what it posted, and a way to send it theirs. */
 class OtherTabs {

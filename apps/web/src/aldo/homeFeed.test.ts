@@ -14,6 +14,7 @@ vi.mock("./directory", () => ({
   subscribeAldoEnvironments: vi.fn(),
 }));
 vi.mock("./walkthrough", () => ({ reconcileAldoWalkthrough: vi.fn() }));
+vi.mock("./pageUse", () => ({ aldoPageInUseNow: () => true }));
 afterEach(() => {
   vi.resetModules();
   vi.clearAllMocks();
@@ -58,6 +59,8 @@ it("unchanged server bodies keep Home identity, while recovery clears errors and
   const feed = await import("./homeFeed");
   fetchHome.mockImplementation(async () => home());
   await feed.refreshAldoHome();
+  // A page in use says so, for Aldo to hold back what's on it from the phone.
+  expect(fetchHome).toHaveBeenCalledWith({ active: true });
   const original = feed.useAldoHomeFeed.getState().home;
   const changed = vi.fn();
   const stop = feed.useAldoHomeFeed.subscribe(changed);

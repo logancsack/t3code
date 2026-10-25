@@ -42,6 +42,7 @@ import {
   isAldoRefusal,
   notifyAldoRefusal,
 } from "./dispatch";
+import { aldoPageUsedAt, noteAldoPageUse } from "./pageUse";
 import { useAldoPreloadSettings } from "./preloadSettings";
 
 /** A thread passed over on the way elsewhere shouldn't start anything. */
@@ -53,19 +54,13 @@ const TOUCH_INTERVAL_MS = 30_000;
 /** A page on screen that hasn't been used for this long no longer keeps its agent up. */
 const UNATTENDED_MS = 5 * 60 * 1000;
 
-/** When the user last used the page: the pointer, a key, a touch, the wheel, or coming back to the tab or window. */
-let lastUsedAt = Date.now();
-
-/** When the user last used the page (focus.ts tells a page in use from one left alone). */
-export function aldoPageUsedAt(): number {
-  return lastUsedAt;
-}
 /** Run when the page is used after a pause: the agent on screen may need a touch, or waking. */
 const resumeListeners = new Set<() => void>();
 
+/** The page was used: the pointer, a key, a touch, the wheel, or coming back to the tab or window (pageUse.ts keeps when). */
 function noteUse(): void {
-  const paused = Date.now() - lastUsedAt > TOUCH_INTERVAL_MS;
-  lastUsedAt = Date.now();
+  const paused = Date.now() - aldoPageUsedAt() > TOUCH_INTERVAL_MS;
+  noteAldoPageUse();
   // After DWELL_MS, as when opening a thread: a click that leaves this thread
   // for another has unmounted it (and its listeners) by then, so it isn't woken.
   if (paused) {
@@ -170,7 +165,7 @@ export function useAldoPreload(
     // Paused mid-turn: carried on when the page is in use (opening the thread,
     // or using the page again), not while it's left unattended.
     const carryOn = () => setWokenToShow(environmentId);
-    if (Date.now() - lastUsedAt <= UNATTENDED_MS) {
+    if (Date.now() - aldoPageUsedAt() <= UNATTENDED_MS) {
       carryOn();
       return;
     }
@@ -248,7 +243,8 @@ export function useAldoPreload(
   useEffect(() => {
     if (!applies || environmentId === null || phase !== "connected") return;
     const touch = () => {
-      if (document.visibilityState !== "visible" || Date.now() - lastUsedAt > UNATTENDED_MS) return;
+      if (document.visibilityState !== "visible" || Date.now() - aldoPageUsedAt() > UNATTENDED_MS)
+        return;
       touchAldoEnvironment(environmentId);
     };
     touch();

@@ -21,7 +21,7 @@ const aldoApiMock = vi.hoisted(() => ({
 }));
 vi.mock("./api", () => aldoApiMock);
 vi.mock("./directory", () => aldoApiMock);
-vi.mock("./preload", () => ({ aldoPageUsedAt: () => page.usedAt }));
+vi.mock("./pageUse", () => ({ aldoPageUsedAt: () => page.usedAt }));
 
 import { watchAldoFocus } from "./focus";
 
