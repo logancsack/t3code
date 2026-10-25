@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  arrange,
   artifactsField,
   artifactsOf,
   chartScale,
@@ -10,8 +11,10 @@ import {
   fileShape,
   formatValue,
   inlineSrc,
+  linkRows,
   niceMax,
   withoutShownLinks,
+  type AldoArtifact,
   type AldoFileArtifact,
 } from "./artifacts.logic";
 
@@ -204,14 +207,14 @@ it("saves a share as it is, Markdown as the file, and a Blob file as an attachme
   );
 });
 
-it("shows a picture, a recording, a sound and a page in place, and anything else as a tile", () => {
+it("shows a picture, a recording, a sound and a page in place, and anything else in a list", () => {
   expect(fileShape("image/svg+xml")).toBe("image");
   expect(fileShape("video/mp4")).toBe("video");
   expect(fileShape("audio/mpeg")).toBe("audio");
   expect(fileShape("text/html; charset=utf-8")).toBe("page");
   expect(fileShape("text/markdown")).toBe("page");
-  expect(fileShape("application/pdf")).toBe("tile");
-  expect(fileShape("video/webm")).toBe("tile");
+  expect(fileShape("application/pdf")).toBe("row");
+  expect(fileShape("video/webm")).toBe("row");
 });
 
 it("drops the lines that only link to what's shown, and keeps every other word", () => {
@@ -235,6 +238,89 @@ it("drops the lines that only link to what's shown, and keeps every other word",
   expect(withoutShownLinks(text, [])).toBe(text);
   const sentence = "See https://aldo.example/s/abcdefghijklmnop1234 for it";
   expect(withoutShownLinks(sentence, [file(SHARE)])).toBe(sentence);
+});
+
+it("drops a shown file's line when its label has a colon too", () => {
+  const text = "Ready.\n\nChart: returns since April: https://aldo.example/s/abcdefghijklmnop1234";
+  expect(withoutShownLinks(text, [file(SHARE)])).toBe("Ready.");
+});
+
+describe("linkRows", () => {
+  it("lists the links a thread's result ends with, a pull request by its repository and number", () => {
+    const text = [
+      "Fixed the checkout. See https://acme.example/notes for why.",
+      "",
+      "Pull request: https://github.com/acme/shop/pull/7",
+      "Fix the cart: https://github.com/acme/shop/pull/8",
+      "Preview: https://shop-git-fix.vercel.app/",
+      "vercel.com: https://vercel.com/acme/shop",
+    ].join("\n");
+    expect(linkRows(text)).toEqual({
+      text: "Fixed the checkout. See https://acme.example/notes for why.",
+      links: [
+        {
+          url: "https://github.com/acme/shop/pull/7",
+          title: "acme/shop #7",
+          type: "Pull request",
+        },
+        { url: "https://github.com/acme/shop/pull/8", title: "Fix the cart", type: "Pull request" },
+        {
+          url: "https://shop-git-fix.vercel.app/",
+          title: "Preview",
+          type: "shop-git-fix.vercel.app",
+        },
+        { url: "https://vercel.com/acme/shop", title: "vercel.com", type: "Link" },
+      ],
+    });
+  });
+
+  it("leaves words alone: a link in a sentence, and a link line with words after it", () => {
+    const text = "Pull request: https://github.com/acme/shop/pull/7\nIt's waiting on review.";
+    expect(linkRows(text)).toEqual({ text, links: [] });
+    expect(linkRows("")).toEqual({ text: "", links: [] });
+  });
+});
+
+describe("arrange", () => {
+  const chart: AldoArtifact = {
+    kind: "chart",
+    title: "Hours",
+    type: "bar",
+    labels: ["Mon"],
+    series: [{ name: "Hours", values: [1] }],
+  };
+  const table: AldoArtifact = { kind: "table", columns: ["A"], rows: [["1"]] };
+  const page = { ...file("/s/pagepagepagepage5678", "text/html"), title: "Page" };
+  const report = { ...file("/s/reportreportreport12", "text/markdown"), title: "Report" };
+  const csv = { ...file("/s/csvcsvcsvcsvcsvcsv12", "text/csv"), title: "Closes" };
+  const picture = file(SHARE);
+  const other = { ...file("/s/otherotherotherother1"), title: "Dog" };
+  const video = file(DEMO, "video/mp4");
+  const sound = file("/s/soundsoundsound9999", "audio/mpeg");
+
+  it("leads with what Aldo draws, a recording, a table, the pictures, a page, then a sound", () => {
+    expect(arrange([page, picture, chart, table, { ...chart, title: "Cost" }]).lead).toEqual([
+      chart,
+      { ...chart, title: "Cost" },
+    ]);
+    expect(arrange([picture, table, video, { ...video, url: `${DEMO}2` }]).lead).toEqual([video]);
+    // An agent's picture of a chart may not read on a phone: the table leads, the picture is listed.
+    expect(arrange([page, picture, report, csv, table])).toEqual({
+      lead: [table],
+      rest: [page, picture, report, csv],
+    });
+    expect(arrange([page, picture, other]).lead).toEqual([picture, other]);
+    expect(arrange([csv, report, page, sound]).lead).toEqual([report]);
+    expect(arrange([csv, sound]).lead).toEqual([sound]);
+    expect(arrange([csv])).toEqual({ lead: [], rest: [csv] });
+  });
+
+  it("lists a file once: its link twice, or a copy of the same title, type and size", () => {
+    const sized = { ...csv, bytes: 930 };
+    const copy = { ...sized, url: "/s/copycopycopycopycopy" };
+    const another = { ...sized, url: "/s/anotheranotheranoth", title: "Indexed closes" };
+    expect(arrange([sized, copy, { ...sized }, another]).rest).toEqual([sized, another]);
+  });
 });
 
 it("writes figures as Aldo does, on a scale that ends on a round number", () => {

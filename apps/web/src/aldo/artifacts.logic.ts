@@ -256,8 +256,8 @@ export function downloadHref(url: string, origin: string, contentType = ""): str
   return url;
 }
 
-/** How a file shows in place. */
-export type AldoFileShape = "image" | "video" | "audio" | "page" | "tile";
+/** How a file shows in place; any other only in a list (`row`), a tap from Aldo's viewer. */
+export type AldoFileShape = "image" | "video" | "audio" | "page" | "row";
 
 export function fileShape(contentType: string): AldoFileShape {
   const type = contentType.split(";")[0]!.trim().toLowerCase();
@@ -267,7 +267,7 @@ export function fileShape(contentType: string): AldoFileShape {
   if (type.startsWith("audio/")) return "audio";
   // What /s/ serves as a page to read or run, sandboxed on an origin of its own.
   if (type === "text/html" || type === "text/markdown") return "page";
-  return "tile";
+  return "row";
 }
 
 /** Whether a link in a reply goes to what one of its artifacts shows. */
@@ -286,6 +286,9 @@ function shows(href: string, artifacts: ReadonlyArray<AldoArtifact>): boolean {
   );
 }
 
+/** A line that's only a link and what it is (`Pull request: https://…`), as a thread's result lists what it made. */
+const LINK_LINE = /^(.{1,64}?): (https:\/\/\S+)$/;
+
 /**
  * A reply's words without the lines that only link to what it shows in
  * place (`Shared link: https://…/s/<id>`, as a thread's result lists what it
@@ -297,12 +300,83 @@ export function withoutShownLinks(text: string, artifacts: ReadonlyArray<AldoArt
   return text
     .split("\n")
     .filter((line) => {
-      const link = /^[^:\n]{1,60}: (https:\/\/\S+)$/.exec(line.trim());
-      return !(link && shows(link[1]!, artifacts));
+      const link = LINK_LINE.exec(line.trim());
+      return !(link && shows(link[2]!, artifacts));
     })
     .join("\n")
     .replace(/\n{3,}/g, "\n\n")
     .trimEnd();
+}
+
+/** A link a thread's result lists, as a row under it: what it is, and in a word what kind. */
+export interface AldoLinkRow {
+  readonly url: string;
+  readonly title: string;
+  readonly type: string;
+}
+
+function linkRow(label: string, url: URL): AldoLinkRow {
+  const host = url.host.replace(/^www\./, "");
+  const pull =
+    url.host === "github.com" ? /^\/([^/]+)\/([^/]+)\/pull\/(\d+)/.exec(url.pathname) : null;
+  if (pull) {
+    // Unlabelled, Aldo calls it "Pull request": its repository and number say more.
+    const title = label === "Pull request" ? `${pull[1]}/${pull[2]} #${pull[3]}` : label;
+    return { url: url.href, title, type: "Pull request" };
+  }
+  return { url: url.href, title: label, type: label === host ? "Link" : host };
+}
+
+/**
+ * A thread's result's words (closingThread's, so never a reply of Aldo's
+ * own) without the lines at their end that only link to what it made, and
+ * those links, to list as rows under it. A link in a sentence stays put.
+ */
+export function linkRows(text: string): {
+  readonly text: string;
+  readonly links: ReadonlyArray<AldoLinkRow>;
+} {
+  const lines = text.split("\n");
+  const links: AldoLinkRow[] = [];
+  for (let link; (link = LINK_LINE.exec(lines.at(-1)?.trim() ?? "")) && URL.canParse(link[2]!);) {
+    links.unshift(linkRow(link[1]!, new URL(link[2]!)));
+    lines.pop();
+  }
+  return { text: lines.join("\n").trimEnd(), links };
+}
+
+const shapeOf = (a: AldoArtifact) => (a.kind === "file" ? fileShape(a.contentType) : a.kind);
+
+/**
+ * What a reply shows first, and the rest, listed under it. First what Aldo
+ * draws (every chart), a recording, a table, the pictures, a page, a sound;
+ * an agent's picture of a chart may not read on a phone, so a table comes
+ * first. A file sent twice (its link twice, or a copy of the same title,
+ * type and size) is listed once.
+ */
+export function arrange(artifacts: ReadonlyArray<AldoArtifact>): {
+  readonly lead: ReadonlyArray<AldoArtifact>;
+  readonly rest: ReadonlyArray<AldoArtifact>;
+} {
+  const seen = new Set<string>();
+  const once = artifacts.filter((a) => {
+    if (a.kind !== "file") return true;
+    const keys = [a.url, ...(a.bytes ? [`${a.contentType} ${a.bytes} ${a.title}`] : [])];
+    if (keys.some((key) => seen.has(key))) return false;
+    for (const key of keys) seen.add(key);
+    return true;
+  });
+  const all = (shape: string) => once.filter((a) => shapeOf(a) === shape);
+  const lead =
+    [
+      all("chart"),
+      all("video").slice(0, 1),
+      all("table").slice(0, 1),
+      all("image"),
+      all("page").slice(0, 1),
+      all("audio").slice(0, 1),
+    ].find((group) => group.length > 0) ?? [];
+  return { lead, rest: once.filter((a) => !lead.includes(a)) };
 }
 
 /** A figure as the page shows it: "$12", "40%", "3.5 h"; `compact` for a scale's ticks ("$1.2K"). */
