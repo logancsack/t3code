@@ -172,6 +172,22 @@ async function sync(environments: ReadonlyArray<AldoEnvironment>): Promise<void>
   }
 }
 
+/**
+ * Whether this page has brought its copies of the listed threads up to date
+ * once: until then a sidebar with none of them is loading, not empty.
+ */
+let synced = false;
+const syncedListeners = new Set<() => void>();
+
+export function aldoThreadsSynced(): boolean {
+  return synced;
+}
+
+export function subscribeAldoThreadsSynced(listener: () => void): () => void {
+  syncedListeners.add(listener);
+  return () => syncedListeners.delete(listener);
+}
+
 let running: Promise<void> | null = null;
 
 /** Brings this browser's copies of the machines' threads up to date on every directory fetch. */
@@ -185,6 +201,9 @@ export function installAldoShellSync(): void {
     // One at a time: a fetch that comes while one runs (slow Aldo) waits for it.
     running ??= sync(environments).finally(() => {
       running = null;
+      if (synced) return;
+      synced = true;
+      for (const listener of syncedListeners) listener();
     });
     return running;
   });

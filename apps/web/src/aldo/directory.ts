@@ -8,6 +8,7 @@ import {
   api,
   CONNECTION_PREFIX,
   AldoApiError,
+  ALDO_READ_ANSWERS_WITHIN_MS,
 } from "./api";
 import { aldoMachineStart } from "./threadStart.logic";
 import { getAldoPreloadSettings } from "./preloadSettings";
@@ -406,7 +407,10 @@ async function fetchEnvironments(): Promise<ReadonlyArray<AldoEnvironment>> {
   const headers: Record<string, string> = {};
   if (firstView !== null) headers["x-aldo-first-view"] = String(firstView);
   if (open !== null) headers["x-aldo-open"] = open;
-  const body = await api<DirectoryBody>("/api/environments", { headers });
+  const body = await api<DirectoryBody>("/api/environments", {
+    headers,
+    answersWithin: ALDO_READ_ANSWERS_WITHIN_MS,
+  });
   if (firstViewMs === firstView) firstViewMs = null;
   if (openTimings === open) openTimings = null;
   sharedReads()?.postMessage({ startedAt, body } satisfies SharedRead);
