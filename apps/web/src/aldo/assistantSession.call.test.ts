@@ -16,6 +16,7 @@ const aldoApiMock = vi.hoisted(() => ({
     startLive: backend.start,
     history: backend.history,
     record: backend.record,
+    references: async () => [],
     kept: async () => ({ pending: null, needsPlan: null }),
     followups: async () => null,
   },
@@ -195,4 +196,18 @@ it("finishes a call that hung up even when another call has opened since", async
   expect(backend.record.mock.calls.some((c) => c[0] === "as_call0000001" && c[2] === true)).toBe(
     true,
   );
+});
+
+it("leaves no card for a call where the user said nothing", async () => {
+  vi.useFakeTimers();
+  const session = await page(drawing());
+  await session.connectAldo({ mic: false });
+  channel.open();
+  channel.emit({ type: "session.started" });
+  say("assistant", "Hi, what can I do?", 1000);
+  expect(kinds(session.useAldoAssistant.getState())).toContain("card");
+  session.disconnectAldo();
+  await vi.advanceTimersByTimeAsync(5_000);
+  expect(kinds(session.useAldoAssistant.getState())).not.toContain("card");
+  expect(backend.record.mock.calls.at(-1)).toEqual(["as_call0000001", [], true]);
 });
