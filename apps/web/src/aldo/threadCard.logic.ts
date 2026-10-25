@@ -175,8 +175,8 @@ export function threadCardOf(
       return {
         tone: "quiet",
         dot: "working",
-        status: `${routine}Hit an error, trying again`,
-        body: "Aldo is asking it to carry on. This usually clears in a couple of minutes.",
+        status: `${routine}Taking longer than usual. Retrying.`,
+        body: null,
         action: null,
       };
     case "working":

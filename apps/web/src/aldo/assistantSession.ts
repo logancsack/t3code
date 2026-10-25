@@ -698,7 +698,8 @@ function tellScreen(): void {
 function toastStartNews(news: AldoStartNews): void {
   const failed = news.state === "failed" || news.state === "stopped";
   toastManager.add({
-    type: failed ? "error" : "warning",
+    id: news.id,
+    type: failed ? "error" : "info",
     title: news.label,
     timeout: failed ? 0 : 10_000,
   });
@@ -725,18 +726,22 @@ function tellAldo(news: AldoStartNews): void {
 }
 
 function tellStartNews(watch: AldoStartWatch, news: AldoStartNews): void {
+  const id = `start-${watch.environmentId}-${watch.threadId}`;
+  news = { ...news, id };
   // On a call where Aldo tells what came of its work (followups), it tells this too, with a line of its own:
   // only a retry, which it doesn't tell, shows here.
   const aldoTells = live && liveStarted && followupsSupported === true;
   if (aldoTells && news.state !== "retrying") return;
   addEntry({
     kind: "action",
-    id: `start-${watch.threadId}-${news.state}`,
-    tool: "start_thread",
+    id,
+    tool: "start_status",
     label: news.label,
-    failed: news.state !== "queued",
+    failed: news.state === "failed" || news.state === "stopped",
     open: { environmentId: watch.environmentId, threadId: watch.threadId },
   });
+  // Retrying is a retractable status, not a spoken reply kept in chat history.
+  if (news.state === "retrying") return toastStartNews(news);
   if (aldoTells) return;
   if (aldoAssistantLive() && channel?.readyState === "open" && (!live || liveStarted))
     tellAldo(news);
@@ -749,6 +754,13 @@ function checkStarts(): void {
   const next: AldoStartWatch[] = [];
   for (const watch of startWatches) {
     const { news, done } = startNews(watch, environments, Date.now());
+    const environment = environments?.find((e) => e.environmentId === watch.environmentId);
+    if (news || done || (environment?.starts && !environment.starts[watch.threadId])) {
+      const id = `start-${watch.environmentId}-${watch.threadId}`;
+      toastManager.close(id);
+      set({ entries: get().entries.filter((entry) => entry.kind !== "action" || entry.id !== id) });
+      newsWaiting = newsWaiting.filter((entry) => entry.id !== id);
+    }
     if (news) tellStartNews(watch, news);
     if (!done) next.push(news ? { ...watch, told: [...watch.told, news.state] } : watch);
   }
