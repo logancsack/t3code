@@ -2903,8 +2903,14 @@ export default function Sidebar() {
       // or descriptor not loaded yet) never classify as settled: the user
       // could neither un-settle nor pin them, so auto-settling them would
       // strand rows in a tail with no working affordances.
-      const supportsSettlement = capabilities?.threadSettlement === true;
-      const supportsSnooze = capabilities?.threadSnooze === true;
+      // Aldo: every machine runs a server that has both, so a thread keeps
+      // its shelf while its machine's config loads. Otherwise a fresh load
+      // rendered every settled thread in the inbox (hundreds of rows), then
+      // moved them as each config came in.
+      const supportsSettlement =
+        capabilities === undefined ? isAldoCloud : capabilities.threadSettlement === true;
+      const supportsSnooze =
+        capabilities === undefined ? isAldoCloud : capabilities.threadSnooze === true;
       const threadKey = scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id));
       if (capabilities?.threadActiveReorder === true) activeReorderable.add(threadKey);
       // Older servers retain their existing drag actions. Active placement

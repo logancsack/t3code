@@ -194,6 +194,7 @@ function Sidebar({
   resizable?: boolean | SidebarResizableOptions;
 }) {
   const { isMobile, state, openMobile, setOpenMobile } = useSidebar();
+  const mobileContentRef = React.useRef<HTMLDivElement | null>(null);
   const resolvedResizable = React.useMemo<SidebarResolvedResizableOptions | null>(() => {
     if (isMobile || collapsible === "none" || !resizable) {
       return null;
@@ -235,6 +236,10 @@ function Sidebar({
       <SidebarInstanceContext value={instanceContextValue}>
         <Sheet onOpenChange={setOpenMobile} open={openMobile}>
           <SheetPopup
+            // Opening focuses the sidebar itself: finding its first control
+            // checked every row's computed style, held for seconds with
+            // hundreds of rows on a phone.
+            initialFocus={mobileContentRef}
             className={cn(
               "w-(--sidebar-width) max-w-none bg-sidebar surface-grain p-0 text-sidebar-foreground",
               className,
@@ -255,8 +260,10 @@ function Sidebar({
               <SheetDescription>Displays the mobile sidebar.</SheetDescription>
             </SheetHeader>
             <div
+              ref={mobileContentRef}
+              tabIndex={-1}
               className={cn(
-                "flex h-full w-full flex-col pb-safe pt-safe",
+                "flex h-full w-full flex-col pb-safe pt-safe outline-none",
                 side === "left" ? "pl-safe" : "pr-safe",
               )}
               {...props}
