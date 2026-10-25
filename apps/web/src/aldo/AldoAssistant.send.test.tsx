@@ -3,9 +3,14 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 
-const backend = vi.hoisted(() => ({ chat: vi.fn() }));
+const backend = vi.hoisted(() => ({ send: vi.fn(), turn: vi.fn() }));
+vi.mock("./homeOutbox", () => ({
+  keepHomeMessage: async () => {},
+  dropHomeMessage: async () => {},
+  homeMessages: async () => [],
+}));
 vi.mock("./assistantApi", () => ({
-  aldoAssistant: { chat: backend.chat },
+  aldoAssistant: { send: backend.send, turn: backend.turn },
   aldoAssistantInfo: async () => ({ available: true, images: null }),
 }));
 vi.mock("./directory", () => ({
@@ -76,10 +81,13 @@ async function send(text: string) {
   expect(container.querySelector("textarea")!.value).toBe("");
 }
 
-it("keeps Send enabled for three taps, shows queued messages, and accepts another send during reply beats", async () => {
+const taken = { kind: "taken", sessionId: "as_dom000000000" };
+
+it("keeps Send enabled for three taps, sends each at once, and accepts another send while a reply arrives", async () => {
   type Turn = { sessionId: string; reply: string; calls: [] };
   const completions: ((turn: Turn) => void)[] = [];
-  backend.chat.mockImplementation(() => new Promise<Turn>((resolve) => completions.push(resolve)));
+  backend.send.mockResolvedValue(taken);
+  backend.turn.mockImplementation(() => new Promise<Turn>((resolve) => completions.push(resolve)));
   await act(async () =>
     root.render(
       <>
@@ -94,13 +102,12 @@ it("keeps Send enabled for three taps, shows queued messages, and accepts anothe
   expect(container.textContent).toContain("Plan dinner");
   expect(container.textContent).toContain("For four people");
   expect(container.textContent).toContain("Make it vegetarian");
-  expect(
-    [...container.querySelectorAll('[role="status"]')].filter((e) => e.textContent === "Queued"),
-  ).toHaveLength(2);
-  expect(backend.chat).toHaveBeenCalledTimes(1);
+  // Nothing waits behind another message's reply, and nothing says "queued" or "sending" for a message that went.
+  expect(backend.send).toHaveBeenCalledTimes(3);
+  expect(container.textContent).not.toMatch(/Queued|Sending/);
   await act(async () =>
     completions[0]!({
-      sessionId: "as_dom",
+      sessionId: "as_dom000000000",
       reply: "First paragraph.\n\nAnother paragraph still arriving.",
       calls: [],
     }),
@@ -108,18 +115,48 @@ it("keeps Send enabled for three taps, shows queued messages, and accepts anothe
   expect(container.textContent).toContain("First paragraph.");
   expect(container.textContent).not.toContain("Another paragraph still arriving.");
   await send("Include a shopping list");
-  expect(backend.chat).toHaveBeenCalledTimes(2);
+  expect(backend.send).toHaveBeenCalledTimes(4);
   for (let i = 1; i < 4; i++) {
-    await act(async () => completions[i]!({ sessionId: "as_dom", reply: `Reply ${i}`, calls: [] }));
+    await act(async () =>
+      completions[i]!({ sessionId: "as_dom000000000", reply: `Reply ${i}`, calls: [] }),
+    );
   }
-  expect(backend.chat.mock.calls.map((call) => call[1])).toEqual([
+  expect(backend.send.mock.calls.map((call) => call[2])).toEqual([
     "Plan dinner",
     "For four people",
     "Make it vegetarian",
     "Include a shopping list",
   ]);
   expect(useAldoAssistant.getState().replying).toBe(false);
-  expect(container.textContent).not.toContain("Queued");
+});
+
+it("says a message isn't sent yet when Aldo can't be reached, and sends it on Try again", async () => {
+  vi.useFakeTimers();
+  backend.send.mockRejectedValue(new TypeError("Failed to fetch"));
+  backend.turn.mockResolvedValue({ sessionId: "as_dom000000000", reply: "Hello.", calls: [] });
+  await act(async () =>
+    root.render(
+      <>
+        <AldoConversation feed={[]} />
+        <AldoComposer chips={[]} onChip={vi.fn()} />
+      </>,
+    ),
+  );
+  await send("Hi");
+  await act(async () => vi.advanceTimersByTimeAsync(3_000));
+  expect(container.textContent).toContain("Sending…");
+  await act(async () => vi.advanceTimersByTimeAsync(4_000));
+  expect(container.textContent).toContain("Can't reach Aldo yet. Still trying.");
+  // The browser's own words never show.
+  expect(container.textContent).not.toContain("Failed to fetch");
+  backend.send.mockResolvedValue(taken);
+  const retry = [...container.querySelectorAll("button")].find(
+    (b) => b.textContent === "Try again",
+  )!;
+  await act(async () => retry.click());
+  expect(container.textContent).toContain("Hello.");
+  expect(container.textContent).not.toMatch(/Sending|Try again/);
+  vi.useRealTimers();
 });
 
 it.each([
@@ -129,7 +166,7 @@ it.each([
   "with %s input, focus stays in the field after sending: %s",
   async (_input, isTouch, keepsFocus) => {
     touch = isTouch;
-    backend.chat.mockImplementation(() => new Promise(() => {}));
+    backend.send.mockImplementation(() => new Promise(() => {}));
     await act(async () => root.render(<AldoComposer chips={[]} onChip={vi.fn()} />));
     const field = container.querySelector("textarea")!;
     field.focus();

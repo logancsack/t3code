@@ -65,6 +65,7 @@ import {
   type AldoFollowupNews,
   type AldoImageUpload,
 } from "./assistantApi";
+import { dropHomeMessage, homeMessages, keepHomeMessage } from "./homeOutbox";
 import {
   getAldoEnvironments,
   requestAldoDirectoryRefresh,
@@ -182,10 +183,15 @@ interface AldoAssistantState {
   readonly unsentImages: ReadonlyArray<AldoImageUpload> | null;
   /** A written reply is on its way (typed without a call on). */
   readonly replying: boolean;
-  /** Typed follow-ups, in send order, waiting for the current written turn. */
-  readonly queuedMessages: ReadonlyArray<AldoConversationEntry>;
-  /** A failed send holds later messages behind it until the user retries. */
-  readonly failedMessage: { readonly entry: AldoConversationEntry; readonly error: string } | null;
+  /**
+   * Written messages not through to Aldo, shown under each: `error` null while
+   * the page sends it again by itself ("Sending…"), else why it isn't sent
+   * yet (it may still be trying).
+   */
+  readonly undelivered: ReadonlyArray<{
+    readonly entry: AldoConversationEntry;
+    readonly error: string | null;
+  }>;
   /** When the call connected (ms), for how long it's been on; null without one. */
   readonly connectedAt: number | null;
   /** Where the call's own entries start in `entries`: what was said and done on it. */
@@ -208,8 +214,7 @@ export const useAldoAssistant = create<AldoAssistantState>(() => ({
   unsent: null,
   unsentImages: null,
   replying: false,
-  queuedMessages: [],
-  failedMessage: null,
+  undelivered: [],
   connectedAt: null,
   callFrom: 0,
   voiceOff: false,
@@ -235,6 +240,8 @@ let openThread: ((target: AldoOpenTarget) => void) | null = null;
 let chatSessionId: string | null = null;
 /** Whether this Aldo can chat in writing; null until tried. An older one takes typing on a call instead. */
 let chatSupported: boolean | null = null;
+/** A request Aldo kept is being sent (sendKept). */
+let resuming = false;
 /**
  * A response has been asked for or is being made (only one at a time), or
  * tool calls run (their results then ask for one).
@@ -357,6 +364,7 @@ export function loadAldoConversation(): Promise<void> {
       entries: [...fromRecord(messages), ...get().entries],
     });
     void settleKept().catch(() => {});
+    void resendKept(messages);
   })();
   return loadingHistory;
 }
@@ -506,13 +514,14 @@ async function sendKept(
     }
     return;
   }
+  resuming = true;
   set({
-    replying: true,
     error: null,
     ...(entry
       ? { planPick: pick(requestId, entry, needs, "confirming", { checkoutSession }) }
       : {}),
   });
+  syncReplying();
   try {
     for (let attempt = 0; ; attempt++) {
       const outcome = await aldoAssistant.resume(requestId, chatSessionId, checkoutSession);
@@ -524,8 +533,8 @@ async function sendKept(
       await new Promise((resolve) => setTimeout(resolve, wait));
     }
   } finally {
-    set({ replying: false });
-    void drainChat();
+    resuming = false;
+    syncReplying();
   }
 }
 
@@ -1654,138 +1663,302 @@ export function seedAldoComposer(text: string): void {
   set({ unsent: text });
 }
 
-type WrittenMessage = {
+// ---------------------------------------------------------------------------
+// Written messages
+//
+// A message goes the moment it's written, each on its own: Aldo takes it in at
+// once, by the id the page gave it (once, however often it's sent), and its
+// answer is asked for apart, in the order the messages came, so none waits
+// behind another's turn and no connection is held for one. One that doesn't
+// get through is sent again by itself, and meanwhile kept on the device
+// (homeOutbox.ts) in case the app closes first.
+
+type Written = {
+  id: string;
   entry: Extract<AldoConversationEntry, { kind: "message" }>;
+  sessionId: string;
   words: string;
   images: ReadonlyArray<AldoImageUpload>;
   viewing: { environmentId: string; threadId: string } | null;
 };
-const chatQueue: WrittenMessage[] = [];
-let sendingChat: WrittenMessage | null = null;
+/** The messages this page hasn't had through, by the entry that shows each (a failed one waits here for "Try again"). */
+const written = new Map<AldoConversationEntry, Written>();
+/** Those being sent or waiting for Aldo's answer. */
+const delivering = new Set<Written>();
+/** A message that hasn't been taken in after this long says it's being sent. */
+const SLOW_SEND_MS = 3_000;
+/** The pauses between tries to reach Aldo (the last repeats); a connection back, or "Try again", tries at once. */
+const RETRY_PAUSES_MS = [1_000, 2_000, 4_000, 8_000, 15_000, 30_000];
+/** Tries before a message says it's not sent yet: the page goes on trying. */
+const TRIES_BEFORE_SAYING = 4;
+const wakers = new Set<() => void>();
+let watchingConnection = false;
 
-/** Every tap shows its message now; one written request at a time keeps the session and replies in order. */
+/** A turn that failed (Aldo took the message and couldn't answer it), as Aldo's answer to asking for it says. */
+const failedTurn = (error: AldoApiError) =>
+  (error.body as { failed?: unknown } | undefined)?.failed === true;
+
+const randomId = (length: number) =>
+  Array.from(crypto.getRandomValues(new Uint8Array(length)), (b) => (b % 36).toString(36)).join("");
+
+/** The typing dots show while Aldo works on a message, or one is being sent, but not for one waiting on a connection. */
+function syncReplying(): void {
+  const troubled = new Set(get().undelivered.map((u) => u.entry));
+  set({ replying: resuming || [...delivering].some((m) => !troubled.has(m.entry)) });
+}
+
+/** What shows under a message that isn't through: "Sending…" (`error` null), or why not; `undefined` clears it. */
+function trouble(message: Written, error: string | null | undefined): void {
+  const others = get().undelivered.filter((u) => u.entry !== message.entry);
+  set({ undelivered: error === undefined ? others : [...others, { entry: message.entry, error }] });
+  syncReplying();
+}
+
+function wakeDelivery(): void {
+  for (const wake of wakers) wake();
+}
+
+function pause(failures: number): Promise<void> {
+  const ms = RETRY_PAUSES_MS[Math.min(failures, RETRY_PAUSES_MS.length) - 1]!;
+  return new Promise((resolve) => {
+    const wake = () => {
+      clearTimeout(timer);
+      wakers.delete(wake);
+      resolve();
+    };
+    const timer = setTimeout(wake, ms);
+    wakers.add(wake);
+  });
+}
+
+/** A phone suspends a page it isn't showing, and loses its connection often: what's waiting tries again as it's back. */
+function watchConnection(): void {
+  if (watchingConnection || typeof window === "undefined") return;
+  watchingConnection = true;
+  window.addEventListener("online", wakeDelivery);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") wakeDelivery();
+  });
+}
+
+/** Every tap shows its message now and sends it. */
 function chatText(words: string, images: ReadonlyArray<AldoImageUpload> = []): void {
   heard = rememberHeard(heard, words);
-  const entry: AldoConversationEntry = {
+  const onScreen = aldoOnScreen();
+  chatSessionId ??= `as_${randomId(12)}`;
+  addWritten({
+    id: `m_${randomId(16)}`,
+    sessionId: chatSessionId,
+    words,
+    images,
+    viewing: onScreen
+      ? { environmentId: onScreen.environmentId, threadId: onScreen.threadId }
+      : null,
+    at: new Date().toISOString(),
+  });
+}
+
+function addWritten(sent: Omit<Written, "entry"> & { at: string }): void {
+  const { at, ...rest } = sent;
+  const entry: Written["entry"] = {
     kind: "message",
     role: "user",
-    text: words,
-    at: new Date().toISOString(),
-    ...(images.length > 0 ? { images: images.map((image) => image.dataUrl) } : {}),
+    text: sent.words,
+    at,
+    ...(sent.images.length > 0 ? { images: sent.images.map((image) => image.dataUrl) } : {}),
   };
   addEntry(entry);
-  if (images.length > 0) sentImages.set(entry, images);
-  const onScreen = aldoOnScreen();
-  const viewing = onScreen
-    ? { environmentId: onScreen.environmentId, threadId: onScreen.threadId }
-    : null;
-  chatQueue.push({ entry, words, images, viewing });
-  set({
-    queuedMessages: chatQueue
-      .filter((message) => message !== sendingChat)
-      .map((message) => message.entry),
-  });
-  void drainChat();
+  if (sent.images.length > 0) sentImages.set(entry, sent.images);
+  const message: Written = { ...rest, entry };
+  written.set(entry, message);
+  set({ error: null });
+  void deliver(message);
 }
 
-/** Retry the failed head; later sends never overtake it. */
-export function retryAldoMessage(): void {
-  if (!get().failedMessage) return;
-  set({ failedMessage: null });
-  void drainChat();
+/** Messages kept on the device that Aldo doesn't have (the app closed before it did): sent now. */
+async function resendKept(known: ReadonlyArray<AldoAssistantMessage>): Promise<void> {
+  const here = new Set([...written.values()].map((m) => m.id));
+  for (const kept of await homeMessages()) {
+    if (here.has(kept.id)) continue;
+    // Aldo has it (the app closed as it was taken in): its answer comes with the conversation.
+    if (known.some((m) => m.clientId === kept.id)) {
+      void dropHomeMessage(kept.id);
+      continue;
+    }
+    addWritten({
+      id: kept.id,
+      sessionId: kept.sessionId,
+      words: kept.text,
+      images: kept.images,
+      viewing: kept.viewing,
+      at: kept.at,
+    });
+  }
 }
 
-async function drainChat(): Promise<void> {
-  if (get().replying || get().failedMessage) return;
-  const message = chatQueue[0];
+/** "Try again" on a message that isn't through. */
+export function retryAldoMessage(entry: AldoConversationEntry): void {
+  const message = written.get(entry);
   if (!message) return;
-  sendingChat = message;
-  set({ replying: true, error: null, queuedMessages: chatQueue.slice(1).map((m) => m.entry) });
+  trouble(message, null);
+  if (delivering.has(message)) wakeDelivery();
+  else void deliver(message);
+}
+
+/**
+ * Gets a message to Aldo and its answer back, for as long as it takes: what
+ * fails with the connection (or Aldo not answering) is tried again, since
+ * sending a message again is harmless; what Aldo answers with a refusal is
+ * the end of it.
+ */
+async function deliver(message: Written): Promise<void> {
+  watchConnection();
+  delivering.add(message);
+  syncReplying();
+  void keepHomeMessage({
+    id: message.id,
+    sessionId: message.sessionId,
+    text: message.words,
+    images: message.images,
+    viewing: message.viewing,
+    at: message.entry.at,
+  });
+  const slow = setTimeout(() => trouble(message, null), SLOW_SEND_MS);
+  let taken = false;
   let answered = false;
   try {
-    answered = await answerChat(message);
-    chatQueue.shift();
-  } catch {
-    // answerChat keeps the failed message on screen, ahead of the rest.
-  } finally {
-    sendingChat = null;
-    set({ replying: false, queuedMessages: chatQueue.map((m) => m.entry) });
-    if (!get().failedMessage) {
-      if (chatQueue.length > 0) void drainChat();
-      else if (answered && get().planPick) void sendKeptOnceFree().catch(() => {});
+    for (let failures = 0; ;) {
+      try {
+        let turn: AldoChatTurn | null = null;
+        if (!taken) {
+          const sent = await aldoAssistant.send(
+            message.id,
+            message.sessionId,
+            message.words,
+            message.images,
+            message.viewing,
+          );
+          if (!sent) return olderAldo(message);
+          taken = true;
+          clearTimeout(slow);
+          trouble(message, undefined);
+          void dropHomeMessage(message.id);
+          chatSessionId = sent.kind === "taken" ? sent.sessionId : sent.turn.sessionId;
+          turn = sent.kind === "answered" ? sent.turn : null;
+        }
+        if (!turn) {
+          const next = await aldoAssistant.turn(message.id);
+          if (next === "unknown") taken = false;
+          else if (next !== "pending") turn = next;
+          else {
+            failures = 0;
+            continue;
+          }
+        }
+        if (turn) {
+          answered = true;
+          written.delete(message.entry);
+          showAnswer(message, turn);
+          return;
+        }
+      } catch (error) {
+        if (error instanceof AldoApiError && (taken ? failedTurn(error) : error.status < 500)) {
+          return refused(message, error, taken);
+        }
+      }
+      failures++;
+      if (!taken && failures === TRIES_BEFORE_SAYING) {
+        trouble(message, "Can't reach Aldo yet. Still trying.");
+      }
+      await pause(failures);
     }
+  } finally {
+    clearTimeout(slow);
+    delivering.delete(message);
+    syncReplying();
+    if (answered && delivering.size === 0 && get().planPick)
+      void sendKeptOnceFree().catch(() => {});
   }
 }
 
-/** The request starts only after the previous reply set chatSessionId, so it sees the full conversation. */
-async function answerChat({ entry, words, images, viewing }: WrittenMessage): Promise<boolean> {
-  try {
-    const turn = await aldoAssistant
-      .chat(chatSessionId, words, images, viewing)
-      .catch((error: unknown) => {
-        if (error instanceof AldoApiError && error.status === 404) return null;
-        throw error;
-      });
-    if (!turn) {
-      // An older Aldo: the words go into a call instead, which shows them itself.
-      chatSupported = false;
-      set({ entries: get().entries.filter((e) => e !== entry) });
-      queuedText = [queuedText, words].filter(Boolean).join("\n\n");
-      if (!aldoAssistantLive()) void connectAldo({ mic: false });
-      return false;
-    }
-    chatSupported = true;
-    chatSessionId = turn.sessionId;
-    showCalls(turn.calls);
-    addEntry({
-      kind: "message",
-      role: "assistant",
-      text: turn.reply,
-      at: new Date().toISOString(),
-      ...(turn.artifacts ? { artifacts: turn.artifacts } : {}),
-    });
-    return true;
-  } catch (error) {
-    const needs =
-      error instanceof AldoApiError && error.status === 402 ? needsPlanOf(error.body) : null;
-    if (needs) {
-      // Aldo kept it until a plan's chosen: the message stays, with the plan picker under it.
-      chatSupported = true;
-      const earlier = get().planPick?.entry;
-      if (earlier && earlier !== entry && earlier.kind === "message") {
-        // Aldo keeps one request: this one joins the one kept before (or, too long for that, takes its
-        // place), so one message shows what it keeps, with the images that go with it.
-        const joined = needs.text.trim() !== words.trim();
-        const shownImages =
-          images.length > 0
-            ? images.map((image) => image.dataUrl)
-            : joined
-              ? earlier.images
-              : undefined;
-        const kept: AldoConversationEntry = {
-          kind: "message",
-          role: "user",
-          text: needs.text || words,
-          at: entry.at,
-          ...(shownImages ? { images: shownImages } : {}),
-        };
-        const uploads = images.length > 0 ? images : joined ? sentImages.get(earlier) : undefined;
-        if (uploads) sentImages.set(kept, uploads);
-        set({
-          entries: get()
-            .entries.filter((e) => e !== earlier)
-            .map((e) => (e === entry ? kept : e)),
-          planPick: pick(needs.requestId, kept, needs, "choose"),
-        });
-        return false;
-      }
-      set({ planPick: pick(needs.requestId, entry, needs, "choose") });
-      return false;
-    }
-    // Keep every message in place. Pausing here preserves order even when more arrive during a failure.
-    set({ failedMessage: { entry, error: messageOf(error) } });
-    throw error;
+/** An older Aldo: the words go into a call instead, which shows them itself. */
+function olderAldo(message: Written): void {
+  chatSupported = false;
+  written.delete(message.entry);
+  void dropHomeMessage(message.id);
+  set({ entries: get().entries.filter((e) => e !== message.entry) });
+  queuedText = [queuedText, message.words].filter(Boolean).join("\n\n");
+  if (!aldoAssistantLive()) void connectAldo({ mic: false });
+}
+
+function showAnswer(message: Written, turn: AldoChatTurn): void {
+  chatSupported = true;
+  chatSessionId = turn.sessionId;
+  showCalls(turn.calls);
+  // The home screen's refresh may have read the answer from Aldo's record already.
+  const after = get().entries.slice(get().entries.indexOf(message.entry) + 1);
+  if (
+    after.some(
+      (e) =>
+        e.kind === "message" && recorded.has(e) && e.role === "assistant" && e.text === turn.reply,
+    )
+  ) {
+    return;
   }
+  addEntry({
+    kind: "message",
+    role: "assistant",
+    text: turn.reply,
+    at: new Date().toISOString(),
+    ...(turn.artifacts ? { artifacts: turn.artifacts } : {}),
+  });
+}
+
+/** Aldo answered the message with a refusal, or couldn't answer it: the end of trying. */
+function refused(message: Written, error: AldoApiError, taken: boolean): void {
+  void dropHomeMessage(message.id);
+  const needs = !taken && error.status === 402 ? needsPlanOf(error.body) : null;
+  if (!needs) {
+    // Aldo has taken in a message it couldn't answer: trying again is a new message to it.
+    if (taken) message.id = `m_${randomId(16)}`;
+    if (!taken && error.status === 404) return olderAldo(message);
+    trouble(message, messageOf(error));
+    return;
+  }
+  // Aldo kept it until a plan's chosen: the message stays, with the plan picker under it.
+  trouble(message, undefined);
+  written.delete(message.entry);
+  chatSupported = true;
+  const { entry, words, images } = message;
+  const earlier = get().planPick?.entry;
+  if (earlier && earlier !== entry && earlier.kind === "message") {
+    // Aldo keeps one request: this one joins the one kept before (or, too long for that, takes its
+    // place), so one message shows what it keeps, with the images that go with it.
+    const joined = needs.text.trim() !== words.trim();
+    const shownImages =
+      images.length > 0
+        ? images.map((image) => image.dataUrl)
+        : joined
+          ? earlier.images
+          : undefined;
+    const kept: AldoConversationEntry = {
+      kind: "message",
+      role: "user",
+      text: needs.text || words,
+      at: entry.at,
+      ...(shownImages ? { images: shownImages } : {}),
+    };
+    const uploads = images.length > 0 ? images : joined ? sentImages.get(earlier) : undefined;
+    if (uploads) sentImages.set(kept, uploads);
+    set({
+      entries: get()
+        .entries.filter((e) => e !== earlier)
+        .map((e) => (e === entry ? kept : e)),
+      planPick: pick(needs.requestId, kept, needs, "choose"),
+    });
+    return;
+  }
+  set({ planPick: pick(needs.requestId, entry, needs, "choose") });
 }
 
 export function setAldoMuted(muted: boolean): void {

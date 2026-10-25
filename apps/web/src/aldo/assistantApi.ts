@@ -81,6 +81,24 @@ export interface AldoChatTurn {
   }>;
 }
 
+/** How long a written message waits to be taken in, and its answer to be asked for (which Aldo holds for 8 s), before the connection is taken as dead. */
+const ALDO_SEND_ANSWERS_WITHIN_MS = 20_000;
+const ALDO_TURN_ANSWERS_WITHIN_MS = 20_000;
+
+/** What Aldo says to a message sent by id: it has it, or (an older Aldo) the whole turn. */
+export type AldoSent =
+  | { readonly kind: "taken"; readonly sessionId: string }
+  | { readonly kind: "answered"; readonly turn: AldoChatTurn };
+
+function turnOf(sessionId: string, reply: string, body: Partial<AldoChatTurn>): AldoChatTurn {
+  return {
+    sessionId,
+    reply,
+    calls: Array.isArray(body.calls) ? body.calls : [],
+    ...artifactsField(body.artifacts),
+  };
+}
+
 /** A call on GPT-Live: Aldo's session for it, and OpenAI's answer to the browser's WebRTC offer. */
 export interface AldoLiveVoice {
   readonly sessionId: string;
@@ -234,23 +252,31 @@ export const aldoAssistant = {
     };
   },
   /**
-   * A written turn, typed without a call (Aldo's src/lib/assistant/chat.ts);
-   * null where this Aldo can't chat in writing (an older one answers a path
-   * it doesn't know with the web client's own page). `viewing` is the thread
-   * on screen, which Aldo names for "this one" (an older Aldo ignores it).
-   * The page shows a plan picker (`planPicker`): refused for want of a plan,
-   * Aldo keeps the request and its 402 carries the picker's (needsPlanOf on
-   * the error's body); an older Aldo ignores it.
+   * A written message, typed without a call (Aldo's src/lib/assistant/chat.ts),
+   * by the `id` the page gave it: Aldo takes it in once, however often it's
+   * sent, and answers at once that it has it (`taken`, with the session
+   * the page named, or the one Aldo made); its answer is asked for apart
+   * (`turn`). An older Aldo ignores the id and answers in the same request
+   * (`answered`). Null where this Aldo can't chat in writing (an older one
+   * answers a path it doesn't know with the web client's own page). `viewing`
+   * is the thread on screen, which Aldo names for "this one" (an older Aldo
+   * ignores it). The page shows a plan picker (`planPicker`): refused for want
+   * of a plan, Aldo keeps the request and its 402 carries the picker's
+   * (needsPlanOf on the error's body); an older Aldo ignores it.
    */
-  chat: async (
+  send: async (
+    id: string,
     sessionId: string | null,
     text: string,
     images: ReadonlyArray<AldoImageUpload> = [],
     viewing: AldoHomeTarget | null = null,
-  ): Promise<AldoChatTurn | null> => {
-    const body = await api<Partial<AldoChatTurn>>("/api/assistant/chat", {
+  ): Promise<AldoSent | null> => {
+    const body = await api<Partial<AldoChatTurn> & { accepted?: boolean }>("/api/assistant/chat", {
       method: "POST",
+      // Taking a message in is quick: one that isn't answered is on a connection that died, and is sent again.
+      answersWithin: ALDO_SEND_ANSWERS_WITHIN_MS,
       body: JSON.stringify({
+        id,
         sessionId,
         text,
         ...(images.length > 0 ? { images } : {}),
@@ -260,13 +286,33 @@ export const aldoAssistant = {
         cards: cardsShown(),
       }),
     });
-    if (typeof body.reply !== "string" || typeof body.sessionId !== "string") return null;
-    return {
-      sessionId: body.sessionId,
-      reply: body.reply,
-      calls: Array.isArray(body.calls) ? body.calls : [],
-      ...artifactsField(body.artifacts),
-    };
+    if (typeof body.sessionId !== "string") return null;
+    if (body.accepted) return { kind: "taken", sessionId: body.sessionId };
+    return typeof body.reply === "string"
+      ? { kind: "answered", turn: turnOf(body.sessionId, body.reply, body) }
+      : null;
+  },
+  /**
+   * Aldo's answer to the message `id` (sent with `send`), once it has one:
+   * "pending" after a few seconds of waiting, to be asked again; "unknown"
+   * when Aldo doesn't have the message. A turn that failed throws an error
+   * whose body says `failed`; anything else that throws is the ask's own and
+   * can be made again.
+   */
+  turn: async (id: string): Promise<AldoChatTurn | "pending" | "unknown"> => {
+    const body = await api<Partial<AldoChatTurn> & { pending?: boolean }>(
+      `/api/assistant/chat?id=${encodeURIComponent(id)}`,
+      { answersWithin: ALDO_TURN_ANSWERS_WITHIN_MS, cache: "no-store" },
+    ).catch((error: unknown) => {
+      if (error instanceof AldoApiError && error.status === 404) return null;
+      throw error;
+    });
+    if (!body) return "unknown";
+    if (body.pending) return "pending";
+    if (typeof body.reply !== "string" || typeof body.sessionId !== "string") {
+      throw new TypeError("Aldo's answer couldn't be read.");
+    }
+    return turnOf(body.sessionId, body.reply, body);
   },
   /** The request Aldo keeps from before a plan was chosen; null where it doesn't keep them (an older Aldo) or couldn't say. */
   /** Null where Aldo keeps none (an older one); throws when it can't be reached, so the page can ask again. */
@@ -355,6 +401,7 @@ export const aldoAssistant = {
           at: string;
           source?: "brief";
           artifacts?: unknown;
+          clientId?: string;
         }>;
       }>(`/api/assistant/history?limit=${limit}`)
     ).messages.map(({ artifacts, ...m }) => ({ ...m, ...artifactsField(artifacts) })),

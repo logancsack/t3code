@@ -922,10 +922,7 @@ function UserMessage({
   readonly entry: Extract<AldoConversationEntry, { kind: "message" }>;
 }) {
   const { text, images: named } = withoutImageNotes(entry.text);
-  const queued = useAldoAssistant((s) => s.queuedMessages?.includes(entry) ?? false);
-  const failed = useAldoAssistant((s) =>
-    s.failedMessage?.entry === entry ? s.failedMessage.error : null,
-  );
+  const trouble = useAldoAssistant((s) => s.undelivered?.find((u) => u.entry === entry));
   const arrive = useAldoArrive();
   return (
     <div {...arrive} className="flex min-w-0 max-w-[80%] flex-col items-end gap-1.5 self-end">
@@ -959,23 +956,23 @@ function UserMessage({
           {text}
         </p>
       ) : null}
-      {failed ? (
+      {trouble?.error ? (
         <div
           role="status"
           className="max-w-full wrap-anywhere text-right text-[12px] text-muted-foreground"
         >
-          {failed}{" "}
+          {trouble.error}{" "}
           <button
             type="button"
             className="min-h-11 underline underline-offset-2"
-            onClick={retryAldoMessage}
+            onClick={() => retryAldoMessage(entry)}
           >
             Try again
           </button>
         </div>
-      ) : queued ? (
+      ) : trouble ? (
         <span role="status" className="max-w-full text-[12px] text-muted-foreground">
-          Queued
+          Sending…
         </span>
       ) : null}
     </div>
