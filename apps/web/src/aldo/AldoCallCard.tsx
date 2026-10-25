@@ -78,7 +78,6 @@ export function AldoCallCard(props: { readonly call: AldoCall }) {
   const stale = transcript?.state === "ready" && !transcript.settled && settled;
   useEffect(() => {
     if (open && stale) fetchTurns().catch(() => {});
-    // oxlint-disable-next-line react/exhaustive-deps -- Only the call finishing reads it again.
   }, [open, stale]);
   const toggle = () => {
     setOpen(!open);
