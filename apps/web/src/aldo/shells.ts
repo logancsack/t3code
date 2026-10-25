@@ -169,7 +169,10 @@ async function seedModelsNow(environments: ReadonlyArray<AldoEnvironment>): Prom
     );
   if (ids.length === 0) return;
   const { written, kept } = await seedMissingServerConfigs(config, ids, settings);
-  for (const environmentId of [...written, ...kept]) modelsChecked.set(environmentId, template);
+  // One that connected meanwhile was forgotten as it did (forgetLiveModelsChecked): its own config replaces this.
+  for (const environmentId of [...written, ...kept]) {
+    if (!isLive(environmentId)) modelsChecked.set(environmentId, template);
+  }
   checkedTemplate = template;
   keepModelsChecked();
   // Already registered: its config reloads from the cache, all of them at once.
