@@ -73,7 +73,8 @@ export interface PieSlice {
   readonly value: number;
   /** Of the whole, 0 to 1. */
   readonly share: number;
-  /** Its color's place in the series' order; null for Other. */
+  /** Its place among the labels, and its default color's in the series' order; null for Other. */
+  readonly index: number;
   readonly color: number | null;
   /** Where it starts and ends, in turns clockwise from twelve o'clock. */
   readonly from: number;
@@ -101,8 +102,15 @@ export function pieSlices(
           .toSorted((a, b) => a - b);
   const rest = values.reduce((sum, v, i) => (kept.includes(i) ? sum : sum + v), 0);
   const parts = [
-    ...kept.map((i, n) => ({ label: labels[i]!, value: values[i]!, color: n as number | null })),
-    ...(kept.length < labels.length ? [{ label: "Other", value: rest, color: null }] : []),
+    ...kept.map((i, n) => ({
+      label: labels[i]!,
+      value: values[i]!,
+      index: i,
+      color: n as number | null,
+    })),
+    ...(kept.length < labels.length
+      ? [{ label: "Other", value: rest, index: -1, color: null }]
+      : []),
   ];
   let at = 0;
   return parts.map((part) => {

@@ -227,3 +227,76 @@ it("draws stacked columns as one column a label, and writes the latest label's f
   expect(figures).toContain("US$5");
   expect(figures).toContain("EU$0");
 });
+
+const fills = (chart: Element) =>
+  [...chart.querySelectorAll<SVGElement>("path, polygon, circle")].map((e) =>
+    e.getAttribute("fill"),
+  );
+
+it("colors every series and slice apart by default, however many there are", async () => {
+  const names = Array.from({ length: 6 }, (_, i) => `S${i}`);
+  const lines: AldoArtifact = {
+    kind: "chart",
+    title: "Six lines",
+    type: "line",
+    labels: ["a", "b"],
+    series: names.map((name, i) => ({ name, values: [i, i + 1] })),
+  };
+  const pie: AldoArtifact = {
+    kind: "chart",
+    title: "Eleven slices",
+    type: "donut",
+    labels: Array.from({ length: 11 }, (_, i) => `P${i}`),
+    series: [{ name: "Share", values: Array.from({ length: 11 }, () => 1) }],
+  };
+  await act(async () => root.render(<AldoArtifacts artifacts={[lines, pie]} />));
+  const strokes = [...container.querySelectorAll('svg[aria-label="Six lines"] polyline')].map((e) =>
+    e.getAttribute("stroke"),
+  );
+  expect(new Set(strokes).size).toBe(6);
+  const slices = fills(container.querySelector('[aria-label="Eleven slices"]')!);
+  expect(new Set(slices).size).toBe(11);
+  expect(slices).not.toContain("var(--muted-foreground)");
+});
+
+it("draws exactly the colors it was given: a series', a pie's slices', a scatter point's", async () => {
+  const column: AldoArtifact = {
+    kind: "chart",
+    title: "Gain and loss",
+    type: "column",
+    labels: ["a", "b"],
+    series: [
+      { name: "Gain", values: [1, 2], color: "#16a34a" },
+      { name: "Loss", values: [2, 1], color: "#dc2626" },
+    ],
+  };
+  const pie: AldoArtifact = {
+    kind: "chart",
+    title: "Split",
+    type: "pie",
+    labels: ["A", "B", "C"],
+    series: [{ name: "Share", values: [1, 2, 3], colors: ["#ea580c", "", "#16a34a"] }],
+  };
+  const scatter: AldoArtifact = {
+    kind: "chart",
+    title: "Points",
+    type: "scatter",
+    labels: [],
+    series: [
+      {
+        name: "Cos",
+        values: [],
+        color: "#7c3aed",
+        points: [
+          { x: 1, y: 2, color: "#0ea5e9" },
+          { x: 2, y: 3 },
+        ],
+      },
+    ],
+  };
+  await act(async () => root.render(<AldoArtifacts artifacts={[column, pie, scatter]} />));
+  const of = (title: string) => fills(container.querySelector(`[aria-label="${title}"]`)!);
+  expect(new Set(of("Gain and loss"))).toEqual(new Set(["#16a34a", "#dc2626"]));
+  expect(of("Split")).toEqual(["#ea580c", "#e8743b", "#16a34a"]);
+  expect(of("Points")).toEqual(["#0ea5e9", "#7c3aed"]);
+});

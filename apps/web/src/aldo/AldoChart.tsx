@@ -22,11 +22,28 @@ import {
 } from "./chart.logic";
 
 /**
- * A chart's series, in the brand's order (docs/brand.md): Aldo Blue, red and
- * yellow at full strength, then a lighter blue, a deeper red and ochre, each
- * next to the last told apart with any color vision.
+ * A chart's default colors, in order: Aldo Blue first, then hues spaced round
+ * the wheel and told apart with any color vision, at middling lightness so
+ * they hold on the card in light and dark. A chart without colors of its own
+ * (a series' `color`, a pie's `colors`) takes these, so no series or slice
+ * shares one (a chart has 6 series at most; a pie folds past these).
  */
-export const SERIES = ["var(--primary)", "#da291c", "#ffc72c", "#6b8ff0", "#b5281d", "#a87a00"];
+export const SERIES = [
+  "var(--primary)",
+  "#e8743b",
+  "#20a39e",
+  "#d6336c",
+  "#e0a100",
+  "#7b5cd6",
+  "#3f9f4a",
+  "#da291c",
+  "#3aa0e0",
+  "#946c4a",
+  "#94b520",
+];
+/** A series' color: the one it was given, else its place in the defaults. */
+const seriesColor = (chart: AldoChartArtifact, j: number) =>
+  chart.series[j]?.color ?? SERIES[j % SERIES.length]!;
 /** What a pie folds past its colors into. */
 const OTHER = "var(--muted-foreground)";
 /** The bars a chart shows in place before its sheet: the rest is a tap away. */
@@ -79,7 +96,7 @@ function Legend(props: { readonly chart: AldoChartArtifact }) {
       {props.chart.series.map((s, i) => (
         // oxlint-disable-next-line react/no-array-index-key -- Series are fixed once said, and may share a name.
         <li key={i} className="flex min-w-0 items-center gap-1.5">
-          <Swatch color={SERIES[i]!} />
+          <Swatch color={seriesColor(props.chart, i)} />
           <span className="truncate">{s.name}</span>
         </li>
       ))}
@@ -153,7 +170,7 @@ function Bars(props: { readonly chart: AldoChartArtifact; readonly all?: boolean
                           // Apart from the next by a gap of the card's own color.
                           width: `calc(${Math.abs(at(to) - at(from))}% - ${end ? 0 : 2}px)`,
                           ...(to < from && !end ? { marginLeft: 2 } : {}),
-                          background: SERIES[j],
+                          background: seriesColor(chart, j),
                         }}
                       />
                     );
@@ -176,7 +193,7 @@ function Bars(props: { readonly chart: AldoChartArtifact; readonly all?: boolean
                             left: `${Math.min(at(0), at(value))}%`,
                             width: `${Math.abs(at(value) - at(0))}%`,
                             minWidth: value !== 0 ? 3 : 0,
-                            background: SERIES[j],
+                            background: seriesColor(chart, j),
                           }}
                         />
                       </span>
@@ -279,7 +296,7 @@ function Plot(props: { readonly chart: AldoChartArtifact; readonly all?: boolean
         {chart.series.map((s, j) => (
           // oxlint-disable-next-line react/no-array-index-key -- Series are fixed once said, and may share a name.
           <span key={j} className="flex min-w-0 items-center gap-1.5">
-            <Swatch color={SERIES[j]!} />
+            <Swatch color={seriesColor(chart, j)} />
             {chart.series.length > 1 ? <span className="truncate">{s.name}</span> : null}
             <span className="shrink-0 text-foreground tabular-nums">
               {formatValue(s.values[shown] ?? 0, chart.unit)}
@@ -344,7 +361,7 @@ function Plot(props: { readonly chart: AldoChartArtifact; readonly all?: boolean
                   // oxlint-disable-next-line react/no-array-index-key -- Fixed once said.
                   key={`${j}-${i}`}
                   d={barPath(true, at, thick, start, end, tip ? 4 : 0)}
-                  fill={SERIES[j]}
+                  fill={seriesColor(chart, j)}
                 />
               );
             }),
@@ -361,14 +378,14 @@ function Plot(props: { readonly chart: AldoChartArtifact; readonly all?: boolean
                 {marks[j] === "area" ? (
                   <polygon
                     points={[...tops, ...floor].join(" ")}
-                    fill={SERIES[j]}
+                    fill={seriesColor(chart, j)}
                     fillOpacity={segments ? 0.28 : 0.12}
                   />
                 ) : null}
                 <polyline
                   points={tops.join(" ")}
                   fill="none"
-                  stroke={SERIES[j]}
+                  stroke={seriesColor(chart, j)}
                   strokeWidth={2}
                   strokeLinejoin="round"
                   strokeLinecap="round"
@@ -377,7 +394,7 @@ function Plot(props: { readonly chart: AldoChartArtifact; readonly all?: boolean
                   cx={x(shown)}
                   cy={y(span(j, shown)[1])}
                   r={4}
-                  fill={SERIES[j]}
+                  fill={seriesColor(chart, j)}
                   strokeWidth={2}
                   className="stroke-card"
                 />
@@ -479,7 +496,7 @@ function Scatter(props: { readonly chart: AldoChartArtifact; readonly all?: bool
                 cx={x(p.x)}
                 cy={y(p.y)}
                 r={focus === i ? 6 : 4.5}
-                fill={SERIES[p.j]}
+                fill={p.color ?? seriesColor(chart, p.j)}
                 strokeWidth={2}
                 className="stroke-card"
               />
@@ -510,9 +527,11 @@ function Pie(props: { readonly chart: AldoChartArtifact; readonly all?: boolean 
   const { chart } = props;
   const values = chart.series[0]!.values;
   const slices = pieSlices(chart.labels, values, SERIES.length);
+  const own = chart.series[0]!.colors;
   const total = values.reduce((sum, v) => sum + v, 0);
   const donut = chart.type === "donut";
-  const colorOf = (color: number | null) => (color === null ? OTHER : SERIES[color]!);
+  const colorOf = (slice: (typeof slices)[number]) =>
+    slice.color === null ? OTHER : own?.[slice.index] || SERIES[slice.color]!;
   return (
     <div role="img" aria-label={chart.title} className="flex min-w-0 items-center gap-4">
       <div className={cn("relative shrink-0", props.all ? "size-44" : "size-32 sm:size-36")}>
@@ -522,7 +541,7 @@ function Pie(props: { readonly chart: AldoChartArtifact; readonly all?: boolean 
               // oxlint-disable-next-line react/no-array-index-key -- Fixed once said.
               key={i}
               d={arcPath(slice.from, slice.to, donut ? 0.62 : 0)}
-              fill={colorOf(slice.color)}
+              fill={colorOf(slice)}
               fillRule="evenodd"
               // Apart from the next by a gap of the card's own color.
               strokeWidth={slices.length > 1 ? 2 : 0}
@@ -545,7 +564,7 @@ function Pie(props: { readonly chart: AldoChartArtifact; readonly all?: boolean 
         {slices.map((slice, i) => (
           // oxlint-disable-next-line react/no-array-index-key -- Fixed once said, and may repeat.
           <li key={i} className="flex min-w-0 items-center gap-2">
-            <Swatch color={colorOf(slice.color)} />
+            <Swatch color={colorOf(slice)} />
             <span className="min-w-0 flex-1 truncate text-muted-foreground">{slice.label}</span>
             {props.all ? (
               <span className="shrink-0 text-muted-foreground tabular-nums">
