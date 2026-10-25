@@ -28,6 +28,8 @@ export interface AldoAssistantMessage {
   readonly source?: "brief";
   /** What an Aldo's message shows under its words (AldoArtifacts.tsx). */
   readonly artifacts?: ReadonlyArray<AldoArtifact>;
+  /** The id the page gave a written message of the user's, which Aldo keeps with it (an older Aldo doesn't). */
+  readonly clientId?: string;
 }
 
 /** Something Aldo did in this conversation, shown under what was said. */

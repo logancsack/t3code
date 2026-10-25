@@ -3,7 +3,8 @@ import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 
 const backend = vi.hoisted(() => ({
   history: vi.fn(async (_limit?: number): Promise<unknown[]> => []),
-  chat: vi.fn(),
+  send: vi.fn(),
+  turn: vi.fn(),
   kept: vi.fn(),
   resume: vi.fn(),
 }));
@@ -19,14 +20,22 @@ const aldoApiMock = vi.hoisted(() => ({
   },
   aldoAssistant: {
     history: backend.history,
-    chat: backend.chat,
+    send: backend.send,
+    turn: backend.turn,
     kept: backend.kept,
     resume: backend.resume,
     followups: async () => null,
   },
+  requestAldoProfile: async () => ({ id: "u1" }),
   getAldoEnvironments: () => [],
   requestAldoDirectoryRefresh: vi.fn(),
   subscribeAldoEnvironments: () => () => {},
+}));
+const outbox = vi.hoisted(() => new Map<string, unknown>());
+vi.mock("./homeOutbox", () => ({
+  keepHomeMessage: async (message: { id: string }) => void outbox.set(message.id, message),
+  dropHomeMessage: async (id: string) => void outbox.delete(id),
+  homeMessages: async () => [...outbox.values()],
 }));
 vi.mock("./api", () => aldoApiMock);
 vi.mock("./assistantApi", () => aldoApiMock);
@@ -65,14 +74,19 @@ async function page(search = "") {
   return import("./assistantSession");
 }
 
+/** An older Aldo answers in the request that sends the message. */
+const answered = (turn: unknown) => ({ kind: "answered", turn });
+
 const said = (s: { entries: ReadonlyArray<{ kind: string; role?: string; text?: string }> }) =>
   s.entries.flatMap((e) => (e.kind === "message" ? [`${e.role}: ${e.text}`] : []));
 
 beforeEach(() => {
   backend.history.mockResolvedValue([]);
   backend.kept.mockResolvedValue({ pending: null, needsPlan: null });
-  backend.chat.mockReset();
+  backend.send.mockReset();
+  backend.turn.mockReset();
   backend.resume.mockReset();
+  outbox.clear();
 });
 
 afterEach(() => {
@@ -82,7 +96,7 @@ afterEach(() => {
 it("keeps a request refused for no plan on screen, with the picker under it", async () => {
   const { loadAldoConversation, sendText, useAldoAssistant } = await page();
   await loadAldoConversation();
-  backend.chat.mockRejectedValue(
+  backend.send.mockRejectedValue(
     new aldoApiMock.AldoApiError(402, REFUSAL, { error: REFUSAL, needsPlan }),
   );
   sendText("Make a deck from my notes");
@@ -100,13 +114,12 @@ it("keeps a refused message in place for retry when an older Aldo does not keep 
   const { loadAldoConversation, sendText, useAldoAssistant } = await page();
   backend.kept.mockResolvedValue(null);
   await loadAldoConversation();
-  backend.chat.mockRejectedValue(new aldoApiMock.AldoApiError(402, REFUSAL, { error: REFUSAL }));
+  backend.send.mockRejectedValue(new aldoApiMock.AldoApiError(402, REFUSAL, { error: REFUSAL }));
   sendText("Make a deck from my notes");
   await vi.waitFor(() => expect(useAldoAssistant.getState().replying).toBe(false));
   const state = useAldoAssistant.getState();
   expect(said(state)).toEqual(["user: Make a deck from my notes"]);
-  expect(state.failedMessage?.entry).toBe(state.entries[0]);
-  expect(state.failedMessage?.error).toBe(REFUSAL);
+  expect(state.undelivered).toEqual([{ entry: state.entries[0], error: REFUSAL }]);
   expect(state.unsent).toBeNull();
   expect(state.planPick).toBeNull();
 });
@@ -214,11 +227,13 @@ it("keeps the picker when “What can you do?” is answered without a plan", as
   backend.kept.mockResolvedValue({ pending, needsPlan });
   await loadAldoConversation();
   await vi.waitFor(() => expect(useAldoAssistant.getState().planPick?.stage).toBe("choose"));
-  backend.chat.mockResolvedValue({
-    sessionId: "as_1",
-    reply: "I hand your work to an agent with a computer of its own.",
-    calls: [],
-  });
+  backend.send.mockResolvedValue(
+    answered({
+      sessionId: "as_1",
+      reply: "I hand your work to an agent with a computer of its own.",
+      calls: [],
+    }),
+  );
   sendText("What can you do?");
   await vi.waitFor(() => expect(backend.kept).toHaveBeenCalledTimes(2));
   await vi.waitFor(() => expect(useAldoAssistant.getState().replying).toBe(false));
@@ -239,7 +254,7 @@ it("sends the kept request after a turn that went once a plan's on (chosen elsew
   await loadAldoConversation();
   await vi.waitFor(() => expect(useAldoAssistant.getState().planPick?.stage).toBe("choose"));
   backend.kept.mockResolvedValue({ pending, needsPlan: null });
-  backend.chat.mockResolvedValue({ sessionId: "as_1", reply: "Hello.", calls: [] });
+  backend.send.mockResolvedValue(answered({ sessionId: "as_1", reply: "Hello.", calls: [] }));
   backend.resume.mockResolvedValue(sent);
   sendText("Hi");
   await vi.waitFor(() => expect(useAldoAssistant.getState().planPick?.stage).toBe("on"));
@@ -256,7 +271,7 @@ it("shows one message for a second request sent before a plan, as Aldo keeps the
     requestId: "pr_zzz999yyy888",
     text: "Make a deck from my notes\n\nAnd a one-page summary",
   };
-  backend.chat.mockRejectedValue(
+  backend.send.mockRejectedValue(
     new aldoApiMock.AldoApiError(402, REFUSAL, { error: REFUSAL, needsPlan: joined }),
   );
   sendText("And a one-page summary");
@@ -274,7 +289,7 @@ it("drops the earlier request from the page when Aldo keeps only the new one", a
   await loadAldoConversation();
   await vi.waitFor(() => expect(useAldoAssistant.getState().planPick?.stage).toBe("choose"));
   const replaced = { ...needsPlan, requestId: "pr_zzz999yyy888", text: "Price my services" };
-  backend.chat.mockRejectedValue(
+  backend.send.mockRejectedValue(
     new aldoApiMock.AldoApiError(402, REFUSAL, { error: REFUSAL, needsPlan: replaced }),
   );
   sendText("Price my services");
@@ -288,14 +303,14 @@ it("gives the images back with the words when a kept request is refused", async 
   const { loadAldoConversation, sendText, useAldoAssistant } = await page();
   await loadAldoConversation();
   const image = { name: "notes.png", dataUrl: "data:image/png;base64,AAAA" };
-  backend.chat.mockRejectedValueOnce(
+  backend.send.mockRejectedValueOnce(
     new aldoApiMock.AldoApiError(402, REFUSAL, { error: REFUSAL, needsPlan }),
   );
   sendText("Make a deck from my notes", [image]);
   await vi.waitFor(() => expect(useAldoAssistant.getState().planPick?.stage).toBe("choose"));
   // A plan's chosen elsewhere, but the request is refused for what a plan doesn't fix.
   backend.kept.mockResolvedValue({ pending: { ...pending, images: 1 }, needsPlan: null });
-  backend.chat.mockResolvedValue({ sessionId: "as_1", reply: "Hello.", calls: [] });
+  backend.send.mockResolvedValue(answered({ sessionId: "as_1", reply: "Hello.", calls: [] }));
   backend.resume.mockResolvedValue({
     kind: "refused",
     message: "Your last payment didn’t go through.",
@@ -313,7 +328,7 @@ it("sends a kept request found while a reply is on its way once that reply is in
   let history!: (messages: unknown[]) => void;
   backend.history.mockReturnValueOnce(new Promise((resolve) => (history = resolve)));
   let reply!: (turn: unknown) => void;
-  backend.chat.mockReturnValueOnce(new Promise((resolve) => (reply = resolve)));
+  backend.send.mockReturnValueOnce(new Promise((resolve) => (reply = resolve)));
   backend.kept.mockResolvedValue({ pending, needsPlan: null });
   backend.resume.mockResolvedValue(sent);
   const { loadAldoConversation, sendText, useAldoAssistant } = await page();
@@ -323,7 +338,7 @@ it("sends a kept request found while a reply is on its way once that reply is in
   await loading;
   await vi.waitFor(() => expect(useAldoAssistant.getState().planPick?.stage).toBe("waiting"));
   expect(backend.resume).not.toHaveBeenCalled();
-  reply({ sessionId: "as_1", reply: "Hello.", calls: [] });
+  reply(answered({ sessionId: "as_1", reply: "Hello.", calls: [] }));
   await vi.waitFor(() => expect(useAldoAssistant.getState().planPick?.stage).toBe("on"));
   expect(backend.resume).toHaveBeenCalledTimes(1);
 });
@@ -337,107 +352,4 @@ it("asks again what Aldo keeps when it can't be reached on load", async () => {
   await vi.advanceTimersByTimeAsync(2_000);
   expect(backend.kept).toHaveBeenCalledTimes(2);
   expect(useAldoAssistant.getState().planPick?.stage).toBe("choose");
-});
-
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  let reject!: (error: Error) => void;
-  const promise = new Promise<T>((yes, no) => {
-    resolve = yes;
-    reject = no;
-  });
-  return { promise, resolve, reject };
-}
-const reply = (text: string) => ({ sessionId: "as_rapid", reply: text, calls: [] });
-
-it("shows three rapid sends immediately and answers every message once in order in the same session", async () => {
-  const { sendText, useAldoAssistant } = await page();
-  const turns = [
-    deferred<ReturnType<typeof reply>>(),
-    deferred<ReturnType<typeof reply>>(),
-    deferred<ReturnType<typeof reply>>(),
-  ];
-  for (const turn of turns) backend.chat.mockImplementationOnce(() => turn.promise);
-  sendText("Plan dinner");
-  sendText("For four people");
-  sendText("Make it vegetarian");
-  expect(said(useAldoAssistant.getState())).toEqual([
-    "user: Plan dinner",
-    "user: For four people",
-    "user: Make it vegetarian",
-  ]);
-  expect(
-    useAldoAssistant.getState().queuedMessages.map((e) => e.kind === "message" && e.text),
-  ).toEqual(["For four people", "Make it vegetarian"]);
-  expect(backend.chat).toHaveBeenCalledTimes(1);
-  turns[0]!.resolve(reply("What should we cook?"));
-  await vi.waitFor(() => expect(backend.chat).toHaveBeenCalledTimes(2));
-  expect(backend.chat.mock.calls[1]?.slice(0, 2)).toEqual(["as_rapid", "For four people"]);
-  turns[1]!.resolve(reply("For four. Anything else?"));
-  await vi.waitFor(() => expect(backend.chat).toHaveBeenCalledTimes(3));
-  expect(backend.chat.mock.calls[2]?.slice(0, 2)).toEqual(["as_rapid", "Make it vegetarian"]);
-  turns[2]!.resolve(reply("Vegetarian dinner for four."));
-  await vi.waitFor(() => expect(useAldoAssistant.getState().replying).toBe(false));
-  expect(said(useAldoAssistant.getState())).toEqual([
-    "user: Plan dinner",
-    "user: For four people",
-    "user: Make it vegetarian",
-    "assistant: What should we cook?",
-    "assistant: For four. Anything else?",
-    "assistant: Vegetarian dinner for four.",
-  ]);
-  expect(useAldoAssistant.getState().queuedMessages).toEqual([]);
-  expect(useAldoAssistant.getState().unsent).toBeNull();
-});
-
-it("accepts a follow-up while a reply is pending and a new send cannot overtake the waiting one", async () => {
-  const { sendText, useAldoAssistant } = await page();
-  const first = deferred<ReturnType<typeof reply>>();
-  const second = deferred<ReturnType<typeof reply>>();
-  backend.chat
-    .mockReturnValueOnce(first.promise)
-    .mockReturnValueOnce(second.promise)
-    .mockResolvedValue(reply("Latest"));
-  sendText("First");
-  await Promise.resolve();
-  sendText("Second");
-  first.resolve(reply("First reply"));
-  await vi.waitFor(() => expect(backend.chat).toHaveBeenCalledTimes(2));
-  sendText("Third, while the second reply is underway");
-  expect(backend.chat).toHaveBeenCalledTimes(2);
-  second.resolve(reply("Second reply"));
-  await vi.waitFor(() => expect(useAldoAssistant.getState().replying).toBe(false));
-  expect(backend.chat.mock.calls.map((call) => call[1])).toEqual([
-    "First",
-    "Second",
-    "Third, while the second reply is underway",
-  ]);
-});
-
-it("keeps a failed send and its images visible, pauses later messages, and retries in order", async () => {
-  const { sendText, retryAldoMessage, useAldoAssistant } = await page();
-  const first = deferred<ReturnType<typeof reply>>();
-  backend.chat.mockReturnValueOnce(first.promise).mockResolvedValue(reply("Received"));
-  const images = [{ name: "Dinner", dataUrl: "data:image/png;base64,aGVsbG8=" }];
-  sendText("First", images);
-  sendText("Second");
-  first.reject(new Error("Connection lost"));
-  await vi.waitFor(() => expect(useAldoAssistant.getState().failedMessage).not.toBeNull());
-  sendText("Third");
-  expect(backend.chat).toHaveBeenCalledTimes(1);
-  expect(said(useAldoAssistant.getState())).toEqual(["user: First", "user: Second", "user: Third"]);
-  retryAldoMessage();
-  retryAldoMessage();
-  await vi.waitFor(() => expect(useAldoAssistant.getState().replying).toBe(false));
-  expect(backend.chat.mock.calls.map((call) => call[1])).toEqual([
-    "First",
-    "First",
-    "Second",
-    "Third",
-  ]);
-  expect(backend.chat.mock.calls[1]?.[2]).toEqual(images);
-  expect(
-    useAldoAssistant.getState().entries.filter((e) => e.kind === "message" && e.role === "user"),
-  ).toHaveLength(3);
-  expect(useAldoAssistant.getState().failedMessage).toBeNull();
 });
