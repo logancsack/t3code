@@ -328,3 +328,13 @@ it("puts the words into a call on an older Aldo that can't chat in writing", asy
   await vi.waitFor(() => expect(useAldoAssistant.getState().entries).toEqual([]));
   expect(outbox.size).toBe(0);
 });
+
+it("keeps a message on the device when the session has ended, for after sign-in", async () => {
+  const { sendText, useAldoAssistant } = await page();
+  backend.send.mockRejectedValue(new aldoApiMock.AldoApiError(401, "Your Aldo session ended."));
+  sendText("Hi");
+  await vi.waitFor(() => expect(backend.send).toHaveBeenCalledTimes(1));
+  await vi.waitFor(() => expect(useAldoAssistant.getState().replying).toBe(false));
+  expect(outbox.size).toBe(1);
+  expect(useAldoAssistant.getState().undelivered).toEqual([]);
+});

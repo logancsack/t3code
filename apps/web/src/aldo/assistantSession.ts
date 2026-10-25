@@ -1862,6 +1862,8 @@ async function deliver(message: Written): Promise<void> {
           return;
         }
       } catch (error) {
+        // The session ended and the page is on its way to sign-in: the message stays on the device for after.
+        if (error instanceof AldoApiError && error.status === 401) return;
         if (error instanceof AldoApiError && (taken ? failedTurn(error) : error.status < 500)) {
           return refused(message, error, taken);
         }
