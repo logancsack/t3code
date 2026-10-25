@@ -71,6 +71,50 @@ describe("artifactsOf", () => {
     expect(artifactsField(undefined)).toEqual({});
   });
 
+  it("keeps the colors it is given as hex, on series, a pie's slices and scatter points, and drops the rest", () => {
+    const [column, pie, scatter] = artifactsOf([
+      {
+        kind: "chart",
+        type: "column",
+        labels: ["a"],
+        series: [
+          { name: "Gain", values: [1], color: " #16A34A " },
+          { name: "Loss", values: [1], color: "red" },
+          { name: "Net", values: [1], color: "#abc" },
+        ],
+      },
+      {
+        kind: "chart",
+        type: "pie",
+        labels: ["a", "b", "c"],
+        series: [
+          { name: "S", values: [1, 2, 3], colors: ["#111111", "nope", "#222222", "#333333"] },
+        ],
+      },
+      {
+        kind: "chart",
+        type: "scatter",
+        series: [
+          {
+            name: "S",
+            color: "#7c3aed",
+            points: [
+              { x: 1, y: 2, color: "#0ea5e9" },
+              { x: 2, y: 3, color: "url(x)" },
+            ],
+          },
+        ],
+      },
+    ]) as Extract<ReturnType<typeof artifactsOf>[number], { kind: "chart" }>[];
+    expect(column!.series.map((s) => s.color)).toEqual(["#16a34a", undefined, "#abc"]);
+    expect(pie!.series[0]!.colors).toEqual(["#111111", "", "#222222"]);
+    expect(scatter!.series[0]!.color).toBe("#7c3aed");
+    expect(scatter!.series[0]!.points).toEqual([
+      { x: 1, y: 2, color: "#0ea5e9" },
+      { x: 2, y: 3 },
+    ]);
+  });
+
   it("keeps every type of chart: stacked, a combo's lines, a pie's one series, a scatter chart's points", () => {
     const values = (n: number) => ({ name: `S${n}`, values: [n, n + 1] });
     expect(

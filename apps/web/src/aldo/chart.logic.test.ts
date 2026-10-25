@@ -63,11 +63,11 @@ it("slices a pie in the order given, folding the smallest past its colors into O
   ]);
   const labels = ["a", "b", "c", "d", "e"];
   const many = pieSlices(labels, [5, 1, 4, 2, 3], 3);
-  expect(many.map((s) => [s.label, s.value, s.color])).toEqual([
-    ["a", 5, 0],
-    ["c", 4, 1],
-    ["e", 3, 2],
-    ["Other", 3, null],
+  expect(many.map((s) => [s.label, s.value, s.color, s.index])).toEqual([
+    ["a", 5, 0, 0],
+    ["c", 4, 1, 2],
+    ["e", 3, 2, 4],
+    ["Other", 3, null, -1],
   ]);
   // One more than its colors needs no Other: it has a color of its own.
   expect(pieSlices(labels.slice(0, 4), [1, 1, 1, 1], 3).map((s) => s.label)).toEqual([

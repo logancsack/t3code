@@ -40,6 +40,7 @@ export interface AldoChartPoint {
   readonly x: number;
   readonly y: number;
   readonly label?: string;
+  readonly color?: string;
 }
 
 export interface AldoChartSeries {
@@ -50,6 +51,10 @@ export interface AldoChartSeries {
   readonly points?: ReadonlyArray<AldoChartPoint>;
   /** In a combo chart, how this series is drawn. */
   readonly mark?: "column" | "line";
+  /** Its color, as hex; else the chart's defaults. */
+  readonly color?: string;
+  /** A pie's slices' colors, as hex, for each label ("" for the default). */
+  readonly colors?: ReadonlyArray<string>;
 }
 
 export interface AldoChartArtifact {
@@ -122,11 +127,23 @@ const isNumber = (value: unknown): value is number =>
 const optionalText = (key: string, value: unknown) =>
   isText(value) && value ? { [key]: value } : {};
 
+/** A color as hex, or nothing: what a style may be given without a page's say. */
+const hex = (value: unknown): string | undefined =>
+  isText(value) && /^#(?:[0-9a-f]{3}){1,2}$/i.test(value.trim())
+    ? value.trim().toLowerCase()
+    : undefined;
+const optionalHex = (value: unknown) => {
+  const color = hex(value);
+  return color ? { color } : {};
+};
+
 function pointsOf(value: unknown): AldoChartPoint[] {
   if (!Array.isArray(value)) return [];
   return value.slice(0, MAX_POINTS).flatMap((p: unknown) => {
-    const { x, y, label } = (p ?? {}) as Record<string, unknown>;
-    return isNumber(x) && isNumber(y) ? [{ x, y, ...optionalText("label", label) }] : [];
+    const { x, y, label, color } = (p ?? {}) as Record<string, unknown>;
+    return isNumber(x) && isNumber(y)
+      ? [{ x, y, ...optionalText("label", label), ...optionalHex(color) }]
+      : [];
   });
 }
 
@@ -137,11 +154,12 @@ function chartOf(a: Record<string, unknown>): AldoChartArtifact | null {
   const labels = type === "scatter" ? [] : texts(a.labels, MAX_LABELS);
   if (!labels || (type !== "scatter" && labels.length === 0)) return null;
   const series = a.series.slice(0, MAX_SERIES).flatMap((s: unknown): AldoChartSeries[] => {
-    const { name, values, points, mark } = (s ?? {}) as Record<string, unknown>;
+    const { name, values, points, mark, color, colors } = (s ?? {}) as Record<string, unknown>;
     if (!isText(name)) return [];
+    const own = optionalHex(color);
     if (type === "scatter") {
       const kept = pointsOf(points);
-      return kept.length ? [{ name, values: [], points: kept }] : [];
+      return kept.length ? [{ name, values: [], points: kept, ...own }] : [];
     }
     if (!Array.isArray(values) || values.length < labels.length || !values.every(isNumber))
       return [];
@@ -152,7 +170,19 @@ function chartOf(a: Record<string, unknown>): AldoChartArtifact | null {
       (kept.some((v) => v < 0) || !kept.some((v) => v > 0))
     )
       return [];
-    return [{ name, values: kept, ...(type === "combo" && mark === "line" ? { mark } : {}) }];
+    const slices =
+      (type === "pie" || type === "donut") && Array.isArray(colors)
+        ? colors.slice(0, labels.length).map((c) => hex(c) ?? "")
+        : [];
+    return [
+      {
+        name,
+        values: kept,
+        ...(type === "combo" && mark === "line" ? { mark } : {}),
+        ...own,
+        ...(slices.some(Boolean) ? { colors: slices } : {}),
+      },
+    ];
   });
   // A pie is one series.
   const drawn = type === "pie" || type === "donut" ? series.slice(0, 1) : series;
