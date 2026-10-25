@@ -155,14 +155,6 @@ function seedModels(environments: ReadonlyArray<AldoEnvironment>): Promise<void>
 }
 
 async function seedModelsNow(environments: ReadonlyArray<AldoEnvironment>): Promise<void> {
-  // A connected machine writes its own config over the cache: checked again once it isn't.
-  let forgot = false;
-  for (const environment of environments) {
-    if (isLive(environment.environmentId) && modelsChecked.delete(environment.environmentId)) {
-      forgot = true;
-    }
-  }
-  if (forgot) keepModelsChecked();
   if (environments.every((environment) => isLive(environment.environmentId))) return;
   // With the user's settings: checking without them, then again once they're in, checks every machine twice.
   await loadAldoMachineSettings();
@@ -225,8 +217,28 @@ async function sync(environments: ReadonlyArray<AldoEnvironment>): Promise<void>
 let running: Promise<void> | null = null;
 
 /** Brings this browser's copies of the machines' threads up to date on every directory fetch. */
+/**
+ * A connected machine writes its own config over the cache: it's checked
+ * again once it isn't, even on a later visit (forgotten as it connects, not
+ * on the next directory fetch, which may never come in this tab).
+ */
+function forgetLiveModelsChecked(
+  presentations: ReadonlyMap<EnvironmentId, EnvironmentPresentation>,
+): void {
+  let forgot = false;
+  for (const [environmentId, presentation] of presentations) {
+    if (isLivePhase(presentation.connection.phase) && modelsChecked.delete(environmentId)) {
+      forgot = true;
+    }
+  }
+  if (forgot) keepModelsChecked();
+}
+
 export function installAldoShellSync(): void {
   if (!isAldoCloud) return;
+  appAtomRegistry.subscribe(environmentPresentations.presentationsAtom, forgetLiveModelsChecked, {
+    immediate: true,
+  });
   subscribeAldoMachineSettings(() => void seedModels(directory));
   setAldoDirectorySync((environments) => {
     directory = environments;
