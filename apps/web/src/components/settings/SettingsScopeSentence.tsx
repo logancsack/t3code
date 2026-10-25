@@ -46,6 +46,8 @@ export const SETTINGS_DEVICE_ONLY_PATHS: ReadonlySet<string> = new Set([
         "/settings/",
         "/settings/general",
         "/settings/account",
+        "/settings/organization",
+        "/settings/members",
         "/settings/agents",
         "/settings/permissions",
         "/settings/notifications",

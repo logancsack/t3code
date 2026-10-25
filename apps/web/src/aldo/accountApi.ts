@@ -11,6 +11,7 @@ import {
   type AldoMomentEmailKind,
   type AldoMomentEmails,
 } from "./momentEmails.logic";
+import { parseAldoOrg, type AldoOrg, type AldoOrgRole } from "./organization.logic";
 
 export type AldoAccountKind = "github" | "claude" | "codex" | "grok" | "muse";
 
@@ -873,3 +874,38 @@ export async function setAldoMomentEmails(
   if (!saved) throw new Error("This Aldo doesn't send these emails.");
   return saved;
 }
+
+/** The user's organization; null when they're in none, or this Aldo has none. */
+export async function fetchAldoOrg(): Promise<AldoOrg | null> {
+  const body = await api<{ org?: unknown }>("/api/org").catch((error: unknown) => {
+    if (error instanceof AldoApiError && error.status === 404) return null;
+    throw error;
+  });
+  return parseAldoOrg(body?.org);
+}
+
+/** Each change answers the organization as it is now, or null once the user is out of it. */
+const orgChange = (path: string, method: string, body?: unknown) =>
+  api<{ org?: unknown; link?: unknown }>(path, {
+    method,
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  }).then((answer) => ({
+    org: parseAldoOrg(answer.org),
+    link: typeof answer.link === "string" ? answer.link : null,
+  }));
+
+const invitePath = (id: string) => `/api/org/invites/${encodeURIComponent(id)}`;
+const memberPath = (id: string) => `/api/org/members/${encodeURIComponent(id)}`;
+
+export const aldoOrg = {
+  rename: (name: string) => orgChange("/api/org", "PATCH", { name }),
+  delete: () => orgChange("/api/org", "DELETE"),
+  invite: (email: string, role: AldoOrgRole) =>
+    orgChange("/api/org/invites", "POST", { email, role }),
+  /** Emails the invite again (7 fresh days; the old link stops working), or answers its link to copy. */
+  renewInvite: (id: string, send: "email" | "link") => orgChange(invitePath(id), "POST", { send }),
+  revokeInvite: (id: string) => orgChange(invitePath(id), "DELETE"),
+  setRole: (id: string, role: AldoOrgRole) => orgChange(memberPath(id), "PATCH", { role }),
+  /** Removes someone, or the user themselves: leaving. */
+  remove: (id: string) => orgChange(memberPath(id), "DELETE"),
+};

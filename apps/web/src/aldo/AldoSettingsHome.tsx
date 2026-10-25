@@ -17,13 +17,23 @@ import { useTheme } from "../hooks/useTheme";
 import { cn } from "../lib/utils";
 import { AldoAvatar, profileName, useAldoProfile } from "./AldoAccountMenu";
 import { AldoIconTile } from "./AldoBrandTile";
-import { ALDO_SETTINGS_ICONS, useAldoConnectionsSummary } from "./AldoSettingsNav";
-import { useAldoDeveloperTools } from "./developerTools";
+import {
+  ALDO_SETTINGS_ICONS,
+  useAldoConnectionsSummary,
+  useAldoSettingsNav,
+} from "./AldoSettingsNav";
 import { aldoOffersItsModels, subscribeAldoEnvironments } from "./directory";
 import { planRunning } from "./home.logic";
 import { useAldoHomeRead, type AldoHomeFeed } from "./homeFeed";
-import { aldoSettingsNav, aldoSettingsPage } from "./settings.logic";
-import { settingsAccounts, settingsMemory, settingsPhone, settingsVault } from "./settingsData";
+import { ALDO_ORG_ROLE_LABELS, aldoOrgMembersSummary } from "./organization.logic";
+import { aldoSettingsPage } from "./settings.logic";
+import {
+  settingsAccounts,
+  settingsMemory,
+  settingsOrg,
+  settingsPhone,
+  settingsVault,
+} from "./settingsData";
 import {
   aldoAccountSummary,
   aldoAppearanceSummary,
@@ -76,10 +86,13 @@ function useSummaries(
   const vault = useSettingsResource(settingsVault).data;
   const memory = useSettingsResource(settingsMemory).data;
   const phone = useSettingsResource(settingsPhone).data;
+  const org = useSettingsResource(settingsOrg).data;
   const { appearanceMode } = useTheme();
   const simple = useAldoSimpleMode();
   const connections = useAldoConnectionsSummary();
   const entries: Array<[SettingsPath, string | null, boolean?]> = [
+    ["/settings/organization", org ? ALDO_ORG_ROLE_LABELS[org.role] : null],
+    ["/settings/members", org ? aldoOrgMembersSummary(org) : null],
     ["/settings/agents", aldoModelsSummary(accounts, ownModels)],
     ["/settings/instructions", aldoMemorySummary(memory)],
     ["/settings/connections", connections?.text ?? null, connections?.broken === true],
@@ -137,7 +150,7 @@ export function AldoSettingsHome() {
   const profile = useAldoProfile();
   const feed = useAldoHomeRead();
   const usage = feed.home?.usage ?? null;
-  const nav = aldoSettingsNav({ developer: useAldoDeveloperTools() });
+  const nav = useAldoSettingsNav();
   const summaries = useSummaries(feed);
   const [query, setQuery] = useState("");
   const searchable = useAvailableSettingsSearchItems();

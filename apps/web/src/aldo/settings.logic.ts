@@ -12,6 +12,8 @@ import type { SettingsPath } from "../components/settings/settingsSearch";
 /** Pages only Aldo has: T3's own nav and search leave them out. */
 export const ALDO_SETTINGS_PATHS: ReadonlySet<string> = new Set([
   "/settings/account",
+  "/settings/organization",
+  "/settings/members",
   "/settings/agents",
   "/settings/permissions",
   "/settings/instructions",
@@ -91,6 +93,15 @@ export const ALDO_SETTINGS_PAGES: Readonly<
     title: "Account",
     intro: "Your plan, your credits and how you sign in.",
   },
+  "/settings/organization": {
+    title: "Organization",
+    intro: "Your organization's name, owners and seats.",
+  },
+  "/settings/members": {
+    title: "Members",
+    intro:
+      "Who's in your organization and what each person can do. Everyone's threads, computers and vault stay their own.",
+  },
   "/settings/agents": {
     title: "Models",
     intro:
@@ -152,15 +163,32 @@ export const ALDO_SETTINGS_PAGES: Readonly<
   },
 };
 
-/** The nav for this account: Code only with the developer tools (developerTools.ts). */
+/**
+ * The nav for this account: Code only with the developer tools
+ * (developerTools.ts), and a group named after its organization, first, only
+ * for someone in one (organization.logic.ts).
+ */
 export function aldoSettingsNav(options: {
   readonly developer: boolean;
+  readonly organization?: string | null;
 }): typeof ALDO_SETTINGS_NAV {
-  if (options.developer) return ALDO_SETTINGS_NAV;
-  return ALDO_SETTINGS_NAV.map((group) => ({
-    ...group,
-    items: group.items.filter((item) => item.to !== "/settings/code"),
-  }));
+  const nav = options.developer
+    ? ALDO_SETTINGS_NAV
+    : ALDO_SETTINGS_NAV.map((group) => ({
+        ...group,
+        items: group.items.filter((item) => item.to !== "/settings/code"),
+      }));
+  if (!options.organization) return nav;
+  return [
+    {
+      group: options.organization,
+      items: [
+        { to: "/settings/organization", label: "Organization" },
+        { to: "/settings/members", label: "Members" },
+      ],
+    },
+    ...nav,
+  ];
 }
 
 /** A page's name and intro, or null for one that has none (a page T3 alone shows). */

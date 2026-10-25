@@ -17,6 +17,7 @@ import {
   BlocksIcon,
   BrainIcon,
   BotIcon,
+  Building2Icon,
   CircleUserRoundIcon,
   CodeXmlIcon,
   createLucideIcon,
@@ -36,6 +37,7 @@ import {
   Share2Icon,
   ShieldCheckIcon,
   SmartphoneIcon,
+  UsersIcon,
   XIcon,
 } from "lucide-react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
@@ -119,6 +121,8 @@ const SETTINGS_SECTION_ICONS: Readonly<
   "/settings/connections": Link2Icon,
   "/settings/archived": ArchiveIcon,
   "/settings/account": CircleUserRoundIcon,
+  "/settings/organization": Building2Icon,
+  "/settings/members": UsersIcon,
   "/settings/agents": BotIcon,
   "/settings/permissions": ShieldCheckIcon,
   "/settings/notifications": BellIcon,

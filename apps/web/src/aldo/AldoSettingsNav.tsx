@@ -2,14 +2,16 @@ import { useEffect } from "react";
 import { useRouter } from "@tanstack/react-router";
 import { prefetchSettingsData } from "./settingsData";
 // Aldo's settings nav (SettingsSidebarNav.tsx, in Aldo): the account at its
-// head, then its pages in groups (settings.logic.ts ALDO_SETTINGS_NAV), Code
-// only with the developer tools (developerTools.ts). A connection that stopped
-// working puts a dot on Connections.
+// head, then its organization for someone in one, then its pages in groups
+// (settings.logic.ts ALDO_SETTINGS_NAV), Code only with the developer tools
+// (developerTools.ts). A connection that stopped working puts a dot on
+// Connections.
 
 import {
   ArchiveIcon,
   BellIcon,
   BotIcon,
+  Building2Icon,
   CodeXmlIcon,
   KeyRoundIcon,
   PaletteIcon,
@@ -18,6 +20,7 @@ import {
   SlidersHorizontalIcon,
   SmartphoneIcon,
   SparklesIcon,
+  UsersIcon,
   type LucideIcon,
 } from "lucide-react";
 
@@ -28,11 +31,13 @@ import { AldoAvatar, profileName, useAldoProfile } from "./AldoAccountMenu";
 import { useAldoDeveloperTools } from "./developerTools";
 import { useAldoHomeFeed } from "./homeFeed";
 import { ALDO_SETTINGS_NAV, aldoSettingsNav, aldoSettingsNavActive } from "./settings.logic";
-import { settingsAccounts, settingsApps, settingsIntegrations } from "./settingsData";
+import { settingsAccounts, settingsApps, settingsIntegrations, settingsOrg } from "./settingsData";
 import { aldoAccountSummary, aldoConnectionsSummary } from "./settingsHome.logic";
 import { useSettingsResource } from "./settingsResource";
 
 export const ALDO_SETTINGS_ICONS: Partial<Record<SettingsPath, LucideIcon>> = {
+  "/settings/organization": Building2Icon,
+  "/settings/members": UsersIcon,
   "/settings/agents": BotIcon,
   "/settings/permissions": ShieldCheckIcon,
   "/settings/instructions": SparklesIcon,
@@ -45,6 +50,13 @@ export const ALDO_SETTINGS_ICONS: Partial<Record<SettingsPath, LucideIcon>> = {
   "/settings/code": CodeXmlIcon,
   "/settings/archived": ArchiveIcon,
 };
+
+/** The nav's groups for this account, with its organization for someone in one. */
+export function useAldoSettingsNav() {
+  const developer = useAldoDeveloperTools();
+  const organization = useSettingsResource(settingsOrg).data?.name ?? null;
+  return aldoSettingsNav({ developer, organization });
+}
 
 /** How the connections stand, for the nav's and the phone list's line on them. */
 export function useAldoConnectionsSummary() {
@@ -89,7 +101,7 @@ export function AldoSettingsNav(props: {
   readonly onNavigate: (to: SettingsPath) => void;
 }) {
   const router = useRouter();
-  const nav = aldoSettingsNav({ developer: useAldoDeveloperTools() });
+  const nav = useAldoSettingsNav();
   const connections = useAldoConnectionsSummary();
   useEffect(() => {
     const warm = () => {
