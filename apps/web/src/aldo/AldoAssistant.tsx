@@ -82,7 +82,7 @@ import { voicePresenceState } from "./presence.logic";
 import { acknowledgeAldo, setAldoReading } from "./presenceReactions";
 import { dedupeLiveCards, interleave, type AldoFeedEvent } from "./feed.logic";
 import { type AldoPlaceable } from "./decisions.logic";
-import { withoutShownLinks, type AldoArtifact } from "./artifacts.logic";
+import { linkRows, withoutShownLinks, type AldoArtifact } from "./artifacts.logic";
 import { useAldoFirstViewHold } from "./firstView";
 import { AldoCallCard } from "./AldoCallCard";
 import { AldoPlanPicker } from "./AldoPlanPicker";
@@ -785,7 +785,8 @@ const AldoArtifacts = lazy(() => import("./AldoArtifacts"));
  * once from history, in the bar and under reduced motion. A result about a
  * thread carries that thread's name and where it stands over its words, a tap
  * into it, rather than its address. What it shows (`artifacts`) follows its
- * words, the width of the conversation, without the lines that only link to it.
+ * words, the width of the conversation, without the lines that only link to it;
+ * the other links a result ends with are listed with it.
  */
 function AldoReply(props: {
   readonly text: string;
@@ -800,7 +801,8 @@ function AldoReply(props: {
   const about = useAldoHomeFeed((s) =>
     closing ? s.home?.conversations.find((c) => sameTarget(c.thread, closing.thread)) : undefined,
   );
-  const text = withoutShownLinks(closing?.text ?? props.text, artifacts);
+  const kept = withoutShownLinks(closing?.text ?? props.text, artifacts);
+  const { text, links } = closing ? linkRows(kept) : { text: kept, links: [] };
   const said = useMemo(() => splitBeats(text), [text]);
   // Nothing but the thread's link, and nothing known about it: the link alone.
   const linkOnly = said.length === 0 && closing !== null && !about;
@@ -860,13 +862,13 @@ function AldoReply(props: {
       {shown < beats.length ? <TypingDots quiet /> : null}
     </div>
   );
-  if (artifacts.length === 0) return words;
+  if (artifacts.length === 0 && links.length === 0) return words;
   return (
     <div className="flex w-full min-w-0 flex-col gap-2">
       {words}
       {shown >= beats.length ? (
         <Suspense fallback={null}>
-          <AldoArtifacts artifacts={artifacts} />
+          <AldoArtifacts artifacts={artifacts} links={links} />
         </Suspense>
       ) : null}
     </div>

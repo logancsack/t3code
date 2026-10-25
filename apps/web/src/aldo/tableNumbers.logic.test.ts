@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { isNumberCell } from "./tableNumbers.logic";
+import { isNumberCell, numericColumns } from "./tableNumbers.logic";
 
 describe("isNumberCell", () => {
   it("takes counts, amounts, shares and multiples", () => {
@@ -59,4 +59,16 @@ describe("isNumberCell", () => {
       expect(isNumberCell(cell), cell).toBe(false);
     }
   });
+});
+
+it("right-aligns a column of numbers, even with a dash or a gap among them, and no column of words", () => {
+  expect(
+    numericColumns([
+      ["Nebius", "+598.37%", "$43.15B", "Leads"],
+      ["SharonAI", "—", "", "Unverified"],
+      ["CoreWeave", "+31.32%", "$29.91B", "6 months"],
+      ["IREN", "+307.61%", "n/a"],
+    ]),
+  ).toEqual([false, true, true, false]);
+  expect(numericColumns([])).toEqual([]);
 });

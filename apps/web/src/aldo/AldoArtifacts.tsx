@@ -1,7 +1,8 @@
-// What a message of Aldo's shows under its words (artifacts.logic.ts): a
-// picture, a recording that plays in place, a page, a file, a chart or a
-// table, each the width of the conversation at most, so a phone never
-// scrolls sideways. A tap opens it whole: a file in Aldo's viewer
+// What a message of Aldo's shows under its words (artifacts.logic.ts): one
+// thing in place (the charts, a recording, a table, the pictures, a page or a
+// sound; `arrange`), then the rest in one list, with the links a thread's
+// result ends with. Each is the width of the conversation at most, so a phone
+// never scrolls sideways. A tap opens it whole: a file in Aldo's viewer
 // (AldoShareViewer.tsx), a chart (AldoChart.tsx) or a table in a sheet with
 // its data to save.
 // A page runs only sandboxed, on an origin of its own: in place it's a
@@ -9,6 +10,8 @@
 // Loaded once a message has one (AldoAssistant.tsx), off the first screen.
 
 import {
+  AudioLinesIcon,
+  ChartLineIcon,
   DownloadIcon,
   FileArchiveIcon,
   FileIcon,
@@ -16,19 +19,25 @@ import {
   FileTextIcon,
   FileXIcon,
   GlobeIcon,
+  ImageIcon,
+  LinkIcon,
   Maximize2Icon,
   PresentationIcon,
+  TableIcon,
+  VideoIcon,
   XIcon,
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
 import { MediaVideoPlayer } from "../components/media/MediaVideoPlayer";
+import { PullRequestGlyph } from "../components/pullRequest/pullRequestIcons";
 import { Button } from "../components/ui/button";
 import { Sheet, SheetPopup, SheetTitle } from "../components/ui/sheet";
 import { cn } from "../lib/utils";
 import { ChartBody, PREVIEW_BARS } from "./AldoChart";
 import {
+  arrange,
   chartTable,
   csvOf,
   downloadHref,
@@ -38,28 +47,31 @@ import {
   type AldoArtifact,
   type AldoChartArtifact,
   type AldoFileArtifact,
+  type AldoLinkRow,
   type AldoTableArtifact,
 } from "./artifacts.logic";
 import { chatVideoWidth, videoAspectRatio } from "./chatVideo.logic";
 import { aldoShareKind, aldoShareViewable } from "./library.logic";
-import { formatMailSize } from "./mail.logic";
 import type { AldoMadeKind } from "./made.logic";
 import { openAldoShare } from "./shareViewer";
 import { FOCUS, ICON_BUTTON, SURFACE } from "./surface";
-import { isNumberCell } from "./tableNumbers.logic";
+import { isNumberCell, numericColumns } from "./tableNumbers.logic";
 
 /** What a table shows in place before its sheet: the rest is a tap away. */
-const PREVIEW = { rows: 6, columns: 4 } as const;
+const PREVIEW = { rows: 8, columns: 4 } as const;
 /** The tallest a picture shows in place, in rem. */
 const TALLEST = 28;
 
-const FILE_ICON: Partial<Record<AldoMadeKind, LucideIcon>> = {
+const FILE_ICON: Record<AldoMadeKind, LucideIcon> = {
   sheet: FileSpreadsheetIcon,
   document: FileTextIcon,
   pdf: FileTextIcon,
   deck: PresentationIcon,
   page: GlobeIcon,
   archive: FileArchiveIcon,
+  image: ImageIcon,
+  video: VideoIcon,
+  audio: AudioLinesIcon,
 };
 
 const TYPE_WORD: Partial<Record<AldoMadeKind, string>> = {
@@ -98,34 +110,43 @@ function saveText(name: string, text: string, type: string): void {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export default function AldoArtifacts(props: { readonly artifacts: ReadonlyArray<AldoArtifact> }) {
-  const pictures = props.artifacts.filter(
-    (a): a is AldoFileArtifact => a.kind === "file" && fileShape(a.contentType) === "image",
-  );
-  const rest = props.artifacts.filter((a) => !pictures.includes(a as AldoFileArtifact));
+export default function AldoArtifacts(props: {
+  readonly artifacts: ReadonlyArray<AldoArtifact>;
+  readonly links?: ReadonlyArray<AldoLinkRow>;
+}) {
+  const { lead, rest } = arrange(props.artifacts);
+  const links = props.links ?? [];
+  // Several lead only as charts or pictures; pictures go side by side.
+  const pictures = lead.filter((a): a is AldoFileArtifact => a.kind === "file");
   return (
     <div data-aldo-artifacts="" className="flex w-full min-w-0 max-w-full flex-col gap-2">
-      {pictures.length === 1 ? <Picture file={pictures[0]!} /> : null}
       {pictures.length > 1 ? (
         <div className="grid w-full min-w-0 grid-cols-2 gap-1.5">
           {pictures.map((file) => (
             <Picture key={file.url} file={file} square />
           ))}
         </div>
-      ) : null}
-      {rest.map((artifact, index) =>
-        artifact.kind === "chart" ? (
+      ) : (
+        lead.map((artifact, index) => (
           // oxlint-disable-next-line react/no-array-index-key -- A message's artifacts never change once it's said.
-          <Chart key={index} chart={artifact} />
-        ) : artifact.kind === "table" ? (
-          // oxlint-disable-next-line react/no-array-index-key -- As above.
-          <Table key={index} table={artifact} />
-        ) : (
-          <File key={artifact.url} file={artifact} />
-        ),
+          <Lead key={index} artifact={artifact} />
+        ))
       )}
+      {rest.length + links.length > 0 ? <Rows items={rest} links={links} /> : null}
     </div>
   );
+}
+
+/** What a reply shows in place (one of its charts, when it leads with several). */
+function Lead(props: { readonly artifact: AldoArtifact }) {
+  const { artifact } = props;
+  if (artifact.kind === "chart") return <Chart chart={artifact} />;
+  if (artifact.kind === "table") return <Table table={artifact} />;
+  const shape = fileShape(artifact.contentType);
+  if (shape === "image") return <Picture file={artifact} />;
+  if (shape === "video") return <Video file={artifact} />;
+  if (shape === "audio") return <Audio file={artifact} />;
+  return <PageCard file={artifact} />;
 }
 
 /**
@@ -134,17 +155,15 @@ export default function AldoArtifacts(props: { readonly artifacts: ReadonlyArray
  * thread's machine, so it doesn't say that.
  */
 function Unavailable(props: { readonly file: AldoFileArtifact; readonly onRetry: () => void }) {
-  const kind = aldoShareKind(props.file.contentType);
+  const { word } = kindOf(props.file.contentType);
   return (
     <div role="status" className={cn(SURFACE, "flex min-w-0 items-center gap-3 p-3")}>
-      <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-foreground/[0.05] text-muted-foreground dark:bg-white/[0.06]">
-        <FileXIcon aria-hidden className="size-5" strokeWidth={1.75} />
-      </span>
+      <Glyph icon={FileXIcon} />
       <span className="flex min-w-0 flex-1 flex-col">
-        <span className="truncate text-[15px] text-foreground">{props.file.title}</span>
-        <span className="truncate text-[13px] text-muted-foreground">
-          {[kind ? TYPE_WORD[kind] : null, "Unavailable right now"].filter(Boolean).join(" · ")}
+        <span className="line-clamp-2 break-words text-[15px] text-foreground leading-5">
+          {props.file.title}
         </span>
+        <span className="text-[13px] text-muted-foreground">{word} · Unavailable right now</span>
       </span>
       <Button size="sm" variant="outline" onClick={props.onRetry}>
         Retry
@@ -213,15 +232,6 @@ function Caption(props: { readonly file: AldoFileArtifact; readonly children?: R
   );
 }
 
-function File(props: { readonly file: AldoFileArtifact }) {
-  const { file } = props;
-  const shape = fileShape(file.contentType);
-  if (shape === "video") return <Video file={file} />;
-  if (shape === "page") return <Page file={file} />;
-  if (shape === "audio") return <Audio file={file} />;
-  return <Tile file={file} />;
-}
-
 function Audio(props: { readonly file: AldoFileArtifact }) {
   const { file } = props;
   const [failed, setFailed] = useState(false);
@@ -274,25 +284,46 @@ function Video(props: { readonly file: AldoFileArtifact }) {
   );
 }
 
-/**
- * A page, as a picture of itself: it loads lazily, sandboxed (an origin of
- * its own, scripts and nothing else: no forms, popups or the page's
- * navigation, no referrer), and takes no taps. A tap opens it for the user
- * in the viewer, sandboxed as its link serves it.
- */
-function Page(props: { readonly file: AldoFileArtifact }) {
-  const { file } = props;
+/** A file's kind in a word, and its icon. */
+function kindOf(contentType: string): { readonly word: string; readonly Icon: LucideIcon } {
+  const kind = aldoShareKind(contentType);
+  return {
+    word: (kind && TYPE_WORD[kind]) || "File",
+    Icon: kind ? FILE_ICON[kind] : FileIcon,
+  };
+}
+
+/** An icon in a rounded square, the size of a row's picture. */
+function Glyph(props: { readonly icon: LucideIcon }) {
+  const { icon: Icon } = props;
   return (
-    <div className="flex min-w-0 max-w-full flex-col gap-1">
-      <button
-        type="button"
-        onClick={() => openFile(file)}
-        aria-label={`Open ${file.title}`}
-        className={cn(
-          "relative block aspect-[4/3] w-full min-w-0 overflow-hidden rounded-[16px] border border-foreground/[0.07] bg-white bg-clip-padding sm:aspect-[16/10] dark:border-white/[0.08]",
-          FOCUS,
-        )}
-      >
+    <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-foreground/[0.05] text-muted-foreground dark:bg-white/[0.06]">
+      <Icon aria-hidden className="size-5" strokeWidth={1.75} />
+    </span>
+  );
+}
+
+/**
+ * A page, as a picture of its top over its title: it loads lazily,
+ * sandboxed (an origin of its own, scripts and nothing else: no forms, popups
+ * or the page's navigation, no referrer), and takes no taps. A tap opens it
+ * for the user in the viewer, sandboxed as its link serves it.
+ */
+function PageCard(props: { readonly file: AldoFileArtifact }) {
+  const { file } = props;
+  const { word, Icon } = kindOf(file.contentType);
+  return (
+    <button
+      type="button"
+      onClick={() => openFile(file)}
+      aria-label={`Open ${file.title}`}
+      className={cn(
+        SURFACE,
+        FOCUS,
+        "flex w-full min-w-0 max-w-full flex-col overflow-hidden text-left transition-colors hover:bg-foreground/[0.02] active:bg-foreground/[0.04] dark:hover:bg-white/[0.06]",
+      )}
+    >
+      <span className="relative block aspect-[16/10] w-full overflow-hidden border-foreground/[0.06] border-b bg-white bg-clip-padding dark:border-white/[0.06]">
         <iframe
           src={inlineSrc(file)}
           title={file.title}
@@ -305,50 +336,142 @@ function Page(props: { readonly file: AldoFileArtifact }) {
           referrerPolicy="no-referrer"
           className="pointer-events-none absolute inset-0 size-full border-0 bg-white"
         />
-      </button>
-      <Caption file={file}>
-        <button
-          type="button"
-          onClick={() => openFile(file)}
-          aria-label={`Open ${file.title}`}
-          className={ICON_BUTTON}
-        >
-          <Maximize2Icon className="size-4" />
-        </button>
-      </Caption>
-    </div>
+      </span>
+      <span className="flex min-h-14 w-full min-w-0 items-center gap-3 px-3 py-2">
+        <Glyph icon={Icon} />
+        <span className="line-clamp-2 min-w-0 flex-1 text-[15px] text-foreground leading-5">
+          {file.title}
+        </span>
+        <span className="shrink-0 text-[13px] text-muted-foreground">{word}</span>
+        <Maximize2Icon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+      </span>
+    </button>
   );
 }
 
-/** A file shown by what it is: a tap opens it in the viewer, or saves what a browser can't show. */
-function Tile(props: { readonly file: AldoFileArtifact }) {
-  const { file } = props;
-  const kind = aldoShareKind(file.contentType);
-  const { [kind ?? "image"]: Icon = FileIcon } = FILE_ICON;
-  const meta = [kind ? TYPE_WORD[kind] : null, file.bytes ? formatMailSize(file.bytes) : null]
-    .filter(Boolean)
-    .join(" · ");
-  const body = (
+/** A row's look: the whole row takes the tap, and shows it. */
+const ROW =
+  "flex min-h-14 w-full min-w-0 items-center gap-3 px-3 py-2 text-left outline-none transition-colors hover:bg-foreground/[0.03] focus-visible:bg-foreground/[0.04] active:bg-foreground/[0.06] dark:active:bg-white/[0.08] dark:hover:bg-white/[0.04]";
+
+/** What a row says: its picture or icon, its title (two lines at most) and what it is. */
+function RowBody(props: {
+  readonly icon: ReactNode;
+  readonly title: string;
+  readonly word: string;
+  readonly end?: ReactNode;
+}) {
+  return (
     <>
-      <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-foreground/[0.05] text-muted-foreground dark:bg-white/[0.06]">
-        <Icon aria-hidden className="size-5" strokeWidth={1.75} />
+      {props.icon}
+      <span className="line-clamp-2 min-w-0 flex-1 text-[15px] text-foreground leading-5">
+        {props.title}
       </span>
-      <span className="flex min-w-0 flex-1 flex-col">
-        <span className="truncate text-[15px] text-foreground">{file.title}</span>
-        {meta ? <span className="truncate text-[13px] text-muted-foreground">{meta}</span> : null}
+      <span className="max-w-[40%] shrink-0 truncate text-[13px] text-muted-foreground">
+        {props.word}
       </span>
+      {props.end}
     </>
   );
-  const look = cn(SURFACE, FOCUS, "flex w-full min-w-0 items-center gap-3 p-3 text-left");
+}
+
+/**
+ * The rest of what a reply has, and the links a thread's result lists, in one
+ * list: a row each, a tap opening it whole (what a browser can't show saves).
+ */
+function Rows(props: {
+  readonly items: ReadonlyArray<AldoArtifact>;
+  readonly links: ReadonlyArray<AldoLinkRow>;
+}) {
+  const edge = "border-foreground/[0.06] border-t first:border-t-0 dark:border-white/[0.06]";
+  return (
+    <ul className={cn(SURFACE, "flex w-full min-w-0 max-w-full flex-col overflow-hidden")}>
+      {props.items.map((item, index) => (
+        // oxlint-disable-next-line react/no-array-index-key -- A message's artifacts never change once it's said.
+        <li key={index} className={edge}>
+          {item.kind === "file" ? <FileRow file={item} /> : <DataRow data={item} />}
+        </li>
+      ))}
+      {props.links.map((link) => (
+        <li key={link.url} className={edge}>
+          <a href={link.url} target="_blank" rel="noopener noreferrer" className={ROW}>
+            <RowBody
+              icon={
+                <Glyph
+                  icon={link.type === "Pull request" ? PullRequestGlyph.pullRequest : LinkIcon}
+                />
+              }
+              title={link.title}
+              word={link.type}
+            />
+          </a>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** A picture's own, small, or its icon when it won't load. */
+function Thumbnail(props: { readonly file: AldoFileArtifact }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) return <Glyph icon={ImageIcon} />;
+  return (
+    <img
+      src={inlineSrc(props.file)}
+      alt=""
+      loading="lazy"
+      decoding="async"
+      draggable={false}
+      // An edge of its own, so a white picture doesn't fade into the card.
+      className="size-10 shrink-0 rounded-xl bg-muted object-cover outline-1 outline-foreground/[0.08] -outline-offset-1 dark:outline-white/[0.08]"
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
+/** A file in the list: a tap opens it in the viewer, or saves what a browser can't show. */
+function FileRow(props: { readonly file: AldoFileArtifact }) {
+  const { file } = props;
+  const { word, Icon } = kindOf(file.contentType);
+  const icon =
+    fileShape(file.contentType) === "image" ? <Thumbnail file={file} /> : <Glyph icon={Icon} />;
   return aldoShareViewable(file.contentType) ? (
-    <button type="button" onClick={() => openFile(file)} className={look}>
-      {body}
+    <button type="button" onClick={() => openFile(file)} className={ROW}>
+      <RowBody icon={icon} title={file.title} word={word} />
     </button>
   ) : (
-    <a href={downloadHref(file.url, origin(), file.contentType)} download="" className={look}>
-      {body}
-      <DownloadIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+    <a href={downloadHref(file.url, origin(), file.contentType)} download="" className={ROW}>
+      <RowBody
+        icon={icon}
+        title={file.title}
+        word={word}
+        end={<DownloadIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />}
+      />
     </a>
+  );
+}
+
+/** A table or chart in the list: a tap opens it whole in its sheet. */
+function DataRow(props: { readonly data: AldoChartArtifact | AldoTableArtifact }) {
+  const { data } = props;
+  const [open, setOpen] = useState(false);
+  const table = data.kind === "table";
+  const title = data.title || (table ? data.columns.filter(Boolean).join(", ") : "") || "Chart";
+  const rows = table ? data.rows.length : 0;
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)} className={ROW}>
+        <RowBody
+          icon={<Glyph icon={table ? TableIcon : ChartLineIcon} />}
+          title={title}
+          word={table ? `Table · ${rows} ${rows === 1 ? "row" : "rows"}` : "Chart"}
+        />
+      </button>
+      {open ? (
+        <DataSheet title={title} onClose={() => setOpen(false)}>
+          <AldoArtifactDetail artifact={data} />
+        </DataSheet>
+      ) : null}
+    </>
   );
 }
 
@@ -449,6 +572,7 @@ function FullTable(
 ) {
   // A chart's saves its figures as they were sent, not as written here.
   const data = props.chart ? chartTable(props.chart, true) : props;
+  const numeric = numericColumns(props.rows);
   return (
     <div className="flex flex-col gap-3 p-4">
       {props.chart ? <ChartBody chart={props.chart} all /> : null}
@@ -480,6 +604,7 @@ function FullTable(
                   className={cn(
                     "sticky top-0 z-10 whitespace-nowrap border-border/60 border-b bg-muted px-3 py-2 text-left font-medium",
                     i === 0 && "left-0 z-20",
+                    numeric[i] && "text-right",
                   )}
                 >
                   {column}
@@ -499,6 +624,7 @@ function FullTable(
                     className={cn(
                       "max-w-80 border-border/40 border-b px-3 py-2 align-top tabular-nums",
                       c === 0 && "sticky left-0 bg-background font-medium",
+                      numeric[c] && "whitespace-nowrap text-right",
                     )}
                   >
                     {cell}
@@ -513,54 +639,69 @@ function FullTable(
   );
 }
 
-/** A table in place: the width of the conversation, its first few columns and rows, each cell cut to fit. */
+/**
+ * A table in place: its first few columns and rows, the width of the
+ * conversation, nothing cut. Words wrap; a column of numbers keeps each on one
+ * line, to the right, its digits lined up. Only a table too wide even so
+ * scrolls, within itself.
+ */
 function Table(props: { readonly table: AldoTableArtifact }) {
   const { table } = props;
   const columns = table.columns.slice(0, PREVIEW.columns);
   const rows = table.rows.slice(0, PREVIEW.rows);
-  const more =
-    table.columns.length > columns.length || table.rows.length > rows.length
-      ? `All ${table.columns.length} columns · ${table.rows.length} ${table.rows.length === 1 ? "row" : "rows"}`
-      : null;
+  const numeric = numericColumns(table.rows);
+  const cut = [
+    table.columns.length > columns.length ? `${table.columns.length} columns` : null,
+    table.rows.length > rows.length ? `${table.rows.length} rows` : null,
+  ].filter(Boolean);
   return (
-    <DataCard title={table.title ?? ""} kind="table" footer={more} sheet={<FullTable {...table} />}>
-      <table className="w-full min-w-0 table-fixed border-collapse text-[14px]">
-        <thead>
-          <tr>
-            {columns.map((column, i) => (
-              <th
-                // oxlint-disable-next-line react/no-array-index-key -- Columns are fixed once said, and may repeat.
-                key={i}
-                scope="col"
-                className={cn(
-                  "truncate border-border/60 border-b pe-3 pb-1.5 text-left font-medium text-[13px] text-muted-foreground last:pe-0",
-                  // What each row is about gets the room; the figures after it are short.
-                  i === 0 && columns.length > 2 && "w-[38%]",
-                )}
-              >
-                {column}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, r) => (
-            // oxlint-disable-next-line react/no-array-index-key -- Rows are fixed once said, and may repeat.
-            <tr key={r}>
-              {row.slice(0, PREVIEW.columns).map((cell, c) => (
-                <td
-                  // oxlint-disable-next-line react/no-array-index-key -- As above.
-                  key={c}
-                  data-numeric={isNumberCell(cell) || undefined}
-                  className="truncate border-border/40 border-b py-1.5 pe-3 tabular-nums last:pe-0"
+    <DataCard
+      title={table.title ?? ""}
+      kind="table"
+      footer={cut.length > 0 ? `All ${cut.join(" · ")}` : null}
+      sheet={<FullTable {...table} />}
+    >
+      <div className="min-w-0 overflow-x-auto">
+        <table className="w-full border-collapse text-[14px] leading-5">
+          <thead>
+            <tr>
+              {columns.map((column, i) => (
+                <th
+                  // oxlint-disable-next-line react/no-array-index-key -- Columns are fixed once said, and may repeat.
+                  key={i}
+                  scope="col"
+                  className={cn(
+                    "border-border/60 border-b pe-3 pb-1.5 align-bottom font-medium text-[13px] text-muted-foreground last:pe-0",
+                    numeric[i] ? "text-right" : "text-left",
+                  )}
                 >
-                  {cell}
-                </td>
+                  {column}
+                </th>
               ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {rows.map((row, r) => (
+              // oxlint-disable-next-line react/no-array-index-key -- Rows are fixed once said, and may repeat.
+              <tr key={r}>
+                {row.slice(0, PREVIEW.columns).map((cell, c) => (
+                  <td
+                    // oxlint-disable-next-line react/no-array-index-key -- As above.
+                    key={c}
+                    data-numeric={isNumberCell(cell) || undefined}
+                    className={cn(
+                      "border-border/40 border-b py-1.5 pe-3 align-top last:pe-0",
+                      numeric[c] ? "whitespace-nowrap text-right tabular-nums" : "break-words",
+                    )}
+                  >
+                    {cell}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </DataCard>
   );
 }

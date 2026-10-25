@@ -18,7 +18,11 @@ const backend = vi.hoisted(() => ({
   computer: vi.fn(),
   refresh: vi.fn(),
 }));
-vi.mock("@tanstack/react-router", () => ({ useNavigate: vi.fn, useRouter: vi.fn }));
+vi.mock("@tanstack/react-router", () => ({
+  useNavigate: vi.fn,
+  useRouter: vi.fn,
+  Link: ({ children }: { children: ReactNode }) => <span>{children}</span>,
+}));
 vi.mock("../components/ui/sidebar", () => ({
   SidebarInset: ({ children }: { children: ReactNode }) => <main>{children}</main>,
 }));
@@ -329,6 +333,26 @@ it("adds a newly arrived card after existing messages, including a card-only con
   before(textElement("I’ll make a plan"), container.querySelector('[data-aldo-plan="plan-1"]')!);
   await act(async () => useAldoAssistant.setState({ entries: [] }));
   expect(container.querySelector('[data-aldo-plan="plan-1"]')).not.toBeNull();
+});
+
+it("lists the links a thread's result ends with under its words, and leaves Aldo's own replies as they are", async () => {
+  const result = [
+    "The checkout fix is live.",
+    "",
+    "Pull request: https://github.com/acme/shop/pull/7",
+    "Thread: https://aldo.example/aldo-1/t1",
+  ].join("\n");
+  message(result, 1, "assistant");
+  message("Docs: https://acme.example/docs", 2, "assistant");
+  await act(async () => root.render(<Page home={home()} />));
+  await vi.waitFor(() => expect(container.querySelector("[data-aldo-artifacts]")).not.toBeNull());
+  const row = container.querySelector<HTMLAnchorElement>("[data-aldo-artifacts] a")!;
+  expect(row.href).toBe("https://github.com/acme/shop/pull/7");
+  expect(row.textContent).toBe("acme/shop #7Pull request");
+  expect(textElement("The checkout fix is live.\nOpen the thread")).toBeDefined();
+  expect(container.textContent).not.toContain("Pull request: https://");
+  expect(textElement("Docs: https://acme.example/docs")).toBeDefined();
+  expect(container.querySelectorAll("[data-aldo-artifacts]")).toHaveLength(1);
 });
 
 it("shows a saved approval outcome even when no messages are loaded", async () => {
