@@ -65,6 +65,19 @@ function isLive(environmentId: string): boolean {
   return isLivePhase(phaseOf(environmentId));
 }
 
+/**
+ * Whether a machine's own shell is on its way, newer than any copy: it's live,
+ * except one still connecting that the directory lists asleep. Its attempt
+ * waited for this listing (directory.ts's freshListing), which tells it so,
+ * and the sidebar has only the copy to show meanwhile.
+ */
+function ownShellComing(environmentId: string): boolean {
+  const phase = phaseOf(environmentId);
+  if (phase !== "connecting") return isLivePhase(phase);
+  const state = directory.find((environment) => environment.environmentId === environmentId)?.state;
+  return state !== "stopped" && state !== "failed";
+}
+
 /** Copies these machines' shells from Aldo into the cache. Returns the thread ids Aldo sent. */
 async function download(environments: ReadonlyArray<AldoEnvironment>): Promise<Set<string>> {
   const shells = await fetchAldoShells(environments.map((environment) => environment.threadId));
@@ -73,7 +86,7 @@ async function download(environments: ReadonlyArray<AldoEnvironment>): Promise<S
       const environmentId = environment.environmentId;
       const shell = shells[environment.threadId] as { snapshotSequence?: unknown } | undefined;
       // A machine coming up for a thread shown here: its own shell is moments away.
-      if (!shell || isLive(environmentId) || aldoShowsStartingThread(environmentId)) return;
+      if (!shell || ownShellComing(environmentId) || aldoShowsStartingThread(environmentId)) return;
       // One that doesn't decode isn't fetched again until the machine reports another.
       known.set(environmentId, environment.shellSequence ?? -1);
       await seedEnvironmentCache({
@@ -84,8 +97,7 @@ async function download(environments: ReadonlyArray<AldoEnvironment>): Promise<S
       if (typeof shell.snapshotSequence === "number")
         known.set(environmentId, shell.snapshotSequence);
       // Already registered: its shell reloads from the cache. (One registering later reads it then.)
-      const phase = phaseOf(environmentId);
-      if (phase !== undefined && !isLivePhase(phase)) {
+      if (phaseOf(environmentId) !== undefined && !ownShellComing(environmentId)) {
         appAtomRegistry.refresh(environmentShell.stateAtom(environmentId as EnvironmentId));
       }
     }),
@@ -143,7 +155,11 @@ async function seedModels(environments: ReadonlyArray<AldoEnvironment>): Promise
 
 async function sync(environments: ReadonlyArray<AldoEnvironment>): Promise<void> {
   await clearLeftoverAldoThreads(environments).catch(() => undefined);
-  const candidates = aldoShellCandidates(environments, { known, offerChecked, isLive });
+  const candidates = aldoShellCandidates(environments, {
+    known,
+    offerChecked,
+    isLive: ownShellComing,
+  });
   if (candidates.length === 0) return;
   const cached = await readCachedShells(
     candidates.map((environment) => environment.environmentId as EnvironmentId),
