@@ -216,7 +216,6 @@ async function sync(environments: ReadonlyArray<AldoEnvironment>): Promise<void>
 
 let running: Promise<void> | null = null;
 
-/** Brings this browser's copies of the machines' threads up to date on every directory fetch. */
 /**
  * A connected machine writes its own config over the cache: it's checked
  * again once it isn't, even on a later visit (forgotten as it connects, not
@@ -234,6 +233,7 @@ function forgetLiveModelsChecked(
   if (forgot) keepModelsChecked();
 }
 
+/** Brings this browser's copies of the machines' threads up to date on every directory fetch. */
 export function installAldoShellSync(): void {
   if (!isAldoCloud) return;
   appAtomRegistry.subscribe(environmentPresentations.presentationsAtom, forgetLiveModelsChecked, {
