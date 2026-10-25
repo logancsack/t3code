@@ -113,6 +113,18 @@ const decodedServerConfigs = new Map<string, ServerConfig>();
 const DECODED_SERVER_CONFIGS = 8;
 
 /**
+ * Aldo: the template a machine this browser never connected to shows
+ * (seedMissingServerConfigs), stored once under this key: such a machine's
+ * own entry holds only ALDO_TEMPLATE_MARKER. A few hundred 147 KB copies took
+ * seconds to read on every open.
+ */
+const ALDO_TEMPLATE_KEY = "aldo:template" as EnvironmentId;
+const ALDO_TEMPLATE_MARKER = "aldo:template";
+/** The stored template as decoded, once for every machine that shows it; undefined until read. */
+let aldoTemplate: Option.Option<ServerConfig> | undefined;
+let aldoTemplateRead: Promise<void> | null = null;
+
+/**
  * A stored config's text without its environment's id, or null if the id
  * appears other than as its two `environmentId`s (then it isn't shared).
  */
@@ -269,6 +281,28 @@ function readDatabaseValue(database: IDBDatabase, storeName: string, key: IDBVal
     if (reads === undefined) stores.set(storeName, [{ key, resume }]);
     else reads.push({ key, resume });
   }).pipe(Effect.withSpan("web.connectionStorage.readDatabaseValue"));
+}
+
+/** Reads the stored template (aldoTemplate), unless it's been read or written already. */
+function loadAldoTemplate(database: IDBDatabase): Promise<void> {
+  aldoTemplateRead ??= Effect.runPromise(
+    readDatabaseValue(database, SERVER_CONFIG_STORE_NAME, ALDO_TEMPLATE_KEY).pipe(
+      Effect.flatMap((raw) =>
+        typeof raw === "string"
+          ? decodeStoredServerConfig(raw).pipe(Effect.map((stored) => Option.some(stored.config)))
+          : Effect.succeedNone,
+      ),
+    ),
+  ).then(
+    (template) => {
+      aldoTemplate ??= template;
+    },
+    (cause: unknown) => {
+      aldoTemplateRead = null;
+      throw cause;
+    },
+  );
+  return aldoTemplateRead;
 }
 
 function writeDatabaseValue(
@@ -578,6 +612,8 @@ export const connectionStorageLayer = Layer.effectContext(
     );
     const catalog = yield* makeCatalogStore(makeCatalogBackend(database));
     const githubRoutingPermissions = makeBrowserGitHubRoutingPermissions();
+    // Aldo: the models its sleeping machines show, ready by the time they're asked for.
+    void loadAldoTemplate(database).catch(() => undefined);
 
     const targetStore = ConnectionTargetStore.of({
       list: catalog.read.pipe(
@@ -736,6 +772,19 @@ export const connectionStorageLayer = Layer.effectContext(
           Effect.flatMap((raw) => {
             if (typeof raw !== "string") {
               return Effect.succeedNone;
+            }
+            if (raw === ALDO_TEMPLATE_MARKER) {
+              const shown = () =>
+                Option.map(aldoTemplate ?? Option.none(), (config) => ({
+                  ...config,
+                  environment: { ...config.environment, environmentId },
+                }));
+              // Read as the database opened, as a rule: with the shells it shows models for.
+              if (aldoTemplate !== undefined) return Effect.succeed(shown());
+              return Effect.tryPromise({
+                try: () => loadAldoTemplate(database),
+                catch: (cause) => persistenceError("load-server-config", cause),
+              }).pipe(Effect.map(shown));
             }
             const shared = sharedServerConfig(raw, environmentId);
             if (shared) return Effect.succeedSome(shared);
@@ -1014,16 +1063,54 @@ function storedServerConfigOf(
 }
 
 /**
- * Aldo: writes the server config given (`template`, renamed for each
- * environment) for each environment that has none cached (a sleeping machine
- * this browser never connected to), so its threads open with models to send
- * with; a cached one, from the machine itself, is kept, with the providers
- * the given one lists that it lacks added (its T3 started before they
- * shipped, and gets them when it starts again), and the user's `settings`
- * that Aldo keeps over its own (it gets those as it wakes). The template is
- * decoded once: a few hundred machines' copies differ only in their id.
- * Checked and written in one transaction. Returns the environments written,
- * and the ones whose cached config was kept as it was.
+ * Aldo: of these environments' stored server configs (`cached`), the ones to
+ * show the template (`stored`, as stored under ALDO_TEMPLATE_KEY) and the
+ * ones that are a machine's own. None, the template or a copy of one shows
+ * it: copies differ only in their id, so a config another shares is one. A
+ * machine's own is like no other's (it checked each provider as it ran).
+ */
+export function aldoTemplateCopies(
+  cached: ReadonlyMap<EnvironmentId, unknown>,
+  stored: string,
+): { readonly template: EnvironmentId[]; readonly own: EnvironmentId[] } {
+  const templateText = serverConfigText(stored, ALDO_TEMPLATE_KEY);
+  const template: EnvironmentId[] = [];
+  const own: EnvironmentId[] = [];
+  const alike = new Map<string, EnvironmentId[]>();
+  for (const [environmentId, raw] of cached) {
+    const text = typeof raw === "string" ? serverConfigText(raw, environmentId) : null;
+    if (
+      raw === undefined ||
+      raw === ALDO_TEMPLATE_MARKER ||
+      (text !== null && text === templateText)
+    ) {
+      template.push(environmentId);
+    } else if (text === null) {
+      own.push(environmentId);
+    } else {
+      const group = alike.get(text);
+      if (group) group.push(environmentId);
+      else alike.set(text, [environmentId]);
+    }
+  }
+  for (const ids of alike.values()) (ids.length > 1 ? template : own).push(...ids);
+  return { template, own };
+}
+
+/**
+ * Aldo: brings the server configs of these environments (machines that
+ * aren't connected) up to the one given (`template`, the newest any machine
+ * reported), so their threads open with models to send with. One with none
+ * cached (a sleeping machine this browser never connected to) shows the
+ * template itself, stored once (ALDO_TEMPLATE_KEY), as do the copies of a
+ * template an earlier build wrote for each such machine. A cached one from
+ * the machine itself is kept, as it wakes with it: with the providers the
+ * template lists that it lacks added (its T3 started before they shipped,
+ * and gets them when it starts again), and the user's `settings` that Aldo
+ * keeps over its own (it gets those as it wakes). Checked and written in one
+ * transaction. Returns the environments written (each one that shows the
+ * template, which may have changed), and the ones whose cached config was
+ * kept as it was.
  */
 export function seedMissingServerConfigs(
   template: unknown,
@@ -1041,14 +1128,15 @@ export function seedMissingServerConfigs(
           const encoded = yield* encodeServerConfig(config.value).pipe(Effect.option);
           if (Option.isNone(encoded)) return none;
           const offered = { providers: encoded.value.providers };
-          return yield* Effect.callback<
+          const storedTemplate = storedServerConfigOf(encoded.value, ALDO_TEMPLATE_KEY);
+          const seeded = yield* Effect.callback<
             { written: EnvironmentId[]; kept: EnvironmentId[] },
             ConnectionTransientError
           >((resume) => {
             const written: EnvironmentId[] = [];
             const kept: EnvironmentId[] = [];
             const transaction = database.transaction(SERVER_CONFIG_STORE_NAME, "readwrite");
-            transaction.addEventListener("error", () => {
+            transaction.addEventListener("abort", () => {
               resume(
                 Effect.fail(
                   catalogError("write", transaction.error ?? "Unknown IndexedDB write error"),
@@ -1059,22 +1147,38 @@ export function seedMissingServerConfigs(
               resume(Effect.succeed({ written, kept }));
             });
             const store = transaction.objectStore(SERVER_CONFIG_STORE_NAME);
-            for (const environmentId of environmentIds) {
+            store.put(storedTemplate, ALDO_TEMPLATE_KEY);
+            const showTemplate = (environmentId: EnvironmentId, raw: unknown) => {
+              if (raw !== ALDO_TEMPLATE_MARKER) store.put(ALDO_TEMPLATE_MARKER, environmentId);
+              written.push(environmentId);
+            };
+            const keepOwn = (environmentId: EnvironmentId, raw: unknown) => {
+              const next = withAldoTemplate(raw, offered, settings);
+              if (next === null) {
+                kept.push(environmentId);
+                return;
+              }
+              store.put(next, environmentId);
+              written.push(environmentId);
+            };
+            const requested = new Set(environmentIds);
+            const cached = new Map<EnvironmentId, unknown>();
+            const seed = () => {
+              const { template, own } = aldoTemplateCopies(cached, storedTemplate);
+              for (const environmentId of template)
+                showTemplate(environmentId, cached.get(environmentId));
+              for (const environmentId of own) keepOwn(environmentId, cached.get(environmentId));
+            };
+            for (const environmentId of requested) {
               const request = store.get(environmentId);
               request.addEventListener("success", () => {
-                const next =
-                  request.result === undefined
-                    ? storedServerConfigOf(encoded.value, environmentId)
-                    : withAldoTemplate(request.result, offered, settings);
-                if (next === null) {
-                  kept.push(environmentId);
-                  return;
-                }
-                store.put(next, environmentId);
-                written.push(environmentId);
+                cached.set(environmentId, request.result);
+                if (cached.size === requested.size) seed();
               });
             }
           });
+          aldoTemplate = Option.some(config.value);
+          return seeded;
         }),
       (database) => Effect.sync(() => database.close()),
     ),
