@@ -2,7 +2,7 @@
 
 import { type AldoPullRequestStage, type AldoCheckCounts } from "./pullRequests.logic";
 import { type AldoMachinePressure } from "./directory";
-import { api, AldoApiError, threadIdForEnvironment } from "./api";
+import { ALDO_READ_ANSWERS_WITHIN_MS, api, AldoApiError, threadIdForEnvironment } from "./api";
 
 // ---------------------------------------------------------------------------
 // The home screen: the user's agents' work in one read (Aldo's src/lib/home.ts)
@@ -563,10 +563,10 @@ export async function resolveAldoHandoff(
 export async function fetchAldoHome(
   options: { readonly active?: boolean } = {},
 ): Promise<AldoHome | null> {
-  const body = await api<Partial<AldoHome>>(
-    "/api/home",
-    options.active ? { headers: { "x-aldo-active": "1" } } : {},
-  );
+  const body = await api<Partial<AldoHome>>("/api/home", {
+    ...(options.active ? { headers: { "x-aldo-active": "1" } } : {}),
+    answersWithin: ALDO_READ_ANSWERS_WITHIN_MS,
+  });
   return Array.isArray(body.conversations) ? (body as AldoHome) : null;
 }
 
