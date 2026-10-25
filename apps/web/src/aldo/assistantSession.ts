@@ -701,11 +701,16 @@ export async function pullAldoConversation(): Promise<void> {
   );
   const { fresh, matched } = unseenMessages(said, messages, historyUntil);
   const calls = history.flatMap((item) => ("kind" in item ? [item] : []));
-  const entries = withCalls(get().entries, calls, historyUntil);
+  const shown = get().entries;
+  const entries = withCalls(shown, calls, historyUntil);
   historyUntil = messages.at(-1)?.at ?? historyUntil;
   for (const entry of matched) recorded.add(entry);
-  if (fresh.length > 0 || entries !== get().entries)
-    set({ entries: [...entries, ...fromRecord(fresh)] });
+  // What's new, calls and messages alike, goes after what's shown in the order Aldo kept it.
+  const added = [...entries.slice(shown.length), ...fromRecord(fresh)].toSorted((a, b) =>
+    "at" in a && "at" in b ? a.at.localeCompare(b.at) : 0,
+  );
+  if (added.length > 0 || entries !== shown)
+    set({ entries: [...entries.slice(0, shown.length), ...added] });
 }
 
 async function transcriptsSettled(): Promise<void> {
@@ -845,7 +850,10 @@ function showCall(call: AldoFunctionCall, outcome: unknown): void {
   // A call is shown as it comes: a request tried again replaces its failed try, even when the try has nothing to show.
   const { entries, callFrom } = get();
   const kept = withoutRetriedFailures(entries, call, outcome, callFrom);
-  if (action) set({ entries: [...kept, { kind: "action", ...action }] });
+  if (action)
+    set({
+      entries: [...kept, { kind: "action", ...action, ...(callOpen ? { call: callOpen } : {}) }],
+    });
   else if (kept !== entries) set({ entries: kept });
   // What it changed shows in the sidebar now (a new thread at once), not on the next refresh.
   if (action && !action.failed) requestAldoDirectoryRefresh();
@@ -1177,8 +1185,13 @@ const SUMMARY_EVERY_MS = 2_500;
  * started; once its last words are through, Aldo is told it ended, and the page reads back its summary.
  */
 function finishCall(session: string | null, began: number | null): void {
-  if (!session || callOpen !== session) return;
-  callOpen = null;
+  // Each call is finished by its own session: a new call may already be open.
+  if (
+    !session ||
+    !get().entries.some((e) => isCallEntry(e) && e.id === session && e.state === "live")
+  )
+    return;
+  if (callOpen === session) callOpen = null;
   const seconds = began === null ? 0 : Math.round((Date.now() - began) / 1000);
   const entries = get().entries;
   set({
@@ -1509,6 +1522,8 @@ export async function connectAldo(
     connectedAt: null,
   });
   let connection: RTCPeerConnection | null = null;
+  // Whether this Aldo draws calls as cards is known before the call opens (a call from the sidebar or a shortcut too).
+  const conversation = loadAldoConversation().catch(() => {});
   try {
     // The microphone first, while the tap that asked for it still counts as the user's.
     // Blocked or missing, the conversation goes on typed.
@@ -1522,6 +1537,7 @@ export async function connectAldo(
           return null;
         });
     }
+    await conversation;
     connection = new RTCPeerConnection();
     peer = connection;
     if (!speaker) {

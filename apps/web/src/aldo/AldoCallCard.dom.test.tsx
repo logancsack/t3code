@@ -107,3 +107,19 @@ it("says plainly when the transcript can't be read, and tries again", async () =
   await act(async () => button("Try again").click());
   expect(container.textContent).toContain("Move my dentist appointment.");
 });
+
+it("says plainly when a finished call has no summary, not that it's summarizing", async () => {
+  await render(call({ summary: null, links: [] }));
+  expect(container.textContent).toContain("No summary for this call.");
+  expect(container.textContent).not.toContain("Summarizing…");
+});
+
+it("reads a transcript opened before the call was done again once it is", async () => {
+  await render(call({ state: "summarizing", summary: null, links: [] }));
+  await act(async () => button("Transcript").click());
+  expect(backend.transcript).toHaveBeenCalledTimes(1);
+  await render(call());
+  expect(backend.transcript).toHaveBeenCalledTimes(2);
+  await render(call());
+  expect(backend.transcript).toHaveBeenCalledTimes(2);
+});

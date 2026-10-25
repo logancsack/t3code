@@ -104,3 +104,19 @@ it("keeps every turn as a message when Aldo doesn't draw calls", async () => {
   await loadAldoConversation();
   expect(kinds(useAldoAssistant.getState())).toEqual(["Move my dentist appointment.", "Done."]);
 });
+
+it("puts what another device said and called in the order Aldo kept it", async () => {
+  backend.history.mockResolvedValueOnce(drawing([message("Morning", "2026-10-25T16:00:00.000Z")]));
+  const { loadAldoConversation, pullAldoConversation, useAldoAssistant } = await page();
+  await loadAldoConversation();
+  backend.history.mockResolvedValueOnce(
+    drawing([
+      message("Morning", "2026-10-25T16:00:00.000Z"),
+      message("Later", "2026-10-25T17:00:00.000Z"),
+      call({ at: "2026-10-25T18:00:00.000Z" }),
+      message("After", "2026-10-25T18:30:00.000Z"),
+    ]),
+  );
+  await pullAldoConversation();
+  expect(kinds(useAldoAssistant.getState())).toEqual(["Morning", "Later", "call", "After"]);
+});

@@ -173,3 +173,26 @@ it("shows the call as it always did when Aldo doesn't draw calls, and doesn't te
   expect(backend.record.mock.calls.every((call) => call[2] === undefined)).toBe(true);
   expect(kinds(session.useAldoAssistant.getState())).toEqual(["message", "message", "message"]);
 });
+
+it("finishes a call that hung up even when another call has opened since", async () => {
+  vi.useFakeTimers();
+  const session = await page(drawing());
+  await talk(session);
+  session.disconnectAldo();
+  await vi.advanceTimersByTimeAsync(0);
+  backend.start.mockResolvedValueOnce({ sessionId: "as_call0000002", sdp: "answer" });
+  await session.connectAldo({ mic: false });
+  channel.open();
+  channel.emit({ type: "session.started" });
+  await vi.advanceTimersByTimeAsync(0);
+  const cards = session.useAldoAssistant
+    .getState()
+    .entries.flatMap((e) => (e.kind === "call" ? [[e.id, e.state]] : []));
+  expect(cards).toEqual([
+    ["as_call0000001", "summarizing"],
+    ["as_call0000002", "live"],
+  ]);
+  expect(backend.record.mock.calls.some((c) => c[0] === "as_call0000001" && c[2] === true)).toBe(
+    true,
+  );
+});
