@@ -163,8 +163,12 @@ export function showAldoCards(cards: ReadonlyArray<string>): () => void {
   };
 }
 
-/** The cards a written turn says the page shows: the page's, and what any reply shows under it (AldoArtifacts.tsx). */
-const cardsShown = () => [...new Set([...shownCards, "artifacts"])];
+/**
+ * The cards a written turn says the page shows: the page's, and what any
+ * reply shows under it (AldoArtifacts.tsx), with every type of chart
+ * (AldoChart.tsx: "charts"; an older page draws bars and lines alone).
+ */
+const cardsShown = () => [...new Set([...shownCards, "artifacts", "charts"])];
 
 export const aldoAssistant = {
   /** A realtime session, for an Aldo from before GPT-Live (startLive returned null). */

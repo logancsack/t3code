@@ -2,7 +2,8 @@
 // picture, a recording that plays in place, a page, a file, a chart or a
 // table, each the width of the conversation at most, so a phone never
 // scrolls sideways. A tap opens it whole: a file in Aldo's viewer
-// (AldoShareViewer.tsx), a chart or a table in a sheet with its data to save.
+// (AldoShareViewer.tsx), a chart (AldoChart.tsx) or a table in a sheet with
+// its data to save.
 // A page runs only sandboxed, on an origin of its own: in place it's a
 // picture of itself that takes no taps, and it runs for the user in the viewer.
 // Loaded once a message has one (AldoAssistant.tsx), off the first screen.
@@ -20,20 +21,19 @@ import {
   XIcon,
   type LucideIcon,
 } from "lucide-react";
-import { Fragment, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
 import { MediaVideoPlayer } from "../components/media/MediaVideoPlayer";
 import { Button } from "../components/ui/button";
 import { Sheet, SheetPopup, SheetTitle } from "../components/ui/sheet";
 import { cn } from "../lib/utils";
+import { ChartBody, PREVIEW_BARS } from "./AldoChart";
 import {
-  chartScale,
   chartTable,
   csvOf,
   downloadHref,
   fileNameOf,
   fileShape,
-  formatValue,
   inlineSrc,
   type AldoArtifact,
   type AldoChartArtifact,
@@ -48,10 +48,8 @@ import { openAldoShare } from "./shareViewer";
 import { FOCUS, ICON_BUTTON, SURFACE } from "./surface";
 import { isNumberCell } from "./tableNumbers.logic";
 
-/** A chart's series, in the brand's order (docs/brand.md): Aldo Blue, then red, then yellow, at full strength. */
-const SERIES = ["var(--primary)", "#da291c", "#ffc72c"] as const;
-/** What a chart or table shows in place before its sheet: the rest is a tap away. */
-const PREVIEW = { bars: 8, rows: 6, columns: 4 } as const;
+/** What a table shows in place before its sheet: the rest is a tap away. */
+const PREVIEW = { rows: 6, columns: 4 } as const;
 /** The tallest a picture shows in place, in rem. */
 const TALLEST = 28;
 
@@ -570,7 +568,7 @@ function Table(props: { readonly table: AldoTableArtifact }) {
 function Chart(props: { readonly chart: AldoChartArtifact }) {
   const { chart } = props;
   const more =
-    chart.type === "bar" && chart.labels.length > PREVIEW.bars
+    chart.type === "bar" && chart.labels.length > PREVIEW_BARS
       ? `All ${chart.labels.length} in full screen`
       : null;
   return (
@@ -582,187 +580,5 @@ function Chart(props: { readonly chart: AldoChartArtifact }) {
     >
       <ChartBody chart={chart} />
     </DataCard>
-  );
-}
-
-/** A chart's legend, when there's more than one series: color is never all that tells them apart. */
-function Legend(props: { readonly chart: AldoChartArtifact }) {
-  if (props.chart.series.length < 2) return null;
-  return (
-    <ul className="flex min-w-0 flex-wrap gap-x-4 gap-y-1 text-[13px] text-muted-foreground">
-      {props.chart.series.map((s, i) => (
-        // oxlint-disable-next-line react/no-array-index-key -- Series are fixed once said, and may share a name.
-        <li key={i} className="flex min-w-0 items-center gap-1.5">
-          <span
-            aria-hidden
-            className="h-2 w-3 shrink-0 rounded-full"
-            style={{ background: SERIES[i] }}
-          />
-          <span className="truncate">{s.name}</span>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function ChartBody(props: {
-  readonly chart: AldoChartArtifact;
-  readonly all?: boolean | undefined;
-}) {
-  const { chart } = props;
-  return (
-    <div className="flex min-w-0 flex-col gap-3">
-      <Legend chart={chart} />
-      {chart.type === "bar" ? <Bars chart={chart} all={props.all} /> : <Line chart={chart} />}
-    </div>
-  );
-}
-
-/**
- * A bar chart as rows: a label, then a bar and its value for each series. It
- * runs down, never across, so long labels and many bars fit any phone, and
- * every value is written beside its bar.
- */
-function Bars(props: { readonly chart: AldoChartArtifact; readonly all?: boolean | undefined }) {
-  const { chart } = props;
-  const { top, bottom } = chartScale(chart.series.flatMap((s) => s.values));
-  const at = (value: number) => ((value - bottom) / (top - bottom)) * 100;
-  const labels = props.all ? chart.labels : chart.labels.slice(0, PREVIEW.bars);
-  // Every row's bar starts and ends at the same place, so bars compare: the labels' column fits
-  // the longest (up to 40%), and the values' the widest.
-  const shown = labels.map((_, i) =>
-    chart.series.map((s) => formatValue(s.values[i] ?? 0, chart.unit)),
-  );
-  const widest = Math.max(...shown.flat().map((text) => text.length));
-  return (
-    <div
-      role="img"
-      aria-label={chart.title}
-      className="grid min-w-0 grid-cols-[fit-content(40%)_minmax(0,1fr)] items-center gap-x-3 gap-y-2.5 text-[13px]"
-    >
-      {labels.map((label, i) => (
-        // oxlint-disable-next-line react/no-array-index-key -- Labels are fixed once said, and may repeat.
-        <Fragment key={i}>
-          <span className="truncate text-muted-foreground">{label}</span>
-          <span className="flex min-w-0 flex-col gap-1">
-            {chart.series.map((s, j) => {
-              const value = s.values[i] ?? 0;
-              return (
-                // oxlint-disable-next-line react/no-array-index-key -- As above.
-                <span key={j} className="flex min-w-0 items-center gap-2">
-                  <span className="relative h-2.5 min-w-0 flex-1">
-                    <span
-                      className="absolute inset-y-0 rounded-full"
-                      style={{
-                        // From zero, rightward or (below it) leftward.
-                        left: `${Math.min(at(0), at(value))}%`,
-                        width: `${Math.abs(at(value) - at(0))}%`,
-                        minWidth: value !== 0 ? 3 : 0,
-                        background: SERIES[j],
-                      }}
-                    />
-                  </span>
-                  <span
-                    className="max-w-[45%] shrink-0 truncate text-right text-foreground tabular-nums"
-                    style={{ width: `${widest + 0.5}ch` }}
-                  >
-                    {shown[i]![j]}
-                  </span>
-                </span>
-              );
-            })}
-          </span>
-        </Fragment>
-      ))}
-    </div>
-  );
-}
-
-/**
- * A line chart: its lines stretch to the width while its words don't (they're
- * the page's own text, 12px on any screen), with the top of its scale, zero,
- * and its first, middle and last labels.
- */
-function Line(props: { readonly chart: AldoChartArtifact }) {
-  const { chart } = props;
-  const values = chart.series.flatMap((s) => s.values);
-  const { top, bottom } = chartScale(values);
-  const n = chart.labels.length;
-  const x = (i: number) => (n === 1 ? 50 : (i / (n - 1)) * 100);
-  const y = (v: number) => ((top - v) / (top - bottom)) * 100;
-  const ticks = [...new Set([0, Math.floor((n - 1) / 2), n - 1])];
-  return (
-    <div
-      role="img"
-      aria-label={chart.title}
-      className="flex min-w-0 flex-col gap-1.5 text-[12px] text-muted-foreground"
-    >
-      <div className="flex justify-between tabular-nums">
-        <span>{formatValue(top, chart.unit)}</span>
-      </div>
-      <svg
-        viewBox="0 0 100 100"
-        preserveAspectRatio="none"
-        aria-hidden
-        className="h-36 w-full overflow-visible sm:h-44"
-      >
-        {[0, 50, 100].map((at) => (
-          <line
-            key={at}
-            x1="0"
-            x2="100"
-            y1={at}
-            y2={at}
-            stroke="currentColor"
-            strokeOpacity={0.15}
-            vectorEffect="non-scaling-stroke"
-          />
-        ))}
-        {bottom < 0 ? (
-          <line
-            x1="0"
-            x2="100"
-            y1={y(0)}
-            y2={y(0)}
-            stroke="currentColor"
-            strokeOpacity={0.35}
-            vectorEffect="non-scaling-stroke"
-          />
-        ) : null}
-        {chart.series.map((s, j) => (
-          <polyline
-            // oxlint-disable-next-line react/no-array-index-key -- Series are fixed once said.
-            key={j}
-            points={s.values.map((v, i) => `${x(i)},${y(v)}`).join(" ")}
-            fill="none"
-            stroke={SERIES[j]}
-            strokeWidth={2}
-            strokeLinejoin="round"
-            strokeLinecap="round"
-            vectorEffect="non-scaling-stroke"
-          />
-        ))}
-      </svg>
-      <div className="flex justify-between tabular-nums">
-        <span>{formatValue(bottom, chart.unit)}</span>
-      </div>
-      <div className="relative h-4 min-w-0">
-        {ticks.map((i) => (
-          <span
-            key={i}
-            className="absolute top-0 max-w-[33%] truncate"
-            style={
-              i === 0
-                ? { left: 0 }
-                : i === n - 1
-                  ? { right: 0 }
-                  : { left: `${x(i)}%`, transform: "translateX(-50%)" }
-            }
-          >
-            {chart.labels[i]}
-          </span>
-        ))}
-      </div>
-    </div>
   );
 }
