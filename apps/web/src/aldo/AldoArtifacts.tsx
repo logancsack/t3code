@@ -582,3 +582,11 @@ function Chart(props: { readonly chart: AldoChartArtifact }) {
     </DataCard>
   );
 }
+
+/** The full chart/table, without another modal over a connected call. */
+export function AldoArtifactDetail(props: {
+  readonly artifact: AldoChartArtifact | AldoTableArtifact;
+}) {
+  const a = props.artifact;
+  return a.kind === "chart" ? <FullTable {...chartTable(a)} chart={a} /> : <FullTable {...a} />;
+}

@@ -27,6 +27,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { useIsMobile } from "../hooks/useMediaQuery";
 import { cn } from "~/lib/utils";
+import { AldoCallReferences } from "./AldoCallReferences";
 import { AldoVoiceMark } from "./AldoAssistant";
 import { ApprovalBody } from "./AldoApprovals";
 import { DecisionIcon } from "./AldoBrief";
@@ -252,6 +253,7 @@ function CallScreen(props: { readonly mobile: boolean }) {
           {lead}
           {tail ? <span className="text-muted-foreground"> {tail}</span> : null}
         </p>
+        <AldoCallReferences />
         {/* What went wrong (a blocked microphone): the call goes on, typed. */}
         {error ? (
           <p className="mt-2 max-w-md text-center text-destructive-foreground text-xs">{error}</p>
