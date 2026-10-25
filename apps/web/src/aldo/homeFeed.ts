@@ -323,6 +323,9 @@ async function readHome(): Promise<void> {
       saveHome(null);
       lastServerBody = null;
     }
+    // One that never reached Aldo (a phone just back from sleep, a network that changed)
+    // goes again at the next look rather than the next refresh.
+    if (!(cause instanceof AldoApiError)) fetchedAt = 0;
     useAldoHomeFeed.setState({ error: cause instanceof Error ? cause.message : String(cause) });
   } finally {
     inflight = false;
