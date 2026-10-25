@@ -289,7 +289,7 @@ function Page(props: { readonly file: AldoFileArtifact }) {
         onClick={() => openFile(file)}
         aria-label={`Open ${file.title}`}
         className={cn(
-          "relative block aspect-[4/3] w-full min-w-0 overflow-hidden rounded-[16px] border border-foreground/[0.07] bg-white sm:aspect-[16/10] dark:border-white/[0.08]",
+          "relative block aspect-[4/3] w-full min-w-0 overflow-hidden rounded-[16px] border border-foreground/[0.07] bg-white bg-clip-padding sm:aspect-[16/10] dark:border-white/[0.08]",
           FOCUS,
         )}
       >
