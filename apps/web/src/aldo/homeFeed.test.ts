@@ -373,3 +373,100 @@ it("an approval decided from one place is decided in every place at the tap, and
   await expect(refused).rejects.toThrow("right now");
   expect(status()).toBe("pending");
 });
+
+const ME = "a".repeat(32);
+const SOMEONE = "b".repeat(32);
+
+/** A browser with storage, signed in as `who` by Aldo's cookie (none: an Aldo that doesn't set it). */
+function device(who: string | null) {
+  const stored = new Map<string, string>();
+  vi.stubGlobal("localStorage", {
+    getItem: (key: string) => stored.get(key) ?? null,
+    setItem: (key: string, value: string) => void stored.set(key, value),
+    removeItem: (key: string) => void stored.delete(key),
+  });
+  const page = { cookie: who ? `theme=dark; aldo-who=${who}` : "theme=dark" };
+  vi.stubGlobal("document", page);
+  return {
+    stored,
+    signIn: (next: string | null) => (page.cookie = next ? `aldo-who=${next}` : ""),
+  };
+}
+
+it("the last read shows at the next open, before its own read, only to whoever it was kept for", async () => {
+  const { stored, signIn } = device(ME);
+  try {
+    const feed = await import("./homeFeed");
+    expect(feed.useAldoHomeFeed.getState()).toMatchObject({ home: null, saved: false });
+    fetchHome.mockImplementation(async () => home());
+    await feed.refreshAldoHome();
+    expect(JSON.parse(stored.get("aldo-home-copy")!)).toMatchObject({ who: ME, home: home() });
+
+    // The next open: the copy at once, then the read in its place.
+    vi.resetModules();
+    let answer: (value: AldoHome) => void = () => {};
+    fetchHome.mockImplementationOnce(() => new Promise((resolve) => (answer = resolve)));
+    const reopened = await import("./homeFeed");
+    expect(reopened.useAldoHomeFeed.getState()).toMatchObject({
+      home: home(),
+      supported: true,
+      saved: true,
+    });
+    expect(fetchHome).toHaveBeenCalledTimes(1);
+    const read = reopened.refreshAldoHome();
+    answer({ ...home(), conversations: [] });
+    await read;
+    expect(reopened.useAldoHomeFeed.getState()).toMatchObject({ saved: false, supported: true });
+    expect(reopened.useAldoHomeFeed.getState().home?.conversations).toEqual([]);
+    expect(JSON.parse(stored.get("aldo-home-copy")!).home.conversations).toEqual([]);
+
+    // Someone else signed in here, or an Aldo that doesn't say who: nothing kept shows.
+    for (const who of [SOMEONE, null]) {
+      signIn(who);
+      vi.resetModules();
+      expect((await import("./homeFeed")).useAldoHomeFeed.getState()).toMatchObject({
+        home: null,
+        saved: false,
+      });
+    }
+    // Kept over a day ago: not shown either.
+    signIn(ME);
+    vi.useFakeTimers({ now: Date.now() + 25 * 60 * 60_000, toFake: ["Date"] });
+    vi.resetModules();
+    expect((await import("./homeFeed")).useAldoHomeFeed.getState().home).toBeNull();
+  } finally {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("signing out, or an Aldo without the read, leaves nothing kept, and the copy goes from the page", async () => {
+  const { stored } = device(ME);
+  try {
+    const feed = await import("./homeFeed");
+    const { AldoApiError } = await import("./api");
+    fetchHome.mockImplementation(async () => home());
+    await feed.refreshAldoHome();
+    expect(stored.has("aldo-home-copy")).toBe(true);
+    fetchHome.mockRejectedValueOnce(
+      new AldoApiError(401, "Your Aldo session ended. Sign in again."),
+    );
+    await feed.refreshAldoHome();
+    expect(stored.has("aldo-home-copy")).toBe(false);
+
+    await feed.refreshAldoHome();
+    vi.resetModules();
+    const reopened = await import("./homeFeed");
+    expect(reopened.useAldoHomeFeed.getState().saved).toBe(true);
+    fetchHome.mockResolvedValueOnce(null);
+    await reopened.refreshAldoHome();
+    expect(reopened.useAldoHomeFeed.getState()).toMatchObject({
+      home: null,
+      supported: false,
+      saved: false,
+    });
+    expect(stored.has("aldo-home-copy")).toBe(false);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
