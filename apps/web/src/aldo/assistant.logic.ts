@@ -455,6 +455,7 @@ export function startWatchFor(
 
 /** What the user hears of a start: a line for the conversation, and what Aldo is asked to say. */
 export interface AldoStartNews {
+  readonly id?: string;
   readonly state: Exclude<AldoStartState["state"], "starting"> | "stopped";
   readonly label: string;
   readonly prompt: string;
@@ -501,7 +502,12 @@ export function startNews(
     };
   }
   const done = start.state === "failed";
-  if (start.state === "starting" || watch.told.includes(start.state)) return { news: null, done };
+  if (
+    start.state === "starting" ||
+    (start.state === "retrying" && (start.attempts ?? 0) < 2) ||
+    watch.told.includes(start.state)
+  )
+    return { news: null, done };
   const why = start.detail ? start.detail.replace(/[.\s]+$/, "") : null;
   switch (start.state) {
     case "failed":
@@ -527,8 +533,8 @@ export function startNews(
         done,
         news: {
           state: "retrying",
-          label: `Trouble starting ${title}${why ? `: ${why}` : ""}. Trying again.`,
-          prompt: `Tell the user briefly: the thread ${title} you started hit a problem starting${why ? ` (${why})` : ""}, and it's being tried again. You'll tell them if it fails.`,
+          label: `Starting ${title} is taking longer than usual${why === "Timed out" ? " (timed out)" : ""}. Retrying.`,
+          prompt: "",
         },
       };
   }

@@ -119,7 +119,7 @@ it("says what each other state is, and asks the user only for what waits on them
   );
   expect(card({ state: "starting" }).status).toBe("Starting its computer");
   expect(card({ state: "queued" }).body).toContain("runs 3 agents at once and 3 are busy");
-  expect(card({ state: "retrying" }).status).toBe("Hit an error, trying again");
+  expect(card({ state: "retrying" }).status).toBe("Taking longer than usual. Retrying.");
   expect(card({ state: "done", at: ago(3 * HOUR) })).toMatchObject({
     status: "Finished 3 h ago",
     dot: "done",

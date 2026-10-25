@@ -81,6 +81,8 @@ export interface AldoStartState {
    */
   readonly kind?: "start" | "message";
   readonly state: "starting" | "queued" | "retrying" | "failed";
+  /** Completed failed attempts, excluding the try in progress; older servers omit it. */
+  readonly attempts?: number;
   readonly detail?: string;
   /** When it was sent, or when it failed (ISO); an older Aldo leaves it out. */
   readonly at?: string;
