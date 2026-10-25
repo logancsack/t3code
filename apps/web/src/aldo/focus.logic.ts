@@ -42,6 +42,15 @@ export interface AldoFocusNow {
   readonly at: number;
 }
 
+/**
+ * A page someone is using: visible, focused and used lately. Its
+ * conversation's touch and its Home read say so, and Aldo holds back what
+ * they'd see there from their phone.
+ */
+export function aldoPageInUse(now: Pick<AldoFocusNow, "visible" | "focused" | "idleMs">): boolean {
+  return now.visible && now.focused && now.idleMs < ALDO_FOCUS_IDLE_MS;
+}
+
 function same(a: AldoFocusTarget, b: AldoFocusTarget): boolean {
   return a.environmentId === b.environmentId && a.thread === b.thread;
 }
@@ -56,10 +65,7 @@ export function aldoFocusReports(
   last: AldoFocusSent | null,
   now: AldoFocusNow,
 ): { readonly send: ReadonlyArray<AldoFocusReport>; readonly last: AldoFocusSent | null } {
-  const showing =
-    now.onScreen !== null && now.visible && now.focused && now.idleMs < ALDO_FOCUS_IDLE_MS
-      ? now.onScreen
-      : null;
+  const showing = now.onScreen !== null && aldoPageInUse(now) ? now.onScreen : null;
   const send: AldoFocusReport[] = [];
   let said = last;
   if (said?.focused && (showing === null || !same(said.to, showing))) {

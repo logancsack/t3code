@@ -32,6 +32,7 @@ import {
   type AldoHomeTarget,
 } from "./homeApi";
 import { requestAldoDirectoryRefresh, subscribeAldoEnvironments } from "./directory";
+import { aldoPageInUseNow } from "./pageUse";
 
 import { reconcileAldoWalkthrough } from "./walkthrough";
 
@@ -89,7 +90,9 @@ let homeFrom = 0;
 // side read it once each. A page shares each read with this browser's other
 // tabs, and one on screen with the home showing takes it as its own: its
 // next read waits a little longer than the reading tab's, so that one goes
-// on reading for all of them while it's seen.
+// on reading for all of them while it's seen. The page in use (only one has
+// focus) keeps reading for itself, so Aldo hears it's in use, and the others
+// take its reads.
 const SHARED_READS = "aldo-home";
 /** How much later than the reading tab's a tab that took its read reads next. */
 const SHARED_READ_SLACK_MS = 2_000;
@@ -116,14 +119,17 @@ function takeSharedRead(read: Partial<SharedRead> | null): void {
   const startedAt = read?.startedAt;
   if (watchers === 0 || document.visibilityState === "hidden") return;
   if (typeof startedAt !== "number" || startedAt <= homeFrom || read?.home === undefined) return;
+  // The page in use goes on reading for itself: its reads say it's in use
+  // (homeApi.ts), which a tab left alone can't say for it.
+  const ownReads = aldoPageInUseNow();
   // A read of this page's own under way answers for it. One begun after it
   // still puts this page's next read back, so tabs that read at the same time
   // fall out of step, and one goes on reading for both.
   if (inflight) {
-    if (startedAt > fetchedAt) fetchedAt = Date.now() + SHARED_READ_SLACK_MS;
+    if (!ownReads && startedAt > fetchedAt) fetchedAt = Date.now() + SHARED_READ_SLACK_MS;
     return;
   }
-  fetchedAt = Date.now() + SHARED_READ_SLACK_MS;
+  if (!ownReads) fetchedAt = Date.now() + SHARED_READ_SLACK_MS;
   homeFrom = startedAt;
   takeHome(read.home);
 }
@@ -230,7 +236,7 @@ async function readHome(): Promise<void> {
   const startedAt = Date.now();
   fetchedAt = startedAt;
   try {
-    const next = await fetchAldoHome();
+    const next = await fetchAldoHome({ active: aldoPageInUseNow() });
     // A poll begun before a persisted hide must not put the card back.
     if (revision !== dismissalRevision) again = true;
     else {
