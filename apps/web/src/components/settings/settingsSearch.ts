@@ -37,6 +37,8 @@ export type SettingsPath =
   | "/settings/account"
   | "/settings/organization"
   | "/settings/members"
+  | "/settings/running"
+  | "/settings/activity"
   | "/settings/agents"
   | "/settings/permissions"
   | "/settings/notifications"
@@ -144,6 +146,8 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/account": "Account",
   "/settings/organization": "Organization",
   "/settings/members": "Members",
+  "/settings/running": "Running now",
+  "/settings/activity": "Activity",
   "/settings/agents": "Models",
   "/settings/permissions": "Permissions",
   "/settings/notifications": "Notifications",
@@ -702,8 +706,16 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Members",
     to: "/settings/members",
     searchTerms: [
-      "members people team invite invites roles owner admin member remove step down resend revoke link",
+      "members people team invite invites roles owner admin member remove step down resend revoke link credits usage limit pause",
     ],
+    aldoCloudOnly: true,
+    requiresAldoOrganization: true,
+  },
+  {
+    id: "aldo-activity",
+    title: "Activity",
+    to: "/settings/activity",
+    searchTerms: ["activity log history audit who changed stopped paused invited removed"],
     aldoCloudOnly: true,
     requiresAldoOrganization: true,
   },
@@ -1243,6 +1255,8 @@ const SETTINGS_CATEGORY_SCOPES: Readonly<Record<SettingsPath, SettingsSearchScop
   "/settings/account": null,
   "/settings/organization": null,
   "/settings/members": null,
+  "/settings/running": null,
+  "/settings/activity": null,
   "/settings/agents": null,
   "/settings/permissions": null,
   "/settings/notifications": null,

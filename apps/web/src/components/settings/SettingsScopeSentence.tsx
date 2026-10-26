@@ -4,6 +4,7 @@ import { ChevronDownIcon, LayersIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { isAldoCloud } from "../../aldo/api";
+import { aldoSettingsParent } from "../../aldo/settings.logic";
 import type { SidebarProjectSnapshot } from "../../sidebarProjectGrouping";
 import { useEnvironments, type EnvironmentPresentation } from "../../state/environments";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
@@ -48,6 +49,8 @@ export const SETTINGS_DEVICE_ONLY_PATHS: ReadonlySet<string> = new Set([
         "/settings/account",
         "/settings/organization",
         "/settings/members",
+        "/settings/running",
+        "/settings/activity",
         "/settings/agents",
         "/settings/permissions",
         "/settings/notifications",
@@ -67,6 +70,14 @@ export const SETTINGS_DEVICE_ONLY_PATHS: ReadonlySet<string> = new Set([
     : []),
 ]);
 
+/** Whether a page ignores the scope: one of the above, or one under them (Aldo's member pages). */
+export function isSettingsDeviceOnlyPath(pathname: string): boolean {
+  return (
+    SETTINGS_DEVICE_ONLY_PATHS.has(pathname) ||
+    (isAldoCloud && aldoSettingsParent(pathname) !== null)
+  );
+}
+
 interface SettingsScopeMenuProps {
   readonly value: SettingsScopeSearch;
   readonly groups: readonly SidebarProjectSnapshot[];
@@ -85,7 +96,7 @@ export function SettingsScopeSentence() {
   const scope = useOptionalSettingsScope();
   const pathname = useLocation({ select: (location) => location.pathname });
   const { environments } = useEnvironments();
-  if (scope === null || SETTINGS_DEVICE_ONLY_PATHS.has(pathname)) return null;
+  if (scope === null || isSettingsDeviceOnlyPath(pathname)) return null;
   const props: SettingsScopeMenuProps = {
     value: scope.search,
     singleEnvironment: scope.singleEnvironment,

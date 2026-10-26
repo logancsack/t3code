@@ -3,6 +3,7 @@
 // with what the user may do about them. Aldo decides; this shows its words
 // when it refuses.
 
+import { useNavigate } from "@tanstack/react-router";
 import { CopyIcon, LockIcon, MailPlusIcon, RefreshCwIcon } from "lucide-react";
 import { useState, type FormEvent, type ReactNode } from "react";
 
@@ -24,6 +25,7 @@ import { Radio, RadioGroup } from "../components/ui/radio-group";
 import { toastManager } from "../components/ui/toast";
 import { cn } from "../lib/utils";
 import { aldoOrg } from "./accountApi";
+import { RunningDot } from "./AldoOrgAdminParts";
 import {
   ErrorLine,
   Initials,
@@ -54,6 +56,9 @@ import {
   type AldoOrgMember,
   type AldoOrgRole,
 } from "./organization.logic";
+import { aldoCredits, aldoRunningLine } from "./orgAdmin.logic";
+import { settingsOrgUsage } from "./settingsData";
+import { useSettingsResource } from "./settingsResource";
 
 type Sheet =
   | { readonly kind: "invite" }
@@ -68,10 +73,17 @@ const AN: Record<AldoOrgRole, string> = {
 
 export function AldoMembersPage() {
   const { org, fallback } = useLoadedOrg();
+  const navigate = useNavigate();
   const [sheet, setSheet] = useState<Sheet | null>(null);
+  // Members' month, for owners and admins; without it (an older Aldo), rows open as before.
+  const { data: usage } = useSettingsResource(
+    settingsOrgUsage,
+    Boolean(org && aldoOrgManages(org)),
+  );
   if (!org) return fallback;
 
   const manages = aldoOrgManages(org);
+  const month = manages ? usage : null;
   const close = () => setSheet(null);
   const member = sheet?.kind === "member" ? org.members.find((m) => m.id === sheet.id) : null;
   const invite =
@@ -80,6 +92,16 @@ export function AldoMembersPage() {
 
   return (
     <>
+      {month ? (
+        <SettingsSection title="Running now" hideTitle>
+          <OpenRow
+            leading={month.running.machines ? <RunningDot /> : undefined}
+            title={aldoRunningLine(month.running)}
+            onOpen={() => void navigate({ to: "/settings/running" })}
+          />
+        </SettingsSection>
+      ) : null}
+
       <SettingsSection
         id="aldo-members"
         title={`People · ${org.members.length}`}
@@ -91,28 +113,63 @@ export function AldoMembersPage() {
           ) : null
         }
       >
-        {org.members.map((m) => (
-          <OpenRow
-            key={m.id}
-            leading={<Initials of={m.email} />}
-            title={
-              <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                <span className="[overflow-wrap:anywhere]">{m.email}</span>
-                {m.role === "member" ? null : (
-                  <Badge variant="outline" size="sm" className="font-normal text-muted-foreground">
-                    {ALDO_ORG_ROLE_LABELS[m.role]}
-                  </Badge>
-                )}
-              </span>
-            }
-            description={
-              m.id === org.you
-                ? `You · joined ${aldoOrgDay(m.joinedAt)}`
-                : `Joined ${aldoOrgDay(m.joinedAt)}`
-            }
-            onOpen={opensFor(org, m) ? () => setSheet({ kind: "member", id: m.id }) : null}
-          />
-        ))}
+        {org.members.map((m) => {
+          const used = month?.members.find((u) => u.id === m.id);
+          return (
+            <OpenRow
+              key={m.id}
+              leading={<Initials of={m.email} />}
+              title={
+                <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                  <span className="[overflow-wrap:anywhere]">{m.email}</span>
+                  {m.role === "member" ? null : (
+                    <Badge
+                      variant="outline"
+                      size="sm"
+                      className="font-normal text-muted-foreground"
+                    >
+                      {ALDO_ORG_ROLE_LABELS[m.role]}
+                    </Badge>
+                  )}
+                  {used?.paused ? (
+                    <Badge variant="warning" size="sm">
+                      Paused
+                    </Badge>
+                  ) : null}
+                </span>
+              }
+              description={
+                m.id === org.you
+                  ? `You · joined ${aldoOrgDay(m.joinedAt)}`
+                  : `Joined ${aldoOrgDay(m.joinedAt)}`
+              }
+              value={
+                used ? (
+                  <span className="inline-flex items-center gap-1.5 tabular-nums">
+                    {used.running ? (
+                      <>
+                        <RunningDot />
+                        <span className="sr-only">Running, </span>
+                      </>
+                    ) : null}
+                    {aldoCredits(used.credits)}
+                  </span>
+                ) : undefined
+              }
+              onOpen={
+                month
+                  ? () =>
+                      void navigate({
+                        to: "/settings/members/$memberId",
+                        params: { memberId: m.id },
+                      })
+                  : opensFor(org, m)
+                    ? () => setSheet({ kind: "member", id: m.id })
+                    : null
+              }
+            />
+          );
+        })}
       </SettingsSection>
 
       {manages && org.members.length <= 1 && !org.invites?.length ? (
@@ -165,7 +222,7 @@ export function AldoMembersPage() {
 }
 
 /** Whether a person's row opens: others the user may manage, and the user's own while they've a role to step down from. */
-function opensFor(org: AldoOrg, member: AldoOrgMember): boolean {
+export function opensFor(org: AldoOrg, member: AldoOrgMember): boolean {
   if (member.id !== org.you) return aldoOrgCanManage(org, member);
   const own = aldoOrgOwnPlace(org);
   return !own.delete && (own.stepDownTo !== null || own.blocked !== null);
@@ -284,7 +341,9 @@ function InviteSheet({ org, onClose }: { org: AldoOrg; onClose: () => void }) {
       <DialogPopup>
         <form onSubmit={submit} className="contents">
           <DialogHeader>
-            <DialogTitle className="[overflow-wrap:anywhere]">Invite to {org.name}</DialogTitle>
+            <DialogTitle className="pe-8 [overflow-wrap:anywhere]">
+              Invite to {org.name}
+            </DialogTitle>
           </DialogHeader>
           <DialogPanel>
             <Input
@@ -323,7 +382,13 @@ function InviteSheet({ org, onClose }: { org: AldoOrg; onClose: () => void }) {
 }
 
 /** Someone else: their role, and removing them. */
-function MemberSheet(props: { org: AldoOrg; member: AldoOrgMember; onClose: () => void }) {
+export function MemberSheet(props: {
+  org: AldoOrg;
+  member: AldoOrgMember;
+  onClose: () => void;
+  /** After they're removed, where nothing of theirs is left to show. */
+  onRemoved?: () => void;
+}) {
   const { org, member } = props;
   const [role, setRole] = useState(member.role);
   const [removing, setRemoving] = useState(false);
@@ -335,12 +400,13 @@ function MemberSheet(props: { org: AldoOrg; member: AldoOrgMember; onClose: () =
       if (!answer) return;
       toastManager.add({ type: "success", title: `Removed ${member.email}` });
       props.onClose();
+      props.onRemoved?.();
     });
   return (
     <Dialog open onOpenChange={(open) => !open && !busy && props.onClose()}>
       <DialogPopup>
         <DialogHeader>
-          <DialogTitle className="[overflow-wrap:anywhere]">{member.email}</DialogTitle>
+          <DialogTitle className="pe-8 [overflow-wrap:anywhere]">{member.email}</DialogTitle>
           <DialogDescription>
             {ALDO_ORG_ROLE_LABELS[member.role]} · joined {aldoOrgDay(member.joinedAt)}
           </DialogDescription>
@@ -393,7 +459,7 @@ function MemberSheet(props: { org: AldoOrg; member: AldoOrgMember; onClose: () =
 }
 
 /** The user's own role: stepping down, or why the last owner can't. */
-function YourRoleSheet({ org, onClose }: { org: AldoOrg; onClose: () => void }) {
+export function YourRoleSheet({ org, onClose }: { org: AldoOrg; onClose: () => void }) {
   const own = aldoOrgOwnPlace(org);
   const lower = own.blocked ? [] : ALDO_ORG_ROLES.slice(0, ALDO_ORG_ROLES.indexOf(org.role));
   const [role, setRole] = useState(org.role);
@@ -421,7 +487,7 @@ function YourRoleSheet({ org, onClose }: { org: AldoOrg; onClose: () => void }) 
     <Dialog open onOpenChange={(open) => !open && !busy && onClose()}>
       <DialogPopup>
         <DialogHeader>
-          <DialogTitle>Your role</DialogTitle>
+          <DialogTitle className="pe-8">Your role</DialogTitle>
         </DialogHeader>
         <DialogPanel>
           <RoleChoices
@@ -514,7 +580,9 @@ function PendingSheet(props: { org: AldoOrg; invite: AldoOrgInvite; onClose: () 
     <Dialog open onOpenChange={(open) => !open && !busy && props.onClose()}>
       <DialogPopup>
         <DialogHeader>
-          <DialogTitle className="[overflow-wrap:anywhere]">Invite for {invite.email}</DialogTitle>
+          <DialogTitle className="pe-8 [overflow-wrap:anywhere]">
+            Invite for {invite.email}
+          </DialogTitle>
         </DialogHeader>
         <DialogPanel>
           {revoking ? (

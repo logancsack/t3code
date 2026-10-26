@@ -12,6 +12,15 @@ import {
   type AldoMomentEmails,
 } from "./momentEmails.logic";
 import { parseAldoOrg, type AldoOrg, type AldoOrgRole } from "./organization.logic";
+import {
+  parseAldoActivity,
+  parseAldoMemberPage,
+  parseAldoOrgMachines,
+  parseAldoOrgNotes,
+  parseAldoOrgUsage,
+  parseAldoThreadDays,
+  type AldoMemberPage,
+} from "./orgAdmin.logic";
 
 export type AldoAccountKind = "github" | "claude" | "codex" | "grok" | "muse";
 
@@ -908,4 +917,64 @@ export const aldoOrg = {
   setRole: (id: string, role: AldoOrgRole) => orgChange(memberPath(id), "PATCH", { role }),
   /** Removes someone, or the user themselves: leaving. */
   remove: (id: string) => orgChange(memberPath(id), "DELETE"),
+};
+
+/** A read of members' work; null from an Aldo without it (404) or an answer that isn't one. */
+async function orgRead<T>(path: string, parse: (body: unknown) => T | null): Promise<T | null> {
+  try {
+    return parse(await api<unknown>(path));
+  } catch (cause) {
+    if (cause instanceof AldoApiError && cause.status === 404) return null;
+    throw cause;
+  }
+}
+
+const memberChange = (id: string, body: unknown) =>
+  api<unknown>(memberPath(id), { method: "PATCH", body: JSON.stringify(body) }).then(
+    (answer): AldoMemberPage => {
+      const page = parseAldoMemberPage(answer);
+      if (!page) throw new Error("Aldo didn't say how it went. Reload to see.");
+      return page;
+    },
+  );
+
+const stopped = (answer: { stopped?: unknown }) =>
+  typeof answer.stopped === "number" ? answer.stopped : 0;
+
+/**
+ * Owners' and admins' view of members' work, and what they do about it
+ * (orgAdmin.logic.ts); a member reads only their own Activity and notes.
+ */
+export const aldoOrgAdmin = {
+  usage: () => orgRead("/api/org/usage", parseAldoOrgUsage),
+  machines: () => orgRead("/api/org/machines", parseAldoOrgMachines),
+  /** A member's month; null once they're not in the organization, as for an Aldo without these pages. */
+  member: (id: string) => orgRead(memberPath(id), parseAldoMemberPage),
+  thread: (id: string) =>
+    orgRead(`/api/org/threads/${encodeURIComponent(id)}`, parseAldoThreadDays),
+  activity: (
+    options: { readonly person?: string | null; readonly before?: string | null } = {},
+  ) => {
+    const query = new URLSearchParams();
+    if (options.person) query.set("person", options.person);
+    if (options.before) query.set("before", options.before);
+    const search = query.toString();
+    return orgRead(`/api/org/activity${search ? `?${search}` : ""}`, parseAldoActivity);
+  },
+  notes: () => orgRead("/api/org/notes", parseAldoOrgNotes),
+  /** Stops an organization thread's machines, with a note to its member; how many threads stopped. */
+  stop: (threadId: string, note: string) =>
+    api<{ stopped?: unknown }>(`/api/org/machines/${encodeURIComponent(threadId)}/stop`, {
+      method: "POST",
+      body: JSON.stringify({ note }),
+    }).then(stopped),
+  /** Stops every machine the user may stop, or only one member's. */
+  stopAll: (input: { readonly note?: string; readonly member?: string }) =>
+    api<{ stopped?: unknown }>("/api/org/machines/stop-all", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }).then(stopped),
+  /** Their extra usage limit in cents, or null for the organization's default. */
+  setLimit: (id: string, cents: number | null) => memberChange(id, { limitCents: cents }),
+  setPaused: (id: string, paused: boolean) => memberChange(id, { paused }),
 };
