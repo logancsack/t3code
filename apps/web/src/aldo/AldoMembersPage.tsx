@@ -62,6 +62,7 @@ import {
 import { aldoCredits, aldoRunningLine } from "./orgAdmin.logic";
 import {
   aldoApproveBlocked,
+  aldoRequestAlready,
   aldoRequestLine,
   type AldoJoining,
   type AldoOrgRequest,
@@ -713,16 +714,19 @@ function RequestSheet(props: {
 }) {
   const { request } = props;
   const { busy, error, run } = useJoiningChange();
-  const blocked = aldoApproveBlocked(props.joining);
+  const already = aldoRequestAlready(props.org, request.email);
+  const blocked = aldoApproveBlocked(props.joining, already);
   const decide = (approve: boolean) =>
     void run(() => aldoOrgJoining.decide(request.id, approve)).then((answer) => {
       if (!answer) return;
       // Approving sends an invite, which holds a seat.
       if (approve) void settingsOrg.refresh().catch(() => undefined);
       toastManager.add(
-        approve
-          ? { type: "success", title: "Invite sent", description: request.email }
-          : { type: "success", title: "Declined", description: `We told ${request.email}.` },
+        !approve
+          ? { type: "success", title: "Declined", description: `We told ${request.email}.` }
+          : already
+            ? { type: "success", title: "Approved", description: request.email }
+            : { type: "success", title: "Invite sent", description: request.email },
       );
       props.onClose();
     });
@@ -732,8 +736,12 @@ function RequestSheet(props: {
         <DialogHeader>
           <DialogTitle className="pe-8 [overflow-wrap:anywhere]">{request.email}</DialogTitle>
           <DialogDescription>
-            {aldoRequestLine(request)}. Approving sends an invite to that address, as a member of{" "}
-            {props.org.name}.
+            {aldoRequestLine(request)}.{" "}
+            {already === "member"
+              ? `They’re in ${props.org.name} already, so approving just closes this.`
+              : already === "invited"
+                ? "They have an open invite already, so approving just closes this."
+                : `Approving sends an invite to that address, as a member of ${props.org.name}.`}
           </DialogDescription>
         </DialogHeader>
         <DialogPanel className="space-y-3">

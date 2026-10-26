@@ -38,11 +38,14 @@ import {
   aldoDomainLine,
   aldoDomainStatus,
   aldoDomainSteps,
+  aldoCheckedJustNow,
   aldoFoundLine,
   aldoLinkExpires,
   aldoLinkFor,
+  aldoLinkStuck,
   aldoLinkSummary,
   aldoLinkUsed,
+  aldoOnlyDomains,
   aldoRecordHost,
   aldoVerifiedDomains,
   type AldoJoining,
@@ -161,8 +164,8 @@ export function AldoJoiningPage() {
 
       <p className="px-1 text-muted-foreground text-xs">
         {verified.length
-          ? `Anyone else, anywhere, needs an invite. New accounts at your domains can only be made through ${org.name}.`
-          : "Until a domain is verified, people need an invite."}
+          ? `Everyone else needs an invite or the invite link. New accounts at your domains can only be made through ${org.name}.`
+          : "Until a domain is verified, people need an invite or the invite link."}
       </p>
 
       {sheet?.kind === "add" ? (
@@ -334,15 +337,28 @@ function DomainSheet(props: { org: AldoOrg; domain: AldoOrgDomain; onClose: () =
   const { domain } = props;
   const [removing, setRemoving] = useState(false);
   const { busy, error, run } = useJoiningChange();
-  const check = () =>
+  const check = () => {
+    // Aldo just looked (on adding it, or a moment ago): say what it saw rather than ask again too soon.
+    if (aldoCheckedJustNow(domain)) {
+      toastManager.add({
+        type: domain.state === "verified" ? "success" : "info",
+        title: aldoFoundLine(
+          domain.domain,
+          domain.state === "verified" ? "found" : "missing",
+          domain,
+        ),
+      });
+      return;
+    }
     void run(() => aldoOrgJoining.checkDomain(domain.id)).then((checked) => {
       if (!checked) return;
       const now = checked.joining.domains.find((d) => d.id === domain.id);
       toastManager.add({
         type: checked.found === "found" && now?.state === "verified" ? "success" : "info",
-        title: aldoFoundLine(domain.domain, checked.found, now?.state ?? domain.state),
+        title: aldoFoundLine(domain.domain, checked.found, now),
       });
     });
+  };
   const send = () => {
     const text = aldoDomainSteps(props.org.name, domain);
     if (typeof navigator.share === "function") {
@@ -371,7 +387,13 @@ function DomainSheet(props: { org: AldoOrg; domain: AldoOrgDomain; onClose: () =
               : aldoDomainStatus(domain)}
           </DialogDescription>
         </DialogHeader>
-        {removing ? null : (
+        {removing ? (
+          error ? (
+            <DialogPanel>
+              <ErrorLine error={error} />
+            </DialogPanel>
+          ) : null
+        ) : (
           <DialogPanel className="space-y-3">
             <div className="rounded-xl border px-3">
               <CopyField label="Type" value="TXT" />
@@ -443,7 +465,7 @@ function DaysChoice(props: {
       {ALDO_LINK_DAYS.map((days) => (
         <label
           key={days}
-          className="flex min-h-11 flex-1 cursor-pointer items-center justify-center gap-2 rounded-lg border px-3 text-sm"
+          className="flex min-h-11 flex-1 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border px-2 text-sm"
         >
           <Radio value={String(days)} />
           {days === 1 ? "1 day" : `${days} days`}
@@ -474,6 +496,7 @@ function LinkSheet(props: { org: AldoOrg; joining: AldoJoining; onClose: () => v
       props.onClose();
     });
   const full = joining.free <= 0;
+  const stuck = aldoLinkStuck(link, verified);
   const seats = full ? (
     <p className="text-warning-foreground text-xs">
       No free seats. Until there are, people who open the link are told to wait, and their ask goes
@@ -499,9 +522,7 @@ function LinkSheet(props: { org: AldoOrg; joining: AldoJoining; onClose: () => v
             </div>
             <div className="flex items-start justify-between gap-4">
               <div className="space-y-0.5">
-                <p className="font-medium text-sm">
-                  {aldoLinkFor({ anyAddress: false }, verified)}
-                </p>
+                <p className="font-medium text-sm">{aldoOnlyDomains(verified)}</p>
                 <p className="text-muted-foreground text-xs">
                   {verified.length
                     ? "Off lets any address in, for contractors."
@@ -552,7 +573,13 @@ function LinkSheet(props: { org: AldoOrg; joining: AldoJoining; onClose: () => v
                 : "Whoever opens it gets an invite to their own address, and is in once they confirm it by email."}
           </DialogDescription>
         </DialogHeader>
-        {confirming ? null : (
+        {confirming ? (
+          error ? (
+            <DialogPanel>
+              <ErrorLine error={error} />
+            </DialogPanel>
+          ) : null
+        ) : (
           <DialogPanel className="space-y-4">
             <div className="rounded-xl border px-3">
               <CopyField label="Link" value={link.url} />
@@ -576,26 +603,32 @@ function LinkSheet(props: { org: AldoOrg; joining: AldoJoining; onClose: () => v
             </div>
             <div className="flex items-start justify-between gap-4">
               <div className="space-y-0.5">
-                <p className="font-medium text-sm">
-                  {aldoLinkFor({ anyAddress: false }, verified)}
-                </p>
-                <p className="text-muted-foreground text-xs">
-                  {verified.length
-                    ? "Off lets any address in, for contractors."
-                    : "No domain is verified, so it works for any address."}
-                </p>
+                <p className="font-medium text-sm">{aldoOnlyDomains(verified)}</p>
+                {stuck ? (
+                  <p className="text-warning-foreground text-xs">
+                    No domain is verified now, so the link works for nobody. Turn this off to let
+                    any address in, or verify a domain.
+                  </p>
+                ) : (
+                  <p className="text-muted-foreground text-xs">
+                    {verified.length
+                      ? "Off lets any address in, for contractors."
+                      : "No domain is verified, so it works for any address."}
+                  </p>
+                )}
               </div>
               <Switch
                 aria-label="Only addresses at your domains"
-                checked={!link.anyAddress && verified.length > 0}
-                disabled={busy || !verified.length}
+                checked={!link.anyAddress}
+                // Limiting it to your domains needs one verified; opening it never does.
+                disabled={busy || (link.anyAddress && !verified.length)}
                 onCheckedChange={(checked) => change({ anyAddress: !checked })}
               />
             </div>
             <dl className="rounded-xl border px-3 text-sm">
               <div className="flex min-h-11 items-center justify-between gap-4 py-2.5">
-                <dt>Joins it gives</dt>
-                <dd className="text-muted-foreground">Member · no team</dd>
+                <dt>People join as</dt>
+                <dd className="text-muted-foreground">Members</dd>
               </div>
               <div className="flex min-h-11 items-center justify-between gap-4 border-t py-2.5">
                 <dt>Used by</dt>

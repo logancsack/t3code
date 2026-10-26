@@ -6,7 +6,7 @@
  * (src/lib/org-doors.ts in Aldo) decides; this says what it answered.
  */
 
-import { aldoOrgDay } from "./organization.logic";
+import { aldoOrgDay, type AldoOrg } from "./organization.logic";
 import { aldoWhen } from "./orgAdmin.logic";
 
 export type AldoJoinPolicy = "invite" | "ask" | "join";
@@ -214,9 +214,23 @@ export function aldoDomainStatus(domain: AldoOrgDomain, now = Date.now()): strin
   return `Add this record where ${domain.domain}’s DNS is managed. It can take a few minutes to show up.${until} ${checked}`;
 }
 
-/** What Check now found, for its toast. */
-export function aldoFoundLine(domain: string, found: AldoDomainFound, state: AldoDomainState) {
-  if (found === "found" && state === "verified") return `${domain} is verified`;
+/** Check now runs at most this often for a domain; Aldo answers sooner ones with 429. */
+export const ALDO_CHECK_NOW_SECONDS = 30;
+
+/** Whether Aldo looked the record up too recently for Check now to look again. */
+export function aldoCheckedJustNow(domain: AldoOrgDomain, now = Date.now()): boolean {
+  const at = domain.checkedAt ? Date.parse(domain.checkedAt) : Number.NaN;
+  return Number.isFinite(at) && now - at < ALDO_CHECK_NOW_SECONDS * 1000;
+}
+
+/** What Check now found, for its toast, from the domain as it is after. */
+export function aldoFoundLine(
+  name: string,
+  found: AldoDomainFound,
+  domain: AldoOrgDomain | undefined,
+) {
+  if (domain?.taken) return `Another organization verified ${name} first`;
+  if (domain?.state === "verified") return `${name} is verified`;
   if (found === "unknown") return "DNS didn’t answer. Aldo will look again in 10 minutes.";
   return "No record yet. Aldo will look again in 10 minutes.";
 }
@@ -246,11 +260,23 @@ export function aldoLinkExpires(link: AldoOrgLink, now = Date.now()): string {
   return days <= 1 ? `${day}, within a day` : `${day}, in ${days} days`;
 }
 
-/** Whom it works for: "Only linden.co", "Only linden.co and lp.com", or anyone. */
-export function aldoLinkFor(link: Pick<AldoOrgLink, "anyAddress">, domains: ReadonlyArray<string>) {
-  if (link.anyAddress || !domains.length) return "Any address";
+/** The domains a link can be limited to: "Only linden.co", "Only linden.co and lp.com". */
+export function aldoOnlyDomains(domains: ReadonlyArray<string>): string {
+  if (!domains.length) return "Only your domains";
   if (domains.length === 1) return `Only ${domains[0]}`;
   return `Only ${domains.slice(0, -1).join(", ")} and ${domains.at(-1)}`;
+}
+
+/** Whether the link is on for the org's domains while none is verified: it then works for nobody. */
+export function aldoLinkStuck(link: AldoOrgLink | null, domains: ReadonlyArray<string>): boolean {
+  return link !== null && !link.anyAddress && !domains.length;
+}
+
+/** Whom it works for: "Only linden.co", any address, or nobody while its domains are unverified. */
+export function aldoLinkFor(link: Pick<AldoOrgLink, "anyAddress">, domains: ReadonlyArray<string>) {
+  if (link.anyAddress) return "Any address";
+  if (!domains.length) return "Nobody until a domain is verified";
+  return aldoOnlyDomains(domains);
 }
 
 /** How much it's been used. */
@@ -267,9 +293,20 @@ export function aldoRequestLine(request: AldoOrgRequest, now = Date.now()): stri
   return `Asked ${at}`;
 }
 
-/** Why approving can't go now, or null: it needs a free seat. */
-export function aldoApproveBlocked(joining: AldoJoining): string | null {
-  return joining.free > 0
+/** Whether a request's address is in the org already, or has an open invite: approving then sends nothing. */
+export function aldoRequestAlready(org: AldoOrg, email: string): "member" | "invited" | null {
+  const address = email.toLowerCase();
+  if (org.members.some((m) => m.email.toLowerCase() === address)) return "member";
+  if (org.invites?.some((i) => !i.expired && i.email.toLowerCase() === address)) return "invited";
+  return null;
+}
+
+/** Why approving can't go now, or null: an invite needs a free seat, unless there's nothing to send. */
+export function aldoApproveBlocked(
+  joining: AldoJoining,
+  already: "member" | "invited" | null = null,
+): string | null {
+  return already || joining.free > 0
     ? null
     : "No free seats. Revoke an invite or ask Aldo for more seats, then approve.";
 }

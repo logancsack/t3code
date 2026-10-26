@@ -116,7 +116,7 @@ export const ALDO_SETTINGS_PAGES: Readonly<
   "/settings/joining": {
     title: "Who can join",
     intro:
-      "The domains your organization proves it owns, what people at them can do, and its invite link. Anyone else needs an invite.",
+      "The domains your organization proves it owns, what people at them can do, and its invite link.",
   },
   "/settings/agents": {
     title: "Models",

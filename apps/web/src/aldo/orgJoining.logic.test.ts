@@ -8,7 +8,11 @@ import {
   aldoFoundLine,
   aldoJoiningSummary,
   aldoLinkExpires,
+  aldoCheckedJustNow,
   aldoLinkFor,
+  aldoLinkStuck,
+  aldoOnlyDomains,
+  aldoRequestAlready,
   aldoLinkSummary,
   aldoLinkUsed,
   aldoRecordHost,
@@ -142,12 +146,23 @@ describe("who can join", () => {
     );
   });
 
+  it("doesn't ask Aldo to look again within half a minute of its last look", () => {
+    expect(aldoCheckedJustNow(domain({ checkedAt: "2026-10-26T14:59:45.000Z" }), now)).toBe(true);
+    expect(aldoCheckedJustNow(domain({ checkedAt: "2026-10-26T14:59:00.000Z" }), now)).toBe(false);
+    expect(aldoCheckedJustNow(domain({ checkedAt: null }), now)).toBe(false);
+  });
+
   it("says what Check now found", () => {
-    expect(aldoFoundLine("linden.co", "found", "verified")).toBe("linden.co is verified");
-    expect(aldoFoundLine("linden.co", "missing", "waiting")).toBe(
+    const waiting = domain({ state: "waiting", verifiedAt: null });
+    expect(aldoFoundLine("linden.co", "found", domain())).toBe("linden.co is verified");
+    expect(aldoFoundLine("linden.co", "missing", waiting)).toBe(
       "No record yet. Aldo will look again in 10 minutes.",
     );
-    expect(aldoFoundLine("linden.co", "unknown", "waiting")).toBe(
+    // The record is there, but another organization verified the domain first.
+    expect(aldoFoundLine("linden.co", "found", { ...waiting, taken: true })).toBe(
+      "Another organization verified linden.co first",
+    );
+    expect(aldoFoundLine("linden.co", "unknown", waiting)).toBe(
       "DNS didn’t answer. Aldo will look again in 10 minutes.",
     );
   });
@@ -173,6 +188,14 @@ describe("who can join", () => {
       "Only linden.co, lp.com and lp.co.uk",
     );
     expect(aldoLinkFor({ anyAddress: true }, ["linden.co"])).toBe("Any address");
+    expect(aldoLinkFor({ anyAddress: true }, [])).toBe("Any address");
+    // For the org's domains with none verified (removed, or its record gone), it lets nobody in.
+    expect(aldoLinkFor(link, [])).toBe("Nobody until a domain is verified");
+    expect(aldoLinkStuck(link, [])).toBe(true);
+    expect(aldoLinkStuck({ ...link, anyAddress: true }, [])).toBe(false);
+    expect(aldoLinkStuck(link, ["linden.co"])).toBe(false);
+    expect(aldoLinkStuck(null, [])).toBe(false);
+    expect(aldoOnlyDomains([])).toBe("Only your domains");
     expect(aldoLinkUsed(link)).toBe("2 people since Oct 25");
     expect(aldoLinkUsed({ ...link, used: 1 })).toBe("1 person since Oct 25");
     expect(aldoLinkUsed({ ...link, used: 0 })).toBe("Nobody yet");
@@ -188,6 +211,46 @@ describe("who can join", () => {
       aldoRequestLine({ ...request!, via: "expired", createdAt: "2026-10-17T12:00:00.000Z" }, now),
     ).toBe("Asked on Oct 17, when their invite had expired");
     expect(aldoApproveBlocked(joining())).toBeNull();
+    // Someone in already, or invited, takes no new seat: approving just closes their request.
+    expect(aldoApproveBlocked(joining({ free: 0 }), "invited")).toBeNull();
+    const org = {
+      id: "o1",
+      name: "Linden Partners",
+      seats: 3,
+      used: 3,
+      you: "me",
+      role: "admin" as const,
+      members: [
+        { id: "u1", email: "Ira@linden.co", role: "member" as const, joinedAt: request!.createdAt },
+      ],
+      invites: [
+        {
+          id: "i1",
+          email: "jo@linden.co",
+          role: "member" as const,
+          expiresAt: request!.createdAt,
+          sentAt: request!.createdAt,
+          sentBy: null,
+          via: null,
+          expired: false,
+        },
+        {
+          id: "i2",
+          email: "kim@linden.co",
+          role: "member" as const,
+          expiresAt: request!.createdAt,
+          sentAt: request!.createdAt,
+          sentBy: null,
+          via: null,
+          expired: true,
+        },
+      ],
+      plan: null,
+    };
+    expect(aldoRequestAlready(org, "ira@linden.co")).toBe("member");
+    expect(aldoRequestAlready(org, "jo@linden.co")).toBe("invited");
+    expect(aldoRequestAlready(org, "kim@linden.co")).toBeNull();
+    expect(aldoRequestAlready({ ...org, invites: null }, "jo@linden.co")).toBeNull();
     expect(aldoApproveBlocked(joining({ free: 0 }))).toMatch(/^No free seats\./);
   });
 });

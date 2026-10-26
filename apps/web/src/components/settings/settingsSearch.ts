@@ -80,6 +80,8 @@ export interface SettingsSearchItem {
   readonly requiresAldoPhone?: boolean;
   /** Its page shows only for someone in an organization (aldo/organization.logic.ts). */
   readonly requiresAldoOrganization?: boolean;
+  /** Its page shows only to an organization's owners and admins, on an Aldo that has it (aldo/orgJoining.logic.ts). */
+  readonly requiresAldoJoining?: boolean;
   /** Its row renders only once Aldo says it has agent inboxes. */
   readonly requiresAldoAgentInbox?: boolean;
   /** Its row renders only on an Aldo that keeps the welcome's answer (aldo/onboarding.ts). */
@@ -111,6 +113,7 @@ export interface SettingsSearchAvailability {
   readonly hasThreadAutoSettlement: boolean;
   readonly hasAldoPhoneApi?: boolean;
   readonly hasAldoOrganization?: boolean;
+  readonly hasAldoJoining?: boolean;
   readonly hasAldoAgentInbox?: boolean;
   readonly hasAldoOnboarding?: boolean;
   /** The rules Aldo's policy takes, once it's said (Settings → Permissions). */
@@ -721,7 +724,7 @@ export const SETTINGS_SEARCH_ITEMS = [
       "who can join domain domains verify dns txt record invite link share link requests ask join right away invite only",
     ],
     aldoCloudOnly: true,
-    requiresAldoOrganization: true,
+    requiresAldoJoining: true,
   },
   {
     id: "aldo-activity",
@@ -1398,6 +1401,7 @@ export function filterAvailableSettingsSearchItems(
         (!item.requiresThreadAutoSettlement || availability.hasThreadAutoSettlement) &&
         (!item.requiresAldoPhone || availability.hasAldoPhoneApi === true) &&
         (!item.requiresAldoOrganization || availability.hasAldoOrganization === true) &&
+        (!item.requiresAldoJoining || availability.hasAldoJoining === true) &&
         (!item.requiresAldoAgentInbox || availability.hasAldoAgentInbox === true) &&
         (!item.requiresAldoOnboarding || availability.hasAldoOnboarding === true) &&
         (!item.requiresAldoPolicyRule ||
