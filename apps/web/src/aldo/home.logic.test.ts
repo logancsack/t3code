@@ -82,6 +82,15 @@ describe("boardFor", () => {
   });
 });
 
+describe("isStuck", () => {
+  it("counts from when the machine reported, not from a rename or a pin", () => {
+    expect(isStuck(conversation({ at: ago(5), stateAt: ago(90) }), NOW)).toBe(true);
+    expect(isStuck(conversation({ at: ago(90), stateAt: ago(5) }), NOW)).toBe(false);
+    expect(isStuck(conversation({ at: ago(90) }), NOW)).toBe(true);
+    expect(isStuck(conversation({ state: "waiting", at: ago(90) }), NOW)).toBe(false);
+  });
+});
+
 describe("capacityLines", () => {
   it("warns at the plan's limit and when credits run low", () => {
     const lines = capacityLines(
