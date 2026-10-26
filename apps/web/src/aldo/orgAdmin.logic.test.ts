@@ -293,10 +293,30 @@ describe("their words", () => {
     expect(aldoMonthLabel({ start: "nope", end: null })).toBe("This month");
   });
 
-  it("offers the usual limits with the organization's default among them", () => {
-    expect(aldoLimitChoices(2000)).toEqual([0, 1000, 2000, 5000, 10000]);
-    expect(aldoLimitChoices(3000)).toEqual([0, 1000, 2000, 3000, 5000, 10000]);
-    expect(aldoLimitChoices(null)).toEqual([0, 1000, 2000, 5000, 10000]);
+  it("offers the usual limits beside the organization's default, and keeps an own limit equal to it apart", () => {
+    const inherits = { limitCents: 2000, ownLimit: false };
+    expect(aldoLimitChoices(inherits, 2000)).toEqual({
+      amounts: [0, 1000, 5000, 10000],
+      chosen: "default",
+    });
+    expect(aldoLimitChoices({ limitCents: 5000, ownLimit: true }, 2000)).toEqual({
+      amounts: [0, 1000, 5000, 10000],
+      chosen: 5000,
+    });
+    // Their own $20 while the default is $20: it shows as theirs, so going back to the default changes something.
+    expect(aldoLimitChoices({ limitCents: 2000, ownLimit: true }, 2000)).toEqual({
+      amounts: [0, 1000, 2000, 5000, 10000],
+      chosen: 2000,
+    });
+    expect(aldoLimitChoices({ limitCents: 3000, ownLimit: true }, 3000)).toEqual({
+      amounts: [0, 1000, 2000, 3000, 5000, 10000],
+      chosen: 3000,
+    });
+    expect(aldoLimitChoices({ limitCents: 4200, ownLimit: true }, 2000).chosen).toBe("custom");
+    expect(aldoLimitChoices({ limitCents: 0, ownLimit: true }, null)).toEqual({
+      amounts: [0, 1000, 2000, 5000, 10000],
+      chosen: 0,
+    });
     expect(aldoCreditDay("2026-10-24")).toBe("Oct 24");
   });
 

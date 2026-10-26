@@ -483,11 +483,26 @@ export function aldoStopAllSentence(threads: ReadonlyArray<AldoRunningThread>): 
   return `Every machine in ${stoppable.length === 1 ? "1 thread" : `${stoppable.length} threads`} goes to sleep now, saving ${aldoCredits(perHour)} credits an hour. Files and memory are kept, and each member gets a note in their thread.${owners}`;
 }
 
-/** The limit choices: Off, the usual amounts and the organization's default, lowest first. */
-export function aldoLimitChoices(defaultCents: number | null): ReadonlyArray<number> {
-  const amounts = new Set([0, 1000, 2000, 5000, 10000]);
-  if (defaultCents !== null) amounts.add(defaultCents);
-  return [...amounts].sort((a, b) => a - b);
+/**
+ * A member's limit choices beside the organization's default (its own choice):
+ * Off and the usual amounts, lowest first, and which is theirs now.
+ */
+export function aldoLimitChoices(
+  seat: { readonly limitCents: number; readonly ownLimit: boolean },
+  defaultCents: number | null,
+): { amounts: ReadonlyArray<number>; chosen: "default" | "custom" | number } {
+  // A limit of their own that equals the default stays theirs (it won't follow the
+  // organization's), so it shows as itself and can be set back to the default.
+  const pinned = seat.ownLimit && seat.limitCents === defaultCents;
+  const amounts = [0, 1000, 2000, 5000, 10000].filter((cents) => cents !== defaultCents || pinned);
+  if (pinned && !amounts.includes(seat.limitCents)) amounts.push(seat.limitCents);
+  amounts.sort((a, b) => a - b);
+  const chosen = !seat.ownLimit
+    ? "default"
+    : amounts.includes(seat.limitCents)
+      ? seat.limitCents
+      : "custom";
+  return { amounts, chosen };
 }
 
 /** What a limit means for a member, over its choices. */

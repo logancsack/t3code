@@ -12,7 +12,14 @@ const notes = vi.hoisted(() => ({
   data: undefined as AldoOrgNotes | undefined,
   enabled: [] as boolean[],
 }));
-vi.mock("./settingsData", () => ({ settingsOrgNotes: { load: async () => undefined } }));
+const loads = vi.hoisted(() => ({ count: 0 }));
+vi.mock("./settingsData", () => ({
+  settingsOrgNotes: {
+    load: async () => {
+      loads.count++;
+    },
+  },
+}));
 vi.mock("./settingsResource", () => ({
   useSettingsResource: (_resource: unknown, enabled: boolean) => {
     notes.enabled.push(enabled);
@@ -30,6 +37,7 @@ beforeEach(() => {
   profile.organization = null;
   notes.data = undefined;
   notes.enabled = [];
+  loads.count = 0;
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -66,6 +74,23 @@ describe("an organization's note in a thread", () => {
     );
     await act(async () => root.render(<AldoOrgNoteCard environmentId="aldo-t_other" />));
     expect(container.innerHTML).toBe("");
+  });
+
+  it("looks again every minute while in an organization, even with no note yet", async () => {
+    vi.useFakeTimers();
+    try {
+      await act(async () => root.render(<AldoOrgNoteCard environmentId="aldo-t_board" />));
+      await act(async () => vi.advanceTimersByTime(120_000));
+      expect(loads.count).toBe(0);
+      profile.organization = "Linden Partners";
+      notes.data = { org: "Linden Partners", paused: null, stops: [] };
+      await act(async () => root.render(<AldoOrgNoteCard environmentId="aldo-t_other" />));
+      expect(container.innerHTML).toBe("");
+      await act(async () => vi.advanceTimersByTime(120_000));
+      expect(loads.count).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("says their work is paused, in every thread", async () => {

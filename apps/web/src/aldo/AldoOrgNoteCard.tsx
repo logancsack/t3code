@@ -2,7 +2,8 @@
 // touched (orgAdmin.logic.ts): over the composer, a note that their work is
 // paused, or that an admin stopped this thread's machines, with the note they
 // left. A stop's note goes once the thread starts again. Read only for
-// someone in an organization, so anyone else asks Aldo nothing new.
+// someone in an organization (every minute while the thread is in view), so
+// anyone else asks Aldo nothing new.
 
 import { PauseCircleIcon, PowerIcon } from "lucide-react";
 import { useEffect } from "react";
@@ -16,15 +17,17 @@ export function AldoOrgNoteCard({ environmentId }: { environmentId: string }) {
   const inOrg = Boolean(useAldoProfile()?.organization);
   const { data: notes } = useSettingsResource(settingsOrgNotes, inOrg);
   const note = inOrg ? aldoOrgNoteFor(notes, environmentId) : null;
-  // While one shows, look again now and then: it goes once the thread starts or work resumes.
+  // Look again now and then while the thread is in view: an admin may stop or pause the
+  // work from elsewhere, and a note goes once the thread starts or work resumes.
   useEffect(() => {
-    if (!note) return;
-    const timer = window.setInterval(
-      () => void settingsOrgNotes.load().catch(() => undefined),
-      60_000,
-    );
+    if (!inOrg) return;
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") {
+        void settingsOrgNotes.load().catch(() => undefined);
+      }
+    }, 60_000);
     return () => window.clearInterval(timer);
-  }, [note]);
+  }, [inOrg]);
   if (!note) return null;
   const Icon = note.kind === "paused" ? PauseCircleIcon : PowerIcon;
   return (

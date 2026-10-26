@@ -375,14 +375,8 @@ function LimitSheet(props: {
   const { page } = props;
   const seat = page.usage.seat!;
   const fallback = page.defaultLimitCents;
-  const amounts = aldoLimitChoices(fallback).filter((cents) => cents !== fallback);
-  const initial = !seat.ownLimit
-    ? DEFAULT
-    : seat.limitCents === fallback
-      ? DEFAULT
-      : amounts.includes(seat.limitCents)
-        ? String(seat.limitCents)
-        : CUSTOM;
+  const { amounts, chosen } = aldoLimitChoices(seat, fallback);
+  const initial = chosen === "default" ? DEFAULT : chosen === "custom" ? CUSTOM : String(chosen);
   const [choice, setChoice] = useState(initial);
   const [custom, setCustom] = useState(initial === CUSTOM ? String(seat.limitCents / 100) : "");
   const [busy, setBusy] = useState(false);
