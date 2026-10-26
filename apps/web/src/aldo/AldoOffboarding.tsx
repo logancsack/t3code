@@ -56,6 +56,7 @@ import {
   type AldoWork,
 } from "./offboarding.logic";
 import { aldoOrgKeeps, type AldoOrg } from "./organization.logic";
+import { aldoNames } from "./orgAdmin.logic";
 import { settingsOrg, settingsOrgDepartures } from "./settingsData";
 import { useSettingsResource } from "./settingsResource";
 
@@ -107,7 +108,11 @@ const WORKS: ReadonlyArray<AldoWork> = ["hand", "keep", "delete"];
 /** Who gets the threads: the user as "You", the rest by address. */
 function ColleaguePicker(props: {
   org: AldoOrg;
-  colleagues: AldoLeaving["colleagues"];
+  colleagues: ReadonlyArray<{
+    readonly id: string;
+    readonly email: string;
+    readonly teams?: ReadonlyArray<string>;
+  }>;
   value: string | null;
   onChange: (id: string) => void;
   disabled?: boolean;
@@ -127,7 +132,14 @@ function ColleaguePicker(props: {
       <SelectPopup alignItemWithTrigger={false}>
         {props.colleagues.map((c) => (
           <SelectItem key={c.id} value={c.id}>
-            <span className="[overflow-wrap:anywhere]">{name(c)}</span>
+            <span className="flex min-w-0 flex-col">
+              <span className="[overflow-wrap:anywhere]">{name(c)}</span>
+              {c.teams?.length ? (
+                <span className="text-muted-foreground text-xs [overflow-wrap:anywhere]">
+                  {aldoNames(c.teams)}
+                </span>
+              ) : null}
+            </span>
           </SelectItem>
         ))}
       </SelectPopup>

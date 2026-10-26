@@ -1,7 +1,7 @@
 // Settings → Activity (orgAdmin.logic.ts): each change to the organization and
 // what its admins did, newest first, under their days. Owners and admins read
-// all of it, or one person's; a member reads what was done to them and their
-// work.
+// all of it, one person's or one team's (its changes, and what its people did
+// or had done to them); a member reads what was done to them and their work.
 
 import { useNavigate } from "@tanstack/react-router";
 import { TriangleAlertIcon } from "lucide-react";
@@ -11,6 +11,8 @@ import { SettingsSection } from "../components/settings/settingsLayout";
 import { Button } from "../components/ui/button";
 import {
   Select,
+  SelectGroup,
+  SelectGroupLabel,
   SelectItem,
   SelectPopup,
   SelectTrigger,
@@ -28,23 +30,33 @@ import {
 import { aldoOrgManages, type AldoOrg } from "./organization.logic";
 
 const EVERYONE = "everyone";
+/** A team's choice in the filter, apart from people's ids. */
+const TEAM = "team:";
 
 const messageOf = (cause: unknown) =>
   cause instanceof Error && cause.message ? cause.message : "Something went wrong. Try again.";
 
-export function AldoActivityPage({ person }: { person: string | null }) {
+export function AldoActivityPage(props: { person: string | null; team?: string | null }) {
   const { org, fallback } = useLoadedOrg();
   if (!org) return fallback;
   const manages = aldoOrgManages(org);
   // A member reads their own, whatever the address says.
+  const person = manages ? props.person : null;
+  const team = manages && !person ? (props.team ?? null) : null;
   return (
-    <Activity key={manages ? (person ?? "") : org.you} org={org} person={manages ? person : null} />
+    <Activity
+      key={manages ? (person ?? (team ? `${TEAM}${team}` : "")) : org.you}
+      org={org}
+      person={person}
+      team={team}
+    />
   );
 }
 
 type Page = { lines: ReadonlyArray<AldoActivityLine>; more: boolean };
 
-function Activity({ org, person }: { org: AldoOrg; person: string | null }) {
+function Activity(props: { org: AldoOrg; person: string | null; team: string | null }) {
+  const { org, person, team } = props;
   const navigate = useNavigate();
   const manages = aldoOrgManages(org);
   const [page, setPage] = useState<Page | null | undefined>(undefined);
@@ -56,7 +68,7 @@ function Activity({ org, person }: { org: AldoOrg; person: string | null }) {
   const first = useCallback(async () => {
     const mine = ++ticket.current;
     try {
-      const next = await aldoOrgAdmin.activity({ person });
+      const next = await aldoOrgAdmin.activity({ person, team });
       if (mine !== ticket.current) return;
       pages.current = 1;
       setPage(next);
@@ -64,7 +76,7 @@ function Activity({ org, person }: { org: AldoOrg; person: string | null }) {
     } catch (cause) {
       if (mine === ticket.current) setError(messageOf(cause));
     }
-  }, [person]);
+  }, [person, team]);
 
   useEffect(() => {
     void first();
@@ -83,7 +95,7 @@ function Activity({ org, person }: { org: AldoOrg; person: string | null }) {
     setBusy(true);
     const mine = ++ticket.current;
     aldoOrgAdmin
-      .activity({ person, before: last.id })
+      .activity({ person, team, before: last.id })
       .then(
         (next) => {
           if (mine !== ticket.current || !next) return;
@@ -100,14 +112,22 @@ function Activity({ org, person }: { org: AldoOrg; person: string | null }) {
     a.id === org.you ? -1 : b.id === org.you ? 1 : a.email.localeCompare(b.email),
   );
   const chosen = person ? people.find((m) => m.id === person) : null;
+  const chosenTeam = team ? org.teams?.find((t) => t.id === team) : null;
+  const value = person ?? (team ? `${TEAM}${team}` : EVERYONE);
+  const teams = org.teams ?? [];
   const filter = manages ? (
     <Select
-      value={person ?? EVERYONE}
-      onValueChange={(value) => {
-        if (typeof value !== "string" || value === (person ?? EVERYONE)) return;
+      value={value}
+      onValueChange={(next) => {
+        if (typeof next !== "string" || next === value) return;
         void navigate({
           to: "/settings/activity",
-          search: value === EVERYONE ? {} : { person: value },
+          search:
+            next === EVERYONE
+              ? {}
+              : next.startsWith(TEAM)
+                ? { team: next.slice(TEAM.length) }
+                : { person: next },
           replace: true,
         });
       }}
@@ -120,18 +140,41 @@ function Activity({ org, person }: { org: AldoOrg; person: string | null }) {
               : chosen.email
             : person
               ? "Someone who left"
-              : "Everyone"}
+              : team
+                ? (chosenTeam?.name ?? "A deleted team")
+                : "Everyone"}
         </SelectValue>
       </SelectTrigger>
       <SelectPopup align="end" alignItemWithTrigger={false}>
         <SelectItem hideIndicator value={EVERYONE}>
           Everyone
         </SelectItem>
-        {people.map((m) => (
-          <SelectItem hideIndicator key={m.id} value={m.id}>
-            {m.id === org.you ? "You" : m.email}
-          </SelectItem>
-        ))}
+        {teams.length ? (
+          <SelectGroup>
+            <SelectGroupLabel>Teams</SelectGroupLabel>
+            {teams.map((t) => (
+              <SelectItem hideIndicator key={t.id} value={`${TEAM}${t.id}`}>
+                {t.name}
+              </SelectItem>
+            ))}
+          </SelectGroup>
+        ) : null}
+        {teams.length ? (
+          <SelectGroup>
+            <SelectGroupLabel>People</SelectGroupLabel>
+            {people.map((m) => (
+              <SelectItem hideIndicator key={m.id} value={m.id}>
+                {m.id === org.you ? "You" : m.email}
+              </SelectItem>
+            ))}
+          </SelectGroup>
+        ) : (
+          people.map((m) => (
+            <SelectItem hideIndicator key={m.id} value={m.id}>
+              {m.id === org.you ? "You" : m.email}
+            </SelectItem>
+          ))
+        )}
       </SelectPopup>
     </Select>
   ) : null;
@@ -165,7 +208,9 @@ function Activity({ org, person }: { org: AldoOrg; person: string | null }) {
           {manages
             ? person
               ? "Nothing yet for them. Invites, role changes, stops, pauses and limits show here as they happen."
-              : "Nothing yet. Invites, role changes, stops, pauses and limits show here as they happen."
+              : team
+                ? "Nothing yet for this team. Who’s put on it or taken off it, and what they do, show here as they happen."
+                : "Nothing yet. Invites, role changes, stops, pauses and limits show here as they happen."
             : "Nothing yet. When an admin changes your role, limit or work, it shows here, with who did it."}
         </p>
       )}

@@ -595,12 +595,28 @@ export function aldoActivitySentence(line: AldoActivityLine, you: string): strin
       if (!line.actor && d.via === "link") return `The invite link sent ${who} an invite`;
       if (!line.actor && d.via === "domain")
         return `${who} got an invite at once, from ${typeof d.domain === "string" ? d.domain : "your domain"}`;
-      return `${actor} invited ${who} as ${roleOf(d.role)}`;
+      return `${actor} invited ${who} as ${roleOf(d.role)}${teamsTail(d)}`;
     }
     case "invite_resent":
       return `${actor} sent ${line.target?.email ?? "someone"}’s invite again`;
     case "invite_revoked":
       return `${actor} revoked the invite for ${line.target?.email ?? "someone"}`;
+    case "invite_changed":
+      return namesIn(d).length
+        ? `${actor} set ${line.target?.email ?? "someone"}’s invite to put them on ${aldoNames(namesIn(d))}`
+        : `${actor} took the teams off ${line.target?.email ?? "someone"}’s invite`;
+    case "team_created":
+      return `${actor} made the team ${teamIn(d)}`;
+    case "team_renamed":
+      return typeof d.from === "string" && typeof d.to === "string"
+        ? `${actor} renamed the team ${d.from} to ${d.to}`
+        : `${actor} renamed a team`;
+    case "team_deleted":
+      return `${actor} deleted the team ${teamIn(d)}`;
+    case "team_added":
+      return `${actor} put ${target} on ${teamIn(d)}`;
+    case "team_removed":
+      return `${actor} took ${target} off ${teamIn(d)}`;
     case "stopped":
       return `${actor} stopped ${title}, ${isYou ? "your" : self ? "their own" : `${line.target?.email ?? "someone"}’s`} thread`;
     case "paused":
@@ -697,6 +713,19 @@ function workTail(d: Readonly<Record<string, unknown>>, whose: string): string {
 }
 const domainIn = (d: Readonly<Record<string, unknown>>) =>
   typeof d.domain === "string" ? d.domain : "a domain";
+const teamIn = (d: Readonly<Record<string, unknown>>) =>
+  typeof d.team === "string" && d.team ? d.team : "a team";
+const namesIn = (d: Readonly<Record<string, unknown>>): string[] =>
+  Array.isArray(d.teams) ? d.teams.filter((t): t is string => typeof t === "string" && !!t) : [];
+/** The teams an invite put its person on: ", for Finance and Ops". */
+const teamsTail = (d: Readonly<Record<string, unknown>>) =>
+  namesIn(d).length ? `, for ${aldoNames(namesIn(d))}` : "";
+
+/** Names in a sentence: "Finance", "Finance and Ops", "Finance, Ops and Sales". */
+export function aldoNames(names: ReadonlyArray<string>): string {
+  if (names.length <= 1) return names[0] ?? "";
+  return `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
+}
 
 /** A note an admin left with a stop, to show under its line. */
 export function aldoActivityNote(line: AldoActivityLine): string | null {

@@ -41,6 +41,7 @@ const invite = (id: string, role: AldoOrgRole, expired = false) => ({
   sentBy: "maya@linden.com",
   via: null,
   expired,
+  teams: [],
 });
 
 function org(role: AldoOrgRole, others: AldoOrg["members"] = [], invites: AldoOrg["invites"] = []) {
@@ -52,6 +53,7 @@ function org(role: AldoOrgRole, others: AldoOrg["members"] = [], invites: AldoOr
     you: "me",
     role,
     members: [member("me", role), ...others],
+    teams: [],
     invites: role === "member" ? null : invites,
     plan: null,
   } satisfies AldoOrg;
@@ -226,7 +228,11 @@ describe("organizations", () => {
       group: "Linden Partners",
       items: [
         { to: "/settings/organization", label: "Organization", also: ["/settings/joining"] },
-        { to: "/settings/members", label: "Members", also: ["/settings/running"] },
+        {
+          to: "/settings/members",
+          label: "Members",
+          also: ["/settings/running", "/settings/teams"],
+        },
         { to: "/settings/activity", label: "Activity" },
       ],
     });
