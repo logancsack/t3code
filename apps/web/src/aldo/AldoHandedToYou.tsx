@@ -5,7 +5,7 @@
 // user's. Someone in no organization has none, so their Library is as it was.
 
 import { Link } from "@tanstack/react-router";
-import { ChevronRightIcon, FolderInputIcon, LoaderCircleIcon } from "lucide-react";
+import { ChevronRightIcon, FolderInputIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Badge } from "../components/ui/badge";
@@ -71,11 +71,7 @@ function ReceivedRow({ received }: { received: AldoReceived }) {
         aria-hidden="true"
         className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-muted/60 text-muted-foreground"
       >
-        {ready ? (
-          <FolderInputIcon className="size-4.5" />
-        ) : (
-          <LoaderCircleIcon className="size-4 animate-spin" />
-        )}
+        <FolderInputIcon className={cn("size-4.5", !ready && "motion-safe:animate-status-pulse")} />
       </span>
       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
         <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">

@@ -6,7 +6,7 @@
 // refuses. From an Aldo without it, the sheets say what they said before.
 
 import { Link } from "@tanstack/react-router";
-import { LoaderCircleIcon, TriangleAlertIcon } from "lucide-react";
+import { TriangleAlertIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { SettingsSection } from "../components/settings/settingsLayout";
@@ -463,7 +463,10 @@ function HandoverItem(props: {
             )}
           >
             {line.state === "copying" ? (
-              <LoaderCircleIcon aria-hidden="true" className="size-3 shrink-0 animate-spin" />
+              <span
+                aria-hidden="true"
+                className="size-1.5 shrink-0 rounded-full bg-current motion-safe:animate-status-pulse"
+              />
             ) : null}
             <span className="[overflow-wrap:anywhere]">{aldoHandoverLineText(line, org.you)}</span>
           </span>

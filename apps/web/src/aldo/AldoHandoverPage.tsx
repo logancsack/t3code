@@ -6,7 +6,7 @@
 
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { ChevronRightIcon, DownloadIcon, LoaderCircleIcon, PaperclipIcon } from "lucide-react";
+import { ChevronRightIcon, DownloadIcon, PaperclipIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import { Badge } from "../components/ui/badge";
@@ -130,9 +130,9 @@ export function AldoHandoverPage({ handoverId }: { handoverId: string }) {
             )}
           >
             {read.kind === "copying" ? (
-              <LoaderCircleIcon
+              <span
                 aria-hidden="true"
-                className="me-1.5 inline size-3.5 animate-spin align-[-2px]"
+                className="me-2 inline-block size-1.5 rounded-full bg-current align-middle motion-safe:animate-status-pulse"
               />
             ) : null}
             {read.message}
