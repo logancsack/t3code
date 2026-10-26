@@ -589,8 +589,14 @@ export function aldoActivitySentence(line: AldoActivityLine, you: string): strin
       return typeof d.to === "string"
         ? `${actor} renamed the organization ${d.to}`
         : `${actor} renamed the organization`;
-    case "invited":
-      return `${actor} invited ${line.target?.email ?? "someone"} as ${roleOf(d.role)}`;
+    case "invited": {
+      const who = line.target?.email ?? "someone";
+      // An invite nobody typed: the invite link's, or the domain's under Join right away.
+      if (!line.actor && d.via === "link") return `The invite link sent ${who} an invite`;
+      if (!line.actor && d.via === "domain")
+        return `${who} got an invite at once, from ${typeof d.domain === "string" ? d.domain : "your domain"}`;
+      return `${actor} invited ${who} as ${roleOf(d.role)}`;
+    }
     case "invite_resent":
       return `${actor} sent ${line.target?.email ?? "someone"}’s invite again`;
     case "invite_revoked":
@@ -620,10 +626,53 @@ export function aldoActivitySentence(line: AldoActivityLine, you: string): strin
         return `${actor} set each seat’s extra usage limit to ${limit === 0 ? "off" : aldoDollars(limit)}`;
       return `${actor} put the organization on ${to}`;
     }
+    case "join_policy_set":
+      return typeof d.to === "string" && d.to in POLICIES
+        ? `${actor} set who can join to ${POLICIES[d.to as keyof typeof POLICIES]}`
+        : `${actor} changed who can join`;
+    case "domain_added":
+      return `${actor} added ${domainIn(d)}`;
+    case "domain_verified":
+      return `${actor} verified ${domainIn(d)}`;
+    case "domain_lost":
+      return `Aldo couldn’t find ${domainIn(d)}’s record, so joining by it is paused`;
+    case "domain_back":
+      return `${actor} found ${domainIn(d)}’s record again, so joining by it works again`;
+    case "domain_removed":
+      return `${actor} removed ${domainIn(d)}`;
+    case "link_on": {
+      const days =
+        typeof d.days === "number" ? `, for ${d.days === 1 ? "1 day" : `${d.days} days`}` : "";
+      return `${actor} turned on the invite link${days}${d.anyAddress === true ? ", for any address" : ""}`;
+    }
+    case "link_changed":
+      if (d.anyAddress === true) return `${actor} opened the invite link to any address`;
+      if (d.anyAddress === false) return `${actor} limited the invite link to your domains`;
+      return typeof d.days === "number"
+        ? `${actor} set the invite link to work for ${d.days === 1 ? "1 day" : `${d.days} days`}`
+        : `${actor} changed the invite link`;
+    case "link_replaced":
+      return `${actor} replaced the invite link`;
+    case "link_off":
+      return `${actor} turned off the invite link`;
+    case "requested": {
+      const who = line.target?.email ?? "Someone";
+      if (d.via === "link") return `${who} asked to join with the invite link`;
+      if (d.via === "expired") return `${who} asked for a new invite`;
+      return `${who} asked to join`;
+    }
+    case "request_approved":
+      return `${actor} approved ${line.target?.email ?? "someone"}’s request`;
+    case "request_declined":
+      return `${actor} declined ${line.target?.email ?? "someone"}’s request`;
     default:
       return `${actor} made a change`;
   }
 }
+
+const POLICIES = { invite: "Invite only", ask: "Ask an admin", join: "Join right away" } as const;
+const domainIn = (d: Readonly<Record<string, unknown>>) =>
+  typeof d.domain === "string" ? d.domain : "a domain";
 
 /** A note an admin left with a stop, to show under its line. */
 export function aldoActivityNote(line: AldoActivityLine): string | null {

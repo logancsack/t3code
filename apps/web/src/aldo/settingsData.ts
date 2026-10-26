@@ -1,6 +1,7 @@
 import {
   aldoInstructions,
   aldoOrgAdmin,
+  aldoOrgJoining,
   aldoSkills,
   aldoVault,
   fetchAldoAccounts,
@@ -40,6 +41,8 @@ export const settingsOrg = createSettingsResource(fetchAldoOrg);
 export const settingsOrgUsage = createSettingsResource(() => aldoOrgAdmin.usage());
 /** What admins did to the user's work, for the note in a thread; read only for someone in an organization. */
 export const settingsOrgNotes = createSettingsResource(() => aldoOrgAdmin.notes());
+/** Who can join, with requests; owners' and admins', read on Organization, Members and Who can join. */
+export const settingsOrgJoining = createSettingsResource(() => aldoOrgJoining.get());
 export const settingsPrebuilds = createSettingsResource(aldoPrebuilds.list);
 export const settingsRepositories = createSettingsResource(listAldoRepositories);
 

@@ -23,6 +23,8 @@ export interface AldoOrgInvite {
   readonly sentAt: string;
   /** Who sent it last, by address; null for Aldo. */
   readonly sentBy: string | null;
+  /** How it came about when nobody typed the address: the invite link, or the domain; null from an older Aldo. */
+  readonly via: "link" | "domain" | "request" | null;
   readonly expired: boolean;
 }
 
@@ -85,10 +87,22 @@ function memberOf(value: unknown): AldoOrgMember | null {
 
 function inviteOf(value: unknown): AldoOrgInvite | null {
   if (!value || typeof value !== "object") return null;
-  const { id, email, role, expiresAt, sentAt, sentBy, expired } = value as Record<string, unknown>;
+  const { id, email, role, expiresAt, sentAt, sentBy, via, expired } = value as Record<
+    string,
+    unknown
+  >;
   const [i, e, x, s] = [str(id), str(email), str(expiresAt), str(sentAt)];
   return i && e && x && s && isRole(role) && typeof expired === "boolean"
-    ? { id: i, email: e, role, expiresAt: x, sentAt: s, sentBy: str(sentBy), expired }
+    ? {
+        id: i,
+        email: e,
+        role,
+        expiresAt: x,
+        sentAt: s,
+        sentBy: str(sentBy),
+        via: via === "link" || via === "domain" || via === "request" ? via : null,
+        expired,
+      }
     : null;
 }
 
@@ -272,4 +286,13 @@ export function aldoOrgExpiresLine(invite: AldoOrgInvite, now = Date.now()): str
   if (invite.expired) return `Expired ${day}`;
   const days = Math.ceil((Date.parse(invite.expiresAt) - now) / 86_400_000);
   return days <= 1 ? `${day}, within a day` : `${day}, in ${days} days`;
+}
+
+/** When an invite was sent, and by whom or what: "Oct 26 by maya@linden.com", "Oct 26 from the invite link". */
+export function aldoOrgSentLine(invite: AldoOrgInvite): string {
+  const day = aldoOrgDay(invite.sentAt);
+  if (invite.sentBy) return `${day} by ${invite.sentBy}`;
+  if (invite.via === "link") return `${day} from the invite link`;
+  if (invite.via === "domain") return `${day} from your domain`;
+  return day;
 }

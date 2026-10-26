@@ -9,6 +9,7 @@ import {
   aldoOrgFullLine,
   aldoOrgInitials,
   aldoOrgInviteLine,
+  aldoOrgSentLine,
   aldoOrgLastOwner,
   aldoOrgKeeps,
   aldoOrgMembersSummary,
@@ -38,6 +39,7 @@ const invite = (id: string, role: AldoOrgRole, expired = false) => ({
   expiresAt: "2026-11-01T12:00:00.000Z",
   sentAt: "2026-10-25T12:00:00.000Z",
   sentBy: "maya@linden.com",
+  via: null,
   expired,
 });
 
@@ -66,6 +68,18 @@ describe("organizations", () => {
       invites: [{ ...invite("x", "owner"), sentBy: null }],
     });
     expect(fromAldo?.invites?.[0]?.sentBy).toBeNull();
+    // How an invite nobody typed came about; anything else, or nothing from an older Aldo, is none.
+    const viaLink = parseAldoOrg({
+      ...answer,
+      invites: [{ ...invite("x", "member"), via: "link" }],
+    });
+    expect(viaLink?.invites?.[0]?.via).toBe("link");
+    const { via: _, ...older } = invite("x", "member");
+    expect(parseAldoOrg({ ...answer, invites: [older] })?.invites?.[0]?.via).toBeNull();
+    expect(
+      parseAldoOrg({ ...answer, invites: [{ ...invite("x", "member"), via: "carrier pigeon" }] })
+        ?.invites?.[0]?.via,
+    ).toBeNull();
     // An older Aldo's page, an error, a half answer: no organization.
     expect(parseAldoOrg("<!doctype html>")).toBeNull();
     expect(parseAldoOrg(null)).toBeNull();
@@ -189,6 +203,11 @@ describe("organizations", () => {
 
   it("says when an invite was sent and expires, or that it expired", () => {
     expect(aldoOrgInviteLine(invite("a", "member"))).toBe("Member · sent Oct 25 · expires Nov 1");
+    expect(aldoOrgSentLine(invite("a", "member"))).toBe("Oct 25 by maya@linden.com");
+    const door = { ...invite("a", "member"), sentBy: null };
+    expect(aldoOrgSentLine({ ...door, via: "link" })).toBe("Oct 25 from the invite link");
+    expect(aldoOrgSentLine({ ...door, via: "domain" })).toBe("Oct 25 from your domain");
+    expect(aldoOrgSentLine(door)).toBe("Oct 25");
     expect(aldoOrgInviteLine(invite("a", "admin", true))).toBe(
       "Admin · expired Nov 1 · holds no seat",
     );
@@ -206,7 +225,7 @@ describe("organizations", () => {
     expect(nav[0]).toEqual({
       group: "Linden Partners",
       items: [
-        { to: "/settings/organization", label: "Organization" },
+        { to: "/settings/organization", label: "Organization", also: ["/settings/joining"] },
         { to: "/settings/members", label: "Members", also: ["/settings/running"] },
         { to: "/settings/activity", label: "Activity" },
       ],

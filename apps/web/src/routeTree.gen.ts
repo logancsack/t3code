@@ -38,6 +38,7 @@ import { Route as SettingsNotificationsRouteImport } from './routes/settings.not
 import { Route as SettingsMemoryRouteImport } from './routes/settings.memory'
 import { Route as SettingsMembersRouteImport } from './routes/settings.members'
 import { Route as SettingsKeybindingsRouteImport } from './routes/settings.keybindings'
+import { Route as SettingsJoiningRouteImport } from './routes/settings.joining'
 import { Route as SettingsIntegrationsRouteImport } from './routes/settings.integrations'
 import { Route as SettingsInstructionsRouteImport } from './routes/settings.instructions'
 import { Route as SettingsGeneralRouteImport } from './routes/settings.general'
@@ -201,6 +202,11 @@ const SettingsKeybindingsRoute = SettingsKeybindingsRouteImport.update({
   path: '/keybindings',
   getParentRoute: () => SettingsRoute,
 } as any)
+const SettingsJoiningRoute = SettingsJoiningRouteImport.update({
+  id: '/joining',
+  path: '/joining',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const SettingsIntegrationsRoute = SettingsIntegrationsRouteImport.update({
   id: '/integrations',
   path: '/integrations',
@@ -312,6 +318,7 @@ export interface FileRoutesByFullPath {
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/instructions': typeof SettingsInstructionsRoute
   '/settings/integrations': typeof SettingsIntegrationsRoute
+  '/settings/joining': typeof SettingsJoiningRoute
   '/settings/keybindings': typeof SettingsKeybindingsRoute
   '/settings/members': typeof SettingsMembersRoute
   '/settings/memory': typeof SettingsMemoryRoute
@@ -357,6 +364,7 @@ export interface FileRoutesByTo {
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/instructions': typeof SettingsInstructionsRoute
   '/settings/integrations': typeof SettingsIntegrationsRoute
+  '/settings/joining': typeof SettingsJoiningRoute
   '/settings/keybindings': typeof SettingsKeybindingsRoute
   '/settings/members': typeof SettingsMembersRoute
   '/settings/memory': typeof SettingsMemoryRoute
@@ -406,6 +414,7 @@ export interface FileRoutesById {
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/instructions': typeof SettingsInstructionsRoute
   '/settings/integrations': typeof SettingsIntegrationsRoute
+  '/settings/joining': typeof SettingsJoiningRoute
   '/settings/keybindings': typeof SettingsKeybindingsRoute
   '/settings/members': typeof SettingsMembersRoute
   '/settings/memory': typeof SettingsMemoryRoute
@@ -456,6 +465,7 @@ export interface FileRouteTypes {
     | '/settings/general'
     | '/settings/instructions'
     | '/settings/integrations'
+    | '/settings/joining'
     | '/settings/keybindings'
     | '/settings/members'
     | '/settings/memory'
@@ -501,6 +511,7 @@ export interface FileRouteTypes {
     | '/settings/general'
     | '/settings/instructions'
     | '/settings/integrations'
+    | '/settings/joining'
     | '/settings/keybindings'
     | '/settings/members'
     | '/settings/memory'
@@ -549,6 +560,7 @@ export interface FileRouteTypes {
     | '/settings/general'
     | '/settings/instructions'
     | '/settings/integrations'
+    | '/settings/joining'
     | '/settings/keybindings'
     | '/settings/members'
     | '/settings/memory'
@@ -792,6 +804,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsKeybindingsRouteImport
       parentRoute: typeof SettingsRoute
     }
+    '/settings/joining': {
+      id: '/settings/joining'
+      path: '/joining'
+      fullPath: '/settings/joining'
+      preLoaderRoute: typeof SettingsJoiningRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/settings/integrations': {
       id: '/settings/integrations'
       path: '/integrations'
@@ -943,6 +962,7 @@ interface SettingsRouteChildren {
   SettingsGeneralRoute: typeof SettingsGeneralRoute
   SettingsInstructionsRoute: typeof SettingsInstructionsRoute
   SettingsIntegrationsRoute: typeof SettingsIntegrationsRoute
+  SettingsJoiningRoute: typeof SettingsJoiningRoute
   SettingsKeybindingsRoute: typeof SettingsKeybindingsRoute
   SettingsMembersRoute: typeof SettingsMembersRoute
   SettingsMemoryRoute: typeof SettingsMemoryRoute
@@ -978,6 +998,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsGeneralRoute: SettingsGeneralRoute,
   SettingsInstructionsRoute: SettingsInstructionsRoute,
   SettingsIntegrationsRoute: SettingsIntegrationsRoute,
+  SettingsJoiningRoute: SettingsJoiningRoute,
   SettingsKeybindingsRoute: SettingsKeybindingsRoute,
   SettingsMembersRoute: SettingsMembersRoute,
   SettingsMemoryRoute: SettingsMemoryRoute,
