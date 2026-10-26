@@ -45,6 +45,7 @@ import {
   aldoMonthLabel,
   aldoPauseSentence,
   aldoPersonalLine,
+  aldoRestLine,
   aldoRoleLine,
   aldoSeatCredits,
   aldoThreadLine,
@@ -196,6 +197,13 @@ function MemberMonth({ org, memberId }: { org: AldoOrg; memberId: string }) {
             onOpen={() => setSheet({ kind: "thread", thread: t })}
           />
         ))}
+        {page.rest?.threads ? (
+          <OpenRow
+            title={aldoRestLine(org.name, page.rest)}
+            value={`${aldoCredits(page.rest.credits)} credits`}
+            onOpen={null}
+          />
+        ) : null}
         {page.personal.threads || page.personal.credits ? (
           <OpenRow
             title={aldoPersonalLine(org.name, page.personal)}

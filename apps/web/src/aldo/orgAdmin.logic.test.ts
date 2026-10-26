@@ -11,6 +11,7 @@ import {
   aldoLimitLine,
   aldoMonthLabel,
   aldoOrgNoteFor,
+  aldoRestLine,
   aldoPausedLine,
   aldoPersonalLine,
   aldoRunningDetail,
@@ -182,6 +183,14 @@ describe("reading Aldo's answers", () => {
     expect(parsed?.member.role).toBe("member");
     expect(parsed?.threads[0]?.state).toBe("working");
     expect(parsed?.can).toEqual({ stop: true, limit: true, pause: true });
+    expect(parsed?.rest).toBeNull();
+    expect(
+      parseAldoMemberPage({ member: { ...page.member, rest: { threads: 216, credits: 340 } } })
+        ?.rest,
+    ).toEqual({ threads: 216, credits: 340 });
+    expect(aldoRestLine("Linden Partners", { threads: 216, credits: 340 })).toBe(
+      "And 216 more threads in Linden Partners",
+    );
     expect(parseAldoMemberPage({ member: { ...page.member, personal: undefined } })).toBeNull();
     expect(
       parseAldoMemberPage({

@@ -77,6 +77,8 @@ export interface AldoMemberPage {
   readonly defaultLimitCents: number | null;
   readonly running: ReadonlyArray<AldoRunningThread>;
   readonly threads: ReadonlyArray<AldoOrgThread>;
+  /** The org's threads of theirs past the list: how many, and their credits this month; null from a server without it. */
+  readonly rest: { readonly threads: number; readonly credits: number } | null;
   /** Their other threads: how many, and their credits this month. Titles stay private. */
   readonly personal: { readonly threads: number; readonly credits: number };
   /** Credits outside any thread: Home, builds. */
@@ -236,6 +238,12 @@ export function parseAldoOrgMachines(
   };
 }
 
+function restOf(value: unknown): AldoMemberPage["rest"] {
+  const o = obj(value);
+  const [threads, credits] = [num(o?.threads), num(o?.credits)];
+  return threads === null || credits === null ? null : { threads, credits };
+}
+
 /** A member's page, from GET or PATCH /api/org/members/:id. */
 export function parseAldoMemberPage(body: unknown): AldoMemberPage | null {
   const o = obj(obj(body)?.member);
@@ -257,6 +265,7 @@ export function parseAldoMemberPage(body: unknown): AldoMemberPage | null {
     defaultLimitCents: num(o.defaultLimitCents),
     running: list(o.running, runningOf),
     threads: list(o.threads, threadOf),
+    rest: restOf(o.rest),
     personal: { threads, credits },
     other,
     can: { stop: can.stop === true, limit: can.limit === true, pause: can.pause === true },
@@ -436,6 +445,11 @@ export function aldoWhen(iso: string, now = Date.now()): string {
   return day(iso);
 }
 
+/** The line for the org's threads past the list: "And 216 more threads in Acme". */
+export function aldoRestLine(org: string, rest: NonNullable<AldoMemberPage["rest"]>): string {
+  return `And ${rest.threads === 1 ? "1 more thread" : `${rest.threads} more threads`} in ${org}`;
+}
+
 /** A thread's line on a member's page: "Working · Running" or "Done · Oct 20", and its other conversations. */
 export function aldoThreadLine(thread: AldoOrgThread, now = Date.now()): string {
   const parts = [
@@ -528,7 +542,7 @@ export function aldoPauseSentence(page: AldoMemberPage, org: string): string {
   const stops = running
     ? `${running === 1 ? "Their 1 running machine stops" : `Their ${running} running machines stop`} now, and nothing`
     : "Nothing";
-  return `${stops} of theirs starts until you resume it: threads, routines and Home, in ${org} or from before. They can still sign in, read their threads and download files, and they’re told you paused it.`;
+  return `${stops} of theirs starts until you resume it: threads, routines and Home, in ${org} or from before. They can still sign in and read their threads, their files are kept, and they’re told you paused it.`;
 }
 
 export function aldoRoleLine(role: AldoOrgRole, joinedAt: string): string {
@@ -681,7 +695,7 @@ export function aldoOrgNoteFor(
     const by = notes.paused.by ?? "An admin";
     return {
       kind: "paused",
-      text: `${by}, an admin of ${notes.org}, paused your work ${noteTime(notes.paused.at, now)}. Nothing starts until an admin resumes it; you can still read your threads and download files.`,
+      text: `${by}, an admin of ${notes.org}, paused your work ${noteTime(notes.paused.at, now)}. Nothing starts until an admin resumes it; you can still read your threads, and your files are kept.`,
       quote: null,
     };
   }
