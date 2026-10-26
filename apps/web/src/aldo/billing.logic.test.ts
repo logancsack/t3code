@@ -169,18 +169,18 @@ describe("aldoBillingView", () => {
     const seat = { org: "Linden", admins: ["maya@linden.com", "sam@linden.com"] };
     const view = aldoBillingView({ ...onPro, billing: { ...billing, managed: false }, seat });
     expect(view).toEqual({ kind: "seat", plan: onPro.plan, periodEnd: PERIOD_END, seat });
-    expect(aldoPlanSummary(view!)).toBe("Pro, on Linden's plan. Renews on Oct 31.");
+    expect(aldoPlanSummary(view!)).toBe("Pro, covered by Linden. Renews on Oct 31.");
     // Shown whether or not this Aldo takes payments.
     const { billing: _, ...noBilling } = onPro;
     expect(aldoBillingView({ ...noBilling, seat })).toMatchObject({ kind: "seat" });
     expect(aldoSeatLimitCopy(seat)).toBe(
-      "Linden's admins set your extra usage limit. Ask maya@linden.com or sam@linden.com for more.",
+      "Linden sets your extra usage limit. Ask maya@linden.com or sam@linden.com for more.",
     );
     expect(aldoSeatLimitCopy({ org: "Linden", admins: ["a@l.com"] })).toBe(
-      "Linden's admins set your extra usage limit. Ask a@l.com for more.",
+      "Linden sets your extra usage limit. Ask a@l.com for more.",
     );
     expect(aldoSeatLimitCopy({ org: "Linden", admins: ["a@l.com", "b@l.com", "c@l.com"] })).toBe(
-      "Linden's admins set your extra usage limit. Ask a@l.com, b@l.com or another admin for more.",
+      "Linden sets your extra usage limit. Ask a@l.com, b@l.com or another admin for more.",
     );
     expect(aldoSeatLimitCopy({ org: "Linden", admins: [] })).toBe(
       "Linden sets your extra usage limit.",

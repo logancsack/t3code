@@ -260,8 +260,8 @@ export function aldoPlanSummary(view: AldoBillingView): string | null {
       return `${view.plan.name}, set by your Aldo admin. Renews ${onPeriodEnd(view.periodEnd)}.`;
     case "seat":
       return view.plan.id === "complimentary"
-        ? `Complimentary, on ${view.seat.org}'s plan.`
-        : `${view.plan.name}, on ${view.seat.org}'s plan. Renews ${onPeriodEnd(view.periodEnd)}.`;
+        ? `Complimentary, covered by ${view.seat.org}.`
+        : `${view.plan.name}, covered by ${view.seat.org}. Renews ${onPeriodEnd(view.periodEnd)}.`;
     case "managed": {
       const parts = [view.plan.name];
       if (view.current) parts.push(`${formatPlanPrice(view.current.priceCents)} a month`);
@@ -271,16 +271,17 @@ export function aldoPlanSummary(view: AldoBillingView): string | null {
   }
 }
 
-/** Who sets a seat's extra usage limit, and whom to ask for more. */
+/** Who sets a seat's extra usage limit, and whom to ask for more: its admins, but for you. */
 export function aldoSeatLimitCopy(seat: AldoSeat): string {
   const [first, second, ...rest] = seat.admins;
-  if (!first) return `${seat.org} sets your extra usage limit.`;
+  const sets = `${seat.org} sets your extra usage limit.`;
+  if (!first) return sets;
   const ask = !second
     ? first
     : rest.length
       ? `${first}, ${second} or another admin`
       : `${first} or ${second}`;
-  return `${seat.org}'s admins set your extra usage limit. Ask ${ask} for more.`;
+  return `${sets} Ask ${ask} for more.`;
 }
 
 /** What a plan change did, for its toast: Aldo says when it takes effect. */

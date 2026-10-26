@@ -14,7 +14,6 @@ import {
   aldoOrgMembersSummary,
   aldoOrgOwnersLine,
   aldoOrgPlanDetail,
-  aldoOrgPlanLine,
   aldoOrgOwnPlace,
   aldoOrgRolesToGive,
   aldoOrgSeatsLine,
@@ -88,13 +87,13 @@ describe("organizations", () => {
     // An older Aldo says nothing of plans; a half answer isn't one.
     expect(parseAldoOrg(org("member"))?.plan).toBeNull();
     expect(parseAldoOrg({ ...org("member"), plan: { ...plan, renewsAt: 5 } })?.plan).toBeNull();
-    expect(aldoOrgPlanLine(plan)).toBe("Max · 24,000 credits a seat");
     expect(aldoOrgPlanDetail(plan)).toBe(
-      "Each seat has its own credits each month. Each seat may use up to $20 of extra usage a month. Renews Nov 5.",
+      "Each seat: 24,000 credits a month and up to $20 of extra usage. Renews Nov 5.",
     );
-    expect(aldoOrgPlanDetail({ ...plan, spendLimitCents: 0 })).toContain("Extra usage is off.");
+    expect(aldoOrgPlanDetail({ ...plan, spendLimitCents: 0 })).toBe(
+      "Each seat: 24,000 credits a month and no extra usage. Renews Nov 5.",
+    );
     const free = { ...plan, id: "complimentary", name: "Complimentary", credits: null };
-    expect(aldoOrgPlanLine(free)).toBe("Complimentary");
     expect(aldoOrgPlanDetail(free)).toBe("Every seat is unmetered. Renews Nov 5.");
     expect(aldoOrgKeeps(onMax!, "yours")).toBe(
       "Your threads, computers and vault stay yours, and your seat on its plan ends.",

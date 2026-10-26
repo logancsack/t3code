@@ -144,7 +144,10 @@ export function aldoUsageFacts(usage: AldoWorkspaceUsage): readonly AldoUsageFac
             ? "—"
             : `${formatCredits(usage.credits.projected)} credits`,
       },
-      { label: "Estimated total", value: formatCents(usage.bill.estimatedCents) },
+      // A seat's plan is its organization's to pay for, not theirs.
+      ...(usage.seat
+        ? []
+        : [{ label: "Estimated total", value: formatCents(usage.bill.estimatedCents) }]),
     );
   }
   const prime = usage.prime;

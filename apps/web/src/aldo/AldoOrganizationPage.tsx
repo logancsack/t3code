@@ -38,7 +38,6 @@ import {
   aldoOrgKeeps,
   aldoOrgMembersSummary,
   aldoOrgPlanDetail,
-  aldoOrgPlanLine,
   aldoOrgOwnersLine,
   aldoOrgOwnPlace,
   aldoOrgSeatsLine,
@@ -97,7 +96,7 @@ export function AldoOrganizationPage() {
         {org.plan ? (
           <OpenRow
             title="Plan"
-            value={aldoOrgPlanLine(org.plan)}
+            value={org.plan.name}
             description={aldoOrgPlanDetail(org.plan)}
             onOpen={null}
           />

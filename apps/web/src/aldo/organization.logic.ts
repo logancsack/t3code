@@ -221,22 +221,15 @@ export function aldoOrgYouLine(org: AldoOrg): string {
 
 const CREDITS = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 
-/** The plan every seat is on, for its row: "Max · 24,000 credits a seat". */
-export function aldoOrgPlanLine(plan: AldoOrgPlan): string {
-  return plan.credits === null
-    ? plan.name
-    : `${plan.name} · ${CREDITS.format(plan.credits)} credits a seat`;
-}
-
-/** Under it: when the month renews, and each seat's extra usage. */
+/** Under the plan's name: each seat's credits and extra usage, and when the month renews. */
 export function aldoOrgPlanDetail(plan: AldoOrgPlan): string {
   const renews = `Renews ${aldoOrgDay(plan.renewsAt)}.`;
   if (plan.credits === null) return `Every seat is unmetered. ${renews}`;
   const extra =
     plan.spendLimitCents > 0
-      ? `Each seat may use up to $${CREDITS.format(plan.spendLimitCents / 100)} of extra usage a month.`
-      : "Extra usage is off.";
-  return `Each seat has its own credits each month. ${extra} ${renews}`;
+      ? `up to $${CREDITS.format(plan.spendLimitCents / 100)} of extra usage`
+      : "no extra usage";
+  return `Each seat: ${CREDITS.format(plan.credits)} credits a month and ${extra}. ${renews}`;
 }
 
 /** What leaving (or being removed, or the org going) keeps: everything, and a seat ends with it. */
