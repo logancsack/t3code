@@ -580,9 +580,9 @@ export function aldoActivitySentence(line: AldoActivityLine, you: string): strin
     case "left":
       return d.deleting
         ? `${actor} left, deleting ${actor === "You" ? "your" : "their"} account`
-        : `${actor} left`;
+        : `${actor} left${workTail(d, actor === "You" ? "your" : "their")}`;
     case "removed":
-      return `${actor} removed ${target}`;
+      return `${actor} removed ${target}${d.managed === true ? ` and closed ${isYou ? "your" : "their"} account` : ""}${workTail(d, isYou ? "your" : "their")}`;
     case "role_changed":
       return `${actor} made ${target} ${roleOf(d.to)}`;
     case "renamed":
@@ -665,12 +665,36 @@ export function aldoActivitySentence(line: AldoActivityLine, you: string): strin
       return `${actor} approved ${line.target?.email ?? "someone"}’s request`;
     case "request_declined":
       return `${actor} declined ${line.target?.email ?? "someone"}’s request`;
+    case "handover_retried":
+      return `${actor} tried copying ${title} again, ${line.target?.email ?? "someone"}’s thread`;
+    case "kept_handed":
+      return `${actor} handed ${title}${typeof d.from === "string" ? `, ${d.from}’s thread,` : ""} to ${target}`;
+    case "kept_deleted":
+      return `${actor} deleted the kept copy of ${title}, ${line.target?.email ?? "someone"}’s thread`;
+    case "account_restored":
+      return `${actor} restored ${whose} account`;
+    case "account_deleted":
+      return `${line.target?.email ?? "Someone"}’s account was deleted, ${DELETED_AFTER_DAYS} days after it was closed`;
     default:
       return `${actor} made a change`;
   }
 }
 
 const POLICIES = { invite: "Invite only", ask: "Ask an admin", join: "Join right away" } as const;
+/** How long kept copies, and a closed account, wait before they’re deleted (offboarding.logic.ts). */
+const DELETED_AFTER_DAYS = 30;
+
+/** Where the organization's threads went as someone left: ", handing their 3 threads to jo@…". */
+function workTail(d: Readonly<Record<string, unknown>>, whose: string): string {
+  const n = typeof d.threads === "number" ? d.threads : 0;
+  if (!n) return "";
+  const threads = n === 1 ? `${whose} thread` : `${whose} ${n} threads`;
+  if (d.work === "hand" && typeof d.to === "string") return `, handing ${threads} to ${d.to}`;
+  if (d.work === "delete") return `, deleting ${threads}`;
+  if (d.work === "keep")
+    return `; ${threads} ${n === 1 ? "is" : "are"} kept for ${DELETED_AFTER_DAYS} days`;
+  return "";
+}
 const domainIn = (d: Readonly<Record<string, unknown>>) =>
   typeof d.domain === "string" ? d.domain : "a domain";
 

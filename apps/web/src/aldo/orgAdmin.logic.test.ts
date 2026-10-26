@@ -412,6 +412,79 @@ describe("their words", () => {
     expect(aldoActivitySentence(line({ action: "something_new" }), "x")).toBe(
       "sam@linden.com made a change",
     );
+    // Offboarding: where the organization's threads went, a closed account, and kept copies.
+    expect(
+      aldoActivitySentence(
+        line({ action: "removed", detail: { work: "hand", threads: 3, to: "jo@linden.com" } }),
+        "x",
+      ),
+    ).toBe("sam@linden.com removed dana@linden.com, handing their 3 threads to jo@linden.com");
+    expect(
+      aldoActivitySentence(
+        line({ action: "removed", detail: { work: "delete", threads: 1, managed: true } }),
+        "dana",
+      ),
+    ).toBe("sam@linden.com removed you and closed your account, deleting your thread");
+    expect(
+      aldoActivitySentence(line({ action: "removed", detail: { work: "keep", threads: 0 } }), "x"),
+    ).toBe("sam@linden.com removed dana@linden.com");
+    expect(
+      aldoActivitySentence(
+        line({
+          action: "left",
+          actor: { id: "dana", email: "dana@linden.com" },
+          target: { id: "dana", email: "dana@linden.com" },
+          detail: { work: "keep", threads: 2 },
+        }),
+        "x",
+      ),
+    ).toBe("dana@linden.com left; their 2 threads are kept for 30 days");
+    expect(
+      aldoActivitySentence(
+        line({
+          action: "kept_handed",
+          target: { id: "jo", email: "jo@linden.com" },
+          detail: { title: "Forecast", from: "pia@linden.com" },
+        }),
+        "jo",
+      ),
+    ).toBe("sam@linden.com handed “Forecast”, pia@linden.com’s thread, to you");
+    expect(
+      aldoActivitySentence(
+        line({
+          action: "kept_deleted",
+          target: { id: null, email: "pia@linden.com" },
+          detail: { title: "Forecast" },
+        }),
+        "sam",
+      ),
+    ).toBe("You deleted the kept copy of “Forecast”, pia@linden.com’s thread");
+    expect(
+      aldoActivitySentence(
+        line({
+          action: "handover_retried",
+          target: { id: null, email: "pia@linden.com" },
+          detail: { title: "Forecast" },
+        }),
+        "x",
+      ),
+    ).toBe("sam@linden.com tried copying “Forecast” again, pia@linden.com’s thread");
+    expect(
+      aldoActivitySentence(
+        line({ action: "account_restored", target: { id: "pia", email: "pia@linden.com" } }),
+        "x",
+      ),
+    ).toBe("sam@linden.com restored pia@linden.com’s account");
+    expect(
+      aldoActivitySentence(
+        line({
+          action: "account_deleted",
+          actor: null,
+          target: { id: null, email: "pia@linden.com" },
+        }),
+        "x",
+      ),
+    ).toBe("pia@linden.com’s account was deleted, 30 days after it was closed");
     // Who can join: the domains, the invite link, requests, and invites nobody typed.
     const domain = { detail: { domain: "linden.co" }, target: null };
     expect(

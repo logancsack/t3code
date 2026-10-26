@@ -54,6 +54,7 @@ import { Route as SettingsAccountRouteImport } from './routes/settings.account'
 import { Route as ProjectsProjectKeyRouteImport } from './routes/projects.$projectKey'
 import { Route as ChatPullRequestsRouteImport } from './routes/_chat.pull-requests'
 import { Route as SettingsMembersMemberIdRouteImport } from './routes/settings.members_.$memberId'
+import { Route as LibraryHandedHandoverIdRouteImport } from './routes/library_.handed.$handoverId'
 import { Route as ChatDraftDraftIdRouteImport } from './routes/_chat.draft.$draftId'
 import { Route as ChatEnvironmentIdThreadIdRouteImport } from './routes/_chat.$environmentId.$threadId'
 
@@ -282,6 +283,11 @@ const SettingsMembersMemberIdRoute = SettingsMembersMemberIdRouteImport.update({
   path: '/members/$memberId',
   getParentRoute: () => SettingsRoute,
 } as any)
+const LibraryHandedHandoverIdRoute = LibraryHandedHandoverIdRouteImport.update({
+  id: '/library_/handed/$handoverId',
+  path: '/library/handed/$handoverId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ChatDraftDraftIdRoute = ChatDraftDraftIdRouteImport.update({
   id: '/draft/$draftId',
   path: '/draft/$draftId',
@@ -340,6 +346,7 @@ export interface FileRoutesByFullPath {
   '/settings/': typeof SettingsIndexRoute
   '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/draft/$draftId': typeof ChatDraftDraftIdRoute
+  '/library/handed/$handoverId': typeof LibraryHandedHandoverIdRoute
   '/settings/members/$memberId': typeof SettingsMembersMemberIdRoute
 }
 export interface FileRoutesByTo {
@@ -387,6 +394,7 @@ export interface FileRoutesByTo {
   '/settings': typeof SettingsIndexRoute
   '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/draft/$draftId': typeof ChatDraftDraftIdRoute
+  '/library/handed/$handoverId': typeof LibraryHandedHandoverIdRoute
   '/settings/members/$memberId': typeof SettingsMembersMemberIdRoute
 }
 export interface FileRoutesById {
@@ -437,6 +445,7 @@ export interface FileRoutesById {
   '/settings/': typeof SettingsIndexRoute
   '/_chat/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/_chat/draft/$draftId': typeof ChatDraftDraftIdRoute
+  '/library_/handed/$handoverId': typeof LibraryHandedHandoverIdRoute
   '/settings/members_/$memberId': typeof SettingsMembersMemberIdRoute
 }
 export interface FileRouteTypes {
@@ -487,6 +496,7 @@ export interface FileRouteTypes {
     | '/settings/'
     | '/$environmentId/$threadId'
     | '/draft/$draftId'
+    | '/library/handed/$handoverId'
     | '/settings/members/$memberId'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -534,6 +544,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/$environmentId/$threadId'
     | '/draft/$draftId'
+    | '/library/handed/$handoverId'
     | '/settings/members/$memberId'
   id:
     | '__root__'
@@ -583,6 +594,7 @@ export interface FileRouteTypes {
     | '/settings/'
     | '/_chat/$environmentId/$threadId'
     | '/_chat/draft/$draftId'
+    | '/library_/handed/$handoverId'
     | '/settings/members_/$memberId'
   fileRoutesById: FileRoutesById
 }
@@ -597,6 +609,7 @@ export interface RootRouteChildren {
   UsageRoute: typeof UsageRoute
   WelcomeRoute: typeof WelcomeRoute
   ProjectsProjectKeyRoute: typeof ProjectsProjectKeyRoute
+  LibraryHandedHandoverIdRoute: typeof LibraryHandedHandoverIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -916,6 +929,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsMembersMemberIdRouteImport
       parentRoute: typeof SettingsRoute
     }
+    '/library_/handed/$handoverId': {
+      id: '/library_/handed/$handoverId'
+      path: '/library/handed/$handoverId'
+      fullPath: '/library/handed/$handoverId'
+      preLoaderRoute: typeof LibraryHandedHandoverIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_chat/draft/$draftId': {
       id: '/_chat/draft/$draftId'
       path: '/draft/$draftId'
@@ -1036,6 +1056,7 @@ const rootRouteChildren: RootRouteChildren = {
   UsageRoute: UsageRoute,
   WelcomeRoute: WelcomeRoute,
   ProjectsProjectKeyRoute: ProjectsProjectKeyRoute,
+  LibraryHandedHandoverIdRoute: LibraryHandedHandoverIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

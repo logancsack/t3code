@@ -45,6 +45,8 @@ import {
   aldoOrgYouLine,
   type AldoOrg,
 } from "./organization.logic";
+import { useLeaving } from "./AldoOffboarding";
+import { aldoLeaveLine, aldoManagedLeaveLine } from "./offboarding.logic";
 import { aldoJoiningSummary } from "./orgJoining.logic";
 
 export function AldoOrganizationPage() {
@@ -54,9 +56,13 @@ export function AldoOrganizationPage() {
   const [confirming, setConfirming] = useState<"leave" | "delete" | null>(null);
   // Who can join, for owners and admins; nothing from an Aldo without it.
   const joining = useJoining(org);
+  // What leaving would do to its threads (and whether it manages the account), before it's asked.
+  const canLeave = Boolean(org && !aldoOrgOwnPlace(org).delete && !aldoOrgOwnPlace(org).blocked);
+  const leaving = useLeaving(org?.you ?? "", canLeave);
   if (!org) return fallback;
 
   const own = aldoOrgOwnPlace(org);
+  const managed = leaving.leaving?.managed === true;
   const members = () => void navigate({ to: "/settings/members" });
 
   return (
@@ -119,16 +125,20 @@ export function AldoOrganizationPage() {
             description="No one else is in it. Its invites stop working, and your account stays yours."
             onOpen={() => setConfirming("delete")}
           />
-        ) : own.blocked ? (
+        ) : own.blocked || managed ? (
           <OpenRow
             title={<span className="text-muted-foreground">Leave {org.name}</span>}
-            description={own.blocked}
+            description={own.blocked ?? aldoManagedLeaveLine(org)}
             onOpen={null}
           />
         ) : (
           <OpenRow
             title={<span className="text-destructive-foreground">Leave {org.name}</span>}
-            onOpen={() => setConfirming("leave")}
+            onOpen={() => {
+              // A read that failed is tried again as it's asked.
+              if (leaving.error) leaving.retry();
+              setConfirming("leave");
+            }}
           />
         )}
       </SettingsSection>
@@ -138,7 +148,14 @@ export function AldoOrganizationPage() {
         open={confirming === "leave"}
         onOpenChange={(open) => setConfirming(open ? "leave" : null)}
         title={`Leave ${org.name}?`}
-        description={`${aldoOrgKeeps(org, "yours")} To come back, you’ll need a new invite.`}
+        description={
+          leaving.leaving !== undefined
+            ? aldoLeaveLine(org, leaving.leaving)
+            : leaving.error
+              ? `Couldn’t check what leaving does to your threads. ${leaving.error}`
+              : "Checking what leaving does to your threads…"
+        }
+        ready={leaving.leaving !== undefined}
         action="Leave"
         onConfirm={() =>
           changeOwn(() => aldoOrg.remove(org.you)).then(() =>

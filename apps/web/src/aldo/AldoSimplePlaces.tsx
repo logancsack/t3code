@@ -17,6 +17,7 @@ import { ApprovalsSection } from "./AldoApprovals";
 import { confirmQuickChoice, DecisionIcon, quickChoice } from "./AldoBrief";
 import { HealthStrip, Section } from "./AldoHomeBoard";
 import { NeedsYouCard, ThreadLink } from "./AldoHomeInbox";
+import { AldoHandedToYou } from "./AldoHandedToYou";
 import { AldoSharedFiles } from "./AldoLibrary";
 import { AldoPaymentWaiting } from "./AldoPaymentCard";
 import { waitingApprovals } from "./approvals.logic";
@@ -254,6 +255,7 @@ export function AldoSimpleLibrary(props: { readonly tabs: ReactNode }) {
       </p>
       {/* The list lines up with the page; it's inset for settings. */}
       <div className="-mx-3 flex flex-col gap-2 sm:-mx-4">
+        <AldoHandedToYou />
         <AldoSharedFiles />
       </div>
     </PlacePage>
