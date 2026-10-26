@@ -366,30 +366,49 @@ describe("former members", () => {
       aldoHandoverLineText(handover({ state: "failed", error: "Its computer is gone." }), null),
     ).toBe("Couldn’t copy it: Its computer is gone.");
     // Handed to someone: theirs to delete, not the admin's.
+    expect(
+      aldoHandoverLineText(
+        handover({ state: "deleted", to: null, error: "Its computer never started." }),
+        null,
+      ),
+    ).toBe("Not copied: Its computer never started.");
+    expect(aldoHandoverLineText(handover({ state: "deleted", to: null }), null)).toBe("Deleted");
     expect(aldoHandoverActions(handover(), "maya")).toEqual({
+      open: false,
       retry: false,
       hand: false,
       delete: false,
     });
     expect(aldoHandoverActions(handover({ to: null }), "maya")).toEqual({
+      open: false,
       retry: false,
       hand: true,
       delete: true,
     });
     expect(aldoHandoverActions(handover({ state: "failed" }), "maya")).toEqual({
+      open: false,
       retry: true,
       hand: false,
       delete: false,
     });
     expect(aldoHandoverActions(handover({ state: "failed", to: null }), "maya")).toEqual({
+      open: false,
       retry: true,
       hand: true,
       delete: true,
     });
     expect(aldoHandoverActions(handover({ state: "deleted", to: null }), "maya")).toEqual({
+      open: false,
       retry: false,
       hand: false,
       delete: false,
+    });
+    // Handed to the admin: theirs to open and delete.
+    expect(aldoHandoverActions(handover({ to: { id: "maya", email: "m" } }), "maya")).toEqual({
+      open: true,
+      retry: false,
+      hand: false,
+      delete: true,
     });
     expect(aldoDeparturesCopying([departure()])).toBe(false);
     expect(

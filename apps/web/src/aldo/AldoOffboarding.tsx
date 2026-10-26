@@ -5,6 +5,7 @@
 // a closed account to restore. Aldo decides; this shows its words when it
 // refuses. From an Aldo without it, the sheets say what they said before.
 
+import { Link } from "@tanstack/react-router";
 import { LoaderCircleIcon, TriangleAlertIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -183,7 +184,7 @@ export function RemoveStep(props: {
     <>
       <p className="text-sm">{aldoRemoveSummary(org, leaving)}</p>
       {leaving.managed ? (
-        <Alert variant="warning">
+        <Alert variant="warning" controlAlignment="first-line">
           <TriangleAlertIcon />
           <AlertDescription>{aldoClosesLine(org, leaving)}</AlertDescription>
         </Alert>
@@ -510,8 +511,17 @@ function HandoverItem(props: {
             </Button>
           </div>
         </div>
-      ) : actions.retry || actions.hand || actions.delete ? (
+      ) : actions.open || actions.retry || actions.hand || actions.delete ? (
         <div className="flex flex-wrap gap-2">
+          {actions.open ? (
+            <Button
+              size="sm"
+              variant="outline"
+              render={<Link to="/library/handed/$handoverId" params={{ handoverId: line.id }} />}
+            >
+              Open
+            </Button>
+          ) : null}
           {actions.retry ? (
             <Button
               size="sm"

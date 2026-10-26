@@ -227,7 +227,7 @@ export function AldoHandoverPage({ handoverId }: { handoverId: string }) {
                   : `Its routines · ${view.routines.length}`
               }
             >
-              <p className="text-muted-foreground text-xs">
+              <p className="px-1 text-muted-foreground text-xs">
                 {view.routines.length === 1 ? "It stopped" : "They stopped"} when {view.from} left.
                 Set {view.routines.length === 1 ? "it" : "them"} up again in your thread if you
                 still need {view.routines.length === 1 ? "it" : "them"}.
@@ -426,7 +426,7 @@ function FilesSection({ view }: { view: AldoHandoverView }) {
           Show all {view.files.length}
         </Button>
       ) : null}
-      {more ? <p className="text-muted-foreground text-xs">{more}</p> : null}
+      {more ? <p className="px-1 text-muted-foreground text-xs">{more}</p> : null}
     </Section>
   );
 }

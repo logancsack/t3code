@@ -495,7 +495,7 @@ export function aldoHandoverLineText(line: AldoHandoverLine, you: string | null)
     case "failed":
       return line.error ? `Couldn’t copy it: ${line.error}` : "Couldn’t copy it.";
     case "deleted":
-      return "Deleted";
+      return line.error ? `Not copied: ${line.error}` : "Deleted";
     case "copied": {
       if (!line.to)
         return `Kept${line.expiresAt ? ` until ${aldoOrgDay(line.expiresAt)}` : ""}${size}`;
@@ -506,15 +506,22 @@ export function aldoHandoverLineText(line: AldoHandoverLine, you: string | null)
 }
 
 /**
- * What an admin can do about a copy: try a failed one again, hand on one
- * nobody has, delete one nobody has (one handed to someone is theirs to delete).
+ * What an admin can do about a copy: open one handed to them, try a failed
+ * one again, hand on one nobody has, delete one nobody has (one handed to
+ * someone is theirs to delete).
  */
 export function aldoHandoverActions(
   line: AldoHandoverLine,
   you: string | null,
-): { readonly retry: boolean; readonly hand: boolean; readonly delete: boolean } {
+): {
+  readonly open: boolean;
+  readonly retry: boolean;
+  readonly hand: boolean;
+  readonly delete: boolean;
+} {
   const live = line.state === "copied" || line.state === "failed";
   return {
+    open: line.state === "copied" && Boolean(you) && line.to?.id === you,
     retry: line.state === "failed",
     hand: live && !line.to,
     delete: live && (!line.to || line.to.id === you),
@@ -567,7 +574,7 @@ export function aldoHandoverFilesMore(view: AldoHandoverView): string | null {
 }
 
 /** The first message carrying a copy on says this unless the user writes their own. */
-export const ALDO_CARRY_ON_DEFAULT = "Then tell me where it stands and what’s left to do.";
+export const ALDO_CARRY_ON_DEFAULT = "Tell me where it stands and what’s left to do.";
 
 /** A conversation's heading: its title, or the thread's when it has none. */
 export function aldoConversationTitle(
