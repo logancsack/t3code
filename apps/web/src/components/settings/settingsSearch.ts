@@ -39,6 +39,7 @@ export type SettingsPath =
   | "/settings/members"
   | "/settings/running"
   | "/settings/activity"
+  | "/settings/joining"
   | "/settings/agents"
   | "/settings/permissions"
   | "/settings/notifications"
@@ -148,6 +149,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/members": "Members",
   "/settings/running": "Running now",
   "/settings/activity": "Activity",
+  "/settings/joining": "Who can join",
   "/settings/agents": "Models",
   "/settings/permissions": "Permissions",
   "/settings/notifications": "Notifications",
@@ -712,6 +714,16 @@ export const SETTINGS_SEARCH_ITEMS = [
     requiresAldoOrganization: true,
   },
   {
+    id: "aldo-joining",
+    title: "Who can join",
+    to: "/settings/joining",
+    searchTerms: [
+      "who can join domain domains verify dns txt record invite link share link requests ask join right away invite only",
+    ],
+    aldoCloudOnly: true,
+    requiresAldoOrganization: true,
+  },
+  {
     id: "aldo-activity",
     title: "Activity",
     to: "/settings/activity",
@@ -1257,6 +1269,7 @@ const SETTINGS_CATEGORY_SCOPES: Readonly<Record<SettingsPath, SettingsSearchScop
   "/settings/members": null,
   "/settings/running": null,
   "/settings/activity": null,
+  "/settings/joining": null,
   "/settings/agents": null,
   "/settings/permissions": null,
   "/settings/notifications": null,

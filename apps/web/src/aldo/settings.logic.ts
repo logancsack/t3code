@@ -16,6 +16,7 @@ export const ALDO_SETTINGS_PATHS: ReadonlySet<string> = new Set([
   "/settings/members",
   "/settings/running",
   "/settings/activity",
+  "/settings/joining",
   "/settings/agents",
   "/settings/permissions",
   "/settings/instructions",
@@ -112,6 +113,11 @@ export const ALDO_SETTINGS_PAGES: Readonly<
     title: "Activity",
     intro: "Each change to your organization, and what its admins did, newest first.",
   },
+  "/settings/joining": {
+    title: "Who can join",
+    intro:
+      "The domains your organization proves it owns, what people at them can do, and its invite link. Anyone else needs an invite.",
+  },
   "/settings/agents": {
     title: "Models",
     intro:
@@ -193,7 +199,7 @@ export function aldoSettingsNav(options: {
     {
       group: options.organization,
       items: [
-        { to: "/settings/organization", label: "Organization" },
+        { to: "/settings/organization", label: "Organization", also: ["/settings/joining"] },
         { to: "/settings/members", label: "Members", also: ["/settings/running"] },
         { to: "/settings/activity", label: "Activity" },
       ],
@@ -205,11 +211,13 @@ export function aldoSettingsNav(options: {
 /** A member's page (orgAdmin.logic.ts): /settings/members/<their id>. */
 const MEMBER_PAGE = /^\/settings\/members\/[^/]+$/;
 
-/** The page a page sits under, for the way back to it: a member's page and Running now, under Members. */
-export function aldoSettingsParent(
-  pathname: string,
-): { readonly to: "/settings/members"; readonly label: string } | null {
+/** The page a page sits under, for the way back to it: a member's page and Running now, under Members; Who can join, under Organization. */
+export function aldoSettingsParent(pathname: string): {
+  readonly to: "/settings/members" | "/settings/organization";
+  readonly label: string;
+} | null {
   const path = pathname.replace(/\/+$/, "");
+  if (path === "/settings/joining") return { to: "/settings/organization", label: "Organization" };
   return MEMBER_PAGE.test(path) || path === "/settings/running"
     ? { to: "/settings/members", label: "Members" }
     : null;

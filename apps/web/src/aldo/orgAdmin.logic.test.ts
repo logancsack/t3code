@@ -412,6 +412,79 @@ describe("their words", () => {
     expect(aldoActivitySentence(line({ action: "something_new" }), "x")).toBe(
       "sam@linden.com made a change",
     );
+    // Who can join: the domains, the invite link, requests, and invites nobody typed.
+    const domain = { detail: { domain: "linden.co" }, target: null };
+    expect(
+      aldoActivitySentence(line({ action: "join_policy_set", detail: { to: "join" } }), "x"),
+    ).toBe("sam@linden.com set who can join to Join right away");
+    expect(aldoActivitySentence(line({ action: "domain_added", ...domain }), "sam")).toBe(
+      "You added linden.co",
+    );
+    expect(
+      aldoActivitySentence(line({ action: "domain_verified", ...domain, actor: null }), "x"),
+    ).toBe("Aldo verified linden.co");
+    expect(aldoActivitySentence(line({ action: "domain_lost", ...domain, actor: null }), "x")).toBe(
+      "Aldo couldn’t find linden.co’s record, so joining by it is paused",
+    );
+    expect(
+      aldoActivitySentence(
+        line({ action: "link_on", target: null, detail: { days: 7, anyAddress: false } }),
+        "x",
+      ),
+    ).toBe("sam@linden.com turned on the invite link, for 7 days");
+    expect(
+      aldoActivitySentence(
+        line({ action: "link_on", target: null, detail: { days: 1, anyAddress: true } }),
+        "x",
+      ),
+    ).toBe("sam@linden.com turned on the invite link, for 1 day, for any address");
+    expect(
+      aldoActivitySentence(
+        line({ action: "link_changed", target: null, detail: { anyAddress: false } }),
+        "x",
+      ),
+    ).toBe("sam@linden.com limited the invite link to your domains");
+    expect(
+      aldoActivitySentence(
+        line({ action: "link_changed", target: null, detail: { days: 30 } }),
+        "x",
+      ),
+    ).toBe("sam@linden.com set the invite link to work for 30 days");
+    const asker = { actor: null, target: { id: null, email: "ira@linden.co" } };
+    expect(
+      aldoActivitySentence(line({ action: "requested", ...asker, detail: { via: "link" } }), "x"),
+    ).toBe("ira@linden.co asked to join with the invite link");
+    expect(
+      aldoActivitySentence(
+        line({ action: "requested", ...asker, detail: { via: "expired" } }),
+        "x",
+      ),
+    ).toBe("ira@linden.co asked for a new invite");
+    expect(
+      aldoActivitySentence(line({ action: "request_approved", target: asker.target }), "sam"),
+    ).toBe("You approved ira@linden.co’s request");
+    expect(
+      aldoActivitySentence(
+        line({ action: "invited", ...asker, detail: { role: "member", via: "link" } }),
+        "x",
+      ),
+    ).toBe("The invite link sent ira@linden.co an invite");
+    expect(
+      aldoActivitySentence(
+        line({
+          action: "invited",
+          ...asker,
+          detail: { role: "member", via: "domain", domain: "linden.co" },
+        }),
+        "x",
+      ),
+    ).toBe("ira@linden.co got an invite at once, from linden.co");
+    expect(
+      aldoActivitySentence(
+        line({ action: "invited", target: asker.target, detail: { role: "admin" } }),
+        "x",
+      ),
+    ).toBe("sam@linden.com invited ira@linden.co as an admin");
     expect(aldoActivityNote(line({ detail: { note: "Back Monday" } }))).toBe("“Back Monday”");
     expect(aldoActivityNote(line({ action: "paused", detail: { note: "x" } }))).toBeNull();
   });

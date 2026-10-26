@@ -1,7 +1,7 @@
-// What Settings → Organization and Members share (organization.logic.ts):
-// the organization once it's loaded, a change and Aldo's refusal of it, the
-// rows and tiles both pages use, and a yes before a change to the user's own
-// place.
+// What Settings → Organization, Members and Who can join share
+// (organization.logic.ts, orgJoining.logic.ts): the organization and who can
+// join it once loaded, a change and Aldo's refusal of it, the rows and tiles
+// the pages use, and a yes before a change to the user's own place.
 
 import { useNavigate } from "@tanstack/react-router";
 import { ChevronRightIcon } from "lucide-react";
@@ -19,8 +19,9 @@ import {
 } from "../components/ui/alert-dialog";
 import { Button } from "../components/ui/button";
 import { cn } from "../lib/utils";
-import { aldoOrgInitials, type AldoOrg } from "./organization.logic";
-import { settingsOrg } from "./settingsData";
+import { aldoOrgInitials, aldoOrgManages, type AldoOrg } from "./organization.logic";
+import type { AldoJoining } from "./orgJoining.logic";
+import { settingsOrg, settingsOrgJoining } from "./settingsData";
 import { useSettingsResource } from "./settingsResource";
 
 export type OrgAnswer = { readonly org: AldoOrg | null; readonly link: string | null };
@@ -80,6 +81,41 @@ export function useOrgChange() {
     }
   }, []);
   return { busy, error, run };
+}
+
+/** A change to who can join, from one place: busy while it runs, and Aldo's refusal kept to show there. */
+export function useJoiningChange() {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const run = useCallback(
+    async <T extends AldoJoining | { readonly joining: AldoJoining }>(
+      work: () => Promise<T>,
+    ): Promise<T | null> => {
+      setBusy(true);
+      setError(null);
+      try {
+        const answer = await work();
+        settingsOrgJoining.set("joining" in answer ? answer.joining : answer);
+        return answer;
+      } catch (cause) {
+        setError(messageOf(cause));
+        // Refused because it changed meanwhile: show it as it is now.
+        void settingsOrgJoining.refresh().catch(() => undefined);
+        return null;
+      } finally {
+        setBusy(false);
+      }
+    },
+    [],
+  );
+  return { busy, error, run };
+}
+
+/** Who can join, for an owner or admin; null while it loads, or from an Aldo without it. */
+export function useJoining(org: AldoOrg | null): AldoJoining | null {
+  const manages = Boolean(org && aldoOrgManages(org));
+  const { data } = useSettingsResource(settingsOrgJoining, manages);
+  return manages ? (data ?? null) : null;
 }
 
 export function ErrorLine({ error }: { error: string | null }) {

@@ -4,7 +4,7 @@
 // decides what each role may do; this offers only what the user may.
 
 import { useNavigate } from "@tanstack/react-router";
-import { UsersIcon } from "lucide-react";
+import { DoorOpenIcon, UsersIcon } from "lucide-react";
 import { useState, type FormEvent } from "react";
 
 import { SettingsSection } from "../components/settings/settingsLayout";
@@ -28,6 +28,7 @@ import {
   ErrorLine,
   Initials,
   OpenRow,
+  useJoining,
   useLoadedOrg,
   useOrgChange,
 } from "./AldoOrgParts";
@@ -44,12 +45,15 @@ import {
   aldoOrgYouLine,
   type AldoOrg,
 } from "./organization.logic";
+import { aldoJoiningSummary } from "./orgJoining.logic";
 
 export function AldoOrganizationPage() {
   const navigate = useNavigate();
   const { org, fallback } = useLoadedOrg();
   const [renaming, setRenaming] = useState(false);
   const [confirming, setConfirming] = useState<"leave" | "delete" | null>(null);
+  // Who can join, for owners and admins; nothing from an Aldo without it.
+  const joining = useJoining(org);
   if (!org) return fallback;
 
   const own = aldoOrgOwnPlace(org);
@@ -74,6 +78,14 @@ export function AldoOrganizationPage() {
           value={aldoOrgMembersSummary(org)}
           onOpen={members}
         />
+        {joining ? (
+          <OpenRow
+            leading={<AldoIconTile icon={<DoorOpenIcon />} />}
+            title="Who can join"
+            value={aldoJoiningSummary(joining)}
+            onOpen={() => void navigate({ to: "/settings/joining" })}
+          />
+        ) : null}
       </SettingsSection>
 
       <SettingsSection title="About" hideTitle>

@@ -4,7 +4,7 @@
 // when it refuses.
 
 import { useNavigate } from "@tanstack/react-router";
-import { CopyIcon, LockIcon, MailPlusIcon, RefreshCwIcon } from "lucide-react";
+import { CopyIcon, LinkIcon, LockIcon, MailPlusIcon, RefreshCwIcon } from "lucide-react";
 import { useState, type FormEvent, type ReactNode } from "react";
 
 import { SettingsSection } from "../components/settings/settingsLayout";
@@ -24,12 +24,14 @@ import { Input } from "../components/ui/input";
 import { Radio, RadioGroup } from "../components/ui/radio-group";
 import { toastManager } from "../components/ui/toast";
 import { cn } from "../lib/utils";
-import { aldoOrg } from "./accountApi";
+import { aldoOrg, aldoOrgJoining } from "./accountApi";
 import { RunningDot } from "./AldoOrgAdminParts";
 import {
   ErrorLine,
   Initials,
   OpenRow,
+  useJoining,
+  useJoiningChange,
   useLoadedOrg,
   useOrgChange,
   type OrgAnswer,
@@ -51,19 +53,27 @@ import {
   aldoOrgOpenInvites,
   aldoOrgOwnPlace,
   aldoOrgRolesToGive,
+  aldoOrgSentLine,
   type AldoOrg,
   type AldoOrgInvite,
   type AldoOrgMember,
   type AldoOrgRole,
 } from "./organization.logic";
 import { aldoCredits, aldoRunningLine } from "./orgAdmin.logic";
-import { settingsOrgUsage } from "./settingsData";
+import {
+  aldoApproveBlocked,
+  aldoRequestLine,
+  type AldoJoining,
+  type AldoOrgRequest,
+} from "./orgJoining.logic";
+import { settingsOrg, settingsOrgUsage } from "./settingsData";
 import { useSettingsResource } from "./settingsResource";
 
 type Sheet =
   | { readonly kind: "invite" }
   | { readonly kind: "member"; readonly id: string }
-  | { readonly kind: "pending"; readonly id: string };
+  | { readonly kind: "pending"; readonly id: string }
+  | { readonly kind: "request"; readonly id: string };
 
 const AN: Record<AldoOrgRole, string> = {
   owner: "an owner",
@@ -80,6 +90,8 @@ export function AldoMembersPage() {
     settingsOrgUsage,
     Boolean(org && aldoOrgManages(org)),
   );
+  // Who can join, for its requests; null from an Aldo without it.
+  const joining = useJoining(org);
   if (!org) return fallback;
 
   const manages = aldoOrgManages(org);
@@ -89,6 +101,8 @@ export function AldoMembersPage() {
   const invite =
     sheet?.kind === "pending" ? org.invites?.find((i) => i.id === sheet.id) : undefined;
   const held = aldoOrgOpenInvites(org);
+  const request =
+    sheet?.kind === "request" ? joining?.requests.find((r) => r.id === sheet.id) : undefined;
 
   return (
     <>
@@ -181,10 +195,44 @@ export function AldoMembersPage() {
               {aldoOrgFreeSeats(org)} free.
             </p>
           </div>
-          <Button size="sm" onClick={() => setSheet({ kind: "invite" })}>
-            <MailPlusIcon /> Invite by email
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" onClick={() => setSheet({ kind: "invite" })}>
+              <MailPlusIcon /> Invite by email
+            </Button>
+            {joining && !joining.link ? (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => void navigate({ to: "/settings/joining" })}
+              >
+                <LinkIcon /> Turn on invite link
+              </Button>
+            ) : null}
+          </div>
         </div>
+      ) : null}
+
+      {joining?.requests.length ? (
+        <SettingsSection title={`Requests · ${joining.requests.length}`}>
+          {joining.requests.map((r) => (
+            <OpenRow
+              key={r.id}
+              leading={<Initials of={r.email} />}
+              title={<span className="[overflow-wrap:anywhere]">{r.email}</span>}
+              description={
+                <>
+                  {aldoRequestLine(r)}
+                  {r.note ? (
+                    <span className="mt-0.5 block text-foreground/80 [overflow-wrap:anywhere]">
+                      “{r.note}”
+                    </span>
+                  ) : null}
+                </>
+              }
+              onOpen={() => setSheet({ kind: "request", id: r.id })}
+            />
+          ))}
+        </SettingsSection>
       ) : null}
 
       {org.invites?.length ? (
@@ -217,6 +265,15 @@ export function AldoMembersPage() {
         <MemberSheet key={member.id} org={org} member={member} onClose={close} />
       ) : null}
       {invite ? <PendingSheet key={invite.id} org={org} invite={invite} onClose={close} /> : null}
+      {request && joining ? (
+        <RequestSheet
+          key={request.id}
+          org={org}
+          joining={joining}
+          request={request}
+          onClose={close}
+        />
+      ) : null}
     </>
   );
 }
@@ -568,12 +625,7 @@ function PendingSheet(props: { org: AldoOrg; invite: AldoOrgInvite; onClose: () 
     void run(() => aldoOrg.revokeInvite(invite.id)).then((answer) => answer && props.onClose());
   const rows: Array<[string, string]> = [
     ["Role", ALDO_ORG_ROLE_LABELS[invite.role]],
-    [
-      "Sent",
-      invite.sentBy
-        ? `${aldoOrgDay(invite.sentAt)} by ${invite.sentBy}`
-        : aldoOrgDay(invite.sentAt),
-    ],
+    ["Sent", aldoOrgSentLine(invite)],
     ["Expires", aldoOrgExpiresLine(invite)],
   ];
   return (
@@ -647,6 +699,60 @@ function PendingSheet(props: { org: AldoOrg; invite: AldoOrgInvite; onClose: () 
             </Button>
           </DialogFooter>
         ) : null}
+      </DialogPopup>
+    </Dialog>
+  );
+}
+
+/** A request to join: who, in their words, and approving (which sends the invite) or declining. */
+function RequestSheet(props: {
+  org: AldoOrg;
+  joining: AldoJoining;
+  request: AldoOrgRequest;
+  onClose: () => void;
+}) {
+  const { request } = props;
+  const { busy, error, run } = useJoiningChange();
+  const blocked = aldoApproveBlocked(props.joining);
+  const decide = (approve: boolean) =>
+    void run(() => aldoOrgJoining.decide(request.id, approve)).then((answer) => {
+      if (!answer) return;
+      // Approving sends an invite, which holds a seat.
+      if (approve) void settingsOrg.refresh().catch(() => undefined);
+      toastManager.add(
+        approve
+          ? { type: "success", title: "Invite sent", description: request.email }
+          : { type: "success", title: "Declined", description: `We told ${request.email}.` },
+      );
+      props.onClose();
+    });
+  return (
+    <Dialog open onOpenChange={(open) => !open && !busy && props.onClose()}>
+      <DialogPopup>
+        <DialogHeader>
+          <DialogTitle className="pe-8 [overflow-wrap:anywhere]">{request.email}</DialogTitle>
+          <DialogDescription>
+            {aldoRequestLine(request)}. Approving sends an invite to that address, as a member of{" "}
+            {props.org.name}.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogPanel className="space-y-3">
+          {request.note ? (
+            <blockquote className="rounded-xl border px-3 py-2.5 text-sm [overflow-wrap:anywhere]">
+              “{request.note}”
+            </blockquote>
+          ) : null}
+          {blocked ? <p className="text-warning-foreground text-sm">{blocked}</p> : null}
+          <ErrorLine error={error} />
+        </DialogPanel>
+        <DialogFooter>
+          <Button variant="outline" disabled={busy} onClick={() => decide(false)}>
+            Decline
+          </Button>
+          <Button disabled={busy || blocked !== null} onClick={() => decide(true)}>
+            Approve
+          </Button>
+        </DialogFooter>
       </DialogPopup>
     </Dialog>
   );

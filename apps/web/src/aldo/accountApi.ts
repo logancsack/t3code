@@ -13,6 +13,12 @@ import {
 } from "./momentEmails.logic";
 import { parseAldoOrg, type AldoOrg, type AldoOrgRole } from "./organization.logic";
 import {
+  parseAldoDomainCheck,
+  parseAldoJoining,
+  type AldoJoining,
+  type AldoJoinPolicy,
+} from "./orgJoining.logic";
+import {
   parseAldoActivity,
   parseAldoMemberPage,
   parseAldoOrgMachines,
@@ -978,4 +984,45 @@ export const aldoOrgAdmin = {
   /** Their extra usage limit in cents, or null for the organization's default. */
   setLimit: (id: string, cents: number | null) => memberChange(id, { limitCents: cents }),
   setPaused: (id: string, paused: boolean) => memberChange(id, { paused }),
+};
+
+const joiningChange = (path: string, method: string, body?: unknown) =>
+  api<unknown>(path, {
+    method,
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  }).then((answer): AldoJoining => {
+    const joining = parseAldoJoining(answer);
+    if (!joining) throw new Error("Aldo didn't say how it went. Reload to see.");
+    return joining;
+  });
+
+const domainPath = (id: string) => `/api/org/domains/${encodeURIComponent(id)}`;
+
+/**
+ * Who can join the organization (orgJoining.logic.ts), for its owners and
+ * admins: each change answers it as it is after.
+ */
+export const aldoOrgJoining = {
+  /** Null from an Aldo without it, or for someone in no organization. */
+  get: () => orgRead("/api/org/joining", parseAldoJoining),
+  setPolicy: (policy: AldoJoinPolicy) => joiningChange("/api/org/joining", "PATCH", { policy }),
+  addDomain: (domain: string) => joiningChange("/api/org/domains", "POST", { domain }),
+  /** Looks the domain's record up now; what it saw, too. */
+  checkDomain: (id: string) =>
+    api<unknown>(domainPath(id), { method: "POST" }).then((answer) => {
+      const checked = parseAldoDomainCheck(answer);
+      if (!checked) throw new Error("Aldo didn't say how it went. Reload to see.");
+      return checked;
+    }),
+  removeDomain: (id: string) => joiningChange(domainPath(id), "DELETE"),
+  /** Turns the invite link on, or changes it. */
+  setLink: (input: {
+    readonly days?: 1 | 7 | 30;
+    readonly anyAddress?: boolean;
+    readonly replace?: true;
+  }) => joiningChange("/api/org/link", "PUT", input),
+  linkOff: () => joiningChange("/api/org/link", "DELETE"),
+  /** Approving sends an invite to the address that asked; declining tells it so. */
+  decide: (id: string, approve: boolean) =>
+    joiningChange(`/api/org/requests/${encodeURIComponent(id)}`, "POST", { approve }),
 };
