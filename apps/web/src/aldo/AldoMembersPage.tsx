@@ -27,6 +27,7 @@ import { cn } from "../lib/utils";
 import { aldoOrg, aldoOrgJoining } from "./accountApi";
 import { FormerMembers, RemoveStep, useLeaving } from "./AldoOffboarding";
 import { RunningDot } from "./AldoOrgAdminParts";
+import { NewTeamSheet, TeamChecks, TeamsSection } from "./AldoTeamParts";
 import {
   ErrorLine,
   Initials,
@@ -59,7 +60,7 @@ import {
   type AldoOrgMember,
   type AldoOrgRole,
 } from "./organization.logic";
-import { aldoCredits, aldoRunningLine } from "./orgAdmin.logic";
+import { aldoCredits, aldoNames, aldoRunningLine } from "./orgAdmin.logic";
 import {
   aldoApproveBlocked,
   aldoRequestAlready,
@@ -75,9 +76,11 @@ import {
 } from "./offboarding.logic";
 import { settingsOrg, settingsOrgDepartures, settingsOrgUsage } from "./settingsData";
 import { useSettingsResource } from "./settingsResource";
+import { aldoInviteTeams, aldoPersonLine, aldoSameIds, aldoTeamsOf } from "./teams.logic";
 
 type Sheet =
   | { readonly kind: "invite" }
+  | { readonly kind: "newTeam" }
   | { readonly kind: "member"; readonly id: string }
   | { readonly kind: "pending"; readonly id: string }
   | { readonly kind: "request"; readonly id: string };
@@ -159,11 +162,11 @@ export function AldoMembersPage() {
                   ) : null}
                 </span>
               }
-              description={
-                m.id === org.you
-                  ? `You · joined ${aldoOrgDay(m.joinedAt)}`
-                  : `Joined ${aldoOrgDay(m.joinedAt)}`
-              }
+              description={aldoPersonLine(
+                m.id === org.you,
+                aldoTeamsOf(org, m.id).map((t) => t.name),
+                aldoOrgDay(m.joinedAt),
+              )}
               value={
                 used ? (
                   <span className="inline-flex items-center gap-1.5 tabular-nums">
@@ -265,9 +268,12 @@ export function AldoMembersPage() {
         </SettingsSection>
       ) : null}
 
+      <TeamsSection org={org} usage={month} onNew={() => setSheet({ kind: "newTeam" })} />
+
       {manages ? <FormerMembers org={org} /> : null}
 
       {sheet?.kind === "invite" ? <InviteSheet org={org} onClose={close} /> : null}
+      {sheet?.kind === "newTeam" ? <NewTeamSheet org={org} onClose={close} /> : null}
       {member && member.id === org.you ? (
         <YourRoleSheet org={org} onClose={close} />
       ) : member ? (
@@ -385,12 +391,14 @@ function RoleChoices(props: {
 function InviteSheet({ org, onClose }: { org: AldoOrg; onClose: () => void }) {
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<AldoOrgRole>("member");
+  const [teams, setTeams] = useState<ReadonlyArray<string>>([]);
   const { busy, error, run } = useOrgChange();
   const full = aldoOrgFull(org);
   const submit = (event: FormEvent) => {
     event.preventDefault();
     const to = email.trim();
-    void run(() => aldoOrg.invite(to, role)).then((answer) => {
+    // Teams go only when some are picked, so an Aldo without them takes the invite as before.
+    void run(() => aldoOrg.invite(to, role, teams.length ? teams : undefined)).then((answer) => {
       if (!answer) return;
       toastManager.add({ type: "success", title: "Invite sent", description: to });
       onClose();
@@ -418,6 +426,14 @@ function InviteSheet({ org, onClose }: { org: AldoOrg; onClose: () => void }) {
               onChange={(event) => setEmail(event.currentTarget.value)}
             />
             <RoleChoices value={role} onChange={setRole} offered={aldoOrgRolesToGive(org)} />
+            {org.teams?.length && !full ? (
+              <div className="space-y-1.5">
+                <p className="font-medium text-sm">
+                  Teams <span className="font-normal text-muted-foreground">· optional</span>
+                </p>
+                <TeamChecks teams={org.teams} value={teams} onChange={setTeams} disabled={busy} />
+              </div>
+            ) : null}
             <p
               className={cn("text-xs", full ? "text-warning-foreground" : "text-muted-foreground")}
             >
@@ -623,10 +639,19 @@ async function copyLink(
 
 /** An open invite: who sent it, when it lapses, and resending, copying or revoking it. */
 function PendingSheet(props: { org: AldoOrg; invite: AldoOrgInvite; onClose: () => void }) {
-  const { invite } = props;
+  const { org, invite } = props;
   const [link, setLink] = useState<string | null>(null);
   const [revoking, setRevoking] = useState(false);
+  // Picking the teams it puts its person on, from those it names now.
+  const [teams, setTeams] = useState<ReadonlyArray<string> | null>(null);
   const { busy, error, run } = useOrgChange();
+  const named = aldoInviteTeams(org, invite);
+  const saveTeams = (picked: ReadonlyArray<string>) =>
+    void run(() => aldoOrg.setInviteTeams(invite.id, picked)).then((answer) => {
+      if (!answer) return;
+      toastManager.add({ type: "success", title: "Invite saved", description: invite.email });
+      setTeams(null);
+    });
   const resend = () =>
     void run(() => aldoOrg.renewInvite(invite.id, "email")).then((answer) => {
       if (!answer) return;
@@ -659,6 +684,19 @@ function PendingSheet(props: { org: AldoOrg; invite: AldoOrgInvite; onClose: () 
             <p className="text-sm">
               Revoke it? The link stops working, and its seat is free at once.
             </p>
+          ) : teams && org.teams ? (
+            <>
+              <p className="text-muted-foreground text-sm">
+                When {invite.email} joins, they’re put on the teams checked here.
+              </p>
+              <TeamChecks
+                teams={org.teams}
+                value={teams}
+                onChange={setTeams}
+                disabled={busy}
+                label="Their teams"
+              />
+            </>
           ) : (
             <>
               <dl className="rounded-xl border px-3 text-sm">
@@ -674,6 +712,15 @@ function PendingSheet(props: { org: AldoOrg; invite: AldoOrgInvite; onClose: () 
                   </div>
                 ))}
               </dl>
+              {org.teams?.length ? (
+                <div className="rounded-xl border">
+                  <OpenRow
+                    title="Teams"
+                    value={named.length ? aldoNames(named) : "None"}
+                    onOpen={busy ? null : () => setTeams(invite.teams)}
+                  />
+                </div>
+              ) : null}
               <div className="grid grid-cols-2 gap-2">
                 <Button variant="outline" disabled={busy} onClick={resend}>
                   <RefreshCwIcon /> Resend
@@ -714,6 +761,18 @@ function PendingSheet(props: { org: AldoOrg; invite: AldoOrgInvite; onClose: () 
             </Button>
             <Button variant="destructive" disabled={busy} onClick={revoke}>
               Revoke invite
+            </Button>
+          </DialogFooter>
+        ) : teams ? (
+          <DialogFooter>
+            <Button variant="outline" disabled={busy} onClick={() => setTeams(null)}>
+              Back
+            </Button>
+            <Button
+              disabled={busy || aldoSameIds(teams, invite.teams)}
+              onClick={() => saveTeams(teams)}
+            >
+              Save
             </Button>
           </DialogFooter>
         ) : null}

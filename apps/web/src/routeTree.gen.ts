@@ -53,6 +53,7 @@ import { Route as SettingsActivityRouteImport } from './routes/settings.activity
 import { Route as SettingsAccountRouteImport } from './routes/settings.account'
 import { Route as ProjectsProjectKeyRouteImport } from './routes/projects.$projectKey'
 import { Route as ChatPullRequestsRouteImport } from './routes/_chat.pull-requests'
+import { Route as SettingsTeamsTeamIdRouteImport } from './routes/settings.teams.$teamId'
 import { Route as SettingsMembersMemberIdRouteImport } from './routes/settings.members_.$memberId'
 import { Route as LibraryHandedHandoverIdRouteImport } from './routes/library_.handed.$handoverId'
 import { Route as ChatDraftDraftIdRouteImport } from './routes/_chat.draft.$draftId'
@@ -278,6 +279,11 @@ const ChatPullRequestsRoute = ChatPullRequestsRouteImport.update({
   path: '/pull-requests',
   getParentRoute: () => ChatRoute,
 } as any)
+const SettingsTeamsTeamIdRoute = SettingsTeamsTeamIdRouteImport.update({
+  id: '/teams/$teamId',
+  path: '/teams/$teamId',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const SettingsMembersMemberIdRoute = SettingsMembersMemberIdRouteImport.update({
   id: '/members_/$memberId',
   path: '/members/$memberId',
@@ -348,6 +354,7 @@ export interface FileRoutesByFullPath {
   '/draft/$draftId': typeof ChatDraftDraftIdRoute
   '/library/handed/$handoverId': typeof LibraryHandedHandoverIdRoute
   '/settings/members/$memberId': typeof SettingsMembersMemberIdRoute
+  '/settings/teams/$teamId': typeof SettingsTeamsTeamIdRoute
 }
 export interface FileRoutesByTo {
   '/connect': typeof ConnectRoute
@@ -396,6 +403,7 @@ export interface FileRoutesByTo {
   '/draft/$draftId': typeof ChatDraftDraftIdRoute
   '/library/handed/$handoverId': typeof LibraryHandedHandoverIdRoute
   '/settings/members/$memberId': typeof SettingsMembersMemberIdRoute
+  '/settings/teams/$teamId': typeof SettingsTeamsTeamIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -447,6 +455,7 @@ export interface FileRoutesById {
   '/_chat/draft/$draftId': typeof ChatDraftDraftIdRoute
   '/library_/handed/$handoverId': typeof LibraryHandedHandoverIdRoute
   '/settings/members_/$memberId': typeof SettingsMembersMemberIdRoute
+  '/settings/teams/$teamId': typeof SettingsTeamsTeamIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -498,6 +507,7 @@ export interface FileRouteTypes {
     | '/draft/$draftId'
     | '/library/handed/$handoverId'
     | '/settings/members/$memberId'
+    | '/settings/teams/$teamId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/connect'
@@ -546,6 +556,7 @@ export interface FileRouteTypes {
     | '/draft/$draftId'
     | '/library/handed/$handoverId'
     | '/settings/members/$memberId'
+    | '/settings/teams/$teamId'
   id:
     | '__root__'
     | '/_chat'
@@ -596,6 +607,7 @@ export interface FileRouteTypes {
     | '/_chat/draft/$draftId'
     | '/library_/handed/$handoverId'
     | '/settings/members_/$memberId'
+    | '/settings/teams/$teamId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -922,6 +934,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ChatPullRequestsRouteImport
       parentRoute: typeof ChatRoute
     }
+    '/settings/teams/$teamId': {
+      id: '/settings/teams/$teamId'
+      path: '/teams/$teamId'
+      fullPath: '/settings/teams/$teamId'
+      preLoaderRoute: typeof SettingsTeamsTeamIdRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/settings/members_/$memberId': {
       id: '/settings/members_/$memberId'
       path: '/members/$memberId'
@@ -1003,6 +1022,7 @@ interface SettingsRouteChildren {
   SettingsWorkspaceRoute: typeof SettingsWorkspaceRoute
   SettingsIndexRoute: typeof SettingsIndexRoute
   SettingsMembersMemberIdRoute: typeof SettingsMembersMemberIdRoute
+  SettingsTeamsTeamIdRoute: typeof SettingsTeamsTeamIdRoute
 }
 
 const SettingsRouteChildren: SettingsRouteChildren = {
@@ -1039,6 +1059,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsWorkspaceRoute: SettingsWorkspaceRoute,
   SettingsIndexRoute: SettingsIndexRoute,
   SettingsMembersMemberIdRoute: SettingsMembersMemberIdRoute,
+  SettingsTeamsTeamIdRoute: SettingsTeamsTeamIdRoute,
 }
 
 const SettingsRouteWithChildren = SettingsRoute._addFileChildren(

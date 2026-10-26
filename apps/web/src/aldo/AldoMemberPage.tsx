@@ -1,7 +1,7 @@
 // Settings → Members → a member (orgAdmin.logic.ts), for owners and admins:
 // their month's credits and extra usage, what's running with Stop, the
 // organization's threads of theirs by title, one private line for the rest,
-// and their limit, pause and role. Never what's in a thread. Aldo decides who
+// and their limit, pause, role and teams. Never what's in a thread. Aldo decides who
 // may do what; this shows its words when it refuses.
 
 import { Link, useNavigate } from "@tanstack/react-router";
@@ -23,7 +23,7 @@ import {
 import { Input } from "../components/ui/input";
 import { Radio, RadioGroup } from "../components/ui/radio-group";
 import { toastManager } from "../components/ui/toast";
-import { aldoOrgAdmin } from "./accountApi";
+import { aldoOrg, aldoOrgAdmin } from "./accountApi";
 import { MemberSheet, opensFor, YourRoleSheet } from "./AldoMembersPage";
 import {
   refreshOrgUsage,
@@ -33,7 +33,8 @@ import {
   StopSheet,
   useOrgRead,
 } from "./AldoOrgAdminParts";
-import { ErrorLine, Initials, OpenRow, useLoadedOrg } from "./AldoOrgParts";
+import { ErrorLine, Initials, OpenRow, useLoadedOrg, useOrgChange } from "./AldoOrgParts";
+import { TeamChecks } from "./AldoTeamParts";
 import {
   aldoCreditDay,
   aldoCredits,
@@ -43,6 +44,7 @@ import {
   aldoLimitHelp,
   aldoLimitLine,
   aldoMonthLabel,
+  aldoNames,
   aldoPauseSentence,
   aldoPersonalLine,
   aldoRestLine,
@@ -56,6 +58,7 @@ import {
   type AldoRunningThread,
 } from "./orgAdmin.logic";
 import { ALDO_ORG_ROLE_LABELS, aldoOrgManages, type AldoOrg } from "./organization.logic";
+import { aldoSameIds, aldoTeamsOf } from "./teams.logic";
 
 const messageOf = (cause: unknown) =>
   cause instanceof Error && cause.message ? cause.message : "Something went wrong. Try again.";
@@ -66,7 +69,8 @@ type Sheet =
   | { readonly kind: "thread"; readonly thread: AldoOrgThread }
   | { readonly kind: "limit" }
   | { readonly kind: "pause" }
-  | { readonly kind: "role" };
+  | { readonly kind: "role" }
+  | { readonly kind: "teams" };
 
 export function AldoMemberPage({ memberId }: { memberId: string }) {
   const { org, fallback } = useLoadedOrg();
@@ -226,6 +230,13 @@ function MemberMonth({ org, memberId }: { org: AldoOrg; memberId: string }) {
           value={ALDO_ORG_ROLE_LABELS[page.member.role]}
           onOpen={listed && opensFor(org, listed) ? () => setSheet({ kind: "role" }) : null}
         />
+        {org.teams?.length && listed ? (
+          <OpenRow
+            title="Teams"
+            value={aldoNames(aldoTeamsOf(org, listed.id).map((t) => t.name)) || "None"}
+            onOpen={() => setSheet({ kind: "teams" })}
+          />
+        ) : null}
         {page.can.pause ? (
           <OpenRow
             title={page.usage.paused ? "Resume their work" : "Pause their work"}
@@ -274,6 +285,9 @@ function MemberMonth({ org, memberId }: { org: AldoOrg; memberId: string }) {
       {sheet?.kind === "pause" ? (
         <PauseSheet page={page} org={org} onClose={close} onChanged={changed} />
       ) : null}
+      {sheet?.kind === "teams" && listed ? (
+        <TeamsSheet org={org} memberId={listed.id} email={listed.email} onClose={close} />
+      ) : null}
       {sheet?.kind === "role" && listed ? (
         you ? (
           <YourRoleSheet org={org} onClose={close} />
@@ -287,6 +301,46 @@ function MemberMonth({ org, memberId }: { org: AldoOrg; memberId: string }) {
         )
       ) : null}
     </>
+  );
+}
+
+/** The teams someone is on: checked, from the organization's. */
+function TeamsSheet(props: { org: AldoOrg; memberId: string; email: string; onClose: () => void }) {
+  const { org } = props;
+  const now = aldoTeamsOf(org, props.memberId).map((t) => t.id);
+  const [teams, setTeams] = useState<ReadonlyArray<string>>(now);
+  const { busy, error, run } = useOrgChange();
+  const save = () =>
+    void run(() => aldoOrg.setMemberTeams(props.memberId, teams)).then((answer) => {
+      if (!answer) return;
+      toastManager.add({ type: "success", title: "Teams saved", description: props.email });
+      props.onClose();
+    });
+  return (
+    <Dialog open onOpenChange={(open) => !open && !busy && props.onClose()}>
+      <DialogPopup>
+        <DialogHeader>
+          <DialogTitle className="pe-8 [overflow-wrap:anywhere]">
+            {props.memberId === org.you ? "Your teams" : `Teams for ${props.email}`}
+          </DialogTitle>
+          <DialogDescription>
+            Teams group people for invites and usage. They don’t change what anyone can do.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogPanel>
+          <TeamChecks teams={org.teams ?? []} value={teams} onChange={setTeams} disabled={busy} />
+          <ErrorLine error={error} />
+        </DialogPanel>
+        <DialogFooter>
+          <DialogClose render={<Button variant="outline" />} disabled={busy}>
+            Cancel
+          </DialogClose>
+          <Button disabled={busy || aldoSameIds(teams, now)} onClick={save}>
+            Save
+          </Button>
+        </DialogFooter>
+      </DialogPopup>
+    </Dialog>
   );
 }
 

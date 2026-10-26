@@ -233,6 +233,7 @@ describe("who can join", () => {
           sentBy: null,
           via: null,
           expired: false,
+          teams: [],
         },
         {
           id: "i2",
@@ -243,8 +244,10 @@ describe("who can join", () => {
           sentBy: null,
           via: null,
           expired: true,
+          teams: [],
         },
       ],
+      teams: [],
       plan: null,
     };
     expect(aldoRequestAlready(org, "ira@linden.co")).toBe("member");

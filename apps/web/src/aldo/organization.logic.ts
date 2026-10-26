@@ -1,7 +1,7 @@
 /**
  * The user's organization (Aldo's GET /api/org and the routes beside it): its
- * people, their roles, its seats and, for owners and admins, its open
- * invites. Someone in none, and an Aldo without organizations, answers 404,
+ * people, their roles, its teams, its seats and, for owners and admins, its
+ * open invites. Someone in none, and an Aldo without organizations, answers 404,
  * so Settings shows nothing of them. What each role may do mirrors the
  * server's checks (src/lib/orgs.ts in Aldo), which decide.
  */
@@ -26,6 +26,15 @@ export interface AldoOrgInvite {
   /** How it came about when nobody typed the address: the invite link, or the domain; null from an older Aldo. */
   readonly via: "link" | "domain" | "request" | null;
   readonly expired: boolean;
+  /** The teams it puts its person on when they join, by id; none from an older Aldo. */
+  readonly teams: ReadonlyArray<string>;
+}
+
+/** A team (teams.logic.ts): a name and its people, by id. */
+export interface AldoOrgTeam {
+  readonly id: string;
+  readonly name: string;
+  readonly members: ReadonlyArray<string>;
 }
 
 export interface AldoOrg {
@@ -38,6 +47,8 @@ export interface AldoOrg {
   readonly you: string;
   readonly role: AldoOrgRole;
   readonly members: ReadonlyArray<AldoOrgMember>;
+  /** Its teams, for everyone in it; null from an Aldo without teams, which shows none of them. */
+  readonly teams: ReadonlyArray<AldoOrgTeam> | null;
   /** Null for members, who don't see invites. */
   readonly invites: ReadonlyArray<AldoOrgInvite> | null;
   /** The plan every member's seat is on; null when everyone is on their own (and from an older Aldo). */
@@ -87,7 +98,7 @@ function memberOf(value: unknown): AldoOrgMember | null {
 
 function inviteOf(value: unknown): AldoOrgInvite | null {
   if (!value || typeof value !== "object") return null;
-  const { id, email, role, expiresAt, sentAt, sentBy, via, expired } = value as Record<
+  const { id, email, role, expiresAt, sentAt, sentBy, via, expired, teams } = value as Record<
     string,
     unknown
   >;
@@ -102,7 +113,17 @@ function inviteOf(value: unknown): AldoOrgInvite | null {
         sentBy: str(sentBy),
         via: via === "link" || via === "domain" || via === "request" ? via : null,
         expired,
+        teams: Array.isArray(teams) ? teams.flatMap((t) => str(t) ?? []) : [],
       }
+    : null;
+}
+
+function teamOf(value: unknown): AldoOrgTeam | null {
+  if (!value || typeof value !== "object") return null;
+  const { id, name, members } = value as Record<string, unknown>;
+  const [i, n] = [str(id), str(name)];
+  return i && n && Array.isArray(members)
+    ? { id: i, name: n, members: members.flatMap((m) => str(m) ?? []) }
     : null;
 }
 
@@ -122,7 +143,7 @@ function planOf(value: unknown): AldoOrgPlan | null {
 /** Aldo's answer, or null for one that isn't (an older Aldo's page, an error, a half answer). */
 export function parseAldoOrg(body: unknown): AldoOrg | null {
   if (!body || typeof body !== "object") return null;
-  const { id, name, seats, used, you, role, members, invites, plan } = body as Record<
+  const { id, name, seats, used, you, role, members, teams, invites, plan } = body as Record<
     string,
     unknown
   >;
@@ -138,6 +159,7 @@ export function parseAldoOrg(body: unknown): AldoOrg | null {
     you: y,
     role,
     members: members.flatMap((m) => memberOf(m) ?? []),
+    teams: Array.isArray(teams) ? teams.flatMap((t) => teamOf(t) ?? []) : null,
     invites: Array.isArray(invites) ? invites.flatMap((m) => inviteOf(m) ?? []) : null,
     plan: planOf(plan),
   };

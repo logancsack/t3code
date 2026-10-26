@@ -41,6 +41,7 @@ const org = (plan = false): AldoOrg => ({
     { id: "maya", email: "maya@linden.com", role: "owner", joinedAt: "2026-10-01T00:00:00.000Z" },
     { id: "jo", email: "jo@linden.com", role: "member", joinedAt: "2026-10-01T00:00:00.000Z" },
   ],
+  teams: [],
   invites: [],
   plan: plan
     ? {
@@ -61,8 +62,8 @@ const leaving = (over: Partial<AldoLeaving> = {}): AldoLeaving => ({
   managed: false,
   closesOn: null,
   colleagues: [
-    { id: "maya", email: "maya@linden.com" },
-    { id: "jo", email: "jo@linden.com" },
+    { id: "maya", email: "maya@linden.com", teams: [] },
+    { id: "jo", email: "jo@linden.com", teams: ["Finance"] },
   ],
   choose: true,
   ...over,
@@ -111,13 +112,21 @@ describe("reading Aldo's answers", () => {
         shares: 4,
         managed: true,
         closesOn: "2026-11-25T12:00:00.000Z",
-        colleagues: [{ id: "maya", email: "maya@linden.com" }, { id: 7 }],
+        colleagues: [
+          { id: "maya", email: "maya@linden.com" },
+          { id: "jo", email: "jo@linden.com", teams: ["Finance", 3, "Ops"] },
+          { id: 7 },
+        ],
         choose: true,
       },
     };
+    // Shared teams from an Aldo that has them; none from an older one.
     expect(parseAldoLeaving(body)).toEqual({
       ...body.leaving,
-      colleagues: [{ id: "maya", email: "maya@linden.com" }],
+      colleagues: [
+        { id: "maya", email: "maya@linden.com", teams: [] },
+        { id: "jo", email: "jo@linden.com", teams: ["Finance", "Ops"] },
+      ],
     });
     expect(parseAldoLeaving({ member: { id: "pia" } })).toBeNull();
     expect(parseAldoLeaving(null)).toBeNull();

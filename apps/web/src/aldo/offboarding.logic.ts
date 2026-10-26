@@ -24,8 +24,12 @@ export interface AldoLeaving {
   /** The organization manages their account (its address is at a verified domain): removing it closes it. */
   readonly managed: boolean;
   readonly closesOn: string | null;
-  /** Who the threads could go to, the user first. */
-  readonly colleagues: ReadonlyArray<{ readonly id: string; readonly email: string }>;
+  /** Who the threads could go to: the user first, then those on a team with them (the teams they share; none from an older Aldo). */
+  readonly colleagues: ReadonlyArray<{
+    readonly id: string;
+    readonly email: string;
+    readonly teams: ReadonlyArray<string>;
+  }>;
   /** Whether the user chooses what becomes of them (removing someone); leaving keeps them for the admins. */
   readonly choose: boolean;
 }
@@ -154,6 +158,14 @@ function personOf(value: unknown): { id: string; email: string } | null {
   return id && email ? { id, email } : null;
 }
 
+function colleagueOf(
+  value: unknown,
+): { id: string; email: string; teams: ReadonlyArray<string> } | null {
+  const person = personOf(value);
+  const teams = rec(value)?.teams;
+  return person && { ...person, teams: list(teams, str) };
+}
+
 function targetOf(value: unknown): AldoThreadTarget | null {
   const r = rec(value);
   const [environmentId, threadId] = [str(r?.environmentId), str(r?.threadId)];
@@ -171,7 +183,7 @@ export function parseAldoLeaving(body: unknown): AldoLeaving | null {
     shares: num(r.shares),
     managed: r.managed,
     closesOn: str(r.closesOn),
-    colleagues: list(r.colleagues, personOf),
+    colleagues: list(r.colleagues, colleagueOf),
     choose: r.choose === true,
   };
 }

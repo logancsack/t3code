@@ -919,12 +919,35 @@ const orgChange = (path: string, method: string, body?: unknown) =>
 
 const invitePath = (id: string) => `/api/org/invites/${encodeURIComponent(id)}`;
 const memberPath = (id: string) => `/api/org/members/${encodeURIComponent(id)}`;
+const teamPath = (id: string) => `/api/org/teams/${encodeURIComponent(id)}`;
 
 export const aldoOrg = {
   rename: (name: string) => orgChange("/api/org", "PATCH", { name }),
   delete: () => orgChange("/api/org", "DELETE"),
-  invite: (email: string, role: AldoOrgRole) =>
-    orgChange("/api/org/invites", "POST", { email, role }),
+  /** Invites someone, onto `teams` (ids) when they join; teams go only to an Aldo that has them. */
+  invite: (email: string, role: AldoOrgRole, teams?: ReadonlyArray<string>) =>
+    orgChange("/api/org/invites", "POST", teams ? { email, role, teams } : { email, role }),
+  /** Which teams an open invite puts its person on. */
+  setInviteTeams: (id: string, teams: ReadonlyArray<string>) =>
+    orgChange(invitePath(id), "PATCH", { teams }),
+  /** Which teams a member is on. */
+  setMemberTeams: (id: string, teams: ReadonlyArray<string>) =>
+    orgChange(memberPath(id), "PATCH", { teams }),
+  /** A new team with those people on it; the organization after, and the team's id. */
+  createTeam: (name: string, people: ReadonlyArray<string>) =>
+    api<{ org?: unknown; team?: unknown }>("/api/org/teams", {
+      method: "POST",
+      body: JSON.stringify({ name, people }),
+    }).then((answer) => ({
+      org: parseAldoOrg(answer.org),
+      link: null,
+      team: typeof answer.team === "string" ? answer.team : null,
+    })),
+  renameTeam: (id: string, name: string) => orgChange(teamPath(id), "PATCH", { name }),
+  /** Who's on a team: exactly these people. */
+  setTeamPeople: (id: string, people: ReadonlyArray<string>) =>
+    orgChange(teamPath(id), "PATCH", { people }),
+  deleteTeam: (id: string) => orgChange(teamPath(id), "DELETE"),
   /** Emails the invite again (7 fresh days; the old link stops working), or answers its link to copy. */
   renewInvite: (id: string, send: "email" | "link") => orgChange(invitePath(id), "POST", { send }),
   revokeInvite: (id: string) => orgChange(invitePath(id), "DELETE"),
@@ -972,10 +995,15 @@ export const aldoOrgAdmin = {
   thread: (id: string) =>
     orgRead(`/api/org/threads/${encodeURIComponent(id)}`, parseAldoThreadDays),
   activity: (
-    options: { readonly person?: string | null; readonly before?: string | null } = {},
+    options: {
+      readonly person?: string | null;
+      readonly team?: string | null;
+      readonly before?: string | null;
+    } = {},
   ) => {
     const query = new URLSearchParams();
     if (options.person) query.set("person", options.person);
+    if (options.team) query.set("team", options.team);
     if (options.before) query.set("before", options.before);
     const search = query.toString();
     return orgRead(`/api/org/activity${search ? `?${search}` : ""}`, parseAldoActivity);

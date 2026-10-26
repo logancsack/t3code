@@ -200,7 +200,11 @@ export function aldoSettingsNav(options: {
       group: options.organization,
       items: [
         { to: "/settings/organization", label: "Organization", also: ["/settings/joining"] },
-        { to: "/settings/members", label: "Members", also: ["/settings/running"] },
+        {
+          to: "/settings/members",
+          label: "Members",
+          also: ["/settings/running", "/settings/teams"],
+        },
         { to: "/settings/activity", label: "Activity" },
       ],
     },
@@ -210,15 +214,17 @@ export function aldoSettingsNav(options: {
 
 /** A member's page (orgAdmin.logic.ts): /settings/members/<their id>. */
 const MEMBER_PAGE = /^\/settings\/members\/[^/]+$/;
+/** A team's page (teams.logic.ts): /settings/teams/<its id>. */
+const TEAM_PAGE = /^\/settings\/teams\/[^/]+$/;
 
-/** The page a page sits under, for the way back to it: a member's page and Running now, under Members; Who can join, under Organization. */
+/** The page a page sits under, for the way back to it: a member's or team's page and Running now, under Members; Who can join, under Organization. */
 export function aldoSettingsParent(pathname: string): {
   readonly to: "/settings/members" | "/settings/organization";
   readonly label: string;
 } | null {
   const path = pathname.replace(/\/+$/, "");
   if (path === "/settings/joining") return { to: "/settings/organization", label: "Organization" };
-  return MEMBER_PAGE.test(path) || path === "/settings/running"
+  return MEMBER_PAGE.test(path) || TEAM_PAGE.test(path) || path === "/settings/running"
     ? { to: "/settings/members", label: "Members" }
     : null;
 }
@@ -233,6 +239,13 @@ export function aldoSettingsPage(
       title: "Member",
       intro:
         "Their month: credits, machines and the organization's threads, by title. What's in them stays theirs.",
+    };
+  }
+  if (TEAM_PAGE.test(path)) {
+    return {
+      title: "Team",
+      intro:
+        "Who's on it, for invites and usage by team. A team doesn't change what anyone can do.",
     };
   }
   return ALDO_SETTINGS_PAGES[path] ?? null;
