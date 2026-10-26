@@ -38,6 +38,18 @@ export interface AldoOrg {
   readonly members: ReadonlyArray<AldoOrgMember>;
   /** Null for members, who don't see invites. */
   readonly invites: ReadonlyArray<AldoOrgInvite> | null;
+  /** The plan every member's seat is on; null when everyone is on their own (and from an older Aldo). */
+  readonly plan: AldoOrgPlan | null;
+}
+
+export interface AldoOrgPlan {
+  readonly id: string;
+  readonly name: string;
+  /** Each seat's credits a month; null for Complimentary, which isn't metered. */
+  readonly credits: number | null;
+  readonly renewsAt: string;
+  /** Each seat's extra usage limit, in cents. */
+  readonly spendLimitCents: number;
 }
 
 export const ALDO_ORG_ROLES: ReadonlyArray<AldoOrgRole> = ["member", "admin", "owner"];
@@ -80,10 +92,26 @@ function inviteOf(value: unknown): AldoOrgInvite | null {
     : null;
 }
 
+function planOf(value: unknown): AldoOrgPlan | null {
+  if (!value || typeof value !== "object") return null;
+  const { id, name, credits, renewsAt, spendLimitCents } = value as Record<string, unknown>;
+  const [i, n, r] = [str(id), str(name), str(renewsAt)];
+  return i &&
+    n &&
+    r &&
+    (credits === null || typeof credits === "number") &&
+    typeof spendLimitCents === "number"
+    ? { id: i, name: n, credits, renewsAt: r, spendLimitCents }
+    : null;
+}
+
 /** Aldo's answer, or null for one that isn't (an older Aldo's page, an error, a half answer). */
 export function parseAldoOrg(body: unknown): AldoOrg | null {
   if (!body || typeof body !== "object") return null;
-  const { id, name, seats, used, you, role, members, invites } = body as Record<string, unknown>;
+  const { id, name, seats, used, you, role, members, invites, plan } = body as Record<
+    string,
+    unknown
+  >;
   const [i, n, y] = [str(id), str(name), str(you)];
   if (!i || !n || !y || !isRole(role) || typeof seats !== "number" || typeof used !== "number")
     return null;
@@ -97,6 +125,7 @@ export function parseAldoOrg(body: unknown): AldoOrg | null {
     role,
     members: members.flatMap((m) => memberOf(m) ?? []),
     invites: Array.isArray(invites) ? invites.flatMap((m) => inviteOf(m) ?? []) : null,
+    plan: planOf(plan),
   };
 }
 
@@ -188,6 +217,27 @@ export function aldoOrgInitials(text: string): string {
 /** The user's place, in a line: "You’re an owner". */
 export function aldoOrgYouLine(org: AldoOrg): string {
   return `You’re ${org.role === "member" ? "a member" : `an ${org.role}`}`;
+}
+
+const CREDITS = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
+
+/** Under the plan's name: each seat's credits and extra usage, and when the month renews. */
+export function aldoOrgPlanDetail(plan: AldoOrgPlan): string {
+  const renews = `Renews ${aldoOrgDay(plan.renewsAt)}.`;
+  if (plan.credits === null) return `Every seat is unmetered. ${renews}`;
+  const extra =
+    plan.spendLimitCents > 0
+      ? `up to $${CREDITS.format(plan.spendLimitCents / 100)} of extra usage`
+      : "no extra usage";
+  return `Each seat: ${CREDITS.format(plan.credits)} credits a month and ${extra}. ${renews}`;
+}
+
+/** What leaving (or being removed, or the org going) keeps: everything, and a seat ends with it. */
+export function aldoOrgKeeps(org: AldoOrg, whose: "yours" | "theirs"): string {
+  const owner = whose === "yours" ? "Your" : "Their";
+  return org.plan
+    ? `${owner} threads, computers and vault stay ${whose}, and ${whose === "yours" ? "your" : "their"} seat on its plan ends.`
+    : `${owner} threads, computers, vault and plan stay ${whose}.`;
 }
 
 /** Seats free for invites. */

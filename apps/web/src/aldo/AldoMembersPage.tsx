@@ -41,6 +41,7 @@ import {
   aldoOrgDay,
   aldoOrgExpiresLine,
   aldoOrgFreeSeats,
+  aldoOrgKeeps,
   aldoOrgFull,
   aldoOrgFullLine,
   aldoOrgInviteLine,
@@ -347,8 +348,8 @@ function MemberSheet(props: { org: AldoOrg; member: AldoOrgMember; onClose: () =
         <DialogPanel>
           {removing ? (
             <p className="text-sm">
-              Remove them from {org.name}? Their threads, computers, vault and plan stay theirs, and
-              their account carries on without the organization.
+              Remove them from {org.name}? {aldoOrgKeeps(org, "theirs")} Their account carries on
+              without the organization.
             </p>
           ) : (
             <>

@@ -1,4 +1,5 @@
 import { isAldoCloud } from "../../aldo/api";
+import { aldoSeatAsk } from "../../aldo/billing.logic";
 import type { AldoUsageAlertLevel, AldoWorkspaceUsage } from "../../state/aldoWorkspaceUsage";
 
 const CREDITS = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 });
@@ -65,7 +66,15 @@ function extraUsagePrice(usage?: AldoWorkspaceUsage): string {
     : "billed by the credit";
 }
 
-/** Aldo cloud: extra usage past the plan is allowed up to the limit set here. */
+/** On a seat, whom to ask `what` (its organization sets the limit, not them); null off a seat. */
+function seatAskCopy(usage: AldoWorkspaceUsage | undefined, what: string): string | null {
+  const seat = usage?.seat;
+  if (!seat) return null;
+  const ask = aldoSeatAsk(seat);
+  return ask ? `Ask ${ask} ${what}.` : `${seat.org} sets your extra usage limit.`;
+}
+
+/** Aldo cloud: extra usage past the plan is allowed up to the limit set here (or, on a seat, by its organization). */
 function aldoCloudAlertCopy(level: AldoUsageAlertLevel, usage?: AldoWorkspaceUsage): string | null {
   // Past the limit, a newer gateway keeps agents on the user's own subscriptions working one at a time (the economy lane).
   const economy = usage?.credits?.economyRemaining;
@@ -75,17 +84,23 @@ function aldoCloudAlertCopy(level: AldoUsageAlertLevel, usage?: AldoWorkspaceUsa
       : null;
   switch (level) {
     case "included_warning":
-      return `This month's included credits are running low. Past them, agents keep working up to your extra usage limit, ${extraUsagePrice(usage)}.`;
-    case "included_exhausted":
+      return usage?.seat
+        ? "This month's included credits are running low. Past them, agents keep working up to your extra usage limit."
+        : `This month's included credits are running low. Past them, agents keep working up to your extra usage limit, ${extraUsagePrice(usage)}.`;
+    case "included_exhausted": {
+      const seat = seatAskCopy(usage, "to turn it on");
       return economyCopy
-        ? `This month's included credits are used up, and extra usage is off. ${economyCopy} Set an extra usage limit to run more.`
-        : "This month's included credits are used up, and extra usage is off. Set an extra usage limit to keep agents working.";
+        ? `This month's included credits are used up, and extra usage is off. ${economyCopy} ${seat ?? "Set an extra usage limit to run more."}`
+        : `This month's included credits are used up, and extra usage is off. ${seat ?? "Set an extra usage limit to keep agents working."}`;
+    }
     case "spend_warning":
-      return "Extra usage is close to your limit. Raise it to keep agents working.";
-    case "spend_reached":
+      return `Extra usage is close to your limit. ${seatAskCopy(usage, "for a higher limit") ?? "Raise it to keep agents working."}`;
+    case "spend_reached": {
+      const seat = seatAskCopy(usage, "for a higher limit");
       return economyCopy
-        ? `Your credits and extra usage limit are used up. ${economyCopy} Raise the limit to run more.`
-        : "Your credits and extra usage limit are used up, so agents can't start. Raise the limit to keep going.";
+        ? `Your credits and extra usage limit are used up. ${economyCopy} ${seat ?? "Raise the limit to run more."}`
+        : `Your credits and extra usage limit are used up, so agents can't start. ${seat ?? "Raise the limit to keep going."}`;
+    }
     default:
       return null;
   }
@@ -144,7 +159,10 @@ export function aldoUsageFacts(usage: AldoWorkspaceUsage): readonly AldoUsageFac
             ? "—"
             : `${formatCredits(usage.credits.projected)} credits`,
       },
-      { label: "Estimated total", value: formatCents(usage.bill.estimatedCents) },
+      // A seat's plan is its organization's to pay for, not theirs.
+      ...(usage.seat
+        ? []
+        : [{ label: "Estimated total", value: formatCents(usage.bill.estimatedCents) }]),
     );
   }
   const prime = usage.prime;

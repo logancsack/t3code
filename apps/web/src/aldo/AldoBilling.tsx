@@ -32,6 +32,7 @@ import {
   aldoPlanChangedCopy,
   aldoPlanSummary,
   aldoPlanTerms,
+  aldoSeatLimitCopy,
   onPeriodEnd,
   withoutAldoCheckoutReturn,
   type AldoBillingPlan,
@@ -178,7 +179,7 @@ export function AldoBillingSection(props: {
     setConfirming(next);
     setConfirmOpen(true);
   };
-  const periodEnd = view.kind === "fixed" || view.kind === "managed" ? view.periodEnd : null;
+  const periodEnd = view.kind === "choose" ? null : view.periodEnd;
 
   /** Runs one request at a time; a redirect leaves the button spinning while the page goes. */
   const run = async (key: string, action: () => Promise<string | void>) => {
@@ -287,6 +288,9 @@ export function AldoBillingSection(props: {
       ) : null}
 
       {summary ? <p className="text-xs text-muted-foreground">{summary}</p> : null}
+      {view.kind === "seat" && view.plan.id !== "complimentary" ? (
+        <p className="text-xs text-muted-foreground">{aldoSeatLimitCopy(view.seat)}</p>
+      ) : null}
 
       {view.kind === "managed" && view.pending && !view.canceling ? (
         <Notice
