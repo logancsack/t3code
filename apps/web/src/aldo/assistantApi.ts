@@ -560,11 +560,15 @@ export interface AldoProfile {
   readonly adminUrl: string | null;
   /** The welcome on Home (onboarding.logic.ts); null on an Aldo without it. */
   readonly onboarding: AldoOnboarding | null;
+  /** The organization they're in, by name; null in none, and on an Aldo without organizations. */
+  readonly organization: string | null;
 }
 
 /** Who's signed in; null where this Aldo can't say (an older one answers with the client's page). */
 export async function fetchAldoProfile(): Promise<AldoProfile | null> {
-  const body = await api<Partial<AldoProfile>>("/api/account").catch(() => null);
+  const body = await api<Partial<AldoProfile> & { org?: { name?: unknown } }>("/api/account").catch(
+    () => null,
+  );
   return body && typeof body.email === "string" && typeof body.id === "string"
     ? {
         id: body.id,
@@ -579,6 +583,7 @@ export async function fetchAldoProfile(): Promise<AldoProfile | null> {
             ? body.adminUrl
             : null,
         onboarding: aldoOnboardingFrom(body),
+        organization: typeof body.org?.name === "string" && body.org.name ? body.org.name : null,
       }
     : null;
 }

@@ -14,6 +14,8 @@ export const ALDO_SETTINGS_PATHS: ReadonlySet<string> = new Set([
   "/settings/account",
   "/settings/organization",
   "/settings/members",
+  "/settings/running",
+  "/settings/activity",
   "/settings/agents",
   "/settings/permissions",
   "/settings/instructions",
@@ -102,6 +104,14 @@ export const ALDO_SETTINGS_PAGES: Readonly<
     intro:
       "Who's in your organization and what each person can do. Everyone's threads, computers and vault stay their own.",
   },
+  "/settings/running": {
+    title: "Running now",
+    intro: "Every machine running in your organization's threads, priciest first.",
+  },
+  "/settings/activity": {
+    title: "Activity",
+    intro: "Each change to your organization, and what its admins did, newest first.",
+  },
   "/settings/agents": {
     title: "Models",
     intro:
@@ -184,18 +194,40 @@ export function aldoSettingsNav(options: {
       group: options.organization,
       items: [
         { to: "/settings/organization", label: "Organization" },
-        { to: "/settings/members", label: "Members" },
+        { to: "/settings/members", label: "Members", also: ["/settings/running"] },
+        { to: "/settings/activity", label: "Activity" },
       ],
     },
     ...nav,
   ];
 }
 
+/** A member's page (orgAdmin.logic.ts): /settings/members/<their id>. */
+const MEMBER_PAGE = /^\/settings\/members\/[^/]+$/;
+
+/** The page a page sits under, for the way back to it: a member's page and Running now, under Members. */
+export function aldoSettingsParent(
+  pathname: string,
+): { readonly to: "/settings/members"; readonly label: string } | null {
+  const path = pathname.replace(/\/+$/, "");
+  return MEMBER_PAGE.test(path) || path === "/settings/running"
+    ? { to: "/settings/members", label: "Members" }
+    : null;
+}
+
 /** A page's name and intro, or null for one that has none (a page T3 alone shows). */
 export function aldoSettingsPage(
   pathname: string,
 ): { readonly title: string; readonly intro: string } | null {
-  return ALDO_SETTINGS_PAGES[pathname.replace(/\/+$/, "")] ?? null;
+  const path = pathname.replace(/\/+$/, "");
+  if (MEMBER_PAGE.test(path)) {
+    return {
+      title: "Member",
+      intro:
+        "Their month: credits, machines and the organization's threads, by title. What's in them stays theirs.",
+    };
+  }
+  return ALDO_SETTINGS_PAGES[path] ?? null;
 }
 
 /** Whether a nav entry is the page shown, or one it opens onto. */

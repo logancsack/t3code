@@ -207,7 +207,8 @@ describe("organizations", () => {
       group: "Linden Partners",
       items: [
         { to: "/settings/organization", label: "Organization" },
-        { to: "/settings/members", label: "Members" },
+        { to: "/settings/members", label: "Members", also: ["/settings/running"] },
+        { to: "/settings/activity", label: "Activity" },
       ],
     });
     expect(nav.slice(1)).toEqual(ALDO_SETTINGS_NAV);

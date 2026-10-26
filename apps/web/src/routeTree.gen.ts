@@ -27,6 +27,7 @@ import { Route as SettingsSourceControlRouteImport } from './routes/settings.sou
 import { Route as SettingsSnapShotRouteImport } from './routes/settings.snap-shot'
 import { Route as SettingsSkillsRouteImport } from './routes/settings.skills'
 import { Route as SettingsSharedRouteImport } from './routes/settings.shared'
+import { Route as SettingsRunningRouteImport } from './routes/settings.running'
 import { Route as SettingsProvidersRouteImport } from './routes/settings.providers'
 import { Route as SettingsProjectsRouteImport } from './routes/settings.projects'
 import { Route as SettingsPhoneRouteImport } from './routes/settings.phone'
@@ -47,9 +48,11 @@ import { Route as SettingsCodeRouteImport } from './routes/settings.code'
 import { Route as SettingsArchivedRouteImport } from './routes/settings.archived'
 import { Route as SettingsAppearanceRouteImport } from './routes/settings.appearance'
 import { Route as SettingsAgentsRouteImport } from './routes/settings.agents'
+import { Route as SettingsActivityRouteImport } from './routes/settings.activity'
 import { Route as SettingsAccountRouteImport } from './routes/settings.account'
 import { Route as ProjectsProjectKeyRouteImport } from './routes/projects.$projectKey'
 import { Route as ChatPullRequestsRouteImport } from './routes/_chat.pull-requests'
+import { Route as SettingsMembersMemberIdRouteImport } from './routes/settings.members_.$memberId'
 import { Route as ChatDraftDraftIdRouteImport } from './routes/_chat.draft.$draftId'
 import { Route as ChatEnvironmentIdThreadIdRouteImport } from './routes/_chat.$environmentId.$threadId'
 
@@ -140,6 +143,11 @@ const SettingsSkillsRoute = SettingsSkillsRouteImport.update({
 const SettingsSharedRoute = SettingsSharedRouteImport.update({
   id: '/shared',
   path: '/shared',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsRunningRoute = SettingsRunningRouteImport.update({
+  id: '/running',
+  path: '/running',
   getParentRoute: () => SettingsRoute,
 } as any)
 const SettingsProvidersRoute = SettingsProvidersRouteImport.update({
@@ -243,6 +251,11 @@ const SettingsAgentsRoute = SettingsAgentsRouteImport.update({
   path: '/agents',
   getParentRoute: () => SettingsRoute,
 } as any)
+const SettingsActivityRoute = SettingsActivityRouteImport.update({
+  id: '/activity',
+  path: '/activity',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const SettingsAccountRoute = SettingsAccountRouteImport.update({
   id: '/account',
   path: '/account',
@@ -257,6 +270,11 @@ const ChatPullRequestsRoute = ChatPullRequestsRouteImport.update({
   id: '/pull-requests',
   path: '/pull-requests',
   getParentRoute: () => ChatRoute,
+} as any)
+const SettingsMembersMemberIdRoute = SettingsMembersMemberIdRouteImport.update({
+  id: '/members_/$memberId',
+  path: '/members/$memberId',
+  getParentRoute: () => SettingsRoute,
 } as any)
 const ChatDraftDraftIdRoute = ChatDraftDraftIdRouteImport.update({
   id: '/draft/$draftId',
@@ -283,6 +301,7 @@ export interface FileRoutesByFullPath {
   '/pull-requests': typeof ChatPullRequestsRoute
   '/projects/$projectKey': typeof ProjectsProjectKeyRoute
   '/settings/account': typeof SettingsAccountRoute
+  '/settings/activity': typeof SettingsActivityRoute
   '/settings/agents': typeof SettingsAgentsRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/archived': typeof SettingsArchivedRoute
@@ -303,6 +322,7 @@ export interface FileRoutesByFullPath {
   '/settings/phone': typeof SettingsPhoneRoute
   '/settings/projects': typeof SettingsProjectsRoute
   '/settings/providers': typeof SettingsProvidersRoute
+  '/settings/running': typeof SettingsRunningRoute
   '/settings/shared': typeof SettingsSharedRoute
   '/settings/skills': typeof SettingsSkillsRoute
   '/settings/snap-shot': typeof SettingsSnapShotRoute
@@ -313,6 +333,7 @@ export interface FileRoutesByFullPath {
   '/settings/': typeof SettingsIndexRoute
   '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/draft/$draftId': typeof ChatDraftDraftIdRoute
+  '/settings/members/$memberId': typeof SettingsMembersMemberIdRoute
 }
 export interface FileRoutesByTo {
   '/connect': typeof ConnectRoute
@@ -325,6 +346,7 @@ export interface FileRoutesByTo {
   '/pull-requests': typeof ChatPullRequestsRoute
   '/projects/$projectKey': typeof ProjectsProjectKeyRoute
   '/settings/account': typeof SettingsAccountRoute
+  '/settings/activity': typeof SettingsActivityRoute
   '/settings/agents': typeof SettingsAgentsRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/archived': typeof SettingsArchivedRoute
@@ -345,6 +367,7 @@ export interface FileRoutesByTo {
   '/settings/phone': typeof SettingsPhoneRoute
   '/settings/projects': typeof SettingsProjectsRoute
   '/settings/providers': typeof SettingsProvidersRoute
+  '/settings/running': typeof SettingsRunningRoute
   '/settings/shared': typeof SettingsSharedRoute
   '/settings/skills': typeof SettingsSkillsRoute
   '/settings/snap-shot': typeof SettingsSnapShotRoute
@@ -356,6 +379,7 @@ export interface FileRoutesByTo {
   '/settings': typeof SettingsIndexRoute
   '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/draft/$draftId': typeof ChatDraftDraftIdRoute
+  '/settings/members/$memberId': typeof SettingsMembersMemberIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -371,6 +395,7 @@ export interface FileRoutesById {
   '/_chat/pull-requests': typeof ChatPullRequestsRoute
   '/projects/$projectKey': typeof ProjectsProjectKeyRoute
   '/settings/account': typeof SettingsAccountRoute
+  '/settings/activity': typeof SettingsActivityRoute
   '/settings/agents': typeof SettingsAgentsRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/archived': typeof SettingsArchivedRoute
@@ -391,6 +416,7 @@ export interface FileRoutesById {
   '/settings/phone': typeof SettingsPhoneRoute
   '/settings/projects': typeof SettingsProjectsRoute
   '/settings/providers': typeof SettingsProvidersRoute
+  '/settings/running': typeof SettingsRunningRoute
   '/settings/shared': typeof SettingsSharedRoute
   '/settings/skills': typeof SettingsSkillsRoute
   '/settings/snap-shot': typeof SettingsSnapShotRoute
@@ -402,6 +428,7 @@ export interface FileRoutesById {
   '/settings/': typeof SettingsIndexRoute
   '/_chat/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/_chat/draft/$draftId': typeof ChatDraftDraftIdRoute
+  '/settings/members_/$memberId': typeof SettingsMembersMemberIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -418,6 +445,7 @@ export interface FileRouteTypes {
     | '/pull-requests'
     | '/projects/$projectKey'
     | '/settings/account'
+    | '/settings/activity'
     | '/settings/agents'
     | '/settings/appearance'
     | '/settings/archived'
@@ -438,6 +466,7 @@ export interface FileRouteTypes {
     | '/settings/phone'
     | '/settings/projects'
     | '/settings/providers'
+    | '/settings/running'
     | '/settings/shared'
     | '/settings/skills'
     | '/settings/snap-shot'
@@ -448,6 +477,7 @@ export interface FileRouteTypes {
     | '/settings/'
     | '/$environmentId/$threadId'
     | '/draft/$draftId'
+    | '/settings/members/$memberId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/connect'
@@ -460,6 +490,7 @@ export interface FileRouteTypes {
     | '/pull-requests'
     | '/projects/$projectKey'
     | '/settings/account'
+    | '/settings/activity'
     | '/settings/agents'
     | '/settings/appearance'
     | '/settings/archived'
@@ -480,6 +511,7 @@ export interface FileRouteTypes {
     | '/settings/phone'
     | '/settings/projects'
     | '/settings/providers'
+    | '/settings/running'
     | '/settings/shared'
     | '/settings/skills'
     | '/settings/snap-shot'
@@ -491,6 +523,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/$environmentId/$threadId'
     | '/draft/$draftId'
+    | '/settings/members/$memberId'
   id:
     | '__root__'
     | '/_chat'
@@ -505,6 +538,7 @@ export interface FileRouteTypes {
     | '/_chat/pull-requests'
     | '/projects/$projectKey'
     | '/settings/account'
+    | '/settings/activity'
     | '/settings/agents'
     | '/settings/appearance'
     | '/settings/archived'
@@ -525,6 +559,7 @@ export interface FileRouteTypes {
     | '/settings/phone'
     | '/settings/projects'
     | '/settings/providers'
+    | '/settings/running'
     | '/settings/shared'
     | '/settings/skills'
     | '/settings/snap-shot'
@@ -536,6 +571,7 @@ export interface FileRouteTypes {
     | '/settings/'
     | '/_chat/$environmentId/$threadId'
     | '/_chat/draft/$draftId'
+    | '/settings/members_/$memberId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -679,6 +715,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsSharedRouteImport
       parentRoute: typeof SettingsRoute
     }
+    '/settings/running': {
+      id: '/settings/running'
+      path: '/running'
+      fullPath: '/settings/running'
+      preLoaderRoute: typeof SettingsRunningRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/settings/providers': {
       id: '/settings/providers'
       path: '/providers'
@@ -819,6 +862,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsAgentsRouteImport
       parentRoute: typeof SettingsRoute
     }
+    '/settings/activity': {
+      id: '/settings/activity'
+      path: '/activity'
+      fullPath: '/settings/activity'
+      preLoaderRoute: typeof SettingsActivityRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/settings/account': {
       id: '/settings/account'
       path: '/account'
@@ -839,6 +889,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/pull-requests'
       preLoaderRoute: typeof ChatPullRequestsRouteImport
       parentRoute: typeof ChatRoute
+    }
+    '/settings/members_/$memberId': {
+      id: '/settings/members_/$memberId'
+      path: '/members/$memberId'
+      fullPath: '/settings/members/$memberId'
+      preLoaderRoute: typeof SettingsMembersMemberIdRouteImport
+      parentRoute: typeof SettingsRoute
     }
     '/_chat/draft/$draftId': {
       id: '/_chat/draft/$draftId'
@@ -875,6 +932,7 @@ const ChatRouteWithChildren = ChatRoute._addFileChildren(ChatRouteChildren)
 
 interface SettingsRouteChildren {
   SettingsAccountRoute: typeof SettingsAccountRoute
+  SettingsActivityRoute: typeof SettingsActivityRoute
   SettingsAgentsRoute: typeof SettingsAgentsRoute
   SettingsAppearanceRoute: typeof SettingsAppearanceRoute
   SettingsArchivedRoute: typeof SettingsArchivedRoute
@@ -895,6 +953,7 @@ interface SettingsRouteChildren {
   SettingsPhoneRoute: typeof SettingsPhoneRoute
   SettingsProjectsRoute: typeof SettingsProjectsRoute
   SettingsProvidersRoute: typeof SettingsProvidersRoute
+  SettingsRunningRoute: typeof SettingsRunningRoute
   SettingsSharedRoute: typeof SettingsSharedRoute
   SettingsSkillsRoute: typeof SettingsSkillsRoute
   SettingsSnapShotRoute: typeof SettingsSnapShotRoute
@@ -903,10 +962,12 @@ interface SettingsRouteChildren {
   SettingsVaultRoute: typeof SettingsVaultRoute
   SettingsWorkspaceRoute: typeof SettingsWorkspaceRoute
   SettingsIndexRoute: typeof SettingsIndexRoute
+  SettingsMembersMemberIdRoute: typeof SettingsMembersMemberIdRoute
 }
 
 const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsAccountRoute: SettingsAccountRoute,
+  SettingsActivityRoute: SettingsActivityRoute,
   SettingsAgentsRoute: SettingsAgentsRoute,
   SettingsAppearanceRoute: SettingsAppearanceRoute,
   SettingsArchivedRoute: SettingsArchivedRoute,
@@ -927,6 +988,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsPhoneRoute: SettingsPhoneRoute,
   SettingsProjectsRoute: SettingsProjectsRoute,
   SettingsProvidersRoute: SettingsProvidersRoute,
+  SettingsRunningRoute: SettingsRunningRoute,
   SettingsSharedRoute: SettingsSharedRoute,
   SettingsSkillsRoute: SettingsSkillsRoute,
   SettingsSnapShotRoute: SettingsSnapShotRoute,
@@ -935,6 +997,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsVaultRoute: SettingsVaultRoute,
   SettingsWorkspaceRoute: SettingsWorkspaceRoute,
   SettingsIndexRoute: SettingsIndexRoute,
+  SettingsMembersMemberIdRoute: SettingsMembersMemberIdRoute,
 }
 
 const SettingsRouteWithChildren = SettingsRoute._addFileChildren(

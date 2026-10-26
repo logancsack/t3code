@@ -574,6 +574,7 @@ import { aldoRoutesModels } from "../aldo/directory";
 import { useAldoKeptRepo } from "../aldo/keptRepo";
 import { ALDO_DEVELOPER_COMMANDS, useAldoDeveloperTools } from "../aldo/developerTools";
 import { AldoHandoffCard } from "../aldo/AldoHandoffCard";
+import { AldoOrgNoteCard } from "../aldo/AldoOrgNoteCard";
 import { useAldoThreadApprovals } from "../aldo/AldoApprovals";
 import { withThreadApprovals } from "../aldo/approvals.logic";
 import {
@@ -10730,6 +10731,9 @@ export default function ChatView(props: ChatViewProps) {
                       environmentId={activeThreadRef.environmentId}
                       threadId={activeThreadRef.threadId}
                     />
+                  ) : null}
+                  {isAldoCloud && !isDraftHeroState && activeThreadRef ? (
+                    <AldoOrgNoteCard environmentId={activeThreadRef.environmentId} />
                   ) : null}
                   {/* An approval the agent stopped on is answered first; an
                       answer sent past it would start a turn it can't take. */}

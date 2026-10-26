@@ -20,7 +20,7 @@ import { useNavigateToMainApp } from "../components/sidebar/mainAppLocation";
 import { isElectron } from "../env";
 import { cn } from "../lib/utils";
 import { isAldoCloud } from "./api";
-import { aldoSettingsPage } from "./settings.logic";
+import { aldoSettingsPage, aldoSettingsParent } from "./settings.logic";
 
 declare module "@tanstack/react-router" {
   interface HistoryState {
@@ -79,6 +79,8 @@ export function AldoSettingsPhoneBar(props: { readonly pathname: string }) {
   const fromList = useLocation({ select: (location) => location.state.aldoFromSettingsList });
   const root = props.pathname.replace(/\/+$/, "") === "/settings";
   const title = root ? null : (aldoSettingsPage(props.pathname)?.title ?? "Settings");
+  // A page under another (a member's, under Members) goes back to it.
+  const parent = aldoSettingsParent(props.pathname);
   return (
     <header className="grid h-[var(--workspace-topbar-height)] min-w-0 shrink-0 grid-cols-[6rem_minmax(0,1fr)_6rem] items-center gap-2 border-border/60 border-b pl-(--workspace-gutter-start) pr-(--workspace-gutter-end)">
       <div className="flex min-w-0">
@@ -88,13 +90,14 @@ export function AldoSettingsPhoneBar(props: { readonly pathname: string }) {
             size="sm"
             className="h-12 min-w-12 gap-0.5 px-2 text-sm sm:h-12"
             onClick={() => {
+              if (parent) void navigate({ to: parent.to, hash: "" });
               // Back to the list underneath, so the browser's Back doesn't reopen this page.
-              if (fromList === true) window.history.back();
+              else if (fromList === true) window.history.back();
               else void navigate({ to: "/settings", search: { project: undefined }, hash: "" });
             }}
           >
             <ChevronLeftIcon className="size-4" />
-            Settings
+            {parent?.label ?? "Settings"}
           </Button>
         )}
       </div>
@@ -120,11 +123,24 @@ export function AldoSettingsPageHeader(props: {
   readonly pathname: string;
   readonly action?: ReactNode;
 }) {
+  const navigate = useNavigate();
   const page = aldoSettingsPage(props.pathname);
+  const parent = aldoSettingsParent(props.pathname);
   if (!page) return null;
   return (
     <header className="flex items-start justify-between gap-6 px-1">
       <div className="min-w-0 space-y-1.5">
+        {/* On a phone its bar has the way back. */}
+        {parent ? (
+          <button
+            type="button"
+            className="-ms-1 flex items-center gap-0.5 rounded-md px-1 text-muted-foreground text-sm outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring max-md:hidden"
+            onClick={() => void navigate({ to: parent.to, hash: "" })}
+          >
+            <ChevronLeftIcon aria-hidden="true" className="size-4" />
+            {parent.label}
+          </button>
+        ) : null}
         {/* A phone's bar names the page already, as its heading. */}
         <h1 className="font-semibold text-foreground text-xl tracking-tight max-md:hidden">
           {page.title}

@@ -13,6 +13,7 @@ import {
   BotIcon,
   Building2Icon,
   CodeXmlIcon,
+  HistoryIcon,
   KeyRoundIcon,
   PaletteIcon,
   PlugIcon,
@@ -38,6 +39,7 @@ import { useSettingsResource } from "./settingsResource";
 export const ALDO_SETTINGS_ICONS: Partial<Record<SettingsPath, LucideIcon>> = {
   "/settings/organization": Building2Icon,
   "/settings/members": UsersIcon,
+  "/settings/activity": HistoryIcon,
   "/settings/agents": BotIcon,
   "/settings/permissions": ShieldCheckIcon,
   "/settings/instructions": SparklesIcon,

@@ -1,5 +1,6 @@
 import {
   aldoInstructions,
+  aldoOrgAdmin,
   aldoSkills,
   aldoVault,
   fetchAldoAccounts,
@@ -35,6 +36,10 @@ export const settingsHeadsUps = createSettingsResource(fetchAldoHeadsUps);
 export const settingsBrief = createSettingsResource(fetchAldoBriefSettings);
 export const settingsMomentEmails = createSettingsResource(fetchAldoMomentEmails);
 export const settingsOrg = createSettingsResource(fetchAldoOrg);
+/** Members' credits and machines this month; owners' and admins', read on Members only. */
+export const settingsOrgUsage = createSettingsResource(() => aldoOrgAdmin.usage());
+/** What admins did to the user's work, for the note in a thread; read only for someone in an organization. */
+export const settingsOrgNotes = createSettingsResource(() => aldoOrgAdmin.notes());
 export const settingsPrebuilds = createSettingsResource(aldoPrebuilds.list);
 export const settingsRepositories = createSettingsResource(listAldoRepositories);
 
