@@ -1,5 +1,6 @@
 import {
   aldoInstructions,
+  aldoOffboarding,
   aldoOrgAdmin,
   aldoOrgJoining,
   aldoSkills,
@@ -43,6 +44,8 @@ export const settingsOrgUsage = createSettingsResource(() => aldoOrgAdmin.usage(
 export const settingsOrgNotes = createSettingsResource(() => aldoOrgAdmin.notes());
 /** Who can join, with requests; owners' and admins', read on Organization, Members and Who can join. */
 export const settingsOrgJoining = createSettingsResource(() => aldoOrgJoining.get());
+/** Former members and their threads' copies; owners' and admins', read on Members only. */
+export const settingsOrgDepartures = createSettingsResource(() => aldoOffboarding.departures());
 export const settingsPrebuilds = createSettingsResource(aldoPrebuilds.list);
 export const settingsRepositories = createSettingsResource(listAldoRepositories);
 

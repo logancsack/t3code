@@ -25,6 +25,7 @@ import { Radio, RadioGroup } from "../components/ui/radio-group";
 import { toastManager } from "../components/ui/toast";
 import { cn } from "../lib/utils";
 import { aldoOrg, aldoOrgJoining } from "./accountApi";
+import { FormerMembers, RemoveStep, useLeaving } from "./AldoOffboarding";
 import { RunningDot } from "./AldoOrgAdminParts";
 import {
   ErrorLine,
@@ -45,7 +46,6 @@ import {
   aldoOrgDay,
   aldoOrgExpiresLine,
   aldoOrgFreeSeats,
-  aldoOrgKeeps,
   aldoOrgFull,
   aldoOrgFullLine,
   aldoOrgInviteLine,
@@ -66,7 +66,14 @@ import {
   aldoRequestLine,
   type AldoOrgRequest,
 } from "./orgJoining.logic";
-import { settingsOrg, settingsOrgUsage } from "./settingsData";
+import {
+  aldoDefaultChoice,
+  aldoRemoveAction,
+  aldoRemoveBody,
+  aldoRemovedNote,
+  type AldoRemoveChoice,
+} from "./offboarding.logic";
+import { settingsOrg, settingsOrgDepartures, settingsOrgUsage } from "./settingsData";
 import { useSettingsResource } from "./settingsResource";
 
 type Sheet =
@@ -258,6 +265,8 @@ export function AldoMembersPage() {
         </SettingsSection>
       ) : null}
 
+      {manages ? <FormerMembers org={org} /> : null}
+
       {sheet?.kind === "invite" ? <InviteSheet org={org} onClose={close} /> : null}
       {member && member.id === org.you ? (
         <YourRoleSheet org={org} onClose={close} />
@@ -444,15 +453,33 @@ export function MemberSheet(props: {
   const [role, setRole] = useState(member.role);
   const [removing, setRemoving] = useState(false);
   const { busy, error, run } = useOrgChange();
+  // What removing them does to their threads, read once it's asked; their choice, from its default.
+  const read = useLeaving(member.id, removing);
+  const leaving = read.leaving;
+  const [picked, setPicked] = useState<AldoRemoveChoice | null>(null);
+  const choice: AldoRemoveChoice =
+    picked ?? (leaving ? aldoDefaultChoice(leaving) : { work: "keep", to: null, keepLinks: true });
   const save = () =>
     void run(() => aldoOrg.setRole(member.id, role)).then((answer) => answer && props.onClose());
   const remove = () =>
-    void run(() => aldoOrg.remove(member.id)).then((answer) => {
-      if (!answer) return;
-      toastManager.add({ type: "success", title: `Removed ${member.email}` });
-      props.onClose();
-      props.onRemoved?.();
-    });
+    void run(() => aldoOrg.remove(member.id, aldoRemoveBody(leaving ?? null, choice))).then(
+      (answer) => {
+        if (!answer) return;
+        const note = aldoRemovedNote(leaving ?? null, choice, org.you);
+        toastManager.add({
+          type: "success",
+          title: `Removed ${member.email}`,
+          ...(note ? { description: note } : {}),
+        });
+        void settingsOrgDepartures.refresh().catch(() => undefined);
+        props.onClose();
+        props.onRemoved?.();
+      },
+    );
+  // Asked, it waits for what removing does (or an Aldo without it), and a colleague to hand them to.
+  const ready =
+    leaving !== undefined &&
+    (aldoRemoveBody(leaving, choice)?.work !== "hand" || Boolean(choice.to));
   return (
     <Dialog open onOpenChange={(open) => !open && !busy && props.onClose()}>
       <DialogPopup>
@@ -464,10 +491,7 @@ export function MemberSheet(props: {
         </DialogHeader>
         <DialogPanel>
           {removing ? (
-            <p className="text-sm">
-              Remove them from {org.name}? {aldoOrgKeeps(org, "theirs")} Their account carries on
-              without the organization.
-            </p>
+            <RemoveStep org={org} read={read} choice={choice} onChoice={setPicked} busy={busy} />
           ) : (
             <>
               <RoleChoices value={role} onChange={setRole} offered={aldoOrgRolesToGive(org)} />
@@ -489,8 +513,8 @@ export function MemberSheet(props: {
               <Button variant="outline" disabled={busy} onClick={() => setRemoving(false)}>
                 Keep them
               </Button>
-              <Button variant="destructive" disabled={busy} onClick={remove}>
-                Remove
+              <Button variant="destructive" disabled={busy || !ready} onClick={remove}>
+                {aldoRemoveAction(leaving ?? null, choice)}
               </Button>
             </>
           ) : (

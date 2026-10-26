@@ -208,6 +208,8 @@ export function Confirm(props: {
   description: string;
   action: string;
   onConfirm: () => Promise<unknown>;
+  /** False while what it does is still being read: the action waits. */
+  ready?: boolean;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -232,7 +234,7 @@ export function Confirm(props: {
           </AlertDialogClose>
           <Button
             variant="destructive"
-            disabled={busy}
+            disabled={busy || props.ready === false}
             onClick={() => {
               setBusy(true);
               setError(null);

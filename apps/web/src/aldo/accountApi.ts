@@ -11,6 +11,14 @@ import {
   type AldoMomentEmailKind,
   type AldoMomentEmails,
 } from "./momentEmails.logic";
+import {
+  parseAldoDepartures,
+  parseAldoHandoverLine,
+  parseAldoHandoverView,
+  parseAldoLeaving,
+  parseAldoReceived,
+  type AldoRemoveChoice,
+} from "./offboarding.logic";
 import { parseAldoOrg, type AldoOrg, type AldoOrgRole } from "./organization.logic";
 import {
   parseAldoDomainCheck,
@@ -921,8 +929,12 @@ export const aldoOrg = {
   renewInvite: (id: string, send: "email" | "link") => orgChange(invitePath(id), "POST", { send }),
   revokeInvite: (id: string) => orgChange(invitePath(id), "DELETE"),
   setRole: (id: string, role: AldoOrgRole) => orgChange(memberPath(id), "PATCH", { role }),
-  /** Removes someone, or the user themselves: leaving. */
-  remove: (id: string) => orgChange(memberPath(id), "DELETE"),
+  /**
+   * Removes someone, or the user themselves: leaving. `choice` says what
+   * becomes of the organization's threads they had (offboarding.logic.ts);
+   * without it, Aldo keeps them for the admins.
+   */
+  remove: (id: string, choice?: AldoRemoveChoice) => orgChange(memberPath(id), "DELETE", choice),
 };
 
 /** A read of members' work; null from an Aldo without it (404, or 405 where the route only changes) or an answer that isn't one. */
@@ -984,6 +996,63 @@ export const aldoOrgAdmin = {
   /** Their extra usage limit in cents, or null for the organization's default. */
   setLimit: (id: string, cents: number | null) => memberChange(id, { limitCents: cents }),
   setPaused: (id: string, paused: boolean) => memberChange(id, { paused }),
+};
+
+const handoverPath = (id: string) => `/api/org/handovers/${encodeURIComponent(id)}`;
+
+/** A read Aldo may refuse as only an older one does: null for 403 (an older Aldo's member page), 404 and 405. */
+async function offboardingRead<T>(
+  path: string,
+  parse: (body: unknown) => T | null,
+): Promise<T | null> {
+  try {
+    return parse(await api<unknown>(path));
+  } catch (cause) {
+    if (cause instanceof AldoApiError && [403, 404, 405].includes(cause.status)) return null;
+    throw cause;
+  }
+}
+
+const handoverChange = (id: string, body: unknown) =>
+  api<unknown>(handoverPath(id), { method: "POST", body: JSON.stringify(body) }).then(
+    parseAldoHandoverLine,
+  );
+
+/**
+ * What leaving or being removed does to the organization's threads someone
+ * had (offboarding.logic.ts): what it would do, the former members and their
+ * copies for owners and admins, and the copies handed to the user. Reads
+ * answer null from an Aldo without them.
+ */
+export const aldoOffboarding = {
+  /** What removing `id` (or leaving, for the user's own) would do. */
+  leaving: (id: string) => offboardingRead(`${memberPath(id)}?leaving`, parseAldoLeaving),
+  departures: () => orgRead("/api/org/departures", parseAldoDepartures),
+  /** Opens an account the organization closed, back in it as a member. */
+  restore: (id: string) =>
+    api<unknown>(`/api/org/departures/${encodeURIComponent(id)}`, {
+      method: "POST",
+      body: JSON.stringify({ restore: true }),
+    }).then(parseAldoDepartures),
+  retry: (id: string) => handoverChange(id, { retry: true }),
+  hand: (id: string, to: string) => handoverChange(id, { hand: to }),
+  /** Deletes a copy: an admin's, of one nobody has; or the user's own. */
+  delete: (id: string) => handoverChange(id, { delete: true }),
+  /** The copies handed to the user; empty without organizations, null from an Aldo without them. */
+  received: () => orgRead("/api/org/handovers", parseAldoReceived),
+  /** A copy handed to the user, to read; null once it's gone. */
+  view: (id: string) => orgRead(handoverPath(id), parseAldoHandoverView),
+  filesUrl: (id: string) => `${handoverPath(id)}/files`,
+  /** Carries a copy on in a thread of the user's own; the thread to open. */
+  carryOn: (id: string, message: string) =>
+    api<{ environmentId?: unknown; threadId?: unknown }>(`${handoverPath(id)}/continue`, {
+      method: "POST",
+      body: JSON.stringify(message.trim() ? { message: message.trim() } : {}),
+    }).then((answer) => {
+      if (typeof answer.environmentId !== "string" || typeof answer.threadId !== "string")
+        throw new Error("Aldo didn't say which thread. Look in your threads.");
+      return { environmentId: answer.environmentId, threadId: answer.threadId };
+    }),
 };
 
 const joiningChange = (path: string, method: string, body?: unknown) =>
