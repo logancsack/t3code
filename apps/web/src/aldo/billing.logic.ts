@@ -3,7 +3,11 @@
 // Aldo leaves out); this decides what the page offers for it, and says it.
 // Pure, so it's tested on its own.
 
-import type { AldoWorkspaceUsage, AldoWorkspaceUsageState } from "../state/aldoWorkspaceUsage";
+import type {
+  AldoSeat,
+  AldoWorkspaceUsage,
+  AldoWorkspaceUsageState,
+} from "../state/aldoWorkspaceUsage";
 
 export interface AldoBillingPlan {
   readonly id: string;
@@ -97,6 +101,13 @@ export type AldoBillingView =
       readonly kind: "fixed";
       readonly plan: { readonly id: string; readonly name: string };
       readonly periodEnd: string | null;
+    }
+  /** A seat on the user's organization's plan: its owners and admins change it, not the user. */
+  | {
+      readonly kind: "seat";
+      readonly plan: { readonly id: string; readonly name: string };
+      readonly periodEnd: string | null;
+      readonly seat: AldoSeat;
     };
 
 /**
@@ -104,6 +115,15 @@ export type AldoBillingView =
  * Aldo without billing, Stripe not set up, or a complimentary account.
  */
 export function aldoBillingView(usage: AldoWorkspaceUsage): AldoBillingView | null {
+  // A seat is the organization's to change, whether or not this Aldo takes payments.
+  if (usage.seat && usage.plan && usage.period?.status !== "canceled") {
+    return {
+      kind: "seat",
+      plan: usage.plan,
+      periodEnd: usage.period?.end ?? null,
+      seat: usage.seat,
+    };
+  }
   const billing = usage.billing;
   if (!billing?.enabled) return null;
   if (usage.configured && !usage.metered) return null;
@@ -238,6 +258,10 @@ export function aldoPlanSummary(view: AldoBillingView): string | null {
         : null;
     case "fixed":
       return `${view.plan.name}, set by your Aldo admin. Renews ${onPeriodEnd(view.periodEnd)}.`;
+    case "seat":
+      return view.plan.id === "complimentary"
+        ? `Complimentary, on ${view.seat.org}'s plan.`
+        : `${view.plan.name}, on ${view.seat.org}'s plan. Renews ${onPeriodEnd(view.periodEnd)}.`;
     case "managed": {
       const parts = [view.plan.name];
       if (view.current) parts.push(`${formatPlanPrice(view.current.priceCents)} a month`);
@@ -245,6 +269,18 @@ export function aldoPlanSummary(view: AldoBillingView): string | null {
       return parts.join(" · ");
     }
   }
+}
+
+/** Who sets a seat's extra usage limit, and whom to ask for more. */
+export function aldoSeatLimitCopy(seat: AldoSeat): string {
+  const [first, second, ...rest] = seat.admins;
+  if (!first) return `${seat.org} sets your extra usage limit.`;
+  const ask = !second
+    ? first
+    : rest.length
+      ? `${first}, ${second} or another admin`
+      : `${first} or ${second}`;
+  return `${seat.org}'s admins set your extra usage limit. Ask ${ask} for more.`;
 }
 
 /** What a plan change did, for its toast: Aldo says when it takes effect. */

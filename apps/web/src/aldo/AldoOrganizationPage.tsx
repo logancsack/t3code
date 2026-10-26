@@ -35,7 +35,10 @@ import {
   aldoOrgFull,
   aldoOrgFullLine,
   aldoOrgManages,
+  aldoOrgKeeps,
   aldoOrgMembersSummary,
+  aldoOrgPlanDetail,
+  aldoOrgPlanLine,
   aldoOrgOwnersLine,
   aldoOrgOwnPlace,
   aldoOrgSeatsLine,
@@ -91,6 +94,14 @@ export function AldoOrganizationPage() {
           }
           onOpen={null}
         />
+        {org.plan ? (
+          <OpenRow
+            title="Plan"
+            value={aldoOrgPlanLine(org.plan)}
+            description={aldoOrgPlanDetail(org.plan)}
+            onOpen={null}
+          />
+        ) : null}
         {own.delete ? (
           <OpenRow
             title={<span className="text-destructive-foreground">Delete {org.name}</span>}
@@ -116,7 +127,7 @@ export function AldoOrganizationPage() {
         open={confirming === "leave"}
         onOpenChange={(open) => setConfirming(open ? "leave" : null)}
         title={`Leave ${org.name}?`}
-        description="Your threads, computers, vault and plan stay yours. To come back, you’ll need a new invite."
+        description={`${aldoOrgKeeps(org, "yours")} To come back, you’ll need a new invite.`}
         action="Leave"
         onConfirm={() =>
           changeOwn(() => aldoOrg.remove(org.you)).then(() =>
@@ -128,7 +139,7 @@ export function AldoOrganizationPage() {
         open={confirming === "delete"}
         onOpenChange={(open) => setConfirming(open ? "delete" : null)}
         title={`Delete ${org.name}?`}
-        description="Its open invites stop working. Your threads, computers, vault and plan stay yours."
+        description={`Its open invites stop working. ${aldoOrgKeeps(org, "yours")}`}
         action="Delete organization"
         onConfirm={() =>
           changeOwn(aldoOrg.delete).then(() =>

@@ -10,8 +10,11 @@ import {
   aldoOrgInitials,
   aldoOrgInviteLine,
   aldoOrgLastOwner,
+  aldoOrgKeeps,
   aldoOrgMembersSummary,
   aldoOrgOwnersLine,
+  aldoOrgPlanDetail,
+  aldoOrgPlanLine,
   aldoOrgOwnPlace,
   aldoOrgRolesToGive,
   aldoOrgSeatsLine,
@@ -49,6 +52,7 @@ function org(role: AldoOrgRole, others: AldoOrg["members"] = [], invites: AldoOr
     role,
     members: [member("me", role), ...others],
     invites: role === "member" ? null : invites,
+    plan: null,
   } satisfies AldoOrg;
 }
 
@@ -69,6 +73,35 @@ describe("organizations", () => {
     expect(parseAldoOrg({ error: "You're not in an organization." })).toBeNull();
     expect(parseAldoOrg({ ...answer, role: "boss" })).toBeNull();
     expect(parseAldoOrg({ ...answer, members: undefined })).toBeNull();
+  });
+
+  it("reads the plan every seat is on, and says what it means", () => {
+    const plan = {
+      id: "max",
+      name: "Max",
+      credits: 24000,
+      renewsAt: "2026-11-05T12:00:00.000Z",
+      spendLimitCents: 2000,
+    };
+    const onMax = parseAldoOrg({ ...org("member"), plan });
+    expect(onMax?.plan).toEqual(plan);
+    // An older Aldo says nothing of plans; a half answer isn't one.
+    expect(parseAldoOrg(org("member"))?.plan).toBeNull();
+    expect(parseAldoOrg({ ...org("member"), plan: { ...plan, renewsAt: 5 } })?.plan).toBeNull();
+    expect(aldoOrgPlanLine(plan)).toBe("Max · 24,000 credits a seat");
+    expect(aldoOrgPlanDetail(plan)).toBe(
+      "Each seat has its own credits each month. Each seat may use up to $20 of extra usage a month. Renews Nov 5.",
+    );
+    expect(aldoOrgPlanDetail({ ...plan, spendLimitCents: 0 })).toContain("Extra usage is off.");
+    const free = { ...plan, id: "complimentary", name: "Complimentary", credits: null };
+    expect(aldoOrgPlanLine(free)).toBe("Complimentary");
+    expect(aldoOrgPlanDetail(free)).toBe("Every seat is unmetered. Renews Nov 5.");
+    expect(aldoOrgKeeps(onMax!, "yours")).toBe(
+      "Your threads, computers and vault stay yours, and your seat on its plan ends.",
+    );
+    expect(aldoOrgKeeps(org("member"), "theirs")).toBe(
+      "Their threads, computers, vault and plan stay theirs.",
+    );
   });
 
   it("offers each role only what Aldo lets it do", () => {
