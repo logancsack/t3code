@@ -1,7 +1,7 @@
 // Settings → Activity (orgAdmin.logic.ts): each change to the organization and
 // what its admins did, newest first, under their days. Owners and admins read
-// all of it, or one person's; a member reads what they did and what was done
-// to their work.
+// all of it, or one person's; a member reads what was done to them and their
+// work.
 
 import { useNavigate } from "@tanstack/react-router";
 import { TriangleAlertIcon } from "lucide-react";
