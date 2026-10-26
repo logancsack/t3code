@@ -167,7 +167,7 @@ export function AldoTeamPage({ teamId }: { teamId: string }) {
           <OpenRow title="Name" value={team.name} onOpen={() => setSheet("rename")} />
           <OpenRow
             title="Activity"
-            description="Who joined or left it, and changes to it."
+            description="Changes to it, and what its people did or had done."
             onOpen={() => void navigate({ to: "/settings/activity", search: { team: team.id } })}
           />
           <OpenRow
