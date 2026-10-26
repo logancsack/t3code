@@ -64,6 +64,13 @@ export const useAldoHomeFeed = create<AldoHomeFeed>(() => ({
   saved: false,
 }));
 
+/**
+ * When this page last had a read of the home, its own or another tab's (0
+ * before the first: the copy kept from the last visit isn't a read). A read
+ * with nothing new counts, so it says how old what's shown can be.
+ */
+export const useAldoHomeReadAt = create<{ readonly at: number }>(() => ({ at: 0 }));
+
 let inflight = false;
 /** A refresh asked for during a read: the read may predate what asked, so it runs again after. */
 let again = false;
@@ -253,6 +260,7 @@ function publish(): void {
 
 /** Shows a read of the home, this page's or another tab's. */
 function takeHome(next: AldoHome | null): void {
+  if (next) useAldoHomeReadAt.setState({ at: Date.now() });
   const body = JSON.stringify(next);
   const changed = body !== lastServerBody;
   lastServerBody = body;

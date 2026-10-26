@@ -73,8 +73,11 @@ export function needsYouKind(c: AldoHomeConversation): NeedsYouKind | null {
 
 export const WORKING_STATES = new Set(["working", "starting", "queued", "retrying"]);
 
+/** Working, with nothing reported for an hour (by when its machine reported: a rename or a pin moves `at`, not that). */
 export function isStuck(c: AldoHomeConversation, now: number): boolean {
-  return c.state === "working" && !isPausedMidTurn(c) && now - Date.parse(c.at) > STUCK_MS;
+  return (
+    c.state === "working" && !isPausedMidTurn(c) && now - Date.parse(c.stateAt ?? c.at) > STUCK_MS
+  );
 }
 
 export interface HomeBoard {

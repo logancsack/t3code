@@ -191,3 +191,21 @@ it("leaves out a computer request on a thread that is put away or hidden", () =>
   });
   expect(pendingNeedsYou(read, now)).toEqual([]);
 });
+it("with hidden, counts what the user hid from the conversation, as the app badge does", () => {
+  const hidden = { id: "hidden", dismissed: true };
+  const putOff = { id: "later", dismissed: true, until: "2026-10-24T12:00:00.000Z" };
+  const read = home({
+    approvals: [approval("shown"), { ...approval("hidden"), chatDecision: hidden }],
+    conversations: [
+      conversation({ ref: "q", state: "failed", chatDecision: hidden }),
+      conversation({ ref: "p", state: "paused", machine: "asleep", chatDecision: putOff }),
+    ],
+  });
+  expect(pendingNeedsYou(read, now).map((i) => i.key)).toEqual(["aldo:shown"]);
+  const all = pendingNeedsYou(read, now, [], true);
+  expect(all.map((i) => i.key)).toEqual(
+    expect.arrayContaining(["aldo:shown", "aldo:hidden", "paused:p"]),
+  );
+  expect(all.find((i) => i.key === "aldo:hidden")?.hidden).toEqual(hidden);
+  expect(all.find((i) => i.key === "aldo:shown")?.hidden).toBeUndefined();
+});
