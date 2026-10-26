@@ -344,15 +344,19 @@ function ItemRow(props: { readonly row: PresenceRow }) {
     </>
   );
   return (
-    <li className="flex items-center">
+    <li>
       {row.target ? (
-        <ThreadLink target={row.target} className={cn(ROW, "flex-1")}>
+        <ThreadLink target={row.target} className={ROW}>
           {body}
         </ThreadLink>
       ) : (
-        <div className={cn(ROW, "flex-1 hover:bg-transparent")}>{body}</div>
+        <div className={cn(ROW, "hover:bg-transparent")}>{body}</div>
       )}
-      {row.hidden ? <DismissChatDecision decision={row.hidden} title={row.title} restore /> : null}
+      {row.hidden ? (
+        <div className="pb-1 ps-7">
+          <DismissChatDecision decision={row.hidden} title={row.title} restore />
+        </div>
+      ) : null}
     </li>
   );
 }
