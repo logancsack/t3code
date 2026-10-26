@@ -54,6 +54,7 @@ const stop = {
   at: "2026-10-26T14:00:00.000Z",
   by: "sam@linden.com",
   note: "Back Monday",
+  gpu: false,
 };
 
 describe("an organization's note in a thread", () => {

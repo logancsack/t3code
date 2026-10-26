@@ -448,6 +448,7 @@ describe("what a member sees in their threads", () => {
         at: "2026-10-26T14:00:00.000Z",
         by: "sam@linden.com",
         note: "Back Monday",
+        gpu: false,
       },
     ],
   };
@@ -461,6 +462,13 @@ describe("what a member sees in their threads", () => {
     expect(note?.quote).toBe("“Back Monday”");
     expect(aldoOrgNoteFor(notes, "aldo-t_other", new Date(NOW))).toBeNull();
     expect(aldoOrgNoteFor(null, "aldo-t_board")).toBeNull();
+  });
+
+  it("doesn't promise a GPU computer's files", () => {
+    const gpu = { ...notes, stops: [{ ...notes.stops[0]!, gpu: true }] };
+    expect(aldoOrgNoteFor(gpu, "aldo-t_board", new Date(NOW))?.text).toMatch(
+      /Your files are kept, but for the GPU computer’s, which went with it; send a message to carry on\.$/,
+    );
   });
 
   it("notes a pause in every thread, before any stop", () => {

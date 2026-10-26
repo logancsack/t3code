@@ -115,6 +115,8 @@ export interface AldoOrgNotes {
     readonly at: string;
     readonly by: string | null;
     readonly note: string | null;
+    /** It had a GPU computer, whose files went with it (false from an Aldo that doesn't say). */
+    readonly gpu: boolean;
   }>;
 }
 
@@ -303,7 +305,9 @@ export function parseAldoOrgNotes(body: unknown): AldoOrgNotes | null {
   const stops = list(o.stops, (value) => {
     const s = obj(value);
     const [environmentId, at] = [str(s?.environmentId), str(s?.at)];
-    return environmentId && at ? { environmentId, at, by: str(s?.by), note: str(s?.note) } : null;
+    return environmentId && at
+      ? { environmentId, at, by: str(s?.by), note: str(s?.note), gpu: s?.gpu === true }
+      : null;
   });
   return { org, paused: pausedOf(o.paused), stops };
 }
@@ -685,7 +689,7 @@ export function aldoOrgNoteFor(
   if (!stop) return null;
   return {
     kind: "stopped",
-    text: `Stopped by ${stop.by ?? "an admin"}, an admin of ${notes.org}, ${noteTime(stop.at, now)}. Your files are kept; send a message to carry on.`,
+    text: `Stopped by ${stop.by ?? "an admin"}, an admin of ${notes.org}, ${noteTime(stop.at, now)}. ${stop.gpu ? "Your files are kept, but for the GPU computer’s, which went with it" : "Your files are kept"}; send a message to carry on.`,
     quote: stop.note ? `“${stop.note}”` : null,
   };
 }
