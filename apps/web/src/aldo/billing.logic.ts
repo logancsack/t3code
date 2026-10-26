@@ -271,17 +271,19 @@ export function aldoPlanSummary(view: AldoBillingView): string | null {
   }
 }
 
-/** Who sets a seat's extra usage limit, and whom to ask for more: its admins, but for you. */
-export function aldoSeatLimitCopy(seat: AldoSeat): string {
+/** Whom a seat asks about its extra usage limit: its admins but you, or null when there's no one else. */
+export function aldoSeatAsk(seat: AldoSeat): string | null {
   const [first, second, ...rest] = seat.admins;
+  if (!first) return null;
+  if (!second) return first;
+  return rest.length ? `${first}, ${second} or another admin` : `${first} or ${second}`;
+}
+
+/** Who sets a seat's extra usage limit, and whom to ask for more. */
+export function aldoSeatLimitCopy(seat: AldoSeat): string {
   const sets = `${seat.org} sets your extra usage limit.`;
-  if (!first) return sets;
-  const ask = !second
-    ? first
-    : rest.length
-      ? `${first}, ${second} or another admin`
-      : `${first} or ${second}`;
-  return `${sets} Ask ${ask} for more.`;
+  const ask = aldoSeatAsk(seat);
+  return ask ? `${sets} Ask ${ask} for more.` : sets;
 }
 
 /** What a plan change did, for its toast: Aldo says when it takes effect. */
