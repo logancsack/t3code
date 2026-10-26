@@ -155,6 +155,23 @@ describe("presenceBoard needs you", () => {
     expect(b.putOff).toBe(1);
     expect(b.needsYou.preview).toBe("Nothing now · 1 put off");
   });
+  it("reports a deferred plan as put off, so its list stays reachable", () => {
+    const plan = {
+      id: "p",
+      goal: "Reconcile the books",
+      cost: "Free",
+      steps: [],
+      minutes: 30,
+      status: "proposed",
+      proposedAt: ago(60),
+      deferredUntil: ahead(600),
+    };
+    const b = board(home({ plans: [plan] }));
+    expect(b.needsYou.rows).toEqual([]);
+    expect(b.putOff).toBe(1);
+    expect(b.needsYou.preview).toBe("Nothing now · 1 put off");
+    expect(board(home({ plans: [{ ...plan, deferredUntil: ago(1) }] })).putOff).toBe(0);
+  });
   it("counts a thread paused mid-turn, once", () => {
     const b = board(
       home({ conversations: [conversation({ state: "working", machine: "asleep" })] }),

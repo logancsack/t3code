@@ -68,7 +68,7 @@ const DOT: Record<PresenceTone, string> = {
   good: "bg-success",
   bad: "bg-destructive",
   attention: "bg-warning",
-  live: "animate-pulse bg-primary motion-reduce:animate-none",
+  live: "bg-primary",
   quiet: "border border-muted-foreground/60",
 };
 

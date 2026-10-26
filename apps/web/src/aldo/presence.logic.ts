@@ -3,7 +3,7 @@
 // board is derived from Aldo's home read and the header and every count come
 // from it, so they can't disagree.
 import type { AldoAssistantPhase } from "./assistant.logic";
-import { putAway } from "./decisions.logic";
+import { aldoHiddenFromChat, putAway } from "./decisions.logic";
 import {
   boardFor,
   deliveryLabel,
@@ -21,6 +21,7 @@ import type {
   AldoHomeTarget,
 } from "./homeApi";
 import { pendingNeedsYou } from "./needsYou.logic";
+import { parseAldoPlans, planPutOff } from "./plans.logic";
 
 export type AldoPresenceState =
   | "idle"
@@ -75,7 +76,7 @@ export interface PresenceSection {
 
 export interface AldoPresenceBoard {
   readonly needsYou: PresenceSection;
-  /** What they put off ("Not now"): still waiting, but not counted until it's back. */
+  /** What they put off ("Not now", decisions and plans): still waiting, but not counted until it's back. */
   readonly putOff: number;
   readonly moved: PresenceSection;
   readonly working: PresenceSection;
@@ -168,7 +169,10 @@ export function presenceBoard(
     }));
   const kinds = [...new Set(waiting.filter((i) => !isPutOff(i)).map((i) => i.kind))].slice(0, 2);
   const hiddenCount = needs.filter((r) => r.hidden).length;
-  const putOff = waiting.filter(isPutOff).length;
+  // What the drop-down lists to bring back: put-off decisions and deferred plans.
+  const putOff =
+    aldoHiddenFromChat(home, now).filter((item) => item.chatDecision.until).length +
+    parseAldoPlans(home.plans).filter((plan) => planPutOff(plan, now)).length;
 
   const moves = movedRows(home, now, options.seenAt);
   const moved: PresenceRow[] = moves.map(({ c, move }) => ({
