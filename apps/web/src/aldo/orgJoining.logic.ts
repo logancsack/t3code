@@ -301,12 +301,15 @@ export function aldoRequestAlready(org: AldoOrg, email: string): "member" | "inv
   return null;
 }
 
-/** Why approving can't go now, or null: an invite needs a free seat, unless there's nothing to send. */
+/**
+ * Why approving can't go now, or null: an invite needs a free seat, unless there's nothing to send.
+ * `free` is the org's, as Members shows it, so revoking or removing someone there frees it at once.
+ */
 export function aldoApproveBlocked(
-  joining: AldoJoining,
+  free: number,
   already: "member" | "invited" | null = null,
 ): string | null {
-  return already || joining.free > 0
+  return already || free > 0
     ? null
     : "No free seats. Revoke an invite or ask Aldo for more seats, then approve.";
 }

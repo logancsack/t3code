@@ -210,9 +210,9 @@ describe("who can join", () => {
     expect(
       aldoRequestLine({ ...request!, via: "expired", createdAt: "2026-10-17T12:00:00.000Z" }, now),
     ).toBe("Asked on Oct 17, when their invite had expired");
-    expect(aldoApproveBlocked(joining())).toBeNull();
+    expect(aldoApproveBlocked(joining().free)).toBeNull();
     // Someone in already, or invited, takes no new seat: approving just closes their request.
-    expect(aldoApproveBlocked(joining({ free: 0 }), "invited")).toBeNull();
+    expect(aldoApproveBlocked(0, "invited")).toBeNull();
     const org = {
       id: "o1",
       name: "Linden Partners",
@@ -251,6 +251,6 @@ describe("who can join", () => {
     expect(aldoRequestAlready(org, "jo@linden.co")).toBe("invited");
     expect(aldoRequestAlready(org, "kim@linden.co")).toBeNull();
     expect(aldoRequestAlready({ ...org, invites: null }, "jo@linden.co")).toBeNull();
-    expect(aldoApproveBlocked(joining({ free: 0 }))).toMatch(/^No free seats\./);
+    expect(aldoApproveBlocked(0)).toMatch(/^No free seats\./);
   });
 });

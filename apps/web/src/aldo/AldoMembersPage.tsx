@@ -64,7 +64,6 @@ import {
   aldoApproveBlocked,
   aldoRequestAlready,
   aldoRequestLine,
-  type AldoJoining,
   type AldoOrgRequest,
 } from "./orgJoining.logic";
 import { settingsOrg, settingsOrgUsage } from "./settingsData";
@@ -266,14 +265,8 @@ export function AldoMembersPage() {
         <MemberSheet key={member.id} org={org} member={member} onClose={close} />
       ) : null}
       {invite ? <PendingSheet key={invite.id} org={org} invite={invite} onClose={close} /> : null}
-      {request && joining ? (
-        <RequestSheet
-          key={request.id}
-          org={org}
-          joining={joining}
-          request={request}
-          onClose={close}
-        />
+      {request ? (
+        <RequestSheet key={request.id} org={org} request={request} onClose={close} />
       ) : null}
     </>
   );
@@ -706,16 +699,12 @@ function PendingSheet(props: { org: AldoOrg; invite: AldoOrgInvite; onClose: () 
 }
 
 /** A request to join: who, in their words, and approving (which sends the invite) or declining. */
-function RequestSheet(props: {
-  org: AldoOrg;
-  joining: AldoJoining;
-  request: AldoOrgRequest;
-  onClose: () => void;
-}) {
+function RequestSheet(props: { org: AldoOrg; request: AldoOrgRequest; onClose: () => void }) {
   const { request } = props;
   const { busy, error, run } = useJoiningChange();
   const already = aldoRequestAlready(props.org, request.email);
-  const blocked = aldoApproveBlocked(props.joining, already);
+  // The org's free seats, which revoking or removing someone here updates at once.
+  const blocked = aldoApproveBlocked(aldoOrgFreeSeats(props.org), already);
   const decide = (approve: boolean) =>
     void run(() => aldoOrgJoining.decide(request.id, approve)).then((answer) => {
       if (!answer) return;
