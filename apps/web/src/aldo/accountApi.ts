@@ -919,12 +919,13 @@ export const aldoOrg = {
   remove: (id: string) => orgChange(memberPath(id), "DELETE"),
 };
 
-/** A read of members' work; null from an Aldo without it (404) or an answer that isn't one. */
+/** A read of members' work; null from an Aldo without it (404, or 405 where the route only changes) or an answer that isn't one. */
 async function orgRead<T>(path: string, parse: (body: unknown) => T | null): Promise<T | null> {
   try {
     return parse(await api<unknown>(path));
   } catch (cause) {
-    if (cause instanceof AldoApiError && cause.status === 404) return null;
+    if (cause instanceof AldoApiError && (cause.status === 404 || cause.status === 405))
+      return null;
     throw cause;
   }
 }
