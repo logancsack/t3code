@@ -26,7 +26,7 @@ import {
 } from "./homeApi";
 import { AldoLiveView } from "./AldoLiveView";
 import { useAldoArrive } from "./arrive";
-import { refreshAldoHome, useAldoHomeFeed } from "./homeFeed";
+import { refreshAldoHome, useAldoHomeFeed, useAldoHomeReadAt } from "./homeFeed";
 import { useAldoLiveNow, useAldoLiveWork } from "./liveWork";
 import {
   liveLineOf,
@@ -290,6 +290,11 @@ export function AldoThreadCard(props: {
   const open = useContext(AldoOpenContext);
   const arrive = useAldoArrive();
   const work = useAldoLiveWork(props.target);
+  // Never before the latest read, though the clock ticks only every so often (as the page's feed).
+  const now = Math.max(
+    useAldoLiveNow(),
+    useAldoHomeReadAt((s) => s.at),
+  );
   const [opened, setOpened] = useState(false);
   const card = useRef<HTMLDivElement>(null);
   const key = `${props.target.environmentId}:${props.target.threadId}`;
@@ -308,7 +313,6 @@ export function AldoThreadCard(props: {
   const conversation = home?.conversations.find((c) => sameTarget(c.thread, props.target));
   if (!home || !conversation) return props.fallback;
   const c = conversation;
-  const now = Date.now();
   if (c.state === "done") return <SettledRow conversation={c} now={now} />;
   const view = threadCardOf(home, c, now);
   const stalled = stalledOf(home, c, now);

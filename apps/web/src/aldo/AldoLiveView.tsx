@@ -8,7 +8,7 @@
 // never wakes a machine or keeps one up: a machine that isn't running has no
 // frames.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { cn } from "~/lib/utils";
 import type { AldoHomeTarget } from "./homeApi";
@@ -30,7 +30,18 @@ const LIVE_AT_ONCE = 2;
 const LATE_MS = 4_000;
 
 /** Small views taking frames now, the most recently shown last. */
-const live: Array<() => void> = [];
+let live: readonly symbol[] = [];
+const turnListeners = new Set<() => void>();
+
+function setLive(next: readonly symbol[]): void {
+  live = next;
+  for (const listener of turnListeners) listener();
+}
+
+function subscribeTurns(listener: () => void): () => void {
+  turnListeners.add(listener);
+  return () => turnListeners.delete(listener);
+}
 /** Each view's last frame, so a view opened or shown again starts from it. */
 const last = new Map<string, AldoLiveFrame>();
 
@@ -50,20 +61,13 @@ function useOnScreen(ref: React.RefObject<HTMLElement | null>): boolean {
 
 /** Whether this small view may take frames: one of the LIVE_AT_ONCE most recently shown. */
 function useTurn(wanted: boolean): boolean {
-  const [turn, setTurn] = useState(false);
+  const [me] = useState(() => Symbol("view"));
   useEffect(() => {
     if (!wanted) return;
-    const lose = () => setTurn(false);
-    live.push(lose);
-    setTurn(true);
-    while (live.length > LIVE_AT_ONCE) live.shift()!();
-    return () => {
-      const at = live.indexOf(lose);
-      if (at >= 0) live.splice(at, 1);
-      setTurn(false);
-    };
-  }, [wanted]);
-  return turn;
+    setLive([...live.filter((view) => view !== me), me].slice(-LIVE_AT_ONCE));
+    return () => setLive(live.filter((view) => view !== me));
+  }, [wanted, me]);
+  return useSyncExternalStore(subscribeTurns, () => live.includes(me));
 }
 
 export function AldoLiveView(props: {
