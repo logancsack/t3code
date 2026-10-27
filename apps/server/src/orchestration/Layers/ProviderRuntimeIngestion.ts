@@ -2492,6 +2492,12 @@ const make = Effect.gen(function* () {
           threadPlanProgress.recordPlanProgress(thread.id, event.payload.plan);
         } else if (isTerminalTurn && shouldApplyThreadLifecycle) {
           threadPlanProgress.clearThreadPlanProgress(thread.id);
+        } else if (event.type === "content.delta" && activeTurnId !== null) {
+          threadPlanProgress.recordStreaming(
+            thread.id,
+            event.payload.streamKind === "assistant_text" ? "writing" : "thinking",
+            now,
+          );
         }
       }
 
@@ -2605,6 +2611,14 @@ const make = Effect.gen(function* () {
       }
 
       const activities = runtimeEventToActivities(activityEvent, taskTitle);
+      // Current work, before the activity's dispatch pushes the shell that carries it.
+      if (!conflictsWithActiveTurn && activeTurnId !== null) {
+        for (const activity of activities) {
+          if (activity.tone === "tool" && activity.kind.startsWith("tool.")) {
+            threadPlanProgress.recordToolActivity(thread.id, projectActivityPayload(activity));
+          }
+        }
+      }
       yield* Effect.forEach(activities, (activity) =>
         providerCommandId(event, "thread-activity-append").pipe(
           Effect.flatMap((commandId) =>

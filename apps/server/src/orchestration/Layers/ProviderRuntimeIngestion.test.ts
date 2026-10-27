@@ -440,6 +440,105 @@ describe("ProviderRuntimeIngestion", () => {
     };
   }
 
+  it("puts what a running turn is doing now on its shell, and clears it once it settles", async () => {
+    const harness = await createHarness();
+    const base = {
+      provider: ProviderDriverKind.make("codex"),
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-work"),
+    } as const;
+    await harness.emitAndDrain([
+      {
+        ...base,
+        type: "turn.started",
+        eventId: asEventId("evt-work-started"),
+        createdAt: "2026-01-01T00:00:00.000Z",
+      },
+    ]);
+    await harness.emitAndDrain([
+      {
+        ...base,
+        type: "content.delta",
+        eventId: asEventId("evt-work-think"),
+        createdAt: "2026-01-01T00:00:01.000Z",
+        payload: { streamKind: "reasoning_text", delta: "Looking at the tests" },
+      },
+    ]);
+    expect((await harness.readThreadShell()).currentWork).toEqual({
+      kind: "thinking",
+      startedAt: "2026-01-01T00:00:01.000Z",
+      activity: null,
+    });
+
+    await harness.emitAndDrain([
+      {
+        ...base,
+        type: "item.started",
+        eventId: asEventId("evt-work-tool"),
+        createdAt: "2026-01-01T00:00:02.000Z",
+        itemId: asItemId("item-work-tool"),
+        payload: {
+          itemType: "command_execution",
+          status: "inProgress",
+          title: "Command run",
+          detail: "pnpm test",
+        },
+      },
+    ]);
+    const tool = (await harness.readThreadShell()).currentWork;
+    expect(tool?.kind).toBe("tool");
+    expect(tool?.startedAt).toBe("2026-01-01T00:00:02.000Z");
+    expect(tool?.activity?.payload).toMatchObject({
+      toolCallId: "item-work-tool",
+      detail: "pnpm test",
+    });
+
+    // Its reasoning while the command runs doesn't replace it; the command ending does.
+    await harness.emitAndDrain([
+      {
+        ...base,
+        type: "content.delta",
+        eventId: asEventId("evt-work-think-during"),
+        createdAt: "2026-01-01T00:00:03.000Z",
+        payload: { streamKind: "reasoning_text", delta: "still running" },
+      },
+    ]);
+    expect((await harness.readThreadShell()).currentWork?.kind).toBe("tool");
+    await harness.emitAndDrain([
+      {
+        ...base,
+        type: "item.completed",
+        eventId: asEventId("evt-work-tool-done"),
+        createdAt: "2026-01-01T00:00:04.000Z",
+        itemId: asItemId("item-work-tool"),
+        payload: { itemType: "command_execution", status: "completed", title: "Command run" },
+      },
+      {
+        ...base,
+        type: "content.delta",
+        eventId: asEventId("evt-work-write"),
+        createdAt: "2026-01-01T00:00:05.000Z",
+        payload: { streamKind: "assistant_text", delta: "All tests pass." },
+      },
+    ]);
+    expect((await harness.readThreadShell()).currentWork).toEqual({
+      kind: "writing",
+      startedAt: "2026-01-01T00:00:05.000Z",
+      activity: null,
+    });
+
+    await harness.emitAndDrain([
+      {
+        ...base,
+        type: "turn.completed",
+        eventId: asEventId("evt-work-completed"),
+        createdAt: "2026-01-01T00:00:06.000Z",
+        payload: { state: "completed" },
+      },
+    ]);
+    expect((await harness.readThreadShell()).currentWork).toBeNull();
+  });
+
   it("maps turn started/completed events into thread session updates", async () => {
     const harness = await createHarness();
     const now = "2026-01-01T00:00:00.000Z";
