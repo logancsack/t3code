@@ -6,7 +6,7 @@
 // the moment it's written. Best effort: without IndexedDB (a private window),
 // a message is sent as it was before.
 
-import type { AldoImageUpload } from "./assistantApi";
+import type { AldoFileUpload, AldoImageUpload } from "./assistantApi";
 
 const DATABASE_NAME = "aldo:home-outbox";
 const STORE_NAME = "messages";
@@ -20,6 +20,8 @@ export interface AldoHomeMessage {
   readonly sessionId: string;
   readonly text: string;
   readonly images: ReadonlyArray<AldoImageUpload>;
+  /** Its files, uploaded to Aldo already (a copy kept by an older page has none). */
+  readonly files?: ReadonlyArray<AldoFileUpload>;
   readonly viewing: { readonly environmentId: string; readonly threadId: string } | null;
   /** When the user sent it, as it shows in the conversation. */
   readonly at: string;

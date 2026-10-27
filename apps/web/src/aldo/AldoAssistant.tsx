@@ -69,9 +69,15 @@ import {
 import {
   aldoAssistant,
   aldoAssistantInfo,
+  type AldoFileLimits,
+  type AldoFileUpload,
   type AldoImageLimits,
   type AldoImageUpload,
 } from "./assistantApi";
+import { AldoAttachMenu, AldoFileChip } from "./AldoAttach";
+import { aldoAttachmentId } from "./held.logic";
+import { uploadAldoHomeFile } from "./threadApi";
+import { randomUUID } from "~/lib/utils";
 import { useAldoArrive, useAldoArrived } from "./arrive";
 import { beatDelay, splitBeats } from "./beats.logic";
 import { sameTarget } from "./home.logic";
@@ -116,14 +122,20 @@ export function useAldoAssistantAvailable(ask = true): boolean | null {
   return available;
 }
 
-/** The images this Aldo's written messages take, asked once per page; null when none (or not known yet). */
-function useAldoImageLimits(): AldoImageLimits | null {
-  const [limits, setLimits] = useState<AldoImageLimits | null>(null);
+/** The images and files this Aldo's written messages take, asked once per page; each null when none (or not known yet). */
+function useAldoAttachLimits(): {
+  readonly images: AldoImageLimits | null;
+  readonly files: AldoFileLimits | null;
+} {
+  const [limits, setLimits] = useState<{
+    images: AldoImageLimits | null;
+    files: AldoFileLimits | null;
+  }>({ images: null, files: null });
   useEffect(() => {
     let current = true;
     assistantInfo ??= aldoAssistantInfo();
     void assistantInfo.then((info) => {
-      if (current) setLimits(info.images);
+      if (current) setLimits({ images: info.images, files: info.files });
     });
     return () => {
       current = false;
@@ -131,6 +143,12 @@ function useAldoImageLimits(): AldoImageLimits | null {
   }, []);
   return limits;
 }
+
+/** A file attached in Home's composer: named as the message will name it, with its bytes while it uploads. */
+type HomeFile = AldoFileUpload & {
+  readonly file: File | null;
+  readonly state: "uploading" | "ready" | "failed";
+};
 
 /** A request to Aldo is at most 4.5 MB: the images of one message share about 3 MB, before base64. */
 const IMAGES_BYTES = 3_000_000;
@@ -253,17 +271,19 @@ export function AldoComposer(props: {
   const micOn = useAldoAssistant((s) => s.micOn);
   const [text, setText] = useState("");
   const [images, setImages] = useState<ReadonlyArray<AldoImageUpload>>([]);
+  /** Files attached, each uploading as it's attached (its bytes gone once given back: `file` null). */
+  const [files, setFiles] = useState<ReadonlyArray<HomeFile>>([]);
   const [imageError, setImageError] = useState<string | null>(null);
   /** Images being made ready to send: the message waits for them. */
   const [preparing, setPreparing] = useState(0);
   const phase = useAldoAssistant((s) => s.phase);
   const unsent = useAldoAssistant((s) => s.unsent);
   const unsentImages = useAldoAssistant((s) => s.unsentImages);
+  const unsentFiles = useAldoAssistant((s) => s.unsentFiles);
   const input = useRef<HTMLTextAreaElement>(null);
-  const picker = useRef<HTMLInputElement>(null);
-  const limits = useAldoImageLimits();
+  const { images: limits, files: fileLimits } = useAldoAttachLimits();
   const live = phase !== "idle" && phase !== "error";
-  // Images go in writing: not into a call.
+  // Images and files go in writing: not into a call.
   const canAttach = limits !== null && !live;
   // Briefly emphasize the mark while the user types.
   const reading = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -311,6 +331,15 @@ export function AldoComposer(props: {
     });
     useAldoAssistant.setState({ unsentImages: null });
   }, [unsentImages, limits]);
+  // And files, uploaded already.
+  useEffect(() => {
+    if (unsentFiles === null) return;
+    setFiles((current) => [
+      ...unsentFiles.map((named) => ({ ...named, file: null, state: "ready" as const })),
+      ...current.filter((file) => !unsentFiles.some((u) => u.id === file.id)),
+    ]);
+    useAldoAssistant.setState({ unsentFiles: null });
+  }, [unsentFiles]);
   // A batch is made ready together, and the message waits for it.
   const addImages = (files: ReadonlyArray<File>) => {
     if (!limits || files.length === 0) return;
@@ -330,6 +359,47 @@ export function AldoComposer(props: {
       })
       .finally(() => setPreparing((n) => n - 1));
   };
+  /** A file goes up to Aldo as it's attached, so the message only names it. */
+  const upload = (attached: HomeFile) => {
+    if (!attached.file) return;
+    const mark = (state: HomeFile["state"]) =>
+      setFiles((current) => current.map((f) => (f.id === attached.id ? { ...f, state } : f)));
+    mark("uploading");
+    uploadAldoHomeFile(attached.id, attached.file).then(
+      () => mark("ready"),
+      (error: unknown) => {
+        mark("failed");
+        setImageError(error instanceof Error ? error.message : null);
+      },
+    );
+  };
+  const addFiles = (picked: ReadonlyArray<File>) => {
+    if (!fileLimits || picked.length === 0) return;
+    setImageError(null);
+    const fits = picked.filter((file) => file.size > 0 && file.size <= fileLimits.maxBytes);
+    const room = fileLimits.max - files.length;
+    if (fits.length < picked.length)
+      setImageError(`A file is at most ${Math.round(fileLimits.maxBytes / 1024 / 1024)} MB.`);
+    else if (fits.length > room) setImageError(`At most ${fileLimits.max} files with a message.`);
+    const added = fits.slice(0, Math.max(0, room)).flatMap((file): HomeFile[] => {
+      const name = file.name || "file";
+      const id = aldoAttachmentId({ type: "file", name, mimeType: file.type }, randomUUID());
+      if (!id) return [];
+      const mimeType = file.type || "application/octet-stream";
+      return [{ id, name, mimeType, sizeBytes: file.size, file, state: "uploading" }];
+    });
+    setFiles((current) => [...current, ...added]);
+    added.forEach(upload);
+  };
+  /** What was picked, dropped or pasted: images Aldo sees as images, anything else as a file (where Aldo takes files). */
+  const attach = (picked: ReadonlyArray<File>) => {
+    const asImage = (file: File) =>
+      !fileLimits ||
+      isHeicImageFile(file) ||
+      (limits?.types.includes(normalizeComposerImageFileMimeType(file).type) ?? false);
+    addImages(picked.filter(asImage));
+    addFiles(picked.filter((file) => !asImage(file)));
+  };
   /** The words last seeded, so another seed replaces them while they're untouched. */
   const seeded = useRef<string | null>(null);
   // What couldn't be sent comes back to be sent again, and words seeded for
@@ -348,16 +418,22 @@ export function AldoComposer(props: {
     // At the end of what was seeded, to carry on from there.
     requestAnimationFrame(() => field?.setSelectionRange(field.value.length, field.value.length));
   }, [unsent]);
-  const sendable = text.trim().length > 0 || (canAttach && images.length > 0);
+  const sendable = text.trim().length > 0 || (canAttach && images.length + files.length > 0);
+  // The message waits for its images to be ready and its files uploaded.
+  const waiting = preparing > 0 || (canAttach && files.some((file) => file.state !== "ready"));
   const submit = () => {
-    if (preparing > 0) return;
-    // During a call images don't go: they stay for after it.
+    if (waiting) return;
+    // During a call images and files don't go: they stay for after it.
     const sending = canAttach ? images : [];
-    if (!text.trim() && sending.length === 0) return;
+    const sendingFiles: AldoFileUpload[] = canAttach
+      ? files.map(({ id, name, mimeType, sizeBytes }) => ({ id, name, mimeType, sizeBytes }))
+      : [];
+    if (!text.trim() && sending.length + sendingFiles.length === 0) return;
     const send = () => {
-      sendText(text, sending);
+      sendText(text, sending, sendingFiles);
       setText("");
       if (sending.length > 0) setImages([]);
+      if (sendingFiles.length > 0) setFiles([]);
       setImageError(null);
     };
     if (props.onSend) props.onSend(send);
@@ -385,10 +461,10 @@ export function AldoComposer(props: {
         onDrop={(event) => {
           if (!canAttach || event.dataTransfer.files.length === 0) return;
           event.preventDefault();
-          addImages([...event.dataTransfer.files]);
+          attach([...event.dataTransfer.files]);
         }}
       >
-        {canAttach && (images.length > 0 || preparing > 0 || imageError) ? (
+        {canAttach && (images.length > 0 || files.length > 0 || preparing > 0 || imageError) ? (
           <div className="flex flex-col gap-1.5 px-2 pt-1.5 pb-1">
             <div className="flex flex-wrap gap-2">
               {images.map((image, index) => (
@@ -415,6 +491,16 @@ export function AldoComposer(props: {
                   className="size-12 animate-pulse rounded-xl bg-foreground/[0.06] motion-reduce:animate-none"
                 />
               ) : null}
+              {files.map((file) => (
+                <AldoFileChip
+                  key={file.id}
+                  name={file.name}
+                  sizeBytes={file.sizeBytes}
+                  state={file.state}
+                  onRemove={() => setFiles((current) => current.filter((f) => f.id !== file.id))}
+                  onRetry={file.file ? () => upload(file) : undefined}
+                />
+              ))}
             </div>
             {imageError ? (
               <p className="text-[12px] text-destructive-foreground leading-[18px]">{imageError}</p>
@@ -423,35 +509,23 @@ export function AldoComposer(props: {
         ) : null}
         <div className="flex items-end gap-1">
           {canAttach ? (
-            <>
-              <input
-                ref={picker}
-                type="file"
-                accept={[...limits.types, ".heic", ".heif"].join(",")}
-                multiple
-                hidden
-                onChange={(event) => {
-                  addImages([...(event.target.files ?? [])]);
-                  event.target.value = "";
-                }}
-              />
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <button
-                      type="button"
-                      aria-label="Add images"
-                      disabled={images.length >= limits.max}
-                      className={quiet}
-                      onClick={() => picker.current?.click()}
-                    />
-                  }
-                >
-                  <PlusIcon className="size-5" strokeWidth={1.75} />
-                </TooltipTrigger>
-                <TooltipPopup side="top">Add images</TooltipPopup>
-              </Tooltip>
-            </>
+            <AldoAttachMenu
+              trigger={
+                <button
+                  type="button"
+                  aria-label={fileLimits ? "Add photos and files" : "Add photos"}
+                  className={quiet}
+                />
+              }
+              disabled={
+                images.length >= limits.max && (!fileLimits || files.length >= fileLimits.max)
+              }
+              photos="image/*"
+              files={fileLimits !== null}
+              onPick={attach}
+            >
+              <PlusIcon className="size-5" strokeWidth={1.75} />
+            </AldoAttachMenu>
           ) : (
             <span className="w-3 shrink-0" />
           )}
@@ -478,12 +552,12 @@ export function AldoComposer(props: {
             }}
             onPaste={(event) => {
               if (!canAttach) return;
-              const files = [...event.clipboardData.files].filter(
-                (file) => classifyComposerAttachmentFile(file) !== "file",
+              const pasted = [...event.clipboardData.files].filter(
+                (file) => fileLimits !== null || classifyComposerAttachmentFile(file) !== "file",
               );
-              if (files.length === 0) return;
+              if (pasted.length === 0) return;
               event.preventDefault();
-              addImages(files);
+              attach(pasted);
             }}
           />
           {live && micOn ? (
@@ -531,7 +605,7 @@ export function AldoComposer(props: {
                   <button
                     type={sendable ? "submit" : "button"}
                     aria-label={sendable ? "Send" : "Talk to Aldo"}
-                    disabled={sendable && preparing > 0}
+                    disabled={sendable && waiting}
                     // Keep the keyboard and composer in place as the user sends follow-ups on a phone.
                     onPointerDown={(event) => {
                       if (sendable && document.activeElement === input.current)
@@ -935,7 +1009,9 @@ function UserMessage({
 }: {
   readonly entry: Extract<AldoConversationEntry, { kind: "message" }>;
 }) {
-  const { text, images: named } = withoutImageNotes(entry.text);
+  const { text, images: named, files: namedFiles } = withoutImageNotes(entry.text);
+  const files: ReadonlyArray<{ id: string; name: string; sizeBytes?: number }> =
+    entry.files ?? namedFiles;
   const trouble = useAldoAssistant((s) => s.undelivered?.find((u) => u.entry === entry));
   const arrive = useAldoArrive();
   return (
@@ -962,6 +1038,13 @@ function UserMessage({
               <ImageIcon className="size-3" />
               {name}
             </span>
+          ))}
+        </div>
+      ) : null}
+      {files.length > 0 ? (
+        <div className="flex max-w-full flex-wrap justify-end gap-1.5">
+          {files.map((file) => (
+            <AldoFileChip key={file.id} name={file.name} sizeBytes={file.sizeBytes} />
           ))}
         </div>
       ) : null}

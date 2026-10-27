@@ -33,20 +33,32 @@ export interface AldoImageLimits {
   readonly types: ReadonlyArray<string>;
 }
 
-/** Whether this Aldo has the assistant, and the images its written messages take (null: none, as on an older Aldo). */
+/** The files (of any kind) a written message to Aldo takes: how many, and how large each. */
+export interface AldoFileLimits {
+  readonly max: number;
+  readonly maxBytes: number;
+}
+
+/**
+ * Whether this Aldo has the assistant, and the images and files its written
+ * messages take (null: none, as on an older Aldo, or one that keeps no files).
+ */
 export async function aldoAssistantInfo(): Promise<{
   readonly available: boolean;
   readonly images: AldoImageLimits | null;
+  readonly files: AldoFileLimits | null;
 }> {
   const response = await fetch("/api/assistant/tools", { credentials: "same-origin" }).catch(
     () => null,
   );
-  if (!response?.ok) return { available: false, images: null };
+  if (!response?.ok) return { available: false, images: null, files: null };
   const body = (await response.json().catch(() => null)) as {
     tools?: unknown;
     images?: { max?: unknown; maxBytes?: unknown; types?: unknown };
+    files?: { max?: unknown; maxBytes?: unknown } | null;
   } | null;
   const images = body?.images;
+  const files = body?.files;
   return {
     available: Array.isArray(body?.tools),
     images:
@@ -60,6 +72,10 @@ export async function aldoAssistantInfo(): Promise<{
             types: images.types.filter((t): t is string => typeof t === "string"),
           }
         : null,
+    files:
+      typeof files?.max === "number" && files.max > 0 && typeof files.maxBytes === "number"
+        ? { max: files.max, maxBytes: files.maxBytes }
+        : null,
   };
 }
 
@@ -67,6 +83,14 @@ export async function aldoAssistantInfo(): Promise<{
 export interface AldoImageUpload {
   readonly name: string;
   readonly dataUrl: string;
+}
+
+/** A file a written message names, uploaded first (uploadAldoHomeFile) under its `id`. */
+export interface AldoFileUpload {
+  readonly id: string;
+  readonly name: string;
+  readonly mimeType: string;
+  readonly sizeBytes: number;
 }
 
 /** A written turn with Aldo: its reply, and the tool calls it made with what came of each. */
@@ -298,6 +322,7 @@ export const aldoAssistant = {
     sessionId: string | null,
     text: string,
     images: ReadonlyArray<AldoImageUpload> = [],
+    files: ReadonlyArray<AldoFileUpload> = [],
     viewing: AldoHomeTarget | null = null,
     takesIds = false,
   ): Promise<AldoSent | null> => {
@@ -311,6 +336,7 @@ export const aldoAssistant = {
         sessionId,
         text,
         ...(images.length > 0 ? { images } : {}),
+        ...(files.length > 0 ? { files } : {}),
         ...(viewing ? { viewing } : {}),
         planPicker: true,
         // What the page shows as cards, which Aldo would otherwise say in words (an older Aldo ignores it).
