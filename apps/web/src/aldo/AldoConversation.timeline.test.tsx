@@ -62,6 +62,7 @@ vi.mock("./morph", () => ({
 vi.mock("./homeFeed", () => ({
   refreshAldoHome: backend.refresh,
   useAldoHomeFeed: (select: (s: { home: null }) => unknown) => select({ home: null }),
+  useAldoHomeReadAt: (select: (s: { at: number }) => unknown) => select({ at: 0 }),
 }));
 vi.mock("./briefFeed", () => ({
   useAldoBrief: (select: (s: { brief: null }) => unknown) => select({ brief: null }),

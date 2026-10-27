@@ -74,6 +74,8 @@ export interface AldoHomeConversation {
   readonly at: string;
   /** When its machine last reported its state: `at` moves with its list's changes too (a rename, a pin). */
   readonly stateAt?: string;
+  /** When it started: it was created, or its routine's latest run began (a newer Aldo). */
+  readonly startedAt?: string;
   readonly pullRequests?: ReadonlyArray<{
     readonly repo: string;
     readonly number: number;

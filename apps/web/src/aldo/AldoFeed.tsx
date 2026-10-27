@@ -2,10 +2,11 @@
 // (feed.logic.ts): quiet lines on Aldo's side, the way an assistant shows the
 // steps it took. What finished and shipped between two things said is one
 // line ("3 shipped · 2 finished"), which opens to a line each, grouped (each
-// a tap from its thread or pull request); just one is its line. What Aldo did
-// (a thread it started that's still going as its live card), and what the
-// user decided from a card this visit, are a line each; a plan stays its
-// card (AldoPlanCard.tsx), including what it started with.
+// a tap from its thread or pull request); just one is its line. A thread
+// that's going is its live card (AldoLiveCard.tsx), where it started or where
+// Aldo last acted on it. What else Aldo did, and what the user decided from a
+// card this visit, are a line each; a plan stays its card (AldoPlanCard.tsx),
+// including what it started with.
 
 import { CheckIcon, ChevronDownIcon, LayersIcon, RepeatIcon } from "lucide-react";
 import { useContext, useState, type ReactNode } from "react";
@@ -257,6 +258,8 @@ function EventLine(props: {
   const open = useContext(AldoOpenContext);
   const { event } = props;
   switch (event.kind) {
+    case "thread":
+      return <AldoThreadCard target={event.conversation.thread} label="Thread" fallback={null} />;
     case "plan":
       return <AldoPlanCard plan={event.plan} still={event.plan.status === "started"} />;
     case "payment":

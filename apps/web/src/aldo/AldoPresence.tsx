@@ -1,7 +1,9 @@
 // Aldo’s Home presence: its mark, name and what it's at. It opens an index of
 // four lists (what needs you, what moved since you looked, what's working,
 // what's coming up), each a count and a line; tapping one opens its list, and
-// each item there opens its thread.
+// each item there opens its thread. A working one goes to its card in the
+// conversation instead, opened, with the step it's on in its line, the way
+// its card says it; one the conversation has no card for opens its thread.
 
 import {
   ChevronDownIcon,
@@ -15,8 +17,11 @@ import { useEffect, useMemo, useRef, useState, type MouseEvent, type PointerEven
 import { Popover, PopoverPopup, PopoverTrigger } from "../components/ui/popover";
 import { cn } from "~/lib/utils";
 import { ThreadLink } from "./AldoHomeInbox";
+import { useAldoLiveNow, useAldoLiveWork } from "./liveWork";
+import { liveLineOf, liveLineText } from "./liveWork.logic";
+import { showAldoThreadCard } from "./show";
 import { useAldoAssistant } from "./assistantSession";
-import { type AldoHome } from "./homeApi";
+import { type AldoHome, type AldoHomeTarget } from "./homeApi";
 import { AldoHiddenFromChat, DismissChatDecision } from "./DismissChatDecision";
 import { aldoHiddenFromChat } from "./decisions.logic";
 import { AldoFrame } from "./AldoFrame";
@@ -128,6 +133,25 @@ export function AldoPresence(props: {
     () => (home ? boardFor(home.conversations, now).working.filter((c) => !isStuck(c, now)) : []),
     [home, now],
   );
+  const change = (next: boolean) => {
+    opened.current = next;
+    setOpen(next);
+    setNote(null);
+    if (next) {
+      setView("index");
+      setSeenAt(readSeen());
+    } else {
+      const at = Date.now();
+      writeSeen(at);
+      setSeenAt(at);
+    }
+  };
+  // To a working thread's card, closing this; false where the conversation has none.
+  const showCard = (target: AldoHomeTarget) => {
+    if (!showAldoThreadCard(target)) return false;
+    change(false);
+    return true;
+  };
   const line = presenceLine({
     phase,
     replying,
@@ -193,22 +217,7 @@ export function AldoPresence(props: {
         ? "Updated just now"
         : `Updated ${elapsed(new Date(readAt).toISOString(), now)} ago`;
   return (
-    <Popover
-      open={open}
-      onOpenChange={(next) => {
-        opened.current = next;
-        setOpen(next);
-        setNote(null);
-        if (next) {
-          setView("index");
-          setSeenAt(readSeen());
-        } else {
-          const at = Date.now();
-          writeSeen(at);
-          setSeenAt(at);
-        }
-      }}
-    >
+    <Popover open={open} onOpenChange={change}>
       <PopoverTrigger
         className={cn(
           layout,
@@ -311,6 +320,7 @@ export function AldoPresence(props: {
                   <ItemRow
                     key={row.key}
                     row={row}
+                    {...(view === "working" ? { onShow: showCard } : {})}
                     {...(view === "needsYou" && row.decision
                       ? { onDismiss: () => dismiss([row.decision!.id], `“${row.title}”`) }
                       : {})}
@@ -417,6 +427,14 @@ function IndexRow(props: {
   );
 }
 
+/** A working row's line: the step it's on, live, as its card says it; else what Aldo's read has. */
+function LiveDetail(props: { readonly target: AldoHomeTarget; readonly fallback: string }) {
+  const work = useAldoLiveWork(props.target);
+  const now = useAldoLiveNow();
+  const line = liveLineOf(work, now);
+  return <>{line ? liveLineText(line, now) : props.fallback}</>;
+}
+
 /**
  * An item in a list: opens its thread. In Needs you it has a way to dismiss it (a ✕, and a swipe on a
  * phone); one hidden from chat has a way to show it there again; in Dismissed, a way to restore it.
@@ -425,8 +443,10 @@ function ItemRow(props: {
   readonly row: PresenceRow;
   readonly onDismiss?: () => void;
   readonly onRestore?: () => void;
+  /** Goes to its card in the conversation instead of opening it; false where there's none. */
+  readonly onShow?: (target: AldoHomeTarget) => boolean;
 }) {
-  const { row, onDismiss, onRestore } = props;
+  const { row, onDismiss, onRestore, onShow } = props;
   const swipe = useSwipeAway(onDismiss);
   const body = (
     <>
@@ -434,13 +454,28 @@ function ItemRow(props: {
       <span className="min-w-0 flex-1">
         <span className="block truncate font-medium text-sm leading-5">{row.title}</span>
         <span className="block truncate text-[12px] text-muted-foreground leading-4 tabular-nums">
-          {row.detail}
+          {onShow && row.target && row.tone === "live" ? (
+            <LiveDetail target={row.target} fallback={row.detail} />
+          ) : (
+            row.detail
+          )}
         </span>
       </span>
     </>
   );
   return (
-    <li className="relative overflow-hidden" data-aldo-need-row="">
+    <li
+      className="relative overflow-hidden"
+      data-aldo-need-row=""
+      // Its card, where the conversation has one, before the link opens the thread.
+      onClickCapture={(event) => {
+        const plain = event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey;
+        if (!onShow || !row.target || !plain || !(event.target as HTMLElement).closest("a")) return;
+        if (!onShow(row.target)) return;
+        event.preventDefault();
+        event.stopPropagation();
+      }}
+    >
       {swipe.dx !== 0 ? (
         <span
           aria-hidden

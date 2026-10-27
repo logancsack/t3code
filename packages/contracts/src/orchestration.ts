@@ -945,6 +945,21 @@ export const OrchestrationThreadShell = Schema.Struct({
       }),
     ),
   ),
+  /**
+   * What a running turn is doing now, for the Working indicators: thinking,
+   * a tool call (its latest activity, as the timeline has it) or writing its
+   * reply, and since when. In memory like planProgress, cleared when the turn
+   * settles. Optional so old servers/clients interop.
+   */
+  currentWork: Schema.optional(
+    Schema.NullOr(
+      Schema.Struct({
+        kind: Schema.Literals(["thinking", "tool", "writing"]),
+        startedAt: IsoDateTime,
+        activity: Schema.NullOr(OrchestrationThreadActivity),
+      }),
+    ),
+  ),
 });
 export type OrchestrationThreadShell = typeof OrchestrationThreadShell.Type;
 

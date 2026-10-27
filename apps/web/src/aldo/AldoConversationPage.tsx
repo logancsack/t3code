@@ -51,8 +51,8 @@ import type { healthIssues } from "./home.logic";
 import { useAldoReceipts } from "./receipts";
 import { acknowledgeAldo } from "./presenceReactions";
 import { aldoGlide, aldoMorphSource, morphIntoThread } from "./morph";
-import { refreshAldoHome } from "./homeFeed";
-import { scrollMotion } from "./show";
+import { refreshAldoHome, useAldoHomeReadAt } from "./homeFeed";
+import { scrollMotion, SHOW_ALDO_THREAD } from "./show";
 import { SECONDARY, SURFACE } from "./surface";
 
 function inField(target: EventTarget | null): boolean {
@@ -83,11 +83,16 @@ const HISTORY_WAIT_MS = 8_000;
  * Keeps the conversation at its end while the user is there, as what's above
  * it loads (what's wrong) and as the window narrows it; scrolled up, it
  * stays put, and says when something new arrived below (true until they're
- * back at the end). Not before anything's been said: that page reads from
- * the top.
+ * back at the end), or that they were taken up to a thread's card (`jumped`),
+ * the way back being the same. Not before anything's been said: that page
+ * reads from the top.
  */
-function useStickToBottom(ref: RefObject<HTMLDivElement | null>, enabled: boolean): boolean {
+function useStickToBottom(
+  ref: RefObject<HTMLDivElement | null>,
+  enabled: boolean,
+): { readonly below: boolean; readonly jumped: boolean } {
   const [below, setBelow] = useState(false);
+  const [jumped, setJumped] = useState(false);
   useLayoutEffect(() => {
     const element = ref.current;
     if (!element || !enabled) return;
@@ -95,15 +100,41 @@ function useStickToBottom(ref: RefObject<HTMLDivElement | null>, enabled: boolea
     // observer only follows later size changes; installing it after paint flashes the top.
     element.scrollTop = element.scrollHeight;
     let atEnd = true;
+    let jumping = false;
+    let top = element.scrollTop;
     let size = `${element.scrollHeight}:${element.clientHeight}`;
     let height = element.scrollHeight;
     const onScroll = () => {
+      const up = element.scrollTop < top;
+      top = element.scrollTop;
       // A scroll the layout made as what's on the page grew (the cards at the end
       // arriving, the composer growing) isn't the user leaving the end.
       if (`${element.scrollHeight}:${element.clientHeight}` !== size) return;
+      // On the way up to a thread's card, leaving the end isn't reaching it.
+      if (jumping && up) return;
       atEnd = element.scrollHeight - element.scrollTop - element.clientHeight < AT_END_PX;
-      if (atEnd) setBelow(false);
+      if (atEnd) {
+        jumping = false;
+        setBelow(false);
+        setJumped(false);
+      }
     };
+    // Taken up to a thread's card: it opening there doesn't pull the page back down.
+    const onShow = (event: Event) => {
+      const was = atEnd;
+      atEnd = false;
+      jumping = true;
+      setTimeout(() => {
+        if (!event.defaultPrevented) {
+          atEnd = was;
+          jumping = false;
+        } else if (element.scrollHeight - element.clientHeight > AT_END_PX) {
+          setBelow(true);
+          setJumped(true);
+        }
+      });
+    };
+    window.addEventListener(SHOW_ALDO_THREAD, onShow);
     const observer = new ResizeObserver(() => {
       if (atEnd) element.scrollTop = element.scrollHeight;
       else if (element.scrollHeight > height + 1) setBelow(true);
@@ -116,9 +147,10 @@ function useStickToBottom(ref: RefObject<HTMLDivElement | null>, enabled: boolea
     return () => {
       observer.disconnect();
       element.removeEventListener("scroll", onScroll);
+      window.removeEventListener(SHOW_ALDO_THREAD, onShow);
     };
   }, [ref, enabled]);
-  return below && enabled;
+  return { below: below && enabled, jumped: jumped && enabled };
 }
 
 /**
@@ -242,12 +274,16 @@ export function AldoConversationPage(props: {
       ),
     [home],
   );
+  // What the latest read has happened by then, though the clock ticks only every so often:
+  // a thread created since its last tick has its card at once.
+  const readAt = useAldoHomeReadAt((s) => s.at);
+  const feedNow = Math.max(now, readAt);
   const feed = useMemo(
     () =>
       withReceipts(
         home
-          ? withPlans(feedEvents(home, { now, from: firstAt, here, told }), plans, {
-              now,
+          ? withPlans(feedEvents(home, { now: feedNow, from: firstAt, here, told }), plans, {
+              now: feedNow,
               // Pending plans remain reachable even before the loaded message window.
               from: null,
             })
@@ -256,7 +292,7 @@ export function AldoConversationPage(props: {
           (r) => !home?.approvals?.some((a) => `aldo:${a.id}` === r.key && a.status !== "pending"),
         ),
       ),
-    [home, now, firstAt, here, told, receipts, plans],
+    [home, feedNow, firstAt, here, told, receipts, plans],
   );
   // Every interactive card uses its creation time, including decided approvals
   // supplied by persisted history. Local receipts replace pending cards in place.
@@ -336,7 +372,7 @@ export function AldoConversationPage(props: {
     const frame = requestAnimationFrame(() => settleAldoConversation());
     return () => cancelAnimationFrame(frame);
   }, [loaded, home]);
-  const below = useStickToBottom(scroller, !loading && !fresh);
+  const { below, jumped } = useStickToBottom(scroller, !loading && !fresh);
   const dock = useRef<HTMLDivElement>(null);
   const { above: roomAboveRef, below: startersRef } = useStartersRoom(
     fresh && Boolean(props.welcome),
@@ -466,7 +502,9 @@ export function AldoConversationPage(props: {
                         />
                       ) : null}
                       <ArrowDownIcon aria-hidden className="size-4 shrink-0" strokeWidth={2} />
-                      <span className="min-w-0 wrap-anywhere">New from Aldo</span>
+                      <span className="min-w-0 wrap-anywhere">
+                        {jumped ? "Back to the latest" : "New from Aldo"}
+                      </span>
                     </button>
                   ) : null}
                 </HomeComposerActions>

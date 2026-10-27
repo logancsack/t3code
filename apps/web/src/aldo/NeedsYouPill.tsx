@@ -6,10 +6,9 @@ import { useRef, useState, type RefObject } from "react";
 import { DialogPopup, DialogTitle } from "../components/ui/dialog";
 import { toastManager } from "../components/ui/toast";
 import { cn } from "~/lib/utils";
-import { revealAldoCard } from "./AldoUpNext";
 import { refreshAldoHome } from "./homeFeed";
 import { needsYouWords, type NeedsYouItem } from "./needsYou.logic";
-import { showAldoDecisionKey } from "./show";
+import { revealAldoCard, showAldoDecisionKey } from "./show";
 import { FOCUS } from "./surface";
 import { COMPOSER_ACTION } from "./HomeComposerActions";
 

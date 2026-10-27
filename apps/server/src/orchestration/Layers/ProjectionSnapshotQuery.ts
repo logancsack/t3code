@@ -2814,6 +2814,7 @@ pending_approval_requests AS (
                           row.threadId,
                         ),
                         planProgress: threadPlanProgress.getThreadPlanProgress(row.threadId),
+                        currentWork: threadPlanProgress.getThreadCurrentWork(row.threadId),
                       } satisfies OrchestrationThreadShell)
                     : Result.failVoid,
                 ),
@@ -3349,6 +3350,7 @@ pending_approval_requests AS (
           threadRow.value.threadId,
         ),
         planProgress: threadPlanProgress.getThreadPlanProgress(threadRow.value.threadId),
+        currentWork: threadPlanProgress.getThreadCurrentWork(threadRow.value.threadId),
       } satisfies OrchestrationThreadShell);
     });
 
