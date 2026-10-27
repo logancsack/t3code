@@ -5,14 +5,18 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 
 // Which views take frames (AldoLiveView.tsx): only on screen, with the page
-// showing, and at most two small ones at once, the most recently shown.
+// showing, and at most two small ones at once, the most recently shown; and a
+// view shows only its own surface's frames.
 
 const watching = new Set<string>();
+/** Each watch's way to send a frame, by thread and surface. */
+const send = new Map<string, (frame: { url: string; at: number }) => void>();
 vi.mock("./liveFrames", () => ({
   GPU_EVERY_MS: 5_000,
-  aldoLiveFrames: (_surface: string, target: { threadId: string }) => ({
-    watch: () => {
+  aldoLiveFrames: (surface: string, target: { threadId: string }) => ({
+    watch: (_options: unknown, onFrame: (frame: { url: string; at: number }) => void) => {
       watching.add(target.threadId);
+      send.set(`${target.threadId} ${surface}`, onFrame);
       return () => watching.delete(target.threadId);
     },
   }),
@@ -38,7 +42,11 @@ function scroll(threadId: string, on: boolean): void {
   }
 }
 
-function views(threads: readonly string[], open?: string): void {
+function views(
+  threads: readonly string[],
+  open?: string,
+  surface: "browser" | "windows" = "browser",
+): void {
   act(() =>
     root.render(
       <>
@@ -46,7 +54,7 @@ function views(threads: readonly string[], open?: string): void {
           <div key={threadId} data-thread={threadId}>
             <AldoLiveView
               target={{ environmentId: "env", threadId }}
-              surface="browser"
+              surface={surface}
               open={threadId === open}
               label="Its browser"
             />
@@ -79,6 +87,7 @@ afterEach(() => {
   host.remove();
   vi.unstubAllGlobals();
   watching.clear();
+  send.clear();
 });
 
 it("takes frames for two small views at most, the last shown, and none off screen", () => {
@@ -103,4 +112,18 @@ it("an opened view takes frames beside two small ones, and stops with the page h
   Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true });
   act(() => document.dispatchEvent(new Event("visibilitychange")));
   expect([...watching].sort()).toEqual(["a", "b", "c"]);
+});
+
+it("shows a surface's own frames: none of the browser's once its work moves to the Windows computer", () => {
+  views(["a"]);
+  scroll("a", true);
+  act(() => send.get("a browser")!({ url: "https://m/browser.jpg", at: Date.now() }));
+  expect(host.querySelector("img")?.getAttribute("src")).toBe("https://m/browser.jpg");
+  views(["a"], undefined, "windows");
+  expect(host.querySelector("img")).toBeNull();
+  // A still the browser's watch was taking as it stopped stays the browser's.
+  act(() => send.get("a browser")!({ url: "https://m/late.jpg", at: Date.now() }));
+  expect(host.querySelector("img")).toBeNull();
+  act(() => send.get("a windows")!({ url: "https://m/windows.jpg", at: Date.now() }));
+  expect(host.querySelector("img")?.getAttribute("src")).toBe("https://m/windows.jpg");
 });

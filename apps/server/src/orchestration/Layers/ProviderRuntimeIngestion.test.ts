@@ -2465,6 +2465,20 @@ describe("ProviderRuntimeIngestion", () => {
       2_000,
       threadId,
     );
+    // The old turn runs a command, which never ends: the new turn supersedes it.
+    await harness.emitAndDrain([
+      {
+        type: "item.started",
+        eventId: asEventId("evt-steered-over-tool"),
+        provider: ProviderDriverKind.make("codex"),
+        createdAt,
+        threadId,
+        turnId: oldTurnId,
+        itemId: asItemId("item-steered-over-tool"),
+        payload: { itemType: "command_execution", status: "inProgress", title: "Command run" },
+      },
+    ]);
+    expect((await harness.readThreadShell()).currentWork?.kind).toBe("tool");
 
     // The steer: a user-requested turn start while the old turn still runs.
     await Effect.runPromise(
@@ -2514,6 +2528,20 @@ describe("ProviderRuntimeIngestion", () => {
     expect(threadAfterSteer.session?.activeTurnId).toBe(newTurnId);
     expect(threadAfterSteer.latestTurn?.turnId).toBe(newTurnId);
     expect(threadAfterSteer.latestTurn?.state).toBe("running");
+    // What the old turn was doing went with it; the new turn's own work shows.
+    expect((await harness.readThreadShell()).currentWork).toBeNull();
+    await harness.emitAndDrain([
+      {
+        type: "content.delta",
+        eventId: asEventId("evt-from-steer-think"),
+        provider: ProviderDriverKind.make("codex"),
+        createdAt,
+        threadId,
+        turnId: newTurnId,
+        payload: { streamKind: "reasoning_text", delta: "15, then" },
+      },
+    ]);
+    expect((await harness.readThreadShell()).currentWork?.kind).toBe("thinking");
   });
 
   it("does not mark the source proposed plan implemented for an unrelated turn.started when no thread active turn is tracked", async () => {

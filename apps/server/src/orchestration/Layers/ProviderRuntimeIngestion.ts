@@ -2487,6 +2487,10 @@ const make = Effect.gen(function* () {
       // active turn's progress; session.exited always clears.
       if (event.type === "session.exited") {
         threadPlanProgress.clearThreadPlanProgress(thread.id);
+      } else if (event.type === "turn.started" && shouldApplyThreadLifecycle) {
+        // A turn starts with nothing under way, one that supersedes the active turn too:
+        // the old turn's tools can't end here any more (its events are now stale).
+        threadPlanProgress.clearThreadCurrentWork(thread.id);
       } else if (!conflictsWithActiveTurn) {
         if (event.type === "turn.plan.updated") {
           threadPlanProgress.recordPlanProgress(thread.id, event.payload.plan);

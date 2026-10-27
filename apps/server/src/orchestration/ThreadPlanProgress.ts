@@ -50,6 +50,9 @@ export class ThreadPlanProgressService extends Context.Service<
     /** Turn settled or session died: the working indicator reverts to plain. */
     readonly clearThreadPlanProgress: (threadId: string) => void;
 
+    /** A turn started: what an earlier one was doing is over. */
+    readonly clearThreadCurrentWork: (threadId: string) => void;
+
     readonly getThreadPlanProgress: (threadId: string) => ThreadPlanProgress | null;
 
     /** The turn streams its reasoning or its reply (between tool calls). */
@@ -108,6 +111,11 @@ export function make(): ThreadPlanProgressService["Service"] {
 
     clearThreadPlanProgress: (threadId) => {
       progressByThreadId.delete(threadId);
+      workByThreadId.delete(threadId);
+      toolsByThreadId.delete(threadId);
+    },
+
+    clearThreadCurrentWork: (threadId) => {
       workByThreadId.delete(threadId);
       toolsByThreadId.delete(threadId);
     },

@@ -38,6 +38,7 @@ describe("shellWork", () => {
           activity: command("python3 build.py --final"),
         },
       }),
+      "live",
     );
     expect(work).toMatchObject({
       kind: "tool",
@@ -52,11 +53,13 @@ describe("shellWork", () => {
         running({
           currentWork: { kind: "thinking", startedAt: "2026-10-27T12:00:05.000Z", activity: null },
         }),
+        "live",
       ),
     ).toMatchObject({ kind: "thinking", doing: null });
     expect(
       shellWork(
         running({ planProgress: { step: "Run the tests", completedSteps: 1, totalSteps: 3 } }),
+        "live",
       ),
     ).toMatchObject({ doing: "Running the tests", plan: { done: 1, total: 3 } });
   });
@@ -68,7 +71,18 @@ describe("shellWork", () => {
           session: { status: "ready" } as Shell["session"],
           currentWork: { kind: "thinking", startedAt: "2026-10-27T12:00:05.000Z", activity: null },
         }),
+        "live",
       ),
     ).toBeNull();
+  });
+
+  it("has nothing to say from a shell it isn't connected to now: what it kept may be over", () => {
+    const writing = running({
+      currentWork: { kind: "writing", startedAt: "2026-10-27T12:00:05.000Z", activity: null },
+    });
+    expect(shellWork(writing, "live")).toMatchObject({ kind: "writing" });
+    for (const status of ["cached", "synchronizing", "empty"] as const) {
+      expect(shellWork(writing, status)).toBeNull();
+    }
   });
 });

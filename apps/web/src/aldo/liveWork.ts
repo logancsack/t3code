@@ -5,15 +5,20 @@
 // thread's timeline words it) and its plan's step (planProgress). A machine
 // whose T3 doesn't report what it's doing gives the plan's step, or nothing.
 // Nothing here wakes a machine or opens a thread: a machine this page isn't
-// connected to has no live step, and the card says what Aldo's read has. A
+// connected to has no live step, nor one whose shell is only what it last
+// kept (cached, or catching up after the connection dropped), and the card
+// says what Aldo's read has. A
 // render on the GPU computer says its frame, while its card's view reads it.
 
+import { useAtomValue } from "@effect/atom-react";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import type { EnvironmentShellStatus } from "@t3tools/client-runtime/state/shell";
 import type { EnvironmentId, OrchestrationThreadActivity, ThreadId } from "@t3tools/contracts";
 import { useEffect, useMemo, useState } from "react";
 
 import { deriveWorkLogEntries } from "../session-logic";
 import { useThreadShell } from "../state/entities";
+import { environmentShell } from "../state/shell";
 import type { AldoHomeTarget } from "./homeApi";
 import { useAldoGpuRender } from "./liveFrames";
 import type { AldoLiveWork } from "./liveWork.logic";
@@ -39,10 +44,14 @@ function toolStep(
   };
 }
 
-/** The step a thread's shell says is under way; null while no turn runs. */
-export function shellWork(shell: Shell | null): AldoLiveWork | null {
+/** The step a thread's shell says is under way; null while no turn runs, or the shell isn't live. */
+export function shellWork(
+  shell: Shell | null,
+  status: EnvironmentShellStatus,
+): AldoLiveWork | null {
   const turn = shell?.latestTurn;
-  if (!shell || shell.session?.status !== "running" || turn?.state !== "running") return null;
+  if (status !== "live" || !shell) return null;
+  if (shell.session?.status !== "running" || turn?.state !== "running") return null;
   const reported = shell.currentWork ?? null;
   const progress = shell.planProgress ?? null;
   const plan = progress ? { done: progress.completedSteps, total: progress.totalSteps } : null;
@@ -74,7 +83,10 @@ export function useAldoLiveWork(target: AldoHomeTarget): AldoLiveWork | null {
     () => scopeThreadRef(target.environmentId as EnvironmentId, target.threadId as ThreadId),
     [target.environmentId, target.threadId],
   );
-  const work = shellWork(useThreadShell(ref));
+  const status = useAtomValue(
+    environmentShell.stateValueAtom(target.environmentId as EnvironmentId),
+  ).status;
+  const work = shellWork(useThreadShell(ref), status);
   const render = useAldoGpuRender(target);
   return work && render ? { ...work, render } : work;
 }

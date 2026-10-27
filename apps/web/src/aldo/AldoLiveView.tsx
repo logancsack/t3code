@@ -89,7 +89,12 @@ export function AldoLiveView(props: {
   const { surface, open } = props;
   const { environmentId, threadId } = props.target;
   const key = `${environmentId}\n${threadId}\n${surface}`;
-  const [frame, setFrame] = useState<AldoLiveFrame | null>(() => last.get(key) ?? null);
+  // A frame is its view's: a card whose work moves to another surface shows that one's.
+  const [shown, setShown] = useState<{
+    readonly key: string;
+    readonly frame: AldoLiveFrame | null;
+  }>(() => ({ key, frame: last.get(key) ?? null }));
+  const frame = shown.key === key ? shown.frame : (last.get(key) ?? null);
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const element = box.current;
@@ -97,9 +102,10 @@ export function AldoLiveView(props: {
     const scale = Math.min(window.devicePixelRatio || 1, 2);
     return aldoLiveFrames(surface, { environmentId, threadId }).watch(
       { width: Math.round(element.clientWidth * scale), everyMs: paceOf(surface, open) },
+      // Kept with its surface: one taken as the view moved on never shows there.
       (next) => {
         last.set(key, next);
-        setFrame(next);
+        setShown({ key, frame: next });
       },
     );
   }, [active, open, surface, environmentId, threadId, key]);
