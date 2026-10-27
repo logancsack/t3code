@@ -83,9 +83,13 @@ describe("boardFor", () => {
 });
 
 describe("isStuck", () => {
-  it("counts from when the machine reported, not from a rename or a pin", () => {
-    expect(isStuck(conversation({ at: ago(5), stateAt: ago(90) }), NOW)).toBe(true);
-    expect(isStuck(conversation({ at: ago(90), stateAt: ago(5) }), NOW)).toBe(false);
+  it("counts from the thread's latest activity, not from when its turn began", () => {
+    // A long turn (began 90 min ago) that is still producing events is working.
+    expect(isStuck(conversation({ at: ago(5), stateAt: ago(90) }), NOW)).toBe(false);
+    // One with nothing at all for over an hour is not.
+    expect(isStuck(conversation({ at: ago(90), stateAt: ago(120) }), NOW)).toBe(true);
+    expect(isStuck(conversation({ at: ago(61), stateAt: ago(61) }), NOW)).toBe(true);
+    expect(isStuck(conversation({ at: ago(59), stateAt: ago(61) }), NOW)).toBe(false);
     expect(isStuck(conversation({ at: ago(90) }), NOW)).toBe(true);
     expect(isStuck(conversation({ state: "waiting", at: ago(90) }), NOW)).toBe(false);
   });

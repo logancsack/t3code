@@ -210,14 +210,13 @@ export function presenceBoard(
   const live = boardFor(home.conversations, now).working;
   const stuck = live.filter((c) => isStuck(c, now)).length;
   const working: PresenceRow[] = live.map((c) => {
-    const since = elapsed(c.stateAt ?? c.at, now);
+    const quiet = isStuck(c, now);
+    const since = elapsed(quiet ? c.at : (c.stateAt ?? c.at), now);
     return {
       key: `working:${c.ref}`,
       title: c.title,
-      detail: isStuck(c, now)
-        ? `No word for ${since}`
-        : `${c.summary ? `${c.summary} · ` : ""}for ${since}`,
-      tone: isStuck(c, now) ? "quiet" : "live",
+      detail: quiet ? `No word for ${since}` : `${c.summary ? `${c.summary} · ` : ""}for ${since}`,
+      tone: quiet ? "quiet" : "live",
       target: c.thread,
     };
   });

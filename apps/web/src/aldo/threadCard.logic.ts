@@ -52,7 +52,7 @@ export function stalledOf(
     : isPausedMidTurn(c)
       ? ({ kind: "paused", since: c.stateAt ?? c.at } as const)
       : isStuck(c, now)
-        ? ({ kind: "stuck", since: c.stateAt ?? c.at } as const)
+        ? ({ kind: "stuck", since: c.at } as const)
         : null;
   if (!base) return null;
   const issue = healthIssues(home).find(

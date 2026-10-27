@@ -326,8 +326,8 @@ describe("presenceBoard working and coming up", () => {
             ref: "b",
             title: "Silent",
             state: "working",
-            at: ago(1),
-            stateAt: ago(90),
+            at: ago(90),
+            stateAt: ago(120),
           }),
         ],
       }),
@@ -337,6 +337,24 @@ describe("presenceBoard working and coming up", () => {
       expect.arrayContaining(["Editing · for 3 min", "No word for 1 h 30 min"]),
     );
     expect(b.working.preview).toBe("1 with no word for over an hour");
+  });
+  it("keeps a long turn that is still moving working, counted from its start", () => {
+    const b = board(
+      home({
+        conversations: [
+          conversation({
+            ref: "a",
+            title: "Long turn",
+            state: "working",
+            at: ago(1),
+            stateAt: ago(62),
+          }),
+        ],
+      }),
+    );
+    expect(b.stuck).toBe(0);
+    expect(b.working.rows.map((r) => [r.detail, r.tone])).toEqual([["for 1 h 2 min", "live"]]);
+    expect(b.working.preview).toBe("Long turn");
   });
   it("previews the first working thread and the rest", () => {
     const two = board(

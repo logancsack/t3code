@@ -95,7 +95,7 @@ export function StateDot(props: {
 export function stateSince(c: AldoHomeConversation, now: number): string {
   if (needsYouKind(c)) return `waiting ${elapsed(c.at, now)}`;
   if (c.state === "done") return `finished ${relativeTime(c.at, now)}`;
-  return `for ${elapsed(c.at, now)}`;
+  return `for ${elapsed(c.stateAt ?? c.at, now)}`;
 }
 
 /** A pull request, its stage, and Merge once it's green. */
