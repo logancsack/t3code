@@ -419,3 +419,18 @@ it("places a browser handoff when it was created, rather than its thread's earli
   expect(decisionAt(decision, read)).toBe(ago(10));
   expect(decisionAt(decision)).toBe(ago(30));
 });
+
+it("takes what the user dismissed out of every list and count, and a different ask back in", () => {
+  const cleared = { id: "request-one", dismissed: true, cleared: true };
+  const dismissed = { ...question, chatDecision: cleared };
+  const read = home({ conversations: [dismissed] });
+  expect(aldoDecisions(read, NOW)).toHaveLength(0);
+  expect(aldoChatDecisions(read, NOW)).toHaveLength(0);
+  expect(aldoWaitingCount(read, NOW)).toBe(0);
+  // Not "hidden from chat" either: it is dismissed, listed under Dismissed (needsYou.logic.ts).
+  expect(aldoHiddenFromChat(read, NOW)).toEqual([]);
+  expect(aldoDecisions(read, NOW, true)).toHaveLength(1);
+  // The same thread asks something else: another id, so it counts again.
+  const next = { ...question, chatDecision: { id: "request-two", dismissed: false } };
+  expect(aldoWaitingCount(home({ conversations: [next] }), NOW)).toBe(1);
+});

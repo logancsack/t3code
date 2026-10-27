@@ -5,7 +5,7 @@
 // for the user's Start, or started. An older Aldo has no plans, and what
 // doesn't read as one is left out. Pure, so it's tested on its own.
 
-import type { AldoHomeTarget } from "./homeApi";
+import type { AldoChatDecision, AldoHomeTarget } from "./homeApi";
 
 export interface AldoPlanQuestion {
   readonly id: string;
@@ -47,6 +47,8 @@ export interface AldoPlan {
   readonly deferredUntil?: string | null;
   /** Put off, and back now: it waits for the user's Start. */
   readonly back?: boolean;
+  /** Whether the user dismissed it from Needs you; absent from an Aldo that can't dismiss. */
+  readonly chatDecision?: AldoChatDecision;
 }
 
 const isText = (value: unknown): value is string => typeof value === "string";
@@ -76,6 +78,13 @@ function answersOf(value: unknown): Readonly<Record<string, string>> | null {
   );
 }
 
+function decisionOf(value: unknown): AldoChatDecision | null {
+  const d = value as Partial<AldoChatDecision> | null;
+  return d && isText(d.id) && typeof d.dismissed === "boolean"
+    ? { id: d.id, dismissed: d.dismissed, ...(d.cleared === true ? { cleared: true } : {}) }
+    : null;
+}
+
 /** One plan from Home's read, or null when it doesn't read as one. */
 export function parseAldoPlan(value: unknown): AldoPlan | null {
   const p = value as Partial<Record<keyof AldoPlan, unknown>> | null;
@@ -89,6 +98,7 @@ export function parseAldoPlan(value: unknown): AldoPlan | null {
   const questions = Array.isArray(p.questions) ? p.questions.map(questionOf) : [];
   // A question that doesn't read leaves the plan out: its Start would answer it unseen.
   if (questions.some((q) => q === null)) return null;
+  const chatDecision = decisionOf(p.chatDecision);
   return {
     id: p.id,
     goal: p.goal,
@@ -113,6 +123,7 @@ export function parseAldoPlan(value: unknown): AldoPlan | null {
     error: textOrNull(p.error),
     ...(p.deferredUntil === undefined ? {} : { deferredUntil: timeOrNull(p.deferredUntil) }),
     ...(p.back === true ? { back: true } : {}),
+    ...(chatDecision ? { chatDecision } : {}),
   };
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { inWords, needsYouWords, pendingNeedsYou } from "./needsYou.logic";
+import { dismissedNeedsYou, inWords, needsYouWords, pendingNeedsYou } from "./needsYou.logic";
 import type { AldoHome, AldoHomeConversation, AldoApproval } from "./homeApi";
 const at = "2026-10-23T12:00:00.000Z";
 const now = Date.parse(at);
@@ -208,4 +208,46 @@ it("with hidden, counts what the user hid from the conversation, as the app badg
   );
   expect(all.find((i) => i.key === "aldo:hidden")?.hidden).toEqual(hidden);
   expect(all.find((i) => i.key === "aldo:shown")?.hidden).toBeUndefined();
+});
+it("leaves out what the user dismissed, lists it as dismissed, and a different ask shows again", () => {
+  const cleared = (id: string) => ({ id, dismissed: true, cleared: true });
+  const plan = {
+    id: "p1",
+    goal: "Plan the trip",
+    cost: "Free",
+    steps: [],
+    minutes: 5,
+    status: "proposed",
+    costsMoney: true,
+    proposedAt: at,
+    chatDecision: cleared("plan"),
+  };
+  const read = home({
+    approvals: [approval("shown"), { ...approval("gone"), chatDecision: cleared("approval") }],
+    plans: [plan],
+    conversations: [
+      conversation({ ref: "failed", state: "failed", chatDecision: cleared("failed") }),
+      conversation({
+        ref: "p",
+        state: "paused",
+        machine: "asleep",
+        chatDecision: cleared("paused"),
+      }),
+      conversation({ ref: "new", state: "failed", chatDecision: { id: "next", dismissed: false } }),
+    ],
+  });
+  for (const withHidden of [false, true]) {
+    expect(
+      pendingNeedsYou(read, now, [], withHidden)
+        .map((i) => i.key)
+        .sort(),
+    ).toEqual(["aldo:shown", `failed:new:${at}`]);
+  }
+  expect(
+    dismissedNeedsYou(read, now)
+      .map((i) => i.key)
+      .sort(),
+  ).toEqual(["aldo:gone", "home-plan:p1", `failed:failed:${at}`, "paused:p"].sort());
+  expect(dismissedNeedsYou(read, now).every((i) => i.decision?.cleared)).toBe(true);
+  expect(dismissedNeedsYou(read, now, ["aldo:gone"]).map((i) => i.key)).not.toContain("aldo:gone");
 });

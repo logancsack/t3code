@@ -8,6 +8,8 @@ import { type AldoHome } from "./homeApi";
 const NOW = Date.parse("2026-10-26T12:00:00Z");
 const ago = (minutes: number) => new Date(NOW - minutes * 60_000).toISOString();
 const underTheHood = vi.hoisted(() => vi.fn());
+const dismiss = vi.hoisted(() => vi.fn(async () => undefined));
+const restore = vi.hoisted(() => vi.fn(async () => undefined));
 
 vi.mock("./assistantSession", () => ({
   useAldoAssistant: (select: (s: { phase: string; replying: boolean }) => unknown) =>
@@ -21,6 +23,7 @@ vi.mock("./AldoFrame", () => ({ AldoFrame: () => null }));
 vi.mock("./AldoHomeInbox", () => ({
   ThreadLink: ({ children }: { children: ReactNode }) => <a href="#thread">{children}</a>,
 }));
+vi.mock("./clearNeedsYou", () => ({ dismissNeedsYou: dismiss, restoreNeedsYou: restore }));
 vi.mock("./DismissChatDecision", () => ({
   AldoHiddenFromChat: () => null,
   DismissChatDecision: () => <button type="button">Show again</button>,
@@ -61,6 +64,8 @@ beforeEach(async () => {
   root = createRoot(host);
 });
 afterEach(() => {
+  dismiss.mockClear();
+  restore.mockClear();
   act(() => root.unmount());
   host.remove();
   document.body.innerHTML = "";
@@ -125,4 +130,62 @@ it("shows what moved until the drop-down is closed", () => {
   act(() => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
   expect(window.localStorage.getItem("aldo:presence:seen")).not.toBeNull();
   expect(text()).toContain("All caught up");
+});
+
+const cleared = (id: string) => ({ id, dismissed: true, cleared: true });
+const asks = (id: string) => ({ id, dismissed: false });
+
+it("dismisses an item with its ✕, without opening its thread, and Clear all takes every one", () => {
+  show(
+    home([
+      conversation("a", { state: "waiting", chatDecision: asks("da") }),
+      conversation("b", { state: "failed", chatDecision: asks("db") }),
+    ]),
+  );
+  press("Aldo:");
+  press("Needs you");
+  press("Dismiss Thread a");
+  expect(dismiss).toHaveBeenLastCalledWith(["da"]);
+  expect(text()).toContain("Dismissed “Thread a”");
+  press("Undo");
+  expect(restore).toHaveBeenLastCalledWith(["da"]);
+  press("Clear all");
+  expect(dismiss).toHaveBeenLastCalledWith(["da", "db"]);
+  expect(text()).toContain("Dismissed 2 things");
+});
+
+it("offers no way to dismiss on an Aldo that can't", () => {
+  show(home([conversation("a", { state: "waiting" })]));
+  press("Aldo:");
+  press("Needs you");
+  expect(text()).toContain("Thread a");
+  expect(document.querySelector('[aria-label^="Dismiss"]')).toBeNull();
+  expect(text()).not.toContain("Clear all");
+});
+
+it("counts nothing dismissed, lists it under Dismissed, and restores it", () => {
+  show(
+    home([
+      conversation("a", { state: "waiting", chatDecision: asks("da") }),
+      conversation("b", { state: "failed", chatDecision: cleared("db") }),
+    ]),
+  );
+  expect(text()).toContain("1 thing needs you");
+  press("Aldo:");
+  expect(text()).toContain("Needs you");
+  press("Needs you");
+  expect(text()).not.toContain("Thread b");
+  press("Dismissed");
+  expect(text()).toContain("Thread b");
+  press("Restore Thread b");
+  expect(restore).toHaveBeenLastCalledWith(["db"]);
+});
+
+it("says nothing waits once everything is dismissed, and keeps the Dismissed list reachable", () => {
+  show(home([conversation("b", { state: "failed", chatDecision: cleared("db") })]));
+  expect(text()).toContain("All caught up");
+  press("Aldo:");
+  press("Needs you");
+  expect(text()).toContain("Nothing waiting on you");
+  expect(text()).toContain("Dismissed");
 });

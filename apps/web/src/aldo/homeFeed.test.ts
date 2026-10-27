@@ -102,6 +102,26 @@ it("a cached server body cannot undo a successful local dismissal before the ser
   );
 });
 
+it("a dismissal from Needs you takes effect at once, in plans too, and a restore undoes it", async () => {
+  const feed = await import("./homeFeed");
+  const plan = { id: "p", chatDecision: { id: "plan-decision", dismissed: false } };
+  fetchHome.mockImplementation(async () => ({ ...home(), plans: [plan] }));
+  await feed.refreshAldoHome();
+  feed.setAldoDecisionsCleared(["decision", "plan-decision"], true);
+  const read = () => feed.useAldoHomeFeed.getState().home;
+  expect(read()?.conversations[0]?.chatDecision).toMatchObject({ dismissed: true, cleared: true });
+  const plans = (read()?.plans ?? []) as (typeof plan)[];
+  expect(plans[0]?.chatDecision).toMatchObject({ cleared: true });
+  // A read begun before can't put it back.
+  await feed.refreshAldoHome();
+  expect(read()?.conversations[0]?.chatDecision?.cleared).toBe(true);
+  feed.setAldoDecisionsCleared(["decision"], false);
+  expect(read()?.conversations[0]?.chatDecision).toMatchObject({
+    dismissed: false,
+    cleared: false,
+  });
+});
+
 // A thread whose machine is asleep keeps saying it waits on the question for a
 // minute or more after the answer was sent: the card must not wait for it.
 function asking(requestId = "r1"): AldoHome {

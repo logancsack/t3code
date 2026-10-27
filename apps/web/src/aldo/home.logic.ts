@@ -91,14 +91,18 @@ export interface HomeBoard {
 
 const byAt = (a: { at: string }, b: { at: string }) => b.at.localeCompare(a.at);
 
-/** The conversations sorted into the board's sections (those with nothing sent yet are left out). */
+/**
+ * The conversations sorted into the board's sections (those with nothing sent yet are left out).
+ * What the user dismissed from Needs you is not in it, unless `withCleared`.
+ */
 export function boardFor(
   conversations: ReadonlyArray<AldoHomeConversation>,
   now: number,
+  withCleared = false,
 ): HomeBoard {
   return {
     needsYou: conversations
-      .filter((c) => needsYouKind(c) !== null)
+      .filter((c) => needsYouKind(c) !== null && (withCleared || !c.chatDecision?.cleared))
       .sort((a, b) => a.at.localeCompare(b.at)),
     working: conversations
       .filter((c) => WORKING_STATES.has(c.state) && !isPausedMidTurn(c))

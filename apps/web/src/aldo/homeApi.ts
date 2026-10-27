@@ -49,6 +49,11 @@ export interface AldoChatDecision {
   readonly until?: string | null;
   /** It's back from being put off. */
   readonly back?: boolean;
+  /**
+   * Dismissed from Needs you (it's also `dismissed`): it no longer counts anywhere and is
+   * listed under Dismissed to restore. Absent from an Aldo that can't dismiss.
+   */
+  readonly cleared?: boolean;
 }
 
 export interface AldoHomeConversation {
@@ -670,6 +675,17 @@ export async function sendAldoDeliveryNow(id: string): Promise<void> {
 /** Cancels a waiting delivery: it's never sent. */
 export async function cancelAldoDelivery(id: string): Promise<void> {
   await api(`/api/deliveries/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+/** Dismisses what waits in Needs you (or restores it, `cleared: false`): nothing is answered; the thread keeps waiting. */
+export async function clearAldoDecisions(
+  ids: ReadonlyArray<string>,
+  cleared = true,
+): Promise<void> {
+  await api("/api/assistant/decisions/clear", {
+    method: "POST",
+    body: JSON.stringify({ ids, cleared }),
+  });
 }
 
 /** Hides or restores only the home-chat prompt; the thread keeps waiting. With `until`, puts it off until then ("Not now"). */

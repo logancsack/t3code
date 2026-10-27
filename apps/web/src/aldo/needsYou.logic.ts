@@ -36,11 +36,15 @@ export interface NeedsYouItem {
   readonly thread?: AldoHomeTarget | null;
   /** Set while the user has hidden it from Aldo's conversation (or put it off); it still waits. */
   readonly hidden?: AldoChatDecision;
+  /** What dismissing it names (an Aldo that can't dismiss has none, and no way to). */
+  readonly decision?: AldoChatDecision;
 }
 
 /** The dismissal a hidden item carries, or nothing. */
-const hiddenBy = (decision: AldoChatDecision | undefined) =>
-  decision?.dismissed ? { hidden: decision } : {};
+const hiddenBy = (decision: AldoChatDecision | undefined) => ({
+  ...(decision ? { decision } : {}),
+  ...(decision?.dismissed ? { hidden: decision } : {}),
+});
 
 export interface ComputerRequest extends NeedsYouItem {
   readonly conversation: AldoHomeConversation;
@@ -76,7 +80,8 @@ export function computerRequests(home: AldoHome): ReadonlyArray<ComputerRequest>
  * conversation's history, `answered` keys the read hasn't caught up with, and
  * plans that start on their own, have started or couldn't start don't wait.
  * `withHidden`: also what they hid from Aldo's conversation or put off, each
- * with its `hidden` dismissal: it all still waits in its thread.
+ * with its `hidden` dismissal: it all still waits in its thread. What they
+ * dismissed from Needs you (`decision.cleared`) is in neither.
  */
 export function pendingNeedsYou(
   home: AldoHome,
@@ -84,11 +89,29 @@ export function pendingNeedsYou(
   answered: ReadonlyArray<string> = [],
   withHidden = false,
 ): ReadonlyArray<NeedsYouItem> {
+  return needsYouItems(home, now, answered, withHidden).filter((item) => !item.decision?.cleared);
+}
+
+/** What the user dismissed from Needs you and it still waits, oldest first: listed to restore. */
+export function dismissedNeedsYou(
+  home: AldoHome,
+  now: number,
+  answered: ReadonlyArray<string> = [],
+): ReadonlyArray<NeedsYouItem> {
+  return needsYouItems(home, now, answered, true).filter((item) => item.decision?.cleared);
+}
+
+function needsYouItems(
+  home: AldoHome,
+  now: number,
+  answered: ReadonlyArray<string>,
+  withHidden: boolean,
+): ReadonlyArray<NeedsYouItem> {
   const computers = computerRequests(home).filter(
     (c) => !putAway(c.conversation, now) && (withHidden || !c.conversation.chatDecision?.dismissed),
   );
   const asksForComputer = (ref: string) => computers.some((c) => c.conversation.ref === ref);
-  const decisions = (withHidden ? aldoDecisions(home, now) : aldoChatDecisions(home, now))
+  const decisions = (withHidden ? aldoDecisions(home, now, true) : aldoChatDecisions(home, now))
     .filter((d) => d.kind !== "waiting" || !asksForComputer(d.conversation.ref))
     .map((d) => ({
       key: d.key,
@@ -125,6 +148,7 @@ export function pendingNeedsYou(
       at: p.proposedAt,
       selector: `[data-aldo-plan=${JSON.stringify(p.id)}]`,
       thread: p.thread,
+      ...hiddenBy(p.chatDecision),
     }));
   const paused = (
     withHidden
