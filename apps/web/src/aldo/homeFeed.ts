@@ -409,35 +409,46 @@ export function useAldoHomeRead(enabled = true): AldoHomeFeed {
   return useAldoHomeFeed();
 }
 
-/** A persisted dismissal takes effect immediately, including when the next read fails. */
-export function setAldoChatDecisionDismissed(id: string, dismissed: boolean, until?: Date): void {
+/** Applies `change` to the decisions named `ids` in the home as it stands, now; Aldo's next read says the same. */
+function changeDecisions(
+  ids: ReadonlySet<string>,
+  change: (decision: AldoChatDecision) => AldoChatDecision,
+): void {
   const home = serverHome;
   if (!home) return;
   dismissalRevision += 1;
   homeFrom = Date.now();
   const update = <T extends { readonly chatDecision?: AldoChatDecision }>(item: T): T =>
-    item.chatDecision?.id === id
-      ? {
-          ...item,
-          chatDecision: {
-            ...item.chatDecision,
-            dismissed,
-            // Put off until then, or not (shown again, or hidden for good), as Aldo's next read will say.
-            ...(item.chatDecision.until !== undefined
-              ? { until: dismissed && until ? until.toISOString() : null }
-              : {}),
-          },
-        }
+    item.chatDecision && ids.has(item.chatDecision.id)
+      ? { ...item, chatDecision: change(item.chatDecision) }
       : item;
   const next = {
     ...home,
     conversations: home.conversations.map(update),
     approvals: (home.approvals ?? []).map(update),
     pullRequests: home.pullRequests.map(update),
+    ...(Array.isArray(home.plans) ? { plans: home.plans.map(update) } : {}),
   };
   noteHiddenPrompts(next);
   serverHome = next;
   publish();
+}
+
+/** A persisted dismissal takes effect immediately, including when the next read fails. */
+export function setAldoChatDecisionDismissed(id: string, dismissed: boolean, until?: Date): void {
+  changeDecisions(new Set([id]), (decision) => ({
+    ...decision,
+    dismissed,
+    // Put off until then, or not (shown again, or hidden for good), as Aldo's next read will say.
+    ...(decision.until !== undefined
+      ? { until: dismissed && until ? until.toISOString() : null }
+      : {}),
+  }));
+}
+
+/** Dismissed from Needs you (or restored), as a persisted dismissal: it counts nowhere at once. */
+export function setAldoDecisionsCleared(ids: ReadonlyArray<string>, cleared: boolean): void {
+  changeDecisions(new Set(ids), (decision) => ({ ...decision, dismissed: cleared, cleared }));
 }
 
 /**

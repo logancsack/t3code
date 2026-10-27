@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
+import { aldoWaitingCount } from "./decisions.logic";
 import type { AldoHome, AldoHomeConversation, AldoHomePullRequest } from "./homeApi";
 import {
   presenceBoard,
@@ -182,6 +183,46 @@ describe("presenceBoard needs you", () => {
   });
   it("says so when nothing waits", () => {
     expect(board(home()).needsYou.preview).toBe("Nothing waiting on you");
+  });
+  it("leaves what they dismissed out of every count, and lists it to restore", () => {
+    const cleared = { id: "c", dismissed: true, cleared: true };
+    const read = home({
+      conversations: [
+        conversation({ ref: "a", title: "Shown", state: "waiting" }),
+        conversation({ ref: "b", title: "Dismissed", state: "failed", chatDecision: cleared }),
+        conversation({
+          ref: "p",
+          title: "Paused",
+          state: "paused",
+          machine: "asleep",
+          chatDecision: { ...cleared, id: "d" },
+        }),
+      ],
+    });
+    const b = board(read);
+    expect(b.needsYou.rows.map((r) => r.title)).toEqual(["Shown"]);
+    expect(b.dismissed.map((r) => r.title).sort()).toEqual(["Dismissed", "Paused"]);
+    expect(b.dismissed[0]!.decision?.cleared).toBe(true);
+    // The header, the Needs you row and the app badge say the same.
+    expect(presenceLine({ ...quiet, waiting: b.needsYou.rows.length, fresh: true }).text).toBe(
+      "1 thing needs you",
+    );
+    expect(aldoWaitingCount(read, NOW)).toBe(b.needsYou.rows.length);
+  });
+  it("keeps Needs you openable when only dismissed items remain, and says so", () => {
+    const cleared = { id: "c", dismissed: true, cleared: true };
+    const b = board(
+      home({ conversations: [conversation({ state: "failed", chatDecision: cleared })] }),
+    );
+    expect(b.needsYou.rows).toEqual([]);
+    expect(b.dismissed).toHaveLength(1);
+    expect(b.needsYou.preview).toBe("Nothing now · 1 dismissed");
+    // A different ask from the same thread has another id: it isn't dismissed.
+    const next = { id: "n", dismissed: false };
+    expect(
+      board(home({ conversations: [conversation({ state: "failed", chatDecision: next })] }))
+        .dismissed,
+    ).toEqual([]);
   });
 });
 

@@ -41,7 +41,7 @@ import { seedAldoComposer, useAldoAssistant } from "./assistantSession";
 import { type AldoHome, type AldoHomeTarget } from "./homeApi";
 import { aldoChatDecisions, aldoWaitingCount, decisionAt, pausedInChat } from "./decisions.logic";
 import { AldoComputerRequest } from "./AldoComputerRequest";
-import { pendingNeedsYou, computerRequests } from "./needsYou.logic";
+import { computerRequests, dismissedNeedsYou, pendingNeedsYou } from "./needsYou.logic";
 import { NeedsYouPill } from "./NeedsYouPill";
 import { COMPOSER_ACTION, HomeComposerActions } from "./HomeComposerActions";
 import { feedEvents, withPlans, withReceipts } from "./feed.logic";
@@ -234,7 +234,14 @@ export function AldoConversationPage(props: {
   useAldoFirstViewHold(loading);
   const receipts = useAldoReceipts((s) => s.receipts);
   // Plans keep their proposal time through Start and subsequent reads.
-  const plans = useMemo(() => parseAldoPlans(home?.plans), [home]);
+  // One dismissed from Needs you leaves the conversation too, as a prompt hidden from chat does.
+  const plans = useMemo(
+    () =>
+      parseAldoPlans(home?.plans).filter(
+        (p) => p.status !== "proposed" || !p.chatDecision?.cleared,
+      ),
+    [home],
+  );
   const feed = useMemo(
     () =>
       withReceipts(
@@ -310,6 +317,8 @@ export function AldoConversationPage(props: {
   const waiting = useMemo(() => (home ? aldoWaitingCount(home, now) : 0), [home, now]);
   // Nothing read yet, and the read failed: that's said, not taken for nothing to show.
   const unread = home === null && props.error !== null;
+  // What they dismissed from Needs you keeps the header (and so the way to restore it).
+  const dismissed = useMemo(() => (home ? dismissedNeedsYou(home, now).length : 0), [home, now]);
   // Nothing said, nothing happened and nothing waiting: the page is one question.
   // An older Aldo without the home read shows its overview, which the empty page has no room for.
   const fresh =
@@ -318,6 +327,7 @@ export function AldoConversationPage(props: {
     feed.length === 0 &&
     placed.length === 0 &&
     waiting === 0 &&
+    dismissed === 0 &&
     !unread &&
     props.supported !== false;
   useEffect(() => {

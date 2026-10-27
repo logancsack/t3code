@@ -20,7 +20,7 @@ import type {
   AldoHomePullRequest,
   AldoHomeTarget,
 } from "./homeApi";
-import { pendingNeedsYou } from "./needsYou.logic";
+import { dismissedNeedsYou, pendingNeedsYou } from "./needsYou.logic";
 import { parseAldoPlans, planPutOff } from "./plans.logic";
 
 export type AldoPresenceState =
@@ -66,6 +66,8 @@ export interface PresenceRow {
   readonly target: AldoHomeTarget | null;
   /** Hidden from Aldo's conversation, still waiting: the dismissal that shows it again. */
   readonly hidden?: AldoChatDecision;
+  /** What dismissing it from Needs you names; none from an Aldo that can't dismiss. */
+  readonly decision?: AldoChatDecision;
 }
 
 /** A list with the one line the index row says of it. */
@@ -76,6 +78,8 @@ export interface PresenceSection {
 
 export interface AldoPresenceBoard {
   readonly needsYou: PresenceSection;
+  /** What they dismissed from Needs you: not counted anywhere, listed to restore. */
+  readonly dismissed: ReadonlyArray<PresenceRow>;
   /** What they put off ("Not now", decisions and plans): still waiting, but not counted until it's back. */
   readonly putOff: number;
   readonly moved: PresenceSection;
@@ -166,7 +170,16 @@ export function presenceBoard(
       tone: "attention",
       target: item.thread ?? null,
       ...(item.hidden ? { hidden: item.hidden } : {}),
+      ...(item.decision ? { decision: item.decision } : {}),
     }));
+  const dismissed: PresenceRow[] = dismissedNeedsYou(home, now, options.answered).map((item) => ({
+    key: item.key,
+    title: item.title,
+    detail: `${item.kind} · ${elapsed(item.at, now)}`,
+    tone: "quiet",
+    target: item.thread ?? null,
+    ...(item.decision ? { decision: item.decision } : {}),
+  }));
   const kinds = [...new Set(waiting.filter((i) => !isPutOff(i)).map((i) => i.kind))].slice(0, 2);
   const hiddenCount = needs.filter((r) => r.hidden).length;
   // What the drop-down lists to bring back: put-off decisions and deferred plans.
@@ -249,10 +262,17 @@ export function presenceBoard(
           ? [kinds.join(" · "), hiddenCount > 0 ? `${hiddenCount} hidden from chat` : ""]
               .filter(Boolean)
               .join(" · ")
-          : putOff > 0
-            ? `Nothing now · ${putOff} put off`
+          : putOff + dismissed.length > 0
+            ? [
+                "Nothing now",
+                putOff > 0 ? `${putOff} put off` : "",
+                dismissed.length > 0 ? `${dismissed.length} dismissed` : "",
+              ]
+                .filter(Boolean)
+                .join(" · ")
             : "Nothing waiting on you",
     },
+    dismissed,
     putOff,
     moved: {
       rows: moved,

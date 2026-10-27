@@ -18,9 +18,11 @@ const DECIDED_SHOWN = 5;
 /** Waiting on the user (or being done right now), oldest first: the first asked is the first to answer. */
 export function waitingApprovals(
   approvals: ReadonlyArray<AldoApproval> | undefined,
+  withCleared = false,
 ): ReadonlyArray<AldoApproval> {
   return (approvals ?? [])
     .filter((a) => a.status === "pending" || a.status === "sending")
+    .filter((a) => withCleared || !a.chatDecision?.cleared)
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 }
 

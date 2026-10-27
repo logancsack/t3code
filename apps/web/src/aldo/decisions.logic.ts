@@ -100,11 +100,17 @@ export function putAway(c: AldoHomeConversation, now: number): boolean {
  * approvals (not ones already being carried out), then threads (waited
  * longest first, not ones they put away), then pull requests that can merge,
  * whose thread isn't on the list already and that Aldo won't merge on its
- * own. Aldo's brief picks from the same (src/lib/assistant/brief.ts).
+ * own. Aldo's brief picks from the same (src/lib/assistant/brief.ts). What
+ * the user dismissed from Needs you (`chatDecision.cleared`) isn't in it,
+ * unless `withCleared` (the Dismissed list), so no count or list shows it.
  */
-export function aldoDecisions(home: AldoHome, now: number): ReadonlyArray<AldoDecision> {
+export function aldoDecisions(
+  home: AldoHome,
+  now: number,
+  withCleared = false,
+): ReadonlyArray<AldoDecision> {
   // A thread paused mid-turn needs opening, not a decision (Aldo's brief leaves it out too).
-  const needsYou = boardFor(home.conversations, now).needsYou.filter(
+  const needsYou = boardFor(home.conversations, now, true).needsYou.filter(
     (c) => !putAway(c, now) && !isPausedMidTurn(c),
   );
   const fromThreads = needsYou.flatMap((c) => {
@@ -124,13 +130,13 @@ export function aldoDecisions(home: AldoHome, now: number): ReadonlyArray<AldoDe
       key: `merge:${pullRequest.repo}#${pullRequest.number}`,
       pullRequest,
     }));
-  return [
+  const all: ReadonlyArray<AldoDecision> = [
     ...waitingPayments(home, now).map((payment): AldoDecision => ({
       kind: "payment",
       key: `payment:${payment.id}`,
       payment,
     })),
-    ...waitingApprovals(home.approvals)
+    ...waitingApprovals(home.approvals, true)
       .filter((approval) => approval.status === "pending")
       .map((approval): AldoDecision => ({
         kind: "aldo-approval",
@@ -140,6 +146,7 @@ export function aldoDecisions(home: AldoHome, now: number): ReadonlyArray<AldoDe
     ...fromThreads,
     ...merges,
   ];
+  return withCleared ? all : all.filter((d) => !chatDecisionOf(d)?.cleared);
 }
 
 /**
@@ -153,7 +160,9 @@ export function aldoWaitingCount(
   now: number,
   answered: ReadonlyArray<string> = [],
 ): number {
-  const paused = home.conversations.filter((c) => isPausedMidTurn(c) && !putAway(c, now));
+  const paused = home.conversations.filter(
+    (c) => isPausedMidTurn(c) && !putAway(c, now) && !c.chatDecision?.cleared,
+  );
   const decisions = aldoDecisions(home, now).filter((d) => !answered.includes(d.key));
   return decisions.length + paused.length;
 }
@@ -316,7 +325,7 @@ export function aldoHiddenFromChat(
     return [{ title, chatDecision }];
   });
   const paused = home.conversations.flatMap((c) =>
-    c.chatDecision?.dismissed && isPausedMidTurn(c) && !putAway(c, now)
+    c.chatDecision?.dismissed && !c.chatDecision.cleared && isPausedMidTurn(c) && !putAway(c, now)
       ? [{ title: c.title, chatDecision: c.chatDecision }]
       : [],
   );

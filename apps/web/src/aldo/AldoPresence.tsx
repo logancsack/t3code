@@ -8,8 +8,9 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
   SlidersHorizontalIcon,
+  XIcon,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent, type PointerEvent } from "react";
 
 import { Popover, PopoverPopup, PopoverTrigger } from "../components/ui/popover";
 import { cn } from "~/lib/utils";
@@ -19,6 +20,7 @@ import { type AldoHome } from "./homeApi";
 import { AldoHiddenFromChat, DismissChatDecision } from "./DismissChatDecision";
 import { aldoHiddenFromChat } from "./decisions.logic";
 import { AldoFrame } from "./AldoFrame";
+import { dismissNeedsYou, restoreNeedsYou } from "./clearNeedsYou";
 import { boardFor, elapsed, isStuck } from "./home.logic";
 import { useAldoHomeReadAt } from "./homeFeed";
 import { setAldoUnderTheHood } from "./simpleMode";
@@ -33,6 +35,7 @@ import {
   type PresenceTone,
 } from "./presence.logic";
 import { useAldoReceipts } from "./receipts";
+import { isSideways, swipedAway } from "./swipeAway.logic";
 import "./presence.css";
 
 const SEEN_KEY = "aldo:presence:seen";
@@ -55,10 +58,11 @@ function writeSeen(at: number): void {
   }
 }
 
-type View = "index" | "needsYou" | "moved" | "working" | "coming";
+type View = "index" | "needsYou" | "dismissed" | "moved" | "working" | "coming";
 
 const TITLES: Record<Exclude<View, "index">, string> = {
   needsYou: "Needs you",
+  dismissed: "Dismissed",
   moved: "Moved since you looked",
   working: "Working",
   coming: "Coming up",
@@ -89,7 +93,22 @@ export function AldoPresence(props: {
   const receipts = useAldoReceipts((s) => s.receipts);
   const readAt = useAldoHomeReadAt((s) => s.at);
   const [open, setOpen] = useState(false);
-  const [view, setView] = useState<View>("index");
+  const [asked, setView] = useState<View>("index");
+  // What they just dismissed, with an Undo while it's fresh (a toast would sit behind the open list).
+  const [note, setNote] = useState<{ text: string; undo?: ReadonlyArray<string> } | null>(null);
+  useEffect(() => {
+    if (!note) return;
+    const timer = window.setTimeout(() => setNote(null), 8000);
+    return () => window.clearTimeout(timer);
+  }, [note]);
+  const dismiss = (ids: ReadonlyArray<string>, what: string) => {
+    setNote({ text: `Dismissed ${what}`, undo: ids });
+    dismissNeedsYou(ids).catch(() => setNote({ text: "Couldn't dismiss it" }));
+  };
+  const restore = (ids: ReadonlyArray<string>, then: string | null) => {
+    setNote(then ? { text: then } : null);
+    restoreNeedsYou(ids).catch(() => setNote({ text: "Couldn't restore it" }));
+  };
   // What moved is counted from when they last closed this; it holds while it's open, so a list doesn't change as it's read.
   const [seenAt, setSeenAt] = useState(readSeen);
   const opened = useRef(false);
@@ -152,14 +171,19 @@ export function AldoPresence(props: {
         {mark}
       </div>
     );
+  // Restoring the last dismissed item leaves an empty list: back to Needs you.
+  const view = asked === "dismissed" && board.dismissed.length === 0 ? "needsYou" : asked;
   const sections: Record<Exclude<View, "index">, PresenceSection> = {
     needsYou: board.needsYou,
+    dismissed: { rows: board.dismissed, preview: "" },
     moved: board.moved,
     working: board.working,
     coming: board.coming,
   };
   // Put off (Not now) waits, but isn't counted: it's listed under what needs you, to bring back.
   const putOff = aldoHiddenFromChat(home, now).filter((item) => item.chatDecision.until);
+  // What each Needs you row can dismiss (an Aldo that can't gives them no way to).
+  const dismissable = board.needsYou.rows.filter((row) => row.decision);
   const plans = parseAldoPlans(home.plans);
   const age = now - readAt;
   const freshness =
@@ -174,6 +198,7 @@ export function AldoPresence(props: {
       onOpenChange={(next) => {
         opened.current = next;
         setOpen(next);
+        setNote(null);
         if (next) {
           setView("index");
           setSeenAt(readSeen());
@@ -203,7 +228,7 @@ export function AldoPresence(props: {
                   tone="attention"
                   title={TITLES.needsYou}
                   section={board.needsYou}
-                  openable={board.needsYou.rows.length + board.putOff > 0}
+                  openable={board.needsYou.rows.length + board.putOff + board.dismissed.length > 0}
                   onOpen={() => setView("needsYou")}
                 />
                 <IndexRow
@@ -261,19 +286,82 @@ export function AldoPresence(props: {
                     {sections[view].rows.length}
                   </span>
                 ) : null}
+                {view === "needsYou" && dismissable.length > 0 ? (
+                  <button
+                    type="button"
+                    className="me-1 min-h-11 rounded-lg px-3 font-medium text-[13px] text-muted-foreground outline-none hover:bg-foreground/[0.05] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                    onClick={() =>
+                      dismiss(
+                        dismissable.map((r) => r.decision!.id),
+                        dismissable.length === 1 ? "1 thing" : `${dismissable.length} things`,
+                      )
+                    }
+                  >
+                    Clear all
+                  </button>
+                ) : null}
               </div>
+              {view === "needsYou" && sections.needsYou.rows.length === 0 ? (
+                <p className="px-2 py-3 text-[13px] text-muted-foreground">
+                  Nothing waiting on you
+                </p>
+              ) : null}
               <ul className="flex flex-col">
                 {sections[view].rows.map((row) => (
-                  <ItemRow key={row.key} row={row} />
+                  <ItemRow
+                    key={row.key}
+                    row={row}
+                    {...(view === "needsYou" && row.decision
+                      ? { onDismiss: () => dismiss([row.decision!.id], `“${row.title}”`) }
+                      : {})}
+                    {...(view === "dismissed" && row.decision
+                      ? { onRestore: () => restore([row.decision!.id], null) }
+                      : {})}
+                  />
                 ))}
               </ul>
               {view === "needsYou" ? (
                 <div className="mt-2 flex flex-col gap-3">
                   <AldoHiddenFromChat items={putOff} plans={plans} now={now} />
+                  {board.dismissed.length > 0 ? (
+                    <button
+                      type="button"
+                      className={cn(ROW, "min-h-11 items-center py-1.5 text-muted-foreground")}
+                      onClick={() => setView("dismissed")}
+                    >
+                      <span className="min-w-0 flex-1 text-[13px]">Dismissed</span>
+                      <span className="text-[12px] tabular-nums">{board.dismissed.length}</span>
+                      <ChevronRightIcon aria-hidden className="size-3.5 shrink-0" />
+                    </button>
+                  ) : null}
                 </div>
               ) : null}
             </>
           )}
+          {note ? (
+            <div
+              role="status"
+              className="mt-1 flex items-center gap-2 rounded-lg bg-foreground/[0.06] ps-3"
+            >
+              <p className="min-w-0 flex-1 py-2 text-[13px] leading-4">
+                <span className="block truncate">{note.text}</span>
+                {note.undo ? (
+                  <span className="block text-[12px] text-muted-foreground">
+                    Still waiting in its thread. Nothing was answered.
+                  </span>
+                ) : null}
+              </p>
+              {note.undo ? (
+                <button
+                  type="button"
+                  className="me-1 min-h-11 shrink-0 rounded-lg px-3 font-medium text-[13px] outline-none hover:bg-foreground/[0.08] focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={() => restore(note.undo!, null)}
+                >
+                  Undo
+                </button>
+              ) : null}
+            </div>
+          ) : null}
           <p className="px-2 pt-2 pb-1 text-[11px] text-muted-foreground tabular-nums">
             {freshness}
             {age >= FRESH_MS || readAt === 0 ? " · checking" : ""}
@@ -329,9 +417,17 @@ function IndexRow(props: {
   );
 }
 
-/** An item in a list: opens its thread; one hidden from chat has a way to show it there again. */
-function ItemRow(props: { readonly row: PresenceRow }) {
-  const { row } = props;
+/**
+ * An item in a list: opens its thread. In Needs you it has a way to dismiss it (a ✕, and a swipe on a
+ * phone); one hidden from chat has a way to show it there again; in Dismissed, a way to restore it.
+ */
+function ItemRow(props: {
+  readonly row: PresenceRow;
+  readonly onDismiss?: () => void;
+  readonly onRestore?: () => void;
+}) {
+  const { row, onDismiss, onRestore } = props;
+  const swipe = useSwipeAway(onDismiss);
   const body = (
     <>
       <span aria-hidden className={cn("mt-1.5 size-2 shrink-0 rounded-full", DOT[row.tone])} />
@@ -344,19 +440,124 @@ function ItemRow(props: { readonly row: PresenceRow }) {
     </>
   );
   return (
-    <li>
-      {row.target ? (
-        <ThreadLink target={row.target} className={ROW}>
-          {body}
-        </ThreadLink>
-      ) : (
-        <div className={cn(ROW, "hover:bg-transparent")}>{body}</div>
-      )}
-      {row.hidden ? (
-        <div className="pb-1 ps-7">
-          <DismissChatDecision decision={row.hidden} title={row.title} restore />
-        </div>
+    <li className="relative overflow-hidden" data-aldo-need-row="">
+      {swipe.dx !== 0 ? (
+        <span
+          aria-hidden
+          style={{ width: Math.abs(swipe.dx) }}
+          className={cn(
+            "absolute inset-y-0 flex items-center justify-center overflow-hidden whitespace-nowrap bg-foreground/[0.06] font-medium text-[13px] text-muted-foreground",
+            swipe.dx < 0 ? "right-0" : "left-0",
+          )}
+        >
+          Dismiss
+        </span>
       ) : null}
+      <div
+        {...swipe.handlers}
+        style={{ transform: swipe.dx ? `translateX(${swipe.dx}px)` : undefined }}
+        className={cn(
+          "relative",
+          onDismiss && "touch-pan-y",
+          swipe.settling && "transition-transform duration-150 motion-reduce:transition-none",
+        )}
+      >
+        <div className="flex items-center">
+          {row.target ? (
+            <ThreadLink target={row.target} className={cn(ROW, "min-w-0 flex-1")}>
+              {body}
+            </ThreadLink>
+          ) : (
+            <div className={cn(ROW, "min-w-0 flex-1 hover:bg-transparent")}>{body}</div>
+          )}
+          {onDismiss ? (
+            <button
+              type="button"
+              aria-label={`Dismiss ${row.title}`}
+              className="flex size-11 shrink-0 items-center justify-center rounded-lg text-muted-foreground outline-none hover:bg-foreground/[0.05] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+              onClick={onDismiss}
+            >
+              <XIcon aria-hidden className="size-4" />
+            </button>
+          ) : null}
+          {onRestore ? (
+            <button
+              type="button"
+              aria-label={`Restore ${row.title}`}
+              className="me-1 min-h-11 shrink-0 rounded-lg px-3 font-medium text-[13px] text-muted-foreground outline-none hover:bg-foreground/[0.05] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+              onClick={onRestore}
+            >
+              Restore
+            </button>
+          ) : null}
+        </div>
+        {row.hidden ? (
+          <div className="pb-1 ps-7">
+            <DismissChatDecision decision={row.hidden} title={row.title} restore />
+          </div>
+        ) : null}
+      </div>
     </li>
   );
+}
+
+/**
+ * A row that a finger drags sideways and lets go of past the threshold: `onAway` (the row slides off
+ * first). Pointer events with `touch-action: pan-y`, so scrolling the list stays the page's; a mouse
+ * has the ✕ instead. A drag that moved the row doesn't also open the thread it sits on.
+ */
+function useSwipeAway(onAway: (() => void) | undefined) {
+  // Bookkeeping that needs no render: where the finger went down, and whether this touch moved the row.
+  const bookkeeping = useRef<{
+    from: { x: number; y: number; id: number; taken: boolean } | null;
+    moved: boolean;
+  }>({ from: null, moved: false });
+  const [dx, setDx] = useState(0);
+  const [settling, setSettling] = useState(false);
+  if (!onAway) return { dx: 0, settling: false, handlers: {} };
+  const end = (event: PointerEvent, cancelled: boolean) => {
+    const drag = bookkeeping.current;
+    const start = drag.from;
+    drag.from = null;
+    if (!start?.taken) return;
+    drag.moved = true;
+    const sideways = { dx: event.clientX - start.x, dy: event.clientY - start.y };
+    const width = event.currentTarget.clientWidth;
+    setSettling(true);
+    if (!cancelled && swipedAway(sideways, width)) {
+      setDx(sideways.dx < 0 ? -width : width);
+      window.setTimeout(onAway, 150);
+    } else setDx(0);
+  };
+  return {
+    dx,
+    settling,
+    handlers: {
+      onPointerDown: (event: PointerEvent) => {
+        if (event.pointerType !== "touch") return;
+        const drag = bookkeeping.current;
+        drag.moved = false;
+        drag.from = { x: event.clientX, y: event.clientY, id: event.pointerId, taken: false };
+        setSettling(false);
+      },
+      onPointerMove: (event: PointerEvent) => {
+        const start = bookkeeping.current.from;
+        if (!start || start.id !== event.pointerId) return;
+        const sideways = { dx: event.clientX - start.x, dy: event.clientY - start.y };
+        // A drag is the row's once it is mostly sideways; until then the page may still scroll.
+        if (!start.taken && isSideways(sideways)) {
+          start.taken = true;
+          event.currentTarget.setPointerCapture(event.pointerId);
+        }
+        if (start.taken) setDx(sideways.dx);
+      },
+      onPointerUp: (event: PointerEvent) => end(event, false),
+      onPointerCancel: (event: PointerEvent) => end(event, true),
+      // The tap that ends a drag isn't a tap on the thread.
+      onClickCapture: (event: MouseEvent) => {
+        if (bookkeeping.current.moved) event.preventDefault();
+        bookkeeping.current.moved = false;
+      },
+    },
+  };
 }
