@@ -53,7 +53,7 @@ import { aldoMorph } from "./morph";
 import { addAldoReceipt, removeAldoReceipt, useAldoReceipts } from "./receipts";
 import { movedOnText, receiptText } from "./receipts.logic";
 import { FOCUS, ICON_BUTTON, INSET, PRIMARY, SECONDARY, SURFACE } from "./surface";
-import { scrollMotion, SHOW_ALDO_DECISION } from "./show";
+import { revealAldoCard, scrollMotion, SHOW_ALDO_DECISION } from "./show";
 import { stalledOf, threadCardOf } from "./threadCard.logic";
 import { startAldoWalkthrough } from "./walkthrough";
 import { inWords } from "./needsYou.logic";
@@ -269,16 +269,6 @@ function focusCardSoon(key: string, reveal = false): void {
       else card.focus({ preventScroll: true });
     }),
   );
-}
-
-/** A card brought into view and focused, with a glance drawn to it. */
-export function revealAldoCard(card: HTMLElement): void {
-  if (!card.hasAttribute("tabindex")) card.tabIndex = -1;
-  card.focus({ preventScroll: true });
-  card.scrollIntoView({ behavior: scrollMotion(), block: "center", inline: "nearest" });
-  card.removeAttribute("data-aldo-attention");
-  requestAnimationFrame(() => card.setAttribute("data-aldo-attention", ""));
-  setTimeout(() => card.removeAttribute("data-aldo-attention"), 1_400);
 }
 
 /**

@@ -24,6 +24,8 @@ vi.mock("./AldoHomeInbox", () => ({
   ThreadLink: ({ children }: { children: ReactNode }) => <a href="#thread">{children}</a>,
 }));
 vi.mock("./clearNeedsYou", () => ({ dismissNeedsYou: dismiss, restoreNeedsYou: restore }));
+// No machine is connected here: no live step (and none of T3's thread state to load).
+vi.mock("./liveWork", () => ({ useAldoLiveWork: () => null, useAldoLiveNow: () => NOW }));
 vi.mock("./DismissChatDecision", () => ({
   AldoHiddenFromChat: () => null,
   DismissChatDecision: () => <button type="button">Show again</button>,

@@ -63,7 +63,10 @@ vi.mock("./morph", () => ({
   aldoMorphSource: vi.fn(),
   morphIntoThread: vi.fn(),
 }));
-vi.mock("./homeFeed", () => ({ refreshAldoHome: vi.fn() }));
+vi.mock("./homeFeed", () => ({
+  refreshAldoHome: vi.fn(),
+  useAldoHomeReadAt: (select: (s: { at: number }) => unknown) => select({ at: 0 }),
+}));
 vi.mock("./firstView", () => ({ useAldoFirstViewHold: vi.fn() }));
 
 let root: Root;

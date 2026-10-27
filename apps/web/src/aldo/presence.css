@@ -65,6 +65,17 @@
   animation: aldo-attention 1.2s ease-out;
 }
 
+/* A thread card's live line comes in as its step changes (AldoLiveCard.tsx). */
+[data-aldo-live-line] {
+  animation: aldo-live-line 180ms ease-out;
+}
+
+@keyframes aldo-live-line {
+  from {
+    opacity: 0;
+  }
+}
+
 /* The places' tabs at a phone's foot (AldoSimpleRail.tsx) step aside while the keyboard is up. */
 @media (pointer: coarse) {
   body:has(:is(textarea, input, [contenteditable="true"]):focus) [data-aldo-tabs] {
@@ -76,6 +87,7 @@
   [data-aldo-typing] > span,
   [data-aldo-arrive],
   [data-aldo-reply],
+  [data-aldo-live-line],
   [data-aldo-attention] {
     animation: none;
     transition: none;

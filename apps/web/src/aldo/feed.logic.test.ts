@@ -274,6 +274,97 @@ describe("conversation thread cards", () => {
   });
 });
 
+describe("a card for every thread", () => {
+  const manual = target;
+  const other = { environmentId: "aldo-m1", threadId: "t2" };
+  const cardsOf = (
+    events: ReturnType<typeof feedEvents>,
+    shown: ReadonlyArray<typeof target> = [],
+  ) =>
+    dedupeLiveCards(events, shown).filter(
+      (e) => e.kind === "thread" || (e.kind === "action" && e.live),
+    );
+
+  it("puts a thread started anywhere at its start, live, once", () => {
+    const events = feedEvents(
+      { ...empty, conversations: [conversation({ state: "working", startedAt: at(20) })] },
+      quiet,
+    );
+    expect(events).toMatchObject([{ kind: "thread", at: at(20) }]);
+    expect(cardsOf(events)).toHaveLength(1);
+  });
+
+  it("leaves a server that doesn't say when threads started as it was", () => {
+    const events = feedEvents(
+      { ...empty, conversations: [conversation({ state: "working" })] },
+      quiet,
+    );
+    expect(events).toEqual([]);
+  });
+
+  it("moves the card to what Aldo last did about the thread", () => {
+    const events = feedEvents(
+      {
+        ...empty,
+        conversations: [conversation({ state: "working", startedAt: at(40) })],
+        actions: [action({ tool: "message_thread", at: at(10) })],
+      },
+      quiet,
+    );
+    expect(cardsOf(events)).toMatchObject([{ kind: "action", at: at(10) }]);
+  });
+
+  it("gives the card to the page when it shows the thread itself", () => {
+    const events = feedEvents(
+      { ...empty, conversations: [conversation({ state: "working", startedAt: at(20) })] },
+      quiet,
+    );
+    expect(cardsOf(events, [manual])).toEqual([]);
+  });
+
+  it("settles a finished thread into its line where its card was", () => {
+    const events = feedEvents(
+      {
+        ...empty,
+        conversations: [
+          conversation({ state: "done", startedAt: at(40), stateAt: at(5) }),
+          conversation({ ref: "m1:t2", thread: other, state: "working", startedAt: at(30) }),
+        ],
+        actions: [action({ at: at(39) })],
+      },
+      quiet,
+    );
+    // Where its card was (Aldo's start, after its creation), which its line says; nothing comes when it finished.
+    expect(events).toMatchObject([
+      { kind: "finished", at: at(39), settled: true },
+      { kind: "thread", at: at(30) },
+    ]);
+  });
+
+  it("settles a routine's run into the routine's line", () => {
+    const events = feedEvents(
+      {
+        ...empty,
+        conversations: [
+          conversation({ state: "done", routine: "r1", startedAt: at(15), stateAt: at(2) }),
+        ],
+        routines: [{ id: "r1", title: "Morning brief" }] as never,
+      },
+      quiet,
+    );
+    expect(digestOf(events).label).toBe("1 routine run");
+  });
+
+  it("drops the settled line where the page shows the thread's card", () => {
+    const events = feedEvents(
+      { ...empty, conversations: [conversation({ state: "done", startedAt: at(40) })] },
+      quiet,
+    );
+    expect(dedupeLiveCards(events, [manual])).toEqual([]);
+    expect(dedupeLiveCards(events, [])).toHaveLength(1);
+  });
+});
+
 describe("plans", () => {
   const plan = (overrides: Record<string, unknown>): AldoPlan =>
     parseAldoPlan({

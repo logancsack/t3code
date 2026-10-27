@@ -135,11 +135,14 @@ export function aldoPreviewUrl(environmentId: string, port: number): string {
   return `/p/${threadIdForEnvironment(environmentId)}/${port}`;
 }
 
-/** Signed WebSocket URLs for the thread's live browser and desktop; AldoApiError 409 while asleep. */
+/**
+ * Signed WebSocket URLs for the thread's live browser and desktop, and (a newer
+ * Aldo) the link for stills of them (liveFrames.ts); AldoApiError 409 while asleep.
+ */
 export async function aldoBrowserConnection(
   environmentId: string,
-): Promise<{ url: string; desktopUrl: string }> {
-  return api<{ url: string; desktopUrl: string }>(
+): Promise<{ url: string; desktopUrl: string; stillUrl?: string }> {
+  return api<{ url: string; desktopUrl: string; stillUrl?: string }>(
     `/api/environments/${threadIdForEnvironment(environmentId)}/browser`,
     { method: "POST" },
   );

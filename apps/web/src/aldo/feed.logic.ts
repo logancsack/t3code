@@ -4,9 +4,11 @@
 // paid, declined), and what Aldo did, but for what this page shows itself (what
 // it did here is in the conversation already; what it did
 // from another device is only here). Cards waiting on the user are
-// interleaved at their creation time too. The newest action on a thread that's
-// still going shows it live, as a card. All from Aldo's home read, so
-// nothing is woken.
+// interleaved at their creation time too. Every thread has a card from its
+// start (it was created, however, or its routine's run began; a server that
+// says when), live while it's going, settling into its finished line in the
+// same place; Aldo acting on it later moves it there. All from Aldo's home
+// read, so nothing is woken.
 // What finished and shipped is quiet: a pull request's check after it merged
 // is part of it shipping, a routine's run (and what it shipped) is the
 // routine's, and a thread Aldo already told the user about needs no line of
@@ -39,6 +41,15 @@ export type AldoFeedEvent =
       readonly conversation: AldoHomeConversation;
       /** The routine whose run it was. */
       readonly routine?: { readonly id: string; readonly title: string };
+      /** Where its card was, rather than when it finished. */
+      readonly settled?: true;
+    }
+  | {
+      /** A thread that's going, where it started: its card, live. */
+      readonly kind: "thread";
+      readonly key: string;
+      readonly at: string;
+      readonly conversation: AldoHomeConversation;
     }
   | {
       readonly kind: "shipped";
@@ -90,6 +101,9 @@ const SHOWN_ACTIONS = new Set([
   "merge_pull_request",
 ]);
 
+/** What starts a thread: once it's settled, its finished line says it. */
+const STARTS = new Set(["start_thread", "start_plan"]);
+
 /** One of Aldo's actions the page shows itself: what it did and to which thread. */
 export interface AldoShownAction {
   readonly tool: string;
@@ -124,6 +138,18 @@ export function feedEvents(
   };
   const conversationAt = (thread: AldoHomeTarget | null | undefined) =>
     thread ? home.conversations.find((c) => sameTarget(thread, c.thread)) : undefined;
+  // What Aldo last did about a thread (starting it, too), where its card moved.
+  const lastAction = (thread: AldoHomeTarget) =>
+    home.actions
+      .filter(
+        (a) =>
+          SHOWN_ACTIONS.has(a.tool) &&
+          !a.failed &&
+          within(a.at) &&
+          a.thread !== null &&
+          sameTarget(a.thread, thread),
+      )
+      .reduce<string | null>((last, a) => latest(a.at, last), null);
   const merged = home.pullRequests.filter((pr) => pr.status === "merged" && within(pr.mergedAt));
   // A merge's check is said by its line (a routine's, by its run's): one merged
   // before the feed leaves its check a line of its own.
@@ -133,26 +159,37 @@ export function feedEvents(
     const after = Date.parse(at) - TOLD_SLACK_MS;
     return (options.told ?? []).some((m) => Date.parse(m.at) >= after && m.text.includes(path));
   };
+  const routineOf = (c: AldoHomeConversation) =>
+    c.routine
+      ? { id: c.routine, title: home.routines?.find((r) => r.id === c.routine)?.title ?? c.title }
+      : undefined;
+  const checked = (c: AldoHomeConversation) => checks.some((check) => sameTarget(check, c.thread));
+  // Where a thread's card is: its start, from a server that says it.
+  const startOf = (c: AldoHomeConversation) =>
+    within(c.startedAt) && !checked(c) && !putAway(c, options.now) ? c.startedAt : null;
   const finished: AldoFeedEvent[] = home.conversations
-    .filter((c) => c.state === "done" && !putAway(c, options.now) && within(c.stateAt ?? c.at))
-    .filter(
-      (c) => !checks.some((check) => sameTarget(check, c.thread)) && !told(c, c.stateAt ?? c.at),
-    )
-    .map((c) => {
-      const routine = c.routine
-        ? {
-            id: c.routine,
-            title: home.routines?.find((r) => r.id === c.routine)?.title ?? c.title,
-          }
-        : undefined;
-      return {
-        kind: "finished",
-        key: `finished:${c.ref}:${c.stateAt ?? c.at}`,
-        at: c.stateAt ?? c.at,
-        conversation: c,
-        ...(routine ? { routine } : {}),
-      };
+    .filter((c) => c.state === "done" && !putAway(c, options.now) && !checked(c))
+    .flatMap((c): AldoFeedEvent[] => {
+      const start = startOf(c);
+      const ended = c.stateAt ?? c.at;
+      if (told(c, ended) || (!start && !within(ended))) return [];
+      const routine = routineOf(c);
+      return [
+        {
+          kind: "finished",
+          key: `finished:${c.ref}:${start ?? ended}`,
+          // Settled where its card was: its start, or what Aldo last did about it.
+          at: start ? latest(start, lastAction(c.thread)) : ended,
+          conversation: c,
+          ...(routine ? { routine } : {}),
+          ...(start ? { settled: true as const } : {}),
+        },
+      ];
     });
+  const threads: AldoFeedEvent[] = home.conversations.flatMap((c) => {
+    const start = c.state === "done" ? null : startOf(c);
+    return start ? [{ kind: "thread", key: `thread:${c.ref}`, at: start, conversation: c }] : [];
+  });
   const shipped: AldoFeedEvent[] = merged
     .filter((pr) => !conversationAt(pr.thread)?.routine)
     .map((pr) => {
@@ -178,10 +215,15 @@ export function feedEvents(
     unmatched.splice(at, 1);
     return true;
   };
+  const settled = (thread: AldoHomeTarget | null) => {
+    const c = conversationAt(thread);
+    return c?.state === "done" && startOf(c) !== null;
+  };
   const shown = home.actions
     .filter((a) => SHOWN_ACTIONS.has(a.tool) && !a.failed && within(a.at))
     .sort((a, b) => a.at.localeCompare(b.at))
-    .filter((a) => !shownHere(a));
+    .filter((a) => !shownHere(a))
+    .filter((a) => !(STARTS.has(a.tool) && settled(a.thread)));
   const going = (thread: AldoHomeAction["thread"]) =>
     thread !== null &&
     home.conversations.some((c) => sameTarget(thread, c.thread) && c.state !== "done");
@@ -199,27 +241,44 @@ export function feedEvents(
     const at = within(p.createdAt) || within(p.updatedAt) ? p.createdAt : null;
     return at ? [{ kind: "payment", key: `payment:${p.id}`, at, payment: p }] : [];
   });
-  return [...finished, ...shipped, ...actions, ...payments].sort((a, b) =>
+  return [...finished, ...threads, ...shipped, ...actions, ...payments].sort((a, b) =>
     a.at.localeCompare(b.at),
   );
 }
 
-/** One live card per thread across the saved feed and local tool results. */
+function latest(a: string, b: string | null): string {
+  return b && Date.parse(b) > Date.parse(a) ? b : a;
+}
+
+/**
+ * One card per thread across the saved feed and local tool results: local
+ * results own their cards; otherwise the newest live feed event does. A
+ * thread's card at its start goes where a newer one is, and so does its
+ * settled line where the page shows the thread's card itself.
+ */
 export function dedupeLiveCards(
   events: ReadonlyArray<AldoFeedEvent>,
   shown: ReadonlyArray<AldoHomeTarget>,
 ): ReadonlyArray<AldoFeedEvent> {
   const key = (thread: AldoHomeTarget) => `${thread.environmentId}\n${thread.threadId}`;
-  const seen = new Set(shown.map(key));
-  // Local results own their cards; otherwise the newest live feed event does.
+  const here = new Set(shown.map(key));
+  const seen = new Set(here);
   return events
     .toReversed()
-    .map((event) => {
-      if (event.kind !== "action" || !event.live || !event.action.thread) return event;
+    .flatMap((event): AldoFeedEvent[] => {
+      if (event.kind === "finished")
+        return event.settled && here.has(key(event.conversation.thread)) ? [] : [event];
+      if (event.kind === "thread") {
+        const id = key(event.conversation.thread);
+        if (seen.has(id)) return [];
+        seen.add(id);
+        return [event];
+      }
+      if (event.kind !== "action" || !event.live || !event.action.thread) return [event];
       const id = key(event.action.thread);
-      if (seen.has(id)) return { ...event, live: false };
+      if (seen.has(id)) return [{ ...event, live: false }];
       seen.add(id);
-      return event;
+      return [event];
     })
     .toReversed();
 }
