@@ -75,6 +75,7 @@ import {
   requestAldoProfile,
   type AldoChatTurn,
   type AldoFollowupNews,
+  type AldoFileUpload,
   type AldoImageUpload,
 } from "./assistantApi";
 import { dropHomeMessage, homeMessages, keepHomeMessage } from "./homeOutbox";
@@ -195,6 +196,8 @@ interface AldoAssistantState {
   readonly unsent: string | null;
   /** Images that couldn't be sent with it, given back the same way. */
   readonly unsentImages: ReadonlyArray<AldoImageUpload> | null;
+  /** And files (uploaded already, so named only). */
+  readonly unsentFiles: ReadonlyArray<AldoFileUpload> | null;
   /** A written reply is on its way (typed without a call on). */
   readonly replying: boolean;
   /**
@@ -228,6 +231,7 @@ export const useAldoAssistant = create<AldoAssistantState>(() => ({
   levels: { mic: 0, aldo: 0 },
   unsent: null,
   unsentImages: null,
+  unsentFiles: null,
   replying: false,
   undelivered: [],
   connectedAt: null,
@@ -648,11 +652,13 @@ async function showResumed(
     case "refused": {
       // Not kept for what a plan doesn't fix: the words go back to the composer, with why.
       const images = shown ? sentImages.get(shown) : undefined;
+      const files = shown?.kind === "message" ? shown.files : undefined;
       dropShown(shown);
       set({
         error: outcome.message,
         ...(text ? { unsent: text } : {}),
         ...(images && images.length > 0 ? { unsentImages: images } : {}),
+        ...(files && files.length > 0 ? { unsentFiles: files } : {}),
       });
       return;
     }
@@ -1830,13 +1836,17 @@ export function setAldoVoiceOff(off: boolean): void {
 
 /**
  * Typed words: into the call when one is on; otherwise to Aldo in writing
- * (or, on an older Aldo, into a call that starts typed only). Images go in
- * writing only: the composer offers them when no call is on.
+ * (or, on an older Aldo, into a call that starts typed only). Images and
+ * files go in writing only: the composer offers them when no call is on.
  */
-export function sendText(text: string, images: ReadonlyArray<AldoImageUpload> = []): void {
+export function sendText(
+  text: string,
+  images: ReadonlyArray<AldoImageUpload> = [],
+  files: ReadonlyArray<AldoFileUpload> = [],
+): void {
   const words = text.trim();
-  if (images.length > 0 && !aldoAssistantLive()) {
-    void chatText(words, images);
+  if (images.length + files.length > 0 && !aldoAssistantLive()) {
+    void chatText(words, images, files);
     return;
   }
   if (!words) return;
@@ -1887,6 +1897,7 @@ type Written = {
   sessionId: string;
   words: string;
   images: ReadonlyArray<AldoImageUpload>;
+  files: ReadonlyArray<AldoFileUpload>;
   viewing: { environmentId: string; threadId: string } | null;
   /** Its copy on the device, once written (the copy is dropped after it). */
   kept?: Promise<void>;
@@ -1954,7 +1965,11 @@ function watchConnection(): void {
 }
 
 /** Every tap shows its message now and sends it. */
-function chatText(words: string, images: ReadonlyArray<AldoImageUpload> = []): void {
+function chatText(
+  words: string,
+  images: ReadonlyArray<AldoImageUpload> = [],
+  files: ReadonlyArray<AldoFileUpload> = [],
+): void {
   heard = rememberHeard(heard, words);
   const onScreen = aldoOnScreen();
   chatSessionId ??= `as_${randomId(12)}`;
@@ -1963,6 +1978,7 @@ function chatText(words: string, images: ReadonlyArray<AldoImageUpload> = []): v
     sessionId: chatSessionId,
     words,
     images,
+    files,
     viewing: onScreen
       ? { environmentId: onScreen.environmentId, threadId: onScreen.threadId }
       : null,
@@ -1978,6 +1994,7 @@ function addWritten(sent: Omit<Written, "entry"> & { at: string }): void {
     text: sent.words,
     at,
     ...(sent.images.length > 0 ? { images: sent.images.map((image) => image.dataUrl) } : {}),
+    ...(sent.files.length > 0 ? { files: sent.files } : {}),
   };
   addEntry(entry);
   if (sent.images.length > 0) sentImages.set(entry, sent.images);
@@ -2003,6 +2020,7 @@ async function resendKept(known: ReadonlyArray<AldoAssistantMessage>): Promise<v
       sessionId: kept.sessionId,
       words: kept.text,
       images: kept.images,
+      files: kept.files ?? [],
       viewing: kept.viewing,
       at: kept.at,
     });
@@ -2042,6 +2060,7 @@ async function deliver(message: Written): Promise<void> {
       sessionId: message.sessionId,
       text: message.words,
       images: message.images,
+      files: message.files,
       viewing: message.viewing,
       at: message.entry.at,
     }),
@@ -2071,6 +2090,7 @@ async function deliver(message: Written): Promise<void> {
             message.sessionId,
             message.words,
             message.images,
+            message.files,
             message.viewing,
             idempotent,
           );
@@ -2182,7 +2202,7 @@ function refused(message: Written, error: AldoApiError, taken: boolean): void {
   trouble(message, undefined);
   written.delete(message.entry);
   chatSupported = true;
-  const { entry, words, images } = message;
+  const { entry, words, images, files } = message;
   const earlier = get().planPick?.entry;
   if (earlier && earlier !== entry && earlier.kind === "message") {
     // Aldo keeps one request: this one joins the one kept before (or, too long for that, takes its
@@ -2194,12 +2214,14 @@ function refused(message: Written, error: AldoApiError, taken: boolean): void {
         : joined
           ? earlier.images
           : undefined;
+    const shownFiles = files.length > 0 ? files : joined ? earlier.files : undefined;
     const kept: AldoConversationEntry = {
       kind: "message",
       role: "user",
       text: needs.text || words,
       at: entry.at,
       ...(shownImages ? { images: shownImages } : {}),
+      ...(shownFiles ? { files: shownFiles } : {}),
     };
     const uploads = images.length > 0 ? images : joined ? sentImages.get(earlier) : undefined;
     if (uploads) sentImages.set(kept, uploads);

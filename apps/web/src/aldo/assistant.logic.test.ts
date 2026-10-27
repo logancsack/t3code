@@ -193,19 +193,23 @@ describe("actionFor", () => {
 });
 
 describe("withoutImageNotes", () => {
-  it("shows the words, and the images a kept message names", () => {
+  it("shows the words, and the images and files a kept message names", () => {
     expect(
-      withoutImageNotes("What's this?\n\n[image img_ab12: shot.png] [image img_cd34: b.jpg]"),
+      withoutImageNotes(
+        "What's this?\n\n[image img_ab12: shot.png] [image img_cd34: b.jpg] [file fil_ef56: Q3 report.pdf]",
+      ),
     ).toEqual({
       text: "What's this?",
       images: [
         { id: "img_ab12", name: "shot.png" },
         { id: "img_cd34", name: "b.jpg" },
       ],
+      files: [{ id: "fil_ef56", name: "Q3 report.pdf" }],
     });
     expect(withoutImageNotes("No images [here].")).toEqual({
       text: "No images [here].",
       images: [],
+      files: [],
     });
   });
 });

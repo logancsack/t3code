@@ -235,9 +235,23 @@ const fileUploads = new Map<string, Promise<void>>();
  * doesn't answer.
  */
 export function uploadAldoFile(environmentId: string, id: string, file: Blob): Promise<void> {
+  const threadId = threadIdForEnvironment(environmentId);
+  return uploadInTurn(
+    id,
+    `/api/environments/${threadId}/files?upload=${encodeURIComponent(id)}`,
+    file,
+  );
+}
+
+/** Sends Aldo a file attached to a message to it on Home, as uploadAldoFile does a thread's (`id`: the one the message names it by). */
+export function uploadAldoHomeFile(id: string, file: Blob): Promise<void> {
+  return uploadInTurn(id, `/api/assistant/files?upload=${encodeURIComponent(id)}`, file);
+}
+
+function uploadInTurn(id: string, path: string, file: Blob): Promise<void> {
   const run = (fileUploads.get(id) ?? Promise.resolve())
     .catch(() => undefined)
-    .then(() => sendAldoFileParts(environmentId, id, file));
+    .then(() => sendAldoFileParts(path, file));
   fileUploads.set(id, run);
   const forget = () => {
     if (fileUploads.get(id) === run) fileUploads.delete(id);
@@ -246,9 +260,7 @@ export function uploadAldoFile(environmentId: string, id: string, file: Blob): P
   return run;
 }
 
-async function sendAldoFileParts(environmentId: string, id: string, file: Blob): Promise<void> {
-  const threadId = threadIdForEnvironment(environmentId);
-  const path = `/api/environments/${threadId}/files?upload=${encodeURIComponent(id)}`;
+async function sendAldoFileParts(path: string, file: Blob): Promise<void> {
   const { parts } = await untilAnswered(() =>
     api<{ parts: Array<{ part: number; bytes: number }> }>(path, {
       signal: AbortSignal.timeout(HOLD_TIMEOUT_MS),

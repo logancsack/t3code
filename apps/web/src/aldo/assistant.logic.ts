@@ -5,7 +5,7 @@
 // call brings up what came back of work it handed over.
 
 import type { AldoArtifact } from "./artifacts.logic";
-import { type AldoFollowupNews } from "./assistantApi";
+import { type AldoFileUpload, type AldoFollowupNews } from "./assistantApi";
 import { type AldoStartState, type AldoThreadAttention } from "./directory";
 
 /** Where the conversation is, as the mark shows it. */
@@ -24,6 +24,8 @@ export interface AldoAssistantMessage {
   readonly at: string;
   /** Images the user sent with it, to show (data URLs); kept for this page only. */
   readonly images?: ReadonlyArray<string>;
+  /** Files the user sent with it, as the message named them; kept for this page only. */
+  readonly files?: ReadonlyArray<AldoFileUpload>;
   /** What said it, when it wasn't the conversation itself: Aldo's brief for the day (AldoBrief.tsx shows it as one). */
   readonly source?: "brief";
   /** What an Aldo's message shows under its words (AldoArtifacts.tsx). */
@@ -124,23 +126,25 @@ export function openTargetOf(outcome: unknown): AldoOpenTarget | null {
 }
 
 /**
- * A message as Aldo keeps it names the images sent with it ("[image img_…:
- * name]", so Aldo can attach them later): the words to show, and the images'
- * names.
+ * A message as Aldo keeps it names the images and files sent with it ("[image
+ * img_…: name]", "[file fil_…: name]", so Aldo can attach them later): the
+ * words to show, and their names.
  */
 export function withoutImageNotes(text: string): {
   readonly text: string;
   readonly images: ReadonlyArray<{ readonly id: string; readonly name: string }>;
+  readonly files: ReadonlyArray<{ readonly id: string; readonly name: string }>;
 } {
   const images: { id: string; name: string }[] = [];
+  const files: { id: string; name: string }[] = [];
   const words = text.replace(
-    /\[image (img_[A-Za-z0-9]+): ([^\]\n]*)\]/g,
-    (_, id: string, name: string) => {
-      images.push({ id, name: name.trim() || "image" });
+    /\[(image|file) ((?:img|fil)_[A-Za-z0-9]+): ([^\]\n]*)\]/g,
+    (_, kind: string, id: string, name: string) => {
+      (kind === "image" ? images : files).push({ id, name: name.trim() || kind });
       return "";
     },
   );
-  return { text: words.trim(), images };
+  return { text: words.trim(), images, files };
 }
 
 /**
