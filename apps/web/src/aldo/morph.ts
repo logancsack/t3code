@@ -79,7 +79,9 @@ export function morphIntoThread(router: Pick<AnyRouter, "subscribe">, row: HTMLE
     stop();
     stopWaiting = null;
     // The thread's page, unless the row is still on it (a thread opened from within the page).
-    const page = document.querySelector<HTMLElement>('main[data-slot="sidebar-inset"]');
+    const page =
+      document.querySelector<HTMLElement>('[data-aldo-layer] main[data-slot="sidebar-inset"]') ??
+      document.querySelector<HTMLElement>('main[data-slot="sidebar-inset"]');
     if (page && !page.contains(row)) {
       unname(row);
       name(page);

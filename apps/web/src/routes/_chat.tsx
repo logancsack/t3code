@@ -1,4 +1,4 @@
-import { Outlet, createFileRoute, redirect, useParams } from "@tanstack/react-router";
+import { Outlet, createFileRoute, redirect, useLocation, useParams } from "@tanstack/react-router";
 import { useAtomValue } from "@effect/atom-react";
 import { useEffect, useMemo, useState } from "react";
 
@@ -34,6 +34,8 @@ import { primaryServerKeybindingsAtom } from "~/state/server";
 import { APP_BASE_NAME } from "../branding";
 import { aldoSupportsGeneralThreads } from "../aldo/directory";
 import { isAldoCloud } from "../aldo/api";
+import { AldoLayers } from "../aldo/AldoLayers";
+import { aldoLayersActive } from "../aldo/layers";
 import { aldoNewThreadPlace, useStartAldoThread } from "../aldo/newThread";
 
 function ChatRouteGlobalShortcuts() {
@@ -258,10 +260,17 @@ function ChatRouteLayout() {
     strict: false,
     select: (params) => resolveThreadRouteTarget(params),
   });
+  const onHome = useLocation({ select: (location) => location.pathname === "/" });
   return (
     <>
       <ChatRouteGlobalShortcuts />
-      {threadTarget ? <ThreadRoute target={threadTarget} /> : <Outlet />}
+      {aldoLayersActive() && (threadTarget || onHome) ? (
+        <AldoLayers target={threadTarget} thread={(target) => <ThreadRoute target={target} />} />
+      ) : threadTarget ? (
+        <ThreadRoute target={threadTarget} />
+      ) : (
+        <Outlet />
+      )}
     </>
   );
 }
