@@ -1,6 +1,6 @@
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { ScopedThreadRef } from "@t3tools/contracts";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useRouter } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
 import ChatView from "./ChatView";
@@ -73,6 +73,7 @@ function sameThreadRouteTarget(a: ThreadRouteTarget, b: ThreadRouteTarget): bool
 
 function ThreadRouteContent({ target }: { target: ThreadRouteTarget }) {
   const navigate = useNavigate();
+  const router = useRouter();
   const draftId = target.kind === "draft" ? target.draftId : null;
   const draftSession = useComposerDraftStore((store) =>
     draftId === null ? null : store.getDraftSession(draftId),
@@ -160,12 +161,13 @@ function ThreadRouteContent({ target }: { target: ThreadRouteTarget }) {
   }, [draftSession?.promotedTo, inferredThreadRef]);
 
   useEffect(() => {
-    if (!canonicalThreadRef) {
+    if (!canonicalThreadRef || draftId === null) {
       return;
     }
     let cancelled = false;
     void waitForDraftHeroTransition().then(() => {
-      if (cancelled) {
+      // Closed meanwhile: in Aldo the thread stays mounted while it slides away.
+      if (cancelled || !router.state.location.pathname.endsWith(`/${draftId}`)) {
         return;
       }
       void navigate({
@@ -177,7 +179,7 @@ function ThreadRouteContent({ target }: { target: ThreadRouteTarget }) {
     return () => {
       cancelled = true;
     };
-  }, [canonicalThreadRef, navigate]);
+  }, [canonicalThreadRef, draftId, navigate, router]);
 
   useEffect(() => {
     if (target.kind !== "draft" || draftSession || canonicalThreadRef) {
