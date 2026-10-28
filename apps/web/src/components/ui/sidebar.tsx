@@ -20,6 +20,12 @@ import { useIsMobile } from "~/hooks/useMediaQuery";
 import { getLocalStorageItem, setLocalStorageItem } from "~/hooks/useLocalStorage";
 import { resolveSidebarState, type ResponsiveSidebarState } from "./sidebarState";
 import * as Schema from "effect/Schema";
+import {
+  aldoLayersActive,
+  closeAldoDrawer,
+  openAldoDrawer,
+  useAldoDrawerOpen,
+} from "../../aldo/layers";
 
 const SIDEBAR_COOKIE_NAME = "sidebar_state";
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
@@ -104,7 +110,24 @@ function SidebarProvider({
   onOpenChange?: (open: boolean) => void;
 }) {
   const isMobile = useIsMobile();
-  const [openMobile, setOpenMobile] = React.useState(false);
+  const [openMobileState, setOpenMobileState] = React.useState(false);
+  // In Aldo the phone's sheet is a history entry (aldo/layers.ts), so Back closes it first.
+  const layered = aldoLayersActive();
+  const drawerOpen = useAldoDrawerOpen();
+  const openMobile = layered ? drawerOpen : openMobileState;
+  const setOpenMobile = React.useCallback(
+    (value: boolean | ((value: boolean) => boolean)) => {
+      if (!layered) return setOpenMobileState(value);
+      const next = typeof value === "function" ? value(drawerOpen) : value;
+      if (next) openAldoDrawer();
+      else closeAldoDrawer();
+    },
+    [layered, drawerOpen],
+  );
+  // A phone turned wide leaves the sheet behind: its entry goes with it.
+  React.useEffect(() => {
+    if (!isMobile && drawerOpen) closeAldoDrawer();
+  }, [isMobile, drawerOpen]);
 
   // This is the internal state of the sidebar.
   // We use openProp and setOpenProp for control from outside the component.
@@ -133,7 +156,7 @@ function SidebarProvider({
   // Helper to toggle the sidebar.
   const toggleSidebar = React.useCallback(() => {
     return isMobile ? setOpenMobile((open) => !open) : setOpen((open) => !open);
-  }, [isMobile, setOpen]);
+  }, [isMobile, setOpen, setOpenMobile]);
 
   // We add a state so that we can do data-state="expanded" or "collapsed".
   // This makes it easier to style the sidebar with Tailwind classes.

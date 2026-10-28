@@ -30,6 +30,7 @@ import { installAldoThreadDetails } from "./aldo/threadDetails";
 import { installAldoVersionCheck } from "./aldo/version";
 import { initializeLandingDemoClientSettings } from "./hooks/useSettings";
 import { isLandingDemo } from "./landingDemo/mode";
+import { installAldoLayers, seedAldoHome } from "./aldo/layers";
 import { installPrismGlass } from "./prismGlass";
 
 prepareProviderAuthDelivery();
@@ -70,7 +71,10 @@ async function renderApp() {
   }
 
   // Electron loads the app from a file-backed shell, so hash history avoids path resolution issues.
+  const layered = isAldoCloud && !isElectron && !landingDemo;
+  if (layered) seedAldoHome();
   const history = isElectron || landingDemo ? createHashHistory() : createBrowserHistory();
+  if (layered) installAldoLayers(history);
   const router = getRouter(history);
   if (!landingDemo) installAldoServiceWorker((href) => router.navigate({ href }));
   installAldoChunkPrefetch(router);

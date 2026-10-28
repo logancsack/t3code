@@ -261,7 +261,6 @@ import {
 } from "./ui/combobox";
 import { SidebarContent, SidebarGroup, useSidebar } from "./ui/sidebar";
 import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
-import { AldoSidebarEntry } from "../aldo/AldoSidebarEntry";
 import { useAldoThreadStart } from "../aldo/threadStart";
 import { useAldoSidebarOrder } from "../aldo/sidebarOrder";
 import { SidebarHeaderIconButton, SidebarThreadHeader } from "./sidebar/SidebarThreadHeader";
@@ -4975,8 +4974,6 @@ export default function Sidebar() {
         }
       >
         <SidebarGroup className="flex-1" role="presentation">
-          {/* Aldo: the assistant is the list's first row, whatever its order or search. */}
-          {isAldoCloud ? <AldoSidebarEntry /> : null}
           {isSearchingThreads ? (
             threadSearchResults.length > 0 ? (
               <TooltipProvider

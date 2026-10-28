@@ -1,0 +1,71 @@
+/* A thread lies over Home (AldoLayers.tsx): it slides in from the right on a phone and fades on a desktop. */
+[data-aldo-layer] {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  min-width: 0;
+  background: var(--background);
+}
+@media (max-width: 767px) {
+  [data-aldo-layer] {
+    box-shadow: -12px 0 32px rgb(0 0 0 / 0.14);
+    --workspace-titlebar-content-left: calc(var(--workspace-controls-left) + 5.25rem);
+  }
+  [data-aldo-layer][data-phase="in"] {
+    animation: aldo-layer-in 280ms cubic-bezier(0.32, 0.72, 0, 1) both;
+  }
+  [data-aldo-layer][data-phase="out"] {
+    animation: aldo-layer-out 220ms cubic-bezier(0.32, 0.72, 0, 1) both;
+    pointer-events: none;
+  }
+  [data-aldo-under] {
+    transition: transform 280ms cubic-bezier(0.32, 0.72, 0, 1);
+  }
+  [data-aldo-under][data-covered="true"] {
+    transform: translateX(-6%);
+  }
+}
+@media (min-width: 768px) {
+  [data-aldo-layer][data-phase="in"] {
+    animation: aldo-layer-fade 140ms ease-out both;
+  }
+  [data-aldo-layer][data-phase="out"] {
+    animation: aldo-layer-fade 120ms ease-in reverse both;
+    pointer-events: none;
+  }
+}
+[data-aldo-layer][data-still="true"] {
+  animation: none !important;
+}
+@keyframes aldo-layer-in {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: none;
+  }
+}
+@keyframes aldo-layer-out {
+  from {
+    transform: none;
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+@keyframes aldo-layer-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-aldo-layer],
+  [data-aldo-under] {
+    animation-duration: 1ms !important;
+    transition: none !important;
+  }
+}
