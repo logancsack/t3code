@@ -20,6 +20,7 @@ import {
 
 const SHARE = "/s/abcdefghijklmnop1234";
 const DEMO = "https://store-1.public.blob.vercel-storage.com/artifacts/thread_1/2048-x7.mp4";
+const DEMO_FILE = "/demo/a_0123456789ab/file";
 const file = (url: string, contentType = "image/png"): AldoFileArtifact => ({
   kind: "file",
   url,
@@ -38,9 +39,12 @@ describe("artifactsOf", () => {
       unit: "h",
     };
     const table = { kind: "table", columns: ["Name", "Cost"], rows: [["Fix", "$4"], ["Docs"]] };
-    expect(artifactsOf([file(SHARE), file(DEMO, "video/mp4"), chart, table])).toEqual([
+    expect(
+      artifactsOf([file(SHARE), file(DEMO, "video/mp4"), file(DEMO_FILE), chart, table]),
+    ).toEqual([
       file(SHARE),
       file(DEMO, "video/mp4"),
+      file(DEMO_FILE),
       { ...chart, series: [{ name: "Machines", values: [1.5, 3] }] },
       {
         kind: "table",
@@ -60,6 +64,9 @@ describe("artifactsOf", () => {
         file("javascript:alert(1)"),
         file("/s/short"),
         file(`${DEMO}?x=1`),
+        file("/demo/a_0123456789ab/poster"),
+        file("/demo/a_0123456789ab/file?x=1"),
+        file("/demo/short/file"),
         { kind: "chart", type: "radar", labels: ["a"], series: [{ name: "", values: [1] }] },
         { kind: "chart", type: "pie", labels: ["a", "b"], series: [{ name: "", values: [1, -1] }] },
         { kind: "chart", type: "scatter", series: [{ name: "", points: [{ x: "1", y: 2 }] }] },

@@ -4,7 +4,7 @@
 // or after this page loses nothing: what isn't one of these is left out, and
 // an Aldo without them sends none.
 
-/** One of the user's shares (`/s/<id>`), or a thread's recording or screenshot in Aldo's Blob store. */
+/** One of the user's shares (`/s/<id>`), or a thread's recording or screenshot (`/demo/<id>/file`; an Aldo from before kept it in a public Blob store). */
 export interface AldoFileArtifact {
   readonly kind: "file";
   readonly url: string;
@@ -84,7 +84,7 @@ export type AldoArtifact = AldoFileArtifact | AldoChartArtifact | AldoTableArtif
 
 const SHARE_PATH = /^\/s\/([A-Za-z0-9_-]{16,32})$/;
 const DEMO_URL =
-  /^https:\/\/[a-z0-9-]+\.public\.blob\.vercel-storage\.com\/artifacts\/[A-Za-z0-9_-]+\/[A-Za-z0-9_.-]+$/;
+  /^(?:\/demo\/a_[0-9a-z]{12}\/file|https:\/\/[a-z0-9-]+\.public\.blob\.vercel-storage\.com\/artifacts\/[A-Za-z0-9_-]+\/[A-Za-z0-9_.-]+)$/;
 const MAX = 6;
 
 const isText = (value: unknown): value is string => typeof value === "string";
