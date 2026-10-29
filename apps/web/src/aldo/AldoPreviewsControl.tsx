@@ -1,4 +1,4 @@
-import { AppWindowIcon, ExternalLinkIcon, LoaderIcon, PanelRightIcon } from "lucide-react";
+import { ChevronDownIcon, EllipsisIcon, ExternalLinkIcon, PanelRightIcon } from "lucide-react";
 import type { ThreadId } from "@t3tools/contracts";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -37,7 +37,8 @@ import {
   type AldoFollowedPullRequest,
   type AldoPreviews,
 } from "./workspaceApi";
-import { aldoMachineIsNew, aldoOfflineMessage } from "./directory";
+import { sameTarget } from "./home.logic";
+import { useAldoHomeRead } from "./homeFeed";
 import {
   aldoPullRequestMergeable,
   aldoPullRequestShortRef,
@@ -63,7 +64,10 @@ export function AldoPreviewsControl(props: {
   useAldoComputerAsk(props.environmentId, props.threadId);
   const [previews, setPreviews] = useState<AldoPreviews | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const { home } = useAldoHomeRead();
+  const browsing = home?.conversations.find((c) =>
+    sameTarget(c.thread, { environmentId: props.environmentId, threadId: props.threadId }),
+  )?.browsing;
   const [pullRequests, setPullRequests] = useState<ReadonlyArray<AldoFollowedPullRequest>>([]);
   const [cost, setCost] = useState<AldoCost | null>(null);
   // The pull request whose Merge was chosen, waiting for the user to confirm.
@@ -77,29 +81,50 @@ export function AldoPreviewsControl(props: {
     setPullRequests([]);
     setCost(null);
     setError(null);
-    setLoading(false);
   }, [props.environmentId]);
 
   const refresh = useCallback(() => {
     const environmentId = props.environmentId;
     const stillCurrent = () => current.current === environmentId;
-    setLoading(true);
     fetchAldoPullRequests(environmentId)
       .then((next) => stillCurrent() && setPullRequests(next))
       .catch(() => undefined);
     void fetchAldoCost(environmentId).then((next) => stillCurrent() && setCost(next));
-    fetchAldoPreviews(environmentId)
-      .then((next) => {
-        if (!stillCurrent()) return;
-        setPreviews(next);
-        setError(null);
-      })
-      .catch((cause: unknown) => {
-        if (stillCurrent()) setError(cause instanceof Error ? cause.message : String(cause));
-      })
-      .finally(() => {
-        if (stillCurrent()) setLoading(false);
-      });
+  }, [props.environmentId]);
+
+  // Only this mounted thread polls, never a hidden tab or an overlapping read.
+  // A sleeping computer is read without waking it. Late replies belong to the
+  // effect that made them, even if the user leaves and returns to this thread.
+  const readPreviews = useRef<() => void>(() => {});
+  useEffect(() => {
+    let active = true;
+    let pending = false;
+    const read = async () => {
+      if (document.visibilityState === "hidden" || pending) return;
+      pending = true;
+      try {
+        const next = await fetchAldoPreviews(props.environmentId);
+        if (active) {
+          setPreviews(next);
+          setError(null);
+        }
+      } catch {
+        if (active) setError("Couldn't check preview. Try again.");
+      } finally {
+        pending = false;
+      }
+    };
+    readPreviews.current = () => void read();
+    void read();
+    const timer = setInterval(() => void read(), 15_000);
+    document.addEventListener("visibilitychange", read);
+    window.addEventListener("focus", read);
+    return () => {
+      active = false;
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", read);
+      window.removeEventListener("focus", read);
+    };
   }, [props.environmentId]);
 
   const openInBrowser = (port: number) => {
@@ -131,37 +156,40 @@ export function AldoPreviewsControl(props: {
   return (
     <>
       <AldoGpuComputerControl environmentId={props.environmentId} />
-      <Menu onOpenChange={(open) => open && refresh()}>
-        <MenuTrigger
-          aria-label="Previews"
-          className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <AppWindowIcon className="size-3.5" />
-          <span className="hidden @3xl/header-actions:inline">Preview</span>
-        </MenuTrigger>
-        <MenuPopup align="end" className="w-80">
-          {loading && !previews ? (
-            <div className="flex items-center gap-2 px-2 py-3 text-xs text-muted-foreground">
-              <LoaderIcon className="size-3.5 animate-spin" /> Looking for previews…
-            </div>
-          ) : error ? (
-            <div className="px-2 py-3 text-xs text-destructive-foreground">{error}</div>
-          ) : previews && !previews.running ? (
-            <div className="px-2 py-3 text-xs text-muted-foreground">
-              {aldoMachineIsNew(props.environmentId)
-                ? aldoOfflineMessage(props.environmentId)
-                : "Its computer is asleep. Opening a preview's link wakes it."}
-            </div>
-          ) : ports.length === 0 ? (
-            <div className="space-y-1 px-2 py-3 text-xs text-muted-foreground">
-              <p>Nothing to preview yet.</p>
-              <p>
-                Ask the agent to start what it made. It keeps it running across sleeps and shares a
-                preview link.
-              </p>
-            </div>
-          ) : (
-            ports.map((port, index) => (
+      {previews?.running && previews.ports.length > 0 ? (
+        <Menu onOpenChange={(open) => open && readPreviews.current()}>
+          <MenuTrigger
+            aria-label={
+              error
+                ? "Preview · status unavailable"
+                : `Preview · ${ports.length} listening ${ports.length === 1 ? "port" : "ports"}`
+            }
+            className="inline-flex h-8 shrink-0 items-center gap-2 rounded-full border border-border px-3 text-xs text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring max-sm:h-12 max-sm:rounded-md max-sm:border-0"
+          >
+            <span
+              aria-hidden
+              className={`size-1.5 rounded-full ${error ? "bg-warning" : "bg-primary"}`}
+            />
+            <span>Preview</span>
+            {ports.length > 1 ? (
+              <span className="border-l border-border pl-2 tabular-nums">{ports.length}</span>
+            ) : null}
+            <ChevronDownIcon aria-hidden className="size-3.5" />
+          </MenuTrigger>
+          <MenuPopup
+            align="end"
+            className="w-80 max-w-[calc(100vw-1rem)] [&_[data-slot=menu-item]]:min-h-10 max-sm:[&_[data-slot=menu-item]]:min-h-12"
+          >
+            {error ? (
+              <>
+                <div role="status" className="px-2 py-2 text-xs text-muted-foreground">
+                  {error} These are the last known ports.
+                </div>
+                <MenuItem onClick={() => readPreviews.current()}>Retry</MenuItem>
+                <MenuSeparator />
+              </>
+            ) : null}
+            {ports.map((port, index) => (
               <MenuGroup key={port.port}>
                 {index > 0 ? <MenuSeparator /> : null}
                 <MenuGroupLabel className="flex items-baseline gap-2">
@@ -185,8 +213,30 @@ export function AldoPreviewsControl(props: {
                   <ExternalLinkIcon className="size-3.5" /> Open in a new tab
                 </MenuItem>
               </MenuGroup>
-            ))
-          )}
+            ))}
+            {stopped.length > 0 ? (
+              <div className="px-2 py-2 text-xs text-muted-foreground">
+                Not running: {stopped.map((s) => s.name).join(", ")}
+              </div>
+            ) : null}
+          </MenuPopup>
+        </Menu>
+      ) : null}
+      <Menu onOpenChange={(open) => open && refresh()}>
+        <MenuTrigger
+          aria-label="Thread tools"
+          className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring max-sm:size-12"
+        >
+          <EllipsisIcon className="size-4" />
+        </MenuTrigger>
+        <MenuPopup
+          align="end"
+          className="w-80 max-w-[calc(100vw-1rem)] max-sm:[&_[data-slot=menu-item]]:min-h-12"
+        >
+          <MenuItem onClick={props.onOpenBrowser}>
+            <PanelRightIcon className="size-3.5" />
+            {browsing ? `Agent browser · ${browsing.site}` : "Open agent browser"}
+          </MenuItem>
           {pullRequests.length > 0 ? (
             <>
               <MenuSeparator />
@@ -249,7 +299,7 @@ export function AldoPreviewsControl(props: {
             <>
               <MenuSeparator />
               <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                Restarting: {stopped.map((s) => s.name).join(", ")}
+                Not running: {stopped.map((s) => s.name).join(", ")}
               </div>
             </>
           ) : null}
