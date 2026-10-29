@@ -92,13 +92,15 @@ export function pendingNeedsYou(
   return needsYouItems(home, now, answered, withHidden).filter((item) => !item.decision?.cleared);
 }
 
-/** What the user dismissed from Needs you and it still waits, oldest first: listed to restore. */
+/** What the user dismissed from Needs you and it still waits, oldest first: listed to restore (what they cleared from there for good isn't). */
 export function dismissedNeedsYou(
   home: AldoHome,
   now: number,
   answered: ReadonlyArray<string> = [],
 ): ReadonlyArray<NeedsYouItem> {
-  return needsYouItems(home, now, answered, true).filter((item) => item.decision?.cleared);
+  return needsYouItems(home, now, answered, true).filter(
+    (item) => item.decision?.cleared && !item.decision.removed,
+  );
 }
 
 function needsYouItems(

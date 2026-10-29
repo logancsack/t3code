@@ -10,6 +10,7 @@ const ago = (minutes: number) => new Date(NOW - minutes * 60_000).toISOString();
 const underTheHood = vi.hoisted(() => vi.fn());
 const dismiss = vi.hoisted(() => vi.fn(async () => undefined));
 const restore = vi.hoisted(() => vi.fn(async () => undefined));
+const remove = vi.hoisted(() => vi.fn(async (_ids: ReadonlyArray<string>) => undefined));
 
 vi.mock("./assistantSession", () => ({
   useAldoAssistant: (select: (s: { phase: string; replying: boolean }) => unknown) =>
@@ -22,6 +23,14 @@ vi.mock("./simpleMode", () => ({ setAldoUnderTheHood: underTheHood }));
 vi.mock("./AldoFrame", () => ({ AldoFrame: () => null }));
 vi.mock("./AldoHomeInbox", () => ({
   ThreadLink: ({ children }: { children: ReactNode }) => <a href="#thread">{children}</a>,
+}));
+vi.mock("./homeApi", async (original) => ({
+  ...(await original<typeof import("./homeApi")>()),
+  removeAldoDecisions: remove,
+}));
+vi.mock("./homeFeed", async (original) => ({
+  ...(await original<typeof import("./homeFeed")>()),
+  refreshAldoHome: async () => undefined,
 }));
 vi.mock("./clearNeedsYou", () => ({ dismissNeedsYou: dismiss, restoreNeedsYou: restore }));
 // No machine is connected here: no live step (and none of T3's thread state to load).
@@ -68,6 +77,9 @@ beforeEach(async () => {
 afterEach(() => {
   dismiss.mockClear();
   restore.mockClear();
+  remove.mockReset();
+  remove.mockResolvedValue(undefined);
+  vi.useRealTimers();
   act(() => root.unmount());
   host.remove();
   document.body.innerHTML = "";
@@ -190,4 +202,116 @@ it("says nothing waits once everything is dismissed, and keeps the Dismissed lis
   press("Needs you");
   expect(text()).toContain("Nothing waiting on you");
   expect(text()).toContain("Dismissed");
+});
+
+const dismissedTwo = () =>
+  show(
+    home([
+      conversation("a", { state: "failed", chatDecision: cleared("da") }),
+      conversation("b", { state: "failed", chatDecision: cleared("db") }),
+    ]),
+  );
+const openDismissed = () => {
+  press("Aldo:");
+  press("Needs you");
+  press("Dismissed");
+};
+
+it("clears one dismissed item with its ✕ and Clear all takes the rest, each with an Undo", () => {
+  dismissedTwo();
+  openDismissed();
+  expect(document.querySelector('[aria-label="Restore Thread a"]')).not.toBeNull();
+  press("Clear Thread a");
+  expect(text()).toContain("Cleared “Thread a”");
+  expect(document.querySelector('[aria-label="Restore Thread a"]')).toBeNull();
+  expect(document.querySelector('[aria-label="Restore Thread b"]')).not.toBeNull();
+  press("Undo");
+  expect(document.querySelector('[aria-label="Restore Thread a"]')).not.toBeNull();
+  press("Clear all");
+  expect(text()).toContain("Cleared 2 things");
+  expect(text()).toContain("Threads are archived, not deleted.");
+  // Nothing was sent: it can still be undone, and the empty list stays to say so.
+  expect(remove).not.toHaveBeenCalled();
+  expect(text()).toContain("Nothing dismissed");
+  press("Undo");
+  expect(document.querySelector('[aria-label="Restore Thread a"]')).not.toBeNull();
+  expect(document.querySelector('[aria-label="Restore Thread b"]')).not.toBeNull();
+  expect(remove).not.toHaveBeenCalled();
+});
+
+it("sends the clear when the time to undo is up, and goes back to Needs you", () => {
+  vi.useFakeTimers();
+  dismissedTwo();
+  openDismissed();
+  press("Clear all");
+  act(() => vi.advanceTimersByTime(7_999));
+  expect(remove).not.toHaveBeenCalled();
+  act(() => vi.advanceTimersByTime(1));
+  expect(remove).toHaveBeenCalledTimes(1);
+  expect(remove).toHaveBeenLastCalledWith(["da", "db"]);
+  expect(text()).toContain("Nothing waiting on you");
+  expect(text()).not.toContain("Dismissed");
+});
+
+it("sends the clear when the drop-down closes", () => {
+  dismissedTwo();
+  openDismissed();
+  press("Clear Thread b");
+  act(() => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+  expect(remove).toHaveBeenLastCalledWith(["db"]);
+});
+
+it("says when a clear couldn't be sent, and the item is back", async () => {
+  vi.useFakeTimers();
+  remove.mockRejectedValueOnce(new Error("offline"));
+  dismissedTwo();
+  openDismissed();
+  press("Clear Thread a");
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(8_000);
+  });
+  expect(text()).toContain("Couldn't clear it");
+  expect(document.querySelector('[aria-label="Restore Thread a"]')).not.toBeNull();
+});
+
+it("doesn't list what was cleared for good, and a clear-all needs no Dismissed row once none are left", () => {
+  show(
+    home([
+      conversation("a", { state: "failed", chatDecision: { ...cleared("da"), removed: true } }),
+    ]),
+  );
+  press("Aldo:");
+  press("Needs you");
+  expect(text()).not.toContain("Dismissed");
+});
+
+const hidePage = () => {
+  Object.defineProperty(document, "visibilityState", { value: "hidden", configurable: true });
+  act(() => document.dispatchEvent(new Event("visibilitychange")));
+  Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true });
+};
+
+it("takes the Undo away once the page being hidden has sent the clear", () => {
+  dismissedTwo();
+  openDismissed();
+  press("Clear all");
+  expect(text()).toContain("Undo");
+  hidePage();
+  expect(remove).toHaveBeenCalledTimes(1);
+  expect(text()).toContain("Cleared 2 things");
+  expect(text()).not.toContain("Undo");
+});
+
+it("sends every request of a long Clear all at once, before the page can go", () => {
+  show(
+    home(
+      Array.from({ length: 120 }, (_, i) =>
+        conversation(`t${i}`, { state: "failed", chatDecision: cleared(`d${i}`) }),
+      ),
+    ),
+  );
+  openDismissed();
+  press("Clear all");
+  press("Aldo:");
+  expect(remove.mock.calls.map(([ids]) => ids.length)).toEqual([50, 50, 20]);
 });

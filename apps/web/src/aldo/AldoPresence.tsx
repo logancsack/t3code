@@ -26,6 +26,13 @@ import { AldoHiddenFromChat, DismissChatDecision } from "./DismissChatDecision";
 import { aldoHiddenFromChat } from "./decisions.logic";
 import { AldoFrame } from "./AldoFrame";
 import { dismissNeedsYou, restoreNeedsYou } from "./clearNeedsYou";
+import {
+  clearDismissed,
+  CLEAR_UNDO_MS,
+  sendClearedDismissed,
+  undoClearDismissed,
+  useAldoClearing,
+} from "./clearDismissed";
 import { boardFor, elapsed, isStuck } from "./home.logic";
 import { useAldoHomeReadAt } from "./homeFeed";
 import { setAldoUnderTheHood } from "./simpleMode";
@@ -100,15 +107,41 @@ export function AldoPresence(props: {
   const [open, setOpen] = useState(false);
   const [asked, setView] = useState<View>("index");
   // What they just dismissed, with an Undo while it's fresh (a toast would sit behind the open list).
-  const [note, setNote] = useState<{ text: string; undo?: ReadonlyArray<string> } | null>(null);
+  const [note, setNote] = useState<{
+    text: string;
+    sub?: string;
+    undo?: () => void;
+    /** It's a clear: once sent, there's no undoing it. */
+    clears?: true;
+  } | null>(null);
   useEffect(() => {
     if (!note) return;
-    const timer = window.setTimeout(() => setNote(null), 8000);
+    const timer = window.setTimeout(() => setNote(null), CLEAR_UNDO_MS);
     return () => window.clearTimeout(timer);
   }, [note]);
   const dismiss = (ids: ReadonlyArray<string>, what: string) => {
-    setNote({ text: `Dismissed ${what}`, undo: ids });
+    setNote({
+      text: `Dismissed ${what}`,
+      sub: "Still waiting in its thread. Nothing was answered.",
+      undo: () => restore(ids, null),
+    });
     dismissNeedsYou(ids).catch(() => setNote({ text: "Couldn't dismiss it" }));
+  };
+  // Gone from Dismissed at once; their threads are archived when the undo time is up (clearDismissed.ts).
+  const clearing = useAldoClearing();
+  const clearingIds = useMemo(() => new Set(clearing.ids), [clearing.ids]);
+  const undo = note?.clears && !clearing.undoable ? undefined : note?.undo;
+  const clear = (ids: ReadonlyArray<string>, what: string) => {
+    setNote({
+      text: `Cleared ${what}`,
+      sub: "Threads are archived, not deleted.",
+      clears: true,
+      undo: () => {
+        undoClearDismissed();
+        setNote(null);
+      },
+    });
+    clearDismissed(ids, () => setNote({ text: "Couldn't clear it" }));
   };
   const restore = (ids: ReadonlyArray<string>, then: string | null) => {
     setNote(then ? { text: then } : null);
@@ -126,8 +159,15 @@ export function AldoPresence(props: {
   );
   const board = useMemo(
     () =>
-      home ? presenceBoard(home, { now, seenAt, answered: receipts.map((r) => r.key) }) : null,
-    [home, now, seenAt, receipts],
+      home
+        ? presenceBoard(home, {
+            now,
+            seenAt,
+            answered: receipts.map((r) => r.key),
+            clearing: clearingIds,
+          })
+        : null,
+    [home, now, seenAt, receipts, clearingIds],
   );
   const working = useMemo(
     () => (home ? boardFor(home.conversations, now).working.filter((c) => !isStuck(c, now)) : []),
@@ -137,6 +177,8 @@ export function AldoPresence(props: {
     opened.current = next;
     setOpen(next);
     setNote(null);
+    // Closing ends the time to undo.
+    if (!next) void sendClearedDismissed();
     if (next) {
       setView("index");
       setSeenAt(readSeen());
@@ -195,8 +237,8 @@ export function AldoPresence(props: {
         {mark}
       </div>
     );
-  // Restoring the last dismissed item leaves an empty list: back to Needs you.
-  const view = asked === "dismissed" && board.dismissed.length === 0 ? "needsYou" : asked;
+  // Restoring the last dismissed item leaves an empty list: back to Needs you. Clearing it stays, with its Undo.
+  const view = asked === "dismissed" && board.dismissed.length === 0 && !undo ? "needsYou" : asked;
   const sections: Record<Exclude<View, "index">, PresenceSection> = {
     needsYou: board.needsYou,
     dismissed: { rows: board.dismissed, preview: "" },
@@ -295,6 +337,22 @@ export function AldoPresence(props: {
                     {sections[view].rows.length}
                   </span>
                 ) : null}
+                {view === "dismissed" && board.dismissed.length > 0 ? (
+                  <button
+                    type="button"
+                    className="me-1 min-h-11 rounded-lg px-3 font-medium text-[13px] text-muted-foreground outline-none hover:bg-foreground/[0.05] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                    onClick={() =>
+                      clear(
+                        board.dismissed.map((r) => r.decision!.id),
+                        board.dismissed.length === 1
+                          ? "1 thing"
+                          : `${board.dismissed.length} things`,
+                      )
+                    }
+                  >
+                    Clear all
+                  </button>
+                ) : null}
                 {view === "needsYou" && dismissable.length > 0 ? (
                   <button
                     type="button"
@@ -310,6 +368,9 @@ export function AldoPresence(props: {
                   </button>
                 ) : null}
               </div>
+              {view === "dismissed" && board.dismissed.length === 0 ? (
+                <p className="px-2 py-3 text-[13px] text-muted-foreground">Nothing dismissed</p>
+              ) : null}
               {view === "needsYou" && sections.needsYou.rows.length === 0 ? (
                 <p className="px-2 py-3 text-[13px] text-muted-foreground">
                   Nothing waiting on you
@@ -325,7 +386,10 @@ export function AldoPresence(props: {
                       ? { onDismiss: () => dismiss([row.decision!.id], `“${row.title}”`) }
                       : {})}
                     {...(view === "dismissed" && row.decision
-                      ? { onRestore: () => restore([row.decision!.id], null) }
+                      ? {
+                          onRestore: () => restore([row.decision!.id], null),
+                          onClear: () => clear([row.decision!.id], `“${row.title}”`),
+                        }
                       : {})}
                   />
                 ))}
@@ -355,17 +419,15 @@ export function AldoPresence(props: {
             >
               <p className="min-w-0 flex-1 py-2 text-[13px] leading-4">
                 <span className="block truncate">{note.text}</span>
-                {note.undo ? (
-                  <span className="block text-[12px] text-muted-foreground">
-                    Still waiting in its thread. Nothing was answered.
-                  </span>
+                {note.sub ? (
+                  <span className="block text-[12px] text-muted-foreground">{note.sub}</span>
                 ) : null}
               </p>
-              {note.undo ? (
+              {undo ? (
                 <button
                   type="button"
                   className="me-1 min-h-11 shrink-0 rounded-lg px-3 font-medium text-[13px] outline-none hover:bg-foreground/[0.08] focus-visible:ring-2 focus-visible:ring-ring"
-                  onClick={() => restore(note.undo!, null)}
+                  onClick={undo}
                 >
                   Undo
                 </button>
@@ -437,22 +499,33 @@ function LiveDetail(props: { readonly target: AldoHomeTarget; readonly fallback:
 
 /**
  * An item in a list: opens its thread. In Needs you it has a way to dismiss it (a ✕, and a swipe on a
- * phone); one hidden from chat has a way to show it there again; in Dismissed, a way to restore it.
+ * phone); one hidden from chat has a way to show it there again; in Dismissed, a way to restore it
+ * and to clear it for good (the same ✕ and swipe, and its title may take two lines for the room).
  */
 function ItemRow(props: {
   readonly row: PresenceRow;
   readonly onDismiss?: () => void;
   readonly onRestore?: () => void;
+  readonly onClear?: () => void;
   /** Goes to its card in the conversation instead of opening it; false where there's none. */
   readonly onShow?: (target: AldoHomeTarget) => boolean;
 }) {
-  const { row, onDismiss, onRestore, onShow } = props;
-  const swipe = useSwipeAway(onDismiss);
+  const { row, onDismiss, onRestore, onClear, onShow } = props;
+  const away = onDismiss ?? onClear;
+  const word = onClear ? "Clear" : "Dismiss";
+  const swipe = useSwipeAway(away);
   const body = (
     <>
       <span aria-hidden className={cn("mt-1.5 size-2 shrink-0 rounded-full", DOT[row.tone])} />
       <span className="min-w-0 flex-1">
-        <span className="block truncate font-medium text-sm leading-5">{row.title}</span>
+        <span
+          className={cn(
+            "block font-medium text-sm leading-5",
+            onClear ? "line-clamp-2" : "truncate",
+          )}
+        >
+          {row.title}
+        </span>
         <span className="block truncate text-[12px] text-muted-foreground leading-4 tabular-nums">
           {onShow && row.target && row.tone === "live" ? (
             <LiveDetail target={row.target} fallback={row.detail} />
@@ -485,7 +558,7 @@ function ItemRow(props: {
             swipe.dx < 0 ? "right-0" : "left-0",
           )}
         >
-          Dismiss
+          {word}
         </span>
       ) : null}
       <div
@@ -493,7 +566,7 @@ function ItemRow(props: {
         style={{ transform: swipe.dx ? `translateX(${swipe.dx}px)` : undefined }}
         className={cn(
           "relative",
-          onDismiss && "touch-pan-y",
+          away && "touch-pan-y",
           swipe.settling && "transition-transform duration-150 motion-reduce:transition-none",
         )}
       >
@@ -505,24 +578,24 @@ function ItemRow(props: {
           ) : (
             <div className={cn(ROW, "min-w-0 flex-1 hover:bg-transparent")}>{body}</div>
           )}
-          {onDismiss ? (
-            <button
-              type="button"
-              aria-label={`Dismiss ${row.title}`}
-              className="flex size-11 shrink-0 items-center justify-center rounded-lg text-muted-foreground outline-none hover:bg-foreground/[0.05] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-              onClick={onDismiss}
-            >
-              <XIcon aria-hidden className="size-4" />
-            </button>
-          ) : null}
           {onRestore ? (
             <button
               type="button"
               aria-label={`Restore ${row.title}`}
-              className="me-1 min-h-11 shrink-0 rounded-lg px-3 font-medium text-[13px] text-muted-foreground outline-none hover:bg-foreground/[0.05] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+              className="min-h-11 shrink-0 rounded-lg px-2.5 font-medium text-[13px] text-muted-foreground outline-none hover:bg-foreground/[0.05] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
               onClick={onRestore}
             >
               Restore
+            </button>
+          ) : null}
+          {away ? (
+            <button
+              type="button"
+              aria-label={`${word} ${row.title}`}
+              className="flex size-11 shrink-0 items-center justify-center rounded-lg text-muted-foreground outline-none hover:bg-foreground/[0.05] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+              onClick={away}
+            >
+              <XIcon aria-hidden className="size-4" />
             </button>
           ) : null}
         </div>

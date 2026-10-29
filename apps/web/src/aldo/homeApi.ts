@@ -54,6 +54,8 @@ export interface AldoChatDecision {
    * listed under Dismissed to restore. Absent from an Aldo that can't dismiss.
    */
   readonly cleared?: boolean;
+  /** Cleared from Dismissed for good (it's also `cleared`): Dismissed doesn't list it. Absent from an Aldo that can't. */
+  readonly removed?: boolean;
 }
 
 export interface AldoHomeConversation {
@@ -687,6 +689,16 @@ export async function clearAldoDecisions(
   await api("/api/assistant/decisions/clear", {
     method: "POST",
     body: JSON.stringify({ ids, cleared }),
+  });
+}
+
+/** Clears what's in Dismissed for good: their threads are archived, nothing is deleted. */
+export async function removeAldoDecisions(ids: ReadonlyArray<string>): Promise<void> {
+  await api("/api/assistant/decisions/remove", {
+    method: "POST",
+    body: JSON.stringify({ ids }),
+    // Sent as the page goes away too.
+    keepalive: true,
   });
 }
 
