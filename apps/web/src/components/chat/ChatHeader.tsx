@@ -11,7 +11,7 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import { ChevronDownIcon, EllipsisIcon } from "lucide-react";
+import { ChevronDownIcon } from "lucide-react";
 import {
   memo,
   useCallback,
@@ -23,8 +23,6 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
-import { createPortal } from "react-dom";
-import GitActionsControl from "../GitActionsControl";
 import { isTrailingDoubleClick } from "../Sidebar.logic";
 import { type DraftId, useComposerDraftStore } from "~/composerDraftStore";
 import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";
@@ -52,8 +50,6 @@ import {
   WorkspaceBreadcrumbText,
 } from "../WorkspaceBreadcrumb";
 import { cn } from "~/lib/utils";
-import { useIsMobile } from "~/hooks/useMediaQuery";
-import { Button } from "../ui/button";
 import { AldoBrowsingChip } from "~/aldo/AldoBrowsingChip";
 import { AldoPreviewsControl } from "~/aldo/AldoPreviewsControl";
 import { isAldoCloud, isAldoEnvironmentId } from "~/aldo/api";
@@ -76,8 +72,6 @@ interface ChatHeaderProps {
   keybindings: ResolvedKeybindingsConfig;
   availableEditors: ReadonlyArray<EditorId>;
   rightPanelOpen: boolean;
-  gitCwd: string | null;
-  readonly onOpenPullRequest?: ((number: number) => void) | undefined;
   onNewThreadInProject: () => void;
   onOpenProjectSettings?: (() => void) | undefined;
   onRunProjectScript: (script: ProjectScript) => void;
@@ -89,8 +83,6 @@ interface ChatHeaderProps {
   onDeleteProjectScript: (scriptId: string) => Promise<ProjectScriptActionResult>;
   /** Aldo: sends the user's message to a sent thread's agent (moving the thread is one it hands off). */
   onSendAldoMessage?: ((text: string) => Promise<boolean>) | undefined;
-  /** Panel toggles fixed over the header's right edge (the terminal toggle can be hidden). */
-  panelToggleCount?: 1 | 2;
 }
 
 /**
@@ -149,8 +141,6 @@ export const ChatHeader = memo(function ChatHeader({
   keybindings,
   availableEditors,
   rightPanelOpen,
-  gitCwd,
-  onOpenPullRequest,
   onNewThreadInProject,
   onOpenProjectSettings,
   onRunProjectScript,
@@ -158,7 +148,6 @@ export const ChatHeader = memo(function ChatHeader({
   onUpdateProjectScript,
   onDeleteProjectScript,
   onSendAldoMessage,
-  panelToggleCount = 2,
 }: ChatHeaderProps) {
   const { active: panelAnimationsActive, durationMs: panelAnimationDurationMs } =
     usePanelAnimationSettings();
@@ -175,40 +164,6 @@ export const ChatHeader = memo(function ChatHeader({
       breakpoint: { value: HEADER_ACTIONS_EXPANDED_BREAKPOINT_REM, unit: "rem" },
     });
   }, [panelAnimationDurationMs, panelAnimationsActive]);
-  const isMobile = useIsMobile();
-  // Side panels can leave a desktop header narrower than a phone.
-  const [isNarrowHeader, setIsNarrowHeader] = useState(false);
-  useEffect(() => {
-    const container = headerActionsRef.current?.parentElement;
-    if (!container) return;
-    const update = () => setIsNarrowHeader(container.clientWidth < 512);
-    update();
-    const observer = new ResizeObserver(update);
-    observer.observe(container);
-    return () => observer.disconnect();
-  }, []);
-  const actionsCollapsed = isMobile || isNarrowHeader;
-  const [actionsOpen, setActionsOpen] = useState(false);
-  const [actionsContainer] = useState(() => {
-    const container = document.createElement("div");
-    container.className = "contents";
-    return container;
-  });
-  // Reparent the DOM host, not the React controls: rotating a phone or resizing
-  // a window must not discard an unsaved script or Git dialog.
-  const mountInlineActions = useCallback(
-    (node: HTMLDivElement | null) => {
-      if (node && !actionsCollapsed) node.appendChild(actionsContainer);
-    },
-    [actionsContainer, actionsCollapsed],
-  );
-  const mountMenuActions = useCallback(
-    (node: HTMLDivElement | null) => {
-      if (node && actionsCollapsed) node.appendChild(actionsContainer);
-    },
-    [actionsContainer, actionsCollapsed],
-  );
-  if (!actionsCollapsed && actionsOpen) setActionsOpen(false);
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const activeProjectName = activeProject?.title;
   const activeProjectCwd = activeProject?.workspaceRoot ?? null;
@@ -484,22 +439,6 @@ export const ChatHeader = memo(function ChatHeader({
     );
   }
 
-  // Scripts and editors live in the project menu, so only git actions remain
-  // on the right (none for a project Aldo keeps).
-  const showGitActions = Boolean(activeProjectName && gitCwd && !aldoKeptRepo);
-  const headerActions = (
-    <>
-      {showGitActions && (
-        <GitActionsControl
-          presentation={actionsCollapsed ? "menu" : "toolbar"}
-          gitCwd={gitCwd}
-          activeThreadRef={scopeThreadRef(activeThreadEnvironmentId, activeThreadId)}
-          onOpenPullRequest={onOpenPullRequest}
-          {...(draftId ? { draftId } : {})}
-        />
-      )}
-    </>
-  );
   return (
     <div
       className="@container/header-actions flex min-w-0 flex-1 items-center gap-2 sm:gap-3"
@@ -597,15 +536,11 @@ export const ChatHeader = memo(function ChatHeader({
         data-chat-header-actions
         className={cn(
           "flex shrink-0 items-center justify-end gap-2 @3xl/header-actions:gap-3",
-          // Reserve two panel toggles (32px, 28px at sm) with their 4px gap and 1px edge inset,
-          // plus the same gap the actions keep between themselves (gap-2, gap-3 at @3xl) so the
-          // terminal toggle does not sit against the last action. The page header adds 8px more
-          // right padding at sm. Without the terminal toggle only one is reserved.
-          rightPanelOpen
-            ? "pr-0"
-            : panelToggleCount === 1
-              ? "pr-10.25 sm:pr-7.25 @3xl/header-actions:pr-8.25"
-              : "pr-19.25 sm:pr-15.25 @3xl/header-actions:pr-16.25",
+          // Reserve the right panel toggle (32px, 28px at sm) with its 1px edge inset, plus the
+          // same gap the actions keep between themselves (gap-2, gap-3 at @3xl) so the toggle
+          // does not sit against the last action. The page header adds 8px more right padding
+          // at sm.
+          rightPanelOpen ? "pr-0" : "pr-10.25 sm:pr-7.25 @3xl/header-actions:pr-8.25",
           "[[data-panel-animations=true]_&]:motion-safe:transition-[padding-right] [[data-panel-animations=true]_&]:motion-safe:duration-(--panel-animation-duration) [[data-panel-animations=true]_&]:motion-safe:ease-out",
         )}
       >
@@ -632,25 +567,6 @@ export const ChatHeader = memo(function ChatHeader({
             }
           />
         ) : null}
-        <Menu open={actionsCollapsed && actionsOpen} onOpenChange={setActionsOpen}>
-          <MenuTrigger
-            className={actionsCollapsed && showGitActions ? undefined : "hidden"}
-            render={<Button size="icon-sm" variant="ghost" aria-label="More header actions" />}
-          >
-            <EllipsisIcon className="size-4" />
-          </MenuTrigger>
-          <div ref={mountInlineActions} className="contents" />
-          <MenuPopup
-            data-chat-header-actions
-            keepMounted
-            aria-label="Header actions"
-            align="end"
-            finalFocus={actionsCollapsed ? undefined : false}
-          >
-            <div ref={mountMenuActions} className="contents" />
-            {createPortal(headerActions, actionsContainer)}
-          </MenuPopup>
-        </Menu>
       </div>
     </div>
   );
