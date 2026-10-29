@@ -111,6 +111,8 @@ export function AldoPresence(props: {
     text: string;
     sub?: string;
     undo?: () => void;
+    /** It's a clear: once sent, there's no undoing it. */
+    clears?: true;
   } | null>(null);
   useEffect(() => {
     if (!note) return;
@@ -127,11 +129,13 @@ export function AldoPresence(props: {
   };
   // Gone from Dismissed at once; their threads are archived when the undo time is up (clearDismissed.ts).
   const clearing = useAldoClearing();
-  const clearingIds = useMemo(() => new Set(clearing), [clearing]);
+  const clearingIds = useMemo(() => new Set(clearing.ids), [clearing.ids]);
+  const undo = note?.clears && !clearing.undoable ? undefined : note?.undo;
   const clear = (ids: ReadonlyArray<string>, what: string) => {
     setNote({
       text: `Cleared ${what}`,
       sub: "Threads are archived, not deleted.",
+      clears: true,
       undo: () => {
         undoClearDismissed();
         setNote(null);
@@ -234,8 +238,7 @@ export function AldoPresence(props: {
       </div>
     );
   // Restoring the last dismissed item leaves an empty list: back to Needs you. Clearing it stays, with its Undo.
-  const view =
-    asked === "dismissed" && board.dismissed.length === 0 && !note?.undo ? "needsYou" : asked;
+  const view = asked === "dismissed" && board.dismissed.length === 0 && !undo ? "needsYou" : asked;
   const sections: Record<Exclude<View, "index">, PresenceSection> = {
     needsYou: board.needsYou,
     dismissed: { rows: board.dismissed, preview: "" },
@@ -420,11 +423,11 @@ export function AldoPresence(props: {
                   <span className="block text-[12px] text-muted-foreground">{note.sub}</span>
                 ) : null}
               </p>
-              {note.undo ? (
+              {undo ? (
                 <button
                   type="button"
                   className="me-1 min-h-11 shrink-0 rounded-lg px-3 font-medium text-[13px] outline-none hover:bg-foreground/[0.08] focus-visible:ring-2 focus-visible:ring-ring"
-                  onClick={note.undo}
+                  onClick={undo}
                 >
                   Undo
                 </button>

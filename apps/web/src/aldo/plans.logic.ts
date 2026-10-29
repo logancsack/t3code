@@ -81,7 +81,12 @@ function answersOf(value: unknown): Readonly<Record<string, string>> | null {
 function decisionOf(value: unknown): AldoChatDecision | null {
   const d = value as Partial<AldoChatDecision> | null;
   return d && isText(d.id) && typeof d.dismissed === "boolean"
-    ? { id: d.id, dismissed: d.dismissed, ...(d.cleared === true ? { cleared: true } : {}) }
+    ? {
+        id: d.id,
+        dismissed: d.dismissed,
+        ...(d.cleared === true ? { cleared: true } : {}),
+        ...(d.removed === true ? { removed: true } : {}),
+      }
     : null;
 }
 

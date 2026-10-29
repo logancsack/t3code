@@ -284,3 +284,34 @@ it("doesn't list what was cleared for good, and a clear-all needs no Dismissed r
   press("Needs you");
   expect(text()).not.toContain("Dismissed");
 });
+
+const hidePage = () => {
+  Object.defineProperty(document, "visibilityState", { value: "hidden", configurable: true });
+  act(() => document.dispatchEvent(new Event("visibilitychange")));
+  Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true });
+};
+
+it("takes the Undo away once the page being hidden has sent the clear", () => {
+  dismissedTwo();
+  openDismissed();
+  press("Clear all");
+  expect(text()).toContain("Undo");
+  hidePage();
+  expect(remove).toHaveBeenCalledTimes(1);
+  expect(text()).toContain("Cleared 2 things");
+  expect(text()).not.toContain("Undo");
+});
+
+it("sends every request of a long Clear all at once, before the page can go", () => {
+  show(
+    home(
+      Array.from({ length: 120 }, (_, i) =>
+        conversation(`t${i}`, { state: "failed", chatDecision: cleared(`d${i}`) }),
+      ),
+    ),
+  );
+  openDismissed();
+  press("Clear all");
+  press("Aldo:");
+  expect(remove.mock.calls.map(([ids]) => ids.length)).toEqual([50, 50, 20]);
+});
