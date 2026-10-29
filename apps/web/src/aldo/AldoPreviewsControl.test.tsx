@@ -55,7 +55,14 @@ async function render(id = "one") {
           environmentId={id}
           threadId={"thread" as ThreadId}
           onOpenBrowser={mocks.browser}
-        />
+        >
+          {(controls) => (
+            <>
+              {controls.preview}
+              {controls.tools}
+            </>
+          )}
+        </AldoPreviewsControl>
       </>,
     ),
   );
@@ -120,13 +127,13 @@ it("shows a labeled single-port control without a count and opens either destina
   expect(open).toHaveBeenCalledWith("/p/one/3000", "_blank", "noopener");
   open.mockRestore();
 });
-it("counts several ports and keeps a ready port usable when another service stopped", async () => {
+it("lists several ports under one label and keeps a ready port usable when another service stopped", async () => {
   mocks.previews.mockResolvedValue({
     ...data([3000, 5173]),
     services: [{ name: "docs", running: false, command: "vite", cwd: "/", restarts: 1 }],
   });
   await render();
-  expect(preview()?.textContent).toBe("Preview2");
+  expect(preview()?.textContent).toBe("Preview");
   await act(() => preview()!.click());
   expect(document.body.textContent).toContain("localhost:5173");
   expect(document.body.textContent).toContain("Not running: docs");

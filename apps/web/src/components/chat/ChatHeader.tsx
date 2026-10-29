@@ -1,5 +1,4 @@
-import { AldoThreadHeaderActions } from "~/aldo/AldoThreadHeaderActions";
-import { AldoThreadBreadcrumb } from "~/aldo/AldoThreadBreadcrumb";
+import { AldoThreadHeader } from "~/aldo/AldoThreadHeader";
 import { useAldoPlaceOf } from "~/aldo/places";
 import {
   type EnvironmentId,
@@ -53,13 +52,10 @@ import {
   WorkspaceBreadcrumbText,
 } from "../WorkspaceBreadcrumb";
 import { cn } from "~/lib/utils";
-import { AldoBrowsingChip } from "~/aldo/AldoBrowsingChip";
-import { AldoPreviewsControl } from "~/aldo/AldoPreviewsControl";
 import { isAldoCloud, isAldoEnvironmentId } from "~/aldo/api";
 import { AldoMoveThreadPicker, useAldoMovesThreads } from "~/aldo/AldoThreadPlace";
 import { useAldoKeptRepo } from "~/aldo/keptRepo";
 import { draftTitle } from "~/aldo/places.logic";
-import { useRightPanelStore } from "~/rightPanelStore";
 
 interface ChatHeaderProps {
   activeThreadEnvironmentId: EnvironmentId;
@@ -75,6 +71,8 @@ interface ChatHeaderProps {
   keybindings: ResolvedKeybindingsConfig;
   availableEditors: ReadonlyArray<EditorId>;
   rightPanelOpen: boolean;
+  /** The thread's agent is working on a turn. */
+  working?: boolean;
   onNewThreadInProject: () => void;
   onOpenProjectSettings?: (() => void) | undefined;
   onRunProjectScript: (script: ProjectScript) => void;
@@ -144,6 +142,7 @@ export const ChatHeader = memo(function ChatHeader({
   keybindings,
   availableEditors,
   rightPanelOpen,
+  working = false,
   onNewThreadInProject,
   onOpenProjectSettings,
   onRunProjectScript,
@@ -448,20 +447,31 @@ export const ChatHeader = memo(function ChatHeader({
         onKeyDown={handleRenameKeyDown}
       />
     ) : null;
+  const actionsReserve = cn(
+    "@3xl/header-actions:gap-3",
+    // Reserve the right panel toggle (32px, 28px at sm) with its 1px edge inset, plus the
+    // same gap the actions keep between themselves (gap-2, gap-3 at @3xl) so the toggle
+    // does not sit against the last action. The page header adds 8px more right padding
+    // at sm. An Aldo thread on a phone opens the panel from its menu instead.
+    rightPanelOpen ? "pr-0" : "pr-10.25 sm:pr-7.25 @3xl/header-actions:pr-8.25",
+    aldoThread && "max-md:pr-0!",
+    "[[data-panel-animations=true]_&]:motion-safe:transition-[padding-right] [[data-panel-animations=true]_&]:motion-safe:duration-(--panel-animation-duration) [[data-panel-animations=true]_&]:motion-safe:ease-out",
+  );
   return (
     <div
       className="@container/header-actions flex min-w-0 flex-1 items-center gap-2 sm:gap-3"
       onContextMenu={handleHeaderContextMenu}
     >
       {aldoThread ? (
-        <span ref={aldoPlaceAnchorRef} className="flex min-w-0 flex-1">
-          <AldoThreadBreadcrumb
-            key={`${activeThreadEnvironmentId}:${activeThreadId}`}
+        <span ref={aldoPlaceAnchorRef} className="flex min-w-0 flex-1 items-center gap-2">
+          <AldoThreadHeader
+            environmentId={activeThreadEnvironmentId}
+            threadId={activeThreadId}
             title={shownTitle}
             titleEditor={titleEditor}
             place={aldoPlace}
-            environmentId={activeThreadEnvironmentId}
-            threadId={activeThreadId}
+            working={working}
+            isServerThread={isServerThread}
             onActions={
               isServerThread
                 ? (button) => {
@@ -470,6 +480,8 @@ export const ChatHeader = memo(function ChatHeader({
                   }
                 : undefined
             }
+            actionsRef={headerActionsRef}
+            actionsClassName={actionsReserve}
           />
           {aldoMoves ? (
             <AldoMoveThreadPicker
@@ -543,48 +555,13 @@ export const ChatHeader = memo(function ChatHeader({
           </WorkspaceBreadcrumbItem>
         </WorkspaceBreadcrumb>
       )}
-      <div
-        ref={headerActionsRef}
-        data-chat-header-actions
-        className={cn(
-          "flex shrink-0 items-center justify-end gap-2 @3xl/header-actions:gap-3",
-          // Reserve the right panel toggle (32px, 28px at sm) with its 1px edge inset, plus the
-          // same gap the actions keep between themselves (gap-2, gap-3 at @3xl) so the toggle
-          // does not sit against the last action. The page header adds 8px more right padding
-          // at sm.
-          rightPanelOpen ? "pr-0" : "pr-10.25 sm:pr-7.25 @3xl/header-actions:pr-8.25",
-          "[[data-panel-animations=true]_&]:motion-safe:transition-[padding-right] [[data-panel-animations=true]_&]:motion-safe:duration-(--panel-animation-duration) [[data-panel-animations=true]_&]:motion-safe:ease-out",
-        )}
-      >
-        {isAldoCloud && isAldoEnvironmentId(activeThreadEnvironmentId) && isServerThread ? (
-          <AldoBrowsingChip
-            environmentId={activeThreadEnvironmentId}
-            threadId={activeThreadId}
-            onOpenBrowser={() =>
-              useRightPanelStore
-                .getState()
-                .open(scopeThreadRef(activeThreadEnvironmentId, activeThreadId), "workspaceBrowser")
-            }
-          />
-        ) : null}
-        {/* Nothing to preview before the thread's agent has started. */}
-        {isAldoCloud && isAldoEnvironmentId(activeThreadEnvironmentId) && isServerThread ? (
-          <AldoThreadHeaderActions>
-            <AldoPreviewsControl
-              environmentId={activeThreadEnvironmentId}
-              threadId={activeThreadId}
-              onOpenBrowser={() =>
-                useRightPanelStore
-                  .getState()
-                  .open(
-                    scopeThreadRef(activeThreadEnvironmentId, activeThreadId),
-                    "workspaceBrowser",
-                  )
-              }
-            />
-          </AldoThreadHeaderActions>
-        ) : null}
-      </div>
+      {aldoThread ? null : (
+        <div
+          ref={headerActionsRef}
+          data-chat-header-actions
+          className={cn("flex shrink-0 items-center justify-end gap-2", actionsReserve)}
+        />
+      )}
     </div>
   );
 });
