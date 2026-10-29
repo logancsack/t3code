@@ -1,3 +1,4 @@
+import { AldoThreadHeaderActions } from "~/aldo/AldoThreadHeaderActions";
 import { AldoThreadBreadcrumb } from "~/aldo/AldoThreadBreadcrumb";
 import { useAldoPlaceOf } from "~/aldo/places";
 import {
@@ -568,15 +569,20 @@ export const ChatHeader = memo(function ChatHeader({
         ) : null}
         {/* Nothing to preview before the thread's agent has started. */}
         {isAldoCloud && isAldoEnvironmentId(activeThreadEnvironmentId) && isServerThread ? (
-          <AldoPreviewsControl
-            environmentId={activeThreadEnvironmentId}
-            threadId={activeThreadId}
-            onOpenBrowser={() =>
-              useRightPanelStore
-                .getState()
-                .open(scopeThreadRef(activeThreadEnvironmentId, activeThreadId), "workspaceBrowser")
-            }
-          />
+          <AldoThreadHeaderActions>
+            <AldoPreviewsControl
+              environmentId={activeThreadEnvironmentId}
+              threadId={activeThreadId}
+              onOpenBrowser={() =>
+                useRightPanelStore
+                  .getState()
+                  .open(
+                    scopeThreadRef(activeThreadEnvironmentId, activeThreadId),
+                    "workspaceBrowser",
+                  )
+              }
+            />
+          </AldoThreadHeaderActions>
         ) : null}
       </div>
     </div>
