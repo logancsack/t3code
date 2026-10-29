@@ -155,6 +155,8 @@ export function presenceBoard(
     readonly now: number;
     readonly seenAt: number | null;
     readonly answered?: ReadonlyArray<string>;
+    /** Dismissed ones being cleared (clearDismissed.ts): gone from Dismissed already. */
+    readonly clearing?: ReadonlySet<string>;
   },
 ): AldoPresenceBoard {
   const { now } = options;
@@ -172,14 +174,16 @@ export function presenceBoard(
       ...(item.hidden ? { hidden: item.hidden } : {}),
       ...(item.decision ? { decision: item.decision } : {}),
     }));
-  const dismissed: PresenceRow[] = dismissedNeedsYou(home, now, options.answered).map((item) => ({
-    key: item.key,
-    title: item.title,
-    detail: `${item.kind} · ${elapsed(item.at, now)}`,
-    tone: "quiet",
-    target: item.thread ?? null,
-    ...(item.decision ? { decision: item.decision } : {}),
-  }));
+  const dismissed: PresenceRow[] = dismissedNeedsYou(home, now, options.answered)
+    .filter((item) => !item.decision || !options.clearing?.has(item.decision.id))
+    .map((item) => ({
+      key: item.key,
+      title: item.title,
+      detail: `${item.kind} · ${elapsed(item.at, now)}`,
+      tone: "quiet",
+      target: item.thread ?? null,
+      ...(item.decision ? { decision: item.decision } : {}),
+    }));
   const kinds = [...new Set(waiting.filter((i) => !isPutOff(i)).map((i) => i.kind))].slice(0, 2);
   const hiddenCount = needs.filter((r) => r.hidden).length;
   // What the drop-down lists to bring back: put-off decisions and deferred plans.
