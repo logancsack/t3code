@@ -408,7 +408,7 @@ export function AldoConversationPage(props: {
   const conversation = (
     <AldoConversation feed={feed} decisions={placed} renderDecisions={renderDecisions} />
   );
-  const column = "mx-auto w-full max-w-[640px] px-4 sm:px-6";
+  const column = "mx-auto w-full max-w-[640px] px-4 sm:px-6 xl:max-w-[720px] 2xl:max-w-[780px]";
   // The empty page's few things to say (the first run's starters say them instead);
   // once something's been said, the composer stands alone.
   const chips = fresh && !props.welcome ? props.chips.slice(0, 3) : [];
