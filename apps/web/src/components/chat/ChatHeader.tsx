@@ -1,3 +1,5 @@
+import { AldoThreadBreadcrumb } from "~/aldo/AldoThreadBreadcrumb";
+import { useAldoPlaceOf } from "~/aldo/places";
 import {
   type EnvironmentId,
   type EditorId,
@@ -53,7 +55,7 @@ import { cn } from "~/lib/utils";
 import { AldoBrowsingChip } from "~/aldo/AldoBrowsingChip";
 import { AldoPreviewsControl } from "~/aldo/AldoPreviewsControl";
 import { isAldoCloud, isAldoEnvironmentId } from "~/aldo/api";
-import { AldoMoveThreadPicker, AldoThreadPlace, useAldoMovesThreads } from "~/aldo/AldoThreadPlace";
+import { AldoMoveThreadPicker, useAldoMovesThreads } from "~/aldo/AldoThreadPlace";
 import { useAldoKeptRepo } from "~/aldo/keptRepo";
 import { draftTitle } from "~/aldo/places.logic";
 import { useRightPanelStore } from "~/rightPanelStore";
@@ -191,6 +193,7 @@ export const ChatHeader = memo(function ChatHeader({
   // Aldo: where the thread works leads the header. A draft moves from its
   // composer's chip; a sent thread moves here, as a handoff its agent makes.
   const aldoThread = isAldoCloud && isAldoEnvironmentId(activeThreadEnvironmentId);
+  const aldoPlace = useAldoPlaceOf(aldoThread ? activeThreadEnvironmentId : null, activeProject);
   const aldoDraft = aldoThread && !isServerThread && draftId !== undefined;
   const aldoMoves = useAldoMovesThreads() && aldoThread && isServerThread && !!onSendAldoMessage;
   const [aldoMoveOpen, setAldoMoveOpen] = useState(false);
@@ -250,6 +253,7 @@ export const ChatHeader = memo(function ChatHeader({
     threadRef: isServerThread ? activeThreadRef : null,
     projectCwd: activeProjectCwd,
     onStartRename: startRename,
+    onMoveThread: aldoMoves ? () => setAldoMoveOpen(true) : undefined,
   });
   const titleButtonRef = useRef<HTMLButtonElement | null>(null);
   const titleMenuTimerRef = useRef<number | null>(null);
@@ -368,9 +372,6 @@ export const ChatHeader = memo(function ChatHeader({
       </MenuTrigger>
       <MenuPopup align="start" className="min-w-52">
         <MenuItem onClick={onNewThreadInProject}>New thread</MenuItem>
-        {aldoMoves ? (
-          <MenuItem onClick={() => setAldoMoveOpen(true)}>Move to another project…</MenuItem>
-        ) : null}
         {openInMenuItems || projectScriptMenuItems ? <MenuSeparator /> : null}
         {openInMenuItems}
         {openInMenuItems && projectScriptMenuItems ? <MenuSeparator /> : null}
@@ -380,15 +381,7 @@ export const ChatHeader = memo(function ChatHeader({
   );
 
   let projectControl: ReactNode = null;
-  if (aldoDraft || (aldoThread && aldoKeptRepo)) {
-    projectControl = (
-      <AldoThreadPlace
-        environmentId={activeThreadEnvironmentId}
-        project={activeProject}
-        onSendMessage={isServerThread ? onSendAldoMessage : undefined}
-      />
-    );
-  } else if (activeProjectName && aldoKeptRepo) {
+  if (activeProjectName && aldoKeptRepo) {
     projectControl = renderProjectMenu(null, null);
   } else if (activeProjectName && activeProjectScripts) {
     projectControl = (
@@ -439,98 +432,116 @@ export const ChatHeader = memo(function ChatHeader({
     );
   }
 
+  const titleEditor =
+    renamingTitle !== null ? (
+      <input
+        autoFocus
+        aria-label="Thread title"
+        className="min-w-0 flex-1 rounded-sm bg-transparent text-sm font-medium text-foreground outline-none ring-1 ring-ring/50 focus:ring-ring"
+        defaultValue={renamingTitle}
+        onBlur={(event) => {
+          if (renameCommittedRef.current) return;
+          commitRename(event.currentTarget.value);
+        }}
+        onFocus={(event) => event.currentTarget.select()}
+        onKeyDown={handleRenameKeyDown}
+      />
+    ) : null;
   return (
     <div
       className="@container/header-actions flex min-w-0 flex-1 items-center gap-2 sm:gap-3"
       onContextMenu={handleHeaderContextMenu}
     >
-      <WorkspaceBreadcrumb
-        ariaLabel="Thread breadcrumb"
-        className="flex-1 overflow-clip [overflow-clip-margin:2px]"
-      >
-        {/* The project always leads the header: knowing which project a
+      {aldoThread ? (
+        <span ref={aldoPlaceAnchorRef} className="flex min-w-0 flex-1">
+          <AldoThreadBreadcrumb
+            key={`${activeThreadEnvironmentId}:${activeThreadId}`}
+            title={shownTitle}
+            titleEditor={titleEditor}
+            place={aldoPlace}
+            environmentId={activeThreadEnvironmentId}
+            threadId={activeThreadId}
+            onActions={
+              isServerThread
+                ? (button) => {
+                    const rect = button.getBoundingClientRect();
+                    openMenu({ x: rect.left, y: rect.bottom + 4 });
+                  }
+                : undefined
+            }
+          />
+          {aldoMoves ? (
+            <AldoMoveThreadPicker
+              environmentId={activeThreadEnvironmentId}
+              project={activeProject}
+              onSendMessage={onSendAldoMessage!}
+              open={aldoMoveOpen}
+              onOpenChange={setAldoMoveOpen}
+              anchor={aldoPlaceAnchorRef}
+            />
+          ) : null}
+        </span>
+      ) : (
+        <WorkspaceBreadcrumb
+          ariaLabel="Thread breadcrumb"
+          className="flex-1 overflow-clip [overflow-clip-margin:2px]"
+        >
+          {/* The project always leads the header: knowing which project a
             thread lives in is priority zero, and the thread title alone
             doesn't answer it. */}
-        {activeProject || aldoDraft ? (
-          <>
-            <WorkspaceBreadcrumbItem className="shrink">
-              {aldoMoves && !aldoKeptRepo ? (
-                // A thread in a repository keeps its project menu, whose "Move to…" opens this.
-                <span ref={aldoPlaceAnchorRef} className="inline-flex min-w-0">
-                  {projectControl}
-                  <AldoMoveThreadPicker
-                    environmentId={activeThreadEnvironmentId}
-                    project={activeProject}
-                    onSendMessage={onSendAldoMessage!}
-                    open={aldoMoveOpen}
-                    onOpenChange={setAldoMoveOpen}
-                    anchor={aldoPlaceAnchorRef}
+          {activeProject || aldoDraft ? (
+            <>
+              <WorkspaceBreadcrumbItem className="shrink">{projectControl}</WorkspaceBreadcrumbItem>
+              <WorkspaceBreadcrumbSeparator>
+                <WorkspaceBreadcrumbText>/</WorkspaceBreadcrumbText>
+              </WorkspaceBreadcrumbSeparator>
+            </>
+          ) : null}
+          <WorkspaceBreadcrumbItem current className="min-w-10 flex-1">
+            {renamingTitle !== null ? (
+              titleEditor
+            ) : isServerThread ? (
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <button
+                      ref={titleButtonRef}
+                      type="button"
+                      aria-label={`Thread actions for ${activeThreadTitle}`}
+                      aria-haspopup="menu"
+                      onClick={openMenuFromTitle}
+                      onDoubleClick={handleTitleDoubleClick}
+                      onBlur={cancelPendingTitleMenu}
+                      className="group/thread-title inline-flex min-w-0 max-w-full cursor-pointer items-center gap-1 rounded-sm text-left focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+                    />
+                  }
+                >
+                  <h2 className="min-w-0">
+                    <WorkspaceBreadcrumbText>{activeThreadTitle}</WorkspaceBreadcrumbText>
+                  </h2>
+                  <ChevronDownIcon
+                    aria-hidden
+                    data-thread-title-chevron
+                    className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/thread-title:opacity-100 group-focus-visible/thread-title:opacity-100 max-sm:hidden"
                   />
-                </span>
-              ) : (
-                projectControl
-              )}
-            </WorkspaceBreadcrumbItem>
-            <WorkspaceBreadcrumbSeparator>
-              <WorkspaceBreadcrumbText>/</WorkspaceBreadcrumbText>
-            </WorkspaceBreadcrumbSeparator>
-          </>
-        ) : null}
-        <WorkspaceBreadcrumbItem current className="min-w-10 flex-1">
-          {renamingTitle !== null ? (
-            <input
-              autoFocus
-              aria-label="Thread title"
-              className="min-w-0 flex-1 rounded-sm bg-transparent text-sm font-medium text-foreground outline-none ring-1 ring-ring/50 focus:ring-ring"
-              defaultValue={renamingTitle}
-              onBlur={(event) => {
-                if (renameCommittedRef.current) return;
-                commitRename(event.currentTarget.value);
-              }}
-              onFocus={(event) => event.currentTarget.select()}
-              onKeyDown={handleRenameKeyDown}
-            />
-          ) : isServerThread ? (
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <button
-                    ref={titleButtonRef}
-                    type="button"
-                    aria-label={`Thread actions for ${activeThreadTitle}`}
-                    aria-haspopup="menu"
-                    onClick={openMenuFromTitle}
-                    onDoubleClick={handleTitleDoubleClick}
-                    onBlur={cancelPendingTitleMenu}
-                    className="group/thread-title inline-flex min-w-0 max-w-full cursor-pointer items-center gap-1 rounded-sm text-left focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
-                  />
-                }
-              >
-                <h2 className="min-w-0">
-                  <WorkspaceBreadcrumbText>{activeThreadTitle}</WorkspaceBreadcrumbText>
-                </h2>
-                <ChevronDownIcon
-                  aria-hidden
-                  data-thread-title-chevron
-                  className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/thread-title:opacity-100 group-focus-visible/thread-title:opacity-100 max-sm:hidden"
-                />
-              </TooltipTrigger>
-              <TooltipPopup side="top">{activeThreadTitle}</TooltipPopup>
-            </Tooltip>
-          ) : aldoDraft && aldoDraftTitle === null ? (
-            <h2 className="min-w-0 flex-1 truncate text-muted-foreground/70 text-sm italic">
-              Untitled
-            </h2>
-          ) : (
-            <Tooltip>
-              <TooltipTrigger render={<h2 aria-label={shownTitle} className="min-w-0 flex-1" />}>
-                <WorkspaceBreadcrumbText>{shownTitle}</WorkspaceBreadcrumbText>
-              </TooltipTrigger>
-              <TooltipPopup side="top">{shownTitle}</TooltipPopup>
-            </Tooltip>
-          )}
-        </WorkspaceBreadcrumbItem>
-      </WorkspaceBreadcrumb>
+                </TooltipTrigger>
+                <TooltipPopup side="top">{activeThreadTitle}</TooltipPopup>
+              </Tooltip>
+            ) : aldoDraft && aldoDraftTitle === null ? (
+              <h2 className="min-w-0 flex-1 truncate text-muted-foreground/70 text-sm italic">
+                Untitled
+              </h2>
+            ) : (
+              <Tooltip>
+                <TooltipTrigger render={<h2 aria-label={shownTitle} className="min-w-0 flex-1" />}>
+                  <WorkspaceBreadcrumbText>{shownTitle}</WorkspaceBreadcrumbText>
+                </TooltipTrigger>
+                <TooltipPopup side="top">{shownTitle}</TooltipPopup>
+              </Tooltip>
+            )}
+          </WorkspaceBreadcrumbItem>
+        </WorkspaceBreadcrumb>
+      )}
       <div
         ref={headerActionsRef}
         data-chat-header-actions

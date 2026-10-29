@@ -2,13 +2,11 @@
 // show it again (layers.ts has the history that goes with it). Its scroll, open cards and
 // half-typed message survive a visit to a thread.
 
-import { ChevronLeftIcon } from "lucide-react";
 import { Activity, useEffect, useRef, useState, type ReactNode } from "react";
-import { createPortal } from "react-dom";
 
 import type { ThreadRouteTarget } from "../threadRoutes";
 import { AldoHome } from "./AldoHome";
-import { closeAldoThread, useAldoDrawerOpen } from "./layers";
+import { closeAldoThread } from "./layers";
 import "./layers.css";
 
 /** The slide's length on a phone (layers.css), which Home waits out before it rests. */
@@ -35,7 +33,6 @@ export function AldoLayers({
   readonly thread: (target: ThreadRouteTarget) => ReactNode;
 }) {
   const open = target !== null;
-  const drawer = useAldoDrawerOpen();
   /** The thread that last lay over Home, kept while it slides away. */
   const last = useRef<ThreadRouteTarget | null>(null);
   const [, setLeaving] = useState(false);
@@ -107,19 +104,6 @@ export function AldoLayers({
           {thread(shown)}
         </div>
       ) : null}
-      {open && !drawer
-        ? createPortal(
-            <button
-              type="button"
-              aria-label="Close thread"
-              onClick={closeAldoThread}
-              className="fixed top-[var(--workspace-controls-top)] left-[calc(var(--workspace-controls-left)+2.5rem)] z-40 flex h-[var(--workspace-topbar-height)] w-9 items-center justify-center rounded-md text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring md:hidden"
-            >
-              <ChevronLeftIcon className="size-5" />
-            </button>,
-            document.body,
-          )
-        : null}
     </div>
   );
 }

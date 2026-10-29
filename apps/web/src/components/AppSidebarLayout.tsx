@@ -1,3 +1,4 @@
+import { isThreadPath } from "../aldo/layers";
 import { ManagedDevPcAgentProvider } from "./ManagedDevPcAgent";
 import { useAtomValue } from "@effect/atom-react";
 import * as Schema from "effect/Schema";
@@ -84,6 +85,9 @@ function readInitialThreadSidebarWidth(): number {
 }
 
 function SidebarControl() {
+  const threadOpen = useLocation({
+    select: (location) => isAldoCloud && isThreadPath(location.pathname),
+  });
   const usagePageOpen = useLocation({ select: (location) => location.pathname === "/usage" });
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const { toggleSidebar } = useSidebar();
@@ -129,6 +133,8 @@ function SidebarControl() {
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
   }, [keybindings, toggleSidebar, usagePageOpen]);
+
+  if (threadOpen) return null;
 
   return (
     // The right-side layout controls carry mr-px (border compensation inside

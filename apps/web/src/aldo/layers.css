@@ -6,11 +6,11 @@
   display: flex;
   min-width: 0;
   background: var(--background);
+  --workspace-titlebar-content-left: var(--workspace-gutter-start);
 }
 @media (max-width: 767px) {
   [data-aldo-layer] {
     box-shadow: -12px 0 32px rgb(0 0 0 / 0.14);
-    --workspace-titlebar-content-left: calc(var(--workspace-controls-left) + 5.25rem);
   }
   [data-aldo-layer][data-phase="in"] {
     animation: aldo-layer-in 280ms cubic-bezier(0.32, 0.72, 0, 1) both;
