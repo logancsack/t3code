@@ -25,7 +25,13 @@ export interface WorkReplayScript {
     end: number;
   };
 }
-let startedAt = new Date();
+// The app reads a scripted clock too: timestamps stay stable across polls,
+// and every loop shows the same native elapsed-time labels.
+const wallNow = Date.now;
+let replayNow = wallNow();
+let clockStarted = false;
+let startedAt = new Date(replayNow);
+Date.now = () => replayNow;
 const iso = (offset: number) => new Date(startedAt.getTime() + offset).toISOString();
 const target = { environmentId: demoEnvironmentId, threadId: demoThreadId };
 export function homeFor(script: WorkReplayScript, at: number): AldoHome {
@@ -87,7 +93,11 @@ const contentType: Record<string, string> = {
 };
 let lastSnapshot = "";
 export function applyWorkReplay(script: WorkReplayScript, at: number): void {
-  startedAt = new Date(Date.now() - at);
+  if (!clockStarted) {
+    startedAt = new Date(wallNow() - at);
+    clockStarted = true;
+  }
+  replayNow = startedAt.getTime() + at;
   const finished = at >= script.timing.result;
   const inThread = at >= script.timing.thread && at < script.timing.home;
   const step = script.steps.findLastIndex((s) => at >= s.at);
@@ -204,7 +214,10 @@ export function applyWorkReplay(script: WorkReplayScript, at: number): void {
 
 export function workReplayHistory() {
   return {
-    messages: useAldoAssistant.getState().entries.filter((e) => e.kind === "message"),
+    messages: useAldoAssistant
+      .getState()
+      .entries.filter((e) => e.kind === "message")
+      .map(({ role, text, at, artifacts }) => ({ role, text, at, artifacts })),
     calls: true,
   };
 }
