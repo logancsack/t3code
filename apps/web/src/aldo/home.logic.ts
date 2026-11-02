@@ -46,6 +46,12 @@ export const NEEDS_YOU_LABEL: Record<NeedsYouKind, string> = {
   failed: "Stopped with an error",
 };
 
+/** A computer queue is a normal wait, even if the last agent report said done or failed. */
+export function queuedComputer(c: AldoHomeConversation) {
+  if (c.pending || c.plan || c.computers?.some((one) => one.status === "asked")) return undefined;
+  return c.computers?.find((one) => one.status === "queued");
+}
+
 /**
  * Its machine went to sleep mid-turn, and opening the thread wakes it to
  * carry on: Aldo says so (paused), or an older Aldo's read has it working on
@@ -54,13 +60,15 @@ export const NEEDS_YOU_LABEL: Record<NeedsYouKind, string> = {
  */
 export function isPausedMidTurn(c: AldoHomeConversation): boolean {
   return (
-    c.state === "paused" ||
-    (c.state === "working" && (c.machine === "asleep" || c.machine === "failed"))
+    !queuedComputer(c) &&
+    (c.state === "paused" ||
+      (c.state === "working" && (c.machine === "asleep" || c.machine === "failed")))
   );
 }
 
 /** Why a conversation needs the user, or null if it doesn't. */
 export function needsYouKind(c: AldoHomeConversation): NeedsYouKind | null {
+  if (queuedComputer(c)) return null;
   if (c.state === "failed") return "failed";
   if (isPausedMidTurn(c)) return "paused";
   if (c.state !== "waiting") return null;
@@ -79,7 +87,12 @@ export const WORKING_STATES = new Set(["working", "starting", "queued", "retryin
  * began. A long turn that keeps moving is working, not stuck.
  */
 export function isStuck(c: AldoHomeConversation, now: number): boolean {
-  return c.state === "working" && !isPausedMidTurn(c) && now - Date.parse(c.at) > STUCK_MS;
+  return (
+    !queuedComputer(c) &&
+    c.state === "working" &&
+    !isPausedMidTurn(c) &&
+    now - Date.parse(c.at) > STUCK_MS
+  );
 }
 
 export interface HomeBoard {
@@ -107,10 +120,12 @@ export function boardFor(
       .filter((c) => needsYouKind(c) !== null && (withCleared || !c.chatDecision?.cleared))
       .sort((a, b) => a.at.localeCompare(b.at)),
     working: conversations
-      .filter((c) => WORKING_STATES.has(c.state) && !isPausedMidTurn(c))
+      .filter((c) => (WORKING_STATES.has(c.state) || queuedComputer(c)) && !isPausedMidTurn(c))
       .sort(byAt),
     done: conversations
-      .filter((c) => c.state === "done" && now - Date.parse(c.at) < DONE_WINDOW_MS)
+      .filter(
+        (c) => !queuedComputer(c) && c.state === "done" && now - Date.parse(c.at) < DONE_WINDOW_MS,
+      )
       .sort(byAt),
   };
 }

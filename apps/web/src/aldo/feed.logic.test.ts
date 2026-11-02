@@ -341,6 +341,27 @@ describe("a card for every thread", () => {
     ]);
   });
 
+  it.each([false, true])(
+    "keeps queued work out of finished digests (has action: %s)",
+    (hasAction) => {
+      const c = conversation({
+        state: "done",
+        startedAt: at(40),
+        computers: [{ computer: "gpu", status: "queued", position: 2, creditsPerHour: 310 }],
+      });
+      const home = {
+        ...empty,
+        conversations: [c],
+        actions: hasAction ? [action({ at: at(39) })] : [],
+      };
+      const events = feedEvents(home, quiet);
+      expect(events.some((e) => e.kind === "finished")).toBe(false);
+      expect(cardsOf(events)).toHaveLength(1);
+      const cleared = feedEvents({ ...home, conversations: [{ ...c, computers: [] }] }, quiet);
+      expect(cleared).toMatchObject([{ kind: "finished" }]);
+    },
+  );
+
   it("settles a routine's run into the routine's line", () => {
     const events = feedEvents(
       {

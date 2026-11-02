@@ -18,6 +18,7 @@ import {
   aldoComputerKeptAnswer,
   aldoComputerName,
   aldoComputerNotice,
+  aldoComputerQueueLabel,
   aldoComputers,
   aldoComputerStartOutcome,
   aldoComputerStoppable,
@@ -184,29 +185,35 @@ export function useAldoComputer(
 }
 
 /**
- * While the thread's GPU computer starts or runs, a control in the thread's
- * header says so and stops it (it has no screen, so nothing else shows it).
+ * The thread's GPU request in its header: waiting, starting or running,
+ * with a way to cancel or stop it (it has no screen).
  */
 export function AldoGpuComputerControl(props: { environmentId: string }) {
   const { computer, stopping: isStopping } = useAldoComputer(props.environmentId, "gpu");
   if (!computer || !aldoComputerStoppable(computer)) return null;
   const running = computer.status === "running";
+  const queued = computer.status === "queued";
+  const label = queued
+    ? aldoComputerQueueLabel("gpu", computer.position)
+    : running
+      ? "Your GPU computer is running"
+      : "Your GPU computer is starting";
   return (
     <Menu>
       <MenuTrigger
-        aria-label={running ? "Your GPU computer is running" : "Your GPU computer is starting"}
+        aria-label={label}
         className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <CpuIcon className={running ? "size-3.5 text-info" : "size-3.5 animate-pulse"} />
-        <span className="hidden @3xl/header-actions:inline">GPU</span>
+        <CpuIcon className={running ? "size-3.5 text-info" : "size-3.5"} />
+        <span className="hidden @3xl/header-actions:inline">{queued ? label : "GPU"}</span>
       </MenuTrigger>
       <MenuPopup align="end" className="w-72">
         <div className="space-y-1 px-2 py-2 text-xs text-muted-foreground">
-          <p className="font-medium text-foreground">
-            {running ? "Your GPU computer is running" : "Your GPU computer is starting"}
-          </p>
+          <p className="font-medium text-foreground">{label}</p>
           <p>
-            {aldoComputerAskDescription({ why: null, creditsPerHour: computer.creditsPerHour })}
+            {queued
+              ? "It carries on automatically when the computer is ready."
+              : aldoComputerAskDescription({ why: null, creditsPerHour: computer.creditsPerHour })}
           </p>
         </div>
         <MenuSeparator />
@@ -214,7 +221,14 @@ export function AldoGpuComputerControl(props: { environmentId: string }) {
           disabled={isStopping}
           onClick={() => void stopAldoThreadComputer(props.environmentId, "gpu")}
         >
-          <SquareIcon className="size-3.5" /> {isStopping ? "Stopping…" : "Stop it"}
+          <SquareIcon className="size-3.5" />{" "}
+          {isStopping
+            ? queued
+              ? "Canceling…"
+              : "Stopping…"
+            : queued
+              ? "Cancel request"
+              : "Stop it"}
         </MenuItem>
       </MenuPopup>
     </Menu>
@@ -245,13 +259,16 @@ export function useAldoComputerAsk(environmentId: string, threadId: ThreadId): v
     const description =
       notice === "ask" && computer
         ? aldoComputerAskDescription(computer)
-        : "Your agent hears when it's ready.";
+        : notice === "queued"
+          ? `${aldoComputerQueueLabel(kind, computer?.position)}. It carries on automatically when the computer is ready.`
+          : "Your agent hears when it's ready.";
     // Stopping is offered once Aldo is starting it, not while the answer is on its way.
-    const stoppable = notice === "starting" && aldoComputerStoppable(computer);
+    const stoppable =
+      (notice === "starting" || notice === "queued") && aldoComputerStoppable(computer);
     // A stop that went through takes its toast down (as closed by the user: not offered again
     // while it winds down); one that failed leaves it, to try again.
     const stopAction = (toastId: () => ToastId) => ({
-      children: "Stop",
+      children: notice === "queued" ? "Cancel request" : "Stop",
       onClick: () => {
         void stopAldoThreadComputer(environmentId, kind).then((stopped) => {
           if (stopped) toastManager.close(toastId());
@@ -276,8 +293,11 @@ export function useAldoComputerAsk(environmentId: string, threadId: ThreadId): v
         (current.description !== description || current.stoppable !== stoppable)
       ) {
         toastManager.update(currentId, {
+          ...(notice === "queued"
+            ? { title: aldoComputerQueueLabel(kind, computer?.position) }
+            : {}),
           description,
-          ...(notice === "starting"
+          ...(notice === "starting" || notice === "queued"
             ? { actionProps: stoppable ? stopAction(() => currentId) : hiddenToastActionProps }
             : {}),
         });
@@ -290,7 +310,7 @@ export function useAldoComputerAsk(environmentId: string, threadId: ThreadId): v
       shown.delete(environmentId);
       // How its start ended, when it's still the same computer (not another one asking now).
       const outcome =
-        current.notice === "starting" && current.kind === kind
+        (current.notice === "starting" || current.notice === "queued") && current.kind === kind
           ? aldoComputerStartOutcome(computer)
           : null;
       if (current.id === null) {
@@ -363,7 +383,10 @@ export function useAldoComputerAsk(environmentId: string, threadId: ThreadId): v
           })
         : stackedThreadToast({
             type: "info",
-            title: `Starting your ${name}…`,
+            title:
+              notice === "queued"
+                ? aldoComputerQueueLabel(kind, computer?.position)
+                : `Starting your ${name}…`,
             description,
             timeout: 0,
             ...(stoppable ? { actionProps: stopAction(() => id) } : {}),

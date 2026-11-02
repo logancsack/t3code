@@ -3,6 +3,7 @@
 // board is derived from Aldo's home read and the header and every count come
 // from it, so they can't disagree.
 import type { AldoAssistantPhase } from "./assistant.logic";
+import { aldoComputerQueueLabel } from "./computer.logic";
 import { aldoHiddenFromChat, putAway } from "./decisions.logic";
 import {
   boardFor,
@@ -10,6 +11,7 @@ import {
   dueIn,
   elapsed,
   isStuck,
+  queuedComputer,
   relativeTime,
   sameTarget,
 } from "./home.logic";
@@ -126,7 +128,7 @@ function pullRequestMove(pr: AldoHomePullRequest): Move | null {
 function movedRows(home: AldoHome, now: number, seenAt: number | null) {
   const latest = new Map<string, { c: AldoHomeConversation; move: Move }>();
   for (const c of home.conversations) {
-    if (c.state !== "done" || putAway(c, now)) continue;
+    if (queuedComputer(c) || c.state !== "done" || putAway(c, now)) continue;
     const moves: Move[] = home.pullRequests
       .filter((pr) => sameTarget(pr.thread, c.thread))
       .flatMap((pr) => pullRequestMove(pr) ?? []);
@@ -214,13 +216,18 @@ export function presenceBoard(
   const live = boardFor(home.conversations, now).working;
   const stuck = live.filter((c) => isStuck(c, now)).length;
   const working: PresenceRow[] = live.map((c) => {
+    const queue = queuedComputer(c);
     const quiet = isStuck(c, now);
     const since = elapsed(quiet ? c.at : (c.stateAt ?? c.at), now);
     return {
       key: `working:${c.ref}`,
       title: c.title,
-      detail: quiet ? `No word for ${since}` : `${c.summary ? `${c.summary} · ` : ""}for ${since}`,
-      tone: quiet ? "quiet" : "live",
+      detail: queue
+        ? aldoComputerQueueLabel(queue.computer, queue.position)
+        : quiet
+          ? `No word for ${since}`
+          : `${c.summary ? `${c.summary} · ` : ""}for ${since}`,
+      tone: queue || quiet ? "quiet" : "live",
       target: c.thread,
     };
   });

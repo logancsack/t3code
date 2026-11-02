@@ -22,6 +22,7 @@ import { requestConfirmDialog } from "../confirmDialog";
 import { cn } from "~/lib/utils";
 import { AldoApprovalRules } from "./AldoApprovalRules";
 import { askAldoAbout, ThreadLink } from "./AldoHomeInbox";
+import { aldoComputerQueueLabel } from "./computer.logic";
 import {
   cancelAldoDelivery,
   sendAldoDeliveryNow,
@@ -42,6 +43,7 @@ import {
   isStuck,
   mergeCountdown,
   policyLines,
+  queuedComputer,
   relativeTime,
   repoName,
   shipLanes,
@@ -129,6 +131,7 @@ export function ConversationRow(props: {
   readonly onActed: () => void;
 }) {
   const c = props.conversation;
+  const queue = queuedComputer(c);
   const stuck = isStuck(c, props.now);
   const working = c.state === "working";
   const model = useAldoModelName(c.thread.environmentId, c.model);
@@ -145,7 +148,7 @@ export function ConversationRow(props: {
         aria-hidden
         className={cn(
           "mt-1.5 size-2 shrink-0 rounded-full",
-          c.state === "done"
+          !queue && c.state === "done"
             ? "bg-success"
             : stuck
               ? "bg-warning"
@@ -166,9 +169,11 @@ export function ConversationRow(props: {
             <Badge variant="warning" size="sm">
               stuck
             </Badge>
-          ) : STATE_LABEL[c.state] ? (
+          ) : queue || STATE_LABEL[c.state] ? (
             <Badge variant="outline" size="sm">
-              {STATE_LABEL[c.state]}
+              {queue
+                ? aldoComputerQueueLabel(queue.computer, queue.position)
+                : STATE_LABEL[c.state]}
             </Badge>
           ) : null}
           {c.approvedPlan ? (
@@ -183,7 +188,7 @@ export function ConversationRow(props: {
           {model ? <span>· {model}</span> : null}
           <span>
             ·{" "}
-            {c.state === "done"
+            {!queue && c.state === "done"
               ? `finished ${relativeTime(c.at, props.now)}`
               : `for ${elapsed(c.at, props.now)}`}
           </span>
