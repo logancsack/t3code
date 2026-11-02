@@ -1,4 +1,4 @@
-import { expect, it } from "vite-plus/test";
+import { expect, it, vi } from "vite-plus/test";
 import { isLandingDemo, isWorkReplay } from "./mode";
 
 it("selects local transports only with an explicit demo flag", () => {
@@ -18,4 +18,14 @@ it("selects local transports only with an explicit demo flag", () => {
   const replay = new URL("https://aldo.computer/replay.html?aldoReplay=1");
   expect(isLandingDemo(replay)).toBe(true);
   expect(isWorkReplay(replay)).toBe(true);
+});
+
+it("keeps partial browser bridges out of replay mode", () => {
+  vi.stubGlobal("window", { localStorage: {} });
+  try {
+    expect(isWorkReplay()).toBe(false);
+    expect(isLandingDemo()).toBe(false);
+  } finally {
+    vi.unstubAllGlobals();
+  }
 });
