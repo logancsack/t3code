@@ -1402,6 +1402,23 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         threadId: command.threadId,
       });
+      if (command.continuation) {
+        const latest = targetThread.latestTurn;
+        if (
+          !latest ||
+          latest.turnId !== command.continuation.turnId ||
+          !["completed", "error"].includes(latest.state) ||
+          targetThread.session?.status === "running" ||
+          openRequests(targetThread).size > 0 ||
+          targetThread.proposedPlans.some((plan) => !plan.approvedAt && !plan.implementedAt) ||
+          hasQueuedTurnStartForThread(targetThread, command.createdAt)
+        ) {
+          return yield* new OrchestrationCommandInvariantError({
+            commandType: command.type,
+            detail: "The continuation is stale, still running, or waiting for the user.",
+          });
+        }
+      }
       const sourceProposedPlan = command.sourceProposedPlan;
       const sourceThread = sourceProposedPlan
         ? yield* requireThread({
@@ -1521,6 +1538,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
             ? { modelSelection: command.modelSelection }
             : {}),
           ...(command.titleSeed !== undefined ? { titleSeed: command.titleSeed } : {}),
+          ...(command.continuation ? { continuation: command.continuation } : {}),
           runtimeMode: targetThread.runtimeMode,
           interactionMode: turnInteractionMode,
           ...(sourceProposedPlan !== undefined ? { sourceProposedPlan } : {}),
