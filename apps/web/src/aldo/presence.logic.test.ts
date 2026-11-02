@@ -311,6 +311,28 @@ describe("presenceBoard moved", () => {
 });
 
 describe("presenceBoard working and coming up", () => {
+  it("shows computer waits with their current position, without Needs you, stalled or finished news", () => {
+    const waiting = conversation({
+      state: "done",
+      machine: "asleep",
+      at: ago(120),
+      computers: [{ computer: "windows", status: "queued", position: 2, creditsPerHour: 90 }],
+    });
+    const read = home({ conversations: [waiting] });
+    const b = board(read);
+    expect(b.working.rows).toHaveLength(1);
+    expect(b.working.rows[0]).toMatchObject({
+      detail: "Waiting for Windows · position 2",
+      tone: "quiet",
+    });
+    expect(b.needsYou.rows).toEqual([]);
+    expect(b.moved.rows).toEqual([]);
+    expect(b.stuck).toBe(0);
+    const advanced = home({
+      conversations: [{ ...waiting, computers: [{ ...waiting.computers![0]!, position: 1 }] }],
+    });
+    expect(board(advanced).working.rows[0]!.detail).toBe("Waiting for Windows · position 1");
+  });
   it("says a thread with no word for an hour instead of working", () => {
     const b = board(
       home({
