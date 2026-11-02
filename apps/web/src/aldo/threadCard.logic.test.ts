@@ -1,6 +1,7 @@
 import { expect, it } from "vite-plus/test";
 
 import type { AldoHome, AldoHomeConversation, AldoHomeDelivery } from "./homeApi";
+import { boardFor, needsYouKind, isPausedMidTurn, isStuck } from "./home.logic";
 import { clockAt, stalledOf, threadCardOf } from "./threadCard.logic";
 
 const now = Date.parse("2026-10-24T20:30:00Z");
@@ -143,4 +144,40 @@ it("says what each other state is, and asks the user only for what waits on them
       at: ago(12 * 60_000),
     }).status,
   ).toBe("Question · 12 min");
+});
+
+it("a sleeping Windows waiter is quiet, shows its position, and needs no Continue or approval", () => {
+  for (const state of ["queued", "working", "failed", "paused", "done"]) {
+    const c = conversation({
+      state,
+      machine: "asleep",
+      at: ago(2 * HOUR),
+      computers: [{ computer: "windows", status: "queued", position: 2, creditsPerHour: 90 }],
+    });
+    const view = threadCardOf(homeWith(), c, now);
+    expect(view).toMatchObject({
+      tone: "quiet",
+      dot: "quiet",
+      status: "Waiting for Windows · position 2",
+      action: null,
+    });
+    expect(stalledOf(homeWith(), c, now)).toBeNull();
+    expect(needsYouKind(c)).toBeNull();
+    expect(isPausedMidTurn(c)).toBe(false);
+    expect(isStuck(c, now)).toBe(false);
+    expect(boardFor([c], now)).toMatchObject({ needsYou: [], done: [], working: [c] });
+  }
+});
+
+it("queue position follows the server and an actual approval still needs the user", () => {
+  const queued = conversation({
+    state: "queued",
+    computers: [{ computer: "gpu", status: "queued", position: 1, creditsPerHour: 310 }],
+  });
+  expect(threadCardOf(homeWith(), queued, now).status).toBe("Waiting for GPU · position 1");
+  const asking = conversation({
+    state: "waiting",
+    computers: [{ computer: "windows", status: "asked", creditsPerHour: 90 }],
+  });
+  expect(needsYouKind(asking)).toBe("waiting");
 });

@@ -90,6 +90,7 @@ export interface AldoHomeConversation {
   /** Computers requested by this conversation (older Aldo reads may omit the request time). */
   readonly computers?: ReadonlyArray<{
     readonly computer: string;
+    readonly position?: number;
     readonly status: string;
     readonly why?: string;
     readonly askedAt?: string;

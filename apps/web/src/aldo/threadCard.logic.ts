@@ -5,9 +5,11 @@
 // hasn't reached it) says so and offers Continue. Pure, so it's tested on its
 // own.
 
+import { aldoComputerQueueLabel } from "./computer.logic";
 import { type AldoHome, type AldoHomeConversation } from "./homeApi";
 import {
   elapsed,
+  queuedComputer,
   healthIssues,
   isPausedMidTurn,
   isStuck,
@@ -40,6 +42,7 @@ export function stalledOf(
   c: AldoHomeConversation,
   now: number,
 ): Stalled | null {
+  if (queuedComputer(c)) return null;
   const held = home.upcoming.find(
     (d) =>
       d.kind === "message" &&
@@ -106,6 +109,15 @@ export function threadCardOf(
   c: AldoHomeConversation,
   now: number,
 ): ThreadCardView {
+  const queue = queuedComputer(c);
+  if (queue)
+    return {
+      tone: "quiet",
+      dot: "quiet",
+      status: aldoComputerQueueLabel(queue.computer, queue.position),
+      body: "It carries on automatically when the computer is ready.",
+      action: null,
+    };
   const since = c.stateAt ?? c.at;
   const stalled = stalledOf(home, c, now);
   if (stalled) {

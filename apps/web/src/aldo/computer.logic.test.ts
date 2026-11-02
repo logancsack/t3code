@@ -2,6 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   aldoComputerToastThread,
+  aldoComputerQueueLabel,
   aldoComputerAskDescription,
   aldoComputerKeptAnswer,
   aldoComputerName,
@@ -181,4 +182,11 @@ describe("aldoComputerName", () => {
     expect(aldoComputerName({ kind: "mac" })).toBe("computer");
     expect(aldoComputerName(null)).toBe("computer");
   });
+});
+
+it("queued computers show a cancellable normal wait, with position optional for older servers", () => {
+  expect(aldoComputerNotice(computer("queued", { position: 3 }), undefined)).toBe("queued");
+  expect(aldoComputerStoppable(computer("queued"))).toBe(true);
+  expect(aldoComputerQueueLabel("windows", 3)).toBe("Waiting for Windows · position 3");
+  expect(aldoComputerQueueLabel("windows")).toBe("Waiting for Windows");
 });

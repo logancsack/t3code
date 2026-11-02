@@ -18,6 +18,7 @@ import {
   aldoComputerKeptAnswer,
   aldoComputerName,
   aldoComputerNotice,
+  aldoComputerQueueLabel,
   aldoComputers,
   aldoComputerStartOutcome,
   aldoComputerStoppable,
@@ -245,13 +246,16 @@ export function useAldoComputerAsk(environmentId: string, threadId: ThreadId): v
     const description =
       notice === "ask" && computer
         ? aldoComputerAskDescription(computer)
-        : "Your agent hears when it's ready.";
+        : notice === "queued"
+          ? `${aldoComputerQueueLabel(kind, computer?.position)}. It carries on automatically when the computer is ready.`
+          : "Your agent hears when it's ready.";
     // Stopping is offered once Aldo is starting it, not while the answer is on its way.
-    const stoppable = notice === "starting" && aldoComputerStoppable(computer);
+    const stoppable =
+      (notice === "starting" || notice === "queued") && aldoComputerStoppable(computer);
     // A stop that went through takes its toast down (as closed by the user: not offered again
     // while it winds down); one that failed leaves it, to try again.
     const stopAction = (toastId: () => ToastId) => ({
-      children: "Stop",
+      children: notice === "queued" ? "Cancel request" : "Stop",
       onClick: () => {
         void stopAldoThreadComputer(environmentId, kind).then((stopped) => {
           if (stopped) toastManager.close(toastId());
@@ -276,8 +280,11 @@ export function useAldoComputerAsk(environmentId: string, threadId: ThreadId): v
         (current.description !== description || current.stoppable !== stoppable)
       ) {
         toastManager.update(currentId, {
+          ...(notice === "queued"
+            ? { title: aldoComputerQueueLabel(kind, computer?.position) }
+            : {}),
           description,
-          ...(notice === "starting"
+          ...(notice === "starting" || notice === "queued"
             ? { actionProps: stoppable ? stopAction(() => currentId) : hiddenToastActionProps }
             : {}),
         });
@@ -363,7 +370,10 @@ export function useAldoComputerAsk(environmentId: string, threadId: ThreadId): v
           })
         : stackedThreadToast({
             type: "info",
-            title: `Starting your ${name}…`,
+            title:
+              notice === "queued"
+                ? aldoComputerQueueLabel(kind, computer?.position)
+                : `Starting your ${name}…`,
             description,
             timeout: 0,
             ...(stoppable ? { actionProps: stopAction(() => id) } : {}),

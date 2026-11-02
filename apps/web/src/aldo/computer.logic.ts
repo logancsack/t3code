@@ -9,6 +9,7 @@
 // the thread machine's own, and the user can stop either.
 
 export type AldoComputerStatus =
+  | "queued"
   | "asked"
   | "new"
   | "starting"
@@ -23,6 +24,7 @@ export type AldoComputerKind = "windows" | "gpu";
 export interface AldoComputer {
   readonly kind: AldoComputerKind | (string & {});
   readonly status: AldoComputerStatus;
+  readonly position?: number;
   /** The agent's one-line reason, while it asks. */
   readonly why: string | null;
   readonly creditsPerHour: number;
@@ -48,8 +50,14 @@ export function aldoComputerName(computer: Pick<AldoComputer, "kind"> | null | u
   return "computer";
 }
 
+/** Plain status shared by the thread and Home. Older servers omit the position. */
+export function aldoComputerQueueLabel(kind: string, position?: number): string {
+  const name = kind === "windows" ? "Windows" : kind === "gpu" ? "GPU" : kind;
+  return `Waiting for ${name}${position === undefined ? "" : ` · position ${position}`}`;
+}
+
 /** What a thread shows about its computer: the ask, "Starting…", or nothing. */
-export type AldoComputerNotice = "ask" | "starting" | null;
+export type AldoComputerNotice = "ask" | "starting" | "queued" | null;
 
 /**
  * What a thread shows about its computer. `answer` is this tab's answer to the
@@ -65,12 +73,17 @@ export function aldoComputerNotice(
     if (answer === undefined) return "ask";
     return answer ? "starting" : null;
   }
+  if (computer?.status === "queued") return "queued";
   return computer?.status === "starting" ? "starting" : null;
 }
 
 /** Whether the user can stop the computer: while it starts or runs. */
 export function aldoComputerStoppable(computer: AldoComputer | null | undefined): boolean {
-  return computer?.status === "starting" || computer?.status === "running";
+  return (
+    computer?.status === "starting" ||
+    computer?.status === "running" ||
+    computer?.status === "queued"
+  );
 }
 
 /** This tab's answer to an ask, while the directory still reports the ask; once it doesn't, a new ask is asked again. */
