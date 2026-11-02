@@ -1355,6 +1355,8 @@ export const ThreadTurnStartCommand = Schema.Struct({
   ),
   bootstrap: Schema.optional(ThreadTurnStartBootstrap),
   sourceProposedPlan: Schema.optional(SourceProposedPlanReference),
+  /** Resume a settled turn on a fresh provider session, retaining this thread. */
+  continuation: Schema.optional(Schema.Struct({ turnId: TurnId })),
   createdAt: IsoDateTime,
 });
 
@@ -1375,6 +1377,8 @@ const ClientThreadTurnStartCommand = Schema.Struct({
   interactionMode: ProviderInteractionMode,
   bootstrap: Schema.optional(ThreadTurnStartBootstrap),
   sourceProposedPlan: Schema.optional(SourceProposedPlanReference),
+  /** Resume a settled turn on a fresh provider session, retaining this thread. */
+  continuation: Schema.optional(Schema.Struct({ turnId: TurnId })),
   createdAt: IsoDateTime,
 });
 
@@ -1973,6 +1977,8 @@ export const ThreadTurnStartRequestedPayload = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_PROVIDER_INTERACTION_MODE)),
   ),
   sourceProposedPlan: Schema.optional(SourceProposedPlanReference),
+  /** Resume a settled turn on a fresh provider session, retaining this thread. */
+  continuation: Schema.optional(Schema.Struct({ turnId: TurnId })),
   createdAt: IsoDateTime,
 });
 

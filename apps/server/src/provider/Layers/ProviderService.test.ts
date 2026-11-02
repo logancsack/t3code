@@ -1225,6 +1225,37 @@ const antigravityInstanceRouting = makeProviderServiceLayer({
 });
 antigravityInstanceRouting.layer("ProviderServiceLive instance-owned conversations", (it) => {
   it.effect(
+    "explicit fresh continuation discards incompatible persisted and supplied resume state",
+    () =>
+      Effect.gen(function* () {
+        const provider = yield* ProviderService.ProviderService;
+        const directory = yield* ProviderSessionDirectory.ProviderSessionDirectory;
+        const threadId = asThreadId("fresh-cross-instance");
+        yield* directory.upsert({
+          threadId,
+          provider: antigravityDriver,
+          providerInstanceId: originalAntigravityInstanceId,
+          status: "stopped",
+          runtimeMode: "approval-required",
+          resumeCursor: { sessionId: "old-native-session" },
+        });
+        replacementAntigravity.startSession.mockClear();
+        yield* provider.startSession(threadId, {
+          threadId,
+          providerInstanceId: replacementAntigravityInstanceId,
+          cwd: fixtureCwd("fresh"),
+          runtimeMode: "approval-required",
+          fresh: true,
+          resumeCursor: { sessionId: "also-incompatible" },
+        });
+        assert.equal(
+          replacementAntigravity.startSession.mock.calls[0]?.[0].resumeCursor,
+          undefined,
+        );
+        yield* provider.stopSession({ threadId });
+      }),
+  );
+  it.effect(
     "does not replace a native conversation with another instance or a removed-instance fallback",
     () =>
       Effect.gen(function* () {

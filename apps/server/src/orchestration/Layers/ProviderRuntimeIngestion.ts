@@ -572,6 +572,7 @@ export function runtimeEventToActivities(
           payload: {
             message: truncateDetail(event.payload.message),
             ...(event.payload.code ? { code: event.payload.code } : {}),
+            ...(event.payload.class ? { class: event.payload.class } : {}),
           },
           turnId: toTurnId(event.turnId) ?? null,
           ...maybeSequence,

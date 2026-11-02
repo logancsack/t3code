@@ -608,6 +608,7 @@ export const ServerConfig = Schema.Struct({
   shellRevealInFileManagerKind: Schema.optionalKey(FileManagerRevealKind),
   /** Whether thread subscriptions can emit an opt-in catch-up completion marker. */
   threadResumeCompletionMarker: Schema.optionalKey(Schema.Boolean),
+  threadProviderContinuation: Schema.optionalKey(Schema.Boolean),
   /**
    * Whether thread detail reads accept a turn window (`turnLimit`/
    * `beforeCursor`) and return `page` metadata. Clients must not send window
