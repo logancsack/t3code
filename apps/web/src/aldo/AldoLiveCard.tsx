@@ -18,6 +18,7 @@ import { ContinueButton } from "./AldoContinue";
 import { cn } from "~/lib/utils";
 import { mergeFollowedPullRequest, TONE_VARIANT } from "./AldoHomeBoard";
 import { askAldoAbout, ThreadLink } from "./AldoHomeInbox";
+import { aldoComputerQueueLabel } from "./computer.logic";
 import {
   type AldoHome,
   type AldoHomeConversation,
@@ -41,6 +42,7 @@ import {
   elapsed,
   isStuck,
   needsYouKind,
+  queuedComputer,
   relativeTime,
   sameTarget,
   shipLaneOf,
@@ -88,15 +90,17 @@ export function StateDot(props: {
       aria-hidden
       className={cn(
         "size-2 shrink-0 rounded-full",
-        kind === "failed"
-          ? "bg-destructive"
-          : kind || isStuck(c, props.now)
-            ? "bg-warning"
-            : WORKING_STATES.has(c.state)
-              ? "animate-pulse bg-primary"
-              : c.state === "done"
-                ? "bg-success"
-                : "bg-muted-foreground/50",
+        queuedComputer(c)
+          ? "bg-muted-foreground/50"
+          : kind === "failed"
+            ? "bg-destructive"
+            : kind || isStuck(c, props.now)
+              ? "bg-warning"
+              : WORKING_STATES.has(c.state)
+                ? "animate-pulse bg-primary"
+                : c.state === "done"
+                  ? "bg-success"
+                  : "bg-muted-foreground/50",
         props.className,
       )}
     />
@@ -105,6 +109,8 @@ export function StateDot(props: {
 
 /** How long it's been at what it's doing: "for 4 min", "waiting 12 min", "finished 1 h ago". */
 export function stateSince(c: AldoHomeConversation, now: number): string {
+  const queue = queuedComputer(c);
+  if (queue) return aldoComputerQueueLabel(queue.computer, queue.position);
   if (needsYouKind(c)) return `waiting ${elapsed(c.at, now)}`;
   if (c.state === "done") return `finished ${relativeTime(c.at, now)}`;
   return `for ${elapsed(c.stateAt ?? c.at, now)}`;
@@ -313,7 +319,7 @@ export function AldoThreadCard(props: {
   const conversation = home?.conversations.find((c) => sameTarget(c.thread, props.target));
   if (!home || !conversation) return props.fallback;
   const c = conversation;
-  if (c.state === "done") return <SettledRow conversation={c} now={now} />;
+  if (c.state === "done" && !queuedComputer(c)) return <SettledRow conversation={c} now={now} />;
   const view = threadCardOf(home, c, now);
   const stalled = stalledOf(home, c, now);
   const kind = needsYouKind(c);

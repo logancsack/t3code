@@ -185,29 +185,35 @@ export function useAldoComputer(
 }
 
 /**
- * While the thread's GPU computer starts or runs, a control in the thread's
- * header says so and stops it (it has no screen, so nothing else shows it).
+ * The thread's GPU request in its header: waiting, starting or running,
+ * with a way to cancel or stop it (it has no screen).
  */
 export function AldoGpuComputerControl(props: { environmentId: string }) {
   const { computer, stopping: isStopping } = useAldoComputer(props.environmentId, "gpu");
   if (!computer || !aldoComputerStoppable(computer)) return null;
   const running = computer.status === "running";
+  const queued = computer.status === "queued";
+  const label = queued
+    ? aldoComputerQueueLabel("gpu", computer.position)
+    : running
+      ? "Your GPU computer is running"
+      : "Your GPU computer is starting";
   return (
     <Menu>
       <MenuTrigger
-        aria-label={running ? "Your GPU computer is running" : "Your GPU computer is starting"}
+        aria-label={label}
         className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <CpuIcon className={running ? "size-3.5 text-info" : "size-3.5 animate-pulse"} />
-        <span className="hidden @3xl/header-actions:inline">GPU</span>
+        <CpuIcon className={running ? "size-3.5 text-info" : "size-3.5"} />
+        <span className="hidden @3xl/header-actions:inline">{queued ? label : "GPU"}</span>
       </MenuTrigger>
       <MenuPopup align="end" className="w-72">
         <div className="space-y-1 px-2 py-2 text-xs text-muted-foreground">
-          <p className="font-medium text-foreground">
-            {running ? "Your GPU computer is running" : "Your GPU computer is starting"}
-          </p>
+          <p className="font-medium text-foreground">{label}</p>
           <p>
-            {aldoComputerAskDescription({ why: null, creditsPerHour: computer.creditsPerHour })}
+            {queued
+              ? "It carries on automatically when the computer is ready."
+              : aldoComputerAskDescription({ why: null, creditsPerHour: computer.creditsPerHour })}
           </p>
         </div>
         <MenuSeparator />
@@ -215,7 +221,14 @@ export function AldoGpuComputerControl(props: { environmentId: string }) {
           disabled={isStopping}
           onClick={() => void stopAldoThreadComputer(props.environmentId, "gpu")}
         >
-          <SquareIcon className="size-3.5" /> {isStopping ? "Stopping…" : "Stop it"}
+          <SquareIcon className="size-3.5" />{" "}
+          {isStopping
+            ? queued
+              ? "Canceling…"
+              : "Stopping…"
+            : queued
+              ? "Cancel request"
+              : "Stop it"}
         </MenuItem>
       </MenuPopup>
     </Menu>

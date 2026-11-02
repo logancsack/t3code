@@ -26,7 +26,7 @@ import {
 import { putAway, type AldoPlaceable } from "./decisions.logic";
 import { settledPayments } from "./payments.logic";
 import { openPlans, type AldoPlan } from "./plans.logic";
-import { sameTarget } from "./home.logic";
+import { queuedComputer, sameTarget } from "./home.logic";
 
 /** How far back the conversation shows what happened: as long as the board kept done threads. */
 const FEED_WINDOW_MS = 2 * 24 * 60 * 60 * 1000;
@@ -164,11 +164,12 @@ export function feedEvents(
       ? { id: c.routine, title: home.routines?.find((r) => r.id === c.routine)?.title ?? c.title }
       : undefined;
   const checked = (c: AldoHomeConversation) => checks.some((check) => sameTarget(check, c.thread));
+  const isFinished = (c: AldoHomeConversation) => c.state === "done" && !queuedComputer(c);
   // Where a thread's card is: its start, from a server that says it.
   const startOf = (c: AldoHomeConversation) =>
     within(c.startedAt) && !checked(c) && !putAway(c, options.now) ? c.startedAt : null;
   const finished: AldoFeedEvent[] = home.conversations
-    .filter((c) => c.state === "done" && !putAway(c, options.now) && !checked(c))
+    .filter((c) => isFinished(c) && !putAway(c, options.now) && !checked(c))
     .flatMap((c): AldoFeedEvent[] => {
       const start = startOf(c);
       const ended = c.stateAt ?? c.at;
@@ -187,7 +188,7 @@ export function feedEvents(
       ];
     });
   const threads: AldoFeedEvent[] = home.conversations.flatMap((c) => {
-    const start = c.state === "done" ? null : startOf(c);
+    const start = isFinished(c) ? null : startOf(c);
     return start ? [{ kind: "thread", key: `thread:${c.ref}`, at: start, conversation: c }] : [];
   });
   const shipped: AldoFeedEvent[] = merged
@@ -217,7 +218,7 @@ export function feedEvents(
   };
   const settled = (thread: AldoHomeTarget | null) => {
     const c = conversationAt(thread);
-    return c?.state === "done" && startOf(c) !== null;
+    return c !== undefined && isFinished(c) && startOf(c) !== null;
   };
   const shown = home.actions
     .filter((a) => SHOWN_ACTIONS.has(a.tool) && !a.failed && within(a.at))
@@ -226,7 +227,7 @@ export function feedEvents(
     .filter((a) => !(STARTS.has(a.tool) && settled(a.thread)));
   const going = (thread: AldoHomeAction["thread"]) =>
     thread !== null &&
-    home.conversations.some((c) => sameTarget(thread, c.thread) && c.state !== "done");
+    home.conversations.some((c) => sameTarget(thread, c.thread) && !isFinished(c));
   const actions: AldoFeedEvent[] = shown.map((a, index) => ({
     kind: "action",
     key: `action:${a.id}`,
