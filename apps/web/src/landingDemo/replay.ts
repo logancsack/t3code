@@ -10,6 +10,7 @@ window.fetch = async (input, init) => {
   if (method !== "GET") return new Response("{}", { status: 404 });
   const path = new URL(input instanceof Request ? input.url : String(input), location.href)
     .pathname;
+  if (path === "/.well-known/t3/environment") return json(workReplayConfig().environment);
   if (path === "/api/assistant/tools")
     return json({
       tools: [],
@@ -55,7 +56,7 @@ window.fetch = async (input, init) => {
   return new Response("{}", { status: 404, headers: { "content-type": "application/json" } });
 };
 
-const { workReplaySnapshots } = await import("./runtime");
+const { workReplaySnapshots, workReplayConfig } = await import("./runtime");
 const { homeFor, applyWorkReplay, workReplayHistory } = await import("./workReplay");
 const home = () => (frame ? homeFor(frame.script, frame.at) : null);
 window.dispatchEvent(new Event("aldo:replay-transport"));

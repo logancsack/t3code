@@ -49,6 +49,13 @@ window.addEventListener("vite:preloadError", (event) => {
   }
 });
 
+function WorkReplayMounted() {
+  React.useEffect(() => {
+    parent.postMessage({ type: "aldo:replay-mounted" }, "*");
+  }, []);
+  return null;
+}
+
 async function renderApp() {
   if (isWorkReplay()) await (await import("./landingDemo/replay")).startWorkReplay();
   installPrismGlass();
@@ -116,6 +123,7 @@ async function renderApp() {
   if (!chunkLoadFailed) clearChunkReloadGuard();
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <React.StrictMode>
+      {isWorkReplay() && <WorkReplayMounted />}
       {ManagedAuthShell && clerkPublishableKey ? (
         <ManagedAuthShell publishableKey={clerkPublishableKey}>{app}</ManagedAuthShell>
       ) : (

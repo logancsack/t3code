@@ -1,5 +1,5 @@
 import { setActiveEnvironmentId } from "../state/entities";
-import { EventId, MessageId, TurnId } from "@t3tools/contracts";
+import { EventId, MessageId, TurnId, ProviderInstanceId } from "@t3tools/contracts";
 import type { AldoHome } from "../aldo/homeApi";
 import { useAldoAssistant, type AldoConversationEntry } from "../aldo/assistantSession";
 import { useAldoHomeFeed, useAldoHomeReadAt } from "../aldo/homeFeed";
@@ -122,9 +122,12 @@ export function applyWorkReplay(script: WorkReplayScript, at: number): void {
         : script.reply,
       at: iso(1000),
       artifacts: finished
-        ? script.files.slice(0, fileCount).map((f) => ({
+        ? script.files.slice(0, fileCount).map((f, i) => ({
             kind: "file",
-            url: f.href,
+            url: `/s/replay_${script.id
+              .slice(0, 16)
+              .replace(/[^a-z0-9_-]/gi, "_")
+              .padEnd(16, "_")}_${i}`,
             title: f.title,
             contentType: contentType[f.type] ?? "application/octet-stream",
           }))
@@ -185,7 +188,8 @@ export function applyWorkReplay(script: WorkReplayScript, at: number): void {
       session: {
         threadId: demoThreadId,
         status: finished ? "ready" : "running",
-        providerName: "Codex",
+        providerName: "codex",
+        providerInstanceId: ProviderInstanceId.make("codex"),
         runtimeMode: "full-access",
         activeTurnId: finished ? null : turnId,
         lastError: null,

@@ -589,6 +589,17 @@ export function setWorkReplayThread(
   projectTitle: string,
 ) {
   Object.assign(demoServerConfig, {
+    auth: {
+      policy: "unsafe-no-auth",
+      bootstrapMethods: [],
+      sessionMethods: [],
+      sessionCookieName: "replay",
+    },
+    environment: {
+      ...demoServerConfig.environment,
+      environmentId: demoEnvironmentId,
+      platform: { os: "linux", arch: "x64", machine: "server" },
+    },
     providers: demoServerConfig.providers.map((provider) => ({
       ...provider,
       displayName: "Codex",
@@ -605,7 +616,11 @@ export function setWorkReplayThread(
       ],
     })),
   });
-  project = { ...project, title: projectTitle };
+  project = {
+    ...project,
+    title: projectTitle,
+    defaultModelSelection: { instanceId: demoProviderId, model: "gpt-6.1-sol" },
+  };
   thread = {
     ...thread,
     ...next,
@@ -617,4 +632,8 @@ export function setWorkReplayThread(
 
 export function workReplaySnapshots() {
   return { shell: shellSnapshot(), detail: threadSnapshot() };
+}
+
+export function workReplayConfig() {
+  return demoServerConfig;
 }
