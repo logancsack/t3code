@@ -24,6 +24,8 @@
           },
         });
       }
+      // Cross-tab channels are unavailable to an opaque, isolated replay.
+      Object.defineProperty(window, "BroadcastChannel", { value: undefined });
       Object.defineProperty(navigator, "serviceWorker", { value: undefined });
       localStorage.setItem("aldo:presence:seen", String(Date.now() + 86400000));
       Object.defineProperty(document, "cookie", { get: () => "", set: () => {} });
