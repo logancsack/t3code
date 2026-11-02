@@ -72,6 +72,7 @@ let files: Record<string, string> = { ...initialFiles };
 let snapshotSequence = 1;
 let nextId = 1;
 const previewListeners = new Set<() => void>();
+const shellListeners = new Set<(item: OrchestrationShellStreamItem) => void>();
 const threadListeners = new Set<(item: OrchestrationThreadStreamItem) => void>();
 
 const welcomeMessage: OrchestrationMessage = {
@@ -117,7 +118,7 @@ let thread: OrchestrationThread = {
   },
 };
 
-const project: OrchestrationProjectShell = {
+let project: OrchestrationProjectShell = {
   id: demoProjectId,
   title: "Northstar landing page",
   workspaceRoot: "/demo/northstar",
@@ -202,7 +203,7 @@ function subscribeShell(): Stream.Stream<OrchestrationShellStreamItem> {
       { kind: "snapshot", snapshot: shellSnapshot() },
       { kind: "synchronized" },
     ]),
-    Stream.never,
+    callbackStream(shellListeners),
   );
 }
 
@@ -580,4 +581,40 @@ export function getDemoPreviewDocument() {
 export function resetDemoFiles() {
   files = { ...initialFiles };
   for (const listener of previewListeners) listener();
+}
+
+/** Feed the stock sidebar and ChatView the replay's local server snapshot. */
+export function setWorkReplayThread(
+  next: Pick<OrchestrationThread, "title" | "messages" | "activities" | "latestTurn" | "session">,
+  projectTitle: string,
+) {
+  Object.assign(demoServerConfig, {
+    providers: demoServerConfig.providers.map((provider) => ({
+      ...provider,
+      displayName: "Codex",
+      badgeLabel: "Codex",
+      models: [
+        {
+          slug: "gpt-6.1-sol",
+          name: "GPT-6.1 Sol",
+          shortName: "GPT-6.1 Sol",
+          isCustom: false,
+          isDefault: true,
+          capabilities: null,
+        },
+      ],
+    })),
+  });
+  project = { ...project, title: projectTitle };
+  thread = {
+    ...thread,
+    ...next,
+    modelSelection: { instanceId: demoProviderId, model: "gpt-6.1-sol" },
+  };
+  broadcastThread();
+  for (const listener of shellListeners) listener({ kind: "snapshot", snapshot: shellSnapshot() });
+}
+
+export function workReplaySnapshots() {
+  return { shell: shellSnapshot(), detail: threadSnapshot() };
 }

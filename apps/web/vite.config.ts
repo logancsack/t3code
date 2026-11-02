@@ -414,6 +414,7 @@ export default defineConfig(() => {
       manifest: true,
       sourcemap: buildSourcemap,
       rolldownOptions: {
+        ...(aldoCloud ? { input: { index: "index.html", replay: "replay.html" } } : {}),
         output: {
           codeSplitting: {
             // What the first screen loads goes in one chunk rather than a

@@ -83,7 +83,7 @@ import {
 import { readProject, setActiveEnvironmentId, useActiveEnvironmentId } from "../state/entities";
 import { useRightPanelStore } from "../rightPanelStore";
 import { demoEnvironmentId, demoThreadId } from "../landingDemo/runtime";
-import { isLandingDemo } from "../landingDemo/mode";
+import { isLandingDemo, isWorkReplay } from "../landingDemo/mode";
 import {
   createKeybindingsUpdateToastController,
   type KeybindingsUpdateToastController,
@@ -297,7 +297,7 @@ function LandingDemoBootstrap() {
   const started = useRef(false);
 
   useEffect(() => {
-    if (!isLandingDemo() || started.current) return;
+    if (!isLandingDemo() || isWorkReplay() || started.current) return;
     if (!environments.some((environment) => environment.environmentId === demoEnvironmentId))
       return;
     started.current = true;
