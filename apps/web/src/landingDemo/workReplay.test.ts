@@ -29,7 +29,8 @@ it.live(
       };
       for (const at of [0, 7200.2, 20500.75, 30000.1, 0.3]) {
         applyWorkReplay(script, at);
-        expect(Number.isInteger(Date.now())).toBe(true);
+        const browserTime = yield* Effect.sync(Date.now);
+        expect(Number.isInteger(browserTime)).toBe(true);
         expect(typeof (yield* Clock.currentTimeNanos)).toBe("bigint");
       }
     }),
