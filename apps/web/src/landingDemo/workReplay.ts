@@ -122,12 +122,9 @@ export function applyWorkReplay(script: WorkReplayScript, at: number): void {
         : script.reply,
       at: iso(1000),
       artifacts: finished
-        ? script.files.slice(0, fileCount).map((f, i) => ({
+        ? script.files.slice(0, fileCount).map((f) => ({
             kind: "file",
-            url: `/s/replay_${script.id
-              .slice(0, 16)
-              .replace(/[^a-z0-9_-]/gi, "_")
-              .padEnd(16, "_")}_${i}`,
+            url: f.href,
             title: f.title,
             contentType: contentType[f.type] ?? "application/octet-stream",
           }))

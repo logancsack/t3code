@@ -27,6 +27,28 @@
       Object.defineProperty(navigator, "serviceWorker", { value: undefined });
       localStorage.setItem("aldo:presence:seen", String(Date.now() + 86400000));
       Object.defineProperty(document, "cookie", { get: () => "", set: () => {} });
+      // Stock auto-follow may scroll ancestor frames. Keep it inside this
+      // passive window; focusing and page scrolling belong to the landing page.
+      Element.prototype.scrollIntoView = function (options) {
+        for (
+          let node = this.parentElement;
+          node && node !== document.body;
+          node = node.parentElement
+        ) {
+          if (!/(auto|scroll)/.test(getComputedStyle(node).overflowY)) continue;
+          const item = this.getBoundingClientRect(),
+            area = node.getBoundingClientRect();
+          const block = options?.block;
+          const top =
+            block === "end"
+              ? item.bottom - area.bottom
+              : block === "nearest"
+                ? Math.min(0, item.top - area.top) + Math.max(0, item.bottom - area.bottom)
+                : item.top - area.top;
+          node.scrollBy({ top, behavior: options?.behavior ?? "instant" });
+          break;
+        }
+      };
       window.fetch = (...args) =>
         new Promise((resolve) => {
           window.addEventListener("aldo:replay-transport", () => resolve(window.fetch(...args)), {
@@ -35,7 +57,7 @@
         });
     </script>
   </head>
-  <body>
+  <body inert>
     <div id="root"></div>
     <script type="module" src="/src/aldo/bootstrap.ts"></script>
   </body>

@@ -490,6 +490,8 @@ const streamingMethods = new Set<string>([
 const client = new Proxy(
   {
     [WS_METHODS.serverGetConfig]: () => Effect.succeed(demoServerConfig),
+    [WS_METHODS.serverRefreshProviders]: () =>
+      Effect.succeed({ providers: demoServerConfig.providers }),
     [WS_METHODS.serverProbe]: () => Effect.succeed({}),
     [WS_METHODS.assetsCreateUrl]: () =>
       Effect.succeed({ relativeUrl: "/favicon.ico", expiresAt: 4_102_444_800_000 }),
