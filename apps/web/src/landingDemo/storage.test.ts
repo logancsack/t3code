@@ -1,9 +1,14 @@
-import { expect, it, vi, afterEach } from "@effect/vitest";
+import { expect, it, afterEach } from "@effect/vitest";
+import { vi } from "vite-plus/test";
 import { ConnectionTargetStore, EnvironmentCacheStore } from "@t3tools/client-runtime/platform";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { ServerConfig } from "@t3tools/contracts";
+vi.mock("./mode", async (original) => ({
+  ...(await original<typeof import("./mode")>()),
+  isWorkReplay: () => true,
+}));
 import {
   demoEnvironmentId,
   demoThreadId,

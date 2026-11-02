@@ -63,8 +63,6 @@ window.dispatchEvent(new Event("aldo:replay-transport"));
 const { startAldoDirectory } = await import("../aldo/directory");
 const { installAldoShellSync } = await import("../aldo/shells");
 installAldoShellSync();
-const playback = document.createElement("style");
-document.head.append(playback);
 let ready: (() => void) | undefined;
 const firstFrame = new Promise<void>((resolve) => {
   ready = resolve;
@@ -74,7 +72,6 @@ window.addEventListener("message", (event: MessageEvent) => {
   frame = event.data.frame;
   if (!frame) return;
   applyWorkReplay(frame.script, frame.at);
-  playback.textContent = event.data.running ? "" : "* { animation-play-state: paused !important; }";
   if (ready) startAldoDirectory();
   ready?.();
   ready = undefined;

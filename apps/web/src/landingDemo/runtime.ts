@@ -34,6 +34,7 @@ import {
   LANDING_DEMO_ENVIRONMENT_ID,
   LANDING_DEMO_PROJECT_ID,
   LANDING_DEMO_THREAD_ID,
+  isWorkReplay,
 } from "./mode";
 
 export const demoEnvironmentId = EnvironmentId.make(LANDING_DEMO_ENVIRONMENT_ID);
@@ -590,6 +591,31 @@ export function setWorkReplayThread(
   next: Pick<OrchestrationThread, "title" | "messages" | "activities" | "latestTurn" | "session">,
   projectTitle: string,
 ) {
+  project = {
+    ...project,
+    title: projectTitle,
+    defaultModelSelection: { instanceId: demoProviderId, model: "gpt-6.1-sol" },
+  };
+  thread = {
+    ...thread,
+    ...next,
+    modelSelection: { instanceId: demoProviderId, model: "gpt-6.1-sol" },
+  };
+  broadcastThread();
+  for (const listener of shellListeners) listener({ kind: "snapshot", snapshot: shellSnapshot() });
+}
+
+export function workReplaySnapshots() {
+  return { shell: shellSnapshot(), detail: threadSnapshot() };
+}
+
+export function workReplayConfig() {
+  return demoServerConfig;
+}
+
+// Connection discovery can run while the app waits for its first script.
+// Give it the current descriptor/config before any transport starts.
+if (isWorkReplay()) {
   Object.assign(demoServerConfig, {
     auth: {
       policy: "unsafe-no-auth",
@@ -618,24 +644,4 @@ export function setWorkReplayThread(
       ],
     })),
   });
-  project = {
-    ...project,
-    title: projectTitle,
-    defaultModelSelection: { instanceId: demoProviderId, model: "gpt-6.1-sol" },
-  };
-  thread = {
-    ...thread,
-    ...next,
-    modelSelection: { instanceId: demoProviderId, model: "gpt-6.1-sol" },
-  };
-  broadcastThread();
-  for (const listener of shellListeners) listener({ kind: "snapshot", snapshot: shellSnapshot() });
-}
-
-export function workReplaySnapshots() {
-  return { shell: shellSnapshot(), detail: threadSnapshot() };
-}
-
-export function workReplayConfig() {
-  return demoServerConfig;
 }

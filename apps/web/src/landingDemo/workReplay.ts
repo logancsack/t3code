@@ -77,7 +77,7 @@ export function homeFor(script: WorkReplayScript, at: number): AldoHome {
 }
 const contentType: Record<string, string> = {
   PDF: "application/pdf",
-  Document: "text/markdown",
+  Document: "text/plain",
   Excel: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   Slides: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   ZIP: "application/zip",
@@ -126,7 +126,9 @@ export function applyWorkReplay(script: WorkReplayScript, at: number): void {
             kind: "file",
             url: f.href,
             title: f.title,
-            contentType: contentType[f.type] ?? "application/octet-stream",
+            contentType: f.href.endsWith(".docx")
+              ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+              : (contentType[f.type] ?? "application/octet-stream"),
           }))
         : [],
     });
