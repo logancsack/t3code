@@ -345,8 +345,11 @@ it("lists the links a thread's result ends with under its words, and leaves Aldo
   ].join("\n");
   message(result, 1, "assistant");
   message("Docs: https://acme.example/docs", 2, "assistant");
-  await act(async () => root.render(<Page home={home()} />));
-  await vi.waitFor(() => expect(container.querySelector("[data-aldo-artifacts]")).not.toBeNull());
+  await act(async () => {
+    root.render(<Page home={home()} />);
+    await import("./AldoArtifacts");
+  });
+  expect(container.querySelector("[data-aldo-artifacts]")).not.toBeNull();
   const row = container.querySelector<HTMLAnchorElement>("[data-aldo-artifacts] a")!;
   expect(row.href).toBe("https://github.com/acme/shop/pull/7");
   expect(row.textContent).toBe("acme/shop #7Pull request");
