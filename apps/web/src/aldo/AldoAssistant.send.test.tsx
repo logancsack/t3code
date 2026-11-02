@@ -176,3 +176,15 @@ it.each([
     expect(document.activeElement === field).toBe(keepsFocus);
   },
 );
+
+it("replaces untouched seeded words, then keeps a draft the user edited", async () => {
+  useAldoAssistant.setState({ unsent: null });
+  await act(async () => root.render(<AldoComposer chips={[]} onChip={vi.fn()} />));
+  for (const unsent of ["Roll", "Roll the board", "Roll the board forward", ""]) {
+    await act(async () => useAldoAssistant.setState({ unsent }));
+    expect(container.querySelector("textarea")!.value).toBe(unsent);
+  }
+  await type("My own draft");
+  await act(async () => useAldoAssistant.setState({ unsent: "New suggestion" }));
+  expect(container.querySelector("textarea")!.value).toBe("New suggestion My own draft");
+});

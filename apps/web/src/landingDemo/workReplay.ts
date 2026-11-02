@@ -97,7 +97,8 @@ export function applyWorkReplay(script: WorkReplayScript, at: number): void {
     startedAt = new Date(wallNow() - at);
     clockStarted = true;
   }
-  replayNow = startedAt.getTime() + at;
+  // Date.now promises integer milliseconds; Effect converts this to BigInt nanoseconds.
+  replayNow = Math.round(startedAt.getTime() + at);
   const finished = at >= script.timing.result;
   const inThread = at >= script.timing.thread && at < script.timing.home;
   const step = script.steps.findLastIndex((s) => at >= s.at);

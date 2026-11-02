@@ -406,8 +406,9 @@ export function AldoComposer(props: {
   // the user to finish; a draft already in the field is kept, after them.
   useEffect(() => {
     if (unsent === null) return;
+    const previousSeed = seeded.current;
     setText((current) => {
-      if (!current.trim() || current === seeded.current) return unsent;
+      if (!current.trim() || current === previousSeed) return unsent;
       if (!unsent.trim()) return current;
       return `${unsent} ${current}`;
     });
