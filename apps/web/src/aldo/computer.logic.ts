@@ -95,7 +95,7 @@ export function aldoComputerKeptAnswer(
 }
 
 /**
- * How a start shown as "Starting…" ended, once the thread no longer shows it:
+ * How a queued or starting request ended, once the thread no longer shows it:
  * ready, failed, or neither (it stopped, it asks again).
  */
 export function aldoComputerStartOutcome(

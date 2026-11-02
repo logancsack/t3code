@@ -310,7 +310,7 @@ export function useAldoComputerAsk(environmentId: string, threadId: ThreadId): v
       shown.delete(environmentId);
       // How its start ended, when it's still the same computer (not another one asking now).
       const outcome =
-        current.notice === "starting" && current.kind === kind
+        (current.notice === "starting" || current.notice === "queued") && current.kind === kind
           ? aldoComputerStartOutcome(computer)
           : null;
       if (current.id === null) {
