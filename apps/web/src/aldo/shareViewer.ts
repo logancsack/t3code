@@ -15,6 +15,8 @@ export interface AldoOpenShare {
   readonly contentType: string;
   /** Aldo's listing of it, when there is one. */
   readonly share: AldoShareView | null;
+  /** Expand to the whole app when presenting a file. */
+  readonly fullScreen?: boolean;
 }
 
 let open: AldoOpenShare | null = null;

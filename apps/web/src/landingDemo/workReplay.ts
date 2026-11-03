@@ -1,3 +1,4 @@
+import { openAldoShare, closeAldoShare } from "../aldo/shareViewer";
 import { setActiveEnvironmentId } from "../state/entities";
 import { EventId, MessageId, TurnId, ProviderInstanceId } from "@t3tools/contracts";
 import type { AldoHome } from "../aldo/homeApi";
@@ -23,6 +24,8 @@ export interface WorkReplayScript {
   files: { at: number; title: string; type: string; href: string }[];
   session?: { script: WorkReplayScript; start: number; sourceStart: string; sourceEnd: string }[];
   elapsed?: { at: number; ms: number }[];
+  preview?: { card: string; full: string; title: string };
+  viewers?: { at: number; end: number; task: string }[];
   timing: {
     sent: number;
     reply: number;
@@ -286,10 +289,28 @@ function sessionHome(script: WorkReplayScript, at: number): AldoHome {
   };
 }
 
+let lastViewer = "";
+
 function applyHomeSession(script: WorkReplayScript, at: number): void {
   if (!clockStarted) {
     startedAt = new Date(wallNow());
     clockStarted = true;
+  }
+  const viewer = script.viewers?.find((v) => at >= v.at && at < v.end);
+  const preview = script.session!.find((t) => t.script.id === viewer?.task)?.script.preview;
+  const viewerKey = preview?.full ?? "";
+  if (viewerKey !== lastViewer) {
+    lastViewer = viewerKey;
+    if (preview)
+      openAldoShare({
+        id: null,
+        url: preview.full,
+        title: preview.title,
+        contentType: "image/png",
+        share: null,
+        fullScreen: true,
+      });
+    else closeAldoShare();
   }
   const time = sourceTime(script, at);
   replayNow = Math.round(startedAt.getTime() + time);
@@ -329,14 +350,30 @@ function applyHomeSession(script: WorkReplayScript, at: number): void {
         role: "assistant",
         text: `${task.title}\n\n${task.result}`,
         at: iso(start + task.timing.result),
-        artifacts: task.files.map((f) => ({
-          kind: "file",
-          url: f.href,
-          title: f.title,
-          contentType: f.href.endsWith(".docx")
-            ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-            : (contentType[f.type] ?? "application/octet-stream"),
-        })),
+        artifacts: [
+          ...(task.preview
+            ? [
+                {
+                  kind: "file" as const,
+                  url: task.preview.card,
+                  width: 1920,
+                  height: 800,
+                  title: task.preview.title,
+                  contentType: "image/png",
+                },
+              ]
+            : []),
+          ...task.files
+            .filter((f) => !task.preview || f.type !== "Image")
+            .map((f) => ({
+              kind: "file" as const,
+              url: f.href,
+              title: f.title,
+              contentType: f.href.endsWith(".docx")
+                ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                : (contentType[f.type] ?? "application/octet-stream"),
+            })),
+        ],
       });
   }
   entries.sort((a, b) => a.at.localeCompare(b.at));
@@ -363,8 +400,9 @@ function applyHomeSession(script: WorkReplayScript, at: number): void {
   });
   useAldoHomeReadAt.setState({ at: replayNow });
   if (location.hash !== "#/") location.hash = "#/";
-  document.documentElement.dataset.replayStage =
-    time >= script.session!.reduce((end, t) => Math.max(end, t.start + t.script.timing.result), 0)
+  document.documentElement.dataset.replayStage = viewer
+    ? "viewer"
+    : time >= script.session!.reduce((end, t) => Math.max(end, t.start + t.script.timing.result), 0)
       ? "result"
       : "home";
 }

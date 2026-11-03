@@ -6,6 +6,8 @@ import * as Effect from "effect/Effect";
 
 const original = vi.hoisted(() => ({ now: Date.now }));
 vi.mock("../state/entities", () => ({ setActiveEnvironmentId: vi.fn() }));
+import { aldoOpenShareNow } from "../aldo/shareViewer";
+import { useAldoAssistant } from "../aldo/assistantSession";
 import { applyWorkReplay, homeFor, sourceTime, type WorkReplayScript } from "./workReplay";
 
 afterAll(() => {
@@ -80,4 +82,43 @@ it("keeps concurrent jobs on Home with distinct identities, source clocks and st
   applyWorkReplay(script, 0.3);
   expect(homeFor(script, 0.3).conversations).toHaveLength(0);
   expect(Number.isInteger(Date.now())).toBe(true);
+});
+
+it("shows finished output previews and opens only the scheduled result, then returns Home on reset", () => {
+  const task: WorkReplayScript = {
+    id: "output",
+    title: "Output",
+    project: "Test",
+    request: "Work",
+    reply: "Working",
+    result: "Done",
+    steps: [],
+    files: [{ at: 10000, title: "Binder", type: "PDF", href: "/binder.pdf" }],
+    preview: { card: "/binder.png", full: "/binder-full.png", title: "Binder" },
+    timing: { sent: 1000, reply: 2000, thread: 999999, result: 10000, home: 10000, end: 10000 },
+  };
+  const script: WorkReplayScript = {
+    ...task,
+    id: "present",
+    session: [{ script: task, start: 0, sourceStart: "", sourceEnd: "" }],
+    viewers: [{ at: 15000, end: 31000, task: task.id }],
+  };
+  applyWorkReplay(script, 9000);
+  expect(
+    useAldoAssistant.getState().entries.some((e) => e.kind === "message" && e.artifacts?.length),
+  ).toBe(false);
+  applyWorkReplay(script, 10000);
+  const result = useAldoAssistant.getState().entries.at(-1);
+  expect(
+    result?.kind === "message" && result.artifacts?.map((a) => a.kind === "file" && a.url),
+  ).toEqual(["/binder.png", "/binder.pdf"]);
+  applyWorkReplay(script, 15000);
+  expect(aldoOpenShareNow()).toMatchObject({ url: "/binder-full.png", fullScreen: true });
+  expect(document.documentElement.dataset.replayStage).toBe("viewer");
+  expect(location.hash).toBe("#/");
+  applyWorkReplay(script, 31000);
+  expect(aldoOpenShareNow()).toBeNull();
+  applyWorkReplay(script, 15000);
+  applyWorkReplay(script, 0);
+  expect(aldoOpenShareNow()).toBeNull();
 });

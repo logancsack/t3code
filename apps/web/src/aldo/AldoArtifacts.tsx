@@ -175,7 +175,9 @@ function Unavailable(props: { readonly file: AldoFileArtifact; readonly onRetry:
 /** A picture: a slot that waits at 4:3, then takes its own shape (not too tall); in a grid, a square. */
 function Picture(props: { readonly file: AldoFileArtifact; readonly square?: boolean }) {
   const { file } = props;
-  const [ratio, setRatio] = useState<number | null>(null);
+  const [ratio, setRatio] = useState<number | null>(
+    file.width && file.height ? file.width / file.height : null,
+  );
   const [failed, setFailed] = useState(false);
   if (failed) return <Unavailable file={file} onRetry={() => setFailed(false)} />;
   const shape = props.square ? 1 : Math.min(2.4, Math.max(0.5, ratio ?? 4 / 3));

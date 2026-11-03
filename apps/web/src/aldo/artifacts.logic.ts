@@ -11,6 +11,9 @@ export interface AldoFileArtifact {
   readonly title: string;
   readonly contentType: string;
   readonly bytes?: number;
+  /** Intrinsic image dimensions, when known, reserve its space before decoding. */
+  readonly width?: number;
+  readonly height?: number;
 }
 
 /** What a chart is: bars across (names, many items), columns, lines and areas over time, parts of a whole, two measures per item, or columns and lines together. */

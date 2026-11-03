@@ -72,7 +72,19 @@ window.addEventListener("message", (event: MessageEvent) => {
   frame = event.data.frame;
   if (!frame) return;
   applyWorkReplay(frame.script, frame.at);
-  if (ready) startAldoDirectory();
+  if (ready) {
+    // Decode local result files before their first appearance, without fetching
+    // Office documents or depending on a PDF plugin in the visitor's browser.
+    for (const task of frame.script.session ?? [])
+      for (const src of task.script.preview
+        ? [task.script.preview.card, task.script.preview.full]
+        : []) {
+        const image = new Image();
+        image.src = src;
+        void image.decode().catch(() => {});
+      }
+    startAldoDirectory();
+  }
   ready?.();
   ready = undefined;
 });

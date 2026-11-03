@@ -129,7 +129,11 @@ function AldoShareViewer(props: { readonly open: AldoOpenShare }) {
       <SheetPopup
         side="right"
         showCloseButton={false}
-        className={cn("w-full max-w-3xl pt-safe pb-safe max-sm:border-s-0", liveCall && "pb-24")}
+        className={cn(
+          "w-full max-w-3xl pt-safe pb-safe max-sm:border-s-0",
+          open.fullScreen && "max-w-none",
+          liveCall && "pb-24",
+        )}
       >
         {/* On a phone the sidebar's toggle floats over the sheet's corner: its title starts past it. */}
         <div className="flex items-center gap-2 border-border/60 border-b px-4 py-2 max-sm:ps-14">
@@ -181,7 +185,7 @@ function AldoShareViewer(props: { readonly open: AldoOpenShare }) {
             <img
               src={open.url}
               alt={open.title}
-              className="size-full object-contain"
+              className={cn("size-full object-contain", open.fullScreen && "mx-auto max-w-[960px]")}
               onLoad={() => setLoaded(true)}
               onError={() => setLoaded(true)}
             />
