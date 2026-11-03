@@ -6,7 +6,7 @@ import * as Effect from "effect/Effect";
 
 const original = vi.hoisted(() => ({ now: Date.now }));
 vi.mock("../state/entities", () => ({ setActiveEnvironmentId: vi.fn() }));
-import { applyWorkReplay, type WorkReplayScript } from "./workReplay";
+import { applyWorkReplay, homeFor, sourceTime, type WorkReplayScript } from "./workReplay";
 
 afterAll(() => {
   Date.now = original.now;
@@ -35,3 +35,49 @@ it.live(
       }
     }),
 );
+
+it("keeps concurrent jobs on Home with distinct identities, source clocks and staggered results", () => {
+  const task: WorkReplayScript = {
+    id: "one",
+    title: "One",
+    project: "Test",
+    request: "Work",
+    reply: "Working",
+    result: "Done",
+    steps: [{ at: 8000, active: "Checking", complete: "Checked", detail: "Source check" }],
+    files: [],
+    timing: { sent: 3000, reply: 4400, thread: 7200, result: 120000, home: 125000, end: 140000 },
+  };
+  const script: WorkReplayScript = {
+    ...task,
+    id: "session",
+    elapsed: [
+      { at: 0, ms: 0 },
+      { at: 20000, ms: 200000 },
+    ],
+    session: Array.from({ length: 7 }, (_, i) => ({
+      script: { ...task, id: `job-${i}` },
+      start: i * 7000,
+      sourceStart: "2026-11-01T00:00:00Z",
+      sourceEnd: "2026-11-01T00:02:00Z",
+    })),
+  };
+  expect(sourceTime(script, 10000.25)).toBe(100003);
+  applyWorkReplay(script, 7000);
+  let home = homeFor(script, 7000);
+  expect(home.conversations).toHaveLength(7);
+  expect(new Set(home.conversations.map((c) => c.thread.threadId)).size).toBe(7);
+  expect(home.usage.agents.running).toBe(7);
+  expect(home.conversations[0]!.summary).toContain("Source check");
+  expect(location.hash).toBe("#/");
+  applyWorkReplay(script, 14000);
+  home = homeFor(script, 14000);
+  expect(home.usage.agents.running).toBe(4);
+  expect(home.conversations[0]!.state).toBe("done");
+  expect(home.conversations.at(-1)!.state).toBe("working");
+  applyWorkReplay(script, 20000);
+  expect(homeFor(script, 20000).usage.agents.running).toBe(0);
+  applyWorkReplay(script, 0.3);
+  expect(homeFor(script, 0.3).conversations).toHaveLength(0);
+  expect(Number.isInteger(Date.now())).toBe(true);
+});

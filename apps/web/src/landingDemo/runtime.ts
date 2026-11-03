@@ -156,11 +156,13 @@ function threadShell() {
   } as const;
 }
 
+let homeShells: OrchestrationShellSnapshot["threads"] | null = null;
+
 function shellSnapshot(): OrchestrationShellSnapshot {
   return {
     snapshotSequence,
     projects: [project],
-    threads: [threadShell()],
+    threads: homeShells ?? [threadShell()],
     updatedAt: thread.updatedAt,
   };
 }
@@ -602,6 +604,32 @@ export function setWorkReplayThread(
     modelSelection: { instanceId: demoProviderId, model: "gpt-6.1-sol" },
   };
   broadcastThread();
+  for (const listener of shellListeners) listener({ kind: "snapshot", snapshot: shellSnapshot() });
+}
+
+/** All of the Home replay's jobs share the same local snapshot transport. */
+export function setWorkReplayHomeThreads(
+  rows: { id: string; title: string; startedAt: string; finishedAt: string | null }[],
+) {
+  project = { ...project, title: "Your work" };
+  homeShells = rows.map((row) => ({
+    ...threadShell(),
+    id: ThreadId.make(`replay-${row.id}`),
+    title: row.title,
+    createdAt: row.startedAt,
+    updatedAt: row.finishedAt ?? row.startedAt,
+    latestUserMessageAt: row.startedAt,
+    latestTurn: {
+      turnId: TurnId.make(`replay-${row.id}`),
+      state: row.finishedAt ? "completed" : "running",
+      requestedAt: row.startedAt,
+      startedAt: row.startedAt,
+      completedAt: row.finishedAt,
+      assistantMessageId: null,
+    },
+    session: null,
+  }));
+  snapshotSequence += 1;
   for (const listener of shellListeners) listener({ kind: "snapshot", snapshot: shellSnapshot() });
 }
 
