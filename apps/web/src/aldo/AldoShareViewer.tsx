@@ -185,7 +185,7 @@ function AldoShareViewer(props: { readonly open: AldoOpenShare }) {
             <img
               src={open.url}
               alt={open.title}
-              className={cn("size-full object-contain", open.fullScreen && "mx-auto max-w-[960px]")}
+              className={cn("size-full object-contain", open.fullScreen && "mx-auto max-w-[520px]")}
               onLoad={() => setLoaded(true)}
               onError={() => setLoaded(true)}
             />
