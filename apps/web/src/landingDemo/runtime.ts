@@ -627,7 +627,16 @@ export function setWorkReplayHomeThreads(
       completedAt: row.finishedAt,
       assistantMessageId: null,
     },
-    session: null,
+    session: {
+      threadId: ThreadId.make(`replay-${row.id}`),
+      status: row.finishedAt ? "ready" : "running",
+      providerName: "codex",
+      providerInstanceId: demoProviderId,
+      runtimeMode: "full-access",
+      activeTurnId: row.finishedAt ? null : TurnId.make(`replay-${row.id}`),
+      lastError: null,
+      updatedAt: row.finishedAt ?? row.startedAt,
+    },
   }));
   snapshotSequence += 1;
   for (const listener of shellListeners) listener({ kind: "snapshot", snapshot: shellSnapshot() });

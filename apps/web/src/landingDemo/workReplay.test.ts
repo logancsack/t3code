@@ -6,6 +6,8 @@ import * as Effect from "effect/Effect";
 
 const original = vi.hoisted(() => ({ now: Date.now }));
 vi.mock("../state/entities", () => ({ setActiveEnvironmentId: vi.fn() }));
+import { workReplaySnapshots } from "./runtime";
+import { resolveSidebarThreadStatus } from "../components/Sidebar.logic";
 import { aldoOpenShareNow } from "../aldo/shareViewer";
 import { useAldoAssistant } from "../aldo/assistantSession";
 import { applyWorkReplay, homeFor, sourceTime, type WorkReplayScript } from "./workReplay";
@@ -121,4 +123,54 @@ it("shows finished output previews and opens only the scheduled result, then ret
   applyWorkReplay(script, 15000);
   applyWorkReplay(script, 0);
   expect(aldoOpenShareNow()).toBeNull();
+});
+
+it("keeps native sidebar status in sync with Home at each task start, finish and loop reset", () => {
+  const task: WorkReplayScript = {
+    id: "task",
+    title: "Task",
+    project: "Test",
+    request: "Work",
+    reply: "Working",
+    result: "Done",
+    steps: [],
+    files: [],
+    timing: { sent: 3000, reply: 4400, thread: 7200, result: 120000, home: 125000, end: 140000 },
+  };
+  const script: WorkReplayScript = {
+    ...task,
+    id: "sidebar-session",
+    session: Array.from({ length: 7 }, (_, i) => ({
+      script: { ...task, id: `job-${i}` },
+      start: i * 7000,
+      sourceStart: "2026-11-01T00:00:00Z",
+      sourceEnd: "2026-11-01T00:02:00Z",
+    })),
+  };
+  const boundaries = script
+    .session!.flatMap(({ start }) => [
+      start + task.timing.reply - 1,
+      start + task.timing.reply,
+      start + task.timing.result - 1,
+      start + task.timing.result,
+    ])
+    .sort((a, b) => a - b);
+  for (const at of [...boundaries, 0]) {
+    applyWorkReplay(script, at);
+    const home = homeFor(script, at);
+    const threads = workReplaySnapshots().shell.threads;
+    expect(threads).toHaveLength(home.conversations.length);
+    expect(threads.filter((t) => resolveSidebarThreadStatus(t) === "working")).toHaveLength(
+      home.usage.agents.running,
+    );
+    for (const conversation of home.conversations) {
+      const thread = threads.find((t) => t.id === `replay-${conversation.ref}`)!;
+      expect(resolveSidebarThreadStatus(thread)).toBe(
+        conversation.state === "working" ? "working" : "ready",
+      );
+      expect(thread.session?.activeTurnId).toBe(
+        conversation.state === "working" ? thread.latestTurn?.turnId : null,
+      );
+    }
+  }
 });
