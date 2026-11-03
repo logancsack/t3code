@@ -102,6 +102,11 @@ it("shows finished output previews and opens only the scheduled result, then ret
   const script: WorkReplayScript = {
     ...task,
     id: "present",
+    elapsed: [
+      { at: 0, ms: 0 },
+      { at: 10000, ms: 10000 },
+      { at: 40000, ms: 10000 },
+    ],
     session: [{ script: task, start: 0, sourceStart: "", sourceEnd: "" }],
     viewers: [{ at: 15000, end: 31000, task: task.id }],
   };

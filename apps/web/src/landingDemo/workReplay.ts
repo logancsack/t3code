@@ -314,6 +314,11 @@ function applyHomeSession(script: WorkReplayScript, at: number): void {
   }
   const time = sourceTime(script, at);
   replayNow = Math.round(startedAt.getTime() + time);
+  document.documentElement.dataset.replayStage = viewer
+    ? "viewer"
+    : time >= script.session!.reduce((end, t) => Math.max(end, t.start + t.script.timing.result), 0)
+      ? "result"
+      : "home";
   const entries: Extract<AldoConversationEntry, { kind: "message" }>[] = [];
   let typed = "";
   for (const { script: task, start } of script.session!) {
@@ -400,9 +405,4 @@ function applyHomeSession(script: WorkReplayScript, at: number): void {
   });
   useAldoHomeReadAt.setState({ at: replayNow });
   if (location.hash !== "#/") location.hash = "#/";
-  document.documentElement.dataset.replayStage = viewer
-    ? "viewer"
-    : time >= script.session!.reduce((end, t) => Math.max(end, t.start + t.script.timing.result), 0)
-      ? "result"
-      : "home";
 }
