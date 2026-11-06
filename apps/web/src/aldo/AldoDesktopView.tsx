@@ -12,6 +12,7 @@ import { aldoCanDecodeH264, AldoVideoPlayer } from "./liveVideo";
 import { ALDO_FRAME_VIDEO, aldoDesktopVideoHello, aldoDesktopVideoUrls } from "./liveVideo.logic";
 import { aldoLiveViewSize, parseAldoLiveFrame } from "./liveView.logic";
 import { useAldoPageVisible } from "./pageVisibility";
+import { AldoScreenKeyboard } from "./AldoScreenKeyboard";
 
 type Status = "connecting" | "live" | "asleep" | "error";
 
@@ -43,6 +44,7 @@ export function AldoDesktopView({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const videoRef = useRef<WebSocket | null>(null);
+  const rfbRef = useRef<RFB | null>(null);
   const [status, setStatus] = useState<Status>("connecting");
   const [error, setError] = useState<string | null>(null);
   // VNC streams whatever changes on the screen while connected: let go of it
@@ -74,6 +76,7 @@ export function AldoDesktopView({
 
     /** Ends this connection's video and VNC; whichever ends first takes the other with it. */
     const hangUp = () => {
+      if (rfbRef.current === rfb) rfbRef.current = null;
       const video = videoSocket;
       videoSocket = null;
       if (videoRef.current === video) videoRef.current = null;
@@ -197,11 +200,13 @@ export function AldoDesktopView({
       // Under video, noVNC never gets the screen's cursor: a dot shows where the pointer is.
       rfb.showDotCursor = video;
       rfb.addEventListener("connect", () => {
+        rfbRef.current = client;
         attempt = 0;
         setStatus("live");
         setError(null);
       });
       rfb.addEventListener("disconnect", () => {
+        if (rfbRef.current === rfb) rfbRef.current = null;
         rfb = null;
         hangUp();
         if (disposed) return;
@@ -247,27 +252,50 @@ export function AldoDesktopView({
     <div
       ref={rootRef}
       data-aldo-desktop=""
-      className="relative min-h-0 flex-1 overflow-hidden bg-muted/30"
+      className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-muted/30"
       // Ahead of noVNC's own listeners, which take the events.
       onPointerDownCapture={onUse}
       onKeyDownCapture={onUse}
       onWheelCapture={onUse}
     >
-      {/* The video, under noVNC's screen (which stays empty over it). */}
-      <canvas
-        ref={canvasRef}
-        aria-hidden
-        className={cn(
-          "pointer-events-none absolute inset-0 size-full object-contain",
-          status !== "live" && "opacity-40",
-        )}
-      />
-      <div
-        ref={containerRef}
-        className={cn("relative size-full", status !== "live" && "opacity-40")}
-      />
-      {status !== "live" ? (
-        <AldoScreenState status={status} environmentId={environmentId} what={what} error={error} />
+      <div className="relative min-h-0 flex-1">
+        {/* The video, under noVNC's screen (which stays empty over it). */}
+        <canvas
+          ref={canvasRef}
+          aria-hidden
+          className={cn(
+            "pointer-events-none absolute inset-0 size-full object-contain",
+            status !== "live" && "opacity-40",
+          )}
+        />
+        <div
+          ref={containerRef}
+          className={cn("relative size-full", status !== "live" && "opacity-40")}
+        />
+        {status !== "live" ? (
+          <AldoScreenState
+            status={status}
+            environmentId={environmentId}
+            what={what}
+            error={error}
+          />
+        ) : null}
+      </div>
+      {status === "live" ? (
+        <AldoScreenKeyboard
+          key={`${environmentId}:${screen}`}
+          onText={(text) => {
+            onUse?.();
+            for (const char of text) {
+              const point = char.codePointAt(0)!;
+              rfbRef.current?.sendKey(point <= 255 ? point : 0x01000000 | point);
+            }
+          }}
+          onKey={(key) => {
+            onUse?.();
+            rfbRef.current?.sendKey({ Enter: 0xff0d, Backspace: 0xff08, Tab: 0xff09 }[key], key);
+          }}
+        />
       ) : null}
     </div>
   );

@@ -50,6 +50,7 @@ import {
 } from "./AldoBrowserChrome";
 import { useAldoHandoffTakeover } from "./AldoHandoffCard";
 import { AldoLoginOfferCard } from "./AldoLoginOfferCard";
+import { AldoScreenKeyboard } from "./AldoScreenKeyboard";
 import { AldoTeachForm } from "./AldoTeach";
 import { aldoBlankPage, aldoBrowserState, aldoDialogFrom } from "./browserChrome.logic";
 import { aldoHandoffOn } from "./handoffs.logic";
@@ -1048,6 +1049,36 @@ export function AldoBrowserPanel({
           />
         ) : null}
       </div>
+      {view === "browser" && connected && pictured ? (
+        <AldoScreenKeyboard
+          key={environmentId}
+          onText={(text) => {
+            noteUse();
+            // Key events reach both normal forms and canvas-based remote desktops.
+            for (const key of text) {
+              for (const event of ["down", "up"]) {
+                send({ type: "key", event, key, text: key, modifiers: 0 });
+                // Older aldod inserts printable key text only for one UTF-16 unit.
+                if (event === "down" && key.length > 1) send({ type: "text", text: key });
+              }
+            }
+          }}
+          onKey={(key) => {
+            noteUse();
+            for (const event of ["down", "up"]) {
+              send({
+                type: "key",
+                event,
+                key,
+                code: key,
+                keyCode: { Enter: 13, Tab: 9, Backspace: 8 }[key],
+                text: key === "Enter" ? "\r" : "",
+                modifiers: 0,
+              });
+            }
+          }}
+        />
+      ) : null}
     </div>
   );
 }
