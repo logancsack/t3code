@@ -4203,6 +4203,15 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           },
         });
         return;
+      case "session_writes_lost":
+        // The disk or its quota was full, so the CLI couldn't save part of
+        // the transcript. Results already received stand; say so once.
+        yield* emitRuntimeWarning(
+          context,
+          `Claude couldn't save ${message.lost.join(" and ").replace("global_config", "its settings")} (${message.error_code === "ENOSPC" ? "disk full" : "disk quota used up"}).`,
+          message,
+        );
+        return;
       case "mirror_error":
         yield* emitRuntimeError(
           context,
