@@ -89,6 +89,10 @@ export interface AldoHomeConversation {
   readonly plan?: { readonly id: string; readonly text: string };
   /** Computers requested by this conversation (older Aldo reads may omit the request time). */
   readonly computers?: ReadonlyArray<{
+    readonly id?: string;
+    readonly disposable?: boolean;
+    readonly concurrentLimit?: number;
+    readonly extraHourlyUsd?: number;
     readonly computer: string;
     readonly position?: number;
     readonly status: string;

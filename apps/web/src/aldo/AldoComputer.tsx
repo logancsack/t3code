@@ -260,7 +260,7 @@ export function useAldoComputerAsk(environmentId: string, threadId: ThreadId): v
       notice === "ask" && computer
         ? aldoComputerAskDescription(computer)
         : notice === "queued"
-          ? `${aldoComputerQueueLabel(kind, computer?.position)}. It carries on automatically when the computer is ready.`
+          ? `${aldoComputerQueueLabel(kind, computer?.position, computer?.concurrentLimit)}. ${computer?.concurrentLimit ? `Up to ${computer.concurrentLimit} Windows computers can run at once. ` : ""}It carries on automatically when a computer is ready.`
           : "Your agent hears when it's ready.";
     // Stopping is offered once Aldo is starting it, not while the answer is on its way.
     const stoppable =
@@ -294,7 +294,7 @@ export function useAldoComputerAsk(environmentId: string, threadId: ThreadId): v
       ) {
         toastManager.update(currentId, {
           ...(notice === "queued"
-            ? { title: aldoComputerQueueLabel(kind, computer?.position) }
+            ? { title: aldoComputerQueueLabel(kind, computer?.position, computer?.concurrentLimit) }
             : {}),
           description,
           ...(notice === "starting" || notice === "queued"
@@ -385,7 +385,7 @@ export function useAldoComputerAsk(environmentId: string, threadId: ThreadId): v
             type: "info",
             title:
               notice === "queued"
-                ? aldoComputerQueueLabel(kind, computer?.position)
+                ? aldoComputerQueueLabel(kind, computer?.position, computer?.concurrentLimit)
                 : `Starting your ${name}…`,
             description,
             timeout: 0,

@@ -85,6 +85,29 @@ describe("aldoComputerStoppable", () => {
 });
 
 describe("aldoComputerAskDescription", () => {
+  it("makes complimentary billing explicit", () => {
+    expect(
+      aldoComputerAskDescription({
+        why: null,
+        creditsPerHour: 38.4,
+        extraHourlyUsd: 0,
+        disposable: true,
+      }),
+    ).toContain("Your complimentary account isn't billed");
+  });
+  it("explains disposable files and the actual extra-usage cash price", () => {
+    expect(
+      aldoComputerAskDescription({
+        why: "Build the deck",
+        creditsPerHour: 38.4,
+        extraHourlyUsd: 0.48,
+        disposable: true,
+        concurrentLimit: 5,
+      }),
+    ).toBe(
+      "Build the deck. $0.48 an hour while it runs (38.4 credits/hour). Billed separately within your extra usage limit. This thread gets a fresh computer. Its computer and files are deleted when the thread is done. No kept-disk charge.",
+    );
+  });
   it("gives the agent's reason, then what it costs", () => {
     expect(
       aldoComputerAskDescription({ why: "To run the macros in Q3.xlsm", creditsPerHour: 3 }),
@@ -185,6 +208,7 @@ describe("aldoComputerName", () => {
 });
 
 it("queued computers show a cancellable normal wait, with position optional for older servers", () => {
+  expect(aldoComputerQueueLabel("windows", 1, 5)).toBe("Waiting for a Windows slot · position 1");
   expect(aldoComputerNotice(computer("queued", { position: 3 }), undefined)).toBe("queued");
   expect(aldoComputerStoppable(computer("queued"))).toBe(true);
   expect(aldoComputerQueueLabel("windows", 3)).toBe("Waiting for Windows · position 3");

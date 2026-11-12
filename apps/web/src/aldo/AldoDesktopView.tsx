@@ -312,6 +312,7 @@ const SCREENS: ReadonlyArray<readonly [AldoDesktopScreen, string]> = [
  */
 export function AldoDesktopScreenSwitch(props: {
   screen: AldoDesktopScreen;
+  disposable?: boolean | undefined;
   onChange: (screen: AldoDesktopScreen) => void;
   /** Aldo is stopping the computer: Stop waits for it. */
   stopping: boolean;
@@ -346,8 +347,16 @@ export function AldoDesktopScreenSwitch(props: {
         type="button"
         variant="ghost"
         size="xs"
-        aria-label="Stop your Windows computer"
-        title="Stop your Windows computer: it stops using credits, and its disk stays as it is."
+        aria-label={
+          props.disposable
+            ? "Stop and delete this thread's Windows computer"
+            : "Stop your Windows computer"
+        }
+        title={
+          props.disposable
+            ? "Stop and delete this thread's Windows computer and files. Copy your results back first."
+            : "Stop your Windows computer: it stops using credits, and its disk stays as it is."
+        }
         disabled={props.stopping}
         onClick={props.onStop}
       >

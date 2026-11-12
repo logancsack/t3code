@@ -81,6 +81,16 @@ describe("isAldoWorkspaceUsage", () => {
   });
 
   it("accepts Aldo's allowances, storage and kept disk, and an older Aldo without them", () => {
+    const windows = {
+      disposable: true,
+      creditsPerHour: 38.4,
+      extraHourlyUsd: 0.48,
+      concurrentLimit: 5,
+    };
+    expect(isAldoWorkspaceUsage({ ...metered, windows, windowsDisk: null })).toBe(true);
+    expect(
+      isAldoWorkspaceUsage({ ...metered, windows: { ...windows, extraHourlyUsd: "0.90" } }),
+    ).toBe(false);
     const prime = {
       deepAsks: { used: 12, included: 100 },
       voiceMinutes: { used: 3.5, included: 40 },

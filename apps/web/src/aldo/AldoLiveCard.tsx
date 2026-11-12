@@ -110,7 +110,7 @@ export function StateDot(props: {
 /** How long it's been at what it's doing: "for 4 min", "waiting 12 min", "finished 1 h ago". */
 export function stateSince(c: AldoHomeConversation, now: number): string {
   const queue = queuedComputer(c);
-  if (queue) return aldoComputerQueueLabel(queue.computer, queue.position);
+  if (queue) return aldoComputerQueueLabel(queue.computer, queue.position, queue.concurrentLimit);
   if (needsYouKind(c)) return `waiting ${elapsed(c.at, now)}`;
   if (c.state === "done") return `finished ${relativeTime(c.at, now)}`;
   return `for ${elapsed(c.stateAt ?? c.at, now)}`;
