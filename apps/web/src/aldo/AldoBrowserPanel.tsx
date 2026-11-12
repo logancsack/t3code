@@ -831,6 +831,7 @@ export function AldoBrowserPanel({
           {windowsRunning ? (
             <AldoDesktopScreenSwitch
               screen={screen}
+              disposable={computer?.disposable}
               onChange={setChosenScreen}
               stopping={stoppingComputer}
               onStop={() =>
@@ -842,7 +843,9 @@ export function AldoBrowserPanel({
           ) : null}
           <span className="min-w-0 flex-1 truncate px-1 text-xs text-muted-foreground">
             {screen === "windows"
-              ? "Your Windows computer, with desktop Office. Sign in to Office here once."
+              ? computer?.disposable
+                ? "This thread's Windows computer. Copy results back before stopping; its files will be deleted."
+                : "Your Windows computer, with desktop Office. Sign in to Office here once."
               : "The agent's whole desktop: Chrome, desktop apps and the taskbar."}
           </span>
           <AldoBrowserViewSwitch view={view} onChange={setView} />

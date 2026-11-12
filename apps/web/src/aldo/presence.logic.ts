@@ -223,7 +223,7 @@ export function presenceBoard(
       key: `working:${c.ref}`,
       title: c.title,
       detail: queue
-        ? aldoComputerQueueLabel(queue.computer, queue.position)
+        ? aldoComputerQueueLabel(queue.computer, queue.position, queue.concurrentLimit)
         : quiet
           ? `No word for ${since}`
           : `${c.summary ? `${c.summary} · ` : ""}for ${since}`,

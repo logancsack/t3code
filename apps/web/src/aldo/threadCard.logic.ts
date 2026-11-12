@@ -114,7 +114,7 @@ export function threadCardOf(
     return {
       tone: "quiet",
       dot: "quiet",
-      status: aldoComputerQueueLabel(queue.computer, queue.position),
+      status: aldoComputerQueueLabel(queue.computer, queue.position, queue.concurrentLimit),
       body: "It carries on automatically when the computer is ready.",
       action: null,
     };

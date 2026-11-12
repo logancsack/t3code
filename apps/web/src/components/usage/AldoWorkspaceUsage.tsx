@@ -102,6 +102,22 @@ export function AldoWorkspaceUsageSection({
             onChanged={onChanged}
           />
         ) : null}
+        {isAldoCloud && usage?.windows ? (
+          <p className="text-xs text-muted-foreground">
+            Windows computers:{" "}
+            {usage.metered ? (
+              <>
+                {formatCredits(usage.windows.creditsPerHour)} credits/hour while running (
+                {formatCents(Math.round(usage.windows.extraHourlyUsd * 100))}/hour, billed
+                separately within your extra usage limit).
+              </>
+            ) : (
+              <>Your complimentary account isn't billed.</>
+            )}{" "}
+            Up to {usage.windows.concurrentLimit} at once. Each thread gets a fresh computer,
+            deleted with its files after use. No kept-disk charge.
+          </p>
+        ) : null}
       </section>
       {isAldoCloud && usage ? (
         <AldoBillingSection usage={usage} status={state.status} onChanged={onChanged} />

@@ -172,7 +172,7 @@ export function ConversationRow(props: {
           ) : queue || STATE_LABEL[c.state] ? (
             <Badge variant="outline" size="sm">
               {queue
-                ? aldoComputerQueueLabel(queue.computer, queue.position)
+                ? aldoComputerQueueLabel(queue.computer, queue.position, queue.concurrentLimit)
                 : STATE_LABEL[c.state]}
             </Badge>
           ) : null}
