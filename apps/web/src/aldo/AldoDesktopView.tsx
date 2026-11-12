@@ -347,7 +347,11 @@ export function AldoDesktopScreenSwitch(props: {
         type="button"
         variant="ghost"
         size="xs"
-        aria-label="Stop your Windows computer"
+        aria-label={
+          props.disposable
+            ? "Stop and delete this thread's Windows computer"
+            : "Stop your Windows computer"
+        }
         title={
           props.disposable
             ? "Stop and delete this thread's Windows computer and files. Copy your results back first."
