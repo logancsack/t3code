@@ -1,7 +1,9 @@
 import type RFB from "@novnc/novnc";
-import { useEffect, useRef, useState } from "react";
+import { KeyboardIcon } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "../components/ui/button";
+import { useMediaQuery } from "../hooks/useMediaQuery";
 import { AldoScreenState } from "./AldoBrowserChrome";
 import { cn } from "../lib/utils";
 import { AldoApiError } from "./api";
@@ -12,9 +14,32 @@ import { aldoCanDecodeH264, AldoVideoPlayer } from "./liveVideo";
 import { ALDO_FRAME_VIDEO, aldoDesktopVideoHello, aldoDesktopVideoUrls } from "./liveVideo.logic";
 import { aldoLiveViewSize, parseAldoLiveFrame } from "./liveView.logic";
 import { useAldoPageVisible } from "./pageVisibility";
-import { AldoScreenKeyboard } from "./AldoScreenKeyboard";
+import { AldoKeyInput, type AldoKeyInputHandle, type AldoKeyOutput } from "./AldoKeyInput";
+import { aldoKeyboardFor } from "./livePage.logic";
 
 type Status = "connecting" | "live" | "asleep" | "error";
+
+/** X keysyms for the keys a phone's keyboard sends as keys. */
+const KEYSYMS: Record<string, number> = {
+  Enter: 0xff0d,
+  Tab: 0xff09,
+  Escape: 0xff1b,
+  Backspace: 0xff08,
+  Delete: 0xffff,
+  Home: 0xff50,
+  ArrowLeft: 0xff51,
+  ArrowUp: 0xff52,
+  ArrowRight: 0xff53,
+  ArrowDown: 0xff54,
+  PageUp: 0xff55,
+  PageDown: 0xff56,
+  End: 0xff57,
+};
+
+const keysym = (char: string) => {
+  const point = char.codePointAt(0)!;
+  return point <= 255 ? point : 0x01000000 | point;
+};
 
 /**
  * A desktop over VNC: by default the sandbox's own (Chrome, desktop apps, the
@@ -50,6 +75,28 @@ export function AldoDesktopView({
   // VNC streams whatever changes on the screen while connected: let go of it
   // once the page has been hidden for a while (a quick tab switch keeps it).
   const pageVisible = useAldoPageVisible(10_000);
+  // A phone: noVNC takes taps, and the keyboard button opens the phone's keyboard for it.
+  const touch = useMediaQuery("(pointer: coarse)");
+  const keysRef = useRef<AldoKeyInputHandle | null>(null);
+  const onUseRef = useRef(onUse);
+  onUseRef.current = onUse;
+  const output = useMemo<AldoKeyOutput>(() => {
+    const type = (text: string) => {
+      onUseRef.current?.();
+      for (const char of text) rfbRef.current?.sendKey(keysym(char), "");
+    };
+    return {
+      key: (key) => {
+        const sym = KEYSYMS[key.key] ?? (key.key.length === 1 ? keysym(key.key) : null);
+        if (sym !== null) rfbRef.current?.sendKey(sym, key.code, key.event === "down");
+      },
+      type,
+      insert: type,
+      backspace: (count) => {
+        for (let i = 0; i < count; i++) rfbRef.current?.sendKey(KEYSYMS.Backspace!, "Backspace");
+      },
+    };
+  }, []);
 
   useEffect(() => {
     if (!pageVisible) return;
@@ -281,21 +328,24 @@ export function AldoDesktopView({
           />
         ) : null}
       </div>
-      {status === "live" ? (
-        <AldoScreenKeyboard
-          key={`${environmentId}:${screen}`}
-          onText={(text) => {
-            onUse?.();
-            for (const char of text) {
-              const point = char.codePointAt(0)!;
-              rfbRef.current?.sendKey(point <= 255 ? point : 0x01000000 | point);
-            }
-          }}
-          onKey={(key) => {
-            onUse?.();
-            rfbRef.current?.sendKey({ Enter: 0xff0d, Backspace: 0xff08, Tab: 0xff09 }[key], key);
-          }}
-        />
+      {touch && status === "live" ? (
+        <>
+          <AldoKeyInput
+            ref={keysRef}
+            touch
+            output={output}
+            label={`Type into ${what}`}
+            onUse={onUse}
+          />
+          <button
+            type="button"
+            aria-label="Keyboard"
+            onClick={() => keysRef.current?.focus({ ...aldoKeyboardFor(null), inputMode: "text" })}
+            className="absolute right-3 bottom-3 z-10 inline-flex size-11 items-center justify-center rounded-full border border-border/70 bg-popover text-foreground shadow-md outline-none transition-colors active:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <KeyboardIcon className="size-5" />
+          </button>
+        </>
       ) : null}
     </div>
   );
