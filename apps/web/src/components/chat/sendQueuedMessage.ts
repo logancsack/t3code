@@ -29,6 +29,7 @@ import {
   resolveThreadMetadataUpdateForNextTurn,
   revokeBlobPreviewUrl,
 } from "../ChatView.logic";
+import { isAldoCloud, isAldoEnvironmentId } from "../../aldo/api";
 import { aldoImagesGoInline } from "../../aldo/dispatch";
 import { aldoAttachmentOf, aldoCarriesAttachments } from "../../aldo/files";
 import { toastManager } from "../ui/toast";
@@ -143,7 +144,7 @@ export async function sendQueuedMessage(
 
     // The server starts the turn with the thread's stored modes, so a change
     // made in the composer before queueing is saved first.
-    const createdAt = userAction ? new Date().toISOString() : message.createdAt;
+    const createdAt = new Date().toISOString();
     const shell = readThreadShell(threadRef);
     const metadataUpdate = shell
       ? resolveThreadMetadataUpdateForNextTurn({
@@ -205,6 +206,9 @@ export async function sendQueuedMessage(
         runtimeMode: sendSettings.runtimeMode,
         interactionMode: sendSettings.interactionMode,
         createdAt,
+        ...(isAldoCloud && isAldoEnvironmentId(environmentId)
+          ? { aldoUserInstructionAt: userAction ? createdAt : message.createdAt }
+          : {}),
       },
     });
     queue.finishSend(threadKey, message.id);

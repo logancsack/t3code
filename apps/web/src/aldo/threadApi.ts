@@ -301,7 +301,7 @@ export async function holdAldoTurn(
 ): Promise<"held" | "refused"> {
   const threadId = threadIdForEnvironment(environmentId);
   for (let tries = 0; ; tries++) {
-    let held = now ? { ...(command as Record<string, unknown>), aldoNow: true } : command;
+    let held = command;
     if (files) {
       for (const [id, file] of files) await uploadAldoFile(environmentId, id, file);
       held = aldoHeldFileCommand(command, files, now);
@@ -316,6 +316,7 @@ export async function holdAldoTurn(
         if (uploaded) held = aldoHeldCommand(command, uploads);
       }
     }
+    if (now) held = { ...(held as Record<string, unknown>), aldoNow: true };
     const body = JSON.stringify({ command: held });
     try {
       await untilAnswered(() =>

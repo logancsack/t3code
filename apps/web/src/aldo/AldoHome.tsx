@@ -510,7 +510,9 @@ function AldoHomeContent() {
                 ) : null}
                 {board.done.length > 0 ? (
                   <Section
-                    title="Done"
+                    title={
+                      board.done.some((c) => c.state === "stopped") ? "Done or stopped" : "Done"
+                    }
                     count={board.done.length}
                     {...(lastSeen ? { hint: "new since you were last here is marked" } : {})}
                   >
