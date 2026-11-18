@@ -20,7 +20,7 @@ import {
   SettingsIcon,
   TargetIcon,
 } from "lucide-react";
-import { useEffect, useState, type ComponentType, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useState, type ComponentType, type ReactNode } from "react";
 
 import { Popover, PopoverPopup, PopoverTrigger } from "../components/ui/popover";
 import { useSidebar } from "../components/ui/sidebar";
@@ -30,10 +30,12 @@ import { AldoThemeToggle } from "./AldoGeneralSettings";
 import { requestAldoProfile, type AldoProfile } from "./assistantApi";
 import { type AldoHomeUsage } from "./homeApi";
 import { useAldoFirstViewHold } from "./firstView";
-import { refreshAldoGoals, useAldoGoals } from "./goals";
 import { useAldoHomeFeed } from "./homeFeed";
 import { aldoPlanLabel } from "./settingsHome.logic";
 import { setAldoSimpleMode, useAldoSimpleMode } from "./simpleMode";
+
+// Loaded after the first screen: most accounts have no goal (AldoGoalsProbe.tsx).
+const AldoGoalsProbe = lazy(() => import("./AldoGoalsProbe"));
 
 // ---------------------------------------------------------------------------
 // Who's signed in, asked once per page.
@@ -255,15 +257,10 @@ export function AldoProfileButton(props: {
   const profile = useAldoProfile();
   useAldoFirstViewHold(profile === undefined);
   const usage = useAldoHomeFeed((s) => s.home?.usage ?? null);
-  // Read here, once as the app loads, so the menu opens with Goals already in it (or not): for an
-  // account without a goal the menu is as it was. A read that failed is tried again when the menu opens.
-  const goals = useAldoGoals();
-  const hasGoals = (goals.goals?.length ?? 0) > 0;
+  // Read as the app loads (AldoGoalsProbe), so the menu opens with Goals already in it (or not): for
+  // an account without a goal the menu is as it was.
+  const [hasGoals, setHasGoals] = useState(false);
   const [open, setOpen] = useState(false);
-  const unread = goals.goals === undefined;
-  useEffect(() => {
-    if (open && unread) void refreshAldoGoals();
-  }, [open, unread]);
   const trigger = props.compact ? (
     <button
       type="button"
@@ -300,6 +297,9 @@ export function AldoProfileButton(props: {
   );
   return (
     <Popover open={open} onOpenChange={setOpen}>
+      <Suspense fallback={null}>
+        <AldoGoalsProbe menuOpen={open} onHasGoals={setHasGoals} />
+      </Suspense>
       <PopoverTrigger render={trigger} />
       <PopoverPopup
         width="md"
