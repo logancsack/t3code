@@ -98,7 +98,7 @@ vi.mock("./directory", () => ({
 }));
 vi.mock("./threadApi", () => ({ holdAldoTurn: host.hold }));
 
-import { installAldoCommandDispatch, resumeAldoOutbox } from "./dispatch";
+import { installAldoCommandDispatch, resumeAldoOutbox, isAldoRefusal } from "./dispatch";
 
 function command(first: boolean): ClientOrchestrationCommand {
   const modelSelection = ModelSelection.make({
@@ -279,4 +279,11 @@ it("records the user stop before acknowledging an interrupt", async () => {
     }),
   );
   expect(result).toEqual({ sequence: 0 });
+});
+
+it("a deliberate stop is not a computer-capacity warning", () => {
+  expect(
+    isAldoRefusal(new host.ApiError(409, "Stopped by you. Send a new message to resume it.")),
+  ).toBe(false);
+  expect(isAldoRefusal(new host.ApiError(409, "Too many computers at once"))).toBe(true);
 });

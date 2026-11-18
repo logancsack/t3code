@@ -204,9 +204,11 @@ export function AldoThreadLoading(props: {
         {start ? (
           <>
             {/* Its first message, on its way to the agent; nothing's on its way once it failed. */}
-            {start.tone === "failed" ? null : <TurnSkeleton reply={false} />}
+            {start.tone === "failed" || start.tone === "stopped" ? null : (
+              <TurnSkeleton reply={false} />
+            )}
             <StartCard start={start} startedAt={props.startedAt} onRetry={props.onRetry} />
-            {start.tone === "failed" ? null : (
+            {start.tone === "failed" || start.tone === "stopped" ? null : (
               <div className="flex flex-col gap-2.5 opacity-60">
                 <Skeleton className={cn("h-3.5 w-10/12", SHADE)} />
                 <Skeleton className={cn("h-3.5 w-7/12", SHADE)} />

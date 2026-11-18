@@ -541,7 +541,11 @@ let refusalToastId: string | null = null;
 
 /** Whether Aldo refused to start a cloud agent (402 or 409), which notifyAldoRefusal tells the user about. */
 export function isAldoRefusal(cause: unknown): cause is AldoApiError {
-  return cause instanceof AldoApiError && (cause.status === 402 || cause.status === 409);
+  return (
+    cause instanceof AldoApiError &&
+    (cause.status === 402 || cause.status === 409) &&
+    !/Stopped by you|your stop/.test(cause.message)
+  );
 }
 
 /**
