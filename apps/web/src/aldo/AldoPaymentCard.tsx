@@ -65,11 +65,16 @@ export function PaymentDetails(props: { readonly payment: AldoPayment }) {
  */
 export function ApproveInLink(props: { readonly payment: AldoPayment; readonly now: number }) {
   const [opened, setOpened] = useState(false);
-  const [renewed, setRenewed] = useState<AldoPayment | null>(null);
+  const [renewed, setRenewed] = useState<{ payment: AldoPayment; seen: AldoPayment } | null>(null);
   const [asking, setAsking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const inFlight = useRef(false);
-  const p = renewed ?? props.payment;
+  // A retry response bridges the wait for Home. Once Home sends a new copy
+  // of that same payment, its later Link status takes precedence.
+  const p =
+    renewed && (renewed.payment.id !== props.payment.id || renewed.seen === props.payment)
+      ? renewed.payment
+      : props.payment;
   const words = paymentWords(p, props.now);
   if (paymentCanAskAgain(p, props.now))
     return (
@@ -92,7 +97,7 @@ export function ApproveInLink(props: { readonly payment: AldoPayment; readonly n
             setError(null);
             try {
               const next = await retryAldoPayment(p.retryFrom);
-              setRenewed(next);
+              setRenewed({ payment: next, seen: props.payment });
               await refreshAldoHome();
               // The refreshed Home can replace this card with its new request.
               // Move focus after that render, rather than to a departing link.
