@@ -19,6 +19,7 @@ import { AldoOpenContext, AldoThreadCard } from "./AldoLiveCard";
 import { AldoPaymentLine } from "./AldoPaymentCard";
 import { AldoPlanCard } from "./AldoPlanCard";
 import { AldoFrame } from "./AldoFrame";
+import AldoTaskResult from "./AldoTaskResult";
 import { useAldoArrive } from "./arrive";
 import { aldoCanMorph } from "./morph";
 import { ACTION_LABELS } from "./assistant.logic";
@@ -116,21 +117,25 @@ function QuietRows(props: { readonly digest: AldoDigest; readonly grouped?: bool
           { clock: true },
         );
         return (
-          <Row
-            key={e.key}
-            icon={
-              state.tone === "done" ? (
-                <CheckIcon className="size-4 text-success-foreground" strokeWidth={2.25} />
-              ) : (
-                <ResultIcon state={state} />
-              )
-            }
-            verb={state.tone === "done" ? "Finished" : `Finished, ${state.words}`}
-            title={e.conversation.title}
-            trailing={state.tone === "done" ? timeOf(e.at) : state.words}
-            trailingClassName={resultToneClass(state)}
-            onClick={open ? (from) => open(e.conversation.thread, from) : undefined}
-          />
+          <div key={e.key} className="min-w-0">
+            <Row
+              icon={
+                state.tone === "done" ? (
+                  <CheckIcon className="size-4 text-success-foreground" strokeWidth={2.25} />
+                ) : (
+                  <ResultIcon state={state} />
+                )
+              }
+              verb={state.tone === "done" ? "Finished" : `Finished, ${state.words}`}
+              title={e.conversation.title}
+              trailing={state.tone === "done" ? timeOf(e.at) : state.words}
+              trailingClassName={resultToneClass(state)}
+              onClick={open ? (from) => open(e.conversation.thread, from) : undefined}
+            />
+            {e.conversation.result ? (
+              <AldoTaskResult result={e.conversation.result} compact />
+            ) : null}
+          </div>
         );
       }),
     ],
@@ -139,16 +144,20 @@ function QuietRows(props: { readonly digest: AldoDigest; readonly grouped?: bool
       routines.map((r) => {
         const last = r.runs.at(-1)!;
         return (
-          <Row
-            key={r.id}
-            icon={<RepeatIcon className="size-4" strokeWidth={1.75} />}
-            verb="Ran"
-            title={r.title}
-            trailing={
-              r.runs.length > 1 ? `${r.runs.length} runs · ${timeOf(last.at)}` : timeOf(last.at)
-            }
-            onClick={open ? (from) => open(last.conversation.thread, from) : undefined}
-          />
+          <div key={r.id} className="min-w-0">
+            <Row
+              icon={<RepeatIcon className="size-4" strokeWidth={1.75} />}
+              verb="Ran"
+              title={r.title}
+              trailing={
+                r.runs.length > 1 ? `${r.runs.length} runs · ${timeOf(last.at)}` : timeOf(last.at)
+              }
+              onClick={open ? (from) => open(last.conversation.thread, from) : undefined}
+            />
+            {last.conversation.result ? (
+              <AldoTaskResult result={last.conversation.result} compact />
+            ) : null}
+          </div>
         );
       }),
     ],
