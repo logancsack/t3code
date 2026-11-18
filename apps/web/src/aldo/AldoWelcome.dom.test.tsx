@@ -5,6 +5,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 const save = vi.hoisted(() => vi.fn(async () => true));
+const navigate = vi.hoisted(() => vi.fn());
+vi.mock("@tanstack/react-router", () => ({ useNavigate: () => navigate }));
 vi.mock("./onboarding", () => ({ saveAldoOnboarding: save }));
 vi.mock("./AldoAccountMenu", () => ({
   useAldoProfile: () => ({ id: "user_1", email: "maya@example.com", name: "Maya Ortiz" }),
@@ -21,7 +23,8 @@ let container: HTMLDivElement;
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  save.mockClear();
+  save.mockReset().mockResolvedValue(true);
+  navigate.mockReset();
   org.data = null;
   container = document.createElement("div");
   document.body.append(container);
@@ -36,6 +39,8 @@ afterEach(async () => {
 
 const button = (name: string) =>
   [...container.querySelectorAll("button")].find((b) => b.textContent === name)!;
+const setupButton = (name: string) =>
+  [...container.querySelectorAll("button")].find((b) => b.textContent?.startsWith(name))!;
 
 describe("the welcome", () => {
   it("greets them by first name and asks one question", async () => {
@@ -61,7 +66,11 @@ describe("the welcome", () => {
     expect(button("Running a business").getAttribute("aria-pressed")).toBe("true");
     expect(button("Research").getAttribute("aria-pressed")).toBe("false");
     await act(async () => button("Continue").click());
-    expect(save).toHaveBeenCalledWith(["business", "media"]);
+    expect(save).not.toHaveBeenCalled();
+    expect(container.textContent).toContain("A few choices, if you like.");
+    await act(async () => button("Skip for now").click());
+    expect(save).toHaveBeenCalledWith(["business", "media"], { revert: true, waitForSave: true });
+    expect(navigate).not.toHaveBeenCalled();
   });
 
   it("a tap again unpicks, and Skip saves nothing picked", async () => {
@@ -70,6 +79,51 @@ describe("the welcome", () => {
     await act(async () => button("Code and apps").click());
     expect(button("Code and apps").getAttribute("aria-pressed")).toBe("false");
     await act(async () => button("Skip").click());
-    expect(save).toHaveBeenCalledWith([]);
+    await act(async () => button("Skip for now").click());
+    expect(save).toHaveBeenCalledWith([], { revert: true, waitForSave: true });
+  });
+
+  it("Back keeps the chosen interests without saving or granting permission", async () => {
+    await act(async () => root.render(<AldoWelcome />));
+    await act(async () => button("Research").click());
+    await act(async () => button("Continue").click());
+    await act(async () => button("Back").click());
+    expect(button("Research").getAttribute("aria-pressed")).toBe("true");
+    expect(save).not.toHaveBeenCalled();
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["Set spending limit", { to: "/settings/permissions" }],
+    ["Choose agents’ email", { to: "/settings/connections", hash: "aldo-agent-inbox" }],
+    ["Connect my mail", { to: "/settings/connections" }],
+  ])("opens %s only after the welcome is saved", async (label, destination) => {
+    let finish!: (saved: boolean) => void;
+    save.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    await act(async () => root.render(<AldoWelcome />));
+    await act(async () => button("Continue").click());
+    await act(async () => setupButton(label).click());
+    expect(navigate).not.toHaveBeenCalled();
+    expect(button("Saving…").disabled).toBe(true);
+    expect(setupButton(label).disabled).toBe(true);
+    await act(async () => finish(true));
+    expect(navigate).toHaveBeenCalledExactlyOnceWith(destination);
+  });
+
+  it("keeps the step and interests after a failed save, then retries the selected action", async () => {
+    save.mockResolvedValueOnce(false);
+    await act(async () => root.render(<AldoWelcome />));
+    await act(async () => button("Video and design").click());
+    await act(async () => button("Continue").click());
+    await act(async () => setupButton("Connect my mail").click());
+    expect(container.querySelector("[role=alert]")?.textContent).toContain("Try again");
+    expect(navigate).not.toHaveBeenCalled();
+    await act(async () => setupButton("Connect my mail").click());
+    expect(save).toHaveBeenLastCalledWith(["media"], { revert: true, waitForSave: true });
+    expect(navigate).toHaveBeenCalledExactlyOnceWith({ to: "/settings/connections" });
   });
 });
