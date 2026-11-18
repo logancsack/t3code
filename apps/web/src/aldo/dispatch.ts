@@ -35,7 +35,7 @@ import { runAtomCommand } from "@t3tools/client-runtime/state/runtime";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentPresentations } from "../state/presentation";
 import { toastManager } from "../components/ui/toast";
-import { AldoApiError, isAldoCloud, isAldoEnvironmentId } from "./api";
+import { AldoApiError, api, threadIdForEnvironment, isAldoCloud, isAldoEnvironmentId } from "./api";
 import {
   aldoMachineIsNew,
   aldoRoutesModels,
@@ -386,6 +386,19 @@ export function installAldoCommandDispatch(): void {
   });
   setOrchestrationCommandDispatchOverride(async ({ command, environmentId }) => {
     if (!isAldoEnvironmentId(environmentId)) return null;
+    if (command.type === "thread.turn.interrupt") {
+      try {
+        await api(`/api/environments/${threadIdForEnvironment(environmentId)}/actions`, {
+          method: "POST",
+          body: JSON.stringify({ action: "interrupt", t3ThreadId: command.threadId }),
+        });
+        requestAldoDirectoryRefresh();
+        return { sequence: 0 };
+      } catch (cause) {
+        // Older Aldo servers still take the ordinary T3 interrupt.
+        if (!(cause instanceof AldoApiError) || cause.status !== 400) throw cause;
+      }
+    }
     if (command.type === "thread.turn.start") lastSentAt.set(environmentId, Date.now());
     // Settling, archiving, renaming... a sleeping machine's thread: at once, without waking it.
     // (Not while this tab is bringing the machine up for a message: those wait for it, in order.)
@@ -413,7 +426,6 @@ export function installAldoCommandDispatch(): void {
       : command;
     const held =
       command.type === "thread.turn.start" &&
-      (routed || files !== null || !connected) &&
       (await handToAldo(environmentId, heldCommand, files, connected));
     if (!held) {
       await ensureAldoConnected(environmentId).catch((cause: unknown) => {
@@ -423,7 +435,7 @@ export function installAldoCommandDispatch(): void {
       return null;
     }
     heldThreads.set(environmentId, command.threadId);
-    const onlyAldo = files !== null || routed;
+    const onlyAldo = true;
     try {
       if (await connectForHeld(environmentId, command, onlyAldo))
         return onlyAldo ? { sequence: 0 } : null;

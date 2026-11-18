@@ -9144,7 +9144,7 @@ export default function ChatView(props: ChatViewProps) {
   queuedMessageActionsRef.current = {
     steer: (id) => {
       if (!activeThreadRef || queueBlockedByPendingRequest) return;
-      void sendQueuedMessage(activeThreadRef, id);
+      void sendQueuedMessage(activeThreadRef, id, true);
     },
     remove: (id) => {
       if (!activeThreadKey) return;

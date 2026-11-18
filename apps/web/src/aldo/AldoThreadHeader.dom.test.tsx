@@ -148,3 +148,16 @@ it("a phone opens files, terminal and changes from the menu; a desktop keeps the
   await vi.waitFor(() => expect(document.body.textContent).toContain("Open agent browser"));
   expect(document.body.textContent).not.toContain("Files, terminal and changes");
 });
+
+it.each([true, false])("shows Stopped by you in the thread header on phone=%s", async (phone) => {
+  host.phone = phone;
+  host.feed.home.conversations = [
+    {
+      thread: { environmentId: "aldo-a", threadId: "one" },
+      state: "stopped",
+    } as AldoHomeConversation,
+  ];
+  await render();
+  expect(container.textContent).toContain("Stopped by you");
+  expect(container.textContent).not.toContain("Working");
+});

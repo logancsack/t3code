@@ -1,5 +1,6 @@
 import type { setOrchestrationCommandDispatchOverride } from "@t3tools/client-runtime/operations";
 import {
+  EnvironmentId,
   CommandId,
   MessageId,
   ModelSelection,
@@ -16,6 +17,7 @@ const host = vi.hoisted(() => ({
     Parameters<typeof setOrchestrationCommandDispatchOverride>[0]
   > | null,
   routes: true,
+  api: vi.fn(async () => ({})),
   explicit: false,
   hold: vi.fn(async () => "held"),
   outgoing: vi.fn(async () => {}),
@@ -84,6 +86,8 @@ vi.mock("./startingThreads", () => ({
   releaseAldoStartingThreads: vi.fn(),
 }));
 vi.mock("./api", () => ({
+  api: host.api,
+  threadIdForEnvironment: (id: string) => id.replace(/^aldo-/, ""),
   isAldoCloud: true,
   isAldoEnvironmentId: () => true,
   AldoApiError: host.ApiError,
@@ -170,12 +174,12 @@ it.each([false, true])(
 it("keeps follow-ups on their existing model and supports a server without model routing", async () => {
   expect(
     await host.dispatch!({ environmentId: "aldo-machine", command: command(false), primary: true }),
-  ).toBeNull();
+  ).toEqual({ sequence: 0 });
   host.routes = false;
   expect(
     await host.dispatch!({ environmentId: "aldo-machine", command: command(true), primary: true }),
-  ).toBeNull();
-  expect(host.hold).not.toHaveBeenCalled();
+  ).toEqual({ sequence: 0 });
+  expect(host.hold).toHaveBeenCalledTimes(2);
 });
 
 it("routes an implementation thread's bootstrap while preserving its source plan", async () => {
@@ -253,4 +257,26 @@ it("retains a refused legacy entry too, and continues with the other saved messa
   await resumeAldoOutbox();
   expect([...host.entries.keys()]).toEqual([first.commandId]);
   expect(host.hold).toHaveBeenCalledTimes(2);
+});
+
+it("records the user stop before acknowledging an interrupt", async () => {
+  installAldoCommandDispatch();
+  const result = await host.dispatch!({
+    environmentId: EnvironmentId.make("aldo-test"),
+    primary: true,
+    command: {
+      type: "thread.turn.interrupt",
+      commandId: CommandId.make("stop"),
+      threadId: ThreadId.make("t"),
+      createdAt: new Date().toISOString(),
+    },
+  });
+  expect(host.api).toHaveBeenCalledWith(
+    "/api/environments/test/actions",
+    expect.objectContaining({
+      method: "POST",
+      body: JSON.stringify({ action: "interrupt", t3ThreadId: "t" }),
+    }),
+  );
+  expect(result).toEqual({ sequence: 0 });
 });

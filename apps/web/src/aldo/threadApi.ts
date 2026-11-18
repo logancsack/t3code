@@ -301,7 +301,7 @@ export async function holdAldoTurn(
 ): Promise<"held" | "refused"> {
   const threadId = threadIdForEnvironment(environmentId);
   for (let tries = 0; ; tries++) {
-    let held = command;
+    let held = now ? { ...(command as Record<string, unknown>), aldoNow: true } : command;
     if (files) {
       for (const [id, file] of files) await uploadAldoFile(environmentId, id, file);
       held = aldoHeldFileCommand(command, files, now);
@@ -331,7 +331,11 @@ export async function holdAldoTurn(
       if (!(cause instanceof AldoApiError) || cause.status === 401) throw cause;
       // Its uploads' parts were gone by the time Aldo held it (kept a day unnamed): sent again, once.
       if (cause.status === 409 && held !== command && tries === 0) continue;
-      if (files || (command as { aldoModelExplicit?: unknown }).aldoModelExplicit !== undefined)
+      if (
+        cause.status === 409 ||
+        files ||
+        (command as { aldoModelExplicit?: unknown }).aldoModelExplicit !== undefined
+      )
         throw cause;
       return "refused";
     }

@@ -5,7 +5,7 @@
 // conversation and, for a start, how it stands (threadStart.ts): the step,
 // how long it has taken, what happens next, and why when it waits or failed.
 
-import { CheckIcon, CircleAlertIcon, ClockIcon, RotateCwIcon } from "lucide-react";
+import { CheckIcon, CircleAlertIcon, ClockIcon, RotateCwIcon, SquareIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { Button } from "../components/ui/button";
@@ -34,6 +34,8 @@ function Elapsed(props: { readonly since: string }) {
 
 function ToneIcon(props: { readonly tone: AldoThreadStartTone; readonly className?: string }) {
   switch (props.tone) {
+    case "stopped":
+      return <SquareIcon aria-hidden className={cn("text-muted-foreground", props.className)} />;
     case "progress":
       return <Spinner aria-hidden className={cn("text-primary", props.className)} />;
     case "waiting":
@@ -122,7 +124,7 @@ function StartCard(props: {
             <h2 role="status" className="font-medium text-foreground text-sm">
               {start.title}
             </h2>
-            {!failed && props.startedAt ? (
+            {!failed && start.tone !== "stopped" && props.startedAt ? (
               <span aria-hidden className="shrink-0 font-mono text-muted-foreground text-xs">
                 <Elapsed since={props.startedAt} />
               </span>

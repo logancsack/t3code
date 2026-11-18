@@ -50,6 +50,7 @@ async function run<W, A, E>(command: AtomCommand<W, A, E>, input: W): Promise<A>
 export async function sendQueuedMessage(
   threadRef: ScopedThreadRef,
   messageId: string,
+  userAction = false,
 ): Promise<void> {
   const { environmentId, threadId } = threadRef;
   const threadKey = scopedThreadKey(threadRef);
@@ -142,7 +143,7 @@ export async function sendQueuedMessage(
 
     // The server starts the turn with the thread's stored modes, so a change
     // made in the composer before queueing is saved first.
-    const createdAt = new Date().toISOString();
+    const createdAt = userAction ? new Date().toISOString() : message.createdAt;
     const shell = readThreadShell(threadRef);
     const metadataUpdate = shell
       ? resolveThreadMetadataUpdateForNextTurn({
