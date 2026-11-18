@@ -125,6 +125,20 @@ describe("resultState", () => {
   });
 });
 
+describe("a thread with several pull requests merging", () => {
+  it("counts down to, and holds, the one Aldo merges first", () => {
+    const later = pullRequest("a", { number: 7, stage: "green", mergesAt: at(-30) });
+    const sooner = pullRequest("a", { number: 8, stage: "green", mergesAt: at(-1) });
+    expect(resultState([later, sooner], NOW)).toMatchObject({
+      words: "#8: Merges in 1 min",
+      pullRequest: sooner,
+    });
+    const [result] = finishedResults(home([conversation("a")], [later, sooner]), NOW);
+    expect(result!.state.pullRequest).toBe(sooner);
+    expect(result!.pullRequests).toEqual([sooner, later]);
+  });
+});
+
 describe("finishedResults", () => {
   it("keeps done threads whose pull requests are on their way, what failed first, then the soonest merge, then the newest", () => {
     const results = finishedResults(

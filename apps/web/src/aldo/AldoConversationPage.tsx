@@ -37,6 +37,7 @@ import { AldoPresence } from "./AldoPresence";
 import { AldoFrame } from "./AldoFrame";
 import { AldoUpNext } from "./AldoUpNext";
 import { AldoFinished } from "./AldoFinished";
+import { finishedResults } from "./finished.logic";
 import { settleAldoConversation, unsettleAldoConversation } from "./arrive";
 import { showAldoCards } from "./assistantApi";
 import { seedAldoComposer, useAldoAssistant } from "./assistantSession";
@@ -355,6 +356,8 @@ export function AldoConversationPage(props: {
     [home, now, computers],
   );
   const waiting = useMemo(() => (home ? aldoWaitingCount(home, now) : 0), [home, now]);
+  // What finished and hasn't landed stays in view after its lines have left the feed.
+  const finished = useMemo(() => (home ? finishedResults(home, now).length : 0), [home, now]);
   // Nothing read yet, and the read failed: that's said, not taken for nothing to show.
   const unread = home === null && props.error !== null;
   // What they dismissed from Needs you keeps the header (and so the way to restore it).
@@ -367,6 +370,7 @@ export function AldoConversationPage(props: {
     feed.length === 0 &&
     placed.length === 0 &&
     waiting === 0 &&
+    finished === 0 &&
     dismissed === 0 &&
     !unread &&
     props.supported !== false;

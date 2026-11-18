@@ -56,7 +56,11 @@ vi.mock("./AldoHomeBoard", () => ({ HealthStrip: () => <div>Setup failed to buil
 vi.mock("./AldoLiveCard", () => ({ AldoOpenContext: createContext(null) }));
 vi.mock("./AldoPresence", () => ({ AldoPresence: () => null }));
 vi.mock("./AldoUpNext", () => ({ AldoUpNext: () => <div>Working thread</div> }));
-vi.mock("./arrive", () => ({ settleAldoConversation: vi.fn(), unsettleAldoConversation: vi.fn() }));
+vi.mock("./arrive", () => ({
+  settleAldoConversation: vi.fn(),
+  unsettleAldoConversation: vi.fn(),
+  useAldoArrive: () => ({}),
+}));
 vi.mock("./presenceReactions", () => ({ acknowledgeAldo: vi.fn() }));
 vi.mock("./morph", () => ({
   aldoGlide: vi.fn(),
@@ -262,6 +266,54 @@ it("still opens an empty conversation at the welcome", async () => {
   await act(async () => root.render(<Page />));
   expect(beforePaint).toEqual([0]);
   expect(container.textContent).toContain("What should we get done?");
+});
+
+it("keeps what finished and hasn't landed in view after its lines have left the feed", async () => {
+  useAldoAssistant.setState({ historyLoaded: true });
+  const thread = { environmentId: "aldo-old", threadId: "old" };
+  const home = {
+    conversations: [
+      {
+        ref: "m:old",
+        thread,
+        title: "Handle 429s",
+        repos: ["acme/web"],
+        branch: "feature",
+        state: "done",
+        machine: "asleep",
+        at: "2026-10-10T12:00:00Z",
+        stateAt: "2026-10-10T12:00:00Z",
+      },
+    ],
+    pullRequests: [
+      {
+        environmentId: "aldo-old",
+        thread,
+        threadTitle: "Handle 429s",
+        repo: "acme/web",
+        number: 611,
+        url: "https://github.com/acme/web/pull/611",
+        title: "Handle 429s",
+        status: "watching",
+        stage: "checks-failing",
+        checks: { passed: 11, failed: 2, running: 0 },
+        deploy: null,
+        followups: 0,
+        reviewsExhausted: false,
+        greenSince: null,
+        mergesAt: null,
+        mergedAt: null,
+        updatedAt: "2026-10-10T12:00:00Z",
+      },
+    ],
+    actions: [],
+    approvals: [],
+  } as unknown as AldoHome;
+  await act(async () => root.render(<Page home={home} />));
+  expect(container.textContent).not.toContain("What should we get done?");
+  expect(container.querySelector("[data-aldo-finished]")?.textContent).toContain(
+    "2 checks failing",
+  );
 });
 
 it("reveals home content after eight seconds without pretending history is loaded", async () => {
