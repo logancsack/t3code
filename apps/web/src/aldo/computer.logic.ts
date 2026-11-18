@@ -32,6 +32,8 @@ export interface AldoComputer {
   readonly t3ThreadId?: string | null;
   /** Why it didn't start, when it failed. */
   readonly error: string | null;
+  /** On an ask: a yes is for the account, so later threads start it without asking (a newer Aldo). */
+  readonly forAccount?: boolean;
 }
 
 /** The thread's computers from a directory entry, the one to show first first (an older Aldo reports one, or none). */
@@ -111,14 +113,15 @@ function credits(perHour: number): string {
   return `${amount} ${amount === 1 ? "credit" : "credits"}`;
 }
 
-/** The ask's body: the agent's reason, then what it costs. */
+/** The ask's body: the agent's reason, what it costs, and what a yes covers when Aldo says it's the account's. */
 export function aldoComputerAskDescription(
-  computer: Pick<AldoComputer, "why" | "creditsPerHour">,
+  computer: Pick<AldoComputer, "why" | "creditsPerHour" | "forAccount">,
 ): string {
   const why = computer.why?.trim() ?? "";
   const reason = why && !/[.!?…]$/.test(why) ? `${why}.` : why;
   const cost = `${credits(computer.creditsPerHour)} an hour while it runs. It stops when the thread is done.`;
-  return reason ? `${reason} ${cost}` : cost;
+  const covers = computer.forAccount ? " A yes covers your other threads too." : "";
+  return `${reason ? `${reason} ${cost}` : cost}${covers}`;
 }
 
 /** The Desktop view's screens: the thread machine's own desktop, or the Windows computer's. */

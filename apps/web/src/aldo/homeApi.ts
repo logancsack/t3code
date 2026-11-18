@@ -94,6 +94,8 @@ export interface AldoHomeConversation {
     readonly status: string;
     readonly why?: string;
     readonly askedAt?: string;
+    /** A yes is for the account, so later threads start it without asking (a newer Aldo). */
+    readonly forAccount?: boolean;
     readonly creditsPerHour: number;
   }>;
   readonly approvedPlan?: { readonly id: string; readonly at: string };

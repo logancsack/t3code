@@ -51,6 +51,7 @@ export function AldoComputerRequest({ request }: { readonly request: ComputerReq
         {aldoComputerAskDescription({
           why: request.computer.why ?? null,
           creditsPerHour: request.computer.creditsPerHour,
+          ...(request.computer.forAccount ? { forAccount: true } : {}),
         })}
       </p>
       {error ? (
