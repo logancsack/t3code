@@ -220,11 +220,22 @@ export function feedEvents(
     const c = conversationAt(thread);
     return c !== undefined && isFinished(c) && startOf(c) !== null;
   };
+  // Aldo merging a pull request is said by its shipped line: one merge, one line.
+  const shippedLine = (a: AldoHomeAction) =>
+    a.tool === "merge_pull_request" &&
+    a.thread !== null &&
+    shipped.some(
+      (e) =>
+        e.kind === "shipped" &&
+        sameTarget(e.pullRequest.thread, a.thread!) &&
+        Date.parse(e.at) >= Date.parse(a.at) - TOLD_SLACK_MS,
+    );
   const shown = home.actions
     .filter((a) => SHOWN_ACTIONS.has(a.tool) && !a.failed && within(a.at))
     .sort((a, b) => a.at.localeCompare(b.at))
     .filter((a) => !shownHere(a))
-    .filter((a) => !(STARTS.has(a.tool) && settled(a.thread)));
+    .filter((a) => !(STARTS.has(a.tool) && settled(a.thread)))
+    .filter((a) => !shippedLine(a));
   const going = (thread: AldoHomeAction["thread"]) =>
     thread !== null &&
     home.conversations.some((c) => sameTarget(thread, c.thread) && !isFinished(c));

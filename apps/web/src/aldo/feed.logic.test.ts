@@ -129,6 +129,46 @@ describe("what finished and shipped", () => {
     ).toBe("Deployed");
   });
 
+  it("says Aldo's merge once, as its shipped line, but keeps a merge whose pull request hasn't shipped", () => {
+    const merge = action({
+      id: "m",
+      tool: "merge_pull_request",
+      title: "#7 Ship the inbox",
+      at: at(45),
+    });
+    const events = feedEvents(
+      {
+        ...empty,
+        conversations: [conversation({ state: "working" })],
+        pullRequests: [pullRequest({})],
+        actions: [merge],
+      },
+      quiet,
+    );
+    expect(events.map((e) => e.kind)).toEqual(["shipped"]);
+    const pending = feedEvents(
+      {
+        ...empty,
+        conversations: [conversation({ state: "working" })],
+        pullRequests: [],
+        actions: [merge],
+      },
+      quiet,
+    );
+    expect(pending.map((e) => e.key)).toEqual(["action:m"]);
+    // A merge after the one that shipped is another merge.
+    const later = feedEvents(
+      {
+        ...empty,
+        conversations: [conversation({ state: "working" })],
+        pullRequests: [pullRequest({})],
+        actions: [{ ...merge, at: at(20) }],
+      },
+      quiet,
+    );
+    expect(later.map((e) => e.kind)).toEqual(["shipped", "action"]);
+  });
+
   it("says a check that finished after its merge left the feed on a line of its own", () => {
     const checked = conversation({
       ref: "m1:check",
