@@ -62,7 +62,6 @@ import { ApprovalsSection } from "./AldoApprovals";
 import { NeedsYouCard } from "./AldoHomeInbox";
 import { RoutinesSection } from "./AldoRoutines";
 import { AldoSimpleTabs } from "./AldoSimpleRail";
-import { AldoSimpleLibrary, AldoSimpleNeedsYou } from "./AldoSimplePlaces";
 import { AldoStarters, STARTERS_UNTIL_THREADS } from "./AldoStarters";
 import {
   loadAldoConversation,
@@ -78,7 +77,6 @@ import {
 import { type AldoHomeConversation } from "./homeApi";
 import { useAldoFirstViewHold } from "./firstView";
 import { refreshAldoHome, useAldoHomeRead } from "./homeFeed";
-import { AldoUnderTheHood } from "./AldoUnderTheHood";
 import { HOST_KINDS, openAldoRepositoryPicker } from "./AldoRepositoryPicker";
 import { useStartAldoThread } from "./newThread";
 import { ICON_BUTTON } from "./surface";
@@ -107,6 +105,22 @@ import { useIsMobile } from "../hooks/useMediaQuery";
 
 const LAST_SEEN_KEY = "aldo:home:seen";
 const AldoWelcome = lazy(() => import("./AldoWelcome").then((m) => ({ default: m.AldoWelcome })));
+const AldoUnderTheHood = lazy(() =>
+  import("./AldoUnderTheHood").then((m) => ({ default: m.AldoUnderTheHood })),
+);
+const AldoSimpleNeedsYou = lazy(() =>
+  import("./AldoSimplePlaces").then((m) => ({ default: m.AldoSimpleNeedsYou })),
+);
+const AldoSimpleLibrary = lazy(() =>
+  import("./AldoSimplePlaces").then((m) => ({ default: m.AldoSimpleLibrary })),
+);
+const placeLoading = (
+  <SidebarInset className="h-dvh bg-background">
+    <p role="status" className="m-auto text-sm text-muted-foreground">
+      Loading…
+    </p>
+  </SidebarInset>
+);
 /** Shows "now" moving: elapsed times tick without a fetch. */
 const TICK_MS = 30_000;
 
@@ -346,14 +360,16 @@ function AldoHomeContent() {
 
   if (underTheHood)
     return (
-      <AldoUnderTheHood
-        home={home}
-        error={error}
-        repos={repos}
-        now={now}
-        lastSeen={lastSeen}
-        tabs={simplePlace !== null && mobile ? <AldoSimpleTabs /> : null}
-      />
+      <Suspense fallback={placeLoading}>
+        <AldoUnderTheHood
+          home={home}
+          error={error}
+          repos={repos}
+          now={now}
+          lastSeen={lastSeen}
+          tabs={simplePlace !== null && mobile ? <AldoSimpleTabs /> : null}
+        />
+      </Suspense>
     );
 
   if (simplePlace !== null) {
@@ -361,18 +377,25 @@ function AldoHomeContent() {
     const tabs = mobile ? <AldoSimpleTabs /> : null;
     if (simplePlace === "needs") {
       return (
-        <AldoSimpleNeedsYou
-          home={home}
-          supported={supported}
-          error={error}
-          now={now}
-          tabs={tabs}
-          issues={issues}
-          assistant={assistant === true}
-        />
+        <Suspense fallback={placeLoading}>
+          <AldoSimpleNeedsYou
+            home={home}
+            supported={supported}
+            error={error}
+            now={now}
+            tabs={tabs}
+            issues={issues}
+            assistant={assistant === true}
+          />
+        </Suspense>
       );
     }
-    if (simplePlace === "library") return <AldoSimpleLibrary tabs={tabs} />;
+    if (simplePlace === "library")
+      return (
+        <Suspense fallback={placeLoading}>
+          <AldoSimpleLibrary tabs={tabs} />
+        </Suspense>
+      );
     return (
       <AldoConversationPage
         home={home}
@@ -537,9 +560,7 @@ function AldoHomeContent() {
                 ) : null}
                 {board.done.length > 0 ? (
                   <Section
-                    title={
-                      board.done.some((c) => c.state === "stopped") ? "Done or stopped" : "Done"
-                    }
+                    title={"Recent updates"}
                     count={board.done.length}
                     {...(lastSeen ? { hint: "new since you were last here is marked" } : {})}
                   >

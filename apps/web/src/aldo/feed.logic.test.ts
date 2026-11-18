@@ -213,7 +213,7 @@ describe("what finished and shipped", () => {
     );
     expect(events.some((e) => e.kind === "shipped")).toBe(false);
     const digest = digestOf(events);
-    expect(digest.label).toBe("1 finished · 2 routine runs");
+    expect(digest.label).toBe("1 update · 2 routine runs");
     expect(digest.routines).toMatchObject([{ id: "rt1", title: "Client pin", runs: [{}, {}] }]);
     expect(digest.finished.map((e) => e.conversation.title)).toEqual(["Inbox triage"]);
   });
@@ -244,7 +244,7 @@ describe("what finished and shipped", () => {
       },
       quiet,
     );
-    expect(digestOf(events).label).toBe("1 shipped · 1 finished");
+    expect(digestOf(events).label).toBe("1 shipped · 1 update");
   });
 });
 

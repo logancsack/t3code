@@ -51,7 +51,7 @@ test("a finished claim cannot pass with missing, unmet, untyped or empty evidenc
     }),
     null,
   );
-  NodeAssert.equal(taskResultOf("```aldo-result\nnot JSON\n```")?.state, "unfinished");
+  NodeAssert.equal(taskResultOf("```aldo-result\nnot JSON\n```"), null);
   NodeAssert.equal(checkedTaskResult({ ...result(), checked: ["x".repeat(801)] }), null);
 });
 test("a closing question counts as waiting; code, quotes and suggested follow-ups do not", () => {

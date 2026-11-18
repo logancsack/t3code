@@ -59,6 +59,17 @@ export interface AldoChatDecision {
 }
 
 export interface AldoHomeConversation {
+  readonly progress?: {
+    readonly execution: "working" | "replied" | "failed" | "stopped" | "unknown";
+    readonly verdict: "finished" | "unfinished" | "blocked" | "unknown";
+    readonly next: {
+      readonly owner: "aldo" | "you" | "none";
+      readonly kind: string;
+      readonly at?: string;
+    };
+    readonly label: string;
+    readonly detail: string;
+  };
   readonly result?: import("./taskResult.logic").TaskResult;
   readonly resultState?: "unfinished";
   readonly chatDecision?: AldoChatDecision;
@@ -624,10 +635,24 @@ export async function fetchAldoHome(
   if (!Array.isArray(body.conversations)) return null;
   return {
     ...body,
-    conversations: body.conversations.map((c) =>
-      c.resultState === "unfinished" ? { ...c, state: "unfinished" } : c,
-    ),
+    conversations: body.conversations.map(adaptTaskProgress),
   } as AldoHome;
+}
+
+/** The additive server status never requires a simultaneous client release. */
+export function adaptTaskProgress(c: AldoHomeConversation): AldoHomeConversation {
+  if (c.progress?.execution === "stopped") return { ...c, state: "stopped" };
+  // Actual questions and approvals stay visible before any automatic continuation.
+  if (
+    !c.pending &&
+    !c.plan &&
+    !c.computers?.some((one) => one.status === "asked") &&
+    c.progress?.next.owner === "aldo" &&
+    !["working", "release"].includes(c.progress.next.kind) &&
+    !["working", "starting", "queued"].includes(c.state)
+  )
+    return { ...c, state: "scheduled" };
+  return c.resultState === "unfinished" ? { ...c, state: "unfinished" } : c;
 }
 
 /**

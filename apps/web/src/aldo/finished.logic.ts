@@ -140,10 +140,19 @@ function morePressing(a: AldoResultState, b: AldoResultState): number {
 export function resultState(
   prs: ReadonlyArray<AldoHomePullRequest>,
   now: number,
-  options: { readonly clock?: boolean } = {},
+  options: { readonly clock?: boolean; readonly conversation?: AldoHomeConversation } = {},
 ): AldoResultState {
   const top = prs.map((pr) => pullRequestState(pr, now, options)).sort(morePressing)[0];
-  if (!top) return { tone: "done", words: "Finished", pullRequest: null };
+  if (!top)
+    return {
+      tone: options.conversation?.result?.state === "finished" ? "done" : "quiet",
+      words:
+        options.conversation?.progress?.label ??
+        (options.conversation?.result?.state === "finished"
+          ? "Reported complete"
+          : "Reply received"),
+      pullRequest: null,
+    };
   return prs.length > 1 ? { ...top, words: `#${top.pullRequest!.number}: ${top.words}` } : top;
 }
 
