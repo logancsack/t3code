@@ -160,7 +160,7 @@ export function taskResultOf(value: string): TaskResult | null {
   }
   let result: TaskResult | null = null;
   const body = last[3] ?? "";
-  if (body.length <= 30_000) {
+  if (body.length <= 300_000) {
     try {
       result = checkedTaskResult(JSON.parse(body));
     } catch {}

@@ -208,3 +208,16 @@ it("unfinished work has its own section and never implies running or asks for us
     ),
   ).toMatchObject({ status: "Unfinished", action: null, dot: "quiet" });
 });
+
+it("a queued computer takes precedence over an unfinished report", () => {
+  const c = conversation({
+    state: "unfinished",
+    computers: [{ computer: "gpu", status: "queued", position: 2, creditsPerHour: 310 }],
+  });
+  expect(boardFor([c], now)).toMatchObject({
+    working: [c],
+    unfinished: [],
+    done: [],
+    needsYou: [],
+  });
+});

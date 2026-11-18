@@ -2589,14 +2589,14 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
             onImageExpand={ctx.onImageExpand}
             mediaGrid={isAldoCloud}
           />
+          {aldoResult?.result && !row.message.streaming ? (
+            <AldoTaskResult
+              result={aldoResult.result}
+              cwd={ctx.markdownCwd}
+              threadRef={ctx.threadRef ?? undefined}
+            />
+          ) : null}
         </AssistantCitationSource>
-        {aldoResult?.result && !row.message.streaming ? (
-          <AldoTaskResult
-            result={aldoResult.result}
-            cwd={ctx.markdownCwd}
-            threadRef={ctx.threadRef ?? undefined}
-          />
-        ) : null}
         {results ? (
           <>
             <AldoMadeCards

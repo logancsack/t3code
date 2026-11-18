@@ -123,7 +123,9 @@ export function boardFor(
     working: conversations
       .filter((c) => (WORKING_STATES.has(c.state) || queuedComputer(c)) && !isPausedMidTurn(c))
       .sort(byAt),
-    unfinished: conversations.filter((c) => c.state === "unfinished").sort(byAt),
+    unfinished: conversations
+      .filter((c) => c.state === "unfinished" && !queuedComputer(c))
+      .sort(byAt),
     done: conversations
       .filter(
         (c) =>
