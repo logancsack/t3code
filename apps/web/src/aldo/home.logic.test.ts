@@ -67,6 +67,11 @@ describe("needsYouKind", () => {
 });
 
 describe("boardFor", () => {
+  it("keeps recently stopped work visible without asking to continue it", () => {
+    const stopped = conversation({ state: "stopped", at: ago(3000), stateAt: ago(1) });
+    expect(boardFor([stopped], NOW)).toMatchObject({ needsYou: [], working: [], done: [stopped] });
+  });
+
   it("puts a conversation paused mid-turn with what needs the user, not working", () => {
     const board = boardFor(
       [

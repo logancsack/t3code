@@ -316,6 +316,7 @@ export async function holdAldoTurn(
         if (uploaded) held = aldoHeldCommand(command, uploads);
       }
     }
+    if (now) held = { ...(held as Record<string, unknown>), aldoNow: true };
     const body = JSON.stringify({ command: held });
     try {
       await untilAnswered(() =>
@@ -331,7 +332,11 @@ export async function holdAldoTurn(
       if (!(cause instanceof AldoApiError) || cause.status === 401) throw cause;
       // Its uploads' parts were gone by the time Aldo held it (kept a day unnamed): sent again, once.
       if (cause.status === 409 && held !== command && tries === 0) continue;
-      if (files || (command as { aldoModelExplicit?: unknown }).aldoModelExplicit !== undefined)
+      if (
+        cause.status === 409 ||
+        files ||
+        (command as { aldoModelExplicit?: unknown }).aldoModelExplicit !== undefined
+      )
         throw cause;
       return "refused";
     }

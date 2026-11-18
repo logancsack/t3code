@@ -229,3 +229,9 @@ describe("aldoMachineStart", () => {
     expect(aldoMachineStart({ a: failed, c: failed })).toBe("failed");
   });
 });
+
+it("a deliberately stopped thread never offers another machine wake", () => {
+  expect(describeAldoWakeFailure("Stopped by you. Send a new message to resume it.")).toMatchObject(
+    { tone: "stopped", title: "Stopped by you", reason: null, step: null },
+  );
+});

@@ -124,7 +124,10 @@ export function boardFor(
       .sort(byAt),
     done: conversations
       .filter(
-        (c) => !queuedComputer(c) && c.state === "done" && now - Date.parse(c.at) < DONE_WINDOW_MS,
+        (c) =>
+          !queuedComputer(c) &&
+          (c.state === "done" || c.state === "stopped") &&
+          now - Date.parse(c.stateAt ?? c.at) < DONE_WINDOW_MS,
       )
       .sort(byAt),
   };

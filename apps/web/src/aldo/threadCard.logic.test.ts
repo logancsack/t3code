@@ -181,3 +181,13 @@ it("queue position follows the server and an actual approval still needs the use
   });
   expect(needsYouKind(asking)).toBe("waiting");
 });
+
+it("shows a user stop without offering Continue, even with a stale held message", () => {
+  expect(
+    threadCardOf(
+      homeWith([held()]),
+      conversation({ state: "stopped", summary: "Stopped by you" }),
+      now,
+    ),
+  ).toMatchObject({ status: "Stopped by you", action: null });
+});

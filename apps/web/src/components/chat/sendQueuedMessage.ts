@@ -29,6 +29,7 @@ import {
   resolveThreadMetadataUpdateForNextTurn,
   revokeBlobPreviewUrl,
 } from "../ChatView.logic";
+import { isAldoCloud, isAldoEnvironmentId } from "../../aldo/api";
 import { aldoImagesGoInline } from "../../aldo/dispatch";
 import { aldoAttachmentOf, aldoCarriesAttachments } from "../../aldo/files";
 import { toastManager } from "../ui/toast";
@@ -50,6 +51,7 @@ async function run<W, A, E>(command: AtomCommand<W, A, E>, input: W): Promise<A>
 export async function sendQueuedMessage(
   threadRef: ScopedThreadRef,
   messageId: string,
+  userAction = false,
 ): Promise<void> {
   const { environmentId, threadId } = threadRef;
   const threadKey = scopedThreadKey(threadRef);
@@ -204,6 +206,9 @@ export async function sendQueuedMessage(
         runtimeMode: sendSettings.runtimeMode,
         interactionMode: sendSettings.interactionMode,
         createdAt,
+        ...(isAldoCloud && isAldoEnvironmentId(environmentId)
+          ? { aldoUserInstructionAt: userAction ? createdAt : message.createdAt }
+          : {}),
       },
     });
     queue.finishSend(threadKey, message.id);

@@ -8,7 +8,7 @@
 
 import { type AldoEnvironment, type AldoStartState } from "./directory";
 
-export type AldoThreadStartTone = "progress" | "waiting" | "retrying" | "failed";
+export type AldoThreadStartTone = "progress" | "waiting" | "retrying" | "failed" | "stopped";
 
 /** The steps of a start, in the order the thread shows them. */
 export const ALDO_START_STEPS = ["Computer", "Agent", "Conversation"] as const;
@@ -16,7 +16,7 @@ export const ALDO_START_STEPS = ["Computer", "Agent", "Conversation"] as const;
 export interface AldoThreadStartView {
   readonly tone: AldoThreadStartTone;
   /** The sidebar's word for it, where a thread under way says "Working". */
-  readonly label: "Starting" | "Sending" | "Queued" | "Retrying" | "Failed";
+  readonly label: "Starting" | "Sending" | "Queued" | "Retrying" | "Failed" | "Stopped";
   /** What's happening, in a line. */
   readonly title: string;
   /** What happens next. */
@@ -206,6 +206,15 @@ function describeHeldMessage(
  * show them failed (preload.ts): why, in its first line, with a way to try again.
  */
 export function describeAldoWakeFailure(message: string): AldoThreadStartView {
+  if (message.includes("Stopped by you"))
+    return {
+      tone: "stopped",
+      label: "Stopped",
+      title: "Stopped by you",
+      body: "Send a new message when you want to resume.",
+      reason: null,
+      step: null,
+    };
   const line =
     message
       .split("\n")
