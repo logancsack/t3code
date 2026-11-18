@@ -214,6 +214,13 @@ export function ConversationRow(props: {
         {c.summary ? (
           <p className="mt-1 line-clamp-2 text-muted-foreground text-xs">{c.summary}</p>
         ) : null}
+        {c.state === "done" &&
+        !c.result &&
+        !c.summary?.includes("Task completion has not been verified.") ? (
+          <p className="mt-1 text-muted-foreground text-xs">
+            Task completion has not been verified.
+          </p>
+        ) : null}
         {c.result ? (
           <details>
             <summary className="min-h-10 cursor-pointer py-2 text-sm">Result</summary>

@@ -9,7 +9,7 @@
 // uses the pieces here too.
 
 import AldoTaskResult from "./AldoTaskResult";
-import { CheckIcon, ChevronDownIcon } from "lucide-react";
+import { ChevronDownIcon } from "lucide-react";
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { PullRequestGlyph } from "../components/pullRequest/pullRequestIcons";
@@ -261,17 +261,12 @@ function SettledRow(props: { readonly conversation: AldoHomeConversation; readon
   const body = (
     <>
       <span aria-hidden className="flex h-5 w-5 shrink-0 items-center justify-center">
-        {c.result?.state === "finished" ? (
-          <CheckIcon className="size-4 text-success-foreground" strokeWidth={2.25} />
-        ) : (
-          <span className="size-1.5 rounded-full bg-muted-foreground/60" />
-        )}
+        <span className="size-1.5 rounded-full bg-muted-foreground/60" />
       </span>
       <span className="min-w-0 flex-1 text-foreground/85">
         <span className="block truncate group-hover:underline">{c.title}</span>
         <span className="block text-[12px] text-muted-foreground">
-          {c.progress?.label ??
-            (c.result?.state === "finished" ? "Reported complete" : "Reply received · unverified")}
+          {c.progress?.label ?? "Reply received"} · unverified
         </span>
       </span>
       <span className="shrink-0 text-[12px] tabular-nums">

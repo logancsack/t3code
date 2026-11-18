@@ -251,10 +251,26 @@ describe("presenceBoard moved", () => {
     );
     expect(b.moved.rows.map((r) => [r.title, r.detail])).toEqual([
       ["Alpha", "#9 deploy failed · 10 min ago"],
-      ["Beta", "Finished · 5 h ago"],
+      ["Beta", "Reply received · unverified · 5 h ago"],
     ]);
     expect(b.moved.rows[0]!.tone).toBe("bad");
-    expect(b.moved.preview).toBe("1 deploy failed · 1 finished");
+    expect(b.moved.rows[1]!.tone).toBe("quiet");
+    expect(b.moved.preview).toBe("1 deploy failed · 1 reply received");
+  });
+  it("calls only an evidenced task report complete", () => {
+    const c = conversation({
+      result: {
+        state: "finished",
+        doneWhen: [{ criterion: "Save comparison", met: true, evidence: "Attached" }],
+        checked: ["Opened it"],
+        notChecked: [],
+        decided: [],
+      },
+    });
+    const b = board(home({ conversations: [c] }));
+    expect(b.moved.rows[0]?.detail).toMatch(/^Reported complete/);
+    expect(b.moved.preview).toBe("1 reported complete");
+    expect(b.moved.rows[0]?.tone).toBe("good");
   });
   it("counts from when they last looked, for a day", () => {
     const read = home({
@@ -266,7 +282,7 @@ describe("presenceBoard moved", () => {
     });
     expect(board(read, NOW - 60 * 60_000).moved.rows).toHaveLength(1);
     expect(board(read, null).moved.rows).toHaveLength(2);
-    expect(board(read, null).moved.preview).toBe("2 finished");
+    expect(board(read, null).moved.preview).toBe("2 replies received");
   });
   it("drops a thread that has moved on", () => {
     const read = (state: AldoHomeConversation["state"]) =>
@@ -286,7 +302,7 @@ describe("presenceBoard moved", () => {
       }),
     );
     expect(b.moved.rows).toHaveLength(1);
-    expect(b.moved.rows[0]!.detail).toMatch(/^Finished/);
+    expect(b.moved.rows[0]!.detail).toMatch(/^Reply received/);
   });
   it("prefers a pull request's word when it ties with finishing", () => {
     const b = board(
@@ -306,7 +322,7 @@ describe("presenceBoard moved", () => {
         }),
       ).moved.rows[0]!.detail;
     expect(green(ahead(10))).toMatch(/^#7 checks passed/);
-    expect(green(null)).toMatch(/^Finished/);
+    expect(green(null)).toMatch(/^Reply received/);
   });
 });
 
