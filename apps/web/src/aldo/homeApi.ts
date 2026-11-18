@@ -125,6 +125,11 @@ export interface AldoHomePullRequest {
   readonly greenSince: string | null;
   /** When Aldo merges it on its own, if nothing changes (the workspace's policy says so). */
   readonly mergesAt: string | null;
+  /**
+   * The user held Aldo's merge: it waits for theirs (`mergesAt` is null). Left
+   * out by an Aldo that can't hold one, so there's no Hold to offer.
+   */
+  readonly held?: boolean;
   readonly mergedAt: string | null;
   readonly updatedAt: string;
   /** The conversation checking it's live once it merged (a newer Aldo). */
