@@ -34,6 +34,7 @@ import { ContinueButton } from "./AldoContinue";
 import { AldoOpenContext } from "./AldoLiveCard";
 import { ApproveInLink, PaymentDetails } from "./AldoPaymentCard";
 import { AldoFrame } from "./AldoFrame";
+import { setAldoMergeHold } from "./mergeHold";
 import { AgentMarkdown, Quoted } from "./AldoQuoted";
 import { useAldoArrive } from "./arrive";
 import { useAldoBrief } from "./briefFeed";
@@ -751,7 +752,25 @@ function DecisionCard(props: {
       body = (
         <p className="text-[14px] text-muted-foreground leading-5 tabular-nums dark:text-foreground/70">
           {checks && total > 0 ? `${checks.passed}/${total} checks passed` : "Checks passed"} ·
-          ready to merge
+          {pr.held ? (
+            <>
+              {" "}
+              you held Aldo's merge, so it waits for yours.{" "}
+              <button
+                type="button"
+                className={cn(
+                  FOCUS,
+                  "rounded-sm font-medium text-foreground/80 underline decoration-foreground/25 underline-offset-4 hover:text-foreground hover:decoration-foreground/60",
+                )}
+                disabled={busy !== null}
+                onClick={() => void setAldoMergeHold(pr, false)}
+              >
+                Let Aldo merge it
+              </button>
+            </>
+          ) : (
+            " ready to merge"
+          )}
         </p>
       );
       actions = (

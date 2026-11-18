@@ -126,6 +126,13 @@ export function pullRequestsOf(
   return home.pullRequests.filter((pr) => sameTarget(pr.thread, c.thread));
 }
 
+/** What to look at first: what failed, what is the user's, then the merge Aldo makes soonest. */
+function morePressing(a: AldoResultState, b: AldoResultState): number {
+  const rank = RANK[a.tone] - RANK[b.tone];
+  if (rank !== 0 || a.tone !== "merging") return rank;
+  return (a.pullRequest?.mergesAt ?? "").localeCompare(b.pullRequest?.mergesAt ?? "");
+}
+
 /**
  * Where a finished thread stands: its most pressing pull request ("#611: 2
  * checks failing" when it has more than one), or done.
@@ -135,10 +142,7 @@ export function resultState(
   now: number,
   options: { readonly clock?: boolean } = {},
 ): AldoResultState {
-  const states = prs
-    .map((pr) => pullRequestState(pr, now, options))
-    .sort((a, b) => RANK[a.tone] - RANK[b.tone]);
-  const top = states[0];
+  const top = prs.map((pr) => pullRequestState(pr, now, options)).sort(morePressing)[0];
   if (!top) return { tone: "done", words: "Finished", pullRequest: null };
   return prs.length > 1 ? { ...top, words: `#${top.pullRequest!.number}: ${top.words}` } : top;
 }
@@ -183,20 +187,15 @@ export function finishedResults(home: AldoHome, now: number): ReadonlyArray<Aldo
       const prs = pullRequestsOf(home, c).filter(inFlight);
       if (prs.length === 0) return [];
       const state = resultState(prs, now);
-      const pullRequests = [...prs].sort(
-        (a, b) => RANK[pullRequestState(a, now).tone] - RANK[pullRequestState(b, now).tone],
-      );
+      const pullRequests = prs
+        .map((pr) => pullRequestState(pr, now))
+        .sort(morePressing)
+        .map((s) => s.pullRequest!);
       return [
         { key: `finished:${c.ref}`, conversation: c, pullRequests, state, at: c.stateAt ?? c.at },
       ];
     })
-    .sort((a, b) => {
-      const rank = RANK[a.state.tone] - RANK[b.state.tone];
-      if (rank !== 0) return rank;
-      const soon = (r: AldoFinishedResult) => r.state.pullRequest?.mergesAt ?? "";
-      if (a.state.tone === "merging") return soon(a).localeCompare(soon(b));
-      return b.at.localeCompare(a.at);
-    });
+    .sort((a, b) => morePressing(a.state, b.state) || b.at.localeCompare(a.at));
 }
 
 /** Whether it's waiting only on checks or a deploy: a quiet line under the group, not a row, until it's ready. */
