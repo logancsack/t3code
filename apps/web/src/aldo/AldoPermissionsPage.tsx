@@ -323,7 +323,11 @@ export function AldoPermissionsPage() {
           rule="spendThreshold"
           setting="aldo-spend-threshold"
           policy={policy}
-          description="What an agent may spend before it asks you: a paid plan, a domain or a service’s usage, at once or in a month."
+          description={
+            policy.view?.spending?.scope === "account"
+              ? `What an agent may spend per purchase before asking you, across all projects. A separate $${policy.view.spending.monthlyLimit} monthly safety net applies. Other approvals still apply.`
+              : "What an agent may spend before it asks you: a paid plan, a domain or a service’s usage, at once or in a month."
+          }
         />
         <AldoPolicyRuleRow
           rule="paidFallback"
@@ -333,8 +337,12 @@ export function AldoPermissionsPage() {
         />
         <SettingsRow
           id="aldo-payments"
-          title="Pay, book or cancel"
-          description="Agents show you what it is and the total with fees, and you approve each one."
+          title="Payments and commitments"
+          description={
+            policy.view?.spending?.scope === "account"
+              ? "Purchases above either limit, paid sign-ups, bookings and cancellations need your approval. Your wallet may also ask you to confirm a payment."
+              : "Agents show you what it is and the total with fees, and you approve each one."
+          }
           control={
             <span className="inline-flex items-center gap-1.5 text-muted-foreground text-xs">
               <LockIcon aria-hidden="true" className="size-3.5" />

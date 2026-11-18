@@ -126,7 +126,7 @@ export const ALDO_SETTINGS_PAGES: Readonly<
   "/settings/permissions": {
     title: "Permissions",
     intro:
-      "What agents may do without asking you first. Paying, booking and cancelling always wait for your yes.",
+      "What agents may do without asking you first, what they can run and how they use your accounts.",
   },
   "/settings/instructions": PERSONALIZATION,
   "/settings/memory": PERSONALIZATION,

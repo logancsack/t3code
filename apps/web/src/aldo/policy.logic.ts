@@ -317,6 +317,7 @@ export function aldoRuleDifferences(
   view: AldoPolicyView,
   rule: AldoPolicyRuleId,
 ): ReadonlyArray<AldoPolicyDifference> {
+  if (rule === "spendThreshold" && view.spending?.scope === "account") return [];
   const spec = ALDO_POLICY_RULES[rule];
   const everywhere = aldoRuleValue(rule, view.everywhere, view.defaults);
   return view.workspaces.flatMap((workspace) => {
