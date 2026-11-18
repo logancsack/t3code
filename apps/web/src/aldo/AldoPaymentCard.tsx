@@ -8,14 +8,15 @@
 // (AldoPaymentWaiting). Never the card itself: only its last four digits.
 
 import { ArrowUpRightIcon, CheckIcon, CreditCardIcon, XIcon } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { cn } from "~/lib/utils";
 import { ThreadLink } from "./AldoHomeInbox";
 import { Quoted } from "./AldoQuoted";
 import { useAldoArrive } from "./arrive";
-import { type AldoPayment } from "./homeApi";
-import { paymentWords } from "./payments.logic";
+import { retryAldoPayment, type AldoPayment } from "./homeApi";
+import { refreshAldoHome } from "./homeFeed";
+import { paymentCanAskAgain, paymentWords } from "./payments.logic";
 import { FOCUS, INSET, PRIMARY, SURFACE } from "./surface";
 
 /** What's being bought, line by line, the total, and what the agent told Link it's for. */
@@ -64,9 +65,52 @@ export function PaymentDetails(props: { readonly payment: AldoPayment }) {
  */
 export function ApproveInLink(props: { readonly payment: AldoPayment; readonly now: number }) {
   const [opened, setOpened] = useState(false);
-  const p = props.payment;
-  if (!p.approvalUrl) return null;
+  const [renewed, setRenewed] = useState<AldoPayment | null>(null);
+  const [asking, setAsking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const inFlight = useRef(false);
+  const approvalRef = useRef<HTMLAnchorElement>(null);
+  useEffect(() => {
+    if (renewed?.approvalUrl) approvalRef.current?.focus();
+  }, [renewed]);
+  const p = renewed ?? props.payment;
   const words = paymentWords(p, props.now);
+  if (paymentCanAskAgain(p, props.now))
+    return (
+      <div className="flex flex-col gap-2">
+        <p className="text-[13px] text-muted-foreground leading-5">{words.line}</p>
+        {error ? (
+          <p role="alert" className="text-[13px] text-destructive">
+            {error}
+          </p>
+        ) : null}
+        <button
+          type="button"
+          className={cn(PRIMARY, "w-full")}
+          disabled={asking}
+          aria-busy={asking}
+          onClick={async () => {
+            if (inFlight.current || !p.retryFrom) return;
+            inFlight.current = true;
+            setAsking(true);
+            setError(null);
+            try {
+              setRenewed(await retryAldoPayment(p.retryFrom));
+              void refreshAldoHome();
+            } catch (e) {
+              setError(e instanceof Error ? e.message : "Couldn't request approval. Try again.");
+              void refreshAldoHome();
+            } finally {
+              inFlight.current = false;
+              setAsking(false);
+            }
+          }}
+        >
+          {asking ? "Asking…" : "Ask me again"}
+        </button>
+      </div>
+    );
+  if (!p.approvalUrl) return null;
   const label = p.status === "requires_action" ? "Open Link" : "Approve in Link";
   return (
     <div className="flex flex-col gap-2">
@@ -76,6 +120,7 @@ export function ApproveInLink(props: { readonly payment: AldoPayment; readonly n
           : words.line}
       </p>
       <a
+        ref={approvalRef}
         href={p.approvalUrl}
         target="_blank"
         rel="noopener noreferrer"

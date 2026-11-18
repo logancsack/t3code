@@ -10,8 +10,19 @@ import { clockTime } from "./notNow.logic";
 /** Asked of the user in Link, waiting on their approval. */
 const ASKING = new Set(["created", "pending_approval"]);
 
+/** A missed approval, or a replacement whose creation can safely be resumed. */
+export function paymentCanAskAgain(payment: AldoPayment, now: number): boolean {
+  return Boolean(
+    payment.retryFrom &&
+    (payment.status === "expired" ||
+      (payment.status === "created" && !payment.approvalUrl && payment.retryFrom !== payment.id) ||
+      (ASKING.has(payment.status) && payment.expiresAt && Date.parse(payment.expiresAt) <= now)),
+  );
+}
+
 /** Waiting on the user in Link: to approve or decline it while it still can be, or to do what Link needs first. */
 export function paymentWaits(payment: AldoPayment, now: number): boolean {
+  if (paymentCanAskAgain(payment, now)) return true;
   if (payment.status === "requires_action") return payment.approvalUrl !== null;
   if (!ASKING.has(payment.status)) return false;
   return payment.expiresAt === null || Date.parse(payment.expiresAt) > now;
@@ -48,6 +59,12 @@ export interface AldoPaymentWords {
 export function paymentWords(payment: AldoPayment, now: number): AldoPaymentWords {
   const what = `${payment.total} at ${payment.merchant}`;
   const card = payment.cardLast4 ? `Card ending ${payment.cardLast4}.` : "";
+  if (paymentCanAskAgain(payment, now))
+    return {
+      headline: `${payment.status === "created" && !payment.approvalUrl ? "Request approval" : "Approval expired"}: ${what}`,
+      line: "Request fresh approval for the same total and terms. You still approve it in Link before anything is paid.",
+      tone: "waiting",
+    };
   switch (payment.status) {
     case "created":
     case "pending_approval":
@@ -131,6 +148,8 @@ export function paymentWords(payment: AldoPayment, now: number): AldoPaymentWord
 
 /** What Aldo is told about a payment waiting on the user, on a call: that only they decide it, in Link. */
 export function paymentBrief(payment: AldoPayment): string {
+  if (paymentCanAskAgain(payment, Date.now()))
+    return `The approval for ${payment.total} at ${payment.merchant} (${payment.site}) expired or needs to be requested again. Its existing card offers “Ask me again” for the same total and terms. This only requests fresh approval; the user still approves in Link. Nothing has been paid. Never tell the agent to buy without that approval.`;
   const items = payment.items
     .map(
       (i) =>

@@ -495,6 +495,8 @@ export interface AldoPayment {
   readonly approvalUrl: string | null;
   /** When Link stops waiting for them, while it does. */
   readonly expiresAt: string | null;
+  /** A newer server can request fresh Link approval of the saved terms after expiry. */
+  readonly retryFrom?: string;
   readonly cardLast4: string | null;
   readonly test: boolean;
   readonly thread: AldoHomeTarget | null;
@@ -714,6 +716,15 @@ export async function fetchAldoConversationCopy(
 /** Sends a waiting delivery (a reminder, a message) now rather than when it's due. */
 export async function sendAldoDeliveryNow(id: string): Promise<void> {
   await api(`/api/deliveries/${encodeURIComponent(id)}`, { method: "POST" });
+}
+
+/** Requests fresh approval of the saved payment; only the user approves it in Link. */
+export async function retryAldoPayment(id: string): Promise<AldoPayment> {
+  const { payment } = await api<{ payment: Omit<AldoPayment, "threadTitle"> }>(
+    `/api/payments/${encodeURIComponent(id)}/retry`,
+    { method: "POST" },
+  );
+  return { ...payment, threadTitle: null };
 }
 
 /** Cancels a waiting delivery: it's never sent. */
