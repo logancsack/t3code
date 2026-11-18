@@ -14,6 +14,8 @@ import { aldoRequestOf } from "../../aldo/request.logic";
 import { AldoStallLine, useAldoStall } from "../../aldo/AldoStall";
 import { AldoProgressLine } from "../../aldo/AldoProgressLine";
 import type { AldoPlanStep } from "../../aldo/progress.logic";
+import AldoTaskResult from "../../aldo/AldoTaskResult";
+import { splitTaskResult } from "../../aldo/taskResult.logic";
 import { splitAldoNext } from "../../aldo/next.logic";
 import { aldoLiveShots } from "../../aldo/results.logic";
 import type { AldoShare } from "../../aldo/made.logic";
@@ -2540,7 +2542,11 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
   const fullText = row.message.text || (row.message.streaming ? "" : "(empty response)");
   // Aldo's agents end a finished task with follow-ups in an `aldo-next` block: offered as chips, not shown as code.
   const aldoNext = useMemo(() => (isAldoCloud ? splitAldoNext(fullText) : null), [fullText]);
-  const messageText = aldoNext?.text ?? fullText;
+  const aldoResult = useMemo(
+    () => (isAldoCloud ? splitTaskResult(aldoNext?.text ?? fullText) : null),
+    [aldoNext, fullText],
+  );
+  const messageText = aldoResult?.text ?? aldoNext?.text ?? fullText;
   // The turn's answer, whether its footer is here or below the tools that followed it.
   const isTurnAnswer = row.showAssistantMeta || row.assistantMetaMoved === true;
   // Not code: what the turn made shows under the answer, and the answer's screenshots of live pages as its cards.
@@ -2583,6 +2589,13 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
             onImageExpand={ctx.onImageExpand}
             mediaGrid={isAldoCloud}
           />
+          {aldoResult?.result && !row.message.streaming ? (
+            <AldoTaskResult
+              result={aldoResult.result}
+              cwd={ctx.markdownCwd}
+              threadRef={ctx.threadRef ?? undefined}
+            />
+          ) : null}
         </AssistantCitationSource>
         {results ? (
           <>

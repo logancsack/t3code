@@ -35,6 +35,7 @@ import { refreshAldoHome } from "./homeFeed";
 import { setAldoMergeHold } from "./mergeHold";
 import { completeAldo } from "./presenceReactions";
 import { FOCUS, ICON_BUTTON, PRIMARY, SECONDARY, SURFACE } from "./surface";
+import AldoTaskResult from "./AldoTaskResult";
 
 /** A pull request's page on its host, at its checks or its changes (GitHub's tabs; elsewhere, the page). */
 function pullRequestPage(url: string, tab: "checks" | "files"): string {
@@ -242,6 +243,7 @@ export default function ResultCard(props: {
           {c.summary}
         </p>
       ) : null}
+      {c.result ? <AldoTaskResult result={c.result} compact /> : null}
       <ul className="flex flex-col gap-2 text-[13px] leading-5">
         {evidence.map((item) => (
           <li key={item.key} className="flex items-start gap-2.5">

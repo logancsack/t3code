@@ -1,3 +1,5 @@
+import AldoTaskResult from "./AldoTaskResult";
+
 // The board's sections besides what needs the user (AldoHomeInbox.tsx): what's
 // wrong with the setup, what's working now, pull requests on their way out,
 // what's coming up, what finished since the user last looked, what Aldo did
@@ -118,6 +120,7 @@ export function HealthStrip(props: { readonly issues: ReadonlyArray<HealthIssue>
 }
 
 const STATE_LABEL: Record<string, string> = {
+  unfinished: "Unfinished",
   starting: "Starting",
   queued: "Waiting for room",
   retrying: "Trying again",
@@ -209,6 +212,12 @@ export function ConversationRow(props: {
         </div>
         {c.summary ? (
           <p className="mt-1 line-clamp-2 text-muted-foreground text-xs">{c.summary}</p>
+        ) : null}
+        {c.result ? (
+          <details>
+            <summary className="min-h-10 cursor-pointer py-2 text-sm">Result</summary>
+            <AldoTaskResult result={c.result} compact />
+          </details>
         ) : null}
         {c.pressure && working ? (
           // Information only. Only a computer Aldo sizes itself gets more on its own.

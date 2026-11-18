@@ -59,6 +59,8 @@ export interface AldoChatDecision {
 }
 
 export interface AldoHomeConversation {
+  readonly result?: import("./taskResult.logic").TaskResult;
+  readonly resultState?: "unfinished";
   readonly chatDecision?: AldoChatDecision;
   readonly ref: string;
   readonly thread: AldoHomeTarget;
@@ -619,7 +621,13 @@ export async function fetchAldoHome(
     ...(options.active ? { headers: { "x-aldo-active": "1" } } : {}),
     answersWithin: ALDO_READ_ANSWERS_WITHIN_MS,
   });
-  return Array.isArray(body.conversations) ? (body as AldoHome) : null;
+  if (!Array.isArray(body.conversations)) return null;
+  return {
+    ...body,
+    conversations: body.conversations.map((c) =>
+      c.resultState === "unfinished" ? { ...c, state: "unfinished" } : c,
+    ),
+  } as AldoHome;
 }
 
 /**

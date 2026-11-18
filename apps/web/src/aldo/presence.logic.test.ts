@@ -428,3 +428,33 @@ describe("presenceBoard working and coming up", () => {
     expect(board(home()).coming.preview).toBe("Nothing scheduled");
   });
 });
+
+describe("unfinished task presence", () => {
+  it("keeps an unfinished task visible without calling it working or asking the user", () => {
+    const b = board(
+      home({
+        conversations: [
+          conversation({
+            state: "unfinished",
+            machine: "stopped",
+            at: ago(3 * 24 * 60),
+            summary: "Production remains unchecked",
+          }),
+        ],
+      }),
+    );
+    expect(b.unfinished.rows).toHaveLength(1);
+    expect(b.unfinished.rows[0]?.detail).toBe("Production remains unchecked");
+    expect(b.needsYou.rows).toEqual([]);
+    expect(b.working.rows).toEqual([]);
+    expect(b.moved.rows).toEqual([]);
+    expect(presenceLine({ ...quiet, unfinished: b.unfinished.rows.length })).toEqual({
+      text: "1 task unfinished",
+      state: "idle",
+      dot: null,
+    });
+    expect(presenceLine({ ...quiet, unfinished: 2, waiting: 1 }).text).toBe(
+      "1 needs you · 2 unfinished",
+    );
+  });
+});
