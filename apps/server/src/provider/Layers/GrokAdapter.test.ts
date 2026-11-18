@@ -14,6 +14,7 @@ import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
+import { vi } from "vite-plus/test";
 
 import {
   ApprovalRequestId,
@@ -27,6 +28,7 @@ import {
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 
 import { ServerConfig } from "../../config.ts";
+import * as GrokAcpSupport from "../acp/GrokAcpSupport.ts";
 import { execScriptSource, writeFakeCli } from "../../testUtils/fakeCli.ts";
 import {
   grokPromptSettlementBelongsToContext,
@@ -1025,11 +1027,20 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
           T3_ACP_EMIT_XAI_PROMPT_COMPLETE_THEN_HANG: "1",
         }),
       );
+      const draining = yield* Deferred.make<void>();
+      const makeRuntime = GrokAcpSupport.makeGrokAcpRuntime;
+      const runtimeSpy = vi
+        .spyOn(GrokAcpSupport, "makeGrokAcpRuntime")
+        .mockImplementation((input) =>
+          makeRuntime(input).pipe(
+            Effect.map((runtime) => ({
+              ...runtime,
+              drainEvents: Deferred.succeed(draining, undefined).pipe(Effect.andThen(Effect.never)),
+            })),
+          ),
+        );
+      yield* Effect.addFinalizer(() => Effect.sync(() => runtimeSpy.mockRestore()));
       const adapter = yield* makeTestAdapter(wrapperPath);
-      const contentDelta = yield* Deferred.make<void>();
-      const runtimeEventsFiber = yield* Stream.runForEach(adapter.streamEvents, (event) =>
-        event.type === "content.delta" ? Deferred.succeed(contentDelta, undefined) : Effect.void,
-      ).pipe(Effect.forkChild);
 
       yield* adapter.startSession({
         threadId,
@@ -1047,20 +1058,15 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
         })
         .pipe(Effect.forkChild);
 
-      yield* Deferred.await(contentDelta);
-      for (let yieldAttempt = 0; yieldAttempt < 6; yieldAttempt += 1) {
-        yield* Effect.yieldNow;
-      }
+      // The first output chunk precedes prompt success. Hold the real ACP drain
+      // after success so interruption deterministically exercises the finalizer.
+      yield* Deferred.await(draining);
       yield* Fiber.interrupt(sendTurnFiber);
-      for (let yieldAttempt = 0; yieldAttempt < 4; yieldAttempt += 1) {
-        yield* Effect.yieldNow;
-      }
 
       const snapshot = yield* adapter.readThread(threadId);
       assert.equal(snapshot.turns.length, 1);
       assert.equal(snapshot.turns[0]?.items.length, 1);
 
-      yield* Fiber.interrupt(runtimeEventsFiber);
       yield* adapter.stopSession(threadId);
     }),
   );
