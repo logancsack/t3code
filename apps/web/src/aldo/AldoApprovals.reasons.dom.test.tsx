@@ -14,7 +14,7 @@ vi.mock("./homeFeed", async (original) => ({
   sendAldoApproval: backend.send,
 }));
 
-let ApprovalCard: typeof import("./AldoApprovals").ApprovalCard;
+let ApprovalCard: typeof import("./AldoApprovalCard").ApprovalCard;
 let DecidedApproval: typeof import("./AldoApprovals").DecidedApproval;
 let root: Root;
 let container: HTMLDivElement;
@@ -71,12 +71,16 @@ beforeEach(async () => {
       disconnect() {}
     },
   );
-  ({ ApprovalCard, DecidedApproval } = await import("./AldoApprovals"));
+  ({ ApprovalCard } = await import("./AldoApprovalCard"));
+  ({ DecidedApproval } = await import("./AldoApprovals"));
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
   backend.send.mockReset();
-  backend.send.mockResolvedValue({ message: "Declined. I won't do it." });
+  backend.send.mockImplementation(async (_approval, decision) => ({
+    message: "Decision saved.",
+    approval: { status: decision === "discard" ? "discarded" : "approved" },
+  }));
   backend.toast.mockReset();
 });
 afterEach(() => {
@@ -101,6 +105,86 @@ it("declines with a reason in a tap, from the reasons Aldo offers", async () => 
   expect(document.activeElement?.textContent).toBe("Too expensive");
   await tap("Bad timing");
   expect(backend.send).toHaveBeenCalledExactlyOnceWith(approval, "discard", "Bad timing");
+});
+
+it("requires an explicit first spending limit and can choose to ask every time", async () => {
+  const approval = booking({ spendingLimit: true });
+  await show(approval);
+  const approve = [...container.querySelectorAll("button")].find(
+    (b) => b.textContent === "Book and save limit",
+  )!;
+  expect(approve.disabled).toBe(false);
+  await tap("Book and save limit");
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+    "Choose a spending limit",
+  );
+  expect(backend.send).not.toHaveBeenCalled();
+  const select = container.querySelector("select")!;
+  expect(document.querySelector(`label[for="${select.id}"]`)?.textContent).toContain(
+    "For future spending",
+  );
+  await act(async () => {
+    select.value = "0";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  expect(approve.disabled).toBe(false);
+  expect(backend.send).not.toHaveBeenCalled();
+  await tap("Book and save limit");
+  expect(backend.send).toHaveBeenCalledExactlyOnceWith(approval, "approve", undefined, 0);
+});
+
+it("keeps custom limits invalid until fixed and can decline without saving one", async () => {
+  const approval = booking({ spendingLimit: true });
+  await show(approval);
+  const select = container.querySelector("select")!;
+  await act(async () => {
+    select.value = "custom";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  const input = container.querySelector("input")!;
+  const set = async (value: string) =>
+    act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  await set("-1");
+  await tap("Book and save limit");
+  expect(backend.send).not.toHaveBeenCalled();
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+    "zero or a positive amount",
+  );
+  await set("19.99");
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+  expect(
+    [...container.querySelectorAll("button")].find((b) => b.textContent === "Book and save limit")
+      ?.disabled,
+  ).toBe(false);
+  await tap("Don't");
+  expect(backend.send).toHaveBeenCalledExactlyOnceWith(approval, "discard", undefined);
+});
+
+it("keeps the custom amount when an optimistic removal is followed by a failed save", async () => {
+  const approval = booking({ id: "ap_failed_limit", spendingLimit: true });
+  await show(approval);
+  await act(async () => {
+    const select = container.querySelector("select")!;
+    select.value = "custom";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await act(async () => {
+    const input = container.querySelector("input")!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "19.99");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  backend.send.mockImplementationOnce(async () => {
+    root.render(<ul />);
+    throw new Error("Couldn't save the approval");
+  });
+  await tap("Book and save limit");
+  expect(container.querySelector("select")).toBeNull();
+  await show(approval);
+  expect(container.querySelector("select")!.value).toBe("custom");
+  expect(container.querySelector("input")!.value).toBe("19.99");
 });
 
 it("goes back without deciding, by its button or Escape, and gives the keyboard back", async () => {

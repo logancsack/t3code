@@ -407,6 +407,8 @@ export interface AldoApproval {
    * goes on from it. Only from an Aldo that passes reasons on; none otherwise.
    */
   readonly reasons?: ReadonlyArray<string>;
+  /** The first paid step can set an account-wide spending limit in US dollars. */
+  readonly spendingLimit?: true;
   /** Why the user declined it, when they said. */
   readonly reason?: string;
 }
@@ -429,6 +431,7 @@ export async function decideAldoApproval(
   id: string,
   decision: "approve" | "discard" | "always",
   reason?: string,
+  spendLimit?: number,
 ): Promise<{
   readonly approval: Omit<AldoApproval, "threadTitle">;
   readonly message: string;
@@ -436,7 +439,11 @@ export async function decideAldoApproval(
 }> {
   return api(`/api/approvals/${encodeURIComponent(id)}`, {
     method: "POST",
-    body: JSON.stringify({ decision, ...(reason ? { reason } : {}) }),
+    body: JSON.stringify({
+      decision,
+      ...(reason ? { reason } : {}),
+      ...(spendLimit !== undefined ? { spendLimit } : {}),
+    }),
   });
 }
 
