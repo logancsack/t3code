@@ -15,6 +15,7 @@ vi.mock("./directory", () => ({
   subscribeAldoEnvironments: vi.fn(),
 }));
 vi.mock("./walkthrough", () => ({ reconcileAldoWalkthrough: vi.fn() }));
+vi.mock("./pageUse", () => ({ aldoPageInUseNow: () => true }));
 afterEach(() => {
   localStorage.clear();
   vi.resetModules();

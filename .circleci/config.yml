@@ -16,7 +16,7 @@ executors:
   # image's Node only runs the installer.
   node:
     docker:
-      - image: cimg/node:24.19
+      - image: cimg/node:24.22
     resource_class: medium
 
 commands:
@@ -76,7 +76,7 @@ commands:
 jobs:
   scope:
     docker:
-      - image: cimg/node:24.19
+      - image: cimg/node:24.22
     resource_class: small
     steps:
       - checkout:

@@ -3927,6 +3927,240 @@ describe("ProviderCommandReactor", () => {
     expect(thread?.session?.runtimeMode).toBe("full-access");
   });
 
+  async function failedMuseThread(longHistory = false) {
+    const harness = await createHarness({
+      threadModelSelection: {
+        instanceId: ProviderInstanceId.make("muse"),
+        model: "muse-spark-1.3",
+      },
+    });
+    const threadId = ThreadId.make("thread-1");
+    const cwd = NodePath.join(harness.stateDir, "workspace");
+    NodeFS.mkdirSync(cwd, { recursive: true });
+    NodeFS.writeFileSync(NodePath.join(cwd, "progress.txt"), "step one completed");
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.meta.update",
+        commandId: CommandId.make("workspace"),
+        threadId,
+        worktreePath: cwd,
+      }),
+    );
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("original-start"),
+        threadId,
+        message: {
+          messageId: asMessageId("original-message"),
+          role: "user",
+          text:
+            "Finish the report. Spend at most $3 and use the computer for at most 10 minutes. Do not resend the approved email." +
+            (longHistory ? " original history".repeat(10000) : ""),
+          attachments: [],
+        },
+        runtimeMode: "approval-required",
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        createdAt: "2026-01-01T00:00:01.000Z",
+      }),
+    );
+    await harness.drain();
+    await harness.runEffect(harness.drainTurnStarts);
+    for (const status of ["running", "error"] as const) {
+      await harness.runEffect(
+        harness.engine.dispatch({
+          type: "thread.session.set",
+          commandId: CommandId.make(`source-${status}`),
+          threadId,
+          session: {
+            threadId,
+            status,
+            providerName: ProviderDriverKind.make("muse"),
+            providerInstanceId: ProviderInstanceId.make("muse"),
+            runtimeMode: "approval-required",
+            activeTurnId: status === "running" ? asTurnId("original") : null,
+            lastError: status === "error" ? "API error 402: Billing verification failed" : null,
+            updatedAt: `2026-01-01T00:00:0${status === "running" ? 2 : 3}.000Z`,
+          },
+          createdAt: "2026-01-01T00:00:03.000Z",
+        }),
+      );
+    }
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.activity.append",
+        commandId: CommandId.make("approved-email"),
+        threadId,
+        createdAt: "2026-01-01T00:00:02.000Z",
+        activity: {
+          id: EventId.make("approved-email"),
+          kind: "approval.resolved",
+          tone: "info",
+          summary: "Email approved",
+          payload: { requestId: "email", decision: "approved" },
+          turnId: asTurnId("original"),
+          createdAt: "2026-01-01T00:00:02.000Z",
+        },
+      }),
+    );
+    await harness.drain();
+    return { harness, cwd, threadId };
+  }
+
+  const continuationCommand = () => ({
+    type: "thread.turn.start" as const,
+    commandId: CommandId.make("automatic-failover"),
+    threadId: ThreadId.make("thread-1"),
+    continuation: { turnId: asTurnId("original") },
+    modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-6.1-sol" },
+    message: {
+      messageId: asMessageId("continue-message"),
+      role: "user" as const,
+      text: "Muse couldn't continue because of a billing error. Continuing with Codex.",
+      attachments: [],
+    },
+    runtimeMode: "approval-required" as const,
+    interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+    createdAt: "2026-01-01T00:01:00.000Z",
+  });
+
+  it("continues a Muse billing failure on Codex in the same thread with files, brief, approvals and limits", async () => {
+    const { harness, cwd, threadId } = await failedMuseThread();
+    await harness.runEffect(harness.engine.dispatch(continuationCommand()));
+    await harness.drain();
+    await harness.runEffect(harness.drainTurnStarts);
+    expect(harness.stopSession).toHaveBeenCalledExactlyOnceWith({ threadId });
+    expect(harness.startSession.mock.calls[1]?.[1]).toMatchObject({
+      threadId,
+      provider: "codex",
+      cwd,
+      fresh: true,
+      runtimeMode: "approval-required",
+    });
+    expect(harness.startSession.mock.calls[1]?.[1]).not.toHaveProperty("resumeCursor");
+    expect(harness.sendTurn.mock.calls[1]?.[0]).toMatchObject({
+      threadId,
+      input: expect.stringContaining("Spend at most $3"),
+    });
+    const sent = harness.sendTurn.mock.calls[1]?.[0] as { input: string };
+    expect(sent.input).toContain("10 minutes");
+    expect(sent.input).toContain("approved-email");
+    expect(sent.input).toContain("do not restart the task");
+    expect(NodeFS.readFileSync(NodePath.join(cwd, "progress.txt"), "utf8")).toBe(
+      "step one completed",
+    );
+    const model = await harness.readModel();
+    expect(model.threads).toHaveLength(1);
+    expect(model.threads[0]?.session?.lastError).toBeNull();
+    expect(model.threads[0]?.runtimeMode).toBe("approval-required");
+    // A lost delivery acknowledgement can submit the same command again.
+    await harness.runEffect(harness.engine.dispatch(continuationCommand()));
+    await harness.drain();
+    await harness.runEffect(harness.drainTurnStarts);
+    expect(harness.startSession).toHaveBeenCalledTimes(2);
+    for (const status of ["running", "ready"] as const) {
+      const at = DateTime.formatIso(
+        DateTime.add(DateTime.makeUnsafe(continuationCommand().createdAt), {
+          seconds: status === "running" ? 1 : 2,
+        }),
+      );
+      await harness.runEffect(
+        harness.engine.dispatch({
+          type: "thread.session.set",
+          commandId: CommandId.make(`replacement-${status}`),
+          threadId,
+          session: {
+            threadId,
+            status,
+            providerName: ProviderDriverKind.make("codex"),
+            providerInstanceId: ProviderInstanceId.make("codex"),
+            runtimeMode: "approval-required",
+            activeTurnId: status === "running" ? asTurnId("recovered-success") : null,
+            lastError: null,
+            updatedAt: at,
+          },
+          createdAt: at,
+        }),
+      );
+    }
+    const finished = (await harness.readModel()).threads[0]!;
+    expect(finished.latestTurn?.state).toBe("completed");
+    expect(finished.session?.lastError).toBeNull();
+  });
+
+  it("keeps long continuation history in a private local transcript with a bounded seed", async () => {
+    const { harness } = await failedMuseThread(true);
+    await harness.runEffect(harness.engine.dispatch(continuationCommand()));
+    await harness.drain();
+    await harness.runEffect(harness.drainTurnStarts);
+    const sent = harness.sendTurn.mock.calls[1]?.[0] as { input: string };
+    expect(sent.input.length).toBeLessThan(50000);
+    const file = NodePath.join(harness.stateDir, "continuations", "thread-1-original.txt");
+    expect(NodeFS.readFileSync(file, "utf8")).toContain(" original history".repeat(10000));
+    expect(NodeFS.statSync(file).mode & 0o777).toBe(0o600);
+    expect(sent.input).toContain(file);
+  });
+
+  it("rejects stale recovery and recovery while a user decision is pending", async () => {
+    const { harness, threadId } = await failedMuseThread();
+    await expect(
+      harness.runEffect(
+        harness.engine.dispatch({
+          ...continuationCommand(),
+          continuation: { turnId: asTurnId("stale") },
+        }),
+      ),
+    ).rejects.toThrow(/stale/);
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.activity.append",
+        commandId: CommandId.make("question"),
+        threadId,
+        createdAt: "2026-01-01T00:00:04.000Z",
+        activity: {
+          id: EventId.make("question"),
+          kind: "approval.requested",
+          tone: "approval",
+          summary: "Needs your yes",
+          payload: { requestId: "question" },
+          turnId: asTurnId("original"),
+          createdAt: "2026-01-01T00:00:04.000Z",
+        },
+      }),
+    );
+    await expect(
+      harness.runEffect(
+        harness.engine.dispatch({
+          ...continuationCommand(),
+          commandId: CommandId.make("blocked-continuation"),
+        }),
+      ),
+    ).rejects.toThrow(/waiting for the user/);
+    expect(harness.startSession).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports replacement-provider startup failures as a new failed turn for bounded recovery", async () => {
+    const { harness } = await failedMuseThread();
+    harness.startSession.mockImplementationOnce(
+      () =>
+        Effect.fail(
+          new ProviderAdapterRequestError({
+            provider: "codex",
+            method: "startSession",
+            detail: "API error 401: invalid API key",
+          }),
+        ) as never,
+    );
+    await harness.runEffect(harness.engine.dispatch(continuationCommand()));
+    await harness.drain();
+    await harness.runEffect(harness.drainTurnStarts);
+    const thread = (await harness.readModel()).threads[0]!;
+    expect(thread.latestTurn?.turnId).toBe("continuation:automatic-failover");
+    expect(thread.latestTurn?.state).toBe("error");
+    expect(thread.session?.lastError).toContain("401");
+    expect(harness.sendTurn).toHaveBeenCalledTimes(1);
+  });
+
   it("rejects provider changes after a thread is already bound to a session provider", async () => {
     const harness = await createHarness();
     const now = "2026-01-01T00:00:00.000Z";

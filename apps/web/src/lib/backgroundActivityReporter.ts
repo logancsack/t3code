@@ -196,8 +196,10 @@ export const backgroundActivityReporterLayer = Layer.effectDiscard(
     const report = Effect.gen(function* () {
       const observedAtMs = yield* Clock.currentTimeMillis;
       const entries = yield* SubscriptionRef.get(registry.entries);
+      // A dormant one would start just to find it has nothing to report to.
+      const dormant = yield* SubscriptionRef.get(registry.dormant);
       yield* Effect.forEach(
-        entries.keys(),
+        [...entries.keys()].filter((environmentId) => !dormant.has(environmentId)),
         (environmentId) =>
           registry
             .run(

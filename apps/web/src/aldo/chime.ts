@@ -8,8 +8,7 @@
 import { useEffect, useSyncExternalStore } from "react";
 
 import { chimeMemory, chimeNews, shouldChime, type ChimeMemory } from "./chime.logic";
-import { type AldoHome } from "./homeApi";
-import { useAldoHomeFeed } from "./homeFeed";
+import { useAldoHomeFeed, type AldoHomeFeed } from "./homeFeed";
 import { aldoOnScreen } from "./screen";
 
 const STORAGE_KEY = "aldo:sound";
@@ -135,15 +134,16 @@ export function useAldoChime(): void {
     if (!enabled) return;
     const showing = () => document.visibilityState === "visible";
     let lastChimeAt: number | null = null;
-    // What's already on the page is only remembered; so is the first read after the page comes back.
-    const remember = (home: AldoHome | null) =>
-      home && showing() ? chimeMemory(home.conversations) : null;
-    let memory: ChimeMemory | null = remember(useAldoHomeFeed.getState().home);
+    // What's already on the page is only remembered; so is the first read after the page comes back,
+    // and the first after the copy the device kept (what changed since it isn't news to chime for).
+    const remember = (feed: AldoHomeFeed) =>
+      feed.home && !feed.saved && showing() ? chimeMemory(feed.home.conversations) : null;
+    let memory: ChimeMemory | null = remember(useAldoHomeFeed.getState());
     const stop = useAldoHomeFeed.subscribe((state, previous) => {
       if (!state.home || state.home === previous.home) return;
       const now = Date.now();
       const news = showing() ? chimeNews(memory, state.home.conversations, now, watching()) : [];
-      memory = remember(state.home);
+      memory = remember(state);
       if (!shouldChime(news.length, lastChimeAt, now)) return;
       lastChimeAt = now;
       playAldoChime();

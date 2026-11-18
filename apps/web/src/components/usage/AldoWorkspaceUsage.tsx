@@ -64,7 +64,12 @@ export function AldoWorkspaceUsageSection({
             {title}
           </h2>
           {isAldoCloud ? (
-            usage?.bill && !aldoPlanEnded(usage) ? (
+            usage?.bill && !aldoPlanEnded(usage) && usage.seat ? (
+              // A seat's limit is its organization's to set (the Plan section says whom to ask).
+              <span className="text-xs text-muted-foreground">
+                Extra usage limit: {formatCents(usage.bill.spendLimitCents)}
+              </span>
+            ) : usage?.bill && !aldoPlanEnded(usage) ? (
               <SpendLimitControl
                 spendLimitCents={usage.bill.spendLimitCents}
                 onChanged={onChanged}

@@ -2,7 +2,7 @@
 
 import { type AldoPullRequestStage, type AldoCheckCounts } from "./pullRequests.logic";
 import { type AldoMachinePressure } from "./directory";
-import { api, AldoApiError, threadIdForEnvironment } from "./api";
+import { ALDO_READ_ANSWERS_WITHIN_MS, api, AldoApiError, threadIdForEnvironment } from "./api";
 
 // ---------------------------------------------------------------------------
 // The home screen: the user's agents' work in one read (Aldo's src/lib/home.ts)
@@ -49,6 +49,13 @@ export interface AldoChatDecision {
   readonly until?: string | null;
   /** It's back from being put off. */
   readonly back?: boolean;
+  /**
+   * Dismissed from Needs you (it's also `dismissed`): it no longer counts anywhere and is
+   * listed under Dismissed to restore. Absent from an Aldo that can't dismiss.
+   */
+  readonly cleared?: boolean;
+  /** Cleared from Dismissed for good (it's also `cleared`): Dismissed doesn't list it. Absent from an Aldo that can't. */
+  readonly removed?: boolean;
 }
 
 export interface AldoHomeConversation {
@@ -69,6 +76,8 @@ export interface AldoHomeConversation {
   readonly at: string;
   /** When its machine last reported its state: `at` moves with its list's changes too (a rename, a pin). */
   readonly stateAt?: string;
+  /** When it started: it was created, or its routine's latest run began (a newer Aldo). */
+  readonly startedAt?: string;
   readonly pullRequests?: ReadonlyArray<{
     readonly repo: string;
     readonly number: number;
@@ -78,6 +87,15 @@ export interface AldoHomeConversation {
   }>;
   readonly pending?: AldoHomePending;
   readonly plan?: { readonly id: string; readonly text: string };
+  /** Computers requested by this conversation (older Aldo reads may omit the request time). */
+  readonly computers?: ReadonlyArray<{
+    readonly computer: string;
+    readonly position?: number;
+    readonly status: string;
+    readonly why?: string;
+    readonly askedAt?: string;
+    readonly creditsPerHour: number;
+  }>;
   readonly approvedPlan?: { readonly id: string; readonly at: string };
   readonly pressure?: AldoMachinePressure | null;
   /** The site its agent is working on in the browser, while it works there (a newer Aldo). */
@@ -107,6 +125,11 @@ export interface AldoHomePullRequest {
   readonly greenSince: string | null;
   /** When Aldo merges it on its own, if nothing changes (the workspace's policy says so). */
   readonly mergesAt: string | null;
+  /**
+   * The user held Aldo's merge: it waits for theirs (`mergesAt` is null). Left
+   * out by an Aldo that can't hold one, so there's no Hold to offer.
+   */
+  readonly held?: boolean;
   readonly mergedAt: string | null;
   readonly updatedAt: string;
   /** The conversation checking it's live once it merged (a newer Aldo). */
@@ -345,7 +368,7 @@ export interface AldoApproval {
   /**
    * An email Aldo rewrote for the user while it waits (an Aldo that rewrites
    * drafts): what it said before, and when it was rewritten. What's new is
-   * underlined (diff.logic.ts), and its card sits under the reply that said so.
+   * underlined (diff.logic.ts), while its card keeps its original place in the conversation.
    */
   readonly previous?: { readonly title: string; readonly body: string };
   readonly revisedAt?: string;
@@ -548,8 +571,17 @@ export async function resolveAldoHandoff(
 }
 
 /** The home screen's read; null where this Aldo doesn't have it (an older one answers with the web client's own page). */
-export async function fetchAldoHome(): Promise<AldoHome | null> {
-  const body = await api<Partial<AldoHome>>("/api/home");
+/**
+ * Aldo's read of the user's work. `active`: the page is in use (focus.ts), so
+ * Aldo knows they're in it and holds back what they'd see here from their phone.
+ */
+export async function fetchAldoHome(
+  options: { readonly active?: boolean } = {},
+): Promise<AldoHome | null> {
+  const body = await api<Partial<AldoHome>>("/api/home", {
+    ...(options.active ? { headers: { "x-aldo-active": "1" } } : {}),
+    answersWithin: ALDO_READ_ANSWERS_WITHIN_MS,
+  });
   return Array.isArray(body.conversations) ? (body as AldoHome) : null;
 }
 
@@ -602,6 +634,19 @@ export async function approveAldoPlan(
   return status;
 }
 
+/**
+ * Carries on a thread that paused or stalled: its computer wakes and its agent
+ * picks up where it stopped (or gets the message of the user's it was holding).
+ * Refused (409) if the thread isn't paused, as Aldo reads it now.
+ */
+export async function continueAldoThread(target: AldoHomeTarget): Promise<string> {
+  const { status } = await api<{ status: string }>(
+    `/api/environments/${threadIdForEnvironment(target.environmentId)}/actions`,
+    postedKept({ action: "continue", t3ThreadId: target.threadId }),
+  );
+  return status;
+}
+
 /** A thread's latest turns as Aldo keeps them (its last three: the messages, and what it waits on). */
 export interface AldoConversationCopy {
   readonly state: string;
@@ -640,6 +685,27 @@ export async function sendAldoDeliveryNow(id: string): Promise<void> {
 /** Cancels a waiting delivery: it's never sent. */
 export async function cancelAldoDelivery(id: string): Promise<void> {
   await api(`/api/deliveries/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+/** Dismisses what waits in Needs you (or restores it, `cleared: false`): nothing is answered; the thread keeps waiting. */
+export async function clearAldoDecisions(
+  ids: ReadonlyArray<string>,
+  cleared = true,
+): Promise<void> {
+  await api("/api/assistant/decisions/clear", {
+    method: "POST",
+    body: JSON.stringify({ ids, cleared }),
+  });
+}
+
+/** Clears what's in Dismissed for good: their threads are archived, nothing is deleted. */
+export async function removeAldoDecisions(ids: ReadonlyArray<string>): Promise<void> {
+  await api("/api/assistant/decisions/remove", {
+    method: "POST",
+    body: JSON.stringify({ ids }),
+    // Sent as the page goes away too.
+    keepalive: true,
+  });
 }
 
 /** Hides or restores only the home-chat prompt; the thread keeps waiting. With `until`, puts it off until then ("Not now"). */

@@ -13,6 +13,7 @@ import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Result from "effect/Result";
 import * as Scheduler from "effect/Scheduler";
@@ -1352,6 +1353,79 @@ describe("EnvironmentRegistry", () => {
           TARGET.environmentId,
           (state) => state.phase === "connected",
         );
+      }).pipe(Effect.provide(harness.layer), Effect.scoped);
+    }),
+  );
+
+  it.effect("leaves asleep platform environments dormant until something needs them", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness([]);
+
+      yield* Effect.gen(function* () {
+        const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+        const first = new PrimaryConnectionRegistration({ target: TARGET });
+        const second = new PrimaryConnectionRegistration({ target: SECOND_TARGET });
+        const asleep = new Set([SECOND_TARGET.environmentId]);
+        yield* registry.reconcilePlatform([first, second], asleep);
+        yield* awaitConnectionState(
+          registry,
+          TARGET.environmentId,
+          (state) => state.phase === "connected",
+        );
+        expect(yield* Ref.get(harness.sessions)).toHaveLength(1);
+        expect(yield* SubscriptionRef.get(registry.dormant)).toEqual(asleep);
+
+        // Shown from its cache while dormant, live once something starts it.
+        const seen = yield* Queue.unbounded<string>();
+        yield* registry
+          .followStream(SECOND_TARGET.environmentId, Stream.make("live"), Stream.make("cached"))
+          .pipe(
+            Stream.runForEach((value) => Queue.offer(seen, value)),
+            Effect.forkChild,
+          );
+        expect(yield* Queue.take(seen)).toBe("cached");
+        yield* registry.reconcilePlatform([first, second], asleep);
+        expect(yield* Ref.get(harness.sessions)).toHaveLength(1);
+
+        yield* registry.run(SECOND_TARGET.environmentId, Effect.void);
+        expect(yield* Queue.take(seen)).toBe("live");
+        expect(yield* SubscriptionRef.get(registry.dormant)).toEqual(new Set());
+        yield* awaitConnectionState(
+          registry,
+          SECOND_TARGET.environmentId,
+          (state) => state.phase === "connected",
+        );
+        expect(yield* Ref.get(harness.sessions)).toHaveLength(2);
+
+        // A running one stays running however the host reports it.
+        yield* registry.reconcilePlatform([first, second], asleep);
+        expect(yield* SubscriptionRef.get(registry.dormant)).toEqual(new Set());
+      }).pipe(Effect.provide(harness.layer), Effect.scoped);
+    }),
+  );
+
+  it.effect("starts a dormant platform environment once the host reports it awake", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness([]);
+
+      yield* Effect.gen(function* () {
+        const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+        const registration = new PrimaryConnectionRegistration({ target: SECOND_TARGET });
+        yield* registry.reconcilePlatform([registration], new Set([SECOND_TARGET.environmentId]));
+        expect(yield* Ref.get(harness.sessions)).toHaveLength(0);
+
+        yield* registry.reconcilePlatform([registration], new Set());
+        expect(yield* SubscriptionRef.get(registry.dormant)).toEqual(new Set());
+        yield* awaitConnectionState(
+          registry,
+          SECOND_TARGET.environmentId,
+          (state) => state.phase === "connected",
+        );
+        expect(yield* Ref.get(harness.sessions)).toHaveLength(1);
+
+        // One the host no longer lists isn't dormant.
+        yield* registry.reconcilePlatform([], new Set([SECOND_TARGET.environmentId]));
+        expect(yield* SubscriptionRef.get(registry.dormant)).toEqual(new Set());
       }).pipe(Effect.provide(harness.layer), Effect.scoped);
     }),
   );

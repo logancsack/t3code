@@ -44,7 +44,7 @@ export function AldoPlanPicker(props: { readonly pick: AldoPlanPick }) {
   return (
     <div className="flex flex-col gap-3 self-stretch" data-aldo-plan-picker={pick.stage}>
       {needs?.say ? (
-        <p className="max-w-[94%] self-start whitespace-pre-wrap break-words text-[16px] leading-6 sm:text-[15px]">
+        <p className="max-w-[94%] self-start whitespace-pre-wrap wrap-anywhere text-[16px] leading-6 sm:text-[15px]">
           {needs.say}
         </p>
       ) : null}

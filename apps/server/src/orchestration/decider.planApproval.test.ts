@@ -124,4 +124,51 @@ it.layer(NodeServices.layer)("plan acceptance", (it) => {
         expect(late).toMatchObject({ payload: { proposedPlan: { approvedAt: NOW } } });
       }),
   );
+
+  it.effect("leaves plan mode in the same command that approves the plan", () =>
+    Effect.gen(function* () {
+      let readModel = makeReadModel({ latestTurn: null });
+      readModel = {
+        ...readModel,
+        threads: readModel.threads.map((t) => ({
+          ...t,
+          interactionMode: "plan" as const,
+          proposedPlans: [plan],
+        })),
+      };
+      const result = yield* decideOrchestrationCommand({ command, readModel });
+      const events = Array.isArray(result) ? result : [result];
+      expect(events.map((e) => e.type)).toEqual([
+        "thread.proposed-plan-upserted",
+        "thread.interaction-mode-set",
+        "thread.message-sent",
+        "thread.turn-start-requested",
+      ]);
+      expect(events.at(-1)).toMatchObject({ payload: { interactionMode: "default" } });
+      for (const [index, event] of events.entries()) {
+        readModel = yield* projectEvent(readModel, { ...event, sequence: index + 1 });
+      }
+      expect(readModel.threads[0]?.interactionMode).toBe("default");
+    }),
+  );
+
+  it.effect("runs a turn that approves no plan in the thread's own mode", () =>
+    Effect.gen(function* () {
+      const readModel = makeReadModel({ latestTurn: null });
+      const { sourceProposedPlan: _plan, ...ordinary } = command;
+      const result = yield* decideOrchestrationCommand({
+        command: ordinary,
+        readModel: {
+          ...readModel,
+          threads: readModel.threads.map((t) => ({ ...t, interactionMode: "plan" as const })),
+        },
+      });
+      const events = Array.isArray(result) ? result : [result];
+      expect(events.map((e) => e.type)).toEqual([
+        "thread.message-sent",
+        "thread.turn-start-requested",
+      ]);
+      expect(events.at(-1)).toMatchObject({ payload: { interactionMode: "plan" } });
+    }),
+  );
 });

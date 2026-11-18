@@ -13,6 +13,7 @@ import * as Stream from "effect/Stream";
 import { afterEach, vi } from "vite-plus/test";
 
 import {
+  aldoTemplateCopies,
   makeBrowserGitHubRoutingPermissions,
   makeCatalogBackend,
   makeCatalogStore,
@@ -197,4 +198,32 @@ describe("browser GitHub routing permissions", () => {
       expect(yield* second.get(entry)).toBe("off");
     }).pipe(Effect.scoped),
   );
+});
+
+describe("aldoTemplateCopies", () => {
+  const stored = (environmentId: string, config: object) =>
+    JSON.stringify({
+      schemaVersion: 1,
+      environmentId,
+      config: { ...config, environment: { environmentId } },
+    });
+  const id = (value: string) => EnvironmentId.make(value);
+
+  it("shows the template for machines with none, the template, or a copy others share", () => {
+    const template = stored("aldo:template", { models: ["new"] });
+    const cached = new Map<EnvironmentId, unknown>([
+      [id("none"), undefined],
+      [id("marked"), "aldo:template"],
+      [id("current"), stored("current", { models: ["new"] })],
+      [id("old-1"), stored("old-1", { models: ["old"] })],
+      [id("old-2"), stored("old-2", { models: ["old"] })],
+      [id("own"), stored("own", { models: ["own"], checkedAt: 1 })],
+      [id("unreadable"), "{"],
+    ]);
+
+    const { template: shown, own } = aldoTemplateCopies(cached, template);
+
+    expect(shown.toSorted()).toEqual(["current", "marked", "none", "old-1", "old-2"]);
+    expect(own.toSorted()).toEqual(["own", "unreadable"]);
+  });
 });

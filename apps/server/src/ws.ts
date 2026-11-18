@@ -1257,6 +1257,7 @@ const makeWsRpcLayer = (
                   shellRevealInFileManagerKind: fileManagerRevealKind,
                 }),
             threadResumeCompletionMarker: true,
+            threadProviderContinuation: true,
             threadSnapshotPagination: true,
             reasoningMessages: true,
             ...(scratchWorkspaceRoot === undefined ? {} : { scratchWorkspaceRoot }),

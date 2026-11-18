@@ -68,8 +68,9 @@ export function useThreadActionMenu(input: {
   /** Fallback for "Copy path" when the thread has no worktree. */
   readonly projectCwd: string | null;
   readonly onStartRename: () => void;
+  readonly onMoveThread?: (() => void) | undefined;
 }) {
-  const { threadRef, projectCwd, onStartRename } = input;
+  const { threadRef, projectCwd, onStartRename, onMoveThread } = input;
   const router = useRouter();
   const projects = useProjects();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
@@ -144,6 +145,7 @@ export function useThreadActionMenu(input: {
         const snoozePresets = resolveSnoozePresets(now, timestampFormat);
         const items = buildThreadActionMenuItems({
           // Aldo: the branches the sidebar shows (none for a machine's own, or work that isn't software).
+          moveProject: Boolean(onMoveThread),
           branch: displayedThreadBranch(threadRef.environmentId, thread.branch),
           // The chat header has no project-scoped thread list behind the
           // menu, so the "Filter by project" affordance is sidebar-only.
@@ -183,6 +185,9 @@ export function useThreadActionMenu(input: {
           }
         };
         switch (action) {
+          case "move-project":
+            onMoveThread?.();
+            return;
           case "project-settings": {
             const project = projects.find(
               (candidate) =>
@@ -340,6 +345,7 @@ export function useThreadActionMenu(input: {
       logicalProjectKeyByPhysicalKey,
       markThreadUnread,
       onStartRename,
+      onMoveThread,
       pinThread,
       projectCwd,
       projectGroupingSettings,

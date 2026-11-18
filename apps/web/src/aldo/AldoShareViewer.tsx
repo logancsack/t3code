@@ -2,17 +2,32 @@
 // conversation on a wide screen, the whole screen on a phone. It's the share's
 // own link (/s/<id>), so a page that stays current shows its latest version,
 // says when that was, and can be pinned first in the Library. A page runs
-// sandboxed, as its link serves it; "Open in a new tab" leaves Aldo for it.
+// sandboxed, as its link serves it; "Open in a new tab" leaves Aldo for it,
+// and "Copy link" takes its link to send.
 
-import { ExternalLinkIcon, FileIcon, GlobeIcon, PinIcon, PinOffIcon, XIcon } from "lucide-react";
+import {
+  CheckIcon,
+  DownloadIcon,
+  ExternalLinkIcon,
+  FileIcon,
+  GlobeIcon,
+  LinkIcon,
+  PinIcon,
+  PinOffIcon,
+  XIcon,
+} from "lucide-react";
 import { useState, type ReactNode } from "react";
 
 import { canShowPdfInFrame } from "../components/files/filePreviewMode";
 import { Button } from "../components/ui/button";
+import { cn } from "../lib/utils";
+import { useAldoAssistant } from "./assistantSession";
 import { Sheet, SheetPopup, SheetTitle } from "../components/ui/sheet";
 import { Spinner } from "../components/ui/spinner";
 import { toastManager } from "../components/ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
+import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
+import { downloadHref } from "./artifacts.logic";
 import { aldoShareUpdated } from "./library.logic";
 import {
   aldoShareChanged,
@@ -35,6 +50,8 @@ function IconButton(props: {
   readonly children: ReactNode;
   readonly onClick?: () => void;
   readonly href?: string;
+  /** Saves what `href` goes to, named so, rather than opening it. */
+  readonly download?: string;
   readonly disabled?: boolean;
   readonly pressed?: boolean;
 }) {
@@ -50,7 +67,14 @@ function IconButton(props: {
             {...(props.disabled ? { disabled: true } : {})}
             {...(props.onClick ? { onClick: props.onClick } : {})}
             {...(props.href
-              ? { render: <a href={props.href} target="_blank" rel="noopener noreferrer" /> }
+              ? {
+                  render:
+                    props.download === undefined ? (
+                      <a href={props.href} target="_blank" rel="noopener noreferrer" />
+                    ) : (
+                      <a href={props.href} download={props.download} />
+                    ),
+                }
               : {})}
           />
         }
@@ -73,6 +97,7 @@ function AldoShareViewer(props: { readonly open: AldoOpenShare }) {
   // A player shows itself at once, as does what's said in place of a PDF.
   const [loaded, setLoaded] = useState(type.startsWith("audio/") || pdfOutside);
   const [pinning, setPinning] = useState(false);
+  const { copyToClipboard, isCopied } = useCopyToClipboard();
   // What /s/ serves as a page (Markdown too, as one to read): sandboxed here as well.
   const page = type === "text/html" || type === "image/svg+xml" || type === "text/markdown";
   const updated = listed ? aldoShareUpdated(listed, new Date()) : null;
@@ -90,9 +115,11 @@ function AldoShareViewer(props: { readonly open: AldoOpenShare }) {
       )
       .finally(() => setPinning(false));
   };
+  const liveCall = useAldoAssistant((s) => s.phase !== "idle" && s.phase !== "error");
   const Icon = page ? GlobeIcon : FileIcon;
   return (
     <Sheet
+      modal={!liveCall}
       open
       onOpenChange={(next) => {
         if (!next) closeAldoShare();
@@ -102,9 +129,14 @@ function AldoShareViewer(props: { readonly open: AldoOpenShare }) {
       <SheetPopup
         side="right"
         showCloseButton={false}
-        className="w-full max-w-3xl pt-safe pb-safe max-sm:border-s-0"
+        className={cn(
+          "w-full max-w-3xl pt-safe pb-safe max-sm:border-s-0",
+          open.fullScreen && "max-w-none",
+          liveCall && "pb-24",
+        )}
       >
-        <div className="flex items-center gap-2 border-border/60 border-b px-4 py-2">
+        {/* On a phone the sidebar's toggle floats over the sheet's corner: its title starts past it. */}
+        <div className="flex items-center gap-2 border-border/60 border-b px-4 py-2 max-sm:ps-14">
           <Icon className="size-4 shrink-0 text-muted-foreground" />
           <div className="min-w-0">
             <SheetTitle className="truncate font-semibold text-base">{open.title}</SheetTitle>
@@ -121,6 +153,20 @@ function AldoShareViewer(props: { readonly open: AldoOpenShare }) {
                 {listed.pinned ? <PinOffIcon /> : <PinIcon />}
               </IconButton>
             ) : null}
+            <IconButton
+              label={isCopied ? "Copied" : "Copy link"}
+              onClick={() => copyToClipboard(new URL(open.url, window.location.origin).href)}
+            >
+              {isCopied ? <CheckIcon /> : <LinkIcon />}
+            </IconButton>
+            <IconButton
+              label="Download"
+              href={downloadHref(open.url, window.location.origin, type)}
+              // Named as /s/ names it, with its type's extension.
+              download=""
+            >
+              <DownloadIcon />
+            </IconButton>
             <IconButton label="Open in a new tab" href={open.url}>
               <ExternalLinkIcon />
             </IconButton>
@@ -139,7 +185,7 @@ function AldoShareViewer(props: { readonly open: AldoOpenShare }) {
             <img
               src={open.url}
               alt={open.title}
-              className="size-full object-contain"
+              className={cn("size-full object-contain", open.fullScreen && "mx-auto max-w-[520px]")}
               onLoad={() => setLoaded(true)}
               onError={() => setLoaded(true)}
             />

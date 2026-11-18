@@ -7,6 +7,8 @@
 // sees doesn't poll, and tabs on screen share their reads (sharedReads). What
 // the user answers from here is held out of what's shown until a read says the
 // thread has moved on (answered.logic.ts), so a card goes the moment it's sent.
+// The last read is kept on the device for whoever is signed in (who.ts), and
+// shown at the next open until this page's first read answers.
 
 import { useEffect } from "react";
 import { create } from "zustand";
@@ -32,27 +34,42 @@ import {
   type AldoHomeTarget,
 } from "./homeApi";
 import { requestAldoDirectoryRefresh, subscribeAldoEnvironments } from "./directory";
+import { aldoPageInUseNow } from "./pageUse";
 
 import { reconcileAldoWalkthrough } from "./walkthrough";
+import { aldoWho } from "./who";
 
 const REFRESH_EVERY_MS = 30_000;
 /** How often a page on screen looks whether its read is REFRESH_EVERY_MS old. */
 const LOOK_EVERY_MS = 5_000;
 /** Directory fetches come every 15 seconds; the home read follows them no closer than this. */
 const FOLLOW_DIRECTORY_MIN_MS = 8_000;
+const SAVED_KEY = "aldo-home-copy";
+/** How old a kept copy of the last read can be and still show at an open. */
+const SAVED_FOR_MS = 24 * 60 * 60_000;
 
 export interface AldoHomeFeed {
   readonly home: AldoHome | null;
   /** Whether this Aldo has the home read; null until it's known. */
   readonly supported: boolean | null;
   readonly error: string | null;
+  /** Whether `home` is the copy this device kept of the last read, not yet this page's own. */
+  readonly saved: boolean;
 }
 
 export const useAldoHomeFeed = create<AldoHomeFeed>(() => ({
   home: null,
   supported: null,
   error: null,
+  saved: false,
 }));
+
+/**
+ * When this page last had a read of the home, its own or another tab's (0
+ * before the first: the copy kept from the last visit isn't a read). A read
+ * with nothing new counts, so it says how old what's shown can be.
+ */
+export const useAldoHomeReadAt = create<{ readonly at: number }>(() => ({ at: 0 }));
 
 let inflight = false;
 /** A refresh asked for during a read: the read may predate what asked, so it runs again after. */
@@ -85,11 +102,64 @@ let approvalHolds: ApprovalHolds = {};
  */
 let homeFrom = 0;
 
+/** A copy of the last read, as it was kept: by whom, and when. */
+interface SavedHome {
+  readonly who: string;
+  readonly at: number;
+  readonly home: AldoHome;
+}
+
+function loadSavedHome(): AldoHome | null {
+  const who = aldoWho();
+  if (!who) return null;
+  try {
+    const saved = JSON.parse(
+      localStorage.getItem(SAVED_KEY) ?? "null",
+    ) as Partial<SavedHome> | null;
+    if (
+      saved?.who !== who ||
+      typeof saved.at !== "number" ||
+      Date.now() - saved.at > SAVED_FOR_MS
+    ) {
+      return null;
+    }
+    return Array.isArray(saved.home?.conversations) ? saved.home : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Keeps a read (its JSON, as it came) for the next open, for whoever is
+ * signed in; none, or no one known, leaves no copy.
+ */
+function saveHome(body: string | null): void {
+  const who = body ? aldoWho() : null;
+  try {
+    // A SavedHome, written around the read's own JSON rather than serializing it again.
+    if (body && who)
+      localStorage.setItem(SAVED_KEY, `{"who":"${who}","at":${Date.now()},"home":${body}}`);
+    else localStorage.removeItem(SAVED_KEY);
+  } catch {
+    // No storage, or too little: the next open waits for its read.
+  }
+}
+
+// What Home last showed here, at once, as it was left (with what was answered
+// since held out), until this page's first read answers.
+const savedHome = loadSavedHome();
+if (savedHome) {
+  serverHome = savedHome;
+  useAldoHomeFeed.setState({ home: shown(savedHome), supported: true, saved: true });
+}
+
 // Each tab on screen reads the home every 30 seconds, so windows side by
 // side read it once each. A page shares each read with this browser's other
 // tabs, and one on screen with the home showing takes it as its own: its
 // next read waits a little longer than the reading tab's, so that one goes
-// on reading for all of them while it's seen.
+// on reading for all of them while it's seen. The page in use (only one has
+// focus) keeps reading for itself, so Aldo hears it's in use, and the others
+// take its reads.
 const SHARED_READS = "aldo-home";
 /** How much later than the reading tab's a tab that took its read reads next. */
 const SHARED_READ_SLACK_MS = 2_000;
@@ -116,14 +186,17 @@ function takeSharedRead(read: Partial<SharedRead> | null): void {
   const startedAt = read?.startedAt;
   if (watchers === 0 || document.visibilityState === "hidden") return;
   if (typeof startedAt !== "number" || startedAt <= homeFrom || read?.home === undefined) return;
+  // The page in use goes on reading for itself: its reads say it's in use
+  // (homeApi.ts), which a tab left alone can't say for it.
+  const ownReads = aldoPageInUseNow();
   // A read of this page's own under way answers for it. One begun after it
   // still puts this page's next read back, so tabs that read at the same time
   // fall out of step, and one goes on reading for both.
   if (inflight) {
-    if (startedAt > fetchedAt) fetchedAt = Date.now() + SHARED_READ_SLACK_MS;
+    if (!ownReads && startedAt > fetchedAt) fetchedAt = Date.now() + SHARED_READ_SLACK_MS;
     return;
   }
-  fetchedAt = Date.now() + SHARED_READ_SLACK_MS;
+  if (!ownReads) fetchedAt = Date.now() + SHARED_READ_SLACK_MS;
   homeFrom = startedAt;
   takeHome(read.home);
 }
@@ -187,21 +260,34 @@ function publish(): void {
 
 /** Shows a read of the home, this page's or another tab's. */
 function takeHome(next: AldoHome | null): void {
+  if (next) useAldoHomeReadAt.setState({ at: Date.now() });
   const body = JSON.stringify(next);
   const changed = body !== lastServerBody;
   lastServerBody = body;
+  const state = useAldoHomeFeed.getState();
+  if (changed) saveHome(next ? body : null);
   if (next && changed) {
     serverHome = next;
     noteHiddenPrompts(next);
   }
-  const state = useAldoHomeFeed.getState();
+  // An Aldo without the read (rolled back) shows no copy of an earlier one.
+  const unsaved = state.saved && !next;
+  if (unsaved) serverHome = null;
   // While an answer is held, each read is looked over again: it may be the one that has caught up.
   const holding = Object.keys(holds).length + Object.keys(approvalHolds).length > 0;
-  if (changed || holding || state.error !== null || state.supported !== Boolean(next)) {
+  if (
+    changed ||
+    holding ||
+    state.saved ||
+    state.error !== null ||
+    state.supported !== Boolean(next)
+  ) {
     useAldoHomeFeed.setState({
       ...(next && serverHome && (changed || holding) ? { home: shown(serverHome) } : {}),
+      ...(unsaved ? { home: null } : {}),
       supported: Boolean(next),
       error: null,
+      saved: false,
     });
   }
 }
@@ -230,7 +316,7 @@ async function readHome(): Promise<void> {
   const startedAt = Date.now();
   fetchedAt = startedAt;
   try {
-    const next = await fetchAldoHome();
+    const next = await fetchAldoHome({ active: aldoPageInUseNow() });
     // A poll begun before a persisted hide must not put the card back.
     if (revision !== dismissalRevision) again = true;
     else {
@@ -239,6 +325,15 @@ async function readHome(): Promise<void> {
       takeHome(next);
     }
   } catch (cause) {
+    // Signed out (api.ts sends them to sign in): nothing of theirs is kept for the next open,
+    // unless a read after this one is theirs again.
+    if (cause instanceof AldoApiError && cause.status === 401) {
+      saveHome(null);
+      lastServerBody = null;
+    }
+    // One that never reached Aldo (a phone just back from sleep, a network that changed)
+    // goes again at the next look rather than the next refresh.
+    if (!(cause instanceof AldoApiError)) fetchedAt = 0;
     useAldoHomeFeed.setState({ error: cause instanceof Error ? cause.message : String(cause) });
   } finally {
     inflight = false;
@@ -314,35 +409,46 @@ export function useAldoHomeRead(enabled = true): AldoHomeFeed {
   return useAldoHomeFeed();
 }
 
-/** A persisted dismissal takes effect immediately, including when the next read fails. */
-export function setAldoChatDecisionDismissed(id: string, dismissed: boolean, until?: Date): void {
+/** Applies `change` to the decisions named `ids` in the home as it stands, now; Aldo's next read says the same. */
+function changeDecisions(
+  ids: ReadonlySet<string>,
+  change: (decision: AldoChatDecision) => AldoChatDecision,
+): void {
   const home = serverHome;
   if (!home) return;
   dismissalRevision += 1;
   homeFrom = Date.now();
   const update = <T extends { readonly chatDecision?: AldoChatDecision }>(item: T): T =>
-    item.chatDecision?.id === id
-      ? {
-          ...item,
-          chatDecision: {
-            ...item.chatDecision,
-            dismissed,
-            // Put off until then, or not (shown again, or hidden for good), as Aldo's next read will say.
-            ...(item.chatDecision.until !== undefined
-              ? { until: dismissed && until ? until.toISOString() : null }
-              : {}),
-          },
-        }
+    item.chatDecision && ids.has(item.chatDecision.id)
+      ? { ...item, chatDecision: change(item.chatDecision) }
       : item;
   const next = {
     ...home,
     conversations: home.conversations.map(update),
     approvals: (home.approvals ?? []).map(update),
     pullRequests: home.pullRequests.map(update),
+    ...(Array.isArray(home.plans) ? { plans: home.plans.map(update) } : {}),
   };
   noteHiddenPrompts(next);
   serverHome = next;
   publish();
+}
+
+/** A persisted dismissal takes effect immediately, including when the next read fails. */
+export function setAldoChatDecisionDismissed(id: string, dismissed: boolean, until?: Date): void {
+  changeDecisions(new Set([id]), (decision) => ({
+    ...decision,
+    dismissed,
+    // Put off until then, or not (shown again, or hidden for good), as Aldo's next read will say.
+    ...(decision.until !== undefined
+      ? { until: dismissed && until ? until.toISOString() : null }
+      : {}),
+  }));
+}
+
+/** Dismissed from Needs you (or restored), as a persisted dismissal: it counts nowhere at once. */
+export function setAldoDecisionsCleared(ids: ReadonlyArray<string>, cleared: boolean): void {
+  changeDecisions(new Set(ids), (decision) => ({ ...decision, dismissed: cleared, cleared }));
 }
 
 /**

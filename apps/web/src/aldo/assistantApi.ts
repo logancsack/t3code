@@ -1,7 +1,10 @@
 // Assistant conversation, voice, brief and memory APIs.
 
+import { voiceReferencesOf, type AldoVoiceReference } from "./voiceReferences";
+import { artifactsField, type AldoArtifact } from "./artifacts.logic";
 import { type AldoHomeTarget } from "./homeApi";
 import { api, AldoApiError } from "./api";
+import type { AldoAssistantMessage, AldoCall, AldoCallEntry } from "./assistant.logic";
 import { aldoOnboardingFrom, type AldoInterest, type AldoOnboarding } from "./onboarding.logic";
 import { keptOf, resumedOf, type AldoKept, type AldoResumed } from "./planPicker.logic";
 
@@ -30,20 +33,32 @@ export interface AldoImageLimits {
   readonly types: ReadonlyArray<string>;
 }
 
-/** Whether this Aldo has the assistant, and the images its written messages take (null: none, as on an older Aldo). */
+/** The files (of any kind) a written message to Aldo takes: how many, and how large each. */
+export interface AldoFileLimits {
+  readonly max: number;
+  readonly maxBytes: number;
+}
+
+/**
+ * Whether this Aldo has the assistant, and the images and files its written
+ * messages take (null: none, as on an older Aldo, or one that keeps no files).
+ */
 export async function aldoAssistantInfo(): Promise<{
   readonly available: boolean;
   readonly images: AldoImageLimits | null;
+  readonly files: AldoFileLimits | null;
 }> {
   const response = await fetch("/api/assistant/tools", { credentials: "same-origin" }).catch(
     () => null,
   );
-  if (!response?.ok) return { available: false, images: null };
+  if (!response?.ok) return { available: false, images: null, files: null };
   const body = (await response.json().catch(() => null)) as {
     tools?: unknown;
     images?: { max?: unknown; maxBytes?: unknown; types?: unknown };
+    files?: { max?: unknown; maxBytes?: unknown } | null;
   } | null;
   const images = body?.images;
+  const files = body?.files;
   return {
     available: Array.isArray(body?.tools),
     images:
@@ -57,6 +72,10 @@ export async function aldoAssistantInfo(): Promise<{
             types: images.types.filter((t): t is string => typeof t === "string"),
           }
         : null,
+    files:
+      typeof files?.max === "number" && files.max > 0 && typeof files.maxBytes === "number"
+        ? { max: files.max, maxBytes: files.maxBytes }
+        : null,
   };
 }
 
@@ -66,16 +85,45 @@ export interface AldoImageUpload {
   readonly dataUrl: string;
 }
 
+/** A file a written message names, uploaded first (uploadAldoHomeFile) under its `id`. */
+export interface AldoFileUpload {
+  readonly id: string;
+  readonly name: string;
+  readonly mimeType: string;
+  readonly sizeBytes: number;
+}
+
 /** A written turn with Aldo: its reply, and the tool calls it made with what came of each. */
 export interface AldoChatTurn {
   readonly sessionId: string;
   readonly reply: string;
+  /** What the reply shows under it (artifacts.logic.ts). */
+  readonly artifacts?: ReadonlyArray<AldoArtifact>;
   readonly calls: ReadonlyArray<{
     readonly callId: string;
     readonly name: string;
     readonly arguments: Record<string, unknown>;
     readonly outcome: unknown;
   }>;
+}
+
+/** How long a written message waits to be taken in, and its answer to be asked for (which Aldo holds for 8 s), before the connection is taken as dead. */
+const ALDO_SEND_ANSWERS_WITHIN_MS = 20_000;
+const ALDO_TURN_ANSWERS_WITHIN_MS = 20_000;
+const ALDO_LEGACY_SEND_ANSWERS_WITHIN_MS = 90_000;
+
+/** What Aldo says to a message sent by id: it has it, or (an older Aldo) the whole turn. */
+export type AldoSent =
+  | { readonly kind: "taken"; readonly sessionId: string }
+  | { readonly kind: "answered"; readonly turn: AldoChatTurn };
+
+function turnOf(sessionId: string, reply: string, body: Partial<AldoChatTurn>): AldoChatTurn {
+  return {
+    sessionId,
+    reply,
+    calls: Array.isArray(body.calls) ? body.calls : [],
+    ...artifactsField(body.artifacts),
+  };
 }
 
 /** A call on GPT-Live: Aldo's session for it, and OpenAI's answer to the browser's WebRTC offer. */
@@ -94,6 +142,7 @@ function secondsLeftOf(value: unknown): { readonly secondsLeft?: number } {
 
 /** What Aldo did with a request the voice handed over, and what the voice should say. */
 export interface AldoDelegated {
+  readonly references?: ReadonlyArray<AldoVoiceReference>;
   readonly say: string;
   readonly calls: AldoChatTurn["calls"];
 }
@@ -160,6 +209,25 @@ export function showAldoCards(cards: ReadonlyArray<string>): () => void {
   };
 }
 
+/**
+ * The cards a written turn says the page shows: the page's, and what any
+ * reply shows under it (AldoArtifacts.tsx), with every type of chart
+ * (AldoChart.tsx: "charts"; an older page draws bars and lines alone).
+ */
+const cardsShown = () => [...new Set([...shownCards, "artifacts", "charts"])];
+
+/**
+ * The conversation as Aldo keeps it (`history`): messages, and with an Aldo that draws calls as cards
+ * (`calls`) each voice call as one `call` item where it began.
+ */
+export type AldoHistory = ReadonlyArray<AldoAssistantMessage | AldoCallEntry> & {
+  readonly calls?: boolean;
+};
+
+function withArtifacts<T extends { artifacts?: unknown }>({ artifacts, ...rest }: T) {
+  return { ...rest, ...artifactsField(artifacts) };
+}
+
 export const aldoAssistant = {
   /** A realtime session, for an Aldo from before GPT-Live (startLive returned null). */
   startSession: async (): Promise<AldoVoiceSession> => {
@@ -196,6 +264,17 @@ export const aldoAssistant = {
    * the call's transcript so far, what the user typed on it if that's what
    * this is, and the thread on screen.
    */
+  references: async (
+    sessionId: string,
+    text: string,
+    thread?: AldoHomeTarget,
+  ): Promise<AldoVoiceReference[]> => {
+    const body = await api<{ references?: unknown }>("/api/assistant/references", {
+      method: "POST",
+      body: JSON.stringify({ sessionId, text, ...(thread ? { thread } : {}) }),
+    });
+    return voiceReferencesOf(body.references);
+  },
   delegate: async (
     sessionId: string,
     transcript: ReadonlyArray<{ role: "user" | "assistant"; text: string }>,
@@ -213,49 +292,84 @@ export const aldoAssistant = {
         ...(stopped ? { stopped } : {}),
         sessionId,
         followups: true,
+        cards: ["references"],
         transcript,
         ...(typed ? { typed } : {}),
         ...(viewing ? { viewing } : {}),
       }),
     });
     return {
+      references: voiceReferencesOf(body.references),
       say: typeof body.say === "string" ? body.say : "",
       calls: Array.isArray(body.calls) ? body.calls : [],
     };
   },
   /**
-   * A written turn, typed without a call (Aldo's src/lib/assistant/chat.ts);
-   * null where this Aldo can't chat in writing (an older one answers a path
-   * it doesn't know with the web client's own page). `viewing` is the thread
-   * on screen, which Aldo names for "this one" (an older Aldo ignores it).
-   * The page shows a plan picker (`planPicker`): refused for want of a plan,
-   * Aldo keeps the request and its 402 carries the picker's (needsPlanOf on
-   * the error's body); an older Aldo ignores it.
+   * A written message, typed without a call (Aldo's src/lib/assistant/chat.ts),
+   * by the `id` the page gave it: Aldo takes it in once, however often it's
+   * sent, and answers at once that it has it (`taken`, with the session
+   * the page named, or the one Aldo made); its answer is asked for apart
+   * (`turn`). An older Aldo ignores the id and answers in the same request
+   * (`answered`). Null where this Aldo can't chat in writing (an older one
+   * answers a path it doesn't know with the web client's own page). `viewing`
+   * is the thread on screen, which Aldo names for "this one" (an older Aldo
+   * ignores it). The page shows a plan picker (`planPicker`): refused for want
+   * of a plan, Aldo keeps the request and its 402 carries the picker's
+   * (needsPlanOf on the error's body); an older Aldo ignores it.
    */
-  chat: async (
+  send: async (
+    id: string,
     sessionId: string | null,
     text: string,
     images: ReadonlyArray<AldoImageUpload> = [],
+    files: ReadonlyArray<AldoFileUpload> = [],
     viewing: AldoHomeTarget | null = null,
-  ): Promise<AldoChatTurn | null> => {
-    const body = await api<Partial<AldoChatTurn>>("/api/assistant/chat", {
+    takesIds = false,
+  ): Promise<AldoSent | null> => {
+    const body = await api<Partial<AldoChatTurn> & { accepted?: boolean }>("/api/assistant/chat", {
       method: "POST",
+      // Taking a message in is quick: one that isn't answered is on a connection that died, and is sent again.
+      // An older Aldo answers when the turn is done, and is not to be cut off (`takesIds`: this one is known to take ids).
+      answersWithin: takesIds ? ALDO_SEND_ANSWERS_WITHIN_MS : ALDO_LEGACY_SEND_ANSWERS_WITHIN_MS,
       body: JSON.stringify({
+        id,
         sessionId,
         text,
         ...(images.length > 0 ? { images } : {}),
+        ...(files.length > 0 ? { files } : {}),
         ...(viewing ? { viewing } : {}),
         planPicker: true,
         // What the page shows as cards, which Aldo would otherwise say in words (an older Aldo ignores it).
-        ...(shownCards.length > 0 ? { cards: shownCards } : {}),
+        cards: cardsShown(),
       }),
     });
-    if (typeof body.reply !== "string" || typeof body.sessionId !== "string") return null;
-    return {
-      sessionId: body.sessionId,
-      reply: body.reply,
-      calls: Array.isArray(body.calls) ? body.calls : [],
-    };
+    if (typeof body.sessionId !== "string") return null;
+    if (body.accepted) return { kind: "taken", sessionId: body.sessionId };
+    return typeof body.reply === "string"
+      ? { kind: "answered", turn: turnOf(body.sessionId, body.reply, body) }
+      : null;
+  },
+  /**
+   * Aldo's answer to the message `id` (sent with `send`), once it has one:
+   * "pending" after a few seconds of waiting, to be asked again; "unknown"
+   * when Aldo doesn't have the message. A turn that failed throws an error
+   * whose body says `failed`; anything else that throws is the ask's own and
+   * can be made again.
+   */
+  turn: async (id: string): Promise<AldoChatTurn | "pending" | "unknown"> => {
+    const body = await api<Partial<AldoChatTurn> & { pending?: boolean }>(
+      `/api/assistant/chat?id=${encodeURIComponent(id)}`,
+      { answersWithin: ALDO_TURN_ANSWERS_WITHIN_MS, cache: "no-store" },
+    ).catch((error: unknown) => {
+      if (error instanceof AldoApiError && error.status === 404) return null;
+      throw error;
+    });
+    if (!body) return "unknown";
+    if (body.pending) return "pending";
+    if (typeof body.reply !== "string" || typeof body.sessionId !== "string") {
+      throw new TypeError("Aldo's answer couldn't be read.");
+    }
+    return turnOf(body.sessionId, body.reply, body);
   },
   /** The request Aldo keeps from before a plan was chosen; null where it doesn't keep them (an older Aldo) or couldn't say. */
   /** Null where Aldo keeps none (an older one); throws when it can't be reached, so the page can ask again. */
@@ -283,6 +397,7 @@ export const aldoAssistant = {
           resume: requestId,
           ...(sessionId ? { sessionId } : {}),
           ...(checkoutSession ? { checkoutSession } : {}),
+          cards: cardsShown(),
         }),
       }).then(
         (body) => ({ ok: true as const, body }),
@@ -330,16 +445,56 @@ export const aldoAssistant = {
   ) =>
     api<{ result?: unknown; error?: string }>(`/api/assistant/tools/${encodeURIComponent(name)}`, {
       method: "POST",
-      body: JSON.stringify({ arguments: args, sessionId, heard }),
+      body: JSON.stringify({ arguments: args, sessionId, heard, cards: ["references"] }),
     }),
-  record: (sessionId: string, items: ReadonlyArray<{ role: "user" | "assistant"; text: string }>) =>
-    api("/api/assistant/history", { method: "POST", body: JSON.stringify({ sessionId, items }) }),
-  history: async (limit = 50) =>
+  /**
+   * Adds what was said in a session. `ended` says the call hung up, its last words in:
+   * Aldo writes its summary then. `call: false` is a line that isn't a turn of the call (news it never said).
+   */
+  record: (
+    sessionId: string,
+    items: ReadonlyArray<{ role: "user" | "assistant"; text: string; call?: false }>,
+    ended = false,
+  ) =>
+    api("/api/assistant/history", {
+      method: "POST",
+      body: JSON.stringify({ sessionId, items, ...(ended ? { ended } : {}) }),
+    }),
+  /**
+   * The conversation, oldest first. An Aldo that draws calls as cards (`calls`) returns each voice call as one
+   * `call` item where it began, not its turns; an older one returns every turn, and says so.
+   */
+  history: async (limit = 50): Promise<AldoHistory> => {
+    const body = await api<{
+      messages: Array<
+        | {
+            role: "user" | "assistant";
+            text: string;
+            at: string;
+            source?: "brief";
+            artifacts?: unknown;
+            clientId?: string;
+          }
+        | { call: Omit<AldoCall, "at">; at: string }
+      >;
+      calls?: boolean;
+    }>(`/api/assistant/history?limit=${limit}&calls=1`);
+    return Object.assign(
+      body.messages.map((m) =>
+        "call" in m
+          ? ({ kind: "call", ...m.call, at: m.at } satisfies AldoCallEntry)
+          : withArtifacts(m),
+      ),
+      { calls: body.calls === true },
+    );
+  },
+  /** What was said on a call (its card opens it), oldest first. */
+  callTranscript: async (id: string) =>
     (
-      await api<{
-        messages: Array<{ role: "user" | "assistant"; text: string; at: string; source?: "brief" }>;
-      }>(`/api/assistant/history?limit=${limit}`)
-    ).messages,
+      await api<{ turns: Array<{ role: "user" | "assistant"; text: string; at: string }> }>(
+        `/api/assistant/calls/${encodeURIComponent(id)}`,
+      )
+    ).turns,
 };
 
 /** One of the brief's things to decide first; `key` is its decision's (decisions.logic.ts). */
@@ -431,11 +586,15 @@ export interface AldoProfile {
   readonly adminUrl: string | null;
   /** The welcome on Home (onboarding.logic.ts); null on an Aldo without it. */
   readonly onboarding: AldoOnboarding | null;
+  /** The organization they're in, by name; null in none, and on an Aldo without organizations. */
+  readonly organization: string | null;
 }
 
 /** Who's signed in; null where this Aldo can't say (an older one answers with the client's page). */
 export async function fetchAldoProfile(): Promise<AldoProfile | null> {
-  const body = await api<Partial<AldoProfile>>("/api/account").catch(() => null);
+  const body = await api<Partial<AldoProfile> & { org?: { name?: unknown } }>("/api/account").catch(
+    () => null,
+  );
   return body && typeof body.email === "string" && typeof body.id === "string"
     ? {
         id: body.id,
@@ -450,6 +609,7 @@ export async function fetchAldoProfile(): Promise<AldoProfile | null> {
             ? body.adminUrl
             : null,
         onboarding: aldoOnboardingFrom(body),
+        organization: typeof body.org?.name === "string" && body.org.name ? body.org.name : null,
       }
     : null;
 }

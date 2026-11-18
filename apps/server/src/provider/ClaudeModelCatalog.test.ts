@@ -4,6 +4,7 @@ import { ProviderInstanceId } from "@t3tools/contracts";
 import { hasValidClaudeManifestAdapters } from "./ClaudeModelManifest.ts";
 import type { ModelManifestData } from "./ModelManifest.ts";
 import {
+  BUNDLED_CLAUDE_MODEL_CATALOG,
   formatClaudeVersionUpgradeMessage,
   normalizeClaudeCatalogEffort,
   resolveClaudeCatalogApiModelId,
@@ -67,6 +68,23 @@ const manifest = (): ModelManifestData => ({
 });
 
 describe("Claude model catalog", () => {
+  // Aldo promises Fable 5.2 on Claude's list; a manifest edit must not drop it.
+  it("keeps Claude Fable 5.2 in the bundled list with its reasoning choices", () => {
+    const fable = resolveClaudeModelsForVersion(BUNDLED_CLAUDE_MODEL_CATALOG, "2.1.321").find(
+      (model) => model.slug === "claude-fable-5-2",
+    );
+    assert.strictEqual(fable?.name, "Claude Fable 5.2");
+    assert.strictEqual(
+      resolveClaudeModelSlug(BUNDLED_CLAUDE_MODEL_CATALOG, "fable-5.2"),
+      "claude-fable-5-2",
+    );
+    const effort = fable?.capabilities?.optionDescriptors?.find((option) => option.id === "effort");
+    assert.deepStrictEqual(
+      effort?.type === "select" ? effort.options.map((option) => option.id) : [],
+      ["low", "medium", "high", "xhigh", "max", "ultracode", "ultrathink"],
+    );
+  });
+
   it("filters models at runtime-version boundaries and derives the upgrade message", () => {
     const catalog = resolveClaudeModelCatalog(manifest());
     assert.deepStrictEqual(resolveClaudeModelsForVersion(catalog, "3.1.9"), []);

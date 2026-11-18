@@ -35,6 +35,10 @@ function allIds(state: ThreadActionMenuState): string[] {
 }
 
 describe("buildThreadActionMenuItems", () => {
+  it("offers project moves only when the caller can move this thread", () => {
+    expect(ids(baseState)).not.toContain("move-project");
+    expect(ids({ ...baseState, moveProject: true })).toContain("move-project");
+  });
   it("hides lifecycle items when the environment lacks the capabilities", () => {
     expect(
       ids({

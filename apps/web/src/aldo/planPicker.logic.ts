@@ -7,6 +7,7 @@
 // it once a plan is on (a tab closed meanwhile). An older Aldo sends none of
 // this: its refusal is a plain error, as before. Pure, so it's tested on its own.
 
+import { artifactsField, type AldoArtifact } from "./artifacts.logic";
 import { withoutImageNotes } from "./assistant.logic";
 import { formatPlanPrice } from "./billing.logic";
 
@@ -211,6 +212,7 @@ export function keptStep(
 export interface AldoResumedTurn {
   readonly sessionId: string;
   readonly reply: string;
+  readonly artifacts?: ReadonlyArray<AldoArtifact>;
   readonly calls: ReadonlyArray<{
     readonly callId: string;
     readonly name: string;
@@ -270,6 +272,7 @@ export function resumedOf(
       sessionId: body.sessionId,
       reply: body.reply,
       calls: Array.isArray(body.calls) ? body.calls : [],
+      ...artifactsField(body.artifacts),
     },
     text: typeof resumed.text === "string" ? resumed.text : "",
     plan: typeof resumed.plan === "string" && resumed.plan ? resumed.plan : null,

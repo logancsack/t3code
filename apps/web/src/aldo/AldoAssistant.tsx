@@ -1,4 +1,4 @@
-// Talking to Aldo: the orb to talk, the composer to type (with a few things to
+// Talking to Aldo: the mark to talk, the composer to type (with a few things to
 // say when it's empty), and the conversation: what was said, and what Aldo
 // did, the newest action about each thread as a live card (AldoLiveCard.tsx).
 // The home screen lays them out as a page (AldoConversationPage.tsx); the
@@ -22,6 +22,8 @@ import {
 } from "lucide-react";
 import {
   Fragment,
+  lazy,
+  Suspense,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -44,13 +46,14 @@ import { OpenThread, threadLink, WorkstreamGlyph } from "./AldoWorkstream";
 import { AldoFeedRun } from "./AldoFeed";
 import { showAldoCall } from "./callView";
 import { AldoThreadCard } from "./AldoLiveCard";
-import { AldoAvatar } from "./AldoPresence";
+import { AldoFrame } from "./AldoFrame";
 import { ALDO_TALK_LABEL } from "./summon.logic";
 import {
   ACTION_LABELS,
   closingThread,
   linkRuns,
   liveCardIndexes,
+  onCall,
   withoutImageNotes,
   type AldoOpenTarget,
 } from "./assistant.logic";
@@ -58,6 +61,7 @@ import {
   connectAldo,
   disconnectAldo,
   sendText,
+  retryAldoMessage,
   setAldoMuted,
   useAldoAssistant,
   type AldoConversationEntry,
@@ -65,32 +69,35 @@ import {
 import {
   aldoAssistant,
   aldoAssistantInfo,
+  type AldoFileLimits,
+  type AldoFileUpload,
   type AldoImageLimits,
   type AldoImageUpload,
 } from "./assistantApi";
+import { AldoAttachMenu, AldoFileChip } from "./AldoAttach";
+import { aldoAttachmentId } from "./held.logic";
+import { uploadAldoHomeFile } from "./threadApi";
+import { randomUUID } from "~/lib/utils";
 import { useAldoArrive, useAldoArrived } from "./arrive";
 import { beatDelay, splitBeats } from "./beats.logic";
 import { sameTarget } from "./home.logic";
 import { useAldoHomeFeed } from "./homeFeed";
 import type { AldoHomeConversation } from "./homeApi";
 import { WORKSTREAM_WORDS, workstreamMeta, workstreamState } from "./workstream.logic";
-import { blinkAldo, setAldoReading } from "./face";
-import {
-  dedupeLiveCards,
-  interleaveInPlace,
-  timelineSlots,
-  type AldoFeedEvent,
-  type AldoTimelineSlot,
-} from "./feed.logic";
-import { placeDecisions, type AldoPlaceable } from "./decisions.logic";
+import { voicePresenceState } from "./presence.logic";
+import { acknowledgeAldo, setAldoReading } from "./presenceReactions";
+import { dedupeLiveCards, interleave, type AldoFeedEvent } from "./feed.logic";
+import { type AldoPlaceable } from "./decisions.logic";
+import { linkRows, withoutShownLinks, type AldoArtifact } from "./artifacts.logic";
 import { useAldoFirstViewHold } from "./firstView";
+import { AldoCallCard } from "./AldoCallCard";
 import { AldoPlanPicker } from "./AldoPlanPicker";
 import { CHIP } from "./surface";
 import "./presence.css";
 
 const OVERVIEW_EVERY_MS = 20_000;
 
-/** The orb: tap to talk or hang up; it swells with whoever is speaking. */
+/** The mark: tap to talk or hang up; its light follows whoever is speaking. */
 let assistantInfo: ReturnType<typeof aldoAssistantInfo> | null = null;
 let assistantAvailable: boolean | null = null;
 
@@ -115,14 +122,20 @@ export function useAldoAssistantAvailable(ask = true): boolean | null {
   return available;
 }
 
-/** The images this Aldo's written messages take, asked once per page; null when none (or not known yet). */
-function useAldoImageLimits(): AldoImageLimits | null {
-  const [limits, setLimits] = useState<AldoImageLimits | null>(null);
+/** The images and files this Aldo's written messages take, asked once per page; each null when none (or not known yet). */
+function useAldoAttachLimits(): {
+  readonly images: AldoImageLimits | null;
+  readonly files: AldoFileLimits | null;
+} {
+  const [limits, setLimits] = useState<{
+    images: AldoImageLimits | null;
+    files: AldoFileLimits | null;
+  }>({ images: null, files: null });
   useEffect(() => {
     let current = true;
     assistantInfo ??= aldoAssistantInfo();
     void assistantInfo.then((info) => {
-      if (current) setLimits(info.images);
+      if (current) setLimits({ images: info.images, files: info.files });
     });
     return () => {
       current = false;
@@ -130,6 +143,12 @@ function useAldoImageLimits(): AldoImageLimits | null {
   }, []);
   return limits;
 }
+
+/** A file attached in Home's composer: named as the message will name it, with its bytes while it uploads. */
+type HomeFile = AldoFileUpload & {
+  readonly file: File | null;
+  readonly state: "uploading" | "ready" | "failed";
+};
 
 /** A request to Aldo is at most 4.5 MB: the images of one message share about 3 MB, before base64. */
 const IMAGES_BYTES = 3_000_000;
@@ -170,66 +189,19 @@ async function imageUpload(
 /** How to talk to Aldo from anywhere (AldoAssistantDock listens for it). */
 export const ALDO_SHORTCUT_LABEL = ALDO_TALK_LABEL;
 
-export function AldoOrb(props: {
+export function AldoVoiceMark(props: {
   readonly size?: "xl" | "lg" | "sm" | "xs";
   readonly className?: string;
-  /** Just the orb, swelling with who speaks: not a button (the call screen's, AldoCallScreen.tsx). */
+  /** The audio-reactive mark: not a button (the call screen's, AldoCallScreen.tsx). */
   readonly display?: boolean;
 }) {
   const phase = useAldoAssistant((s) => s.phase);
-  const levels = useAldoAssistant((s) => s.levels);
   const live = phase !== "idle" && phase !== "error";
-  const level =
-    phase === "speaking"
-      ? levels.aldo
-      : phase === "hearing" || phase === "listening"
-        ? levels.mic
-        : 0;
-  const scale = 1 + Math.min(1, level * 2.5) * (props.display ? 0.14 : 0.28);
   const size = props.size ?? "lg";
-  const visuals = (
-    <>
-      {size === "xl" ? (
-        <span
-          aria-hidden
-          className="absolute -inset-8 rounded-full bg-primary/10 transition-transform duration-150 motion-reduce:transition-none"
-          style={{ transform: `scale(${1 + Math.min(1, level * 2.5) * 0.25})` }}
-        />
-      ) : null}
-      <span
-        aria-hidden
-        className={cn(
-          "absolute inset-0 rounded-full bg-gradient-to-br from-primary/90 to-primary/50 shadow-lg shadow-primary/20 transition-transform duration-100 motion-reduce:transition-none",
-          (phase === "thinking" || phase === "connecting") && "animate-pulse",
-          !live && !props.display && "opacity-80",
-        )}
-        style={{ transform: `scale(${scale})` }}
-      />
-      <span
-        aria-hidden
-        className={cn(
-          "absolute rounded-full bg-background/25",
-          size === "xl"
-            ? "inset-[30%]"
-            : size === "lg"
-              ? "inset-5"
-              : size === "sm"
-                ? "inset-2"
-                : "inset-1.5",
-        )}
-      />
-      {live || props.display ? null : (
-        <MicIcon
-          className={cn(
-            "relative text-primary-foreground",
-            size === "lg" || size === "xl" ? "size-7" : size === "sm" ? "size-4" : "size-3",
-          )}
-        />
-      )}
-    </>
-  );
+  const pixels = { xl: 160, lg: 80, sm: 36, xs: 24 }[size];
+  const visuals = <AldoFrame size={pixels} state={voicePresenceState(phase)} />;
   const box = cn(
-    "relative flex shrink-0 items-center justify-center rounded-full",
+    "relative flex shrink-0 items-center justify-center rounded-lg",
     size === "xl" ? "size-40" : size === "lg" ? "size-20" : size === "sm" ? "size-9" : "size-6",
     props.className,
   );
@@ -299,20 +271,21 @@ export function AldoComposer(props: {
   const micOn = useAldoAssistant((s) => s.micOn);
   const [text, setText] = useState("");
   const [images, setImages] = useState<ReadonlyArray<AldoImageUpload>>([]);
+  /** Files attached, each uploading as it's attached (its bytes gone once given back: `file` null). */
+  const [files, setFiles] = useState<ReadonlyArray<HomeFile>>([]);
   const [imageError, setImageError] = useState<string | null>(null);
   /** Images being made ready to send: the message waits for them. */
   const [preparing, setPreparing] = useState(0);
   const phase = useAldoAssistant((s) => s.phase);
   const unsent = useAldoAssistant((s) => s.unsent);
   const unsentImages = useAldoAssistant((s) => s.unsentImages);
-  const replying = useAldoAssistant((s) => s.replying);
+  const unsentFiles = useAldoAssistant((s) => s.unsentFiles);
   const input = useRef<HTMLTextAreaElement>(null);
-  const picker = useRef<HTMLInputElement>(null);
-  const limits = useAldoImageLimits();
+  const { images: limits, files: fileLimits } = useAldoAttachLimits();
   const live = phase !== "idle" && phase !== "error";
-  // Images go in writing: not into a call.
+  // Images and files go in writing: not into a call.
   const canAttach = limits !== null && !live;
-  // Aldo looks down at what's being written, and back up once the user stops.
+  // Briefly emphasize the mark while the user types.
   const reading = useRef<ReturnType<typeof setTimeout> | null>(null);
   const read = (on: boolean) => {
     if (reading.current) clearTimeout(reading.current);
@@ -358,6 +331,15 @@ export function AldoComposer(props: {
     });
     useAldoAssistant.setState({ unsentImages: null });
   }, [unsentImages, limits]);
+  // And files, uploaded already.
+  useEffect(() => {
+    if (unsentFiles === null) return;
+    setFiles((current) => [
+      ...unsentFiles.map((named) => ({ ...named, file: null, state: "ready" as const })),
+      ...current.filter((file) => !unsentFiles.some((u) => u.id === file.id)),
+    ]);
+    useAldoAssistant.setState({ unsentFiles: null });
+  }, [unsentFiles]);
   // A batch is made ready together, and the message waits for it.
   const addImages = (files: ReadonlyArray<File>) => {
     if (!limits || files.length === 0) return;
@@ -377,14 +359,56 @@ export function AldoComposer(props: {
       })
       .finally(() => setPreparing((n) => n - 1));
   };
+  /** A file goes up to Aldo as it's attached, so the message only names it. */
+  const upload = (attached: HomeFile) => {
+    if (!attached.file) return;
+    const mark = (state: HomeFile["state"]) =>
+      setFiles((current) => current.map((f) => (f.id === attached.id ? { ...f, state } : f)));
+    mark("uploading");
+    uploadAldoHomeFile(attached.id, attached.file).then(
+      () => mark("ready"),
+      (error: unknown) => {
+        mark("failed");
+        setImageError(error instanceof Error ? error.message : null);
+      },
+    );
+  };
+  const addFiles = (picked: ReadonlyArray<File>) => {
+    if (!fileLimits || picked.length === 0) return;
+    setImageError(null);
+    const fits = picked.filter((file) => file.size > 0 && file.size <= fileLimits.maxBytes);
+    const room = fileLimits.max - files.length;
+    if (fits.length < picked.length)
+      setImageError(`A file is at most ${Math.round(fileLimits.maxBytes / 1024 / 1024)} MB.`);
+    else if (fits.length > room) setImageError(`At most ${fileLimits.max} files with a message.`);
+    const added = fits.slice(0, Math.max(0, room)).flatMap((file): HomeFile[] => {
+      const name = file.name || "file";
+      const id = aldoAttachmentId({ type: "file", name, mimeType: file.type }, randomUUID());
+      if (!id) return [];
+      const mimeType = file.type || "application/octet-stream";
+      return [{ id, name, mimeType, sizeBytes: file.size, file, state: "uploading" }];
+    });
+    setFiles((current) => [...current, ...added]);
+    added.forEach(upload);
+  };
+  /** What was picked, dropped or pasted: images Aldo sees as images, anything else as a file (where Aldo takes files). */
+  const attach = (picked: ReadonlyArray<File>) => {
+    const asImage = (file: File) =>
+      !fileLimits ||
+      isHeicImageFile(file) ||
+      (limits?.types.includes(normalizeComposerImageFileMimeType(file).type) ?? false);
+    addImages(picked.filter(asImage));
+    addFiles(picked.filter((file) => !asImage(file)));
+  };
   /** The words last seeded, so another seed replaces them while they're untouched. */
   const seeded = useRef<string | null>(null);
   // What couldn't be sent comes back to be sent again, and words seeded for
   // the user to finish; a draft already in the field is kept, after them.
   useEffect(() => {
     if (unsent === null) return;
+    const previousSeed = seeded.current;
     setText((current) => {
-      if (!current.trim() || current === seeded.current) return unsent;
+      if (!current.trim() || current === previousSeed) return unsent;
       if (!unsent.trim()) return current;
       return `${unsent} ${current}`;
     });
@@ -395,24 +419,30 @@ export function AldoComposer(props: {
     // At the end of what was seeded, to carry on from there.
     requestAnimationFrame(() => field?.setSelectionRange(field.value.length, field.value.length));
   }, [unsent]);
-  const sendable = text.trim().length > 0 || (canAttach && images.length > 0);
-  // One turn at a time: while Aldo replies the user can write the next, not send it.
-  const held = replying && !live;
+  const sendable = text.trim().length > 0 || (canAttach && images.length + files.length > 0);
+  // The message waits for its images to be ready and its files uploaded.
+  const waiting = preparing > 0 || (canAttach && files.some((file) => file.state !== "ready"));
   const submit = () => {
-    if (preparing > 0 || held) return;
-    // During a call images don't go: they stay for after it.
+    if (waiting) return;
+    // During a call images and files don't go: they stay for after it.
     const sending = canAttach ? images : [];
-    if (!text.trim() && sending.length === 0) return;
+    const sendingFiles: AldoFileUpload[] = canAttach
+      ? files.map(({ id, name, mimeType, sizeBytes }) => ({ id, name, mimeType, sizeBytes }))
+      : [];
+    if (!text.trim() && sending.length + sendingFiles.length === 0) return;
     const send = () => {
-      sendText(text, sending);
+      sendText(text, sending, sendingFiles);
       setText("");
       if (sending.length > 0) setImages([]);
+      if (sendingFiles.length > 0) setFiles([]);
       setImageError(null);
     };
     if (props.onSend) props.onSend(send);
     else send();
+    // A touch screen's keyboard would otherwise cover the reply.
+    if (coarse) input.current?.blur();
     read(false);
-    blinkAldo();
+    acknowledgeAldo();
   };
   const round =
     "relative flex size-11 shrink-0 items-center justify-center rounded-full outline-none transition-[background-color,opacity,transform] duration-100 focus-visible:ring-2 focus-visible:ring-ring active:scale-95 disabled:opacity-40 motion-reduce:transition-none";
@@ -432,10 +462,10 @@ export function AldoComposer(props: {
         onDrop={(event) => {
           if (!canAttach || event.dataTransfer.files.length === 0) return;
           event.preventDefault();
-          addImages([...event.dataTransfer.files]);
+          attach([...event.dataTransfer.files]);
         }}
       >
-        {canAttach && (images.length > 0 || preparing > 0 || imageError) ? (
+        {canAttach && (images.length > 0 || files.length > 0 || preparing > 0 || imageError) ? (
           <div className="flex flex-col gap-1.5 px-2 pt-1.5 pb-1">
             <div className="flex flex-wrap gap-2">
               {images.map((image, index) => (
@@ -462,6 +492,16 @@ export function AldoComposer(props: {
                   className="size-12 animate-pulse rounded-xl bg-foreground/[0.06] motion-reduce:animate-none"
                 />
               ) : null}
+              {files.map((file) => (
+                <AldoFileChip
+                  key={file.id}
+                  name={file.name}
+                  sizeBytes={file.sizeBytes}
+                  state={file.state}
+                  onRemove={() => setFiles((current) => current.filter((f) => f.id !== file.id))}
+                  onRetry={file.file ? () => upload(file) : undefined}
+                />
+              ))}
             </div>
             {imageError ? (
               <p className="text-[12px] text-destructive-foreground leading-[18px]">{imageError}</p>
@@ -470,35 +510,23 @@ export function AldoComposer(props: {
         ) : null}
         <div className="flex items-end gap-1">
           {canAttach ? (
-            <>
-              <input
-                ref={picker}
-                type="file"
-                accept={[...limits.types, ".heic", ".heif"].join(",")}
-                multiple
-                hidden
-                onChange={(event) => {
-                  addImages([...(event.target.files ?? [])]);
-                  event.target.value = "";
-                }}
-              />
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <button
-                      type="button"
-                      aria-label="Add images"
-                      disabled={images.length >= limits.max}
-                      className={quiet}
-                      onClick={() => picker.current?.click()}
-                    />
-                  }
-                >
-                  <PlusIcon className="size-5" strokeWidth={1.75} />
-                </TooltipTrigger>
-                <TooltipPopup side="top">Add images</TooltipPopup>
-              </Tooltip>
-            </>
+            <AldoAttachMenu
+              trigger={
+                <button
+                  type="button"
+                  aria-label={fileLimits ? "Add photos and files" : "Add photos"}
+                  className={quiet}
+                />
+              }
+              disabled={
+                images.length >= limits.max && (!fileLimits || files.length >= fileLimits.max)
+              }
+              photos="image/*"
+              files={fileLimits !== null}
+              onPick={attach}
+            >
+              <PlusIcon className="size-5" strokeWidth={1.75} />
+            </AldoAttachMenu>
           ) : (
             <span className="w-3 shrink-0" />
           )}
@@ -525,12 +553,12 @@ export function AldoComposer(props: {
             }}
             onPaste={(event) => {
               if (!canAttach) return;
-              const files = [...event.clipboardData.files].filter(
-                (file) => classifyComposerAttachmentFile(file) !== "file",
+              const pasted = [...event.clipboardData.files].filter(
+                (file) => fileLimits !== null || classifyComposerAttachmentFile(file) !== "file",
               );
-              if (files.length === 0) return;
+              if (pasted.length === 0) return;
               event.preventDefault();
-              addImages(files);
+              attach(pasted);
             }}
           />
           {live && micOn ? (
@@ -577,8 +605,13 @@ export function AldoComposer(props: {
                 render={
                   <button
                     type={sendable ? "submit" : "button"}
-                    aria-label={sendable ? (held ? "Aldo is replying" : "Send") : "Talk to Aldo"}
-                    disabled={sendable && (preparing > 0 || held)}
+                    aria-label={sendable ? "Send" : "Talk to Aldo"}
+                    disabled={sendable && waiting}
+                    // Keep the keyboard and composer in place as the user sends follow-ups on a phone.
+                    onPointerDown={(event) => {
+                      if (sendable && document.activeElement === input.current)
+                        event.preventDefault();
+                    }}
                     className={cn(round, "bg-foreground text-background hover:bg-foreground/88")}
                     onClick={sendable ? undefined : () => void connectAldo()}
                   />
@@ -602,11 +635,7 @@ export function AldoComposer(props: {
                 />
               </TooltipTrigger>
               <TooltipPopup side="top">
-                {sendable
-                  ? held
-                    ? "Aldo is replying: send once it's done"
-                    : "Send"
-                  : `Talk to Aldo (${ALDO_SHORTCUT_LABEL})`}
+                {sendable ? "Send" : `Talk to Aldo (${ALDO_SHORTCUT_LABEL})`}
               </TooltipPopup>
             </Tooltip>
           )}
@@ -625,33 +654,20 @@ export function AldoComposer(props: {
   );
 }
 
-/** Where an entry is in the conversation: what Aldo did belongs to its reply, with no time of its own. */
-const slotOf = (entry: AldoConversationEntry): AldoTimelineSlot =>
-  entry.kind === "message"
-    ? { at: entry.at, reply: entry.role === "assistant" }
-    : { at: null, reply: false };
-
 /**
  * The conversation: from the start, or `since` an entry (the summon bar shows
  * what followed its question), the newest action about each thread as a live
  * card. On the home screen it's a messaging thread: days marked, what happened
  * to the user's agents put where it happened (`feed`, AldoFeed.tsx), and what
- * waits on them under what was said when it came up, or at its end once
- * nothing's been said since (`decisions`, drawn by `renderDecisions`:
- * AldoUpNext.tsx), after the `tail`.
+ * waits on them at its creation time (`decisions`, drawn by
+ * `renderDecisions`: AldoUpNext.tsx).
  */
 export function AldoConversation(
   props: {
     readonly since?: number;
     readonly feed?: ReadonlyArray<AldoFeedEvent>;
-    readonly tail?: ReactNode;
     readonly decisions?: ReadonlyArray<AldoPlaceable>;
-    /**
-     * Events in `feed` that were cards waiting on the user (a payment that went
-     * on), each as it was placed as a decision: it stays where its card was.
-     */
-    readonly decided?: ReadonlyArray<AldoPlaceable>;
-    /** A group of cards: `keys` for one placed in the conversation, null for the end's (what wasn't placed, by `placedAt`). */
+    /** Cards in the timeline, or null for the conversation's walkthrough control. */
     readonly renderDecisions?: (
       keys: ReadonlyArray<string> | null,
       placedAt: ReadonlyMap<string, string>,
@@ -668,20 +684,28 @@ export function AldoConversation(
   const entries = since > 0 ? all.slice(since) : all;
   const items = useMemo(() => {
     const shown = entries.flatMap((entry, index) =>
-      entry.kind === "action" && entry.open && live.has(since + index) ? [entry.open] : [],
+      entry.kind === "action" && entry.open && !entry.call && live.has(since + index)
+        ? [entry.open]
+        : [],
     );
     const feed = dedupeLiveCards(props.feed ?? [], shown);
-    return interleaveInPlace(entries, feed, slotOf, props.decided ?? []);
-  }, [entries, props.feed, props.decided, live, since]);
-  const placement = useMemo(
-    () => placeDecisions(timelineSlots(items, slotOf), props.decisions ?? []),
-    [items, props.decisions],
+    return interleave(
+      entries,
+      feed,
+      (entry) => (onCall(entry) ? null : entry.kind === "action" ? null : entry.at),
+      props.decisions,
+    ).filter((item) => item.kind !== "entry" || !onCall(item.entry));
+  }, [entries, props.feed, props.decisions, live, since]);
+  const shownCount = items.length;
+  const placedAt = useMemo(
+    () => new Map((props.decisions ?? []).map((card) => [card.key, card.at])),
+    [props.decisions],
   );
   const { renderDecisions } = props;
-  // Aldo's reply in: it looks up from it, with a blink.
+  // Acknowledge the completed reply.
   const wasReplying = useRef(replying);
   useEffect(() => {
-    if (wasReplying.current && !replying) blinkAldo();
+    if (wasReplying.current && !replying) acknowledgeAldo();
     wasReplying.current = replying;
   }, [replying]);
   const end = useRef<HTMLDivElement>(null);
@@ -696,22 +720,19 @@ export function AldoConversation(
   const follows = props.feed === undefined;
   useEffect(() => {
     if (follows) end.current?.scrollIntoView({ block: "end" });
-  }, [follows, entries.length, replying, planPick?.stage]);
+  }, [follows, shownCount, replying, planPick?.stage]);
   let day: string | null = null;
   return (
     <div className="flex flex-col gap-6">
-      {items.map((item, position) => {
-        const placed = placement.before.get(position);
-        const cards =
-          placed && renderDecisions ? (
-            <Fragment key={`needs-${placed[0]}`}>{renderDecisions(placed, placement.at)}</Fragment>
-          ) : null;
+      {items.map((item) => {
         const at =
           item.kind === "entry"
-            ? item.entry.kind === "message"
-              ? item.entry.at
-              : null
-            : item.events[0]!.at;
+            ? item.entry.kind === "action"
+              ? null
+              : item.entry.at
+            : item.kind === "card"
+              ? item.at
+              : item.events[0]!.at;
         const label = props.feed && at ? dayLabel(at) : null;
         const marker =
           label && label !== day ? (
@@ -723,14 +744,24 @@ export function AldoConversation(
             </p>
           ) : null;
         if (label) day = label;
+        if (item.kind === "card")
+          return [
+            marker,
+            <Fragment key={item.key}>{renderDecisions?.([item.key], placedAt)}</Fragment>,
+          ];
         if (item.kind === "events")
-          return [cards, marker, <AldoFeedRun key={item.key} events={item.events} />];
+          return [marker, <AldoFeedRun key={item.key} events={item.events} />];
         const { entry, index } = item;
         return [
-          cards,
           marker,
           <ConversationEntry
-            key={entry.kind === "action" ? entry.id : `${entry.at}-${since + index}`}
+            key={
+              entry.kind === "action"
+                ? entry.id
+                : entry.kind === "call"
+                  ? `call-${entry.id}`
+                  : `${entry.at}-${since + index}`
+            }
             entry={entry}
             live={live.has(since + index)}
             beats={props.feed !== undefined}
@@ -742,8 +773,7 @@ export function AldoConversation(
         ];
       })}
       {replying ? <TypingDots /> : null}
-      {props.tail}
-      {renderDecisions?.(null, placement.at)}
+      {renderDecisions?.(null, placedAt)}
       <div ref={end} />
     </div>
   );
@@ -789,7 +819,7 @@ function ConversationEntry({
     const line = (
       <div className="flex items-center gap-2.5 self-start text-[14px] text-muted-foreground leading-5">
         <span aria-hidden className="flex size-5 shrink-0 items-center justify-center">
-          <AldoAvatar size={14} />
+          <AldoFrame size={14} />
         </span>
         {entry.href ? (
           <a href={entry.href} target="_blank" rel="noreferrer" className="hover:text-foreground">
@@ -815,27 +845,40 @@ function ConversationEntry({
       line
     );
   }
+  if (entry.kind === "call") return <AldoCallCard call={entry} />;
   if (entry.role === "user") return <UserMessage entry={entry} />;
   if (entry.source === "brief") return <AldoBriefEntry text={entry.text} at={entry.at} />;
-  return <AldoReply text={entry.text} beats={beats === true} />;
+  return <AldoReply text={entry.text} beats={beats === true} artifacts={entry.artifacts} />;
 }
+
+/** What a reply shows under its words: loaded once one does, off the first screen. */
+const AldoArtifacts = lazy(() => import("./AldoArtifacts"));
 
 /**
  * What Aldo said, in bubbles: a paragraph each, a beat apart with the dots
  * between when it's just arrived on the page (`beats`; beats.logic.ts), all at
  * once from history, in the bar and under reduced motion. A result about a
  * thread carries that thread's name and where it stands over its words, a tap
- * into it, rather than its address.
+ * into it, rather than its address. What it shows (`artifacts`) follows its
+ * words, the width of the conversation, without the lines that only link to it;
+ * the other links a result ends with are listed with it.
  */
-function AldoReply(props: { readonly text: string; readonly beats?: boolean }) {
+function AldoReply(props: {
+  readonly text: string;
+  readonly beats?: boolean;
+  readonly artifacts?: ReadonlyArray<AldoArtifact> | undefined;
+}) {
   const arrived = useAldoArrived();
   const still = useMediaQuery("(prefers-reduced-motion: reduce)");
+  const artifacts = props.artifacts ?? [];
   const closing = closingThread(props.text);
   // The thread it's about, as the home screen reads it: none for an older Aldo or a thread since deleted.
   const about = useAldoHomeFeed((s) =>
     closing ? s.home?.conversations.find((c) => sameTarget(c.thread, closing.thread)) : undefined,
   );
-  const said = useMemo(() => splitBeats(closing?.text ?? props.text), [closing?.text, props.text]);
+  const kept = withoutShownLinks(closing?.text ?? props.text, artifacts);
+  const { text, links } = closing ? linkRows(kept) : { text: kept, links: [] };
+  const said = useMemo(() => splitBeats(text), [text]);
   // Nothing but the thread's link, and nothing known about it: the link alone.
   const linkOnly = said.length === 0 && closing !== null && !about;
   const beats = useMemo(() => (linkOnly ? [""] : said), [linkOnly, said]);
@@ -848,7 +891,7 @@ function AldoReply(props: { readonly text: string; readonly beats?: boolean }) {
     return () => window.clearTimeout(timer);
   }, [shown, beats]);
   const visible = beats.slice(0, shown);
-  return (
+  const words = (
     <div className="flex max-w-[88%] flex-col items-start gap-1 self-start sm:max-w-[80%]">
       {about ? <WorkstreamLabel conversation={about} /> : null}
       {visible.map((beat, index) => {
@@ -859,7 +902,7 @@ function AldoReply(props: { readonly text: string; readonly beats?: boolean }) {
             key={index}
             {...(arrived ? { "data-aldo-reply": "" } : {})}
             className={cn(
-              "whitespace-pre-wrap break-words rounded-[20px] border border-foreground/[0.07] bg-card px-4 py-2 text-[16px] leading-6 sm:text-[15px] dark:border-white/[0.08] dark:bg-white/[0.045]",
+              "whitespace-pre-wrap wrap-anywhere rounded-[20px] border border-foreground/[0.07] bg-card px-4 py-2 text-[16px] leading-6 sm:text-[15px] dark:border-white/[0.08] dark:bg-white/[0.045]",
               last && "rounded-bl-[8px]",
             )}
           >
@@ -892,6 +935,17 @@ function AldoReply(props: { readonly text: string; readonly beats?: boolean }) {
         );
       })}
       {shown < beats.length ? <TypingDots quiet /> : null}
+    </div>
+  );
+  if (artifacts.length === 0 && links.length === 0) return words;
+  return (
+    <div className="flex w-full min-w-0 flex-col gap-2">
+      {words}
+      {shown >= beats.length ? (
+        <Suspense fallback={null}>
+          <AldoArtifacts artifacts={artifacts} links={links} />
+        </Suspense>
+      ) : null}
     </div>
   );
 }
@@ -956,10 +1010,13 @@ function UserMessage({
 }: {
   readonly entry: Extract<AldoConversationEntry, { kind: "message" }>;
 }) {
-  const { text, images: named } = withoutImageNotes(entry.text);
+  const { text, images: named, files: namedFiles } = withoutImageNotes(entry.text);
+  const files: ReadonlyArray<{ id: string; name: string; sizeBytes?: number }> =
+    entry.files ?? namedFiles;
+  const trouble = useAldoAssistant((s) => s.undelivered?.find((u) => u.entry === entry));
   const arrive = useAldoArrive();
   return (
-    <div {...arrive} className="flex max-w-[80%] flex-col items-end gap-1.5 self-end">
+    <div {...arrive} className="flex min-w-0 max-w-[80%] flex-col items-end gap-1.5 self-end">
       {entry.images && entry.images.length > 0 ? (
         <div className="flex flex-wrap justify-end gap-1.5">
           {entry.images.map((src) => (
@@ -985,10 +1042,36 @@ function UserMessage({
           ))}
         </div>
       ) : null}
+      {files.length > 0 ? (
+        <div className="flex max-w-full flex-wrap justify-end gap-1.5">
+          {files.map((file) => (
+            <AldoFileChip key={file.id} name={file.name} sizeBytes={file.sizeBytes} />
+          ))}
+        </div>
+      ) : null}
       {text ? (
-        <p className="whitespace-pre-wrap break-words rounded-[20px] rounded-br-[8px] bg-message px-4 py-2 text-[16px] text-message-foreground leading-6 sm:text-[15px]">
+        <p className="max-w-full whitespace-pre-wrap wrap-anywhere rounded-[20px] rounded-br-[8px] bg-message px-4 py-2 text-[16px] text-message-foreground leading-6 sm:text-[15px]">
           {text}
         </p>
+      ) : null}
+      {trouble?.error ? (
+        <div
+          role="status"
+          className="max-w-full wrap-anywhere text-right text-[12px] text-muted-foreground"
+        >
+          {trouble.error}{" "}
+          <button
+            type="button"
+            className="min-h-11 underline underline-offset-2"
+            onClick={() => retryAldoMessage(entry)}
+          >
+            Try again
+          </button>
+        </div>
+      ) : trouble ? (
+        <span role="status" className="max-w-full text-[12px] text-muted-foreground">
+          Sending…
+        </span>
       ) : null}
     </div>
   );

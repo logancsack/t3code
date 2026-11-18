@@ -6,7 +6,14 @@ import {
   type AldoHomePullRequest,
 } from "./homeApi";
 import { liveCardIndexes } from "./assistant.logic";
-import { dedupeLiveCards, digestOf, feedEvents, shippedStatus, withPlans } from "./feed.logic";
+import {
+  dedupeLiveCards,
+  digestOf,
+  feedEvents,
+  interleave,
+  shippedStatus,
+  withPlans,
+} from "./feed.logic";
 import { parseAldoPlan, type AldoPlan } from "./plans.logic";
 
 const NOW = Date.parse("2026-10-15T12:00:00Z");
@@ -120,6 +127,46 @@ describe("what finished and shipped", () => {
     expect(
       shippedStatus(checked[0] as Extract<(typeof checked)[number], { kind: "shipped" }>),
     ).toBe("Deployed");
+  });
+
+  it("says Aldo's merge once, as its shipped line, but keeps a merge whose pull request hasn't shipped", () => {
+    const merge = action({
+      id: "m",
+      tool: "merge_pull_request",
+      title: "#7 Ship the inbox",
+      at: at(45),
+    });
+    const events = feedEvents(
+      {
+        ...empty,
+        conversations: [conversation({ state: "working" })],
+        pullRequests: [pullRequest({})],
+        actions: [merge],
+      },
+      quiet,
+    );
+    expect(events.map((e) => e.kind)).toEqual(["shipped"]);
+    const pending = feedEvents(
+      {
+        ...empty,
+        conversations: [conversation({ state: "working" })],
+        pullRequests: [],
+        actions: [merge],
+      },
+      quiet,
+    );
+    expect(pending.map((e) => e.key)).toEqual(["action:m"]);
+    // A merge after the one that shipped is another merge.
+    const later = feedEvents(
+      {
+        ...empty,
+        conversations: [conversation({ state: "working" })],
+        pullRequests: [pullRequest({})],
+        actions: [{ ...merge, at: at(20) }],
+      },
+      quiet,
+    );
+    expect(later.map((e) => e.kind)).toEqual(["shipped", "action"]);
   });
 
   it("says a check that finished after its merge left the feed on a line of its own", () => {
@@ -267,6 +314,118 @@ describe("conversation thread cards", () => {
   });
 });
 
+describe("a card for every thread", () => {
+  const manual = target;
+  const other = { environmentId: "aldo-m1", threadId: "t2" };
+  const cardsOf = (
+    events: ReturnType<typeof feedEvents>,
+    shown: ReadonlyArray<typeof target> = [],
+  ) =>
+    dedupeLiveCards(events, shown).filter(
+      (e) => e.kind === "thread" || (e.kind === "action" && e.live),
+    );
+
+  it("puts a thread started anywhere at its start, live, once", () => {
+    const events = feedEvents(
+      { ...empty, conversations: [conversation({ state: "working", startedAt: at(20) })] },
+      quiet,
+    );
+    expect(events).toMatchObject([{ kind: "thread", at: at(20) }]);
+    expect(cardsOf(events)).toHaveLength(1);
+  });
+
+  it("leaves a server that doesn't say when threads started as it was", () => {
+    const events = feedEvents(
+      { ...empty, conversations: [conversation({ state: "working" })] },
+      quiet,
+    );
+    expect(events).toEqual([]);
+  });
+
+  it("moves the card to what Aldo last did about the thread", () => {
+    const events = feedEvents(
+      {
+        ...empty,
+        conversations: [conversation({ state: "working", startedAt: at(40) })],
+        actions: [action({ tool: "message_thread", at: at(10) })],
+      },
+      quiet,
+    );
+    expect(cardsOf(events)).toMatchObject([{ kind: "action", at: at(10) }]);
+  });
+
+  it("gives the card to the page when it shows the thread itself", () => {
+    const events = feedEvents(
+      { ...empty, conversations: [conversation({ state: "working", startedAt: at(20) })] },
+      quiet,
+    );
+    expect(cardsOf(events, [manual])).toEqual([]);
+  });
+
+  it("settles a finished thread into its line where its card was", () => {
+    const events = feedEvents(
+      {
+        ...empty,
+        conversations: [
+          conversation({ state: "done", startedAt: at(40), stateAt: at(5) }),
+          conversation({ ref: "m1:t2", thread: other, state: "working", startedAt: at(30) }),
+        ],
+        actions: [action({ at: at(39) })],
+      },
+      quiet,
+    );
+    // Where its card was (Aldo's start, after its creation), which its line says; nothing comes when it finished.
+    expect(events).toMatchObject([
+      { kind: "finished", at: at(39), settled: true },
+      { kind: "thread", at: at(30) },
+    ]);
+  });
+
+  it.each([false, true])(
+    "keeps queued work out of finished digests (has action: %s)",
+    (hasAction) => {
+      const c = conversation({
+        state: "done",
+        startedAt: at(40),
+        computers: [{ computer: "gpu", status: "queued", position: 2, creditsPerHour: 310 }],
+      });
+      const home = {
+        ...empty,
+        conversations: [c],
+        actions: hasAction ? [action({ at: at(39) })] : [],
+      };
+      const events = feedEvents(home, quiet);
+      expect(events.some((e) => e.kind === "finished")).toBe(false);
+      expect(cardsOf(events)).toHaveLength(1);
+      const cleared = feedEvents({ ...home, conversations: [{ ...c, computers: [] }] }, quiet);
+      expect(cleared).toMatchObject([{ kind: "finished" }]);
+    },
+  );
+
+  it("settles a routine's run into the routine's line", () => {
+    const events = feedEvents(
+      {
+        ...empty,
+        conversations: [
+          conversation({ state: "done", routine: "r1", startedAt: at(15), stateAt: at(2) }),
+        ],
+        routines: [{ id: "r1", title: "Morning brief" }] as never,
+      },
+      quiet,
+    );
+    expect(digestOf(events).label).toBe("1 routine run");
+  });
+
+  it("drops the settled line where the page shows the thread's card", () => {
+    const events = feedEvents(
+      { ...empty, conversations: [conversation({ state: "done", startedAt: at(40) })] },
+      quiet,
+    );
+    expect(dedupeLiveCards(events, [manual])).toEqual([]);
+    expect(dedupeLiveCards(events, [])).toHaveLength(1);
+  });
+});
+
 describe("plans", () => {
   const plan = (overrides: Record<string, unknown>): AldoPlan =>
     parseAldoPlan({
@@ -283,19 +442,51 @@ describe("plans", () => {
       ...overrides,
     })!;
 
-  it("puts a plan that started where it started, among the rest", () => {
+  it("keeps a started plan where it was proposed, among the rest", () => {
     const events = withPlans(
       feedEvents({ ...empty, actions: [action({ tool: "start_plan", at: at(17) })] }, quiet),
       [plan({})],
       quiet,
     );
     expect(events.map((e) => e.kind)).toEqual(["plan", "action"]);
-    expect(events[0]).toMatchObject({ key: "plan:plan-1", at: at(18) });
+    expect(events[0]).toMatchObject({ key: "plan:plan-1", at: at(20) });
   });
 
-  it("leaves open plans for the conversation's end, and what started before it began", () => {
+  it("includes open plans in the timeline and leaves out plans started before it began", () => {
     const open = plan({ id: "open", status: "proposed", startedAt: null });
     const before = plan({ id: "before", startedAt: at(90) });
-    expect(withPlans([], [open, before], { now: NOW, from: at(60) })).toEqual([]);
+    expect(withPlans([], [open, before], { now: NOW, from: at(60) })).toEqual([
+      { kind: "plan", key: "plan:open", at: open.proposedAt, plan: open },
+    ]);
+  });
+});
+
+describe("interleave", () => {
+  it("orders cards with messages and splits activity runs at each card", () => {
+    const messages = [{ at: at(50) }, { at: at(10) }];
+    const events = feedEvents(
+      {
+        ...empty,
+        actions: [action({ id: "first", at: at(40) }), action({ id: "second", at: at(20) })],
+      },
+      quiet,
+    );
+    const items = interleave(messages, events, (m) => m.at, [
+      { key: "latest", at: at(5) },
+      { key: "middle", at: at(30) },
+      { key: "oldest", at: at(60) },
+    ]);
+    expect(items.map((item) => (item.kind === "entry" ? item.entry.at : item.key))).toEqual([
+      "oldest",
+      at(50),
+      "action:first",
+      "middle",
+      "action:second",
+      at(10),
+      "latest",
+    ]);
+    expect(interleave([], [], () => null, [{ key: "only", at: at(1) }])).toEqual([
+      { kind: "card", key: "only", at: at(1) },
+    ]);
   });
 });

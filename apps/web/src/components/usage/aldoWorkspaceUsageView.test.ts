@@ -81,6 +81,13 @@ describe("aldoUsageFacts", () => {
     ]);
   });
 
+  it("leaves the bill out for a seat, which its organization pays for", () => {
+    const seat = { ...metered, seat: { org: "Linden", admins: [] } };
+    expect(aldoUsageFacts(seat)).toEqual(
+      aldoUsageFacts(metered).filter((fact) => fact.label !== "Estimated total"),
+    );
+  });
+
   it("leaves Aldo's models to the plan limits, as a share rather than an amount", () => {
     const facts = aldoUsageFacts({
       ...metered,

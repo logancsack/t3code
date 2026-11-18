@@ -50,13 +50,19 @@ import {
 } from "./AldoBrowserChrome";
 import { useAldoHandoffTakeover } from "./AldoHandoffCard";
 import { AldoLoginOfferCard } from "./AldoLoginOfferCard";
+import { AldoScreenKeyboard } from "./AldoScreenKeyboard";
 import { AldoTeachForm } from "./AldoTeach";
 import { aldoBlankPage, aldoBrowserState, aldoDialogFrom } from "./browserChrome.logic";
 import { aldoHandoffOn } from "./handoffs.logic";
 import { useAldoHomeFeed } from "./homeFeed";
 import { AldoApiError } from "./api";
 import { aldoBrowserConnection, aldoPreviewUrl } from "./workspaceApi";
-import { getAldoEnvironments, subscribeAldoEnvironments } from "./directory";
+import {
+  aldoMachineIsAsleep,
+  getAldoEnvironments,
+  subscribeAldoEnvironments,
+  whenAldoMachineUp,
+} from "./directory";
 import { aldoDesktopScreen, type AldoDesktopScreen } from "./computer.logic";
 import { aldoCanDecodeH264, AldoVideoPlayer } from "./liveVideo";
 import { ALDO_FRAME_VIDEO } from "./liveVideo.logic";
@@ -217,6 +223,7 @@ export function AldoBrowserPanel({
   useEffect(() => {
     let disposed = false;
     let retry: ReturnType<typeof setTimeout> | null = null;
+    let stopWaiting: (() => void) | null = null;
     let attempt = 0;
 
     /** Draws a frame unless a newer one has arrived meanwhile. */
@@ -296,7 +303,12 @@ export function AldoBrowserPanel({
         connecting = false;
         if (cause instanceof AldoApiError && cause.status === 409) {
           setStatus("asleep");
-          schedule(3000);
+          // Listed asleep: again once the directory has it up. Otherwise it's coming up.
+          if (aldoMachineIsAsleep(environmentId) && !disposed) {
+            stopWaiting = whenAldoMachineUp(environmentId, () => void connect());
+          } else {
+            schedule(3000);
+          }
         } else {
           setStatus("error");
           setError(cause instanceof Error ? cause.message : String(cause));
@@ -421,6 +433,7 @@ export function AldoBrowserPanel({
     retryNow.current = () => {
       if (disposed || connecting || socketRef.current) return;
       if (retry) clearTimeout(retry);
+      stopWaiting?.();
       attempt = 0;
       setStatus((current) => (current === "error" ? "connecting" : current));
       void connect();
@@ -429,6 +442,7 @@ export function AldoBrowserPanel({
     return () => {
       disposed = true;
       if (retry) clearTimeout(retry);
+      stopWaiting?.();
       socketRef.current?.close();
       socketRef.current = null;
       setConnected(false);
@@ -1035,6 +1049,36 @@ export function AldoBrowserPanel({
           />
         ) : null}
       </div>
+      {view === "browser" && connected && pictured ? (
+        <AldoScreenKeyboard
+          key={environmentId}
+          onText={(text) => {
+            noteUse();
+            // Key events reach both normal forms and canvas-based remote desktops.
+            for (const key of text) {
+              for (const event of ["down", "up"]) {
+                send({ type: "key", event, key, text: key, modifiers: 0 });
+                // Older aldod inserts printable key text only for one UTF-16 unit.
+                if (event === "down" && key.length > 1) send({ type: "text", text: key });
+              }
+            }
+          }}
+          onKey={(key) => {
+            noteUse();
+            for (const event of ["down", "up"]) {
+              send({
+                type: "key",
+                event,
+                key,
+                code: key,
+                keyCode: { Enter: 13, Tab: 9, Backspace: 8 }[key],
+                text: key === "Enter" ? "\r" : "",
+                modifiers: 0,
+              });
+            }
+          }}
+        />
+      ) : null}
     </div>
   );
 }

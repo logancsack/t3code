@@ -12,6 +12,11 @@ import type { SettingsPath } from "../components/settings/settingsSearch";
 /** Pages only Aldo has: T3's own nav and search leave them out. */
 export const ALDO_SETTINGS_PATHS: ReadonlySet<string> = new Set([
   "/settings/account",
+  "/settings/organization",
+  "/settings/members",
+  "/settings/running",
+  "/settings/activity",
+  "/settings/joining",
   "/settings/agents",
   "/settings/permissions",
   "/settings/instructions",
@@ -91,6 +96,28 @@ export const ALDO_SETTINGS_PAGES: Readonly<
     title: "Account",
     intro: "Your plan, your credits and how you sign in.",
   },
+  "/settings/organization": {
+    title: "Organization",
+    intro: "Your organization's name, owners and seats.",
+  },
+  "/settings/members": {
+    title: "Members",
+    intro:
+      "Who's in your organization and what each person can do. Everyone's threads, computers and vault stay their own.",
+  },
+  "/settings/running": {
+    title: "Running now",
+    intro: "Every machine running in your organization's threads, priciest first.",
+  },
+  "/settings/activity": {
+    title: "Activity",
+    intro: "Each change to your organization, and what its admins did, newest first.",
+  },
+  "/settings/joining": {
+    title: "Who can join",
+    intro:
+      "The domains your organization proves it owns, what people at them can do, and its invite link.",
+  },
   "/settings/agents": {
     title: "Models",
     intro:
@@ -152,22 +179,76 @@ export const ALDO_SETTINGS_PAGES: Readonly<
   },
 };
 
-/** The nav for this account: Code only with the developer tools (developerTools.ts). */
+/**
+ * The nav for this account: Code only with the developer tools
+ * (developerTools.ts), and a group named after its organization, first, only
+ * for someone in one (organization.logic.ts).
+ */
 export function aldoSettingsNav(options: {
   readonly developer: boolean;
+  readonly organization?: string | null;
 }): typeof ALDO_SETTINGS_NAV {
-  if (options.developer) return ALDO_SETTINGS_NAV;
-  return ALDO_SETTINGS_NAV.map((group) => ({
-    ...group,
-    items: group.items.filter((item) => item.to !== "/settings/code"),
-  }));
+  const nav = options.developer
+    ? ALDO_SETTINGS_NAV
+    : ALDO_SETTINGS_NAV.map((group) => ({
+        ...group,
+        items: group.items.filter((item) => item.to !== "/settings/code"),
+      }));
+  if (!options.organization) return nav;
+  return [
+    {
+      group: options.organization,
+      items: [
+        { to: "/settings/organization", label: "Organization", also: ["/settings/joining"] },
+        {
+          to: "/settings/members",
+          label: "Members",
+          also: ["/settings/running", "/settings/teams"],
+        },
+        { to: "/settings/activity", label: "Activity" },
+      ],
+    },
+    ...nav,
+  ];
+}
+
+/** A member's page (orgAdmin.logic.ts): /settings/members/<their id>. */
+const MEMBER_PAGE = /^\/settings\/members\/[^/]+$/;
+/** A team's page (teams.logic.ts): /settings/teams/<its id>. */
+const TEAM_PAGE = /^\/settings\/teams\/[^/]+$/;
+
+/** The page a page sits under, for the way back to it: a member's or team's page and Running now, under Members; Who can join, under Organization. */
+export function aldoSettingsParent(pathname: string): {
+  readonly to: "/settings/members" | "/settings/organization";
+  readonly label: string;
+} | null {
+  const path = pathname.replace(/\/+$/, "");
+  if (path === "/settings/joining") return { to: "/settings/organization", label: "Organization" };
+  return MEMBER_PAGE.test(path) || TEAM_PAGE.test(path) || path === "/settings/running"
+    ? { to: "/settings/members", label: "Members" }
+    : null;
 }
 
 /** A page's name and intro, or null for one that has none (a page T3 alone shows). */
 export function aldoSettingsPage(
   pathname: string,
 ): { readonly title: string; readonly intro: string } | null {
-  return ALDO_SETTINGS_PAGES[pathname.replace(/\/+$/, "")] ?? null;
+  const path = pathname.replace(/\/+$/, "");
+  if (MEMBER_PAGE.test(path)) {
+    return {
+      title: "Member",
+      intro:
+        "Their month: credits, machines and the organization's threads, by title. What's in them stays theirs.",
+    };
+  }
+  if (TEAM_PAGE.test(path)) {
+    return {
+      title: "Team",
+      intro:
+        "Who's on it, for invites and usage by team. A team doesn't change what anyone can do.",
+    };
+  }
+  return ALDO_SETTINGS_PAGES[path] ?? null;
 }
 
 /** Whether a nav entry is the page shown, or one it opens onto. */

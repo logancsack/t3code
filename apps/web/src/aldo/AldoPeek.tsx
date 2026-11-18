@@ -25,7 +25,7 @@ import {
 import { refreshAldoHome } from "./homeFeed";
 import { needsYouKind, sameTarget } from "./home.logic";
 import { useAldoModelName } from "./modelNames";
-import { AldoAvatar } from "./AldoPresence";
+import { AldoFrame } from "./AldoFrame";
 import { AgentMarkdown, loadChatMarkdown } from "./AldoQuoted";
 import { CHIP, ICON_BUTTON, INSET, SECONDARY } from "./surface";
 
@@ -307,7 +307,7 @@ function UserTurn(props: { readonly text: string }) {
         <span className="text-[12px] text-muted-foreground">{aldoRequestLabel(request.from)}</span>
       ) : fromAldo ? (
         <span className="flex items-center gap-1 text-[12px] text-muted-foreground">
-          <AldoAvatar size={12} />
+          <AldoFrame size={12} />
           From Aldo
         </span>
       ) : null}

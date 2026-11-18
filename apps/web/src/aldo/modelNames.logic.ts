@@ -28,7 +28,7 @@ const WORDS = new Map<string, string>([
  * after one of these, a number and the one after it are one version, "5.5". Elsewhere numbers stay
  * apart, since they may not be a version ("llama-3-1-70-instruct" has a size in it).
  */
-const SPLIT_VERSION_AFTER = new Set(["Claude", "Opus", "Sonnet", "Haiku"]);
+const SPLIT_VERSION_AFTER = new Set(["Claude", "Opus", "Sonnet", "Haiku", "Fable"]);
 
 /**
  * Aldo's own models by the names Aldo gives them (AI_MODELS in aldo's

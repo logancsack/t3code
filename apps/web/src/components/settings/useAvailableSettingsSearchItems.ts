@@ -12,7 +12,8 @@ import { fetchAldoAgentInbox, fetchAldoPhone } from "../../aldo/accountApi";
 import { isAldoCloud } from "../../aldo/api";
 import { useAldoDeveloperTools } from "../../aldo/developerTools";
 import { useAldoOnboardingState } from "../../aldo/onboarding";
-import { settingsPolicy } from "../../aldo/settingsData";
+import { aldoOrgManages } from "../../aldo/organization.logic";
+import { settingsOrg, settingsOrgJoining, settingsPolicy } from "../../aldo/settingsData";
 import { useSettingsResource } from "../../aldo/settingsResource";
 import { isWslSettingsRowVisible } from "./ConnectionsSettings.logic";
 import { isProviderSettingsEnvironmentAvailable } from "./ProviderSettingsPanel.logic";
@@ -60,6 +61,14 @@ export function useAvailableSettingsSearchItems(scopeSearch: SettingsScopeSearch
   // Permissions' newer rules are found only once Aldo says it takes them.
   const aldoPolicy = useSettingsResource(settingsPolicy, isAldoCloud, false).data;
   const aldoPolicyRules = aldoPolicy?.rules;
+  // Organization is found only by someone in one.
+  const aldoOrg = useSettingsResource(settingsOrg, isAldoCloud, false).data;
+  const hasAldoOrganization = Boolean(aldoOrg);
+  // Who can join, only by its owners and admins, and only once Aldo answers for it.
+  const hasAldoJoining = Boolean(
+    useSettingsResource(settingsOrgJoining, Boolean(aldoOrg && aldoOrgManages(aldoOrg)), false)
+      .data,
+  );
   const aldoDeveloperTools = useAldoDeveloperTools();
   const { environments } = useEnvironments();
   const primarySessionState = usePrimarySessionState();
@@ -78,6 +87,8 @@ export function useAvailableSettingsSearchItems(scopeSearch: SettingsScopeSearch
     () =>
       filterAvailableSettingsSearchItems({
         hasAldoPhoneApi,
+        hasAldoOrganization,
+        hasAldoJoining,
         hasAldoAgentInbox,
         hasAldoOnboarding,
         ...(aldoPolicyRules ? { aldoPolicyRules } : {}),
@@ -111,6 +122,8 @@ export function useAvailableSettingsSearchItems(scopeSearch: SettingsScopeSearch
       }),
     [
       hasAldoPhoneApi,
+      hasAldoOrganization,
+      hasAldoJoining,
       hasAldoAgentInbox,
       hasAldoOnboarding,
       aldoPolicyRules,

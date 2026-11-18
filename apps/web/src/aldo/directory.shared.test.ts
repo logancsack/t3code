@@ -216,6 +216,24 @@ it.live("tells Aldo how long the first view took with the next read, once", () =
   }),
 );
 
+it.live("tells Aldo how the open felt with the next read, once", () =>
+  Effect.gen(function* () {
+    const { api, fetch } = yield* directory;
+    const header = (call: number) =>
+      new Headers((fetch.mock.calls[call] as unknown as [string, RequestInit])[1].headers).get(
+        "x-aldo-open",
+      );
+    expect(header(0)).toBeNull();
+    api.noteAldoOpen("busy=1200;longest=640;sidebar=3100;input=88;machines=3;phone=1");
+    api.requestAldoDirectoryRefresh();
+    yield* wait(250);
+    expect(header(1)).toBe("busy=1200;longest=640;sidebar=3100;input=88;machines=3;phone=1");
+    api.requestAldoDirectoryRefresh();
+    yield* wait(250);
+    expect(header(2)).toBeNull();
+  }),
+);
+
 it.live("a tab taking another's reads still makes its own once, to tell its first view", () =>
   Effect.gen(function* () {
     const { api, tabs, fetch } = yield* directory;

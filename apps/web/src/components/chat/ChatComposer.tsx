@@ -1,4 +1,5 @@
 import { isAldoCloud } from "../../aldo/api";
+import { AldoAttachMenu } from "../../aldo/AldoAttach";
 import { aldoRoutesModels } from "../../aldo/directory";
 import { useAldoMachineSettings } from "../../aldo/machineSettings";
 import { unlistedModelLabel } from "../../aldo/modelNames";
@@ -958,6 +959,7 @@ import {
   PaperclipIcon,
   PencilRulerIcon,
   PlayIcon,
+  PlusIcon,
   ShieldIcon,
   XIcon,
 } from "lucide-react";
@@ -3912,8 +3914,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       isSendDisabled ||
       isConnecting ||
       noProviderAvailable ||
-      environmentUnavailable !== null ||
-      phase === "running"
+      environmentUnavailable !== null
     ) {
       return false;
     }
@@ -3931,7 +3932,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     isSendBusy,
     isSendDisabled,
     noProviderAvailable,
-    phase,
     showPlanFollowUpPrompt,
   ]);
 
@@ -7127,7 +7127,28 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   }
                   className="flex shrink-0 flex-nowrap items-center justify-end gap-2"
                 >
-                  {showComposerAttachAction ? (
+                  {showComposerAttachAction && isAldoCloud ? (
+                    <AldoAttachMenu
+                      trigger={
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label="Add photos and files"
+                        />
+                      }
+                      align="end"
+                      photos="image/*,video/*"
+                      files
+                      onPick={(files) => {
+                        void addComposerAttachments(files).then((inserted) => {
+                          if (!inserted) focusComposer();
+                        });
+                      }}
+                    >
+                      <PlusIcon />
+                    </AldoAttachMenu>
+                  ) : showComposerAttachAction ? (
                     <>
                       <input
                         ref={attachmentInputRef}

@@ -3,23 +3,32 @@
 // its own. Each is a page like Usage, with its title in
 // the top bar; Escape goes back.
 
+import { Link } from "@tanstack/react-router";
 import { useEffect, useState, type ReactNode } from "react";
 
 import { ScrollArea } from "../components/ui/scroll-area";
 import { SidebarInset } from "../components/ui/sidebar";
 import { Skeleton } from "../components/ui/skeleton";
-import { WorkspaceBreadcrumb, WorkspaceBreadcrumbItem } from "../components/WorkspaceBreadcrumb";
+import {
+  WorkspaceBreadcrumb,
+  WorkspaceBreadcrumbItem,
+  WorkspaceBreadcrumbSeparator,
+  WorkspaceBreadcrumbText,
+} from "../components/WorkspaceBreadcrumb";
 import { WorkspacePageContainer } from "../components/WorkspacePageContainer";
 import { WorkspacePageHeader } from "../components/WorkspacePageHeader";
 import { isElectron } from "../env";
 import { useEscapeToGoBack } from "../hooks/useNavigateBack";
+import { AldoHandedToYou } from "./AldoHandedToYou";
 import { AldoSharedFiles } from "./AldoLibrary";
 import { RoutinesSection } from "./AldoRoutines";
 import { refreshAldoHome, useAldoHomeRead } from "./homeFeed";
 
-function AldoPlacePage(props: {
+export function AldoPlacePage(props: {
   readonly title: string;
   readonly about?: string;
+  /** The place it's in, before its title: the Library, for a page of it. */
+  readonly parent?: { readonly label: string; readonly to: "/library" };
   readonly children: ReactNode;
 }) {
   useEscapeToGoBack();
@@ -28,8 +37,26 @@ function AldoPlacePage(props: {
       <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-background text-foreground">
         <WorkspacePageHeader electron={isElectron}>
           <WorkspaceBreadcrumb ariaLabel={`${props.title} breadcrumb`}>
-            <WorkspaceBreadcrumbItem current>
-              <h1>{props.title}</h1>
+            {props.parent ? (
+              <>
+                <WorkspaceBreadcrumbItem>
+                  <Link to={props.parent.to} className="hover:text-foreground">
+                    <WorkspaceBreadcrumbText>{props.parent.label}</WorkspaceBreadcrumbText>
+                  </Link>
+                </WorkspaceBreadcrumbItem>
+                <WorkspaceBreadcrumbSeparator>
+                  <WorkspaceBreadcrumbText>/</WorkspaceBreadcrumbText>
+                </WorkspaceBreadcrumbSeparator>
+              </>
+            ) : null}
+            <WorkspaceBreadcrumbItem current className={props.parent ? "min-w-0 flex-1" : ""}>
+              {props.parent ? (
+                <h1 className="min-w-0">
+                  <WorkspaceBreadcrumbText>{props.title}</WorkspaceBreadcrumbText>
+                </h1>
+              ) : (
+                <h1>{props.title}</h1>
+              )}
             </WorkspaceBreadcrumbItem>
           </WorkspaceBreadcrumb>
         </WorkspacePageHeader>
@@ -53,6 +80,7 @@ export function AldoLibraryPage() {
     >
       {/* The list's rows are inset for settings; here they line up with the page. */}
       <div className="-mx-3 flex flex-col gap-2 sm:-mx-4">
+        <AldoHandedToYou />
         <AldoSharedFiles />
       </div>
     </AldoPlacePage>

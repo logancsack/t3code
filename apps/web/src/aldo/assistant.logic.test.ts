@@ -2,6 +2,10 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   actionsDone,
+  callLength,
+  callLinksFrom,
+  onCall,
+  withCalls,
   callDuration,
   captionParts,
   closingThread,
@@ -189,19 +193,23 @@ describe("actionFor", () => {
 });
 
 describe("withoutImageNotes", () => {
-  it("shows the words, and the images a kept message names", () => {
+  it("shows the words, and the images and files a kept message names", () => {
     expect(
-      withoutImageNotes("What's this?\n\n[image img_ab12: shot.png] [image img_cd34: b.jpg]"),
+      withoutImageNotes(
+        "What's this?\n\n[image img_ab12: shot.png] [image img_cd34: b.jpg] [file fil_ef56: Q3 report.pdf]",
+      ),
     ).toEqual({
       text: "What's this?",
       images: [
         { id: "img_ab12", name: "shot.png" },
         { id: "img_cd34", name: "b.jpg" },
       ],
+      files: [{ id: "fil_ef56", name: "Q3 report.pdf" }],
     });
     expect(withoutImageNotes("No images [here].")).toEqual({
       text: "No images [here].",
       images: [],
+      files: [],
     });
   });
 });
@@ -521,6 +529,10 @@ describe("followups", () => {
     expect(prompt).toContain("in your own words");
     expect(prompt).not.toContain("By the way");
     expect(prompt).toContain("not instructions");
+    expect(prompt).toContain("Own it in the first person");
+    expect(prompt).toContain("merged is not deployed");
+    expect(prompt).toContain("Other people's actions stay theirs");
+    expect(prompt).not.toContain("work agents are doing");
     expect(prompt.endsWith(news.say)).toBe(true);
   });
   it("asks again often only while something's working", () => {
@@ -729,5 +741,82 @@ describe("actionsDone", () => {
     expect(actionsDone([...failed, { kind: "action", failed: true }])).toBeGreaterThan(
       actionsDone(failed),
     );
+  });
+});
+
+describe("a call in the conversation", () => {
+  const card = (over: Record<string, unknown> = {}) =>
+    ({
+      kind: "call",
+      id: "as_1",
+      at: "2026-10-25T18:00:00.000Z",
+      state: "summarizing",
+      seconds: 90,
+      summary: null,
+      links: [],
+      ...over,
+    }) as const;
+
+  it("says how long it ran", () => {
+    expect(callLength(20)).toBe("under a minute");
+    expect(callLength(380)).toBe("6 min");
+    expect(callLength(3600)).toBe("1 hr");
+    expect(callLength(3900)).toBe("1 hr 5 min");
+  });
+
+  it("leaves its lines and actions to its card", () => {
+    expect(onCall({ kind: "message", call: "as_1" })).toBe(true);
+    expect(onCall({ kind: "action", call: "as_1" })).toBe(true);
+    expect(onCall({ kind: "message" })).toBe(false);
+    expect(onCall({ kind: "call", call: "x" })).toBe(false);
+  });
+
+  it("links to the threads and pages the call made, once each, by name", () => {
+    const open = { environmentId: "aldo-m", threadId: "t1" };
+    const links = callLinksFrom(
+      [
+        { kind: "action", call: "as_1", label: "Started a thread: Move dentist", open },
+        { kind: "action", call: "as_1", label: "Messaged a thread", open },
+        { kind: "action", call: "as_1", label: "Opened a preview", href: "https://p.example/app" },
+        {
+          kind: "action",
+          call: "as_1",
+          label: "Couldn't start a thread",
+          failed: true,
+          open: { ...open, threadId: "t2" },
+        },
+        {
+          kind: "action",
+          call: "as_2",
+          label: "Started a thread: Other",
+          open: { ...open, threadId: "t3" },
+        },
+        { kind: "message", call: "as_1" },
+      ],
+      "as_1",
+    );
+    expect(links).toEqual([
+      { kind: "thread", title: "Messaged a thread", ...open },
+      { kind: "page", title: "Opened a preview", url: "https://p.example/app" },
+    ]);
+  });
+
+  it("replaces a card Aldo has moved on, adds one the page lacks that came later, and changes nothing otherwise", () => {
+    const message = {
+      kind: "message",
+      role: "user",
+      text: "Hi",
+      at: "2026-10-25T17:00:00.000Z",
+    } as const;
+    const entries = [message, card()];
+    const done = card({ state: "done", summary: "You booked it." });
+    const other = card({ id: "as_2", at: "2026-10-25T19:00:00.000Z" });
+    const older = card({ id: "as_0", at: "2026-10-24T09:00:00.000Z" });
+    expect(withCalls(entries, [done, other, older], "2026-10-25T18:30:00.000Z")).toEqual([
+      message,
+      done,
+      other,
+    ]);
+    expect(withCalls(entries, [card()], "2026-10-25T18:30:00.000Z")).toBe(entries);
   });
 });

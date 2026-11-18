@@ -13,6 +13,7 @@ import {
 describe("modelNameFromId", () => {
   it.each([
     ["claude-opus-5-5", "Claude Opus 5.5"],
+    ["claude-fable-5-2", "Claude Fable 5.2"],
     ["claude-opus-4-1", "Claude Opus 4.1"],
     ["claude-sonnet-4-5-20250929", "Claude Sonnet 4.5"],
     ["claude-3-5-sonnet-latest", "Claude 3.5 Sonnet"],

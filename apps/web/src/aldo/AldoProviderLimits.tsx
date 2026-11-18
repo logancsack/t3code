@@ -7,7 +7,7 @@ import { createSettingsResource, useSettingsResource } from "./settingsResource"
 import { ExternalLinkIcon } from "lucide-react";
 import { useCallback, useEffect } from "react";
 
-import { AldoMark } from "./AldoBrandTile";
+import { AldoMark } from "./AldoMark";
 import { ClaudeAI, GrokIcon, type Icon, MuseCodeIcon, OpenAI } from "../components/Icons";
 import { useNowMinute } from "../hooks/useNowMinute";
 import { isLandingDemo } from "../landingDemo/mode";

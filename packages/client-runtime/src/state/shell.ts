@@ -57,13 +57,11 @@ function shellStatusForSnapshot(
 
 const SHELL_SYNCHRONIZATION_ERROR_MESSAGE = "Could not synchronize environment data.";
 
-export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")(function* () {
-  const supervisor = yield* EnvironmentSupervisor;
+const loadCachedShell = Effect.fn("EnvironmentShellState.loadCached")(function* (
+  environmentId: EnvironmentId,
+) {
   const cache = yield* EnvironmentCacheStore;
-  const snapshotLoader = yield* ShellSnapshotLoader;
-  const wakeups = yield* Effect.serviceOption(ConnectionWakeups.ConnectionWakeups);
-  const environmentId = supervisor.target.environmentId;
-  const cachedSnapshot = yield* cache.loadShell(environmentId).pipe(
+  return yield* cache.loadShell(environmentId).pipe(
     Effect.catch((error) =>
       Effect.logWarning("Could not load cached environment shell.").pipe(
         Effect.annotateLogs({
@@ -74,6 +72,15 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
       ),
     ),
   );
+});
+
+export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")(function* () {
+  const supervisor = yield* EnvironmentSupervisor;
+  const cache = yield* EnvironmentCacheStore;
+  const snapshotLoader = yield* ShellSnapshotLoader;
+  const wakeups = yield* Effect.serviceOption(ConnectionWakeups.ConnectionWakeups);
+  const environmentId = supervisor.target.environmentId;
+  const cachedSnapshot = yield* loadCachedShell(environmentId);
   const state = yield* SubscriptionRef.make<EnvironmentShellState>({
     snapshot: cachedSnapshot,
     status: shellStatusForSnapshot(cachedSnapshot),
@@ -288,6 +295,15 @@ function shellStateChanges(environmentId: EnvironmentId) {
   return followStreamInEnvironment(
     environmentId,
     Stream.unwrap(makeEnvironmentShellState().pipe(Effect.map(SubscriptionRef.changes))),
+    Stream.fromEffect(
+      loadCachedShell(environmentId).pipe(
+        Effect.map((snapshot): EnvironmentShellState => ({
+          snapshot,
+          status: shellStatusForSnapshot(snapshot),
+          error: Option.none(),
+        })),
+      ),
+    ),
   );
 }
 

@@ -76,10 +76,12 @@ export function AldoHandoffTakeoverHost() {
 }
 
 function Takeover({ id, onRead }: { readonly id: string; readonly onRead: () => void }) {
-  const { home, supported } = useAldoHomeRead();
+  const { home, supported, saved } = useAldoHomeRead();
+  // The copy the device kept of an earlier read can't say yet whether the step still waits.
+  const read = saved ? null : home;
   useEffect(() => {
-    if (home !== null || supported === false) onRead();
-  }, [home, supported, onRead]);
+    if (read !== null || supported === false) onRead();
+  }, [read, supported, onRead]);
   const handoff = home?.handoffs?.find((h) => h.id === id) ?? null;
   const [busy, setBusy] = useState<"done" | "skip" | null>(null);
   const [teaching, setTeaching] = useState(false);
@@ -88,7 +90,7 @@ function Takeover({ id, onRead }: { readonly id: string; readonly onRead: () => 
   const onPhone = useAldoOnPhone();
   const siteLink = handoff && onPhone ? aldoHandoffSiteLink(handoff) : null;
   // Gone from the read: done on another device, skipped, or run out.
-  const gone = supported === false || (home !== null && handoff === null);
+  const gone = supported === false || (read !== null && handoff === null);
   useEffect(() => {
     if (!gone || answered.current) return;
     closeAldoHandoffTakeover();

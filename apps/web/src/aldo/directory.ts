@@ -8,6 +8,7 @@ import {
   api,
   CONNECTION_PREFIX,
   AldoApiError,
+  ALDO_READ_ANSWERS_WITHIN_MS,
 } from "./api";
 import { aldoMachineStart } from "./threadStart.logic";
 import { getAldoPreloadSettings } from "./preloadSettings";
@@ -27,6 +28,7 @@ import * as Option from "effect/Option";
 import * as Semaphore from "effect/Semaphore";
 import { type PreparedPlatformEnvironment } from "@t3tools/client-runtime/platform";
 import { type AldoProjectHost } from "./accountApi";
+import { aldoWho } from "./who";
 
 export interface AldoEnvironment {
   readonly environmentId: string;
@@ -79,6 +81,8 @@ export interface AldoStartState {
    */
   readonly kind?: "start" | "message";
   readonly state: "starting" | "queued" | "retrying" | "failed";
+  /** Completed failed attempts, excluding the try in progress; older servers omit it. */
+  readonly attempts?: number;
   readonly detail?: string;
   /** When it was sent, or when it failed (ISO); an older Aldo leaves it out. */
   readonly at?: string;
@@ -319,6 +323,32 @@ export function aldoMachineIsAsleep(environmentId: string): boolean {
   return state === "stopped" || state === "failed";
 }
 
+/** How long what waits for a sleeping machine waits before asking it anyway (whenAldoMachineUp). */
+const MACHINE_UP_FALLBACK_MS = 30_000;
+
+/**
+ * Calls `then` once the directory no longer lists this machine asleep
+ * (aldoMachineIsAsleep), or in a while if it still does. What waits for a
+ * sleeping machine (its browser, its desktop) waits for that rather than
+ * asking it every few seconds: a panel left open on one asked for hours.
+ * Returns a function that stops waiting.
+ */
+export function whenAldoMachineUp(environmentId: string, then: () => void): () => void {
+  const stop = () => {
+    clearTimeout(timer);
+    unsubscribe();
+  };
+  const done = () => {
+    stop();
+    then();
+  };
+  const timer = setTimeout(done, MACHINE_UP_FALLBACK_MS);
+  const unsubscribe = subscribeAldoEnvironments(() => {
+    if (!aldoMachineIsAsleep(environmentId)) done();
+  });
+  return stop;
+}
+
 /**
  * Whether Aldo is starting a thread on this machine (it brings the machine up
  * itself), or couldn't start the thread on screen (`threadId`; with none,
@@ -385,27 +415,45 @@ interface DirectoryBody {
 
 /** How long this page took to show its first view (firstView.ts), for the next read to tell Aldo, once. */
 let firstViewMs: number | null = null;
+/** How its open felt after that (openTimings.ts), for the next read to tell Aldo, once. */
+let openTimings: string | null = null;
 
 /** Notes how long this page took to show its first view: Aldo keeps it to measure how fast the app opens. */
 export function noteAldoFirstView(ms: number): void {
   firstViewMs = Math.round(ms);
 }
 
+/** Notes how this page's open felt (openTimings.ts): Aldo keeps it next to its first view. */
+export function noteAldoOpen(timings: string): void {
+  openTimings = timings;
+}
+
 async function fetchEnvironments(): Promise<ReadonlyArray<AldoEnvironment>> {
   const startedAt = Date.now();
   const firstView = firstViewMs;
-  const body = await api<DirectoryBody>(
-    "/api/environments",
-    firstView === null ? {} : { headers: { "x-aldo-first-view": String(firstView) } },
-  );
+  const open = openTimings;
+  const headers: Record<string, string> = {};
+  if (firstView !== null) headers["x-aldo-first-view"] = String(firstView);
+  if (open !== null) headers["x-aldo-open"] = open;
+  const body = await api<DirectoryBody>("/api/environments", {
+    headers,
+    answersWithin: ALDO_READ_ANSWERS_WITHIN_MS,
+  });
   if (firstViewMs === firstView) firstViewMs = null;
+  if (openTimings === open) openTimings = null;
   sharedReads()?.postMessage({ startedAt, body } satisfies SharedRead);
   listingFrom = Math.max(listingFrom, startedAt);
   return takeListing(body);
 }
 
-/** Takes a read of the directory, this tab's or another's (takeSharedRead), as what it lists now. */
-function takeListing({ environments, features }: DirectoryBody): ReadonlyArray<AldoEnvironment> {
+/**
+ * Takes a read of the directory, this tab's or another's (takeSharedRead), as
+ * what it lists now; or (`kept`) the copy this device kept of the last one.
+ */
+function takeListing(
+  { environments, features }: DirectoryBody,
+  kept = false,
+): ReadonlyArray<AldoEnvironment> {
   const nextFeatures = {
     general: features?.general === true,
     projects: features?.projects === true,
@@ -421,16 +469,57 @@ function takeListing({ environments, features }: DirectoryBody): ReadonlyArray<A
   };
   // A listing that started before a deletion finished can still include its machine.
   const listed = environments.filter((environment) => !hiddenByDeletion(environment.environmentId));
-  const changed =
-    JSON.stringify([knownEnvironments, aldoFeatures]) !== JSON.stringify([listed, nextFeatures]);
+  const listing = JSON.stringify([listed, nextFeatures]);
+  const changed = JSON.stringify([knownEnvironments, aldoFeatures]) !== listing;
   aldoFeatures = nextFeatures;
-  lastReadAt = Date.now();
   if (changed) {
     knownEnvironments = listed;
+    if (!kept) keepListing(listing);
     for (const listener of directoryListeners) listener();
   }
+  if (kept) return listed;
+  lastReadAt = Date.now();
   for (const listener of directoryRefreshListeners) listener();
   return knownEnvironments!;
+}
+
+// The last listing is kept on the device for whoever is signed in (who.ts),
+// and draws the sidebar as the page opens, until Aldo's read answers. It isn't
+// a read: no machine is told it's asleep from it (asleepAsListed), and an
+// attempt to connect waits for the read under way (freshListing).
+const KEPT_KEY = "aldo-directory-copy";
+/** How long a kept listing can go unchanged and still draw the sidebar at an open. */
+const KEPT_FOR_MS = 7 * 24 * 60 * 60_000;
+
+/** Keeps a listing (its JSON: environments and features) for the next open; null, or no one known, keeps none. */
+function keepListing(listing: string | null): void {
+  const who = listing ? aldoWho() : null;
+  try {
+    if (listing && who) {
+      localStorage.setItem(KEPT_KEY, `{"who":"${who}","at":${Date.now()},"listing":${listing}}`);
+    } else localStorage.removeItem(KEPT_KEY);
+  } catch {
+    // No storage, or too little: the next open waits for its read.
+  }
+}
+
+function keptListing(): DirectoryBody | null {
+  const who = aldoWho();
+  if (!who) return null;
+  try {
+    const kept = JSON.parse(localStorage.getItem(KEPT_KEY) ?? "null") as {
+      readonly who?: unknown;
+      readonly at?: unknown;
+      readonly listing?: readonly [AldoEnvironment[], DirectoryBody["features"]];
+    } | null;
+    if (kept?.who !== who || typeof kept.at !== "number" || Date.now() - kept.at > KEPT_FOR_MS) {
+      return null;
+    }
+    const [environments, features] = kept.listing ?? [];
+    return Array.isArray(environments) ? { environments, ...(features ? { features } : {}) } : null;
+  } catch {
+    return null;
+  }
 }
 
 function registrationFor(environment: AldoEnvironment): BearerConnectionRegistration {
@@ -492,7 +581,13 @@ let firstRead: Promise<Array<BearerConnectionRegistration> | null> | null = null
  * this read.
  */
 export function startAldoDirectory(): void {
-  if (isAldoCloud) firstRead ??= readDirectory();
+  if (!isAldoCloud) return;
+  firstRead ??= readDirectory();
+  const kept = knownEnvironments === null ? keptListing() : null;
+  if (kept) {
+    takeListing(kept, true);
+    emitRequested = true;
+  }
 }
 
 function pageHidden(): boolean {
@@ -521,14 +616,15 @@ function readDue(): boolean {
 }
 
 async function pollDirectory(): Promise<Array<BearerConnectionRegistration> | null> {
+  // First, as the page opens, the machines the kept listing has; then the first read's.
+  if (emitRequested && knownEnvironments) {
+    emitRequested = false;
+    return currentRegistrations(knownEnvironments);
+  }
   if (firstRead) {
     const read = firstRead;
     firstRead = null;
     return read;
-  }
-  if (emitRequested && knownEnvironments) {
-    emitRequested = false;
-    return currentRegistrations(knownEnvironments);
   }
   const due = readDue();
   wasHidden = pageHidden();
@@ -614,8 +710,8 @@ function takeSharedRead(read: Partial<SharedRead> | null): void {
   const startedAt = read?.startedAt;
   if (pageHidden() || typeof startedAt !== "number" || startedAt <= listingFrom) return;
   if (!Array.isArray(read?.body?.environments)) return;
-  // Not while this tab has its first view to tell Aldo: its own read, on time, says it.
-  const later = firstViewMs === null;
+  // Not while this tab has its first view (or how its open felt) to tell Aldo: its own read, on time, says it.
+  const later = firstViewMs === null && openTimings === null;
   // A read of this tab's own under way answers for it. One begun after it
   // still puts this tab's next read back, so tabs that read at the same time
   // (a tab just duplicated) fall out of step, and one goes on reading for both.
@@ -644,7 +740,9 @@ async function fetchRegistrations(): Promise<Array<BearerConnectionRegistration>
     failedFetches = 0;
     retryAt = 0;
     return registrations;
-  } catch {
+  } catch (cause) {
+    // Signed out (api.ts sends them to sign in): no listing of theirs is kept for the next open.
+    if (cause instanceof AldoApiError && cause.status === 401) keepListing(null);
     // Retry soon, backing off while Aldo can't be reached so every open tab doesn't hammer it.
     failedFetches += 1;
     retryAt = Date.now() + Math.min(IDLE_REFRESH_MS, 1000 * 2 ** (failedFetches - 1));
@@ -739,6 +837,8 @@ const FRESH_LISTING_WAIT = "2 seconds";
  */
 export function askAldoNext(environmentId: string): void {
   asks.set(environmentId, ++askCount);
+  // No longer asleep to the registry, if it was (aldoAsleepEnvironments).
+  emitRequested = true;
 }
 
 /**
@@ -774,6 +874,26 @@ function asleepAsListed(environmentId: string): boolean {
     !wakes.has(environmentId) &&
     !asks.has(environmentId)
   );
+}
+
+/**
+ * The machines the directory lists as not running that this tab isn't waking
+ * or asking about (askAldoNext), for the registry: a sleeping machine runs
+ * nothing in this tab (no connection, no streams) until something needs it,
+ * and shows its cached threads and models meanwhile. Each machine ran its own
+ * connection and streams, which took seconds to start for a few hundred.
+ * Unlike asleepAsListed, an old listing still counts: a hidden tab's machines
+ * stay asleep until it reads the directory again.
+ */
+export function aldoAsleepEnvironments(): ReadonlySet<EnvironmentId> {
+  const asleep = new Set<EnvironmentId>();
+  for (const environment of knownEnvironments ?? []) {
+    const environmentId = environment.environmentId;
+    if (environment.state !== "ready" && !wakes.has(environmentId) && !asks.has(environmentId)) {
+      asleep.add(environmentId as EnvironmentId);
+    }
+  }
+  return asleep;
 }
 
 /**
@@ -854,6 +974,7 @@ export function wakeAldoEnvironment(environmentId: string): Promise<void> {
     .then(() => askAldoNext(environmentId))
     .finally(() => wakes.delete(environmentId));
   wakes.set(environmentId, wake);
+  emitRequested = true;
   return wake;
 }
 

@@ -1547,6 +1547,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           }
           const persistedBinding = Option.getOrUndefined(yield* directory.getBinding(threadId));
           if (
+            input.fresh !== true &&
             persistedBinding?.provider === resolvedProvider &&
             persistedBinding.providerInstanceId !== resolvedInstanceId &&
             (input.resumeCursor != null || persistedBinding.resumeCursor != null)
@@ -1567,10 +1568,12 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
             }
           }
           const effectiveResumeCursor =
-            input.resumeCursor ??
-            (persistedBinding?.providerInstanceId === resolvedInstanceId
-              ? persistedBinding.resumeCursor
-              : undefined);
+            input.fresh === true
+              ? undefined
+              : (input.resumeCursor ??
+                (persistedBinding?.providerInstanceId === resolvedInstanceId
+                  ? persistedBinding.resumeCursor
+                  : undefined));
           const effectiveCwd =
             input.cwd ??
             (persistedBinding?.providerInstanceId === resolvedInstanceId
@@ -1615,11 +1618,9 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           const session = yield* adapter
             .startSession({
               ...input,
+              resumeCursor: effectiveResumeCursor,
               providerInstanceId: resolvedInstanceId,
               ...(effectiveCwd !== undefined ? { cwd: effectiveCwd } : {}),
-              ...(effectiveResumeCursor !== undefined
-                ? { resumeCursor: effectiveResumeCursor }
-                : {}),
             })
             .pipe(Effect.onError(() => clearMcpSession(threadId)));
 

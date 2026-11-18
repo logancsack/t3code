@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+vi.mock("./AldoFrame", () => ({ AldoFrame: () => null }));
 
 import { act, createContext, useLayoutEffect, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -7,7 +8,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { AldoConversationPage } from "./AldoConversationPage";
 import { useAldoAssistant } from "./assistantSession";
 import type { AldoFeedEvent } from "./feed.logic";
-import type { AldoHome } from "./homeApi";
+import type { AldoApproval, AldoHome } from "./homeApi";
 
 vi.mock("@tanstack/react-router", () => ({ useNavigate: vi.fn, useRouter: vi.fn }));
 vi.mock("../components/ui/sidebar", () => ({
@@ -41,7 +42,9 @@ vi.mock("./AldoAssistant", () => ({
           <p key={event.key}>Activity: {event.kind}</p>
         ))}
         {entries.map((e) => (
-          <p key={e.kind === "message" ? e.at : e.id}>{e.kind === "message" ? e.text : e.label}</p>
+          <p key={e.kind === "message" ? e.at : e.id}>
+            {e.kind === "message" ? e.text : e.kind === "action" ? e.label : "Call"}
+          </p>
         ))}
         {tail}
         {renderDecisions?.(null, new Map())}
@@ -51,16 +54,19 @@ vi.mock("./AldoAssistant", () => ({
 }));
 vi.mock("./AldoHomeBoard", () => ({ HealthStrip: () => <div>Setup failed to build</div> }));
 vi.mock("./AldoLiveCard", () => ({ AldoOpenContext: createContext(null) }));
-vi.mock("./AldoPresence", () => ({ AldoPresence: () => null, AldoAvatar: () => null }));
+vi.mock("./AldoPresence", () => ({ AldoPresence: () => null }));
 vi.mock("./AldoUpNext", () => ({ AldoUpNext: () => <div>Working thread</div> }));
 vi.mock("./arrive", () => ({ settleAldoConversation: vi.fn(), unsettleAldoConversation: vi.fn() }));
-vi.mock("./face", () => ({ blinkAldo: vi.fn() }));
+vi.mock("./presenceReactions", () => ({ acknowledgeAldo: vi.fn() }));
 vi.mock("./morph", () => ({
   aldoGlide: vi.fn(),
   aldoMorphSource: vi.fn(),
   morphIntoThread: vi.fn(),
 }));
-vi.mock("./homeFeed", () => ({ refreshAldoHome: vi.fn() }));
+vi.mock("./homeFeed", () => ({
+  refreshAldoHome: vi.fn(),
+  useAldoHomeReadAt: (select: (s: { at: number }) => unknown) => select({ at: 0 }),
+}));
 vi.mock("./firstView", () => ({ useAldoFirstViewHold: vi.fn() }));
 
 let root: Root;
@@ -101,6 +107,11 @@ function history() {
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.stubGlobal("matchMedia", () => ({
+    matches: true,
+    addEventListener() {},
+    removeEventListener() {},
+  }));
   vi.stubGlobal(
     "ResizeObserver",
     class {
@@ -174,6 +185,76 @@ it("follows resizing at the end and preserves the position after the user scroll
   await act(async () => resized());
   expect(scroller.scrollTop).toBe(300);
   expect(container.textContent).toContain("New from Aldo");
+});
+
+it("keeps the draft and reading position as pending actions change beside the latest action", async () => {
+  history();
+  const home = {
+    conversations: [],
+    pullRequests: [],
+    actions: [],
+    approvals: [],
+  } as unknown as AldoHome;
+  await act(async () => root.render(<Page home={home} />));
+  const composer = container.querySelector("textarea")!;
+  composer.value = "Keep this draft";
+  composer.focus();
+  const scroller = container.querySelector<HTMLDivElement>(".overflow-y-auto")!;
+  scroller.scrollTop = 300;
+  scroller.dispatchEvent(new Event("scroll"));
+  vi.spyOn(Element.prototype, "scrollHeight", "get").mockReturnValue(2200);
+  await act(async () => resized());
+
+  const approval: AldoApproval = {
+    id: "review",
+    kind: "confirm",
+    status: "pending",
+    title: "Review the proposal",
+    createdAt: "2026-10-19T12:00:00Z",
+    provider: null,
+    summary: "Ready for review",
+    fields: [],
+    body: "The phone layout is ready",
+    approveLabel: "Approve",
+    discardLabel: "Discard",
+    result: null,
+    failed: false,
+    thread: null,
+    threadTitle: null,
+    decidedAt: null,
+  };
+  await act(async () => root.render(<Page home={{ ...home, approvals: [approval] }} />));
+  expect(container.querySelector("[data-aldo-needs-you]")?.textContent).toBe("One needs you");
+  await act(async () => root.render(<Page home={home} />));
+  expect(container.querySelector("[data-aldo-needs-you]")).toBeNull();
+  expect(scroller.scrollTop).toBe(300);
+  expect(container.querySelector("textarea")).toBe(composer);
+  expect(composer.value).toBe("Keep this draft");
+  expect(document.activeElement).toBe(composer);
+
+  scroller.scrollTo = vi.fn();
+  const latest = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "New from Aldo",
+  )!;
+  await act(async () => latest.click());
+  expect(scroller.scrollTo).toHaveBeenCalledWith({ top: 2200, behavior: "auto" });
+});
+
+it("never scrolls sideways: the scroller clips, and the column wraps what has no break in it", async () => {
+  history();
+  await act(async () => root.render(<Page />));
+  const scroller = container.querySelector<HTMLDivElement>(".overflow-y-auto")!;
+  expect(scroller.classList).toContain("overflow-x-hidden");
+  const column = scroller.firstElementChild!;
+  expect(column.classList).toContain("min-w-0");
+  expect(column.classList).toContain("wrap-anywhere");
+
+  // The empty page's scroller too.
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  useAldoAssistant.setState({ entries: [], historyLoaded: true });
+  await act(async () => root.render(<Page />));
+  expect(container.querySelector(".overflow-y-auto")!.classList).toContain("overflow-x-hidden");
 });
 
 it("still opens an empty conversation at the welcome", async () => {

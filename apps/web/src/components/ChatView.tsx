@@ -574,6 +574,7 @@ import { aldoRoutesModels } from "../aldo/directory";
 import { useAldoKeptRepo } from "../aldo/keptRepo";
 import { ALDO_DEVELOPER_COMMANDS, useAldoDeveloperTools } from "../aldo/developerTools";
 import { AldoHandoffCard } from "../aldo/AldoHandoffCard";
+import { AldoOrgNoteCard } from "../aldo/AldoOrgNoteCard";
 import { useAldoThreadApprovals } from "../aldo/AldoApprovals";
 import { withThreadApprovals } from "../aldo/approvals.logic";
 import {
@@ -1839,6 +1840,7 @@ export default function ChatView(props: ChatViewProps) {
   >({});
   const shouldUseRightPanelSheet = useMediaQuery(RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY);
   const isMobileViewport = useMediaQuery("max-sm");
+  const isPhoneHeaderViewport = useMediaQuery("max-md");
   const [terminalFocusRequestId, setTerminalFocusRequestId] = useState(0);
   const [pullRequestDialogState, setPullRequestDialogState] =
     useState<PullRequestDialogState | null>(null);
@@ -5137,24 +5139,6 @@ export default function ChatView(props: ChatViewProps) {
     readonly threadKey: string;
     readonly reference: ThreadLinkedPullRequest | null;
   } | null>(null);
-  const openProjectPullRequest = useCallback(
-    (number: number) => {
-      if (
-        !supportsPullRequests ||
-        !activeThreadRef ||
-        !activeProject ||
-        activeProjectRepository === null
-      ) {
-        return;
-      }
-      useRightPanelStore.getState().openPullRequest(activeThreadRef, {
-        projectId: activeProject.id,
-        repository: activeProjectRepository,
-        number,
-      });
-    },
-    [activeProject, activeProjectRepository, activeThreadRef, supportsPullRequests],
-  );
   const proactivePanelObservationRef = useRef<ReturnType<
     typeof observeProactivePanelUserChoice
   > | null>(null);
@@ -10151,10 +10135,6 @@ export default function ChatView(props: ChatViewProps) {
 
   const panelToggleControls = (
     <PanelLayoutControls
-      showTerminalControl={aldoDeveloperTools}
-      terminalAvailable={activeProject !== null}
-      terminalOpen={terminalUiState.terminalOpen}
-      terminalShortcutLabel={shortcutLabelForCommand(keybindings, "terminal.toggle")}
       rightPanelAvailable={activeProject !== null}
       rightPanelOpen={rightPanelOpen}
       rightPanelShortcutLabel={shortcutLabelForCommand(keybindings, "rightPanel.toggle")}
@@ -10163,7 +10143,6 @@ export default function ChatView(props: ChatViewProps) {
       liveAgentCount={
         rightPanelOpen && activeRightPanelSurface?.kind === "agents" ? 0 : agentPanelModel.liveCount
       }
-      onToggleTerminal={toggleTerminalVisibility}
       onToggleRightPanel={toggleRightPanel}
     />
   );
@@ -10172,7 +10151,9 @@ export default function ChatView(props: ChatViewProps) {
       className={cn(
         // Keep one viewport anchor inside the header's no-drag region. The
         // header can shrink behind the right panel without moving the controls.
-        "pointer-events-none fixed top-[var(--workspace-controls-top)] right-[var(--workspace-controls-right)] z-50 mr-px flex h-[var(--workspace-topbar-height)] items-center gap-1 [-webkit-app-region:no-drag]",
+        // Under the sheet layer (z-45 < --z-sheet), like the sidebar toggle, so a
+        // sheet covers them instead of having them drawn over its corner.
+        "pointer-events-none fixed top-[var(--workspace-controls-top)] right-[var(--workspace-controls-right)] z-45 mr-px flex h-[var(--workspace-topbar-height)] items-center gap-1 [-webkit-app-region:no-drag]",
       )}
       data-workspace-titlebar-controls
     >
@@ -10183,9 +10164,9 @@ export default function ChatView(props: ChatViewProps) {
             "flex shrink-0",
             panelAnimationsActive &&
               "motion-safe:transition-opacity motion-safe:duration-(--panel-animation-duration) motion-safe:ease-out",
-            // Closed, the control leaves the flex flow so the cluster is only as wide as the two
-            // toggles the header reserves room for; anchored to the cluster's left edge, it fades
-            // out where it stood rather than over the terminal toggle.
+            // Closed, the control leaves the flex flow so the cluster is only as wide as the
+            // toggle the header reserves room for; anchored to the cluster's left edge, it fades
+            // out where it stood rather than over the panel toggle.
             rightPanelOpen
               ? "pointer-events-auto opacity-100"
               : "pointer-events-none absolute right-full mr-1 opacity-0",
@@ -10430,11 +10411,13 @@ export default function ChatView(props: ChatViewProps) {
               className="pointer-events-none fixed top-[var(--workspace-controls-top)] right-[var(--workspace-controls-right)] h-[var(--workspace-topbar-height)] w-28 [-webkit-app-region:no-drag]"
             />
           ) : null}
-          {!rightPanelControlsAtRoot && !rightPanelControlsInPanel ? panelLayoutControls : null}
+          {/* An Aldo thread's phone header opens the right panel from its menu. */}
+          {!rightPanelControlsAtRoot &&
+          !rightPanelControlsInPanel &&
+          !(isPhoneHeaderViewport && isAldoCloud && isAldoEnvironmentId(activeThread.environmentId))
+            ? panelLayoutControls
+            : null}
           <ChatHeader
-            {...(!supportsPullRequests || activeProjectRepository === null
-              ? {}
-              : { onOpenPullRequest: openProjectPullRequest })}
             activeThreadEnvironmentId={activeThread.environmentId}
             activeThreadId={activeThread.id}
             {...(routeKind === "draft" && draftId ? { draftId } : {})}
@@ -10449,7 +10432,7 @@ export default function ChatView(props: ChatViewProps) {
             keybindings={keybindings}
             availableEditors={availableEditors}
             rightPanelOpen={rightPanelOpen}
-            gitCwd={gitCwd}
+            working={phase === "running"}
             onNewThreadInProject={handleNewThreadInActiveProject}
             {...(activeDraftLogicalProjectKey
               ? { onOpenProjectSettings: handleOpenDraftProjectSettings }
@@ -10459,7 +10442,6 @@ export default function ChatView(props: ChatViewProps) {
             onUpdateProjectScript={updateProjectScript}
             onDeleteProjectScript={deleteProjectScript}
             onSendAldoMessage={isAldoCloud && isServerThread ? onSendAldoMove : undefined}
-            panelToggleCount={aldoDeveloperTools ? 2 : 1}
           />
         </WorkspacePageHeader>
 
@@ -10728,6 +10710,9 @@ export default function ChatView(props: ChatViewProps) {
                       environmentId={activeThreadRef.environmentId}
                       threadId={activeThreadRef.threadId}
                     />
+                  ) : null}
+                  {isAldoCloud && !isDraftHeroState && activeThreadRef ? (
+                    <AldoOrgNoteCard environmentId={activeThreadRef.environmentId} />
                   ) : null}
                   {/* An approval the agent stopped on is answered first; an
                       answer sent past it would start a turn it can't take. */}

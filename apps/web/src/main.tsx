@@ -23,12 +23,14 @@ import { installAldoNotificationsSync } from "./aldo/notifications";
 import { installAldoServiceWorker } from "./aldo/serviceWorker";
 import { installAldoReconnect } from "./aldo/reconnect";
 import { installAldoFirstView } from "./aldo/firstView";
+import { installAldoOpenTimings } from "./aldo/openTimings";
 import { installAldoChunkPrefetch } from "./aldo/chunkPrefetch";
 import { installAldoShellSync } from "./aldo/shells";
 import { installAldoThreadDetails } from "./aldo/threadDetails";
 import { installAldoVersionCheck } from "./aldo/version";
 import { initializeLandingDemoClientSettings } from "./hooks/useSettings";
-import { isLandingDemo } from "./landingDemo/mode";
+import { isLandingDemo, isWorkReplay } from "./landingDemo/mode";
+import { installAldoLayers, seedAldoHome } from "./aldo/layers";
 import { installPrismGlass } from "./prismGlass";
 
 prepareProviderAuthDelivery();
@@ -47,7 +49,15 @@ window.addEventListener("vite:preloadError", (event) => {
   }
 });
 
+function WorkReplayMounted() {
+  React.useEffect(() => {
+    parent.postMessage({ type: "aldo:replay-mounted" }, "*");
+  }, []);
+  return null;
+}
+
 async function renderApp() {
+  if (isWorkReplay()) await (await import("./landingDemo/replay")).startWorkReplay();
   installPrismGlass();
   const landingDemo = isLandingDemo();
   if (!landingDemo) {
@@ -61,14 +71,18 @@ async function renderApp() {
     installAldoThreadDetails();
     installAldoReconnect();
     installAldoFirstView();
+    installAldoOpenTimings();
     await prepareManagedDevPc();
   } else {
     initializeLandingDemoClientSettings();
-    document.documentElement.classList.add("dark");
+    if (!isWorkReplay()) document.documentElement.classList.add("dark");
   }
 
   // Electron loads the app from a file-backed shell, so hash history avoids path resolution issues.
+  const layered = isAldoCloud && !isElectron && (!landingDemo || isWorkReplay());
+  if (layered && !landingDemo) seedAldoHome();
   const history = isElectron || landingDemo ? createHashHistory() : createBrowserHistory();
+  if (layered) installAldoLayers(history);
   const router = getRouter(history);
   if (!landingDemo) installAldoServiceWorker((href) => router.navigate({ href }));
   installAldoChunkPrefetch(router);
@@ -109,6 +123,7 @@ async function renderApp() {
   if (!chunkLoadFailed) clearChunkReloadGuard();
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <React.StrictMode>
+      {isWorkReplay() && <WorkReplayMounted />}
       {ManagedAuthShell && clerkPublishableKey ? (
         <ManagedAuthShell publishableKey={clerkPublishableKey}>{app}</ManagedAuthShell>
       ) : (

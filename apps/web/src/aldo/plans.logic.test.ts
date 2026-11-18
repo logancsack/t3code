@@ -65,6 +65,12 @@ const plan = (overrides: Record<string, unknown> = {}) => {
 };
 
 describe("parseAldoPlans", () => {
+  it("keeps a dismissed plan's cleared and removed marks, so Dismissed can leave it out", () => {
+    const [read] = parseAldoPlans([
+      wire({ chatDecision: { id: "d", dismissed: true, cleared: true, removed: true } }),
+    ]);
+    expect(read!.chatDecision).toEqual({ id: "d", dismissed: true, cleared: true, removed: true });
+  });
   it("reads what Home sends", () => {
     const [read] = parseAldoPlans([wire()]);
     expect(read).toMatchObject({

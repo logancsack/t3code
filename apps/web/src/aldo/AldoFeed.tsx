@@ -2,10 +2,13 @@
 // (feed.logic.ts): quiet lines on Aldo's side, the way an assistant shows the
 // steps it took. What finished and shipped between two things said is one
 // line ("3 shipped · 2 finished"), which opens to a line each, grouped (each
-// a tap from its thread or pull request); just one is its line. What Aldo did
-// (a thread it started that's still going as its live card), and what the
-// user decided from a card this visit, are a line each; a plan that started
-// is its card (AldoPlanCard.tsx), saying what it started with.
+// a tap from its thread or pull request); just one is its line. A finished
+// line says where its pull requests stand (finished.logic.ts): a green check
+// only once they've shipped. A thread
+// that's going is its live card (AldoLiveCard.tsx), where it started or where
+// Aldo last acted on it. What else Aldo did, and what the user decided from a
+// card this visit, are a line each; a plan stays its card (AldoPlanCard.tsx),
+// including what it started with.
 
 import { CheckIcon, ChevronDownIcon, LayersIcon, RepeatIcon } from "lucide-react";
 import { useContext, useState, type ReactNode } from "react";
@@ -15,10 +18,13 @@ import { cn } from "~/lib/utils";
 import { AldoOpenContext, AldoThreadCard } from "./AldoLiveCard";
 import { AldoPaymentLine } from "./AldoPaymentCard";
 import { AldoPlanCard } from "./AldoPlanCard";
-import { AldoAvatar } from "./AldoPresence";
+import { AldoFrame } from "./AldoFrame";
 import { useAldoArrive } from "./arrive";
 import { aldoCanMorph } from "./morph";
 import { ACTION_LABELS } from "./assistant.logic";
+import { ResultIcon, resultToneClass } from "./AldoResultMark";
+import { pullRequestsOf, resultState } from "./finished.logic";
+import { useAldoHomeFeed, useAldoHomeReadAt } from "./homeFeed";
 import { FOCUS } from "./surface";
 import {
   digestOf,
@@ -82,6 +88,9 @@ function Digest(props: { readonly digest: AldoDigest }) {
 function QuietRows(props: { readonly digest: AldoDigest; readonly grouped?: boolean }) {
   const open = useContext(AldoOpenContext);
   const arrive = useAldoArrive();
+  const pullRequests = useAldoHomeFeed((s) => s.home?.pullRequests);
+  // When the home was read: where its pull requests stood then.
+  const readAt = useAldoHomeReadAt((s) => s.at);
   const { shipped, finished, routines } = props.digest;
   const groups: ReadonlyArray<readonly [string, ReadonlyArray<ReactNode>]> = [
     [
@@ -99,16 +108,31 @@ function QuietRows(props: { readonly digest: AldoDigest; readonly grouped?: bool
     ],
     [
       "Finished",
-      finished.map((e) => (
-        <Row
-          key={e.key}
-          icon={<CheckIcon className="size-4 text-success-foreground" strokeWidth={2.25} />}
-          verb="Finished"
-          title={e.conversation.title}
-          trailing={timeOf(e.at)}
-          onClick={open ? (from) => open(e.conversation.thread, from) : undefined}
-        />
-      )),
+      finished.map((e) => {
+        // Honest about its pull requests: a green check only once they've shipped (or there are none).
+        const state = resultState(
+          pullRequests ? pullRequestsOf({ pullRequests }, e.conversation) : [],
+          readAt,
+          { clock: true },
+        );
+        return (
+          <Row
+            key={e.key}
+            icon={
+              state.tone === "done" ? (
+                <CheckIcon className="size-4 text-success-foreground" strokeWidth={2.25} />
+              ) : (
+                <ResultIcon state={state} />
+              )
+            }
+            verb={state.tone === "done" ? "Finished" : `Finished, ${state.words}`}
+            title={e.conversation.title}
+            trailing={state.tone === "done" ? timeOf(e.at) : state.words}
+            trailingClassName={resultToneClass(state)}
+            onClick={open ? (from) => open(e.conversation.thread, from) : undefined}
+          />
+        );
+      }),
     ],
     [
       "Routines",
@@ -157,6 +181,8 @@ function Row(props: {
   readonly verb: string;
   readonly title: string;
   readonly trailing: string;
+  /** Its color, when where it stands says something (amber for what failed). */
+  readonly trailingClassName?: string;
   readonly href?: string;
   readonly onClick?: ((from: HTMLElement) => void) | undefined;
 }) {
@@ -173,7 +199,9 @@ function Row(props: {
         <span className="sr-only">{props.verb}: </span>
         {props.title}
       </span>
-      <span className="shrink-0 text-[12px] tabular-nums">{props.trailing}</span>
+      <span className={cn("shrink-0 text-[12px] tabular-nums", props.trailingClassName)}>
+        {props.trailing}
+      </span>
     </>
   );
   if (props.href)
@@ -257,9 +285,10 @@ function EventLine(props: {
   const open = useContext(AldoOpenContext);
   const { event } = props;
   switch (event.kind) {
+    case "thread":
+      return <AldoThreadCard target={event.conversation.thread} label="Thread" fallback={null} />;
     case "plan":
-      // It was at the conversation's end until it started: it stays, without arriving again.
-      return <AldoPlanCard plan={event.plan} still />;
+      return <AldoPlanCard plan={event.plan} still={event.plan.status === "started"} />;
     case "payment":
       return <AldoPaymentLine payment={event.payment} />;
     case "decided": {
@@ -285,7 +314,7 @@ function EventLine(props: {
       const thread = a.thread;
       const line = (
         <Line
-          icon={<AldoAvatar size={14} />}
+          icon={<AldoFrame size={14} />}
           onClick={thread && open ? (from) => open(thread, from) : undefined}
         >
           {label}

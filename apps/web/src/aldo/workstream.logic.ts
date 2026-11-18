@@ -35,7 +35,8 @@ export const WORKSTREAM_WORDS: Record<WorkstreamState, string> = {
 /**
  * A word on where it stands, after its title: "waiting 12 min", "for 4 min",
  * "no word for 2 h", "finished 1 h ago", "back in 2 h". Since its state was
- * reported: a rename or a pin moves `at`, not this.
+ * reported (when its turn began), except "no word", which counts from its last
+ * activity.
  */
 export function workstreamMeta(
   c: AldoHomeConversation,
@@ -49,5 +50,5 @@ export function workstreamMeta(
   const since = c.stateAt ?? c.at;
   if (state === "needs") return `waiting ${elapsed(since, now)}`;
   if (state === "done") return `finished ${relativeTime(since, now)}`;
-  return isStuck(c, now) ? `no word for ${elapsed(since, now)}` : `for ${elapsed(since, now)}`;
+  return isStuck(c, now) ? `no word for ${elapsed(c.at, now)}` : `for ${elapsed(since, now)}`;
 }

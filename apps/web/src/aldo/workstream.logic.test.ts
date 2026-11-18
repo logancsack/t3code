@@ -39,6 +39,11 @@ describe("workstreamState", () => {
     );
   });
 
+  it("keeps a long turn that is still moving working, counted from its start", () => {
+    const c = conversation({ at: ago(1), stateAt: ago(62) });
+    expect(workstreamMeta(c, "working", NOW)).toBe("for 1 h 2 min");
+  });
+
   it("is put off while snoozed or settled, whatever it's doing", () => {
     expect(workstreamState(conversation({ state: "waiting", snoozedUntil: ahead(60) }), NOW)).toBe(
       "later",

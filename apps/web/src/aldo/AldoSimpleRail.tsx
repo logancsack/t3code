@@ -22,7 +22,7 @@ import { toastManager } from "../components/ui/toast";
 import { useIsMobile } from "../hooks/useMediaQuery";
 import { cn } from "~/lib/utils";
 import { AldoProfileButton } from "./AldoAccountMenu";
-import { AldoOrb, useAldoAssistantAvailable } from "./AldoAssistant";
+import { AldoVoiceMark, useAldoAssistantAvailable } from "./AldoAssistant";
 import { useAldoAttentionCount } from "./attentionBadge";
 import { isAldoCloud } from "./api";
 import { setAldoSimpleMode, setAldoSimplePlace, useAldoSimple } from "./simpleMode";
@@ -66,7 +66,7 @@ function useCurrentPlace(): AldoSimplePlace | null {
 }
 
 function PlaceIcon(props: { readonly place: AldoSimplePlace }) {
-  if (props.place === "aldo") return <AldoOrb size="xs" display />;
+  if (props.place === "aldo") return <AldoVoiceMark size="xs" display />;
   if (props.place === "needs") return <InboxIcon className="size-[18px]" />;
   return <LibraryBigIcon className="size-[18px]" />;
 }

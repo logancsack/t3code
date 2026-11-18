@@ -1,11 +1,11 @@
 // The home screen as a conversation with Aldo (AldoHome.tsx), made like a
-// messaging app's chat with a teammate. At the top, Aldo's face and what it's
+// messaging app's chat with a teammate. At the top, Aldo’s mark and what it's
 // at (AldoPresence.tsx), which opens what's working and coming up. Then the
 // conversation, with what happened to the user's agents where it happened
-// (feed.logic.ts, AldoFeed.tsx), and at its end what waits on the user, as
+// (feed.logic.ts, AldoFeed.tsx), and what waits on the user where it came up, as
 // cards to answer in place (a plan to start, AldoPlanCard.tsx; the rest,
 // AldoUpNext.tsx), so nothing needs a view of its own. Then the composer.
-// Before anything's been said, the page is Aldo's face, one question and the
+// Before anything's been said, the page is Aldo’s mark, one question and the
 // composer under it, which glides down to its place with the first message
 // (the same composer: what's typed and focus stay). Scrolled up, what arrives
 // waits behind "New from Aldo". A thread tapped anywhere in it opens: the
@@ -32,26 +32,27 @@ import { cn } from "~/lib/utils";
 import { AldoAtAGlance, AldoCaption, AldoComposer, AldoConversation } from "./AldoAssistant";
 import { HealthStrip } from "./AldoHomeBoard";
 import { AldoOpenContext } from "./AldoLiveCard";
-import { AldoAvatar, AldoPresence } from "./AldoPresence";
+import { AldoPresence } from "./AldoPresence";
+import { AldoFrame } from "./AldoFrame";
 import { AldoUpNext } from "./AldoUpNext";
 import { settleAldoConversation, unsettleAldoConversation } from "./arrive";
 import { showAldoCards } from "./assistantApi";
 import { seedAldoComposer, useAldoAssistant } from "./assistantSession";
 import { type AldoHome, type AldoHomeTarget } from "./homeApi";
-import { aldoChatDecisions, aldoWaitingCount, pausedInChat, placeableOf } from "./decisions.logic";
-import { briefRaised } from "./briefGroups.logic";
-import { useAldoBrief } from "./briefFeed";
+import { aldoChatDecisions, aldoWaitingCount, decisionAt, pausedInChat } from "./decisions.logic";
+import { AldoComputerRequest } from "./AldoComputerRequest";
+import { computerRequests, dismissedNeedsYou, pendingNeedsYou } from "./needsYou.logic";
 import { NeedsYouPill } from "./NeedsYouPill";
+import { COMPOSER_ACTION, HomeComposerActions } from "./HomeComposerActions";
 import { feedEvents, withPlans, withReceipts } from "./feed.logic";
-import { AldoPlanCard } from "./AldoPlanCard";
-import { openPlans, parseAldoPlans } from "./plans.logic";
+import { parseAldoPlans } from "./plans.logic";
 import { useAldoFirstViewHold } from "./firstView";
 import type { healthIssues } from "./home.logic";
 import { useAldoReceipts } from "./receipts";
-import { blinkAldo } from "./face";
+import { acknowledgeAldo } from "./presenceReactions";
 import { aldoGlide, aldoMorphSource, morphIntoThread } from "./morph";
-import { refreshAldoHome } from "./homeFeed";
-import { scrollMotion } from "./show";
+import { refreshAldoHome, useAldoHomeReadAt } from "./homeFeed";
+import { scrollMotion, SHOW_ALDO_THREAD } from "./show";
 import { SECONDARY, SURFACE } from "./surface";
 
 function inField(target: EventTarget | null): boolean {
@@ -82,11 +83,16 @@ const HISTORY_WAIT_MS = 8_000;
  * Keeps the conversation at its end while the user is there, as what's above
  * it loads (what's wrong) and as the window narrows it; scrolled up, it
  * stays put, and says when something new arrived below (true until they're
- * back at the end). Not before anything's been said: that page reads from
- * the top.
+ * back at the end), or that they were taken up to a thread's card (`jumped`),
+ * the way back being the same. Not before anything's been said: that page
+ * reads from the top.
  */
-function useStickToBottom(ref: RefObject<HTMLDivElement | null>, enabled: boolean): boolean {
+function useStickToBottom(
+  ref: RefObject<HTMLDivElement | null>,
+  enabled: boolean,
+): { readonly below: boolean; readonly jumped: boolean } {
   const [below, setBelow] = useState(false);
+  const [jumped, setJumped] = useState(false);
   useLayoutEffect(() => {
     const element = ref.current;
     if (!element || !enabled) return;
@@ -94,15 +100,41 @@ function useStickToBottom(ref: RefObject<HTMLDivElement | null>, enabled: boolea
     // observer only follows later size changes; installing it after paint flashes the top.
     element.scrollTop = element.scrollHeight;
     let atEnd = true;
+    let jumping = false;
+    let top = element.scrollTop;
     let size = `${element.scrollHeight}:${element.clientHeight}`;
     let height = element.scrollHeight;
     const onScroll = () => {
+      const up = element.scrollTop < top;
+      top = element.scrollTop;
       // A scroll the layout made as what's on the page grew (the cards at the end
       // arriving, the composer growing) isn't the user leaving the end.
       if (`${element.scrollHeight}:${element.clientHeight}` !== size) return;
+      // On the way up to a thread's card, leaving the end isn't reaching it.
+      if (jumping && up) return;
       atEnd = element.scrollHeight - element.scrollTop - element.clientHeight < AT_END_PX;
-      if (atEnd) setBelow(false);
+      if (atEnd) {
+        jumping = false;
+        setBelow(false);
+        setJumped(false);
+      }
     };
+    // Taken up to a thread's card: it opening there doesn't pull the page back down.
+    const onShow = (event: Event) => {
+      const was = atEnd;
+      atEnd = false;
+      jumping = true;
+      setTimeout(() => {
+        if (!event.defaultPrevented) {
+          atEnd = was;
+          jumping = false;
+        } else if (element.scrollHeight - element.clientHeight > AT_END_PX) {
+          setBelow(true);
+          setJumped(true);
+        }
+      });
+    };
+    window.addEventListener(SHOW_ALDO_THREAD, onShow);
     const observer = new ResizeObserver(() => {
       if (atEnd) element.scrollTop = element.scrollHeight;
       else if (element.scrollHeight > height + 1) setBelow(true);
@@ -115,9 +147,10 @@ function useStickToBottom(ref: RefObject<HTMLDivElement | null>, enabled: boolea
     return () => {
       observer.disconnect();
       element.removeEventListener("scroll", onScroll);
+      window.removeEventListener(SHOW_ALDO_THREAD, onShow);
     };
   }, [ref, enabled]);
-  return below && enabled;
+  return { below: below && enabled, jumped: jumped && enabled };
 }
 
 /**
@@ -191,9 +224,9 @@ export function AldoConversationPage(props: {
   const cardsShow = home !== null && props.error === null && home.plans !== undefined;
   useEffect(() => (cardsShow ? showAldoCards(CARDS) : undefined), [cardsShow]);
   useEffect(() => {
-    // The user back at the page: Aldo notices, with a blink.
+    // Acknowledge the user returning to Home.
     const onVisible = () => {
-      if (document.visibilityState === "visible") blinkAldo();
+      if (document.visibilityState === "visible") acknowledgeAldo();
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
@@ -232,57 +265,105 @@ export function AldoConversationPage(props: {
   const loading = !loaded && !said && !historySlow;
   useAldoFirstViewHold(loading);
   const receipts = useAldoReceipts((s) => s.receipts);
-  // Aldo's plans (a newer Aldo's): one that started where it started, the open ones at the end.
-  const plans = useMemo(() => parseAldoPlans(home?.plans), [home]);
+  // Plans keep their proposal time through Start and subsequent reads.
+  // One dismissed from Needs you leaves the conversation too, as a prompt hidden from chat does.
+  const plans = useMemo(
+    () =>
+      parseAldoPlans(home?.plans).filter(
+        (p) => p.status !== "proposed" || !p.chatDecision?.cleared,
+      ),
+    [home],
+  );
+  // What the latest read has happened by then, though the clock ticks only every so often:
+  // a thread created since its last tick has its card at once.
+  const readAt = useAldoHomeReadAt((s) => s.at);
+  const feedNow = Math.max(now, readAt);
   const feed = useMemo(
     () =>
       withReceipts(
         home
-          ? withPlans(feedEvents(home, { now, from: firstAt, here, told }), plans, {
-              now,
-              from: firstAt,
+          ? withPlans(feedEvents(home, { now: feedNow, from: firstAt, here, told }), plans, {
+              now: feedNow,
+              // Pending plans remain reachable even before the loaded message window.
+              from: null,
             })
           : [],
-        receipts,
+        receipts.filter(
+          (r) => !home?.approvals?.some((a) => `aldo:${a.id}` === r.key && a.status !== "pending"),
+        ),
       ),
-    [home, now, firstAt, here, told, receipts, plans],
+    [home, feedNow, firstAt, here, told, receipts, plans],
   );
-  const proposed = useMemo(() => openPlans(plans, firstAt, now), [plans, firstAt, now]);
-  // What waits on the user, placed where it came up (AldoUpNext.tsx); one answered here is a line now.
-  const brief = useAldoBrief((s) => s.brief);
+  // Every interactive card uses its creation time, including decided approvals
+  // supplied by persisted history. Local receipts replace pending cards in place.
   const decisions = useMemo(() => {
     if (!home) return [];
-    const raised = brief ? briefRaised(brief) : null;
-    return aldoChatDecisions(home, now)
-      .filter((d) => !receipts.some((r) => r.key === d.key))
-      .map((d) => placeableOf(d, raised));
-  }, [home, now, brief, receipts]);
-  // A payment that went on stays where its card was while it waited on the user.
-  const decided = useMemo(() => {
-    const raised = brief ? briefRaised(brief) : null;
-    return feed.flatMap((e) =>
-      e.kind === "payment"
-        ? [placeableOf({ kind: "payment", key: e.key, payment: e.payment }, raised)]
+    return [
+      ...aldoChatDecisions(home, now)
+        .filter(
+          (d) =>
+            !receipts.some((r) => r.key === d.key) &&
+            !(d.kind === "waiting" && d.conversation.computers?.some((c) => c.status === "asked")),
+        )
+        .map((d) => ({ key: d.key, at: decisionAt(d, home) })),
+      ...(home.approvals ?? [])
+        .filter(
+          (a) => a.status !== "pending" && a.status !== "withdrawn" && !a.chatDecision?.dismissed,
+        )
+        .map((a) => ({ key: `aldo:${a.id}`, at: a.createdAt })),
+      ...pausedInChat(home, now)
+        .filter((c) => !c.computers?.some((computer) => computer.status === "asked"))
+        .map((c) => ({ key: `paused:${c.ref}`, at: c.stateAt ?? c.at })),
+    ];
+  }, [home, now, receipts]);
+  const pending = useMemo(
+    () =>
+      home
+        ? pendingNeedsYou(
+            home,
+            now,
+            receipts.map((r) => r.key),
+          )
         : [],
-    );
-  }, [feed, brief]);
-  const pausedCount = useMemo(() => (home ? pausedInChat(home, now).length : 0), [home, now]);
+    [home, now, receipts],
+  );
+  const computers = useMemo(
+    () =>
+      home ? computerRequests(home).filter((c) => pending.some((item) => item.key === c.key)) : [],
+    [home, pending],
+  );
+  const placed = useMemo(
+    () => [...decisions, ...computers.map(({ key, at }) => ({ key, at }))],
+    [decisions, computers],
+  );
   const renderDecisions = useCallback(
     (keys: ReadonlyArray<string> | null, placedAt: ReadonlyMap<string, string>) =>
-      home ? <AldoUpNext home={home} now={now} only={keys} placedAt={placedAt} /> : null,
-    [home, now],
+      home ? (
+        <>
+          <AldoUpNext home={home} now={now} only={keys} placedAt={placedAt} />
+          {computers
+            .filter((c) => keys?.includes(c.key))
+            .map((request) => (
+              <AldoComputerRequest key={request.key} request={request} />
+            ))}
+        </>
+      ) : null,
+    [home, now, computers],
   );
   const waiting = useMemo(() => (home ? aldoWaitingCount(home, now) : 0), [home, now]);
   // Nothing read yet, and the read failed: that's said, not taken for nothing to show.
   const unread = home === null && props.error !== null;
+  // What they dismissed from Needs you keeps the header (and so the way to restore it).
+  const dismissed = useMemo(() => (home ? dismissedNeedsYou(home, now).length : 0), [home, now]);
   // Nothing said, nothing happened and nothing waiting: the page is one question.
   // An older Aldo without the home read shows its overview, which the empty page has no room for.
   const fresh =
     loaded &&
     !said &&
     feed.length === 0 &&
+    placed.length === 0 &&
     waiting === 0 &&
-    proposed.length === 0 &&
+    dismissed === 0 &&
     !unread &&
     props.supported !== false;
   useEffect(() => {
@@ -291,7 +372,7 @@ export function AldoConversationPage(props: {
     const frame = requestAnimationFrame(() => settleAldoConversation());
     return () => cancelAnimationFrame(frame);
   }, [loaded, home]);
-  const below = useStickToBottom(scroller, !loading && !fresh);
+  const { below, jumped } = useStickToBottom(scroller, !loading && !fresh);
   const dock = useRef<HTMLDivElement>(null);
   const { above: roomAboveRef, below: startersRef } = useStartersRoom(
     fresh && Boolean(props.welcome),
@@ -325,23 +406,9 @@ export function AldoConversationPage(props: {
   }, []);
 
   const conversation = (
-    <AldoConversation
-      feed={feed}
-      tail={
-        home ? (
-          <>
-            {proposed.map((plan) => (
-              <AldoPlanCard key={plan.id} plan={plan} />
-            ))}
-          </>
-        ) : null
-      }
-      decisions={decisions}
-      decided={decided}
-      renderDecisions={renderDecisions}
-    />
+    <AldoConversation feed={feed} decisions={placed} renderDecisions={renderDecisions} />
   );
-  const column = "mx-auto w-full max-w-[640px] px-4 sm:px-6";
+  const column = "mx-auto w-full max-w-[640px] px-4 sm:px-6 xl:max-w-[720px] 2xl:max-w-[780px]";
   // The empty page's few things to say (the first run's starters say them instead);
   // once something's been said, the composer stands alone.
   const chips = fresh && !props.welcome ? props.chips.slice(0, 3) : [];
@@ -364,9 +431,10 @@ export function AldoConversationPage(props: {
               ref={scroller}
               aria-busy={loading}
               className={cn(
+                // Never sideways: what's too wide for the column wraps or scrolls inside its own box.
                 fresh
-                  ? "min-h-0 shrink overflow-y-auto"
-                  : "relative min-h-0 flex-1 overflow-y-auto [mask-image:linear-gradient(to_bottom,transparent,black_12px,black_calc(100%-12px),transparent)]",
+                  ? "min-h-0 shrink overflow-x-hidden overflow-y-auto"
+                  : "relative min-h-0 flex-1 overflow-x-hidden overflow-y-auto [mask-image:linear-gradient(to_bottom,transparent,black_12px,black_calc(100%-12px),transparent)]",
               )}
             >
               {loading ? (
@@ -380,7 +448,7 @@ export function AldoConversationPage(props: {
                 <div className={cn(column, "flex flex-col gap-6")}>
                   <HealthStrip issues={props.issues} />
                   <div className="flex flex-col items-center text-center">
-                    <AldoAvatar size={48} aware />
+                    <AldoFrame size={48} aware />
                     <h1 className="mt-5 font-semibold text-[24px] leading-[30px] tracking-[-0.02em] sm:text-[28px] sm:leading-[34px]">
                       What should we get done?
                     </h1>
@@ -393,8 +461,9 @@ export function AldoConversationPage(props: {
                 <div
                   className={cn(
                     column,
-                    // Room at the end for the pill over it, so the last card isn't under it.
-                    "flex flex-col gap-4 pt-3 pb-6 group-has-[[data-aldo-needs-you]]/page:pb-16",
+                    // Words with no break in them (a link, a path, a token) wrap at the column's edge.
+                    "min-w-0 wrap-anywhere",
+                    "flex flex-col gap-4 pt-3 pb-6",
                   )}
                 >
                   <HealthStrip issues={props.issues} />
@@ -411,28 +480,34 @@ export function AldoConversationPage(props: {
             </div>
             {/* The same composer, empty page or not, so what's typed and focus stay as it glides into place. */}
             <div className="relative shrink-0" data-aldo-assistant-footer="">
-              {/* Over the conversation's end: what's new below, and on a wide screen, how many wait on the user out of view. */}
-              <div className="pointer-events-none absolute inset-x-0 -top-11 z-10 flex justify-center gap-2 px-4 *:pointer-events-auto">
-                {below ? (
-                  <button
-                    type="button"
-                    data-aldo-arrive=""
-                    className="flex h-8 items-center gap-1.5 rounded-full border border-foreground/[0.10] bg-popover ps-2.5 pe-3 font-medium text-[13px] shadow-composer outline-none focus-visible:ring-2 focus-visible:ring-ring dark:shadow-composer-dark"
-                    onClick={() =>
-                      scroller.current?.scrollTo({
-                        top: scroller.current.scrollHeight,
-                        behavior: scrollMotion(),
-                      })
-                    }
-                  >
-                    <ArrowDownIcon aria-hidden className="size-3.5" strokeWidth={2} />
-                    New from Aldo
-                  </button>
-                ) : null}
-                {/* A phone has its Needs you tab. */}
-                {props.tabs || fresh || loading ? null : (
-                  <NeedsYouPill scroller={scroller} total={decisions.length + pausedCount} />
-                )}
+              {/* The actions have their own room, clear of messages, captions and the input. */}
+              <div className={column}>
+                <HomeComposerActions active={below || (!fresh && !loading && pending.length > 0)}>
+                  {fresh || loading ? null : <NeedsYouPill scroller={scroller} items={pending} />}
+                  {below ? (
+                    <button
+                      type="button"
+                      className={COMPOSER_ACTION}
+                      onClick={() =>
+                        scroller.current?.scrollTo({
+                          top: scroller.current.scrollHeight,
+                          behavior: scrollMotion(),
+                        })
+                      }
+                    >
+                      {!fresh && !loading && pending.length > 0 ? (
+                        <span
+                          aria-hidden
+                          className="absolute inset-y-3.5 start-0 w-px bg-foreground/[0.10]"
+                        />
+                      ) : null}
+                      <ArrowDownIcon aria-hidden className="size-4 shrink-0" strokeWidth={2} />
+                      <span className="min-w-0 wrap-anywhere">
+                        {jumped ? "Back to the latest" : "New from Aldo"}
+                      </span>
+                    </button>
+                  ) : null}
+                </HomeComposerActions>
               </div>
               <div
                 ref={dock}

@@ -5,7 +5,7 @@
 // the moment the thread opens. Whenever a cloud agent connects or its config
 // changes, the newest one is saved to Aldo for other tabs and devices.
 
-import { ServerConfig, type EnvironmentId } from "@t3tools/contracts";
+import { ServerConfig } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 
 import { appAtomRegistry } from "../rpc/atomRegistry";
@@ -15,7 +15,7 @@ import { fetchAldoServerConfig, reportAldoServerConfig } from "./threadApi";
 import { isAldoCloud, isAldoEnvironmentId } from "./api";
 import { settingsAccounts } from "./settingsData";
 import { loadAldoMachineSettings } from "./machineSettings";
-import { providerInstances, providerKinds } from "./serverConfig.logic";
+import { providerKinds } from "./serverConfig.logic";
 
 type EncodedConfig = {
   environment: Record<string, unknown>;
@@ -75,21 +75,25 @@ function saysMore(a: ServerConfig, b: ServerConfig): boolean {
  */
 function connectedConfig(): ServerConfig | null {
   const configs = appAtomRegistry.get(environmentServerConfigsAtom);
+  const presentations = appAtomRegistry.get(environmentPresentations.presentationsAtom);
   let best: ServerConfig | null = null;
-  for (const [environmentId, config] of configs) {
-    if (!isAldoEnvironmentId(environmentId)) continue;
-    const presentation = appAtomRegistry.get(
-      environmentPresentations.presentationAtom(environmentId as EnvironmentId),
-    );
-    if (presentation?.connection.phase !== "connected") continue;
-    if (!best || saysMore(config, best)) best = config;
+  for (const [environmentId, presentation] of presentations) {
+    if (presentation.connection.phase !== "connected" || !isAldoEnvironmentId(environmentId)) {
+      continue;
+    }
+    const config = configs.get(environmentId);
+    if (config && (!best || saysMore(config, best))) best = config;
   }
   return best;
 }
 
+/** The config last captured: every machine's config change calls capture, and most leave it as it was. */
+let captured: ServerConfig | null = null;
+
 function capture(): void {
   const config = connectedConfig();
-  if (!config) return;
+  if (!config || config === captured) return;
+  captured = config;
   const encoded = encodeServerConfig(config) as unknown as EncodedConfig;
   latest = encoded;
   // Save when the models (or their availability) change, not on every check.
@@ -100,12 +104,8 @@ function capture(): void {
   reportedProviders = providers;
   void reportAldoServerConfig(encoded).catch(() => {
     reportedProviders = null;
+    captured = null;
   });
-}
-
-/** The provider instances the newest config lists ("" before there is one): seeded copies follow it. */
-export function aldoTemplateProviders(): string {
-  return latest ? providerInstances(latest).join(",") : "";
 }
 
 /** Starts following cloud agents' configs. */
@@ -140,22 +140,19 @@ export function onAldoServerConfigChange(listener: () => void): () => void {
 }
 
 /**
- * The server config to show for machines that aren't running, by environment
- * id: the newest one any cloud agent reported, renamed for each machine, with
- * each provider's sign-in set from the user's Aldo accounts (a machine gets
- * those sign-ins when it starts, whatever the reporting machine had):
- * connected ones signed in, disconnected ones signed out. If the accounts
- * can't be read, providers stay as reported. Its settings carry the user's
- * that Aldo keeps (machineSettings.ts), which every machine gets as it starts.
- * None before any cloud agent has ever reported one.
+ * The server config to show for machines that aren't running: the newest one
+ * any cloud agent reported, with each provider's sign-in set from the user's
+ * Aldo accounts (a machine gets those sign-ins when it starts, whatever the
+ * reporting machine had): connected ones signed in, disconnected ones signed
+ * out. If the accounts can't be read, providers stay as reported. Its
+ * settings carry the user's that Aldo keeps (machineSettings.ts), which every
+ * machine gets as it starts. Each machine's copy is this with its own
+ * environment id (aldoServerConfigOf). None before any cloud agent has ever
+ * reported one.
  */
-export async function aldoServerConfigsFor(
-  environmentIds: ReadonlyArray<string>,
-): Promise<Map<string, EncodedConfig>> {
-  const configs = new Map<string, EncodedConfig>();
-  if (environmentIds.length === 0) return configs;
+export async function aldoServerConfigTemplate(): Promise<EncodedConfig | null> {
   const base = await template();
-  if (!base) return configs;
+  if (!base) return null;
   const [accounts, kept] = await Promise.all([
     settingsAccounts.load().catch(() => null),
     loadAldoMachineSettings(),
@@ -179,18 +176,16 @@ export async function aldoServerConfigsFor(
       message: "Not signed in. Connect it in Settings → Models.",
     };
   });
-  for (const environmentId of environmentIds) {
-    configs.set(environmentId, {
-      ...base,
-      environment: { ...base.environment, environmentId },
-      providers,
-      settings,
-    });
-  }
-  return configs;
+  return { ...base, providers, settings };
 }
 
-/** The server config to show for a machine that isn't running (aldoServerConfigsFor). */
+/** A machine's copy of the template (aldoServerConfigTemplate). */
+export function aldoServerConfigOf(config: EncodedConfig, environmentId: string): EncodedConfig {
+  return { ...config, environment: { ...config.environment, environmentId } };
+}
+
+/** The server config to show for a machine that isn't running (aldoServerConfigTemplate). */
 export async function aldoServerConfigFor(environmentId: string): Promise<EncodedConfig | null> {
-  return (await aldoServerConfigsFor([environmentId])).get(environmentId) ?? null;
+  const config = await aldoServerConfigTemplate();
+  return config && aldoServerConfigOf(config, environmentId);
 }

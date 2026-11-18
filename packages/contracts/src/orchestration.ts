@@ -945,6 +945,21 @@ export const OrchestrationThreadShell = Schema.Struct({
       }),
     ),
   ),
+  /**
+   * What a running turn is doing now, for the Working indicators: thinking,
+   * a tool call (its latest activity, as the timeline has it) or writing its
+   * reply, and since when. In memory like planProgress, cleared when the turn
+   * settles. Optional so old servers/clients interop.
+   */
+  currentWork: Schema.optional(
+    Schema.NullOr(
+      Schema.Struct({
+        kind: Schema.Literals(["thinking", "tool", "writing"]),
+        startedAt: IsoDateTime,
+        activity: Schema.NullOr(OrchestrationThreadActivity),
+      }),
+    ),
+  ),
 });
 export type OrchestrationThreadShell = typeof OrchestrationThreadShell.Type;
 
@@ -1340,6 +1355,8 @@ export const ThreadTurnStartCommand = Schema.Struct({
   ),
   bootstrap: Schema.optional(ThreadTurnStartBootstrap),
   sourceProposedPlan: Schema.optional(SourceProposedPlanReference),
+  /** Resume a settled turn on a fresh provider session, retaining this thread. */
+  continuation: Schema.optional(Schema.Struct({ turnId: TurnId })),
   createdAt: IsoDateTime,
 });
 
@@ -1360,6 +1377,8 @@ const ClientThreadTurnStartCommand = Schema.Struct({
   interactionMode: ProviderInteractionMode,
   bootstrap: Schema.optional(ThreadTurnStartBootstrap),
   sourceProposedPlan: Schema.optional(SourceProposedPlanReference),
+  /** Resume a settled turn on a fresh provider session, retaining this thread. */
+  continuation: Schema.optional(Schema.Struct({ turnId: TurnId })),
   createdAt: IsoDateTime,
 });
 
@@ -1958,6 +1977,8 @@ export const ThreadTurnStartRequestedPayload = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_PROVIDER_INTERACTION_MODE)),
   ),
   sourceProposedPlan: Schema.optional(SourceProposedPlanReference),
+  /** Resume a settled turn on a fresh provider session, retaining this thread. */
+  continuation: Schema.optional(Schema.Struct({ turnId: TurnId })),
   createdAt: IsoDateTime,
 });
 

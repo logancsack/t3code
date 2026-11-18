@@ -16,7 +16,7 @@ Give a secret the name your code or tools look for, such as `STRIPE_SECRET_KEY`,
 
 Every agent's shell commands and dev servers have the variable. New commands see a change right away; restart a running dev server to pick it up.
 
-A shell can't hold a name with a dot or a dash, like `spring.datasource.password`. Dev servers and `aldo env` still get it.
+A shell can't hold a name with a dot or a dash, like `spring.datasource.password`. Dev servers and `aldo env --write` still get it.
 
 ### Injected into requests
 
@@ -26,7 +26,7 @@ Agents, and anything they run, see a stand-in in the variable. For an API key, i
 
 This works for any program that reads the key from the variable and sends it in a header over HTTPS. It doesn't work for secrets used another way, such as database connection strings, SSH, keys in a URL, or requests a client signs itself (AWS, for example). Save those as a variable or a file.
 
-`aldo env > .env.local` writes the stand-ins too, so an app that reads its keys from a `.env` file works the same way.
+`aldo env --write .env.local` writes the stand-ins too, so an app that reads its keys from a `.env` file works the same way.
 
 ### File
 

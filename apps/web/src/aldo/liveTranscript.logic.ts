@@ -125,11 +125,11 @@ export class AldoLiveTranscript {
   }
 }
 
-/** How recently someone spoke (timeline ms) for the orb to show them speaking. */
+/** How recently someone spoke (timeline ms) for the mark to show them speaking. */
 const SPEAKING_MS = 700;
 
 /**
- * Where a GPT-Live call is, as the orb shows it: whoever spoke last moments
+ * Where a GPT-Live call is, as the mark shows it: whoever spoke last moments
  * ago, else thinking while a delegation runs, else listening. Aldo speaking
  * wins over the user (full duplex: a "mm-hmm" under their words is Aldo
  * listening).

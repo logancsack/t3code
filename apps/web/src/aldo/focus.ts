@@ -10,7 +10,7 @@ import { useEffect } from "react";
 import { isAldoCloud, isAldoEnvironmentId } from "./api";
 import { touchAldoEnvironment } from "./directory";
 import { aldoFocusReports, type AldoFocusSent, type AldoFocusTarget } from "./focus.logic";
-import { aldoPageUsedAt } from "./preload";
+import { aldoPageUsedAt } from "./pageUse";
 
 /** How often it looks again. */
 const TICK_MS = 15_000;

@@ -12,7 +12,7 @@ import {
   useRouter,
 } from "@tanstack/react-router";
 import { CheckIcon, CopyIcon } from "lucide-react";
-import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 
 import { APP_BASE_NAME, APP_DISPLAY_NAME, APP_STAGE_LABEL, APP_VERSION } from "../branding";
 import { resolveServerBackedAppDisplayName } from "../branding.logic";
@@ -29,7 +29,7 @@ import { isAldoCloud } from "../aldo/api";
 import { CustomSnoozeDialogHost } from "../components/CustomSnoozeDialog";
 import { ConfirmDialogHost } from "../components/ConfirmDialogHost";
 import { FirstRunGate } from "../components/onboarding/FirstRunGate";
-import { ConnectOnboardingDialog } from "../components/cloud/ConnectOnboardingDialog";
+import { hasCloudPublicConfig } from "../cloud/publicConfig";
 import { RelayClientInstallDialog } from "../components/cloud/RelayClientInstallDialog";
 import { SshPasswordPromptDialog } from "../components/desktop/SshPasswordPromptDialog";
 import { SnapShotCoordinator } from "../components/desktop/SnapShotCoordinator";
@@ -83,7 +83,7 @@ import {
 import { readProject, setActiveEnvironmentId, useActiveEnvironmentId } from "../state/entities";
 import { useRightPanelStore } from "../rightPanelStore";
 import { demoEnvironmentId, demoThreadId } from "../landingDemo/runtime";
-import { isLandingDemo } from "../landingDemo/mode";
+import { isLandingDemo, isWorkReplay } from "../landingDemo/mode";
 import {
   createKeybindingsUpdateToastController,
   type KeybindingsUpdateToastController,
@@ -92,6 +92,14 @@ import {
 import { getDesktopSnapShotBridge } from "../lib/desktopSnapShot";
 import { installDesktopPasteAsText } from "../lib/desktopPasteAsText";
 import { shouldResumeSnapShotSetupOnStartup } from "../lib/snapShotSetupResume";
+
+// T3 Connect's onboarding reads Clerk's session: it loads only where T3 Connect
+// is configured, so a first screen without it (Aldo's among them) has no Clerk.
+const ConnectOnboardingDialog = lazy(() =>
+  import("../components/cloud/ConnectOnboardingDialog").then((module) => ({
+    default: module.ConnectOnboardingDialog,
+  })),
+);
 
 export const Route = createRootRoute({
   beforeLoad: async ({ location }) => {
@@ -242,7 +250,11 @@ function RootRouteView() {
           {primaryEnvironmentAuthenticated ? <DesktopAppActivationCoordinator /> : null}
           {isElectron ? <RunningThreadKeepAlive /> : null}
           <RelayClientInstallDialog />
-          <ConnectOnboardingDialog />
+          {hasCloudPublicConfig() ? (
+            <Suspense fallback={null}>
+              <ConnectOnboardingDialog />
+            </Suspense>
+          ) : null}
           <SshPasswordPromptDialog />
           <SnapShotCoordinator />
           {/* Aldo alerts for every thread itself; T3's would double them and
@@ -285,7 +297,7 @@ function LandingDemoBootstrap() {
   const started = useRef(false);
 
   useEffect(() => {
-    if (!isLandingDemo() || started.current) return;
+    if (!isLandingDemo() || isWorkReplay() || started.current) return;
     if (!environments.some((environment) => environment.environmentId === demoEnvironmentId))
       return;
     started.current = true;

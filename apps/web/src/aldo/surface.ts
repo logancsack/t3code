@@ -2,7 +2,7 @@
 // one place so every card, button and inset matches: a card is one flat
 // surface with a hairline edge (only the composer, where you type, is raised),
 // what to do is one black (white in dark) button, everything else is quiet.
-// Color is for Aldo's face, and a dot for what needs the user.
+// The theme carries the mark; a status dot shows what needs the user.
 
 /** A card in the conversation: flat, with a hairline edge. */
 export const SURFACE =

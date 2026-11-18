@@ -13,6 +13,7 @@ import {
   aldoPlanChangedCopy,
   aldoPlanSummary,
   aldoPlanTerms,
+  aldoSeatLimitCopy,
   formatPlanPrice,
   isAldoBilling,
   withoutAldoCheckoutReturn,
@@ -162,6 +163,28 @@ describe("aldoBillingView", () => {
       periodEnd: PERIOD_END,
     });
     expect(aldoPlanSummary(view!)).toBe("Pro, set by your Aldo admin. Renews on Oct 31.");
+  });
+
+  it("shows a seat on the organization's plan, with nothing to change and whom to ask", () => {
+    const seat = { org: "Linden", admins: ["maya@linden.com", "sam@linden.com"] };
+    const view = aldoBillingView({ ...onPro, billing: { ...billing, managed: false }, seat });
+    expect(view).toEqual({ kind: "seat", plan: onPro.plan, periodEnd: PERIOD_END, seat });
+    expect(aldoPlanSummary(view!)).toBe("Pro, covered by Linden. Renews on Oct 31.");
+    // Shown whether or not this Aldo takes payments.
+    const { billing: _, ...noBilling } = onPro;
+    expect(aldoBillingView({ ...noBilling, seat })).toMatchObject({ kind: "seat" });
+    expect(aldoSeatLimitCopy(seat)).toBe(
+      "Linden sets your extra usage limit. Ask maya@linden.com or sam@linden.com for more.",
+    );
+    expect(aldoSeatLimitCopy({ org: "Linden", admins: ["a@l.com"] })).toBe(
+      "Linden sets your extra usage limit. Ask a@l.com for more.",
+    );
+    expect(aldoSeatLimitCopy({ org: "Linden", admins: ["a@l.com", "b@l.com", "c@l.com"] })).toBe(
+      "Linden sets your extra usage limit. Ask a@l.com, b@l.com or another admin for more.",
+    );
+    expect(aldoSeatLimitCopy({ org: "Linden", admins: [] })).toBe(
+      "Linden sets your extra usage limit.",
+    );
   });
 
   it("offers an upgrade to pricier plans and a downgrade to cheaper ones", () => {

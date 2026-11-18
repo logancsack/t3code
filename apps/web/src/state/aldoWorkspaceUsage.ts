@@ -68,6 +68,14 @@ export interface AldoWorkspaceUsage {
   readonly storage?: { readonly usedBytes: number; readonly includedBytes: number };
   /** Aldo cloud: a stopped Windows computer's disk, kept for next time; null without one (newer Aldo only). */
   readonly windowsDisk?: AldoWindowsDisk | null;
+  /** Aldo cloud: the plan is a seat on the user's organization's, whose owners and admins set its limit (newer Aldo, only for a seat). */
+  readonly seat?: AldoSeat;
+}
+
+export interface AldoSeat {
+  readonly org: string;
+  /** Its owners' and admins' addresses, owners first. */
+  readonly admins: readonly string[];
 }
 
 export interface AldoAllowanceUse {
@@ -244,6 +252,17 @@ export function isAldoWorkspaceUsage(value: unknown): value is AldoWorkspaceUsag
     value.windowsDisk !== undefined &&
     value.windowsDisk !== null &&
     !isWindowsDisk(value.windowsDisk)
+  ) {
+    return false;
+  }
+  if (
+    value.seat !== undefined &&
+    !(
+      isRecord(value.seat) &&
+      typeof value.seat.org === "string" &&
+      Array.isArray(value.seat.admins) &&
+      value.seat.admins.every((admin) => typeof admin === "string")
+    )
   ) {
     return false;
   }

@@ -1,16 +1,13 @@
 // What waits on the user, in Aldo's conversation (AldoConversationPage.tsx):
 // each decision (decisions.logic.ts) as a card that's decided right there,
-// under what was said when it came up (placeDecisions), and what came up
-// after the last thing said at the end, first above the composer. On a wide
-// screen, the count of those out of view waits above the composer
-// (NeedsYouPill.tsx); on a phone, on the Needs you tab. In each group the
+// at its creation time among messages and activity. The pending count
+// waits above the composer (NeedsYouPill.tsx). In each group the
 // first is open, with big buttons for the choices (Aldo's pick first, from
 // the brief, with why), a tap on what asks (or ↗) to open its thread; the
 // next two are a line each that opens in place, and the rest unfold.
 // Decided, a card turns into the line saying what happened (receipts.ts),
-// where it was, and leaves with the next read of the home screen. A thread
-// paused mid-turn waits on the user too, though only opening it carries it
-// on: it's a line at the end that opens it. On a keyboard, j and k move
+// where it was. Saved approval outcomes remain there after reloading. A
+// thread paused mid-turn is a card at its state time with Continue. On a keyboard, j and k move
 // between cards and Enter unfolds one, then opens its thread: nothing is
 // decided without a button.
 
@@ -29,13 +26,14 @@ import {
 import { cn } from "~/lib/utils";
 import { proposedPlanTitle, stripDisplayedPlanMarkdown } from "../proposedPlan";
 import { DismissChatDecision } from "./DismissChatDecision";
-import { ApprovalCard, ApprovalText, RewriteNote } from "./AldoApprovals";
+import { ApprovalCard, ApprovalText, DecidedApproval, RewriteNote } from "./AldoApprovals";
 import { confirmQuickChoice, DecisionIcon } from "./AldoBrief";
 import { AldoHandoffActions } from "./AldoHandoffCard";
 import { askAldoAbout, PendingForm, ThreadLink } from "./AldoHomeInbox";
+import { ContinueButton } from "./AldoContinue";
 import { AldoOpenContext } from "./AldoLiveCard";
 import { ApproveInLink, PaymentDetails } from "./AldoPaymentCard";
-import { AldoAvatar } from "./AldoPresence";
+import { AldoFrame } from "./AldoFrame";
 import { AgentMarkdown, Quoted } from "./AldoQuoted";
 import { useAldoArrive } from "./arrive";
 import { useAldoBrief } from "./briefFeed";
@@ -48,14 +46,15 @@ import {
   pausedInChat,
   type AldoDecision,
 } from "./decisions.logic";
-import { pleaseAldo } from "./face";
+import { completeAldo } from "./presenceReactions";
 import { refreshAldoHome, useAldoHomeFeed } from "./homeFeed";
 import { elapsed } from "./home.logic";
 import { aldoMorph } from "./morph";
 import { addAldoReceipt, removeAldoReceipt, useAldoReceipts } from "./receipts";
 import { movedOnText, receiptText } from "./receipts.logic";
 import { FOCUS, ICON_BUTTON, INSET, PRIMARY, SECONDARY, SURFACE } from "./surface";
-import { scrollMotion, SHOW_ALDO_DECISION } from "./show";
+import { revealAldoCard, scrollMotion, SHOW_ALDO_DECISION } from "./show";
+import { stalledOf, threadCardOf } from "./threadCard.logic";
 import { startAldoWalkthrough } from "./walkthrough";
 import { inWords } from "./needsYou.logic";
 import { paymentWords } from "./payments.logic";
@@ -81,9 +80,22 @@ export function AldoUpNext(props: {
   const [all, setAll] = useState(false);
   const everything = useMemo(() => {
     // One answered here is a line in the conversation now, while the home read catches up.
-    const list = aldoChatDecisions(props.home, props.now).filter(
-      (d) => !receipts.some((r) => r.key === d.key),
-    );
+    const list: ReadonlyArray<AldoDecision> = [
+      ...aldoChatDecisions(props.home, props.now).filter(
+        (d) =>
+          !receipts.some((r) => r.key === d.key) &&
+          !(d.kind === "waiting" && d.conversation.computers?.some((c) => c.status === "asked")),
+      ),
+      ...(props.home.approvals ?? [])
+        .filter(
+          (a) => a.status !== "pending" && a.status !== "withdrawn" && !a.chatDecision?.dismissed,
+        )
+        .map((approval) => ({
+          kind: "aldo-approval" as const,
+          key: `aldo:${approval.id}`,
+          approval,
+        })),
+    ];
     // What can't wait first (a payment Link stops waiting for, soonest first;
     // a site handed to the user times out), then the brief's order: what Aldo
     // said matters most today.
@@ -96,6 +108,9 @@ export function AldoUpNext(props: {
     );
     return [...urgent, ...first, ...list.filter((d) => !urgent.includes(d) && !first.includes(d))];
   }, [props.home, props.now, brief, receipts]);
+  const waiting = everything.filter(
+    (d) => d.kind !== "aldo-approval" || d.approval.status === "pending",
+  );
   const { only, placedAt } = props;
   const decisions = useMemo(
     () =>
@@ -104,10 +119,15 @@ export function AldoUpNext(props: {
         : everything.filter((d) => only!.includes(d.key)),
     [everything, end, only, placedAt],
   );
-  // Asleep mid-turn: no decision, but it waits on the user to open it, at the end.
+  // Paused threads use the same timeline positions as the cards.
   const paused = useMemo(
-    () => (end ? pausedInChat(props.home, props.now) : []),
-    [end, props.home, props.now],
+    () =>
+      pausedInChat(props.home, props.now).filter(
+        (c) =>
+          !c.computers?.some((computer) => computer.status === "asked") &&
+          (end ? !placedAt?.has(`paused:${c.ref}`) : only!.includes(`paused:${c.ref}`)),
+      ),
+    [end, props.home, props.now, only, placedAt],
   );
   const picks = useMemo(() => {
     const out: Record<string, { readonly label: string; readonly reason: string | null }> = {};
@@ -140,7 +160,7 @@ export function AldoUpNext(props: {
   // What the user hid is under Aldo's name at the top (AldoHiddenFromChat), not here.
   if (decisions.length === 0 && paused.length === 0)
     // Each under what was said when it came up: the way through them all stays at the end.
-    return end && everything.length > 1 ? (
+    return end && waiting.length > 1 ? (
       <div className="flex justify-center">
         <button
           type="button"
@@ -148,9 +168,9 @@ export function AldoUpNext(props: {
             FOCUS,
             "rounded-full px-3 py-1.5 text-[13px] text-muted-foreground hover:bg-foreground/[0.05] hover:text-foreground",
           )}
-          onClick={() => startAldoWalkthrough(everything, suggestions)}
+          onClick={() => startAldoWalkthrough(waiting, suggestions)}
         >
-          Go through the {inWords(everything.length)} that need you with Aldo
+          Go through the {inWords(waiting.length)} that need you with Aldo
         </button>
       </div>
     ) : null;
@@ -162,14 +182,14 @@ export function AldoUpNext(props: {
       {end ? (
         <div className="flex items-center justify-between px-1 pb-0.5 text-[12px] leading-[18px]">
           <h3 className="font-medium text-muted-foreground">Needs you</h3>
-          {everything.length > 1 ? (
+          {waiting.length > 1 ? (
             <button
               type="button"
               className={cn(
                 FOCUS,
                 "-me-1 rounded-full px-1 font-medium text-foreground/75 hover:text-foreground",
               )}
-              onClick={() => startAldoWalkthrough(everything, suggestions)}
+              onClick={() => startAldoWalkthrough(waiting, suggestions)}
             >
               Go through them with Aldo
             </button>
@@ -192,7 +212,7 @@ export function AldoUpNext(props: {
         />
       ))}
       {paused.map((c) => (
-        <PausedLine key={c.ref} conversation={c} now={props.now} />
+        <PausedCard key={c.ref} home={props.home} conversation={c} now={props.now} />
       ))}
       {decisions.length > SHOWN ? (
         <button
@@ -249,15 +269,6 @@ function focusCardSoon(key: string, reveal = false): void {
       else card.focus({ preventScroll: true });
     }),
   );
-}
-
-/** A card brought into view and focused, with a glance drawn to it. */
-export function revealAldoCard(card: HTMLElement): void {
-  card.focus({ preventScroll: true });
-  card.scrollIntoView({ behavior: scrollMotion(), block: "center" });
-  card.removeAttribute("data-aldo-attention");
-  requestAnimationFrame(() => card.setAttribute("data-aldo-attention", ""));
-  setTimeout(() => card.removeAttribute("data-aldo-attention"), 1_400);
 }
 
 /**
@@ -329,7 +340,7 @@ function Choice(props: {
         <LoaderCircleIcon aria-hidden className="size-4 shrink-0 animate-spin" />
       ) : props.tag ? (
         <span className="flex shrink-0 items-center gap-1.5 text-[12px] text-muted-foreground">
-          <AldoAvatar size={12} />
+          <AldoFrame size={12} />
           {props.tag}
         </span>
       ) : null}
@@ -462,7 +473,7 @@ function DecisionCard(props: {
       }
       return;
     }
-    if (outcome === "done") pleaseAldo();
+    if (outcome === "done") completeAldo();
     drafts.delete(d.key);
     if (settles) {
       // Done as the line already says (Aldo's own approvals add what it did: a draft it couldn't delete);
@@ -515,6 +526,12 @@ function DecisionCard(props: {
   switch (d.kind) {
     case "aldo-approval": {
       const a = d.approval;
+      if (a.status !== "pending")
+        return (
+          <ul>
+            <DecidedApproval approval={a} now={props.now} />
+          </ul>
+        );
       if (a.kind === "confirm" || a.kind === "start") {
         // A step with a total and terms, or a thread to start, is said yes to in its own card, in full.
         return (
@@ -892,37 +909,47 @@ function CardFrame(props: {
   );
 }
 
-/** A thread whose computer went to sleep mid-turn: a line that opens it, which carries it on. */
-function PausedLine(props: { readonly conversation: AldoHomeConversation; readonly now: number }) {
+/**
+ * A thread whose computer went to sleep mid-turn, as a card at its state time:
+ * what happened and when, that only a tap is asked of the user, and Continue.
+ */
+function PausedCard(props: {
+  readonly home: AldoHome;
+  readonly conversation: AldoHomeConversation;
+  readonly now: number;
+}) {
   const c = props.conversation;
+  const view = threadCardOf(props.home, c, props.now);
+  const stalled = stalledOf(props.home, c, props.now);
+  const arrive = useAldoArrive();
   return (
     <article
-      className={cn(SURFACE, "flex items-center overflow-hidden pe-2")}
+      {...arrive}
+      className={cn(SURFACE, "border-warning/40 bg-warning-surface flex w-full flex-col gap-2 p-4")}
       data-aldo-paused={c.ref}
+      aria-label={`${view.status}: ${c.title}`}
     >
-      <ThreadLink
-        target={c.thread}
-        className={cn(
-          FOCUS,
-          "flex min-h-13 min-w-0 flex-1 items-center gap-3 rounded-[20px] px-4 py-2.5 text-left transition-colors hover:bg-foreground/[0.025]",
-        )}
-      >
-        <MoonIcon aria-hidden className="size-4 shrink-0 text-foreground/55" strokeWidth={1.75} />
-        <span className="min-w-0 flex-1 truncate font-medium text-[14px] leading-5">
-          Paused mid-turn: open it to carry on
-        </span>
-        <span className="flex min-w-0 max-w-[40%] shrink-0 items-center gap-1.5 text-[12px] text-muted-foreground max-sm:hidden">
-          <span className="truncate">{c.title}</span>
-          <span aria-hidden>·</span>
-          <span className="shrink-0 tabular-nums">{elapsed(c.stateAt ?? c.at, props.now)}</span>
-        </span>
-        <ArrowUpRightIcon
+      <div className="-my-1 flex min-h-8 items-center gap-2 text-[12px] leading-[18px]">
+        <MoonIcon
           aria-hidden
-          className="size-4 shrink-0 text-muted-foreground"
+          className="size-4 shrink-0 text-warning-foreground"
           strokeWidth={1.75}
         />
-      </ThreadLink>
-      <DismissChatDecision decision={c.chatDecision} title={c.title} />
+        <span className="min-w-0 flex-1 font-semibold text-warning-foreground">{view.status}</span>
+        <DismissChatDecision decision={c.chatDecision} title={c.title} />
+        <span className="-me-1.5">
+          <ThreadLink target={c.thread} className={ICON_BUTTON} label="Open the thread">
+            <ArrowUpRightIcon className="size-4" strokeWidth={1.75} />
+          </ThreadLink>
+        </span>
+      </div>
+      <h4 className="line-clamp-2 break-words font-semibold text-[16px] leading-[22px] tracking-[-0.01em]">
+        {c.title}
+      </h4>
+      <p className="text-[14px] text-muted-foreground leading-5 dark:text-foreground/70">
+        {view.body}
+      </p>
+      <ContinueButton conversation={c} blocked={stalled?.blocked} />
     </article>
   );
 }

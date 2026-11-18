@@ -4,7 +4,8 @@ import type { AldoHeadsUpsTuning } from "./accountApi";
 import {
   appsEveryOptions,
   appsNote,
-  quietHoursNote,
+  quietHoursChange,
+  quietHoursOn,
   quietTimeOptions,
   topicsChange,
 } from "./headsUps.logic";
@@ -20,17 +21,32 @@ const tuning = (over: Partial<AldoHeadsUpsTuning> = {}): AldoHeadsUpsTuning => (
 });
 
 describe("quietTimeOptions", () => {
-  it("offers every half hour of the day", () => {
-    const options = quietTimeOptions(1260);
-    expect(options).toHaveLength(48);
+  it("offers every half hour of the day but the other end's", () => {
+    const options = quietTimeOptions(1260, 420);
+    expect(options).toHaveLength(47);
     expect(options[0]?.value).toBe("0");
     expect(options.at(-1)?.value).toBe("1410");
+    expect(options.map((o) => o.value)).not.toContain("420");
   });
 
   it("keeps a time set another way, in its place", () => {
-    const values = quietTimeOptions(1275).map((o) => o.value);
-    expect(values).toHaveLength(49);
+    const values = quietTimeOptions(1275, 420).map((o) => o.value);
+    expect(values).toHaveLength(48);
     expect(values.indexOf("1275")).toBe(values.indexOf("1260") + 1);
+  });
+});
+
+describe("quiet hours on and off", () => {
+  it("are on when they start and end at different times, off at the same time", () => {
+    expect(quietHoursOn({ quietStart: 1260, quietEnd: 420 })).toBe(true);
+    expect(quietHoursOn({ quietStart: 0, quietEnd: 0 })).toBe(false);
+    expect(quietHoursOn({ quietStart: 480, quietEnd: 480 })).toBe(false);
+  });
+
+  it("turn on for 9 PM to 7 AM, and off as the same time twice", () => {
+    expect(quietHoursChange(true)).toEqual({ quietStart: 1260, quietEnd: 420 });
+    expect(quietHoursOn(quietHoursChange(true))).toBe(true);
+    expect(quietHoursOn(quietHoursChange(false))).toBe(false);
   });
 });
 
@@ -62,15 +78,6 @@ describe("appsNote", () => {
     );
     expect(appsNote(tuning({ apps: ["Linear", "Notion", "Asana", "Jira"] }))).toBe(
       "Aldo reads only what's new in Linear, Notion and 2 more.",
-    );
-  });
-});
-
-describe("quietHoursNote", () => {
-  it("says when the same two times mean never quiet", () => {
-    expect(quietHoursNote(tuning())).toBeNull();
-    expect(quietHoursNote(tuning({ quietStart: 0, quietEnd: 0 }))).toBe(
-      "The same time: never quiet.",
     );
   });
 });
