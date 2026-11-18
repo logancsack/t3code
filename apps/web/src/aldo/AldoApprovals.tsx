@@ -6,10 +6,12 @@
 // notification on their devices. Shown only when Aldo reports approvals.
 // An email to a few named people or an event with no guests can also be
 // always allowed: it's approved and becomes a rule, undone from the toast
-// or the list under "How Aldo works for you" (AldoHomeBoard.tsx).
+// or the list under "How Aldo works for you" (AldoHomeBoard.tsx). A step an
+// agent asked to take can be declined with why, in a tap ("Don't, because…"):
+// the agent is told, and goes on from it, where Aldo offers reasons.
 
 import { CalendarPlusIcon, CircleCheckBigIcon, MailIcon, SparklesIcon } from "lucide-react";
-import { Fragment, useMemo } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
 import { Badge } from "../components/ui/badge";
 import { useNowMinute } from "../hooks/useNowMinute";
@@ -84,6 +86,9 @@ export function DecidedApproval(props: { readonly approval: AldoApproval; readon
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm">{a.title}</p>
         {a.result ? <p className="line-clamp-2 text-muted-foreground text-xs">{a.result}</p> : null}
+        {a.reason ? (
+          <p className="line-clamp-2 text-muted-foreground text-xs">You said: {a.reason}</p>
+        ) : null}
       </div>
       <span className="shrink-0 text-muted-foreground text-xs">
         {a.decidedAt ? relativeTime(a.decidedAt, props.now) : null}
@@ -179,7 +184,19 @@ export function ApprovalCard(props: {
   const a = props.approval;
   const Icon = KIND_ICON[a.kind];
   const sending = a.status === "sending";
-  const decide = async (decision: "approve" | "discard" | "always") => {
+  const reasons = a.reasons ?? [];
+  // Saying why not: its choices take the buttons' place until one is picked, or Back.
+  const [sayingWhy, setSayingWhy] = useState(false);
+  const whyDoor = useRef<HTMLButtonElement>(null);
+  const firstReason = useRef<HTMLButtonElement>(null);
+  const wasSayingWhy = useRef(false);
+  useEffect(() => {
+    // Focus follows the swap, so the keyboard stays where the choice is.
+    if (sayingWhy) firstReason.current?.focus();
+    else if (wasSayingWhy.current) whyDoor.current?.focus();
+    wasSayingWhy.current = sayingWhy;
+  }, [sayingWhy]);
+  const decide = async (decision: "approve" | "discard" | "always", reason?: string) => {
     if (decision === "discard" && a.kind === "email") {
       const confirmed = await (requestConfirmDialog(
         "Discard this draft? It's deleted from your drafts, and isn't sent.",
@@ -194,7 +211,7 @@ export function ApprovalCard(props: {
       if (!confirmed) return;
     }
     try {
-      const { message, rule } = await sendAldoApproval(a, decision);
+      const { message, rule } = await sendAldoApproval(a, decision, reason);
       if (rule) toastAldoRule(message, rule);
       else toastManager.add({ type: "success", title: message });
     } catch (cause) {
@@ -248,30 +265,80 @@ export function ApprovalCard(props: {
           {a.failed && a.result ? (
             <p className="mt-2 text-destructive-foreground text-xs">{a.result}</p>
           ) : null}
-          <div className="mt-3 flex flex-wrap gap-2">
-            <Button size="sm" disabled={sending} onClick={() => void decide("approve")}>
-              {sending ? "Working…" : a.approveLabel}
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={sending}
-              onClick={() => void decide("discard")}
+          {sayingWhy ? (
+            <div
+              role="group"
+              aria-label="Why not?"
+              className="mt-3 flex flex-col gap-2"
+              onKeyDown={(event) => {
+                if (event.key !== "Escape") return;
+                event.stopPropagation();
+                setSayingWhy(false);
+              }}
             >
-              {a.discardLabel}
-            </Button>
-            {a.always ? (
+              <p className="text-muted-foreground text-xs">
+                Why not? The agent is told, and goes on from there.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {reasons.map((reason, i) => (
+                  <Button
+                    key={reason}
+                    ref={i === 0 ? firstReason : undefined}
+                    size="sm"
+                    variant="outline"
+                    disabled={sending}
+                    onClick={() => void decide("discard", reason)}
+                  >
+                    {reason}
+                  </Button>
+                ))}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={sending}
+                  onClick={() => setSayingWhy(false)}
+                >
+                  Back
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button size="sm" disabled={sending} onClick={() => void decide("approve")}>
+                {sending ? "Working…" : a.approveLabel}
+              </Button>
               <Button
                 size="sm"
-                variant="ghost"
+                variant="outline"
                 disabled={sending}
-                onClick={() => void decide("always")}
-                aria-label={`${a.approveLabel}, and always allow: ${a.always}`}
+                onClick={() => void decide("discard")}
               >
-                Always allow…
+                {a.discardLabel}
               </Button>
-            ) : null}
-          </div>
+              {a.always ? (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={sending}
+                  onClick={() => void decide("always")}
+                  aria-label={`${a.approveLabel}, and always allow: ${a.always}`}
+                >
+                  Always allow…
+                </Button>
+              ) : null}
+              {reasons.length > 0 ? (
+                <Button
+                  ref={whyDoor}
+                  size="sm"
+                  variant="ghost"
+                  disabled={sending}
+                  onClick={() => setSayingWhy(true)}
+                >
+                  {a.discardLabel}, because…
+                </Button>
+              ) : null}
+            </div>
+          )}
         </div>
       </div>
     </li>

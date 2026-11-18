@@ -93,6 +93,21 @@ describe("a decision held until Aldo's read catches up", () => {
     expect(held.holds).toBe(holds);
   });
 
+  it("shows why not on a declined one at once, and takes its reasons to tap with the card", () => {
+    const holds = {
+      ap_1: { status: "discarded" as const, result: "Declined.", at, reason: "Too expensive" },
+    };
+    const waiting = approval({ reasons: ["Too expensive", "Bad timing"] });
+    const [held] = withApprovalHolds(home([waiting]), holds, now).home.approvals ?? [];
+    expect(held).toMatchObject({ status: "discarded", reason: "Too expensive" });
+    expect(held?.reasons).toBeUndefined();
+    // A plain no says nothing more.
+    const plain = { ap_1: { status: "discarded" as const, result: "Declined.", at } };
+    expect(
+      withApprovalHolds(home([waiting]), plain, now).home.approvals?.[0]?.reason,
+    ).toBeUndefined();
+  });
+
   it("is let go once the read has it decided, or it outlives its time", () => {
     const holds = { ap_1: { status: "approved" as const, result: null, at, until: now + 1000 } };
     const caughtUp = withApprovalHolds(home([approval({ status: "approved" })]), holds, now);
