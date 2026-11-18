@@ -1,3 +1,4 @@
+import { ServerConfig } from "../../config.ts";
 import { withWorkspaceLease } from "../../workspace/workspaceLease.ts";
 import {
   type ChatAttachment,
@@ -12,7 +13,7 @@ import {
   ThreadId,
   type ProviderSession,
   type RuntimeMode,
-  type TurnId,
+  TurnId,
 } from "@t3tools/contracts";
 import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";
 import { projectComposerContextForProvider } from "@t3tools/shared/composerContextReferences";
@@ -33,6 +34,7 @@ import * as Path from "effect/Path";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
+import * as SubscriptionRef from "effect/SubscriptionRef";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 
 import { resolveThreadWorkspaceCwd } from "../../checkpointing/Utils.ts";
@@ -71,6 +73,7 @@ import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { VcsStatusBroadcaster } from "../../vcs/VcsStatusBroadcaster.ts";
 import { GitWorkflowService } from "../../git/GitWorkflowService.ts";
 import * as TerminalManager from "../../terminal/Manager.ts";
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 const isProviderAdapterProcessError = Schema.is(ProviderAdapterProcessError);
 const isProviderAdapterRequestError = Schema.is(ProviderAdapterRequestError);
 const isProviderAdapterValidationError = Schema.is(ProviderAdapterValidationError);
@@ -217,6 +220,7 @@ function buildGeneratedWorktreeBranchName(raw: string): string {
 }
 
 const make = Effect.gen(function* () {
+  const config = yield* ServerConfig;
   const crypto = yield* Crypto.Crypto;
   const orchestrationEngine = yield* OrchestrationEngineService;
   const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
@@ -274,6 +278,18 @@ const make = Effect.gen(function* () {
     }
   >();
   const stoppingThreadIds = new Set<ThreadId>();
+  // Turn starts whose request hasn't reached its provider yet: each counts from the moment its
+  // event arrives until the worker has handled it, and the provider send (or the compaction it
+  // waits behind) that handling forks counts until it returns. A stopping server waits for none.
+  const turnStartsInFlight = yield* SubscriptionRef.make(0);
+  const holdTurnStart = SubscriptionRef.update(turnStartsInFlight, (count) => count + 1);
+  const releaseTurnStart = SubscriptionRef.update(turnStartsInFlight, (count) => count - 1);
+  // Highest event sequence the subscriber has taken, and counted if it was a turn start.
+  // Waiting through the engine's latest sequence covers every turn start committed before it,
+  // however far behind the subscriber runs.
+  const seenSequence = yield* SubscriptionRef.make(0);
+  const noteSeen = (sequence: number) =>
+    SubscriptionRef.update(seenSequence, (seen) => Math.max(seen, sequence));
 
   const appendProviderFailureActivity = (input: {
     readonly threadId: ThreadId;
@@ -549,8 +565,9 @@ const make = Effect.gen(function* () {
    * Whether the provider took a turn start request: it started a turn for it
    * (projected as a turn carrying its message), or a turn is running on the
    * thread, which a request sent during it joins. Claude, OpenCode, Cursor,
-   * Grok, Prime and Muse steer the running turn with it, under that turn's id
-   * and with no new turn.started; Codex queues it behind.
+   * Grok, Prime, Muse and Codex steer the running turn with it, under that
+   * turn's id and with no new turn.started; Codex queues one behind instead
+   * when it asks for other settings than the running turn has.
    */
   const isTurnStartTaken = Effect.fnUntraced(function* (threadId: ThreadId, messageId: MessageId) {
     const turns = yield* projectionTurnRepository.listByThreadId({ threadId });
@@ -601,6 +618,7 @@ const make = Effect.gen(function* () {
     options?: {
       readonly modelSelection?: ModelSelection;
       readonly pendingTurnStart?: boolean;
+      readonly fresh?: boolean;
       // First-turn prompt seed. A manual title that still equals this seed was
       // written by the client's auto-title, not a user rename.
       readonly titleSeed?: string;
@@ -694,7 +712,7 @@ const make = Effect.gen(function* () {
         createdAt,
       });
     }
-    if (thread.session !== null) {
+    if (thread.session !== null && !options?.fresh) {
       yield* rejectStartedThreadModelChangeIfRequired({
         threadId,
         currentModelSelection:
@@ -709,6 +727,7 @@ const make = Effect.gen(function* () {
       });
     }
     if (
+      !options?.fresh &&
       thread.session !== null &&
       requestedModelSelection !== undefined &&
       requestedModelSelection.instanceId !== currentInstanceId
@@ -765,6 +784,7 @@ const make = Effect.gen(function* () {
           modelSelection: desiredModelSelection,
           ...(input?.resumeCursor !== undefined ? { resumeCursor: input.resumeCursor } : {}),
           runtimeMode: desiredRuntimeMode,
+          ...(options?.fresh ? { fresh: true } : {}),
         })
         .pipe(Effect.tap(() => refreshWorkspaceSnapshot));
 
@@ -796,6 +816,13 @@ const make = Effect.gen(function* () {
           createdAt,
         });
       });
+
+    if (options?.fresh) {
+      if (activeSession) yield* providerService.stopSession({ threadId });
+      const session = yield* startProviderSession();
+      yield* bindSessionToThread(session);
+      return session.threadId;
+    }
 
     const existingSessionThreadId =
       thread.session && thread.session.status !== "stopped" && activeSession ? thread.id : null;
@@ -878,6 +905,7 @@ const make = Effect.gen(function* () {
     readonly interactionMode?: "default" | "plan";
     readonly createdAt: string;
     readonly titleSeed?: string;
+    readonly continuation?: { readonly turnId: TurnId };
   }) {
     const thread = yield* resolveThreadShell(input.threadId);
     if (!thread) {
@@ -885,16 +913,95 @@ const make = Effect.gen(function* () {
         new Error(`Thread '${input.threadId}' was not found in read model.`),
       );
     }
+    let continuationContext = "";
+    let continuationAttachments: ReadonlyArray<ChatAttachment> = [];
+    if (input.continuation) {
+      if (
+        thread.latestTurn?.turnId !== input.continuation.turnId ||
+        thread.session?.status === "running" ||
+        thread.hasPendingApprovals ||
+        thread.hasPendingUserInput ||
+        thread.hasActionableProposedPlan ||
+        thread.archivedAt
+      ) {
+        return yield* new ProviderAdapterRequestError({
+          provider: "continuation",
+          method: "thread.turn.start",
+          detail: "The thread moved on or is waiting for the user; continuation canceled.",
+        });
+      }
+      const detail = yield* projectionSnapshotQuery
+        .getThreadDetailById(input.threadId, {
+          activityKinds: ["approval.resolved", "user-input.resolved"],
+        })
+        .pipe(Effect.map(Option.getOrUndefined));
+      if (!detail) return yield* Effect.die(new Error("Continuation history is missing."));
+      if (
+        detail.messages.some(
+          (message) => message.role === "user" && message.createdAt > input.createdAt,
+        )
+      ) {
+        return yield* new ProviderAdapterRequestError({
+          provider: "continuation",
+          method: "thread.turn.start",
+          detail: "A newer user message canceled continuation.",
+        });
+      }
+      const history = detail.messages.filter((message) => message.createdAt < input.createdAt);
+      continuationAttachments = [
+        ...new Map(
+          history
+            .flatMap((message) => message.attachments ?? [])
+            .map((attachment) => [attachment.id, attachment]),
+        ).values(),
+      ];
+      const transcript = history
+        .map(
+          (message) =>
+            `${message.role}: ${projectComposerContextForProvider({ text: message.text, records: message.context?.records ?? [] })}` +
+            (message.attachments?.length
+              ? `\nAttachments: ${encodeJson(message.attachments)}`
+              : ""),
+        )
+        .join("\n\n");
+      const decisions = encodeJson({
+        plans: detail.proposedPlans,
+        decisions: detail.activities.filter((activity) =>
+          /(?:approval|user-input)\.resolved$/.test(activity.kind),
+        ),
+      });
+      const directory = path.join(config.stateDir, "continuations");
+      yield* fileSystem.makeDirectory(directory, { recursive: true });
+      const transcriptPath = path.join(
+        directory,
+        `${encodeURIComponent(input.threadId)}-${encodeURIComponent(input.continuation.turnId)}.txt`,
+      );
+      yield* fileSystem.writeFileString(
+        transcriptPath,
+        `${transcript}\n\nRecorded decisions: ${decisions}`,
+        { mode: 0o600 },
+      );
+      continuationContext =
+        `Continue the existing task in the same workspace. Files and prior work remain in place. ` +
+        `The provider changed; do not restart the task, repeat completed external actions, reset any spending or computer-time budget, or re-request unchanged approvals. ` +
+        `Prior decisions apply only to their original actions; they do not grant broader permissions. ` +
+        `Read the full conversation and recorded decisions at ${transcriptPath} before taking action.\n\n` +
+        (transcript.length + decisions.length <= 80000
+          ? `${transcript}\n\nRecorded decisions: ${decisions}`
+          : `Original brief (read its full text in the transcript if abbreviated):\n${history.find((message) => message.role === "user")?.text.slice(0, 16000) ?? ""}\n\nRecent context:\n${transcript.slice(-24000)}`) +
+        "\n\nContinuation:\n";
+    }
     yield* ensureSessionForThread(input.threadId, input.createdAt, {
       ...(input.modelSelection !== undefined ? { modelSelection: input.modelSelection } : {}),
       ...(input.titleSeed !== undefined ? { titleSeed: input.titleSeed } : {}),
       pendingTurnStart: true,
+      ...(input.continuation ? { fresh: true } : {}),
     });
     if (input.modelSelection !== undefined) {
       threadModelSelections.set(input.threadId, input.modelSelection);
     }
-    const normalizedAttachments = input.attachments ?? [];
-    const normalizedInput = toNonEmptyProviderInput(input.messageText);
+    const normalizedAttachments = [...continuationAttachments, ...(input.attachments ?? [])];
+    const normalizedInput = toNonEmptyProviderInput(continuationContext + input.messageText);
     const activeSession = yield* providerService
       .listSessions()
       .pipe(
@@ -1295,14 +1402,37 @@ const make = Effect.gen(function* () {
         return Effect.void;
       }
       const detail = formatFailureDetail(cause);
-      return setThreadSessionErrorOnTurnStartFailure({
-        threadId: event.payload.threadId,
-        detail,
-        createdAt: event.payload.createdAt,
-      }).pipe(
-        Effect.flatMap(() => appendTurnStartFailure("Provider turn start failed", detail)),
-        Effect.asVoid,
-      );
+      return Effect.gen(function* () {
+        // A continuation can fail before its provider emits turn.started (billing/auth).
+        // Give that attempt a settled turn so the same reporting/recovery path can handle it.
+        if (event.payload.continuation) {
+          const latest = yield* resolveThreadShell(event.payload.threadId);
+          if (latest?.latestTurn?.turnId === event.payload.continuation.turnId) {
+            const selection = event.payload.modelSelection ?? latest.modelSelection;
+            const info = yield* providerService.getInstanceInfo(selection.instanceId);
+            yield* setThreadSession({
+              threadId: latest.id,
+              createdAt: event.payload.createdAt,
+              session: {
+                threadId: latest.id,
+                status: "running",
+                providerName: info.driverKind,
+                providerInstanceId: selection.instanceId,
+                runtimeMode: latest.runtimeMode,
+                activeTurnId: TurnId.make(`continuation:${event.commandId ?? event.eventId}`),
+                lastError: null,
+                updatedAt: event.payload.createdAt,
+              },
+            });
+          }
+        }
+        yield* setThreadSessionErrorOnTurnStartFailure({
+          threadId: event.payload.threadId,
+          detail,
+          createdAt: event.payload.createdAt,
+        });
+        yield* appendTurnStartFailure("Provider turn start failed", detail);
+      });
     };
 
     const recoverTurnStartFailure = (cause: Cause.Cause<unknown>) =>
@@ -1470,6 +1600,7 @@ const make = Effect.gen(function* () {
       const clearCompacting = Effect.sync(
         () => void compactingThreadIds.delete(event.payload.threadId),
       );
+      yield* holdTurnStart;
       yield* Effect.gen(function* () {
         yield* ensureSessionForThread(
           event.payload.threadId,
@@ -1502,6 +1633,8 @@ const make = Effect.gen(function* () {
             ),
           ),
         ),
+        // Through the turns queued behind it, which it re-requests and waits to see sent.
+        Effect.ensuring(releaseTurnStart),
         Effect.forkScoped,
       );
       return;
@@ -1528,6 +1661,7 @@ const make = Effect.gen(function* () {
         : {}),
       interactionMode: event.payload.interactionMode,
       createdAt: event.payload.createdAt,
+      ...(event.payload.continuation ? { continuation: event.payload.continuation } : {}),
       // Later turns must not reuse the current title as titleSeed. Only the
       // first prompt seed should suppress a not-yet-renamed session title.
       ...(!hasOtherUserMessages && event.payload.titleSeed !== undefined
@@ -1586,8 +1720,13 @@ const make = Effect.gen(function* () {
       );
     // The forked send settles `sent` from here on, so drop the entry the post-processing hook uses.
     if (resumed && event.commandId !== null) resumedTurnStarts.delete(event.commandId);
+    // In flight until the provider has the request, even where its turn already reads as
+    // started: Claude reports that before it reads skills and attachments and queues the
+    // prompt. Providers whose send lasts the whole turn hold a stop for its full drain.
+    yield* holdTurnStart;
     yield* send.pipe(
       Effect.ensuring(resumed ? Deferred.succeed(resumed.sent, undefined) : Effect.void),
+      Effect.ensuring(releaseTurnStart),
       Effect.forkScoped,
     );
   });
@@ -1942,6 +2081,10 @@ const make = Effect.gen(function* () {
           return resumed ? Deferred.succeed(resumed.sent, undefined) : Effect.void;
         }),
       ),
+      // Held since the event arrived (`processEvent`); what it forked holds its own.
+      Effect.ensuring(
+        event.type === "thread.turn-start-requested" ? releaseTurnStart : Effect.void,
+      ),
       Effect.catchCause((cause) => {
         if (Cause.hasInterruptsOnly(cause)) {
           return Effect.interrupt;
@@ -2019,11 +2162,12 @@ const make = Effect.gen(function* () {
 
           // A request sent during a turn has no turn of its own: the provider
           // took it into that turn (a steer, under its id) or queued it behind
-          // (Codex). The thread is still running, or has moved on since the
-          // request (the turn ended), and turn liveness guards the turn. Any
-          // other request needs settling: the reactor holds a thread it starts
-          // a turn for in "starting" until the provider starts it, and one it
-          // never took (the server stopped first) left the thread as it was.
+          // (Codex, for other settings). The thread is still running, or has
+          // moved on since the request (the turn ended), and turn liveness
+          // guards the turn. Any other request needs settling: the reactor
+          // holds a thread it starts a turn for in "starting" until the
+          // provider starts it, and one it never took (the server stopped
+          // first) left the thread as it was.
           const session = thread.session;
           if (
             session !== null &&
@@ -2085,6 +2229,7 @@ const make = Effect.gen(function* () {
         event.type === "thread.session-stop-requested" ||
         event.type === "thread.settled"
       ) {
+        if (event.type === "thread.turn-start-requested") yield* holdTurnStart;
         return yield* worker.enqueue(event);
       }
     });
@@ -2095,7 +2240,14 @@ const make = Effect.gen(function* () {
     // intended to close. Subscribe before returning, even while event handling
     // waits for server activation.
     const domainEvents = yield* orchestrationEngine.subscribeDomainEvents;
-    yield* forkParked(Stream.runForEach(domainEvents, processEvent));
+    // Events that landed before the subscription are not replayed, so start
+    // the watermark at the current head instead of zero.
+    yield* orchestrationEngine.latestSequence.pipe(Effect.flatMap(noteSeen));
+    yield* forkParked(
+      Stream.runForEach(domainEvents, (event) =>
+        processEvent(event).pipe(Effect.andThen(noteSeen(event.sequence))),
+      ),
+    );
 
     const reconcileInterruptedTurnStarts = Effect.fn("reconcileInterruptedTurnStarts")(
       function* () {
@@ -2164,6 +2316,18 @@ const make = Effect.gen(function* () {
     drain: Effect.gen(function* () {
       yield* worker.drain;
       yield* threadTitleRegenerationWorker.drain;
+    }),
+    turnStartsInFlight: SubscriptionRef.get(turnStartsInFlight),
+    drainTurnStarts: Effect.gen(function* () {
+      const through = yield* orchestrationEngine.latestSequence;
+      yield* SubscriptionRef.changes(seenSequence).pipe(
+        Stream.filter((seen) => seen >= through),
+        Stream.runHead,
+      );
+      yield* SubscriptionRef.changes(turnStartsInFlight).pipe(
+        Stream.filter((count) => count === 0),
+        Stream.runHead,
+      );
     }),
   } satisfies ProviderCommandReactorShape;
 });

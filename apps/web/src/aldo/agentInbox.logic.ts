@@ -1,4 +1,4 @@
-// The agents' address a user claims (Settings → Integrations → Agent inbox): a
+// The agents' address a user claims (Settings → Agents → Your agents' email): a
 // handle, like one on a social site, checked here as it's typed. Aldo checks
 // it again, and has the last word (reserved handles, ones that are taken). The
 // same for the name its mail goes out under, which the user changes as they like.
@@ -26,7 +26,7 @@ export function agentHandleProblem(handle: string): string | null {
 }
 
 /** Most characters a sender name has (Aldo's limit: mail apps cut longer ones short). */
-export const SENDER_NAME_MAX = 64;
+const SENDER_NAME_MAX = 64;
 
 /** A sender name as typed: spaces and line breaks run together, as Aldo keeps it. */
 export function normalizeSenderName(input: string): string {

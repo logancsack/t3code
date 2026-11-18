@@ -9,9 +9,10 @@
 // or the list under "How Aldo works for you" (AldoHomeBoard.tsx).
 
 import { CalendarPlusIcon, CircleCheckBigIcon, MailIcon, SparklesIcon } from "lucide-react";
-import { useState } from "react";
+import { Fragment, useMemo } from "react";
 
 import { Badge } from "../components/ui/badge";
+import { useNowMinute } from "../hooks/useNowMinute";
 import { Button } from "../components/ui/button";
 import { toastManager } from "../components/ui/toast";
 import { requestConfirmDialog } from "../confirmDialog";
@@ -19,20 +20,21 @@ import { cn } from "~/lib/utils";
 import { aldoApprovalRulesChanged } from "./AldoApprovalRules";
 import { Section } from "./AldoHomeBoard";
 import { ThreadLink } from "./AldoHomeInbox";
-import {
-  AldoApiError,
-  decideAldoApproval,
-  removeAldoApprovalRule,
-  type AldoApproval,
-} from "./cloud";
+import { AgentMarkdown, Quoted } from "./AldoQuoted";
+import { AldoApiError } from "./api";
+import { removeAldoApprovalRule, type AldoApproval } from "./homeApi";
+import { refreshAldoHome, sendAldoApproval, useAldoHomeFeed, useAldoHomeRead } from "./homeFeed";
 import {
   APPROVAL_KIND_LABEL,
   approvalOutcome,
   approvalQuestion,
   decidedLately,
+  threadApprovals,
+  threadAwaitsApproval,
   waitingApprovals,
 } from "./approvals.logic";
 import { relativeTime } from "./home.logic";
+import { addedWords, wordDiff } from "./diff.logic";
 
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
@@ -63,20 +65,7 @@ export function ApprovalsSection(props: {
       {decided.length > 0 ? (
         <ul className="rounded-xl border border-border/60 bg-card/30 p-1.5">
           {decided.map((a) => (
-            <li key={a.id} className="flex items-start gap-2.5 rounded-lg px-2 py-1.5">
-              <Badge variant={a.status === "approved" ? "success" : "outline"} size="sm">
-                {approvalOutcome(a)}
-              </Badge>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm">{a.title}</p>
-                {a.result ? (
-                  <p className="line-clamp-2 text-muted-foreground text-xs">{a.result}</p>
-                ) : null}
-              </div>
-              <span className="shrink-0 text-muted-foreground text-xs">
-                {a.decidedAt ? relativeTime(a.decidedAt, props.now) : null}
-              </span>
-            </li>
+            <DecidedApproval key={a.id} approval={a} now={props.now} />
           ))}
         </ul>
       ) : null}
@@ -84,8 +73,71 @@ export function ApprovalsSection(props: {
   );
 }
 
-/** What was done, and the rule it saved, with Undo for the rule (what was done stays done). */
-function toastRule(message: string, rule: { readonly id: string; readonly text: string }) {
+/** An approval that isn't waiting any more: how it went, in a line. */
+export function DecidedApproval(props: { readonly approval: AldoApproval; readonly now: number }) {
+  const a = props.approval;
+  return (
+    <li className="flex list-none items-start gap-2.5 rounded-lg px-2 py-1.5">
+      <Badge variant={a.status === "approved" ? "success" : "outline"} size="sm">
+        {approvalOutcome(a)}
+      </Badge>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm">{a.title}</p>
+        {a.result ? <p className="line-clamp-2 text-muted-foreground text-xs">{a.result}</p> : null}
+      </div>
+      <span className="shrink-0 text-muted-foreground text-xs">
+        {a.decidedAt ? relativeTime(a.decidedAt, props.now) : null}
+      </span>
+    </li>
+  );
+}
+
+/**
+ * The approvals a thread's agent asked, for its timeline (session-logic.ts):
+ * the same ones as on Home, from the same read.
+ */
+export function useAldoThreadApprovals(
+  environmentId: string | null,
+  threadId: string | null,
+  enabled: boolean,
+): ReadonlyArray<AldoApproval> {
+  const { home } = useAldoHomeRead(enabled);
+  return useMemo(
+    () =>
+      environmentId && threadId
+        ? threadApprovals(home?.approvals, { environmentId, threadId })
+        : [],
+    [home?.approvals, environmentId, threadId],
+  );
+}
+
+/** Whether an approval waits on the user in this thread (the sidebar's row says so); reads what's there. */
+export function useAldoThreadAwaitsApproval(environmentId: string, threadId: string): boolean {
+  return useAldoHomeFeed((feed) =>
+    threadAwaitsApproval(feed.home?.approvals, { environmentId, threadId }),
+  );
+}
+
+/** One of a thread's approvals where it was asked: the card while it waits, a line once it's decided. */
+export function AldoThreadApproval(props: { readonly approval: AldoApproval }) {
+  const now = Date.parse(`${useNowMinute()}:00Z`);
+  const a = props.approval;
+  return (
+    <ul className="flex flex-col">
+      {a.status === "pending" ? (
+        <ApprovalCard approval={a} now={now} inThread onActed={() => void refreshAldoHome()} />
+      ) : (
+        <DecidedApproval approval={a} now={now} />
+      )}
+    </ul>
+  );
+}
+
+/** What a decision that became a rule says, with Undo. */
+export function toastAldoRule(
+  message: string,
+  rule: { readonly id: string; readonly text: string },
+): void {
   aldoApprovalRulesChanged();
   const id = toastManager.add({
     type: "success",
@@ -113,15 +165,18 @@ function toastRule(message: string, rule: { readonly id: string; readonly text: 
   });
 }
 
-/** One approval in full, with its buttons (an item of a list). */
+/**
+ * One approval in full, with its buttons (an item of a list). It's decided on
+ * every card showing it at the tap (homeFeed.ts sendAldoApproval); in the thread
+ * that asked (`inThread`) it doesn't link to that thread.
+ */
 export function ApprovalCard(props: {
   readonly approval: AldoApproval;
   readonly now: number;
   readonly onActed: () => void;
+  readonly inThread?: boolean;
 }) {
   const a = props.approval;
-  const [busy, setBusy] = useState<"approve" | "discard" | "always" | null>(null);
-  const [expanded, setExpanded] = useState(false);
   const Icon = KIND_ICON[a.kind];
   const sending = a.status === "sending";
   const decide = async (decision: "approve" | "discard" | "always") => {
@@ -138,10 +193,9 @@ export function ApprovalCard(props: {
       ) ?? Promise.resolve(true));
       if (!confirmed) return;
     }
-    setBusy(decision);
     try {
-      const { message, rule } = await decideAldoApproval(a.id, decision);
-      if (rule) toastRule(message, rule);
+      const { message, rule } = await sendAldoApproval(a, decision);
+      if (rule) toastAldoRule(message, rule);
       else toastManager.add({ type: "success", title: message });
     } catch (cause) {
       // A draft that changed since it was shown comes back as it is now, to look at again.
@@ -152,12 +206,11 @@ export function ApprovalCard(props: {
         description: messageOf(cause),
       });
     } finally {
-      setBusy(null);
       props.onActed();
     }
   };
   return (
-    <li className="rounded-xl border border-border/60 bg-card/30 p-3.5">
+    <li className="list-none rounded-xl border border-border/60 bg-card/30 p-3.5">
       <div className="flex items-start gap-2.5">
         <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
         <div className="min-w-0 flex-1">
@@ -165,11 +218,11 @@ export function ApprovalCard(props: {
             <Badge variant="warning" size="sm">
               {APPROVAL_KIND_LABEL[a.kind]}
             </Badge>
-            {a.thread ? (
+            {a.thread && !props.inThread ? (
               <ThreadLink target={a.thread} className="min-w-0 truncate hover:text-foreground">
                 {a.kind === "start" ? "Started" : "From"} {a.threadTitle ?? "its thread"}
               </ThreadLink>
-            ) : a.kind === "start" ? (
+            ) : a.kind === "start" && !a.thread ? (
               <span>From Aldo</span>
             ) : null}
             <span>· {relativeTime(a.createdAt, props.now)}</span>
@@ -188,50 +241,132 @@ export function ApprovalCard(props: {
             <p className="mt-0.5 text-muted-foreground text-xs">{a.summary}</p>
           )}
           {a.body ? (
-            <button
-              type="button"
-              className="mt-2 block w-full rounded-lg border border-border/50 bg-background/40 px-2.5 py-2 text-left"
-              onClick={() => setExpanded((open) => !open)}
-              aria-expanded={expanded}
-            >
-              <p className={cn("whitespace-pre-wrap text-sm", !expanded && "line-clamp-6")}>
-                {a.body}
-              </p>
-            </button>
+            <div className="mt-2 flex flex-col gap-1 rounded-lg border border-border/50 bg-background/40 px-2.5 py-2">
+              <ApprovalBody approval={a} lines={6} className="text-sm" />
+            </div>
           ) : null}
           {a.failed && a.result ? (
             <p className="mt-2 text-destructive-foreground text-xs">{a.result}</p>
           ) : null}
           <div className="mt-3 flex flex-wrap gap-2">
-            <Button
-              size="sm"
-              disabled={busy !== null || sending}
-              onClick={() => void decide("approve")}
-            >
-              {busy === "approve" || sending ? "Working…" : a.approveLabel}
+            <Button size="sm" disabled={sending} onClick={() => void decide("approve")}>
+              {sending ? "Working…" : a.approveLabel}
             </Button>
             <Button
               size="sm"
               variant="outline"
-              disabled={busy !== null || sending}
+              disabled={sending}
               onClick={() => void decide("discard")}
             >
-              {busy === "discard" ? "Working…" : a.discardLabel}
+              {a.discardLabel}
             </Button>
             {a.always ? (
               <Button
                 size="sm"
                 variant="ghost"
-                disabled={busy !== null || sending}
+                disabled={sending}
                 onClick={() => void decide("always")}
                 aria-label={`${a.approveLabel}, and always allow: ${a.always}`}
               >
-                {busy === "always" ? "Working…" : "Always allow…"}
+                Always allow…
               </Button>
             ) : null}
           </div>
         </div>
       </div>
     </li>
+  );
+}
+
+/**
+ * What an approval says: an agent's words (the brief of a thread to start, a
+ * step's details) rendered; an email's or an event's text as it goes out.
+ */
+export function ApprovalBody(props: {
+  readonly approval: AldoApproval;
+  readonly lines: 3 | 6;
+  readonly className: string;
+}) {
+  const a = props.approval;
+  const written = a.kind === "start" || a.kind === "confirm";
+  return (
+    <>
+      <Quoted
+        lines={props.lines}
+        className={cn(!written && "whitespace-pre-wrap", props.className)}
+      >
+        {written ? (
+          <AgentMarkdown text={a.body} className={props.className} />
+        ) : (
+          <ApprovalText approval={a} />
+        )}
+      </Quoted>
+      <RewriteNote approval={a} />
+    </>
+  );
+}
+
+/** The last few drafts' rewrites: a card's text and its note share one, and a long draft's takes a while. */
+const rewrites = new Map<string, ReturnType<typeof wordDiff>>();
+
+/** What Aldo rewrote, against what it said before (an Aldo that rewrites drafts). */
+function useRewrite(a: AldoApproval) {
+  const before = a.previous?.body;
+  return useMemo(() => {
+    if (before === undefined) return null;
+    const key = `${before}\u0000${a.body}`;
+    let runs = rewrites.get(key);
+    if (!runs) {
+      runs = wordDiff(before, a.body);
+      if (rewrites.size >= 8) rewrites.delete(rewrites.keys().next().value!);
+      rewrites.set(key, runs);
+    }
+    return runs;
+  }, [before, a.body]);
+}
+
+/** An email's or an event's text as it goes out: one Aldo rewrote, the words it put in underlined. */
+export function ApprovalText(props: { readonly approval: AldoApproval }) {
+  const runs = useRewrite(props.approval);
+  if (!runs) return <>{props.approval.body}</>;
+  return runs.map((run, i) =>
+    run.added ? (
+      <ins
+        // oxlint-disable-next-line react/no-array-index-key -- runs have no identity but their place
+        key={i}
+        className="text-inherit underline decoration-primary decoration-[1.5px] underline-offset-[3px]"
+      >
+        {run.text}
+      </ins>
+    ) : (
+      // oxlint-disable-next-line react/no-array-index-key -- runs have no identity but their place
+      <Fragment key={i}>{run.text}</Fragment>
+    ),
+  );
+}
+
+/** Under a text Aldo rewrote: that it did, so the underlines read as what's new, and what the subject was if it changed. */
+export function RewriteNote(props: {
+  readonly approval: AldoApproval;
+  readonly className?: string;
+}) {
+  const a = props.approval;
+  const runs = useRewrite(a);
+  if (!runs || !a.previous) return null;
+  const name = a.kind === "email" ? "subject" : "title";
+  const retitled = a.previous.title !== a.title;
+  let words =
+    addedWords(runs) > 0
+      ? "Aldo rewrote it. The new words in the text are underlined."
+      : "Aldo rewrote it.";
+  if (retitled)
+    words =
+      a.previous.body === a.body
+        ? `Aldo changed the ${name} from “${a.previous.title}”.`
+        : `${words} The ${name} was “${a.previous.title}”.`;
+  return (
+    <p className={cn("text-[12px] text-muted-foreground leading-[18px]", props.className)}>
+      {words}
+    </p>
   );
 }

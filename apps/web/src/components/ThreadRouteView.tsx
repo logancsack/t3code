@@ -1,6 +1,6 @@
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { ScopedThreadRef } from "@t3tools/contracts";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useRouter } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
 import ChatView from "./ChatView";
@@ -30,6 +30,7 @@ import {
   type ThreadRouteTarget,
 } from "../threadRoutes";
 import { resolveThreadSyncPhase } from "../threadSync";
+import { useAfterPaint } from "../hooks/useAfterPaint";
 
 /**
  * The single chat surface behind both `/draft/$draftId` and
@@ -45,7 +46,34 @@ import { resolveThreadSyncPhase } from "../threadSync";
  * an element only survives a route swap when the same parent renders it.
  */
 export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
+  // Opening a server thread renders it once the click or key that opened it
+  // has painted, so the sidebar answers at once: the thread on screen stays,
+  // inert, until the next one is ready, and one opened from elsewhere starts
+  // from an empty frame. Drafts, and a draft's swap to its thread, render at
+  // once, keeping one ChatView across the swap.
+  const deferredTarget = useAfterPaint(target, null, sameThreadRouteTarget);
+  const shownTarget =
+    target.kind === "server" && deferredTarget?.kind !== "draft" ? deferredTarget : target;
+  const stale = shownTarget !== null && !sameThreadRouteTarget(shownTarget, target);
+  return (
+    <SidebarInset
+      className="h-svh min-h-0 overflow-hidden overscroll-y-none md:h-dvh"
+      inert={stale}
+      aria-busy={shownTarget === null || stale ? true : undefined}
+    >
+      {shownTarget ? <ThreadRouteContent target={shownTarget} /> : null}
+    </SidebarInset>
+  );
+}
+
+function sameThreadRouteTarget(a: ThreadRouteTarget, b: ThreadRouteTarget): boolean {
+  if (a.kind === "draft") return b.kind === "draft" && a.draftId === b.draftId;
+  return b.kind === "server" && scopedThreadKey(a.threadRef) === scopedThreadKey(b.threadRef);
+}
+
+function ThreadRouteContent({ target }: { target: ThreadRouteTarget }) {
   const navigate = useNavigate();
+  const router = useRouter();
   const draftId = target.kind === "draft" ? target.draftId : null;
   const draftSession = useComposerDraftStore((store) =>
     draftId === null ? null : store.getDraftSession(draftId),
@@ -133,12 +161,13 @@ export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
   }, [draftSession?.promotedTo, inferredThreadRef]);
 
   useEffect(() => {
-    if (!canonicalThreadRef) {
+    if (!canonicalThreadRef || draftId === null) {
       return;
     }
     let cancelled = false;
     void waitForDraftHeroTransition().then(() => {
-      if (cancelled) {
+      // Closed meanwhile: in Aldo the thread stays mounted while it slides away.
+      if (cancelled || !router.state.location.pathname.endsWith(`/${draftId}`)) {
         return;
       }
       void navigate({
@@ -150,7 +179,7 @@ export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
     return () => {
       cancelled = true;
     };
-  }, [canonicalThreadRef, navigate]);
+  }, [canonicalThreadRef, draftId, navigate, router]);
 
   useEffect(() => {
     if (target.kind !== "draft" || draftSession || canonicalThreadRef) {
@@ -197,7 +226,7 @@ export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
         />
       );
     }
-  } else if (renderState === "ready" || (renderState === "loading" && serverThreadShell !== null)) {
+  } else if (renderState === "ready" || renderState === "loading") {
     view = (
       <ChatView
         {...(nextChatViewKey ? { key: nextChatViewKey.key } : {})}
@@ -209,9 +238,5 @@ export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
     );
   }
 
-  return (
-    <SidebarInset className="h-svh min-h-0 overflow-hidden overscroll-y-none md:h-dvh">
-      {view}
-    </SidebarInset>
-  );
+  return view;
 }

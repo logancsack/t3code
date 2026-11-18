@@ -109,6 +109,22 @@
       "sourceUrl": "https://github.com/ryanoasis/nerd-fonts"
     },
     {
+      "bundles": ["web"],
+      "license": "OFL-1.1",
+      "name": "Geist",
+      "noticeFile": "apps/web/src/aldo/fonts/geist/LICENSE",
+      "sourceUrl": "https://github.com/vercel/geist-font",
+      "version": "1.800"
+    },
+    {
+      "bundles": ["web"],
+      "license": "OFL-1.1",
+      "name": "Geist Mono",
+      "noticeFile": "apps/web/src/aldo/fonts/geist-mono/LICENSE",
+      "sourceUrl": "https://github.com/vercel/geist-font",
+      "version": "1.701"
+    },
+    {
       "bundles": ["ios", "mobile"],
       "license": "MIT",
       "name": "GhosttyKit",

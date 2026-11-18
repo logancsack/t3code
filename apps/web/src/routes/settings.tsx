@@ -1,5 +1,5 @@
 import { Outlet, createFileRoute, redirect, useLocation } from "@tanstack/react-router";
-import { useState, type ReactNode } from "react";
+import { useCallback, useState, type ReactNode } from "react";
 import { RotateCcwIcon } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { useSettingsRestore } from "../components/settings/SettingsPanels";
@@ -10,14 +10,20 @@ import { useNavigateToMainApp } from "../components/sidebar/mainAppLocation";
 import { WorkspacePageHeader } from "../components/WorkspacePageHeader";
 import { isElectron } from "../env";
 import { useEscapeToGoBack } from "../hooks/useNavigateBack";
+import { useIsMobile } from "../hooks/useMediaQuery";
+import { AldoSettingsPhoneBar, aldoSettingsOpensOnList } from "../aldo/AldoSettingsShell";
 import {
   SettingsScopeProvider,
   useSettingsScope,
 } from "../components/settings/SettingsScopeContext";
+import { isAldoCloud } from "../aldo/api";
 import { useEnvironments } from "../state/environments";
 import { SettingsScopeNotice } from "../components/settings/SettingsScopeNotice";
-import { SETTINGS_DEVICE_ONLY_PATHS } from "../components/settings/SettingsScopeSentence";
-import { SettingsPageContainer } from "../components/settings/settingsLayout";
+import { isSettingsDeviceOnlyPath } from "../components/settings/SettingsScopeSentence";
+import {
+  SettingsPageContainer,
+  SettingsRestoredContext,
+} from "../components/settings/settingsLayout";
 import {
   retainSettingsScope,
   validateSettingsRouteSearch,
@@ -88,7 +94,7 @@ function SettingsScopeBoundary({ pathname, children }: { pathname: string; child
   }
   // Device-local pages ignore the scope entirely; the project page follows
   // remembered members while a grouping change replaces its URL key.
-  if (SETTINGS_DEVICE_ONLY_PATHS.has(pathname) || pathname === "/settings/projects") {
+  if (isSettingsDeviceOnlyPath(pathname) || pathname === "/settings/projects") {
     return children;
   }
   // Keep the scope sentence on screen so the selection can be changed back.
@@ -116,30 +122,42 @@ function SettingsContentLayout() {
   useEscapeToGoBack(navigateToMainApp);
   const { search } = useSettingsScope();
   const [restoreSignal, setRestoreSignal] = useState(0);
+  const onRestored = useCallback(() => setRestoreSignal((value) => value + 1), []);
+  const isMobile = useIsMobile();
 
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none isolate">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-background text-foreground">
-        <WorkspacePageHeader electron={isElectron}>
-          <div className="flex w-full items-center gap-3">
-            <SettingsBreadcrumb pathname={location.pathname} />
-            {location.pathname === "/settings/general" ? (
-              <div className="ms-auto flex shrink-0 items-center">
-                <RestoreDeviceDefaultsButton
-                  onRestored={() => setRestoreSignal((value) => value + 1)}
-                />
-              </div>
-            ) : null}
-          </div>
-        </WorkspacePageHeader>
+        {/* Aldo's pages say their own name at their top; a phone's bar has the way back.
+            In the desktop app an empty titlebar still drags the window. */}
+        {isAldoCloud && isMobile ? (
+          <AldoSettingsPhoneBar pathname={location.pathname} />
+        ) : isAldoCloud ? (
+          isElectron ? (
+            <WorkspacePageHeader electron />
+          ) : null
+        ) : (
+          <WorkspacePageHeader electron={isElectron}>
+            <div className="flex w-full items-center gap-3">
+              <SettingsBreadcrumb pathname={location.pathname} />
+              {location.pathname === "/settings/general" ? (
+                <div className="ms-auto flex shrink-0 items-center">
+                  <RestoreDeviceDefaultsButton onRestored={onRestored} />
+                </div>
+              ) : null}
+            </div>
+          </WorkspacePageHeader>
+        )}
 
         <div
           key={`${JSON.stringify(search)}:${restoreSignal}`}
           className="min-h-0 flex flex-1 flex-col"
         >
-          <SettingsScopeBoundary pathname={location.pathname}>
-            <Outlet />
-          </SettingsScopeBoundary>
+          <SettingsRestoredContext.Provider value={onRestored}>
+            <SettingsScopeBoundary pathname={location.pathname}>
+              <Outlet />
+            </SettingsScopeBoundary>
+          </SettingsRestoredContext.Provider>
         </div>
       </div>
     </SidebarInset>
@@ -153,6 +171,7 @@ function SettingsRouteLayout() {
   return (
     <SettingsScopeProvider
       search={rawSearch}
+      pathname={pathname}
       singleEnvironment={pathname === "/settings/providers"}
       onChange={(next) => {
         // Send every axis so the retain middleware sees an explicit target
@@ -185,8 +204,10 @@ export const Route = createFileRoute("/settings")({
       throw redirect({ to: "/pair", replace: true });
     }
 
-    if (location.pathname === "/settings") {
-      throw redirect({ to: "/settings/general", replace: true });
+    if (location.pathname === "/settings" && !aldoSettingsOpensOnList()) {
+      // Aldo's settings open on its models, what people come to change most;
+      // on a phone, on the list of its pages (settings.index.tsx).
+      throw redirect({ to: isAldoCloud ? "/settings/agents" : "/settings/general", replace: true });
     }
   },
   component: SettingsRouteLayout,

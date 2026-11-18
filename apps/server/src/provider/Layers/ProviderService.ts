@@ -1547,6 +1547,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           }
           const persistedBinding = Option.getOrUndefined(yield* directory.getBinding(threadId));
           if (
+            input.fresh !== true &&
             persistedBinding?.provider === resolvedProvider &&
             persistedBinding.providerInstanceId !== resolvedInstanceId &&
             (input.resumeCursor != null || persistedBinding.resumeCursor != null)
@@ -1567,10 +1568,12 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
             }
           }
           const effectiveResumeCursor =
-            input.resumeCursor ??
-            (persistedBinding?.providerInstanceId === resolvedInstanceId
-              ? persistedBinding.resumeCursor
-              : undefined);
+            input.fresh === true
+              ? undefined
+              : (input.resumeCursor ??
+                (persistedBinding?.providerInstanceId === resolvedInstanceId
+                  ? persistedBinding.resumeCursor
+                  : undefined));
           const effectiveCwd =
             input.cwd ??
             (persistedBinding?.providerInstanceId === resolvedInstanceId
@@ -1615,11 +1618,9 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           const session = yield* adapter
             .startSession({
               ...input,
+              resumeCursor: effectiveResumeCursor,
               providerInstanceId: resolvedInstanceId,
               ...(effectiveCwd !== undefined ? { cwd: effectiveCwd } : {}),
-              ...(effectiveResumeCursor !== undefined
-                ? { resumeCursor: effectiveResumeCursor }
-                : {}),
             })
             .pipe(Effect.onError(() => clearMcpSession(threadId)));
 
@@ -2510,7 +2511,17 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         });
       }),
     ).pipe(Effect.asVoid);
-    yield* Effect.forEach(currentAdapters, ([, adapter]) => adapter.stopAll()).pipe(Effect.asVoid);
+    // Together: a Claude instance's stop waits up to shutdownDrainMs for its
+    // CLIs to take the prompts sent to them, and one after another those
+    // waits would add up past what the process stopping the server allows.
+    // Each runs to its end even if another fails, which then fails the stop.
+    const stopExits = yield* Effect.forEach(
+      currentAdapters,
+      ([, adapter]) => Effect.exit(adapter.stopAll()),
+      { concurrency: "unbounded" },
+    );
+    const stopFailure = stopExits.find((exit) => exit._tag === "Failure");
+    if (stopFailure?._tag === "Failure") return yield* Effect.failCause(stopFailure.cause);
     yield* McpSessionRegistry.revokeAllActiveMcpCredentials();
     McpProviderSession.clearAllMcpProviderSessions();
     // Stopped rows stay for their resume cursors, so long-lived installs hold

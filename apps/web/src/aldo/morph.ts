@@ -56,7 +56,7 @@ function clearIn(ms: number): void {
   clearTimer = setTimeout(clear, ms);
 }
 
-/** What a link or button sits on: its row, the card it's on, or the peek. */
+/** What a link or button sits on: its row, the card it's on, or the bar's peek. */
 export function aldoMorphSource(element: Element): HTMLElement | null {
   return element.closest<HTMLElement>(
     "li, [data-aldo-live-card], [data-aldo-handoff-card], [data-aldo-peek]",
@@ -79,7 +79,9 @@ export function morphIntoThread(router: Pick<AnyRouter, "subscribe">, row: HTMLE
     stop();
     stopWaiting = null;
     // The thread's page, unless the row is still on it (a thread opened from within the page).
-    const page = document.querySelector<HTMLElement>('main[data-slot="sidebar-inset"]');
+    const page =
+      document.querySelector<HTMLElement>('[data-aldo-layer] main[data-slot="sidebar-inset"]') ??
+      document.querySelector<HTMLElement>('main[data-slot="sidebar-inset"]');
     if (page && !page.contains(row)) {
       unname(row);
       name(page);
@@ -122,6 +124,33 @@ export function aldoMorph(
     void transition.finished.then(done, done);
   } catch {
     clear();
+    update();
+  }
+}
+
+/**
+ * Makes a change that moves `element` across the page (the composer, from the
+ * empty page's middle to the foot of the conversation once something's said)
+ * with it gliding there rather than jumping; the rest crossfades. Without a
+ * morph, it just makes the change.
+ */
+export function aldoGlide(element: HTMLElement | null, update: () => void): void {
+  if (!element || !aldoCanMorph()) {
+    update();
+    return;
+  }
+  const root = document.documentElement;
+  const done = () => {
+    element.style.removeProperty("view-transition-name");
+    delete root.dataset.aldoGlide;
+  };
+  element.style.setProperty("view-transition-name", "aldo-glide");
+  root.dataset.aldoGlide = "";
+  try {
+    const transition = document.startViewTransition(() => flushSync(update));
+    void transition.finished.then(done, done);
+  } catch {
+    done();
     update();
   }
 }

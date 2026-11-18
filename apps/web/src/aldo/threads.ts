@@ -35,15 +35,14 @@ import {
   deleteAldoEnvironment,
   deleteAldoMachineWithThread,
   holdAldoEnvironment,
-  isAldoCloud,
-  isAldoEnvironmentId,
   newAldoThreadId,
   releaseAldoEnvironment,
   type AldoEnvironment,
   type AldoNewProject,
   type AldoPlannedProject,
   type AldoPullRequestBranch,
-} from "./cloud";
+} from "./directory";
+import { isAldoCloud, isAldoEnvironmentId } from "./api";
 import { ensureAldoConnected } from "./dispatch";
 import { aldoServerConfigFor } from "./serverConfig";
 

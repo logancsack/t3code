@@ -1,3 +1,4 @@
+import { AldoMark } from "../../aldo/AldoMark";
 import { ManagedDevPcConnections } from "../ManagedDevPcConnections";
 import { ManagedDevPcAgent } from "../ManagedDevPcAgent";
 import { ArrowLeftIcon, ChartNoAxesColumnIcon, SettingsIcon } from "lucide-react";
@@ -33,6 +34,8 @@ import { ManagedDevPcFooterAccount } from "../ManagedDevPcAccount";
 import { APP_BASE_NAME, APP_IS_ALDO } from "../../branding";
 import { SidebarUpdateArchitectureWarning, SidebarUpdatePill } from "./SidebarUpdatePill";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
+import { isAldoCloud } from "../../aldo/api";
+import { useAldoDeveloperTools } from "../../aldo/developerTools";
 
 export const SidebarChromeHeader = memo(function SidebarChromeHeader({
   isElectron,
@@ -119,14 +122,6 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
 }
 
 /** The Aldo "Open Frame" mark, drawn in the current text color. */
-export function AldoMark({ className }: { className?: string }) {
-  return (
-    <svg aria-hidden="true" className={className} viewBox="0 0 42 32">
-      <path d="M1 28 13.4 4h8.7L10.6 28H1Z" fill="currentColor" />
-      <path d="M23.9 4h8.7L41 28h-9.6L23.9 4Z" fill="currentColor" />
-    </svg>
-  );
-}
 
 function SidebarUtilityItem({
   icon,
@@ -160,12 +155,19 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
   const isOnUtilityPage = useLocation({
     select: (location) => isSidebarUtilityPage(location.pathname),
   });
+  const isOnSettings = useLocation({
+    select: (location) =>
+      location.pathname === "/settings" || location.pathname.startsWith("/settings/"),
+  });
   const { environments } = useEnvironments();
   // The page reads every connected server, so one of them offering pull requests is enough for
-  // the link to lead somewhere.
-  const pullRequestsSupported = environments.some(
-    (environment) => environment.serverConfig?.environment.capabilities.pullRequests === true,
-  );
+  // the link to lead somewhere. In Aldo, pull requests are a developer tool.
+  const aldoDeveloperTools = useAldoDeveloperTools();
+  const pullRequestsSupported =
+    aldoDeveloperTools &&
+    environments.some(
+      (environment) => environment.serverConfig?.environment.capabilities.pullRequests === true,
+    );
   const closeMobileSidebar = useCallback(() => {
     if (isMobile) {
       setOpenMobile(false);
@@ -194,6 +196,11 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
     closeMobileSidebar();
     void navigateToMainApp();
   }, [closeMobileSidebar, navigateToMainApp]);
+
+  // Aldo's navigation lives in its account menu.
+  if (isAldoCloud && !isOnSettings) {
+    return null;
+  }
 
   return (
     <SidebarMenu className="flex-row items-center">

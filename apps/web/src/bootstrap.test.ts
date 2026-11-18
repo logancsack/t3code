@@ -76,7 +76,7 @@ describe("app startup failures", () => {
   it.each([true, false])("shows startup error details only in dev mode, DEV=%s", (dev) => {
     vi.stubEnv("DEV", dev);
 
-    showBootError(new Error("internal module path"));
+    showBootError(new Error("internal module path"), import.meta.env.DEV);
 
     expect(bootShell?.text).toContain("T3 Code could not load.");
     expect(bootShell?.text.includes("internal module path")).toBe(dev);

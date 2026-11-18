@@ -41,6 +41,7 @@ import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSna
 import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngine.ts";
 import { OrchestrationLayerLive } from "./orchestration/runtimeLayer.ts";
 import { orchestrationHttpApiLayer } from "./orchestration/http.ts";
+import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
 import * as ProjectCloneTracker from "./project/ProjectCloneTracker.ts";
 import { layerConfig as SqlitePersistenceLayerLive } from "./persistence/Layers/Sqlite.ts";
 import * as RepositoryIdentityResolver from "./project/RepositoryIdentityResolver.ts";
@@ -376,6 +377,11 @@ const withLiveProjectCliServer = <A, E, R>(baseDir: string, run: () => Effect.Ef
             Layer.mock(ProjectCloneTracker.ProjectCloneTracker)({
               get: () => Effect.succeed(null),
               discard: () => Effect.void,
+            }),
+          ),
+          Layer.provide(
+            Layer.mock(ServerRuntimeStartup.ServerRuntimeStartup)({
+              enqueueCommand: (effect) => effect,
             }),
           ),
         ),

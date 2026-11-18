@@ -34,10 +34,11 @@ import {
   LANDING_DEMO_ENVIRONMENT_ID,
   LANDING_DEMO_PROJECT_ID,
   LANDING_DEMO_THREAD_ID,
+  isWorkReplay,
 } from "./mode";
 
 export const demoEnvironmentId = EnvironmentId.make(LANDING_DEMO_ENVIRONMENT_ID);
-export const demoProjectId = ProjectId.make(LANDING_DEMO_PROJECT_ID);
+const demoProjectId = ProjectId.make(LANDING_DEMO_PROJECT_ID);
 export const demoThreadId = ThreadId.make(LANDING_DEMO_THREAD_ID);
 const demoProviderId = ProviderInstanceId.make("codex");
 const STARTED_AT = "2026-07-31T12:00:00.000Z";
@@ -72,6 +73,7 @@ let files: Record<string, string> = { ...initialFiles };
 let snapshotSequence = 1;
 let nextId = 1;
 const previewListeners = new Set<() => void>();
+const shellListeners = new Set<(item: OrchestrationShellStreamItem) => void>();
 const threadListeners = new Set<(item: OrchestrationThreadStreamItem) => void>();
 
 const welcomeMessage: OrchestrationMessage = {
@@ -117,7 +119,7 @@ let thread: OrchestrationThread = {
   },
 };
 
-const project: OrchestrationProjectShell = {
+let project: OrchestrationProjectShell = {
   id: demoProjectId,
   title: "Northstar landing page",
   workspaceRoot: "/demo/northstar",
@@ -154,11 +156,13 @@ function threadShell() {
   } as const;
 }
 
+let homeShells: OrchestrationShellSnapshot["threads"] | null = null;
+
 function shellSnapshot(): OrchestrationShellSnapshot {
   return {
     snapshotSequence,
     projects: [project],
-    threads: [threadShell()],
+    threads: homeShells ?? [threadShell()],
     updatedAt: thread.updatedAt,
   };
 }
@@ -202,11 +206,11 @@ function subscribeShell(): Stream.Stream<OrchestrationShellStreamItem> {
       { kind: "snapshot", snapshot: shellSnapshot() },
       { kind: "synchronized" },
     ]),
-    Stream.never,
+    callbackStream(shellListeners),
   );
 }
 
-export const demoServerConfig = {
+const demoServerConfig = {
   environment: {
     id: demoEnvironmentId,
     label: "Aldo browser demo",
@@ -489,6 +493,8 @@ const streamingMethods = new Set<string>([
 const client = new Proxy(
   {
     [WS_METHODS.serverGetConfig]: () => Effect.succeed(demoServerConfig),
+    [WS_METHODS.serverRefreshProviders]: () =>
+      Effect.succeed({ providers: demoServerConfig.providers }),
     [WS_METHODS.serverProbe]: () => Effect.succeed({}),
     [WS_METHODS.assetsCreateUrl]: () =>
       Effect.succeed({ relativeUrl: "/favicon.ico", expiresAt: 4_102_444_800_000 }),
@@ -580,4 +586,99 @@ export function getDemoPreviewDocument() {
 export function resetDemoFiles() {
   files = { ...initialFiles };
   for (const listener of previewListeners) listener();
+}
+
+/** Feed the stock sidebar and ChatView the replay's local server snapshot. */
+export function setWorkReplayThread(
+  next: Pick<OrchestrationThread, "title" | "messages" | "activities" | "latestTurn" | "session">,
+  projectTitle: string,
+) {
+  project = {
+    ...project,
+    title: projectTitle,
+    defaultModelSelection: { instanceId: demoProviderId, model: "gpt-6.1-sol" },
+  };
+  thread = {
+    ...thread,
+    ...next,
+    modelSelection: { instanceId: demoProviderId, model: "gpt-6.1-sol" },
+  };
+  broadcastThread();
+  for (const listener of shellListeners) listener({ kind: "snapshot", snapshot: shellSnapshot() });
+}
+
+/** All of the Home replay's jobs share the same local snapshot transport. */
+export function setWorkReplayHomeThreads(
+  rows: { id: string; title: string; startedAt: string; finishedAt: string | null }[],
+) {
+  project = { ...project, title: "Your work" };
+  homeShells = rows.map((row) => ({
+    ...threadShell(),
+    id: ThreadId.make(`replay-${row.id}`),
+    title: row.title,
+    createdAt: row.startedAt,
+    updatedAt: row.finishedAt ?? row.startedAt,
+    latestUserMessageAt: row.startedAt,
+    latestTurn: {
+      turnId: TurnId.make(`replay-${row.id}`),
+      state: row.finishedAt ? "completed" : "running",
+      requestedAt: row.startedAt,
+      startedAt: row.startedAt,
+      completedAt: row.finishedAt,
+      assistantMessageId: null,
+    },
+    session: {
+      threadId: ThreadId.make(`replay-${row.id}`),
+      status: row.finishedAt ? "ready" : "running",
+      providerName: "codex",
+      providerInstanceId: demoProviderId,
+      runtimeMode: "full-access",
+      activeTurnId: row.finishedAt ? null : TurnId.make(`replay-${row.id}`),
+      lastError: null,
+      updatedAt: row.finishedAt ?? row.startedAt,
+    },
+  }));
+  snapshotSequence += 1;
+  for (const listener of shellListeners) listener({ kind: "snapshot", snapshot: shellSnapshot() });
+}
+
+export function workReplaySnapshots() {
+  return { shell: shellSnapshot(), detail: threadSnapshot() };
+}
+
+export function workReplayConfig() {
+  return demoServerConfig;
+}
+
+// Connection discovery can run while the app waits for its first script.
+// Give it the current descriptor/config before any transport starts.
+if (isWorkReplay()) {
+  Object.assign(demoServerConfig, {
+    auth: {
+      policy: "unsafe-no-auth",
+      bootstrapMethods: [],
+      sessionMethods: [],
+      sessionCookieName: "replay",
+    },
+    environment: {
+      ...demoServerConfig.environment,
+      environmentId: demoEnvironmentId,
+      platform: { os: "linux", arch: "x64", machine: "server" },
+    },
+    providers: demoServerConfig.providers.map((provider) => ({
+      ...provider,
+      displayName: "Codex",
+      badgeLabel: "Codex",
+      models: [
+        {
+          slug: "gpt-6.1-sol",
+          name: "GPT-6.1 Sol",
+          shortName: "GPT-6.1 Sol",
+          isCustom: false,
+          isDefault: true,
+          capabilities: null,
+        },
+      ],
+    })),
+  });
 }

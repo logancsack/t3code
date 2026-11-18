@@ -1,14 +1,15 @@
 import {
   DEFAULT_SERVER_SETTINGS,
   type ModelSelection,
-  type ProviderInstanceId,
+  ProviderInstanceId,
   type WorktreeSubmodules,
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { useNavigate } from "@tanstack/react-router";
 
-import { isAldoCloud } from "../../aldo/cloud";
+import { isAldoCloud } from "../../aldo/api";
+import { aldoRoutesModels } from "../../aldo/directory";
 import { aldoSavesSettings } from "../../aldo/machineSettings.logic";
 import { getCustomModelOptionsByInstance } from "../../modelSelection";
 import {
@@ -53,7 +54,14 @@ function isWorktreeSubmodules(value: string | null): value is WorktreeSubmodules
   return value !== null && (WORKTREE_SUBMODULES_OPTIONS as readonly string[]).includes(value);
 }
 
-export function ProjectDefaultsSettings({ category }: { category: ProjectSettingsCategory }) {
+export function ProjectDefaultsSettings({
+  category,
+  aldoPart,
+}: {
+  category: ProjectSettingsCategory;
+  /** Aldo shows one row on a page of its own: the model on Agents, the access on Permissions. */
+  aldoPart?: "model" | "permissions";
+}) {
   const { scope, target, targets, connectedEnvironments, aldo } = useSettingsScope();
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
@@ -67,7 +75,14 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
     // Aldo: with no machine connected, a sleeping one's, to choose the user's model from.
     (isAldoCloud ? aldo?.providers : null) ??
     EMPTY_SERVER_PROVIDERS;
-  const selection = resolveDefaultProviderModelSelection(providers, settings.defaultModelSelection);
+  const aldoModel = isAldoCloud && aldoRoutesModels() && aldoPart === "model";
+  const fallbackSelection = resolveDefaultProviderModelSelection(
+    providers,
+    settings.defaultModelSelection,
+  );
+  // An unavailable saved override stays visible until the user replaces or clears it.
+  // Its traits must never edit a different, locally resolved fallback model.
+  const selection = aldoModel ? settings.defaultModelSelection : fallbackSelection;
   const entries = sortProviderInstanceEntries(
     applyProviderInstanceSettings(deriveProviderInstanceEntries(providers), settings),
   );
@@ -78,6 +93,13 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
     selection?.model,
   );
   const activeEntry = entries.find((entry) => entry.instanceId === selection?.instanceId);
+  const traitsAvailable =
+    !aldoModel ||
+    (activeEntry?.enabled &&
+      activeEntry.isAvailable &&
+      modelOptions
+        .get(activeEntry.instanceId)
+        ?.some((option) => option.slug === selection?.model && !option.isUnavailable));
   const mixedModel = useScopedSettingsMixed(["defaultModelSelection"]);
   const mixedPermissions = useScopedSettingsMixed(["defaultRuntimeMode"]);
   const PermissionIcon = runtimeModeConfig[settings.defaultRuntimeMode].icon;
@@ -138,6 +160,8 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
     updateSettings({ defaultModelSelection: value });
   };
 
+  const automaticModel = aldoModel && settings.defaultModelSelection == null;
+
   const modelRow = (
     <SettingsRow
       serverScoped
@@ -146,16 +170,26 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
       id="default-model"
       title="Model"
       description={
-        isProjectScope
-          ? "Model for new threads in this project."
-          : "Default model for new threads. Projects can override it."
+        aldoModel
+          ? automaticModel
+            ? "Aldo chooses the model and reasoning for each task using the room left on your plans."
+            : "Override for every new thread, including requests to Aldo. A model you choose for one thread takes priority."
+          : isAldoCloud
+            ? "Default model for new threads."
+            : isProjectScope
+              ? "Model for new threads in this project."
+              : "Default model for new threads. Projects can override it."
       }
       status={
         modelUnavailable || mixedModel || modelSource === "project"
           ? undefined
           : settings.defaultModelSelection === null
-            ? "Automatic"
-            : undefined
+            ? aldoModel
+              ? "Router"
+              : "Automatic"
+            : aldoModel
+              ? "Override"
+              : undefined
       }
       resetAction={
         settings.defaultModelSelection !== null ? (
@@ -163,15 +197,29 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
         ) : null
       }
       control={
-        selection && activeEntry ? (
+        aldoModel || (selection && activeEntry) ? (
           <div className="flex min-w-0 flex-wrap items-center justify-end gap-1.5">
             <ProviderModelPicker
-              activeInstanceId={selection.instanceId}
-              model={selection.model}
+              activeInstanceId={
+                selection?.instanceId ??
+                fallbackSelection?.instanceId ??
+                ProviderInstanceId.make("aldo")
+              }
+              model={selection?.model ?? fallbackSelection?.model ?? ""}
               lockedProvider={null}
               instanceEntries={entries}
               modelOptionsByInstance={modelOptions}
               triggerClassName={SETTINGS_PICKER_TRIGGER_CLASSNAME}
+              {...(aldoModel
+                ? {
+                    automaticOption: {
+                      label: "Let Aldo decide",
+                      selected: automaticModel,
+                      onSelect: () => setModel(null),
+                    },
+                    ...(automaticModel ? { triggerLabel: "Let Aldo decide" } : {}),
+                  }
+                : {})}
               {...(mixedModel ? { triggerLabel: "Mixed" } : {})}
               getModelDisabledReason={modelDisabledReason}
               onOpenProviderSetup={(instanceId) => {
@@ -185,7 +233,7 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
                 setModel(createModelSelection(instanceId, model))
               }
             />
-            {!mixedModel ? (
+            {!mixedModel && selection && activeEntry && traitsAvailable && !automaticModel ? (
               <TraitsPicker
                 provider={activeEntry.driverKind}
                 models={activeEntry.models}
@@ -311,6 +359,70 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
     </>
   );
 
+  const permissionsRow = (
+    <SettingsRow
+      serverScoped
+      settingKeys={["defaultRuntimeMode"]}
+      mixed={mixedPermissions}
+      {...searchableSetting("default-permissions")}
+      description={
+        isProjectScope
+          ? "Permissions for new threads in this project."
+          : "Default permissions for new threads. Projects can override them."
+      }
+      resetAction={
+        settings.defaultRuntimeMode !== DEFAULT_SERVER_SETTINGS.defaultRuntimeMode ? (
+          <SettingResetButton
+            label="default permissions"
+            onClick={() =>
+              updateSettings({
+                defaultRuntimeMode: DEFAULT_SERVER_SETTINGS.defaultRuntimeMode,
+              })
+            }
+          />
+        ) : null
+      }
+      control={
+        <Select
+          value={mixedPermissions ? null : settings.defaultRuntimeMode}
+          onValueChange={(value) => {
+            if (value) updateSettings({ defaultRuntimeMode: value });
+          }}
+        >
+          <SelectTrigger size="sm" aria-label="Default permissions">
+            {!mixedPermissions && (
+              <PermissionIcon className="size-3.5 shrink-0 text-muted-foreground" />
+            )}
+            <SelectValue>
+              {mixedPermissions ? "Mixed" : runtimeModeConfig[settings.defaultRuntimeMode].label}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectPopup align="end" alignItemWithTrigger={false}>
+            {runtimeModeOptions.map((mode) => {
+              const option = runtimeModeConfig[mode];
+              const Icon = option.icon;
+              return (
+                <SelectItem key={mode} value={mode} className="min-w-64">
+                  <div className="grid gap-0.5">
+                    <span className="inline-flex items-center gap-1.5 font-medium">
+                      <Icon className="size-3.5 shrink-0 text-muted-foreground" />
+                      {option.label}
+                    </span>
+                    <span className="text-xs leading-4 text-muted-foreground">
+                      {option.description}
+                    </span>
+                  </div>
+                </SelectItem>
+              );
+            })}
+          </SelectPopup>
+        </Select>
+      }
+    />
+  );
+  if (aldoPart === "model") return modelRow;
+  if (aldoPart === "permissions") return permissionsRow;
+
   return (
     <SettingsSection
       id={
@@ -337,67 +449,7 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
       ) : category === "general" ? (
         <>
           {modelRow}
-          <SettingsRow
-            serverScoped
-            settingKeys={["defaultRuntimeMode"]}
-            mixed={mixedPermissions}
-            {...searchableSetting("default-permissions")}
-            description={
-              isProjectScope
-                ? "Permissions for new threads in this project."
-                : "Default permissions for new threads. Projects can override them."
-            }
-            resetAction={
-              settings.defaultRuntimeMode !== DEFAULT_SERVER_SETTINGS.defaultRuntimeMode ? (
-                <SettingResetButton
-                  label="default permissions"
-                  onClick={() =>
-                    updateSettings({
-                      defaultRuntimeMode: DEFAULT_SERVER_SETTINGS.defaultRuntimeMode,
-                    })
-                  }
-                />
-              ) : null
-            }
-            control={
-              <Select
-                value={mixedPermissions ? null : settings.defaultRuntimeMode}
-                onValueChange={(value) => {
-                  if (value) updateSettings({ defaultRuntimeMode: value });
-                }}
-              >
-                <SelectTrigger size="sm" aria-label="Default permissions">
-                  {!mixedPermissions && (
-                    <PermissionIcon className="size-3.5 shrink-0 text-muted-foreground" />
-                  )}
-                  <SelectValue>
-                    {mixedPermissions
-                      ? "Mixed"
-                      : runtimeModeConfig[settings.defaultRuntimeMode].label}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectPopup align="end" alignItemWithTrigger={false}>
-                  {runtimeModeOptions.map((mode) => {
-                    const option = runtimeModeConfig[mode];
-                    const Icon = option.icon;
-                    return (
-                      <SelectItem key={mode} value={mode} className="min-w-64">
-                        <div className="grid gap-0.5">
-                          <span className="inline-flex items-center gap-1.5 font-medium">
-                            <Icon className="size-3.5 shrink-0 text-muted-foreground" />
-                            {option.label}
-                          </span>
-                          <span className="text-xs leading-4 text-muted-foreground">
-                            {option.description}
-                          </span>
-                        </div>
-                      </SelectItem>
-                    );
-                  })}
-                </SelectPopup>
-              </Select>
-            }
-          />
+          {permissionsRow}
           {/* Each Aldo thread works in its machine's own checkout, so these do nothing there. */}
           {isAldoCloud ? null : worktreeRows}
         </>

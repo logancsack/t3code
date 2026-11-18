@@ -40,6 +40,7 @@ export const makeOrchestrationReactor = Effect.gen(function* () {
 
   return {
     start,
+    drainTurnStarts: providerCommandReactor.drainTurnStarts,
   } satisfies OrchestrationReactorShape;
 });
 

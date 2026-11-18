@@ -1,7 +1,7 @@
 import { memo, useState } from "react";
 import { type PendingApproval } from "../../session-logic";
 import { aldoApprovalSentence } from "~/aldo/approvalWords";
-import { isAldoCloud } from "~/aldo/cloud";
+import { isAldoCloud } from "~/aldo/api";
 import { cn } from "~/lib/utils";
 
 interface ComposerPendingApprovalPanelProps {

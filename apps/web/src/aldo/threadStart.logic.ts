@@ -1,12 +1,12 @@
 // What a thread Aldo is starting says until its machine has it: Aldo makes the
 // thread at once (in the sidebar, connecting) and brings the machine up to
 // send it its first message, which can take minutes, or wait for room on the
-// plan, or try again. The directory says how each start stands (cloud.ts
+// plan, or try again. The directory says how each start stands (directory.ts
 // AldoStartState) and what its machine is doing; this is the words for it, in
 // the thread (AldoThreadLoading.tsx) and the sidebar. Pure, so it's tested on
 // its own.
 
-import type { AldoEnvironment, AldoStartState } from "./cloud";
+import { type AldoEnvironment, type AldoStartState } from "./directory";
 
 export type AldoThreadStartTone = "progress" | "waiting" | "retrying" | "failed";
 

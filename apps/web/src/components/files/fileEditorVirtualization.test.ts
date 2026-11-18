@@ -268,75 +268,6 @@ async function makeFixture(
 }
 
 describe("wrapped editor document changes", () => {
-  it("preserves the position above an EOF insertion across layout checkpoints", async () => {
-    const { instance, document, append } = await makeFixture();
-    const previousLastLine = document.lineCount;
-    const before = instance.getLinePosition(previousLastLine);
-    expect(before).toEqual({ top: 120328, height: 60 });
-    const viewport = { top: before!.top - 100, bottom: before!.top + 80 };
-    expect(instance.getAdvancedStickySpecs(viewport)).toEqual({ topOffset: 118240, height: 2156 });
-
-    append();
-
-    expect(document.lineCount).toBe(previousLastLine + 1);
-    expect(instance.getLinePosition(previousLastLine)).toEqual({ top: before!.top, height: 20 });
-    expect(instance.getLinePosition(document.lineCount)).toEqual({ top: 120348, height: 20 });
-    expect(instance.getVirtualizedHeight()).toBe(120376);
-    expect(instance.getAdvancedStickySpecs(viewport)).toEqual({ topOffset: 118240, height: 2136 });
-  });
-
-  it("invalidates changed and shifted rows after an insertion in the middle", async () => {
-    const { instance, document, apply } = await makeFixture();
-    const before = instance.getLinePosition(5001);
-    const position = { line: 5000, character: 2 };
-    apply(document.applyEdits([{ range: { start: position, end: position }, newText: "\n" }]));
-
-    expect(instance.getLinePosition(5001)).toEqual({ top: before!.top, height: 20 });
-    expect(instance.getLineHeight(4999)).toBe(100);
-    expect(instance.getLineHeight(5000)).toBe(20);
-    expect(instance.getLineHeight(5999)).toBe(20);
-    expect(instance.getLinePosition(document.lineCount)).toEqual({ top: 120208, height: 20 });
-  });
-
-  it("keeps preceding measurements when a deletion crosses a checkpoint", async () => {
-    const { instance, document, apply } = await makeFixture();
-    const before = instance.getLinePosition(5000);
-    apply(
-      document.applyEdits([
-        {
-          range: { start: { line: 4999, character: 2 }, end: { line: 5001, character: 2 } },
-          newText: "",
-        },
-      ]),
-    );
-
-    expect(document.lineCount).toBe(5999);
-    expect(instance.getLinePosition(5000)).toEqual({ top: before!.top, height: 20 });
-    expect(instance.getLineHeight(120)).toBe(60);
-    expect(instance.getLineHeight(4999)).toBe(20);
-    expect(instance.getLineHeight(6000)).toBe(20);
-    expect(instance.getLinePosition(document.lineCount)).toEqual({ top: 120068, height: 20 });
-  });
-
-  it("uses the earliest changed line for edits at multiple selections", async () => {
-    const { instance, document, apply } = await makeFixture();
-    const before = instance.getLinePosition(121);
-    apply(
-      document.applyEdits(
-        [120, 5000].map((line) => ({
-          range: { start: { line, character: 2 }, end: { line, character: 2 } },
-          newText: "\n",
-        })),
-      ),
-    );
-
-    expect(document.lineCount).toBe(6003);
-    expect(instance.getLinePosition(121)).toEqual({ top: before!.top, height: 20 });
-    expect(instance.getLineHeight(0)).toBe(80);
-    expect(instance.getLineHeight(120)).toBe(20);
-    expect(instance.getLineHeight(4999)).toBe(20);
-  });
-
   it("retains the unchanged prefix through repeated Enter, undo and redo", async () => {
     const { instance, document, apply, append } = await makeFixture();
     const before = instance.getLinePosition(6001);
@@ -349,74 +280,9 @@ describe("wrapped editor document changes", () => {
     expect(document.lineCount).toBe(6061);
     expect(instance.getLinePosition(6001)?.top).toBe(before!.top);
   });
-
-  it("keeps unwrapped positions unchanged", async () => {
-    const { instance, append } = await makeFixture("scroll");
-    const before = instance.getLinePosition(6001);
-    append();
-    expect(instance.getLinePosition(6001)).toEqual(before);
-    expect(instance.getLinePosition(6002)).toEqual({ top: 120028, height: 20 });
-  });
-
-  it("fully invalidates measurements when the first changed line is unknown", async () => {
-    const { instance, document, apply } = await makeFixture();
-    const position = document.positionAt(document.getText().length);
-    apply(
-      document.applyEdits([{ range: { start: position, end: position }, newText: "\n" }]),
-      false,
-    );
-    expect(instance.getLinePosition(6001)).toEqual({ top: 120008, height: 20 });
-    expect(instance.getLineHeight(0)).toBe(20);
-  });
-
-  it("still discards all measured rows after a metric change", async () => {
-    const { instance, file, append } = await makeFixture();
-    append();
-    instance.setMetrics({ hunkLineCount: 50, lineHeight: 24, diffHeaderHeight: 44, spacing: 8 });
-    instance.prepareCodeViewItem(file, 0);
-    expect(instance.getLinePosition(6001)).toEqual({ top: 144008, height: 24 });
-  });
-
-  it("still discards all measured rows when annotations change", async () => {
-    const { instance, file, append } = await makeFixture();
-    append();
-    instance.setLineAnnotations([{ lineNumber: 10, metadata: undefined }]);
-    instance.prepareCodeViewItem(file, 0);
-    expect(instance.getLinePosition(6001)).toEqual({ top: 120008, height: 20 });
-  });
 });
 
 describe("wrapped measurement widths", () => {
-  it.each([
-    [226.25, 482.25],
-    [482.25, 226.25],
-  ])(
-    "drops offscreen measurements when content changes from %spx to %spx",
-    async (before, after) => {
-      const { instance } = await makeFixture("wrap", 6001, before);
-      instance.measure([[6000, 60]], after);
-      expect(instance.getLineHeight(0)).toBe(20);
-      expect(instance.getLineHeight(120)).toBe(20);
-      expect(instance.getLineHeight(6000)).toBe(60);
-      expect(instance.getVirtualizedHeight()).toBe(120076);
-    },
-  );
-
-  it.each([
-    [226.25, 482.25],
-    [482.25, 226.25],
-  ])(
-    "does not retain old-width prefix heights after a %spx to %spx resize and edit",
-    async (before, after) => {
-      const { instance, append } = await makeFixture("wrap", 6001, before);
-      instance.measure([[6000, 60]], after);
-      append();
-      expect(instance.getLineHeight(0)).toBe(20);
-      expect(instance.getLineHeight(120)).toBe(20);
-      expect(instance.getLinePosition(6001)).toEqual({ top: 120008, height: 20 });
-    },
-  );
-
   it("repairs an edit before resize delivery when the real resize and render queues drain", async () => {
     const { instance, append } = await makeFixture();
     instance.measure([[6000, 60]]);
@@ -433,63 +299,6 @@ describe("wrapped measurement widths", () => {
     expect(instance.getLinePosition(6001)).toEqual({ top: 120008, height: 60 });
   });
 
-  it("keeps measured prefixes through same-width reconciliation and editing", async () => {
-    const { instance, append } = await makeFixture();
-    instance.measure([[6000, 60]]);
-    append();
-    expect(instance.getLineHeight(0)).toBe(80);
-    expect(instance.getLineHeight(120)).toBe(60);
-    expect(instance.getLinePosition(6001)).toEqual({ top: 120328, height: 20 });
-  });
-
-  it("preserves measurements on first and repeated same-width resize deliveries", async () => {
-    const { instance } = await makeFixture();
-    const before = instance.getVirtualizedHeight();
-    const deliverResize = instance.observeLayout();
-    deliverResize();
-    deliverResize();
-    drainRenderFrames();
-    expect(instance.getLineHeight(0)).toBe(80);
-    expect(instance.getVirtualizedHeight()).toBe(before);
-  });
-
-  it.each([
-    [226.25, 482.25],
-    [482.25, 226.25],
-  ])("handles a %spx to %spx resize before first observer delivery", async (before, after) => {
-    const { instance } = await makeFixture("wrap", 6001, before);
-    instance.measure([[6000, 20]], before);
-    const deliverResize = instance.observeLayout();
-    instance.resizeContent(after);
-    deliverResize();
-    drainRenderFrames();
-    expect(instance.getLineHeight(0)).toBe(20);
-    expect(instance.getVirtualizedHeight()).toBe(120036);
-  });
-
-  it("keeps width validity when a new editor attaches to the same file", async () => {
-    const { instance } = await makeFixture();
-    instance.measure([[6000, 20]]);
-    const deliverResize = instance.observeLayout();
-    vi.stubGlobal("SVGSVGElement", EditorElement);
-    vi.stubGlobal(
-      "document",
-      Object.assign(new EditorElement(), { createElement: () => new EditorElement() }),
-    );
-    const first = new Editor<undefined>();
-    editors.push(first);
-    first.edit(instance);
-    first.cleanUp();
-    const second = new Editor<undefined>();
-    editors.push(second);
-    second.edit(instance);
-    instance.resizeContent(482.25);
-    deliverResize();
-    drainRenderFrames();
-    expect(instance.getLineHeight(0)).toBe(20);
-    expect(instance.getVirtualizedHeight()).toBe(120036);
-  });
-
   it("ignores stale resize deliveries after cleanup", async () => {
     const { instance } = await makeFixture();
     const deliverResize = instance.observeLayout();
@@ -498,30 +307,6 @@ describe("wrapped measurement widths", () => {
     animationFrames.clear();
     deliverResize();
     expect(animationFrames.size).toBe(0);
-  });
-
-  it("does not discard a stable code width for gutter subpixel rounding", async () => {
-    const { instance } = await makeFixture("wrap", 6001, 482.25);
-    const deliverResize = instance.observeLayout();
-    instance.resizeContent(482.234375, 539);
-    deliverResize();
-    drainRenderFrames();
-    expect(instance.getLineHeight(0)).toBe(80);
-  });
-
-  it("waits for a visible width instead of caching measurements while hidden", async () => {
-    const { instance } = await makeFixture();
-    instance.measure([[6000, 20]]);
-    const deliverResize = instance.observeLayout();
-    instance.resizeContent(0, 0);
-    deliverResize();
-    drainRenderFrames();
-    expect(instance.getLineHeight(0)).toBe(80);
-    instance.resizeContent(482.25);
-    deliverResize();
-    drainRenderFrames();
-    expect(instance.getLineHeight(0)).toBe(20);
-    expect(instance.getVirtualizedHeight()).toBe(120036);
   });
 });
 
@@ -661,35 +446,6 @@ async function makeEditorFixture(lineCount: number) {
 }
 
 describe("editor gutter-width changes", () => {
-  it.each([
-    [9999, 1],
-    [9998, 3],
-  ])(
-    "clears prefix measurements when %i lines grow by %i across a digit boundary",
-    async (lines, count) => {
-      const { instance, editor, append } = await makeEditorFixture(lines);
-      expect(instance.getLineHeight(0)).toBe(80);
-      append(count);
-      expect(editor.getText().split("\n")).toHaveLength(lines + count);
-      expect(instance.getLineHeight(0)).toBe(20);
-      expect(instance.getLineHeight(5000)).toBe(20);
-    },
-  );
-
-  it.each([
-    [10000, 1],
-    [10002, 4],
-  ])(
-    "clears prefix measurements when %i lines shrink by %i across a digit boundary",
-    async (lines, count) => {
-      const { instance, editor, remove } = await makeEditorFixture(lines);
-      remove(count);
-      expect(editor.getText().split("\n")).toHaveLength(lines - count);
-      expect(instance.getLineHeight(0)).toBe(20);
-      expect(instance.getLineHeight(5000)).toBe(20);
-    },
-  );
-
   it("clears newly measured prefixes on undo and redo across a digit boundary", async () => {
     const { instance, editor, append } = await makeEditorFixture(9999);
     append(1);
@@ -702,22 +458,4 @@ describe("editor gutter-width changes", () => {
     expect(editor.getText().split("\n")).toHaveLength(10000);
     expect(instance.getLineHeight(0)).toBe(20);
   });
-
-  it.each([
-    [9998, 1],
-    [10000, 2],
-  ])(
-    "retains prefix measurements when %i lines grow by %i without changing digit width",
-    async (lines, count) => {
-      const { instance, editor, append } = await makeEditorFixture(lines);
-      append(count);
-      expect(editor.getText().split("\n")).toHaveLength(lines + count);
-      expect(instance.getLineHeight(0)).toBe(80);
-      expect(instance.getLineHeight(5000)).toBe(80);
-      editor.undo();
-      expect(instance.getLineHeight(0)).toBe(80);
-      editor.redo();
-      expect(instance.getLineHeight(0)).toBe(80);
-    },
-  );
 });

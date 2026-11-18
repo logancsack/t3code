@@ -42,9 +42,12 @@ import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
+import { Atom } from "effect/unstable/reactivity";
 import { projectFaviconCache } from "../assets/projectFaviconCache";
 
-import { aldoKeepsEnvironmentCache, aldoThreadDetail } from "../aldo/cloud";
+import { aldoKeepsEnvironmentCache } from "../aldo/directory";
+import { aldoThreadDetail } from "../aldo/threadApi";
+import { isAldoConnectionId } from "../aldo/api";
 import { withAldoTemplate } from "../aldo/serverConfig.logic";
 
 const DATABASE_NAME = "t3code:connection-runtime";
@@ -93,6 +96,60 @@ const StoredVcsRefs = Schema.Struct({
 const StoredVcsRefsJson = Schema.fromJsonString(StoredVcsRefs);
 const ConnectionCatalogDocumentJson = Schema.fromJsonString(ConnectionCatalogDocument);
 const decodeConnectionCatalogDocument = Schema.decodeUnknownEffect(ConnectionCatalogDocumentJson);
+/**
+ * Aldo: the stored shells read as the directory registers its machines
+ * (readCachedShells, seedEnvironmentCache), for each machine's first load to
+ * take instead of reading it again on its own. A few hundred separate reads
+ * landed one at a time, and the sidebar rendered again for each.
+ */
+const shellsRead = new Map<EnvironmentId, string>();
+/**
+ * Aldo: stored server configs as decoded, by their text with the
+ * environment's id taken out (serverConfigText). A sleeping machine's config
+ * is a copy of one template, renamed (aldo/serverConfig.ts), so a few hundred
+ * machines decode one; decoding each copy held the page for seconds.
+ */
+const decodedServerConfigs = new Map<string, ServerConfig>();
+const DECODED_SERVER_CONFIGS = 8;
+
+/**
+ * Aldo: the template a machine this browser never connected to shows
+ * (seedMissingServerConfigs), stored once under this key: such a machine's
+ * own entry holds only ALDO_TEMPLATE_MARKER. A few hundred 147 KB copies took
+ * seconds to read on every open.
+ */
+const ALDO_TEMPLATE_KEY = "aldo:template" as EnvironmentId;
+const ALDO_TEMPLATE_MARKER = "aldo:template";
+/** The stored template as decoded, once for every machine that shows it; undefined until read. */
+let aldoTemplate: Option.Option<ServerConfig> | undefined;
+let aldoTemplateRead: Promise<void> | null = null;
+
+/**
+ * A stored config's text without its environment's id, or null if the id
+ * appears other than as its two `environmentId`s (then it isn't shared).
+ */
+function serverConfigText(raw: string, environmentId: EnvironmentId): string | null {
+  const id = JSON.stringify(environmentId);
+  const parts = raw.split(id);
+  return parts.length === 3 ? parts.join("\u0000") : null;
+}
+
+function sharedServerConfig(raw: string, environmentId: EnvironmentId): ServerConfig | null {
+  const text = serverConfigText(raw, environmentId);
+  const config = text === null ? undefined : decodedServerConfigs.get(text);
+  return config ? { ...config, environment: { ...config.environment, environmentId } } : null;
+}
+
+function rememberServerConfig(raw: string, environmentId: EnvironmentId, config: ServerConfig) {
+  const text = serverConfigText(raw, environmentId);
+  if (text === null) return;
+  decodedServerConfigs.delete(text);
+  decodedServerConfigs.set(text, config);
+  for (const oldest of decodedServerConfigs.keys()) {
+    if (decodedServerConfigs.size <= DECODED_SERVER_CONFIGS) break;
+    decodedServerConfigs.delete(oldest);
+  }
+}
 const encodeConnectionCatalogDocument = Schema.encodeEffect(ConnectionCatalogDocumentJson);
 const decodeStoredShellSnapshot = Schema.decodeUnknownEffect(StoredShellSnapshotJson);
 const decodeStoredThreadSnapshot = Schema.decodeUnknownEffect(StoredThreadSnapshotJson);
@@ -171,16 +228,81 @@ const openDatabase = Effect.fn("web.connectionStorage.openDatabase")(function* (
   });
 });
 
+interface QueuedRead {
+  readonly key: IDBValidKey;
+  readonly resume: (result: Effect.Effect<unknown, ConnectionTransientError>) => void;
+}
+
+/** Reads waiting for the next microtask, by database and store. */
+const queuedReads = new Map<IDBDatabase, Map<string, Array<QueuedRead>>>();
+
+function runQueuedReads(database: IDBDatabase): void {
+  const stores = queuedReads.get(database);
+  queuedReads.delete(database);
+  for (const [storeName, reads] of stores ?? []) {
+    const fail = (cause: unknown) => {
+      for (const read of reads) read.resume(Effect.fail(catalogError("read", cause)));
+    };
+    try {
+      const transaction = database.transaction(storeName, "readonly");
+      const store = transaction.objectStore(storeName);
+      const requests = reads.map((read) => store.get(read.key));
+      transaction.addEventListener("complete", () => {
+        Atom.batch(() => {
+          for (const [index, read] of reads.entries()) {
+            read.resume(Effect.succeed(requests[index]!.result));
+          }
+        });
+      });
+      transaction.addEventListener("abort", () =>
+        fail(transaction.error ?? "Unknown IndexedDB read error"),
+      );
+    } catch (cause) {
+      fail(cause);
+    }
+  }
+}
+
+/**
+ * Reads asked for together share a transaction and are answered at once, in
+ * one atom batch. Every environment's first load reads its shell and models:
+ * in a transaction each, the answers came one by one, and with hundreds of
+ * environments each one rebuilt everything that lists them.
+ */
 function readDatabaseValue(database: IDBDatabase, storeName: string, key: IDBValidKey) {
   return Effect.callback<unknown, ConnectionTransientError>((resume) => {
-    const request = database.transaction(storeName, "readonly").objectStore(storeName).get(key);
-    request.addEventListener("error", () => {
-      resume(Effect.fail(catalogError("read", request.error ?? "Unknown IndexedDB read error")));
-    });
-    request.addEventListener("success", () => {
-      resume(Effect.succeed(request.result));
-    });
+    let stores = queuedReads.get(database);
+    if (stores === undefined) {
+      stores = new Map();
+      queuedReads.set(database, stores);
+      queueMicrotask(() => runQueuedReads(database));
+    }
+    const reads = stores.get(storeName);
+    if (reads === undefined) stores.set(storeName, [{ key, resume }]);
+    else reads.push({ key, resume });
   }).pipe(Effect.withSpan("web.connectionStorage.readDatabaseValue"));
+}
+
+/** Reads the stored template (aldoTemplate), unless it's been read or written already. */
+function loadAldoTemplate(database: IDBDatabase): Promise<void> {
+  aldoTemplateRead ??= Effect.runPromise(
+    readDatabaseValue(database, SERVER_CONFIG_STORE_NAME, ALDO_TEMPLATE_KEY).pipe(
+      Effect.flatMap((raw) =>
+        typeof raw === "string"
+          ? decodeStoredServerConfig(raw).pipe(Effect.map((stored) => Option.some(stored.config)))
+          : Effect.succeedNone,
+      ),
+    ),
+  ).then(
+    (template) => {
+      aldoTemplate ??= template;
+    },
+    (cause: unknown) => {
+      aldoTemplateRead = null;
+      throw cause;
+    },
+  );
+  return aldoTemplateRead;
 }
 
 function writeDatabaseValue(
@@ -490,6 +612,8 @@ export const connectionStorageLayer = Layer.effectContext(
     );
     const catalog = yield* makeCatalogStore(makeCatalogBackend(database));
     const githubRoutingPermissions = makeBrowserGitHubRoutingPermissions();
+    // Aldo: the models its sleeping machines show, ready by the time they're asked for.
+    void loadAldoTemplate(database).catch(() => undefined);
 
     const targetStore = ConnectionTargetStore.of({
       list: catalog.read.pipe(
@@ -549,13 +673,19 @@ export const connectionStorageLayer = Layer.effectContext(
           ),
         ),
       put: (connectionId, credential) =>
-        catalog.update((document) => ({
-          ...document,
-          credentials: replaceCatalogValue(document.credentials, (value) => value.connectionId, {
-            connectionId,
-            credential,
-          }),
-        })),
+        // Aldo: a machine's registration carries a placeholder that's never read
+        // (aldoEnvironmentGateway has its token), and storing it rewrote the whole
+        // catalog once per machine, one after another, on every directory fetch.
+        isAldoConnectionId(connectionId)
+          ? Effect.void
+          : catalog.update((document) => ({
+              ...document,
+              credentials: replaceCatalogValue(
+                document.credentials,
+                (value) => value.connectionId,
+                { connectionId, credential },
+              ),
+            })),
       remove: (connectionId) =>
         catalog.update((document) => ({
           ...document,
@@ -588,7 +718,13 @@ export const connectionStorageLayer = Layer.effectContext(
     });
     const cacheStore = EnvironmentCacheStore.of({
       loadShell: (environmentId) =>
-        readDatabaseValue(database, SHELL_STORE_NAME, environmentId).pipe(
+        Effect.suspend(() => {
+          const read = shellsRead.get(environmentId);
+          shellsRead.delete(environmentId);
+          return read === undefined
+            ? readDatabaseValue(database, SHELL_STORE_NAME, environmentId)
+            : Effect.succeed<unknown>(read);
+        }).pipe(
           Effect.tap(() => Effect.promise(() => projectFaviconCache.hydrate())),
           Effect.flatMap((raw) => {
             if (typeof raw !== "string") {
@@ -623,6 +759,7 @@ export const connectionStorageLayer = Layer.effectContext(
             catch: (cause) => persistenceError("save-shell", cause),
           });
           yield* writeDatabaseValue(database, SHELL_STORE_NAME, environmentId, encoded);
+          shellsRead.delete(environmentId);
         }).pipe(
           Effect.mapError((cause) =>
             cause._tag === "ConnectionPersistenceError"
@@ -636,11 +773,28 @@ export const connectionStorageLayer = Layer.effectContext(
             if (typeof raw !== "string") {
               return Effect.succeedNone;
             }
+            if (raw === ALDO_TEMPLATE_MARKER) {
+              const shown = () =>
+                Option.map(aldoTemplate ?? Option.none(), (config) => ({
+                  ...config,
+                  environment: { ...config.environment, environmentId },
+                }));
+              // Read as the database opened, as a rule: with the shells it shows models for.
+              if (aldoTemplate !== undefined) return Effect.succeed(shown());
+              return Effect.tryPromise({
+                try: () => loadAldoTemplate(database),
+                catch: (cause) => persistenceError("load-server-config", cause),
+              }).pipe(Effect.map(shown));
+            }
+            const shared = sharedServerConfig(raw, environmentId);
+            if (shared) return Effect.succeedSome(shared);
             return decodeStoredServerConfig(raw).pipe(
               Effect.mapError((cause) => persistenceError("load-server-config", cause)),
-              Effect.map((stored) =>
-                stored.environmentId === environmentId ? Option.some(stored.config) : Option.none(),
-              ),
+              Effect.map((stored) => {
+                if (stored.environmentId !== environmentId) return Option.none();
+                rememberServerConfig(raw, environmentId, stored.config);
+                return Option.some(stored.config);
+              }),
             );
           }),
           Effect.mapError((cause) =>
@@ -688,18 +842,9 @@ export const connectionStorageLayer = Layer.effectContext(
               ? cause
               : persistenceError("load-thread", cause),
           ),
-          // Aldo: a sleeping machine's thread opens from Aldo's copy when it's newer,
-          // or when the cached one can't be read (it's reported as before if Aldo has none).
-          Effect.matchEffect({
-            onSuccess: (cached) => withAldoThreadDetail(database, environmentId, threadId, cached),
-            onFailure: (error) =>
-              withAldoThreadDetail(database, environmentId, threadId, Option.none()).pipe(
-                Effect.flatMap((copy) =>
-                  Option.isSome(copy) ? Effect.succeed(copy) : Effect.fail(error),
-                ),
-              ),
-          }),
         ),
+      refreshThread: (environmentId, threadId, afterSequence) =>
+        refreshAldoThreadDetail(environmentId, threadId, afterSequence),
       saveThread: (environmentId, snapshot) =>
         Effect.gen(function* () {
           const encoded = yield* encodeStoredThreadSnapshot({
@@ -799,55 +944,30 @@ export const connectionStorageLayer = Layer.effectContext(
   }),
 );
 
-/**
- * Aldo: the thread as Aldo's copy has it when that's newer than the cached one
- * (for a machine that isn't connected; aldo/threadDetails.ts), and cached from
- * then on. A copy that doesn't decode, or isn't newer, leaves the cache as it was.
- */
-function withAldoThreadDetail(
-  database: IDBDatabase,
+/** A remote copy refreshes the visible thread after the local cache has rendered. */
+function refreshAldoThreadDetail(
   environmentId: EnvironmentId,
   threadId: ThreadId,
-  cached: Option.Option<OrchestrationThreadDetailSnapshot>,
+  cachedSequence: number | null,
 ) {
-  const cachedSequence = Option.match(cached, {
-    onNone: () => null,
-    onSome: (snapshot) => snapshot.snapshotSequence,
-  });
   return Effect.promise(() => aldoThreadDetail(environmentId, threadId, cachedSequence)).pipe(
     Effect.flatMap((copy) =>
       copy === null
-        ? Effect.succeed(cached)
+        ? Effect.succeedNone
         : decodeThreadDetailSnapshot(copy).pipe(
-            Effect.flatMap((snapshot) =>
-              snapshot.thread.id !== threadId || snapshot.snapshotSequence <= (cachedSequence ?? -1)
-                ? Effect.succeed(cached)
-                : encodeStoredThreadSnapshot({
-                    schemaVersion: 4,
-                    environmentId,
-                    threadId,
-                    snapshot,
-                  }).pipe(
-                    Effect.flatMap((encoded) =>
-                      writeDatabaseValue(
-                        database,
-                        THREAD_STORE_NAME,
-                        threadCacheKey(environmentId, threadId),
-                        encoded,
-                      ),
-                    ),
-                    // Shown even if it couldn't be cached.
-                    Effect.ignore,
-                    Effect.as(Option.some(snapshot)),
-                  ),
+            Effect.map((snapshot) =>
+              snapshot.thread.id === threadId && snapshot.snapshotSequence > (cachedSequence ?? -1)
+                ? Option.some(snapshot)
+                : Option.none(),
             ),
-            Effect.orElseSucceed(() => cached),
+            Effect.orElseSucceed(() => Option.none()),
           ),
     ),
   );
 }
 
 function clearCachedEnvironment(database: IDBDatabase, environmentId: EnvironmentId) {
+  shellsRead.delete(environmentId);
   return Effect.all(
     [
       Effect.promise(() => projectFaviconCache.clearEnvironment(environmentId)),
@@ -907,6 +1027,7 @@ export function seedEnvironmentCache(input: {
             snapshot,
           });
           yield* writeDatabaseValue(database, SHELL_STORE_NAME, input.environmentId, shell);
+          shellsRead.set(input.environmentId, shell);
           if (input.serverConfig !== null) {
             const config = yield* decodeServerConfig(input.serverConfig);
             const stored = yield* encodeStoredServerConfig({
@@ -927,18 +1048,73 @@ export function seedEnvironmentCache(input: {
   );
 }
 
+const encodeServerConfig = Schema.encodeEffect(ServerConfig);
+
+/** A server config stored for an environment, as encodeStoredServerConfig writes it, from its encoded form. */
+function storedServerConfigOf(
+  config: { readonly environment: object },
+  environmentId: EnvironmentId,
+): string {
+  return JSON.stringify({
+    schemaVersion: 1,
+    environmentId,
+    config: { ...config, environment: { ...config.environment, environmentId } },
+  });
+}
+
 /**
- * Aldo: writes the server config given for each environment that has none
- * cached (a sleeping machine this browser never connected to), so its threads
- * open with models to send with; a cached one, from the machine itself, is
- * kept, with the providers the given one lists that it lacks added (its T3
- * started before they shipped, and gets them when it starts again), and the
- * user's `settings` that Aldo keeps over its own (it gets those as it wakes).
- * Checked and written in one transaction. Returns the environments written,
- * and the ones whose cached config was kept as it was.
+ * Aldo: of these environments' stored server configs (`cached`), the ones to
+ * show the template (`stored`, as stored under ALDO_TEMPLATE_KEY) and the
+ * ones that are a machine's own. None, the template or a copy of one shows
+ * it: copies differ only in their id, so a config another shares is one. A
+ * machine's own is like no other's (it checked each provider as it ran).
+ */
+export function aldoTemplateCopies(
+  cached: ReadonlyMap<EnvironmentId, unknown>,
+  stored: string,
+): { readonly template: EnvironmentId[]; readonly own: EnvironmentId[] } {
+  const templateText = serverConfigText(stored, ALDO_TEMPLATE_KEY);
+  const template: EnvironmentId[] = [];
+  const own: EnvironmentId[] = [];
+  const alike = new Map<string, EnvironmentId[]>();
+  for (const [environmentId, raw] of cached) {
+    const text = typeof raw === "string" ? serverConfigText(raw, environmentId) : null;
+    if (
+      raw === undefined ||
+      raw === ALDO_TEMPLATE_MARKER ||
+      (text !== null && text === templateText)
+    ) {
+      template.push(environmentId);
+    } else if (text === null) {
+      own.push(environmentId);
+    } else {
+      const group = alike.get(text);
+      if (group) group.push(environmentId);
+      else alike.set(text, [environmentId]);
+    }
+  }
+  for (const ids of alike.values()) (ids.length > 1 ? template : own).push(...ids);
+  return { template, own };
+}
+
+/**
+ * Aldo: brings the server configs of these environments (machines that
+ * aren't connected) up to the one given (`template`, the newest any machine
+ * reported), so their threads open with models to send with. One with none
+ * cached (a sleeping machine this browser never connected to) shows the
+ * template itself, stored once (ALDO_TEMPLATE_KEY), as do the copies of a
+ * template an earlier build wrote for each such machine. A cached one from
+ * the machine itself is kept, as it wakes with it: with the providers the
+ * template lists that it lacks added (its T3 started before they shipped,
+ * and gets them when it starts again), and the user's `settings` that Aldo
+ * keeps over its own (it gets those as it wakes). Checked and written in one
+ * transaction. Returns the environments written (each one that shows the
+ * template, which may have changed), and the ones whose cached config was
+ * kept as it was.
  */
 export function seedMissingServerConfigs(
-  configs: ReadonlyMap<EnvironmentId, unknown>,
+  template: unknown,
+  environmentIds: ReadonlyArray<EnvironmentId>,
   settings: Readonly<Record<string, unknown>> = {},
 ): Promise<{ readonly written: EnvironmentId[]; readonly kept: EnvironmentId[] }> {
   return Effect.runPromise(
@@ -946,25 +1122,21 @@ export function seedMissingServerConfigs(
       openDatabase(),
       (database) =>
         Effect.gen(function* () {
-          const encoded = new Map<EnvironmentId, string>();
-          for (const [environmentId, raw] of configs) {
-            const config = yield* decodeServerConfig(raw).pipe(Effect.option);
-            if (Option.isNone(config)) continue;
-            const stored = yield* encodeStoredServerConfig({
-              schemaVersion: 1,
-              environmentId,
-              config: config.value,
-            }).pipe(Effect.option);
-            if (Option.isSome(stored)) encoded.set(environmentId, stored.value);
-          }
-          return yield* Effect.callback<
+          const none = { written: [], kept: [] };
+          const config = yield* decodeServerConfig(template).pipe(Effect.option);
+          if (Option.isNone(config)) return none;
+          const encoded = yield* encodeServerConfig(config.value).pipe(Effect.option);
+          if (Option.isNone(encoded)) return none;
+          const offered = { providers: encoded.value.providers };
+          const storedTemplate = storedServerConfigOf(encoded.value, ALDO_TEMPLATE_KEY);
+          const seeded = yield* Effect.callback<
             { written: EnvironmentId[]; kept: EnvironmentId[] },
             ConnectionTransientError
           >((resume) => {
             const written: EnvironmentId[] = [];
             const kept: EnvironmentId[] = [];
             const transaction = database.transaction(SERVER_CONFIG_STORE_NAME, "readwrite");
-            transaction.addEventListener("error", () => {
+            transaction.addEventListener("abort", () => {
               resume(
                 Effect.fail(
                   catalogError("write", transaction.error ?? "Unknown IndexedDB write error"),
@@ -975,22 +1147,38 @@ export function seedMissingServerConfigs(
               resume(Effect.succeed({ written, kept }));
             });
             const store = transaction.objectStore(SERVER_CONFIG_STORE_NAME);
-            for (const [environmentId, value] of encoded) {
+            store.put(storedTemplate, ALDO_TEMPLATE_KEY);
+            const showTemplate = (environmentId: EnvironmentId, raw: unknown) => {
+              if (raw !== ALDO_TEMPLATE_MARKER) store.put(ALDO_TEMPLATE_MARKER, environmentId);
+              written.push(environmentId);
+            };
+            const keepOwn = (environmentId: EnvironmentId, raw: unknown) => {
+              const next = withAldoTemplate(raw, offered, settings);
+              if (next === null) {
+                kept.push(environmentId);
+                return;
+              }
+              store.put(next, environmentId);
+              written.push(environmentId);
+            };
+            const requested = new Set(environmentIds);
+            const cached = new Map<EnvironmentId, unknown>();
+            const seed = () => {
+              const { template, own } = aldoTemplateCopies(cached, storedTemplate);
+              for (const environmentId of template)
+                showTemplate(environmentId, cached.get(environmentId));
+              for (const environmentId of own) keepOwn(environmentId, cached.get(environmentId));
+            };
+            for (const environmentId of requested) {
               const request = store.get(environmentId);
               request.addEventListener("success", () => {
-                const next =
-                  request.result === undefined
-                    ? value
-                    : withAldoTemplate(request.result, value, settings);
-                if (next === null) {
-                  kept.push(environmentId);
-                  return;
-                }
-                store.put(next, environmentId);
-                written.push(environmentId);
+                cached.set(environmentId, request.result);
+                if (cached.size === requested.size) seed();
               });
             }
           });
+          aldoTemplate = Option.some(config.value);
+          return seeded;
         }),
       (database) => Effect.sync(() => database.close()),
     ),
@@ -1034,7 +1222,8 @@ function summarizeStoredShell(
 
 /**
  * The shells cached for these environments, in one read. Aldo compares their
- * sequences with the copies it keeps of its machines' shells.
+ * sequences with the copies it keeps of its machines' shells, and the
+ * machines' first loads take them from here (shellsRead).
  */
 export function readCachedShells(
   environmentIds: ReadonlyArray<EnvironmentId>,
@@ -1063,6 +1252,8 @@ export function readCachedShells(
               request.addEventListener("success", () => {
                 const shell = summarizeStoredShell(request.result, environmentId);
                 if (shell) shells.set(environmentId, shell);
+                if (typeof request.result === "string")
+                  shellsRead.set(environmentId, request.result);
               });
             }
           },

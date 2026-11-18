@@ -42,12 +42,9 @@ import {
 import { ProjectActionsSettings } from "./ProjectActionsSettings";
 import { ProjectDefaultsSettings } from "./ProjectDefaultsSettings";
 import { projectGroupTitleNeedsUpdate } from "./ProjectSettingsPanel.logic";
-import {
-  ALDO_PROJECT_REMOVAL_NOTE,
-  isAldoCloud,
-  isAldoEnvironmentId,
-  removeAldoProjectSandbox,
-} from "../../aldo/cloud";
+import { ALDO_PROJECT_REMOVAL_NOTE, removeAldoProjectSandbox } from "../../aldo/directory";
+import { isAldoCloud, isAldoEnvironmentId } from "../../aldo/api";
+import { AldoProjectCodeSettings } from "../../aldo/AldoProjectCode";
 import { useSettingsProjectGroups } from "./useSettingsProjectGroups";
 
 const ProjectIconPickerDialog = lazy(() =>
@@ -514,7 +511,10 @@ function ProjectDetail({
             }
           />
         </SettingsSection>
-        <ProjectDefaultsSettings category="project" />
+        {isAldoCloud ? null : <ProjectDefaultsSettings category="project" />}
+        {isAldoCloud ? (
+          <AldoProjectCodeSettings environmentId={representative.environmentId} />
+        ) : null}
         {/* Aldo hides the machines: a project is its repository, not its checkouts. */}
         {isAldoCloud ? null : <ProjectActionsSettings />}
         {hasMultipleCheckouts && !isAldoCloud ? checkoutChoices : null}

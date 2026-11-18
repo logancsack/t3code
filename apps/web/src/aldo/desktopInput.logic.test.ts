@@ -1,51 +1,42 @@
-// @effect-diagnostics nodeBuiltinImport:off
+// @vitest-environment jsdom
 
-import * as NodeFS from "node:fs";
-import { describe, expect, it, vi } from "vite-plus/test";
-import { aldoDesktopOwnsKeyboard } from "./desktopInput.logic";
+import { expect, it, vi } from "vite-plus/test";
+import { listenForAppShortcuts } from "./desktopInput.logic";
 
-// Exercise the real capture-handler entry before any terminal/chat shortcut runs.
-const chatView = NodeFS.readFileSync(
-  new URL("../components/ChatView.tsx", import.meta.url),
-  "utf8",
-);
-const captureEntry = chatView
-  .split("const handler = (event: globalThis.KeyboardEvent) => {")[1]!
-  .split("if (preventRepeatedTerminalCloseShortcut(event, keybindings)) {")[0]!;
-
-describe("remote desktop keyboard ownership", () => {
-  it.each(["a", "Enter", "Escape", "Control", "c"])(
-    "lets desktop %s events reach noVNC before app shortcut processing",
-    (key) => {
-      const processAppShortcut = vi.fn();
-      const handler = new Function(
-        "aldoDesktopOwnsKeyboard",
-        "processAppShortcut",
-        `return (event) => { ${captureEntry} processAppShortcut(event); };`,
-      )(aldoDesktopOwnsKeyboard, processAppShortcut);
-      const event = {
-        key,
-        target: { closest: (selector: string) => (selector === "[data-aldo-desktop]" ? {} : null) },
-        preventDefault: vi.fn(),
-        stopPropagation: vi.fn(),
-      };
-      handler(event);
-      expect(processAppShortcut).not.toHaveBeenCalled();
-      expect(event.preventDefault).not.toHaveBeenCalled();
-      expect(event.stopPropagation).not.toHaveBeenCalled();
-    },
-  );
-
-  it("keeps normal app keyboard handling available outside the desktop", () => {
-    const processAppShortcut = vi.fn();
-    const handler = new Function(
-      "aldoDesktopOwnsKeyboard",
-      "processAppShortcut",
-      `return (event) => { ${captureEntry} processAppShortcut(event); };`,
-    )(aldoDesktopOwnsKeyboard, processAppShortcut);
-    handler({ target: { closest: () => null } });
-    expect(processAppShortcut).toHaveBeenCalledOnce();
-    expect(aldoDesktopOwnsKeyboard(null)).toBe(false);
-    expect(aldoDesktopOwnsKeyboard({})).toBe(false);
+it("leaves desktop key events for noVNC, handles app shortcuts elsewhere, and stops listening", () => {
+  const desktop = document.createElement("div");
+  desktop.dataset.aldoDesktop = "";
+  const screen = document.createElement("canvas");
+  desktop.append(screen);
+  const composer = document.createElement("textarea");
+  document.body.append(desktop, composer);
+  const appShortcut = vi.fn((event: KeyboardEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
   });
+  const remoteKeyboard = vi.fn();
+  screen.addEventListener("keydown", remoteKeyboard);
+  const stop = listenForAppShortcuts(appShortcut);
+  try {
+    for (const key of ["a", "Enter", "Escape", "Control", "c"]) {
+      const event = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true });
+      screen.dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(false);
+    }
+    expect(remoteKeyboard).toHaveBeenCalledTimes(5);
+    expect(appShortcut).not.toHaveBeenCalled();
+
+    const event = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+    composer.dispatchEvent(event);
+    expect(appShortcut).toHaveBeenCalledOnce();
+    expect(event.defaultPrevented).toBe(true);
+
+    stop();
+    composer.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    expect(appShortcut).toHaveBeenCalledOnce();
+  } finally {
+    stop();
+    desktop.remove();
+    composer.remove();
+  }
 });

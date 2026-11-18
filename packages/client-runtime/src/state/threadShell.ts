@@ -171,6 +171,7 @@ export function createEnvironmentThreadShellAtoms(input: {
     }).pipe(Atom.withLabel(`environment-thread-shells-for-projects:${key}`));
   });
 
+  // Kept alive between thread pages: made again for each, it built every machine's refs anew.
   let previousThreadRefs: ReadonlyArray<ScopedThreadRef> = [];
   const threadRefsAtom = Atom.make((get) => {
     const refs: ScopedThreadRef[] = [];
@@ -182,7 +183,7 @@ export function createEnvironmentThreadShellAtoms(input: {
     }
     previousThreadRefs = refs;
     return refs;
-  }).pipe(Atom.withLabel("environment-thread-refs"));
+  }).pipe(Atom.keepAlive, Atom.withLabel("environment-thread-refs"));
 
   let previousThreadShells: ReadonlyArray<EnvironmentThreadShell> = [];
   const threadShellsAtom = Atom.make((get) => {

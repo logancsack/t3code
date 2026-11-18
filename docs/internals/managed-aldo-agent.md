@@ -57,6 +57,10 @@ a named provider, model and reasoning level. All require managed mode and
 private and uncacheable. These routes use the same workspace-local capability as managed
 dispatch and are not a new public agent authorization mechanism.
 
+The server takes the token out of its environment as it starts (`managedGatewayToken.ts`,
+the first import of `bin.ts`) and holds it in memory only, so the agents, terminals and tools
+it spawns never inherit it.
+
 The coordinator sends work through the existing durable managed dispatch endpoint.
 Task creation retains T3's ordinary command receipts, worktree preparation, provider
 execution, and approval behavior. Before bootstrap side effects, the dispatcher checks

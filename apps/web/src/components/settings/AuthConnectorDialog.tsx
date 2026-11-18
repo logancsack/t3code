@@ -42,7 +42,8 @@ import { Textarea } from "../ui/textarea";
 import { toastManager } from "../ui/toast";
 import { APP_BASE_NAME } from "../../branding";
 import { managedWorkspaceBrowserUrl } from "../../managedDevPc";
-import { aldoAuthConnectors, isAldoCloud } from "../../aldo/cloud";
+import { aldoAuthConnectors } from "../../aldo/accountApi";
+import { isAldoCloud } from "../../aldo/api";
 import { useAldoAccountMethod } from "../../aldo/accountSpecs";
 
 export type AuthConnectorMethodOption = {
@@ -476,7 +477,8 @@ export function AuthConnectorDialog(props: {
         disabled={!ACCOUNT_SCOPED && !environmentId}
         onClick={() => handleOpenChange(true)}
       >
-        <PlugIcon className="size-3.5" />
+        {/* Aldo's Connect buttons are words alone, beside the service's logo. */}
+        {isAldoCloud ? null : <PlugIcon className="size-3.5" />}
         {triggerLabel ?? (isAuthenticated ? "Reconnect" : "Connect")}
       </Button>
 

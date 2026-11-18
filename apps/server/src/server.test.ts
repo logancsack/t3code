@@ -1125,6 +1125,7 @@ const buildAppUnderTest = (options?: {
           markRunningProviderSessionsForContinuation: Effect.succeed([]),
           clearProviderSessionContinuationMarkers: () => Effect.void,
           enqueueCommand: (effect) => effect,
+          drainForShutdown: Effect.void,
           ...options?.layers?.serverRuntimeStartup,
         }),
       ),

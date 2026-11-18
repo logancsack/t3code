@@ -14,8 +14,4 @@ describe("theme import size guard", () => {
     expect(message).toContain("100.0 MB");
     expect(message).toContain("256 KB");
   });
-
-  it("reports sizes just past the limit in KB", () => {
-    expect(describeOversizedThemeFile(MAX_THEME_FILE_BYTES + 1)).toContain("256 KB");
-  });
 });

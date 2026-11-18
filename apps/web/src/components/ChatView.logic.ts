@@ -26,6 +26,7 @@ import {
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
 import { videoMimeType } from "@t3tools/shared/video";
+import { applyClaudePromptEffortPrefix, resolvePromptInjectedEffort } from "@t3tools/shared/model";
 import {
   appendCodexArtifactTemplateUsePrompt,
   codexArtifactTemplateUsePrompt,
@@ -57,6 +58,22 @@ import {
   resolveSelectableProviderInstanceEntry,
   type ProviderInstanceEntry,
 } from "../providerInstances";
+import { getProviderModelCapabilities } from "../providerModels";
+
+export function formatOutgoingPrompt(params: {
+  provider: ProviderDriverKind;
+  model: string | null;
+  models: ReadonlyArray<ServerProvider["models"][number]>;
+  effort: string | null;
+  text: string;
+  modelMayChange?: boolean;
+}): string {
+  // A router chooses its own provider and reasoning; inherited prompt traits don't apply.
+  if (params.modelMayChange) return params.text;
+  const caps = getProviderModelCapabilities(params.models, params.model, params.provider);
+  const promptEffort = resolvePromptInjectedEffort(caps, params.effort);
+  return applyClaudePromptEffortPrefix(params.text, promptEffort);
+}
 
 export const LAST_INVOKED_SCRIPT_BY_PROJECT_KEY = "t3code:last-invoked-script-by-project";
 export const MAX_HIDDEN_MOUNTED_TERMINAL_THREADS = 10;

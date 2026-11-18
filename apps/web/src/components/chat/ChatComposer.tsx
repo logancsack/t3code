@@ -1,3 +1,10 @@
+import { isAldoCloud } from "../../aldo/api";
+import { AldoAttachMenu } from "../../aldo/AldoAttach";
+import { aldoRoutesModels } from "../../aldo/directory";
+import { useAldoMachineSettings } from "../../aldo/machineSettings";
+import { unlistedModelLabel } from "../../aldo/modelNames";
+import { modelDisplayName } from "../../aldo/modelNames.logic";
+import { hasExplicitComposerModelSelection } from "../../lib/chatThreadActions";
 import { DESKTOP_PASTE_AS_TEXT_EVENT } from "../../lib/desktopPasteAsText";
 import { isLocalEnvironmentDisabled } from "../../localEnvironment";
 import { usePrimaryEnvironmentId } from "../../state/environments";
@@ -50,7 +57,12 @@ import {
 } from "@t3tools/client-runtime/text-paste";
 import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
 import { folderDropTarget, resolveDroppedFolderPath } from "./folderDrop";
-import { createModelSelection, normalizeModelSlug } from "@t3tools/shared/model";
+import {
+  createModelSelection,
+  normalizeModelSlug,
+  isClaudePromptEffortPrefixInjection,
+  stripClaudePromptEffortPrefix,
+} from "@t3tools/shared/model";
 import { USAGE_LIMITS_COMMAND } from "@t3tools/shared/usageLimits";
 import {
   memo,
@@ -260,7 +272,6 @@ import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
 import { ComposerImageThumbnail } from "./ComposerImageThumbnail";
 import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
 import { ComposerPendingApprovalPanel } from "./ComposerPendingApprovalPanel";
-import { ComposerPendingUserInputPanel } from "./ComposerPendingUserInputPanel";
 import { ComposerPlanFollowUpBanner } from "./ComposerPlanFollowUpBanner";
 import {
   ComposerControl,
@@ -948,6 +959,7 @@ import {
   PaperclipIcon,
   PencilRulerIcon,
   PlayIcon,
+  PlusIcon,
   ShieldIcon,
   XIcon,
 } from "lucide-react";
@@ -977,7 +989,6 @@ import {
   stepComposerPromptHistory,
   type ComposerPromptHistoryPosition,
 } from "./composerPromptHistory";
-import type { PendingUserInputDraftAnswer } from "../../pendingUserInput";
 import type { PendingApproval, PendingUserInput } from "../../session-logic";
 import type { ContextWindowSnapshot } from "../../lib/contextWindow";
 import {
@@ -1341,6 +1352,8 @@ export interface ChatComposerHandle {
   };
   /** Validate the fully composed text immediately before a provider turn starts. */
   validateProviderInput: (providerInput: string) => boolean;
+  /** Keep the draft and say why it wasn't sent, from within onSend. */
+  refuseSend: (message: string) => void;
   setMultipleModelSelections: (selections: ReadonlyArray<ModelSelection>) => void;
 }
 
@@ -1423,8 +1436,6 @@ export interface ChatComposerProps {
   } | null;
   activePendingResolvedAnswers: Record<string, unknown> | null;
   activePendingIsResponding: boolean;
-  activePendingDraftAnswers: Record<string, PendingUserInputDraftAnswer>;
-  activePendingQuestionIndex: number;
   respondingRequestIds: ApprovalRequestId[];
 
   // Plan
@@ -1494,9 +1505,6 @@ export interface ChatComposerProps {
     requestId: ApprovalRequestId,
     decision: ProviderApprovalDecision,
   ) => Promise<unknown>;
-  onSelectActivePendingUserInputOption: (questionId: string, optionValue: string) => void;
-  onAdvanceActivePendingUserInput: () => void;
-  onDismissActivePendingUserInput: (requestId: ApprovalRequestId) => void;
   onPreviousActivePendingUserInputQuestion: () => void;
   onChangeActivePendingUserInputCustomAnswer: (
     questionId: string,
@@ -1566,8 +1574,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     activePendingProgress,
     activePendingResolvedAnswers,
     activePendingIsResponding,
-    activePendingDraftAnswers,
-    activePendingQuestionIndex,
     respondingRequestIds,
     showPlanFollowUpPrompt,
     activeProposedPlan,
@@ -1611,9 +1617,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     onInterrupt,
     onImplementPlanInNewThread,
     onRespondToApproval,
-    onSelectActivePendingUserInputOption,
-    onAdvanceActivePendingUserInput,
-    onDismissActivePendingUserInput,
     onPreviousActivePendingUserInputQuestion,
     onChangeActivePendingUserInputCustomAnswer,
     onProviderModelSelect,
@@ -1640,6 +1643,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // Store subscriptions (prompt / images / terminal contexts)
   // ------------------------------------------------------------------
   const composerDraft = useComposerThreadDraft(composerDraftTarget);
+  const aldoMachineSettings = useAldoMachineSettings();
+  const aldoDefaultModel =
+    isAldoCloud &&
+    aldoRoutesModels() &&
+    routeKind === "draft" &&
+    !hasExplicitComposerModelSelection(composerDraft);
+
   // Live target key, for async flows that must notice a thread switch that
   // happened while they awaited.
   const composerDraftTargetKeyRef = useRef("");
@@ -2020,12 +2030,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     [selectedProviderEntry],
   );
   const compactCommandAvailable = providerSupportsManualCompaction(selectedProviderEntry);
-  const selectedProviderSkills = selectedProviderStatus
-    ? resolveProviderSkillsForCwd(selectedProviderStatus, gitCwd)
-    : [];
-  const selectedProviderSlashCommands = selectedProviderStatus
-    ? resolveProviderSlashCommandsForCwd(selectedProviderStatus, gitCwd)
-    : [];
+  const selectedProviderSkills =
+    !aldoDefaultModel && selectedProviderStatus
+      ? resolveProviderSkillsForCwd(selectedProviderStatus, gitCwd)
+      : [];
+  const selectedProviderSlashCommands =
+    !aldoDefaultModel && selectedProviderStatus
+      ? resolveProviderSlashCommandsForCwd(selectedProviderStatus, gitCwd)
+      : [];
   const refreshProviders = useAtomCommand(serverEnvironment.refreshProviders, {
     reportFailure: false,
   });
@@ -2158,7 +2170,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // Context window
   // ------------------------------------------------------------------
   const activeThreadModelDisplayName = useMemo(
-    () => resolveContextWindowModelDisplayName(activeThreadModelSelection, modelOptionsByInstance),
+    () =>
+      resolveContextWindowModelDisplayName(
+        activeThreadModelSelection,
+        modelOptionsByInstance,
+        unlistedModelLabel,
+      ),
     [activeThreadModelSelection, modelOptionsByInstance],
   );
   const reserveContextWindowMeter = shouldReserveContextWindowMeter({
@@ -2711,8 +2728,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         scheduleComposerFocus();
         return;
       }
+      const effortInjected = isClaudePromptEffortPrefixInjection(promptRef.current, nextPrompt);
       promptRef.current = nextPrompt;
-      setComposerDraftPrompt(composerDraftTarget, nextPrompt);
+      setComposerDraftPrompt(composerDraftTarget, nextPrompt, { effortInjected });
       const nextCursor = collapseExpandedComposerCursor(nextPrompt, nextPrompt.length);
       setComposerCursor(nextCursor);
       setComposerTrigger(detectComposerTrigger(nextPrompt, nextPrompt.length));
@@ -2752,7 +2770,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     planModeEnabled: settings.planModeEnabled,
     isComposerOwned: true,
   } satisfies Parameters<typeof renderProviderTraitsPicker>[0];
-  const providerTraitsPicker = renderProviderTraitsPicker(providerTraitsPickerInput);
+  // A routed draft has no model or effort yet; inherited traits would claim
+  // a choice that Aldo replaces when the first message is sent.
+  const providerTraitsPicker = aldoDefaultModel
+    ? null
+    : renderProviderTraitsPicker(providerTraitsPickerInput);
   const {
     controlsRef: restingComposerControlsRef,
     attachControls: attachRestingComposerControls,
@@ -3372,6 +3394,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         const stagedAttachmentById = new Map<string, PersistedComposerAttachment>();
         await Promise.all(
           composerImages.map(async (image) => {
+            // An image keeps its id and file, so one persisted already needn't be read again.
+            const alreadyPersisted = existingPersistedById.get(image.id);
+            if (alreadyPersisted) {
+              stagedAttachmentById.set(image.id, alreadyPersisted);
+              return;
+            }
             try {
               const dataUrl = await readFileAsDataUrl(image.file);
               stagedAttachmentById.set(image.id, {
@@ -3889,8 +3917,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       isSendDisabled ||
       isConnecting ||
       noProviderAvailable ||
-      environmentUnavailable !== null ||
-      phase === "running"
+      environmentUnavailable !== null
     ) {
       return false;
     }
@@ -3908,7 +3935,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     isSendBusy,
     isSendDisabled,
     noProviderAvailable,
-    phase,
     showPlanFollowUpPrompt,
   ]);
 
@@ -5127,6 +5153,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const hiddenRestingBlockIds = restingBlockDefs
     .slice(restingBlockDefs.length - restingHiddenBlockCount)
     .map((def) => def.id);
+  const aldoDefaultSelection = aldoMachineSettings?.defaultModelSelection;
+  const aldoDefaultModelName = aldoDefaultSelection
+    ? modelDisplayName(
+        providerInstanceEntries,
+        aldoDefaultSelection.instanceId,
+        aldoDefaultSelection.model,
+      )
+    : null;
   const composerControls = showProviderUnavailable ? (
     <ComposerControl
       type="button"
@@ -5157,6 +5191,34 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       ) : null}
       {renderLeadingControl?.(composerControlsInStrip ? "xs" : "sm")}
       <ProviderModelPicker
+        {...(isAldoCloud && aldoRoutesModels() && routeKind === "draft"
+          ? {
+              automaticOption: {
+                label: aldoDefaultModelName
+                  ? `Use default: ${aldoDefaultModelName}`
+                  : "Let Aldo decide",
+                selected: aldoDefaultModel,
+                onSelect: () => {
+                  if (!aldoDefaultModel) {
+                    const draft = useComposerDraftStore
+                      .getState()
+                      .getComposerDraft(composerDraftTarget);
+                    setPromptFromTraits(
+                      stripClaudePromptEffortPrefix(promptRef.current, draft?.promptEffortInjected),
+                    );
+                  }
+                  useComposerDraftStore.getState().setModelSelection(composerDraftTarget, null);
+                },
+              },
+            }
+          : {})}
+        {...(aldoDefaultModel
+          ? {
+              triggerLabel: aldoDefaultModelName
+                ? `Default: ${aldoDefaultModelName}`
+                : "Let Aldo decide",
+            }
+          : {})}
         isComposerOwned
         disabled={providerCatalogPending || isSendBusy}
         {...(routeKind === "draft" && supportsMultipleModels
@@ -6196,6 +6258,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         setProviderInputSubmissionError(validationMessage);
         return validationMessage === null;
       },
+      refuseSend: (message: string) => {
+        providerInputRejectedRef.current = true;
+        setProviderInputSubmissionError(message);
+      },
     }),
     [
       activeThread,
@@ -6379,96 +6445,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       />
                     </ComposerBanner.Actions>
                   </ComposerBanner.Row>
-                ) : !isComposerCollapsedMobile && pendingUserInputs.length > 0 ? (
-                  <ComposerPendingUserInputPanel
-                    pendingUserInputs={pendingUserInputs}
-                    respondingRequestIds={
-                      activePendingIsResponding && activePendingUserInput
-                        ? [...respondingRequestIds, activePendingUserInput.requestId]
-                        : respondingRequestIds
-                    }
-                    answers={activePendingDraftAnswers}
-                    questionIndex={activePendingQuestionIndex}
-                    onToggleOption={onSelectActivePendingUserInputOption}
-                    onAdvance={onAdvanceActivePendingUserInput}
-                    onDismiss={onDismissActivePendingUserInput}
-                  />
                 ) : !isComposerCollapsedMobile && showPlanFollowUpPrompt && activeProposedPlan ? (
                   <ComposerPlanFollowUpBanner
                     key={activeProposedPlan.id}
                     planTitle={proposedPlanTitle(activeProposedPlan.planMarkdown) ?? null}
                   />
-                ) : isComposerCollapsedMobile && pendingUserInputs.length > 0 ? (
-                  <div data-chat-composer-collapsed-controls="true">
-                    <ComposerPendingUserInputPanel
-                      pendingUserInputs={pendingUserInputs}
-                      respondingRequestIds={
-                        activePendingIsResponding && activePendingUserInput
-                          ? [...respondingRequestIds, activePendingUserInput.requestId]
-                          : respondingRequestIds
-                      }
-                      answers={activePendingDraftAnswers}
-                      questionIndex={activePendingQuestionIndex}
-                      onToggleOption={onSelectActivePendingUserInputOption}
-                      onAdvance={onAdvanceActivePendingUserInput}
-                      onDismiss={onDismissActivePendingUserInput}
-                    />
-                    {!isChoiceOnlyPendingQuestion ||
-                    activePendingProgress?.activeQuestion?.multiSelect ? (
-                      <ComposerBanner.Body>
-                        <div
-                          data-chat-composer-mobile-pending-compact="true"
-                          className={cn(
-                            "flex min-w-0 items-center gap-2 rounded-lg border border-border/55 bg-background/55 p-1.5 pl-3 transition-colors hover:bg-background/80",
-                            !activePendingProgress?.activeQuestion?.multiSelect && "p-0",
-                          )}
-                        >
-                          {!isChoiceOnlyPendingQuestion ? (
-                            <button
-                              type="button"
-                              className={cn(
-                                "min-w-0 flex-1 truncate bg-transparent py-1.5 text-left text-sm",
-                                activePendingProgress?.customAnswer
-                                  ? "text-foreground"
-                                  : "text-placeholder",
-                                !activePendingProgress?.activeQuestion?.multiSelect && "px-3 py-2",
-                              )}
-                              onPointerDown={(event) => event.preventDefault()}
-                              onClick={expandMobileComposer}
-                              aria-label="Write custom answer"
-                            >
-                              {activePendingProgress?.customAnswer || "Write custom answer"}
-                            </button>
-                          ) : null}
-                          {activePendingProgress?.activeQuestion?.multiSelect ? (
-                            <ComposerPrimaryActions
-                              compact
-                              pendingAction={pendingPrimaryAction}
-                              isRunning={false}
-                              showPlanFollowUpPrompt={false}
-                              promptHasText={false}
-                              isSendBusy={isSendBusy}
-                              sendDisabledReason={sendDisabledReason}
-                              isConnecting={isConnecting}
-                              isEnvironmentUnavailable={
-                                environmentUnavailable !== null ||
-                                noProviderAvailable ||
-                                projectSelectionRequired
-                              }
-                              isPreparingWorktree={false}
-                              hasSendableContent={false}
-                              preserveComposerFocusOnPointerDown
-                              onPreviousPendingQuestion={onPreviousActivePendingUserInputQuestion}
-                              onInterrupt={handleInterruptPrimaryAction}
-                              onImplementPlanInNewThread={
-                                handleImplementPlanInNewThreadPrimaryAction
-                              }
-                            />
-                          ) : null}
-                        </div>
-                      </ComposerBanner.Body>
-                    ) : null}
-                  </div>
                 ) : null}
               </ComposerBanner.Root>
             </ComposerBanner.Attachment>
@@ -7149,7 +7130,28 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   }
                   className="flex shrink-0 flex-nowrap items-center justify-end gap-2"
                 >
-                  {showComposerAttachAction ? (
+                  {showComposerAttachAction && isAldoCloud ? (
+                    <AldoAttachMenu
+                      trigger={
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label="Add photos and files"
+                        />
+                      }
+                      align="end"
+                      photos="image/*,video/*"
+                      files
+                      onPick={(files) => {
+                        void addComposerAttachments(files).then((inserted) => {
+                          if (!inserted) focusComposer();
+                        });
+                      }}
+                    >
+                      <PlusIcon />
+                    </AldoAttachMenu>
+                  ) : showComposerAttachAction ? (
                     <>
                       <input
                         ref={attachmentInputRef}

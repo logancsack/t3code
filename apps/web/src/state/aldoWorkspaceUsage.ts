@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback } from "react";
+import { createSettingsResource, useSettingsResource } from "../aldo/settingsResource";
 
 import { isAldoBilling, type AldoBilling } from "../aldo/billing.logic";
-import { isAldoCloud } from "../aldo/cloud";
+import { isAldoCloud } from "../aldo/api";
 import { isLandingDemo } from "../landingDemo/mode";
 import { isManagedDevPc } from "../managedDevPc";
 
@@ -35,9 +36,13 @@ export interface AldoWorkspaceUsage {
     readonly includedRemaining: number;
     readonly overageRemaining: number;
     readonly projected: number | null;
-    /** Past the authorized credits, agents keep working one at a time on these, not billed (newer gateways only). */
+    /** Past the authorized credits, agents on the user's own subscriptions keep working one at a time on these, not billed (newer gateways only). */
     readonly economyIncluded?: number;
     readonly economyRemaining?: number;
+    /** Of the credits used, Aldo's models'; the most of the plan's they may use, and what's left of it (newer Aldo, where its models are offered). */
+    readonly ai?: number;
+    readonly aiIncluded?: number;
+    readonly aiRemaining?: number;
   } | null;
   readonly bill: {
     readonly estimatedCents: number;
@@ -57,6 +62,39 @@ export interface AldoWorkspaceUsage {
   readonly updatedAt: string | null;
   /** Aldo cloud: the plans and what the user can do about theirs (newer Aldo only). */
   readonly billing?: AldoBilling;
+  /** Aldo cloud: what the user's assistant used of this period's allowances; null without a plan (newer Aldo only). */
+  readonly prime?: AldoPrimeUsage | null;
+  /** Aldo cloud: what the user keeps (projects, shared files, recordings), of what the plan keeps (newer Aldo only). */
+  readonly storage?: { readonly usedBytes: number; readonly includedBytes: number };
+  /** Aldo cloud: a stopped Windows computer's disk, kept for next time; null without one (newer Aldo only). */
+  readonly windowsDisk?: AldoWindowsDisk | null;
+  /** Aldo cloud: the plan is a seat on the user's organization's, whose owners and admins set its limit (newer Aldo, only for a seat). */
+  readonly seat?: AldoSeat;
+}
+
+export interface AldoSeat {
+  readonly org: string;
+  /** Its owners' and admins' addresses, owners first. */
+  readonly admins: readonly string[];
+}
+
+export interface AldoAllowanceUse {
+  readonly used: number;
+  readonly included: number;
+}
+
+export interface AldoPrimeUsage {
+  readonly deepAsks: AldoAllowanceUse;
+  readonly voiceMinutes: AldoAllowanceUse;
+  readonly texts: AldoAllowanceUse;
+  /** Quick replies have a fair-use amount: what they cost, as a share of it. */
+  readonly quickReplies: { readonly usedPercent: number };
+}
+
+export interface AldoWindowsDisk {
+  readonly creditsPerHour: number;
+  /** When it's deleted (as Aldo says it, "Oct 25") while the plan can't pay for it; null while it can. */
+  readonly deletedOn: string | null;
 }
 
 export type AldoUsageAlertLevel =
@@ -74,9 +112,9 @@ const ALERT_LEVELS: ReadonlySet<string> = new Set([
   "spend_reached",
 ]);
 
-export const ALDO_WORKSPACE_USAGE_PATH = "/_devpc/account/usage";
+const ALDO_WORKSPACE_USAGE_PATH = "/_devpc/account/usage";
 /** Aldo cloud's own usage API: the same summary, for the signed-in user. */
-export const ALDO_CLOUD_USAGE_PATH = "/api/usage";
+const ALDO_CLOUD_USAGE_PATH = "/api/usage";
 const REQUEST_TIMEOUT_MS = 10_000;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -93,6 +131,29 @@ function isNullableFiniteNumber(value: unknown): value is number | null {
 
 function isOptionalFiniteNumber(value: unknown): value is number | undefined {
   return value === undefined || isFiniteNumber(value);
+}
+
+function isAllowanceUse(value: unknown): value is AldoAllowanceUse {
+  return isRecord(value) && isFiniteNumber(value.used) && isFiniteNumber(value.included);
+}
+
+function isPrimeUsage(value: unknown): value is AldoPrimeUsage {
+  return (
+    isRecord(value) &&
+    isAllowanceUse(value.deepAsks) &&
+    isAllowanceUse(value.voiceMinutes) &&
+    isAllowanceUse(value.texts) &&
+    isRecord(value.quickReplies) &&
+    isFiniteNumber(value.quickReplies.usedPercent)
+  );
+}
+
+function isWindowsDisk(value: unknown): value is AldoWindowsDisk {
+  return (
+    isRecord(value) &&
+    isFiniteNumber(value.creditsPerHour) &&
+    (value.deletedOn === null || typeof value.deletedOn === "string")
+  );
 }
 
 /**
@@ -142,7 +203,10 @@ export function isAldoWorkspaceUsage(value: unknown): value is AldoWorkspaceUsag
       isFiniteNumber(credits.overageRemaining) &&
       isNullableFiniteNumber(credits.projected) &&
       isOptionalFiniteNumber(credits.economyIncluded) &&
-      isOptionalFiniteNumber(credits.economyRemaining)
+      isOptionalFiniteNumber(credits.economyRemaining) &&
+      isOptionalFiniteNumber(credits.ai) &&
+      isOptionalFiniteNumber(credits.aiIncluded) &&
+      isOptionalFiniteNumber(credits.aiRemaining)
     )
   ) {
     return false;
@@ -173,6 +237,35 @@ export function isAldoWorkspaceUsage(value: unknown): value is AldoWorkspaceUsag
     return false;
   }
   if (value.billing !== undefined && !isAldoBilling(value.billing)) return false;
+  if (value.prime !== undefined && value.prime !== null && !isPrimeUsage(value.prime)) return false;
+  if (
+    value.storage !== undefined &&
+    !(
+      isRecord(value.storage) &&
+      isFiniteNumber(value.storage.usedBytes) &&
+      isFiniteNumber(value.storage.includedBytes)
+    )
+  ) {
+    return false;
+  }
+  if (
+    value.windowsDisk !== undefined &&
+    value.windowsDisk !== null &&
+    !isWindowsDisk(value.windowsDisk)
+  ) {
+    return false;
+  }
+  if (
+    value.seat !== undefined &&
+    !(
+      isRecord(value.seat) &&
+      typeof value.seat.org === "string" &&
+      Array.isArray(value.seat.admins) &&
+      value.seat.admins.every((admin) => typeof admin === "string")
+    )
+  ) {
+    return false;
+  }
   // A metered summary always carries its plan, period, credits, and bill.
   if (value.metered && (plan === null || period === null || credits === null || bill === null)) {
     return false;
@@ -187,7 +280,7 @@ export type AldoWorkspaceUsageState =
   | { readonly status: "ready"; readonly usage: AldoWorkspaceUsage }
   | { readonly status: "error"; readonly usage: AldoWorkspaceUsage | null };
 
-export function aldoWorkspaceUsageAvailable(): boolean {
+function aldoWorkspaceUsageAvailable(): boolean {
   return (isManagedDevPc || isAldoCloud) && !isLandingDemo();
 }
 
@@ -197,58 +290,33 @@ export function aldoWorkspaceUsageAvailable(): boolean {
  * Errors keep the last good summary so a blip during refresh does not blank
  * the card; the page's refresh control is the way back.
  */
+const usageResource = createSettingsResource(async () => {
+  const response = await fetch(isAldoCloud ? ALDO_CLOUD_USAGE_PATH : ALDO_WORKSPACE_USAGE_PATH, {
+    credentials: "same-origin",
+    cache: "no-store",
+    headers: { accept: "application/json" },
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
+  const payload: unknown = await response.json().catch(() => null);
+  if (!response.ok || !isAldoWorkspaceUsage(payload)) throw new Error("Couldn't read usage.");
+  return payload;
+});
+
 export function useAldoWorkspaceUsage(): {
   readonly state: AldoWorkspaceUsageState;
   readonly refresh: () => void;
 } {
   const available = aldoWorkspaceUsageAvailable();
-  const [state, setState] = useState<AldoWorkspaceUsageState>(() =>
-    available ? { status: "loading", usage: null } : { status: "unavailable" },
-  );
-  const request = useRef<AbortController | null>(null);
-
+  const cached = useSettingsResource(usageResource, available);
+  const state: AldoWorkspaceUsageState = !available
+    ? { status: "unavailable" }
+    : cached.error
+      ? { status: "error", usage: cached.data ?? null }
+      : cached.data === undefined || cached.loading
+        ? { status: "loading", usage: cached.data ?? null }
+        : { status: "ready", usage: cached.data };
   const refresh = useCallback(() => {
-    if (!available) return;
-    request.current?.abort();
-    const controller = new AbortController();
-    request.current = controller;
-    setState((previous) => ({
-      status: "loading",
-      usage: previous.status === "unavailable" ? null : previous.usage,
-    }));
-    void fetch(isAldoCloud ? ALDO_CLOUD_USAGE_PATH : ALDO_WORKSPACE_USAGE_PATH, {
-      credentials: "same-origin",
-      cache: "no-store",
-      headers: { accept: "application/json" },
-      signal: AbortSignal.any([controller.signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]),
-    })
-      .then(async (response) => {
-        const payload: unknown = await response.json().catch(() => null);
-        if (controller.signal.aborted) return;
-        if (!response.ok || !isAldoWorkspaceUsage(payload)) {
-          setState((previous) => ({
-            status: "error",
-            usage: previous.status === "unavailable" ? null : previous.usage,
-          }));
-          return;
-        }
-        setState({ status: "ready", usage: payload });
-      })
-      .catch(() => {
-        if (controller.signal.aborted) return;
-        setState((previous) => ({
-          status: "error",
-          usage: previous.status === "unavailable" ? null : previous.usage,
-        }));
-      });
+    if (available) void usageResource.refresh().catch(() => undefined);
   }, [available]);
-
-  useEffect(() => {
-    refresh();
-    return () => {
-      request.current?.abort();
-    };
-  }, [refresh]);
-
   return { state, refresh };
 }

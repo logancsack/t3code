@@ -1,4 +1,13 @@
-import { KeyRoundIcon, LockKeyholeIcon, PlusIcon, UploadIcon, VariableIcon } from "lucide-react";
+import { settingsIntegrations, settingsVault } from "./settingsData";
+import { useSettingsResource } from "./settingsResource";
+import {
+  GlobeIcon,
+  KeyRoundIcon,
+  LockKeyholeIcon,
+  PlusIcon,
+  UploadIcon,
+  VariableIcon,
+} from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -6,6 +15,7 @@ import {
   useState,
   useSyncExternalStore,
   type FormEvent,
+  type ReactNode,
 } from "react";
 
 import { SettingsRow, SettingsSection } from "../components/settings/settingsLayout";
@@ -19,13 +29,9 @@ import {
   SelectValue,
 } from "../components/ui/select";
 import { Textarea } from "../components/ui/textarea";
-import {
-  aldoVault,
-  getAldoEnvironments,
-  subscribeAldoEnvironments,
-  type AldoSecretKind,
-  type AldoVaultItem,
-} from "./cloud";
+import { aldoVault, type AldoSecretKind, type AldoVaultItem } from "./accountApi";
+import { AldoBrandTile, AldoIconTile, aldoBrandForVaultItem } from "./AldoBrandTile";
+import { getAldoEnvironments, subscribeAldoEnvironments } from "./directory";
 import {
   offerSavingLoginsFor,
   refreshAldoNeverSaveLogins,
@@ -108,6 +114,16 @@ const PRESETS: ReadonlyArray<{
     template: "Bearer {value}",
   },
 ];
+
+/** A key's or login's tile: the logo of the service it's for, or an icon where that isn't known. */
+function VaultTile(props: { readonly item: AldoVaultItem; readonly fallback: ReactNode }) {
+  const brand = aldoBrandForVaultItem(props.item);
+  return brand ? (
+    <AldoBrandTile id={brand} name={props.item.name} />
+  ) : (
+    <AldoIconTile icon={props.fallback} />
+  );
+}
 
 function deliveryLabel(item: AldoVaultItem): string {
   if (item.kind === "request") return `Injected into requests to ${(item.hosts ?? []).join(", ")}`;
@@ -399,7 +415,8 @@ type LoginDraft = {
  * encrypted and never shown again.
  */
 export function AldoVaultPanel() {
-  const [items, setItems] = useState<ReadonlyArray<AldoVaultItem> | null>(null);
+  const cached = useSettingsResource(settingsVault);
+  const items = cached.data ?? null;
   const [error, setError] = useState<string | null>(null);
   const [secret, setSecret] = useState<SecretDraft | null>(null);
   const [login, setLogin] = useState<LoginDraft | null>(null);
@@ -429,17 +446,13 @@ export function AldoVaultPanel() {
   };
 
   const refresh = useCallback(() => {
-    aldoVault
-      .list()
-      .then((next) => {
-        setItems(next);
-        setError(null);
-      })
+    settingsVault
+      .refresh()
+      .then(() => setError(null))
       .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)));
   }, []);
-  useEffect(() => refresh(), [refresh]);
   // Sites never offered may have changed on another device since this page loaded.
-  useEffect(() => void refreshAldoNeverSaveLogins(), []);
+  useEffect(() => void refreshAldoNeverSaveLogins(30_000), []);
 
   const run = async (action: () => Promise<unknown>, done: () => void) => {
     setSaving(true);
@@ -448,6 +461,7 @@ export function AldoVaultPanel() {
       await action();
       done();
       refresh();
+      void settingsIntegrations.refresh().catch(() => undefined);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -511,7 +525,7 @@ export function AldoVaultPanel() {
   return (
     <>
       <SettingsSection title="Vault" icon={<LockKeyholeIcon className="size-4" />}>
-        <p className="px-3 text-sm text-muted-foreground sm:px-4">
+        <p className="px-3 py-3 text-sm text-muted-foreground sm:px-4">
           Secrets for your agents, under any name. Everything is encrypted and can't be read back
           here, only replaced. A secret can be a variable in every agent shell, injected into
           requests to the sites you list (agents see only a stand-in, so they can't read or leak
@@ -519,7 +533,11 @@ export function AldoVaultPanel() {
           password. Agents save what they sign in with here too, and when you sign in in a thread's
           browser, it offers to save the login.
         </p>
-        {error ? <p className="px-3 text-sm text-destructive-foreground sm:px-4">{error}</p> : null}
+        {error || cached.error ? (
+          <p className="px-3 text-sm text-destructive-foreground sm:px-4">
+            {error ?? cached.error}
+          </p>
+        ) : null}
         {notice ? <p className="px-3 text-sm text-success-foreground sm:px-4">{notice}</p> : null}
       </SettingsSection>
 
@@ -609,7 +627,7 @@ export function AldoVaultPanel() {
           />
         ) : null}
         {items && secrets.length === 0 && !secret && !importing ? (
-          <p className="px-3 text-sm text-muted-foreground sm:px-4">
+          <p className="px-3 py-3 text-sm text-muted-foreground sm:px-4">
             No secrets yet. Add API keys, settings and files your projects need, or import a .env
             file.
           </p>
@@ -617,6 +635,7 @@ export function AldoVaultPanel() {
         {secrets.map((item) => (
           <SettingsRow
             key={item.id}
+            leading={<VaultTile item={item} fallback={<KeyRoundIcon />} />}
             title={<span className="font-mono text-sm">{item.name}</span>}
             description={`${deliveryLabel(item)} · ${scopeLabel(item.scope)} · updated ${ago(item.updated_at)}${savedBy(item)}`}
             control={
@@ -719,13 +738,14 @@ export function AldoVaultPanel() {
           </form>
         ) : null}
         {items && logins.length === 0 && !login ? (
-          <p className="px-3 text-sm text-muted-foreground sm:px-4">
+          <p className="px-3 py-3 text-sm text-muted-foreground sm:px-4">
             No logins yet. Save the sign-ins your agents need for your app, staging or dashboards.
           </p>
         ) : null}
         {logins.map((item) => (
           <SettingsRow
             key={item.id}
+            leading={<VaultTile item={item} fallback={<GlobeIcon />} />}
             title={item.name}
             description={`${item.origin}${item.username ? ` · ${item.username}` : ""} · ${scopeLabel(item.scope)} · used ${ago(item.last_used_at)}${savedBy(item)}`}
             control={

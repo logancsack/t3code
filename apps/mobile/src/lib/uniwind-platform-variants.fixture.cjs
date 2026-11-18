@@ -93,14 +93,15 @@ async function main() {
   for (const match of tailwindCSS.matchAll(/\.(ios|android)\\:([^{ ,]+) \{/g)) {
     compiledGuardedClasses[`${match[1]}:${match[2]}`.replace(/\\(.)/g, "$1")] = true;
   }
-  const platformBlock = (name) =>
-    new RegExp(`@media ${name} \\{([\\s\\S]*?)\\n  \\}`).exec(tailwindCSS)?.[1] ?? "";
-  const utilityCountIn = (block) => (block.match(/^\s+\.[^ ]+ \{/gm) ?? []).length;
+  const utilityCounts = (name) =>
+    [...tailwindCSS.matchAll(new RegExp(`@media ${name} \\{([\\s\\S]*?)\\n  \\}`, "g"))].map(
+      (match) => (match[1].match(/^\s+\.[^ ]+ \{/gm) ?? []).length,
+    );
   const tailwindChecks = {
-    iosBlocks: (tailwindCSS.match(/@media ios \{/g) ?? []).length,
-    androidBlocks: (tailwindCSS.match(/@media android \{/g) ?? []).length,
-    iosUtilities: utilityCountIn(platformBlock("ios")),
-    androidUtilities: utilityCountIn(platformBlock("android")),
+    iosBlocks: utilityCounts("ios").length,
+    androidBlocks: utilityCounts("android").length,
+    iosUtilities: Math.max(0, ...utilityCounts("ios")),
+    androidUtilities: Math.max(0, ...utilityCounts("android")),
   };
   for (const platform of ["ios", "android"]) {
     // Same config the app's withUniwindConfig produces (polyfills.rem: 14).

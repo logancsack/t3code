@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Content-Security-Policy" content="connect-src 'none'; form-action 'none'" />
+    <title>Aldo</title>
+    <script>
+      // Installed before the module graph. The sandbox has no account/storage;
+      // CSP blocks all other connection transports, including WebSockets.
+      // Storage is in memory, isolated from the account in the enclosing page.
+      for (const key of ["localStorage", "sessionStorage"]) {
+        const values = new Map();
+        Object.defineProperty(window, key, {
+          value: {
+            getItem: (key) => values.get(String(key)) ?? null,
+            setItem: (key, value) => values.set(String(key), String(value)),
+            removeItem: (key) => values.delete(String(key)),
+            clear: () => values.clear(),
+            key: (index) => [...values.keys()][index] ?? null,
+            get length() {
+              return values.size;
+            },
+          },
+        });
+      }
+      // Cross-tab channels are unavailable to an opaque, isolated replay.
+      Object.defineProperty(window, "BroadcastChannel", { value: undefined });
+      Object.defineProperty(navigator, "serviceWorker", { value: undefined });
+      localStorage.setItem("aldo:presence:seen", String(Date.now() + 86400000));
+      Object.defineProperty(document, "cookie", { get: () => "", set: () => {} });
+      // Stock auto-follow may scroll ancestor frames. Keep it inside this
+      // passive window; focusing and page scrolling belong to the landing page.
+      Element.prototype.scrollIntoView = function (options) {
+        for (
+          let node = this.parentElement;
+          node && node !== document.body;
+          node = node.parentElement
+        ) {
+          if (!/(auto|scroll)/.test(getComputedStyle(node).overflowY)) continue;
+          const item = this.getBoundingClientRect(),
+            area = node.getBoundingClientRect();
+          const block = options?.block;
+          const top =
+            block === "end"
+              ? item.bottom - area.bottom
+              : block === "nearest"
+                ? Math.min(0, item.top - area.top) + Math.max(0, item.bottom - area.bottom)
+                : item.top - area.top;
+          node.scrollBy({ top, behavior: options?.behavior ?? "instant" });
+          break;
+        }
+      };
+      window.fetch = (...args) =>
+        new Promise((resolve) => {
+          window.addEventListener("aldo:replay-transport", () => resolve(window.fetch(...args)), {
+            once: true,
+          });
+        });
+    </script>
+  </head>
+  <body inert>
+    <div id="root"></div>
+    <script type="module" src="/src/aldo/bootstrap.ts"></script>
+  </body>
+</html>

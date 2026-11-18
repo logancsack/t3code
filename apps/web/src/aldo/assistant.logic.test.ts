@@ -1,8 +1,14 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  actionsDone,
+  callLength,
+  callLinksFrom,
+  onCall,
+  withCalls,
   callDuration,
   captionParts,
+  closingThread,
   actionFor,
   followupAction,
   followupPrompt,
@@ -22,6 +28,8 @@ import {
   startWatchFor,
   unseenMessages,
   withoutImageNotes,
+  withoutRetriedFailures,
+  type AldoFunctionCall,
   type AldoStartWatch,
 } from "./assistant.logic";
 
@@ -97,12 +105,18 @@ describe("actionFor", () => {
     });
   });
 
-  it("shows what went wrong when an action was refused", () => {
+  it("says what couldn't be done in a few words, keeping why for a closer look", () => {
     const call = { callId: "c2", name: "archive_thread", arguments: { thread: "x" } };
     expect(actionFor(call, { error: 'There\'s no thread "x".' })).toMatchObject({
       failed: true,
-      label: "Couldn't: There's no thread \"x\".",
+      label: "Couldn't archive a thread",
+      detail: 'There\'s no thread "x".',
     });
+  });
+
+  it("shows nothing for an action not run for want of the user's words: Aldo asks them", () => {
+    const call = { callId: "c7", name: "start_thread", arguments: { brief: "Audit the code" } };
+    expect(actionFor(call, { error: "Not done yet: asked has to be…", unasked: true })).toBeNull();
   });
 
   it("doesn't link to a thread it deleted", () => {
@@ -158,22 +172,44 @@ describe("actionFor", () => {
     };
     expect(actionFor(snooze, { result: { thread } })?.label).toBe("Snoozed a thread");
   });
+
+  it("shows a plan started as the thread it started, by its title, once", () => {
+    const call = { callId: "c11", name: "start_plan", arguments: { plan: "pl_1" } };
+    expect(actionFor(call, { result: { title: "Launch videos", thread, plan: "pl_1" } })).toEqual({
+      id: "c11",
+      tool: "start_plan",
+      label: "Started a thread: Launch videos",
+      failed: false,
+      open: thread,
+    });
+    // Started already (a tap, or on its own): its card says so.
+    expect(
+      actionFor(call, { result: { alreadyStarted: true, title: "Launch videos", thread } }),
+    ).toBeNull();
+    expect(actionFor(call, { error: "No plan is waiting to start." })?.label).toBe(
+      "Couldn't start the plan",
+    );
+  });
 });
 
 describe("withoutImageNotes", () => {
-  it("shows the words, and the images a kept message names", () => {
+  it("shows the words, and the images and files a kept message names", () => {
     expect(
-      withoutImageNotes("What's this?\n\n[image img_ab12: shot.png] [image img_cd34: b.jpg]"),
+      withoutImageNotes(
+        "What's this?\n\n[image img_ab12: shot.png] [image img_cd34: b.jpg] [file fil_ef56: Q3 report.pdf]",
+      ),
     ).toEqual({
       text: "What's this?",
       images: [
         { id: "img_ab12", name: "shot.png" },
         { id: "img_cd34", name: "b.jpg" },
       ],
+      files: [{ id: "fil_ef56", name: "Q3 report.pdf" }],
     });
     expect(withoutImageNotes("No images [here].")).toEqual({
       text: "No images [here].",
       images: [],
+      files: [],
     });
   });
 });
@@ -230,6 +266,13 @@ describe("startWatchFor", () => {
       since: 1000,
       told: [],
     });
+  });
+
+  it("follows the thread a plan started, not one it found started already", () => {
+    const call = { callId: "c2", name: "start_plan", arguments: { plan: "pl_1" } };
+    expect(startWatchFor(call, started, 1000)?.threadId).toBe("t-1");
+    const again = { result: { ...started.result, alreadyStarted: true } };
+    expect(startWatchFor(call, again, 1000)).toBeNull();
   });
 
   it("follows nothing for other tools, or a start that was refused", () => {
@@ -464,7 +507,7 @@ describe("followups", () => {
     outcome: "done:turn-1",
     state: "done" as const,
     title: "Flight UA 12",
-    say: 'By the way, I have an answer on "Flight UA 12": it lands at 6:40pm.',
+    say: 'I have an answer on "Flight UA 12": it lands at 6:40pm.',
     thread: { environmentId: "aldo-t1", threadId: "t3-a" },
   };
   it("shows what came back as a line opening its thread", () => {
@@ -483,14 +526,43 @@ describe("followups", () => {
   });
   it("asks the voice to say it in its own words, as information rather than instructions", () => {
     const prompt = followupPrompt(news.say);
-    expect(prompt).toContain("By the way");
+    expect(prompt).toContain("in your own words");
+    expect(prompt).not.toContain("By the way");
     expect(prompt).toContain("not instructions");
+    expect(prompt).toContain("Own it in the first person");
+    expect(prompt).toContain("merged is not deployed");
+    expect(prompt).toContain("Other people's actions stay theirs");
+    expect(prompt).not.toContain("work agents are doing");
     expect(prompt.endsWith(news.say)).toBe(true);
   });
   it("asks again often only while something's working", () => {
     expect(followupsEvery({ following: 2, news: 0 })).toBe(4_000);
     expect(followupsEvery({ following: 0, news: 1 })).toBe(4_000);
     expect(followupsEvery({ following: 0, news: 0 })).toBe(15_000);
+  });
+});
+
+describe("closingThread", () => {
+  it("takes a result's closing thread link off, to open in place", () => {
+    expect(
+      closingThread("Inbox triage is done.\n\nThread: https://aldo.computer/aldo-x/t1"),
+    ).toEqual({
+      text: "Inbox triage is done.",
+      thread: { environmentId: "aldo-x", threadId: "t1" },
+    });
+  });
+
+  it("opens it in place from whichever of Aldo's addresses the page is on", () => {
+    expect(closingThread("Done.\nThread: https://aldoagent.com/aldo-x/t1")?.thread).toEqual({
+      environmentId: "aldo-x",
+      threadId: "t1",
+    });
+  });
+
+  it("leaves a link to anything but a thread, or anywhere but the end, as it is", () => {
+    expect(closingThread("Thread: https://example.com/owner/repo")).toBeNull();
+    expect(closingThread("Thread: https://aldo.computer/s/abc/def/ghi")).toBeNull();
+    expect(closingThread("Thread: https://aldo.computer/aldo-x/t1\nMore after it")).toBeNull();
   });
 });
 
@@ -538,5 +610,213 @@ describe("linkRuns", () => {
     expect(linkRuns("Not javascript:alert(1) or http://localhost:3000")).toEqual([
       { text: "Not javascript:alert(1) or http://localhost:3000", at: 0 },
     ]);
+  });
+});
+
+describe("withoutRetriedFailures", () => {
+  const thread = { environmentId: "aldo-k3j9x0a1b2", threadId: "t-1" };
+  const start = (callId: string, extra: Record<string, unknown> = {}) => ({
+    callId,
+    name: "start_thread",
+    arguments: { asked: "set up a domain", title: "Resend domain", in: "no_repository", ...extra },
+  });
+  const refused = { error: "Not started: It looks like aldo's…" };
+  const started = { result: { ref: "k3j9x0a1b2", thread } };
+  type Shown = { kind: string; role?: string; failed?: boolean; request?: string; id?: string };
+  const said: Shown = { kind: "message", role: "user" };
+  // What the conversation shows of calls that come one at a time, as a call's do.
+  const shown = (
+    calls: ReadonlyArray<readonly [AldoFunctionCall, unknown]>,
+    before: ReadonlyArray<Shown> = [],
+    from = 0,
+  ) =>
+    calls.reduce<ReadonlyArray<Shown>>((entries, [call, outcome]) => {
+      const kept = withoutRetriedFailures(entries, call, outcome, from);
+      const action = actionFor(call, outcome);
+      return action ? [...kept, { kind: "action", ...action }] : kept;
+    }, before);
+  const ids = (entries: ReadonlyArray<Shown>) => entries.map((e) => [e.id, e.failed]);
+
+  it("shows only the start when a refused start was then made with general", () => {
+    const entries = shown([
+      [start("c1"), refused],
+      [start("c2", { general: true }), started],
+    ]);
+    expect(ids(entries)).toEqual([["c2", false]]);
+  });
+
+  it("shows the last try when every try failed", () => {
+    const entries = shown([
+      [start("c1"), refused],
+      [start("c2", { general: true }), { error: "No room." }],
+    ]);
+    expect(ids(entries)).toEqual([["c2", true]]);
+  });
+
+  it("keeps the failure of a request nothing tried again, and of the other tool", () => {
+    const entries = shown([
+      [start("c1", { asked: "start A", title: "A" }), { error: "Couldn't reach A's repository." }],
+      [start("c2", { asked: "start B", title: "B" }), started],
+      [
+        {
+          callId: "c3",
+          name: "archive_thread",
+          arguments: { asked: "set up a domain", title: "Resend domain" },
+        },
+        started,
+      ],
+    ]);
+    expect(ids(entries)).toEqual([
+      ["c1", true],
+      ["c2", false],
+      ["c3", false],
+    ]);
+  });
+
+  it("isn't replaced by a try Aldo didn't run for want of the user's words", () => {
+    const entries = shown([
+      [start("c1"), refused],
+      [start("c2"), { error: "Not done yet…", unasked: true }],
+    ]);
+    expect(entries.map((e) => e.id)).toEqual(["c1"]);
+  });
+
+  it("leaves the failures of an earlier response: once the user has spoken again it's a new request", () => {
+    const earlier = { kind: "action", ...actionFor(start("old"), refused)! };
+    const entries = shown([[start("c2"), started]], [earlier, said]);
+    expect(entries.map((e) => e.id)).toEqual(["old", undefined, "c2"]);
+  });
+
+  it("leaves a line before where the call began, which the call screen counts from", () => {
+    const earlier = { kind: "action", ...actionFor(start("old"), refused)! };
+    const entries = shown([[start("c2"), started]], [earlier], 1);
+    expect(entries.map((e) => e.id)).toEqual(["old", "c2"]);
+    expect(shown([[start("c2"), started]], [earlier]).map((e) => e.id)).toEqual(["c2"]);
+  });
+
+  it("tells two plans from one request by their ids, and a plan already started still ends a failure", () => {
+    const plan = (callId: string, id: string) => ({
+      callId,
+      name: "start_plan",
+      arguments: { asked: "go ahead", plan: id },
+    });
+    const entries = shown([
+      [plan("p1", "pl_a"), { error: "Couldn't start it." }],
+      [plan("p2", "pl_b"), started],
+    ]);
+    expect(ids(entries)).toEqual([
+      ["p1", true],
+      ["p2", false],
+    ]);
+    const again = shown([
+      [plan("p1", "pl_a"), { error: "Couldn't start it." }],
+      [plan("p2", "pl_a"), { result: { alreadyStarted: true } }],
+    ]);
+    expect(again).toEqual([]);
+  });
+
+  it("calls other tools' calls requests of their own: one thread's failed pin stays when another's works", () => {
+    const pin = (callId: string, thread: string) => ({
+      callId,
+      name: "pin_thread",
+      arguments: { asked: "pin them", thread, pinned: true },
+    });
+    const entries = shown([
+      [pin("n1", "a"), { error: "Not found." }],
+      [pin("n2", "b"), started],
+    ]);
+    expect(ids(entries)).toEqual([
+      ["n1", true],
+      ["n2", false],
+    ]);
+  });
+});
+
+describe("actionsDone", () => {
+  it("grows when a try that worked takes the place of a failed line, which counting lines misses", () => {
+    const failed = [{ kind: "message" }, { kind: "action", failed: true }];
+    const worked = [{ kind: "message" }, { kind: "action", failed: false }];
+    expect(actionsDone(failed)).toBe(1);
+    expect(actionsDone(worked)).toBeGreaterThan(actionsDone(failed));
+    expect(actionsDone([...failed, { kind: "action", failed: true }])).toBeGreaterThan(
+      actionsDone(failed),
+    );
+  });
+});
+
+describe("a call in the conversation", () => {
+  const card = (over: Record<string, unknown> = {}) =>
+    ({
+      kind: "call",
+      id: "as_1",
+      at: "2026-10-25T18:00:00.000Z",
+      state: "summarizing",
+      seconds: 90,
+      summary: null,
+      links: [],
+      ...over,
+    }) as const;
+
+  it("says how long it ran", () => {
+    expect(callLength(20)).toBe("under a minute");
+    expect(callLength(380)).toBe("6 min");
+    expect(callLength(3600)).toBe("1 hr");
+    expect(callLength(3900)).toBe("1 hr 5 min");
+  });
+
+  it("leaves its lines and actions to its card", () => {
+    expect(onCall({ kind: "message", call: "as_1" })).toBe(true);
+    expect(onCall({ kind: "action", call: "as_1" })).toBe(true);
+    expect(onCall({ kind: "message" })).toBe(false);
+    expect(onCall({ kind: "call", call: "x" })).toBe(false);
+  });
+
+  it("links to the threads and pages the call made, once each, by name", () => {
+    const open = { environmentId: "aldo-m", threadId: "t1" };
+    const links = callLinksFrom(
+      [
+        { kind: "action", call: "as_1", label: "Started a thread: Move dentist", open },
+        { kind: "action", call: "as_1", label: "Messaged a thread", open },
+        { kind: "action", call: "as_1", label: "Opened a preview", href: "https://p.example/app" },
+        {
+          kind: "action",
+          call: "as_1",
+          label: "Couldn't start a thread",
+          failed: true,
+          open: { ...open, threadId: "t2" },
+        },
+        {
+          kind: "action",
+          call: "as_2",
+          label: "Started a thread: Other",
+          open: { ...open, threadId: "t3" },
+        },
+        { kind: "message", call: "as_1" },
+      ],
+      "as_1",
+    );
+    expect(links).toEqual([
+      { kind: "thread", title: "Messaged a thread", ...open },
+      { kind: "page", title: "Opened a preview", url: "https://p.example/app" },
+    ]);
+  });
+
+  it("replaces a card Aldo has moved on, adds one the page lacks that came later, and changes nothing otherwise", () => {
+    const message = {
+      kind: "message",
+      role: "user",
+      text: "Hi",
+      at: "2026-10-25T17:00:00.000Z",
+    } as const;
+    const entries = [message, card()];
+    const done = card({ state: "done", summary: "You booked it." });
+    const other = card({ id: "as_2", at: "2026-10-25T19:00:00.000Z" });
+    const older = card({ id: "as_0", at: "2026-10-24T09:00:00.000Z" });
+    expect(withCalls(entries, [done, other, older], "2026-10-25T18:30:00.000Z")).toEqual([
+      message,
+      done,
+      other,
+    ]);
+    expect(withCalls(entries, [card()], "2026-10-25T18:30:00.000Z")).toBe(entries);
   });
 });

@@ -2,17 +2,35 @@ import { ExternalLinkIcon } from "lucide-react";
 import { useState, type FormEvent } from "react";
 
 import { AldoBillingSection, useAldoCheckoutReturn } from "../../aldo/AldoBilling";
-import { isAldoCloud, setAldoSpendLimit } from "../../aldo/cloud";
+import { isAldoCloud } from "../../aldo/api";
+import { deleteAldoWindowsDisk, setAldoSpendLimit } from "../../aldo/accountApi";
 
-import type { AldoWorkspaceUsage, AldoWorkspaceUsageState } from "../../state/aldoWorkspaceUsage";
+import type {
+  AldoWindowsDisk,
+  AldoWorkspaceUsage,
+  AldoWorkspaceUsageState,
+} from "../../state/aldoWorkspaceUsage";
+import {
+  AlertDialog,
+  AlertDialogClose,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogPopup,
+  AlertDialogTitle,
+} from "../ui/alert-dialog";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
+import { Spinner } from "../ui/spinner";
+import { toastManager } from "../ui/toast";
 import {
+  aldoPlanEnded,
   aldoUsageAlertCopy,
   aldoUsageFacts,
   aldoUsageFootnote,
-  aldoUsageMeterFraction,
+  aldoUsageMeter,
   aldoUsageUnmeteredCopy,
+  aldoWindowsDiskCopy,
   formatCents,
   formatCredits,
 } from "./aldoWorkspaceUsageView";
@@ -27,9 +45,12 @@ const MANAGE_CAPACITY_HREF = "/_devpc/account/billing";
 export function AldoWorkspaceUsageSection({
   state,
   onChanged,
+  title = "Aldo workspace",
 }: {
   readonly state: AldoWorkspaceUsageState;
   readonly onChanged?: () => void;
+  /** Aldo's Settings → Account names it for what it shows there. */
+  readonly title?: string;
 }) {
   useAldoCheckoutReturn(onChanged);
   if (state.status === "unavailable") return null;
@@ -40,10 +61,15 @@ export function AldoWorkspaceUsageSection({
       <section className="flex flex-col gap-3" aria-labelledby="aldo-workspace-usage-heading">
         <div className="flex items-center justify-between gap-3">
           <h2 id="aldo-workspace-usage-heading" className="text-sm font-medium text-foreground">
-            Aldo workspace
+            {title}
           </h2>
           {isAldoCloud ? (
-            usage?.bill ? (
+            usage?.bill && !aldoPlanEnded(usage) && usage.seat ? (
+              // A seat's limit is its organization's to set (the Plan section says whom to ask).
+              <span className="text-xs text-muted-foreground">
+                Extra usage limit: {formatCents(usage.bill.spendLimitCents)}
+              </span>
+            ) : usage?.bill && !aldoPlanEnded(usage) ? (
               <SpendLimitControl
                 spendLimitCents={usage.bill.spendLimitCents}
                 onChanged={onChanged}
@@ -69,6 +95,13 @@ export function AldoWorkspaceUsageSection({
         ) : (
           <AldoWorkspaceUsageSkeleton />
         )}
+        {isAldoCloud && usage?.windowsDisk ? (
+          <WindowsDiskControl
+            disk={usage.windowsDisk}
+            status={state.status}
+            onChanged={onChanged}
+          />
+        ) : null}
       </section>
       {isAldoCloud && usage ? (
         <AldoBillingSection usage={usage} status={state.status} onChanged={onChanged} />
@@ -84,9 +117,12 @@ function AldoWorkspaceUsageBody({
   readonly usage: AldoWorkspaceUsage;
   readonly stale: boolean;
 }) {
-  const alert = aldoUsageAlertCopy(usage.alert, usage);
+  // An ended plan's credits can't be used: no warnings or meter, just what it used.
+  const ended = aldoPlanEnded(usage);
+  const alert = ended ? null : aldoUsageAlertCopy(usage.alert, usage);
   const facts = aldoUsageFacts(usage);
   const footnote = aldoUsageFootnote(usage);
+  const meter = usage.credits && !ended ? aldoUsageMeter(usage.credits) : null;
 
   return (
     <div className={stale ? "flex flex-col gap-3 opacity-64" : "flex flex-col gap-3"}>
@@ -95,29 +131,27 @@ function AldoWorkspaceUsageBody({
           {alert}
         </p>
       ) : null}
-      {usage.credits ? (
+      {usage.credits && meter ? (
         <div className="flex flex-col gap-2">
           <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
             <span className="text-2xl font-semibold text-foreground tabular-nums">
               {formatCredits(usage.credits.remaining)}{" "}
               <span className="text-sm font-normal text-muted-foreground">credits left</span>
             </span>
-            <span className="text-xs text-muted-foreground tabular-nums">
-              {formatCredits(usage.credits.used)} of {formatCredits(usage.credits.authorized)} used
-              this cycle
-            </span>
+            <span className="text-xs text-muted-foreground tabular-nums">{meter.valueText}</span>
           </div>
           <div
             className="h-1 overflow-hidden rounded-full bg-border"
             role="meter"
-            aria-label="Credits used this cycle"
+            aria-label={meter.label}
             aria-valuemin={0}
-            aria-valuemax={usage.credits.authorized}
-            aria-valuenow={Math.min(usage.credits.used, usage.credits.authorized)}
+            aria-valuemax={meter.max}
+            aria-valuenow={meter.value}
+            aria-valuetext={meter.valueText}
           >
             <div
               className="h-full rounded-full bg-foreground/55"
-              style={{ width: `${(aldoUsageMeterFraction(usage.credits) * 100).toFixed(1)}%` }}
+              style={{ width: `${(meter.fraction * 100).toFixed(1)}%` }}
             />
           </div>
         </div>
@@ -203,6 +237,80 @@ function SpendLimitControl(props: {
       </Button>
       {error ? <span className="text-xs text-destructive-foreground">{error}</span> : null}
     </form>
+  );
+}
+
+/**
+ * Aldo cloud: a stopped Windows computer's disk, kept (and charged) for next
+ * time, and deleting it, once the summary is current.
+ */
+function WindowsDiskControl(props: {
+  readonly disk: AldoWindowsDisk;
+  readonly status: AldoWorkspaceUsageState["status"];
+  readonly onChanged: (() => void) | undefined;
+}) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const remove = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const message = await deleteAldoWindowsDisk();
+      setOpen(false);
+      toastManager.add({ type: "success", title: "Windows computer's disk", description: message });
+      props.onChanged?.();
+    } catch (cause) {
+      // Running, starting or stopping (409): Aldo says what to do first.
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 border border-border px-3 py-2 text-xs text-foreground">
+      <span>{aldoWindowsDiskCopy(props.disk)}</span>
+      <Button
+        size="xs"
+        variant="outline"
+        disabled={props.status !== "ready" || busy}
+        onClick={() => {
+          setError(null);
+          setOpen(true);
+        }}
+      >
+        Delete
+      </Button>
+      <AlertDialog
+        open={open}
+        onOpenChange={(next) => {
+          if (!next && !busy) setOpen(false);
+        }}
+      >
+        <AlertDialogPopup>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete your Windows computer's disk?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Its files, apps and Office sign-in go; it starts fresh next time.
+            </AlertDialogDescription>
+            {error ? (
+              <p className="text-sm text-destructive-foreground" role="alert">
+                {error}
+              </p>
+            ) : null}
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogClose render={<Button variant="outline" size="sm" />} disabled={busy}>
+              Keep it
+            </AlertDialogClose>
+            <Button size="sm" variant="destructive" disabled={busy} onClick={() => void remove()}>
+              {busy ? <Spinner className="size-3.5" /> : null}
+              Delete disk
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogPopup>
+      </AlertDialog>
+    </div>
   );
 }
 

@@ -2,9 +2,11 @@
 // tested on their own: whether it's on, where its rail shows, which of its
 // places the page is on, and what its Needs-you place lists.
 
-import type { AldoHome, AldoHomeConversation } from "./cloud";
+import { type AldoHome, type AldoHomeConversation, type AldoPayment } from "./homeApi";
 import { aldoDecisions, putAway, type AldoDecision } from "./decisions.logic";
 import { boardFor } from "./home.logic";
+import { waitingPayments } from "./payments.logic";
+import { aldoSimpleByDefault, type AldoInterest } from "./onboarding.logic";
 
 /** The three places on simple mode's rail, each a view of the home screen. */
 export type AldoSimplePlace = "aldo" | "needs" | "library";
@@ -18,9 +20,18 @@ export const ALDO_SIMPLE_PLACES: ReadonlyArray<{
   { place: "library", label: "Library" },
 ];
 
-/** Kept per device as "on"; anything else (nothing kept, private mode) is off. */
-export function simpleModeFrom(stored: string | null | undefined): boolean {
-  return stored === "on";
+/**
+ * Kept per device as "on" or "off" once the user sets it. Until they have
+ * (nothing kept, or private mode), it follows the welcome's answer: on for
+ * one without code, off for code and for an account that was never asked.
+ */
+export function simpleModeFrom(
+  stored: string | null | undefined,
+  interests: ReadonlyArray<AldoInterest> | null = null,
+): boolean {
+  if (stored === "on") return true;
+  if (stored === "off") return false;
+  return aldoSimpleByDefault(interests);
 }
 
 /**
@@ -46,16 +57,17 @@ export function currentSimplePlace(
   return pathname === "/" ? place : null;
 }
 
-/** Whether the home screen shows Aldo's conversation: in simple mode by its place, otherwise by the view. */
+/** Whether the home screen shows Aldo's conversation: always, but for simple mode's other places. */
 export function homeShowsConversation(input: {
   readonly simple: boolean;
   readonly place: AldoSimplePlace;
-  readonly view: string;
 }): boolean {
-  return input.simple ? input.place === "aldo" : input.view === "aldo";
+  return !input.simple || input.place === "aldo";
 }
 
 export interface AldoSimpleNeedsYou {
+  /** Payments waiting on the user's approval in Link, the one that stops waiting soonest first. */
+  readonly payments: ReadonlyArray<AldoPayment>;
   /** Threads waiting on the user, waited longest first, without the ones they put away. */
   readonly conversations: ReadonlyArray<AldoHomeConversation>;
   /** Pull requests ready to merge that no thread above already asks about. */
@@ -63,13 +75,15 @@ export interface AldoSimpleNeedsYou {
 }
 
 /**
- * What the Needs-you place lists under Aldo's approvals: what the home
- * screen's board lists as needing the user, less what they put away, and the
- * pull requests ready to merge. Together with the waiting approvals that's
- * what aldoWaitingCount counts, so the rail's number matches the list.
+ * What the Needs-you place lists with Aldo's approvals: payments waiting on
+ * the user in Link, what the home screen's board lists as needing the user,
+ * less what they put away, and the pull requests ready to merge. Together
+ * with the waiting approvals that's what aldoWaitingCount counts, so the
+ * rail's number matches the list.
  */
 export function simpleNeedsYou(home: AldoHome, now: number): AldoSimpleNeedsYou {
   return {
+    payments: waitingPayments(home, now),
     conversations: boardFor(home.conversations, now).needsYou.filter((c) => !putAway(c, now)),
     merges: aldoDecisions(home, now).filter(
       (d): d is Extract<AldoDecision, { kind: "merge" }> => d.kind === "merge",

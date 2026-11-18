@@ -8,10 +8,11 @@
 // too. Hanging up ends it.
 
 import { create } from "zustand";
+import { type AldoHome } from "./homeApi";
 
 import { aldoAssistantLive, connectAldo, tellAldoCall } from "./assistantSession";
 import { showAldoCall } from "./callView";
-import { decisionBrief, type AldoDecision } from "./decisions.logic";
+import { aldoDecisions, chatDecisionOf, decisionBrief, type AldoDecision } from "./decisions.logic";
 
 export interface AldoWalkthroughState {
   readonly active: boolean;
@@ -77,9 +78,15 @@ export function startAldoWalkthrough(
 
 /**
  * The one that's up was decided (`how`, in words, when the user tapped: Aldo
- * acted itself when they said it) or skipped: the next one comes up.
+ * acted itself when they said it), skipped, or found to have moved on when
+ * tapped (`how` is what it stood at): the next one comes up.
  */
-export function advanceAldoWalkthrough(outcome: "decided" | "skipped", how?: string): void {
+export function advanceAldoWalkthrough(
+  outcome: "decided" | "skipped" | "moved-on",
+  how?: string,
+  /** What Aldo's approvals said happened ("Not sent; the draft is deleted."). */
+  said?: string,
+): void {
   const { active, decisions, index } = get();
   if (!active || index >= decisions.length) return;
   const next = index + 1;
@@ -87,9 +94,11 @@ export function advanceAldoWalkthrough(outcome: "decided" | "skipped", how?: str
   const previous =
     outcome === "skipped"
       ? "The user skipped that one: it stays waiting for later, untouched (don't act on it, and don't say it's done)."
-      : how
-        ? `The user tapped: they ${how}. It's done.`
-        : "That one's decided.";
+      : outcome === "moved-on"
+        ? `The user tapped, but that one had already moved on, so nothing was done (don't say it's done)${how ? `: ${how}` : "."}`
+        : how
+          ? `The user tapped: they ${how}. ${said ? `What happened: ${said}` : "It's done."}`
+          : "That one's decided.";
   tellAldoCall(walkthroughNext(previous, decisions[next] ?? null, next + 1, decisions.length), {
     respond: true,
   });
@@ -100,4 +109,29 @@ export function stopAldoWalkthrough(note?: string): void {
   if (!get().active) return;
   set({ active: false, decisions: [], index: 0, suggestions: {} });
   if (note) tellAldoCall(note, { respond: false });
+}
+
+/** A hidden prompt leaves an active or minimized walkthrough without being decided. */
+export function reconcileAldoWalkthrough(home: AldoHome, now = Date.now()): void {
+  const { active, decisions, index } = get();
+  if (!active) return;
+  const hidden = new Set(
+    aldoDecisions(home, now)
+      .filter((d) => chatDecisionOf(d)?.dismissed)
+      .map((d) => d.key),
+  );
+  const remaining = decisions.filter((d, i) => i < index || !hidden.has(d.key));
+  if (remaining.length === decisions.length) return;
+  set({ decisions: remaining });
+  if (decisions[index] && hidden.has(decisions[index]!.key)) {
+    tellAldoCall(
+      walkthroughNext(
+        "The user hid that prompt from Aldo chat. It is still waiting, unanswered and unapproved. Stop discussing or acting on it.",
+        remaining[index] ?? null,
+        index + 1,
+        remaining.length,
+      ),
+      { respond: true },
+    );
+  }
 }

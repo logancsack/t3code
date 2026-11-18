@@ -7,7 +7,7 @@
 import { create } from "zustand";
 
 import { pullAldoConversation } from "./assistantSession";
-import { fetchAldoBrief, type AldoBrief } from "./cloud";
+import { fetchAldoBrief, type AldoBrief } from "./assistantApi";
 
 const PENDING_RETRY_MS = 4_000;
 /** The day's brief comes from this hour on, as Aldo makes it (brief.ts DAY_STARTS_HOUR). */

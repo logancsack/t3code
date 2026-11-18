@@ -67,8 +67,11 @@ export function aldoMachineSettingsOf(raw: unknown): AldoMachineSettings {
 export function withAldoMachineSettings<S extends ServerSettings>(
   settings: S,
   kept: AldoMachineSettings | null,
+  modelRouting = false,
 ): S {
-  return kept && Object.keys(kept).length > 0 ? { ...settings, ...kept } : settings;
+  return kept
+    ? { ...settings, ...(modelRouting ? { defaultModelSelection: null } : {}), ...kept }
+    : settings;
 }
 
 /** Whether Aldo keeps every one of `keys` (none: it keeps nothing of them). */
@@ -112,6 +115,7 @@ export function aldoSettingsSelection<
   scopeKind: string,
   selected: S,
   kept: AldoMachineSettings | null,
+  modelRouting = false,
 ): S & { aldo: AldoSettingsScope | null } {
   if (kept === null || scopeKind !== "all") return { ...selected, aldo: null };
   const connectedEnvironments = selected.connectedEnvironments.map((environment) =>
@@ -120,7 +124,11 @@ export function aldoSettingsSelection<
           ...environment,
           serverConfig: {
             ...environment.serverConfig,
-            settings: withAldoMachineSettings(environment.serverConfig.settings, kept),
+            settings: withAldoMachineSettings(
+              environment.serverConfig.settings,
+              kept,
+              modelRouting,
+            ),
           },
         }
       : environment,

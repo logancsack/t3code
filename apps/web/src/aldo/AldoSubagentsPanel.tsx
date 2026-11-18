@@ -1,5 +1,8 @@
+import { settingsSubagents } from "./settingsData";
+import { useSettingsResource } from "./settingsResource";
 import type { ClientSettings } from "@t3tools/contracts";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { NetworkIcon } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 
 import { SettingsRow, SettingsSection } from "../components/settings/settingsLayout";
 import { Button } from "../components/ui/button";
@@ -11,13 +14,12 @@ import {
   SelectValue,
 } from "../components/ui/select";
 import { useClientSettings } from "../hooks/useSettings";
+import { AldoBrandTile } from "./AldoBrandTile";
 import {
-  fetchAldoSubagents,
   saveAldoSubagents,
   type AldoSubagentDefault,
   type AldoSubagentProvider,
-  type AldoSubagents,
-} from "./cloud";
+} from "./threadApi";
 import { newestAldoProviders, onAldoServerConfigChange } from "./serverConfig";
 import {
   chooseModel,
@@ -37,6 +39,7 @@ const hiddenModels = (settings: ClientSettings): HiddenModels => settings.provid
 const message = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause));
 
 function SubagentRow(props: {
+  readonly id?: string;
   readonly agent: SubagentAgent;
   readonly providers: ReadonlyArray<Record<string, unknown>>;
   readonly hidden: HiddenModels;
@@ -50,7 +53,9 @@ function SubagentRow(props: {
   const effort = efforts.find((candidate) => candidate.id === saved?.reasoning);
   return (
     <SettingsRow
-      title={agent.title}
+      {...(props.id ? { id: props.id } : {})}
+      leading={<AldoBrandTile id={agent.kind} name={agent.title} size="sm" />}
+      title={`${agent.title}’s helpers`}
       description={
         models.length > 0
           ? agent.description
@@ -68,12 +73,12 @@ function SubagentRow(props: {
           >
             <SelectTrigger
               className="h-8 min-w-44 text-xs"
-              aria-label={`${agent.title} subagents' model`}
+              aria-label={`${agent.title}’s helpers’ model`}
             >
-              <SelectValue>{model ? model.name : "Same as the main agent"}</SelectValue>
+              <SelectValue>{model ? model.name : "Same as the thread"}</SelectValue>
             </SelectTrigger>
             <SelectPopup align="end" alignItemWithTrigger={false}>
-              <SelectItem value={SAME_AS_MAIN}>Same as the main agent</SelectItem>
+              <SelectItem value={SAME_AS_MAIN}>Same as the thread</SelectItem>
               {models.map((candidate) => (
                 <SelectItem key={candidate.slug} value={candidate.slug}>
                   {candidate.name}
@@ -94,7 +99,7 @@ function SubagentRow(props: {
             >
               <SelectTrigger
                 className="h-8 min-w-32 text-xs"
-                aria-label={`${agent.title} subagents' reasoning`}
+                aria-label={`${agent.title}’s helpers’ reasoning`}
               >
                 <SelectValue>{effort ? effort.label : "Model's default"}</SelectValue>
               </SelectTrigger>
@@ -115,34 +120,21 @@ function SubagentRow(props: {
 }
 
 /**
- * Settings → Providers: what each agent's subagents run on when it doesn't
- * pick a model (by default, the main agent's). Aldo writes it into each
- * machine's Claude Code and Codex config. Hidden with an Aldo that doesn't
- * keep it.
+ * Settings → Models: what each agent's subagents (its helpers) run on when it
+ * doesn't pick a model (by default, the main agent's). Aldo writes it into
+ * each machine's Claude Code and Codex config. Hidden with an Aldo that
+ * doesn't keep it. `bare`, its rows alone, for a section of the page's.
  */
-export function AldoSubagentsPanel() {
-  const [saved, setSaved] = useState<AldoSubagents | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
+export function AldoSubagentsPanel(props: { readonly bare?: boolean } = {}) {
+  const cached = useSettingsResource(settingsSubagents);
+  const saved = cached.data ?? null;
+  const loadError = cached.error;
   const [providers, setProviders] = useState<ReadonlyArray<Record<string, unknown>>>([]);
   const [error, setError] = useState<string | null>(null);
   const hidden = useClientSettings(hiddenModels);
-  // What Aldo last said it keeps, to go back to if the newest change fails.
-  const confirmed = useRef<AldoSubagents>({});
-  // Changes go to Aldo one at a time, in the order they were made; only the newest one's answer shows.
-  const queue = useRef<Promise<void>>(Promise.resolve());
-  const newest = useRef(0);
-
   const load = useCallback(() => {
-    fetchAldoSubagents().then(
-      (next) => {
-        if (next) confirmed.current = next;
-        setSaved(next);
-        setLoadError(null);
-      },
-      (cause: unknown) => setLoadError(message(cause)),
-    );
+    void settingsSubagents.refresh().catch(() => undefined);
   }, []);
-  useEffect(load, [load]);
 
   // The models: the newest config's, again as an agent's changes (its first one may come after this opens).
   useEffect(() => {
@@ -155,45 +147,46 @@ export function AldoSubagentsPanel() {
 
   if (!saved) {
     if (!loadError) return null;
+    const failed = (
+      <SettingsRow
+        {...(props.bare ? { id: "aldo-subagents" } : {})}
+        title="Couldn't load what helpers run on"
+        description={loadError}
+        control={
+          <Button size="sm" variant="outline" onClick={load}>
+            Try again
+          </Button>
+        }
+      />
+    );
+    if (props.bare) return failed;
     return (
-      <SettingsSection title="Subagents">
-        <SettingsRow
-          title="Couldn't load what subagents run on"
-          description={loadError}
-          control={
-            <Button size="sm" variant="outline" onClick={load}>
-              Try again
-            </Button>
-          }
-        />
+      <SettingsSection
+        id="aldo-subagents"
+        title="Helper models"
+        icon={<NetworkIcon className="size-4" />}
+      >
+        {failed}
       </SettingsSection>
     );
   }
 
   const change = (kind: AldoSubagentProvider, value: AldoSubagentDefault | null) => {
-    setSaved((current) => withSubagentDefault(current ?? {}, kind, value));
     setError(null);
-    const turn = ++newest.current;
-    queue.current = queue.current.then(() =>
-      saveAldoSubagents({ [kind]: value }).then(
-        (next) => {
-          confirmed.current = next;
-          if (turn === newest.current) setSaved(next);
-        },
-        (cause: unknown) => {
-          setError(message(cause));
-          // A later change's answer says what Aldo keeps; the newest one failing goes back to the last it said.
-          if (turn === newest.current) setSaved(confirmed.current);
-        },
-      ),
-    );
+    void settingsSubagents
+      .mutate(
+        (current) => withSubagentDefault(current ?? {}, kind, value),
+        () => saveAldoSubagents({ [kind]: value }),
+      )
+      .catch((cause: unknown) => setError(message(cause)));
   };
 
-  return (
-    <SettingsSection title="Subagents">
-      {SUBAGENT_AGENTS.map((agent) => (
+  const rows = (
+    <>
+      {SUBAGENT_AGENTS.map((agent, index) => (
         <SubagentRow
           key={agent.kind}
+          {...(props.bare && index === 0 ? { id: "aldo-subagents" } : {})}
           agent={agent}
           providers={providers}
           hidden={hidden}
@@ -201,11 +194,31 @@ export function AldoSubagentsPanel() {
           onChange={(value) => change(agent.kind, value)}
         />
       ))}
-      <p className="px-4 py-3 text-muted-foreground text-xs">
-        A model you ask an agent to give a subagent still wins. Changes reach new conversations
-        within 10 minutes.
-      </p>
       {error ? <p className="px-4 pb-3 text-destructive-foreground text-sm">{error}</p> : null}
+    </>
+  );
+  const note = (
+    <p className="px-3 py-3 text-muted-foreground text-xs sm:px-4">
+      A model you ask an agent to give a helper still wins. Changes reach new conversations within
+      10 minutes.
+    </p>
+  );
+  if (props.bare) {
+    return (
+      <>
+        {rows}
+        {note}
+      </>
+    );
+  }
+  return (
+    <SettingsSection
+      id="aldo-subagents"
+      title="Helper models"
+      icon={<NetworkIcon className="size-4" />}
+    >
+      {rows}
+      {note}
     </SettingsSection>
   );
 }

@@ -429,3 +429,19 @@ export function applyClaudePromptEffortPrefix(
   }
   return `Ultrathink:\n${trimmed}`;
 }
+
+/** Whether a trait change added the header, rather than retaining user-authored text. */
+export function isClaudePromptEffortPrefixInjection(previous: string, next: string): boolean {
+  return (
+    next.startsWith("Ultrathink:\n") &&
+    next !== previous.trim() &&
+    next ===
+      (previous.trim() ? applyClaudePromptEffortPrefix(previous, "ultrathink") : "Ultrathink:\n")
+  );
+}
+
+/** Removes a known injected header without trimming the user's text. */
+export function stripClaudePromptEffortPrefix(text: string, injected = false): string {
+  const prefix = "Ultrathink:\n";
+  return injected && text.startsWith(prefix) ? text.slice(prefix.length) : text;
+}

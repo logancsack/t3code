@@ -6,7 +6,7 @@ import { Atom } from "effect/unstable/reactivity";
 
 import { connectionAtomRuntime } from "../connection/runtime";
 import { projectFaviconCache } from "../assets/projectFaviconCache";
-import { isAldoCloud } from "../aldo/cloud";
+import { isAldoCloud } from "../aldo/api";
 import { aldoProjectFaviconCache } from "../aldo/projectFavicons";
 import { isElectron } from "../env";
 import { primaryEnvironmentIdAtom } from "./primaryEnvironment";

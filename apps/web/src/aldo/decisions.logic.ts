@@ -7,17 +7,22 @@
 // same list, from Aldo's home read. Pure, so it's tested on its own.
 
 import { waitingApprovals } from "./approvals.logic";
-import type {
-  AldoApproval,
-  AldoHome,
-  AldoHomeConversation,
-  AldoHomePending,
-  AldoHomePullRequest,
-} from "./cloud";
+import { paymentBrief, paymentWords, waitingPayments } from "./payments.logic";
+import {
+  type AldoApproval,
+  type AldoChatDecision,
+  type AldoHome,
+  type AldoHomeConversation,
+  type AldoHomePending,
+  type AldoHomePullRequest,
+  type AldoPayment,
+} from "./homeApi";
 import { boardFor, isPausedMidTurn, needsYouKind, sameTarget } from "./home.logic";
 
 export type AldoDecision =
   | { readonly kind: "aldo-approval"; readonly key: string; readonly approval: AldoApproval }
+  /** A payment an agent asked for, which the user approves or declines in Link (payments.logic.ts). */
+  | { readonly kind: "payment"; readonly key: string; readonly payment: AldoPayment }
   | {
       readonly kind: "question";
       readonly key: string;
@@ -90,15 +95,22 @@ export function putAway(c: AldoHomeConversation, now: number): boolean {
 }
 
 /**
- * Everything waiting on the user, in the order to go through it: Aldo's
+ * Everything waiting on the user, in the order to go through it: payments
+ * waiting on their approval in Link (they stop waiting soon), Aldo's
  * approvals (not ones already being carried out), then threads (waited
  * longest first, not ones they put away), then pull requests that can merge,
  * whose thread isn't on the list already and that Aldo won't merge on its
- * own. Aldo's brief picks from the same (src/lib/assistant/brief.ts).
+ * own. Aldo's brief picks from the same (src/lib/assistant/brief.ts). What
+ * the user dismissed from Needs you (`chatDecision.cleared`) isn't in it,
+ * unless `withCleared` (the Dismissed list), so no count or list shows it.
  */
-export function aldoDecisions(home: AldoHome, now: number): ReadonlyArray<AldoDecision> {
+export function aldoDecisions(
+  home: AldoHome,
+  now: number,
+  withCleared = false,
+): ReadonlyArray<AldoDecision> {
   // A thread paused mid-turn needs opening, not a decision (Aldo's brief leaves it out too).
-  const needsYou = boardFor(home.conversations, now).needsYou.filter(
+  const needsYou = boardFor(home.conversations, now, true).needsYou.filter(
     (c) => !putAway(c, now) && !isPausedMidTurn(c),
   );
   const fromThreads = needsYou.flatMap((c) => {
@@ -118,8 +130,13 @@ export function aldoDecisions(home: AldoHome, now: number): ReadonlyArray<AldoDe
       key: `merge:${pullRequest.repo}#${pullRequest.number}`,
       pullRequest,
     }));
-  return [
-    ...waitingApprovals(home.approvals)
+  const all: ReadonlyArray<AldoDecision> = [
+    ...waitingPayments(home, now).map((payment): AldoDecision => ({
+      kind: "payment",
+      key: `payment:${payment.id}`,
+      payment,
+    })),
+    ...waitingApprovals(home.approvals, true)
       .filter((approval) => approval.status === "pending")
       .map((approval): AldoDecision => ({
         kind: "aldo-approval",
@@ -129,19 +146,28 @@ export function aldoDecisions(home: AldoHome, now: number): ReadonlyArray<AldoDe
     ...fromThreads,
     ...merges,
   ];
+  return withCleared ? all : all.filter((d) => !chatDecisionOf(d)?.cleared);
 }
 
 /**
  * How many things wait on the user, for the phone's badge and summary: the
  * decisions, and the threads paused mid-turn (not put away), which opening
- * them carries on rather than a decision.
+ * them carries on rather than a decision. `answered`: decisions' keys the user
+ * has just decided, which the home read hasn't caught up with.
  */
-export function aldoWaitingCount(home: AldoHome, now: number): number {
-  const paused = home.conversations.filter((c) => isPausedMidTurn(c) && !putAway(c, now));
-  return aldoDecisions(home, now).length + paused.length;
+export function aldoWaitingCount(
+  home: AldoHome,
+  now: number,
+  answered: ReadonlyArray<string> = [],
+): number {
+  const paused = home.conversations.filter(
+    (c) => isPausedMidTurn(c) && !putAway(c, now) && !c.chatDecision?.cleared,
+  );
+  const decisions = aldoDecisions(home, now).filter((d) => !answered.includes(d.key));
+  return decisions.length + paused.length;
 }
 
-/** Whether a decision can be made without opening its thread: a tap, or a few words. */
+/** Whether a decision can be made without opening its thread: a tap, or a few words (a payment's, in Link). */
 export function decidesInPlace(decision: AldoDecision): boolean {
   return decision.kind !== "failed" && decision.kind !== "waiting";
 }
@@ -151,6 +177,8 @@ export function decisionTitle(decision: AldoDecision): string {
   switch (decision.kind) {
     case "aldo-approval":
       return decision.approval.title;
+    case "payment":
+      return `Pay ${decision.payment.total} at ${decision.payment.merchant}`;
     case "merge":
       return `Merge #${decision.pullRequest.number} ${decision.pullRequest.title}`;
     default:
@@ -163,6 +191,8 @@ export function decisionAsk(decision: AldoDecision): string {
   switch (decision.kind) {
     case "aldo-approval":
       return decision.approval.summary;
+    case "payment":
+      return paymentWords(decision.payment, 0).line;
     case "question": {
       const first = decision.pending.questions[0];
       return first ? first.question : "It asks you something";
@@ -192,6 +222,8 @@ export function decisionThread(
   switch (decision.kind) {
     case "aldo-approval":
       return decision.approval.thread;
+    case "payment":
+      return decision.payment.thread;
     case "merge":
       return decision.pullRequest.thread;
     default:
@@ -228,6 +260,8 @@ export function decisionBrief(decision: AldoDecision): string {
         .filter(Boolean)
         .join(" ");
     }
+    case "payment":
+      return paymentBrief(decision.payment);
     case "question": {
       const c = decision.conversation;
       const questions = decision.pending.questions
@@ -245,7 +279,7 @@ export function decisionBrief(decision: AldoDecision): string {
     }
     case "handoff": {
       const c = decision.conversation;
-      return `The thread "${c.title}" (ref ${c.ref}) needs the user in its browser: ${decision.pending.summary || "something only they can get past"}. They do it on their screen, from the card's "Do it now", which opens the agent's browser; or skip it there.`;
+      return `The thread "${c.title}" (ref ${c.ref}) needs the user in its browser: ${decision.pending.summary || "something only they can get past"}. They do it from the card, which offers the way in for this step (the agent's browser, a box for a code, or the site on their phone); or skip it there.`;
     }
     case "plan":
       return `The thread "${decision.conversation.title}" (ref ${decision.conversation.ref}) has a plan to approve: ${decision.plan.text.slice(0, 600)}. The user can approve it, or ask for changes.`;
@@ -258,4 +292,78 @@ export function decisionBrief(decision: AldoDecision): string {
     case "waiting":
       return `The thread "${decision.conversation.title}" (ref ${decision.conversation.ref}) waits on the user: ${decision.conversation.summary ?? "it didn't say why"}.`;
   }
+}
+
+/** Presentation of this pending item in Aldo chat; overview still uses the complete list. */
+export function chatDecisionOf(decision: AldoDecision): AldoChatDecision | undefined {
+  // A payment can't be put off: Link stops waiting for it within the half hour.
+  if (decision.kind === "payment") return undefined;
+  return decision.kind === "aldo-approval"
+    ? decision.approval.chatDecision
+    : decision.kind === "merge"
+      ? decision.pullRequest.chatDecision
+      : decision.conversation.chatDecision;
+}
+
+export function aldoChatDecisions(home: AldoHome, now: number): ReadonlyArray<AldoDecision> {
+  return aldoDecisions(home, now).filter((d) => !chatDecisionOf(d)?.dismissed);
+}
+
+/**
+ * What waits on the user that they hid from Aldo's conversation (it still
+ * waits in its thread, and counts in aldoWaitingCount): a line each, to show
+ * again.
+ */
+export function aldoHiddenFromChat(
+  home: AldoHome,
+  now: number,
+): ReadonlyArray<{ readonly title: string; readonly chatDecision: AldoChatDecision }> {
+  const decisions = aldoDecisions(home, now).flatMap((d) => {
+    const chatDecision = chatDecisionOf(d);
+    if (!chatDecision?.dismissed) return [];
+    const title = decisionTitle(d);
+    return [{ title, chatDecision }];
+  });
+  const paused = home.conversations.flatMap((c) =>
+    c.chatDecision?.dismissed && !c.chatDecision.cleared && isPausedMidTurn(c) && !putAway(c, now)
+      ? [{ title: c.title, chatDecision: c.chatDecision }]
+      : [],
+  );
+  return [...decisions, ...paused];
+}
+
+/** Threads paused mid-turn, in Aldo's conversation: not put away, not hidden from it. A line each that opens the thread. */
+export function pausedInChat(home: AldoHome, now: number): ReadonlyArray<AldoHomeConversation> {
+  return home.conversations.filter(
+    (c) => isPausedMidTurn(c) && !putAway(c, now) && !c.chatDecision?.dismissed,
+  );
+}
+
+/**
+ * When a decision came up: an Aldo approval when it was asked for, a pull
+ * request when it went green, a thread when it got to where it waits.
+ */
+export function decisionAt(decision: AldoDecision, home?: Pick<AldoHome, "handoffs">): string {
+  switch (decision.kind) {
+    case "aldo-approval":
+      return decision.approval.createdAt;
+    case "payment":
+      return decision.payment.createdAt;
+    case "handoff":
+      return (
+        home?.handoffs?.find((h) => h.id === decision.pending.requestId)?.createdAt ??
+        decision.conversation.stateAt ??
+        decision.conversation.at
+      );
+    case "merge":
+      return decision.pullRequest.greenSince ?? decision.pullRequest.updatedAt;
+    default:
+      return decision.conversation.stateAt ?? decision.conversation.at;
+  }
+}
+
+/** A card's stable position in the conversation. */
+export interface AldoPlaceable {
+  readonly key: string;
+  readonly at: string;
 }

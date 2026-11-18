@@ -1,3 +1,4 @@
+import { AldoFrame } from "./AldoFrame";
 // Simple mode's places besides Aldo's conversation (AldoHome.tsx shows them,
 // AldoSimpleRail.tsx goes to them). Needs you is what waits on the user, each
 // answered in place as on the board: Aldo's approvals, then threads, then pull
@@ -5,21 +6,24 @@
 // shared. Asking Aldo from either (Ask Aldo, or "/") goes to Aldo's place,
 // where its composer is.
 
-import { useEffect, useMemo, type ReactNode } from "react";
+import { LoaderCircleIcon } from "lucide-react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { Button } from "../components/ui/button";
 import { SidebarInset } from "../components/ui/sidebar";
 import { Skeleton } from "../components/ui/skeleton";
 import { cn } from "~/lib/utils";
-import { QuickButton } from "./AldoAgentsTab";
 import { ApprovalsSection } from "./AldoApprovals";
-import { DecisionIcon } from "./AldoBrief";
+import { confirmQuickChoice, DecisionIcon, quickChoice } from "./AldoBrief";
 import { HealthStrip, Section } from "./AldoHomeBoard";
 import { NeedsYouCard, ThreadLink } from "./AldoHomeInbox";
+import { AldoHandedToYou } from "./AldoHandedToYou";
 import { AldoSharedFiles } from "./AldoLibrary";
+import { AldoPaymentWaiting } from "./AldoPaymentCard";
 import { waitingApprovals } from "./approvals.logic";
 import { seedAldoComposer, useAldoAssistant } from "./assistantSession";
-import type { AldoHome } from "./cloud";
+import { type AldoHome } from "./homeApi";
+import { decideAldo } from "./decide";
 import {
   aldoDecisions,
   aldoWaitingCount,
@@ -67,7 +71,7 @@ function useAskingGoesToAldo(): void {
 function PlacePage(props: {
   readonly title: string;
   readonly count?: number;
-  /** On a phone, the places as tabs; the title is then for screen readers. */
+  /** On a phone, the places as tabs, at the foot. */
   readonly tabs: ReactNode;
   readonly action?: ReactNode;
   readonly children: ReactNode;
@@ -76,10 +80,15 @@ function PlacePage(props: {
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground">
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-4 pt-3 pb-[max(2rem,env(safe-area-inset-bottom))] sm:px-5 sm:pt-6">
-          {props.tabs ? <div className="flex justify-center">{props.tabs}</div> : null}
+        <div
+          className={cn(
+            "mx-auto flex w-full max-w-2xl flex-col gap-5 px-4 pt-3 sm:px-5 sm:pt-6",
+            props.tabs ? "pb-6" : "pb-[max(2rem,env(safe-area-inset-bottom))]",
+          )}
+        >
           <header className="flex min-h-8 flex-wrap items-center gap-2">
-            <h1 className={cn("font-semibold text-lg", props.tabs && "sr-only")}>
+            {/* Clear of the sidebar's button, which floats at the top left on a phone; what to do is on a row of its own under it. */}
+            <h1 className={cn("font-semibold text-lg", props.tabs && "ps-11 leading-10")}>
               {props.title}
               {props.count ? (
                 <span className="ms-2 font-normal text-muted-foreground text-sm">
@@ -87,11 +96,18 @@ function PlacePage(props: {
                 </span>
               ) : null}
             </h1>
-            {props.action ? <span className="ms-auto">{props.action}</span> : null}
+            {props.action ? (
+              <span className={props.tabs ? "w-full" : "ms-auto"}>{props.action}</span>
+            ) : null}
           </header>
           {props.children}
         </div>
       </div>
+      {props.tabs ? (
+        <div className="shrink-0 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+          {props.tabs}
+        </div>
+      ) : null}
     </SidebarInset>
   );
 }
@@ -114,6 +130,7 @@ export function AldoSimpleNeedsYou(props: {
   const refresh = () => void refreshAldoHome();
   const nothing =
     list !== null &&
+    list.payments.length === 0 &&
     list.conversations.length === 0 &&
     list.merges.length === 0 &&
     waitingApprovals(home?.approvals).length === 0;
@@ -130,10 +147,7 @@ export function AldoSimpleNeedsYou(props: {
             className="rounded-full"
             onClick={() => startAldoWalkthrough(decisions)}
           >
-            <span
-              aria-hidden
-              className="size-2.5 rounded-full bg-gradient-to-br from-primary/90 to-primary/50"
-            />
+            <AldoFrame size={12} />
             Go through them with Aldo
           </Button>
         ) : null
@@ -153,6 +167,15 @@ export function AldoSimpleNeedsYou(props: {
           <Skeleton className="h-24 w-full rounded-xl" />
           <Skeleton className="h-24 w-full rounded-xl" />
         </div>
+      ) : null}
+      {list && list.payments.length > 0 ? (
+        <Section title="Payments" count={list.payments.length}>
+          <ul className="flex flex-col gap-2">
+            {list.payments.map((p) => (
+              <AldoPaymentWaiting key={p.id} payment={p} now={now} />
+            ))}
+          </ul>
+        </Section>
       ) : null}
       {home?.approvals ? (
         <ApprovalsSection approvals={home.approvals} now={now} onActed={refresh} />
@@ -227,13 +250,43 @@ export function AldoSimpleLibrary(props: { readonly tabs: ReactNode }) {
   return (
     <PlacePage title="Library" tabs={props.tabs}>
       <p className="text-muted-foreground text-sm">
-        Pages and files your agents shared by link, newest first. Open one, copy its link, or stop
-        sharing it.
+        Pages and files your agents shared by link, newest first, with any you pin above them. Open
+        one, copy its link, or stop sharing it.
       </p>
       {/* The list lines up with the page; it's inset for settings. */}
       <div className="-mx-3 flex flex-col gap-2 sm:-mx-4">
+        <AldoHandedToYou />
         <AldoSharedFiles />
       </div>
     </PlacePage>
+  );
+}
+
+/** A row's one tap, if it has one (send, merge, Aldo's pick), on the row itself. */
+function QuickButton(props: {
+  readonly decision: AldoDecision;
+  readonly suggestion?: string | null;
+}) {
+  const [busy, setBusy] = useState(false);
+  const quick = quickChoice(props.decision, props.suggestion ?? null);
+  if (!quick) return null;
+  return (
+    <Button
+      size="sm"
+      variant={quick.primary ? "default" : "outline"}
+      className="shrink-0"
+      disabled={busy}
+      onClick={(event) => {
+        event.stopPropagation();
+        void (async () => {
+          if (!(await confirmQuickChoice(props.decision))) return;
+          setBusy(true);
+          await decideAldo(props.decision, quick.choice);
+          setBusy(false);
+        })();
+      }}
+    >
+      {busy ? <LoaderCircleIcon className="animate-spin" /> : quick.label}
+    </Button>
   );
 }

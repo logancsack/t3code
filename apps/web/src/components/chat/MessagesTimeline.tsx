@@ -1,13 +1,25 @@
-import { isAldoCloud } from "../../aldo/cloud";
+import { isAldoCloud } from "../../aldo/api";
 import { aldoStartingLabel } from "../../aldo/dispatch";
 import { AldoNotifyOffer } from "../../aldo/AldoNotifyOffer";
-import { useAldoKeptRepo } from "../../aldo/keptRepo";
+import { AldoThreadApproval } from "../../aldo/AldoApprovals";
+import { useAldoQuietWork } from "../../aldo/keptRepo";
 import { AldoMadeCards } from "../../aldo/AldoMadeCards";
 import { AldoNextChips } from "../../aldo/AldoNextChips";
+import {
+  ALDO_REQUEST_CARD_CLASS,
+  AldoRequestBrief,
+  AldoRequestHeading,
+} from "../../aldo/AldoRequestCard";
+import { aldoRequestOf } from "../../aldo/request.logic";
 import { AldoStallLine, useAldoStall } from "../../aldo/AldoStall";
+import { AldoProgressLine } from "../../aldo/AldoProgressLine";
+import type { AldoPlanStep } from "../../aldo/progress.logic";
 import { splitAldoNext } from "../../aldo/next.logic";
+import { aldoLiveShots } from "../../aldo/results.logic";
 import type { AldoShare } from "../../aldo/made.logic";
-import { aldoSharesByTurn, aldoWorkWords } from "../../aldo/workLabels.logic";
+import { AldoWorkGroups } from "../../aldo/AldoWorkGroups";
+import { aldoSharesByTurn } from "../../aldo/workLabels.logic";
+import { aldoQuietWork } from "../../aldo/workRows.logic";
 import { APP_BASE_NAME } from "../../branding";
 import { ArrowUpIcon, ClockIcon } from "lucide-react";
 import { ReadOnlySourcePreview } from "../files/AttachmentFilePreview";
@@ -83,11 +95,7 @@ import {
   type MouseEvent,
   type ReactNode,
 } from "react";
-import {
-  LegendList,
-  type LegendListRef,
-  type MaintainScrollAtEndOptions,
-} from "@legendapp/list/react";
+import { LegendList, type LegendListRef } from "@legendapp/list/react";
 import { FileDiff } from "@pierre/diffs/react";
 import { DiffWorkerPoolProvider } from "../DiffWorkerPoolProvider";
 import {
@@ -197,6 +205,7 @@ import {
   workEntryIsActiveTurnActivity,
   resolveAssistantMessageCopyState,
   resolveTimelineIsAtEnd,
+  resolveTimelineMaintainScrollAtEnd,
   resolveTimelineMinimapHasPersistentGutter,
   resolveTimelineMinimapCurrentIndex,
   resolveTimelineMinimapHeightStyle,
@@ -328,6 +337,7 @@ interface TimelineRowActivityState {
   isWorking: boolean;
   isPreparingWorktree: boolean;
   workingStepLabel: string | null;
+  workingPlanSteps: ReadonlyArray<AldoPlanStep> | null;
   isCompacting: boolean;
   isRevertingCheckpoint: boolean;
   latestTurnId: TurnId | null;
@@ -392,25 +402,6 @@ function TimelineListFooter({ composerInset }: { readonly composerInset: number 
   );
 }
 const EMPTY_TIMELINE_SKILLS: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">> = [];
-const TIMELINE_MAINTAIN_SCROLL_AT_END = {
-  animated: false,
-  on: {
-    dataChange: true,
-    // Composer inset changes must not move already-visible messages. New
-    // rows and row growth still keep live-follow pinned through the other
-    // triggers below.
-    footerLayout: false,
-    itemLayout: true,
-    layout: true,
-  },
-} as const satisfies MaintainScrollAtEndOptions;
-// Streamed text lands a paragraph at a time. A smooth scroll to the end
-// turns each landing into a short glide instead of a jump. Thread switches
-// and layout settles keep the instant variant so nothing visibly travels.
-const TIMELINE_MAINTAIN_SCROLL_AT_END_SMOOTH = {
-  ...TIMELINE_MAINTAIN_SCROLL_AT_END,
-  animated: true,
-} as const satisfies MaintainScrollAtEndOptions;
 
 // ---------------------------------------------------------------------------
 // Props (public API)
@@ -428,6 +419,8 @@ interface MessagesTimelineProps {
   isWorking: boolean;
   isWakingWorkspace?: boolean;
   workingStepLabel?: string | null;
+  /** The plan the running turn works through, for Aldo's progress line. */
+  workingPlanSteps?: ReadonlyArray<AldoPlanStep> | null;
   activeTurnInProgress?: boolean;
   isPreparingWorktree?: boolean;
   isCompacting?: boolean;
@@ -510,6 +503,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   isWorking,
   isWakingWorkspace = false,
   workingStepLabel = null,
+  workingPlanSteps = null,
   activeTurnInProgress = false,
   worktreeSetup = null,
   onCancelWorktreeSetup,
@@ -584,6 +578,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   );
   const restoringThreadPosition = positionedThreadKey !== listIdentityKey;
   const prefersReducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
+  const isPhoneViewport = useMediaQuery("max-sm");
   const listIdentityRef = useRef(listIdentityKey);
   const previousLatestTurnRef = useRef(latestTurn);
   // The list stays mounted across thread switches. Its first end pins on the
@@ -777,8 +772,9 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     });
   }, [latestTurn]);
 
-  // Threads on work that isn't software say what their steps did in words.
-  const workWords = useAldoKeptRepo(activeThreadEnvironmentId) ? aldoWorkWords : null;
+  // Threads on work that isn't software, and every thread in Simple mode, say
+  // what their steps did in words and fold the work between messages.
+  const workWords = useAldoQuietWork(activeThreadEnvironmentId) ? aldoQuietWork : null;
   // Kept as one value until a share changes, so rows don't re-render as the agent streams.
   const aldoSharesKey = useMemo(
     () =>
@@ -1291,6 +1287,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       isWorking,
       isPreparingWorktree,
       workingStepLabel,
+      workingPlanSteps,
       isCompacting,
       isRevertingCheckpoint,
       latestTurnId: latestTurn?.turnId ?? null,
@@ -1306,6 +1303,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       isWorking,
       isPreparingWorktree,
       workingStepLabel,
+      workingPlanSteps,
       // Deliberately the fields `deriveUnsettledTurnId` reads, not the object:
       // its identity changes on every thread-shell patch.
       latestTurn?.turnId,
@@ -1379,9 +1377,10 @@ export const MessagesTimeline = memo(function MessagesTimeline({
               !liveFollowEnabled ||
               disclosureToggleSettling
                 ? false
-                : isWorking && !prefersReducedMotion && settlingListIdentity === null
-                  ? TIMELINE_MAINTAIN_SCROLL_AT_END_SMOOTH
-                  : TIMELINE_MAINTAIN_SCROLL_AT_END
+                : resolveTimelineMaintainScrollAtEnd({
+                    animated: isWorking && !prefersReducedMotion && settlingListIdentity === null,
+                    followComposerGrowth: isPhoneViewport,
+                  })
             }
             maintainVisibleContentPosition={
               citationPositioning ||
@@ -1775,6 +1774,7 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
                   row.kind === "work" ||
                   row.kind === "work-live" ||
                   row.kind === "work-toggle" ||
+                  row.kind === "work-summary" ||
                   row.kind === "activity-group" ||
                   row.kind === "thinking" ||
                   row.kind === "worktree-setup"
@@ -1804,6 +1804,7 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
       {row.kind === "activity-group" ? <ActivityGroupTimelineRow row={row} /> : null}
       {row.kind === "work-toggle" ? <WorkGroupToggleTimelineRow row={row} /> : null}
       {row.kind === "turn-fold" ? <TurnFoldTimelineRow row={row} /> : null}
+      {row.kind === "work-summary" ? <WorkSummaryTimelineRow row={row} /> : null}
       {row.kind === "context-compaction" ? <ContextCompactionTimelineRow row={row} /> : null}
       {row.kind === "message" && row.message.role === "user" ? <UserTimelineRow row={row} /> : null}
       {row.kind === "message" && row.message.role === "assistant" ? (
@@ -1814,6 +1815,7 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
       ) : null}
       {row.kind === "assistant-meta" ? <AssistantMetaTimelineRow row={row} /> : null}
       {row.kind === "proposed-plan" ? <ProposedPlanTimelineRow row={row} /> : null}
+      {row.kind === "aldo-approval" ? <AldoApprovalTimelineRow row={row} /> : null}
       {row.kind === "working" ? <WorkingTimelineRow row={row} /> : null}
       {row.kind === "thinking" ? <ThinkingTimelineRow /> : null}
       {row.kind === "worktree-setup" ? <WorktreeSetupTimelineRow row={row} /> : null}
@@ -2058,6 +2060,12 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
     (attachment) => !isImageAttachment(attachment) && !isFileAttachment(attachment),
   );
   const resolvedContext = useMemo(() => resolveUserMessageContext(row.message), [row.message]);
+  // A thread Aldo started opens with its brief: shown as the user's request, the brief behind it.
+  const aldoRequest = useMemo(
+    () => (isAldoCloud ? aldoRequestOf(resolvedContext.text) : null),
+    [resolvedContext.text],
+  );
+  const bodyText = aldoRequest?.said ?? resolvedContext.text;
   const previewImages = useMemo(
     () => userImages.filter((image) => image.name.startsWith("preview-annotation-")),
     [userImages],
@@ -2182,8 +2190,18 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
 
   return (
     <div className="group flex flex-col items-end gap-1">
-      <div className="relative max-w-[80%] rounded-2xl bg-message p-3 text-message-foreground">
-        <MessageAuthorHeading>You</MessageAuthorHeading>
+      <div
+        className={
+          aldoRequest
+            ? ALDO_REQUEST_CARD_CLASS
+            : "relative max-w-[80%] rounded-2xl bg-message p-3 text-message-foreground"
+        }
+      >
+        {aldoRequest ? (
+          <AldoRequestHeading from={aldoRequest.from} />
+        ) : (
+          <MessageAuthorHeading>You</MessageAuthorHeading>
+        )}
         {(regularImages.length > 0 || userVideos.length > 0) && (
           <div className="mb-2 grid max-w-[210px] grid-cols-2 gap-2">
             {regularImages.map((image) => (
@@ -2288,12 +2306,21 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
         ) : null}
         <div onCopyCapture={onBodyCopyCapture}>
           <CollapsibleUserMessageBody
-            text={resolvedContext.text}
+            text={bodyText}
             renderContextReference={renderContextReference}
             skills={ctx.skills}
             markdownCwd={ctx.markdownCwd}
           />
         </div>
+        {aldoRequest ? (
+          <AldoRequestBrief>
+            <UserMessageBody
+              text={aldoRequest.brief}
+              skills={ctx.skills}
+              markdownCwd={ctx.markdownCwd}
+            />
+          </AldoRequestBrief>
+        ) : null}
       </div>
       <div className="flex w-full max-w-[80%] items-center justify-end pe-1 text-xs tabular-nums opacity-0 transition-opacity duration-200 pointer-coarse:opacity-100 focus-within:opacity-100 group-hover:opacity-100">
         <div className="flex shrink-0 items-center gap-2">
@@ -2309,16 +2336,13 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
             {typeof revertTurnCount === "number" && (
               <RevertUserMessageButton turnCount={revertTurnCount} messageId={row.message.id} />
             )}
-            {resolvedContext.text && (
+            {bodyText && (
               <MessageCopyButton
                 // Structured paste needs the canonical links to retain their positions.
                 text={
                   contextClipboardFragment
-                    ? resolvedContext.text
-                    : replaceComposerContextReferences(
-                        resolvedContext.text,
-                        (reference) => reference.label,
-                      )
+                    ? bodyText
+                    : replaceComposerContextReferences(bodyText, (reference) => reference.label)
                 }
                 {...(contextClipboardFragment
                   ? {
@@ -2450,6 +2474,51 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
   );
 }
 
+/**
+ * Quiet threads' work between messages: "Worked 6 min · 22 steps", or the step
+ * under way while it's live. It opens to the work's groups, whose technical
+ * log opens the timeline's own rows below it.
+ */
+function WorkSummaryTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "work-summary" }> }) {
+  const ctx = use(TimelineRowCtx);
+  const Icon = row.expanded ? ChevronDownIcon : ChevronRightIcon;
+  const latest = row.entries.at(-1);
+  const thinking = row.active && row.label === "Thinking";
+  return (
+    <div className="group/timeline-row relative">
+      <button
+        type="button"
+        aria-expanded={row.expanded}
+        data-scroll-anchor-ignore
+        onClick={() => ctx.onToggleWorkGroup(row.expandKey, row.id)}
+        className="flex min-h-6 max-w-full cursor-pointer select-none items-center gap-1 rounded-md text-left text-sm leading-relaxed text-muted-foreground tabular-nums transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
+      >
+        {row.active ? (
+          <LiveActivityRow
+            label={row.label}
+            iconName={thinking || !latest ? "brain" : workEntryIconName(latest)}
+            active
+            shimmer={thinking}
+          />
+        ) : (
+          <>
+            <Icon aria-hidden className="size-3.5 shrink-0" />
+            <span className="min-w-0 truncate px-0.5">{row.label}</span>
+          </>
+        )}
+      </button>
+      {row.expanded ? (
+        <AldoWorkGroups
+          entries={row.entries}
+          endedAt={row.endedAt}
+          logOpen={row.logOpen}
+          onToggleLog={() => ctx.onToggleWorkGroup(row.logKey, row.id)}
+        />
+      ) : null}
+    </div>
+  );
+}
+
 const NO_TURN_FILES: TurnDiffSummary["files"] = [];
 const NO_TURN_SHARES: ReadonlyArray<AldoShare> = [];
 
@@ -2474,6 +2543,13 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
   const messageText = aldoNext?.text ?? fullText;
   // The turn's answer, whether its footer is here or below the tools that followed it.
   const isTurnAnswer = row.showAssistantMeta || row.assistantMetaMoved === true;
+  // Not code: what the turn made shows under the answer, and the answer's screenshots of live pages as its cards.
+  const results = ctx.workWords !== null && isTurnAnswer;
+  const live = useMemo(() => (results ? aldoLiveShots(messageText) : null), [results, messageText]);
+  const nextRow =
+    aldoNext && aldoNext.next.length > 0 && isTurnAnswer ? (
+      <AldoNextRow turnId={row.message.turnId ?? null} next={aldoNext.next} />
+    ) : null;
   const changedFiles = (
     <AssistantChangedFilesSection
       turnSummary={row.assistantTurnDiffSummary}
@@ -2495,7 +2571,7 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
           listRef={ctx.listRef}
         >
           <ChatMarkdown
-            text={messageText}
+            text={live?.text ?? messageText}
             cwd={ctx.markdownCwd}
             threadRef={ctx.threadRef ?? undefined}
             isStreaming={Boolean(row.message.streaming)}
@@ -2505,24 +2581,31 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
             onUseArtifactTemplate={ctx.onUseArtifactTemplate}
             onRunShellCommand={ctx.onRunShellCommand}
             onImageExpand={ctx.onImageExpand}
+            mediaGrid={isAldoCloud}
           />
         </AssistantCitationSource>
-        {aldoNext && aldoNext.next.length > 0 && isTurnAnswer ? (
-          <AldoNextRow turnId={row.message.turnId ?? null} next={aldoNext.next} />
-        ) : null}
-        {ctx.workWords && isTurnAnswer ? (
-          <AldoMadeCards
-            files={row.assistantTurnDiffSummary?.files ?? NO_TURN_FILES}
-            shares={
-              (row.message.turnId && ctx.aldoSharesByTurnId.get(row.message.turnId)) ||
-              NO_TURN_SHARES
-            }
-            threadRef={ctx.threadRef}
-            workspaceRoot={ctx.workspaceRoot}
-            allChanges={changedFiles}
-          />
+        {results ? (
+          <>
+            <AldoMadeCards
+              files={row.assistantTurnDiffSummary?.files ?? NO_TURN_FILES}
+              shares={
+                (row.message.turnId && ctx.aldoSharesByTurnId.get(row.message.turnId)) ||
+                NO_TURN_SHARES
+              }
+              threadRef={ctx.threadRef}
+              workspaceRoot={ctx.workspaceRoot}
+              answer={messageText}
+              shots={live?.shots}
+              onImageExpand={ctx.onImageExpand}
+              allChanges={changedFiles}
+            />
+            {nextRow}
+          </>
         ) : (
-          changedFiles
+          <>
+            {nextRow}
+            {changedFiles}
+          </>
         )}
         {row.showAssistantMeta ? (
           <AssistantMessageMeta
@@ -2622,6 +2705,19 @@ function AssistantCopyButton({
   return <MessageCopyButton text={assistantCopyState.text ?? ""} variant="ghost" />;
 }
 
+/** Aldo: an approval the agent asked for, where it asked, decided here or on Home as one item. */
+function AldoApprovalTimelineRow({
+  row,
+}: {
+  row: Extract<TimelineRow, { kind: "aldo-approval" }>;
+}) {
+  return (
+    <div className="min-w-0 px-1 py-0.5">
+      <AldoThreadApproval approval={row.approval} />
+    </div>
+  );
+}
+
 function ProposedPlanTimelineRow({
   row,
 }: {
@@ -2643,8 +2739,13 @@ function ProposedPlanTimelineRow({
 }
 
 function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "working" }> }) {
-  const { isCompacting, isPreparingWorktree, workingStepLabel, backgroundWorktreeSetup } =
-    use(TimelineRowActivityCtx);
+  const {
+    isCompacting,
+    isPreparingWorktree,
+    workingStepLabel,
+    workingPlanSteps,
+    backgroundWorktreeSetup,
+  } = use(TimelineRowActivityCtx);
   const { activeThreadEnvironmentId, routeThreadKey, workWords } = use(TimelineRowCtx);
   // Say what the turn is actually waiting on. A tool the agent launched (a
   // build, a test run) is legitimately unbounded, so it gets its own label
@@ -2661,6 +2762,14 @@ function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "workin
   // One span for every label so the setup-to-working handoff swaps text in
   // place instead of remounting the row.
   const shimmer = !aldoStall && !waking && (isPreparingWorktree || isCompacting);
+  // Aldo: threads that aren't code say where the turn is in one line, in words.
+  const aldoProgress =
+    workWords !== null &&
+    row.status === "working" &&
+    row.createdAt !== null &&
+    !aldoStall &&
+    !isPreparingWorktree &&
+    !isCompacting;
   const label = aldoStall ? (
     <AldoStallLine stall={aldoStall} />
   ) : row.status === "waking" && row.createdAt ? (
@@ -2674,6 +2783,8 @@ function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "workin
     "Setting up worktree…"
   ) : isCompacting ? (
     <CompactingLabel />
+  ) : aldoProgress && row.createdAt ? (
+    <AldoProgressLine plan={workingPlanSteps} words={row.words ?? null} startedAt={row.createdAt} />
   ) : row.words && row.createdAt ? (
     <>
       {row.words} · <WorkingTimer createdAt={row.createdAt} />
@@ -2700,7 +2811,7 @@ function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "workin
           {label}
           {shimmer ? <ActivityShimmerOverlay>{label}</ActivityShimmerOverlay> : null}
         </span>
-        {workingStepLabel && !aldoStall ? (
+        {workingStepLabel && !aldoStall && !aldoProgress ? (
           <span className="min-w-0 truncate text-muted-foreground/55">· {workingStepLabel}</span>
         ) : null}
         {backgroundWorktreeSetup ? (

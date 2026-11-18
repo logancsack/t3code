@@ -32,19 +32,19 @@ import {
   aldoPlanChangedCopy,
   aldoPlanSummary,
   aldoPlanTerms,
+  aldoSeatLimitCopy,
   onPeriodEnd,
   withoutAldoCheckoutReturn,
   type AldoBillingPlan,
 } from "./billing.logic";
+import { AldoApiError, isAldoCloud } from "./api";
 import {
-  AldoApiError,
   aldoBillingPortalUrl,
   cancelAldoPlan,
   changeAldoPlan,
   fetchAldoCloudUsage,
-  isAldoCloud,
   startAldoCheckout,
-} from "./cloud";
+} from "./accountApi";
 
 const CHECKOUT_POLL_MS = 2_000;
 const CHECKOUT_WAIT_MS = 30_000;
@@ -179,7 +179,7 @@ export function AldoBillingSection(props: {
     setConfirming(next);
     setConfirmOpen(true);
   };
-  const periodEnd = view.kind === "fixed" || view.kind === "managed" ? view.periodEnd : null;
+  const periodEnd = view.kind === "choose" ? null : view.periodEnd;
 
   /** Runs one request at a time; a redirect leaves the button spinning while the page goes. */
   const run = async (key: string, action: () => Promise<string | void>) => {
@@ -288,6 +288,9 @@ export function AldoBillingSection(props: {
       ) : null}
 
       {summary ? <p className="text-xs text-muted-foreground">{summary}</p> : null}
+      {view.kind === "seat" && view.plan.id !== "complimentary" ? (
+        <p className="text-xs text-muted-foreground">{aldoSeatLimitCopy(view.seat)}</p>
+      ) : null}
 
       {view.kind === "managed" && view.pending && !view.canceling ? (
         <Notice
@@ -354,7 +357,7 @@ export function AldoBillingSection(props: {
       {view.kind === "choose" ? (
         <p className="text-xs text-muted-foreground">
           Past a plan's credits, extra usage is billed by the credit up to a limit you set. Past
-          that, agents keep going one at a time, unbilled.
+          that, agents on your own AI subscriptions keep going one at a time, unbilled.
         </p>
       ) : null}
       {props.status === "error" ? (

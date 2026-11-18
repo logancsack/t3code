@@ -2,7 +2,7 @@
 // wrong with the setup, what's working now, pull requests on their way out,
 // what's coming up, what finished since the user last looked, what Aldo did
 // for them, the plan's room and credits, and how Aldo works for them. Each
-// reads from Aldo's one read of the user's work (cloud.ts AldoHome).
+// reads from Aldo's one read of the user's work (homeApi.ts AldoHome).
 
 import { Link } from "@tanstack/react-router";
 import {
@@ -22,16 +22,17 @@ import { requestConfirmDialog } from "../confirmDialog";
 import { cn } from "~/lib/utils";
 import { AldoApprovalRules } from "./AldoApprovalRules";
 import { askAldoAbout, ThreadLink } from "./AldoHomeInbox";
+import { aldoComputerQueueLabel } from "./computer.logic";
 import {
   cancelAldoDelivery,
-  mergeAldoPullRequest,
   sendAldoDeliveryNow,
   type AldoHome,
   type AldoHomeAction,
   type AldoHomeConversation,
   type AldoHomeDelivery,
   type AldoHomePullRequest,
-} from "./cloud";
+} from "./homeApi";
+import { mergeAldoPullRequest } from "./workspaceApi";
 import {
   actionLabel,
   capacityLines,
@@ -41,8 +42,8 @@ import {
   isNewSince,
   isStuck,
   mergeCountdown,
-  modelName,
   policyLines,
+  queuedComputer,
   relativeTime,
   repoName,
   shipLanes,
@@ -52,6 +53,7 @@ import {
   type ShipLane,
   type StageTone,
 } from "./home.logic";
+import { useAldoModelName } from "./modelNames";
 
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
@@ -129,9 +131,10 @@ export function ConversationRow(props: {
   readonly onActed: () => void;
 }) {
   const c = props.conversation;
+  const queue = queuedComputer(c);
   const stuck = isStuck(c, props.now);
   const working = c.state === "working";
-  const model = modelName(c.model);
+  const model = useAldoModelName(c.thread.environmentId, c.model);
   return (
     <li
       data-selected={props.selected || undefined}
@@ -145,7 +148,7 @@ export function ConversationRow(props: {
         aria-hidden
         className={cn(
           "mt-1.5 size-2 shrink-0 rounded-full",
-          c.state === "done"
+          !queue && c.state === "done"
             ? "bg-success"
             : stuck
               ? "bg-warning"
@@ -166,9 +169,16 @@ export function ConversationRow(props: {
             <Badge variant="warning" size="sm">
               stuck
             </Badge>
-          ) : STATE_LABEL[c.state] ? (
+          ) : queue || STATE_LABEL[c.state] ? (
             <Badge variant="outline" size="sm">
-              {STATE_LABEL[c.state]}
+              {queue
+                ? aldoComputerQueueLabel(queue.computer, queue.position)
+                : STATE_LABEL[c.state]}
+            </Badge>
+          ) : null}
+          {c.approvedPlan ? (
+            <Badge variant="outline" size="sm">
+              Plan approved
             </Badge>
           ) : null}
           {props.isNew ? <NewBadge /> : null}
@@ -178,7 +188,7 @@ export function ConversationRow(props: {
           {model ? <span>· {model}</span> : null}
           <span>
             ·{" "}
-            {c.state === "done"
+            {!queue && c.state === "done"
               ? `finished ${relativeTime(c.at, props.now)}`
               : `for ${elapsed(c.at, props.now)}`}
           </span>
@@ -568,7 +578,17 @@ export function CapacitySection(props: {
 export function PolicySection(props: { readonly policy: AldoHome["policy"] }) {
   const lines = policyLines(props.policy);
   return (
-    <Section title="How Aldo works for you">
+    <Section
+      title="How Aldo works for you"
+      action={
+        <Link
+          to="/settings/permissions"
+          className="text-muted-foreground text-xs hover:text-foreground"
+        >
+          Change
+        </Link>
+      }
+    >
       <div className="rounded-xl border border-border/60 bg-card/30 px-3.5 py-2.5">
         <ul className="flex flex-col gap-1 text-muted-foreground text-xs">
           {lines.map((line) => (

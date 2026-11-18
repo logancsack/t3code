@@ -1,3 +1,4 @@
+import { AldoFrame } from "./AldoFrame";
 // Aldo over whatever's on screen. ⌘I (Ctrl+I), or the dock's keyboard, opens a
 // bar that knows which thread is open (screen.ts, which this keeps up with the
 // route): things to say about it, what needs the user elsewhere (peeked at,
@@ -32,8 +33,13 @@ import { DialogBackdrop, DialogPortal, DialogViewport } from "../components/ui/d
 import { Kbd } from "../components/ui/kbd";
 import { useThreadShells } from "../state/entities";
 import { cn } from "~/lib/utils";
-import { AldoCaption, AldoConversation, AldoOrb, useAldoAssistantAvailable } from "./AldoAssistant";
-import { AldoPeekContext, pullRequestsOf, reposLabel } from "./AldoLiveCard";
+import {
+  AldoCaption,
+  AldoConversation,
+  AldoVoiceMark,
+  useAldoAssistantAvailable,
+} from "./AldoAssistant";
+import { AldoOpenContext, pullRequestsOf, reposLabel } from "./AldoLiveCard";
 import { mergeFollowedPullRequest } from "./AldoHomeBoard";
 import { AldoPeek, type AldoPeekTarget } from "./AldoPeek";
 import {
@@ -44,7 +50,7 @@ import {
   sendText,
   useAldoAssistant,
 } from "./assistantSession";
-import { isAldoCloud, isAldoEnvironmentId, type AldoHomeTarget } from "./cloud";
+import { isAldoCloud, isAldoEnvironmentId } from "./api";
 import { refreshAldoHome, useAldoHomeRead } from "./homeFeed";
 import { aldoHomeShowsConversation, showAldoConversation } from "./simpleMode";
 import { NEEDS_YOU_LABEL, needsYouKind } from "./home.logic";
@@ -61,7 +67,7 @@ import {
 } from "./summon.logic";
 
 /** `query`: words the bar opens with, as if typed. */
-export const useAldoSummon = create<{ readonly open: boolean; readonly query: string }>(() => ({
+const useAldoSummon = create<{ readonly open: boolean; readonly query: string }>(() => ({
   open: false,
   query: "",
 }));
@@ -75,7 +81,7 @@ export function openAldoSummonWith(query: string): void {
   useAldoSummon.setState({ open: true, query });
 }
 
-export function closeAldoSummon(): void {
+function closeAldoSummon(): void {
   useAldoSummon.setState({ open: false, query: "" });
 }
 
@@ -178,10 +184,6 @@ function SummonBar() {
   const rows = summonRows(sections);
   useEffect(() => setSelected(0), [query]);
   const answering = askedAt !== null && !query.trim() && !peek;
-  const peekThread = useCallback(
-    (target: AldoHomeTarget) => setPeek({ kind: "thread", target }),
-    [],
-  );
 
   const ask = (text: string) => {
     // Where the conversation is before the question goes in (an updater would read it after).
@@ -192,16 +194,19 @@ function SummonBar() {
     sendText(text);
     input.current?.focus();
   };
-  const go = (target: { environmentId: string; threadId: string }) => {
-    closeAldoSummon();
-    void navigate({
-      to: "/$environmentId/$threadId",
-      params: {
-        environmentId: target.environmentId as EnvironmentId,
-        threadId: target.threadId as ThreadId,
-      },
-    });
-  };
+  const go = useCallback(
+    (target: { environmentId: string; threadId: string }) => {
+      closeAldoSummon();
+      void navigate({
+        to: "/$environmentId/$threadId",
+        params: {
+          environmentId: target.environmentId as EnvironmentId,
+          threadId: target.threadId as ThreadId,
+        },
+      });
+    },
+    [navigate],
+  );
   const writeToAgent = (text: string) => {
     if (!threadRef) return;
     useComposerDraftStore.getState().setPrompt(threadRef, promptWith(draft, text));
@@ -250,7 +255,7 @@ function SummonBar() {
           data-aldo-summon=""
         >
           <div className="flex h-14 shrink-0 items-center gap-3 border-border/60 border-b ps-3.5 pe-3">
-            <AldoOrb size="sm" />
+            <AldoVoiceMark size="sm" />
             <input
               ref={input}
               autoFocus
@@ -319,9 +324,9 @@ function SummonBar() {
               />
             ) : answering ? (
               <div className="flex flex-col gap-3 px-4 py-4" aria-live="polite">
-                <AldoPeekContext.Provider value={peekThread}>
+                <AldoOpenContext.Provider value={go}>
                   <AldoConversation since={askedAt} />
-                </AldoPeekContext.Provider>
+                </AldoOpenContext.Provider>
               </div>
             ) : (
               <SummonList
@@ -458,10 +463,7 @@ function RowContent({ row, selected }: { readonly row: SummonRow; readonly selec
     case "ask":
       return (
         <>
-          <span
-            aria-hidden
-            className="size-4 shrink-0 rounded-full bg-gradient-to-br from-primary/90 to-primary/50"
-          />
+          <AldoFrame size={16} />
           <span className="min-w-0 truncate">
             Ask Aldo: <span className="font-medium">{row.text}</span>
           </span>

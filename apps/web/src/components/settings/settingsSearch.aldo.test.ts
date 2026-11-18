@@ -1,210 +1,53 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 
-const mode = vi.hoisted(() => ({ cloud: true }));
-vi.mock("../../aldo/cloud", () => ({
-  get isAldoCloud() {
-    return mode.cloud;
-  },
-}));
+vi.mock("../../aldo/api", () => ({ isAldoCloud: true }));
 
-import {
-  filterAvailableSettingsSearchItems,
-  getSettingsSearchTargetScope,
-  searchSettings,
-  type SettingsSearchAvailability,
-} from "./settingsSearch";
+const { filterAvailableSettingsSearchItems } = await import("./settingsSearch");
 
-const availability: SettingsSearchAvailability = {
+const availability = {
   hasCloudPublicConfig: false,
-  hasEnvironment: false,
-  hasProviderSettingsEnvironment: false,
+  hasEnvironment: true,
+  hasProviderSettingsEnvironment: true,
   hasMacProviderSettingsEnvironment: false,
   canManageLocalBackend: false,
   isWslSettingsRowVisible: false,
   hasThreadAutoSettlement: false,
 };
 
-describe("Aldo phone settings search", () => {
-  it.each([undefined, false])(
-    "hides phone results until the API is supported (%s)",
-    (supported) => {
-      const items = filterAvailableSettingsSearchItems(
-        supported === undefined ? availability : { ...availability, hasAldoPhoneApi: supported },
-      );
-      expect(searchSettings("sms", items)).toEqual([]);
-      expect(items.some((item) => item.id === "aldo-phone")).toBe(false);
-      expect(items.some((item) => item.id === "aldo-integration-microsoft")).toBe(true);
-    },
-  );
+const ids = (more: Partial<Parameters<typeof filterAvailableSettingsSearchItems>[0]>) =>
+  filterAvailableSettingsSearchItems({ ...availability, ...more });
 
-  it("offers the mounted phone section when the API exists, including before provider setup", () => {
-    const items = filterAvailableSettingsSearchItems({ ...availability, hasAldoPhoneApi: true });
-    expect(searchSettings("sms", items)).toMatchObject([
-      { id: "aldo-phone", title: "Text and call Aldo", to: "/settings/integrations" },
-    ]);
-  });
-
-  it("does not expose phone settings outside Aldo cloud mode", () => {
-    mode.cloud = false;
-    try {
-      const items = filterAvailableSettingsSearchItems({ ...availability, hasAldoPhoneApi: true });
-      expect(searchSettings("sms", items)).toEqual([]);
-    } finally {
-      mode.cloud = true;
-    }
-  });
-});
-
-describe("Aldo Link settings search", () => {
-  it("finds the Link wallet row by what people call it", () => {
-    const items = filterAvailableSettingsSearchItems(availability);
-    for (const query of ["link", "wallet", "payments"]) {
-      expect(searchSettings(query, items)[0]).toMatchObject({
-        id: "aldo-integration-link",
-        to: "/settings/integrations",
-      });
-    }
-  });
-});
-
-describe("Aldo agent inbox settings search", () => {
-  it.each([undefined, false])("hides the inbox until Aldo has inboxes (%s)", (available) => {
-    const items = filterAvailableSettingsSearchItems(
-      available === undefined ? availability : { ...availability, hasAldoAgentInbox: available },
+describe("Aldo's settings search", () => {
+  it("finds Code's rows only with the developer tools", () => {
+    const code = (items: ReturnType<typeof ids>) =>
+      items.filter((item) => item.to === "/settings/code").map((item) => item.id);
+    expect(code(ids({ aldoDeveloperTools: true }))).toEqual(
+      expect.arrayContaining(["aldo-environments", "diff-layout"]),
     );
-    expect(items.some((item) => item.id === "aldo-agent-inbox")).toBe(false);
+    expect(code(ids({ aldoDeveloperTools: false }))).toEqual([]);
   });
 
-  it("finds the agent inbox row by its address and its sender name", () => {
-    const items = filterAvailableSettingsSearchItems({ ...availability, hasAldoAgentInbox: true });
-    for (const query of ["agent inbox", "sender name", "email address"]) {
-      expect(searchSettings(query, items)[0]).toMatchObject({
-        id: "aldo-agent-inbox",
-        to: "/settings/integrations",
-      });
-    }
-  });
-});
-
-describe("Aldo simple mode settings search", () => {
-  it("finds simple mode by what people call it", () => {
-    const items = filterAvailableSettingsSearchItems(availability);
-    for (const query of ["simple", "rail", "hide threads"]) {
-      expect(searchSettings(query, items)[0]).toMatchObject({
-        id: "aldo-simple-mode",
-        to: "/settings/general",
-      });
-    }
-  });
-
-  it("is only in Aldo cloud mode", () => {
-    mode.cloud = false;
-    try {
-      const items = filterAvailableSettingsSearchItems(availability);
-      expect(items.some((item) => item.id === "aldo-simple-mode")).toBe(false);
-    } finally {
-      mode.cloud = true;
-    }
-  });
-});
-
-describe("Aldo hides T3 settings it doesn't show", () => {
-  const everywhere: SettingsSearchAvailability = {
-    ...availability,
-    hasEnvironment: true,
-    hasProviderSettingsEnvironment: true,
-    hasMacProviderSettingsEnvironment: true,
-    hasThreadAutoSettlement: true,
-  };
-  const ids = (items: ReadonlyArray<{ readonly id: string }>) => items.map((item) => item.id);
-
-  it("leaves out rows Aldo doesn't render, and keeps the licenses", () => {
-    const items = ids(filterAvailableSettingsSearchItems(everywhere));
-    for (const id of [
-      "thread-notifications",
-      "in-app-notifications",
-      "follow-up-behavior",
-      "provider-update-checks",
-      "diagnostics",
-      "new-threads",
-      "worktree-submodules",
-      "start-from-origin",
-      "add-project-starts-in",
-    ]) {
-      expect(items).not.toContain(id);
-    }
-    expect(items).toContain("open-source-licenses");
-    expect(items).toContain("hide-whitespace-changes");
-    expect(items).toContain("default-model");
-  });
-
-  it("leaves out the SnapShots and Storage pages", () => {
-    const items = filterAvailableSettingsSearchItems(everywhere);
-    expect(
-      items.filter((item) => item.to === "/settings/snap-shot" || item.to === "/settings/storage"),
-    ).toEqual([]);
-    expect(searchSettings("snapshots", items)).toEqual([]);
-    expect(searchSettings("worktree cleanup", items)).toEqual([]);
-  });
-
-  it("keeps only the page itself where Aldo's own page replaces T3's", () => {
-    const items = filterAvailableSettingsSearchItems(everywhere);
-    expect(ids(items.filter((item) => item.to === "/settings/providers"))).toEqual(["providers"]);
-    expect(ids(items.filter((item) => item.to === "/settings/source-control"))).toEqual([
-      "source-control",
+  it("finds accounts and publishing in your name only where Aldo takes them", () => {
+    const found = (items: ReturnType<typeof ids>) =>
+      items
+        .filter((item) => item.id === "aldo-accounts" || item.id === "aldo-publishing")
+        .map((item) => item.id);
+    expect(found(ids({ aldoPolicyRules: ["merge", "accounts", "publishing"] }))).toEqual([
+      "aldo-accounts",
+      "aldo-publishing",
     ]);
+    expect(found(ids({ aldoPolicyRules: ["merge", "accounts"] }))).toEqual(["aldo-accounts"]);
+    expect(found(ids({ aldoPolicyRules: ["merge"] }))).toEqual([]);
+    expect(found(ids({}))).toEqual([]);
+    // The rules the page has always had are found on any Aldo.
+    expect(ids({}).some((item) => item.id === "aldo-spend-threshold")).toBe(true);
   });
 
-  it("finds Git hosts by the hosts Aldo supports, not Forgejo or Gitea", () => {
-    const items = filterAvailableSettingsSearchItems(everywhere);
-    expect(searchSettings("forgejo", items)).toEqual([]);
-    expect(searchSettings("gitea", items)).toEqual([]);
-    expect(searchSettings("bitbucket", items)).toMatchObject([{ id: "source-control" }]);
-  });
-
-  it("opens Git hosts at any selection", () => {
-    expect(getSettingsSearchTargetScope("source-control")?.scope).toBeNull();
-  });
-
-  it("keeps T3's rows and pages outside Aldo cloud mode", () => {
-    mode.cloud = false;
-    try {
-      const items = ids(filterAvailableSettingsSearchItems(everywhere));
-      for (const id of [
-        "thread-notifications",
-        "follow-up-behavior",
-        "provider-update-checks",
-        "diagnostics",
-        "start-from-origin",
-        "snap-shot-enabled",
-        "storage-worktrees",
-        "usage-providers",
-        "git-fetch-interval",
-      ]) {
-        expect(items).toContain(id);
-      }
-    } finally {
-      mode.cloud = true;
-    }
-  });
-});
-
-describe("Aldo's own notifications and hidden shortcuts in settings search", () => {
-  it("finds Aldo's notification rows in place of T3's", () => {
-    const items = filterAvailableSettingsSearchItems(availability);
-    expect(searchSettings("notifications", items).map((item) => item.id)).toContain(
-      "aldo-notifications",
-    );
-    expect(searchSettings("chime", items)[0]).toMatchObject({
-      id: "aldo-notification-sound",
-      to: "/settings/general",
-    });
-    expect(items.some((item) => item.id === "thread-notifications")).toBe(false);
-  });
-
-  it("leaves out the shortcut to Usage's Limits tab, which Aldo doesn't show", () => {
-    const items = filterAvailableSettingsSearchItems(availability);
-    expect(items.some((item) => item.id === "keybinding-usage.limits")).toBe(false);
-    expect(items.some((item) => item.id === "keybinding-usage.cost")).toBe(true);
+  it("finds what they hand Aldo only where Aldo keeps it", () => {
+    const interests = (items: ReturnType<typeof ids>) =>
+      items.some((item) => item.id === "aldo-interests");
+    expect(interests(ids({ hasAldoOnboarding: true }))).toBe(true);
+    expect(interests(ids({ hasAldoOnboarding: false }))).toBe(false);
+    expect(interests(ids({}))).toBe(false);
   });
 });

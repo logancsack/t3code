@@ -1402,6 +1402,23 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         threadId: command.threadId,
       });
+      if (command.continuation) {
+        const latest = targetThread.latestTurn;
+        if (
+          !latest ||
+          latest.turnId !== command.continuation.turnId ||
+          !["completed", "error"].includes(latest.state) ||
+          targetThread.session?.status === "running" ||
+          openRequests(targetThread).size > 0 ||
+          targetThread.proposedPlans.some((plan) => !plan.approvedAt && !plan.implementedAt) ||
+          hasQueuedTurnStartForThread(targetThread, command.createdAt)
+        ) {
+          return yield* new OrchestrationCommandInvariantError({
+            commandType: command.type,
+            detail: "The continuation is stale, still running, or waiting for the user.",
+          });
+        }
+      }
       const sourceProposedPlan = command.sourceProposedPlan;
       const sourceThread = sourceProposedPlan
         ? yield* requireThread({
@@ -1424,6 +1441,29 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         return yield* new OrchestrationCommandInvariantError({
           commandType: command.type,
           detail: `Proposed plan '${sourceProposedPlan?.planId}' belongs to thread '${sourceThread.id}' in a different project.`,
+        });
+      }
+      // Accept the plan in the same command as its implementation request.
+      // Provider startup is asynchronous; a second device must not start it again.
+      if (sourcePlan && (sourcePlan.approvedAt || sourcePlan.implementedAt)) return [];
+      const approvalEvents: Array<Omit<OrchestrationEvent, "sequence">> = [];
+      if (sourcePlan && sourceThread) {
+        approvalEvents.push({
+          ...(yield* withEventBase({
+            aggregateKind: "thread",
+            aggregateId: sourceThread.id,
+            occurredAt: command.createdAt,
+            commandId: command.commandId,
+          })),
+          type: "thread.proposed-plan-upserted",
+          payload: {
+            threadId: sourceThread.id,
+            proposedPlan: {
+              ...sourcePlan,
+              approvedAt: command.createdAt,
+              updatedAt: command.createdAt,
+            },
+          },
         });
       }
       // A worktree bootstrap persists the message ahead of the turn with
@@ -1459,6 +1499,29 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
               updatedAt: command.createdAt,
             },
           };
+      // Approving a plan leaves plan mode in the same command, so the implementation turn never
+      // starts in it, whatever mode the thread was left in. Other turns run in the thread's mode.
+      const turnInteractionMode =
+        sourceProposedPlan !== undefined ? command.interactionMode : targetThread.interactionMode;
+      const interactionModeEvents: Array<Omit<OrchestrationEvent, "sequence">> =
+        turnInteractionMode === targetThread.interactionMode
+          ? []
+          : [
+              {
+                ...(yield* withEventBase({
+                  aggregateKind: "thread",
+                  aggregateId: command.threadId,
+                  occurredAt: command.createdAt,
+                  commandId: command.commandId,
+                })),
+                type: "thread.interaction-mode-set",
+                payload: {
+                  threadId: command.threadId,
+                  interactionMode: turnInteractionMode,
+                  updatedAt: command.createdAt,
+                },
+              },
+            ];
       const turnStartRequestedEvent: Omit<OrchestrationEvent, "sequence"> = {
         ...(yield* withEventBase({
           aggregateKind: "thread",
@@ -1475,8 +1538,9 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
             ? { modelSelection: command.modelSelection }
             : {}),
           ...(command.titleSeed !== undefined ? { titleSeed: command.titleSeed } : {}),
+          ...(command.continuation ? { continuation: command.continuation } : {}),
           runtimeMode: targetThread.runtimeMode,
-          interactionMode: targetThread.interactionMode,
+          interactionMode: turnInteractionMode,
           ...(sourceProposedPlan !== undefined ? { sourceProposedPlan } : {}),
           createdAt: command.createdAt,
         },
@@ -1520,7 +1584,9 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         });
       }
       return [
+        ...approvalEvents,
         ...lifecycleResetEvents,
+        ...interactionModeEvents,
         ...(userMessageEvent ? [userMessageEvent] : []),
         turnStartRequestedEvent,
       ];
@@ -2137,7 +2203,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
     }
 
     case "thread.proposed-plan.upsert": {
-      yield* requireThread({
+      const thread = yield* requireThread({
         readModel,
         command,
         threadId: command.threadId,
@@ -2152,7 +2218,13 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         type: "thread.proposed-plan-upserted",
         payload: {
           threadId: command.threadId,
-          proposedPlan: command.proposedPlan,
+          proposedPlan: {
+            ...command.proposedPlan,
+            approvedAt:
+              thread.proposedPlans.find((p) => p.id === command.proposedPlan.id)?.approvedAt ??
+              command.proposedPlan.approvedAt ??
+              null,
+          },
         },
       };
     }

@@ -1,24 +1,37 @@
 // The agent's browser full screen, for what only the user can get past
-// (AldoHandoffCard.tsx): the page, one sentence of what to do, and a large
-// "I'm done" that hands it back. It opens from the card's "Do it now", the
-// Browser panel's "Take over", or a notification's "Do it now", which opens
-// the conversation with `?handoff=<id>`. Touch works as in the Browser panel,
-// and so does "Teach this", which teaches the conversation that asked: it's
-// handed back only once a recording is taught or discarded.
+// (AldoHandoffCard.tsx): the page, what it is and what to do, and a large
+// "I'm done" that hands it back. It opens from the card's "Take control", the
+// Browser panel's "Take over", or the conversation with `?handoff=<id>`: a
+// notification's "Do it now", or the card's "Do it on my phone" on a phone
+// signed in to Aldo. There, a camera step the site offers to finish on a
+// phone leads with the site's own page, where the phone's camera works.
+// Touch works as in the Browser panel, and so does "Teach this", which
+// teaches the conversation that asked: it's handed back only once a
+// recording is taught or discarded.
 
-import { LoaderIcon, XIcon } from "lucide-react";
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { useRouter, useRouterState } from "@tanstack/react-router";
+import { ExternalLinkIcon, LoaderIcon, XIcon } from "lucide-react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "../components/ui/button";
 import { toastManager } from "../components/ui/toast";
+import { cn } from "~/lib/utils";
 import {
   answerAldoHandoff,
   closeAldoHandoffTakeover,
   openAldoHandoffTakeover,
   useAldoHandoffTakeover,
+  useAldoOnPhone,
 } from "./AldoHandoffCard";
-import { aldoHandoffHow, aldoHandoffParam, aldoHandoffSkipLabel } from "./handoffs.logic";
+import {
+  aldoHandoffHow,
+  aldoHandoffParam,
+  aldoHandoffSiteLabel,
+  aldoHandoffSiteLink,
+  aldoHandoffSkipLabel,
+} from "./handoffs.logic";
 import { useAldoHomeRead } from "./homeFeed";
+import { PRIMARY, SECONDARY } from "./surface";
 
 const AldoBrowserPanel = lazy(() =>
   import("./AldoBrowserPanel").then((module) => ({ default: module.AldoBrowserPanel })),
@@ -31,26 +44,53 @@ let fromNotification =
 /** Mounted once: the takeover, when one is open. */
 export function AldoHandoffTakeoverHost() {
   const id = useAldoHandoffTakeover((s) => s.id);
+  const router = useRouter();
+  const href = useRouterState({ select: (state) => state.location.href });
   useEffect(() => {
-    if (!fromNotification) return;
-    openAldoHandoffTakeover(fromNotification);
+    const handoff =
+      fromNotification ?? aldoHandoffParam(new URL(href, window.location.origin).search);
+    if (!handoff) return;
+    openAldoHandoffTakeover(handoff);
     fromNotification = null;
-    // A reload doesn't open it again.
-    const url = new URL(window.location.href);
+  }, [href]);
+  // The URL keeps `?handoff=` until Aldo has answered the takeover's read, so a
+  // phone that has to sign in first comes back to the step (api.ts sends sign-in
+  // back to this URL). Then it's cleared, so another tap of the same link is a
+  // new navigation; and when the takeover closes before that.
+  const clearParam = useCallback(() => {
+    const url = new URL(router.state.location.href, window.location.origin);
+    if (!url.searchParams.has("handoff")) return;
     url.searchParams.delete("handoff");
-    window.history.replaceState(window.history.state, "", url);
-  }, []);
-  return id ? <Takeover key={id} id={id} /> : null;
+    void router.navigate({
+      href: url.pathname + url.search + url.hash,
+      replace: true,
+      resetScroll: false,
+    });
+  }, [router]);
+  const shown = useRef<string | null>(null);
+  useEffect(() => {
+    if (shown.current && !id) clearParam();
+    shown.current = id;
+  }, [id, clearParam]);
+  return id ? <Takeover key={id} id={id} onRead={clearParam} /> : null;
 }
 
-function Takeover({ id }: { readonly id: string }) {
-  const { home, supported } = useAldoHomeRead();
+function Takeover({ id, onRead }: { readonly id: string; readonly onRead: () => void }) {
+  const { home, supported, saved } = useAldoHomeRead();
+  // The copy the device kept of an earlier read can't say yet whether the step still waits.
+  const read = saved ? null : home;
+  useEffect(() => {
+    if (read !== null || supported === false) onRead();
+  }, [read, supported, onRead]);
   const handoff = home?.handoffs?.find((h) => h.id === id) ?? null;
   const [busy, setBusy] = useState<"done" | "skip" | null>(null);
   const [teaching, setTeaching] = useState(false);
   const answered = useRef(false);
+  // On a phone, a camera step's own page (the site's link) is where its camera works.
+  const onPhone = useAldoOnPhone();
+  const siteLink = handoff && onPhone ? aldoHandoffSiteLink(handoff) : null;
   // Gone from the read: done on another device, skipped, or run out.
-  const gone = supported === false || (home !== null && handoff === null);
+  const gone = supported === false || (read !== null && handoff === null);
   useEffect(() => {
     if (!gone || answered.current) return;
     closeAldoHandoffTakeover();
@@ -92,7 +132,10 @@ function Takeover({ id }: { readonly id: string }) {
           <p className="truncate font-medium text-sm">
             {handoff?.threadTitle || "Your agent's browser"}
           </p>
-          <p className="truncate text-warning text-xs">You have the browser · your agent waits</p>
+          <p className="flex items-center gap-1.5 truncate text-[12px] text-muted-foreground leading-[18px]">
+            <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-warning" />
+            You have the browser · your agent waits
+          </p>
         </div>
       </header>
       <div className="flex min-h-0 flex-1 flex-col">
@@ -115,16 +158,37 @@ function Takeover({ id }: { readonly id: string }) {
       {handoff ? (
         <footer className="shrink-0 border-t border-border px-4 py-3">
           <div className="mx-auto flex w-full max-w-md flex-col gap-2">
-            <p className="text-sm">{aldoHandoffHow(handoff)}</p>
-            <Button
+            <div className="text-center text-[14px] leading-5">
+              <p className="font-medium">{handoff.reason}</p>
+              <p className="text-muted-foreground">{aldoHandoffHow(handoff)}</p>
+            </div>
+            {siteLink ? (
+              <>
+                <a
+                  className={cn(PRIMARY, "w-full")}
+                  href={siteLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {aldoHandoffSiteLabel(handoff)}
+                  <ExternalLinkIcon aria-hidden className="size-4" />
+                </a>
+                <p className="text-center text-muted-foreground text-xs">
+                  Your phone's camera works there. When you've finished, return here and hand it
+                  back.
+                </p>
+              </>
+            ) : null}
+            <button
               type="button"
-              size="xl"
-              className="w-full font-semibold"
+              className={cn(siteLink ? SECONDARY : PRIMARY, "w-full")}
+              aria-busy={busy === "done" || undefined}
               disabled={busy !== null || teaching}
               onClick={() => void answer({ decision: "done" })}
             >
-              {busy === "done" ? <LoaderIcon className="size-4 animate-spin" /> : null} I'm done
-            </Button>
+              I'm done
+              {busy === "done" ? <LoaderIcon aria-hidden className="size-4 animate-spin" /> : null}
+            </button>
             {teaching ? (
               <p className="text-center text-muted-foreground text-xs">
                 Finish the recording (teach it or discard it) to hand it back.

@@ -31,6 +31,20 @@ export interface ProviderCommandReactorShape {
    * Intended for test use to replace timing-sensitive sleeps.
    */
   readonly drain: Effect.Effect<void>;
+
+  /**
+   * How many turn starts this reactor received whose request hasn't reached
+   * its provider yet (the provider send, or the compaction a turn waits
+   * behind, hasn't returned).
+   */
+  readonly turnStartsInFlight: Effect.Effect<number>;
+
+  /**
+   * Resolves once this reactor has taken every event the engine committed so
+   * far and none of the turn starts it took is still in flight. A stopping
+   * server waits for it, after the commands it admitted are done.
+   */
+  readonly drainTurnStarts: Effect.Effect<void>;
 }
 
 /**

@@ -6,7 +6,7 @@
 // or one that can't be reached) shows nothing and isn't asked again soon.
 
 import { toastManager } from "../components/ui/toast";
-import { isAldoCloud } from "./cloud";
+import { isAldoCloud } from "./api";
 import { updateAldoServiceWorker } from "./serviceWorker";
 import {
   aldoVersionCheckDue,

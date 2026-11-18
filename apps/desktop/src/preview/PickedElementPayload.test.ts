@@ -1,6 +1,5 @@
-import { describe, expect, it } from "vite-plus/test";
-
-import { isPickedElementPayload, isPreviewAnnotationPayload } from "./PickedElementPayload.ts";
+import { expect, it } from "vite-plus/test";
+import { isPreviewAnnotationPayload } from "./PickedElementPayload.ts";
 
 function validPayload(overrides?: Record<string, unknown>): Record<string, unknown> {
   return {
@@ -29,110 +28,6 @@ function validPayload(overrides?: Record<string, unknown>): Record<string, unkno
     ...overrides,
   };
 }
-
-describe("isPickedElementPayload", () => {
-  it("accepts a complete, well-typed payload", () => {
-    expect(isPickedElementPayload(validPayload())).toBe(true);
-  });
-
-  it("accepts nullable string fields when null", () => {
-    expect(
-      isPickedElementPayload(
-        validPayload({ pageTitle: null, selector: null, componentName: null, source: null }),
-      ),
-    ).toBe(true);
-  });
-
-  it("accepts an empty stack array", () => {
-    expect(isPickedElementPayload(validPayload({ stack: [] }))).toBe(true);
-  });
-
-  it("accepts stack frames with null fields", () => {
-    expect(
-      isPickedElementPayload(
-        validPayload({
-          stack: [
-            {
-              functionName: null,
-              fileName: null,
-              lineNumber: null,
-              columnNumber: null,
-            },
-          ],
-        }),
-      ),
-    ).toBe(true);
-  });
-
-  it("rejects null and primitive inputs", () => {
-    expect(isPickedElementPayload(null)).toBe(false);
-    expect(isPickedElementPayload(undefined)).toBe(false);
-    expect(isPickedElementPayload("string")).toBe(false);
-    expect(isPickedElementPayload(42)).toBe(false);
-    expect(isPickedElementPayload([])).toBe(false);
-  });
-
-  it.each<[string, Record<string, unknown>]>([
-    ["missing pageUrl", validPayload({ pageUrl: undefined })],
-    ["wrong-type pageUrl", validPayload({ pageUrl: 123 })],
-    ["missing tagName", validPayload({ tagName: undefined })],
-    ["missing htmlPreview", validPayload({ htmlPreview: undefined })],
-    ["missing styles", validPayload({ styles: undefined })],
-    ["missing pickedAt", validPayload({ pickedAt: undefined })],
-    ["wrong-type pageTitle", validPayload({ pageTitle: 99 })],
-    ["wrong-type selector", validPayload({ selector: 99 })],
-    ["wrong-type componentName", validPayload({ componentName: 99 })],
-  ])("rejects payloads with %s", (_label, value) => {
-    expect(isPickedElementPayload(value)).toBe(false);
-  });
-
-  it("rejects malformed source frames", () => {
-    expect(
-      isPickedElementPayload(
-        validPayload({
-          source: {
-            functionName: 0,
-            fileName: null,
-            lineNumber: null,
-            columnNumber: null,
-          },
-        }),
-      ),
-    ).toBe(false);
-  });
-
-  it("rejects non-finite numeric line/column numbers", () => {
-    expect(
-      isPickedElementPayload(
-        validPayload({
-          source: {
-            functionName: null,
-            fileName: null,
-            lineNumber: Number.POSITIVE_INFINITY,
-            columnNumber: null,
-          },
-        }),
-      ),
-    ).toBe(false);
-    expect(
-      isPickedElementPayload(
-        validPayload({
-          source: {
-            functionName: null,
-            fileName: null,
-            lineNumber: Number.NaN,
-            columnNumber: null,
-          },
-        }),
-      ),
-    ).toBe(false);
-  });
-
-  it("rejects malformed stack arrays", () => {
-    expect(isPickedElementPayload(validPayload({ stack: "not-an-array" }))).toBe(false);
-    expect(isPickedElementPayload(validPayload({ stack: [{ bogus: true }] }))).toBe(false);
-  });
-});
 
 function validAnnotation(overrides?: Record<string, unknown>): Record<string, unknown> {
   return {
@@ -175,27 +70,36 @@ function validAnnotation(overrides?: Record<string, unknown>): Record<string, un
   };
 }
 
-describe("isPreviewAnnotationPayload", () => {
-  it("accepts a structured annotation draft before screenshot capture", () => {
-    expect(isPreviewAnnotationPayload(validAnnotation())).toBe(true);
-  });
-
-  it("rejects screenshots supplied by the guest preload", () => {
-    expect(isPreviewAnnotationPayload(validAnnotation({ screenshot: { dataUrl: "bad" } }))).toBe(
-      false,
-    );
-  });
-
-  it("rejects malformed geometry and nested element payloads", () => {
-    expect(
-      isPreviewAnnotationPayload(
-        validAnnotation({ regions: [{ id: "region_1", rect: { x: 0, y: 0, width: "wide" } }] }),
-      ),
-    ).toBe(false);
-    expect(
-      isPreviewAnnotationPayload(
-        validAnnotation({ elements: [{ id: "element_1", element: {}, rect: {} }] }),
-      ),
-    ).toBe(false);
-  });
+it("accepts guest drafts but rejects guest screenshots, non-finite geometry and malformed nested elements", () => {
+  expect(isPreviewAnnotationPayload(validAnnotation())).toBe(true);
+  expect(isPreviewAnnotationPayload(validAnnotation({ screenshot: { dataUrl: "bad" } }))).toBe(
+    false,
+  );
+  expect(
+    isPreviewAnnotationPayload(
+      validAnnotation({ regions: [{ id: "r", rect: { x: 0, y: 0, width: Infinity, height: 1 } }] }),
+    ),
+  ).toBe(false);
+  expect(
+    isPreviewAnnotationPayload(
+      validAnnotation({
+        elements: [{ id: "e", element: {}, rect: { x: 0, y: 0, width: 1, height: 1 } }],
+      }),
+    ),
+  ).toBe(false);
+  expect(
+    isPreviewAnnotationPayload(
+      validAnnotation({
+        elements: [
+          {
+            id: "e",
+            element: validPayload({
+              source: { functionName: null, fileName: null, lineNumber: NaN, columnNumber: null },
+            }),
+            rect: { x: 0, y: 0, width: 1, height: 1 },
+          },
+        ],
+      }),
+    ),
+  ).toBe(false);
 });

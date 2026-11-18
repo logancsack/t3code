@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNod
 import { useAssetUrlRefresh, useAssetUrlState } from "../assets/assetUrls";
 import type { MediaActionSource } from "../components/media/MediaActions";
 import { MediaVideoPlayer } from "../components/media/MediaVideoPlayer";
+import { cn } from "../lib/utils";
 import { useRightPanelStore } from "../rightPanelStore";
 import { chatVideoWidth, videoAspectRatio } from "./chatVideo.logic";
 
@@ -20,6 +21,8 @@ export function AldoChatVideo(props: {
   /** The link's own fragment, such as `#t=12` to start 12 seconds in. */
   readonly fragment: string;
   readonly children: ReactNode;
+  /** Its space around it, in place of a message's. */
+  readonly className?: string;
 }) {
   const { environmentId, threadId } = props.threadRef;
   const resource = useMemo(
@@ -64,7 +67,10 @@ export function AldoChatVideo(props: {
   } as CSSProperties;
 
   return (
-    <figure ref={figure} className="my-4 flex flex-col items-start gap-1.5">
+    <figure
+      ref={figure}
+      className={cn("flex flex-col items-start gap-1.5", props.className ?? "my-4")}
+    >
       <MediaVideoPlayer
         src={src}
         sourceFailed={assetUrl._tag === "Failure"}

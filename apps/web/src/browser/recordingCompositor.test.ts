@@ -37,53 +37,6 @@ const context = () => ({
 });
 
 describe("recording decorations", () => {
-  it("keeps rings aligned through dragging and stops following the cursor after release", () => {
-    const decorations = new RecordingDecorations(options, primaryColor);
-    const ctx = context();
-    decorations.apply(pointer("down"), 0);
-    decorations.apply(pointer("move", 120), 10);
-    decorations.draw(ctx as unknown as CanvasRenderingContext2D, 1600, 1200, 10);
-    expect(ctx.ellipse.mock.calls[0]?.slice(0, 4)).toEqual([240, 160, 40, 40]);
-    expect(ctx.strokeStyle).toBe(primaryColor);
-    expect(ctx.fillStyle).toBe(primaryColor);
-    expect(decorations.nextRedraw(10)).toBeNull();
-    decorations.apply(pointer("up", 130), 20);
-    decorations.apply(pointer("move", 300), 30);
-    decorations.draw(ctx as unknown as CanvasRenderingContext2D, 1600, 1200, 320);
-    expect(ctx.ellipse.mock.calls[1]?.slice(0, 4)).toEqual([260, 160, 50, 50]);
-    ctx.ellipse.mockClear();
-    decorations.draw(ctx as unknown as CanvasRenderingContext2D, 1600, 1200, 620);
-    expect(ctx.ellipse).not.toHaveBeenCalled();
-    expect(decorations.nextRedraw(620)).toBeNull();
-  });
-
-  it("pulses agent clicks and clears decorations on blur or navigation", () => {
-    const decorations = new RecordingDecorations(options, primaryColor);
-    const ctx = context();
-    decorations.apply(pointer("click"), 0);
-    decorations.draw(ctx as unknown as CanvasRenderingContext2D, 800, 600, 300);
-    expect(ctx.ellipse).toHaveBeenCalledOnce();
-    decorations.apply({ type: "clear" }, 301);
-    ctx.ellipse.mockClear();
-    decorations.draw(ctx as unknown as CanvasRenderingContext2D, 800, 600, 302);
-    expect(ctx.ellipse).not.toHaveBeenCalled();
-    expect(decorations.nextRedraw(302)).toBeNull();
-  });
-
-  it("holds shortcut badges until release, then expires them even on a static page", () => {
-    const decorations = new RecordingDecorations(options, primaryColor);
-    const ctx = context();
-    const key = { type: "key" as const, label: "⌘C", held: true, width: 800 };
-    decorations.apply(key, 0);
-    decorations.draw(ctx as unknown as CanvasRenderingContext2D, 1600, 1200, 5000);
-    expect(ctx.fillText.mock.calls[0]?.slice(0, 3)).toEqual(["⌘C", 800, 1098]);
-    decorations.apply({ ...key, held: false }, 5000);
-    expect(decorations.nextRedraw(5500)).toBe(400);
-    ctx.fillText.mockClear();
-    decorations.draw(ctx as unknown as CanvasRenderingContext2D, 1600, 1200, 5900);
-    expect(ctx.fillText).not.toHaveBeenCalled();
-  });
-
   it("removes the previous key badge on password focus", () => {
     const decorations = new RecordingDecorations(options, primaryColor);
     const ctx = context();

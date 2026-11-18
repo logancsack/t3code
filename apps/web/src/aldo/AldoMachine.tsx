@@ -5,11 +5,11 @@ import { MenuGroup, MenuGroupLabel, MenuItem } from "../components/ui/menu";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
 import {
   getAldoEnvironments,
-  setAldoMachine,
   subscribeAldoEnvironments,
   type AldoEnvironment,
   type AldoMachineSize,
-} from "./cloud";
+} from "./directory";
+import { setAldoMachine } from "./workspaceApi";
 
 const MACHINE_LABELS: Record<AldoMachineSize, string> = {
   standard: "Standard: 4 vCPU, 8 GB, 1 credit an hour",

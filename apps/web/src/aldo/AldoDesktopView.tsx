@@ -1,15 +1,18 @@
 import type RFB from "@novnc/novnc";
-import { LoaderIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { Button } from "../components/ui/button";
+import { AldoScreenState } from "./AldoBrowserChrome";
 import { cn } from "../lib/utils";
-import { AldoApiError, aldoBrowserConnection, aldoOfflineMessage } from "./cloud";
+import { AldoApiError } from "./api";
+import { aldoBrowserConnection } from "./workspaceApi";
+import { aldoMachineIsAsleep, whenAldoMachineUp } from "./directory";
 import { aldoDesktopScreenUrl, type AldoDesktopScreen } from "./computer.logic";
 import { aldoCanDecodeH264, AldoVideoPlayer } from "./liveVideo";
 import { ALDO_FRAME_VIDEO, aldoDesktopVideoHello, aldoDesktopVideoUrls } from "./liveVideo.logic";
 import { aldoLiveViewSize, parseAldoLiveFrame } from "./liveView.logic";
 import { useAldoPageVisible } from "./pageVisibility";
+import { AldoScreenKeyboard } from "./AldoScreenKeyboard";
 
 type Status = "connecting" | "live" | "asleep" | "error";
 
@@ -30,14 +33,18 @@ type Status = "connecting" | "live" | "asleep" | "error";
 export function AldoDesktopView({
   environmentId,
   screen = "machine",
+  onUse,
 }: {
   environmentId: string;
   screen?: AldoDesktopScreen;
+  /** The user clicked, typed or scrolled on the screen: agents wait a moment after. */
+  onUse?: (() => void) | undefined;
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const videoRef = useRef<WebSocket | null>(null);
+  const rfbRef = useRef<RFB | null>(null);
   const [status, setStatus] = useState<Status>("connecting");
   const [error, setError] = useState<string | null>(null);
   // VNC streams whatever changes on the screen while connected: let go of it
@@ -51,6 +58,7 @@ export function AldoDesktopView({
     // This effect's own video socket: a later effect's goes in videoRef too, and isn't this one's to close.
     let videoSocket: WebSocket | null = null;
     let retry: ReturnType<typeof setTimeout> | null = null;
+    let stopWaiting: (() => void) | null = null;
     let attempt = 0;
     // Video until the machine says it has none (an older one, or it can't now): VNC alone from then on.
     let vncOnly = screen !== "machine";
@@ -68,6 +76,7 @@ export function AldoDesktopView({
 
     /** Ends this connection's video and VNC; whichever ends first takes the other with it. */
     const hangUp = () => {
+      if (rfbRef.current === rfb) rfbRef.current = null;
       const video = videoSocket;
       videoSocket = null;
       if (videoRef.current === video) videoRef.current = null;
@@ -169,7 +178,12 @@ export function AldoDesktopView({
         hangUp();
         if (cause instanceof AldoApiError && cause.status === 409) {
           setStatus("asleep");
-          schedule(3000);
+          // Listed asleep: again once the directory has it up. Otherwise it's coming up.
+          if (aldoMachineIsAsleep(environmentId) && !disposed) {
+            stopWaiting = whenAldoMachineUp(environmentId, () => void connect());
+          } else {
+            schedule(3000);
+          }
         } else {
           // Includes noVNC failing to download (a deploy in progress, a network blip).
           setStatus("error");
@@ -186,11 +200,13 @@ export function AldoDesktopView({
       // Under video, noVNC never gets the screen's cursor: a dot shows where the pointer is.
       rfb.showDotCursor = video;
       rfb.addEventListener("connect", () => {
+        rfbRef.current = client;
         attempt = 0;
         setStatus("live");
         setError(null);
       });
       rfb.addEventListener("disconnect", () => {
+        if (rfbRef.current === rfb) rfbRef.current = null;
         rfb = null;
         hangUp();
         if (disposed) return;
@@ -205,6 +221,7 @@ export function AldoDesktopView({
     return () => {
       disposed = true;
       if (retry) clearTimeout(retry);
+      stopWaiting?.();
       hangUp();
     };
   }, [environmentId, screen, pageVisible]);
@@ -235,36 +252,50 @@ export function AldoDesktopView({
     <div
       ref={rootRef}
       data-aldo-desktop=""
-      className="relative min-h-0 flex-1 overflow-hidden bg-muted/30"
+      className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-muted/30"
+      // Ahead of noVNC's own listeners, which take the events.
+      onPointerDownCapture={onUse}
+      onKeyDownCapture={onUse}
+      onWheelCapture={onUse}
     >
-      {/* The video, under noVNC's screen (which stays empty over it). */}
-      <canvas
-        ref={canvasRef}
-        aria-hidden
-        className={cn(
-          "pointer-events-none absolute inset-0 size-full object-contain",
-          status !== "live" && "opacity-40",
-        )}
-      />
-      <div
-        ref={containerRef}
-        className={cn("relative size-full", status !== "live" && "opacity-40")}
-      />
-      {status !== "live" ? (
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-6 text-center text-sm text-muted-foreground">
-          {status === "asleep" ? (
-            aldoOfflineMessage(environmentId)
-          ) : status === "error" ? (
-            <span className="max-w-sm">
-              Couldn't reach {what}
-              {error ? `: ${error}` : ""}. Retrying…
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-2">
-              <LoaderIcon className="size-4 animate-spin" /> Connecting to {what}…
-            </span>
+      <div className="relative min-h-0 flex-1">
+        {/* The video, under noVNC's screen (which stays empty over it). */}
+        <canvas
+          ref={canvasRef}
+          aria-hidden
+          className={cn(
+            "pointer-events-none absolute inset-0 size-full object-contain",
+            status !== "live" && "opacity-40",
           )}
-        </div>
+        />
+        <div
+          ref={containerRef}
+          className={cn("relative size-full", status !== "live" && "opacity-40")}
+        />
+        {status !== "live" ? (
+          <AldoScreenState
+            status={status}
+            environmentId={environmentId}
+            what={what}
+            error={error}
+          />
+        ) : null}
+      </div>
+      {status === "live" ? (
+        <AldoScreenKeyboard
+          key={`${environmentId}:${screen}`}
+          onText={(text) => {
+            onUse?.();
+            for (const char of text) {
+              const point = char.codePointAt(0)!;
+              rfbRef.current?.sendKey(point <= 255 ? point : 0x01000000 | point);
+            }
+          }}
+          onKey={(key) => {
+            onUse?.();
+            rfbRef.current?.sendKey({ Enter: 0xff0d, Backspace: 0xff08, Tab: 0xff09 }[key], key);
+          }}
+        />
       ) : null}
     </div>
   );

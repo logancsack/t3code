@@ -41,20 +41,25 @@ import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { cn } from "../lib/utils";
 import { AldoAccountButton, useAldoAccounts } from "./AldoAccountsPanel";
 import {
+  aldoLinksProjectCode,
   aldoSupportsGeneralThreads,
   aldoSupportsProjects,
-  listAldoRepositoryDirectory,
   subscribeAldoEnvironments,
-  type AldoAccount,
-  type AldoHostKind,
-  type AldoProjectHost,
-} from "./cloud";
+} from "./directory";
+import {
+  listAldoProjects,
+  listAldoRepositoryDirectory,
+  type AldoProjectSummary,
+} from "./workspaceApi";
+import { type AldoAccount, type AldoHostKind, type AldoProjectHost } from "./accountApi";
 import { HOST_KINDS, type AldoStartMode as Mode } from "./AldoRepositoryPicker";
 import { dropAldoCarriedDraft, landAldoCarriedDraft } from "./newThread";
 import { aldoProjectSlug, typedRepositoryRef } from "./places.logic";
 import { startAldoSandbox } from "./threads";
 
 const MAX_REPOS = 6;
+/** A new repository that isn't one of the user's Aldo projects' code. */
+const NO_PROJECT = "none";
 
 const HOST_LABELS: Record<AldoProjectHost, string> = {
   github: "GitHub",
@@ -179,8 +184,8 @@ function StartPicker(props: {
           <DialogPanel className="flex flex-col items-start gap-3">
             <p className="text-muted-foreground text-sm">
               {general ? "To work on code, connect" : "Connect"} GitHub (or GitLab, Bitbucket or
-              Azure DevOps in Settings → Git hosts) so threads can clone your repositories and open
-              pull requests.
+              Azure DevOps in Settings → Connections) so threads can clone your repositories and
+              open pull requests.
             </p>
             <AldoAccountButton
               kind="github"
@@ -317,6 +322,25 @@ function NewProjectForm(props: {
   const [isPrivate, setIsPrivate] = useState(true);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Code can be one of the user's Aldo projects' (a business's app), on an Aldo that links them.
+  const linking = useSyncExternalStore(
+    subscribeAldoEnvironments,
+    aldoLinksProjectCode,
+    () => false,
+  );
+  const [aldoProjects, setAldoProjects] = useState<ReadonlyArray<AldoProjectSummary>>([]);
+  const [partOf, setPartOf] = useState(NO_PROJECT);
+  useEffect(() => {
+    if (!linking) return;
+    let current = true;
+    void listAldoProjects().then(
+      (projects) => current && setAldoProjects(projects),
+      () => undefined,
+    );
+    return () => {
+      current = false;
+    };
+  }, [linking]);
   // An Aldo project is named by its title (Aldo makes its slug); a repository by its name.
   const inAldo = host === "aldo";
   const name = inAldo ? title.trim() : slugify(title);
@@ -336,6 +360,7 @@ function NewProjectForm(props: {
           name,
           isPrivate: inAldo || isPrivate,
           ...(description.trim() ? { description: description.trim() } : {}),
+          ...(!inAldo && partOf !== NO_PROJECT ? { project: partOf } : {}),
         },
       });
       props.onDone();
@@ -406,10 +431,38 @@ function NewProjectForm(props: {
           onChange={(event) => setDescription(event.currentTarget.value)}
         />
       </label>
+      {!inAldo && aldoProjects.length > 0 ? (
+        <label className="flex flex-col gap-1.5">
+          <span className="font-medium text-sm">
+            Code of <span className="font-normal text-muted-foreground">(optional)</span>
+          </span>
+          <Select value={partOf} onValueChange={(value) => setPartOf(String(value))}>
+            <SelectTrigger className="h-9 text-sm" disabled={creating}>
+              <SelectValue>
+                {aldoProjects.find((project) => project.ref === partOf)?.title ??
+                  "None: a repository of its own"}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectPopup align="start" alignItemWithTrigger={false}>
+              <SelectItem value={NO_PROJECT}>None: a repository of its own</SelectItem>
+              {aldoProjects.map((project) => (
+                <SelectItem key={project.ref} value={project.ref}>
+                  {project.title}
+                </SelectItem>
+              ))}
+            </SelectPopup>
+          </Select>
+          <span className="text-muted-foreground text-xs">
+            {partOf === NO_PROJECT
+              ? "For an app of one of your Aldo projects (a business): its threads know the project, and the project's threads can read its code."
+              : "Its threads know the project and read it for context, and the project's threads can read its code, without either one's files in the other."}
+          </span>
+        </label>
+      ) : null}
       {inAldo ? (
         props.hosts.length === 1 ? (
           <p className="text-muted-foreground text-xs">
-            For code, connect GitHub (or another git host in Settings → Git hosts).
+            For code, connect GitHub (or another git host in Settings → Connections).
           </p>
         ) : null
       ) : (

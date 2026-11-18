@@ -1,38 +1,24 @@
 import { CheckCircle2Icon } from "lucide-react";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, type ReactNode } from "react";
 
 import { AuthConnectorDialog } from "../components/settings/AuthConnectorDialog";
 import { SettingsRow, SettingsSection } from "../components/settings/settingsLayout";
 import { Button } from "../components/ui/button";
-import {
-  disconnectAldoAccount,
-  fetchAldoAccounts,
-  type AldoAccount,
-  type AldoAccountKind,
-  type AldoGitHostKind,
-} from "./cloud";
+import { disconnectAldoAccount, type AldoAccount, type AldoAccountKind } from "./accountApi";
+import { AldoBrandTile } from "./AldoBrandTile";
+import { settingsAccounts, settingsRepositories } from "./settingsData";
+import { useSettingsResource } from "./settingsResource";
 import { ALDO_ACCOUNT_SPECS } from "./accountSpecs";
 
 export { ALDO_ACCOUNT_SPECS };
 
 export function useAldoAccounts() {
-  const [accounts, setAccounts] = useState<Record<
-    AldoAccountKind | AldoGitHostKind,
-    AldoAccount
-  > | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { data, error } = useSettingsResource(settingsAccounts);
   const refresh = useCallback(() => {
-    fetchAldoAccounts()
-      .then((next) => {
-        setAccounts(next);
-        setError(null);
-      })
-      .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)));
+    void settingsAccounts.refresh().catch(() => undefined);
+    void settingsRepositories.refresh().catch(() => undefined);
   }, []);
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
-  return { accounts, error, refresh };
+  return { accounts: data ?? null, error, refresh };
 }
 
 export function AldoAccountButton(props: {
@@ -56,7 +42,8 @@ export function AldoAccountButton(props: {
 
 function accountStatus(account: AldoAccount | undefined) {
   if (!account) return "Checking…";
-  if (!account.connected) return "Not connected";
+  // Its Connect button says it.
+  if (!account.connected) return null;
   return (
     <span className="inline-flex items-center gap-1 text-success-foreground">
       <CheckCircle2Icon className="size-3.5" />
@@ -66,49 +53,68 @@ function accountStatus(account: AldoAccount | undefined) {
   );
 }
 
+/** One account the user signs in to with its wizard: its status, Disconnect and Connect. */
+export function AldoAccountRow(props: {
+  readonly kind: AldoAccountKind;
+  readonly account: AldoAccount | undefined;
+  readonly onChanged: () => void;
+}) {
+  const spec = ALDO_ACCOUNT_SPECS[props.kind];
+  const { account } = props;
+  return (
+    <SettingsRow
+      id={`aldo-account-${props.kind}`}
+      leading={<AldoBrandTile id={props.kind} name={spec.title} />}
+      title={spec.title}
+      description={spec.description}
+      status={accountStatus(account)}
+      inline
+      control={
+        <>
+          {account?.connected ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => void disconnectAldoAccount(props.kind).then(props.onChanged)}
+            >
+              Disconnect
+            </Button>
+          ) : null}
+          <AldoAccountButton kind={props.kind} account={account} onConnected={props.onChanged} />
+        </>
+      }
+    />
+  );
+}
+
 /** Account connections shared by every thread's sandbox. */
 export function AldoAccountsPanel(props: {
   readonly kinds: ReadonlyArray<AldoAccountKind>;
   readonly title: string;
-  /** More rows after the wizard-connected accounts (the token-connected git hosts). */
-  readonly extra?: (
-    accounts: Record<AldoAccountKind | AldoGitHostKind, AldoAccount> | null,
-    refresh: () => void,
-  ) => ReactNode;
+  readonly id?: string;
+  readonly icon?: ReactNode;
+  /** A line above the rows: what they're for. */
+  readonly about?: string | null;
+  /** Rows before the accounts' (Aldo's own models). */
+  readonly before?: ReactNode;
 }) {
   const { accounts, error, refresh } = useAldoAccounts();
   return (
-    <SettingsSection title={props.title}>
+    <SettingsSection
+      title={props.title}
+      {...(props.id ? { id: props.id } : {})}
+      {...(props.icon ? { icon: props.icon } : {})}
+    >
+      {props.about ? (
+        <p className="px-3 pt-3 pb-1 text-muted-foreground text-xs sm:px-4">{props.about}</p>
+      ) : null}
+      {props.before}
       {/* Only what Aldo connects: an older Aldo doesn't list Muse Code, so it waits for the list. */}
       {props.kinds
         .filter((kind) => (accounts ? kind in accounts : kind !== "muse"))
-        .map((kind) => {
-          const spec = ALDO_ACCOUNT_SPECS[kind];
-          const account = accounts?.[kind];
-          return (
-            <SettingsRow
-              key={kind}
-              title={spec.title}
-              description={spec.description}
-              status={accountStatus(account)}
-              control={
-                <>
-                  {account?.connected ? (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => void disconnectAldoAccount(kind).then(refresh)}
-                    >
-                      Disconnect
-                    </Button>
-                  ) : null}
-                  <AldoAccountButton kind={kind} account={account} onConnected={refresh} />
-                </>
-              }
-            />
-          );
-        })}
-      {props.extra?.(accounts, refresh)}
+        .map((kind) => (
+          <AldoAccountRow key={kind} kind={kind} account={accounts?.[kind]} onChanged={refresh} />
+        ))}
       {error ? <p className="px-4 text-destructive-foreground text-sm">{error}</p> : null}
     </SettingsSection>
   );

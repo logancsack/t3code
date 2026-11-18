@@ -6,6 +6,7 @@ import {
   remapFileCommentAnnotations,
 } from "./fileCommentAnnotations";
 import {
+  canShowPdfInFrame,
   isMarkdownPreviewFile,
   resolveFilePreviewPath,
   setMarkdownTaskChecked,
@@ -104,6 +105,40 @@ describe("shouldShowFileExplorer", () => {
         attachmentOpen: false,
       }),
     ).toBe(false);
+  });
+
+  it("gives a file the whole width of a phone-width panel", () => {
+    expect(
+      shouldShowFileExplorer({
+        relativePath: "docs/report.pdf",
+        explorerOpen: true,
+        attachmentOpen: false,
+        compact: true,
+      }),
+    ).toBe(false);
+  });
+
+  it("still shows the tree on a phone when no file is open", () => {
+    expect(
+      shouldShowFileExplorer({
+        relativePath: null,
+        explorerOpen: false,
+        attachmentOpen: false,
+        compact: true,
+      }),
+    ).toBe(true);
+  });
+});
+
+describe("canShowPdfInFrame", () => {
+  it("falls back where the browser has no PDF viewer (Chrome on Android)", () => {
+    expect(canShowPdfInFrame({ pdfViewerEnabled: false })).toBe(false);
+  });
+
+  it("keeps the frame where the browser has a viewer or predates the flag", () => {
+    expect(canShowPdfInFrame({ pdfViewerEnabled: true })).toBe(true);
+    expect(canShowPdfInFrame({})).toBe(true);
+    expect(canShowPdfInFrame(undefined)).toBe(true);
   });
 });
 

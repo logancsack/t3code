@@ -1,0 +1,307 @@
+import { describe, expect, it } from "vite-plus/test";
+
+import { type AldoPolicyView } from "./homeApi";
+import {
+  ALDO_SAME_AS_EVERYWHERE,
+  ALDO_UNDECIDED,
+  aldoMediaDefaults,
+  aldoMergeMethodEdits,
+  aldoMergeMethods,
+  aldoRuleDifferences,
+  aldoRuleEdit,
+  aldoRuleLabel,
+  aldoRuleOptions,
+  aldoRuleShown,
+  aldoRuleValue,
+  aldoWorkspaceLabel,
+  optimisticPolicyEdit,
+} from "./policy.logic";
+
+const view: AldoPolicyView = {
+  everywhere: {
+    merge: "auto",
+    spendThreshold: 50,
+    mediaDefaults: { video: "Runway", image: null },
+  },
+  workspaces: [
+    {
+      repos: ["logancsack/aldo", "logancsack/t3code"],
+      policy: {
+        merge: "approve",
+        mergeMethod: { "logancsack/aldo": "squash" },
+        reviews: "important",
+      },
+    },
+    { repos: ["logancsack/site"], policy: { merge: "auto", spendThreshold: 37 } },
+  ],
+  repos: ["logancsack/aldo", "logancsack/site", "logancsack/t3code"],
+};
+
+describe("optimistic policy changes", () => {
+  it("clears before merging without changing other rules or the saved view", () => {
+    const next = optimisticPolicyEdit(view, {
+      clear: [["spendThreshold"], ["mediaDefaults", "image"]],
+      set: { mediaDefaults: { audio: "ElevenLabs" }, onProviderLimit: "wait" },
+    });
+    expect(next.everywhere).toEqual({
+      merge: "auto",
+      mediaDefaults: { video: "Runway", audio: "ElevenLabs" },
+      onProviderLimit: "wait",
+    });
+    expect(view.everywhere.spendThreshold).toBe(50);
+    expect(view.everywhere.mediaDefaults).toEqual({ video: "Runway", image: null });
+  });
+
+  it("restores workspace inheritance and clears workspace merge methods decided everywhere", () => {
+    const inherited = optimisticPolicyEdit(view, {
+      repos: ["logancsack/t3code", "logancsack/aldo"],
+      clear: [["merge"]],
+    });
+    expect(aldoRuleDifferences(inherited, "merge")).toEqual([]);
+    const next = optimisticPolicyEdit(view, {
+      set: { mergeMethod: { "logancsack/aldo": "merge" } },
+    });
+    expect(next.everywhere.mergeMethod).toEqual({ "logancsack/aldo": "merge" });
+    expect(next.workspaces[0]?.policy.mergeMethod).toEqual({});
+    expect(view.workspaces[0]?.policy.mergeMethod).toEqual({ "logancsack/aldo": "squash" });
+  });
+});
+
+describe("aldoRuleValue", () => {
+  it("reads the user's answer, a rule's default, or undecided", () => {
+    expect(aldoRuleValue("merge", view.everywhere)).toBe("auto");
+    expect(aldoRuleValue("spendThreshold", view.everywhere)).toBe("50");
+    expect(aldoRuleValue("reviews", view.everywhere)).toBe(ALDO_UNDECIDED);
+    expect(aldoRuleValue("paidFallback", view.everywhere)).toBe("never");
+    expect(aldoRuleValue("contextBudget", view.everywhere)).toBe("300000");
+    expect(aldoRuleValue("contextBudget", { contextBudget: 500_000 })).toBe("500000");
+  });
+});
+
+describe("aldoRuleOptions", () => {
+  it("offers undecided only for a rule without a default, and following the user's own for a workspace", () => {
+    expect(aldoRuleOptions("merge", "auto")[0]).toEqual({
+      value: ALDO_UNDECIDED,
+      label: "Ask me the first time",
+    });
+    expect(aldoRuleOptions("paidFallback", "never").map((o) => o.value)).toEqual([
+      "never",
+      "authorized",
+    ]);
+    expect(aldoRuleOptions("merge", "auto", { workspace: true })[0]?.value).toBe(
+      ALDO_SAME_AS_EVERYWHERE,
+    );
+  });
+
+  it("keeps an amount an agent recorded, in order", () => {
+    const values = aldoRuleOptions("spendThreshold", "37").map((o) => o.value);
+    expect(values).toEqual([ALDO_UNDECIDED, "0", "5", "20", "37", "50", "100", "250"]);
+    expect(aldoRuleLabel("spendThreshold", "37")).toBe("Up to $37");
+    expect(aldoRuleLabel("spendThreshold", "0")).toBe("Always ask");
+    expect(aldoRuleLabel("contextBudget", "250000")).toBe("250k tokens");
+    expect(aldoRuleLabel("contextBudget", "1000000")).toBe("Longest");
+    expect(aldoRuleLabel("merge", ALDO_SAME_AS_EVERYWHERE)).toBe("Same as everywhere");
+  });
+});
+
+describe("aldoRuleEdit", () => {
+  it("sets an answer, or clears it so an agent asks (or the workspace follows the user's own)", () => {
+    expect(aldoRuleEdit("merge", "approve")).toEqual({ set: { merge: "approve" } });
+    expect(aldoRuleEdit("spendThreshold", "0")).toEqual({ set: { spendThreshold: 0 } });
+    expect(aldoRuleEdit("paidFallback", "authorized")).toEqual({
+      set: { modelRouting: { paidFallback: "authorized" } },
+    });
+    expect(aldoRuleEdit("reviews", ALDO_UNDECIDED)).toEqual({ clear: [["reviews"]] });
+    expect(aldoRuleEdit("merge", ALDO_SAME_AS_EVERYWHERE, ["logancsack/site"])).toEqual({
+      repos: ["logancsack/site"],
+      clear: [["merge"]],
+    });
+    expect(aldoRuleEdit("contextBudget", "50")).toBeNull();
+  });
+});
+
+describe("aldoRuleDifferences", () => {
+  it("lists the workspaces that answered otherwise", () => {
+    expect(aldoRuleDifferences(view, "merge")).toEqual([
+      { repos: ["logancsack/aldo", "logancsack/t3code"], value: "approve" },
+    ]);
+    expect(aldoRuleDifferences(view, "spendThreshold")).toEqual([
+      { repos: ["logancsack/site"], value: "37" },
+    ]);
+    expect(aldoRuleDifferences(view, "mediaRouting")).toEqual([]);
+  });
+
+  it("compares with the rule's default where the user hasn't answered", () => {
+    const budgets: AldoPolicyView = {
+      ...view,
+      workspaces: [
+        { repos: ["logancsack/site"], policy: { contextBudget: 300_000 } },
+        { repos: ["logancsack/aldo"], policy: { contextBudget: 500_000 } },
+      ],
+    };
+    expect(aldoRuleDifferences(budgets, "contextBudget")).toEqual([
+      { repos: ["logancsack/aldo"], value: "500000" },
+    ]);
+  });
+});
+
+describe("merge methods", () => {
+  it("shows each repository's method, decided ones first", () => {
+    expect(aldoMergeMethods(view)).toEqual([
+      { repo: "logancsack/aldo", value: "squash", differences: [] },
+      { repo: "logancsack/site", value: ALDO_UNDECIDED, differences: [] },
+      { repo: "logancsack/t3code", value: ALDO_UNDECIDED, differences: [] },
+    ]);
+  });
+
+  it("shows the workspaces that recorded another, under the user's own or where they disagree", () => {
+    const methods: AldoPolicyView = {
+      everywhere: { mergeMethod: { "logancsack/aldo": "squash" } },
+      workspaces: [
+        {
+          repos: ["logancsack/aldo", "logancsack/t3code"],
+          policy: { mergeMethod: { "logancsack/aldo": "merge", "logancsack/t3code": "merge" } },
+        },
+        {
+          repos: ["logancsack/t3code"],
+          policy: { mergeMethod: { "logancsack/t3code": "rebase" } },
+        },
+      ],
+      repos: ["logancsack/aldo", "logancsack/site", "logancsack/t3code"],
+    };
+    expect(aldoMergeMethods(methods)).toEqual([
+      {
+        repo: "logancsack/aldo",
+        value: "squash",
+        differences: [{ repos: ["logancsack/aldo", "logancsack/t3code"], value: "merge" }],
+      },
+      {
+        repo: "logancsack/t3code",
+        value: ALDO_UNDECIDED,
+        differences: [
+          { repos: ["logancsack/aldo", "logancsack/t3code"], value: "merge" },
+          { repos: ["logancsack/t3code"], value: "rebase" },
+        ],
+      },
+      { repo: "logancsack/site", value: ALDO_UNDECIDED, differences: [] },
+    ]);
+  });
+
+  it("sets one for every workspace, or clears it everywhere it was recorded", () => {
+    expect(aldoMergeMethodEdits(view, "logancsack/site", "rebase")).toEqual([
+      { set: { mergeMethod: { "logancsack/site": "rebase" } } },
+    ]);
+    expect(aldoMergeMethodEdits(view, "logancsack/aldo", ALDO_UNDECIDED)).toEqual([
+      {
+        repos: ["logancsack/aldo", "logancsack/t3code"],
+        clear: [["mergeMethod", "logancsack/aldo"]],
+      },
+    ]);
+    expect(aldoMergeMethodEdits(view, "logancsack/aldo", "fast-forward")).toEqual([]);
+  });
+
+  it("sets one for a workspace, or has it follow the user's own", () => {
+    const repos = ["logancsack/aldo", "logancsack/t3code"];
+    expect(aldoMergeMethodEdits(view, "logancsack/aldo", "merge", repos)).toEqual([
+      { repos, set: { mergeMethod: { "logancsack/aldo": "merge" } } },
+    ]);
+    expect(aldoMergeMethodEdits(view, "logancsack/aldo", ALDO_SAME_AS_EVERYWHERE, repos)).toEqual([
+      { repos, clear: [["mergeMethod", "logancsack/aldo"]] },
+    ]);
+  });
+});
+
+describe("aldoMediaDefaults and aldoWorkspaceLabel", () => {
+  it("lists the tools the user named, and names a workspace by its repositories", () => {
+    expect(aldoMediaDefaults(view)).toEqual([{ task: "video", label: "Video", tool: "Runway" }]);
+    const media: AldoPolicyView = {
+      ...view,
+      workspaces: [
+        { repos: ["logancsack/site"], policy: { mediaDefaults: { video: null, image: "Codex" } } },
+        { repos: ["logancsack/aldo"], policy: { mediaDefaults: { video: "Runway", image: null } } },
+      ],
+    };
+    expect(aldoMediaDefaults(media)).toEqual([
+      { task: "image", label: "Images", tool: "Codex", repos: ["logancsack/site"] },
+      { task: "video", label: "Video", tool: "Runway" },
+      { task: "video", label: "Video", tool: null, repos: ["logancsack/site"] },
+    ]);
+    expect(aldoWorkspaceLabel(["logancsack/aldo", "logancsack/t3code"])).toBe("aldo + t3code");
+    expect(aldoWorkspaceLabel(["aldo:fiverr-motion-graphics"])).toBe("fiverr-motion-graphics");
+    // Its project's name, as the sidebar shows it, where it's known.
+    const names = new Map([["aldo:fiverr-motion-graphics", "Fiverr Motion Graphics"]]);
+    expect(aldoWorkspaceLabel(["aldo:fiverr-motion-graphics"], names)).toBe(
+      "Fiverr Motion Graphics",
+    );
+  });
+});
+
+describe("accounts and publishing in the user's name", () => {
+  const rules = ["merge", "spendThreshold", "accounts", "publishing"];
+
+  it("shows them only on an Aldo that says it takes them; the others everywhere", () => {
+    expect(aldoRuleShown({ rules }, "accounts")).toBe(true);
+    expect(aldoRuleShown({ rules }, "publishing")).toBe(true);
+    expect(aldoRuleShown({ rules: ["merge", "accounts"] }, "publishing")).toBe(false);
+    // An older Aldo doesn't say which rules it takes, and has none of the newer ones.
+    expect(aldoRuleShown(view, "accounts")).toBe(false);
+    expect(aldoRuleShown(null, "accounts")).toBe(false);
+    expect(aldoRuleShown(undefined, "publishing")).toBe(false);
+    expect(aldoRuleShown({ rules: "accounts" as never }, "accounts")).toBe(false);
+    expect(aldoRuleShown(view, "merge")).toBe(true);
+    expect(aldoRuleShown(null, "spendThreshold")).toBe(true);
+  });
+
+  it("is When I ask until the user says otherwise, with no undecided choice", () => {
+    expect(aldoRuleValue("accounts", {})).toBe("when_asked");
+    expect(aldoRuleValue("publishing", {})).toBe("when_asked");
+    expect(aldoRuleValue("accounts", { accounts: "never" })).toBe("never");
+    expect(aldoRuleOptions("accounts", "when_asked")).toEqual([
+      { value: "when_asked", label: "When I ask" },
+      { value: "ask_first", label: "Ask me first" },
+      { value: "never", label: "Never" },
+    ]);
+    expect(aldoRuleOptions("publishing", "show_first")).toEqual([
+      { value: "when_asked", label: "When I ask" },
+      { value: "show_first", label: "Show me first" },
+    ]);
+    expect(aldoRuleOptions("publishing", "when_asked", { workspace: true })[0]?.value).toBe(
+      ALDO_SAME_AS_EVERYWHERE,
+    );
+    expect(aldoRuleLabel("accounts", "ask_first")).toBe("Ask me first");
+  });
+
+  it("saves each choice as the server takes it, and a workspace can follow the user's own again", () => {
+    expect(aldoRuleEdit("accounts", "ask_first")).toEqual({ set: { accounts: "ask_first" } });
+    expect(aldoRuleEdit("accounts", "when_asked")).toEqual({ set: { accounts: "when_asked" } });
+    expect(aldoRuleEdit("publishing", "show_first")).toEqual({ set: { publishing: "show_first" } });
+    expect(aldoRuleEdit("publishing", "never")).toBeNull();
+    expect(aldoRuleEdit("accounts", "sometimes")).toBeNull();
+    expect(aldoRuleEdit("accounts", ALDO_SAME_AS_EVERYWHERE, ["logancsack/site"])).toEqual({
+      repos: ["logancsack/site"],
+      clear: [["accounts"]],
+    });
+  });
+
+  it("lists a workspace that answered otherwise than the user's own or the default", () => {
+    const acting: AldoPolicyView = {
+      ...view,
+      rules,
+      everywhere: { accounts: "ask_first" },
+      workspaces: [
+        { repos: ["logancsack/site"], policy: { accounts: "never", publishing: "when_asked" } },
+        { repos: ["logancsack/aldo"], policy: { accounts: "ask_first", publishing: "show_first" } },
+      ],
+    };
+    expect(aldoRuleDifferences(acting, "accounts")).toEqual([
+      { repos: ["logancsack/site"], value: "never" },
+    ]);
+    expect(aldoRuleDifferences(acting, "publishing")).toEqual([
+      { repos: ["logancsack/aldo"], value: "show_first" },
+    ]);
+    // A change shows at once and keeps which rules Aldo takes.
+    const next = optimisticPolicyEdit(acting, { set: { publishing: "show_first" } });
+    expect(next.everywhere).toEqual({ accounts: "ask_first", publishing: "show_first" });
+    expect(next.rules).toEqual(rules);
+  });
+});

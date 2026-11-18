@@ -1,3 +1,5 @@
+import { settingsInstructions, settingsRepositories } from "./settingsData";
+import { useSettingsResource } from "./settingsResource";
 import { LoaderCircleIcon, NotebookPenIcon, PlusIcon } from "lucide-react";
 import { useEffect, useMemo, useState, useSyncExternalStore, type FormEvent } from "react";
 
@@ -5,14 +7,9 @@ import { SettingsSection } from "../components/settings/settingsLayout";
 import { Button } from "../components/ui/button";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../components/ui/menu";
 import { Textarea } from "../components/ui/textarea";
-import {
-  AldoApiError,
-  aldoInstructions,
-  getAldoEnvironments,
-  listAldoRepositories,
-  subscribeAldoEnvironments,
-  type AldoInstructions,
-} from "./cloud";
+import { AldoApiError } from "./api";
+import { aldoInstructions, type AldoInstructions } from "./accountApi";
+import { getAldoEnvironments, subscribeAldoEnvironments } from "./directory";
 
 const EVERY_PROJECT = "*";
 
@@ -31,7 +28,7 @@ function projectLabel(ref: string): string {
 
 const PLACEHOLDERS = {
   every:
-    "How you like agents to work everywhere, e.g.\n- Keep answers short.\n- Use pnpm, never npm.\n- Write commit messages in the imperative mood.",
+    "How you like agents to work everywhere, e.g.\n- Keep answers short.\n- Write in British English.\n- Use pnpm, never npm.",
   project:
     "What agents should know about this project, e.g.\n- Run pnpm test before opening a pull request.\n- Reuse the components in packages/ui.",
 };
@@ -56,6 +53,15 @@ function InstructionsEditor(props: {
   // an agent remembered in the meantime isn't overwritten without the user seeing it.
   const [base, setBase] = useState(props.saved);
   const [draft, setDraft] = useState(props.saved?.text ?? "");
+  const [shown, setShown] = useState(props.saved);
+  // Refresh clean editors; an edit keeps its original version for the conflict check.
+  if (shown !== props.saved) {
+    setShown(props.saved);
+    if (draft === (base?.text ?? "")) {
+      setBase(props.saved);
+      setDraft(props.saved?.text ?? "");
+    }
+  }
   // What's saved now, when it changed while the user was editing.
   const [changed, setChanged] = useState<{ text: string } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -67,10 +73,9 @@ function InstructionsEditor(props: {
     setBusy(true);
     setError(null);
     try {
-      const next =
-        (await aldoInstructions.save(scope, text, base?.updated_at ?? null)).find(
-          (i) => i.scope === scope,
-        ) ?? null;
+      const list = await aldoInstructions.save(scope, text, base?.updated_at ?? null);
+      settingsInstructions.set(list);
+      const next = list.find((i) => i.scope === scope) ?? null;
       setBase(next);
       // Keep what the user typed while the save was in flight.
       setDraft((current) => (current === text ? (next?.text ?? "") : current));
@@ -80,7 +85,8 @@ function InstructionsEditor(props: {
     } catch (cause) {
       if (cause instanceof AldoApiError && cause.status === 409) {
         try {
-          const latest = (await aldoInstructions.list()).find((i) => i.scope === scope) ?? null;
+          const latest =
+            (await settingsInstructions.refresh()).find((i) => i.scope === scope) ?? null;
           setBase(latest);
           setChanged({ text: latest?.text ?? "" });
         } catch (again) {
@@ -186,30 +192,28 @@ type Entry = { scope: string; saved: AldoInstructions | null };
 
 /** Settings → Instructions: what every agent is told, for all projects and for each one. */
 export function AldoInstructionsPanel() {
-  const [entries, setEntries] = useState<ReadonlyArray<Entry> | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [unsupported, setUnsupported] = useState(false);
+  const cached = useSettingsResource(settingsInstructions, true, false);
+  const unsupported = cached.cause instanceof AldoApiError && cached.cause.status === 404;
+  const error = unsupported ? null : cached.error;
+  const [added, setAdded] = useState<ReadonlyArray<string>>([]);
+  const entries: ReadonlyArray<Entry> | null = cached.data
+    ? [
+        { scope: EVERY_PROJECT, saved: cached.data.find((i) => i.scope === EVERY_PROJECT) ?? null },
+        ...cached.data
+          .filter((i) => i.scope !== EVERY_PROJECT)
+          .map((i) => ({ scope: i.scope, saved: i })),
+        ...added
+          .filter((scope) => !cached.data?.some((i) => i.scope === scope))
+          .map((scope) => ({ scope, saved: null })),
+      ]
+    : null;
   const threads = useSyncExternalStore(subscribeAldoEnvironments, getAldoEnvironments, () => null);
   // The connected accounts' repositories too, so a project can have instructions before its first thread.
   const [accountRepos, setAccountRepos] = useState<ReadonlyArray<string>>([]);
 
   useEffect(() => {
-    aldoInstructions
-      .list()
-      .then((list) =>
-        setEntries([
-          { scope: EVERY_PROJECT, saved: list.find((i) => i.scope === EVERY_PROJECT) ?? null },
-          ...list
-            .filter((i) => i.scope !== EVERY_PROJECT)
-            .map((i) => ({ scope: i.scope, saved: i })),
-        ]),
-      )
-      .catch((cause: unknown) => {
-        // An Aldo from before instructions.
-        if (cause instanceof AldoApiError && cause.status === 404) setUnsupported(true);
-        else setError(messageOf(cause));
-      });
-    listAldoRepositories()
+    settingsRepositories
+      .load()
       .then((repositories) => setAccountRepos(repositories.map((r) => r.nameWithOwner)))
       .catch(() => setAccountRepos([]));
   }, []);
@@ -236,12 +240,7 @@ export function AldoInstructionsPanel() {
             </MenuTrigger>
             <MenuPopup align="end" className="max-w-80">
               {addable.map((repo) => (
-                <MenuItem
-                  key={repo}
-                  onClick={() =>
-                    setEntries((all) => [...(all ?? []), { scope: repo, saved: null }])
-                  }
-                >
+                <MenuItem key={repo} onClick={() => setAdded((all) => [...all, repo])}>
                   {projectLabel(repo)}
                 </MenuItem>
               ))}
@@ -250,14 +249,14 @@ export function AldoInstructionsPanel() {
         ) : null
       }
     >
-      <p className="px-3 text-sm text-muted-foreground sm:px-4">
+      <p className="px-3 py-3 text-sm text-muted-foreground sm:px-4">
         What every agent is told, for all projects or for one, kept out of your repositories. When
         you ask an agent to remember something for later threads, it's saved here too. A thread
         picks up changes the next time its computer starts or wakes. A repository's own notes for
         agents (AGENTS.md or CLAUDE.md) still apply.
       </p>
       {unsupported ? (
-        <p className="px-3 text-sm text-muted-foreground sm:px-4">
+        <p className="px-3 py-3 text-sm text-muted-foreground sm:px-4">
           This Aldo server doesn't have instructions yet.
         </p>
       ) : null}
@@ -270,7 +269,7 @@ export function AldoInstructionsPanel() {
           key={entry.scope}
           scope={entry.scope}
           saved={entry.saved}
-          onRemoved={() => setEntries((all) => all?.filter((e) => e.scope !== entry.scope) ?? all)}
+          onRemoved={() => setAdded((all) => all.filter((scope) => scope !== entry.scope))}
         />
       ))}
     </SettingsSection>

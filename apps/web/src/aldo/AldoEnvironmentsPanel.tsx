@@ -1,3 +1,5 @@
+import { settingsPrebuilds, settingsRepositories } from "./settingsData";
+import { useSettingsResource } from "./settingsResource";
 import { BoxesIcon, LoaderCircleIcon, PlusIcon, TrashIcon } from "lucide-react";
 import {
   useCallback,
@@ -13,12 +15,10 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import {
   aldoPrebuilds,
-  getAldoEnvironments,
-  listAldoRepositories,
-  subscribeAldoEnvironments,
   type AldoEnvironmentService,
   type AldoPrebuiltEnvironment,
-} from "./cloud";
+} from "./workspaceApi";
+import { getAldoEnvironments, subscribeAldoEnvironments } from "./directory";
 
 function ago(iso: string | null): string {
   if (!iso) return "";
@@ -298,16 +298,18 @@ function EnvironmentRow(props: {
   );
 }
 
-/** Settings → Environments: prebuilt workspaces new threads start from. */
+/** Settings → Code: prebuilt workspaces new threads start from. */
 export function AldoEnvironmentsPanel() {
-  const [envs, setEnvs] = useState<ReadonlyArray<AldoPrebuiltEnvironment> | null>(null);
+  const cached = useSettingsResource(settingsPrebuilds);
+  const envs = cached.data ?? null;
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const threads = useSyncExternalStore(subscribeAldoEnvironments, getAldoEnvironments, () => null);
   // The connected accounts' repositories, so the first environment can come before any thread.
   const [accountRepos, setAccountRepos] = useState<ReadonlyArray<string>>([]);
   useEffect(() => {
-    listAldoRepositories()
+    settingsRepositories
+      .load()
       .then((repositories) => setAccountRepos(repositories.map((r) => r.nameWithOwner)))
       .catch(() => setAccountRepos([]));
   }, []);
@@ -321,15 +323,11 @@ export function AldoEnvironmentsPanel() {
   );
 
   const refresh = useCallback(() => {
-    aldoPrebuilds
-      .list()
-      .then((next) => {
-        setEnvs(next);
-        setError(null);
-      })
+    settingsPrebuilds
+      .refresh()
+      .then(() => setError(null))
       .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)));
   }, []);
-  useEffect(() => refresh(), [refresh]);
   // Follow builds in progress.
   const building = envs?.some((e) => e.building) ?? false;
   useEffect(() => {
@@ -340,6 +338,7 @@ export function AldoEnvironmentsPanel() {
 
   return (
     <SettingsSection
+      id="aldo-environments"
       title="Environments"
       icon={<BoxesIcon className="size-4" />}
       headerAction={
@@ -352,14 +351,16 @@ export function AldoEnvironmentsPanel() {
         </Button>
       }
     >
-      <p className="px-3 text-sm text-muted-foreground sm:px-4">
+      <p className="px-3 py-3 text-sm text-muted-foreground sm:px-4">
         A ready-to-go environment prebuilds a repository (or a set of repositories) with
         dependencies installed, so new threads start working immediately, with their previews
         already running. Agents set one up with <code className="text-xs">save_environment</code>, a
         repository can define one in <code className="text-xs">.aldo/environment.json</code>, or add
         one here. Aldo rebuilds them daily.
       </p>
-      {error ? <p className="px-3 text-destructive-foreground text-sm sm:px-4">{error}</p> : null}
+      {error || cached.error ? (
+        <p className="px-3 text-destructive-foreground text-sm sm:px-4">{error ?? cached.error}</p>
+      ) : null}
       {draft ? (
         <EnvironmentForm
           key={draft.id ?? "new"}
@@ -373,7 +374,7 @@ export function AldoEnvironmentsPanel() {
         />
       ) : null}
       {envs && envs.length === 0 && !draft ? (
-        <p className="px-3 text-muted-foreground text-sm sm:px-4">
+        <p className="px-3 py-3 text-muted-foreground text-sm sm:px-4">
           No environments yet. A repository's ready-to-go setup shows here once an agent saves one
           or you add one.
         </p>

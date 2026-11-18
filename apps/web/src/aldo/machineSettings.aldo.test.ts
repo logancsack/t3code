@@ -7,7 +7,9 @@ const cloud = vi.hoisted(() => ({
 }));
 const toasts = vi.hoisted(() => ({ add: vi.fn() }));
 
-vi.mock("./cloud", () => ({ isAldoCloud: true, ...cloud }));
+const aldoApiMock = vi.hoisted(() => ({ isAldoCloud: true, ...cloud }));
+vi.mock("./api", () => aldoApiMock);
+vi.mock("./threadApi", () => aldoApiMock);
 vi.mock("../components/ui/toast", () => ({ toastManager: toasts }));
 
 import { planScopedSettingsPatch } from "../components/settings/scopedSettings";

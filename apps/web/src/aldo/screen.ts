@@ -1,16 +1,13 @@
-// What's on the user's screen, for Aldo: the thread open on the page, or the
-// one they're peeking at from the home screen (which wins while it's open).
+// What's on the user's screen, for Aldo: the thread open on the page.
 // Written turns carry it, so Aldo names that conversation in its
 // instructions; a call hears when it changes (assistantSession.ts). Either
-// way "this one" means it. The root sets the page's thread (AldoSummon.tsx),
-// the home screen the peeked one.
+// way "this one" means it. The root sets it (AldoSummon.tsx).
 
 import { useSyncExternalStore } from "react";
 
 import type { AldoOnScreen } from "./assistant.logic";
 
 let routeThread: AldoOnScreen | null = null;
-let peekedThread: AldoOnScreen | null = null;
 const listeners = new Set<() => void>();
 
 const same = (a: AldoOnScreen | null, b: AldoOnScreen | null) =>
@@ -32,15 +29,8 @@ export function setAldoRouteThread(thread: AldoOnScreen | null): void {
   changed();
 }
 
-/** The thread the home screen's peek shows, or null when it's closed. */
-export function setAldoPeekedThread(thread: AldoOnScreen | null): void {
-  if (same(peekedThread, thread)) return;
-  peekedThread = thread;
-  changed();
-}
-
 export function aldoOnScreen(): AldoOnScreen | null {
-  return peekedThread ?? routeThread;
+  return routeThread;
 }
 
 export function subscribeAldoOnScreen(listener: () => void): () => void {

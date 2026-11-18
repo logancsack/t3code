@@ -12,6 +12,8 @@ const MAX_ZOOM = 8;
 
 export interface ZoomableImageHandle {
   pan: (key: string) => boolean;
+  /** Whether it's zoomed in, so a finger's stroke pans it rather than leaving it. */
+  zoomed: () => boolean;
 }
 
 /** Zooms around the pointer and keeps the whole image accessible by dragging or scrolling. */
@@ -83,6 +85,7 @@ export function ZoomableImage({
         }
         return true;
       },
+      zoomed: () => zoomRef.current > 1,
     }),
     [],
   );

@@ -1,22 +1,19 @@
-// A look at a thread without leaving Aldo: beside the home screen's
-// conversation on a wide screen, over it on a phone (AldoHome.tsx). It shows
-// what Aldo's home read has (how the thread stands, what it asks, answered in
-// place, its pull requests) and its latest turns as Aldo keeps them
-// (cloud.ts fetchAldoConversationCopy), so nothing is woken. While it's open,
-// Aldo hears it's on screen (screen.ts), so "this one" means it. An approval
-// peeks the same way: the card in full.
+// A look at a thread or an approval without leaving Aldo's bar (AldoSummon.tsx),
+// for what needs the user elsewhere. It shows what Aldo's home read has (how
+// the thread stands, what it asks, answered in place, its pull requests) and
+// its latest turns as Aldo keeps them (homeApi.ts fetchAldoConversationCopy), so
+// nothing is woken. An approval shows the same way: the card in full.
 
 import { ArrowUpRightIcon, MessageCircleQuestionIcon, XIcon } from "lucide-react";
-import { createContext, lazy, Suspense, useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
-import { Badge } from "../components/ui/badge";
-import { Button } from "../components/ui/button";
 import { Skeleton } from "../components/ui/skeleton";
 import { cn } from "~/lib/utils";
 import { ApprovalCard } from "./AldoApprovals";
 import { PendingForm, ThreadLink } from "./AldoHomeInbox";
 import { pullRequestsOf, PullRequestLine, reposLabel, StateDot, stateSince } from "./AldoLiveCard";
 import { withoutImageNotes } from "./assistant.logic";
+import { aldoRequestLabel, aldoRequestOf } from "./request.logic";
 import { sendText } from "./assistantSession";
 import {
   fetchAldoConversationCopy,
@@ -24,23 +21,20 @@ import {
   type AldoHome,
   type AldoHomeConversation,
   type AldoHomeTarget,
-} from "./cloud";
+} from "./homeApi";
 import { refreshAldoHome } from "./homeFeed";
-import { modelName, needsYouKind, sameTarget } from "./home.logic";
-
-// The markdown renderer loads with the first peek, not with the app.
-const loadChatMarkdown = () => import("../components/ChatMarkdown");
-const ChatMarkdown = lazy(loadChatMarkdown);
+import { needsYouKind, sameTarget } from "./home.logic";
+import { useAldoModelName } from "./modelNames";
+import { AldoFrame } from "./AldoFrame";
+import { AgentMarkdown, loadChatMarkdown } from "./AldoQuoted";
+import { CHIP, ICON_BUTTON, INSET, SECONDARY } from "./surface";
 
 export type AldoPeekTarget =
   | { readonly kind: "thread"; readonly target: AldoHomeTarget }
   | { readonly kind: "approval"; readonly id: string };
 
-/** Peeks at a thread or an approval beside Aldo's conversation (the home screen gives it); absent elsewhere. */
-export const AldoPeekerContext = createContext<((peek: AldoPeekTarget) => void) | null>(null);
-
 /** The conversation a peek shows, from the home read; null when it has left it. */
-export function peekedConversation(
+function peekedConversation(
   home: AldoHome | null,
   peek: AldoPeekTarget | null,
 ): AldoHomeConversation | null {
@@ -117,26 +111,29 @@ function PeekFrame(props: {
       className={cn("flex min-h-0 flex-col bg-background", props.className)}
       data-aldo-peek=""
     >
-      <header className="flex shrink-0 flex-col gap-1 border-border/60 border-b px-4 pt-3 pb-2.5">
-        <div className="flex items-center gap-2">
-          {props.header ?? <h2 className="min-w-0 truncate font-semibold">{props.title}</h2>}
-          <Button
-            size="icon-sm"
-            variant="ghost"
+      <header className="flex shrink-0 flex-col gap-0.5 px-5 pt-3.5 pb-3">
+        <div className="flex min-h-8 items-center gap-2">
+          {props.header ?? (
+            <h2 className="min-w-0 truncate font-semibold text-[15px] leading-5">{props.title}</h2>
+          )}
+          <button
+            type="button"
             aria-label="Close the peek"
-            className="ms-auto shrink-0"
+            className={cn(ICON_BUTTON, "-me-1.5 ms-auto")}
             onClick={props.onClose}
           >
-            <XIcon />
-          </Button>
+            <XIcon className="size-4" strokeWidth={1.75} />
+          </button>
         </div>
         {props.meta}
       </header>
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-        <div className="flex flex-col gap-4">{props.children}</div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-5 pt-1 pb-5">
+        <div className="flex flex-col gap-5">{props.children}</div>
       </div>
       {props.footer ? (
-        <footer className="shrink-0 border-border/60 border-t px-4 py-3">{props.footer}</footer>
+        <footer className="shrink-0 px-5 pt-2 pb-[max(1rem,env(safe-area-inset-bottom))]">
+          {props.footer}
+        </footer>
       ) : null}
     </section>
   );
@@ -152,7 +149,7 @@ function ThreadPeek(props: {
 }) {
   const c = props.conversation;
   const kind = needsYouKind(c);
-  const model = modelName(c.model);
+  const model = useAldoModelName(c.thread.environmentId, c.model);
   const pullRequests = pullRequestsOf(props.home, c.thread, props.now);
   const ask = (words: string) => {
     sendText(words);
@@ -166,58 +163,61 @@ function ThreadPeek(props: {
       header={
         <>
           <StateDot conversation={c} now={props.now} />
-          <h2 className="min-w-0 truncate font-semibold">{c.title}</h2>
-          <Badge variant="outline" size="sm" className="shrink-0 max-sm:hidden">
-            {reposLabel(c.repos)}
-          </Badge>
-          <Button
-            size="compact"
-            variant="outline"
-            className="ms-auto shrink-0"
-            render={<ThreadLink target={c.thread} />}
+          <h2 className="min-w-0 truncate font-semibold text-[15px] leading-5">{c.title}</h2>
+          <ThreadLink
+            target={c.thread}
+            className={cn(SECONDARY, "ms-auto h-8 shrink-0 gap-1 px-3 text-[13px]")}
           >
-            Open thread
-            <ArrowUpRightIcon />
-          </Button>
+            Open
+            <ArrowUpRightIcon className="size-3.5" strokeWidth={1.75} />
+          </ThreadLink>
         </>
       }
       meta={
-        <p className="ps-4 text-muted-foreground text-xs">
-          {[model, stateSince(c, props.now)].filter(Boolean).join(" · ")}
+        <p className="truncate ps-4 text-[12px] text-muted-foreground leading-[18px]">
+          {[reposLabel(c.repos), model, stateSince(c, props.now)].filter(Boolean).join(" · ")}
         </p>
       }
       footer={
-        <div className="flex flex-wrap items-center gap-1.5">
-          <Button
-            size="compact"
-            variant="outline"
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            className={CHIP}
             onClick={() => ask(`Where is "${c.title}" up to?`)}
           >
-            <MessageCircleQuestionIcon />
+            <MessageCircleQuestionIcon
+              aria-hidden
+              className="size-4 text-muted-foreground"
+              strokeWidth={1.75}
+            />
             Where is it up to?
-          </Button>
-          <Button
-            size="compact"
-            variant="ghost"
+          </button>
+          <button
+            type="button"
+            className={CHIP}
             onClick={() =>
               ask(`Look over what "${c.title}" changed, and tell me if anything looks off.`)
             }
           >
             Review its changes
-          </Button>
+          </button>
         </div>
       }
     >
       {kind ? (
-        <div className="rounded-xl border border-warning/50 bg-card/40 p-3">
+        <div className={cn(INSET, "flex flex-col gap-2.5")}>
+          <p className="flex items-center gap-1.5 font-medium text-[12px] text-muted-foreground leading-[18px]">
+            <span aria-hidden className="size-1.5 rounded-full bg-warning" />
+            Needs you
+          </p>
           {c.summary && kind !== "approval" && kind !== "question" ? (
-            <p className="mb-2.5 whitespace-pre-wrap text-sm">{c.summary}</p>
+            <p className="whitespace-pre-wrap text-[14px] leading-6">{c.summary}</p>
           ) : null}
           <PendingForm conversation={c} onActed={() => void refreshAldoHome()} />
         </div>
       ) : null}
       {pullRequests.length > 0 ? (
-        <div className="flex flex-col gap-2 rounded-xl border border-border/60 bg-card/30 p-3">
+        <div className={cn(INSET, "flex flex-col gap-2")}>
           {pullRequests.map((pr) => (
             <PullRequestLine key={`${pr.repo}#${pr.number}`} pullRequest={pr} />
           ))}
@@ -251,9 +251,12 @@ function LatestTurns(props: { readonly conversation: AldoHomeConversation }) {
     };
   }, [environmentId, threadId, c.at]);
   const messages = copy?.messages.filter((m) => m.text.trim()) ?? [];
+  const keys = new Map<string, number>();
   return (
     <div className="flex flex-col gap-3">
-      <h3 className="font-medium text-muted-foreground text-xs">Latest in the thread</h3>
+      <h3 className="font-medium text-[12px] text-muted-foreground leading-[18px]">
+        Latest in the thread
+      </h3>
       {copy === undefined && !error ? (
         <TurnsSkeleton />
       ) : error ? (
@@ -263,15 +266,18 @@ function LatestTurns(props: { readonly conversation: AldoHomeConversation }) {
           {c.summary ?? "Aldo has no copy of its turns yet. Open the thread to see it all."}
         </p>
       ) : (
-        <Suspense fallback={<TurnsSkeleton />}>
-          {messages.map((m) =>
-            m.role === "user" ? (
-              <UserTurn key={`${m.role}:${m.createdAt}`} text={m.text} />
-            ) : (
-              <ChatMarkdown key={`${m.role}:${m.createdAt}`} text={m.text} cwd={undefined} />
-            ),
-          )}
-        </Suspense>
+        messages.map((m) => {
+          // Two turns can share a moment, so a second one there is told apart.
+          const at = `${m.role}:${m.createdAt}`;
+          const seen = keys.get(at) ?? 0;
+          keys.set(at, seen + 1);
+          const key = seen ? `${at}:${seen}` : at;
+          return m.role === "user" ? (
+            <UserTurn key={key} text={m.text} />
+          ) : (
+            <AgentMarkdown key={key} text={m.text} />
+          );
+        })
       )}
     </div>
   );
@@ -290,15 +296,23 @@ function TurnsSkeleton() {
 /** What Aldo writes to a thread ends with this line (fromAldo in Aldo's src/lib/actions.ts); the peek labels it instead. */
 const FROM_ALDO = /\s*_\(Sent by Aldo[^)]*\)_\s*$/;
 
-/** A message the user (or Aldo for them) sent the thread. */
+/** A message the user (or Aldo for them) sent the thread: a thread Aldo started opens with the user's own words (request.logic.ts). */
 function UserTurn(props: { readonly text: string }) {
   const text = withoutImageNotes(props.text).text;
-  const fromAldo = FROM_ALDO.test(text);
+  const request = aldoRequestOf(text);
+  const fromAldo = !request && FROM_ALDO.test(text);
   return (
     <div className="flex max-w-[90%] flex-col items-end gap-1 self-end">
-      {fromAldo ? <span className="text-[11px] text-primary">From Aldo</span> : null}
-      <p className="whitespace-pre-wrap rounded-2xl bg-muted/60 px-3.5 py-2 text-sm">
-        {fromAldo ? text.replace(FROM_ALDO, "") : text}
+      {request ? (
+        <span className="text-[12px] text-muted-foreground">{aldoRequestLabel(request.from)}</span>
+      ) : fromAldo ? (
+        <span className="flex items-center gap-1 text-[12px] text-muted-foreground">
+          <AldoFrame size={12} />
+          From Aldo
+        </span>
+      ) : null}
+      <p className="whitespace-pre-wrap break-words rounded-[18px] bg-message px-3.5 py-2 text-[14px] text-message-foreground leading-5">
+        {request ? request.said : fromAldo ? text.replace(FROM_ALDO, "") : text}
       </p>
     </div>
   );

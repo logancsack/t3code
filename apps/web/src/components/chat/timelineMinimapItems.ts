@@ -1,3 +1,5 @@
+import { isAldoCloud } from "../../aldo/api";
+import { aldoRequestOf } from "../../aldo/request.logic";
 import type { MessagesTimelineRow } from "./MessagesTimeline.logic";
 
 export interface TimelineMinimapItem {
@@ -60,7 +62,10 @@ export function resolveTimelineMinimapPreview(
     ? null
     : {
         ...item,
-        userText: compactMinimapPreview(item.userText),
+        // A thread Aldo started opens with its brief: the preview is the user's own request.
+        userText: compactMinimapPreview(
+          (isAldoCloud && item.userText && aldoRequestOf(item.userText)?.said) || item.userText,
+        ),
         assistantText: compactMinimapPreview(item.assistantText),
       };
 }

@@ -13,6 +13,7 @@ import {
   aldoPlanChangedCopy,
   aldoPlanSummary,
   aldoPlanTerms,
+  aldoSeatLimitCopy,
   formatPlanPrice,
   isAldoBilling,
   withoutAldoCheckoutReturn,
@@ -116,6 +117,8 @@ describe("isAldoBilling", () => {
     expect(isAldoBilling(null)).toBe(false);
     expect(isAldoBilling({ ...billing, pastDue: "no" })).toBe(false);
     expect(isAldoBilling({ ...billing, plans: [{ ...plus, priceCents: "20" }] })).toBe(false);
+    expect(isAldoBilling({ ...billing, plans: [{ ...plus, aiCredits: 1_000 }] })).toBe(true);
+    expect(isAldoBilling({ ...billing, plans: [{ ...plus, aiCredits: "10" }] })).toBe(false);
     expect(isAldoWorkspaceUsage({ ...onPro, billing: { enabled: true } })).toBe(false);
   });
 });
@@ -160,6 +163,28 @@ describe("aldoBillingView", () => {
       periodEnd: PERIOD_END,
     });
     expect(aldoPlanSummary(view!)).toBe("Pro, set by your Aldo admin. Renews on Oct 31.");
+  });
+
+  it("shows a seat on the organization's plan, with nothing to change and whom to ask", () => {
+    const seat = { org: "Linden", admins: ["maya@linden.com", "sam@linden.com"] };
+    const view = aldoBillingView({ ...onPro, billing: { ...billing, managed: false }, seat });
+    expect(view).toEqual({ kind: "seat", plan: onPro.plan, periodEnd: PERIOD_END, seat });
+    expect(aldoPlanSummary(view!)).toBe("Pro, covered by Linden. Renews on Oct 31.");
+    // Shown whether or not this Aldo takes payments.
+    const { billing: _, ...noBilling } = onPro;
+    expect(aldoBillingView({ ...noBilling, seat })).toMatchObject({ kind: "seat" });
+    expect(aldoSeatLimitCopy(seat)).toBe(
+      "Linden sets your extra usage limit. Ask maya@linden.com or sam@linden.com for more.",
+    );
+    expect(aldoSeatLimitCopy({ org: "Linden", admins: ["a@l.com"] })).toBe(
+      "Linden sets your extra usage limit. Ask a@l.com for more.",
+    );
+    expect(aldoSeatLimitCopy({ org: "Linden", admins: ["a@l.com", "b@l.com", "c@l.com"] })).toBe(
+      "Linden sets your extra usage limit. Ask a@l.com, b@l.com or another admin for more.",
+    );
+    expect(aldoSeatLimitCopy({ org: "Linden", admins: [] })).toBe(
+      "Linden sets your extra usage limit.",
+    );
   });
 
   it("offers an upgrade to pricier plans and a downgrade to cheaper ones", () => {
@@ -227,6 +252,12 @@ describe("plan copy", () => {
       "6 agents at once",
     ]);
     expect(aldoPlanTerms({ ...plus, concurrent: 1 })[2]).toBe("1 agent at once");
+    expect(aldoPlanTerms({ ...pro, aiCredits: 1_500 })).toEqual([
+      "$60 a month",
+      "10,000 credits a month",
+      "6 agents at once",
+      "Up to $15 of them on Aldo's models",
+    ]);
   });
 
   it("says an upgrade starts now and what it charges", () => {

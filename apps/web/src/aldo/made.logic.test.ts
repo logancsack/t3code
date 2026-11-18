@@ -1,60 +1,41 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { aldoMadeKind, aldoTurnMade } from "./made.logic";
+import { aldoThreadLibrary, type AldoShareView } from "./library.logic";
+import { aldoTurnMade } from "./made.logic";
 
-const file = (path: string, additions = 0, deletions = 0) => ({ path, additions, deletions });
+const zip: AldoShareView = {
+  id: "abc",
+  title: "Renders",
+  url: "https://aldo.computer/s/abc",
+  contentType: "application/zip",
+  bytes: 1024,
+  public: true,
+  views: 0,
+  createdAt: "2026-10-20T08:00:00.000Z",
+  environmentId: "env-1",
+};
 
-describe("aldoMadeKind", () => {
-  it("knows the kinds of things people use", () => {
-    expect(aldoMadeKind("out/Budget.xlsx")).toBe("sheet");
-    expect(aldoMadeKind("Report.DOCX")).toBe("document");
-    expect(aldoMadeKind("deck.pptx")).toBe("deck");
-    expect(aldoMadeKind("trip/plan.html")).toBe("page");
-    expect(aldoMadeKind("build.py")).toBeNull();
-    expect(aldoMadeKind(".env")).toBeNull();
-  });
-});
-
-describe("aldoTurnMade", () => {
-  it("puts shares first, then what it made, and counts the rest", () => {
-    const made = aldoTurnMade({
-      files: [
-        file("trip/plan.html", 120),
-        file("Budget.xlsx"),
-        file("build_deck.py", 40),
-        file(".aldo/state.json", 3),
-        file("node_modules/x/readme.md", 3),
-        file("README.md", 2),
-        file("old.md", 0, 12),
-      ],
-      shares: [
-        {
-          path: "/vercel/work/general/trip/plan.html",
-          title: "Lisbon in May",
-          url: "https://aldo.example/s/abc",
-        },
-      ],
-      workspaceRoot: "/vercel/work/general",
-    });
-    expect(made.items).toEqual([
-      {
-        path: "trip/plan.html",
-        name: "plan.html",
-        kind: "page",
-        sharedAs: "Lisbon in May",
-        url: "https://aldo.example/s/abc",
-      },
-      { path: "Budget.xlsx", name: "Budget.xlsx", kind: "sheet" },
-    ]);
-    expect(made.others).toBe(5);
+describe("a zip it shared", () => {
+  it("is a Zip by its path, or by its title where the provider recorded only the reply", () => {
+    const made = (path: string | null, title: string) =>
+      aldoTurnMade({
+        files: [],
+        shares: [{ path, title, url: null }],
+        workspaceRoot: "/vercel/work/general",
+      }).items[0]?.kind;
+    expect(made("/vercel/work/general/renders.zip", "Renders")).toBe("archive");
+    expect(made(null, "renders.zip")).toBe("archive");
+    expect(made(null, "Launch plan")).toBe("page");
   });
 
-  it("keeps a share from outside the folder, without opening it", () => {
-    const made = aldoTurnMade({
-      files: [],
-      shares: [{ path: "/tmp/chart.png", title: null, url: null }],
+  it("is a Zip in the thread's library by its share's type", () => {
+    const library = aldoThreadLibrary({
+      turns: [{ turnId: "turn-1", completedAt: "2026-10-20T08:01:00.000Z", files: [] }],
+      sharesByTurn: new Map([["turn-1", [{ path: null, title: "Renders", url: zip.url }]]]),
       workspaceRoot: "/vercel/work/general",
+      shares: [zip],
+      environmentId: "env-1",
     });
-    expect(made.items).toEqual([{ path: null, name: "chart.png", kind: "image" }]);
+    expect(library.items.map((item) => [item.name, item.kind])).toEqual([["Renders", "archive"]]);
   });
 });

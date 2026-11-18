@@ -81,6 +81,15 @@ export class EnvironmentCacheStore extends Context.Service<
       Option.Option<OrchestrationThreadDetailSnapshot>,
       ConnectionPersistenceError
     >;
+    /** Optional remote copy, refreshed after local content is already visible. */
+    readonly refreshThread?: (
+      environmentId: EnvironmentId,
+      threadId: ThreadId,
+      afterSequence: number | null,
+    ) => Effect.Effect<
+      Option.Option<OrchestrationThreadDetailSnapshot>,
+      ConnectionPersistenceError
+    >;
     readonly saveThread: (
       environmentId: EnvironmentId,
       snapshot: OrchestrationThreadDetailSnapshot,

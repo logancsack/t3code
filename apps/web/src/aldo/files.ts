@@ -11,7 +11,9 @@ import type { ChatAttachment } from "@t3tools/contracts";
 
 import type { ComposerFileAttachment, ComposerImageAttachment } from "../composerDraftStore";
 import { randomUUID } from "../lib/utils";
-import { aldoKeepsFiles, isAldoCloud, isAldoEnvironmentId, uploadAldoFile } from "./cloud";
+import { aldoKeepsFiles } from "./directory";
+import { isAldoCloud, isAldoEnvironmentId } from "./api";
+import { uploadAldoFile } from "./threadApi";
 import { aldoAttachmentId, aldoOwnUuid } from "./held.logic";
 
 type ComposerAttachment = ComposerImageAttachment | ComposerFileAttachment;

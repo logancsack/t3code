@@ -29,7 +29,7 @@ import { orchestrationEnvironment } from "~/state/orchestration";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { Button } from "~/components/ui/button";
 import { ALDO_HELPERS_EMPTY } from "~/aldo/AldoEmptyStates";
-import { isAldoCloud } from "~/aldo/cloud";
+import { isAldoCloud } from "~/aldo/api";
 
 /**
  * In-flight states all present as Working (one steady state, per the

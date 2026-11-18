@@ -80,7 +80,7 @@ describe("RightPanelTabs in Aldo, on work that isn't code", () => {
           pullRequestAvailable={false}
           pullRequestsAvailable={false}
           agentsAvailable
-          deviceAvailable={false}
+          deviceAvailable
         >
           {null}
         </RightPanelTabs>,
@@ -99,5 +99,7 @@ describe("RightPanelTabs in Aldo, on work that isn't code", () => {
     );
     expect(more?.textContent).toContain("Terminal");
     expect(more?.textContent).toContain("Helpers");
+    expect(menu?.textContent).not.toContain("Device");
+    expect(menu?.textContent).not.toContain("iOS Simulator");
   });
 });

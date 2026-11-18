@@ -1,76 +1,117 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import type { AldoApproval } from "./cloud";
 import {
   approvalOutcome,
-  approvalQuestion,
-  decidedLately,
-  waitingApprovals,
+  heldStatus,
+  threadApprovals,
+  threadAwaitsApproval,
+  withApprovalHolds,
+  withThreadApprovals,
 } from "./approvals.logic";
+import type { AldoApproval, AldoHome } from "./homeApi";
+import type { TimelineEntry } from "../session-logic";
 
-const NOW = Date.parse("2026-10-03T12:00:00Z");
+const thread = { environmentId: "aldo-t", threadId: "c" };
 
-function approval(overrides: Partial<AldoApproval>): AldoApproval {
+function approval(over: Partial<AldoApproval> = {}): AldoApproval {
   return {
     id: "ap_1",
-    kind: "email",
-    provider: "google",
-    title: "Re: Thursday",
-    summary: "To sam@example.com",
+    kind: "confirm",
+    provider: null,
+    title: "Submit the Stripe activation",
+    summary: "Stripe",
     fields: [],
-    body: "Friday works.",
-    approveLabel: "Send",
-    discardLabel: "Discard",
+    body: "",
+    approveLabel: "Submit",
+    discardLabel: "Don't",
     status: "pending",
     result: null,
     failed: false,
-    thread: null,
-    threadTitle: null,
-    createdAt: "2026-10-03T11:00:00Z",
+    thread,
+    threadTitle: "Pricing",
+    createdAt: "2026-10-21T10:00:00Z",
     decidedAt: null,
-    ...overrides,
+    ...over,
   };
 }
 
-describe("waitingApprovals", () => {
-  it("keeps what waits, oldest first", () => {
+const home = (approvals: AldoApproval[]) => ({ approvals }) as unknown as AldoHome;
+
+describe("a thread's approvals", () => {
+  it("are its own, oldest first, without the ones the agent took back", () => {
     const list = [
-      approval({ id: "b", createdAt: "2026-10-03T11:30:00Z" }),
-      approval({ id: "a", createdAt: "2026-10-03T10:00:00Z", status: "sending" }),
-      approval({ id: "c", status: "approved", decidedAt: "2026-10-03T11:45:00Z" }),
+      approval({ id: "b", createdAt: "2026-10-21T11:00:00Z" }),
+      approval({ id: "other", thread: { environmentId: "aldo-t", threadId: "x" } }),
+      approval({ id: "gone", status: "withdrawn" }),
+      approval({ id: "a" }),
     ];
-    expect(waitingApprovals(list).map((a) => a.id)).toEqual(["a", "b"]);
-    expect(waitingApprovals(undefined)).toEqual([]);
+    expect(threadApprovals(list, thread).map((a) => a.id)).toEqual(["a", "b"]);
+    expect(threadApprovals(undefined, thread)).toEqual([]);
+  });
+
+  it("make the thread wait on the user only while one is pending", () => {
+    expect(threadAwaitsApproval([approval()], thread)).toBe(true);
+    expect(threadAwaitsApproval([approval({ status: "approved" })], thread)).toBe(false);
+    expect(threadAwaitsApproval([approval({ thread: null })], thread)).toBe(false);
+  });
+
+  it("sit in the timeline where they were asked", () => {
+    const message = (id: string, createdAt: string) =>
+      ({ id, kind: "message", createdAt, message: {} }) as unknown as TimelineEntry;
+    const entries = [message("m1", "2026-10-21T09:00:00Z"), message("m2", "2026-10-21T11:00:00Z")];
+    const merged = withThreadApprovals(entries, [approval()]);
+    expect(merged.map((e) => e.id)).toEqual(["m1", "aldo-approval:ap_1", "m2"]);
+    expect(withThreadApprovals(entries, [])).toBe(entries);
+    expect(
+      withThreadApprovals(entries, [approval({ createdAt: "2026-10-21T12:00:00Z" })]).at(-1)?.id,
+    ).toBe("aldo-approval:ap_1");
   });
 });
 
-describe("decidedLately", () => {
-  it("keeps the last day's decisions, newest first", () => {
-    const list = [
-      approval({ id: "old", status: "approved", decidedAt: "2026-10-01T11:00:00Z" }),
-      approval({ id: "sent", status: "approved", decidedAt: "2026-10-03T09:00:00Z" }),
-      approval({ id: "gone", status: "discarded", decidedAt: "2026-10-03T11:00:00Z" }),
-      approval({ id: "waiting" }),
-    ];
-    expect(decidedLately(list, NOW).map((a) => a.id)).toEqual(["gone", "sent"]);
+describe("a decision held until Aldo's read catches up", () => {
+  const at = "2026-10-21T10:05:00Z";
+  const now = Date.parse(at);
+
+  it("shows a step an agent takes decided at once, and the rest being carried out", () => {
+    expect(heldStatus({ kind: "confirm" }, "approve")).toBe("approved");
+    expect(heldStatus({ kind: "confirm" }, "discard")).toBe("discarded");
+    expect(heldStatus({ kind: "email" }, "approve")).toBe("sending");
+    expect(heldStatus({ kind: "event" }, "discard")).toBe("sending");
+  });
+
+  it("decides the approval in every place that shows it, and leaves the rest alone", () => {
+    const other = approval({ id: "ap_2" });
+    const holds = { ap_1: { status: "approved" as const, result: null, at } };
+    const held = withApprovalHolds(home([approval({ always: "x" }), other]), holds, now);
+    expect(held.home.approvals?.[0]).toMatchObject({
+      status: "approved",
+      decidedAt: at,
+      failed: false,
+    });
+    expect(held.home.approvals?.[0]?.always).toBeUndefined();
+    expect(held.home.approvals?.[1]).toBe(other);
+    expect(held.holds).toBe(holds);
+  });
+
+  it("is let go once the read has it decided, or it outlives its time", () => {
+    const holds = { ap_1: { status: "approved" as const, result: null, at, until: now + 1000 } };
+    const caughtUp = withApprovalHolds(home([approval({ status: "approved" })]), holds, now);
+    expect(caughtUp.holds).toEqual({});
+    const expired = withApprovalHolds(home([approval()]), holds, now + 2000);
+    expect(expired.holds).toEqual({});
+    expect(expired.home.approvals?.[0]?.status).toBe("pending");
+  });
+
+  it("gives the same home back when nothing is held", () => {
+    const same = home([approval()]);
+    expect(withApprovalHolds(same, {}, now).home).toBe(same);
   });
 });
 
-describe("approvalQuestion and approvalOutcome", () => {
-  it("say what it asks and how it went", () => {
-    expect(approvalQuestion({ kind: "email", title: "Re: Thursday" })).toBe('Send "Re: Thursday"?');
-    expect(approvalQuestion({ kind: "event", title: "Review" })).toBe(
-      'Add "Review" to your calendar?',
-    );
-    expect(approvalQuestion({ kind: "start", title: "Reply to Sam" })).toBe("Reply to Sam");
-    expect(approvalOutcome({ kind: "email", status: "approved" })).toBe("Sent");
-    expect(approvalOutcome({ kind: "event", status: "approved" })).toBe("Added");
-    expect(approvalOutcome({ kind: "start", status: "discarded" })).toBe("Skipped");
-    expect(approvalOutcome({ kind: "email", status: "expired" })).toBe("Expired");
-    expect(approvalQuestion({ kind: "confirm", title: "Book a table for 4 at Poppies" })).toBe(
-      "Book a table for 4 at Poppies?",
-    );
+describe("how a decided approval is worded", () => {
+  it("says what happened to one the agent took back or one being carried out", () => {
+    expect(approvalOutcome({ kind: "email", status: "withdrawn" })).toBe("Withdrawn");
+    expect(approvalOutcome({ kind: "email", status: "sending" })).toBe("Sending");
     expect(approvalOutcome({ kind: "confirm", status: "approved" })).toBe("Approved");
-    expect(approvalOutcome({ kind: "confirm", status: "discarded" })).toBe("Declined");
   });
 });

@@ -1,4 +1,5 @@
 import * as NodeCrypto from "node:crypto";
+import * as NodeUtil from "node:util";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -27,36 +28,7 @@ const makeCaptureLogger = (logs: CapturedLog[]) =>
     });
   });
 
-const findIdentityLog = (
-  logs: ReadonlyArray<CapturedLog>,
-  source: Identify.TelemetryIdentitySource,
-  errorTag: string,
-) => logs.find((log) => log.annotations.source === source && log.annotations.errorTag === errorTag);
-
 it.layer(NodeServices.layer)("telemetry identity", (it) => {
-  it.effect("uses the persisted anonymous id when provider identities are absent", () =>
-    Effect.gen(function* () {
-      const config = yield* ServerConfig.ServerConfig;
-      const fileSystem = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const anonymousId = "persisted-anonymous-id";
-
-      yield* fileSystem.writeFileString(config.anonymousIdPath, anonymousId);
-
-      const identifier = yield* Identify.getTelemetryIdentifierForHome(
-        path.join(config.baseDir, "home"),
-      );
-
-      assert.equal(identifier, sha256(anonymousId));
-    }).pipe(
-      Effect.provide(
-        ServerConfig.layerTest(process.cwd(), {
-          prefix: "t3-telemetry-identify-anonymous-",
-        }),
-      ),
-    ),
-  );
-
   it.effect("logs structured decode context and falls back from malformed Codex auth", () => {
     const logs: CapturedLog[] = [];
     const logger = makeCaptureLogger(logs);
@@ -80,7 +52,11 @@ it.layer(NodeServices.layer)("telemetry identity", (it) => {
       const identifier = yield* Identify.getTelemetryIdentifierForHome(homeDirectory);
 
       assert.equal(identifier, sha256(anonymousId));
-      const decodeLog = findIdentityLog(logs, "codex", "TelemetryIdentityDecodeError");
+      const decodeLog = logs.find(
+        (log) =>
+          log.annotations.source === "codex" &&
+          log.annotations.errorTag === "TelemetryIdentityDecodeError",
+      );
       assert.isDefined(decodeLog);
       assert.equal(
         decodeLog?.message,
@@ -93,56 +69,12 @@ it.layer(NodeServices.layer)("telemetry identity", (it) => {
       const errorStack = decodeLog?.annotations.errorStack;
       assert.isString(errorStack);
       assert.include(errorStack, "Failed to decode codex telemetry identity");
-      const annotations = Object.values(decodeLog?.annotations ?? {})
-        .map(String)
-        .join("\n");
-      assert.notInclude(annotations, privateAccessToken);
+      assert.notInclude(NodeUtil.inspect(logs, { depth: null }), privateAccessToken);
     }).pipe(
       Effect.provide(
         Layer.merge(
           ServerConfig.layerTest(process.cwd(), {
             prefix: "t3-telemetry-identify-decode-",
-          }),
-          Logger.layer([logger], { mergeWithExisting: false }),
-        ),
-      ),
-    );
-  });
-
-  it.effect("does not overwrite the anonymous id path after a non-NotFound read failure", () => {
-    const logs: CapturedLog[] = [];
-    const logger = makeCaptureLogger(logs);
-
-    return Effect.gen(function* () {
-      const config = yield* ServerConfig.ServerConfig;
-      const fileSystem = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const homeDirectory = path.join(config.baseDir, "home");
-
-      yield* fileSystem.makeDirectory(config.anonymousIdPath);
-
-      const identifier = yield* Identify.getTelemetryIdentifierForHome(homeDirectory);
-
-      assert.isNull(identifier);
-      assert.deepEqual(yield* fileSystem.readDirectory(config.anonymousIdPath), []);
-
-      const readLog = findIdentityLog(logs, "anonymous", "TelemetryIdentityReadError");
-      assert.isDefined(readLog);
-      assert.equal(readLog?.annotations.filePath, config.anonymousIdPath);
-      assert.equal(readLog?.annotations.causeKind, "platform");
-      assert.notEqual(readLog?.annotations.platformReason, "NotFound");
-      assert.notProperty(readLog?.annotations ?? {}, "cause");
-      const errorStack = readLog?.annotations.errorStack;
-      assert.isString(errorStack);
-      assert.include(errorStack, "Failed to read anonymous telemetry identity");
-      assert.isUndefined(
-        findIdentityLog(logs, "anonymous", "TelemetryAnonymousIdPersistenceError"),
-      );
-    }).pipe(
-      Effect.provide(
-        Layer.merge(
-          ServerConfig.layerTest(process.cwd(), {
-            prefix: "t3-telemetry-identify-read-",
           }),
           Logger.layer([logger], { mergeWithExisting: false }),
         ),

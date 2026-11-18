@@ -1710,16 +1710,11 @@ function PullRequestsRouteView() {
   );
   const panelToggleControls = (
     <PanelLayoutControls
-      showTerminalControl={false}
-      terminalAvailable={false}
-      terminalOpen={false}
-      terminalShortcutLabel={null}
       rightPanelAvailable={rightPanelAvailable}
       rightPanelOpen={rightPanelState.isOpen}
       rightPanelShortcutLabel={shortcutLabelForCommand(keybindings, "rightPanel.toggle")}
       rightPanelUnavailableLabel="Select a pull request first"
       liveAgentCount={0}
-      onToggleTerminal={() => undefined}
       onToggleRightPanel={toggleRightPanel}
     />
   );
@@ -1729,7 +1724,7 @@ function PullRequestsRouteView() {
       // anchor the thread view's controls and the sidebar trigger use, so
       // every titlebar cluster in the app sits one shared inset from its
       // edge.
-      className="absolute top-[var(--workspace-controls-top)] right-[var(--workspace-controls-right)] z-50 mr-px flex h-[var(--workspace-topbar-height)] items-center gap-1 [-webkit-app-region:no-drag]"
+      className="absolute top-[var(--workspace-controls-top)] right-[var(--workspace-controls-right)] z-45 mr-px flex h-[var(--workspace-topbar-height)] items-center gap-1 [-webkit-app-region:no-drag]"
       data-workspace-titlebar-controls
     >
       {panelToggleControls}

@@ -671,6 +671,33 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
     ),
   );
 
+  // A dormant environment (an asleep cloud machine) is still asleep when the
+  // app comes back to the foreground or the network changes: only the platform
+  // knows when it's up, and it says so with retryNow (or connect/disconnect).
+  // Retrying every dormant one on each activation asked the platform once per
+  // sleeping machine and re-presented each of them twice, which re-rendered
+  // everything that lists environments hundreds of times per return to the app.
+  // While the network is down it shows offline, and asleep again once it's
+  // back, still without asking the platform.
+  const waitForPlatformSignal = Effect.fnUntraced(function* (dormant: SupervisorConnectionState) {
+    for (;;) {
+      const next = yield* Queue.take(signals);
+      if (next._tag === "NetworkChanged") {
+        const current = yield* Ref.get(intent);
+        yield* setState(
+          current.network === "offline"
+            ? offlineState(current, dormant.generation, dormant.attempt, dormant.lastFailure)
+            : { ...dormant, desired: current.desired, network: current.network },
+        );
+        continue;
+      }
+      if (next._tag === "Wakeup" && ConnectionWakeups.isApplicationActiveWakeup(next.reason)) {
+        continue;
+      }
+      return;
+    }
+  });
+
   const run = Effect.fnUntraced(function* () {
     let failureCount = 0;
     let generation = 0;
@@ -681,6 +708,11 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
       pendingRetry = Option.none();
     };
 
+    // The loop starts on a later tick than `make` returns, so what was asked
+    // before it ran (`connect`, on a supervisor just made) is answered by its
+    // first pass, which reads the intent that set. Left queued, it started a
+    // second attempt once a blocked first one ended.
+    yield* Queue.clear(signals);
     for (;;) {
       if (yield* Ref.getAndSet(resetRetryState, false)) {
         failureCount = 0;
@@ -733,7 +765,7 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
       latestFailure = error;
       if (error._tag === "ConnectionBlockedError") {
         const blockedIntent = yield* Ref.get(intent);
-        yield* setState({
+        const blockedState: SupervisorConnectionState = {
           desired: blockedIntent.desired,
           network: blockedIntent.network,
           phase: "blocked",
@@ -742,7 +774,12 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
           generation,
           lastFailure: error,
           retryAt: null,
-        });
+        };
+        yield* setState(blockedState);
+        if (error.reason === "dormant") {
+          yield* waitForPlatformSignal(blockedState);
+          continue;
+        }
         const applicationActivated = yield* waitForSignal;
         if (applicationActivated) {
           resetRetryLadder();

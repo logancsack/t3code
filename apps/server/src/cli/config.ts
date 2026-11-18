@@ -22,6 +22,7 @@ import { Argument, Flag } from "effect/unstable/cli";
 
 import { readBootstrapEnvelope } from "../bootstrap.ts";
 import * as ServerConfig from "../config.ts";
+import { managedGatewayToken } from "../managedGatewayToken.ts";
 import { expandHomePath, resolveBaseDir } from "../os-jank.ts";
 
 const modeFlag = Flag.Literals("mode", ServerConfig.RuntimeMode.literals).pipe(
@@ -143,6 +144,10 @@ const EnvServerConfig = Config.all({
     Config.map(Option.getOrUndefined),
   ),
   managedDevPc: Config.Boolean("T3CODE_MANAGED_DEVPC").pipe(Config.withDefault(false)),
+  shutdownDrainMs: Config.Int("T3CODE_SHUTDOWN_DRAIN_MS").pipe(
+    Config.option,
+    Config.map(Option.getOrUndefined),
+  ),
   museCodeEnabled: Config.Boolean("T3CODE_MUSE_ENABLED").pipe(
     Config.option,
     Config.map(Option.getOrUndefined),
@@ -150,10 +155,8 @@ const EnvServerConfig = Config.all({
   primeAgentSubscriptionOAuthEnabled: Config.Boolean(
     "T3CODE_PRIME_AGENT_SUBSCRIPTION_OAUTH_ENABLED",
   ).pipe(Config.withDefault(false)),
-  managedGatewayToken: Config.String("WORKSPACE_GATEWAY_TOKEN").pipe(
-    Config.option,
-    Config.map(Option.getOrUndefined),
-  ),
+  // Taken out of the environment as the server loads (managedGatewayToken.ts).
+  managedGatewayToken: Config.succeed(managedGatewayToken),
   bootstrapFd: Config.Int("T3CODE_BOOTSTRAP_FD").pipe(
     Config.option,
     Config.map(Option.getOrUndefined),
@@ -462,6 +465,7 @@ export const resolveServerConfig = (
       devAllowedOrigins: env.devAllowedOrigins,
       noBrowser,
       managedDevPc: env.managedDevPc,
+      ...(env.shutdownDrainMs === undefined ? {} : { shutdownDrainMs: env.shutdownDrainMs }),
       museCodeEnabled: env.museCodeEnabled ?? !env.managedDevPc,
       primeAgentSubscriptionOAuthEnabled: env.primeAgentSubscriptionOAuthEnabled,
       managedGatewayToken: env.managedGatewayToken,

@@ -4,9 +4,11 @@ import {
   STANDARD_THEME_PREVIEW_COLORS as SHARED_STANDARD_THEME_PREVIEW_COLORS,
   THEME_PREVIEW_RENDER_SPECS,
 } from "@t3tools/shared/themePreview";
+import { isAldoCloud } from "../../aldo/api";
 import { cn } from "../../lib/utils";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
+  T3_CHAT_THEME_ID,
   getThemeColorsForMode,
   getThemeModes,
   type ThemeAppearance,
@@ -76,7 +78,9 @@ export function previewColorsOf(
 export function getThemeCardDefinition(theme: ThemeDefinition): ThemeCardDefinition {
   return {
     id: theme.id,
-    label: theme.label,
+    // Aldo's build renames its sibling product to Aldo, which is the default
+    // card's name already; its pink palette goes by its color there.
+    label: isAldoCloud && theme.id === T3_CHAT_THEME_ID ? "Rose" : theme.label,
     previews: getThemeModes(theme).map((mode) => {
       const colors = getThemeColorsForMode(theme, mode) ?? theme.colors;
       return {

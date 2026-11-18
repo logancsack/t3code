@@ -68,9 +68,14 @@ import {
   type DesktopSecondaryBootstrapsRead,
 } from "./desktopLocal";
 import { connectionStorageLayer } from "./storage";
-import { LANDING_DEMO_ENVIRONMENT_ID, isLandingDemo } from "../landingDemo/mode";
+import { LANDING_DEMO_ENVIRONMENT_ID, isLandingDemo, isWorkReplay } from "../landingDemo/mode";
 import { clientPresentationMetadata } from "./clientMetadata";
-import { aldoEnvironmentGateway, aldoPlatformRegistrations, isAldoCloud } from "../aldo/cloud";
+import {
+  aldoAsleepEnvironments,
+  aldoEnvironmentGateway,
+  aldoPlatformRegistrations,
+} from "../aldo/directory";
+import { isAldoCloud } from "../aldo/api";
 
 let nextObservedRpcRequestId = 0;
 
@@ -524,6 +529,7 @@ const platformConnectionSourceLayer = Layer.effect(
     if (isAldoCloud) {
       return PlatformConnectionSource.of({
         registrations: aldoPlatformRegistrations(),
+        asleep: Effect.sync(aldoAsleepEnvironments),
       });
     }
     if (isHostedStaticApp() || isLocalEnvironmentDisabled()) {
@@ -668,8 +674,16 @@ const rpcRequestObserverLayer = Layer.succeed(
   }),
 );
 
+const storageLayer = isWorkReplay()
+  ? Layer.unwrap(
+      Effect.promise(() =>
+        import("../landingDemo/storage").then((module) => module.workReplayStorageLayer),
+      ),
+    )
+  : connectionStorageLayer;
+
 type ConnectionPlatformLayerSource =
-  | typeof connectionStorageLayer
+  | typeof storageLayer
   | typeof connectivityLayer
   | typeof wakeupsLayer
   | typeof capabilitiesLayer
@@ -682,7 +696,7 @@ export const connectionPlatformLayer: Layer.Layer<
   Layer.Error<ConnectionPlatformLayerSource>,
   Layer.Services<ConnectionPlatformLayerSource>
 > = Layer.mergeAll(
-  connectionStorageLayer,
+  storageLayer,
   connectivityLayer,
   wakeupsLayer,
   capabilitiesLayer,

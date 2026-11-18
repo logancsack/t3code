@@ -523,3 +523,75 @@ it.effect("completeAutoBootstrapWelcome settles an empty bootstrap result", () =
     assert.deepStrictEqual(completion, { bootstrapStatus: "complete" });
   }),
 );
+
+it.effect("a closed gate refuses commands while the ones admitted before finish", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const commandGate = yield* ServerRuntimeStartup.makeCommandGate;
+      yield* commandGate.signalCommandReady;
+      const release = yield* Deferred.make<void>();
+
+      const admitted = yield* commandGate
+        .enqueueCommand(Deferred.await(release).pipe(Effect.as("ran")))
+        .pipe(Effect.forkScoped);
+      yield* Effect.yieldNow;
+      assert.equal(yield* commandGate.runningCount, 1);
+
+      yield* commandGate.close;
+      const refused = yield* Effect.flip(commandGate.enqueueCommand(Effect.succeed("late")));
+      assert.instanceOf(refused, ServerRuntimeStartup.ServerStoppingError);
+      assert.equal(refused.message, "The server is restarting. Send this again in a moment.");
+      assert.equal(yield* commandGate.runningCount, 1);
+
+      yield* Deferred.succeed(release, undefined);
+      assert.equal(yield* Fiber.join(admitted), "ran");
+      assert.equal(yield* commandGate.runningCount, 0);
+    }),
+  ),
+);
+
+it.effect("a command queued before readiness is refused if the gate closed meanwhile", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const executionCount = yield* Ref.make(0);
+      const commandGate = yield* ServerRuntimeStartup.makeCommandGate;
+
+      const queued = yield* commandGate
+        .enqueueCommand(Ref.updateAndGet(executionCount, (count) => count + 1))
+        .pipe(Effect.forkScoped);
+      yield* Effect.yieldNow;
+      yield* commandGate.close;
+      yield* commandGate.signalCommandReady;
+
+      const refused = yield* Effect.flip(Fiber.join(queued));
+      assert.instanceOf(refused, ServerRuntimeStartup.ServerStoppingError);
+      assert.equal(yield* Ref.get(executionCount), 0);
+    }),
+  ),
+);
+
+it.effect("an admitted command counts until its work ends, even if its caller stops waiting", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const commandGate = yield* ServerRuntimeStartup.makeCommandGate;
+      yield* commandGate.signalCommandReady;
+      const release = yield* Deferred.make<void>();
+      const finished = yield* Deferred.make<void>();
+
+      const caller = yield* commandGate
+        .enqueueCommand(
+          Deferred.await(release).pipe(Effect.andThen(Deferred.succeed(finished, undefined))),
+        )
+        .pipe(Effect.forkScoped);
+      yield* Effect.yieldNow;
+      // A closed connection: the caller goes, the command's work carries on.
+      yield* Fiber.interrupt(caller);
+      assert.equal(yield* commandGate.runningCount, 1);
+
+      yield* Deferred.succeed(release, undefined);
+      yield* Deferred.await(finished);
+      yield* Effect.yieldNow;
+      assert.equal(yield* commandGate.runningCount, 0);
+    }),
+  ),
+);

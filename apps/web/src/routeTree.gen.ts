@@ -12,10 +12,13 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as WelcomeRouteImport } from './routes/welcome'
 import { Route as UsageRouteImport } from './routes/usage'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as RoutinesRouteImport } from './routes/routines'
 import { Route as PairRouteImport } from './routes/pair'
 import { Route as MailRouteImport } from './routes/mail'
+import { Route as LibraryRouteImport } from './routes/library'
 import { Route as ConnectRouteImport } from './routes/connect'
 import { Route as ChatRouteImport } from './routes/_chat'
+import { Route as SettingsIndexRouteImport } from './routes/settings.index'
 import { Route as ChatIndexRouteImport } from './routes/_chat.index'
 import { Route as SettingsWorkspaceRouteImport } from './routes/settings.workspace'
 import { Route as SettingsVaultRouteImport } from './routes/settings.vault'
@@ -24,21 +27,35 @@ import { Route as SettingsSourceControlRouteImport } from './routes/settings.sou
 import { Route as SettingsSnapShotRouteImport } from './routes/settings.snap-shot'
 import { Route as SettingsSkillsRouteImport } from './routes/settings.skills'
 import { Route as SettingsSharedRouteImport } from './routes/settings.shared'
+import { Route as SettingsRunningRouteImport } from './routes/settings.running'
 import { Route as SettingsProvidersRouteImport } from './routes/settings.providers'
 import { Route as SettingsProjectsRouteImport } from './routes/settings.projects'
+import { Route as SettingsPhoneRouteImport } from './routes/settings.phone'
+import { Route as SettingsPermissionsRouteImport } from './routes/settings.permissions'
+import { Route as SettingsOrganizationRouteImport } from './routes/settings.organization'
 import { Route as SettingsOpenSourceLicensesRouteImport } from './routes/settings.open-source-licenses'
+import { Route as SettingsNotificationsRouteImport } from './routes/settings.notifications'
 import { Route as SettingsMemoryRouteImport } from './routes/settings.memory'
+import { Route as SettingsMembersRouteImport } from './routes/settings.members'
 import { Route as SettingsKeybindingsRouteImport } from './routes/settings.keybindings'
+import { Route as SettingsJoiningRouteImport } from './routes/settings.joining'
 import { Route as SettingsIntegrationsRouteImport } from './routes/settings.integrations'
 import { Route as SettingsInstructionsRouteImport } from './routes/settings.instructions'
 import { Route as SettingsGeneralRouteImport } from './routes/settings.general'
 import { Route as SettingsEnvironmentsRouteImport } from './routes/settings.environments'
 import { Route as SettingsDiagnosticsRouteImport } from './routes/settings.diagnostics'
 import { Route as SettingsConnectionsRouteImport } from './routes/settings.connections'
+import { Route as SettingsCodeRouteImport } from './routes/settings.code'
 import { Route as SettingsArchivedRouteImport } from './routes/settings.archived'
 import { Route as SettingsAppearanceRouteImport } from './routes/settings.appearance'
+import { Route as SettingsAgentsRouteImport } from './routes/settings.agents'
+import { Route as SettingsActivityRouteImport } from './routes/settings.activity'
+import { Route as SettingsAccountRouteImport } from './routes/settings.account'
 import { Route as ProjectsProjectKeyRouteImport } from './routes/projects.$projectKey'
 import { Route as ChatPullRequestsRouteImport } from './routes/_chat.pull-requests'
+import { Route as SettingsTeamsTeamIdRouteImport } from './routes/settings.teams.$teamId'
+import { Route as SettingsMembersMemberIdRouteImport } from './routes/settings.members_.$memberId'
+import { Route as LibraryHandedHandoverIdRouteImport } from './routes/library_.handed.$handoverId'
 import { Route as ChatDraftDraftIdRouteImport } from './routes/_chat.draft.$draftId'
 import { Route as ChatEnvironmentIdThreadIdRouteImport } from './routes/_chat.$environmentId.$threadId'
 
@@ -57,6 +74,11 @@ const SettingsRoute = SettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
+const RoutinesRoute = RoutinesRouteImport.update({
+  id: '/routines',
+  path: '/routines',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PairRoute = PairRouteImport.update({
   id: '/pair',
   path: '/pair',
@@ -67,6 +89,11 @@ const MailRoute = MailRouteImport.update({
   path: '/mail',
   getParentRoute: () => rootRouteImport,
 } as any)
+const LibraryRoute = LibraryRouteImport.update({
+  id: '/library',
+  path: '/library',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ConnectRoute = ConnectRouteImport.update({
   id: '/connect',
   path: '/connect',
@@ -75,6 +102,11 @@ const ConnectRoute = ConnectRouteImport.update({
 const ChatRoute = ChatRouteImport.update({
   id: '/_chat',
   getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsIndexRoute = SettingsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => SettingsRoute,
 } as any)
 const ChatIndexRoute = ChatIndexRouteImport.update({
   id: '/',
@@ -116,6 +148,11 @@ const SettingsSharedRoute = SettingsSharedRouteImport.update({
   path: '/shared',
   getParentRoute: () => SettingsRoute,
 } as any)
+const SettingsRunningRoute = SettingsRunningRouteImport.update({
+  id: '/running',
+  path: '/running',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const SettingsProvidersRoute = SettingsProvidersRouteImport.update({
   id: '/providers',
   path: '/providers',
@@ -126,20 +163,50 @@ const SettingsProjectsRoute = SettingsProjectsRouteImport.update({
   path: '/projects',
   getParentRoute: () => SettingsRoute,
 } as any)
+const SettingsPhoneRoute = SettingsPhoneRouteImport.update({
+  id: '/phone',
+  path: '/phone',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsPermissionsRoute = SettingsPermissionsRouteImport.update({
+  id: '/permissions',
+  path: '/permissions',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsOrganizationRoute = SettingsOrganizationRouteImport.update({
+  id: '/organization',
+  path: '/organization',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const SettingsOpenSourceLicensesRoute =
   SettingsOpenSourceLicensesRouteImport.update({
     id: '/open-source-licenses',
     path: '/open-source-licenses',
     getParentRoute: () => SettingsRoute,
   } as any)
+const SettingsNotificationsRoute = SettingsNotificationsRouteImport.update({
+  id: '/notifications',
+  path: '/notifications',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const SettingsMemoryRoute = SettingsMemoryRouteImport.update({
   id: '/memory',
   path: '/memory',
   getParentRoute: () => SettingsRoute,
 } as any)
+const SettingsMembersRoute = SettingsMembersRouteImport.update({
+  id: '/members',
+  path: '/members',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const SettingsKeybindingsRoute = SettingsKeybindingsRouteImport.update({
   id: '/keybindings',
   path: '/keybindings',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsJoiningRoute = SettingsJoiningRouteImport.update({
+  id: '/joining',
+  path: '/joining',
   getParentRoute: () => SettingsRoute,
 } as any)
 const SettingsIntegrationsRoute = SettingsIntegrationsRouteImport.update({
@@ -172,6 +239,11 @@ const SettingsConnectionsRoute = SettingsConnectionsRouteImport.update({
   path: '/connections',
   getParentRoute: () => SettingsRoute,
 } as any)
+const SettingsCodeRoute = SettingsCodeRouteImport.update({
+  id: '/code',
+  path: '/code',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const SettingsArchivedRoute = SettingsArchivedRouteImport.update({
   id: '/archived',
   path: '/archived',
@@ -180,6 +252,21 @@ const SettingsArchivedRoute = SettingsArchivedRouteImport.update({
 const SettingsAppearanceRoute = SettingsAppearanceRouteImport.update({
   id: '/appearance',
   path: '/appearance',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsAgentsRoute = SettingsAgentsRouteImport.update({
+  id: '/agents',
+  path: '/agents',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsActivityRoute = SettingsActivityRouteImport.update({
+  id: '/activity',
+  path: '/activity',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsAccountRoute = SettingsAccountRouteImport.update({
+  id: '/account',
+  path: '/account',
   getParentRoute: () => SettingsRoute,
 } as any)
 const ProjectsProjectKeyRoute = ProjectsProjectKeyRouteImport.update({
@@ -191,6 +278,21 @@ const ChatPullRequestsRoute = ChatPullRequestsRouteImport.update({
   id: '/pull-requests',
   path: '/pull-requests',
   getParentRoute: () => ChatRoute,
+} as any)
+const SettingsTeamsTeamIdRoute = SettingsTeamsTeamIdRouteImport.update({
+  id: '/teams/$teamId',
+  path: '/teams/$teamId',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsMembersMemberIdRoute = SettingsMembersMemberIdRouteImport.update({
+  id: '/members_/$memberId',
+  path: '/members/$memberId',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const LibraryHandedHandoverIdRoute = LibraryHandedHandoverIdRouteImport.update({
+  id: '/library_/handed/$handoverId',
+  path: '/library/handed/$handoverId',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const ChatDraftDraftIdRoute = ChatDraftDraftIdRouteImport.update({
   id: '/draft/$draftId',
@@ -207,26 +309,39 @@ const ChatEnvironmentIdThreadIdRoute =
 export interface FileRoutesByFullPath {
   '/': typeof ChatIndexRoute
   '/connect': typeof ConnectRoute
+  '/library': typeof LibraryRoute
   '/mail': typeof MailRoute
   '/pair': typeof PairRoute
+  '/routines': typeof RoutinesRoute
   '/settings': typeof SettingsRouteWithChildren
   '/usage': typeof UsageRoute
   '/welcome': typeof WelcomeRoute
   '/pull-requests': typeof ChatPullRequestsRoute
   '/projects/$projectKey': typeof ProjectsProjectKeyRoute
+  '/settings/account': typeof SettingsAccountRoute
+  '/settings/activity': typeof SettingsActivityRoute
+  '/settings/agents': typeof SettingsAgentsRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/archived': typeof SettingsArchivedRoute
+  '/settings/code': typeof SettingsCodeRoute
   '/settings/connections': typeof SettingsConnectionsRoute
   '/settings/diagnostics': typeof SettingsDiagnosticsRoute
   '/settings/environments': typeof SettingsEnvironmentsRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/instructions': typeof SettingsInstructionsRoute
   '/settings/integrations': typeof SettingsIntegrationsRoute
+  '/settings/joining': typeof SettingsJoiningRoute
   '/settings/keybindings': typeof SettingsKeybindingsRoute
+  '/settings/members': typeof SettingsMembersRoute
   '/settings/memory': typeof SettingsMemoryRoute
+  '/settings/notifications': typeof SettingsNotificationsRoute
   '/settings/open-source-licenses': typeof SettingsOpenSourceLicensesRoute
+  '/settings/organization': typeof SettingsOrganizationRoute
+  '/settings/permissions': typeof SettingsPermissionsRoute
+  '/settings/phone': typeof SettingsPhoneRoute
   '/settings/projects': typeof SettingsProjectsRoute
   '/settings/providers': typeof SettingsProvidersRoute
+  '/settings/running': typeof SettingsRunningRoute
   '/settings/shared': typeof SettingsSharedRoute
   '/settings/skills': typeof SettingsSkillsRoute
   '/settings/snap-shot': typeof SettingsSnapShotRoute
@@ -234,31 +349,47 @@ export interface FileRoutesByFullPath {
   '/settings/storage': typeof SettingsStorageRoute
   '/settings/vault': typeof SettingsVaultRoute
   '/settings/workspace': typeof SettingsWorkspaceRoute
+  '/settings/': typeof SettingsIndexRoute
   '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/draft/$draftId': typeof ChatDraftDraftIdRoute
+  '/library/handed/$handoverId': typeof LibraryHandedHandoverIdRoute
+  '/settings/members/$memberId': typeof SettingsMembersMemberIdRoute
+  '/settings/teams/$teamId': typeof SettingsTeamsTeamIdRoute
 }
 export interface FileRoutesByTo {
   '/connect': typeof ConnectRoute
+  '/library': typeof LibraryRoute
   '/mail': typeof MailRoute
   '/pair': typeof PairRoute
-  '/settings': typeof SettingsRouteWithChildren
+  '/routines': typeof RoutinesRoute
   '/usage': typeof UsageRoute
   '/welcome': typeof WelcomeRoute
   '/pull-requests': typeof ChatPullRequestsRoute
   '/projects/$projectKey': typeof ProjectsProjectKeyRoute
+  '/settings/account': typeof SettingsAccountRoute
+  '/settings/activity': typeof SettingsActivityRoute
+  '/settings/agents': typeof SettingsAgentsRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/archived': typeof SettingsArchivedRoute
+  '/settings/code': typeof SettingsCodeRoute
   '/settings/connections': typeof SettingsConnectionsRoute
   '/settings/diagnostics': typeof SettingsDiagnosticsRoute
   '/settings/environments': typeof SettingsEnvironmentsRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/instructions': typeof SettingsInstructionsRoute
   '/settings/integrations': typeof SettingsIntegrationsRoute
+  '/settings/joining': typeof SettingsJoiningRoute
   '/settings/keybindings': typeof SettingsKeybindingsRoute
+  '/settings/members': typeof SettingsMembersRoute
   '/settings/memory': typeof SettingsMemoryRoute
+  '/settings/notifications': typeof SettingsNotificationsRoute
   '/settings/open-source-licenses': typeof SettingsOpenSourceLicensesRoute
+  '/settings/organization': typeof SettingsOrganizationRoute
+  '/settings/permissions': typeof SettingsPermissionsRoute
+  '/settings/phone': typeof SettingsPhoneRoute
   '/settings/projects': typeof SettingsProjectsRoute
   '/settings/providers': typeof SettingsProvidersRoute
+  '/settings/running': typeof SettingsRunningRoute
   '/settings/shared': typeof SettingsSharedRoute
   '/settings/skills': typeof SettingsSkillsRoute
   '/settings/snap-shot': typeof SettingsSnapShotRoute
@@ -267,33 +398,50 @@ export interface FileRoutesByTo {
   '/settings/vault': typeof SettingsVaultRoute
   '/settings/workspace': typeof SettingsWorkspaceRoute
   '/': typeof ChatIndexRoute
+  '/settings': typeof SettingsIndexRoute
   '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/draft/$draftId': typeof ChatDraftDraftIdRoute
+  '/library/handed/$handoverId': typeof LibraryHandedHandoverIdRoute
+  '/settings/members/$memberId': typeof SettingsMembersMemberIdRoute
+  '/settings/teams/$teamId': typeof SettingsTeamsTeamIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_chat': typeof ChatRouteWithChildren
   '/connect': typeof ConnectRoute
+  '/library': typeof LibraryRoute
   '/mail': typeof MailRoute
   '/pair': typeof PairRoute
+  '/routines': typeof RoutinesRoute
   '/settings': typeof SettingsRouteWithChildren
   '/usage': typeof UsageRoute
   '/welcome': typeof WelcomeRoute
   '/_chat/pull-requests': typeof ChatPullRequestsRoute
   '/projects/$projectKey': typeof ProjectsProjectKeyRoute
+  '/settings/account': typeof SettingsAccountRoute
+  '/settings/activity': typeof SettingsActivityRoute
+  '/settings/agents': typeof SettingsAgentsRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/archived': typeof SettingsArchivedRoute
+  '/settings/code': typeof SettingsCodeRoute
   '/settings/connections': typeof SettingsConnectionsRoute
   '/settings/diagnostics': typeof SettingsDiagnosticsRoute
   '/settings/environments': typeof SettingsEnvironmentsRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/instructions': typeof SettingsInstructionsRoute
   '/settings/integrations': typeof SettingsIntegrationsRoute
+  '/settings/joining': typeof SettingsJoiningRoute
   '/settings/keybindings': typeof SettingsKeybindingsRoute
+  '/settings/members': typeof SettingsMembersRoute
   '/settings/memory': typeof SettingsMemoryRoute
+  '/settings/notifications': typeof SettingsNotificationsRoute
   '/settings/open-source-licenses': typeof SettingsOpenSourceLicensesRoute
+  '/settings/organization': typeof SettingsOrganizationRoute
+  '/settings/permissions': typeof SettingsPermissionsRoute
+  '/settings/phone': typeof SettingsPhoneRoute
   '/settings/projects': typeof SettingsProjectsRoute
   '/settings/providers': typeof SettingsProvidersRoute
+  '/settings/running': typeof SettingsRunningRoute
   '/settings/shared': typeof SettingsSharedRoute
   '/settings/skills': typeof SettingsSkillsRoute
   '/settings/snap-shot': typeof SettingsSnapShotRoute
@@ -302,34 +450,51 @@ export interface FileRoutesById {
   '/settings/vault': typeof SettingsVaultRoute
   '/settings/workspace': typeof SettingsWorkspaceRoute
   '/_chat/': typeof ChatIndexRoute
+  '/settings/': typeof SettingsIndexRoute
   '/_chat/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/_chat/draft/$draftId': typeof ChatDraftDraftIdRoute
+  '/library_/handed/$handoverId': typeof LibraryHandedHandoverIdRoute
+  '/settings/members_/$memberId': typeof SettingsMembersMemberIdRoute
+  '/settings/teams/$teamId': typeof SettingsTeamsTeamIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
     | '/connect'
+    | '/library'
     | '/mail'
     | '/pair'
+    | '/routines'
     | '/settings'
     | '/usage'
     | '/welcome'
     | '/pull-requests'
     | '/projects/$projectKey'
+    | '/settings/account'
+    | '/settings/activity'
+    | '/settings/agents'
     | '/settings/appearance'
     | '/settings/archived'
+    | '/settings/code'
     | '/settings/connections'
     | '/settings/diagnostics'
     | '/settings/environments'
     | '/settings/general'
     | '/settings/instructions'
     | '/settings/integrations'
+    | '/settings/joining'
     | '/settings/keybindings'
+    | '/settings/members'
     | '/settings/memory'
+    | '/settings/notifications'
     | '/settings/open-source-licenses'
+    | '/settings/organization'
+    | '/settings/permissions'
+    | '/settings/phone'
     | '/settings/projects'
     | '/settings/providers'
+    | '/settings/running'
     | '/settings/shared'
     | '/settings/skills'
     | '/settings/snap-shot'
@@ -337,31 +502,47 @@ export interface FileRouteTypes {
     | '/settings/storage'
     | '/settings/vault'
     | '/settings/workspace'
+    | '/settings/'
     | '/$environmentId/$threadId'
     | '/draft/$draftId'
+    | '/library/handed/$handoverId'
+    | '/settings/members/$memberId'
+    | '/settings/teams/$teamId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/connect'
+    | '/library'
     | '/mail'
     | '/pair'
-    | '/settings'
+    | '/routines'
     | '/usage'
     | '/welcome'
     | '/pull-requests'
     | '/projects/$projectKey'
+    | '/settings/account'
+    | '/settings/activity'
+    | '/settings/agents'
     | '/settings/appearance'
     | '/settings/archived'
+    | '/settings/code'
     | '/settings/connections'
     | '/settings/diagnostics'
     | '/settings/environments'
     | '/settings/general'
     | '/settings/instructions'
     | '/settings/integrations'
+    | '/settings/joining'
     | '/settings/keybindings'
+    | '/settings/members'
     | '/settings/memory'
+    | '/settings/notifications'
     | '/settings/open-source-licenses'
+    | '/settings/organization'
+    | '/settings/permissions'
+    | '/settings/phone'
     | '/settings/projects'
     | '/settings/providers'
+    | '/settings/running'
     | '/settings/shared'
     | '/settings/skills'
     | '/settings/snap-shot'
@@ -370,32 +551,49 @@ export interface FileRouteTypes {
     | '/settings/vault'
     | '/settings/workspace'
     | '/'
+    | '/settings'
     | '/$environmentId/$threadId'
     | '/draft/$draftId'
+    | '/library/handed/$handoverId'
+    | '/settings/members/$memberId'
+    | '/settings/teams/$teamId'
   id:
     | '__root__'
     | '/_chat'
     | '/connect'
+    | '/library'
     | '/mail'
     | '/pair'
+    | '/routines'
     | '/settings'
     | '/usage'
     | '/welcome'
     | '/_chat/pull-requests'
     | '/projects/$projectKey'
+    | '/settings/account'
+    | '/settings/activity'
+    | '/settings/agents'
     | '/settings/appearance'
     | '/settings/archived'
+    | '/settings/code'
     | '/settings/connections'
     | '/settings/diagnostics'
     | '/settings/environments'
     | '/settings/general'
     | '/settings/instructions'
     | '/settings/integrations'
+    | '/settings/joining'
     | '/settings/keybindings'
+    | '/settings/members'
     | '/settings/memory'
+    | '/settings/notifications'
     | '/settings/open-source-licenses'
+    | '/settings/organization'
+    | '/settings/permissions'
+    | '/settings/phone'
     | '/settings/projects'
     | '/settings/providers'
+    | '/settings/running'
     | '/settings/shared'
     | '/settings/skills'
     | '/settings/snap-shot'
@@ -404,19 +602,26 @@ export interface FileRouteTypes {
     | '/settings/vault'
     | '/settings/workspace'
     | '/_chat/'
+    | '/settings/'
     | '/_chat/$environmentId/$threadId'
     | '/_chat/draft/$draftId'
+    | '/library_/handed/$handoverId'
+    | '/settings/members_/$memberId'
+    | '/settings/teams/$teamId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   ChatRoute: typeof ChatRouteWithChildren
   ConnectRoute: typeof ConnectRoute
+  LibraryRoute: typeof LibraryRoute
   MailRoute: typeof MailRoute
   PairRoute: typeof PairRoute
+  RoutinesRoute: typeof RoutinesRoute
   SettingsRoute: typeof SettingsRouteWithChildren
   UsageRoute: typeof UsageRoute
   WelcomeRoute: typeof WelcomeRoute
   ProjectsProjectKeyRoute: typeof ProjectsProjectKeyRoute
+  LibraryHandedHandoverIdRoute: typeof LibraryHandedHandoverIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -442,6 +647,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/routines': {
+      id: '/routines'
+      path: '/routines'
+      fullPath: '/routines'
+      preLoaderRoute: typeof RoutinesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/pair': {
       id: '/pair'
       path: '/pair'
@@ -454,6 +666,13 @@ declare module '@tanstack/react-router' {
       path: '/mail'
       fullPath: '/mail'
       preLoaderRoute: typeof MailRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/library': {
+      id: '/library'
+      path: '/library'
+      fullPath: '/library'
+      preLoaderRoute: typeof LibraryRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/connect': {
@@ -469,6 +688,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof ChatRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/settings/': {
+      id: '/settings/'
+      path: '/'
+      fullPath: '/settings/'
+      preLoaderRoute: typeof SettingsIndexRouteImport
+      parentRoute: typeof SettingsRoute
     }
     '/_chat/': {
       id: '/_chat/'
@@ -526,6 +752,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsSharedRouteImport
       parentRoute: typeof SettingsRoute
     }
+    '/settings/running': {
+      id: '/settings/running'
+      path: '/running'
+      fullPath: '/settings/running'
+      preLoaderRoute: typeof SettingsRunningRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/settings/providers': {
       id: '/settings/providers'
       path: '/providers'
@@ -540,11 +773,39 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsProjectsRouteImport
       parentRoute: typeof SettingsRoute
     }
+    '/settings/phone': {
+      id: '/settings/phone'
+      path: '/phone'
+      fullPath: '/settings/phone'
+      preLoaderRoute: typeof SettingsPhoneRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/permissions': {
+      id: '/settings/permissions'
+      path: '/permissions'
+      fullPath: '/settings/permissions'
+      preLoaderRoute: typeof SettingsPermissionsRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/organization': {
+      id: '/settings/organization'
+      path: '/organization'
+      fullPath: '/settings/organization'
+      preLoaderRoute: typeof SettingsOrganizationRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/settings/open-source-licenses': {
       id: '/settings/open-source-licenses'
       path: '/open-source-licenses'
       fullPath: '/settings/open-source-licenses'
       preLoaderRoute: typeof SettingsOpenSourceLicensesRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/notifications': {
+      id: '/settings/notifications'
+      path: '/notifications'
+      fullPath: '/settings/notifications'
+      preLoaderRoute: typeof SettingsNotificationsRouteImport
       parentRoute: typeof SettingsRoute
     }
     '/settings/memory': {
@@ -554,11 +815,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsMemoryRouteImport
       parentRoute: typeof SettingsRoute
     }
+    '/settings/members': {
+      id: '/settings/members'
+      path: '/members'
+      fullPath: '/settings/members'
+      preLoaderRoute: typeof SettingsMembersRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/settings/keybindings': {
       id: '/settings/keybindings'
       path: '/keybindings'
       fullPath: '/settings/keybindings'
       preLoaderRoute: typeof SettingsKeybindingsRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/joining': {
+      id: '/settings/joining'
+      path: '/joining'
+      fullPath: '/settings/joining'
+      preLoaderRoute: typeof SettingsJoiningRouteImport
       parentRoute: typeof SettingsRoute
     }
     '/settings/integrations': {
@@ -603,6 +878,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsConnectionsRouteImport
       parentRoute: typeof SettingsRoute
     }
+    '/settings/code': {
+      id: '/settings/code'
+      path: '/code'
+      fullPath: '/settings/code'
+      preLoaderRoute: typeof SettingsCodeRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/settings/archived': {
       id: '/settings/archived'
       path: '/archived'
@@ -615,6 +897,27 @@ declare module '@tanstack/react-router' {
       path: '/appearance'
       fullPath: '/settings/appearance'
       preLoaderRoute: typeof SettingsAppearanceRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/agents': {
+      id: '/settings/agents'
+      path: '/agents'
+      fullPath: '/settings/agents'
+      preLoaderRoute: typeof SettingsAgentsRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/activity': {
+      id: '/settings/activity'
+      path: '/activity'
+      fullPath: '/settings/activity'
+      preLoaderRoute: typeof SettingsActivityRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/account': {
+      id: '/settings/account'
+      path: '/account'
+      fullPath: '/settings/account'
+      preLoaderRoute: typeof SettingsAccountRouteImport
       parentRoute: typeof SettingsRoute
     }
     '/projects/$projectKey': {
@@ -630,6 +933,27 @@ declare module '@tanstack/react-router' {
       fullPath: '/pull-requests'
       preLoaderRoute: typeof ChatPullRequestsRouteImport
       parentRoute: typeof ChatRoute
+    }
+    '/settings/teams/$teamId': {
+      id: '/settings/teams/$teamId'
+      path: '/teams/$teamId'
+      fullPath: '/settings/teams/$teamId'
+      preLoaderRoute: typeof SettingsTeamsTeamIdRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/members_/$memberId': {
+      id: '/settings/members_/$memberId'
+      path: '/members/$memberId'
+      fullPath: '/settings/members/$memberId'
+      preLoaderRoute: typeof SettingsMembersMemberIdRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/library_/handed/$handoverId': {
+      id: '/library_/handed/$handoverId'
+      path: '/library/handed/$handoverId'
+      fullPath: '/library/handed/$handoverId'
+      preLoaderRoute: typeof LibraryHandedHandoverIdRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/_chat/draft/$draftId': {
       id: '/_chat/draft/$draftId'
@@ -665,19 +989,30 @@ const ChatRouteChildren: ChatRouteChildren = {
 const ChatRouteWithChildren = ChatRoute._addFileChildren(ChatRouteChildren)
 
 interface SettingsRouteChildren {
+  SettingsAccountRoute: typeof SettingsAccountRoute
+  SettingsActivityRoute: typeof SettingsActivityRoute
+  SettingsAgentsRoute: typeof SettingsAgentsRoute
   SettingsAppearanceRoute: typeof SettingsAppearanceRoute
   SettingsArchivedRoute: typeof SettingsArchivedRoute
+  SettingsCodeRoute: typeof SettingsCodeRoute
   SettingsConnectionsRoute: typeof SettingsConnectionsRoute
   SettingsDiagnosticsRoute: typeof SettingsDiagnosticsRoute
   SettingsEnvironmentsRoute: typeof SettingsEnvironmentsRoute
   SettingsGeneralRoute: typeof SettingsGeneralRoute
   SettingsInstructionsRoute: typeof SettingsInstructionsRoute
   SettingsIntegrationsRoute: typeof SettingsIntegrationsRoute
+  SettingsJoiningRoute: typeof SettingsJoiningRoute
   SettingsKeybindingsRoute: typeof SettingsKeybindingsRoute
+  SettingsMembersRoute: typeof SettingsMembersRoute
   SettingsMemoryRoute: typeof SettingsMemoryRoute
+  SettingsNotificationsRoute: typeof SettingsNotificationsRoute
   SettingsOpenSourceLicensesRoute: typeof SettingsOpenSourceLicensesRoute
+  SettingsOrganizationRoute: typeof SettingsOrganizationRoute
+  SettingsPermissionsRoute: typeof SettingsPermissionsRoute
+  SettingsPhoneRoute: typeof SettingsPhoneRoute
   SettingsProjectsRoute: typeof SettingsProjectsRoute
   SettingsProvidersRoute: typeof SettingsProvidersRoute
+  SettingsRunningRoute: typeof SettingsRunningRoute
   SettingsSharedRoute: typeof SettingsSharedRoute
   SettingsSkillsRoute: typeof SettingsSkillsRoute
   SettingsSnapShotRoute: typeof SettingsSnapShotRoute
@@ -685,22 +1020,36 @@ interface SettingsRouteChildren {
   SettingsStorageRoute: typeof SettingsStorageRoute
   SettingsVaultRoute: typeof SettingsVaultRoute
   SettingsWorkspaceRoute: typeof SettingsWorkspaceRoute
+  SettingsIndexRoute: typeof SettingsIndexRoute
+  SettingsMembersMemberIdRoute: typeof SettingsMembersMemberIdRoute
+  SettingsTeamsTeamIdRoute: typeof SettingsTeamsTeamIdRoute
 }
 
 const SettingsRouteChildren: SettingsRouteChildren = {
+  SettingsAccountRoute: SettingsAccountRoute,
+  SettingsActivityRoute: SettingsActivityRoute,
+  SettingsAgentsRoute: SettingsAgentsRoute,
   SettingsAppearanceRoute: SettingsAppearanceRoute,
   SettingsArchivedRoute: SettingsArchivedRoute,
+  SettingsCodeRoute: SettingsCodeRoute,
   SettingsConnectionsRoute: SettingsConnectionsRoute,
   SettingsDiagnosticsRoute: SettingsDiagnosticsRoute,
   SettingsEnvironmentsRoute: SettingsEnvironmentsRoute,
   SettingsGeneralRoute: SettingsGeneralRoute,
   SettingsInstructionsRoute: SettingsInstructionsRoute,
   SettingsIntegrationsRoute: SettingsIntegrationsRoute,
+  SettingsJoiningRoute: SettingsJoiningRoute,
   SettingsKeybindingsRoute: SettingsKeybindingsRoute,
+  SettingsMembersRoute: SettingsMembersRoute,
   SettingsMemoryRoute: SettingsMemoryRoute,
+  SettingsNotificationsRoute: SettingsNotificationsRoute,
   SettingsOpenSourceLicensesRoute: SettingsOpenSourceLicensesRoute,
+  SettingsOrganizationRoute: SettingsOrganizationRoute,
+  SettingsPermissionsRoute: SettingsPermissionsRoute,
+  SettingsPhoneRoute: SettingsPhoneRoute,
   SettingsProjectsRoute: SettingsProjectsRoute,
   SettingsProvidersRoute: SettingsProvidersRoute,
+  SettingsRunningRoute: SettingsRunningRoute,
   SettingsSharedRoute: SettingsSharedRoute,
   SettingsSkillsRoute: SettingsSkillsRoute,
   SettingsSnapShotRoute: SettingsSnapShotRoute,
@@ -708,6 +1057,9 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsStorageRoute: SettingsStorageRoute,
   SettingsVaultRoute: SettingsVaultRoute,
   SettingsWorkspaceRoute: SettingsWorkspaceRoute,
+  SettingsIndexRoute: SettingsIndexRoute,
+  SettingsMembersMemberIdRoute: SettingsMembersMemberIdRoute,
+  SettingsTeamsTeamIdRoute: SettingsTeamsTeamIdRoute,
 }
 
 const SettingsRouteWithChildren = SettingsRoute._addFileChildren(
@@ -717,12 +1069,15 @@ const SettingsRouteWithChildren = SettingsRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   ChatRoute: ChatRouteWithChildren,
   ConnectRoute: ConnectRoute,
+  LibraryRoute: LibraryRoute,
   MailRoute: MailRoute,
   PairRoute: PairRoute,
+  RoutinesRoute: RoutinesRoute,
   SettingsRoute: SettingsRouteWithChildren,
   UsageRoute: UsageRoute,
   WelcomeRoute: WelcomeRoute,
   ProjectsProjectKeyRoute: ProjectsProjectKeyRoute,
+  LibraryHandedHandoverIdRoute: LibraryHandedHandoverIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

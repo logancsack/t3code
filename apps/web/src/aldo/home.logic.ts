@@ -1,21 +1,26 @@
 // The pure parts of the home screen (AldoHome.tsx): how Aldo's read of the
-// user's work (cloud.ts AldoHome) sorts into what needs them, what's working,
+// user's work (homeApi.ts AldoHome) sorts into what needs them, what's working,
 // what shipped and what's coming, and the words for each.
 
-import { ACTION_LABELS, REVERSE_LABELS } from "./assistant.logic";
-import type {
-  AldoHome,
-  AldoHomeAction,
-  AldoHomeConversation,
-  AldoHomeDelivery,
-  AldoHomePullRequest,
-  AldoHomeTarget,
-  AldoHomeUsage,
-  AldoPolicy,
-} from "./cloud";
+import {
+  ACTION_LABELS,
+  FAILED_LABELS,
+  FAILED_REVERSE_LABELS,
+  REVERSE_LABELS,
+} from "./assistant.logic";
+import {
+  type AldoHome,
+  type AldoHomeAction,
+  type AldoHomeConversation,
+  type AldoHomeDelivery,
+  type AldoHomePullRequest,
+  type AldoHomeTarget,
+  type AldoHomeUsage,
+  type AldoPolicy,
+} from "./homeApi";
 
 /** A turn that hasn't moved in this long is stuck (Aldo's sweep counts it as idle). */
-export const STUCK_MS = 60 * 60 * 1000;
+const STUCK_MS = 60 * 60 * 1000;
 /** How long finished work and shipped pull requests stay on the board. */
 const DONE_WINDOW_MS = 48 * 60 * 60 * 1000;
 const MINUTE = 60_000;
@@ -41,6 +46,12 @@ export const NEEDS_YOU_LABEL: Record<NeedsYouKind, string> = {
   failed: "Stopped with an error",
 };
 
+/** A computer queue is a normal wait, even if the last agent report said done or failed. */
+export function queuedComputer(c: AldoHomeConversation) {
+  if (c.pending || c.plan || c.computers?.some((one) => one.status === "asked")) return undefined;
+  return c.computers?.find((one) => one.status === "queued");
+}
+
 /**
  * Its machine went to sleep mid-turn, and opening the thread wakes it to
  * carry on: Aldo says so (paused), or an older Aldo's read has it working on
@@ -49,13 +60,15 @@ export const NEEDS_YOU_LABEL: Record<NeedsYouKind, string> = {
  */
 export function isPausedMidTurn(c: AldoHomeConversation): boolean {
   return (
-    c.state === "paused" ||
-    (c.state === "working" && (c.machine === "asleep" || c.machine === "failed"))
+    !queuedComputer(c) &&
+    (c.state === "paused" ||
+      (c.state === "working" && (c.machine === "asleep" || c.machine === "failed")))
   );
 }
 
 /** Why a conversation needs the user, or null if it doesn't. */
 export function needsYouKind(c: AldoHomeConversation): NeedsYouKind | null {
+  if (queuedComputer(c)) return null;
   if (c.state === "failed") return "failed";
   if (isPausedMidTurn(c)) return "paused";
   if (c.state !== "waiting") return null;
@@ -68,8 +81,18 @@ export function needsYouKind(c: AldoHomeConversation): NeedsYouKind | null {
 
 export const WORKING_STATES = new Set(["working", "starting", "queued", "retrying"]);
 
+/**
+ * Working, with no activity for an hour: `at` follows the thread's latest event
+ * (a step, a word, a tool's output), not `stateAt`, which is when the turn
+ * began. A long turn that keeps moving is working, not stuck.
+ */
 export function isStuck(c: AldoHomeConversation, now: number): boolean {
-  return c.state === "working" && !isPausedMidTurn(c) && now - Date.parse(c.at) > STUCK_MS;
+  return (
+    !queuedComputer(c) &&
+    c.state === "working" &&
+    !isPausedMidTurn(c) &&
+    now - Date.parse(c.at) > STUCK_MS
+  );
 }
 
 export interface HomeBoard {
@@ -83,20 +106,26 @@ export interface HomeBoard {
 
 const byAt = (a: { at: string }, b: { at: string }) => b.at.localeCompare(a.at);
 
-/** The conversations sorted into the board's sections (those with nothing sent yet are left out). */
+/**
+ * The conversations sorted into the board's sections (those with nothing sent yet are left out).
+ * What the user dismissed from Needs you is not in it, unless `withCleared`.
+ */
 export function boardFor(
   conversations: ReadonlyArray<AldoHomeConversation>,
   now: number,
+  withCleared = false,
 ): HomeBoard {
   return {
     needsYou: conversations
-      .filter((c) => needsYouKind(c) !== null)
+      .filter((c) => needsYouKind(c) !== null && (withCleared || !c.chatDecision?.cleared))
       .sort((a, b) => a.at.localeCompare(b.at)),
     working: conversations
-      .filter((c) => WORKING_STATES.has(c.state) && !isPausedMidTurn(c))
+      .filter((c) => (WORKING_STATES.has(c.state) || queuedComputer(c)) && !isPausedMidTurn(c))
       .sort(byAt),
     done: conversations
-      .filter((c) => c.state === "done" && now - Date.parse(c.at) < DONE_WINDOW_MS)
+      .filter(
+        (c) => !queuedComputer(c) && c.state === "done" && now - Date.parse(c.at) < DONE_WINDOW_MS,
+      )
       .sort(byAt),
   };
 }
@@ -284,13 +313,6 @@ export function filterHome(home: AldoHome, repo: string | null): AldoHome {
   };
 }
 
-/** The model a conversation runs on, short: "claude/claude-opus-4-1" reads as "claude-opus-4-1". */
-export function modelName(model: string | undefined): string | null {
-  if (!model) return null;
-  const [, name] = model.split("/", 2);
-  return name || model;
-}
-
 /** Where the selection goes on j, k, Home or End; null when the key isn't one of those. */
 export function moveSelection(current: number | null, length: number, key: string): number | null {
   if (length === 0) return null;
@@ -309,44 +331,6 @@ export function moveSelection(current: number | null, length: number, key: strin
       return current;
   }
 }
-
-/** What Aldo couldn't do, when an action failed. */
-const FAILED_LABELS: Record<string, string> = {
-  start_thread: "Couldn't start a thread",
-  message_thread: "Couldn't message a thread",
-  answer_thread: "Couldn't answer a thread",
-  approve_plan: "Couldn't approve a plan",
-  interrupt_thread: "Couldn't stop a thread",
-  rename_thread: "Couldn't rename a thread",
-  archive_thread: "Couldn't archive a thread",
-  unarchive_thread: "Couldn't bring a thread back",
-  delete_thread: "Couldn't delete a thread",
-  merge_pull_request: "Couldn't merge a pull request",
-  open_pull_request: "Couldn't open a pull request",
-  stop_following_pull_request: "Couldn't stop following a pull request",
-  run_command: "Couldn't run a command",
-  write_file: "Couldn't edit a file",
-  revert_thread: "Couldn't revert a thread",
-  pin_thread: "Couldn't pin a thread",
-  snooze_thread: "Couldn't snooze a thread",
-  settle_thread: "Couldn't settle a thread",
-  answer_computer_request: "Couldn't answer a computer request",
-  stop_computer: "Couldn't stop a computer",
-  set_machine_size: "Couldn't change a computer's size",
-  send_upcoming_now: "Couldn't send a queued message",
-  cancel_upcoming: "Couldn't cancel a queued message",
-  create_routine: "Couldn't set up a routine",
-  update_routine: "Couldn't change a routine",
-  run_routine: "Couldn't run a routine",
-  delete_routine: "Couldn't remove a routine",
-};
-
-/** What a call that undoes its tool's name couldn't do. */
-const FAILED_REVERSE_LABELS: Record<string, string> = {
-  pin_thread: "Couldn't unpin a thread",
-  snooze_thread: "Couldn't bring back a snoozed thread",
-  settle_thread: "Couldn't make a thread active again",
-};
 
 /** What Aldo did (or couldn't), in a few words, for its log: "Started a thread: Fix checkout". */
 export function actionLabel(action: AldoHomeAction): string {
@@ -467,7 +451,7 @@ export function healthIssues(home: Pick<AldoHome, "health" | "usage">): Readonly
       id: "providers",
       text: `${listed(signedOut.map((p) => p.name))} ${signedOut.length === 1 ? "needs" : "need"} signing in again.`,
       tone: "bad",
-      href: "/settings/providers",
+      href: "/settings/agents",
     });
   }
   const period = home.usage.period?.status;
@@ -476,28 +460,28 @@ export function healthIssues(home: Pick<AldoHome, "health" | "usage">): Readonly
       id: "plan",
       text: "Your last payment didn't go through, so agents can't start.",
       tone: "bad",
-      href: "/usage",
+      href: "/settings/account",
     });
   } else if (period === "canceled") {
     issues.push({
       id: "plan",
       text: "Your plan has ended, so agents can't start.",
       tone: "bad",
-      href: "/usage",
+      href: "/settings/account",
     });
   } else if (home.usage.alert === "spend_reached" || home.usage.alert === "included_exhausted") {
     issues.push({
       id: "credits",
       text: "This month's credits are used up. Raise the spending limit to keep going.",
       tone: "bad",
-      href: "/usage",
+      href: "/settings/account",
     });
   } else if (home.usage.alert === "spend_warning" || home.usage.alert === "included_warning") {
     issues.push({
       id: "credits",
       text: "This month's credits are nearly used up.",
       tone: "warn",
-      href: "/usage",
+      href: "/settings/account",
     });
   }
   for (const env of home.health.environments) {
@@ -506,7 +490,7 @@ export function healthIssues(home: Pick<AldoHome, "health" | "usage">): Readonly
         id: `env-${env.repos.join(",")}`,
         text: `The ready-to-go setup for ${env.repos.map((r) => r.split("/").at(-1) ?? r).join(" + ")} failed to build. New threads start without it.`,
         tone: "warn",
-        href: "/settings/environments",
+        href: "/settings/code",
       });
     }
   }

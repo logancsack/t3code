@@ -138,6 +138,8 @@ import {
   deriveWorkLogEntries,
   hasActionableProposedPlan,
   isLatestTurnSettled,
+  blockingPendingUserInputsFirst,
+  pendingUserInputBlocksMessages,
   selectHandoffImageResources,
   withoutRefusalsAnsweredByMessage,
   type PendingUserInput,
@@ -154,12 +156,15 @@ import {
 import {
   buildPendingUserInputAnswers,
   carryDisplacedCustomAnswerIntoPrompt,
+  derivePendingUserInputCarryOn,
   derivePendingUserInputProgress,
   formatPendingUserInputAnswersAsMessage,
+  formatPendingUserInputCarryOn,
   setPendingUserInputCustomAnswer,
   togglePendingUserInputOptionSelection,
   type PendingUserInputDraftAnswer,
 } from "../pendingUserInput";
+import { formatShortTimestamp } from "../timestampFormat";
 import { useUiStateStore } from "../uiStateStore";
 import {
   latestWorkspaceMutationId,
@@ -249,6 +254,7 @@ import {
   Minimize2Icon,
   PaperclipIcon,
   WifiOffIcon,
+  XIcon,
 } from "lucide-react";
 import { cn, randomHex, randomUUID } from "~/lib/utils";
 import { stackedThreadToast, toastManager } from "./ui/toast";
@@ -293,7 +299,10 @@ import {
   preventRepeatedTerminalCloseShortcut,
   preventTerminalCloseShortcut,
 } from "../lib/terminalCloseShortcut";
-import { resolveNewDraftStartFromOrigin } from "../lib/chatThreadActions";
+import {
+  hasExplicitComposerModelSelection,
+  resolveNewDraftStartFromOrigin,
+} from "../lib/chatThreadActions";
 import {
   derivePhysicalProjectKey,
   deriveLogicalProjectKeyFromSettings,
@@ -374,6 +383,8 @@ import {
 } from "../state/entities";
 import { environmentShell } from "../state/shell";
 import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
+import { ComposerBanner } from "./chat/ComposerBanner";
+import { ComposerPendingUserInputPanel } from "./chat/ComposerPendingUserInputPanel";
 import { createPageScrollController, type PageScrollKey } from "./chat/pageScrollController";
 import { isTimelineScrollTarget } from "./chat/timelineScrollTarget";
 import { DraftHeroHeadline } from "./chat/DraftHeroHeadline";
@@ -426,6 +437,7 @@ import {
 } from "./chat/draftHeroTransition";
 import {
   MAX_HIDDEN_MOUNTED_TERMINAL_THREADS,
+  formatOutgoingPrompt,
   agentControlledBrowserCloseConfirmation,
   branchMismatchKey,
   buildExpiredTerminalContextToastCopy,
@@ -551,14 +563,20 @@ import {
 import { useAldoPreload } from "../aldo/preload";
 import { useAldoFocusReport } from "../aldo/focus";
 import { useAldoStallSignals } from "../aldo/AldoStall";
-import { aldoDesktopOwnsKeyboard } from "../aldo/desktopInput.logic";
+import { aldoDesktopOwnsKeyboard, listenForAppShortcuts } from "../aldo/desktopInput.logic";
 import { useAldoThreadDetailMissing } from "../aldo/threadDetails";
 import { AldoThreadLoading } from "../aldo/AldoThreadLoading";
+import { useAldoFirstViewHold } from "../aldo/firstView";
 import { useAldoThreadStart } from "../aldo/threadStart";
 import { describeAldoWakeFailure } from "../aldo/threadStart.logic";
-import { isAldoCloud, isAldoEnvironmentId } from "../aldo/cloud";
+import { isAldoCloud, isAldoEnvironmentId } from "../aldo/api";
+import { aldoRoutesModels } from "../aldo/directory";
 import { useAldoKeptRepo } from "../aldo/keptRepo";
+import { ALDO_DEVELOPER_COMMANDS, useAldoDeveloperTools } from "../aldo/developerTools";
 import { AldoHandoffCard } from "../aldo/AldoHandoffCard";
+import { AldoOrgNoteCard } from "../aldo/AldoOrgNoteCard";
+import { useAldoThreadApprovals } from "../aldo/AldoApprovals";
+import { withThreadApprovals } from "../aldo/approvals.logic";
 import {
   AldoComposerPlaceChip,
   AldoDraftWhereCard,
@@ -575,6 +593,7 @@ const EMPTY_PROVIDERS: ServerProvider[] = [];
 const EMPTY_USAGE_LIMIT_SOURCES: UsageLimitSourceSnapshots = [];
 const EMPTY_PROVIDER_SKILLS: ServerProvider["skills"] = [];
 const EMPTY_PENDING_USER_INPUT_ANSWERS: Record<string, PendingUserInputDraftAnswer> = {};
+const EMPTY_PENDING_USER_INPUTS: PendingUserInput[] = [];
 function useDraftHeroLayoutTransition(
   isDraftHeroState: boolean,
   animationsActive: boolean,
@@ -764,17 +783,6 @@ const draftFanoutStateAtom = Atom.family((_routeKey: string) =>
   }).pipe(Atom.keepAlive),
 );
 
-function formatOutgoingPrompt(params: {
-  provider: ProviderDriverKind;
-  model: string | null;
-  models: ReadonlyArray<ServerProvider["models"][number]>;
-  effort: string | null;
-  text: string;
-}): string {
-  const caps = getProviderModelCapabilities(params.models, params.model, params.provider);
-  const promptEffort = resolvePromptInjectedEffort(caps, params.effort);
-  return applyClaudePromptEffortPrefix(params.text, promptEffort);
-}
 const SCRIPT_TERMINAL_COLS = 120;
 const SCRIPT_TERMINAL_ROWS = 30;
 
@@ -1658,6 +1666,8 @@ export default function ChatView(props: ChatViewProps) {
       href: location.href,
       key: location.state.assistantCitationActivation ?? location.state.__TSR_key,
     }),
+    // A new object from each location update re-rendered the whole view.
+    structuralSharing: true,
   });
   const citationRequest = useMemo<AssistantCitationRequest | null>(() => {
     const citation = assistantCitationFromLocation(citationLocation.href);
@@ -1799,6 +1809,12 @@ export default function ChatView(props: ChatViewProps) {
   const [answeredByMessageRequestIds, setAnsweredByMessageRequestIds] = useState<
     ApprovalRequestId[]
   >([]);
+  // Aldo: questions answered from this card, hidden from the tap until the
+  // server closes them (so a card never waits on the round trip), and back
+  // only if the server refuses the answer. The question still stops the agent
+  // meanwhile, so messages stay held back (it isn't taken out of the pending
+  // list). Dropped once the server has closed it.
+  const [sentUserInputRequestIds, setSentUserInputRequestIds] = useState<ApprovalRequestId[]>([]);
 
   useEffect(() => {
     setIsWorkspaceFileDragActive(false);
@@ -1815,8 +1831,16 @@ export default function ChatView(props: ChatViewProps) {
   >({});
   const [pendingUserInputQuestionIndexByRequestId, setPendingUserInputQuestionIndexByRequestId] =
     useState<Record<string, number>>({});
+  // Aldo: questions that have carried on with their recommended answers, so
+  // each does once, even if the answer doesn't go through.
+  const [carriedOnRequestKeys, setCarriedOnRequestKeys] = useState<string[]>([]);
+  // Aldo: when this page first showed each question, so one found late still waits its full time.
+  const [pendingShownAtByRequestKey, setPendingShownAtByRequestKey] = useState<
+    Record<string, number>
+  >({});
   const shouldUseRightPanelSheet = useMediaQuery(RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY);
   const isMobileViewport = useMediaQuery("max-sm");
+  const isPhoneHeaderViewport = useMediaQuery("max-md");
   const [terminalFocusRequestId, setTerminalFocusRequestId] = useState(0);
   const [pullRequestDialogState, setPullRequestDialogState] =
     useState<PullRequestDialogState | null>(null);
@@ -3047,22 +3071,26 @@ export default function ChatView(props: ChatViewProps) {
     () => derivePendingRequests(threadActivities),
     [threadActivities],
   );
+  // A question that stops the agent comes before async ones, so the card asks
+  // it first and the composer holds messages back while any question blocks.
   const pendingUserInputs = useMemo(
     () =>
-      derivedPendingUserInputs.filter(
-        (input) => !answeredByMessageRequestIds.includes(input.requestId),
+      blockingPendingUserInputsFirst(
+        derivedPendingUserInputs.filter(
+          (input) => !answeredByMessageRequestIds.includes(input.requestId),
+        ),
+        activeLatestTurn,
       ),
-    [answeredByMessageRequestIds, derivedPendingUserInputs],
+    [activeLatestTurn, answeredByMessageRequestIds, derivedPendingUserInputs],
   );
   // Aldo: a message's attachments go to Aldo with it, not to the thread's
-  // cloud agent (aldo/files.ts); an answer to the agent's question still
-  // uploads its own to the agent, which is up to ask it. On an Aldo that
-  // doesn't keep files they upload to the agent, which a new thread doesn't
-  // have until its first message is sent (and a sleeping one is still
-  // waking): until it's connected they wait instead of failing; sending
-  // brings the agent up and uploads them first.
+  // cloud agent (aldo/files.ts). On an Aldo that doesn't keep files they
+  // upload to the agent, which a new thread doesn't have until its first
+  // message is sent (and a sleeping one is still waking): until it's
+  // connected they wait instead of failing; sending brings the agent up and
+  // uploads them first.
   const attachmentUploadsDeferred =
-    (aldoCarriesAttachments(environmentId) && pendingUserInputs.length === 0) ||
+    aldoCarriesAttachments(environmentId) ||
     (isAldoCloud &&
       isAldoEnvironmentId(environmentId) &&
       environmentById.get(environmentId)?.connection.phase !== "connected");
@@ -3073,6 +3101,17 @@ export default function ChatView(props: ChatViewProps) {
     [threadActivities, activeSessionTurnId],
   );
   const activePendingUserInput = pendingUserInputs[0] ?? null;
+  useEffect(() => {
+    setSentUserInputRequestIds((existing) => {
+      const open = existing.filter((id) =>
+        derivedPendingUserInputs.some((input) => input.requestId === id),
+      );
+      return open.length === existing.length ? existing : open;
+    });
+  }, [derivedPendingUserInputs]);
+  const activePendingSent =
+    activePendingUserInput !== null &&
+    sentUserInputRequestIds.includes(activePendingUserInput.requestId);
   const activePendingRequestKey = JSON.stringify([
     environmentId,
     activeThreadId,
@@ -3209,6 +3248,42 @@ export default function ChatView(props: ChatViewProps) {
   const activePendingIsResponding = activePendingUserInput
     ? respondingUserInputRequestIds.includes(activePendingUserInput.requestId)
     : false;
+  // Questions are answered on their own card; the composer only writes
+  // messages, and holds one back while the question stops the agent.
+  const activePendingBlocksMessages =
+    activePendingUserInput !== null &&
+    pendingUserInputBlocksMessages(activePendingUserInput, activeLatestTurn);
+  // Aldo: a question the agent stopped on, with an answer its provider
+  // recommends, carries on with that answer once it has waited ten minutes, so
+  // a thread left alone doesn't stall on it. Once the user picks an option or
+  // types an answer, it waits for them. This page keeps the time, so it only
+  // happens while the thread is open.
+  const activePendingAnswerStarted =
+    pendingUserInputAnswersByRequestId[activePendingRequestKey] !== undefined;
+  const activePendingCarriedOn = carriedOnRequestKeys.includes(activePendingRequestKey);
+  const activePendingShownAt = pendingShownAtByRequestKey[activePendingRequestKey];
+  const activePendingCanCarryOn =
+    isAldoCloud &&
+    pendingApprovals.length === 0 &&
+    activePendingUserInput !== null &&
+    activePendingBlocksMessages &&
+    !activePendingAnswerStarted &&
+    !activePendingCarriedOn;
+  useEffect(() => {
+    if (!activePendingCanCarryOn || activePendingShownAt !== undefined) return;
+    setPendingShownAtByRequestKey((existing) =>
+      existing[activePendingRequestKey] !== undefined
+        ? existing
+        : { ...existing, [activePendingRequestKey]: Date.now() },
+    );
+  }, [activePendingCanCarryOn, activePendingRequestKey, activePendingShownAt]);
+  const activePendingCarryOn = useMemo(
+    () =>
+      activePendingCanCarryOn && activePendingUserInput && activePendingShownAt !== undefined
+        ? derivePendingUserInputCarryOn(activePendingUserInput, activePendingShownAt)
+        : null,
+    [activePendingCanCarryOn, activePendingShownAt, activePendingUserInput],
+  );
   const activeProposedPlan = useMemo(() => {
     if (!latestTurnSettled) {
       return null;
@@ -3234,6 +3309,11 @@ export default function ChatView(props: ChatViewProps) {
       null
     );
   }, [activeLatestTurn?.turnId, activePlan]);
+  // Aldo's working line counts the steps of the plan the turn works through.
+  const workingPlanSteps =
+    activePlan && activePlan.turnId === (activeLatestTurn?.turnId ?? null)
+      ? activePlan.steps
+      : null;
   const showPlanFollowUpPrompt = shouldShowPlanFollowUpPrompt({
     pendingUserInputCount: pendingUserInputs.length,
     interactionMode,
@@ -3361,7 +3441,10 @@ export default function ChatView(props: ChatViewProps) {
     activeLatestTurn,
     phase,
     activePendingApproval: activePendingApproval?.requestId ?? null,
-    activePendingUserInput: activePendingUserInput?.requestId ?? null,
+    // An async question asked before this message doesn't acknowledge it.
+    activePendingUserInput: activePendingBlocksMessages
+      ? (activePendingUserInput?.requestId ?? null)
+      : null,
     threadError,
     wakingManagedWorkspace:
       (isManagedDevPc &&
@@ -3719,6 +3802,19 @@ export default function ChatView(props: ChatViewProps) {
     activeThreadKey,
   );
   const displayedThreadRef = parseScopedThreadKey(displayedTimelineKey);
+  // Aldo: the approvals this thread's agent asked, in its timeline where it asked.
+  const aldoApprovals = useAldoThreadApprovals(
+    activeThreadRef?.environmentId ?? null,
+    activeThreadRef?.threadId ?? null,
+    isAldoCloud,
+  );
+  const aldoTimelineEntries = useMemo(
+    () =>
+      paintOnlyDisplayedTimeline
+        ? displayedTimeline.entries
+        : withThreadApprovals(displayedTimeline.entries, aldoApprovals),
+    [paintOnlyDisplayedTimeline, displayedTimeline.entries, aldoApprovals],
+  );
   // Live stages of a bootstrap worktree setup. A worktree send creates the
   // server thread under the route's thread id before anything else, so the
   // stream is keyed by that id alone: no owner bookkeeping, and a remount,
@@ -3748,6 +3844,11 @@ export default function ChatView(props: ChatViewProps) {
     displayedTimeline.entries.length === 0 &&
     !isWorking &&
     (aldoThreadStart !== null || threadDetailLoading);
+  // A thread the app opens on shows with its messages (firstView.ts), unless
+  // they wait on its machine waking or starting.
+  useAldoFirstViewHold(
+    showAldoThreadLoading && aldoThreadStart === null && !aldoThreadDetailMissing,
+  );
   const latestWorktreeSetup = worktreeSetupQuery.data;
   useEffect(() => {
     if (latestWorktreeSetup) setHeldWorktreeSetup(latestWorktreeSetup);
@@ -3975,6 +4076,8 @@ export default function ChatView(props: ChatViewProps) {
   // worth showing (and the strip shows nothing else in the cloud), so its strip
   // only hosts a resting composer's controls.
   const aldoKeptRepo = useAldoKeptRepo(environmentId);
+  // Aldo: the Terminal and the Diff are developer tools (developerTools.ts).
+  const aldoDeveloperTools = useAldoDeveloperTools();
   const composerStripShowsGit = isGitRepo && !aldoKeptRepo;
   // Aldo: an unsent draft has no session yet, which isn't worth saying; work
   // that isn't code gets words for it.
@@ -5036,24 +5139,6 @@ export default function ChatView(props: ChatViewProps) {
     readonly threadKey: string;
     readonly reference: ThreadLinkedPullRequest | null;
   } | null>(null);
-  const openProjectPullRequest = useCallback(
-    (number: number) => {
-      if (
-        !supportsPullRequests ||
-        !activeThreadRef ||
-        !activeProject ||
-        activeProjectRepository === null
-      ) {
-        return;
-      }
-      useRightPanelStore.getState().openPullRequest(activeThreadRef, {
-        projectId: activeProject.id,
-        repository: activeProjectRepository,
-        number,
-      });
-    },
-    [activeProject, activeProjectRepository, activeThreadRef, supportsPullRequests],
-  );
   const proactivePanelObservationRef = useRef<ReturnType<
     typeof observeProactivePanelUserChoice
   > | null>(null);
@@ -7063,8 +7148,6 @@ export default function ChatView(props: ChatViewProps) {
 
   useEffect(() => {
     const handler = (event: globalThis.KeyboardEvent) => {
-      // noVNC handles desktop typing and shortcuts after this capture handler.
-      if (aldoDesktopOwnsKeyboard(event.target)) return;
       if (preventRepeatedTerminalCloseShortcut(event, keybindings)) {
         event.stopPropagation();
         return;
@@ -7101,6 +7184,8 @@ export default function ChatView(props: ChatViewProps) {
         context: shortcutContext,
       });
       if (!command) return;
+      // Leaves the key alone: without the developer tools there's no Terminal or Diff to open.
+      if (!aldoDeveloperTools && ALDO_DEVELOPER_COMMANDS.has(command)) return;
 
       if (command === "thread.copyReference") {
         event.preventDefault();
@@ -7307,8 +7392,7 @@ export default function ChatView(props: ChatViewProps) {
       event.stopPropagation();
       void runProjectScript(script);
     };
-    window.addEventListener("keydown", handler, true);
-    return () => window.removeEventListener("keydown", handler, true);
+    return listenForAppShortcuts(handler);
   }, [
     activeProject,
     activeRightPanelSurface,
@@ -7335,6 +7419,7 @@ export default function ChatView(props: ChatViewProps) {
     isServerThread,
     onInterrupt,
     onToggleDiff,
+    aldoDeveloperTools,
     pinThread,
     settleThread,
     supportsPinning,
@@ -7771,12 +7856,17 @@ export default function ChatView(props: ChatViewProps) {
       });
       return;
     }
-    if (activePendingProgress) {
+    // The composer never answers a question. While one stops the agent, a
+    // message would reach nothing, so it stays in the composer, which says
+    // where to answer.
+    if (activePendingBlocksMessages) {
       if (directAnnotation) {
         notifyDirectAnnotationAttached();
         return;
       }
-      onAdvanceActivePendingUserInput();
+      composerRef.current?.refuseSend(
+        "The agent is waiting on its question above. Answer it there, then send this.",
+      );
       return;
     }
     const sendCtx = composerRef.current?.getSendContext();
@@ -8050,7 +8140,7 @@ export default function ChatView(props: ChatViewProps) {
       (queueStillSending ||
         (phase === "running" &&
           // Aldo steers: a queue lives in this tab and is lost with it, while a
-          // message sent now reaches the machine (Codex queues it there).
+          // message sent now reaches the machine.
           ((isAldoCloud ? "steer" : settings.followUpBehavior) === "queue") !==
             (submissionIntent === "alternate")))
     ) {
@@ -8106,6 +8196,9 @@ export default function ChatView(props: ChatViewProps) {
     const composerTerminalContextsSnapshot = [...sendableComposerTerminalContexts];
     const composerPreviewAnnotationsSnapshot = [...composerPreviewAnnotations];
     const composerReviewCommentsSnapshot: ReviewCommentContext[] = [...composerReviewComments];
+    const promptEffortInjectedForSend =
+      useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)
+        ?.promptEffortInjected === true;
     // Expired terminal excerpts are not sent; their chips leave the text with them.
     const messageTextForSend = composerTerminalContexts
       .filter((context) => !composerTerminalContextsSnapshot.includes(context))
@@ -8137,6 +8230,13 @@ export default function ChatView(props: ChatViewProps) {
       models: ctxSelectedProviderModels,
       effort: ctxSelectedPromptEffort,
       text: messageTextForSend || ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
+      modelMayChange:
+        isAldoCloud &&
+        aldoRoutesModels() &&
+        isLocalDraftThread &&
+        !hasExplicitComposerModelSelection(
+          useComposerDraftStore.getState().getComposerDraft(composerDraftTarget),
+        ),
     });
     if (composerRef.current?.validateProviderInput(outgoingMessageText) === false) {
       return;
@@ -8542,7 +8642,9 @@ export default function ChatView(props: ChatViewProps) {
         const restoreFailedDraft = () => {
           setMultipleModelSelections(failedSelections);
           if (clearedDraft) {
-            setComposerDraftPrompt(composerDraftTarget, messageTextForSend);
+            setComposerDraftPrompt(composerDraftTarget, messageTextForSend, {
+              effortInjected: promptEffortInjectedForSend,
+            });
             addComposerDraftImages(
               composerDraftTarget,
               composerImagesSnapshot.map(cloneComposerImageForRetry),
@@ -8960,7 +9062,9 @@ export default function ChatView(props: ChatViewProps) {
         composerImagesRef.current = retryComposerImages;
         composerFilesRef.current = composerFilesSnapshot;
         composerTerminalContextsRef.current = composerTerminalContextsSnapshot;
-        setComposerDraftPrompt(composerDraftTarget, messageTextForSend);
+        setComposerDraftPrompt(composerDraftTarget, messageTextForSend, {
+          effortInjected: promptEffortInjectedForSend,
+        });
         addComposerDraftImages(composerDraftTarget, retryComposerImages);
         addComposerDraftFiles(composerDraftTarget, composerFilesSnapshot);
         setComposerDraftTerminalContexts(composerDraftTarget, composerTerminalContextsSnapshot);
@@ -9025,10 +9129,11 @@ export default function ChatView(props: ChatViewProps) {
 
   // Queued messages go out from QueuedMessageSender, which also covers
   // threads that are not on screen. Send now uses the same path but skips the
-  // wait for a boundary. Approvals and questions still hold it: a steer on
-  // top of them would answer nothing and confuse the turn.
+  // wait for a boundary. Approvals and questions that stop the agent still
+  // hold it: a steer on top of them would answer nothing and confuse the turn.
   const queueBlockedByPendingRequest =
-    activePendingApproval !== null || pendingUserInputs.length > 0;
+    activePendingApproval !== null ||
+    pendingUserInputs.some((input) => pendingUserInputBlocksMessages(input, activeLatestTurn));
 
   // The row handlers are read from refs at call-time so their identity stays
   // stable and does not bust TimelineRowCtx on every ChatView render.
@@ -9086,7 +9191,12 @@ export default function ChatView(props: ChatViewProps) {
   );
 
   const onRespondToUserInput = useCallback(
-    async (requestId: ApprovalRequestId, answers: Record<string, unknown>) => {
+    async (
+      requestId: ApprovalRequestId,
+      answers: Record<string, unknown>,
+      // Already sent as a message (its card is held by the caller).
+      answeredAlready = false,
+    ) => {
       if (!activeThreadId || !activePendingUserInput || activePendingIsResponding) return;
       const responseKey = JSON.stringify([environmentId, activeThreadId, requestId]);
       if (userInputResponsesInFlight.current.has(responseKey)) return;
@@ -9122,6 +9232,11 @@ export default function ChatView(props: ChatViewProps) {
       setRespondingUserInputRequestIds((existing) =>
         existing.includes(requestId) ? existing : [...existing, requestId],
       );
+      if (!answeredAlready) {
+        setSentUserInputRequestIds((existing) =>
+          existing.includes(requestId) ? existing : [...existing, requestId],
+        );
+      }
       const result = await respondToThreadUserInput({
         environmentId,
         input: {
@@ -9133,6 +9248,9 @@ export default function ChatView(props: ChatViewProps) {
             : {}),
         },
       });
+      if (result._tag === "Failure" && !answeredAlready) {
+        setSentUserInputRequestIds((existing) => existing.filter((id) => id !== requestId));
+      }
       if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
         const error = squashAtomCommandFailure(result);
         setThreadError(
@@ -9153,6 +9271,29 @@ export default function ChatView(props: ChatViewProps) {
       setThreadError,
     ],
   );
+
+  // Aldo: carries on with the recommended answers when the time comes. A
+  // question that waited past it while no page was open carries on now.
+  useEffect(() => {
+    if (!activePendingUserInput || !activePendingCarryOn) return;
+    const { requestId } = activePendingUserInput;
+    const { answers, at } = activePendingCarryOn;
+    const requestKey = activePendingRequestKey;
+    const timer = window.setTimeout(
+      () => {
+        setCarriedOnRequestKeys((existing) => [...existing, requestKey]);
+        void onRespondToUserInput(requestId, answers);
+      },
+      Math.max(0, at - Date.now()),
+    );
+    return () => window.clearTimeout(timer);
+  }, [activePendingCarryOn, activePendingRequestKey, activePendingUserInput, onRespondToUserInput]);
+  const activePendingCarryOnNote = activePendingCarryOn
+    ? formatPendingUserInputCarryOn(
+        activePendingCarryOn,
+        formatShortTimestamp(new Date(activePendingCarryOn.at).toISOString(), timestampFormat),
+      )
+    : null;
 
   // Closes an async question without messaging the agent. The server records
   // the dismissal so every client releases the composer.
@@ -9199,13 +9340,14 @@ export default function ChatView(props: ChatViewProps) {
         return;
       }
       // The option replaces the custom answer. Anything typed there is the
-      // user's text, so it goes back to the thread draft instead of vanishing.
+      // user's text, so it goes to the thread draft instead of vanishing.
       const displacedAnswer =
         pendingUserInputAnswersByRequestId[activePendingRequestKey]?.[questionId]?.customAnswer;
       const currentPrompt =
         useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.prompt ?? "";
       const nextPrompt = carryDisplacedCustomAnswerIntoPrompt(currentPrompt, displacedAnswer);
       if (nextPrompt !== currentPrompt) {
+        promptRef.current = nextPrompt;
         setComposerDraftPrompt(composerDraftTarget, nextPrompt);
       }
       setPendingUserInputAnswersByRequestId((existing) => {
@@ -9230,28 +9372,19 @@ export default function ChatView(props: ChatViewProps) {
           },
         };
       });
-      promptRef.current = "";
-      composerRef.current?.resetCursorState({ cursor: 0 });
     },
     [
       activePendingProgress?.activeQuestion,
       activePendingUserInput,
       activePendingRequestKey,
       composerDraftTarget,
-      composerRef,
       pendingUserInputAnswersByRequestId,
       setComposerDraftPrompt,
     ],
   );
 
   const onChangeActivePendingUserInputCustomAnswer = useCallback(
-    (
-      questionId: string,
-      value: string,
-      nextCursor: number,
-      expandedCursor: number,
-      _cursorAdjacentToMention: boolean,
-    ) => {
+    (questionId: string, value: string) => {
       if (!activePendingUserInput) {
         return;
       }
@@ -9259,7 +9392,6 @@ export default function ChatView(props: ChatViewProps) {
       if (!question || question.allowCustomAnswer === false) {
         return;
       }
-      promptRef.current = value;
       setPendingUserInputAnswersByRequestId((existing) => ({
         ...existing,
         [activePendingRequestKey]: {
@@ -9270,16 +9402,8 @@ export default function ChatView(props: ChatViewProps) {
           ),
         },
       }));
-      const snapshot = composerRef.current?.readSnapshot();
-      if (
-        snapshot?.value !== value ||
-        snapshot.cursor !== nextCursor ||
-        snapshot.expandedCursor !== expandedCursor
-      ) {
-        composerRef.current?.focusAt(nextCursor);
-      }
     },
-    [activePendingUserInput, activePendingRequestKey, composerRef],
+    [activePendingUserInput, activePendingRequestKey],
   );
 
   const onPreviousActivePendingUserInputQuestion = useCallback(() => {
@@ -9320,7 +9444,8 @@ export default function ChatView(props: ChatViewProps) {
       }
 
       const sendCtx = composerRef.current?.getSendContext();
-      if (!sendCtx?.providerAvailable || !sendCtx.interactionModeEnabled) {
+      // Ordinary follow-ups work even when the Plan mode toggle is unavailable or off.
+      if (!sendCtx?.providerAvailable || (linkProposedPlan && !sendCtx.interactionModeEnabled)) {
         return false;
       }
       const {
@@ -9480,7 +9605,7 @@ export default function ChatView(props: ChatViewProps) {
     threadKey: isServerThread ? routeThreadKey : null,
     activities: threadActivities,
     messages: timelineMessages,
-    waitingOnYou: pendingApprovals.length > 0 || pendingUserInputs.length > 0,
+    waitingOnYou: pendingApprovals.length > 0 || activePendingBlocksMessages,
     target: isServerThread ? (activeThreadRef ?? null) : null,
     send: onSendFollowUp,
     stop: onInterrupt,
@@ -9504,7 +9629,7 @@ export default function ChatView(props: ChatViewProps) {
         setAnsweredByMessageRequestIds((existing) => existing.filter((id) => id !== requestId));
         return;
       }
-      await onRespondToUserInput(requestId, answers);
+      await onRespondToUserInput(requestId, answers, true);
     },
     [interactionMode, onRespondToUserInput, onSubmitPlanFollowUp],
   );
@@ -9571,12 +9696,14 @@ export default function ChatView(props: ChatViewProps) {
     const nextThreadId = newThreadId();
     const planMarkdown = activeProposedPlan.planMarkdown;
     const implementationPrompt = buildPlanImplementationPrompt(planMarkdown);
+    const routeNewThread = isAldoCloud && aldoRoutesModels();
     const outgoingImplementationPrompt = formatOutgoingPrompt({
       provider: ctxSelectedProvider,
       model: ctxSelectedModel,
       models: ctxSelectedProviderModels,
       effort: ctxSelectedPromptEffort,
       text: implementationPrompt,
+      modelMayChange: routeNewThread,
     });
     if (composerRef.current?.validateProviderInput(outgoingImplementationPrompt) === false) {
       return;
@@ -9591,28 +9718,32 @@ export default function ChatView(props: ChatViewProps) {
       resetLocalDispatch();
     };
 
-    const createResult = await createThread({
-      environmentId,
-      input: {
-        threadId: nextThreadId,
-        projectId: activeProject.id,
-        title: nextThreadTitle,
-        modelSelection: nextThreadModelSelection,
-        runtimeMode: defaultRuntimeMode,
-        interactionMode: "default",
-        branch: activeThreadBranch,
-        worktreePath: activeThread.worktreePath,
-        createdAt,
-      },
-    });
+    const newThread = {
+      projectId: activeProject.id,
+      title: nextThreadTitle,
+      modelSelection: nextThreadModelSelection,
+      runtimeMode: defaultRuntimeMode,
+      interactionMode: "default" as const,
+      branch: activeThreadBranch,
+      worktreePath: activeThread.worktreePath,
+      createdAt,
+    };
+    // Aldo routes an atomic first turn, including starts from an existing plan.
+    const createResult = routeNewThread
+      ? null
+      : await createThread({
+          environmentId,
+          input: { threadId: nextThreadId, ...newThread },
+        });
     let failure: AtomCommandResult<unknown, unknown> | null =
-      createResult._tag === "Failure" ? createResult : null;
+      createResult?._tag === "Failure" ? createResult : null;
 
     if (failure === null) {
       const startResult = await startThreadTurn({
         environmentId,
         input: {
           threadId: nextThreadId,
+          ...(routeNewThread ? { bootstrap: { createThread: newThread } } : {}),
           message: {
             messageId: newMessageId(),
             role: "user",
@@ -9872,7 +10003,7 @@ export default function ChatView(props: ChatViewProps) {
     clientSettingsHydrated &&
     !needsLoadBalancing &&
     !activeEnvironmentUnavailable &&
-    !activePendingProgress &&
+    !activePendingBlocksMessages &&
     !feedbackUploading;
   useEffect(() => {
     if (
@@ -9982,16 +10113,28 @@ export default function ChatView(props: ChatViewProps) {
     pendingSidebarFileDrops,
   ]);
 
-  // Empty state: no active thread
   if (!activeThread) {
+    // A deep link can arrive before either the shell or detail is cached.
+    if (isAldoCloud && routeKind === "server") {
+      return (
+        <AldoThreadLoading
+          start={aldoThreadStart ?? aldoWakeFailure}
+          startedAt={null}
+          label={
+            aldoThreadDetailMissing
+              ? "Waking the cloud agent to load this thread…"
+              : "Loading messages…"
+          }
+          onRetry={aldoThreadStart === null ? aldoWake.retryWake : undefined}
+          bottomInset={0}
+        />
+      );
+    }
     return <NoActiveThreadState />;
   }
 
   const panelToggleControls = (
     <PanelLayoutControls
-      terminalAvailable={activeProject !== null}
-      terminalOpen={terminalUiState.terminalOpen}
-      terminalShortcutLabel={shortcutLabelForCommand(keybindings, "terminal.toggle")}
       rightPanelAvailable={activeProject !== null}
       rightPanelOpen={rightPanelOpen}
       rightPanelShortcutLabel={shortcutLabelForCommand(keybindings, "rightPanel.toggle")}
@@ -10000,7 +10143,6 @@ export default function ChatView(props: ChatViewProps) {
       liveAgentCount={
         rightPanelOpen && activeRightPanelSurface?.kind === "agents" ? 0 : agentPanelModel.liveCount
       }
-      onToggleTerminal={toggleTerminalVisibility}
       onToggleRightPanel={toggleRightPanel}
     />
   );
@@ -10009,7 +10151,9 @@ export default function ChatView(props: ChatViewProps) {
       className={cn(
         // Keep one viewport anchor inside the header's no-drag region. The
         // header can shrink behind the right panel without moving the controls.
-        "pointer-events-none fixed top-[var(--workspace-controls-top)] right-[var(--workspace-controls-right)] z-50 mr-px flex h-[var(--workspace-topbar-height)] items-center gap-1 [-webkit-app-region:no-drag]",
+        // Under the sheet layer (z-45 < --z-sheet), like the sidebar toggle, so a
+        // sheet covers them instead of having them drawn over its corner.
+        "pointer-events-none fixed top-[var(--workspace-controls-top)] right-[var(--workspace-controls-right)] z-45 mr-px flex h-[var(--workspace-topbar-height)] items-center gap-1 [-webkit-app-region:no-drag]",
       )}
       data-workspace-titlebar-controls
     >
@@ -10020,9 +10164,9 @@ export default function ChatView(props: ChatViewProps) {
             "flex shrink-0",
             panelAnimationsActive &&
               "motion-safe:transition-opacity motion-safe:duration-(--panel-animation-duration) motion-safe:ease-out",
-            // Closed, the control leaves the flex flow so the cluster is only as wide as the two
-            // toggles the header reserves room for; anchored to the cluster's left edge, it fades
-            // out where it stood rather than over the terminal toggle.
+            // Closed, the control leaves the flex flow so the cluster is only as wide as the
+            // toggle the header reserves room for; anchored to the cluster's left edge, it fades
+            // out where it stood rather than over the panel toggle.
             rightPanelOpen
               ? "pointer-events-auto opacity-100"
               : "pointer-events-none absolute right-full mr-1 opacity-0",
@@ -10267,11 +10411,13 @@ export default function ChatView(props: ChatViewProps) {
               className="pointer-events-none fixed top-[var(--workspace-controls-top)] right-[var(--workspace-controls-right)] h-[var(--workspace-topbar-height)] w-28 [-webkit-app-region:no-drag]"
             />
           ) : null}
-          {!rightPanelControlsAtRoot && !rightPanelControlsInPanel ? panelLayoutControls : null}
+          {/* An Aldo thread's phone header opens the right panel from its menu. */}
+          {!rightPanelControlsAtRoot &&
+          !rightPanelControlsInPanel &&
+          !(isPhoneHeaderViewport && isAldoCloud && isAldoEnvironmentId(activeThread.environmentId))
+            ? panelLayoutControls
+            : null}
           <ChatHeader
-            {...(!supportsPullRequests || activeProjectRepository === null
-              ? {}
-              : { onOpenPullRequest: openProjectPullRequest })}
             activeThreadEnvironmentId={activeThread.environmentId}
             activeThreadId={activeThread.id}
             {...(routeKind === "draft" && draftId ? { draftId } : {})}
@@ -10286,7 +10432,7 @@ export default function ChatView(props: ChatViewProps) {
             keybindings={keybindings}
             availableEditors={availableEditors}
             rightPanelOpen={rightPanelOpen}
-            gitCwd={gitCwd}
+            working={phase === "running"}
             onNewThreadInProject={handleNewThreadInActiveProject}
             {...(activeDraftLogicalProjectKey
               ? { onOpenProjectSettings: handleOpenDraftProjectSettings }
@@ -10374,6 +10520,7 @@ export default function ChatView(props: ChatViewProps) {
                 isWorking={!paintOnlyDisplayedTimeline && isWorking}
                 isWakingWorkspace={!paintOnlyDisplayedTimeline && isWakingManagedWorkspace}
                 workingStepLabel={paintOnlyDisplayedTimeline ? null : workingStepLabel}
+                workingPlanSteps={paintOnlyDisplayedTimeline ? null : workingPlanSteps}
                 activeTurnInProgress={
                   !paintOnlyDisplayedTimeline && (isWorking || !latestTurnSettled)
                 }
@@ -10386,7 +10533,7 @@ export default function ChatView(props: ChatViewProps) {
                 {...(draftId ? { onWorktreeSetupWorkLocally } : {})}
                 {...(onOpenWorktreeSetupTerminal ? { onOpenWorktreeSetupTerminal } : {})}
                 listRef={legendListRef}
-                timelineEntries={displayedTimeline.entries}
+                timelineEntries={aldoTimelineEntries}
                 latestTurn={paintOnlyDisplayedTimeline ? null : activeLatestTurn}
                 runningTurnId={paintOnlyDisplayedTimeline ? null : activeRunningTurnId}
                 turnDiffSummaries={
@@ -10564,6 +10711,38 @@ export default function ChatView(props: ChatViewProps) {
                       threadId={activeThreadRef.threadId}
                     />
                   ) : null}
+                  {isAldoCloud && !isDraftHeroState && activeThreadRef ? (
+                    <AldoOrgNoteCard environmentId={activeThreadRef.environmentId} />
+                  ) : null}
+                  {/* An approval the agent stopped on is answered first; an
+                      answer sent past it would start a turn it can't take. */}
+                  {activePendingUserInput &&
+                  !activePendingSent &&
+                  activePendingApproval === null ? (
+                    <ComposerBanner.Root
+                      placement="floating"
+                      variant="info"
+                      className="mb-2"
+                      data-chat-pending-user-input-card="true"
+                    >
+                      <ComposerPendingUserInputPanel
+                        pendingUserInputs={pendingUserInputs}
+                        respondingRequestIds={
+                          activePendingIsResponding
+                            ? [...respondingRequestIds, activePendingUserInput.requestId]
+                            : respondingRequestIds
+                        }
+                        answers={activePendingDraftAnswers}
+                        questionIndex={activePendingQuestionIndex}
+                        note={activePendingCarryOnNote}
+                        onToggleOption={onSelectActivePendingUserInputOption}
+                        onChangeCustomAnswer={onChangeActivePendingUserInputCustomAnswer}
+                        onAdvance={onAdvanceActivePendingUserInput}
+                        onPrevious={onPreviousActivePendingUserInputQuestion}
+                        onDismiss={onDismissUserInput}
+                      />
+                    </ComposerBanner.Root>
+                  ) : null}
                   <div
                     className="relative"
                     style={
@@ -10607,7 +10786,13 @@ export default function ChatView(props: ChatViewProps) {
                             renderLeadingControl={
                               aldoDraft && draftId ? renderAldoPlaceChip : undefined
                             }
-                            idlePlaceholder={aldoComposerPlaceholder}
+                            idlePlaceholder={
+                              activePendingBlocksMessages
+                                ? activePendingSent
+                                  ? "Sending your answer"
+                                  : "Answer the question above to continue"
+                                : aldoComposerPlaceholder
+                            }
                             phase={phase}
                             isConnecting={isConnecting}
                             isSendBusy={isSendBusy}
@@ -10637,12 +10822,12 @@ export default function ChatView(props: ChatViewProps) {
                             environmentUnavailable={activeEnvironmentActionUnavailableState}
                             activePendingApproval={activePendingApproval}
                             pendingApprovals={pendingApprovals}
-                            pendingUserInputs={pendingUserInputs}
-                            activePendingProgress={activePendingProgress}
-                            activePendingResolvedAnswers={activePendingResolvedAnswers}
-                            activePendingIsResponding={activePendingIsResponding}
-                            activePendingDraftAnswers={activePendingDraftAnswers}
-                            activePendingQuestionIndex={activePendingQuestionIndex}
+                            // Questions are answered on their own card, above;
+                            // the composer only writes messages.
+                            pendingUserInputs={EMPTY_PENDING_USER_INPUTS}
+                            activePendingProgress={null}
+                            activePendingResolvedAnswers={null}
+                            activePendingIsResponding={false}
                             respondingRequestIds={respondingRequestIds}
                             showPlanFollowUpPrompt={showPlanFollowUpPrompt}
                             activeProposedPlan={activeProposedPlan}
@@ -10697,11 +10882,6 @@ export default function ChatView(props: ChatViewProps) {
                             onInterrupt={onInterrupt}
                             onImplementPlanInNewThread={onImplementPlanInNewThread}
                             onRespondToApproval={onRespondToApproval}
-                            onSelectActivePendingUserInputOption={
-                              onSelectActivePendingUserInputOption
-                            }
-                            onAdvanceActivePendingUserInput={onAdvanceActivePendingUserInput}
-                            onDismissActivePendingUserInput={onDismissUserInput}
                             onPreviousActivePendingUserInputQuestion={
                               onPreviousActivePendingUserInputQuestion
                             }
@@ -10922,9 +11102,20 @@ export default function ChatView(props: ChatViewProps) {
             // right inset plus mr-px), so the cluster does not creep when
             // the sheet opens.
             layoutControls={
-              rightPanelOpen ? (
+              !rightPanelOpen ? null : isMobileViewport ? (
+                // Full screen on a phone, so the way back is a plain close.
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  className="mr-px"
+                  aria-label="Close panel"
+                  onClick={closePreviewPanel}
+                >
+                  <XIcon className="size-4" />
+                </Button>
+              ) : (
                 <div className="mr-px flex items-center">{panelToggleControls}</div>
-              ) : null
+              )
             }
             surfaces={renderedRightPanelSurfaces}
             environmentId={activeThreadRef.environmentId}

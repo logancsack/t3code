@@ -4,8 +4,12 @@ import {
   buildPendingUserInputAnswers,
   carryDisplacedCustomAnswerIntoPrompt,
   countAnsweredPendingUserInputQuestions,
+  derivePendingUserInputCarryOn,
   derivePendingUserInputProgress,
+  describePendingUserInputOption,
   formatPendingUserInputAnswersAsMessage,
+  formatPendingUserInputCarryOn,
+  PENDING_USER_INPUT_CARRY_ON_DELAY_MS,
   resolvePendingUserInputAnswer,
   setPendingUserInputCustomAnswer,
   togglePendingUserInputOptionSelection,
@@ -351,5 +355,148 @@ describe("formatPendingUserInputAnswersAsMessage", () => {
         areas: ["Server", "Web"],
       }),
     ).toBe("Scope: Orchestration-first\nAreas: Server, Web");
+  });
+});
+
+describe("describePendingUserInputOption", () => {
+  it("drops the provider's recommended mark from the label and flags the option", () => {
+    expect(
+      describePendingUserInputOption({ label: "Keep both (Recommended)", description: "" }),
+    ).toEqual({ label: "Keep both", recommended: true });
+    expect(
+      describePendingUserInputOption({ label: "Keep both (recommended) ", description: "" }),
+    ).toEqual({ label: "Keep both", recommended: true });
+  });
+
+  it("leaves other labels alone", () => {
+    expect(describePendingUserInputOption({ label: "Keep both", description: "" })).toEqual({
+      label: "Keep both",
+      recommended: false,
+    });
+    expect(
+      describePendingUserInputOption({ label: "(Recommended) Keep both", description: "" }),
+    ).toEqual({ label: "(Recommended) Keep both", recommended: false });
+    // A label that is only the mark has nothing else to show.
+    expect(describePendingUserInputOption({ label: "(Recommended)", description: "" })).toEqual({
+      label: "(Recommended)",
+      recommended: false,
+    });
+  });
+});
+
+describe("derivePendingUserInputCarryOn", () => {
+  const askedAt = "2026-10-20T10:32:00.000Z";
+  const recommendedQuestion = {
+    id: "layout",
+    header: "Layout",
+    question: "Which layout should the page use?",
+    options: [
+      { label: "Two columns", description: "Side by side" },
+      { label: "One column (Recommended)", description: "Stacked" },
+      { label: "Grid (Recommended)", description: "Tiles" },
+    ],
+    multiSelect: false,
+  };
+
+  it("carries on with the recommended option ten minutes after the question was asked", () => {
+    expect(
+      derivePendingUserInputCarryOn({ questions: [recommendedQuestion], createdAt: askedAt }),
+    ).toEqual({
+      // The provider gets the label it sent, mark and all.
+      answers: { layout: "One column (Recommended)" },
+      labels: ["One column"],
+      at: Date.parse(askedAt) + PENDING_USER_INPUT_CARRY_ON_DELAY_MS,
+    });
+    expect(PENDING_USER_INPUT_CARRY_ON_DELAY_MS).toBe(10 * 60 * 1000);
+  });
+
+  it("waits the full time from when the page first showed it, if that's later", () => {
+    const shownAt = Date.parse(askedAt) + 60 * 60 * 1000;
+    expect(
+      derivePendingUserInputCarryOn(
+        { questions: [recommendedQuestion], createdAt: askedAt },
+        shownAt,
+      )?.at,
+    ).toBe(shownAt + PENDING_USER_INPUT_CARRY_ON_DELAY_MS);
+    expect(
+      derivePendingUserInputCarryOn(
+        { questions: [recommendedQuestion], createdAt: askedAt },
+        Date.parse(askedAt) - 1000,
+      )?.at,
+    ).toBe(Date.parse(askedAt) + PENDING_USER_INPUT_CARRY_ON_DELAY_MS);
+  });
+
+  it("answers with an option's value when it has one", () => {
+    expect(
+      derivePendingUserInputCarryOn({
+        questions: [
+          {
+            ...recommendedQuestion,
+            options: [{ value: "one", label: "One column (Recommended)", description: "" }],
+          },
+        ],
+        createdAt: askedAt,
+      })?.answers,
+    ).toEqual({ layout: "one" });
+  });
+
+  it("carries on with every recommended option of a multi-select question", () => {
+    expect(
+      derivePendingUserInputCarryOn({
+        questions: [{ ...recommendedQuestion, multiSelect: true }],
+        createdAt: askedAt,
+      }),
+    ).toMatchObject({
+      answers: { layout: ["One column (Recommended)", "Grid (Recommended)"] },
+      labels: ["One column, Grid"],
+    });
+  });
+
+  it("needs a recommended answer for every question", () => {
+    expect(
+      derivePendingUserInputCarryOn({
+        questions: [recommendedQuestion, singleSelectQuestion],
+        createdAt: askedAt,
+      }),
+    ).toBeNull();
+    expect(
+      derivePendingUserInputCarryOn({
+        questions: [
+          recommendedQuestion,
+          {
+            ...singleSelectQuestion,
+            options: [{ label: "Orchestration-first (Recommended)", description: "" }],
+          },
+        ],
+        createdAt: askedAt,
+      }),
+    ).toMatchObject({
+      answers: { layout: "One column (Recommended)", scope: "Orchestration-first (Recommended)" },
+      labels: ["One column", "Orchestration-first"],
+    });
+  });
+
+  it("never invents a default", () => {
+    expect(
+      derivePendingUserInputCarryOn({ questions: [multiSelectQuestion], createdAt: askedAt }),
+    ).toBeNull();
+    expect(derivePendingUserInputCarryOn({ questions: [], createdAt: askedAt })).toBeNull();
+    expect(
+      derivePendingUserInputCarryOn({ questions: [recommendedQuestion], createdAt: "not a date" }),
+    ).toBeNull();
+  });
+});
+
+describe("formatPendingUserInputCarryOn", () => {
+  it("names a single answer and the time it carries on at", () => {
+    expect(formatPendingUserInputCarryOn({ labels: ["One column"] }, "10:42 AM")).toBe(
+      "Carries on with “One column” at 10:42 AM if you don’t answer.",
+    );
+  });
+
+  it("sums up answers to several questions", () => {
+    expect(formatPendingUserInputCarryOn({ labels: ["One column", "Server"] }, "10:42 AM")).toBe(
+      "Carries on with the recommended answers at 10:42 AM if you don’t answer.",
+    );
   });
 });

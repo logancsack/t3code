@@ -1,3 +1,4 @@
+import { isThreadPath } from "../aldo/layers";
 import { ManagedDevPcAgentProvider } from "./ManagedDevPcAgent";
 import { useAtomValue } from "@effect/atom-react";
 import * as Schema from "effect/Schema";
@@ -35,9 +36,10 @@ import {
   usePanelNavigationSuppression,
 } from "../panelAnimations";
 import ThreadSidebar from "./Sidebar";
-import { AldoProfileButton } from "../aldo/AldoAccountDialog";
+import { AldoProfileButton } from "../aldo/AldoAccountMenu";
+import { AldoSettingsBackBar } from "../aldo/AldoSettingsShell";
 import { AldoSimpleRail, useAldoSimpleRail } from "../aldo/AldoSimpleRail";
-import { isAldoCloud } from "../aldo/cloud";
+import { isAldoCloud } from "../aldo/api";
 import { SidebarChromeHeader } from "./sidebar/SidebarChrome";
 import { MainAppLocationTracker } from "./sidebar/mainAppLocation";
 import { useSidebarStageBackdropVariant } from "./SidebarStageBackdrop";
@@ -83,6 +85,9 @@ function readInitialThreadSidebarWidth(): number {
 }
 
 function SidebarControl() {
+  const threadOpen = useLocation({
+    select: (location) => isAldoCloud && isThreadPath(location.pathname),
+  });
   const usagePageOpen = useLocation({ select: (location) => location.pathname === "/usage" });
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const { toggleSidebar } = useSidebar();
@@ -129,12 +134,16 @@ function SidebarControl() {
     return () => window.removeEventListener("keydown", onKeyDown, true);
   }, [keybindings, toggleSidebar, usagePageOpen]);
 
+  if (threadOpen) return null;
+
   return (
     // The right-side layout controls carry mr-px (border compensation inside
     // the panel), so the trigger mirrors it: both clusters sit one extra pixel
-    // off their edge and the titlebar reads symmetric.
+    // off their edge and the titlebar reads symmetric. It sits under the sheet
+    // layer (z-45 < --z-sheet) so a sheet covers it rather than drawing its own
+    // top-left content beneath it; the sidebar's sheet carries its own trigger.
     <div
-      className="pointer-events-none fixed left-[var(--workspace-controls-left)] top-[var(--workspace-controls-top)] z-50 ml-px flex h-[var(--workspace-topbar-height)] items-center"
+      className="pointer-events-none fixed left-[var(--workspace-controls-left)] top-[var(--workspace-controls-top)] z-45 ml-px flex h-[var(--workspace-topbar-height)] items-center"
       data-sidebar-control=""
     >
       <Tooltip>
@@ -230,6 +239,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
   const routePanelAnimationsActive = panelAnimationsActive && !panelAnimationsSuppressed;
   const isOnSettings = pathname === "/settings" || pathname.startsWith("/settings/");
   const aldoSimpleRail = useAldoSimpleRail(isOnSettings);
+  const aldoSettings = isAldoCloud && isOnSettings;
   const isMacosDesktop = isElectron && isMacPlatform(navigator.platform);
   const [sidebarWidth, setSidebarWidth] = useState(readInitialThreadSidebarWidth);
   // Subscribed rather than read once: the clamp must track live window size,
@@ -327,6 +337,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
           className="h-dvh! min-h-0!"
           data-panel-animations={routePanelAnimationsActive ? "true" : "false"}
           defaultOpen
+          {...(aldoSettings ? { open: true } : {})}
           style={sidebarProviderStyle}
         >
           <ProjectProjectionRetention />
@@ -348,21 +359,27 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
           >
             {isOnSettings ? (
               <>
-                <SidebarChromeHeader isElectron={isElectron} />
+                {/* Aldo: the way back to threads heads its settings nav. */}
+                {isAldoCloud ? (
+                  <AldoSettingsBackBar />
+                ) : (
+                  <SidebarChromeHeader isElectron={isElectron} />
+                )}
                 <SettingsSidebarNav pathname={pathname} />
               </>
             ) : legacySidebarEnabled ? (
               <LegacyThreadSidebar />
             ) : (
-              <>
-                <ThreadSidebar />
-                {isAldoCloud ? <AldoProfileButton className="mx-2 mb-2 w-auto" /> : null}
-              </>
+              <ThreadSidebar />
             )}
+            {isAldoCloud && !isOnSettings ? (
+              <AldoProfileButton className="mx-2 mb-2 w-auto" />
+            ) : null}
             <SidebarRail onDoubleClick={resetSidebarWidth} />
           </Sidebar>
           {children}
-          <SidebarControl />
+          {/* Aldo's settings nav stays open, with Back to threads at its head and Done on a phone. */}
+          {aldoSettings ? null : <SidebarControl />}
           <NavigationHistoryShortcuts />
           <MainAppLocationTracker />
         </SidebarProvider>

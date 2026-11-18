@@ -1,10 +1,12 @@
 // The Library: what agents made and shared. In a thread that isn't code it's
 // a right-panel tab: the files its turns made, each opening beside the thread,
-// and what it shared by link. Settings → Shared files lists everything the
-// user's agents shared, and so does simple mode's Library
+// and what it shared by link. The Library page (/library, AldoPlaces.tsx)
+// lists everything the user's agents shared, and so does simple mode's Library
 // (AldoSimplePlaces.tsx). A shared one says who can open it, and can be
-// copied, opened, or stopped (its link stops working at once). Grouping and
-// labels are in library.logic.ts.
+// copied, opened, or stopped (its link stops working at once). A page or file
+// with no copy beside the thread opens in Aldo's viewer (AldoShareViewer.tsx).
+// One that stays current says when it was updated, and any can be pinned
+// first. Grouping and labels are in library.logic.ts.
 
 import type { EnvironmentId, ScopedThreadRef, ThreadId } from "@t3tools/contracts";
 import { Link } from "@tanstack/react-router";
@@ -17,11 +19,10 @@ import {
   LinkIcon,
   LoaderCircleIcon,
   LockIcon,
-  Share2Icon,
+  PinIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
-import { SettingsSection } from "../components/settings/settingsLayout";
 import { Button } from "../components/ui/button";
 import { ScrollArea } from "../components/ui/scroll-area";
 import { toastManager } from "../components/ui/toast";
@@ -31,18 +32,17 @@ import { useRightPanelStore } from "../rightPanelStore";
 import type { WorkLogEntry } from "../session-logic";
 import type { TurnDiffSummary } from "../types";
 import { AldoMadeThumb, aldoAskToShare } from "./AldoMadeCards";
-import {
-  AldoApiError,
-  fetchAldoShares,
-  getAldoEnvironments,
-  stopAldoShare,
-  subscribeAldoEnvironments,
-} from "./cloud";
+import { AldoApiError } from "./api";
+import { fetchAldoShares, pinAldoShare, stopAldoShare } from "./workspaceApi";
+import { aldoShareChanged, onAldoShareChanged, openAldoShare } from "./shareViewer";
+import { getAldoEnvironments, subscribeAldoEnvironments } from "./directory";
 import {
   aldoLibraryGroups,
   aldoShareAudience,
   aldoShareItem,
   aldoShareProject,
+  aldoShareUpdated,
+  aldoShareViewable,
   aldoShareViews,
   aldoThreadLibrary,
   type AldoLibraryItem,
@@ -70,11 +70,14 @@ function useAldoShares(key: string) {
   const [error, setError] = useState<string | null>(null);
   // Only the latest read's answer shows.
   const latest = useRef(0);
+  // Whether a read has answered yet.
+  const read = useRef(false);
   const refresh = useCallback(() => {
     const request = ++latest.current;
     fetchAldoShares()
       .then((next) => {
         if (request !== latest.current) return;
+        read.current = true;
         setShares(next);
         setError(null);
       })
@@ -94,6 +97,24 @@ function useAldoShares(key: string) {
     latest.current += 1;
     setShares((current) => (current ? current.filter((share) => share.id !== id) : current));
   }, []);
+  // Pinned or unpinned, here or in the viewer.
+  useEffect(
+    () =>
+      onAldoShareChanged((changed) => {
+        // Nothing read yet, and the read on its way may predate the change: read again.
+        if (!read.current) {
+          refresh();
+          return;
+        }
+        latest.current += 1;
+        setShares((current) =>
+          current
+            ? current.map((share) => (share.id === changed.id ? { ...share, ...changed } : share))
+            : current,
+        );
+      }),
+    [refresh],
+  );
   return { shares, error, refresh, removed };
 }
 
@@ -155,9 +176,35 @@ function LibraryRow(props: {
   const url = share?.url ?? item.url;
   const [confirming, setConfirming] = useState(false);
   const [stopping, setStopping] = useState(false);
-  const canOpen = item.path !== null && threadRef !== null;
+  const [pinning, setPinning] = useState(false);
+  const besideThread = item.path !== null && threadRef !== null;
+  const viewable = share !== null && aldoShareViewable(share.contentType);
+  const canOpen = besideThread || viewable;
   const open = () => {
     if (item.path && threadRef) useRightPanelStore.getState().openFile(threadRef, item.path);
+    else if (share && viewable) {
+      openAldoShare({
+        id: share.id,
+        url: share.url,
+        title: share.title,
+        contentType: share.contentType,
+        share,
+      });
+    }
+  };
+  const pin = () => {
+    if (share?.pinned === undefined) return;
+    setPinning(true);
+    pinAldoShare(share.id, !share.pinned)
+      .then(aldoShareChanged)
+      .catch((cause: unknown) =>
+        toastManager.add({
+          type: "error",
+          title: share.pinned ? "Couldn't unpin it" : "Couldn't pin it",
+          description: messageOf(cause),
+        }),
+      )
+      .finally(() => setPinning(false));
   };
   const stop = async () => {
     if (!share) return;
@@ -184,6 +231,7 @@ function LibraryRow(props: {
   const kindLabel = item.kind ? ALDO_MADE_KIND_LABEL[item.kind] : "File";
   const detail = [
     item.fileName ?? kindLabel,
+    share ? aldoShareUpdated(share, new Date()) : null,
     share && share.bytes > 0 ? formatMailSize(share.bytes) : null,
     share ? aldoShareViews(share.views) : null,
     item.shared && !url ? "Shared" : null,
@@ -208,7 +256,12 @@ function LibraryRow(props: {
             workspaceRoot={props.workspaceRoot}
           />
           <span className="min-w-0">
-            <span className="block truncate font-medium text-sm">{item.name}</span>
+            <span className="flex min-w-0 items-center gap-1 font-medium text-sm">
+              {share?.pinned ? (
+                <PinIcon aria-label="Pinned" className="size-3 shrink-0 text-muted-foreground" />
+              ) : null}
+              <span className="truncate">{item.name}</span>
+            </span>
             <span className="block truncate text-muted-foreground text-xs">{detail}</span>
           </span>
         </button>
@@ -273,6 +326,11 @@ function LibraryRow(props: {
               Share
             </button>
           ) : null}
+          {share?.pinned !== undefined ? (
+            <button type="button" className={action} disabled={pinning} onClick={pin}>
+              {share.pinned ? "Unpin" : "Pin"}
+            </button>
+          ) : null}
           {share ? (
             <button
               type="button"
@@ -299,7 +357,13 @@ function LibraryGroups(props: {
   readonly onStopped: (id: string) => void;
 }) {
   const groups = useMemo(
-    () => aldoLibraryGroups(props.items, (item) => item.at, new Date()),
+    () =>
+      aldoLibraryGroups(
+        props.items,
+        (item) => item.at,
+        new Date(),
+        (item) => item.share?.pinned === true,
+      ),
     [props.items],
   );
   return (
@@ -328,7 +392,7 @@ function LibraryGroups(props: {
 function AllSharedLink(props: { readonly label: string }) {
   return (
     <Link
-      to="/settings/shared"
+      to="/library"
       className="inline-flex items-center gap-0.5 px-1 text-muted-foreground text-xs hover:text-foreground"
     >
       {props.label}
@@ -457,20 +521,6 @@ function useThreadOf(): (environmentId: string | undefined) => {
         : null;
     },
     [environments],
-  );
-}
-
-/** Settings → Shared files: what it's for, then everything shared. */
-export function AldoSharedFilesPanel() {
-  return (
-    <SettingsSection title="Shared files" icon={<Share2Icon className="size-4" />}>
-      <p className="px-3 text-muted-foreground text-sm sm:px-4">
-        Pages and files your agents shared by link, newest first. A public link opens for anyone who
-        has it; one only you can open asks for your Aldo sign-in. Stop sharing turns its link off at
-        once and deletes the shared copy; the agent's own file stays where it is.
-      </p>
-      <AldoSharedFiles />
-    </SettingsSection>
   );
 }
 

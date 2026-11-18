@@ -38,6 +38,7 @@ import {
 } from "@t3tools/client-runtime/environment";
 import {
   resolveEnvironmentMachineKind,
+  type EnvironmentId,
   type EnvironmentMachineKind,
   type ProjectIconOverride,
   type ScopedThreadRef,
@@ -47,6 +48,7 @@ import type { TimestampFormat } from "@t3tools/contracts/settings";
 import {
   AlarmClockIcon,
   AlarmClockOffIcon,
+  ArchiveIcon,
   CheckIcon,
   ChevronDownIcon,
   CircleAlertIcon,
@@ -70,6 +72,7 @@ import {
 import {
   memo,
   useCallback,
+  useDeferredValue,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -77,11 +80,13 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  type ComponentProps,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
+  type RefObject,
 } from "react";
-import { useParams, useRouter } from "@tanstack/react-router";
+import { Link, useParams, useRouter } from "@tanstack/react-router";
 
 import { useRightPanelStore } from "../rightPanelStore";
 import {
@@ -159,11 +164,13 @@ import { AldoThreadBadge, isAldoThreadId } from "./ManagedDevPcAgent";
 import {
   aldoSupportsGeneralThreads,
   aldoThreadInKeptRepo,
+  getAldoEnvironments,
   subscribeAldoEnvironments,
   displayedThreadBranch,
-  isAldoCloud,
-  isAldoEnvironmentId,
-} from "../aldo/cloud";
+} from "../aldo/directory";
+import { isAldoCloud, isAldoEnvironmentId } from "../aldo/api";
+import { aldoThreadsSynced, subscribeAldoThreadsSynced } from "../aldo/shells";
+import { useAldoThreadAwaitsApproval } from "../aldo/AldoApprovals";
 import { aldoNewThreadPlace, useStartAldoThread } from "../aldo/newThread";
 import { buildThreadActionMenuItems } from "./threadActionMenu.logic";
 import {
@@ -199,6 +206,7 @@ import {
   sortLogicalProjectsForSidebar,
   sortPinnedThreadsForSidebar,
   sortThreadsForSidebar,
+  useKeyedValue,
   useRetainedValue,
   useSidebarRowSubscriptionLease,
   useThreadJumpHintVisibility,
@@ -231,6 +239,7 @@ import { ThreadSearchMatchExcerpt } from "./ThreadSearchMatch";
 import { makeWorkspaceFileDropHandlers } from "./chat/workspaceFileDrop";
 import { ProviderInstanceIcon } from "./chat/ProviderInstanceIcon";
 import { getTriggerDisplayModelLabel } from "./chat/providerIconUtils";
+import { unlistedModelLabel } from "../aldo/modelNames";
 import {
   deriveProviderEntriesByEnvironment,
   shouldShowInstanceBadge,
@@ -239,6 +248,7 @@ import {
 import { useThreadRunningTerminalIds } from "../state/terminalSessions";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { Button, InlineButton } from "./ui/button";
+import { Skeleton } from "./ui/skeleton";
 import {
   Combobox,
   ComboboxEmpty,
@@ -251,8 +261,8 @@ import {
 } from "./ui/combobox";
 import { SidebarContent, SidebarGroup, useSidebar } from "./ui/sidebar";
 import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
-import { AldoSidebarEntry } from "../aldo/AldoSidebarEntry";
 import { useAldoThreadStart } from "../aldo/threadStart";
+import { useAldoSidebarOrder } from "../aldo/sidebarOrder";
 import { SidebarHeaderIconButton, SidebarThreadHeader } from "./sidebar/SidebarThreadHeader";
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuShortcut, MenuTrigger } from "./ui/menu";
 import { Tooltip, TooltipPopup, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
@@ -325,6 +335,26 @@ function settledTimeLabel(thread: SidebarThreadSummary): string {
   return timestamp === null ? "" : compactSidebarTimeLabel(formatRelativeTimeLabel(timestamp));
 }
 
+/** Thread cards' shape while the list loads: where each card's place and title go. */
+function SidebarThreadsSkeleton() {
+  return (
+    <ul role="status" aria-label="Loading threads">
+      <SidebarThreadSkeleton title={<Skeleton className="h-3 w-4/5" />} />
+      <SidebarThreadSkeleton title={<Skeleton className="h-3 w-3/5" />} />
+      <SidebarThreadSkeleton title={<Skeleton className="h-3 w-2/3" />} />
+    </ul>
+  );
+}
+
+function SidebarThreadSkeleton(props: { title: ReactNode }) {
+  return (
+    <li className="flex h-[4.875rem] flex-col justify-center gap-3 px-2.5">
+      <Skeleton className="h-2.5 w-2/5" />
+      {props.title}
+    </li>
+  );
+}
+
 // Floats at the row's right edge, vertically centered, while the jump
 // modifier is held. An overlay pill instead of an inline slot: the hint
 // must neither displace the status/time label (holding ⌘ used to blank
@@ -356,6 +386,7 @@ function WorkingDuration(props: { startedAt: string | null }) {
 }
 
 const EMPTY_PROVIDER_ENTRIES: ReadonlyMap<string, ProviderInstanceEntry> = new Map();
+const EMPTY_DRAGGED_ORDER: readonly string[] = [];
 // Collapsed shelves share one empty list so a route change alone does not
 // give the sidebar list a new identity.
 const EMPTY_THREADS: readonly EnvironmentThreadShell[] = [];
@@ -560,14 +591,22 @@ type SortableThreadRowBag = Pick<
   "listeners" | "setNodeRef" | "transform" | "transition" | "isDragging"
 >;
 
-function SortableThreadRow(props: {
-  id: string;
-  disabled: boolean;
-  children: (bag: SortableThreadRowBag) => ReactNode;
+// Memoized on the row's own props, so a sidebar render that changes none of
+// them skips dnd-kit's per-row work: the list holds hundreds of these.
+const SortableThreadRow = memo(function SortableThreadRow({
+  sortableId,
+  sortableDisabled,
+  rowKey,
+  ...row
+}: Omit<ComponentProps<typeof SidebarThreadRow>, "sortable"> & {
+  sortableId: string;
+  sortableDisabled: boolean;
+  /** The row's own key: a card and a slim row fade between each other. */
+  rowKey: string;
 }) {
   const { listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: props.id,
-    disabled: { draggable: props.disabled },
+    id: sortableId,
+    disabled: { draggable: sortableDisabled },
     animateLayoutChanges: animateSidebarLayoutChanges,
   });
   // dnd-kit memoizes each field but not the bag, so the memoized row would
@@ -576,8 +615,8 @@ function SortableThreadRow(props: {
     () => ({ listeners, setNodeRef, transform, transition, isDragging }),
     [listeners, setNodeRef, transform, transition, isDragging],
   );
-  return props.children(bag);
-}
+  return <SidebarThreadRow key={rowKey} {...row} sortable={bag} />;
+});
 
 // Unsent work shares one look: the new-thread draft rows and thread rows
 // with unsent composer text both use this tint and pen so they read alike.
@@ -1074,7 +1113,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   // the user visits the thread.
   wokeAt: string | null;
   isActive: boolean;
-  openPullRequestsInRightPanel: boolean;
+  // Read on click: a boolean flipping on every trip between home and a
+  // thread re-rendered every row.
+  openPullRequestsInRightPanel: () => boolean;
   jumpLabel: string | null;
   currentEnvironmentId: string | null;
   environmentLabel: string | null;
@@ -1186,7 +1227,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   // Same semantics as the legacy sidebar (never-visited counts as read):
   // switching sidebars must not light up every historical thread as unread.
   const isUnread = hasUnseenCompletion({ ...thread, lastVisitedAt });
-  const status = resolveSidebarThreadStatus(thread);
+  // Aldo: an approval its agent asked waits on the user like one the agent stopped on.
+  const aldoAsks = useAldoThreadAwaitsApproval(thread.environmentId, thread.id);
+  const status = resolveSidebarThreadStatus(
+    aldoAsks && !thread.hasPendingApprovals ? { ...thread, hasPendingApprovals: true } : thread,
+  );
   // Aldo: a thread it's starting has no turn yet; it says how the start stands.
   const aldoStart = useAldoThreadStart(thread.environmentId, thread.id);
   // A woken thread reappears at its original position (the sort is
@@ -1216,11 +1261,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   // mobile Live Activity/widgets (amber approval, indigo input, sky working)
   // so a thread reads the same color everywhere it surfaces.
   // Aldo: a thread it's starting reads like Working (or Failed), with how the
-  // start stands as its label.
+  // start stands as its label; so does one Aldo holds a message for, which
+  // the sidebar lists with the threads at work.
   const aldoStartStatus =
     aldoStart?.tone === "failed"
       ? { label: "Failed", icon: "failed" as const, className: "text-red-700 dark:text-red-300" }
-      : aldoStart !== null && status === "working"
+      : aldoStart !== null
         ? {
             label: aldoStart.label,
             icon: "working" as const,
@@ -1297,7 +1343,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   );
   const modelLabel = selectedModel
     ? getTriggerDisplayModelLabel(selectedModel)
-    : thread.modelSelection.model;
+    : unlistedModelLabel(thread.modelSelection.model, providerEntry?.models);
 
   // The local environment is "this machine" and needs no marker; every other
   // one gets its machine glyph. With no local environment (the hosted app)
@@ -1472,12 +1518,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     (event: ReactMouseEvent<HTMLElement>) => {
       const url = pr?.url ?? currentLinkedPr?.url;
       if (!url) return;
-      const openedInRightPanel = openPrLink(
-        event,
-        url,
-        openPullRequestsInRightPanel ? threadRef : undefined,
-      );
-      if (openedInRightPanel && openPullRequestsInRightPanel && !props.isActive) {
+      const inRightPanel = openPullRequestsInRightPanel();
+      const openedInRightPanel = openPrLink(event, url, inRightPanel ? threadRef : undefined);
+      if (openedInRightPanel && inRightPanel && !props.isActive) {
         onThreadActivate(threadRef);
       }
     },
@@ -2127,11 +2170,13 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
   resultId: string;
   searchMatch: EnvironmentThreadSearchMatch | null;
   searchQuery: string;
-  onHighlight: () => void;
-  onSelect: () => void;
+  index: number;
+  // Stable across renders, so a keystroke re-renders only the rows it changes.
+  onHighlight: (index: number) => void;
+  onSelect: (threadRef: ScopedThreadRef) => void;
   onFileDropThreads: (threadRef: ScopedThreadRef, files: File[]) => void;
 }) {
-  const { thread } = props;
+  const { index, onHighlight, onSelect, thread } = props;
   const accessibility = resolveSidebarRowAccessibility({
     title: thread.title,
     statusLabel: null,
@@ -2142,6 +2187,8 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
     () => scopeThreadRef(thread.environmentId, thread.id),
     [thread.environmentId, thread.id],
   );
+  const handleHighlight = useCallback(() => onHighlight(index), [index, onHighlight]);
+  const handleSelect = useCallback(() => onSelect(threadRef), [onSelect, threadRef]);
   const { leaseLiveStatus, rowRef } = useSidebarRowSubscriptionLease(
     props.isHighlighted || props.isRouteActive,
   );
@@ -2176,7 +2223,7 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
   );
   const modelLabel = selectedModel
     ? getTriggerDisplayModelLabel(selectedModel)
-    : thread.modelSelection.model;
+    : unlistedModelLabel(thread.modelSelection.model, providerEntry?.models);
   const runningTerminalIds = useThreadRunningTerminalIds({
     environmentId: thread.environmentId,
     threadId: thread.id,
@@ -2216,8 +2263,8 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
               aria-selected={props.isHighlighted}
               aria-current={accessibility.current}
               aria-label={accessibility.label}
-              onMouseMove={props.onHighlight}
-              onClick={props.onSelect}
+              onMouseMove={handleHighlight}
+              onClick={handleSelect}
               className={cn(
                 "flex min-h-9 w-full cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-1 text-left text-sm outline-none",
                 props.isHighlighted || props.isRouteActive
@@ -2269,6 +2316,222 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
   );
 });
 
+/**
+ * The project scope menu above the list. Its open state and query are its
+ * own: kept in the sidebar's, opening it, typing in it or closing it
+ * re-rendered the whole sidebar.
+ */
+const SidebarProjectScopeMenu = memo(function SidebarProjectScopeMenu(props: {
+  readonly projectGroups: ReadonlyArray<SidebarProjectSnapshot>;
+  readonly projectScopeKey: string | null;
+  readonly scopedProjectGroup: SidebarProjectSnapshot | null;
+  readonly onScopeChange: (projectKey: string | null) => void;
+  readonly anchor: RefObject<HTMLDivElement | null>;
+  readonly onOpenProjectSettings: (projectGroup: SidebarProjectSnapshot) => void;
+  readonly primaryEnvironmentId: EnvironmentId | null;
+  readonly environmentMachineById: ReadonlyMap<EnvironmentId, EnvironmentMachineKind>;
+}) {
+  const { onOpenProjectSettings } = props;
+  // {value, label} items let Base UI drive the combobox selection contract
+  // while the popup search filters the same collection.
+  const items = useMemo(
+    () => [
+      { value: "all", label: "All projects" },
+      ...props.projectGroups.map((project) => ({
+        value: project.projectKey,
+        label: project.displayName,
+      })),
+    ],
+    [props.projectGroups],
+  );
+  // Same-named projects on two machines are only told apart by where they
+  // live, so rows on another machine carry its icon once the catalog spans
+  // more than one environment; a single-machine catalog stays as it was.
+  // Aldo: a project spans the machines of its threads, which the picker
+  // doesn't name, so it shows no machine badge.
+  const showProjectEnvironments = useMemo(
+    () => !isAldoCloud && projectGroupsSpanEnvironments(props.projectGroups),
+    [props.projectGroups],
+  );
+  const projectGroupByScopeKey = useMemo(
+    () => new Map(props.projectGroups.map((project) => [project.projectKey, project] as const)),
+    [props.projectGroups],
+  );
+  const selectedItem = useMemo(
+    () => items.find((item) => item.value === (props.projectScopeKey ?? "all")) ?? items[0]!,
+    [items, props.projectScopeKey],
+  );
+  const [menuState, dispatch] = useReducer(reduceSidebarProjectScopeMenuState, {
+    open: false,
+    query: "",
+  });
+  const filter = useComboboxFilter();
+  // Filtering derives from the same React state that controls the input, so
+  // the visible query and the visible list can never desync — the peer wiring
+  // in DiffPanel and BranchToolbarBranchSelector. "All projects" is the default
+  // row, not a searchable entry: it heads the list while the query is empty and
+  // drops out while filtering, so it can't outrank a project match under
+  // autoHighlight and no-hit queries reach the empty state.
+  const filteredItems = useMemo(
+    () =>
+      filterSidebarProjectScopeItems({
+        items,
+        query: menuState.query,
+        matches: (item, query) => filter.contains(item, query, (candidate) => candidate.label),
+      }),
+    [filter, items, menuState.query],
+  );
+  // Safari can send a click after Ctrl+click opens settings. Ignore that one
+  // selection, then clear the guard when the picker opens again.
+  const suppressNextScopeChangeRef = useRef(false);
+  const highlightedProjectScopeKeyRef = useRef<string | null>(null);
+  const handleProjectSettings = useCallback(
+    (
+      event: ReactMouseEvent<HTMLElement> | ReactKeyboardEvent<HTMLInputElement>,
+      projectGroup: SidebarProjectSnapshot,
+    ) => {
+      event.preventDefault();
+      event.stopPropagation();
+      suppressNextScopeChangeRef.current = true;
+      dispatch({ type: "project-settings-opened" });
+      onOpenProjectSettings(projectGroup);
+    },
+    [onOpenProjectSettings],
+  );
+  return (
+    <Combobox
+      items={items}
+      filteredItems={filteredItems}
+      autoHighlight
+      itemToStringLabel={(item) => item.label}
+      isItemEqualToValue={(a, b) => a.value === b.value}
+      open={menuState.open}
+      onOpenChange={(open) => {
+        if (open) suppressNextScopeChangeRef.current = false;
+        dispatch({ type: "open-changed", open });
+      }}
+      onItemHighlighted={(item) => {
+        highlightedProjectScopeKeyRef.current = item?.value ?? null;
+      }}
+      value={selectedItem}
+      onValueChange={(item) => {
+        if (suppressNextScopeChangeRef.current) {
+          suppressNextScopeChangeRef.current = false;
+          return;
+        }
+        if (!item) return;
+        props.onScopeChange(item.value === "all" ? null : item.value);
+      }}
+    >
+      <ComboboxTrigger
+        render={
+          <SidebarHeaderIconButton
+            label={
+              props.scopedProjectGroup
+                ? `Filter threads by project: ${props.scopedProjectGroup.displayName}`
+                : "Filter threads by project"
+            }
+          />
+        }
+      >
+        {props.scopedProjectGroup ? (
+          // Wrapped so the button's direct-child svg color rule cannot override
+          // a project's own icon color.
+          <span className="flex shrink-0">
+            <ProjectFavicon project={props.scopedProjectGroup} className="size-4" />
+          </span>
+        ) : (
+          <FolderIcon className="size-4" />
+        )}
+      </ComboboxTrigger>
+      <ComboboxPopup
+        align="start"
+        // Anchored to the search field, not the 28px trigger: the
+        // popup opens under the field, is at least as wide as it,
+        // and grows to fit project names up to a cap, past which
+        // the rows truncate.
+        anchor={props.anchor}
+        className="max-w-[min(18rem,var(--available-width))] overflow-hidden"
+      >
+        <ComboboxSearchInput
+          aria-label="Search projects"
+          placeholder="Search projects..."
+          value={menuState.query}
+          onKeyDown={(event) => {
+            if (
+              event.defaultPrevented ||
+              event.nativeEvent.isComposing ||
+              event.ctrlKey ||
+              event.altKey ||
+              event.metaKey ||
+              (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10"))
+            ) {
+              return;
+            }
+            // Combobox items use virtual focus: keyboard events
+            // stay on this input, not on the highlighted option.
+            const scopeKey = highlightedProjectScopeKeyRef.current;
+            const project = scopeKey ? projectGroupByScopeKey.get(scopeKey) : null;
+            if (project) handleProjectSettings(event, project);
+          }}
+          onChange={(event) =>
+            dispatch({
+              type: "query-changed",
+              query: event.target.value,
+            })
+          }
+        />
+        <ComboboxEmpty>No matching projects.</ComboboxEmpty>
+        <ComboboxList>
+          {(item: (typeof items)[number]) => {
+            const project = projectGroupByScopeKey.get(item.value) ?? null;
+            return (
+              <ComboboxItem
+                key={item.value}
+                hideIndicator
+                value={item}
+                onContextMenu={(event) => {
+                  if (project) handleProjectSettings(event, project);
+                }}
+              >
+                {project ? (
+                  <ProjectFavicon project={project} className="size-4 shrink-0" />
+                ) : (
+                  <FolderIcon className="size-4 shrink-0" />
+                )}
+                <span className="min-w-0 flex-1 truncate text-sm">{item.label}</span>
+                {project && showProjectEnvironments ? (
+                  <ProjectEnvironmentBadge
+                    group={project}
+                    primaryEnvironmentId={props.primaryEnvironmentId}
+                    machineByEnvironmentId={props.environmentMachineById}
+                  />
+                ) : null}
+                {project ? (
+                  <Button
+                    size="icon-xs"
+                    variant="ghost-muted"
+                    tabIndex={-1}
+                    aria-hidden="true"
+                    title={`Project settings for ${project.displayName}`}
+                    className="ml-auto"
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={(event) => {
+                      void handleProjectSettings(event, project);
+                    }}
+                  >
+                    <SettingsIcon className="size-3.5" />
+                  </Button>
+                ) : null}
+              </ComboboxItem>
+            );
+          }}
+        </ComboboxList>
+      </ComboboxPopup>
+    </Combobox>
+  );
+});
+
 export default function Sidebar() {
   const projects = useProjects();
   const projectOrder = useUiStateStore((store) => store.projectOrder);
@@ -2281,6 +2544,18 @@ export default function Sidebar() {
   const sidebarProjectSortOrder = useClientSettings((s) => s.sidebarProjectSortOrder);
   const timestampFormat = useClientSettings((s) => s.timestampFormat);
   const workingShelfEnabled = useClientSettings((s) => s.sidebarWorkingShelfEnabled);
+  const [threadSearchQuery, setThreadSearchQuery] = useState("");
+  const isSearchingThreads = threadSearchQuery.trim().length > 0;
+  // Results follow the query in a background render, so typing never waits
+  // on hundreds of result rows.
+  const deferredThreadSearchQuery = useDeferredValue(threadSearchQuery);
+  const isThreadSearchStale = deferredThreadSearchQuery !== threadSearchQuery;
+  // Aldo: search results keep their order while a search is open.
+  const {
+    order: aldoOrder,
+    sort: aldoSort,
+    listProps: aldoListProps,
+  } = useAldoSidebarOrder({ hold: isSearchingThreads });
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const {
     settleThread,
@@ -2392,6 +2667,7 @@ export default function Sidebar() {
   // the command was in flight, completing it must not yank them away.
   const routeThreadKeyRef = useRef(routeThreadKey);
   routeThreadKeyRef.current = routeThreadKey;
+  const isThreadRouteOpen = useCallback(() => routeThreadKeyRef.current !== null, []);
 
   const environmentLabelById = useMemo(
     () =>
@@ -2495,58 +2771,6 @@ export default function Sidebar() {
   // app restarts keep it.
   const projectScopeKey = useUiStateStore((store) => store.sidebarProjectScopeKey);
   const setProjectScopeKey = useUiStateStore((store) => store.setSidebarProjectScopeKey);
-  // {value, label} items let Base UI drive the combobox selection contract
-  // while the popup search filters the same collection.
-  const projectScopeItems = useMemo(
-    () => [
-      { value: "all", label: "All projects" },
-      ...projectGroups.map((project) => ({
-        value: project.projectKey,
-        label: project.displayName,
-      })),
-    ],
-    [projectGroups],
-  );
-  // Same-named projects on two machines are only told apart by where they
-  // live, so rows on another machine carry its icon once the catalog spans
-  // more than one environment; a single-machine catalog stays as it was.
-  // Aldo: a project spans the machines of its threads, which the picker
-  // doesn't name, so it shows no machine badge.
-  const showProjectEnvironments = useMemo(
-    () => !isAldoCloud && projectGroupsSpanEnvironments(projectGroups),
-    [projectGroups],
-  );
-  const projectGroupByScopeKey = useMemo(
-    () => new Map(projectGroups.map((project) => [project.projectKey, project] as const)),
-    [projectGroups],
-  );
-  const selectedProjectScopeItem = useMemo(
-    () =>
-      projectScopeItems.find((item) => item.value === (projectScopeKey ?? "all")) ??
-      projectScopeItems[0]!,
-    [projectScopeItems, projectScopeKey],
-  );
-  const [projectScopeMenuState, dispatchProjectScopeMenu] = useReducer(
-    reduceSidebarProjectScopeMenuState,
-    { open: false, query: "" },
-  );
-  const projectScopeFilter = useComboboxFilter();
-  // Filtering derives from the same React state that controls the input, so
-  // the visible query and the visible list can never desync — the peer wiring
-  // in DiffPanel and BranchToolbarBranchSelector. "All projects" is the default
-  // row, not a searchable entry: it heads the list while the query is empty and
-  // drops out while filtering, so it can't outrank a project match under
-  // autoHighlight and no-hit queries reach the empty state.
-  const filteredProjectScopeItems = useMemo(
-    () =>
-      filterSidebarProjectScopeItems({
-        items: projectScopeItems,
-        query: projectScopeMenuState.query,
-        matches: (item, query) =>
-          projectScopeFilter.contains(item, query, (candidate) => candidate.label),
-      }),
-    [projectScopeFilter, projectScopeItems, projectScopeMenuState.query],
-  );
   const scopedProjectGroup = useMemo(
     () =>
       projectScopeKey === null
@@ -2620,23 +2844,6 @@ export default function Sidebar() {
   );
   // Anchor for the scope popup: the header search field, not its icon trigger.
   const headerSearchRef = useRef<HTMLDivElement | null>(null);
-  // Safari can send a click after Ctrl+click opens settings. Ignore that one
-  // selection, then clear the guard when the picker opens again.
-  const suppressNextScopeChangeRef = useRef(false);
-  const highlightedProjectScopeKeyRef = useRef<string | null>(null);
-  const handleProjectSettings = useCallback(
-    (
-      event: ReactMouseEvent<HTMLElement> | ReactKeyboardEvent<HTMLInputElement>,
-      projectGroup: SidebarProjectSnapshot,
-    ) => {
-      event.preventDefault();
-      event.stopPropagation();
-      suppressNextScopeChangeRef.current = true;
-      dispatchProjectScopeMenu({ type: "project-settings-opened" });
-      openProjectSettings(projectGroup);
-    },
-    [openProjectSettings],
-  );
 
   // Keep a dropped row at its destination while its server applies the
   // lifecycle command and any order-key writes. The next pickup waits for
@@ -2695,8 +2902,14 @@ export default function Sidebar() {
       // or descriptor not loaded yet) never classify as settled: the user
       // could neither un-settle nor pin them, so auto-settling them would
       // strand rows in a tail with no working affordances.
-      const supportsSettlement = capabilities?.threadSettlement === true;
-      const supportsSnooze = capabilities?.threadSnooze === true;
+      // Aldo: every machine runs a server that has both, so a thread keeps
+      // its shelf while its machine's config loads. Otherwise a fresh load
+      // rendered every settled thread in the inbox (hundreds of rows), then
+      // moved them as each config came in.
+      const supportsSettlement =
+        capabilities === undefined ? isAldoCloud : capabilities.threadSettlement === true;
+      const supportsSnooze =
+        capabilities === undefined ? isAldoCloud : capabilities.threadSnooze === true;
       const threadKey = scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id));
       if (capabilities?.threadActiveReorder === true) activeReorderable.add(threadKey);
       // Older servers retain their existing drag actions. Active placement
@@ -2737,14 +2950,20 @@ export default function Sidebar() {
     // Server capability only gates DRAGGING — it must not influence the
     // sort, or mixed-version fleets would render different pinned orders on
     // web and mobile from the same data.
-    const sortedPinned = sortPinnedThreadsForSidebar(pinned);
-    const sortedActive = workingShelfEnabled
-      ? sortInboxThreadsByReturn(active, (thread) =>
-          observedInboxReturns.get(
-            scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
-          ),
-        )
-      : sortThreadsForSidebar(active);
+    // Aldo: work first, then what waits on the user, then newest finished
+    // (aldo/sidebarOrder.logic.ts), in both lists.
+    const sortedPinned = isAldoCloud
+      ? aldoOrder("pinned", pinned)
+      : sortPinnedThreadsForSidebar(pinned);
+    const sortedActive = isAldoCloud
+      ? aldoOrder("active", active)
+      : workingShelfEnabled
+        ? sortInboxThreadsByReturn(active, (thread) =>
+            observedInboxReturns.get(
+              scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
+            ),
+          )
+        : sortThreadsForSidebar(active);
     return {
       pinnedThreads:
         optimisticDrop?.section !== "pinned" || optimisticDrop.order === null
@@ -2776,6 +2995,7 @@ export default function Sidebar() {
       snoozeNow: preciseNow,
     };
   }, [
+    aldoOrder,
     nowMinute,
     optimisticDrop,
     scopedProjectKeys,
@@ -2786,9 +3006,7 @@ export default function Sidebar() {
   ]);
 
   const threadSearchInputRef = useRef<HTMLInputElement>(null);
-  const [threadSearchQuery, setThreadSearchQuery] = useState("");
   const [activeSearchResultIndex, setActiveSearchResultIndex] = useState(0);
-  const isSearchingThreads = threadSearchQuery.trim().length > 0;
   const searchableThreads = useMemo(
     () => [
       ...pinnedThreads,
@@ -2817,10 +3035,10 @@ export default function Sidebar() {
     () =>
       searchSidebarThreads(
         searchableThreads,
-        threadSearchQuery,
+        deferredThreadSearchQuery,
         new Set(threadSearchMatchByKey.keys()),
       ),
-    [searchableThreads, threadSearchQuery, threadSearchMatchByKey],
+    [deferredThreadSearchQuery, searchableThreads, threadSearchMatchByKey],
   );
   const threadSearchResultOrderKey = threadSearchResults
     .map((thread) => scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)))
@@ -3120,9 +3338,9 @@ export default function Sidebar() {
     setActiveSearchResultIndex(0);
   }, []);
   const selectThreadSearchResult = useCallback(
-    (thread: EnvironmentThreadShell) => {
+    (threadRef: ScopedThreadRef) => {
       clearThreadSearch();
-      navigateToThread(scopeThreadRef(thread.environmentId, thread.id));
+      navigateToThread(threadRef);
     },
     [clearThreadSearch, navigateToThread],
   );
@@ -3135,6 +3353,18 @@ export default function Sidebar() {
         event.preventDefault();
         event.stopPropagation();
         clearThreadSearch();
+        return;
+      }
+      if (event.key === "Enter" && isThreadSearchStale) {
+        // The list still shows the previous query's results: open the first
+        // match for what's typed now, as the list will show once it catches up.
+        event.preventDefault();
+        const [result] = searchSidebarThreads(
+          searchableThreads,
+          threadSearchQuery,
+          new Set(threadSearchMatchByKey.keys()),
+        );
+        if (result) selectThreadSearchResult(scopeThreadRef(result.environmentId, result.id));
         return;
       }
       if (threadSearchResults.length === 0) return;
@@ -3153,14 +3383,18 @@ export default function Sidebar() {
       if (event.key === "Enter") {
         event.preventDefault();
         const result = threadSearchResults[activeSearchResultIndex];
-        if (result) selectThreadSearchResult(result);
+        if (result) selectThreadSearchResult(scopeThreadRef(result.environmentId, result.id));
       }
     },
     [
       activeSearchResultIndex,
       clearThreadSearch,
       isSearchingThreads,
+      isThreadSearchStale,
+      searchableThreads,
       selectThreadSearchResult,
+      threadSearchMatchByKey,
+      threadSearchQuery,
       threadSearchResults,
     ],
   );
@@ -3376,13 +3610,13 @@ export default function Sidebar() {
   const cancelThreadDrag = useCallback(() => {
     dragSensorRef.current?.cancel();
   }, []);
-  const dndSensors = useSensors(
-    useSensor(SidebarPointerSensor, {
-      distance: 6,
-      onAttach: attachDragSensor,
-      onFinish: finishThreadDrag,
-    }),
+  // Stable options keep the sensors, and with them dnd-kit's internal
+  // context, from changing on every render: each change re-renders every row.
+  const dndSensorOptions = useMemo(
+    () => ({ distance: 6, onAttach: attachDragSensor, onFinish: finishThreadDrag }),
+    [attachDragSensor, finishThreadDrag],
   );
+  const dndSensors = useSensors(useSensor(SidebarPointerSensor, dndSensorOptions));
   const sectionByThreadKey = useMemo(() => {
     const map = new Map<string, SidebarSection>();
     const add = (list: readonly EnvironmentThreadShell[], section: SidebarSection) => {
@@ -3440,10 +3674,11 @@ export default function Sidebar() {
     }
     if (optimisticDrop.order === null) {
       // Settle also emits unpin/unsnooze events. Wait for the entire move
-      // before releasing the projected fields and sort timestamps.
+      // before releasing the projected fields and sort timestamps. A pin
+      // into a time-ordered pinned block (Aldo) has no order to wait for.
       if (
         canonicalSection === optimisticDrop.section &&
-        thread.pinnedAt == null &&
+        (optimisticDrop.section === "pinned" || thread.pinnedAt == null) &&
         (!optimisticDrop.clearsSnooze || thread.snoozedUntil == null)
       ) {
         setOptimisticDrop(null);
@@ -3551,7 +3786,7 @@ export default function Sidebar() {
   );
   // Include every visible row in the measured order. Older servers disable
   // pickup on their rows without changing where those rows render.
-  const sidebarListItems = useMemo((): readonly SidebarListItem[] => {
+  const latestSidebarListItems = useMemo((): readonly SidebarListItem[] => {
     const rowsOf = (
       list: readonly EnvironmentThreadShell[],
       section: SidebarSection,
@@ -3600,6 +3835,19 @@ export default function Sidebar() {
     visibleWorkingThreads,
     workingThreads.length,
   ]);
+  // Every shell event rebuilds the list, but rows only move when the
+  // rendered order or a row's section changes. Keying the list (and the
+  // motion pass) on that keeps ordinary updates from re-rendering every
+  // sortable row, forcing a layout read and animating rows whose position
+  // drifted for other reasons.
+  const sidebarListOrderKey = useMemo(
+    () =>
+      latestSidebarListItems
+        .map((item) => (item.kind === "thread" ? `${item.key}:${item.section}` : item.marker))
+        .join("\0"),
+    [latestSidebarListItems],
+  );
+  const sidebarListItems = useKeyedValue(sidebarListOrderKey, latestSidebarListItems);
   useEffect(() => {
     if (
       dragState !== null &&
@@ -3609,19 +3857,11 @@ export default function Sidebar() {
     }
   }, [cancelThreadDrag, dragState, sidebarListItems]);
   const listMotionPaused = dragState !== null;
-  // Every shell event rebuilds sidebarListItems, but rows only move when the
-  // rendered order or a row's section changes. Keying the motion pass on that
-  // keeps ordinary updates from forcing a layout read and animating rows
-  // whose position drifted for other reasons.
-  const sidebarListOrderKey = useMemo(
-    () =>
-      sidebarListItems
-        .map((item) => (item.kind === "thread" ? `${item.key}:${item.section}` : item.marker))
-        .join("\0"),
-    [sidebarListItems],
-  );
   const sidebarListHasRows = sidebarListItems.length + visibleDraftSessionCount > 0;
   useLayoutEffect(() => {
+    // A hidden list (a search open) has no positions to take: rows glide from
+    // where they were before it once it shows again.
+    if (isSearchingThreads) return;
     // Drag release clears the baseline, so its commit cannot replay the
     // sortable preview; rows glide from their released positions instead.
     // Later thread actions can animate while writes settle.
@@ -3629,6 +3869,7 @@ export default function Sidebar() {
     void sidebarListOrderKey;
     listMotionRef.current?.update(!listMotionPaused && sidebarListHasRows);
   }, [
+    isSearchingThreads,
     listMotionPaused,
     routeDraftIdForRows,
     sidebarListHasRows,
@@ -3651,7 +3892,7 @@ export default function Sidebar() {
   const sortableIds = useMemo(() => sidebarListItems.map(sidebarListItemId), [sidebarListItems]);
   const draggedSettledOrder = useMemo(() => {
     const thread = dragState === null ? undefined : threadByKey.get(dragState.activeKey);
-    if (dragState === null || thread === undefined) return [];
+    if (dragState === null || thread === undefined) return EMPTY_DRAGGED_ORDER;
     const key = (candidate: EnvironmentThreadShell) =>
       scopedThreadKey(scopeThreadRef(candidate.environmentId, candidate.id));
     return sortSettledThreads([
@@ -3660,20 +3901,39 @@ export default function Sidebar() {
     ]).map(key);
   }, [dragState, settledThreads, threadByKey]);
   // Working beta: the inbox is time-ordered too, so the preview shows the
-  // slot a drop will land in, not the slot under the pointer.
+  // slot a drop will land in, not the slot under the pointer. Aldo orders
+  // the inbox and the pinned block itself, so both preview that way.
   const draggedActiveOrder = useMemo(() => {
     const thread = dragState === null ? undefined : threadByKey.get(dragState.activeKey);
-    if (!workingShelfEnabled || dragState === null || thread === undefined) return undefined;
+    if (!(isAldoCloud || workingShelfEnabled) || dragState === null || thread === undefined)
+      return undefined;
     const key = (candidate: EnvironmentThreadShell) =>
       scopedThreadKey(scopeThreadRef(candidate.environmentId, candidate.id));
-    return sortInboxThreadsByReturn(
-      [
-        ...activeThreads.filter((candidate) => key(candidate) !== dragState.activeKey),
-        applySidebarThreadDrop(thread, "active", dragState.occurredAt),
-      ],
-      (candidate) => observedInboxReturns.get(key(candidate)),
+    const destination = [
+      ...activeThreads.filter((candidate) => key(candidate) !== dragState.activeKey),
+      applySidebarThreadDrop(thread, "active", dragState.occurredAt),
+    ];
+    return (
+      isAldoCloud
+        ? aldoSort(destination)
+        : sortInboxThreadsByReturn(destination, (candidate) =>
+            observedInboxReturns.get(key(candidate)),
+          )
     ).map(key);
-  }, [activeThreads, dragState, threadByKey, workingShelfEnabled]);
+  }, [activeThreads, aldoSort, dragState, threadByKey, workingShelfEnabled]);
+  const draggedPinnedOrder = useMemo(() => {
+    const thread = dragState === null ? undefined : threadByKey.get(dragState.activeKey);
+    if (!isAldoCloud || dragState === null || thread === undefined) return undefined;
+    const key = (candidate: EnvironmentThreadShell) =>
+      scopedThreadKey(scopeThreadRef(candidate.environmentId, candidate.id));
+    return aldoSort([
+      ...pinnedThreads.filter((candidate) => key(candidate) !== dragState.activeKey),
+      applySidebarThreadDrop(thread, "pinned", dragState.occurredAt),
+    ]).map(key);
+  }, [aldoSort, dragState, pinnedThreads, threadByKey]);
+  // Only a drag's preview reads the route: tied to the strategy outside one,
+  // every navigation re-rendered every sortable row.
+  const dragRouteThreadKey = dragState === null ? null : routeThreadKey;
   const sidebarSortingStrategy = useMemo(
     () =>
       createSidebarSortingStrategy({
@@ -3681,15 +3941,17 @@ export default function Sidebar() {
         boundaryLabelHeight: SIDEBAR_DRAG_LABEL_HEIGHT,
         settledOrder: draggedSettledOrder,
         ...(draggedActiveOrder === undefined ? {} : { activeOrder: draggedActiveOrder }),
+        ...(draggedPinnedOrder === undefined ? {} : { pinnedOrder: draggedPinnedOrder }),
         settledExpanded: settledShelfExpanded,
         settledVisibleCount,
-        routeThreadKey,
+        routeThreadKey: dragRouteThreadKey,
         snoozedThreadCount: snoozedThreads.length,
       }),
     [
       draggedActiveOrder,
+      draggedPinnedOrder,
+      dragRouteThreadKey,
       draggedSettledOrder,
-      routeThreadKey,
       settledShelfExpanded,
       settledVisibleCount,
       sidebarListItems,
@@ -3743,7 +4005,8 @@ export default function Sidebar() {
             activeOrder: activeKeys,
             activeKeysById,
             activeReorderableKeys: activeReorderableThreadKeys,
-            activeTimeOrdered: workingShelfEnabled,
+            activeTimeOrdered: isAldoCloud || workingShelfEnabled,
+            pinnedTimeOrdered: isAldoCloud,
           }).kind !== "none"
         );
       },
@@ -3793,7 +4056,8 @@ export default function Sidebar() {
         activeOrder: activeKeys,
         activeKeysById,
         activeReorderableKeys: activeReorderableThreadKeys,
-        activeTimeOrdered: workingShelfEnabled,
+        activeTimeOrdered: isAldoCloud || workingShelfEnabled,
+        pinnedTimeOrdered: isAldoCloud,
       });
       if (plan.kind === "none") return;
       if (plan.kind === "settle" && settlingThreadKeysRef.current.has(activeKey)) return;
@@ -4603,6 +4867,22 @@ export default function Sidebar() {
     () => isAldoCloud && aldoSupportsGeneralThreads(),
     () => false,
   );
+  // Aldo: no rows yet while its directory hasn't listed the threads, or before
+  // this page has brought its copies of them up to date, is loading, not "No threads yet".
+  const aldoListed = useSyncExternalStore(
+    subscribeAldoEnvironments,
+    () => {
+      const listed = getAldoEnvironments();
+      return listed === null ? null : listed.length > 0;
+    },
+    () => null,
+  );
+  const threadsSynced = useSyncExternalStore(
+    subscribeAldoThreadsSynced,
+    aldoThreadsSynced,
+    () => false,
+  );
+  const threadsLoading = isAldoCloud && (aldoListed === null || (aldoListed && !threadsSynced));
   const handleNewThreadClick = useCallback(
     (event?: ReactMouseEvent) => {
       // Aldo: a draft at once, in the project of the thread on screen, else
@@ -4657,141 +4937,20 @@ export default function Sidebar() {
           // Lifted above the stage backdrop, whose fade bleeds below the
           // header and would otherwise paint across the search row's outline.
           <SidebarGroup className="z-[1]">
-            {isAldoCloud ? <AldoSidebarEntry /> : null}
             <SidebarThreadHeader
               searchFieldRef={headerSearchRef}
               hasProjects={projectGroups.length > 0}
               projectScope={
-                <Combobox
-                  items={projectScopeItems}
-                  filteredItems={filteredProjectScopeItems}
-                  autoHighlight
-                  itemToStringLabel={(item) => item.label}
-                  isItemEqualToValue={(a, b) => a.value === b.value}
-                  open={projectScopeMenuState.open}
-                  onOpenChange={(open) => {
-                    if (open) suppressNextScopeChangeRef.current = false;
-                    dispatchProjectScopeMenu({ type: "open-changed", open });
-                  }}
-                  onItemHighlighted={(item) => {
-                    highlightedProjectScopeKeyRef.current = item?.value ?? null;
-                  }}
-                  value={selectedProjectScopeItem}
-                  onValueChange={(item) => {
-                    if (suppressNextScopeChangeRef.current) {
-                      suppressNextScopeChangeRef.current = false;
-                      return;
-                    }
-                    if (!item) return;
-                    setProjectScopeKey(item.value === "all" ? null : item.value);
-                  }}
-                >
-                  <ComboboxTrigger
-                    render={
-                      <SidebarHeaderIconButton
-                        label={
-                          scopedProjectGroup
-                            ? `Filter threads by project: ${scopedProjectGroup.displayName}`
-                            : "Filter threads by project"
-                        }
-                      />
-                    }
-                  >
-                    {scopedProjectGroup ? (
-                      // Wrapped so the button's direct-child svg color rule cannot override
-                      // a project's own icon color.
-                      <span className="flex shrink-0">
-                        <ProjectFavicon project={scopedProjectGroup} className="size-4" />
-                      </span>
-                    ) : (
-                      <FolderIcon className="size-4" />
-                    )}
-                  </ComboboxTrigger>
-                  <ComboboxPopup
-                    align="start"
-                    // Anchored to the search field, not the 28px trigger: the
-                    // popup opens under the field, is at least as wide as it,
-                    // and grows to fit project names up to a cap, past which
-                    // the rows truncate.
-                    anchor={headerSearchRef}
-                    className="max-w-[min(18rem,var(--available-width))] overflow-hidden"
-                  >
-                    <ComboboxSearchInput
-                      aria-label="Search projects"
-                      placeholder="Search projects..."
-                      value={projectScopeMenuState.query}
-                      onKeyDown={(event) => {
-                        if (
-                          event.defaultPrevented ||
-                          event.nativeEvent.isComposing ||
-                          event.ctrlKey ||
-                          event.altKey ||
-                          event.metaKey ||
-                          (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10"))
-                        ) {
-                          return;
-                        }
-                        // Combobox items use virtual focus: keyboard events
-                        // stay on this input, not on the highlighted option.
-                        const scopeKey = highlightedProjectScopeKeyRef.current;
-                        const project = scopeKey ? projectGroupByScopeKey.get(scopeKey) : null;
-                        if (project) handleProjectSettings(event, project);
-                      }}
-                      onChange={(event) =>
-                        dispatchProjectScopeMenu({
-                          type: "query-changed",
-                          query: event.target.value,
-                        })
-                      }
-                    />
-                    <ComboboxEmpty>No matching projects.</ComboboxEmpty>
-                    <ComboboxList>
-                      {(item: (typeof projectScopeItems)[number]) => {
-                        const project = projectGroupByScopeKey.get(item.value) ?? null;
-                        return (
-                          <ComboboxItem
-                            key={item.value}
-                            hideIndicator
-                            value={item}
-                            onContextMenu={(event) => {
-                              if (project) handleProjectSettings(event, project);
-                            }}
-                          >
-                            {project ? (
-                              <ProjectFavicon project={project} className="size-4 shrink-0" />
-                            ) : (
-                              <FolderIcon className="size-4 shrink-0" />
-                            )}
-                            <span className="min-w-0 flex-1 truncate text-sm">{item.label}</span>
-                            {project && showProjectEnvironments ? (
-                              <ProjectEnvironmentBadge
-                                group={project}
-                                primaryEnvironmentId={primaryEnvironmentId}
-                                machineByEnvironmentId={environmentMachineById}
-                              />
-                            ) : null}
-                            {project ? (
-                              <Button
-                                size="icon-xs"
-                                variant="ghost-muted"
-                                tabIndex={-1}
-                                aria-hidden="true"
-                                title={`Project settings for ${project.displayName}`}
-                                className="ml-auto"
-                                onPointerDown={(event) => event.stopPropagation()}
-                                onClick={(event) => {
-                                  void handleProjectSettings(event, project);
-                                }}
-                              >
-                                <SettingsIcon className="size-3.5" />
-                              </Button>
-                            ) : null}
-                          </ComboboxItem>
-                        );
-                      }}
-                    </ComboboxList>
-                  </ComboboxPopup>
-                </Combobox>
+                <SidebarProjectScopeMenu
+                  projectGroups={projectGroups}
+                  projectScopeKey={projectScopeKey}
+                  scopedProjectGroup={scopedProjectGroup}
+                  onScopeChange={setProjectScopeKey}
+                  anchor={headerSearchRef}
+                  onOpenProjectSettings={openProjectSettings}
+                  primaryEnvironmentId={primaryEnvironmentId}
+                  environmentMachineById={environmentMachineById}
+                />
               }
               onNewProject={openAddProjectCommandPalette}
               onNewThread={handleNewThreadClick}
@@ -4868,16 +5027,17 @@ export default function Sidebar() {
                             }),
                           ) ?? null
                         }
-                        searchQuery={threadSearchQuery}
-                        onHighlight={() => setActiveSearchResultIndex(index)}
-                        onSelect={() => selectThreadSearchResult(thread)}
+                        searchQuery={deferredThreadSearchQuery}
+                        index={index}
+                        onHighlight={setActiveSearchResultIndex}
+                        onSelect={selectThreadSearchResult}
                         onFileDropThreads={handleThreadFileDrop}
                       />
                     );
                   })}
                 </ul>
               </TooltipProvider>
-            ) : (
+            ) : isThreadSearchStale ? null : (
               <p
                 role="status"
                 className="px-2 py-6 text-center text-xs text-sidebar-muted-foreground"
@@ -4886,7 +5046,9 @@ export default function Sidebar() {
               </p>
             )
           ) : null}
-          {!isSearchingThreads ? (
+          {/* Hidden, not unmounted, while a search is open: closing the
+              search would otherwise mount every row again at once. */}
+          {
             <TooltipProvider
               key="sidebar-thread-tooltips-150"
               delay={150}
@@ -4909,6 +5071,8 @@ export default function Sidebar() {
                 <SortableContext items={sortableIds} strategy={sidebarSortingStrategy}>
                   <ul
                     ref={attachListMotionRef}
+                    hidden={isSearchingThreads}
+                    {...(isAldoCloud ? aldoListProps : {})}
                     // VoiceOver treats an exposed list as an interaction boundary,
                     // which hides its rows from ordinary linear navigation. A
                     // presentational list also makes its implicit listitems
@@ -4920,10 +5084,9 @@ export default function Sidebar() {
                     )}
                   >
                     {(() => {
-                      const renderThreadRowInner = (
+                      const renderThreadRow = (
                         thread: EnvironmentThreadShell,
                         section: SidebarSection,
-                        sortable?: SortableThreadRowBag,
                       ) => {
                         const threadKey = scopedThreadKey(
                           scopeThreadRef(thread.environmentId, thread.id),
@@ -4937,10 +5100,18 @@ export default function Sidebar() {
                           section === "active" || section === "pinned" || section === "working";
                         const rowVariant = isCard ? "card" : "slim";
                         return (
-                          <SidebarThreadRow
+                          <SortableThreadRow
+                            key={threadKey}
+                            sortableId={threadKey}
+                            sortableDisabled={
+                              renamingThreadKey === threadKey ||
+                              section === "working" ||
+                              !draggableThreadKeys.has(threadKey) ||
+                              optimisticDrop !== null
+                            }
                             // Fade between card and compact rows while the outer
                             // sortable wrapper keeps its identity during a drag.
-                            key={`${threadKey}:${rowVariant}`}
+                            rowKey={`${threadKey}:${rowVariant}`}
                             thread={thread}
                             variant={rowVariant}
                             // Snoozed rows wake, settled rows un-settle, and cards settle.
@@ -4964,7 +5135,6 @@ export default function Sidebar() {
                                 .threadPinning === true
                             }
                             isPinned={thread.pinnedAt != null}
-                            sortable={sortable}
                             dropVerb={
                               dragState?.activeKey === threadKey
                                 ? resolveSidebarDropVerb(dragState.activeSection, dragTargetSection)
@@ -4986,7 +5156,7 @@ export default function Sidebar() {
                             // rows resolve to null on their own.
                             wokeAt={threadWokeAt(thread, { now: snoozeNow })}
                             isActive={routeThreadKey === threadKey}
-                            openPullRequestsInRightPanel={routeThreadRef !== null}
+                            openPullRequestsInRightPanel={isThreadRouteOpen}
                             jumpLabel={
                               showThreadJumpHints ? (jumpLabelByKey.get(threadKey) ?? null) : null
                             }
@@ -5030,28 +5200,6 @@ export default function Sidebar() {
                             onAcknowledgeWoke={acknowledgeWoke}
                             onFileDropThreads={handleThreadFileDrop}
                           />
-                        );
-                      };
-                      const renderThreadRow = (
-                        thread: EnvironmentThreadShell,
-                        section: SidebarSection,
-                      ) => {
-                        const threadKey = scopedThreadKey(
-                          scopeThreadRef(thread.environmentId, thread.id),
-                        );
-                        return (
-                          <SortableThreadRow
-                            key={threadKey}
-                            id={threadKey}
-                            disabled={
-                              renamingThreadKey === threadKey ||
-                              section === "working" ||
-                              !draggableThreadKeys.has(threadKey) ||
-                              optimisticDrop !== null
-                            }
-                          >
-                            {(bag) => renderThreadRowInner(thread, section, bag)}
-                          </SortableThreadRow>
                         );
                       };
                       const from = dragState?.activeSection ?? null;
@@ -5207,7 +5355,7 @@ export default function Sidebar() {
                 </SortableContext>
               </DndContext>
             </TooltipProvider>
-          ) : null}
+          }
           {!isSearchingThreads &&
           visibleDraftSessionCount === 0 &&
           pinnedThreads.length +
@@ -5216,25 +5364,39 @@ export default function Sidebar() {
             snoozedThreads.length +
             settledThreads.length ===
             0 ? (
-            <div className="flex flex-col items-center gap-2 px-2 py-6 text-center text-xs text-muted-foreground/60">
-              {projects.length === 0 ? (
-                <>
-                  <span>No projects yet</span>
-                  <button
-                    type="button"
-                    onClick={openAddProjectCommandPalette}
-                    className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-sidebar-border px-2.5 py-1 text-2xs font-medium text-sidebar-muted-foreground transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
-                  >
-                    <PlusIcon className="-mx-0.5 size-3" />
-                    Add project
-                  </button>
-                </>
-              ) : scopedProjectGroup ? (
-                `No threads in ${scopedProjectGroup.displayName} yet`
-              ) : (
-                "No threads yet"
-              )}
-            </div>
+            threadsLoading ? (
+              <SidebarThreadsSkeleton />
+            ) : (
+              <div className="flex flex-col items-center gap-2 px-2 py-6 text-center text-xs text-muted-foreground/60">
+                {projects.length === 0 ? (
+                  <>
+                    <span>No projects yet</span>
+                    <button
+                      type="button"
+                      onClick={openAddProjectCommandPalette}
+                      className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-sidebar-border px-2.5 py-1 text-2xs font-medium text-sidebar-muted-foreground transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
+                    >
+                      <PlusIcon className="-mx-0.5 size-3" />
+                      Add project
+                    </button>
+                  </>
+                ) : scopedProjectGroup ? (
+                  `No threads in ${scopedProjectGroup.displayName} yet`
+                ) : (
+                  "No threads yet"
+                )}
+              </div>
+            )
+          ) : null}
+          {/* Aldo: archived threads are threads, so the list ends with the way to them. */}
+          {isAldoCloud && !isSearchingThreads ? (
+            <Link
+              to="/settings/archived"
+              className="mt-1 flex h-8 items-center gap-2.5 rounded-md px-2.5 text-xs text-sidebar-muted-foreground/70 outline-none hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <ArchiveIcon aria-hidden className="size-3.5 shrink-0" />
+              Archived threads
+            </Link>
           ) : null}
         </SidebarGroup>
       </SidebarContent>

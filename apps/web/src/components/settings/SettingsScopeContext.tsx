@@ -5,7 +5,8 @@ import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
 import { createContext, type ReactNode, useContext, useMemo } from "react";
 
-import { isAldoCloud } from "../../aldo/cloud";
+import { isAldoCloud } from "../../aldo/api";
+import { aldoRoutesModels } from "../../aldo/directory";
 import { useAldoMachineSettings } from "../../aldo/machineSettings";
 import { aldoSettingsSelection } from "../../aldo/machineSettings.logic";
 import { aldoSettingsScopeSearch } from "../../aldo/settings.logic";
@@ -80,12 +81,14 @@ function useResolvedSettingsScope(rawSearch: SettingsScopeSearch, singleEnvironm
   );
   const projectFiles = useMemberProjectFiles(scope);
   const kept = useAldoMachineSettings();
+  const modelRouting = isAldoCloud && aldoRoutesModels();
   return useMemo(() => {
     // Aldo: the user's values at "All environments" (aldo/machineSettings.logic.ts).
     const selected = aldoSettingsSelection(
       scope.kind,
       selectScopedSettingsEnvironments(scope, availableEnvironments, primaryEnvironmentId),
       isAldoCloud ? kept : null,
+      modelRouting,
     );
     const targets = resolveScopedSettingsTargets(
       scope,
@@ -101,7 +104,16 @@ function useResolvedSettingsScope(rawSearch: SettingsScopeSearch, singleEnvironm
       targets[0] ??
       null;
     return { scope, groups, search, ...selected, targets, target };
-  }, [availableEnvironments, groups, kept, primaryEnvironmentId, projectFiles, scope, search]);
+  }, [
+    availableEnvironments,
+    groups,
+    kept,
+    modelRouting,
+    primaryEnvironmentId,
+    projectFiles,
+    scope,
+    search,
+  ]);
 }
 
 const SettingsScopeContext = createContext<
@@ -118,16 +130,19 @@ export function SettingsScopeProvider({
   onChange,
   children,
   singleEnvironment = false,
+  pathname,
 }: {
   singleEnvironment?: boolean;
   search: SettingsScopeSearch;
   onChange: (next: SettingsScopeSearch) => void;
   children: ReactNode;
+  /** The page shown: Aldo follows a project only on the pages that are a project's. */
+  pathname?: string;
 }) {
   // Aldo: a project or every thread, never one machine.
   const scopeSearch = useMemo(
-    () => (isAldoCloud ? aldoSettingsScopeSearch(search) : search),
-    [search],
+    () => (isAldoCloud ? aldoSettingsScopeSearch(search, pathname) : search),
+    [pathname, search],
   );
   const resolved = useResolvedSettingsScope(scopeSearch, singleEnvironment);
   const value = useMemo(

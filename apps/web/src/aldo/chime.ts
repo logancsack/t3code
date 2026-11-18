@@ -1,6 +1,6 @@
 // An optional sound while Aldo is open: a soft chime when a thread finishes
 // or needs the user (chime.logic.ts says when), off unless they turn it on
-// in Settings → General, per browser (every open tab follows). It's made here
+// in Settings → Notifications, per browser (every open tab follows). It's made here
 // with Web Audio rather than shipped as a file. It listens only while the
 // page shows, and not for the thread the user is looking at; notifications
 // cover the rest.
@@ -8,8 +8,7 @@
 import { useEffect, useSyncExternalStore } from "react";
 
 import { chimeMemory, chimeNews, shouldChime, type ChimeMemory } from "./chime.logic";
-import type { AldoHome } from "./cloud";
-import { useAldoHomeFeed } from "./homeFeed";
+import { useAldoHomeFeed, type AldoHomeFeed } from "./homeFeed";
 import { aldoOnScreen } from "./screen";
 
 const STORAGE_KEY = "aldo:sound";
@@ -25,7 +24,7 @@ function read(): boolean {
 
 let on = typeof window === "undefined" ? false : read();
 
-export function getAldoSound(): boolean {
+function getAldoSound(): boolean {
   return on;
 }
 
@@ -135,15 +134,16 @@ export function useAldoChime(): void {
     if (!enabled) return;
     const showing = () => document.visibilityState === "visible";
     let lastChimeAt: number | null = null;
-    // What's already on the page is only remembered; so is the first read after the page comes back.
-    const remember = (home: AldoHome | null) =>
-      home && showing() ? chimeMemory(home.conversations) : null;
-    let memory: ChimeMemory | null = remember(useAldoHomeFeed.getState().home);
+    // What's already on the page is only remembered; so is the first read after the page comes back,
+    // and the first after the copy the device kept (what changed since it isn't news to chime for).
+    const remember = (feed: AldoHomeFeed) =>
+      feed.home && !feed.saved && showing() ? chimeMemory(feed.home.conversations) : null;
+    let memory: ChimeMemory | null = remember(useAldoHomeFeed.getState());
     const stop = useAldoHomeFeed.subscribe((state, previous) => {
       if (!state.home || state.home === previous.home) return;
       const now = Date.now();
       const news = showing() ? chimeNews(memory, state.home.conversations, now, watching()) : [];
-      memory = remember(state.home);
+      memory = remember(state);
       if (!shouldChime(news.length, lastChimeAt, now)) return;
       lastChimeAt = now;
       playAldoChime();

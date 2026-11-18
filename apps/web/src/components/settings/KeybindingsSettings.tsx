@@ -68,7 +68,7 @@ import {
 } from "./KeybindingsSettings.logic";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 import { AldoKeysSection } from "../../aldo/AldoKeys";
-import { isAldoCloud } from "../../aldo/cloud";
+import { isAldoCloud } from "../../aldo/api";
 import { ALDO_HIDDEN_KEYBINDING_COMMANDS } from "../../aldo/settings.logic";
 import { keybindingSearchAnchorId, searchableSetting } from "./settingsSearch";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";

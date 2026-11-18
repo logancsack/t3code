@@ -1,7 +1,7 @@
 import type { EnvironmentId, PullRequestRef, ScopedThreadRef } from "@t3tools/contracts";
-import { useAtomValue } from "@effect/atom-react";
+import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import { useNavigate } from "@tanstack/react-router";
-import { type MouseEvent, useCallback, useMemo } from "react";
+import { type MouseEvent, useCallback, useContext, useMemo } from "react";
 
 import { pullRequestHostOf, type SourceControlProviderKind } from "@t3tools/contracts";
 import { parseChangeRequestUrl, type ChangeRequestLink } from "@t3tools/shared/changeRequestUrl";
@@ -15,8 +15,9 @@ import { stackedThreadToast, toastManager } from "../components/ui/toast";
 import { useRightPanelStore } from "../rightPanelStore";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 
-import { useProjects, useServerConfigs } from "../state/entities";
-import { serverEnvironment } from "../state/server";
+import { useProjects } from "../state/entities";
+import { environmentProjects } from "../state/projects";
+import { environmentServerConfigsAtom, serverEnvironment } from "../state/server";
 import { usePrimaryEnvironmentId } from "../state/environments";
 
 export {
@@ -217,12 +218,15 @@ export function useOpenChangeRequestLink(
   targetEnvironmentId?: EnvironmentId,
 ) => boolean {
   const navigate = useNavigate();
-  const allProjects = useProjects();
-  const serverConfigs = useServerConfigs();
+  // Read on click: every sidebar row holds one of these, and subscribing each
+  // to all projects and server configs re-rendered the whole list on any change.
+  const registry = useContext(RegistryContext);
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   return useCallback(
     (event, targetUrl, targetThreadRef, targetEnvironmentId) => {
       if (shouldOpenPullRequestExternally(event)) return false;
+      const allProjects = registry.get(environmentProjects.projectsAtom);
+      const serverConfigs = registry.get(environmentServerConfigsAtom);
       const resolvedThreadRef = targetThreadRef ?? threadRef;
       const resolvedPanelRef = panelRef ?? resolvedThreadRef;
       const parsed = parseChangeRequestUrl(targetUrl);
@@ -318,7 +322,7 @@ export function useOpenChangeRequestLink(
       });
       return true;
     },
-    [allProjects, navigate, panelRef, primaryEnvironmentId, serverConfigs, threadRef],
+    [navigate, panelRef, primaryEnvironmentId, registry, threadRef],
   );
 }
 

@@ -1,4 +1,4 @@
-// How Aldo's start of a thread stands, from the directory (cloud.ts), for the
+// How Aldo's start of a thread stands, from the directory (directory.ts), for the
 // thread (AldoThreadLoading.tsx) and the sidebar to show instead of an empty
 // thread "Working". The words are threadStart.logic.ts's.
 
@@ -9,12 +9,11 @@ import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentPresentations } from "../state/presentation";
 import {
   getAldoEnvironments,
-  isAldoCloud,
-  isAldoEnvironmentId,
   subscribeAldoEnvironments,
   type AldoEnvironment,
   type AldoStartState,
-} from "./cloud";
+} from "./directory";
+import { isAldoCloud, isAldoEnvironmentId } from "./api";
 import { describeAldoThreadStart, type AldoThreadStartView } from "./threadStart.logic";
 
 function environmentOf(environmentId: string): AldoEnvironment | null {

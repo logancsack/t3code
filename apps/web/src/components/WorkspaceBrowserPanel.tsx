@@ -5,7 +5,7 @@ import { useCallback, useState } from "react";
 
 import { managedWorkspaceBrowserUrl } from "~/managedDevPc";
 import { AldoBrowserPanel } from "~/aldo/AldoBrowserPanel";
-import { isAldoCloud } from "~/aldo/cloud";
+import { isAldoCloud } from "~/aldo/api";
 
 import { Button } from "./ui/button";
 import { isLandingDemo } from "~/landingDemo/mode";

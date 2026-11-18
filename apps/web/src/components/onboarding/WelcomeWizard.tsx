@@ -57,7 +57,6 @@ import { newProjectId, randomUUID } from "../../lib/utils";
 import { agentSessionImport } from "../../state/agentSessions";
 import { readProjects, useProjects } from "../../state/entities";
 import { useEnvironments, usePrimaryEnvironment } from "../../state/environments";
-import { isOnboardingRelayEnvironment } from "../../onboarding/targetEnvironment.logic";
 import { useProjectScans } from "../../onboarding/useProjectScans";
 import { projectEnvironment } from "../../state/projects";
 import { serverEnvironment } from "../../state/server";
@@ -303,7 +302,7 @@ function ConnectionStep({
   const { environments } = useEnvironments();
   const cloudEnabled = hasCloudPublicConfig();
   const directEnvironments = environments.filter(
-    (environment) => !cloudEnabled || !isOnboardingRelayEnvironment(environment),
+    (environment) => !cloudEnabled || environment.entry.target._tag !== "RelayConnectionTarget",
   );
   const [pairingOpen, setPairingOpen] = useState(expandPairingInitially);
   const [isPairing, setIsPairing] = useState(false);

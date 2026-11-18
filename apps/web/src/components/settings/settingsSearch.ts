@@ -1,6 +1,6 @@
 import { isElectron } from "~/env";
-import { isAldoCloud } from "../../aldo/cloud";
-import { aldoShowsSettingsSearchItem } from "../../aldo/settings.logic";
+import { isAldoCloud } from "../../aldo/api";
+import { aldoSettingsSearchItem, aldoShowsSettingsSearchItem } from "../../aldo/settings.logic";
 import { isManagedDevPc } from "../../managedDevPc";
 import { isMacPlatform, isWindowsPlatform, normalizeSearchText } from "~/lib/utils";
 import { STATIC_KEYBINDING_COMMANDS, type KeybindingCommand } from "@t3tools/contracts";
@@ -32,7 +32,19 @@ export type SettingsPath =
   | "/settings/environments"
   | "/settings/storage"
   | "/settings/connections"
-  | "/settings/archived";
+  | "/settings/archived"
+  // Aldo's own pages (aldo/settings.logic.ts).
+  | "/settings/account"
+  | "/settings/organization"
+  | "/settings/members"
+  | "/settings/running"
+  | "/settings/activity"
+  | "/settings/joining"
+  | "/settings/agents"
+  | "/settings/permissions"
+  | "/settings/notifications"
+  | "/settings/phone"
+  | "/settings/code";
 
 /**
  * Where a setting can be edited. Device-local rows have no scope: they render
@@ -66,8 +78,16 @@ export interface SettingsSearchItem {
   /** Only in Aldo cloud mode, whose page at this path differs from T3's. */
   readonly aldoCloudOnly?: boolean;
   readonly requiresAldoPhone?: boolean;
+  /** Its page shows only for someone in an organization (aldo/organization.logic.ts). */
+  readonly requiresAldoOrganization?: boolean;
+  /** Its page shows only to an organization's owners and admins, on an Aldo that has it (aldo/orgJoining.logic.ts). */
+  readonly requiresAldoJoining?: boolean;
   /** Its row renders only once Aldo says it has agent inboxes. */
   readonly requiresAldoAgentInbox?: boolean;
+  /** Its row renders only on an Aldo that keeps the welcome's answer (aldo/onboarding.ts). */
+  readonly requiresAldoOnboarding?: boolean;
+  /** Its row renders only once Aldo says its policy takes this rule (aldo/policy.logic.ts). */
+  readonly requiresAldoPolicyRule?: string;
   readonly environmentOnly?: boolean;
   readonly providerSettingsOnly?: boolean;
   readonly macProviderSettingsOnly?: boolean;
@@ -92,7 +112,14 @@ export interface SettingsSearchAvailability {
   readonly isWslSettingsRowVisible: boolean;
   readonly hasThreadAutoSettlement: boolean;
   readonly hasAldoPhoneApi?: boolean;
+  readonly hasAldoOrganization?: boolean;
+  readonly hasAldoJoining?: boolean;
   readonly hasAldoAgentInbox?: boolean;
+  readonly hasAldoOnboarding?: boolean;
+  /** The rules Aldo's policy takes, once it's said (Settings → Permissions). */
+  readonly aldoPolicyRules?: ReadonlyArray<string>;
+  /** False for an Aldo account without the developer tools (aldo/developerTools.ts): no Code page. */
+  readonly aldoDeveloperTools?: boolean;
 }
 
 /**
@@ -110,15 +137,27 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/providers": isAldoCloud ? "AI subscriptions" : "Providers",
   "/settings/integrations": "Integrations",
   "/settings/source-control": isAldoCloud ? "Git hosts" : "Source Control",
-  "/settings/instructions": "Instructions",
-  "/settings/skills": "Skills",
-  "/settings/memory": "Memory",
+  // Aldo: one page, in tabs.
+  "/settings/instructions": isAldoCloud ? "Personalization" : "Instructions",
+  "/settings/skills": isAldoCloud ? "Personalization" : "Skills",
+  "/settings/memory": isAldoCloud ? "Personalization" : "Memory",
   "/settings/vault": "Vault",
   "/settings/shared": "Shared files",
   "/settings/environments": "Environments",
   "/settings/storage": "Storage",
   "/settings/connections": isManagedDevPc ? "Server connections" : "Connections",
   "/settings/archived": "Archive",
+  "/settings/account": "Account",
+  "/settings/organization": "Organization",
+  "/settings/members": "Members",
+  "/settings/running": "Running now",
+  "/settings/activity": "Activity",
+  "/settings/joining": "Who can join",
+  "/settings/agents": "Models",
+  "/settings/permissions": "Permissions",
+  "/settings/notifications": "Notifications",
+  "/settings/phone": "Phone",
+  "/settings/code": "Code",
 };
 
 /** Anchor id of the first row bound to `command` on the Keybindings page. */
@@ -295,23 +334,33 @@ export const SETTINGS_SEARCH_ITEMS = [
   {
     id: "aldo-notifications",
     title: "Notifications on this device",
-    to: "/settings/general",
+    to: "/settings/notifications",
     searchTerms: ["push alerts notify phone browser finished needs you"],
     aldoCloudOnly: true,
   },
   {
     id: "aldo-notification-sound",
     title: "Play a sound when a thread finishes or needs you",
-    to: "/settings/general",
+    to: "/settings/notifications",
     searchTerms: ["notifications chime sound audio alert"],
     aldoCloudOnly: true,
   },
   {
     id: "aldo-simple-mode",
-    title: "Simple mode",
-    to: "/settings/general",
-    searchTerms: ["rail sidebar hide threads just aldo needs you library layout full view"],
+    title: "Layout",
+    to: "/settings/appearance",
+    searchTerms: ["simple mode rail sidebar hide threads just aldo needs you library full view"],
     aldoCloudOnly: true,
+  },
+  {
+    id: "aldo-interests",
+    title: "What you hand Aldo",
+    to: "/settings/general",
+    searchTerms: [
+      "interests welcome starters ideas home developer tools code pull requests terminal diff",
+    ],
+    aldoCloudOnly: true,
+    requiresAldoOnboarding: true,
   },
   {
     id: "project-grouping",
@@ -624,7 +673,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   {
     id: "aldo-integration-microsoft",
     title: "Microsoft",
-    to: "/settings/integrations",
+    to: "/settings/connections",
     searchTerms: [
       "integrations accounts connect disconnect onedrive sharepoint excel office 365 work school personal",
     ],
@@ -633,7 +682,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   {
     id: "aldo-integration-link",
     title: "Link",
-    to: "/settings/integrations",
+    to: "/settings/connections",
     searchTerms: [
       "link wallet stripe payments pay card credit debit buy purchase checkout approve approval spend connect disconnect",
     ],
@@ -641,8 +690,8 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "aldo-agent-inbox",
-    title: "Agent inbox",
-    to: "/settings/integrations",
+    title: "Your agents' email",
+    to: "/settings/connections",
     searchTerms: [
       "agent inbox email address mail handle claim agentmail aldomail sender name display name from rename",
     ],
@@ -650,9 +699,45 @@ export const SETTINGS_SEARCH_ITEMS = [
     requiresAldoAgentInbox: true,
   },
   {
+    id: "aldo-organization",
+    title: "Organization",
+    to: "/settings/organization",
+    searchTerms: ["organization org company name rename seats owners leave delete"],
+    aldoCloudOnly: true,
+    requiresAldoOrganization: true,
+  },
+  {
+    id: "aldo-members",
+    title: "Members",
+    to: "/settings/members",
+    searchTerms: [
+      "members people team invite invites roles owner admin member remove step down resend revoke link credits usage limit pause",
+    ],
+    aldoCloudOnly: true,
+    requiresAldoOrganization: true,
+  },
+  {
+    id: "aldo-joining",
+    title: "Who can join",
+    to: "/settings/joining",
+    searchTerms: [
+      "who can join domain domains verify dns txt record invite link share link requests ask join right away invite only",
+    ],
+    aldoCloudOnly: true,
+    requiresAldoJoining: true,
+  },
+  {
+    id: "aldo-activity",
+    title: "Activity",
+    to: "/settings/activity",
+    searchTerms: ["activity log history audit who changed stopped paused invited removed"],
+    aldoCloudOnly: true,
+    requiresAldoOrganization: true,
+  },
+  {
     id: "aldo-phone",
     title: "Text and call Aldo",
-    to: "/settings/integrations",
+    to: "/settings/phone",
     searchTerms: ["phone sms mms voice call text number verification pin disconnect"],
     aldoCloudOnly: true,
     requiresAldoPhone: true,
@@ -660,7 +745,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   {
     id: "aldo-apps",
     title: "Apps",
-    to: "/settings/integrations",
+    to: "/settings/connections",
     searchTerms: [
       "apps mcp server connectors plugins connect disconnect zapier notion linear jira confluence atlassian airtable canva granola stripe paypal webflow supabase sentry hugging face",
     ],
@@ -703,7 +788,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   {
     id: "aldo-environments",
     title: "Environments",
-    to: "/settings/environments",
+    to: "/settings/code",
     searchTerms: [
       "environments ready-to-go setup install build workspace computer prebuilt dependencies",
     ],
@@ -721,10 +806,169 @@ export const SETTINGS_SEARCH_ITEMS = [
   {
     id: "aldo-generators",
     title: "Image, video and audio",
-    to: "/settings/integrations",
+    to: "/settings/connections",
     searchTerms: [
       "generators media generation ai video image audio voice music speech api key runway higgsfield luma fal replicate elevenlabs flux black forest labs kling minimax hailuo ideogram veo imagen sora gpt image",
     ],
+    aldoCloudOnly: true,
+  },
+  {
+    id: "aldo-integration-google",
+    title: "Google",
+    to: "/settings/connections",
+    searchTerms: [
+      "integrations accounts connect disconnect gmail mail calendar contacts drive docs sheets",
+    ],
+    aldoCloudOnly: true,
+  },
+  {
+    id: "aldo-account",
+    title: "Account",
+    to: "/settings/account",
+    searchTerms: ["profile name email picture password two-step verification devices manage"],
+    aldoCloudOnly: true,
+  },
+  {
+    id: "aldo-plan",
+    title: "Plan and billing",
+    to: "/settings/account",
+    searchTerms: [
+      "subscription upgrade downgrade cancel credits extra usage limit invoices receipts payment method card",
+    ],
+    aldoCloudOnly: true,
+  },
+  {
+    id: "aldo-subscription-limits",
+    title: "AI subscription limits",
+    to: "/settings/account",
+    searchTerms: ["claude codex chatgpt grok weekly limit resets usage left quota"],
+    aldoCloudOnly: true,
+  },
+  {
+    id: "aldo-sign-out",
+    title: "Sign out",
+    to: "/settings/account",
+    searchTerms: ["log out leave this device"],
+    aldoCloudOnly: true,
+  },
+  {
+    id: "aldo-subagents",
+    title: "Helper models",
+    to: "/settings/agents",
+    searchTerms: ["subagents helpers model reasoning effort claude code codex"],
+    aldoCloudOnly: true,
+  },
+  {
+    id: "aldo-provider-limit",
+    title: "When a subscription runs out mid-task",
+    to: "/settings/agents",
+    searchTerms: ["usage limit reached mid-task wait reset switch model"],
+    aldoCloudOnly: true,
+  },
+  {
+    id: "aldo-context-budget",
+    title: "Conversation length",
+    to: "/settings/agents",
+    searchTerms: ["long conversations context budget compact compaction tokens summarize"],
+    aldoCloudOnly: true,
+  },
+  {
+    id: "aldo-accounts",
+    title: "Sign up for sites",
+    to: "/settings/permissions",
+    searchTerms: [
+      "accounts in your name sign up signup register create account profile listing terms login vault ask me first never",
+    ],
+    aldoCloudOnly: true,
+    requiresAldoPolicyRule: "accounts",
+  },
+  {
+    id: "aldo-publishing",
+    title: "Publish",
+    to: "/settings/permissions",
+    searchTerms: ["publishing for you post listing page go live public show me first"],
+    aldoCloudOnly: true,
+    requiresAldoPolicyRule: "publishing",
+  },
+  {
+    id: "aldo-spend-threshold",
+    title: "Spending limit",
+    to: "/settings/permissions",
+    searchTerms: ["money spend without asking threshold dollars purchase buy approve budget"],
+    aldoCloudOnly: true,
+  },
+  {
+    id: "aldo-paid-fallback",
+    title: "Go past your plans' limits",
+    to: "/settings/permissions",
+    searchTerms: ["pay extra usage credits paid fallback model routing subscription"],
+    aldoCloudOnly: true,
+  },
+  {
+    id: "aldo-merge",
+    title: "Merge pull requests",
+    to: "/settings/permissions",
+    searchTerms: ["auto merge approve checks pass"],
+    aldoCloudOnly: true,
+  },
+  {
+    id: "aldo-merge-method",
+    title: "Merge method",
+    to: "/settings/permissions",
+    searchTerms: ["squash rebase merge commit repository pull request"],
+    aldoCloudOnly: true,
+  },
+  {
+    id: "aldo-reviews",
+    title: "Automated reviews",
+    to: "/settings/permissions",
+    searchTerms: ["codex reviewer findings comments fix"],
+    aldoCloudOnly: true,
+  },
+  {
+    id: "aldo-media-routing",
+    title: "Choosing a tool",
+    to: "/settings/permissions",
+    searchTerms: ["image video audio media generation choose ask default tool"],
+    aldoCloudOnly: true,
+  },
+  {
+    id: "aldo-always-allowed",
+    title: "Always allowed",
+    to: "/settings/permissions",
+    searchTerms: ["approval rules always allow without asking remove"],
+    aldoCloudOnly: true,
+  },
+  {
+    id: "aldo-quiet-hours",
+    title: "Quiet hours",
+    to: "/settings/notifications",
+    searchTerms: [
+      "night sleep do not disturb mute hold wait heads-ups finished threads push start end time",
+    ],
+    aldoCloudOnly: true,
+  },
+  {
+    id: "aldo-brief",
+    title: "Daily brief",
+    to: "/settings/notifications",
+    searchTerms: ["morning brief time push notification what needs you today off"],
+    aldoCloudOnly: true,
+  },
+  {
+    id: "aldo-heads-ups",
+    title: "Heads-ups from Aldo",
+    to: "/settings/notifications",
+    searchTerms: [
+      "mail calendar events half hour what's worth knowing other apps tell me about don't tell me",
+    ],
+    aldoCloudOnly: true,
+  },
+  {
+    id: "aldo-preload",
+    title: "Have agents ready",
+    to: "/settings/general",
+    searchTerms: ["speed preload start computer wake open thread faster waiting"],
     aldoCloudOnly: true,
   },
   {
@@ -1023,6 +1267,17 @@ const SETTINGS_CATEGORY_SCOPES: Readonly<Record<SettingsPath, SettingsSearchScop
   "/settings/storage": "project-defaults",
   "/settings/connections": "connections",
   "/settings/archived": "project-defaults",
+  "/settings/account": null,
+  "/settings/organization": null,
+  "/settings/members": null,
+  "/settings/running": null,
+  "/settings/activity": null,
+  "/settings/joining": null,
+  "/settings/agents": null,
+  "/settings/permissions": null,
+  "/settings/notifications": null,
+  "/settings/phone": null,
+  "/settings/code": null,
 };
 
 /** Search keeps the selected target. A missing row can explain its owning scope instead. */
@@ -1124,29 +1379,41 @@ export function searchableSetting(id: SettingsSearchItemId): {
   readonly id: string;
   readonly title: string;
 } {
-  const { id: anchorId, title } = SEARCH_ITEMS_BY_ID.get(id)!;
-  return { id: anchorId, title };
+  const item = SEARCH_ITEMS_BY_ID.get(id)!;
+  // Aldo's words for a row it shows on a page of its own; it keeps the row's id.
+  return { id: item.id, title: isAldoCloud ? aldoSettingsSearchItem(item).title : item.title };
 }
 
 export function filterAvailableSettingsSearchItems(
   availability: SettingsSearchAvailability,
 ): ReadonlyArray<SettingsSearchItem> {
   const items: ReadonlyArray<SettingsSearchItem> = SETTINGS_SEARCH_ITEMS;
-  return items.filter(
-    (item) =>
-      (!item.cloudOnly || availability.hasCloudPublicConfig) &&
-      (!item.environmentOnly || availability.hasEnvironment) &&
-      (!item.providerSettingsOnly || availability.hasProviderSettingsEnvironment) &&
-      (!item.macProviderSettingsOnly || availability.hasMacProviderSettingsEnvironment) &&
-      (!item.localBackendManagementOnly || availability.canManageLocalBackend) &&
-      (!item.localEnvironmentOnly || !availability.localEnvironmentDisabled) &&
-      (!item.wslAvailableOnly || availability.isWslSettingsRowVisible) &&
-      (!item.requiresThreadAutoSettlement || availability.hasThreadAutoSettlement) &&
-      (!item.requiresAldoPhone || availability.hasAldoPhoneApi === true) &&
-      (!item.requiresAldoAgentInbox || availability.hasAldoAgentInbox === true) &&
-      // Aldo leaves out T3's pages and rows that don't apply to its machines.
-      (isAldoCloud ? aldoShowsSettingsSearchItem(item) : !item.aldoCloudOnly),
-  );
+  return items
+    .filter(
+      (item) =>
+        (!item.cloudOnly || availability.hasCloudPublicConfig) &&
+        (!item.environmentOnly || availability.hasEnvironment) &&
+        (!item.providerSettingsOnly || availability.hasProviderSettingsEnvironment) &&
+        (!item.macProviderSettingsOnly || availability.hasMacProviderSettingsEnvironment) &&
+        (!item.localBackendManagementOnly || availability.canManageLocalBackend) &&
+        (!item.localEnvironmentOnly || !availability.localEnvironmentDisabled) &&
+        (!item.wslAvailableOnly || availability.isWslSettingsRowVisible) &&
+        (!item.requiresThreadAutoSettlement || availability.hasThreadAutoSettlement) &&
+        (!item.requiresAldoPhone || availability.hasAldoPhoneApi === true) &&
+        (!item.requiresAldoOrganization || availability.hasAldoOrganization === true) &&
+        (!item.requiresAldoJoining || availability.hasAldoJoining === true) &&
+        (!item.requiresAldoAgentInbox || availability.hasAldoAgentInbox === true) &&
+        (!item.requiresAldoOnboarding || availability.hasAldoOnboarding === true) &&
+        (!item.requiresAldoPolicyRule ||
+          availability.aldoPolicyRules?.includes(item.requiresAldoPolicyRule) === true) &&
+        // Aldo leaves out T3's pages and rows that don't apply to its machines.
+        (isAldoCloud ? aldoShowsSettingsSearchItem(item) : !item.aldoCloudOnly),
+    )
+    .map((item) => (isAldoCloud ? aldoSettingsSearchItem(item) : item))
+    .filter(
+      (item) =>
+        !isAldoCloud || availability.aldoDeveloperTools !== false || item.to !== "/settings/code",
+    );
 }
 
 export function searchSettings(

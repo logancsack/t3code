@@ -1,23 +1,27 @@
-// Settings → Integrations → Apps: any app with a remote MCP server, connected
+import { settingsApps, settingsHeadsUps } from "./settingsData";
+import { useSettingsResource } from "./settingsResource";
+// Settings → Connections' apps: any app with a remote MCP server, connected
 // for every agent (Notion, Linear, Zapier and through it thousands more, or
 // one by its URL). Connecting signs in with the app in a popup, through Aldo,
 // which keeps the sign-in; its last page reports back here (apps.logic.ts),
 // over the integrations' channel too. A server without apps shows nothing.
 
-import { CheckCircle2Icon, PlugIcon } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { CheckCircle2Icon } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 
-import { SettingsRow, SettingsSection } from "../components/settings/settingsLayout";
+import { SettingsRow } from "../components/settings/settingsLayout";
+import { AldoBrandTile } from "./AldoBrandTile";
+import { AldoBrokenStatus } from "./AldoConnectionStatus";
+import { AldoConnectionTile } from "./AldoConnectionTile";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { toastManager } from "../components/ui/toast";
 import {
   aldoAppConnectUrl,
   disconnectAldoApp,
-  fetchAldoApps,
   type AldoApp,
   type AldoAppCatalogEntry,
-} from "./cloud";
+} from "./accountApi";
 import {
   aldoAppResultFilter,
   normalizeAldoAppUrl,
@@ -43,7 +47,7 @@ function signIn(url: string) {
   if (!window.open(url, "aldo-app", "popup,width=520,height=760")) window.location.assign(url);
 }
 
-function AppRow(props: { readonly app: AldoApp; readonly onChanged: () => void }) {
+export function AldoAppRow(props: { readonly app: AldoApp; readonly onChanged: () => void }) {
   const { app } = props;
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -65,11 +69,13 @@ function AppRow(props: { readonly app: AldoApp; readonly onChanged: () => void }
   };
   return (
     <SettingsRow
+      id={`aldo-app-${app.id}`}
+      leading={<AldoBrandTile id={app.name} name={app.title} />}
       title={app.title}
       description={new URL(app.url).host}
       status={
         app.status === "failed" ? (
-          <span className="text-destructive-foreground">{app.error}</span>
+          <AldoBrokenStatus since={app.changedAt}>{app.error}</AldoBrokenStatus>
         ) : app.status === "connected" ? (
           <span className="inline-flex items-center gap-1 text-success-foreground">
             <CheckCircle2Icon className="size-3.5" />
@@ -87,7 +93,7 @@ function AppRow(props: { readonly app: AldoApp; readonly onChanged: () => void }
               disabled={busy}
               onClick={() => signIn(aldoAppConnectUrl({ url: app.url }))}
             >
-              Connect again
+              {app.status === "failed" ? "Reconnect" : "Connect again"}
             </Button>
           ) : null}
           {confirming ? (
@@ -110,15 +116,17 @@ function AppRow(props: { readonly app: AldoApp; readonly onChanged: () => void }
   );
 }
 
-function CatalogRow(props: { readonly entry: AldoAppCatalogEntry }) {
+/** An app in the catalog, as a tile, with its Connect. */
+export function AldoAppCatalogTile(props: { readonly entry: AldoAppCatalogEntry }) {
   const { entry } = props;
   return (
-    <SettingsRow
-      title={entry.title}
-      description={entry.about}
+    <AldoConnectionTile
+      brand={entry.name}
+      name={entry.title}
+      what={entry.about}
       control={
         <Button
-          size="sm"
+          size="compact"
           variant="outline"
           onClick={() => signIn(aldoAppConnectUrl({ app: entry.name }))}
         >
@@ -129,29 +137,20 @@ function CatalogRow(props: { readonly entry: AldoAppCatalogEntry }) {
   );
 }
 
-export function AldoAppsSection() {
-  const [data, setData] = useState<Awaited<ReturnType<typeof fetchAldoApps>> | undefined>(
-    undefined,
-  );
-  const [error, setError] = useState<string | null>(null);
-  const [typed, setTyped] = useState("");
-  const latest = useRef(0);
-
+/**
+ * The user's apps and the catalog: undefined while they're read, null on an
+ * Aldo without apps. Read again when a sign-in reports back (in a popup, or
+ * in this tab when the popup was blocked) and when the user comes back.
+ */
+export function useAldoApps() {
+  const { data, error } = useSettingsResource(settingsApps, true, false);
+  // Heads-ups read the apps too (AldoNotificationSettings.tsx): read again with them.
   const refresh = useCallback(() => {
-    const request = ++latest.current;
-    fetchAldoApps()
-      .then((next) => {
-        if (request !== latest.current) return;
-        setData(next);
-        setError(null);
-      })
-      .catch((cause: unknown) => {
-        if (request === latest.current) setError(messageOf(cause));
-      });
+    void settingsApps.refresh().catch(() => undefined);
+    void settingsHeadsUps.refresh().catch(() => undefined);
   }, []);
 
   useEffect(() => {
-    refresh();
     // Back from a sign-in that ran in this tab (the popup was blocked).
     const redirected = parseAldoAppRedirect(window.location.search);
     if (redirected) {
@@ -164,7 +163,7 @@ export function AldoAppsSection() {
         `${pathname}${withoutAldoAppRedirect(search)}${hash}`,
       );
     }
-  }, [refresh]);
+  }, []);
 
   useEffect(() => {
     // The popup's page posts to its opener and on the channel: each result is told once.
@@ -192,52 +191,46 @@ export function AldoAppsSection() {
     };
   }, [refresh]);
 
-  // An Aldo without apps says nothing about them.
-  if (data === null) return null;
-  const url = normalizeAldoAppUrl(typed);
-  const offered = (data?.catalog ?? []).filter((entry) => !entry.connected);
+  return { data, error, refresh };
+}
 
+/**
+ * Any app with a remote MCP server, by its address: offered where the catalog
+ * has no app by the name searched for (`searched`), or asked for under it.
+ */
+export function AldoConnectorAddress(props: { readonly searched?: string }) {
+  const [typed, setTyped] = useState("");
+  const url = normalizeAldoAppUrl(typed);
+  const searched = props.searched?.trim();
   return (
-    <SettingsSection id="aldo-apps" title="Apps" icon={<PlugIcon className="size-4" />}>
-      <p className="px-3 text-sm text-muted-foreground sm:px-4">
-        Apps every agent can use as you. You sign in to each one; Aldo keeps the sign-in, and no
-        agent ever sees it. Zapier reaches thousands more.
-      </p>
-      {error ? <p className="px-3 text-sm text-destructive-foreground sm:px-4">{error}</p> : null}
-      {data === undefined && !error ? (
-        <p className="px-3 text-sm text-muted-foreground sm:px-4">Loading…</p>
-      ) : null}
-      {(data?.apps ?? []).map((app) => (
-        <AppRow key={app.id} app={app} onChanged={refresh} />
-      ))}
-      {offered.map((entry) => (
-        <CatalogRow key={entry.name} entry={entry} />
-      ))}
-      {data ? (
-        <SettingsRow
-          title="Another app"
-          description="Any app with a remote MCP server, by its address."
-          control={
-            <form
-              className="flex gap-2"
-              onSubmit={(event) => {
-                event.preventDefault();
-                if (url) signIn(aldoAppConnectUrl({ url }));
-              }}
-            >
-              <Input
-                aria-label="MCP server address"
-                placeholder="https://mcp.example.com/mcp"
-                value={typed}
-                onChange={(event) => setTyped(event.target.value)}
-              />
-              <Button size="sm" type="submit" disabled={!url}>
-                Connect
-              </Button>
-            </form>
-          }
+    <div id="aldo-another-app" className="space-y-3 px-3 py-4 sm:px-4">
+      <div className="space-y-1">
+        <p className="text-foreground text-sm">
+          {searched ? `No app called “${searched}” here yet.` : "Add an app by its address"}
+        </p>
+        <p className="text-muted-foreground text-xs">
+          {searched
+            ? "If it gives you a connector address (an MCP server’s, often ending in /mcp), paste it here and your agents can use it."
+            : "Any app with a connector address (an MCP server’s, often ending in /mcp)."}
+        </p>
+      </div>
+      <form
+        className="flex gap-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (url) signIn(aldoAppConnectUrl({ url }));
+        }}
+      >
+        <Input
+          aria-label="Connector address"
+          placeholder="https://mcp.example.com/mcp"
+          value={typed}
+          onChange={(event) => setTyped(event.target.value)}
         />
-      ) : null}
-    </SettingsSection>
+        <Button size="sm" type="submit" disabled={!url}>
+          Connect
+        </Button>
+      </form>
+    </div>
   );
 }

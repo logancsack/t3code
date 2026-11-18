@@ -596,7 +596,7 @@ for (const [enabled, completed] of [
   );
 }
 
-it.effect("ProviderServiceLive catches stopAll failures during shutdown", () =>
+it.effect("ProviderServiceLive stops every adapter despite a stopAll failure", () =>
   Effect.gen(function* () {
     const codex = makeFakeCodexAdapter();
     codex.stopAll.mockImplementation(() =>
@@ -608,8 +608,22 @@ it.effect("ProviderServiceLive catches stopAll failures during shutdown", () =>
         }),
       ),
     );
+    // Claude's stop can wait for its CLIs to take their prompts; another
+    // adapter failing meanwhile must not cut it short.
+    const claude = makeFakeCodexAdapter(CLAUDE_AGENT_DRIVER);
+    let claudeStopped = false;
+    claude.stopAll.mockImplementation(() =>
+      Effect.sleep("1 second").pipe(
+        Effect.andThen(
+          Effect.sync(() => {
+            claudeStopped = true;
+          }),
+        ),
+      ),
+    );
     const registry = makeAdapterRegistryMock({
       [CODEX_DRIVER]: codex.adapter,
+      [CLAUDE_AGENT_DRIVER]: claude.adapter,
     });
     const providerAdapterLayer = Layer.succeed(
       ProviderAdapterRegistry.ProviderAdapterRegistry,
@@ -642,10 +656,13 @@ it.effect("ProviderServiceLive catches stopAll failures during shutdown", () =>
     const runtimeServices = yield* Layer.build(providerLayer).pipe(Scope.provide(scope));
 
     yield* ProviderService.ProviderService.pipe(Effect.provide(runtimeServices));
-    const closeExit = yield* Scope.close(scope, Exit.void).pipe(Effect.exit);
+    const closing = yield* Scope.close(scope, Exit.void).pipe(Effect.exit, Effect.forkChild);
+    yield* TestClock.adjust("1 second");
+    const closeExit = yield* Fiber.join(closing);
 
     assert.equal(Exit.isSuccess(closeExit), true);
     assert.equal(codex.stopAll.mock.calls.length, 1);
+    assert.equal(claudeStopped, true);
   }),
 );
 
@@ -1207,6 +1224,37 @@ const antigravityInstanceRouting = makeProviderServiceLayer({
   },
 });
 antigravityInstanceRouting.layer("ProviderServiceLive instance-owned conversations", (it) => {
+  it.effect(
+    "explicit fresh continuation discards incompatible persisted and supplied resume state",
+    () =>
+      Effect.gen(function* () {
+        const provider = yield* ProviderService.ProviderService;
+        const directory = yield* ProviderSessionDirectory.ProviderSessionDirectory;
+        const threadId = asThreadId("fresh-cross-instance");
+        yield* directory.upsert({
+          threadId,
+          provider: antigravityDriver,
+          providerInstanceId: originalAntigravityInstanceId,
+          status: "stopped",
+          runtimeMode: "approval-required",
+          resumeCursor: { sessionId: "old-native-session" },
+        });
+        replacementAntigravity.startSession.mockClear();
+        yield* provider.startSession(threadId, {
+          threadId,
+          providerInstanceId: replacementAntigravityInstanceId,
+          cwd: fixtureCwd("fresh"),
+          runtimeMode: "approval-required",
+          fresh: true,
+          resumeCursor: { sessionId: "also-incompatible" },
+        });
+        assert.equal(
+          replacementAntigravity.startSession.mock.calls[0]?.[0].resumeCursor,
+          undefined,
+        );
+        yield* provider.stopSession({ threadId });
+      }),
+  );
   it.effect(
     "does not replace a native conversation with another instance or a removed-instance fallback",
     () =>

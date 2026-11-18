@@ -1,10 +1,14 @@
-import { Outlet, createFileRoute, redirect, useParams } from "@tanstack/react-router";
+import { Outlet, createFileRoute, redirect, useLocation, useParams } from "@tanstack/react-router";
 import { useAtomValue } from "@effect/atom-react";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { isCommandPaletteOpen } from "../commandPaletteBus";
-import { ThreadRouteView } from "../components/ThreadRouteView";
-import { resolveThreadRouteTarget } from "../threadRoutes";
+import {
+  loadThreadRouteView,
+  loadedThreadRouteView,
+  resolveThreadRouteTarget,
+  type ThreadRouteTarget,
+} from "../threadRoutes";
 import { useClientSettings, useLegacySidebarEnabled } from "../hooks/useSettings";
 import { openCommandPalette } from "../commandPaletteBus";
 import { useProjects } from "../state/entities";
@@ -28,7 +32,10 @@ import { useThreadSelectionStore } from "../threadSelectionStore";
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
 import { primaryServerKeybindingsAtom } from "~/state/server";
 import { APP_BASE_NAME } from "../branding";
-import { aldoSupportsGeneralThreads, isAldoCloud } from "../aldo/cloud";
+import { aldoSupportsGeneralThreads } from "../aldo/directory";
+import { isAldoCloud } from "../aldo/api";
+import { AldoLayers } from "../aldo/AldoLayers";
+import { aldoLayersActive } from "../aldo/layers";
 import { aldoNewThreadPlace, useStartAldoThread } from "../aldo/newThread";
 
 function ChatRouteGlobalShortcuts() {
@@ -225,6 +232,27 @@ function ChatRouteGlobalShortcuts() {
   return null;
 }
 
+/**
+ * The thread view, whose code loads with the thread routes rather than with
+ * this layout, so the home screen doesn't download it. Their loaders wait for
+ * it, so it's normally here on the first render; if not, it renders once it is.
+ */
+function ThreadRoute({ target }: { target: ThreadRouteTarget }) {
+  const [ThreadRouteView, setThreadRouteView] = useState(loadedThreadRouteView);
+  useEffect(() => {
+    if (ThreadRouteView) return;
+    let current = true;
+    loadThreadRouteView().then(
+      (view) => current && setThreadRouteView(() => view),
+      () => undefined,
+    );
+    return () => {
+      current = false;
+    };
+  }, [ThreadRouteView]);
+  return ThreadRouteView ? <ThreadRouteView target={target} /> : null;
+}
+
 function ChatRouteLayout() {
   // Both thread routes render here, not in their own leaf components, so the
   // draft-to-thread promotion keeps one ChatView mounted across the swap.
@@ -232,10 +260,17 @@ function ChatRouteLayout() {
     strict: false,
     select: (params) => resolveThreadRouteTarget(params),
   });
+  const onHome = useLocation({ select: (location) => location.pathname === "/" });
   return (
     <>
       <ChatRouteGlobalShortcuts />
-      {threadTarget ? <ThreadRouteView target={threadTarget} /> : <Outlet />}
+      {aldoLayersActive() && (threadTarget || onHome) ? (
+        <AldoLayers target={threadTarget} thread={(target) => <ThreadRoute target={target} />} />
+      ) : threadTarget ? (
+        <ThreadRoute target={threadTarget} />
+      ) : (
+        <Outlet />
+      )}
     </>
   );
 }

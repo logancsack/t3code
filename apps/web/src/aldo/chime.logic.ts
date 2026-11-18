@@ -5,7 +5,7 @@
 // is looking at, stays quiet. Several at once make one sound, and sounds
 // come no closer than a few seconds apart.
 
-import type { AldoHomeConversation, AldoHomeTarget } from "./cloud";
+import { type AldoHomeConversation, type AldoHomeTarget } from "./homeApi";
 import { putAway } from "./decisions.logic";
 import { needsYouKind, sameTarget } from "./home.logic";
 

@@ -86,7 +86,7 @@ function escapeAttribute(value: string): string {
 }
 
 /** The mail's markup made safe: its styles for the head, its body's attributes and its body. */
-export function sanitizeMailHtml(html: string): {
+function sanitizeMailHtml(html: string): {
   readonly head: string;
   readonly bodyAttributes: string;
   readonly body: string;

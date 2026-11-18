@@ -1,6 +1,6 @@
 import * as Schema from "effect/Schema";
 
-import { isAldoCloud } from "../../aldo/cloud";
+import { isAldoCloud } from "../../aldo/api";
 import { getLocalStorageItem, setLocalStorageItem } from "../../hooks/useLocalStorage";
 
 const STORAGE_KEY = "t3code:usage-page-preferences:v1";

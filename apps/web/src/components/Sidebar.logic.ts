@@ -116,6 +116,17 @@ export function useRetainedValue<T>(key: string | null, value: T | null): T | nu
   return key !== null && retained.current?.key === key ? retained.current.value : null;
 }
 
+// `value` as first seen for the current `key`: a rebuilt list that holds the
+// same rows keeps the previous one's identity, so what reads it (dnd-kit's
+// sortable context, which every row reads) changes only when the rows do.
+export function useKeyedValue<T>(key: string, value: T): T {
+  const kept = React.useRef<{ readonly key: string; readonly value: T } | null>(null);
+  if (kept.current?.key !== key) {
+    kept.current = { key, value };
+  }
+  return kept.current.value;
+}
+
 // Sidebar.motion handles ordinary section changes. Sortable transforms own
 // dragging; replaying their committed DOM order would animate the drop twice.
 export const animateSidebarLayoutChanges: AnimateLayoutChanges = (args) =>
@@ -226,7 +237,8 @@ export type SidebarThreadDropPlan =
       moved row when it was already pinned beneath a snooze. */
   | {
       readonly kind: "pin";
-      readonly order: readonly string[];
+      /** Null when the pinned block is time-ordered: the drop has no placement. */
+      readonly order: readonly string[] | null;
       readonly orderKey: string | undefined;
       readonly extraAssignments: ReadonlyArray<{ readonly id: string; readonly orderKey: string }>;
     }
@@ -275,6 +287,8 @@ export function planSidebarThreadDrop(input: {
   readonly activeReorderableKeys?: ReadonlySet<string>;
   /** Working beta: the inbox sorts by time, so drops only change lifecycle. */
   readonly activeTimeOrdered?: boolean;
+  /** The pinned block sorts itself too (Aldo), so a drop there only pins. */
+  readonly pinnedTimeOrdered?: boolean;
 }): SidebarThreadDropPlan {
   const {
     activeKey,
@@ -336,6 +350,12 @@ export function planSidebarThreadDrop(input: {
     case "settled":
       return activeSection === "settled" ? { kind: "none" } : { kind: "settle" };
     case "pinned": {
+      // As in a time-ordered inbox: threads can be pinned, not arranged.
+      if (input.pinnedTimeOrdered) {
+        return activeSection === "pinned"
+          ? { kind: "none" }
+          : { kind: "pin", order: null, orderKey: undefined, extraAssignments: [] };
+      }
       const order = target.pinnedOrder;
       // Dropped back where it started: nothing to write.
       if (

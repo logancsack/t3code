@@ -13,13 +13,20 @@ import {
 } from "react";
 import {
   ArchiveIcon,
+  BellIcon,
   BlocksIcon,
   BrainIcon,
   BotIcon,
+  Building2Icon,
+  CircleUserRoundIcon,
+  CodeXmlIcon,
   createLucideIcon,
+  DoorOpenIcon,
+  GaugeIcon,
   GitBranchIcon,
   GraduationCapIcon,
   HardDriveIcon,
+  HistoryIcon,
   LockKeyholeIcon,
   BoxesIcon,
   NotebookPenIcon,
@@ -31,6 +38,9 @@ import {
   ServerIcon,
   Settings2Icon,
   Share2Icon,
+  ShieldCheckIcon,
+  SmartphoneIcon,
+  UsersIcon,
   XIcon,
 } from "lucide-react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
@@ -49,8 +59,14 @@ import {
 } from "../ui/sidebar";
 import { ManagedDevPcFooterAccount } from "../ManagedDevPcAccount";
 import { isManagedDevPc } from "../../managedDevPc";
-import { isAldoCloud } from "../../aldo/cloud";
-import { ALDO_HIDDEN_SETTINGS_PATHS } from "../../aldo/settings.logic";
+import { isAldoCloud } from "../../aldo/api";
+import { AldoSettingsAccountCard, AldoSettingsNav } from "../../aldo/AldoSettingsNav";
+import {
+  ALDO_HIDDEN_SETTINGS_PATHS,
+  ALDO_SETTINGS_PATHS,
+  aldoSettingsPage,
+} from "../../aldo/settings.logic";
+import { cn } from "../../lib/utils";
 import { SidebarUtilityMenu } from "../sidebar/SidebarChrome";
 import { scrollToSettingsTarget } from "./settingsLayout";
 import {
@@ -107,6 +123,17 @@ const SETTINGS_SECTION_ICONS: Readonly<
   "/settings/storage": HardDriveIcon,
   "/settings/connections": Link2Icon,
   "/settings/archived": ArchiveIcon,
+  "/settings/account": CircleUserRoundIcon,
+  "/settings/organization": Building2Icon,
+  "/settings/members": UsersIcon,
+  "/settings/running": GaugeIcon,
+  "/settings/activity": HistoryIcon,
+  "/settings/joining": DoorOpenIcon,
+  "/settings/agents": BotIcon,
+  "/settings/permissions": ShieldCheckIcon,
+  "/settings/notifications": BellIcon,
+  "/settings/phone": SmartphoneIcon,
+  "/settings/code": CodeXmlIcon,
 };
 
 const SETTINGS_NAV_ITEMS: ReadonlyArray<{
@@ -115,16 +142,7 @@ const SETTINGS_NAV_ITEMS: ReadonlyArray<{
   icon: ComponentType<{ className?: string }>;
 }> = (Object.keys(SETTINGS_SECTION_LABELS) as SettingsPath[])
   .filter((to) => to !== "/settings/workspace" || isManagedDevPc)
-  .filter(
-    (to) =>
-      (to !== "/settings/instructions" &&
-        to !== "/settings/skills" &&
-        to !== "/settings/memory" &&
-        to !== "/settings/vault" &&
-        to !== "/settings/shared" &&
-        to !== "/settings/environments") ||
-      isAldoCloud,
-  )
+  .filter((to) => !ALDO_SETTINGS_PATHS.has(to) || isAldoCloud)
   // Aldo connects each thread's cloud agent itself; there's nothing to manage.
   // SnapShots and Storage don't apply to its machines either.
   .filter((to) => !isAldoCloud || !ALDO_HIDDEN_SETTINGS_PATHS.has(to))
@@ -207,6 +225,8 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
       }
       void navigate({
         to,
+        // Aldo: a project's settings are on its own page; its other pages are the account's.
+        ...(isAldoCloud ? { search: { project: undefined } } : {}),
         hash: "",
         replace: true,
         hashScrollIntoView: false,
@@ -231,6 +251,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
       }
       void navigate({
         to: item.to,
+        ...(isAldoCloud ? { search: { project: undefined } } : {}),
         hash: targetId,
         replace: true,
         hashScrollIntoView: false,
@@ -271,7 +292,14 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
       <SidebarContent className="overflow-x-hidden">
         <SidebarGroup>
           <div className="flex flex-col gap-2">
-            <div className="flex h-8 items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground">
+            <div
+              className={cn(
+                "flex h-8 items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground",
+                // Aldo: a field that reads as one, above the account.
+                isAldoCloud &&
+                  "border border-sidebar-border bg-sidebar-row-selected shadow-xs/5 hover:bg-sidebar-row-selected",
+              )}
+            >
               <SearchIcon className="size-4 shrink-0 text-sidebar-muted-foreground/80" />
               <SidebarInput
                 ref={searchInputRef}
@@ -283,7 +311,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                   setActiveResultIndex(0);
                 }}
                 onKeyDown={handleSearchKeyDown}
-                placeholder="Search"
+                placeholder={isAldoCloud ? "Search settings" : "Search"}
                 aria-label="Search settings"
                 role="combobox"
                 aria-autocomplete="list"
@@ -314,12 +342,23 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                 <Kbd>/</Kbd>
               )}
             </div>
+            {isAldoCloud && !isSearching ? (
+              <AldoSettingsAccountCard
+                active={pathname === "/settings/account"}
+                onOpen={() => handleSectionClick("/settings/account")}
+              />
+            ) : null}
             {isSearching && results.length === 0 ? (
               <p
                 role="status"
                 className="px-2 py-6 text-center text-xs text-sidebar-muted-foreground"
               >
-                No settings found
+                {isAldoCloud ? `No settings match “${query.trim()}”` : "No settings found"}
+              </p>
+            ) : null}
+            {isAldoCloud && isSearching && hasResults ? (
+              <p role="status" className="px-2 pt-1 text-xs text-sidebar-muted-foreground">
+                {results.length === 1 ? "1 setting matches" : `${results.length} settings match`}
               </p>
             ) : null}
             {isSearching ? (
@@ -347,13 +386,17 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                           {item.title}
                         </span>
                         <span className="block truncate text-2xs text-sidebar-muted-foreground/75">
-                          {SETTINGS_SECTION_LABELS[item.to]}
+                          {isAldoCloud
+                            ? (aldoSettingsPage(item.to)?.title ?? SETTINGS_SECTION_LABELS[item.to])
+                            : SETTINGS_SECTION_LABELS[item.to]}
                         </span>
                       </span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 ))}
               </SidebarMenu>
+            ) : isAldoCloud ? (
+              <AldoSettingsNav pathname={pathname} onNavigate={handleSectionClick} />
             ) : (
               <SidebarMenu>
                 {navItems.map((item) => {
@@ -390,9 +433,8 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
         <ManagedDevPcAgent />
         <ManagedDevPcFooterAccount showWorkspaceStatus={pathname !== "/settings/workspace"} />
         <div className="flex items-center gap-1">
-          <div className="min-w-0 flex-1">
-            <SidebarUtilityMenu />
-          </div>
+          {/* Aldo's way back heads the nav (AldoSettingsBackBar). */}
+          <div className="min-w-0 flex-1">{isAldoCloud ? null : <SidebarUtilityMenu />}</div>
           <Suspense fallback={null}>
             <T3ConnectSidebarAvatar />
           </Suspense>

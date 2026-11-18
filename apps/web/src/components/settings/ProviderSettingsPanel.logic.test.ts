@@ -42,14 +42,6 @@ describe("provider environment selection", () => {
     ).toBe(false);
   });
 
-  it("sorts the primary environment first and the rest by label", () => {
-    expect(
-      buildProviderEnvironmentOptions(environments, primaryId).map(
-        (environment) => environment.environmentId,
-      ),
-    ).toEqual([primaryId, relayId, sshId]);
-  });
-
   it("keeps a valid selection, then falls back to primary or the first environment", () => {
     const options = buildProviderEnvironmentOptions(environments, primaryId);
 

@@ -6,7 +6,12 @@
 
 import { waitingApprovals } from "./approvals.logic";
 import type { AldoOnScreen, AldoOpenTarget } from "./assistant.logic";
-import type { AldoApproval, AldoHome, AldoHomeConversation, AldoHomePullRequest } from "./cloud";
+import {
+  type AldoApproval,
+  type AldoHome,
+  type AldoHomeConversation,
+  type AldoHomePullRequest,
+} from "./homeApi";
 import { boardFor, sameTarget } from "./home.logic";
 
 const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);

@@ -66,16 +66,6 @@ export function useThreadRefs(): ReadonlyArray<ScopedThreadRef> {
   return useAtomValue(environmentThreadShells.threadRefsAtom);
 }
 
-export function useEnvironmentThreadRefs(
-  environmentId: EnvironmentId | null,
-): ReadonlyArray<ScopedThreadRef> {
-  return useAtomValue(
-    environmentId === null
-      ? EMPTY_THREAD_REFS_ATOM
-      : environmentThreadShells.environmentThreadRefsAtom(environmentId),
-  );
-}
-
 export function useProjects(): ReadonlyArray<EnvironmentProject> {
   return useAtomValue(environmentProjects.projectsAtom);
 }

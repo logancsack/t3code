@@ -29,9 +29,9 @@ import { videoMimeType } from "../types";
 import {
   aldoSupportsGeneralThreads,
   getAldoEnvironments,
-  isAldoCloud,
   subscribeAldoEnvironments,
-} from "./cloud";
+} from "./directory";
+import { isAldoCloud } from "./api";
 import { useStartAldoThread } from "./newThread";
 import { keepAldoDraftFiles, restoreAldoDraftFiles } from "./shareDraftFiles";
 import { dropAldoShare, readAldoShare } from "./shareTarget";

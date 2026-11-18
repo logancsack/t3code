@@ -6,6 +6,7 @@ import {
   useState,
   type ReactNode,
   type KeyboardEvent,
+  type TouchEvent,
 } from "react";
 import { ChevronLeftIcon, ChevronRightIcon, ImageIcon, TextIcon, XIcon } from "lucide-react";
 import { Button } from "../ui/button";
@@ -25,6 +26,7 @@ import {
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ZoomableImage, type ZoomableImageHandle } from "./ZoomableImage";
 import { composerFloatingLayerProps } from "./composerEventScope";
+import { swipeStep } from "../../aldo/swipe.logic";
 
 interface ExpandedImageDialogProps {
   preview: ExpandedImagePreview;
@@ -101,9 +103,44 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
       }
     : source;
 
+  // An image the opener had no URL for yet (still being signed, or not in view there): signed here.
+  const unsignedAsset =
+    item && item.type !== "video" && item.src === null ? item.actionsSource?.asset : undefined;
+  const signedImage = useAssetUrlState(
+    unsignedAsset?.environmentId ?? null,
+    unsignedAsset?.resource ?? null,
+  );
+  const imageSrc = item?.src ?? (signedImage._tag === "Success" ? signedImage.url : null);
+  const imageSigning = unsignedAsset !== undefined && signedImage._tag === "Loading";
+
   const navigateImage = useCallback((direction: -1 | 1) => {
     setImageOffset((current) => current + direction);
   }, []);
+
+  // One finger's quick sideways stroke goes to the next or previous item (touch
+  // events, which a stroke the page scrolls with still ends).
+  const strokeRef = useRef<{ x: number; y: number; at: number } | null>(null);
+  const onTouchStart = (event: TouchEvent<HTMLDivElement>) => {
+    const touch = event.touches.length === 1 ? event.touches[0] : undefined;
+    const onControl =
+      event.target instanceof Element &&
+      event.target.closest("video, button, input, [role=slider]");
+    strokeRef.current =
+      touch && !onControl ? { x: touch.clientX, y: touch.clientY, at: event.timeStamp } : null;
+  };
+  const onTouchEnd = (event: TouchEvent<HTMLDivElement>) => {
+    const stroke = strokeRef.current;
+    const touch = event.changedTouches[0];
+    strokeRef.current = null;
+    if (!stroke || !touch || event.touches.length > 0 || preview.images.length <= 1) return;
+    if (zoomableImageRef.current?.zoomed()) return;
+    const step = swipeStep({
+      dx: touch.clientX - stroke.x,
+      dy: touch.clientY - stroke.y,
+      ms: event.timeStamp - stroke.at,
+    });
+    if (step) navigateImage(step);
+  };
 
   // The element that opened the preview gets focus back on close. Without
   // this a close button click leaves focus on the unmounted dialog, and the
@@ -181,6 +218,11 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
         bottomStickOnMobile={false}
         className="row-start-1 max-h-[92vh] w-[92vw] max-w-[92vw] items-center overflow-visible [--media-width:92vw] [--media-height:min(86vh,calc(100vh-160px))] sm:[--media-width:calc(92vw-96px)]"
         onKeyDown={onKeyDown}
+        onTouchStart={onTouchStart}
+        onTouchEnd={onTouchEnd}
+        onTouchCancel={() => {
+          strokeRef.current = null;
+        }}
         initialFocus={closeButtonRef}
         finalFocus={() => returnFocusTarget}
         onClick={(event) => {
@@ -222,7 +264,9 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
                   className="h-[min(var(--media-height),40rem)] w-[min(var(--media-width),42rem)] transition-opacity duration-140 ease-out starting:opacity-0 rounded-lg border border-border/70 bg-background p-4 text-xs leading-5 shadow-2xl motion-reduce:transition-none"
                 />
               ) : null
-            ) : item.src === null || failedImageSrc === item.src ? (
+            ) : imageSigning ? (
+              <div aria-busy="true" className={EXPANDED_MEDIA_STATE_CLASS_NAME} />
+            ) : imageSrc === null || failedImageSrc === imageSrc ? (
               <ExpandedMediaFailure>
                 <p>
                   {openOriginalLink
@@ -234,10 +278,10 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
             ) : (
               <ZoomableImage
                 ref={zoomableImageRef}
-                key={`${index}:${item.src}`}
-                src={item.src}
+                key={`${index}:${imageSrc}`}
+                src={imageSrc}
                 name={item.name}
-                onError={() => setFailedImageSrc(item.src)}
+                onError={() => setFailedImageSrc(imageSrc)}
               />
             )}
             <div className="mt-2 flex max-w-[var(--media-width)] items-center justify-center gap-1.5 text-xs text-white/80">

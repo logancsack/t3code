@@ -15,7 +15,7 @@ vi.mock("../state/entities", () => ({
     Array.from({ length: state.threads[environmentId] ?? 0 }),
   readProjects: () => state.projects,
 }));
-vi.mock("./cloud", () => ({
+const aldoApiMock = vi.hoisted(() => ({
   isAldoCloud: true,
   isAldoEnvironmentId: (id: string) => id.startsWith("aldo-"),
   aldoProjectSandboxes: () => state.sandboxes,
@@ -32,6 +32,8 @@ vi.mock("./cloud", () => ({
   deleteAldoEnvironment: () => Promise.resolve(),
   deleteAldoMachineWithThread: () => Promise.resolve(),
 }));
+vi.mock("./api", () => aldoApiMock);
+vi.mock("./directory", () => aldoApiMock);
 vi.mock("./dispatch", () => ({ ensureAldoConnected: () => Promise.resolve() }));
 vi.mock("./serverConfig", () => ({ aldoServerConfigFor: () => Promise.resolve(null) }));
 vi.mock("../connection/storage", () => ({

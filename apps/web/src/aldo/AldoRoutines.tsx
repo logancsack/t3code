@@ -41,11 +41,11 @@ import { ThreadLink } from "./AldoHomeInbox";
 import {
   createAldoRoutine,
   deleteAldoRoutine,
-  requestAldoDirectoryRefresh,
   runAldoRoutine,
   updateAldoRoutine,
   type AldoRoutine,
-} from "./cloud";
+} from "./homeApi";
+import { requestAldoDirectoryRefresh } from "./directory";
 import { dueIn } from "./home.logic";
 import {
   ALDO_WEEKDAYS,

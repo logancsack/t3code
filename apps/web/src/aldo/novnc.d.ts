@@ -1,6 +1,7 @@
 // noVNC ships no types; Aldo's Desktop view uses this much of RFB.
 declare module "@novnc/novnc" {
   export default class RFB extends EventTarget {
+    sendKey(keysym: number, code?: string, down?: boolean): void;
     constructor(
       target: HTMLElement,
       url: string,

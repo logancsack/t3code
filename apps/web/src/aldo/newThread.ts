@@ -17,10 +17,10 @@ import { waitForProject } from "../state/entities";
 import {
   aldoSupportsGeneralThreads,
   getAldoEnvironments,
-  isAldoCloud,
   subscribeAldoEnvironments,
   type AldoNewProject,
-} from "./cloud";
+} from "./directory";
+import { isAldoCloud } from "./api";
 import { aldoProjectRefForNewThread, startAldoSandbox } from "./threads";
 
 /** What's typed in a draft being moved, for the draft it moves to (AldoRepositoryDialog). */

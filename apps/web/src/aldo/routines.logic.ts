@@ -1,9 +1,9 @@
 // Routines on the home screen (AldoRoutines.tsx): the new-routine form's
-// choices as the schedule Aldo takes (cloud.ts AldoRoutineSchedule), and how a
+// choices as the schedule Aldo takes (homeApi.ts AldoRoutineSchedule), and how a
 // routine's state reads. Times are the user's own: Aldo keeps the browser's
 // time zone and runs each routine in it.
 
-import type { AldoRoutine, AldoRoutineSchedule, AldoWeekday } from "./cloud";
+import { type AldoRoutine, type AldoRoutineSchedule, type AldoWeekday } from "./homeApi";
 
 export const ALDO_WEEKDAYS: ReadonlyArray<{ readonly day: AldoWeekday; readonly short: string }> = [
   { day: "mon", short: "Mon" },

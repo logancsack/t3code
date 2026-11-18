@@ -1,3 +1,5 @@
+import { settingsSkills } from "./settingsData";
+import { useSettingsResource } from "./settingsResource";
 // Settings → Skills: how the user's agents do a kind of task (the steps, what
 // to do and what to avoid, the user's feedback), saved to their account.
 // Every agent in every thread sees what each skill is for and reads the rest
@@ -5,13 +7,14 @@
 // here the user reads, edits, adds and removes them.
 
 import { GraduationCapIcon, LoaderCircleIcon, PlusIcon } from "lucide-react";
-import { useEffect, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 
 import { SettingsSection } from "../components/settings/settingsLayout";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Textarea } from "../components/ui/textarea";
-import { AldoApiError, aldoSkills, type AldoSkill } from "./cloud";
+import { AldoApiError } from "./api";
+import { aldoSkills, type AldoSkill } from "./accountApi";
 
 /** Aldo's rule for a name (the Agent Skills format's). */
 const NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
@@ -231,23 +234,14 @@ function SkillRow(props: { readonly skill: AldoSkill; readonly onOpen: () => voi
 
 /** Settings → Skills: what the user's agents know how to do, the way the user wants it done. */
 export function AldoSkillsPanel() {
-  const [skills, setSkills] = useState<AldoSkill[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [unsupported, setUnsupported] = useState(false);
+  const cached = useSettingsResource(settingsSkills, true, false);
+  const skills = cached.data ?? null;
+  const setSkills = settingsSkills.set;
+  const unsupported = cached.cause instanceof AldoApiError && cached.cause.status === 404;
+  const error = unsupported ? null : cached.error;
   const [adding, setAdding] = useState(false);
   // The skills open for editing, by name (several at once keeps each draft).
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
-
-  useEffect(() => {
-    aldoSkills
-      .list()
-      .then(setSkills)
-      .catch((cause: unknown) => {
-        // An Aldo from before skills.
-        if (cause instanceof AldoApiError && cause.status === 404) setUnsupported(true);
-        else setError(messageOf(cause));
-      });
-  }, []);
 
   const close = (name: string) => setOpen((names) => new Set([...names].filter((n) => n !== name)));
 
@@ -268,7 +262,7 @@ export function AldoSkillsPanel() {
         ) : null
       }
     >
-      <p className="px-3 text-sm text-muted-foreground sm:px-4">
+      <p className="px-3 py-3 text-sm text-muted-foreground sm:px-4">
         How your agents do a kind of task: the steps, what to do and what to avoid, your feedback.
         Every agent in every thread sees what each skill is for and reads the rest when a task needs
         it. Ask an agent to make one ("make a skill for podcast clips with this feedback") or to add
@@ -276,7 +270,7 @@ export function AldoSkillsPanel() {
         machine next starts or wakes.
       </p>
       {unsupported ? (
-        <p className="px-3 text-sm text-muted-foreground sm:px-4">
+        <p className="px-3 py-3 text-sm text-muted-foreground sm:px-4">
           This Aldo server doesn't have skills yet.
         </p>
       ) : null}

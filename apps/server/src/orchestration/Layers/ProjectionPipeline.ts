@@ -1284,6 +1284,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             threadId: event.payload.threadId,
             turnId: event.payload.proposedPlan.turnId,
             planMarkdown: event.payload.proposedPlan.planMarkdown,
+            approvedAt: event.payload.proposedPlan.approvedAt ?? null,
             implementedAt: event.payload.proposedPlan.implementedAt,
             implementationThreadId: event.payload.proposedPlan.implementationThreadId,
             createdAt: event.payload.proposedPlan.createdAt,

@@ -7025,6 +7025,80 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
     }),
   );
 
+  it.effect("keeps a compaction's summary out of the timeline", () =>
+    Effect.gen(function* () {
+      const adapter = yield* OpenCodeAdapter;
+      const threadId = asThreadId("thread-opencode-compaction-summary");
+      const sessionID = "http://127.0.0.1:9999/session";
+      const textPart = (messageID: string, text: string) => ({
+        type: "message.part.updated",
+        properties: {
+          sessionID,
+          part: {
+            id: `${messageID}-part`,
+            sessionID,
+            messageID,
+            type: "text",
+            text,
+            time: { start: 1, end: 2 },
+          },
+          time: 2,
+        },
+      });
+      runtimeMock.state.subscribedEvents = [
+        // Its text can come before the message says it's a summary.
+        textPart("msg-summary", "## Summary of the conversation so far"),
+        {
+          type: "message.updated",
+          properties: {
+            sessionID,
+            info: {
+              id: "msg-summary",
+              role: "assistant",
+              summary: true,
+              mode: "compaction",
+              agent: "compaction",
+            },
+          },
+        },
+        textPart("msg-summary", "## Summary of the conversation so far\n- made the video"),
+        {
+          type: "message.updated",
+          properties: {
+            sessionID,
+            info: { id: "msg-reply", role: "assistant", mode: "build", agent: "build" },
+          },
+        },
+        textPart("msg-reply", "Here's your video."),
+      ];
+      const eventsFiber = yield* adapter.streamEvents.pipe(
+        Stream.filter((event) => event.threadId === threadId),
+        Stream.filter((event) => event.type === "content.delta" || event.type === "item.completed"),
+        Stream.take(2),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("opencode"),
+        threadId,
+        runtimeMode: "full-access",
+      });
+
+      const events = Array.from(yield* Fiber.join(eventsFiber).pipe(Effect.timeout("1 second")));
+      NodeAssert.deepEqual(
+        events.map((event) =>
+          event.type === "content.delta"
+            ? event.payload.delta
+            : event.type === "item.completed"
+              ? event.payload.detail
+              : null,
+        ),
+        ["Here's your video.", "Here's your video."],
+      );
+    }),
+  );
+
   it.effect("emits tool lifecycle events before late assistant metadata", () =>
     Effect.gen(function* () {
       const adapter = yield* OpenCodeAdapter;

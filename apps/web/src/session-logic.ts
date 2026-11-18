@@ -1,4 +1,10 @@
 import {
+  changedFilesFromToolData,
+  extractToolCommand,
+  stripTrailingExitCode,
+  summarizeToolTextOutput,
+} from "@t3tools/shared/toolPayload";
+import {
   isStaleRequestFailure,
   parseQuestions,
   requestKindFromRequestType,
@@ -44,6 +50,7 @@ import {
   type ThreadSession,
   type TurnDiffSummary,
 } from "./types";
+import type { AldoApproval } from "./aldo/homeApi";
 
 export type { PendingApproval, PendingUserInput } from "@t3tools/client-runtime/pending-requests";
 
@@ -137,6 +144,7 @@ export interface LatestProposedPlanState {
   updatedAt: string;
   turnId: TurnId | null;
   planMarkdown: string;
+  approvedAt?: string | null;
   implementedAt: string | null;
   implementationThreadId: ThreadId | null;
 }
@@ -159,6 +167,13 @@ export type TimelineEntry =
       kind: "work";
       createdAt: string;
       entry: WorkLogEntry;
+    }
+  | {
+      /** Aldo: an approval the agent asked the user for, at the point it asked (aldo/approvals.logic.ts). */
+      id: string;
+      kind: "aldo-approval";
+      createdAt: string;
+      approval: AldoApproval;
     };
 
 export interface TimelineEntriesProjection {
@@ -252,6 +267,36 @@ export function hasPendingUserInputOutlivedTurn(
   if (latestTurn.turnId === input.turnId) return latestTurn.state !== "running";
   // A latest turn requested before the question is one this client hasn't caught up past.
   return Date.parse(latestTurn.requestedAt) > Date.parse(input.createdAt);
+}
+
+/**
+ * Whether the agent is stopped on a question, so a message can't reach it
+ * until the question is answered. An async question doesn't stop it (its
+ * answer goes as a message anyway), and nothing waits on one whose turn is over.
+ */
+export function pendingUserInputBlocksMessages(
+  input: Pick<PendingUserInput, "turnId" | "createdAt" | "dismissible">,
+  latestTurn: Pick<OrchestrationLatestTurn, "turnId" | "state" | "requestedAt"> | null,
+): boolean {
+  return !input.dismissible && !hasPendingUserInputOutlivedTurn(input, latestTurn);
+}
+
+/**
+ * The questions a thread shows, those that stop the agent first, so the first
+ * is the one to answer and says whether any holds messages back. Order within
+ * each group is kept.
+ */
+export function blockingPendingUserInputsFirst<
+  T extends Pick<PendingUserInput, "turnId" | "createdAt" | "dismissible">,
+>(
+  inputs: readonly T[],
+  latestTurn: Pick<OrchestrationLatestTurn, "turnId" | "state" | "requestedAt"> | null,
+): T[] {
+  return inputs.toSorted(
+    (a, b) =>
+      Number(pendingUserInputBlocksMessages(b, latestTurn)) -
+      Number(pendingUserInputBlocksMessages(a, latestTurn)),
+  );
 }
 
 /**
@@ -468,9 +513,9 @@ export function findLatestProposedPlan(
 }
 
 export function hasActionableProposedPlan(
-  proposedPlan: LatestProposedPlanState | Pick<ProposedPlan, "implementedAt"> | null,
+  proposedPlan: LatestProposedPlanState | Pick<ProposedPlan, "implementedAt" | "approvedAt"> | null,
 ): boolean {
-  return proposedPlan !== null && proposedPlan.implementedAt === null;
+  return proposedPlan !== null && !proposedPlan.approvedAt && proposedPlan.implementedAt === null;
 }
 
 /**
@@ -724,7 +769,7 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
       ? (activity.payload as Record<string, unknown>)
       : null;
   const commandPreview = extractToolCommand(payload);
-  const changedFiles = extractChangedFiles(payload);
+  const changedFiles = changedFilesFromToolData(asRecord(payload?.data));
   const title = extractToolTitle(payload);
   const toolPresentation = extractToolActivityPresentation(payload);
   const isTaskActivity =
@@ -807,12 +852,19 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   if (toolPresentation.toolSource) {
     entry.toolSource = toolPresentation.toolSource;
   }
-  if (itemType === "mcp_tool_call") {
-    const data = asRecord(payload?.data);
-    const toolData = typeof data?.toolName === "string" ? (data.item ?? data) : data?.item;
-    if (toolData !== undefined) {
-      entry.toolData = toolData;
-    }
+  const data = asRecord(payload?.data);
+  const mcpData =
+    itemType === "mcp_tool_call"
+      ? typeof data?.toolName === "string"
+        ? (data.item ?? data)
+        : data?.item
+      : undefined;
+  // OpenCode names its tool and keeps its state (input and output), whatever kind of tool it is.
+  const toolData =
+    mcpData ??
+    (typeof data?.tool === "string" && asRecord(asRecord(data.state)?.input) ? data : undefined);
+  if (toolData !== undefined) {
+    entry.toolData = toolData;
   }
   if (activity.kind === "tool.completed") {
     const generatedImage = extractGeneratedImage(payload);
@@ -1116,6 +1168,7 @@ function toLatestProposedPlanState(proposedPlan: ProposedPlan): LatestProposedPl
     updatedAt: proposedPlan.updatedAt,
     turnId: proposedPlan.turnId,
     planMarkdown: proposedPlan.planMarkdown,
+    ...(proposedPlan.approvedAt ? { approvedAt: proposedPlan.approvedAt } : {}),
     implementedAt: proposedPlan.implementedAt,
     implementationThreadId: proposedPlan.implementationThreadId,
   };
@@ -1214,194 +1267,6 @@ function asNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
-function trimMatchingOuterQuotes(value: string): string {
-  const trimmed = value.trim();
-  if (
-    (trimmed.startsWith("'") && trimmed.endsWith("'")) ||
-    (trimmed.startsWith('"') && trimmed.endsWith('"'))
-  ) {
-    const unquoted = trimmed.slice(1, -1).trim();
-    return unquoted.length > 0 ? unquoted : trimmed;
-  }
-  return trimmed;
-}
-
-function executableBasename(value: string): string | null {
-  const trimmed = trimMatchingOuterQuotes(value);
-  if (trimmed.length === 0) {
-    return null;
-  }
-  const normalized = trimmed.replace(/\\/g, "/");
-  const segments = normalized.split("/");
-  const last = segments.at(-1)?.trim() ?? "";
-  return last.length > 0 ? last.toLowerCase() : null;
-}
-
-function splitExecutableAndRest(value: string): { executable: string; rest: string } | null {
-  const trimmed = value.trim();
-  if (trimmed.length === 0) {
-    return null;
-  }
-
-  if (trimmed.startsWith('"') || trimmed.startsWith("'")) {
-    const quote = trimmed.charAt(0);
-    const closeIndex = trimmed.indexOf(quote, 1);
-    if (closeIndex <= 0) {
-      return null;
-    }
-    return {
-      executable: trimmed.slice(0, closeIndex + 1),
-      rest: trimmed.slice(closeIndex + 1).trim(),
-    };
-  }
-
-  const firstWhitespace = trimmed.search(/\s/);
-  if (firstWhitespace < 0) {
-    return {
-      executable: trimmed,
-      rest: "",
-    };
-  }
-
-  return {
-    executable: trimmed.slice(0, firstWhitespace),
-    rest: trimmed.slice(firstWhitespace).trim(),
-  };
-}
-
-const SHELL_WRAPPER_SPECS = [
-  {
-    executables: ["pwsh", "pwsh.exe", "powershell", "powershell.exe"],
-    wrapperFlagPattern: /(?:^|\s)-command\s+/i,
-  },
-  {
-    executables: ["cmd", "cmd.exe"],
-    wrapperFlagPattern: /(?:^|\s)\/c\s+/i,
-  },
-  {
-    executables: ["bash", "sh", "zsh"],
-    wrapperFlagPattern: /(?:^|\s)-(?:l)?c\s+/i,
-  },
-] as const;
-
-function findShellWrapperSpec(shell: string) {
-  return SHELL_WRAPPER_SPECS.find((spec) =>
-    (spec.executables as ReadonlyArray<string>).includes(shell),
-  );
-}
-
-function unwrapCommandRemainder(value: string, wrapperFlagPattern: RegExp): string | null {
-  const match = wrapperFlagPattern.exec(value);
-  if (!match) {
-    return null;
-  }
-
-  const command = value.slice(match.index + match[0].length).trim();
-  if (command.length === 0) {
-    return null;
-  }
-
-  const openingQuote = command[0];
-  if ((openingQuote === "'" || openingQuote === '"') && !command.endsWith(openingQuote)) {
-    return null;
-  }
-
-  const unwrapped = trimMatchingOuterQuotes(command);
-  return unwrapped.length > 0 ? unwrapped : null;
-}
-
-function unwrapKnownShellCommandWrapper(value: string): string {
-  const split = splitExecutableAndRest(value);
-  if (!split || split.rest.length === 0) {
-    return value;
-  }
-
-  const shell = executableBasename(split.executable);
-  if (!shell) {
-    return value;
-  }
-
-  const spec = findShellWrapperSpec(shell);
-  if (!spec) {
-    return value;
-  }
-
-  return unwrapCommandRemainder(split.rest, spec.wrapperFlagPattern) ?? value;
-}
-
-function formatCommandArrayPart(value: string): string {
-  return /[\s"'`]/.test(value) ? `"${value.replace(/"/g, '\\"')}"` : value;
-}
-
-function formatCommandValue(value: unknown): string | null {
-  const direct = asTrimmedString(value);
-  if (direct) {
-    return direct;
-  }
-  if (!Array.isArray(value)) {
-    return null;
-  }
-  const parts: Array<string> = [];
-  for (const entry of value) {
-    const part = asTrimmedString(entry);
-    if (part !== null) {
-      parts.push(part);
-    }
-  }
-  if (parts.length === 0) {
-    return null;
-  }
-  return parts.map((part) => formatCommandArrayPart(part)).join(" ");
-}
-
-function normalizeCommandValue(value: unknown): string | null {
-  const formatted = formatCommandValue(value);
-  return formatted ? unwrapKnownShellCommandWrapper(formatted) : null;
-}
-
-function toRawToolCommand(value: unknown, normalizedCommand: string | null): string | null {
-  const formatted = formatCommandValue(value);
-  if (!formatted || normalizedCommand === null) {
-    return null;
-  }
-  return formatted === normalizedCommand ? null : formatted;
-}
-
-function extractToolCommand(payload: Record<string, unknown> | null): {
-  command: string | null;
-  rawCommand: string | null;
-} {
-  const data = asRecord(payload?.data);
-  const item = asRecord(data?.item);
-  const itemResult = asRecord(item?.result);
-  const itemInput = asRecord(item?.input);
-  const itemType = asTrimmedString(payload?.itemType);
-  const detail = asTrimmedString(payload?.detail);
-  const candidates: unknown[] = [
-    item?.command,
-    itemInput?.command,
-    itemResult?.command,
-    data?.command,
-    itemType === "command_execution" && detail ? stripTrailingExitCode(detail).output : null,
-  ];
-
-  for (const candidate of candidates) {
-    const command = normalizeCommandValue(candidate);
-    if (!command) {
-      continue;
-    }
-    return {
-      command,
-      rawCommand: toRawToolCommand(candidate, command),
-    };
-  }
-
-  return {
-    command: null,
-    rawCommand: null,
-  };
-}
-
 function extractToolTitle(payload: Record<string, unknown> | null): string | null {
   return asTrimmedString(payload?.title);
 }
@@ -1415,37 +1280,12 @@ function normalizeInlinePreview(value: string): string {
   return value.replace(/\s+/g, " ").trim();
 }
 
-function truncateInlinePreview(value: string, maxLength = 84): string {
-  if (value.length <= maxLength) {
-    return value;
-  }
-  return `${value.slice(0, maxLength - 1).trimEnd()}…`;
-}
-
 function normalizePreviewForComparison(value: string | null | undefined): string | null {
   const normalized = asTrimmedString(value);
   if (!normalized) {
     return null;
   }
   return normalizeCompactToolLabel(normalizeInlinePreview(normalized)).toLowerCase();
-}
-
-function summarizeToolTextOutput(value: string): string | null {
-  const lines: Array<string> = [];
-  for (const rawLine of value.split(/\r?\n/u)) {
-    const line = normalizeInlinePreview(rawLine);
-    if (line.length > 0) {
-      lines.push(line);
-    }
-  }
-  const firstLine = lines.find((line) => line !== "```");
-  if (firstLine) {
-    return truncateInlinePreview(firstLine);
-  }
-  if (lines.length > 1) {
-    return `${lines.length.toLocaleString()} lines`;
-  }
-  return null;
 }
 
 function summarizeToolRawOutput(payload: Record<string, unknown> | null): string | null {
@@ -1540,27 +1380,6 @@ function extractToolDetail(
   return null;
 }
 
-function stripTrailingExitCode(value: string): {
-  output: string | null;
-  exitCode?: number | undefined;
-} {
-  const trimmed = value.trim();
-  const match = /^(?<output>[\s\S]*?)(?:\s*<exited with exit code (?<code>\d+)>)\s*$/i.exec(
-    trimmed,
-  );
-  if (!match?.groups) {
-    return {
-      output: trimmed.length > 0 ? trimmed : null,
-    };
-  }
-  const exitCode = Number.parseInt(match.groups.code ?? "", 10);
-  const normalizedOutput = match.groups.output?.trim() ?? "";
-  return {
-    output: normalizedOutput.length > 0 ? normalizedOutput : null,
-    ...(Number.isInteger(exitCode) ? { exitCode } : {}),
-  };
-}
-
 function extractWorkLogItemType(
   payload: Record<string, unknown> | null,
 ): WorkLogEntry["itemType"] | undefined {
@@ -1582,70 +1401,6 @@ function extractWorkLogRequestKind(
     return payload.requestKind;
   }
   return requestKindFromRequestType(payload?.requestType) ?? undefined;
-}
-
-function pushChangedFile(target: string[], seen: Set<string>, value: unknown) {
-  const normalized = asTrimmedString(value);
-  if (!normalized || seen.has(normalized)) {
-    return;
-  }
-  seen.add(normalized);
-  target.push(normalized);
-}
-
-function collectChangedFiles(value: unknown, target: string[], seen: Set<string>, depth: number) {
-  if (depth > 4 || target.length >= 12) {
-    return;
-  }
-  if (Array.isArray(value)) {
-    for (const entry of value) {
-      collectChangedFiles(entry, target, seen, depth + 1);
-      if (target.length >= 12) {
-        return;
-      }
-    }
-    return;
-  }
-
-  const record = asRecord(value);
-  if (!record) {
-    return;
-  }
-
-  pushChangedFile(target, seen, record.path);
-  pushChangedFile(target, seen, record.filePath);
-  pushChangedFile(target, seen, record.relativePath);
-  pushChangedFile(target, seen, record.filename);
-  pushChangedFile(target, seen, record.newPath);
-  pushChangedFile(target, seen, record.oldPath);
-
-  for (const nestedKey of [
-    "item",
-    "result",
-    "input",
-    "data",
-    "changes",
-    "files",
-    "edits",
-    "patch",
-    "patches",
-    "operations",
-  ]) {
-    if (!(nestedKey in record)) {
-      continue;
-    }
-    collectChangedFiles(record[nestedKey], target, seen, depth + 1);
-    if (target.length >= 12) {
-      return;
-    }
-  }
-}
-
-function extractChangedFiles(payload: Record<string, unknown> | null): string[] {
-  const changedFiles: string[] = [];
-  const seen = new Set<string>();
-  collectChangedFiles(asRecord(payload?.data), changedFiles, seen, 0);
-  return changedFiles;
 }
 
 function compareActivitiesByOrder(
@@ -1728,6 +1483,8 @@ function timelineEntrySourceOrder(entry: TimelineEntry): number {
       return 1;
     case "work":
       return 2;
+    case "aldo-approval":
+      return 3;
   }
 }
 

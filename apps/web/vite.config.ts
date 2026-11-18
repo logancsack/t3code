@@ -14,6 +14,7 @@ import { DEV_PROXIED_PATH_PREFIXES } from "@t3tools/shared/devProxy";
 import { loadRepoEnv } from "../../scripts/lib/public-config";
 import { thirdPartyLicensesPlugin } from "../../scripts/lib/third-party-licenses";
 import { tailwindPlugins } from "./vite/tailwind";
+import { showBootError } from "./src/lib/bootError";
 
 const repoEnv = loadRepoEnv();
 Object.assign(process.env, repoEnv);
@@ -209,6 +210,65 @@ function aldoBrandingPlugin(): Plugin {
   };
 }
 
+function aldoBootstrapPlugin(): Plugin {
+  return {
+    name: "aldo:bootstrap",
+    apply: "build",
+    transformIndexHtml: {
+      order: "pre",
+      handler(html) {
+        // A static entry makes $initial include the UI graph. Install its error
+        // handler outside that graph, so a missing or broken module still shows Reload.
+        return html.replace(
+          '<script type="module" src="/src/bootstrap.ts"></script>',
+          `<script>
+            window.addEventListener("error", function(event) {
+              if (!document.getElementById("boot-shell")) return;
+              if (event instanceof ErrorEvent || event.target instanceof HTMLScriptElement) {
+                (${showBootError.toString().replaceAll("T3 Code", "Aldo")})(event.error || new Error("Startup module failed to load"));
+              }
+            }, true);
+          </script>
+          <script type="module" src="/src/aldo/bootstrap.ts"></script>`,
+        );
+      },
+    },
+  };
+}
+
+// Aldo's interface font (src/aldo/fonts.css) starts downloading with the page,
+// beside its scripts, rather than once the app first draws text. Only its Latin
+// file, every weight in one; other scripts and italics load as text needs them.
+function aldoFontPreloadPlugin(): Plugin {
+  let base = "/";
+  return {
+    name: "aldo:font-preload",
+    apply: "build",
+    configResolved(config) {
+      base = config.base;
+    },
+    transformIndexHtml: {
+      order: "post",
+      handler(html, context) {
+        const font = Object.values(context.bundle ?? {}).find(
+          (output) =>
+            output.type === "asset" &&
+            /(^|\/)geist-latin-wght-normal-[^/]+\.woff2$/.test(output.fileName),
+        );
+        if (!font)
+          throw new Error("aldo:font-preload: the build has no Geist Latin file to preload.");
+        const charset = '<meta charset="UTF-8" />';
+        if (!html.includes(charset))
+          throw new Error("aldo:font-preload: index.html has no charset.");
+        return html.replace(
+          charset,
+          `${charset}\n    <link rel="preload" href="${base}${font.fileName}" as="font" type="font/woff2" crossorigin />`,
+        );
+      },
+    },
+  };
+}
+
 // Vite rejects requests whose Host header isn't localhost, which blocks sharing
 // a dev server over Tailscale/LAN. Tailnet names are safe to allow wholesale:
 // the DNS is controlled by tailscale, so they can't be rebound by an attacker.
@@ -225,7 +285,7 @@ export default defineConfig(() => {
     base: managedDevPc ? "/_t3/" : "/",
     publicDir: aldoCloud ? "public-aldo" : "public",
     plugins: [
-      ...(aldoCloud ? [aldoBrandingPlugin()] : []),
+      ...(aldoCloud ? [aldoBrandingPlugin(), aldoBootstrapPlugin(), aldoFontPreloadPlugin()] : []),
       devCompressionPlugin(),
       thirdPartyLicensesPlugin({
         bundleName: "web",
@@ -354,11 +414,31 @@ export default defineConfig(() => {
       manifest: true,
       sourcemap: buildSourcemap,
       rolldownOptions: {
+        ...(aldoCloud ? { input: { index: "index.html", replay: "replay.html" } } : {}),
         output: {
           codeSplitting: {
             // What the first screen loads goes in one chunk rather than a
             // couple hundred small ones; routes and panels split off it.
-            groups: [{ name: "index", tags: ["$initial" as const] }],
+            // In Aldo's build, whose entry imports the whole first screen
+            // (aldoBootstrapPlugin), its libraries get a chunk of their own
+            // whose name (and hash) stays the same across releases that
+            // change only the app's code, so returning devices keep it
+            // cached. Vite's preload helper goes with them: every chunk with
+            // an import() imports it, and a library's chunk then keeps its
+            // name too.
+            groups: [
+              ...(aldoCloud
+                ? [
+                    {
+                      name: "vendor",
+                      test: /[\\/]node_modules[\\/]|^\0vite\/preload-helper/,
+                      tags: ["$initial" as const],
+                      priority: 1,
+                    },
+                  ]
+                : []),
+              { name: "index", tags: ["$initial" as const] },
+            ],
           },
         },
       },

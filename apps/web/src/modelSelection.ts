@@ -32,6 +32,8 @@ import {
   NO_PROVIDER_MODEL_SELECTION,
 } from "./providerInstances";
 import { sortModelsForProviderInstance } from "./modelOrdering";
+import { isAldoCloud } from "./aldo/api";
+import { modelNameFromId } from "./aldo/modelNames.logic";
 
 const MAX_CUSTOM_MODEL_COUNT = 32;
 export const MAX_CUSTOM_MODEL_LENGTH = 256;
@@ -109,7 +111,9 @@ function appendUnavailableDynamicModelSelection(
   if (hiddenModels.includes(slug)) return options;
   if (options.some((option) => option.slug === slug)) return options;
 
-  return [...options, { slug, name: slug, isCustom: false, isUnavailable: true }];
+  // Aldo: a model the machine doesn't list still reads as a name.
+  const name = isAldoCloud ? modelNameFromId(slug) : slug;
+  return [...options, { slug, name, isCustom: false, isUnavailable: true }];
 }
 
 function toAppModelOption(model: ServerProvider["models"][number]): AppModelOption {

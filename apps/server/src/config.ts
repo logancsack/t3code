@@ -94,6 +94,16 @@ export class ServerConfig extends Context.Service<
     readonly noBrowser: boolean;
     readonly managedDevPc: boolean;
     /**
+     * How long a stopping server waits for the commands it admitted, and the
+     * turn starts they made, to reach their provider, so its stop marks those
+     * turns to continue (`T3CODE_SHUTDOWN_DRAIN_MS`). Claude's stop then waits
+     * as long again for its CLI to take the prompts sent to it. Unset or 0
+     * waits for nothing: set it only where whatever stops the server allows
+     * twice that before it kills it (the desktop app and service launcher
+     * don't).
+     */
+    readonly shutdownDrainMs?: number | undefined;
+    /**
      * Whether the Muse Code driver and its authentication connector are
      * available in this server process. Standalone T3 Code enables the driver
      * by default; managed deployments can explicitly withhold it while still

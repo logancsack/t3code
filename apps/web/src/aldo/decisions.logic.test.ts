@@ -1,20 +1,23 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import type {
-  AldoApproval,
-  AldoHome,
-  AldoHomeConversation,
-  AldoHomePending,
-  AldoHomePullRequest,
-} from "./cloud";
+import {
+  type AldoApproval,
+  type AldoHome,
+  type AldoHomeConversation,
+  type AldoHomePending,
+  type AldoHomePullRequest,
+} from "./homeApi";
 import {
   aldoDecisions,
+  aldoChatDecisions,
+  aldoHiddenFromChat,
   aldoWaitingCount,
   decidesInPlace,
   decisionAsk,
   decisionBrief,
   decisionOpen,
   decisionTitle,
+  decisionAt,
 } from "./decisions.logic";
 
 const NOW = Date.parse("2026-10-01T12:00:00Z");
@@ -295,4 +298,139 @@ describe("aldoDecisions", () => {
       ),
     ).toBe(false);
   });
+});
+
+it("keeps a hidden question waiting in overview while removing only its chat card", () => {
+  const hidden = { ...question, chatDecision: { id: "request-one", dismissed: true } };
+  const read = home({ conversations: [hidden] });
+  expect(aldoChatDecisions(read, NOW)).toHaveLength(0);
+  expect(aldoDecisions(read, NOW)).toHaveLength(1);
+  expect(aldoWaitingCount(read, NOW)).toBe(1);
+  // Aldo's conversation lists it under its name, to show again, and doesn't count it.
+  expect(aldoHiddenFromChat(read, NOW)).toEqual([
+    { title: hidden.title, chatDecision: hidden.chatDecision },
+  ]);
+  expect(aldoHiddenFromChat(home({ conversations: [question] }), NOW)).toEqual([]);
+  expect(hidden.state).toBe("waiting");
+  expect(hidden.pending).toEqual(question.pending);
+  // A fresh read (another device or reload) follows the server's dismissal.
+  expect(aldoChatDecisions(JSON.parse(JSON.stringify(read)), NOW)).toHaveLength(0);
+  const next = {
+    ...question,
+    pending: { ...question.pending!, requestId: "request-two" },
+    chatDecision: { id: "request-two", dismissed: false },
+  };
+  expect(aldoChatDecisions(home({ conversations: [next] }), NOW)).toHaveLength(1);
+});
+
+it("all card kinds support chat dismissal without changing the full decision list", () => {
+  const hidden = { id: "hidden", dismissed: true };
+  const read = home({
+    approvals: [approval("a", { chatDecision: hidden })],
+    conversations: [
+      { ...question, chatDecision: hidden },
+      conversation({
+        ref: "plan",
+        thread: at("plan"),
+        state: "waiting",
+        plan: { id: "p", text: "Plan" },
+        chatDecision: hidden,
+      }),
+      conversation({
+        ref: "permission",
+        thread: at("permission"),
+        state: "waiting",
+        pending: { kind: "approval", requestId: "a", summary: "Allow?", options: [] },
+        chatDecision: hidden,
+      }),
+      conversation({
+        ref: "handoff",
+        thread: at("handoff"),
+        state: "waiting",
+        pending: { kind: "handoff", requestId: "h", summary: "Sign in" },
+        chatDecision: hidden,
+      }),
+      conversation({
+        ref: "computer",
+        thread: at("computer"),
+        state: "waiting",
+        summary: "Needs your computer",
+        chatDecision: hidden,
+      }),
+      conversation({ ref: "failed", thread: at("failed"), state: "failed", chatDecision: hidden }),
+    ],
+    pullRequests: [pullRequest({ thread: at("merge"), chatDecision: hidden })],
+  });
+  expect(aldoDecisions(read, NOW)).toHaveLength(8);
+  expect(aldoChatDecisions(read, NOW)).toHaveLength(0);
+});
+
+it("older servers still show their prompts", () => {
+  expect(aldoChatDecisions(home({ conversations: [question] }), NOW)).toHaveLength(1);
+});
+
+describe("decisionAt", () => {
+  it("keeps a revised draft at its original creation time", () => {
+    const [draft] = aldoDecisions(
+      home({
+        approvals: [
+          approval("ap1", {
+            createdAt: "2026-10-21T15:00:00.000Z",
+            revisedAt: "2026-10-21T15:20:00.000Z",
+            previous: { title: "x", body: "y" },
+          }),
+        ],
+      }),
+      NOW,
+    );
+    expect(decisionAt(draft!)).toBe("2026-10-21T15:00:00.000Z");
+  });
+});
+
+it("places a browser handoff when it was created, rather than its thread's earlier state", () => {
+  const read = home({
+    conversations: [
+      conversation({
+        ref: "handoff",
+        thread: at("handoff"),
+        state: "waiting",
+        stateAt: ago(30),
+        at: ago(30),
+        pending: { kind: "handoff", requestId: "handoff-1", summary: "Sign in" },
+      }),
+    ],
+    handoffs: [
+      {
+        id: "handoff-1",
+        kind: "sign_in",
+        reason: "Sign in",
+        how: null,
+        site: "example.com",
+        url: null,
+        seconds: null,
+        thread: at("handoff"),
+        threadTitle: "Sign in",
+        createdAt: ago(10),
+        expiresAt: ago(-10),
+      },
+    ],
+  });
+  const decision = aldoDecisions(read, NOW).find((d) => d.kind === "handoff")!;
+  expect(decisionAt(decision, read)).toBe(ago(10));
+  expect(decisionAt(decision)).toBe(ago(30));
+});
+
+it("takes what the user dismissed out of every list and count, and a different ask back in", () => {
+  const cleared = { id: "request-one", dismissed: true, cleared: true };
+  const dismissed = { ...question, chatDecision: cleared };
+  const read = home({ conversations: [dismissed] });
+  expect(aldoDecisions(read, NOW)).toHaveLength(0);
+  expect(aldoChatDecisions(read, NOW)).toHaveLength(0);
+  expect(aldoWaitingCount(read, NOW)).toBe(0);
+  // Not "hidden from chat" either: it is dismissed, listed under Dismissed (needsYou.logic.ts).
+  expect(aldoHiddenFromChat(read, NOW)).toEqual([]);
+  expect(aldoDecisions(read, NOW, true)).toHaveLength(1);
+  // The same thread asks something else: another id, so it counts again.
+  const next = { ...question, chatDecision: { id: "request-two", dismissed: false } };
+  expect(aldoWaitingCount(home({ conversations: [next] }), NOW)).toBe(1);
 });

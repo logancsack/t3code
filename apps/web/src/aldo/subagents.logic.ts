@@ -3,7 +3,11 @@
 // for its provider, and for Codex each model's reasoning efforts. Claude Code
 // has no default effort for subagents: they run at the main agent's.
 
-import type { AldoSubagentDefault, AldoSubagentProvider, AldoSubagents } from "./cloud";
+import {
+  type AldoSubagentDefault,
+  type AldoSubagentProvider,
+  type AldoSubagents,
+} from "./threadApi";
 
 export interface SubagentAgent {
   readonly kind: AldoSubagentProvider;
@@ -21,15 +25,14 @@ export const SUBAGENT_AGENTS: ReadonlyArray<SubagentAgent> = [
     driver: "claudeAgent",
     title: "Claude Code",
     description:
-      "What its subagents run on when Claude doesn't pick a model, Explore and Plan included. They keep the main agent's effort.",
+      "The model its helpers (subagents, Explore and Plan among them) use when it doesn’t pick one. They keep the thread’s effort.",
     efforts: false,
   },
   {
     kind: "codex",
     driver: "codex",
     title: "Codex",
-    description:
-      "What its subagents run on when Codex doesn't pick a model, and at what reasoning.",
+    description: "The model and reasoning its helpers (subagents) use when it doesn’t pick one.",
     efforts: true,
   },
 ];

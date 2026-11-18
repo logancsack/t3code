@@ -1,4 +1,4 @@
-// A call with Aldo on a phone, full screen: the orb, what Aldo is saying (its
+// A call with Aldo on a phone, full screen: the mark, what Aldo is saying (its
 // last sentence lighter, as it trails off or is still coming), what it did on
 // this call, and mute, type and end. Folded away (the chevron) the call goes
 // on: the page's composer has mute and hang up, and its mic button (or the
@@ -27,9 +27,12 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { useIsMobile } from "../hooks/useMediaQuery";
 import { cn } from "~/lib/utils";
-import { AldoOrb } from "./AldoAssistant";
+import { AldoCallReferences } from "./AldoCallReferences";
+import { AldoVoiceMark } from "./AldoAssistant";
+import { ApprovalBody } from "./AldoApprovals";
 import { DecisionIcon } from "./AldoBrief";
 import { PendingForm } from "./AldoHomeInbox";
+import { AgentMarkdown, Quoted } from "./AldoQuoted";
 import { openAldoSummon } from "./AldoSummon";
 import { callDuration, captionParts } from "./assistant.logic";
 import {
@@ -39,7 +42,7 @@ import {
   setAldoVoiceOff,
   useAldoAssistant,
 } from "./assistantSession";
-import { choiceWords, decideAldo, type AldoChoice } from "./decide";
+import { choiceWords, decideAldoOutcome, type AldoChoice } from "./decide";
 import {
   decisionAsk,
   decisionOpen,
@@ -72,7 +75,12 @@ export function AldoCallScreen() {
   if (mobile && !minimized) return <CallScreen mobile />;
   if (!mobile && walking) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/60 p-4 backdrop-blur-sm">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Going through them with Aldo"
+        className="fixed inset-0 z-50 flex items-center justify-center bg-background/60 p-4 backdrop-blur-sm"
+      >
         <div className="flex h-[min(46rem,92dvh)] w-full max-w-md overflow-hidden rounded-2xl border border-border/70 bg-background shadow-2xl">
           <CallScreen mobile={false} />
         </div>
@@ -233,7 +241,7 @@ function CallScreen(props: { readonly mobile: boolean }) {
             walk.active ? "pt-3 pb-3" : "flex-1 pt-10 pb-6",
           )}
         >
-          <AldoOrb size={walk.active ? "lg" : "xl"} display />
+          <AldoVoiceMark size={walk.active ? "lg" : "xl"} display />
         </div>
         <p
           className={cn(
@@ -245,6 +253,7 @@ function CallScreen(props: { readonly mobile: boolean }) {
           {lead}
           {tail ? <span className="text-muted-foreground"> {tail}</span> : null}
         </p>
+        <AldoCallReferences />
         {/* What went wrong (a blocked microphone): the call goes on, typed. */}
         {error ? (
           <p className="mt-2 max-w-md text-center text-destructive-foreground text-xs">{error}</p>
@@ -361,9 +370,11 @@ function WalkCard(props: {
   const [busy, setBusy] = useState<string | null>(null);
   const choose = async (id: string, choice: AldoChoice) => {
     setBusy(id);
-    const done = await decideAldo(d, choice);
+    const { outcome, said } = await decideAldoOutcome(d, choice);
     setBusy(null);
-    if (done) advanceAldoWalkthrough("decided", choiceWords(d, choice));
+    if (outcome === "done")
+      advanceAldoWalkthrough("decided", choiceWords(d, choice), said ?? undefined);
+    else if (outcome === "moved-on") advanceAldoWalkthrough("moved-on", said ?? undefined);
   };
   const choices = useMemo((): ReadonlyArray<{
     id: string;
@@ -437,14 +448,26 @@ function WalkCard(props: {
         </dl>
       ) : null}
       {d.kind === "aldo-approval" && d.approval.body ? (
-        <p className="line-clamp-3 whitespace-pre-wrap rounded-lg bg-background/60 px-2.5 py-2 text-xs">
-          {d.approval.body}
-        </p>
+        <div className="flex flex-col gap-1 rounded-lg bg-background/60 px-2.5 py-2">
+          <ApprovalBody approval={d.approval} lines={3} className="text-xs" />
+        </div>
+      ) : null}
+      {/* Only the user approves a payment, in Link: the call can open it, never decide it. */}
+      {d.kind === "payment" && d.payment.approvalUrl ? (
+        <Button
+          size="lg"
+          className="h-11"
+          render={<a href={d.payment.approvalUrl} target="_blank" rel="noopener noreferrer" />}
+        >
+          {d.payment.status === "requires_action" ? "Open Link" : "Approve in Link"}
+        </Button>
       ) : null}
       {d.kind === "plan" ? (
-        <p className="line-clamp-5 whitespace-pre-wrap rounded-lg bg-background/60 px-2.5 py-2 text-xs">
-          {d.plan.text}
-        </p>
+        <div className="flex flex-col gap-1 rounded-lg bg-background/60 px-2.5 py-2">
+          <Quoted lines={6} className="text-xs leading-5">
+            <AgentMarkdown text={d.plan.text} className="text-xs" />
+          </Quoted>
+        </div>
       ) : null}
       {fullForm && d.kind === "question" ? (
         <PendingForm

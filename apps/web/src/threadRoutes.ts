@@ -108,3 +108,28 @@ export function resolveActiveThreadRouteRef(
   }
   return draftThread.promotedTo;
 }
+
+type ThreadRouteViewComponent = typeof import("./components/ThreadRouteView").ThreadRouteView;
+
+let threadRouteView: ThreadRouteViewComponent | null = null;
+let threadRouteViewLoad: Promise<ThreadRouteViewComponent> | null = null;
+
+/**
+ * Loads the thread view (ChatView and everything it renders), which the home
+ * screen doesn't need. Both thread routes wait for it in their loader, so by
+ * the time one matches, `loadedThreadRouteView` has it and the view renders
+ * with the route, without suspending. A failed load is tried again next time.
+ */
+export function loadThreadRouteView(): Promise<ThreadRouteViewComponent> {
+  threadRouteViewLoad ??= import("./components/ThreadRouteView")
+    .then((module) => (threadRouteView = module.ThreadRouteView))
+    .catch((error: unknown) => {
+      threadRouteViewLoad = null;
+      throw error;
+    });
+  return threadRouteViewLoad;
+}
+
+export function loadedThreadRouteView(): ThreadRouteViewComponent | null {
+  return threadRouteView;
+}

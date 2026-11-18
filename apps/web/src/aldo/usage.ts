@@ -12,7 +12,8 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
 
-import { aldoMachineIsNew, fetchAldoUsage } from "./cloud";
+import { aldoMachineIsNew } from "./directory";
+import { fetchAldoUsage } from "./threadApi";
 import { withAldoUsage, type AldoUsageAnswers } from "./usage.logic";
 
 /** Aldo's answers for one window, keyed as state/usage.ts keys it. */

@@ -1,10 +1,11 @@
-// How a sign-in for an integration (Settings → Integrations) reports back.
+// How a sign-in for an integration (Settings → Connections) reports back.
 // Connecting opens Aldo's connect URL in a popup; when the provider is done,
 // Aldo's callback page posts the result to this tab, both to its opener and
 // on the "aldo-integrations" BroadcastChannel (a provider's Cross-Origin-
 // Opener-Policy can cut the popup off from its opener). Without a popup, the
-// callback sends the page back to Settings → Integrations with the result in
-// the query: `?integration=microsoft&status=connected|error&message=…`.
+// callback sends the page back to /settings/integrations, which forwards it
+// to Connections, with the result in the query:
+// `?integration=microsoft&status=connected|error&message=…`.
 
 export const ALDO_INTEGRATIONS_CHANNEL = "aldo-integrations";
 

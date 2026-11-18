@@ -2,8 +2,8 @@
 // Today, This week and Older. What it made comes from each turn's changed
 // files (made.logic.ts); what's shared, from Aldo's list of shares (GET
 // /api/shares), matched to the thread by its computer where Aldo says which
-// one, or else by the link its share_file step recorded. Settings → Shared
-// files lists every share the same way.
+// one, or else by the link its share_file step recorded. The Library lists
+// every share the same way.
 
 import {
   aldoMadeKind,
@@ -28,6 +28,12 @@ export interface AldoShareView {
   readonly environmentId?: string;
   /** That thread's repositories: none for General, `aldo:<slug>` for a project (an older Aldo leaves it out). */
   readonly repos?: ReadonlyArray<string>;
+  /** Kept current: shared again by its agent, it changes in place at the same link. */
+  readonly live?: boolean;
+  /** When it last changed in place, or was checked unchanged. */
+  readonly updatedAt?: string;
+  /** First in the Library (an Aldo that can't pin leaves it out). */
+  readonly pinned?: boolean;
 }
 
 /** Aldo's list, with anything it doesn't recognize left out; null when it isn't a list (an older Aldo). */
@@ -62,6 +68,9 @@ export function parseAldoShares(value: unknown): AldoShareView[] | null {
         createdAt: share.createdAt,
         ...(environmentId ? { environmentId } : {}),
         ...(repos ? { repos } : {}),
+        ...(share.live === true ? { live: true } : {}),
+        ...(typeof share.updatedAt === "string" ? { updatedAt: share.updatedAt } : {}),
+        ...(typeof share.pinned === "boolean" ? { pinned: share.pinned } : {}),
       },
     ];
   });
@@ -72,7 +81,8 @@ export function parseAldoShares(value: unknown): AldoShareView[] | null {
 
 export type AldoLibraryWhen = "today" | "week" | "older";
 
-export const ALDO_LIBRARY_WHEN_LABEL: Record<AldoLibraryWhen, string> = {
+const ALDO_LIBRARY_WHEN_LABEL: Record<AldoLibraryWhen | "pinned", string> = {
+  pinned: "Pinned",
   today: "Today",
   week: "This week",
   older: "Older",
@@ -88,20 +98,26 @@ export function aldoLibraryWhen(at: string, now: Date): AldoLibraryWhen {
   return time >= weekAgo.getTime() ? "week" : "older";
 }
 
-/** Newest first, in the groups that have something. */
+/** Newest first, in the groups that have something: what's pinned, then by when. */
 export function aldoLibraryGroups<T>(
   items: ReadonlyArray<T>,
   atOf: (item: T) => string,
   now: Date,
-): Array<{ readonly when: AldoLibraryWhen; readonly label: string; readonly items: T[] }> {
+  pinnedOf?: (item: T) => boolean,
+): Array<{
+  readonly when: AldoLibraryWhen | "pinned";
+  readonly label: string;
+  readonly items: T[];
+}> {
   const sorted = items.toSorted((a, b) => timeOf(atOf(b)) - timeOf(atOf(a)));
-  const groups = (["today", "week", "older"] as const).map((when) => ({
+  const groups = (["pinned", "today", "week", "older"] as const).map((when) => ({
     when,
     label: ALDO_LIBRARY_WHEN_LABEL[when],
     items: [] as T[],
   }));
   for (const item of sorted) {
-    groups.find((group) => group.when === aldoLibraryWhen(atOf(item), now))!.items.push(item);
+    const when = pinnedOf?.(item) ? "pinned" : aldoLibraryWhen(atOf(item), now);
+    groups.find((group) => group.when === when)!.items.push(item);
   }
   return groups.filter((group) => group.items.length > 0);
 }
@@ -126,9 +142,10 @@ const KIND_BY_TYPE: Record<string, AldoMadeKind> = {
   "text/markdown": "document",
   "application/vnd.openxmlformats-officedocument.presentationml.presentation": "deck",
   "application/vnd.ms-powerpoint": "deck",
+  "application/zip": "archive",
 };
 
-/** What a shared file is, by its type; null for one that's none of the kinds (a zip, data). */
+/** What a shared file is, by its type; null for one that's none of the kinds (data). */
 export function aldoShareKind(contentType: string): AldoMadeKind | null {
   const type = contentType.split(";")[0]!.trim().toLowerCase();
   const known = KIND_BY_TYPE[type];
@@ -145,8 +162,39 @@ export function aldoShareAudience(share: Pick<AldoShareView, "public">): {
   readonly detail: string;
 } {
   return share.public
-    ? { label: "Public link", detail: "Anyone with the link can open it." }
+    ? { label: "Anyone with the link", detail: "Anyone with the link can open it." }
     : { label: "Only you", detail: "Only you can open it, signed in to Aldo." };
+}
+
+/**
+ * "Updated 7:42 AM" today, "Updated yesterday", "Updated Tuesday" this week,
+ * "Updated Oct 3" before; nothing for a share that hasn't changed since it
+ * was made.
+ */
+export function aldoShareUpdated(
+  share: Pick<AldoShareView, "updatedAt">,
+  now: Date,
+): string | null {
+  const time = share.updatedAt ? Date.parse(share.updatedAt) : Number.NaN;
+  if (!Number.isFinite(time)) return null;
+  const at = new Date(time);
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const day = 24 * 60 * 60 * 1000;
+  if (time >= today) {
+    return `Updated ${at.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
+  }
+  if (time >= today - day) return "Updated yesterday";
+  if (time >= today - 6 * day) {
+    return `Updated ${at.toLocaleDateString([], { weekday: "long" })}`;
+  }
+  return `Updated ${at.toLocaleDateString([], { month: "short", day: "numeric" })}`;
+}
+
+/** What opens in Aldo itself to read (as /s/ serves it inline); the rest downloads. */
+export function aldoShareViewable(contentType: string): boolean {
+  return /^(text\/(html|plain|csv|markdown)|application\/(pdf|json)|image\/|video\/|audio\/)/.test(
+    contentType.split(";")[0]!.trim().toLowerCase(),
+  );
 }
 
 /** "Opened 3 times", or nothing before anyone has. */
@@ -285,13 +333,15 @@ export function aldoThreadLibrary(input: {
       if (!shared && thing.path === null) continue;
       if (share) claimed.add(share.id);
       const name = shared ? (share?.title ?? thing.sharedAs ?? thing.name) : thing.name;
+      // A page that stays current is as new as its last update.
+      const updated = share?.updatedAt ?? null;
       const item: AldoLibraryItem = {
         key: thing.path ?? (share ? `share:${share.id}` : (thing.url ?? thing.name)),
         name,
         fileName: name !== thing.name ? thing.name : null,
-        kind: thing.kind,
+        kind: (share ? aldoShareKind(share.contentType) : null) ?? thing.kind,
         path: thing.path,
-        at: turn.completedAt,
+        at: updated && timeOf(updated) > timeOf(turn.completedAt) ? updated : turn.completedAt,
         shared,
         share,
         url: input.shares === null ? (thing.url ?? null) : null,
@@ -305,7 +355,7 @@ export function aldoThreadLibrary(input: {
       // A file a later turn changed again keeps that time, and the share an earlier turn made.
       const later = items[index]!;
       if (!later.shared && item.shared) {
-        items[index] = { ...item, at: later.at };
+        items[index] = { ...item, at: timeOf(item.at) > timeOf(later.at) ? item.at : later.at };
       }
     }
   });
@@ -326,7 +376,7 @@ export function aldoShareItem(share: AldoShareView): AldoLibraryItem {
     fileName: null,
     kind: aldoShareKind(share.contentType) ?? aldoMadeKind(share.title),
     path: null,
-    at: share.createdAt,
+    at: share.updatedAt ?? share.createdAt,
     shared: true,
     share,
     url: null,

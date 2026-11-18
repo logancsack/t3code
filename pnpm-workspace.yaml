@@ -113,7 +113,7 @@ minimumReleaseAgeExclude:
   - expo-sqlite@58.0.8
   - expo-symbols@58.0.3
   - electron@44.4.2
-  - "@anthropic-ai/claude-agent-sdk@0.3.276"
+  - "@anthropic-ai/claude-agent-sdk@0.3.321"
   - "@alchemy.run/cloudflare-runtime@2.0.0-beta.79"
   - "@alchemy.run/floci@2.0.0-beta.79"
   - "@alchemy.run/node-utils@2.0.0-beta.79"
@@ -257,6 +257,7 @@ patchedDependencies:
   react-native-nitro-modules@0.35.9: patches/react-native-nitro-modules@0.35.9.patch
   react-native-screens@4.28.0: patches/react-native-screens@4.28.0.patch
   uniwind@1.11.0: patches/uniwind@1.11.0.patch
+  "@dnd-kit/core@6.3.1": patches/@dnd-kit__core@6.3.1.patch
 
 peerDependencyRules:
   allowAny:

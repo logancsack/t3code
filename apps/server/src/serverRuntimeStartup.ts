@@ -17,13 +17,16 @@ import {
 } from "@t3tools/contracts";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import * as Cause from "effect/Cause";
+import * as Clock from "effect/Clock";
 import * as Console from "effect/Console";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
@@ -31,6 +34,8 @@ import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
+import * as Stream from "effect/Stream";
+import * as SubscriptionRef from "effect/SubscriptionRef";
 
 import * as ServerConfig from "./config.ts";
 import { flushCompileCache } from "./compileCache.ts";
@@ -72,6 +77,16 @@ export class ServerRuntimeStartupError extends Schema.TaggedError<ServerRuntimeS
   }
 }
 
+/** A command sent once the server began to stop. Nothing of it ran, so it can be sent again. */
+export class ServerStoppingError extends Schema.TaggedError<ServerStoppingError>()(
+  "ServerStoppingError",
+  {},
+) {
+  override get message(): string {
+    return "The server is restarting. Send this again in a moment.";
+  }
+}
+
 export class ServerRuntimeStartup extends Context.Service<
   ServerRuntimeStartup,
   {
@@ -86,7 +101,14 @@ export class ServerRuntimeStartup extends Context.Service<
     ) => Effect.Effect<void, ServerUpdateThreadContinuationError>;
     readonly enqueueCommand: <A, E>(
       effect: Effect.Effect<A, E>,
-    ) => Effect.Effect<A, E | ServerRuntimeStartupError>;
+    ) => Effect.Effect<A, E | ServerRuntimeStartupError | ServerStoppingError>;
+    /**
+     * The first step of stopping: refuses commands from now on, then waits up
+     * to `shutdownDrainMs` for the ones already admitted to finish and for
+     * every turn start taken to reach its provider, so that the stop after it
+     * marks those turns to continue rather than leaving them half started.
+     */
+    readonly drainForShutdown: Effect.Effect<void>;
   }
 >()("t3/serverRuntimeStartup") {}
 
@@ -96,13 +118,24 @@ interface QueuedCommand {
 
 type CommandReadinessState = "pending" | "ready" | ServerRuntimeStartupError;
 
+interface CommandAdmission {
+  readonly closed: boolean;
+  readonly running: number;
+}
+
 interface CommandGate {
   readonly awaitCommandReady: Effect.Effect<void, ServerRuntimeStartupError>;
   readonly signalCommandReady: Effect.Effect<void>;
   readonly failCommandReady: (error: ServerRuntimeStartupError) => Effect.Effect<void>;
   readonly enqueueCommand: <A, E>(
     effect: Effect.Effect<A, E>,
-  ) => Effect.Effect<A, E | ServerRuntimeStartupError>;
+  ) => Effect.Effect<A, E | ServerRuntimeStartupError | ServerStoppingError>;
+  /** Refuses every command from now on; the ones admitted before carry on. */
+  readonly close: Effect.Effect<void>;
+  /** How many admitted commands are still running. */
+  readonly runningCount: Effect.Effect<number>;
+  /** Resolves once no admitted command is running. */
+  readonly awaitIdle: Effect.Effect<void>;
 }
 
 const settleQueuedCommand = <A, E>(deferred: Deferred.Deferred<A, E>, exit: Exit.Exit<A, E>) =>
@@ -114,6 +147,34 @@ export const makeCommandGate = Effect.gen(function* () {
   const commandReady = yield* Deferred.make<void, ServerRuntimeStartupError>();
   const commandQueue = yield* Queue.unbounded<QueuedCommand>();
   const commandReadinessState = yield* Ref.make<CommandReadinessState>("pending");
+  const scope = yield* Effect.scope;
+  // Admitting a command (counting it) and closing the gate are each one
+  // atomic step, so every command is either counted before the gate closed,
+  // and waited for, or refused. A command counts for as long as its work
+  // runs, not its caller: one that stops waiting (a closed connection) leaves
+  // the work going on, as the engine's queue and a bootstrap would anyway.
+  const admission = yield* SubscriptionRef.make<CommandAdmission>({ closed: false, running: 0 });
+  const admit = <A, E>(effect: Effect.Effect<A, E>): Effect.Effect<A, E | ServerStoppingError> =>
+    Effect.uninterruptibleMask((restore) =>
+      Effect.flatMap(
+        SubscriptionRef.modify(admission, (state): readonly [boolean, CommandAdmission] =>
+          state.closed ? [false, state] : [true, { ...state, running: state.running + 1 }],
+        ),
+        (admitted): Effect.Effect<A, E | ServerStoppingError> =>
+          admitted
+            ? Effect.interruptible(effect).pipe(
+                Effect.ensuring(
+                  SubscriptionRef.update(admission, (state) => ({
+                    ...state,
+                    running: state.running - 1,
+                  })),
+                ),
+                Effect.forkIn(scope, { startImmediately: true }),
+                Effect.flatMap((fiber) => restore(Fiber.join(fiber))),
+              )
+            : Effect.fail(new ServerStoppingError()),
+      ),
+    );
 
   const commandWorker = Effect.forever(
     Queue.take(commandQueue).pipe(Effect.flatMap((command) => command.run)),
@@ -121,6 +182,13 @@ export const makeCommandGate = Effect.gen(function* () {
   yield* Effect.forkScoped(commandWorker);
 
   return {
+    close: SubscriptionRef.update(admission, (state) => ({ ...state, closed: true })),
+    runningCount: SubscriptionRef.get(admission).pipe(Effect.map((state) => state.running)),
+    awaitIdle: SubscriptionRef.changes(admission).pipe(
+      Stream.filter((state) => state.running === 0),
+      Stream.runHead,
+      Effect.asVoid,
+    ),
     awaitCommandReady: Deferred.await(commandReady),
     signalCommandReady: Effect.gen(function* () {
       yield* Ref.set(commandReadinessState, "ready");
@@ -135,16 +203,19 @@ export const makeCommandGate = Effect.gen(function* () {
       Effect.gen(function* () {
         const readinessState = yield* Ref.get(commandReadinessState);
         if (readinessState === "ready") {
-          return yield* effect;
+          return yield* admit(effect);
         }
         if (readinessState !== "pending") {
           return yield* readinessState;
         }
 
-        const result = yield* Deferred.make<A, E | ServerRuntimeStartupError>();
+        const result = yield* Deferred.make<
+          A,
+          E | ServerRuntimeStartupError | ServerStoppingError
+        >();
         yield* Queue.offer(commandQueue, {
           run: Deferred.await(commandReady).pipe(
-            Effect.flatMap(() => effect),
+            Effect.flatMap(() => admit(effect)),
             Effect.exit,
             Effect.flatMap((exit) => settleQueuedCommand(result, exit)),
           ),
@@ -914,6 +985,42 @@ export const make = (options?: StartupOptions) =>
     const commandGate = yield* makeCommandGate;
     const httpListening = yield* Deferred.make<void>();
     const reactorScope = yield* Scope.make("sequential");
+    // The watchdog starts turns of its own (automatic retries). Each one runs
+    // as an admitted command, and a stop ends the watchdog first.
+    const watchdogScope = yield* Scope.make("sequential");
+    // Set as the orchestration roots are released at activation. Until then
+    // nothing starts a turn: commands wait for startup, and the reactors and
+    // the watchdog are parked.
+    const rootsReleased = yield* Ref.make(false);
+    const shutdownDrainMs = serverConfig.shutdownDrainMs ?? 0;
+
+    const drainForShutdown = Effect.gen(function* () {
+      yield* commandGate.close;
+      // A retry the watchdog started carries on as an admitted command.
+      yield* Scope.close(watchdogScope, Exit.void);
+      if (shutdownDrainMs <= 0 || !(yield* Ref.get(rootsReleased))) return;
+      const startedAt = yield* Clock.currentTimeMillis;
+      // Nothing starts a turn once the gate is closed. An admitted command is
+      // done once the engine has committed and published its events, so the
+      // reactor's drain through the engine's latest sequence after that takes
+      // in every turn start there will be.
+      const drained = yield* commandGate.awaitIdle.pipe(
+        Effect.andThen(orchestrationReactor.drainTurnStarts),
+        Effect.timeoutOption(Duration.millis(shutdownDrainMs)),
+      );
+      const waitedMs = (yield* Clock.currentTimeMillis) - startedAt;
+      if (Option.isNone(drained)) {
+        yield* Effect.logWarning("stopping with turn starts still under way", { waitedMs });
+      } else {
+        yield* Effect.logInfo("stopping once every turn start reached its provider", {
+          waitedMs,
+        });
+      }
+    }).pipe(
+      Effect.catchCause((cause) =>
+        Effect.logWarning("failed to wait for turn starts before stopping", { cause }),
+      ),
+    );
 
     const syncAutoPullProjects = projectionSnapshotQuery.getShellSnapshot().pipe(
       Effect.flatMap((snapshot) =>
@@ -927,6 +1034,7 @@ export const make = (options?: StartupOptions) =>
     );
 
     yield* Effect.addFinalizer(() => Scope.close(reactorScope, Exit.void));
+    yield* Effect.addFinalizer(() => Scope.close(watchdogScope, Exit.void));
 
     const startup = Effect.gen(function* () {
       yield* Effect.logDebug("startup phase: starting keybindings runtime");
@@ -965,7 +1073,9 @@ export const make = (options?: StartupOptions) =>
         Effect.gen(function* () {
           yield* orchestrationReactor.start().pipe(Scope.provide(reactorScope));
           yield* providerSessionReaper.start().pipe(Scope.provide(reactorScope));
-          yield* turnLivenessWatchdog.start().pipe(Scope.provide(reactorScope));
+          yield* turnLivenessWatchdog
+            .start({ admitRetry: commandGate.enqueueCommand })
+            .pipe(Scope.provide(watchdogScope));
         }),
       );
 
@@ -1061,6 +1171,7 @@ export const make = (options?: StartupOptions) =>
           },
         }),
       );
+      yield* Ref.set(rootsReleased, true);
       yield* options?.activate ?? Effect.void;
 
       yield* Effect.logDebug("Accepting commands");
@@ -1129,6 +1240,7 @@ export const make = (options?: StartupOptions) =>
           ),
         ),
       enqueueCommand: commandGate.enqueueCommand,
+      drainForShutdown,
     } satisfies ServerRuntimeStartup["Service"];
   });
 

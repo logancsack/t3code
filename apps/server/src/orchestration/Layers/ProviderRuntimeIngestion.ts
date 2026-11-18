@@ -572,6 +572,7 @@ export function runtimeEventToActivities(
           payload: {
             message: truncateDetail(event.payload.message),
             ...(event.payload.code ? { code: event.payload.code } : {}),
+            ...(event.payload.class ? { class: event.payload.class } : {}),
           },
           turnId: toTurnId(event.turnId) ?? null,
           ...maybeSequence,
@@ -1634,6 +1635,7 @@ const make = Effect.gen(function* () {
         id: input.planId,
         turnId: input.turnId ?? null,
         planMarkdown,
+        approvedAt: existingPlan?.approvedAt ?? null,
         implementedAt: existingPlan?.implementedAt ?? null,
         implementationThreadId: existingPlan?.implementationThreadId ?? null,
         createdAt: existingPlan?.createdAt ?? (bufferedPlan?.createdAt || input.updatedAt),
@@ -1770,6 +1772,7 @@ const make = Effect.gen(function* () {
           turnId: sourcePlan.turnId,
           planMarkdown: sourcePlan.planMarkdown,
           createdAt: sourcePlan.createdAt,
+          approvedAt: sourcePlan.approvedAt ?? implementedAt,
           implementedAt,
           implementationThreadId,
           updatedAt: implementedAt,
@@ -2485,11 +2488,21 @@ const make = Effect.gen(function* () {
       // active turn's progress; session.exited always clears.
       if (event.type === "session.exited") {
         threadPlanProgress.clearThreadPlanProgress(thread.id);
+      } else if (event.type === "turn.started" && shouldApplyThreadLifecycle) {
+        // A turn starts with nothing under way, one that supersedes the active turn too:
+        // the old turn's tools can't end here any more (its events are now stale).
+        threadPlanProgress.clearThreadCurrentWork(thread.id);
       } else if (!conflictsWithActiveTurn) {
         if (event.type === "turn.plan.updated") {
           threadPlanProgress.recordPlanProgress(thread.id, event.payload.plan);
         } else if (isTerminalTurn && shouldApplyThreadLifecycle) {
           threadPlanProgress.clearThreadPlanProgress(thread.id);
+        } else if (event.type === "content.delta" && activeTurnId !== null) {
+          threadPlanProgress.recordStreaming(
+            thread.id,
+            event.payload.streamKind === "assistant_text" ? "writing" : "thinking",
+            now,
+          );
         }
       }
 
@@ -2603,6 +2616,14 @@ const make = Effect.gen(function* () {
       }
 
       const activities = runtimeEventToActivities(activityEvent, taskTitle);
+      // Current work, before the activity's dispatch pushes the shell that carries it.
+      if (!conflictsWithActiveTurn && activeTurnId !== null) {
+        for (const activity of activities) {
+          if (activity.tone === "tool" && activity.kind.startsWith("tool.")) {
+            threadPlanProgress.recordToolActivity(thread.id, projectActivityPayload(activity));
+          }
+        }
+      }
       yield* Effect.forEach(activities, (activity) =>
         providerCommandId(event, "thread-activity-append").pipe(
           Effect.flatMap((commandId) =>
