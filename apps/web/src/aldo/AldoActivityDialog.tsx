@@ -203,7 +203,9 @@ export function AldoActivityDialog(props: {
                                   ? "Verified this"
                                   : "Confirmed unmet"}
                           </Button>
-                          {c.met && c.verification?.verifier !== "owner_review_v1" ? (
+                          {c.met &&
+                          (c.verification?.verifier !== "owner_review_v1" ||
+                            c.verification.verdict === "unverified") ? (
                             <Button
                               variant="ghost"
                               size="sm"

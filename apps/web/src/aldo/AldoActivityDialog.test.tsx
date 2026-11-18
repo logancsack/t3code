@@ -188,11 +188,25 @@ it("records owner review independently, preserves a failed save and can clear a 
   const clear = [...document.querySelectorAll("button")].find(
     (b) => b.textContent === "Clear my check",
   )!;
+  saveVerification.mockImplementationOnce(async () => {
+    data.turns[0]!.taskResult!.doneWhen[0]!.verification!.verdict = "unverified";
+    return { saved: true };
+  });
   await act(() => clear.click());
   expect(saveVerification).toHaveBeenLastCalledWith(
     "aldo-one",
     "conversation",
     expect.objectContaining({ verdict: "unverified" }),
+  );
+  const problem = [...document.querySelectorAll("button")].find(
+    (b) => b.textContent === "Found a problem",
+  )!;
+  expect(problem).toBeDefined();
+  await act(() => problem.click());
+  expect(saveVerification).toHaveBeenLastCalledWith(
+    "aldo-one",
+    "conversation",
+    expect.objectContaining({ verdict: "failed" }),
   );
 });
 it("keeps optional estimates unknown and preserves them after a failed save", async () => {
