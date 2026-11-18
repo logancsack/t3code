@@ -335,6 +335,7 @@ export function AldoPreviewsControl(props: {
         ) : null}
       </MenuPopup>
       <AldoActivityDialog
+        key={`${props.environmentId}:${props.threadId}`}
         environmentId={props.environmentId}
         conversation={props.threadId}
         open={activityOpen}

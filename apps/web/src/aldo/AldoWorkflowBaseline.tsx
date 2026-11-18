@@ -19,7 +19,9 @@ export function AldoWorkflowBaseline(props: {
   const [error, setError] = useState<string | null>(null);
   return (
     <details className="space-y-3">
-      <summary className="cursor-pointer py-2 font-medium">Work estimates · optional</summary>
+      <summary className="min-h-11 cursor-pointer py-3 font-medium sm:min-h-8 sm:py-2">
+        Work estimates · optional
+      </summary>
       <p className="text-muted-foreground">
         Your estimates help measure work absorbed. Leave unknown values blank. These numbers don’t
         change permissions or count an unverified job as finished.
@@ -40,7 +42,11 @@ export function AldoWorkflowBaseline(props: {
             ),
           })
             .then(props.onSaved)
-            .catch(() => setError("Couldn’t save your estimates. They’re still here; try again."))
+            .catch(() =>
+              setError(
+                "Couldn’t confirm your estimates were saved. Your entered values are still here; refresh activity to check the recorded values.",
+              ),
+            )
             .finally(() => setSaving(false));
         }}
       >
@@ -64,10 +70,33 @@ export function AldoWorkflowBaseline(props: {
               disabled={saving}
               onChange={(event) => setDraft((old) => ({ ...old, [key]: event.target.value }))}
             />
+            {error ? (
+              <span className="text-muted-foreground">
+                Recorded: {String(props.workflow[key] ?? "Unknown")}
+              </span>
+            ) : null}
           </label>
         ))}
-        {error ? <p role="status">{error}</p> : null}
-        <Button variant="outline" size="sm" disabled={saving} type="submit">
+        {error ? (
+          <div>
+            <p role="status">{error}</p>
+            <Button
+              variant="outline"
+              className="min-h-11 sm:min-h-8"
+              type="button"
+              onClick={props.onSaved}
+            >
+              Refresh activity
+            </Button>
+          </div>
+        ) : null}
+        <Button
+          variant="outline"
+          size="sm"
+          className="min-h-11 sm:min-h-8"
+          disabled={saving}
+          type="submit"
+        >
           {saving ? "Saving…" : "Save estimates"}
         </Button>
       </form>

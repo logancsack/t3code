@@ -41,9 +41,22 @@ export type AldoActivity = {
     provider: string;
     status: string;
     approvalId: string;
+    display?: { subject?: string; destination?: string; to?: string[] } | null;
+    outcomeSource?: string | null;
+    outcomeAt?: string;
     receipt: string | null;
     at: string;
   }[];
+  reservations?: { id: string; amount: number | string; authority: string; status: string }[];
+  ledger?: { id: string; what: string; amount: number | string }[];
+  mailGrants?: {
+    id: string;
+    recipients: string[];
+    messageLimit: number;
+    remaining?: number;
+    expiresAt: string;
+  }[];
+  goals?: { id: string; title: string; sharedCredits: number | string | null }[];
   routing: { id: string; origin: string; reason: string; at: string }[];
   home: { id: string; tool: string; outcome: string; at: string }[];
   stream: { partial: boolean; reportedAt: string } | null;

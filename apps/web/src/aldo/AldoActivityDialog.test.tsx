@@ -142,3 +142,182 @@ it("reported criteria remain distinct from platform receipts and older observati
   await act(() => more.click());
   expect(document.body.textContent).toContain("read · completed");
 });
+
+it("records owner review independently, preserves a failed save and can clear a saved check", async () => {
+  const data = example();
+  data.turns = [
+    {
+      id: "turn",
+      trigger: "user",
+      provider: "codex",
+      model: "model",
+      outcome: "replied",
+      taskResult: {
+        state: "finished",
+        doneWhen: [
+          {
+            criterion: "Deliver the artifact",
+            met: true,
+            evidence: "https://fixture.invalid/report",
+          },
+        ],
+      },
+    },
+  ];
+  fetchActivity.mockResolvedValue(data);
+  saveVerification.mockRejectedValueOnce(new Error("offline"));
+  await render();
+  expect(document.querySelector('a[href="https://fixture.invalid/report"]')).not.toBeNull();
+  const button = () =>
+    [...document.querySelectorAll("button")].find((b) => b.textContent === "Verified this")!;
+  await act(() => button().click());
+  expect(document.body.textContent).toContain("Couldn’t confirm your check");
+  expect(document.body.textContent).toContain("Deliver the artifact");
+  expect(saveVerification).toHaveBeenLastCalledWith("aldo-one", "conversation", {
+    action: "review",
+    turnId: "turn",
+    criterion: "Deliver the artifact",
+    verdict: "passed",
+  });
+  data.turns[0]!.taskResult!.doneWhen[0]!.verification = {
+    verdict: "passed",
+    verifier: "owner_review_v1",
+    checkedAt: "2026-11-18T12:00:00Z",
+  };
+  await act(() => button().click());
+  const clear = [...document.querySelectorAll("button")].find(
+    (b) => b.textContent === "Clear my check",
+  )!;
+  await act(() => clear.click());
+  expect(saveVerification).toHaveBeenLastCalledWith(
+    "aldo-one",
+    "conversation",
+    expect.objectContaining({ verdict: "unverified" }),
+  );
+});
+it("keeps optional estimates unknown and preserves them after a failed save", async () => {
+  const data = example();
+  data.workflow = {
+    pack: "records",
+    version: 1,
+    humanMinutes: 45,
+    reviewMinutes: null,
+    hiringMinutesPerMonth: null,
+    role: null,
+  };
+  fetchActivity.mockResolvedValue(data);
+  saveVerification.mockRejectedValueOnce(new Error("offline"));
+  await render();
+  const form = [...document.querySelectorAll("form")].find((f) =>
+    f.textContent?.includes("Save estimates"),
+  )!;
+  await act(() => form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+  expect(saveVerification).toHaveBeenLastCalledWith("aldo-one", "conversation", {
+    action: "baseline",
+    humanMinutes: 45,
+    reviewMinutes: null,
+    hiringMinutesPerMonth: null,
+    role: null,
+  });
+  expect(document.body.textContent).toContain("Your entered values are still here");
+  expect((form.querySelector('input[type="number"]') as HTMLInputElement).value).toBe("45");
+});
+it("never reconciles an uncertain action until the owner records an account check; failures keep it held", async () => {
+  const data = example();
+  data.effects = [
+    {
+      id: "effect",
+      operation: "email.send",
+      provider: "google",
+      status: "uncertain",
+      approvalId: "approval",
+      receipt: null,
+      at: "2026-11-18T12:00:00Z",
+    },
+  ];
+  fetchActivity.mockResolvedValue(data);
+  saveVerification.mockRejectedValueOnce(new Error("offline"));
+  await render();
+  const happened = [...document.querySelectorAll("button")].find(
+    (b) => b.textContent === "Confirmed it happened",
+  )!;
+  expect(happened.disabled).toBe(true);
+  expect(saveVerification).not.toHaveBeenCalled();
+  await act(() => (document.querySelector('input[type="checkbox"]') as HTMLInputElement).click());
+  expect(happened.disabled).toBe(false);
+  await act(() => happened.click());
+  expect(saveVerification).toHaveBeenLastCalledWith("aldo-one", "conversation", {
+    action: "receipt",
+    id: "effect",
+    outcome: "happened",
+    checkedAccount: true,
+  });
+  expect(document.body.textContent).toContain("Couldn’t confirm your account check");
+  expect(document.body.textContent).toContain("uncertain");
+});
+it("removes only the selected task email scope without sending a message", async () => {
+  const data = example();
+  data.mailGrants = [
+    {
+      id: "grant-one",
+      recipients: ["person@example.invalid"],
+      messageLimit: 2,
+      expiresAt: "2026-11-25T12:00:00Z",
+    },
+  ];
+  fetchActivity.mockResolvedValue(data);
+  await render();
+  expect(saveVerification).not.toHaveBeenCalled();
+  expect(document.body.textContent).toContain("person@example.invalid");
+  const remove = [...document.querySelectorAll("button")].find(
+    (button) => button.textContent === "Remove access",
+  )!;
+  await act(() => remove.click());
+  expect(saveVerification).toHaveBeenLastCalledWith("aldo-one", "conversation", {
+    action: "mail_revoke",
+    id: "grant-one",
+  });
+  expect(document.body.textContent).toContain("Task email access");
+});
+
+it("validates recipients and requires refreshed access after a lost save response", async () => {
+  const data = example();
+  data.mailGrants = [];
+  fetchActivity.mockResolvedValue(data);
+  saveVerification.mockRejectedValueOnce(new Error("response lost"));
+  await render();
+  const form = [...document.querySelectorAll("form")].find((f) =>
+    f.textContent?.includes("Allow task email"),
+  )!;
+  const submit = () => form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  await act(() => {
+    submit();
+  });
+  expect(document.body.textContent).toContain("valid email addresses");
+  expect(saveVerification).not.toHaveBeenCalled();
+  const input = form.querySelector("input")!;
+  await act(() => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      input,
+      "person@example.invalid",
+    );
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(() => {
+    submit();
+  });
+  expect(saveVerification).toHaveBeenCalledWith("aldo-one", "conversation", {
+    action: "mail_grant",
+    recipients: ["person@example.invalid"],
+    messages: 1,
+  });
+  expect(document.body.textContent).toContain("Couldn’t confirm email access");
+  expect(input.disabled).toBe(true);
+  fetchActivity.mockResolvedValue({ ...data, mailGrants: [] });
+  const refresh = [...document.querySelectorAll("button")].find(
+    (b) => b.textContent === "Refresh recorded access",
+  )!;
+  await act(() => refresh.click());
+  expect(input.disabled).toBe(false);
+  expect(input.value).toBe("person@example.invalid");
+});

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "../components/ui/button";
 import {
   Dialog,
@@ -10,7 +10,9 @@ import {
 } from "../components/ui/dialog";
 import { AldoApiError } from "./api";
 import { fetchAldoActivity, saveAldoVerification, type AldoActivity } from "./activity";
+import { AldoActionReconciliation } from "./AldoActionReconciliation";
 import { AldoWorkflowBaseline } from "./AldoWorkflowBaseline";
+import { AldoTaskMailAccess } from "./AldoTaskMailAccess";
 
 const dollars = (value: number | string | null | undefined) =>
   value == null ? "Unknown" : `$${Number(value).toFixed(2)}`;
@@ -28,10 +30,15 @@ export function AldoActivityDialog(props: {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [revision, setRevision] = useState(0);
+  const [pageError, setPageError] = useState(false);
+  const scope = `${props.environmentId}:${props.conversation}`;
+  const previousScope = useRef(scope);
   useEffect(() => {
     if (!props.open) return;
     let current = true;
-    setData(null);
+    if (!revision || previousScope.current !== scope) setData(null);
+    previousScope.current = scope;
+    setPageError(false);
     setError(null);
     setLoading(true);
     void fetchAldoActivity(props.environmentId, props.conversation)
@@ -55,7 +62,7 @@ export function AldoActivityDialog(props: {
     return () => {
       current = false;
     };
-  }, [props.open, props.environmentId, props.conversation, revision]);
+  }, [props.open, props.environmentId, props.conversation, revision, scope]);
   const [paging, setPaging] = useState(false);
   const [reviewing, setReviewing] = useState<string | null>(null);
   const [reviewError, setReviewError] = useState<string | null>(null);
@@ -71,7 +78,9 @@ export function AldoActivityDialog(props: {
       });
       setRevision((n) => n + 1);
     } catch {
-      setReviewError("Couldn’t save your check. Try again.");
+      setReviewError(
+        "Couldn’t confirm your check was saved. Refresh activity to see its recorded state.",
+      );
     } finally {
       setReviewing(null);
     }
@@ -89,6 +98,7 @@ export function AldoActivityDialog(props: {
           : previous,
       );
     } catch {
+      setPageError(true);
       setError("Couldn’t load older activity. Try again.");
     } finally {
       setPaging(false);
@@ -104,14 +114,17 @@ export function AldoActivityDialog(props: {
           </DialogDescription>
         </DialogHeader>
         <DialogPanel>
-          {loading ? <p role="status">Loading saved activity…</p> : null}
+          {loading ? (
+            <p role="status">{data ? "Refreshing saved activity…" : "Loading saved activity…"}</p>
+          ) : null}
           {error ? (
             <div role="status" className="space-y-2">
               <p>{error}</p>
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => (data ? void more() : setRevision((n) => n + 1))}
+                className="min-h-11 sm:min-h-8"
+                onClick={() => (pageError ? void more() : setRevision((n) => n + 1))}
               >
                 Retry
               </Button>
@@ -126,7 +139,9 @@ export function AldoActivityDialog(props: {
                 Tool observations describe what ran; platform receipts confirm recorded effects.
               </p>
               <details className="space-y-3" open>
-                <summary className="cursor-pointer py-2 font-medium">Results and receipts</summary>
+                <summary className="min-h-11 cursor-pointer py-3 font-medium sm:min-h-8 sm:py-2">
+                  Results and receipts
+                </summary>
                 {data.turns
                   .filter((t) => t.taskResult)
                   .map((t) => (
@@ -140,16 +155,31 @@ export function AldoActivityDialog(props: {
                             {c.met ? "Reported met" : "Unmet"}: {c.criterion}
                             <span className="block text-muted-foreground">
                               {c.evidence || "No evidence supplied."}
+                              {c.evidence
+                                .match(/https:\/\/[^\s<>]+/g)
+                                ?.slice(0, 5)
+                                .map((url) => (
+                                  <a
+                                    key={url}
+                                    className="block underline underline-offset-2"
+                                    href={url.replace(/[).,]+$/, "")}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                  >
+                                    Open evidence
+                                  </a>
+                                ))}
                             </span>
                             <span className="block text-muted-foreground">
                               {c.verification
-                                ? `Independent check: ${c.verification.verdict} · ${c.verification.verifier.replaceAll("_", " ")}`
+                                ? `Independent check: ${c.verification.verdict} · ${c.verification.verifier === "owner_review_v1" ? "Your review" : "Recorded evidence check"}`
                                 : "Independent check: unverified"}
                             </span>
                           </p>
                           <Button
                             variant="ghost"
                             size="sm"
+                            className="min-h-11 sm:min-h-8"
                             disabled={reviewing !== null}
                             onClick={() =>
                               void review(
@@ -169,8 +199,21 @@ export function AldoActivityDialog(props: {
                               : c.verification?.verifier === "owner_review_v1" &&
                                   c.verification.verdict !== "unverified"
                                 ? "Clear my check"
-                                : "I checked this"}
+                                : c.met
+                                  ? "Verified this"
+                                  : "Confirmed unmet"}
                           </Button>
+                          {c.met && c.verification?.verifier !== "owner_review_v1" ? (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="min-h-11 sm:min-h-8"
+                              disabled={reviewing !== null}
+                              onClick={() => void review(t.id, c.criterion, "failed")}
+                            >
+                              Found a problem
+                            </Button>
+                          ) : null}
                         </div>
                       ))}
                       <p className="text-xs text-muted-foreground">
@@ -183,10 +226,19 @@ export function AldoActivityDialog(props: {
                     <p>
                       {e.operation.replaceAll(".", " · ")} · {e.status}
                     </p>
+                    {e.display ? (
+                      <p>
+                        {e.display.subject} · {e.display.destination ?? e.display.to?.join(", ")}
+                      </p>
+                    ) : null}
                     <p className="text-muted-foreground">
-                      {e.receipt
-                        ? `Provider receipt: ${e.receipt}`
-                        : "No provider receipt recorded."}
+                      {e.outcomeSource === "owner_account_check"
+                        ? `Outcome recorded from your account check${e.outcomeAt ? ` · ${time(e.outcomeAt)}` : ""}.`
+                        : e.receipt
+                          ? `Provider receipt: ${e.receipt}`
+                          : e.outcomeSource === "provider_acknowledged"
+                            ? "Acknowledged by the account provider."
+                            : "No provider receipt recorded."}
                     </p>
                   </div>
                 ))}
@@ -197,7 +249,9 @@ export function AldoActivityDialog(props: {
                 ) : null}
               </details>
               <details className="space-y-3">
-                <summary className="cursor-pointer py-2 font-medium">Cost and coverage</summary>
+                <summary className="min-h-11 cursor-pointer py-3 font-medium sm:min-h-8 sm:py-2">
+                  Cost and coverage
+                </summary>
                 <dl className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-2 tabular-nums">
                   <dt>Computer credits · shared</dt>
                   <dd>{Number(data.cost.chargedCredits.machineCredits).toLocaleString()}</dd>
@@ -213,13 +267,49 @@ export function AldoActivityDialog(props: {
                   <dd>{dollars(data.cost.externalPurchases.usd)}</dd>
                 </dl>
                 <p className="text-muted-foreground">{data.cost.note}</p>
+                {data.goals?.map((goal) => (
+                  <p key={goal.id} className="break-words text-muted-foreground">
+                    {goal.title}:{" "}
+                    {goal.sharedCredits === null
+                      ? "Unknown"
+                      : Number(goal.sharedCredits).toLocaleString()}{" "}
+                    measured credits across its recorded computers. This shared goal total counts
+                    each computer once.
+                  </p>
+                ))}
                 {data.cost.modelApiCost.pending ||
                 data.cost.modelApiCost.unpriced ||
                 Number(data.cost.subscriptionReference?.unpricedRecords) ? (
                   <p className="text-muted-foreground">Some model costs are pending or unpriced.</p>
                 ) : null}
               </details>
-              {reviewError ? <p role="status">{reviewError}</p> : null}
+              <AldoActionReconciliation
+                key={`${props.environmentId}:${props.conversation}`}
+                environmentId={props.environmentId}
+                conversation={props.conversation}
+                data={data}
+                onSaved={() => setRevision((n) => n + 1)}
+              />
+              {data.mailGrants ? (
+                <AldoTaskMailAccess
+                  environmentId={props.environmentId}
+                  conversation={props.conversation}
+                  grants={data.mailGrants}
+                  onSaved={() => setRevision((r) => r + 1)}
+                />
+              ) : null}
+              {reviewError ? (
+                <div>
+                  <p role="status">{reviewError}</p>
+                  <Button
+                    variant="outline"
+                    className="min-h-11 sm:min-h-8"
+                    onClick={() => setRevision((r) => r + 1)}
+                  >
+                    Refresh activity
+                  </Button>
+                </div>
+              ) : null}
               {data.workflow ? (
                 <AldoWorkflowBaseline
                   environmentId={props.environmentId}
@@ -229,7 +319,9 @@ export function AldoActivityDialog(props: {
                 />
               ) : null}
               <details className="space-y-3">
-                <summary className="cursor-pointer py-2 font-medium">Requests and routing</summary>
+                <summary className="min-h-11 cursor-pointer py-3 font-medium sm:min-h-8 sm:py-2">
+                  Requests and routing
+                </summary>
                 {data.home.map((h) => (
                   <p key={h.id} className="break-words">
                     Home · {h.tool.replaceAll("_", " ")} · {h.outcome}
@@ -247,7 +339,7 @@ export function AldoActivityDialog(props: {
                 ) : null}
               </details>
               <details className="space-y-3">
-                <summary className="cursor-pointer py-2 font-medium">
+                <summary className="min-h-11 cursor-pointer py-3 font-medium sm:min-h-8 sm:py-2">
                   Observed actions · {data.events.length}
                 </summary>
                 <ol className="space-y-3">
