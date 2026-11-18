@@ -8,14 +8,15 @@
 // (AldoPaymentWaiting). Never the card itself: only its last four digits.
 
 import { ArrowUpRightIcon, CheckIcon, CreditCardIcon, XIcon } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { cn } from "~/lib/utils";
 import { ThreadLink } from "./AldoHomeInbox";
 import { Quoted } from "./AldoQuoted";
 import { useAldoArrive } from "./arrive";
-import { type AldoPayment } from "./homeApi";
-import { paymentWords } from "./payments.logic";
+import { retryAldoPayment, type AldoPayment } from "./homeApi";
+import { refreshAldoHome } from "./homeFeed";
+import { paymentCanAskAgain, paymentWords } from "./payments.logic";
 import { FOCUS, INSET, PRIMARY, SURFACE } from "./surface";
 
 /** What's being bought, line by line, the total, and what the agent told Link it's for. */
@@ -64,9 +65,64 @@ export function PaymentDetails(props: { readonly payment: AldoPayment }) {
  */
 export function ApproveInLink(props: { readonly payment: AldoPayment; readonly now: number }) {
   const [opened, setOpened] = useState(false);
-  const p = props.payment;
-  if (!p.approvalUrl) return null;
+  const [renewed, setRenewed] = useState<{ payment: AldoPayment; seen: AldoPayment } | null>(null);
+  const [asking, setAsking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const inFlight = useRef(false);
+  // A retry response bridges the wait for Home. Once Home sends a new copy
+  // of that same payment, its later Link status takes precedence.
+  const p =
+    renewed && (renewed.payment.id !== props.payment.id || renewed.seen === props.payment)
+      ? renewed.payment
+      : props.payment;
   const words = paymentWords(p, props.now);
+  if (paymentCanAskAgain(p, props.now))
+    return (
+      <div className="flex flex-col gap-2">
+        <p className="text-[13px] text-muted-foreground leading-5">{words.line}</p>
+        {error ? (
+          <p role="alert" className="text-[13px] text-destructive">
+            {error}
+          </p>
+        ) : null}
+        <button
+          type="button"
+          className={cn(PRIMARY, "w-full")}
+          disabled={asking}
+          aria-busy={asking}
+          onClick={async () => {
+            if (inFlight.current || !p.retryFrom) return;
+            inFlight.current = true;
+            setAsking(true);
+            setError(null);
+            try {
+              const next = await retryAldoPayment(p.retryFrom);
+              setRenewed({ payment: next, seen: props.payment });
+              await refreshAldoHome();
+              // The refreshed Home can replace this card with its new request.
+              // Move focus after that render, rather than to a departing link.
+              requestAnimationFrame(() => {
+                if (next.approvalUrl)
+                  Array.from(document.links)
+                    .find(
+                      (link) => link.href === next.approvalUrl && link.getClientRects().length > 0,
+                    )
+                    ?.focus();
+              });
+            } catch (e) {
+              setError(e instanceof Error ? e.message : "Couldn't request approval. Try again.");
+              void refreshAldoHome();
+            } finally {
+              inFlight.current = false;
+              setAsking(false);
+            }
+          }}
+        >
+          {asking ? "Asking…" : "Ask me again"}
+        </button>
+      </div>
+    );
+  if (!p.approvalUrl) return null;
   const label = p.status === "requires_action" ? "Open Link" : "Approve in Link";
   return (
     <div className="flex flex-col gap-2">
