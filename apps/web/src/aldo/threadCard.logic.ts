@@ -42,7 +42,7 @@ export function stalledOf(
   c: AldoHomeConversation,
   now: number,
 ): Stalled | null {
-  if (c.state === "stopped") return null;
+  if (c.state === "stopped" || c.progress?.next.owner === "aldo") return null;
   if (queuedComputer(c)) return null;
   const held = home.upcoming.find(
     (d) =>
@@ -161,8 +161,25 @@ export function threadCardOf(
       body: null,
       action: "show",
     };
+  if (c.progress && !["working", "starting", "queued"].includes(c.state))
+    return {
+      tone:
+        c.progress.execution === "failed" && c.progress.next.owner === "none" ? "problem" : "quiet",
+      dot: c.progress.verdict === "finished" && c.progress.next.owner === "none" ? "done" : "quiet",
+      status: c.progress.label,
+      body: c.progress.detail,
+      action: null,
+    };
   const routine = c.routine ? "Routine run · " : "";
   switch (c.state) {
+    case "scheduled":
+      return {
+        tone: "quiet",
+        dot: "quiet",
+        status: "Next step scheduled",
+        body: null,
+        action: null,
+      };
     case "unfinished":
       return { tone: "quiet", dot: "quiet", status: "Unfinished", body: null, action: null };
     case "stopped":
@@ -210,9 +227,9 @@ export function threadCardOf(
     case "done":
       return {
         tone: "quiet",
-        dot: "done",
-        status: `${routine}Finished ${relativeTime(c.at, now)}`,
-        body: null,
+        dot: c.result?.state === "finished" ? "done" : "quiet",
+        status: `${routine}${c.result?.state === "finished" ? "Reported complete" : "Reply received"} ${relativeTime(c.at, now)}`,
+        body: c.result ? null : "Task completion has not been verified.",
         action: null,
       };
     case "new":

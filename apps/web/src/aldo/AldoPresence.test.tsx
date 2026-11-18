@@ -138,7 +138,8 @@ it("shows what moved until the drop-down is closed", () => {
   expect(text()).toContain("1 thread moved");
   press("Aldo:");
   press("Moved since you looked");
-  expect(text()).toContain("Finished");
+  expect(text()).toContain("Reply received");
+  expect(text()).not.toContain("Finished");
   press("Back");
   press("Under the hood");
   act(() => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));

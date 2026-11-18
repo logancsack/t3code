@@ -60,6 +60,7 @@ export function queuedComputer(c: AldoHomeConversation) {
  */
 export function isPausedMidTurn(c: AldoHomeConversation): boolean {
   return (
+    c.progress?.next.owner !== "aldo" &&
     !queuedComputer(c) &&
     (c.state === "paused" ||
       (c.state === "working" && (c.machine === "asleep" || c.machine === "failed")))
@@ -69,6 +70,13 @@ export function isPausedMidTurn(c: AldoHomeConversation): boolean {
 /** Why a conversation needs the user, or null if it doesn't. */
 export function needsYouKind(c: AldoHomeConversation): NeedsYouKind | null {
   if (queuedComputer(c)) return null;
+  if (
+    c.progress?.next.owner === "aldo" &&
+    !c.pending &&
+    !c.plan &&
+    !c.computers?.some((one) => one.status === "asked")
+  )
+    return null;
   if (c.state === "failed") return "failed";
   if (isPausedMidTurn(c)) return "paused";
   if (c.state !== "waiting") return null;
@@ -79,7 +87,7 @@ export function needsYouKind(c: AldoHomeConversation): NeedsYouKind | null {
   return "waiting";
 }
 
-export const WORKING_STATES = new Set(["working", "starting", "queued", "retrying"]);
+export const WORKING_STATES = new Set(["working", "starting", "queued", "retrying", "scheduled"]);
 
 /**
  * Working, with no activity for an hour: `at` follows the thread's latest event

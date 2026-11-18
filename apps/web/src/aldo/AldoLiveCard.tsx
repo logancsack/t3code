@@ -9,7 +9,7 @@
 // uses the pieces here too.
 
 import AldoTaskResult from "./AldoTaskResult";
-import { CheckIcon, ChevronDownIcon } from "lucide-react";
+import { ChevronDownIcon } from "lucide-react";
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { PullRequestGlyph } from "../components/pullRequest/pullRequestIcons";
@@ -113,7 +113,7 @@ export function stateSince(c: AldoHomeConversation, now: number): string {
   const queue = queuedComputer(c);
   if (queue) return aldoComputerQueueLabel(queue.computer, queue.position);
   if (needsYouKind(c)) return `waiting ${elapsed(c.at, now)}`;
-  if (c.state === "done") return `finished ${relativeTime(c.at, now)}`;
+  if (c.state === "done") return `updated ${relativeTime(c.at, now)}`;
   return `for ${elapsed(c.stateAt ?? c.at, now)}`;
 }
 
@@ -261,11 +261,13 @@ function SettledRow(props: { readonly conversation: AldoHomeConversation; readon
   const body = (
     <>
       <span aria-hidden className="flex h-5 w-5 shrink-0 items-center justify-center">
-        <CheckIcon className="size-4 text-success-foreground" strokeWidth={2.25} />
+        <span className="size-1.5 rounded-full bg-muted-foreground/60" />
       </span>
-      <span className="min-w-0 flex-1 truncate text-foreground/85 group-hover:underline group-hover:decoration-foreground/30 group-hover:underline-offset-4">
-        <span className="sr-only">Finished: </span>
-        {c.title}
+      <span className="min-w-0 flex-1 text-foreground/85">
+        <span className="block truncate group-hover:underline">{c.title}</span>
+        <span className="block text-[12px] text-muted-foreground">
+          {c.progress?.label ?? "Reply received"} · unverified
+        </span>
       </span>
       <span className="shrink-0 text-[12px] tabular-nums">
         {clockAt(c.stateAt ?? c.at, props.now)}

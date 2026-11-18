@@ -114,7 +114,11 @@ describe("mergeWords", () => {
 
 describe("resultState", () => {
   it("is done without pull requests, and otherwise the most pressing one, numbered when there are several", () => {
-    expect(resultState([], NOW)).toMatchObject({ tone: "done", pullRequest: null });
+    expect(resultState([], NOW)).toMatchObject({
+      tone: "quiet",
+      words: "Reply received",
+      pullRequest: null,
+    });
     const shipped = pullRequest("a", { number: 3, status: "merged", stage: "deployed" });
     const failing = pullRequest("a", { number: 4, stage: "checks-failing" });
     expect(resultState([shipped], NOW).words).toBe("Deployed");

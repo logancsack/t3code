@@ -376,7 +376,7 @@ export function digestOf(events: ReadonlyArray<AldoFeedEvent>): AldoDigest {
   const runs = done.length - finished.length;
   const label = [
     shipped.length > 0 ? `${shipped.length} shipped` : null,
-    finished.length > 0 ? `${finished.length} finished` : null,
+    finished.length > 0 ? `${finished.length} update${finished.length === 1 ? "" : "s"}` : null,
     runs > 0 ? `${runs} routine ${runs === 1 ? "run" : "runs"}` : null,
   ]
     .filter(Boolean)

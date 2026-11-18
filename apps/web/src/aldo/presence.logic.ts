@@ -92,7 +92,7 @@ export interface AldoPresenceBoard {
   readonly coming: PresenceSection;
 }
 
-type MoveKind = "failed" | "merged" | "green" | "finished";
+type MoveKind = "failed" | "merged" | "green" | "finished" | "replied";
 interface Move {
   readonly at: string;
   readonly text: string;
@@ -133,7 +133,12 @@ function movedRows(home: AldoHome, now: number, seenAt: number | null) {
     const moves: Move[] = home.pullRequests
       .filter((pr) => sameTarget(pr.thread, c.thread))
       .flatMap((pr) => pullRequestMove(pr) ?? []);
-    moves.push({ at: c.stateAt ?? c.at, text: "Finished", kind: "finished" });
+    const reported = c.result?.state === "finished";
+    moves.push({
+      at: c.stateAt ?? c.at,
+      text: c.progress?.label ?? (reported ? "Reported complete" : "Reply received · unverified"),
+      kind: reported ? "finished" : "replied",
+    });
     // The latest wins; at the same time a pull request's word is the more telling.
     const move = moves.reduce((a, b) => (Date.parse(b.at) > Date.parse(a.at) ? b : a));
     const time = Date.parse(move.at);
@@ -199,7 +204,7 @@ export function presenceBoard(
     key: `moved:${c.ref}:${move.at}`,
     title: c.title,
     detail: `${move.text} · ${relativeTime(move.at, now)}`,
-    tone: move.kind === "failed" ? "bad" : "good",
+    tone: move.kind === "failed" ? "bad" : move.kind === "replied" ? "quiet" : "good",
     target: c.thread,
   }));
   const movedWords = (
@@ -207,11 +212,12 @@ export function presenceBoard(
       ["failed", "deploy failed"],
       ["merged", "merged"],
       ["green", "checks passed"],
-      ["finished", "finished"],
+      ["finished", "reported complete"],
+      ["replied", "replies received"],
     ] as const
   ).flatMap(([kind, words]) => {
     const n = moves.filter((m) => m.move.kind === kind).length;
-    return n > 0 ? [`${n} ${words}`] : [];
+    return n > 0 ? [kind === "replied" ? plural(n, "reply received", words) : `${n} ${words}`] : [];
   });
 
   const tasks = boardFor(home.conversations, now);
