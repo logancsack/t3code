@@ -35,6 +35,7 @@ import { AldoGpuComputerControl, useAldoComputerAsk } from "./AldoComputer";
 import { AldoMachineMenuSection, useAldoMachineOffer } from "./AldoMachine";
 import { useAldoBrowserRequests } from "./browserStore";
 import { aldoCostLine, type AldoCost } from "./costs.logic";
+import { AldoActivityDialog } from "./AldoActivityDialog";
 import {
   aldoPreviewUrl,
   fetchAldoCost,
@@ -89,6 +90,7 @@ export function AldoPreviewsControl(props: {
   )?.browsing;
   const [pullRequests, setPullRequests] = useState<ReadonlyArray<AldoFollowedPullRequest>>([]);
   const [cost, setCost] = useState<AldoCost | null>(null);
+  const [activityOpen, setActivityOpen] = useState(false);
   // The pull request whose Merge was chosen, waiting for the user to confirm.
   const [confirmMerge, setConfirmMerge] = useState<AldoFollowedPullRequest | null>(null);
   // The thread whose answers are wanted: one for a thread left since is dropped.
@@ -324,6 +326,7 @@ export function AldoPreviewsControl(props: {
           </>
         ) : null}
         <MenuSeparator />
+        <MenuItem onClick={() => setActivityOpen(true)}>Activity and evidence</MenuItem>
         <AldoMachineMenuSection environmentId={props.environmentId} />
         {aldoCostLine(cost, props.threadId) ? (
           <div className="px-2 py-1.5 text-xs text-muted-foreground">
@@ -331,6 +334,12 @@ export function AldoPreviewsControl(props: {
           </div>
         ) : null}
       </MenuPopup>
+      <AldoActivityDialog
+        environmentId={props.environmentId}
+        conversation={props.threadId}
+        open={activityOpen}
+        onOpenChange={setActivityOpen}
+      />
       <AlertDialog
         open={confirmMerge !== null}
         onOpenChange={(open) => {
