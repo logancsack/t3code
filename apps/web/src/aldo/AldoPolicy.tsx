@@ -175,7 +175,7 @@ export function AldoPolicyRuleRow(props: {
       <SettingsRow {...row} description={props.description} status={ALDO_POLICY_ASK_AN_AGENT} />
     );
   }
-  const value = view ? aldoRuleValue(props.rule, view.everywhere) : "";
+  const value = view ? aldoRuleValue(props.rule, view.everywhere, view.defaults) : "";
   const change = (next: string, repos?: ReadonlyArray<string>) => {
     const change = aldoRuleEdit(props.rule, next, repos);
     if (change) void edit([change]);
@@ -187,7 +187,7 @@ export function AldoPolicyRuleRow(props: {
       control={
         <AldoPolicySelect
           value={value}
-          options={view ? aldoRuleOptions(props.rule, value) : []}
+          options={view ? aldoRuleOptions(props.rule, value, { defaults: view.defaults }) : []}
           label={row.title}
           {...(view ? {} : { placeholder: "…" })}
           disabled={!view || saving}

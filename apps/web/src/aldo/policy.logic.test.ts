@@ -76,6 +76,16 @@ describe("aldoRuleValue", () => {
     expect(aldoRuleValue("contextBudget", view.everywhere)).toBe("300000");
     expect(aldoRuleValue("contextBudget", { contextBudget: 500_000 })).toBe("500000");
   });
+
+  it("takes Aldo's own default where the user hasn't answered, from an Aldo that has them", () => {
+    const defaults = { merge: "auto", reviews: "important" } as const;
+    expect(aldoRuleValue("reviews", view.everywhere, defaults)).toBe("important");
+    expect(aldoRuleValue("merge", {}, defaults)).toBe("auto");
+    // Their own answer still wins, and a rule Aldo has no default for is still undecided.
+    expect(aldoRuleValue("merge", { merge: "approve" }, defaults)).toBe("approve");
+    expect(aldoRuleValue("spendThreshold", {}, defaults)).toBe(ALDO_UNDECIDED);
+    expect(aldoRuleValue("merge", {}, undefined)).toBe(ALDO_UNDECIDED);
+  });
 });
 
 describe("aldoRuleOptions", () => {
@@ -89,6 +99,26 @@ describe("aldoRuleOptions", () => {
       "authorized",
     ]);
     expect(aldoRuleOptions("merge", "auto", { workspace: true })[0]?.value).toBe(
+      ALDO_SAME_AS_EVERYWHERE,
+    );
+  });
+
+  it("offers no undecided for a rule Aldo starts decided: nobody is asked the first time", () => {
+    const defaults = { merge: "auto", reviews: "important" } as const;
+    expect(aldoRuleOptions("merge", "auto", { defaults }).map((o) => o.value)).toEqual([
+      "auto",
+      "approve",
+    ]);
+    expect(aldoRuleOptions("reviews", "important", { defaults }).map((o) => o.value)).toEqual([
+      "important",
+      "all",
+    ]);
+    // Spending has no default: its first paid step still asks.
+    expect(aldoRuleOptions("spendThreshold", ALDO_UNDECIDED, { defaults })[0]).toEqual({
+      value: ALDO_UNDECIDED,
+      label: "Ask me the first time",
+    });
+    expect(aldoRuleOptions("merge", "auto", { workspace: true, defaults })[0]?.value).toBe(
       ALDO_SAME_AS_EVERYWHERE,
     );
   });
@@ -129,6 +159,27 @@ describe("aldoRuleDifferences", () => {
       { repos: ["logancsack/site"], value: "37" },
     ]);
     expect(aldoRuleDifferences(view, "mediaRouting")).toEqual([]);
+  });
+
+  it("compares with Aldo's own default where the user hasn't answered", () => {
+    const fresh: AldoPolicyView = {
+      everywhere: {},
+      workspaces: [
+        { repos: ["logancsack/aldo"], policy: { merge: "auto", reviews: "all" } },
+        { repos: ["logancsack/site"], policy: { merge: "approve" } },
+      ],
+      repos: ["logancsack/aldo", "logancsack/site"],
+      defaults: { merge: "auto", reviews: "important" },
+    };
+    expect(aldoRuleDifferences(fresh, "merge")).toEqual([
+      { repos: ["logancsack/site"], value: "approve" },
+    ]);
+    expect(aldoRuleDifferences(fresh, "reviews")).toEqual([
+      { repos: ["logancsack/aldo"], value: "all" },
+    ]);
+    // An older Aldo has no defaults: each workspace's answer differs from "ask me".
+    const { defaults: _none, ...older } = fresh;
+    expect(aldoRuleDifferences(older, "merge")).toHaveLength(2);
   });
 
   it("compares with the rule's default where the user hasn't answered", () => {

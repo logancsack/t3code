@@ -73,7 +73,7 @@ function MergeMethodRow(props: { readonly policy: AldoPolicyState }) {
       <SettingsRow
         {...row}
         description={description}
-        status="Agents ask the first time they merge in a repository."
+        status="Agents take it from each repository’s recent pull requests."
       />
     );
   }
