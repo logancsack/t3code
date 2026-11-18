@@ -211,6 +211,8 @@ export interface AldoPolicy {
  * used over theirs), with every repository they've worked in.
  */
 export interface AldoPolicyView {
+  /** New servers share one per-purchase limit and a separate monthly safety net. */
+  readonly spending?: { readonly scope: "account"; readonly monthlyLimit: number };
   readonly everywhere: AldoPolicy;
   readonly workspaces: ReadonlyArray<{
     readonly repos: ReadonlyArray<string>;

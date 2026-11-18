@@ -151,6 +151,12 @@ describe("aldoRuleEdit", () => {
 });
 
 describe("aldoRuleDifferences", () => {
+  it("shares one spending limit only when the server declares account-wide spending", () => {
+    expect(aldoRuleDifferences(view, "spendThreshold")).toHaveLength(1);
+    const shared = { ...view, spending: { scope: "account" as const, monthlyLimit: 300 } };
+    expect(aldoRuleDifferences(shared, "spendThreshold")).toEqual([]);
+    expect(aldoRuleDifferences(shared, "merge")).toEqual(aldoRuleDifferences(view, "merge"));
+  });
   it("lists the workspaces that answered otherwise", () => {
     expect(aldoRuleDifferences(view, "merge")).toEqual([
       { repos: ["logancsack/aldo", "logancsack/t3code"], value: "approve" },
