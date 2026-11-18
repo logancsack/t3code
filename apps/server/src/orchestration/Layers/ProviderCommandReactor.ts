@@ -1048,7 +1048,7 @@ const make = Effect.gen(function* () {
       commandId: CommandId.make(`turn-dispatch:${input.messageId}`),
       threadId: input.threadId,
       activity: {
-        id: yield* serverEventId(),
+        id: EventId.make(`turn-dispatch:${input.messageId}`),
         tone: "info",
         kind: "provider.turn.dispatched",
         summary: "Turn sent to provider",
