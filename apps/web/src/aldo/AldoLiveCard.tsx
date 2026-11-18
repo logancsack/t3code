@@ -122,36 +122,41 @@ export function PullRequestLine(props: { readonly pullRequest: AldoHomePullReque
   const [merging, setMerging] = useState(false);
   const mergeable = pr.status === "watching" && pr.stage === "green";
   return (
-    <div className="flex items-center gap-2 text-xs">
-      <PullRequestGlyph.pullRequest
-        className="size-3.5 shrink-0 text-muted-foreground"
-        aria-hidden
-      />
-      <a
-        href={pr.url}
-        target="_blank"
-        rel="noreferrer"
-        className="min-w-0 truncate text-foreground/90 hover:underline"
-      >
-        #{pr.number} {pr.title}
-      </a>
-      <Badge variant={TONE_VARIANT[stageTone(pr)]} size="sm" className="shrink-0">
-        {stageLabel(pr)}
-      </Badge>
-      {mergeable ? (
-        <Button
-          size="compact"
-          className="ml-auto shrink-0"
-          disabled={merging}
-          onClick={() =>
-            void mergeFollowedPullRequest(pr, () => setMerging(true)).then((merged) => {
-              setMerging(false);
-              if (merged) void refreshAldoHome();
-            })
-          }
+    <div className="min-w-0 text-xs">
+      <div className="flex items-center gap-2">
+        <PullRequestGlyph.pullRequest
+          className="size-3.5 shrink-0 text-muted-foreground"
+          aria-hidden
+        />
+        <a
+          href={pr.url}
+          target="_blank"
+          rel="noreferrer"
+          className="min-w-0 truncate text-foreground/90 hover:underline"
         >
-          {merging ? "Merging…" : "Merge"}
-        </Button>
+          #{pr.number} {pr.title}
+        </a>
+        <Badge variant={TONE_VARIANT[stageTone(pr)]} size="sm" className="shrink-0">
+          {stageLabel(pr)}
+        </Badge>
+        {mergeable ? (
+          <Button
+            size="compact"
+            className="ml-auto shrink-0"
+            disabled={merging}
+            onClick={() =>
+              void mergeFollowedPullRequest(pr, () => setMerging(true)).then((merged) => {
+                setMerging(false);
+                if (merged) void refreshAldoHome();
+              })
+            }
+          >
+            {merging ? "Merging…" : "Merge"}
+          </Button>
+        ) : null}
+      </div>
+      {pr.heldReason ? (
+        <p className="mt-1 break-words text-muted-foreground leading-relaxed">{pr.heldReason}</p>
       ) : null}
     </div>
   );
@@ -163,28 +168,35 @@ function PullRequestRow(props: { readonly pullRequest: AldoHomePullRequest }) {
   const checks = pr.checks;
   const total = checks ? checks.passed + checks.failed + checks.running : 0;
   return (
-    <div className="flex items-start gap-2 text-[13px] text-muted-foreground leading-5">
-      <PullRequestGlyph.pullRequest className="mt-[3px] size-3.5 shrink-0" aria-hidden />
-      <a
-        href={pr.url}
-        target="_blank"
-        rel="noreferrer"
-        className="min-w-0 flex-1 break-words text-foreground/85 hover:underline hover:decoration-foreground/30 hover:underline-offset-4"
-      >
-        #{pr.number} {pr.title}
-      </a>
-      <span
-        className={cn(
-          "shrink-0 tabular-nums",
-          checks && checks.failed > 0 && "text-destructive-foreground",
-        )}
-      >
-        {checks && total > 0 && pr.status === "watching" && pr.stage !== "green"
-          ? checks.failed > 0
-            ? `${checks.failed} failing`
-            : `${checks.passed}/${total} checks`
-          : stageLabel(pr)}
-      </span>
+    <div className="min-w-0">
+      <div className="flex items-start gap-2 text-[13px] text-muted-foreground leading-5">
+        <PullRequestGlyph.pullRequest className="mt-[3px] size-3.5 shrink-0" aria-hidden />
+        <a
+          href={pr.url}
+          target="_blank"
+          rel="noreferrer"
+          className="min-w-0 flex-1 break-words text-foreground/85 hover:underline hover:decoration-foreground/30 hover:underline-offset-4"
+        >
+          #{pr.number} {pr.title}
+        </a>
+        <span
+          className={cn(
+            "shrink-0 tabular-nums",
+            checks && checks.failed > 0 && "text-destructive-foreground",
+          )}
+        >
+          {checks && total > 0 && pr.status === "watching" && pr.stage !== "green"
+            ? checks.failed > 0
+              ? `${checks.failed} failing`
+              : `${checks.passed}/${total} checks`
+            : stageLabel(pr)}
+        </span>
+      </div>
+      {pr.heldReason ? (
+        <p className="mt-1 break-words text-muted-foreground text-xs leading-relaxed">
+          {pr.heldReason}
+        </p>
+      ) : null}
     </div>
   );
 }
