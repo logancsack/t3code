@@ -1,7 +1,7 @@
 // Aldo's own pages, linked from the account menu (AldoAccountMenu.tsx):
 // the Library, what the user's agents shared, and the routines, what runs on
-// its own. Each is a page like Usage, with its title in
-// the top bar; Escape goes back.
+// its own (Goals, in AldoGoals.tsx, uses the same frame). Each is a page like
+// Usage, with its title in the top bar; Escape goes back.
 
 import { Link } from "@tanstack/react-router";
 import { useEffect, useState, type ReactNode } from "react";
@@ -27,8 +27,8 @@ import { refreshAldoHome, useAldoHomeRead } from "./homeFeed";
 export function AldoPlacePage(props: {
   readonly title: string;
   readonly about?: string;
-  /** The place it's in, before its title: the Library, for a page of it. */
-  readonly parent?: { readonly label: string; readonly to: "/library" };
+  /** The place it's in, before its title: the Library or Goals, for a page of it. */
+  readonly parent?: { readonly label: string; readonly to: "/library" | "/goals" };
   readonly children: ReactNode;
 }) {
   useEscapeToGoBack();
