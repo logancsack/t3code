@@ -40,3 +40,25 @@ it("adapts old and new server responses without asking the user to restart sched
     }).state,
   ).toBe("stopped");
 });
+
+it("places recorded user-owned next steps in Needs you while preserving execution and Stop", () => {
+  for (const state of ["done", "working", "failed"] as const) {
+    const waiting = adaptTaskProgress({
+      ...base,
+      state,
+      progress: { ...progress, next: { owner: "you", kind: "release" } },
+    });
+    expect(waiting.state).toBe("waiting");
+    expect(waiting.progress?.execution).toBe("failed");
+    expect(needsYouKind(waiting)).toBe("waiting");
+    expect(boardFor([waiting], Date.now()).needsYou).toEqual([waiting]);
+    expect(boardFor([waiting], Date.now()).done).toEqual([]);
+  }
+  const stopped = adaptTaskProgress({
+    ...base,
+    state: "stopped",
+    progress: { ...progress, next: { owner: "you", kind: "input" } },
+  });
+  expect(stopped.state).toBe("stopped");
+  expect(needsYouKind(stopped)).toBeNull();
+});

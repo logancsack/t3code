@@ -113,7 +113,9 @@ export function NeedsYouCard(props: {
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <Badge variant={kind === "failed" ? "error" : "warning"} size="sm">
-              {NEEDS_YOU_LABEL[kind]}
+              {kind === "waiting"
+                ? (c.progress?.label ?? NEEDS_YOU_LABEL[kind])
+                : NEEDS_YOU_LABEL[kind]}
             </Badge>
             <ThreadLink
               target={c.thread}
