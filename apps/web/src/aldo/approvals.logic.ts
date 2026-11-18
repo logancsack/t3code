@@ -98,6 +98,8 @@ export interface ApprovalHold {
   readonly result: string | null;
   /** When it was sent. */
   readonly at: string;
+  /** Why not, as Aldo took it, when the user said. */
+  readonly reason?: string;
   /** Until when a read that still has it waiting is taken as behind, once Aldo has answered; unset while it's on its way. */
   readonly until?: number;
 }
@@ -138,8 +140,16 @@ export function withApprovalHolds(
     const waiting = a.status === "pending" || a.status === "sending";
     if (!hold || !waiting || (hold.until !== undefined && hold.until <= now)) return a;
     kept[a.id] = hold;
-    const { always: _always, ...rest } = a;
-    return { ...rest, status: hold.status, result: hold.result, failed: false, decidedAt: hold.at };
+    // What a waiting one offers (a rule, reasons to tap) goes with the card.
+    const { always: _always, reasons: _reasons, ...rest } = a;
+    return {
+      ...rest,
+      status: hold.status,
+      result: hold.result,
+      failed: false,
+      decidedAt: hold.at,
+      ...(hold.reason ? { reason: hold.reason } : {}),
+    };
   });
   const same = ids.length === Object.keys(kept).length;
   return {

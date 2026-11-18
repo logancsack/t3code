@@ -516,6 +516,7 @@ export async function sendAldoAnswer<T>(
 export async function sendAldoApproval(
   approval: Pick<AldoApproval, "id" | "kind">,
   decision: "approve" | "discard" | "always",
+  reason?: string,
 ): ReturnType<typeof decideAldoApproval> {
   const at = new Date().toISOString();
   approvalHolds = {
@@ -524,7 +525,7 @@ export async function sendAldoApproval(
   };
   publish();
   try {
-    const sent = await decideAldoApproval(approval.id, decision);
+    const sent = await decideAldoApproval(approval.id, decision, reason);
     // As Aldo says it stands (decided elsewhere first, say), until a read has it too.
     approvalHolds = {
       ...approvalHolds,
@@ -533,6 +534,7 @@ export async function sendAldoApproval(
         result: sent.approval.result,
         at,
         until: Date.now() + APPROVAL_HOLD_MS,
+        ...(sent.approval.reason ? { reason: sent.approval.reason } : {}),
       },
     };
     publish();

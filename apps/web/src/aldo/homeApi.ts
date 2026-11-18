@@ -388,6 +388,14 @@ export interface AldoApproval {
    * people or an event with no guests, and only from an Aldo that has rules.
    */
   readonly always?: string;
+  /**
+   * Ways to say why not, each a tap, while a step an agent asked to take
+   * waits ("Too expensive", "Bad timing"): the agent is told the one chosen and
+   * goes on from it. Only from an Aldo that passes reasons on; none otherwise.
+   */
+  readonly reasons?: ReadonlyArray<string>;
+  /** Why the user declined it, when they said. */
+  readonly reason?: string;
 }
 
 /** A rule the user made with "Always allow": agents do what it covers exactly without asking. */
@@ -401,11 +409,13 @@ export interface AldoApprovalRule {
 /**
  * Approves or discards one; says what was done. Aldo refuses (409) an email
  * whose draft changed since it was shown. `always` approves it and saves its
- * rule (`rule`, when that worked).
+ * rule (`rule`, when that worked). A discard can say why (`reason`, one of the
+ * approval's `reasons`): the agent that asked is told.
  */
 export async function decideAldoApproval(
   id: string,
   decision: "approve" | "discard" | "always",
+  reason?: string,
 ): Promise<{
   readonly approval: Omit<AldoApproval, "threadTitle">;
   readonly message: string;
@@ -413,7 +423,7 @@ export async function decideAldoApproval(
 }> {
   return api(`/api/approvals/${encodeURIComponent(id)}`, {
     method: "POST",
-    body: JSON.stringify({ decision }),
+    body: JSON.stringify({ decision, ...(reason ? { reason } : {}) }),
   });
 }
 
