@@ -137,7 +137,7 @@ export function AldoProviderLimitsSection({ state }: { readonly state: AldoProvi
 }
 
 const MARKS: Readonly<Record<string, Icon | undefined>> = {
-  aldo: AldoMark,
+  aldo: ({ className }) => <AldoMark className={className ?? ""} />,
   claude: ClaudeAI,
   codex: OpenAI,
   grok: GrokIcon,
