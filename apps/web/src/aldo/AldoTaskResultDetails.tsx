@@ -61,7 +61,7 @@ export default function AldoTaskResult(props: {
       <div>
         <p className="font-medium">
           {r.state === "finished"
-            ? "Finished"
+            ? "Reported complete"
             : r.state === "blocked_on_user"
               ? "Needs you"
               : "Unfinished"}

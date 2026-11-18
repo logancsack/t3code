@@ -35,10 +35,11 @@ export function AldoFinished(props: { readonly home: AldoHome; readonly now: num
   if (results.length === 0) return null;
   const shown = all ? rows : rows.slice(0, SHOWN);
   return (
-    <section aria-label="Finished" className="flex flex-col gap-2" data-aldo-finished="">
+    <section aria-label="Release updates" className="flex flex-col gap-2" data-aldo-finished="">
       <div className="flex items-center justify-between px-1 pb-0.5 text-[12px] leading-[18px]">
         <h3 className="font-medium text-muted-foreground">
-          Finished <span className="text-muted-foreground/70 tabular-nums">· {results.length}</span>
+          Release updates{" "}
+          <span className="text-muted-foreground/70 tabular-nums">· {results.length}</span>
         </h3>
       </div>
       {shown.map((r) => {

@@ -136,7 +136,7 @@ async function openRow(n: number) {
 
 it("lists what finished with where it honestly stands, what failed first, checks still running as a line", async () => {
   await act(async () => root.render(<AldoFinished home={busyDay(false)} now={NOW} />));
-  expect(container.querySelector("h3")?.textContent).toBe("Finished · 3");
+  expect(container.querySelector("h3")?.textContent).toBe("Release updates · 3");
   expect(rowTexts()).toEqual([
     "Handle 429s2 checks failing",
     "Add CSV exportMerges in 9 min",

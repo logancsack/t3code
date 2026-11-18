@@ -108,13 +108,13 @@ function QuietRows(props: { readonly digest: AldoDigest; readonly grouped?: bool
       )),
     ],
     [
-      "Finished",
+      "Recent updates",
       finished.map((e) => {
         // Honest about its pull requests: a green check only once they've shipped (or there are none).
         const state = resultState(
           pullRequests ? pullRequestsOf({ pullRequests }, e.conversation) : [],
           readAt,
-          { clock: true },
+          { clock: true, conversation: e.conversation },
         );
         return (
           <div key={e.key} className="min-w-0">
@@ -126,7 +126,7 @@ function QuietRows(props: { readonly digest: AldoDigest; readonly grouped?: bool
                   <ResultIcon state={state} />
                 )
               }
-              verb={state.tone === "done" ? "Finished" : `Finished, ${state.words}`}
+              verb={state.words}
               title={e.conversation.title}
               trailing={state.tone === "done" ? timeOf(e.at) : state.words}
               trailingClassName={resultToneClass(state)}

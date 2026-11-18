@@ -120,6 +120,7 @@ export function HealthStrip(props: { readonly issues: ReadonlyArray<HealthIssue>
 }
 
 const STATE_LABEL: Record<string, string> = {
+  scheduled: "Next step scheduled",
   unfinished: "Unfinished",
   starting: "Starting",
   queued: "Waiting for room",
@@ -154,7 +155,7 @@ export function ConversationRow(props: {
         aria-hidden
         className={cn(
           "mt-1.5 size-2 shrink-0 rounded-full",
-          !queue && c.state === "done"
+          !queue && c.state === "done" && c.result?.state === "finished"
             ? "bg-success"
             : stuck
               ? "bg-warning"
@@ -175,11 +176,11 @@ export function ConversationRow(props: {
             <Badge variant="warning" size="sm">
               stuck
             </Badge>
-          ) : queue || STATE_LABEL[c.state] ? (
+          ) : queue || c.progress || STATE_LABEL[c.state] ? (
             <Badge variant="outline" size="sm">
               {queue
                 ? aldoComputerQueueLabel(queue.computer, queue.position)
-                : STATE_LABEL[c.state]}
+                : (c.progress?.label ?? STATE_LABEL[c.state])}
             </Badge>
           ) : null}
           {c.approvedPlan ? (
@@ -195,7 +196,7 @@ export function ConversationRow(props: {
           <span>
             ·{" "}
             {!queue && c.state === "done"
-              ? `finished ${relativeTime(c.at, props.now)}`
+              ? `updated ${relativeTime(c.at, props.now)}`
               : `for ${elapsed(c.at, props.now)}`}
           </span>
           {c.pullRequests?.map((pr) => (

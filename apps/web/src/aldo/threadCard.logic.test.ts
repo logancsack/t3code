@@ -122,8 +122,8 @@ it("says what each other state is, and asks the user only for what waits on them
   expect(card({ state: "queued" }).body).toContain("runs 3 agents at once and 3 are busy");
   expect(card({ state: "retrying" }).status).toBe("Taking longer than usual. Retrying.");
   expect(card({ state: "done", at: ago(3 * HOUR) })).toMatchObject({
-    status: "Finished 3 h ago",
-    dot: "done",
+    status: "Reply received 3 h ago",
+    dot: "quiet",
     action: null,
   });
   expect(card({ state: "new" }).status).toBe("Not started");
@@ -220,4 +220,50 @@ it("a queued computer takes precedence over an unfinished report", () => {
     done: [],
     needsYou: [],
   });
+});
+
+it("keeps recovered screenshot updates and automatic continuations neutral while real faults remain red", () => {
+  const progress = {
+    execution: "replied",
+    verdict: "unknown",
+    next: { owner: "aldo", kind: "delivery", at: ago(-60_000) },
+    label: "Next step scheduled",
+    detail: "Task completion has not been verified.",
+  } as const;
+  for (const title of ["Make a user's stop final", "Client pin, Oct 16, 3:56 PM"]) {
+    const c = conversation({ title, state: "done", progress });
+    expect(threadCardOf(homeWith(), c, now)).toMatchObject({
+      tone: "quiet",
+      dot: "quiet",
+      status: progress.label,
+      body: progress.detail,
+      action: null,
+    });
+    expect(needsYouKind(c)).toBeNull();
+    expect(stalledOf(homeWith([held()]), c, now)).toBeNull();
+  }
+  const retry = conversation({
+    state: "failed",
+    progress: { ...progress, execution: "failed", label: "Paused; retry scheduled" },
+  });
+  expect(needsYouKind(retry)).toBeNull();
+  expect(threadCardOf(homeWith(), retry, now)).toMatchObject({ tone: "quiet", action: null });
+  expect(threadCardOf(homeWith(), conversation({ state: "failed" }), now)).toMatchObject({
+    tone: "problem",
+  });
+  expect(
+    threadCardOf(
+      homeWith(),
+      conversation({
+        state: "stopped",
+        progress: {
+          ...progress,
+          execution: "stopped",
+          next: { owner: "none", kind: "none" },
+          label: "Stopped by you",
+        },
+      }),
+      now,
+    ).status,
+  ).toBe("Stopped by you");
 });

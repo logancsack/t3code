@@ -537,9 +537,7 @@ function AldoHomeContent() {
                 ) : null}
                 {board.done.length > 0 ? (
                   <Section
-                    title={
-                      board.done.some((c) => c.state === "stopped") ? "Done or stopped" : "Done"
-                    }
+                    title={"Recent updates"}
                     count={board.done.length}
                     {...(lastSeen ? { hint: "new since you were last here is marked" } : {})}
                   >
