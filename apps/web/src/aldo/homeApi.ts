@@ -110,6 +110,7 @@ export interface AldoHomeConversation {
 }
 
 export interface AldoHomePullRequest {
+  readonly heldReason?: string;
   readonly chatDecision?: AldoChatDecision;
   readonly environmentId: string;
   readonly thread: AldoHomeTarget | null;

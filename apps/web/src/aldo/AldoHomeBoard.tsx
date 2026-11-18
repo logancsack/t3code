@@ -333,6 +333,11 @@ export function ShipLaneSection(props: {
                             <NewBadge />
                           ) : null}
                         </div>
+                        {pr.heldReason ? (
+                          <p className="mt-1 break-words text-muted-foreground text-xs leading-relaxed">
+                            {pr.heldReason}
+                          </p>
+                        ) : null}
                         <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-muted-foreground text-xs">
                           <span>
                             {allRepos.length > 1
