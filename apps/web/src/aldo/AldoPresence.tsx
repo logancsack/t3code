@@ -70,12 +70,13 @@ function writeSeen(at: number): void {
   }
 }
 
-type View = "index" | "needsYou" | "dismissed" | "moved" | "working" | "coming";
+type View = "index" | "needsYou" | "dismissed" | "moved" | "unfinished" | "working" | "coming";
 
 const TITLES: Record<Exclude<View, "index">, string> = {
   needsYou: "Needs you",
   dismissed: "Dismissed",
   moved: "Moved since you looked",
+  unfinished: "Unfinished",
   working: "Working",
   coming: "Coming up",
 };
@@ -199,6 +200,7 @@ export function AldoPresence(props: {
     replying,
     working,
     stuck: board?.stuck ?? 0,
+    unfinished: board?.unfinished.rows.length ?? 0,
     waiting: board?.needsYou.rows.length ?? 0,
     moved: board?.moved.rows.length ?? 0,
     fresh: readIsFresh(readAt, now),
@@ -243,6 +245,7 @@ export function AldoPresence(props: {
     needsYou: board.needsYou,
     dismissed: { rows: board.dismissed, preview: "" },
     moved: board.moved,
+    unfinished: board.unfinished,
     working: board.working,
     coming: board.coming,
   };
@@ -289,6 +292,14 @@ export function AldoPresence(props: {
                   dot="bg-primary"
                   onOpen={() => setView("moved")}
                 />
+                {board.unfinished.rows.length > 0 ? (
+                  <IndexRow
+                    tone="quiet"
+                    title={TITLES.unfinished}
+                    section={board.unfinished}
+                    onOpen={() => setView("unfinished")}
+                  />
+                ) : null}
                 <IndexRow
                   tone="live"
                   title={TITLES.working}
@@ -381,7 +392,7 @@ export function AldoPresence(props: {
                   <ItemRow
                     key={row.key}
                     row={row}
-                    {...(view === "working" ? { onShow: showCard } : {})}
+                    {...(view === "working" || view === "unfinished" ? { onShow: showCard } : {})}
                     {...(view === "needsYou" && row.decision
                       ? { onDismiss: () => dismiss([row.decision!.id], `“${row.title}”`) }
                       : {})}

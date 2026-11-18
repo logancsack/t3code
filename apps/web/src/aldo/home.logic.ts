@@ -565,7 +565,8 @@ export function composerChips(
   const board = home ? boardFor(home.conversations, Date.now()) : null;
   if (board && board.needsYou.length > 0) chips.push("What needs me?");
   if (options.lastSeen && home && home.conversations.length > 0) chips.push("Catch me up");
-  if (board && (board.done.length > 0 || board.working.length > 0 || board.unfinished.length > 0))
+  if (board?.unfinished.length) chips.push("What’s unfinished?");
+  else if (board && (board.done.length > 0 || board.working.length > 0))
     chips.push("What shipped today?");
   const repo = repoChips(home ?? { conversations: [] })[0];
   if (repo) chips.push(`Start something in ${repo.split("/").at(-1) ?? repo}`);
