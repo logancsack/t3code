@@ -7,6 +7,7 @@ import {
   planRunning,
   isStuck,
   needsYouKind,
+  policyLines,
   sameTarget,
 } from "./home.logic";
 
@@ -151,6 +152,35 @@ describe("planRunning", () => {
     expect(planRunning({ ...usage, metered: false, period: null })).toBe(true);
     expect(planRunning({ ...usage, configured: false, period: null })).toBe(false);
     expect(planRunning({ ...usage, period: { ...usage.period, status: "past_due" } })).toBe(false);
+  });
+});
+
+describe("policyLines", () => {
+  const ASKS =
+    "Whether Aldo merges green pull requests itself hasn't come up yet: an agent asks the first time.";
+
+  it("says how Aldo works for an account that has answered nothing, from Aldo's defaults", () => {
+    const defaults = { merge: "auto", reviews: "important" } as const;
+    expect(policyLines({ everywhere: {}, workspaces: [], defaults })).toEqual([
+      "Aldo merges pull requests once they're green.",
+      "Agents fix what matters from automated reviews and answer the rest.",
+    ]);
+    // Their own answers win over the defaults, and a workspace's exception is still said.
+    expect(
+      policyLines({
+        everywhere: { merge: "approve", reviews: "all", spendThreshold: 20 },
+        workspaces: [{ repos: ["acme/shop"], policy: { merge: "auto" } }],
+        defaults,
+      }),
+    ).toEqual([
+      "Aldo waits for you to merge, except where you said otherwise.",
+      "Agents may spend up to $20 without asking.",
+      "Agents address every automated review finding.",
+    ]);
+  });
+
+  it("still says an agent asks, on an Aldo that has no defaults", () => {
+    expect(policyLines({ everywhere: {}, workspaces: [] })).toEqual([ASKS]);
   });
 });
 

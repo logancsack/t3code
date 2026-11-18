@@ -2,8 +2,9 @@
 // choices, the user's own for all their workspaces, and where a workspace
 // answered otherwise. An undecided rule is one an agent asks about the first
 // time it comes up; one with a default (paying past the plans, long
-// conversations, accounts and publishing in their name) does that until the
-// user changes it.
+// conversations, accounts and publishing in their name, and the ones Aldo
+// says it starts decided: merging and reviews) does that until the user
+// changes it.
 
 import { type AldoPolicy, type AldoPolicyPath, type AldoPolicyView } from "./homeApi";
 import { repoShortName } from "./places.logic";
@@ -171,10 +172,19 @@ export function aldoRuleShown(
   return Array.isArray(view?.rules) && view.rules.includes(requires);
 }
 
+/** A rule's default: Aldo's own for it (`defaults`, from an Aldo that has them), or the rule's. */
+function ruleDefault(spec: RuleSpec, defaults: AldoPolicy | undefined): string | undefined {
+  return (defaults ? spec.read(defaults) : undefined) ?? spec.fallback;
+}
+
 /** The user's choice for a rule: theirs, the rule's default, or undecided. */
-export function aldoRuleValue(rule: AldoPolicyRuleId, policy: AldoPolicy): string {
+export function aldoRuleValue(
+  rule: AldoPolicyRuleId,
+  policy: AldoPolicy,
+  defaults?: AldoPolicy,
+): string {
   const spec = ALDO_POLICY_RULES[rule];
-  return spec.read(policy) ?? spec.fallback ?? ALDO_UNDECIDED;
+  return spec.read(policy) ?? ruleDefault(spec, defaults) ?? ALDO_UNDECIDED;
 }
 
 /**
@@ -185,12 +195,12 @@ export function aldoRuleValue(rule: AldoPolicyRuleId, policy: AldoPolicy): strin
 export function aldoRuleOptions(
   rule: AldoPolicyRuleId,
   current: string,
-  options: { readonly workspace?: boolean } = {},
+  options: { readonly workspace?: boolean; readonly defaults?: AldoPolicy | undefined } = {},
 ): ReadonlyArray<AldoPolicyOption> {
   const spec = ALDO_POLICY_RULES[rule];
   const first: AldoPolicyOption[] = options.workspace
     ? [{ value: ALDO_SAME_AS_EVERYWHERE, label: "Same as everywhere" }]
-    : spec.fallback === undefined
+    : ruleDefault(spec, options.defaults) === undefined
       ? [{ value: ALDO_UNDECIDED, label: spec.undecided ?? ALDO_UNDECIDED_LABEL }]
       : [];
   const known = spec.options.some((option) => option.value === current);
@@ -308,7 +318,7 @@ export function aldoRuleDifferences(
   rule: AldoPolicyRuleId,
 ): ReadonlyArray<AldoPolicyDifference> {
   const spec = ALDO_POLICY_RULES[rule];
-  const everywhere = aldoRuleValue(rule, view.everywhere);
+  const everywhere = aldoRuleValue(rule, view.everywhere, view.defaults);
   return view.workspaces.flatMap((workspace) => {
     const value = spec.read(workspace.policy);
     return value !== undefined && value !== everywhere ? [{ repos: workspace.repos, value }] : [];
