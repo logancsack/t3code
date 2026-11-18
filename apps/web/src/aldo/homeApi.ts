@@ -641,7 +641,9 @@ export async function fetchAldoHome(
 
 /** The additive server status never requires a simultaneous client release. */
 export function adaptTaskProgress(c: AldoHomeConversation): AldoHomeConversation {
-  if (c.progress?.execution === "stopped") return { ...c, state: "stopped" };
+  if (c.state === "stopped" || c.progress?.execution === "stopped")
+    return { ...c, state: "stopped" };
+  if (c.progress?.next.owner === "you") return { ...c, state: "waiting" };
   // Actual questions and approvals stay visible before any automatic continuation.
   if (
     !c.pending &&
