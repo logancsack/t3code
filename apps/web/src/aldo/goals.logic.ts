@@ -294,3 +294,33 @@ export function goalReading(measure: Pick<AldoGoalMeasure, "latest" | "target" |
     !(typeof measure.start === "number" && measure.target < measure.start);
   return countsUp ? `${now} of ${target}` : `${now}, aiming for ${target}`;
 }
+
+/** Log lines read at different times as one list, each once, newest first. */
+export function mergedGoalLog<T extends { readonly id: number }>(
+  had: ReadonlyArray<T>,
+  next: ReadonlyArray<T>,
+): ReadonlyArray<T> {
+  const byId = new Map([...had, ...next].map((line) => [line.id, line]));
+  return [...byId.values()].toSorted((a, b) => b.id - a.id);
+}
+
+/**
+ * The log after its newest page is read again (`next`, newest first; `more` says older lines lie
+ * behind it). When the page doesn't reach back to what was read before, more lines came than a
+ * page holds (a tab left in the background), and the ones in between were never read: the log
+ * starts over from the new page, so "Show older" reaches them, instead of showing a list with a
+ * hole in it.
+ */
+export function refreshedGoalLog<T extends { readonly id: number }>(
+  had: ReadonlyArray<T>,
+  next: ReadonlyArray<T>,
+  more: boolean,
+): { readonly lines: ReadonlyArray<T>; readonly restarted: boolean } {
+  const newestHad = had[0]?.id;
+  const oldestNext = next.at(-1)?.id;
+  const apart =
+    more && newestHad !== undefined && oldestNext !== undefined && oldestNext > newestHad;
+  return apart
+    ? { lines: next, restarted: true }
+    : { lines: mergedGoalLog(had, next), restarted: false };
+}

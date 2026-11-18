@@ -19,6 +19,8 @@ import {
   goalValue,
   goalWaitingKeyed,
   goalWaitingKind,
+  mergedGoalLog,
+  refreshedGoalLog,
 } from "./goals.logic";
 import type { AldoGoalConversation, AldoGoalMeasure } from "./goalsApi";
 
@@ -263,5 +265,32 @@ describe("the log", () => {
       ["Yesterday", 1],
       [goalLogDay(at(10, 8), now), 1],
     ]);
+  });
+
+  const ids = (...list: number[]) => list.map((id) => ({ id }));
+  const read = (lines: ReadonlyArray<{ id: number }>) => lines.map((line) => line.id);
+
+  it("joins pages read at different times, each line once, newest first", () => {
+    expect(read(mergedGoalLog(ids(9, 7, 4), ids(12, 9, 7)))).toEqual([12, 9, 7, 4]);
+    expect(read(mergedGoalLog(ids(9, 7), ids(4, 2)))).toEqual([9, 7, 4, 2]);
+    expect(read(mergedGoalLog([], ids(3, 1)))).toEqual([3, 1]);
+  });
+
+  it("adds what's new to a log whose newest page still reaches what was read", () => {
+    const fresh = refreshedGoalLog(ids(9, 7, 4), ids(14, 12, 9), true);
+    expect(fresh.restarted).toBe(false);
+    expect(read(fresh.lines)).toEqual([14, 12, 9, 7, 4]);
+    // Nothing new, and a first read.
+    expect(refreshedGoalLog(ids(9, 7), ids(9, 7), true).restarted).toBe(false);
+    expect(read(refreshedGoalLog([], ids(9, 7), true).lines)).toEqual([9, 7]);
+  });
+
+  it("starts the log over when more came than a page holds, rather than leave a hole", () => {
+    // 10 and 11 were never read: lines ids are the whole account's, so nothing says how many lie between.
+    const fresh = refreshedGoalLog(ids(9, 7, 4), ids(20, 16, 12), true);
+    expect(fresh.restarted).toBe(true);
+    expect(read(fresh.lines)).toEqual([20, 16, 12]);
+    // The whole log fits the page (nothing older behind it): nothing can be missing.
+    expect(refreshedGoalLog(ids(9), ids(20, 16), false).restarted).toBe(false);
   });
 });

@@ -2,7 +2,7 @@
 // toward for weeks from a plan the user approves once. The page only reads.
 // An older Aldo has no goals at all: its 404 is "none", never an error.
 
-import { AldoApiError, api } from "./api";
+import { ALDO_READ_ANSWERS_WITHIN_MS, AldoApiError, api } from "./api";
 
 export type AldoGoalStatus = "researching" | "awaiting_approval" | "running" | "paused" | "ended";
 
@@ -114,7 +114,11 @@ const none = (cause: unknown) => cause instanceof AldoApiError && cause.status =
 /** The user's goals, the ones still going first; null from an Aldo that has no goals yet. */
 export async function fetchAldoGoals(): Promise<ReadonlyArray<AldoGoal> | null> {
   try {
-    const body = await api<{ goals?: unknown }>("/api/goals");
+    // Cut off like Home's reads: one that never answers (a phone that slept, a changed network) would
+    // otherwise hold every later look, which shares it (goals.ts).
+    const body = await api<{ goals?: unknown }>("/api/goals", {
+      answersWithin: ALDO_READ_ANSWERS_WITHIN_MS,
+    });
     return list<AldoGoal>(body.goals).map(goalFrom);
   } catch (cause) {
     if (none(cause)) return null;
@@ -142,6 +146,7 @@ export async function fetchAldoGoal(
   try {
     const body = await api<{ goal?: AldoGoal; log?: unknown; more?: unknown }>(
       `/api/goals/${encodeURIComponent(id)}${query}`,
+      { answersWithin: ALDO_READ_ANSWERS_WITHIN_MS },
     );
     if (!body.goal) return null;
     return {

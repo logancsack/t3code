@@ -35,6 +35,8 @@ import {
   goalStatus,
   goalWaitingKeyed,
   goalWaitingKind,
+  mergedGoalLog,
+  refreshedGoalLog,
   type GoalTone,
 } from "./goals.logic";
 import {
@@ -44,6 +46,7 @@ import {
   type AldoGoalMeasure,
 } from "./goalsApi";
 import { relativeTime } from "./home.logic";
+import { setAldoSimplePlace, useAldoSimple } from "./simpleMode";
 import { FOCUS, INSET } from "./surface";
 
 const TONE: Record<GoalTone, "outline" | "info" | "warning" | "success" | "error"> = {
@@ -350,15 +353,6 @@ function LogLines(props: {
 const LOG_FIRST = 20;
 const LOG_OLDER = 50;
 
-/** Log lines read at different times as one list, each once, newest first. */
-function mergedLog(
-  had: ReadonlyArray<AldoGoalLogLine>,
-  next: ReadonlyArray<AldoGoalLogLine>,
-): ReadonlyArray<AldoGoalLogLine> {
-  const byId = new Map([...had, ...next].map((line) => [line.id, line]));
-  return [...byId.values()].toSorted((a, b) => b.id - a.id);
-}
-
 /** /goals/$goalId: one goal. */
 export function AldoGoalPage(props: { readonly goalId: string }) {
   const { goalId } = props;
@@ -366,6 +360,12 @@ export function AldoGoalPage(props: { readonly goalId: string }) {
   const [read, setRead] = useState<GoalRead>({ kind: "loading" });
   /** The log lines read so far, newest first: the newest page, and any older ones asked for. */
   const [lines, setLines] = useState<ReadonlyArray<AldoGoalLogLine>>([]);
+  // The same lines for the reads' answers, which come after the render that asked.
+  const logRead = useRef<ReadonlyArray<AldoGoalLogLine>>([]);
+  const show = useCallback((next: ReadonlyArray<AldoGoalLogLine>) => {
+    logRead.current = next;
+    setLines(next);
+  }, []);
   const [more, setMore] = useState(false);
   const [older, setOlder] = useState<"idle" | "loading" | { readonly error: string }>("idle");
   // Answers that come after the page is gone are dropped. Another goal is another page (the route keys it).
@@ -377,6 +377,8 @@ export function AldoGoalPage(props: { readonly goalId: string }) {
     };
   }, []);
   const olderAsked = useRef(false);
+  // How many times the log started over: an older page asked for before then belongs to the list that's gone.
+  const restarts = useRef(0);
 
   const look = useCallback(() => {
     fetchAldoGoal(goalId, { limit: LOG_FIRST }).then(
@@ -384,7 +386,13 @@ export function AldoGoalPage(props: { readonly goalId: string }) {
         if (!alive.current) return;
         if (!answer) return setRead({ kind: "gone" });
         setRead({ kind: "ready", goal: answer.goal });
-        setLines((had) => mergedLog(had, answer.log));
+        const fresh = refreshedGoalLog(logRead.current, answer.log, answer.more);
+        show(fresh.lines);
+        // A log that starts over has only its newest page again.
+        if (fresh.restarted) {
+          olderAsked.current = false;
+          restarts.current += 1;
+        }
         // Once older pages were asked for, whether more remain is theirs to say.
         if (!olderAsked.current) setMore(answer.more);
       },
@@ -398,18 +406,20 @@ export function AldoGoalPage(props: { readonly goalId: string }) {
         );
       },
     );
-  }, [goalId]);
+  }, [goalId, show]);
   useAldoGoalsWatch(look);
 
   const showOlder = () => {
     const oldest = lines.at(-1);
     if (!oldest || older === "loading") return;
     setOlder("loading");
+    const asked = restarts.current;
     fetchAldoGoal(goalId, { before: oldest.id, limit: LOG_OLDER }).then(
       (answer) => {
         if (!alive.current) return;
+        if (asked !== restarts.current) return setOlder("idle");
         olderAsked.current = true;
-        setLines((had) => mergedLog(had, answer?.log ?? []));
+        show(mergedGoalLog(logRead.current, answer?.log ?? []));
         setMore(answer?.more ?? false);
         setOlder("idle");
       },
@@ -493,7 +503,16 @@ export function AldoGoalPage(props: { readonly goalId: string }) {
                     variant="outline"
                     size="compact"
                     className="shrink-0"
-                    render={<Link to="/" aria-label={`Answer on Home: ${waiting.title}`} />}
+                    render={
+                      <Link
+                        to="/"
+                        aria-label={`Answer on Home: ${waiting.title}`}
+                        // Simple mode keeps the place it was on (the Library, say): the card is under Needs you.
+                        onClick={() => {
+                          if (useAldoSimple.getState().on) setAldoSimplePlace("needs");
+                        }}
+                      />
+                    }
                   >
                     Open Home
                   </Button>
