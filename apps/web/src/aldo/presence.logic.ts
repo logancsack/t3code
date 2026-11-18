@@ -85,6 +85,7 @@ export interface AldoPresenceBoard {
   /** What they put off ("Not now", decisions and plans): still waiting, but not counted until it's back. */
   readonly putOff: number;
   readonly moved: PresenceSection;
+  readonly unfinished: PresenceSection;
   readonly working: PresenceSection;
   /** Of the working, how many have reported nothing for over an hour. */
   readonly stuck: number;
@@ -147,7 +148,7 @@ function movedRows(home: AldoHome, now: number, seenAt: number | null) {
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 /**
- * The drop-down's four lists. `seenAt`: when they last closed it, from which
+ * The drop-down's task lists. `seenAt`: when they last closed it, from which
  * what moved is counted; `answered`: decisions just made here that the read
  * hasn't caught up with.
  */
@@ -213,7 +214,15 @@ export function presenceBoard(
     return n > 0 ? [`${n} ${words}`] : [];
   });
 
-  const live = boardFor(home.conversations, now).working;
+  const tasks = boardFor(home.conversations, now);
+  const unfinished: PresenceRow[] = tasks.unfinished.map((c) => ({
+    key: `unfinished:${c.ref}`,
+    title: c.title,
+    detail: c.summary ?? "Unfinished",
+    tone: "quiet",
+    target: c.thread,
+  }));
+  const live = tasks.working;
   const stuck = live.filter((c) => isStuck(c, now)).length;
   const working: PresenceRow[] = live.map((c) => {
     const queue = queuedComputer(c);
@@ -288,6 +297,10 @@ export function presenceBoard(
       rows: moved,
       preview: movedWords.length > 0 ? movedWords.join(" · ") : "Nothing new since you looked",
     },
+    unfinished: {
+      rows: unfinished,
+      preview: unfinished[0]?.title ?? "Nothing unfinished",
+    },
     working: {
       rows: working,
       preview:
@@ -316,6 +329,7 @@ export function presenceLine(input: {
   /** What's working now, newest first, but for those that have reported nothing for an hour (`stuck`, counted). */
   readonly working: ReadonlyArray<Pick<AldoHomeConversation, "title" | "browsing">>;
   readonly stuck: number;
+  readonly unfinished?: number;
   readonly waiting: number;
   /** Moved since they last looked. */
   readonly moved: number;
@@ -341,14 +355,15 @@ export function presenceLine(input: {
     return { text: "Typing…", state: "thinking", ...none };
   if (phase === "error") return { text: "Tap to talk again", state: "error", ...none };
   if (input.unread) return { text: "Couldn't check on your agents", state: "error", ...none };
-  const { waiting, moved, stuck } = input;
+  const { waiting, moved, stuck, unfinished = 0 } = input;
   const live = input.working.length;
   const [first] = input.working;
   const dot = waiting > 0 ? "needs-you" : moved > 0 ? "moved" : null;
-  // What needs them leads, then what moved, then what's working; the first two say it.
+  // What needs them leads, then what moved and remains unfinished; the first two say it.
   const tiers = [
     waiting > 0 ? `${waiting} need${waiting === 1 ? "s" : ""} you` : null,
     moved > 0 ? `${moved} moved` : null,
+    unfinished > 0 ? `${unfinished} unfinished` : null,
     live > 0 ? `${live} working` : null,
     stuck > 0 ? `${stuck} with no word` : null,
   ].filter((tier) => tier !== null);
@@ -362,6 +377,8 @@ export function presenceLine(input: {
       dot,
     };
   if (moved > 0) return { text: `${plural(moved, "thread", "threads")} moved`, state, dot };
+  if (unfinished > 0)
+    return { text: `${plural(unfinished, "task", "tasks")} unfinished`, state, dot };
   if (live > 1) return { text: `${live} working`, state, dot };
   if (live === 1 && first)
     return { text: first.browsing ? `On ${first.browsing.site}` : first.title, state, dot };

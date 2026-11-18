@@ -163,6 +163,8 @@ export function threadCardOf(
     };
   const routine = c.routine ? "Routine run · " : "";
   switch (c.state) {
+    case "unfinished":
+      return { tone: "quiet", dot: "quiet", status: "Unfinished", body: null, action: null };
     case "stopped":
       return { tone: "quiet", dot: "quiet", status: "Stopped by you", body: null, action: null };
     case "starting":

@@ -8,6 +8,7 @@
 // shows the one line Aldo's action always had. The bar's peek (AldoPeek.tsx)
 // uses the pieces here too.
 
+import AldoTaskResult from "./AldoTaskResult";
 import { CheckIcon, ChevronDownIcon } from "lucide-react";
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 
@@ -331,7 +332,8 @@ export function AldoThreadCard(props: {
   const conversation = home?.conversations.find((c) => sameTarget(c.thread, props.target));
   if (!home || !conversation) return props.fallback;
   const c = conversation;
-  if (c.state === "done" && !queuedComputer(c)) return <SettledRow conversation={c} now={now} />;
+  if (c.state === "done" && !c.result && !queuedComputer(c))
+    return <SettledRow conversation={c} now={now} />;
   const view = threadCardOf(home, c, now);
   const stalled = stalledOf(home, c, now);
   const kind = needsYouKind(c);
@@ -442,6 +444,11 @@ export function AldoThreadCard(props: {
           />
         )}
       </button>
+      {c.result ? (
+        <div className="px-4">
+          <AldoTaskResult result={c.result} compact />
+        </div>
+      ) : null}
       {opened || asks ? (
         <div className="flex flex-col gap-2.5 px-4 pb-3.5">
           {opened && surface ? (
