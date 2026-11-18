@@ -34,7 +34,7 @@ import { ContinueButton } from "./AldoContinue";
 import { AldoOpenContext } from "./AldoLiveCard";
 import { ApproveInLink, PaymentDetails } from "./AldoPaymentCard";
 import { AldoFrame } from "./AldoFrame";
-import { setAldoMergeHold } from "./AldoFinished";
+import { setAldoMergeHold } from "./mergeHold";
 import { AgentMarkdown, Quoted } from "./AldoQuoted";
 import { useAldoArrive } from "./arrive";
 import { useAldoBrief } from "./briefFeed";

@@ -124,6 +124,15 @@ const rowTexts = () =>
   [...container.querySelectorAll("[data-aldo-finished-result]")].map((r) => r.textContent?.trim());
 const button = (name: string) =>
   [...container.querySelectorAll("button")].find((b) => b.textContent?.trim() === name);
+/** Opens the nth line, and waits for its receipt (loaded the first time one opens). */
+async function openRow(n: number) {
+  await act(async () =>
+    container.querySelectorAll<HTMLButtonElement>("[data-aldo-finished-result] button")[n]!.click(),
+  );
+  for (let i = 0; i < 50 && !container.querySelector("article[tabindex='-1']"); i++)
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 20)));
+  expect(container.querySelector("article[tabindex='-1']")).not.toBeNull();
+}
 
 it("lists what finished with where it honestly stands, what failed first, checks still running as a line", async () => {
   await act(async () => root.render(<AldoFinished home={busyDay(false)} now={NOW} />));
@@ -147,9 +156,7 @@ it("lists what finished with where it honestly stands, what failed first, checks
 it("opens a result into its receipt, and Hold stops Aldo's merge, with Undo", async () => {
   backend.hold.mockResolvedValue(true);
   await act(async () => root.render(<AldoFinished home={busyDay(false)} now={NOW} />));
-  await act(async () =>
-    container.querySelectorAll<HTMLButtonElement>("[data-aldo-finished-result] button")[1]!.click(),
-  );
+  await openRow(1);
   const card = container.querySelector("article[aria-label='Add CSV export']")!;
   expect(card.textContent).toContain("Export button streams a CSV of the filtered rows.");
   expect(card.textContent).toContain("14 checks passed");
@@ -179,9 +186,7 @@ it("offers no Hold where Aldo can't hold a merge, and Merge now asks before it m
   backend.confirm.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
   backend.merge.mockResolvedValue({ outcome: "done", said: null });
   await act(async () => root.render(<AldoFinished home={busyDay()} now={NOW} />));
-  await act(async () =>
-    container.querySelectorAll<HTMLButtonElement>("[data-aldo-finished-result] button")[1]!.click(),
-  );
+  await openRow(1);
   expect(button("Hold")).toBeUndefined();
   expect(container.textContent).toContain("Aldo merges it in 9 min.");
   await act(async () => button("Merge now")!.click());
@@ -198,9 +203,7 @@ it("offers no Hold where Aldo can't hold a merge, and Merge now asks before it m
 
 it("sends what failed to Aldo's composer, and shows nothing when nothing finished is on its way", async () => {
   await act(async () => root.render(<AldoFinished home={busyDay(false)} now={NOW} />));
-  await act(async () =>
-    container.querySelectorAll<HTMLButtonElement>("[data-aldo-finished-result] button")[0]!.click(),
-  );
+  await openRow(0);
   expect(container.textContent).toContain("2 of 13 checks fail.");
   expect(container.querySelector("a[href$='/pull/611/checks']")).not.toBeNull();
   await act(async () => button("Ask Aldo about it")!.click());
