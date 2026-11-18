@@ -191,3 +191,20 @@ it("shows a user stop without offering Continue, even with a stale held message"
     ),
   ).toMatchObject({ status: "Stopped by you", action: null });
 });
+
+it("unfinished work has its own section and never implies running or asks for user input", () => {
+  const c = conversation({ state: "unfinished" });
+  const board = boardFor([c], now);
+  expect(board).toMatchObject({ unfinished: [c], working: [], done: [], needsYou: [] });
+  expect(
+    threadCardOf(
+      {
+        upcoming: [],
+        usage: { agents: { running: 0, limit: 2 } },
+        health: {},
+      } as unknown as AldoHome,
+      c,
+      now,
+    ),
+  ).toMatchObject({ status: "Unfinished", action: null, dot: "quiet" });
+});

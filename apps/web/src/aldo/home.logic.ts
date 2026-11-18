@@ -100,6 +100,7 @@ export interface HomeBoard {
   readonly needsYou: ReadonlyArray<AldoHomeConversation>;
   /** Newest first. */
   readonly working: ReadonlyArray<AldoHomeConversation>;
+  readonly unfinished: ReadonlyArray<AldoHomeConversation>;
   /** Finished in the last two days, newest first. */
   readonly done: ReadonlyArray<AldoHomeConversation>;
 }
@@ -122,6 +123,7 @@ export function boardFor(
     working: conversations
       .filter((c) => (WORKING_STATES.has(c.state) || queuedComputer(c)) && !isPausedMidTurn(c))
       .sort(byAt),
+    unfinished: conversations.filter((c) => c.state === "unfinished").sort(byAt),
     done: conversations
       .filter(
         (c) =>
@@ -563,7 +565,7 @@ export function composerChips(
   const board = home ? boardFor(home.conversations, Date.now()) : null;
   if (board && board.needsYou.length > 0) chips.push("What needs me?");
   if (options.lastSeen && home && home.conversations.length > 0) chips.push("Catch me up");
-  if (board && (board.done.length > 0 || board.working.length > 0))
+  if (board && (board.done.length > 0 || board.working.length > 0 || board.unfinished.length > 0))
     chips.push("What shipped today?");
   const repo = repoChips(home ?? { conversations: [] })[0];
   if (repo) chips.push(`Start something in ${repo.split("/").at(-1) ?? repo}`);

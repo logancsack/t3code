@@ -59,6 +59,7 @@ export interface AldoChatDecision {
 }
 
 export interface AldoHomeConversation {
+  readonly result?: import("./taskResult.logic").TaskResult;
   readonly chatDecision?: AldoChatDecision;
   readonly ref: string;
   readonly thread: AldoHomeTarget;
