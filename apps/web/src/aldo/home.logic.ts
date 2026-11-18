@@ -124,7 +124,10 @@ export function boardFor(
       .sort(byAt),
     done: conversations
       .filter(
-        (c) => !queuedComputer(c) && c.state === "done" && now - Date.parse(c.at) < DONE_WINDOW_MS,
+        (c) =>
+          !queuedComputer(c) &&
+          (c.state === "done" || c.state === "stopped") &&
+          now - Date.parse(c.stateAt ?? c.at) < DONE_WINDOW_MS,
       )
       .sort(byAt),
   };
@@ -514,7 +517,8 @@ export function policyLines(policy: AldoHome["policy"]): ReadonlyArray<string> {
       : p.merge === "approve"
         ? "waits for you to merge"
         : null;
-  const merge = describeMerge(everywhere);
+  // Their own answer, or what Aldo does until they give one (an older Aldo has no such default: its agents ask).
+  const merge = describeMerge(everywhere) ?? describeMerge(policy.defaults ?? {});
   const perWorkspace = policy.workspaces
     .map((w) => ({ repos: w.repos, merge: describeMerge(w.policy) }))
     .filter((w) => w.merge && w.merge !== merge);
@@ -541,7 +545,9 @@ export function policyLines(policy: AldoHome["policy"]): ReadonlyArray<string> {
     );
   }
   const reviews =
-    everywhere.reviews ?? policy.workspaces.find((w) => w.policy.reviews)?.policy.reviews;
+    everywhere.reviews ??
+    policy.workspaces.find((w) => w.policy.reviews)?.policy.reviews ??
+    policy.defaults?.reviews;
   if (reviews === "all") lines.push("Agents address every automated review finding.");
   else if (reviews === "important")
     lines.push("Agents fix what matters from automated reviews and answer the rest.");

@@ -249,7 +249,9 @@ it.each(["email", "event", "start", "confirm"] as const)(
     };
     await act(async () => root.render(<Page home={home({ approvals: [revised] })} />));
     expect(container.querySelector('[data-aldo-decision="aldo:draft-1"]')).toBe(card);
-    expect(card.textContent).toContain("Monday");
+    // Start/confirm controls load on demand; the timeline's card stays put
+    // while that chunk arrives and then shows the latest revision.
+    await vi.waitFor(() => expect(card.textContent).toContain("Monday"));
     before(card, textElement("One more detail"));
     const decided = { ...revised, status: "approved" as const, decidedAt: at(7), result: "Sent" };
     await act(async () => root.render(<Page home={home({ approvals: [decided] })} />));

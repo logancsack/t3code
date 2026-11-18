@@ -12,7 +12,7 @@ import {
   MessageCircleQuestionIcon,
   SparklesIcon,
 } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { lazy, Suspense, useState, type ReactNode } from "react";
 
 import { PullRequestGlyph } from "../components/pullRequest/pullRequestIcons";
 import { Badge } from "../components/ui/badge";
@@ -20,7 +20,6 @@ import { Button } from "../components/ui/button";
 import { toastManager } from "../components/ui/toast";
 import { requestConfirmDialog } from "../confirmDialog";
 import { cn } from "~/lib/utils";
-import { AldoApprovalRules } from "./AldoApprovalRules";
 import { askAldoAbout, ThreadLink } from "./AldoHomeInbox";
 import { aldoComputerQueueLabel } from "./computer.logic";
 import {
@@ -56,6 +55,10 @@ import {
 import { useAldoModelName } from "./modelNames";
 
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
+const AldoApprovalRules = lazy(() =>
+  import("./AldoApprovalRulesList").then((m) => ({ default: m.AldoApprovalRules })),
+);
 
 export function Section(props: {
   readonly title: string;
@@ -330,6 +333,11 @@ export function ShipLaneSection(props: {
                             <NewBadge />
                           ) : null}
                         </div>
+                        {pr.heldReason ? (
+                          <p className="mt-1 break-words text-muted-foreground text-xs leading-relaxed">
+                            {pr.heldReason}
+                          </p>
+                        ) : null}
                         <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-muted-foreground text-xs">
                           <span>
                             {allRepos.length > 1
@@ -595,7 +603,9 @@ export function PolicySection(props: { readonly policy: AldoHome["policy"] }) {
             <li key={line}>{line}</li>
           ))}
         </ul>
-        <AldoApprovalRules />
+        <Suspense fallback={null}>
+          <AldoApprovalRules />
+        </Suspense>
         <div className="mt-2 flex flex-wrap gap-x-3 text-xs">
           <Link to="/settings/memory" className="text-muted-foreground hover:text-foreground">
             What Aldo knows about you

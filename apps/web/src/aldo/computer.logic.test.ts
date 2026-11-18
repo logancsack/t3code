@@ -129,6 +129,36 @@ describe("aldoComputerAskDescription", () => {
   });
 });
 
+describe("aldoComputerAskDescription for a yes that's the account's", () => {
+  it("keeps the cash price and disposable-file terms on an account-wide approval", () => {
+    expect(
+      aldoComputerAskDescription({
+        why: "Build the deck",
+        creditsPerHour: 38.4,
+        extraHourlyUsd: 0.48,
+        disposable: true,
+        forAccount: true,
+      }),
+    ).toBe(
+      "Build the deck. $0.48 an hour while it runs (38.4 credits/hour). Billed separately within your extra usage limit. This thread gets a fresh computer. Its computer and files are deleted when the thread is done. No kept-disk charge. A yes covers your other threads too.",
+    );
+  });
+  it("says a yes covers the other threads, only when Aldo says so", () => {
+    expect(
+      aldoComputerAskDescription({
+        why: "To render the film",
+        creditsPerHour: 310,
+        forAccount: true,
+      }),
+    ).toBe(
+      "To render the film. 310 credits an hour while it runs. It stops when the thread is done. A yes covers your other threads too.",
+    );
+    expect(aldoComputerAskDescription({ why: null, creditsPerHour: 90, forAccount: false })).toBe(
+      "90 credits an hour while it runs. It stops when the thread is done.",
+    );
+  });
+});
+
 describe("aldoDesktopScreen", () => {
   it("shows Windows only while it's chosen and the computer runs", () => {
     expect(aldoDesktopScreen("windows", computer("running"))).toBe("windows");

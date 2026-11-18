@@ -742,7 +742,7 @@ describe("bringing a machine up from this page", () => {
         expect(tab.aldo.allAsks()).toBe(0);
 
         yield* advance(3_000);
-        expect(yield* Effect.promise(() => sent)).toBeNull();
+        expect(yield* Effect.promise(() => sent)).toEqual({ sequence: 0 });
         expect(tab.aldo.wakes).toBe(0);
         expect(tab.aldo.asksFor("s0")).toBe(1);
         expect(tab.aldo.allAsks()).toBe(1);
@@ -765,7 +765,7 @@ describe("bringing a machine up from this page", () => {
       };
       const sent = send("s0");
       yield* advance(1_500);
-      expect(yield* Effect.promise(() => sent)).toBeNull();
+      expect(yield* Effect.promise(() => sent)).toEqual({ sequence: 0 });
       expect(tab.aldo.wakes).toBe(1);
       expect(tab.aldo.asksFor("s0")).toBe(1);
       expect(phase("s0")).toBe("connected");
@@ -791,7 +791,7 @@ describe("bringing a machine up from this page", () => {
         yield* advance(2_500);
         expect(tab.aldo.wakes).toBe(0);
         yield* advance(3_000);
-        expect(yield* Effect.promise(() => sent)).toBeNull();
+        expect(yield* Effect.promise(() => sent)).toEqual({ sequence: 0 });
         expect(tab.aldo.wakes).toBe(1);
         expect(tab.aldo.asksFor("s0")).toBe(1);
         expect(phase("s0")).toBe("connected");
@@ -809,7 +809,7 @@ describe("bringing a machine up from this page", () => {
         };
         const sent = send("s0");
         yield* advance(1_500);
-        expect(yield* Effect.promise(() => sent)).toBeNull();
+        expect(yield* Effect.promise(() => sent)).toEqual({ sequence: 0 });
         expect(tab.aldo.wakes).toBe(1);
         expect(tab.aldo.asksFor("s0")).toBe(1);
         expect(phase("s0")).toBe("connected");
@@ -829,11 +829,12 @@ describe("bringing a machine up from this page", () => {
         yield* advance(14_500);
         expect(tab.aldo.wakes).toBe(0);
         yield* advance(1_500);
-        expect(yield* Effect.promise(() => sent)).toBeNull();
+        tab.aldo.open("read");
+        yield* advance(500);
+        expect(yield* Effect.promise(() => sent)).toEqual({ sequence: 0 });
         expect(tab.aldo.wakes).toBe(1);
         expect(tab.aldo.asksFor("s0")).toBe(1);
         expect(phase("s0")).toBe("connected");
-        tab.aldo.open("read");
       }),
   );
 
@@ -916,7 +917,7 @@ describe("bringing a machine up from this page", () => {
 
         yield* advance(4_000);
         expect(sent).toBe(true);
-        expect(yield* Effect.promise(() => sending)).toBeNull();
+        expect(yield* Effect.promise(() => sending)).toEqual({ sequence: 0 });
         expect(tab.aldo.wakes).toBe(0);
         expect(tab.aldo.asksFor("s0")).toBe(1);
         expect(phase("s0")).toBe("connected");
@@ -955,7 +956,9 @@ describe("bringing a machine up from this page", () => {
 
         yield* advance(10_000);
         expect(tab.aldo.wakes).toBe(1);
-        expect(yield* Effect.promise(() => sent)).toBeNull();
+        tab.aldo.starts.delete("s0");
+        yield* advance(10_000);
+        expect(yield* Effect.promise(() => sent)).toEqual({ sequence: 0 });
         expect(tab.aldo.asksFor("s0")).toBe(1);
         expect(phase("s0")).toBe("connected");
       }),
@@ -979,7 +982,7 @@ describe("bringing a machine up from this page", () => {
         yield* advance(1_500);
         expect(tab.aldo.wakes).toBe(1);
         expect(tab.aldo.asksFor("s0")).toBe(1);
-        expect(yield* Effect.promise(() => sent)).toBeNull();
+        expect(yield* Effect.promise(() => sent)).toEqual({ sequence: 0 });
       }),
   );
 
@@ -1014,23 +1017,21 @@ describe("bringing a machine up from this page", () => {
       }),
   );
 
-  it.live(
-    "a message the page can send itself that Aldo gave up on: the page wakes the machine and sends it",
-    () =>
-      Effect.gen(function* () {
-        const tab = yield* page({ s0: "stopped" });
-        host.hold = (command) => {
-          tab.aldo.starts.set("s0", {
-            [command.threadId]: { kind: "message", state: "failed", detail: "It didn't start." },
-          });
-        };
-        const sent = send("s0");
-        yield* advance(1_500);
-        expect(yield* Effect.promise(() => sent)).toBeNull();
-        expect(tab.aldo.wakes).toBe(1);
-        expect(tab.aldo.asksFor("s0")).toBe(1);
-        expect(phase("s0")).toBe("connected");
-      }),
+  it.live("a held text message Aldo gave up on: the page reports it without bypassing Aldo", () =>
+    Effect.gen(function* () {
+      const tab = yield* page({ s0: "stopped" });
+      host.hold = (command) => {
+        tab.aldo.starts.set("s0", {
+          [command.threadId]: { kind: "message", state: "failed", detail: "It didn't start." },
+        });
+      };
+      const sent = send("s0").catch((cause: Error) => cause.message);
+      yield* advance(1_500);
+      expect(yield* Effect.promise(() => sent)).toBe("It didn't start.");
+      expect(tab.aldo.wakes).toBe(0);
+      expect(tab.aldo.asksFor("s0")).toBe(0);
+      expect(phase("s0")).toBe("available");
+    }),
   );
 
   it.live(

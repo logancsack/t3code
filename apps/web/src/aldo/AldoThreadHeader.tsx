@@ -26,6 +26,7 @@ interface ThreadProps {
   readonly title: string;
   readonly place: AldoPickedPlace | null;
   readonly working: boolean;
+  readonly stopped?: boolean;
   readonly titleEditor: ReactNode;
   /** Opens the thread's actions (rename, move, pin, archive…); drafts have none. */
   readonly onActions?: ((button: HTMLElement) => void) | undefined;
@@ -39,7 +40,12 @@ interface ThreadProps {
 function AldoThreadAppBar(props: ThreadProps) {
   const [open, setOpen] = useState(false);
   const project = aldoThreadProject(props.place);
-  const subtitle = [project?.name, props.working ? "Working" : null].filter(Boolean).join(" · ");
+  const subtitle = [
+    project?.name,
+    props.stopped ? "Stopped by you" : props.working ? "Working" : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
   const close = () => setOpen(false);
   return (
     <div className="flex min-w-0 flex-1 items-center gap-1">
@@ -136,13 +142,20 @@ export function AldoThreadHeader({
     environmentId: props.environmentId,
     threadId: props.threadId,
   });
+  const stopped =
+    home?.conversations.some(
+      (c) =>
+        c.thread.environmentId === props.environmentId &&
+        c.thread.threadId === props.threadId &&
+        c.state === "stopped",
+    ) ?? false;
   const threadRef = scopeThreadRef(props.environmentId, props.threadId);
   const openBrowser = () => useRightPanelStore.getState().open(threadRef, "workspaceBrowser");
 
   const layout = (controls: { gpu: ReactNode; preview: ReactNode; tools: ReactNode }) => (
     <>
       {phone ? (
-        <AldoThreadAppBar {...props} />
+        <AldoThreadAppBar {...props} stopped={stopped} working={props.working && !stopped} />
       ) : (
         <AldoThreadBreadcrumb
           key={`${props.environmentId}:${props.threadId}`}
@@ -151,7 +164,7 @@ export function AldoThreadHeader({
           place={props.place}
           environmentId={props.environmentId}
           threadId={props.threadId}
-          working={props.working}
+          working={props.working && !stopped}
           onActions={props.onActions}
         />
       )}
@@ -164,6 +177,11 @@ export function AldoThreadHeader({
           actionsClassName,
         )}
       >
+        {stopped && !phone ? (
+          <span className="text-muted-foreground text-xs" role="status">
+            Stopped by you
+          </span>
+        ) : null}
         {isServerThread ? (
           <AldoBrowsingChip
             environmentId={props.environmentId}

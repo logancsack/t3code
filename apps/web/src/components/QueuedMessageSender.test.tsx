@@ -28,6 +28,10 @@ vi.mock("../rpc/atomRegistry", () => ({
 }));
 vi.mock("../state/server", () => ({ environmentServerConfigsAtom: {} }));
 vi.mock("../aldo/dispatch", () => ({ aldoImagesGoInline: () => false }));
+vi.mock("../aldo/api", () => ({
+  isAldoCloud: true,
+  isAldoEnvironmentId: (id: string) => id.startsWith("aldo-"),
+}));
 vi.mock("../state/threads", () => ({
   threadEnvironment: {
     updateMetadata: "metadata",
@@ -60,8 +64,8 @@ const threadRef = scopeThreadRef(EnvironmentId.make("env-a"), ThreadId.make("thr
 const threadKey = scopedThreadKey(threadRef);
 const modelSelection = { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5" };
 
-function enqueue(overrides: Partial<QueuedComposerMessage> = {}) {
-  return useQueuedMessageStore.getState().enqueue(threadKey, {
+function enqueue(overrides: Partial<QueuedComposerMessage> = {}, key = threadKey) {
+  return useQueuedMessageStore.getState().enqueue(key, {
     prompt: "follow up",
     images: [],
     files: [],
@@ -182,6 +186,26 @@ describe("QueuedMessageSender", () => {
 });
 
 describe("sendQueuedMessage", () => {
+  it("timestamps an ordinary queued turn when sent", async () => {
+    const message = enqueue();
+    await sendQueuedMessage(threadRef, message.id);
+    const input = io.run.mock.calls[0]![2].input;
+    expect(Date.parse(input.createdAt)).toBeGreaterThan(Date.parse(message.createdAt));
+    expect(input).not.toHaveProperty("aldoUserInstructionAt");
+  });
+
+  it.each([false, true])(
+    "separates Aldo's stop boundary from the actual send time (Send now: %s)",
+    async (userAction) => {
+      const ref = scopeThreadRef(EnvironmentId.make("aldo-a"), ThreadId.make("thread-a"));
+      const message = enqueue({}, scopedThreadKey(ref));
+      await sendQueuedMessage(ref, message.id, userAction);
+      const input = io.run.mock.calls[0]![2].input;
+      expect(Date.parse(input.createdAt)).toBeGreaterThan(Date.parse(message.createdAt));
+      expect(input.aldoUserInstructionAt).toBe(userAction ? input.createdAt : message.createdAt);
+    },
+  );
+
   it("saves a mode changed before queueing, then starts the turn", async () => {
     io.shell = { ...io.shell, runtimeMode: "approval-required" };
     const message = enqueue();

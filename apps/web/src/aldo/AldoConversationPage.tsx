@@ -4,7 +4,8 @@
 // conversation, with what happened to the user's agents where it happened
 // (feed.logic.ts, AldoFeed.tsx), and what waits on the user where it came up, as
 // cards to answer in place (a plan to start, AldoPlanCard.tsx; the rest,
-// AldoUpNext.tsx), so nothing needs a view of its own. Then the composer.
+// AldoUpNext.tsx), so nothing needs a view of its own. At its end, Needs you,
+// then what finished and hasn't landed yet (AldoFinished.tsx). Then the composer.
 // Before anything's been said, the page is Aldo’s mark, one question and the
 // composer under it, which glides down to its place with the first message
 // (the same composer: what's typed and focus stay). Scrolled up, what arrives
@@ -35,6 +36,8 @@ import { AldoOpenContext } from "./AldoLiveCard";
 import { AldoPresence } from "./AldoPresence";
 import { AldoFrame } from "./AldoFrame";
 import { AldoUpNext } from "./AldoUpNext";
+import { AldoFinished } from "./AldoFinished";
+import { finishedResults } from "./finished.logic";
 import { settleAldoConversation, unsettleAldoConversation } from "./arrive";
 import { showAldoCards } from "./assistantApi";
 import { seedAldoComposer, useAldoAssistant } from "./assistantSession";
@@ -341,6 +344,8 @@ export function AldoConversationPage(props: {
       home ? (
         <>
           <AldoUpNext home={home} now={now} only={keys} placedAt={placedAt} />
+          {/* At the end, under what needs the user: what finished and hasn't landed yet. */}
+          {keys === null ? <AldoFinished home={home} now={now} /> : null}
           {computers
             .filter((c) => keys?.includes(c.key))
             .map((request) => (
@@ -351,6 +356,8 @@ export function AldoConversationPage(props: {
     [home, now, computers],
   );
   const waiting = useMemo(() => (home ? aldoWaitingCount(home, now) : 0), [home, now]);
+  // What finished and hasn't landed stays in view after its lines have left the feed.
+  const finished = useMemo(() => (home ? finishedResults(home, now).length : 0), [home, now]);
   // Nothing read yet, and the read failed: that's said, not taken for nothing to show.
   const unread = home === null && props.error !== null;
   // What they dismissed from Needs you keeps the header (and so the way to restore it).
@@ -363,6 +370,7 @@ export function AldoConversationPage(props: {
     feed.length === 0 &&
     placed.length === 0 &&
     waiting === 0 &&
+    finished === 0 &&
     dismissed === 0 &&
     !unread &&
     props.supported !== false;

@@ -54,6 +54,7 @@ export function AldoComputerRequest({ request }: { readonly request: ComputerReq
           disposable: request.computer.disposable,
           concurrentLimit: request.computer.concurrentLimit,
           extraHourlyUsd: request.computer.extraHourlyUsd,
+          ...(request.computer.forAccount ? { forAccount: true } : {}),
         })}
       </p>
       {error ? (

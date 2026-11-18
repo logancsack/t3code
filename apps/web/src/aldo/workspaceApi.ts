@@ -284,6 +284,19 @@ export async function mergeAldoPullRequest(
   });
 }
 
+/** Holds Aldo's own merge of a pull request (it waits for the user's), or lets it go; says whether it's held now. */
+export async function holdAldoMerge(
+  environmentId: string,
+  pr: { repo: string; number: number },
+  held: boolean,
+): Promise<boolean> {
+  const result = await api<{ held: boolean }>(
+    `/api/environments/${threadIdForEnvironment(environmentId)}/prs`,
+    { method: "PATCH", body: JSON.stringify({ repo: pr.repo, number: pr.number, held }) },
+  );
+  return result.held;
+}
+
 export async function stopAldoFollowThrough(
   environmentId: string,
   pr?: { repo: string; number: number },

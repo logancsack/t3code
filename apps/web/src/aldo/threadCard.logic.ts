@@ -42,6 +42,7 @@ export function stalledOf(
   c: AldoHomeConversation,
   now: number,
 ): Stalled | null {
+  if (c.state === "stopped") return null;
   if (queuedComputer(c)) return null;
   const held = home.upcoming.find(
     (d) =>
@@ -162,6 +163,8 @@ export function threadCardOf(
     };
   const routine = c.routine ? "Routine run · " : "";
   switch (c.state) {
+    case "stopped":
+      return { tone: "quiet", dot: "quiet", status: "Stopped by you", body: null, action: null };
     case "starting":
       return {
         tone: "quiet",

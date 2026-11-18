@@ -57,7 +57,7 @@ let queue: Promise<unknown> = Promise.resolve();
  */
 export async function saveAldoOnboarding(
   interests: ReadonlyArray<AldoInterest>,
-  options: { readonly revert?: boolean } = {},
+  options: { readonly revert?: boolean; readonly waitForSave?: boolean } = {},
 ): Promise<boolean> {
   const before = useAldoOnboarding.getState().onboarding;
   if (pending === 0) confirmed = before;
@@ -66,7 +66,9 @@ export async function saveAldoOnboarding(
     onboardedAt: before?.onboardedAt ?? new Date().toISOString(),
     interests,
   };
-  useAldoOnboarding.setState({ onboarding: shown });
+  // Keep the welcome mounted during its final save, so an error keeps the
+  // step and picks. Settings can still show a changed interest optimistically.
+  if (!options.waitForSave) useAldoOnboarding.setState({ onboarding: shown });
   const save = queue.then(() =>
     saveAldoInterests(interests).then(
       (saved) => {

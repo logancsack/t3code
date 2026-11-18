@@ -98,6 +98,8 @@ export interface AldoHomeConversation {
     readonly status: string;
     readonly why?: string;
     readonly askedAt?: string;
+    /** A yes is for the account, so later threads start it without asking (a newer Aldo). */
+    readonly forAccount?: boolean;
     readonly creditsPerHour: number;
   }>;
   readonly approvedPlan?: { readonly id: string; readonly at: string };
@@ -112,6 +114,7 @@ export interface AldoHomeConversation {
 }
 
 export interface AldoHomePullRequest {
+  readonly heldReason?: string;
   readonly chatDecision?: AldoChatDecision;
   readonly environmentId: string;
   readonly thread: AldoHomeTarget | null;
@@ -129,6 +132,11 @@ export interface AldoHomePullRequest {
   readonly greenSince: string | null;
   /** When Aldo merges it on its own, if nothing changes (the workspace's policy says so). */
   readonly mergesAt: string | null;
+  /**
+   * The user held Aldo's merge: it waits for theirs (`mergesAt` is null). Left
+   * out by an Aldo that can't hold one, so there's no Hold to offer.
+   */
+  readonly held?: boolean;
   readonly mergedAt: string | null;
   readonly updatedAt: string;
   /** The conversation checking it's live once it merged (a newer Aldo). */
@@ -208,6 +216,8 @@ export interface AldoPolicy {
  * used over theirs), with every repository they've worked in.
  */
 export interface AldoPolicyView {
+  /** New servers share one per-purchase limit and a separate monthly safety net. */
+  readonly spending?: { readonly scope: "account"; readonly monthlyLimit: number };
   readonly everywhere: AldoPolicy;
   readonly workspaces: ReadonlyArray<{
     readonly repos: ReadonlyArray<string>;
@@ -216,6 +226,8 @@ export interface AldoPolicyView {
   readonly repos: ReadonlyArray<string>;
   /** The rules this Aldo takes (its policy's keys); an older one doesn't say, and has none of the newer rules. */
   readonly rules?: ReadonlyArray<string>;
+  /** What applies where the user hasn't said (merging, reviews); an older Aldo has none, and its agents ask. */
+  readonly defaults?: AldoPolicy;
 }
 
 /** A rule to clear (["merge"]), or one entry of a rule kept by repository or kind of media. */
@@ -233,10 +245,19 @@ function isPolicyView(value: unknown): value is AldoPolicyView {
   );
 }
 
-/** Which rules Aldo takes is said only by a list of their names; anything else says nothing. */
+/**
+ * Which rules Aldo takes is said only by a list of their names, and its
+ * defaults only by a policy; anything else says nothing.
+ */
 function withRules(view: AldoPolicyView): AldoPolicyView {
-  const { rules, ...rest } = view;
-  return Array.isArray(rules) && rules.every((rule) => typeof rule === "string") ? view : rest;
+  const { rules, defaults, ...rest } = view;
+  return {
+    ...rest,
+    ...(Array.isArray(rules) && rules.every((rule) => typeof rule === "string") ? { rules } : {}),
+    ...(defaults !== null && typeof defaults === "object" && !Array.isArray(defaults)
+      ? { defaults }
+      : {}),
+  };
 }
 
 /** The user's rules for agents, or null from an Aldo that doesn't let them be edited here. */
@@ -387,6 +408,16 @@ export interface AldoApproval {
    * people or an event with no guests, and only from an Aldo that has rules.
    */
   readonly always?: string;
+  /**
+   * Ways to say why not, each a tap, while a step an agent asked to take
+   * waits ("Too expensive", "Bad timing"): the agent is told the one chosen and
+   * goes on from it. Only from an Aldo that passes reasons on; none otherwise.
+   */
+  readonly reasons?: ReadonlyArray<string>;
+  /** The first paid step can set an account-wide spending limit in US dollars. */
+  readonly spendingLimit?: true;
+  /** Why the user declined it, when they said. */
+  readonly reason?: string;
 }
 
 /** A rule the user made with "Always allow": agents do what it covers exactly without asking. */
@@ -400,11 +431,14 @@ export interface AldoApprovalRule {
 /**
  * Approves or discards one; says what was done. Aldo refuses (409) an email
  * whose draft changed since it was shown. `always` approves it and saves its
- * rule (`rule`, when that worked).
+ * rule (`rule`, when that worked). A discard can say why (`reason`, one of the
+ * approval's `reasons`): the agent that asked is told.
  */
 export async function decideAldoApproval(
   id: string,
   decision: "approve" | "discard" | "always",
+  reason?: string,
+  spendLimit?: number,
 ): Promise<{
   readonly approval: Omit<AldoApproval, "threadTitle">;
   readonly message: string;
@@ -412,7 +446,11 @@ export async function decideAldoApproval(
 }> {
   return api(`/api/approvals/${encodeURIComponent(id)}`, {
     method: "POST",
-    body: JSON.stringify({ decision }),
+    body: JSON.stringify({
+      decision,
+      ...(reason ? { reason } : {}),
+      ...(spendLimit !== undefined ? { spendLimit } : {}),
+    }),
   });
 }
 
@@ -519,6 +557,8 @@ export interface AldoHome {
       readonly repos: ReadonlyArray<string>;
       readonly policy: AldoPolicy;
     }>;
+    /** What applies where the user hasn't said; an older Aldo has none. */
+    readonly defaults?: AldoPolicy;
   };
 }
 
