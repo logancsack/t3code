@@ -10,26 +10,19 @@
 // agent asked to take can be declined with why, in a tap ("Don't, because…"):
 // the agent is told, and goes on from it, where Aldo offers reasons.
 
-import { CalendarPlusIcon, CircleCheckBigIcon, MailIcon, SparklesIcon } from "lucide-react";
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, lazy, Suspense, useMemo } from "react";
 
 import { Badge } from "../components/ui/badge";
 import { useNowMinute } from "../hooks/useNowMinute";
-import { Button } from "../components/ui/button";
 import { toastManager } from "../components/ui/toast";
-import { requestConfirmDialog } from "../confirmDialog";
 import { cn } from "~/lib/utils";
 import { aldoApprovalRulesChanged } from "./AldoApprovalRules";
 import { Section } from "./AldoHomeBoard";
-import { ThreadLink } from "./AldoHomeInbox";
 import { AgentMarkdown, Quoted } from "./AldoQuoted";
-import { AldoApiError } from "./api";
 import { removeAldoApprovalRule, type AldoApproval } from "./homeApi";
-import { refreshAldoHome, sendAldoApproval, useAldoHomeFeed, useAldoHomeRead } from "./homeFeed";
+import { refreshAldoHome, useAldoHomeFeed, useAldoHomeRead } from "./homeFeed";
 import {
-  APPROVAL_KIND_LABEL,
   approvalOutcome,
-  approvalQuestion,
   decidedLately,
   threadApprovals,
   threadAwaitsApproval,
@@ -37,15 +30,9 @@ import {
 } from "./approvals.logic";
 import { relativeTime } from "./home.logic";
 import { addedWords, wordDiff } from "./diff.logic";
+import type { ApprovalCardProps } from "./AldoApprovalCard";
 
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
-
-const KIND_ICON = {
-  email: MailIcon,
-  event: CalendarPlusIcon,
-  start: SparklesIcon,
-  confirm: CircleCheckBigIcon,
-} as const;
 
 export function ApprovalsSection(props: {
   readonly approvals: ReadonlyArray<AldoApproval>;
@@ -175,173 +162,21 @@ export function toastAldoRule(
  * every card showing it at the tap (homeFeed.ts sendAldoApproval); in the thread
  * that asked (`inThread`) it doesn't link to that thread.
  */
-export function ApprovalCard(props: {
-  readonly approval: AldoApproval;
-  readonly now: number;
-  readonly onActed: () => void;
-  readonly inThread?: boolean;
-}) {
-  const a = props.approval;
-  const Icon = KIND_ICON[a.kind];
-  const sending = a.status === "sending";
-  const reasons = a.reasons ?? [];
-  // Saying why not: its choices take the buttons' place until one is picked, or Back.
-  const [sayingWhy, setSayingWhy] = useState(false);
-  const whyDoor = useRef<HTMLButtonElement>(null);
-  const firstReason = useRef<HTMLButtonElement>(null);
-  const wasSayingWhy = useRef(false);
-  useEffect(() => {
-    // Focus follows the swap, so the keyboard stays where the choice is.
-    if (sayingWhy) firstReason.current?.focus();
-    else if (wasSayingWhy.current) whyDoor.current?.focus();
-    wasSayingWhy.current = sayingWhy;
-  }, [sayingWhy]);
-  const decide = async (decision: "approve" | "discard" | "always", reason?: string) => {
-    if (decision === "discard" && a.kind === "email") {
-      const confirmed = await (requestConfirmDialog(
-        "Discard this draft? It's deleted from your drafts, and isn't sent.",
-        { variant: "destructive" },
-      ) ?? Promise.resolve(true));
-      if (!confirmed) return;
-    }
-    if (decision === "always") {
-      const confirmed = await (requestConfirmDialog(
-        `${a.always}, from now on? This one is approved now too, and you can undo the rule.`,
-      ) ?? Promise.resolve(true));
-      if (!confirmed) return;
-    }
-    try {
-      const { message, rule } = await sendAldoApproval(a, decision, reason);
-      if (rule) toastAldoRule(message, rule);
-      else toastManager.add({ type: "success", title: message });
-    } catch (cause) {
-      // A draft that changed since it was shown comes back as it is now, to look at again.
-      const changed = cause instanceof AldoApiError && cause.status === 409;
-      toastManager.add({
-        type: changed ? "warning" : "error",
-        title: changed ? "Look again" : "Couldn't do that",
-        description: messageOf(cause),
-      });
-    } finally {
-      props.onActed();
-    }
-  };
+const FullApprovalCard = lazy(() =>
+  import("./AldoApprovalCard").then((m) => ({ default: m.ApprovalCard })),
+);
+
+export function ApprovalCard(props: ApprovalCardProps) {
   return (
-    <li className="list-none rounded-xl border border-border/60 bg-card/30 p-3.5">
-      <div className="flex items-start gap-2.5">
-        <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-muted-foreground text-xs">
-            <Badge variant="warning" size="sm">
-              {APPROVAL_KIND_LABEL[a.kind]}
-            </Badge>
-            {a.thread && !props.inThread ? (
-              <ThreadLink target={a.thread} className="min-w-0 truncate hover:text-foreground">
-                {a.kind === "start" ? "Started" : "From"} {a.threadTitle ?? "its thread"}
-              </ThreadLink>
-            ) : a.kind === "start" && !a.thread ? (
-              <span>From Aldo</span>
-            ) : null}
-            <span>· {relativeTime(a.createdAt, props.now)}</span>
-          </div>
-          <p className="mt-1 font-medium text-sm">{approvalQuestion(a)}</p>
-          {a.fields.length > 0 ? (
-            <dl className="mt-1.5 grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 text-xs">
-              {a.fields.map((f) => (
-                <div key={f.label} className="contents">
-                  <dt className="text-muted-foreground">{f.label}</dt>
-                  <dd className="min-w-0 break-words">{f.value}</dd>
-                </div>
-              ))}
-            </dl>
-          ) : (
-            <p className="mt-0.5 text-muted-foreground text-xs">{a.summary}</p>
-          )}
-          {a.body ? (
-            <div className="mt-2 flex flex-col gap-1 rounded-lg border border-border/50 bg-background/40 px-2.5 py-2">
-              <ApprovalBody approval={a} lines={6} className="text-sm" />
-            </div>
-          ) : null}
-          {a.failed && a.result ? (
-            <p className="mt-2 text-destructive-foreground text-xs">{a.result}</p>
-          ) : null}
-          {sayingWhy ? (
-            <div
-              role="group"
-              aria-label="Why not?"
-              className="mt-3 flex flex-col gap-2"
-              onKeyDown={(event) => {
-                if (event.key !== "Escape") return;
-                event.stopPropagation();
-                setSayingWhy(false);
-              }}
-            >
-              <p className="text-muted-foreground text-xs">
-                Why not? The agent is told, and goes on from there.
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {reasons.map((reason, i) => (
-                  <Button
-                    key={reason}
-                    ref={i === 0 ? firstReason : undefined}
-                    size="sm"
-                    variant="outline"
-                    disabled={sending}
-                    onClick={() => void decide("discard", reason)}
-                  >
-                    {reason}
-                  </Button>
-                ))}
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  disabled={sending}
-                  onClick={() => setSayingWhy(false)}
-                >
-                  Back
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <div className="mt-3 flex flex-wrap gap-2">
-              <Button size="sm" disabled={sending} onClick={() => void decide("approve")}>
-                {sending ? "Working…" : a.approveLabel}
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={sending}
-                onClick={() => void decide("discard")}
-              >
-                {a.discardLabel}
-              </Button>
-              {a.always ? (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  disabled={sending}
-                  onClick={() => void decide("always")}
-                  aria-label={`${a.approveLabel}, and always allow: ${a.always}`}
-                >
-                  Always allow…
-                </Button>
-              ) : null}
-              {reasons.length > 0 ? (
-                <Button
-                  ref={whyDoor}
-                  size="sm"
-                  variant="ghost"
-                  disabled={sending}
-                  onClick={() => setSayingWhy(true)}
-                >
-                  {a.discardLabel}, because…
-                </Button>
-              ) : null}
-            </div>
-          )}
-        </div>
-      </div>
-    </li>
+    <Suspense
+      fallback={
+        <li className="list-none p-3.5 text-sm" role="status">
+          Loading approval…
+        </li>
+      }
+    >
+      <FullApprovalCard key={props.approval.id} {...props} />
+    </Suspense>
   );
 }
 
