@@ -1,3 +1,4 @@
+import { PROVIDER_SEND_TURN_MAX_INPUT_CHARS } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
@@ -14,7 +15,11 @@ const TurnInstructions = Schema.fromJsonString(
 
 const decode = Schema.decodeOption(TurnInstructions);
 
-export function parseTurnInstructions(value: string) {
+export function parseTurnInstructions(value: string, baseLength = 0) {
   if (value.length > 16_000) return null;
-  return Option.getOrNull(decode(value));
+  const instructions = Option.getOrNull(decode(value));
+  return instructions &&
+    baseLength + 2 + instructions.text.length <= PROVIDER_SEND_TURN_MAX_INPUT_CHARS
+    ? instructions
+    : null;
 }

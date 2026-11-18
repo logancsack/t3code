@@ -909,7 +909,7 @@ describe("ProviderCommandReactor", () => {
     }),
   );
 
-  it.each(["valid", "invalid", "absent"] as const)(
+  it.each(["valid", "invalid", "absent", "near-limit"] as const)(
     "records exact dispatch context with an %s optional instruction file",
     async (format) => {
       const sent = Effect.runSync(Deferred.make<void>());
@@ -923,7 +923,7 @@ describe("ProviderCommandReactor", () => {
       if (format !== "absent")
         NodeFS.writeFileSync(
           NodePath.join(harness.stateDir, "turn-instructions.json"),
-          format === "valid"
+          format === "valid" || format === "near-limit"
             ? JSON.stringify({
                 contract: "completion",
                 version: 1,
@@ -933,6 +933,7 @@ describe("ProviderCommandReactor", () => {
         );
       const now = "2026-01-01T00:00:00.000Z",
         threadId = ThreadId.make("thread-1");
+      const messageText = format === "near-limit" ? "x".repeat(120_000) : "Finish the task.";
       const command = {
         type: "thread.turn.start" as const,
         commandId: CommandId.make("with-optional-context"),
@@ -940,7 +941,7 @@ describe("ProviderCommandReactor", () => {
         message: {
           messageId: asMessageId("context-message"),
           role: "user" as const,
-          text: "Finish the task.",
+          text: messageText,
           attachments: [],
         },
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
@@ -955,7 +956,7 @@ describe("ProviderCommandReactor", () => {
           input:
             format === "valid"
               ? "Finish the task.\n\nEnd with the agreed completion format."
-              : "Finish the task.",
+              : messageText,
         }),
       );
       const before = Option.getOrThrow(
@@ -970,9 +971,7 @@ describe("ProviderCommandReactor", () => {
         format === "valid" ? { contract: "completion", version: 1 } : undefined,
       );
       // The durable message stays the user's words. Dispatch context is separate.
-      expect(before.messages.find((m) => m.id === "context-message")?.text).toBe(
-        "Finish the task.",
-      );
+      expect(before.messages.find((m) => m.id === "context-message")?.text).toBe(messageText);
       NodeFS.writeFileSync(NodePath.join(harness.stateDir, "turn-instructions.json"), "{}");
       await harness.runEffect(harness.engine.dispatch(command));
       await harness.drain();
@@ -985,6 +984,90 @@ describe("ProviderCommandReactor", () => {
       expect(harness.sendTurn).toHaveBeenCalledTimes(1);
     },
   );
+
+  it("does not report cached reasoning options that were not sent", async () => {
+    const harness = await createHarness({
+      threadModelSelection: {
+        instanceId: ProviderInstanceId.make("codex"),
+        model: "gpt-5-codex",
+        options: [{ id: "reasoningEffort", value: "high" }],
+      },
+    });
+    await harness.runEffect(harness.engine.dispatch(turnStart("no-explicit-options")));
+    await harness.runEffect(harness.drainTurnStarts);
+    const detail = Option.getOrThrow(
+      await harness.runEffect(harness.snapshotQuery.getThreadDetailById(ThreadId.make("thread-1"))),
+    );
+    expect(harness.sendTurn).toHaveBeenCalledTimes(1);
+    expect(harness.sendTurn.mock.calls[0]?.[0]).not.toHaveProperty("modelSelection");
+    const dispatch = detail.activities.find((a) => a.kind === "provider.turn.dispatched");
+    expect(dispatch?.payload).toMatchObject({
+      modelSelection: { instanceId: "codex", model: "gpt-5-codex" },
+    });
+    expect((dispatch?.payload as { modelSelection?: object })?.modelSelection).not.toHaveProperty(
+      "options",
+    );
+  });
+
+  it("records new retry context once per attempt while retaining the original message", async () => {
+    const harness = await createHarness();
+    const file = NodePath.join(harness.stateDir, "turn-instructions.json");
+    NodeFS.mkdirSync(harness.stateDir, { recursive: true });
+    NodeFS.writeFileSync(
+      file,
+      JSON.stringify({ contract: "completion", version: 1, text: "Use format one." }),
+    );
+    await harness.runEffect(harness.engine.dispatch(turnStart("original-retry-message")));
+    await harness.runEffect(harness.drainTurnStarts);
+    await harness.runEffect(
+      harness.engine.dispatch(sessionSet("retry-running", "running", "turn-1")),
+    );
+    const failure = sessionSet("retry-error", "ready", null, 2);
+    if (failure.type !== "thread.session.set") throw new Error("Expected session command");
+    await harness.runEffect(
+      harness.engine.dispatch({
+        ...failure,
+        session: { ...failure.session, status: "error", lastError: "Temporary failure" },
+      }),
+    );
+    await harness.drain();
+    NodeFS.writeFileSync(
+      file,
+      JSON.stringify({ contract: "completion", version: 2, text: "Use format two." }),
+    );
+    const retry = {
+      type: "thread.turn.retry" as const,
+      commandId: CommandId.make("retry-original-with-new-context"),
+      threadId: ThreadId.make("thread-1"),
+      turnId: asTurnId("turn-1"),
+      createdAt: secondsIn(3),
+    };
+    await harness.runEffect(harness.engine.dispatch(retry));
+    await harness.runEffect(harness.drainTurnStarts);
+    await harness.runEffect(harness.engine.dispatch(retry));
+    await harness.runEffect(harness.drainTurnStarts);
+    const detail = Option.getOrThrow(
+      await harness.runEffect(harness.snapshotQuery.getThreadDetailById(ThreadId.make("thread-1"))),
+    );
+    const attempts = detail.activities.filter((a) => a.kind === "provider.turn.dispatched");
+    expect(attempts).toHaveLength(2);
+    expect(new Set(attempts.map((a) => a.id)).size).toBe(2);
+    expect(attempts.map((a) => a.payload)).toEqual([
+      expect.objectContaining({
+        requestId: "original-retry-message",
+        instructions: { contract: "completion", version: 1 },
+      }),
+      expect.objectContaining({
+        requestId: "original-retry-message",
+        instructions: { contract: "completion", version: 2 },
+      }),
+    ]);
+    expect(detail.messages.filter((m) => m.role === "user")).toHaveLength(1);
+    expect(harness.sendTurn).toHaveBeenCalledTimes(2);
+    expect(harness.sendTurn.mock.calls[1]?.[0]).toMatchObject({
+      input: "request original-retry-message\n\nUse format two.",
+    });
+  });
 
   it("reacts to thread.turn.start by ensuring session and sending provider turn", async () => {
     const harness = await createHarness();

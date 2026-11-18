@@ -902,6 +902,7 @@ const make = Effect.gen(function* () {
     readonly threadId: ThreadId;
     readonly messageText: string;
     readonly messageId: MessageId;
+    readonly attempt: number;
     readonly attachments?: ReadonlyArray<ChatAttachment>;
     readonly modelSelection?: ModelSelection;
     readonly interactionMode?: "default" | "plan";
@@ -1003,14 +1004,15 @@ const make = Effect.gen(function* () {
       threadModelSelections.set(input.threadId, input.modelSelection);
     }
     const normalizedAttachments = [...continuationAttachments, ...(input.attachments ?? [])];
+    const baseInput = toNonEmptyProviderInput(continuationContext + input.messageText);
     const instructions = yield* fileSystem
       .readFileString(path.join(config.stateDir, "turn-instructions.json"))
       .pipe(
-        Effect.map(parseTurnInstructions),
+        Effect.map((value) => parseTurnInstructions(value, baseInput?.length ?? 0)),
         Effect.orElseSucceed(() => null),
       );
     const normalizedInput = toNonEmptyProviderInput(
-      continuationContext + input.messageText + (instructions ? `\n\n${instructions.text}` : ""),
+      (baseInput ?? "") + (instructions ? `\n\n${instructions.text}` : ""),
     );
     const activeSession = yield* providerService
       .listSessions()
@@ -1045,21 +1047,18 @@ const make = Effect.gen(function* () {
     // This records supply, not model acknowledgement or task completion.
     yield* orchestrationEngine.dispatch({
       type: "thread.activity.append",
-      commandId: CommandId.make(`turn-dispatch:${input.messageId}`),
+      commandId: CommandId.make(`turn-dispatch:${input.attempt}`),
       threadId: input.threadId,
       activity: {
-        id: EventId.make(`turn-dispatch:${input.messageId}`),
+        id: EventId.make(`turn-dispatch:${input.attempt}`),
         tone: "info",
         kind: "provider.turn.dispatched",
         summary: "Turn sent to provider",
         payload: {
           requestId: input.messageId,
           modelSelection: modelForTurn ?? {
-            ...requestedModelSelection,
-            ...(activeSession?.providerInstanceId
-              ? { instanceId: activeSession.providerInstanceId }
-              : {}),
-            ...(activeSession?.model ? { model: activeSession.model } : {}),
+            instanceId: activeSession?.providerInstanceId ?? requestedModelSelection.instanceId,
+            model: activeSession?.model ?? requestedModelSelection.model,
           },
           ...(instructions
             ? { instructions: { contract: instructions.contract, version: instructions.version } }
@@ -1692,6 +1691,7 @@ const make = Effect.gen(function* () {
     const sendTurnRequest = yield* buildSendTurnRequestForThread({
       threadId: event.payload.threadId,
       messageId: event.payload.messageId,
+      attempt: event.sequence,
       messageText: projectComposerContextForProvider({
         text: message.text,
         records: message.context?.records ?? [],
