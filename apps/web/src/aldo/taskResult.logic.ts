@@ -114,14 +114,29 @@ export function redactTaskResult(result: TaskResult, hide: (text: string) => str
 
 /** A final question is waiting even when no formal question tool was used.
  * Offered next steps, quoted material and code are not requests to the user. */
-export function endsOnQuestion(value: string): boolean {
+export function endsOnRequest(value: string): boolean {
   const prose = withoutTaskResult(value.replace(NEXT_BLOCK, "$1"))
     .replace(/(^|\n)[ \t]*(`{3,}|~{3,})[^\n]*\n[\s\S]*?\n[ \t]*\2[ \t]*(?=\n|$)/g, "$1")
     .split("\n")
-    .filter((line) => !/^\s*>/.test(line))
+    .filter(
+      (line) => !/^\s*>/.test(line) && !/^\s*!?\[[^\]]+\]\([^)]*\)(?:\s*[-—–].*)?\s*$/.test(line),
+    )
     .join("\n")
     .trim();
-  return /[?？][\s*_~)\]”’"']*$/.test(prose);
+  if (/[?？][\s*_~)\]”’"']*$/.test(prose)) return true;
+  const ending = prose.split(/\n\s*\n/).at(-1) ?? "";
+  // A question followed by its terms, or an explicit final instruction to
+  // the user, is still an ask. Quoted text, code and follow-up chips above
+  // remain excluded. Do not infer an ask just from "not checked" or a URL.
+  return (
+    /\b(?:(?:do|would|could|can|will) you|(?:should|may|can) I)\b[^?？]*[?？]/i.test(ending) ||
+    /(?:^|[.!]\s+)(?:please (?:provide|send|confirm|approve|choose|tell)|let me know|tell me|reply (?:yes|with)|say ["“]?(?:yes|approve))\b/i.test(
+      ending,
+    ) ||
+    /\b(?:waiting|stopping|paused|blocked)\b[^.!?]{0,100}\b(?:your (?:yes|approval|confirmation|answer)|you (?:approve|confirm|answer))\b/i.test(
+      ending,
+    )
+  );
 }
 
 /** Only the last report, placed at the end before optional next steps,
@@ -158,7 +173,7 @@ export function taskResultOf(value: string): TaskResult | null {
     decided: [],
     problem: "The completion report is invalid; completion is unverified.",
   };
-  if (endsOnQuestion(source) && result.state === "finished") {
+  if (endsOnRequest(source) && result.state === "finished") {
     result.state = "blocked_on_user";
     result.problem = "The reply ends on a request, so the task is waiting rather than finished.";
   }

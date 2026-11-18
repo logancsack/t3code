@@ -2,7 +2,7 @@ import * as NodeAssert from "node:assert/strict";
 import { it as test } from "vite-plus/test";
 import {
   checkedTaskResult,
-  endsOnQuestion,
+  endsOnRequest,
   taskResultOf,
   withoutTaskResult,
 } from "./taskResult.logic";
@@ -55,7 +55,7 @@ test("a finished claim cannot pass with missing, unmet, untyped or empty evidenc
   NodeAssert.equal(checkedTaskResult({ ...result(), checked: ["x".repeat(801)] }), null);
 });
 test("a closing question counts as waiting; code, quotes and suggested follow-ups do not", () => {
-  NodeAssert.equal(endsOnQuestion("Which prospect should I use?"), true);
+  NodeAssert.equal(endsOnRequest("Which prospect should I use?"), true);
   NodeAssert.equal(
     taskResultOf("Can you supply the missing fact?\n" + report(result()))?.state,
     "blocked_on_user",
@@ -66,5 +66,24 @@ test("a closing question counts as waiting; code, quotes and suggested follow-up
     "Done.\n```aldo-next\nDeploy it?\n```",
     "The answer is 42.",
   ])
-    NodeAssert.equal(endsOnQuestion(value), false);
+    NodeAssert.equal(endsOnRequest(value), false);
+});
+
+test("a final request stays waiting when its terms or a link follow it", () => {
+  for (const words of [
+    "Do you approve merging this? Deployment needs separate approval.",
+    "Please provide that log. Nothing was pushed.\n\n[Findings](https://example.com/report) — only you can open it.",
+    "I'm stopping here until you approve.",
+    "Waiting for your yes.",
+  ]) {
+    NodeAssert.equal(endsOnRequest(words), true, words);
+    NodeAssert.equal(taskResultOf(words + "\n" + report(result()))?.state, "blocked_on_user");
+  }
+  for (const words of [
+    "Production is not checked.",
+    "Say what done means first is a heading.",
+    "The report includes the quote:\n> Do you approve it?",
+    "The deployment needs a separate check.",
+  ])
+    NodeAssert.equal(endsOnRequest(words), false, words);
 });
