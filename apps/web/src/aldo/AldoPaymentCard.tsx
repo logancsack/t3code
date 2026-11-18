@@ -8,7 +8,7 @@
 // (AldoPaymentWaiting). Never the card itself: only its last four digits.
 
 import { ArrowUpRightIcon, CheckIcon, CreditCardIcon, XIcon } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 
 import { cn } from "~/lib/utils";
 import { ThreadLink } from "./AldoHomeInbox";
@@ -69,10 +69,6 @@ export function ApproveInLink(props: { readonly payment: AldoPayment; readonly n
   const [asking, setAsking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const inFlight = useRef(false);
-  const approvalRef = useRef<HTMLAnchorElement>(null);
-  useEffect(() => {
-    if (renewed?.approvalUrl) approvalRef.current?.focus();
-  }, [renewed]);
   const p = renewed ?? props.payment;
   const words = paymentWords(p, props.now);
   if (paymentCanAskAgain(p, props.now))
@@ -95,8 +91,19 @@ export function ApproveInLink(props: { readonly payment: AldoPayment; readonly n
             setAsking(true);
             setError(null);
             try {
-              setRenewed(await retryAldoPayment(p.retryFrom));
-              void refreshAldoHome();
+              const next = await retryAldoPayment(p.retryFrom);
+              setRenewed(next);
+              await refreshAldoHome();
+              // The refreshed Home can replace this card with its new request.
+              // Move focus after that render, rather than to a departing link.
+              requestAnimationFrame(() => {
+                if (next.approvalUrl)
+                  Array.from(document.links)
+                    .find(
+                      (link) => link.href === next.approvalUrl && link.getClientRects().length > 0,
+                    )
+                    ?.focus();
+              });
             } catch (e) {
               setError(e instanceof Error ? e.message : "Couldn't request approval. Try again.");
               void refreshAldoHome();
@@ -120,7 +127,6 @@ export function ApproveInLink(props: { readonly payment: AldoPayment; readonly n
           : words.line}
       </p>
       <a
-        ref={approvalRef}
         href={p.approvalUrl}
         target="_blank"
         rel="noopener noreferrer"
