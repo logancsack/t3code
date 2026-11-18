@@ -18,6 +18,23 @@ beforeEach(() => {
 });
 
 describe("answering the welcome", () => {
+  it("can keep the welcome mounted until its save succeeds, including after a failed attempt", async () => {
+    let finish!: (value: unknown) => void;
+    save.mockRejectedValueOnce(new Error("offline"));
+    expect(await saveAldoOnboarding(["research"], { waitForSave: true, revert: true })).toBe(false);
+    expect(useAldoOnboarding.getState().onboarding).toEqual(waiting);
+    save.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const saved = saveAldoOnboarding(["research"], { waitForSave: true, revert: true });
+    expect(aldoWelcomeShows(useAldoOnboarding.getState().onboarding)).toBe(true);
+    finish({ onboardedAt: at, interests: ["research"] });
+    expect(await saved).toBe(true);
+    expect(aldoWelcomeShows(useAldoOnboarding.getState().onboarding)).toBe(false);
+    expect(useAldoOnboarding.getState().onboarding?.interests).toEqual(["research"]);
+  });
   it("ends it at once, then keeps what Aldo kept", async () => {
     let finish!: (value: unknown) => void;
     save.mockReturnValueOnce(new Promise((resolve) => (finish = resolve)));

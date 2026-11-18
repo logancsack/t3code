@@ -27,7 +27,16 @@ import {
   SparklesIcon,
   SquarePenIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 
 import { Button } from "../components/ui/button";
 import { Group, GroupSeparator } from "../components/ui/group";
@@ -92,12 +101,12 @@ import {
 import { loadAldoBrief } from "./briefFeed";
 import { morphIntoThread } from "./morph";
 import { setAldoUnderTheHood, useAldoSimple, useAldoUnderTheHood } from "./simpleMode";
-import { AldoWelcome } from "./AldoWelcome";
 import { useAldoOnboardingState } from "./onboarding";
 import { aldoWelcomeShows } from "./onboarding.logic";
 import { useIsMobile } from "../hooks/useMediaQuery";
 
 const LAST_SEEN_KEY = "aldo:home:seen";
+const AldoWelcome = lazy(() => import("./AldoWelcome").then((m) => ({ default: m.AldoWelcome })));
 /** Shows "now" moving: elapsed times tick without a fetch. */
 const TICK_MS = 30_000;
 
@@ -168,7 +177,15 @@ export function AldoHome() {
   if (aldoWelcomeShows(onboarding))
     return (
       <SidebarInset className="h-dvh bg-background">
-        <AldoWelcome />
+        <Suspense
+          fallback={
+            <p role="status" className="p-6 text-muted-foreground">
+              Loading welcome…
+            </p>
+          }
+        >
+          <AldoWelcome />
+        </Suspense>
       </SidebarInset>
     );
   if (!ready) return <SidebarInset className="h-dvh bg-background" aria-busy />;
