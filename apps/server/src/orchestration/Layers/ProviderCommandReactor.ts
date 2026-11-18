@@ -1,4 +1,5 @@
 import { ServerConfig } from "../../config.ts";
+import { parseTurnInstructions } from "../turnInstructions.ts";
 import { withWorkspaceLease } from "../../workspace/workspaceLease.ts";
 import {
   type ChatAttachment,
@@ -900,6 +901,7 @@ const make = Effect.gen(function* () {
   const buildSendTurnRequestForThread = Effect.fnUntraced(function* (input: {
     readonly threadId: ThreadId;
     readonly messageText: string;
+    readonly messageId: MessageId;
     readonly attachments?: ReadonlyArray<ChatAttachment>;
     readonly modelSelection?: ModelSelection;
     readonly interactionMode?: "default" | "plan";
@@ -1001,7 +1003,15 @@ const make = Effect.gen(function* () {
       threadModelSelections.set(input.threadId, input.modelSelection);
     }
     const normalizedAttachments = [...continuationAttachments, ...(input.attachments ?? [])];
-    const normalizedInput = toNonEmptyProviderInput(continuationContext + input.messageText);
+    const instructions = yield* fileSystem
+      .readFileString(path.join(config.stateDir, "turn-instructions.json"))
+      .pipe(
+        Effect.map(parseTurnInstructions),
+        Effect.orElseSucceed(() => null),
+      );
+    const normalizedInput = toNonEmptyProviderInput(
+      continuationContext + input.messageText + (instructions ? `\n\n${instructions.text}` : ""),
+    );
     const activeSession = yield* providerService
       .listSessions()
       .pipe(
@@ -1030,6 +1040,36 @@ const make = Effect.gen(function* () {
           : requestedModelSelection
         : input.modelSelection;
 
+    // Persist the selection and context actually prepared for this message,
+    // before sending. Later model changes and server restarts cannot rewrite it.
+    // This records supply, not model acknowledgement or task completion.
+    yield* orchestrationEngine.dispatch({
+      type: "thread.activity.append",
+      commandId: CommandId.make(`turn-dispatch:${input.messageId}`),
+      threadId: input.threadId,
+      activity: {
+        id: yield* serverEventId(),
+        tone: "info",
+        kind: "provider.turn.dispatched",
+        summary: "Turn sent to provider",
+        payload: {
+          requestId: input.messageId,
+          modelSelection: modelForTurn ?? {
+            ...requestedModelSelection,
+            ...(activeSession?.providerInstanceId
+              ? { instanceId: activeSession.providerInstanceId }
+              : {}),
+            ...(activeSession?.model ? { model: activeSession.model } : {}),
+          },
+          ...(instructions
+            ? { instructions: { contract: instructions.contract, version: instructions.version } }
+            : {}),
+        },
+        turnId: null,
+        createdAt: input.createdAt,
+      },
+      createdAt: input.createdAt,
+    });
     return {
       threadId: input.threadId,
       ...(normalizedInput ? { input: normalizedInput } : {}),
@@ -1651,6 +1691,7 @@ const make = Effect.gen(function* () {
     }
     const sendTurnRequest = yield* buildSendTurnRequestForThread({
       threadId: event.payload.threadId,
+      messageId: event.payload.messageId,
       messageText: projectComposerContextForProvider({
         text: message.text,
         records: message.context?.records ?? [],

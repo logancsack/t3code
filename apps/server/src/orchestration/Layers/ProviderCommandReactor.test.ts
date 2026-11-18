@@ -909,6 +909,83 @@ describe("ProviderCommandReactor", () => {
     }),
   );
 
+  it.each(["valid", "invalid", "absent"] as const)(
+    "records exact dispatch context with an %s optional instruction file",
+    async (format) => {
+      const sent = Effect.runSync(Deferred.make<void>());
+      const harness = await createHarness({
+        sendTurnEffect: () =>
+          Deferred.succeed(sent, undefined).pipe(
+            Effect.as({ threadId: ThreadId.make("thread-1"), turnId: asTurnId("turn-1") }),
+          ),
+      });
+      NodeFS.mkdirSync(harness.stateDir, { recursive: true });
+      if (format !== "absent")
+        NodeFS.writeFileSync(
+          NodePath.join(harness.stateDir, "turn-instructions.json"),
+          format === "valid"
+            ? JSON.stringify({
+                contract: "completion",
+                version: 1,
+                text: "End with the agreed completion format.",
+              })
+            : "not JSON",
+        );
+      const now = "2026-01-01T00:00:00.000Z",
+        threadId = ThreadId.make("thread-1");
+      const command = {
+        type: "thread.turn.start" as const,
+        commandId: CommandId.make("with-optional-context"),
+        threadId,
+        message: {
+          messageId: asMessageId("context-message"),
+          role: "user" as const,
+          text: "Finish the task.",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required" as const,
+        createdAt: now,
+      };
+      await harness.runEffect(harness.engine.dispatch(command));
+      await harness.drain();
+      await harness.runEffect(Deferred.await(sent));
+      expect(harness.sendTurn).toHaveBeenCalledWith(
+        expect.objectContaining({
+          input:
+            format === "valid"
+              ? "Finish the task.\n\nEnd with the agreed completion format."
+              : "Finish the task.",
+        }),
+      );
+      const before = Option.getOrThrow(
+        await harness.runEffect(harness.snapshotQuery.getThreadDetailById(threadId)),
+      );
+      const trace = before.activities.find((a) => a.kind === "provider.turn.dispatched");
+      expect(trace?.payload).toMatchObject({
+        requestId: "context-message",
+        modelSelection: { instanceId: "codex", model: "gpt-5-codex" },
+      });
+      expect((trace?.payload as { instructions?: unknown } | undefined)?.instructions).toEqual(
+        format === "valid" ? { contract: "completion", version: 1 } : undefined,
+      );
+      // The durable message stays the user's words. Dispatch context is separate.
+      expect(before.messages.find((m) => m.id === "context-message")?.text).toBe(
+        "Finish the task.",
+      );
+      NodeFS.writeFileSync(NodePath.join(harness.stateDir, "turn-instructions.json"), "{}");
+      await harness.runEffect(harness.engine.dispatch(command));
+      await harness.drain();
+      const after = Option.getOrThrow(
+        await harness.runEffect(harness.snapshotQuery.getThreadDetailById(threadId)),
+      );
+      expect(after.activities.filter((a) => a.kind === "provider.turn.dispatched")).toEqual([
+        trace,
+      ]);
+      expect(harness.sendTurn).toHaveBeenCalledTimes(1);
+    },
+  );
+
   it("reacts to thread.turn.start by ensuring session and sending provider turn", async () => {
     const harness = await createHarness();
     const now = "2026-01-01T00:00:00.000Z";
@@ -4774,7 +4851,7 @@ describe("ProviderCommandReactor", () => {
       ),
     );
 
-    await Effect.runPromise(
+    await harness.runEffect(
       harness.engine.dispatch({
         type: "thread.session.set",
         commandId: CommandId.make("cmd-session-set-for-approval-error"),
@@ -4792,7 +4869,7 @@ describe("ProviderCommandReactor", () => {
       }),
     );
 
-    await Effect.runPromise(
+    await harness.runEffect(
       harness.engine.dispatch({
         type: "thread.activity.append",
         commandId: CommandId.make("cmd-approval-requested"),
@@ -4813,7 +4890,7 @@ describe("ProviderCommandReactor", () => {
       }),
     );
 
-    await Effect.runPromise(
+    await harness.runEffect(
       harness.engine.dispatch({
         type: "thread.approval.respond",
         commandId: CommandId.make("cmd-approval-respond-stale"),
@@ -4869,7 +4946,7 @@ describe("ProviderCommandReactor", () => {
       ),
     );
 
-    await Effect.runPromise(
+    await harness.runEffect(
       harness.engine.dispatch({
         type: "thread.session.set",
         commandId: CommandId.make("cmd-session-set-for-user-input-error"),
@@ -4887,7 +4964,7 @@ describe("ProviderCommandReactor", () => {
       }),
     );
 
-    await Effect.runPromise(
+    await harness.runEffect(
       harness.engine.dispatch({
         type: "thread.activity.append",
         commandId: CommandId.make("cmd-user-input-requested"),
