@@ -16,6 +16,7 @@ import { Route as RoutinesRouteImport } from './routes/routines'
 import { Route as PairRouteImport } from './routes/pair'
 import { Route as MailRouteImport } from './routes/mail'
 import { Route as LibraryRouteImport } from './routes/library'
+import { Route as GoalsRouteImport } from './routes/goals'
 import { Route as ConnectRouteImport } from './routes/connect'
 import { Route as ChatRouteImport } from './routes/_chat'
 import { Route as SettingsIndexRouteImport } from './routes/settings.index'
@@ -52,6 +53,7 @@ import { Route as SettingsAgentsRouteImport } from './routes/settings.agents'
 import { Route as SettingsActivityRouteImport } from './routes/settings.activity'
 import { Route as SettingsAccountRouteImport } from './routes/settings.account'
 import { Route as ProjectsProjectKeyRouteImport } from './routes/projects.$projectKey'
+import { Route as GoalsGoalIdRouteImport } from './routes/goals_.$goalId'
 import { Route as ChatPullRequestsRouteImport } from './routes/_chat.pull-requests'
 import { Route as SettingsTeamsTeamIdRouteImport } from './routes/settings.teams.$teamId'
 import { Route as SettingsMembersMemberIdRouteImport } from './routes/settings.members_.$memberId'
@@ -92,6 +94,11 @@ const MailRoute = MailRouteImport.update({
 const LibraryRoute = LibraryRouteImport.update({
   id: '/library',
   path: '/library',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GoalsRoute = GoalsRouteImport.update({
+  id: '/goals',
+  path: '/goals',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ConnectRoute = ConnectRouteImport.update({
@@ -274,6 +281,11 @@ const ProjectsProjectKeyRoute = ProjectsProjectKeyRouteImport.update({
   path: '/projects/$projectKey',
   getParentRoute: () => rootRouteImport,
 } as any)
+const GoalsGoalIdRoute = GoalsGoalIdRouteImport.update({
+  id: '/goals_/$goalId',
+  path: '/goals/$goalId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ChatPullRequestsRoute = ChatPullRequestsRouteImport.update({
   id: '/pull-requests',
   path: '/pull-requests',
@@ -309,6 +321,7 @@ const ChatEnvironmentIdThreadIdRoute =
 export interface FileRoutesByFullPath {
   '/': typeof ChatIndexRoute
   '/connect': typeof ConnectRoute
+  '/goals': typeof GoalsRoute
   '/library': typeof LibraryRoute
   '/mail': typeof MailRoute
   '/pair': typeof PairRoute
@@ -317,6 +330,7 @@ export interface FileRoutesByFullPath {
   '/usage': typeof UsageRoute
   '/welcome': typeof WelcomeRoute
   '/pull-requests': typeof ChatPullRequestsRoute
+  '/goals/$goalId': typeof GoalsGoalIdRoute
   '/projects/$projectKey': typeof ProjectsProjectKeyRoute
   '/settings/account': typeof SettingsAccountRoute
   '/settings/activity': typeof SettingsActivityRoute
@@ -358,6 +372,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/connect': typeof ConnectRoute
+  '/goals': typeof GoalsRoute
   '/library': typeof LibraryRoute
   '/mail': typeof MailRoute
   '/pair': typeof PairRoute
@@ -365,6 +380,7 @@ export interface FileRoutesByTo {
   '/usage': typeof UsageRoute
   '/welcome': typeof WelcomeRoute
   '/pull-requests': typeof ChatPullRequestsRoute
+  '/goals/$goalId': typeof GoalsGoalIdRoute
   '/projects/$projectKey': typeof ProjectsProjectKeyRoute
   '/settings/account': typeof SettingsAccountRoute
   '/settings/activity': typeof SettingsActivityRoute
@@ -409,6 +425,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_chat': typeof ChatRouteWithChildren
   '/connect': typeof ConnectRoute
+  '/goals': typeof GoalsRoute
   '/library': typeof LibraryRoute
   '/mail': typeof MailRoute
   '/pair': typeof PairRoute
@@ -417,6 +434,7 @@ export interface FileRoutesById {
   '/usage': typeof UsageRoute
   '/welcome': typeof WelcomeRoute
   '/_chat/pull-requests': typeof ChatPullRequestsRoute
+  '/goals_/$goalId': typeof GoalsGoalIdRoute
   '/projects/$projectKey': typeof ProjectsProjectKeyRoute
   '/settings/account': typeof SettingsAccountRoute
   '/settings/activity': typeof SettingsActivityRoute
@@ -462,6 +480,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/connect'
+    | '/goals'
     | '/library'
     | '/mail'
     | '/pair'
@@ -470,6 +489,7 @@ export interface FileRouteTypes {
     | '/usage'
     | '/welcome'
     | '/pull-requests'
+    | '/goals/$goalId'
     | '/projects/$projectKey'
     | '/settings/account'
     | '/settings/activity'
@@ -511,6 +531,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/connect'
+    | '/goals'
     | '/library'
     | '/mail'
     | '/pair'
@@ -518,6 +539,7 @@ export interface FileRouteTypes {
     | '/usage'
     | '/welcome'
     | '/pull-requests'
+    | '/goals/$goalId'
     | '/projects/$projectKey'
     | '/settings/account'
     | '/settings/activity'
@@ -561,6 +583,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/_chat'
     | '/connect'
+    | '/goals'
     | '/library'
     | '/mail'
     | '/pair'
@@ -569,6 +592,7 @@ export interface FileRouteTypes {
     | '/usage'
     | '/welcome'
     | '/_chat/pull-requests'
+    | '/goals_/$goalId'
     | '/projects/$projectKey'
     | '/settings/account'
     | '/settings/activity'
@@ -613,6 +637,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   ChatRoute: typeof ChatRouteWithChildren
   ConnectRoute: typeof ConnectRoute
+  GoalsRoute: typeof GoalsRoute
   LibraryRoute: typeof LibraryRoute
   MailRoute: typeof MailRoute
   PairRoute: typeof PairRoute
@@ -620,6 +645,7 @@ export interface RootRouteChildren {
   SettingsRoute: typeof SettingsRouteWithChildren
   UsageRoute: typeof UsageRoute
   WelcomeRoute: typeof WelcomeRoute
+  GoalsGoalIdRoute: typeof GoalsGoalIdRoute
   ProjectsProjectKeyRoute: typeof ProjectsProjectKeyRoute
   LibraryHandedHandoverIdRoute: typeof LibraryHandedHandoverIdRoute
 }
@@ -673,6 +699,13 @@ declare module '@tanstack/react-router' {
       path: '/library'
       fullPath: '/library'
       preLoaderRoute: typeof LibraryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/goals': {
+      id: '/goals'
+      path: '/goals'
+      fullPath: '/goals'
+      preLoaderRoute: typeof GoalsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/connect': {
@@ -927,6 +960,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProjectsProjectKeyRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/goals_/$goalId': {
+      id: '/goals_/$goalId'
+      path: '/goals/$goalId'
+      fullPath: '/goals/$goalId'
+      preLoaderRoute: typeof GoalsGoalIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_chat/pull-requests': {
       id: '/_chat/pull-requests'
       path: '/pull-requests'
@@ -1069,6 +1109,7 @@ const SettingsRouteWithChildren = SettingsRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   ChatRoute: ChatRouteWithChildren,
   ConnectRoute: ConnectRoute,
+  GoalsRoute: GoalsRoute,
   LibraryRoute: LibraryRoute,
   MailRoute: MailRoute,
   PairRoute: PairRoute,
@@ -1076,6 +1117,7 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsRoute: SettingsRouteWithChildren,
   UsageRoute: UsageRoute,
   WelcomeRoute: WelcomeRoute,
+  GoalsGoalIdRoute: GoalsGoalIdRoute,
   ProjectsProjectKeyRoute: ProjectsProjectKeyRoute,
   LibraryHandedHandoverIdRoute: LibraryHandedHandoverIdRoute,
 }

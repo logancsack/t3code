@@ -2,7 +2,8 @@
 // (AppSidebarLayout.tsx) and simple mode's rail: their name and picture from
 // their sign-in, their plan and credits (opening Settings → Account), the way
 // to Library, Routines, Settings, the agents' mail and the keyboard shortcuts
-// (and, for the owner, the admin pages), the two things people change most
+// (Goals too, for an account that has one; and, for the owner, the admin
+// pages), the two things people change most
 // (theme, simple mode), and signing out. An Aldo that can't say who's signed
 // in still shows the rest.
 
@@ -17,6 +18,7 @@ import {
   LogOutIcon,
   RepeatIcon,
   SettingsIcon,
+  TargetIcon,
 } from "lucide-react";
 import { useEffect, useState, type ComponentType, type ReactNode } from "react";
 
@@ -28,6 +30,7 @@ import { AldoThemeToggle } from "./AldoGeneralSettings";
 import { requestAldoProfile, type AldoProfile } from "./assistantApi";
 import { type AldoHomeUsage } from "./homeApi";
 import { useAldoFirstViewHold } from "./firstView";
+import { refreshAldoGoals, useAldoGoals } from "./goals";
 import { useAldoHomeFeed } from "./homeFeed";
 import { aldoPlanLabel } from "./settingsHome.logic";
 import { setAldoSimpleMode, useAldoSimpleMode } from "./simpleMode";
@@ -129,6 +132,8 @@ function MenuGroup(props: { readonly children: ReactNode }) {
 function AccountMenu(props: {
   readonly profile: AldoProfile | null | undefined;
   readonly usage: AldoHomeUsage | null;
+  /** The account has a goal, so the menu lists Goals. */
+  readonly hasGoals: boolean;
   readonly onClose: () => void;
 }) {
   const navigate = useNavigate();
@@ -185,6 +190,9 @@ function AccountMenu(props: {
         )}
       </button>
       <MenuGroup>
+        {props.hasGoals ? (
+          <MenuItem icon={TargetIcon} label="Goals" onClick={() => go("/goals")} />
+        ) : null}
         <MenuItem icon={LibraryBigIcon} label="Library" onClick={() => go("/library")} />
         <MenuItem icon={RepeatIcon} label="Routines" onClick={() => go("/routines")} />
         <MenuItem icon={SettingsIcon} label="Settings" onClick={() => go("/settings")} />
@@ -247,7 +255,15 @@ export function AldoProfileButton(props: {
   const profile = useAldoProfile();
   useAldoFirstViewHold(profile === undefined);
   const usage = useAldoHomeFeed((s) => s.home?.usage ?? null);
+  // Read here, once as the app loads, so the menu opens with Goals already in it (or not): for an
+  // account without a goal the menu is as it was. A read that failed is tried again when the menu opens.
+  const goals = useAldoGoals();
+  const hasGoals = (goals.goals?.length ?? 0) > 0;
   const [open, setOpen] = useState(false);
+  const unread = goals.goals === undefined;
+  useEffect(() => {
+    if (open && unread) void refreshAldoGoals();
+  }, [open, unread]);
   const trigger = props.compact ? (
     <button
       type="button"
@@ -292,7 +308,12 @@ export function AldoProfileButton(props: {
         align={props.compact ? "end" : "start"}
         aria-label="Your account"
       >
-        <AccountMenu profile={profile} usage={usage} onClose={() => setOpen(false)} />
+        <AccountMenu
+          profile={profile}
+          usage={usage}
+          hasGoals={hasGoals}
+          onClose={() => setOpen(false)}
+        />
       </PopoverPopup>
     </Popover>
   );
