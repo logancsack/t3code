@@ -175,7 +175,7 @@ export function ApprovalCard(props: ApprovalCardProps) {
         </li>
       }
     >
-      <FullApprovalCard {...props} />
+      <FullApprovalCard key={props.approval.id} {...props} />
     </Suspense>
   );
 }

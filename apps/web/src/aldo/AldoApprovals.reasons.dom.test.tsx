@@ -187,6 +187,35 @@ it("keeps the custom amount when an optimistic removal is followed by a failed s
   expect(container.querySelector("input")!.value).toBe("19.99");
 });
 
+it("switching a peek to another approval restores only that approval's own limit draft", async () => {
+  const { ApprovalCard: PeekCard } = await import("./AldoApprovals");
+  const first = booking({ id: "ap_peek_first", spendingLimit: true });
+  const second = booking({ id: "ap_peek_second", spendingLimit: true });
+  const peek = (approval: AldoApproval) =>
+    act(async () =>
+      root.render(
+        <ul>
+          <PeekCard approval={approval} now={Date.now()} onActed={() => {}} />
+        </ul>,
+      ),
+    );
+  await peek(first);
+  await act(async () => {
+    const select = container.querySelector("select")!;
+    select.value = "20";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await peek(second);
+  expect(container.querySelector("select")!.value).toBe("");
+  await tap("Book and save limit");
+  expect(backend.send).not.toHaveBeenCalled();
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+    "Choose a spending limit",
+  );
+  await peek(first);
+  expect(container.querySelector("select")!.value).toBe("20");
+});
+
 it("goes back without deciding, by its button or Escape, and gives the keyboard back", async () => {
   await show(booking());
   await tap("Don't, because…");
