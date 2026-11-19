@@ -228,7 +228,7 @@ it("keeps the draft and reading position as pending actions change beside the la
     decidedAt: null,
   };
   await act(async () => root.render(<Page home={{ ...home, approvals: [approval] }} />));
-  expect(container.querySelector("[data-aldo-needs-you]")?.textContent).toBe("One needs you");
+  expect(container.querySelector("[data-aldo-needs-you]")?.textContent).toBe("Review 1 request");
   await act(async () => root.render(<Page home={home} />));
   expect(container.querySelector("[data-aldo-needs-you]")).toBeNull();
   expect(scroller.scrollTop).toBe(300);
@@ -312,7 +312,7 @@ it("keeps what finished and hasn't landed in view after its lines have left the 
   await act(async () => root.render(<Page home={home} />));
   expect(container.textContent).not.toContain("What should we get done?");
   expect(container.querySelector("[data-aldo-finished]")?.textContent).toContain(
-    "2 checks failing",
+    "I found a problem with this update.",
   );
 });
 

@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 
 import type { AldoHome, AldoHomeConversation, AldoHomePullRequest } from "./homeApi";
+import type { AldoAssistantMessage } from "./assistant.logic";
 
 const backend = vi.hoisted(() => ({
   hold: vi.fn(),
@@ -136,21 +137,57 @@ async function openRow(n: number) {
 
 it("lists what finished with where it honestly stands, what failed first, checks still running as a line", async () => {
   await act(async () => root.render(<AldoFinished home={busyDay(false)} now={NOW} />));
-  expect(container.querySelector("h3")?.textContent).toBe("Release updates · 3");
+  expect(container.querySelector("summary")?.textContent).toBe("Following 3 updates");
+  expect(container.querySelector("details")?.open).toBe(false);
+  await act(async () => container.querySelector("summary")!.click());
+  expect(container.querySelector("details")?.open).toBe(true);
   expect(rowTexts()).toEqual([
-    "Handle 429s2 checks failing",
-    "Add CSV exportMerges in 9 min",
-    "Waiting on checks: Fix flaky e2eChecks 9 of 12",
+    "Handle 429sI found a problem with this update.",
+    "Add CSV exportI’m preparing the update.",
+    "Fix flaky e2eI’m checking the update before it goes live.",
   ]);
   // Only what shipped gets a green check: nothing here is.
   expect(container.querySelector(".text-success-foreground")).toBeNull();
   // What failed is amber, its glyph and its words.
   expect(
     [...container.querySelectorAll(".text-warning-foreground")].map((e) => e.tagName.toLowerCase()),
-  ).toEqual(["svg", "span"]);
-  expect(container.querySelector("span.text-warning-foreground")?.textContent).toBe(
-    "2 checks failing",
+  ).toEqual(["svg"]);
+});
+
+it.each([
+  [
+    "another thread in the same environment",
+    { thread: { ...target("e2e"), threadId: "other" } },
+    {},
+  ],
+  ["another environment", { thread: { ...target("e2e"), environmentId: "aldo-other" } }, {}],
+  ["an old ask hidden by Home", { state: "needs-you" }, {}],
+  ["a call transcript", {}, { call: "call-1" }],
+  ["a daily brief", {}, { source: "brief" }],
+] as const)("keeps progress when the update belongs to %s", async (_label, update, message) => {
+  const told: AldoAssistantMessage = {
+    role: "assistant",
+    at: at(2),
+    text: "I’ve prepared the guide.\n\nThread: https://aldo.computer/aldo-e2e/e2e",
+    update: {
+      id: "guide-result",
+      title: "Prepare the guide",
+      thread: target("e2e"),
+      state: "done",
+      summary: "I’ve prepared the guide.",
+      checked: [],
+      notChecked: [],
+      links: [],
+      ...update,
+    },
+    ...message,
+  };
+  await act(async () =>
+    root.render(
+      <AldoFinished home={homeOf([pullRequest("e2e", 1842, {})])} now={NOW} told={[told]} />,
+    ),
   );
+  expect(rowTexts()).toEqual(["Fix flaky e2eI’m checking the update before it goes live."]);
 });
 
 it("opens a result into its receipt, and Hold stops Aldo's merge, with Undo", async () => {

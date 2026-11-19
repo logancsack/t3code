@@ -75,6 +75,61 @@ const empty = { conversations: [], pullRequests: [], actions: [] };
 const quiet = { now: NOW, from: null };
 
 describe("feedEvents", () => {
+  it("keeps live work after an ordinary assistant reply links to it", () => {
+    const home = {
+      ...empty,
+      conversations: [conversation({ state: "working", startedAt: at(40), stateAt: at(30) })],
+    };
+    const before = feedEvents(home, quiet);
+    expect(before.map((event) => event.kind)).toEqual(["thread"]);
+    expect(
+      feedEvents(home, {
+        ...quiet,
+        told: [{ text: "Here is the thread: https://aldo.computer/aldo-m1/t1", at: at(29) }],
+      }),
+    ).toEqual(before);
+  });
+
+  const update = {
+    id: "report-1",
+    title: "Inbox triage",
+    thread: target,
+    state: "working",
+    summary: "I’m organizing your inbox.",
+    checked: [],
+    notChecked: [],
+    links: [],
+  } as const;
+  const legacy = "I’m organizing your inbox.\n\nThread: https://aldo.computer/aldo-m1/t1";
+  it.each([
+    ["structured report", { text: update.summary, update }, false],
+    ["older report", { text: legacy }, false],
+    ["call transcript", { text: legacy, call: "call-1" }, true],
+    ["daily brief", { text: legacy, source: "brief" }, true],
+    ["old ask", { text: legacy, update: { ...update, state: "needs-you" } }, true],
+    [
+      "other thread",
+      { text: legacy, update: { ...update, thread: { ...target, threadId: "t2" } } },
+      true,
+    ],
+    [
+      "other environment",
+      { text: legacy, update: { ...update, thread: { ...target, environmentId: "aldo-other" } } },
+      true,
+    ],
+    ["report before the current work", { text: update.summary, update, at: at(45) }, true],
+  ] as const)(
+    "replaces live progress only with a current same-thread card: %s",
+    (_label, message, kept) => {
+      const home = {
+        ...empty,
+        conversations: [conversation({ state: "working", startedAt: at(40), stateAt: at(30) })],
+      };
+      const events = feedEvents(home, { ...quiet, told: [{ at: at(29), ...message }] });
+      expect(events.map((event) => event.kind)).toEqual(kept ? ["thread"] : []);
+    },
+  );
+
   it("reconciles a local start after navigating away and mounting the home page again", () => {
     const events = feedEvents(
       {

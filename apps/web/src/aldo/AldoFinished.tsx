@@ -13,10 +13,13 @@ import { lazy, Suspense, useContext, useMemo, useState } from "react";
 
 import { cn } from "~/lib/utils";
 import { AldoOpenContext } from "./AldoLiveCard";
-import { ResultGlyph, ResultStatus } from "./AldoResultMark";
+import { ResultGlyph } from "./AldoResultMark";
 import { useAldoArrive } from "./arrive";
+import type { AldoAssistantMessage } from "./assistant.logic";
 import { finishedResults, onlyWaiting, type AldoFinishedResult } from "./finished.logic";
+import { sameTarget } from "./home.logic";
 import { type AldoHome } from "./homeApi";
+import { progressUpdate } from "./homeUpdate.logic";
 import { FOCUS, SURFACE } from "./surface";
 
 /** A receipt, loaded when one is first opened (or about to be: a pointer on its line). */
@@ -26,8 +29,24 @@ const ResultCard = lazy(loadCard);
 /** Results shown before the rest unfold. */
 const SHOWN = 3;
 
-export function AldoFinished(props: { readonly home: AldoHome; readonly now: number }) {
-  const results = useMemo(() => finishedResults(props.home, props.now), [props.home, props.now]);
+export function AldoFinished(props: {
+  readonly home: AldoHome;
+  readonly now: number;
+  readonly told?: ReadonlyArray<Pick<AldoAssistantMessage, "text" | "update" | "call" | "source">>;
+}) {
+  const results = useMemo(() => {
+    // Only a rendered result card carries the current-status disclosure. Ordinary links,
+    // call transcripts, briefs and old asks leave the quiet progress line in place.
+    const replacements = props.told?.flatMap((m) => {
+      const update = progressUpdate(m);
+      return update?.thread ? [update.thread] : [];
+    });
+    return finishedResults(props.home, props.now).filter(
+      (r) =>
+        !onlyWaiting(r) ||
+        !replacements?.some((thread) => sameTarget(thread, r.conversation.thread)),
+    );
+  }, [props.home, props.now, props.told]);
   const rows = results.filter((r) => !onlyWaiting(r));
   const waiting = results.filter(onlyWaiting);
   const [opened, setOpened] = useState<string | null>(null);
@@ -35,13 +54,22 @@ export function AldoFinished(props: { readonly home: AldoHome; readonly now: num
   if (results.length === 0) return null;
   const shown = all ? rows : rows.slice(0, SHOWN);
   return (
-    <section aria-label="Release updates" className="flex flex-col gap-2" data-aldo-finished="">
-      <div className="flex items-center justify-between px-1 pb-0.5 text-[12px] leading-[18px]">
-        <h3 className="font-medium text-muted-foreground">
-          Release updates{" "}
-          <span className="text-muted-foreground/70 tabular-nums">· {results.length}</span>
-        </h3>
-      </div>
+    <details
+      aria-label="Following updates"
+      className="group flex flex-col gap-2"
+      data-aldo-finished=""
+    >
+      <summary
+        className={cn(
+          FOCUS,
+          "flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-sm px-1 text-[14px] text-muted-foreground [&::-webkit-details-marker]:hidden",
+        )}
+      >
+        <span>
+          Following {results.length} {results.length === 1 ? "update" : "updates"}
+        </span>
+        <ChevronDownIcon aria-hidden className="ml-auto size-3.5 group-open:rotate-180" />
+      </summary>
       {shown.map((r) => {
         const row = (
           <ResultRow key={r.key} result={r} now={props.now} onOpen={() => setOpened(r.key)} />
@@ -74,7 +102,7 @@ export function AldoFinished(props: { readonly home: AldoHome; readonly now: num
       {waiting.map((r) => (
         <WaitingLine key={r.key} result={r} />
       ))}
-    </section>
+    </details>
   );
 }
 
@@ -109,7 +137,13 @@ function ResultRow(props: {
           <span className="min-w-0 flex-1 truncate font-medium text-[14px] leading-5">
             {r.conversation.title}
           </span>
-          <ResultStatus state={r.state} />
+          <span className="text-[13px] text-muted-foreground">
+            {r.state.tone === "failing"
+              ? "I found a problem with this update."
+              : r.state.tone === "shipped"
+                ? "The change is ready."
+                : "I’m preparing the update."}
+          </span>
         </span>
         <ChevronDownIcon
           aria-hidden
@@ -125,22 +159,22 @@ function ResultRow(props: {
 function WaitingLine(props: { readonly result: AldoFinishedResult }) {
   const open = useContext(AldoOpenContext);
   const r = props.result;
-  const label = r.state.pullRequest?.stage === "deploying" ? "Deploying" : "Waiting on checks";
+
   const body = (
     <>
       <span aria-hidden className="flex h-5 w-4 shrink-0 items-center justify-center">
         <CircleDashedIcon className="size-[15px]" strokeWidth={1.75} />
       </span>
-      <span className="min-w-0 flex-1 truncate">
-        {label}: <span className="text-foreground/80">{r.conversation.title}</span>
+      <span className="flex min-w-0 flex-1 flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
+        <span className="min-w-0 flex-1 truncate text-foreground/80">{r.conversation.title}</span>
+        <span className="text-[13px] text-muted-foreground">
+          I’m checking the update before it goes live.
+        </span>
       </span>
-      {label === "Deploying" ? null : (
-        <span className="shrink-0 text-[12px] tabular-nums">{r.state.words}</span>
-      )}
     </>
   );
   const className =
-    "flex min-h-10 w-full items-center gap-2.5 rounded-md px-4 text-left text-[13px] text-muted-foreground leading-5 sm:min-h-8";
+    "flex min-h-11 w-full items-center gap-2.5 rounded-md px-4 py-2 text-left text-[13px] text-muted-foreground leading-5 sm:min-h-8";
   return open ? (
     <button
       type="button"

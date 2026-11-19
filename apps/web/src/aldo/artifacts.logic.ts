@@ -274,10 +274,10 @@ export function fileShape(contentType: string): AldoFileShape {
 }
 
 /** Whether a link in a reply goes to what one of its artifacts shows. */
-function shows(href: string, artifacts: ReadonlyArray<AldoArtifact>): boolean {
+export function artifactShows(href: string, artifacts: ReadonlyArray<AldoArtifact>): boolean {
   let url: URL;
   try {
-    url = new URL(href);
+    url = new URL(href, "https://aldo.invalid");
   } catch {
     return false;
   }
@@ -304,7 +304,7 @@ export function withoutShownLinks(text: string, artifacts: ReadonlyArray<AldoArt
     .split("\n")
     .filter((line) => {
       const link = LINK_LINE.exec(line.trim());
-      return !(link && shows(link[2]!, artifacts));
+      return !(link && artifactShows(link[2]!, artifacts));
     })
     .join("\n")
     .replace(/\n{3,}/g, "\n\n")

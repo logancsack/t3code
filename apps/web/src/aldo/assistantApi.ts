@@ -1,3 +1,4 @@
+import { homeUpdateOf } from "./homeUpdate.logic";
 // Assistant conversation, voice, brief and memory APIs.
 
 import { voiceReferencesOf, type AldoVoiceReference } from "./voiceReferences";
@@ -224,8 +225,13 @@ export type AldoHistory = ReadonlyArray<AldoAssistantMessage | AldoCallEntry> & 
   readonly calls?: boolean;
 };
 
-function withArtifacts<T extends { artifacts?: unknown }>({ artifacts, ...rest }: T) {
-  return { ...rest, ...artifactsField(artifacts) };
+function withArtifacts<T extends { artifacts?: unknown; update?: unknown }>({
+  artifacts,
+  update,
+  ...rest
+}: T) {
+  const result = homeUpdateOf(update);
+  return { ...rest, ...artifactsField(artifacts), ...(result ? { update: result } : {}) };
 }
 
 export const aldoAssistant = {
@@ -472,6 +478,7 @@ export const aldoAssistant = {
             text: string;
             at: string;
             source?: "brief";
+            update?: unknown;
             artifacts?: unknown;
             clientId?: string;
           }

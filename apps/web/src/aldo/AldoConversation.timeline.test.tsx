@@ -17,6 +17,7 @@ const backend = vi.hoisted(() => ({
   decide: vi.fn(),
   computer: vi.fn(),
   refresh: vi.fn(),
+  home: null as import("./homeApi").AldoHome | null,
 }));
 vi.mock("@tanstack/react-router", () => ({
   useNavigate: vi.fn,
@@ -40,7 +41,12 @@ vi.mock("./AldoAssistant", async (original) => ({
   AldoCaption: () => null,
 }));
 vi.mock("./AldoHomeBoard", () => ({ HealthStrip: () => null }));
-vi.mock("./AldoLiveCard", () => ({ AldoOpenContext: createContext(null) }));
+vi.mock("./AldoLiveCard", () => ({
+  AldoOpenContext: createContext(null),
+  AldoThreadCard: ({ target }: { target: { environmentId: string; threadId: string } }) => (
+    <div data-test-live={`${target.environmentId}/${target.threadId}`}>Live work</div>
+  ),
+}));
 vi.mock("./AldoPresence", () => ({ AldoPresence: () => null }));
 vi.mock("./AldoHomeInbox", () => ({
   ThreadLink: ({ children }: { children: ReactNode }) => <span>{children}</span>,
@@ -61,7 +67,8 @@ vi.mock("./morph", () => ({
 }));
 vi.mock("./homeFeed", () => ({
   refreshAldoHome: backend.refresh,
-  useAldoHomeFeed: (select: (s: { home: null }) => unknown) => select({ home: null }),
+  useAldoHomeFeed: (select: (s: { home: AldoHome | null }) => unknown) =>
+    select({ home: backend.home }),
   useAldoHomeReadAt: (select: (s: { at: number }) => unknown) => select({ at: 0 }),
 }));
 vi.mock("./briefFeed", () => ({
@@ -117,6 +124,7 @@ const home = (overrides: Partial<AldoHome> = {}) =>
     actions: [],
     approvals: [],
     plans: [],
+    upcoming: [],
     ...overrides,
   }) as unknown as AldoHome;
 let root: Root;
@@ -171,6 +179,7 @@ beforeEach(async () => {
   Element.prototype.scrollIntoView = vi.fn();
   useAldoAssistant.setState({ entries: [], historyLoaded: true, replying: false });
   useAldoReceipts.setState({ receipts: [] });
+  backend.home = null;
   backend.tap.mockReset();
   backend.computer.mockReset().mockResolvedValue({});
   backend.refresh.mockReset().mockResolvedValue(undefined);
@@ -291,6 +300,7 @@ it("answers a question in scrollback and leaves its receipt before later message
     machine: "running",
     at: at(2),
     stateAt: at(2),
+    startedAt: at(1),
     pending: {
       kind: "question" as const,
       requestId: "scope",
@@ -311,6 +321,7 @@ it("answers a question in scrollback and leaves its receipt before later message
   });
   const card = container.querySelector('[data-aldo-decision="question:launch:scope"]')!;
   before(card, textElement("How long will it take?"));
+  expect(container.querySelectorAll("[data-aldo-live-card]")).toHaveLength(0);
   await act(async () =>
     [...card.querySelectorAll("button")]
       .find((b) => b.textContent?.startsWith("Include pricing"))!
@@ -351,14 +362,16 @@ it("lists the links a thread's result ends with under its words, and leaves Aldo
     root.render(<Page home={home()} />);
     await import("./AldoArtifacts");
   });
-  expect(container.querySelector("[data-aldo-artifacts]")).not.toBeNull();
-  const row = container.querySelector<HTMLAnchorElement>("[data-aldo-artifacts] a")!;
+  const card = container.querySelector("[data-aldo-update]")!;
+  const row = card.querySelector<HTMLAnchorElement>("details a")!;
   expect(row.href).toBe("https://github.com/acme/shop/pull/7");
-  expect(row.textContent).toBe("acme/shop #7Pull request");
-  expect(textElement("The checkout fix is live.\nOpen the thread")).toBeDefined();
+  expect(card.querySelector("details")?.open).toBe(false);
+  expect(card.querySelector("p")?.textContent).toBe("The checkout fix is live.");
   expect(container.textContent).not.toContain("Pull request: https://");
-  expect(textElement("Docs: https://acme.example/docs")).toBeDefined();
-  expect(container.querySelectorAll("[data-aldo-artifacts]")).toHaveLength(1);
+  expect(container.querySelector("p a[href='https://acme.example/docs']")?.textContent).toBe(
+    "acme.example",
+  );
+  expect(container.querySelectorAll("[data-aldo-artifacts]")).toHaveLength(0);
 });
 
 it("shows a saved approval outcome even when no messages are loaded", async () => {
@@ -372,6 +385,55 @@ it("shows a saved approval outcome even when no messages are loaded", async () =
   expect(container.textContent).toContain("Sent");
   expect(container.textContent).toContain("Launch update");
   expect(container.textContent).not.toContain("What should we get done?");
+});
+
+it("keeps structured HTTPS, HTTP and relative deliverables without repeating a shown file", async () => {
+  const share = "/s/abcdefghijklmnop";
+  useAldoAssistant.setState({
+    entries: [
+      {
+        kind: "message",
+        role: "assistant",
+        at: at(1),
+        text: "I’ve prepared the draft.",
+        update: {
+          id: "draft",
+          title: "Launch",
+          thread: { environmentId: "aldo-1", threadId: "t1" },
+          state: "update",
+          summary: "I’ve prepared the draft.",
+          checked: [],
+          notChecked: [],
+          links: [
+            { label: "Website", url: "https://example.com/result" },
+            { label: "Local preview", url: "http://localhost:3000" },
+            { label: "Review evidence", url: "/admin/reliability" },
+            { label: "Shared file", url: share },
+          ],
+        },
+        artifacts: [
+          { kind: "file", url: share, title: "Saved draft", contentType: "application/pdf" },
+        ],
+      },
+    ],
+  });
+  await act(async () => {
+    root.render(<Page home={home()} />);
+    await import("./AldoArtifacts");
+  });
+  for (const [label, href] of [
+    ["Website", "https://example.com/result"],
+    ["Local preview", "http://localhost:3000"],
+    ["Review evidence", "/admin/reliability"],
+  ]) {
+    expect(
+      [...container.querySelectorAll("a")]
+        .find((a) => a.textContent?.includes(label!))
+        ?.getAttribute("href"),
+    ).toBe(href);
+  }
+  expect(container.textContent).toContain("Saved draft");
+  expect(container.textContent).not.toContain("Shared file");
 });
 
 const pill = () => container.querySelector<HTMLButtonElement>("[data-aldo-needs-you]")!;
@@ -440,7 +502,7 @@ it("jumps to a single older plan in a partial timeline, including on a phone wit
       />,
     ),
   );
-  expect(pill().textContent).toBe("One needs you");
+  expect(pill().textContent).toBe("Review 1 request");
   const card = container.querySelector<HTMLElement>('[data-aldo-plan="plan-1"]')!;
   before(card, textElement("A recent message"));
   const scroll = vi.spyOn(card, "scrollIntoView");
@@ -455,7 +517,7 @@ it("lists pending kinds and times, then closes and reveals the selected inline c
   await act(async () =>
     root.render(<Page home={home({ plans: [plan], approvals: [approval()] })} />),
   );
-  expect(pill().textContent).toBe("Two need you");
+  expect(pill().textContent).toBe("Review 2 requests");
   const card = container.querySelector<HTMLElement>('[data-aldo-decision="aldo:draft-1"]')!;
   const scroll = vi.spyOn(card, "scrollIntoView");
   await click(pill());
@@ -499,7 +561,7 @@ it("updates the open list live and returns to single-item behavior when only one
       <Page home={home({ plans: [plan], approvals: [{ ...a, status: "approved" }, b] })} />,
     ),
   );
-  expect(pill().textContent).toBe("Two need you");
+  expect(pill().textContent).toBe("Review 2 requests");
   expect(dialog()!.querySelectorAll("li")).toHaveLength(2);
   expect(dialog()!.textContent).not.toContain("Launch update");
   await act(async () =>
@@ -516,7 +578,7 @@ it("updates the open list live and returns to single-item behavior when only one
     ),
   );
   await vi.waitFor(() => expect(dialog()).toBeNull());
-  expect(pill().textContent).toBe("One needs you");
+  expect(pill().textContent).toBe("Review 1 request");
   await click(pill());
   expect(dialog()).toBeNull();
   await act(async () => root.render(<Page home={home()} />));
@@ -592,7 +654,7 @@ it.each(["Start · 310 credits/hour", "Decline"])(
     });
     message("Please keep the captions readable", 3);
     await act(async () => root.render(<Page home={read} />));
-    expect(pill().textContent).toBe("One needs you");
+    expect(pill().textContent).toBe("Review 1 request");
     const card = container.querySelector<HTMLElement>("[data-aldo-computer-request]")!;
     before(card, textElement("Please keep the captions readable"));
     expect(card.textContent).toContain("310 credits an hour");
@@ -645,4 +707,515 @@ it("shows a call as its card where it began, and keeps its lines and actions off
   expect(container.textContent).not.toContain("Started a thread");
   before(textElement("Morning"), card);
   before(card, textElement("Thanks, and remind me Wednesday"));
+});
+
+it("offers the request shortcut only while the actionable card is outside the conversation viewport", async () => {
+  let report: IntersectionObserverCallback | undefined;
+  let observed: Element | undefined;
+  vi.stubGlobal(
+    "IntersectionObserver",
+    class {
+      constructor(callback: IntersectionObserverCallback) {
+        report = callback;
+      }
+      observe(node: Element) {
+        observed = node;
+      }
+      disconnect() {}
+    },
+  );
+  message("A later message", 15);
+  await act(async () => root.render(<Page home={home({ plans: [plan] })} />));
+  expect(pill().textContent).toBe("Review 1 request");
+  expect(observed).toBe(container.querySelector('[data-aldo-plan="plan-1"]'));
+  await act(async () =>
+    report!(
+      [{ target: observed!, intersectionRatio: 1 } as IntersectionObserverEntry],
+      {} as IntersectionObserver,
+    ),
+  );
+  expect(container.querySelector("[data-aldo-needs-you]")).toBeNull();
+  await act(async () =>
+    report!(
+      [{ target: observed!, intersectionRatio: 0 } as IntersectionObserverEntry],
+      {} as IntersectionObserver,
+    ),
+  );
+  expect(pill().textContent).toBe("Review 1 request");
+});
+
+it("keeps an automated ask from duplicating its action card or reviving it after an answer", async () => {
+  const read = home();
+  backend.home = {
+    ...read,
+    conversations: [
+      {
+        ref: "ask",
+        thread: { environmentId: "aldo-1", threadId: "t1" },
+        title: "Choose the layout",
+        repos: [],
+        branch: "",
+        machine: "asleep",
+        state: "waiting",
+        at: at(1),
+      },
+    ],
+  };
+  useAldoAssistant.setState({
+    entries: [
+      {
+        kind: "message",
+        role: "assistant",
+        at: at(2),
+        text: "I need your answer before I can continue.\n\nThread: https://aldo.example/aldo-1/t1",
+        update: {
+          id: "ask",
+          thread: { environmentId: "aldo-1", threadId: "t1" },
+          title: "Choose the layout",
+          state: "needs-you",
+          summary: "I need your answer before I can continue.",
+          checked: [],
+          notChecked: [],
+          links: [],
+        },
+      },
+    ],
+  });
+  await act(async () => root.render(<Page home={read} />));
+  expect(container.querySelector("[data-aldo-update]")).toBeNull();
+  backend.home = {
+    ...backend.home,
+    conversations: backend.home!.conversations.map((c) => ({ ...c, state: "working" })),
+  };
+  await act(async () => root.render(<Page home={read} />));
+  expect(container.querySelector("[data-aldo-update]")).toBeNull();
+});
+it("shows a multi-paragraph Home answer as one reply", async () => {
+  const text = "I’ve prepared the draft.\n\nYour source notes are included.";
+  message(text, 1, "assistant");
+  await act(async () => root.render(<Page home={home()} />));
+  expect([...container.querySelectorAll("p")].filter((p) => p.textContent === text)).toHaveLength(
+    1,
+  );
+  expect(container.textContent).not.toContain("Checks reported");
+});
+
+it("keeps the live work card after an ordinary reply links to work started elsewhere", async () => {
+  const read = home({
+    conversations: [
+      {
+        ref: "work",
+        thread: { environmentId: "aldo-demo", threadId: "work" },
+        title: "Prepare the guide",
+        repos: [],
+        branch: "",
+        state: "working",
+        machine: "running",
+        startedAt: at(2),
+        stateAt: at(3),
+        at: at(3),
+      },
+    ],
+  });
+  backend.home = read;
+  message("Prepare the guide", 1);
+  await act(async () => root.render(<Page home={read} />));
+  expect(container.querySelectorAll('[data-test-live="aldo-demo/work"]')).toHaveLength(1);
+  await act(async () => {
+    message("Here is the thread: https://aldo.computer/aldo-demo/work", 4, "assistant");
+  });
+  expect(container.querySelector("[data-aldo-update]")).toBeNull();
+  expect(container.querySelectorAll('[data-test-live="aldo-demo/work"]')).toHaveLength(1);
+});
+
+it.each(["checks-running", "deploying"] as const)(
+  "keeps %s progress when an ordinary reply only links to the completed thread",
+  async (stage) => {
+    const target = { environmentId: "aldo-demo", threadId: "work" };
+    const read = home({
+      conversations: [
+        {
+          ref: "work",
+          thread: target,
+          title: "Prepare the guide",
+          repos: [],
+          branch: "",
+          state: "done",
+          machine: "asleep",
+          at: at(2),
+        },
+      ],
+      pullRequests: [
+        {
+          environmentId: target.environmentId,
+          thread: target,
+          threadTitle: "Prepare the guide",
+          repo: "acme/guide",
+          number: 7,
+          url: "https://github.com/acme/guide/pull/7",
+          title: "Prepare the guide",
+          status: "watching",
+          stage,
+          checks: { passed: 1, failed: 0, running: 1 },
+          deploy: null,
+          followups: 0,
+          reviewsExhausted: false,
+          greenSince: null,
+          mergesAt: null,
+          mergedAt: null,
+          updatedAt: at(3),
+        },
+      ],
+    });
+    backend.home = read;
+    message("Prepare the guide", 1);
+    message("Here is the thread: https://aldo.computer/aldo-demo/work", 3, "assistant");
+    await act(async () => root.render(<Page home={read} />));
+    expect(container.querySelector("[data-aldo-update]")).toBeNull();
+    expect(container.querySelector("[data-aldo-finished]")?.textContent).toContain(
+      "I’m checking the update before it goes live.",
+    );
+
+    // A structured result needs no raw thread URL. It owns the replacement status.
+    await act(async () => {
+      useAldoAssistant.setState((s) => ({
+        entries: [
+          s.entries[0]!,
+          {
+            kind: "message",
+            role: "assistant",
+            at: at(3),
+            text: "I’ve prepared the guide.",
+            update: {
+              id: "guide-result",
+              title: "Prepare the guide",
+              thread: target,
+              state: "done",
+              summary: "I’ve prepared the guide.",
+              checked: [],
+              notChecked: [],
+              links: [],
+            },
+          },
+        ],
+      }));
+    });
+    expect(container.querySelector("[data-aldo-finished]")).toBeNull();
+    const details = container.querySelector('[data-aldo-update="guide-result"] details')!;
+    expect(container.textContent).not.toContain("Checks 1 of 2");
+    expect(details.textContent).toContain("Current status");
+    expect(details.textContent).toContain("I’m checking the update before it goes live.");
+
+    // The explicit older result envelope supplies the same replacement, without metadata.
+    await act(async () => {
+      useAldoAssistant.setState((s) => ({ entries: [s.entries[0]!] }));
+      message(
+        "I’ve prepared the guide.\n\nThread: https://aldo.computer/aldo-demo/work",
+        3,
+        "assistant",
+      );
+    });
+    expect(container.querySelector("[data-aldo-finished]")).toBeNull();
+    expect(container.querySelector("[data-aldo-update] details")?.textContent).toContain(
+      "I’m checking the update before it goes live.",
+    );
+  },
+);
+
+it("retains a snoozed failure report when no replacement decision card is rendered", async () => {
+  const target = { environmentId: "aldo-1", threadId: "t1" };
+  const failed = {
+    ref: "failed",
+    title: "Prepare the guide",
+    repos: [],
+    branch: "",
+    machine: "asleep",
+    state: "failed",
+    at: at(1),
+    thread: target,
+    snoozedUntil: new Date(Date.now() + 3600000).toISOString(),
+  } as const;
+  const read = home({ conversations: [failed] });
+  backend.home = read;
+  useAldoAssistant.setState({
+    entries: [
+      {
+        kind: "message",
+        role: "assistant",
+        at: at(2),
+        text: "I couldn’t finish this attempt.",
+        update: {
+          id: "failure",
+          thread: target,
+          title: failed.title,
+          state: "failed",
+          summary: "I couldn’t finish this attempt.",
+          checked: [],
+          notChecked: [],
+          links: [],
+        },
+      },
+    ],
+  });
+  await act(async () => root.render(<Page home={read} />));
+  expect(container.querySelector('[data-aldo-decision^="failed:"]')).toBeNull();
+  expect(container.querySelector('[data-aldo-update="failure"]')).not.toBeNull();
+});
+
+it("keeps inline legacy report destinations clickable inside Details", async () => {
+  message(
+    "Read the guide at https://example.com/guide.\n\nThread: https://aldo.computer/aldo-demo/work",
+    1,
+    "assistant",
+  );
+  await act(async () => root.render(<Page home={home()} />));
+  const details = container.querySelector("details")!;
+  expect(details.open).toBe(false);
+  expect(details.querySelector("a")?.getAttribute("href")).toBe("https://example.com/guide");
+  expect(details.querySelector("a")?.textContent).toBe("example.com");
+});
+
+it("keeps earlier failure attempts while the current report is represented by Retry", async () => {
+  const target = { environmentId: "aldo-1", threadId: "t1" };
+  const failed = {
+    ref: "failed",
+    title: "Prepare the guide",
+    repos: [],
+    branch: "",
+    machine: "asleep",
+    state: "failed",
+    at: at(1),
+    stateAt: at(4),
+    thread: target,
+  } as const;
+  const read = home({ conversations: [failed] });
+  backend.home = read;
+  useAldoAssistant.setState({
+    entries: [1, 5].map((minute) => ({
+      kind: "message" as const,
+      role: "assistant" as const,
+      at: at(minute),
+      text: `Attempt ${minute} could not finish.`,
+      update: {
+        id: `failure-${minute}`,
+        thread: target,
+        title: failed.title,
+        state: "failed" as const,
+        summary: `I couldn’t finish attempt ${minute}.`,
+        checked: [],
+        notChecked: [],
+        links: [],
+      },
+    })),
+  });
+  await act(async () => root.render(<Page home={read} />));
+  expect(container.querySelector('[data-aldo-decision^="failed:"]')).not.toBeNull();
+  expect(container.querySelector('[data-aldo-update="failure-1"]')).not.toBeNull();
+  expect(container.querySelector('[data-aldo-update="failure-5"]')).toBeNull();
+  expect(container.textContent).toContain("I couldn’t finish attempt 1.");
+  expect(container.textContent).toContain("I couldn’t finish attempt 5.");
+});
+
+it("keeps needs-you update evidence under the question instead of duplicating its summary", async () => {
+  const target = { environmentId: "aldo-1", threadId: "t1" };
+  const c = {
+    ref: "ask",
+    title: "Prepare the guide",
+    repos: [],
+    branch: "",
+    machine: "asleep",
+    state: "waiting",
+    at: at(1),
+    thread: target,
+    pending: {
+      kind: "question",
+      requestId: "ask:turn",
+      questions: [
+        {
+          id: "scope",
+          header: "",
+          question: "Which pages should I include?",
+          options: [
+            { label: "Home (Recommended)", description: "" },
+            { label: "All pages", description: "" },
+          ],
+          multiSelect: false,
+        },
+      ],
+    },
+  } as const;
+  const read = home({ conversations: [c] });
+  backend.home = read;
+  useAldoAssistant.setState({
+    entries: [
+      {
+        kind: "message",
+        role: "assistant",
+        at: at(2),
+        text: "I need your answer.",
+        update: {
+          id: "asked-report",
+          thread: target,
+          title: c.title,
+          state: "needs-you",
+          summary: "I need your answer.",
+          checked: ["Saved the source notes."],
+          notChecked: ["The full comparison."],
+          notes: ["The internal comparison is incomplete."],
+          links: [{ label: "Change evidence", url: "https://github.com/acme/guide/pull/7" }],
+        },
+      },
+    ],
+  });
+  await act(async () => root.render(<Page home={read} />));
+  expect(container.querySelector('[data-aldo-update="asked-report"]')).toBeNull();
+  const card = container.querySelector('[data-aldo-decision^="question:"]')!;
+  expect(card.textContent).toContain("Which pages should I include?");
+  expect(card.textContent).not.toContain("I need your answer.");
+  const details = card.querySelector("details")!;
+  expect(details.open).toBe(false);
+  expect(details.textContent).toContain("Saved the source notes.");
+  expect(details.textContent).toContain("The internal comparison is incomplete.");
+  expect(details.querySelector("a")?.getAttribute("href")).toBe(
+    "https://github.com/acme/guide/pull/7",
+  );
+  expect(card.textContent).toContain("Open the thread");
+});
+
+it("keeps a legacy failure's original notes and links in its single Retry card", async () => {
+  const target = { environmentId: "aldo-1", threadId: "t1" };
+  const c = {
+    ref: "failed",
+    title: "Prepare the guide",
+    repos: [],
+    branch: "",
+    machine: "asleep",
+    state: "failed",
+    at: at(1),
+    thread: target,
+  } as const;
+  const read = home({ conversations: [c] });
+  backend.home = read;
+  message(
+    "I ran into trouble with the guide. CI failed.\n\n[Change evidence](https://github.com/acme/guide/pull/7)\n\nChecks reported with the task:\n\nChecked:\nSaved the source notes.\n\nNot checked:\nThe full comparison.\nThread: https://aldo.example/aldo-1/t1",
+    2,
+    "assistant",
+  );
+  await act(async () => root.render(<Page home={read} />));
+  expect(container.querySelector("[data-aldo-update]")).toBeNull();
+  const card = container.querySelector('[data-aldo-decision^="failed:"]')!;
+  const details = card.querySelector("details")!;
+  expect(details.textContent).toContain("CI failed.");
+  expect(details.textContent).toContain("Saved the source notes.");
+  expect(details.textContent).toContain("The full comparison.");
+  expect(details.querySelector("a")?.getAttribute("href")).toBe(
+    "https://github.com/acme/guide/pull/7",
+  );
+});
+
+it.each(["native", "turn-ask", "fallback"] as const)(
+  "dedupes %s by conversation, restores snoozed waits and shows the new working turn",
+  async (kind) => {
+    const target = { environmentId: "aldo-1", threadId: "t1" };
+    const pending =
+      kind === "fallback"
+        ? undefined
+        : {
+            kind: "question" as const,
+            requestId: kind === "turn-ask" ? "ask:turn-1" : "native-question",
+            questions: [
+              {
+                id: "scope",
+                header: "",
+                question: "Which pages?",
+                multiSelect: false,
+                options: [
+                  { label: "Home", description: "" },
+                  { label: "All pages", description: "" },
+                ],
+              },
+            ],
+          };
+    const c = {
+      ref: "work",
+      title: "Prepare the guide",
+      repos: [],
+      branch: "",
+      machine: "asleep",
+      state: "waiting" as const,
+      at: at(2),
+      thread: target,
+      ...(pending ? { pending } : {}),
+    };
+    const render = async (conversation: typeof c) => {
+      const read = home({ conversations: [conversation] });
+      backend.home = read;
+      await act(async () => root.render(<Page home={read} />));
+    };
+    useAldoAssistant.setState({
+      entries: [
+        {
+          kind: "action",
+          id: "start-work",
+          tool: "start_thread",
+          label: "Started work",
+          failed: false,
+          open: target,
+        },
+      ],
+    });
+    await render(c);
+    expect(container.querySelectorAll("[data-aldo-decision]")).toHaveLength(1);
+    expect(container.querySelector("[data-test-live]")).toBeNull();
+    await render({ ...c, snoozedUntil: at(50) } as typeof c);
+    expect(container.querySelectorAll("[data-aldo-decision]")).toHaveLength(
+      kind === "native" ? 1 : 0,
+    );
+    expect(container.querySelectorAll("[data-test-live]")).toHaveLength(kind === "native" ? 0 : 1);
+    await render({
+      ...c,
+      state: "working",
+      machine: "running",
+      pending: undefined,
+    } as unknown as typeof c);
+    expect(container.querySelector("[data-aldo-decision]")).toBeNull();
+    expect(container.querySelectorAll("[data-test-live]")).toHaveLength(1);
+  },
+);
+
+it("restores the live card once an answer receipt replaces the decision, before Home refreshes", async () => {
+  const target = { environmentId: "aldo-1", threadId: "t1" };
+  const c = {
+    ref: "work",
+    title: "Prepare the guide",
+    repos: [],
+    branch: "",
+    machine: "asleep",
+    state: "waiting",
+    at: at(2),
+    thread: target,
+  };
+  const read = home({ conversations: [c] });
+  backend.home = read;
+  useAldoAssistant.setState({
+    entries: [
+      {
+        kind: "action",
+        id: "start-work",
+        tool: "start_thread",
+        label: "Started work",
+        failed: false,
+        open: target,
+      },
+    ],
+  });
+  await act(async () => root.render(<Page home={read} />));
+  const key = container.querySelector("[data-aldo-decision]")!.getAttribute("data-aldo-decision")!;
+  await act(async () =>
+    useAldoReceipts.setState({
+      receipts: [{ key, at: at(3), text: "You answered", thread: target }],
+    }),
+  );
+  expect(container.querySelector("[data-aldo-decision]")).toBeNull();
+  expect(container.querySelectorAll("[data-test-live]")).toHaveLength(1);
 });

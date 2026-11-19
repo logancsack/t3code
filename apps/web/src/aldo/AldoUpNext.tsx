@@ -24,6 +24,9 @@ import {
 } from "react";
 
 import { cn } from "~/lib/utils";
+import { useAldoAssistant } from "./assistantSession";
+import { currentDecisionReport, legacyHomeUpdate, technicalUpdateLink } from "./homeUpdate.logic";
+import { AldoUpdateDetails } from "./AldoUpdateCard";
 import { proposedPlanTitle, stripDisplayedPlanMarkdown } from "../proposedPlan";
 import { DismissChatDecision } from "./DismissChatDecision";
 import { ApprovalCard, ApprovalText, DecidedApproval, RewriteNote } from "./AldoApprovals";
@@ -504,6 +507,18 @@ export function DecisionCard(props: {
     onOpen: props.onOpen,
   };
 
+  const report = useAldoAssistant((s) =>
+    d.kind === "failed" || d.kind === "question" || d.kind === "waiting"
+      ? currentDecisionReport(
+          s.entries,
+          d.conversation,
+          d.kind === "failed" ? "failed" : "needs-you",
+        )
+      : undefined,
+  );
+  const update =
+    report?.kind === "message" ? (report.update ?? legacyHomeUpdate(report.text)) : undefined;
+  const failure = d.kind === "failed" ? update : undefined;
   let headline: string;
   let body: ReactNode = null;
   let actions: ReactNode = null;
@@ -609,12 +624,16 @@ export function DecisionCard(props: {
       // What it last said, less the question the card already asks; where it
       // only waits, its words are behind "View result" instead.
       const said = waiting ? null : q ? c.summary?.replace(q.question, "").trim() : c.summary;
-      body =
-        said && /\w/.test(said) ? (
-          <p className="line-clamp-3 text-[14px] text-muted-foreground leading-6 dark:text-foreground/70">
-            {said}
-          </p>
-        ) : null;
+      body = (
+        <AldoUpdateDetails
+          checked={update?.checked ?? c.result?.checked}
+          notChecked={update?.notChecked ?? c.result?.notChecked}
+          notes={[
+            ...new Set([...(update?.notes ?? []), ...(said && /\w/.test(said) ? [said] : [])]),
+          ]}
+          links={update?.links.filter((link) => technicalUpdateLink(link.url))}
+        />
+      );
       if (waiting || isTurnAsk(pending))
         more = (
           <ThreadLink target={c.thread} className={QUIET}>
@@ -835,11 +854,22 @@ export function DecisionCard(props: {
     }
     case "failed": {
       const c = d.conversation;
-      headline = "Stopped with an error";
+      headline = "Couldn’t finish";
       body = (
-        <p className="whitespace-pre-wrap break-words text-sm text-muted-foreground leading-6">
-          {c.summary || c.progress?.detail || "Open the thread to see what happened."}
-        </p>
+        <>
+          <p className="text-sm text-muted-foreground leading-6">
+            {failure?.summary ??
+              "I couldn’t finish this attempt. You can retry or open the work to see what happened."}
+          </p>
+          <AldoUpdateDetails
+            checked={failure?.checked ?? c.result?.checked}
+            notChecked={failure?.notChecked ?? c.result?.notChecked}
+            notes={[...(failure?.notes ?? []), c.summary || c.progress?.detail || ""].filter(
+              Boolean,
+            )}
+            links={failure?.links.filter((link) => technicalUpdateLink(link.url))}
+          />
+        </>
       );
       actions = (
         <div className="grid grid-cols-2 gap-2">

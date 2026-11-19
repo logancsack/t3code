@@ -567,6 +567,18 @@ describe("closingThread", () => {
 });
 
 describe("linkRuns", () => {
+  it("keeps unmatched brackets readable without blocking the conversation", () => {
+    const prefix = "[".repeat(40_000) + "\n";
+    const started = performance.now();
+    const runs = linkRuns(prefix + "[Open work](https://example.com/guide)");
+    const elapsed = performance.now() - started;
+    expect(runs).toEqual([
+      { text: prefix, at: 0 },
+      { text: "Open work", at: prefix.length, href: "https://example.com/guide" },
+    ]);
+    expect(elapsed).toBeLessThan(250);
+  });
+
   it("sets a message's https links apart, without the punctuation after them", () => {
     expect(
       linkRuns(
@@ -574,9 +586,9 @@ describe("linkRuns", () => {
       ),
     ).toEqual([
       { text: "Your cartoon is ready.\n\nShared link: ", at: 0 },
-      { text: "https://aldo.computer/s/abc", at: 37, href: "https://aldo.computer/s/abc" },
+      { text: "aldo.computer", at: 37, href: "https://aldo.computer/s/abc" },
       { text: ".\nThread: ", at: 64 },
-      { text: "https://aldo.computer/aldo-x/t", at: 74, href: "https://aldo.computer/aldo-x/t" },
+      { text: "aldo.computer", at: 74, href: "https://aldo.computer/aldo-x/t" },
     ]);
   });
 
@@ -607,8 +619,8 @@ describe("linkRuns", () => {
 
   it("leaves words without links, and other schemes, as they are", () => {
     expect(linkRuns("Nothing to open here.")).toEqual([{ text: "Nothing to open here.", at: 0 }]);
-    expect(linkRuns("Not javascript:alert(1) or http://localhost:3000")).toEqual([
-      { text: "Not javascript:alert(1) or http://localhost:3000", at: 0 },
+    expect(linkRuns("Not javascript:alert(1) or file:///tmp/test")).toEqual([
+      { text: "Not javascript:alert(1) or file:///tmp/test", at: 0 },
     ]);
   });
 });
