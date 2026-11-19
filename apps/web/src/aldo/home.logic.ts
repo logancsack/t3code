@@ -13,6 +13,7 @@ import {
   type AldoHomeAction,
   type AldoHomeConversation,
   type AldoHomeDelivery,
+  type AldoHomePending,
   type AldoHomePullRequest,
   type AldoHomeTarget,
   type AldoHomeUsage,
@@ -67,10 +68,55 @@ export function isPausedMidTurn(c: AldoHomeConversation): boolean {
   );
 }
 
+/**
+ * What a thread that waits on the user without asking anything asks on its
+ * card (from an older Aldo, or a release held for them): a plain question and
+ * answers to tap, each sent as what it tells the thread, as Aldo words a
+ * turn's own ask (sandbox-agent/task-result.ts). Never the agent's notes:
+ * those stay in its thread.
+ */
+export const WAITING_CHOICES: ReadonlyArray<{ readonly label: string; readonly reply: string }> = [
+  {
+    label: "Let it decide and carry on (Recommended)",
+    reply:
+      "Go ahead with what you think is best and finish. Anything that costs money or acts in my name still needs my OK first.",
+  },
+  { label: "Skip that part", reply: "Skip the part you needed me for and finish the rest." },
+  { label: "Stop here", reply: "Stop here, and don't carry on with this task." },
+];
+
+export function waitingQuestion(
+  c: Pick<AldoHomeConversation, "stateAt" | "at">,
+): Extract<AldoHomePending, { kind: "question" }> {
+  return {
+    kind: "question",
+    requestId: `waiting:${c.stateAt ?? c.at}`,
+    questions: [
+      {
+        id: "ask",
+        header: "",
+        question: "It needs a decision from you before it can finish.",
+        options: WAITING_CHOICES.map((o) => ({ label: o.label, description: "" })),
+        multiSelect: false,
+      },
+    ],
+  };
+}
+
+/** What a tapped (or typed) answer to a waiting card tells its thread. */
+export const waitingReply = (answer: string) =>
+  WAITING_CHOICES.find((o) => o.label === answer)?.reply ?? answer;
+
+/** A question Aldo worded from how a turn ended (`ask:`), not a request in the thread: the thread only waits. */
+export const isTurnAsk = (pending: AldoHomePending | undefined) =>
+  pending?.requestId.startsWith("ask:") === true;
+
 /** Why a conversation needs the user, or null if it doesn't. */
 export function needsYouKind(c: AldoHomeConversation): NeedsYouKind | null {
-  if (queuedComputer(c)) return null;
+  if (c.activity?.needsYou === false || c.settled) return null;
+  if (!c.activity?.needsYou && queuedComputer(c)) return null;
   if (
+    !c.activity?.needsYou &&
     c.progress?.next.owner === "aldo" &&
     !c.pending &&
     !c.plan &&
@@ -79,7 +125,7 @@ export function needsYouKind(c: AldoHomeConversation): NeedsYouKind | null {
     return null;
   if (c.state === "failed") return "failed";
   if (isPausedMidTurn(c)) return "paused";
-  if (c.state !== "waiting") return null;
+  if (c.state !== "waiting" && !c.activity?.needsYou) return null;
   if (c.pending?.kind === "question") return "question";
   if (c.pending?.kind === "approval") return "approval";
   if (c.pending?.kind === "handoff") return "handoff";
@@ -87,7 +133,25 @@ export function needsYouKind(c: AldoHomeConversation): NeedsYouKind | null {
   return "waiting";
 }
 
-export const WORKING_STATES = new Set(["working", "starting", "queued", "retrying", "scheduled"]);
+export const WORKING_STATES = new Set(["working", "starting", "retrying"]);
+
+/** Use Aldo's shared activity read, with a conservative fallback for an older server. */
+export function isWorkingNow(c: AldoHomeConversation): boolean {
+  if (c.activity) return c.activity.working;
+  return (
+    !c.settled &&
+    WORKING_STATES.has(c.state) &&
+    !isPausedMidTurn(c) &&
+    !queuedComputer(c) &&
+    !needsYouKind(c) &&
+    !(c.state === "working" && c.progress && c.progress.execution !== "working") &&
+    !(
+      c.progress?.next.owner === "aldo" &&
+      c.progress.next.kind !== "working" &&
+      c.progress.execution !== "working"
+    )
+  );
+}
 
 /**
  * Working, with no activity for an hour: `at` follows the thread's latest event
@@ -108,9 +172,25 @@ export interface HomeBoard {
   readonly needsYou: ReadonlyArray<AldoHomeConversation>;
   /** Newest first. */
   readonly working: ReadonlyArray<AldoHomeConversation>;
+  /** Retained work without a turn running now. */
+  readonly waiting: ReadonlyArray<AldoHomeConversation>;
   readonly unfinished: ReadonlyArray<AldoHomeConversation>;
   /** Finished in the last two days, newest first. */
   readonly done: ReadonlyArray<AldoHomeConversation>;
+}
+
+/** A future continuation or capacity wait stays visible, separate from current execution. */
+function waitingToContinue(c: AldoHomeConversation): boolean {
+  return (
+    !c.settled &&
+    !isWorkingNow(c) &&
+    !needsYouKind(c) &&
+    Boolean(
+      queuedComputer(c) ||
+      ["queued", "scheduled", "starting", "retrying"].includes(c.state) ||
+      (c.progress?.next.owner === "aldo" && c.progress.next.kind !== "working"),
+    )
+  );
 }
 
 const byAt = (a: { at: string }, b: { at: string }) => b.at.localeCompare(a.at);
@@ -128,16 +208,15 @@ export function boardFor(
     needsYou: conversations
       .filter((c) => needsYouKind(c) !== null && (withCleared || !c.chatDecision?.cleared))
       .sort((a, b) => a.at.localeCompare(b.at)),
-    working: conversations
-      .filter((c) => (WORKING_STATES.has(c.state) || queuedComputer(c)) && !isPausedMidTurn(c))
-      .sort(byAt),
+    working: conversations.filter((c) => isWorkingNow(c)).sort(byAt),
+    waiting: conversations.filter(waitingToContinue).sort(byAt),
     unfinished: conversations
-      .filter((c) => c.state === "unfinished" && !queuedComputer(c))
+      .filter((c) => c.state === "unfinished" && !waitingToContinue(c))
       .sort(byAt),
     done: conversations
       .filter(
         (c) =>
-          !queuedComputer(c) &&
+          !waitingToContinue(c) &&
           (c.state === "done" || c.state === "stopped") &&
           now - Date.parse(c.stateAt ?? c.at) < DONE_WINDOW_MS,
       )

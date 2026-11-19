@@ -17,7 +17,7 @@ import {
   type AldoHomePullRequest,
   type AldoPayment,
 } from "./homeApi";
-import { boardFor, isPausedMidTurn, needsYouKind, sameTarget } from "./home.logic";
+import { boardFor, isPausedMidTurn, isTurnAsk, needsYouKind, sameTarget } from "./home.logic";
 
 export type AldoDecision =
   | { readonly kind: "aldo-approval"; readonly key: string; readonly approval: AldoApproval }
@@ -86,11 +86,13 @@ function conversationDecision(c: AldoHomeConversation): AldoDecision | null {
   return null;
 }
 
-/** Put away in the user's list: settled, or snoozed (still, by `now`) without asking them anything. */
+/** Put away in the user's list: settled, or snoozed (still, by `now`) without asking them anything (a turn's own ask is how it waits). */
 export function putAway(c: AldoHomeConversation, now: number): boolean {
   if (c.settled === true) return true;
   return (
-    c.snoozedUntil !== undefined && Date.parse(c.snoozedUntil) > now && c.pending === undefined
+    c.snoozedUntil !== undefined &&
+    Date.parse(c.snoozedUntil) > now &&
+    (c.pending === undefined || isTurnAsk(c.pending))
   );
 }
 

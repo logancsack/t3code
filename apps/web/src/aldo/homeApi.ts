@@ -82,6 +82,8 @@ export interface AldoHomeConversation {
   readonly branch: string;
   /** working, waiting, done, failed; starting, queued, retrying; new (nothing sent yet). */
   readonly state: string;
+  /** Canonical current activity from Aldo; absent on older servers. */
+  readonly activity?: { readonly working: boolean; readonly needsYou: boolean };
   /** What it last said, asked or failed with. */
   readonly summary?: string;
   /** Its machine: running, asleep, not created, failed. */

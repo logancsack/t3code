@@ -193,3 +193,24 @@ describe("sameTarget", () => {
     expect(sameTarget(null, at("a"))).toBe(false);
   });
 });
+
+it("retains capacity and computer queues in a separate waiting board section", () => {
+  const capacity = conversation({
+    ref: "capacity",
+    state: "queued",
+    activity: { working: false, needsYou: false },
+  });
+  const computer = conversation({
+    ref: "computer",
+    state: "done",
+    computers: [{ computer: "gpu", status: "queued", creditsPerHour: 310 }],
+  });
+  const board = boardFor([capacity, computer], NOW);
+  expect(board).toMatchObject({
+    working: [],
+    needsYou: [],
+    unfinished: [],
+    done: [],
+    waiting: [capacity, computer],
+  });
+});

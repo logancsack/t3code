@@ -40,6 +40,7 @@ export function receiptText(
       if (choice.kind !== "answer") break;
       const picked = Object.values(choice.answers ?? {})
         .flatMap((a) => (Array.isArray(a) ? a : [a]))
+        .map((a) => a.replace(/\s*\(recommended\)\s*$/i, ""))
         .join(", ");
       const answer = picked || choice.text;
       return answer

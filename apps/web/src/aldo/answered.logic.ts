@@ -46,7 +46,15 @@ export const HOLD_MS = 10 * 60_000;
 
 /** A conversation as it is once its answer is on its way: carrying on with it, not waiting. */
 export function carryingOn(c: AldoHomeConversation, hold: AldoHold): AldoHomeConversation {
-  const { pending: _pending, plan: _plan, summary: _summary, ...rest } = c;
+  // Activity and progress describe the unanswered server copy, not this local continuation.
+  const {
+    pending: _pending,
+    plan: _plan,
+    summary: _summary,
+    activity: _activity,
+    progress: _progress,
+    ...rest
+  } = c;
   return {
     ...rest,
     // Its computer wakes for the answer (a thread that's asleep would read as paused mid-turn).
