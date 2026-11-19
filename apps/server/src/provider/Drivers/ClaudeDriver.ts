@@ -40,7 +40,11 @@ import {
   probeClaudeCapabilities,
 } from "../Layers/ClaudeProvider.ts";
 import { ProviderEventLoggers } from "../Layers/ProviderEventLoggers.ts";
-import { resolveClaudeModelCatalog } from "../ClaudeModelCatalog.ts";
+import {
+  resolveClaudeModelCatalog,
+  withDiscoveredClaudeModels,
+  type ClaudeModelCatalog,
+} from "../ClaudeModelCatalog.ts";
 import { makeManagedServerProvider } from "../makeManagedServerProvider.ts";
 import * as ModelManifest from "../ModelManifest.ts";
 import {
@@ -141,7 +145,12 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
       const serverSettings = yield* ServerSettingsService;
       const eventLoggers = yield* ProviderEventLoggers;
       const modelManifest = yield* ModelManifest.ModelManifest;
-      const modelCatalog = modelManifest.current.pipe(Effect.map(resolveClaudeModelCatalog));
+      let discovered: ReadonlyArray<ClaudeModelCatalog["models"][number]["model"]> = [];
+      const modelCatalog = modelManifest.current.pipe(
+        Effect.map((manifest) =>
+          withDiscoveredClaudeModels(resolveClaudeModelCatalog(manifest), discovered),
+        ),
+      );
       const processEnv = mergeProviderInstanceEnvironment(environment);
       const fallbackContinuationIdentity = defaultProviderContinuationIdentity({
         driverKind: DRIVER_KIND,
@@ -227,6 +236,11 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
                       Effect.provideService(Path.Path, path),
                     ),
                 ),
+              ),
+              Effect.tap((draft) =>
+                Effect.sync(() => {
+                  discovered = draft.models;
+                }),
               ),
               Effect.map(stampIdentity),
             ),

@@ -279,6 +279,30 @@ export function presenceBoard(
       } satisfies PresenceRow,
     }));
 
+  // Retained work stays discoverable without claiming an agent is running.
+  const retained: PresenceRow[] = tasks.waiting
+    .filter(
+      (c) =>
+        !soon.some(
+          (s) =>
+            s.row.target &&
+            s.row.target.environmentId === c.thread.environmentId &&
+            s.row.target.threadId === c.thread.threadId,
+        ),
+    )
+    .map((c) => {
+      const queue = queuedComputer(c);
+      return {
+        key: `scheduled:${c.ref}`,
+        title: c.title,
+        target: c.thread,
+        tone: "quiet",
+        detail: queue
+          ? aldoComputerQueueLabel(queue.computer, queue.position)
+          : (c.progress?.label ?? "Waiting to start"),
+      };
+    });
+
   return {
     needsYou: {
       rows: needs,
@@ -318,8 +342,10 @@ export function presenceBoard(
     },
     stuck,
     coming: {
-      rows: soon.map((s) => s.row),
-      preview: soon[0] ? `${soon[0].row.title} · ${soon[0].when}` : "Nothing scheduled",
+      rows: [...soon.map((s) => s.row), ...retained],
+      preview: soon[0]
+        ? `${soon[0].row.title} · ${soon[0].when}`
+        : (retained[0]?.detail ?? "Nothing scheduled"),
     },
   };
 }

@@ -157,6 +157,16 @@ it.layer(NodeServices.layer)("Claude capability probe SDK boundary", (it) => {
         subscriptionType: "pro",
         tokenSource: "oauth",
         apiProvider: undefined,
+        sdkModels: [
+          {
+            value: "claude-sonnet-6",
+            displayName: "Claude Sonnet 6",
+            description: "Newest Sonnet",
+            supportsEffort: true,
+            supportedEffortLevels: ["medium", "xhigh"],
+            supportsFastMode: true,
+          },
+        ],
         slashCommands: [
           {
             name: "review",

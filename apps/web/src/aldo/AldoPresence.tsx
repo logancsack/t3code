@@ -33,7 +33,7 @@ import {
   undoClearDismissed,
   useAldoClearing,
 } from "./clearDismissed";
-import { boardFor, elapsed, isStuck } from "./home.logic";
+import { boardFor, elapsed } from "./home.logic";
 import { useAldoHomeReadAt } from "./homeFeed";
 import { setAldoUnderTheHood } from "./simpleMode";
 import { parseAldoPlans } from "./plans.logic";
@@ -171,7 +171,7 @@ export function AldoPresence(props: {
     [home, now, seenAt, receipts, clearingIds],
   );
   const working = useMemo(
-    () => (home ? boardFor(home.conversations, now).working.filter((c) => !isStuck(c, now)) : []),
+    () => (home ? boardFor(home.conversations, now).working : []),
     [home, now],
   );
   const change = (next: boolean) => {

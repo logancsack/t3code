@@ -5,6 +5,8 @@ import { hasValidClaudeManifestAdapters } from "./ClaudeModelManifest.ts";
 import type { ModelManifestData } from "./ModelManifest.ts";
 import {
   BUNDLED_CLAUDE_MODEL_CATALOG,
+  claudeModelsFromSdk,
+  withDiscoveredClaudeModels,
   formatClaudeVersionUpgradeMessage,
   normalizeClaudeCatalogEffort,
   resolveClaudeCatalogApiModelId,
@@ -208,4 +210,29 @@ describe("Claude model catalog", () => {
       ["claude-synthetic-next", "claude-custom-tuned"],
     );
   });
+});
+
+it("discovers future SDK models and their effort choices without changing the default or runtime mappings", () => {
+  const baseline = resolveClaudeModelsForVersion(BUNDLED_CLAUDE_MODEL_CATALOG, "999.0.0");
+  const native = [
+    {
+      value: "future",
+      resolvedModel: "claude-future-99",
+      displayName: "Claude Future 99",
+      description: "Future",
+      supportedEffortLevels: ["low", "xhigh"] as ("low" | "xhigh")[],
+    },
+  ];
+  const models = claudeModelsFromSdk(baseline, native);
+  assert.deepEqual(models.slice(0, baseline.length), baseline);
+  const discovered = withDiscoveredClaudeModels(BUNDLED_CLAUDE_MODEL_CATALOG, models);
+  assert.equal(resolveClaudeModelSlug(discovered, "future"), "claude-future-99");
+  assert.equal(resolveClaudeCatalogEffort(discovered, "future", "xhigh"), "xhigh");
+  assert.equal(normalizeClaudeCatalogEffort(discovered, "xhigh", "future"), "xhigh");
+  assert.deepEqual(
+    models.filter((m) => m.isDefault),
+    baseline.filter((m) => m.isDefault),
+  );
+  assert.deepEqual(claudeModelsFromSdk(models, native), models);
+  assert.deepEqual(claudeModelsFromSdk(baseline, []), baseline);
 });

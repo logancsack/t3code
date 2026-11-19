@@ -49,7 +49,7 @@ import {
   shipLaneOf,
   stageLabel,
   stageTone,
-  WORKING_STATES,
+  isWorkingNow,
 } from "./home.logic";
 import { FOCUS, INSET, PRIMARY, SECONDARY, SURFACE } from "./surface";
 import { clockAt, stalledOf, threadCardOf } from "./threadCard.logic";
@@ -97,7 +97,7 @@ export function StateDot(props: {
             ? "bg-destructive"
             : kind || isStuck(c, props.now)
               ? "bg-warning"
-              : WORKING_STATES.has(c.state)
+              : isWorkingNow(c)
                 ? "animate-pulse bg-primary"
                 : c.state === "done"
                   ? "bg-success"

@@ -21,6 +21,7 @@ import {
   type SDKControlGetUsageResponse,
   type SDKUserMessage,
   type SettingSource,
+  type ModelInfo,
 } from "@anthropic-ai/claude-agent-sdk";
 
 import {
@@ -47,6 +48,7 @@ import {
   type ClaudeModelCatalog,
   formatClaudeVersionUpgradeMessage,
   resolveClaudeModelsForVersion,
+  claudeModelsFromSdk,
 } from "../ClaudeModelCatalog.ts";
 
 const DEFAULT_CLAUDE_MODEL_CAPABILITIES: ModelCapabilities = createModelCapabilities({
@@ -226,6 +228,7 @@ function nonEmptyProbeString(value: string): string | undefined {
 }
 
 type ClaudeCapabilitiesProbe = {
+  readonly sdkModels?: ReadonlyArray<ModelInfo>;
   readonly email: string | undefined;
   readonly subscriptionType: string | undefined;
   readonly tokenSource: string | undefined;
@@ -386,9 +389,10 @@ const probeClaudeCapabilities = (
           subscriptionType: account?.subscriptionType,
           tokenSource: account?.tokenSource,
           apiProvider: account?.apiProvider,
+          ...(init.models?.length ? { sdkModels: init.models } : {}),
           slashCommands: parseClaudeInitializationCommands(init.commands),
           ...(usage ? { usage } : {}),
-        } satisfies ClaudeCapabilitiesProbe;
+        } as ClaudeCapabilitiesProbe;
       }),
     ),
     Effect.ensuring(
@@ -526,16 +530,19 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
     });
   }
 
+  const capabilities = resolveCapabilities
+    ? yield* resolveCapabilities(claudeSettings).pipe(Effect.orElseSucceed(() => undefined))
+    : undefined;
   const models = providerModelsFromSettings(
-    resolveClaudeModelsForVersion(modelCatalog, parsedVersion),
+    claudeModelsFromSdk(
+      resolveClaudeModelsForVersion(modelCatalog, parsedVersion),
+      capabilities?.sdkModels ?? [],
+    ),
     claudeSettings.customModels,
     DEFAULT_CLAUDE_MODEL_CAPABILITIES,
   );
   const versionUpgradeMessage = formatClaudeVersionUpgradeMessage(modelCatalog, parsedVersion);
 
-  const capabilities = resolveCapabilities
-    ? yield* resolveCapabilities(claudeSettings).pipe(Effect.orElseSucceed(() => undefined))
-    : undefined;
   const skills = yield* discoverClaudeSkills(claudeSettings, cwd, resolvedEnvironment);
   const slashCommands = [COMPACT_SLASH_COMMAND, ...(capabilities?.slashCommands ?? [])];
   const dedupedSlashCommands = dedupeSlashCommands(slashCommands);

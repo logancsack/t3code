@@ -33,7 +33,7 @@ import { askAldoAbout, PendingForm, ThreadLink } from "./AldoHomeInbox";
 import { ContinueButton } from "./AldoContinue";
 import { AldoOpenContext } from "./AldoLiveCard";
 import { ApproveInLink, PaymentDetails } from "./AldoPaymentCard";
-import { AldoFrame } from "./AldoFrame";
+import { AldoMark } from "./AldoMark";
 import { setAldoMergeHold } from "./mergeHold";
 import { AgentMarkdown, Quoted } from "./AldoQuoted";
 import { useAldoArrive } from "./arrive";
@@ -49,7 +49,7 @@ import {
 } from "./decisions.logic";
 import { completeAldo } from "./presenceReactions";
 import { refreshAldoHome, useAldoHomeFeed } from "./homeFeed";
-import { elapsed } from "./home.logic";
+import { elapsed, isTurnAsk, waitingQuestion, waitingReply } from "./home.logic";
 import { addAldoReceipt, useAldoReceipts } from "./receipts";
 import { movedOnText, receiptText } from "./receipts.logic";
 import { FOCUS, ICON_BUTTON, INSET, PRIMARY, SECONDARY, SURFACE } from "./surface";
@@ -304,6 +304,12 @@ function useCardKeys(enabled: boolean): void {
   }, [enabled]);
 }
 
+/** A quiet text button under a card's choices. */
+const QUIET = cn(
+  FOCUS,
+  "inline-flex min-h-11 items-center rounded-full px-3 text-sm text-muted-foreground hover:text-foreground",
+);
+
 /** A choice as a big button, the way a phone asks: the one to take filled, the rest quiet. */
 function Choice(props: {
   readonly children: ReactNode;
@@ -336,7 +342,8 @@ function Choice(props: {
         <LoaderCircleIcon aria-hidden className="size-4 shrink-0 animate-spin" />
       ) : props.tag ? (
         <span className="flex shrink-0 items-center gap-1.5 text-[12px] text-muted-foreground">
-          <AldoFrame size={12} />
+          {/* The still mark, black or white by the theme alone, never a colour worked out at runtime. */}
+          <AldoMark className="size-3 shrink-0 text-black dark:text-white" />
           {props.tag}
         </span>
       ) : null}
@@ -500,6 +507,8 @@ export function DecisionCard(props: {
   let headline: string;
   let body: ReactNode = null;
   let actions: ReactNode = null;
+  /** A quiet link beside "Ask Aldo about it". */
+  let more: ReactNode = null;
   switch (d.kind) {
     case "aldo-approval": {
       const a = d.approval;
@@ -589,20 +598,34 @@ export function DecisionCard(props: {
       body = <PaymentDetails payment={d.payment} />;
       actions = <ApproveInLink payment={d.payment} now={props.now} />;
       break;
-    case "question": {
-      const q = d.pending.questions[0];
+    case "question":
+    case "waiting": {
+      const c = d.conversation;
+      // A thread that only waits (no request in it) is asked in plain words, its answer sent as a message.
+      const waiting = d.kind !== "question";
+      const pending = d.kind === "question" ? d.pending : waitingQuestion(c);
+      const q = pending.questions[0];
       headline = q?.question ?? "It asks you something";
-      // What it last said, less the question the card already asks.
-      const said = q
-        ? d.conversation.summary?.replace(q.question, "").trim()
-        : d.conversation.summary;
+      // What it last said, less the question the card already asks; where it
+      // only waits, its words are behind "View result" instead.
+      const said = waiting ? null : q ? c.summary?.replace(q.question, "").trim() : c.summary;
       body =
         said && /\w/.test(said) ? (
           <p className="line-clamp-3 text-[14px] text-muted-foreground leading-6 dark:text-foreground/70">
             {said}
           </p>
         ) : null;
-      if (d.pending.questions.length !== 1 || !q || q.multiSelect) {
+      if (waiting || isTurnAsk(pending))
+        more = (
+          <ThreadLink target={c.thread} className={QUIET}>
+            {c.result ? "View result" : "Open the thread"}
+          </ThreadLink>
+        );
+      const answer = (label: string): AldoChoice =>
+        waiting
+          ? { kind: "reply", text: waitingReply(label) }
+          : { kind: "answer", answers: { [q!.id]: label } };
+      if (pending.questions.length !== 1 || !q || q.multiSelect) {
         actions = (
           <PendingForm
             conversation={d.conversation}
@@ -648,7 +671,7 @@ export function DecisionCard(props: {
               }
               busy={busy === o.label}
               disabled={busy !== null}
-              onClick={() => void decide(o.label, { kind: "answer", answers: { [q.id]: o.label } })}
+              onClick={() => void decide(o.label, answer(o.label))}
             >
               {o.label.replace(/\s*\(recommended\)/i, "")}
               {/* What the choice means, where the thread says. */}
@@ -662,7 +685,9 @@ export function DecisionCard(props: {
           <OwnWords
             draft={d.key}
             disabled={busy !== null}
-            onSend={(text) => void decide("words", { kind: "answer", text })}
+            onSend={(text) =>
+              void decide("words", waiting ? { kind: "reply", text } : { kind: "answer", text })
+            }
           />
         </div>
       );
@@ -808,56 +833,29 @@ export function DecisionCard(props: {
       );
       break;
     }
-    case "failed":
-    case "waiting": {
+    case "failed": {
       const c = d.conversation;
-      const needs =
-        c.result?.state === "blocked_on_user"
-          ? c.result.doneWhen
-              .filter((item) => !item.met)
-              .map((item) => item.evidence || item.criterion)
-              .join("\n")
-          : null;
-      headline =
-        d.kind === "failed" ? "Stopped with an error" : (c.progress?.label ?? "Needs your reply");
+      headline = "Stopped with an error";
       body = (
         <p className="whitespace-pre-wrap break-words text-sm text-muted-foreground leading-6">
-          {needs ||
-            c.summary ||
-            c.progress?.detail ||
-            "Open the thread to see the context, or reply here."}
+          {c.summary || c.progress?.detail || "Open the thread to see what happened."}
         </p>
       );
-      actions =
-        d.kind === "failed" ? (
-          <div className="grid grid-cols-2 gap-2">
-            <ThreadLink target={c.thread} className={SECONDARY}>
-              Open
-            </ThreadLink>
-            <Choice
-              primary
-              busy={busy === "continue"}
-              disabled={busy !== null}
-              onClick={() => void decide("continue", { kind: "continue" })}
-            >
-              Retry
-            </Choice>
-          </div>
-        ) : (
-          <div className="flex flex-col gap-2">
-            <OwnWords
-              initiallyOpen
-              draft={d.key}
-              disabled={busy !== null}
-              ask="Reply to the thread"
-              placeholder="Your reply"
-              onSend={(text) => void decide("reply", { kind: "reply", text })}
-            />
-            <ThreadLink target={c.thread} className={SECONDARY}>
-              {c.result ? "View result" : "Open"}
-            </ThreadLink>
-          </div>
-        );
+      actions = (
+        <div className="grid grid-cols-2 gap-2">
+          <ThreadLink target={c.thread} className={SECONDARY}>
+            Open
+          </ThreadLink>
+          <Choice
+            primary
+            busy={busy === "continue"}
+            disabled={busy !== null}
+            onClick={() => void decide("continue", { kind: "continue" })}
+          >
+            Retry
+          </Choice>
+        </div>
+      );
       break;
     }
   }
@@ -876,16 +874,12 @@ export function DecisionCard(props: {
         </p>
       ) : null}
       {actions}
-      <button
-        type="button"
-        className={cn(
-          FOCUS,
-          "min-h-11 self-center rounded-full px-3 text-sm text-muted-foreground hover:text-foreground",
-        )}
-        onClick={() => askAldoAbout(who ?? "this item")}
-      >
-        Ask Aldo about it
-      </button>
+      <div className="flex flex-wrap items-center justify-center gap-1">
+        {more}
+        <button type="button" className={QUIET} onClick={() => askAldoAbout(who ?? "this item")}>
+          Ask Aldo about it
+        </button>
+      </div>
     </CardFrame>
   );
 }
