@@ -106,6 +106,10 @@ export function waitingQuestion(
       .replace(/^(?:learn from|research|study|compare)\s+/i, "")
       .split(/\s+(?:to|for)\s+/)[0] ?? c.title
   ).slice(0, 60);
+  const specificEvidence = evidence
+    .split(/(?<=[.!?])\s+/)
+    .find((line) => line.trim() && !/\b(?:PR|holdout|provenance|unadmitted|coverage)\b/i.test(line))
+    ?.slice(0, 220);
   const question =
     own?.question && !/^I need your decision before I can finish/i.test(own.question)
       ? own.question
@@ -118,7 +122,9 @@ export function waitingQuestion(
                 c.summary,
               )
             ? c.summary
-            : `I haven't recorded what I need from you to finish “${c.title}”.`;
+            : specificEvidence
+              ? `I need your help: ${specificEvidence}`
+              : `I haven't recorded what I need from you to finish “${c.title}”.`;
   const options =
     own?.question === question && own.options.length >= 2 && own.options.length <= 4
       ? own.options
