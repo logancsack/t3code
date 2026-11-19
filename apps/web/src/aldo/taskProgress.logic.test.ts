@@ -22,7 +22,7 @@ const progress = {
 it("adapts old and new server responses without asking the user to restart scheduled work", () => {
   const scheduled = adaptTaskProgress({ ...base, progress });
   expect(scheduled.state).toBe("scheduled");
-  expect(boardFor([scheduled], Date.now()).working).toEqual([scheduled]);
+  expect(boardFor([scheduled], Date.now()).working).toEqual([]);
   expect(needsYouKind(scheduled)).toBeNull();
   expect(adaptTaskProgress(base)).toEqual(base);
   expect(adaptTaskProgress({ ...base, resultState: "unfinished" }).state).toBe("unfinished");
@@ -61,4 +61,13 @@ it("places recorded user-owned next steps in Needs you while preserving executio
   });
   expect(stopped.state).toBe("stopped");
   expect(needsYouKind(stopped)).toBeNull();
+});
+
+it("uses the shared need even when an older progress hint says Aldo owns the next step", () => {
+  expect(needsYouKind({ ...base, activity: { working: false, needsYou: true }, progress })).toBe(
+    "failed",
+  );
+  expect(
+    needsYouKind({ ...base, state: "waiting", activity: { working: false, needsYou: false } }),
+  ).toBeNull();
 });

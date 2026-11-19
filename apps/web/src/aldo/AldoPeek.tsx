@@ -210,7 +210,7 @@ function ThreadPeek(props: {
             <span aria-hidden className="size-1.5 rounded-full bg-warning" />
             Needs you
           </p>
-          {c.summary && kind !== "approval" && kind !== "question" ? (
+          {c.summary && kind !== "approval" && kind !== "question" && kind !== "waiting" ? (
             <p className="whitespace-pre-wrap text-[14px] leading-6">{c.summary}</p>
           ) : null}
           <PendingForm conversation={c} onActed={() => void refreshAldoHome()} />

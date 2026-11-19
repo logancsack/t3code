@@ -6,7 +6,7 @@
 // working there, and says so.
 
 import type { AldoHomeConversation } from "./homeApi";
-import { WORKING_STATES, dueIn, elapsed, isStuck, needsYouKind, relativeTime } from "./home.logic";
+import { isWorkingNow, dueIn, elapsed, isStuck, needsYouKind, relativeTime } from "./home.logic";
 
 export type WorkstreamState = "needs" | "working" | "done" | "later";
 
@@ -19,7 +19,7 @@ export function workstreamState(c: AldoHomeConversation, now: number): Workstrea
   if (c.settled || (c.snoozedUntil && Date.parse(c.snoozedUntil) > now && !c.pending))
     return "later";
   if (needsYouKind(c)) return "needs";
-  if (WORKING_STATES.has(c.state)) return "working";
+  if (isWorkingNow(c)) return "working";
   if (c.state === "done") return "done";
   return null;
 }

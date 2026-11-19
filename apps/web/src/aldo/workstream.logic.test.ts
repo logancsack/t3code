@@ -24,7 +24,7 @@ function conversation(over: Partial<AldoHomeConversation> = {}): AldoHomeConvers
 describe("workstreamState", () => {
   it("reads what the board reads", () => {
     expect(workstreamState(conversation(), NOW)).toBe("working");
-    expect(workstreamState(conversation({ state: "queued" }), NOW)).toBe("working");
+    expect(workstreamState(conversation({ state: "queued" }), NOW)).toBeNull();
     expect(workstreamState(conversation({ state: "waiting" }), NOW)).toBe("needs");
     expect(workstreamState(conversation({ state: "failed" }), NOW)).toBe("needs");
     expect(workstreamState(conversation({ state: "done" }), NOW)).toBe("done");

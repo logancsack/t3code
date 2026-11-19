@@ -168,6 +168,14 @@ describe("aldoDecisions", () => {
           conversation({ ref: "z", thread: at("z"), state: "failed", snoozedUntil: ago(-60) }),
           // Snoozed, but it asks: it raised its hand.
           { ...question, ref: "s", thread: at("s"), snoozedUntil: ago(-60) },
+          // Snoozed, and only waits: Aldo's plain words for how its turn ended don't raise a hand.
+          {
+            ...question,
+            ref: "t",
+            thread: at("t"),
+            snoozedUntil: ago(-60),
+            pending: { ...question.pending!, requestId: "ask:turn-1" },
+          },
           // Paused mid-turn: opening it carries on, nothing to decide (its pull request still can be).
           conversation({ ref: "p", thread: at("p"), state: "paused" }),
         ],
