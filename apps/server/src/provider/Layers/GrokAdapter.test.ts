@@ -14,6 +14,7 @@ import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
+import { vi } from "vite-plus/test";
 
 import {
   ApprovalRequestId,
@@ -27,6 +28,7 @@ import {
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 
 import { ServerConfig } from "../../config.ts";
+import * as GrokAcpSupport from "../acp/GrokAcpSupport.ts";
 import { execScriptSource, writeFakeCli } from "../../testUtils/fakeCli.ts";
 import {
   grokPromptSettlementBelongsToContext,
@@ -636,6 +638,39 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
           T3_ACP_EMIT_FOREIGN_SESSION_UPDATES: "1",
         }),
       );
+      const trailingChunks = [yield* Deferred.make<void>(), yield* Deferred.make<void>()];
+      let receivedTail = 0;
+      let drainedPrompt = 0;
+      const makeRuntime = GrokAcpSupport.makeGrokAcpRuntime;
+      const runtimeSpy = vi
+        .spyOn(GrokAcpSupport, "makeGrokAcpRuntime")
+        .mockImplementation((input) =>
+          makeRuntime(input).pipe(
+            Effect.map((runtime) => ({
+              ...runtime,
+              getEvents: () =>
+                runtime.getEvents().pipe(
+                  Stream.tap((event) => {
+                    const tail = trailingChunks[receivedTail];
+                    if (event._tag !== "ContentDelta" || event.text !== "ck" || !tail)
+                      return Effect.void;
+                    receivedTail += 1;
+                    return Deferred.succeed(tail, undefined);
+                  }),
+                ),
+              drainEvents: Effect.suspend(() => {
+                const tail = trailingChunks[drainedPrompt++];
+                // The mock emits completion before its trailing writes. A queue
+                // drain cannot wait for bytes the OS has not delivered yet: make
+                // those updates queued before testing their real drain/settlement.
+                return tail
+                  ? Deferred.await(tail).pipe(Effect.andThen(runtime.drainEvents))
+                  : runtime.drainEvents;
+              }),
+            })),
+          ),
+        );
+      yield* Effect.addFinalizer(() => Effect.sync(() => runtimeSpy.mockRestore()));
       const adapter = yield* makeTestAdapter(wrapperPath);
 
       const runtimeEvents: ProviderRuntimeEvent[] = [];
@@ -673,9 +708,6 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
       });
 
       yield* Deferred.await(turnCompleted);
-      for (let yieldAttempt = 0; yieldAttempt < 8; yieldAttempt += 1) {
-        yield* Effect.yieldNow;
-      }
       const readySessions = yield* adapter.listSessions();
       const readySession = readySessions.find((session) => session.threadId === threadId);
       const turnCompletedEvent = runtimeEvents.find(
@@ -1025,11 +1057,20 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
           T3_ACP_EMIT_XAI_PROMPT_COMPLETE_THEN_HANG: "1",
         }),
       );
+      const draining = yield* Deferred.make<void>();
+      const makeRuntime = GrokAcpSupport.makeGrokAcpRuntime;
+      const runtimeSpy = vi
+        .spyOn(GrokAcpSupport, "makeGrokAcpRuntime")
+        .mockImplementation((input) =>
+          makeRuntime(input).pipe(
+            Effect.map((runtime) => ({
+              ...runtime,
+              drainEvents: Deferred.succeed(draining, undefined).pipe(Effect.andThen(Effect.never)),
+            })),
+          ),
+        );
+      yield* Effect.addFinalizer(() => Effect.sync(() => runtimeSpy.mockRestore()));
       const adapter = yield* makeTestAdapter(wrapperPath);
-      const contentDelta = yield* Deferred.make<void>();
-      const runtimeEventsFiber = yield* Stream.runForEach(adapter.streamEvents, (event) =>
-        event.type === "content.delta" ? Deferred.succeed(contentDelta, undefined) : Effect.void,
-      ).pipe(Effect.forkChild);
 
       yield* adapter.startSession({
         threadId,
@@ -1047,20 +1088,15 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
         })
         .pipe(Effect.forkChild);
 
-      yield* Deferred.await(contentDelta);
-      for (let yieldAttempt = 0; yieldAttempt < 6; yieldAttempt += 1) {
-        yield* Effect.yieldNow;
-      }
+      // The first output chunk precedes prompt success. Hold the real ACP drain
+      // after success so interruption deterministically exercises the finalizer.
+      yield* Deferred.await(draining);
       yield* Fiber.interrupt(sendTurnFiber);
-      for (let yieldAttempt = 0; yieldAttempt < 4; yieldAttempt += 1) {
-        yield* Effect.yieldNow;
-      }
 
       const snapshot = yield* adapter.readThread(threadId);
       assert.equal(snapshot.turns.length, 1);
       assert.equal(snapshot.turns[0]?.items.length, 1);
 
-      yield* Fiber.interrupt(runtimeEventsFiber);
       yield* adapter.stopSession(threadId);
     }),
   );
@@ -1676,33 +1712,40 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
           T3_ACP_EMIT_XAI_PROMPT_COMPLETE_THEN_HANG: "1",
         }),
       );
+      const draining = yield* Deferred.make<void>();
+      const releaseDrain = yield* Deferred.make<void>();
+      const makeRuntime = GrokAcpSupport.makeGrokAcpRuntime;
+      const runtimeSpy = vi
+        .spyOn(GrokAcpSupport, "makeGrokAcpRuntime")
+        .mockImplementation((input) =>
+          makeRuntime(input).pipe(
+            Effect.map((runtime) => ({
+              ...runtime,
+              drainEvents: Deferred.succeed(draining, undefined).pipe(
+                Effect.andThen(Deferred.await(releaseDrain)),
+                Effect.andThen(runtime.drainEvents),
+              ),
+            })),
+          ),
+        );
+      yield* Effect.addFinalizer(() => Effect.sync(() => runtimeSpy.mockRestore()));
       const adapter = yield* makeTestAdapter(wrapperPath);
 
       const runtimeEvents: ProviderRuntimeEvent[] = [];
-      const activeTurnIdRef = yield* Ref.make<TurnId | undefined>(undefined);
-      const trailingChunkTurnId = yield* Deferred.make<TurnId>();
-      let receivedText = "";
+      const activeTurn = yield* Deferred.make<TurnId>();
+      const completed = yield* Deferred.make<void>();
       const runtimeEventsFiber = yield* Stream.runForEach(adapter.streamEvents, (event) =>
         Effect.gen(function* () {
           runtimeEvents.push(event);
           if (String(event.threadId) !== String(threadId)) {
             return;
           }
-          if (event.type === "turn.started") {
-            yield* Ref.set(activeTurnIdRef, event.turnId);
+          if (event.type === "turn.started" && event.turnId !== undefined) {
+            yield* Deferred.succeed(activeTurn, event.turnId);
           }
-          if (event.type !== "content.delta") {
-            return;
+          if (event.type === "turn.completed") {
+            yield* Deferred.succeed(completed, undefined);
           }
-          receivedText += event.payload.delta;
-          if (receivedText !== "hello from mock") {
-            return;
-          }
-          const turnId = event.turnId ?? (yield* Ref.get(activeTurnIdRef));
-          if (turnId === undefined) {
-            return;
-          }
-          yield* Deferred.succeed(trailingChunkTurnId, turnId).pipe(Effect.ignore);
         }),
       ).pipe(Effect.forkChild);
 
@@ -1722,9 +1765,19 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
         })
         .pipe(Effect.forkChild);
 
-      const turnId = yield* Deferred.await(trailingChunkTurnId).pipe(Effect.timeout("2 seconds"));
-      yield* adapter.interruptTurn(threadId, turnId).pipe(Effect.timeout("2 seconds"));
-      yield* Fiber.join(sendTurnFiber).pipe(Effect.timeout("2 seconds"));
+      yield* Effect.gen(function* () {
+        const turnId = yield* Deferred.await(activeTurn);
+        yield* Deferred.await(draining);
+        // Stop marks its target before waiting for the settlement lock. Start it
+        // immediately while completion holds that lock, then drain real events.
+        const stop = yield* adapter
+          .interruptTurn(threadId, turnId)
+          .pipe(Effect.forkChild({ startImmediately: true }));
+        yield* Deferred.succeed(releaseDrain, undefined);
+        yield* Fiber.join(stop);
+        yield* Fiber.join(sendTurnFiber);
+        yield* Deferred.await(completed);
+      }).pipe(Effect.ensuring(Deferred.succeed(releaseDrain, undefined)));
 
       const turnCompletedEvents = runtimeEvents.filter(
         (event): event is Extract<ProviderRuntimeEvent, { type: "turn.completed" }> =>
