@@ -62,3 +62,12 @@ it("places recorded user-owned next steps in Needs you while preserving executio
   expect(stopped.state).toBe("stopped");
   expect(needsYouKind(stopped)).toBeNull();
 });
+
+it("uses the shared need even when an older progress hint says Aldo owns the next step", () => {
+  expect(needsYouKind({ ...base, activity: { working: false, needsYou: true }, progress })).toBe(
+    "failed",
+  );
+  expect(
+    needsYouKind({ ...base, state: "waiting", activity: { working: false, needsYou: false } }),
+  ).toBeNull();
+});

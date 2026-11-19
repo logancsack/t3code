@@ -70,8 +70,9 @@ export function isPausedMidTurn(c: AldoHomeConversation): boolean {
 /** Why a conversation needs the user, or null if it doesn't. */
 export function needsYouKind(c: AldoHomeConversation): NeedsYouKind | null {
   if (c.activity?.needsYou === false || c.settled) return null;
-  if (queuedComputer(c)) return null;
+  if (!c.activity?.needsYou && queuedComputer(c)) return null;
   if (
+    !c.activity?.needsYou &&
     c.progress?.next.owner === "aldo" &&
     !c.pending &&
     !c.plan &&
