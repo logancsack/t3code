@@ -39,7 +39,13 @@ const model = (overrides: Partial<ServerProviderModel>): ServerProviderModel => 
 
 describe("classifyModels", () => {
   it("classifies qualified Codex families without changing their wire ids", () => {
-    const manifest: ModelManifestData = { version: 1, currentModels: { codex: ["gpt-test"] } };
+    const manifest: ModelManifestData = {
+      version: 1,
+      currentModels: { codex: ["gpt-test"] },
+      providers: {
+        codex: { profiles: {}, models: [{ slug: "gpt-old", name: "Old", status: "legacy" }] },
+      },
+    };
     const models = [
       model({ slug: "openai.gpt-test", isLegacy: true }),
       model({ slug: "openai.gpt-old" }),
@@ -52,10 +58,13 @@ describe("classifyModels", () => {
       ],
     );
   });
-  it("flags non-current models, clears stale flags, and skips custom models", () => {
+  it("flags explicit legacy models, clears stale flags, and skips custom models", () => {
     const manifest: ModelManifestData = {
       version: 1,
       currentModels: { codex: ["current-a", "current-b"] },
+      providers: {
+        codex: { profiles: {}, models: [{ slug: "old-model", name: "Old", status: "legacy" }] },
+      },
     };
     const models = [
       model({ slug: "current-a" }),
@@ -73,6 +82,78 @@ describe("classifyModels", () => {
         ["old-model", true],
         ["my-own-model", false],
       ],
+    );
+  });
+
+  it("keeps newly discovered models visible with their capabilities and the incumbent default", () => {
+    for (const driver of [
+      "codex",
+      "claudeAgent",
+      "grok",
+      "muse",
+      "opencode",
+      "cursor",
+      "antigravity",
+    ]) {
+      const kind = ProviderDriverKind.make(driver);
+      const manifest: ModelManifestData = {
+        version: 1,
+        currentModels: { [driver]: ["incumbent"] },
+        providers: {
+          [driver]: {
+            profiles: {},
+            defaults: { chat: "incumbent" },
+            models: [{ slug: "retired", name: "Retired", status: "legacy" }],
+          },
+        },
+      };
+      const fresh = model({
+        slug: "future-release",
+        name: "Future release",
+        isDefault: true,
+        isLegacy: true,
+        capabilities: {
+          optionDescriptors: [
+            {
+              id: "reasoningEffort",
+              label: "Reasoning",
+              type: "select",
+              options: [
+                { id: "low", label: "Low" },
+                { id: "high", label: "High" },
+              ],
+            },
+          ],
+        },
+      });
+      const actual = applyManifestDefault(
+        classifyModels(
+          [model({ slug: "incumbent" }), model({ slug: "retired" }), fresh],
+          manifest,
+          kind,
+        ),
+        manifest,
+        kind,
+      );
+      assert.deepStrictEqual(
+        actual.filter((entry) => !entry.isLegacy).map((entry) => entry.slug),
+        ["incumbent", "future-release"],
+        driver,
+      );
+      assert.deepStrictEqual(
+        actual.find((entry) => entry.slug === fresh.slug)?.capabilities,
+        fresh.capabilities,
+      );
+      assert.strictEqual(actual.find((entry) => entry.isDefault)?.slug, "incumbent");
+    }
+  });
+
+  it("does not treat an older current-only manifest as an exhaustive live catalog", () => {
+    const manifest: ModelManifestData = { version: 1, currentModels: { codex: ["incumbent"] } };
+    assert.notStrictEqual(
+      classifyModels([model({ slug: "future-release", isLegacy: true })], manifest, CODEX)[0]
+        ?.isLegacy,
+      true,
     );
   });
 });
