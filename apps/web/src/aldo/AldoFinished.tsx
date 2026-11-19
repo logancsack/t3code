@@ -15,8 +15,11 @@ import { cn } from "~/lib/utils";
 import { AldoOpenContext } from "./AldoLiveCard";
 import { ResultGlyph } from "./AldoResultMark";
 import { useAldoArrive } from "./arrive";
+import type { AldoAssistantMessage } from "./assistant.logic";
 import { finishedResults, onlyWaiting, type AldoFinishedResult } from "./finished.logic";
+import { sameTarget } from "./home.logic";
 import { type AldoHome } from "./homeApi";
+import { legacyHomeUpdate } from "./homeUpdate.logic";
 import { FOCUS, SURFACE } from "./surface";
 
 /** A receipt, loaded when one is first opened (or about to be: a pointer on its line). */
@@ -29,19 +32,22 @@ const SHOWN = 3;
 export function AldoFinished(props: {
   readonly home: AldoHome;
   readonly now: number;
-  readonly told?: ReadonlyArray<{ readonly text: string }>;
+  readonly told?: ReadonlyArray<Pick<AldoAssistantMessage, "text" | "update" | "call" | "source">>;
 }) {
-  const results = useMemo(
-    () =>
-      finishedResults(props.home, props.now).filter((r) => {
-        const target = r.conversation.thread;
-        return (
-          !onlyWaiting(r) ||
-          !props.told?.some((m) => m.text.includes(`/${target.environmentId}/${target.threadId}`))
-        );
-      }),
-    [props.home, props.now, props.told],
-  );
+  const results = useMemo(() => {
+    // Only a rendered result card carries the current-status disclosure. Ordinary links,
+    // call transcripts, briefs and old asks leave the quiet progress line in place.
+    const replacements = props.told?.flatMap((m) => {
+      if (m.call !== undefined || m.source === "brief") return [];
+      const update = m.update ?? legacyHomeUpdate(m.text);
+      return update?.thread && update.state !== "needs-you" ? [update.thread] : [];
+    });
+    return finishedResults(props.home, props.now).filter(
+      (r) =>
+        !onlyWaiting(r) ||
+        !replacements?.some((thread) => sameTarget(thread, r.conversation.thread)),
+    );
+  }, [props.home, props.now, props.told]);
   const rows = results.filter((r) => !onlyWaiting(r));
   const waiting = results.filter(onlyWaiting);
   const [opened, setOpened] = useState<string | null>(null);

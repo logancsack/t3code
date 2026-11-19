@@ -800,6 +800,100 @@ it("shows a multi-paragraph Home answer as one reply", async () => {
   expect(container.textContent).not.toContain("Checks reported");
 });
 
+it.each(["checks-running", "deploying"] as const)(
+  "keeps %s progress when an ordinary reply only links to the completed thread",
+  async (stage) => {
+    const target = { environmentId: "aldo-demo", threadId: "work" };
+    const read = home({
+      conversations: [
+        {
+          ref: "work",
+          thread: target,
+          title: "Prepare the guide",
+          repos: [],
+          branch: "",
+          state: "done",
+          machine: "asleep",
+          at: at(2),
+        },
+      ],
+      pullRequests: [
+        {
+          environmentId: target.environmentId,
+          thread: target,
+          threadTitle: "Prepare the guide",
+          repo: "acme/guide",
+          number: 7,
+          url: "https://github.com/acme/guide/pull/7",
+          title: "Prepare the guide",
+          status: "watching",
+          stage,
+          checks: { passed: 1, failed: 0, running: 1 },
+          deploy: null,
+          followups: 0,
+          reviewsExhausted: false,
+          greenSince: null,
+          mergesAt: null,
+          mergedAt: null,
+          updatedAt: at(3),
+        },
+      ],
+    });
+    backend.home = read;
+    message("Prepare the guide", 1);
+    message("Here is the thread: https://aldo.computer/aldo-demo/work", 3, "assistant");
+    await act(async () => root.render(<Page home={read} />));
+    expect(container.querySelector("[data-aldo-update]")).toBeNull();
+    expect(container.querySelector("[data-aldo-finished]")?.textContent).toContain(
+      "I’m checking the update before it goes live.",
+    );
+
+    // A structured result needs no raw thread URL. It owns the replacement status.
+    await act(async () => {
+      useAldoAssistant.setState((s) => ({
+        entries: [
+          s.entries[0]!,
+          {
+            kind: "message",
+            role: "assistant",
+            at: at(3),
+            text: "I’ve prepared the guide.",
+            update: {
+              id: "guide-result",
+              title: "Prepare the guide",
+              thread: target,
+              state: "done",
+              summary: "I’ve prepared the guide.",
+              checked: [],
+              notChecked: [],
+              links: [],
+            },
+          },
+        ],
+      }));
+    });
+    expect(container.querySelector("[data-aldo-finished]")).toBeNull();
+    const details = container.querySelector('[data-aldo-update="guide-result"] details')!;
+    expect(container.textContent).not.toContain("Checks 1 of 2");
+    expect(details.textContent).toContain("Current status");
+    expect(details.textContent).toContain("I’m checking the update before it goes live.");
+
+    // The explicit older result envelope supplies the same replacement, without metadata.
+    await act(async () => {
+      useAldoAssistant.setState((s) => ({ entries: [s.entries[0]!] }));
+      message(
+        "I’ve prepared the guide.\n\nThread: https://aldo.computer/aldo-demo/work",
+        3,
+        "assistant",
+      );
+    });
+    expect(container.querySelector("[data-aldo-finished]")).toBeNull();
+    expect(container.querySelector("[data-aldo-update] details")?.textContent).toContain(
+      "I’m checking the update before it goes live.",
+    );
+  },
+);
+
 it("retains a snoozed failure report when no replacement decision card is rendered", async () => {
   const target = { environmentId: "aldo-1", threadId: "t1" };
   const failed = {

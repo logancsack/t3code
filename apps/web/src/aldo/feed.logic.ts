@@ -27,6 +27,7 @@ import { putAway, type AldoPlaceable } from "./decisions.logic";
 import { settledPayments } from "./payments.logic";
 import { openPlans, type AldoPlan } from "./plans.logic";
 import { queuedComputer, sameTarget } from "./home.logic";
+import type { AldoAssistantMessage } from "./assistant.logic";
 
 /** How far back the conversation shows what happened: as long as the board kept done threads. */
 const FEED_WINDOW_MS = 2 * 24 * 60 * 60 * 1000;
@@ -124,7 +125,7 @@ export function feedEvents(
     readonly now: number;
     readonly from: string | null;
     readonly here?: ReadonlyArray<AldoShownAction>;
-    readonly told?: ReadonlyArray<{ readonly text: string; readonly at: string }>;
+    readonly told?: ReadonlyArray<Pick<AldoAssistantMessage, "text" | "at" | "update">>;
   },
 ): ReadonlyArray<AldoFeedEvent> {
   const start = Math.max(
@@ -157,7 +158,11 @@ export function feedEvents(
   const told = (c: AldoHomeConversation, at: string) => {
     const path = `/${c.thread.environmentId}/${c.thread.threadId}`;
     const after = Date.parse(at) - TOLD_SLACK_MS;
-    return (options.told ?? []).some((m) => Date.parse(m.at) >= after && m.text.includes(path));
+    return (options.told ?? []).some(
+      (m) =>
+        Date.parse(m.at) >= after &&
+        (m.update?.thread ? sameTarget(m.update.thread, c.thread) : m.text.includes(path)),
+    );
   };
   const routineOf = (c: AldoHomeConversation) =>
     c.routine

@@ -252,10 +252,7 @@ export function AldoConversationPage(props: {
   );
   // What Aldo said: a thread it told the user about needs no line of its own.
   const told = useMemo(
-    () =>
-      entries.flatMap((e) =>
-        e.kind === "message" && e.role === "assistant" ? [{ text: e.text, at: e.at }] : [],
-      ),
+    () => entries.flatMap((e) => (e.kind === "message" && e.role === "assistant" ? [e] : [])),
     [entries],
   );
   const loaded = useAldoAssistant((s) => s.historyLoaded);
