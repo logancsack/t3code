@@ -15,7 +15,7 @@ import { fetchAldoServerConfig, reportAldoServerConfig } from "./threadApi";
 import { isAldoCloud, isAldoEnvironmentId } from "./api";
 import { settingsAccounts } from "./settingsData";
 import { loadAldoMachineSettings } from "./machineSettings";
-import { providerKinds } from "./serverConfig.logic";
+import { providerKinds, mergeProviderSnapshots } from "./serverConfig.logic";
 
 type EncodedConfig = {
   environment: Record<string, unknown>;
@@ -96,7 +96,10 @@ function capture(): void {
   if (!config || config === captured) return;
   captured = config;
   const encoded = encodeServerConfig(config) as unknown as EncodedConfig;
-  latest = encoded;
+  latest = {
+    ...encoded,
+    providers: mergeProviderSnapshots(latest?.providers ?? [], encoded.providers),
+  };
   // Save when the models (or their availability) change, not on every check.
   const providers = JSON.stringify(
     encoded.providers.map(({ checkedAt: _checkedAt, ...provider }) => provider),
@@ -124,9 +127,10 @@ async function template(): Promise<EncodedConfig | null> {
       fetchedAt = Date.now();
       if (!config) return;
       const reported = config as EncodedConfig;
-      const newest = (value: EncodedConfig) =>
-        value.providers.reduce((at, p) => Math.max(at, Date.parse(String(p.checkedAt)) || 0), 0);
-      if (!latest || newest(reported) > newest(latest)) latest = reported;
+      latest = {
+        ...reported,
+        providers: mergeProviderSnapshots(latest?.providers ?? [], reported.providers),
+      };
     })
     .catch(() => {
       fetchedFromAldo = null;

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   missingProviders,
+  mergeProviderSnapshots,
   providerInstances,
   providerKinds,
   withAldoTemplate,
@@ -126,4 +127,26 @@ describe("withAldoTemplate", () => {
     ).toBeNull();
     expect(withAldoTemplate(undefined, stored(["codex"], {}), {})).toBeNull();
   });
+});
+
+it("refreshes existing sleeping providers independently, without replacing a newer local check", () => {
+  const codex = {
+    instanceId: "codex",
+    driver: "codex",
+    checkedAt: "2026-11-19T01:00:00Z",
+    models: ["old"],
+  };
+  const claude = {
+    instanceId: "claudeAgent",
+    driver: "claudeAgent",
+    checkedAt: "2026-11-19T03:00:00Z",
+    models: ["current"],
+  };
+  const future = { ...codex, checkedAt: "2026-11-19T02:00:00Z", models: ["old", "future"] };
+  const reported = [future, { ...claude, checkedAt: "2026-11-19T00:00:00Z", models: [] }];
+  expect(mergeProviderSnapshots([codex, claude], reported)).toEqual([future, claude]);
+  const raw = JSON.stringify({ config: { providers: [codex, claude], settings: {} } });
+  const refreshed = withAldoTemplate(raw, { providers: reported }, {});
+  expect(JSON.parse(refreshed!).config.providers).toEqual([future, claude]);
+  expect(withAldoTemplate(refreshed, { providers: reported }, {})).toBeNull();
 });
