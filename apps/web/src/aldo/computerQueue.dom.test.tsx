@@ -113,7 +113,7 @@ it("keeps the GPU header quiet, updates its queue position, and cancels the requ
       }),
   );
   await act(() => cancel.click());
-  expect(fixture.stop).toHaveBeenCalledExactlyOnceWith(target.environmentId, "gpu");
+  expect(fixture.stop).toHaveBeenCalledExactlyOnceWith(target.environmentId, "gpu", undefined);
   fixture.environments = [];
   await act(async () => {
     finish("Canceled the request for the GPU computer.");
