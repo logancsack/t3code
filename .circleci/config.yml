@@ -144,12 +144,7 @@ jobs:
       - setup
       - run:
           name: Test
-          command: |
-            set +e
-            vp run --filter t3 test --reporter=default --reporter=json --outputFile.json=/tmp/server-results.json 2>&1 | tee /tmp/server-tests.log
-            test_status=${PIPESTATUS[0]}
-            node .circleci/report-server-tests.mjs "$test_status" || true
-            exit "$test_status"
+          command: vp run --filter t3 test
 
   build:
     executor: node
