@@ -1228,3 +1228,39 @@ it("restores the live card once an answer receipt replaces the decision, before 
   expect(container.querySelector("[data-aldo-decision]")).toBeNull();
   expect(container.querySelectorAll("[data-test-live]")).toHaveLength(1);
 });
+
+it("keeps only the latest scheduled turn per thread inside the collapsed status disclosure", async () => {
+  const target = { environmentId: "aldo-demo", threadId: "work" };
+  useAldoAssistant.setState({
+    entries: [1, 2, 3].map((minute) => ({
+      kind: "message" as const,
+      role: "assistant" as const,
+      at: at(minute),
+      text: "I have a follow-up scheduled for the remaining work.",
+      update: {
+        id: `wait-${minute}`,
+        title: "Waiting cards on Home must say exactly what’s needed",
+        thread: target,
+        state: "scheduled" as const,
+        summary: "I have a follow-up scheduled for the remaining work.",
+        checked: [`Check ${minute}`],
+        notChecked: [],
+        links: [],
+      },
+    })),
+  });
+  await act(async () => root.render(<Page home={home()} />));
+  expect(container.querySelectorAll("[data-aldo-update]")).toHaveLength(0);
+  expect(container.textContent).not.toContain("I have a follow-up scheduled");
+  const disclosure = [...container.querySelectorAll("button")].find(
+    (b) => b.textContent === "1 scheduled",
+  )!;
+  expect(disclosure.getAttribute("aria-expanded")).toBe("false");
+  await act(async () => disclosure.click());
+  expect(container.querySelectorAll("[data-aldo-update]")).toHaveLength(1);
+  expect(container.textContent).toContain("Open work");
+  expect(container.textContent).toContain("Check 3");
+  expect(container.textContent).not.toContain("Check 1");
+  await act(async () => disclosure.click());
+  expect(container.querySelectorAll("[data-aldo-update]")).toHaveLength(0);
+});

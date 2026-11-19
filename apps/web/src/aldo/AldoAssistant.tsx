@@ -88,7 +88,7 @@ import { sameTarget } from "./home.logic";
 import { useAldoHomeFeed } from "./homeFeed";
 import { voicePresenceState } from "./presence.logic";
 import { acknowledgeAldo, setAldoReading } from "./presenceReactions";
-import { dedupeLiveCards, interleave, type AldoFeedEvent } from "./feed.logic";
+import { dedupeLiveCards, interleave, scheduledEvents, type AldoFeedEvent } from "./feed.logic";
 import { type AldoPlaceable } from "./decisions.logic";
 import { artifactShows, linkRows, withoutShownLinks, type AldoArtifact } from "./artifacts.logic";
 import { useAldoFirstViewHold } from "./firstView";
@@ -701,12 +701,29 @@ export function AldoConversation(
         : [],
     );
     const feed = dedupeLiveCards(props.feed ?? [], [...shown, ...(props.decisionThreads ?? [])]);
+    const visible = entries
+      .map((entry, index) => ({ entry, index }))
+      .filter(
+        ({ entry }) =>
+          !onCall(entry) &&
+          !(
+            entry.kind === "message" &&
+            entry.role === "assistant" &&
+            (entry.update ?? legacyHomeUpdate(entry.text))?.state === "scheduled" &&
+            entry.source !== "brief"
+          ),
+      );
     return interleave(
-      entries,
-      feed,
-      (entry) => (onCall(entry) ? null : entry.kind === "action" ? null : entry.at),
+      visible,
+      [
+        ...feed,
+        ...scheduledEvents(
+          entries.flatMap((e) => (e.kind === "message" && e.role === "assistant" ? [e] : [])),
+        ),
+      ],
+      ({ entry }) => (entry.kind === "action" ? null : entry.at),
       props.decisions,
-    ).filter((item) => item.kind !== "entry" || !onCall(item.entry));
+    ).map((item) => (item.kind === "entry" ? { ...item, ...item.entry } : item));
   }, [entries, props.feed, props.decisions, props.decisionThreads, live, since]);
   const shownCount = items.length;
   const placedAt = useMemo(

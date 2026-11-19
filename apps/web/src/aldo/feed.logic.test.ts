@@ -12,6 +12,7 @@ import {
   feedEvents,
   interleave,
   shippedStatus,
+  scheduledEvents,
   withPlans,
 } from "./feed.logic";
 import { parseAldoPlan, type AldoPlan } from "./plans.logic";
@@ -544,4 +545,33 @@ describe("interleave", () => {
       { kind: "card", key: "only", at: at(1) },
     ]);
   });
+});
+
+it("counts scheduled threads together with shipped work, keeping the latest details", () => {
+  const messages = [1, 3, 2].map((n) => ({
+    text: "I have a follow-up scheduled for the remaining work.",
+    at: at(n),
+    update: {
+      id: `wait-${n}`,
+      title: "Check release",
+      thread: target,
+      state: "scheduled" as const,
+      summary: "Waiting",
+      checked: [`Check ${n}`],
+      notChecked: [],
+      links: [],
+    },
+  }));
+  const scheduled = scheduledEvents(messages);
+  expect(scheduled).toHaveLength(1);
+  expect(scheduled[0]).toMatchObject({ update: { id: "wait-1", checked: ["Check 1"] } });
+  const shipped = feedEvents(
+    {
+      conversations: [],
+      actions: [],
+      pullRequests: [pullRequest({ status: "merged", mergedAt: at(5) })],
+    },
+    { now: NOW, from: null },
+  );
+  expect(digestOf([...shipped, ...scheduled]).label).toBe("1 shipped · 1 scheduled");
 });
