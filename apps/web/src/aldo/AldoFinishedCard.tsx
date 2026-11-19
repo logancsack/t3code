@@ -370,7 +370,14 @@ function Actions(props: {
   return (
     <div className="grid grid-cols-2 gap-2">
       {tone === "failing" ? look("checks", "View checks") : look("files", "View changes")}
-      <button type="button" className={PRIMARY} onClick={() => askAldoAbout(title)}>
+      <ThreadLink target={props.result.conversation.thread} className={PRIMARY}>
+        Open
+      </ThreadLink>
+      <button
+        type="button"
+        className={cn(FOCUS, "col-span-2 min-h-11 rounded-full text-sm text-muted-foreground")}
+        onClick={() => askAldoAbout(title)}
+      >
         Ask Aldo about it
       </button>
     </div>

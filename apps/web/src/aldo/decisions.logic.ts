@@ -113,7 +113,18 @@ export function aldoDecisions(
   const needsYou = boardFor(home.conversations, now, true).needsYou.filter(
     (c) => !putAway(c, now) && !isPausedMidTurn(c),
   );
+  // A recorded release hold is represented by its PR, never by a generic
+  // waiting card that would suppress the PR's real actions. Live requests win.
+  const releaseOnly = (c: AldoHomeConversation) =>
+    c.progress?.next.owner === "you" && c.progress.next.kind === "release" && !c.pending && !c.plan;
   const fromThreads = needsYou.flatMap((c) => {
+    if (
+      releaseOnly(c) &&
+      home.pullRequests.some(
+        (pr) => sameTarget(pr.thread, c.thread) && pr.status === "watching" && pr.stage === "green",
+      )
+    )
+      return [];
     const decision = conversationDecision(c);
     return decision ? [decision] : [];
   });
@@ -122,7 +133,7 @@ export function aldoDecisions(
     // Its thread's own decision comes first; a thread put away puts away its pull request too.
     .filter(
       (pr) =>
-        !needsYou.some((c) => sameTarget(pr.thread, c.thread)) &&
+        !needsYou.some((c) => sameTarget(pr.thread, c.thread) && !releaseOnly(c)) &&
         !home.conversations.some((c) => sameTarget(pr.thread, c.thread) && putAway(c, now)),
     )
     .map((pullRequest) => ({

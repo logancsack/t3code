@@ -7,7 +7,7 @@
 
 import { Link } from "@tanstack/react-router";
 import { LoaderCircleIcon } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { toastManager } from "../components/ui/toast";
 import { cn } from "~/lib/utils";
@@ -23,6 +23,8 @@ export function ContinueButton(props: {
   readonly blocked?: Stalled["blocked"];
   readonly className?: string;
 }) {
+  const sending = useRef(false);
+  const [error, setError] = useState<string | null>(null);
   const [phase, setPhase] = useState<"idle" | "busy" | "sent">("idle");
   const { blocked } = props;
   if (blocked)
@@ -32,36 +34,50 @@ export function ContinueButton(props: {
       </Link>
     );
   return (
-    <button
-      type="button"
-      disabled={phase !== "idle"}
-      aria-busy={phase === "busy" || undefined}
-      className={cn(PRIMARY, FULL, props.className)}
-      onClick={() => {
-        setPhase("busy");
-        sendAldoAnswer(props.conversation, () => continueAldoThread(props.conversation.thread))
-          .then(() => setPhase("sent"))
-          .catch((cause: unknown) => {
-            setPhase("idle");
-            // The hold is released on failure, so this card is remounted: say it where it stays.
-            toastManager.add({
-              type: "error",
-              title: "Couldn't carry it on",
-              description: cause instanceof Error ? cause.message : "Try again.",
+    <div className="flex w-full flex-col gap-2">
+      {error ? (
+        <p role="alert" className="text-sm text-destructive-foreground">
+          {error}
+        </p>
+      ) : null}
+      <button
+        type="button"
+        disabled={phase !== "idle"}
+        aria-busy={phase === "busy" || undefined}
+        className={cn(PRIMARY, FULL, props.className)}
+        onClick={() => {
+          if (sending.current) return;
+          sending.current = true;
+          setPhase("busy");
+          setError(null);
+          sendAldoAnswer(props.conversation, () => continueAldoThread(props.conversation.thread), {
+            afterAccepted: true,
+          })
+            .then(() => setPhase("sent"))
+            .catch((cause: unknown) => {
+              sending.current = false;
+              setPhase("idle");
+              setError(cause instanceof Error ? cause.message : "Try again.");
+              // The hold is released on failure, so this card is remounted: say it where it stays.
+              toastManager.add({
+                type: "error",
+                title: "Couldn't carry it on",
+                description: cause instanceof Error ? cause.message : "Try again.",
+              });
             });
-          });
-      }}
-    >
-      {phase === "busy" ? (
-        <>
-          <LoaderCircleIcon aria-hidden className="size-4 animate-spin" />
-          Continuing…
-        </>
-      ) : phase === "sent" ? (
-        "Asked it to carry on"
-      ) : (
-        "Continue"
-      )}
-    </button>
+        }}
+      >
+        {phase === "busy" ? (
+          <>
+            <LoaderCircleIcon aria-hidden className="size-4 animate-spin" />
+            Continuing…
+          </>
+        ) : phase === "sent" ? (
+          "Asked it to carry on"
+        ) : (
+          "Continue"
+        )}
+      </button>
+    </div>
   );
 }

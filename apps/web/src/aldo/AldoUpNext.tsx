@@ -2,10 +2,10 @@
 // each decision (decisions.logic.ts) as a card that's decided right there,
 // at its creation time among messages and activity. The pending count
 // waits above the composer (NeedsYouPill.tsx). In each group the
-// first is open, with big buttons for the choices (Aldo's pick first, from
-// the brief, with why), a tap on what asks (or ↗) to open its thread; the
-// next two are a line each that opens in place, and the rest unfold.
-// Decided, a card turns into the line saying what happened (receipts.ts),
+// visible cards show their real actions, with the brief’s recommendation
+// beside the choices. A tap on the title or ↗ opens its thread; more items
+// unfold without hiding the actions of cards already on screen.
+// Accepted by the server, a card turns into what happened (receipts.ts),
 // where it was. Saved approval outcomes remain there after reloading. A
 // thread paused mid-turn is a card at its state time with Continue. On a keyboard, j and k move
 // between cards and Enter unfolds one, then opens its thread: nothing is
@@ -39,7 +39,7 @@ import { AgentMarkdown, Quoted } from "./AldoQuoted";
 import { useAldoArrive } from "./arrive";
 import { useAldoBrief } from "./briefFeed";
 import { type AldoHome, type AldoHomeConversation } from "./homeApi";
-import { decideAldoOutcome, type AldoChoice, type AldoDecidedResult } from "./decide";
+import { decideAldoOutcome, type AldoChoice } from "./decide";
 import {
   aldoChatDecisions,
   chatDecisionOf,
@@ -50,8 +50,7 @@ import {
 import { completeAldo } from "./presenceReactions";
 import { refreshAldoHome, useAldoHomeFeed } from "./homeFeed";
 import { elapsed } from "./home.logic";
-import { aldoMorph } from "./morph";
-import { addAldoReceipt, removeAldoReceipt, useAldoReceipts } from "./receipts";
+import { addAldoReceipt, useAldoReceipts } from "./receipts";
 import { movedOnText, receiptText } from "./receipts.logic";
 import { FOCUS, ICON_BUTTON, INSET, PRIMARY, SECONDARY, SURFACE } from "./surface";
 import { revealAldoCard, scrollMotion, SHOW_ALDO_DECISION } from "./show";
@@ -136,7 +135,6 @@ export function AldoUpNext(props: {
       if (item.suggestion) out[item.key] = { label: item.suggestion, reason: item.reason };
     return out;
   }, [brief]);
-  const [opened, setOpened] = useState<string | null>(null);
   // One set of keys for every card on the page, wherever it sits.
   useCardKeys(end);
   useEffect(() => {
@@ -150,7 +148,6 @@ export function AldoUpNext(props: {
       });
       if (at < 0) return;
       event.preventDefault();
-      setOpened(decisions[at]!.key);
       if (at >= SHOWN) setAll(true);
       focusCardSoon(decisions[at]!.key, true);
     };
@@ -175,8 +172,7 @@ export function AldoUpNext(props: {
         </button>
       </div>
     ) : null;
-  // The one open is the one the user opened, while it's there; else the first.
-  const open = decisions.some((d) => d.key === opened) ? opened : (decisions[0]?.key ?? null);
+  // Actions remain visible on every shown card; no opening step before deciding.
   const shown = all ? decisions : decisions.slice(0, SHOWN);
   return (
     <section aria-label="Needs you" className="flex flex-col gap-2" data-aldo-up-next="">
@@ -204,10 +200,9 @@ export function AldoUpNext(props: {
           now={props.now}
           pick={picks[d.key] ?? null}
           receiptAt={placedAt?.get(d.key)}
-          open={d.key === open}
+          open
           onOpen={() => {
             // The line tapped becomes the card, and focus goes with it.
-            setOpened(d.key);
             focusCardSoon(d.key);
           }}
         />
@@ -351,6 +346,7 @@ function Choice(props: {
 
 /** Own answers being written, by card: one folded away keeps what was typed. */
 const drafts = new Map<string, string>();
+const decisionErrors = new Map<string, string>();
 
 /** "Something else…": the user's own answer (or what should change), a field once asked for. */
 function OwnWords(props: {
@@ -361,8 +357,9 @@ function OwnWords(props: {
   readonly ask?: string;
   readonly placeholder?: string;
   readonly onSend: (text: string) => void;
+  readonly initiallyOpen?: boolean;
 }) {
-  const [open, setOpen] = useState(() => drafts.has(props.draft));
+  const [open, setOpen] = useState(() => props.initiallyOpen || drafts.has(props.draft));
   const [words, setWordsState] = useState(() => drafts.get(props.draft) ?? "");
   const setWords = (next: string) => {
     setWordsState(next);
@@ -375,7 +372,9 @@ function OwnWords(props: {
         type="button"
         className={cn(
           FOCUS,
-          "mx-auto rounded-full px-3 py-1 text-[13px] text-muted-foreground hover:text-foreground",
+          props.ask === "Request changes"
+            ? cn(SECONDARY, "w-full")
+            : "mx-auto min-h-11 rounded-full px-3 py-2 text-sm text-muted-foreground hover:text-foreground",
         )}
         disabled={props.disabled}
         onClick={() => setOpen(true)}
@@ -395,7 +394,7 @@ function OwnWords(props: {
       <input
         autoFocus
         aria-label={props.placeholder ?? "Your answer"}
-        className="min-w-0 flex-1 bg-transparent text-[15px] outline-none placeholder:text-muted-foreground/70"
+        className="min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-muted-foreground/70"
         placeholder={props.placeholder ?? "Say it in your own words"}
         value={words}
         disabled={props.disabled}
@@ -415,7 +414,7 @@ function OwnWords(props: {
   );
 }
 
-function DecisionCard(props: {
+export function DecisionCard(props: {
   readonly decision: AldoDecision;
   readonly now: number;
   readonly pick: { readonly label: string; readonly reason: string | null } | null;
@@ -427,13 +426,31 @@ function DecisionCard(props: {
 }) {
   const d = props.decision;
   const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(() => decisionErrors.get(d.key) ?? null);
+  const sending = useRef(false);
   const card = useRef<HTMLElement>(null);
   // Where a keyboard on the card goes once it's answered; worked out before the card goes.
   const keyboardTo = useRef<HTMLElement | null>(null);
   const decide = async (key: string, choice: AldoChoice) => {
-    // What it sends is on screen here, so its button is the yes; a draft deleted, or a merge, is asked.
-    if (!(await confirmQuickChoice(d, choice, { seen: true }))) return;
+    if (sending.current) return;
+    sending.current = true;
+    if (!(await confirmQuickChoice(d, choice, { seen: true }))) {
+      sending.current = false;
+      return;
+    }
     setBusy(key);
+    setError(null);
+    decisionErrors.delete(d.key);
+    keyboardTo.current = focusAfter(card.current);
+    const { outcome, said } = await decideAldoOutcome(d, choice, { quiet: true });
+    sending.current = false;
+    setBusy(null);
+    if (outcome === "failed") {
+      const why = said ?? "Couldn't do that. Try again.";
+      decisionErrors.set(d.key, why);
+      setError(why);
+      return;
+    }
     const receipt = (text: string) =>
       addAldoReceipt({
         key: d.key,
@@ -441,51 +458,10 @@ function DecisionCard(props: {
         text,
         thread: decisionThread(d),
       });
-    const lineOf = () =>
-      document.querySelector<HTMLElement>(`[data-aldo-receipt="${CSS.escape(d.key)}"]`);
-    // A thread's answer is settled the moment it's tapped: the card becomes
-    // the line saying what was done, however long its computer takes to wake
-    // and take it. The line goes, and the card is back, only if Aldo refuses it.
-    const settles =
-      d.kind === "question" ||
-      d.kind === "approval" ||
-      d.kind === "plan" ||
-      d.kind === "aldo-approval";
-    keyboardTo.current = focusAfter(card.current);
-    const decided = settles
-      ? new Promise<AldoDecidedResult>((resolve) =>
-          aldoMorph(
-            () => {
-              receipt(receiptText(d, choice));
-              resolve(decideAldoOutcome(d, choice, { quiet: true }));
-            },
-            card.current,
-            lineOf,
-          ),
-        )
-      : decideAldoOutcome(d, choice, { quiet: true });
-    if (settles) keyboardTo.current?.focus({ preventScroll: true });
-    const { outcome, said } = await decided;
-    setBusy(null);
-    if (outcome === "failed") {
-      if (settles) {
-        removeAldoReceipt(d.key);
-        if (keyboardTo.current) focusCardSoon(d.key);
-      }
-      return;
-    }
     if (outcome === "done") completeAldo();
     drafts.delete(d.key);
-    if (settles) {
-      // Done as the line already says (Aldo's own approvals add what it did: a draft it couldn't delete);
-      // one that had moved on says that instead.
-      if (outcome === "moved-on") receipt(movedOnText(d, said));
-      else if (d.kind === "aldo-approval" && said) receipt(receiptText(d, choice, said));
-      return;
-    }
-    // The card becomes the line saying what happened, where it happened.
     const text = outcome === "done" ? receiptText(d, choice, said) : movedOnText(d, said);
-    aldoMorph(() => receipt(text), card.current, lineOf);
+    receipt(text);
     keyboardTo.current?.focus({ preventScroll: true });
   };
   // Its own form sent its answer (a longer question, a handoff, a step with terms): the card goes with it.
@@ -537,7 +513,17 @@ function DecisionCard(props: {
         // A step with a total and terms, or a thread to start, is said yes to in its own card, in full.
         return (
           <CardFrame {...frame} headline={a.title}>
-            <ApprovalCard approval={a} now={props.now} onActed={acted} />
+            <ApprovalCard inline approval={a} now={props.now} onActed={acted} />
+            <button
+              type="button"
+              className={cn(
+                FOCUS,
+                "min-h-11 self-center rounded-full px-3 text-sm text-muted-foreground hover:text-foreground",
+              )}
+              onClick={() => askAldoAbout(a.title)}
+            >
+              Ask Aldo about it
+            </button>
           </CardFrame>
         );
       }
@@ -653,12 +639,18 @@ function DecisionCard(props: {
             <Choice
               key={o.label}
               row
-              tag={pick && index === 0 ? "Aldo's pick" : null}
+              tag={
+                /\(recommended\)/i.test(o.label)
+                  ? "Recommended"
+                  : pick && index === 0
+                    ? "Aldo's pick"
+                    : null
+              }
               busy={busy === o.label}
               disabled={busy !== null}
               onClick={() => void decide(o.label, { kind: "answer", answers: { [q.id]: o.label } })}
             >
-              {o.label}
+              {o.label.replace(/\s*\(recommended\)/i, "")}
               {/* What the choice means, where the thread says. */}
               {o.description ? (
                 <span className="mt-0.5 block text-[13px] text-muted-foreground leading-5 dark:text-foreground/70">
@@ -709,7 +701,13 @@ function DecisionCard(props: {
     }
     case "handoff":
       headline = d.pending.summary || "It needs you in its browser";
-      actions = <HandoffActions requestId={d.pending.requestId} onActed={acted} />;
+      actions = (
+        <HandoffActions
+          requestId={d.pending.requestId}
+          target={d.conversation.thread}
+          onActed={acted}
+        />
+      );
       break;
     case "plan": {
       // A plan that opens on its title is headed by it, as in its thread (ProposedPlanCard).
@@ -717,9 +715,19 @@ function DecisionCard(props: {
       headline = title ?? "Has a plan for you to approve";
       body = (
         <div className={cn(INSET, "flex flex-col gap-2")}>
-          <Quoted lines={10} className="text-sm leading-6">
+          <p className="text-sm text-muted-foreground leading-6 dark:text-foreground/70">
+            {stripDisplayedPlanMarkdown(d.plan.text)
+              .replace(/^#+ .*\n?/, "")
+              .trim()
+              .split("\n\n")[0]
+              ?.slice(0, 240)}
+          </p>
+          <details>
+            <summary className={cn(FOCUS, "cursor-pointer rounded-sm py-2 text-sm font-medium")}>
+              View plan
+            </summary>
             <AgentMarkdown text={title ? stripDisplayedPlanMarkdown(d.plan.text) : d.plan.text} />
-          </Quoted>
+          </details>
         </div>
       );
       actions = (
@@ -736,7 +744,7 @@ function DecisionCard(props: {
           <OwnWords
             draft={d.key}
             disabled={busy !== null}
-            ask="Ask for changes…"
+            ask="Request changes"
             placeholder="What should change?"
             onSend={(changes) => void decide("changes", { kind: "plan", changes })}
           />
@@ -760,10 +768,19 @@ function DecisionCard(props: {
                 type="button"
                 className={cn(
                   FOCUS,
-                  "rounded-sm font-medium text-foreground/80 underline decoration-foreground/25 underline-offset-4 hover:text-foreground hover:decoration-foreground/60",
+                  "inline-flex min-h-11 items-center rounded-sm px-1 font-medium text-foreground/80 underline decoration-foreground/25 underline-offset-4 hover:text-foreground hover:decoration-foreground/60",
                 )}
                 disabled={busy !== null}
-                onClick={() => void setAldoMergeHold(pr, false)}
+                onClick={async () => {
+                  if (sending.current) return;
+                  sending.current = true;
+                  setBusy("hold");
+                  setError(null);
+                  const accepted = await setAldoMergeHold(pr, false);
+                  sending.current = false;
+                  setBusy(null);
+                  if (!accepted) setError("Couldn't release the merge hold. Try again.");
+                }}
               >
                 Let Aldo merge it
               </button>
@@ -792,29 +809,83 @@ function DecisionCard(props: {
       break;
     }
     case "failed":
-    case "waiting":
+    case "waiting": {
+      const c = d.conversation;
+      const needs =
+        c.result?.state === "blocked_on_user"
+          ? c.result.doneWhen
+              .filter((item) => !item.met)
+              .map((item) => item.evidence || item.criterion)
+              .join("\n")
+          : null;
       headline =
-        d.kind === "failed"
-          ? "Stopped with an error"
-          : (d.conversation.summary ?? "It's waiting on you");
-      body =
-        d.kind === "failed" && d.conversation.summary ? (
-          <p className="line-clamp-3 text-[14px] text-muted-foreground leading-6 dark:text-foreground/70">
-            {d.conversation.summary}
-          </p>
-        ) : null;
-      actions = (
-        <Choice primary className="w-full" onClick={() => askAldoAbout(d.conversation.title)}>
-          Ask Aldo about it
-        </Choice>
+        d.kind === "failed" ? "Stopped with an error" : (c.progress?.label ?? "Needs your reply");
+      body = (
+        <p className="whitespace-pre-wrap break-words text-sm text-muted-foreground leading-6">
+          {needs ||
+            c.summary ||
+            c.progress?.detail ||
+            "Open the thread to see the context, or reply here."}
+        </p>
       );
+      actions =
+        d.kind === "failed" ? (
+          <div className="grid grid-cols-2 gap-2">
+            <ThreadLink target={c.thread} className={SECONDARY}>
+              Open
+            </ThreadLink>
+            <Choice
+              primary
+              busy={busy === "continue"}
+              disabled={busy !== null}
+              onClick={() => void decide("continue", { kind: "continue" })}
+            >
+              Retry
+            </Choice>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-2">
+            <OwnWords
+              initiallyOpen
+              draft={d.key}
+              disabled={busy !== null}
+              ask="Reply to the thread"
+              placeholder="Your reply"
+              onSend={(text) => void decide("reply", { kind: "reply", text })}
+            />
+            <ThreadLink target={c.thread} className={SECONDARY}>
+              {c.result ? "View result" : "Open"}
+            </ThreadLink>
+          </div>
+        );
       break;
+    }
   }
 
   return (
     <CardFrame {...frame} headline={headline}>
       {body}
+      {error ? (
+        <p role="alert" className="break-words text-sm text-destructive-foreground">
+          {error}
+        </p>
+      ) : null}
+      {busy ? (
+        <p role="status" className="text-sm text-muted-foreground">
+          Sending…
+        </p>
+      ) : null}
       {actions}
+      <button
+        type="button"
+        className={cn(
+          FOCUS,
+          "min-h-11 self-center rounded-full px-3 text-sm text-muted-foreground hover:text-foreground",
+        )}
+        onClick={() => askAldoAbout(who ?? "this item")}
+      >
+        Ask Aldo about it
+      </button>
     </CardFrame>
   );
 }
@@ -932,7 +1003,7 @@ function CardFrame(props: {
  * A thread whose computer went to sleep mid-turn, as a card at its state time:
  * what happened and when, that only a tap is asked of the user, and Continue.
  */
-function PausedCard(props: {
+export function PausedCard(props: {
   readonly home: AldoHome;
   readonly conversation: AldoHomeConversation;
   readonly now: number;
@@ -974,9 +1045,18 @@ function PausedCard(props: {
 }
 
 /** What only the user can get past in an agent's browser, with its card's own buttons. */
-function HandoffActions(props: { readonly requestId: string; readonly onActed: () => void }) {
+function HandoffActions(props: {
+  readonly requestId: string;
+  readonly target: AldoHomeConversation["thread"];
+  readonly onActed: () => void;
+}) {
   const handoff = useAldoHomeFeed((s) => s.home?.handoffs?.find((h) => h.id === props.requestId));
-  if (!handoff) return null;
+  if (!handoff)
+    return (
+      <ThreadLink target={props.target} className={SECONDARY}>
+        Open browser request
+      </ThreadLink>
+    );
   return (
     <div className="flex flex-col gap-2.5">
       <AldoHandoffActions handoff={handoff} onActed={props.onActed} pills />

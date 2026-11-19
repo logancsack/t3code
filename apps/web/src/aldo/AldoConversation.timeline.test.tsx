@@ -564,7 +564,7 @@ it("uses smooth navigation when reduced motion is off", async () => {
   });
 });
 
-it.each(["Start it", "Not now"])(
+it.each(["Start · 310 credits/hour", "Decline"])(
   "shows a computer request once and removes it after %s while Home catches up",
   async (label) => {
     const read = home({
@@ -598,7 +598,11 @@ it.each(["Start it", "Not now"])(
     expect(card.textContent).toContain("310 credits an hour");
     expect(container.querySelector('[data-aldo-decision^="waiting:"]')).toBeNull();
     await click([...card.querySelectorAll("button")].find((b) => b.textContent === label)!);
-    expect(backend.computer).toHaveBeenCalledWith("aldo-render", label === "Start it", "gpu");
+    expect(backend.computer).toHaveBeenCalledWith(
+      "aldo-render",
+      label === "Start · 310 credits/hour",
+      "gpu",
+    );
     expect(pill()).toBeNull();
     expect(container.querySelector("[data-aldo-computer-request]")).toBeNull();
   },
