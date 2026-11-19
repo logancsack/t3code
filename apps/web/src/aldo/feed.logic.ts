@@ -28,7 +28,7 @@ import { settledPayments } from "./payments.logic";
 import { openPlans, type AldoPlan } from "./plans.logic";
 import { queuedComputer, sameTarget } from "./home.logic";
 import type { AldoAssistantMessage } from "./assistant.logic";
-import { progressUpdate } from "./homeUpdate.logic";
+import { progressUpdate, type AldoHomeUpdate } from "./homeUpdate.logic";
 
 /** How far back the conversation shows what happened: as long as the board kept done threads. */
 const FEED_WINDOW_MS = 2 * 24 * 60 * 60 * 1000;
@@ -36,6 +36,13 @@ const FEED_WINDOW_MS = 2 * 24 * 60 * 60 * 1000;
 const TOLD_SLACK_MS = 60_000;
 
 export type AldoFeedEvent =
+  | {
+      readonly kind: "scheduled";
+      readonly key: string;
+      readonly at: string;
+      readonly update: AldoHomeUpdate;
+      readonly message: Pick<AldoAssistantMessage, "text" | "artifacts">;
+    }
   | {
       readonly kind: "finished";
       readonly key: string;
@@ -91,6 +98,32 @@ export type AldoFeedEvent =
       readonly text: string;
       readonly thread: AldoHomeTarget | null;
     };
+
+/** Saved scheduled turns are status, one latest entry per thread across the whole conversation. */
+export function scheduledEvents(
+  messages: ReadonlyArray<
+    Pick<AldoAssistantMessage, "text" | "at" | "update" | "call" | "source" | "artifacts">
+  >,
+): AldoFeedEvent[] {
+  const latest = new Map<string, AldoFeedEvent>();
+  for (const message of messages) {
+    const update = progressUpdate(message);
+    if (update?.state !== "scheduled") continue;
+    const key = update.thread
+      ? `${update.thread.environmentId}/${update.thread.threadId}`
+      : update.id;
+    const previous = latest.get(key);
+    if (!previous || Date.parse(message.at) >= Date.parse(previous.at))
+      latest.set(key, {
+        kind: "scheduled",
+        key: `scheduled:${key}`,
+        at: message.at,
+        update,
+        message,
+      });
+  }
+  return [...latest.values()];
+}
 
 /** Aldo's actions worth a line in the conversation: what it changed about a thread or a pull request. */
 const SHOWN_ACTIONS = new Set([
@@ -359,11 +392,14 @@ type Finished = Extract<AldoFeedEvent, { readonly kind: "finished" }>;
 type Shipped = Extract<AldoFeedEvent, { readonly kind: "shipped" }>;
 
 /** What finished or shipped: quiet, so a run of it is one line (digestOf). */
-export function isQuietEvent(event: AldoFeedEvent): event is Finished | Shipped {
-  return event.kind === "finished" || event.kind === "shipped";
+export function isQuietEvent(
+  event: AldoFeedEvent,
+): event is Finished | Shipped | Extract<AldoFeedEvent, { kind: "scheduled" }> {
+  return event.kind === "finished" || event.kind === "shipped" || event.kind === "scheduled";
 }
 
 export interface AldoDigest {
+  readonly scheduled: ReadonlyArray<Extract<AldoFeedEvent, { kind: "scheduled" }>>;
   readonly shipped: ReadonlyArray<Shipped>;
   readonly finished: ReadonlyArray<Finished>;
   /** Routines' runs, a group each: its runs oldest first. */
@@ -378,6 +414,9 @@ export interface AldoDigest {
 
 /** A run of what finished and shipped, grouped: what shipped, what finished, and each routine's runs. */
 export function digestOf(events: ReadonlyArray<AldoFeedEvent>): AldoDigest {
+  const scheduled = events.filter(
+    (e): e is Extract<AldoFeedEvent, { kind: "scheduled" }> => e.kind === "scheduled",
+  );
   const shipped = events.filter((e): e is Shipped => e.kind === "shipped");
   const done = events.filter((e): e is Finished => e.kind === "finished");
   const finished = done.filter((e) => !e.routine);
@@ -391,12 +430,13 @@ export function digestOf(events: ReadonlyArray<AldoFeedEvent>): AldoDigest {
   const runs = done.length - finished.length;
   const label = [
     shipped.length > 0 ? `${shipped.length} shipped` : null,
+    scheduled.length > 0 ? `${scheduled.length} scheduled` : null,
     finished.length > 0 ? `${finished.length} update${finished.length === 1 ? "" : "s"}` : null,
     runs > 0 ? `${runs} routine ${runs === 1 ? "run" : "runs"}` : null,
   ]
     .filter(Boolean)
     .join(" · ");
-  return { shipped, finished, routines: [...routines.values()], label };
+  return { scheduled, shipped, finished, routines: [...routines.values()], label };
 }
 
 /** Where a pull request that merged is now, in a word or two: its check working, then its merge commit's checks. */

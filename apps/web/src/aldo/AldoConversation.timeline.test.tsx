@@ -1228,3 +1228,88 @@ it("restores the live card once an answer receipt replaces the decision, before 
   expect(container.querySelector("[data-aldo-decision]")).toBeNull();
   expect(container.querySelectorAll("[data-test-live]")).toHaveLength(1);
 });
+
+it("keeps only the latest scheduled turn per thread inside the collapsed status disclosure", async () => {
+  const target = { environmentId: "aldo-demo", threadId: "work" };
+  useAldoAssistant.setState({
+    entries: [1, 2, 3].map((minute) => ({
+      kind: "message" as const,
+      role: "assistant" as const,
+      at: at(minute),
+      text: "I have a follow-up scheduled for the remaining work.",
+      update: {
+        id: `wait-${minute}`,
+        title: "Waiting cards on Home must say exactly what’s needed",
+        thread: target,
+        state: "scheduled" as const,
+        summary: "I have a follow-up scheduled for the remaining work.",
+        checked: [`Check ${minute}`],
+        notChecked: [],
+        links: [],
+      },
+    })),
+  });
+  await act(async () => root.render(<Page home={home()} />));
+  expect(container.querySelectorAll("[data-aldo-update]")).toHaveLength(0);
+  expect(container.textContent).not.toContain("I have a follow-up scheduled");
+  const disclosure = [...container.querySelectorAll("button")].find(
+    (b) => b.textContent === "1 scheduled",
+  )!;
+  expect(disclosure.getAttribute("aria-expanded")).toBe("false");
+  await act(async () => disclosure.click());
+  expect(container.querySelectorAll("[data-aldo-update]")).toHaveLength(1);
+  expect(container.textContent).toContain("Open work");
+  expect(container.textContent).toContain("Check 3");
+  expect(container.textContent).not.toContain("Check 1");
+  await act(async () => disclosure.click());
+  expect(container.querySelectorAll("[data-aldo-update]")).toHaveLength(0);
+});
+
+it("keeps scheduled deliverables and artifacts inside status without duplicating a shown file", async () => {
+  const share = "/s/abcdefghijklmnop";
+  useAldoAssistant.setState({
+    entries: [1, 2, 3].map((minute) => ({
+      kind: "message" as const,
+      role: "assistant" as const,
+      at: at(minute),
+      text: "The preview is ready; I’m checking the release.",
+      update: {
+        id: `deliverable-${minute}`,
+        title: "Prepare the page",
+        thread: { environmentId: "aldo-demo", threadId: "work" },
+        state: "scheduled" as const,
+        summary: "The preview is ready; I’m checking the release.",
+        checked: [],
+        notChecked: [],
+        links: [
+          { label: "Open preview", url: "https://example.com/preview" },
+          { label: "Shared document", url: share },
+        ],
+      },
+      artifacts: [
+        { kind: "file" as const, url: share, title: "Saved draft", contentType: "application/pdf" },
+      ],
+    })),
+  });
+  await act(async () => root.render(<Page home={home()} />));
+  expect(container.querySelectorAll("[data-aldo-update]")).toHaveLength(0);
+  expect(container.textContent).not.toContain("Saved draft");
+  expect(container.querySelector('a[href="https://example.com/preview"]')).toBeNull();
+  const disclosure = [...container.querySelectorAll("button")].find(
+    (b) => b.textContent === "1 scheduled",
+  )!;
+  await act(async () => {
+    disclosure.click();
+    await import("./AldoArtifacts");
+  });
+  expect(container.querySelectorAll("[data-aldo-update]")).toHaveLength(1);
+  expect(container.querySelector('[data-aldo-update="deliverable-3"]')).not.toBeNull();
+  expect(container.querySelector('a[href="https://example.com/preview"]')?.textContent).toContain(
+    "Open preview",
+  );
+  expect(container.textContent).toContain("Saved draft");
+  expect(container.textContent).not.toContain("Shared document");
+  expect(container.textContent).toContain("Open work");
+  await act(async () => disclosure.click());
+  expect(container.textContent).not.toContain("Saved draft");
+});

@@ -16,6 +16,7 @@ import { useContext, useState, type ReactNode } from "react";
 import { PullRequestGlyph } from "../components/pullRequest/pullRequestIcons";
 import { cn } from "~/lib/utils";
 import { AldoOpenContext, AldoThreadCard } from "./AldoLiveCard";
+import { AldoReply } from "./AldoReply";
 import { AldoPaymentLine } from "./AldoPaymentCard";
 import { AldoPlanCard } from "./AldoPlanCard";
 import { AldoFrame } from "./AldoFrame";
@@ -42,7 +43,7 @@ export function AldoFeedRun(props: { readonly events: ReadonlyArray<AldoFeedEven
       {props.events.map((event) =>
         !isQuietEvent(event) ? (
           <EventLine key={event.key} event={event} />
-        ) : event !== quiet[0] ? null : quiet.length === 1 ? (
+        ) : event !== quiet[0] ? null : quiet.length === 1 && quiet[0]?.kind !== "scheduled" ? (
           <QuietRows key={event.key} digest={digestOf(quiet)} />
         ) : (
           <Digest key={event.key} digest={digestOf(quiet)} />
@@ -63,7 +64,7 @@ function Digest(props: { readonly digest: AldoDigest }) {
         aria-expanded={open}
         className={cn(
           FOCUS,
-          "flex max-w-[94%] items-center gap-2.5 self-start rounded-md text-left text-[14px] text-muted-foreground leading-5 hover:text-foreground",
+          "flex min-h-11 max-w-[94%] items-center gap-2.5 self-start rounded-md text-left text-[14px] text-muted-foreground leading-5 hover:text-foreground",
         )}
         onClick={() => setOpen((v) => !v)}
       >
@@ -92,8 +93,20 @@ function QuietRows(props: { readonly digest: AldoDigest; readonly grouped?: bool
   const pullRequests = useAldoHomeFeed((s) => s.home?.pullRequests);
   // When the home was read: where its pull requests stood then.
   const readAt = useAldoHomeReadAt((s) => s.at);
-  const { shipped, finished, routines } = props.digest;
+  const { shipped, finished, routines, scheduled } = props.digest;
   const groups: ReadonlyArray<readonly [string, ReadonlyArray<ReactNode>]> = [
+    [
+      "Scheduled",
+      scheduled.map((e) => (
+        <AldoReply
+          key={e.key}
+          text={e.message.text}
+          artifacts={e.message.artifacts}
+          update={e.update}
+          at={e.at}
+        />
+      )),
+    ],
     [
       "Shipped",
       shipped.map((e) => (
@@ -289,7 +302,7 @@ function Line(props: {
 }
 
 function EventLine(props: {
-  readonly event: Exclude<AldoFeedEvent, { readonly kind: "finished" | "shipped" }>;
+  readonly event: Exclude<AldoFeedEvent, { readonly kind: "finished" | "shipped" | "scheduled" }>;
 }) {
   const open = useContext(AldoOpenContext);
   const { event } = props;
