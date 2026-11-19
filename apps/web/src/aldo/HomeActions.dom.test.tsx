@@ -161,13 +161,11 @@ const JARGON = /holdout|provenance|unadmitted|coverage|dedicated account/i;
 it("a thread that only waits asks in plain words with choices to tap, never its notes or a bare text box", async () => {
   const d = await mount("waiting");
   expect(d.kind === "waiting" && d.conversation.summary).toBe(BLOCKED_NOTE);
-  expect(el.querySelector("h4")?.textContent).toBe(
-    "It needs a decision from you before it can finish.",
-  );
+  expect(el.querySelector("h4")?.textContent).toBe("I need your decision before I can finish.");
   expect(el.textContent).not.toMatch(JARGON);
   // Choices first, the recommended one marked; typing only once asked for.
   expect(el.querySelector("input")).toBeNull();
-  expect(button("Let it decide and carry onRecommended")).toBeDefined();
+  expect(button("Decide for me and carry onRecommended")).toBeDefined();
   expect(button("Something else…")).toBeDefined();
   expect(el.textContent).toContain("View result");
   expect(el.textContent).toContain("Ask Aldo about it");
@@ -221,7 +219,7 @@ it("the board's form for a thread that only waits answers with a tap, as a reply
   await act(async () =>
     root.render(<PendingForm conversation={d.conversation} onActed={() => {}} />),
   );
-  expect(el.textContent).toContain("It needs a decision from you before it can finish.");
+  expect(el.textContent).toContain("I need your decision before I can finish.");
   expect(el.textContent).not.toMatch(JARGON);
   await act(async () => button("Skip that part").click());
   expect(backend.fetch.mock.calls[0]![0]).toBe("/api/environments/waiting/messages");
@@ -262,6 +260,15 @@ it("no thread waiting on Home is left with only a text box", async () => {
     expect(choices.length, d.key).toBeLessThanOrEqual(4);
     expect(el.querySelector("input"), d.key).toBeNull();
     expect(el.textContent, d.key).not.toMatch(JARGON);
+    // The recommended one's mark is black or white by the theme alone: nothing
+    // worked out at runtime that a theme switch or a copied page can leave stale.
+    const marked = choices.filter((b) => /Recommended|Aldo's pick/.test(b.textContent ?? ""));
+    for (const b of marked) {
+      const mark = b.querySelector("svg");
+      expect(mark?.getAttribute("class"), d.key).toContain("text-black dark:text-white");
+      expect(b.querySelector("[data-aldo-frame], [style*='--aldo-frame-ink']"), d.key).toBeNull();
+    }
+    expect(marked.length, d.key).toBeGreaterThan(0);
   }
 });
 

@@ -77,7 +77,7 @@ export function isPausedMidTurn(c: AldoHomeConversation): boolean {
  */
 export const WAITING_CHOICES: ReadonlyArray<{ readonly label: string; readonly reply: string }> = [
   {
-    label: "Let it decide and carry on (Recommended)",
+    label: "Decide for me and carry on (Recommended)",
     reply:
       "Go ahead with what you think is best and finish. Anything that costs money or acts in my name still needs my OK first.",
   },
@@ -95,7 +95,7 @@ export function waitingQuestion(
       {
         id: "ask",
         header: "",
-        question: "It needs a decision from you before it can finish.",
+        question: "I need your decision before I can finish.",
         options: WAITING_CHOICES.map((o) => ({ label: o.label, description: "" })),
         multiSelect: false,
       },
