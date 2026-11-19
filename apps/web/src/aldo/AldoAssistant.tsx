@@ -1,5 +1,10 @@
 import { AldoUpdateCard } from "./AldoUpdateCard";
-import { legacyHomeUpdate, technicalUpdateLink, type AldoHomeUpdate } from "./homeUpdate.logic";
+import {
+  currentFailureReport,
+  legacyHomeUpdate,
+  technicalUpdateLink,
+  type AldoHomeUpdate,
+} from "./homeUpdate.logic";
 // Talking to Aldo: the mark to talk, the composer to type (with a few things to
 // say when it's empty), and the conversation: what was said, and what Aldo
 // did, the newest action about each thread as a live card (AldoLiveCard.tsx).
@@ -903,11 +908,16 @@ function AldoReply(props: {
     : [];
   // Home owns outstanding questions and their answer receipts. A task summary must not repeat them,
   // or revive an old “Needs you” label after the work has moved on.
+  const failureId = useAldoAssistant((s) => {
+    const report = about?.state === "failed" ? currentFailureReport(s.entries, about) : undefined;
+    return report?.kind === "message" ? report.update?.id : undefined;
+  });
   const hasDecision =
     about !== undefined &&
     (update?.state === "needs-you" ||
       (update?.state === "failed" &&
         about.state === "failed" &&
+        failureId === update.id &&
         props.decisionThreads?.some((thread) => sameTarget(thread, about.thread))));
   return (
     <div className="flex w-full min-w-0 flex-col gap-2">

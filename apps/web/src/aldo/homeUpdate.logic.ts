@@ -1,3 +1,5 @@
+import type { AldoConversationEntry } from "./assistantSession";
+import type { AldoHomeConversation } from "./homeApi";
 import { closingThread } from "./assistant.logic";
 import { linkRows } from "./artifacts.logic";
 import type { AldoOpenTarget } from "./assistant.logic";
@@ -161,5 +163,22 @@ export const technicalUpdateLink = (url: string) =>
 export function internalHomeCopy(text: string): boolean {
   return /the agent|\blint\b|type[ -]?check|\bCI\b|\bPRs?\b|\d[\d,]* (?:(?:deterministic |reliability |focused )*(?:tests?|checks?)|passed\b)|\bdeploy(?:ed|ment)?\b|release checks|still being followed|https?:\/\//i.test(
     text,
+  );
+}
+
+/** The one saved report represented by the current Retry card; earlier attempts stay in history. */
+export function currentFailureReport(
+  entries: ReadonlyArray<AldoConversationEntry>,
+  conversation: Pick<AldoHomeConversation, "thread" | "stateAt" | "at">,
+) {
+  const since = Date.parse(conversation.stateAt ?? conversation.at) - 2_000;
+  return entries.findLast(
+    (e) =>
+      e.kind === "message" &&
+      e.role === "assistant" &&
+      e.update?.state === "failed" &&
+      e.update.thread?.environmentId === conversation.thread.environmentId &&
+      e.update.thread?.threadId === conversation.thread.threadId &&
+      Date.parse(e.at) >= since,
   );
 }

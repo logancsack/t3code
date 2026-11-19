@@ -846,3 +846,44 @@ it("keeps inline legacy report destinations clickable inside Details", async () 
   expect(details.querySelector("a")?.getAttribute("href")).toBe("https://example.com/guide");
   expect(details.querySelector("a")?.textContent).toBe("example.com");
 });
+
+it("keeps earlier failure attempts while the current report is represented by Retry", async () => {
+  const target = { environmentId: "aldo-1", threadId: "t1" };
+  const failed = {
+    ref: "failed",
+    title: "Prepare the guide",
+    repos: [],
+    branch: "",
+    machine: "asleep",
+    state: "failed",
+    at: at(1),
+    stateAt: at(4),
+    thread: target,
+  } as const;
+  const read = home({ conversations: [failed] });
+  backend.home = read;
+  useAldoAssistant.setState({
+    entries: [1, 5].map((minute) => ({
+      kind: "message" as const,
+      role: "assistant" as const,
+      at: at(minute),
+      text: `Attempt ${minute} could not finish.`,
+      update: {
+        id: `failure-${minute}`,
+        thread: target,
+        title: failed.title,
+        state: "failed" as const,
+        summary: `I couldn’t finish attempt ${minute}.`,
+        checked: [],
+        notChecked: [],
+        links: [],
+      },
+    })),
+  });
+  await act(async () => root.render(<Page home={read} />));
+  expect(container.querySelector('[data-aldo-decision^="failed:"]')).not.toBeNull();
+  expect(container.querySelector('[data-aldo-update="failure-1"]')).not.toBeNull();
+  expect(container.querySelector('[data-aldo-update="failure-5"]')).toBeNull();
+  expect(container.textContent).toContain("I couldn’t finish attempt 1.");
+  expect(container.textContent).toContain("I couldn’t finish attempt 5.");
+});

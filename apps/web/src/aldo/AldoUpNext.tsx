@@ -25,7 +25,7 @@ import {
 
 import { cn } from "~/lib/utils";
 import { useAldoAssistant } from "./assistantSession";
-import { technicalUpdateLink } from "./homeUpdate.logic";
+import { currentFailureReport, technicalUpdateLink } from "./homeUpdate.logic";
 import { AldoUpdateDetails } from "./AldoUpdateCard";
 import { proposedPlanTitle, stripDisplayedPlanMarkdown } from "../proposedPlan";
 import { DismissChatDecision } from "./DismissChatDecision";
@@ -508,17 +508,7 @@ export function DecisionCard(props: {
   };
 
   const report = useAldoAssistant((s) =>
-    d.kind === "failed"
-      ? s.entries.findLast(
-          (e) =>
-            e.kind === "message" &&
-            e.role === "assistant" &&
-            e.update?.state === "failed" &&
-            e.update.thread?.environmentId === d.conversation.thread.environmentId &&
-            e.update.thread.threadId === d.conversation.thread.threadId &&
-            Date.parse(e.at) >= Date.parse(since) - 2_000,
-        )
-      : undefined,
+    d.kind === "failed" ? currentFailureReport(s.entries, d.conversation) : undefined,
   );
   const failure = report?.kind === "message" ? report.update : undefined;
   let headline: string;
