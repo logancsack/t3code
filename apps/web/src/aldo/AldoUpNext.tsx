@@ -33,7 +33,7 @@ import { askAldoAbout, PendingForm, ThreadLink } from "./AldoHomeInbox";
 import { ContinueButton } from "./AldoContinue";
 import { AldoOpenContext } from "./AldoLiveCard";
 import { ApproveInLink, PaymentDetails } from "./AldoPaymentCard";
-import { AldoFrame } from "./AldoFrame";
+import { AldoMark } from "./AldoMark";
 import { setAldoMergeHold } from "./mergeHold";
 import { AgentMarkdown, Quoted } from "./AldoQuoted";
 import { useAldoArrive } from "./arrive";
@@ -342,7 +342,8 @@ function Choice(props: {
         <LoaderCircleIcon aria-hidden className="size-4 shrink-0 animate-spin" />
       ) : props.tag ? (
         <span className="flex shrink-0 items-center gap-1.5 text-[12px] text-muted-foreground">
-          <AldoFrame size={12} />
+          {/* The still mark, black or white by the theme alone, never a colour worked out at runtime. */}
+          <AldoMark className="size-3 shrink-0 text-black dark:text-white" />
           {props.tag}
         </span>
       ) : null}

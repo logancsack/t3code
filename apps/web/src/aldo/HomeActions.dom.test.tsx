@@ -262,6 +262,15 @@ it("no thread waiting on Home is left with only a text box", async () => {
     expect(choices.length, d.key).toBeLessThanOrEqual(4);
     expect(el.querySelector("input"), d.key).toBeNull();
     expect(el.textContent, d.key).not.toMatch(JARGON);
+    // The recommended one's mark is black or white by the theme alone: nothing
+    // worked out at runtime that a theme switch or a copied page can leave stale.
+    const marked = choices.filter((b) => /Recommended|Aldo's pick/.test(b.textContent ?? ""));
+    for (const b of marked) {
+      const mark = b.querySelector("svg");
+      expect(mark?.getAttribute("class"), d.key).toContain("text-black dark:text-white");
+      expect(b.querySelector("[data-aldo-frame], [style*='--aldo-frame-ink']"), d.key).toBeNull();
+    }
+    expect(marked.length, d.key).toBeGreaterThan(0);
   }
 });
 
