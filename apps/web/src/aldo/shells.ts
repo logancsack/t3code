@@ -37,7 +37,6 @@ import {
   subscribeAldoMachineSettings,
 } from "./machineSettings";
 import { aldoServerConfigTemplate } from "./serverConfig";
-import { providerInstances } from "./serverConfig.logic";
 import { aldoShellCandidates, planAldoShellSync } from "./shells.logic";
 import { aldoShowsStartingThread, clearLeftoverAldoThreads } from "./startingThreads";
 
@@ -50,7 +49,7 @@ const known = new Map<string, number>();
 const offerChecked = new Set<string>();
 /**
  * Machines whose cache this browser has looked at for models, with the
- * providers the newest config listed then (and the user's settings), kept
+ * provider catalogs the newest config listed then (and the user's settings), kept
  * between visits (MODELS_CHECKED_KEY): reading a few hundred cached configs
  * on every open, to find nothing to change, held the page for seconds.
  */
@@ -151,10 +150,10 @@ function keepModelsChecked(): void {
 
 /**
  * Models for the machines that aren't connected and have none cached, or a
- * cached copy that lacks a provider the newest config lists or the user's
- * settings Aldo keeps: once each, and again when the newest config lists
- * other providers, the user changes a setting, or after the machine was
- * connected (its own config replaced the cache then). One that didn't get
+ * cached copy behind the newest provider catalogs or the user's settings
+ * Aldo keeps: once each, and again when those catalogs or settings change,
+ * or after the machine connected (its own config replaced the cache then).
+ * One that didn't get
  * them (no cloud agent has reported any yet, or Aldo couldn't be reached) is
  * tried again on the next directory fetch. One at a time, each after the one
  * before, so none checks what another is checking.
@@ -173,8 +172,19 @@ async function seedModelsNow(environments: ReadonlyArray<AldoEnvironment>): Prom
   const config = await aldoServerConfigTemplate();
   if (!config) return;
   const settings = getAldoMachineSettings() ?? {};
-  // v2: the machines an earlier build gave a copy each now share one (seedMissingServerConfigs).
-  const template = `v2 ${providerInstances(config).join(",")} ${JSON.stringify(settings)}`;
+  // Catalogs and availability invalidate sleeping copies; usage/CLI telemetry does not.
+  const providers = config.providers.map((provider) => ({
+    instanceId: provider.instanceId,
+    driver: provider.driver,
+    displayName: provider.displayName,
+    models: provider.models,
+    enabled: provider.enabled,
+    installed: provider.installed,
+    status: provider.status,
+    auth: provider.auth,
+    availability: provider.availability,
+  }));
+  const template = `v3 ${JSON.stringify([providers, settings])}`;
   const ids = environments
     .map((environment) => environment.environmentId as EnvironmentId)
     .filter(

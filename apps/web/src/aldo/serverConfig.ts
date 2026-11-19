@@ -15,7 +15,7 @@ import { fetchAldoServerConfig, reportAldoServerConfig } from "./threadApi";
 import { isAldoCloud, isAldoEnvironmentId } from "./api";
 import { settingsAccounts } from "./settingsData";
 import { loadAldoMachineSettings } from "./machineSettings";
-import { providerKinds } from "./serverConfig.logic";
+import { providerKinds, mergeProviderSnapshots } from "./serverConfig.logic";
 
 type EncodedConfig = {
   environment: Record<string, unknown>;
@@ -35,6 +35,7 @@ const ACCOUNT_FOR_DRIVER: Record<string, "claude" | "codex" | "grok" | "muse"> =
 let latest: EncodedConfig | null = null;
 let reportedProviders: string | null = null;
 let fetchedFromAldo: Promise<void> | null = null;
+let fetchedAt = 0;
 
 /**
  * How many of the machine's providers it hasn't checked since its server
@@ -95,7 +96,10 @@ function capture(): void {
   if (!config || config === captured) return;
   captured = config;
   const encoded = encodeServerConfig(config) as unknown as EncodedConfig;
-  latest = encoded;
+  latest = {
+    ...encoded,
+    providers: mergeProviderSnapshots(latest?.providers ?? [], encoded.providers),
+  };
   // Save when the models (or their availability) change, not on every check.
   const providers = JSON.stringify(
     encoded.providers.map(({ checkedAt: _checkedAt, ...provider }) => provider),
@@ -117,15 +121,22 @@ export function installAldoServerConfigCapture(): void {
 
 async function template(): Promise<EncodedConfig | null> {
   capture();
-  if (latest) return latest;
-  fetchedFromAldo ??= fetchAldoServerConfig()
-    .then((config) => {
-      if (config && !latest) latest = config as EncodedConfig;
-    })
-    .catch(() => {
-      fetchedFromAldo = null;
-    });
-  await fetchedFromAldo;
+  if (!fetchedFromAldo || Date.now() - fetchedAt > 60_000) {
+    // Count from the request, so concurrent callers share it and failures retry after a minute.
+    fetchedAt = Date.now();
+    fetchedFromAldo = fetchAldoServerConfig()
+      .then((config) => {
+        if (!config) return;
+        const reported = config as EncodedConfig;
+        latest = {
+          ...reported,
+          providers: mergeProviderSnapshots(latest?.providers ?? [], reported.providers),
+        };
+      })
+      .catch(() => undefined);
+  }
+  // A usable catalog must not hold up a new thread while its optional refresh runs.
+  if (!latest) await fetchedFromAldo;
   return latest;
 }
 

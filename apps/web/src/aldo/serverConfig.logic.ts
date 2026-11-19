@@ -2,7 +2,13 @@
 // before a provider shipped (Muse Code, say) lists fewer, and gets the rest
 // when its T3 starts again.
 
-type Provider = { readonly instanceId?: unknown; readonly driver?: unknown };
+type Provider = {
+  readonly instanceId?: unknown;
+  readonly driver?: unknown;
+  readonly checkedAt?: unknown;
+  readonly status?: unknown;
+  readonly auth?: { readonly status?: unknown };
+};
 type ListsProviders<P extends Provider = Provider> = { readonly providers: ReadonlyArray<P> };
 
 /** The provider instances a config lists, sorted. */
@@ -74,9 +80,9 @@ export function withAldoTemplate(
       typeof given === "string" ? (JSON.parse(given) as Stored).config?.providers : given.providers;
     const providers = config?.providers;
     if (config && Array.isArray(providers) && Array.isArray(offered)) {
-      const missing = missingProviders({ providers }, { providers: offered as Provider[] });
-      if (missing.length > 0) {
-        config = { ...config, providers: [...providers, ...missing] };
+      const merged = mergeProviderSnapshots(providers as Provider[], offered as Provider[]);
+      if (JSON.stringify(merged) !== JSON.stringify(providers)) {
+        config = { ...config, providers: merged };
         changed = true;
       }
     }
@@ -94,4 +100,23 @@ export function withAldoTemplate(
   } catch {
     return null;
   }
+}
+
+/** Merge each provider's check independently; a busy unrelated provider is not a catalog clock. */
+export function mergeProviderSnapshots<P extends Provider>(
+  previous: ReadonlyArray<P>,
+  reported: ReadonlyArray<P>,
+): P[] {
+  const result = previous.map((old) => {
+    const next = reported.find((p) => p.instanceId === old.instanceId && p.driver === old.driver);
+    if (next?.status === "warning" && next.auth?.status === "unknown") return old;
+    return next &&
+      (Date.parse(String(next.checkedAt)) || 0) > (Date.parse(String(old.checkedAt)) || 0)
+      ? next
+      : old;
+  });
+  return [
+    ...result,
+    ...reported.filter((p) => !previous.some((old) => old.instanceId === p.instanceId)),
+  ];
 }
