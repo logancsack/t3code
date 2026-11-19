@@ -166,19 +166,21 @@ export function internalHomeCopy(text: string): boolean {
   );
 }
 
-/** The one saved report represented by the current Retry card; earlier attempts stay in history. */
-export function currentFailureReport(
+/** The saved report represented by a current decision, including older stored envelopes. */
+export function currentDecisionReport(
   entries: ReadonlyArray<AldoConversationEntry>,
   conversation: Pick<AldoHomeConversation, "thread" | "stateAt" | "at">,
+  state: "failed" | "needs-you",
 ) {
   const since = Date.parse(conversation.stateAt ?? conversation.at) - 2_000;
-  return entries.findLast(
-    (e) =>
-      e.kind === "message" &&
-      e.role === "assistant" &&
-      e.update?.state === "failed" &&
-      e.update.thread?.environmentId === conversation.thread.environmentId &&
-      e.update.thread?.threadId === conversation.thread.threadId &&
-      Date.parse(e.at) >= since,
-  );
+  return entries.findLast((e) => {
+    if (e.kind !== "message" || e.role !== "assistant" || !(Date.parse(e.at) >= since))
+      return false;
+    const update = e.update ?? legacyHomeUpdate(e.text);
+    return (
+      update?.state === state &&
+      update.thread?.environmentId === conversation.thread.environmentId &&
+      update.thread?.threadId === conversation.thread.threadId
+    );
+  });
 }

@@ -1,6 +1,6 @@
 import { AldoUpdateCard } from "./AldoUpdateCard";
 import {
-  currentFailureReport,
+  currentDecisionReport,
   legacyHomeUpdate,
   technicalUpdateLink,
   type AldoHomeUpdate,
@@ -909,8 +909,11 @@ function AldoReply(props: {
   // Home owns outstanding questions and their answer receipts. A task summary must not repeat them,
   // or revive an old “Needs you” label after the work has moved on.
   const failureId = useAldoAssistant((s) => {
-    const report = about?.state === "failed" ? currentFailureReport(s.entries, about) : undefined;
-    return report?.kind === "message" ? report.update?.id : undefined;
+    const report =
+      about?.state === "failed" ? currentDecisionReport(s.entries, about, "failed") : undefined;
+    return report?.kind === "message"
+      ? (report.update ?? legacyHomeUpdate(report.text))?.id
+      : undefined;
   });
   const hasDecision =
     about !== undefined &&

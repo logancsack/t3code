@@ -25,7 +25,7 @@ import {
 
 import { cn } from "~/lib/utils";
 import { useAldoAssistant } from "./assistantSession";
-import { currentFailureReport, technicalUpdateLink } from "./homeUpdate.logic";
+import { currentDecisionReport, legacyHomeUpdate, technicalUpdateLink } from "./homeUpdate.logic";
 import { AldoUpdateDetails } from "./AldoUpdateCard";
 import { proposedPlanTitle, stripDisplayedPlanMarkdown } from "../proposedPlan";
 import { DismissChatDecision } from "./DismissChatDecision";
@@ -508,9 +508,17 @@ export function DecisionCard(props: {
   };
 
   const report = useAldoAssistant((s) =>
-    d.kind === "failed" ? currentFailureReport(s.entries, d.conversation) : undefined,
+    d.kind === "failed" || d.kind === "question" || d.kind === "waiting"
+      ? currentDecisionReport(
+          s.entries,
+          d.conversation,
+          d.kind === "failed" ? "failed" : "needs-you",
+        )
+      : undefined,
   );
-  const failure = report?.kind === "message" ? report.update : undefined;
+  const update =
+    report?.kind === "message" ? (report.update ?? legacyHomeUpdate(report.text)) : undefined;
+  const failure = d.kind === "failed" ? update : undefined;
   let headline: string;
   let body: ReactNode = null;
   let actions: ReactNode = null;
@@ -618,9 +626,12 @@ export function DecisionCard(props: {
       const said = waiting ? null : q ? c.summary?.replace(q.question, "").trim() : c.summary;
       body = (
         <AldoUpdateDetails
-          checked={c.result?.checked}
-          notChecked={c.result?.notChecked}
-          notes={said && /\w/.test(said) ? [said] : undefined}
+          checked={update?.checked ?? c.result?.checked}
+          notChecked={update?.notChecked ?? c.result?.notChecked}
+          notes={[
+            ...new Set([...(update?.notes ?? []), ...(said && /\w/.test(said) ? [said] : [])]),
+          ]}
+          links={update?.links.filter((link) => technicalUpdateLink(link.url))}
         />
       );
       if (waiting || isTurnAsk(pending))

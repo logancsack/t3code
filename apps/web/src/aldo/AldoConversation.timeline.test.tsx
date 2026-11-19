@@ -887,3 +887,100 @@ it("keeps earlier failure attempts while the current report is represented by Re
   expect(container.textContent).toContain("I couldn’t finish attempt 1.");
   expect(container.textContent).toContain("I couldn’t finish attempt 5.");
 });
+
+it("keeps needs-you update evidence under the question instead of duplicating its summary", async () => {
+  const target = { environmentId: "aldo-1", threadId: "t1" };
+  const c = {
+    ref: "ask",
+    title: "Prepare the guide",
+    repos: [],
+    branch: "",
+    machine: "asleep",
+    state: "waiting",
+    at: at(1),
+    thread: target,
+    pending: {
+      kind: "question",
+      requestId: "ask:turn",
+      questions: [
+        {
+          id: "scope",
+          header: "",
+          question: "Which pages should I include?",
+          options: [
+            { label: "Home (Recommended)", description: "" },
+            { label: "All pages", description: "" },
+          ],
+          multiSelect: false,
+        },
+      ],
+    },
+  } as const;
+  const read = home({ conversations: [c] });
+  backend.home = read;
+  useAldoAssistant.setState({
+    entries: [
+      {
+        kind: "message",
+        role: "assistant",
+        at: at(2),
+        text: "I need your answer.",
+        update: {
+          id: "asked-report",
+          thread: target,
+          title: c.title,
+          state: "needs-you",
+          summary: "I need your answer.",
+          checked: ["Saved the source notes."],
+          notChecked: ["The full comparison."],
+          notes: ["The internal comparison is incomplete."],
+          links: [{ label: "Change evidence", url: "https://github.com/acme/guide/pull/7" }],
+        },
+      },
+    ],
+  });
+  await act(async () => root.render(<Page home={read} />));
+  expect(container.querySelector('[data-aldo-update="asked-report"]')).toBeNull();
+  const card = container.querySelector('[data-aldo-decision^="question:"]')!;
+  expect(card.textContent).toContain("Which pages should I include?");
+  expect(card.textContent).not.toContain("I need your answer.");
+  const details = card.querySelector("details")!;
+  expect(details.open).toBe(false);
+  expect(details.textContent).toContain("Saved the source notes.");
+  expect(details.textContent).toContain("The internal comparison is incomplete.");
+  expect(details.querySelector("a")?.getAttribute("href")).toBe(
+    "https://github.com/acme/guide/pull/7",
+  );
+  expect(card.textContent).toContain("Open the thread");
+});
+
+it("keeps a legacy failure's original notes and links in its single Retry card", async () => {
+  const target = { environmentId: "aldo-1", threadId: "t1" };
+  const c = {
+    ref: "failed",
+    title: "Prepare the guide",
+    repos: [],
+    branch: "",
+    machine: "asleep",
+    state: "failed",
+    at: at(1),
+    thread: target,
+  } as const;
+  const read = home({ conversations: [c] });
+  backend.home = read;
+  message(
+    "I ran into trouble with the guide. CI failed.\n\n[Change evidence](https://github.com/acme/guide/pull/7)\n\nChecks reported with the task:\n\nChecked:\nSaved the source notes.\n\nNot checked:\nThe full comparison.\nThread: https://aldo.example/aldo-1/t1",
+    2,
+    "assistant",
+  );
+  await act(async () => root.render(<Page home={read} />));
+  expect(container.querySelector("[data-aldo-update]")).toBeNull();
+  const card = container.querySelector('[data-aldo-decision^="failed:"]')!;
+  const details = card.querySelector("details")!;
+  expect(details.textContent).toContain("CI failed.");
+  expect(details.textContent).toContain("Saved the source notes.");
+  expect(details.textContent).toContain("The full comparison.");
+  expect(details.querySelector("a")?.getAttribute("href")).toBe(
+    "https://github.com/acme/guide/pull/7",
+  );
+});
