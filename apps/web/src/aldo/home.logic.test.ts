@@ -234,3 +234,29 @@ it("an older server's bare report still names an unmet need without a payment de
   expect(waitingQuestion(c).questions[0]?.question).toContain("Grok Bot needs Premium access");
   expect(waitingQuestion(c).questions[0]?.question).not.toContain("haven't recorded");
 });
+
+it("keeps account verification distinct from choosing an account on older servers", () => {
+  const c = conversation({
+    state: "waiting",
+    title: "Publish the listing",
+    summary: "I need your decision before I can finish.",
+    result: {
+      state: "blocked_on_user",
+      doneWhen: [
+        {
+          criterion: "Publish",
+          met: false,
+          evidence:
+            "Publishing requires account verification. The selected account's email must be verified.",
+        },
+      ],
+      checked: [],
+      notChecked: [],
+      decided: [],
+    },
+  });
+  const ask = waitingQuestion(c).questions[0]!;
+  expect(ask.question).toContain("account verification");
+  expect(ask.question).not.toContain("Which account");
+  expect(ask.options.map((o) => o.label).join(" ")).not.toContain("provide an account");
+});
