@@ -1005,12 +1005,17 @@ const make = Effect.gen(function* () {
     }
     const normalizedAttachments = [...continuationAttachments, ...(input.attachments ?? [])];
     const baseInput = toNonEmptyProviderInput(continuationContext + input.messageText);
-    const instructions = yield* fileSystem
-      .readFileString(path.join(config.stateDir, "turn-instructions.json"))
-      .pipe(
-        Effect.map((value) => parseTurnInstructions(value, baseInput?.length ?? 0)),
-        Effect.orElseSucceed(() => null),
-      );
+    // Adapters can interpret slash input as native command arguments. Optional
+    // prompt context must not become part of those arguments.
+    const instructions =
+      baseInput && /^\/[^\s/]+(?:\s|$)/.test(baseInput)
+        ? null
+        : yield* fileSystem
+            .readFileString(path.join(config.stateDir, "turn-instructions.json"))
+            .pipe(
+              Effect.map((value) => parseTurnInstructions(value, baseInput?.length ?? 0)),
+              Effect.orElseSucceed(() => null),
+            );
     const normalizedInput = toNonEmptyProviderInput(
       (baseInput ?? "") + (instructions ? `\n\n${instructions.text}` : ""),
     );

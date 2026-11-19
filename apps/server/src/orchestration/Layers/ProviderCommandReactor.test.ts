@@ -985,6 +985,54 @@ describe("ProviderCommandReactor", () => {
     },
   );
 
+  it.each([
+    { text: "/review main", command: true },
+    { text: "/goal status", command: true },
+    { text: "/help", command: true },
+    { text: " \n/goal status  ", command: true },
+    { text: "/review main\n--branch feature", command: true },
+    { text: "What does /review main do?", command: false },
+    { text: "/tmp/review.txt", command: false },
+    { text: "// comment", command: false },
+  ])(
+    "preserves command arguments when optional context is present: $text",
+    async ({ text, command }) => {
+      const harness = await createHarness();
+      NodeFS.writeFileSync(
+        NodePath.join(harness.stateDir, "turn-instructions.json"),
+        JSON.stringify({ contract: "completion", version: 1, text: "Use the completion format." }),
+      );
+      const start = turnStart("optional-context-command");
+      if (start.type !== "thread.turn.start") throw new Error("Expected turn start");
+      await harness.runEffect(
+        harness.engine.dispatch({ ...start, message: { ...start.message, text } }),
+      );
+      await harness.runEffect(harness.drainTurnStarts);
+
+      expect(harness.sendTurn).toHaveBeenCalledTimes(1);
+      expect(harness.sendTurn).toHaveBeenCalledWith(
+        expect.objectContaining({
+          input: text.trim() + (command ? "" : "\n\nUse the completion format."),
+        }),
+      );
+      const detail = Option.getOrThrow(
+        await harness.runEffect(
+          harness.snapshotQuery.getThreadDetailById(ThreadId.make("thread-1")),
+        ),
+      );
+      const dispatch = detail.activities.find(
+        (activity) => activity.kind === "provider.turn.dispatched",
+      );
+      expect(dispatch).toBeDefined();
+      expect((dispatch?.payload as { instructions?: unknown } | undefined)?.instructions).toEqual(
+        command ? undefined : { contract: "completion", version: 1 },
+      );
+      expect(detail.messages.find((message) => message.id === start.message.messageId)?.text).toBe(
+        text,
+      );
+    },
+  );
+
   it("does not report cached reasoning options that were not sent", async () => {
     const harness = await createHarness({
       threadModelSelection: {
