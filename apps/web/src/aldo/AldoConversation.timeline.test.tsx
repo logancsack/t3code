@@ -793,3 +793,56 @@ it("shows a multi-paragraph Home answer as one reply", async () => {
   );
   expect(container.textContent).not.toContain("Checks reported");
 });
+
+it("retains a snoozed failure report when no replacement decision card is rendered", async () => {
+  const target = { environmentId: "aldo-1", threadId: "t1" };
+  const failed = {
+    ref: "failed",
+    title: "Prepare the guide",
+    repos: [],
+    branch: "",
+    machine: "asleep",
+    state: "failed",
+    at: at(1),
+    thread: target,
+    snoozedUntil: new Date(Date.now() + 3600000).toISOString(),
+  } as const;
+  const read = home({ conversations: [failed] });
+  backend.home = read;
+  useAldoAssistant.setState({
+    entries: [
+      {
+        kind: "message",
+        role: "assistant",
+        at: at(2),
+        text: "I couldn’t finish this attempt.",
+        update: {
+          id: "failure",
+          thread: target,
+          title: failed.title,
+          state: "failed",
+          summary: "I couldn’t finish this attempt.",
+          checked: [],
+          notChecked: [],
+          links: [],
+        },
+      },
+    ],
+  });
+  await act(async () => root.render(<Page home={read} />));
+  expect(container.querySelector('[data-aldo-decision^="failed:"]')).toBeNull();
+  expect(container.querySelector('[data-aldo-update="failure"]')).not.toBeNull();
+});
+
+it("keeps inline legacy report destinations clickable inside Details", async () => {
+  message(
+    "Read the guide at https://example.com/guide.\n\nThread: https://aldo.computer/aldo-demo/work",
+    1,
+    "assistant",
+  );
+  await act(async () => root.render(<Page home={home()} />));
+  const details = container.querySelector("details")!;
+  expect(details.open).toBe(false);
+  expect(details.querySelector("a")?.getAttribute("href")).toBe("https://example.com/guide");
+  expect(details.querySelector("a")?.textContent).toBe("example.com");
+});

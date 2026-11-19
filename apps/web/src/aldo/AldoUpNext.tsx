@@ -25,7 +25,6 @@ import {
 
 import { cn } from "~/lib/utils";
 import { useAldoAssistant } from "./assistantSession";
-import { internalHomeCopy } from "./homeUpdate.logic";
 import { AldoUpdateDetails } from "./AldoUpdateCard";
 import { proposedPlanTitle, stripDisplayedPlanMarkdown } from "../proposedPlan";
 import { DismissChatDecision } from "./DismissChatDecision";
@@ -626,20 +625,12 @@ export function DecisionCard(props: {
       // What it last said, less the question the card already asks; where it
       // only waits, its words are behind "View result" instead.
       const said = waiting ? null : q ? c.summary?.replace(q.question, "").trim() : c.summary;
-      const internal = !!said && internalHomeCopy(said);
       body = (
-        <>
-          {said && /\w/.test(said) && !internal ? (
-            <p className="line-clamp-3 text-[14px] text-muted-foreground leading-6 dark:text-foreground/70">
-              {said}
-            </p>
-          ) : null}
-          <AldoUpdateDetails
-            checked={c.result?.checked}
-            notChecked={c.result?.notChecked}
-            notes={internal && said ? [said] : undefined}
-          />
-        </>
+        <AldoUpdateDetails
+          checked={c.result?.checked}
+          notChecked={c.result?.notChecked}
+          notes={said && /\w/.test(said) ? [said] : undefined}
+        />
       );
       if (waiting || isTurnAsk(pending))
         more = (

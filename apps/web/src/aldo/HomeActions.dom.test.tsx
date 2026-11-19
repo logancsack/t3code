@@ -459,32 +459,39 @@ it("uses the current Home-written failure summary with the retry card", async ()
   }
 });
 
-it("keeps a real question and its choices while disclosing engineering notes separately", async () => {
-  const found = decisions.find((d) => d.kind === "question")!;
-  if (found.kind !== "question") throw new Error("Question fixture missing");
-  const question = found.pending.questions[0]!.question;
-  const d = {
-    ...found,
-    conversation: {
-      ...found.conversation,
-      summary: `${question} 272 deterministic reliability checks passed.`,
-    },
-  };
-  await act(async () =>
-    root.render(<DecisionCard decision={d} now={Date.now()} pick={null} open onOpen={() => {}} />),
-  );
-  expect(el.textContent).toContain(question);
-  const details = el.querySelector("details")!;
-  expect(details.open).toBe(false);
-  expect(
-    [...el.querySelectorAll("p")]
-      .filter((p) => !p.closest("details"))
-      .map((p) => p.textContent)
-      .join(" "),
-  ).not.toContain("272");
-  await act(async () => details.querySelector("summary")!.click());
-  expect(details.open).toBe(true);
-  expect(details.textContent).toContain("272 deterministic reliability checks passed.");
-  const label = found.pending.questions[0]!.options[0]!.label.replace(/\s*\(recommended\)/i, "");
-  expect([...el.querySelectorAll("button")].some((b) => b.textContent?.includes(label))).toBe(true);
-});
+it.each(["272 deterministic reliability checks passed.", "I’ve prepared the draft."])(
+  "keeps supplementary notes in Details beside the real question and choices: %s",
+  async (note) => {
+    const found = decisions.find((d) => d.kind === "question")!;
+    if (found.kind !== "question") throw new Error("Question fixture missing");
+    const question = found.pending.questions[0]!.question;
+    const d = {
+      ...found,
+      conversation: {
+        ...found.conversation,
+        summary: `${question} ${note}`,
+      },
+    };
+    await act(async () =>
+      root.render(
+        <DecisionCard decision={d} now={Date.now()} pick={null} open onOpen={() => {}} />,
+      ),
+    );
+    expect(el.textContent).toContain(question);
+    const details = el.querySelector("details")!;
+    expect(details.open).toBe(false);
+    expect(
+      [...el.querySelectorAll("p")]
+        .filter((p) => !p.closest("details"))
+        .map((p) => p.textContent)
+        .join(" "),
+    ).not.toContain(note);
+    await act(async () => details.querySelector("summary")!.click());
+    expect(details.open).toBe(true);
+    expect(details.textContent).toContain(note);
+    const label = found.pending.questions[0]!.options[0]!.label.replace(/\s*\(recommended\)/i, "");
+    expect([...el.querySelectorAll("button")].some((b) => b.textContent?.includes(label))).toBe(
+      true,
+    );
+  },
+);

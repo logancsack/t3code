@@ -13,6 +13,7 @@ import { UPDATE_STATE_LABELS, technicalUpdateLink, type AldoHomeUpdate } from ".
 import { relativeTime } from "./home.logic";
 import { useNowMinute } from "../hooks/useNowMinute";
 import { FOCUS } from "./surface";
+import { linkRuns } from "./assistant.logic";
 
 const EMPTY_LINES: ReadonlyArray<string> = [];
 const EMPTY_LINKS: ReadonlyArray<{ readonly url: string; readonly label: string }> = [];
@@ -165,7 +166,21 @@ function Evidence({
       <h4 className="font-medium text-foreground">{label}</h4>
       {[...new Set(lines)].map((line) => (
         <p key={line} className="mt-1 whitespace-pre-wrap wrap-anywhere">
-          {line}
+          {linkRuns(line).map((run) =>
+            run.href ? (
+              <a
+                key={run.at}
+                href={run.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={cn(FOCUS, "underline underline-offset-4")}
+              >
+                {run.text}
+              </a>
+            ) : (
+              run.text
+            ),
+          )}
         </p>
       ))}
     </section>

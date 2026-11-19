@@ -762,6 +762,7 @@ export function AldoConversation(
         return [
           marker,
           <ConversationEntry
+            decisionThreads={props.decisionThreads}
             key={
               entry.kind === "action"
                 ? entry.id
@@ -803,9 +804,11 @@ function dayLabel(iso: string): string {
 function ConversationEntry({
   entry,
   live,
+  decisionThreads,
 }: {
   readonly entry: AldoConversationEntry;
   readonly live: boolean;
+  readonly decisionThreads?: ReadonlyArray<AldoOpenTarget> | undefined;
 }) {
   if (entry.kind === "action") {
     const label = (
@@ -852,7 +855,13 @@ function ConversationEntry({
   if (entry.role === "user") return <UserMessage entry={entry} />;
   if (entry.source === "brief") return <AldoBriefEntry text={entry.text} at={entry.at} />;
   return (
-    <AldoReply text={entry.text} at={entry.at} update={entry.update} artifacts={entry.artifacts} />
+    <AldoReply
+      text={entry.text}
+      at={entry.at}
+      update={entry.update}
+      artifacts={entry.artifacts}
+      decisionThreads={decisionThreads}
+    />
   );
 }
 
@@ -865,6 +874,7 @@ function AldoReply(props: {
   readonly at?: string | undefined;
   readonly update?: AldoHomeUpdate | undefined;
   readonly artifacts?: ReadonlyArray<AldoArtifact> | undefined;
+  readonly decisionThreads?: ReadonlyArray<AldoOpenTarget> | undefined;
 }) {
   const artifacts = props.artifacts ?? [];
   const update = props.update ?? legacyHomeUpdate(props.text);
@@ -898,9 +908,7 @@ function AldoReply(props: {
     (update?.state === "needs-you" ||
       (update?.state === "failed" &&
         about.state === "failed" &&
-        about.activity?.needsYou !== false &&
-        !about.chatDecision?.cleared &&
-        !about.chatDecision?.dismissed));
+        props.decisionThreads?.some((thread) => sameTarget(thread, about.thread))));
   return (
     <div className="flex w-full min-w-0 flex-col gap-2">
       {update ? (
