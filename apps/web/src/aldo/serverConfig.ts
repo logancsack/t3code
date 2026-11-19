@@ -35,6 +35,7 @@ const ACCOUNT_FOR_DRIVER: Record<string, "claude" | "codex" | "grok" | "muse"> =
 let latest: EncodedConfig | null = null;
 let reportedProviders: string | null = null;
 let fetchedFromAldo: Promise<void> | null = null;
+let fetchedAt = 0;
 
 /**
  * How many of the machine's providers it hasn't checked since its server
@@ -117,10 +118,15 @@ export function installAldoServerConfigCapture(): void {
 
 async function template(): Promise<EncodedConfig | null> {
   capture();
-  if (latest) return latest;
+  if (Date.now() - fetchedAt > 60_000) fetchedFromAldo = null;
   fetchedFromAldo ??= fetchAldoServerConfig()
     .then((config) => {
-      if (config && !latest) latest = config as EncodedConfig;
+      fetchedAt = Date.now();
+      if (!config) return;
+      const reported = config as EncodedConfig;
+      const newest = (value: EncodedConfig) =>
+        value.providers.reduce((at, p) => Math.max(at, Date.parse(String(p.checkedAt)) || 0), 0);
+      if (!latest || newest(reported) > newest(latest)) latest = reported;
     })
     .catch(() => {
       fetchedFromAldo = null;
