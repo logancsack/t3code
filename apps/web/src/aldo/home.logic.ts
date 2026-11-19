@@ -69,6 +69,7 @@ export function isPausedMidTurn(c: AldoHomeConversation): boolean {
 
 /** Why a conversation needs the user, or null if it doesn't. */
 export function needsYouKind(c: AldoHomeConversation): NeedsYouKind | null {
+  if (c.activity?.needsYou === false || c.settled) return null;
   if (queuedComputer(c)) return null;
   if (
     c.progress?.next.owner === "aldo" &&
@@ -79,7 +80,7 @@ export function needsYouKind(c: AldoHomeConversation): NeedsYouKind | null {
     return null;
   if (c.state === "failed") return "failed";
   if (isPausedMidTurn(c)) return "paused";
-  if (c.state !== "waiting") return null;
+  if (c.state !== "waiting" && !c.activity?.needsYou) return null;
   if (c.pending?.kind === "question") return "question";
   if (c.pending?.kind === "approval") return "approval";
   if (c.pending?.kind === "handoff") return "handoff";
@@ -87,7 +88,25 @@ export function needsYouKind(c: AldoHomeConversation): NeedsYouKind | null {
   return "waiting";
 }
 
-export const WORKING_STATES = new Set(["working", "starting", "queued", "retrying", "scheduled"]);
+export const WORKING_STATES = new Set(["working", "starting", "retrying"]);
+
+/** Use Aldo's shared activity read, with a conservative fallback for an older server. */
+export function isWorkingNow(c: AldoHomeConversation): boolean {
+  if (c.activity) return c.activity.working;
+  return (
+    !c.settled &&
+    WORKING_STATES.has(c.state) &&
+    !isPausedMidTurn(c) &&
+    !queuedComputer(c) &&
+    !needsYouKind(c) &&
+    !(c.state === "working" && c.progress && c.progress.execution !== "working") &&
+    !(
+      c.progress?.next.owner === "aldo" &&
+      c.progress.next.kind !== "working" &&
+      c.progress.execution !== "working"
+    )
+  );
+}
 
 /**
  * Working, with no activity for an hour: `at` follows the thread's latest event
@@ -128,9 +147,7 @@ export function boardFor(
     needsYou: conversations
       .filter((c) => needsYouKind(c) !== null && (withCleared || !c.chatDecision?.cleared))
       .sort((a, b) => a.at.localeCompare(b.at)),
-    working: conversations
-      .filter((c) => (WORKING_STATES.has(c.state) || queuedComputer(c)) && !isPausedMidTurn(c))
-      .sort(byAt),
+    working: conversations.filter((c) => isWorkingNow(c)).sort(byAt),
     unfinished: conversations
       .filter((c) => c.state === "unfinished" && !queuedComputer(c))
       .sort(byAt),

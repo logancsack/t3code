@@ -165,7 +165,7 @@ it("a sleeping Windows waiter is quiet, shows its position, and needs no Continu
     expect(needsYouKind(c)).toBeNull();
     expect(isPausedMidTurn(c)).toBe(false);
     expect(isStuck(c, now)).toBe(false);
-    expect(boardFor([c], now)).toMatchObject({ needsYou: [], done: [], working: [c] });
+    expect(boardFor([c], now)).toMatchObject({ needsYou: [], done: [], working: [] });
   }
 });
 
@@ -215,7 +215,7 @@ it("a queued computer takes precedence over an unfinished report", () => {
     computers: [{ computer: "gpu", status: "queued", position: 2, creditsPerHour: 310 }],
   });
   expect(boardFor([c], now)).toMatchObject({
-    working: [c],
+    working: [],
     unfinished: [],
     done: [],
     needsYou: [],
