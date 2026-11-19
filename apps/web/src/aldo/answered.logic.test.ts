@@ -2,6 +2,7 @@ import { expect, it } from "vite-plus/test";
 
 import { askOf, carryingOn, HOLD_MS, withHolds } from "./answered.logic";
 import type { AldoHome, AldoHomeConversation } from "./homeApi";
+import { boardFor, needsYouKind } from "./home.logic";
 
 const at = "2026-10-16T00:00:00Z";
 const conversation = (patch: Partial<AldoHomeConversation> = {}): AldoHomeConversation => ({
@@ -93,4 +94,35 @@ it("gives back the same read when nothing is held", () => {
   const home = homeOf(conversation());
   expect(withHolds(home, {}, 0).home).toBe(home);
   expect(withHolds(home, { elsewhere: hold }, 0).home).toBe(home);
+});
+
+it("invalidates waiting activity and progress while an answered request is held", () => {
+  for (const machine of ["running", "asleep"]) {
+    for (const kind of ["question", "approval"] as const) {
+      const c = conversation({
+        machine,
+        activity: { working: false, needsYou: true },
+        progress: {
+          execution: "replied",
+          verdict: "blocked",
+          next: { owner: "you", kind: "input" },
+          label: "Waiting for your input",
+          detail: "Answer required",
+        },
+        pending:
+          kind === "question"
+            ? { kind, requestId: "r1", questions: [] }
+            : { kind, requestId: "r1", summary: "Run?", options: [] },
+      });
+      const now = Date.parse(hold.at);
+      const taken = { ...hold, until: now + HOLD_MS };
+      const held = withHolds(homeOf(c), { t: taken }, now).home.conversations[0]!;
+      expect(needsYouKind(held)).toBeNull();
+      expect(boardFor([held], now)).toMatchObject({ needsYou: [], working: [held] });
+      expect(held.progress?.next.owner).not.toBe("you");
+      const expired = withHolds(homeOf(c), { t: taken }, now + HOLD_MS).home.conversations[0]!;
+      expect(needsYouKind(expired)).toBe(kind);
+      expect(expired.activity).toEqual(c.activity);
+    }
+  }
 });

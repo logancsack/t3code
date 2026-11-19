@@ -279,7 +279,16 @@ function AldoHomeContent() {
   );
   /** Everything j and k move over, in the order it's on the board. */
   const selectable: ReadonlyArray<AldoHomeConversation> = useMemo(
-    () => (board ? [...board.needsYou, ...board.working, ...board.unfinished, ...board.done] : []),
+    () =>
+      board
+        ? [
+            ...board.needsYou,
+            ...board.working,
+            ...board.waiting,
+            ...board.unfinished,
+            ...board.done,
+          ]
+        : [],
     [board],
   );
   const selectedIndex = selectable.findIndex((c) => c.ref === selectedRef);
@@ -511,6 +520,15 @@ function AldoHomeContent() {
                     </ul>
                   </Section>
                 ) : null}
+                {board.waiting.length > 0 ? (
+                  <Section title="Waiting to continue" count={board.waiting.length}>
+                    <ul className="rounded-xl border border-border/60 bg-card/30 p-1.5">
+                      {board.waiting.map((c) => (
+                        <ConversationRow key={c.ref} {...rowProps(c)} />
+                      ))}
+                    </ul>
+                  </Section>
+                ) : null}
                 {board.unfinished.length > 0 ? (
                   <Section title="Unfinished" count={board.unfinished.length}>
                     <ul className="rounded-xl border border-border/60 bg-card/30 p-1.5">
@@ -523,6 +541,7 @@ function AldoHomeContent() {
                 {board.unfinished.length === 0 &&
                 board.needsYou.length === 0 &&
                 board.working.length === 0 &&
+                board.waiting.length === 0 &&
                 board.done.length === 0 ? (
                   <div className="rounded-xl border border-border/60 border-dashed px-5 py-8 text-center">
                     {/* Done threads leave the board after two days: it's caught up, not empty. */}

@@ -336,8 +336,8 @@ describe("presenceBoard working and coming up", () => {
     });
     const read = home({ conversations: [waiting] });
     const b = board(read);
-    expect(b.working.rows).toHaveLength(1);
-    expect(b.working.rows[0]).toMatchObject({
+    expect(b.working.rows).toHaveLength(0);
+    expect(b.coming.rows[0]).toMatchObject({
       detail: "Waiting for Windows · position 2",
       tone: "quiet",
     });
@@ -347,7 +347,7 @@ describe("presenceBoard working and coming up", () => {
     const advanced = home({
       conversations: [{ ...waiting, computers: [{ ...waiting.computers![0]!, position: 1 }] }],
     });
-    expect(board(advanced).working.rows[0]!.detail).toBe("Waiting for Windows · position 1");
+    expect(board(advanced).coming.rows[0]!.detail).toBe("Waiting for Windows · position 1");
   });
   it("says a thread with no word for an hour instead of working", () => {
     const b = board(
@@ -473,4 +473,68 @@ describe("unfinished task presence", () => {
       "1 needs you · 2 unfinished",
     );
   });
+});
+
+it("counts only current turns, with the same threads in the header and drop-down", () => {
+  const cases = [
+    conversation({
+      ref: "running",
+      state: "working",
+      activity: { working: true, needsYou: false },
+    }),
+    conversation({
+      ref: "reminder",
+      state: "done",
+      progress: {
+        execution: "replied",
+        verdict: "unknown",
+        next: { owner: "aldo", kind: "delivery", at: ahead(60) },
+        label: "Next step scheduled",
+        detail: "Later",
+      },
+    }),
+    conversation({
+      ref: "release",
+      state: "done",
+      progress: {
+        execution: "replied",
+        verdict: "unknown",
+        next: { owner: "aldo", kind: "release" },
+        label: "Waiting for release checks",
+        detail: "Later",
+      },
+    }),
+    conversation({
+      ref: "retry",
+      state: "failed",
+      progress: {
+        execution: "failed",
+        verdict: "unknown",
+        next: { owner: "aldo", kind: "delivery", at: ahead(60) },
+        label: "Paused; retry scheduled",
+        detail: "Later",
+      },
+    }),
+    conversation({ ref: "settled", state: "working", settled: true }),
+    conversation({
+      ref: "waiting",
+      state: "waiting",
+      activity: { working: false, needsYou: true },
+    }),
+  ];
+  const b = board(home({ conversations: cases }));
+  expect(b.working.rows.map((r) => r.key)).toEqual(["working:running"]);
+  expect(b.needsYou.rows.map((r) => r.title)).toEqual([cases[5]!.title]);
+  expect(b.coming.rows.map((r) => r.key)).toEqual([
+    "scheduled:reminder",
+    "scheduled:release",
+    "scheduled:retry",
+  ]);
+  expect(
+    presenceLine({
+      ...quiet,
+      waiting: b.needsYou.rows.length,
+      working: cases.filter((c) => b.working.rows.some((r) => r.key === `working:${c.ref}`)),
+    }).text,
+  ).toBe("1 needs you · 1 working");
 });
