@@ -86,8 +86,57 @@ export const WAITING_CHOICES: ReadonlyArray<{ readonly label: string; readonly r
 ];
 
 export function waitingQuestion(
-  c: Pick<AldoHomeConversation, "stateAt" | "at">,
+  c: Pick<AldoHomeConversation, "stateAt" | "at" | "title" | "summary" | "result">,
 ): Extract<AldoHomePending, { kind: "question" }> {
+  const own = c.result?.ask;
+  const evidence =
+    c.result?.doneWhen
+      .filter((line) => !line.met)
+      .map((line) => line.evidence)
+      .join(" ") ?? "";
+  const context = [c.summary, evidence].filter(Boolean).join(" ");
+  const paid =
+    /\bdeclined\b/i.test(context) &&
+    /\b(?:payment|payments|card)\b/i.test(context) &&
+    /\b(?:Premium|subscription|paid (?:access|plan|Bot))\b/i.test(context);
+  const account =
+    /\baccount\b/i.test(context) && /\b(?:need|requires?|unspecified|missing)\b/i.test(context);
+  const subject = (
+    c.title
+      .replace(/^(?:learn from|research|study|compare)\s+/i, "")
+      .split(/\s+(?:to|for)\s+/)[0] ?? c.title
+  ).slice(0, 60);
+  const question =
+    own?.question && !/^I need your decision before I can finish/i.test(own.question)
+      ? own.question
+      : paid
+        ? `I need ${/\bPremium\b/i.test(context) ? "Premium" : "paid access"} for ${subject}, but the payment was declined. Can you fix the card or provide existing paid access?`
+        : account
+          ? `I need you to choose an account for “${c.title}”. Which account should I use?`
+          : c.summary &&
+              !/I need your decision|(?:PR|holdout|provenance|unadmitted|coverage)\b/i.test(
+                c.summary,
+              )
+            ? c.summary
+            : `I haven't recorded what I need from you to finish “${c.title}”.`;
+  const options =
+    own?.question === question && own.options.length >= 2 && own.options.length <= 4
+      ? own.options
+      : paid
+        ? [
+            "I'll fix the card with my bank; wait for me (Recommended)",
+            "I'll provide an existing paid login",
+            "Skip the paid tasks and finish with what you have",
+          ]
+        : account
+          ? [
+              "I'll provide an account to use (Recommended)",
+              "Finish without the work that needs that account",
+            ]
+          : [
+              "Explain exactly what you need from me (Recommended)",
+              "Finish only the parts you can do without me",
+            ];
   return {
     kind: "question",
     requestId: `waiting:${c.stateAt ?? c.at}`,
@@ -95,11 +144,35 @@ export function waitingQuestion(
       {
         id: "ask",
         header: "",
-        question: "I need your decision before I can finish.",
-        options: WAITING_CHOICES.map((o) => ({ label: o.label, description: "" })),
+        question,
+        options: options.map((label) => ({ label, description: "" })),
         multiSelect: false,
       },
     ],
+  };
+}
+
+/** Old servers already supplied the empty fallback as a synthetic question.
+ * Keep its response identity while recovering useful copy from the report. */
+export function concreteWaitingQuestion(
+  c: AldoHomeConversation,
+  pending: Extract<AldoHomePending, { kind: "question" }>,
+) {
+  if (
+    !pending.requestId.startsWith("ask:") ||
+    !pending.questions.some((q) =>
+      /^I need your decision before I can finish[.!]?$/i.test(q.question),
+    )
+  )
+    return pending;
+  const recovered = waitingQuestion(c).questions[0]!;
+  return {
+    ...pending,
+    questions: pending.questions.map((q) => ({
+      ...q,
+      question: recovered.question,
+      options: recovered.options,
+    })),
   };
 }
 

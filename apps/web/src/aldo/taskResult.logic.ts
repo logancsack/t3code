@@ -9,6 +9,7 @@ export type TaskResult = {
   checked: string[];
   notChecked: string[];
   decided: { what: string; why: string; undo: string }[];
+  ask?: { question: string; options: string[] };
   /** A protocol problem Aldo found, separate from the agent's own words. */
   problem?: string;
 };
@@ -80,6 +81,14 @@ export function checkedTaskResult(value: unknown): TaskResult | null {
   const result: TaskResult = {
     ...(value.schemaVersion === TASK_RESULT_SCHEMA ? { schemaVersion: TASK_RESULT_SCHEMA } : {}),
     state: value.state as TaskResult["state"],
+    ...(record(value.ask) &&
+    text(value.ask.question, 300) &&
+    Array.isArray(value.ask.options) &&
+    value.ask.options.length >= 2 &&
+    value.ask.options.length <= 4 &&
+    value.ask.options.every((o) => text(o, 100) && o.trim())
+      ? { ask: { question: value.ask.question, options: value.ask.options as string[] } }
+      : {}),
     doneWhen: value.doneWhen.map((item) => ({
       criterion: item.criterion,
       met: item.met,

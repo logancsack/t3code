@@ -52,7 +52,13 @@ import {
 } from "./decisions.logic";
 import { completeAldo } from "./presenceReactions";
 import { refreshAldoHome, useAldoHomeFeed } from "./homeFeed";
-import { elapsed, isTurnAsk, waitingQuestion, waitingReply } from "./home.logic";
+import {
+  concreteWaitingQuestion,
+  elapsed,
+  isTurnAsk,
+  waitingQuestion,
+  waitingReply,
+} from "./home.logic";
 import { addAldoReceipt, useAldoReceipts } from "./receipts";
 import { movedOnText, receiptText } from "./receipts.logic";
 import { FOCUS, ICON_BUTTON, INSET, PRIMARY, SECONDARY, SURFACE } from "./surface";
@@ -618,7 +624,8 @@ export function DecisionCard(props: {
       const c = d.conversation;
       // A thread that only waits (no request in it) is asked in plain words, its answer sent as a message.
       const waiting = d.kind !== "question";
-      const pending = d.kind === "question" ? d.pending : waitingQuestion(c);
+      const pending =
+        d.kind === "question" ? concreteWaitingQuestion(c, d.pending) : waitingQuestion(c);
       const q = pending.questions[0];
       headline = q?.question ?? "It asks you something";
       // What it last said, less the question the card already asks; where it
