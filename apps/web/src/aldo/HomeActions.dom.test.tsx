@@ -161,13 +161,11 @@ const JARGON = /holdout|provenance|unadmitted|coverage|dedicated account/i;
 it("a thread that only waits asks in plain words with choices to tap, never its notes or a bare text box", async () => {
   const d = await mount("waiting");
   expect(d.kind === "waiting" && d.conversation.summary).toBe(BLOCKED_NOTE);
-  expect(el.querySelector("h4")?.textContent).toBe(
-    "It needs a decision from you before it can finish.",
-  );
+  expect(el.querySelector("h4")?.textContent).toBe("I need your decision before I can finish.");
   expect(el.textContent).not.toMatch(JARGON);
   // Choices first, the recommended one marked; typing only once asked for.
   expect(el.querySelector("input")).toBeNull();
-  expect(button("Let it decide and carry onRecommended")).toBeDefined();
+  expect(button("Decide for me and carry onRecommended")).toBeDefined();
   expect(button("Something else…")).toBeDefined();
   expect(el.textContent).toContain("View result");
   expect(el.textContent).toContain("Ask Aldo about it");
@@ -221,7 +219,7 @@ it("the board's form for a thread that only waits answers with a tap, as a reply
   await act(async () =>
     root.render(<PendingForm conversation={d.conversation} onActed={() => {}} />),
   );
-  expect(el.textContent).toContain("It needs a decision from you before it can finish.");
+  expect(el.textContent).toContain("I need your decision before I can finish.");
   expect(el.textContent).not.toMatch(JARGON);
   await act(async () => button("Skip that part").click());
   expect(backend.fetch.mock.calls[0]![0]).toBe("/api/environments/waiting/messages");
