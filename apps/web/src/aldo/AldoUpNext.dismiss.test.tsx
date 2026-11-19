@@ -38,7 +38,10 @@ vi.mock("./homeApi", () => ({
     };
   },
 }));
-vi.mock("./assistantSession", () => ({ noteAldoHiddenPrompts: vi.fn() }));
+vi.mock("./assistantSession", () => ({
+  noteAldoHiddenPrompts: vi.fn(),
+  useAldoAssistant: (select: (s: { entries: never[] }) => unknown) => select({ entries: [] }),
+}));
 vi.mock("../components/ui/toast", () => ({ toastManager: { add: backend.toast, close: vi.fn() } }));
 vi.mock("./AldoApprovals", () => ({ ApprovalCard: () => null }));
 vi.mock("./AldoBrief", () => ({ DecisionIcon: () => null, confirmQuickChoice: vi.fn() }));

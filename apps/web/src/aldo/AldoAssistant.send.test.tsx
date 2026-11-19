@@ -114,7 +114,12 @@ it("keeps Send enabled for three taps, sends each at once, and accepts another s
     }),
   );
   expect(container.textContent).toContain("First paragraph.");
-  expect(container.textContent).not.toContain("Another paragraph still arriving.");
+  expect(container.textContent).toContain("Another paragraph still arriving.");
+  const reply = [...container.querySelectorAll("p")].filter((p) =>
+    p.textContent?.includes("First paragraph."),
+  );
+  expect(reply).toHaveLength(1);
+  expect(reply[0]?.textContent).toContain("Another paragraph still arriving.");
   await send("Include a shopping list");
   expect(backend.send).toHaveBeenCalledTimes(4);
   for (let i = 1; i < 4; i++) {
