@@ -564,9 +564,18 @@ it("uses smooth navigation when reduced motion is off", async () => {
   });
 });
 
-it.each(["Start · 310 credits/hour", "Decline"])(
-  "shows a computer request once and removes it after %s while Home catches up",
-  async (label) => {
+it.each(
+  [
+    { kind: "gpu", rate: 310, disposable: false },
+    { kind: "windows", rate: 38.4, disposable: true },
+  ].flatMap((computer) => [
+    { ...computer, approve: true },
+    { ...computer, approve: false },
+  ]),
+)(
+  "shows one $kind request and removes it after approve=$approve while Home catches up",
+  async ({ kind, rate, disposable, approve }) => {
+    const label = approve ? `Start · ${rate} credits/hour` : "Decline";
     const read = home({
       conversations: [
         {
@@ -580,9 +589,10 @@ it.each(["Start · 310 credits/hour", "Decline"])(
           at: at(2),
           computers: [
             {
-              computer: "gpu",
+              computer: kind,
               status: "asked",
-              creditsPerHour: 310,
+              creditsPerHour: rate,
+              ...(disposable ? { disposable: true, concurrentLimit: 5 } : {}),
               askedAt: at(2),
               why: "Render the video",
             },
@@ -595,14 +605,10 @@ it.each(["Start · 310 credits/hour", "Decline"])(
     expect(pill().textContent).toBe("One needs you");
     const card = container.querySelector<HTMLElement>("[data-aldo-computer-request]")!;
     before(card, textElement("Please keep the captions readable"));
-    expect(card.textContent).toContain("310 credits an hour");
+    expect(card.textContent).toContain(`${rate} credits an hour`);
     expect(container.querySelector('[data-aldo-decision^="waiting:"]')).toBeNull();
     await click([...card.querySelectorAll("button")].find((b) => b.textContent === label)!);
-    expect(backend.computer).toHaveBeenCalledWith(
-      "aldo-render",
-      label === "Start · 310 credits/hour",
-      "gpu",
-    );
+    expect(backend.computer).toHaveBeenCalledWith("aldo-render", approve, kind, "render");
     expect(pill()).toBeNull();
     expect(container.querySelector("[data-aldo-computer-request]")).toBeNull();
   },
