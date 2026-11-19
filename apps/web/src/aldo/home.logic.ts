@@ -128,9 +128,25 @@ export interface HomeBoard {
   readonly needsYou: ReadonlyArray<AldoHomeConversation>;
   /** Newest first. */
   readonly working: ReadonlyArray<AldoHomeConversation>;
+  /** Retained work without a turn running now. */
+  readonly waiting: ReadonlyArray<AldoHomeConversation>;
   readonly unfinished: ReadonlyArray<AldoHomeConversation>;
   /** Finished in the last two days, newest first. */
   readonly done: ReadonlyArray<AldoHomeConversation>;
+}
+
+/** A future continuation or capacity wait stays visible, separate from current execution. */
+function waitingToContinue(c: AldoHomeConversation): boolean {
+  return (
+    !c.settled &&
+    !isWorkingNow(c) &&
+    !needsYouKind(c) &&
+    Boolean(
+      queuedComputer(c) ||
+      ["queued", "scheduled", "starting", "retrying"].includes(c.state) ||
+      (c.progress?.next.owner === "aldo" && c.progress.next.kind !== "working"),
+    )
+  );
 }
 
 const byAt = (a: { at: string }, b: { at: string }) => b.at.localeCompare(a.at);
@@ -149,13 +165,14 @@ export function boardFor(
       .filter((c) => needsYouKind(c) !== null && (withCleared || !c.chatDecision?.cleared))
       .sort((a, b) => a.at.localeCompare(b.at)),
     working: conversations.filter((c) => isWorkingNow(c)).sort(byAt),
+    waiting: conversations.filter(waitingToContinue).sort(byAt),
     unfinished: conversations
-      .filter((c) => c.state === "unfinished" && !queuedComputer(c))
+      .filter((c) => c.state === "unfinished" && !waitingToContinue(c))
       .sort(byAt),
     done: conversations
       .filter(
         (c) =>
-          !queuedComputer(c) &&
+          !waitingToContinue(c) &&
           (c.state === "done" || c.state === "stopped") &&
           now - Date.parse(c.stateAt ?? c.at) < DONE_WINDOW_MS,
       )

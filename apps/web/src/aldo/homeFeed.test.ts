@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from "vite-plus/test";
 import type { AldoHome } from "./homeApi";
+import { boardFor } from "./home.logic";
 
 const fetchHome = vi.hoisted(() => vi.fn());
 const decide = vi.hoisted(() => vi.fn());
@@ -144,6 +145,14 @@ function asking(requestId = "r1"): AldoHome {
         ],
       },
       summary: "Which sites?",
+      activity: { working: false, needsYou: true },
+      progress: {
+        execution: "replied",
+        verdict: "blocked",
+        next: { owner: "you", kind: "input" },
+        label: "Waiting for your input",
+        detail: "Which sites?",
+      },
     })),
   };
 }
@@ -164,6 +173,10 @@ it("an answer takes its card away at once, not when the server has answered or A
   expect(shownConversation(feed)).toMatchObject({ state: "starting" });
   expect(shownConversation(feed).pending).toBeUndefined();
   expect(shownConversation(feed).summary).toBeUndefined();
+  expect(boardFor([shownConversation(feed)], Date.now())).toMatchObject({
+    needsYou: [],
+    working: [shownConversation(feed)],
+  });
   taken();
   await expect(sending).resolves.toBe("sent");
   expect(shownConversation(feed).pending).toBeUndefined();

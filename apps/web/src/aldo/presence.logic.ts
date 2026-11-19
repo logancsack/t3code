@@ -280,16 +280,7 @@ export function presenceBoard(
     }));
 
   // Retained work stays discoverable without claiming an agent is running.
-  const retained: PresenceRow[] = home.conversations
-    .filter(
-      (c) =>
-        !c.settled &&
-        !live.includes(c) &&
-        (queuedComputer(c) ||
-          c.state === "queued" ||
-          c.state === "scheduled" ||
-          (c.progress?.next.owner === "aldo" && c.progress.next.kind !== "working")),
-    )
+  const retained: PresenceRow[] = tasks.waiting
     .filter(
       (c) =>
         !soon.some(
