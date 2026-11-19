@@ -100,7 +100,7 @@ export function waitingQuestion(
     /\b(?:payment|payments|card)\b/i.test(context) &&
     /\b(?:Premium|subscription|paid (?:access|plan|Bot))\b/i.test(context);
   const account =
-    /\b(?:account(?: identity)?(?: remains| is)? (?:unspecified|missing|not (?:chosen|specified|selected|provided))|no account (?:has been )?(?:chosen|specified|selected|provided)|which account to use)\b/i.test(
+    /\b(?:account(?: identity)?(?: remains| is)? (?:unspecified|missing|not (?:chosen|specified|selected|provided))|no account (?:has been )?(?:chosen|specified|selected|provided)|which account to use)\b|\b(?:needs?|requires?) (?:an? |your )?(?:(?:dedicated|subscription) )*account(?=[.!?;]|$)/i.test(
       context,
     );
   const subject = (
