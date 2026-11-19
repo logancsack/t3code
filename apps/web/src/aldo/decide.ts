@@ -10,7 +10,13 @@
 import { toastManager } from "../components/ui/toast";
 import { toastAldoRule } from "./AldoApprovals";
 import { AldoApiError } from "./api";
-import { answerAldoThread, approveAldoPlan, fetchAldoHome } from "./homeApi";
+import {
+  answerAldoThread,
+  approveAldoPlan,
+  fetchAldoHome,
+  replyAldoThread,
+  continueAldoThread,
+} from "./homeApi";
 import { mergeAldoPullRequest } from "./workspaceApi";
 import { decisionOpen, type AldoDecision } from "./decisions.logic";
 import { refreshAldoHome, sendAldoAnswer, sendAldoApproval } from "./homeFeed";
@@ -28,7 +34,9 @@ export type AldoChoice =
   | { readonly kind: "plan"; readonly changes?: string }
   /** One of Aldo's approvals: an email to send, an event to add, a thread to start; or approved, and always allowed. */
   | { readonly kind: "aldo"; readonly decision: "approve" | "discard" | "always" }
-  | { readonly kind: "merge" };
+  | { readonly kind: "merge" }
+  | { readonly kind: "reply"; readonly text: string }
+  | { readonly kind: "continue" };
 
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
@@ -61,6 +69,10 @@ export function choiceWords(decision: AldoDecision, choice: AldoChoice): string 
       return decision.kind === "aldo-approval"
         ? `chose "${choice.decision === "discard" ? decision.approval.discardLabel : decision.approval.approveLabel}"${choice.decision === "always" ? ", and to always allow it" : ""}`
         : choice.decision;
+    case "reply":
+      return `replied “${choice.text}”`;
+    case "continue":
+      return "asked it to carry on";
     case "merge":
       return "merged it";
   }
@@ -105,14 +117,38 @@ export async function decideAldoOutcome(
     return { outcome: "moved-on", said };
   };
   try {
+    if (choice.kind === "reply" && decision.kind === "waiting") {
+      await replyAldoThread(decision.conversation.thread, choice.text);
+      return done(
+        "Reply kept for delivery",
+        "Reply kept for delivery. Aldo will read it when the thread can take it.",
+      );
+    }
+    if (choice.kind === "continue" && decision.kind === "failed") {
+      if (decision.conversation.canRetry) {
+        const status = await continueAldoThread(decision.conversation.thread);
+        return done("Asked it to carry on", status);
+      }
+      // Older servers refuse failed threads on Continue; the existing message
+      // route still keeps the same carry-on instruction without waking first.
+      await replyAldoThread(decision.conversation.thread, "Carry on where you left off.");
+      return done(
+        "Retry kept for delivery",
+        "Retry kept for delivery. Aldo will carry on when the thread can take it.",
+      );
+    }
     if (choice.kind === "aldo" && decision.kind === "aldo-approval") {
       const { approval, message, rule } = await sendAldoApproval(
         decision.approval,
         choice.decision,
+        undefined,
+        undefined,
+        { afterAccepted: true },
       );
       // A rule it became can be undone from its toast, however quiet the card is.
       if (rule) toastAldoRule(message, rule);
       // An approval decided before (elsewhere, or it expired or was withdrawn) is answered as it stands.
+      if (approval.status === "pending") return { outcome: "failed", said: message };
       const asked = choice.decision === "discard" ? "discarded" : "approved";
       return approval.status === asked ? done(message, message) : movedOn(message);
     }
@@ -122,29 +158,37 @@ export async function decideAldoOutcome(
       return done(`Merged ${pr.repo}#${pr.number}`);
     }
     if (choice.kind === "plan" && decision.kind === "plan") {
-      await sendAldoAnswer(decision.conversation, () =>
-        approveAldoPlan(decision.conversation.thread, decision.plan.id, choice.changes),
+      await sendAldoAnswer(
+        decision.conversation,
+        () => approveAldoPlan(decision.conversation.thread, decision.plan.id, choice.changes),
+        { afterAccepted: true },
       );
       return done(
         choice.changes ? "Asked for a revised plan" : "The agent is carrying out the plan",
       );
     }
     if (choice.kind === "answer" && decision.kind === "question") {
-      await sendAldoAnswer(decision.conversation, () =>
-        answerAldoThread(decision.conversation.thread, {
-          requestId: decision.pending.requestId,
-          ...(choice.answers ? { answers: choice.answers } : {}),
-          ...(choice.text ? { text: choice.text } : {}),
-        }),
+      await sendAldoAnswer(
+        decision.conversation,
+        () =>
+          answerAldoThread(decision.conversation.thread, {
+            requestId: decision.pending.requestId,
+            ...(choice.answers ? { answers: choice.answers } : {}),
+            ...(choice.text ? { text: choice.text } : {}),
+          }),
+        { afterAccepted: true },
       );
       return done("Answered");
     }
     if (choice.kind === "decision" && decision.kind === "approval") {
-      await sendAldoAnswer(decision.conversation, () =>
-        answerAldoThread(decision.conversation.thread, {
-          requestId: decision.pending.requestId,
-          decision: choice.decision,
-        }),
+      await sendAldoAnswer(
+        decision.conversation,
+        () =>
+          answerAldoThread(decision.conversation.thread, {
+            requestId: decision.pending.requestId,
+            decision: choice.decision,
+          }),
+        { afterAccepted: true },
       );
       return done("Decision sent");
     }
@@ -160,7 +204,7 @@ export async function decideAldoOutcome(
       (decision.kind === "question" || decision.kind === "approval" || decision.kind === "plan");
     if (threadSaidNo && !(await stillOpen(decision))) return movedOn(messageOf(cause));
     toastManager.add({ type: "error", title: "Couldn't do that", description: messageOf(cause) });
-    return { outcome: "failed", said: null };
+    return { outcome: "failed", said: messageOf(cause) };
   } finally {
     void refreshAldoHome();
   }

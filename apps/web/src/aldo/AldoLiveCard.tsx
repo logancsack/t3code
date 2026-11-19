@@ -18,7 +18,7 @@ import { Button } from "../components/ui/button";
 import { ContinueButton } from "./AldoContinue";
 import { cn } from "~/lib/utils";
 import { mergeFollowedPullRequest, TONE_VARIANT } from "./AldoHomeBoard";
-import { askAldoAbout, ThreadLink } from "./AldoHomeInbox";
+import { ThreadLink } from "./AldoHomeInbox";
 import { aldoComputerQueueLabel } from "./computer.logic";
 import {
   type AldoHome,
@@ -370,12 +370,8 @@ export function AldoThreadCard(props: {
     where ?? (c.repos.length > 0 ? reposLabel(c.repos) : null),
   ].filter(Boolean);
   const action =
-    view.action === "continue" || view.action === "fix" ? (
+    view.action === "continue" || view.action === "fix" || view.action === "ask" ? (
       <ContinueButton conversation={c} blocked={stalled?.blocked} />
-    ) : view.action === "ask" ? (
-      <button type="button" className={cn(PRIMARY, "w-full")} onClick={() => askAldoAbout(c.title)}>
-        Ask Aldo about it
-      </button>
     ) : view.action === "show" ? (
       open ? (
         <button

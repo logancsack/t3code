@@ -1,5 +1,5 @@
 // Home offers the same computer request as its thread, at the time it arrived.
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { cn } from "~/lib/utils";
 import { answerAldoComputer } from "./workspaceApi";
 import { refreshAldoHome } from "./homeFeed";
@@ -10,10 +10,12 @@ import { aldoComputerAskDescription } from "./computer.logic";
 import { PRIMARY, SECONDARY, SURFACE } from "./surface";
 
 export function AldoComputerRequest({ request }: { readonly request: ComputerRequest }) {
+  const sending = useRef(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const answer = async (approve: boolean) => {
-    if (busy) return;
+    if (sending.current) return;
+    sending.current = true;
     setBusy(true);
     setError(null);
     try {
@@ -32,6 +34,7 @@ export function AldoComputerRequest({ request }: { readonly request: ComputerReq
       void refreshAldoHome();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Couldn't answer your agent. Try again.");
+      sending.current = false;
       setBusy(false);
       void refreshAldoHome();
     }
@@ -66,7 +69,7 @@ export function AldoComputerRequest({ request }: { readonly request: ComputerReq
           className={cn(PRIMARY, "min-h-11 px-4 text-sm")}
           onClick={() => void answer(true)}
         >
-          {busy ? "Answering…" : "Start it"}
+          {busy ? "Answering…" : `Start · ${request.computer.creditsPerHour} credits/hour`}
         </button>
         <button
           type="button"
@@ -74,7 +77,7 @@ export function AldoComputerRequest({ request }: { readonly request: ComputerReq
           className={cn(SECONDARY, "min-h-11 px-4 text-sm")}
           onClick={() => void answer(false)}
         >
-          Not now
+          Decline
         </button>
       </div>
     </article>

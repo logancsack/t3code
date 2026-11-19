@@ -2,12 +2,12 @@
 import { CalendarPlusIcon, CircleCheckBigIcon, MailIcon, SparklesIcon } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { Badge } from "../components/ui/badge";
-import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { toastManager } from "../components/ui/toast";
 import { requestConfirmDialog } from "../confirmDialog";
 import { ApprovalBody, toastAldoRule } from "./AldoApprovals";
 import { ThreadLink } from "./AldoHomeInbox";
+import { FOCUS, PRIMARY, SECONDARY } from "./surface";
 import { AldoApiError } from "./api";
 import { APPROVAL_KIND_LABEL, approvalQuestion } from "./approvals.logic";
 import { relativeTime } from "./home.logic";
@@ -15,8 +15,8 @@ import type { AldoApproval } from "./homeApi";
 import { sendAldoApproval } from "./homeFeed";
 
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
-// Optimistic approval removes the card. A failed request remounts it: keep its
-// unsaved choice until the server accepts a decision, without granting a rule.
+// Keep unsaved spending choices across a refresh or failed request, without
+// granting a rule before the server accepts the decision.
 const limitDrafts = new Map<string, { choice: string; custom: string }>();
 function keepLimitDraft(id: string, choice: string, custom: string): void {
   if (!limitDrafts.has(id) && limitDrafts.size >= 100)
@@ -35,12 +35,17 @@ export type ApprovalCardProps = {
   readonly now: number;
   readonly onActed: () => void;
   readonly inThread?: boolean;
+  /** Home supplies the outer frame and heading. */
+  readonly inline?: boolean;
 };
 
 export function ApprovalCard(props: ApprovalCardProps) {
   const a = props.approval;
   const Icon = KIND_ICON[a.kind];
-  const sending = a.status === "sending";
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const acting = useRef(false);
+  const sending = busy || a.status === "sending";
   const reasons = a.reasons ?? [];
   const limitId = useId();
   const [limitChoice, setLimitChoice] = useState(() => limitDrafts.get(a.id)?.choice ?? "");
@@ -83,19 +88,31 @@ export function ApprovalCard(props: ApprovalCardProps) {
       ) ?? Promise.resolve(true));
       if (!confirmed) return;
     }
+    if (acting.current) return;
+    acting.current = true;
+    setBusy(true);
+    setError(null);
     try {
       const {
         message,
         rule,
         approval: decided,
       } = a.spendingLimit && decision === "approve"
-        ? await sendAldoApproval(a, decision, reason, spendLimit)
-        : await sendAldoApproval(a, decision, reason);
+        ? await sendAldoApproval(a, decision, reason, spendLimit, { afterAccepted: true })
+        : await sendAldoApproval(a, decision, reason, undefined, { afterAccepted: true });
       if (decided.status !== "pending") limitDrafts.delete(a.id);
       if (rule) toastAldoRule(message, rule);
-      else toastManager.add({ type: "success", title: message });
+      else {
+        const expected = decision === "discard" ? "discarded" : "approved";
+        if (decided.status === "pending") setError(message);
+        toastManager.add({
+          type: decided.status === expected ? "success" : "warning",
+          title: message,
+        });
+      }
     } catch (cause) {
       // A draft that changed since it was shown comes back as it is now, to look at again.
+      setError(messageOf(cause));
       const changed = cause instanceof AldoApiError && cause.status === 409;
       toastManager.add({
         type: changed ? "warning" : "error",
@@ -103,30 +120,48 @@ export function ApprovalCard(props: ApprovalCardProps) {
         description: messageOf(cause),
       });
     } finally {
+      acting.current = false;
+      setBusy(false);
       props.onActed();
     }
   };
+  const Wrapper = props.inline ? "div" : "li";
   return (
-    <li className="list-none rounded-xl border border-border/60 bg-card/30 p-3.5">
+    <Wrapper
+      className={
+        props.inline ? "min-w-0" : "list-none rounded-xl border border-border/60 bg-card/30 p-3.5"
+      }
+    >
       <div className="flex items-start gap-2.5">
-        <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
+        {!props.inline ? (
+          <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
+        ) : null}
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-muted-foreground text-xs">
-            <Badge variant="warning" size="sm">
-              {APPROVAL_KIND_LABEL[a.kind]}
-            </Badge>
-            {a.thread && !props.inThread ? (
-              <ThreadLink target={a.thread} className="min-w-0 truncate hover:text-foreground">
-                {a.kind === "start" ? "Started" : "From"} {a.threadTitle ?? "its thread"}
-              </ThreadLink>
-            ) : a.kind === "start" && !a.thread ? (
-              <span>From Aldo</span>
-            ) : null}
-            <span>· {relativeTime(a.createdAt, props.now)}</span>
-          </div>
-          <p className="mt-1 font-medium text-sm">{approvalQuestion(a)}</p>
+          {error ? (
+            <p role="alert" className="mb-3 text-sm text-destructive-foreground">
+              {error}
+            </p>
+          ) : null}
+          {!props.inline ? (
+            <>
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-muted-foreground text-xs">
+                <Badge variant="warning" size="sm">
+                  {APPROVAL_KIND_LABEL[a.kind]}
+                </Badge>
+                {a.thread && !props.inThread ? (
+                  <ThreadLink target={a.thread} className="min-w-0 truncate hover:text-foreground">
+                    {a.kind === "start" ? "Started" : "From"} {a.threadTitle ?? "its thread"}
+                  </ThreadLink>
+                ) : a.kind === "start" && !a.thread ? (
+                  <span>From Aldo</span>
+                ) : null}
+                <span>· {relativeTime(a.createdAt, props.now)}</span>
+              </div>
+              <p className="mt-1 font-medium text-sm">{approvalQuestion(a)}</p>
+            </>
+          ) : null}
           {a.fields.length > 0 ? (
-            <dl className="mt-1.5 grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 text-xs">
+            <dl className="mt-1.5 grid grid-cols-[auto_1fr] gap-x-2 gap-y-1 text-sm">
               {a.fields.map((f) => (
                 <div key={f.label} className="contents">
                   <dt className="text-muted-foreground">{f.label}</dt>
@@ -219,70 +254,75 @@ export function ApprovalCard(props: ApprovalCardProps) {
               </p>
               <div className="flex flex-wrap gap-2">
                 {reasons.map((reason, i) => (
-                  <Button
+                  <button
+                    type="button"
                     key={reason}
                     ref={i === 0 ? firstReason : undefined}
-                    size="sm"
-                    variant="outline"
+                    className={SECONDARY}
                     disabled={sending}
                     onClick={() => void decide("discard", reason)}
                   >
                     {reason}
-                  </Button>
+                  </button>
                 ))}
-                <Button
-                  size="sm"
-                  variant="ghost"
+                <button
+                  type="button"
+                  className={`${FOCUS} min-h-11 rounded-full px-3 text-sm text-muted-foreground hover:text-foreground`}
                   disabled={sending}
                   onClick={() => setSayingWhy(false)}
                 >
                   Back
-                </Button>
+                </button>
               </div>
             </div>
           ) : (
             <div className="mt-3 flex flex-wrap gap-2">
-              <Button size="sm" disabled={sending} onClick={() => void decide("approve")}>
+              <button
+                type="button"
+                className={PRIMARY}
+                disabled={sending}
+                onClick={() => void decide("approve")}
+              >
                 {sending
                   ? "Working…"
                   : a.spendingLimit
                     ? `${a.approveLabel} and save limit`
                     : a.approveLabel}
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
+              </button>
+              <button
+                type="button"
+                className={SECONDARY}
                 disabled={sending}
                 onClick={() => void decide("discard")}
               >
                 {a.discardLabel}
-              </Button>
+              </button>
               {a.always ? (
-                <Button
-                  size="sm"
-                  variant="ghost"
+                <button
+                  type="button"
+                  className={`${FOCUS} min-h-11 rounded-full px-3 text-sm text-muted-foreground hover:text-foreground`}
                   disabled={sending}
                   onClick={() => void decide("always")}
                   aria-label={`${a.approveLabel}, and always allow: ${a.always}`}
                 >
                   Always allow…
-                </Button>
+                </button>
               ) : null}
               {reasons.length > 0 ? (
-                <Button
+                <button
+                  type="button"
                   ref={whyDoor}
-                  size="sm"
-                  variant="ghost"
+                  className={`${FOCUS} min-h-11 rounded-full px-3 text-sm text-muted-foreground hover:text-foreground`}
                   disabled={sending}
                   onClick={() => setSayingWhy(true)}
                 >
                   {a.discardLabel}, because…
-                </Button>
+                </button>
               ) : null}
             </div>
           )}
         </div>
       </div>
-    </li>
+    </Wrapper>
   );
 }
