@@ -51,4 +51,12 @@ describe("Home update compatibility", () => {
     for (const url of ["/admin/reliability", "https://aldo.computer/s/result"])
       expect(safeUpdateUrl(url)).toBe(true);
   });
+  it("keeps the original legacy report when its summary needs a plain fallback", () => {
+    const original =
+      "I couldn’t finish the deployment. The agent needs you to add the production API key in Settings before it can continue.";
+    const parsed = legacyHomeUpdate(`${original}\n\nThread: https://aldo.computer/aldo-demo/work`)!;
+    expect(parsed.summary).toBe("I couldn’t finish this attempt.");
+    expect(parsed.notes).toEqual([original]);
+    expect(parsed.checked).toEqual([]);
+  });
 });

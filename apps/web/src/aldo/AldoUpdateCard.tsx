@@ -14,6 +14,9 @@ import { relativeTime } from "./home.logic";
 import { useNowMinute } from "../hooks/useNowMinute";
 import { FOCUS } from "./surface";
 
+const EMPTY_LINES: ReadonlyArray<string> = [];
+const EMPTY_LINKS: ReadonlyArray<{ readonly url: string; readonly label: string }> = [];
+
 const ICONS = {
   done: CheckIcon,
   "needs-you": MessageCircleQuestionIcon,
@@ -41,12 +44,6 @@ export function AldoUpdateCard({
   const evidenceLinks = update.links.filter(
     (link) => !update.thread || technicalUpdateLink(link.url),
   );
-  const detail =
-    update.checked.length +
-    update.notChecked.length +
-    (update.notes?.length ?? 0) +
-    evidenceLinks.length +
-    (following ? 1 : 0);
   return (
     <article
       data-aldo-update={update.id}
@@ -93,45 +90,66 @@ export function AldoUpdateCard({
               ),
             )
           : null}
-        {detail > 0 ? (
-          <details className="group ml-auto max-w-full text-[14px] text-muted-foreground open:ml-0 open:basis-full">
-            <summary
-              className={cn(
-                FOCUS,
-                "flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-sm [&::-webkit-details-marker]:hidden",
-              )}
-            >
-              <ChevronDownIcon aria-hidden className="size-3.5 group-open:rotate-180" />
-              Details
-            </summary>
-            <div className="space-y-3 border-t border-foreground/10 pt-3 pb-1 leading-[22px]">
-              {update.checked.length ? (
-                <Evidence label="Reported checks" lines={update.checked} />
-              ) : null}
-              {update.notChecked.length ? (
-                <Evidence label="Not checked" lines={update.notChecked} />
-              ) : null}
-              {update.notes?.length ? <Evidence label="Report" lines={update.notes} /> : null}
-              {following ? <Evidence label="Current status" lines={[following]} /> : null}
-              {evidenceLinks.map((link) => (
-                <a
-                  key={link.url}
-                  href={link.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className={cn(
-                    FOCUS,
-                    "inline-flex min-h-11 items-center wrap-anywhere rounded-sm underline underline-offset-4",
-                  )}
-                >
-                  {link.label}
-                </a>
-              ))}
-            </div>
-          </details>
-        ) : null}
+        <AldoUpdateDetails
+          checked={update.checked}
+          notChecked={update.notChecked}
+          notes={update.notes}
+          links={evidenceLinks}
+          following={following}
+        />
       </div>
     </article>
+  );
+}
+
+/** The same evidence disclosure is used beside a result and its existing retry controls. */
+export function AldoUpdateDetails({
+  checked = EMPTY_LINES,
+  notChecked = EMPTY_LINES,
+  notes = EMPTY_LINES,
+  links = EMPTY_LINKS,
+  following,
+}: {
+  readonly checked?: ReadonlyArray<string> | undefined;
+  readonly notChecked?: ReadonlyArray<string> | undefined;
+  readonly notes?: ReadonlyArray<string> | undefined;
+  readonly links?: ReadonlyArray<{ readonly url: string; readonly label: string }> | undefined;
+  readonly following?: string | undefined;
+}) {
+  if (!checked.length && !notChecked.length && !notes.length && !links.length && !following)
+    return null;
+  return (
+    <details className="group ml-auto max-w-full text-[14px] text-muted-foreground open:ml-0 open:basis-full">
+      <summary
+        className={cn(
+          FOCUS,
+          "flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-sm [&::-webkit-details-marker]:hidden",
+        )}
+      >
+        <ChevronDownIcon aria-hidden className="size-3.5 group-open:rotate-180" />
+        Details
+      </summary>
+      <div className="space-y-3 border-t border-foreground/10 pt-3 pb-1 leading-[22px]">
+        {checked.length ? <Evidence label="Reported checks" lines={checked} /> : null}
+        {notChecked.length ? <Evidence label="Not checked" lines={notChecked} /> : null}
+        {notes?.length ? <Evidence label="Report" lines={notes} /> : null}
+        {following ? <Evidence label="Current status" lines={[following]} /> : null}
+        {links.map((link) => (
+          <a
+            key={link.url}
+            href={link.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={cn(
+              FOCUS,
+              "inline-flex min-h-11 items-center wrap-anywhere rounded-sm underline underline-offset-4",
+            )}
+          >
+            {link.label}
+          </a>
+        ))}
+      </div>
+    </details>
   );
 }
 

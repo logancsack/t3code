@@ -381,6 +381,55 @@ it("shows a saved approval outcome even when no messages are loaded", async () =
   expect(container.textContent).not.toContain("What should we get done?");
 });
 
+it("keeps structured HTTPS, HTTP and relative deliverables without repeating a shown file", async () => {
+  const share = "/s/abcdefghijklmnop";
+  useAldoAssistant.setState({
+    entries: [
+      {
+        kind: "message",
+        role: "assistant",
+        at: at(1),
+        text: "I’ve prepared the draft.",
+        update: {
+          id: "draft",
+          title: "Launch",
+          thread: { environmentId: "aldo-1", threadId: "t1" },
+          state: "update",
+          summary: "I’ve prepared the draft.",
+          checked: [],
+          notChecked: [],
+          links: [
+            { label: "Website", url: "https://example.com/result" },
+            { label: "Local preview", url: "http://localhost:3000" },
+            { label: "Review evidence", url: "/admin/reliability" },
+            { label: "Shared file", url: share },
+          ],
+        },
+        artifacts: [
+          { kind: "file", url: share, title: "Saved draft", contentType: "application/pdf" },
+        ],
+      },
+    ],
+  });
+  await act(async () => {
+    root.render(<Page home={home()} />);
+    await import("./AldoArtifacts");
+  });
+  for (const [label, href] of [
+    ["Website", "https://example.com/result"],
+    ["Local preview", "http://localhost:3000"],
+    ["Review evidence", "/admin/reliability"],
+  ]) {
+    expect(
+      [...container.querySelectorAll("a")]
+        .find((a) => a.textContent?.includes(label!))
+        ?.getAttribute("href"),
+    ).toBe(href);
+  }
+  expect(container.textContent).toContain("Saved draft");
+  expect(container.textContent).not.toContain("Shared file");
+});
+
 const pill = () => container.querySelector<HTMLButtonElement>("[data-aldo-needs-you]")!;
 const dialog = () => document.querySelector<HTMLElement>('[role="dialog"]');
 async function frames() {

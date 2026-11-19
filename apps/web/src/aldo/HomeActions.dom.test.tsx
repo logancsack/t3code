@@ -397,3 +397,94 @@ it("a handoff whose details have not arrived still has a direct way into the req
   await mount("handoff");
   expect(el.textContent).toContain("Open browser request");
 });
+
+it("keeps a failed thread’s technical report behind Details beside its original retry action", async () => {
+  const found = decisions.find((d) => d.kind === "failed")!;
+  if (found.kind !== "failed") throw new Error("Failed fixture missing");
+  const d = {
+    ...found,
+    conversation: {
+      ...found.conversation,
+      summary: "The agent reports CI failed. Type checking and lint passed.",
+    },
+  };
+  await act(async () =>
+    root.render(<DecisionCard decision={d} now={Date.now()} open onOpen={() => {}} pick={null} />),
+  );
+  const details = el.querySelector("details")!;
+  expect(details.open).toBe(false);
+  expect(el.textContent).toContain("I couldn’t finish this attempt.");
+  expect(details.textContent).toContain("The agent reports CI failed.");
+  await act(async () => details.querySelector("summary")!.click());
+  expect(details.open).toBe(true);
+  expect(button("Retry")).toBeDefined();
+});
+
+it("uses the current Home-written failure summary with the retry card", async () => {
+  const { useAldoAssistant } = await import("./assistantSession");
+  const previous = useAldoAssistant.getState().entries;
+  const d = decisions.find((d) => d.kind === "failed")!;
+  if (d.kind !== "failed") throw new Error("Failed fixture missing");
+  const summary = "I couldn’t reach the supplier’s website. The draft is saved.";
+  useAldoAssistant.setState({
+    entries: [
+      {
+        kind: "message",
+        role: "assistant",
+        at: new Date().toISOString(),
+        text: summary,
+        update: {
+          id: "failure",
+          title: d.conversation.title,
+          thread: d.conversation.thread,
+          state: "failed",
+          summary,
+          checked: [],
+          notChecked: [],
+          links: [],
+        },
+      },
+    ],
+  });
+  try {
+    await act(async () =>
+      root.render(
+        <DecisionCard decision={d} now={Date.now()} pick={null} open onOpen={() => {}} />,
+      ),
+    );
+    expect(el.textContent).toContain(summary);
+    expect(el.textContent).not.toContain("I couldn’t finish this attempt.");
+  } finally {
+    await act(async () => useAldoAssistant.setState({ entries: previous }));
+  }
+});
+
+it("keeps a real question and its choices while disclosing engineering notes separately", async () => {
+  const found = decisions.find((d) => d.kind === "question")!;
+  if (found.kind !== "question") throw new Error("Question fixture missing");
+  const question = found.pending.questions[0]!.question;
+  const d = {
+    ...found,
+    conversation: {
+      ...found.conversation,
+      summary: `${question} 272 deterministic reliability checks passed.`,
+    },
+  };
+  await act(async () =>
+    root.render(<DecisionCard decision={d} now={Date.now()} pick={null} open onOpen={() => {}} />),
+  );
+  expect(el.textContent).toContain(question);
+  const details = el.querySelector("details")!;
+  expect(details.open).toBe(false);
+  expect(
+    [...el.querySelectorAll("p")]
+      .filter((p) => !p.closest("details"))
+      .map((p) => p.textContent)
+      .join(" "),
+  ).not.toContain("272");
+  await act(async () => details.querySelector("summary")!.click());
+  expect(details.open).toBe(true);
+  expect(details.textContent).toContain("272 deterministic reliability checks passed.");
+  const label = found.pending.questions[0]!.options[0]!.label.replace(/\s*\(recommended\)/i, "");
+  expect([...el.querySelectorAll("button")].some((b) => b.textContent?.includes(label))).toBe(true);
+});

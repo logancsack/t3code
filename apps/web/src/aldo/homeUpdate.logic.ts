@@ -129,10 +129,7 @@ export function legacyHomeUpdate(text: string): AldoHomeUpdate | null {
         : /ran into trouble|couldn['’]t finish|could not finish/i.test(summary)
           ? "failed"
           : "update";
-  const internal =
-    /the agent|\blint\b|type[ -]?check|\bCI\b|\bPR\s*#?\d|\d[\d,]* (?:tests?|checks?)|release checks|still being followed|https?:\/\//i.test(
-      summary,
-    );
+  const internal = internalHomeCopy(summary);
   const fallback =
     state === "unfinished"
       ? "I haven’t finished this work yet."
@@ -151,6 +148,7 @@ export function legacyHomeUpdate(text: string): AldoHomeUpdate | null {
     summary: internal ? fallback : summary || fallback,
     checked: checks ? [checks.trim()] : [],
     notChecked: notChecked ? [notChecked.trim()] : [],
+    ...(internal ? { notes: [summary] } : {}),
     links: links.map((l) => ({ label: l.title, url: l.url })),
   };
 }
@@ -158,3 +156,10 @@ export function legacyHomeUpdate(text: string): AldoHomeUpdate | null {
 /** Source-code review links are evidence; documents and other deliverables stay visible. */
 export const technicalUpdateLink = (url: string) =>
   /\/(?:pull|pull-requests|merge_requests)\/\d+|\/_git\/.+\/pullrequest\//i.test(url);
+
+/** Old thread notes are evidence, never a voice example for Home. */
+export function internalHomeCopy(text: string): boolean {
+  return /the agent|\blint\b|type[ -]?check|\bCI\b|\bPRs?\b|\d[\d,]* (?:(?:deterministic |reliability |focused )*(?:tests?|checks?)|passed\b)|\bdeploy(?:ed|ment)?\b|release checks|still being followed|https?:\/\//i.test(
+    text,
+  );
+}

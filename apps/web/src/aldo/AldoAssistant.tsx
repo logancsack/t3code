@@ -85,7 +85,7 @@ import { voicePresenceState } from "./presence.logic";
 import { acknowledgeAldo, setAldoReading } from "./presenceReactions";
 import { dedupeLiveCards, interleave, type AldoFeedEvent } from "./feed.logic";
 import { type AldoPlaceable } from "./decisions.logic";
-import { linkRows, withoutShownLinks, type AldoArtifact } from "./artifacts.logic";
+import { artifactShows, linkRows, withoutShownLinks, type AldoArtifact } from "./artifacts.logic";
 import { useAldoFirstViewHold } from "./firstView";
 import { AldoCallCard } from "./AldoCallCard";
 import { AldoPlanPicker } from "./AldoPlanPicker";
@@ -883,23 +883,28 @@ function AldoReply(props: {
   const kept = withoutShownLinks(update?.summary ?? props.text, artifacts);
   const { text } = update ? linkRows(kept) : { text: kept };
   const links = update?.thread
-    ? linkRows(
-        withoutShownLinks(
-          update.links
-            .filter((l) => !technicalUpdateLink(l.url))
-            .map((l) => `${l.label}: ${l.url}`)
-            .join("\n"),
-          artifacts,
-        ),
-      ).links
+    ? update.links
+        .filter((l) => !technicalUpdateLink(l.url) && !artifactShows(l.url, artifacts))
+        .map((l) => ({
+          url: l.url,
+          title: l.label,
+          type: l.url.startsWith("/") ? "Link" : new URL(l.url).host.replace(/^www\./, ""),
+        }))
     : [];
   // Home owns outstanding questions and their answer receipts. A task summary must not repeat them,
   // or revive an old “Needs you” label after the work has moved on.
-  const hasAsk = update?.state === "needs-you" && about !== undefined;
+  const hasDecision =
+    about !== undefined &&
+    (update?.state === "needs-you" ||
+      (update?.state === "failed" &&
+        about.state === "failed" &&
+        about.activity?.needsYou !== false &&
+        !about.chatDecision?.cleared &&
+        !about.chatDecision?.dismissed));
   return (
     <div className="flex w-full min-w-0 flex-col gap-2">
       {update ? (
-        hasAsk ? null : (
+        hasDecision ? null : (
           <AldoUpdateCard
             update={update}
             at={props.at}

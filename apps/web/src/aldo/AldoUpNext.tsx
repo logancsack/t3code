@@ -24,6 +24,9 @@ import {
 } from "react";
 
 import { cn } from "~/lib/utils";
+import { useAldoAssistant } from "./assistantSession";
+import { internalHomeCopy } from "./homeUpdate.logic";
+import { AldoUpdateDetails } from "./AldoUpdateCard";
 import { proposedPlanTitle, stripDisplayedPlanMarkdown } from "../proposedPlan";
 import { DismissChatDecision } from "./DismissChatDecision";
 import { ApprovalCard, ApprovalText, DecidedApproval, RewriteNote } from "./AldoApprovals";
@@ -504,6 +507,20 @@ export function DecisionCard(props: {
     onOpen: props.onOpen,
   };
 
+  const report = useAldoAssistant((s) =>
+    d.kind === "failed"
+      ? s.entries.findLast(
+          (e) =>
+            e.kind === "message" &&
+            e.role === "assistant" &&
+            e.update?.state === "failed" &&
+            e.update.thread?.environmentId === d.conversation.thread.environmentId &&
+            e.update.thread.threadId === d.conversation.thread.threadId &&
+            Date.parse(e.at) >= Date.parse(since) - 2_000,
+        )
+      : undefined,
+  );
+  const failure = report?.kind === "message" ? report.update : undefined;
   let headline: string;
   let body: ReactNode = null;
   let actions: ReactNode = null;
@@ -609,12 +626,21 @@ export function DecisionCard(props: {
       // What it last said, less the question the card already asks; where it
       // only waits, its words are behind "View result" instead.
       const said = waiting ? null : q ? c.summary?.replace(q.question, "").trim() : c.summary;
-      body =
-        said && /\w/.test(said) ? (
-          <p className="line-clamp-3 text-[14px] text-muted-foreground leading-6 dark:text-foreground/70">
-            {said}
-          </p>
-        ) : null;
+      const internal = !!said && internalHomeCopy(said);
+      body = (
+        <>
+          {said && /\w/.test(said) && !internal ? (
+            <p className="line-clamp-3 text-[14px] text-muted-foreground leading-6 dark:text-foreground/70">
+              {said}
+            </p>
+          ) : null}
+          <AldoUpdateDetails
+            checked={c.result?.checked}
+            notChecked={c.result?.notChecked}
+            notes={internal && said ? [said] : undefined}
+          />
+        </>
+      );
       if (waiting || isTurnAsk(pending))
         more = (
           <ThreadLink target={c.thread} className={QUIET}>
@@ -835,11 +861,19 @@ export function DecisionCard(props: {
     }
     case "failed": {
       const c = d.conversation;
-      headline = "Stopped with an error";
+      headline = "Couldn’t finish";
       body = (
-        <p className="whitespace-pre-wrap break-words text-sm text-muted-foreground leading-6">
-          {c.summary || c.progress?.detail || "Open the thread to see what happened."}
-        </p>
+        <>
+          <p className="text-sm text-muted-foreground leading-6">
+            {failure?.summary ??
+              "I couldn’t finish this attempt. You can retry or open the work to see what happened."}
+          </p>
+          <AldoUpdateDetails
+            checked={failure?.checked ?? c.result?.checked}
+            notChecked={failure?.notChecked ?? c.result?.notChecked}
+            notes={[c.summary || c.progress?.detail || ""].filter(Boolean)}
+          />
+        </>
       );
       actions = (
         <div className="grid grid-cols-2 gap-2">
