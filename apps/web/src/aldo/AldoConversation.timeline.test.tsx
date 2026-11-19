@@ -3,7 +3,7 @@ vi.mock("./AldoFrame", () => ({ AldoFrame: () => null }));
 
 import { act, createContext, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
+import { afterEach, beforeAll, beforeEach, expect, it, vi } from "vite-plus/test";
 
 import { AldoConversationPage } from "./AldoConversationPage";
 import { useAldoAssistant } from "./assistantSession";
@@ -149,12 +149,15 @@ function before(first: Element, second: Element) {
   expect(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 }
 async function remount(read: AldoHome) {
-  await act(async () => root.unmount());
+  await act(async () => root?.unmount());
   root = createRoot(container);
   await act(async () => root.render(<Page home={read} />));
 }
-beforeEach(async () => {
+// Cold Markdown transforms are fixture setup, not a user interaction budget.
+beforeAll(async () => {
   await import("../components/ChatMarkdown");
+}, 60_000);
+beforeEach(async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal(
     "ResizeObserver",
@@ -180,8 +183,8 @@ beforeEach(async () => {
   root = createRoot(container);
 });
 afterEach(async () => {
-  await act(async () => root.unmount());
-  container.remove();
+  await act(async () => root?.unmount());
+  container?.remove();
   Reflect.deleteProperty(Element.prototype, "scrollIntoView");
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
