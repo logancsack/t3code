@@ -13,6 +13,7 @@ import {
   type AldoHomeAction,
   type AldoHomeConversation,
   type AldoHomeDelivery,
+  type AldoHomePending,
   type AldoHomePullRequest,
   type AldoHomeTarget,
   type AldoHomeUsage,
@@ -66,6 +67,49 @@ export function isPausedMidTurn(c: AldoHomeConversation): boolean {
       (c.state === "working" && (c.machine === "asleep" || c.machine === "failed")))
   );
 }
+
+/**
+ * What a thread that waits on the user without asking anything asks on its
+ * card (from an older Aldo, or a release held for them): a plain question and
+ * answers to tap, each sent as what it tells the thread, as Aldo words a
+ * turn's own ask (sandbox-agent/task-result.ts). Never the agent's notes:
+ * those stay in its thread.
+ */
+export const WAITING_CHOICES: ReadonlyArray<{ readonly label: string; readonly reply: string }> = [
+  {
+    label: "Let it decide and carry on (Recommended)",
+    reply:
+      "Go ahead with what you think is best and finish. Anything that costs money or acts in my name still needs my OK first.",
+  },
+  { label: "Skip that part", reply: "Skip the part you needed me for and finish the rest." },
+  { label: "Stop here", reply: "Stop here, and don't carry on with this task." },
+];
+
+export function waitingQuestion(
+  c: Pick<AldoHomeConversation, "stateAt" | "at">,
+): Extract<AldoHomePending, { kind: "question" }> {
+  return {
+    kind: "question",
+    requestId: `waiting:${c.stateAt ?? c.at}`,
+    questions: [
+      {
+        id: "ask",
+        header: "",
+        question: "It needs a decision from you before it can finish.",
+        options: WAITING_CHOICES.map((o) => ({ label: o.label, description: "" })),
+        multiSelect: false,
+      },
+    ],
+  };
+}
+
+/** What a tapped (or typed) answer to a waiting card tells its thread. */
+export const waitingReply = (answer: string) =>
+  WAITING_CHOICES.find((o) => o.label === answer)?.reply ?? answer;
+
+/** A question Aldo worded from how a turn ended (`ask:`), not a request in the thread: the thread only waits. */
+export const isTurnAsk = (pending: AldoHomePending | undefined) =>
+  pending?.requestId.startsWith("ask:") === true;
 
 /** Why a conversation needs the user, or null if it doesn't. */
 export function needsYouKind(c: AldoHomeConversation): NeedsYouKind | null {
