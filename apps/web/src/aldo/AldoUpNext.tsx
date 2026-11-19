@@ -25,6 +25,7 @@ import {
 
 import { cn } from "~/lib/utils";
 import { useAldoAssistant } from "./assistantSession";
+import { technicalUpdateLink } from "./homeUpdate.logic";
 import { AldoUpdateDetails } from "./AldoUpdateCard";
 import { proposedPlanTitle, stripDisplayedPlanMarkdown } from "../proposedPlan";
 import { DismissChatDecision } from "./DismissChatDecision";
@@ -862,7 +863,10 @@ export function DecisionCard(props: {
           <AldoUpdateDetails
             checked={failure?.checked ?? c.result?.checked}
             notChecked={failure?.notChecked ?? c.result?.notChecked}
-            notes={[c.summary || c.progress?.detail || ""].filter(Boolean)}
+            notes={[...(failure?.notes ?? []), c.summary || c.progress?.detail || ""].filter(
+              Boolean,
+            )}
+            links={failure?.links.filter((link) => technicalUpdateLink(link.url))}
           />
         </>
       );

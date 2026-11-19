@@ -441,7 +441,8 @@ it("uses the current Home-written failure summary with the retry card", async ()
           summary,
           checked: [],
           notChecked: [],
-          links: [],
+          notes: ["The saved draft is ready to retry."],
+          links: [{ label: "Change evidence", url: "https://github.com/acme/guide/pull/7" }],
         },
       },
     ],
@@ -454,6 +455,12 @@ it("uses the current Home-written failure summary with the retry card", async ()
     );
     expect(el.textContent).toContain(summary);
     expect(el.textContent).not.toContain("I couldn’t finish this attempt.");
+    expect(el.querySelector("details")?.textContent).toContain(
+      "The saved draft is ready to retry.",
+    );
+    expect(el.querySelector("details a")?.getAttribute("href")).toBe(
+      "https://github.com/acme/guide/pull/7",
+    );
   } finally {
     await act(async () => useAldoAssistant.setState({ entries: previous }));
   }
