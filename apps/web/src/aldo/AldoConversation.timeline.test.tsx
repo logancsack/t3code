@@ -800,6 +800,34 @@ it("shows a multi-paragraph Home answer as one reply", async () => {
   expect(container.textContent).not.toContain("Checks reported");
 });
 
+it("keeps the live work card after an ordinary reply links to work started elsewhere", async () => {
+  const read = home({
+    conversations: [
+      {
+        ref: "work",
+        thread: { environmentId: "aldo-demo", threadId: "work" },
+        title: "Prepare the guide",
+        repos: [],
+        branch: "",
+        state: "working",
+        machine: "running",
+        startedAt: at(2),
+        stateAt: at(3),
+        at: at(3),
+      },
+    ],
+  });
+  backend.home = read;
+  message("Prepare the guide", 1);
+  await act(async () => root.render(<Page home={read} />));
+  expect(container.querySelectorAll('[data-test-live="aldo-demo/work"]')).toHaveLength(1);
+  await act(async () => {
+    message("Here is the thread: https://aldo.computer/aldo-demo/work", 4, "assistant");
+  });
+  expect(container.querySelector("[data-aldo-update]")).toBeNull();
+  expect(container.querySelectorAll('[data-test-live="aldo-demo/work"]')).toHaveLength(1);
+});
+
 it.each(["checks-running", "deploying"] as const)(
   "keeps %s progress when an ordinary reply only links to the completed thread",
   async (stage) => {

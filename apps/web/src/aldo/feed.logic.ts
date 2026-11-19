@@ -28,6 +28,7 @@ import { settledPayments } from "./payments.logic";
 import { openPlans, type AldoPlan } from "./plans.logic";
 import { queuedComputer, sameTarget } from "./home.logic";
 import type { AldoAssistantMessage } from "./assistant.logic";
+import { progressUpdate } from "./homeUpdate.logic";
 
 /** How far back the conversation shows what happened: as long as the board kept done threads. */
 const FEED_WINDOW_MS = 2 * 24 * 60 * 60 * 1000;
@@ -125,7 +126,9 @@ export function feedEvents(
     readonly now: number;
     readonly from: string | null;
     readonly here?: ReadonlyArray<AldoShownAction>;
-    readonly told?: ReadonlyArray<Pick<AldoAssistantMessage, "text" | "at" | "update">>;
+    readonly told?: ReadonlyArray<
+      Pick<AldoAssistantMessage, "text" | "at" | "update" | "call" | "source">
+    >;
   },
 ): ReadonlyArray<AldoFeedEvent> {
   const start = Math.max(
@@ -155,7 +158,7 @@ export function feedEvents(
   // A merge's check is said by its line (a routine's, by its run's): one merged
   // before the feed leaves its check a line of its own.
   const checks = merged.flatMap((pr) => (pr.check ? [pr.check] : []));
-  const told = (c: AldoHomeConversation, at: string) => {
+  const toldFinished = (c: AldoHomeConversation, at: string) => {
     const path = `/${c.thread.environmentId}/${c.thread.threadId}`;
     const after = Date.parse(at) - TOLD_SLACK_MS;
     return (options.told ?? []).some(
@@ -178,7 +181,7 @@ export function feedEvents(
     .flatMap((c): AldoFeedEvent[] => {
       const start = startOf(c);
       const ended = c.stateAt ?? c.at;
-      if (told(c, ended) || (!start && !within(ended))) return [];
+      if (toldFinished(c, ended) || (!start && !within(ended))) return [];
       const routine = routineOf(c);
       return [
         {
@@ -192,8 +195,15 @@ export function feedEvents(
         },
       ];
     });
+  // A mention may cover a finished line; active progress needs an actual replacement card.
+  const replacements = (options.told ?? []).flatMap((m) => {
+    const update = progressUpdate(m);
+    return update?.thread ? [{ thread: update.thread, at: Date.parse(m.at) }] : [];
+  });
   const threads: AldoFeedEvent[] = home.conversations.flatMap((c) => {
-    const start = isFinished(c) || told(c, c.stateAt ?? c.at) ? null : startOf(c);
+    const after = Date.parse(c.stateAt ?? c.at) - TOLD_SLACK_MS;
+    const replaced = replacements.some((m) => m.at >= after && sameTarget(m.thread, c.thread));
+    const start = isFinished(c) || replaced ? null : startOf(c);
     return start ? [{ kind: "thread", key: `thread:${c.ref}`, at: start, conversation: c }] : [];
   });
   const shipped: AldoFeedEvent[] = merged

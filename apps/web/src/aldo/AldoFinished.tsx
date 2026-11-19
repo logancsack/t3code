@@ -19,7 +19,7 @@ import type { AldoAssistantMessage } from "./assistant.logic";
 import { finishedResults, onlyWaiting, type AldoFinishedResult } from "./finished.logic";
 import { sameTarget } from "./home.logic";
 import { type AldoHome } from "./homeApi";
-import { legacyHomeUpdate } from "./homeUpdate.logic";
+import { progressUpdate } from "./homeUpdate.logic";
 import { FOCUS, SURFACE } from "./surface";
 
 /** A receipt, loaded when one is first opened (or about to be: a pointer on its line). */
@@ -38,9 +38,8 @@ export function AldoFinished(props: {
     // Only a rendered result card carries the current-status disclosure. Ordinary links,
     // call transcripts, briefs and old asks leave the quiet progress line in place.
     const replacements = props.told?.flatMap((m) => {
-      if (m.call !== undefined || m.source === "brief") return [];
-      const update = m.update ?? legacyHomeUpdate(m.text);
-      return update?.thread && update.state !== "needs-you" ? [update.thread] : [];
+      const update = progressUpdate(m);
+      return update?.thread ? [update.thread] : [];
     });
     return finishedResults(props.home, props.now).filter(
       (r) =>

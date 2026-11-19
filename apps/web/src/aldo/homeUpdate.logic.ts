@@ -2,7 +2,7 @@ import type { AldoConversationEntry } from "./assistantSession";
 import type { AldoHomeConversation } from "./homeApi";
 import { closingThread } from "./assistant.logic";
 import { linkRows } from "./artifacts.logic";
-import type { AldoOpenTarget } from "./assistant.logic";
+import type { AldoAssistantMessage, AldoOpenTarget } from "./assistant.logic";
 
 /** Immutable presentation of one outcome; never authorizes a task action. */
 export interface AldoHomeUpdate {
@@ -153,6 +153,15 @@ export function legacyHomeUpdate(text: string): AldoHomeUpdate | null {
     ...(internal ? { notes: [summary] } : {}),
     links: links.map((l) => ({ label: l.title, url: l.url })),
   };
+}
+
+/** A result card that can carry Home's live or release progress. Existing asks have their own cards. */
+export function progressUpdate(
+  message: Pick<AldoAssistantMessage, "text" | "update" | "call" | "source">,
+): AldoHomeUpdate | null {
+  if (message.call !== undefined || message.source === "brief") return null;
+  const update = message.update ?? legacyHomeUpdate(message.text);
+  return update?.state === "needs-you" ? null : update;
 }
 
 /** Source-code review links are evidence; documents and other deliverables stay visible. */
