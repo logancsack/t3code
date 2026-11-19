@@ -21,6 +21,8 @@ Catalog-aware releases classify models as legacy only when their
 `providers.<driver>.models[].status` explicitly says `legacy`. A newly discovered
 model remains visible when the manifest has no entry for it. The manifest's chat
 default is applied separately, so discovering a model does not replace it.
+The Aldo cloud picker also shows models reported by older servers despite stale
+legacy flags, while retaining the user's hidden-model preferences.
 
 Model data is schema-validated configuration. Tests should cover resolver, cache,
 and adapter semantics with synthetic model names, so adding a model never requires

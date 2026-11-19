@@ -127,7 +127,9 @@ function toAppModelOption(model: ServerProvider["models"][number]): AppModelOpti
   if (model.aliases) option.aliases = model.aliases;
   if (model.badge) option.badge = model.badge;
   if (model.isDefault) option.isDefault = true;
-  if (model.isLegacy) option.isLegacy = true;
+  // Cloud environments can keep older servers whose manifest marks new
+  // releases as legacy. Offer every reported model; user-hidden choices stay hidden.
+  if (model.isLegacy && !isAldoCloud) option.isLegacy = true;
   return option;
 }
 
