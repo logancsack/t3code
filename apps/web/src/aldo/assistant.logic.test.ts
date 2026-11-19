@@ -567,6 +567,18 @@ describe("closingThread", () => {
 });
 
 describe("linkRuns", () => {
+  it("keeps unmatched brackets readable without blocking the conversation", () => {
+    const prefix = "[".repeat(40_000) + "\n";
+    const started = performance.now();
+    const runs = linkRuns(prefix + "[Open work](https://example.com/guide)");
+    const elapsed = performance.now() - started;
+    expect(runs).toEqual([
+      { text: prefix, at: 0 },
+      { text: "Open work", at: prefix.length, href: "https://example.com/guide" },
+    ]);
+    expect(elapsed).toBeLessThan(250);
+  });
+
   it("sets a message's https links apart, without the punctuation after them", () => {
     expect(
       linkRuns(

@@ -188,7 +188,7 @@ export function linkRuns(
   const runs: { text: string; at: number; href?: string }[] = [];
   let last = 0;
   const pattern =
-    /\[([^\]\n]+)\]\((https?:\/\/[^\s)]+|\/(?!\/)[^\s)]+)\)|(https?:\/\/[^\s<>()[\]"'`]+)/g;
+    /\[([^[\]\n]+)\]\((https?:\/\/[^\s)]+|\/(?!\/)[^\s)]+)\)|(https?:\/\/[^\s<>()[\]"'`]+)/g;
   for (const match of text.matchAll(pattern)) {
     const at = match.index ?? 0;
     const raw = match[2] ?? match[3]!;
